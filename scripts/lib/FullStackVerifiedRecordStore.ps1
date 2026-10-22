@@ -219,6 +219,42 @@ function Read-NervFullStackOpenedRecordBytes {
     }
 }
 
+function Read-NervFullStackProofRecordBytes {
+    <#
+        单一的「按证据取字节」入口。⚠️ 三种情形必须分开，⛔ 别合并：
+        1. 证据可用且已验证 → 从 opened handle 读，享有 device/inode 绑定；
+        2. 宿主**有** provider 但证据没验过 → 真实的证据失败，按调用方的稳定标签 fail closed；
+        3. 宿主**没有** provider（`path:identity-unavailable`，目前即非 macOS）→ 这是宿主事实，
+           不是被读记录的事实。降级为按已复验并规范化的路径读，由调用方据
+           `$Proof.IdentityProven` 如实标注身份未获证明。把 3 也 throw 会让上层把
+           每一条记录都判成 invalid（#3405：Linux 上 canonical legacy manifest 被判成非 v0）。
+    #>
+    [OutputType([byte[]])]
+    param(
+        [Parameter(Mandatory)]
+        [object] $Proof,
+
+        [Parameter(Mandatory)]
+        [string] $RequirementTag
+    )
+
+    $usableHandle = [string]::Equals([string] $Proof.Status, 'Verified', [StringComparison]::Ordinal) -and
+        $null -ne $Proof.Handle -and -not $Proof.Handle.IsClosed -and -not $Proof.Handle.IsInvalid
+    if ($usableHandle -ne [bool] $Proof.IdentityProven) {
+        throw $RequirementTag
+    }
+
+    if ($usableHandle) {
+        return Read-NervFullStackOpenedRecordBytes -Handle $Proof.Handle
+    }
+
+    if (Test-NervFullStackOpenedObjectIdentityAvailable) {
+        throw $RequirementTag
+    }
+
+    return [System.IO.File]::ReadAllBytes([string] $Proof.TrustedPath.CanonicalPath)
+}
+
 function Invoke-NervFullStackVerifiedRecordCrashSeam {
     param(
         [Parameter(Mandatory)]
@@ -257,12 +293,9 @@ function Read-NervFullStackVerifiedRecord {
         -ExpectedKind File
     $proof = Open-NervFullStackVerifiedPathHandle -TrustedPath $trustedTarget -Access Read
     try {
-        if (-not [string]::Equals($proof.Status, 'Verified', [StringComparison]::Ordinal) -or
-            $null -eq $proof.Handle -or $proof.Handle.IsClosed -or $proof.Handle.IsInvalid) {
-            throw 'record:opened-object-identity-required'
-        }
-
-        $rawBytes = Read-NervFullStackOpenedRecordBytes -Handle $proof.Handle
+        $rawBytes = Read-NervFullStackProofRecordBytes `
+            -Proof $proof `
+            -RequirementTag 'record:opened-object-identity-required'
         $record = ConvertFrom-NervFullStackRecordBytes -RawBytes $rawBytes -RecordKind $RecordKind
         return [pscustomobject][ordered]@{
             Verified = $true
@@ -272,12 +305,18 @@ function Read-NervFullStackVerifiedRecord {
             RecordKind = $RecordKind
             RawBytes = [byte[]] $rawBytes.Clone()
             Record = $record
-            Identity = [pscustomobject][ordered]@{
-                Provider = [string] $proof.Provider
-                Key = [string] $proof.Identity.Key
-                Device = $proof.Identity.Device
-                Inode = $proof.Identity.Inode
-                Kind = [string] $proof.Identity.Kind
+            IdentityProven = [bool] $proof.IdentityProven
+            Identity = if ($proof.IdentityProven) {
+                [pscustomobject][ordered]@{
+                    Provider = [string] $proof.Provider
+                    Key = [string] $proof.Identity.Key
+                    Device = $proof.Identity.Device
+                    Inode = $proof.Identity.Inode
+                    Kind = [string] $proof.Identity.Kind
+                }
+            }
+            else {
+                $null
             }
         }
     }

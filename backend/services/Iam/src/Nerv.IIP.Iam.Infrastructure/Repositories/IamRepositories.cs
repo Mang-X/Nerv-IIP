@@ -20,6 +20,30 @@ public interface IUserRepository : IRepository<User, UserId>
     Task<User?> GetByLoginNameAsync(string loginName, CancellationToken cancellationToken = default);
     Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<User>> ListNotDeletedAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 列出在指定组织/环境里有成员关系、未删除的账号；可按关键字（登录名/显示名）或账号 ID 批量收窄，
+    /// <paramref name="includeDisabled"/> 为假时只列启用账号。按登录名排序分页。
+    /// </summary>
+    Task<(IReadOnlyList<User> Items, int Total)> ListMembersAsync(
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        string? keyword,
+        IReadOnlyCollection<UserId>? userIds,
+        bool includeDisabled,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default);
+
+    Task<(IReadOnlyList<string> UserIds, int Total)> ListRoleMemberIdsAsync(
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        RoleId roleId,
+        DateTimeOffset now,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default);
+
     Task PersistFailedLoginAsync(User user, CancellationToken cancellationToken = default);
 }
 
@@ -64,6 +88,77 @@ public sealed class UserRepository(ApplicationDbContext context)
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<(IReadOnlyList<User> Items, int Total)> ListMembersAsync(
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        string? keyword,
+        IReadOnlyCollection<UserId>? userIds,
+        bool includeDisabled,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var query = DbContext.Users
+            .AsNoTracking()
+            .Where(x => x.Deleted == NotDeleted
+                && DbContext.Memberships.Any(m =>
+                    m.UserId == x.Id
+                    && m.OrganizationId == organizationId
+                    && m.EnvironmentId == environmentId));
+        if (!includeDisabled)
+        {
+            query = query.Where(x => x.Enabled);
+        }
+
+        if (userIds is not null)
+        {
+            query = query.Where(x => userIds.Contains(x.Id));
+        }
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            var normalized = keyword.Trim().ToLowerInvariant();
+            query = query.Where(x =>
+                x.LoginName.ToLower().Contains(normalized)
+                || (x.DisplayName != null && x.DisplayName.ToLower().Contains(normalized)));
+        }
+
+        var total = await query.CountAsync(cancellationToken);
+        var items = await query
+            .OrderBy(x => x.LoginName)
+            .ThenBy(x => x.Id)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+        return (items, total);
+    }
+
+    public async Task<(IReadOnlyList<string> UserIds, int Total)> ListRoleMemberIdsAsync(
+        OrganizationId organizationId,
+        IamEnvironmentId environmentId,
+        RoleId roleId,
+        DateTimeOffset now,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        var query = DbContext.Users.AsNoTracking()
+            .Where(user => user.Deleted == NotDeleted
+                && user.Enabled
+                && (user.AccountExpiresAtUtc == null || user.AccountExpiresAtUtc > now)
+                && DbContext.Memberships.Any(membership =>
+                    membership.UserId == user.Id
+                    && membership.OrganizationId == organizationId
+                    && membership.EnvironmentId == environmentId
+                    && DbContext.MembershipRoles.Any(memberRole =>
+                        memberRole.MembershipId == membership.Id && memberRole.RoleId == roleId))
+                && DbContext.Roles.Any(role => role.Id == roleId && role.Deleted == NotDeleted));
+        var total = await query.CountAsync(cancellationToken);
+        var ids = await query.OrderBy(user => user.Id)
+            .Skip(skip).Take(take).Select(user => user.Id).ToArrayAsync(cancellationToken);
+        return (ids.Select(id => id.Id).ToArray(), total);
+    }
+
     public async Task PersistFailedLoginAsync(User user, CancellationToken cancellationToken = default)
     {
         DbContext.Users.Update(user);
@@ -83,7 +178,7 @@ public interface IRoleRepository : IRepository<Role, RoleId>
 }
 
 public sealed class DuplicateRoleNameException(string roleName)
-    : Exception($"Role name '{roleName}' is already used.")
+    : Exception($"角色名称「{roleName}」已被使用。")
 {
     public string RoleName { get; } = roleName;
 }

@@ -108,7 +108,7 @@ function Invoke-Verifier {
 
     # Whitespace is collapsed so that where a line happens to break is not part of the contract; the
     # assertions are about content, not layout. (Why this mattered enough to write down:
-    # docs/architecture/backend-ci-build-strategy.md, "走查收尾" 第 3 条.)
+    # docs/reports/audits/backend-ci-build-strategy-man-669.md, "走查收尾" 第 3 条.)
     try {
         $result = Invoke-NativeCommandOutput `
             -Command 'pwsh' `
@@ -172,7 +172,7 @@ try {
     # 4. A *declared* member whose configuration map is missing must fail (form 2). It is invisible
     #    to every rule that reads only `Project(...)` lines — including PR-B's directory rule — and
     #    is one hand-edit away in practice. Why that is so is argued once, in
-    #    docs/architecture/backend-ci-build-strategy.md; not restated here.
+    #    docs/reports/audits/backend-ci-build-strategy-man-669.md（形态 2）; not restated here.
     $mapDirectory = Join-Path $fixtureRoot 'map'
     New-FixtureProject -Path (Join-Path $mapDirectory 'lib/Lib.csproj')
     New-FixtureProject -Path (Join-Path $mapDirectory 'app/App.csproj') -ProjectReferenceInclude @('..\lib\Lib.csproj')

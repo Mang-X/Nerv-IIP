@@ -18,11 +18,13 @@ public sealed class MaterialRequirementEntityTypeConfiguration : IEntityTypeConf
         builder.Property(x => x.MaterialId).HasColumnName("material_id").IsRequired().HasMaxLength(100).HasComment("MasterData material SKU id required by the work order or operation.");
         builder.Property(x => x.MaterialLotId).HasColumnName("material_lot_id").HasMaxLength(100).HasComment("Optional preferred or allocated material lot id from Inventory/WMS readiness.");
         builder.Property(x => x.RequiredQuantity).HasColumnName("required_quantity").HasPrecision(18, 6).IsRequired().HasComment("Required material quantity from released MBOM or operation demand snapshot.");
+        builder.Property(x => x.UomCode).HasColumnName("uom_code").IsRequired().HasMaxLength(50).HasComment("Unit of measure frozen with the released MBOM material requirement.");
         builder.Property(x => x.AvailableQuantity).HasColumnName("available_quantity").HasPrecision(18, 6).IsRequired().HasComment("Available Inventory quantity snapshot for this requirement.");
         builder.Property(x => x.StagedQuantity).HasColumnName("staged_quantity").HasPrecision(18, 6).IsRequired().HasComment("WMS staged quantity snapshot for this requirement.");
         builder.Property(x => x.SourceSystem).HasColumnName("source_system").IsRequired().HasMaxLength(100).HasComment("Owning source system that produced the material readiness snapshot.");
         builder.Property(x => x.SourceSnapshotId).HasColumnName("source_snapshot_id").IsRequired().HasMaxLength(100).HasComment("Source snapshot id or version used to trace the readiness calculation.");
         builder.Property(x => x.CapturedAtUtc).HasColumnName("captured_at_utc").IsRequired().HasComment("UTC time when MES captured this material requirement readiness snapshot.");
+        builder.Property(x => x.SubstituteMaterialIdsJson).HasColumnName("substitute_material_ids_json").HasColumnType("text").IsRequired().HasDefaultValue("[]").HasComment("JSON array of normalized substitute material ids produced by the MES MBOM snapshot adapter; consumers are MES readiness and material issue flows; compatibility is an append-only candidate list.");
         builder.HasOne<WorkOrder>()
             .WithMany()
             .HasPrincipalKey(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderIdValue })

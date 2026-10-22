@@ -51,7 +51,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvTabs,
   NvTabsContent,
@@ -147,7 +147,7 @@ function documentTypeLabel(value?: string | null, fallback = '') {
   const code = (value ?? '').trim()
   if (!code) return fallback
   const controlled = documentTypeOptions.find((option) => option.value === code)?.label
-  return controlled ?? labelFor(DOCUMENT_TYPE_LABELS, code, fallback || code)
+  return controlled ?? labelFor(DOCUMENT_TYPE_LABELS, code, fallback || '—')
 }
 
 // 委托的「单据范围」可留空代表全部单据；NvSelect 不接受空串值，用 `all` 哨兵代理。
@@ -195,7 +195,7 @@ const workerOptions = computed(() =>
     .filter((row) => !!row.userId && row.active !== false)
     .map((row) => ({
       value: row.userId as string,
-      label: row.displayName || (row.userId as string),
+      label: row.displayName?.trim() || '—',
       hint: [row.employeeNo, row.departmentName ?? row.departmentCode].filter(Boolean).join(' · '),
     })),
 )
@@ -215,7 +215,7 @@ const delegateOptions = computed(() => {
     (option) => option.value !== delegationForm.delegatorActorRef.trim(),
   )
   if (current && !options.some((option) => option.value === current)) {
-    return [{ value: current, label: current, hint: undefined }, ...options]
+    return [{ value: current, label: '—', hint: undefined }, ...options]
   }
   return options
 })
@@ -229,7 +229,7 @@ const approverOptions = computed(() => {
         : []
   const current = templateForm.approverRef.trim()
   if (current && !options.some((option) => option.value === current)) {
-    return [{ value: current, label: current, hint: undefined }, ...options]
+    return [{ value: current, label: '—', hint: undefined }, ...options]
   }
   return options
 })
@@ -463,8 +463,8 @@ const decisionContextItems = computed(() => {
   const row = decisionTarget.value
   if (!row) return []
   return [
-    { label: '单据', value: row.documentId ?? row.documentType },
-    { label: '单据类型', value: row.documentType },
+    { label: '单据', value: documentLabel(row) },
+    { label: '单据类型', value: documentTypeLabel(row.documentType, '—') },
     { label: '当前步骤', value: row.stepName ?? (row.stepNo ? `第 ${row.stepNo} 步` : undefined) },
     { label: '到期时间', value: row.dueAtUtc ? formatDateTime(row.dueAtUtc) : undefined },
   ]
@@ -977,7 +977,9 @@ function toIsoFromLocalInput(value: string) {
             @update:page-size="(v) => (templatePager.pageSize.value = String(v))"
           >
             <template #cell-isActive="{ row }"
-              ><NvStatusBadge :value="formatStatus(row.isActive)"
+              ><NvStatusBadge
+                :value="row.isActive ? 'active' : 'disabled'"
+                :label="formatStatus(row.isActive)"
             /></template>
           </NvDataTable>
         </NvTabsContent>
@@ -1011,7 +1013,7 @@ function toIsoFromLocalInput(value: string) {
               :variant="decisionForm.decision === 'reject' ? 'destructive' : 'default'"
               :disabled="approval.resolveTaskPending.value"
             >
-              <Spinner v-if="approval.resolveTaskPending.value" aria-hidden="true" />
+              <NvSpinner v-if="approval.resolveTaskPending.value" aria-hidden="true" />
               {{ decisionLabel(decisionForm.decision) }}
             </NvButton>
           </NvDialogFooter>
@@ -1041,9 +1043,9 @@ function toIsoFromLocalInput(value: string) {
                 id="approval-delegate"
                 v-model="delegationForm.delegateActorRef"
                 :options="delegateOptions"
+                :show-code="false"
                 title="选择代理人"
                 placeholder="选择代理人"
-                source-text="数据来自员工名录"
                 empty-text="暂无员工，请先在基础数据维护员工"
                 :loading="workersPending"
                 aria-label="代理人"
@@ -1098,7 +1100,7 @@ function toIsoFromLocalInput(value: string) {
               <NvButton type="button" variant="outline">取消</NvButton>
             </NvDialogClose>
             <NvButton type="submit" :disabled="approval.createDelegationPending.value">
-              <Spinner v-if="approval.createDelegationPending.value" aria-hidden="true" />
+              <NvSpinner v-if="approval.createDelegationPending.value" aria-hidden="true" />
               保存委托
             </NvButton>
           </NvDialogFooter>
@@ -1198,11 +1200,9 @@ function toIsoFromLocalInput(value: string) {
                 id="approval-template-actor-ref"
                 v-model="templateForm.approverRef"
                 :options="approverOptions"
+                :show-code="templateForm.approverType !== 'user'"
                 :title="templateForm.approverType === 'user' ? '选择人员' : '选择部门'"
                 :placeholder="templateForm.approverType === 'user' ? '选择人员' : '选择部门'"
-                :source-text="
-                  templateForm.approverType === 'user' ? '数据来自员工名录' : '数据来自部门主数据'
-                "
                 :empty-text="
                   templateForm.approverType === 'user'
                     ? '暂无员工，请先在基础数据维护员工'
@@ -1241,7 +1241,7 @@ function toIsoFromLocalInput(value: string) {
               <NvButton type="button" variant="outline">取消</NvButton>
             </NvDialogClose>
             <NvButton type="submit" :disabled="approval.saveTemplatePending.value">
-              <Spinner v-if="approval.saveTemplatePending.value" aria-hidden="true" />
+              <NvSpinner v-if="approval.saveTemplatePending.value" aria-hidden="true" />
               保存模板
             </NvButton>
           </NvDialogFooter>

@@ -416,7 +416,9 @@ public sealed class ErpSalesFinanceAggregateTests
             [
                 new JournalVoucherLineDraft("1401", 100m, 0m, "debit"),
                 new JournalVoucherLineDraft("2202", 0m, 99m, "credit"),
-            ]));
+            ],
+            JournalVoucherSourceType.Manual,
+            "JV-001"));
     }
 
     [Fact]
@@ -431,7 +433,9 @@ public sealed class ErpSalesFinanceAggregateTests
                 new JournalVoucherLineDraft("2202", 100m, 0m, "clear USD AP", "USD", 7.1m),
                 new JournalVoucherLineDraft("BANK-USD", 0m, 100m, "pay USD cash", "USD", 7.2m),
                 new JournalVoucherLineDraft("6603", 10m, 0m, "realized FX loss", "CNY", 1m),
-            ]);
+            ],
+            JournalVoucherSourceType.PaymentExecution,
+            "PAY-FX-001");
 
         Assert.Equal(720m, voucher.Lines.Sum(x => x.LocalDebitAmount));
         Assert.Equal(720m, voucher.Lines.Sum(x => x.LocalCreditAmount));
@@ -509,7 +513,9 @@ public sealed class ErpSalesFinanceAggregateTests
             [
                 new JournalVoucherLineDraft("1401", 100m, 0m, "debit"),
                 new JournalVoucherLineDraft("2202", 0m, 100m, "credit"),
-            ]);
+            ],
+            JournalVoucherSourceType.Manual,
+            "JV-002");
 
         Assert.Equal(100m, voucher.Lines.Sum(x => x.DebitAmount));
         Assert.Equal(100m, voucher.Lines.Sum(x => x.CreditAmount));

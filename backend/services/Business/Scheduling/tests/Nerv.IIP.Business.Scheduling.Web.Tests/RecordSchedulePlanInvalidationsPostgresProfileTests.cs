@@ -1,5 +1,8 @@
+using System.Collections.Immutable;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleOperationOverrideAggregate;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Text.Json;
@@ -10,12 +13,17 @@ using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
+using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.IntegrationEvents;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.MasterData;
+using Nerv.IIP.Contracts.Mes;
+using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Contracts.Scheduling;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
@@ -167,6 +175,411 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
         Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
     }
 
+    [SchedulingPostgresFact]
+    public async Task Postgres_material_eta_event_replay_converges_after_the_first_atomic_commit_fails()
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        var interceptor = new FailNextSaveChangesInterceptor();
+        var services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(new FixedTimeProvider(FixedNow));
+        services.AddScoped<ISchedulingIntegrationEventContextAccessor, StubSchedulingIntegrationEventContextAccessor>();
+        services.AddScoped<SchedulePlanInvalidatedIntegrationEventConverter>();
+        services.AddSingleton<IIntegrationEventPublisher, NoOpIntegrationEventPublisher>();
+        services.AddMediatR(configuration => configuration
+            .RegisterServicesFromAssembly(typeof(Program).Assembly)
+            .AddUnitOfWorkBehaviors());
+        services.AddSchedulingPostgreSqlPersistence(SchedulingPostgresLaneDatabase.ConnectionString);
+        services.AddSingleton(interceptor);
+        services.AddDbContext<ApplicationDbContext>((serviceProvider, options) =>
+            options.AddInterceptors(serviceProvider.GetRequiredService<FailNextSaveChangesInterceptor>()));
+        services.AddUnitOfWork<ApplicationDbContext>();
+        await using var provider = services.BuildServiceProvider();
+
+        using (var seedScope = provider.CreateScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            SchedulingPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
+            await dbContext.Database.MigrateAsync();
+            dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-eta-a", "ASSET-CNC-01", "problem-eta-a"));
+            dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-eta-b", "ASSET-CNC-01", "problem-eta-b"));
+            dbContext.ScheduleProblems.Add(CreateMaterialProblemSnapshot("problem-eta-a", "SKU-001"));
+            dbContext.ScheduleProblems.Add(CreateMaterialProblemSnapshot("problem-eta-b", "SKU-002"));
+            await dbContext.SaveChangesAsync();
+        }
+
+        var integrationEvent = CreateMaterialSupplyEtaChangedEvent();
+        interceptor.FailNextSave();
+        using (var failedScope = provider.CreateScope())
+        {
+            var handler = new MaterialSupplyEtaChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+                new InMemoryIntegrationEventDeadLetterStore(),
+                failedScope.ServiceProvider.GetRequiredService<ISender>());
+            await Assert.ThrowsAsync<DbUpdateException>(() =>
+                handler.HandleAsync(integrationEvent, CancellationToken.None));
+        }
+
+        using (var afterFailureScope = provider.CreateScope())
+        {
+            var dbContext = afterFailureScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Empty(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+            Assert.Empty(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
+        }
+
+        using (var replayScope = provider.CreateScope())
+        {
+            var handler = new MaterialSupplyEtaChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+                new InMemoryIntegrationEventDeadLetterStore(),
+                replayScope.ServiceProvider.GetRequiredService<ISender>());
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        }
+
+        using (var assertionScope = provider.CreateScope())
+        {
+            var dbContext = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+            var invalidations = await dbContext.SchedulePlanInvalidations.OrderBy(x => x.PlanId).ToArrayAsync();
+            Assert.Equal(["plan-eta-a", "plan-eta-b"], invalidations.Select(x => x.PlanId));
+            Assert.Equal(["SKU-001", "SKU-002"], invalidations.Select(x => x.AffectedSkuCode));
+        }
+    }
+
+    [SchedulingPostgresFact]
+    public async Task Postgres_execution_deviation_replay_commits_projection_inbox_and_exact_invalidation_atomically()
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        var interceptor = new FailNextSaveChangesInterceptor();
+        var services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(new FixedTimeProvider(FixedNow));
+        services.AddScoped<ISchedulingIntegrationEventContextAccessor, StubSchedulingIntegrationEventContextAccessor>();
+        services.AddScoped<SchedulePlanGeneratedIntegrationEventConverter>();
+        services.AddScoped<SchedulePlanInvalidatedIntegrationEventConverter>();
+        services.AddSingleton<IIntegrationEventPublisher, NoOpIntegrationEventPublisher>();
+        services.AddMediatR(configuration => configuration
+            .RegisterServicesFromAssembly(typeof(Program).Assembly)
+            .AddUnitOfWorkBehaviors());
+        services.AddSchedulingPostgreSqlPersistence(SchedulingPostgresLaneDatabase.ConnectionString);
+        services.AddSingleton(interceptor);
+        services.AddDbContext<ApplicationDbContext>((serviceProvider, options) =>
+            options.AddInterceptors(serviceProvider.GetRequiredService<FailNextSaveChangesInterceptor>()));
+        services.AddUnitOfWork<ApplicationDbContext>();
+        await using var provider = services.BuildServiceProvider();
+
+        using (var seedScope = provider.CreateScope())
+        {
+            var dbContext = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            SchedulingPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
+            await dbContext.Database.MigrateAsync();
+            dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-deviation", "ASSET-CNC-01"));
+            await dbContext.SaveChangesAsync();
+        }
+
+        var integrationEvent = CreateOperationStartedEvent();
+        interceptor.FailNextSave();
+        using (var failedScope = provider.CreateScope())
+        {
+            var dbContext = failedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await using var transaction = await dbContext.Database.BeginTransactionAsync();
+            var handler = new MesOperationTaskStartedIntegrationEventHandlerForProjectExecution(
+                dbContext,
+                new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext),
+                failedScope.ServiceProvider.GetRequiredService<IOperationExecutionProjectionMutationLock>(),
+                failedScope.ServiceProvider.GetRequiredService<TimeProvider>(),
+                new SchedulingExecutionDeviationToleranceOption(15));
+
+            await Assert.ThrowsAsync<DbUpdateException>(() =>
+                handler.HandleAsync(integrationEvent, CancellationToken.None));
+        }
+
+        using (var afterFailureScope = provider.CreateScope())
+        {
+            var dbContext = afterFailureScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Empty(await dbContext.OperationExecutionProjections.ToArrayAsync());
+            Assert.Empty(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+            Assert.Empty(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
+        }
+
+        using (var replayScope = provider.CreateScope())
+        {
+            var dbContext = replayScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await using var transaction = await dbContext.Database.BeginTransactionAsync();
+            var handler = new MesOperationTaskStartedIntegrationEventHandlerForProjectExecution(
+                dbContext,
+                new PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>(dbContext),
+                replayScope.ServiceProvider.GetRequiredService<IOperationExecutionProjectionMutationLock>(),
+                replayScope.ServiceProvider.GetRequiredService<TimeProvider>(),
+                new SchedulingExecutionDeviationToleranceOption(15));
+
+            await handler.HandleAsync(integrationEvent, CancellationToken.None);
+            await transaction.CommitAsync();
+        }
+
+        using (var assertionScope = provider.CreateScope())
+        {
+            var dbContext = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Single(await dbContext.OperationExecutionProjections.ToArrayAsync());
+            Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
+            var invalidation = await dbContext.SchedulePlanInvalidations.SingleAsync();
+            Assert.Equal("plan-deviation", invalidation.PlanId);
+            Assert.Equal(SchedulingPlanInvalidationReasons.OperationStartDelayed, invalidation.ReasonCode);
+            Assert.Equal("WO-001", invalidation.AffectedWorkOrderId);
+            Assert.Equal("OP-001", invalidation.AffectedOperationId);
+        }
+    }
+
+    /// <summary>
+    /// #3191 真 provider 守线：检验结论走的 WorkOrderOrOperation 作用域谓词是
+    /// <c>Assignments.Any(a =&gt; a.WorkOrderId == v || a.OperationId == v)</c> —— 一条**关联子查询**。
+    /// 此前这条通路的唯一验证载体是 EF InMemory（客户端求值），真 Postgres 上的翻译从未被检验，
+    /// 而本仓已因同一形状栽过：QueryPlans 里的自定义方法调用在 InMemory 绿、在 Postgres 抛
+    /// 「could not be translated」。这里把 || 的**两个分支各走一次**（按工单命中 / 按工序命中）。
+    /// </summary>
+    [SchedulingPostgresFact]
+    public async Task Postgres_translates_the_work_order_or_operation_scope_for_quality_inspection_results()
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = BuildEventHandlerProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SchedulingPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
+        await dbContext.Database.MigrateAsync();
+
+        dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-target", "ASSET-CNC-01", "problem-target"));
+        dbContext.SchedulePlans.Add(CreatePlanWithAssignmentIdentity("plan-other", "WO-999", "OP-999", "problem-other"));
+        await dbContext.SaveChangesAsync();
+
+        var handler = new QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans(
+            dbContext,
+            new InMemoryIntegrationEventDeadLetterStore(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            NullLogger<QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans>.Instance);
+
+        // ① 首件复合来源单据 + 结构化工单身份 → 走 assignment.WorkOrderId 那一支。
+        await handler.HandleAsync(
+            CreateInspectionEvent(
+                "evt-quality-first-article",
+                QualityIntegrationEventTypes.InspectionRejected,
+                sourceType: QualityInspectionSourceTypes.FirstArticle,
+                sourceDocumentId: "WO-001:OP-001",
+                workOrderId: "WO-001",
+                operationTaskId: "OP-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var byWorkOrder = await dbContext.SchedulePlanInvalidations.AsNoTracking().ToArrayAsync();
+        var firstArticle = Assert.Single(byWorkOrder);
+        Assert.Equal("plan-target", firstArticle.PlanId);
+        Assert.Equal("WO-001", firstArticle.AffectedWorkOrderId);
+        Assert.Equal(SchedulingPlanInvalidationReasons.QualityBlocked, firstArticle.ReasonCode);
+
+        // ② 周期检复合行号 + 结构化工序身份（无工单号）→ 走 assignment.OperationId 那一支。
+        //    这是 #3319 之前的生产者形状；改后周期检也会带工单号，但存量与在途事件仍是这个形状，
+        //    这条消费分支因此不能退休。
+        await handler.HandleAsync(
+            CreateInspectionEvent(
+                "evt-quality-periodic",
+                QualityIntegrationEventTypes.InspectionPassed,
+                sourceType: QualityInspectionSourceTypes.Operation,
+                sourceDocumentId: $"OP-001:periodic-time:{Guid.Empty:D}:1",
+                workOrderId: null,
+                operationTaskId: "OP-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var periodic = Assert.Single(await dbContext.SchedulePlanInvalidations
+            .AsNoTracking()
+            .Where(x => x.SourceEventId == "evt-quality-periodic")
+            .ToArrayAsync());
+        Assert.Equal("plan-target", periodic.PlanId);
+        Assert.Equal("OP-001", periodic.AffectedOperationId);
+        Assert.Null(periodic.AffectedWorkOrderId);
+        Assert.Equal(SchedulingPlanInvalidationReasons.QualityReleased, periodic.ReasonCode);
+
+        // 另一张计划的工单／工序都不匹配，两次都不该被牵连。
+        Assert.Empty(await dbContext.SchedulePlanInvalidations
+            .AsNoTracking()
+            .Where(x => x.PlanId == "plan-other")
+            .ToArrayAsync());
+    }
+
+    /// <summary>
+    /// #3191 真 provider 守线：发布闸门的 <c>ReasonCode != qualityReleased</c> 是一条 SQL 谓词，
+    /// 同样只在 InMemory 上验过。裁定的两条行为（qualityBlocked 阻断 / qualityReleased 放行）
+    /// 在真库上各走一次。
+    /// </summary>
+    [SchedulingPostgresFact]
+    public async Task Postgres_release_gate_blocks_quality_blocked_and_allows_quality_released()
+    {
+        await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+        var services = new ServiceCollection();
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
+        services.AddSchedulingPostgreSqlPersistence(SchedulingPostgresLaneDatabase.ConnectionString);
+        await using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SchedulingPostgresLaneDatabase.AssertUsesGovernedDatabase(dbContext);
+        await dbContext.Database.MigrateAsync();
+
+        dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-blocked", "ASSET-CNC-01", "problem-blocked"));
+        dbContext.SchedulePlans.Add(CreatePlanWithAssignment("plan-released", "ASSET-CNC-01", "problem-released"));
+        dbContext.SchedulePlanInvalidations.Add(CreateQualityInvalidation(
+            "plan-blocked", SchedulingPlanInvalidationReasons.QualityBlocked, "quality.InspectionRejected"));
+        dbContext.SchedulePlanInvalidations.Add(CreateQualityInvalidation(
+            "plan-released", SchedulingPlanInvalidationReasons.QualityReleased, "quality.InspectionPassed"));
+        await dbContext.SaveChangesAsync();
+
+        var handler = new ReleaseSchedulePlanCommandHandler(
+            dbContext,
+            new FixedTimeProvider(FixedNow),
+            new NoopScheduleReleaseScopeLock());
+
+        var blocked = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseSchedulePlanCommand("plan-blocked", "org-001", "env-dev"),
+            CancellationToken.None));
+        Assert.Contains("排程输入变化失效", blocked.Message, StringComparison.Ordinal);
+
+        var released = await handler.Handle(
+            new ReleaseSchedulePlanCommand("plan-released", "org-001", "env-dev"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(SchedulePlanStatusContract.Released, released.Status);
+        dbContext.ChangeTracker.Clear();
+        var persisted = await dbContext.SchedulePlans.AsNoTracking().ToArrayAsync();
+        Assert.Equal(SchedulePlanLifecycleStatus.Generated, persisted.Single(x => x.PlanId == "plan-blocked").Status);
+        Assert.Equal(SchedulePlanLifecycleStatus.Released, persisted.Single(x => x.PlanId == "plan-released").Status);
+        // 放行不等于抹掉留痕。
+        Assert.Equal(2, await dbContext.SchedulePlanInvalidations.CountAsync());
+    }
+
+    private static ServiceProvider BuildEventHandlerProvider(ISchedulingWorkbenchSourceProvider? sourceProvider = null, IIntegrationEventPublisher? publisher = null)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<TimeProvider>(new FixedTimeProvider(FixedNow));
+        services.AddScoped<ISchedulingIntegrationEventContextAccessor, StubSchedulingIntegrationEventContextAccessor>();
+        services.AddScoped<SchedulePlanGeneratedIntegrationEventConverter>();
+        services.AddScoped<ScheduleConflictDetectedIntegrationEventConverter>();
+        services.AddScoped<SchedulePlanReleasedIntegrationEventConverter>();
+        services.AddScoped<SchedulePlanInvalidatedIntegrationEventConverter>();
+        services.AddSingleton<IIntegrationEventPublisher>(publisher ?? new NoOpIntegrationEventPublisher());
+        services.AddMediatR(configuration => configuration
+            .RegisterServicesFromAssembly(typeof(Program).Assembly)
+            .AddUnitOfWorkBehaviors());
+        services.AddSchedulingPostgreSqlPersistence(SchedulingPostgresLaneDatabase.ConnectionString);
+        services.AddUnitOfWork<ApplicationDbContext>();
+        if (sourceProvider is not null) services.AddSingleton(sourceProvider);
+        return services.BuildServiceProvider();
+    }
+
+    private static SchedulePlanInvalidation CreateQualityInvalidation(string planId, string reasonCode, string sourceEventType)
+    {
+        return SchedulePlanInvalidation.Create(
+            "org-001",
+            "env-dev",
+            planId,
+            sourceEventId: $"evt-{planId}",
+            sourceEventType: sourceEventType,
+            sourceService: "business-quality",
+            reasonCode: reasonCode,
+            affectedResourceId: null,
+            affectedWorkOrderId: "WO-001",
+            affectedOperationId: null,
+            affectedSkuCode: "SKU-001",
+            occurredAtUtc: FixedNow,
+            recordedAtUtc: FixedNow);
+    }
+
+    private static InspectionResultIntegrationEvent CreateInspectionEvent(
+        string eventId,
+        string eventType,
+        string sourceType,
+        string sourceDocumentId,
+        string? workOrderId,
+        string? operationTaskId)
+    {
+        var occurredAtUtc = new DateTimeOffset(2026, 6, 1, 9, 10, 0, TimeSpan.Zero);
+        return new InspectionResultIntegrationEvent(
+            eventId,
+            eventType,
+            QualityIntegrationEventVersions.V1,
+            occurredAtUtc,
+            QualityIntegrationEventSources.BusinessQuality,
+            $"corr-{eventId}",
+            $"cause-{eventId}",
+            "org-001",
+            "env-dev",
+            "system:quality",
+            $"quality:inspection:{eventId}",
+            new InspectionResultPayload(
+                "INS-001",
+                null,
+                sourceType,
+                QualityInspectionSourceServices.Mes,
+                sourceDocumentId,
+                "SKU-001",
+                1,
+                eventType == QualityIntegrationEventTypes.InspectionRejected ? "Rejected" : "Passed",
+                null,
+                [],
+                occurredAtUtc,
+                WorkOrderId: workOrderId,
+                OperationTaskId: operationTaskId));
+    }
+
+    private static SchedulePlan CreatePlanWithAssignmentIdentity(
+        string planId,
+        string workOrderId,
+        string operationId,
+        string problemId)
+    {
+        return SchedulePlan.FromGeneratedPlan(
+            "org-001",
+            "env-dev",
+            SchedulePlanContractMapper.ToDomainSnapshot(new SchedulePlanContract(
+                ContractVersion: 1,
+                PlanId: planId,
+                ProblemId: problemId,
+                ProblemFingerprint: $"fingerprint-{planId}",
+                AlgorithmVersion: "aps-lite-v1",
+                Status: SchedulePlanStatusContract.Generated,
+                GeneratedAtUtc: new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+                Metrics: new SchedulePlanMetricsContract(1, 0, 60, 60, 0, 0, 1m, 0m),
+                Assignments:
+                [
+                    new ScheduleAssignmentContract(
+                        AssignmentId: $"assign-{planId}",
+                        OrderId: workOrderId,
+                        OperationId: operationId,
+                        OperationSequence: 10,
+                        ResourceId: "ASSET-LATHE-01",
+                        WorkCenterId: "WC-LATHE",
+                        StartUtc: new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero),
+                        EndUtc: new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
+                        IsLocked: false,
+                        ExplanationCode: "scheduled")
+                ],
+                ResourceLoads: [],
+                Conflicts: [],
+                UnscheduledOperations: [],
+                ChangeSummary: [],
+                GanttItems: [])));
+    }
+
+    private sealed class NoopScheduleReleaseScopeLock : IScheduleReleaseScopeLock
+    {
+        public Task<IAsyncDisposable> AcquireAsync(
+            string organizationId,
+            string environmentId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IAsyncDisposable>(NoopAsyncDisposable.Instance);
+    }
+
+    private sealed class NoopAsyncDisposable : IAsyncDisposable
+    {
+        public static NoopAsyncDisposable Instance { get; } = new();
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private static SchedulePlan CreatePlanWithAssignment(
         string planId,
         string resourceId,
@@ -235,6 +648,88 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
             FixedNow);
     }
 
+    private static ScheduleProblemSnapshot CreateMaterialProblemSnapshot(string problemId, string skuCode)
+    {
+        var horizonStart = FixedNow.AddHours(-4);
+        var horizonEnd = FixedNow.AddHours(4);
+        var problem = new SchedulingProblemContract(
+            1,
+            problemId,
+            "org-001",
+            "env-dev",
+            horizonStart,
+            horizonEnd,
+            [],
+            [],
+            [],
+            [],
+            [
+                new SchedulingMaterialReadinessContract(
+                    "order",
+                    "WO-001",
+                    horizonStart.AddHours(2),
+                    false,
+                    [$"{skuCode} shortage"],
+                    [new SchedulingMaterialShortageContract(skuCode, null, 5m, 3m, 2m)])
+            ],
+            [],
+            []);
+        return new ScheduleProblemSnapshot(
+            problemId,
+            1,
+            "org-001",
+            "env-dev",
+            $"fingerprint-{problemId}",
+            JsonSerializer.Serialize(problem, SchedulingJson.Options),
+            horizonStart,
+            horizonEnd,
+            FixedNow);
+    }
+
+    private static MaterialSupplyEtaChangedIntegrationEvent CreateMaterialSupplyEtaChangedEvent()
+    {
+        return new MaterialSupplyEtaChangedIntegrationEvent(
+            "evt-erp-material-eta-postgres-001",
+            ErpIntegrationEventTypes.MaterialSupplyEtaChanged,
+            ErpIntegrationEventVersions.V1,
+            FixedNow,
+            ErpIntegrationEventSources.BusinessErp,
+            "corr-erp-material-eta-postgres-001",
+            "PO-001",
+            "org-001",
+            "env-dev",
+            "system:test",
+            "erp:material-supply-eta-changed:org-001:env-dev:PO-001:released",
+            new MaterialSupplyEtaChangedPayload(
+                "purchase-order",
+                "PO-001",
+                "released",
+                ["SKU-002", "SKU-001", "SKU-001"]));
+    }
+
+    private static MesOperationTaskStartedIntegrationEvent CreateOperationStartedEvent()
+    {
+        var actualStartedAtUtc = new DateTimeOffset(2026, 6, 1, 8, 16, 0, TimeSpan.Zero);
+        return new MesOperationTaskStartedIntegrationEvent(
+            "evt-mes-operation-started-postgres-001",
+            MesIntegrationEventTypes.OperationTaskStarted,
+            MesIntegrationEventVersions.V1,
+            actualStartedAtUtc,
+            MesIntegrationEventSources.BusinessMes,
+            "corr-mes-operation-started-postgres-001",
+            "cause-mes-operation-started-postgres-001",
+            "org-001",
+            "env-dev",
+            "system:test",
+            "mes:operation-task-started:WO-001:OP-001",
+            new OperationTaskLifecyclePayload(
+                "WO-001",
+                "OP-001",
+                10,
+                "WC-CNC",
+                actualStartedAtUtc));
+    }
+
     private static WorkCalendarChangedIntegrationEvent CreateWorkCalendarChangedEvent()
     {
         return new WorkCalendarChangedIntegrationEvent(
@@ -275,6 +770,164 @@ public sealed class RecordSchedulePlanInvalidationsPostgresProfileTests
             CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FailNextSaveChangesInterceptor : SaveChangesInterceptor
+    {
+        private bool shouldFail;
+
+        public void FailNextSave() => shouldFail = true;
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (shouldFail)
+            {
+                shouldFail = false;
+                throw new DbUpdateException("Injected atomic commit failure.");
+            }
+
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
+    }
+
+    // DomainInvariant: #4141 approved split lock rules and precise mother-order impact.
+    [SchedulingPostgresFact]
+    public async Task Postgres_split_invalidates_only_mother_operations_migrates_locks_and_deduplicates()
+    {
+        foreach (var clearFirst in new bool?[] { null, true, false })
+        {
+            await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
+            await AssertSplitFlowAsync(clearFirst);
+        }
+    }
+
+    private static async Task AssertSplitFlowAsync(bool? clearFirst)
+    {
+        var source = new SplitSourceProvider();
+        var publisher = new SplitPublisher();
+        await using var provider = BuildEventHandlerProvider(source, publisher);
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        SchedulingPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+        await db.Database.MigrateAsync();
+        var original = SchedulePlanContractMapper.ToContract(CreatePlanWithAssignment("plan-split-generated", "DEV-1"));
+        var otherAssignment = original.Assignments.Single() with { AssignmentId = "assign-other", OrderId = "WO-OTHER", OperationId = "OP-OTHER" };
+        var generated = SchedulePlan.FromGeneratedPlan("org-001", "env-dev", SchedulePlanContractMapper.ToDomainSnapshot(
+            original with { Assignments = original.Assignments.Append(otherAssignment).ToArray() }));
+        var released = CreatePlanWithAssignment("plan-split-released", "DEV-1");
+        released.Release(FixedNow, 1);
+        // Another order in the same plan must not become an affected operation.
+        var mixed = CreatePlanWithAssignmentIdentity("plan-split-other", "WO-OTHER", "OP-OTHER", "problem-other");
+        db.SchedulePlans.AddRange(generated, released, mixed);
+        var parent = ScheduleOperationOverride.Create(
+            "org-001", "env-dev", "WO-001", "OP-001", 10, "DEV-1", "WC-CNC",
+            FixedNow, FixedNow.AddTicks(1000), "manual-override", "scheduling-api", null,
+            "user:test", FixedNow, FixedNow);
+        if (clearFirst.HasValue)
+        {
+            Assert.True(parent.TryApplyMesDispatch("DEV-1", "WC-CNC", FixedNow, FixedNow.AddTicks(1000),
+                "dispatch-1", "user:test", 1, FixedNow, FixedNow));
+        }
+        db.ScheduleOperationOverrides.Add(parent);
+        await db.SaveChangesAsync();
+        var integrationEvent = SplitEvent("WO-001", "split-locked");
+        var consumer = new WorkOrderSplitIntegrationEventHandlerForApplySplit(db,
+            new InMemoryIntegrationEventDeadLetterStore(), scope.ServiceProvider.GetRequiredService<MediatR.ISender>());
+        var clearConsumer = new MesOperationTaskManualDispatchClearedIntegrationEventHandlerForClearOverride(
+            db, new InMemoryIntegrationEventDeadLetterStore());
+        var clear = new MesOperationTaskManualDispatchClearedIntegrationEvent(
+            "split-clear", MesIntegrationEventTypes.OperationTaskManualDispatchCleared, 1, FixedNow,
+            MesIntegrationEventSources.BusinessMes, "corr-split", "cause-split", "org-001", "env-dev",
+            "user:test", "split-clear", new OperationTaskManualDispatchClearedPayload(
+                "WO-001", "OP-001", 10, "DEV-1", "WC-CNC", FixedNow, FixedNow.AddTicks(1000),
+                2, MesManualDispatchClearReasonCodes.OperationCancelled, FixedNow));
+        if (clearFirst == true) await clearConsumer.HandleAsync(clear, default);
+        await consumer.HandleAsync(integrationEvent, default);
+        if (clearFirst == false) await clearConsumer.HandleAsync(clear, default);
+        db.ChangeTracker.Clear();
+        await consumer.HandleAsync(integrationEvent, default);
+        var invalidations = await db.SchedulePlanInvalidations.ToArrayAsync();
+        Assert.Equal(2, invalidations.Length);
+        Assert.All(invalidations, invalidation =>
+        {
+            Assert.Equal("WO-001", invalidation.AffectedWorkOrderId);
+        });
+        var locks = await db.ScheduleOperationOverrides.OrderBy(x => x.WorkOrderId).ToArrayAsync();
+        Assert.Equal(3, locks.Length);
+        Assert.All(publisher.Invalidations, published =>
+        {
+            var operation = Assert.Single(published.Payload.AffectedOperations);
+            Assert.Equal("WO-001", operation.WorkOrderId);
+            Assert.Equal("OP-001", operation.OperationId);
+        });
+        Assert.Equal(2, publisher.Invalidations.Count);
+        Assert.False(locks.Single(x => x.WorkOrderId == "WO-001").IsActive);
+        Assert.Equal(["CHILD-A", "CHILD-B"], locks.Where(x => x.IsActive).Select(x => x.WorkOrderId).Order());
+        var children = locks.Where(x => x.IsActive).OrderBy(x => x.WorkOrderId).ToArray();
+        Assert.Equal(FixedNow, children[0].StartUtc);
+        Assert.Equal(FixedNow.AddTicks(330), children[0].EndUtc);
+        Assert.Equal(children[0].EndUtc, children[1].StartUtc);
+        Assert.Equal(FixedNow.AddTicks(1000), children[1].EndUtc);
+        Assert.Equal(["CHILD-A-OP", "CHILD-B-OP"], children.Select(x => x.OperationId));
+        Assert.All(children, child => { Assert.Equal("DEV-1", child.ResourceId); Assert.Equal("WC-CNC", child.WorkCenterId); });
+        Assert.Equal(clearFirst.HasValue ? 2 : 1, await db.ProcessedIntegrationEvents.CountAsync());
+        Assert.Equal(1, source.ReadCount);
+
+        // A split without a parent override does not invent any child lock or read MES operations.
+        await consumer.HandleAsync(SplitEvent("WO-NO-LOCK", "split-unlocked"), default);
+        Assert.Equal(3, await db.ScheduleOperationOverrides.CountAsync());
+        Assert.Equal(1, source.ReadCount);
+
+        // Earlier cancellations and ordinary device clears must remain revoked, even if a later split arrives.
+        db.ScheduleOperationOverrides.AddRange(
+            ScheduleOperationOverride.CreateClearedMesDispatch("org-001", "env-dev", "WO-CANCELLED", "OP-CANCELLED",
+                10, "DEV-1", "WC-CNC", FixedNow, FixedNow.AddTicks(1000), "earlier-clear", "user:test", 2,
+                FixedNow.AddMinutes(-1), MesManualDispatchClearReasonCodes.OperationCancelled, FixedNow.AddMinutes(-1)),
+            ScheduleOperationOverride.CreateClearedMesDispatch("org-001", "env-dev", "WO-DEVICE-CLEARED", "OP-DEVICE-CLEARED",
+                10, "DEV-1", "WC-CNC", FixedNow, FixedNow.AddTicks(1000), "device-clear", "user:test", 2,
+                FixedNow, MesManualDispatchClearReasonCodes.DeviceCleared, FixedNow));
+        await db.SaveChangesAsync();
+        await consumer.HandleAsync(SplitEvent("WO-CANCELLED", "split-earlier-cancelled"), default);
+        await consumer.HandleAsync(SplitEvent("WO-DEVICE-CLEARED", "split-device-cleared"), default);
+        Assert.Equal(5, await db.ScheduleOperationOverrides.CountAsync());
+        Assert.Equal(1, source.ReadCount);
+    }
+
+    private static WorkOrderSplitIntegrationEvent SplitEvent(string sourceId, string eventId) => new(
+        eventId, MesIntegrationEventTypes.WorkOrderSplit, 1, FixedNow,
+        MesIntegrationEventSources.BusinessMes, "corr-split", "cause-split", "org-001", "env-dev",
+        "user:test", eventId, new WorkOrderTransformationPayload(Guid.Parse("00000000-0000-0000-0000-000000000041"), "split",
+            ImmutableArray.Create(
+                new WorkOrderTransformationLinePayload(sourceId, "CHILD-B", 2m, 3m, 2m, "EA", "split", "released", 2, 1),
+                new WorkOrderTransformationLinePayload(sourceId, "CHILD-A", 1m, 3m, 1m, "EA", "split", "released", 2, 1))));
+
+    private sealed class SplitPublisher : IIntegrationEventPublisher
+    {
+        public List<SchedulePlanInvalidatedIntegrationEvent> Invalidations { get; } = [];
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(TIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        {
+            if (integrationEvent is SchedulePlanInvalidatedIntegrationEvent invalidation) Invalidations.Add(invalidation);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class SplitSourceProvider : ISchedulingWorkbenchSourceProvider
+    {
+        public int ReadCount { get; private set; }
+        public Task<IReadOnlyCollection<SchedulingWorkbenchProblemSourceOrder>> ResolveOrdersAsync(
+            string organizationId, string environmentId, DateTimeOffset earliestStartFallbackUtc,
+            IReadOnlyCollection<SchedulingWorkbenchOrderSelection> selections, CancellationToken cancellationToken)
+        {
+            ReadCount++;
+            IReadOnlyCollection<SchedulingWorkbenchProblemSourceOrder> result = selections.Select(x =>
+                new SchedulingWorkbenchProblemSourceOrder(new SchedulingProblemSourceOrder(
+                    x.WorkOrderId, "SKU-001", 1m, FixedNow.AddDays(1), 50, true, FixedNow, "ROUTE-001"),
+                    [new SchedulingWorkbenchOperationSource(x.WorkOrderId + "-OP", 10, "WC-001")])).ToArray();
+            return Task.FromResult(result);
         }
     }
 }

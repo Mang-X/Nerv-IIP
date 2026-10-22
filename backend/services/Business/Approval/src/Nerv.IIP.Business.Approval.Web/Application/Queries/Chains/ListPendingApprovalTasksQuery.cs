@@ -33,12 +33,10 @@ public sealed class ListPendingApprovalTasksQueryValidator : AbstractValidator<L
 {
     public ListPendingApprovalTasksQueryValidator()
     {
-        RuleFor(x => x.OrganizationId).RequiredApprovalCode(100);
-        RuleFor(x => x.EnvironmentId).RequiredApprovalCode(100);
+        this.AddRequiredTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
         RuleFor(x => x.ActorType).RequiredApprovalCode(50);
         RuleFor(x => x.ActorRef).RequiredApprovalCode(150);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        this.AddOffsetPageRules(x => x.Skip, x => x.Take);
     }
 }
 

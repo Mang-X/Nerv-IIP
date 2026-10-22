@@ -30,7 +30,7 @@ import {
   NvFieldLabel,
   NvInput,
   NvPageHeader,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -135,7 +135,7 @@ const sortedRows = computed(() => {
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 const pagedRows = computed(() => sortedRows.value)
 
-const listErrorMessage = computed(() => formatError(codesError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(codesError.value))
 
 const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
@@ -270,9 +270,6 @@ function syncFormOnOpen(open: boolean) {
   createForm.environmentId = filters.environmentId
   createForm.codeSet = selectedCodeSet.value
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 function isNonEmpty(value: string) {
   return value.trim().length > 0
 }
@@ -379,7 +376,7 @@ function isNonEmpty(value: string) {
                     !canSubmitCode
                   "
                 >
-                  <Spinner
+                  <NvSpinner
                     v-if="createCodePending || codeActions.updatePending.value"
                     aria-hidden="true"
                   />

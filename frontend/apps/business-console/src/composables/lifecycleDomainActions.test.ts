@@ -361,13 +361,13 @@ describe('Business Console lifecycle domain actions', () => {
 
   it('replays a posting-pending outbound only from an exact restored intent and its OLD key', async () => {
     const wms = useWmsOutboundOrders({ scopeKind: 'self', scopeId: 'user-001' })
-    const payload = { packReviewNo: 'PR-1', passed: true }
+    const payload = { passed: true }
     const pendingScope = {
       principalId: 'unrestored-session',
       organizationId: 'org-1',
       environmentId: 'env-1',
       operationType: 'wms.outbound-order.complete',
-      payloadFingerprint: 'OUT-1:{"packReviewNo":"PR-1","passed":true}',
+      payloadFingerprint: 'OUT-1:{"passed":true}',
     }
     clearPendingBusinessIntent(pendingScope)
     vi.mocked(listBusinessConsoleWmsOutboundOrders).mockResolvedValue(

@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { toModel } from '../../model/aps-mapper'
 import { samplePlan, samplePlanWithCalendar } from '../../model/fixtures'
 import type { SchedulingEngineOptions } from '../engine'
-import { DhtmlxEngine } from './DhtmlxEngine'
+import { withFactoryTimeContext } from '../../model/factory-time'
+import { cardHtml, tooltipHtml, DhtmlxEngine } from './DhtmlxEngine'
 
 // 用假 gantt 工厂注入,在 CI(无真实 DHTMLX)下覆盖适配器的「模型→parse / 事件归一化 / 命令」逻辑。
 // 真实 DOM 渲染由 Playwright(真浏览器)验证,见 apps/business-console e2e/visual。
@@ -56,6 +57,20 @@ function makeFakeGantt() {
       state.destroyed = true
     },
     showDate: (_d: Date) => {},
+    date: {
+      add: (date: Date, step: number, unit: string) => {
+        const result = new Date(date)
+        if (unit === 'day') result.setDate(result.getDate() + step)
+        else result.setHours(result.getHours() + step)
+        return result
+      },
+    },
+    getTaskPosition: (_task: unknown, start: Date, end: Date) => ({
+      left: start.getTime() / 3_600_000,
+      width: (end.getTime() - start.getTime()) / 3_600_000,
+      top: 0,
+      height: 30,
+    }),
   }
   return { gantt, state, fire: (name: string, ...args: unknown[]) => handlers.get(name)?.(...args) }
 }
@@ -69,6 +84,272 @@ const options = (): SchedulingEngineOptions => ({
 })
 
 describe('DhtmlxEngine (fake factory)', () => {
+  it('renders only the exact server window portion of a work-center cell, without blocking tasks', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    engine.mount(el(), { ...options(), view: 'resource', groupBy: 'workCenter' })
+    engine.setData(
+      toModel({
+        ...samplePlan,
+        freezeContext: {
+          asOfUtc: '2026-06-10T06:00:00Z',
+          defaultWindowEndUtc: '2026-06-10T12:00:00Z',
+          workCenterWindows: [{ workCenterId: 'WC-CNC', endUtc: '2026-06-10T06:00:00Z' }],
+          assignments: [],
+        },
+      }),
+    )
+    const content = fake.state.templates.timeline_cell_content as (
+      row: { id: string },
+      date: Date,
+    ) => string
+    const html = content({ id: 'lane:WC-ASM' }, new Date('2026-06-10T00:00:00Z'))
+    const node = document.createElement('div')
+    node.innerHTML = html
+    const window = node.querySelector<HTMLElement>('[data-freeze-window]')!
+    expect(window.style.left).toBe('25%')
+    expect(window.style.width).toBe('25%')
+    expect(content({ id: 'lane:WC-CNC' }, new Date('2026-06-10T00:00:00Z'))).toBe('')
+    expect(content({ id: 'lane:WC-ASM' }, new Date('2026-06-11T00:00:00Z'))).toBe('')
+    expect(fake.state.parsed.data.some((task) => task.id.startsWith('block:'))).toBe(false)
+    engine.applyCommand({ kind: 'setGroupBy', groupBy: 'workshop' })
+    expect(content({ id: 'lane:WS-1' }, new Date('2026-06-10T00:00:00Z'))).toBe('')
+    engine.destroy()
+  })
+
+  afterEach(() => vi.useRealTimers())
+  it('shows work-order quantities in the grid and never invents zero operation progress', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    engine.mount(el(), options())
+    const model = toModel(samplePlan)
+    engine.setData(model)
+    const columns = fake.state.config.columns as {
+      name: string
+      label: string
+      template: (task: unknown) => string
+    }[]
+    const column = columns.find((item) => item.name === 'progress')!
+    const task = model.tasks.find((item) => item.id === 'a1')!
+    expect(column.template({ nerv: task })).toBe('—')
+    expect(
+      column.template({
+        nerv: {
+          ...task,
+          currentExecution: { workOrderProgress: { completedQuantity: 25, plannedQuantity: 100 } },
+        },
+      }),
+    ).toContain('25 / 100')
+    expect(column.label).toBe('工单进度')
+    engine.destroy()
+  })
+
+  it('uses the full operation due difference on every segment card', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    const endUtc = '2026-06-10T16:00:00Z'
+    const model = toModel({
+      ...samplePlan,
+      assignments: [
+        {
+          ...samplePlan.assignments![0],
+          endUtc,
+          segments: [
+            { startUtc: '2026-06-10T08:00:00Z', endUtc: '2026-06-10T10:00:00Z' },
+            { startUtc: '2026-06-10T14:00:00Z', endUtc },
+          ],
+        },
+      ],
+      validationContext: {
+        operations: [
+          { orderId: 'WO-001', operationId: 'op-10', dueUtc: endUtc, predecessorOperationIds: [] },
+        ],
+      },
+    })
+    engine.mount(el(), { ...options(), view: 'resource' })
+    engine.setData(model)
+    const template = fake.state.templates.task_text as (
+      s: unknown,
+      e: unknown,
+      task: unknown,
+    ) => string
+    const html = template(
+      null,
+      null,
+      fake.state.parsed.data.find((task) => task.id === 'a1'),
+    )
+    expect(html.match(/交期差 按期/g)).toHaveLength(2)
+    expect(html).not.toContain('提前 360 分钟')
+    engine.destroy()
+  })
+
+  it('resource endpoints resize without starting the custom move, including read-only changes (#4041)', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    const root = el()
+    engine.mount(root, { ...options(), view: 'resource' })
+    engine.setData(toModel(samplePlan))
+    root.insertAdjacentHTML(
+      'beforeend',
+      '<div class="gantt_task_line" task_id="a1"><div class="nerv-card"></div><div class="gantt_task_drag task_left"></div></div>',
+    )
+    expect(fake.state.config.drag_move).toBe(false)
+    expect(fake.state.config.drag_resize).toBe(true)
+    root
+      .querySelector('.gantt_task_drag')!
+      .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 20, clientY: 20 }))
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 50, clientY: 20 }))
+    expect(root.querySelector('.gantt_task_line')!.classList.contains('nerv-drag-source')).toBe(
+      false,
+    )
+    expect(root.querySelector<HTMLElement>('.nerv-drop-cancel')!.style.display).toBe('none')
+    document.dispatchEvent(new MouseEvent('mouseup'))
+    engine.applyCommand({ kind: 'setReadOnly', readOnly: true })
+    expect(fake.state.config.drag_resize).toBe(false)
+    root.querySelector('.nerv-card')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 50, clientY: 20 }))
+    expect(root.querySelector('.gantt_task_line')!.classList.contains('nerv-drag-source')).toBe(
+      false,
+    )
+    engine.applyCommand({ kind: 'setReadOnly', readOnly: false })
+    expect(fake.state.config.drag_resize).toBe(true)
+    expect(fake.state.config.drag_move).toBe(false)
+    engine.destroy()
+  })
+
+  it('rejects locked resource resize through the existing feedback event (#4041)', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    const root = el()
+    engine.mount(root, { ...options(), view: 'resource' })
+    const model = toModel(samplePlan)
+    model.tasks.find((task) => task.id === 'a1')!.locked = true
+    engine.setData(model)
+    root.insertAdjacentHTML(
+      'beforeend',
+      '<div class="gantt_task_line" task_id="a1"><div class="nerv-card"></div><div class="gantt_task_drag task_right"></div></div>',
+    )
+    const attempts: string[] = []
+    engine.on('lockedDragAttempt', ({ taskId }) => attempts.push(taskId))
+    expect(fake.fire('onBeforeTaskDrag', 'a1', 'resize')).toBe(false)
+    root
+      .querySelector('.gantt_task_drag')!
+      .dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    expect(attempts).toEqual(['a1'])
+    engine.destroy()
+  })
+
+  it.each(['start_date', 'end_date'] as const)(
+    'reports %s resize once after the native callback, retaining the resource (#4041)',
+    async (endpoint) => {
+      vi.useFakeTimers()
+      const fake = makeFakeGantt()
+      const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+      const model = toModel(samplePlan)
+      // 设备资源与工作中心是不同身份;resize 不得把分组泳道写成资源。
+      model.tasks.find((task) => task.id === 'a1')!.resourceId = 'RES-001'
+      engine.mount(el(), { ...options(), view: 'resource' })
+      engine.setData(model)
+      const task = fake.gantt.getTask('a1')!
+      task[endpoint] = new Date(
+        endpoint === 'start_date' ? '2026-06-10T07:00:00Z' : '2026-06-10T11:00:00Z',
+      )
+      const received: unknown[] = []
+      engine.on('taskDragEnd', (payload) => {
+        received.push(payload)
+        engine.setData(model)
+      })
+      fake.fire('onAfterTaskDrag', 'a1', 'resize')
+      expect(received).toEqual([])
+      await vi.runAllTimersAsync()
+      expect(received).toEqual([
+        {
+          taskId: 'a1',
+          operationId: 'op-10',
+          resourceId: 'RES-001',
+          kind: 'resize',
+          startUtc:
+            endpoint === 'start_date' ? '2026-06-10T07:00:00.000Z' : '2026-06-10T08:00:00.000Z',
+          endUtc: endpoint === 'end_date' ? '2026-06-10T11:00:00.000Z' : '2026-06-10T10:00:00.000Z',
+        },
+      ])
+      expect(fake.gantt.getTask('a1')).toBeDefined()
+      engine.destroy()
+    },
+  )
+
+  it.each(['order', 'resource'] as const)(
+    'renders real segments with an empty overnight gap in %s view (#4004)',
+    (view) => {
+      const fake = makeFakeGantt()
+      const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+      const model = toModel({
+        ...samplePlan,
+        assignments: [
+          {
+            ...samplePlan.assignments![0],
+            endUtc: '2026-06-11T10:00:00Z',
+            isLocked: true,
+            segments: [
+              { startUtc: '2026-06-10T08:00:00Z', endUtc: '2026-06-10T10:00:00Z' },
+              { startUtc: '2026-06-11T08:00:00Z', endUtc: '2026-06-11T10:00:00Z' },
+            ],
+          },
+        ],
+      })
+      engine.mount(el(), { ...options(), view })
+      engine.setData(model)
+      const operation = fake.state.parsed.data.find((task) => task.id === 'a1')!
+      const template = fake.state.templates.task_text as (
+        s: unknown,
+        e: unknown,
+        task: unknown,
+      ) => string
+      const content = document.createElement('div')
+      content.innerHTML = template(undefined, undefined, operation)
+      const segments = content.querySelectorAll<HTMLElement>('.nerv-segment')
+      expect(segments).toHaveLength(2)
+      expect(segments[0]!.style.left).toBe('0px')
+      expect(segments[0]!.style.width).toBe('2px')
+      expect(segments[1]!.style.left).toBe('24px')
+      expect(segments[1]!.style.width).toBe('2px')
+      if (view === 'resource') expect(content.textContent).toContain('WO-001')
+      else {
+        const columns = fake.state.config.columns as {
+          name: string
+          template?: (task: unknown) => string
+        }[]
+        expect(columns.find((column) => column.name === 'duration')!.template!(operation)).toBe(
+          '4h',
+        )
+      }
+      engine.destroy()
+    },
+  )
+
+  it('keeps assembly dependencies visible in resource view without showing all intra-order links', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    const model = toModel(samplePlan)
+    model.tasks.push({
+      ...model.tasks.find((task) => task.id === 'a1')!,
+      id: 'assembly',
+      orderId: 'WO-ASSEMBLY',
+    })
+    model.links.push({
+      id: 'a2->assembly',
+      source: 'a2',
+      target: 'assembly',
+      type: 'finish_to_start',
+    })
+    engine.mount(el(), { ...options(), view: 'resource' })
+    engine.setData(model)
+    expect(fake.state.parsed.links).toEqual([
+      { id: 'a2->assembly', source: 'a2', target: 'assembly', type: '0' },
+    ])
+    engine.destroy()
+  })
+
   it('maps the model into gantt.parse with one task per node and FS links', () => {
     const fake = makeFakeGantt()
     const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
@@ -81,6 +362,37 @@ describe('DhtmlxEngine (fake factory)', () => {
     ])
     engine.destroy()
     expect(fake.state.destroyed).toBe(true)
+  })
+
+  it('资源卡片使用同一物料风险事实显示预计到料日期', () => {
+    const fake = makeFakeGantt()
+    const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+    const model = toModel({
+      ...samplePlan,
+      materialRisks: [
+        {
+          orderId: 'WO-001',
+          operationId: 'op-10',
+          reasonCodes: ['material-shortage'],
+          shortages: [],
+          message: '需在开工前完成备料',
+          materialReadyUtc: '2026-09-28T08:00:00.000Z',
+        },
+      ],
+    })
+    engine.mount(el(), { ...options(), view: 'resource' })
+    engine.setData(model)
+
+    const template = fake.state.templates.task_text as (
+      start: unknown,
+      end: unknown,
+      task: { nerv?: (typeof model.tasks)[number] },
+    ) => string
+    const html = template(undefined, undefined, {
+      nerv: model.tasks.find((task) => task.id === 'a1'),
+    })
+
+    expect(html).toContain('预计到料 09-28')
   })
 
   it('maps resource load utilization into the resource lane header', () => {
@@ -273,3 +585,77 @@ describe('DhtmlxEngine 时间线底纹(工作日历 / 班次 / 资源时间块)'
 function el() {
   return document.createElement('div')
 }
+
+// Regression / DomainInvariant: #4449 与父 #4405 r1，不能用浏览器时区解释工厂时间。
+it('aligns factory ticks and renders task time without shifting real drag coordinates', async () => {
+  const fake = makeFakeGantt()
+  const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+  engine.mount(el(), { ...options(), scale: 'hour' })
+  const model = toModel(samplePlan)
+  const op = model.tasks.find((task) => task.type === 'operation')!
+  op.startUtc = '2026-10-16T16:00:00Z'
+  op.endUtc = '2026-10-16T18:00:00Z'
+  const timed = withFactoryTimeContext(model, [
+    {
+      workCenterCode: op.workCenterId!,
+      plantCode: 'NB',
+      plantName: '宁波工厂',
+      timezone: 'Asia/Shanghai',
+    },
+  ])
+  engine.setData(timed)
+  const scales = fake.state.config.scales as { unit: string; format: (date: Date) => string }[]
+  const hour = scales[1]
+  expect(hour.format(new Date(op.startUtc))).toContain('Asia/Shanghai · 00:00')
+  const dateApi = fake.gantt.date as unknown as Record<string, (date: Date, count?: number) => Date>
+  expect(dateApi[`${scales[0].unit}_start`](new Date('2026-10-16T22:00:00Z')).toISOString()).toBe(
+    '2026-10-16T16:00:00.000Z',
+  )
+  const row = fake.state.parsed.data.find((task) => task.id === op.id)!
+  expect(row.start_date!.toISOString()).toBe('2026-10-16T16:00:00.000Z')
+  expect(tooltipHtml(timed.tasks.find((task) => task.id === op.id)!)).toContain('10/17 00:00')
+  expect(cardHtml(timed.tasks.find((task) => task.id === op.id)!)).toContain('00:00–02:00')
+  const payloads: unknown[] = []
+  engine.on('taskDragEnd', (value) => payloads.push(value))
+  row.start_date = new Date('2026-10-16T17:00:00Z')
+  row.end_date = new Date('2026-10-16T19:00:00Z')
+  vi.useFakeTimers()
+  try {
+    fake.fire('onAfterTaskDrag', op.id, 'move')
+    await vi.runAllTimersAsync()
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        taskId: op.id,
+        startUtc: '2026-10-16T17:00:00.000Z',
+        endUtc: '2026-10-16T19:00:00.000Z',
+        kind: 'move',
+      }),
+    )
+    row.end_date = new Date('2026-10-16T20:00:00Z')
+    fake.fire('onAfterTaskDrag', op.id, 'resize')
+    await vi.runAllTimersAsync()
+    expect(payloads).toContainEqual(
+      expect.objectContaining({
+        startUtc: '2026-10-16T17:00:00.000Z',
+        endUtc: '2026-10-16T20:00:00.000Z',
+        kind: 'resize',
+      }),
+    )
+  } finally {
+    vi.useRealTimers()
+    engine.destroy()
+  }
+})
+
+it('shows named scales for every factory timezone instead of choosing the first factory', () => {
+  const fake = makeFakeGantt()
+  const engine = new DhtmlxEngine({ createInstance: () => fake.gantt })
+  engine.mount(el(), { ...options(), scale: 'hour' })
+  engine.setData({ ...toModel(samplePlan), timezones: ['Asia/Shanghai', 'UTC'] })
+  const scales = fake.state.config.scales as { format: (date: Date) => string }[]
+  expect(scales).toHaveLength(4)
+  const instant = new Date('2026-10-16T16:00:00Z')
+  expect(scales[1].format(instant)).toContain('Asia/Shanghai · 00:00')
+  expect(scales[3].format(instant)).toContain('UTC · 16:00')
+  engine.destroy()
+})

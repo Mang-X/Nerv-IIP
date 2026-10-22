@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { maintenanceWorkOrderNoLabel } from '@/composables/useEquipmentPickerCatalog'
 import type {
   NvDataTableColumn,
   NvMetricFacet,
@@ -6,7 +7,10 @@ import type {
   NvMetricStripCell,
 } from '@nerv-iip/ui'
 import {
+  describeAvailabilityStatus,
+  describeAvailabilityWindowReference,
   describeEquipmentReason,
+  equipmentSourceStatus,
   equipmentStatusTone,
   useBusinessEquipmentDevice,
   type EquipmentTone,
@@ -27,10 +31,12 @@ import {
   deviceControlCommandTypeLabel,
   deviceControlStatusLabel,
   deviceControlStatusTone,
+  deviceReceiptLabel,
   useBusinessDeviceControlCommands,
 } from '@/composables/useBusinessDeviceControl'
 import { usePagedList } from '@/composables/usePagedList'
 import DeviceControlSheet from '@/components/equipment/DeviceControlSheet.vue'
+import DeviceTelemetryPointsSheet from '@/components/equipment/DeviceTelemetryPointsSheet.vue'
 import EquipmentHealthCard from '@/components/equipment/EquipmentHealthCard.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -43,7 +49,11 @@ import {
   useMaintenanceWorkOrders,
 } from '@/composables/useBusinessMaintenance'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { formatIsoInterval } from '@/data/businessLabels'
+import {
+  formatIsoInterval,
+  labelFor,
+  MAINTENANCE_INSPECTION_RESULT_LABELS,
+} from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvBadge,
@@ -59,6 +69,7 @@ import {
   CalendarRangeIcon,
   ClipboardCheckIcon,
   GaugeIcon,
+  HashIcon,
   LineChartIcon,
   PackageSearchIcon,
   RadioIcon,
@@ -72,6 +83,7 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { inlineErrorMessage } from '@/utils/notify'
 import { readFaceText } from '@/utils/readFace'
+import { formatDateTime } from '@/utils/format'
 
 definePage({
   meta: {
@@ -148,11 +160,17 @@ const { spareParts, sparePartsError, sparePartsPending } = useMaintenanceSparePa
 const auth = useAuthStore()
 const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
 const canControlDevice = computed(() => permissionCodes.value.includes(P.iiotDeviceControlWrite))
+const canCreateMaintenanceWorkOrder = computed(() =>
+  permissionCodes.value.includes(P.maintenanceWorkOrdersManage),
+)
 const controlSheetOpen = ref(false)
+// 采集点位（#3870）：就地维护这台设备的采集点位，读者能看，有点位管理权限才能改。
+const canManageTelemetryPoints = computed(() => permissionCodes.value.includes(P.iiotTagsManage))
+const pointsSheetOpen = ref(false)
 const deviceAssetIdRef = computed(() => filters.deviceAssetId)
 const { health, healthError, healthPending, refreshHealth } =
   useBusinessEquipmentHealth(deviceAssetIdRef)
-const healthErrorMessage = computed(() => formatError(healthError.value))
+const healthErrorMessage = computed(() => inlineErrorMessage(healthError.value))
 const {
   commands: controlCommands,
   commandsError: controlCommandsError,
@@ -161,7 +179,7 @@ const {
   historyFilters: controlHistoryFilters,
 } = useBusinessDeviceControlCommands(deviceAssetIdRef)
 const { page: controlPage, pageSize: controlPageSize } = usePagedList(controlHistoryFilters)
-const controlCommandsErrorMessage = computed(() => formatError(controlCommandsError.value))
+const controlCommandsErrorMessage = computed(() => inlineErrorMessage(controlCommandsError.value))
 
 type ControlCommandRow = (typeof controlCommands)['value'][number]
 const controlColumns: NvDataTableColumn<ControlCommandRow>[] = [
@@ -171,7 +189,8 @@ const controlColumns: NvDataTableColumn<ControlCommandRow>[] = [
     width: 'w-44',
     accessor: (r) => formatDateTime(r.requestedAtUtc),
   },
-  { key: 'requestedBy', header: '操作人', accessor: (r) => r.requestedBy ?? '未知' },
+  // 操作人是登录账号（系统标识），按员工名录显示姓名；查不到姓名显示「—」，不回吐账号。
+  { key: 'requestedBy', header: '操作人', accessor: (r) => resolveUser(r.requestedBy) ?? '—' },
   { key: 'commandType', header: '命令' },
   { key: 'value', header: '值', accessor: (r) => r.value ?? (r.tagKey ? '—' : '参数集') },
   { key: 'approvalStatus', header: '审批状态', width: 'w-28' },
@@ -182,9 +201,9 @@ function controlCommandRowKey(row: ControlCommandRow) {
 }
 
 const currentState = computed(() => device.value?.currentState)
-const errorMessage = computed(() => formatError(deviceError.value))
+const errorMessage = computed(() => inlineErrorMessage(deviceError.value))
 const telemetryErrorMessage = computed(() =>
-  formatError(
+  inlineErrorMessage(
     historyError.value ||
       oeeError.value ||
       runtimeAvailabilityError.value ||
@@ -195,7 +214,7 @@ const oeeDegradedReasons = computed(() =>
   (oee.value?.degradedReasons ?? []).map(describeTelemetryOeeDegradation),
 )
 const maintenanceErrorMessage = computed(() =>
-  formatError(
+  inlineErrorMessage(
     maintenanceAvailabilityError.value ||
       reliabilityError.value ||
       workOrdersError.value ||
@@ -270,7 +289,7 @@ const runtimeRemainingUnknownReason = computed(() => {
   return (
     [
       ['error', '读取失败'],
-      ['no-samples', '暂无样本'],
+      ['no-samples', '暂无运行记录'],
       ['invalid', '阈值缺失'],
     ] as const
   )
@@ -289,7 +308,7 @@ const runtimeUntilNextCardValue = computed(() => {
   // 没有任何已知(ok)计划：按具体未知成因区分,与计划列表口径一致——不把「阈值缺失」误报成「无样本」。
   if (runtimeRemainingHasErrorCandidate.value) return '读取失败'
   if (runtimeRemainingHasInvalidCandidate.value) return '阈值缺失'
-  return '无样本'
+  return '暂无记录'
 })
 // 主卡描述随口径同步：有已知值但也有未知候选时，主 label 本身就说明是「已知计划最少还需」，
 // 不把已知最小值当成全体最紧迫的确定断言。
@@ -311,9 +330,9 @@ const runtimeUntilNextCardHint = computed(() => {
     }
     return `运行小时型计划 ${code} · 阈值 ${mostUrgent.plan.nextDueRuntimeHours ?? '—'} 小时`
   }
-  if (runtimeRemainingHasErrorCandidate.value) return '运行小时读面读取失败，请稍后重试'
-  if (runtimeRemainingHasInvalidCandidate.value) return '运行小时阈值与游标不成对，计划数据不完整'
-  return '当前窗口无运行样本'
+  if (runtimeRemainingHasErrorCandidate.value) return '运行小时读取失败，请稍后重试'
+  if (runtimeRemainingHasInvalidCandidate.value) return '保养计划的运行小时阈值未维护完整'
+  return '自保养计划起算日以来没有运行记录'
 })
 // 「累计运行小时」是信息卡：窗口锚定运行小时计划起算日（无则近 N 天），展示窗口内累计运行事实。
 const nowIso = ref(new Date().toISOString())
@@ -351,16 +370,19 @@ function refreshAll() {
 const cumulativeRuntimeCardValue = computed(() => {
   if (runtimeHoursPending.value) return '读取中…'
   if (runtimeHoursError.value) return '读取失败'
-  if (!hasRuntimeHoursSamples.value) return '无样本'
+  if (!hasRuntimeHoursSamples.value) return '暂无记录'
   return formatHours(totalRuntimeHours.value)
 })
 const runtimeHoursCardHint = computed(() => {
   if (runtimeHoursPending.value) return '正在读取运行小时'
-  if (runtimeHoursError.value) return '运行小时读面读取失败，请稍后重试'
-  if (!hasRuntimeHoursSamples.value) return '当前窗口无运行样本，等于设备暂无运行事实'
+  if (runtimeHoursError.value) return '运行小时读取失败，请稍后重试'
+  if (!hasRuntimeHoursSamples.value)
+    return currentDeviceRuntimePlan.value?.startsOn
+      ? '自保养计划起算日以来没有设备运行记录'
+      : `近 ${RUNTIME_HOURS_DEFAULT_WINDOW_DAYS} 天没有设备运行记录`
   return currentDeviceRuntimePlan.value
     ? '自运行小时型计划起算日累计'
-    : `近 ${RUNTIME_HOURS_DEFAULT_WINDOW_DAYS} 天窗口累计`
+    : `近 ${RUNTIME_HOURS_DEFAULT_WINDOW_DAYS} 天累计`
 })
 const currentDeviceSpareParts = computed(() =>
   spareParts.value.filter((row) => row.deviceAssetId === currentDeviceId.value).slice(0, 5),
@@ -388,8 +410,19 @@ function rateValue(rate?: number | null) {
 function rateProgress(rate?: number | null) {
   return rate === null || rate === undefined ? 0 : Math.max(0, Math.min(100, rate * 100))
 }
+/** 查询范围的说法：「最近 8 小时」「近 30 天」，与页面实际取数范围一致。 */
+function recentRangeLabel(startUtc: string, endUtc: string) {
+  const hours = Math.round((Date.parse(endUtc) - Date.parse(startUtc)) / 3_600_000)
+  return hours < 48 ? `最近 ${hours} 小时` : `近 ${Math.round(hours / 24)} 天`
+}
+const oeeRangeLabel = computed(() =>
+  recentRangeLabel(oeeFilters.windowStartUtc, oeeFilters.windowEndUtc),
+)
+const reliabilityRangeLabel = computed(() =>
+  recentRangeLabel(reliabilityFilters.windowStartUtc, reliabilityFilters.windowEndUtc),
+)
 function rateFoot(rate?: number | null, explanation?: string) {
-  return rate === null || rate === undefined ? '当前窗口暂无可计算样本' : explanation
+  return rate === null || rate === undefined ? `${oeeRangeLabel.value}暂无可计算数据` : explanation
 }
 const oeeFacets = computed<NvMetricFacet[]>(() => [
   { key: 'availability', label: '可用率', value: rateValue(oee.value?.availabilityRate) },
@@ -409,8 +442,17 @@ const reliabilityCells = computed<NvMetricStripCell[]>(() => [
   {
     key: 'mtbf',
     label: 'MTBF',
-    value: metricLabel(reliability.value?.mtbfHours, ' 小时'),
-    meta: reliability.value?.mtbfRuntimeHasSamples ? '按维修记录样本计算' : '当前窗口无运行样本',
+    // MTBF = 运行时长 ÷ 故障次数：没有运行记录算不出；有运行记录但零故障时如实说「无故障」。
+    value: !reliability.value?.mtbfRuntimeHasSamples
+      ? '暂无记录'
+      : reliability.value.mtbfHours == null
+        ? '无故障'
+        : metricLabel(reliability.value.mtbfHours, ' 小时'),
+    meta: !reliability.value?.mtbfRuntimeHasSamples
+      ? `${reliabilityRangeLabel.value}没有运行记录`
+      : reliability.value.mtbfHours == null
+        ? `${reliabilityRangeLabel.value}没有故障记录`
+        : '运行时长 ÷ 故障次数',
   },
   {
     key: 'mttr',
@@ -462,14 +504,42 @@ watch(
 )
 
 // 设备 / 维保读面只回编号（DEV-CNC-01 / WC-…），名称在主数据里，按编号 join 出中文名。
-const { resolveDevice, resolveWorkCenter } = useMasterDataDisplayNames({
-  devices: true,
-  workCenters: true,
+const { resolveDevice, resolveDeviceCode, resolveWorkCenter, resolveUom, resolveUser } =
+  useMasterDataDisplayNames({
+    devices: true,
+    workCenters: true,
+    uoms: true,
+    users: true,
+  })
+// 本页这台设备。路由里的设备引用可能是编码，也可能是设备公开 ID（从维保可用窗口进来时），
+// 名称和编码都从主数据按引用解析，不依赖设备有没有运行数据。
+const deviceName = computed(() => resolveDevice(filters.deviceAssetId))
+const deviceCode = computed(
+  () => resolveDeviceCode(filters.deviceAssetId) ?? readFaceText(filters.deviceAssetId, ''),
+)
+const deviceTitle = computed(() => {
+  if (deviceName.value && deviceCode.value && deviceName.value !== deviceCode.value) {
+    return `${deviceName.value}（${deviceCode.value}）`
+  }
+  return deviceName.value || deviceCode.value
 })
+// 采集接入状态与可用性窗口同一套后端判据（没有状态快照也没有任何样本才算尚未接入）。
+const sourceStatus = computed(() =>
+  equipmentSourceStatus(currentState.value?.isSourceFresh, availabilityWindows.value),
+)
+const notConnected = computed(() => Boolean(device.value) && sourceStatus.value === 'notConnected')
+const stateText = computed(() =>
+  notConnected.value ? '尚未接入采集' : statusLabel(currentState.value?.currentState),
+)
+const SOURCE_TEXT = { fresh: '采集正常', stale: '采集过期', notConnected: '尚未接入' } as const
+// 未接入是还没配置，不是异常：中性色；采集中断才用警示色。
+const SOURCE_TONE = { fresh: 'success', stale: 'warning', notConnected: 'neutral' } as const
+const sourceText = computed(() => SOURCE_TEXT[sourceStatus.value])
+const sourceTone = computed(() => SOURCE_TONE[sourceStatus.value])
 /** 设备展示串：名称优先；名录失败时只保留可读业务编码，不回吐技术标识。 */
-function deviceLabel(code?: string | null, fallback = '无设备') {
-  if (!code) return fallback
-  return resolveDevice(code) ?? readFaceText(code, fallback)
+function deviceLabel(reference?: string | null) {
+  if (!reference) return '—'
+  return resolveDevice(reference) ?? readFaceText(reference)
 }
 function workCenterLabel(code?: string | null, fallback = '未绑定') {
   if (!code) return fallback
@@ -490,7 +560,7 @@ const columns: NvDataTableColumn<Window>[] = [
   {
     key: 'sourceReferenceId',
     header: '关联业务',
-    accessor: (r) => r.sourceReferenceLabel?.trim() || '—',
+    accessor: (r) => describeAvailabilityWindowReference(r, deviceCode.value),
   },
   {
     key: 'substituteDeviceAssetIds',
@@ -540,26 +610,12 @@ function severityVariant(value?: string | null) {
   if (severity === 'warning') return 'warning'
   return 'neutral'
 }
-function availabilityLabel(value?: string | null) {
-  const labels: Record<string, string> = {
-    available: '可用',
-    unavailable: '不可用',
-    unknown: '未知',
-  }
-  // 词表漏了就说「未知」，绝不把后端英文码回吐到界面上。
-  return value ? (labels[value.toLowerCase()] ?? '未知') : '未知'
-}
-function availabilityVariant(value?: string | null) {
-  if (value === 'available') return 'success'
-  if (value === 'unavailable') return 'danger'
-  return 'neutral'
-}
 function metricLabel(value?: number | null, suffix = '') {
-  if (value === null || value === undefined) return '无样本'
+  if (value === null || value === undefined) return '暂无记录'
   return `${Number(value).toFixed(1)}${suffix}`
 }
 function formatHours(value?: number | null) {
-  if (value === null || value === undefined) return '无样本'
+  if (value === null || value === undefined) return '暂无记录'
   return `${Number(value).toFixed(1)} 小时`
 }
 function historyTypeLabel(value?: string | null) {
@@ -567,7 +623,7 @@ function historyTypeLabel(value?: string | null) {
     alarm: '报警',
     daily: '日汇总',
     hourly: '小时汇总',
-    sample: '采样',
+    sample: '采集值',
     state: '状态',
   }
   // 词表漏了就说「其他记录」，绝不把后端英文码回吐到界面上。
@@ -576,8 +632,13 @@ function historyTypeLabel(value?: string | null) {
 function historyType(row: { itemType?: string | null }) {
   return row.itemType
 }
-function historyValue(row: { value?: string | null }) {
-  return row.value ?? '无数值'
+function historyValue(row: { itemType?: string | null; value?: string | null }) {
+  if (!row.value) return '无数值'
+  // 状态类记录的值是设备状态码，按设备状态词表说中文。
+  return row.itemType?.toLowerCase() === 'state' ? statusLabel(row.value) : row.value
+}
+function inspectionResultLabel(value?: string | null) {
+  return value ? labelFor(MAINTENANCE_INSPECTION_RESULT_LABELS, value, '未知结果') : '未记录'
 }
 function maintenanceStatusLabel(value?: string | null) {
   const labels: Record<string, string> = {
@@ -593,8 +654,10 @@ function maintenanceStatusLabel(value?: string | null) {
   // 词表漏了就说「未知状态」，绝不把后端英文码回吐到界面上。
   return value ? (labels[value.toLowerCase()] ?? '未知状态') : '未知'
 }
-function workOrderLabel(row: { openedAtUtc?: string | null }) {
-  return row.openedAtUtc ? `维修工单 · ${formatDateTime(row.openedAtUtc)}` : '维修工单'
+/** 维修工单以正式单号标识（#3852），附开单时间。 */
+function workOrderLabel(row: { workOrderNo?: string | null; openedAtUtc?: string | null }) {
+  const no = maintenanceWorkOrderNoLabel(row.workOrderNo)
+  return row.openedAtUtc ? `${no} · ${formatDateTime(row.openedAtUtc)}` : no
 }
 const alarmCodeById = computed(
   () =>
@@ -607,10 +670,12 @@ const alarmCodeById = computed(
 function alarmLabel(alarmId?: string | null) {
   return (alarmId && alarmCodeById.value.get(alarmId)) || '—'
 }
-function sparePartWorkOrderLabel(workOrderId?: string | null) {
-  if (!workOrderId) return '未关联'
-  const workOrder = currentDeviceWorkOrders.value.find((row) => row.workOrderId === workOrderId)
-  return workOrder ? workOrderLabel(workOrder) : '—'
+function sparePartWorkOrderLabel(row: {
+  workOrderId?: string | null
+  workOrderNo?: string | null
+}) {
+  if (!row.workOrderId) return '未关联'
+  return maintenanceWorkOrderNoLabel(row.workOrderNo)
 }
 /** 保养/点检周期：先查常用说法，其余按 ISO 8601 周期翻译（P7D → 每 7 天）。 */
 function intervalLabel(value?: string | null) {
@@ -627,28 +692,19 @@ function intervalLabel(value?: string | null) {
 }
 function quantityLabel(row: { quantity?: number | null; uomCode?: string | null }) {
   if (row.quantity === null || row.quantity === undefined) return '未记录'
-  return `${row.quantity} ${row.uomCode ?? ''}`.trim()
+  // 单位按主数据名称显示（如「件」），名录里没有时才显示单位编码本身（租户维护的业务编码）。
+  return `${row.quantity} ${resolveUom(row.uomCode) ?? row.uomCode ?? ''}`.trim()
 }
 function recordDowntime() {
   void router.push({ path: '/mes/downtime', query: { deviceAssetId: filters.deviceAssetId } })
-}
-function formatDateTime(value?: string | null) {
-  if (!value) return '无'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 
 <template>
   <BusinessLayout>
     <NvPageHeader
-      :title="
-        filters.deviceAssetId ? `设备详情：${deviceLabel(filters.deviceAssetId)}` : '设备详情'
-      "
-      :breadcrumbs="[{ label: '设备监控（IoT）' }]"
+      :title="deviceTitle ? `设备详情：${deviceTitle}` : '设备详情'"
+      :breadcrumbs="[{ label: '设备监控' }]"
     >
       <template #actions>
         <NvButton
@@ -659,6 +715,16 @@ function formatError(error: unknown) {
         >
           <SlidersHorizontalIcon aria-hidden="true" />
           设备控制
+        </NvButton>
+        <NvButton
+          v-if="filters.deviceAssetId"
+          size="sm"
+          type="button"
+          variant="outline"
+          @click="pointsSheetOpen = true"
+        >
+          <HashIcon aria-hidden="true" />
+          采集点位
         </NvButton>
         <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/equipment"><ArrowLeftIcon aria-hidden="true" />返回看板</RouterLink>
@@ -686,14 +752,20 @@ function formatError(error: unknown) {
             }"
           >
             <GaugeIcon aria-hidden="true" />
-            OEE 与可用性
+            OEE 趋势与横比
           </RouterLink>
         </NvButton>
         <NvButton size="sm" type="button" variant="outline" @click="recordDowntime">
           <WrenchIcon aria-hidden="true" />
           记录停机
         </NvButton>
-        <NvButton size="sm" type="button" variant="outline" as-child>
+        <NvButton
+          v-if="canCreateMaintenanceWorkOrder"
+          size="sm"
+          type="button"
+          variant="outline"
+          as-child
+        >
           <RouterLink
             :to="{
               path: '/maintenance/work-orders',
@@ -775,7 +847,7 @@ function formatError(error: unknown) {
         <NvMetricCard
           variant="alert"
           label="当前状态"
-          :value="statusLabel(currentState?.currentState)"
+          :value="stateText"
           :tone="
             equipmentStatusTone(currentState?.currentState) === 'danger' ? 'danger' : 'neutral'
           "
@@ -789,8 +861,8 @@ function formatError(error: unknown) {
         <NvMetricCard
           variant="icon"
           label="数据状态"
-          :value="currentState?.isSourceFresh ? '采集正常' : '采集过期'"
-          :tone="currentState?.isSourceFresh ? 'success' : 'warning'"
+          :value="sourceText"
+          :tone="sourceTone"
           :icon="RadioIcon"
         />
         <NvMetricCard
@@ -802,7 +874,7 @@ function formatError(error: unknown) {
         />
         <NvMetricCard
           variant="alert"
-          label="占用窗口"
+          label="占用时段"
           :value="blockCount"
           :tone="blockCount > 0 ? 'warning' : 'neutral'"
           :status="blockCount > 0 ? { label: '影响排程', tone: 'warning' } : undefined"
@@ -816,10 +888,10 @@ function formatError(error: unknown) {
             <div class="mt-3 flex items-center justify-between gap-3">
               <div class="min-w-0">
                 <p class="truncate text-lg font-semibold text-foreground">
-                  {{ deviceLabel(currentState?.deviceAssetId ?? filters.deviceAssetId) }}
+                  {{ deviceName || deviceCode || '—' }}
                 </p>
                 <p class="truncate text-xs text-muted-foreground">
-                  {{ readFaceText(currentState?.deviceAssetId ?? filters.deviceAssetId) }}
+                  {{ deviceCode || '—' }}
                 </p>
                 <p class="mt-1 text-sm text-muted-foreground">
                   状态时间 {{ formatDateTime(currentState?.stateOccurredAtUtc) }}
@@ -828,15 +900,11 @@ function formatError(error: unknown) {
               <NvBadge
                 class="rounded-sm"
                 :variant="badgeVariant(equipmentStatusTone(currentState?.currentState))"
-                >{{ statusLabel(currentState?.currentState) }}</NvBadge
+                >{{ stateText }}</NvBadge
               >
             </div>
             <div class="mt-3">
-              <NvBadge
-                class="rounded-sm"
-                :variant="currentState?.isSourceFresh ? 'success' : 'warning'"
-                >{{ currentState?.isSourceFresh ? '采集正常' : '采集过期' }}</NvBadge
-              >
+              <NvBadge class="rounded-sm" :variant="sourceTone">{{ sourceText }}</NvBadge>
             </div>
           </div>
 
@@ -858,7 +926,7 @@ function formatError(error: unknown) {
               >
                 <div class="flex items-center justify-between gap-2">
                   <p class="truncate text-sm font-semibold text-foreground">
-                    {{ alarm.alarmCode ?? '无代码' }}
+                    {{ alarm.alarmCode ?? '未设报警代码' }}
                   </p>
                   <NvBadge class="rounded-sm" :variant="severityVariant(alarm.severity)">{{
                     severityLabel(alarm.severity)
@@ -888,7 +956,7 @@ function formatError(error: unknown) {
         </div>
 
         <div class="grid gap-2">
-          <span class="text-sm font-semibold text-foreground">可用性窗口（排程与维修占用）</span>
+          <span class="text-sm font-semibold text-foreground">设备占用时段（排程与维修）</span>
           <NvDataTable
             :columns="columns"
             :rows="availabilityWindows"
@@ -896,12 +964,14 @@ function formatError(error: unknown) {
             :loading="devicePending"
             :searchable="false"
             :column-settings="false"
-            empty-message="当前设备没有可用性窗口。"
+            empty-message="当前设备没有排程或维修占用时段。"
           >
             <template #cell-availabilityStatus="{ row }">
-              <NvBadge class="rounded-sm" :variant="availabilityVariant(row.availabilityStatus)">{{
-                availabilityLabel(row.availabilityStatus)
-              }}</NvBadge>
+              <NvBadge
+                class="rounded-sm"
+                :variant="describeAvailabilityStatus(row.availabilityStatus).tone"
+                >{{ describeAvailabilityStatus(row.availabilityStatus).label }}</NvBadge
+              >
             </template>
             <template #cell-reason="{ row }">
               <div class="grid gap-1">
@@ -951,7 +1021,7 @@ function formatError(error: unknown) {
                 }"
               >
                 <GaugeIcon aria-hidden="true" />
-                OEE 与可用性
+                OEE 趋势与横比
               </RouterLink>
             </NvButton>
             <NvButton size="sm" type="button" variant="outline" as-child>
@@ -984,7 +1054,7 @@ function formatError(error: unknown) {
             :value="rateValue(oee?.loadingRate)"
             :progress="rateProgress(oee?.loadingRate)"
             target-label="目标 100%"
-            :foot-start="rateFoot(oee?.loadingRate, '已排除计划停机窗口')"
+            :foot-start="rateFoot(oee?.loadingRate, '已扣除计划停机时间')"
           />
           <NvMetricCard
             variant="target"
@@ -1013,7 +1083,7 @@ function formatError(error: unknown) {
             variant="sparkline"
             label="历史事件"
             :value="historyCount"
-            foot-start="当前时间窗内的历史事件数"
+            foot-start="所选时间范围内的历史事件数"
           />
         </NvSectionCards>
 
@@ -1057,7 +1127,7 @@ function formatError(error: unknown) {
             </div>
             <div class="grid gap-3 p-4">
               <div v-if="telemetryPending" class="text-sm text-muted-foreground">
-                正在读取遥测历史。
+                正在读取历史数据。
               </div>
               <div
                 v-for="item in historyPreview"
@@ -1081,46 +1151,41 @@ function formatError(error: unknown) {
                 v-if="!telemetryPending && !historyPreview.length"
                 class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
               >
-                所选时间范围内没有历史采样；不代表设备未接入，可换个时间范围再看。
+                所选时间范围内没有历史数据；不代表设备未接入，可换个时间范围再看。
               </div>
             </div>
           </div>
 
           <div class="rounded-lg border bg-card">
             <div class="border-b px-4 py-3">
-              <h3 class="text-sm font-semibold text-foreground">OEE 与可用性口径</h3>
+              <h3 class="text-sm font-semibold text-foreground">OEE 计算依据</h3>
               <p class="mt-1 text-xs text-muted-foreground">
-                OEE 与可用性口径与设备综合效率页一致，此处不另行计算。
+                算法与「OEE 趋势与横比」页一致，此处不另行计算。
               </p>
             </div>
             <div class="grid gap-3 p-4 text-sm">
               <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
-                <span class="text-muted-foreground">统计窗口</span>
+                <span class="text-muted-foreground">统计时段</span>
                 <span
                   >{{ formatDateTime(oee?.windowStartUtc ?? oeeFilters.windowStartUtc) }} -
                   {{ formatDateTime(oee?.windowEndUtc ?? oeeFilters.windowEndUtc) }}</span
                 >
               </div>
               <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
-                <span class="text-muted-foreground">状态样本</span>
+                <span class="text-muted-foreground">设备状态记录</span>
                 <span>{{ oee?.stateSampleCount ?? 0 }} 条</span>
               </div>
               <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
-                <span class="text-muted-foreground">性能因子</span>
-                <span>{{ formatOeeRate(oee?.performanceRate) }}</span>
-              </div>
-              <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
-                <span class="text-muted-foreground">质量因子</span>
-                <span>{{ formatOeeRate(oee?.qualityRate) }}</span>
-              </div>
-              <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
-                <span class="text-muted-foreground">MES 报工</span>
+                <span class="text-muted-foreground">报工记录</span>
                 <span>{{ oee?.productionFactCount ?? 0 }} 条</span>
               </div>
               <div class="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
                 <span class="text-muted-foreground">理论产出</span>
                 <span>{{
-                  formatOeeQuantity(oee?.expectedOutputQuantity, oee?.outputUomCode)
+                  formatOeeQuantity(
+                    oee?.expectedOutputQuantity,
+                    resolveUom(oee?.outputUomCode) ?? oee?.outputUomCode,
+                  )
                 }}</span>
               </div>
               <div
@@ -1185,7 +1250,7 @@ function formatError(error: unknown) {
           <NvMetricStrip :cells="reliabilityCells" />
           <NvMetricCard
             variant="breakdown"
-            label="窗口内维护事件"
+            :label="`${reliabilityRangeLabel}维护事件`"
             :value="maintenanceEventTotal"
             unit=" 次"
             :segments="maintenanceEventSegments"
@@ -1199,7 +1264,7 @@ function formatError(error: unknown) {
             </div>
             <div class="grid gap-3 p-4">
               <div v-if="maintenancePending" class="text-sm text-muted-foreground">
-                正在读取维护上下文。
+                正在读取维护记录。
               </div>
               <div
                 v-for="row in currentDeviceWorkOrders"
@@ -1226,7 +1291,9 @@ function formatError(error: unknown) {
                 v-if="!maintenancePending && !currentDeviceWorkOrders.length"
                 class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
               >
-                当前数据窗口没有该设备的维修工单。可前往维护工单查看完整记录或新建工单。
+                最近
+                {{ MAINTENANCE_DETAIL_TAKE }}
+                张维修工单中没有该设备的记录。可前往维护工单查看完整记录或新建工单。
               </div>
             </div>
           </div>
@@ -1241,9 +1308,7 @@ function formatError(error: unknown) {
                 :key="row.planId ?? row.planCode"
                 class="grid gap-1 rounded-lg border p-3"
               >
-                <span class="text-sm font-medium text-foreground">{{
-                  row.planCode ?? row.planId ?? '保养计划'
-                }}</span>
+                <span class="text-sm font-medium text-foreground">{{ row.planCode ?? '—' }}</span>
                 <span class="text-xs text-muted-foreground"
                   >周期 {{ intervalLabel(row.interval) }} · 起始
                   {{ row.startsOn ?? '未设置' }}</span
@@ -1254,12 +1319,11 @@ function formatError(error: unknown) {
                 :key="row.inspectionId"
                 class="grid gap-1 rounded-lg border p-3"
               >
-                <span class="text-sm font-medium text-foreground">{{
-                  row.inspectionId ?? '点检记录'
-                }}</span>
+                <span class="text-sm font-medium text-foreground"
+                  >点检 · {{ formatDateTime(row.inspectedAtUtc) }}</span
+                >
                 <span class="text-xs text-muted-foreground"
-                  >结果 {{ row.result ?? '未记录' }} ·
-                  {{ formatDateTime(row.inspectedAtUtc) }}</span
+                  >结果 {{ inspectionResultLabel(row.result) }}</span
                 >
               </div>
               <div
@@ -1270,7 +1334,7 @@ function formatError(error: unknown) {
                 "
                 class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
               >
-                当前返回窗口未包含可关联的保养计划或点检记录；点检以工单/计划关联，缺少设备字段时不在详情页冒充已关联。
+                暂无与该设备关联的保养计划或点检记录。点检通过维护工单或保养计划关联到设备，未关联设备的点检不在此显示。
               </div>
             </div>
           </div>
@@ -1289,8 +1353,7 @@ function formatError(error: unknown) {
                   row.skuCode ?? '备件物料'
                 }}</span>
                 <span class="text-xs text-muted-foreground"
-                  >数量 {{ quantityLabel(row) }} · 工单
-                  {{ sparePartWorkOrderLabel(row.workOrderId) }}</span
+                  >数量 {{ quantityLabel(row) }} · 工单 {{ sparePartWorkOrderLabel(row) }}</span
                 >
               </div>
               <div
@@ -1304,9 +1367,9 @@ function formatError(error: unknown) {
 
           <div class="rounded-lg border bg-card">
             <div class="border-b px-4 py-3">
-              <h3 class="text-sm font-semibold text-foreground">维护占用窗口</h3>
+              <h3 class="text-sm font-semibold text-foreground">维护占用时段</h3>
               <p class="mt-1 text-xs text-muted-foreground">
-                来自维护计划的占用窗口，与上方设备运行可用性分开统计。
+                来自保养计划的占用时段，与上方设备占用时段分开统计。
               </p>
             </div>
             <div class="grid gap-3 p-4">
@@ -1321,8 +1384,8 @@ function formatError(error: unknown) {
                   }}</span>
                   <NvBadge
                     class="rounded-sm"
-                    :variant="availabilityVariant(row.availabilityStatus)"
-                    >{{ availabilityLabel(row.availabilityStatus) }}</NvBadge
+                    :variant="describeAvailabilityStatus(row.availabilityStatus).tone"
+                    >{{ describeAvailabilityStatus(row.availabilityStatus).label }}</NvBadge
                   >
                 </div>
                 <span class="text-xs text-muted-foreground"
@@ -1333,7 +1396,7 @@ function formatError(error: unknown) {
                 v-if="!maintenancePending && !maintenanceAvailabilityWindows.length"
                 class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
               >
-                当前设备没有 Maintenance 可用窗口。
+                当前设备没有维护占用时段。
               </div>
             </div>
           </div>
@@ -1398,14 +1461,13 @@ function formatError(error: unknown) {
               >
               <span
                 v-if="row.deviceReceiptCode || row.failureCode"
-                class="font-mono text-xs"
+                class="text-xs"
                 :class="
                   row.status?.toLowerCase() === 'failed'
                     ? 'text-destructive'
                     : 'text-muted-foreground'
                 "
-                :title="row.deviceReceiptMessage ?? undefined"
-                >{{ row.deviceReceiptCode ?? row.failureCode }}</span
+                >{{ deviceReceiptLabel(row.deviceReceiptCode) }}</span
               >
             </div>
           </template>
@@ -1416,6 +1478,13 @@ function formatError(error: unknown) {
         v-if="filters.deviceAssetId"
         v-model:open="controlSheetOpen"
         :device-asset-id="filters.deviceAssetId"
+      />
+      <DeviceTelemetryPointsSheet
+        v-if="filters.deviceAssetId"
+        v-model:open="pointsSheetOpen"
+        :device-asset-id="filters.deviceAssetId"
+        :device-title="deviceTitle || '设备'"
+        :can-manage="canManageTelemetryPoints"
       />
     </template>
   </BusinessLayout>

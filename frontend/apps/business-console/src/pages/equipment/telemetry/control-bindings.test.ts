@@ -43,7 +43,6 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
       resolveWorkshop: () => undefined,
       resolveLine: () => undefined,
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
-      deviceByCode: emptyIndex,
       locationByCode: emptyIndex,
       workCenterByCode: emptyIndex,
       teamByCode: emptyIndex,
@@ -142,6 +141,13 @@ const stubs = {
   // 实体选择弹窗同样是 reka portal；单测只关心取值，替成同 id 的输入位。
   NvEntityPicker: {
     props: ['modelValue', 'id', 'options', 'loading', 'disabled'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
+  // 表单里的设备选择器（取数与就地新增由 DirectoryPicker 自己的测试覆盖）同样替成输入位。
+  DirectoryPicker: {
+    props: ['modelValue', 'id'],
     emits: ['update:modelValue'],
     template:
       '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',

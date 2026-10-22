@@ -316,7 +316,7 @@ public sealed class WorldHistorySeedServiceTests
         await CreateSeed(dbContext).SeedAsync("org-001", "env-dev", AsOfDate, ShortageScale);
 
         var shortWorkOrderId = (await ShortWorkOrderIdsAsync(dbContext)).Order(StringComparer.Ordinal).First();
-        var readiness = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+        var readiness = await new GetMaterialReadinessQueryHandler(dbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", shortWorkOrderId),
             CancellationToken.None);
 
@@ -425,6 +425,7 @@ public sealed class WorldHistorySeedServiceTests
 
         Assert.All(completed, task =>
         {
+            Assert.Equal(0, task.ActualTimeSettlementRevision);
             Assert.NotNull(task.ExistingStartUtc);
             Assert.NotNull(task.ExistingEndUtc);
             Assert.True(task.ExistingEndUtc >= task.ExistingStartUtc);
@@ -437,6 +438,7 @@ public sealed class WorldHistorySeedServiceTests
             AssertInsideShiftWindow(task.ExistingStartUtc!.Value);
             AssertInsideShiftWindow(task.ExistingEndUtc!.Value);
         });
+        Assert.Empty(await dbContext.OperationActualTimeSettlements.ToArrayAsync());
 
         // 性能终检工序带质检标志——这是二期质量域接管检验任务的预留引用点。
         var inspectionTasks = await dbContext.OperationTasks

@@ -46,7 +46,6 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
       resolveWorkshop: () => undefined,
       resolveLine: () => undefined,
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
-      deviceByCode: emptyIndex,
       locationByCode: emptyIndex,
       workCenterByCode: emptyIndex,
       teamByCode: emptyIndex,
@@ -201,7 +200,7 @@ const selectStubs = {
       '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
-  SelectValue: { template: '<span />' },
+  NvSelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
@@ -224,10 +223,23 @@ const orderDialogStubs = {
     template:
       '<button type="button" data-testid="site-picker" @click="$emit(\'update:modelValue\', \'SITE-01\')">选择履约工厂</button>',
   },
+  // 已批准报价单选择器桩成带同名 id 的输入位，用例用 setValue 表达「选中了这张报价」。
+  SourceDocumentCatalogPicker: {
+    props: ['modelValue', 'id'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
 }
 
 // 新建报价弹窗：实体选择器桩成可直接读写的输入位，用例只关心提交体里的单位来自哪里。
 const dialogStubs = {
+  // 本组验证单位随物料提交；日期的真实交互由 date-inputs.test.ts 覆盖。
+  NvDatePicker: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: `<input :value="modelValue" @input="$emit('update:modelValue', $event.target.value)" />`,
+  },
   ...dialogShellStubs,
   NvEntityPicker: {
     props: ['modelValue', 'options', 'id'],
@@ -594,7 +606,7 @@ describe('ERP sales order and delivery pages', () => {
     // 语义在界面明确：谁发起、谁裁决、通过后订单回到什么状态。
     expect(wrapper.text()).toContain('提交信用解冻复核')
     expect(wrapper.text()).toContain('审批')
-    expect(wrapper.text()).toContain('已下达（released）')
+    expect(wrapper.text()).toContain('恢复为「已下达」')
 
     await wrapper
       .findAll('button')

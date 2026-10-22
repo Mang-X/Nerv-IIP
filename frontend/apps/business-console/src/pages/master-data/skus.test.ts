@@ -38,8 +38,6 @@ const skuRow = {
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessSkus: () => ({
-    createSku: stub.createSku,
-    createSkuPending: shallowRef(false),
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 10 }),
     refreshSkus: vi.fn(),
     skus: computed(() => [skuRow]),
@@ -47,6 +45,7 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     skusPending: shallowRef(false),
     skusTotal: computed(() => 1),
   }),
+  useCreateSku: () => ({ create: stub.createSku, pending: shallowRef(false) }),
   useMasterDataResourceActions: () => ({
     update: stub.update,
     disable: vi.fn(),
@@ -61,6 +60,10 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     stub.resourcesCalls.push({ resourceType, codeSet: options.codeSet })
     return { resources: shallowRef([]), resourcesPending: shallowRef(false) }
   },
+}))
+
+vi.mock('@/stores/businessContext', () => ({
+  useBusinessContextStore: () => ({ organizationId: 'org-001', environmentId: 'env-dev' }),
 }))
 
 // 产品分类已升为主数据（#400）：electronic → 电子料。
@@ -80,9 +83,7 @@ const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 // 对话框就地渲染（不 teleport），便于断言表单内容。
 const dialogStubs = {
   NvDialog: { template: '<div><slot /></div>' },
-  DialogRoot: { template: '<div><slot /></div>' },
   NvDialogTrigger: { template: '<div><slot /></div>' },
-  DialogTrigger: { template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogFooter: { template: '<div><slot /></div>' },
@@ -122,7 +123,6 @@ const selectStubs = {
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
-  SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }

@@ -11,7 +11,7 @@ public sealed class MaintenanceAggregateTests
     [Fact]
     public void Work_order_from_alarm_can_mark_asset_unavailable_and_complete_with_downtime_attribution()
     {
-        var workOrder = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
+        var workOrder = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "alarm-001", "critical");
         workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, "over temperature");
 
         workOrder.Complete("replaced sensor", "equipment-failure", 45, [new SparePartLineDraft("SKU-SP-001", 1m, "pcs")]);
@@ -32,7 +32,7 @@ public sealed class MaintenanceAggregateTests
     public void Work_order_from_alarm_can_be_marked_alarm_cleared_without_auto_completion()
     {
         var clearedAtUtc = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
-        var workOrder = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
+        var workOrder = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "alarm-001", "critical");
 
         workOrder.MarkAlarmCleared(clearedAtUtc);
         workOrder.MarkAlarmCleared(clearedAtUtc.AddMinutes(5));
@@ -46,7 +46,7 @@ public sealed class MaintenanceAggregateTests
     [Fact]
     public void Manual_work_order_completion_does_not_emit_asset_restored_when_asset_was_not_unavailable()
     {
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
 
         workOrder.Complete("fixed", "minor-stop", 5, []);
 
@@ -55,9 +55,33 @@ public sealed class MaintenanceAggregateTests
     }
 
     [Fact]
+    public void Cancelling_a_work_order_releases_the_registered_asset_occupation()
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
+        workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, "planned maintenance");
+
+        workOrder.Cancel();
+
+        Assert.Equal(MaintenanceWorkOrderStatus.Cancelled, workOrder.Status);
+        var restored = Assert.Single(workOrder.GetDomainEvents().OfType<AssetRestoredDomainEvent>());
+        Assert.Equal(workOrder.CancelledAtUtc, restored.RestoredAtUtc);
+    }
+
+    [Fact]
+    public void Cancelling_a_work_order_does_not_release_when_no_asset_occupation_was_registered()
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
+
+        workOrder.Cancel();
+
+        Assert.Equal(MaintenanceWorkOrderStatus.Cancelled, workOrder.Status);
+        Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is AssetRestoredDomainEvent);
+    }
+
+    [Fact]
     public void Repair_start_cannot_be_before_work_order_opened_time()
     {
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
 
         Assert.Throws<ArgumentOutOfRangeException>(() => workOrder.MarkRepairStarted(workOrder.OpenedAtUtc.AddMinutes(-1)));
     }
@@ -68,7 +92,7 @@ public sealed class MaintenanceAggregateTests
     [InlineData("fixed", "equipment-failure", 0)]
     public void Completion_requires_result_reason_and_positive_downtime(string result, string reasonCode, int downtimeMinutes)
     {
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
 
         Assert.ThrowsAny<Exception>(() => workOrder.Complete(result, reasonCode, downtimeMinutes, []));
     }
@@ -82,7 +106,7 @@ public sealed class MaintenanceAggregateTests
     [Fact]
     public void Closed_work_order_is_terminal()
     {
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
         workOrder.Assign("technician-001", "team-001");
         workOrder.Accept("technician-001");
         workOrder.StartWork();
@@ -99,6 +123,7 @@ public sealed class MaintenanceAggregateTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-001",
             "env-dev",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-CNC-01",
             "high",
             "reporter-001");
@@ -132,7 +157,7 @@ public sealed class MaintenanceAggregateTests
     public void Compatibility_completion_advances_the_shared_lifecycle_version()
     {
         var workOrder = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", "DEV-CNC-01", "high", "reporter-001");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "high", "reporter-001");
 
         workOrder.Complete("fixed", "equipment-failure", 20, []);
 
@@ -144,7 +169,7 @@ public sealed class MaintenanceAggregateTests
     public void Lifecycle_event_leaves_persistent_id_for_the_ef_guid_v7_generator()
     {
         var workOrder = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", "DEV-CNC-01", "high", "reporter-001");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "high", "reporter-001");
         var fromStatus = workOrder.Status;
         workOrder.Assign("technician-001", "team-001");
 
@@ -169,6 +194,7 @@ public sealed class MaintenanceAggregateTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-001",
             "env-dev",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-CNC-01",
             "high",
             "reporter-001");
@@ -451,6 +477,7 @@ public sealed class MaintenanceAggregateTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-001",
             "env-dev",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-CNC-01",
             "normal",
             "operator-001",
@@ -481,6 +508,7 @@ public sealed class MaintenanceAggregateTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-001",
             "env-dev",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-CNC-01",
             "normal",
             "operator-001",
@@ -503,6 +531,7 @@ public sealed class MaintenanceAggregateTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-001",
             "env-dev",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-CNC-01",
             "normal",
             "operator-001",

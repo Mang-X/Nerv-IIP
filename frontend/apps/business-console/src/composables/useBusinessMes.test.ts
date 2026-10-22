@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { reactive, shallowRef, type ShallowRef } from 'vue'
+import { nextTick, reactive, shallowRef, type ShallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import {
   cancelBusinessConsoleMesWorkOrder,
+  confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
+  closeBusinessConsoleMesWorkOrderMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesRushWorkOrderMutationOptions,
-  createBusinessConsoleSopFileDownloadGrantMutationOptions,
+  getBusinessConsoleMesFinishedGoodsReceiptInventoryLinkQueryOptions,
   getBusinessConsoleMesBatchTraceabilityQueryOptions,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   getBusinessConsoleMesFoundationReadinessQueryOptions,
@@ -17,11 +19,13 @@ import {
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
+  holdBusinessConsoleMesWorkOrder,
   listBusinessConsoleMesCapacityImpactsQueryOptions,
   listBusinessConsoleMesDispatchTasksQueryOptions,
   listBusinessConsoleMesDowntimeEventsQueryOptions,
   listBusinessConsoleMesFinishedGoodsReceiptRequests,
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
+  listBusinessConsoleMesLineSideInventoryBalancesQueryOptions,
   listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
@@ -29,14 +33,17 @@ import {
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesReportableOperationTasks,
-  listBusinessConsoleMesScheduleResultsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
+  listBusinessConsoleMesHistoricalProducedLotsQueryOptions,
+  listBusinessConsoleSearchableDirectoryQueryOptions,
   recordBusinessConsoleMesProductionReport,
+  recordBusinessConsoleMesDefectV2MutationOptions,
+  recordBusinessConsoleMesDowntimeEventV2MutationOptions,
+  recordBusinessConsoleMesEngineeringChangeDecisionMutationOptions,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
   retryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingMutationOptions,
   reverseBusinessConsoleMesProductionReportMutationOptions,
-  runBusinessConsoleMesScheduleMutationOptions,
   startBusinessConsoleMesOperationTaskMutationOptions,
 } from '@nerv-iip/api-client'
 import {
@@ -46,45 +53,83 @@ import {
   useMesDispatchTasks,
   useMesDowntimeEvents,
   useMesFoundationReadiness,
+  useMesReceiptInventorySource,
   useMesFinishedGoodsReceipts,
+  useMesLineSideInventoryBalances,
   useMesCurrentOperationSops,
   useMesMaterialIssueRequests,
   useMesOperationTasks,
   useMesOverview,
   useMesProductionPlans,
+  useMesProductionMaterialLots,
   useMesProductionReporting,
   useMesProductionReports,
   useMesQualityContext,
-  useMesSchedules,
   useMesShiftHandovers,
   useMesTraceability,
   useMesWipSummary,
   useMesWorkOrderDetail,
+  useMesWorkOrderFacts,
   useMesWorkOrders,
+  useMesWorkOrderHistoricalProducedLots,
+  useMesWorkOrderProducedLots,
 } from './useBusinessMes'
 import { useBusinessContextStore } from '@/stores/businessContext'
 
+type TestQueryCacheEntry = { key: Array<{ _id: string }> }
+type TestInvalidateQueriesOptions = {
+  predicate: (entry: TestQueryCacheEntry) => boolean
+}
+
 const coladaState = vi.hoisted(() => ({
-  invalidateQueries: vi.fn(async () => undefined),
-  queryFactoriesById: new Map<string, () => unknown>(),
+  invalidateQueries: vi.fn(
+    async (_options: TestInvalidateQueriesOptions, _refetchActive?: boolean) => undefined,
+  ),
+  queryFactoriesById: new Map<
+    string,
+    () => {
+      enabled?: boolean
+      autoRefetch?: (state: { status: string }) => number | false
+      key?: unknown
+      query?: (context: { signal: AbortSignal }) => unknown
+    }
+  >(),
   queryDataById: new Map<string, unknown>(),
+  queryErrorById: new Map<string, unknown>(),
+  queryErrorRefById: new Map<string, ShallowRef<unknown>>(),
   queryDataRefById: new Map<string, ShallowRef<unknown>>(),
   queryRefetchById: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
 const receiptState = vi.hoisted(() => ({
   confirm: vi.fn(),
 }))
+const workOrderDetailQuery = vi.hoisted(() => vi.fn())
+const lineSideInventoryFetch = vi.hoisted(() => vi.fn())
+const materialReadinessFetch = vi.hoisted(() => vi.fn())
 const authState = vi.hoisted(() => ({
   principal: {
     principalId: 'user-001',
     organizationId: 'org-001',
     environmentId: 'env-dev',
+    permissionCodes: [] as string[],
   },
   sessionId: 'session-001',
 }))
 const reactiveAuthState = reactive(authState)
 
 vi.mock('@nerv-iip/api-client', () => ({
+  listBusinessConsoleMesReceivableProducedLotsQueryOptions: vi.fn((options) => ({
+    key: [{ _id: 'listBusinessConsoleMesReceivableProducedLots', ...options }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleMesHistoricalProducedLotsQueryOptions: vi.fn((options) => ({
+    key: [{ _id: 'listBusinessConsoleMesHistoricalProducedLots', ...options }],
+    query: vi.fn(),
+  })),
+  getBusinessConsoleMesFinishedGoodsReceiptInventoryLinkQueryOptions: vi.fn(({ path, query }) => ({
+    key: [{ _id: 'getBusinessConsoleMesFinishedGoodsReceiptInventoryLink', path, query }],
+    query: vi.fn(),
+  })),
   cancelBusinessConsoleMesWorkOrder: vi.fn(async () => ({
     data: { success: true },
     response: { status: 200 },
@@ -103,6 +148,12 @@ vi.mock('@nerv-iip/api-client', () => ({
     })),
   })),
   cancelBusinessConsoleMesWorkOrderMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  closeBusinessConsoleMesWorkOrderMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: vars.body,
@@ -160,6 +211,12 @@ vi.mock('@nerv-iip/api-client', () => ({
       data: vars.body,
     })),
   })),
+  returnBusinessConsoleMesLineSideMaterialMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
   createBusinessConsoleMesRushWorkOrderMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
@@ -170,19 +227,6 @@ vi.mock('@nerv-iip/api-client', () => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: vars.body,
-    })),
-  })),
-  createBusinessConsoleSopFileDownloadGrantMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(async (vars) => ({
-      success: true,
-      data: {
-        fileId: vars.path.fileId,
-        downloadUrl: '/api/business-console/v1/files/download-grants/grant-sop/content',
-        downloadHeaders: {
-          'X-Organization-Id': vars.body.organizationId,
-          'X-Environment-Id': vars.body.environmentId,
-        },
-      },
     })),
   })),
   getBusinessConsoleMesBatchTraceabilityQueryOptions: vi.fn(() => ({
@@ -207,7 +251,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   getBusinessConsoleMesMaterialReadinessQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesMaterialReadiness' }],
-    query: vi.fn(),
+    query: materialReadinessFetch,
   })),
   getBusinessConsoleMesMaterialLotTraceabilityQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesMaterialLotTraceability' }],
@@ -231,11 +275,15 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   getBusinessConsoleMesWorkOrderDetailQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesWorkOrderDetail' }],
-    query: vi.fn(async () => ({ success: true, data: { status: 'Created' } })),
+    query: workOrderDetailQuery,
   })),
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesWorkOrderTraceability' }],
     query: vi.fn(),
+  })),
+  holdBusinessConsoleMesWorkOrder: vi.fn(async () => ({
+    data: { success: true },
+    response: { status: 200 },
   })),
   listBusinessConsoleMesDispatchTasksQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesDispatchTasks' }],
@@ -257,6 +305,24 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleMesMaterialIssueRequests' }],
     query: vi.fn(),
   })),
+  listBusinessConsoleMesLineSideInventoryBalances: (...args: unknown[]) =>
+    lineSideInventoryFetch(...args),
+  listBusinessConsoleMesLineSideInventoryBalancesQueryOptions: vi.fn((options) => ({
+    key: [
+      {
+        _id: 'listBusinessConsoleMesLineSideInventoryBalances',
+        page: options.query.page,
+      },
+    ],
+    query: async (context: { signal?: AbortSignal }) => {
+      const response = await lineSideInventoryFetch({
+        ...options,
+        ...context,
+        throwOnError: true,
+      })
+      return response.data
+    },
+  })),
   // 原始 fetch fn（供完整分页），默认返回空页；分页测试用 mockImplementation 覆盖成多页。
   listBusinessConsoleMesFinishedGoodsReceiptRequests: vi.fn(async () => ({
     data: { success: true, data: { items: [], total: 0 } },
@@ -266,7 +332,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   })),
   listBusinessConsoleMesOperationTasksQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesOperationTasks' }],
-    query: vi.fn(),
+    query: vi.fn(async () => coladaState.queryDataById.get('listBusinessConsoleMesOperationTasks')),
   })),
   listBusinessConsoleMesOperationTasks: vi.fn(async () => ({
     data: {
@@ -302,16 +368,20 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'listBusinessConsoleMesRelatedQualityItems' }],
     query: vi.fn(),
   })),
-  listBusinessConsoleMesScheduleResultsQueryOptions: vi.fn(() => ({
-    key: [{ _id: 'listBusinessConsoleMesScheduleResults' }],
-    query: vi.fn(),
-  })),
   listBusinessConsoleMesShiftHandoversQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesShiftHandovers' }],
     query: vi.fn(),
   })),
+  getBusinessConsoleMesShiftHandoverQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsoleMesShiftHandover' }],
+    query: vi.fn(),
+  })),
   listBusinessConsoleMesWorkOrdersQueryOptions: vi.fn(() => ({
     key: [{ _id: 'listBusinessConsoleMesWorkOrders' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsoleSearchableDirectoryQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleSearchableDirectory' }],
     query: vi.fn(),
   })),
   pauseBusinessConsoleMesOperationTaskMutationOptions: vi.fn(() => ({
@@ -320,13 +390,19 @@ vi.mock('@nerv-iip/api-client', () => ({
       data: vars.body,
     })),
   })),
-  recordBusinessConsoleMesDefectMutationOptions: vi.fn(() => ({
+  recordBusinessConsoleMesDefectV2MutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: vars.body,
     })),
   })),
-  recordBusinessConsoleMesDowntimeEventMutationOptions: vi.fn(() => ({
+  recordBusinessConsoleMesEngineeringChangeDecisionMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: vars.body,
+    })),
+  })),
+  recordBusinessConsoleMesDowntimeEventV2MutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
       data: vars.body,
@@ -356,12 +432,6 @@ vi.mock('@nerv-iip/api-client', () => ({
       data: vars.body,
     })),
   })),
-  runBusinessConsoleMesScheduleMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(async (vars) => ({
-      success: true,
-      data: vars.body,
-    })),
-  })),
   startBusinessConsoleMesOperationTaskMutationOptions: vi.fn(() => ({
     mutation: vi.fn(async (vars) => ({
       success: true,
@@ -386,15 +456,37 @@ vi.mock('@pinia/colada', () => ({
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
     coladaState.queryFactoriesById.set(id, optionsFactory)
 
-    const refetch = vi.fn()
+    const initialData = coladaState.queryDataById.get(id)
+    const data = shallowRef(
+      id === 'listBusinessConsoleMesLineSideInventoryBalances' && initialData !== undefined
+        ? { identity: 'org-001:env-dev:page:1', response: initialData }
+        : initialData,
+    )
+    const error = shallowRef(coladaState.queryErrorById.get(id))
+    const isLoading = shallowRef(false)
+    const refetch = vi.fn(async () => {
+      if (id !== 'listBusinessConsoleMesLineSideInventoryBalances') return
+      const latest = optionsFactory()
+      isLoading.value = true
+      try {
+        const result = await latest.query?.({ signal: new AbortController().signal })
+        data.value = result
+        error.value = undefined
+        return result
+      } catch (queryError) {
+        error.value = queryError
+        throw queryError
+      } finally {
+        isLoading.value = false
+      }
+    })
     coladaState.queryRefetchById.set(id, refetch)
-
-    const data = shallowRef(coladaState.queryDataById.get(id))
     coladaState.queryDataRefById.set(id, data)
+    coladaState.queryErrorRefById.set(id, error)
     return {
       data,
-      error: shallowRef(),
-      isLoading: shallowRef(false),
+      error,
+      isLoading,
       refetch,
     }
   }),
@@ -419,8 +511,29 @@ describe('business MES composables', () => {
     setActivePinia(createPinia())
     useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
     vi.clearAllMocks()
+    coladaState.invalidateQueries.mockImplementation(async () => undefined)
     sessionStorage.clear()
     receiptState.confirm.mockImplementation(async (value) => value)
+    workOrderDetailQuery.mockReset().mockResolvedValue({
+      success: true,
+      data: {
+        workOrderId: 'WO-RELEASE',
+        status: 'Created',
+        productionVersionId: 'PV-1',
+        operationTasks: [
+          {
+            status: 'queued',
+            workCenterId: 'WC-READ',
+            blockReasons: [],
+            evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
+          },
+        ],
+        qualityHolds: [],
+      },
+    })
+    lineSideInventoryFetch.mockReset().mockResolvedValue({
+      data: { success: true, data: { items: [], totalCount: 0, page: 1, pageSize: 200 } },
+    })
     vi.mocked(listBusinessConsoleMesOperationTasks).mockResolvedValue({
       data: {
         success: true,
@@ -442,12 +555,15 @@ describe('business MES composables', () => {
     coladaState.invalidateQueries.mockClear()
     coladaState.queryFactoriesById.clear()
     coladaState.queryDataById.clear()
+    coladaState.queryErrorById.clear()
+    coladaState.queryErrorRefById.clear()
     coladaState.queryDataRefById.clear()
     coladaState.queryRefetchById.clear()
     reactiveAuthState.principal = {
       principalId: 'user-001',
       organizationId: 'org-001',
       environmentId: 'env-dev',
+      permissionCodes: [],
     }
     reactiveAuthState.sessionId = 'session-001'
     coladaState.queryDataById.set(
@@ -500,6 +616,15 @@ describe('business MES composables', () => {
       {
         success: true,
         data: { selectedScope: { kind: 'self', id: 'user-001', displayName: '我的任务' } },
+      },
+    )
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.downtime.manage',
+      {
+        success: true,
+        data: {
+          selectedScope: { kind: 'work-center', id: 'WC-A', displayName: '精加工一线' },
+        },
       },
     )
   })
@@ -593,7 +718,7 @@ describe('business MES composables', () => {
         },
         { idempotencyKey: 'no-scope-key' },
       ),
-      // 读到了但授权清单为空：提示「没有已授权的作业范围」并指向 IAM 配置（#1288），不再泛泛说「尚未选择」。
+      // 读到了但授权清单为空：提示「没有已授权的作业范围」并指向管理员配置授权（#1288），不再泛泛说「尚未选择」。
     ).rejects.toThrow('没有已授权的作业范围')
 
     expect(listBusinessConsoleMesOperationTasks).not.toHaveBeenCalled()
@@ -763,6 +888,43 @@ describe('business MES composables', () => {
     ])
   })
 
+  it('reads commercial facts for a completed historical work order absent from the candidate pool', async () => {
+    const commercialSourceFacts = {
+      status: 'resolved',
+      salesOrders: [{ salesOrderNo: 'SO-HISTORY', customerCode: 'CUSTOMER-HISTORY' }],
+    }
+    workOrderDetailQuery.mockResolvedValue({
+      success: true,
+      data: {
+        workOrderId: 'WO-COMPLETED',
+        status: 'Completed',
+        quantity: 100,
+        completedQuantity: 100,
+        operationTasks: [{ operationTaskId: 'OP-10', status: 'Completed' }],
+        commercialSourceFacts,
+      },
+    })
+    const facts = useMesWorkOrderFacts(() => ['WO-COMPLETED', 'WO-COMPLETED'])
+    const response = await coladaState.queryFactoriesById.get('schedulingWorkOrderFacts')!().query!(
+      {
+        signal: new AbortController().signal,
+      },
+    )
+    coladaState.queryDataRefById.get('schedulingWorkOrderFacts')!.value = response
+    await nextTick()
+    expect(facts.workOrders.value).toEqual([
+      {
+        workOrderId: 'WO-COMPLETED',
+        executionStatus: 'Completed',
+        quantity: 100,
+        completedQuantity: 100,
+        operationTasks: [{ operationTaskId: 'OP-10', status: 'Completed' }],
+        commercialSourceFacts,
+      },
+    ])
+    expect(workOrderDetailQuery).toHaveBeenCalledTimes(1)
+  })
+
   it('applies a caller-owned initial page size before creating the work-order query', () => {
     useMesWorkOrders({ initialTake: 500 })
 
@@ -845,6 +1007,14 @@ describe('business MES composables', () => {
     expect(
       coladaState.queryFactoriesById.get('listBusinessConsoleMesCapacityImpacts')?.(),
     ).toMatchObject({ enabled: false })
+  })
+
+  it('keeps the current WIP request disabled when the consuming page lacks operations permission', () => {
+    useMesWipSummary(() => false)
+
+    expect(coladaState.queryFactoriesById.get('getBusinessConsoleMesWipSummary')?.()).toMatchObject(
+      { enabled: false },
+    )
   })
 
   it('does not refetch MES lists when business context is empty', async () => {
@@ -939,7 +1109,7 @@ describe('business MES composables', () => {
         completesOperation: false,
         idempotencyKey: 'report-no-scope',
       }),
-      // 读到了但授权清单为空：提示「没有已授权的作业范围」并指向 IAM 配置（#1288），不再泛泛说「尚未选择」。
+      // 读到了但授权清单为空：提示「没有已授权的作业范围」并指向管理员配置授权（#1288），不再泛泛说「尚未选择」。
     ).rejects.toThrow('没有已授权的作业范围')
     expect(recordBusinessConsoleMesProductionReport).not.toHaveBeenCalled()
   })
@@ -1038,7 +1208,62 @@ describe('business MES composables', () => {
     expect(recordBusinessConsoleMesProductionReport).toHaveBeenCalledTimes(2)
   })
 
-  it('reads overview, foundation readiness, operation tasks, and WIP rows', () => {
+  it('保留打印准备待收敛的完整报工载荷，新实例恢复后只重放原模板和原时间', async () => {
+    vi.mocked(recordBusinessConsoleMesProductionReport).mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          productionReportId: 'report-serial',
+          reportNo: 'PRPT-SERIAL',
+          serialNumbers: ['SN-H-101'],
+          printBatchId: 'LPB-014',
+          printStatus: 'reserved',
+          printingPreparationPending: true,
+        },
+      },
+      response: { status: 200 },
+    } as never)
+    const body = {
+      workOrderId: 'wo-serial',
+      operationTaskId: 'op-serial',
+      goodQuantity: 1,
+      scrapQuantity: 0,
+      completesOperation: false,
+      reportedAtUtc: '2026-09-14T01:00:00Z',
+      labelTemplateId: 'template-housing',
+      idempotencyKey: 'report-serial-intent',
+    }
+    const first = useMesProductionReporting()
+    await first.recordProductionReport(body)
+    const restored = useMesProductionReporting()
+    expect(restored.restoreProductionReport('wo-serial', 'op-serial')).toMatchObject(body)
+    vi.mocked(recordBusinessConsoleMesProductionReport).mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          reportNo: 'PRPT-SERIAL',
+          productionReportId: 'report-serial',
+          serialNumbers: ['SN-H-101'],
+          printBatchId: 'LPB-014',
+          printStatus: 'ready-to-print',
+          printingPreparationPending: false,
+        },
+      },
+      response: { status: 200 },
+    } as never)
+    await restored.recordProductionReport({
+      ...body,
+      goodQuantity: 9,
+      labelTemplateId: 'another-template',
+      idempotencyKey: 'new-key',
+    })
+    expect(
+      vi.mocked(recordBusinessConsoleMesProductionReport).mock.calls.at(-1)?.[0]?.body,
+    ).toMatchObject(body)
+    expect(restored.restoreProductionReport('wo-serial', 'op-serial')).toBeUndefined()
+  })
+
+  it('reads overview, foundation readiness, operation tasks, and WIP rows', async () => {
     coladaState.queryDataById.set('getBusinessConsoleMesOverview', {
       success: true,
       data: {
@@ -1072,6 +1297,10 @@ describe('business MES composables', () => {
     const overview = useMesOverview()
     const readiness = useMesFoundationReadiness()
     const tasks = useMesOperationTasks()
+    coladaState.queryDataRefById.get('listBusinessConsoleMesOperationTasks')!.value =
+      await coladaState.queryFactoriesById.get('listBusinessConsoleMesOperationTasks')!().query!({
+        signal: new AbortController().signal,
+      })
     const wip = useMesWipSummary()
 
     expect(getBusinessConsoleMesOverviewQueryOptions).toHaveBeenCalledWith({
@@ -1092,17 +1321,9 @@ describe('business MES composables', () => {
     expect(readiness.readiness.value?.status).toBe('Ready')
     expect(tasks.operationTasks.value).toHaveLength(1)
     expect(tasks.operationTasksTotal.value).toBe(77)
+    expect(tasks.operationTasksState.value).toBe('ready')
     expect(wip.wipRows.value).toHaveLength(1)
     expect(wip.wipTotal.value).toBe(23)
-  })
-
-  it('exposes an unsuccessful operation-task envelope as a business-response failure', () => {
-    coladaState.queryDataById.set('listBusinessConsoleMesOperationTasks', { success: false })
-
-    const tasks = useMesOperationTasks()
-
-    expect(tasks.operationTasksHasSuccessfulResponse.value).toBe(false)
-    expect(tasks.operationTasksHasFailedResponse.value).toBe(true)
   })
 
   it('queries current SOP documents by operation and work center context', () => {
@@ -1139,22 +1360,6 @@ describe('business MES composables', () => {
     expect(sops.currentSops.value[0]).toMatchObject({ revision: 'B', fileId: 'file-sop-b' })
   })
 
-  it('creates SOP file download grants through the generated mutation options', async () => {
-    const sops = useMesCurrentOperationSops()
-
-    const grant = await sops.createSopFileDownloadGrant('file-sop-b')
-
-    expect(createBusinessConsoleSopFileDownloadGrantMutationOptions).toHaveBeenCalled()
-    expect(grant).toMatchObject({
-      fileId: 'file-sop-b',
-      downloadUrl: '/api/business-console/v1/files/download-grants/grant-sop/content',
-      downloadHeaders: {
-        'X-Organization-Id': 'org-001',
-        'X-Environment-Id': 'env-dev',
-      },
-    })
-  })
-
   it('exposes secondary MES list totals from response envelopes', () => {
     const totals = new Map([
       ['listBusinessConsoleMesCapacityImpacts', 11],
@@ -1178,6 +1383,352 @@ describe('business MES composables', () => {
     expect(useMesProductionReports().productionReportsTotal.value).toBe(16)
     expect(useMesQualityContext().qualityItemsTotal.value).toBe(17)
     expect(useMesShiftHandovers().handoversTotal.value).toBe(18)
+  })
+
+  it('injects current business context and the selected scope into downtime v2 writes', async () => {
+    const downtime = useMesDowntimeEvents()
+
+    await downtime.recordDowntimeEvent({
+      workOrderId: 'WO-1',
+      operationTaskId: 'OP-1',
+      workCenterId: 'WC-A',
+      deviceAssetId: 'DEVICE-1',
+      reasonCode: 'equipment-fault',
+      startedAtUtc: '2026-08-26T00:30:00.000Z',
+      idempotencyKey: 'downtime-key',
+      scopeKind: 'work-center',
+      scopeId: 'WC-A',
+    })
+
+    const mutation = vi
+      .mocked(recordBusinessConsoleMesDowntimeEventV2MutationOptions)
+      .mock.results.at(-1)?.value.mutation as ReturnType<typeof vi.fn>
+    expect(mutation).toHaveBeenCalledWith({
+      body: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        workOrderId: 'WO-1',
+        operationTaskId: 'OP-1',
+        workCenterId: 'WC-A',
+        deviceAssetId: 'DEVICE-1',
+        reasonCode: 'equipment-fault',
+        startedAtUtc: '2026-08-26T00:30:00.000Z',
+        idempotencyKey: 'downtime-key',
+        scopeKind: 'work-center',
+        scopeId: 'WC-A',
+      },
+    })
+  })
+
+  // #1947：停机读面要按原因显示、筛选与汇总。
+  it('defaults downtime reads to the latest 30 days and forwards an explicitly selected window', () => {
+    vi.setSystemTime('2026-08-30T08:00:00.000Z')
+    const downtime = useMesDowntimeEvents()
+    const listOptions = vi.mocked(listBusinessConsoleMesDowntimeEventsQueryOptions)
+
+    expect(listOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        skip: 0,
+        take: 100,
+        windowStartUtc: '2026-07-31T08:00:00.000Z',
+        windowEndUtc: '2026-08-30T08:00:00.000Z',
+      },
+    })
+
+    downtime.filters.keyword = 'filter'
+    downtime.filters.workCenterId = 'WC-FILTER'
+    downtime.filters.shiftId = 'SHIFT-FILTER'
+    downtime.filters.deviceAssetId = 'DEV-FILTER'
+    downtime.filters.reasonCode = 'DT-MECH'
+    downtime.filters.skip = 5
+    downtime.filters.take = 25
+    downtime.filters.windowStartUtc = '2026-08-01T00:00:00.000Z'
+    downtime.filters.windowEndUtc = '2026-08-15T00:00:00.000Z'
+    coladaState.queryFactoriesById.get('listBusinessConsoleMesDowntimeEvents')!()
+
+    expect(listOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        keyword: 'filter',
+        workCenterId: 'WC-FILTER',
+        shiftId: 'SHIFT-FILTER',
+        deviceAssetId: 'DEV-FILTER',
+        skip: 5,
+        take: 25,
+        reasonCode: 'DT-MECH',
+        windowStartUtc: '2026-08-01T00:00:00.000Z',
+        windowEndUtc: '2026-08-15T00:00:00.000Z',
+      },
+    })
+    vi.useRealTimers()
+  })
+
+  it('advances the default downtime window on every refresh so newly started events fall inside it', async () => {
+    vi.setSystemTime('2026-08-30T08:00:00.000Z')
+    try {
+      const downtime = useMesDowntimeEvents()
+      const listOptions = vi.mocked(listBusinessConsoleMesDowntimeEventsQueryOptions)
+      const startedAtUtc = '2026-08-30T08:01:00.000Z'
+
+      for (const now of ['2026-08-30T08:01:05.000Z', '2026-08-30T08:02:00.000Z']) {
+        vi.setSystemTime(now)
+        await downtime.refreshDowntimeEvents()
+        coladaState.queryFactoriesById.get('listBusinessConsoleMesDowntimeEvents')!()
+
+        const query = listOptions.mock.calls.at(-1)![0]!.query!
+        expect(query.windowEndUtc).toBe(now)
+        expect(query.windowStartUtc).toBe(now.replace('2026-08-30', '2026-07-31'))
+        expect(Date.parse(startedAtUtc)).toBeGreaterThanOrEqual(Date.parse(query.windowStartUtc!))
+        expect(Date.parse(startedAtUtc)).toBeLessThan(Date.parse(query.windowEndUtc!))
+      }
+      expect(
+        coladaState.queryRefetchById.get('listBusinessConsoleMesDowntimeEvents'),
+      ).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps an explicitly selected historical downtime window unchanged on refresh', async () => {
+    vi.setSystemTime('2026-08-30T08:00:00.000Z')
+    try {
+      const downtime = useMesDowntimeEvents()
+      const window = {
+        windowStartUtc: '2026-08-01T00:00:00.000Z',
+        windowEndUtc: '2026-08-15T00:00:00.000Z',
+      }
+      downtime.setDowntimeWindow(window)
+      vi.setSystemTime('2026-08-31T09:00:00.000Z')
+      await downtime.refreshDowntimeEvents()
+      coladaState.queryFactoriesById.get('listBusinessConsoleMesDowntimeEvents')!()
+
+      expect(
+        vi.mocked(listBusinessConsoleMesDowntimeEventsQueryOptions).mock.calls.at(-1)![0]!.query,
+      ).toMatchObject(window)
+      expect(
+        coladaState.queryRefetchById.get('listBusinessConsoleMesDowntimeEvents'),
+      ).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('forwards the selected downtime reason into the list query and leaves it out when unset', () => {
+    const downtime = useMesDowntimeEvents()
+    const listOptions = vi.mocked(listBusinessConsoleMesDowntimeEventsQueryOptions)
+    expect(listOptions.mock.calls.at(-1)![0]!.query).not.toHaveProperty('reasonCode')
+
+    downtime.filters.reasonCode = 'DT-MECH'
+    coladaState.queryFactoriesById.get('listBusinessConsoleMesDowntimeEvents')!()
+
+    expect(listOptions.mock.calls.at(-1)![0]!.query).toMatchObject({
+      reasonCode: 'DT-MECH',
+    })
+  })
+
+  it('exposes the reason summary facet carried by the downtime list envelope', () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesDowntimeEvents', {
+      success: true,
+      data: {
+        items: [],
+        total: 3,
+        reasonSummary: [
+          {
+            reasonCode: 'DT-MECH',
+            reasonName: '机械故障（轴承/传动/密封）',
+            openCount: 1,
+            durationMinutes: 90,
+          },
+        ],
+      },
+    })
+
+    expect(useMesDowntimeEvents().downtimeReasonSummary.value).toEqual([
+      {
+        reasonCode: 'DT-MECH',
+        reasonName: '机械故障（轴承/传动/密封）',
+        openCount: 1,
+        durationMinutes: 90,
+      },
+    ])
+  })
+
+  // 原因中文名是读面要素：没有停机登记范围（只读用户）也必须能取到字典。
+  it('reads the downtime-reason directory without waiting for a write scope', () => {
+    coladaState.queryDataById.delete(
+      'getBusinessConsolePrincipalWorkContext:business.mes.downtime.manage',
+    )
+
+    const downtime = useMesDowntimeEvents()
+    expect(downtime.downtimeWriteScopeReady.value).toBe(false)
+
+    const directoryFactory = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleSearchableDirectory',
+    )!
+    expect(directoryFactory().enabled).toBe(true)
+  })
+
+  // #2793 裁定：`enabled` 不加权限前置。前端 principal 的权限码只是提示，网关才是权威；
+  // 加了前置一旦权限码滞后就再也不发请求，页面永远显示无权限且没有证据能纠正。
+  // 少发的只是一次请求，归因交由 downtime.vue 分流 403 与其它失败来解决。
+  // 若有人给这条 query 加上 `permissionCodes.includes(...)` 之类的前置，本用例必红。
+  it('still issues the downtime-reason directory read when the principal lacks that read permission', () => {
+    reactiveAuthState.principal = {
+      ...reactiveAuthState.principal!,
+      // 刻意给一组「别的都齐、唯独没有目录读权限」的权限码：这样它能通过这条 query 的
+      // 其它所有前置（组织/环境上下文齐备），差别只在那一个码上。
+      permissionCodes: ['business.mes.downtime.read', 'business.mes.downtime.manage'],
+    }
+
+    useMesDowntimeEvents()
+
+    const directoryFactory = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleSearchableDirectory',
+    )!
+    expect(directoryFactory().enabled).toBe(true)
+  })
+
+  it('uses the searchable-directory 1-based page and server page-size bound for downtime reasons', () => {
+    useMesDowntimeEvents()
+
+    expect(listBusinessConsoleSearchableDirectoryQueryOptions).toHaveBeenCalledWith({
+      path: { directoryType: 'downtime-reason' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        pageIndex: 1,
+        pageSize: 100,
+        rankingMode: 'default',
+      },
+    })
+  })
+
+  it('maps an available downtime-reason directory response to selectable options', () => {
+    coladaState.queryDataById.set('listBusinessConsoleSearchableDirectory', {
+      success: true,
+      data: {
+        status: 'available',
+        items: [
+          {
+            id: 'reason-1',
+            code: 'equipment-fault',
+            displayName: '设备故障',
+            sourceService: 'BusinessMaintenance',
+            authorityDirectoryType: 'downtime-reason',
+          },
+        ],
+      },
+    })
+
+    const downtime = useMesDowntimeEvents()
+
+    // label 是登记弹窗既有的「名称（码）」口径；name 是只读面用的纯名称。
+    expect(downtime.downtimeReasonOptions.value).toEqual([
+      { value: 'equipment-fault', label: '设备故障（equipment-fault）', name: '设备故障' },
+    ])
+    expect(downtime.downtimeReasonsError.value).toBeUndefined()
+  })
+
+  it('keeps an unavailable downtime-reason directory fail closed without fabricated options', () => {
+    coladaState.queryDataById.set('listBusinessConsoleSearchableDirectory', {
+      success: true,
+      data: {
+        status: 'unavailable',
+        reasonCode: 'directory-authority-unconfigured',
+        items: [],
+      },
+    })
+
+    const downtime = useMesDowntimeEvents()
+
+    expect(downtime.downtimeReasonOptions.value).toEqual([])
+    expect(downtime.downtimeReasonsError.value).toBeUndefined()
+  })
+
+  it('exposes downtime-reason directory errors while keeping registration options empty', () => {
+    const directoryError = new Error('directory-page-invalid')
+    coladaState.queryErrorById.set('listBusinessConsoleSearchableDirectory', directoryError)
+
+    const downtime = useMesDowntimeEvents()
+
+    expect(downtime.downtimeReasonOptions.value).toEqual([])
+    expect(downtime.downtimeReasonsError.value).toBe(directoryError)
+  })
+
+  it('injects the current business context into the defect wire body and rejects caller overrides', async () => {
+    const quality = useMesQualityContext()
+    const body = {
+      organizationId: 'forged-org',
+      environmentId: 'forged-env',
+      workOrderId: 'WO-2',
+      operationTaskId: 'OP-2',
+      defectCode: 'SCRATCH',
+      quantity: 2.5,
+      recordedAtUtc: '2026-08-26T01:02:03.000Z',
+      idempotencyKey: 'defect-key',
+      actor: 'forged-user',
+      scopeKind: 'work-center',
+      scopeId: 'WC-2',
+    }
+
+    await quality.recordDefect(body as never)
+
+    const mutation = vi.mocked(recordBusinessConsoleMesDefectV2MutationOptions).mock.results.at(-1)
+      ?.value.mutation as ReturnType<typeof vi.fn>
+    expect(mutation).toHaveBeenCalledWith({
+      body: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        workOrderId: 'WO-2',
+        operationTaskId: 'OP-2',
+        defectCode: 'SCRATCH',
+        quantity: 2.5,
+        recordedAtUtc: '2026-08-26T01:02:03.000Z',
+        idempotencyKey: 'defect-key',
+        scopeKind: 'work-center',
+        scopeId: 'WC-2',
+      },
+    })
+    expect(mutation.mock.calls[0]?.[0].body).not.toHaveProperty('actor')
+    const invalidationCalls = coladaState.invalidateQueries.mock.calls
+    const invalidatedIds = [
+      'listBusinessConsoleMesRelatedQualityItems',
+      'listBusinessConsoleMesOperationTasks',
+      'listBusinessConsoleMesWorkOrders',
+      'getBusinessConsoleMesWorkOrderDetail',
+    ].filter((id) =>
+      invalidationCalls.some(([options]) => options.predicate({ key: [{ _id: id }] })),
+    )
+    expect(invalidatedIds).toEqual([
+      'listBusinessConsoleMesRelatedQualityItems',
+      'listBusinessConsoleMesOperationTasks',
+      'listBusinessConsoleMesWorkOrders',
+      'getBusinessConsoleMesWorkOrderDetail',
+    ])
+  })
+
+  it('fails closed before defect mutation when the current business context is missing', async () => {
+    useBusinessContextStore().patchContext({ organizationId: '', environmentId: '' })
+    const quality = useMesQualityContext()
+
+    await expect(
+      quality.recordDefect({
+        workOrderId: 'WO-2',
+        defectCode: 'SCRATCH',
+        quantity: 2.5,
+        recordedAtUtc: '2026-08-26T01:02:03.000Z',
+        idempotencyKey: 'defect-key',
+        scopeKind: 'work-center',
+        scopeId: 'WC-2',
+      }),
+    ).rejects.toThrow('尚未确定当前组织')
+
+    const mutation = vi.mocked(recordBusinessConsoleMesDefectV2MutationOptions).mock.results.at(-1)
+      ?.value.mutation as ReturnType<typeof vi.fn>
+    expect(mutation).not.toHaveBeenCalled()
   })
 
   it('sends MES list search and structured filters as server query parameters', () => {
@@ -1266,11 +1817,6 @@ describe('business MES composables', () => {
         composable: useMesMaterialIssueRequests,
       },
       {
-        id: 'listBusinessConsoleMesDowntimeEvents',
-        options: listBusinessConsoleMesDowntimeEventsQueryOptions,
-        composable: useMesDowntimeEvents,
-      },
-      {
         id: 'listBusinessConsoleMesShiftHandovers',
         options: listBusinessConsoleMesShiftHandoversQueryOptions,
         composable: useMesShiftHandovers,
@@ -1321,10 +1867,24 @@ describe('business MES composables', () => {
       uomCode: 'EA',
       requestedAtUtc: '2026-05-26T00:00:00.000Z',
       idempotencyKey: 'receipt-1',
-    })
+    } as never)
 
     expect(createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions).toHaveBeenCalled()
-    expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(2)
+    const mutationOptions = vi.mocked(
+      createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
+    ).mock.results[
+      vi.mocked(createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions).mock.results
+        .length - 1
+    ]?.value as { mutation: ReturnType<typeof vi.fn> } | undefined
+    expect(mutationOptions).toBeDefined()
+    const sentBody = mutationOptions!.mutation.mock.calls[0]![0].body
+    expect(sentBody).not.toHaveProperty('unitCost')
+    expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(3)
+    expect(
+      coladaState.invalidateQueries.mock.calls.some(([options]) =>
+        options.predicate({ key: [{ _id: 'listBusinessConsoleMesReceivableProducedLots' }] }),
+      ),
+    ).toBe(true)
   })
 
   it('tracks concurrent inventory-posting retries independently by requestNo', async () => {
@@ -1426,45 +1986,6 @@ describe('business MES composables', () => {
     ).toMatchObject({ enabled: false })
   })
 
-  it('reads schedule history through the generated query option', () => {
-    const schedules = useMesSchedules()
-    schedules.filters.skip = 5
-    schedules.filters.take = 25
-
-    coladaState.queryFactoriesById.get('listBusinessConsoleMesScheduleResults')?.()
-
-    expect(listBusinessConsoleMesScheduleResultsQueryOptions).toHaveBeenCalledWith({
-      query: expect.objectContaining({ skip: 5, take: 25 }),
-    })
-
-    // 业务上下文为空时不发请求（页面给空态，不是反复失败的请求）。
-    schedules.filters.organizationId = ''
-    expect(
-      coladaState.queryFactoriesById.get('listBusinessConsoleMesScheduleResults')?.(),
-    ).toMatchObject({ enabled: false })
-  })
-
-  it('runs schedule mutations through the generated option', async () => {
-    const { runSchedule } = useMesSchedules()
-
-    await runSchedule({
-      organizationId: 'org-001',
-      environmentId: 'env-dev',
-      trigger: 'manual',
-    })
-
-    expect(runBusinessConsoleMesScheduleMutationOptions).toHaveBeenCalled()
-    expect(
-      vi.mocked(runBusinessConsoleMesScheduleMutationOptions).mock.results[0]?.value.mutation,
-    ).toHaveBeenCalledWith({
-      body: {
-        organizationId: 'org-001',
-        environmentId: 'env-dev',
-        trigger: 'manual',
-      },
-    })
-  })
-
   it('suppresses traceability queries when their required scope is empty', () => {
     const traceability = useMesTraceability()
 
@@ -1492,6 +2013,118 @@ describe('business MES composables', () => {
     expect(getBusinessConsoleMesMaterialLotTraceabilityQueryOptions).not.toHaveBeenCalledWith(
       expect.objectContaining({ path: { materialLotId: 'LOT-001' } }),
     )
+  })
+
+  it('收料受理后跨过 ReceiptPosting 再结束齐套自动读回，失败后重试只读取', async () => {
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-RECEIPT'
+    const issueData = coladaState.queryDataRefById.get(
+      'listBusinessConsoleMesMaterialIssueRequests',
+    )!
+    const issueRefetch = coladaState.queryRefetchById.get(
+      'listBusinessConsoleMesMaterialIssueRequests',
+    )!
+    issueRefetch.mockImplementation(async () => {
+      issueData.value = {
+        success: true,
+        data: {
+          items: [{ requestId: 'MIR-1', workOrderId: 'WO-RECEIPT', status: 'ReceiptPosting' }],
+        },
+      }
+    })
+    materialReadinessFetch.mockResolvedValue({
+      success: true,
+      data: { readinessStatus: 'Blocked' },
+    })
+    await detail.confirmLineSideReceipt('MIR-1', { receivedQuantity: 2 })
+    const options = coladaState.queryFactoriesById.get('getBusinessConsoleMesMaterialReadiness')!()
+    expect(detail.materialReadinessPending.value).toBe(true)
+    await options.query!({ signal: new AbortController().signal })
+    expect(options.autoRefetch!({ status: 'success' })).toBe(1000)
+    expect(detail.materialReadinessPending.value).toBe(true)
+    issueRefetch.mockImplementation(async () => {
+      issueData.value = {
+        success: true,
+        data: {
+          items: [{ requestId: 'MIR-1', workOrderId: 'WO-RECEIPT', status: 'PartiallyReceived' }],
+        },
+      }
+    })
+    materialReadinessFetch.mockRejectedValueOnce(new Error('读取齐套失败'))
+    await expect(options.query!({ signal: new AbortController().signal })).rejects.toThrow(
+      '读取齐套失败',
+    )
+    expect(options.autoRefetch!({ status: 'error' })).toBe(false)
+    expect(detail.materialReadinessPending.value).toBe(true)
+    expect(await options.query!({ signal: new AbortController().signal })).toMatchObject({
+      data: { readinessStatus: 'Blocked' },
+    })
+    expect(detail.materialReadinessPending.value).toBe(false)
+    expect(options.autoRefetch!({ status: 'success' })).toBe(false)
+  })
+
+  it('收料POST已受理后，齐套读取失败不把受理结果改为失败且重试不重复POST', async () => {
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-RECEIPT'
+    coladaState.invalidateQueries.mockImplementation(async (_options, refetchActive) => {
+      if (refetchActive !== false) throw new Error('齐套GET失败')
+    })
+    const readinessRefetch = coladaState.queryRefetchById.get(
+      'getBusinessConsoleMesMaterialReadiness',
+    )!
+    readinessRefetch.mockImplementation(async () => {
+      coladaState.queryErrorRefById.get('getBusinessConsoleMesMaterialReadiness')!.value =
+        new Error('齐套GET失败')
+    })
+    await expect(
+      detail.confirmLineSideReceipt('MIR-1', { receivedQuantity: 2 }),
+    ).resolves.toMatchObject({ success: true })
+    expect(detail.materialReadinessError.value).toEqual(new Error('齐套GET失败'))
+    await detail.refreshMaterialReadiness()
+    expect(readinessRefetch).toHaveBeenCalledTimes(2)
+    const options = vi.mocked(confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions).mock
+      .results[0]!.value
+    expect(options.mutation).toHaveBeenCalledTimes(1)
+  })
+
+  it('同工单A仍在过账时B先完成，继续跟踪直到A完成并读取最新齐套', async () => {
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-RECEIPT'
+    const issueData = coladaState.queryDataRefById.get(
+      'listBusinessConsoleMesMaterialIssueRequests',
+    )!
+    const issueRefetch = coladaState.queryRefetchById.get(
+      'listBusinessConsoleMesMaterialIssueRequests',
+    )!
+    let aStatus = 'ReceiptPosting'
+    issueRefetch.mockImplementation(async () => {
+      issueData.value = {
+        success: true,
+        data: {
+          items: [
+            { requestId: 'MIR-A', workOrderId: 'WO-RECEIPT', status: aStatus },
+            { requestId: 'MIR-B', workOrderId: 'WO-RECEIPT', status: 'Received' },
+          ],
+        },
+      }
+    })
+    materialReadinessFetch.mockResolvedValue({
+      success: true,
+      data: { readinessStatus: 'Blocked' },
+    })
+    await detail.confirmLineSideReceipt('MIR-A', { receivedQuantity: 2 })
+    await detail.confirmLineSideReceipt('MIR-B', { receivedQuantity: 2 })
+    const options = coladaState.queryFactoriesById.get('getBusinessConsoleMesMaterialReadiness')!()
+    await options.query!({ signal: new AbortController().signal })
+    expect(detail.materialReadinessPending.value).toBe(true)
+    expect(options.autoRefetch!({ status: 'success' })).toBe(1000)
+    aStatus = 'Received'
+    materialReadinessFetch.mockResolvedValue({ success: true, data: { readinessStatus: 'Ready' } })
+    expect(await options.query!({ signal: new AbortController().signal })).toMatchObject({
+      data: { readinessStatus: 'Ready' },
+    })
+    expect(detail.materialReadinessPending.value).toBe(false)
+    expect(options.autoRefetch!({ status: 'success' })).toBe(false)
   })
 
   it('cancels a work order with the reason payload and invalidates MES + inventory queries', async () => {
@@ -1555,21 +2188,112 @@ describe('business MES composables', () => {
     )
   })
 
-  it('requires and forwards the selected manage scope for work-order release', async () => {
+  it('holds a work order with the reason through the selected manage scope and refreshes MES reads', async () => {
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-HOLD'
+    vi.mocked(getBusinessConsoleMesWorkOrderDetailQueryOptions).mockClear()
+
+    await detail.holdWorkOrder('设备异常，等待维修确认')
+
+    expect(getBusinessConsoleMesWorkOrderDetailQueryOptions).toHaveBeenCalledWith({
+      path: { workOrderId: 'WO-HOLD' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'work-center',
+        scopeId: 'WC-A',
+      },
+    })
+    expect(holdBusinessConsoleMesWorkOrder).toHaveBeenCalledWith({
+      path: { workOrderId: 'WO-HOLD' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'work-center',
+        scopeId: 'WC-A',
+      },
+      body: { reason: '设备异常，等待维修确认' },
+      throwOnError: false,
+    })
+    const invalidationCalls = coladaState.invalidateQueries.mock.calls
+    const expectedInvalidatedIds = [
+      'getBusinessConsoleMesWorkOrderDetail',
+      'listBusinessConsoleMesWorkOrders',
+      'getBusinessConsoleMesOverview',
+      'getBusinessConsoleMesWipSummary',
+      'listBusinessConsoleMesOperationTasks',
+      'listBusinessConsoleMesDispatchTasks',
+    ]
+    expect(
+      expectedInvalidatedIds.filter((id) =>
+        invalidationCalls.some(([options]) => options.predicate({ key: [{ _id: id }] })),
+      ),
+    ).toEqual(expectedInvalidatedIds)
+    expect(invalidationCalls).toHaveLength(expectedInvalidatedIds.length)
+  })
+
+  it('rejects manual hold when the submit-time work-order status is terminal', async () => {
+    workOrderDetailQuery.mockResolvedValueOnce({
+      success: true,
+      data: { workOrderId: 'WO-HOLD', status: 'Closed' },
+    })
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-HOLD'
+
+    await expect(detail.holdWorkOrder('设备异常，等待维修确认')).rejects.toThrow(
+      '状态已被其他操作更新',
+    )
+
+    expect(workOrderDetailQuery).toHaveBeenCalledTimes(1)
+    expect(holdBusinessConsoleMesWorkOrder).not.toHaveBeenCalled()
+    expect(coladaState.invalidateQueries).not.toHaveBeenCalled()
+  })
+
+  it('preflights and releases the exact work order through the selected manage scope', async () => {
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.work-orders.read',
+      {
+        success: true,
+        data: { selectedScope: { kind: 'work-center', id: 'WC-READ' } },
+      },
+    )
     coladaState.queryDataById.set(
       'getBusinessConsolePrincipalWorkContext:business.mes.work-orders.manage',
       {
         success: true,
-        data: { selectedScope: { kind: 'work-center', id: 'WC-MANAGE' } },
+        data: {
+          principal: { id: 'user-001' },
+          selectedScope: { kind: 'workshop', id: 'WS-MANAGE' },
+          authorizedScopes: [
+            { kind: 'workshop', id: 'WS-MANAGE' },
+            { kind: 'work-center', id: 'WC-READ' },
+          ],
+          coveredWorkCenters: [{ id: 'WC-READ', workshopId: 'WS-MANAGE' }],
+        },
       },
     )
     const workOrders = useMesWorkOrders()
+    vi.mocked(getBusinessConsoleMesWorkOrderDetailQueryOptions).mockClear()
+
+    await expect(workOrders.readWorkOrderForRelease('WO-RELEASE')).resolves.toMatchObject({
+      workOrderId: 'WO-RELEASE',
+      status: 'Created',
+      productionVersionId: 'PV-1',
+    })
+    expect(getBusinessConsoleMesWorkOrderDetailQueryOptions).toHaveBeenCalledWith({
+      path: { workOrderId: 'WO-RELEASE' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        scopeKind: 'work-center',
+        scopeId: 'WC-READ',
+      },
+    })
 
     await workOrders.releaseWorkOrder('WO-RELEASE', {
       organizationId: 'org-001',
       environmentId: 'env-dev',
       confirmWarnings: true,
-      idempotencyKey: 'release-key',
     })
 
     const mutation = vi
@@ -1581,8 +2305,149 @@ describe('business MES composables', () => {
         query: {
           organizationId: 'org-001',
           environmentId: 'env-dev',
-          scopeKind: 'work-center',
-          scopeId: 'WC-MANAGE',
+          scopeKind: 'workshop',
+          scopeId: 'WS-MANAGE',
+        },
+      }),
+    )
+    expect(getBusinessConsoleMesWorkOrderDetailQueryOptions).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not release when the submit-time detail becomes blocked', async () => {
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.work-orders.read',
+      {
+        success: true,
+        data: { selectedScope: { kind: 'work-center', id: 'WC-READ' } },
+      },
+    )
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.work-orders.manage',
+      {
+        success: true,
+        data: {
+          principal: { id: 'user-001' },
+          selectedScope: { kind: 'workshop', id: 'WS-MANAGE' },
+          authorizedScopes: [
+            { kind: 'workshop', id: 'WS-MANAGE' },
+            { kind: 'work-center', id: 'WC-READ' },
+          ],
+          coveredWorkCenters: [{ id: 'WC-READ', workshopId: 'WS-MANAGE' }],
+        },
+      },
+    )
+    const ready = {
+      success: true,
+      data: {
+        workOrderId: 'WO-RELEASE',
+        status: 'Created',
+        productionVersionId: 'PV-1',
+        operationTasks: [
+          {
+            status: 'queued',
+            workCenterId: 'WC-READ',
+            blockReasons: [],
+            evaluatedAtUtc: '2026-08-25T00:00:00.000Z',
+          },
+        ],
+        qualityHolds: [],
+      },
+    }
+    const blocked = {
+      success: true,
+      data: {
+        ...ready.data,
+        operationTasks: [
+          {
+            ...ready.data.operationTasks[0],
+            blockReasons: ['MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照'],
+          },
+        ],
+      },
+    }
+    workOrderDetailQuery.mockResolvedValueOnce(ready).mockResolvedValueOnce(blocked)
+    const workOrders = useMesWorkOrders()
+
+    await expect(workOrders.readWorkOrderForRelease('WO-RELEASE')).resolves.toBeTruthy()
+    await expect(
+      workOrders.releaseWorkOrder('WO-RELEASE', {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        confirmWarnings: true,
+      }),
+    ).rejects.toThrow('齐套快照缺失')
+
+    const mutation = vi
+      .mocked(releaseBusinessConsoleMesWorkOrderMutationOptions)
+      .mock.results.at(-1)?.value.mutation as ReturnType<typeof vi.fn>
+    expect(workOrderDetailQuery).toHaveBeenCalledTimes(2)
+    expect(mutation).not.toHaveBeenCalled()
+  })
+
+  it('rejects a target outside the selected manage scope before release', async () => {
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.work-orders.read',
+      {
+        success: true,
+        data: { selectedScope: { kind: 'work-center', id: 'WC-READ' } },
+      },
+    )
+    coladaState.queryDataById.set(
+      'getBusinessConsolePrincipalWorkContext:business.mes.work-orders.manage',
+      {
+        success: true,
+        data: {
+          principal: { id: 'user-001' },
+          selectedScope: { kind: 'work-center', id: 'WC-OTHER' },
+          authorizedScopes: [{ kind: 'work-center', id: 'WC-OTHER' }],
+          coveredWorkCenters: [{ id: 'WC-OTHER', workshopId: 'WS-OTHER' }],
+        },
+      },
+    )
+    const workOrders = useMesWorkOrders()
+
+    await expect(workOrders.readWorkOrderForRelease('WO-RELEASE')).rejects.toThrow(
+      '不在所选管理范围',
+    )
+
+    const mutation = vi
+      .mocked(releaseBusinessConsoleMesWorkOrderMutationOptions)
+      .mock.results.at(-1)?.value.mutation as ReturnType<typeof vi.fn>
+    expect(mutation).not.toHaveBeenCalled()
+  })
+
+  it('closes a work order and records an engineering decision through the manage scope', async () => {
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-1953'
+
+    await detail.closeWorkOrder()
+    await detail.recordEngineeringChangeDecision({
+      changeNumber: 'ECO-1953-001',
+      decision: 'continue-with-archived-version',
+      reason: '当前批次继续使用现行版本，待下批次切换。',
+    })
+
+    expect(
+      vi.mocked(closeBusinessConsoleMesWorkOrderMutationOptions).mock.results.at(-1)?.value
+        .mutation,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { workOrderId: 'WO-1953' },
+        query: expect.objectContaining({ scopeKind: 'work-center', scopeId: 'WC-A' }),
+        body: {},
+      }),
+    )
+    expect(
+      vi
+        .mocked(recordBusinessConsoleMesEngineeringChangeDecisionMutationOptions)
+        .mock.results.at(-1)?.value.mutation,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { workOrderId: 'WO-1953' },
+        body: {
+          changeNumber: 'ECO-1953-001',
+          decision: 'continue-with-archived-version',
+          reason: '当前批次继续使用现行版本，待下批次切换。',
         },
       }),
     )
@@ -1736,5 +2601,604 @@ describe('business MES composables', () => {
     ready.filters.workOrderId = 'WO-CANCEL'
     ready.activateCancelPreview()
     expect(ready.cancelPreviewReady.value).toBe(true)
+  })
+
+  // 状态字面量取运行时真实值（MES 域 MaterialIssueRequest 常量，#3912）；camelCase 变体运行时不可达。
+  it('只把 Received 且仍有余量的批次提供给报工表单', () => {
+    reactiveAuthState.principal = {
+      ...reactiveAuthState.principal,
+      permissionCodes: ['business.mes.materials.read'],
+    }
+    coladaState.queryDataById.set('listBusinessConsoleMesMaterialIssueRequests', {
+      success: true,
+      data: {
+        items: [
+          {
+            requestId: 'MIR-RECEIVED',
+            materialId: 'MAT-1',
+            materialLotId: 'LOT-1',
+            receivedQuantity: 10,
+            consumedQuantity: 2,
+            status: 'Received',
+          },
+          {
+            requestId: 'MIR-PARTIAL',
+            materialId: 'MAT-2',
+            materialLotId: 'LOT-2',
+            receivedQuantity: 10,
+            consumedQuantity: 2,
+            status: 'PartiallyReceived',
+          },
+          {
+            requestId: 'MIR-FAILED',
+            materialId: 'MAT-3',
+            materialLotId: 'LOT-3',
+            receivedQuantity: 10,
+            consumedQuantity: 2,
+            status: 'InventoryPostingFailed',
+          },
+        ],
+      },
+    })
+
+    const result = useMesProductionMaterialLots(() => ({
+      workOrderId: 'WO-1',
+      operationTaskId: 'OP-1',
+    }))
+
+    expect(result.availableMaterialLots.value.map((row) => row.requestId)).toEqual(['MIR-RECEIVED'])
+  })
+
+  it('首次请求身份正确但 payload 页码错误时失败关闭', () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: {
+        items: [
+          { siteCode: 'SITE-A', locationCode: 'LINE-A', skuCode: 'SKU-WRONG', uomCode: 'pcs' },
+        ],
+        totalCount: 1,
+        page: 2,
+        pageSize: 200,
+      },
+    })
+    const result = useMesLineSideInventoryBalances()
+
+    expect(result.lineSideInventoryBalances.value).toEqual([])
+    expect(result.lineSideInventoryReady.value).toBe(false)
+    expect(result.lineSideInventoryError.value).toEqual(
+      expect.objectContaining({ message: '线边库存响应页码与请求不一致，请重试。' }),
+    )
+    expect(result.lineSideInventoryPending.value).toBe(false)
+    expect(result.lineSideInventoryTotal.value).toBe(0)
+  })
+
+  it('翻页后带当前请求身份的迟到错页 payload 不得投影', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: { items: [], totalCount: 401, page: 1, pageSize: 200 },
+    })
+    lineSideInventoryFetch.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          items: [
+            { siteCode: 'SITE-A', locationCode: 'LINE-A', skuCode: 'SKU-LATE', uomCode: 'pcs' },
+          ],
+          totalCount: 401,
+          page: 1,
+          pageSize: 200,
+        },
+      },
+    })
+    const result = useMesLineSideInventoryBalances()
+
+    result.nextLineSideInventoryPage()
+    const options = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    const lateWrongPage = await options?.query?.({ signal: new AbortController().signal })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      lateWrongPage
+
+    expect(result.lineSideInventoryPage.value).toBe(2)
+    expect(result.lineSideInventoryBalances.value).toEqual([])
+    expect(result.lineSideInventoryReady.value).toBe(false)
+    expect(result.lineSideInventoryError.value).toEqual(
+      expect.objectContaining({ message: '线边库存响应页码与请求不一致，请重试。' }),
+    )
+    expect(result.lineSideInventoryPending.value).toBe(false)
+    expect(result.lineSideInventoryTotal.value).toBe(401)
+    expect(result.lineSideInventoryPageCount.value).toBe(3)
+
+    result.previousLineSideInventoryPage()
+    expect(result.lineSideInventoryPage.value).toBe(1)
+  })
+
+  it('切换组织环境时同页旧响应立即失效', () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: {
+        items: [{ siteCode: 'SITE-A', locationCode: 'LINE-A', skuCode: 'SKU-OLD', uomCode: 'pcs' }],
+        totalCount: 1,
+        page: 1,
+        pageSize: 200,
+      },
+    })
+    const result = useMesLineSideInventoryBalances()
+    const context = useBusinessContextStore()
+
+    expect(result.lineSideInventoryBalances.value.map((item) => item.skuCode)).toEqual(['SKU-OLD'])
+
+    context.patchContext({ organizationId: 'org-002', environmentId: 'env-prod' })
+
+    expect(result.lineSideInventoryPage.value).toBe(1)
+    expect(result.lineSideInventoryBalances.value).toEqual([])
+    expect(result.lineSideInventoryTotal.value).toBe(0)
+    expect(result.lineSideInventoryReady.value).toBe(false)
+    coladaState.queryFactoriesById.get('listBusinessConsoleMesLineSideInventoryBalances')?.()
+    expect(listBusinessConsoleMesLineSideInventoryBalancesQueryOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({
+          organizationId: 'org-002',
+          environmentId: 'env-prod',
+          page: 1,
+        }),
+      }),
+    )
+  })
+
+  it('分页请求报错后仍可退回上一页', () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: { items: [], totalCount: 401, page: 1, pageSize: 200 },
+    })
+    const result = useMesLineSideInventoryBalances()
+
+    result.nextLineSideInventoryPage()
+    expect(result.lineSideInventoryPage.value).toBe(2)
+    coladaState.queryErrorRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      new Error('第 2 页加载失败')
+
+    expect(result.lineSideInventoryError.value).toEqual(
+      expect.objectContaining({ message: '第 2 页加载失败' }),
+    )
+    expect(result.lineSideInventoryTotal.value).toBe(401)
+    expect(result.lineSideInventoryPageCount.value).toBe(3)
+    result.previousLineSideInventoryPage()
+    expect(result.lineSideInventoryPage.value).toBe(1)
+  })
+
+  it('总量收缩使当前页越界时回到最后有效页并忽略迟到旧页', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: { items: [], totalCount: 401, page: 1, pageSize: 200 },
+    })
+    let resolveCorrectedPage!: (value: {
+      data: {
+        success: boolean
+        data: {
+          items: Array<{
+            siteCode: string
+            locationCode: string
+            skuCode: string
+            uomCode: string
+          }>
+          totalCount: number
+          page: number
+          pageSize: number
+        }
+      }
+    }) => void
+    const correctedPage = new Promise<Parameters<typeof resolveCorrectedPage>[0]>((resolve) => {
+      resolveCorrectedPage = resolve
+    })
+    lineSideInventoryFetch
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: { items: [], totalCount: 200, page: 2, pageSize: 200 },
+        },
+      })
+      .mockImplementationOnce(() => correctedPage)
+    const result = useMesLineSideInventoryBalances()
+
+    result.nextLineSideInventoryPage()
+    const pageTwoOptions = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    const shrunkenPageTwo = await pageTwoOptions?.query?.({
+      signal: new AbortController().signal,
+    })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      shrunkenPageTwo
+
+    expect(result.lineSideInventoryPage.value).toBe(1)
+    expect(coladaState.invalidateQueries).toHaveBeenCalledWith(
+      {
+        exact: true,
+        key: [
+          { _id: 'listBusinessConsoleMesLineSideInventoryBalances', page: 1 },
+          'scope-page:org-001:env-dev:page:1',
+        ],
+      },
+      false,
+    )
+    expect(result.lineSideInventoryPending.value).toBe(true)
+    expect(result.lineSideInventoryBalances.value).toEqual([])
+
+    const correctedOptions = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    const correctedRequest = correctedOptions?.query?.({ signal: new AbortController().signal })
+    expect(lineSideInventoryFetch).toHaveBeenCalledTimes(2)
+    expect(listBusinessConsoleMesLineSideInventoryBalancesQueryOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: expect.objectContaining({ page: 1, pageSize: 200 }) }),
+    )
+
+    // 页码已校正后，迟到的 page 2 响应不得再投影或改写当前页。
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      shrunkenPageTwo
+    expect(result.lineSideInventoryPage.value).toBe(1)
+    expect(result.lineSideInventoryBalances.value).toEqual([])
+
+    resolveCorrectedPage({
+      data: {
+        success: true,
+        data: {
+          items: [
+            { siteCode: 'SITE-1', locationCode: 'LINE-1', skuCode: 'SKU-VALID', uomCode: 'pcs' },
+          ],
+          totalCount: 200,
+          page: 1,
+          pageSize: 200,
+        },
+      },
+    })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      await correctedRequest
+    await vi.waitFor(() => {
+      expect(result.lineSideInventoryBalances.value.map((item) => item.skuCode)).toEqual([
+        'SKU-VALID',
+      ])
+      expect(result.lineSideInventoryPending.value).toBe(false)
+    })
+  })
+
+  it('校正期间切换组织环境后只投影新 scope 并解锁 pending', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: { items: [], totalCount: 401, page: 1, pageSize: 200 },
+    })
+    lineSideInventoryFetch
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: [], totalCount: 200, page: 2, pageSize: 200 } },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              { siteCode: 'SITE-B', locationCode: 'LINE-B', skuCode: 'SKU-NEW', uomCode: 'pcs' },
+            ],
+            totalCount: 1,
+            page: 1,
+            pageSize: 200,
+          },
+        },
+      })
+    const result = useMesLineSideInventoryBalances()
+
+    result.nextLineSideInventoryPage()
+    const pageTwoOptions = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    const oldScopePageTwo = await pageTwoOptions?.query?.({
+      signal: new AbortController().signal,
+    })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      oldScopePageTwo
+    expect(result.lineSideInventoryPending.value).toBe(true)
+
+    useBusinessContextStore().patchContext({ organizationId: 'org-002', environmentId: 'env-prod' })
+    const newScopeOptions = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    const newScopePageOne = await newScopeOptions?.query?.({
+      signal: new AbortController().signal,
+    })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      newScopePageOne
+
+    expect(lineSideInventoryFetch).toHaveBeenCalledTimes(2)
+    expect(result.lineSideInventoryBalances.value.map((item) => item.skuCode)).toEqual(['SKU-NEW'])
+    expect(result.lineSideInventoryPending.value).toBe(false)
+
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      oldScopePageTwo
+    expect(result.lineSideInventoryBalances.value).toEqual([])
+    expect(result.lineSideInventoryPending.value).toBe(false)
+  })
+
+  it('校正目标页请求失败后解锁 pending 并显示错误', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: { items: [], totalCount: 401, page: 1, pageSize: 200 },
+    })
+    lineSideInventoryFetch
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: [], totalCount: 200, page: 2, pageSize: 200 } },
+      })
+      .mockRejectedValueOnce(new Error('校正页加载失败'))
+    const result = useMesLineSideInventoryBalances()
+
+    result.nextLineSideInventoryPage()
+    const pageTwoOptions = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    const shrunkenPageTwo = await pageTwoOptions?.query?.({
+      signal: new AbortController().signal,
+    })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      shrunkenPageTwo
+    expect(result.lineSideInventoryPending.value).toBe(true)
+
+    const correctedOptions = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    await expect(
+      correctedOptions?.query?.({ signal: new AbortController().signal }),
+    ).rejects.toThrow('校正页加载失败')
+    coladaState.queryErrorRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      new Error('校正页加载失败')
+
+    expect(result.lineSideInventoryPending.value).toBe(false)
+    expect(result.lineSideInventoryError.value).toEqual(
+      expect.objectContaining({ message: '校正页加载失败' }),
+    )
+    expect(result.lineSideInventoryPage.value).toBe(1)
+  })
+
+  it('未缓存目标页校正只由响应式 query key 发起一次请求', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: { items: [], totalCount: 1001, page: 1, pageSize: 200 },
+    })
+    const targetPage = new Promise<never>(() => undefined)
+    lineSideInventoryFetch
+      .mockResolvedValueOnce({
+        data: { success: true, data: { items: [], totalCount: 401, page: 5, pageSize: 200 } },
+      })
+      .mockImplementation(() => targetPage)
+    const result = useMesLineSideInventoryBalances()
+
+    result.goToLineSideInventoryPage(5)
+    const pageFiveOptions = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    const shrunkenPageFive = await pageFiveOptions?.query?.({
+      signal: new AbortController().signal,
+    })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      shrunkenPageFive
+
+    expect(result.lineSideInventoryPage.value).toBe(3)
+    const pageThreeOptions = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    const autoController = new AbortController()
+    void pageThreeOptions?.query?.({ signal: autoController.signal })
+    await nextTick()
+
+    expect(lineSideInventoryFetch).toHaveBeenCalledTimes(2)
+    expect(lineSideInventoryFetch.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({ signal: autoController.signal }),
+    )
+    expect(result.lineSideInventoryPending.value).toBe(true)
+  })
+
+  it('通过服务端分页访问第 201 条线边库存且把页码纳入请求身份', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: true,
+      data: {
+        items: [{ siteCode: 'SITE-1', locationCode: 'LINE-1', skuCode: 'SKU-001', uomCode: 'pcs' }],
+        totalCount: 401,
+        page: 1,
+        pageSize: 200,
+      },
+    })
+    lineSideInventoryFetch
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              { siteCode: 'SITE-1', locationCode: 'LINE-2', skuCode: 'SKU-201', uomCode: 'pcs' },
+            ],
+            totalCount: 401,
+            page: 2,
+            pageSize: 200,
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              { siteCode: 'SITE-1', locationCode: 'LINE-3', skuCode: 'SKU-401', uomCode: 'pcs' },
+            ],
+            totalCount: 401,
+            page: 3,
+            pageSize: 200,
+          },
+        },
+      })
+
+    const result = useMesLineSideInventoryBalances()
+    const pageOneKey = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.().key
+
+    expect(result.lineSideInventoryPage.value).toBe(1)
+    expect(result.lineSideInventoryPageSize).toBe(200)
+    expect(result.lineSideInventoryPageCount.value).toBe(3)
+    expect(result.lineSideInventoryHasNextPage.value).toBe(true)
+
+    result.nextLineSideInventoryPage()
+    result.nextLineSideInventoryPage()
+    expect(result.lineSideInventoryPage.value).toBe(2)
+    const options = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    expect(listBusinessConsoleMesLineSideInventoryBalancesQueryOptions).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({ page: 2, pageSize: 200 }),
+      }),
+    )
+    expect(options?.key).toEqual([
+      { _id: 'listBusinessConsoleMesLineSideInventoryBalances', page: 2 },
+      'scope-page:org-001:env-dev:page:2',
+    ])
+    expect(options?.key).not.toEqual(pageOneKey)
+    const pageTwo = await options?.query?.({ signal: new AbortController().signal })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      pageTwo
+
+    expect(result.lineSideInventoryBalances.value.map((item) => item.skuCode)).toEqual(['SKU-201'])
+    expect(result.lineSideInventoryHasPreviousPage.value).toBe(true)
+    expect(result.lineSideInventoryHasNextPage.value).toBe(true)
+
+    result.nextLineSideInventoryPage()
+    const pageThreeOptions = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleMesLineSideInventoryBalances',
+    )?.()
+    const pageThree = await pageThreeOptions?.query?.({ signal: new AbortController().signal })
+    coladaState.queryDataRefById.get('listBusinessConsoleMesLineSideInventoryBalances')!.value =
+      pageThree
+    expect(result.lineSideInventoryBalances.value.map((item) => item.skuCode)).toEqual(['SKU-401'])
+    expect(result.lineSideInventoryHasNextPage.value).toBe(false)
+
+    result.previousLineSideInventoryPage()
+    result.previousLineSideInventoryPage()
+    expect(result.lineSideInventoryPage.value).toBe(2)
+
+    useBusinessContextStore().patchContext({ organizationId: 'org-002', environmentId: 'env-prod' })
+    expect(result.lineSideInventoryPage.value).toBe(1)
+  })
+
+  it('把 HTTP 200 success:false 失败关闭且刷新重新执行公开 query', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleMesLineSideInventoryBalances', {
+      success: false,
+      message: '库存读模型暂不可用',
+    })
+    lineSideInventoryFetch
+      .mockResolvedValueOnce({ data: { success: false, message: '刷新仍失败' } })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            items: [
+              { siteCode: 'SITE-1', locationCode: 'LINE-1', skuCode: 'SKU-OK', uomCode: 'pcs' },
+            ],
+            totalCount: 1,
+            page: 1,
+            pageSize: 200,
+          },
+        },
+      })
+
+    const result = useMesLineSideInventoryBalances()
+
+    expect(result.lineSideInventoryError.value).toEqual(
+      expect.objectContaining({ message: '库存读模型暂不可用' }),
+    )
+    expect(result.lineSideInventoryBalances.value).toEqual([])
+
+    await result.refreshLineSideInventory()
+    expect(lineSideInventoryFetch).toHaveBeenCalledTimes(1)
+    expect(result.lineSideInventoryError.value).toEqual(
+      expect.objectContaining({ message: '刷新仍失败' }),
+    )
+
+    await result.refreshLineSideInventory()
+    expect(lineSideInventoryFetch).toHaveBeenCalledTimes(2)
+    expect(result.lineSideInventoryError.value).toBeNull()
+    expect(result.lineSideInventoryBalances.value.map((item) => item.skuCode)).toEqual(['SKU-OK'])
+  })
+})
+
+describe('MES receipt inventory source', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+  it('首次登记列表请求已限定真实工单，不先读取全部登记', () => {
+    useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    useMesFinishedGoodsReceipts({ workOrderId: 'WO-001', requestNo: 'FGR-001' })
+    expect(listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions).toHaveBeenLastCalledWith(
+      {
+        query: expect.objectContaining({ workOrderId: 'WO-001', keyword: 'FGR-001' }),
+      },
+    )
+  })
+  it('以真实 FGR 与工单及当前组织环境读取来源', () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-4414', environmentId: 'env-4414' })
+    useMesReceiptInventorySource(() => ({ requestNo: 'FGR-001', workOrderId: 'WO-001' }))
+    expect(
+      getBusinessConsoleMesFinishedGoodsReceiptInventoryLinkQueryOptions,
+    ).toHaveBeenLastCalledWith({
+      path: { requestNo: 'FGR-001' },
+      query: { organizationId: 'org-4414', environmentId: 'env-4414', workOrderId: 'WO-001' },
+    })
+  })
+})
+
+describe('历史产出与入库候选消费边界', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    coladaState.queryDataById.clear()
+    coladaState.queryErrorById.clear()
+    vi.mocked(listBusinessConsoleMesHistoricalProducedLotsQueryOptions).mockClear()
+  })
+  it.each([12, 5, 0])('剩余 %s 时追溯保留历史产出，入库仍读取候选端点', (remaining) => {
+    const row = { producedLotNo: 'LOT-20261018-01', reportNo: 'PRPT-900', quantity: 12 }
+    coladaState.queryDataById.set('listBusinessConsoleMesHistoricalProducedLots', {
+      success: true,
+      data: { items: [row] },
+    })
+    coladaState.queryDataById.set('listBusinessConsoleMesReceivableProducedLots', {
+      success: true,
+      data: { items: remaining ? [{ ...row, remainingQuantity: remaining }] : [] },
+    })
+    const history = useMesWorkOrderHistoricalProducedLots(() => ' WO-20261014-000001 ')
+    const receipt = useMesWorkOrderProducedLots(() => 'WO-20261014-000001')
+    expect(history.producedLots.value).toEqual([row])
+    expect(history.producedLotsState.value).toBe('ready')
+    expect(receipt.producedLots.value.map((lot) => lot.remainingQuantity)).toEqual(
+      remaining ? [remaining] : [],
+    )
+    expect(listBusinessConsoleMesHistoricalProducedLotsQueryOptions).toHaveBeenCalledWith({
+      path: { workOrderId: 'WO-20261014-000001' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+    })
+  })
+
+  it('无工单不请求历史目录，失败时不暴露缓存目录', () => {
+    const empty = useMesWorkOrderHistoricalProducedLots(() => '')
+    expect(
+      coladaState.queryFactoriesById.get('listBusinessConsoleMesHistoricalProducedLots')?.()
+        .enabled,
+    ).toBe(false)
+    expect(empty.producedLotsState.value).toBe('idle')
+    coladaState.queryDataById.set('listBusinessConsoleMesHistoricalProducedLots', {
+      success: true,
+      data: { items: [{ producedLotNo: 'LOT-OLD' }] },
+    })
+    coladaState.queryErrorById.set('listBusinessConsoleMesHistoricalProducedLots', { status: 403 })
+    const denied = useMesWorkOrderHistoricalProducedLots(() => 'WO-20261014-000001')
+    expect(denied.producedLotsState.value).toBe('error')
+    expect(denied.producedLots.value).toEqual([])
+    expect(denied.producedLotsError.value).toEqual({ status: 403 })
   })
 })

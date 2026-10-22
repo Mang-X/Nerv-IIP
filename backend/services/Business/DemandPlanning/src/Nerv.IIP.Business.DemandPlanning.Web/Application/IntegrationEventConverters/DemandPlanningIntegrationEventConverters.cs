@@ -69,7 +69,8 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventConverter
             suggestion.AcceptedDownstreamService ?? string.Empty,
             suggestion.AcceptedDownstreamDocumentType ?? string.Empty,
             suggestion.AcceptedDownstreamDocumentId,
-            demandSourceReferences);
+            demandSourceReferences,
+            domainEvent.AssemblyParentSuggestionIds);
         return new PlanningSuggestionAcceptedIntegrationEvent(
             EventIds.New(),
             DemandPlanningIntegrationEventTypes.PlanningSuggestionAccepted,
@@ -83,6 +84,35 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventConverter
             "system:demand-planning",
             EventIds.Idempotency("planning-suggestion-accepted", suggestion.OrganizationId, suggestion.EnvironmentId, PublicId(suggestion.Id)),
             payload);
+    }
+}
+
+public sealed class SalesOrderDemandChangedForWorkOrderIntegrationEventConverter
+    : IIntegrationEventConverter<SalesOrderDemandChangedForWorkOrderDomainEvent, SalesOrderDemandChangedForWorkOrderIntegrationEvent>
+{
+    public SalesOrderDemandChangedForWorkOrderIntegrationEvent Convert(SalesOrderDemandChangedForWorkOrderDomainEvent domainEvent)
+    {
+        var suggestion = domainEvent.PlanningSuggestion;
+        return new SalesOrderDemandChangedForWorkOrderIntegrationEvent(
+            EventIds.New(),
+            DemandPlanningIntegrationEventTypes.SalesOrderDemandChangedForWorkOrder,
+            DemandPlanningIntegrationEventVersions.V1,
+            DateTimeOffset.UtcNow,
+            DemandPlanningIntegrationEventSources.BusinessDemandPlanning,
+            "system:demand-planning",
+            domainEvent.SalesOrderId,
+            suggestion.OrganizationId,
+            suggestion.EnvironmentId,
+            "system:demand-planning",
+            EventIds.Idempotency("sales-order-demand-changed", suggestion.OrganizationId, suggestion.EnvironmentId,
+                PublicId(suggestion.Id), domainEvent.DemandSourceReference, domainEvent.OrderVersion.ToString()),
+            new SalesOrderDemandChangedForWorkOrderPayload(
+                PublicId(suggestion.Id),
+                suggestion.AcceptedDownstreamDocumentId!,
+                domainEvent.DemandSourceReference,
+                domainEvent.SalesOrderId,
+                domainEvent.OrderVersion,
+                domainEvent.Cancelled));
     }
 }
 

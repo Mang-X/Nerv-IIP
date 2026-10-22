@@ -41,7 +41,6 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
       resolveWorkshop: () => undefined,
       resolveLine: () => undefined,
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
-      deviceByCode: emptyIndex,
       locationByCode: emptyIndex,
       workCenterByCode: emptyIndex,
       teamByCode: emptyIndex,
@@ -126,7 +125,7 @@ describe('MES index page', () => {
     myScopeState.scope = { kind: 'team', id: 'TEAM-A', displayName: '注塑一班' }
     myScopeState.scopeMessage = ''
     myScopeState.readState = 'ready'
-    myScopeState.totals = { queued: 0, inProgress: 0, paused: 0, scheduleInvalidated: 0 }
+    myScopeState.totals = { Queued: 0, InProgress: 0, Paused: 0, ScheduleInvalidated: 0 }
   })
 
   function mountPage() {
@@ -178,7 +177,7 @@ describe('MES index page', () => {
     for (const claim of SAFETY_CLAIMS) {
       expect(text).not.toContain(claim)
     }
-    expect(text).toContain('现场数据获取失败，无法判断当前是否存在阻塞')
+    expect(text).toContain('数据加载失败')
     expect(text).toContain('重试')
     expect(text).toContain('无法判断现场是否存在阻塞')
   })
@@ -215,29 +214,32 @@ describe('MES index page', () => {
 
     const text = mountPage().text()
 
-    expect(text).toContain('本次读取的汇总里没有阻塞')
+    expect(text).toContain('当前范围内没有阻塞')
     expect(text).toContain('进入工单与派工')
   })
 
   // 走查台账 #50：驾驶舱只有全厂总量，班组长看不到「我这一摊」。
   describe('我的班组维度', () => {
     it('按作业范围给出四个未终态计数，并写明这是谁的范围', () => {
-      myScopeState.totals = { queued: 12, inProgress: 3, paused: 5, scheduleInvalidated: 7 }
+      myScopeState.totals = { Queued: 12, InProgress: 3, Paused: 5, ScheduleInvalidated: 7 }
 
       const wrapper = mountPage()
       const text = wrapper.text()
 
       expect(text).toContain('我的班组 · 现在该干什么')
       expect(text).toContain('作业范围：注塑一班（班组）')
-      expect(text).toContain('我的范围 · 待开工')
+      expect(text).toContain('我负责的 · 待开工')
       expect(text).toContain('12')
-      expect(text).toContain('我的范围 · 进行中')
+      expect(text).toContain('我负责的 · 进行中')
       expect(text).toContain('3')
       // 暂停与排程失效此前完全漏在外面（「进行中」的文案还把 paused 一起讲了进去）。
-      expect(text).toContain('我的范围 · 已暂停')
+      expect(text).toContain('我负责的 · 已暂停')
       expect(text).toContain('5')
-      expect(text).toContain('我的范围 · 排程已失效')
+      expect(text).toContain('我负责的 · 排程已失效')
       expect(text).toContain('7')
+      // 「范围」是取数口径不是产品语义（#3735），产品语义是「我负责的这一摊」；
+      // 口径由标题下那行 `作业范围：…` 交代。旧标签不许再出现。
+      expect(text).not.toContain('我的范围 ·')
 
       const queueLink = wrapper
         .findAll('[data-router-link]')
@@ -257,7 +259,7 @@ describe('MES index page', () => {
       expect(text).not.toContain('等着报工或完工')
     })
 
-    // 全厂总量与「我的范围」并排出现，口径必须自带标注，否则两组数字会被读成同一回事。
+    // 全厂总量与「我负责的」并排出现，口径必须自带标注，否则两组数字会被读成同一回事。
     it('全厂那一条明确标注全厂口径，不再叫「在制」', () => {
       const text = mountPage().text()
 
@@ -268,7 +270,7 @@ describe('MES index page', () => {
 
     it('范围数字没读到时显占位，不拿 0 当结论', () => {
       myScopeState.readState = 'error'
-      myScopeState.totals = { queued: 12, inProgress: 3, paused: 5, scheduleInvalidated: 7 }
+      myScopeState.totals = { Queued: 12, InProgress: 3, Paused: 5, ScheduleInvalidated: 7 }
 
       const text = mountPage().text()
 

@@ -15,9 +15,19 @@ internal static class MesDomainRuleGuard
     public static void Enforce(Action mutation)
     {
         ArgumentNullException.ThrowIfNull(mutation);
-        try
+        Enforce(() =>
         {
             mutation();
+            return true;
+        });
+    }
+
+    public static T Enforce<T>(Func<T> mutation)
+    {
+        ArgumentNullException.ThrowIfNull(mutation);
+        try
+        {
+            return mutation();
         }
         catch (InvalidOperationException exception)
         {

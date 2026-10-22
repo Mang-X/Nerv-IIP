@@ -4,7 +4,7 @@ import { createAuthStore } from '@nerv-iip/auth'
 export const useAuthStore = createAuthStore({
   api: consoleAuthApi,
   messages: {
-    invalidSession: '认证服务返回了无效会话。',
+    invalidSession: '登录失败，请重试。',
     loginFailed: '无法登录。',
     unknownUser: '未知用户',
   },

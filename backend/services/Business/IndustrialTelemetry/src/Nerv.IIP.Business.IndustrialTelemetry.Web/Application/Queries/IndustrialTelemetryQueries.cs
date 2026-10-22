@@ -150,7 +150,15 @@ public sealed class GetConnectorTagCoverageQueryHandler(ApplicationDbContext dbC
         DateTimeOffset ManifestObservedAtUtc);
 }
 
-public sealed record ListTelemetryTagsQuery(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, int Skip = 0, int Take = 100) : IQuery<PagedListResponse<TelemetryTagListItem>>;
+public sealed record ListTelemetryTagsQuery(string OrganizationId, string EnvironmentId, string? DeviceAssetId, int Skip = 0, int Take = OffsetPage.DefaultTake, bool IncludeDisabled = false) : IQuery<PagedListResponse<TelemetryTagListItem>>;
+
+public sealed class ListTelemetryTagsQueryValidator : AbstractValidator<ListTelemetryTagsQuery>
+{
+    public ListTelemetryTagsQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+    }
+}
 
 public sealed record TelemetryTagListItem(
     TelemetryTagId TelemetryTagId,
@@ -164,27 +172,32 @@ public sealed record TelemetryTagListItem(
     bool IsWritable,
     decimal? ControlMinValue,
     decimal? ControlMaxValue,
-    IReadOnlyCollection<string> ControlAllowedValues);
+    IReadOnlyCollection<string> ControlAllowedValues,
+    string? DisplayName,
+    bool IsEnabled);
 
 public sealed class ListTelemetryTagsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListTelemetryTagsQuery, PagedListResponse<TelemetryTagListItem>>
 {
     public async Task<PagedListResponse<TelemetryTagListItem>> Handle(ListTelemetryTagsQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
         var query = dbContext.TelemetryTags
             .AsNoTracking()
-            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
-            .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
+            .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
+            // 停用点位默认不进目录（选择器只列在用点位）；设备的点位维护抽屉显式带 includeDisabled 看全量。
+            .Where(x => request.IncludeDisabled || x.IsEnabled);
         var total = await query.CountAsync(cancellationToken);
         // Project the raw allowed-values JSON column (ControlAllowedValues is a computed property that is
         // not translatable in LINQ) and deserialize after materialization.
         var projected = await query
             .OrderBy(x => x.DeviceAssetId)
             .ThenBy(x => x.TagKey)
-            .Select(x => new TelemetryTagProjection(x.Id, x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.ValueType, x.UnitCode, x.SamplingPolicy, x.IsWritable, x.ControlMinValue, x.ControlMaxValue, x.ControlAllowedValuesJson))
-            .Skip(request.Skip)
-            .Take(request.Take)
+            .Select(x => new TelemetryTagProjection(x.Id, x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.TagKey, x.ValueType, x.UnitCode, x.SamplingPolicy, x.IsWritable, x.ControlMinValue, x.ControlMaxValue, x.ControlAllowedValuesJson, x.DisplayName, x.IsEnabled))
+            .Skip(page.Skip)
+            .Take(page.Take)
             .ToArrayAsync(cancellationToken);
         var items = projected
             .Select(x => new TelemetryTagListItem(
@@ -199,7 +212,9 @@ public sealed class ListTelemetryTagsQueryHandler(ApplicationDbContext dbContext
                 x.IsWritable,
                 x.ControlMinValue,
                 x.ControlMaxValue,
-                DeserializeAllowedValues(x.ControlAllowedValuesJson)))
+                DeserializeAllowedValues(x.ControlAllowedValuesJson),
+                x.DisplayName,
+                x.IsEnabled))
             .ToArray();
         return new PagedListResponse<TelemetryTagListItem>(items, total);
     }
@@ -226,7 +241,9 @@ public sealed class ListTelemetryTagsQueryHandler(ApplicationDbContext dbContext
         bool IsWritable,
         decimal? ControlMinValue,
         decimal? ControlMaxValue,
-        string ControlAllowedValuesJson);
+        string ControlAllowedValuesJson,
+        string? DisplayName,
+        bool IsEnabled);
 }
 
 // Latest instantaneous tag value for the device-control write form. Sources the newest raw sample's
@@ -263,7 +280,15 @@ public sealed class GetTelemetryTagCurrentValueQueryHandler(ApplicationDbContext
     }
 }
 
-public sealed record ListAlarmRulesQuery(string? OrganizationId, string? EnvironmentId, string? DeviceAssetId, bool? IsEnabled, int Skip = 0, int Take = 100) : IQuery<PagedListResponse<AlarmRuleListItem>>;
+public sealed record ListAlarmRulesQuery(string OrganizationId, string EnvironmentId, string? DeviceAssetId, bool? IsEnabled, int Skip = 0, int Take = OffsetPage.DefaultTake) : IQuery<PagedListResponse<AlarmRuleListItem>>;
+
+public sealed class ListAlarmRulesQueryValidator : AbstractValidator<ListAlarmRulesQuery>
+{
+    public ListAlarmRulesQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+    }
+}
 
 public sealed record AlarmRuleListItem(
     AlarmRuleId AlarmRuleId,
@@ -290,10 +315,11 @@ public sealed class ListAlarmRulesQueryHandler(ApplicationDbContext dbContext)
 {
     public async Task<PagedListResponse<AlarmRuleListItem>> Handle(ListAlarmRulesQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
         var query = dbContext.AlarmRules
             .AsNoTracking()
-            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
             .Where(x => request.IsEnabled == null || x.IsEnabled == request.IsEnabled);
         var total = await query.CountAsync(cancellationToken);
@@ -319,22 +345,30 @@ public sealed class ListAlarmRulesQueryHandler(ApplicationDbContext dbContext)
                 x.MinDurationSeconds,
                 x.Priority,
                 x.UpdatedAtUtc))
-            .Skip(request.Skip)
-            .Take(request.Take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .ToArrayAsync(cancellationToken);
         return new PagedListResponse<AlarmRuleListItem>(items, total);
     }
 }
 
 public sealed record ListAlarmEventsQuery(
-    string? OrganizationId,
-    string? EnvironmentId,
+    string OrganizationId,
+    string EnvironmentId,
     string? DeviceAssetId,
     string? Status,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? DeviceAssetIds = null,
     AlarmEventId? AlarmEventId = null) : IQuery<PagedListResponse<AlarmEventListItem>>;
+
+public sealed class ListAlarmEventsQueryValidator : AbstractValidator<ListAlarmEventsQuery>
+{
+    public ListAlarmEventsQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+    }
+}
 
 public sealed record AlarmEventListItem(
     AlarmEventId AlarmEventId,
@@ -367,12 +401,13 @@ public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
 {
     public async Task<PagedListResponse<AlarmEventListItem>> Handle(ListAlarmEventsQuery request, CancellationToken cancellationToken)
     {
-        var status = NormalizeStatus(request.Status);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var status = SearchTerm.From(request.Status).Value;
         var deviceAssetIds = SplitCsv(request.DeviceAssetIds);
         var query = dbContext.AlarmEvents
             .AsNoTracking()
-            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
             .Where(x => deviceAssetIds.Count == 0 || deviceAssetIds.Contains(x.DeviceAssetId))
             .Where(x => request.AlarmEventId == null || x.Id == request.AlarmEventId);
@@ -401,8 +436,8 @@ public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
                 : 3)
             .ThenByDescending(x => x.RaisedAtUtc)
             .ThenBy(x => x.Id)
-            .Skip(request.Skip)
-            .Take(request.Take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .ToArrayAsync(cancellationToken);
         var items = alarmEvents
             .Select(x => new AlarmEventListItem(
@@ -432,12 +467,6 @@ public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
                 x.EscalationRecipientRefs))
             .ToArray();
         return new PagedListResponse<AlarmEventListItem>(items, total);
-    }
-
-    private static string? NormalizeStatus(string? status)
-    {
-        var normalized = status?.Trim().ToLowerInvariant();
-        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
 
     private static IReadOnlyCollection<string> SplitCsv(string? value)
@@ -525,7 +554,8 @@ public sealed record OeeResponse(
     decimal? QualityRate,
     decimal? OeeRate,
     bool IsDegraded,
-    IReadOnlyCollection<string> DegradedReasons);
+    IReadOnlyCollection<string> DegradedReasons,
+    decimal ChangeoverLossMinutes = 0m);
 
 public sealed record QueryRuntimeHoursQuery(
     string OrganizationId,
@@ -636,7 +666,8 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
                 ? Math.Round(availabilityRate.Value * factors.PerformanceRate.Value * factors.QualityRate.Value, 6)
                 : null,
             factors.DegradedReasons.Count > 0,
-            factors.DegradedReasons);
+            factors.DegradedReasons,
+            Math.Round(runtimeRates.ChangeoverLossMinutes, 6));
     }
 
     private static OeeProductionFactors CalculateProductionFactors(
@@ -722,12 +753,13 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
     {
         if (states.Count == 0)
         {
-            return new OeeRuntimeRates(0m, 0m, 0m);
+            return new OeeRuntimeRates(0m, 0m, 0m, 0m);
         }
 
         var totalTicks = windowEndUtc.UtcTicks - windowStartUtc.UtcTicks;
         var loadingTicks = 0L;
         var productiveRuntimeTicks = 0L;
+        var changeoverTicks = 0L;
         for (var i = 0; i < states.Count; i++)
         {
             var segmentStart = states[i].OccurredAtUtc < windowStartUtc ? windowStartUtc : states[i].OccurredAtUtc;
@@ -744,6 +776,10 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
 
             var segmentTicks = segmentEnd.UtcTicks - segmentStart.UtcTicks;
             loadingTicks += segmentTicks;
+            if (EquipmentRuntimeDeviceStates.IsChangeoverState(states[i].State))
+            {
+                changeoverTicks += segmentTicks;
+            }
             if (IsProductiveRuntimeState(states[i].State))
             {
                 productiveRuntimeTicks += segmentTicks;
@@ -752,12 +788,16 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
 
         if (loadingTicks <= 0)
         {
-            return new OeeRuntimeRates(0m, 0m, 0m);
+            return new OeeRuntimeRates(0m, 0m, 0m, decimal.Divide(changeoverTicks, TimeSpan.TicksPerMinute));
         }
 
         var availabilityRate = decimal.Divide(productiveRuntimeTicks, loadingTicks);
         var loadingRate = totalTicks <= 0 ? 0m : decimal.Divide(loadingTicks, totalTicks);
-        return new OeeRuntimeRates(availabilityRate, loadingRate, decimal.Divide(productiveRuntimeTicks, TimeSpan.TicksPerHour));
+        return new OeeRuntimeRates(
+            availabilityRate,
+            loadingRate,
+            decimal.Divide(productiveRuntimeTicks, TimeSpan.TicksPerHour),
+            decimal.Divide(changeoverTicks, TimeSpan.TicksPerMinute));
     }
 
     private static bool IsProductiveRuntimeState(string state)
@@ -770,7 +810,11 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
         return EquipmentRuntimeDeviceStates.IsPlannedDownState(state);
     }
 
-    private sealed record OeeRuntimeRates(decimal AvailabilityRate, decimal LoadingRate, decimal ProductiveRuntimeHours);
+    private sealed record OeeRuntimeRates(
+        decimal AvailabilityRate,
+        decimal LoadingRate,
+        decimal ProductiveRuntimeHours,
+        decimal ChangeoverLossMinutes);
 
     private sealed record OeeProductionFactors(
         decimal? GoodQuantity,
@@ -1230,21 +1274,43 @@ public sealed class QueryRuntimeAvailabilityQueryHandler(ApplicationDbContext db
             }
         }
 
+        // 没有状态快照的设备。快照只在样本带设备状态时才写，Modbus / MQTT / OPC UA 连接器上报的样本不带状态，
+        // 所以「没有快照」不等于「没接入」：有样本的按样本新鲜度判（新鲜不出窗口，过期发采集过期）；
+        // 快照和样本都没有，才是尚未接入采集。
         foreach (var deviceAssetId in deviceAssetIds.Where(deviceAssetId => latestStates.All(x => !string.Equals(x.DeviceAssetId, deviceAssetId, StringComparison.OrdinalIgnoreCase))))
         {
+            DateTimeOffset startUtc;
+            string reasonCode;
+            if (latestSampleByDevice.TryGetValue(deviceAssetId, out var latestSampleAtUtc))
+            {
+                var staleStartUtc = latestSampleAtUtc.AddMinutes(request.FreshnessMaxAgeMinutes);
+                if (staleStartUtc > request.WindowStartUtc)
+                {
+                    continue;
+                }
+
+                startUtc = Max(staleStartUtc, request.WindowStartUtc);
+                reasonCode = EquipmentRuntimeReasonCodes.SourceStale;
+            }
+            else
+            {
+                startUtc = request.WindowStartUtc;
+                reasonCode = EquipmentRuntimeReasonCodes.SourceNotConnected;
+            }
+
             windows.Add(new EquipmentRuntimeAvailabilityWindowContract(
                 DeviceAssetId: deviceAssetId,
                 WorkCenterId: null,
                 AvailabilityStatus: EquipmentRuntimeAvailabilityStatus.Unknown,
-                ReasonCode: EquipmentRuntimeReasonCodes.SourceStale,
+                ReasonCode: reasonCode,
                 Severity: EquipmentRuntimeSeverity.Warning,
-                StartUtc: request.WindowStartUtc,
+                StartUtc: startUtc,
                 EndUtc: request.WindowEndUtc,
                 SourceType: EquipmentRuntimeSourceType.StaleSource,
                 SourceReferenceId: deviceAssetId,
-                MessageKey: EquipmentRuntimeReasonCodes.SourceStale,
+                MessageKey: reasonCode,
                 SubstituteDeviceAssetIds: [],
-                // 这一路的 SourceReferenceId 本就是设备编码（人读），标签同值即可。
+                // 这一路没有来源单据，SourceReferenceId 就是调用方传入的设备引用（编码或公开 ID）。
                 SourceReferenceLabel: deviceAssetId));
         }
 

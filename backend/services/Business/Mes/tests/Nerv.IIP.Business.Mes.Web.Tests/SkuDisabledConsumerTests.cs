@@ -8,7 +8,6 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.MasterData;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.DemandPlanning;
 using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.Messaging.CAP;
@@ -162,7 +161,7 @@ public sealed class SkuDisabledConsumerTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var store = new InMemoryMesPlanningStore();
-        var rushHandler = new CreateRushWorkOrderCommandHandler(store, new RuleScheduler(), null, dbContext);
+        var rushHandler = new CreateRushWorkOrderCommandHandler(store, null, dbContext, routingSnapshotProvider: SingleOperationRoutingSnapshotProvider.Instance);
         await Assert.ThrowsAsync<DisabledMesSkuException>(() => rushHandler.Handle(
             RushCommand("org-001", "env-dev", "WO-BLOCKED", changedAtUtc),
             CancellationToken.None));
@@ -184,7 +183,6 @@ public sealed class SkuDisabledConsumerTests
         var codingService = new MesCodingService();
         var planHandler = new ConvertPlanToWorkOrderCommandHandler(
             dbContext,
-            new RuleScheduler(),
             codingService,
             null,
             new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),
@@ -197,7 +195,7 @@ public sealed class SkuDisabledConsumerTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var rushStore = new InMemoryMesPlanningStore();
-        var rushHandler = new CreateRushWorkOrderCommandHandler(rushStore, new RuleScheduler(), codingService, dbContext);
+        var rushHandler = new CreateRushWorkOrderCommandHandler(rushStore, codingService, dbContext, routingSnapshotProvider: SingleOperationRoutingSnapshotProvider.Instance);
         var rushCommand = RushCommand("org-001", "env-dev", "WO-RUSH-REPLAY", changedAtUtc) with
         {
             IdempotencyKey = "rush-replay-001"

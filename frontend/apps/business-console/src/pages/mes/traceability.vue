@@ -3,12 +3,13 @@ import type { EntityPickerOption, NvDataTableColumn, NvMetricStripCell } from '@
 import {
   useMesTraceability,
   useMesWorkOrders,
-  useMesWorkOrderProducedLots,
+  useMesWorkOrderHistoricalProducedLots,
 } from '@/composables/useBusinessMes'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { buildWorkOrderPickerOptions } from '@/composables/mes/workOrderPickerOptions'
 import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'
 import { labelFor, TRACE_NODE_TYPE_LABELS } from '@/data/businessLabels'
+import TraceReportLinks from '@/components/mes/TraceReportLinks.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -27,8 +28,12 @@ import {
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
-import { inlineErrorMessage } from '@/utils/notify'
+import { useAuthStore } from '@/stores/auth'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { traceWorkOrderTarget } from '@/composables/mes/traceWorkOrderLink'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+
+import { inlineErrorMessage, isForbiddenError } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -42,6 +47,45 @@ const { filters, refreshTraceability, traceability, traceabilityError, traceabil
   useMesTraceability()
 const { statusLabel } = useMesReferenceLabels()
 const route = useRoute()
+const router = useRouter()
+const reportReturnTo = computed(
+  () =>
+    router.resolve({
+      path: '/mes/traceability',
+      query: {
+        ...route.query,
+        mode: filters.mode,
+        workOrderId: filters.workOrderId,
+        batchOrSerial: filters.batchOrSerial,
+        materialLotId: filters.materialLotId,
+      },
+    }).fullPath,
+)
+const auth = useAuthStore()
+const canReadReceipts = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes('business.mes.receipts.read'),
+)
+function receiptTarget(workOrderId: string) {
+  return {
+    path: '/mes/receipts',
+    query: {
+      workOrderId,
+      traceReturn: router.resolve({
+        path: '/mes/traceability',
+        query: {
+          ...route.query,
+          mode: filters.mode,
+          workOrderId: filters.workOrderId,
+          batchOrSerial: filters.batchOrSerial,
+          materialLotId: filters.materialLotId,
+        },
+      }).fullPath,
+    },
+  }
+}
+const canReadWorkOrder = computed(
+  () => auth.principal?.permissionCodes?.includes(P.mesWorkOrdersRead) ?? false,
+)
 
 /** 选择器一页拉多少工单：足够铺满下拉，其余靠服务端搜索收敛，不做「拉全量再本地过滤」。 */
 const WORK_ORDER_PAGE_SIZE = 50
@@ -85,7 +129,38 @@ watch(
 )
 
 const nodes = computed(() => traceability.value?.nodes ?? [])
-const errorMessage = computed(() => formatError(traceabilityError.value))
+const nodeRows = computed(() =>
+  nodes.value.map((node) => {
+    const target = traceWorkOrderTarget(node, traceability.value)
+    const isWorkOrderNode = node.nodeType === 'WorkOrder' || node.nodeType === 'OperationTask'
+    const reason = isWorkOrderNode && !canReadWorkOrder.value ? '缺少工单读取权限' : target.reason
+    const to =
+      target.workOrderId && !reason
+        ? {
+            path: `/mes/work-orders/${encodeURIComponent(target.workOrderId)}`,
+            query: {
+              operationTaskId: target.operationTaskId,
+              traceOrganizationId: filters.organizationId,
+              traceEnvironmentId: filters.environmentId,
+              traceReturn: router.resolve({
+                path: '/mes/traceability',
+                query: {
+                  ...route.query,
+                  mode: filters.mode,
+                  workOrderId: filters.workOrderId,
+                  batchOrSerial: filters.batchOrSerial,
+                  materialLotId: filters.materialLotId,
+                  serialNo: undefined,
+                  batchNo: undefined,
+                },
+              }).fullPath,
+            },
+          }
+        : undefined
+    return { ...node, to, reason }
+  }),
+)
+const errorMessage = computed(() => inlineErrorMessage(traceabilityError.value))
 const batchModel = computed({
   get: () => filters.batchOrSerial ?? '',
   set: (value: string) => {
@@ -106,17 +181,25 @@ const workOrderModel = computed({
 
 // 批次/序列号没有通用目录读面，只有「某工单的产出批次」这一条权威来源；
 // 因此选了工单才能挑批次，没选工单时如实保留手工录入。
-const { producedLots, producedLotsPending } = useMesWorkOrderProducedLots(() => filters.workOrderId)
+const {
+  producedLots,
+  producedLotsPending,
+  producedLotsError,
+  producedLotsState,
+  refreshProducedLots,
+} = useMesWorkOrderHistoricalProducedLots(() => filters.workOrderId)
+const producedLotsForbidden = computed(() => isForbiddenError(producedLotsError.value))
 const producedLotOptions = computed<EntityPickerOption[]>(() =>
-  producedLots.value.map((lot) => {
+  producedLots.value.flatMap((lot) => {
+    if (!lot.producedLotNo) return []
     const hint = [
       lot.serialNo ? `序列号 ${lot.serialNo}` : '',
       lot.reportNo ? `报工 ${lot.reportNo}` : '',
-      `剩余 ${lot.remainingQuantity}`,
+      `产出 ${lot.quantity ?? 0}`,
     ]
       .filter(Boolean)
       .join(' · ')
-    return { value: lot.producedLotNo, label: lot.producedLotNo, hint }
+    return [{ value: lot.producedLotNo, label: lot.producedLotNo, hint }]
   }),
 )
 const hasWorkOrderScope = computed(() => filters.workOrderId.trim().length > 0)
@@ -131,23 +214,40 @@ const traceCells = computed<NvMetricStripCell[]>(() => [
   { key: 'edges', label: '上下游关联', value: traceability.value?.edges?.length ?? 0, unit: '条' },
 ])
 
-type NodeRow = (typeof nodes)['value'][number]
+type NodeRow = (typeof nodeRows)['value'][number]
 const columns: NvDataTableColumn<NodeRow>[] = [
-  { key: 'nodeId', header: '节点', cellClass: 'font-medium' },
+  {
+    key: 'nodeId',
+    header: '节点',
+    width: 'w-72',
+    cellClass: 'font-medium whitespace-normal break-all',
+    accessor: (r) => (r.nodeType === 'Operator' ? r.displayName : r.nodeId),
+  },
   {
     key: 'nodeType',
     header: '类型',
     width: 'w-32',
-    // 后端回 work-order / material-lot 这类码值，词表缺项时只显原码，不编造中文。
+    // 后端回 WorkOrder / MaterialLot 这类 PascalCase 码值（labelFor 会归一后查表）；
+    // 词表缺项时只显原码，不编造中文。
     accessor: (r) => labelFor(TRACE_NODE_TYPE_LABELS, r.nodeType) || '未标注',
   },
-  { key: 'displayName', header: '名称' },
+  {
+    key: 'displayName',
+    header: '名称',
+    width: 'w-64',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => r.displayName,
+  },
   { key: 'status', header: '状态', width: 'w-28' },
+  { key: 'receipts', header: '入库来源', width: 'w-48' },
+  {
+    key: 'reportDetail',
+    header: '报工详情',
+    width: 'w-80',
+    cellClass:
+      'whitespace-normal break-all [&_a]:h-auto [&_a]:max-w-full [&_a]:whitespace-normal [&_a]:text-left',
+  },
 ]
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''
@@ -196,7 +296,6 @@ function firstQuery(value: unknown) {
           title="选择工单"
           placeholder="选择工单"
           search-placeholder="搜索工单号 / 物料…"
-          source-text="数据来自制造执行工单列表"
           empty-text="当前范围内没有匹配的工单"
           :loading="workOrderCatalog.workOrdersPending.value"
           server-search
@@ -205,18 +304,27 @@ function firstQuery(value: unknown) {
           aria-label="工单号"
         />
         <NvEntityPicker
-          v-if="hasWorkOrderScope"
+          v-if="hasWorkOrderScope && producedLotsState !== 'error'"
           v-model="batchModel"
           class="w-56"
           :options="producedLotOptions"
           title="选择产出批次"
+          variant="dialog"
           placeholder="选择产出批次"
-          source-text="数据来自该工单的报工产出批次"
           empty-text="该工单还没有产出批次"
           :loading="producedLotsPending"
           clearable
           aria-label="批次或物料批"
         />
+        <span v-else-if="hasWorkOrderScope" role="alert" class="text-sm text-muted-foreground">
+          <template v-if="producedLotsForbidden"
+            >缺少追溯读取权限，无法读取产出批次，请联系管理员。</template
+          >
+          <template v-else>
+            {{ inlineErrorMessage(producedLotsError, '产出批次加载失败，请重试。') }}
+            <NvButton variant="outline" size="sm" @click="refreshProducedLots">重试</NvButton>
+          </template>
+        </span>
         <NvInput
           v-else
           v-model="batchModel"
@@ -227,17 +335,45 @@ function firstQuery(value: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <NvDataTable
       :columns="columns"
-      :rows="nodes"
+      :rows="nodeRows"
       row-key="nodeId"
       :loading="traceabilityPending"
+      :error="traceabilityError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无追溯数据。先选择查询类型并填入工单、批次/序列号或物料批，再查询它经过的工序、用料与检验记录。"
+      @retry="refreshTraceability"
     >
+      <template #cell-receipts="{ row }">
+        <template v-if="row.nodeType === 'WorkOrder' && row.status !== 'Unknown' && row.nodeId">
+          <RouterLink
+            v-if="canReadReceipts"
+            :to="receiptTarget(row.nodeId)"
+            class="text-brand hover:underline"
+          >
+            查看完工入库
+          </RouterLink>
+          <span v-else class="text-sm text-muted-foreground">无完工入库读取权限</span>
+        </template>
+      </template>
+      <template #cell-nodeId="{ row }">
+        <RouterLink v-if="row.to" :to="row.to" class="text-primary hover:underline">{{
+          row.nodeId
+        }}</RouterLink>
+        <span v-else>{{ row.nodeType === 'Operator' ? row.displayName : row.nodeId }}</span>
+        <p v-if="row.reason" class="mt-1 text-xs text-muted-foreground">{{ row.reason }}</p>
+      </template>
+      <template #cell-reportDetail="{ row }">
+        <span
+          v-if="row.nodeType === 'BatchOrSerial' && row.status === 'Unknown'"
+          class="text-sm text-muted-foreground"
+          >未找到匹配的批次/序列事实，暂无可查看详情</span
+        >
+        <TraceReportLinks v-else :node="row" :graph="traceability" :return-to="reportReturnTo" />
+      </template>
       <template #cell-status="{ row }">
         <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
       </template>

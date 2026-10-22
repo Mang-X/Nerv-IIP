@@ -8,8 +8,10 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierQuotationAggregate;
 using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
+using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Procurement;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Contracts.Erp;
 
 namespace Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 
@@ -106,6 +108,8 @@ public sealed record CreatePurchaseOrderResponse(PurchaseOrderId PurchaseOrderId
 public sealed record RequestPurchaseOrderChangeRequest(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, IReadOnlyCollection<PurchaseOrderLineChangeDraft> Lines, string? Reason = null, string StartedBy = "system:erp");
 public sealed record RequestPurchaseOrderChangeResponse(string ApprovalChainId);
 public sealed record ClosePurchaseOrderLineRequest(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, string LineNo, string Reason);
+public sealed record ReschedulePurchaseOrderLineRequest(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, string LineNo, DateOnly PromisedDate);
+public sealed record CancelPurchaseOrderLineRequest(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, string LineNo, string Reason);
 public sealed record CancelPurchaseOrderRequest(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, string Reason);
 
 public sealed record RecordPurchaseReceiptRequest(
@@ -115,9 +119,10 @@ public sealed record RecordPurchaseReceiptRequest(
     string PurchaseOrderNo,
     IReadOnlyCollection<PurchaseReceiptCommandLine> Lines,
     string? IdempotencyKey = null,
-    decimal ExchangeRate = 1m);
+    decimal ExchangeRate = 1m,
+    PurchaseReceiptInventoryPostingRoute InventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Direct);
 
-public sealed record RecordPurchaseReceiptResponse(PurchaseReceiptId PurchaseReceiptId);
+public sealed record RecordPurchaseReceiptResponse(PurchaseReceiptId PurchaseReceiptId, string PurchaseReceiptNo);
 
 public sealed record RecordSupplierInvoiceRequest(
     string OrganizationId,
@@ -356,29 +361,59 @@ public sealed class RequestPurchaseOrderChangeEndpoint(ISender sender)
     }
 }
 
-public sealed class ClosePurchaseOrderLineEndpoint(ISender sender) : ErpEndpoint<ClosePurchaseOrderLineRequest, ResponseData<string>>
+public sealed class ClosePurchaseOrderLineEndpoint(ISender sender, IErpIntegrationEventContextAccessor eventContext) : ErpEndpoint<ClosePurchaseOrderLineRequest, ResponseData<string>>
 {
     public override void Configure() => ConfigureErpContract(ErpProcurementEndpointContracts.Get<ClosePurchaseOrderLineEndpoint>());
 
     public override async Task HandleAsync(ClosePurchaseOrderLineRequest req, CancellationToken ct)
     {
+        using var causationScope = eventContext.BeginScope(ErpCommandCausationIds.ForHttpCommand(
+            "close-purchase-order-line", req.OrganizationId, req.EnvironmentId, req.PurchaseOrderNo, req.LineNo));
         await sender.Send(new ClosePurchaseOrderLineCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseOrderNo, req.LineNo, req.Reason), ct);
         await Send.OkAsync("closed".AsResponseData(), cancellation: ct);
     }
 }
 
-public sealed class CancelPurchaseOrderEndpoint(ISender sender) : ErpEndpoint<CancelPurchaseOrderRequest, ResponseData<string>>
+public sealed class ReschedulePurchaseOrderLineEndpoint(ISender sender, IErpIntegrationEventContextAccessor eventContext) : ErpEndpoint<ReschedulePurchaseOrderLineRequest, ResponseData<string>>
+{
+    public override void Configure() => ConfigureErpContract(ErpProcurementEndpointContracts.Get<ReschedulePurchaseOrderLineEndpoint>());
+
+    public override async Task HandleAsync(ReschedulePurchaseOrderLineRequest req, CancellationToken ct)
+    {
+        using var causationScope = eventContext.BeginScope(ErpCommandCausationIds.ForHttpCommand(
+            "reschedule-purchase-order-line", req.OrganizationId, req.EnvironmentId, req.PurchaseOrderNo, req.LineNo, req.PromisedDate.ToString("O")));
+        await sender.Send(new ReschedulePurchaseOrderLineCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseOrderNo, req.LineNo, req.PromisedDate), ct);
+        await Send.OkAsync("rescheduled".AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CancelPurchaseOrderLineEndpoint(ISender sender, IErpIntegrationEventContextAccessor eventContext) : ErpEndpoint<CancelPurchaseOrderLineRequest, ResponseData<string>>
+{
+    public override void Configure() => ConfigureErpContract(ErpProcurementEndpointContracts.Get<CancelPurchaseOrderLineEndpoint>());
+
+    public override async Task HandleAsync(CancelPurchaseOrderLineRequest req, CancellationToken ct)
+    {
+        using var causationScope = eventContext.BeginScope(ErpCommandCausationIds.ForHttpCommand(
+            "cancel-purchase-order-line", req.OrganizationId, req.EnvironmentId, req.PurchaseOrderNo, req.LineNo));
+        await sender.Send(new CancelPurchaseOrderLineCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseOrderNo, req.LineNo, req.Reason), ct);
+        await Send.OkAsync("cancelled".AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class CancelPurchaseOrderEndpoint(ISender sender, IErpIntegrationEventContextAccessor eventContext) : ErpEndpoint<CancelPurchaseOrderRequest, ResponseData<string>>
 {
     public override void Configure() => ConfigureErpContract(ErpProcurementEndpointContracts.Get<CancelPurchaseOrderEndpoint>());
 
     public override async Task HandleAsync(CancelPurchaseOrderRequest req, CancellationToken ct)
     {
+        using var causationScope = eventContext.BeginScope(ErpCommandCausationIds.ForHttpCommand(
+            "cancel-purchase-order", req.OrganizationId, req.EnvironmentId, req.PurchaseOrderNo));
         await sender.Send(new CancelPurchaseOrderCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseOrderNo, req.Reason), ct);
         await Send.OkAsync("cancelled".AsResponseData(), cancellation: ct);
     }
 }
 
-public sealed class RecordPurchaseReceiptEndpoint(ISender sender)
+public sealed class RecordPurchaseReceiptEndpoint(ISender sender, IErpIntegrationEventContextAccessor eventContext)
     : ErpEndpoint<RecordPurchaseReceiptRequest, ResponseData<RecordPurchaseReceiptResponse>>
 {
     public override void Configure()
@@ -388,8 +423,10 @@ public sealed class RecordPurchaseReceiptEndpoint(ISender sender)
 
     public override async Task HandleAsync(RecordPurchaseReceiptRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new RecordPurchaseReceiptCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseReceiptNo, req.PurchaseOrderNo, req.Lines, req.IdempotencyKey, req.ExchangeRate), ct);
-        await Send.OkAsync(new RecordPurchaseReceiptResponse(id).AsResponseData(), cancellation: ct);
+        using var causationScope = eventContext.BeginScope(ErpCommandCausationIds.ForHttpCommand(
+            "record-purchase-receipt", req.OrganizationId, req.EnvironmentId, req.PurchaseReceiptNo, req.PurchaseOrderNo, req.IdempotencyKey));
+        var result = await sender.Send(new RecordPurchaseReceiptCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseReceiptNo, req.PurchaseOrderNo, req.Lines, req.IdempotencyKey, req.ExchangeRate, req.InventoryPostingRoute), ct);
+        await Send.OkAsync(new RecordPurchaseReceiptResponse(result.PurchaseReceiptId, result.PurchaseReceiptNo).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -496,6 +533,24 @@ public sealed class ListPurchaseOrdersEndpoint(ISender sender)
     }
 }
 
+public sealed class ResolveMaterialSupplyEtasEndpoint(ISender sender)
+    : ErpEndpoint<ResolveMaterialSupplyEtasRequest, ResponseData<ResolveMaterialSupplyEtasResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureErpContract(ErpProcurementEndpointContracts.Get<ResolveMaterialSupplyEtasEndpoint>());
+    }
+
+    public override async Task HandleAsync(ResolveMaterialSupplyEtasRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ResolveMaterialSupplyEtasQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Items), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
 public sealed record ErpEndpointContract(
     Type EndpointType,
     string HttpMethod,
@@ -519,12 +574,15 @@ public static class ErpProcurementEndpointContracts
         new(typeof(RequestPurchaseOrderChangeEndpoint), "POST", "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/changes", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "requestErpPurchaseOrderChange"),
         new(typeof(ClosePurchaseOrderLineEndpoint), "POST", "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/final-delivery", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "closeErpPurchaseOrderLineFinalDelivery"),
         new(typeof(CancelPurchaseOrderEndpoint), "POST", "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/cancel", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "cancelErpPurchaseOrder"),
+        new(typeof(ReschedulePurchaseOrderLineEndpoint), "POST", "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/reschedule", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "rescheduleErpPurchaseOrderLine"),
+        new(typeof(CancelPurchaseOrderLineEndpoint), "POST", "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/cancel", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "cancelErpPurchaseOrderLine"),
         new(typeof(RecordPurchaseReceiptEndpoint), "POST", "/api/business/v1/erp/purchase-receipts", ErpPermissionCodes.ProcurementManage, InternalServiceAuthorizationPolicy.Name, "recordErpPurchaseReceipt"),
         new(typeof(GetPurchaseReceiptSourceDocumentEndpoint), "GET", "/api/business/v1/erp/purchase-receipts/{purchaseReceiptNo}/source-document", ErpPermissionCodes.ProcurementRead, InternalServiceAuthorizationPolicy.Name, "getErpPurchaseReceiptSourceDocument"),
         new(typeof(RecordSupplierInvoiceEndpoint), "POST", "/api/business/v1/erp/supplier-invoices", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "recordErpSupplierInvoice"),
         new(typeof(ReleaseSupplierInvoicePaymentHoldEndpoint), "POST", "/api/business/v1/erp/supplier-invoices/{invoiceNo}/release-payment-hold", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "releaseErpSupplierInvoicePaymentHold"),
         new(typeof(VoidSupplierInvoicePaymentHoldEndpoint), "POST", "/api/business/v1/erp/supplier-invoices/{invoiceNo}/void-payment-hold", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "voidErpSupplierInvoicePaymentHold"),
         new(typeof(ListPurchaseOrdersEndpoint), "GET", "/api/business/v1/erp/purchase-orders", ErpPermissionCodes.ProcurementRead, InternalServiceAuthorizationPolicy.Name, "listErpPurchaseOrders"),
+        new(typeof(ResolveMaterialSupplyEtasEndpoint), "POST", "/api/business/v1/erp/material-supply-etas/resolve", ErpPermissionCodes.ProcurementRead, InternalServiceAuthorizationPolicy.Name, "resolveErpMaterialSupplyEtas"),
     ];
 
     public static ErpEndpointContract Get<TEndpoint>()

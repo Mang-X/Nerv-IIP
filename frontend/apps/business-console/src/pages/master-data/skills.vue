@@ -15,6 +15,7 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvBadge,
   NvButton,
+  NvDatePicker,
   NvDialog,
   NvDialogContent,
   NvDialogDescription,
@@ -35,7 +36,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvToolbar,
   NvTooltip,
   NvTooltipContent,
@@ -46,6 +47,9 @@ import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
 import { formatDate } from '@/utils/format'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { i18n } from '@/i18n'
+
+const locale = i18n.global.locale
 
 definePage({
   meta: {
@@ -526,14 +530,19 @@ async function submitSkill() {
             </NvField>
             <NvField>
               <NvFieldLabel for="skill-from">生效日期</NvFieldLabel>
-              <NvInput id="skill-from" v-model="skillForm.effectiveFrom" type="date" />
+              <NvDatePicker
+                id="skill-from"
+                v-model="skillForm.effectiveFrom"
+                :locale="locale"
+                clearable
+              />
               <NvFieldDescription>留空表示即时生效。</NvFieldDescription>
             </NvField>
           </NvFieldGroup>
           <NvDialogFooter>
             <NvButton type="button" variant="outline" @click="skillOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="skillAssignment.assignPending.value">
-              <Spinner v-if="skillAssignment.assignPending.value" aria-hidden="true" />登记技能
+              <NvSpinner v-if="skillAssignment.assignPending.value" aria-hidden="true" />登记技能
             </NvButton>
           </NvDialogFooter>
         </form>

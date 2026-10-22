@@ -41,7 +41,6 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
       resolveWorkshop: () => undefined,
       resolveLine: () => undefined,
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
-      deviceByCode: emptyIndex,
       locationByCode: emptyIndex,
       workCenterByCode: emptyIndex,
       teamByCode: emptyIndex,
@@ -95,6 +94,7 @@ vi.mock('@/composables/useWmsWorkScope', async () => {
 vi.mock('@/composables/useBusinessWms', async () => {
   const { computed, reactive, shallowRef } = await import('vue')
   return {
+    createWmsIdempotencyKey: () => 'putaway-intent-key',
     useWmsPutawayTasks: () => ({
       filters: reactive({
         organizationId: 'org-001',
@@ -122,26 +122,13 @@ vi.mock('@/composables/useBusinessWms', async () => {
       inboundOrdersPending: shallowRef(false),
       inboundOrdersTotal: computed(() => 1),
       refreshInboundOrders: vi.fn(),
-    }),
-  }
-})
-
-// 库位目录后端无读面，真实实现从仓储作业记录派生；测试给确定选项。
-vi.mock('@/composables/useWarehouseCodeCatalog', async () => {
-  const { computed, shallowRef } = await import('vue')
-  return {
-    WAREHOUSE_CATALOG_SOURCE_TEXT: '数据来自现有库存与仓储作业记录（暂无库位主数据）',
-    WAREHOUSE_LOCATION_EMPTY_TEXT: '系统里还没有出现过库位，可直接录入新库位编码',
-    WAREHOUSE_LOT_EMPTY_TEXT: '系统里还没有出现过批次',
-    WAREHOUSE_SERIAL_EMPTY_TEXT: '系统里还没有出现过序列号',
-    useWarehouseCodeCatalog: () => ({
-      locationOptions: computed(() => [
-        { value: 'STAGE-01', label: 'STAGE-01' },
-        { value: 'RACK-A-01-01', label: 'RACK-A-01-01' },
+      // 入库单的收货行（含免检行）：上架行号只能从所选入库单的这些行里挑。
+      receivingQualityGates: computed(() => [
+        { inboundOrderId: 'ib-1', lineNo: '1', skuCode: 'SKU-001', receivedQuantity: 5 },
+        { inboundOrderId: 'ib-1', lineNo: '2', skuCode: 'SKU-002', receivedQuantity: 3 },
+        { inboundOrderId: 'ib-2', lineNo: '9', skuCode: 'SKU-009', receivedQuantity: 1 },
       ]),
-      lotOptions: computed(() => [{ value: 'LOT-001', label: 'LOT-001' }]),
-      serialOptions: computed(() => [{ value: 'SN-001', label: 'SN-001' }]),
-      warehouseCatalogPending: shallowRef(false),
+      receivingQualityGatesPending: shallowRef(false),
     }),
   }
 })
@@ -176,7 +163,6 @@ describe('WMS putaway route handoff', () => {
     expect(carried?.textContent).toContain('IB-1')
     expect(document.body.querySelector('#wms-putaway-inbound')).toBeNull()
 
-    await setInput('#wms-putaway-no', 'PUT-IB-1-01')
     await setInput('#wms-putaway-line', '1')
     await setInput('#wms-putaway-from', 'QA-STAGE-01')
     await setInput('#wms-putaway-to', 'RACK-A-01')
@@ -187,13 +173,48 @@ describe('WMS putaway route handoff', () => {
     await flushPromises()
 
     expect(state.createPutaway).toHaveBeenCalledWith('ib-1', {
-      taskNo: 'PUT-IB-1-01',
       lineNo: '1',
       fromLocationCode: 'QA-STAGE-01',
       toLocationCode: 'RACK-A-01',
       quantity: 5,
+      idempotencyKey: expect.any(String),
     })
 
+    wrapper.unmount()
+  })
+
+  // #3832 审核 R3-1：从入库页带入的入库单可能不在本页最近 200 条里，工厂取路由带来的入库单工厂，
+  // 不能回落成空（空工厂会让库位选择器没有候选、新增时落到别的工厂）。
+  it('从入库页带入较早的入库单时，库位选择器用路由带来的入库单工厂', async () => {
+    const previous = state.routeQuery
+    state.routeQuery = {
+      inboundOrderNo: 'IB-OLD',
+      inboundOrderId: 'ib-old',
+      siteCode: 'SITE-OLD',
+      create: '1',
+    }
+    try {
+      const wrapper = mountPutaway()
+      await flushPromises()
+
+      for (const field of ['#wms-putaway-from', '#wms-putaway-to']) {
+        const picker = document.body.querySelector(field)!
+        expect(picker.getAttribute('data-form-site')).toBe('SITE-OLD')
+        // 上架表单没有工厂字段，工厂从入库单推出：缺工厂时要提示先选入库单。
+        expect(picker.getAttribute('data-site-missing')).toBe('请先选择入库单')
+      }
+      wrapper.unmount()
+    } finally {
+      state.routeQuery = previous
+    }
+  })
+
+  it('入库单行只从所选入库单的收货行里挑，不混入别的入库单', async () => {
+    const wrapper = mountPutaway()
+    await flushPromises()
+
+    const line = document.body.querySelector<HTMLInputElement>('#wms-putaway-line')
+    expect(line?.dataset.options).toBe('1,2')
     wrapper.unmount()
   })
 
@@ -201,7 +222,6 @@ describe('WMS putaway route handoff', () => {
     const wrapper = mountPutaway()
     await flushPromises()
 
-    await setInput('#wms-putaway-no', 'PUT-IB-1-01')
     await setInput('#wms-putaway-line', '1')
     await setInput('#wms-putaway-from', 'QA-STAGE-01')
     await setInput('#wms-putaway-to', 'RACK-A-01')
@@ -221,7 +241,7 @@ describe('WMS putaway route handoff', () => {
     await flushPromises()
 
     expect(document.body.querySelector('[data-slot="carried-context"]')).toBeNull()
-    expect(document.body.querySelector('#wms-putaway-no')).toBeNull()
+    expect(document.body.querySelector('#wms-putaway-line')).toBeNull()
     expect(wrapper.text()).not.toContain('新建上架任务')
     wrapper.unmount()
   })
@@ -258,11 +278,17 @@ function wmsStubs() {
   return {
     BusinessLayout: { template: '<main><slot /></main>' },
     WmsInventoryContextPanel: true,
+    DirectoryPicker: {
+      props: ['modelValue', 'id', 'formSiteCode', 'siteMissingText'],
+      emits: ['update:modelValue'],
+      template:
+        '<input :id="id" :data-form-site="formSiteCode" :data-site-missing="siteMissingText" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    },
     NvEntityPicker: {
       props: ['modelValue', 'options', 'id'],
       emits: ['update:modelValue'],
       template:
-        '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+        '<input :id="id" :value="modelValue" :data-options="options.map((o) => o.value).join(\',\')" @input="$emit(\'update:modelValue\', $event.target.value)" />',
     },
     NvSearchSelect: {
       props: ['modelValue', 'options', 'id'],

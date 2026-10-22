@@ -56,6 +56,13 @@ public sealed class MasterDataLeaderDemoSeedServiceTests
         Assert.Empty(await db.Sites.Where(x => x.Code == "SITE-001").ToArrayAsync());
         Assert.Empty(await db.Skus.Where(x => x.Code.StartsWith("SKU-DEMO-")).ToArrayAsync());
         Assert.Empty(await db.DeviceAssets.Where(x => x.Code == "DEV-CNC-DEMO").ToArrayAsync());
+        // #3811：虚构员工、班组、技能、减振器产品分类是演示最小集，不进产品基线。
+        Assert.Empty(await db.Workers.ToArrayAsync());
+        Assert.Empty(await db.Teams.ToArrayAsync());
+        Assert.Empty(await db.TeamMembers.ToArrayAsync());
+        Assert.Empty(await db.PersonnelSkills.ToArrayAsync());
+        Assert.Empty(await db.Skills.ToArrayAsync());
+        Assert.Empty(await db.ProductCategories.ToArrayAsync());
     }
 
     private static ApplicationDbContext CreateDbContext()

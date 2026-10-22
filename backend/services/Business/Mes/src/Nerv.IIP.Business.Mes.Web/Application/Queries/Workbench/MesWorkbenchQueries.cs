@@ -1,11 +1,20 @@
+using System.ComponentModel;
+using System.Globalization;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Mes.Web.Application.Queries;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
-using ScheduleTrigger = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.ScheduleTrigger;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
+using Nerv.IIP.Contracts.Mes;
+using WorkCenterUnavailability = Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 
@@ -50,8 +59,21 @@ public sealed class GetMesFoundationReadinessAreaQueryHandler(MesFoundationReadi
     }
 }
 
-public sealed class MesFoundationReadinessService(ApplicationDbContext dbContext)
+public sealed class MesFoundationReadinessService(
+    ApplicationDbContext dbContext,
+    IMesQualityInspectionPlanReader qualityInspectionPlanReader,
+    IMesFoundationSourceReader foundationSourceReader,
+    MesMaterialSupplyLocationOptions materialSupplyLocations,
+    MesFinishedGoodsReceiptLocationOptions finishedGoodsReceiptLocation)
 {
+    private const string WorkCenterCostRateMissing = "WORK_CENTER_COST_RATE_MISSING";
+    private const string AccountingPeriodMissing = "ACCOUNTING_PERIOD_MISSING";
+    private const string WorkCenterMachineOverheadRateMissing = "WORK_CENTER_MACHINE_OVERHEAD_RATE_MISSING";
+    private const string InventoryLocationMissing = "INVENTORY_LOCATION_MISSING";
+    private const string LineSideLocationTypeInvalid = "LINE_SIDE_LOCATION_TYPE_INVALID";
+    private const string OperationTaskDeviceUnassigned = "OPERATION_TASK_DEVICE_UNASSIGNED";
+    private const string LineSideLocationType = "line-side";
+
     public async Task<MesReadinessArea> GetAreaAsync(
         GetMesFoundationReadinessAreaQuery request,
         CancellationToken cancellationToken)
@@ -59,8 +81,10 @@ public sealed class MesFoundationReadinessService(ApplicationDbContext dbContext
         var normalizedAreaCode = NormalizeAreaCode(request.AreaCode);
         var issues = normalizedAreaCode switch
         {
-            "quality" => BuildQualityIssues(request),
+            "quality" => await BuildQualityIssuesAsync(request, cancellationToken),
             "equipment" => await BuildEquipmentIssuesAsync(request, cancellationToken),
+            "erp" => await BuildCostRateIssuesAsync(request, cancellationToken),
+            "inventory" => await BuildInventoryLocationIssuesAsync(request, cancellationToken),
             _ => [],
         };
 
@@ -70,7 +94,9 @@ public sealed class MesFoundationReadinessService(ApplicationDbContext dbContext
     private static string NormalizeAreaCode(string areaCode) =>
         string.IsNullOrWhiteSpace(areaCode) ? "unknown" : areaCode.Trim().ToLowerInvariant();
 
-    private static IReadOnlyCollection<MesReadinessIssue> BuildQualityIssues(GetMesFoundationReadinessAreaQuery request)
+    private async Task<IReadOnlyCollection<MesReadinessIssue>> BuildQualityIssuesAsync(
+        GetMesFoundationReadinessAreaQuery request,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.SkuId) && string.IsNullOrWhiteSpace(request.ProductionVersionId))
         {
@@ -78,15 +104,30 @@ public sealed class MesFoundationReadinessService(ApplicationDbContext dbContext
             return [];
         }
 
+        var skuId = request.SkuId?.Trim();
+        // Quality 的现有列表读面只接受 skuCode，不接受 productionVersionId。
+        // 没有 SKU 时不能猜测生产版本对应的 SKU，因此按合同 fail-closed，不发起无范围查询。
+        var hasPublishedPlan = !string.IsNullOrWhiteSpace(skuId) &&
+            await qualityInspectionPlanReader.HasActiveOperationPlanAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                skuId,
+                request.WorkCenterCode,
+                cancellationToken);
+        if (hasPublishedPlan)
+        {
+            return [];
+        }
+
         return
         [
             NewIssue(
                 MesReadinessReasonCodes.QualityPlanMissing,
-                "未解析到已发布的 SKU/工序检验方案，首检、巡检和终检要求不能放行。",
+                "未找到当前组织、环境、SKU 与工序工作中心适用的已发布检验方案。",
                 "Quality",
                 "InspectionPlan",
                 request.ProductionVersionId ?? request.SkuId,
-                "维护并启用对应 SKU 与工序的检验方案"),
+                "维护并启用对应 SKU 与工序工作中心的检验方案"),
         ];
     }
 
@@ -94,11 +135,70 @@ public sealed class MesFoundationReadinessService(ApplicationDbContext dbContext
         GetMesFoundationReadinessAreaQuery request,
         CancellationToken cancellationToken)
     {
+        var deviceIssues = await BuildDeviceBindingIssuesAsync(request, cancellationToken);
         if (string.IsNullOrWhiteSpace(request.WorkCenterCode))
         {
-            // No execution context supplied; context-specific checks are handled by the execution workbench.
-            return [];
+            // 停机/维修占用只在给定工作中心时检查；设备绑定不依赖范围。
+            return deviceIssues;
         }
+
+        return
+        [
+            .. await BuildEquipmentUnavailabilityIssuesAsync(request, request.WorkCenterCode.Trim(), cancellationToken),
+            .. deviceIssues,
+        ];
+    }
+
+    /// <summary>
+    /// 待开工工序没绑设备时，开工后机器工时没有执行设备，机器制造费用会以
+    /// <c>unavailable-machine-time-fact</c> 进 ERP 死信。开工本身不受阻，所以是警告。
+    /// </summary>
+    private async Task<IReadOnlyCollection<MesReadinessIssue>> BuildDeviceBindingIssuesAsync(
+        GetMesFoundationReadinessAreaQuery request,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.OperationTasks
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                x.Status == OperationTaskLifecycleStatus.Queued &&
+                x.DeviceAssetId == null);
+        if (!string.IsNullOrWhiteSpace(request.WorkCenterCode))
+        {
+            var workCenterCode = request.WorkCenterCode.Trim();
+            query = query.Where(x => x.WorkCenterId == workCenterCode);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.SkuId))
+        {
+            var skuCode = request.SkuId.Trim();
+            query = query.Where(x => x.SkuCode == skuCode);
+        }
+
+        var unassigned = await query
+            .GroupBy(x => x.WorkOrderId)
+            .Select(x => new { WorkOrderId = x.Key, Count = x.Count() })
+            .ToArrayAsync(cancellationToken);
+
+        return unassigned
+            .OrderBy(x => x.WorkOrderId, StringComparer.Ordinal)
+            .Select(x => NewIssue(
+                OperationTaskDeviceUnassigned,
+                $"工单 {x.WorkOrderId} 有 {x.Count} 道待开工工序未绑定设备：开工后采集不到机器工时，机器制造费用无法结算。",
+                "MES",
+                "WorkOrder",
+                x.WorkOrderId,
+                "在「制造执行 ▸ 计划与工单 ▸ 派工看板」给这些工序派工时选择设备",
+                severity: "Warning"))
+            .ToArray();
+    }
+
+    private async Task<IReadOnlyCollection<MesReadinessIssue>> BuildEquipmentUnavailabilityIssuesAsync(
+        GetMesFoundationReadinessAreaQuery request,
+        string workCenterCode,
+        CancellationToken cancellationToken)
+    {
 
         var windowStart = request.PlannedStartUtc ?? DateTimeOffset.UtcNow;
         var windowEnd = request.PlannedEndUtc ?? windowStart;
@@ -107,7 +207,6 @@ public sealed class MesFoundationReadinessService(ApplicationDbContext dbContext
             (windowStart, windowEnd) = (windowEnd, windowStart);
         }
 
-        var workCenterCode = request.WorkCenterCode.Trim();
         var unavailabilities = await dbContext.WorkCenterUnavailabilities
             .AsNoTracking()
             .Where(x =>
@@ -145,6 +244,150 @@ public sealed class MesFoundationReadinessService(ApplicationDbContext dbContext
             .ToArray();
     }
 
+    private async Task<IReadOnlyCollection<MesReadinessIssue>> BuildCostRateIssuesAsync(
+        GetMesFoundationReadinessAreaQuery request,
+        CancellationToken cancellationToken)
+    {
+        var workCenters = await foundationSourceReader.ListActiveWorkCentersAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.SiteCode,
+            request.LineCode,
+            request.WorkCenterCode,
+            cancellationToken);
+        var laborRateIssues = BuildWorkCenterCostRateIssuesAsync(request, workCenters, cancellationToken);
+        var machineOverheadRateIssues = BuildMachineOverheadRateIssuesAsync(request, workCenters, cancellationToken);
+        return [.. await laborRateIssues, .. await machineOverheadRateIssues];
+    }
+
+    /// <summary>
+    /// 工作中心在当前时点没有生效的成本费率时，报工的人工成本会以 <c>missing-work-center-cost-rate</c>
+    /// 进 ERP 死信，成本归集不发布，完工入库停在待入库。
+    /// </summary>
+    private async Task<IReadOnlyCollection<MesReadinessIssue>> BuildWorkCenterCostRateIssuesAsync(
+        GetMesFoundationReadinessAreaQuery request,
+        IReadOnlyCollection<MesFoundationWorkCenter> workCenters,
+        CancellationToken cancellationToken)
+    {
+        var rated = await Task.WhenAll(workCenters.Select(async workCenter => (
+            WorkCenter: workCenter,
+            HasRate: await foundationSourceReader.HasEffectiveWorkCenterCostRateAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                workCenter.Code,
+                cancellationToken))));
+
+        return rated
+            .Where(x => !x.HasRate)
+            .Select(x => NewIssue(
+                WorkCenterCostRateMissing,
+                $"工作中心 {x.WorkCenter.Code}（{x.WorkCenter.DisplayName}）当前没有生效的成本费率：报工算不出人工成本，完工入库会停在待入库。",
+                "ERP",
+                "WorkCenter",
+                x.WorkCenter.Code,
+                "在「经营管理 ▸ 财务 ▸ 工作中心费率」为该工作中心新增费率修订",
+                referenceDisplayName: x.WorkCenter.DisplayName))
+            .ToArray();
+    }
+
+    /// <summary>
+    /// 机器制造费用率按会计期间取值：工序完工日所在的会计期间必须唯一存在，且工作中心在该期间有费率修订
+    /// （适用或明确不适用），否则机器费用以 <c>missing-machine-overhead-rate</c> 进 ERP 死信。
+    /// 判定与 ERP 结算同一套，由 ERP 按今天的日期给出。
+    /// </summary>
+    private async Task<IReadOnlyCollection<MesReadinessIssue>> BuildMachineOverheadRateIssuesAsync(
+        GetMesFoundationReadinessAreaQuery request,
+        IReadOnlyCollection<MesFoundationWorkCenter> workCenters,
+        CancellationToken cancellationToken)
+    {
+        var today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.UtcDateTime);
+        var coverage = await foundationSourceReader.GetMachineOverheadRateCoverageAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            today,
+            cancellationToken);
+        if (coverage.AccountingPeriodCode is not { } periodCode)
+        {
+            return
+            [
+                NewIssue(
+                    AccountingPeriodMissing,
+                    $"今天（{today:yyyy-MM-dd}）没有唯一对应的会计期间：完工工序的机器制造费用无法结算。",
+                    "ERP",
+                    "AccountingPeriod",
+                    today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    "请财务开立覆盖今天的会计期间，再为各工作中心录入该期间的机器制造费用率"),
+            ];
+        }
+
+        var configured = coverage.ConfiguredWorkCenterIds.ToHashSet(StringComparer.Ordinal);
+        return workCenters
+            .Where(x => !configured.Contains(x.Code))
+            .Select(x => NewIssue(
+                WorkCenterMachineOverheadRateMissing,
+                $"工作中心 {x.Code}（{x.DisplayName}）在会计期间 {periodCode} 没有机器制造费用率：完工工序的机器费用无法结算。",
+                "ERP",
+                "WorkCenter",
+                x.Code,
+                $"在「经营管理 ▸ 财务 ▸ 机器制造费用率」为该工作中心录入 {periodCode} 的费率；不产生机器费用的工作中心也要录入一条「不适用」",
+                referenceDisplayName: x.DisplayName))
+            .ToArray();
+    }
+
+    /// <summary>
+    /// MES 部署配置里用到的库位（线边收料来源库位、线边库位、成品入库库位）必须在 Inventory 库位表里存在；
+    /// 线边库存读面按「站点 + 库位 + 类型 line-side」连库位表，任一对不上读面就恒空、也不报错。
+    /// </summary>
+    private async Task<IReadOnlyCollection<MesReadinessIssue>> BuildInventoryLocationIssuesAsync(
+        GetMesFoundationReadinessAreaQuery request,
+        CancellationToken cancellationToken)
+    {
+        var supplySiteCode = materialSupplyLocations.SiteCode.Trim();
+        var lineSideSiteCode = string.IsNullOrWhiteSpace(materialSupplyLocations.LineSideSiteCode)
+            ? supplySiteCode
+            : materialSupplyLocations.LineSideSiteCode.Trim();
+        var configured = materialSupplyLocations.SourceLocationCodes
+            .Select(code => (Role: "线边收料来源库位", SiteCode: supplySiteCode, LocationCode: code, RequireLineSide: false))
+            .Append((Role: "线边库位", SiteCode: lineSideSiteCode, LocationCode: materialSupplyLocations.LineSideLocationCode, RequireLineSide: true))
+            .Append((Role: "成品入库库位", SiteCode: finishedGoodsReceiptLocation.SiteCode.Trim(), LocationCode: finishedGoodsReceiptLocation.LocationCode, RequireLineSide: false))
+            .Where(x => !string.IsNullOrWhiteSpace(x.LocationCode))
+            .Select(x => x with { LocationCode = x.LocationCode.Trim() })
+            .ToArray();
+
+        var issues = new List<MesReadinessIssue>();
+        foreach (var location in configured)
+        {
+            var found = await foundationSourceReader.FindStockLocationAsync(
+                request.OrganizationId,
+                request.EnvironmentId,
+                location.LocationCode,
+                cancellationToken);
+            if (found is null || !string.Equals(found.SiteCode, location.SiteCode, StringComparison.Ordinal))
+            {
+                issues.Add(NewIssue(
+                    InventoryLocationMissing,
+                    $"{location.Role} {location.LocationCode}（工厂 {location.SiteCode}）在库位主数据中不存在，相关库存过账与线边库存查询会落空。",
+                    "Inventory",
+                    "StockLocation",
+                    location.LocationCode,
+                    $"在「库存管理 ▸ 库位」新建库位 {location.LocationCode}，工厂选 {location.SiteCode}"));
+            }
+            else if (location.RequireLineSide &&
+                !string.Equals(found.LocationType, LineSideLocationType, StringComparison.Ordinal))
+            {
+                issues.Add(NewIssue(
+                    LineSideLocationTypeInvalid,
+                    $"线边库位 {location.LocationCode} 的库位类型不是线边，线边库存查询会一直为空。",
+                    "Inventory",
+                    "StockLocation",
+                    location.LocationCode,
+                    $"在「库存管理 ▸ 库位」把库位 {location.LocationCode} 的类型改为线边"));
+            }
+        }
+
+        return issues;
+    }
+
     private static string StatusFromIssues(IReadOnlyCollection<MesReadinessIssue> issues)
     {
         if (issues.Any(x => string.Equals(x.Severity, "Blocked", StringComparison.Ordinal)))
@@ -164,10 +407,11 @@ public sealed class MesFoundationReadinessService(ApplicationDbContext dbContext
         string fixHint,
         DateTimeOffset? effectiveFromUtc = null,
         DateTimeOffset? effectiveToUtc = null,
-        string? referenceDisplayName = null) =>
+        string? referenceDisplayName = null,
+        string severity = "Blocked") =>
         new(
             code,
-            "Blocked",
+            severity,
             message,
             sourceSystem,
             referenceType,
@@ -184,7 +428,7 @@ public sealed record ListProductionPlansQuery(
     string EnvironmentId,
     string? Status,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -216,11 +460,14 @@ public sealed class ListProductionPlansQueryHandler(ApplicationDbContext dbConte
 {
     public async Task<MesProductionPlanListResponse> Handle(ListProductionPlansQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var query = dbContext.WorkOrders
             .AsNoTracking()
             .Where(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
+                x.OrganizationId == tenant.OrganizationId &&
+                x.EnvironmentId == tenant.EnvironmentId &&
                 x.SourcePlanReference != null);
 
         if (!string.IsNullOrWhiteSpace(request.Status))
@@ -229,9 +476,8 @@ public sealed class ListProductionPlansQueryHandler(ApplicationDbContext dbConte
             query = query.Where(x => x.Status.ToLower() == status);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = request.Keyword.Trim().ToLower();
             query = query.Where(x =>
                 x.WorkOrderIdValue.ToLower().Contains(keyword) ||
                 x.Status.ToLower().Contains(keyword) ||
@@ -274,8 +520,8 @@ public sealed class ListProductionPlansQueryHandler(ApplicationDbContext dbConte
             var shiftId = request.ShiftId?.Trim();
             var deviceAssetId = request.DeviceAssetId?.Trim();
             query = query.Where(x => dbContext.OperationTasks.Any(task =>
-                task.OrganizationId == request.OrganizationId &&
-                task.EnvironmentId == request.EnvironmentId &&
+                task.OrganizationId == tenant.OrganizationId &&
+                task.EnvironmentId == tenant.EnvironmentId &&
                 task.WorkOrderId == x.WorkOrderIdValue &&
                 (workCenterId == null || task.WorkCenterId == workCenterId) &&
                 (shiftId == null || task.ShiftId == shiftId) &&
@@ -286,8 +532,8 @@ public sealed class ListProductionPlansQueryHandler(ApplicationDbContext dbConte
         var rows = await query
             .OrderBy(x => x.DueUtc)
             .ThenBy(x => x.WorkOrderIdValue)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(Math.Clamp(request.Take, 1, 500))
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new
             {
                 x.WorkOrderIdValue,
@@ -484,7 +730,8 @@ public sealed class GetMesOverviewQueryHandler(ApplicationDbContext dbContext)
     /// <summary>
     /// 「已下达未开工」工单里按最新齐套快照仍缺料的数量。口径与放行门禁
     /// <see cref="MaterialReadinessGuards.GetShortageReasonsAsync"/> 一致：
-    /// 同 (工序, 物料, 批次) 取最新快照，缺口 = 需求 − 可用 − 备料 − 已线边接收。
+    /// 每个工单先选择一次完整最新 capture，再按 (物料, 批次) 聚合；
+    /// 缺口 = 需求 − 可用 − 备料 − 已线边接收。
     /// released 工单集合有限（历史形状约 3%），加载后在内存完成快照去重。
     /// </summary>
     private async Task<int> CountReleasedWorkOrdersWithMaterialShortageAsync(
@@ -502,22 +749,12 @@ public sealed class GetMesOverviewQueryHandler(ApplicationDbContext dbContext)
             return 0;
         }
 
-        var requirements = await dbContext.MaterialRequirements
-            .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId &&
-                releasedWorkOrderIds.Contains(x.WorkOrderId))
-            .Select(x => new
-            {
-                x.WorkOrderId,
-                x.OperationTaskId,
-                x.MaterialId,
-                x.MaterialLotId,
-                x.RequiredQuantity,
-                x.AvailableQuantity,
-                x.StagedQuantity,
-                x.CapturedAtUtc,
-            })
-            .ToArrayAsync(cancellationToken);
+        var requirements = await MaterialRequirementSnapshotReader.LoadLatestByWorkOrdersAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            releasedWorkOrderIds,
+            cancellationToken);
         if (requirements.Length == 0)
         {
             return 0;
@@ -538,8 +775,6 @@ public sealed class GetMesOverviewQueryHandler(ApplicationDbContext dbContext)
             .ToArrayAsync(cancellationToken);
 
         return requirements
-            .GroupBy(x => new { x.WorkOrderId, x.OperationTaskId, x.MaterialId, x.MaterialLotId })
-            .Select(group => group.OrderByDescending(x => x.CapturedAtUtc).First())
             .GroupBy(x => new { x.WorkOrderId, x.MaterialId, x.MaterialLotId })
             .Select(group =>
             {
@@ -572,7 +807,8 @@ public sealed record MesSourcePlanReferenceResponse(
     string SourceSystem,
     string SourceDocumentType,
     string SourceDocumentId,
-    string? SourceDemandReference);
+    string? SourceDemandReference,
+    IReadOnlyCollection<string>? SourceDemandReferences = null);
 
 public sealed record MesWorkOrderDetailResponse(
     string WorkOrderId,
@@ -584,7 +820,14 @@ public sealed record MesWorkOrderDetailResponse(
     IReadOnlyCollection<string> BlockingReasons,
     IReadOnlyCollection<MesOperationTaskRow> OperationTasks,
     MesSourcePlanReferenceResponse? SourcePlanReference = null,
-    IReadOnlyCollection<MesWorkOrderQualityHoldSummary>? QualityHolds = null);
+    IReadOnlyCollection<MesWorkOrderQualityHoldSummary>? QualityHolds = null,
+    string WorkOrderType = WorkOrder.StandardType,
+    string? SourceWorkOrderId = null,
+    string? SourceNcrId = null,
+    string? SourceNcrCode = null,
+    bool IsRush = false,
+    int Priority = 0,
+    decimal CompletedQuantity = 0);
 
 // 工单质量保留（quality hold）投影,含活跃与已释放周期,供工单详情 hold 区块接时间线查询与人工强制释放。
 // IsActive 是「锁定/自动消失」的依据(列表锁定图标仅看活跃);已释放周期仍返回,使释放时间/方式与时间线在详情可见。
@@ -629,13 +872,80 @@ public sealed record MesOperationTaskRow(
     DateTimeOffset? ScheduledAtUtc = null,
     string? ScheduleInvalidationReasonCode = null,
     string? TeamId = null,
-    string? TeamName = null)
+    string? TeamName = null,
+    // 只在工序完成后返回已冻结的累计实绩；未完成或冲销后重新打开时为 null，单位为小时。
+    [property: JsonIgnore] MesActualHours? ActualHours = null)
 {
+    [Description("工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    public decimal? ActualLaborHours => ActualHours?.LaborHours;
+
+    [Description("工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    public decimal? ActualMachineHours => ActualHours?.MachineHours;
+
     public IReadOnlyCollection<string> AllowedActions { get; init; } = [];
 
     public IReadOnlyCollection<string> BlockReasons { get; init; } = [];
 
     public DateTimeOffset EvaluatedAtUtc { get; init; }
+
+    public string WorkOrderType { get; init; } = WorkOrder.StandardType;
+
+    public string? SourceWorkOrderId { get; init; }
+
+    public string? SourceNcrId { get; init; }
+
+    public string? SourceNcrCode { get; init; }
+
+    [Description("任务创建时保存的权威工艺路线号；无权威来源时为 null。")]
+    public string? RoutingCode { get; init; }
+
+    [Description("任务创建时保存的权威工艺路线修订；无权威来源时为 null。")]
+    public string? RoutingRevision { get; init; }
+}
+
+internal sealed record MesWorkOrderAuthority(
+    string WorkOrderId,
+    string WorkOrderType,
+    string? SourceWorkOrderId,
+    string? SourceNcrId,
+    string? SourceNcrCode);
+
+internal static class MesWorkOrderAuthorityProjection
+{
+    internal static async Task<IReadOnlyDictionary<string, MesWorkOrderAuthority>> LoadAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<string> workOrderIds,
+        CancellationToken cancellationToken)
+    {
+        return await dbContext.WorkOrders
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                workOrderIds.Contains(x.WorkOrderIdValue))
+            .Select(x => new MesWorkOrderAuthority(
+                x.WorkOrderIdValue,
+                x.WorkOrderType,
+                x.SourceWorkOrderId,
+                x.SourceNcrId,
+                x.SourceNcrCode))
+            .ToDictionaryAsync(x => x.WorkOrderId, StringComparer.Ordinal, cancellationToken);
+    }
+
+    internal static MesOperationTaskRow Apply(
+        MesOperationTaskRow row,
+        MesWorkOrderAuthority? authority) =>
+        authority is null
+            ? row
+            : row with
+            {
+                WorkOrderType = authority.WorkOrderType,
+                SourceWorkOrderId = authority.SourceWorkOrderId,
+                SourceNcrId = authority.SourceNcrId,
+                SourceNcrCode = authority.SourceNcrCode,
+            };
 }
 
 public sealed class GetMesWorkOrderDetailQueryHandler(
@@ -657,14 +967,22 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
                 x.SkuId,
                 x.ProductionVersionId,
                 x.Quantity,
+                x.CompletedQuantity,
+                x.IsRush,
+                x.Priority,
                 x.Status,
+                x.WorkOrderType,
+                x.SourceWorkOrderId,
+                x.SourceNcrId,
+                x.SourceNcrCode,
                 SourcePlanReference = x.SourcePlanReference == null
                     ? null
                     : new MesSourcePlanReferenceResponse(
                         x.SourcePlanReference.SourceSystem,
                         x.SourcePlanReference.SourceDocumentType,
                         x.SourcePlanReference.SourceDocumentId,
-                        x.SourcePlanReference.SourceDemandReference),
+                        x.SourcePlanReference.SourceDemandReference,
+                        x.SourcePlanReference.SourceDemandReferences),
             })
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
@@ -684,7 +1002,14 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
         var taskReadiness = await new MesOperationTaskActionReadinessEvaluator(dbContext)
             .EvaluateManyAsync(operationTasks, evaluatedAtUtc, cancellationToken);
         var tasks = operationTasks
-            .Select(x => ToRow(x, taskReadiness[x.OperationTaskIdValue]))
+            .Select(x => MesWorkOrderAuthorityProjection.Apply(
+                ToRow(x, taskReadiness[x.OperationTaskIdValue]),
+                new MesWorkOrderAuthority(
+                    workOrder.WorkOrderIdValue,
+                    workOrder.WorkOrderType,
+                    workOrder.SourceWorkOrderId,
+                    workOrder.SourceNcrId,
+                    workOrder.SourceNcrCode)))
             .ToArray();
 
         // 返回该工单的全部质量保留周期(活跃 + 已释放)。锁定看 IsActive;已释放周期仍返回,
@@ -731,18 +1056,23 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
             [],
             tasks,
             workOrder.SourcePlanReference,
-            qualityHolds);
+            qualityHolds,
+            workOrder.WorkOrderType,
+            workOrder.SourceWorkOrderId,
+            workOrder.SourceNcrId,
+            workOrder.SourceNcrCode,
+            workOrder.IsRush,
+            workOrder.Priority,
+            workOrder.CompletedQuantity);
     }
 
     internal static IQueryable<MesOperationTaskRow> QueryOperationTasks(
         ApplicationDbContext dbContext,
-        string organizationId,
-        string environmentId,
+        TenantScope tenant,
         string? workOrderId,
         string? status,
-        int skip,
-        int take,
-        string? keyword = null,
+        OffsetPage page,
+        SearchTerm keyword,
         string? workCenterId = null,
         string? shiftId = null,
         string? deviceAssetId = null,
@@ -750,15 +1080,16 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
         string? assignedUserIds = null,
         string? teamIds = null,
         string? workCenterIds = null,
-        string? operationTaskId = null)
+        string? operationTaskId = null,
+        bool excludeTerminal = false)
     {
         var query = QueryOperationTaskEntities(
             dbContext,
-            organizationId,
-            environmentId,
+            tenant.OrganizationId,
+            tenant.EnvironmentId,
             workOrderId,
             status,
-            keyword,
+            keyword.Value,
             workCenterId,
             shiftId,
             deviceAssetId,
@@ -766,14 +1097,15 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
             assignedUserIds,
             teamIds,
             workCenterIds,
-            operationTaskId);
+            operationTaskId,
+            excludeTerminal);
 
         return query
             .OrderBy(x => x.EarliestStartUtc)
             .ThenBy(x => x.OperationSequence)
             .ThenBy(x => x.OperationTaskIdValue)
-            .Skip(Math.Max(0, skip))
-            .Take(Math.Clamp(take, 1, 500))
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new MesOperationTaskRow(
                 x.OperationTaskIdValue,
                 x.WorkOrderId,
@@ -797,7 +1129,16 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
                 x.ScheduledAtUtc,
                 x.ScheduleInvalidationReasonCode,
                 x.TeamId,
-                x.TeamName));
+                x.TeamName,
+                x.Status == OperationTaskLifecycleStatus.Completed
+                    ? new MesActualHours(
+                        x.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour,
+                        x.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour)
+                    : null)
+            {
+                RoutingCode = x.RoutingCode,
+                RoutingRevision = x.RoutingRevision,
+            });
     }
 
     internal static IQueryable<Domain.AggregatesModel.OperationTaskAggregate.OperationTask> QueryOperationTaskEntities(
@@ -814,11 +1155,19 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
         string? assignedUserIds = null,
         string? teamIds = null,
         string? workCenterIds = null,
-        string? operationTaskId = null)
+        string? operationTaskId = null,
+        bool excludeTerminal = false)
     {
         var query = dbContext.OperationTasks
             .AsNoTracking()
             .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId);
+
+        if (excludeTerminal)
+        {
+            query = query.Where(x =>
+                x.Status != OperationTaskLifecycleStatus.Completed &&
+                x.Status != OperationTaskLifecycleStatus.Cancelled);
+        }
 
         if (!string.IsNullOrWhiteSpace(operationTaskId))
         {
@@ -887,7 +1236,13 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
             var values = SplitCanonicalCsv(assignedUserIds);
             query = values.Length == 0
                 ? query.Where(_ => false)
-                : query.Where(x => values.Contains(x.AssignedUserId));
+                : query.Where(x =>
+                    values.Contains(x.AssignedUserId)
+                    || dbContext.OperationTaskParticipants.Any(participant =>
+                        participant.OrganizationId == x.OrganizationId
+                        && participant.EnvironmentId == x.EnvironmentId
+                        && participant.OperationTaskId == x.OperationTaskIdValue
+                        && values.Contains(participant.WorkerId)));
         }
 
         if (teamIds is not null)
@@ -936,8 +1291,15 @@ public sealed class GetMesWorkOrderDetailQueryHandler(
             task.ScheduledAtUtc,
             task.ScheduleInvalidationReasonCode,
             task.TeamId,
-            task.TeamName)
+            task.TeamName,
+            task.Status == OperationTaskLifecycleStatus.Completed
+                ? new MesActualHours(
+                    task.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour,
+                    task.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour)
+                : null)
         {
+            RoutingCode = task.RoutingCode,
+            RoutingRevision = task.RoutingRevision,
             AllowedActions = readiness.AllowedActions,
             BlockReasons = readiness.BlockReasons,
             EvaluatedAtUtc = readiness.EvaluatedAtUtc,
@@ -971,7 +1333,7 @@ public sealed record ListOperationTasksQuery(
     string EnvironmentId,
     string? Status,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -993,13 +1355,16 @@ public sealed class ListOperationTasksQueryHandler(
 {
     public async Task<MesOperationTaskListResponse> Handle(ListOperationTasksQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword);
         var query = GetMesWorkOrderDetailQueryHandler.QueryOperationTaskEntities(
             dbContext,
-            request.OrganizationId,
-            request.EnvironmentId,
+            tenant.OrganizationId,
+            tenant.EnvironmentId,
             request.WorkOrderId,
             request.Status,
-            request.Keyword,
+            keyword.Value,
             request.WorkCenterId,
             request.ShiftId,
             request.DeviceAssetId,
@@ -1012,16 +1377,24 @@ public sealed class ListOperationTasksQueryHandler(
             .OrderBy(x => x.EarliestStartUtc)
             .ThenBy(x => x.OperationSequence)
             .ThenBy(x => x.OperationTaskIdValue)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(Math.Clamp(request.Take, 1, 500))
+            .Skip(page.Skip)
+            .Take(page.Take)
             .ToArrayAsync(cancellationToken);
         var readiness = await new MesOperationTaskActionReadinessEvaluator(dbContext)
             .EvaluateManyAsync(
                 tasks,
                 (timeProvider ?? TimeProvider.System).GetUtcNow(),
                 cancellationToken);
+        var workOrderAuthorities = await MesWorkOrderAuthorityProjection.LoadAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            tasks.Select(x => x.WorkOrderId).Distinct(StringComparer.Ordinal).ToArray(),
+            cancellationToken);
         var items = tasks
-            .Select(x => GetMesWorkOrderDetailQueryHandler.ToRow(x, readiness[x.OperationTaskIdValue]))
+            .Select(x => MesWorkOrderAuthorityProjection.Apply(
+                GetMesWorkOrderDetailQueryHandler.ToRow(x, readiness[x.OperationTaskIdValue]),
+                workOrderAuthorities.GetValueOrDefault(x.WorkOrderId)))
             .ToArray();
         return new MesOperationTaskListResponse(items, total);
     }
@@ -1032,7 +1405,7 @@ public sealed record ListReportableOperationTasksQuery(
     string EnvironmentId,
     string? Status = null,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -1051,6 +1424,9 @@ public sealed class ListReportableOperationTasksQueryHandler(
         ListReportableOperationTasksQuery request,
         CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword);
         if (!string.IsNullOrWhiteSpace(request.Status)
             && !string.Equals(
                 request.Status.Trim(),
@@ -1062,11 +1438,11 @@ public sealed class ListReportableOperationTasksQueryHandler(
 
         var query = GetMesWorkOrderDetailQueryHandler.QueryOperationTaskEntities(
             dbContext,
-            request.OrganizationId,
-            request.EnvironmentId,
+            tenant.OrganizationId,
+            tenant.EnvironmentId,
             request.WorkOrderId,
             nameof(OperationTaskLifecycleStatus.InProgress),
-            request.Keyword,
+            keyword.Value,
             request.WorkCenterId,
             request.ShiftId,
             request.DeviceAssetId,
@@ -1078,16 +1454,24 @@ public sealed class ListReportableOperationTasksQueryHandler(
             .OrderBy(x => x.EarliestStartUtc)
             .ThenBy(x => x.OperationSequence)
             .ThenBy(x => x.OperationTaskIdValue)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(Math.Clamp(request.Take, 1, 500))
+            .Skip(page.Skip)
+            .Take(page.Take)
             .ToArrayAsync(cancellationToken);
         var readiness = await new MesOperationTaskActionReadinessEvaluator(dbContext)
             .EvaluateManyAsync(
                 tasks,
                 (timeProvider ?? TimeProvider.System).GetUtcNow(),
                 cancellationToken);
+        var workOrderAuthorities = await MesWorkOrderAuthorityProjection.LoadAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            tasks.Select(x => x.WorkOrderId).Distinct(StringComparer.Ordinal).ToArray(),
+            cancellationToken);
         var items = tasks
-            .Select(x => GetMesWorkOrderDetailQueryHandler.ToRow(x, readiness[x.OperationTaskIdValue]))
+            .Select(x => MesWorkOrderAuthorityProjection.Apply(
+                GetMesWorkOrderDetailQueryHandler.ToRow(x, readiness[x.OperationTaskIdValue]),
+                workOrderAuthorities.GetValueOrDefault(x.WorkOrderId)))
             .ToArray();
         return new MesOperationTaskListResponse(items, total);
     }
@@ -1098,16 +1482,18 @@ public sealed record ListMaterialIssueRequestsQuery(
     string EnvironmentId,
     string? WorkOrderId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
     string? DeviceAssetId = null,
-    string? Status = null) : IQuery<MesMaterialIssueRequestListResponse>;
+    string? Status = null,
+    string? OperationTaskId = null) : IQuery<MesMaterialIssueRequestListResponse>;
 
 public sealed record MesMaterialIssueRequestListResponse(
     IReadOnlyCollection<MesMaterialIssueRequestRow> Items,
-    int Total);
+    int Total,
+    int SupplementaryCount);
 
 public sealed record MesMaterialIssueRequestRow(
     string RequestId,
@@ -1128,25 +1514,36 @@ public sealed record MesMaterialIssueRequestRow(
     string? InventoryPostingFailureMessage = null,
     DateTimeOffset? InventoryPostingFailedAtUtc = null,
     string? WmsRequestId = null,
-    string? WmsPickingTaskNo = null);
+    string? WmsPickingTaskNo = null,
+    bool IsSupplementary = false,
+    string? OriginalMaterialIssueRequestNo = null,
+    string? SubstitutedMaterialId = null);
 
 public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaterialIssueRequestsQuery, MesMaterialIssueRequestListResponse>
 {
     public async Task<MesMaterialIssueRequestListResponse> Handle(ListMaterialIssueRequestsQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var query = dbContext.MaterialIssueRequests
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.WorkOrderId))
         {
             query = query.Where(x => x.WorkOrderId == request.WorkOrderId);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (!string.IsNullOrWhiteSpace(request.OperationTaskId))
         {
-            var keyword = request.Keyword.Trim().ToLower();
+            var operationTaskId = request.OperationTaskId.Trim();
+            query = query.Where(x => x.OperationTaskId == null || x.OperationTaskId == operationTaskId);
+        }
+
+        if (keyword is not null)
+        {
             query = query.Where(x =>
                 x.RequestNo.ToLower().Contains(keyword) ||
                 x.WorkOrderId.ToLower().Contains(keyword) ||
@@ -1170,8 +1567,8 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
             var shiftId = request.ShiftId?.Trim();
             var deviceAssetId = request.DeviceAssetId?.Trim();
             query = query.Where(x => dbContext.OperationTasks.Any(task =>
-                task.OrganizationId == request.OrganizationId &&
-                task.EnvironmentId == request.EnvironmentId &&
+                task.OrganizationId == tenant.OrganizationId &&
+                task.EnvironmentId == tenant.EnvironmentId &&
                 ((x.OperationTaskId != null && task.OperationTaskIdValue == x.OperationTaskId) ||
                     (x.OperationTaskId == null && task.WorkOrderId == x.WorkOrderId)) &&
                 (workCenterId == null || task.WorkCenterId == workCenterId) &&
@@ -1180,11 +1577,19 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
         }
 
         var total = await query.CountAsync(cancellationToken);
-        var items = await query
-            .OrderByDescending(x => x.RequestedAtUtc)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(Math.Clamp(request.Take, 1, 500))
-            .Select(x => new MesMaterialIssueRequestRow(
+        var supplementaryCount = await query.CountAsync(x => x.IsSupplementary, cancellationToken);
+        var items = await ProjectRows(query
+                .OrderByDescending(x => x.RequestedAtUtc)
+                .Skip(page.Skip)
+                .Take(page.Take), dbContext)
+            .ToArrayAsync(cancellationToken);
+        return new MesMaterialIssueRequestListResponse(items, total, supplementaryCount);
+    }
+
+    internal static IQueryable<MesMaterialIssueRequestRow> ProjectRows(
+        IQueryable<MaterialIssueRequest> query,
+        ApplicationDbContext dbContext) =>
+        query.Select(x => new MesMaterialIssueRequestRow(
                 x.RequestNo,
                 x.WorkOrderId,
                 x.OperationTaskId,
@@ -1212,9 +1617,43 @@ public sealed class ListMaterialIssueRequestsQueryHandler(ApplicationDbContext d
                 x.InventoryPostingFailureMessage,
                 x.InventoryPostingFailedAtUtc,
                 x.WmsRequestId,
-                x.WmsPickingTaskNo))
-            .ToArrayAsync(cancellationToken);
-        return new MesMaterialIssueRequestListResponse(items, total);
+                x.WmsPickingTaskNo,
+                x.IsSupplementary,
+                x.OriginalMaterialIssueRequestNo,
+                x.SubstitutedMaterialId));
+}
+
+public sealed record GetMaterialIssueRequestQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string RequestId) : IQuery<MesMaterialIssueRequestRow>;
+
+public sealed class GetMaterialIssueRequestQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetMaterialIssueRequestQuery, MesMaterialIssueRequestRow>
+{
+    public async Task<MesMaterialIssueRequestRow> Handle(
+        GetMaterialIssueRequestQuery request,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.MaterialIssueRequests
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId);
+        // x.Id 是强类型 GuidId：谓词里 x.Id.Id == guid 无法被 EF 翻译（真机 500，#3098）。
+        // 先按业务单号命中；只有请求确实是 Guid 时才用先物化好的强类型 Id 直接比较（可翻译）。
+        var row = await ListMaterialIssueRequestsQueryHandler
+            .ProjectRows(query.Where(x => x.RequestNo == request.RequestId), dbContext)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (row is null && Guid.TryParse(request.RequestId, out var requestGuid))
+        {
+            var requestId = new MaterialIssueRequestId(requestGuid);
+            row = await ListMaterialIssueRequestsQueryHandler
+                .ProjectRows(query.Where(x => x.Id == requestId), dbContext)
+                .SingleOrDefaultAsync(cancellationToken);
+        }
+
+        return row ?? throw new KnownException("未找到领料申请。");
     }
 }
 
@@ -1223,7 +1662,7 @@ public sealed record ListDispatchTasksQuery(
     string EnvironmentId,
     string? Status,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -1261,14 +1700,17 @@ public sealed class ListDispatchTasksQueryHandler(ApplicationDbContext dbContext
 {
     public async Task<MesDispatchTaskListResponse> Handle(ListDispatchTasksQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword);
         var total = await GetMesWorkOrderDetailQueryHandler
             .QueryOperationTaskEntities(
                 dbContext,
-                request.OrganizationId,
-                request.EnvironmentId,
+                tenant.OrganizationId,
+                tenant.EnvironmentId,
                 null,
                 request.Status,
-                request.Keyword,
+                keyword.Value,
                 request.WorkCenterId,
                 request.ShiftId,
                 request.DeviceAssetId,
@@ -1277,13 +1719,11 @@ public sealed class ListDispatchTasksQueryHandler(ApplicationDbContext dbContext
         var tasks = await GetMesWorkOrderDetailQueryHandler
             .QueryOperationTasks(
                 dbContext,
-                request.OrganizationId,
-                request.EnvironmentId,
+                tenant,
                 null,
                 request.Status,
-                request.Skip,
-                request.Take,
-                request.Keyword,
+                page,
+                keyword,
                 request.WorkCenterId,
                 request.ShiftId,
                 request.DeviceAssetId,
@@ -1324,7 +1764,8 @@ public sealed record MesMaterialReadinessResponse(
     string ReadinessStatus,
     IReadOnlyCollection<string> BlockingReasons,
     IReadOnlyCollection<MesMaterialReadinessRow> Items,
-    string ReadinessScope = MesMaterialReadinessScopes.LineSideAndStaged);
+    string ReadinessScope = MesMaterialReadinessScopes.LineSideAndStaged,
+    DateTimeOffset? SnapshotCapturedAtUtc = null);
 
 /// <summary>
 /// 齐套核算口径。齐套只认「线边可用 + 已备料 + 已收料」,不含原料仓等其他库存;
@@ -1349,6 +1790,7 @@ public static class MesMaterialShortageStages
 public sealed record MesMaterialReadinessRow(
     string MaterialId,
     string? MaterialLotId,
+    string UomCode,
     decimal RequiredQuantity,
     decimal AvailableQuantity,
     decimal RequestedQuantity,
@@ -1356,45 +1798,53 @@ public sealed record MesMaterialReadinessRow(
     decimal ReceivedQuantity,
     decimal ShortageQuantity,
     string Status,
-    string ShortageStage = MesMaterialShortageStages.None);
+    string ShortageStage = MesMaterialShortageStages.None,
+    IReadOnlyCollection<string>? SubstituteMaterialIds = null,
+    DateTimeOffset? ExpectedAvailableAtUtc = null,
+    string? ExpectedAvailabilitySource = null);
 
-public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbContext)
+public sealed class GetMaterialReadinessQueryHandler(
+    ApplicationDbContext dbContext,
+    IMesMaterialReadinessLiveCoverageProvider liveCoverageProvider)
     : IQueryHandler<GetMaterialReadinessQuery, MesMaterialReadinessResponse>
 {
     public async Task<MesMaterialReadinessResponse> Handle(GetMaterialReadinessQuery request, CancellationToken cancellationToken)
     {
-        var exists = await dbContext.WorkOrders
+        var workOrder = await dbContext.WorkOrders
             .AsNoTracking()
-            .AnyAsync(x =>
+            .SingleOrDefaultAsync(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 x.WorkOrderIdValue == request.WorkOrderId,
                 cancellationToken);
-        if (!exists)
+        if (workOrder is null)
         {
             throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
         }
 
-        var requirements = await dbContext.MaterialRequirements
-            .AsNoTracking()
-            .Where(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                x.WorkOrderId == request.WorkOrderId)
-            .Select(x => new MaterialReadinessGuards.MaterialRequirementSnapshot(
-                x.OperationTaskId,
-                x.MaterialId,
-                x.MaterialLotId,
-                x.RequiredQuantity,
-                x.AvailableQuantity,
-                x.StagedQuantity,
-                x.CapturedAtUtc))
-            .ToArrayAsync(cancellationToken);
-        requirements = MaterialReadinessGuards.SelectLatestRequirementSnapshots(requirements);
+        var snapshot = await MaterialRequirementSnapshotReader.LoadLatestByWorkOrderAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WorkOrderId,
+            cancellationToken);
+        var requirements = snapshot.Requirements;
 
         if (requirements.Length == 0)
         {
-            return new MesMaterialReadinessResponse(request.WorkOrderId, "Ready", [], []);
+            var noRequirementsProven =
+                workOrder.MaterialRequirementSnapshotStatus == WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus &&
+                workOrder.MaterialRequirementSnapshotEvaluatedAtUtc is not null &&
+                workOrder.MaterialRequirementSnapshotProductionVersionId == workOrder.ProductionVersionId;
+            return noRequirementsProven
+                ? new MesMaterialReadinessResponse(
+                    request.WorkOrderId, "Ready", [], [],
+                    SnapshotCapturedAtUtc: workOrder.MaterialRequirementSnapshotEvaluatedAtUtc)
+                : new MesMaterialReadinessResponse(
+                    request.WorkOrderId,
+                    "Blocked",
+                    [MaterialReadinessGuards.MissingRequirementSnapshotReason],
+                    []);
         }
 
         var issues = await dbContext.MaterialIssueRequests
@@ -1407,21 +1857,58 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
             {
                 x.MaterialId,
                 x.MaterialLotId,
+                x.UomCode,
                 x.RequestedQuantity,
                 x.ReceivedQuantity,
                 x.Status,
             })
             .ToArrayAsync(cancellationToken);
 
+        var coverageRequestItems = requirements
+            .GroupBy(x => new { x.MaterialId, x.MaterialLotId, x.UomCode })
+            .Select(group =>
+            {
+                var issueRows = issues.Where(issue =>
+                    string.Equals(issue.MaterialId, group.Key.MaterialId, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(issue.UomCode, group.Key.UomCode, StringComparison.OrdinalIgnoreCase) &&
+                    (group.Key.MaterialLotId is null ||
+                        string.Equals(issue.MaterialLotId, group.Key.MaterialLotId, StringComparison.OrdinalIgnoreCase)));
+                return new MesMaterialReadinessLiveCoverageRequestItem(
+                    group.Key.MaterialId,
+                    group.Key.MaterialLotId,
+                    group.Key.UomCode,
+                    group.Sum(x => x.RequiredQuantity),
+                    group.Sum(x => x.AvailableQuantity),
+                    group.Sum(x => x.StagedQuantity),
+                    issueRows.Sum(x => x.ReceivedQuantity),
+                    MaterialSubstituteCandidateNormalizer.Normalize(
+                        group.Key.MaterialId,
+                        group.SelectMany(x => x.SubstituteMaterialIds ?? [])));
+            })
+            .ToArray();
+        var liveCoverage = await liveCoverageProvider.ResolveAsync(
+            new MesMaterialReadinessLiveCoverageRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                coverageRequestItems),
+            cancellationToken);
+        var liveCoverageByMaterial = liveCoverage.Items.ToDictionary(
+            x => (x.MaterialId.ToUpperInvariant(), x.MaterialLotId?.ToUpperInvariant(), x.UomCode.ToUpperInvariant()),
+            x => x);
+
         var rows = requirements
-            .GroupBy(x => new { x.MaterialId, x.MaterialLotId })
+            .GroupBy(x => new { x.MaterialId, x.MaterialLotId, x.UomCode })
             .Select(x =>
             {
                 var issueRows = issues.Where(y =>
                     string.Equals(y.MaterialId, x.Key.MaterialId, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(y.UomCode, x.Key.UomCode, StringComparison.OrdinalIgnoreCase) &&
                     (x.Key.MaterialLotId is null ||
                         string.Equals(y.MaterialLotId, x.Key.MaterialLotId, StringComparison.OrdinalIgnoreCase)));
                 var required = x.Sum(y => y.RequiredQuantity);
+                liveCoverageByMaterial.TryGetValue(
+                    (x.Key.MaterialId.ToUpperInvariant(), x.Key.MaterialLotId?.ToUpperInvariant(), x.Key.UomCode.ToUpperInvariant()),
+                    out var coverage);
                 var available = x.Sum(y => y.AvailableQuantity);
                 var staged = x.Sum(y => y.StagedQuantity);
                 // 「应领」只算仍然在途/已兑现的领料单。取消、退料中、预留失效的单子不代表仓库还在配货,
@@ -1433,9 +1920,13 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
                 // 这里再过滤一次反而会把已消耗的量凭空抹掉,改动齐套结论。
                 var received = issueRows.Sum(y => y.ReceivedQuantity);
                 var shortage = Math.Max(0m, required - available - staged - received);
+                var substituteMaterialIds = MaterialSubstituteCandidateNormalizer.Normalize(
+                    x.Key.MaterialId,
+                    x.SelectMany(y => y.SubstituteMaterialIds ?? []));
                 return new MesMaterialReadinessRow(
                     x.Key.MaterialId,
                     x.Key.MaterialLotId,
+                    x.Key.UomCode,
                     required,
                     available,
                     requested,
@@ -1448,10 +1939,14 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
                         ? MesMaterialShortageStages.None
                         : requested > received
                             ? MesMaterialShortageStages.AwaitingDelivery
-                            : MesMaterialShortageStages.AwaitingPreparation);
+                            : MesMaterialShortageStages.AwaitingPreparation,
+                    substituteMaterialIds,
+                    shortage > 0 && liveCoverage.ErpAvailable ? coverage?.ExpectedAvailableAtUtc : null,
+                    shortage > 0 && liveCoverage.ErpAvailable ? coverage?.ExpectedAvailabilitySource : null);
             })
             .OrderBy(x => x.MaterialId, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.MaterialLotId, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.UomCode, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
         var blockingReasons = rows
@@ -1459,7 +1954,9 @@ public sealed class GetMaterialReadinessQueryHandler(ApplicationDbContext dbCont
             .Select(x => MaterialReadinessGuards.FormatShortageReason(x.MaterialId, x.MaterialLotId, x.ShortageQuantity))
             .ToArray();
         var status = blockingReasons.Length > 0 ? "Blocked" : "Ready";
-        return new MesMaterialReadinessResponse(request.WorkOrderId, status, blockingReasons, rows);
+        return new MesMaterialReadinessResponse(
+            request.WorkOrderId, status, blockingReasons, rows,
+            SnapshotCapturedAtUtc: snapshot.CaptureIdentity);
     }
 }
 
@@ -1468,7 +1965,7 @@ public sealed record GetWipSummaryQuery(
     string EnvironmentId,
     string? Status,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -1497,31 +1994,34 @@ public sealed class GetWipSummaryQueryHandler(ApplicationDbContext dbContext)
 {
     public async Task<MesWipSummaryResponse> Handle(GetWipSummaryQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword);
         var total = await GetMesWorkOrderDetailQueryHandler
             .QueryOperationTaskEntities(
                 dbContext,
-                request.OrganizationId,
-                request.EnvironmentId,
+                tenant.OrganizationId,
+                tenant.EnvironmentId,
                 null,
                 request.Status,
-                request.Keyword,
+                keyword.Value,
                 request.WorkCenterId,
                 request.ShiftId,
-                request.DeviceAssetId)
+                request.DeviceAssetId,
+                excludeTerminal: string.IsNullOrWhiteSpace(request.Status))
             .CountAsync(cancellationToken);
         var tasks = await GetMesWorkOrderDetailQueryHandler
             .QueryOperationTasks(
                 dbContext,
-                request.OrganizationId,
-                request.EnvironmentId,
+                tenant,
                 null,
                 request.Status,
-                request.Skip,
-                request.Take,
-                request.Keyword,
+                page,
+                keyword,
                 request.WorkCenterId,
                 request.ShiftId,
-                request.DeviceAssetId)
+                request.DeviceAssetId,
+                excludeTerminal: string.IsNullOrWhiteSpace(request.Status))
             .ToArrayAsync(cancellationToken);
         var workOrderIds = tasks.Select(x => x.WorkOrderId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var operationTaskIds = tasks.Select(x => x.OperationTaskId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -1529,8 +2029,8 @@ public sealed class GetWipSummaryQueryHandler(ApplicationDbContext dbContext)
         var quantities = await dbContext.WorkOrders
             .AsNoTracking()
             .Where(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
+                x.OrganizationId == tenant.OrganizationId &&
+                x.EnvironmentId == tenant.EnvironmentId &&
                 workOrderIds.Contains(x.WorkOrderIdValue))
             .Select(x => new { x.WorkOrderIdValue, x.Quantity })
             .ToDictionaryAsync(x => x.WorkOrderIdValue, x => x.Quantity, StringComparer.OrdinalIgnoreCase, cancellationToken);
@@ -1538,8 +2038,8 @@ public sealed class GetWipSummaryQueryHandler(ApplicationDbContext dbContext)
         var reports = await dbContext.ProductionReports
             .AsNoTracking()
             .Where(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
+                x.OrganizationId == tenant.OrganizationId &&
+                x.EnvironmentId == tenant.EnvironmentId &&
                 operationTaskIds.Contains(x.OperationTaskId))
             .GroupBy(x => x.OperationTaskId)
             .Select(x => new
@@ -1578,7 +2078,7 @@ public sealed record ListRelatedQualityItemsQuery(
     string? WorkOrderId,
     string? OperationTaskId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -1595,16 +2095,21 @@ public sealed record MesRelatedQualityItemRow(
     string SourceDocumentId,
     string Status,
     string? DefectCode,
-    string? NcrId);
+    string? NcrId,
+    string? WorkOrderId = null,
+    string? OperationTaskId = null);
 
 public sealed class ListRelatedQualityItemsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListRelatedQualityItemsQuery, MesRelatedQualityItemListResponse>
 {
     public async Task<MesRelatedQualityItemListResponse> Handle(ListRelatedQualityItemsQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var query = dbContext.DefectRecords
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.WorkOrderId))
         {
@@ -1616,9 +2121,8 @@ public sealed class ListRelatedQualityItemsQueryHandler(ApplicationDbContext dbC
             query = query.Where(x => x.OperationTaskId == request.OperationTaskId);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = request.Keyword.Trim().ToLower();
             query = query.Where(x =>
                 x.DefectNo.ToLower().Contains(keyword) ||
                 x.WorkOrderId.ToLower().Contains(keyword) ||
@@ -1641,8 +2145,8 @@ public sealed class ListRelatedQualityItemsQueryHandler(ApplicationDbContext dbC
             var shiftId = request.ShiftId?.Trim();
             var deviceAssetId = request.DeviceAssetId?.Trim();
             query = query.Where(x => dbContext.OperationTasks.Any(task =>
-                task.OrganizationId == request.OrganizationId &&
-                task.EnvironmentId == request.EnvironmentId &&
+                task.OrganizationId == tenant.OrganizationId &&
+                task.EnvironmentId == tenant.EnvironmentId &&
                 ((x.OperationTaskId != null && task.OperationTaskIdValue == x.OperationTaskId) ||
                     (x.OperationTaskId == null && task.WorkOrderId == x.WorkOrderId)) &&
                 (workCenterId == null || task.WorkCenterId == workCenterId) &&
@@ -1654,15 +2158,17 @@ public sealed class ListRelatedQualityItemsQueryHandler(ApplicationDbContext dbC
         var items = await query
             .OrderByDescending(x => x.RecordedAtUtc)
             .ThenByDescending(x => x.DefectNo)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(Math.Clamp(request.Take, 1, 500))
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new MesRelatedQualityItemRow(
                 x.DefectNo,
                 "Defect",
                 x.OperationTaskId ?? x.WorkOrderId,
                 x.Status,
                 x.DefectCode,
-                null))
+                null,
+                x.WorkOrderId,
+                x.OperationTaskId))
             .ToArrayAsync(cancellationToken);
         return new MesRelatedQualityItemListResponse(items, total);
     }
@@ -1674,14 +2180,29 @@ public sealed record ListDowntimeEventsQuery(
     string? WorkCenterId,
     string? DeviceAssetId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? ShiftId = null,
-    string? Status = null) : IQuery<MesDowntimeEventListResponse>;
+    string? Status = null,
+    string? ReasonCode = null,
+    DateTimeOffset? WindowStartUtc = null,
+    DateTimeOffset? WindowEndUtc = null,
+    IReadOnlyCollection<string>? AuthorizedWorkCenterIds = null) : IQuery<MesDowntimeEventListResponse>;
 
 public sealed record MesDowntimeEventListResponse(
     IReadOnlyCollection<MesDowntimeEventRow> Items,
-    int Total);
+    int Total,
+    IReadOnlyCollection<MesDowntimeReasonSummaryRow> ReasonSummary);
+
+/// <summary>
+/// 停机时长按原因分类汇总（#1947）。与列表共用同一组过滤条件，但**不受 ReasonCode 过滤影响**——
+/// 否则按某个原因筛选后汇总只剩那一行，就没法再换原因了。事件按开始时刻落入半开窗口；
+/// 未恢复事件按查询时刻与窗口右边界中的较早者计入进行中时长。
+/// </summary>
+public sealed record MesDowntimeReasonSummaryRow(
+    string ReasonCode,
+    int OpenCount,
+    decimal DurationMinutes);
 
 public sealed record MesDowntimeEventRow(
     string DowntimeEventId,
@@ -1698,14 +2219,29 @@ public sealed record MesDowntimeEventRow(
     string? DeviceAssetCode = null,
     string? DeviceAssetName = null);
 
-public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContext)
+public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContext, TimeProvider timeProvider)
     : IQueryHandler<ListDowntimeEventsQuery, MesDowntimeEventListResponse>
 {
     public async Task<MesDowntimeEventListResponse> Handle(ListDowntimeEventsQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
+        var nowUtc = timeProvider.GetUtcNow();
+        var windowEndUtc = request.WindowEndUtc ?? nowUtc;
+        var windowStartUtc = request.WindowStartUtc ?? windowEndUtc.AddDays(-30);
         var query = dbContext.WorkCenterUnavailabilities
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x =>
+                x.OrganizationId == tenant.OrganizationId &&
+                x.EnvironmentId == tenant.EnvironmentId &&
+                x.FromUtc >= windowStartUtc &&
+                x.FromUtc < windowEndUtc);
+
+        if (request.AuthorizedWorkCenterIds is not null)
+        {
+            query = query.Where(x => request.AuthorizedWorkCenterIds.Contains(x.WorkCenterId));
+        }
 
         if (!string.IsNullOrWhiteSpace(request.WorkCenterId))
         {
@@ -1717,9 +2253,8 @@ public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContex
             query = query.Where(x => x.DeviceAssetId == request.DeviceAssetId);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = request.Keyword.Trim().ToLower();
             query = query.Where(x =>
                 x.DowntimeEventNo.ToLower().Contains(keyword) ||
                 x.WorkCenterId.ToLower().Contains(keyword) ||
@@ -1742,25 +2277,35 @@ public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContex
         {
             var shiftId = request.ShiftId.Trim();
             query = query.Where(x => dbContext.OperationTasks.Any(task =>
-                task.OrganizationId == request.OrganizationId &&
-                task.EnvironmentId == request.EnvironmentId &&
+                task.OrganizationId == tenant.OrganizationId &&
+                task.EnvironmentId == tenant.EnvironmentId &&
                 task.WorkCenterId == x.WorkCenterId &&
                 task.ShiftId == shiftId &&
                 (x.DeviceAssetId == null || task.DeviceAssetId == x.DeviceAssetId)));
         }
 
+        var reasonSummary = await SummarizeByReasonAsync(
+            query,
+            windowEndUtc < nowUtc ? windowEndUtc : nowUtc,
+            cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(request.ReasonCode))
+        {
+            var reasonCode = request.ReasonCode.Trim();
+            query = query.Where(x => x.Reason == reasonCode);
+        }
+
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.FromUtc)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(Math.Clamp(request.Take, 1, 500))
-            // #48 字段归位：停机事实不挂工单，WorkOrderId 一律为空；工作中心码只放 WorkCenterId。
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new MesDowntimeEventRow(
                 x.DowntimeEventNo,
-                null,
-                null,
+                x.WorkOrderId,
+                x.OperationTaskId,
                 x.DeviceAssetId,
-                x.ToUtc == null ? "Open" : "Recovered",
+                x.ToUtc == null ? WorkCenterUnavailability.OpenStatus : WorkCenterUnavailability.RecoveredStatus,
                 x.FromUtc,
                 x.ToUtc,
                 x.WorkCenterId,
@@ -1770,7 +2315,38 @@ public sealed class ListDowntimeEventsQueryHandler(ApplicationDbContext dbContex
                 x.DeviceAssetId,
                 null))
             .ToArrayAsync(cancellationToken);
-        return new MesDowntimeEventListResponse(items, total);
+        return new MesDowntimeEventListResponse(items, total, reasonSummary);
+    }
+
+    /// <summary>
+    /// 按原因分组聚合，整条聚合下推数据库：读面每次翻页/改筛选都要重算，绝不能把过滤后的全部
+    /// 停机行拉回进程（那是一次无界全表投影）。Npgsql 把它翻成单条
+    /// <c>GROUP BY reason</c> + <c>sum(date_part('epoch', COALESCE(to_utc, @asOf) - from_utc)/60)</c>，
+    /// 回程行数等于原因个数。未恢复事件按查询时刻与窗口右边界的较早者累计，历史窗口不会越界。
+    /// </summary>
+    private async Task<IReadOnlyCollection<MesDowntimeReasonSummaryRow>> SummarizeByReasonAsync(
+        IQueryable<WorkCenterUnavailability> query,
+        DateTimeOffset asOfUtc,
+        CancellationToken cancellationToken)
+    {
+        var grouped = await query
+            .GroupBy(x => x.Reason)
+            .Select(group => new
+            {
+                ReasonCode = group.Key,
+                OpenCount = group.Count(x => x.ToUtc == null),
+                DurationMinutes = group.Sum(x => ((x.ToUtc ?? asOfUtc) - x.FromUtc).TotalMinutes),
+            })
+            .ToArrayAsync(cancellationToken);
+        // 名次在进程内定：回程只有「原因个数」行，且 GROUP BY 之上没有定序来源，
+        // 名次留在 SQL 里就等于把「同时长怎么排」交给未定义的行序。
+        return [.. grouped
+            .Select(x => new MesDowntimeReasonSummaryRow(
+                x.ReasonCode,
+                x.OpenCount,
+                Math.Round((decimal)x.DurationMinutes, 2)))
+            .OrderByDescending(x => x.DurationMinutes)
+            .ThenBy(x => x.ReasonCode, StringComparer.Ordinal)];
     }
 }
 
@@ -1779,7 +2355,7 @@ public sealed record ListShiftHandoversQuery(
     string EnvironmentId,
     string? ShiftId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? DeviceAssetId = null,
@@ -1796,25 +2372,35 @@ public sealed record MesShiftHandoverRow(
     string HandoverStatus,
     int OpenIssueCount,
     DateTimeOffset CreatedAtUtc,
-    string? TeamName = null);
+    string? TeamName = null,
+    string? OutgoingUserId = null,
+    string? OutgoingUserName = null,
+    string? IncomingUserId = null,
+    string? IncomingUserName = null,
+    DateTimeOffset? AcceptedAtUtc = null,
+    int WipItemCount = 0,
+    int UnfinishedWorkOrderCount = 0,
+    int OpenIssueDetailCount = 0);
 
 public sealed class ListShiftHandoversQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListShiftHandoversQuery, MesShiftHandoverListResponse>
 {
     public async Task<MesShiftHandoverListResponse> Handle(ListShiftHandoversQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var query = dbContext.ShiftHandovers
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.ShiftId))
         {
             query = query.Where(x => x.ShiftId == request.ShiftId);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = request.Keyword.Trim().ToLower();
             query = query.Where(x =>
                 x.HandoverNo.ToLower().Contains(keyword) ||
                 x.ShiftId.ToLower().Contains(keyword) ||
@@ -1834,8 +2420,8 @@ public sealed class ListShiftHandoversQueryHandler(ApplicationDbContext dbContex
             var workCenterId = request.WorkCenterId?.Trim();
             var deviceAssetId = request.DeviceAssetId?.Trim();
             query = query.Where(x => dbContext.OperationTasks.Any(task =>
-                task.OrganizationId == request.OrganizationId &&
-                task.EnvironmentId == request.EnvironmentId &&
+                task.OrganizationId == tenant.OrganizationId &&
+                task.EnvironmentId == tenant.EnvironmentId &&
                 task.ShiftId == x.ShiftId &&
                 (workCenterId == null || task.WorkCenterId == workCenterId) &&
                 (deviceAssetId == null || task.DeviceAssetId == deviceAssetId)));
@@ -1845,8 +2431,8 @@ public sealed class ListShiftHandoversQueryHandler(ApplicationDbContext dbContex
         var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .ThenByDescending(x => x.HandoverNo)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(Math.Clamp(request.Take, 1, 500))
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new MesShiftHandoverRow(
                 x.HandoverNo,
                 x.ShiftId,
@@ -1854,97 +2440,159 @@ public sealed class ListShiftHandoversQueryHandler(ApplicationDbContext dbContex
                 x.HandoverStatus,
                 x.OpenIssueCount,
                 x.CreatedAtUtc,
-                x.TeamName))
+                x.TeamName,
+                x.OutgoingUserId,
+                x.OutgoingUserName,
+                x.IncomingUserId,
+                x.IncomingUserName,
+                x.AcceptedAtUtc,
+                x.WipItems.Count,
+                x.UnfinishedWorkOrders.Count,
+                x.OpenIssues.Count))
             .ToArrayAsync(cancellationToken);
         return new MesShiftHandoverListResponse(items, total);
     }
 }
 
-/// <summary>
-/// 历史规则排程结果列表。
-///
-/// 「规则排程」页此前只能显示本次会话刚跑的那一次结果（前端把结果存在内存里），
-/// 刷新即空、别人跑的看不到——服务端只有 POST 跑一次的写端点，没有任何读面。本查询补上读面。
-///
-/// 注意 <c>schedule_results</c> 表**没有 organization_id / environment_id 列**（既有模型如此），
-/// 因此 scope 参数在这里只做入参一致性，不参与过滤；跨租户隔离需要先给表补 scope 列
-/// （另行跟踪，不在读面补齐的范围内）。
-/// </summary>
-public sealed record ListScheduleResultsQuery(
+/// <summary>交接班明细读面：一条交接班记录的三类交班时点快照全量。</summary>
+public sealed record GetShiftHandoverQuery(
     string OrganizationId,
     string EnvironmentId,
-    string? Trigger = null,
-    int Skip = 0,
-    int Take = 20) : IQuery<MesScheduleResultListResponse>;
+    string HandoverId) : IQuery<MesShiftHandoverDetail>;
 
-public sealed record MesScheduleResultListResponse(
-    IReadOnlyCollection<MesScheduleResultRow> Items,
-    int Total);
-
-public sealed record MesScheduleResultRow(
-    int ScheduleVersion,
-    string Trigger,
-    DateTimeOffset ScheduledAtUtc,
-    int AssignmentCount,
-    int AffectedWorkOrderCount,
-    IReadOnlyCollection<string> AffectedWorkOrderIds,
-    IReadOnlyCollection<MesScheduledOperationRow> Assignments);
-
-public sealed record MesScheduledOperationRow(
+public sealed record MesShiftHandoverWipItemRow(
     string WorkOrderId,
-    string OperationTaskId,
-    string WorkCenterId,
-    DateTimeOffset StartUtc,
-    DateTimeOffset EndUtc,
-    string Reason);
+    string? OperationTaskId,
+    decimal Quantity);
 
-public sealed class ListScheduleResultsQueryHandler(ApplicationDbContext dbContext)
-    : IQueryHandler<ListScheduleResultsQuery, MesScheduleResultListResponse>
+public sealed record MesShiftHandoverUnfinishedWorkOrderRow(
+    string WorkOrderId,
+    decimal PlannedQuantity,
+    decimal CompletedQuantity,
+    string WorkOrderStatus);
+
+/// <summary><c>Category</c> 与 <c>Severity</c> 用字符串回显域枚举名，避免服务端未注册枚举转换器时被序列化成整数。</summary>
+public sealed record MesShiftHandoverOpenIssueRow(
+    string Category,
+    string Severity,
+    string Description,
+    string? ReferenceId);
+
+/// <summary>交班附件行；<c>FileId</c> 就是网关下载授权面所需的全部信息。</summary>
+public sealed record MesShiftHandoverAttachmentRow(
+    string FileId,
+    string FileName,
+    string ContentType,
+    long SizeBytes);
+
+public sealed record MesShiftHandoverDetail(
+    string HandoverId,
+    string ShiftId,
+    string TeamId,
+    string HandoverStatus,
+    int OpenIssueCount,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset? AcceptedAtUtc,
+    string? TeamName,
+    string? OutgoingUserId,
+    string? OutgoingUserName,
+    string? IncomingUserId,
+    string? IncomingUserName,
+    IReadOnlyCollection<MesShiftHandoverWipItemRow> WipItems,
+    IReadOnlyCollection<MesShiftHandoverUnfinishedWorkOrderRow> UnfinishedWorkOrders,
+    IReadOnlyCollection<MesShiftHandoverOpenIssueRow> OpenIssues,
+    IReadOnlyCollection<MesShiftHandoverAttachmentRow> Attachments);
+
+public sealed class GetShiftHandoverQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetShiftHandoverQuery, MesShiftHandoverDetail>
 {
-    public async Task<MesScheduleResultListResponse> Handle(
-        ListScheduleResultsQuery request,
-        CancellationToken cancellationToken)
+    public async Task<MesShiftHandoverDetail> Handle(GetShiftHandoverQuery request, CancellationToken cancellationToken)
     {
-        var query = dbContext.ScheduleResults.AsNoTracking();
+        // 只按 HandoverNo 解析：列表行、详情和两个写面回执一律回吐 HandoverNo，
+        // 聚合 Guid 从不离开本服务，客户端拿不到也就无从用它来查。
+        var query = dbContext.ShiftHandovers
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.HandoverNo == request.HandoverId);
 
-        if (!string.IsNullOrWhiteSpace(request.Trigger) &&
-            Enum.TryParse<ScheduleTrigger>(request.Trigger.Trim(), ignoreCase: true, out var trigger))
-        {
-            query = query.Where(x => x.Trigger == trigger);
-        }
+        // 三类明细一律来自本聚合的子表，不回 join 工单表重算：读面回吐的就是交班时点写下的数值。
+        var handover = await query
+            .Select(x => new
+            {
+                x.HandoverNo,
+                x.ShiftId,
+                x.TeamId,
+                x.HandoverStatus,
+                x.OpenIssueCount,
+                x.CreatedAtUtc,
+                x.AcceptedAtUtc,
+                x.TeamName,
+                x.OutgoingUserId,
+                x.OutgoingUserName,
+                x.IncomingUserId,
+                x.IncomingUserName,
+                WipItems = x.WipItems
+                    .Select(item => new MesShiftHandoverWipItemRow(item.WorkOrderId, item.OperationTaskId, item.Quantity))
+                    .ToArray(),
+                UnfinishedWorkOrders = x.UnfinishedWorkOrders
+                    .Select(workOrder => new MesShiftHandoverUnfinishedWorkOrderRow(
+                        workOrder.WorkOrderId,
+                        workOrder.PlannedQuantity,
+                        workOrder.CompletedQuantity,
+                        workOrder.WorkOrderStatus))
+                    .ToArray(),
+                OpenIssues = x.OpenIssues
+                    .Select(issue => new
+                    {
+                        issue.Category,
+                        issue.Severity,
+                        issue.Description,
+                        issue.ReferenceId,
+                    })
+                    .ToArray(),
+                Attachments = x.Attachments
+                    .Select(attachment => new MesShiftHandoverAttachmentRow(
+                        attachment.FileId,
+                        attachment.FileName,
+                        attachment.ContentType,
+                        attachment.SizeBytes))
+                    .ToArray(),
+            })
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new KnownException($"未找到班次交接，HandoverId = {request.HandoverId}");
 
-        var total = await query.CountAsync(cancellationToken);
-
-        // 分配明细存的是 JSON，条数与内容都只能在内存里展开——因此先按版本号倒序分页取实体，
-        // 再投影，页大小上限 100 让展开量可控。排序键用业务版本号，不用强类型 id
-        // （强类型 id 在 InMemory provider 上不可比较，会当场抛 IComparable）。
-        var rows = await query
-            .OrderByDescending(x => x.ScheduledAtUtc)
-            .ThenByDescending(x => x.ScheduleVersion)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(Math.Clamp(request.Take, 1, 100))
-            .ToArrayAsync(cancellationToken);
-
-        var items = rows
-            .Select(x => new MesScheduleResultRow(
-                x.ScheduleVersion,
-                x.Trigger.ToString(),
-                x.ScheduledAtUtc,
-                x.Assignments.Count,
-                x.AffectedWorkOrderIds.Count,
-                [.. x.AffectedWorkOrderIds],
-                [
-                    .. x.Assignments.Select(assignment => new MesScheduledOperationRow(
-                        assignment.WorkOrderId,
-                        assignment.OperationTaskId,
-                        assignment.WorkCenterId,
-                        assignment.StartUtc,
-                        assignment.EndUtc,
-                        assignment.Reason)),
-                ]))
-            .ToArray();
-
-        return new MesScheduleResultListResponse(items, total);
+        return new MesShiftHandoverDetail(
+            handover.HandoverNo,
+            handover.ShiftId,
+            handover.TeamId,
+            handover.HandoverStatus,
+            handover.OpenIssueCount,
+            handover.CreatedAtUtc,
+            handover.AcceptedAtUtc,
+            handover.TeamName,
+            handover.OutgoingUserId,
+            handover.OutgoingUserName,
+            handover.IncomingUserId,
+            handover.IncomingUserName,
+            [.. handover.WipItems
+                .OrderBy(x => x.WorkOrderId, StringComparer.Ordinal)
+                .ThenBy(x => x.OperationTaskId, StringComparer.Ordinal)],
+            [.. handover.UnfinishedWorkOrders.OrderBy(x => x.WorkOrderId, StringComparer.Ordinal)],
+            // 严重度排序必须留在内存里：Severity 以字符串列持久化，交给数据库排会按
+            // High < Low < Medium 的字典序排，而不是按严重度。
+            [.. handover.OpenIssues
+                .OrderBy(x => x.Category)
+                .ThenByDescending(x => x.Severity)
+                .ThenBy(x => x.Description, StringComparer.Ordinal)
+                .Select(x => new MesShiftHandoverOpenIssueRow(
+                    x.Category.ToString(),
+                    x.Severity.ToString(),
+                    x.Description,
+                    x.ReferenceId))],
+            [.. handover.Attachments
+                .OrderBy(x => x.FileName, StringComparer.Ordinal)
+                .ThenBy(x => x.FileId, StringComparer.Ordinal)]);
     }
 }
 
@@ -1957,11 +2605,127 @@ public sealed record MesTraceabilityResponse(
     IReadOnlyCollection<MesTraceabilityNode> Nodes,
     IReadOnlyCollection<MesTraceabilityEdge> Edges);
 
-public sealed record MesTraceabilityNode(string NodeId, string NodeType, string DisplayName, string Status);
+public sealed record MesTraceabilityNode
+{
+    /// <summary>
+    /// <c>nodeType</c> 只收 <see cref="MesTraceabilityNodeType"/>。这是刻意的：本类型无法由字符串隐式得到，
+    /// 于是「在调用点直接写个新的类型字面量」在编译期就不成立，节点类型全集不会再被悄悄扩大。
+    /// <para>
+    /// <c>occurredAtUtc</c> 是该节点对应事实的发生时刻。追溯图上「什么时候」和「谁 / 哪台设备 /
+    /// 什么检验结论」同属一条报工事实，因此时间落在节点上而不是另起一类时间节点；主数据类节点
+    /// （工单、物料、批次）没有单一发生时刻，保持 null。
+    /// </para>
+    /// </summary>
+    public MesTraceabilityNode(
+        string nodeId,
+        MesTraceabilityNodeType nodeType,
+        string displayName,
+        string status,
+        DateTimeOffset? occurredAtUtc = null)
+    {
+        NodeId = nodeId;
+        NodeType = nodeType.Value;
+        DisplayName = displayName;
+        Status = status;
+        OccurredAtUtc = occurredAtUtc;
+    }
+
+    public string NodeId { get; }
+
+    /// <summary>节点类型码值。**写入面**只收受控值，读出面仍是字符串，线上 JSON 形状不变。</summary>
+    public string NodeType { get; }
+
+    public string DisplayName { get; }
+
+    public string Status { get; }
+
+    public DateTimeOffset? OccurredAtUtc { get; }
+}
 
 public sealed record MesTraceabilityEdge(string FromNodeId, string ToNodeId, string RelationType);
 
-public static class MesTraceabilityProductionReportQueries
+/// <summary>
+/// MES 追溯读面能发出的节点类型。追溯图上的节点类型是给人看的分类码，前端要按它出中文说法；
+/// 散在十几个调用点上写字面量时，前端词表无从知道该覆盖哪些，界面上就会印出 <c>ProductionReport</c>
+/// 这样的英文码——本票修的就是这个。
+/// <para>
+/// 所以这里不是一张「常量表」而是一个**封闭类型**：构造函数私有，字符串没有到本类型的隐式转换，
+/// 因此调用点写不出表外的字面量——无论是集合初始化器里的 target-typed <c>new(...)</c>、三元的某一支，
+/// 还是先落到局部变量再传进来，都在编译期不成立。新增一类节点只能在下面加一个静态字段。
+/// </para>
+/// <para>
+/// 它是 <c>sealed record</c>（引用类型）而不是 <c>record struct</c>，这一条是**被实测逼出来的**：
+/// 值类型有隐式公共无参构造，<c>default</c> 与 <c>new MesTraceabilityNodeType()</c> 都绕得过私有构造，
+/// 拿到 <c>Value == null</c> 的实例，编译还是绿的，界面上那一行的「类型」列直接空白。
+/// 换成引用类型后，这两种写法在 <c>&lt;Nullable&gt;enable&lt;/Nullable&gt;</c> +
+/// <c>TreatWarningsAsErrors</c> 下都是编译错误；仅剩的例外是 <c>null!</c> / <c>default!</c>
+/// 这种显式抑制 NRT 的写法（实测编译零诊断），那是编写者主动缴械，不在护栏射程内。
+/// </para>
+/// <para>
+/// 前端追溯词表按本表做完备性契约（<c>frontend/apps/business-console/src/data/traceNodeType.contract.test.ts</c>）：
+/// 这里加一个字段而词表没跟进即红。
+/// </para>
+/// </summary>
+public sealed record MesTraceabilityNodeType
+{
+    private MesTraceabilityNodeType(string value) => Value = value;
+
+    public string Value { get; }
+
+    public static implicit operator string(MesTraceabilityNodeType nodeType) => nodeType.Value;
+
+    public override string ToString() => Value;
+
+    public static readonly MesTraceabilityNodeType WorkOrder = new("WorkOrder");
+    public static readonly MesTraceabilityNodeType DemandSource = new("DemandSource");
+    public static readonly MesTraceabilityNodeType OperationTask = new("OperationTask");
+    public static readonly MesTraceabilityNodeType ProductionReport = new("ProductionReport");
+    public static readonly MesTraceabilityNodeType Operator = new("Operator");
+    public static readonly MesTraceabilityNodeType DeviceAsset = new("DeviceAsset");
+    /// <summary>
+    /// 取值引 <see cref="MesTraceabilityNodeTypes.InspectionResult"/> 而不是写字面量：这个 wire 值被
+    /// BusinessGateway 的追溯门面用来按 <c>business.mes.quality.read</c> 裁剪检验结论节点，
+    /// 两边各写一份字面量则 MES 改名后门面静默失配、权限泄漏复发（#2686）。词表漂移门禁扫本文件。
+    /// </summary>
+    public static readonly MesTraceabilityNodeType InspectionResult = new(MesTraceabilityNodeTypes.InspectionResult);
+    public static readonly MesTraceabilityNodeType NonconformanceReport = new("NonconformanceReport");
+    public static readonly MesTraceabilityNodeType ProducedLot = new("ProducedLot");
+    public static readonly MesTraceabilityNodeType Serial = new("Serial");
+    public static readonly MesTraceabilityNodeType Material = new("Material");
+    public static readonly MesTraceabilityNodeType MaterialLot = new("MaterialLot");
+    public static readonly MesTraceabilityNodeType MaterialIssueRequest = new("MaterialIssueRequest");
+    public static readonly MesTraceabilityNodeType BatchOrSerial = new("BatchOrSerial");
+    public static readonly MesTraceabilityNodeType ProducedLotOrSerial = new("ProducedLotOrSerial");
+
+    /// <summary>
+    /// 需求计划来源单据节点**唯一**的例外通道：那个节点的类型就是工单上持久化的
+    /// <c>SourceDocumentType</c>，由外部写入方经公开端点给（<c>MaximumLength(100)</c> 的自由文本，
+    /// 无取值校验），是开放集合，登记不进上面的表。
+    /// <para>
+    /// 这是本类型封闭性上仅剩的口子。前端契约测试盯两件事：本类型上**收外部值的入口**只能有这一个
+    /// （再加一个 <c>FromCode(string)</c> 之类的工厂、一个公开构造，或者一个 <c>string</c> 到本类型的
+    /// 隐式转换，都等于把护栏拆了），且它只能有一个调用点。那条断言认的是声明的写法，覆盖
+    /// public/internal、跨行、任意形参类型与转换运算符；它钉的是已知的拆护栏姿势，不是全称封闭。
+    /// 要发新的**受控**节点类型，加静态字段，不要走这里。
+    /// </para>
+    /// </summary>
+    public static MesTraceabilityNodeType FromSourceDocumentType(string sourceDocumentType) =>
+        new(sourceDocumentType);
+}
+
+/// <summary>
+/// 一条报工事实在追溯图上的完整投影输入：报工号、报工时刻、报工人、报工时固化的设备快照，
+/// 以及该报工所属的工单与工序（检验结论按工序归属查不良记录）。
+/// </summary>
+public sealed record MesTraceabilityReportContext(
+    string ReportNo,
+    DateTimeOffset ReportedAtUtc,
+    string? ReportedBy,
+    string? DeviceAssetId,
+    string OperationTaskId,
+    IReadOnlyCollection<string> SerialNumbers);
+
+public static class MesTraceabilityQueries
 {
     public static IQueryable<ProductionReport> ActiveProductionReports(this ApplicationDbContext dbContext)
     {
@@ -1974,6 +2738,293 @@ public static class MesTraceabilityProductionReportQueries
                     reversal.EnvironmentId == report.EnvironmentId &&
                     reversal.ReversedReportNo == report.ReportNo));
     }
+
+    public static async Task<IReadOnlyDictionary<string, string[]>> LoadProductionReportSerialNumbersAsync(
+        this ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<string> reportNos,
+        CancellationToken cancellationToken)
+    {
+        var rows = await dbContext.ProductionReportSerialNumbers
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                reportNos.Contains(x.ReportNo))
+            .OrderBy(x => x.ReportNo)
+            .ThenBy(x => x.SequenceNo)
+            .Select(x => new { x.ReportNo, x.SerialNumber })
+            .ToArrayAsync(cancellationToken);
+
+        return rows
+            .GroupBy(x => x.ReportNo, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(x => x.SerialNumber).ToArray(),
+                StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// 发出报工节点本身，以及它携带的人员、设备与检验结论。三个追溯读面都只传 context，不在调用点
+    /// 自行拼报工节点或回填时间；节点与边在这里按身份去重，故同一报工出现在多条路径上也只发一次。
+    /// 设备取报工时固化的 OEE 设备快照，检验结论按工序归属查不良记录当前处置状态（工序号在租户+环境内唯一）：
+    /// 不良记录本就以工单+工序为归属，报工侧没有反向写入通道。
+    /// </summary>
+    public static async Task AppendProductionReportFactsAsync(
+        this ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<MesTraceabilityReportContext> reports,
+        List<MesTraceabilityNode> nodes,
+        List<MesTraceabilityEdge> edges,
+        CancellationToken cancellationToken)
+    {
+        if (reports.Count == 0)
+        {
+            return;
+        }
+
+        var operationTaskIds = reports
+            .Select(x => x.OperationTaskId)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var defectRecords = await dbContext.DefectRecords
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.OperationTaskId != null &&
+                operationTaskIds.Contains(x.OperationTaskId))
+            .Select(x => new { x.DefectNo, x.DefectCode, x.Status, x.RecordedAtUtc, x.OperationTaskId })
+            .ToArrayAsync(cancellationToken);
+
+        var emittedNodes = new HashSet<(string NodeId, string NodeType)>();
+        var emittedEdges = new HashSet<(string FromNodeId, string ToNodeId, string RelationType)>();
+        void AddNode(string nodeId, MesTraceabilityNodeType nodeType, string displayName, string status, DateTimeOffset? occurredAtUtc)
+        {
+            if (emittedNodes.Add((nodeId, nodeType)))
+            {
+                nodes.Add(new MesTraceabilityNode(nodeId, nodeType, displayName, status, occurredAtUtc));
+            }
+        }
+
+        void AddEdge(string fromNodeId, string toNodeId, string relationType)
+        {
+            if (emittedEdges.Add((fromNodeId, toNodeId, relationType)))
+            {
+                edges.Add(new MesTraceabilityEdge(fromNodeId, toNodeId, relationType));
+            }
+        }
+
+        foreach (var report in reports)
+        {
+            AddNode(report.ReportNo, MesTraceabilityNodeType.ProductionReport, report.ReportNo, "Reported", report.ReportedAtUtc);
+
+            if (!string.IsNullOrWhiteSpace(report.ReportedBy))
+            {
+                AddNode(report.ReportedBy, MesTraceabilityNodeType.Operator, report.ReportedBy, "Reported", report.ReportedAtUtc);
+                AddEdge(report.ReportNo, report.ReportedBy, "reported-by");
+            }
+
+            if (!string.IsNullOrWhiteSpace(report.DeviceAssetId))
+            {
+                AddNode(report.DeviceAssetId, MesTraceabilityNodeType.DeviceAsset, report.DeviceAssetId, "Reported", report.ReportedAtUtc);
+                AddEdge(report.ReportNo, report.DeviceAssetId, "reported-on-device");
+            }
+
+            foreach (var serialNumber in report.SerialNumbers)
+            {
+                AddNode(serialNumber, MesTraceabilityNodeType.Serial, serialNumber, "Produced", report.ReportedAtUtc);
+                AddEdge(report.ReportNo, serialNumber, "produced-serial");
+            }
+
+            foreach (var defectRecord in defectRecords.Where(x =>
+                string.Equals(x.OperationTaskId, report.OperationTaskId, StringComparison.Ordinal)))
+            {
+                AddNode(defectRecord.DefectNo, MesTraceabilityNodeType.InspectionResult, defectRecord.DefectCode, defectRecord.Status, defectRecord.RecordedAtUtc);
+                AddEdge(report.OperationTaskId, defectRecord.DefectNo, "inspected-as");
+            }
+        }
+    }
+
+    public static async Task<bool> AppendReworkFactsAsync(
+        this ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<string> workOrderIds,
+        IReadOnlyCollection<string> batchOrSerials,
+        List<MesTraceabilityNode> nodes,
+        List<MesTraceabilityEdge> edges,
+        bool useBatchReadFaceEdgeDirection,
+        CancellationToken cancellationToken)
+    {
+        var scopedWorkOrderIds = workOrderIds.Distinct(StringComparer.Ordinal).ToArray();
+        var scopedBatchOrSerials = batchOrSerials.Distinct(StringComparer.Ordinal).ToArray();
+        var reworkWorkOrders = await dbContext.WorkOrders
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.WorkOrderType == WorkOrder.ReworkType &&
+                (scopedWorkOrderIds.Contains(x.WorkOrderIdValue) ||
+                    (x.SourceWorkOrderId != null && scopedWorkOrderIds.Contains(x.SourceWorkOrderId)) ||
+                    (x.SourceLotNo != null && scopedBatchOrSerials.Contains(x.SourceLotNo)) ||
+                    (x.SourceSerialNo != null && scopedBatchOrSerials.Contains(x.SourceSerialNo))))
+            .Select(x => new
+            {
+                x.WorkOrderIdValue,
+                x.Status,
+                x.SourceWorkOrderId,
+                x.SourceNcrId,
+                x.SourceNcrCode,
+                x.SourceLotNo,
+                x.SourceSerialNo,
+            })
+            .ToArrayAsync(cancellationToken);
+        if (reworkWorkOrders.Length == 0)
+        {
+            return false;
+        }
+
+        var reworkWorkOrderIds = reworkWorkOrders.Select(x => x.WorkOrderIdValue).ToArray();
+        var operations = await dbContext.OperationTasks
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                reworkWorkOrderIds.Contains(x.WorkOrderId))
+            .Select(x => new { x.WorkOrderId, x.OperationTaskIdValue, x.Status })
+            .ToArrayAsync(cancellationToken);
+        var reports = await dbContext.ProductionReports
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.ReversedReportNo == null &&
+                reworkWorkOrderIds.Contains(x.WorkOrderId))
+            .Select(x => new
+            {
+                x.WorkOrderId,
+                x.OperationTaskId,
+                x.ReportNo,
+                x.ProducedLotNo,
+                x.ReportedAtUtc,
+                x.ReportedBy,
+                x.OeeDeviceAssetId,
+                IsReversed = dbContext.ProductionReports.Any(reversal =>
+                    reversal.OrganizationId == x.OrganizationId &&
+                    reversal.EnvironmentId == x.EnvironmentId &&
+                    reversal.ReversedReportNo == x.ReportNo),
+            })
+            .ToArrayAsync(cancellationToken);
+        var serialNumbersByReport = await dbContext.LoadProductionReportSerialNumbersAsync(
+            organizationId,
+            environmentId,
+            reports.Select(x => x.ReportNo).ToArray(),
+            cancellationToken);
+
+        await dbContext.AppendProductionReportFactsAsync(
+            organizationId,
+            environmentId,
+            [.. reports.Select(x => new MesTraceabilityReportContext(
+                x.ReportNo,
+                x.ReportedAtUtc,
+                x.ReportedBy,
+                x.OeeDeviceAssetId,
+                x.OperationTaskId,
+                x.IsReversed ? [] : serialNumbersByReport.GetValueOrDefault(x.ReportNo, [])))],
+            nodes,
+            edges,
+            cancellationToken);
+
+        var emittedNodes = nodes
+            .Select(x => (x.NodeId, x.NodeType))
+            .ToHashSet();
+        var emittedEdges = edges
+            .Select(x => (x.FromNodeId, x.ToNodeId, x.RelationType))
+            .ToHashSet();
+        void AddNode(string nodeId, MesTraceabilityNodeType nodeType, string displayName, string status)
+        {
+            if (emittedNodes.Add((nodeId, nodeType)))
+            {
+                nodes.Add(new MesTraceabilityNode(nodeId, nodeType, displayName, status));
+            }
+        }
+
+        void AddEdge(string fromNodeId, string toNodeId, string relationType)
+        {
+            if (emittedEdges.Add((fromNodeId, toNodeId, relationType)))
+            {
+                edges.Add(new MesTraceabilityEdge(fromNodeId, toNodeId, relationType));
+            }
+        }
+
+        foreach (var reworkWorkOrder in reworkWorkOrders)
+        {
+            AddNode(reworkWorkOrder.SourceWorkOrderId!, MesTraceabilityNodeType.WorkOrder, reworkWorkOrder.SourceWorkOrderId!, "Source");
+            AddNode(reworkWorkOrder.SourceNcrId!, MesTraceabilityNodeType.NonconformanceReport, reworkWorkOrder.SourceNcrCode!, "ReworkRequested");
+            AddNode(reworkWorkOrder.WorkOrderIdValue, MesTraceabilityNodeType.WorkOrder, reworkWorkOrder.WorkOrderIdValue, reworkWorkOrder.Status);
+            AddEdge(reworkWorkOrder.SourceWorkOrderId!, reworkWorkOrder.SourceNcrId!, "raised-ncr");
+            AddEdge(reworkWorkOrder.SourceNcrId!, reworkWorkOrder.WorkOrderIdValue, "created-rework-work-order");
+
+            if (reworkWorkOrder.SourceLotNo is not null)
+            {
+                var sourceLotNodeId = SourceOccurrenceNodeId(
+                    reworkWorkOrder.SourceNcrId!,
+                    "lot",
+                    reworkWorkOrder.SourceLotNo);
+                AddNode(sourceLotNodeId, MesTraceabilityNodeType.ProducedLot, reworkWorkOrder.SourceLotNo, "Source");
+                AddEdge(sourceLotNodeId, reworkWorkOrder.SourceNcrId!, "identified-in-ncr");
+            }
+
+            if (reworkWorkOrder.SourceSerialNo is not null)
+            {
+                var sourceSerialNodeId = SourceOccurrenceNodeId(
+                    reworkWorkOrder.SourceNcrId!,
+                    "serial",
+                    reworkWorkOrder.SourceSerialNo);
+                AddNode(sourceSerialNodeId, MesTraceabilityNodeType.Serial, reworkWorkOrder.SourceSerialNo, "Source");
+                AddEdge(sourceSerialNodeId, reworkWorkOrder.SourceNcrId!, "identified-in-ncr");
+            }
+        }
+
+        foreach (var operation in operations)
+        {
+            AddNode(operation.OperationTaskIdValue, MesTraceabilityNodeType.OperationTask, operation.OperationTaskIdValue, operation.Status.ToString());
+            if (!useBatchReadFaceEdgeDirection)
+            {
+                AddEdge(operation.WorkOrderId, operation.OperationTaskIdValue, "has-operation");
+            }
+        }
+
+        foreach (var report in reports)
+        {
+            var reworkWorkOrder = reworkWorkOrders.Single(x =>
+                string.Equals(x.WorkOrderIdValue, report.WorkOrderId, StringComparison.Ordinal));
+            if (useBatchReadFaceEdgeDirection)
+            {
+                AddEdge(report.ReportNo, report.OperationTaskId, "reported-operation");
+                AddEdge(report.OperationTaskId, reworkWorkOrder.WorkOrderIdValue, "belongs-to-work-order");
+            }
+            else
+            {
+                AddEdge(report.OperationTaskId, report.ReportNo, "has-report");
+            }
+
+            if (!report.IsReversed && report.ProducedLotNo is not null)
+            {
+                AddNode(report.ProducedLotNo, MesTraceabilityNodeType.ProducedLot, report.ProducedLotNo, "Produced");
+                AddEdge(report.ReportNo, report.ProducedLotNo, "produced-lot");
+            }
+
+        }
+
+        return true;
+    }
+
+    private static string SourceOccurrenceNodeId(string sourceNcrId, string kind, string sourceValue) =>
+        $"{sourceNcrId}:source-{kind}:{sourceValue}";
 }
 
 public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext dbContext)
@@ -1991,7 +3042,7 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
         if (workOrder is null)
         {
             return new MesTraceabilityResponse(
-                [new MesTraceabilityNode(request.WorkOrderId, "WorkOrder", request.WorkOrderId, "Unknown")],
+                [new MesTraceabilityNode(request.WorkOrderId, MesTraceabilityNodeType.WorkOrder, request.WorkOrderId, "Unknown")],
                 []);
         }
 
@@ -2004,13 +3055,26 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 x.WorkOrderId == request.WorkOrderId)
-            .Select(x => new { Id = x.ReportNo, x.OperationTaskId, x.ProducedLotNo, x.SerialNo })
+            .Select(x => new
+            {
+                Id = x.ReportNo,
+                x.OperationTaskId,
+                x.ProducedLotNo,
+                x.ReportedAtUtc,
+                x.ReportedBy,
+                x.OeeDeviceAssetId,
+            })
             .ToArrayAsync(cancellationToken);
         var activeReportNos = reports.Select(x => x.Id).ToArray();
+        var serialNumbersByReport = await dbContext.LoadProductionReportSerialNumbersAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            activeReportNos,
+            cancellationToken);
 
         var nodes = new List<MesTraceabilityNode>
         {
-            new(detail.WorkOrderId, "WorkOrder", detail.WorkOrderId, detail.Status),
+            new MesTraceabilityNode(detail.WorkOrderId, MesTraceabilityNodeType.WorkOrder, detail.WorkOrderId, detail.Status),
         };
         var edges = new List<MesTraceabilityEdge>();
 
@@ -2018,7 +3082,7 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
         {
             nodes.Add(new MesTraceabilityNode(
                 detail.SourcePlanReference.SourceDocumentId,
-                detail.SourcePlanReference.SourceDocumentType,
+                MesTraceabilityNodeType.FromSourceDocumentType(detail.SourcePlanReference.SourceDocumentType),
                 detail.SourcePlanReference.SourceDocumentId,
                 "Source"));
             edges.Add(new MesTraceabilityEdge(
@@ -2046,7 +3110,7 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
             {
                 nodes.Add(new MesTraceabilityNode(
                     demandReference,
-                    "DemandSource",
+                    MesTraceabilityNodeType.DemandSource,
                     demandReference,
                     "Source"));
                 edges.Add(new MesTraceabilityEdge(
@@ -2058,25 +3122,33 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
 
         foreach (var task in detail.OperationTasks)
         {
-            nodes.Add(new MesTraceabilityNode(task.OperationTaskId, "OperationTask", task.OperationTaskId, task.Status));
+            nodes.Add(new MesTraceabilityNode(task.OperationTaskId, MesTraceabilityNodeType.OperationTask, task.OperationTaskId, task.Status));
             edges.Add(new MesTraceabilityEdge(detail.WorkOrderId, task.OperationTaskId, "has-operation"));
         }
 
+        await dbContext.AppendProductionReportFactsAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            [.. reports.Select(x => new MesTraceabilityReportContext(
+                x.Id,
+                x.ReportedAtUtc,
+                x.ReportedBy,
+                x.OeeDeviceAssetId,
+                x.OperationTaskId,
+                serialNumbersByReport.GetValueOrDefault(x.Id, [])))],
+            nodes,
+            edges,
+            cancellationToken);
+
         foreach (var report in reports)
         {
-            nodes.Add(new MesTraceabilityNode(report.Id, "ProductionReport", report.Id, "Reported"));
             edges.Add(new MesTraceabilityEdge(report.OperationTaskId, report.Id, "has-report"));
             if (!string.IsNullOrWhiteSpace(report.ProducedLotNo))
             {
-                nodes.Add(new MesTraceabilityNode(report.ProducedLotNo, "ProducedLot", report.ProducedLotNo, "Produced"));
+                nodes.Add(new MesTraceabilityNode(report.ProducedLotNo, MesTraceabilityNodeType.ProducedLot, report.ProducedLotNo, "Produced"));
                 edges.Add(new MesTraceabilityEdge(report.Id, report.ProducedLotNo, "produced-lot"));
             }
 
-            if (!string.IsNullOrWhiteSpace(report.SerialNo))
-            {
-                nodes.Add(new MesTraceabilityNode(report.SerialNo, "Serial", report.SerialNo, "Produced"));
-                edges.Add(new MesTraceabilityEdge(report.Id, report.SerialNo, "produced-serial"));
-            }
         }
 
         var consumptions = await dbContext.ProductionReportMaterialConsumptions
@@ -2090,18 +3162,30 @@ public sealed class GetWorkOrderTraceabilityQueryHandler(ApplicationDbContext db
             .ToArrayAsync(cancellationToken);
         foreach (var consumption in consumptions)
         {
-            nodes.Add(new MesTraceabilityNode(consumption.MaterialId, "Material", consumption.MaterialId, "Consumed"));
-            nodes.Add(new MesTraceabilityNode(consumption.MaterialLotId, "MaterialLot", consumption.MaterialLotId, "Consumed"));
+            nodes.Add(new MesTraceabilityNode(consumption.MaterialId, MesTraceabilityNodeType.Material, consumption.MaterialId, "Consumed"));
+            nodes.Add(new MesTraceabilityNode(consumption.MaterialLotId, MesTraceabilityNodeType.MaterialLot, consumption.MaterialLotId, "Consumed"));
             edges.Add(new MesTraceabilityEdge(consumption.MaterialId, consumption.MaterialLotId, "has-lot"));
             edges.Add(new MesTraceabilityEdge(consumption.MaterialLotId, consumption.ReportNo, "consumed-by-report"));
             if (!string.IsNullOrWhiteSpace(consumption.MaterialIssueRequestNo))
             {
-                nodes.Add(new MesTraceabilityNode(consumption.MaterialIssueRequestNo, "MaterialIssueRequest", consumption.MaterialIssueRequestNo, "Received"));
+                nodes.Add(new MesTraceabilityNode(consumption.MaterialIssueRequestNo, MesTraceabilityNodeType.MaterialIssueRequest, consumption.MaterialIssueRequestNo, "Received"));
                 edges.Add(new MesTraceabilityEdge(consumption.MaterialIssueRequestNo, consumption.MaterialLotId, "received-lot"));
             }
         }
 
-        return new MesTraceabilityResponse(nodes, edges);
+        await dbContext.AppendReworkFactsAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            [request.WorkOrderId],
+            [],
+            nodes,
+            edges,
+            useBatchReadFaceEdgeDirection: false,
+            cancellationToken);
+
+        return new MesTraceabilityResponse(
+            nodes.DistinctBy(x => new { x.NodeId, x.NodeType }).ToArray(),
+            edges.DistinctBy(x => new { x.FromNodeId, x.ToNodeId, x.RelationType }).ToArray());
     }
 }
 
@@ -2116,12 +3200,34 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
     public async Task<MesTraceabilityResponse> Handle(GetBatchTraceabilityQuery request, CancellationToken cancellationToken)
     {
         var activeProductionReports = dbContext.ActiveProductionReports();
+        var producedReports = await activeProductionReports
+            .Where(x =>
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId &&
+                (x.ProducedLotNo == request.BatchOrSerial ||
+                    dbContext.ProductionReportSerialNumbers.Any(serial =>
+                        serial.OrganizationId == x.OrganizationId &&
+                        serial.EnvironmentId == x.EnvironmentId &&
+                        serial.ReportNo == x.ReportNo &&
+                        serial.SerialNumber == request.BatchOrSerial)))
+            .Select(x => new
+            {
+                x.ReportNo,
+                x.WorkOrderId,
+                x.OperationTaskId,
+                x.ProducedLotNo,
+                x.ReportedAtUtc,
+                x.ReportedBy,
+                x.OeeDeviceAssetId,
+            })
+            .ToArrayAsync(cancellationToken);
+        var producedReportNos = producedReports.Select(x => x.ReportNo).ToArray();
         var consumptions = await dbContext.ProductionReportMaterialConsumptions
             .AsNoTracking()
             .Where(x =>
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
-                x.MaterialLotId == request.BatchOrSerial &&
+                (x.MaterialLotId == request.BatchOrSerial || producedReportNos.Contains(x.ReportNo)) &&
                 activeProductionReports.Any(report =>
                     report.OrganizationId == x.OrganizationId &&
                     report.EnvironmentId == x.EnvironmentId &&
@@ -2137,52 +3243,111 @@ public sealed class GetBatchTraceabilityQueryHandler(ApplicationDbContext dbCont
             })
             .ToArrayAsync(cancellationToken);
 
-        var producedReports = await activeProductionReports
-            .Where(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                (x.ProducedLotNo == request.BatchOrSerial || x.SerialNo == request.BatchOrSerial))
-            .Select(x => new { x.ReportNo, x.WorkOrderId, x.OperationTaskId, x.ProducedLotNo, x.SerialNo })
-            .ToArrayAsync(cancellationToken);
+        // 消耗侧的报工行来自耗料表，本身不带执行上下文；回到报工事实取人员 / 设备 / 时间，
+        // 让「投入批次 → 谁在哪台设备上用掉的」与产出侧同样可查。重复的报工由装配函数按身份去重。
+        var consumingReportNos = consumptions
+            .Select(x => x.ReportNo)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var consumingReports = consumingReportNos.Length == 0
+            ? []
+            : await dbContext.ProductionReports
+                .AsNoTracking()
+                .Where(x =>
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    consumingReportNos.Contains(x.ReportNo))
+                .Select(x => new { x.ReportNo, x.ReportedAtUtc, x.ReportedBy, x.OeeDeviceAssetId, x.OperationTaskId })
+                .ToArrayAsync(cancellationToken);
+        var traceReportNos = producedReportNos
+            .Concat(consumingReportNos)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var serialNumbersByReport = await dbContext.LoadProductionReportSerialNumbersAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            traceReportNos,
+            cancellationToken);
 
-        if (consumptions.Length == 0 && producedReports.Length == 0)
+        var nodes = new List<MesTraceabilityNode>();
+        if (consumptions.Length > 0 || producedReports.Length > 0)
         {
-            return new MesTraceabilityResponse(
-                [new MesTraceabilityNode(request.BatchOrSerial, "BatchOrSerial", request.BatchOrSerial, "Unknown")],
-                []);
+            nodes.Add(new MesTraceabilityNode(request.BatchOrSerial, producedReports.Length > 0 ? MesTraceabilityNodeType.ProducedLotOrSerial : MesTraceabilityNodeType.MaterialLot, request.BatchOrSerial, producedReports.Length > 0 ? "Produced" : "Consumed"));
         }
-
-        var nodes = new List<MesTraceabilityNode>
-        {
-            new(request.BatchOrSerial, producedReports.Length > 0 ? "ProducedLotOrSerial" : "MaterialLot", request.BatchOrSerial, producedReports.Length > 0 ? "Produced" : "Consumed"),
-        };
         var edges = new List<MesTraceabilityEdge>();
+
+        await dbContext.AppendProductionReportFactsAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            [
+                .. producedReports.Select(x => new MesTraceabilityReportContext(
+                    x.ReportNo,
+                    x.ReportedAtUtc,
+                    x.ReportedBy,
+                    x.OeeDeviceAssetId,
+                    x.OperationTaskId,
+                    serialNumbersByReport.GetValueOrDefault(x.ReportNo, []))),
+                .. consumingReports.Select(x => new MesTraceabilityReportContext(
+                    x.ReportNo,
+                    x.ReportedAtUtc,
+                    x.ReportedBy,
+                    x.OeeDeviceAssetId,
+                    x.OperationTaskId,
+                    serialNumbersByReport.GetValueOrDefault(x.ReportNo, []))),
+            ],
+            nodes,
+            edges,
+            cancellationToken);
 
         foreach (var report in producedReports)
         {
-            nodes.Add(new MesTraceabilityNode(report.WorkOrderId, "WorkOrder", report.WorkOrderId, "Reported"));
-            nodes.Add(new MesTraceabilityNode(report.OperationTaskId, "OperationTask", report.OperationTaskId, "Reported"));
-            nodes.Add(new MesTraceabilityNode(report.ReportNo, "ProductionReport", report.ReportNo, "Reported"));
-            edges.Add(new MesTraceabilityEdge(report.ReportNo, request.BatchOrSerial, report.SerialNo == request.BatchOrSerial ? "produced-serial" : "produced-lot"));
+            nodes.Add(new MesTraceabilityNode(report.WorkOrderId, MesTraceabilityNodeType.WorkOrder, report.WorkOrderId, "Reported"));
+            nodes.Add(new MesTraceabilityNode(report.OperationTaskId, MesTraceabilityNodeType.OperationTask, report.OperationTaskId, "Reported"));
+            if (!string.IsNullOrWhiteSpace(report.ProducedLotNo))
+            {
+                nodes.Add(new MesTraceabilityNode(report.ProducedLotNo, MesTraceabilityNodeType.ProducedLot, report.ProducedLotNo, "Produced"));
+                edges.Add(new MesTraceabilityEdge(report.ReportNo, report.ProducedLotNo, "produced-lot"));
+            }
+
             edges.Add(new MesTraceabilityEdge(report.ReportNo, report.OperationTaskId, "reported-operation"));
             edges.Add(new MesTraceabilityEdge(report.OperationTaskId, report.WorkOrderId, "belongs-to-work-order"));
         }
 
         foreach (var consumption in consumptions)
         {
-            nodes.Add(new MesTraceabilityNode(consumption.MaterialId, "Material", consumption.MaterialId, "Consumed"));
-            nodes.Add(new MesTraceabilityNode(consumption.WorkOrderId, "WorkOrder", consumption.WorkOrderId, "Reported"));
-            nodes.Add(new MesTraceabilityNode(consumption.OperationTaskId, "OperationTask", consumption.OperationTaskId, "Reported"));
-            nodes.Add(new MesTraceabilityNode(consumption.ReportNo, "ProductionReport", consumption.ReportNo, "Reported"));
+            nodes.Add(new MesTraceabilityNode(consumption.MaterialId, MesTraceabilityNodeType.Material, consumption.MaterialId, "Consumed"));
+            nodes.Add(new MesTraceabilityNode(consumption.MaterialLotId, MesTraceabilityNodeType.MaterialLot, consumption.MaterialLotId, "Consumed"));
+            nodes.Add(new MesTraceabilityNode(consumption.WorkOrderId, MesTraceabilityNodeType.WorkOrder, consumption.WorkOrderId, "Reported"));
+            nodes.Add(new MesTraceabilityNode(consumption.OperationTaskId, MesTraceabilityNodeType.OperationTask, consumption.OperationTaskId, "Reported"));
             edges.Add(new MesTraceabilityEdge(consumption.MaterialId, consumption.MaterialLotId, "has-lot"));
             edges.Add(new MesTraceabilityEdge(consumption.MaterialLotId, consumption.ReportNo, "consumed-by-report"));
             edges.Add(new MesTraceabilityEdge(consumption.ReportNo, consumption.OperationTaskId, "reported-operation"));
             edges.Add(new MesTraceabilityEdge(consumption.OperationTaskId, consumption.WorkOrderId, "belongs-to-work-order"));
             if (!string.IsNullOrWhiteSpace(consumption.MaterialIssueRequestNo))
             {
-                nodes.Add(new MesTraceabilityNode(consumption.MaterialIssueRequestNo, "MaterialIssueRequest", consumption.MaterialIssueRequestNo, "Received"));
+                nodes.Add(new MesTraceabilityNode(consumption.MaterialIssueRequestNo, MesTraceabilityNodeType.MaterialIssueRequest, consumption.MaterialIssueRequestNo, "Received"));
                 edges.Add(new MesTraceabilityEdge(consumption.MaterialIssueRequestNo, consumption.MaterialLotId, "received-lot"));
             }
+        }
+
+        var hasReworkFacts = await dbContext.AppendReworkFactsAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            [
+                .. producedReports.Select(x => x.WorkOrderId),
+                .. consumptions.Select(x => x.WorkOrderId),
+            ],
+            [request.BatchOrSerial],
+            nodes,
+            edges,
+            useBatchReadFaceEdgeDirection: true,
+            cancellationToken);
+
+        if (consumptions.Length == 0 && producedReports.Length == 0 && !hasReworkFacts)
+        {
+            return new MesTraceabilityResponse(
+                [new MesTraceabilityNode(request.BatchOrSerial, MesTraceabilityNodeType.BatchOrSerial, request.BatchOrSerial, "Unknown")],
+                []);
         }
 
         return new MesTraceabilityResponse(
@@ -2225,7 +3390,7 @@ public sealed class GetMaterialLotTraceabilityQueryHandler(ApplicationDbContext 
 
         var nodes = new List<MesTraceabilityNode>
         {
-            new(request.MaterialLotId, "MaterialLot", request.MaterialLotId, consumptions.Length > 0 ? "Consumed" : "Unknown"),
+            new MesTraceabilityNode(request.MaterialLotId, MesTraceabilityNodeType.MaterialLot, request.MaterialLotId, consumptions.Length > 0 ? "Consumed" : "Unknown"),
         };
         var edges = new List<MesTraceabilityEdge>();
         var reportNos = consumptions.Select(x => x.ReportNo).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -2235,22 +3400,48 @@ public sealed class GetMaterialLotTraceabilityQueryHandler(ApplicationDbContext 
                 x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
                 reportNos.Contains(x.ReportNo))
-            .Select(x => new { x.ReportNo, x.ProducedLotNo, x.SerialNo })
+            .Select(x => new
+            {
+                x.ReportNo,
+                x.OperationTaskId,
+                x.ProducedLotNo,
+                x.ReportedAtUtc,
+                x.ReportedBy,
+                x.OeeDeviceAssetId,
+            })
             .ToArrayAsync(cancellationToken);
+        var serialNumbersByReport = await dbContext.LoadProductionReportSerialNumbersAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            producedReports.Select(x => x.ReportNo).ToArray(),
+            cancellationToken);
+
+        await dbContext.AppendProductionReportFactsAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            [.. producedReports.Select(x => new MesTraceabilityReportContext(
+                x.ReportNo,
+                x.ReportedAtUtc,
+                x.ReportedBy,
+                x.OeeDeviceAssetId,
+                x.OperationTaskId,
+                serialNumbersByReport.GetValueOrDefault(x.ReportNo, [])))],
+            nodes,
+            edges,
+            cancellationToken);
 
         foreach (var consumption in consumptions)
         {
-            nodes.Add(new MesTraceabilityNode(consumption.MaterialId, "Material", consumption.MaterialId, "Consumed"));
-            nodes.Add(new MesTraceabilityNode(consumption.WorkOrderId, "WorkOrder", consumption.WorkOrderId, "Reported"));
-            nodes.Add(new MesTraceabilityNode(consumption.OperationTaskId, "OperationTask", consumption.OperationTaskId, "Reported"));
-            nodes.Add(new MesTraceabilityNode(consumption.ReportNo, "ProductionReport", consumption.ReportNo, "Reported"));
+            nodes.Add(new MesTraceabilityNode(consumption.MaterialId, MesTraceabilityNodeType.Material, consumption.MaterialId, "Consumed"));
+            nodes.Add(new MesTraceabilityNode(consumption.WorkOrderId, MesTraceabilityNodeType.WorkOrder, consumption.WorkOrderId, "Reported"));
+            nodes.Add(new MesTraceabilityNode(consumption.OperationTaskId, MesTraceabilityNodeType.OperationTask, consumption.OperationTaskId, "Reported"));
             edges.Add(new MesTraceabilityEdge(consumption.MaterialId, consumption.MaterialLotId, "has-lot"));
             edges.Add(new MesTraceabilityEdge(consumption.MaterialLotId, consumption.ReportNo, "consumed-by-report"));
             edges.Add(new MesTraceabilityEdge(consumption.ReportNo, consumption.OperationTaskId, "reported-operation"));
             edges.Add(new MesTraceabilityEdge(consumption.OperationTaskId, consumption.WorkOrderId, "belongs-to-work-order"));
             if (!string.IsNullOrWhiteSpace(consumption.MaterialIssueRequestNo))
             {
-                nodes.Add(new MesTraceabilityNode(consumption.MaterialIssueRequestNo, "MaterialIssueRequest", consumption.MaterialIssueRequestNo, "Received"));
+                nodes.Add(new MesTraceabilityNode(consumption.MaterialIssueRequestNo, MesTraceabilityNodeType.MaterialIssueRequest, consumption.MaterialIssueRequestNo, "Received"));
                 edges.Add(new MesTraceabilityEdge(consumption.MaterialIssueRequestNo, consumption.MaterialLotId, "received-lot"));
             }
         }
@@ -2259,16 +3450,21 @@ public sealed class GetMaterialLotTraceabilityQueryHandler(ApplicationDbContext 
         {
             if (!string.IsNullOrWhiteSpace(report.ProducedLotNo))
             {
-                nodes.Add(new MesTraceabilityNode(report.ProducedLotNo, "ProducedLot", report.ProducedLotNo, "Produced"));
+                nodes.Add(new MesTraceabilityNode(report.ProducedLotNo, MesTraceabilityNodeType.ProducedLot, report.ProducedLotNo, "Produced"));
                 edges.Add(new MesTraceabilityEdge(report.ReportNo, report.ProducedLotNo, "produced-lot"));
             }
 
-            if (!string.IsNullOrWhiteSpace(report.SerialNo))
-            {
-                nodes.Add(new MesTraceabilityNode(report.SerialNo, "Serial", report.SerialNo, "Produced"));
-                edges.Add(new MesTraceabilityEdge(report.ReportNo, report.SerialNo, "produced-serial"));
-            }
         }
+
+        await dbContext.AppendReworkFactsAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            [.. consumptions.Select(x => x.WorkOrderId)],
+            [request.MaterialLotId],
+            nodes,
+            edges,
+            useBatchReadFaceEdgeDirection: true,
+            cancellationToken);
 
         return new MesTraceabilityResponse(
             nodes.DistinctBy(x => new { x.NodeId, x.NodeType }).ToArray(),

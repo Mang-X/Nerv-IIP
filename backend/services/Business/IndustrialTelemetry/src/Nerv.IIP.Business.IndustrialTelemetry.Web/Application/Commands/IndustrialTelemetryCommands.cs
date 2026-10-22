@@ -287,7 +287,8 @@ public sealed record CreateTelemetryTagCommand(
     bool IsWritable = false,
     decimal? ControlMinValue = null,
     decimal? ControlMaxValue = null,
-    IReadOnlyCollection<string>? ControlAllowedValues = null) : ICommand<TelemetryTagId>;
+    IReadOnlyCollection<string>? ControlAllowedValues = null,
+    string? DisplayName = null) : ICommand<TelemetryTagId>;
 
 public sealed class CreateTelemetryTagCommandValidator : AbstractValidator<CreateTelemetryTagCommand>
 {
@@ -297,8 +298,13 @@ public sealed class CreateTelemetryTagCommandValidator : AbstractValidator<Creat
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.ValueType).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.ValueType)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(BeKnownValueType)
+            .WithMessage("数据类型只能是数值、开关、文本或计数。");
         RuleFor(x => x.UnitCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.DisplayName).MaximumLength(TelemetryTag.DisplayNameMaxLength);
         RuleFor(x => x.SamplingPolicy)
             .NotEmpty()
             .MaximumLength(100)
@@ -309,6 +315,10 @@ public sealed class CreateTelemetryTagCommandValidator : AbstractValidator<Creat
             .When(x => x.ControlMinValue.HasValue && x.ControlMaxValue.HasValue);
         RuleForEach(x => x.ControlAllowedValues).MaximumLength(100);
     }
+
+    private static bool BeKnownValueType(string valueType) =>
+        !string.IsNullOrWhiteSpace(valueType)
+        && TelemetryTag.ValueTypes.Contains(valueType.Trim().ToLowerInvariant(), StringComparer.Ordinal);
 
     private static bool BeValidSamplingPolicy(string samplingPolicy)
     {
@@ -338,14 +348,57 @@ public sealed class CreateTelemetryTagCommandHandler(ApplicationDbContext dbCont
             cancellationToken);
         if (existing is not null)
         {
+            // 停用的点位不复活：同编码重建会把新旧两段采样历史混在一起（#3870 裁定：点位只停用不删除，填错换编码重建）。
+            if (!existing.IsEnabled)
+            {
+                throw new KnownException($"点位编码 {normalizedTagKey} 已停用，不能再次使用，请换一个点位编码。");
+            }
+
             existing.UpdateDefinition(request.ValueType, request.UnitCode, request.SamplingPolicy);
+            existing.Rename(request.DisplayName);
             existing.ConfigureControl(request.IsWritable, request.ControlMinValue, request.ControlMaxValue, request.ControlAllowedValues ?? []);
             return existing.Id;
         }
 
         var tag = TelemetryTag.Create(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, request.TagKey, request.ValueType, request.UnitCode, request.SamplingPolicy);
+        tag.Rename(request.DisplayName);
         tag.ConfigureControl(request.IsWritable, request.ControlMinValue, request.ControlMaxValue, request.ControlAllowedValues ?? []);
         dbContext.TelemetryTags.Add(tag);
+        return tag.Id;
+    }
+}
+
+public sealed record DisableTelemetryTagCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string TagKey) : ICommand<TelemetryTagId>;
+
+public sealed class DisableTelemetryTagCommandValidator : AbstractValidator<DisableTelemetryTagCommand>
+{
+    public DisableTelemetryTagCommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
+    }
+}
+
+public sealed class DisableTelemetryTagCommandHandler(ApplicationDbContext dbContext, TimeProvider timeProvider)
+    : ICommandHandler<DisableTelemetryTagCommand, TelemetryTagId>
+{
+    public async Task<TelemetryTagId> Handle(DisableTelemetryTagCommand request, CancellationToken cancellationToken)
+    {
+        var normalizedTagKey = request.TagKey.Trim().ToLowerInvariant();
+        var tag = await dbContext.TelemetryTags.SingleOrDefaultAsync(
+            x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.DeviceAssetId == request.DeviceAssetId
+                && x.TagKey == normalizedTagKey,
+            cancellationToken)
+            ?? throw new KnownException($"没有找到点位 {normalizedTagKey}。");
+        tag.Disable(timeProvider.GetUtcNow());
         return tag.Id;
     }
 }
@@ -597,6 +650,11 @@ public sealed class CreateDeviceControlCommandCommandHandler(
                 && x.TagKey == tagKey,
             cancellationToken)
             ?? throw new KnownException($"Telemetry tag was not found for device control: {tagKey}");
+        if (!tag.IsEnabled)
+        {
+            throw new KnownException($"点位 {tagKey} 已停用，不能下发控制。");
+        }
+
         if (!tag.IsWritable)
         {
             throw new KnownException($"Telemetry tag is not writable: {tagKey}");
@@ -867,9 +925,10 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
                 && x.EnvironmentId == request.EnvironmentId
                 && x.DeviceAssetId == request.DeviceAssetId
                 && x.TagKey == normalizedTagKey)
-            .Select(x => new { x.SamplingPolicy, x.ValueType })
+            .Select(x => new { x.SamplingPolicy, x.ValueType, x.IsEnabled })
             .SingleOrDefaultAsync(cancellationToken);
-        if (tag is null)
+        // 停用的点位按未登记处理：采样照收（连接器可能还在发），但不校验周期、不计数（#3870）。
+        if (tag is null || !tag.IsEnabled)
         {
             return null;
         }

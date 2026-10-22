@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionTasks;
+using Nerv.IIP.Business.Quality.Web.Application.Queries;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
@@ -16,7 +17,7 @@ public sealed record ListInspectionTasksRequest(
     string? Status,
     string? SkuCode,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     InspectionTaskId? InspectionTaskId = null,
     string? ScopeKind = null,
     string? PrincipalId = null,
@@ -37,6 +38,12 @@ public sealed record CreateInspectionRecordFromTaskRequest(
     string IdempotencyKey,
     string OrganizationId,
     string EnvironmentId);
+
+public sealed record GetFirstArticleConfirmationRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string WorkOrderId,
+    string OperationId);
 
 public sealed record GetInspectionTaskRequest(
     InspectionTaskId InspectionTaskId,
@@ -131,6 +138,28 @@ public sealed class GetInspectionTaskEndpoint(ISender sender)
             req.ScopeKind,
             req.PrincipalId,
             req.AuthorizedTeamIds ?? []), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+/// <summary>
+/// 服务间读契约（#2779）：某工单某工序的首件判定结论，供 MES 首件门禁取数。
+/// </summary>
+public sealed class GetFirstArticleConfirmationEndpoint(ISender sender)
+    : QualityEndpoint<GetFirstArticleConfirmationRequest, ResponseData<FirstArticleConfirmationResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureQualityContract(QualityInspectionEndpointContracts.Get<GetFirstArticleConfirmationEndpoint>());
+    }
+
+    public override async Task HandleAsync(GetFirstArticleConfirmationRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new GetFirstArticleConfirmationQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.WorkOrderId,
+            req.OperationId), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }

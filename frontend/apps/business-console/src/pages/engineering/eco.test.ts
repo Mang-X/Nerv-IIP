@@ -75,8 +75,8 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const dialogStubs = {
-  DialogRoot: { template: '<div><slot /></div>' },
-  DialogTrigger: { template: '<div><slot /></div>' },
+  NvDialog: { template: '<div><slot /></div>' },
+  NvDialogTrigger: { template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div data-testid="eco-dialog-content"><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogFooter: { template: '<div data-testid="eco-dialog-footer"><slot /></div>' },
@@ -84,7 +84,10 @@ const dialogStubs = {
   NvDialogDescription: { template: '<p><slot /></p>' },
 }
 const sheetStubs = {
-  // NvSheet 根 = reka DialogRoot（与对话框共用 DialogRoot stub），内容/标头为真 .vue 按 Pro 名打桩。
+  // NvSheet 根与 NvDialog 同为 reka DialogRoot，但 barrel 已给两个别名各自的 name，
+  // 因而这里能分开打桩（过去只能共用一个 DialogRoot 键）。
+  NvSheet: { template: '<div><slot /></div>' },
+  NvSheetTrigger: { template: '<div><slot /></div>' },
   NvSheetContent: { template: '<div data-testid="sheet"><slot /></div>' },
   NvSheetHeader: { template: '<div><slot /></div>' },
   NvSheetTitle: { template: '<h2><slot /></h2>' },
@@ -106,7 +109,7 @@ const formSelectStubs = {
       '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
-  SelectValue: { template: '<span />' },
+  NvSelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
@@ -182,6 +185,12 @@ beforeEach(() => {
           severity: 'warning',
           message: '变更会影响 MRP、MES、APS 和在制执行候选。',
           relatedVersionId: 'MBOM-1:B',
+        },
+        {
+          code: 'production-version-not-found',
+          severity: 'warning',
+          message: "Production version 'PV-404' was not found.",
+          relatedVersionId: 'PV-404',
         },
       ],
     }
@@ -330,6 +339,12 @@ describe('engineering eco page', () => {
     expect(wrapper.text()).toContain('暂无入口')
     expect(wrapper.find('[data-router-link]').exists()).toBe(true)
     expect(wrapper.text()).toContain('变更会影响 MRP、MES、APS 和在制执行候选')
+    // 风险级别与服务端英文原文都换成中文，版本主键不上屏。
+    expect(wrapper.text()).toContain('警告')
+    expect(wrapper.text()).toContain('找不到该生产版本，请确认版本是否存在。')
+    expect(wrapper.text()).not.toContain('warning')
+    expect(wrapper.text()).not.toContain('was not found')
+    expect(wrapper.text()).not.toContain('PV-404')
   })
 
   it('校验拦截：变更信息未填点发布出现汇总提示且不发请求', async () => {
@@ -362,7 +377,11 @@ describe('engineering eco page', () => {
       changeNumber: 'ECO-1',
       reason: '更换供应商物料',
       status: 'Released',
-      affectedVersions: [{ versionKind: 'ManufacturingBom', versionId: 'MBOM-VER-9' }],
+      affectedVersions: [
+        { versionKind: 'ManufacturingBom', versionId: 'MBOM-VER-9' },
+        { versionKind: 'ProductionVersion', versionId: 'PV-1' },
+        { versionKind: 'ProductionVersion', versionId: 'PV-GONE' },
+      ],
     })
     const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
     await flushPromises()
@@ -374,5 +393,11 @@ describe('engineering eco page', () => {
     const sheet = wrapper.find('[data-testid="sheet"]')
     expect(sheet.text()).toContain('制造 BOM')
     expect(sheet.text()).toContain('MBOM-VER-9')
+    // 生产版本存的是版本主键，上屏的是「物料 · 生效日」。
+    expect(sheet.text()).toContain('SKU-1 · 生效 2026-01-01')
+    expect(sheet.text()).not.toContain('PV-1')
+    // 读不到名称（无权限、清单截断或仍在加载）时说中性话，不回吐主键。
+    expect(sheet.text()).toContain('暂无法显示版本名称')
+    expect(sheet.text()).not.toContain('PV-GONE')
   })
 })

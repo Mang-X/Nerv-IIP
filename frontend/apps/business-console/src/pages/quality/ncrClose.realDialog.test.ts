@@ -4,13 +4,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import NcrsPage from './ncrs.vue'
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    principal: {
+      principalId: 'qa-user-001',
+      loginName: 'qa-user',
+      permissionCodes: [
+        'business.quality.ncr.read',
+        'business.quality.ncr.manage',
+        'business.mes.work-orders.read',
+      ],
+    },
+  }),
+}))
+
 /**
  * **不 stub `NvAlertDialog*`** 的一组用例（#1613 子项 d · quality 域）。
  *
  * 这一处比其它清扫点更糟：确认框原先**完全非受控**——`NvAlertDialogTrigger` 开、
  * `NvAlertDialogAction` 关，关框时机整个落在组件里。而 `NvAlertDialogAction` 渲染成
  * reka `DialogClose`，`@click` 里 `onOpenChange(false)` 无条件执行、不看 `defaultPrevented`：
- * 关单失败时框立刻消失，用户填的关闭原因、返工工单、报废库存移动全都白填一遍
+ * 关单失败时框立刻消失，用户填的关闭原因、报废库存移动全都白填一遍
  * （confirm-destroy 规则 3、票面子项 d「注意失败后表单值保留」）。
  *
  * `quality-location.test.ts` 里这页的弹层被桩成 `<div><slot /></div>`，因此上面这件事在那
@@ -24,9 +38,11 @@ const ncrRow = {
   id: 'NCR-001',
   code: 'NCR-001',
   status: 'disposition-in-progress',
-  sourceDocumentId: 'WO-1001',
+  sourceDocumentId: 'IR-1001',
   sourceType: 'work-order',
   skuCode: 'SKU-001',
+  reworkWorkOrderCreationStatus: 'created',
+  reworkWorkOrderId: 'RW-1001',
 }
 
 const spies = vi.hoisted(() => ({
@@ -43,6 +59,7 @@ const spies = vi.hoisted(() => ({
 const state = vi.hoisted(() => ({}) as { closeNcrPending: { value: boolean } })
 
 vi.mock('@/composables/useBusinessQuality', async () => {
+  const { statusActionGate } = await import('@nerv-iip/business-core')
   const { computed, reactive, shallowRef } = await import('vue')
   state.closeNcrPending = shallowRef(false)
   return {
@@ -63,6 +80,17 @@ vi.mock('@/composables/useBusinessQuality', async () => {
       ncrsError: shallowRef(),
       ncrsPending: shallowRef(false),
       ncrsTotal: computed(() => 1),
+      ncrActionGate: (
+        _ncrId: string,
+        status: string | null | undefined,
+        dispositionType: string | null | undefined,
+        action: 'submit-disposition' | 'close',
+      ) =>
+        statusActionGate({
+          domain: 'quality-ncr',
+          action,
+          facts: { status, dispositionType },
+        }),
       refreshNcrs: vi.fn(),
       submitDisposition: spies.submitDisposition,
       submitDispositionError: shallowRef(),
@@ -114,7 +142,6 @@ const stubs = {
   NvSelect: { template: '<select><slot /></select>' },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
-  SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
@@ -194,15 +221,18 @@ describe('不合格品关闭确认框在真弹层下的关闭时机', () => {
     expect(document.querySelector<HTMLInputElement>('#ncr-scrap')!.value).toBe('MOV-2026-0007')
   })
 
-  it('关单成功才关框，且原因与关联单据如实提交', async () => {
+  it('关单成功才关框，系统绑定只读展示且不作为客户端写入提交', async () => {
     await openCloseConfirm()
+
+    expect(document.body.textContent).toContain('RW-1001')
+    expect(document.body.textContent).toContain('已创建')
+    expect(document.body.textContent).not.toContain('created')
 
     documentButton('确认关闭')!.click()
     await flushPromises()
 
     expect(spies.closeNcr).toHaveBeenCalledWith('NCR-001', {
       reason: '返工后复检合格',
-      reworkWorkOrderId: 'WO-1001',
       scrapMovementId: 'MOV-2026-0007',
       returnDocumentId: undefined,
     })

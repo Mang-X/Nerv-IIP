@@ -75,12 +75,12 @@ const ROUTE: Stop[] = [
   { id: '08-04', chapter: '8-财务', title: '成本候选', path: '/erp/finance/cost-candidates' },
   // ── 第 9 棒 设备与维护（owner 点名：前四轮从未覆盖）──
   { id: '09-01', chapter: '9-设备', title: '采集健康', path: '/equipment/telemetry/connectors' },
-  { id: '09-02', chapter: '9-设备', title: '采集标签', path: '/equipment/telemetry/tags' },
+  { id: '09-02', chapter: '9-设备', title: '采集点位', path: '/equipment/telemetry/tags' },
   { id: '09-03', chapter: '9-设备', title: '设备运行看板', path: '/equipment' },
   { id: '09-04', chapter: '9-设备', title: '历史趋势', path: '/equipment/telemetry/history' },
   { id: '09-05', chapter: '9-设备', title: '设备报警', path: '/equipment/alarms' },
   { id: '09-06', chapter: '9-设备', title: '报警规则', path: '/equipment/telemetry/alarm-rules' },
-  { id: '09-07', chapter: '9-设备', title: 'OEE 与可用性', path: '/equipment/telemetry/oee' },
+  { id: '09-07', chapter: '9-设备', title: 'OEE 趋势与横比', path: '/equipment/telemetry/oee' },
   {
     id: '09-08',
     chapter: '9-设备',

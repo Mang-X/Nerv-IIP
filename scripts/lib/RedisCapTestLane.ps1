@@ -89,10 +89,9 @@ function Remove-NervRedisCapNamespace {
     }
 }
 
-function Import-NervRedisCapTestLaneMember {
+function Import-NervRedisCapTestLaneManifest {
     param(
         [Parameter(Mandatory)] [string] $ManifestPath,
-        [Parameter(Mandatory)] [string] $MemberId,
         [Parameter(Mandatory)] [string] $RepositoryRoot
     )
 
@@ -120,6 +119,29 @@ function Import-NervRedisCapTestLaneMember {
         if ($identities.Count -eq 0 -or @($identities | Where-Object { [string]::IsNullOrWhiteSpace($_) -or -not $identitySet.Add($_) }).Count -gt 0) { throw "Redis/CAP lane member '$id' must freeze a non-empty unique test identity set." }
     }
 
+    return $members
+}
+
+function Import-NervRedisCapTestLaneMembers {
+    param(
+        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [string] $RepositoryRoot
+    )
+
+    $members = @(Import-NervRedisCapTestLaneManifest -ManifestPath $ManifestPath -RepositoryRoot $RepositoryRoot)
+    $activeMembers = @($members | Where-Object { [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) })
+    if ($activeMembers.Count -eq 0) { throw 'Redis/CAP lane manifest does not contain any active members.' }
+    return $activeMembers
+}
+
+function Import-NervRedisCapTestLaneMember {
+    param(
+        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [string] $MemberId,
+        [Parameter(Mandatory)] [string] $RepositoryRoot
+    )
+
+    $members = @(Import-NervRedisCapTestLaneManifest -ManifestPath $ManifestPath -RepositoryRoot $RepositoryRoot)
     $matches = @($members | Where-Object { [string]::Equals([string]$_.id, $MemberId, [StringComparison]::Ordinal) })
     if ($matches.Count -ne 1) { throw "Redis/CAP lane member '$MemberId' must resolve exactly once." }
     if (-not [string]::Equals([string]$matches[0].status, 'active', [StringComparison]::Ordinal)) { throw "Redis/CAP lane member '$MemberId' is not active." }

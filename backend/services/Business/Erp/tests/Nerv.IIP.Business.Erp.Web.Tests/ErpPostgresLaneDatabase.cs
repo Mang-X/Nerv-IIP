@@ -9,8 +9,8 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 // （NERV_IIP_TEST_POSTGRES），不再各自 CREATE DATABASE 自建内层数据库——内层数据库既不能被外层
 // 失败诊断读取，也不能被外层 finally 清理证明。每个用例先删除 erp schema 再迁移，因此同一成员数据库内
 // 的用例之间没有残留。ERP 的持久化扩展（AddErpPostgreSqlPersistence）不装配 CAP，业务表与迁移历史表
-// 全部落在 ErpFacts.Schema（"erp"），不像 MES/DemandPlanning 那样存在独立的 cap schema，因此只需声明
-// 并清理这一个 schema。
+// 全部落在 ErpFacts.Schema（"erp"），不像 MES/DemandPlanning 那样存在独立的 cap schema，因此常规成员只需
+// 声明并清理这一个 schema；显式装配真实 CAP 的 transport acceptance 会额外清理其原生 cap schema。
 //
 // 迁移历史表必须落在 erp schema 内才能被这里的 DROP SCHEMA 清理干净：生产路径
 // （AddErpPostgreSqlPersistence）已经把 MigrationsHistoryTable 显式配到 ErpFacts.Schema；直接
@@ -35,6 +35,16 @@ internal static class ErpPostgresLaneDatabase
         var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(ErpFacts.Schema);
         await using var command = connection.CreateCommand();
         command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
+        await command.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>CAP transport acceptance tests also reset their native storage schema before starting a host.</summary>
+    internal static async Task ResetCapSchemaAsync()
+    {
+        await using var connection = new NpgsqlConnection(ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DROP SCHEMA IF EXISTS cap CASCADE";
         await command.ExecuteNonQueryAsync();
     }
 

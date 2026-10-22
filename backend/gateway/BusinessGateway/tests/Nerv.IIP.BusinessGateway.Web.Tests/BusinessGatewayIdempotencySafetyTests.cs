@@ -37,10 +37,12 @@ public sealed class BusinessGatewayIdempotencySafetyTests
         Assert.Equal("idempotency-key-mismatch", exception.Message);
     }
 
+    // #3287 ①：非法字符拒的是入参形状，不是「同一个键被用在了别的意图上」，所以是 400。
+    // 夹具只触犯字符规则一条：两个取值都远在全局钳以内，不会先撞长度上界。
     [Theory]
     [InlineData("contains space")]
     [InlineData("包含中文")]
-    public void Invalid_key_characters_fail_closed(string key)
+    public void Invalid_key_characters_fail_closed_with_a_stable_400(string key)
     {
         var context = new DefaultHttpContext();
         context.Request.Headers["Idempotency-Key"] = key;
@@ -50,8 +52,48 @@ public sealed class BusinessGatewayIdempotencySafetyTests
                 context,
                 new RequestWithIdempotencyKey(null)));
 
-        Assert.Equal(HttpStatusCode.Conflict, exception.StatusCode);
-        Assert.Equal("idempotency-key-mismatch", exception.Message);
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.Equal("idempotency-key-invalid-characters", exception.Message);
+    }
+
+    // #3287 ①：超长拒的是入参超长，不是键冲突。夹具全部使用 IsAllowed 允许的字符，
+    // 因此只触犯长度一条规则——否则相邻的字符守卫会把长度分支的变异一起兜住。
+    //
+    // 长度按全局钳**派生**而不是手抄（#3327 把钳从 150 抬到 512 时，手抄的 151 会静默失去鉴别力：
+    // 它不再超长，用例从「证明超长被拒」退化成「证明合法键被拒」并直接红）。
+    // 两格分别是「刚好越界一格」与「远超」，覆盖边界与非边界两种输入。
+    [Theory]
+    [InlineData(1)]
+    [InlineData(512)]
+    public void Over_length_key_fails_closed_with_a_stable_400(int lengthOverClamp)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Headers["Idempotency-Key"] =
+            new string('a', BusinessGatewayIdempotencyKey.MaximumKeyLength + lengthOverClamp);
+
+        var exception = Assert.Throws<BusinessServiceProxyException>(() =>
+            BusinessGatewayIdempotencyKey.Resolve(
+                context,
+                new RequestWithIdempotencyKey(null)));
+
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.Equal("idempotency-key-too-long", exception.Message);
+    }
+
+    // 上界上的那一格必须被接受并原样解析（键长恰等于全局钳）。
+    // 同样按钳派生：手抄 150 在 #3327 抬钳后仍会绿，但它测的就不再是「上界那一格」了。
+    [Fact]
+    public void Key_at_the_maximum_length_is_still_accepted()
+    {
+        var key = new string('a', BusinessGatewayIdempotencyKey.MaximumKeyLength);
+        var context = new DefaultHttpContext();
+        context.Request.Headers["Idempotency-Key"] = key;
+
+        var resolved = BusinessGatewayIdempotencyKey.Resolve(
+            context,
+            new RequestWithIdempotencyKey(null));
+
+        Assert.Equal(key, resolved.IdempotencyKey);
     }
 
     [Fact]
@@ -269,6 +311,31 @@ public sealed class BusinessGatewayIdempotencySafetyTests
         Assert.Equal(0, response.Version);
     }
 
+    /// <summary>
+    /// 真栈实测：Maintenance 详情读面把强类型 ID 序列化成字符串。只认对象形时每次详情预读都 502，
+    /// 控制台「完成工单」一律失败（#3902 真栈验收时发现）；字符串形与对象形同一口径校验。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Maintenance_detail_accepts_the_matching_string_work_order_id_emitted_by_maintenance(bool enveloped)
+    {
+        var workOrderId = Guid.CreateVersion7().ToString();
+        using var httpClient = Client(MaintenanceDetailBody($$"""
+            "{{workOrderId}}"
+            """), enveloped);
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+
+        var response = await client.GetWorkOrderAsync(
+            "internal-token",
+            workOrderId,
+            new BusinessConsoleMaintenanceContextRequest("org-001", "env-dev"),
+            CancellationToken.None);
+
+        Assert.Equal(workOrderId, response.WorkOrderId);
+        Assert.Equal("Open", response.Status);
+    }
+
     [Theory]
     [InlineData(false, "malformed")]
     [InlineData(true, "malformed")]
@@ -276,6 +343,8 @@ public sealed class BusinessGatewayIdempotencySafetyTests
     [InlineData(true, "blank")]
     [InlineData(false, "mismatch")]
     [InlineData(true, "mismatch")]
+    [InlineData(false, "string-mismatch")]
+    [InlineData(true, "string-blank")]
     public async Task Maintenance_detail_rejects_malformed_blank_or_mismatched_strong_work_order_id(
         bool enveloped,
         string scenario)
@@ -286,6 +355,10 @@ public sealed class BusinessGatewayIdempotencySafetyTests
             "malformed" => $$"""{"value":"{{workOrderId}}"}""",
             "blank" => """{"id":""}""",
             "mismatch" => $$"""{"id":"{{Guid.CreateVersion7()}}"}""",
+            "string-mismatch" => $$"""
+                "{{Guid.CreateVersion7()}}"
+                """,
+            "string-blank" => "\"\"",
             _ => throw new InvalidOperationException($"Unknown scenario: {scenario}"),
         };
         using var httpClient = Client(MaintenanceDetailBody(downstreamId), enveloped);

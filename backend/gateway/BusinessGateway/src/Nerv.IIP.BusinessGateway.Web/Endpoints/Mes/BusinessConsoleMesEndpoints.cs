@@ -3,9 +3,42 @@ using FluentValidation;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
+using Nerv.IIP.BusinessGateway.Web.Endpoints;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Mes;
+
+// ---------------------------------------------------------------------------
+// #3324 端点级幂等键上界：本文件里 *RequestValidator 的共同口径
+// ---------------------------------------------------------------------------
+// 每条规则的值**不得大于**它下游权威解析出的上界。注意机器只校验这一个方向：
+// BusinessGatewayIdempotencyKeyDownstreamBoundContractTests 的
+// Gateway_never_promises_a_longer_idempotency_key_than_its_downstream_accepts
+// 断言的是 `网关值 <= 下游值`，把某条规则**收窄**不会红（反方向归 #3287）。
+// 登记表同时钉住「链接必须存在」：下游改名或删除会让权威解析失败而报红。
+// 不写条数：那个计数每落一张子票就变，复述它等于制造一处会过期的手抄事实。
+//
+// 为什么写在校验器上而不是集中一张表：端点级规则会进 OpenAPI 的 maxLength，
+// 对客户端是真实契约；集中表不会。
+//
+// 只加上界、不加 NotEmpty —— 本票不改这些字段的必填语义。
+//
+// 值域边界（#3327 按 #3330 落地后的事实重写；#3324 当时写的那句已作废，别沿用）：
+// #3330 已把鉴权与 BusinessGatewayIdempotencyKey.Resolve 从
+// AuthorizedBusinessProxyEndpoint.HandleAsync 挪进 OnBeforeValidateAsync，
+// 即 FastEndpoints 执行序里 DTO 校验**之前**的那一格。⇒ 经 Idempotency-Key /
+// X-Idempotency-Key 头传来的键在校验发生时已归一化写回 DTO，本文件这些规则
+// 对**头部与请求体两条来源同时生效**（#3324 当时只对请求体生效）。
+// ⚠️ 我在 #3327 第一版这里写过一个「残余窗口」，并断言它「走不到 ForwardAsync」——
+// **那句是错的，#3345 审核用真 HTTP 探针实测走到了**（作用域字段缺省 ∧ 令牌无
+// organizationId/environmentId 声明 ∧ 键走头部 ⇒ 200 + forwarded=1 + 键长 300）。
+// 该窗口已在 #3327 本票内关掉：AuthorizedBusinessProxyEndpoint 把归一化从
+// 「鉴权推迟」的那个早返回里拆了出来，鉴权可以推迟、归一化不推迟。
+// ⇒ 本文件这些规则对头部来源在**两条支路上都生效**。
+// 「归一化先于校验」这条性质由网关自己的 BusinessGatewayRequestPipelineOrderTests
+// 证明（含那五格探针），不由本文件这些规则证明：本文件只写规则值，不发请求。
+// ---------------------------------------------------------------------------
 
 [Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/foundation-readiness")]
@@ -27,6 +60,8 @@ public sealed class GetBusinessConsoleMesFoundationReadinessEndpoint(
         "equipment",
         "barcode-coding",
         "iam-context",
+        "erp",
+        "inventory",
     ];
 
     protected override string OrganizationId(BusinessConsoleMesFoundationReadinessRequest request) => request.OrganizationId;
@@ -360,12 +395,25 @@ public sealed class ConvertBusinessConsoleMesPlanToWorkOrderEndpoint(
         mes.ConvertPlanToWorkOrderAsync(tokenProvider.BearerToken, request.ProductionPlanId, request, cancellationToken);
 }
 
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 ConvertPlanToWorkOrderCommandHandler 把原始键交给 CodeAllocator，落 mes.code_idempotency_keys.idempotency_key(150)。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleMesConvertPlanToWorkOrderRequestValidator
+    : Validator<BusinessConsoleMesConvertPlanToWorkOrderRequest>
+{
+    public BusinessConsoleMesConvertPlanToWorkOrderRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
 [Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/work-orders")]
 [BusinessGatewayOperationId("listBusinessConsoleMesWorkOrders")]
 public sealed class ListBusinessConsoleMesWorkOrdersEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    BusinessMesCommercialSourceReader commercialSources,
     PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesWorkOrderListRequest, BusinessConsoleMesWorkOrderListResponse>(
@@ -386,7 +434,7 @@ public sealed class ListBusinessConsoleMesWorkOrdersEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        var scope = await workScopeResolver.ResolveAsync(
+        var scope = await workScopeResolver.ResolveWorkOrderListAsync(
             AuthorizationResult,
             request.OrganizationId,
             request.EnvironmentId,
@@ -394,7 +442,7 @@ public sealed class ListBusinessConsoleMesWorkOrdersEndpoint(
             request.ScopeKind,
             request.ScopeId,
             cancellationToken);
-        return await mes.ListWorkOrdersAsync(
+        var response = await mes.ListWorkOrdersAsync(
             tokenProvider.BearerToken,
             new BusinessMesWorkOrderListRequest(
                 request.OrganizationId,
@@ -406,42 +454,20 @@ public sealed class ListBusinessConsoleMesWorkOrdersEndpoint(
                 request.DeviceAssetId,
                 request.Skip,
                 request.Take,
-                Join(scope.AssignedUserIds),
-                Join(scope.TeamIds),
-                NarrowRequestedIds(request.WorkCenterIds, scope.WorkCenterIds),
+                null,
+                null,
+                request.WorkCenterIds,
                 request.DeviceAssetIds,
-                request.Statuses),
+                request.Statuses,
+                AuthorizedAssignedUserIds: Join(scope.AssignedUserIds),
+                AuthorizedTeamIds: Join(scope.TeamIds),
+                AuthorizedWorkCenterIds: Join(scope.WorkCenterIds)),
             cancellationToken);
+        var facts = await commercialSources.ReadAsync(request.OrganizationId, request.EnvironmentId, bearerToken,
+            response.Items.Select(x => (x.WorkOrderId, x.SourcePlanReference)).ToArray(), cancellationToken);
+        return response with { Items = response.Items.Select(x => x with { CommercialSourceFacts = facts.GetValueOrDefault(x.WorkOrderId) }).ToArray() };
+
     }
-
-    private static string? NarrowRequestedIds(
-        string? requestedIds,
-        IReadOnlyCollection<string> authorizedIds)
-    {
-        var requested = Split(requestedIds);
-        if (authorizedIds.Count == 0)
-        {
-            return requested.Count == 0 ? null : string.Join(',', requested);
-        }
-
-        if (requested.Count == 0)
-        {
-            return Join(authorizedIds);
-        }
-
-        var authorized = authorizedIds.ToHashSet(StringComparer.Ordinal);
-        var narrowed = requested.Where(authorized.Contains).ToArray();
-        return narrowed.Length == 0 ? "__principal_scope_no_match__" : string.Join(',', narrowed);
-    }
-
-    private static IReadOnlyCollection<string> Split(string? values) =>
-        string.IsNullOrWhiteSpace(values)
-            ? []
-            : values
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Distinct(StringComparer.Ordinal)
-                .Order(StringComparer.Ordinal)
-                .ToArray();
 
     private static string? Join(IReadOnlyCollection<string> values) =>
         values.Count == 0 ? null : string.Join(',', values.Order(StringComparer.Ordinal));
@@ -453,6 +479,7 @@ public sealed class ListBusinessConsoleMesWorkOrdersEndpoint(
 public sealed class GetBusinessConsoleMesWorkOrderDetailEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    BusinessMesCommercialSourceReader commercialSources,
     MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesWorkOrderDetailRequest, BusinessConsoleMesWorkOrderDetailResponse>(
@@ -482,10 +509,58 @@ public sealed class GetBusinessConsoleMesWorkOrderDetailEndpoint(
             request.ScopeId,
             request.WorkOrderId,
             cancellationToken);
-        return await mes.GetWorkOrderDetailAsync(
+        var response = await mes.GetWorkOrderDetailAsync(
             tokenProvider.BearerToken,
             request.WorkOrderId,
             new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
+            cancellationToken);
+        var facts = await commercialSources.ReadAsync(request.OrganizationId, request.EnvironmentId, bearerToken,
+            [(response.WorkOrderId, response.SourcePlanReference)], cancellationToken);
+        return response with { CommercialSourceFacts = facts.GetValueOrDefault(response.WorkOrderId) };
+
+    }
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/work-orders/{workOrderId}/priority")]
+[BusinessGatewayOperationId("adjustBusinessConsoleMesWorkOrderPriority")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+public sealed class AdjustBusinessConsoleMesWorkOrderPriorityEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesAdjustWorkOrderPriorityRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.MesWorkOrdersManage)
+{
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    protected override string OrganizationId(BusinessConsoleMesAdjustWorkOrderPriorityRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesAdjustWorkOrderPriorityRequest request) => request.EnvironmentId;
+
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleMesAdjustWorkOrderPriorityRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        await workScopeAuthorizer.EnsureWorkOrderAccessAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.MesWorkOrdersManage,
+            request.ScopeKind,
+            request.ScopeId,
+            request.WorkOrderId,
+            cancellationToken);
+        return await mes.AdjustWorkOrderPriorityAsync(
+            tokenProvider.BearerToken,
+            request.WorkOrderId,
+            request,
             cancellationToken);
     }
 }
@@ -607,7 +682,95 @@ public sealed class CancelBusinessConsoleMesWorkOrderEndpoint(
         string internalBearerToken,
         BusinessConsoleMesWorkOrderReasonRequest request,
         CancellationToken cancellationToken) =>
-        mes.CancelWorkOrderAsync(internalBearerToken, request.WorkOrderId, request, cancellationToken);
+        mes.CancelWorkOrderAsync(
+            internalBearerToken,
+            request.WorkOrderId,
+            request,
+            RequireAuthorizedPrincipalActorReference(),
+            cancellationToken);
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/work-orders/{workOrderId}/close")]
+[BusinessGatewayOperationId("closeBusinessConsoleMesWorkOrder")]
+public sealed class CloseBusinessConsoleMesWorkOrderEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesCloseWorkOrderRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.MesWorkOrdersManage)
+{
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    protected override string OrganizationId(BusinessConsoleMesCloseWorkOrderRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesCloseWorkOrderRequest request) => request.EnvironmentId;
+
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleMesCloseWorkOrderRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        await workScopeAuthorizer.EnsureWorkOrderAccessAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.MesWorkOrdersManage,
+            request.ScopeKind,
+            request.ScopeId,
+            request.WorkOrderId,
+            cancellationToken);
+        return await mes.CloseWorkOrderAsync(tokenProvider.BearerToken, request.WorkOrderId, request, cancellationToken);
+    }
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/work-orders/{workOrderId}/engineering-change-decisions")]
+[BusinessGatewayOperationId("recordBusinessConsoleMesEngineeringChangeDecision")]
+public sealed class RecordBusinessConsoleMesEngineeringChangeDecisionEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesEngineeringChangeDecisionRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.MesWorkOrdersManage)
+{
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    protected override string OrganizationId(BusinessConsoleMesEngineeringChangeDecisionRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesEngineeringChangeDecisionRequest request) => request.EnvironmentId;
+
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleMesEngineeringChangeDecisionRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        await workScopeAuthorizer.EnsureWorkOrderAccessAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.MesWorkOrdersManage,
+            request.ScopeKind,
+            request.ScopeId,
+            request.WorkOrderId,
+            cancellationToken);
+        return await mes.RecordEngineeringChangeDecisionAsync(
+            tokenProvider.BearerToken,
+            request.WorkOrderId,
+            request,
+            RequireAuthorizedPrincipalActorReference(),
+            cancellationToken);
+    }
 }
 
 [Tags("Business Console MES")]
@@ -651,6 +814,18 @@ public sealed class ForceReleaseBusinessConsoleMesQualityHoldEndpoint(
     }
 }
 
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 ForceReleaseQualityHoldCommandValidator(512) 与落库列 mes.quality_hold_transitions.idempotency_key(512)。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleMesForceReleaseQualityHoldRequestValidator
+    : Validator<BusinessConsoleMesForceReleaseQualityHoldRequest>
+{
+    public BusinessConsoleMesForceReleaseQualityHoldRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(512);
+}
+
 [Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/quality-holds/{sourceDocumentId}/timeline")]
 [BusinessGatewayOperationId("getBusinessConsoleMesQualityHoldTimeline")]
@@ -674,6 +849,7 @@ public sealed class GetBusinessConsoleMesQualityHoldTimelineEndpoint(
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/production-reports/{reportNo}/reverse")]
 [BusinessGatewayOperationId("reverseBusinessConsoleMesProductionReport")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class ReverseBusinessConsoleMesProductionReportEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
@@ -696,6 +872,57 @@ public sealed class ReverseBusinessConsoleMesProductionReportEndpoint(
             request,
             RequireAuthorizedPrincipalActor().ActorRef,
             cancellationToken);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 ReverseProductionReportCommandHandler 走 CodeAllocator，落 mes.code_idempotency_keys.idempotency_key(150)。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleMesReverseProductionReportRequestValidator
+    : Validator<BusinessConsoleMesReverseProductionReportRequest>
+{
+    public BusinessConsoleMesReverseProductionReportRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3327 补，#3324 当时因「算不出正上界」把本位点移出）。
+/// </summary>
+/// <remarks>
+/// <para><b>本处下游权威取命令校验器，不取承载列，理由是那一列对本位点是「条件性派生」</b>
+/// （与 <c>WmsText.LineIdempotencyKey</c> 同形，**不是** #3290 那种无条件摘要的纯幽灵权威）。
+/// 键经 <c>FinishedGoodsReceiptRequest.RetryInventoryPosting</c> →
+/// <c>FinishedGoodsReceiptInventoryPostingKey.BuildRetry</c> 拼成
+/// <c>{可读作用域}:{原始键}</c> 后跨服务进 Inventory，两支要分开读：</para>
+/// <list type="bullet">
+/// <item><b>整键 ≤ <c>FinishedGoodsReceiptInventoryPostingKey.ColumnMaxLength</c>（128）⇒ 逐字保持</b>
+/// —— 落进 <c>stock_movements.idempotency_key</c> 的就是含原始键的那个字符串，
+/// 那一列**是**这一支的真权威（长度单调）。</item>
+/// <item><b>整键 &gt; 128 ⇒ 作用域段与尾段一起回落成定长摘要</b>（#3332）
+/// —— 落库值与原始键长度无关，那一列对原始键**零约束**。</item>
+/// </list>
+/// <para>⇒ 那一列**不构成本位点的上界**（它只约束前一支），但也**不是**「完全不承重」——
+/// 别把这条读成「该列可以随意收窄」。可登记的**有效上界**因此取 Mes 命令校验器
+/// <c>RetryFinishedGoodsReceiptInventoryPostingCommandValidator</c>
+/// （<c>IdempotencyKey</c> <c>MaximumLength(200)</c>），登记见
+/// <c>BusinessGatewayIdempotencyKeyDownstreamBoundContractTests.DownstreamBounds</c>。</para>
+/// <para><b>补这条规则改变了本位点超长键的响应形状</b>（#3333 已修，本段按修后事实重写）：
+/// 此前超长键落到全局钳上，拿的是带稳定码 <c>idempotency-key-too-long</c> 的 400；
+/// 补规则之后 201..512 的键先被 DTO 校验拒，当时拿的是 FastEndpoints 默认的
+/// <c>{"statusCode":400,"message":"One or more errors occurred!","errors":{...}}</c>，前端拿不到稳定码。
+/// #3333 把校验失败也成形为同一个 <c>ResponseData</c> 信封
+/// （<c>message</c> 位是稳定码 <c>request-payload-invalid</c>，见
+/// <c>BusinessGatewayValidationErrorResponse</c>），⇒ 两条上界现在只差稳定码本身，形状一致。
+/// OpenAPI 快照里本端点那条 <c>400</c> 响应的 schema 也因此从 <c>FastEndpointsErrorResponse</c>
+/// 换成了共享信封。</para>
+/// <para>共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。</para>
+/// </remarks>
+public sealed class BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequestValidator
+    : Validator<BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequest>
+{
+    public BusinessConsoleMesRetryFinishedGoodsReceiptInventoryPostingRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(200);
 }
 
 [Tags("Business Console MES")]
@@ -740,6 +967,18 @@ public sealed class CreateBusinessConsoleMesRushWorkOrderEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.CreateRushWorkOrderAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 CreateRushWorkOrderCommandHandler 走 CodeAllocator，落 mes.code_idempotency_keys.idempotency_key(150)。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleCreateRushWorkOrderRequestValidator
+    : Validator<BusinessConsoleCreateRushWorkOrderRequest>
+{
+    public BusinessConsoleCreateRushWorkOrderRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
 }
 
 [Tags("Business Console MES")]
@@ -816,6 +1055,18 @@ public sealed class CreateBusinessConsoleMesMaterialIssueRequestEndpoint(
         mes.CreateMaterialIssueRequestAsync(tokenProvider.BearerToken, request.WorkOrderId, request, cancellationToken);
 }
 
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 CreateMaterialIssueRequestCommandHandler 走 CodeAllocator，落 mes.code_idempotency_keys.idempotency_key(150)。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleMesCreateMaterialIssueRequestValidator
+    : Validator<BusinessConsoleMesCreateMaterialIssueRequest>
+{
+    public BusinessConsoleMesCreateMaterialIssueRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
 [Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/material-issue-requests")]
 [BusinessGatewayOperationId("listBusinessConsoleMesMaterialIssueRequests")]
@@ -823,19 +1074,101 @@ public sealed class ListBusinessConsoleMesMaterialIssueRequestsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesListRequest, BusinessConsoleMesMaterialIssueRequestListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesMaterialIssueRequestListRequest, BusinessConsoleMesMaterialIssueRequestListResponse>(
         auth,
         BusinessGatewayPermissions.MesMaterialsRead)
 {
-    protected override string OrganizationId(BusinessConsoleMesListRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleMesMaterialIssueRequestListRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleMesListRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleMesMaterialIssueRequestListRequest request) => request.EnvironmentId;
 
     protected override Task<BusinessConsoleMesMaterialIssueRequestListResponse> ForwardAsync(
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesMaterialIssueRequestListRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.ListMaterialIssueRequestsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console MES")]
+[HttpGet("/api/business-console/v1/mes/material-issue-requests/{requestId}")]
+[BusinessGatewayOperationId("getBusinessConsoleMesMaterialIssueRequest")]
+public sealed class GetBusinessConsoleMesMaterialIssueRequestEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesMaterialIssueRequestDetailRequest, BusinessConsoleMesMaterialIssueRequestRow>(
+        auth,
+        BusinessGatewayPermissions.MesMaterialsRead)
+{
+    protected override string OrganizationId(BusinessConsoleMesMaterialIssueRequestDetailRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesMaterialIssueRequestDetailRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleMesMaterialIssueRequestRow> ForwardAsync(
+        BusinessConsoleMesMaterialIssueRequestDetailRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        mes.GetMaterialIssueRequestAsync(tokenProvider.BearerToken, request.RequestId, request, cancellationToken);
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/material-scan-prevalidation")]
+[BusinessGatewayOperationId("prevalidateBusinessConsoleMesMaterialScan")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status400BadRequest)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status503ServiceUnavailable)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status504GatewayTimeout)]
+public sealed class PrevalidateBusinessConsoleMesMaterialScanEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesMaterialPrevalidationClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<MesMaterialScanPrevalidationRequest, MesMaterialScanPrevalidationResponse>(
+        auth,
+        BusinessGatewayPermissions.MesMaterialsRead)
+{
+    protected override string OrganizationId(MesMaterialScanPrevalidationRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(MesMaterialScanPrevalidationRequest request) => request.EnvironmentId;
+
+    protected override Task<MesMaterialScanPrevalidationResponse> ForwardAsync(
+        MesMaterialScanPrevalidationRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = HttpContext.Response.Headers["X-Correlation-Id"].Single()
+            ?? throw new InvalidOperationException("Correlation middleware did not establish X-Correlation-Id.");
+        return mes.PrevalidateAsync(tokenProvider.BearerToken, correlationId, request, cancellationToken);
+    }
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/context-scan-prevalidation")]
+[BusinessGatewayOperationId("prevalidateBusinessConsoleMesContextScan")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status400BadRequest)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status503ServiceUnavailable)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status504GatewayTimeout)]
+public sealed class PrevalidateBusinessConsoleMesContextScanEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesContextPrevalidationClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<MesContextScanPrevalidationRequest, MesContextScanPrevalidationResponse>(
+        auth,
+        BusinessGatewayPermissions.MesOperationsRead)
+{
+    protected override string OrganizationId(MesContextScanPrevalidationRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(MesContextScanPrevalidationRequest request) => request.EnvironmentId;
+
+    protected override Task<MesContextScanPrevalidationResponse> ForwardAsync(
+        MesContextScanPrevalidationRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var correlationId = HttpContext.Response.Headers["X-Correlation-Id"].Single()
+            ?? throw new InvalidOperationException("Correlation middleware did not establish X-Correlation-Id.");
+        return mes.PrevalidateAsync(tokenProvider.BearerToken, correlationId, request, cancellationToken);
+    }
 }
 
 [Tags("Business Console MES")]
@@ -859,6 +1192,41 @@ public sealed class ConfirmBusinessConsoleMesLineSideMaterialReceiptEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.ConfirmLineSideMaterialReceiptAsync(tokenProvider.BearerToken, request.RequestId, request, cancellationToken);
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-returns")]
+[BusinessGatewayOperationId("returnBusinessConsoleMesLineSideMaterial")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
+public sealed class ReturnBusinessConsoleMesLineSideMaterialEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesReturnLineSideMaterialRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.MesMaterialsManage)
+{
+    protected override string OrganizationId(BusinessConsoleMesReturnLineSideMaterialRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesReturnLineSideMaterialRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleMesReturnLineSideMaterialRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        mes.ReturnLineSideMaterialAsync(tokenProvider.BearerToken, request.RequestId, request, cancellationToken);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 ReturnLineSideMaterialCommandValidator(150)；承载列是无界 text，上界只由该校验器承担。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleMesReturnLineSideMaterialRequestValidator
+    : Validator<BusinessConsoleMesReturnLineSideMaterialRequest>
+{
+    public BusinessConsoleMesReturnLineSideMaterialRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
 }
 
 [Tags("Business Console MES")]
@@ -906,33 +1274,48 @@ public sealed class AssignBusinessConsoleMesDispatchTaskEndpoint(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // The assignee must be a registered, on-duty worker; resolving here keeps the name snapshot
-        // trustworthy and stops arbitrary identifiers from reaching the dispatch record.
-        string? assignedUserName = null;
-        string? teamId = null;
-        string? teamName = null;
-        if (!string.IsNullOrWhiteSpace(request.AssignedUserId))
+        // Every assignee/participant must be a registered, on-duty worker. Resolving all names here keeps
+        // collaboration snapshots trustworthy and stops arbitrary caller-provided identities from reaching MES.
+        var workerIds = new[] { request.AssignedUserId }
+            .Concat(request.Participants?.Select(x => x.WorkerId) ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(x => x!)
+            .ToArray();
+        var resolvedWorkers = await Task.WhenAll(workerIds.Select(ResolveWorkerAsync));
+        var workers = resolvedWorkers.ToDictionary(x => x.WorkerId, x => x.Worker, StringComparer.OrdinalIgnoreCase);
+
+        async Task<(string WorkerId, BusinessConsoleWorkerDirectoryItem Worker)> ResolveWorkerAsync(string workerId)
         {
             var directory = await masterData.ListWorkersAsync(
                 tokenProvider.BearerToken,
                 new BusinessConsoleWorkerDirectoryRequest(
                     request.OrganizationId,
                     request.EnvironmentId,
-                    UserId: request.AssignedUserId,
+                    UserId: workerId,
                     PageIndex: 1,
                     PageSize: 1),
                 cancellationToken);
             var worker = directory.Items.FirstOrDefault();
             if (worker is null)
             {
-                throw new BusinessServiceProxyException(System.Net.HttpStatusCode.BadRequest, $"未找到员工，工人标识 = {request.AssignedUserId}");
+                throw BusinessServiceProxyException.FromLocalRejection(System.Net.HttpStatusCode.BadRequest, "未找到员工，无法派工。");
             }
 
             if (!worker.Active || !string.Equals(worker.EmploymentStatus, "active", StringComparison.Ordinal))
             {
-                throw new BusinessServiceProxyException(System.Net.HttpStatusCode.BadRequest, $"员工 {worker.DisplayName} 当前不在岗，无法派工。");
+                throw BusinessServiceProxyException.FromLocalRejection(System.Net.HttpStatusCode.BadRequest, "员工当前不在岗，无法派工。");
             }
 
+            return (workerId, worker);
+        }
+
+        string? assignedUserName = null;
+        string? teamId = null;
+        string? teamName = null;
+        if (!string.IsNullOrWhiteSpace(request.AssignedUserId))
+        {
+            var worker = workers[request.AssignedUserId];
             assignedUserName = worker.DisplayName;
 
             // 班组随派工落快照，口径与 assignedUserName 一致：由网关从主数据解析，不信调用方传入。
@@ -941,6 +1324,11 @@ public sealed class AssignBusinessConsoleMesDispatchTaskEndpoint(
             teamId = team?.TeamCode;
             teamName = team?.TeamName;
         }
+        var participants = request.Participants?.Select(participant =>
+            new BusinessConsoleMesDispatchParticipantForwardInput(
+                participant.WorkerId,
+                workers[participant.WorkerId].DisplayName,
+                participant.SharePercent)).ToArray();
 
         return await mes.AssignDispatchTaskAsync(
             tokenProvider.BearerToken,
@@ -952,11 +1340,150 @@ public sealed class AssignBusinessConsoleMesDispatchTaskEndpoint(
                 assignedUserName,
                 request.DeviceAssetId,
                 request.ShiftId,
-                request.IdempotencyKey,
                 teamId,
-                teamName),
+                teamName,
+                participants),
             RequireAuthorizedPrincipalActorReference(),
             cancellationToken);
+    }
+}
+
+public sealed class BusinessConsoleMesAssignDispatchTaskRequestValidator
+    : Validator<BusinessConsoleMesAssignDispatchTaskRequest>
+{
+    public BusinessConsoleMesAssignDispatchTaskRequestValidator()
+    {
+        RuleFor(x => x.Participants).Must(participants => participants is null || participants.Count is > 0 and <= 20)
+            .WithMessage("提供参与者列表时必须包含 1 至 20 人。");
+        RuleForEach(x => x.Participants).ChildRules(participant =>
+        {
+            participant.RuleFor(x => x.WorkerId)
+                .NotEmpty().WithMessage("参与者人员 ID 不能为空。")
+                .MaximumLength(100).WithMessage("参与者人员 ID 长度不能超过 100 个字符。");
+            participant.RuleFor(x => x.SharePercent)
+                .GreaterThan(0m).WithMessage("工时占比必须大于 0。")
+                .LessThanOrEqualTo(100m).WithMessage("工时占比不能超过 100。")
+                .Must(HasPersistableSharePrecision)
+                .WithMessage("工时占比最多保留四位小数。");
+        });
+        RuleFor(x => x.Participants).Must(HaveUniqueWorkersAndBalancedShares)
+            .WithMessage("工序参与者必须唯一，且工时占比合计必须为 100%。");
+    }
+
+    private static bool HaveUniqueWorkersAndBalancedShares(
+        IReadOnlyCollection<BusinessConsoleMesDispatchParticipantRequest>? participants)
+    {
+        if (participants is null || participants.Count == 0)
+        {
+            return true;
+        }
+
+        return participants.All(x => !string.IsNullOrWhiteSpace(x.WorkerId)) &&
+            participants.Select(x => x.WorkerId.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() == participants.Count &&
+            participants.Sum(x => x.SharePercent) == 100m;
+    }
+
+    private static bool HasPersistableSharePrecision(decimal sharePercent) =>
+        decimal.Round(sharePercent, 4) == sharePercent;
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v1/mes/operation-tasks/{operationTaskId}/claim")]
+[BusinessGatewayOperationId("claimBusinessConsoleMesOperationTask")]
+public sealed class ClaimBusinessConsoleMesOperationTaskEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IBusinessMasterDataClient masterData,
+    PrincipalWorkScopeResolver workScopeResolver,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesClaimOperationTaskRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.MesOperationsManage)
+{
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    protected override string OrganizationId(BusinessConsoleMesClaimOperationTaskRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesClaimOperationTaskRequest request) => request.EnvironmentId;
+
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleMesClaimOperationTaskRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var scopedRequest = await ListBusinessConsoleMesOperationTasksEndpoint.ResolveRequestAsync(
+            workScopeResolver,
+            AuthorizationResult,
+            new BusinessConsoleMesOperationTaskListRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                Status: "Queued",
+                Skip: 0,
+                Take: 2,
+                ScopeKind: request.ScopeKind,
+                ScopeId: request.ScopeId,
+                OperationTaskId: request.OperationTaskId),
+            BusinessGatewayPermissions.MesOperationsManage,
+            cancellationToken);
+        var tasks = await mes.ListOperationTasksAsync(tokenProvider.BearerToken, scopedRequest, cancellationToken);
+        var task = tasks.Items.SingleOrDefault(x =>
+            string.Equals(x.OperationTaskId, request.OperationTaskId, StringComparison.Ordinal));
+        if (task is null)
+        {
+            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.Forbidden, "operation-task-outside-work-center");
+        }
+
+        var principalId = RequireAuthorizedPrincipalId();
+        var directory = await masterData.ListWorkersAsync(
+            tokenProvider.BearerToken,
+            new BusinessConsoleWorkerDirectoryRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                UserId: principalId,
+                WorkCenterCode: task.WorkCenterId,
+                EmploymentStatus: "active",
+                PageIndex: 1,
+                PageSize: 2),
+            cancellationToken);
+        var worker = directory.Items.SingleOrDefault();
+        if (worker is null || !worker.Active)
+        {
+            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.Forbidden, "worker-not-on-duty-at-work-center");
+        }
+
+        var team = worker.Teams.FirstOrDefault(x => x.IsLeader) ?? worker.Teams.FirstOrDefault();
+        return await mes.ClaimDispatchTaskAsync(
+            tokenProvider.BearerToken,
+            request.OperationTaskId,
+            new BusinessConsoleMesClaimDispatchTaskForwardRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                principalId,
+                worker.DisplayName,
+                task.DeviceAssetId,
+                task.ShiftId,
+                request.IdempotencyKey,
+                team?.TeamCode,
+                team?.TeamName),
+            RequireAuthorizedPrincipalActorReference(),
+            cancellationToken);
+    }
+}
+
+public sealed class BusinessConsoleMesClaimOperationTaskRequestValidator
+    : Validator<BusinessConsoleMesClaimOperationTaskRequest>
+{
+    public BusinessConsoleMesClaimOperationTaskRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OperationTaskId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ScopeKind).Equal("work-center");
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
     }
 }
 
@@ -1299,6 +1826,7 @@ public sealed class GetBusinessConsoleMesWipSummaryEndpoint(
 public sealed class ListBusinessConsoleMesProductionReportsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IBusinessIamAccountDirectoryClient iamAccounts,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesListWithoutStatusRequest, BusinessConsoleMesProductionReportListResponse>(
         auth,
@@ -1308,11 +1836,61 @@ public sealed class ListBusinessConsoleMesProductionReportsEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleMesListWithoutStatusRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesProductionReportListResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleMesProductionReportListResponse> ForwardAsync(
         BusinessConsoleMesListWithoutStatusRequest request,
         string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var response = await mes.ListProductionReportsAsync(tokenProvider.BearerToken, request, cancellationToken);
+        var names = await MesOperatorDisplayNames.ResolveAsync(iamAccounts, tokenProvider.BearerToken,
+            request.OrganizationId, request.EnvironmentId, response.Items.Select(report => report.ReportedBy), cancellationToken);
+        return response with
+        {
+            Items = response.Items.Select(report => report with
+            {
+                ReportedByDisplayName = report.ReportedBy is { } userId ? names.GetValueOrDefault(userId) : null,
+            }).ToArray(),
+        };
+    }
+}
+
+[Tags("Business Console MES")]
+[HttpGet("/api/business-console/v1/mes/production-statistics")]
+[BusinessGatewayOperationId("queryBusinessConsoleMesProductionStatistics")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
+public sealed class QueryBusinessConsoleMesProductionStatisticsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesProductionStatisticsRequest, BusinessConsoleMesProductionStatisticsResponse>(
+        auth,
+        BusinessGatewayPermissions.MesReportingRead)
+{
+    protected override string OrganizationId(BusinessConsoleMesProductionStatisticsRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesProductionStatisticsRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleMesProductionStatisticsResponse> ForwardAsync(
+        BusinessConsoleMesProductionStatisticsRequest request,
+        string bearerToken,
         CancellationToken cancellationToken) =>
-        mes.ListProductionReportsAsync(tokenProvider.BearerToken, request, cancellationToken);
+        mes.QueryProductionStatisticsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+public sealed class BusinessConsoleMesProductionStatisticsRequestValidator
+    : Validator<BusinessConsoleMesProductionStatisticsRequest>
+{
+    public BusinessConsoleMesProductionStatisticsRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WindowEndUtc).GreaterThan(x => x.WindowStartUtc);
+        RuleFor(x => x.ShiftCode).MaximumLength(100);
+        RuleFor(x => x.WorkCenterId).MaximumLength(100);
+        RuleFor(x => x.SkuId).MaximumLength(100);
+        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
 }
 
 [Tags("Business Console MES")]
@@ -1321,6 +1899,7 @@ public sealed class ListBusinessConsoleMesProductionReportsEndpoint(
 public sealed class GetBusinessConsoleMesProductionReportEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IBusinessIamAccountDirectoryClient iamAccounts,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesProductionReportDetailRequest, BusinessConsoleMesProductionReportDetailResponse>(
         auth,
@@ -1330,15 +1909,26 @@ public sealed class GetBusinessConsoleMesProductionReportEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleMesProductionReportDetailRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesProductionReportDetailResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleMesProductionReportDetailResponse> ForwardAsync(
         BusinessConsoleMesProductionReportDetailRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.GetProductionReportAsync(
+        CancellationToken cancellationToken)
+    {
+        var response = await mes.GetProductionReportAsync(
             tokenProvider.BearerToken,
             request.ReportNo,
             new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
             cancellationToken);
+        var names = await MesOperatorDisplayNames.ResolveAsync(iamAccounts, tokenProvider.BearerToken,
+            request.OrganizationId, request.EnvironmentId, [response.Report.ReportedBy], cancellationToken);
+        return response with
+        {
+            Report = response.Report with
+            {
+                ReportedByDisplayName = response.Report.ReportedBy is { } userId ? names.GetValueOrDefault(userId) : null,
+            },
+        };
+    }
 }
 
 [Tags("Business Console MES")]
@@ -1347,7 +1937,7 @@ public sealed class GetBusinessConsoleMesProductionReportEndpoint(
 [Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status409Conflict)]
 public sealed class RecordBusinessConsoleMesProductionReportEndpoint(
     IBusinessGatewayAuthorizationClient auth,
-    IBusinessMesClient mes,
+    IBusinessMesProductionReportCoordinator coordinator,
     MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleRecordProductionReportRequest, BusinessConsoleRecordProductionReportResponse>(
@@ -1368,7 +1958,7 @@ public sealed class RecordBusinessConsoleMesProductionReportEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        await workScopeAuthorizer.EnsureOperationTaskAccessAsync(
+        var operationTask = await workScopeAuthorizer.EnsureOperationTaskAccessAsync(
             AuthorizationResult,
             request.OrganizationId,
             request.EnvironmentId,
@@ -1377,9 +1967,16 @@ public sealed class RecordBusinessConsoleMesProductionReportEndpoint(
             request.ScopeId,
             request.OperationTaskId,
             cancellationToken);
-        return await mes.RecordProductionReportAsync(
+        if (!string.Equals(operationTask.WorkOrderId, request.WorkOrderId, StringComparison.Ordinal))
+        {
+            throw BusinessServiceProxyException.FromLocalRejection(
+                System.Net.HttpStatusCode.Forbidden,
+                PrincipalWorkScopeStableWireCodes.NotAuthorized);
+        }
+        return await coordinator.RecordAsync(
             tokenProvider.BearerToken,
             request,
+            RequireAuthorizedPrincipalActor().ActorRef,
             cancellationToken);
     }
 }
@@ -1389,7 +1986,7 @@ public sealed class BusinessConsoleRecordProductionReportRequestValidator
 {
     public BusinessConsoleRecordProductionReportRequestValidator()
     {
-        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
         RuleFor(x => x.ScopeKind)
             .NotEmpty()
             .MaximumLength(50)
@@ -1466,7 +2063,8 @@ public sealed class DismissBusinessConsoleMesTelemetryCandidateEndpoint(IBusines
 public sealed class RecordBusinessConsoleMesDefectEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
-    IInternalServiceTokenProvider tokenProvider)
+    IInternalServiceTokenProvider tokenProvider,
+    TimeProvider timeProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesRecordDefectRequest, BusinessConsoleAcceptedResponse>(
         auth,
         BusinessGatewayPermissions.MesQualityWrite)
@@ -1479,7 +2077,99 @@ public sealed class RecordBusinessConsoleMesDefectEndpoint(
         BusinessConsoleMesRecordDefectRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        mes.RecordDefectAsync(tokenProvider.BearerToken, request, cancellationToken);
+        mes.RecordDefectAsync(
+            tokenProvider.BearerToken,
+            new BusinessMesRecordDefectRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WorkOrderId,
+                request.OperationTaskId,
+                request.DefectCode,
+                request.DefectQuantity,
+                timeProvider.GetUtcNow(),
+                request.IdempotencyKey),
+            cancellationToken);
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 RecordDefectRequestValidator(150) 与 CodeAllocator 落库列 mes.code_idempotency_keys.idempotency_key(150)，取最小。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleMesRecordDefectRequestValidator
+    : Validator<BusinessConsoleMesRecordDefectRequest>
+{
+    public BusinessConsoleMesRecordDefectRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v2/mes/defects")]
+[BusinessGatewayOperationId("recordBusinessConsoleMesDefectV2")]
+public sealed class RecordBusinessConsoleMesDefectV2Endpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesRecordDefectV2Request, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.MesQualityWrite)
+{
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    protected override string OrganizationId(BusinessConsoleMesRecordDefectV2Request request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesRecordDefectV2Request request) => request.EnvironmentId;
+
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleMesRecordDefectV2Request request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        await workScopeAuthorizer.EnsureWorkOrderAccessAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.MesQualityWrite,
+            request.ScopeKind,
+            request.ScopeId,
+            request.WorkOrderId,
+            cancellationToken);
+        return await mes.RecordDefectAsync(
+            tokenProvider.BearerToken,
+            new BusinessMesRecordDefectRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WorkOrderId,
+                request.OperationTaskId,
+                request.DefectCode,
+                request.Quantity,
+                request.RecordedAtUtc,
+                request.IdempotencyKey),
+            cancellationToken);
+    }
+}
+
+public sealed class BusinessConsoleMesRecordDefectV2RequestValidator
+    : Validator<BusinessConsoleMesRecordDefectV2Request>
+{
+    public BusinessConsoleMesRecordDefectV2RequestValidator()
+    {
+        RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.OperationTaskId).MaximumLength(200);
+        RuleFor(x => x.DefectCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Quantity).NotEmpty().GreaterThan(0);
+        RuleFor(x => x.RecordedAtUtc).NotEmpty();
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ScopeKind)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(Endpoints.Principal.BusinessGatewayWorkScopeKinds.Contains);
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+    }
 }
 
 [Tags("Business Console MES")]
@@ -1510,6 +2200,7 @@ public sealed class ListBusinessConsoleMesRelatedQualityItemsEndpoint(
 public sealed class ListBusinessConsoleMesFinishedGoodsReceiptRequestsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IBusinessErpCostingClient erp,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesListRequest, BusinessConsoleMesReceiptRequestListResponse>(
         auth,
@@ -1519,11 +2210,76 @@ public sealed class ListBusinessConsoleMesFinishedGoodsReceiptRequestsEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleMesListRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesReceiptRequestListResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleMesReceiptRequestListResponse> ForwardAsync(
         BusinessConsoleMesListRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.ListFinishedGoodsReceiptRequestsAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var response = await mes.ListFinishedGoodsReceiptRequestsAsync(tokenProvider.BearerToken, request, cancellationToken);
+
+        // #3728：Requested 且尚无单位成本 = 在等 ERP 成本归集。把 ERP 的归集进度挂到行上，
+        // 让「报工成本 0/8 不前进」在入库单上直接可见。进度是 ERP 财务数据，按调用者自身的
+        // ERP 财务读权限决定是否挂（内部 token 不提升最终主体权限）；无权限时行保持原样。
+        var awaitingWorkOrderIds = response.Items
+            .Where(IsAwaitingCostCapitalization)
+            .Select(item => item.WorkOrderId)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (awaitingWorkOrderIds.Length == 0)
+        {
+            return response;
+        }
+
+        var financeRead = await AuthorizationClient.CheckAsync(
+            bearerToken,
+            new BusinessGatewayPermissionRequirement(
+                BusinessGatewayPermissions.ErpFinanceRead,
+                request.OrganizationId,
+                request.EnvironmentId,
+                null,
+                null),
+            cancellationToken);
+        if (!financeRead.IsAllowed)
+        {
+            return response;
+        }
+
+        var progress = await Task.WhenAll(awaitingWorkOrderIds.Select(ReadProgressAsync));
+        var progressByWorkOrder = progress
+            .Where(x => x.Progress is not null)
+            .ToDictionary(x => x.WorkOrderId, x => x.Progress!, StringComparer.Ordinal);
+        return response with
+        {
+            Items = response.Items
+                .Select(item => IsAwaitingCostCapitalization(item)
+                    ? item with { CostCapitalization = progressByWorkOrder.GetValueOrDefault(item.WorkOrderId) }
+                    : item)
+                .ToArray(),
+        };
+
+        async Task<(string WorkOrderId, BusinessConsoleMesReceiptCostCapitalizationProgress? Progress)> ReadProgressAsync(
+            string workOrderId)
+        {
+            try
+            {
+                var read = await erp.GetWorkOrderCostProgressAsync(
+                    tokenProvider.BearerToken,
+                    new BusinessConsoleErpWorkOrderCostProgressRequest(request.OrganizationId, request.EnvironmentId, workOrderId),
+                    cancellationToken);
+                // ERP 还没有该工单的成本记录 = 一条报工成本都没收到、也没收到完工。
+                return (workOrderId, read ?? new BusinessConsoleMesReceiptCostCapitalizationProgress(false, 0, 0, 0, 0, false));
+            }
+            catch (BusinessServiceProxyException)
+            {
+                // 进度只是附加说明：ERP 读不到时这些行不挂进度（与无权限同一条路），入库单列表本身照常返回。
+                return (workOrderId, null);
+            }
+        }
+    }
+
+    private static bool IsAwaitingCostCapitalization(BusinessConsoleMesReceiptRequestRow item) =>
+        item.UnitCost is null
+        && string.Equals(item.ReceiptStatus, "Requested", StringComparison.Ordinal);
 }
 
 [Tags("Business Console MES")]
@@ -1672,35 +2428,142 @@ public sealed class CreateBusinessConsoleMesFinishedGoodsReceiptRequestEndpoint(
         mes.CreateFinishedGoodsReceiptRequestAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 CreateFinishedGoodsReceiptRequestCommandHandler 走 CodeAllocator，落 mes.code_idempotency_keys.idempotency_key(150)。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleMesCreateReceiptRequestValidator
+    : Validator<BusinessConsoleMesCreateReceiptRequest>
+{
+    public BusinessConsoleMesCreateReceiptRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
 [Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/downtime-events")]
 [BusinessGatewayOperationId("listBusinessConsoleMesDowntimeEvents")]
 public sealed class ListBusinessConsoleMesDowntimeEventsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    PrincipalWorkScopeResolver workScopeResolver,
+    IBusinessMaintenanceClient maintenance,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesListRequest, BusinessConsoleMesDowntimeEventListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesDowntimeEventListRequest, BusinessConsoleMesDowntimeEventListResponse>(
         auth,
         BusinessGatewayPermissions.MesDowntimeRead)
 {
-    protected override string OrganizationId(BusinessConsoleMesListRequest request) => request.OrganizationId;
+    protected override bool IncludePrincipalContext => true;
 
-    protected override string EnvironmentId(BusinessConsoleMesListRequest request) => request.EnvironmentId;
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
 
-    protected override Task<BusinessConsoleMesDowntimeEventListResponse> ForwardAsync(
-        BusinessConsoleMesListRequest request,
+    protected override string OrganizationId(BusinessConsoleMesDowntimeEventListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesDowntimeEventListRequest request) => request.EnvironmentId;
+
+    protected override async Task<BusinessConsoleMesDowntimeEventListResponse> ForwardAsync(
+        BusinessConsoleMesDowntimeEventListRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.ListDowntimeEventsAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var authorizedWorkCenterIds = await workScopeResolver.ResolveDowntimeWorkCentersAsync(
+            AuthorizationResult, request.OrganizationId, request.EnvironmentId,
+            BusinessGatewayPermissions.MesDowntimeRead, request.WorkCenterId, cancellationToken);
+        var response = await mes.ListDowntimeEventsAsync(
+            tokenProvider.BearerToken, request, cancellationToken, authorizedWorkCenterIds);
+        return await MesDowntimeReasonNameEnricher.EnrichAsync(
+            response,
+            maintenance,
+            tokenProvider.BearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
+            cancellationToken);
+    }
+}
+
+/// <summary>
+/// 停机原因码归 Maintenance 的 <c>downtime-reason</c> 目录所有，MES 只存码。读面按
+/// api-contract-and-codegen §17「列表行必须随业务标识返回可显示的 *Name」在门面层补中文名，
+/// 与 <see cref="MaintenanceDeviceAssetWarrantyEnricher"/> 同一姿势（读面跨域取名走门面，不让页面自己拼）。
+/// 目录里没有的码（历史自由文本停机原因）不编名字：<c>ReasonName</c> 留空，页面照实显示原值。
+/// </summary>
+internal static class MesDowntimeReasonNameEnricher
+{
+    /// <summary>
+    /// 停机原因目录是受控词表（当前世界史种子 5 条），一页取回即可覆盖。目录真超过这一页时本方法
+    /// **静默截断**：多出来的码解不出名字，与「目录里没有这个码」落在同一条降级路径上。
+    /// </summary>
+    private const int CatalogPageSize = 200;
+
+    public static async Task<BusinessConsoleMesDowntimeEventListResponse> EnrichAsync(
+        BusinessConsoleMesDowntimeEventListResponse response,
+        IBusinessMaintenanceClient maintenance,
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        var names = await LoadReasonNamesAsync(
+            maintenance, internalBearerToken, organizationId, environmentId, cancellationToken);
+
+        string? Resolve(string? reasonCode) =>
+            reasonCode is not null && names.TryGetValue(reasonCode, out var name) ? name : null;
+
+        return response with
+        {
+            Items = [.. response.Items.Select(item => item with { ReasonName = Resolve(item.ReasonCode) })],
+            ReasonSummary = [.. response.ReasonSummary.Select(row => row with { ReasonName = Resolve(row.ReasonCode) })],
+        };
+    }
+
+    /// <summary>
+    /// 取名是**增补**，不是停机读面的事实来源：Maintenance 不可用时停机数据本身完好、原因码原值也在，
+    /// 整页 502 是拿一个可降级的依赖去否决一个能正常回答的读面。因此按
+    /// <see cref="MaintenanceDeviceAssetWarrantyEnricher"/> 已判定可达的同一组失败降级为「解不出名字」，
+    /// 与「目录里没有这个码」走同一条路径（页面照实显示原值），不新增前端分支。
+    /// 调用方自己取消不在此列：那不是下游故障，必须原样抛回。
+    /// </summary>
+    private static async Task<Dictionary<string, string>> LoadReasonNamesAsync(
+        IBusinessMaintenanceClient maintenance,
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var catalog = await maintenance.ListDowntimeReasonsAsync(
+                internalBearerToken,
+                new BusinessConsoleMaintenanceReasonDirectoryRequest(organizationId, environmentId, Take: CatalogPageSize),
+                cancellationToken);
+            return catalog.Items
+                .Where(x => !string.IsNullOrWhiteSpace(x.ReasonCode))
+                .ToDictionary(x => x.ReasonCode, x => x.Description, StringComparer.Ordinal);
+        }
+        catch (BusinessServiceProxyException exception) when (
+            BusinessConsoleReadEnrichmentFailurePolicy.CanDegrade(exception.StatusCode))
+        {
+            return [];
+        }
+        catch (HttpRequestException)
+        {
+            return [];
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return [];
+        }
+    }
+
 }
 
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/downtime-events")]
 [BusinessGatewayOperationId("recordBusinessConsoleMesDowntimeEvent")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status400BadRequest)]
 public sealed class RecordBusinessConsoleMesDowntimeEventEndpoint(
-    IBusinessGatewayAuthorizationClient auth,
-    IBusinessMesClient mes,
-    IInternalServiceTokenProvider tokenProvider)
+    IBusinessGatewayAuthorizationClient auth)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesRecordDowntimeEventRequest, BusinessConsoleAcceptedResponse>(
         auth,
         BusinessGatewayPermissions.MesDowntimeManage)
@@ -1713,7 +2576,98 @@ public sealed class RecordBusinessConsoleMesDowntimeEventEndpoint(
         BusinessConsoleMesRecordDowntimeEventRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        mes.RecordDowntimeEventAsync(tokenProvider.BearerToken, request, cancellationToken);
+        throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+            System.Net.HttpStatusCode.BadRequest,
+            "work-center-required-use-v2");
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 RecordDowntimeEventRequestValidator(150) 与 CodeAllocator 落库列 mes.code_idempotency_keys.idempotency_key(150)，取最小。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleMesRecordDowntimeEventRequestValidator
+    : Validator<BusinessConsoleMesRecordDowntimeEventRequest>
+{
+    public BusinessConsoleMesRecordDowntimeEventRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+}
+
+[Tags("Business Console MES")]
+[HttpPost("/api/business-console/v2/mes/downtime-events")]
+[BusinessGatewayOperationId("recordBusinessConsoleMesDowntimeEventV2")]
+public sealed class RecordBusinessConsoleMesDowntimeEventV2Endpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesRecordDowntimeEventV2Request, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.MesDowntimeManage)
+{
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    protected override string OrganizationId(BusinessConsoleMesRecordDowntimeEventV2Request request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesRecordDowntimeEventV2Request request) => request.EnvironmentId;
+
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleMesRecordDowntimeEventV2Request request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        await workScopeAuthorizer.EnsureWorkCenterAccessAsync(
+            AuthorizationResult,
+            request.OrganizationId,
+            request.EnvironmentId,
+            BusinessGatewayPermissions.MesDowntimeManage,
+            request.ScopeKind,
+            request.ScopeId,
+            request.WorkCenterId,
+            cancellationToken);
+        return await mes.RecordDowntimeEventAsync(
+            tokenProvider.BearerToken,
+            new BusinessMesRecordDowntimeEventRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.WorkOrderId,
+                request.OperationTaskId,
+                request.WorkCenterId,
+                request.DeviceAssetId,
+                request.ReasonCode,
+                request.StartedAtUtc,
+                request.IdempotencyKey,
+                request.ToUtc),
+            cancellationToken);
+    }
+}
+
+public sealed class BusinessConsoleMesRecordDowntimeEventV2RequestValidator
+    : Validator<BusinessConsoleMesRecordDowntimeEventV2Request>
+{
+    public BusinessConsoleMesRecordDowntimeEventV2RequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.OperationTaskId).MaximumLength(200);
+        RuleFor(x => x.WorkCenterId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.DeviceAssetId).MaximumLength(200);
+        RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.StartedAtUtc).NotEmpty();
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ScopeKind)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(Endpoints.Principal.BusinessGatewayWorkScopeKinds.Contains);
+        RuleFor(x => x.ScopeId).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.ToUtc)
+            .GreaterThanOrEqualTo(x => x.StartedAtUtc)
+            .When(x => x.ToUtc.HasValue);
+    }
 }
 
 [Tags("Business Console MES")]
@@ -1722,42 +2676,32 @@ public sealed class RecordBusinessConsoleMesDowntimeEventEndpoint(
 public sealed class ConfirmBusinessConsoleMesDowntimeRecoveryEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    PrincipalWorkScopeResolver workScopeResolver,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesRecoverDowntimeEventRequest, BusinessConsoleAcceptedResponse>(
         auth,
         BusinessGatewayPermissions.MesDowntimeManage)
 {
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
     protected override string OrganizationId(BusinessConsoleMesRecoverDowntimeEventRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleMesRecoverDowntimeEventRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
         BusinessConsoleMesRecoverDowntimeEventRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.ConfirmDowntimeRecoveryAsync(tokenProvider.BearerToken, request.DowntimeEventId, request, cancellationToken);
-}
-
-[Tags("Business Console MES")]
-[HttpGet("/api/business-console/v1/mes/schedules")]
-[BusinessGatewayOperationId("listBusinessConsoleMesScheduleResults")]
-public sealed class ListBusinessConsoleMesScheduleResultsEndpoint(
-    IBusinessGatewayAuthorizationClient auth,
-    IBusinessMesClient mes,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesScheduleResultListRequest, BusinessConsoleMesScheduleResultListResponse>(
-        auth,
-        BusinessGatewayPermissions.MesSchedulesRead)
-{
-    protected override string OrganizationId(BusinessConsoleMesScheduleResultListRequest request) => request.OrganizationId;
-
-    protected override string EnvironmentId(BusinessConsoleMesScheduleResultListRequest request) => request.EnvironmentId;
-
-    protected override Task<BusinessConsoleMesScheduleResultListResponse> ForwardAsync(
-        BusinessConsoleMesScheduleResultListRequest request,
-        string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.ListScheduleResultsAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var authorizedWorkCenterIds = await workScopeResolver.ResolveDowntimeWorkCentersAsync(
+            AuthorizationResult, request.OrganizationId, request.EnvironmentId,
+            BusinessGatewayPermissions.MesDowntimeManage, null, cancellationToken);
+        return await mes.ConfirmDowntimeRecoveryAsync(
+            tokenProvider.BearerToken, request.DowntimeEventId, request, cancellationToken, authorizedWorkCenterIds);
+    }
 }
 
 [Tags("Business Console MES")]
@@ -1783,11 +2727,34 @@ public sealed class ListBusinessConsoleMesShiftHandoversEndpoint(
 }
 
 [Tags("Business Console MES")]
+[HttpGet("/api/business-console/v1/mes/shift-handovers/{handoverId}")]
+[BusinessGatewayOperationId("getBusinessConsoleMesShiftHandover")]
+public sealed class GetBusinessConsoleMesShiftHandoverEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMesClient mes,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesShiftHandoverDetailRequest, BusinessConsoleMesShiftHandoverDetail>(
+        auth,
+        BusinessGatewayPermissions.MesHandoversRead)
+{
+    protected override string OrganizationId(BusinessConsoleMesShiftHandoverDetailRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleMesShiftHandoverDetailRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleMesShiftHandoverDetail> ForwardAsync(
+        BusinessConsoleMesShiftHandoverDetailRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        mes.GetShiftHandoverAsync(tokenProvider.BearerToken, request.HandoverId, request, cancellationToken);
+}
+
+[Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/shift-handovers")]
 [BusinessGatewayOperationId("createBusinessConsoleMesShiftHandover")]
 public sealed class CreateBusinessConsoleMesShiftHandoverEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IBusinessMasterDataClient masterData,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesCreateShiftHandoverRequest, BusinessConsoleAcceptedResponse>(
         auth,
@@ -1797,11 +2764,54 @@ public sealed class CreateBusinessConsoleMesShiftHandoverEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleMesCreateShiftHandoverRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
         BusinessConsoleMesCreateShiftHandoverRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.CreateShiftHandoverAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        // 交班人绑定到认证 principal：交接班记录的全部意义就是「谁交给谁」的问责，
+        // 允许请求体自带 outgoingUserId 就等于允许持 handovers.manage 的人把别人写成交班人。
+        var outgoingUserId = RequireAuthorizedPrincipalId();
+        var outgoingUserName = await BusinessConsoleMesShiftHandoverPrincipal.ResolveDisplayNameAsync(
+            masterData,
+            tokenProvider.BearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
+            outgoingUserId,
+            cancellationToken);
+
+        return await mes.CreateShiftHandoverAsync(
+            tokenProvider.BearerToken,
+            new BusinessConsoleMesCreateShiftHandoverForwardRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.ShiftId,
+                request.TeamId,
+                request.OpenIssueIds,
+                request.IdempotencyKey,
+                request.TeamName,
+                outgoingUserId,
+                outgoingUserName,
+                request.WipItems,
+                request.UnfinishedWorkOrders,
+                request.OpenIssues,
+                request.Attachments),
+            cancellationToken);
+    }
+}
+
+/// <summary>
+/// 端点级幂等键长度上界（#3324）。本处下游权威：
+/// MES 侧 CreateShiftHandoverCommandHandler 走 CodeAllocator，落 mes.code_idempotency_keys.idempotency_key(150)。
+/// 共同口径见本文件顶部的「#3324 端点级幂等键上界」注释块。
+/// </summary>
+public sealed class BusinessConsoleMesCreateShiftHandoverRequestValidator
+    : Validator<BusinessConsoleMesCreateShiftHandoverRequest>
+{
+    public BusinessConsoleMesCreateShiftHandoverRequestValidator() =>
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
 }
 
 [Tags("Business Console MES")]
@@ -1810,6 +2820,7 @@ public sealed class CreateBusinessConsoleMesShiftHandoverEndpoint(
 public sealed class AcceptBusinessConsoleMesShiftHandoverEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IBusinessMasterDataClient masterData,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesAcceptShiftHandoverRequest, BusinessConsoleAcceptedResponse>(
         auth,
@@ -1819,11 +2830,138 @@ public sealed class AcceptBusinessConsoleMesShiftHandoverEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleMesAcceptShiftHandoverRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleAcceptedResponse> ForwardAsync(
         BusinessConsoleMesAcceptShiftHandoverRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.AcceptShiftHandoverAsync(tokenProvider.BearerToken, request.HandoverId, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        // 接班人同样绑定到认证 principal：接班动作只能代表操作者本人。
+        var incomingUserId = RequireAuthorizedPrincipalId();
+        var incomingUserName = await BusinessConsoleMesShiftHandoverPrincipal.ResolveDisplayNameAsync(
+            masterData,
+            tokenProvider.BearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
+            incomingUserId,
+            cancellationToken);
+
+        return await mes.AcceptShiftHandoverAsync(
+            tokenProvider.BearerToken,
+            request.HandoverId,
+            new BusinessConsoleMesAcceptShiftHandoverForwardRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                incomingUserId,
+                incomingUserName),
+            cancellationToken);
+    }
+}
+
+/// <summary>
+/// 交接人显示名快照的解析口径：身份 id 来自认证 principal，姓名来自 MasterData 员工目录
+/// （「人」的业务权威是 MasterData Worker，IAM 只负责登录身份）。
+/// principal 不是登记在册的员工时（平台管理员、集成账号）姓名留空——身份 id 始终落库，
+/// 缺的只是展示用的名字，不因此拒绝交接班。
+/// </summary>
+internal static class BusinessConsoleMesShiftHandoverPrincipal
+{
+    public static async Task<string?> ResolveDisplayNameAsync(
+        IBusinessMasterDataClient masterData,
+        string internalBearerToken,
+        string organizationId,
+        string environmentId,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        var directory = await masterData.ListWorkersAsync(
+            internalBearerToken,
+            new BusinessConsoleWorkerDirectoryRequest(
+                organizationId,
+                environmentId,
+                UserId: userId,
+                PageIndex: 1,
+                PageSize: 1),
+            cancellationToken);
+        var displayName = directory.Items.FirstOrDefault()?.DisplayName;
+        return string.IsNullOrWhiteSpace(displayName) ? null : displayName;
+    }
+}
+
+/// <summary>
+/// MES 追溯读面的公共门面：取到执行追溯图后，按 <c>business.mes.quality.read</c> 分层检验结论。
+/// 检验结论节点带出缺陷码与处置结论，按 authorization-matrix 属质量下钻内容（同一份矩阵已有
+/// 「工单列表由 Gateway 按权限感知范围裁剪内容」与「工单详情给保留摘要、逐事件时间线另要 quality.read」
+/// 两条内容级分层先例）。只持 <c>business.mes.traceability.read</c> 的主体仍拿到整张执行追溯图，
+/// 但不含检验结论节点及其边。
+/// <para>
+/// <see cref="ForwardAsync"/> 是 sealed 的：继承本基类的读面只能实现 <see cref="LoadTraceabilityAsync"/>，
+/// 不能各自决定裁不裁剪。这不构成类型层面的封闭——新端点仍可直接继承 AuthorizedBusinessProxyEndpoint
+/// 绕开本基类；兜住这一整类的是三个读面 × 两种权限态的门面用例矩阵。
+/// </para>
+/// </summary>
+public abstract class BusinessConsoleMesTraceabilityEndpoint<TRequest>(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIamAccountDirectoryClient iamAccounts,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<TRequest, BusinessConsoleMesTraceabilityResponse>(
+        auth,
+        BusinessGatewayPermissions.MesTraceabilityRead)
+    where TRequest : notnull
+{
+    protected string InternalBearerToken => tokenProvider.BearerToken;
+
+    protected abstract Task<BusinessConsoleMesTraceabilityResponse> LoadTraceabilityAsync(
+        TRequest request,
+        CancellationToken cancellationToken);
+
+    protected sealed override async Task<BusinessConsoleMesTraceabilityResponse> ForwardAsync(
+        TRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken)
+    {
+        var response = await LoadTraceabilityAsync(request, cancellationToken);
+        var inspectionNodeIds = response.Nodes
+            .Where(x => string.Equals(x.NodeType, MesTraceabilityNodeTypes.InspectionResult, StringComparison.Ordinal))
+            .Select(x => x.NodeId)
+            .ToHashSet(StringComparer.Ordinal);
+        var namesTask = MesOperatorDisplayNames.ResolveAsync(iamAccounts, InternalBearerToken,
+            OrganizationId(request), EnvironmentId(request),
+            response.Nodes.Where(node => string.Equals(node.NodeType, "Operator", StringComparison.Ordinal))
+                .Select(node => node.NodeId), cancellationToken);
+        if (inspectionNodeIds.Count > 0)
+        {
+            var qualityTask = AuthorizationClient.CheckAsync(
+                bearerToken,
+                new BusinessGatewayPermissionRequirement(
+                    BusinessGatewayPermissions.MesQualityRead,
+                    OrganizationId(request),
+                    EnvironmentId(request),
+                    null,
+                    null),
+                BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed,
+                cancellationToken);
+            await Task.WhenAll(namesTask, qualityTask);
+            if (!(await qualityTask).IsAllowed)
+            {
+                response = response with
+                {
+                    Nodes = [.. response.Nodes.Where(x => !string.Equals(x.NodeType, MesTraceabilityNodeTypes.InspectionResult, StringComparison.Ordinal))],
+                    Edges = [.. response.Edges.Where(x => !inspectionNodeIds.Contains(x.ToNodeId))],
+                };
+            }
+        }
+
+        var names = await namesTask;
+        return response with
+        {
+            Nodes = [.. response.Nodes.Select(node =>
+                string.Equals(node.NodeType, "Operator", StringComparison.Ordinal)
+                    ? node with { DisplayName = names.GetValueOrDefault(node.NodeId) ?? "姓名不可用" }
+                    : node)],
+        };
+    }
 }
 
 [Tags("Business Console MES")]
@@ -1832,21 +2970,19 @@ public sealed class AcceptBusinessConsoleMesShiftHandoverEndpoint(
 public sealed class GetBusinessConsoleMesWorkOrderTraceabilityEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IBusinessIamAccountDirectoryClient iamAccounts,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesTraceabilityByWorkOrderRequest, BusinessConsoleMesTraceabilityResponse>(
-        auth,
-        BusinessGatewayPermissions.MesTraceabilityRead)
+    : BusinessConsoleMesTraceabilityEndpoint<BusinessConsoleMesTraceabilityByWorkOrderRequest>(auth, iamAccounts, tokenProvider)
 {
     protected override string OrganizationId(BusinessConsoleMesTraceabilityByWorkOrderRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleMesTraceabilityByWorkOrderRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesTraceabilityResponse> ForwardAsync(
+    protected override Task<BusinessConsoleMesTraceabilityResponse> LoadTraceabilityAsync(
         BusinessConsoleMesTraceabilityByWorkOrderRequest request,
-        string bearerToken,
         CancellationToken cancellationToken) =>
         mes.GetWorkOrderTraceabilityAsync(
-            tokenProvider.BearerToken,
+            InternalBearerToken,
             request.WorkOrderId,
             new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
             cancellationToken);
@@ -1858,21 +2994,19 @@ public sealed class GetBusinessConsoleMesWorkOrderTraceabilityEndpoint(
 public sealed class GetBusinessConsoleMesBatchTraceabilityEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IBusinessIamAccountDirectoryClient iamAccounts,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesTraceabilityByBatchRequest, BusinessConsoleMesTraceabilityResponse>(
-        auth,
-        BusinessGatewayPermissions.MesTraceabilityRead)
+    : BusinessConsoleMesTraceabilityEndpoint<BusinessConsoleMesTraceabilityByBatchRequest>(auth, iamAccounts, tokenProvider)
 {
     protected override string OrganizationId(BusinessConsoleMesTraceabilityByBatchRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleMesTraceabilityByBatchRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesTraceabilityResponse> ForwardAsync(
+    protected override Task<BusinessConsoleMesTraceabilityResponse> LoadTraceabilityAsync(
         BusinessConsoleMesTraceabilityByBatchRequest request,
-        string bearerToken,
         CancellationToken cancellationToken) =>
         mes.GetBatchTraceabilityAsync(
-            tokenProvider.BearerToken,
+            InternalBearerToken,
             request.BatchOrSerial,
             new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
             cancellationToken);
@@ -1884,21 +3018,19 @@ public sealed class GetBusinessConsoleMesBatchTraceabilityEndpoint(
 public sealed class GetBusinessConsoleMesMaterialLotTraceabilityEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IBusinessIamAccountDirectoryClient iamAccounts,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesTraceabilityByMaterialLotRequest, BusinessConsoleMesTraceabilityResponse>(
-        auth,
-        BusinessGatewayPermissions.MesTraceabilityRead)
+    : BusinessConsoleMesTraceabilityEndpoint<BusinessConsoleMesTraceabilityByMaterialLotRequest>(auth, iamAccounts, tokenProvider)
 {
     protected override string OrganizationId(BusinessConsoleMesTraceabilityByMaterialLotRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleMesTraceabilityByMaterialLotRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleMesTraceabilityResponse> ForwardAsync(
+    protected override Task<BusinessConsoleMesTraceabilityResponse> LoadTraceabilityAsync(
         BusinessConsoleMesTraceabilityByMaterialLotRequest request,
-        string bearerToken,
         CancellationToken cancellationToken) =>
         mes.GetMaterialLotTraceabilityAsync(
-            tokenProvider.BearerToken,
+            InternalBearerToken,
             request.MaterialLotId,
             new BusinessConsoleMesContextRequest(request.OrganizationId, request.EnvironmentId),
             cancellationToken);
@@ -1924,26 +3056,4 @@ public sealed class ListBusinessConsoleMesCapacityImpactsEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.ListCapacityImpactsAsync(tokenProvider.BearerToken, request, cancellationToken);
-}
-
-[Tags("Business Console MES")]
-[HttpPost("/api/business-console/v1/mes/schedules/run")]
-[BusinessGatewayOperationId("runBusinessConsoleMesSchedule")]
-public sealed class RunBusinessConsoleMesScheduleEndpoint(
-    IBusinessGatewayAuthorizationClient auth,
-    IBusinessMesClient mes,
-    IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleRunScheduleRequest, BusinessConsoleMesScheduleResult>(
-        auth,
-        BusinessGatewayPermissions.MesSchedulesManage)
-{
-    protected override string OrganizationId(BusinessConsoleRunScheduleRequest request) => request.OrganizationId;
-
-    protected override string EnvironmentId(BusinessConsoleRunScheduleRequest request) => request.EnvironmentId;
-
-    protected override Task<BusinessConsoleMesScheduleResult> ForwardAsync(
-        BusinessConsoleRunScheduleRequest request,
-        string bearerToken,
-        CancellationToken cancellationToken) =>
-        mes.RunScheduleAsync(tokenProvider.BearerToken, request, cancellationToken);
 }

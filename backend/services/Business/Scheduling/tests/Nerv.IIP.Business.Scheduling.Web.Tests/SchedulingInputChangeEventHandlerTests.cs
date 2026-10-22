@@ -4,14 +4,19 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Hosting.Internal;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Text.Json;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
+using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.IntegrationEvents;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Maintenance;
@@ -36,11 +41,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
         await SeedPlansAsync(provider);
 
         using var scope = provider.CreateScope();
-        var handler = new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
-            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
-            new InMemoryIntegrationEventDeadLetterStore(),
-            scope.ServiceProvider.GetRequiredService<ISender>(),
-            new RecordingLogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>());
+        var handler = CreateAssetUnavailableHandler(scope.ServiceProvider);
 
         await handler.HandleAsync(CreateAssetUnavailableEvent(), CancellationToken.None);
 
@@ -56,6 +57,132 @@ public sealed class SchedulingInputChangeEventHandlerTests
         });
         Assert.Equal(2, scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>()
             .Published.OfType<SchedulePlanInvalidatedIntegrationEvent>().Count());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Maintenance_asset_unavailable_v1_and_v2_share_business_identity_and_invalidate_once(bool v1First)
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var v1 = CreateAssetUnavailableHandler(scope.ServiceProvider);
+        var v2 = CreateAssetUnavailableV2Handler(scope.ServiceProvider);
+        const string sharedKey = "asset-unavailable:wo-maint-001:2026-06-01T09:00:00.0000000+00:00";
+
+        var first = v1First
+            ? v1.HandleAsync(CreateAssetUnavailableEvent() with { IdempotencyKey = sharedKey }, CancellationToken.None)
+            : v2.HandleAsync(CreateAssetUnavailableV2Event(sharedKey), CancellationToken.None);
+        await first;
+        var second = v1First
+            ? v2.HandleAsync(CreateAssetUnavailableV2Event(sharedKey), CancellationToken.None)
+            : v1.HandleAsync(CreateAssetUnavailableEvent() with { IdempotencyKey = sharedKey }, CancellationToken.None);
+        await second;
+
+        Assert.Equal(2, await db.SchedulePlanInvalidations.CountAsync());
+        Assert.Single(await db.ProcessedIntegrationEvents.ToArrayAsync());
+        Assert.Empty(await ListAssetUnavailableDeadLettersAsync(scope.ServiceProvider));
+    }
+
+    /// <summary>
+    /// 双身份去重断言的鉴别力自证（反向探针）：同一业务键下，只有版本合法的投递才会进入 claim。
+    /// v1 envelope 把 EventVersion 换成 2，消费守卫必须把它送进 DLQ（<c>unsupported-version</c>）而不是
+    /// 当作已处理的重复静默吞掉；v2 的 wire 契约在反序列化时就拒绝 eventVersion 不为 2 的 envelope，
+    /// 这样的投递在到达 handler 之前已进入 CAP 既有失败路径。最后换了业务键与事件实例的投递必须真的
+    /// 产生第二条 inbox 记录，证明前面的 <c>Single</c> 断言不是恒真。
+    /// </summary>
+    [Fact]
+    public async Task Maintenance_asset_unavailable_version_mutation_is_rejected_instead_of_being_deduplicated()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var v1 = CreateAssetUnavailableHandler(scope.ServiceProvider);
+        var v2 = CreateAssetUnavailableV2Handler(scope.ServiceProvider);
+        const string sharedKey = "asset-unavailable:wo-maint-001:2026-06-01T09:00:00.0000000+00:00";
+
+        await v2.HandleAsync(CreateAssetUnavailableV2Event(sharedKey), CancellationToken.None);
+        Assert.Single(await db.ProcessedIntegrationEvents.ToArrayAsync());
+
+        await v1.HandleAsync(CreateAssetUnavailableEvent() with { IdempotencyKey = sharedKey, EventVersion = MaintenanceIntegrationEventVersions.V2 }, CancellationToken.None);
+        var deadLetter = Assert.Single(await ListAssetUnavailableDeadLettersAsync(scope.ServiceProvider));
+        Assert.Equal(IntegrationEventEnvelopeValidator.UnsupportedVersionFailureCode, deadLetter.FailureCode);
+
+        var v2WireJson = JsonSerializer.Serialize(CreateAssetUnavailableV2Event(sharedKey), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var mutatedWireJson = v2WireJson.Replace("\"eventVersion\":2", "\"eventVersion\":1", StringComparison.Ordinal);
+        Assert.NotEqual(v2WireJson, mutatedWireJson);
+        var wireRejection = Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<AssetUnavailableV2IntegrationEvent>(mutatedWireJson, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        Assert.Contains("eventVersion 2", wireRejection.Message, StringComparison.Ordinal);
+
+        Assert.Single(await db.ProcessedIntegrationEvents.ToArrayAsync());
+        Assert.Equal(2, await db.SchedulePlanInvalidations.CountAsync());
+
+        await v1.HandleAsync(CreateAssetUnavailableEvent() with { EventId = "evt-maint-002", IdempotencyKey = "asset-unavailable:wo-maint-002" }, CancellationToken.None);
+        Assert.Equal(2, (await db.ProcessedIntegrationEvents.ToArrayAsync()).Length);
+        Assert.Equal(4, await db.SchedulePlanInvalidations.CountAsync());
+    }
+
+    /// <summary>
+    /// 双身份的另一半：同一事件实例（EventId 相同）即使带了不同的业务键，也只能被 claim 一次。
+    /// InMemory 没有唯一索引兜底，这条用例只靠 claim 谓词的 EventId 分支存活。
+    /// </summary>
+    [Fact]
+    public async Task Maintenance_asset_unavailable_same_event_id_with_different_business_key_is_claimed_once()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var v2 = CreateAssetUnavailableV2Handler(scope.ServiceProvider);
+
+        await v2.HandleAsync(CreateAssetUnavailableV2Event("asset-unavailable:wo-maint-001:key-a"), CancellationToken.None);
+        await v2.HandleAsync(CreateAssetUnavailableV2Event("asset-unavailable:wo-maint-001:key-b"), CancellationToken.None);
+
+        var processed = Assert.Single(await db.ProcessedIntegrationEvents.ToArrayAsync());
+        Assert.Equal("evt-maint-v2-001", processed.EventId);
+        Assert.Equal("asset-unavailable:wo-maint-001:key-a", processed.IdempotencyKey);
+        Assert.Equal(2, await db.SchedulePlanInvalidations.CountAsync());
+        Assert.Empty(await ListAssetUnavailableDeadLettersAsync(scope.ServiceProvider));
+    }
+
+    /// <summary>
+    /// v1 与 v2 handler 必须共用同一个注册的 <see cref="IAssetUnavailableCanonicalProcessor"/>：
+    /// 用 <c>services.Replace</c> 换成计数装饰器后，两个版本的投递都必须经过它。
+    /// </summary>
+    [Fact]
+    public async Task Maintenance_asset_unavailable_v1_and_v2_handlers_dispatch_through_the_registered_processor_seam()
+    {
+        var counting = new List<CountingAssetUnavailableProcessor>();
+        await using var provider = CreateInMemoryProvider(services =>
+            services.Replace(ServiceDescriptor.Scoped<IAssetUnavailableCanonicalProcessor>(serviceProvider =>
+            {
+                var processor = new CountingAssetUnavailableProcessor(serviceProvider.GetRequiredService<AssetUnavailableCanonicalProcessor>());
+                counting.Add(processor);
+                return processor;
+            })));
+        await SeedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var v1 = CreateAssetUnavailableHandler(scope.ServiceProvider);
+        var v2 = CreateAssetUnavailableV2Handler(scope.ServiceProvider);
+        const string sharedKey = "asset-unavailable:wo-maint-001:2026-06-01T09:00:00.0000000+00:00";
+
+        await v1.HandleAsync(CreateAssetUnavailableEvent() with { IdempotencyKey = sharedKey }, CancellationToken.None);
+        await v2.HandleAsync(CreateAssetUnavailableV2Event(sharedKey), CancellationToken.None);
+
+        var seam = Assert.Single(counting);
+        Assert.Equal(
+            [MaintenanceIntegrationEventVersions.V1, MaintenanceIntegrationEventVersions.V2],
+            seam.Inputs.Select(x => x.Envelope.EventVersion));
+        Assert.All(seam.Inputs, input => Assert.Equal("breakdown", input.UpstreamReason));
+        Assert.Single(await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().ProcessedIntegrationEvents.ToArrayAsync());
     }
 
     /// <summary>
@@ -103,11 +230,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
         // 维护世界只持有业务编码，两个事件都用它。
         if (unavailable)
         {
-            await new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
-                    dbContext,
-                    new InMemoryIntegrationEventDeadLetterStore(),
-                    sender,
-                    new RecordingLogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>())
+            await CreateAssetUnavailableHandler(scope.ServiceProvider)
                 .HandleAsync(
                     CreateAssetUnavailableEvent() with
                     {
@@ -154,11 +277,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
         await SeedPlansAsync(provider);
 
         using var scope = provider.CreateScope();
-        var handler = new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
-            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
-            new InMemoryIntegrationEventDeadLetterStore(),
-            scope.ServiceProvider.GetRequiredService<ISender>(),
-            new RecordingLogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>());
+        var handler = CreateAssetUnavailableHandler(scope.ServiceProvider);
         var integrationEvent = CreateAssetUnavailableEvent() with
         {
             Payload = new AssetUnavailablePayload(" ", "breakdown", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero))
@@ -171,18 +290,114 @@ public sealed class SchedulingInputChangeEventHandlerTests
     }
 
     [Fact]
+    public async Task Maintenance_asset_unavailable_v2_with_wrong_source_is_dead_lettered_before_claim()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var handler = CreateAssetUnavailableV2Handler(scope.ServiceProvider);
+
+        await handler.HandleAsync(CreateAssetUnavailableV2Event("key-wrong-source") with
+        {
+            SourceService = MaintenanceIntegrationEventSources.Maintenance
+        }, CancellationToken.None);
+
+        var deadLetter = Assert.Single(await ListAssetUnavailableDeadLettersAsync(scope.ServiceProvider));
+        Assert.Equal("unexpected-source-service", deadLetter.FailureCode);
+        using var eventJson = JsonDocument.Parse(deadLetter.EventJson);
+        var root = eventJson.RootElement;
+        Assert.Equal("evt-maint-v2-001", root.GetProperty("eventId").GetString());
+        Assert.Equal(MaintenanceIntegrationEventVersions.V2, root.GetProperty("eventVersion").GetInt32());
+        Assert.Equal("key-wrong-source", root.GetProperty("idempotencyKey").GetString());
+        Assert.Equal("org-001", root.GetProperty("organizationId").GetString());
+        Assert.Equal("ASSET-CNC-01", root.GetProperty("payload").GetProperty("deviceAssetId").GetString());
+        Assert.Equal("breakdown", root.GetProperty("payload").GetProperty("reasonCode").GetString());
+        Assert.Empty(await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().ProcessedIntegrationEvents.ToArrayAsync());
+    }
+
+    /// <summary>
+    /// replay 回环：DLQ 里保存的完整 v2 envelope 必须能被 replay handler 用契约 converter 反序列化回
+    /// <see cref="AssetUnavailableV2IntegrationEvent"/>、按当前环境的 v2 canonical topic 重新发布，且重入的
+    /// envelope 与原投递逐字段相等；v1 行按 legacy alias 重入。
+    /// </summary>
+    [Fact]
+    public async Task Maintenance_asset_unavailable_dead_letters_replay_the_original_envelope_through_cap()
+    {
+        var v2Original = CreateAssetUnavailableV2Event("key-replay") with { CausationId = "cause-maint-v2-001" };
+        var v1Original = CreateAssetUnavailableEvent();
+        var v2DeadLetter = IntegrationEventDeadLetterMessage.Create(
+            AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName,
+            v2Original,
+            IntegrationEventCapFailureDeadLetterer.HandlerRetryExhaustedFailureCode,
+            "probe");
+        var v1DeadLetter = IntegrationEventDeadLetterMessage.Create(
+            AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName,
+            v1Original,
+            IntegrationEventCapFailureDeadLetterer.HandlerRetryExhaustedFailureCode,
+            "probe");
+        var publisher = new RecordingCapPublisher();
+        var replay = new SchedulingAssetUnavailableDeadLetterReplayHandler(
+            publisher,
+            new HostingEnvironment { EnvironmentName = "ReplayProbe" });
+
+        Assert.True(replay.CanReplay(v2DeadLetter));
+        Assert.True(replay.CanReplay(v1DeadLetter));
+        await replay.ReplayAsync(v2DeadLetter, CancellationToken.None);
+        await replay.ReplayAsync(v1DeadLetter, CancellationToken.None);
+
+        Assert.Equal(2, publisher.Published.Count);
+        Assert.Equal(AssetUnavailableIntegrationEventTopics.V2("ReplayProbe"), publisher.Published[0].Name);
+        Assert.Equal(v2Original, Assert.IsType<AssetUnavailableV2IntegrationEvent>(publisher.Published[0].Content));
+        Assert.Equal(AssetUnavailableIntegrationEventTopics.V1LegacyAlias, publisher.Published[1].Name);
+        Assert.Equal(v1Original, Assert.IsType<AssetUnavailableIntegrationEvent>(publisher.Published[1].Content));
+    }
+
+    /// <summary>
+    /// 错误 source 那条 DLQ 的 <c>EventJson</c> 是完整的 v2 envelope，但 v2 wire 契约在反序列化时就拒绝
+    /// 非 business-maintenance 的 source service——这样的 envelope 在生产中到不了消费者，重入也必然再次失败。
+    /// replay handler 必须以可操作的契约原因拒绝，执行器把该行记为 replay 失败并保留原行，且不向 broker 发布任何消息。
+    /// </summary>
+    [Fact]
+    public async Task Maintenance_asset_unavailable_v2_wrong_source_dead_letter_is_refused_on_replay_with_the_contract_reason()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var handler = CreateAssetUnavailableV2Handler(scope.ServiceProvider);
+        await handler.HandleAsync(CreateAssetUnavailableV2Event("key-wrong-source") with
+        {
+            SourceService = MaintenanceIntegrationEventSources.Maintenance
+        }, CancellationToken.None);
+        var deadLetter = Assert.Single(await ListAssetUnavailableDeadLettersAsync(scope.ServiceProvider));
+
+        var publisher = new RecordingCapPublisher();
+        var replay = new SchedulingAssetUnavailableDeadLetterReplayHandler(
+            publisher,
+            new HostingEnvironment { EnvironmentName = "ReplayProbe" });
+        var store = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+        var executor = new IntegrationEventDeadLetterReplayExecutor(store, [replay], TimeProvider.System);
+
+        var result = await executor.ReplayAsync(deadLetter.Id, CancellationToken.None);
+
+        Assert.False(result.Succeeded);
+        Assert.NotNull(result.Message);
+        Assert.Contains("business-maintenance source service", result.Message, StringComparison.Ordinal);
+        Assert.Contains(deadLetter.Id.ToString(), result.Message, StringComparison.Ordinal);
+        Assert.Empty(publisher.Published);
+        var failed = await store.GetAsync(deadLetter.Id, CancellationToken.None);
+        Assert.NotNull(failed);
+        Assert.Equal(IntegrationEventDeadLetterStatus.Failed, failed.Status);
+        Assert.Equal("replay-handler-failed", failed.FailureCode);
+        Assert.Empty(await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().ProcessedIntegrationEvents.ToArrayAsync());
+    }
+
+    [Fact]
     public async Task Maintenance_asset_unavailable_event_logs_when_resource_mapping_matches_no_generated_plan()
     {
         await using var provider = CreateInMemoryProvider();
         await SeedPlansAsync(provider);
 
         using var scope = provider.CreateScope();
-        var logger = new RecordingLogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>();
-        var handler = new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
-            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
-            new InMemoryIntegrationEventDeadLetterStore(),
-            scope.ServiceProvider.GetRequiredService<ISender>(),
-            logger);
+        var logger = scope.ServiceProvider.GetRequiredService<RecordingLogger<AssetUnavailableCanonicalProcessor>>();
+        var handler = CreateAssetUnavailableHandler(scope.ServiceProvider);
         var integrationEvent = CreateAssetUnavailableEvent() with
         {
             Payload = new AssetUnavailablePayload("ASSET-NOT-MAPPED", "breakdown", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero))
@@ -261,28 +476,102 @@ public sealed class SchedulingInputChangeEventHandlerTests
     }
 
     [Fact]
-    public async Task Stock_availability_changed_event_invalidates_generated_plans_in_same_business_scope()
+    public async Task Stock_availability_changed_event_invalidates_only_plans_with_matching_material_shortage()
     {
         await using var provider = CreateInMemoryProvider();
-        await SeedPlansAsync(provider);
+        await SeedMaterialSupplyEtaPlansAsync(provider);
 
         using var scope = provider.CreateScope();
         var handler = new StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans(
             scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             new InMemoryIntegrationEventDeadLetterStore(),
-            scope.ServiceProvider.GetRequiredService<ISender>());
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            NullLogger<StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans>.Instance);
 
         await handler.HandleAsync(CreateStockAvailabilityChangedEvent(), CancellationToken.None);
 
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var invalidations = await dbContext.SchedulePlanInvalidations.OrderBy(x => x.PlanId).ToArrayAsync();
-        Assert.Equal(["plan-generated", "plan-released"], invalidations.Select(x => x.PlanId));
+        Assert.Equal(["plan-eta-both", "plan-eta-released", "plan-eta-sku-001"], invalidations.Select(x => x.PlanId));
         Assert.All(invalidations, invalidation =>
         {
             Assert.Equal(SchedulingPlanInvalidationReasons.MaterialReadinessChanged, invalidation.ReasonCode);
             Assert.Equal("SKU-001", invalidation.AffectedSkuCode);
             Assert.Equal("inventory.StockAvailabilityChanged", invalidation.SourceEventType);
         });
+    }
+
+    [Theory]
+    [InlineData("order", "WO-001", "OP-TARGET,OP-OTHER")]
+    [InlineData("sku", "FG-001", "OP-TARGET,OP-OTHER")]
+    [InlineData("operation", "OP-TARGET", "OP-TARGET")]
+    [InlineData("resource", "ASSET-CNC-01", "OP-TARGET")]
+    public async Task Stock_availability_changed_event_reports_only_operations_in_matching_material_scope(
+        string scopeType, string scopeId, string expectedOperations)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using (var seedScope = provider.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.SchedulePlans.Add(CreatePlanWithAssignments("plan-material-scope", "problem-material-scope",
+            [
+                new ScheduleAssignmentContract("assign-target", "WO-001", "OP-TARGET", 10,
+                    "ASSET-CNC-01", "WC-CNC", FixedNow, FixedNow.AddHours(1), false, "scheduled"),
+                new ScheduleAssignmentContract("assign-other", "WO-001", "OP-OTHER", 20,
+                    "ASSET-LATHE-01", "WC-LATHE", FixedNow.AddHours(1), FixedNow.AddHours(2), false, "scheduled"),
+                new ScheduleAssignmentContract("assign-unrelated", "WO-OTHER", "OP-UNRELATED", 10,
+                    "ASSET-LATHE-01", "WC-LATHE", FixedNow.AddHours(2), FixedNow.AddHours(3), false, "scheduled"),
+            ]));
+            db.ScheduleProblems.Add(CreateMaterialScopeProblemSnapshot(scopeType, scopeId));
+            await db.SaveChangesAsync();
+        }
+
+        using var scope = provider.CreateScope();
+        var handler = new StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            NullLogger<StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans>.Instance);
+
+        await handler.HandleAsync(CreateStockAvailabilityChangedEvent(), CancellationToken.None);
+
+        var published = Assert.Single(scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>()
+            .Published.OfType<SchedulePlanInvalidatedIntegrationEvent>());
+        Assert.Equal(expectedOperations.Split(','), published.Payload.AffectedOperations.Select(x => x.OperationId));
+    }
+
+    [Fact]
+    public async Task Erp_material_supply_eta_changed_invalidates_only_generated_plans_with_affected_skus_once()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedMaterialSupplyEtaPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var handler = new MaterialSupplyEtaChangedIntegrationEventHandlerForInvalidateSchedulePlans(
+            new InMemoryIntegrationEventDeadLetterStore(),
+            scope.ServiceProvider.GetRequiredService<ISender>());
+        var integrationEvent = CreateMaterialSupplyEtaChangedEvent();
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var invalidations = await dbContext.SchedulePlanInvalidations.OrderBy(x => x.PlanId).ToArrayAsync();
+        Assert.Equal(["plan-eta-both", "plan-eta-sku-001", "plan-eta-sku-002"], invalidations.Select(x => x.PlanId));
+        Assert.Equal(
+            new Dictionary<string, string?>
+            {
+                ["plan-eta-both"] = "SKU-001",
+                ["plan-eta-sku-001"] = "SKU-001",
+                ["plan-eta-sku-002"] = "SKU-002",
+            },
+            invalidations.ToDictionary(x => x.PlanId, x => x.AffectedSkuCode));
+        Assert.All(invalidations, invalidation =>
+        {
+            Assert.Equal(SchedulingPlanInvalidationReasons.MaterialReadinessChanged, invalidation.ReasonCode);
+            Assert.Equal(ErpIntegrationEventTypes.MaterialSupplyEtaChanged, invalidation.SourceEventType);
+        });
+        Assert.Single(await dbContext.ProcessedIntegrationEvents.ToArrayAsync());
     }
 
     [Theory]
@@ -294,10 +583,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
         await SeedPlansAsync(provider);
 
         using var scope = provider.CreateScope();
-        var handler = new QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans(
-            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
-            new InMemoryIntegrationEventDeadLetterStore(),
-            scope.ServiceProvider.GetRequiredService<ISender>());
+        var handler = CreateInspectionHandler(scope);
 
         await handler.HandleAsync(CreateInspectionEvent(eventType), CancellationToken.None);
 
@@ -312,20 +598,30 @@ public sealed class SchedulingInputChangeEventHandlerTests
         });
     }
 
+    /// <summary>
+    /// 周期检（#3191）：来源单据身份是 <c>{operationId}:periodic-*:{contextId}:{seq}</c> 复合行号，
+    /// 拿它本身去匹配计划指派永远命中不到。生产者把工序身份结构化发布出来之后才能落到那道工序。
+    ///
+    /// <para>这一格造的是**改前形状**（复合行号 + 工单号为空）。#3319 之后 Quality 的周期检结论会同时
+    /// 带上工单号，但「只给工序、不给工单」这条消费分支并未消失：存量事件与在途重投仍是这个形状，
+    /// 排程侧必须继续按工序落到那道工序，而不是整张工单。</para>
+    /// </summary>
     [Fact]
-    public async Task Quality_inspection_event_for_operation_source_publishes_only_affected_operation()
+    public async Task Quality_inspection_event_for_periodic_operation_source_publishes_only_affected_operation()
     {
         await using var provider = CreateInMemoryProvider();
         await SeedPlansAsync(provider);
 
         using var scope = provider.CreateScope();
-        var handler = new QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans(
-            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
-            new InMemoryIntegrationEventDeadLetterStore(),
-            scope.ServiceProvider.GetRequiredService<ISender>());
+        var handler = CreateInspectionHandler(scope);
 
         await handler.HandleAsync(
-            CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected, sourceDocumentId: "OP-002"),
+            CreateInspectionEvent(
+                QualityIntegrationEventTypes.InspectionRejected,
+                // 复合行号的编码约定属 Quality 内部，排程侧只是把它当成一串不透明取值；这里照它的真实形状造。
+                sourceDocumentId: $"OP-002:periodic-time:{Guid.Empty:D}:1",
+                workOrderId: null,
+                operationTaskId: "OP-002"),
             CancellationToken.None);
 
         var invalidations = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
@@ -337,46 +633,139 @@ public sealed class SchedulingInputChangeEventHandlerTests
         {
             Assert.Equal("OP-002", invalidation.AffectedOperationId);
             Assert.Null(invalidation.AffectedWorkOrderId);
-            Assert.Contains("OP-002", invalidation.SourceEventId, StringComparison.Ordinal);
         });
     }
 
+    /// <summary>
+    /// 首件（#2779 / #3191）：来源单据身份是 <c>{workOrderId}:{operationTaskId}</c> 复合串。
+    /// 排程不拆这串，取生产者结构化发布的工单身份。
+    /// </summary>
     [Fact]
-    public async Task Quality_inspection_event_ignores_non_mes_source_service()
+    public async Task Quality_inspection_event_for_first_article_composite_source_invalidates_affected_work_order()
     {
         await using var provider = CreateInMemoryProvider();
         await SeedPlansAsync(provider);
 
         using var scope = provider.CreateScope();
-        var handler = new QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans(
-            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
-            new InMemoryIntegrationEventDeadLetterStore(),
-            scope.ServiceProvider.GetRequiredService<ISender>());
-        var integrationEvent = CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected) with
-        {
-            Payload = CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected).Payload with
-            {
-                SourceService = QualityIntegrationEventSources.BusinessQuality
-            }
-        };
+        var handler = CreateInspectionHandler(scope);
 
-        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+        await handler.HandleAsync(
+            CreateInspectionEvent(
+                QualityIntegrationEventTypes.InspectionRejected,
+                sourceDocumentId: "WO-001:OP-002",
+                sourceType: QualityInspectionSourceTypes.FirstArticle,
+                workOrderId: "WO-001",
+                operationTaskId: "OP-002"),
+            CancellationToken.None);
+
+        var invalidations = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .SchedulePlanInvalidations
+            .OrderBy(x => x.PlanId)
+            .ToArrayAsync();
+        Assert.Equal(["plan-generated", "plan-released"], invalidations.Select(x => x.PlanId));
+        Assert.All(invalidations, invalidation => Assert.Equal("WO-001", invalidation.AffectedWorkOrderId));
+    }
+
+    /// <summary>
+    /// 对照组：同一条首件事件，若结构化身份缺失（老生产者、或将来有人把它去掉），复合串本身匹配不到
+    /// 任何计划，并且必须留下 0 命中日志——这条通路原本连 ILogger 都没有，「一条都没命中」在现场
+    /// 与「门恒不通过」看起来完全一样。
+    /// </summary>
+    [Fact]
+    public async Task Quality_inspection_event_without_structured_identity_matches_nothing_and_logs_it()
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var logger = new RecordingLogger<QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans>();
+        var handler = CreateInspectionHandler(scope, logger);
+
+        await handler.HandleAsync(
+            CreateInspectionEvent(
+                QualityIntegrationEventTypes.InspectionRejected,
+                sourceDocumentId: "WO-001:OP-002",
+                sourceType: QualityInspectionSourceTypes.FirstArticle,
+                workOrderId: null,
+                operationTaskId: null),
+            CancellationToken.None);
+
+        Assert.Empty(await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .SchedulePlanInvalidations
+            .ToArrayAsync());
+        Assert.Contains(logger.Messages, x =>
+            x.Message.Contains("matched no schedule plan", StringComparison.OrdinalIgnoreCase)
+            && x.Message.Contains("WO-001:OP-002", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// 来源服务维（#3191）：门收 MES 归属的两个 payload 取值与历史入站别名，其余一律不收。
+    /// 原用例传的是 <c>business-quality</c>——但当时那道门比较的常量是 <c>business-mes</c>，
+    /// 任何取值都不通过，于是这条负向用例零鉴别力。现在正反两侧都在同一条 Theory 里。
+    /// </summary>
+    [Theory]
+    [InlineData(QualityInspectionSourceServices.Mes, 2)]
+    [InlineData(QualityInspectionSourceServices.MesOperation, 2)]
+    [InlineData(QualityIntegrationEventSources.BusinessMes, 2)]
+    [InlineData(QualityInspectionSourceServices.Wms, 0)]
+    [InlineData(QualityInspectionSourceServices.Inventory, 0)]
+    [InlineData(QualityIntegrationEventSources.BusinessQuality, 0)]
+    public async Task Quality_inspection_event_gate_accepts_only_mes_owned_source_services(string sourceService, int expectedInvalidationCount)
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var handler = CreateInspectionHandler(scope);
+
+        await handler.HandleAsync(
+            CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected, sourceService: sourceService),
+            CancellationToken.None);
 
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.Empty(await dbContext.SchedulePlanInvalidations.ToArrayAsync());
+        Assert.Equal(expectedInvalidationCount, await dbContext.SchedulePlanInvalidations.CountAsync());
+    }
+
+    /// <summary>
+    /// 来源环节维（#3191）：final 的来源单据是入库申请单号、receiving 是收货单号，永远匹配不到工单。
+    /// 滤掉它们不是为了省事，是为了让「0 命中」在日志里从噪声变成真信号。
+    /// </summary>
+    [Theory]
+    [InlineData(QualityInspectionSourceTypes.Operation, 2)]
+    [InlineData(QualityInspectionSourceTypes.FirstArticle, 2)]
+    [InlineData(QualityInspectionSourceTypes.Final, 0)]
+    [InlineData(QualityInspectionSourceTypes.Receiving, 0)]
+    [InlineData(QualityInspectionSourceTypes.Maintenance, 0)]
+    [InlineData(QualityInspectionSourceTypes.CustomerReturn, 0)]
+    public async Task Quality_inspection_event_gate_accepts_only_work_order_bearing_source_types(string sourceType, int expectedInvalidationCount)
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedPlansAsync(provider);
+
+        using var scope = provider.CreateScope();
+        var handler = CreateInspectionHandler(scope);
+
+        await handler.HandleAsync(
+            CreateInspectionEvent(QualityIntegrationEventTypes.InspectionRejected, sourceType: sourceType),
+            CancellationToken.None);
+
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(expectedInvalidationCount, await dbContext.SchedulePlanInvalidations.CountAsync());
     }
 
     [Fact]
-    public async Task Mes_work_order_released_event_invalidates_generated_plans_in_same_business_scope_once()
+    public async Task Mes_work_order_released_event_records_no_match_when_order_and_sku_are_absent()
     {
         await using var provider = CreateInMemoryProvider();
         await SeedPlansAsync(provider);
 
         using var scope = provider.CreateScope();
+        var logger = new RecordingLogger<WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans>();
         var handler = new WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans(
             scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
             new InMemoryIntegrationEventDeadLetterStore(),
-            scope.ServiceProvider.GetRequiredService<ISender>());
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            logger);
         var integrationEvent = CreateWorkOrderReleasedEvent();
 
         await handler.HandleAsync(integrationEvent, CancellationToken.None);
@@ -384,15 +773,59 @@ public sealed class SchedulingInputChangeEventHandlerTests
 
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var invalidations = await dbContext.SchedulePlanInvalidations.OrderBy(x => x.PlanId).ToArrayAsync();
-        Assert.Equal(["plan-generated", "plan-released"], invalidations.Select(x => x.PlanId));
-        Assert.All(invalidations, invalidation =>
+        Assert.Empty(invalidations);
+        Assert.Empty(scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>()
+            .Published.OfType<SchedulePlanInvalidatedIntegrationEvent>());
+        Assert.Contains(logger.Messages, x => x.LogLevel == LogLevel.Information &&
+            x.Message.Contains("matched no schedule plan", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("WO-001", "SKU-UNKNOWN")]
+    [InlineData("WO-NEW", "SKU-001")]
+    public async Task Mes_work_order_released_event_invalidates_only_snapshot_match_and_reports_affected_operations(
+        string workOrderId, string skuCode)
+    {
+        await using var provider = CreateInMemoryProvider();
+        await SeedPlansAsync(provider);
+        using (var seedScope = provider.CreateScope())
         {
-            Assert.Equal(SchedulingPlanInvalidationReasons.WorkOrderReleased, invalidation.ReasonCode);
-            Assert.Equal("WO-NEW", invalidation.AffectedWorkOrderId);
-            Assert.Equal("mes.WorkOrderReleased", invalidation.SourceEventType);
-        });
-        Assert.Equal(2, scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>()
-            .Published.OfType<SchedulePlanInvalidatedIntegrationEvent>().Count());
+            var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.ScheduleProblems.Add(CreateOrderProblemSnapshot("problem-001", "WO-001", "SKU-001", "WO-OTHER"));
+            db.SchedulePlans.Add(CreatePlanWithAssignments("plan-mixed", "problem-001",
+            [
+                new ScheduleAssignmentContract("assign-target", "WO-001", "OP-TARGET", 10,
+                    "ASSET-CNC-01", "WC-CNC", FixedNow, FixedNow.AddHours(1), false, "scheduled"),
+                new ScheduleAssignmentContract("assign-unrelated", "WO-OTHER", "OP-UNRELATED", 20,
+                    "ASSET-CNC-01", "WC-CNC", FixedNow.AddHours(1), FixedNow.AddHours(2), false, "scheduled"),
+            ]));
+            db.SchedulePlans.Add(CreatePlan("plan-unrelated", SchedulePlanStatusContract.Generated,
+                "org-001", "env-dev", "problem-unrelated", workOrderId: "WO-OTHER"));
+            db.ScheduleProblems.Add(CreateOrderProblemSnapshot("problem-unrelated", "WO-OTHER", "SKU-OTHER"));
+            await db.SaveChangesAsync();
+        }
+
+        using var scope = provider.CreateScope();
+        var handler = new WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            NullLogger<WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans>.Instance);
+        var integrationEvent = CreateWorkOrderReleasedEvent() with
+        {
+            Payload = CreateWorkOrderReleasedEvent().Payload with { WorkOrderId = workOrderId, SkuCode = skuCode }
+        };
+
+        await handler.HandleAsync(integrationEvent, CancellationToken.None);
+
+        var invalidations = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .SchedulePlanInvalidations.OrderBy(x => x.PlanId).ToArrayAsync();
+        Assert.Equal(["plan-generated", "plan-mixed", "plan-released"], invalidations.Select(x => x.PlanId));
+        var published = scope.ServiceProvider.GetRequiredService<RecordingIntegrationEventPublisher>()
+            .Published.OfType<SchedulePlanInvalidatedIntegrationEvent>().ToArray();
+        Assert.Equal(3, published.Length);
+        Assert.Equal(["OP-TARGET"], Assert.Single(published, x => x.Payload.PlanId == "plan-mixed")
+            .Payload.AffectedOperations.Select(operation => operation.OperationId));
     }
 
     [Fact]
@@ -660,6 +1093,9 @@ public sealed class SchedulingInputChangeEventHandlerTests
         AssertSubscription<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>(
             "AssetUnavailableIntegrationEvent",
             AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
+        AssertSubscription<AssetUnavailableV2IntegrationEventHandlerForInvalidateSchedulePlans>(
+            AssetUnavailableIntegrationEventTopics.V2Template,
+            AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
         AssertSubscription<AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans>(
             "AssetRestoredIntegrationEvent",
             AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
@@ -669,6 +1105,9 @@ public sealed class SchedulingInputChangeEventHandlerTests
         AssertSubscription<StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans>(
             "StockAvailabilityChangedIntegrationEvent",
             StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
+        AssertSubscription<MaterialSupplyEtaChangedIntegrationEventHandlerForInvalidateSchedulePlans>(
+            "MaterialSupplyEtaChangedIntegrationEvent",
+            MaterialSupplyEtaChangedIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
         AssertSubscription<QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans>(
             "InspectionResultIntegrationEvent",
             QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName);
@@ -765,6 +1204,132 @@ public sealed class SchedulingInputChangeEventHandlerTests
         await dbContext.SaveChangesAsync();
     }
 
+    private static async Task SeedMaterialSupplyEtaPlansAsync(ServiceProvider provider)
+    {
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.SchedulePlans.Add(CreatePlan(
+            "plan-eta-sku-001", SchedulePlanStatusContract.Generated, "org-001", "env-dev", "problem-eta-sku-001"));
+        dbContext.SchedulePlans.Add(CreatePlan(
+            "plan-eta-sku-002", SchedulePlanStatusContract.Generated, "org-001", "env-dev", "problem-eta-sku-002"));
+        dbContext.SchedulePlans.Add(CreatePlan(
+            "plan-eta-both", SchedulePlanStatusContract.Generated, "org-001", "env-dev", "problem-eta-both"));
+        dbContext.SchedulePlans.Add(CreatePlan(
+            "plan-eta-unrelated", SchedulePlanStatusContract.Generated, "org-001", "env-dev", "problem-eta-unrelated"));
+        var released = CreatePlan(
+            "plan-eta-released", SchedulePlanStatusContract.Generated, "org-001", "env-dev", "problem-eta-released");
+        released.Release(FixedNow, 1);
+        dbContext.SchedulePlans.Add(released);
+        dbContext.SchedulePlans.Add(CreatePlan(
+            "plan-eta-other-env", SchedulePlanStatusContract.Generated, "org-001", "env-other", "problem-eta-other-env"));
+        dbContext.SchedulePlans.Add(CreatePlan(
+            "plan-eta-other-org", SchedulePlanStatusContract.Generated, "org-other", "env-dev", "problem-eta-other-org"));
+
+        dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-sku-001", "org-001", "env-dev", "SKU-001"));
+        dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-sku-002", "org-001", "env-dev", "SKU-002"));
+        dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-both", "org-001", "env-dev", "SKU-002", "SKU-001"));
+        dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-unrelated", "org-001", "env-dev", "SKU-999"));
+        dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-released", "org-001", "env-dev", "SKU-001"));
+        dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-other-env", "org-001", "env-other", "SKU-001"));
+        dbContext.ScheduleProblems.Add(CreateSkuProblemSnapshot("problem-eta-other-org", "org-other", "env-dev", "SKU-001"));
+        await dbContext.SaveChangesAsync();
+    }
+
+    private static ScheduleProblemSnapshot CreateSkuProblemSnapshot(
+        string problemId,
+        string organizationId,
+        string environmentId,
+        params string[] skuCodes)
+    {
+        var horizonStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        var horizonEnd = horizonStart.AddHours(8);
+        var problem = new SchedulingProblemContract(
+            1,
+            problemId,
+            organizationId,
+            environmentId,
+            horizonStart,
+            horizonEnd,
+            [new SchedulingOrderContract("WO-001", "FG-001", 1, horizonEnd, 1, false, [])],
+            [],
+            [],
+            [],
+            [
+                new SchedulingMaterialReadinessContract(
+                    "order",
+                    "WO-001",
+                    horizonStart.AddHours(2),
+                    false,
+                    skuCodes.Select(skuCode => $"{skuCode} shortage 2").ToArray(),
+                    skuCodes.Select(skuCode => new SchedulingMaterialShortageContract(skuCode, null, 5m, 3m, 2m)).ToArray())
+            ],
+            [],
+            []);
+        return new ScheduleProblemSnapshot(
+            problemId,
+            1,
+            organizationId,
+            environmentId,
+            $"fingerprint-{problemId}",
+            JsonSerializer.Serialize(problem, SchedulingJson.Options),
+            horizonStart,
+            horizonEnd,
+            FixedNow);
+    }
+
+    private static ScheduleProblemSnapshot CreateOrderProblemSnapshot(
+        string problemId,
+        string orderId,
+        string skuCode,
+        string? additionalOrderId = null)
+    {
+        var horizonStart = new DateTimeOffset(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
+        var horizonEnd = horizonStart.AddHours(8);
+        var orders = new List<SchedulingOrderContract>
+        {
+            new(orderId, skuCode, 1, horizonEnd, 1, false, []),
+        };
+        if (additionalOrderId is not null)
+        {
+            orders.Add(new SchedulingOrderContract(additionalOrderId, "SKU-OTHER", 1, horizonEnd, 1, false, []));
+        }
+        var problem = new SchedulingProblemContract(
+            1, problemId, "org-001", "env-dev", horizonStart, horizonEnd,
+            orders,
+            [], [], [], [], [], []);
+        return new ScheduleProblemSnapshot(problemId, 1, "org-001", "env-dev",
+            $"fingerprint-{problemId}", JsonSerializer.Serialize(problem, SchedulingJson.Options),
+            horizonStart, horizonEnd, FixedNow);
+    }
+
+    private static ScheduleProblemSnapshot CreateMaterialScopeProblemSnapshot(string scopeType, string scopeId)
+    {
+        var start = FixedNow;
+        var end = start.AddHours(8);
+        static SchedulingOperationContract Operation(string id, int sequence, string resource, DateTimeOffset start, DateTimeOffset end) =>
+            new(id, sequence, [], 60, "CAP", [resource], resource, start, end, 1, false,
+                ScheduleSplitPolicyContract.NonSplittable, null, null, null);
+        var problem = new SchedulingProblemContract(
+            1, "problem-material-scope", "org-001", "env-dev", start, end,
+            [
+                new SchedulingOrderContract("WO-001", "FG-001", 1, end, 1, false,
+                [
+                    Operation("OP-TARGET", 10, "ASSET-CNC-01", start, end),
+                    Operation("OP-OTHER", 20, "ASSET-LATHE-01", start, end),
+                ]),
+                new SchedulingOrderContract("WO-OTHER", "FG-OTHER", 1, end, 1, false,
+                [Operation("OP-UNRELATED", 10, "ASSET-LATHE-01", start, end)]),
+            ],
+            [], [], [],
+            [new SchedulingMaterialReadinessContract(scopeType, scopeId, null, false,
+                ["material-shortage"],
+                [new SchedulingMaterialShortageContract("SKU-001", null, 5m, 3m, 2m)])],
+            [], []);
+        return new ScheduleProblemSnapshot(problem.ProblemId, 1, "org-001", "env-dev",
+            "fingerprint-material-scope", JsonSerializer.Serialize(problem, SchedulingJson.Options),
+            start, end, FixedNow);
+    }
+
     private static SchedulePlan CreatePlan(
         string planId,
         SchedulePlanStatusContract status,
@@ -772,7 +1337,8 @@ public sealed class SchedulingInputChangeEventHandlerTests
         string environmentId,
         string problemId = "problem-001",
         string resourceId = "ASSET-CNC-01",
-        string workCenterId = "WC-CNC")
+        string workCenterId = "WC-CNC",
+        string workOrderId = "WO-001")
     {
         return CreatePlanWithAssignments(
             planId,
@@ -780,7 +1346,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
             [
                 new ScheduleAssignmentContract(
                     AssignmentId: $"assign-{planId}",
-                    OrderId: "WO-001",
+                    OrderId: workOrderId,
                     OperationId: "OP-001",
                     OperationSequence: 10,
                     ResourceId: resourceId,
@@ -791,7 +1357,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
                     ExplanationCode: "scheduled"),
                 new ScheduleAssignmentContract(
                     AssignmentId: $"assign-{planId}-2",
-                    OrderId: "WO-001",
+                    OrderId: workOrderId,
                     OperationId: "OP-002",
                     OperationSequence: 20,
                     ResourceId: resourceId,
@@ -842,7 +1408,7 @@ public sealed class SchedulingInputChangeEventHandlerTests
                 GanttItems: [])));
     }
 
-    private static ServiceProvider CreateInMemoryProvider()
+    private static ServiceProvider CreateInMemoryProvider(Action<IServiceCollection>? configure = null)
     {
         var services = new ServiceCollection();
         var databaseName = $"scheduling-events-{Guid.NewGuid():N}";
@@ -859,6 +1425,19 @@ public sealed class SchedulingInputChangeEventHandlerTests
             .UseInMemoryDatabase(databaseName)
             .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
         services.AddUnitOfWork<ApplicationDbContext>();
+        services.AddScoped<IAssetUnavailableInboxIdentityLock, PostgreSqlAssetUnavailableInboxIdentityLock>();
+        // AssetUnavailable 的 v1/v2 handler 与 canonical processor 走与 Program.cs 相同的 DI seam 注册，
+        // 用例从容器解析 handler，而不是手工 new：只有这样才证明两个版本解析到的是同一个注册的 processor。
+        services.AddSingleton<IIntegrationEventDeadLetterStore, InMemoryIntegrationEventDeadLetterStore>();
+        services.AddSingleton<RecordingLogger<AssetUnavailableCanonicalProcessor>>();
+        services.AddSingleton<ILogger<AssetUnavailableCanonicalProcessor>>(serviceProvider =>
+            serviceProvider.GetRequiredService<RecordingLogger<AssetUnavailableCanonicalProcessor>>());
+        services.AddScoped<AssetUnavailableCanonicalProcessor>();
+        services.AddScoped<IAssetUnavailableCanonicalProcessor>(serviceProvider =>
+            serviceProvider.GetRequiredService<AssetUnavailableCanonicalProcessor>());
+        services.AddScoped<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>();
+        services.AddScoped<AssetUnavailableV2IntegrationEventHandlerForInvalidateSchedulePlans>();
+        configure?.Invoke(services);
         return services.BuildServiceProvider();
     }
 
@@ -894,6 +1473,23 @@ public sealed class SchedulingInputChangeEventHandlerTests
             "system:maintenance",
             "maintenance:asset-restored:ASSET-CNC-01",
             new AssetRestoredPayload("ASSET-CNC-01", new DateTimeOffset(2026, 6, 1, 9, 30, 0, TimeSpan.Zero)));
+    }
+
+    private static AssetUnavailableV2IntegrationEvent CreateAssetUnavailableV2Event(string idempotencyKey)
+    {
+        return new AssetUnavailableV2IntegrationEvent(
+            "evt-maint-v2-001",
+            MaintenanceIntegrationEventTypes.AssetUnavailable,
+            MaintenanceIntegrationEventVersions.V2,
+            new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero),
+            MaintenanceIntegrationEventSources.BusinessMaintenance,
+            "corr-maint-001",
+            "wo-maint-001",
+            "org-001",
+            "env-dev",
+            "system:maintenance",
+            idempotencyKey,
+            new AssetUnavailableV2Payload("ASSET-CNC-01", "breakdown", new DateTimeOffset(2026, 6, 1, 9, 0, 0, TimeSpan.Zero)));
     }
 
     private static DeviceStateChangedIntegrationEvent CreateDeviceStateChangedEvent()
@@ -950,7 +1546,40 @@ public sealed class SchedulingInputChangeEventHandlerTests
                 120));
     }
 
-    private static InspectionResultIntegrationEvent CreateInspectionEvent(string eventType, string sourceDocumentId = "WO-001")
+    private static MaterialSupplyEtaChangedIntegrationEvent CreateMaterialSupplyEtaChangedEvent()
+    {
+        return new MaterialSupplyEtaChangedIntegrationEvent(
+            "evt-erp-material-eta-001",
+            ErpIntegrationEventTypes.MaterialSupplyEtaChanged,
+            ErpIntegrationEventVersions.V1,
+            new DateTimeOffset(2026, 6, 1, 9, 6, 0, TimeSpan.Zero),
+            ErpIntegrationEventSources.BusinessErp,
+            "corr-erp-material-eta-001",
+            "PO-001",
+            "org-001",
+            "env-dev",
+            "system:erp",
+            "erp:material-supply-eta-changed:org-001:env-dev:PO-001:released",
+            new MaterialSupplyEtaChangedPayload(
+                "purchase-order",
+                "PO-001",
+                "released",
+                ["SKU-002", "SKU-001", "SKU-001"]));
+    }
+
+    /// <summary>
+    /// 夹具必须只发**真实生产者发得出来**的取值（#3191）。原夹具写的是 SourceType="mes-work-order"
+    /// （不在 QualityInspectionSourceTypes 六项词表里）与 SourceService=business-mes（信封面常量，
+    /// payload 面不存在），两个值 Quality 一个都发不出来，于是三条绿用例在为一条从未跑通的路径背书。
+    /// 默认取值对应「MES 工序检」：sourceType=operation、sourceService=mes、来源单据身份就是工单。
+    /// </summary>
+    private static InspectionResultIntegrationEvent CreateInspectionEvent(
+        string eventType,
+        string sourceDocumentId = "WO-001",
+        string sourceService = QualityInspectionSourceServices.Mes,
+        string sourceType = QualityInspectionSourceTypes.Operation,
+        string? workOrderId = "WO-001",
+        string? operationTaskId = null)
     {
         return new InspectionResultIntegrationEvent(
             $"evt-quality-{eventType}-{sourceDocumentId}",
@@ -967,15 +1596,28 @@ public sealed class SchedulingInputChangeEventHandlerTests
             new InspectionResultPayload(
                 "INS-001",
                 null,
-                "mes-work-order",
-                QualityIntegrationEventSources.BusinessMes,
+                sourceType,
+                sourceService,
                 sourceDocumentId,
                 "SKU-001",
                 1,
                 eventType == QualityIntegrationEventTypes.InspectionRejected ? "Rejected" : "Passed",
                 null,
                 [],
-                new DateTimeOffset(2026, 6, 1, 9, 10, 0, TimeSpan.Zero)));
+                new DateTimeOffset(2026, 6, 1, 9, 10, 0, TimeSpan.Zero),
+                WorkOrderId: workOrderId,
+                OperationTaskId: operationTaskId));
+    }
+
+    private static QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans CreateInspectionHandler(
+        IServiceScope scope,
+        RecordingLogger<QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans>? logger = null)
+    {
+        return new QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans(
+            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new InMemoryIntegrationEventDeadLetterStore(),
+            scope.ServiceProvider.GetRequiredService<ISender>(),
+            logger ?? new RecordingLogger<QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans>());
     }
 
     private static WorkOrderReleasedIntegrationEvent CreateWorkOrderReleasedEvent()
@@ -1043,6 +1685,57 @@ public sealed class SchedulingInputChangeEventHandlerTests
 
         Assert.Equal(expectedTopic, attribute.Name);
         Assert.Equal(expectedGroup, attribute.Group);
+    }
+
+    private static AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans CreateAssetUnavailableHandler(
+        IServiceProvider services) =>
+        services.GetRequiredService<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>();
+
+    private static AssetUnavailableV2IntegrationEventHandlerForInvalidateSchedulePlans CreateAssetUnavailableV2Handler(
+        IServiceProvider services) =>
+        services.GetRequiredService<AssetUnavailableV2IntegrationEventHandlerForInvalidateSchedulePlans>();
+
+    private static Task<IReadOnlyList<IntegrationEventDeadLetterMessage>> ListAssetUnavailableDeadLettersAsync(IServiceProvider services) =>
+        services.GetRequiredService<IIntegrationEventDeadLetterStore>().ListAsync(
+            AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None);
+
+    private sealed class CountingAssetUnavailableProcessor(IAssetUnavailableCanonicalProcessor inner) : IAssetUnavailableCanonicalProcessor
+    {
+        public List<AssetUnavailableCanonicalInput> Inputs { get; } = [];
+
+        public Task ProcessAsync(AssetUnavailableCanonicalInput input, CancellationToken cancellationToken)
+        {
+            Inputs.Add(input);
+            return inner.ProcessAsync(input, cancellationToken);
+        }
+    }
+
+    private sealed class RecordingCapPublisher : ICapPublisher
+    {
+        public List<(string Name, object? Content)> Published { get; } = [];
+        public IServiceProvider ServiceProvider => throw new NotSupportedException();
+        public ICapTransaction? Transaction { get; set; }
+
+        public Task PublishAsync<T>(string name, T? contentObj, string? callbackName = null, CancellationToken cancellationToken = default)
+        {
+            Published.Add((name, contentObj));
+            return Task.CompletedTask;
+        }
+
+        public Task PublishAsync<T>(string name, T? contentObj, IDictionary<string, string?> headers, CancellationToken cancellationToken = default)
+        {
+            Published.Add((name, contentObj));
+            return Task.CompletedTask;
+        }
+
+        public void Publish<T>(string name, T? contentObj, string? callbackName = null) => Published.Add((name, contentObj));
+        public void Publish<T>(string name, T? contentObj, IDictionary<string, string?> headers) => Published.Add((name, contentObj));
+        public Task PublishDelayAsync<T>(TimeSpan delayTime, string name, T? contentObj, IDictionary<string, string?> headers, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task PublishDelayAsync<T>(TimeSpan delayTime, string name, T? contentObj, string? callbackName = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public void PublishDelay<T>(TimeSpan delayTime, string name, T? contentObj, IDictionary<string, string?> headers) => throw new NotSupportedException();
+        public void PublishDelay<T>(TimeSpan delayTime, string name, T? contentObj, string? callbackName = null) => throw new NotSupportedException();
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

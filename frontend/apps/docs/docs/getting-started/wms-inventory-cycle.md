@@ -77,7 +77,7 @@ PDA 仓储作业只使用服务端返回的“本人 / 工作池 / 站点”范�
 - FEFO/FIFO 拣货、ASN 预期/实收差异、定向上架（directed putaway）、LPN/HU 仍未作为完整能力交付。
 - WMS 快捷候选是当前授权范围内的有界近期作业事实，不是 Inventory `StockLocation` 权威目录或全量批次目录。
 - 盘点作业当前没有批次筛选；不得用其它作业域的批次候选代替。
-- 条码标签已有后端能力和 PDA/扫码相关基础，但正式 BarcodeLabel 前端页面仍后置。
+- 条码标签已有后端能力、PDA 只读扫码解析，以及 `/barcode/rules`、`/barcode/templates`、`/barcode/print-batches`、`/barcode/scans` 四个正式 PC 页面；打印机驱动、模板设计器、完整标签预览与追溯 UI 仍后置。
 - MinIO/S3 分段上传和对象存储直传不属于当前 WMS 上手路径。
 
 [内部缺口记录](/internal/gaps/wms-inventory-cycle)

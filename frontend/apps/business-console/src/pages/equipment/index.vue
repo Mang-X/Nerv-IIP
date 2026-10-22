@@ -2,7 +2,10 @@
 import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
 import DeviceQuickViewSheet from '@/components/equipment/DeviceQuickViewSheet.vue'
 import {
+  describeAvailabilityWindowReference,
   describeEquipmentReason,
+  EQUIPMENT_FRESHNESS_DISPLAY,
+  equipmentSourceStatus,
   equipmentStatusTone,
   MAX_DEVICE_ASSET_IDS,
   useBusinessEquipmentOverview,
@@ -10,7 +13,10 @@ import {
 } from '@/composables/useBusinessEquipment'
 import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import { friendlyErrorMessage } from '@/utils/notify'
+import { readFaceText } from '@/utils/readFace'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { equipmentStateLabel } from '@nerv-iip/business-core'
 import {
@@ -47,6 +53,10 @@ definePage({
 })
 
 const router = useRouter()
+const auth = useAuthStore()
+const canCreateMaintenanceWorkOrder = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(P.maintenanceWorkOrdersManage),
+)
 const {
   activeBlocks,
   deviceRosterError,
@@ -136,7 +146,7 @@ const stateSegments = computed<NvMetricSegment[]>(() => [
 ])
 
 // 遥测读面只回设备编号（DEV-CNC-01），设备名在主数据里，按编号 join 出中文名。
-const { resolveDevice, resolveWorkCenter } = useMasterDataDisplayNames({
+const { resolveDevice, resolveDeviceCode, resolveWorkCenter } = useMasterDataDisplayNames({
   devices: true,
   workCenters: true,
 })
@@ -178,6 +188,12 @@ function stateText(status?: string | null) {
 // 行内速览抽屉：不离开看板即可核对设备状态 / 报警 / 可用性窗口。
 const quickViewDeviceId = ref('')
 const quickViewOpen = ref(false)
+// 是否接入以后端可用性窗口为准，与详情页同一判据。
+function rowFreshness(row: { deviceAssetId?: string | null; isSourceFresh?: boolean | null }) {
+  return EQUIPMENT_FRESHNESS_DISPLAY[
+    equipmentSourceStatus(row.isSourceFresh, activeBlocks.value, row.deviceAssetId)
+  ]
+}
 function openQuickView(deviceAssetId?: string | null) {
   if (!deviceAssetId) return
   quickViewDeviceId.value = deviceAssetId
@@ -202,11 +218,7 @@ function formatDateTime(value?: string | null) {
 
 <template>
   <BusinessLayout>
-    <NvPageHeader
-      title="设备运行看板"
-      :breadcrumbs="[{ label: '设备监控（IoT）' }]"
-      :count="headerCount"
-    >
+    <NvPageHeader title="设备运行看板" :breadcrumbs="[{ label: '设备监控' }]" :count="headerCount">
       <template #actions>
         <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/equipment/alarms"
@@ -215,7 +227,7 @@ function formatDateTime(value?: string | null) {
         </NvButton>
         <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/equipment/telemetry/oee"
-            ><GaugeIcon aria-hidden="true" />OEE 与可用性</RouterLink
+            ><GaugeIcon aria-hidden="true" />OEE 趋势与横比</RouterLink
           >
         </NvButton>
         <NvButton
@@ -236,7 +248,7 @@ function formatDateTime(value?: string | null) {
       v-if="overviewState === 'idle'"
       class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
     >
-      业务上下文未就绪，设备运行数据尚未查询。
+      尚未确定当前组织，暂未查询设备运行数据。
     </div>
     <div
       v-else-if="overviewState === 'loading'"
@@ -306,7 +318,7 @@ function formatDateTime(value?: string | null) {
         v-if="overviewState === 'idle'"
         class="self-start rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
       >
-        业务上下文未就绪，设备清单尚未查询。
+        尚未确定当前组织，暂未查询设备清单。
       </div>
       <div
         v-else-if="overviewState === 'error'"
@@ -353,10 +365,11 @@ function formatDateTime(value?: string | null) {
             >{{ stateText(row.currentState) }}</NvBadge
           >
         </template>
-        <!-- 「过期」是采集口径，现场关心的是"这行数还能不能信"：不新鲜＝没有实时数据。 -->
+        <!-- 「过期」是采集口径，现场关心的是"这行数还能不能信"：不新鲜＝没有实时数据；
+             从没接入采集的设备不是数据中断，照实说、用中性色。 -->
         <template #cell-isSourceFresh="{ row }">
-          <NvBadge class="rounded-sm" :variant="row.isSourceFresh ? 'success' : 'warning'">{{
-            row.isSourceFresh ? '实时' : '暂无实时数据'
+          <NvBadge class="rounded-sm" :variant="rowFreshness(row).tone">{{
+            rowFreshness(row).label
           }}</NvBadge>
         </template>
         <template #cell-activeAlarmCount="{ row }"
@@ -379,14 +392,14 @@ function formatDateTime(value?: string | null) {
                 }"
               >
                 <GaugeIcon aria-hidden="true" />
-                OEE 与可用性
+                OEE 趋势与横比
               </RouterLink>
             </NvDropdownMenuItem>
             <NvDropdownMenuItem @click="recordDowntime(row.deviceAssetId)">
               <WrenchIcon aria-hidden="true" />
               记录停机
             </NvDropdownMenuItem>
-            <NvDropdownMenuItem as-child>
+            <NvDropdownMenuItem v-if="canCreateMaintenanceWorkOrder" as-child>
               <RouterLink
                 :to="{
                   path: '/maintenance/work-orders',
@@ -427,9 +440,11 @@ function formatDateTime(value?: string | null) {
                   }}
                 </p>
               </div>
-              <NvBadge class="rounded-sm" variant="danger">{{
-                describeEquipmentReason(block.reasonCode ?? '').label
-              }}</NvBadge>
+              <NvBadge
+                class="rounded-sm"
+                :variant="describeEquipmentReason(block.reasonCode ?? '').tone"
+                >{{ describeEquipmentReason(block.reasonCode ?? '').label }}</NvBadge
+              >
             </div>
             <p class="text-sm leading-6 text-muted-foreground">
               {{ describeEquipmentReason(block.reasonCode ?? '').nextStep }}
@@ -439,7 +454,15 @@ function formatDateTime(value?: string | null) {
                 ><ActivityIcon class="inline size-3" /> {{ formatDateTime(block.startUtc) }}</span
               >
               <span>{{ formatDateTime(block.endUtc) }}</span>
-              <span v-if="block.sourceReferenceId">关联单据 {{ block.sourceReferenceId }}</span>
+              <span
+                >关联业务
+                {{
+                  describeAvailabilityWindowReference(
+                    block,
+                    resolveDeviceCode(block.deviceAssetId) ?? readFaceText(block.deviceAssetId, ''),
+                  )
+                }}</span
+              >
               <span v-if="block.substituteDeviceAssetIds?.length"
                 >替代设备
                 {{ block.substituteDeviceAssetIds.map((id) => deviceLabel(id)).join('、') }}</span
@@ -455,7 +478,14 @@ function formatDateTime(value?: string | null) {
               <WrenchIcon aria-hidden="true" />
               记录停机
             </NvButton>
-            <NvButton size="sm" type="button" variant="outline" class="justify-self-start" as-child>
+            <NvButton
+              v-if="canCreateMaintenanceWorkOrder"
+              size="sm"
+              type="button"
+              variant="outline"
+              class="justify-self-start"
+              as-child
+            >
               <RouterLink
                 :to="{
                   path: '/maintenance/work-orders',
@@ -471,7 +501,7 @@ function formatDateTime(value?: string | null) {
             v-if="overviewState === 'idle'"
             class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
           >
-            业务上下文未就绪，阻塞窗口尚未查询。
+            尚未确定当前组织，暂未查询阻塞窗口。
           </div>
           <div
             v-else-if="overviewState === 'loading'"

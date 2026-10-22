@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { i18n } from '@/i18n'
 import type {
   BusinessConsoleCreateMaintenancePlanRequest,
   BusinessConsoleMaintenancePlanItem,
@@ -6,6 +7,7 @@ import type {
 } from '@nerv-iip/api-client'
 import {
   NvButton,
+  NvDatePicker,
   NvDialog,
   NvDialogClose,
   NvDialogContent,
@@ -15,6 +17,7 @@ import {
   NvDialogTitle,
   NvEntityPicker,
   NvField,
+  NvFieldDescription,
   NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
@@ -27,15 +30,15 @@ import {
   NvTabs,
   NvTabsList,
   NvTabsTrigger,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { computed, reactive, shallowRef, watch } from 'vue'
 
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
-import {
-  useEquipmentDeviceCatalog,
-  useEquipmentTeamCatalog,
-} from '@/composables/useEquipmentPickerCatalog'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
+import { useEquipmentTeamCatalog } from '@/composables/useEquipmentPickerCatalog'
+
+const locale = i18n.global.locale
 
 type TriggerMode = 'calendar' | 'runtime' | 'both'
 type DialogMode = 'create' | 'edit'
@@ -96,7 +99,6 @@ const form = reactive<PlanFormState>({
 })
 const submitted = shallowRef(false)
 
-const { deviceOptions, devicesPending } = useEquipmentDeviceCatalog()
 const { teamOptions, teamsPending } = useEquipmentTeamCatalog()
 
 const intervalOptions = computed(() => {
@@ -265,28 +267,20 @@ function submitForm() {
         <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
           <NvField v-if="!isEditMode">
             <NvFieldLabel for="plan-device">设备</NvFieldLabel>
-            <NvEntityPicker
+            <DirectoryPicker
               id="plan-device"
               v-model="form.deviceAssetId"
-              :options="deviceOptions"
-              title="选择设备"
-              placeholder="选择设备"
-              source-text="数据来自基础数据设备资产"
-              empty-text="暂无设备资产，请先在基础数据登记设备"
-              :loading="devicesPending"
-              aria-label="设备"
+              directory-type="equipment"
+              creatable
+              :invalid="deviceInvalid"
             />
             <NvFieldError v-if="deviceInvalid" :errors="['请选择设备。']" />
           </NvField>
 
           <NvField v-if="!isEditMode">
             <NvFieldLabel for="plan-code">计划编号</NvFieldLabel>
-            <NvInput
-              id="plan-code"
-              v-model="form.planCode"
-              autocomplete="off"
-              placeholder="可选，如 PM-SMT-01-M"
-            />
+            <NvInput id="plan-code" v-model="form.planCode" autocomplete="off" placeholder="可选" />
+            <NvFieldDescription>可自定义计划编号，如 PM-SMT-01-M。</NvFieldDescription>
           </NvField>
 
           <NvField v-if="usesCalendar">
@@ -342,7 +336,7 @@ function submitForm() {
 
           <NvField v-if="!isEditMode">
             <NvFieldLabel for="plan-starts">起始日期</NvFieldLabel>
-            <NvInput id="plan-starts" v-model="form.startsOn" type="date" />
+            <NvDatePicker id="plan-starts" v-model="form.startsOn" :locale="locale" clearable />
           </NvField>
 
           <NvField v-if="!isEditMode" class="sm:col-span-2">
@@ -353,7 +347,6 @@ function submitForm() {
               :options="teamOptions"
               title="选择负责班组"
               placeholder="选择负责班组"
-              source-text="数据来自基础数据班组"
               empty-text="暂无班组，请先在基础数据维护班组"
               :loading="teamsPending"
               aria-label="负责班组"
@@ -369,7 +362,7 @@ function submitForm() {
             <NvButton type="button" variant="outline">取消</NvButton>
           </NvDialogClose>
           <NvButton type="submit" :disabled="pending">
-            <Spinner v-if="pending" aria-hidden="true" />
+            <NvSpinner v-if="pending" aria-hidden="true" />
             {{ isEditMode ? '保存触发条件' : '创建保养计划' }}
           </NvButton>
         </NvDialogFooter>

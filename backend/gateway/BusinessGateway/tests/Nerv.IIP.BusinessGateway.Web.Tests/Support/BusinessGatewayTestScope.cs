@@ -28,7 +28,7 @@ internal sealed class BusinessGatewayTestScope(IReadOnlyDictionary<Type, object>
 
     public IReadOnlyDictionary<Type, object> Overrides { get; } = overrides;
 
-    public BusinessGatewayDownstreamHealthState HealthState { get; } = new();
+    public BusinessGatewayDownstreamHealthState HealthState { get; } = new(TimeProvider.System);
 
     /// <summary>Marks a request as using this scope until the returned handle is disposed.</summary>
     public IDisposable Enter()

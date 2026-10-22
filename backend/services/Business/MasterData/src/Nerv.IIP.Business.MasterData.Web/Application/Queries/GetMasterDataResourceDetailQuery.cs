@@ -186,6 +186,9 @@ public sealed class GetMasterDataResourceDetailQueryHandler(ApplicationDbContext
             "production-line" => UpdateMasterDataResourceCommandHandler.Detail(
                 await dbContext.ProductionLines.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
                 ?? throw NotFound(type, request.Code)),
+            "station" => UpdateMasterDataResourceCommandHandler.Detail(
+                await dbContext.Stations.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+                ?? throw NotFound(type, request.Code)),
             "work-center" => UpdateMasterDataResourceCommandHandler.Detail(
                 await dbContext.WorkCenters.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
                 ?? throw NotFound(type, request.Code)),

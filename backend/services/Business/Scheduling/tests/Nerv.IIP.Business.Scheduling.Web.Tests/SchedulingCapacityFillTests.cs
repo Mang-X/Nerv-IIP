@@ -16,6 +16,113 @@ public sealed class SchedulingCapacityFillTests
 {
     private static readonly DateTimeOffset Day = new(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
 
+    [Fact]
+    public void Utilization_reserves_rated_capacity_without_changing_operation_duration_or_shift()
+    {
+        var problem = ProblemWith(60, [new(Day.AddHours(8), Day.AddHours(10.5), "day")]);
+        var first = problem.Orders.Single();
+        var second = first with
+        {
+            OrderId = "WO-FILL-002",
+            Operations = [first.Operations.Single() with { OperationId = "WO-FILL-002-OP10" }]
+        };
+        problem = problem with
+        {
+            Orders = [first, second],
+            Resources = [problem.Resources.Single() with { UtilizationRate = 0.8m }]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-rated-capacity", Day);
+
+        Assert.Empty(plan.UnscheduledOperations);
+        Assert.Equal(Day.AddHours(8), plan.Assignments.Single(x => x.OrderId == first.OrderId).StartUtc);
+        Assert.Equal(Day.AddHours(9), plan.Assignments.Single(x => x.OrderId == first.OrderId).EndUtc);
+        Assert.Equal(Day.AddHours(9).AddMinutes(15), plan.Assignments.Single(x => x.OrderId == second.OrderId).StartUtc);
+        Assert.Equal(Day.AddHours(10).AddMinutes(15), plan.Assignments.Single(x => x.OrderId == second.OrderId).EndUtc);
+        var load = Assert.Single(plan.ResourceLoads);
+        Assert.Equal(120, load.AssignedMinutes);
+        Assert.Equal(120, load.AvailableMinutes); // 150 shift minutes * 0.8
+        Assert.Equal(1m, load.Utilization);
+    }
+
+    [Fact]
+    public void Utilization_rounds_each_reservation_up_and_keeps_parallel_capacity()
+    {
+        var problem = ProblemWith(61, [new(Day.AddHours(8), Day.AddHours(9).AddMinutes(16), "day")]);
+        var first = problem.Orders.Single();
+        var second = first with
+        {
+            OrderId = "WO-FILL-002",
+            Operations = [first.Operations.Single() with { OperationId = "WO-FILL-002-OP10" }]
+        };
+        problem = problem with
+        {
+            Orders = [first, second],
+            Resources = [problem.Resources.Single() with { UtilizationRate = 0.8m, CapacityUnits = 2 }]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-rated-parallel", Day);
+
+        Assert.Empty(plan.Assignments); // ceil(61 / 0.8) = 77, one minute longer than the shift
+        Assert.Equal(2, plan.UnscheduledOperations.Count);
+        Assert.All(plan.UnscheduledOperations, x => Assert.Equal(ScheduleConflictReasonCodeContract.Calendar, x.ReasonCode));
+        var load = Assert.Single(plan.ResourceLoads);
+        Assert.Equal(121, load.AvailableMinutes); // floor(76 * 0.8 * 2)
+
+        var fitting = problem with
+        {
+            HorizonEndUtc = Day.AddHours(9).AddMinutes(17),
+            Calendars = [new SchedulingCalendarContract("CAL-FILL",
+                [new(Day.AddHours(8), Day.AddHours(9).AddMinutes(17), "day")])]
+        };
+        var parallelPlan = new FiniteCapacityScheduler().Schedule(fitting, "plan-rated-parallel-fit", Day);
+        Assert.Empty(parallelPlan.UnscheduledOperations);
+        Assert.All(parallelPlan.Assignments, x => Assert.Equal(Day.AddHours(8), x.StartUtc));
+        Assert.Equal(2, parallelPlan.Assignments.Count);
+        Assert.Equal(123, Assert.Single(parallelPlan.ResourceLoads).AvailableMinutes); // floor(77 * 0.8 * 2)
+    }
+
+    [Fact]
+    public void Adjacent_locked_operations_conflict_when_rated_reservations_overlap()
+    {
+        var problem = ProblemWith(60, [new(Day.AddHours(8), Day.AddHours(10.5), "day")]);
+        problem = problem with
+        {
+            Resources = [problem.Resources.Single() with { UtilizationRate = 0.8m }],
+            LockedAssignments =
+            [
+                new("lock-a", "WO-A", "OP-A", 10, "DEV-FILL-01", "WC-FILL",
+                    Day.AddHours(8), Day.AddHours(9), "manual"),
+                new("lock-b", "WO-B", "OP-B", 10, "DEV-FILL-01", "WC-FILL",
+                    Day.AddHours(9), Day.AddHours(10), "manual")
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-rated-locks", Day);
+
+        Assert.Contains(plan.Conflicts, x => x.ReasonCode == ScheduleConflictReasonCodeContract.InvalidLockedAssignment
+            && x.ResourceId == "DEV-FILL-01");
+    }
+
+    [Fact]
+    public void Subminute_locked_operation_reserves_capacity_before_open_operation()
+    {
+        var problem = ProblemWith(60, [new(Day.AddHours(8), Day.AddHours(10), "day")]);
+        problem = problem with
+        {
+            Resources = [problem.Resources.Single() with { UtilizationRate = 0.8m }],
+            LockedAssignments =
+            [
+                new("lock-half-minute", "WO-LOCK", "OP-LOCK", 10, "DEV-FILL-01", "WC-FILL",
+                    Day.AddHours(8), Day.AddHours(8).AddSeconds(30), "manual")
+            ]
+        };
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-rated-subminute-lock", Day);
+
+        Assert.Equal(Day.AddHours(8).AddMinutes(1), Assert.Single(plan.Assignments, x => !x.IsLocked).StartUtc);
+    }
+
     // ---------- 班次窗口合并 ----------
 
     /// <summary>

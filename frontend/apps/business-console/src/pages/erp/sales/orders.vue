@@ -16,6 +16,7 @@ import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import FulfillmentTimelineSheet from '@/components/fulfillment/FulfillmentTimelineSheet.vue'
 import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
+import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -34,7 +35,7 @@ import {
   NvInput,
   NvMetricStrip,
   NvPageHeader,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -245,7 +246,7 @@ async function submitCreditHoldRelease() {
   try {
     await orders.releaseCreditHold({ salesOrderNo })
     creditHoldOpen.value = false
-    notifySuccess('已提交信用解冻复核，审批通过后订单将恢复为已下达（released）')
+    notifySuccess('已提交信用解冻复核，审批通过后订单将恢复为已下达')
   } catch (error) {
     notifyOperationFailure(
       '提交信用解冻复核失败',
@@ -457,7 +458,7 @@ async function submit() {
         </NvDialogHeader>
         <p class="text-sm text-muted-foreground">
           提交后将以你的账号发起「信用解冻」审批，由审批中心的信用复核人（厂长/管理员）裁决；
-          审批通过后订单自动恢复为「已下达（released）」，可继续发货履约。
+          审批通过后订单自动恢复为「已下达」，可继续发货履约。
         </p>
         <NvDialogFooter>
           <NvDialogClose as-child>
@@ -468,7 +469,7 @@ async function submit() {
             :disabled="orders.releaseCreditHoldPending.value"
             @click="submitCreditHoldRelease"
           >
-            <Spinner v-if="orders.releaseCreditHoldPending.value" aria-hidden="true" />
+            <NvSpinner v-if="orders.releaseCreditHoldPending.value" aria-hidden="true" />
             提交解冻复核
           </NvButton>
         </NvDialogFooter>
@@ -500,7 +501,7 @@ async function submit() {
             :disabled="orders.releaseDeliveryOrderPending.value"
             @click="submitReleaseDelivery"
           >
-            <Spinner v-if="orders.releaseDeliveryOrderPending.value" aria-hidden="true" />
+            <NvSpinner v-if="orders.releaseDeliveryOrderPending.value" aria-hidden="true" />
             <TruckIcon v-else aria-hidden="true" />
             释放发货
           </NvButton>
@@ -520,11 +521,11 @@ async function submit() {
               <NvFieldLabel for="erp-so-quotation">
                 已批准报价单号 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <SourceDocumentPicker
                 id="erp-so-quotation"
                 v-model="form.quotationNo"
-                autocomplete="off"
-                :data-invalid="showErrors && invalid.quotationNo ? '' : undefined"
+                kind="erp-approved-quotation"
+                :invalid="showErrors && invalid.quotationNo"
               />
             </NvField>
             <NvField>
@@ -537,7 +538,6 @@ async function submit() {
                 :options="siteOptions"
                 title="选择履约工厂"
                 placeholder="选择履约工厂"
-                source-text="数据来自基础数据工厂主数据"
                 empty-text="暂无工厂，请先在「基础数据 · 工厂」维护"
                 :loading="sitesPending"
                 aria-label="履约工厂"
@@ -557,7 +557,7 @@ async function submit() {
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             >
             <NvButton type="submit" :disabled="orders.createSalesOrderPending.value">
-              <Spinner v-if="orders.createSalesOrderPending.value" aria-hidden="true" />
+              <NvSpinner v-if="orders.createSalesOrderPending.value" aria-hidden="true" />
               创建订单
             </NvButton>
           </NvDialogFooter>

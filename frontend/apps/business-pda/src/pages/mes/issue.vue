@@ -15,15 +15,22 @@ import {
   NvListRow,
   NvMobileResult,
   NvMobileToast,
-  NvScanBar,
 } from '@nerv-iip/ui-mobile'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useMesMaterialIssue, useMesWorkOrders } from '@/composables/useBusinessMes'
-import ListScopeMeta from '@/components/ListScopeMeta.vue'
+import {
+  useMesLineSideInventoryBalances,
+  useMesMaterialIssue,
+  useMesWorkOrders,
+} from '@/composables/useBusinessMes'
+import LineSideInventoryBalancesPanel from '@/components/mes/LineSideInventoryBalancesPanel.vue'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
+import { describeRequestError } from '@/api/request-timeout'
+import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
+import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
+import { useMesScanGate } from '@/composables/mes/useMesScanGate'
 
 definePage({
   meta: {
@@ -40,15 +47,14 @@ const router = useRouter()
 const {
   filters,
   requests,
-  total,
   pending,
   error,
-  lastUpdatedAt,
   hasSuccessfulResponse,
   hasFailedResponse,
   refresh,
   createIssue,
   confirmLineSideReceipt,
+  returnLineSideMaterial,
 } = useMesMaterialIssue()
 
 const {
@@ -60,26 +66,30 @@ const {
   refresh: refreshWorkOrders,
 } = useMesWorkOrders()
 
+const {
+  balances: lineSideInventoryBalances,
+  total: lineSideInventoryTotal,
+  pending: lineSideInventoryPending,
+  error: lineSideInventoryError,
+  hasNextPage: lineSideInventoryHasNextPage,
+  hasPreviousPage: lineSideInventoryHasPreviousPage,
+  page: lineSideInventoryPage,
+  pageCount: lineSideInventoryPageCount,
+  ready: lineSideInventoryReady,
+  nextPage: nextLineSideInventoryPage,
+  previousPage: previousLineSideInventoryPage,
+  refresh: refreshLineSideInventory,
+} = useMesLineSideInventoryBalances()
+
 // 可读中文状态标签 + 工单标题/副标题来自 @nerv-iip/business-core（不暴露原始状态码）。
 const statusLabel = materialIssueStatusLabel
-const listScope = computed(() =>
-  filters.organizationId && filters.environmentId
-    ? '当前登录组织 / 当前业务环境'
-    : '组织/环境范围未就绪',
-)
 const scopeReady = computed(() => Boolean(filters.organizationId && filters.environmentId))
 const scopedRequests = computed(() => (scopeReady.value ? requests.value : []))
-const scopedTotal = computed(() => (scopeReady.value ? total.value : 0))
-const emptyExplanation = computed(() =>
-  !filters.organizationId || !filters.environmentId
-    ? '缺少组织或环境范围，未发起查询。'
-    : '当前组织/环境范围暂无领料申请；此列表暂不支持按当前人员归属筛选，不代表当前人员没有领料任务。',
-)
 const listFailure = computed(() =>
   error.value
     ? error.value
     : hasFailedResponse.value
-      ? new Error('领料申请服务未返回成功结果，请重试。')
+      ? new Error('领料申请加载失败，请重试。')
       : null,
 )
 
@@ -96,6 +106,10 @@ function requestSubtitle(req: IssueRequest) {
   return parts.join(' · ')
 }
 
+function returnableQuantity(req: IssueRequest) {
+  return Math.max(0, (req.receivedQuantity ?? 0) - (req.consumedQuantity ?? 0))
+}
+
 // --- 结果反馈 ---
 type ResultState = {
   status: 'success' | 'error'
@@ -109,6 +123,13 @@ const submitting = ref(false)
 // 稳定的逐操作幂等键：在提交（创建/接收）时铸造一次，重试复用同键；
 // 开始新操作（重新打开新建/接收表单、成功）时清空 → 下次提交铸造新键。
 const operationKey = ref('')
+const returnOperationKey = ref('')
+const scanGate = useMesScanGate()
+const scanPending = scanGate.pending
+const scanGuarded = scanGate.guarded
+const scannedWorkOrderId = ref('')
+const scannedOperationTaskId = ref('')
+const scannedMaterialIssueRequestId = ref('')
 
 // --- 新建领料表单 ---
 const creating = ref(false)
@@ -132,6 +153,7 @@ const createSheetOpen = computed({
 })
 
 function openCreate() {
+  scanGate.clear('list')
   result.value = null
   selectedWorkOrder.value = null
   issueMaterialId.value = ''
@@ -149,6 +171,7 @@ function chooseWorkOrder(wo: WorkOrder) {
 }
 
 async function submitCreate() {
+  if (scanGuarded.value) return
   const workOrderId = selectedWorkOrder.value?.workOrderId
   const materialId = issueMaterialId.value.trim()
   if (!workOrderId || materialId === '') return
@@ -193,6 +216,8 @@ async function retryCreate() {
 // --- 线边接收 ---
 const receiving = ref<IssueRequest | null>(null)
 const receivedQuantity = ref<number | null>(null)
+const returning = ref<IssueRequest | null>(null)
+const returnedQuantity = ref<number | null>(null)
 
 const receiveValid = computed(() => {
   // 接收数量可选；若填写则须 >= 0
@@ -217,11 +242,34 @@ function canReceive(req: IssueRequest) {
 
 function openReceive(req: IssueRequest) {
   if (!canReceive(req)) return
+  scanGate.clear('list')
   result.value = null
   // 新一轮线边接收 → 作废上一个幂等键
   operationKey.value = ''
   receiving.value = req
   receivedQuantity.value = req.requestedQuantity ?? null
+}
+
+function canReturn(req: IssueRequest) {
+  return (
+    (req.materialLotId ?? '').trim().length > 0 &&
+    returnableQuantity(req) > 0 &&
+    ['received', 'partiallyreceived'].includes((req.status ?? '').toLowerCase())
+  )
+}
+
+function openReturn(req: IssueRequest) {
+  if (!canReturn(req)) return
+  scanGate.clear('list')
+  result.value = null
+  returnOperationKey.value = makeIdempotencyKey()
+  returning.value = req
+  returnedQuantity.value = returnableQuantity(req)
+}
+
+function closeReturn() {
+  returning.value = null
+  returnedQuantity.value = null
 }
 function closeReceive() {
   receiving.value = null
@@ -240,24 +288,20 @@ const lifecycleRecovery = useLifecycleActionRecovery({
 })
 
 async function submitReceive() {
+  if (scanGuarded.value) return
   const req = receiving.value
   const requestId = req?.requestId
   if (!requestId) return
   if (!receiveValid.value) return
   const quantity = receivedQuantity.value
-  // 首次提交铸造稳定幂等键，重试复用同键。
-  if (operationKey.value === '') {
-    operationKey.value = makeIdempotencyKey()
-  }
   submitting.value = true
   receiving.value = null
   const doSubmit = () =>
     confirmLineSideReceipt(
       requestId,
-      {
-        ...(quantity === null ? {} : { receivedQuantity: quantity }),
-        idempotencyKey: operationKey.value,
-      },
+      // #3328：线边收料的 idempotencyKey 已从网关公开契约摘掉——MES 侧从不消费它，
+      // 重放安全由 MaterialIssueRequest.ConfirmLineSideReceipt 的「过账尚未回执」守卫承担。
+      quantity === null ? {} : { receivedQuantity: quantity },
       {
         workOrderId: req?.workOrderId,
       },
@@ -282,6 +326,45 @@ async function submitReceive() {
   }
 }
 
+async function submitReturn() {
+  if (scanGuarded.value) return
+  const req = returning.value
+  const requestId = req?.requestId
+  const quantity = returnedQuantity.value
+  const returnable = req ? returnableQuantity(req) : 0
+  if (!requestId || quantity === null || !(quantity > 0) || quantity > returnable) return
+  submitting.value = true
+  returning.value = null
+  const doSubmit = () =>
+    returnLineSideMaterial(
+      requestId,
+      { returnedQuantity: quantity, idempotencyKey: returnOperationKey.value },
+      { workOrderId: req?.workOrderId },
+    )
+  try {
+    await doSubmit()
+    result.value = { status: 'success', title: '线边退料已提交', retry: () => {} }
+  } catch (e) {
+    const described = describeRequestError(e)
+    result.value = {
+      status: 'error',
+      title: '线边退料失败',
+      description: described.message || '请检查网络后重试。',
+      retry: () => retryReturn(req!, quantity),
+    }
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function retryReturn(req: IssueRequest, quantity: number) {
+  result.value = null
+  returning.value = req
+  returnedQuantity.value = quantity
+  if (returnOperationKey.value === '') returnOperationKey.value = makeIdempotencyKey()
+  await submitReturn()
+}
+
 async function retryReceive(req: IssueRequest, quantity: number | null) {
   result.value = null
   receiving.value = req
@@ -300,16 +383,47 @@ function goBack() {
   router.push('/').catch(() => {})
 }
 
-// ScanBar 仅在列表态活跃；新建/接收/结果展开时不抢焦点
+// 扫码仅在列表态活跃；新建/接收/结果展开时不抢焦点。
 const scanActive = computed(
-  () => result.value === null && !creating.value && receiving.value === null,
+  () =>
+    result.value === null &&
+    !creating.value &&
+    receiving.value === null &&
+    returning.value === null,
 )
 
-function onScan(value: string) {
-  filters.keyword = value
+function onScanAccepted(value: MesScanAccepted) {
+  if (value.kind === 'work-order') {
+    scannedWorkOrderId.value = value.workOrderId
+    scannedOperationTaskId.value = ''
+    scannedMaterialIssueRequestId.value = ''
+    filters.keyword = undefined
+    filters.workOrderId = value.workOrderId
+    return
+  }
+  if (value.kind === 'operation-task') {
+    scannedWorkOrderId.value = value.workOrderId
+    scannedOperationTaskId.value = value.operationTaskId
+    scannedMaterialIssueRequestId.value = ''
+    filters.keyword = undefined
+    filters.workOrderId = value.workOrderId
+    return
+  }
+  if (value.kind === 'material') {
+    scannedWorkOrderId.value = value.workOrderId
+    scannedOperationTaskId.value = value.operationTaskId
+    scannedMaterialIssueRequestId.value = value.materialIssueRequestId
+    filters.workOrderId = value.workOrderId
+    filters.keyword = value.materialId ?? value.materialIssueRequestId
+  }
 }
-function onScanWorkOrder(value: string) {
-  workOrderFilters.keyword = value
+
+function onCreateScanAccepted(value: MesScanAccepted) {
+  if (value.kind !== 'work-order' && value.kind !== 'operation-task') return
+  workOrderFilters.keyword = undefined
+  workOrderFilters.workOrderId = value.workOrderId
+  scannedWorkOrderId.value = value.workOrderId
+  scannedOperationTaskId.value = value.kind === 'operation-task' ? value.operationTaskId : ''
 }
 </script>
 
@@ -329,6 +443,7 @@ function onScanWorkOrder(value: string) {
         <button
           type="button"
           data-testid="new-issue"
+          :disabled="scanPending"
           class="ml-auto rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
           @click="openCreate"
         >
@@ -373,21 +488,38 @@ function onScanWorkOrder(value: string) {
     </NvMobileResult>
 
     <div v-else class="space-y-4 p-4">
-      <NvScanBar placeholder="扫描工单号 / 领料单" :active="scanActive" @scan="onScan" />
+      <MesScanPrevalidation
+        :organization-id="filters.organizationId"
+        :environment-id="filters.environmentId"
+        :work-order-id="scannedWorkOrderId"
+        :operation-task-id="scannedOperationTaskId"
+        placeholder="扫描工单 / 工序 / 物料批次"
+        :active="scanActive"
+        :accepted-kinds="['work-order', 'operation-task', 'material']"
+        @accepted="onScanAccepted"
+        @status-change="scanGate.set('list', $event)"
+      />
+      <p
+        v-if="scannedMaterialIssueRequestId"
+        data-testid="issue-scanned-material"
+        class="text-sm text-muted-foreground"
+      >
+        已核验当前工单工序的物料批次
+      </p>
 
-      <ListScopeMeta
-        :scope="listScope"
-        source="生产领料申请服务（组织/环境范围）"
-        :loaded="scopedRequests.length"
-        :total="scopedTotal"
-        :updated-at="lastUpdatedAt"
-        :failed="hasFailedResponse"
-        failure-explanation="生产领料申请服务未成功返回，请刷新重试。"
-        :empty="
-          !scopeReady ||
-          (!pending && !error && hasSuccessfulResponse && scopedRequests.length === 0)
-        "
-        :empty-explanation="emptyExplanation"
+      <LineSideInventoryBalancesPanel
+        :items="lineSideInventoryBalances"
+        :page="lineSideInventoryPage"
+        :page-count="lineSideInventoryPageCount"
+        :has-previous-page="lineSideInventoryHasPreviousPage"
+        :has-next-page="lineSideInventoryHasNextPage"
+        :total="lineSideInventoryTotal"
+        :pending="lineSideInventoryPending"
+        :error="lineSideInventoryError"
+        :ready="lineSideInventoryReady"
+        @previous-page="previousLineSideInventoryPage"
+        @next-page="nextLineSideInventoryPage"
+        @refresh="refreshLineSideInventory"
       />
 
       <RetryableListError
@@ -405,7 +537,7 @@ function onScanWorkOrder(value: string) {
         "
         class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
       >
-        当前组织/环境范围暂无领料申请
+        暂无领料申请
       </div>
 
       <div
@@ -424,22 +556,94 @@ function onScanWorkOrder(value: string) {
               v-if="canReceive(req)"
               type="button"
               :data-testid="`receive-${req.requestId}`"
-              class="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-primary"
+              :disabled="scanPending"
+              class="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-primary disabled:opacity-60"
               @click="openReceive(req)"
             >
               线边接收
+            </button>
+            <button
+              v-if="canReturn(req)"
+              type="button"
+              :data-testid="`return-${req.requestId}`"
+              :disabled="scanPending"
+              class="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-primary disabled:opacity-60"
+              @click="openReturn(req)"
+            >
+              线边退料
             </button>
           </template>
         </NvListRow>
       </div>
     </div>
 
+    <NvBottomSheet
+      :open="returning !== null && result === null"
+      title="线边退料"
+      @update:open="
+        (open) => {
+          if (!open) closeReturn()
+        }
+      "
+    >
+      <div class="space-y-4 pb-2">
+        <p class="text-sm text-muted-foreground">退料数量不能超过当前线边可退数量。</p>
+        <label class="block space-y-1">
+          <span class="text-sm font-medium text-foreground">退料数量</span>
+          <input
+            v-model="returnedQuantity"
+            data-testid="returned-quantity"
+            type="number"
+            min="0"
+            :max="returning ? returnableQuantity(returning) : undefined"
+            step="any"
+            class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base outline-none focus:border-primary"
+          />
+        </label>
+        <p
+          v-if="
+            returning &&
+            returnedQuantity !== null &&
+            returnedQuantity > returnableQuantity(returning)
+          "
+          class="text-sm text-destructive"
+          role="alert"
+        >
+          退料数量不能超过当前可退数量 {{ returnableQuantity(returning) }}。
+        </p>
+        <button
+          type="button"
+          data-testid="submit-return"
+          class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-50"
+          :disabled="
+            returnedQuantity === null ||
+            returnedQuantity <= 0 ||
+            (returning !== null && returnedQuantity > returnableQuantity(returning)) ||
+            submitting ||
+            scanGuarded
+          "
+          @click="submitReturn"
+        >
+          提交退料
+        </button>
+      </div>
+    </NvBottomSheet>
+
     <!-- 新建领料表单 -->
     <NvBottomSheet :open="createSheetOpen" title="新建领料" @update:open="createSheetOpen = $event">
       <div class="space-y-4 pb-2">
         <!-- 选工单 -->
         <div v-if="!selectedWorkOrder" class="space-y-2">
-          <NvScanBar placeholder="扫描工单号" :active="false" @scan="onScanWorkOrder" />
+          <MesScanPrevalidation
+            :organization-id="filters.organizationId"
+            :environment-id="filters.environmentId"
+            :work-order-id="scannedWorkOrderId"
+            :operation-task-id="scannedOperationTaskId"
+            placeholder="扫描工单或工序"
+            :accepted-kinds="['work-order', 'operation-task']"
+            @accepted="onCreateScanAccepted"
+            @status-change="scanGate.set('create', $event)"
+          />
           <p class="text-sm text-muted-foreground">选择领料的工单（共 {{ workOrderTotal }} 张）</p>
           <RetryableListError
             v-if="workOrdersError"
@@ -520,7 +724,7 @@ function onScanWorkOrder(value: string) {
           <button
             type="button"
             data-testid="submit-issue"
-            :disabled="!createValid || submitting"
+            :disabled="!createValid || submitting || scanGuarded"
             class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
             @click="submitCreate"
           >
@@ -563,7 +767,7 @@ function onScanWorkOrder(value: string) {
         <button
           type="button"
           data-testid="submit-receive"
-          :disabled="!receiveValid || submitting"
+          :disabled="!receiveValid || submitting || scanGuarded"
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
           @click="submitReceive"
         >

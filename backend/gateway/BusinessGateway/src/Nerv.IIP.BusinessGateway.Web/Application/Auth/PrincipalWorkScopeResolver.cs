@@ -4,6 +4,11 @@ using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.Auth;
 
+internal static class PrincipalWorkScopeStableWireCodes
+{
+    public const string NotAuthorized = "work-scope-not-authorized";
+}
+
 public sealed record PrincipalWorkScopeSelection(
     string Kind,
     string Id,
@@ -24,30 +29,11 @@ public sealed class PrincipalWorkScopeResolver(
         string? requestedScopeId,
         CancellationToken cancellationToken)
     {
-        if (authorization is null
-            || !authorization.IsAllowed
-            || string.IsNullOrWhiteSpace(authorization.PrincipalId)
-            || authorization.DataScope?.DenyAll == true)
-        {
-            throw Forbidden();
-        }
-
-        var context = await masterData.GetPrincipalWorkContextAsync(
-            tokenProvider.BearerToken,
-            new BusinessMasterDataPrincipalWorkContextRequest(
-                organizationId,
-                environmentId,
-                authorization.PrincipalId),
+        var (context, resolution, principalId) = await ResolveContextAsync(authorization,
+            organizationId, environmentId, permissionCode, requestedScopeKind, requestedScopeId,
             cancellationToken);
         var explicitSelection = !string.IsNullOrWhiteSpace(requestedScopeKind)
             || !string.IsNullOrWhiteSpace(requestedScopeId);
-        var resolution = PrincipalWorkContextAuthorizationResolver.Resolve(
-            context,
-            authorization,
-            organizationId,
-            permissionCode,
-            requestedScopeKind,
-            requestedScopeId);
         BusinessConsoleAuthorizedWorkScope selected;
         if (explicitSelection)
         {
@@ -78,7 +64,121 @@ public sealed class PrincipalWorkScopeResolver(
             }
         }
 
-        return ProjectSelection(context, resolution.AuthorizedScopes, authorization.PrincipalId, selected);
+        return ProjectSelection(context, resolution.AuthorizedScopes, principalId, selected);
+    }
+
+    // 只有工单列表允许缺省范围取授权并集；其它入口仍使用 ResolveAsync。
+    public async Task<PrincipalWorkScopeSelection> ResolveWorkOrderListAsync(
+        BusinessGatewayAuthorizationResult? authorization,
+        string organizationId,
+        string environmentId,
+        string permissionCode,
+        string? requestedScopeKind,
+        string? requestedScopeId,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedScopeKind) || !string.IsNullOrWhiteSpace(requestedScopeId))
+        {
+            return await ResolveAsync(authorization, organizationId, environmentId, permissionCode,
+                requestedScopeKind, requestedScopeId, cancellationToken);
+        }
+
+        var (context, resolution, principalId) = await ResolveContextAsync(authorization,
+            organizationId, environmentId, permissionCode, null, null, cancellationToken);
+        if (resolution.AuthorizedScopes.Any(x => x.Kind == "organization" && x.Id == organizationId))
+        {
+            return new("organization", organizationId, [], [], []);
+        }
+
+        // 车间授权已由可信上下文展开为 work-center 候选，不把车间自身当成工序字段。
+        var selections = resolution.AuthorizedScopes
+            .Where(x => x.Kind != "workshop")
+            .Select(scope => ProjectSelection(context, resolution.AuthorizedScopes,
+                principalId, scope))
+            .ToArray();
+        if (selections.Length == 0)
+        {
+            throw Forbidden();
+        }
+
+        return new("authorized-union", principalId,
+            selections.SelectMany(x => x.AssignedUserIds).Distinct(StringComparer.Ordinal).ToArray(),
+            selections.SelectMany(x => x.TeamIds).Distinct(StringComparer.Ordinal).ToArray(),
+            selections.SelectMany(x => x.WorkCenterIds).Distinct(StringComparer.Ordinal).ToArray());
+    }
+
+    // 停机事实只归属 WC；不把 self/team 投影成并不存在的停机所有者。
+    public async Task<IReadOnlyCollection<string>?> ResolveDowntimeWorkCentersAsync(
+        BusinessGatewayAuthorizationResult? authorization,
+        string organizationId,
+        string environmentId,
+        string permissionCode,
+        string? requestedWorkCenterId,
+        CancellationToken cancellationToken)
+    {
+        var (_, resolution, _) = await ResolveContextAsync(authorization,
+            organizationId, environmentId, permissionCode, null, null, cancellationToken);
+        if (!string.Equals(authorization!.AuthorizedOrganizationId, organizationId, StringComparison.Ordinal)
+            || !string.Equals(authorization.AuthorizedEnvironmentId, environmentId, StringComparison.Ordinal))
+        {
+            throw Forbidden();
+        }
+
+        if (resolution.AuthorizedScopes.Any(x => x.Kind == "organization" && x.Id == organizationId))
+        {
+            return null;
+        }
+
+        // 候选 WC（含车间展开）已经 canonical resolver 与当前 permission grants 求交。
+        var workCenterIds = resolution.AuthorizedScopes
+            .Where(x => x.Kind == "work-center")
+            .Select(x => x.Id)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (workCenterIds.Length == 0
+            || (!string.IsNullOrWhiteSpace(requestedWorkCenterId)
+                && !workCenterIds.Contains(requestedWorkCenterId, StringComparer.Ordinal)))
+        {
+            throw Forbidden();
+        }
+
+        return workCenterIds;
+    }
+
+    private async Task<(BusinessMasterDataPrincipalWorkContextResponse Context,
+        PrincipalWorkContextAuthorizationResolution Resolution, string PrincipalId)> ResolveContextAsync(
+        BusinessGatewayAuthorizationResult? authorization,
+        string organizationId,
+        string environmentId,
+        string permissionCode,
+        string? requestedScopeKind,
+        string? requestedScopeId,
+        CancellationToken cancellationToken)
+    {
+        if (authorization is null
+            || !authorization.IsAllowed
+            || string.IsNullOrWhiteSpace(authorization.PrincipalId)
+            || authorization.DataScope?.DenyAll == true)
+        {
+            throw Forbidden();
+        }
+
+        var context = await masterData.GetPrincipalWorkContextAsync(
+            tokenProvider.BearerToken,
+            new BusinessMasterDataPrincipalWorkContextRequest(
+                organizationId,
+                environmentId,
+                authorization.PrincipalId),
+            cancellationToken);
+        var resolution = PrincipalWorkContextAuthorizationResolver.Resolve(
+            context,
+            authorization,
+            organizationId,
+            permissionCode,
+            requestedScopeKind,
+            requestedScopeId);
+        return (context, resolution, authorization.PrincipalId);
     }
 
     private static PrincipalWorkScopeSelection ProjectSelection(
@@ -126,5 +226,5 @@ public sealed class PrincipalWorkScopeResolver(
     }
 
     private static BusinessServiceProxyException Forbidden() =>
-        new(HttpStatusCode.Forbidden, "work-scope-not-authorized");
+        BusinessServiceProxyException.FromLocalRejection(HttpStatusCode.Forbidden, PrincipalWorkScopeStableWireCodes.NotAuthorized);
 }

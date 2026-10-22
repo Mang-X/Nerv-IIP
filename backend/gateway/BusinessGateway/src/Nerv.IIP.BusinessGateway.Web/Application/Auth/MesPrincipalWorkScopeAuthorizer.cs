@@ -44,7 +44,42 @@ public sealed class MesPrincipalWorkScopeAuthorizer(
         }
     }
 
-    public async Task EnsureOperationTaskAccessAsync(
+    // 历史目录没有显式范围选择；复用工单列表的授权并集验证目标工单成员关系。
+    // 相邻详情和写入口仍保留 EnsureWorkOrderAccessAsync 的单范围语义。
+    public async Task EnsureWorkOrderAccessAcrossAuthorizedScopesAsync(
+        BusinessGatewayAuthorizationResult? authorization,
+        string organizationId,
+        string environmentId,
+        string permissionCode,
+        string workOrderId,
+        CancellationToken cancellationToken)
+    {
+        var scope = await workScopeResolver.ResolveWorkOrderListAsync(
+            authorization,
+            organizationId,
+            environmentId,
+            permissionCode,
+            null,
+            null,
+            cancellationToken);
+        var response = await mes.ListWorkOrdersAsync(
+            tokenProvider.BearerToken,
+            new BusinessMesWorkOrderListRequest(
+                organizationId,
+                environmentId,
+                Take: 1,
+                WorkOrderId: workOrderId,
+                AuthorizedAssignedUserIds: Join(scope.AssignedUserIds),
+                AuthorizedTeamIds: Join(scope.TeamIds),
+                AuthorizedWorkCenterIds: Join(scope.WorkCenterIds)),
+            cancellationToken);
+        if (!response.Items.Any(x => string.Equals(x.WorkOrderId, workOrderId, StringComparison.Ordinal)))
+        {
+            throw Forbidden();
+        }
+    }
+
+    public async Task<BusinessConsoleMesOperationTaskRow> EnsureOperationTaskAccessAsync(
         BusinessGatewayAuthorizationResult? authorization,
         string organizationId,
         string environmentId,
@@ -73,7 +108,47 @@ public sealed class MesPrincipalWorkScopeAuthorizer(
                 WorkCenterIds: Join(scope.WorkCenterIds),
                 OperationTaskId: operationTaskId),
             cancellationToken);
-        if (!response.Items.Any(x => string.Equals(x.OperationTaskId, operationTaskId, StringComparison.Ordinal)))
+        var operationTask = response.Items.FirstOrDefault(x =>
+            string.Equals(x.OperationTaskId, operationTaskId, StringComparison.Ordinal));
+        if (operationTask is null)
+        {
+            throw Forbidden();
+        }
+
+        return operationTask;
+    }
+
+    public async Task EnsureWorkCenterAccessAsync(
+        BusinessGatewayAuthorizationResult? authorization,
+        string organizationId,
+        string environmentId,
+        string permissionCode,
+        string? requestedScopeKind,
+        string? requestedScopeId,
+        string workCenterId,
+        CancellationToken cancellationToken)
+    {
+        var scope = await workScopeResolver.ResolveAsync(
+            authorization,
+            organizationId,
+            environmentId,
+            permissionCode,
+            requestedScopeKind,
+            requestedScopeId,
+            cancellationToken);
+        if (scope.Kind == "organization")
+        {
+            // 组织范围已由 resolver 按本次权限及实际 grant 校验，不以空工作中心集合表示拒绝。
+            if (!string.Equals(authorization!.AuthorizedOrganizationId, organizationId, StringComparison.Ordinal)
+                || !string.Equals(authorization.AuthorizedEnvironmentId, environmentId, StringComparison.Ordinal))
+            {
+                throw Forbidden();
+            }
+
+            return;
+        }
+
+        if (!scope.WorkCenterIds.Any(x => string.Equals(x, workCenterId, StringComparison.Ordinal)))
         {
             throw Forbidden();
         }
@@ -83,5 +158,5 @@ public sealed class MesPrincipalWorkScopeAuthorizer(
         values.Count == 0 ? null : string.Join(',', values.Order(StringComparer.Ordinal));
 
     private static BusinessServiceProxyException Forbidden() =>
-        new(HttpStatusCode.Forbidden, "work-scope-not-authorized");
+        BusinessServiceProxyException.FromLocalRejection(HttpStatusCode.Forbidden, PrincipalWorkScopeStableWireCodes.NotAuthorized);
 }

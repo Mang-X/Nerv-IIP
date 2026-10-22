@@ -1,3 +1,5 @@
+using Nerv.IIP.Contracts.MasterData;
+
 namespace Nerv.IIP.Business.MasterData.Web.Application.Seed;
 
 public enum ReferenceDataCodeSetKind
@@ -41,10 +43,12 @@ public static class MasterDataDictionaryRules
         new("batch-tracking-policy", "optional", "可选记录", ReferenceDataCodeSetKind.SystemEnum),
         new("batch-tracking-policy", "mandatory", "强制批次", ReferenceDataCodeSetKind.SystemEnum),
 
-        new("serial-tracking-policy", "none", "不管理", ReferenceDataCodeSetKind.SystemEnum),
-        new("serial-tracking-policy", "on-receipt", "入库赋序", ReferenceDataCodeSetKind.SystemEnum),
-        new("serial-tracking-policy", "on-production", "生产赋序", ReferenceDataCodeSetKind.SystemEnum),
-        new("serial-tracking-policy", "on-shipment", "出货赋序", ReferenceDataCodeSetKind.SystemEnum),
+        // 码值引 Nerv.IIP.Contracts.MasterData.MasterDataSerialTrackingPolicies：MES 领域校验与
+        // 业务网关报工判定引的是同一份常量，字典与判定不会再各抄一份后分叉（#3747）。
+        new("serial-tracking-policy", MasterDataSerialTrackingPolicies.None, "不管理", ReferenceDataCodeSetKind.SystemEnum),
+        new("serial-tracking-policy", MasterDataSerialTrackingPolicies.OnReceipt, "入库赋序", ReferenceDataCodeSetKind.SystemEnum),
+        new("serial-tracking-policy", MasterDataSerialTrackingPolicies.OnProduction, "生产赋序", ReferenceDataCodeSetKind.SystemEnum),
+        new("serial-tracking-policy", MasterDataSerialTrackingPolicies.OnShipment, "出货赋序", ReferenceDataCodeSetKind.SystemEnum),
 
         new("shelf-life-policy", "none", "无保质期", ReferenceDataCodeSetKind.SystemEnum),
         new("shelf-life-policy", "fifo", "先进先出", ReferenceDataCodeSetKind.SystemEnum),
@@ -114,6 +118,18 @@ public static class MasterDataDictionaryRules
         new("compliance-tag", "msd", "湿敏元件"),
         new("compliance-tag", "ul", "UL认证"),
 
+        // 设备类别：#3809 补登。取自 GB/T 14885-2010《固定资产分类与代码》的通用设备、专用设备
+        // 两个门类（2022 版《固定资产等资产基础分类与代码》已将其并入 A02「设备」门类，不再是该
+        // 门类下的大类），另加 MES 行业设备台账常用的功能性类别（检测/物流/动力），覆盖工厂常见
+        // 设备资产。工装夹具已有独立工装台账（ToolingAssetAggregate）承载，不在此码集重复登记。
+        // 不带系统行为语义，登记为平台预置+可维护（默认 Kind），口径同 product-category：平台给
+        // 常用值，租户可继续新增。
+        new("asset-class", "general-equipment", "通用设备"),
+        new("asset-class", "special-equipment", "专用设备"),
+        new("asset-class", "testing-equipment", "检测设备"),
+        new("asset-class", "logistics-equipment", "物流设备"),
+        new("asset-class", "power-equipment", "动力设备"),
+
         new("device-status", "running", "运行", ReferenceDataCodeSetKind.SystemEnum),
         new("device-status", "idle", "待机", ReferenceDataCodeSetKind.SystemEnum),
         new("device-status", "maintenance", "保养", ReferenceDataCodeSetKind.SystemEnum),
@@ -128,17 +144,6 @@ public static class MasterDataDictionaryRules
         new("work-center-type", "section", "工段", ReferenceDataCodeSetKind.SystemEnum),
         new("work-center-type", "station-group", "工位组", ReferenceDataCodeSetKind.SystemEnum)
     ];
-
-    public static readonly IReadOnlyDictionary<string, IReadOnlySet<string>> ObsoleteSeedCodes =
-        new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal)
-        {
-            ["batch-tracking-policy"] = new HashSet<string>(["lot"], StringComparer.Ordinal),
-            ["product-category"] = new HashSet<string>(["finished-good", "raw-material", "packaging", "spare-part"], StringComparer.Ordinal),
-            ["material-type"] = new HashSet<string>(["material", "service"], StringComparer.Ordinal),
-            ["serial-tracking-policy"] = new HashSet<string>(["serial"], StringComparer.Ordinal),
-            ["shelf-life-policy"] = new HashSet<string>(["180d", "365d"], StringComparer.Ordinal),
-            ["uom-dimension"] = new HashSet<string>(["mass", "quantity"], StringComparer.Ordinal)
-        };
 
     /// <summary>
     /// SKU 创建时需要按受控字典校验的字段。

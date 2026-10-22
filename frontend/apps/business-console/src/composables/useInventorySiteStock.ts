@@ -15,7 +15,7 @@
  *
  * 后端补齐 `GET /api/business-console/v1/inventory/ledgers`（工厂可选、分页）之后，
  * 这个 composable 应当整体删除、页面直接换成那个读面。缺口已登记在
- * `docs/architecture/inventory-module-product-design.md` 的「后端缺口」一节。
+ * `docs/product/inventory/design.md` §4「后端缺口（按优先级）」一节。
  */
 import {
   getBusinessConsoleInventoryAvailability,

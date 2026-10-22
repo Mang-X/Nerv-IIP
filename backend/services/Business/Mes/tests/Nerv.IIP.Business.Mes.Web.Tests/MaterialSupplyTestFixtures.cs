@@ -21,7 +21,7 @@ internal static class MaterialSupplyTestFixtures
             dbContext.MaterialIssueRequests,
             x => x.RequestNo == requestNo);
         var token = request.PendingPostingToken!;
-        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, postedAtUtc);
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, postedAtUtc, 0, 8m, -8m * request.PendingReceiptQuantity);
         request.MarkInventoryPosted(token, MaterialTransferLeg.LineSideReceipt, postedAtUtc);
         await dbContext.SaveChangesAsync();
     }

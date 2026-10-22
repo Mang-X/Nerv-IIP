@@ -1,3 +1,4 @@
+import { NvSearchSelect } from '@nerv-iip/ui'
 import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
@@ -115,11 +116,10 @@ const alertDialogStubs = {
 }
 // 对话框就地渲染（不 teleport），便于填写表单。
 const dialogStubs = {
-  // NvDialog/NvDialogTrigger/NvDialogClose 是 reka-ui 原语再导出，组件名仍是 DialogRoot/DialogTrigger/DialogClose。
+  // NvDialog/NvDialogTrigger/NvDialogClose 是 reka-ui 原语的带 name 浅拷贝别名（barrel 已补 name），
+  // 组件名即 Nv 名，故 stub 键按 Nv 名写。
   NvDialog: { template: '<div><slot /></div>' },
-  DialogRoot: { template: '<div><slot /></div>' },
   NvDialogTrigger: { template: '<div><slot /></div>' },
-  DialogTrigger: { template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogFooter: { template: '<div><slot /></div>' },
@@ -135,9 +135,8 @@ const selectStubs = {
       '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
-  // NvSelectValue 是 reka-ui SelectValue 再导出，组件名仍是 SelectValue。
+  // NvSelectValue 是 reka-ui SelectValue 的带 name 浅拷贝别名，组件名即 NvSelectValue。
   NvSelectValue: { template: '<span />' },
-  SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
@@ -279,7 +278,8 @@ describe('master-data partners page', () => {
 
     expect(wrapper.text()).toContain('信用额度')
     await wrapper.find('#partner-credit-limit').setValue('500000')
-    await wrapper.find('#partner-credit-currency').setValue('CNY')
+    // 币种从 GB/T 12406 常用币种表里选，默认人民币；改选美元后提交三位代码。
+    wrapper.findComponent(NvSearchSelect).vm.$emit('update:modelValue', 'USD')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
@@ -288,7 +288,7 @@ describe('master-data partners page', () => {
       creditCurrencyCode?: string
     }
     expect(body.creditLimit).toBe(500000)
-    expect(body.creditCurrencyCode).toBe('CNY')
+    expect(body.creditCurrencyCode).toBe('USD')
   })
 
   it('编辑客户时清空信用额度会提交 clearCreditLimit', async () => {

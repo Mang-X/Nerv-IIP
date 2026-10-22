@@ -11,6 +11,8 @@ import {
   CalendarClockIcon,
   CalendarCogIcon,
   CalendarRangeIcon,
+  CircleSlashIcon,
+  CoinsIcon,
   CheckCheckIcon,
   ClipboardCheckIcon,
   ClipboardListIcon,
@@ -30,6 +32,7 @@ import {
   LayoutDashboardIcon,
   ListChecksIcon,
   LineChartIcon,
+  MapPinIcon,
   NetworkIcon,
   PackageCheckIcon,
   PackageIcon,
@@ -55,8 +58,9 @@ import {
 import { BUSINESS_DOMAIN_PERMISSIONS, BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 
 /**
- * Business Console navigation model (T-shaped). Source of truth = the capability
- * catalog + current visible scope in docs/architecture/frontend-navigation-map.md.
+ * Business Console navigation model (T-shaped). Current product IA lives in
+ * docs/product/navigation.md; route/page/permission/facade producer navigation lives in
+ * docs/reference/frontend/navigation-map.md. This file is the executable route/menu producer.
  *
  * Only route-ready domains/pages are listed; new large domains must clear the menu
  * upgrade gate before being added here. `requiredPermissions` mirrors the
@@ -152,6 +156,13 @@ export const BUSINESS_DOMAINS: NavDomain[] = [
     to: { path: '/approval' },
     requiredPermissions: [...BUSINESS_DOMAIN_PERMISSIONS.approval],
   },
+  {
+    id: 'ops',
+    title: '集成运维',
+    icon: ShieldAlertIcon,
+    to: { path: '/ops/dead-letters' },
+    requiredPermissions: [...BUSINESS_DOMAIN_PERMISSIONS.ops],
+  },
 ]
 
 /** Domain-local side navigation (the left of the T), per domain id. */
@@ -194,6 +205,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           title: '设备台账',
           icon: CpuIcon,
           to: { path: '/master-data/devices' },
+          requiredPermissions: [P.masterDataResourcesRead],
+        },
+        {
+          title: '工装与模具',
+          icon: WrenchIcon,
+          to: { path: '/master-data/tooling' },
           requiredPermissions: [P.masterDataResourcesRead],
         },
       ],
@@ -449,6 +466,30 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           to: { path: '/erp/finance/cost-candidates' },
           requiredPermissions: [P.erpFinanceRead],
         },
+        {
+          title: '机器制造费用',
+          icon: LayersIcon,
+          to: { path: '/erp/finance/machine-overhead' },
+          requiredPermissions: [P.erpFinanceRead],
+        },
+        {
+          title: '机器制造费用率',
+          icon: CoinsIcon,
+          to: { path: '/erp/finance/machine-overhead-rates' },
+          requiredPermissions: [P.erpFinanceRead],
+        },
+        {
+          title: '工单成本差异',
+          icon: LayersIcon,
+          to: { path: '/erp/finance/cost-variance' },
+          requiredPermissions: [P.erpFinanceRead],
+        },
+        {
+          title: '工作中心费率',
+          icon: CoinsIcon,
+          to: { path: '/erp/finance/work-center-cost-rates' },
+          requiredPermissions: [P.erpFinanceRead],
+        },
       ],
     },
   ],
@@ -498,6 +539,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           requiredPermissions: [P.mesOperationsRead],
         },
         {
+          title: '安灯响应',
+          icon: BellRingIcon,
+          to: { path: '/mes/andon' },
+          requiredPermissions: [P.mesOperationsRead],
+        },
+        {
           title: '在制跟踪',
           icon: ActivityIcon,
           to: { path: '/mes/wip' },
@@ -512,6 +559,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           title: '报工记录',
           icon: ClipboardCheckIcon,
           to: { path: '/mes/production-reports' },
+          requiredPermissions: [P.mesReportingRead],
+        },
+        {
+          title: '生产日报',
+          icon: TrendingUpIcon,
+          to: { path: '/mes/reports' },
           requiredPermissions: [P.mesReportingRead],
         },
         {
@@ -543,15 +596,6 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           to: { path: '/mes/capacity' },
           requiredPermissions: [P.mesCapacityRead],
         },
-        // 规则排程（过渡）暂不进菜单：正式排产入口是「排产工作台」(/scheduling)，
-        // 菜单里同时挂两个排程入口会让现场分不清哪个是权威。页面仍可通过
-        // /mes/schedules 直达用于诊断。恢复时把下面这段还原即可。
-        // {
-        //   title: '规则排程（过渡）',
-        //   icon: CalendarCogIcon,
-        //   to: { path: '/mes/schedules' },
-        //   requiredPermissions: [P.mesSchedulesRead, P.mesSchedulesManage],
-        // },
         {
           title: '班次交接',
           icon: ArrowRightLeftIcon,
@@ -653,6 +697,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           to: { path: '/inventory/counts' },
           requiredPermissions: [P.inventoryCountsManage],
         },
+        {
+          title: '库位',
+          icon: MapPinIcon,
+          to: { path: '/inventory/locations' },
+          requiredPermissions: [P.inventoryLocationsManage],
+        },
       ],
     },
   ],
@@ -695,6 +745,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           to: { path: '/wms/counts' },
           requiredPermissions: [P.wmsCountsRead],
         },
+        {
+          title: '作业池',
+          icon: UsersRoundIcon,
+          to: { path: '/wms/work-pools' },
+          requiredPermissions: [P.wmsWorkPoolsManage],
+        },
       ],
     },
   ],
@@ -717,7 +773,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           title: '打印批次',
           icon: PrinterIcon,
           to: { path: '/barcode/print-batches' },
-          requiredPermissions: [P.barcodeTemplatesManage],
+          requiredPermissions: [P.barcodePrint],
         },
         {
           title: '扫码记录',
@@ -745,7 +801,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           requiredPermissions: [P.iiotAlarmsRead],
         },
         {
-          title: '采集标签',
+          title: '采集点位',
           icon: HashIcon,
           to: { path: '/equipment/telemetry/tags' },
           requiredPermissions: [P.iiotTelemetryRead],
@@ -769,7 +825,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           requiredPermissions: [P.iiotTelemetryRead],
         },
         {
-          title: 'OEE 与可用性',
+          title: 'OEE 趋势与横比',
           icon: GaugeIcon,
           to: { path: '/equipment/telemetry/oee' },
           requiredPermissions: [P.iiotTelemetryRead],
@@ -810,6 +866,12 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           requiredPermissions: [P.maintenanceWorkOrdersRead],
         },
         {
+          title: '停机原因',
+          icon: CircleSlashIcon,
+          to: { path: '/maintenance/downtime-reasons' },
+          requiredPermissions: [P.maintenanceDowntimeReasonsRead],
+        },
+        {
           title: '可靠性指标',
           icon: TrendingUpIcon,
           to: { path: '/maintenance/reliability' },
@@ -832,6 +894,18 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           icon: FileCheck2Icon,
           to: { path: '/approval' },
           requiredPermissions: [P.approvalsRead, P.approvalsManage],
+        },
+      ],
+    },
+  ],
+  ops: [
+    {
+      items: [
+        {
+          title: '集成事件死信',
+          icon: ShieldAlertIcon,
+          to: { path: '/ops/dead-letters' },
+          requiredPermissions: [P.deadLettersRead],
         },
       ],
     },
@@ -859,6 +933,7 @@ export function resolveDomainId(path: string): string {
   if (isUnder(path, '/equipment')) return 'equipment'
   if (isUnder(path, '/maintenance')) return 'equipment'
   if (isUnder(path, '/approval')) return 'approval'
+  if (isUnder(path, '/ops')) return 'ops'
   return 'workbench'
 }
 

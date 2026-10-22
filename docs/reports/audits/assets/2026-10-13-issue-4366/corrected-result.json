@@ -1,0 +1,155 @@
+{
+  "runSha": "9aa493c14028ba5984f4f61da7b47525406d5c63",
+  "checks": [
+    {
+      "check": "exact run SHA",
+      "passed": true
+    },
+    {
+      "check": "six distinct public principals linked to actual active workers",
+      "passed": true
+    },
+    {
+      "check": "operation and handover only eight work-center grants",
+      "passed": true
+    },
+    {
+      "check": "all82 actual UI write receipts have payload response correlation",
+      "passed": true
+    },
+    {
+      "check": "no HTTP5xx UI write",
+      "passed": true
+    },
+    {
+      "check": "before-planning-mps empty",
+      "passed": true
+    },
+    {
+      "check": "before-planning-mrp-runs empty",
+      "passed": true
+    },
+    {
+      "check": "before-planning-suggestions empty",
+      "passed": true
+    },
+    {
+      "check": "before-mes-work-orders empty",
+      "passed": true
+    },
+    {
+      "check": "same MPS Draft Reviewed Released with planner identity",
+      "passed": true
+    },
+    {
+      "check": "MRP Completed MPS input no degradation13 suggestions",
+      "passed": true
+    },
+    {
+      "check": "accepted suggestion creates same WO and same MPS lineage",
+      "passed": true
+    },
+    {
+      "check": "11 exact received quantities and material Ready",
+      "passed": true
+    },
+    {
+      "check": "rejected receive kept first MIR requested0",
+      "passed": true
+    },
+    {
+      "check": "UI operation inspection actual passed and correct SKU",
+      "passed": true
+    },
+    {
+      "check": "actual sort-and-screen closed NCR and MES return",
+      "passed": true
+    },
+    {
+      "check": "real WO OP80 InProgress during handover and after incoming accept",
+      "passed": true
+    },
+    {
+      "check": "two principals accepted same nonempty manual WIP and unfinished snapshots",
+      "passed": true
+    },
+    {
+      "check": "same WO completed2 all8 Completed and produced batch from OP80",
+      "passed": true
+    },
+    {
+      "check": "ERP stop requested null cost notPosted0 same lot",
+      "passed": true
+    },
+    {
+      "check": "actual Posted same FGR same lot inventory2 remaining0",
+      "passed": true
+    },
+    {
+      "check": "cost all8 actual machine settlements available and original period open",
+      "passed": true
+    },
+    {
+      "check": "observed stable delta equals last operation machine overhead",
+      "passed": true
+    },
+    {
+      "check": "public accumulated equals capitalized plus public variance",
+      "passed": true
+    },
+    {
+      "check": "same movement sources actual voucher and public FGR inventory",
+      "passed": true
+    },
+    {
+      "check": "actual voucher debit equals credit",
+      "passed": true
+    },
+    {
+      "check": "actual finished goods debit matches public unit cost and quantity",
+      "passed": true
+    },
+    {
+      "check": "actual variance debit matches public delta and late OP80",
+      "passed": true
+    },
+    {
+      "check": "actual WIP credit and aggregate clearance cover accumulated cost",
+      "passed": true
+    },
+    {
+      "check": "actual inventory valuation matches same public lot quantity and unit cost",
+      "passed": true
+    },
+    {
+      "check": "OP80 machine posting preceded actual final receipt accounting",
+      "passed": true
+    },
+    {
+      "check": "own runtime Stopped cleanup0 and container volume network0",
+      "passed": true
+    },
+    {
+      "check": "own observer exited and exact password scan0",
+      "passed": true
+    }
+  ],
+  "passed": 33,
+  "failed": 0,
+  "archiveFactsVerified": true,
+  "whole4366Accepted": false,
+  "independentReviewRequired": true,
+  "unverified": [
+    "public voucher detail",
+    "public GL WIP balance",
+    "independent DB SELECT"
+  ],
+  "evidencePlane": "archive validation; no new runtime or repository gate",
+  "uiWriteCount": 82,
+  "uiWriteStatuses": {
+    "200": 79,
+    "400": 2,
+    "202": 1
+  },
+  "formalRepositoryGates": "not run; no production changes and no completion candidate"
+}

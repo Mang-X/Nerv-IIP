@@ -151,13 +151,24 @@ public sealed class GatewayAuthorizationTests
     }
 }
 
-internal sealed class FakeGatewayAuthorizationClient(bool allowed) : IGatewayAuthorizationClient
+internal sealed class FakeGatewayAuthorizationClient(Func<GatewayPermissionRequirement, bool> isAllowed)
+    : IGatewayAuthorizationClient
 {
     public GatewayPermissionRequirement? LastRequirement { get; private set; }
 
-    public static FakeGatewayAuthorizationClient Allowed() => new(true);
+    /// <summary>按到达顺序记录每一次授权询问；多码路由靠它证明「每个码都被问过」。</summary>
+    public List<GatewayPermissionRequirement> Requirements { get; } = [];
 
-    public static FakeGatewayAuthorizationClient Forbidden() => new(false);
+    public static FakeGatewayAuthorizationClient Allowed() => new(_ => true);
+
+    public static FakeGatewayAuthorizationClient Forbidden() => new(_ => false);
+
+    /// <summary>只放行点名的权限码，其余一律 403。用于「缺其中一个码就走不通」类断言。</summary>
+    public static FakeGatewayAuthorizationClient AllowOnly(params string[] permissionCodes)
+    {
+        var allowed = permissionCodes.ToHashSet(StringComparer.Ordinal);
+        return new(requirement => allowed.Contains(requirement.PermissionCode));
+    }
 
     public Task<GatewayAuthorizationResult> CheckAsync(
         string bearerToken,
@@ -165,7 +176,8 @@ internal sealed class FakeGatewayAuthorizationClient(bool allowed) : IGatewayAut
         CancellationToken cancellationToken)
     {
         LastRequirement = requirement;
-        return Task.FromResult(allowed
+        Requirements.Add(requirement);
+        return Task.FromResult(isAllowed(requirement)
             ? GatewayAuthorizationResult.Allowed("user-admin", "user", "admin")
             : GatewayAuthorizationResult.Forbidden("forbidden"));
     }

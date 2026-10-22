@@ -202,7 +202,9 @@ oom_kill 1
 
     $runnerText = [IO.File]::ReadAllText($runnerPath)
     Assert-Contract ($runnerText.IndexOf("lib/RuntimeMemoryEvidence.ps1", [StringComparison]::Ordinal) -ge 0) 'The FullChain runner must dot-source the memory evidence library.'
-    Assert-Contract ($runnerText.IndexOf('schemaVersion = 3', [StringComparison]::Ordinal) -ge 0) 'Adding memory evidence to the dependency summary must bump its schema version.'
+    # #3135 把 residual 覆盖段加进同一份 summary，schemaVersion 因此由 3 升到 4；本断言的语义是
+    # 「往 dependency summary 加字段必须升版本」，锚点随之前移，不是放松。
+    Assert-Contract ($runnerText.IndexOf('schemaVersion = 4', [StringComparison]::Ordinal) -ge 0) 'Adding memory evidence to the dependency summary must bump its schema version.'
 
     # --- 变异对照 ---------------------------------------------------------------------------------
 

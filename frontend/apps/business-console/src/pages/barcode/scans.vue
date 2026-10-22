@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import type { BusinessConsoleBarcodeScanRecordItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
+import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import { useBarcodeScans } from '@/composables/useBusinessBarcode'
+import { makeIdempotencyKey } from '@/composables/useBusinessMes'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -27,14 +30,19 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
-import { useRoute } from 'vue-router'
-import { BARCODE_SCAN_WORKFLOW_OPTIONS, barcodeScanWorkflowLabel } from './workflow-options'
+import { RouterLink, useRoute } from 'vue-router'
+import {
+  BARCODE_SCAN_WORKFLOW_OPTIONS,
+  barcodeScanWorkflowLabel,
+  barcodeSourceDocumentKind,
+  barcodeSourceDocumentRoute,
+} from './workflow-options'
 
 definePage({
   meta: {
@@ -82,9 +90,12 @@ const form = reactive({
   sourceDocumentId: '',
   result: 'accepted',
   rejectionReason: '',
+  // 一次补录一把键：失败重试沿用，打开新补录才换新键。键只用网关白名单字符，
+  // 不再把来源单号原样拼进键——中文或带空格的单号会被网关 400 拒掉（同 #3922）。
+  idempotencyKey: makeIdempotencyKey('scan'),
 })
 
-// 设备/终端从设备资产主数据里选（补录与筛选共用一份目录），不再手输编码。
+// 筛选区的设备/终端从设备资产主数据里选，不再手输编码（补录表单用可新增的设备选择器）。
 const { resources: deviceResources, resourcesPending: devicesPending } =
   useBusinessMasterDataResources('device-asset')
 const deviceCatalogOptions = computed(() =>
@@ -96,15 +107,6 @@ const deviceCatalogOptions = computed(() =>
       hint: row.code ?? undefined,
     })),
 )
-function deviceOptionsWith(current: string) {
-  const options = deviceCatalogOptions.value
-  const trimmed = current.trim()
-  if (trimmed && !options.some((option) => option.value === trimmed)) {
-    return [{ value: trimmed, label: trimmed, hint: undefined }, ...options]
-  }
-  return options
-}
-const formDeviceOptions = computed(() => deviceOptionsWith(form.deviceCode))
 // 筛选值是 `string | undefined`（留空=全部），选择器要 `string`，做一层空串代理。
 const deviceFilterValue = computed({
   get: () => filters.deviceCode ?? '',
@@ -112,7 +114,14 @@ const deviceFilterValue = computed({
     filters.deviceCode = value.trim() ? value : undefined
   },
 })
-const filterDeviceOptions = computed(() => deviceOptionsWith(deviceFilterValue.value))
+const filterDeviceOptions = computed(() => {
+  const options = deviceCatalogOptions.value
+  const current = deviceFilterValue.value.trim()
+  if (current && !options.some((option) => option.value === current)) {
+    return [{ value: current, label: current, hint: undefined }, ...options]
+  }
+  return options
+})
 
 const columns: NvDataTableColumn<BusinessConsoleBarcodeScanRecordItem>[] = [
   {
@@ -151,7 +160,7 @@ watch(workflowFilter, (value) => {
   filters.sourceWorkflow = value === 'all' ? undefined : value
 })
 
-const errorMessage = computed(() => formatError(scansError.value))
+const errorMessage = computed(() => inlineErrorMessage(scansError.value))
 const canSubmit = computed(
   () =>
     form.deviceCode.trim().length > 0 &&
@@ -170,9 +179,16 @@ function openRecordDialog() {
     sourceDocumentId: filters.sourceDocumentId ?? '',
     result: 'accepted',
     rejectionReason: '',
+    idempotencyKey: makeIdempotencyKey('scan'),
   })
   showErrors.value = false
   open.value = true
+}
+
+// 换了动作来源，已选的业务对象就不属于这一类了。
+function changeSourceWorkflow(value: unknown) {
+  form.sourceWorkflow = typeof value === 'string' ? value : ''
+  form.sourceDocumentId = ''
 }
 
 async function submitScan() {
@@ -191,7 +207,7 @@ async function submitScan() {
       sourceDocumentId,
       result: form.result.trim(),
       rejectionReason: form.result === 'accepted' ? undefined : form.rejectionReason.trim(),
-      idempotencyKey: `scan-${sourceDocumentId}-${Date.now()}`,
+      idempotencyKey: form.idempotencyKey,
     })
     notifySuccess('扫码审计已记录。')
     open.value = false
@@ -256,10 +272,6 @@ function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''
 }
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 </script>
 
 <template>
@@ -302,15 +314,12 @@ function formatError(error: unknown) {
                   <NvFieldLabel for="barcode-scan-device"
                     >设备/终端 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvEntityPicker
+                  <DirectoryPicker
                     id="barcode-scan-device"
                     v-model="form.deviceCode"
-                    :options="formDeviceOptions"
-                    title="选择设备/终端"
+                    directory-type="equipment"
+                    creatable
                     placeholder="选择设备/终端"
-                    source-text="数据来自基础数据设备台账"
-                    empty-text="暂无设备台账，请先在基础数据维护设备"
-                    :loading="devicesPending"
                     aria-label="设备/终端"
                     clearable
                   />
@@ -342,20 +351,32 @@ function formatError(error: unknown) {
                   <NvFieldLabel for="barcode-scan-workflow"
                     >动作来源 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
-                    id="barcode-scan-workflow"
-                    v-model="form.sourceWorkflow"
-                    autocomplete="off"
-                  />
+                  <NvSelect
+                    :model-value="form.sourceWorkflow"
+                    @update:model-value="changeSourceWorkflow"
+                  >
+                    <NvSelectTrigger id="barcode-scan-workflow"
+                      ><NvSelectValue placeholder="选择动作来源"
+                    /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem
+                        v-for="option in WORKFLOW_OPTIONS"
+                        :key="option.value"
+                        :value="option.value"
+                        >{{ option.label }}</NvSelectItem
+                      >
+                    </NvSelectContent>
+                  </NvSelect>
                 </NvField>
                 <NvField :data-invalid="showErrors && !form.sourceDocumentId.trim()">
                   <NvFieldLabel for="barcode-scan-source-id"
                     >业务对象 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
+                  <SourceDocumentPicker
                     id="barcode-scan-source-id"
                     v-model="form.sourceDocumentId"
-                    autocomplete="off"
+                    :kind="barcodeSourceDocumentKind(form.sourceWorkflow)"
+                    :invalid="showErrors && !form.sourceDocumentId.trim()"
                   />
                 </NvField>
                 <NvField
@@ -375,7 +396,7 @@ function formatError(error: unknown) {
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
                 <NvButton type="submit" :disabled="recordScanPending">
-                  <Spinner v-if="recordScanPending" aria-hidden="true" />
+                  <NvSpinner v-if="recordScanPending" aria-hidden="true" />
                   记录审计
                 </NvButton>
               </NvDialogFooter>
@@ -413,7 +434,6 @@ function formatError(error: unknown) {
           class="h-9 w-40"
           title="选择设备/终端"
           placeholder="全部终端"
-          source-text="数据来自基础数据设备台账"
           empty-text="暂无设备台账，请先在基础数据维护设备"
           :loading="devicesPending"
           aria-label="终端"
@@ -441,6 +461,16 @@ function formatError(error: unknown) {
     >
       <template #cell-parsed="{ row }">
         <span class="text-sm">{{ parsedBarcodeSummary(row.scannedValue) }}</span>
+      </template>
+      <template #cell-sourceDocumentId="{ row }">
+        <RouterLink
+          v-if="barcodeSourceDocumentRoute(row.sourceWorkflow, row.sourceDocumentId)"
+          class="underline underline-offset-2"
+          :to="barcodeSourceDocumentRoute(row.sourceWorkflow, row.sourceDocumentId)!"
+        >
+          {{ row.sourceDocumentId }}
+        </RouterLink>
+        <span v-else>{{ row.sourceDocumentId ?? '无' }}</span>
       </template>
       <template #cell-sourceWorkflow="{ row }">
         {{ workflowLabel(row.sourceWorkflow) }}

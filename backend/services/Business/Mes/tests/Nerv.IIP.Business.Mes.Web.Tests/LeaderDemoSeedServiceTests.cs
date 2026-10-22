@@ -94,6 +94,7 @@ public sealed class LeaderDemoSeedServiceTests
             new DateTimeOffset(2026, 8, 15, 0, 0, 0, TimeSpan.Zero), "pcs");
         var operations = existing.Release(
             new DateTimeOffset(2026, 7, 20, 0, 0, 0, TimeSpan.Zero),
+            WorkOrderReleaseFactTime.NotLaterThan(new DateTimeOffset(2026, 7, 20, 0, 0, 0, TimeSpan.Zero), null),
             [new RoutingStepSnapshot("OP-DEMO-Q01-010", 10, "WC-CNC-DEMO", [], TimeSpan.FromMinutes(30), true, "OP-CNC-DEMO")]);
         db.WorkOrders.Add(existing);
         db.OperationTasks.AddRange(operations);

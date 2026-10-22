@@ -47,7 +47,7 @@ describe('useNonIdempotentWriteResult', () => {
 
     expect(write.canRetry.value).toBe(true)
     expect(write.errorTitle.value).toBe('提交结果未知')
-    expect(write.errorDescription.value).toContain('相同操作编号')
+    expect(write.errorDescription.value).toContain('可直接重试，不会重复')
   })
 
   it('HTTP 5xx is indeterminate at the PDA edge; only a persisted idempotency key makes retry safe', async () => {
@@ -70,7 +70,7 @@ describe('useNonIdempotentWriteResult', () => {
     })
     expect(idempotent.errorTitle.value).toBe('提交结果未知')
     expect(idempotent.canRetry.value).toBe(true)
-    expect(idempotent.errorDescription.value).toContain('相同操作编号')
+    expect(idempotent.errorDescription.value).toContain('可直接重试，不会重复')
   })
 
   it('OFFLINE pre-check (never dispatched) → safe to retry', async () => {

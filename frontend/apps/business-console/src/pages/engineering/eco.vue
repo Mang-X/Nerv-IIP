@@ -45,7 +45,7 @@ import {
   NvSheetDescription,
   NvSheetHeader,
   NvSheetTitle,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -115,12 +115,26 @@ const productionVersionOptions = computed(() =>
       ...(row.isDefault ? { hint: '默认版本' } : {}),
     })),
 )
+// 生产版本读不到名称（无权限、清单截断或仍在加载）时的中性说法，不回吐版本主键。
+const UNKNOWN_VERSION_LABEL = '暂无法显示版本名称'
+/**
+ * 查看抽屉里受影响版本的说法。生产版本存的是版本主键，换成「物料 · 生效日」再上屏；
+ * 其余三类是用户手工录入的版本标识，原样显示。
+ */
+function affectedVersionLabel(kind?: string | null, versionId?: string | null) {
+  if (!versionId) return '—'
+  if (kind !== 'ProductionVersion') return versionId
+  return (
+    productionVersionOptions.value.find((option) => option.value === versionId)?.label ??
+    UNKNOWN_VERSION_LABEL
+  )
+}
 function affectedVersionOptions(kind: string, current: string) {
   if (kind !== 'ProductionVersion') return []
   const options = productionVersionOptions.value
   const trimmed = current.trim()
   if (trimmed && !options.some((option) => option.value === trimmed)) {
-    return [{ value: trimmed, label: trimmed }, ...options]
+    return [{ value: trimmed, label: UNKNOWN_VERSION_LABEL }, ...options]
   }
   return options
 }
@@ -194,7 +208,7 @@ const ecoCells = computed<NvMetricStripCell[]>(() => [
   },
 ])
 
-const listErrorMessage = computed(() => formatError(changesError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(changesError.value))
 
 const columns: NvDataTableColumn<BusinessConsoleEngineeringChangeItem>[] = [
   { key: 'changeNumber', header: '变更号', cellClass: 'font-medium' },
@@ -213,8 +227,7 @@ const impactColumns: NvDataTableColumn<BusinessConsoleEngineeringChangeImpactNod
 ]
 const riskColumns: NvDataTableColumn<BusinessConsoleEngineeringChangeImpactRisk>[] = [
   { key: 'severity', header: '级别', width: 'w-24' },
-  { key: 'message', header: '风险提示' },
-  { key: 'relatedVersionId', header: '关联版本', width: 'w-40' },
+  { key: 'message', header: '风险提示', accessor: (row) => riskMessage(row) },
 ]
 
 // ── 发布变更向导（一步发布，非多步审批）────────────────────────
@@ -362,10 +375,6 @@ async function openView(row: BusinessConsoleEngineeringChangeItem) {
   }
 }
 
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
-
 function impactNodeTypeLabel(type?: string | null) {
   const labels: Record<string, string> = {
     'engineering-bom': 'EBOM',
@@ -395,6 +404,21 @@ function impactLevelLabel(level?: string | null) {
     candidate: '候选',
   }
   return labels[(level ?? '').toLowerCase()] ?? (level || '候选')
+}
+
+function riskSeverityLabel(severity?: string | null) {
+  const labels: Record<string, string> = { critical: '严重', error: '严重', warning: '警告' }
+  return labels[(severity ?? '').toLowerCase()] ?? '提示'
+}
+
+// 影响预览的风险说明有三条是英文原文，按风险码给中文说法；其余沿用服务端给的中文。
+const RISK_MESSAGES: Record<string, string> = {
+  'unsupported-affected-version': '该类受影响版本暂不支持影响预览。',
+  'invalid-production-version-id': '生产版本标识无效，请重新选择生产版本。',
+  'production-version-not-found': '找不到该生产版本，请确认版本是否存在。',
+}
+function riskMessage(risk: BusinessConsoleEngineeringChangeImpactRisk) {
+  return RISK_MESSAGES[risk.code ?? ''] ?? risk.message ?? '—'
 }
 
 function riskTone(severity?: string | null): StatusTone {
@@ -440,7 +464,7 @@ function riskTone(severity?: string | null): StatusTone {
             </NvDialogHeader>
             <form class="grid gap-5" @submit.prevent="submitForm">
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-                请完整填写带 * 的必填项，并确保至少一条受影响版本填好对象种类与版本 ID。
+                请完整填写带 * 的必填项，并确保至少一条受影响版本填好对象种类与版本。
               </p>
               <p
                 v-if="showErrors && !changeNumberValid"
@@ -545,11 +569,11 @@ function riskTone(severity?: string | null): StatusTone {
                       :options="affectedVersionOptions(row.versionKind, row.versionId)"
                       title="选择生产版本"
                       placeholder="选择生产版本"
-                      source-text="数据来自工程数据生产版本"
                       empty-text="暂无生产版本，请先在工程数据维护"
                       :loading="productionVersionsPending"
                       aria-label="受影响版本"
                       clearable
+                      :show-code="false"
                     />
                     <NvInput
                       v-else
@@ -580,7 +604,7 @@ function riskTone(severity?: string | null): StatusTone {
                     :disabled="previewPending"
                     @click="previewFormImpact"
                   >
-                    <Spinner v-if="previewPending" aria-hidden="true" />
+                    <NvSpinner v-if="previewPending" aria-hidden="true" />
                     <NetworkIcon v-else aria-hidden="true" />
                     预览影响
                   </NvButton>
@@ -628,18 +652,18 @@ function riskTone(severity?: string | null): StatusTone {
                   empty-message="没有风险提示。"
                 >
                   <template #cell-severity="{ row }">
-                    <NvStatusBadge :label="row.severity || 'info'" :tone="riskTone(row.severity)" />
+                    <NvStatusBadge
+                      :label="riskSeverityLabel(row.severity)"
+                      :tone="riskTone(row.severity)"
+                    />
                   </template>
-                  <template #cell-relatedVersionId="{ row }">{{
-                    row.relatedVersionId || '—'
-                  }}</template>
                 </NvDataTable>
               </div>
 
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="releasePending">
-                  <Spinner v-if="releasePending" aria-hidden="true" />
+                  <NvSpinner v-if="releasePending" aria-hidden="true" />
                   发布变更
                 </NvButton>
               </NvDialogFooter>
@@ -741,7 +765,7 @@ function riskTone(severity?: string | null): StatusTone {
             v-if="detailPending"
             class="flex items-center gap-2 py-4 text-sm text-muted-foreground"
           >
-            <Spinner aria-hidden="true" />
+            <NvSpinner aria-hidden="true" />
             加载受影响版本…
           </div>
           <div v-else-if="viewAffected.length" class="overflow-hidden rounded-md border">
@@ -749,13 +773,15 @@ function riskTone(severity?: string | null): StatusTone {
               <thead class="bg-muted/40 text-muted-foreground">
                 <tr>
                   <th class="px-3 py-2 text-left font-medium">对象种类</th>
-                  <th class="px-3 py-2 text-left font-medium">版本 ID</th>
+                  <th class="px-3 py-2 text-left font-medium">受影响版本</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="(row, i) in viewAffected" :key="i" class="border-t">
                   <td class="px-3 py-2">{{ versionKindLabel(row.versionKind) }}</td>
-                  <td class="px-3 py-2 break-all">{{ row.versionId || '—' }}</td>
+                  <td class="px-3 py-2 break-all">
+                    {{ affectedVersionLabel(row.versionKind, row.versionId) }}
+                  </td>
                 </tr>
               </tbody>
             </table>

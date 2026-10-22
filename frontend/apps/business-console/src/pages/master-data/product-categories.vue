@@ -36,7 +36,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -313,7 +313,7 @@ async function confirmArchive() {
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="createPending || updatePending">
-                  <Spinner v-if="createPending || updatePending" aria-hidden="true" />
+                  <NvSpinner v-if="createPending || updatePending" aria-hidden="true" />
                   {{ editingCode ? '保存修改' : '创建分类' }}
                 </NvButton>
               </NvDialogFooter>
@@ -400,7 +400,7 @@ async function confirmArchive() {
             :disabled="!canConfirmArchive"
             @click="confirmArchive"
           >
-            <Spinner v-if="archivePending" aria-hidden="true" />
+            <NvSpinner v-if="archivePending" aria-hidden="true" />
             确认停用
           </NvButton>
         </NvAlertDialogFooter>

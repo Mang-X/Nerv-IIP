@@ -1,0 +1,121 @@
+# 设备维护 模块产品/业务设计
+
+> 业务域:设备维护(/maintenance) + 设备运行详情维护上下文(/equipment/{deviceAssetId}) · 前端落点:`frontend/apps/business-console/src/pages/maintenance` + `frontend/apps/business-console/src/pages/equipment/[deviceAssetId].vue`
+> 后端:BusinessMaintenance(`backend/services/Business/Maintenance`)· facade:BusinessGateway `/api/business-console/v1/maintenance/**`
+> 关联:MAN-631/#1168(工单执行生命周期 M2)、#794(运行小时指标 + 保养计划触发模式)、#945(保养计划触发配置编辑)、#688/#884(IIoT 运行小时聚合读面)、#416(设备可靠性闭环)
+
+## 1. 这页给谁用、解决什么
+
+- **设备保全班 / 维修工**:登记周期保养计划、处理维护工单、记录点检、领用备件。
+- **设备工程师 / 主管**:看设备可靠性(MTBF/MTTR)、可用窗口、累计运行小时与到期趋势,决定保养节奏。
+
+主操作:**登记或调整保养计划(选触发模式)→ 到期批量开单 → 维修/点检/备件闭环 → 看可靠性与运行小时**。
+
+## 2. 信息架构(IA)
+
+- `/maintenance/plans` 保养计划:列表(触发模式 / 保养周期 / 下次到期)+ 新建/编辑计划 + 生成到期工单。
+- `/maintenance/work-orders`、`/inspections`、`/spare-parts`、`/reliability`、`/availability`:维护闭环各正式页面。`/reliability` 与 `/availability` 顶部用车间→产线→设备级联范围选择(共用 `useEquipmentScopeSelection`,主数据目录驱动):可靠性指标按单台设备计算,未下钻时默认显示范围设备总览引导下钻;可用窗口接口天然吃设备编号集合,未下钻时直接以范围内设备全集(上限 50 台,超出如实提示截断)做真实范围聚合。
+- `/maintenance/downtime-reasons` 停机原因(#3855):停机原因目录的维护页,列表 + 侧滑抽屉新建/编辑 + 确认删除。新环境由 Maintenance 产品基线预置 12 条标准原因(见 §6),租户可增改删;被维修工单引用过的原因不能删除;新建时编码已存在会被拒绝(提示换编码,不覆盖、不误选原有原因)。
+  - 归属判断:停机原因是 **Maintenance 的码表**,不是主数据字典。理由:①ADR 0029 已把 `downtime-reason` 定为 Maintenance 单一权威,MES 停机、PDA 报修只经可搜索目录读取;②两条完工路径与 v2 建单都按这份目录硬校验原因码,校验与数据同在一个服务才不会跨服务漂移;③每条原因带 OEE 损失类别,属于设备效率口径,由维保域维护。分类与损失类别的受控码也归 Maintenance(`DowntimeReasonVocabulary`),由它的写命令校验;控制台只按码显示中文。
+- `/equipment/{deviceAssetId}` 设备详情「维护与可靠性上下文」:按当前设备收敛的工单/计划/点检/备件/可用窗口 + **运行小时指标卡**(累计运行小时、距下次保养还需 X 小时)。
+
+设备监控 → 维护保养侧栏新增「停机原因」一项(#3855),需 `business.maintenance.downtime-reasons.read`。
+
+## 3. UX 要点
+
+### 3.1 保养计划触发模式(#794)
+新建/编辑保养计划共用表单,用**分段控件**(NvTabs)选触发模式,三档语义与后端领域模型一一对应:
+
+| 模式 | 语义 | 提交字段 | 到期口径 |
+| --- | --- | --- | --- |
+| 日历周期 | 按日期到期 | `interval`=保养周期,无 `runtimeHourInterval` | 到期日 |
+| 运行小时 | 按累计运行小时到期,**不受日历影响** | `interval` 留空,`runtimeHourInterval`=触发小时数 | 运行小时剩余 |
+| 两者组合 | **两条独立触发线**(日历 + 运行小时),各自维护独立到期游标、各自到期时开单 | `interval` + `runtimeHourInterval` 都填 | 前端展示以运行小时剩余为主,读取失败/暂无样本时回落日历到期日 |
+
+- 运行小时数提供常用值快捷按钮(500 / 1000 / 2000)+ 手动数字输入;**必填**校验为字段级(红框 + 字段级错误)+ 底部汇总,校验不过不发请求。
+- 界面文案用业务语言(如「每运行满 1000 小时保养一次」),不暴露 ISO duration(P30D)或「后端」等实现术语。
+- 编辑从计划行操作进入,按存储事实回填日历/运行小时/两者三态;计划编号、设备和起始日期只读,本操作只调整未来触发配置。模式切换会显式提交 `null` 清除被移除的触发,成功后刷新当前范围列表并关闭对话框,失败时保留输入并以 toast 反馈。
+
+新建计划的起始日期和生成到期工单的业务日期使用统一日期选择器,已选日期随当前语言显示,请求仍传递 ISO 日历日期。两处均可清空,提交空值时沿用当天默认日期;编辑计划的起始日期仍只读带出。
+
+### 3.2 列表展示
+- **触发模式列**:由存储事实区分三态——有日历 `interval` 无运行小时 = 日历周期;无 `interval` 有运行小时 = 运行小时;两者皆有 = 两者组合。
+- **下次到期列**:日历型显下次到期日;运行小时型显**剩余小时**(前端按各计划自己的起算窗口经 `queryBusinessConsoleTelemetryRuntimeHours` 派生;遥测**读取失败**显「读取失败」、真实**无运行样本**显「暂无样本」——两者分开不混淆)。
+
+### 3.3 设备详情运行小时指标(#794 消费 #884)
+- **累计运行小时**卡:窗口聚合(锚定运行小时计划起算日,无则近 90 天),明确是「窗口内累计运行事实」非终身表底;无运行样本时诚实显「无样本」。
+- **距下次保养还需 X 小时**卡:前端逐计划派生剩余小时;设备有多个运行小时计划时取**剩余最小**(最紧迫)者,不按创建顺序;剩余未知(无样本/读取失败)的计划排在有剩余之后,读取失败与无样本在卡片上分别显示。
+
+### 3.3.1 设备采集点与控制候选
+
+设备详情的「采集点位」抽屉维护点位名称、远程写入许可与值域。设备控制的单点、多参数候选，以及报警规则登记与历史趋势的点位候选，显示已登记的采集点名称；缺少名称时显示「—」，不以连接器点位编码补位。控制提交、报警规则关联与时序查询仍使用原点位编码，单位、当前值和近期平均值沿原点位读取。
+
+### 3.4 工单执行生命周期(MAN-631)
+
+- 标准路径为`待接单(Open) → 已接单(Accepted) → 处理中(InProgress) → 已完成(Completed) → 已验证(Verified) → 已关闭(Closed)`；处理中可进入`暂停(Paused)`或`待料(WaitingForParts)`后恢复，完成前可取消。
+- 分派与每个动作都带期望版本、业务原因和幂等键；详情的可用动作由服务端按当前权威状态返回，前端不得自行猜测越级操作。
+- 工单详情返回追加式生命周期审计，显示动作主体、当时的技师/班组、原因、前后状态、版本和权威时间。既有一步完工 facade 保留，供已上线调用兼容迁移。
+- “我的工单”只在显式`self`范围下成立，并由 Gateway 从认证 principal 派生；班组队列使用显式`team`范围。客户端不能提交 actor 或借用未授权范围。
+- PC 新建维护工单明确选择“不登记设备不可用”或“登记设备不可用”。登记时从当前业务范围的权威停机原因目录检索选择，原因码原样提交 v2；不登记提交 null。目录加载、无权限、读取失败与空结果分别反馈，不回退自由文本或默认码；读取失败保留已选意图，用户可重试或明确改选不登记。切换组织/环境清除旧原因，登记模式下须重新选择才能提交。
+- PDA 故障报修的“设备占用原因”改为从本组织/环境的权威停机原因目录中选择，提交 v2 `assetUnavailableReasonCode`（目录码原值，不 trim、不改大小写）；用户可明确选择“不登记设备不可用”，该路径提交 null。目录读取失败、无权限、词表不可用或组织尚未配置时分别给出可归因的错误态，界面上不再提供自由文本输入，也不使用默认原因码——此时只能提交不登记设备停机的报修。
+- 完工时登记的停机原因和停机时长是维修结果事实，不替代建单时的设备占用登记。完工停机原因与建单同一份权威目录检索选择，不预填（#3855；此前写死的三个码不在目录里，完工必然被拒）。
+- 建单“设备占用原因”与完工“停机原因”旁提供就地新增（持 `business.maintenance.work-orders.manage` 时），在侧滑抽屉里建好后自动选中，不离开当前表单。
+
+### 3.4.1 维修工单正式单号(#3852)
+
+- 每张维修工单都有编码规则分配的正式单号 `MWO-yyyyMMdd-NNNNNN`(规则 `maintenance-work-order`,前缀与生产工单 `WO` 区分),四个开单入口(手工/报警、计划到期、点检不合格)统一分配;工单列表、完工抽屉、备件需求、设备详情、PDA 工单与可用窗口「关联业务」都显示单号,工单列表关键字可按单号检索。
+- 跨域引用存单号:成本候选的「维护成本」来源单据、质量检验的维修来源单据提交的都是单号;维修备件出库的库存流水来源单据也是单号。
+- 兼容口径:#3827 之后、本次之前登记的成本候选里,维修来源单据可能是前端从工单 ID 截出的 `WO-XXXXXXXX`,这些是可重造的本地数据,不迁移、不反查;早期质量检验与库存流水里存的工单 ID(GUID)不上屏,显示为「维修工单」。
+
+### 3.5 备件领用库位(#3902)
+
+- 维修工单归属设备所在工厂;备件从该工厂已登记的库位领出。完工换件行与「新建备件需求」都显示领出工厂(由设备主档带出,只读),每条备件必须选择领出库位(库位选择器只列该工厂的库位,有库位管理权限时可就地新建)。
+- 设备主档没有所属工厂时如实提示,不猜工厂,也不能提交备件。
+- 出库请求按行上的工厂 + 库位扣减库存,归属类型为企业自有(`company`);Inventory 拒收未登记库位。库存过账失败目前没有回传维保(另行登记),界面不显示过账结果。
+
+### 3.6 预计恢复时间
+
+- PC 新建工单登记设备不可用时，可选填预计恢复时间；列表展示服务端保存的预测。现有工单从行内“更新预计恢复时间”打开抽屉，按本机时区填写或留空清除，提交转换为 UTC。
+- 更新沿用工单管理权限、当前授权作业范围与指派技师限制；维修作业范围仅列出 Maintenance 支持的组织、本人及团队范围；有多个合法范围时，在预计恢复抽屉内选择维修作业范围，优先预选工单所属团队；已完成的工单不可改。服务端拒绝未登记设备不可用的工单，错误通过 toast 呈现并保留输入。
+- 保存携带工单版本和稳定幂等键，确认权威回执后读回详情并刷新列表。预测与实际停机、实际恢复分开，不触发完工或恢复。
+
+维修工单列表与完工上下文的开单时间统一按本机时区显示为 `YYYY-MM-DD HH:mm`，不随浏览器语言改变日期时间格式；空值显示「—」。
+
+## 4. 角色与权限
+- 读:`business.maintenance.plans.read` / `business.maintenance.work-orders.read` / `business.iiot.telemetry.read`(运行小时卡)。
+- 写:`business.maintenance.plans.manage`(建计划 / 编辑触发配置 / 生成到期工单)/ `business.maintenance.work-orders.manage`(含停机原因目录的新增、修改、删除,不单设权限码)。
+- 停机原因目录读:`business.maintenance.downtime-reasons.read`(ADR 0029)。
+- facade 层按 operation 强制权限;运行小时读面(`telemetry/runtime-hours`)按 IIoT telemetry read 门控。
+
+## 5. 数据来源(facade 代码事实)
+- 保养计划:`listBusinessConsoleMaintenancePlans`(纯 DB 投影,支持 `deviceAssetId` 过滤;返回 `interval`/`nextDueOn`/`runtimeHourInterval`/`nextDueRuntimeHours`/`lastGeneratedRuntimeHours`,**不含**剩余小时——剩余由前端派生)、`createBusinessConsoleMaintenancePlan`(`interval` 可空、`runtimeHourInterval` 可选,二选一或都填)、`updateBusinessConsoleMaintenancePlan`(仅更新触发配置,转发到 BusinessMaintenance `PUT /api/business/v1/maintenance/plans/{planId}`)、`generateDueBusinessConsoleMaintenanceWorkOrders`。
+- 运行小时:`queryBusinessConsoleTelemetryRuntimeHours`(窗口聚合 `totalRuntimeHours` / `hasRuntimeSamples` / 日粒度)。
+- 工单:`createBusinessConsoleMaintenanceWorkOrderV2`以`assetUnavailableReasonCode`的 null 或目录码区分“只建工单”和“同时登记设备占用”，目录读取使用`listBusinessConsoleSearchableDirectory`的`downtime-reason`；`listBusinessConsoleMaintenanceWorkOrders`在分页前按`status`、`deviceAssetId`、`keyword`和受信任的 technician/team 范围过滤；`getBusinessConsoleMaintenanceWorkOrder`返回详情、`allowedActions`与生命周期；`assignBusinessConsoleMaintenanceWorkOrder`和`transitionBusinessConsoleMaintenanceWorkOrder`完成分派及状态动作。可靠性 / 点检 / 备件 / 可用窗口继续使用各自 facade，设备详情按返回设备字段客户端收敛。
+- 停机原因:读走 `listBusinessConsoleSearchableDirectory` 的 `downtime-reason`;写走 `createBusinessConsoleMaintenanceDowntimeReason` / `updateBusinessConsoleMaintenanceDowntimeReason` / `deleteBusinessConsoleMaintenanceDowntimeReason`,分类与损失类别只收受控码。
+- 备件:`createBusinessConsoleMaintenanceSparePart` 与完工请求的备件行携带 `siteCode` + `locationCode`,维保服务端必填;`listBusinessConsoleMaintenanceSpareParts` 回显领出工厂与库位(早期行为空)。
+
+## 6. 领域口径(代码事实)
+- `MaintenancePlan.Interval` **可空**:运行小时型计划无日历触发、无 `NextDueOn`,只在累计运行小时越过阈值时开单(PM 调度器 `generate-due`)。一个计划必须至少有一个触发(日历 / 运行小时 / 两者)。
+- **组合计划的两条触发线相互独立**(沿用 #416 设计):`generate-due` 对每个计划先按日历游标 `ConsumeDueDates` 生成 `date:*` 工单,再按运行小时游标 `ConsumeRuntimeDue` 生成 `runtime:*` 工单,两个游标各自推进、各自幂等键。因此组合计划若日历线与运行小时线在同一轮同时到期,会分别开出日历型与运行小时型工单(不是合并成一单);这是「日历 PM + 用量 PM 两类保养各自成立」的口径,若业务需要「同轮只开一单」的单 occurrence 语义,属 #416 域模型调整,不在本 PR 范围。
+- 运行小时累计口径:前端按各计划 `[plan.StartsOn, now]` 窗口调 `queryBusinessConsoleTelemetryRuntimeHours` 得 `totalRuntimeHours`,`剩余 = nextDueRuntimeHours − totalRuntimeHours`(负数截 0);无真实样本时为空。**列表查询本身是纯 DB 投影,不逐计划 fan-out 到 IndustrialTelemetry**——曾把该派生放服务端 list 查询逐计划调 provider,导致 DbContext 并发/超时使 list 500,故改前端派生(每页至多 6 路并发、非阻塞)。
+- 剩余小时按**各计划各自起算窗口**计算,不同计划不可共用一个窗口直接比较。阈值推进后(生成到期工单)前端按新 `nextDueRuntimeHours` 重算,不显旧值。
+- 编辑触发配置保持已生成工单与历史水位不变。未改变的规范化触发保留当前到期游标;移除触发只清空对应下一到期值;新增或改变日历触发按 `StartsOn` 或 `LastGeneratedOn + 新周期` 重算,新增或改变运行小时触发按 `LastGeneratedRuntimeHours + 新阈值` 重算。完整候选配置先校验再原子更新,至少保留一个触发。
+
+## 7. 分期
+- #794 已交付:触发模式三档 + 运行小时数快捷值 + 字段级校验;列表三态 + 剩余小时;设备详情两卡。
+- #945 已交付:领域触发配置更新、租户范围内 PUT 端点、BusinessGateway exposed facade、OpenAPI/api-client、列表行编辑入口、三态预填与 update mutation。至此 #794 要求的「创建/编辑表单」编辑缺口已关闭。
+- MAN-631/#1168 已交付后端 M2：多状态生命周期、分派、self/team 队列、并发与幂等、详情可用动作和审计历史，以及 BusinessGateway 两跳契约；本项不新增 Business Console 页面。
+- 后续:运行小时趋势/预测、按到期紧迫度排序的计划工作台。
+
+## 8. 已收口能力与剩余验收
+- **保养计划编辑(#945)**:BusinessMaintenance 已提供 `updateMaintenancePlan` 命令/PUT 端点,并按组织、环境和计划 ID 收敛写范围;BusinessGateway 以 `business.maintenance.plans.manage` 暴露 `updateBusinessConsoleMaintenancePlan`,facade coverage 声明为 `exposed`,OpenAPI 与生成客户端已同步。Business Console 共用新建/编辑表单完成三态预填、字段级校验、显式清除旧触发、刷新与反馈闭环。#794 的编辑链路缺口不再是后端缺口。
+- 运行小时阈值触发的真机验收需连接器持续上报设备运行状态样本(冷启动 dev 无历史样本时运行小时=0)。Maintenance Web/命令测试以 fake `FixedAssetRuntimeHoursProvider` 覆盖阈值计算与工单生成分支,不等同于真实跨服务验收;IndustrialTelemetry 遥测事实 → 运行小时阈值 → Maintenance 工单的真实 PostgreSQL + Redis acceptance 由 `MaintenanceRuntimeHoursPostgresRedisAcceptanceTests` 覆盖，通过 `.\nerv.ps1 fullstack run -Scenario man-440` 在受治理的一次性 session 中运行；该验收确认 Maintenance Redis CAP consumer group 就绪，由 session-owned PostgreSQL seed 证明低于阈值不生成、追加运行状态跨阈值后由真实 scheduler 自动生成计划工单。
+
+## 9. 验收
+- 三档触发模式可切换,运行小时模式字段/快捷值/字段级校验齐;运行小时型计划提交 `interval` 为空(真纯运行小时,起始日不产生日历工单)。
+- 已存在计划可从列表进入编辑,正确预填日历/运行小时/两者配置;切换模式只更新未来触发配置,移除的触发显式清空,保存成功后列表即时刷新,校验失败不发请求。
+- 列表三态可辨、运行小时型显剩余小时;设备详情累计运行小时 + 距下次保养(多计划取最紧迫)正确,按设备范围查询不受全局分页影响。
+- PC 新建维护工单选中设备占用原因时走 v2，请求携带原值`assetUnavailableReasonCode`；明确不登记提交 null。相同创建意图重试保留幂等键，改变原因形成新意图；成功后保留权威回执确认与列表刷新。
+- PDA 报修选中停机原因时，请求走`createBusinessConsoleMaintenanceWorkOrderV2`并携带原值`assetUnavailableReasonCode`；不选原因时该字段为 null；目录不可用时不得回退自由文本或默认码。
+- 门禁:前端 typecheck/test/build + touched fmt;后端 Maintenance + BusinessGateway + FacadeCoverage 全绿。
+- 停机原因产品基线(#3855,`Maintenance:Seed:Enabled` 默认开启、只补缺,目标租户读 `Iam:Seed:*`):按 TPM 六大损失 / 国内 OEE 实践分类——设备故障(机械、电气、刀具/工装)、换型调整、工艺参数异常、质量停机、缺料待工、缺人待岗、停水停电停气计入可用率损失;小停机/空转计入性能损失;计划保养、无生产计划是计划停机,不计入损失。与世界观演示种子同名的 8 个码沿用同一码。

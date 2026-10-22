@@ -46,6 +46,7 @@ public enum BusinessConsoleMaintenanceWorkOrderAction
     Verify = 6,
     Close = 7,
     Cancel = 8,
+    UpdateExpectedRestore = 9,
 }
 
 public sealed record BusinessConsoleAssignMaintenanceWorkOrderRequest(
@@ -75,7 +76,8 @@ public sealed record BusinessConsoleTransitionMaintenanceWorkOrderRequest(
     int? ActualLaborMinutes = null,
     decimal? SparePartCostAmount = null,
     decimal? ExternalServiceCostAmount = null,
-    string? CostCurrencyCode = null);
+    string? CostCurrencyCode = null,
+    DateTimeOffset? ExpectedRestoreAtUtc = null);
 
 public sealed record BusinessConsoleMaintenanceWorkOrderActionResponse(
     string WorkOrderId,
@@ -84,10 +86,13 @@ public sealed record BusinessConsoleMaintenanceWorkOrderActionResponse(
     DateTimeOffset ChangedAtUtc,
     BusinessConsoleOperationReceipt OperationReceipt);
 
+/// <summary>备件领用行：<c>SiteCode</c>/<c>LocationCode</c> 为领出工厂与已登记库位（#3902），维保服务端必填。</summary>
 public sealed record BusinessConsoleMaintenanceSparePartInput(
     string SkuCode,
     decimal Quantity,
-    string? UomCode);
+    string? UomCode,
+    string? SiteCode = null,
+    string? LocationCode = null);
 
 public sealed record BusinessConsoleCreateMaintenanceWorkOrderRequest(
     string OrganizationId,
@@ -99,9 +104,33 @@ public sealed record BusinessConsoleCreateMaintenanceWorkOrderRequest(
     string IdempotencyKey,
     string? AssetUnavailableReason = null,
     string? AssignedTechnicianUserId = null,
-    int? EstimatedLaborMinutes = null);
+    int? EstimatedLaborMinutes = null,
+    DateTimeOffset? ExpectedRestoreAtUtc = null);
 
 public sealed record BusinessConsoleCreateMaintenanceWorkOrderResponse(
+    string WorkOrderId,
+    BusinessConsoleOperationReceipt? OperationReceipt = null);
+
+/// <summary>
+/// v2 创建工单请求（#2969 / spec #2964）：与 v1 是彼此独立的 wire 契约，只把自由文本
+/// <c>AssetUnavailableReason</c> 换成目录码 <see cref="AssetUnavailableReasonCode"/>。
+/// Gateway 只做长度与必填的传输层校验，不 trim、不改大小写、不校验目录成员——
+/// 目录精确命中由 Maintenance v2 写边界承担。
+/// </summary>
+public sealed record BusinessConsoleCreateMaintenanceWorkOrderV2Request(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string Priority,
+    string? SourceAlarmId,
+    string OpenedBy,
+    string IdempotencyKey,
+    string? AssetUnavailableReasonCode = null,
+    string? AssignedTechnicianUserId = null,
+    int? EstimatedLaborMinutes = null,
+    DateTimeOffset? ExpectedRestoreAtUtc = null);
+
+public sealed record BusinessConsoleCreateMaintenanceWorkOrderV2Response(
     string WorkOrderId,
     BusinessConsoleOperationReceipt? OperationReceipt = null);
 
@@ -206,7 +235,10 @@ public sealed record BusinessConsoleMaintenanceWorkOrderItem(
     int Version = 0,
     IReadOnlyCollection<string>? AllowedActions = null,
     IReadOnlyCollection<BusinessConsoleMaintenanceWorkOrderLifecycleEventItem>? Lifecycle = null,
-    IReadOnlyCollection<string>? BlockReasons = null);
+    IReadOnlyCollection<string>? BlockReasons = null,
+    DateTimeOffset? ExpectedRestoreAtUtc = null,
+
+    string? WorkOrderNo = null);
 
 public sealed record BusinessConsoleMaintenanceWorkOrderLifecycleEventItem(
     string Action,
@@ -271,7 +303,10 @@ public sealed record BusinessConsoleMaintenanceSparePartItem(
     string DeviceAssetId,
     string SkuCode,
     decimal Quantity,
-    string? UomCode);
+    string? UomCode,
+    string? SiteCode = null,
+    string? LocationCode = null,
+    string? WorkOrderNo = null);
 
 public sealed record BusinessConsoleCreateMaintenanceSparePartRequest(
     string OrganizationId,
@@ -279,7 +314,9 @@ public sealed record BusinessConsoleCreateMaintenanceSparePartRequest(
     string WorkOrderId,
     string SkuCode,
     decimal Quantity,
-    string? UomCode);
+    string? UomCode,
+    string? SiteCode = null,
+    string? LocationCode = null);
 
 public sealed record BusinessConsoleCreateMaintenanceSparePartResponse(string SparePartLineId);
 
@@ -356,3 +393,30 @@ public sealed record BusinessConsoleAssetReliabilityResponse(
     decimal? MttrMinutes,
     string MtbfRuntimeSource,
     bool MtbfRuntimeHasSamples);
+
+/// <summary>
+/// 停机原因目录维护（#3855）。目录由 Maintenance 独占（ADR 0029），读仍走可搜索目录
+/// <c>downtime-reason</c>；这里只补控制台写入口。分类与损失类别的受控码归 Maintenance
+/// （<c>DowntimeReasonVocabulary</c>），由 Maintenance 的写命令校验，网关不另存一份。
+/// 编码已存在时 Maintenance 返回 409 稳定码 <c>downtime-reason-code-already-exists</c>，原样透传。
+/// </summary>
+public sealed record BusinessConsoleCreateMaintenanceDowntimeReasonRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ReasonCode,
+    string Description,
+    string ReasonCategory,
+    string LossCategory);
+
+public sealed record BusinessConsoleUpdateMaintenanceDowntimeReasonRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string Description,
+    string ReasonCategory,
+    string LossCategory);
+
+public sealed record BusinessConsoleDeleteMaintenanceDowntimeReasonRequest(
+    string OrganizationId,
+    string EnvironmentId);
+
+public sealed record BusinessConsoleMaintenanceDowntimeReasonMutationResponse(string ReasonCode);

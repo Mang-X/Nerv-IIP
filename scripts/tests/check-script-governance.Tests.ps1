@@ -114,9 +114,6 @@ Invoke-GovernanceCase -Name 'missing-helper.ps1' -ExpectedExitCode 1
 Invoke-GovernanceCase -Name 'direct-dotnet.ps1' -ExpectedExitCode 1
 Invoke-GovernanceCase -Name 'direct-start-job.ps1' -ExpectedExitCode 1
 Invoke-GovernanceCase -Name 'dynamic-invocation.ps1' -ExpectedExitCode 1
-
-Invoke-GovernanceScriptCase -RelativePath 'scripts/verify-fifth-slice-persistence-foundation.ps1'
-Invoke-GovernanceScriptCase -RelativePath 'scripts/verify-fourth-slice-real-infra.ps1'
 Invoke-GovernanceScriptCase -RelativePath 'scripts/collect-test-evidence.ps1'
 Invoke-GovernanceScriptCase -RelativePath 'scripts/generate-test-evidence-baseline.ps1'
 Invoke-GovernanceScriptCase -RelativePath 'scripts/update-backend-test-shard-timings.ps1'

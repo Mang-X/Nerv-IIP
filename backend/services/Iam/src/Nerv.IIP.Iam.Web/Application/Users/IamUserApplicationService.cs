@@ -1,9 +1,13 @@
 using Nerv.IIP.Iam.Domain;
+using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.UserAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Infrastructure.Repositories;
 using Nerv.IIP.Iam.Web.Application;
 using Nerv.IIP.Iam.Web.Application.Auth;
+using Nerv.IIP.Iam.Web.Application.SecurityAudit;
 using Microsoft.Extensions.Options;
 using NetCorePal.Extensions.Primitives;
 
@@ -12,6 +16,17 @@ namespace Nerv.IIP.Iam.Web.Application.Users;
 public interface IIamUserApplicationService
 {
     Task<PagedListResponse<UserResponse>> ListUsersAsync(IamListQueryOptions options, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 列出在指定组织/环境里有成员关系的账号（供业务侧「关联登录账号」选择与核验）。
+    /// </summary>
+    Task<PagedListResponse<MemberAccountResponse>> ListMemberAccountsAsync(
+        MemberAccountListOptions options,
+        CancellationToken cancellationToken);
+
+    Task<PagedListResponse<string>> ListProductionPlannerMemberIdsAsync(
+        ProductionPlannerMemberListOptions options,
+        CancellationToken cancellationToken);
 
     Task<UserResponse> CreateUserAsync(
         string loginName,
@@ -34,7 +49,30 @@ public interface IIamUserApplicationService
 
     Task ResetPasswordAsync(string userId, string newPassword, CancellationToken cancellationToken);
 
-    Task ChangePasswordAsync(string userId, string currentPassword, string newPassword, CancellationToken cancellationToken);
+    /// <summary>自助改密；成功后吊销该用户除 <paramref name="currentSessionId"/> 以外的全部活动会话。</summary>
+    Task ChangePasswordAsync(
+        string userId,
+        string currentSessionId,
+        string currentPassword,
+        string newPassword,
+        CancellationToken cancellationToken);
+
+    Task<UserMembershipResponse> GetMembershipAsync(
+        string userId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 把用户在指定组织环境里的角色整组替换为 <paramref name="roleIds"/>；没有成员关系时新建，传空集合时移除成员关系。
+    /// </summary>
+    Task<UserMembershipResponse> ReplaceMembershipRolesAsync(
+        string userId,
+        string organizationId,
+        string environmentId,
+        IReadOnlyList<string> roleIds,
+        SecurityAuditContext auditContext,
+        CancellationToken cancellationToken);
 }
 
 public sealed class InMemoryIamUserApplicationService(
@@ -53,6 +91,50 @@ public sealed class InMemoryIamUserApplicationService(
             .ApplyUserSort(options)
             .ToPagedResponse(options);
         return Task.FromResult(users);
+    }
+
+    public Task<PagedListResponse<MemberAccountResponse>> ListMemberAccountsAsync(
+        MemberAccountListOptions options,
+        CancellationToken cancellationToken)
+    {
+        var rows = store.Users
+            .Where(user => store.UserHasMembership(user.UserId, options.OrganizationId, options.EnvironmentId))
+            .Where(user => options.IncludeDisabled || user.Enabled)
+            .Where(user => options.UserIds is null || options.UserIds.Contains(user.UserId, StringComparer.Ordinal))
+            .Where(user => options.Keyword is null
+                || user.LoginName.Contains(options.Keyword, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(user => user.LoginName, StringComparer.Ordinal)
+            .ThenBy(user => user.UserId, StringComparer.Ordinal)
+            .ToArray();
+        return Task.FromResult(new PagedListResponse<MemberAccountResponse>(
+            options.PageIndex,
+            options.PageSize,
+            rows.Length,
+            rows
+                .Skip((options.PageIndex - 1) * options.PageSize)
+                .Take(options.PageSize)
+                .Select(user => new MemberAccountResponse(user.UserId, user.LoginName, null, user.Enabled))
+                .ToArray()));
+    }
+
+    public Task<PagedListResponse<string>> ListProductionPlannerMemberIdsAsync(
+        ProductionPlannerMemberListOptions options,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var ids = store.Users
+            .Where(user => user.Enabled
+                && (user.AccountExpiresAtUtc is null || user.AccountExpiresAtUtc > now)
+                && store.GetMembershipRoleIds(user.UserId, options.OrganizationId, options.EnvironmentId)
+                    .Contains(NervIipSeedRoles.ProductionPlannerRoleId, StringComparer.Ordinal))
+            .Select(user => user.UserId)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        return Task.FromResult(new PagedListResponse<string>(
+            options.PageIndex,
+            options.PageSize,
+            ids.Length,
+            ids.Skip((options.PageIndex - 1) * options.PageSize).Take(options.PageSize).ToArray()));
     }
 
     public Task<UserResponse> CreateUserAsync(
@@ -124,11 +206,21 @@ public sealed class InMemoryIamUserApplicationService(
         return Task.CompletedTask;
     }
 
-    public Task ChangePasswordAsync(string userId, string currentPassword, string newPassword, CancellationToken cancellationToken)
+    public Task ChangePasswordAsync(
+        string userId,
+        string currentSessionId,
+        string currentPassword,
+        string newPassword,
+        CancellationToken cancellationToken)
     {
         try
         {
-            store.ChangePassword(userId, currentPassword, newPassword, ToStorePolicy(passwordPolicyOptions.Value));
+            store.ChangePassword(
+                userId,
+                currentSessionId,
+                currentPassword,
+                newPassword,
+                ToStorePolicy(passwordPolicyOptions.Value));
         }
         catch (InvalidOperationException ex)
         {
@@ -139,6 +231,41 @@ public sealed class InMemoryIamUserApplicationService(
             throw new KnownException(ex.Message);
         }
         return Task.CompletedTask;
+    }
+
+    public Task<UserMembershipResponse> GetMembershipAsync(
+        string userId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        return Task.FromResult(new UserMembershipResponse(
+            userId,
+            organizationId,
+            environmentId,
+            store.GetMembershipRoleIds(userId, organizationId, environmentId)));
+    }
+
+    public Task<UserMembershipResponse> ReplaceMembershipRolesAsync(
+        string userId,
+        string organizationId,
+        string environmentId,
+        IReadOnlyList<string> roleIds,
+        SecurityAuditContext auditContext,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Task.FromResult(new UserMembershipResponse(
+                userId,
+                organizationId,
+                environmentId,
+                store.ReplaceMembershipRoles(userId, organizationId, environmentId, roleIds.Distinct(StringComparer.Ordinal).ToArray())));
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new KnownException(ex.Message);
+        }
     }
 
     private static UserResponse ToResponse(UserFact user)
@@ -170,6 +297,9 @@ public sealed class InMemoryIamUserApplicationService(
 public sealed class PostgreSqlIamUserApplicationService(
     IUserRepository repository,
     IUserSessionRepository userSessionRepository,
+    IMembershipRepository membershipRepository,
+    IRoleRepository roleRepository,
+    ISecurityAuditRecorder securityAudit,
     IamPasswordService passwordService,
     IamPasswordPolicy passwordPolicy) : IIamUserApplicationService
 {
@@ -187,6 +317,41 @@ public sealed class PostgreSqlIamUserApplicationService(
             .ToPagedResponse(options);
     }
 
+    public async Task<PagedListResponse<MemberAccountResponse>> ListMemberAccountsAsync(
+        MemberAccountListOptions options,
+        CancellationToken cancellationToken)
+    {
+        var (items, total) = await repository.ListMembersAsync(
+            new OrganizationId(options.OrganizationId),
+            new IamEnvironmentId(options.EnvironmentId),
+            options.Keyword,
+            options.UserIds?.Select(x => new UserId(x)).ToArray(),
+            options.IncludeDisabled,
+            (options.PageIndex - 1) * options.PageSize,
+            options.PageSize,
+            cancellationToken);
+        return new PagedListResponse<MemberAccountResponse>(
+            options.PageIndex,
+            options.PageSize,
+            total,
+            items.Select(user => new MemberAccountResponse(user.Id.Id, user.LoginName, user.DisplayName, user.Enabled)).ToArray());
+    }
+
+    public async Task<PagedListResponse<string>> ListProductionPlannerMemberIdsAsync(
+        ProductionPlannerMemberListOptions options,
+        CancellationToken cancellationToken)
+    {
+        var (ids, total) = await repository.ListRoleMemberIdsAsync(
+            new OrganizationId(options.OrganizationId),
+            new IamEnvironmentId(options.EnvironmentId),
+            new RoleId(NervIipSeedRoles.ProductionPlannerRoleId),
+            DateTimeOffset.UtcNow,
+            (options.PageIndex - 1) * options.PageSize,
+            options.PageSize,
+            cancellationToken);
+        return new PagedListResponse<string>(options.PageIndex, options.PageSize, total, ids);
+    }
+
     public async Task<UserResponse> CreateUserAsync(
         string loginName,
         string email,
@@ -197,12 +362,12 @@ public sealed class PostgreSqlIamUserApplicationService(
         passwordPolicy.ValidateComplexity(password);
         if (await repository.GetByLoginNameAsync(loginName, cancellationToken) is not null)
         {
-            throw new KnownException($"Login name '{loginName}' is already used.");
+            throw new KnownException($"登录名「{loginName}」已被使用。");
         }
 
         if (await repository.GetByEmailAsync(email, cancellationToken) is not null)
         {
-            throw new KnownException($"Email '{email}' is already used.");
+            throw new KnownException($"邮箱「{email}」已被使用。");
         }
 
         var userId = new UserId($"user-{Guid.CreateVersion7():N}");
@@ -238,13 +403,13 @@ public sealed class PostgreSqlIamUserApplicationService(
         var userWithLoginName = await repository.GetByLoginNameAsync(loginName, cancellationToken);
         if (userWithLoginName is not null && userWithLoginName.Id != typedUserId)
         {
-            throw new KnownException($"Login name '{loginName}' is already used.");
+            throw new KnownException($"登录名「{loginName}」已被使用。");
         }
 
         var userWithEmail = await repository.GetByEmailAsync(email, cancellationToken);
         if (userWithEmail is not null && userWithEmail.Id != typedUserId)
         {
-            throw new KnownException($"Email '{email}' is already used.");
+            throw new KnownException($"邮箱「{email}」已被使用。");
         }
 
         var shouldRevokeSessions = user.Enabled && !enabled;
@@ -311,11 +476,13 @@ public sealed class PostgreSqlIamUserApplicationService(
 
     public async Task ChangePasswordAsync(
         string userId,
+        string currentSessionId,
         string currentPassword,
         string newPassword,
         CancellationToken cancellationToken)
     {
-        var user = await repository.GetByIdAsync(new UserId(userId), cancellationToken)
+        var typedUserId = new UserId(userId);
+        var user = await repository.GetByIdAsync(typedUserId, cancellationToken)
             ?? throw new KnownException($"User '{userId}' was not found.");
         if (!passwordService.Verify(user, currentPassword))
         {
@@ -330,7 +497,93 @@ public sealed class PostgreSqlIamUserApplicationService(
             passwordPolicy.GetPasswordExpiresAtUtc(now),
             passwordChangeRequired: false,
             passwordPolicy.Current.PasswordHistoryCount);
+
+        var sessions = await userSessionRepository.ListActiveByUserIdAsync(typedUserId, now, cancellationToken);
+        foreach (var session in sessions.Where(x => x.Id.Id != currentSessionId))
+        {
+            session.Revoke(now, "password-changed");
+        }
     }
+
+    public async Task<UserMembershipResponse> GetMembershipAsync(
+        string userId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken)
+    {
+        var membership = await membershipRepository.GetByUserIdAndOrgEnvAsync(
+            new UserId(userId),
+            new OrganizationId(organizationId),
+            new IamEnvironmentId(environmentId),
+            cancellationToken);
+        return new UserMembershipResponse(userId, organizationId, environmentId, RoleIdsOf(membership));
+    }
+
+    public async Task<UserMembershipResponse> ReplaceMembershipRolesAsync(
+        string userId,
+        string organizationId,
+        string environmentId,
+        IReadOnlyList<string> roleIds,
+        SecurityAuditContext auditContext,
+        CancellationToken cancellationToken)
+    {
+        var typedUserId = new UserId(userId);
+        _ = await repository.GetByIdAsync(typedUserId, cancellationToken)
+            ?? throw new KnownException($"User '{userId}' was not found.");
+
+        var desiredRoleIds = roleIds.Distinct(StringComparer.Ordinal).Select(x => new RoleId(x)).ToArray();
+        var existingRoleIds = (await roleRepository.ListByIdsAsync(desiredRoleIds, cancellationToken))
+            .Select(x => x.Id)
+            .ToHashSet();
+        var missingRoleId = desiredRoleIds.FirstOrDefault(x => !existingRoleIds.Contains(x));
+        if (missingRoleId is not null)
+        {
+            throw new KnownException($"Role '{missingRoleId.Id}' was not found.");
+        }
+
+        var membership = await membershipRepository.GetByUserIdAndOrgEnvAsync(
+            typedUserId,
+            new OrganizationId(organizationId),
+            new IamEnvironmentId(environmentId),
+            cancellationToken);
+        var before = RoleIdsOf(membership);
+        if (desiredRoleIds.Length == 0)
+        {
+            if (membership is not null)
+            {
+                membershipRepository.Delete(membership);
+            }
+        }
+        else if (membership is null)
+        {
+            membership = new Membership(
+                new MembershipId($"membership-{Guid.CreateVersion7():N}"),
+                typedUserId,
+                new OrganizationId(organizationId),
+                new IamEnvironmentId(environmentId),
+                desiredRoleIds);
+            await membershipRepository.AddAsync(membership, cancellationToken);
+        }
+        else
+        {
+            membership.ReplaceRoles(desiredRoleIds);
+        }
+
+        var after = desiredRoleIds.Select(x => x.Id).Order(StringComparer.Ordinal).ToArray();
+        await securityAudit.RecordAsync(
+            auditContext,
+            "iam.membership.roles.changed",
+            "user",
+            userId,
+            "success",
+            new { organizationId, environmentId, before, after },
+            DateTimeOffset.UtcNow,
+            cancellationToken);
+        return new UserMembershipResponse(userId, organizationId, environmentId, after);
+    }
+
+    private static IReadOnlyList<string> RoleIdsOf(Membership? membership) =>
+        membership?.Roles.Select(x => x.RoleId.Id).Order(StringComparer.Ordinal).ToArray() ?? [];
 
     private static UserResponse ToResponse(User user)
     {

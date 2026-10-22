@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
@@ -32,6 +33,7 @@ using Nerv.IIP.Business.ProductEngineering.Web.Application.Scheduling;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductEngineering;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.ProductionVersions;
 using Nerv.IIP.Business.ProductEngineering.Web.Endpoints.StandardOperations;
+using Nerv.IIP.Coding;
 using Nerv.IIP.Contracts.ProductEngineering;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Primitives;
@@ -41,6 +43,235 @@ namespace Nerv.IIP.Business.ProductEngineering.Web.Tests;
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class ProductEngineeringReleaseApiContractTests
 {
+    [Fact]
+    public void Routing_operation_command_accepts_required_skill_code_from_public_json()
+    {
+        const string json = """
+            {
+              "sequence": 10,
+              "workCenterCode": "WC-CNC-01",
+              "operationCode": "cnc-turning",
+              "operationName": "CNC 精车",
+              "standardMinutes": 30,
+              "requiredSkillCode": "cnc-operation",
+              "interruptible": true
+            }
+            """;
+
+        var operation = JsonSerializer.Deserialize<RoutingOperationCommand>(
+            json,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.NotNull(operation);
+        Assert.Equal("cnc-operation", operation.RequiredSkillCode);
+        Assert.True(operation.Interruptible);
+    }
+
+    [Fact]
+    public async Task Release_routing_preserves_normalized_required_skill_in_the_routing_read_contract()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.StandardOperations.Add(StandardOperation.Create(
+            "org-001",
+            "env-dev",
+            "cnc-turning",
+            "CNC 精车",
+            "WC-CNC-01",
+            5,
+            25,
+            "INHOUSE",
+            requiresReporting: true,
+            requiresQualityInspection: false,
+            isOutsourced: false,
+            description: null));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ReleaseRoutingCommandHandler(
+            new RoutingRepository(dbContext),
+            new StandardOperationRepository(dbContext),
+            codingService: new ProductEngineeringCodingService());
+        var command = new ReleaseRoutingCommand(
+            "org-001",
+            "env-dev",
+            "ROUTE-SKILL",
+            "A",
+            "SKU-FG-SKILL",
+            new DateOnly(2026, 8, 25),
+            [new RoutingOperationCommand(
+                10,
+                "WC-IGNORED",
+                "cnc-turning",
+                "Ignored",
+                1,
+                RequiredSkillCode: " cnc-operation ",
+                Interruptible: true)],
+            "routing-skill-release");
+        await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new GetRoutingQueryHandler(dbContext).Handle(
+            new GetRoutingQuery("org-001", "env-dev", "ROUTE-SKILL", "A"),
+            CancellationToken.None);
+
+        var operation = Assert.Single(response.Operations);
+        Assert.Equal("cnc-operation", operation.RequiredSkillCode);
+        Assert.True(operation.Interruptible);
+
+        var conflict = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            command with
+            {
+                Operations =
+                [
+                    new RoutingOperationCommand(
+                        10,
+                        "WC-IGNORED",
+                        "cnc-turning",
+                        "Ignored",
+                        1,
+                        RequiredSkillCode: " cnc-operation ",
+                        Interruptible: false)
+                ]
+            },
+            CancellationToken.None));
+        Assert.Equal("本次提交与此前的创建内容不一致，请重新发起创建。", conflict.Message);
+
+        var skillConflict = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            command with
+            {
+                Operations =
+                [
+                    new RoutingOperationCommand(
+                        10,
+                        "WC-IGNORED",
+                        "cnc-turning",
+                        "Ignored",
+                        1,
+                        RequiredSkillCode: "grinding",
+                        Interruptible: true)
+                ]
+            },
+            CancellationToken.None));
+        Assert.Equal("本次提交与此前的创建内容不一致，请重新发起创建。", skillConflict.Message);
+    }
+
+    [Fact]
+    public async Task Release_routing_replays_pre_upgrade_fingerprint_when_all_skills_are_null()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var effectiveDate = new DateOnly(2026, 8, 25);
+        var routing = Routing.CreateDraft("org-001", "env-dev", "ROUTE-LEGACY", "A", "SKU-FG-LEGACY")
+            .AddOperation(10, "WC-CNC-01", "cnc-turning", "CNC 精车", 30);
+        routing.Release(effectiveDate);
+        dbContext.Routings.Add(routing);
+        dbContext.CodeIdempotencyKeys.Add(new CodeIdempotencyKey(
+            "org-001",
+            "env-dev",
+            "routing",
+            "routing-legacy-replay",
+            "ROUTE-LEGACY",
+            ProductEngineeringCodingService.Fingerprint(
+                "A",
+                "SKU-FG-LEGACY",
+                effectiveDate,
+                new[] { "10:cnc-turning" }),
+            new DateTimeOffset(2026, 8, 25, 0, 0, 0, TimeSpan.Zero)));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ReleaseRoutingCommandHandler(
+            new RoutingRepository(dbContext),
+            new StandardOperationRepository(dbContext),
+            codingService: new ProductEngineeringCodingService(
+                dbContext,
+                provider.GetRequiredService<IServiceScopeFactory>()));
+
+        var result = await handler.Handle(
+            new ReleaseRoutingCommand(
+                "org-001",
+                "env-dev",
+                "ROUTE-LEGACY",
+                "A",
+                "SKU-FG-LEGACY",
+                effectiveDate,
+                [new RoutingOperationCommand(10, "WC-CNC-01", "cnc-turning", "CNC 精车", 30)],
+                "routing-legacy-replay"),
+            CancellationToken.None);
+
+        Assert.Equal("ROUTE-LEGACY", result.Id);
+    }
+
+    [Theory]
+    [InlineData("a:b", "c", "a", "b:c")]
+    [InlineData("a:", "b", "a", ":b")]
+    public async Task Release_routing_rejects_idempotency_reuse_for_delimiter_collision_payloads(
+        string firstOperationCode,
+        string firstSkillCode,
+        string secondOperationCode,
+        string secondSkillCode)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.StandardOperations.Add(NewStandardOperation(firstOperationCode, "WC-CNC-01"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new ReleaseRoutingCommandHandler(
+            new RoutingRepository(dbContext),
+            new StandardOperationRepository(dbContext),
+            codingService: new ProductEngineeringCodingService());
+        var command = new ReleaseRoutingCommand(
+            "org-001",
+            "env-dev",
+            "ROUTE-COLLISION",
+            "A",
+            "SKU-FG-COLLISION",
+            new DateOnly(2026, 8, 25),
+            [new RoutingOperationCommand(
+                10,
+                "WC-IGNORED",
+                firstOperationCode,
+                "Ignored",
+                1,
+                firstSkillCode)],
+            "routing-delimiter-collision");
+        await handler.Handle(command, CancellationToken.None);
+
+        var conflict = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            command with
+            {
+                Operations =
+                [
+                    new RoutingOperationCommand(
+                        10,
+                        "WC-IGNORED",
+                        secondOperationCode,
+                        "Ignored",
+                        1,
+                        secondSkillCode)
+                ]
+            },
+            CancellationToken.None));
+
+        Assert.Equal("本次提交与此前的创建内容不一致，请重新发起创建。", conflict.Message);
+    }
+
+    [Fact]
+    public async Task Routing_openapi_contract_exposes_required_skill_code_on_write_and_read_models()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var response = await client.GetAsync("/swagger/v1/swagger.json");
+        var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+        AssertSchemaExposesRequiredSkillCode(schemas, nameof(RoutingOperationCommand));
+        AssertSchemaExposesRequiredSkillCode(schemas, nameof(RoutingOperationItem));
+        AssertSchemaExposesRequiredSkillCode(schemas, "ProductionVersionRoutingOperationResponse");
+    }
+
     [Fact]
     public async Task Release_results_feed_production_version_identity_without_caller_construction()
     {
@@ -119,10 +350,8 @@ public sealed class ProductEngineeringReleaseApiContractTests
             routingHandler.Handle(
                 routingCommand with { Revision = "B" },
                 CancellationToken.None));
-        Assert.Contains("Idempotency key", mbomConflict.Message, StringComparison.Ordinal);
-        Assert.Contains("conflicts", mbomConflict.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Idempotency key", routingConflict.Message, StringComparison.Ordinal);
-        Assert.Contains("conflicts", routingConflict.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("本次提交与此前的创建内容不一致，请重新发起创建。", mbomConflict.Message);
+        Assert.Equal("本次提交与此前的创建内容不一致，请重新发起创建。", routingConflict.Message);
 
         var productionVersionResult = await new CreateProductionVersionCommandHandler(
             new ProductionVersionRepository(dbContext),
@@ -1660,6 +1889,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.Equal(38, operation.StandardMinutes);
         Assert.Equal("MIX-QA", operation.ControlKey);
         Assert.True(operation.RequiresQualityInspection);
+        Assert.False(operation.Interruptible);
     }
 
     [Fact]
@@ -2856,6 +3086,17 @@ public sealed class ProductEngineeringReleaseApiContractTests
             .Where(endpoint => string.Equals(endpoint.RoutePattern.RawText, route, StringComparison.Ordinal))
             .SelectMany(endpoint => endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>())
             .Any(authorizeData => string.Equals(authorizeData.Policy, InternalServiceAuthorizationPolicy.Name, StringComparison.Ordinal));
+    }
+
+    private static void AssertSchemaExposesRequiredSkillCode(JsonElement schemas, string schemaName)
+    {
+        var schema = schemas.EnumerateObject()
+            .Single(property => property.Name.EndsWith(schemaName, StringComparison.Ordinal));
+
+        Assert.True(
+            schema.Value.GetProperty("properties").TryGetProperty("requiredSkillCode", out var requiredSkillCode),
+            $"OpenAPI schema {schema.Name} does not expose requiredSkillCode.");
+        Assert.Equal("string", requiredSkillCode.GetProperty("type").GetString());
     }
 
     private static WebApplicationFactory<Program> CreateFactory()

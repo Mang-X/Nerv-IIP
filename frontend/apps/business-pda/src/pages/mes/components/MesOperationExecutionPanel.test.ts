@@ -8,12 +8,12 @@ import { describe, expect, it } from 'vitest'
 import MesOperationExecutionPanel from './MesOperationExecutionPanel.vue'
 
 const task: BusinessConsoleMesOperationTaskRow = {
-  operationTaskId: 'operation-task-internal-20',
-  workOrderId: 'work-order-internal-42',
+  operationTaskId: 'WO-2026-0042-OP-20',
+  workOrderId: 'WO-2026-0042',
   workOrderNo: 'MO-2026-0042',
   operationTaskNo: undefined,
   operationCode: 'OP-STANDARD-20',
-  status: 'queued',
+  status: 'Queued',
   operationSequence: 20,
   workCenterId: 'WC-A',
   allowedActions: ['start'],
@@ -57,12 +57,11 @@ describe('MesOperationExecutionPanel', () => {
     await flushPromises()
 
     const taskDefinition = [...document.body.querySelectorAll('dt')].find(
-      (term) => term.textContent === '工序任务',
+      (term) => term.textContent === '工序',
     )?.nextElementSibling
-    expect(taskDefinition?.textContent).toBe('工序任务信息未提供')
+    expect(taskDefinition?.textContent).toBe('工序 20')
     expect(document.body.textContent).toContain('OP-STANDARD-20')
-    expect(document.body.textContent).not.toContain('operation-task-internal-20')
-    expect(document.body.textContent).not.toContain('work-order-internal-42')
+    expect(document.body.textContent).not.toContain('MO-2026-0042')
   })
 
   it('renders shared gate details and emits only a recognized server action', async () => {
@@ -73,6 +72,46 @@ describe('MesOperationExecutionPanel', () => {
     expect(document.body.textContent).toContain('物料 MAT-STEEL 缺口 2')
     document.body.querySelector<HTMLButtonElement>('[data-testid="action-start"]')!.click()
     expect(wrapper.emitted('action')).toEqual([['start']])
+  })
+
+  it('marks a rework task only from authoritative type and source fields', async () => {
+    mountPanel({
+      selected: {
+        ...task,
+        workOrderType: 'rework',
+        sourceWorkOrderId: 'WO-SOURCE-001',
+        sourceNcrId: 'ncr-001',
+        sourceNcrCode: 'NCR-2026-0001',
+      },
+    })
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('返工 · WO-2026-0042 · 工序 20')
+    expect(
+      document.body.querySelector('[data-testid="operation-rework-source"]')?.textContent?.trim(),
+    ).toBe('来源 NCR NCR-2026-0001 · 源工单 WO-SOURCE-001')
+  })
+
+  it('fails closed when a rework task omits authoritative source fields', async () => {
+    mountPanel({
+      selected: {
+        ...task,
+        workOrderType: 'rework',
+        sourceWorkOrderId: null,
+        sourceNcrId: null,
+        sourceNcrCode: null,
+        allowedActions: ['start'],
+      },
+      canClaim: true,
+    })
+    await flushPromises()
+
+    expect(document.body.querySelector('[data-testid="operation-rework-source"]')).toBeNull()
+    expect(
+      document.body.querySelector('[data-testid="operation-rework-authority-error"]'),
+    ).not.toBeNull()
+    expect(document.body.querySelector('[data-testid="action-start"]')).toBeNull()
+    expect(document.body.querySelector('[data-testid="action-claim"]')).toBeNull()
   })
 
   it('renders every action through the NvUI mobile button boundary', async () => {

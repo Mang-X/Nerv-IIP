@@ -7,10 +7,12 @@ public static class ErpIntegrationEventTypes
     public const string PurchaseRequisitionCreated = "erp.PurchaseRequisitionCreated";
     public const string PurchaseOrderReleased = "erp.PurchaseOrderReleased";
     public const string PurchaseReceiptRecorded = "erp.PurchaseReceiptRecorded";
+    public const string MaterialSupplyEtaChanged = "erp.MaterialSupplyEtaChanged";
     public const string SalesReturnAuthorized = "erp.SalesReturnAuthorized";
     public const string SalesOrderReleased = "erp.SalesOrderReleased";
     public const string SalesOrderChanged = "erp.SalesOrderChanged";
     public const string SalesOrderCancelled = "erp.SalesOrderCancelled";
+    public const string SalesOrderDeliveryRegistered = "erp.SalesOrderDeliveryRegistered";
     public const string DeliveryOrderReleased = "erp.DeliveryOrderReleased";
     public const string AccountPayableCreated = "erp.AccountPayableCreated";
     public const string AccountReceivableCreated = "erp.AccountReceivableCreated";
@@ -62,6 +64,29 @@ public sealed record PurchaseOrderReleasedPayload(
     string SupplierCode,
     string SiteCode,
     decimal TotalAmount);
+
+public sealed record MaterialSupplyEtaChangedPayload(
+    string SourceDocumentType,
+    string SourceDocumentNo,
+    string ChangeReason,
+    IReadOnlyCollection<string> SkuCodes);
+
+public sealed record MaterialSupplyEtaChangedIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    MaterialSupplyEtaChangedPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
 
 public sealed record PurchaseReceiptRecordedPayload(
     string PurchaseReceiptId,
@@ -136,7 +161,8 @@ public sealed record SalesOrderLineSnapshot(
     decimal Quantity,
     string UomCode,
     DateOnly RequiredDate,
-    bool Cancelled);
+    bool Cancelled,
+    decimal DeliveredQuantity = 0m);
 
 public sealed record SalesOrderLifecyclePayload(
     string SalesOrderId,
@@ -182,6 +208,23 @@ public sealed record SalesOrderChangedIntegrationEvent(
 }
 
 public sealed record SalesOrderCancelledIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    SalesOrderLifecyclePayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record SalesOrderDeliveryRegisteredIntegrationEvent(
     string EventId,
     string EventType,
     int EventVersion,

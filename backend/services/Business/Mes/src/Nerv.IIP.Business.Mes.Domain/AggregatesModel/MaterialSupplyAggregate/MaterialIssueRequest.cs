@@ -13,18 +13,33 @@ public sealed record MaterialTransferAllocation
         string sourceSiteCode,
         string sourceLocationCode,
         string? sourceLotNo,
-        decimal quantity)
+        decimal quantity,
+        string ownerType = "production",
+        string? ownerId = null,
+        decimal? unitCost = null,
+        decimal? movementAmount = null)
     {
         SourceSiteCode = DomainGuard.Required(sourceSiteCode, nameof(sourceSiteCode));
         SourceLocationCode = DomainGuard.Required(sourceLocationCode, nameof(sourceLocationCode));
         SourceLotNo = string.IsNullOrWhiteSpace(sourceLotNo) ? null : sourceLotNo.Trim();
         Quantity = DomainGuard.Positive(quantity, nameof(quantity));
+        OwnerType = DomainGuard.Required(ownerType, nameof(ownerType));
+        OwnerId = ownerId;
+        UnitCost = unitCost;
+        MovementAmount = movementAmount;
     }
 
     public string SourceSiteCode { get; }
     public string SourceLocationCode { get; }
     public string? SourceLotNo { get; }
     public decimal Quantity { get; }
+    // 缺少字段的旧 JSON 与既有调用继续表示 production/null。
+    public string OwnerType { get; }
+    public string? OwnerId { get; }
+    /// <summary>仓库实际出库回执的单价；旧记录或未回执时保持未知。</summary>
+    public decimal? UnitCost { get; init; }
+    /// <summary>仓库实际出库回执的带符号金额，不按当前均价重算。</summary>
+    public decimal? MovementAmount { get; init; }
 }
 
 /// <summary>
@@ -96,7 +111,10 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         string materialId,
         string uomCode,
         decimal requestedQuantity,
-        DateTimeOffset requestedAtUtc)
+        DateTimeOffset requestedAtUtc,
+        bool isSupplementary,
+        string? originalMaterialIssueRequestNo,
+        string? substitutedMaterialId)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -104,7 +122,29 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         WorkOrderId = DomainGuard.Required(workOrderId, nameof(workOrderId));
         OperationTaskId = string.IsNullOrWhiteSpace(operationTaskId) ? null : operationTaskId.Trim();
         MaterialId = DomainGuard.Required(materialId, nameof(materialId));
+        SubstitutedMaterialId = string.IsNullOrWhiteSpace(substitutedMaterialId)
+            ? null
+            : substitutedMaterialId.Trim();
         UomCode = DomainGuard.Required(uomCode, nameof(uomCode));
+        var normalizedOriginalRequestNo = string.IsNullOrWhiteSpace(originalMaterialIssueRequestNo)
+            ? null
+            : originalMaterialIssueRequestNo.Trim();
+        if (isSupplementary != (normalizedOriginalRequestNo is not null))
+        {
+            throw new ArgumentException(
+                isSupplementary
+                    ? "补料领料申请必须关联原领料单。"
+                    : "普通领料申请不能关联原领料单。",
+                nameof(originalMaterialIssueRequestNo));
+        }
+
+        if (string.Equals(requestNo, normalizedOriginalRequestNo, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("补料领料申请不能关联自身。", nameof(originalMaterialIssueRequestNo));
+        }
+
+        IsSupplementary = isSupplementary;
+        OriginalMaterialIssueRequestNo = normalizedOriginalRequestNo;
         RequestedQuantity = DomainGuard.Positive(requestedQuantity, nameof(requestedQuantity));
         ReceivedQuantity = 0m;
         Status = RequestedStatus;
@@ -117,7 +157,10 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     public string WorkOrderId { get; private set; } = string.Empty;
     public string? OperationTaskId { get; private set; }
     public string MaterialId { get; private set; } = string.Empty;
+    public string? SubstitutedMaterialId { get; private set; }
     public string UomCode { get; private set; } = string.Empty;
+    public bool IsSupplementary { get; private set; }
+    public string? OriginalMaterialIssueRequestNo { get; private set; }
     public string? MaterialLotId { get; private set; }
     public decimal RequestedQuantity { get; private set; }
     public decimal ReceivedQuantity { get; private set; }
@@ -128,6 +171,12 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     public string? InventoryPostingFailureMessage { get; private set; }
     public DateTimeOffset? InventoryPostingFailedAtUtc { get; private set; }
     public string? InventoryPostingRollbackKey { get; private set; }
+
+    /// <summary>已处理的线边退料幂等键及数量，支持客户端超时后的同意图回放。</summary>
+    public string LineSideReturnIdempotencyKeysJson { get; private set; } = "{}";
+
+    /// <summary>退料幂等记录与数量变更共用的乐观并发令牌。</summary>
+    public long LineSideReturnConcurrencyToken { get; private set; }
 
     /// <summary>本次收料尝试的在途数量：已提交给库存、尚未双腿回执，齐套不计。</summary>
     public decimal PendingReceiptQuantity { get; private set; }
@@ -152,6 +201,12 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
 
     /// <summary>线边入库腿是否已回执，语义同 <see cref="PendingIssueLegPosted"/>。</summary>
     public bool PendingReceiptLegPosted { get; private set; }
+
+    /// <summary>本次收料按全部来源实际出库价值发起入库；旧在途缺省为原双腿协议。</summary>
+    public bool ReceiptUsesActualIssueValue { get; private set; }
+
+    /// <summary>本次尝试已发入库意图，与 outbox 在同一事务提交。</summary>
+    public bool PendingReceiptIntentSent { get; private set; }
 
     /// <summary>发料来源站点（库存实际持仓站点），由应用层从领料来源/库存查询解析后落库。</summary>
     public string? SourceSiteCode { get; private set; }
@@ -187,7 +242,10 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         string materialId,
         string uomCode,
         decimal requestedQuantity,
-        DateTimeOffset requestedAtUtc)
+        DateTimeOffset requestedAtUtc,
+        bool isSupplementary = false,
+        string? originalMaterialIssueRequestNo = null,
+        string? substitutedMaterialId = null)
     {
         var request = new MaterialIssueRequest(
             organizationId,
@@ -198,7 +256,10 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
             materialId,
             uomCode,
             requestedQuantity,
-            requestedAtUtc);
+            requestedAtUtc,
+            isSupplementary,
+            originalMaterialIssueRequestNo,
+            substitutedMaterialId);
         // The warehouse side only learns about a material issue through this event: it is the head of
         // the 领料 chain (MES -> WMS outbound/picking -> wmsRequestId 回写).
         request.AddDomainEvent(new MaterialIssueRequestCreatedDomainEvent(request));
@@ -234,6 +295,14 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         DateTimeOffset receivedAtUtc,
         decimal? receivedQuantity = null,
         string? materialLotId = null)
+        => ConfirmLineSideReceipt(locations, receivedAtUtc, receivedQuantity, materialLotId, useActualIssueValue: true);
+
+    private void ConfirmLineSideReceipt(
+        MaterialTransferLocations locations,
+        DateTimeOffset receivedAtUtc,
+        decimal? receivedQuantity,
+        string? materialLotId,
+        bool useActualIssueValue)
     {
         ArgumentNullException.ThrowIfNull(locations);
         if (Status == ReservationExpiredStatus)
@@ -308,7 +377,10 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         {
             PendingIssueLegPosted = false;
             PendingReceiptLegPosted = false;
+            ReceiptUsesActualIssueValue = useActualIssueValue;
         }
+
+        PendingReceiptIntentSent = false;
 
         PendingPostingToken = BuildTransferToken(quantity);
         ReceivedAtUtc = receivedAtUtc;
@@ -332,10 +404,7 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
             }
         }
 
-        if (!PendingReceiptLegPosted)
-        {
-            AddDomainEvent(new MaterialLineSideReceiptConfirmedDomainEvent(this, quantity));
-        }
+        RequestLineSideInboundWhenReady();
     }
 
     /// <summary>
@@ -348,7 +417,7 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         decimal? receivedQuantity = null,
         string? materialLotId = null)
     {
-        ConfirmLineSideReceipt(locations, receivedAtUtc, receivedQuantity, materialLotId);
+        ConfirmLineSideReceipt(locations, receivedAtUtc, receivedQuantity, materialLotId, useActualIssueValue: false);
         var postingToken = PendingPostingToken!;
         foreach (var allocationIndex in Enumerable.Range(0, PendingIssueLegCount))
         {
@@ -365,7 +434,9 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         string postingToken,
         MaterialTransferLeg leg,
         DateTimeOffset postedAtUtc,
-        int? allocationIndex = null)
+        int? allocationIndex = null,
+        decimal? unitCost = null,
+        decimal? movementAmount = null)
     {
         // 按「收料步」匹配而非整键匹配：失败后重试会换尝试序号，旧尝试迟到的成功回执仍然必须记账，
         // 否则那条腿会被当成没过账、重试时再扣一次库存。
@@ -383,9 +454,20 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
             }
 
             var postedIndexes = PostedIssueIndexes();
-            postedIndexes.Add(index);
+            if (!postedIndexes.Add(index))
+            {
+                return;
+            }
+
+            var allocations = GetSourceAllocations(PendingReceiptQuantity).ToArray();
+            allocations[index] = allocations[index] with { UnitCost = unitCost, MovementAmount = movementAmount };
+            SourceAllocationsJson = JsonSerializer.Serialize(allocations);
             PendingIssueLegPostedIndexesJson = JsonSerializer.Serialize(postedIndexes.Order());
             PendingIssueLegPosted = postedIndexes.Count >= Math.Max(1, PendingIssueLegCount);
+            if (ReceiptUsesActualIssueValue)
+            {
+                RequestLineSideInboundWhenReady();
+            }
         }
         else
         {
@@ -405,10 +487,31 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
         PendingIssueLegCount = 0;
         PendingIssueLegPostedIndexesJson = "[]";
         PendingReceiptLegPosted = false;
+        PendingReceiptIntentSent = false;
         Status = ReceivedQuantity >= RequestedQuantity ? ReceivedStatus : PartiallyReceivedStatus;
         InventoryPostingFailureCode = null;
         InventoryPostingFailureMessage = null;
         InventoryPostingFailedAtUtc = null;
+    }
+
+    private void RequestLineSideInboundWhenReady()
+    {
+        if (PendingReceiptLegPosted || PendingReceiptIntentSent ||
+            (ReceiptUsesActualIssueValue && !PendingIssueLegPosted))
+        {
+            return;
+        }
+
+        decimal? unitCost = null;
+        if (ReceiptUsesActualIssueValue)
+        {
+            var amount = GetSourceAllocations().Sum(x => x.MovementAmount
+                ?? throw new InvalidOperationException("来源出库回执缺少实际金额，无法发起线边入库。"));
+            unitCost = -amount / PendingReceiptQuantity;
+        }
+
+        PendingReceiptIntentSent = true;
+        AddDomainEvent(new MaterialLineSideReceiptConfirmedDomainEvent(this, PendingReceiptQuantity, unitCost));
     }
 
     /// <summary>
@@ -660,10 +763,30 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     private bool HasAnyPostedLeg() =>
         PendingIssueLegPosted || PendingReceiptLegPosted || PostedIssueIndexes().Count > 0;
 
-    public void ReturnLineSideMaterial(DateTimeOffset returnedAtUtc, decimal returnedQuantity, decimal consumedQuantity = 0m)
+    public bool ReturnLineSideMaterial(
+        DateTimeOffset returnedAtUtc,
+        decimal returnedQuantity,
+        decimal consumedQuantity = 0m,
+        string? idempotencyKey = null)
     {
         DomainGuard.Positive(returnedQuantity, nameof(returnedQuantity));
         DomainGuard.NonNegative(consumedQuantity, nameof(consumedQuantity));
+
+        if (!string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            var key = idempotencyKey.Trim();
+            var recorded = JsonSerializer.Deserialize<Dictionary<string, decimal>>(LineSideReturnIdempotencyKeysJson)
+                ?? new Dictionary<string, decimal>(StringComparer.Ordinal);
+            if (recorded.TryGetValue(key, out var recordedQuantity))
+            {
+                if (recordedQuantity != returnedQuantity)
+                {
+                    throw new InvalidOperationException("同一退料幂等键不能用于不同数量。");
+                }
+
+                return false;
+            }
+        }
 
         if (string.IsNullOrWhiteSpace(MaterialLotId))
         {
@@ -693,8 +816,19 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
             Status = ReceivedQuantity >= RequestedQuantity ? ReceivedStatus : PartiallyReceivedStatus;
         }
 
+        if (!string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            var recorded = JsonSerializer.Deserialize<Dictionary<string, decimal>>(LineSideReturnIdempotencyKeysJson)
+                ?? new Dictionary<string, decimal>(StringComparer.Ordinal);
+            recorded[idempotencyKey.Trim()] = returnedQuantity;
+            LineSideReturnIdempotencyKeysJson = JsonSerializer.Serialize(recorded);
+        }
+
+        LineSideReturnConcurrencyToken++;
+
         AddDomainEvent(new MaterialLineSideReturnRequestedDomainEvent(this, returnedQuantity, returnedMaterialLotId, returnedAtUtc));
         AddDomainEvent(new MaterialReturnedToWarehouseDomainEvent(this, returnedQuantity, returnedMaterialLotId, returnedAtUtc));
+        return true;
     }
 
     public void CancelForWorkOrderCancellation(DateTimeOffset cancelledAtUtc, decimal consumedQuantity = 0m)

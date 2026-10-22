@@ -13,7 +13,7 @@ public sealed class MaintenanceIntegrationEventTests
     [Fact]
     public void Asset_unavailable_converter_matches_common_contract_shape()
     {
-        var workOrder = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", "DEV-CNC-01", "alarm-001", "critical");
+        var workOrder = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "alarm-001", "critical");
         var fromUtc = DateTimeOffset.UtcNow;
         workOrder.MarkAssetUnavailable(fromUtc, "over temperature");
 
@@ -31,7 +31,7 @@ public sealed class MaintenanceIntegrationEventTests
     [Fact]
     public void Asset_restored_and_local_work_order_events_use_required_event_types()
     {
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
         workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, "planned maintenance");
         workOrder.Complete("fixed", "minor-stop", 5, []);
 
@@ -47,8 +47,12 @@ public sealed class MaintenanceIntegrationEventTests
     [Fact]
     public void Spare_part_issue_converter_requests_inventory_outbound_movement()
     {
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
-        workOrder.Complete("fixed", "minor-stop", 5, [new SparePartLineDraft("SPARE-001", 2m, "pcs")]);
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
+        workOrder.Complete(
+            "fixed",
+            "minor-stop",
+            5,
+            [new SparePartLineDraft("SPARE-001", 2m, "pcs", "SITE-001", "loc-spare-01")]);
         var domainEvent = Assert.Single(workOrder.GetDomainEvents().OfType<MaintenanceSparePartIssuedDomainEvent>());
 
         var integrationEvent = new MaintenanceSparePartIssuedIntegrationEventConverter().Convert(domainEvent);
@@ -57,12 +61,16 @@ public sealed class MaintenanceIntegrationEventTests
         Assert.Equal(InventoryIntegrationEventVersions.V1, integrationEvent.EventVersion);
         Assert.Equal("maintenance", integrationEvent.Payload.SourceService);
         Assert.Equal("outbound", integrationEvent.Payload.MovementType);
-        Assert.Equal(workOrder.Id.ToString(), integrationEvent.Payload.SourceDocumentId);
+        Assert.Equal(workOrder.WorkOrderNo, integrationEvent.Payload.SourceDocumentId);
+        Assert.StartsWith("MWO-", integrationEvent.Payload.SourceDocumentId, StringComparison.Ordinal);
         Assert.Equal(domainEvent.SparePartLine.Id.ToString(), integrationEvent.Payload.SourceDocumentLineId);
         Assert.Equal("SPARE-001", integrationEvent.Payload.SkuCode);
         Assert.Equal("pcs", integrationEvent.Payload.UomCode);
-        Assert.Equal("maintenance", integrationEvent.Payload.SiteCode);
-        Assert.Equal("maintenance-spares", integrationEvent.Payload.LocationCode);
+        // #3902：领出工厂与库位来自领用行，不再是占位值；备件是企业自有库存，归属类型是 company。
+        Assert.Equal("SITE-001", integrationEvent.Payload.SiteCode);
+        Assert.Equal("loc-spare-01", integrationEvent.Payload.LocationCode);
+        Assert.Equal("company", integrationEvent.Payload.OwnerType);
+        Assert.Equal("available", integrationEvent.Payload.QualityStatus);
         Assert.Equal(-2m, integrationEvent.Payload.Quantity);
         Assert.Contains(workOrder.Id.ToString(), integrationEvent.IdempotencyKey, StringComparison.Ordinal);
     }
@@ -76,13 +84,33 @@ public sealed class MaintenanceIntegrationEventTests
     [Fact]
     public void Spare_part_issue_converter_refuses_to_invent_a_missing_unit_of_measure()
     {
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-CNC-01", "normal", "operator-001");
-        workOrder.Complete("fixed", "minor-stop", 5, [new SparePartLineDraft("SPARE-001", 2m)]);
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
+        workOrder.Complete("fixed", "minor-stop", 5, [new SparePartLineDraft("SPARE-001", 2m, SiteCode: "SITE-001", LocationCode: "loc-spare-01")]);
         var domainEvent = Assert.Single(workOrder.GetDomainEvents().OfType<MaintenanceSparePartIssuedDomainEvent>());
 
         var error = Assert.Throws<InvalidOperationException>(
             () => new MaintenanceSparePartIssuedIntegrationEventConverter().Convert(domainEvent));
 
         Assert.Contains("unit of measure", error.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// #3902：领出工厂 / 库位缺失同样是源头数据缺陷。以前写死 maintenance / maintenance-spares，
+    /// Inventory 拒收未登记库位后每一笔都会失败；现在缺了就在源头显形，不再发占位值。
+    /// </summary>
+    [Theory]
+    [InlineData(null, "loc-spare-01")]
+    [InlineData("SITE-001", null)]
+    [InlineData(" ", "loc-spare-01")]
+    public void Spare_part_issue_converter_refuses_to_invent_an_issue_location(string? siteCode, string? locationCode)
+    {
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
+        workOrder.Complete("fixed", "minor-stop", 5, [new SparePartLineDraft("SPARE-001", 2m, "pcs", siteCode, locationCode)]);
+        var domainEvent = Assert.Single(workOrder.GetDomainEvents().OfType<MaintenanceSparePartIssuedDomainEvent>());
+
+        var error = Assert.Throws<InvalidOperationException>(
+            () => new MaintenanceSparePartIssuedIntegrationEventConverter().Convert(domainEvent));
+
+        Assert.Contains("issue site/location", error.Message, StringComparison.Ordinal);
     }
 }

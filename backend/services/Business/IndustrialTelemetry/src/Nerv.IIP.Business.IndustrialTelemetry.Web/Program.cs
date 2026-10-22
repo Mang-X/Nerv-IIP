@@ -1,6 +1,8 @@
 using System.Reflection;
+using Nerv.IIP.Business.IndustrialTelemetry.Web;
 using System.Text.Json;
 using FastEndpoints;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.DeadLetters;
 using FastEndpoints.Swagger;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
@@ -119,6 +121,8 @@ try
             x.UseDashboard();
         });
     }
+    builder.Services.AddIndustrialTelemetryDeadLetterReplay();
+    builder.Services.AddIntegrationEventDeadLetterEndpoints();
 
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
@@ -223,9 +227,16 @@ try
     {
         c.Serializer.Options.Converters.Add(new EquipmentRuntimeSourceTypeJsonConverter());
         c.Endpoints.NameGenerator = ctx =>
-            IndustrialTelemetryEndpointContracts.TryGet(ctx.EndpointType, out var contract)
-                ? contract.OperationId
+        {
+            if (IndustrialTelemetryEndpointContracts.TryGet(ctx.EndpointType, out var contract))
+            {
+                return contract.OperationId;
+            }
+
+            return IiotDeadLetterEndpointContracts.TryGet(ctx.EndpointType, out var deadLetterContract)
+                ? deadLetterContract.OperationId
                 : ToLowerCamelEndpointName(ctx.EndpointType.Name);
+        };
     }).UseSwaggerGen();
     app.UseHttpMetrics();
     app.MapHealthChecks("/health");

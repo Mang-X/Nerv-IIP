@@ -50,7 +50,7 @@ public sealed class WmsUnprocessableException(string reason, string? reasonCode 
         string.IsNullOrWhiteSpace(reasonCode) ? SafeCode : reasonCode;
 }
 
-public sealed class WmsLifecycleConflictException(string action, string currentStatus)
+public sealed class WmsLifecycleConflictException(string action, string currentStatus, string? reasonCode = null)
     : Exception($"WMS lifecycle conflict for action '{action}' at status '{currentStatus}'.")
 {
     public const string SafeCode = "lifecycle-conflict";
@@ -58,6 +58,10 @@ public sealed class WmsLifecycleConflictException(string action, string currentS
     public string Action { get; } = action;
 
     public string CurrentStatus { get; } = currentStatus;
+
+    /// <summary>稳定的机读冲突原因（kebab ASCII）；没有给代码时退回 <see cref="SafeCode"/>。</summary>
+    public string ReasonCode { get; } =
+        string.IsNullOrWhiteSpace(reasonCode) ? SafeCode : reasonCode;
 }
 
 public sealed record WmsLifecycleConflictResponse(bool Success, string Message);
@@ -128,7 +132,7 @@ public sealed class WmsLifecycleConflictMiddleware(
                 exception.CurrentStatus);
             context.Response.StatusCode = (int)HttpStatusCode.Conflict;
             await context.Response.WriteAsJsonAsync(
-                new WmsLifecycleConflictResponse(false, WmsLifecycleConflictException.SafeCode),
+                new WmsLifecycleConflictResponse(false, SafeOutboundCode(exception.ReasonCode, WmsLifecycleConflictException.SafeCode)),
                 context.RequestAborted);
         }
     }

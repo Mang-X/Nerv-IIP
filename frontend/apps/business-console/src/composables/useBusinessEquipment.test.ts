@@ -14,12 +14,15 @@ import {
 } from '@nerv-iip/api-client'
 import { acquirePendingBusinessIntent } from '@nerv-iip/business-core'
 import {
+  describeAvailabilityWindowReference,
   describeEquipmentReason,
+  equipmentSourceStatus,
   equipmentStatusTone,
   useBusinessEquipmentAlarms,
   useBusinessEquipmentAvailability,
   useBusinessEquipmentDevice,
   useBusinessEquipmentOverview,
+  useEquipmentDeviceAlarms,
 } from './useBusinessEquipment'
 import { useBusinessContextStore } from '@/stores/businessContext'
 
@@ -77,6 +80,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   createBusinessConsoleProductionLineMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   createBusinessConsoleShiftMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   createBusinessConsoleSiteMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
+  createBusinessConsoleStationMutationOptions: vi.fn(() => ({ key: [], mutation: vi.fn() })),
   createBusinessConsoleBusinessPartnerMutationOptions: vi.fn(() => ({
     key: [],
     mutation: vi.fn(),
@@ -180,6 +184,10 @@ describe('business equipment composables', () => {
       label: '采集数据过期',
       nextStep: '检查采集连接并刷新设备状态',
     })
+    expect(describeEquipmentReason('equipment.sourceNotConnected')).toMatchObject({
+      label: '尚未接入采集',
+      nextStep: '为设备配置采集连接后即可看到运行状态',
+    })
     expect(describeEquipmentReason('equipment.tagMappingMissing')).toMatchObject({
       label: '采集点未配置',
       nextStep: '补齐设备采集点映射',
@@ -188,9 +196,10 @@ describe('business equipment composables', () => {
       label: '无可替代设备',
       nextStep: '调整排程或维护设备能力配置',
     })
+    // 词表外的原因码不把英文码送上屏。
     expect(describeEquipmentReason('vendor.custom')).toMatchObject({
       code: 'vendor.custom',
-      label: 'vendor.custom',
+      label: '—',
       nextStep: '查看设备详情并处理来源业务单据',
     })
   })
@@ -328,8 +337,27 @@ describe('business equipment composables', () => {
     coladaState.queryDataById.set('listBusinessConsoleEquipmentAlarms', { success: false })
     const failed = useBusinessEquipmentAlarms()
     expect(failed.alarms.value).toEqual([])
-    expect(failed.alarmsHasSuccessfulResponse.value).toBe(false)
-    expect(failed.alarmsHasFailedResponse.value).toBe(true)
+  })
+
+  it('单台设备的报警由服务端按设备过滤，未选设备时不发请求', () => {
+    const none = useEquipmentDeviceAlarms('')
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleEquipmentAlarms')?.enabled).toBe(
+      false,
+    )
+    expect(none.alarms.value).toEqual([])
+
+    coladaState.queryDataById.set('listBusinessConsoleEquipmentAlarms', {
+      success: true,
+      data: { items: [{ alarmEventId: 'alarm-1', deviceAssetId: 'DEV-SMT-01' }] },
+    })
+    const device = useEquipmentDeviceAlarms('DEV-SMT-01')
+    expect(listBusinessConsoleEquipmentAlarmsQueryOptions).toHaveBeenLastCalledWith({
+      query: { organizationId: 'org-001', environmentId: 'env-dev', deviceAssetId: 'DEV-SMT-01' },
+    })
+    expect(coladaState.queryOptionsById.get('listBusinessConsoleEquipmentAlarms')?.enabled).toBe(
+      true,
+    )
+    expect(device.alarms.value.map((alarm) => alarm.alarmEventId)).toEqual(['alarm-1'])
   })
 
   it('posts alarm lifecycle actions with current business context', async () => {
@@ -501,5 +529,60 @@ describe('business equipment composables', () => {
     await active.shelveAlarm('alarm-1', 'operator-a', 120, 'planned maintenance', intent)
 
     expect(shelveBusinessConsoleEquipmentAlarm).toHaveBeenCalledOnce()
+  })
+})
+
+describe('可用性窗口的关联业务', () => {
+  const publicId = '019fbb41-5555-7555-8555-555555555555'
+
+  it('设备状态与采集类窗口显示设备编码，不显示 IIoT 回填的设备引用或快照主键', () => {
+    for (const sourceType of ['device-state', 'stale-source'] as const) {
+      expect(
+        describeAvailabilityWindowReference(
+          { sourceType, sourceReferenceLabel: publicId },
+          'EQ00001',
+        ),
+      ).toBe('EQ00001')
+    }
+    expect(
+      describeAvailabilityWindowReference(
+        { sourceType: 'stale-source', sourceReferenceLabel: publicId },
+        '',
+      ),
+    ).toBe('—')
+  })
+
+  it('其余窗口显示来源单据的人读标识，缺失时显示占位', () => {
+    expect(
+      describeAvailabilityWindowReference(
+        { sourceType: 'maintenance-window', sourceReferenceLabel: 'MWO000001' },
+        'EQ00001',
+      ),
+    ).toBe('MWO000001')
+    expect(describeAvailabilityWindowReference({ sourceType: 'alarm' }, 'EQ00001')).toBe('—')
+  })
+})
+
+describe('设备采集接入状态', () => {
+  const notConnected = { deviceAssetId: 'EQ00001', reasonCode: 'equipment.sourceNotConnected' }
+  const stale = { deviceAssetId: 'EQ00002', reasonCode: 'equipment.sourceStale' }
+
+  it('只有后端发了「尚未接入采集」窗口才算未接入，其余不新鲜的都是采集中断', () => {
+    expect(equipmentSourceStatus(false, [notConnected])).toBe('notConnected')
+    // 只上报样本、不带状态的设备没有状态快照，但后端按样本新鲜度发的是采集过期
+    expect(equipmentSourceStatus(false, [stale])).toBe('stale')
+    expect(equipmentSourceStatus(false, [])).toBe('stale')
+    expect(equipmentSourceStatus(true, [notConnected])).toBe('fresh')
+  })
+
+  it('看板按设备取自己的窗口，不被别的设备的未接入窗口带偏', () => {
+    expect(equipmentSourceStatus(false, [notConnected, stale], 'EQ00002')).toBe('stale')
+    expect(equipmentSourceStatus(false, [notConnected, stale], 'EQ00001')).toBe('notConnected')
+  })
+
+  it('原因徽标色由字典给出：尚未接入为中性色，其余缺省为危险色', () => {
+    expect(describeEquipmentReason('equipment.sourceNotConnected').tone).toBe('neutral')
+    expect(describeEquipmentReason('equipment.sourceStale').tone).toBe('danger')
+    expect(describeEquipmentReason('equipment.unknown-code').tone).toBe('danger')
   })
 })

@@ -30,14 +30,18 @@ public sealed record CompleteCorrectiveActionItemRequest(
     CorrectiveActionId CorrectiveActionId,
     CorrectiveActionItemId CorrectiveActionItemId,
     string CompletedByUserId,
-    DateTimeOffset CompletedAtUtc);
+    DateTimeOffset CompletedAtUtc,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
 
 public sealed record VerifyCorrectiveActionEffectivenessRequest(
     CorrectiveActionId CorrectiveActionId,
     string VerifiedByUserId,
     string Result,
     DateTimeOffset VerifiedAtUtc,
-    InspectionRecordId? EffectivenessInspectionRecordId);
+    InspectionRecordId? EffectivenessInspectionRecordId,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
 
 public sealed record CloseCorrectiveActionRequest(
     CorrectiveActionId CorrectiveActionId,
@@ -174,7 +178,9 @@ public sealed class CompleteCorrectiveActionItemEndpoint(ISender sender)
             req.CorrectiveActionId,
             req.CorrectiveActionItemId,
             req.CompletedByUserId,
-            req.CompletedAtUtc), ct);
+            req.CompletedAtUtc,
+            req.OrganizationId,
+            req.EnvironmentId), ct);
         await Send.OkAsync(new AcceptedResponse(true).AsResponseData(), cancellation: ct);
     }
 }
@@ -194,7 +200,9 @@ public sealed class VerifyCorrectiveActionEffectivenessEndpoint(ISender sender)
             req.VerifiedByUserId,
             req.Result,
             req.VerifiedAtUtc,
-            req.EffectivenessInspectionRecordId), ct);
+            req.EffectivenessInspectionRecordId,
+            req.OrganizationId,
+            req.EnvironmentId), ct);
         await Send.OkAsync(new AcceptedResponse(true).AsResponseData(), cancellation: ct);
     }
 }

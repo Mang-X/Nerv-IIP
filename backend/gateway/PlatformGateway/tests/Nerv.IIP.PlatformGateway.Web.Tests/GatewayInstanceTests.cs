@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Contracts.AppHubQueries;
+using Nerv.IIP.Caching;
 using Nerv.IIP.PlatformGateway.Web;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
 using Nerv.IIP.ServiceAuth;
@@ -25,6 +26,8 @@ public sealed class GatewayInstanceTests
                 services.RemoveAll<IGatewayAuthorizationClient>();
                 services.AddSingleton<IGatewayAuthorizationClient>(auth);
             }));
+        var cache = factory.Services.GetRequiredService<IAppCache>();
+        await cache.GetOrCreateAsync("iam:non-target", () => Task.FromResult(17), TimeSpan.FromMinutes(1));
         var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
 
@@ -38,10 +41,16 @@ public sealed class GatewayInstanceTests
         var cachedResponse = await client.GetAsync("/api/console/v1/instances/demo-api-001?organizationId=org-001&environmentId=env-dev");
         cachedResponse.EnsureSuccessStatusCode();
         var cached = await ReadResponseDataAsync<InstanceDetailResponse>(cachedResponse);
+        var cachedListResponse = await client.GetAsync("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev&pageIndex=1&pageSize=20&sortBy=instanceName&sortOrder=asc&filterSearch=demo");
+        cachedListResponse.EnsureSuccessStatusCode();
+        Assert.Equal(1, fake.ListCalls);
         using var invalidateRequest = new HttpRequestMessage(HttpMethod.Post, "/internal/gateway/cache/invalidate");
         invalidateRequest.Headers.Authorization = new("Bearer", InternalServiceAuthentication.DefaultDevelopmentBearerToken);
         var invalidateResponse = await client.SendAsync(invalidateRequest);
         invalidateResponse.EnsureSuccessStatusCode();
+        var refreshedList = await client.GetAsync("/api/console/v1/instances?organizationId=org-001&environmentId=env-dev&pageIndex=1&pageSize=20&sortBy=instanceName&sortOrder=asc&filterSearch=demo");
+        refreshedList.EnsureSuccessStatusCode();
+        Assert.Equal(17, await cache.GetOrCreateAsync<int>("iam:non-target", () => throw new InvalidOperationException("non-target was cleared"), TimeSpan.FromMinutes(1)));
         var refreshedResponse = await client.GetAsync("/api/console/v1/instances/demo-api-001?organizationId=org-001&environmentId=env-dev");
         refreshedResponse.EnsureSuccessStatusCode();
         var refreshed = await ReadResponseDataAsync<InstanceDetailResponse>(refreshedResponse);
@@ -56,6 +65,8 @@ public sealed class GatewayInstanceTests
         Assert.Equal("demo-api-001", detail!.InstanceKey);
         Assert.Equal("running", cached!.ReportedStatus);
         Assert.Equal("stopped", refreshed!.ReportedStatus);
+        Assert.Equal(2, fake.ListCalls);
+        Assert.Equal(2, fake.DetailCalls);
         var projectFile = FindGatewayProjectFile();
         Assert.DoesNotContain("Nerv.IIP.AppHub.Domain", File.ReadAllText(projectFile));
         Assert.DoesNotContain("Nerv.IIP.AppHub.Infrastructure", File.ReadAllText(projectFile));
@@ -84,16 +95,23 @@ public sealed class GatewayInstanceTests
 
     private sealed class FakeAppHubClient : IAppHubClient
     {
+        public int ListCalls { get; private set; }
+        public int DetailCalls { get; private set; }
         public InstanceListQuery? LastQuery { get; private set; }
         public InstanceDetailResponse? Detail { get; set; } = new("demo-api", "Demo API", "1.0.0", "node-001", "local-docker", "demo-api-001", "demo-api", "running", "healthy", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, [new CapabilitySummary("lifecycle.restart", "1.0", "lifecycle", ["restart"])], new Dictionary<string, string>());
 
         public Task<InstanceListResponse> QueryInstancesAsync(InstanceListQuery query, CancellationToken cancellationToken)
         {
+            ListCalls++;
             LastQuery = query;
             return Task.FromResult(new InstanceListResponse(query.PageIndex, query.PageSize, 1, [new InstanceListItem("demo-api", "Demo API", "1.0.0", "node-001", "local-docker", "demo-api-001", "demo-api", "running", "healthy", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)]));
         }
 
-        public Task<InstanceDetailResponse> GetInstanceAsync(string organizationId, string environmentId, string instanceKey, CancellationToken cancellationToken) => Task.FromResult(Detail!);
+        public Task<InstanceDetailResponse> GetInstanceAsync(string organizationId, string environmentId, string instanceKey, CancellationToken cancellationToken)
+        {
+            DetailCalls++;
+            return Task.FromResult(Detail!);
+        }
     }
 
     private sealed class FailingAppHubClient : IAppHubClient

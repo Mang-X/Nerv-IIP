@@ -18,6 +18,14 @@ public sealed record AssembleSchedulingProblemRequest(
     string? BasePlanId = null,
     IReadOnlyCollection<string>? LockedOperationIds = null);
 
+public sealed record AssembleSchedulingWorkbenchProblemRequest(
+    string ProblemId,
+    string OrganizationId,
+    string EnvironmentId,
+    DateTimeOffset HorizonStartUtc,
+    DateTimeOffset HorizonEndUtc,
+    IReadOnlyCollection<SchedulingWorkbenchProblemSourceOrder> Orders);
+
 public sealed record SchedulingProblemSourceOrder(
     string OrderId,
     string SkuCode,
@@ -40,14 +48,72 @@ public interface ISchedulingProblemProducer
     Task<SchedulingProblemContract> AssembleAsync(
         AssembleSchedulingProblemRequest request,
         CancellationToken cancellationToken);
+
+    Task<SchedulingProblemContract> AssembleWorkbenchAsync(
+        AssembleSchedulingWorkbenchProblemRequest request,
+        CancellationToken cancellationToken);
 }
 
 public sealed class SchedulingProblemProducer(
     ISchedulingProblemProductEngineeringClient productEngineering,
     ISchedulingProblemMasterDataClient masterData) : ISchedulingProblemProducer
 {
-    public async Task<SchedulingProblemContract> AssembleAsync(
+    public Task<SchedulingProblemContract> AssembleAsync(
         AssembleSchedulingProblemRequest request,
+        CancellationToken cancellationToken) => AssembleAsync(
+            request,
+            static (order, operation) => $"{order.OrderId}-{operation.Sequence}-{operation.OperationCode}",
+            cancellationToken);
+
+    public async Task<SchedulingProblemContract> AssembleWorkbenchAsync(
+        AssembleSchedulingWorkbenchProblemRequest request,
+        CancellationToken cancellationToken)
+    {
+        var operationSources = request.Orders.ToDictionary(
+            x => x.Order.OrderId,
+            x => x.Operations.ToDictionary(y => y.OperationSequence),
+            StringComparer.Ordinal);
+        var problem = await AssembleAsync(
+            new AssembleSchedulingProblemRequest(
+                request.ProblemId,
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.HorizonStartUtc,
+                request.HorizonEndUtc,
+                request.Orders.Select(x => x.Order).ToArray()),
+            (order, operation) =>
+            {
+                if (!operationSources[order.OrderId].TryGetValue(operation.Sequence, out var task) ||
+                    string.IsNullOrWhiteSpace(task.OperationTaskId))
+                {
+                    throw new KnownException(
+                        $"MES 工单 '{order.OrderId}' 缺少序号 '{operation.Sequence}' 的工序任务。");
+                }
+
+                if (!string.Equals(task.WorkCenterId, operation.WorkCenterCode, StringComparison.Ordinal))
+                {
+                    throw new KnownException(
+                        $"工单{order.OrderId}序{operation.Sequence}中心{task.WorkCenterId}≠路线{operation.WorkCenterCode}；未恢复");
+                }
+
+                return task.OperationTaskId;
+            },
+            cancellationToken);
+        return problem with
+        {
+            AssemblyDependencies = request.Orders
+                .SelectMany(parent => (parent.AssemblyChildOrderIds ?? [])
+                    .Select(childId => new SchedulingAssemblyDependencyContract(childId, parent.Order.OrderId)))
+                .Distinct()
+                .OrderBy(x => x.ParentOrderId, StringComparer.Ordinal)
+                .ThenBy(x => x.ChildOrderId, StringComparer.Ordinal)
+                .ToArray()
+        };
+    }
+
+    private async Task<SchedulingProblemContract> AssembleAsync(
+        AssembleSchedulingProblemRequest request,
+        Func<SchedulingProblemSourceOrder, SchedulingProblemRoutingOperationSnapshot, string> operationId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -80,7 +146,12 @@ public sealed class SchedulingProblemProducer(
                 StringComparer.Ordinal);
         var resources = BuildResources(workCenters.Values, devicesByWorkCenter, operationCapabilitiesByWorkCenter);
         var orderedOrders = request.Orders.OrderBy(x => x.DueUtc).ThenBy(x => x.Priority).ThenBy(x => x.OrderId, StringComparer.Ordinal).ToArray();
-        var transitions = BuildTransitions(orderedOrders, routingsByVersion);
+        var skuCodesByWorkCenter = orderedOrders
+            .SelectMany(order => routingsByVersion[order.RoutingVersionId].Operations
+                .Select(operation => (operation.WorkCenterCode, order.SkuCode)))
+            .GroupBy(x => x.WorkCenterCode, StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => x.Select(y => y.SkuCode).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray(), StringComparer.Ordinal);
+        var transitions = BuildTransitions(orderedOrders, routingsByVersion, skuCodesByWorkCenter, operationId);
         var toolingFacts = await masterData.ResolveToolingFactsAsync(request.OrganizationId, request.EnvironmentId, transitions, cancellationToken);
         var toolingFactsByOperation = toolingFacts.ToDictionary(x => x.OperationId, StringComparer.Ordinal);
 
@@ -92,7 +163,14 @@ public sealed class SchedulingProblemProducer(
             HorizonStartUtc: request.HorizonStartUtc,
             HorizonEndUtc: request.HorizonEndUtc,
             Orders: orderedOrders
-                .Select(order => ToOrder(order, routingsByVersion[order.RoutingVersionId], resources, toolingFactsByOperation))
+                .Select(order => ToOrder(
+                    order,
+                    routingsByVersion[order.RoutingVersionId],
+                    workCenters,
+                    resources,
+                    toolingFactsByOperation,
+                    skuCodesByWorkCenter,
+                    operationId))
                 .ToArray(),
             Resources: resources.Values
                 .OrderBy(x => x.SortKey, StringComparer.Ordinal)
@@ -110,8 +188,11 @@ public sealed class SchedulingProblemProducer(
     private static SchedulingOrderContract ToOrder(
         SchedulingProblemSourceOrder order,
         SchedulingProblemRoutingSnapshot routing,
+        IReadOnlyDictionary<string, SchedulingProblemWorkCenterSnapshot> workCenters,
         IReadOnlyDictionary<string, SchedulingResourceContract> resources,
-        IReadOnlyDictionary<string, SchedulingProblemToolingFactSnapshot> toolingFacts)
+        IReadOnlyDictionary<string, SchedulingProblemToolingFactSnapshot> toolingFacts,
+        IReadOnlyDictionary<string, string[]> skuCodesByWorkCenter,
+        Func<SchedulingProblemSourceOrder, SchedulingProblemRoutingOperationSnapshot, string> operationId)
     {
         var constraints = (order.OperationConstraints ?? [])
             .GroupBy(x => x.OperationCode, StringComparer.Ordinal)
@@ -120,19 +201,30 @@ public sealed class SchedulingProblemProducer(
         var operations = new List<SchedulingOperationContract>();
         foreach (var operation in routing.Operations.OrderBy(x => x.Sequence))
         {
-            var operationId = $"{order.OrderId}-{operation.Sequence}-{operation.OperationCode}";
+            var resolvedOperationId = operationId(order, operation);
             var eligibleResources = resources.Values
                 .Where(x => string.Equals(x.WorkCenterId, operation.WorkCenterCode, StringComparison.Ordinal))
                 .Select(x => x.ResourceId)
                 .Order(StringComparer.Ordinal)
                 .ToArray();
             var constraint = constraints.GetValueOrDefault(operation.OperationCode);
-            var toolingFact = toolingFacts.GetValueOrDefault(operationId);
+            var toolingFact = toolingFacts.GetValueOrDefault(resolvedOperationId);
+            var changeovers = skuCodesByWorkCenter[operation.WorkCenterCode]
+                .Select(fromSku =>
+                {
+                    var fact = toolingFacts.GetValueOrDefault(TransitionId(resolvedOperationId, order.SkuCode, fromSku));
+                    return new SchedulingChangeoverContract(
+                        fromSku,
+                        fact is null || fact.SetupMinutes == 0 ? operation.SetupMinutes : fact.SetupMinutes,
+                        NormalizeCodes(fact?.RequiredToolingCodes),
+                        fact?.ToolingAvailable ?? true);
+                })
+                .ToArray();
             operations.Add(new SchedulingOperationContract(
-                OperationId: operationId,
+                OperationId: resolvedOperationId,
                 OperationSequence: operation.Sequence,
                 PredecessorOperationIds: previousOperationIds.ToArray(),
-                DurationMinutes: CalculateDurationMinutes(operation, order.Quantity),
+                DurationMinutes: CalculateDurationMinutes(operation, order.Quantity, workCenters[operation.WorkCenterCode].EfficiencyRate),
                 RequiredCapabilityCode: operation.OperationCode,
                 EligibleResourceIds: eligibleResources,
                 PrimaryResourceId: eligibleResources.FirstOrDefault(),
@@ -140,16 +232,17 @@ public sealed class SchedulingProblemProducer(
                 DueUtc: order.DueUtc,
                 Priority: order.Priority,
                 IsRush: order.IsRush,
-                SplitPolicy: ScheduleSplitPolicyContract.NonSplittable,
+                SplitPolicy: operation.Interruptible ? ScheduleSplitPolicyContract.Interruptible : ScheduleSplitPolicyContract.NonSplittable,
                 MaterialReadyUtc: null,
                 QualityBlockReason: operation.RequiresQualityInspection ? "quality.inspectionRequired" : null,
                 SourceReference: $"product-engineering:routing:{routing.RoutingCode}:{routing.Revision}:{operation.OperationCode}",
                 SetupMinutes: toolingFact is null || toolingFact.SetupMinutes == 0 ? operation.SetupMinutes : toolingFact.SetupMinutes,
                 RequiredSkillCodes: NormalizeCodes(constraint?.RequiredSkillCodes),
                 RequiredToolingIds: NormalizeCodes(toolingFact?.RequiredToolingCodes),
-                ToolingAvailable: toolingFact?.ToolingAvailable ?? true));
+                ToolingAvailable: toolingFact?.ToolingAvailable ?? true,
+                Changeovers: changeovers));
             previousOperationIds.Clear();
-            previousOperationIds.Add(operationId);
+            previousOperationIds.Add(resolvedOperationId);
         }
 
         return new SchedulingOrderContract(
@@ -165,22 +258,28 @@ public sealed class SchedulingProblemProducer(
 
     private static IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot> BuildTransitions(
         IReadOnlyCollection<SchedulingProblemSourceOrder> orders,
-        IReadOnlyDictionary<string, SchedulingProblemRoutingSnapshot> routings)
+        IReadOnlyDictionary<string, SchedulingProblemRoutingSnapshot> routings,
+        IReadOnlyDictionary<string, string[]> skuCodesByWorkCenter,
+        Func<SchedulingProblemSourceOrder, SchedulingProblemRoutingOperationSnapshot, string> operationId)
     {
-        var previousSkuByWorkCenter = new Dictionary<string, string>(StringComparer.Ordinal);
         var transitions = new List<SchedulingProblemToolingTransitionSnapshot>();
         foreach (var order in orders)
         {
             foreach (var operation in routings[order.RoutingVersionId].Operations.OrderBy(x => x.Sequence))
             {
-                var operationId = $"{order.OrderId}-{operation.Sequence}-{operation.OperationCode}";
-                var fromSku = previousSkuByWorkCenter.GetValueOrDefault(operation.WorkCenterCode) ?? order.SkuCode;
-                transitions.Add(new SchedulingProblemToolingTransitionSnapshot(operationId, operation.WorkCenterCode, fromSku, null, order.SkuCode));
-                previousSkuByWorkCenter[operation.WorkCenterCode] = order.SkuCode;
+                var resolvedOperationId = operationId(order, operation);
+                foreach (var fromSku in skuCodesByWorkCenter[operation.WorkCenterCode])
+                {
+                    transitions.Add(new SchedulingProblemToolingTransitionSnapshot(
+                        TransitionId(resolvedOperationId, order.SkuCode, fromSku), operation.WorkCenterCode, fromSku, null, order.SkuCode));
+                }
             }
         }
         return transitions;
     }
+
+    private static string TransitionId(string operationId, string toSku, string fromSku) =>
+        string.Equals(fromSku, toSku, StringComparison.Ordinal) ? operationId : $"{operationId}::from:{fromSku}";
 
     private async Task<Dictionary<string, SchedulingProblemWorkCenterSnapshot>> LoadWorkCentersAsync(
         AssembleSchedulingProblemRequest request,
@@ -254,18 +353,19 @@ public sealed class SchedulingProblemProducer(
                         .Concat([workCenter.Code])),
                     CapacityUnits: capacityUnits,
                     CalendarId: workCenter.DefaultCalendarCode,
-                    SortKey: $"{workCenter.Code}:{resourceId}");
+                    SortKey: $"{workCenter.Code}:{resourceId}",
+                    UtilizationRate: workCenter.UtilizationRate);
             }
         }
 
         return resources;
     }
 
-    private static int CalculateDurationMinutes(SchedulingProblemRoutingOperationSnapshot operation, decimal quantity)
+    private static int CalculateDurationMinutes(SchedulingProblemRoutingOperationSnapshot operation, decimal quantity, decimal efficiencyRate)
     {
         var runMinutes = Math.Max(0, operation.RunMinutes);
         var effectiveQuantity = Math.Max(0m, quantity);
-        var totalRunMinutes = (int)Math.Ceiling(runMinutes * effectiveQuantity);
+        var totalRunMinutes = (int)Math.Ceiling(runMinutes * effectiveQuantity / efficiencyRate);
         return Math.Max(1, totalRunMinutes + Math.Max(0, operation.TeardownMinutes));
     }
 
@@ -345,13 +445,16 @@ public sealed record SchedulingProblemRoutingOperationSnapshot(
     int SetupMinutes,
     int RunMinutes,
     int TeardownMinutes,
-    bool RequiresQualityInspection = false);
+    bool RequiresQualityInspection = false,
+    bool Interruptible = false);
 
 public sealed record SchedulingProblemWorkCenterSnapshot(
     string Code,
     string DefaultCalendarCode,
     int NumberOfCapacities,
-    IReadOnlyCollection<string> CapabilityCodes);
+    IReadOnlyCollection<string> CapabilityCodes,
+    decimal EfficiencyRate = 1m,
+    decimal UtilizationRate = 1m);
 
 public sealed record SchedulingProblemCalendarSnapshot(
     string Code,
@@ -407,7 +510,8 @@ public sealed class HttpSchedulingProblemProductEngineeringClient(
                 x.SetupMinutes,
                 Math.Max(1, x.RunMinutes == 0 ? x.StandardMinutes - x.SetupMinutes - x.TeardownMinutes : x.RunMinutes),
                 Math.Max(0, x.TeardownMinutes),
-                x.RequiresQualityInspection)).ToArray());
+                x.RequiresQualityInspection,
+                x.Interruptible)).ToArray());
     }
 
     private async Task<T> SendAsync<T>(string requestUri, CancellationToken cancellationToken)
@@ -462,7 +566,8 @@ public sealed class HttpSchedulingProblemProductEngineeringClient(
         string ControlKey,
         bool RequiresReporting,
         bool RequiresQualityInspection,
-        bool IsOutsourced);
+        bool IsOutsourced,
+        bool Interruptible = false);
 }
 
 public sealed class HttpSchedulingProblemMasterDataClient(
@@ -478,7 +583,7 @@ public sealed class HttpSchedulingProblemMasterDataClient(
         string workCenterCode,
         CancellationToken cancellationToken)
     {
-        var detail = await GetResourceDetailAsync(
+        var detail = await GetResourceDetailAsync<MasterDataWorkCenterDetailResponse>(
             organizationId,
             environmentId,
             "work-center",
@@ -488,7 +593,9 @@ public sealed class HttpSchedulingProblemMasterDataClient(
             detail.Code,
             detail.DefaultCalendarCode ?? throw new KnownException($"工作中心 '{workCenterCode}' 未配置默认日历，请先补充配置。"),
             Math.Max(1, detail.NumberOfCapacities ?? 1),
-            [detail.Code]);
+            [detail.Code],
+            detail.EfficiencyRate,
+            detail.UtilizationRate);
     }
 
     public async Task<SchedulingProblemCalendarSnapshot> GetCalendarAsync(
@@ -499,7 +606,7 @@ public sealed class HttpSchedulingProblemMasterDataClient(
         DateTimeOffset horizonEndUtc,
         CancellationToken cancellationToken)
     {
-        var calendar = await GetResourceDetailAsync(organizationId, environmentId, "work-calendar", calendarCode, cancellationToken);
+        var calendar = await GetResourceDetailAsync<MasterDataResourceDetailResponse>(organizationId, environmentId, "work-calendar", calendarCode, cancellationToken);
         var shifts = await GetShiftDetailsAsync(organizationId, environmentId, cancellationToken);
         var windows = BuildShiftWindows(calendar, shifts, horizonStartUtc, horizonEndUtc);
         return new SchedulingProblemCalendarSnapshot(calendar.Code, windows);
@@ -588,18 +695,19 @@ public sealed class HttpSchedulingProblemMasterDataClient(
 
         var shifts = await Task.WhenAll(response.Resources
             .Where(x => x.Active)
-            .Select(x => GetResourceDetailAsync(organizationId, environmentId, "shift", x.Code, cancellationToken)));
+            .Select(x => GetResourceDetailAsync<MasterDataResourceDetailResponse>(organizationId, environmentId, "shift", x.Code, cancellationToken)));
         return shifts;
     }
 
-    private async Task<MasterDataResourceDetailResponse> GetResourceDetailAsync(
+    private async Task<T> GetResourceDetailAsync<T>(
         string organizationId,
         string environmentId,
         string resourceType,
         string code,
         CancellationToken cancellationToken)
+        where T : class
     {
-        return await SendAsync<MasterDataResourceDetailResponse>(
+        return await SendAsync<T>(
             "/api/business/v1/master-data/resources/" +
             $"{Uri.EscapeDataString(resourceType)}/{Uri.EscapeDataString(code)}?" +
             SchedulingProblemHttp.Query(("organizationId", organizationId), ("environmentId", environmentId)),
@@ -722,6 +830,13 @@ public sealed class HttpSchedulingProblemMasterDataClient(
         string? WorkCenterCode = null,
         string? DeviceAssetId = null);
 
+    private sealed record MasterDataWorkCenterDetailResponse(
+        string Code,
+        string? DefaultCalendarCode = null,
+        int? NumberOfCapacities = null,
+        decimal EfficiencyRate = 1m,
+        decimal UtilizationRate = 1m);
+
     private sealed record MasterDataResourceDetailResponse(
         string ResourceType,
         string Code,
@@ -736,8 +851,7 @@ public sealed class HttpSchedulingProblemMasterDataClient(
         string? DefaultCalendarCode = null,
         IReadOnlyCollection<WorkCalendarWorkingTimeResponse>? WorkingTimes = null,
         IReadOnlyCollection<WorkCalendarHolidayResponse>? Holidays = null,
-        IReadOnlyCollection<WorkCalendarExceptionResponse>? Exceptions = null,
-        int? NumberOfCapacities = null);
+        IReadOnlyCollection<WorkCalendarExceptionResponse>? Exceptions = null);
 
     private sealed record WorkCalendarWorkingTimeResponse(DayOfWeek DayOfWeek);
     private sealed record WorkCalendarHolidayResponse(DateOnly Date, string Name);

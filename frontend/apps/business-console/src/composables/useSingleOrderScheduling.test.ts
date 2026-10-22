@@ -3,10 +3,7 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { useBusinessContextStore } from '@/stores/businessContext'
-import {
-  singleOrderSchedulingResultRoute,
-  useSingleOrderScheduling,
-} from './useSingleOrderScheduling'
+import { useSingleOrderScheduling } from './useSingleOrderScheduling'
 
 const state = vi.hoisted(() => ({
   bodies: [] as unknown[],
@@ -80,7 +77,13 @@ describe('单单排产（MAN-694 / #1262）', () => {
       orders: [{ workOrderId: 'WO-77', priority: 10, isRush: true }],
     })
     // 生成后必须让方案列表/明细失效，否则跳过去看到的还是旧列表。
-    expect(state.invalidated.length).toBeGreaterThan(0)
+    expect(
+      state.invalidated.some((entry) =>
+        (entry as { predicate: (query: unknown) => boolean }).predicate({
+          key: [{ _id: 'listBusinessConsoleSchedulingPlanHistory' }],
+        }),
+      ),
+    ).toBe(true)
   })
 
   it('业务范围为空时不发请求（Common Mistakes #13）', async () => {
@@ -94,7 +97,7 @@ describe('单单排产（MAN-694 / #1262）', () => {
         horizonStartUtc: '2026-08-01T00:00:00.000Z',
         horizonEndUtc: '2026-08-02T00:00:00.000Z',
       }),
-    ).rejects.toThrow('请先选择组织与环境后再排产。')
+    ).rejects.toThrow('尚未确定当前组织，暂不能排产。')
     expect(state.bodies).toHaveLength(0)
   })
 
@@ -126,12 +129,5 @@ describe('单单排产（MAN-694 / #1262）', () => {
         horizonEndUtc: '2026-08-02T00:00:00.000Z',
       }),
     ).rejects.toThrow('工单没有生产版本')
-  })
-
-  it('落点带上 planId 与工单号，工作台可直接定位刚生成的方案', () => {
-    expect(singleOrderSchedulingResultRoute('PLAN-1', 'WO-77')).toEqual({
-      path: '/scheduling',
-      query: { planId: 'PLAN-1', orderReference: 'WO-77' },
-    })
   })
 })

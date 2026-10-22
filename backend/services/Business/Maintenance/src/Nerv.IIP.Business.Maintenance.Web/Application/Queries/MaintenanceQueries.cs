@@ -17,10 +17,10 @@ namespace Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 public sealed record PagedMaintenanceListResponse<T>(IReadOnlyCollection<T> Items, int Skip, int Take, int Total);
 
 public sealed record ListMaintenanceWorkOrdersQuery(
-    string? OrganizationId,
-    string? EnvironmentId,
+    string OrganizationId,
+    string EnvironmentId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? DeviceAssetIds = null,
     string? Status = null,
     string? DeviceAssetId = null,
@@ -29,6 +29,12 @@ public sealed record ListMaintenanceWorkOrdersQuery(
     string? AssignedTeamIds = null,
     string? WorkOrderId = null,
     string[]? DeviceAssetReferences = null) : IQuery<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>;
+
+public sealed class ListMaintenanceWorkOrdersQueryValidator : AbstractValidator<ListMaintenanceWorkOrdersQuery>
+{
+    public ListMaintenanceWorkOrdersQueryValidator() =>
+        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
+}
 
 public sealed record MaintenanceWorkOrderListItem(
     MaintenanceWorkOrderId WorkOrderId,
@@ -46,15 +52,18 @@ public sealed record MaintenanceWorkOrderListItem(
     string? CostCurrencyCode,
     string? SourceReferenceId = null,
     string? AssignedTeamId = null,
-    int Version = 0);
+    int Version = 0,
+    DateTimeOffset? ExpectedRestoreAtUtc = null,
+
+    string WorkOrderNo = "");
 
 public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaintenanceWorkOrdersQuery, PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>
 {
     public async Task<PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>> Handle(ListMaintenanceWorkOrdersQuery request, CancellationToken cancellationToken)
     {
-        var skip = NormalizeSkip(request.Skip);
-        var take = NormalizeTake(request.Take);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
         var deviceAssetIds = SplitCsv(request.DeviceAssetIds);
         var deviceAssetReferences = NormalizeExactReferences(request.DeviceAssetReferences);
         var assignedTechnicianUserIds = SplitCsv(request.AssignedTechnicianUserIds);
@@ -65,16 +74,16 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
             if (!Enum.TryParse<MaintenanceWorkOrderStatus>(request.Status.Trim(), true, out var parsedStatus)
                 || !Enum.IsDefined(parsedStatus))
             {
-                return new PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>([], skip, take, 0);
+                return new PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>([], page.Skip, page.Take, 0);
             }
             status = parsedStatus;
         }
-        var keyword = request.Keyword?.Trim().ToLowerInvariant();
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var hasWorkOrderId = Guid.TryParse(request.WorkOrderId, out var workOrderGuid);
         var workOrderId = hasWorkOrderId ? new MaintenanceWorkOrderId(workOrderGuid) : null;
         var query = dbContext.MaintenanceWorkOrders
-            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId)
+            .Where(x => x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => deviceAssetIds.Count == 0 || deviceAssetIds.Contains(x.DeviceAssetId))
             .Where(x => request.DeviceAssetId == null || x.DeviceAssetId == request.DeviceAssetId)
             .Where(x => deviceAssetReferences.Count == 0 || deviceAssetReferences.Contains(x.DeviceAssetId))
@@ -83,6 +92,7 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
             .Where(x => assignedTeamIds.Count == 0 || (x.AssignedTeamId != null && assignedTeamIds.Contains(x.AssignedTeamId)))
             .Where(x => request.WorkOrderId == null || (workOrderId != null && x.Id == workOrderId))
             .Where(x => keyword == null
+                || x.WorkOrderNo.ToLower().Contains(keyword)
                 || x.DeviceAssetId.ToLower().Contains(keyword)
                 || (x.SourceAlarmId != null && x.SourceAlarmId.ToLower().Contains(keyword))
                 || (x.SourceReferenceId != null && x.SourceReferenceId.ToLower().Contains(keyword))
@@ -108,11 +118,13 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
                 x.CostCurrencyCode,
                 x.SourceReferenceId,
                 x.AssignedTeamId,
-                x.Version))
-            .Skip(skip)
-            .Take(take)
+                x.Version,
+                x.ExpectedRestoreAtUtc,
+                x.WorkOrderNo))
+            .Skip(page.Skip)
+            .Take(page.Take)
             .ToArrayAsync(cancellationToken);
-        return new PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>(items, skip, take, total);
+        return new PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>(items, page.Skip, page.Take, total);
     }
 
     internal static int NormalizeSkip(int skip) => Math.Max(0, skip);
@@ -210,7 +222,9 @@ public sealed class GetMaintenanceWorkOrderQueryHandler(ApplicationDbContext dbC
                     x.CostCurrencyCode,
                     x.SourceReferenceId,
                     x.AssignedTeamId,
-                    x.Version),
+                    x.Version,
+                    x.ExpectedRestoreAtUtc,
+                    x.WorkOrderNo),
                 x.CompletionResult != null
                     && x.DowntimeReasonCode != null
                     && x.DowntimeMinutes != null
@@ -327,7 +341,13 @@ public static class MaintenanceWorkOrderEligibility
     };
 }
 
-public sealed record ListMaintenancePlansQuery(string? OrganizationId, string? EnvironmentId, int Skip = 0, int Take = 100, string? DeviceAssetId = null) : IQuery<PagedMaintenanceListResponse<MaintenancePlanListItem>>;
+public sealed record ListMaintenancePlansQuery(string OrganizationId, string EnvironmentId, int Skip = 0, int Take = OffsetPage.DefaultTake, string? DeviceAssetId = null) : IQuery<PagedMaintenanceListResponse<MaintenancePlanListItem>>;
+
+public sealed class ListMaintenancePlansQueryValidator : AbstractValidator<ListMaintenancePlansQuery>
+{
+    public ListMaintenancePlansQueryValidator() =>
+        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
+}
 
 public sealed record MaintenancePlanListItem(
     MaintenancePlanId PlanId,
@@ -345,15 +365,15 @@ public sealed class ListMaintenancePlansQueryHandler(ApplicationDbContext dbCont
 {
     public async Task<PagedMaintenanceListResponse<MaintenancePlanListItem>> Handle(ListMaintenancePlansQuery request, CancellationToken cancellationToken)
     {
-        var skip = ListMaintenanceWorkOrdersQueryHandler.NormalizeSkip(request.Skip);
-        var take = ListMaintenanceWorkOrdersQueryHandler.NormalizeTake(request.Take);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
         var deviceAssetId = string.IsNullOrWhiteSpace(request.DeviceAssetId) ? null : request.DeviceAssetId;
         // The list stays a fast DB projection: remaining runtime hours (which needs a telemetry read per
         // plan over the plan's own [StartsOn, now] window) is derived on the client from the runtime-hours
         // read facade, so the list query never fans out to IndustrialTelemetry.
         var query = dbContext.MaintenancePlans
-            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId)
+            .Where(x => x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => deviceAssetId == null || x.DeviceAssetId == deviceAssetId);
         var total = await query.CountAsync(cancellationToken);
         var items = await query
@@ -368,10 +388,10 @@ public sealed class ListMaintenancePlansQueryHandler(ApplicationDbContext dbCont
                 x.RuntimeHourInterval,
                 x.NextDueRuntimeHours,
                 x.LastGeneratedRuntimeHours))
-            .Skip(skip)
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .ToArrayAsync(cancellationToken);
-        return new PagedMaintenanceListResponse<MaintenancePlanListItem>(items, skip, take, total);
+        return new PagedMaintenanceListResponse<MaintenancePlanListItem>(items, page.Skip, page.Take, total);
     }
 }
 
@@ -544,7 +564,10 @@ public sealed record MaintenanceSparePartListItem(
     string DeviceAssetId,
     string SkuCode,
     decimal Quantity,
-    string? UomCode);
+    string? UomCode,
+    string? SiteCode = null,
+    string? LocationCode = null,
+    string WorkOrderNo = "");
 
 public sealed class ListMaintenanceSparePartsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaintenanceSparePartsQuery, PagedMaintenanceListResponse<MaintenanceSparePartListItem>>
@@ -574,18 +597,27 @@ public sealed class ListMaintenanceSparePartsQueryHandler(ApplicationDbContext d
                 x.workOrder.DeviceAssetId,
                 x.sparePart.SkuCode,
                 x.sparePart.Quantity,
-                x.sparePart.UomCode))
+                x.sparePart.UomCode,
+                x.sparePart.SiteCode,
+                x.sparePart.LocationCode,
+                x.workOrder.WorkOrderNo))
             .ToArrayAsync(cancellationToken);
         return new PagedMaintenanceListResponse<MaintenanceSparePartListItem>(items, skip, take, total);
     }
 }
 
 public sealed record ListDowntimeReasonsQuery(
-    string? OrganizationId,
-    string? EnvironmentId,
+    string OrganizationId,
+    string EnvironmentId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null) : IQuery<PagedMaintenanceListResponse<DowntimeReasonListItem>>;
+
+public sealed class ListDowntimeReasonsQueryValidator : AbstractValidator<ListDowntimeReasonsQuery>
+{
+    public ListDowntimeReasonsQueryValidator() =>
+        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
+}
 
 public sealed record DowntimeReasonListItem(DowntimeReasonId DowntimeReasonId, string OrganizationId, string EnvironmentId, string ReasonCode, string Description, string ReasonCategory, string LossCategory);
 
@@ -594,12 +626,12 @@ public sealed class ListDowntimeReasonsQueryHandler(ApplicationDbContext dbConte
 {
     public async Task<PagedMaintenanceListResponse<DowntimeReasonListItem>> Handle(ListDowntimeReasonsQuery request, CancellationToken cancellationToken)
     {
-        var skip = ListMaintenanceWorkOrdersQueryHandler.NormalizeSkip(request.Skip);
-        var take = ListMaintenanceWorkOrdersQueryHandler.NormalizeTake(request.Take);
-        var keyword = string.IsNullOrWhiteSpace(request.Keyword) ? null : request.Keyword.Trim().ToLowerInvariant();
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var query = dbContext.DowntimeReasons
-            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId)
+            .Where(x => x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => keyword == null
                 || x.ReasonCode.ToLower().Contains(keyword)
                 || x.Description.ToLower().Contains(keyword)
@@ -609,10 +641,10 @@ public sealed class ListDowntimeReasonsQueryHandler(ApplicationDbContext dbConte
         var items = await query
             .OrderBy(x => x.ReasonCode)
             .Select(x => new DowntimeReasonListItem(x.Id, x.OrganizationId, x.EnvironmentId, x.ReasonCode, x.Description, x.ReasonCategory, x.LossCategory))
-            .Skip(skip)
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .ToArrayAsync(cancellationToken);
-        return new PagedMaintenanceListResponse<DowntimeReasonListItem>(items, skip, take, total);
+        return new PagedMaintenanceListResponse<DowntimeReasonListItem>(items, page.Skip, page.Take, total);
     }
 }
 
@@ -1031,7 +1063,9 @@ public sealed class GetMaintenanceAssetAvailabilityWindowsQueryValidator : Abstr
     }
 }
 
-public sealed class GetMaintenanceAssetAvailabilityWindowsQueryHandler(ApplicationDbContext dbContext)
+public sealed class GetMaintenanceAssetAvailabilityWindowsQueryHandler(
+    ApplicationDbContext dbContext,
+    IRequestHandler<GetMaintenanceRestorePredictionQuery, MaintenanceRestorePredictionResult> restorePredictions)
     : IQueryHandler<GetMaintenanceAssetAvailabilityWindowsQuery, EquipmentRuntimeAvailabilityResponse>
 {
     public async Task<EquipmentRuntimeAvailabilityResponse> Handle(GetMaintenanceAssetAvailabilityWindowsQuery request, CancellationToken cancellationToken)
@@ -1046,6 +1080,7 @@ public sealed class GetMaintenanceAssetAvailabilityWindowsQueryHandler(Applicati
                 [request.DeviceAssetId],
                 null,
                 request.FreshnessMaxAgeMinutes),
+            restorePredictions,
             cancellationToken);
     }
 }
@@ -1063,12 +1098,14 @@ public sealed class QueryMaintenanceAvailabilityWindowsQueryValidator : Abstract
     }
 }
 
-public sealed class QueryMaintenanceAvailabilityWindowsQueryHandler(ApplicationDbContext dbContext)
+public sealed class QueryMaintenanceAvailabilityWindowsQueryHandler(
+    ApplicationDbContext dbContext,
+    IRequestHandler<GetMaintenanceRestorePredictionQuery, MaintenanceRestorePredictionResult> restorePredictions)
     : IQueryHandler<QueryMaintenanceAvailabilityWindowsQuery, EquipmentRuntimeAvailabilityResponse>
 {
     public Task<EquipmentRuntimeAvailabilityResponse> Handle(QueryMaintenanceAvailabilityWindowsQuery request, CancellationToken cancellationToken)
     {
-        return MaintenanceAvailabilityWindowCalculator.CalculateAsync(dbContext, request.Request, cancellationToken);
+        return MaintenanceAvailabilityWindowCalculator.CalculateAsync(dbContext, request.Request, restorePredictions, cancellationToken);
     }
 }
 
@@ -1077,6 +1114,7 @@ internal static class MaintenanceAvailabilityWindowCalculator
     public static async Task<EquipmentRuntimeAvailabilityResponse> CalculateAsync(
         ApplicationDbContext dbContext,
         EquipmentRuntimeAvailabilityRequest originalContract,
+        IRequestHandler<GetMaintenanceRestorePredictionQuery, MaintenanceRestorePredictionResult> restorePredictions,
         CancellationToken cancellationToken)
     {
         if (originalContract.WindowEndUtc <= originalContract.WindowStartUtc)
@@ -1102,26 +1140,46 @@ internal static class MaintenanceAvailabilityWindowCalculator
             throw new KnownException("deviceAssetIds is required in P0 maintenance availability.");
         }
 
+        // 占用窗口 [AssetUnavailableFromUtc, 释放时刻] 与查询窗口求交才进读面。
+        // 「释放时刻」取聚合发 AssetRestoredDomainEvent 的那两个位点：完工（CompletedAtUtc）与
+        // 取消（CancelledAtUtc）。两者皆无即尚未释放，右边界取查询窗口末端。报警清除不算释放 ——
+        // MarkAlarmCleared 既不清 AssetUnavailable 也不发 AssetRestoredDomainEvent，清警后工单仍可
+        // Accept/StartWork 继续修；把它算进释放会让在途停机少扣。
+        //
+        // 这里分两段投影不是啰嗦：释放时刻必须以单个 COALESCE 下推到服务端参与区间比较。
+        // 合并成一段、或把下面那条 Where 提到 Select 之前写成 `x.CompletedAtUtc ?? x.CancelledAtUtc`，
+        // 会让这个判据在查询里出现两次，改一处漏一处。
         var workOrders = await dbContext.MaintenanceWorkOrders
             .Where(x => x.OrganizationId == contract.OrganizationId)
             .Where(x => x.EnvironmentId == contract.EnvironmentId)
             .Where(x => deviceAssetIds.Contains(x.DeviceAssetId))
             .Where(x => x.AssetUnavailable)
             .Where(x => x.AssetUnavailableFromUtc != null)
-            .Where(x => x.Status == MaintenanceWorkOrderStatus.Open || x.CompletedAtUtc != null)
             .Where(x => x.AssetUnavailableFromUtc < contract.WindowEndUtc)
-            .Where(x => x.Status == MaintenanceWorkOrderStatus.Open || x.CompletedAtUtc > contract.WindowStartUtc)
+            .Select(x => new
+            {
+                x.Id,
+                x.DeviceAssetId,
+                x.SourceAlarmId,
+                x.AssetUnavailableFromUtc,
+                ReleasedAtUtc = x.CompletedAtUtc ?? x.CancelledAtUtc,
+                x.SourcePlanCode,
+                x.SourceReferenceId,
+                x.SourceType,
+                x.WorkOrderNo,
+            })
+            .Where(x => x.ReleasedAtUtc == null || x.ReleasedAtUtc > contract.WindowStartUtc)
             .OrderBy(x => x.AssetUnavailableFromUtc)
             .Select(x => new MaintenanceWorkOrderAvailabilityProjection(
                 x.Id,
                 x.DeviceAssetId,
                 x.SourceAlarmId,
-                x.Status,
                 x.AssetUnavailableFromUtc!.Value,
-                x.AlarmClearedAtUtc,
-                x.CompletedAtUtc,
+                x.ReleasedAtUtc,
                 x.SourcePlanCode,
-                x.SourceReferenceId))
+                x.SourceReferenceId,
+                x.SourceType,
+                x.WorkOrderNo))
             .ToArrayAsync(cancellationToken);
 
         var plans = await dbContext.MaintenancePlans
@@ -1144,7 +1202,7 @@ internal static class MaintenanceAvailabilityWindowCalculator
             .Where(x => x.OrganizationId == contract.OrganizationId)
             .Where(x => x.EnvironmentId == contract.EnvironmentId)
             .Where(x => deviceAssetIds.Contains(x.DeviceAssetId))
-            .Select(x => new MaintenanceInspectionWorkOrderProjection(x.Id, x.DeviceAssetId, x.SourcePlanCode, x.SourceReferenceId))
+            .Select(x => new MaintenanceInspectionWorkOrderProjection(x.Id, x.DeviceAssetId, x.SourcePlanCode, x.SourceReferenceId, x.SourceType, x.SourceAlarmId, x.WorkOrderNo))
             .ToArrayAsync(cancellationToken);
         var inspectionPlanIds = inspectionPlans.Select(x => x.PlanId).ToArray();
         var inspectionWorkOrderIds = inspectionWorkOrders.Select(x => x.WorkOrderId).ToArray();
@@ -1161,9 +1219,11 @@ internal static class MaintenanceAvailabilityWindowCalculator
         var windows = new List<EquipmentRuntimeAvailabilityWindowContract>();
         foreach (var workOrder in workOrders)
         {
-            var endUtc = workOrder.Status == MaintenanceWorkOrderStatus.Open
-                ? workOrder.AlarmClearedAtUtc ?? contract.WindowEndUtc
-                : workOrder.CompletedAtUtc!.Value;
+            var endUtc = workOrder.ReleasedAtUtc ?? contract.WindowEndUtc;
+            var prediction = workOrder.ReleasedAtUtc is null
+                ? await restorePredictions.Handle(new GetMaintenanceRestorePredictionQuery(
+                    contract.OrganizationId, contract.EnvironmentId, workOrder.WorkOrderId), cancellationToken)
+                : null;
             AddWindow(
                 windows,
                 workOrder.DeviceAssetId,
@@ -1174,12 +1234,9 @@ internal static class MaintenanceAvailabilityWindowCalculator
                 workOrder.SourceAlarmId is null ? EquipmentRuntimeSourceType.Downtime : EquipmentRuntimeSourceType.Alarm,
                 workOrder.SourceAlarmId ?? workOrder.WorkOrderId.ToString(),
                 contract,
-                // 维修工单号（MWO-2026-####）按本服务既定约定落在 SourceReferenceId 上
-                // （见 WorldHistorySeedService 注释，先例 MWO-DEMO-001），这才是人读单号。
-                // 注意**不要**用 SourceAlarmId：它是 WH-DEV-ASM-12-press-force:0000 这类合成键，
-                // 不是给人看的编号。工单号缺失时回落到生成它的保养计划编码，再没有就回 null ——
-                // 宁可让界面显示占位，也不把 GUID 当业务标识上屏。
-                sourceReferenceLabel: workOrder.SourceReferenceId ?? workOrder.SourcePlanCode);
+                // 维修工单的人读标识就是它的正式单号（#3852）。
+                sourceReferenceLabel: WorkOrderReferenceLabel(workOrder.WorkOrderNo),
+                prediction: prediction);
         }
 
         foreach (var plan in plans)
@@ -1255,7 +1312,8 @@ internal static class MaintenanceAvailabilityWindowCalculator
         EquipmentRuntimeSourceType sourceType,
         string sourceReferenceId,
         EquipmentRuntimeAvailabilityRequest request,
-        string? sourceReferenceLabel = null)
+        string? sourceReferenceLabel = null,
+        MaintenanceRestorePredictionResult? prediction = null)
     {
         var clippedStartUtc = Max(startUtc, request.WindowStartUtc);
         var clippedEndUtc = Min(endUtc, request.WindowEndUtc);
@@ -1276,7 +1334,10 @@ internal static class MaintenanceAvailabilityWindowCalculator
             SourceReferenceId: sourceReferenceId,
             MessageKey: reasonCode,
             SubstituteDeviceAssetIds: [],
-            SourceReferenceLabel: sourceReferenceLabel));
+            SourceReferenceLabel: sourceReferenceLabel,
+            ExpectedRestoreAtUtc: prediction?.PredictedRestoreAtUtc,
+            RestorePredictionSource: prediction?.Source,
+            RestorePredictionSourceVersion: prediction?.SourceVersion));
     }
 
     private static string? ResolveInspectionDeviceAssetId(
@@ -1314,8 +1375,17 @@ internal static class MaintenanceAvailabilityWindowCalculator
         }
 
         var workOrder = workOrders.FirstOrDefault(x => x.WorkOrderId == inspection.WorkOrderId);
-        return workOrder?.SourceReferenceId ?? workOrder?.SourcePlanCode;
+        return workOrder is null
+            ? null
+            : WorkOrderReferenceLabel(workOrder.WorkOrderNo);
     }
+
+    /// <summary>
+    /// 维修工单在可用窗口「关联业务」列的人读标识：正式单号（#3852，编码规则分配）。
+    /// 以前只能从 SourceReferenceId 里挑能看的值（报警合成键、点检 GUID 都不是单号），现在每张工单都有单号。
+    /// </summary>
+    private static string? WorkOrderReferenceLabel(string workOrderNo) =>
+        string.IsNullOrWhiteSpace(workOrderNo) ? null : workOrderNo;
 
     private static string GetInspectionReferenceKey(MaintenanceInspectionAvailabilityProjection inspection)
     {
@@ -1344,12 +1414,12 @@ internal sealed record MaintenanceWorkOrderAvailabilityProjection(
     MaintenanceWorkOrderId WorkOrderId,
     string DeviceAssetId,
     string? SourceAlarmId,
-    MaintenanceWorkOrderStatus Status,
     DateTimeOffset AssetUnavailableFromUtc,
-    DateTimeOffset? AlarmClearedAtUtc,
-    DateTimeOffset? CompletedAtUtc,
+    DateTimeOffset? ReleasedAtUtc,
     string? SourcePlanCode = null,
-    string? SourceReferenceId = null);
+    string? SourceReferenceId = null,
+    string? SourceType = null,
+    string WorkOrderNo = "");
 
 internal sealed record MaintenancePlanAvailabilityProjection(MaintenancePlanId PlanId, string DeviceAssetId, string PlanCode, DateTimeOffset WindowStartUtc, DateTimeOffset WindowEndUtc);
 
@@ -1359,7 +1429,10 @@ internal sealed record MaintenanceInspectionWorkOrderProjection(
     MaintenanceWorkOrderId WorkOrderId,
     string DeviceAssetId,
     string? SourcePlanCode = null,
-    string? SourceReferenceId = null);
+    string? SourceReferenceId = null,
+    string? SourceType = null,
+    string? SourceAlarmId = null,
+    string WorkOrderNo = "");
 
 internal sealed record MaintenanceInspectionAvailabilityProjection(
     MaintenanceInspectionId InspectionId,

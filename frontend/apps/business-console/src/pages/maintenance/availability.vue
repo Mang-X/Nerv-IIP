@@ -2,7 +2,10 @@
 import type { EquipmentRuntimeAvailabilityWindow } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
 import { useMaintenanceAvailabilityWindows } from '@/composables/useBusinessMaintenance'
-import { describeEquipmentReason } from '@/composables/useBusinessEquipment'
+import {
+  describeAvailabilityWindowReference,
+  describeEquipmentReason,
+} from '@/composables/useBusinessEquipment'
 import { useEquipmentWorkCenterCatalog } from '@/composables/useEquipmentPickerCatalog'
 import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
 import EntityMultiPicker from '@/components/business/EntityMultiPicker.vue'
@@ -24,6 +27,7 @@ import { RefreshCwIcon, WrenchIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { inlineErrorMessage } from '@/utils/notify'
+import { readFaceText } from '@/utils/readFace'
 
 definePage({
   meta: {
@@ -89,7 +93,7 @@ const windowSegments = computed<NvMetricSegment[]>(() => [
     tone: 'success',
   },
 ])
-const errorMessage = computed(() => formatError(availabilityError.value))
+const errorMessage = computed(() => inlineErrorMessage(availabilityError.value))
 
 const windowStartLocal = computed({
   get: () => toLocalDateTime(filters.windowStartUtc),
@@ -104,19 +108,34 @@ const windowEndLocal = computed({
   },
 })
 
-// 可用窗口读面只回编号（DEV-CNC-01 / WC-…），名称在主数据里，按编号 join 出中文名。
-const { resolveDevice, resolveWorkCenter } = useMasterDataDisplayNames({
+// 可用窗口读面只回设备引用（编码或公开 ID）与工作中心编号，名称在主数据里，按引用 join 出中文名。
+const { resolveDevice, resolveDeviceCode, resolveWorkCenter } = useMasterDataDisplayNames({
   devices: true,
   workCenters: true,
 })
-/** 设备展示串：名称优先，名录查不到就只显编号，不编名字。 */
-function deviceLabel(code?: string | null, fallback = '未记录') {
-  if (!code) return fallback
-  return resolveDevice(code) ?? code
+/** 设备名称；名录查不到时只留可读编码，公开 ID 不上屏。 */
+function deviceName(reference?: string | null) {
+  if (!reference) return '—'
+  return resolveDevice(reference) ?? readFaceText(reference)
+}
+/** 设备编码；名录查不到时只留可读编码。 */
+function deviceCode(reference?: string | null) {
+  if (!reference) return ''
+  return resolveDeviceCode(reference) ?? readFaceText(reference, '')
+}
+/** 设备「名称（编码）」。 */
+function deviceLabel(reference?: string | null) {
+  const name = deviceName(reference)
+  const code = deviceCode(reference)
+  return code && code !== name ? `${name}（${code}）` : name
 }
 function workCenterLabel(code?: string | null, fallback = '未绑定') {
   if (!code) return fallback
-  return resolveWorkCenter(code) ?? code
+  return resolveWorkCenter(code) ?? readFaceText(code, fallback)
+}
+/** 关联业务：维修工单号 / 保养计划编码 / 点检来源等人读标识；解析不出来显示「—」，不显示工单主键或告警合成键。 */
+function referenceLabel(row: EquipmentRuntimeAvailabilityWindow) {
+  return describeAvailabilityWindowReference(row, deviceCode(row.deviceAssetId))
 }
 
 const columns: NvDataTableColumn<EquipmentRuntimeAvailabilityWindow>[] = [
@@ -124,10 +143,7 @@ const columns: NvDataTableColumn<EquipmentRuntimeAvailabilityWindow>[] = [
     key: 'deviceAssetId',
     header: '设备',
     cellClass: 'font-medium',
-    accessor: (r) =>
-      resolveDevice(r.deviceAssetId)
-        ? `${resolveDevice(r.deviceAssetId)} ${r.deviceAssetId}`
-        : (r.deviceAssetId ?? '未记录'),
+    accessor: (r) => deviceLabel(r.deviceAssetId),
   },
   { key: 'availabilityStatus', header: '状态', width: 'w-24' },
   { key: 'reasonCode', header: '原因' },
@@ -138,7 +154,7 @@ const columns: NvDataTableColumn<EquipmentRuntimeAvailabilityWindow>[] = [
   },
   { key: 'startUtc', header: '开始', accessor: (r) => formatDateTime(r.startUtc) },
   { key: 'endUtc', header: '结束', accessor: (r) => formatDateTime(r.endUtc) },
-  { key: 'sourceReferenceId', header: '关联业务', accessor: (r) => r.sourceReferenceId ?? '无' },
+  { key: 'sourceReferenceId', header: '关联业务', accessor: referenceLabel },
 ]
 
 function availabilityLabel(value?: string | null) {
@@ -172,9 +188,6 @@ function formatDateTime(value?: string | null) {
   if (!value) return '无'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 
@@ -227,7 +240,6 @@ function formatError(error: unknown) {
             :options="workCenterOptions"
             title="选择工作中心"
             placeholder="可选，添加工作中心"
-            source-text="数据来自基础数据工作中心"
             empty-text="暂无工作中心，请先在基础数据维护工作中心"
             selection-empty-text="未限定工作中心（统计范围内全部设备）"
             :loading="workCentersPending"
@@ -286,12 +298,9 @@ function formatError(error: unknown) {
         <template #cell-deviceAssetId="{ row }">
           <RouterLink
             :to="`/equipment/${row.deviceAssetId}`"
-            class="grid leading-tight text-brand underline-offset-4 hover:underline"
+            class="text-brand underline-offset-4 hover:underline"
           >
-            <span>{{ deviceLabel(row.deviceAssetId) }}</span>
-            <span v-if="resolveDevice(row.deviceAssetId)" class="text-xs text-muted-foreground">{{
-              row.deviceAssetId
-            }}</span>
+            {{ deviceLabel(row.deviceAssetId) }}
           </RouterLink>
         </template>
         <template #cell-availabilityStatus="{ row }">

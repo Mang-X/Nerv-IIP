@@ -92,7 +92,12 @@ public sealed record ReleaseMasterProductionScheduleBucketRequest(
     [property: QueryParam] string EnvironmentId,
     string ReleasedBy);
 
-public sealed record ListDemandSourcesRequest(string OrganizationId, string EnvironmentId);
+public sealed record ListDemandSourcesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record CancelDemandSourceRequest(
     [property: RouteParam] DemandSourceId DemandSourceId,
@@ -300,7 +305,12 @@ public sealed class ListDemandSourcesEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListDemandSourcesRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListDemandSourcesQuery(req.OrganizationId, req.EnvironmentId), ct);
+        var response = await sender.Send(new ListDemandSourcesQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Keyword,
+            req.Skip,
+            req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -505,6 +515,7 @@ public static class DemandPlanningEndpointContracts
         new(typeof(RunMrpEndpoint), "POST", "/api/business/v1/planning/mrp-runs", DemandPlanningPermissionCodes.MrpRun, InternalServiceAuthorizationPolicy.Name, "runPlanningMrp"),
         new(typeof(ListMrpRunsEndpoint), "GET", "/api/business/v1/planning/mrp-runs", DemandPlanningPermissionCodes.MrpRead, InternalServiceAuthorizationPolicy.Name, "listPlanningMrpRuns"),
         new(typeof(ListMrpPeggingEndpoint), "GET", "/api/business/v1/planning/mrp-runs/{runId}/pegging", DemandPlanningPermissionCodes.MrpRead, InternalServiceAuthorizationPolicy.Name, "getPlanningMrpPegging"),
+        new(typeof(GetMaterialDeliveriesEndpoint), "GET", "/api/business/v1/planning/mrp-runs/{runId}/material-deliveries", DemandPlanningPermissionCodes.MrpRead, InternalServiceAuthorizationPolicy.Name, "getPlanningMaterialDeliveries"),
         new(typeof(ListPlanningSuggestionsEndpoint), "GET", "/api/business/v1/planning/suggestions", DemandPlanningPermissionCodes.MrpRead, InternalServiceAuthorizationPolicy.Name, "listPlanningSuggestions"),
         new(typeof(AcceptPlanningSuggestionEndpoint), "POST", "/api/business/v1/planning/suggestions/{suggestionId}/accept", DemandPlanningPermissionCodes.SuggestionsManage, InternalServiceAuthorizationPolicy.Name, "acceptPlanningSuggestion"),
         new(typeof(RejectPlanningSuggestionEndpoint), "POST", "/api/business/v1/planning/suggestions/{suggestionId}/reject", DemandPlanningPermissionCodes.SuggestionsManage, InternalServiceAuthorizationPolicy.Name, "rejectPlanningSuggestion"),

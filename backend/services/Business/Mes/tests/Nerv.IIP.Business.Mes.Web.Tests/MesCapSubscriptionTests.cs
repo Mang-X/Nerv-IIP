@@ -6,16 +6,17 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.Quality;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing;
 using Npgsql;
 using System.Data;
@@ -27,6 +28,8 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 public sealed class MesCapSubscriptionTests
 {
     private const string AssetUnavailableTopic = "AssetUnavailableIntegrationEvent";
+    private const string AssetUnavailableV2DevelopmentTopic =
+        "nerv-iip.development.business-maintenance.maintenance.asset-unavailable.v2";
     private const string AssetRestoredTopic = "AssetRestoredIntegrationEvent";
     private const string SchedulePlanReleasedTopic = "SchedulePlanReleasedIntegrationEvent";
     private const string SchedulePlanInvalidatedTopic = "SchedulePlanInvalidatedIntegrationEvent";
@@ -67,6 +70,12 @@ public sealed class MesCapSubscriptionTests
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, StockMovementPostedTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, StockMovementPostingFailedTopic));
         Assert.Contains(candidates, candidate => CandidateSubscribesToTopic(candidate, SkuDisabledTopic));
+        var v2Candidate = Assert.Single(candidates, candidate =>
+            CandidateSubscribesToTopic(candidate, AssetUnavailableV2DevelopmentTopic));
+        var v1Candidate = Assert.Single(candidates, candidate =>
+            candidate.ImplTypeInfo.AsType() == typeof(AssetUnavailableIntegrationEventHandlerForReschedule) &&
+            CandidateSubscribesToTopic(candidate, AssetUnavailableTopic));
+        Assert.Equal(v1Candidate.Attribute.Group, v2Candidate.Attribute.Group);
     }
 
     [Fact]
@@ -128,6 +137,19 @@ public sealed class MesCapSubscriptionTests
         Assert.Contains(services, descriptor =>
             descriptor.ServiceType == typeof(SkuDisabledIntegrationEventHandlerForProjectMesSkuAvailability) &&
             descriptor.Lifetime == ServiceLifetime.Scoped);
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(MesAssetUnavailableCanonicalProcessor) &&
+            descriptor.Lifetime == ServiceLifetime.Scoped);
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(AssetUnavailableV2IntegrationEventHandlerForReschedule) &&
+            descriptor.Lifetime == ServiceLifetime.Scoped);
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IIntegrationEventDeadLetterReplayHandler) &&
+            descriptor.ImplementationType == typeof(MesAssetUnavailableDeadLetterReplayHandler) &&
+            descriptor.Lifetime == ServiceLifetime.Scoped);
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(IntegrationEventDeadLetterReplayExecutor) &&
+            descriptor.Lifetime == ServiceLifetime.Scoped);
     }
 
     [Fact]
@@ -144,7 +166,6 @@ public sealed class MesCapSubscriptionTests
 
         var services = new ServiceCollection();
         services.AddSingleton<IMesPlanningStore>(new InMemoryMesPlanningStore());
-        services.AddSingleton<RuleScheduler>();
         services.AddSingleton<MesCodingService>();
         services.AddSingleton<IMesMaterialRequirementSnapshotProvider>(NoRequirementSnapshotProvider.Instance);
         services.AddSingleton(new ApplicationDbContext(
@@ -174,7 +195,7 @@ public sealed class MesCapSubscriptionTests
 
         await PublishAsync(factory, CreateUnavailableEvent(DateTimeOffset.Parse("2026-05-23T08:00:00Z")));
 
-        await AssertEventuallyAsync("the MES CAP consumer persisted the inbox, work-center unavailable window, and reschedule result", async token =>
+        await AssertEventuallyAsync("the MES CAP consumer persisted the inbox and work-center unavailable window", async token =>
         {
             using var scope = factory.Services.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -189,20 +210,15 @@ public sealed class MesCapSubscriptionTests
                 .SingleOrDefaultAsync(
                     x => x.DeviceAssetId == "ASSET-CNC-01",
                     token);
-            var result = await dbContext.ScheduleResults
-                .AsNoTracking()
-                .SingleOrDefaultAsync(token);
-
             Assert.True(inbox is not null, "MES CAP consumer should persist the processed-event inbox row.");
             Assert.True(window is not null, "MES CAP consumer should persist the work-center unavailable window.");
             Assert.Equal("WC-A", window.WorkCenterId);
             Assert.Null(window.ToUtc);
-            Assert.True(result is not null, "MES CAP consumer should auto-reschedule after asset unavailable.");
         });
     }
 
     [PostgreSqlFact]
-    public async Task PostgreSQL_asset_restored_handler_persists_window_schedule_and_inbox_without_external_save()
+    public async Task PostgreSQL_asset_restored_handler_persists_window_and_inbox_without_external_save()
     {
         await MesPostgresLaneDatabase.ResetSchemaAsync();
         await using var factory = CreateFactory(MesPostgresLaneDatabase.ConnectionString);
@@ -236,12 +252,10 @@ public sealed class MesCapSubscriptionTests
         using var assertionScope = factory.Services.CreateScope();
         var assertionDb = assertionScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var window = await assertionDb.WorkCenterUnavailabilities.AsNoTracking().SingleAsync();
-        var schedule = await assertionDb.ScheduleResults.AsNoTracking().SingleAsync();
         var inbox = await assertionDb.ProcessedIntegrationEvents.AsNoTracking().SingleAsync(x =>
             x.ConsumerName == AssetRestoredIntegrationEventHandlerForReschedule.ConsumerName);
 
         Assert.Equal(restoredAtUtc, window.ToUtc);
-        Assert.Equal("AssetRestored", schedule.Trigger.ToString());
         Assert.Equal(integrationEvent.EventId, inbox.EventId);
     }
 
@@ -322,6 +336,12 @@ public sealed class MesCapSubscriptionTests
                 {
                     configuration.AddInMemoryCollection(settings);
                 });
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IMesDeviceWorkCenterResolver>();
+                    services.AddSingleton<IMesDeviceWorkCenterResolver>(
+                        new FakeMesDeviceWorkCenterResolver().Map("ASSET-CNC-01", "WC-A"));
+                });
             });
     }
 
@@ -355,9 +375,8 @@ public sealed class MesCapSubscriptionTests
         using var scope = factory.Services.CreateScope();
         var now = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
         var store = scope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
-        store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
-        store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2)));
+        store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
         await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
     }
 

@@ -1,13 +1,17 @@
 ﻿using System.Reflection;
 using System.Text.Json;
 using FastEndpoints;
+using Nerv.IIP.Business.Erp.Web.Endpoints.DeadLetters;
 using FastEndpoints.Swagger;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.Business.Erp.Web;
 using Nerv.IIP.Business.Erp.Web.Application.Approval;
+using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Erp.Web.Application.MasterData;
 using Nerv.IIP.Business.Erp.Web.Application.Seed;
 using Nerv.IIP.Business.Erp.Web.Application.Wms;
@@ -33,6 +37,7 @@ try
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<IErpIntegrationEventContextAccessor, HttpErpIntegrationEventContextAccessor>();
+    builder.Services.AddSingleton<IErpMachineOverheadInternalScopeAuthorizer, AuthenticatedErpMachineOverheadInternalScopeAuthorizer>();
     var approvalBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
     builder.Services.AddHttpClient<IPurchaseOrderApprovalClient, HttpPurchaseOrderApprovalClient>(client =>
     {
@@ -53,6 +58,7 @@ try
         client.BaseAddress = wmsBaseAddress;
     }).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
+    builder.Services.AddErpMachineOverheadInternalCallerAuthorization(builder.Configuration);
     builder.Services
         .AddFastEndpoints(o =>
         {
@@ -81,6 +87,10 @@ try
 
     builder.Services.AddErpPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddIntegrationEventDeadLetterEndpoints();
+    builder.Services.AddErpDeadLetterReplay();
+    builder.Services.AddScoped<OperationLaborSettlementOrchestrator>();
+    builder.Services.AddScoped<OperationMachineOverheadSettlementOrchestrator>();
     builder.Services.AddScoped<ErpCodingService>();
     builder.Services.AddScoped<SalesOrderDemandDemoSeedService>();
     builder.Services.AddScoped<WalkthroughSeedService>();
@@ -90,29 +100,10 @@ try
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
-    if (isTesting)
-    {
-        builder.Services.AddIntegrationEvents(typeof(Program));
-    }
-    else
-    {
-        builder.Services.AddIntegrationEvents(typeof(Program))
-            .UseCap<ApplicationDbContext>(b =>
-            {
-                b.RegisterServicesFromAssemblies(typeof(Program));
-                b.AddContextIntegrationFilters();
-            });
-
-        builder.Services.AddCap(x =>
-        {
-            x.Version = builder.Configuration["Cap:Version"] ?? "v1";
-            x.UseConfiguredRecovery(builder.Configuration);
-            x.UseEntityFramework<ApplicationDbContext>();
-            x.JsonSerializerOptions.AddNetCorePalJsonConverters();
-            x.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
-            x.UseDashboard();
-        });
-    }
+    builder.Services.AddErpCapIntegrationEvents(
+        builder.Configuration,
+        builder.Environment.EnvironmentName,
+        isTesting);
 
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
@@ -124,6 +115,9 @@ try
         .UseMicrosoftServiceDiscovery();
     builder.Services.AddConfigurationServiceEndpointProvider();
 
+    // 演示种子 fail-closed：在创建 host/provider 前拒绝无效配置，避免失败路径与 deferred start 争夺释放所有权。
+    ErpDemoSeedStartupGovernance.EnsureDevelopmentOnly(builder.Configuration, builder.Environment);
+
     await using var app = builder.Build();
     app.UseNervIipCorrelation();
     var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
@@ -131,9 +125,6 @@ try
     {
         throw new InvalidOperationException("Persistence:AutoMigrate=true is only allowed for BusinessERP in Development. Use an explicit migrator, release script or migration bundle outside Development.");
     }
-
-    // 演示种子 fail-closed：非 Development 开启种子开关直接拒绝启动，且必须早于任何迁移与监听。
-    ErpDemoSeedStartupGovernance.EnsureDevelopmentOnly(builder.Configuration, app.Environment);
 
     if (autoMigrate)
     {
@@ -165,9 +156,16 @@ try
     app.UseFastEndpoints(c =>
     {
         c.Endpoints.NameGenerator = ctx =>
-            ErpEndpointContracts.TryGet(ctx.EndpointType, out var contract)
-                ? contract.OperationId
+        {
+            if (ErpEndpointContracts.TryGet(ctx.EndpointType, out var contract))
+            {
+                return contract.OperationId;
+            }
+
+            return ErpDeadLetterEndpointContracts.TryGet(ctx.EndpointType, out var deadLetterContract)
+                ? deadLetterContract.OperationId
                 : ToLowerCamelEndpointName(ctx.EndpointType.Name);
+        };
     }).UseSwaggerGen();
     app.UseHttpMetrics();
     app.MapHealthChecks("/health");

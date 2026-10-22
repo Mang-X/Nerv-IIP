@@ -12,6 +12,7 @@ public sealed class PlanningSuggestionEntityTypeConfiguration : IEntityTypeConfi
         builder.Property(x => x.OrganizationId).HasColumnName("organization_id").HasMaxLength(64).IsRequired().HasComment("Tenant organization id that owns the suggestion.");
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").HasMaxLength(64).IsRequired().HasComment("Planning environment id.");
         builder.Property(x => x.MrpRunId).HasColumnName("mrp_run_id").HasComment("Owning MRP run id; no cross-service foreign key.");
+        builder.Property(x => x.NetRequirementReference).HasColumnName("net_requirement_reference").HasComment("Immutable netting event reference shared by lot-sized batches; null for legacy or non-netted suggestions.");
         builder.Property(x => x.SuggestionType).HasColumnName("suggestion_type").HasMaxLength(32).IsRequired().HasComment("Suggestion type such as planned-purchase or planned-work-order.");
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").HasMaxLength(64).IsRequired().HasComment("Suggested SKU code snapshot.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").HasMaxLength(32).IsRequired().HasComment("Suggested quantity unit of measure snapshot.");
@@ -34,6 +35,7 @@ public sealed class PlanningSuggestionEntityTypeConfiguration : IEntityTypeConfi
         builder.Property(x => x.Formula).HasColumnName("formula").HasMaxLength(512).IsRequired().HasComment("Human-readable net requirement formula from persisted MRP inputs.");
         builder.Property(x => x.UomConversionSummary).HasColumnName("uom_conversion_summary").HasMaxLength(512).IsRequired().HasComment("UOM conversion summary used while calculating this suggestion.");
         builder.Property(x => x.Status).HasColumnName("status").HasConversion<string>().HasMaxLength(32).HasComment("Suggestion lifecycle status.");
+        builder.Property(x => x.SupersededByRunId).HasColumnName("superseded_by_run_id").HasComment("Newer completed MRP run that replaced this open suggestion.");
         builder.Property(x => x.AcceptedDownstreamService).HasColumnName("accepted_downstream_service").HasMaxLength(64).HasComment("Downstream service that accepted the suggestion.");
         builder.Property(x => x.AcceptedDownstreamDocumentType).HasColumnName("accepted_downstream_document_type").HasMaxLength(64).HasComment("Downstream document type that accepted the suggestion.");
         builder.Property(x => x.AcceptedDownstreamDocumentId).HasColumnName("accepted_downstream_document_id").HasMaxLength(128).HasComment("Downstream document id that accepted the suggestion.");

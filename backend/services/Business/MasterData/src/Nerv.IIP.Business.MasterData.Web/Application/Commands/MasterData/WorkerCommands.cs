@@ -55,7 +55,13 @@ public sealed class CreateWorkerCommandHandler(
         var userId = string.IsNullOrWhiteSpace(request.UserId) ? code : request.UserId.Trim();
         if (await repository.UserIdTakenAsync(request.OrganizationId, request.EnvironmentId, userId, cancellationToken))
         {
-            throw new KnownException($"人员身份 '{userId}' 已登记。");
+            if (string.IsNullOrWhiteSpace(request.UserId))
+            {
+                throw new KnownException($"人员身份 '{userId}' 已登记。");
+            }
+
+            // 与 ApplicationDbContext 并发兜底同文案；不回显账号 ID。
+            throw new KnownException("所选登录账号已关联其他员工，一个账号只能关联一名员工。");
         }
 
         var worker = Worker.Create(

@@ -168,6 +168,20 @@ public sealed class QualitySpcAnalysisTests
         Assert.NotEqual(alerts[0].IdempotencyKey, alerts[2].IdempotencyKey);
         Assert.Contains("2026-07-08T01:12:00.0000000+00:00", alerts[0].IdempotencyKey, StringComparison.Ordinal);
         Assert.Contains("2026-07-08T02:02:00.0000000+00:00", alerts[2].IdempotencyKey, StringComparison.Ordinal);
+
+        // #3370：上面三条断言**全部前缀无关**（键之间互比 + 时间戳包含），
+        // 所以这条位点改前缀不会让任何用例报红 —— 而前缀是**线上幂等键身份的一部分**，
+        // 下游 inbox（processed_integration_events 的 (ConsumerName, IdempotencyKey) 唯一索引）
+        // 按整条键精确相等去重 ⇒ 静默改前缀会打断在途事件的去重连续性。
+        // 这一段钉的是**字面身份**，不是长度：长度那条性质在本位点由构造成立
+        // （Compose 要么产出 <= Budget 的键，要么就地抛，不可能静默越界）。
+        foreach (var alert in alerts)
+        {
+            Assert.StartsWith(
+                "quality:quality-spc-alert:org-001:env-dev:SKU-RM-1000:length:WC-MIX-01:",
+                alert.IdempotencyKey,
+                StringComparison.Ordinal);
+        }
     }
 
     [Fact]
@@ -224,6 +238,41 @@ public sealed class QualitySpcAnalysisTests
 
         Assert.Empty(provider.GetRequiredService<RecordingIntegrationEventPublisher>().Published.OfType<SpcAlertRaisedIntegrationEvent>());
         Assert.Empty(deadLetters.Messages);
+    }
+
+    // ADR0011 #19 and #4356: consumer dedup is distinct from direct evaluation commands.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Same_inspection_event_is_evaluated_once_and_records_completion_even_without_alert(bool hasTrend)
+    {
+        using var provider = CreateInMemoryMediatorProvider();
+        InspectionPlan plan;
+        using (var scope = provider.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            plan = NewVariablePlan("IQP-SPC-INBOX", lowerSpecLimit: 9m, upperSpecLimit: 12m);
+            db.InspectionPlans.Add(plan);
+            AddMeasurements(db, plan, hasTrend
+                ? [10.0m, 10.1m, 10.2m, 10.3m, 10.4m, 10.5m, 10.6m, 10.7m, 10.8m, 10.9m, 11.0m, 11.1m]
+                : [10.0m]);
+            await db.SaveChangesAsync();
+        }
+        var original = NewInspectionResultEvent(plan);
+        for (var i = 0; i < 2; i++)
+        {
+            using var scope = provider.CreateScope();
+            await new InspectionResultIntegrationEventHandlerForEvaluateSpc(
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                scope.ServiceProvider.GetRequiredService<ISender>(),
+                new InMemoryIntegrationEventDeadLetterStore()).HandleAsync(original, CancellationToken.None);
+        }
+        var alerts = provider.GetRequiredService<RecordingIntegrationEventPublisher>().Published.OfType<SpcAlertRaisedIntegrationEvent>();
+        Assert.Equal(hasTrend ? 1 : 0, alerts.Count());
+        using var read = provider.CreateScope();
+        var inbox = Assert.Single(await read.ServiceProvider.GetRequiredService<ApplicationDbContext>().ProcessedIntegrationEvents.ToListAsync());
+        Assert.Equal(original.EventId, inbox.EventId);
+        Assert.Equal(InspectionResultIntegrationEventHandlerForEvaluateSpc.ConsumerName, inbox.ConsumerName);
     }
 
     [Fact]
@@ -319,6 +368,7 @@ public sealed class QualitySpcAnalysisTests
                 "operation",
                 "mes-operation",
                 $"WO-SPC-{index:000}",
+                sourceDocumentLineId: null,
                 "SKU-RM-1000",
                 1m,
                 null,

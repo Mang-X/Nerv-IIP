@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
+using Nerv.IIP.Business.Quality.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionRecords;
 
@@ -51,16 +52,14 @@ public sealed record ListInspectionRecordsQuery(
     string? SkuCode,
     string? Result,
     int Skip = 0,
-    int Take = 100) : IQuery<ListInspectionRecordsResponse>;
+    int Take = OffsetPage.DefaultTake) : IQuery<ListInspectionRecordsResponse>;
 
 public sealed class ListInspectionRecordsQueryValidator : AbstractValidator<ListInspectionRecordsQuery>
 {
     public ListInspectionRecordsQueryValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
+        this.AddOffsetPageRules(x => x.Skip, x => x.Take);
     }
 }
 
@@ -69,10 +68,12 @@ public sealed class ListInspectionRecordsQueryHandler(ApplicationDbContext dbCon
 {
     public async Task<ListInspectionRecordsResponse> Handle(ListInspectionRecordsQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
         var query = dbContext.InspectionRecords
             .AsNoTracking()
             .Include(x => x.ResultLines)
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.SourceService))
         {
@@ -102,8 +103,8 @@ public sealed class ListInspectionRecordsQueryHandler(ApplicationDbContext dbCon
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
-            .Skip(request.Skip)
-            .Take(Math.Clamp(request.Take, 1, 500))
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new InspectionRecordResponse(
                 x.Id,
                 x.OrganizationId,

@@ -134,11 +134,21 @@ if (usesPostgreSql && autoMigrate)
     await migrationRunner.MigrateAsync();
     var seed = scope.ServiceProvider.GetRequiredService<IamSeedService>();
     await seed.SeedAsync();
-    if (builder.Configuration.GetValue("LeaderDemo:World:Enabled", false))
+    if (WorldBibleSeedGate.ShouldRunWorkerSeeds(
+        builder.Configuration.GetValue("LeaderDemo:World:Enabled", false),
+        builder.Configuration["Iam:Seed:DemoWorkerPassword"]))
     {
         await scope.ServiceProvider.GetRequiredService<WorldBibleWorkerSeedService>().SeedAsync();
         await scope.ServiceProvider.GetRequiredService<WorldBiblePdaDemoAccountSeedService>().SeedAsync();
     }
+}
+
+// 非 Development 的平台引导（只补缺）：最高权限管理员及其默认组织/环境、生产计划员角色。库结构由发布 migrator 先行建好；
+// 与产品基线 seed 一样默认执行，显式设 Iam:Bootstrap:Enabled=false 才关闭。
+if (!builder.Environment.IsDevelopment() && builder.Configuration.GetValue("Iam:Bootstrap:Enabled", true))
+{
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<IamSeedService>().BootstrapAsync();
 }
 
 app.Run();

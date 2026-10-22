@@ -10,9 +10,10 @@
 
 ## 0. 开工前
 
-1. 读根 `docs/architecture/implementation-readiness.md`。
-2. 读所改业务域的**产品业务文档**（§2 清单），以它为业务/IA/UX 事实依据。
-3. 后端能力以 **facade（门面）代码事实**为准，不臆测——**必要时登录后探针真实接口看真返回**（曾踩坑：以为 MES facade 回 GUID、实为人读编码 `WO-…/WC-…/SKU-…`，导致把现成可读单号藏成"待接入"占位；探一下就避免了）；缺什么就发 Issue（§2）。
+1. 先读当前 Issue/spec 与所改业务域的**产品业务文档**（§2 清单），以它们为业务/IA/UX 事实依据；普通页面、组件、测试和局部修复不读取全局状态或历史快照。
+2. 读取目标页面、composable、facade、生成客户端和相关测试；后端能力以 **facade（门面）代码事实**为准，不臆测——**必要时登录后探针真实接口看真返回**（曾踩坑：以为 MES facade 回 GUID、实为人读编码 `WO-…/WC-…/SKU-…`，导致把现成可读单号藏成"待接入"占位；探一下就避免了）；缺什么就发 Issue（§2）。
+3. 涉及服务边界、跨域数据所有权或公开契约时，从 `docs/architecture/README.md` 按任务加载相关当前架构文档；涉及长期决策时读取 `docs/adr/README.md` 与相关 ADR。
+4. 只有发布、里程碑规划或跨域能力盘点才读取 `docs/status/current.md`；状态页不能替代 facade、生成客户端、公开契约和测试的当前事实。
 
 ## 1. 三大支柱：产品 · 业务 · UX（最高准则）
 
@@ -57,8 +58,10 @@
 
 改业务模块时**同步更新**文档；文档落后于代码 = 未完成：
 
-- **模块产品业务文档**：每个业务域一份，是该域产品/IA/UX/分期/验收的依据。范例：`docs/architecture/master-data-module-product-design.md`（基础数据）。新域开工先立此文档。
-- **导航总图**：`docs/architecture/frontend-navigation-map.md`——IA/导航变更必须同步。
+- **模块产品业务文档**：每个业务域一份，是该域产品/IA/UX/分期/验收的依据。范例：`docs/product/master-data/design.md`（基础数据）。新域开工先立此文档。
+- **导航产品 IA**：`docs/product/navigation.md`——角色入口、菜单信息架构或跨域任务变化时同步。
+- **导航工程规则**：`docs/governance/frontend/navigation.md`——BusinessGateway、RBAC、菜单层级或壳层使用规则变化时同步。
+- **导航当前事实索引**：`docs/reference/frontend/navigation-map.md`——生产者路径或职责发生变化时同步；route、permission、facade 精确事实直接回到代码/OpenAPI，不手抄状态表。
 - **后端缺口**：发现门面缺端点，**整批审计后向 Codex 提交汇总 Issue**（不要遇到一个发一个），并在模块文档「后端缺口」回填 Issue 号。
 - 顺序铁律：**先有/先更文档方案 → 再重构**。
 
@@ -92,7 +95,7 @@ src/components/                  应用级组件（非 @nerv-iip/ui 原版）
 ## 5. 权限：拆分与同步（务必仔细）
 
 - `src/navigation.ts` 的 `requiredPermissions` 是 RBAC 钩子（当前多为宽松默认）；**网关 BusinessGateway 的授权校验才是权威**。
-- 新增页面/操作时：① 明确该页/该操作所需**权限码**，与后端 `BusinessGatewayPermissions` 对齐；② 在 nav 项与 `definePage` 挂权限；③ 按角色画像（计划员/班组长/仓管/质量/设备/采购销售财务，见导航图角色矩阵）裁剪可见域与页。
+- 新增页面/操作时：① 明确该页/该操作所需**权限码**，与后端 `BusinessGatewayPermissions` 对齐；② 在 nav 项与 `definePage` 挂权限；③ 按角色画像（计划员/班组长/仓管/质量/设备/采购销售财务，见 `docs/product/navigation.md`）裁剪可见域与页。
 - **前端隐藏 ≠ 后端放行**：能写的操作必须有对应权限语义，前端可见性与网关授权**一起改、保持一致**，不留宽松空洞。
 - 权限拆分（域级 / 页级 / 操作级）与业务角色**同步设计**；权限相关改动在 PR 里说明前后端如何对齐。
 

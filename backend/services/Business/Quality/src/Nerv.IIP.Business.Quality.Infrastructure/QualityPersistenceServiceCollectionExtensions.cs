@@ -38,6 +38,7 @@ public static class QualityPersistenceServiceCollectionExtensions
         services.AddScoped<IInspectionTaskRepository, InspectionTaskRepository>();
         services.AddScoped<IQualityReasonRepository, QualityReasonRepository>();
         services.AddScoped<ICorrectiveActionRepository, CorrectiveActionRepository>();
+        services.AddScoped<IPeriodicInspectionOperationScopeCoordinator, PeriodicInspectionOperationScopeCoordinator>();
         return services;
     }
 }

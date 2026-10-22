@@ -150,6 +150,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               </div>
             </NvDropdownMenuLabel>
             <NvDropdownMenuSeparator />
+            <slot name="user-menu-items" />
             <NvDropdownMenuItem @select="emit('signOut')">
               <LogOutIcon class="size-4" aria-hidden="true" />
               {{ signOutLabel }}

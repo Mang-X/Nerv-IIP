@@ -120,6 +120,7 @@ const scopeCounts = computed(() => {
         <div>
           <h1 class="hall-title">生产指挥中心</h1>
           <p class="hall-sub">NERV-IIP 工业数据大屏</p>
+          <RouterLink to="/andon" class="hall-sub">安灯呼叫看板 · 真实作业范围</RouterLink>
         </div>
         <div class="hall-clock">
           <div class="hall-time">{{ clock }}</div>

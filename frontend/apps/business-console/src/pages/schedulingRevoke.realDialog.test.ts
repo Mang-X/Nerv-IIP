@@ -62,7 +62,6 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
       resolveWorkshop: () => undefined,
       resolveLine: () => undefined,
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
-      deviceByCode: emptyIndex,
       locationByCode: emptyIndex,
       workCenterByCode: emptyIndex,
       teamByCode: emptyIndex,
@@ -105,6 +104,9 @@ vi.mock('@/composables/useSchedulingWorkbench', () => ({
     candidatesScopeReady: computed(() => true),
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
     generatePending: shallowRef(false),
+    firstPlanJob: shallowRef(),
+    generatedPlan: shallowRef(),
+    generationError: shallowRef(),
     generatePlan: vi.fn(),
     refreshCandidates: vi.fn(),
     revisionPending: shallowRef(false),
@@ -116,7 +118,16 @@ vi.mock('@/composables/useSchedulingWorkbench', () => ({
 /** `revokePlanPending` 必须是真 ref，否则「pending 期间禁点」那条会假绿。 */
 const revokePlanPending = shallowRef(false)
 
+vi.mock('@/composables/useSchedulingDowntime', () => ({
+  useSchedulingDowntime: () => ({
+    impact: shallowRef(),
+    now: shallowRef(new Date()),
+    error: shallowRef(),
+  }),
+}))
+
 vi.mock('@/composables/useBusinessScheduling', () => ({
+  useSchedulingPlanSummary: () => ({ summary: shallowRef() }),
   useBusinessScheduling: () => ({
     detailSelection: reactive({ planId: '' }),
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
@@ -125,6 +136,7 @@ vi.mock('@/composables/useBusinessScheduling', () => ({
     planDetail: computed(() => undefined),
     planDetailError: shallowRef(undefined),
     planDetailPending: shallowRef(false),
+    plansTotal: computed(() => 1),
     plans: computed(() => [
       {
         planId: 'plan-released',

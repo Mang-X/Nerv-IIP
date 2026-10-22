@@ -1,13 +1,15 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FastEndpoints;
+using Nerv.IIP.Business.Scheduling.Web.Endpoints.DeadLetters;
 using FastEndpoints.Swagger;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Scheduling.Domain;
+using Nerv.IIP.Business.Scheduling.Web;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
@@ -56,6 +58,14 @@ try
     {
         client.BaseAddress = mesBaseAddress;
     }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient<IMaterialDeliveryMesSourceProvider, HttpMaterialDeliveryMesSourceProvider>(client =>
+    {
+        client.BaseAddress = mesBaseAddress;
+    }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient<IOrderUrgencyMesDueDateProvider, HttpOrderUrgencyMesDueDateProvider>(client =>
+    {
+        client.BaseAddress = mesBaseAddress;
+    }).UseHttpClientMetrics();
     builder.Services.AddHttpClient(HttpSchedulingMaterialReadinessProvider.MesClientName, client =>
     {
         client.BaseAddress = mesBaseAddress;
@@ -101,8 +111,18 @@ try
     builder.Services.AddSingleton(new SchedulingEquipmentUnknownModeOption(
         SchedulingEquipmentUnknownModeResolver.Resolve(
             builder.Configuration[SchedulingEquipmentUnknownModeResolver.ConfigurationKey])));
+    builder.Services.AddSingleton(SchedulingExecutionDeviationToleranceResolver.Resolve(
+        builder.Configuration[SchedulingExecutionDeviationToleranceResolver.ConfigurationKey]));
     builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddSingleton(SchedulingFreezeSettings.Resolve(builder.Configuration));
     builder.Services.AddScoped<ISchedulingProblemProducer, SchedulingProblemProducer>();
+    builder.Services.AddScoped<SchedulingWorkbenchPlanAssembler>();
+    builder.Services.AddScoped<SchedulingCandidateService>();
+    builder.Services.AddScoped<ISchedulingDowntimeFactsProvider, HttpSchedulingDowntimeFactsProvider>();
+    builder.Services.AddSingleton<ScheduleFirstPlanJobQueue>();
+    builder.Services.AddSingleton<ScheduleInsertionPreviewJobQueue>();
+    builder.Services.AddScoped<HttpSchedulingMaterialReadinessProvider>();
+    builder.Services.AddScoped<ScheduleAssignmentCurrentExecutionReader>();
     builder.Services.AddScoped<ISchedulingOperationOverrideOverlay, SchedulingOperationOverrideOverlay>();
     builder.Services.AddScoped<OrderUrgencyService>();
     builder.Services.AddScoped<WorldHistorySeedService>();
@@ -132,6 +152,8 @@ try
     {
         builder.Services.AddScoped<ISchedulingEquipmentAvailabilityProvider, HttpSchedulingEquipmentAvailabilityProvider>();
         builder.Services.AddScoped<ISchedulingMaterialReadinessProvider, HttpSchedulingMaterialReadinessProvider>();
+        builder.Services.AddHostedService<ScheduleFirstPlanJobWorker>();
+        builder.Services.AddHostedService<ScheduleInsertionPreviewJobWorker>();
         builder.Services.AddHostedService<OrderUrgencyRefreshWorker>();
         builder.Services.AddHostedService<OrderUrgencyRetentionWorker>();
     }
@@ -146,37 +168,26 @@ try
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddScoped<IntegrationEventCapFailureDeadLetterer>();
+    builder.Services.AddIntegrationEventDeadLetterEndpoints();
+    builder.Services.AddScoped<IIntegrationEventDeadLetterReplayHandler, SchedulingAssetUnavailableDeadLetterReplayHandler>();
+    builder.Services.AddScoped<AssetUnavailableCanonicalProcessor>();
+    builder.Services.AddScoped<IAssetUnavailableCanonicalProcessor>(sp => sp.GetRequiredService<AssetUnavailableCanonicalProcessor>());
     builder.Services.AddScoped<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>();
+    builder.Services.AddScoped<AssetUnavailableV2IntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<AssetRestoredIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<DeviceStateChangedIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<StockAvailabilityChangedIntegrationEventHandlerForInvalidateSchedulePlans>();
+    builder.Services.AddScoped<MaterialSupplyEtaChangedIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<QualityInspectionResultIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<WorkOrderReleasedIntegrationEventHandlerForInvalidateSchedulePlans>();
     builder.Services.AddScoped<MesOperationTaskManuallyDispatchedIntegrationEventHandlerForUpsertOverride>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
-    if (isTesting)
-    {
-        builder.Services.AddIntegrationEvents(typeof(Program));
-    }
-    else
-    {
-        builder.Services.AddIntegrationEvents(typeof(Program))
-            .UseCap<ApplicationDbContext>(b =>
-            {
-                b.RegisterServicesFromAssemblies(typeof(Program));
-                b.AddContextIntegrationFilters();
-            });
-
-        builder.Services.AddCap(x =>
-        {
-            x.Version = builder.Configuration["Cap:Version"] ?? "v1";
-            x.UseEntityFramework<ApplicationDbContext>();
-            x.JsonSerializerOptions.AddNetCorePalJsonConverters();
-            x.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
-            x.UseDashboard();
-        });
-    }
+    builder.Services.AddSchedulingCapIntegrationEvents(
+        builder.Configuration,
+        builder.Environment.EnvironmentName,
+        isTesting);
 
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
@@ -222,23 +233,14 @@ try
             WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
             WorldHistoryConfiguration.ResolveScale(builder.Configuration));
         app.Logger.LogInformation(
-            "World-history scheduling seed completed: {Problems} problem snapshots, {Plans} schedule plans, " +
-            "{Assignments} assignments, {ResourceLoads} resource loads, {Conflicts} conflicts, " +
-            "{Unscheduled} unscheduled operations, {Urgencies} order urgency snapshots; " +
-            "validator checked {CheckedPlans} plans ({Generated} generated / {Released} released / " +
-            "{Superseded} superseded / {Revoked} revoked) and {CheckedUrgencies} urgency snapshots.",
+            "World-history scheduling seed completed: {Problems} problem snapshots, " +
+            "{Urgencies} order urgency snapshots; schedule plans are left to the engine. " +
+            "Validator checked {CheckedProblems} problem snapshots ({Operations} operations) " +
+            "and {CheckedUrgencies} urgency snapshots.",
             report.ScheduleProblemsWritten,
-            report.SchedulePlansWritten,
-            report.AssignmentsWritten,
-            report.ResourceLoadsWritten,
-            report.ConflictsWritten,
-            report.UnscheduledOperationsWritten,
             report.OrderUrgencySnapshotsWritten,
-            report.Validation.PlansChecked,
-            report.Validation.GeneratedChecked,
-            report.Validation.ReleasedChecked,
-            report.Validation.SupersededChecked,
-            report.Validation.RevokedChecked,
+            report.Validation.ProblemsChecked,
+            report.Validation.OperationsChecked,
             report.Validation.UrgencySnapshotsChecked);
         foreach (var line in report.Validation.Sample)
         {
@@ -257,9 +259,16 @@ try
     {
         c.Serializer.Options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
         c.Endpoints.NameGenerator = ctx =>
-            SchedulingEndpointContracts.TryGet(ctx.EndpointType, out var contract)
-                ? contract.OperationId
+        {
+            if (SchedulingEndpointContracts.TryGet(ctx.EndpointType, out var contract))
+            {
+                return contract.OperationId;
+            }
+
+            return SchedulingDeadLetterEndpointContracts.TryGet(ctx.EndpointType, out var deadLetterContract)
+                ? deadLetterContract.OperationId
                 : ToLowerCamelEndpointName(ctx.EndpointType.Name);
+        };
     }).UseSwaggerGen();
     app.UseHttpMetrics();
     app.MapHealthChecks("/health");

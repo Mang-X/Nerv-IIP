@@ -18,5 +18,10 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nerv.IIP.Business.BarcodeLabel.Domain.Tests" />
+    <InternalsVisibleTo Include="Nerv.IIP.Business.BarcodeLabel.Web" />
+    <InternalsVisibleTo Include="Nerv.IIP.Business.BarcodeLabel.Web.Tests" />
+  </ItemGroup>
 
 </Project>

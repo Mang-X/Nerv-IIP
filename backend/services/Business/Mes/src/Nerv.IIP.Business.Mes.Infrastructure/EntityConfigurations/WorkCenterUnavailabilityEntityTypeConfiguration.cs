@@ -18,6 +18,8 @@ public sealed class WorkCenterUnavailabilityEntityTypeConfiguration : IEntityTyp
         builder.Property(x => x.ToUtc).HasColumnName("to_utc").HasComment("UTC end of the unavailable window; null means still unavailable.");
         builder.Property(x => x.Reason).HasColumnName("reason").IsRequired().HasMaxLength(200).HasComment("Business reason for the scheduling constraint.");
         builder.Property(x => x.DeviceAssetId).HasColumnName("device_asset_id").HasMaxLength(100).HasComment("Maintenance device asset public id that produced the unavailable window, when applicable.");
+        builder.Property(x => x.WorkOrderId).HasColumnName("work_order_id").HasMaxLength(100).HasComment("MES work order public id associated with the downtime window, when available.");
+        builder.Property(x => x.OperationTaskId).HasColumnName("operation_task_id").HasMaxLength(100).HasComment("MES operation task public id associated with the downtime window, when available.");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkCenterId, x.FromUtc, x.ToUtc })
             .HasDatabaseName("ix_wc_unavailability_scope_center_window");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.DeviceAssetId, x.ToUtc })

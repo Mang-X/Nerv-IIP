@@ -69,7 +69,7 @@ public sealed class QualityLifecycleConflictTests
         var task = NewPendingTask("DOC-EXISTING-STARTED");
         task.Start("inspector-001", DateTimeOffset.Parse("2026-07-27T08:00:00Z"));
 
-        var record = NewInspectionRecord(task.SourceDocumentId);
+        var record = NewInspectionRecord(task.SourceDocumentId, task.SourceDocumentLineId);
         dbContext.InspectionTasks.Add(task);
         dbContext.InspectionRecords.Add(record);
         await dbContext.SaveChangesAsync();
@@ -89,7 +89,7 @@ public sealed class QualityLifecycleConflictTests
     {
         await using var dbContext = CreateDbContext();
         var task = NewPendingTask("DOC-COMPLETED");
-        var record = NewInspectionRecord(task.SourceDocumentId);
+        var record = NewInspectionRecord(task.SourceDocumentId, task.SourceDocumentLineId);
         task.Start("inspector-001", DateTimeOffset.Parse("2026-07-27T08:00:00Z"));
         task.Complete(record.Id, DateTimeOffset.Parse("2026-07-27T08:05:00Z"));
         dbContext.InspectionTasks.Add(task);
@@ -117,7 +117,7 @@ public sealed class QualityLifecycleConflictTests
         typeof(InspectionTask)
             .GetProperty(nameof(InspectionTask.Status))!
             .SetValue(task, status);
-        var record = NewInspectionRecord(task.SourceDocumentId);
+        var record = NewInspectionRecord(task.SourceDocumentId, task.SourceDocumentLineId);
         dbContext.InspectionTasks.Add(task);
         dbContext.InspectionRecords.Add(record);
         await dbContext.SaveChangesAsync();
@@ -197,12 +197,16 @@ public sealed class QualityLifecycleConflictTests
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
             approval,
-            automation);
+            automation,
+            dbContext,
+            QualityEvidenceTestFiles.Client(ncr, "file-screening-result-001"));
 
         var exception = await Assert.ThrowsAsync<QualityLifecycleConflictException>(() =>
             handler.Handle(
                 new SubmitNonconformanceReportDispositionCommand(
                     ncr.Id,
+                    "org-001",
+                    "env-dev",
                     "scrap",
                     "approval-chain-001",
                     [],
@@ -225,11 +229,20 @@ public sealed class QualityLifecycleConflictTests
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
             new RecordingApprovalClient(),
-            new RecordingCapaAutomationService());
+            new RecordingCapaAutomationService(),
+            dbContext,
+            QualityEvidenceTestFiles.Client(ncr, "file-screening-result-001"));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(
-                new SubmitNonconformanceReportDispositionCommand(ncr.Id, "scrap", null, [], []),
+                new SubmitNonconformanceReportDispositionCommand(
+                    ncr.Id,
+                    "org-001",
+                    "env-dev",
+                    "scrap",
+                    null,
+                    [],
+                    []),
                 CancellationToken.None));
 
         Assert.Contains("NCR-SUBMIT-APPROVAL", exception.Message, StringComparison.Ordinal);
@@ -247,11 +260,20 @@ public sealed class QualityLifecycleConflictTests
         var handler = new SubmitNonconformanceReportDispositionCommandHandler(
             new NonconformanceReportRepository(dbContext),
             new RecordingApprovalClient(),
-            new RecordingCapaAutomationService());
+            new RecordingCapaAutomationService(),
+            dbContext,
+            QualityEvidenceTestFiles.Client(ncr, "file-screening-result-001"));
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(
-                new SubmitNonconformanceReportDispositionCommand(ncr.Id, "sort-and-screen", null, [], []),
+                new SubmitNonconformanceReportDispositionCommand(
+                    ncr.Id,
+                    "org-001",
+                    "env-dev",
+                    "sort-and-screen",
+                    null,
+                    [],
+                    []),
                 CancellationToken.None));
 
         Assert.Contains("NCR-SUBMIT-EVIDENCE", exception.Message, StringComparison.Ordinal);
@@ -280,7 +302,7 @@ public sealed class QualityLifecycleConflictTests
 
         var exception = await Assert.ThrowsAsync<QualityLifecycleConflictException>(() =>
             handler.Handle(
-                new CloseNonconformanceReportCommand(ncr.Id, null, null, null, "done"),
+                new CloseNonconformanceReportCommand(ncr.Id, null, null, "done"),
                 CancellationToken.None));
 
         Assert.Equal("close-ncr", exception.Action);
@@ -302,12 +324,39 @@ public sealed class QualityLifecycleConflictTests
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             handler.Handle(
-                new CloseNonconformanceReportCommand(ncr.Id, null, null, null, "done"),
+                new CloseNonconformanceReportCommand(ncr.Id, null, null, "done"),
                 CancellationToken.None));
 
         Assert.Contains("NCR-CLOSE-CAPA", exception.Message, StringComparison.Ordinal);
         Assert.Contains("CAPA", exception.Message, StringComparison.Ordinal);
         Assert.IsNotType<QualityLifecycleConflictException>(exception);
+    }
+
+    [Fact]
+    public async Task Close_rework_without_system_receipt_cannot_supply_an_equivalent_client_work_order()
+    {
+        await using var dbContext = CreateDbContext();
+        var ncr = NewNcr("NCR-CLOSE-REWORK");
+        ncr.SubmitDisposition(
+            "rework",
+            "approval-chain-001",
+            [],
+            [MrbReviewInput.Approve("qa-manager", "approved", DateTimeOffset.Parse("2026-08-29T10:00:00Z"))]);
+        dbContext.NonconformanceReports.Add(ncr);
+        await dbContext.SaveChangesAsync();
+        var handler = new CloseNonconformanceReportCommandHandler(
+            new NonconformanceReportRepository(dbContext),
+            new CorrectiveActionRepository(dbContext),
+            new FixedIntegrationEventContextAccessor());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() =>
+            handler.Handle(
+                new CloseNonconformanceReportCommand(ncr.Id, null, null, "client claims RW-FORGED is complete"),
+                CancellationToken.None));
+
+        Assert.Contains("尚未满足关闭条件", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("disposition-in-progress", ncr.Status);
+        Assert.Null(ncr.ReworkWorkOrderId);
     }
 
     [Fact]
@@ -327,7 +376,7 @@ public sealed class QualityLifecycleConflictTests
 
         var exception = await Assert.ThrowsAsync<QualityLifecycleConflictException>(() =>
             handler.Handle(
-                new CloseNonconformanceReportCommand(ncr.Id, null, null, null, "done"),
+                new CloseNonconformanceReportCommand(ncr.Id, null, null, "done"),
                 CancellationToken.None));
 
         Assert.Equal("close-ncr", exception.Action);
@@ -341,6 +390,7 @@ public sealed class QualityLifecycleConflictTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
+                builder.UseSetting("Quality:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>
                     {
@@ -384,6 +434,7 @@ public sealed class QualityLifecycleConflictTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
+                builder.UseSetting("Quality:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>
                     {
@@ -440,6 +491,7 @@ public sealed class QualityLifecycleConflictTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
+                builder.UseSetting("Quality:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>
                     {
@@ -500,6 +552,7 @@ public sealed class QualityLifecycleConflictTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
+                builder.UseSetting("Quality:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>
                     {
@@ -565,7 +618,11 @@ public sealed class QualityLifecycleConflictTests
             $"quality-task:{sourceDocumentId}");
     }
 
-    private static InspectionRecord NewInspectionRecord(string sourceDocumentId)
+    /// <summary>
+    /// 「这张任务所在那条链上已有的记录」。链身份自 #3319 起含来源行，因此夹具必须连来源行一起给——
+    /// 只给来源单据的话，任务提交查不到它，本用例证的就不再是重放而是新建。
+    /// </summary>
+    private static InspectionRecord NewInspectionRecord(string sourceDocumentId, string? sourceDocumentLineId)
     {
         return InspectionRecord.Create(
             "org-001",
@@ -574,6 +631,7 @@ public sealed class QualityLifecycleConflictTests
             "receiving",
             "wms",
             sourceDocumentId,
+            sourceDocumentLineId,
             "SKU-RM-1000",
             10m,
             null,
@@ -604,7 +662,7 @@ public sealed class QualityLifecycleConflictTests
         ncr.SubmitDisposition("sort-and-screen", null, ["evidence-file"]);
         if (status == "closed")
         {
-            ncr.Close(null, null, null, "done", "user:qa-manager-001");
+            ncr.Close(null, null, "done", "user:qa-manager-001");
         }
     }
 

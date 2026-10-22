@@ -21,10 +21,10 @@
   <!-- Authoritative registry + Gateway snapshots + governance doc, embedded so the
        gate reads committed artifacts (no source-tree traversal at test time). -->
   <ItemGroup>
-    <EmbeddedResource Include="..\..\..\docs\architecture\facade-coverage-matrix.json">
+    <EmbeddedResource Include="..\..\..\docs\reference\api\facade-coverage-matrix.json">
       <LogicalName>facade-coverage-matrix.json</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="..\..\..\docs\architecture\facade-coverage-matrix.md">
+    <EmbeddedResource Include="..\..\..\docs\governance\api\facade-coverage.md">
       <LogicalName>facade-coverage-matrix.md</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="..\..\..\frontend\packages\api-client\openapi\business-gateway-console.v1.json">

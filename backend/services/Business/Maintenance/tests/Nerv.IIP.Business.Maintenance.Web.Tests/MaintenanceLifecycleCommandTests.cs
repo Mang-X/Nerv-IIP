@@ -12,7 +12,7 @@ public sealed class MaintenanceLifecycleCommandTests
     public async Task Assignment_and_lifecycle_actions_persist_actor_technician_reason_and_authoritative_version()
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
-        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "DEV-001", "high", "reporter-001");
+        var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-001", "high", "reporter-001");
         db.MaintenanceWorkOrders.Add(workOrder);
         db.DowntimeReasons.Add(DowntimeReason.Create("org-001", "env-dev", "failure", "Failure", "breakdown", "equipment"));
         await db.SaveChangesAsync();
@@ -57,7 +57,7 @@ public sealed class MaintenanceLifecycleCommandTests
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var workOrder = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", "DEV-001", "high", "reporter-001", assignedTechnicianUserId: "tech-001");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-001", "high", "reporter-001", assignedTechnicianUserId: "tech-001");
         db.MaintenanceWorkOrders.Add(workOrder);
         await db.SaveChangesAsync();
         var handler = new TransitionMaintenanceWorkOrderCommandHandler(db);
@@ -84,7 +84,7 @@ public sealed class MaintenanceLifecycleCommandTests
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var workOrder = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", "DEV-001", "high", "reporter-001", assignedTechnicianUserId: "tech-a");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-001", "high", "reporter-001", assignedTechnicianUserId: "tech-a");
         workOrder.Assign("tech-a", "team-a");
         workOrder.Accept("tech-a");
         db.MaintenanceWorkOrders.Add(workOrder);
@@ -117,12 +117,45 @@ public sealed class MaintenanceLifecycleCommandTests
         Assert.Empty(clear.SparePartLines);
     }
 
+    /// <summary>
+    /// #3902：生命周期完工（/actions）也把每条备件的领出工厂与库位写进备件行；
+    /// 丢了它们出库请求就无从扣减（转换器会在源头拒绝）。
+    /// </summary>
+    [Fact]
+    public async Task Lifecycle_complete_persists_the_issue_site_and_location_on_each_spare_part_line()
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        db.DowntimeReasons.Add(DowntimeReason.Create("org-001", "env-dev", "failure", "Failure", "breakdown", "equipment"));
+        var workOrder = StartedWorkOrder("DEV-001", "tech-001", "SPARE-OLD");
+        db.MaintenanceWorkOrders.Add(workOrder);
+        await db.SaveChangesAsync();
+
+        await new TransitionMaintenanceWorkOrderCommandHandler(db).Handle(
+            Complete(
+                workOrder,
+                "tech-001",
+                "complete-with-locations",
+                [
+                    new MaintenanceSparePartInput("SPARE-001", 1m, "pcs", "SITE-001", "loc-spare-01"),
+                    new MaintenanceSparePartInput("SPARE-002", 2m, "pcs", "SITE-002", "loc-spare-02"),
+                ]),
+            CancellationToken.None);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var lines = await db.SparePartLines.AsNoTracking().OrderBy(x => x.SkuCode).ToListAsync();
+        Assert.Collection(
+            lines,
+            line => Assert.Equal(("SPARE-001", "SITE-001", "loc-spare-01"), (line.SkuCode, line.SiteCode, line.LocationCode)),
+            line => Assert.Equal(("SPARE-002", "SITE-002", "loc-spare-02"), (line.SkuCode, line.SiteCode, line.LocationCode)));
+    }
+
     [Fact]
     public async Task Alarm_work_order_walks_through_pause_waiting_completion_verification_and_close_with_audit_history()
     {
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var workOrder = MaintenanceWorkOrder.OpenFromAlarm(
-            "org-001", "env-dev", "DEV-001", "alarm-001", "critical", assignedTechnicianUserId: "tech-001");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-001", "alarm-001", "critical", assignedTechnicianUserId: "tech-001");
         workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, "alarm-raised");
         db.MaintenanceWorkOrders.Add(workOrder);
         db.DowntimeReasons.Add(DowntimeReason.Create("org-001", "env-dev", "failure", "Failure", "breakdown", "equipment"));
@@ -192,7 +225,7 @@ public sealed class MaintenanceLifecycleCommandTests
     private static MaintenanceWorkOrder StartedWorkOrder(string deviceAssetId, string technicianUserId, string spareSku)
     {
         var workOrder = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", deviceAssetId, "high", "reporter-001", assignedTechnicianUserId: technicianUserId);
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", deviceAssetId, "high", "reporter-001", assignedTechnicianUserId: technicianUserId);
         workOrder.AddSparePartLine(new SparePartLineDraft(spareSku, 1m, "EA"));
         workOrder.Accept(technicianUserId);
         workOrder.StartWork();

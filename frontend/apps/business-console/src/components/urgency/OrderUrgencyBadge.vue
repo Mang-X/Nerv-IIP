@@ -141,7 +141,7 @@ async function submitPriority() {
     await refreshDetail()
     emit('refresh')
   } catch {
-    formError.value = formatError(mutationError.value) || '优先级调整失败，请稍后重试。'
+    formError.value = inlineErrorMessage(mutationError.value) || '优先级调整失败，请稍后重试。'
   }
 }
 
@@ -156,10 +156,6 @@ function toIsoOrError(value: string): string | null | typeof INVALID_EXPIRY {
   return Number.isNaN(date.getTime()) ? INVALID_EXPIRY : date.toISOString()
 }
 
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
-
 function reasonLabel(code: string) {
   const labels: Record<string, string> = {
     'business.priority.p0': '业务优先级 P0',
@@ -169,8 +165,8 @@ function reasonLabel(code: string) {
     'business.priority.expired': '人工优先级已过期',
     'time.due.overdue': '承诺时间已逾期',
     'time.due.missing': '缺少承诺时间',
-    'time.slack.negative': 'Slack 为负',
-    'time.slack.withinShift': 'Slack 小于一个班次',
+    'time.slack.negative': '松弛时间为负',
+    'time.slack.withinShift': '松弛时间不足一个班次',
     'time.cr.belowOne': '关键比率 CR 小于 1',
     'time.cr.attention': '关键比率 CR 接近 1',
     'material.shortage': '物料短缺',
@@ -286,7 +282,7 @@ function hasTimeReason(code: string) {
         <p class="font-medium">综合分级：{{ presentation.label }}</p>
         <p>业务优先级：{{ priorityLabel(urgency.businessPriority?.level) }}</p>
         <p>
-          CR：{{ formatNumber(urgency.timeCriticality?.criticalRatio) }} · Slack：{{
+          CR：{{ formatNumber(urgency.timeCriticality?.criticalRatio) }} · 松弛时间：{{
             formatNumber(urgency.timeCriticality?.slackHours)
           }}
           h
@@ -446,7 +442,7 @@ function hasTimeReason(code: string) {
         </section>
 
         <section class="rounded-lg border bg-background p-4">
-          <h3 class="font-semibold text-foreground">CR / Slack 时间紧迫度</h3>
+          <h3 class="font-semibold text-foreground">时间紧迫度（CR / 松弛时间）</h3>
           <dl class="mt-3 grid grid-cols-3 gap-3 text-sm">
             <div>
               <dt class="text-muted-foreground">CR</dt>
@@ -455,7 +451,7 @@ function hasTimeReason(code: string) {
               </dd>
             </div>
             <div>
-              <dt class="text-muted-foreground">Slack</dt>
+              <dt class="text-muted-foreground">松弛时间</dt>
               <dd class="font-medium text-foreground">
                 {{ formatNumber(urgency.timeCriticality?.slackHours) }} h
               </dd>
@@ -495,7 +491,7 @@ function hasTimeReason(code: string) {
                   </td>
                 </tr>
                 <tr class="border-t">
-                  <td class="py-2 pr-3">Slack</td>
+                  <td class="py-2 pr-3">松弛时间</td>
                   <td class="py-2 pr-3">
                     {{ formatNumber(urgency.timeCriticality?.slackHours) }} h
                   </td>

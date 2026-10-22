@@ -34,7 +34,8 @@ public sealed class MesProductionReportReversalPersistenceTests
             now,
             TimeSpan.FromMinutes(30),
             now,
-            null));
+            null,
+            "SKU-001"));
         var original = ProductionReport.Record(
             "org-001",
             "env-dev",

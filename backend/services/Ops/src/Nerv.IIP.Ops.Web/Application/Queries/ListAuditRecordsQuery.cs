@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Ops.Domain;
+using Nerv.IIP.Ops.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Ops.Infrastructure;
 using Nerv.IIP.Ops.Web.Application;
 using NetCorePal.Extensions.Primitives;
@@ -34,7 +35,10 @@ public sealed class ListAuditRecordsQueryHandler(IServiceProvider serviceProvide
 
         if (!string.IsNullOrWhiteSpace(request.OperationTaskId))
         {
-            query = query.Where(x => x.Id.Id == request.OperationTaskId);
+            // x.Id 是强类型 Id：谓词里 x.Id.Id == string 无法被 EF 翻译（真机 500，#3098）；
+            // 先物化强类型 Id 再直接比较（可翻译）。
+            var operationTaskId = new OperationTaskId(request.OperationTaskId);
+            query = query.Where(x => x.Id == operationTaskId);
         }
 
         var items = await query

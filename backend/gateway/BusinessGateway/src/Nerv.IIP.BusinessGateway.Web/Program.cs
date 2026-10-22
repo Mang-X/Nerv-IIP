@@ -17,9 +17,11 @@ using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Localization;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.AspNetCore;
+using NetCorePal.Extensions.Dto;
 
 const string BusinessConsoleCorsPolicy = "business-console-cors";
 var builder = WebApplication.CreateBuilder(args);
@@ -44,8 +46,12 @@ builder.Services
             s.SchemaSettings.ResolveExternalXmlDocumentation = false;
             s.DocumentProcessors.Add(new SchedulingEnumOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new MesListDisplayOpenApiDocumentProcessor());
+            s.DocumentProcessors.Add(new MachineOverheadOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new OperationReceiptOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new SearchableDirectoryOpenApiDocumentProcessor());
+            s.DocumentProcessors.Add(new SopTusOpenApiDocumentProcessor());
+            s.DocumentProcessors.Add(new QualityEvidenceTusOpenApiDocumentProcessor());
+            s.DocumentProcessors.Add(new BusinessGatewayErrorResponseOpenApiDocumentProcessor());
         };
     });
 builder.Services.Configure<JsonOptions>(o =>
@@ -58,16 +64,23 @@ builder.Services.AddNervIipObservability(builder.Configuration, "business-gatewa
 builder.Services.AddNervIipLocalization();
 builder.Services.AddNervIipInternalServiceTokenProvider(builder.Configuration, builder.Environment);
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.Configure<BusinessGatewayTemplateAssetRetirementProofOptions>(
+    builder.Configuration.GetSection("TemplateAssetRetirementProof"));
+builder.Services.AddSingleton<TemplateAssetRetirementProofSigner>();
 builder.Services.Configure<BusinessGatewayAuthorizationOptions>(builder.Configuration.GetSection("Gateway"));
 builder.Services.Configure<BusinessGatewayInventoryForwardedPermissionOptions>(builder.Configuration.GetSection("Inventory:ForwardedPermissions"));
 builder.Services.AddSingleton<BusinessGatewayDownstreamHealthState>();
 builder.Services.AddScoped<PrincipalWorkScopeResolver>();
 builder.Services.AddScoped<MesPrincipalWorkScopeAuthorizer>();
+builder.Services.AddScoped<BusinessMesCommercialSourceReader>();
 builder.Services.AddScoped<WmsTrustedRequestContextResolver>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddTransient<AcceptLanguageForwardingHandler>();
 builder.Services.AddScoped<BusinessConsoleSearchService>();
+builder.Services.AddScoped<BusinessConsoleDeadLetterService>();
 builder.Services.AddScoped<BusinessGatewayDataScopeFilter>();
+builder.Services.AddScoped<IBusinessOeeAggregateCapability, BusinessOeeAggregateCapability>();
+builder.Services.AddScoped<IBusinessMesProductionReportCoordinator, BusinessMesProductionReportCoordinator>();
 var iamBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
 var masterDataBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
 var inventoryBaseAddress = InternalServiceBaseAddress.Resolve(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
@@ -89,6 +102,11 @@ builder.Services.AddHttpClient<IBusinessGatewayAuthorizationClient, HttpBusiness
 {
     client.BaseAddress = iamBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
+builder.Services.AddHttpClient<IBusinessIamAccountDirectoryClient, HttpBusinessIamAccountDirectoryClient>(client =>
+{
+    client.BaseAddress = iamBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
+builder.Services.AddHttpClient<SchedulingTimeContextClient>(client => client.BaseAddress = masterDataBaseAddress);
 builder.Services.AddHttpClient<IBusinessMasterDataClient, HttpBusinessMasterDataClient>(client =>
 {
     client.BaseAddress = masterDataBaseAddress;
@@ -101,6 +119,10 @@ builder.Services.AddHttpClient<IBusinessQualityClient, HttpBusinessQualityClient
 {
     client.BaseAddress = qualityBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessQualityScrapReasonCodeClient, HttpBusinessQualityScrapReasonCodeClient>(client =>
+{
+    client.BaseAddress = qualityBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
 builder.Services.AddHttpClient<IBusinessProductEngineeringClient, HttpBusinessProductEngineeringClient>(client =>
 {
     client.BaseAddress = productEngineeringBaseAddress;
@@ -110,6 +132,10 @@ builder.Services.AddHttpClient<IBusinessPlanningClient, HttpBusinessPlanningClie
     client.BaseAddress = demandPlanningBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IBusinessErpClient, HttpBusinessErpClient>(client =>
+{
+    client.BaseAddress = erpBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessErpCostingClient, HttpBusinessErpCostingClient>(client =>
 {
     client.BaseAddress = erpBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
@@ -125,6 +151,10 @@ builder.Services.AddHttpClient<IBusinessBarcodeLabelClient, HttpBusinessBarcodeL
 {
     client.BaseAddress = barcodeLabelBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessBarcodeResolverClient, HttpBusinessBarcodeResolverClient>(client =>
+{
+    client.BaseAddress = barcodeLabelBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IBusinessNotificationClient, HttpBusinessNotificationClient>(client =>
 {
     client.BaseAddress = notificationBaseAddress;
@@ -133,10 +163,36 @@ builder.Services.AddHttpClient<IBusinessFileStorageClient, HttpBusinessFileStora
 {
     client.BaseAddress = fileStorageBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+// 字节面单独注册。ADR 0015 决策 2 的 10 秒总超时是按单次 JSON 调用定的，会切断
+// shift-handover-photo 允许的 20,971,520 bytes 级 tus PATCH，并把同一 client 的熔断器打开、
+// 连累 JSON 面。该参数对字节流跳的不适用由 ADR 0030 决策 5 部分修订登记。
+// 注意这**不是**零策略：ADR 0015 决策 3.2 对能发起非幂等写的客户端仍适用（tus PATCH 是非幂等写），
+// 因此挂 streaming-safe——保留熔断与「不自动重试」，只去掉总超时。
+builder.Services.AddHttpClient<IBusinessFileTransferClient, HttpBusinessFileTransferClient>(client =>
+{
+    client.BaseAddress = fileStorageBaseAddress;
+    client.Timeout = Timeout.InfiniteTimeSpan;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayStreamingSafeResilience();
 builder.Services.AddHttpClient<IBusinessMesClient, HttpBusinessMesClient>(client =>
 {
     client.BaseAddress = mesBaseAddress;
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessMesWorkOrderTransformationClient, HttpBusinessMesWorkOrderTransformationClient>(client =>
+{
+    client.BaseAddress = mesBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessMesAndonClient, HttpBusinessMesAndonClient>(client =>
+{
+    client.BaseAddress = mesBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddHttpClient<IBusinessMesMaterialPrevalidationClient, HttpBusinessMesMaterialPrevalidationClient>(client =>
+{
+    client.BaseAddress = mesBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
+builder.Services.AddHttpClient<IBusinessMesContextPrevalidationClient, HttpBusinessMesContextPrevalidationClient>(client =>
+{
+    client.BaseAddress = mesBaseAddress;
+}).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
 builder.Services.AddHttpClient<IBusinessSchedulingClient, HttpBusinessSchedulingClient>(client =>
 {
     client.BaseAddress = schedulingBaseAddress;
@@ -151,6 +207,23 @@ builder.Services.AddHttpClient<IBusinessMaintenanceClient, HttpBusinessMaintenan
 }).AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
 builder.Services.AddHttpClient<IBusinessAppHubClient, HttpBusinessAppHubClient>(client => client.BaseAddress = appHubBaseAddress)
     .AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddStandardResilienceHandler();
+// 死信运维面（#3739）扇出 10 个服务的同一份契约，因此是一个不设 BaseAddress 的 client：
+// 基址随来源表逐次传入，弹性策略只有这一份。来源表按共享清单校验，少配一个服务在启动期就炸。
+builder.Services.AddHttpClient<IBusinessDeadLetterClient, HttpBusinessDeadLetterClient>()
+    .AddHttpMessageHandler<AcceptLanguageForwardingHandler>().AddBusinessGatewayNonIdempotentSafeResilience();
+builder.Services.AddSingleton(new BusinessDeadLetterSources(new Dictionary<string, Uri>(StringComparer.Ordinal)
+{
+    [IntegrationEventDeadLetterServices.AppHub.Name] = appHubBaseAddress,
+    [IntegrationEventDeadLetterServices.DemandPlanning.Name] = demandPlanningBaseAddress,
+    [IntegrationEventDeadLetterServices.Erp.Name] = erpBaseAddress,
+    [IntegrationEventDeadLetterServices.IndustrialTelemetry.Name] = industrialTelemetryBaseAddress,
+    [IntegrationEventDeadLetterServices.Inventory.Name] = inventoryBaseAddress,
+    [IntegrationEventDeadLetterServices.Maintenance.Name] = maintenanceBaseAddress,
+    [IntegrationEventDeadLetterServices.Mes.Name] = mesBaseAddress,
+    [IntegrationEventDeadLetterServices.Quality.Name] = qualityBaseAddress,
+    [IntegrationEventDeadLetterServices.Scheduling.Name] = schedulingBaseAddress,
+    [IntegrationEventDeadLetterServices.Wms.Name] = wmsBaseAddress,
+}));
 builder.Services.AddBusinessGatewayAuthentication(builder.Configuration, builder.Environment);
 var allowedCorsOrigins = ResolveGatewayCorsOrigins(builder.Configuration, builder.Environment);
 builder.Services.AddCors(options =>
@@ -202,6 +275,15 @@ app.UseFastEndpoints(c =>
     c.Serializer.Options.Converters.Add(new EquipmentRuntimeSourceTypeJsonConverter());
     c.Serializer.Options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
     c.Endpoints.NameGenerator = BusinessGatewayOperationIdConvention.Generate;
+    // #3333：校验失败改用与本网关其它失败通道同一个 ResponseData 信封 + 稳定错误码。
+    // ProducesMetadataType 必须跟着改，否则 OpenAPI 上的 400 仍然登记成 FastEndpoints
+    // 默认的 ErrorResponse，生成的 api-client 会给出一个运行时永不出现的类型。
+    c.Errors.ResponseBuilder = BusinessGatewayValidationErrorResponse.Build;
+    c.Errors.ProducesMetadataType = typeof(ResponseData);
+    // 内容协商也要跟着换：默认的 application/problem+json 声明的是 RFC7807 problem details，
+    // 而这条通道现在写的是本网关的 ResponseData 信封。不带 charset 参数是为了让 OpenAPI 的
+    // media type 键与本文档其它响应一致（带参数会生成 "application/json; charset=utf-8" 这个键）。
+    c.Errors.ContentType = "application/json";
 }).UseSwaggerGen();
 app.Run();
 

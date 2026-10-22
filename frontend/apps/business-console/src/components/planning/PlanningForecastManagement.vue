@@ -7,6 +7,7 @@ import {
   useBusinessMasterDataResources,
   useBusinessSkus,
 } from '@/composables/useBusinessMasterData'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import { useBusinessForecasts, type ForecastForm } from '@/composables/useBusinessForecasts'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -33,7 +34,7 @@ import {
   NvInput,
   NvSearchSelect,
   NvToolbar,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 
 const {
@@ -361,15 +362,14 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
             </NvField>
             <NvField :data-invalid="submitted && fieldErrors.skuCode.length > 0">
               <NvFieldLabel for="forecast-sku">SKU</NvFieldLabel>
-              <NvSearchSelect
+              <DirectoryPicker
                 id="forecast-sku"
                 v-model="form.skuCode"
-                :options="skuOptions"
+                directory-type="material"
+                creatable
                 placeholder="选择 SKU"
-                search-placeholder="搜索 SKU 编码或名称"
                 aria-label="预测 SKU"
-                :class="submitted && fieldErrors.skuCode.length ? 'border-destructive' : undefined"
-                :aria-invalid="submitted && fieldErrors.skuCode.length > 0"
+                :invalid="submitted && fieldErrors.skuCode.length > 0"
                 :aria-describedby="
                   submitted && fieldErrors.skuCode.length ? 'forecast-sku-error' : undefined
                 "
@@ -537,7 +537,7 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
           <NvDialogFooter>
             <NvButton type="button" variant="outline" @click="dialogOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="saveForecastPending">
-              <Spinner v-if="saveForecastPending" aria-hidden="true" />
+              <NvSpinner v-if="saveForecastPending" aria-hidden="true" />
               {{ editMode ? '保存修改' : '创建预测' }}
             </NvButton>
           </NvDialogFooter>

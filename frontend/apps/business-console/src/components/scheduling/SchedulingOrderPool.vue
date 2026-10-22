@@ -2,13 +2,19 @@
 import type { BusinessConsoleMesWorkOrderItem } from '@nerv-iip/api-client'
 import type { WorkingScheduleOrder } from '@/composables/useWorkingScheduleDraft'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
+import WorkOrderDemandChangeBadges from '@/components/mes/WorkOrderDemandChangeBadges.vue'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import { DEFAULT_URGENCY_DISPLAY_MODE } from '@/composables/useUrgencyDisplayMode'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { AlertTriangleIcon, RefreshCwIcon, SearchIcon, XIcon } from '@lucide/vue'
-import { NvButton, NvCheckbox, NvInput, Spinner } from '@nerv-iip/ui'
-import { computed, ref } from 'vue'
+import { NvButton, NvCheckbox, NvInput, NvSpinner } from '@nerv-iip/ui'
+import { computed, ref, reactive, shallowRef } from 'vue'
+import {
+  FIRST_PLAN_ORDER_LIMIT,
+  firstPlanSelectionReason,
+} from '@/composables/schedulingFirstPlanCapacity'
+import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 const props = withDefaults(
   defineProps<{
@@ -16,6 +22,11 @@ const props = withDefaults(
     draftOrders: WorkingScheduleOrder[]
     loading?: boolean
     readOnly?: boolean
+    canEditPriority?: boolean
+    saveOrder?: (
+      workOrderId: string,
+      values: { priority: number; isRush: boolean },
+    ) => Promise<void>
     /**
      * MES 工单读取失败（非空即失败）。曾踩坑：这里只有加载态和表体，空数组直接渲染
      * 一个空 tbody——「MES 接口挂了」和「今天真的没有待排工单」长得一模一样，
@@ -37,7 +48,6 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   include: [workOrderIds: string[], included: boolean]
-  update: [workOrderId: string, patch: { priority?: number; isRush?: boolean }]
   retry: []
 }>()
 
@@ -100,9 +110,40 @@ const candidateIds = computed(
     filteredCandidates.value.map((candidate) => candidate.workOrderId).filter(Boolean) as string[],
 )
 
-function setPriority(workOrderId: string, value: string | number) {
+// MES 编辑不进入甘特草案撤销栈；成功读回后只清除该行输入。
+const edits = reactive(new Map<string, { priority: number; isRush: boolean }>())
+const savingOrderId = shallowRef('')
+function values(candidate: BusinessConsoleMesWorkOrderItem) {
+  return (
+    edits.get(candidate.workOrderId ?? '') ?? {
+      priority: candidate.priority ?? 100,
+      isRush: candidate.isRush ?? false,
+    }
+  )
+}
+function edit(
+  candidate: BusinessConsoleMesWorkOrderItem,
+  patch: { priority?: number; isRush?: boolean },
+) {
+  edits.set(candidate.workOrderId ?? '', { ...values(candidate), ...patch })
+}
+function setPriority(candidate: BusinessConsoleMesWorkOrderItem, value: string | number) {
   const priority = Number(value)
-  if (Number.isFinite(priority)) emit('update', workOrderId, { priority })
+  if (Number.isFinite(priority)) edit(candidate, { priority })
+}
+async function save(candidate: BusinessConsoleMesWorkOrderItem) {
+  const workOrderId = candidate.workOrderId ?? ''
+  if (!props.saveOrder) return
+  savingOrderId.value = workOrderId
+  try {
+    await props.saveOrder(workOrderId, { ...values(candidate) })
+    edits.delete(workOrderId)
+    notifySuccess('急单与优先级已保存')
+  } catch (error) {
+    notifyOperationFailure('保存失败', error, '急单与优先级保存失败，请稍后重试')
+  } finally {
+    savingOrderId.value = ''
+  }
 }
 </script>
 
@@ -112,7 +153,8 @@ function setPriority(workOrderId: string, value: string | number) {
       <div>
         <h2 class="font-semibold">待排工单池</h2>
         <p class="text-sm text-muted-foreground">
-          从 MES 权威工单中一次选择最多 10 条。批量越大排程耗时越长，超过上限会被拒绝。
+          异步首版最多选择 {{ FIRST_PLAN_ORDER_LIMIT }} 单；已选
+          {{ draftOrders.filter((order) => order.included).length }} 单。
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
@@ -153,11 +195,18 @@ function setPriority(workOrderId: string, value: string | number) {
           size="sm"
           variant="outline"
           type="button"
-          :disabled="readOnly || scopeBlocked || failed || candidateIds.length === 0"
+          :disabled="
+            readOnly ||
+            scopeBlocked ||
+            failed ||
+            candidateIds.length === 0 ||
+            Boolean(firstPlanSelectionReason(draftOrders, candidateIds))
+          "
           :title="
-            search.trim()
+            firstPlanSelectionReason(draftOrders, candidateIds) ||
+            (search.trim()
               ? `把当前筛选出的 ${candidateIds.length} 张工单加入本次排程`
-              : '把池内全部工单加入本次排程'
+              : '把池内全部工单加入本次排程')
           "
           @click="emit('include', candidateIds, true)"
           >{{ search.trim() ? `加入筛选结果（${candidateIds.length}）` : '全部加入' }}</NvButton
@@ -182,7 +231,7 @@ function setPriority(workOrderId: string, value: string | number) {
       v-if="loading"
       class="flex min-h-32 items-center justify-center gap-2 text-sm text-muted-foreground"
     >
-      <Spinner aria-hidden="true" />正在读取 MES 工单
+      <NvSpinner aria-hidden="true" />正在读取 MES 工单
     </div>
 
     <!-- 作业范围未就绪：候选查询根本没发，不许下「没有待排产的工单」结论（#1288） -->
@@ -199,7 +248,7 @@ function setPriority(workOrderId: string, value: string | number) {
       <p class="text-sm leading-6 text-muted-foreground">
         {{
           scopeMessage ||
-          '请先在上方选择已授权的作业范围；若没有可选项，请联系管理员在 IAM 为账号配置数据范围。'
+          '请先在上方选择已授权的作业范围；若没有可选项，请联系管理员为账号配置数据范围。'
         }}
       </p>
     </div>
@@ -263,6 +312,7 @@ function setPriority(workOrderId: string, value: string | number) {
             <th class="p-2">紧迫度</th>
             <th class="p-2">优先级</th>
             <th class="p-2">急单</th>
+            <th class="p-2">保存</th>
           </tr>
         </thead>
         <tbody>
@@ -270,14 +320,27 @@ function setPriority(workOrderId: string, value: string | number) {
             <td class="p-2">
               <NvCheckbox
                 :model-value="byId.get(candidate.workOrderId ?? '')?.included ?? false"
-                :disabled="readOnly"
+                :disabled="
+                  readOnly ||
+                  (!byId.get(candidate.workOrderId ?? '')?.included &&
+                    Boolean(firstPlanSelectionReason(draftOrders, [candidate.workOrderId ?? ''])))
+                "
+                :title="firstPlanSelectionReason(draftOrders, [candidate.workOrderId ?? ''])"
                 :aria-label="`加入工单 ${candidate.workOrderId}`"
                 @update:model-value="
                   emit('include', [candidate.workOrderId ?? ''], Boolean($event))
                 "
               />
             </td>
-            <td class="p-2 font-medium">{{ candidate.workOrderNo || candidate.workOrderId }}</td>
+            <td class="p-2 font-medium">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span>{{ candidate.workOrderNo || candidate.workOrderId }}</span>
+                <WorkOrderDemandChangeBadges
+                  :has-changed-demand="candidate.hasChangedDemand"
+                  :has-cancelled-demand="candidate.hasCancelledDemand"
+                />
+              </div>
+            </td>
             <td class="p-2">
               <CodeWithNameCell
                 :code="candidate.skuCode || candidate.skuId"
@@ -304,25 +367,39 @@ function setPriority(workOrderId: string, value: string | number) {
               <NvInput
                 class="h-8 w-24"
                 type="number"
-                min="0"
-                :disabled="readOnly"
-                :model-value="
-                  String(
-                    byId.get(candidate.workOrderId ?? '')?.priority ?? candidate.priority ?? 100,
-                  )
-                "
-                @update:model-value="setPriority(candidate.workOrderId ?? '', $event)"
+                :disabled="!canEditPriority || Boolean(savingOrderId)"
+                :aria-label="`优先级 ${candidate.workOrderId}`"
+                :model-value="String(values(candidate).priority)"
+                @update:model-value="setPriority(candidate, $event)"
               />
             </td>
             <td class="p-2">
               <NvCheckbox
-                :model-value="byId.get(candidate.workOrderId ?? '')?.isRush ?? false"
-                :disabled="readOnly"
+                :model-value="values(candidate).isRush"
+                :disabled="!canEditPriority || Boolean(savingOrderId)"
                 :aria-label="`急单 ${candidate.workOrderId}`"
-                @update:model-value="
-                  emit('update', candidate.workOrderId ?? '', { isRush: Boolean($event) })
-                "
+                @update:model-value="edit(candidate, { isRush: Boolean($event) })"
               />
+            </td>
+            <td class="p-2">
+              <NvButton
+                size="sm"
+                variant="outline"
+                type="button"
+                :aria-label="`保存工单 ${candidate.workOrderId} 急单与优先级`"
+                :disabled="
+                  !canEditPriority ||
+                  Boolean(savingOrderId) ||
+                  !edits.has(candidate.workOrderId ?? '')
+                "
+                :title="
+                  canEditPriority
+                    ? '保存后用于排程，刷新或重入仍保留'
+                    : '当前账号没有 MES 工单管理权限或管理范围未就绪'
+                "
+                @click="save(candidate)"
+                >{{ savingOrderId === candidate.workOrderId ? '保存中…' : '保存' }}</NvButton
+              >
             </td>
           </tr>
         </tbody>

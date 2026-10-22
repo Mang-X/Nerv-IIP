@@ -63,11 +63,7 @@ import {
   withBusinessContextEnabled,
 } from './businessContextBinding'
 import { executeLifecycleAction, LifecycleStateChangedError } from './lifecycleAction'
-import {
-  useListFreshness,
-  useListResponseState,
-  useScopeBoundListResponse,
-} from './useListFreshness'
+import { useScopeBoundListResponse } from './useScopeBoundListResponse'
 
 const DEFAULT_TAKE = 100
 const RECEIVING_QUALITY_POLL_INTERVAL_MS = 10_000
@@ -75,7 +71,7 @@ const RECEIVING_QUALITY_PAGE_SIZE = 500
 
 function requirePendingPayloadSnapshot<T extends object>(snapshot: unknown, operation: string): T {
   if (!snapshot || typeof snapshot !== 'object') {
-    throw new Error(`${operation}缺少冻结的待处理载荷，请保留当前页面并人工核实。`)
+    throw new Error(`${operation}缺少上次未完成提交的内容，请保留当前页面并人工核实。`)
   }
   return snapshot as T
 }
@@ -89,6 +85,8 @@ async function fetchAllReceivingQualityGates(query: {
   organizationId: string
   environmentId: string
   includeNotRequired: boolean
+  scopeKind?: string
+  scopeId?: string
 }) {
   return fetchAllWmsPages(
     (skip) =>
@@ -377,41 +375,26 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
     () => listScopeKey(filters),
     inboundOrdersScopeReady,
   )
-  const inboundOrdersLastUpdatedAt = useListFreshness(
-    inboundOrdersResponse,
-    inboundOrdersScopeReady,
-  )
-  const {
-    hasSuccessfulResponse: inboundOrdersHasSuccessfulResponse,
-    hasFailedResponse: inboundOrdersHasFailedResponse,
-  } = useListResponseState(
-    inboundOrdersResponse,
-    inboundOrdersScopeReady,
-    () => inboundOrdersQuery.isLoading.value,
-  )
-  const receivingQualityGatesQuery = useQuery(() =>
-    withBusinessContextEnabled(
+  // 收货行读面与入库单列表同样按作业范围授权（网关 ResolveScope），不带范围会被下游拒绝。
+  const receivingQualityGatesQuery = useQuery(() => {
+    const scopedQuery = {
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      includeNotRequired: true,
+      ...optionalQuery('scopeKind', filters.scopeKind),
+      ...optionalQuery('scopeId', filters.scopeId),
+    }
+    return withWmsListScopeEnabled(
       {
         ...listBusinessConsoleWmsReceivingQualityGatesQueryOptions({
-          query: {
-            organizationId: filters.organizationId,
-            environmentId: filters.environmentId,
-            skip: 0,
-            take: RECEIVING_QUALITY_PAGE_SIZE,
-            includeNotRequired: true,
-          },
+          query: { ...scopedQuery, skip: 0, take: RECEIVING_QUALITY_PAGE_SIZE },
         }),
-        query: () =>
-          fetchAllReceivingQualityGates({
-            organizationId: filters.organizationId,
-            environmentId: filters.environmentId,
-            includeNotRequired: true,
-          }),
+        query: () => fetchAllReceivingQualityGates(scopedQuery),
         autoRefetch: () => RECEIVING_QUALITY_POLL_INTERVAL_MS,
       },
       filters,
-    ),
-  )
+    )
+  })
   const supplierReturnsQuery = useQuery(() =>
     withBusinessContextEnabled(
       {
@@ -436,7 +419,7 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
 
   function refreshAll() {
     void refetchWithWmsListScope(filters, inboundOrdersQuery)
-    void refetchWithBusinessContext(filters, receivingQualityGatesQuery)
+    void refetchWithWmsListScope(filters, receivingQualityGatesQuery)
     void refetchWithBusinessContext(filters, supplierReturnsQuery)
   }
 
@@ -567,9 +550,6 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
         inboundOrdersResponse.value as BusinessConsoleWmsInboundOrderListEnvelope | undefined,
       ),
     ),
-    inboundOrdersLastUpdatedAt,
-    inboundOrdersHasSuccessfulResponse,
-    inboundOrdersHasFailedResponse,
     refreshInboundOrders: () => refetchWithWmsListScope(filters, inboundOrdersQuery),
     receivingQualityGates: computed<BusinessConsoleWmsReceivingQualityGateItem[]>(() =>
       listItems<BusinessConsoleWmsReceivingQualityGateItem>(
@@ -589,7 +569,7 @@ export function useWmsInboundOrders(initialFilters: Partial<WmsInboundListFilter
     supplierReturnsError: supplierReturnsQuery.error,
     refreshReceivingQuality: () =>
       Promise.all([
-        refetchWithBusinessContext(filters, receivingQualityGatesQuery),
+        refetchWithWmsListScope(filters, receivingQualityGatesQuery),
         refetchWithBusinessContext(filters, supplierReturnsQuery),
       ]),
     completeInbound: completeInboundOrder,
@@ -623,18 +603,6 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsOutboundListFilt
     () => listScopeKey(filters),
     outboundOrdersScopeReady,
   )
-  const outboundOrdersLastUpdatedAt = useListFreshness(
-    outboundOrdersResponse,
-    outboundOrdersScopeReady,
-  )
-  const {
-    hasSuccessfulResponse: outboundOrdersHasSuccessfulResponse,
-    hasFailedResponse: outboundOrdersHasFailedResponse,
-  } = useListResponseState(
-    outboundOrdersResponse,
-    outboundOrdersScopeReady,
-    () => outboundOrdersQuery.isLoading.value,
-  )
 
   const completeOutboundPending = shallowRef(false)
   const completeOutboundError = shallowRef<unknown>()
@@ -647,7 +615,7 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsOutboundListFilt
 
   async function completeOutboundOrder(
     outboundOrderId: string,
-    payload: { packReviewNo: string; passed: boolean },
+    payload: { passed: boolean },
     idempotencyKey = createWmsIdempotencyKey(),
     options: WmsCompletionAttemptOptions = { attempt: 'initial' },
   ) {
@@ -716,7 +684,6 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsOutboundListFilt
                 environmentId: filters.environmentId,
               },
               body: {
-                packReviewNo: stablePayload.packReviewNo,
                 passed: stablePayload.passed,
                 idempotencyKey: pending.idempotencyKey,
                 scopeKind: stablePayload.scopeKind,
@@ -734,6 +701,10 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsOutboundListFilt
           expectedResourceId: outboundOrderId,
           // 回读走的是范围受限的列表读面，不带范围必 403 → 成功也会被报成「尚未确认」（#1397）。
           readbackScope: commandScope,
+          // 库存过账是异步事件，通常几秒内落定：多等一会儿拿到过账结果（#3926）；
+          // 仍在过账就以「已提交、正在过账」收尾，不报失败。
+          attempts: 20,
+          retryDelayMs: 500,
         })
         return envelope
       })
@@ -761,9 +732,6 @@ export function useWmsOutboundOrders(initialFilters: Partial<WmsOutboundListFilt
         outboundOrdersResponse.value as BusinessConsoleWmsOutboundOrderListEnvelope | undefined,
       ),
     ),
-    outboundOrdersLastUpdatedAt,
-    outboundOrdersHasSuccessfulResponse,
-    outboundOrdersHasFailedResponse,
     refreshOutboundOrders: () => refetchWithWmsListScope(filters, outboundOrdersQuery),
     completeOutbound: completeOutboundOrder,
     completeOutboundPending,
@@ -830,7 +798,6 @@ export function useWmsWcsTasks(initialFilters: Partial<WmsWcsTaskListFilters> = 
       payload: {
         adapterType: string
         externalTaskId: string
-        payloadJson: string
         expectedVersion?: number
       },
     ) => {
@@ -843,7 +810,6 @@ export function useWmsWcsTasks(initialFilters: Partial<WmsWcsTaskListFilters> = 
         body: {
           adapterType: payload.adapterType,
           externalTaskId: payload.externalTaskId,
-          payloadJson: payload.payloadJson,
           expectedVersion: payload.expectedVersion!,
         },
       })
@@ -886,15 +852,6 @@ export function useWmsPutawayTasks(initialFilters: Partial<WmsWarehouseTaskListF
     () => listScopeKey(filters),
     putawayTasksScopeReady,
   )
-  const putawayTasksLastUpdatedAt = useListFreshness(putawayTasksResponse, putawayTasksScopeReady)
-  const {
-    hasSuccessfulResponse: putawayTasksHasSuccessfulResponse,
-    hasFailedResponse: putawayTasksHasFailedResponse,
-  } = useListResponseState(
-    putawayTasksResponse,
-    putawayTasksScopeReady,
-    () => putawayTasksQuery.isLoading.value,
-  )
 
   const createMutation = useMutation({
     ...createBusinessConsoleWmsPutawayTaskMutationOptions(),
@@ -917,9 +874,6 @@ export function useWmsPutawayTasks(initialFilters: Partial<WmsWarehouseTaskListF
         putawayTasksResponse.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
       ),
     ),
-    putawayTasksLastUpdatedAt,
-    putawayTasksHasSuccessfulResponse,
-    putawayTasksHasFailedResponse,
     refreshPutawayTasks: () => refetchWithWmsListScope(filters, putawayTasksQuery),
     createPutaway: (inboundOrderId: string, body: BusinessConsoleCreateWmsPutawayTaskRequest) =>
       createMutation.mutateAsync({
@@ -948,15 +902,6 @@ export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListF
     () => pickingTasksQuery.data.value,
     () => listScopeKey(filters),
     pickingTasksScopeReady,
-  )
-  const pickingTasksLastUpdatedAt = useListFreshness(pickingTasksResponse, pickingTasksScopeReady)
-  const {
-    hasSuccessfulResponse: pickingTasksHasSuccessfulResponse,
-    hasFailedResponse: pickingTasksHasFailedResponse,
-  } = useListResponseState(
-    pickingTasksResponse,
-    pickingTasksScopeReady,
-    () => pickingTasksQuery.isLoading.value,
   )
 
   const createMutation = useMutation({
@@ -1048,9 +993,6 @@ export function useWmsPickingTasks(initialFilters: Partial<WmsWarehouseTaskListF
         pickingTasksResponse.value as BusinessConsoleWmsWarehouseTaskListEnvelope | undefined,
       ),
     ),
-    pickingTasksLastUpdatedAt,
-    pickingTasksHasSuccessfulResponse,
-    pickingTasksHasFailedResponse,
     refreshPickingTasks: () => refetchWithWmsListScope(filters, pickingTasksQuery),
     createPicking: (outboundOrderId: string, body: BusinessConsoleCreateWmsPickingTaskRequest) =>
       createMutation.mutateAsync({
@@ -1148,18 +1090,6 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
     () => countExecutionsQuery.data.value,
     () => listScopeKey(filters),
     countExecutionsScopeReady,
-  )
-  const countExecutionsLastUpdatedAt = useListFreshness(
-    countExecutionsResponse,
-    countExecutionsScopeReady,
-  )
-  const {
-    hasSuccessfulResponse: countExecutionsHasSuccessfulResponse,
-    hasFailedResponse: countExecutionsHasFailedResponse,
-  } = useListResponseState(
-    countExecutionsResponse,
-    countExecutionsScopeReady,
-    () => countExecutionsQuery.isLoading.value,
   )
 
   const createMutation = useMutation({
@@ -1286,9 +1216,6 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
         countExecutionsResponse.value as BusinessConsoleWmsCountExecutionListEnvelope | undefined,
       ),
     ),
-    countExecutionsLastUpdatedAt,
-    countExecutionsHasSuccessfulResponse,
-    countExecutionsHasFailedResponse,
     refreshCountExecutions: () => refetchWithWmsListScope(filters, countExecutionsQuery),
     createCountExecution: (body: BusinessConsoleCreateWmsCountExecutionRequest) =>
       createMutation.mutateAsync({ body }),

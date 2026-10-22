@@ -5,6 +5,7 @@ import {
   INVENTORY_MANUAL_MOVEMENT_TYPE_OPTIONS,
   INVENTORY_MOVEMENT_TYPE_LABELS,
   inventoryMovementTypeLabel,
+  WMS_RECEIVING_QUALITY_OPTIONS,
 } from './inventoryReference'
 
 /**
@@ -70,5 +71,23 @@ describe('库存移动受控值', () => {
     }
     expect(inventoryMovementTypeLabel('unknown-code')).toBe('unknown-code')
     expect(inventoryMovementTypeLabel(undefined)).toBe('—')
+  })
+})
+
+/**
+ * #3923 回归锁：WMS 免检判定只认 `WmsReceivingQualityStatuses.InspectionSkippedStatuses`
+ * （后端 `backend/common/Contracts/Nerv.IIP.Contracts.Wms/WmsIntegrationEvents.cs`）。
+ * 「可用」一旦退回 `available`，合格来料就会被当成待检、上架被卡住。
+ */
+describe('WMS 收货质量状态码值（#3923）', () => {
+  const byLabel = Object.fromEntries(WMS_RECEIVING_QUALITY_OPTIONS.map((o) => [o.label, o.value]))
+
+  it('「可用」下发 WMS 免检码 unrestricted，其余三项下发需要质检的码值', () => {
+    expect(byLabel).toEqual({
+      可用: 'unrestricted',
+      待检: 'inspection',
+      冻结: 'blocked',
+      不合格: 'rejected',
+    })
   })
 })

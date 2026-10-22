@@ -108,6 +108,7 @@ describe('buildQualityBucketDetail', () => {
       sourceType: 'operation',
       defectReason: '尺寸超差',
       defectQuantity: 6,
+      reworkWorkOrderCreationStatus: 'not-requested',
     },
     {
       id: 'ncr-2',
@@ -117,6 +118,7 @@ describe('buildQualityBucketDetail', () => {
       sourceType: 'receiving',
       defectReason: '表面划伤',
       defectQuantity: 2,
+      reworkWorkOrderCreationStatus: 'not-requested',
     },
     {
       id: 'ncr-3',
@@ -125,6 +127,7 @@ describe('buildQualityBucketDetail', () => {
       skuCode: 'SKU-002',
       sourceType: 'operation',
       defectQuantity: 3,
+      reworkWorkOrderCreationStatus: 'not-requested',
     },
   ]
 
@@ -143,7 +146,16 @@ describe('buildQualityBucketDetail', () => {
 
   it('matches the 未填 bucket for records without the dimension value', () => {
     const detail = buildQualityBucketDetail(
-      [...ncrs, { id: 'ncr-4', code: 'NCR-004', status: 'open', defectQuantity: 1 }],
+      [
+        ...ncrs,
+        {
+          id: 'ncr-4',
+          code: 'NCR-004',
+          status: 'open',
+          defectQuantity: 1,
+          reworkWorkOrderCreationStatus: 'not-requested',
+        },
+      ],
       'sku',
       '未填',
     )

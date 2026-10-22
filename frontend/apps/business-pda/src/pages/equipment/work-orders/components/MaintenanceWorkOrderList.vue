@@ -31,7 +31,7 @@ function select(item: BusinessConsoleMaintenanceWorkOrderItem) {
       :key="item.workOrderId"
       data-testid="maintenance-work-order-row"
       :data-work-order-id="item.workOrderId"
-      :title="maintenanceWorkOrderTitle(item.sourceReferenceId)"
+      :title="maintenanceWorkOrderTitle(item.workOrderNo)"
       :subtitle="subtitle(item)"
       :interactive="Boolean(item.workOrderId)"
       @select="select(item)"

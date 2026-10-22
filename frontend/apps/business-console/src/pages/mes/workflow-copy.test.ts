@@ -23,6 +23,7 @@ const mesSpies = vi.hoisted(() => ({
   createReceiptRequest: vi.fn(async () => undefined),
   refreshReceiptRequests: vi.fn(async () => undefined),
   retryInventoryPosting: vi.fn(async () => undefined),
+  traceabilityNodes: [] as Array<{ nodeId: string; nodeType: string; displayName: string }>,
   traceabilityFilters: undefined as
     | { batchOrSerial: string; materialLotId: string; mode: string; workOrderId: string }
     | undefined,
@@ -46,8 +47,12 @@ vi.mock('@/utils/notify', async (importOriginal) => ({
 }))
 
 vi.mock('@/composables/useBusinessMasterData', () => ({
-  useBusinessMasterDataResources: () => ({
-    resources: ref([]),
+  useBusinessMasterDataResources: (resourceType: string) => ({
+    resources: ref(
+      resourceType === 'worker'
+        ? [{ code: 'EMP001', userId: 'user-operator', displayName: '王建国' }]
+        : [],
+    ),
     resourcesPending: ref(false),
     filters: reactive({}),
   }),
@@ -73,10 +78,21 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
 // 急单表单的物料 ▸ 生产版本目录走 colada 读面，本文件只看文案与提交体，整体打桩。
 vi.mock('@/composables/useMesPickerCatalog', () => ({
   useMesMaterialVersionCatalog: () => ({
+    productionVersionLabel: () => '—',
     skuOptions: ref([]),
     skusPending: ref(false),
     productionVersionOptions: () => [],
     productionVersionsPending: ref(false),
+  }),
+}))
+
+vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
+  useProductionReportSerialOptions: () => ({
+    serialPolicy: ref('none'),
+    labelTemplates: ref([]),
+    serialOptionsReady: ref(true),
+    serialOptionsPending: ref(false),
+    refreshSerialOptions: vi.fn(),
   }),
 }))
 
@@ -95,12 +111,28 @@ vi.mock('@/composables/useBusinessMes', () => ({
   }),
   useMesProductionReporting: () => ({
     recordProductionReport: vi.fn(),
+    restoreProductionReport: vi.fn(),
+    readProductionPrintStatus: vi.fn(),
     recordProductionReportError: ref(undefined),
     recordProductionReportPending: ref(false),
     reportScopeMessage: ref(''),
     reportScopePending: ref(false),
     reportScopeReady: ref(true),
     refreshProductionReportState: vi.fn(),
+  }),
+  useMesProductionMaterialLots: () => ({
+    materialsReadPermission: ref(false),
+    materialLotsPending: ref(false),
+    materialLotsError: ref(undefined),
+    availableMaterialLots: ref([]),
+    refreshMaterialLots: vi.fn(),
+  }),
+  useMesScrapReasonCodes: () => ({
+    qualityInspectionRecordsReadPermission: ref(false),
+    scrapReasonCodesPending: ref(false),
+    scrapReasonCodesError: ref(undefined),
+    scrapReasonCodes: ref([]),
+    refreshScrapReasonCodes: vi.fn(),
   }),
   describeMesReadinessReason: (code: string) => ({
     code,
@@ -125,6 +157,13 @@ vi.mock('@/composables/useBusinessMes', () => ({
     return [...seen.values()]
   },
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
+  useMesWorkOrderHistoricalProducedLots: () => ({
+    producedLots: ref([{ producedLotNo: 'LOT-WO-001', reportNo: 'PRPT-1', quantity: 10 }]),
+    producedLotsError: ref(undefined),
+    producedLotsPending: ref(false),
+    producedLotsState: ref('ready'),
+    refreshProducedLots: vi.fn(),
+  }),
   useMesWorkOrderProducedLots: () => ({
     // 单一产出批次自动选中，使完工入库提交用例可通过 canCreate（后端强制引用真实产出批次）。
     producedLots: ref([
@@ -177,6 +216,9 @@ vi.mock('@/composables/useBusinessMes', () => ({
       displayName: '精加工一线',
     }),
     operationListScopeMessage: ref(''),
+    operationListScopeError: ref(undefined),
+    operationListScopePending: ref(false),
+    operationTasksState: ref('ready'),
     operationListScopeReady: ref(true),
     operationScopeMessage: ref(''),
     operationScopePending: ref(false),
@@ -216,11 +258,13 @@ vi.mock('@/composables/useBusinessMes', () => ({
     },
     productionPlans: ref([
       {
-        productionPlanId: 'PLAN-001',
+        productionPlanId: '01a0c7cb-8e5f-7292-a808-10ab91f74031',
         sourceSystem: 'sales-order',
-        sourceDocumentId: 'SO-001',
+        sourceDocumentId: '01a0c7cb-8e5f-7292-a808-10ab91f74031',
+        sourceDemandReference: 'MD-V3-01',
         skuId: 'FG-001',
         plannedQuantity: 10,
+        status: 'created',
         readinessStatus: 'Ready',
         plannedStartUtc: '2026-05-25T08:00:00.000Z',
       },
@@ -242,7 +286,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     return {
       filters,
       refreshTraceability: vi.fn(),
-      traceability: ref({ edges: [], nodes: [] }),
+      traceability: ref({ edges: [], nodes: mesSpies.traceabilityNodes }),
       traceabilityError: ref(undefined),
       traceabilityPending: ref(false),
     }
@@ -252,6 +296,8 @@ vi.mock('@/composables/useBusinessMes', () => ({
     detailError: ref(null),
     detailPending: ref(false),
     filters: reactive({ workOrderId: '' }),
+    workOrderManageScope: ref(undefined),
+    workOrderReadScope: ref(undefined),
   }),
   useMesWorkOrders: () => ({
     createRushWorkOrder: vi.fn(),
@@ -295,6 +341,21 @@ vi.mock('@/composables/useBusinessMes', () => ({
     }),
     workOrderReadScopeMessage: ref(''),
     workOrderReadScopeReady: ref(true),
+    workOrderManageScope: ref({
+      kind: 'work-center',
+      id: 'WC-01',
+      displayName: '精加工一线',
+    }),
+    workOrderManageScopeMessage: ref(''),
+    workOrderManageScopePending: ref(false),
+    workOrderManageScopeReady: ref(true),
+  }),
+  useMesWorkOrderTransformations: () => ({
+    splitWorkOrder: vi.fn(),
+    mergeWorkOrders: vi.fn(),
+    readTransformation: vi.fn(),
+    splitWorkOrderPending: ref(false),
+    mergeWorkOrdersPending: ref(false),
   }),
 }))
 
@@ -352,6 +413,9 @@ const uiStubs = {
   NvDataTable: {
     props: ['rows', 'columns', 'rowKey', 'sort', 'clientSort', 'loading', 'emptyMessage'],
     template: `<div><template v-for="(row, i) in rows" :key="i">
+      <span v-for="column in row.nodeType ? columns : []" :key="column.key">{{ column.accessor ? column.accessor(row) : row[column.key] }}</span>
+      <slot name="cell-sourceDemandReference" :row="row" />
+      <slot name="cell-sourceSystem" :row="row" />
       <slot name="cell-workOrderId" :row="row" />
       <slot name="cell-status" :row="row" />
       <slot name="cell-qualityStatus" :row="row" />
@@ -359,7 +423,7 @@ const uiStubs = {
     </template></div>`,
   },
   DataTablePagination: true,
-  DialogRoot: {
+  NvDialog: {
     props: ['open'],
     template: '<div><slot /></div>',
   },
@@ -446,11 +510,11 @@ const uiStubs = {
   NvSelectTrigger: {
     template: '<button><slot /></button>',
   },
-  SelectValue: {
+  NvSelectValue: {
     props: ['placeholder'],
     template: '<span>{{ placeholder }}</span>',
   },
-  // 只选控件内部自带 reka Dialog/Popover，与本文件的 DialogRoot 桩不兼容；
+  // 只选控件内部自带 reka Dialog/Popover，与本文件的 NvDialog 桩不兼容；
   // 桩成带同名 id 的输入位，保留「选中某个候选」的语义。
   NvEntityPicker: {
     props: ['modelValue', 'options', 'id'],
@@ -464,7 +528,7 @@ const uiStubs = {
     template:
       '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
-  Spinner: true,
+  NvSpinner: true,
   Table: {
     template: '<table><slot /></table>',
   },
@@ -529,6 +593,7 @@ describe('MES workflow copy', () => {
     mesSpies.createReceiptRequest.mockClear()
     mesSpies.refreshReceiptRequests.mockClear()
     mesSpies.traceabilityFilters = undefined
+    mesSpies.traceabilityNodes = []
   })
 
   it('keeps work-order reporting row-context driven with no typed context fields', () => {
@@ -587,9 +652,12 @@ describe('MES workflow copy', () => {
     const wrapper = mountMesPage(PlansPage)
 
     expect(wrapper.text()).toContain('生产计划')
-    expect(wrapper.text()).toContain('转工单')
+    expect(wrapper.text()).not.toContain('可转工单')
     expect(wrapper.find('#add-plan-id').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('生成')
+    expect(wrapper.text()).toContain('MD-V3-01')
+    expect(wrapper.text().match(/MD-V3-01/g)).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('01a0c7cb-8e5f-7292-a808-10ab91f74031')
     expectNoForbiddenVisibleTerms(wrapper.text())
   })
 
@@ -617,7 +685,7 @@ describe('MES workflow copy', () => {
     expect(carried.text()).toContain('FG-001')
   })
 
-  it('submits finished-goods receipt context with unit cost', async () => {
+  it('submits finished-goods receipt context without client unit cost', async () => {
     routeState.query = {
       quantity: '10',
       skuId: 'FG-001',
@@ -625,7 +693,7 @@ describe('MES workflow copy', () => {
     }
     const wrapper = mountMesPage(ReceiptsPage)
 
-    await wrapper.find('#receipt-unit-cost').setValue('12.34')
+    expect(wrapper.find('#receipt-unit-cost').exists()).toBe(false)
     await wrapper.find('form').trigger('submit')
 
     expect(mesSpies.createReceiptRequest).toHaveBeenCalledWith(
@@ -634,12 +702,34 @@ describe('MES workflow copy', () => {
         organizationId: 'org',
         quantity: 10,
         skuId: 'FG-001',
-        unitCost: 12.34,
         uomCode: 'pcs',
         workOrderId: 'WO-001',
       }),
     )
   })
+
+  it.each(['work-order', 'batch', 'material-lot'])(
+    'shows IAM operator names in %s traceability without employee linkage',
+    (mode) => {
+      routeState.query = { mode }
+      mesSpies.traceabilityNodes = [
+        { nodeId: 'user-admin', nodeType: 'Operator', displayName: '李工' },
+        { nodeId: 'user-missing', nodeType: 'Operator', displayName: '姓名不可用' },
+        { nodeId: 'user-operator', nodeType: 'Operator', displayName: 'IAM 王工' },
+        { nodeId: 'WO-001', nodeType: 'WorkOrder', displayName: '订单一' },
+      ]
+      const wrapper = mountMesPage(TraceabilityPage)
+      expect(wrapper.text()).toContain('李工')
+      expect(wrapper.text()).toContain('IAM 王工')
+      expect(wrapper.text()).toContain('姓名不可用')
+      expect(wrapper.text()).toContain('WO-001')
+      expect(wrapper.text()).toContain('订单一')
+      expect(wrapper.text()).not.toContain('user-admin')
+      expect(wrapper.text()).not.toContain('user-missing')
+      expect(wrapper.text()).not.toContain('王建国')
+      expect(mesSpies.traceabilityNodes[0].nodeId).toBe('user-admin')
+    },
+  )
 
   it('links non-work-order traceability to scan records without hardcoding a workflow filter', () => {
     routeState.query = { batchOrSerial: 'LOT-001', mode: 'batch' }

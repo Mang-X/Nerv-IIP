@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 
 public partial record MaterialRequirementId : IGuidStronglyTypedId;
@@ -23,8 +25,11 @@ public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggreg
         decimal stagedQuantity,
         string sourceSystem,
         string sourceSnapshotId,
-        DateTimeOffset capturedAtUtc)
+        DateTimeOffset capturedAtUtc,
+        IReadOnlyCollection<string> substituteMaterialIds,
+        string uomCode)
     {
+        ArgumentNullException.ThrowIfNull(substituteMaterialIds);
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
         WorkOrderId = DomainGuard.Required(workOrderId, nameof(workOrderId));
@@ -32,11 +37,14 @@ public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggreg
         MaterialId = DomainGuard.Required(materialId, nameof(materialId));
         MaterialLotId = string.IsNullOrWhiteSpace(materialLotId) ? null : materialLotId.Trim();
         RequiredQuantity = DomainGuard.Positive(requiredQuantity, nameof(requiredQuantity));
+        UomCode = RequiredUom(uomCode);
         AvailableQuantity = DomainGuard.NonNegative(availableQuantity, nameof(availableQuantity));
         StagedQuantity = DomainGuard.NonNegative(stagedQuantity, nameof(stagedQuantity));
         SourceSystem = DomainGuard.Required(sourceSystem, nameof(sourceSystem));
         SourceSnapshotId = DomainGuard.Required(sourceSnapshotId, nameof(sourceSnapshotId));
         CapturedAtUtc = capturedAtUtc;
+        SubstituteMaterialIdsJson = JsonSerializer.Serialize(
+            MaterialSubstituteCandidateNormalizer.Normalize(MaterialId, substituteMaterialIds));
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -46,11 +54,13 @@ public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggreg
     public string MaterialId { get; private set; } = string.Empty;
     public string? MaterialLotId { get; private set; }
     public decimal RequiredQuantity { get; private set; }
+    public string UomCode { get; private set; } = MaterialIssueRequest.UnspecifiedUomCode;
     public decimal AvailableQuantity { get; private set; }
     public decimal StagedQuantity { get; private set; }
     public string SourceSystem { get; private set; } = string.Empty;
     public string SourceSnapshotId { get; private set; } = string.Empty;
     public DateTimeOffset CapturedAtUtc { get; private set; }
+    public string SubstituteMaterialIdsJson { get; private set; } = "[]";
 
     public static MaterialRequirement Capture(
         string organizationId,
@@ -64,7 +74,9 @@ public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggreg
         decimal stagedQuantity,
         string sourceSystem,
         string sourceSnapshotId,
-        DateTimeOffset capturedAtUtc)
+        DateTimeOffset capturedAtUtc,
+        IReadOnlyCollection<string> substituteMaterialIds,
+        string uomCode)
     {
         return new MaterialRequirement(
             organizationId,
@@ -78,6 +90,23 @@ public sealed class MaterialRequirement : Entity<MaterialRequirementId>, IAggreg
             stagedQuantity,
             sourceSystem,
             sourceSnapshotId,
-            capturedAtUtc);
+            capturedAtUtc,
+            substituteMaterialIds,
+            uomCode);
     }
+
+    public IReadOnlyCollection<string> GetSubstituteMaterialIds() =>
+        JsonSerializer.Deserialize<string[]>(SubstituteMaterialIdsJson) ?? [];
+
+    private static string RequiredUom(string uomCode)
+    {
+        var normalized = DomainGuard.Required(uomCode, nameof(uomCode));
+        if (string.Equals(normalized, MaterialIssueRequest.UnspecifiedUomCode, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("New material requirement snapshots require a real UOM.", nameof(uomCode));
+        }
+
+        return normalized;
+    }
+
 }

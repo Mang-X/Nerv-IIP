@@ -106,7 +106,7 @@ public sealed class ReleaseStockReservationsBySourceCommandHandler(
             ? throw new ArgumentException("Source service is required.", nameof(sourceService))
             : sourceService.Trim();
         return string.Equals(normalized, InventoryIntegrationEventSources.BusinessMes, StringComparison.OrdinalIgnoreCase)
-            ? [InventoryIntegrationEventSources.BusinessMes, "mes"]
+            ? [InventoryIntegrationEventSources.BusinessMes, InventoryMovementSourceServices.Mes]
             : [normalized];
     }
 }

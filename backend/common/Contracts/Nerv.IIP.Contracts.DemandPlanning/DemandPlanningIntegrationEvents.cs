@@ -8,6 +8,7 @@ public static class DemandPlanningIntegrationEventTypes
     public const string PlannedPurchaseSuggested = "demandPlanning.PlannedPurchaseSuggested";
     public const string PlannedWorkOrderSuggested = "demandPlanning.PlannedWorkOrderSuggested";
     public const string PlanningSuggestionAccepted = "demandPlanning.PlanningSuggestionAccepted";
+    public const string SalesOrderDemandChangedForWorkOrder = "demandPlanning.SalesOrderDemandChangedForWorkOrder";
 }
 
 public static class DemandPlanningIntegrationEventVersions
@@ -89,6 +90,31 @@ public sealed record PlanningSuggestionAcceptedIntegrationEvent(
     object? IIntegrationEventEnvelope.PayloadObject => Payload;
 }
 
+public sealed record SalesOrderDemandChangedForWorkOrderIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    SalesOrderDemandChangedForWorkOrderPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record SalesOrderDemandChangedForWorkOrderPayload(
+    string SuggestionId,
+    string WorkOrderId,
+    string DemandSourceReference,
+    string SalesOrderId,
+    int OrderVersion,
+    bool Cancelled);
+
 public sealed record MrpRunCompletedPayload(
     string MrpRunId,
     DateOnly HorizonStart,
@@ -135,4 +161,5 @@ public sealed record PlanningSuggestionAcceptedPayload(
     string DownstreamService,
     string DownstreamDocumentType,
     string? DownstreamDocumentId,
-    IReadOnlyCollection<string>? DemandSourceReferences = null);
+    IReadOnlyCollection<string>? DemandSourceReferences = null,
+    IReadOnlyCollection<string>? AssemblyParentSuggestionIds = null);

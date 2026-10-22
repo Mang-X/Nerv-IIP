@@ -22,13 +22,13 @@ internal static class TusUploadCompletionValidator
 
         if (tusStoreAccessor is null || !tusStoreAccessor.TryGet(out var store))
         {
-            return TusUploadCompletionValidationFailure.ServiceUnavailable("Tus upload store is unavailable.");
+            return TusUploadCompletionValidationFailure.ServiceUnavailable("Tus 上传存储暂不可用。");
         }
 
         var actualSize = store.GetOffset(uploadSessionId);
         if (actualSize != expectedSizeBytes || (request.SizeBytes is not null && request.SizeBytes != actualSize))
         {
-            return TusUploadCompletionValidationFailure.BadRequest("Tus upload size does not match the upload session.");
+            return TusUploadCompletionValidationFailure.BadRequest("Tus 上传大小与上传会话不匹配。");
         }
 
         var expectedChecksum = request.Checksum ?? sessionChecksum;
@@ -37,7 +37,7 @@ internal static class TusUploadCompletionValidator
             var actualChecksum = await store.ComputeSha256HexAsync(uploadSessionId, cancellationToken);
             if (!ChecksumMatchesSha256Hex(expectedChecksum, actualChecksum))
             {
-                return TusUploadCompletionValidationFailure.BadRequest("Tus upload checksum does not match the upload session.");
+                return TusUploadCompletionValidationFailure.BadRequest("Tus 上传校验和与上传会话不匹配。");
             }
         }
 

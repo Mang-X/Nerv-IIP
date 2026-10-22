@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import NvEntityPicker from './NvEntityPicker.vue'
 
 const options = [
@@ -21,6 +21,14 @@ describe('NvEntityPicker', () => {
     const trigger = wrapper.get('button[aria-haspopup]')
     expect(trigger.attributes('aria-invalid')).toBe('true')
     expect(trigger.classes()).toContain('border-destructive')
+  })
+
+  it('links the trigger to the field error message for screen readers', () => {
+    const wrapper = mount(NvEntityPicker, {
+      props: { options, title: '选择物料', invalid: true, ariaDescribedby: 'sku-error' },
+    })
+
+    expect(wrapper.get('button[aria-haspopup]').attributes('aria-describedby')).toBe('sku-error')
   })
 
   it('shows the placeholder when nothing is selected, and name + code when selected', () => {
@@ -45,7 +53,7 @@ describe('NvEntityPicker', () => {
   // 默认形态必须是「点一下直接展开下拉、下拉内自带搜索框」，不是先弹一个对话框。
   it('defaults to the dropdown form: one click opens an in-place listbox with a search box', async () => {
     const wrapper = mount(NvEntityPicker, {
-      props: { options, title: '选择物料', sourceText: '数据来自物料主数据' },
+      props: { options, title: '选择物料' },
       attachTo: document.body,
     })
 
@@ -57,9 +65,12 @@ describe('NvEntityPicker', () => {
     expect(panelOpen()).toBe(true)
     expect(document.body.querySelector('input[role="combobox"]')).not.toBeNull()
     expect(document.body.querySelector('[role="listbox"]')?.textContent).toContain('前减振器总成')
-    // 编码与来源注脚是 NvEntityPicker 区别于 NvSearchSelect 的地方，两种形态都要有。
+    // 编码是 NvEntityPicker 区别于 NvSearchSelect 的地方。
     expect(document.body.textContent).toContain('SKU-FG-100')
-    expect(document.body.textContent).toContain('数据来自物料主数据')
+    // #3823：条数是开发者关心的事，下拉里不报「共 N 条」。
+    expect(document.body.textContent).not.toMatch(/共\s*\d+\s*条/)
+    // 本地过滤时目录已全部列出，不能提示「继续筛选」。
+    expect(document.body.textContent).not.toContain('输入关键字继续筛选')
 
     wrapper.unmount()
   })
@@ -256,7 +267,7 @@ describe('NvEntityPicker', () => {
       wrapper.unmount()
     })
 
-    it('目录还有没显示出来的条目时如实说明，并给出继续输入的出路', async () => {
+    it('目录还有没显示出来的条目时提示继续输入，但不报条数', async () => {
       const wrapper = mount(NvEntityPicker, {
         props: { options, title: '选择工单', serverSearch: true, search: '', totalCount: 4760 },
         attachTo: document.body,
@@ -265,9 +276,201 @@ describe('NvEntityPicker', () => {
       await wrapper.get('button[aria-haspopup]').trigger('click')
       await flushPromises()
 
-      expect(document.body.textContent).toContain('显示 2 / 共 4760 条')
       expect(document.body.textContent).toContain('输入关键字继续筛选')
+      expect(document.body.textContent).not.toContain('4760')
 
+      wrapper.unmount()
+    })
+  })
+
+  // #3832：库位多的仓库几千个候选。只渲染可视区附近的行，滚到哪里就渲染到哪里，
+  // 第 2601 个照样点得到；服务端搜索时滚近底部向调用方要下一页。
+  describe('大目录：虚拟化与滚动加载', () => {
+    // 用例中途失败时残留的浮层会让下一条取错列表：每条之后清掉。
+    afterEach(() => {
+      document.body.innerHTML = ''
+    })
+    function listbox() {
+      return document.body.querySelector<HTMLElement>('[role="listbox"]')!
+    }
+    function scrollListTo(el: HTMLElement, box: { top: number; height: number; client: number }) {
+      Object.defineProperty(el, 'scrollTop', { configurable: true, value: box.top })
+      Object.defineProperty(el, 'scrollHeight', { configurable: true, value: box.height })
+      Object.defineProperty(el, 'clientHeight', { configurable: true, value: box.client })
+      el.dispatchEvent(new Event('scroll'))
+    }
+    const many = Array.from({ length: 3000 }, (_, i) => ({
+      value: `LOC-${String(i + 1).padStart(4, '0')}`,
+      label: `LOC-${String(i + 1).padStart(4, '0')}`,
+    }))
+
+    it('几千个候选只渲染可视区附近的行，滚到后面的行照样能选', async () => {
+      const wrapper = mount(NvEntityPicker, {
+        props: { options: many, title: '选择库位', showCode: false },
+        attachTo: document.body,
+      })
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+
+      const rendered = () => [...document.body.querySelectorAll('[role="option"]')]
+      expect(rendered().length).toBeLessThan(40)
+      expect(rendered()[0]?.textContent).toContain('LOC-0001')
+
+      // 单行候选行高 36px：滚到第 2601 个所在的位置。
+      scrollListTo(listbox(), { top: 2600 * 36, height: 3000 * 36, client: 288 })
+      await flushPromises()
+
+      const target = rendered().find((row) => row.textContent?.includes('LOC-2601'))
+      expect(target).toBeDefined()
+      expect(rendered().length).toBeLessThan(40)
+      ;(target as HTMLElement).click()
+      await flushPromises()
+      expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['LOC-2601'])
+
+      wrapper.unmount()
+    })
+
+    it('键盘往下移到可视区之外的候选，它被渲染出来并高亮', async () => {
+      const scrolled: number[] = []
+      const original = Element.prototype.scrollIntoView
+      Element.prototype.scrollIntoView = function () {
+        // jsdom 不做布局：就近滚入 = 把这一行滚到可视区底部（可视区 288px，行高 36px）。
+        const list = this.closest<HTMLElement>('[role="listbox"]')!
+        const index = [...list.querySelectorAll('[role="option"]')].indexOf(this)
+        const top = Number(this.id.split('-opt-').at(-1)) * 36
+        scrolled.push(index)
+        Object.defineProperty(list, 'scrollTop', {
+          configurable: true,
+          value: Math.max(0, top + 36 - 288),
+        })
+        Object.defineProperty(list, 'clientHeight', { configurable: true, value: 288 })
+        list.dispatchEvent(new Event('scroll'))
+      }
+      try {
+        const wrapper = mount(NvEntityPicker, {
+          props: { options: many, title: '选择库位', showCode: false },
+          attachTo: document.body,
+        })
+        await wrapper.get('button[aria-haspopup]').trigger('click')
+        await flushPromises()
+
+        const search = document.body.querySelector<HTMLInputElement>('input[role="combobox"]')!
+        for (let i = 0; i < 20; i++) {
+          search.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+          await flushPromises()
+        }
+
+        const active = document.body.querySelector('[role="option"][data-active]')
+        expect(active?.textContent).toContain('LOC-0021')
+        expect(scrolled.length).toBeGreaterThan(0)
+        wrapper.unmount()
+      } finally {
+        Element.prototype.scrollIntoView = original
+      }
+    })
+
+    it('从首项按上键绕回末项：末项此前没渲染，也要滚过去并高亮', async () => {
+      const wrapper = mount(NvEntityPicker, {
+        props: { options: many, title: '选择库位', showCode: false },
+        attachTo: document.body,
+      })
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+      expect(listbox().textContent).not.toContain('LOC-3000')
+
+      const search = document.body.querySelector<HTMLInputElement>('input[role="combobox"]')!
+      search.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+      await flushPromises()
+
+      const active = document.body.querySelector('[role="option"][data-active]')
+      expect(active?.textContent).toContain('LOC-3000')
+      wrapper.unmount()
+    })
+
+    it('服务端搜索时滚近底部才要下一页；已经列全就不再要', async () => {
+      const firstPage = many.slice(0, 50)
+      const wrapper = mount(NvEntityPicker, {
+        props: {
+          options: firstPage,
+          title: '选择库位',
+          showCode: false,
+          serverSearch: true,
+          search: '',
+          totalCount: 3000,
+        },
+        attachTo: document.body,
+      })
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+
+      const box = { height: 50 * 36 + 16, client: 288 }
+      scrollListTo(listbox(), { ...box, top: 0 })
+      expect(wrapper.emitted('load-more')).toBeUndefined()
+
+      scrollListTo(listbox(), { ...box, top: box.height - box.client })
+      expect(wrapper.emitted('load-more')).toHaveLength(1)
+
+      await wrapper.setProps({ totalCount: 50 })
+      scrollListTo(listbox(), { ...box, top: box.height - box.client })
+      expect(wrapper.emitted('load-more')).toHaveLength(1)
+
+      wrapper.unmount()
+    })
+  })
+
+  // #3796：表单里的选择器就地新增。入口只在调用方给了文案时出现（没有新增权限就不给）；
+  // 点入口收起选择器、把「要新增」交给调用方打开表单，本组件不自己改 v-model。
+  describe('新增入口', () => {
+    function createEntry() {
+      return [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(
+        (b) => b.textContent?.trim() === '新增物料',
+      )
+    }
+
+    it('没给 createText 就没有入口', async () => {
+      const wrapper = mount(NvEntityPicker, {
+        props: { options, title: '选择物料' },
+        attachTo: document.body,
+      })
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+
+      // 不按文案找：没给文案时文案本来就不会出现。面板里除候选项之外不该有任何按钮。
+      const panel = document.body.querySelector('[role="listbox"]')!.parentElement!
+      expect(panel.querySelectorAll('button:not([role="option"])')).toHaveLength(0)
+      wrapper.unmount()
+    })
+
+    it('点入口收起选择器并发出 create，不动已选值', async () => {
+      const wrapper = mount(NvEntityPicker, {
+        props: { options, title: '选择物料', createText: '新增物料' },
+        attachTo: document.body,
+      })
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+
+      createEntry()!.click()
+      await flushPromises()
+
+      expect(wrapper.emitted('create')).toHaveLength(1)
+      expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+      expect(panelOpen()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('弹窗形态同样有入口', async () => {
+      const wrapper = mount(NvEntityPicker, {
+        props: { options, title: '选择物料', variant: 'dialog' as const, createText: '新增物料' },
+        attachTo: document.body,
+      })
+      await wrapper.get('button[aria-haspopup]').trigger('click')
+      await flushPromises()
+
+      createEntry()!.click()
+      await flushPromises()
+
+      expect(wrapper.emitted('create')).toHaveLength(1)
+      expect(document.body.querySelector('[role="dialog"]')).toBeNull()
       wrapper.unmount()
     })
   })

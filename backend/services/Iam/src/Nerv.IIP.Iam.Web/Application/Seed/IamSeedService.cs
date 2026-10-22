@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.Iam.Domain;
 using Nerv.IIP.Iam.Domain.AggregatesModel.ConnectorHostCredentialAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.ExternalClientAggregate;
@@ -19,6 +20,61 @@ public sealed class IamSeedService(
     IamPasswordService passwordService,
     IamTokenService tokenService)
 {
+    private const string ErpFinanceRoleId = "role-erp-finance";
+    private static readonly string[] ProductionPlannerWorkbenchReadPermissions =
+    [
+        NervIipPermissionCodes.MesWorkOrdersRead,
+        NervIipPermissionCodes.NotificationMessagesRead,
+        NervIipPermissionCodes.NotificationTasksRead,
+    ];
+
+    // #3838 之前平台管理员的默认角色名。只用来判断「运营没改过名」，角色本身按角色码查找。
+    private const string LegacyPlatformAdministratorRoleName = "Platform Administrator";
+    private static readonly SeedManifestId AdminRoleNameManifestId = new("iam-platform-admin-role-name-zh:v1");
+
+    // #3827 之前财务专员的默认权限；只有仍等于这一版的存量角色才补维修工单只读。
+    private static readonly string[] ErpFinanceDefaultPermissionsBeforeMaintenanceRead =
+    [
+        NervIipPermissionCodes.MasterDataResourcesRead,
+        NervIipPermissionCodes.ErpProcurementRead,
+        NervIipPermissionCodes.ErpSalesRead,
+        NervIipPermissionCodes.ErpFinanceRead,
+        NervIipPermissionCodes.ErpFinanceManage,
+    ];
+
+    /// <summary>
+    /// 非 Development 启动时的平台引导：只补缺最高权限管理员及其默认组织/环境、平台管理员角色与成员关系，以及生产计划员和停机班组长角色，
+    /// 不覆盖已存在的行。例外：为已有固定 ID 的生产计划员角色补工作台读取权限，仍是旧英文默认名的平台管理员角色一次性改为中文名
+    /// （manifest <c>iam-platform-admin-role-name-zh:v1</c>，见 <see cref="RenameLegacyAdministratorRoleAsync"/>）。组织/环境/管理员/角色 id 读 <c>Iam:Seed:*</c>（与产品基线 seed 同源）。
+    /// 新建管理员时初始口令只来自部署配置 <c>Iam:Seed:AdminPassword</c>，须满足口令策略，并标记首次登录须改密。
+    /// 连接器凭据、外部客户端、ERP 岗位角色与演示账号不在此列。
+    /// </summary>
+    public async Task BootstrapAsync(CancellationToken cancellationToken = default)
+    {
+        var seed = options.Value;
+        var dbContext = serviceProvider.GetRequiredService<ApplicationDbContext>();
+        var passwordPolicy = serviceProvider.GetRequiredService<IamPasswordPolicy>();
+        await EnsurePlatformAdministratorAsync(dbContext, seed, () =>
+        {
+            if (string.IsNullOrWhiteSpace(seed.AdminPassword))
+            {
+                throw new InvalidOperationException(
+                    "Iam:Seed:AdminPassword is required to create the initial platform administrator.");
+            }
+
+            passwordPolicy.ValidateComplexity(seed.AdminPassword);
+            var now = DateTimeOffset.UtcNow;
+            return NewAdministrator(
+                seed,
+                passwordChangedAtUtc: now,
+                passwordExpiresAtUtc: passwordPolicy.GetPasswordExpiresAtUtc(now),
+                passwordChangeRequired: true);
+        }, cancellationToken);
+        await EnsureProductionPlannerAsync(dbContext, seed, cancellationToken);
+        await EnsureMesDowntimeTeamLeaderAsync(dbContext, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
         var seed = options.Value;
@@ -40,32 +96,40 @@ public sealed class IamSeedService(
         var dbContext = serviceProvider.GetRequiredService<ApplicationDbContext>();
         var organizationId = new OrganizationId(seed.OrganizationId);
         var environmentId = new IamEnvironmentId(seed.EnvironmentId);
-        var adminUserId = new UserId(seed.AdminUserId);
-        var adminRoleId = new RoleId(seed.AdminRoleId);
-        var membershipId = new MembershipId($"{seed.AdminUserId}:{seed.OrganizationId}:{seed.EnvironmentId}");
         var credentialId = new ConnectorHostCredentialId(seed.ConnectorHostCredentialId);
         var manifestId = new SeedManifestId("iam-default-seed:v1");
         var principalScopeBackfillManifestId = new SeedManifestId("iam-admin-principal-scope-backfill:v1");
         var seedAlreadyApplied = await dbContext.SeedManifests.FindAsync([manifestId], cancellationToken) is not null;
         var principalScopeBackfillApplied = await dbContext.SeedManifests
             .FindAsync([principalScopeBackfillManifestId], cancellationToken) is not null;
+        var financeMaintenanceReadManifestId = new SeedManifestId("iam-erp-finance-maintenance-work-orders-read:v1");
+        var financeMaintenanceReadApplied = await dbContext.SeedManifests
+            .FindAsync([financeMaintenanceReadManifestId], cancellationToken) is not null;
         var now = DateTimeOffset.UtcNow;
-
-        if (await dbContext.Organizations.FindAsync([organizationId], cancellationToken) is null)
-        {
-            dbContext.Organizations.Add(new Organization(organizationId, seed.OrganizationName, "active"));
-        }
-
-        if (await dbContext.Environments.FindAsync([environmentId], cancellationToken) is null)
-        {
-            dbContext.Environments.Add(new IamEnvironment(environmentId, organizationId, seed.EnvironmentName, "active"));
-        }
 
         foreach (var seedRole in NervIipSeedRoles.ErpJobRoles)
         {
             var roleId = new RoleId(seedRole.RoleId);
-            if (await dbContext.Roles.FindAsync([roleId], cancellationToken) is not null)
+            var existingRole = await dbContext.Roles
+                .Include(x => x.Permissions)
+                .SingleOrDefaultAsync(x => x.Id == roleId, cancellationToken);
+            if (existingRole is not null)
             {
+                // 已有环境的财务专员补维修工单只读（#3827）。只补仍是上一版默认权限的角色，
+                // 运营改过的不动；补一次后记 manifest，之后运营再撤掉也不会被补回。
+                if (!financeMaintenanceReadApplied
+                    && seedRole.RoleId == ErpFinanceRoleId
+                    && existingRole.RoleName == seedRole.RoleName
+                    && SetEquals(
+                        existingRole.Permissions.Select(x => x.PermissionCode),
+                        ErpFinanceDefaultPermissionsBeforeMaintenanceRead))
+                {
+                    existingRole.ReplacePermissions([
+                        .. ErpFinanceDefaultPermissionsBeforeMaintenanceRead,
+                        NervIipPermissionCodes.MaintenanceWorkOrdersRead,
+                    ]);
+                }
+
                 continue;
             }
 
@@ -76,49 +140,25 @@ public sealed class IamSeedService(
             dbContext.Roles.Add(erpRole);
         }
 
-        var role = await dbContext.Roles
-            .Include(x => x.Permissions)
-            .Include(x => x.DataScopes)
-            .SingleOrDefaultAsync(x => x.Id == adminRoleId, cancellationToken);
-        if (role is null)
-        {
-            role = new Role(adminRoleId, "Platform Administrator", NervIipSeedPermissions.All);
-            role.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Organization, seed.OrganizationId)]);
-            dbContext.Roles.Add(role);
-        }
-        else if (!principalScopeBackfillApplied
+        await EnsureProductionPlannerAsync(dbContext, seed, cancellationToken);
+        await EnsureMesDowntimeTeamLeaderAsync(dbContext, cancellationToken);
+
+        var (role, user) = await EnsurePlatformAdministratorAsync(
+            dbContext,
+            seed,
+            () => NewAdministrator(seed, null, null, passwordChangeRequired: false),
+            cancellationToken);
+        if (!principalScopeBackfillApplied
             && seedAlreadyApplied
-            && role.RoleName == "Platform Administrator"
             && role.DataScopes.Count == 0
             && SetEquals(role.Permissions.Select(x => x.PermissionCode), NervIipSeedPermissions.All))
         {
             role.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Organization, seed.OrganizationId)]);
         }
 
-        var user = await dbContext.Users.FindAsync([adminUserId], cancellationToken);
-        if (user is null)
-        {
-            user = new User(
-                adminUserId,
-                seed.AdminLoginName,
-                seed.AdminEmail,
-                passwordService.Hash(seed.AdminPassword),
-                true,
-                Guid.NewGuid().ToString("n"),
-                1);
-            dbContext.Users.Add(user);
-        }
-        else if (!seedAlreadyApplied && !passwordService.Verify(user, seed.AdminPassword))
+        if (!seedAlreadyApplied && !passwordService.Verify(user, seed.AdminPassword))
         {
             user.UpdatePasswordHash(passwordService.Hash(seed.AdminPassword), now, now.AddDays(90), false, 5);
-        }
-
-        var membership = await dbContext.Memberships
-            .Include(x => x.Roles)
-            .SingleOrDefaultAsync(x => x.Id == membershipId, cancellationToken);
-        if (membership is null)
-        {
-            dbContext.Memberships.Add(new Membership(membershipId, adminUserId, organizationId, environmentId, [adminRoleId]));
         }
 
         var connectorCapabilities = NervIipSeedPermissions.All
@@ -204,6 +244,16 @@ public sealed class IamSeedService(
             dbContext.SeedManifests.Add(new SeedManifest(manifestId, "iam-default-seed", "v1", "iam", now));
         }
 
+        if (!financeMaintenanceReadApplied)
+        {
+            dbContext.SeedManifests.Add(new SeedManifest(
+                financeMaintenanceReadManifestId,
+                "iam-erp-finance-maintenance-work-orders-read",
+                "v1",
+                "iam",
+                now));
+        }
+
         if (!principalScopeBackfillApplied)
         {
             dbContext.SeedManifests.Add(new SeedManifest(
@@ -215,6 +265,153 @@ public sealed class IamSeedService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static async Task EnsureMesDowntimeTeamLeaderAsync(
+        ApplicationDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        var definition = NervIipSeedRoles.MesDowntimeTeamLeader;
+        var roleId = new RoleId(definition.RoleId);
+        if (await dbContext.Roles.AnyAsync(role => role.Id == roleId, cancellationToken)) return;
+
+        var normalizedName = Role.NormalizeName(definition.RoleName);
+        var nameTaken = await dbContext.Roles.AnyAsync(role => role.NormalizedRoleName == normalizedName, cancellationToken);
+        var roleName = nameTaken ? "班组长（停机登记，系统预置）" : definition.RoleName;
+        // 模板不授予组织全权；部署方通过既有成员数据范围配置实际工作中心。
+        dbContext.Roles.Add(new Role(roleId, roleName, definition.PermissionCodes));
+    }
+
+    private static async Task EnsureProductionPlannerAsync(
+        ApplicationDbContext dbContext,
+        IamSeedOptions seed,
+        CancellationToken cancellationToken)
+    {
+        var definition = NervIipSeedRoles.ProductionPlanner;
+        var existingRole = await dbContext.Roles
+            .Include(role => role.Permissions)
+            .SingleOrDefaultAsync(role => role.Id == new RoleId(definition.RoleId), cancellationToken);
+        if (existingRole is not null)
+        {
+            var existingCodes = existingRole.Permissions.Select(permission => permission.PermissionCode).ToArray();
+            var missingCodes = ProductionPlannerWorkbenchReadPermissions.Except(existingCodes, StringComparer.Ordinal).ToArray();
+            if (missingCodes.Length > 0)
+            {
+                existingRole.ReplacePermissions([
+                    .. existingCodes,
+                    .. missingCodes,
+                ]);
+            }
+
+            return;
+        }
+
+        var normalizedDefaultName = Role.NormalizeName(definition.RoleName);
+        var defaultNameTaken = await dbContext.Roles.AnyAsync(
+            role => role.NormalizedRoleName == normalizedDefaultName,
+            cancellationToken);
+        var roleName = defaultNameTaken ? "生产计划员（系统预置）" : definition.RoleName;
+        var role = new Role(new RoleId(definition.RoleId), roleName, definition.PermissionCodes);
+        role.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Organization, seed.OrganizationId)]);
+        dbContext.Roles.Add(role);
+    }
+
+    private async Task<(Role Role, User User)> EnsurePlatformAdministratorAsync(
+        ApplicationDbContext dbContext,
+        IamSeedOptions seed,
+        Func<User> createAdministrator,
+        CancellationToken cancellationToken)
+    {
+        var organizationId = new OrganizationId(seed.OrganizationId);
+        var environmentId = new IamEnvironmentId(seed.EnvironmentId);
+        var adminUserId = new UserId(seed.AdminUserId);
+        var adminRoleId = new RoleId(seed.AdminRoleId);
+        var membershipId = new MembershipId($"{seed.AdminUserId}:{seed.OrganizationId}:{seed.EnvironmentId}");
+
+        if (await dbContext.Organizations.FindAsync([organizationId], cancellationToken) is null)
+        {
+            dbContext.Organizations.Add(new Organization(organizationId, seed.OrganizationName, "active"));
+        }
+
+        if (await dbContext.Environments.FindAsync([environmentId], cancellationToken) is null)
+        {
+            dbContext.Environments.Add(new IamEnvironment(environmentId, organizationId, seed.EnvironmentName, "active"));
+        }
+
+        var role = await dbContext.Roles
+            .Include(x => x.Permissions)
+            .Include(x => x.DataScopes)
+            .SingleOrDefaultAsync(x => x.Id == adminRoleId, cancellationToken);
+        if (role is null)
+        {
+            role = new Role(adminRoleId, NervIipSeedRoles.PlatformAdministratorRoleName, NervIipSeedPermissions.All);
+            role.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Organization, seed.OrganizationId)]);
+            dbContext.Roles.Add(role);
+        }
+
+        await RenameLegacyAdministratorRoleAsync(dbContext, role, cancellationToken);
+
+        var user = await dbContext.Users.FindAsync([adminUserId], cancellationToken);
+        if (user is null)
+        {
+            user = createAdministrator();
+            dbContext.Users.Add(user);
+        }
+
+        if (!await dbContext.Memberships.AnyAsync(x => x.Id == membershipId, cancellationToken))
+        {
+            dbContext.Memberships.Add(new Membership(membershipId, adminUserId, organizationId, environmentId, [adminRoleId]));
+        }
+
+        return (role, user);
+    }
+
+    /// <summary>
+    /// 已有环境里平台管理员的角色名原是英文（#3838），引导与基线 seed 两条路径都在这里改成中文。
+    /// 只改仍是旧默认名的角色，运营改过名的不动；中文名已被运营自建角色占用时也不改（角色名唯一）。改一次后记 manifest。
+    /// </summary>
+    private static async Task RenameLegacyAdministratorRoleAsync(
+        ApplicationDbContext dbContext,
+        Role role,
+        CancellationToken cancellationToken)
+    {
+        if (await dbContext.SeedManifests.FindAsync([AdminRoleNameManifestId], cancellationToken) is not null)
+        {
+            return;
+        }
+
+        var chineseName = Role.NormalizeName(NervIipSeedRoles.PlatformAdministratorRoleName);
+        if (role.RoleName == LegacyPlatformAdministratorRoleName
+            && !await dbContext.Roles.AnyAsync(x => x.NormalizedRoleName == chineseName, cancellationToken))
+        {
+            role.Rename(NervIipSeedRoles.PlatformAdministratorRoleName);
+        }
+
+        dbContext.SeedManifests.Add(new SeedManifest(
+            AdminRoleNameManifestId,
+            "iam-platform-admin-role-name-zh",
+            "v1",
+            "iam",
+            DateTimeOffset.UtcNow));
+    }
+
+    private User NewAdministrator(
+        IamSeedOptions seed,
+        DateTimeOffset? passwordChangedAtUtc,
+        DateTimeOffset? passwordExpiresAtUtc,
+        bool passwordChangeRequired)
+    {
+        return new User(
+            new UserId(seed.AdminUserId),
+            seed.AdminLoginName,
+            seed.AdminEmail,
+            passwordService.Hash(seed.AdminPassword),
+            true,
+            Guid.NewGuid().ToString("n"),
+            1,
+            passwordChangedAtUtc: passwordChangedAtUtc,
+            passwordExpiresAtUtc: passwordExpiresAtUtc,
+            passwordChangeRequired: passwordChangeRequired);
     }
 
     private static bool SetEquals(IEnumerable<string> current, IEnumerable<string> desired)

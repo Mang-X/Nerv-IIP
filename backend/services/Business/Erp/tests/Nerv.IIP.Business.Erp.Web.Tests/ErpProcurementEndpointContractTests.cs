@@ -15,6 +15,7 @@ using Nerv.IIP.Business.Erp.Web.Application.Queries.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.Wms;
 using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 using Nerv.IIP.Contracts.Approval;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Primitives;
@@ -28,7 +29,7 @@ public sealed class ErpProcurementEndpointContractTests
     {
         var contracts = ErpProcurementEndpointContracts.All.ToArray();
 
-        Assert.Equal(17, contracts.Length);
+        Assert.Equal(20, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/erp/purchase-requisitions/from-suggestion"
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
@@ -62,6 +63,14 @@ public sealed class ErpProcurementEndpointContractTests
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/changes" && x.OperationId == "requestErpPurchaseOrderChange");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/final-delivery" && x.OperationId == "closeErpPurchaseOrderLineFinalDelivery");
         Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/cancel" && x.OperationId == "cancelErpPurchaseOrder");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/reschedule"
+            && x.PermissionCode == ErpPermissionCodes.ProcurementManage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "rescheduleErpPurchaseOrderLine");
+        Assert.Contains(contracts, x => x.Route == "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/lines/{lineNo}/cancel"
+            && x.PermissionCode == ErpPermissionCodes.ProcurementManage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "cancelErpPurchaseOrderLine");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/erp/purchase-receipts"
             && x.PermissionCode == ErpPermissionCodes.ProcurementManage
@@ -97,6 +106,11 @@ public sealed class ErpProcurementEndpointContractTests
             && x.PermissionCode == ErpPermissionCodes.ProcurementRead
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "listErpPurchaseOrders");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST"
+            && x.Route == "/api/business/v1/erp/material-supply-etas/resolve"
+            && x.PermissionCode == ErpPermissionCodes.ProcurementRead
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "resolveErpMaterialSupplyEtas");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/erp/supplier-quotations"
             && x.PermissionCode == ErpPermissionCodes.ProcurementRead
@@ -119,6 +133,7 @@ public sealed class ErpProcurementEndpointContractTests
     [InlineData(typeof(ReleaseSupplierInvoicePaymentHoldEndpoint))]
     [InlineData(typeof(VoidSupplierInvoicePaymentHoldEndpoint))]
     [InlineData(typeof(ListPurchaseOrdersEndpoint))]
+    [InlineData(typeof(ResolveMaterialSupplyEtasEndpoint))]
     public void Erp_procurement_endpoints_route_through_mediator(Type endpointType)
     {
         var parameterTypes = endpointType
@@ -172,7 +187,7 @@ public sealed class ErpProcurementEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListPurchaseRequisitionsQueryHandler(dbContext).Handle(
-            new ListPurchaseRequisitionsQuery("org-001", "env-dev", "Open", "PR-002", 0, 1),
+            new ListPurchaseRequisitionsQuery(" org-001 ", " env-dev ", "Open", " PR-002 ", 0, 1),
             CancellationToken.None);
         var unknownStatus = await new ListPurchaseRequisitionsQueryHandler(dbContext).Handle(
             new ListPurchaseRequisitionsQuery("org-001", "env-dev", "not-a-status", null, 0, 100),
@@ -216,7 +231,7 @@ public sealed class ErpProcurementEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListRequestsForQuotationQueryHandler(dbContext).Handle(
-            new ListRequestsForQuotationQuery("org-001", "env-dev", "Open", "SUP-002", 0, 1),
+            new ListRequestsForQuotationQuery(" org-001 ", " env-dev ", "Open", " SUP-002 ", 0, 1),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -225,6 +240,13 @@ public sealed class ErpProcurementEndpointContractTests
         Assert.Equal("Open", item.Status);
         Assert.Contains("SUP-003", item.SupplierCodes);
         Assert.Equal("SKU-RM-2000", Assert.Single(item.Lines).SkuCode);
+
+        // #2121 requires compatibility with the original case-sensitive Contains query.
+        var differentCase = await new ListRequestsForQuotationQueryHandler(dbContext).Handle(
+            new ListRequestsForQuotationQuery("org-001", "env-dev", Keyword: "rfq-002"),
+            CancellationToken.None);
+        Assert.Equal(0, differentCase.Total);
+        Assert.Empty(differentCase.Items);
     }
 
     /// <summary>
@@ -259,7 +281,7 @@ public sealed class ErpProcurementEndpointContractTests
         Assert.All(bySupplier.Items, item => Assert.Equal("SUP-001", item.SupplierCode));
 
         var byKeyword = await handler.Handle(
-            new ListSupplierQuotationsQuery("org-001", "env-dev", Keyword: "SKU-RM-2000"),
+            new ListSupplierQuotationsQuery(" org-001 ", " env-dev ", Keyword: " SKU-RM-2000 "),
             CancellationToken.None);
         var quoted = Assert.Single(byKeyword.Items);
         Assert.Equal("SQ-003", quoted.QuotationNo);
@@ -394,6 +416,150 @@ public sealed class ErpProcurementEndpointContractTests
     }
 
     [Fact]
+    public async Task Purchase_order_line_commands_persist_results_visible_in_procurement_query()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = PurchaseOrder.Create("org-001", "env-dev", "PO-3970", "SUP-001", "SITE-01",
+            [new PurchaseOrderLineDraft("10", "SKU-001", "kg", 3m, 12m, new DateOnly(2026, 6, 5)),
+             new PurchaseOrderLineDraft("20", "SKU-002", "kg", 4m, 12m, new DateOnly(2026, 6, 5))]);
+        order.MarkApprovalRequested("approval-3970");
+        order.ReleaseAfterApproval("approval-3970");
+        dbContext.PurchaseOrders.Add(order);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var promisedDate = new DateOnly(2026, 7, 1);
+        await new ReschedulePurchaseOrderLineCommandHandler(dbContext).Handle(
+            new ReschedulePurchaseOrderLineCommand("org-001", "env-dev", "PO-3970", "10", promisedDate), CancellationToken.None);
+        await new CancelPurchaseOrderLineCommandHandler(dbContext).Handle(
+            new CancelPurchaseOrderLineCommand("org-001", "env-dev", "PO-3970", "20", "plan cancelled"), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        await new CancelPurchaseOrderLineCommandHandler(dbContext).Handle(
+            new CancelPurchaseOrderLineCommand("org-001", "env-dev", "PO-3970", "20", "plan cancelled"), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var response = await new ListPurchaseOrdersQueryHandler(dbContext).Handle(
+            new ListPurchaseOrdersQuery("org-001", "env-dev"), CancellationToken.None);
+        var lines = Assert.Single(response.Items).Lines;
+        Assert.Equal(promisedDate, lines.Single(x => x.LineNo == "10").PromisedDate);
+        Assert.Equal(0m, lines.Single(x => x.LineNo == "20").OpenQuantity);
+        Assert.True(lines.Single(x => x.LineNo == "20").FinalDelivery);
+    }
+
+    [Fact]
+    public async Task Resolve_material_supply_etas_accumulates_released_open_lines_by_promised_date()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        AddReleasedPurchaseOrder(dbContext, "PO-ETA-001", "SKU-RM-1000", 4m, new DateOnly(2026, 6, 3));
+        AddReleasedPurchaseOrder(dbContext, "PO-ETA-002", "SKU-RM-1000", 7m, new DateOnly(2026, 6, 5));
+        AddReleasedPurchaseOrder(dbContext, "PO-ETA-003", "SKU-RM-2000", 2m, new DateOnly(2026, 6, 4));
+        AddReleasedPurchaseOrder(dbContext, "PO-ETA-BOX", "SKU-RM-1000", 100m, new DateOnly(2026, 6, 1), uomCode: "BOX");
+        AddReleasedPurchaseOrder(dbContext, "PO-OTHER-ENV", "SKU-RM-1000", 100m, new DateOnly(2026, 6, 1), environmentId: "env-other");
+        var partlyReceivedOrder = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-PARTLY-RECEIVED",
+            "SUP-001",
+            "SITE-01",
+            [new PurchaseOrderLineDraft("10", "SKU-RM-1000", "kg", 10m, 1m, new DateOnly(2026, 6, 1))]);
+        partlyReceivedOrder.MarkApprovalRequested("approval-partly-received");
+        partlyReceivedOrder.ReleaseAfterApproval("approval-partly-received");
+        partlyReceivedOrder.RegisterReceipt("10", 9m);
+        dbContext.PurchaseOrders.Add(partlyReceivedOrder);
+        var partiallyOpenOrder = PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-FINAL-LINE",
+            "SUP-001",
+            "SITE-01",
+            [
+                new PurchaseOrderLineDraft("10", "SKU-RM-1000", "kg", 100m, 1m, new DateOnly(2026, 6, 1), UnderReceiptTolerancePercent: 100m),
+                new PurchaseOrderLineDraft("20", "SKU-KEEP-OPEN", "kg", 1m, 1m, new DateOnly(2026, 6, 8)),
+            ]);
+        partiallyOpenOrder.MarkApprovalRequested("approval-final-line");
+        partiallyOpenOrder.ReleaseAfterApproval("approval-final-line");
+        partiallyOpenOrder.RegisterReceipt("10", 1m, finalDelivery: true);
+        dbContext.PurchaseOrders.Add(partiallyOpenOrder);
+        dbContext.PurchaseOrders.Add(PurchaseOrder.Create(
+            "org-001",
+            "env-dev",
+            "PO-PENDING",
+            "SUP-001",
+            "SITE-01",
+            [new PurchaseOrderLineDraft("10", "SKU-RM-1000", "kg", 100m, 1m, new DateOnly(2026, 6, 2))]));
+        AddReleasedPurchaseOrder(dbContext, "PO-OTHER-TENANT", "SKU-RM-1000", 100m, new DateOnly(2026, 6, 1), "org-other");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var response = await new ResolveMaterialSupplyEtasQueryHandler(dbContext).Handle(
+            new ResolveMaterialSupplyEtasQuery(
+                " org-001 ",
+                " env-dev ",
+                [
+                    new MaterialSupplyEtaRequestItem("SKU-RM-2000", "kg", 3m),
+                    new MaterialSupplyEtaRequestItem("SKU-RM-1000", "kg", 10m),
+                ]),
+            CancellationToken.None);
+
+        Assert.Collection(response.Items,
+            item =>
+            {
+                Assert.Equal("SKU-RM-1000", item.SkuCode);
+                Assert.Equal("kg", item.UomCode);
+                Assert.Equal(10m, item.ShortageQuantity);
+                Assert.Equal(12m, item.OpenPurchaseQuantity);
+                Assert.Equal(new DateOnly(2026, 6, 5), item.ExpectedAvailableDate);
+            },
+            item =>
+            {
+                Assert.Equal("SKU-RM-2000", item.SkuCode);
+                Assert.Equal(3m, item.ShortageQuantity);
+                Assert.Equal(2m, item.OpenPurchaseQuantity);
+                Assert.Null(item.ExpectedAvailableDate);
+            });
+    }
+
+    [Fact]
+    public void Resolve_material_supply_etas_rejects_duplicate_skus_and_non_positive_shortage()
+    {
+        var validator = new ResolveMaterialSupplyEtasQueryValidator();
+
+        var result = validator.Validate(new ResolveMaterialSupplyEtasQuery(
+            "org-001",
+            "env-dev",
+            [
+                new MaterialSupplyEtaRequestItem("SKU-RM-1000", "kg", 1m),
+                new MaterialSupplyEtaRequestItem(" SKU-RM-1000 ", " kg ", 0m),
+            ]));
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, error => error.PropertyName == "Items");
+        Assert.Contains(result.Errors, error => error.PropertyName == "Items[1].ShortageQuantity");
+    }
+
+    [Fact]
+    public void Resolve_material_supply_etas_rejects_null_items_and_null_sku_without_throwing()
+    {
+        var validator = new ResolveMaterialSupplyEtasQueryValidator();
+
+        var nullItems = validator.Validate(new ResolveMaterialSupplyEtasQuery("org-001", "env-dev", null!));
+        var nullSku = validator.Validate(new ResolveMaterialSupplyEtasQuery(
+            "org-001",
+            "env-dev",
+            [new MaterialSupplyEtaRequestItem(null!, "kg", 1m)]));
+
+        Assert.False(nullItems.IsValid);
+        Assert.Contains(nullItems.Errors, error => error.PropertyName == "Items");
+        Assert.False(nullSku.IsValid);
+        Assert.Contains(nullSku.Errors, error => error.PropertyName == "Items[0].SkuCode");
+    }
+
+    [Fact]
     public async Task Get_purchase_receipt_source_document_query_returns_org_scoped_line_facts()
     {
         await using var provider = CreateInMemoryProvider();
@@ -483,7 +649,7 @@ public sealed class ErpProcurementEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ListPurchaseOrdersQueryHandler(dbContext).Handle(
-            new ListPurchaseOrdersQuery("org-001", "env-dev", "PendingApproval", "SUP-002", 0, 1),
+            new ListPurchaseOrdersQuery(" org-001 ", " env-dev ", "PendingApproval", " SUP-002 ", 0, 1),
             CancellationToken.None);
 
         Assert.Equal(1, response.Total);
@@ -985,6 +1151,28 @@ public sealed class ErpProcurementEndpointContractTests
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
         return services.BuildServiceProvider();
+    }
+
+    private static void AddReleasedPurchaseOrder(
+        ApplicationDbContext dbContext,
+        string purchaseOrderNo,
+        string skuCode,
+        decimal quantity,
+        DateOnly promisedDate,
+        string organizationId = "org-001",
+        string environmentId = "env-dev",
+        string uomCode = "kg")
+    {
+        var order = PurchaseOrder.Create(
+            organizationId,
+            environmentId,
+            purchaseOrderNo,
+            "SUP-001",
+            "SITE-01",
+            [new PurchaseOrderLineDraft("10", skuCode, uomCode, quantity, 1m, promisedDate)]);
+        order.MarkApprovalRequested($"approval-{purchaseOrderNo}");
+        order.ReleaseAfterApproval($"approval-{purchaseOrderNo}");
+        dbContext.PurchaseOrders.Add(order);
     }
 
     private static async Task SeedPurchaseRequisitionAsync(

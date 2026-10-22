@@ -24,7 +24,7 @@ public sealed class ApprovalSeedServiceTests
     {
         await using var db = CreateDbContext();
 
-        var written = await new ApprovalSeedService(db).SeedAsync("org-001", "env-dev");
+        var written = await new ApprovalSeedService(db).SeedAsync("org-001", "env-dev", "user-tenant-admin");
 
         var templates = await db.ApprovalTemplates
             .AsNoTracking()
@@ -40,7 +40,7 @@ public sealed class ApprovalSeedServiceTests
             Assert.Equal(1, template.Version);
             var step = Assert.Single(template.Steps);
             Assert.Equal("user", step.ApproverType);
-            Assert.Equal("user-admin", step.ApproverRef);
+            Assert.Equal("user-tenant-admin", step.ApproverRef);
         });
     }
 
@@ -61,9 +61,9 @@ public sealed class ApprovalSeedServiceTests
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
 
-        var firstWritten = await new ApprovalSeedService(db).SeedAsync("org-001", "env-dev");
+        var firstWritten = await new ApprovalSeedService(db).SeedAsync("org-001", "env-dev", "user-admin");
         db.ChangeTracker.Clear();
-        var secondWritten = await new ApprovalSeedService(db).SeedAsync("org-001", "env-dev");
+        var secondWritten = await new ApprovalSeedService(db).SeedAsync("org-001", "env-dev", "user-admin");
         db.ChangeTracker.Clear();
 
         var preserved = await db.ApprovalTemplates
@@ -87,7 +87,7 @@ public sealed class ApprovalSeedServiceTests
     public async Task World_history_seed_keeps_the_five_legacy_codes_beside_product_templates()
     {
         await using var db = CreateDbContext();
-        await new ApprovalSeedService(db).SeedAsync("org-001", "env-dev");
+        await new ApprovalSeedService(db).SeedAsync("org-001", "env-dev", "user-admin");
         db.ChangeTracker.Clear();
 
         var report = await new WorldHistoryApprovalSeedService(db).SeedAsync(

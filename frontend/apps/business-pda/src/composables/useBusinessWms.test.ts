@@ -453,7 +453,6 @@ describe('PDA WMS composables', () => {
   it('passes the supplied idempotencyKey through outbound and keeps org/env override-proof', async () => {
     const { completeOutbound } = useWmsOutbound()
     await completeOutbound('outbound-1', {
-      packReviewNo: 'PR',
       passed: true,
       idempotencyKey: 'KEY-OUT',
       // 调用方试图注入敌意 org/env——必须永远落空（query 恒取登录主体）。
@@ -465,7 +464,6 @@ describe('PDA WMS composables', () => {
       path: { outboundOrderId: string }
       query: { organizationId: string; environmentId: string }
       body: {
-        packReviewNo: string
         passed?: boolean
         idempotencyKey: string
         scopeKind: string
@@ -474,7 +472,6 @@ describe('PDA WMS composables', () => {
       }
     }
     expect(vars.path).toEqual({ outboundOrderId: 'outbound-1' })
-    expect(vars.body.packReviewNo).toBe('PR')
     expect(vars.body.passed).toBe(true)
     // 页面提供的稳定键原样透传。
     expect(vars.body.idempotencyKey).toBe('KEY-OUT')
@@ -523,9 +520,8 @@ describe('PDA WMS composables', () => {
       name: 'outbound',
       operationType: 'wms.outbound-order.complete',
       resourceId: 'outbound-1',
-      payloadFingerprint: 'outbound-1:{"packReviewNo":"PR","passed":true}',
+      payloadFingerprint: 'outbound-1:{"passed":true}',
       payloadSnapshot: {
-        packReviewNo: 'PR',
         passed: true,
         scopeKind: 'self',
         scopeId: 'emp049',
@@ -533,7 +529,6 @@ describe('PDA WMS composables', () => {
       },
       mutationId: 'completeOutbound',
       expectedBody: {
-        packReviewNo: 'PR',
         passed: true,
         idempotencyKey: 'KEY-OLD',
         scopeKind: 'self',
@@ -553,7 +548,7 @@ describe('PDA WMS composables', () => {
       execute: () =>
         useWmsOutbound().completeOutbound(
           'outbound-1',
-          { packReviewNo: 'PR', passed: true, idempotencyKey: 'KEY-NEW' },
+          { passed: true, idempotencyKey: 'KEY-NEW' },
           { attempt: 'retry' },
         ),
     },
@@ -625,12 +620,16 @@ describe('PDA WMS composables', () => {
         expect(coladaState.lastMutationVars.get(mutationId)).toMatchObject({
           body: expectedBody,
         })
-        expect(confirmBusinessConsoleOperation).toHaveBeenCalledWith(receipt, {
-          expectedOperationType: operationType,
-          expectedIdempotencyKey: 'KEY-OLD',
-          expectedResourceId: resourceId,
-          readbackScope: { scopeKind: 'self', scopeId: 'emp049' },
-        })
+        // 出库复核另带更长的回读预算（#3926），这里只核意图键与回读范围。
+        expect(confirmBusinessConsoleOperation).toHaveBeenCalledWith(
+          receipt,
+          expect.objectContaining({
+            expectedOperationType: operationType,
+            expectedIdempotencyKey: 'KEY-OLD',
+            expectedResourceId: resourceId,
+            readbackScope: { scopeKind: 'self', scopeId: 'emp049' },
+          }),
+        )
         expect(peekPendingBusinessIntent(intentScope)?.idempotencyKey).toBe('KEY-OLD')
       } finally {
         clearPendingBusinessIntent(intentScope)
@@ -683,13 +682,8 @@ describe('PDA WMS composables', () => {
         key: string,
         attempt: 'initial' | 'retry',
       ) =>
-        result.completeOutbound(
-          'outbound-1',
-          { packReviewNo: 'PR-A', passed: true, idempotencyKey: key },
-          { attempt },
-        ),
+        result.completeOutbound('outbound-1', { passed: true, idempotencyKey: key }, { attempt }),
       expectedBody: {
-        packReviewNo: 'PR-A',
         passed: true,
         scopeKind: 'self',
         scopeId: 'emp049',
@@ -817,7 +811,7 @@ describe('PDA WMS composables', () => {
       },
     })
     const { completeOutbound } = useWmsOutbound()
-    const input = { packReviewNo: 'PR', passed: true, idempotencyKey: 'KEY-OUT' }
+    const input = { passed: true, idempotencyKey: 'KEY-OUT' }
 
     await expect(completeOutbound('outbound-1', input, { attempt: 'initial' })).rejects.toThrow(
       '状态已被其他操作更新',
@@ -834,11 +828,10 @@ describe('PDA WMS composables', () => {
         principalId: 'emp049',
         ...SCOPE,
         operationType: 'wms.outbound-order.complete',
-        payloadFingerprint: 'outbound-1:{"packReviewNo":"PR","passed":true}',
+        payloadFingerprint: 'outbound-1:{"passed":true}',
       },
       () => 'KEY-OUT',
       {
-        packReviewNo: 'PR',
         passed: true,
         scopeKind: 'self',
         scopeId: 'emp049',
@@ -1052,7 +1045,6 @@ describe('PDA WMS composables', () => {
 
     expect(result.tasks.value).toEqual([])
     expect(result.total.value).toBe(0)
-    expect(result.lastUpdatedAt.value).toBeNull()
   })
 
   it('normalizes task rows and refreshes the authorized query from page zero', async () => {
@@ -1982,7 +1974,6 @@ describe('PDA WMS composables', () => {
       expect(result.rows.value).toHaveLength(1)
       expect(result.total.value).toBe(7)
       expect(result.hasSuccessfulResponse.value).toBe(true)
-      expect(result.lastUpdatedAt.value).not.toBeNull()
     }
 
     reactiveAuthState.principal = { organizationId: 'org-002', environmentId: 'env-prod' }
@@ -1993,7 +1984,6 @@ describe('PDA WMS composables', () => {
       expect(result.total.value).toBe(0)
       expect(result.hasSuccessfulResponse.value).toBe(false)
       expect(result.hasFailedResponse.value).toBe(false)
-      expect(result.lastUpdatedAt.value).toBeNull()
     }
   })
 

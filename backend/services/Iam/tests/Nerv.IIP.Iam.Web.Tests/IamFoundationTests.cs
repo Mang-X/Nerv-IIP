@@ -309,6 +309,14 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
         Assert.Contains(catalog.Items, item => item.Code == "business.mes.work-orders.read"
             && item.Domain == "business"
             && item.Seeded);
+        // ADR 0029 决策 1：参考数据专用读权限码必须出现在管理读面，并提供可显示的描述
+        // （IamPermissionCatalog.Descriptions 漏收该 code 时 GetValueOrDefault 会回落成
+        // code 本身，此断言会红）。既有 Descriptions 缺口见 #2864。
+        Assert.Contains(catalog.Items, item => item.Code == "business.maintenance.downtime-reasons.read"
+            && item.Domain == "business"
+            && item.Seeded
+            && !string.IsNullOrWhiteSpace(item.Description)
+            && item.Description != item.Code);
         foreach (var permission in new[]
         {
             "business.mes.work-orders.manage",
@@ -405,6 +413,10 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
             "/api/iam/v1/roles",
             new { roleName = "auditor", permissionCodes = Array.Empty<string>() });
         Assert.Equal(HttpStatusCode.BadRequest, duplicate.StatusCode);
+        // 这句经网关透传到控制台上屏，必须是中文业务文案。
+        Assert.Equal(
+            "角色名称「auditor」已被使用。",
+            (await duplicate.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("message").GetString());
 
         var unknown = await _client.PostAsJsonAsync(
             "/api/iam/v1/roles",
@@ -444,6 +456,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
             new { loginName = "reset-user", email = "reset-user@nerv-iip.local", password = "OldPassword123!" });
         create.EnsureSuccessStatusCode();
         var user = await ReadResponseDataAsync<UserResponse>(create);
+        await IamTestMembership.AssignAsync(_client, user!.UserId);
 
         var login = await _client.PostAsJsonAsync(
             "/api/iam/v1/auth/login",
@@ -482,6 +495,7 @@ public sealed class IamFoundationTests : IClassFixture<WebApplicationFactory<Pro
             "/api/iam/v1/users",
             new { loginName, email = $"{loginName}@nerv-iip.local", password });
         create.EnsureSuccessStatusCode();
+        await IamTestMembership.AssignAsync(_client, (await ReadResponseDataAsync<UserResponse>(create))!.UserId);
 
         for (var attempt = 0; attempt < 4; attempt++)
         {

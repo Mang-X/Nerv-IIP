@@ -976,7 +976,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
 
     #endregion
 
-    #region 生产准备底座（设备映射 / SKU 停用）
+    #region 生产准备底座（SKU 停用）
 
     /// <summary>
     /// 底座块的 fail-closed 校验。最关键的一条：**停用清单不得命中演示主链**——
@@ -988,31 +988,6 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
         CancellationToken cancellationToken = default)
     {
         var failures = new List<string>();
-
-        var mappings = await dbContext.DeviceAssetWorkCenterMappings
-            .AsNoTracking()
-            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
-            .Select(x => new { x.DeviceAssetId, x.WorkCenterId })
-            .ToArrayAsync(cancellationToken);
-        var workCenters = WorldHistoryFloorEventsSpec.WorkCenterIds.ToHashSet(StringComparer.Ordinal);
-
-        foreach (var mapping in mappings)
-        {
-            if (!workCenters.Contains(mapping.WorkCenterId))
-            {
-                failures.Add($"设备 {mapping.DeviceAssetId} 映射到非 L0 工作中心 {mapping.WorkCenterId}。");
-            }
-
-            if (mapping.DeviceAssetId.StartsWith(WorldHistoryFoundationSpec.UnmappedAuxiliaryDevicePrefix, StringComparison.Ordinal))
-            {
-                failures.Add($"辅助设备 {mapping.DeviceAssetId} 不应绑定工作中心（其遥测会被误记为产量）。");
-            }
-        }
-
-        if (mappings.Length != mappings.Select(x => x.DeviceAssetId).Distinct(StringComparer.Ordinal).Count())
-        {
-            failures.Add("设备 ↔ 工作中心映射存在重复设备编码。");
-        }
 
         var disabled = await dbContext.MesSkuAvailabilities
             .AsNoTracking()
@@ -1036,48 +1011,7 @@ public sealed class WorldHistoryConsistencyValidator(ApplicationDbContext dbCont
             throw new WorldHistoryConsistencyException(failures);
         }
 
-        return new WorldHistoryFoundationValidationReport(mappings.Length, disabled.Length);
-    }
-
-    #endregion
-
-    #region 规则排程
-
-    /// <summary>排程结果的 fail-closed 校验：版本号唯一且连续、分配非空、时间窗口合法。</summary>
-    public async Task<WorldHistoryScheduleResultValidationReport> ValidateScheduleResultsAsync(
-        CancellationToken cancellationToken = default)
-    {
-        var failures = new List<string>();
-        var results = await dbContext.ScheduleResults
-            .AsNoTracking()
-            .OrderBy(x => x.ScheduleVersion)
-            .ToArrayAsync(cancellationToken);
-
-        var versions = results.Select(x => x.ScheduleVersion).ToArray();
-        if (versions.Length != versions.Distinct().Count())
-        {
-            failures.Add("排程结果的版本号存在重复。");
-        }
-
-        foreach (var result in results)
-        {
-            if (result.Assignments.Count == 0)
-            {
-                failures.Add($"排程结果 v{result.ScheduleVersion} 没有任何工序分配。");
-            }
-
-            foreach (var assignment in result.Assignments.Where(x => x.EndUtc < x.StartUtc))
-            {
-                failures.Add($"排程结果 v{result.ScheduleVersion} 的工序 {assignment.OperationTaskId} 结束早于开始。");
-            }
-        }
-
-        if (failures.Count > 0)
-        {
-            throw new WorldHistoryConsistencyException(failures);
-        }
-
-        return new WorldHistoryScheduleResultValidationReport(results.Length);
+        return new WorldHistoryFoundationValidationReport(disabled.Length);
     }
 
     #endregion
@@ -1102,13 +1036,9 @@ public sealed record WorldHistoryGenealogyValidationReport(
     int OutputLotGenealogiesChecked,
     int MaterialConsumptionsChecked);
 
-/// <summary>「生产准备底座」块（设备映射 / SKU 停用）的校验产出摘要。</summary>
+/// <summary>「生产准备底座」块（SKU 停用）的校验产出摘要。</summary>
 public sealed record WorldHistoryFoundationValidationReport(
-    int DeviceAssetMappingsChecked,
     int DisabledSkusChecked);
-
-/// <summary>「规则排程」块的校验产出摘要。</summary>
-public sealed record WorldHistoryScheduleResultValidationReport(int ScheduleResultsChecked);
 
 /// <summary>一致性校验失败。抛出即代表 seed 失败（fail-closed）。</summary>
 public sealed class WorldHistoryConsistencyException : InvalidOperationException

@@ -31,6 +31,9 @@ public static class ApprovalDocumentTypes
     /// <summary>工程变更单；审批模板、工程变更发起面和发布校验共用。</summary>
     public const string EngineeringChangeOrder = "engineering-change-order";
 
+    /// <summary>MES 工序跳站授权审批。</summary>
+    public const string MesOperationTaskStartAuthorization = "mes-operation-task-start-authorization";
+
     /// <summary>
     /// 销售订单「信用解冻」审批（#1290）。**三方共用**：ERP 发起侧
     /// （<c>ReleaseSalesOrderCreditHoldCommandHandler</c>）、审批种子模板

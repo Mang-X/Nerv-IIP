@@ -6,6 +6,7 @@ import type {
 } from '@nerv-iip/api-client'
 import type { MasterDataTreeNodeData } from '@/components/masterData/MasterDataTreeNode.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
@@ -14,7 +15,6 @@ import TeamMembersDialog from '@/components/masterData/TeamMembersDialog.vue'
 import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
 import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
 import {
-  useBusinessMasterDataResources,
   useMasterDataResource,
   useMasterDataResourceActions,
 } from '@/composables/useBusinessMasterData'
@@ -40,7 +40,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, SearchIcon, UsersIcon, UsersRoundIcon } from '@lucide/vue'
@@ -66,11 +66,8 @@ const TREE_TAKE = 200
 
 const departments = useMasterDataResource<BusinessConsoleCreateDepartmentRequest>('department')
 const teams = useMasterDataResource<BusinessConsoleCreateTeamRequest>('team')
-// 班组挂靠班次：新建班组要选班次，取班次列表填下拉（只读引用，不在本页维护班次）。
+// 班组挂靠班次：「所属班次」用班次选择器（可就地新增）；这里的列表只用来在只有一个班次时自动选中。
 const shifts = useMasterDataResource('shift')
-// 班组是车间级的（一个班次的人覆盖本车间全部工作中心）；派工按「工作中心 → 车间 → 班组」找人，
-// 所以班组绑的是车间。
-const teamWorkshops = useBusinessMasterDataResources('workshop')
 const deptActions = useMasterDataResourceActions('department')
 const teamActions = useMasterDataResourceActions('team')
 // 停用/启用确认框收在页面层单实例，行操作只负责指向当前行（#1591）。
@@ -85,7 +82,6 @@ const includeDisabled = useIncludeDisabledFilter([
   teams.filters,
   shifts.filters,
 ])
-teamWorkshops.filters.take = TREE_TAKE
 
 function isNonEmpty(value: string) {
   return value.trim().length > 0
@@ -94,7 +90,6 @@ function refreshAll() {
   void departments.refresh()
   void teams.refresh()
   void shifts.refresh()
-  void teamWorkshops.refreshResources()
 }
 
 // ================= 部门多层树（按 parentDepartmentCode 前端拼） =================
@@ -876,7 +871,7 @@ function openMembers(row: BusinessConsoleResourceItem) {
               >取消</NvButton
             >
             <NvButton type="submit" :disabled="departments.createPending.value">
-              <Spinner v-if="departments.createPending.value" aria-hidden="true" />保存部门
+              <NvSpinner v-if="departments.createPending.value" aria-hidden="true" />保存部门
             </NvButton>
           </NvDialogFooter>
         </form>
@@ -938,7 +933,7 @@ function openMembers(row: BusinessConsoleResourceItem) {
           <NvDialogFooter>
             <NvButton type="button" variant="outline" @click="deptEditOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="deptActions.updatePending.value || deptEditLoading">
-              <Spinner v-if="deptActions.updatePending.value" aria-hidden="true" />保存修改
+              <NvSpinner v-if="deptActions.updatePending.value" aria-hidden="true" />保存修改
             </NvButton>
           </NvDialogFooter>
         </form>
@@ -1011,37 +1006,24 @@ function openMembers(row: BusinessConsoleResourceItem) {
               <NvFieldLabel for="team-shift"
                 >所属班次 <span class="text-destructive">*</span></NvFieldLabel
               >
-              <NvSelect v-model="teamForm.shiftCode">
-                <NvSelectTrigger id="team-shift"
-                  ><NvSelectValue placeholder="请选择班次"
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem
-                    v-for="s in shifts.items.value"
-                    :key="s.code"
-                    :value="s.code ?? NONE_PARENT"
-                  >
-                    {{ s.displayName ?? s.code }}
-                  </NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
+              <!-- 要挂的班次还没建时可以就地新增，建好自动选中。 -->
+              <DirectoryPicker
+                id="team-shift"
+                v-model="teamForm.shiftCode"
+                directory-type="shift"
+                placeholder="请选择班次"
+                creatable
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="team-workshop">所属车间</NvFieldLabel>
-              <NvSelect v-model="teamForm.workshopCode">
-                <NvSelectTrigger id="team-workshop"
-                  ><NvSelectValue placeholder="请选择车间"
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem
-                    v-for="w in teamWorkshops.resources.value"
-                    :key="w.code"
-                    :value="w.code ?? NONE_PARENT"
-                  >
-                    {{ w.displayName ?? w.code }}
-                  </NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
+              <DirectoryPicker
+                id="team-workshop"
+                v-model="teamForm.workshopCode"
+                directory-type="workshop"
+                placeholder="请选择车间"
+                creatable
+              />
               <NvFieldDescription
                 >绑定后，该车间各工作中心的派工都能从本班组选人。</NvFieldDescription
               >
@@ -1055,7 +1037,7 @@ function openMembers(row: BusinessConsoleResourceItem) {
                 teams.createPending.value || teamActions.updatePending.value || teamEditLoading
               "
             >
-              <Spinner
+              <NvSpinner
                 v-if="teams.createPending.value || teamActions.updatePending.value"
                 aria-hidden="true"
               />{{ teamEditingCode ? '保存修改' : '保存班组' }}

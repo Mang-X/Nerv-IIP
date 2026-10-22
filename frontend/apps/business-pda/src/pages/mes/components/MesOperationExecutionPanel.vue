@@ -7,6 +7,7 @@ import { describeMesReadinessReasons, operationTaskStatusLabel } from '@nerv-iip
 import RetryableListError from '@/components/RetryableListError.vue'
 import { NvBottomSheet, NvMobileButton, NvMobileResult } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
+import { hasCompleteReworkAuthority } from '@/composables/mes/mesWorkOrderAuthority'
 
 import {
   actionsForOperationTask,
@@ -16,6 +17,7 @@ import {
   operationTaskLabel,
   operationTaskRowTitle,
   OPERATION_ACTION_LABELS,
+  reworkSourceLabel,
   type OperationActionKind,
   type OperationResultState,
   workOrderLabel,
@@ -34,6 +36,7 @@ const props = defineProps<{
   openingSopFileId: string | null
   sopFileError: string
   operationResultUnknown?: boolean
+  canClaim?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -45,9 +48,13 @@ const emit = defineEmits<{
   cancelComplete: []
   refreshSops: []
   openSop: [sop: BusinessConsoleCurrentSopDocumentItem]
+  claim: []
 }>()
 
 const availableActions = computed(() => actionsForOperationTask(props.selected))
+const authorityComplete = computed(
+  () => props.selected === null || hasCompleteReworkAuthority(props.selected),
+)
 const blockReasonDisplays = computed(() =>
   describeMesReadinessReasons(props.selected?.blockReasons),
 )
@@ -108,12 +115,14 @@ const blockReasonDisplays = computed(() =>
       <p class="text-sm text-muted-foreground">
         当前状态：{{ operationTaskStatusLabel(selected.status) }}
       </p>
+      <slot name="context-scan" />
+      <slot name="andon-call" />
       <dl
         class="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 rounded-lg border border-border px-3 py-3 text-sm"
       >
         <dt class="text-muted-foreground">工单</dt>
         <dd class="min-w-0 break-all text-foreground">{{ workOrderLabel(selected) }}</dd>
-        <dt class="text-muted-foreground">工序任务</dt>
+        <dt class="text-muted-foreground">工序</dt>
         <dd class="min-w-0 break-all text-foreground">{{ operationTaskLabel(selected) }}</dd>
         <dt class="text-muted-foreground">设备</dt>
         <dd class="min-w-0 break-all text-foreground">{{ deviceLabel(selected) }}</dd>
@@ -122,6 +131,21 @@ const blockReasonDisplays = computed(() =>
       </dl>
       <p v-if="selected.assignedUserName" class="text-sm text-muted-foreground">
         受派工人：{{ selected.assignedUserName }}
+      </p>
+      <p
+        v-if="reworkSourceLabel(selected)"
+        data-testid="operation-rework-source"
+        class="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-foreground"
+      >
+        {{ reworkSourceLabel(selected) }}
+      </p>
+      <p
+        v-if="!authorityComplete"
+        data-testid="operation-rework-authority-error"
+        class="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+        role="alert"
+      >
+        返工来源信息不完整，已阻止工序操作，请刷新后重试。
       </p>
 
       <section
@@ -168,7 +192,7 @@ const blockReasonDisplays = computed(() =>
             >
               <p class="font-medium text-foreground">{{ sop.fileName || sop.documentNumber }}</p>
               <p class="text-xs text-muted-foreground">
-                {{ sop.documentNumber }} · rev {{ sop.revision }} · 生效
+                {{ sop.documentNumber }} · 版本 {{ sop.revision }} · 生效
                 {{ formatOperationDate(sop.effectiveDate) }}
               </p>
               <NvMobileButton
@@ -195,7 +219,7 @@ const blockReasonDisplays = computed(() =>
         </template>
       </section>
 
-      <div v-if="confirmingComplete" class="space-y-3">
+      <div v-if="confirmingComplete && authorityComplete" class="space-y-3">
         <p class="text-sm text-foreground">完成后该工序将进入终态，确认完成？</p>
         <NvMobileButton
           type="button"
@@ -223,6 +247,19 @@ const blockReasonDisplays = computed(() =>
 
       <div v-else class="space-y-2">
         <NvMobileButton
+          v-if="canClaim && authorityComplete"
+          type="button"
+          data-testid="action-claim"
+          :disabled="actionPending || !operationScopeReady"
+          variant="primary"
+          size="lg"
+          block
+          class="min-h-touch"
+          @click="emit('claim')"
+        >
+          领取任务
+        </NvMobileButton>
+        <NvMobileButton
           v-for="action in availableActions"
           :key="action"
           type="button"
@@ -238,7 +275,7 @@ const blockReasonDisplays = computed(() =>
           {{ OPERATION_ACTION_LABELS[action] }}
         </NvMobileButton>
         <p
-          v-if="availableActions.length === 0"
+          v-if="availableActions.length === 0 && !canClaim"
           class="rounded-lg border border-dashed border-border px-4 py-4 text-center text-sm text-muted-foreground"
         >
           当前状态无可执行动作

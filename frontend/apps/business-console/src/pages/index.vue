@@ -536,7 +536,7 @@ function formatDateTime(value: string) {
       <div>
         <p class="text-sm font-medium text-destructive-strong">工作台摘要读取失败</p>
         <p class="mt-1 text-sm text-muted-foreground">
-          跨域汇总接口没有返回结果，现在无法判断今天是否有待处理事项，下面各卡的读数一律显
+          工作台摘要没有读取到，现在无法判断今天是否有待处理事项，下面各卡的读数一律显
           「—」。请重试，或稍后再看。
         </p>
       </div>

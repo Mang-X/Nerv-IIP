@@ -1,6 +1,8 @@
 using System.Reflection;
+using Nerv.IIP.Business.Inventory.Web;
 using System.Text.Json;
 using FastEndpoints;
+using Nerv.IIP.Business.Inventory.Web.Endpoints.DeadLetters;
 using FastEndpoints.Swagger;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
@@ -8,9 +10,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 using Nerv.IIP.Business.Inventory.Web.Application.Approval;
+using Nerv.IIP.Business.Inventory.Web.Application.Coding;
+using Nerv.IIP.Business.Inventory.Web.Application.Errors;
 using Nerv.IIP.Business.Inventory.Web.Application.Expiry;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Inventory.Web.Application.MasterData;
+using Nerv.IIP.Business.Inventory.Web.Application.Valuation;
 using Nerv.IIP.Business.Inventory.Web.Application.Seed;
 using Nerv.IIP.Business.Inventory.Web.Endpoints.Inventory;
 using Nerv.IIP.Localization;
@@ -42,6 +47,12 @@ try
         client.Timeout = TimeSpan.FromSeconds(2);
     }).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
+    var mesBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Mes:BaseUrl", "http://localhost:5111");
+    builder.Services.AddHttpClient<IInventoryUnitCostAuthorityResolver, HttpInventoryUnitCostAuthorityResolver>(client =>
+    {
+        client.BaseAddress = mesBaseAddress;
+        client.Timeout = TimeSpan.FromSeconds(2);
+    }).UseHttpClientMetrics();
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
         .AddFastEndpoints(o => o.IncludeAbstractValidators = true)
@@ -82,6 +93,7 @@ try
     }
 
     builder.Services.AddInventoryPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
+    builder.Services.AddScoped<InventoryLocationSeedService>();
     builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddScoped<WorldHistoryCountSeedService>();
@@ -89,6 +101,9 @@ try
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddScoped<IntegrationEventCapFailureDeadLetterer>();
+    builder.Services.AddInventoryDeadLetterReplay();
+    builder.Services.AddIntegrationEventDeadLetterEndpoints();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<IInventoryIntegrationEventContextAccessor, HttpInventoryIntegrationEventContextAccessor>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
@@ -112,6 +127,7 @@ try
             x.UseEntityFramework<ApplicationDbContext>();
             x.JsonSerializerOptions.AddNetCorePalJsonConverters();
             x.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
+            x.UseIntegrationEventDeadLetterOnFailedThreshold();
             x.UseDashboard();
         });
     }
@@ -122,6 +138,7 @@ try
             .AddOpenBehavior(typeof(CreateStockCountTaskUniqueConflictBehavior<,>))
             .AddUnitOfWorkBehaviors());
     builder.Services.AddScoped<ICommandLock<CreateStockCountTaskCommand>, CreateStockCountTaskCommandLock>();
+    builder.Services.AddScoped<InventoryCodingService>();
     builder.Services.AddMultiEnv(envOption => envOption.ServiceName = InventoryFacts.ServiceName)
         .UseMicrosoftServiceDiscovery();
     builder.Services.AddConfigurationServiceEndpointProvider();
@@ -139,6 +156,18 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await dbContext.Database.MigrateAsync();
+    }
+
+    // Inventory 产品基线 seed（#3770）：默认开启（#3805），显式 false 可关闭。
+    // 目标租户读 IAM 引导种子的同一组键（#3812），不再单独配置。
+    var seedEnabled = builder.Configuration.GetValue("Inventory:Seed:Enabled", true);
+    if (seedEnabled)
+    {
+        using var scope = app.Services.CreateScope();
+        var written = await scope.ServiceProvider.GetRequiredService<InventoryLocationSeedService>().SeedAsync(
+            builder.Configuration["Iam:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["Iam:Seed:EnvironmentId"] ?? "env-dev");
+        app.Logger.LogInformation("Inventory product seed completed: {Locations} missing stock locations added.", written);
     }
 
     var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");
@@ -242,6 +271,7 @@ try
 
     app.UseNervIipRequestLocalization();
     app.UseKnownExceptionHandler();
+    app.UseMiddleware<InventoryDomainExceptionMiddleware>();
     app.UseStaticFiles();
     app.UseRouting();
     app.UseAuthentication();
@@ -250,9 +280,16 @@ try
     app.UseFastEndpoints(c =>
     {
         c.Endpoints.NameGenerator = ctx =>
-            InventoryEndpointContracts.TryGet(ctx.EndpointType, out var contract)
-                ? contract.OperationId
+        {
+            if (InventoryEndpointContracts.TryGet(ctx.EndpointType, out var contract))
+            {
+                return contract.OperationId;
+            }
+
+            return InventoryDeadLetterEndpointContracts.TryGet(ctx.EndpointType, out var deadLetterContract)
+                ? deadLetterContract.OperationId
                 : ToLowerCamelEndpointName(ctx.EndpointType.Name);
+        };
     }).UseSwaggerGen();
     app.UseHttpMetrics();
     app.MapHealthChecks("/health");

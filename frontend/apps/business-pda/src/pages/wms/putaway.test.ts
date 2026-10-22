@@ -7,7 +7,6 @@ const refresh = vi.fn()
 const loadMore = vi.fn()
 const loadMoreError = shallowRef<unknown>()
 const actionError = shallowRef<unknown>()
-const lastUpdatedAt = shallowRef('2026-08-01T08:00:00.000Z')
 const actionPending = shallowRef(false)
 const actionUnconfirmed = shallowRef(false)
 const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => {}) }))
@@ -46,7 +45,6 @@ vi.mock('@/composables/useBusinessWms', () => ({
     loadingMore: shallowRef(false),
     loadMoreError,
     actionError,
-    lastUpdatedAt,
     actionPending,
     actionUnconfirmed,
     refresh,
@@ -63,9 +61,6 @@ vi.mock('@/composables/useWmsOperationalCandidates', async () => {
       ready: shallowRef(true),
       searchKeyword: shallowRef(''),
       scanOverrides: shallowRef({}),
-      sourceLabel: shallowRef('当前范围仓储作业记录候选'),
-      asOfUtc: shallowRef(),
-      freshnessUtc: shallowRef(),
       truncated: shallowRef(false),
       pending: shallowRef(false),
       error: shallowRef(),
@@ -107,19 +102,18 @@ describe('WMS 上架作业页', () => {
               'total',
               'scopeKey',
               'status',
-              'updatedAt',
               'loadMoreError',
               'actionError',
             ],
             template:
-              '<div data-testid="execution-view">{{ title }}|{{ taskType }}|{{ total }}|{{ scopeKey }}|{{ status }}|{{ tasks[0].taskNo }}|{{ updatedAt }}|{{ Boolean(loadMoreError) }}|{{ Boolean(actionError) }}</div>',
+              '<div data-testid="execution-view">{{ title }}|{{ taskType }}|{{ total }}|{{ scopeKey }}|{{ status }}|{{ tasks[0].taskNo }}|{{ Boolean(loadMoreError) }}|{{ Boolean(actionError) }}</div>',
           },
         },
       },
     })
 
     expect(wrapper.get('[data-testid="execution-view"]').text()).toContain(
-      '上架|putaway|1|self:emp049|Open|PA-2026-0001|2026-08-01T08:00:00.000Z|false|true',
+      '上架|putaway|1|self:emp049|Open|PA-2026-0001|false|true',
     )
   })
 

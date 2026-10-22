@@ -61,6 +61,121 @@ public sealed class ReleaseSchedulePlanInvalidationGateTests
         Assert.Null(persisted.ReleasedAtUtc);
     }
 
+    /// <summary>
+    /// #3191 裁定三：闸门按 reason 区分。qualityBlocked 是约束收紧 → 阻断；qualityReleased 是约束放松
+    /// （检验合格／质量阻塞解除），它让原计划更可行，拿它阻断等于「因为好消息所以不许发布」，
+    /// 且合格是高频事实，会把闸门变成噪声。两条一起断言，删掉 reason 维会同时红一条。
+    /// </summary>
+    [Fact]
+    public async Task Release_is_rejected_when_the_plan_is_invalidated_by_quality_blocked()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.SchedulePlans.Add(CreatePlan("plan-quality-blocked"));
+        dbContext.SchedulePlanInvalidations.Add(CreateQualityInvalidation(
+            "plan-quality-blocked",
+            SchedulingPlanInvalidationReasons.QualityBlocked,
+            "quality.InspectionRejected"));
+        await dbContext.SaveChangesAsync();
+
+        var handler = new ReleaseSchedulePlanCommandHandler(
+            dbContext,
+            new FixedTimeProvider(FixedNow),
+            new NoopScheduleReleaseScopeLock());
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseSchedulePlanCommand("plan-quality-blocked", "org-001", "env-dev"),
+            CancellationToken.None));
+        Assert.Contains("排程输入变化失效", exception.Message, StringComparison.Ordinal);
+
+        var persisted = await dbContext.SchedulePlans.SingleAsync(x => x.PlanId == "plan-quality-blocked");
+        Assert.Equal(SchedulePlanLifecycleStatus.Generated, persisted.Status);
+    }
+
+    [Fact]
+    public async Task Release_is_allowed_when_the_only_invalidation_is_quality_released()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.SchedulePlans.Add(CreatePlan("plan-quality-released"));
+        dbContext.SchedulePlanInvalidations.Add(CreateQualityInvalidation(
+            "plan-quality-released",
+            SchedulingPlanInvalidationReasons.QualityReleased,
+            "quality.InspectionPassed"));
+        await dbContext.SaveChangesAsync();
+
+        var handler = new ReleaseSchedulePlanCommandHandler(
+            dbContext,
+            new FixedTimeProvider(FixedNow),
+            new NoopScheduleReleaseScopeLock());
+
+        var response = await handler.Handle(
+            new ReleaseSchedulePlanCommand("plan-quality-released", "org-001", "env-dev"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(SchedulePlanStatusContract.Released, response.Status);
+        // 放行不等于抹掉留痕：那条 qualityReleased 记录仍然在库里，只是不参与阻断判定。
+        Assert.Single(await dbContext.SchedulePlanInvalidations
+            .Where(x => x.PlanId == "plan-quality-released")
+            .ToArrayAsync());
+    }
+
+    /// <summary>
+    /// 边界：qualityReleased 只免掉自己那一条，同一张计划上并存的其它 reason 照旧阻断——
+    /// 否则一条合格结论就能把设备停机造成的失效一并洗掉。
+    /// </summary>
+    [Fact]
+    public async Task Quality_released_does_not_mask_another_blocking_reason_on_the_same_plan()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.SchedulePlans.Add(CreatePlan("plan-mixed"));
+        dbContext.SchedulePlanInvalidations.Add(CreateQualityInvalidation(
+            "plan-mixed",
+            SchedulingPlanInvalidationReasons.QualityReleased,
+            "quality.InspectionPassed"));
+        dbContext.SchedulePlanInvalidations.Add(SchedulePlanInvalidation.Create(
+            "org-001",
+            "env-dev",
+            "plan-mixed",
+            sourceEventId: "evt-mixed-asset",
+            sourceEventType: "maintenance.AssetUnavailable",
+            sourceService: "maintenance",
+            reasonCode: SchedulingPlanInvalidationReasons.EquipmentUnavailable,
+            affectedResourceId: "ASSET-CNC-01",
+            affectedWorkOrderId: null,
+            affectedOperationId: null,
+            affectedSkuCode: null,
+            occurredAtUtc: FixedNow,
+            recordedAtUtc: FixedNow));
+        await dbContext.SaveChangesAsync();
+
+        var handler = new ReleaseSchedulePlanCommandHandler(
+            dbContext,
+            new FixedTimeProvider(FixedNow),
+            new NoopScheduleReleaseScopeLock());
+
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new ReleaseSchedulePlanCommand("plan-mixed", "org-001", "env-dev"),
+            CancellationToken.None));
+    }
+
+    private static SchedulePlanInvalidation CreateQualityInvalidation(string planId, string reasonCode, string sourceEventType)
+    {
+        return SchedulePlanInvalidation.Create(
+            "org-001",
+            "env-dev",
+            planId,
+            sourceEventId: $"evt-{planId}",
+            sourceEventType: sourceEventType,
+            sourceService: "business-quality",
+            reasonCode: reasonCode,
+            affectedResourceId: null,
+            affectedWorkOrderId: "WO-001",
+            affectedOperationId: null,
+            affectedSkuCode: "SKU-001",
+            occurredAtUtc: FixedNow,
+            recordedAtUtc: FixedNow);
+    }
+
     [Fact]
     public async Task Release_succeeds_for_a_plan_without_invalidations()
     {

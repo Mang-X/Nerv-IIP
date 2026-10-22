@@ -113,29 +113,37 @@ public sealed class MrpRunWorker(
             return;
         }
 
-        // 第二跳（计算事务）：成功置 Completed；失败另起事务置 Failed。
-        try
+        // 第二跳（计算事务）：每次尝试使用独立 scope；首次失败仍保持 Running，
+        // 第二次失败才另起事务写最终失败原因。
+        for (var attempt = 1; attempt <= 2; attempt++)
         {
-            await using var scope = scopeFactory.CreateAsyncScope();
-            var sender = scope.ServiceProvider.GetRequiredService<ISender>();
-            var result = await sender.Send(new ExecuteMrpRunCommand(runId), cancellationToken);
-            logger.LogInformation(
-                "MRP run {RunId} completed with {SuggestionCount} suggestions.",
-                runId,
-                result.SuggestionCount);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            // 停机取消：不写失败态，交给下次启动的恢复扫描判定。
-            throw;
-        }
-        catch (Exception exception)
-        {
-            logger.LogError(exception, "MRP run {RunId} execution failed.", runId);
-            var reason = exception is KnownException known
-                ? known.Message
-                : $"MRP 计算失败：{exception.Message}";
-            await MarkRunFailedAsync(runId, reason, cancellationToken);
+            try
+            {
+                await using var scope = scopeFactory.CreateAsyncScope();
+                var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+                var result = await sender.Send(new ExecuteMrpRunCommand(runId), cancellationToken);
+                logger.LogInformation(
+                    "MRP run {RunId} completed on attempt {Attempt} with {SuggestionCount} suggestions.",
+                    runId, attempt, result.SuggestionCount);
+                return;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // 停机取消：不写失败态，交给下次启动的恢复扫描判定。
+                throw;
+            }
+            catch (Exception exception) when (attempt == 1)
+            {
+                logger.LogWarning(exception, "MRP run {RunId} first attempt failed; retrying once.", runId);
+            }
+            catch (Exception exception)
+            {
+                logger.LogError(exception, "MRP run {RunId} execution failed after two attempts.", runId);
+                var reason = exception is KnownException known
+                    ? known.Message
+                    : $"MRP 计算失败：{exception.Message}";
+                await MarkRunFailedAsync(runId, reason, cancellationToken);
+            }
         }
     }
 

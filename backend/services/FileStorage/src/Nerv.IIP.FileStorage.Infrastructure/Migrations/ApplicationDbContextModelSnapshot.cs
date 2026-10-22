@@ -213,6 +213,143 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.FileStorage.Infrastructure.Records.TemplateAssetRetirementRecord", b =>
+                {
+                    b.Property<string>("DecisionId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("decision_id")
+                        .HasComment("Upstream retirement decision and audit reference.");
+
+                    b.Property<DateTimeOffset>("AcceptedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("accepted_at_utc")
+                        .HasComment("UTC acceptance, physical hold and quota release timestamp.");
+
+                    b.Property<long>("BarcodeLeaseSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("barcode_lease_seconds")
+                        .HasComment("Frozen BarcodeLabel retirement lease, in seconds.");
+
+                    b.Property<long>("BarcodeMaxBackoffSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("barcode_max_backoff_seconds")
+                        .HasComment("Frozen BarcodeLabel retirement maximum backoff, in seconds.");
+
+                    b.Property<string>("Checksum")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("checksum")
+                        .HasComment("Frozen canonical SHA-256 of the retired asset.");
+
+                    b.Property<long>("ClientWindowSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("client_window_seconds")
+                        .HasComment("Frozen upstream client replay request, in seconds.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Owning environment.");
+
+                    b.Property<string>("FileId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("file_id")
+                        .HasComment("Retired file identity; retained after file metadata removal.");
+
+                    b.Property<long>("GcIntervalSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("gc_interval_seconds")
+                        .HasComment("Frozen FileStorage collector interval, in seconds.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Owning organization.");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("owner_id")
+                        .HasComment("Frozen owner resource identity.");
+
+                    b.Property<string>("OwnerService")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("owner_service")
+                        .HasComment("Frozen owning service.");
+
+                    b.Property<string>("OwnerType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("owner_type")
+                        .HasComment("Frozen owner resource type.");
+
+                    b.Property<long>("PhysicalGraceSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("physical_grace_seconds")
+                        .HasComment("Frozen physical grace, in seconds.");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("purpose")
+                        .HasComment("Authorized file purpose.");
+
+                    b.Property<long>("ReplayHorizonSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("replay_horizon_seconds")
+                        .HasComment("Frozen shared replay duration H; terminal deadline is assigned by physical completion.");
+
+                    b.Property<long>("ReplayPolicyVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("replay_policy_version")
+                        .HasComment("Version of the frozen horizon policy.");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("size_bytes")
+                        .HasComment("Business quota bytes released by acceptance.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status")
+                        .HasComment("Physical lifecycle state; acceptance alone is physical-hold.");
+
+                    b.Property<long>("StorageLeaseSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("storage_lease_seconds")
+                        .HasComment("Frozen FileStorage retirement executor lease, in seconds.");
+
+                    b.Property<long>("StorageMaxBackoffSeconds")
+                        .HasColumnType("bigint")
+                        .HasColumnName("storage_max_backoff_seconds")
+                        .HasComment("Frozen FileStorage retirement executor maximum backoff, in seconds.");
+
+                    b.HasKey("DecisionId");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "FileId")
+                        .IsUnique();
+
+                    b.ToTable("template_asset_retirements", "filestorage", t =>
+                        {
+                            t.HasComment("Durable label-template retirement receipts and frozen replay inputs.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.FileStorage.Infrastructure.Records.UploadSessionRecord", b =>
                 {
                     b.Property<string>("UploadSessionId")
@@ -227,15 +364,33 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                         .HasColumnName("checksum")
                         .HasComment("Optional caller-provided checksum for integrity tracking.");
 
-                    b.Property<bool>("Completed")
-                        .HasColumnType("boolean")
-                        .HasColumnName("completed")
-                        .HasComment("Whether the upload session has been completed.");
+                    b.Property<string>("CommitChecksum")
+                        .HasMaxLength(71)
+                        .HasColumnType("character varying(71)")
+                        .HasColumnName("commit_checksum")
+                        .HasComment("Immutable expected canonical SHA-256 evidence; null when final storage must compute it.");
+
+                    b.Property<string>("CommitId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("commit_id")
+                        .HasComment("Immutable unique commit ownership identifier created by Tx1.");
+
+                    b.Property<DateTimeOffset?>("CommittingAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("committing_at_utc")
+                        .HasComment("UTC timestamp when Tx1 durably moved the upload session to committing.");
 
                     b.Property<DateTimeOffset?>("CompletedAtUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("completed_at_utc")
                         .HasComment("UTC timestamp when the upload session was completed.");
+
+                    b.Property<long>("ConcurrencyVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("concurrency_version")
+                        .HasComment("Application-managed optimistic concurrency version for upload state transitions.");
 
                     b.Property<string>("ContentType")
                         .IsRequired()
@@ -255,6 +410,17 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                         .HasColumnType("character varying(128)")
                         .HasColumnName("environment_id")
                         .HasComment("Environment identifier that scopes the upload session.");
+
+                    b.Property<DateTimeOffset?>("ExecutionLeaseUntilUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("execution_lease_until_utc")
+                        .HasComment("UTC expiration timestamp of the current storage execution lease.");
+
+                    b.Property<string>("ExecutionOwnerId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("execution_owner_id")
+                        .HasComment("Short-lived durable owner authorized to execute storage I/O for the commit intent.");
 
                     b.Property<long>("ExpectedSizeBytes")
                         .HasColumnType("bigint")
@@ -286,6 +452,22 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                         .HasColumnType("character varying(128)")
                         .HasColumnName("file_purpose")
                         .HasComment("Purpose policy key used to validate and route the upload.");
+
+                    b.Property<string>("LastRecoveryErrorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("last_recovery_error_code")
+                        .HasComment("Stable non-sensitive diagnostic code from the latest recovery attempt.");
+
+                    b.Property<bool>("LegacyCompleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("completed")
+                        .HasComment("Expand-window compatibility flag written by both the legacy and durable commit protocols.");
+
+                    b.Property<DateTimeOffset?>("NextRecoveryAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_recovery_at_utc")
+                        .HasComment("UTC timestamp before which recovery must not retry this commit intent.");
 
                     b.Property<string>("ObjectKey")
                         .IsRequired()
@@ -329,7 +511,32 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                         .HasColumnName("provider")
                         .HasComment("Upload provider used for this session.");
 
+                    b.Property<int>("RecoveryAttemptCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("recovery_attempt_count")
+                        .HasComment("Storage recovery failure count for the immutable commit intent.");
+
+                    b.Property<DateTimeOffset?>("RecoveryTerminalAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("recovery_terminal_at_utc")
+                        .HasComment("UTC timestamp when automatic recovery stopped after a permanent evidence failure.");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("state")
+                        .HasComment("Durable upload lifecycle state: open, committing, or completed.");
+
+                    b.Property<DateTimeOffset?>("StorageActionStartedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("storage_action_started_at_utc")
+                        .HasComment("Durable UTC marker written before any storage action that may establish final bytes.");
+
                     b.HasKey("UploadSessionId");
+
+                    b.HasIndex("CommitId")
+                        .IsUnique();
 
                     b.HasIndex("FileId")
                         .IsUnique();
@@ -337,11 +544,15 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                     b.HasIndex("ObjectKey")
                         .IsUnique();
 
+                    b.HasIndex("State", "NextRecoveryAtUtc");
+
                     b.HasIndex("OrganizationId", "EnvironmentId", "ExpiresAtUtc");
 
                     b.ToTable("upload_sessions", "filestorage", t =>
                         {
                             t.HasComment("FileStorage upload session metadata created before object bytes are completed.");
+
+                            t.HasCheckConstraint("CK_upload_sessions_state_intent", "(completed AND state = 'open' AND commit_id IS NULL AND committing_at_utc IS NULL AND storage_action_started_at_utc IS NULL AND completed_at_utc IS NOT NULL AND recovery_attempt_count = 0 AND next_recovery_at_utc IS NULL AND last_recovery_error_code IS NULL AND recovery_terminal_at_utc IS NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL) OR (NOT completed AND state = 'open' AND commit_id IS NULL AND committing_at_utc IS NULL AND storage_action_started_at_utc IS NULL AND completed_at_utc IS NULL AND recovery_attempt_count = 0 AND next_recovery_at_utc IS NULL AND last_recovery_error_code IS NULL AND recovery_terminal_at_utc IS NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL) OR (state = 'committing' AND commit_id IS NOT NULL AND committing_at_utc IS NOT NULL AND completed_at_utc IS NULL AND recovery_attempt_count >= 0 AND (recovery_terminal_at_utc IS NULL OR (next_recovery_at_utc IS NULL AND last_recovery_error_code IS NOT NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL)) AND ((execution_owner_id IS NULL AND execution_lease_until_utc IS NULL) OR (execution_owner_id IS NOT NULL AND execution_lease_until_utc IS NOT NULL))) OR (completed AND state = 'completed' AND commit_id IS NOT NULL AND committing_at_utc IS NOT NULL AND completed_at_utc IS NOT NULL AND recovery_attempt_count >= 0 AND next_recovery_at_utc IS NULL AND last_recovery_error_code IS NULL AND recovery_terminal_at_utc IS NULL AND execution_owner_id IS NULL AND execution_lease_until_utc IS NULL)");
                         });
                 });
 

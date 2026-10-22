@@ -12,11 +12,70 @@ using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesTaskScopeQueryTests
 {
+    // DomainInvariant：#4256 / #3825 r1，授权维度满足任一，业务筛选仍取交集。
+    [Fact]
+    public async Task Work_order_authorization_union_deduplicates_before_paging_and_hides_other_operations()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = Utc("2026-07-29T08:00:00Z");
+        SeedTask(db, "WO-01", "OP-SELF", "WC-X", "user-a", "TEAM-X", now);
+        SeedTask(db, "WO-01", "OP-HIDDEN", "WC-X", "user-x", "TEAM-X", now);
+        SeedTask(db, "WO-02", "OP-TEAM", "WC-X", "user-x", "TEAM-A", now.AddMinutes(1));
+        SeedTask(db, "WO-03", "OP-CENTER", "WC-A", "user-x", "TEAM-X", now.AddMinutes(2));
+        SeedTask(db, "WO-04", "OP-OVERLAP", "WC-A", "user-a", "TEAM-A", now.AddMinutes(3));
+        SeedTask(db, "WO-05", "OP-DENIED", "WC-X", "user-x", "TEAM-X", now.AddMinutes(4));
+        var crossTenant = OperationTask.Create("other-org", "env-dev", "WO-01", "OP-CROSS-ORG",
+            OperationTaskLifecycleStatus.Queued, 20, "WC-A", [], now, TimeSpan.FromHours(1), null, null, "SKU-001");
+        var crossEnvironment = OperationTask.Create("org-001", "other-env", "WO-01", "OP-CROSS-ENV",
+            OperationTaskLifecycleStatus.Queued, 30, "WC-A", [], now, TimeSpan.FromHours(1), null, null, "SKU-001");
+        db.OperationTasks.AddRange(crossTenant, crossEnvironment);
+        db.WorkOrders.AddRange(
+            WorkOrder.Create("other-org", "env-dev", "WO-OTHER-ORG", "SKU-001", "PV-001", 10m, 1, now, "PCS"),
+            WorkOrder.Create("org-001", "other-env", "WO-OTHER-ENV", "SKU-001", "PV-001", 10m, 1, now, "PCS"));
+        db.OperationTasks.AddRange(
+            OperationTask.Create("other-org", "env-dev", "WO-OTHER-ORG", "OP-OTHER-ORG",
+                OperationTaskLifecycleStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(1), null, null, "SKU-001"),
+            OperationTask.Create("org-001", "other-env", "WO-OTHER-ENV", "OP-OTHER-ENV",
+                OperationTaskLifecycleStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(1), null, null, "SKU-001"));
+        await db.SaveChangesAsync();
+        var handler = new ListMesWorkOrdersQueryHandler(db);
+        var query = new ListMesWorkOrdersQuery("org-001", "env-dev", null, Take: 2,
+            Keyword: "WO-", AuthorizedAssignedUserIds: "user-a", AuthorizedTeamIds: "TEAM-A",
+            AuthorizedWorkCenterIds: "WC-A,WC-A");
+
+        var first = await handler.Handle(query, CancellationToken.None);
+        var second = await handler.Handle(
+            new ListMesWorkOrdersQuery("org-001", "env-dev", null, Skip: 2, Take: 2,
+                Keyword: "WO-", AuthorizedAssignedUserIds: "user-a", AuthorizedTeamIds: "TEAM-A",
+                AuthorizedWorkCenterIds: "WC-A,WC-A"), CancellationToken.None);
+        Assert.Equal(4, first.Total);
+        Assert.Equal(4, second.Total);
+        Assert.Equal(["WO-01", "WO-02", "WO-03", "WO-04"],
+            first.Items.Concat(second.Items).Select(x => x.WorkOrderId).ToArray());
+        Assert.Equal("OP-SELF", Assert.Single(first.Items.First().OperationTasks).OperationTaskId);
+        Assert.Equal("OP-OVERLAP", Assert.Single(second.Items.Last().OperationTasks).OperationTaskId);
+
+        var filtered = await handler.Handle(query with { WorkCenterIds = "WC-A", Keyword = "WO-03" }, CancellationToken.None);
+        Assert.Equal(1, filtered.Total);
+        Assert.Equal("WO-03", Assert.Single(filtered.Items).WorkOrderId);
+        var disjoint = await handler.Handle(query with { AuthorizedAssignedUserIds = null,
+            AuthorizedTeamIds = null, WorkCenterId = "WC-X" }, CancellationToken.None);
+        Assert.Equal(0, disjoint.Total);
+        Assert.Empty(disjoint.Items);
+        var emptyScope = await handler.Handle(query with { AuthorizedAssignedUserIds = " ",
+            AuthorizedTeamIds = null, AuthorizedWorkCenterIds = null }, CancellationToken.None);
+        Assert.Equal(0, emptyScope.Total);
+        Assert.Empty(emptyScope.Items);
+    }
+
     [Fact]
     public async Task Operation_scope_filters_intersect_and_keep_total_consistent_with_the_page()
     {
@@ -215,6 +274,31 @@ public sealed class MesTaskScopeQueryTests
     }
 
     [Fact]
+    public async Task Reportable_query_includes_an_in_progress_task_for_a_registered_participant()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var now = Utc("2026-07-29T08:00:00Z");
+        var task = SeedTask(dbContext, "WO-01", "OP-01", "WC-01", "lead-worker", "TEAM-A", now);
+        task.Start(now.AddMinutes(1));
+        dbContext.OperationTaskParticipants.Add(OperationTaskParticipant.Register(
+            "org-001", "env-dev", "OP-01", "participant-worker", "协作员工", 40m));
+        await dbContext.SaveChangesAsync();
+
+        var result = await new ListReportableOperationTasksQueryHandler(dbContext).Handle(
+            new ListReportableOperationTasksQuery(
+                "org-001",
+                "env-dev",
+                Status: nameof(OperationTaskLifecycleStatus.InProgress),
+                AssignedUserIds: "participant-worker"),
+            CancellationToken.None);
+
+        Assert.Equal(1, result.Total);
+        Assert.Equal("OP-01", Assert.Single(result.Items).OperationTaskId);
+    }
+
+    [Fact]
     public async Task Queued_task_without_material_snapshot_is_blocked_while_lifecycle_actions_are_authoritative()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();
@@ -229,7 +313,7 @@ public sealed class MesTaskScopeQueryTests
         paused.Pause(now.AddMinutes(4));
         var completed = SeedTask(dbContext, "WO-DONE", "OP-DONE", "WC-01", "emp010", "TEAM-MC", now.AddMinutes(3));
         completed.Start(now.AddMinutes(4));
-        completed.Complete(now.AddMinutes(5));
+        completed.Complete(now.AddMinutes(5), []);
         await dbContext.SaveChangesAsync();
 
         var result = await new ListOperationTasksQueryHandler(dbContext).Handle(
@@ -267,15 +351,18 @@ public sealed class MesTaskScopeQueryTests
         Assert.Equal("MATERIAL_SHORTAGE: 物料 MAT-BEARING 缺口 7", withoutLot);
         Assert.DoesNotContain("shortage ", withLot, StringComparison.OrdinalIgnoreCase);
 
-        var userFacing = MaterialReadinessGuards.DescribeForUser(
-            [withLot, withoutLot, MaterialReadinessGuards.MissingRequirementSnapshotReason]);
+        var userFacing = MesReadinessReason.DescribeForUser(
+        [
+            MaterialReadinessGuards.ShortageReason("MAT-OIL", "LOT-OIL-A", 2.5m),
+            MaterialReadinessGuards.ShortageReason("MAT-BEARING", null, 7m),
+            MaterialReadinessGuards.MissingRequirementSnapshot,
+        ]);
 
         Assert.DoesNotContain("MATERIAL_SHORTAGE", userFacing, StringComparison.Ordinal);
         Assert.DoesNotContain("MATERIAL_REQUIREMENT_SNAPSHOT_MISSING", userFacing, StringComparison.Ordinal);
         Assert.Contains("物料 MAT-OIL，批次 LOT-OIL-A 缺口 2.5", userFacing, StringComparison.Ordinal);
         Assert.Contains("工单缺少齐套需求快照", userFacing, StringComparison.Ordinal);
-        // 中文说明里自带冒号的原因不能被当成码剥掉半句。
-        Assert.Equal("物料齐套未满足：还差 3 件", MaterialReadinessGuards.DescribeForUser(["物料齐套未满足：还差 3 件"]));
+        Assert.Equal("物料 MAT-OIL，批次 LOT-OIL-A 缺口 2.5；物料 MAT-BEARING 缺口 7；工单缺少齐套需求快照，无法确认物料齐套。", userFacing);
     }
 
     [Fact]
@@ -308,7 +395,8 @@ public sealed class MesTaskScopeQueryTests
             now,
             TimeSpan.FromHours(1),
             null,
-            null);
+            null,
+            "SKU-001");
         var blocked = OperationTask.Create(
             "org-001",
             "env-dev",
@@ -321,7 +409,8 @@ public sealed class MesTaskScopeQueryTests
             now.AddMinutes(1),
             TimeSpan.FromHours(1),
             null,
-            null);
+            null,
+            "SKU-001");
         previous.Assign("emp011", null, null, now, teamId: "TEAM-AS");
         blocked.Assign("emp012", null, null, now, teamId: "TEAM-AS");
         dbContext.WorkOrders.Add(workOrder);
@@ -338,7 +427,9 @@ public sealed class MesTaskScopeQueryTests
             1m,
             "ProductEngineering",
             "SNAP-ASSEMBLY",
-            now));
+            now,
+            [],
+            "PCS"));
         await dbContext.SaveChangesAsync();
 
         var evaluatedReadiness = await new MesOperationTaskActionReadinessEvaluator(dbContext)
@@ -418,7 +509,9 @@ public sealed class MesTaskScopeQueryTests
             0m,
             "ProductEngineering",
             "SNAP-READY",
-            now));
+            now,
+            [],
+            "PCS"));
         await dbContext.SaveChangesAsync();
 
         var result = await new ListOperationTasksQueryHandler(dbContext).Handle(
@@ -461,7 +554,9 @@ public sealed class MesTaskScopeQueryTests
             0m,
             "Legacy",
             "SNAP-LEGACY",
-            now.AddDays(-1)));
+            now.AddDays(-1),
+            [],
+            "PCS"));
         await dbContext.SaveChangesAsync();
 
         var list = await new ListOperationTasksQueryHandler(dbContext).Handle(
@@ -553,11 +648,11 @@ public sealed class MesTaskScopeQueryTests
         var now = Utc("2026-07-29T08:00:00Z");
         var task = SeedTask(dbContext, "WO-DONE", "OP-DONE", "WC-01", "emp010", "TEAM-MC", now);
         task.Start(now.AddMinutes(1));
-        task.Complete(now.AddMinutes(2));
+        task.Complete(now.AddMinutes(2), []);
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<MesLifecycleConflictException>(() =>
-            new RecordProductionReportCommandHandler(dbContext).Handle(
+            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing).Handle(
                 new RecordProductionReportCommand(
                     "org-001",
                     "env-dev",
@@ -616,7 +711,8 @@ public sealed class MesTaskScopeQueryTests
             earliestStartUtc,
             TimeSpan.FromHours(1),
             null,
-            null);
+            null,
+            "SKU-001");
         task.Assign(
             assignedUserId,
             null,

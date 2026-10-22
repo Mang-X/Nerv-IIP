@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        提交前请先查阅 `docs/architecture/implementation-readiness.md` 确认相关服务/能力的当前阶段。
+        涉及跨域优先级或项目阻塞时查看 `docs/status/current.md`；能力是否存在以相关 Architecture、代码、公开契约和测试为准。
   - type: textarea
     id: background
     attributes:

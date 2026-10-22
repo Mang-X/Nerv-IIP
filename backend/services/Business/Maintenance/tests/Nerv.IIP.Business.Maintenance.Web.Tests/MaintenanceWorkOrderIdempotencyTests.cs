@@ -93,6 +93,7 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
         var otherScopeWorkOrder = MaintenanceWorkOrder.OpenManual(
             "org-other",
             "env-other",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-CNC-OTHER",
             "high",
             "emp-other");
@@ -173,6 +174,7 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-001",
             "env-dev",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-CNC-01",
             "high",
             "emp010");
@@ -264,6 +266,7 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-001",
             "env-dev",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-CNC-01",
             "high",
             "emp010");
@@ -312,6 +315,7 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-001",
             "env-dev",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-CNC-01",
             "high",
             "emp010");
@@ -362,6 +366,7 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-001",
             "env-dev",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-CNC-01",
             "high",
             "emp010");
@@ -418,7 +423,7 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
         PersistCompletedWorkOrderAsync(ApplicationDbContext db, string idempotencyKey)
     {
         var workOrder = MaintenanceWorkOrder.OpenManual(
-            "org-001", "env-dev", $"DEV-{Guid.CreateVersion7():N}", "high", "emp010");
+            "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", $"DEV-{Guid.CreateVersion7():N}", "high", "emp010");
         db.MaintenanceWorkOrders.Add(workOrder);
         if (!await db.DowntimeReasons.AnyAsync(x => x.ReasonCode == "equipment-failure"))
         {

@@ -246,12 +246,19 @@ public sealed class ReleaseSalesOrderCreditHoldEndpoint(ISender sender, IErpInte
     }
 }
 
-public sealed class ReleaseDeliveryOrderEndpoint(ISender sender) : ErpEndpoint<ReleaseDeliveryOrderRequest, ResponseData<ReleaseDeliveryOrderResponse>>
+public sealed class ReleaseDeliveryOrderEndpoint(ISender sender, IErpIntegrationEventContextAccessor eventContext) : ErpEndpoint<ReleaseDeliveryOrderRequest, ResponseData<ReleaseDeliveryOrderResponse>>
 {
     public override void Configure() => ConfigureErpContract(ErpSalesEndpointContracts.Get<ReleaseDeliveryOrderEndpoint>());
 
     public override async Task HandleAsync(ReleaseDeliveryOrderRequest req, CancellationToken ct)
     {
+        using var causationScope = eventContext.BeginScope(ErpCommandCausationIds.ForHttpCommand(
+            "release-delivery-order",
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.SalesOrderNo,
+            req.DeliveryOrderNo,
+            req.IdempotencyKey));
         var id = await sender.Send(new ReleaseDeliveryOrderCommand(req.OrganizationId, req.EnvironmentId, req.DeliveryOrderNo, req.SalesOrderNo, req.Lines, req.IdempotencyKey), ct);
         await Send.OkAsync(new ReleaseDeliveryOrderResponse(id).AsResponseData(), cancellation: ct);
     }
@@ -573,8 +580,15 @@ public static class ErpFinanceEndpointContracts
 {
     public static readonly IReadOnlyCollection<ErpEndpointContract> All =
     [
+        new(typeof(ConfigureWorkCenterMachineOverheadRateEndpoint), "POST", "/api/business/v1/erp/finance/work-center-machine-overhead-rates", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "configureErpWorkCenterMachineOverheadRate"),
+        new(typeof(ListWorkCenterMachineOverheadRatesEndpoint), "GET", "/api/business/v1/erp/finance/work-center-machine-overhead-rates", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpWorkCenterMachineOverheadRates"),
+        new(typeof(GetCurrentWorkCenterMachineOverheadRateEndpoint), "GET", "/api/business/v1/erp/finance/work-center-machine-overhead-rates/current", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getCurrentErpWorkCenterMachineOverheadRate"),
         new(typeof(ConfigureWorkCenterCostRateEndpoint), "POST", "/api/business/v1/erp/finance/work-center-cost-rates", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "configureErpWorkCenterCostRate"),
         new(typeof(ListWorkCenterCostRatesEndpoint), "GET", "/api/business/v1/erp/finance/work-center-cost-rates", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpWorkCenterCostRates"),
+        new(typeof(ListWorkOrderCostsEndpoint), "GET", "/api/business/v1/erp/finance/work-order-costs", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpWorkOrderCosts"),
+        new(typeof(ReconcileWorkCenterMachineOverheadEndpoint), "POST", "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations", ErpPermissionCodes.FinanceManage, MachineOverheadInternalCallerAuthorization.ManagePolicyName, "reconcileErpWorkCenterMachineOverhead"),
+        new(typeof(ListWorkCenterMachineOverheadReconciliationsEndpoint), "GET", "/api/business/v1/erp/finance/work-center-machine-overhead-reconciliations", ErpPermissionCodes.FinanceRead, MachineOverheadInternalCallerAuthorization.ReadPolicyName, "listErpWorkCenterMachineOverheadReconciliations"),
+        new(typeof(GetWorkOrderCostVarianceEndpoint), "GET", "/api/business/v1/erp/finance/work-order-costs/{workOrderId}", ErpPermissionCodes.FinanceRead, MachineOverheadInternalCallerAuthorization.ReadPolicyName, "getErpWorkOrderCostVariance"),
         new(typeof(CreateAccountPayableEndpoint), "POST", "/api/business/v1/erp/finance/payables", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "createErpAccountPayable"),
         new(typeof(CreateAccountReceivableEndpoint), "POST", "/api/business/v1/erp/finance/receivables", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "createErpAccountReceivable"),
         new(typeof(CreateCostCandidateEndpoint), "POST", "/api/business/v1/erp/finance/cost-candidates", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "createErpCostCandidate"),
@@ -588,6 +602,7 @@ public static class ErpFinanceEndpointContracts
         new(typeof(OpenAccountingPeriodEndpoint), "POST", "/api/business/v1/erp/finance/accounting-periods", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "openErpAccountingPeriod"),
         new(typeof(CloseAccountingPeriodEndpoint), "POST", "/api/business/v1/erp/finance/accounting-periods/close", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "closeErpAccountingPeriod"),
         new(typeof(ReopenAccountingPeriodEndpoint), "POST", "/api/business/v1/erp/finance/accounting-periods/reopen", ErpPermissionCodes.FinanceManage, InternalServiceAuthorizationPolicy.Name, "reopenErpAccountingPeriod"),
+        new(typeof(GetMachineOverheadRatePeriodCoverageEndpoint), "GET", "/api/business/v1/erp/finance/machine-overhead-rate-coverage", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpMachineOverheadRatePeriodCoverage"),
         new(typeof(ListJournalVouchersEndpoint), "GET", "/api/business/v1/erp/finance/vouchers", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "listErpJournalVouchers"),
         new(typeof(GetTrialBalanceEndpoint), "GET", "/api/business/v1/erp/finance/trial-balance", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpTrialBalance"),
         new(typeof(GetMonthEndChecklistEndpoint), "GET", "/api/business/v1/erp/finance/month-end-checklist", ErpPermissionCodes.FinanceRead, InternalServiceAuthorizationPolicy.Name, "getErpMonthEndChecklist"),

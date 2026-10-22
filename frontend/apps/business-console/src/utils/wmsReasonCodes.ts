@@ -18,13 +18,19 @@
 export interface WmsReasonContext {
   /** 出库单号，如 `OB-WQ-B-PICK-MIR-20260731-02`。 */
   outboundOrderNo?: string
+  /** 入库单号；入库侧的拒绝（如未分配作业池）按入库单点名，不能说成出库单（#3849）。 */
+  inboundOrderNo?: string
   /** 拣货任务号，如 `WT-OB-WQ-B-PICK-MIR-20260731-02-01`。 */
   taskNo?: string
 }
 
-function subject(context: WmsReasonContext | undefined): string {
-  const no = context?.outboundOrderNo?.trim()
-  return no ? `出库单 ${no}` : '该出库单'
+/** 出库专属代码拿不到单号时仍说「该出库单」；入库/出库/盘点共用的代码退化成「该单据」。 */
+function subject(context: WmsReasonContext | undefined, unnamed = '该出库单'): string {
+  const inbound = context?.inboundOrderNo?.trim()
+  if (inbound) return `入库单 ${inbound}`
+  const outbound = context?.outboundOrderNo?.trim()
+  if (outbound) return `出库单 ${outbound}`
+  return unnamed
 }
 
 function taskSubject(context: WmsReasonContext | undefined): string {
@@ -66,27 +72,49 @@ const REASON_MESSAGES: Record<string, (context?: WmsReasonContext) => string> = 
   // 这些代码原本也被压成一句 "forbidden"，导致「这单派给别人了」和「不在你的作业范围」
   // 在界面上长得一模一样（台账 #82「页面也不指路」）。
   'resource-not-assigned-to-self': (context) =>
-    `${subject(context)}已派给其他作业员，你不能代为执行。请让当班负责人改派给你，或由被指派人执行。`,
+    `${subject(context, '该单据')}已派给其他作业员，你不能代为执行。请让当班负责人改派给你，或由被指派人执行。`,
 
   'assignment-principal-mismatch': (context) =>
-    `${subject(context)}的指派人与当前登录账号不一致。请刷新页面确认最新指派，或联系当班负责人改派。`,
+    `${subject(context, '该单据')}的指派人与当前登录账号不一致。请刷新页面确认最新指派，或联系当班负责人改派。`,
 
   'resource-outside-selected-work-scope': (context) =>
-    `${subject(context)}不在当前选择的作业范围内。请在页面顶部切换到该单所属的库区/站点后再操作。`,
+    `${subject(context, '该单据')}不在当前选择的作业范围内。请在页面顶部切换到该单所属的库区/站点后再操作。`,
 
   'missing-work-pool-assignment': (context) =>
-    `${subject(context)}还没有分配作业池，无法执行。请先由当班负责人把它分配到对应的作业池。`,
+    `${subject(context, '该单据')}还没有分配作业池，无法执行。请先由当班负责人把它分配到对应的作业池。`,
 
-  'resource-tenant-mismatch': () =>
-    '该对象不属于当前组织或环境，无法操作。请确认顶部的组织/环境选择是否正确。',
+  'resource-tenant-mismatch': () => '该对象不属于当前组织，无法操作。',
 
   'missing-work-scope-kind': () => '本次操作没有带上作业范围，请在页面顶部选择库区/站点后重试。',
 
   'missing-work-scope-id': () => '本次操作没有带上作业范围，请在页面顶部选择库区/站点后重试。',
 
-  // —— 422（作业池写面，#1910）——
-  // 该写面尚未经 BusinessGateway 暴露（作业池管理页面未立项），当前控制台走不到这条。
-  // 仍按 `WmsUnprocessableReasonCodes.cs` 的「新增代码必须同步」契约登记，避免开门时漏成兜底文案。
+  // —— 设备任务（WCS）人工处置（#3842）——
+  // 此前重派被拒一律显示「状态已被其他操作更新」、回执被拒一律显示「服务暂时不可用」，都不是真因。
+  'wcs-retry-not-due': () =>
+    '该设备任务刚失败，还没到允许重新下发的时间（每次失败后的等待时间会加长）。请稍后再重新下发。',
+
+  'wcs-retry-limit-reached': () =>
+    '该设备任务的重新下发次数已用完，不能再下发。请先在设备侧排查故障，再联系仓储负责人处理这条仓库任务。',
+
+  'wcs-redispatch-requires-failed-task': () =>
+    '只有执行失败的设备任务才能重新下发；该任务当前不在失败状态，设备侧不会收到任何内容。请刷新列表核实状态。',
+
+  'wcs-device-circuit-open': () =>
+    '这台设备连续失败，已暂停向它下发任务。请先在设备侧排查恢复，再重新下发。',
+
+  'wcs-completion-quantity-out-of-range': () =>
+    '累计完成数量不能超过计划数量，也不能少于已记录的数量。请按设备回报的累计数量重新填写。',
+
+  // —— 作业池维护与分配（#1910 / #3849）——
+  'inactive-or-cross-site-work-pool': () =>
+    '所选作业池已停用或不属于该单据所在工厂。请刷新作业池列表，改选本工厂的作业池。',
+
+  'target-operator-not-effective-pool-member': () =>
+    '所选作业人员不是该作业池的有效成员。请先在「作业池」页把他加入该池，或改选池内成员。',
+
+  'inactive-or-unknown-work-pool': () => '该作业池不存在或已停用，请刷新作业池列表后重试。',
+
   'membership-window-not-forward': () =>
     '作业池成员的生效结束时间不晚于开始时间，这段资格窗口不成立。请把结束时间改到开始时间之后，或留空表示长期有效。',
 }

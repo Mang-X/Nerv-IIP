@@ -9,6 +9,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.StationAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
@@ -408,6 +409,20 @@ public sealed class UpdateMasterDataResourceCommandHandler(
                     !string.Equals(lineSiteBefore, line.SiteCode, StringComparison.Ordinal)
                         || !string.Equals(lineWorkshopBefore, line.WorkshopCode, StringComparison.Ordinal));
                 return Detail(line);
+            case "station":
+                var station = await FindStationAsync(request, cancellationToken);
+                if (request.LineCode is not null || request.WorkCenterCode is not null)
+                {
+                    await StationParentValidator.EnsureAsync(
+                        dbContext,
+                        request.OrganizationId,
+                        request.EnvironmentId,
+                        request.LineCode ?? station.LineCode,
+                        request.WorkCenterCode ?? station.WorkCenterCode,
+                        cancellationToken);
+                }
+                station.Update(request.Name ?? station.Name, request.LineCode ?? station.LineCode, request.WorkCenterCode ?? station.WorkCenterCode);
+                return Detail(station);
             case "work-center":
                 var workCenter = await FindWorkCenterAsync(request, cancellationToken);
                 var workCenterPlantBefore = workCenter.PlantCode;
@@ -454,6 +469,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(
                     device,
                     request.SupplierPartnerCode,
                     request.ParentDeviceId,
+                    request.StationCode,
                     cancellationToken);
                 var purchaseCurrencyCode = DeviceAssetCommandValidator.NormalizeCurrencyCode(request.PurchaseCurrencyCode, device.PurchaseCurrencyCode);
                 DeviceAssetCommandValidator.EnsureValidComponents(request.Components?.Select(x => new DeviceAssetComponentDraft(x.ComponentCode, x.ComponentName, x.Quantity, x.Critical)).ToArray());
@@ -479,7 +495,7 @@ public sealed class UpdateMasterDataResourceCommandHandler(
                     request.SiteCode ?? device.SiteCode,
                     request.WorkshopCode ?? device.WorkshopCode,
                     request.LineCode ?? device.LineCode,
-                    request.StationCode ?? device.StationCode,
+                    validatedReferences.StationCode,
                     validatedReferences.ParentDeviceId,
                     request.RetiredOn ?? device.RetiredOn);
                 if (request.Components is not null)
@@ -596,6 +612,10 @@ public sealed class UpdateMasterDataResourceCommandHandler(
 
     private async Task<ProductionLine> FindProductionLineAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
         await dbContext.ProductionLines.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
+        ?? throw NotFound(request.ResourceType, request.Code);
+
+    private async Task<Station> FindStationAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
+        await dbContext.Stations.SingleOrDefaultAsync(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId && x.Code == request.Code, cancellationToken)
         ?? throw NotFound(request.ResourceType, request.Code);
 
     private async Task<WorkCenter> FindWorkCenterAsync(UpdateMasterDataResourceCommand request, CancellationToken cancellationToken) =>
@@ -766,6 +786,9 @@ public sealed class UpdateMasterDataResourceCommandHandler(
 
     internal static MasterDataResourceDetail Detail(ProductionLine x) =>
         new("production-line", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, SiteCode: x.SiteCode, WorkshopCode: x.WorkshopCode, Status: x.Disabled ? "disabled" : "active");
+
+    internal static MasterDataResourceDetail Detail(Station x) =>
+        new("station", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, LineCode: x.LineCode, WorkCenterCode: x.WorkCenterCode, StationCode: x.Code, Status: x.Disabled ? "disabled" : "active");
 
     internal static MasterDataResourceDetail Detail(WorkCenter x) =>
         new("work-center", x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc.ToString("O"), x.OrganizationId, x.EnvironmentId, x.Name, PlantCode: x.PlantCode, LineCode: x.LineCode, WorkshopCode: x.WorkshopCode, CapacityMinutesPerDay: x.CapacityMinutesPerDay, ResourceKind: x.ResourceType, DefaultCalendarCode: x.DefaultCalendarCode, CapacityUnit: x.CapacityUnit, FiniteCapacity: x.FiniteCapacity, Status: x.Disabled ? "disabled" : "active", UtilizationRate: x.UtilizationRate, EfficiencyRate: x.EfficiencyRate, NumberOfCapacities: x.NumberOfCapacities, EffectiveCapacityMinutesPerDay: x.EffectiveCapacityMinutesPerDay, CostCenterCode: x.CostCenterCode, Bottleneck: x.Bottleneck);
@@ -948,6 +971,13 @@ public sealed class SetMasterDataResourceEnabledCommandHandler(
                 if (request.Enabled) line.Enable(reason); else line.Disable(reason);
                 AddAudit(request, type, line.Id.ToString(), resourceIdentity, reason);
                 return UpdateMasterDataResourceCommandHandler.Detail(line);
+            case "station":
+                var station = await FindAsync(dbContext.Stations, request, cancellationToken);
+                if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(station);
+                if (station.Disabled == !request.Enabled) { AddAudit(request, type, station.Id.ToString(), resourceIdentity, reason); return UpdateMasterDataResourceCommandHandler.Detail(station); }
+                if (request.Enabled) station.Enable(reason); else station.Disable(reason);
+                AddAudit(request, type, station.Id.ToString(), resourceIdentity, reason);
+                return UpdateMasterDataResourceCommandHandler.Detail(station);
             case "work-center":
                 var workCenter = await FindAsync(dbContext.WorkCenters, request, cancellationToken);
                 if (isReplay) return UpdateMasterDataResourceCommandHandler.Detail(workCenter);

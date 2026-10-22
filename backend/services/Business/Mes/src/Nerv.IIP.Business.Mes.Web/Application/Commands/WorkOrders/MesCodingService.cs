@@ -68,7 +68,7 @@ public sealed class MesCodingService
                 cancellationToken);
         }
         catch (KnownException exception) when (
-            exception.Message.Contains("conflicts with a different", StringComparison.Ordinal))
+            string.Equals(exception.Message, "本次提交与此前的创建内容不一致，请重新发起创建。", StringComparison.Ordinal))
         {
             throw new Nerv.IIP.Business.Mes.Web.Application.Errors.MesIdempotencyConflictException();
         }

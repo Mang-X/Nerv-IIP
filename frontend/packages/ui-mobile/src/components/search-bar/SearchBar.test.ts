@@ -49,4 +49,105 @@ describe('SearchBar', () => {
     expect(wrapper.props('modelValue')).toBe('')
     expect(wrapper.emitted('cancel')).toEqual([[]])
   })
+
+  it('reports the emptied keyword through @search so list-only consumers can restore the full list', async () => {
+    const wrapper = mount(SearchBar, {
+      props: {
+        modelValue: '轴承',
+        'onUpdate:modelValue': (value: string) => wrapper.setProps({ modelValue: value }),
+      },
+    })
+
+    await wrapper.get('button[aria-label="清除"]').trigger('click')
+
+    expect(wrapper.props('modelValue')).toBe('')
+    expect(wrapper.emitted('search')).toEqual([['']])
+  })
+
+  it('reports the emptied keyword when the field is deleted down to empty without Enter', async () => {
+    const wrapper = mount(SearchBar, {
+      props: {
+        modelValue: '轴承',
+        'onUpdate:modelValue': (value: string) => wrapper.setProps({ modelValue: value }),
+      },
+    })
+
+    const input = wrapper.get('input[type="search"]')
+    ;(input.element as HTMLInputElement).value = ''
+    await input.trigger('input')
+
+    expect(wrapper.props('modelValue')).toBe('')
+    expect(wrapper.emitted('search')).toEqual([['']])
+  })
+
+  it('keeps cancel as "leave search", not as an implicit empty search', async () => {
+    const wrapper = mount(SearchBar, {
+      props: {
+        cancelable: true,
+        modelValue: '轴承',
+        'onUpdate:modelValue': (value: string) => wrapper.setProps({ modelValue: value }),
+      },
+    })
+
+    await wrapper.get('input').trigger('focus')
+    await wrapper.get('button:not([aria-label])').trigger('click')
+
+    expect(wrapper.props('modelValue')).toBe('')
+    expect(wrapper.emitted('cancel')).toEqual([[]])
+    expect(wrapper.emitted('search')).toBeUndefined()
+  })
+
+  it('does not decide for the consumer that a whitespace-only keyword counts as cleared', async () => {
+    const wrapper = mount(SearchBar, {
+      props: {
+        modelValue: '轴承',
+        'onUpdate:modelValue': (value: string) => wrapper.setProps({ modelValue: value }),
+      },
+    })
+
+    const input = wrapper.get('input[type="search"]')
+    ;(input.element as HTMLInputElement).value = '   '
+    await input.trigger('input')
+
+    expect(wrapper.props('modelValue')).toBe('   ')
+    expect(wrapper.emitted('search')).toBeUndefined()
+  })
+
+  it('stays silent when the consumer empties the binding itself', async () => {
+    const wrapper = mount(SearchBar, { props: { modelValue: '轴承' } })
+
+    await wrapper.setProps({ modelValue: '' })
+
+    expect(wrapper.emitted('search')).toBeUndefined()
+  })
+
+  /**
+   * 结构性护栏：不点名具体按钮，而是枚举当前渲染出的每个可点击控件。将来给搜索栏加了新的
+   * 「清空」入口，只要它把关键词清空却不通知消费方（`search('')` 或 `cancel`），这里就红。
+   */
+  it('leaves no affordance that empties the keyword without notifying the consumer', async () => {
+    const probe = mount(SearchBar, { props: { cancelable: true, modelValue: '轴承' } })
+    const affordanceCount = probe.findAll('button').length
+    expect(affordanceCount).toBeGreaterThanOrEqual(2)
+
+    for (let index = 0; index < affordanceCount; index += 1) {
+      const wrapper = mount(SearchBar, {
+        props: {
+          cancelable: true,
+          modelValue: '轴承',
+          'onUpdate:modelValue': (value: string) => wrapper.setProps({ modelValue: value }),
+        },
+      })
+      const affordance = wrapper.findAll('button')[index]!
+      const label = affordance.attributes('aria-label') ?? affordance.text() ?? `#${index}`
+
+      await affordance.trigger('click')
+      if (wrapper.props('modelValue') !== '') continue
+
+      const announced =
+        wrapper.emitted('search')?.some(([value]) => value === '') === true ||
+        wrapper.emitted('cancel') !== undefined
+      expect(announced, `「${label}」清空了关键词却没有通知消费方`).toBe(true)
+    }
+  })
 })

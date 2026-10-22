@@ -8,6 +8,8 @@ import {
   Cog,
   FilePen,
   ListChecks,
+  LogIn,
+  LogOut,
   PackageCheck,
   PackageMinus,
   PackagePlus,
@@ -16,13 +18,13 @@ import {
 } from '@lucide/vue'
 import { PDA_TASK_KINDS } from '@nerv-iip/business-core'
 import { useUnacknowledgedAlarmCount } from '@/composables/useBusinessEquipmentAlarms'
-import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import RetryableListError from '@/components/RetryableListError.vue'
 import {
   HOME_PERMISSIONS,
   usePdaIdentity,
   usePendingInspectionSummary,
   useWarehouseSummary,
+  type WarehouseSummaryEntryState,
 } from '@/composables/useWorkbenchHome'
 import {
   NvAppShellMobile,
@@ -31,11 +33,11 @@ import {
   NvMobileAvatar,
   NvMobileGrid,
   NvMobileTag,
-  NvScanBar,
   type GridItem,
 } from '@nerv-iip/ui-mobile'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import PdaBarcodeResolver from '@/components/barcode/PdaBarcodeResolver.vue'
 
 definePage({
   meta: {
@@ -54,14 +56,6 @@ const inspection = usePendingInspectionSummary()
 const canSeeAlarms = computed(() => identity.can(HOME_PERMISSIONS.alarms))
 const { unacknowledgedCount } = useUnacknowledgedAlarmCount(canSeeAlarms)
 
-const lastScan = ref('')
-
-function onScan(value: string) {
-  // TODO(M5): 扫码直达（/scan 路由 + 扫码解析端点）落地后改为按解析结果导航。
-  // 现阶段 /scan 尚不存在，只做诚实的页内反馈，不做假跳转。
-  lastScan.value = value
-}
-
 /** 首页身份行：岗位 · 班组（都有才拼接，缺失不占位）。 */
 const identitySubtitle = computed(() => {
   const worker = identity.worker.value
@@ -69,24 +63,50 @@ const identitySubtitle = computed(() => {
   return parts.join(' · ')
 })
 
+/**
+ * 仓储计数取不到时格子里写什么。**绝不回落成 `0`**：`0` 断言的是「一件都没有」，
+ * 而这几种情形断言的是「这个人/这一刻看不到数」，现场据此导出的行动完全不同（#3474）。
+ *
+ * 用词跟 PDA 既有**可见**口径走，不用开发口径：读不到一律说「加载失败」（同文件
+ * `待检任务加载失败，请重试。`、`TaskListShell` 的 `任务加载失败，请重试。`）。
+ * 「取数」在 PDA 只出现在注释里，从来没上过屏。
+ */
+const WAREHOUSE_STATE_TEXT: Record<WarehouseSummaryEntryState, string> = {
+  counted: '',
+  loading: '…',
+  denied: '无范围',
+  failed: '加载失败',
+}
+
+/**
+ * 板块级说明。全被拒时说清「不是 0」；只有部分格被拒时不能把整块说死，否则又会
+ * 谎报另一个方向（真读到的那几格是真的）。
+ *
+ * 三句都要带**下一步动作**：只说「这不是 0」是在向用户解释缺陷，操作工据此做不了任何事。
+ */
+const warehouseScopeNote = computed(() => {
+  if (warehouse.scopeDenied.value) {
+    return '当前账号没有仓储数据范围，看不到任何仓储单据——这不是「0 件」。请联系管理员分配仓库范围。'
+  }
+  if (warehouse.hasDeniedEntry.value) {
+    return '标「无范围」的项目没有分配给当前账号，其数量不可知，不是 0。需要这几项请联系管理员分配仓库范围。'
+  }
+  if (warehouse.hasFailedEntry.value) {
+    return '标「加载失败」的项目本次没读到，数量不可知，不是 0。请下拉刷新或稍后重试。'
+  }
+  return ''
+})
+
 const INSPECTION_PREVIEW = 3
 const scopedInspectionTasks = computed(() =>
   inspection.scopeReady.value ? inspection.tasks.value : [],
 )
-const scopedInspectionTotal = computed(() =>
-  inspection.scopeReady.value ? inspection.total.value : 0,
-)
 const inspectionPreview = computed(() => scopedInspectionTasks.value.slice(0, INSPECTION_PREVIEW))
-const inspectionEmptyExplanation = computed(() =>
-  inspection.scopeReady.value
-    ? '当前组织/环境范围暂无待检任务；此列表不是个人待检。'
-    : '缺少组织或环境范围，未发起查询。',
-)
 const inspectionFailure = computed(() =>
   inspection.error.value
     ? inspection.error.value
     : inspection.hasFailedResponse.value
-      ? new Error('待检任务服务未返回成功结果，请重试。')
+      ? new Error('待检任务加载失败，请重试。')
       : null,
 )
 
@@ -101,6 +121,9 @@ const KIND_PERMISSIONS: Record<string, string> = {
   'mes.issue': 'business.mes.materials.read',
   'mes.receipt': 'business.mes.receipts.read',
   'mes.operation': 'business.mes.operations.read',
+  // 交班要写（建单），接班入口先要读（列表）；两条权限不同，入口必须分别裁剪。
+  'mes.handover': 'business.mes.handovers.manage',
+  'mes.handover-accept': 'business.mes.handovers.read',
   'equipment.repair': 'business.maintenance.work-orders.read',
   'equipment.inspect': 'business.maintenance.plans.read',
   'equipment.alarms': 'business.iiot.alarms.read',
@@ -117,6 +140,8 @@ const KIND_ICONS: Record<string, Component> = {
   'mes.issue': PackageMinus,
   'mes.receipt': PackagePlus,
   'mes.operation': Cog,
+  'mes.handover': LogOut,
+  'mes.handover-accept': LogIn,
   'equipment.repair': Wrench,
   'equipment.inspect': ClipboardList,
   'equipment.alarms': Bell,
@@ -172,26 +197,40 @@ function openRoute(route: string) {
     </template>
 
     <div class="space-y-5 p-4">
-      <NvScanBar placeholder="扫描工单 / 库位 / 物料 / 设备" @scan="onScan" />
-
-      <p v-if="lastScan" data-testid="last-scan" class="-mt-2 text-sm text-foreground">
-        已扫码：{{ lastScan }}
-      </p>
+      <PdaBarcodeResolver />
 
       <!-- 仓储任务（有 WMS 读权限的仓储角色可见） -->
       <section v-if="warehouse.enabled.value" data-testid="home-warehouse">
         <h2 class="mb-2 text-sm font-medium text-muted-foreground">仓储任务</h2>
+        <p
+          v-if="warehouseScopeNote"
+          class="mb-2 rounded-xl border border-dashed border-border bg-card px-3 py-2 text-xs text-muted-foreground"
+          data-testid="home-warehouse-scope-note"
+        >
+          {{ warehouseScopeNote }}
+        </p>
         <div class="grid grid-cols-4 gap-2">
           <button
             v-for="entry in warehouse.entries.value"
             :key="entry.key"
             type="button"
             class="flex min-h-touch flex-col items-center justify-center gap-0.5 rounded-xl border border-border bg-card py-3 active:bg-accent"
+            :data-testid="`home-warehouse-${entry.key}`"
+            :data-state="entry.state"
             @click="openRoute(entry.route)"
           >
-            <span class="text-lg font-semibold tabular-nums text-foreground">{{
-              entry.count
-            }}</span>
+            <span
+              v-if="entry.state === 'counted'"
+              class="text-lg font-semibold tabular-nums text-foreground"
+              :data-testid="`home-warehouse-${entry.key}-value`"
+              >{{ entry.count }}</span
+            >
+            <span
+              v-else
+              class="text-xs font-medium text-muted-foreground"
+              :data-testid="`home-warehouse-${entry.key}-value`"
+              >{{ WAREHOUSE_STATE_TEXT[entry.state] }}</span
+            >
             <span class="text-xs text-muted-foreground">{{ entry.label }}</span>
           </button>
         </div>
@@ -205,27 +244,6 @@ function openRoute(route: string) {
             共 <span class="font-semibold text-foreground">{{ inspection.total.value }}</span> 项
           </span>
         </div>
-        <ListScopeMeta
-          :scope="
-            identity.organizationId.value && identity.environmentId.value
-              ? '当前登录组织 / 当前业务环境'
-              : '组织/环境范围未就绪'
-          "
-          source="质检待检任务服务（组织/环境范围，状态：待检）"
-          :loaded="scopedInspectionTasks.length"
-          :total="scopedInspectionTotal"
-          :updated-at="inspection.lastUpdatedAt.value"
-          :failed="inspection.hasFailedResponse.value"
-          failure-explanation="质检待检任务服务未成功返回，请刷新重试。"
-          :empty="
-            !inspection.scopeReady.value ||
-            (!inspection.pending.value &&
-              !inspection.error.value &&
-              inspection.hasSuccessfulResponse.value &&
-              scopedInspectionTasks.length === 0)
-          "
-          :empty-explanation="inspectionEmptyExplanation"
-        />
         <RetryableListError
           v-if="inspectionFailure"
           :error="inspectionFailure"
@@ -257,7 +275,7 @@ function openRoute(route: string) {
           "
           class="rounded-xl border border-dashed border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground"
         >
-          当前组织/环境范围暂无待检任务；此列表不是个人待检
+          暂无待检任务
         </div>
       </section>
 

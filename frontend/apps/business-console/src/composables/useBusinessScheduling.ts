@@ -1,16 +1,17 @@
 import {
   getBusinessConsoleSchedulingPlanQueryOptions,
-  listBusinessConsoleSchedulingPlansQueryOptions,
+  listBusinessConsoleSchedulingPlanHistoryQueryOptions,
+  listBusinessConsoleSchedulingPlanHistory,
   releaseBusinessConsoleSchedulingPlanMutationOptions,
   revokeBusinessConsoleSchedulingPlanMutationOptions,
   upsertBusinessConsoleSchedulingOperationOverrideMutationOptions,
   type BusinessConsoleSchedulePlanEnvelope,
-  type BusinessConsoleSchedulingPlanSummaryListEnvelope,
+  type BusinessConsoleSchedulingHistoryEnvelope,
   type BusinessConsoleSchedulingPlanSummaryResponse,
   type BusinessConsoleSchedulePlan,
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 import {
   bindBusinessContext,
   hasBusinessContext,
@@ -18,18 +19,21 @@ import {
   type BusinessContextFields,
 } from './businessContextBinding'
 import { assertEnvelopeSuccess } from './serviceEnvelope'
+import { usePagedList, type PagedListFilters } from './usePagedList'
+import type { BusinessConsoleSchedulingPlanStatus } from '@nerv-iip/api-client'
+
+const SCHEDULING_POLL_INTERVAL_MS = 5_000
 
 const SCHEDULING_QUERY_IDS = [
-  'listBusinessConsoleSchedulingPlans',
+  'listBusinessConsoleSchedulingPlanHistory',
   'getBusinessConsoleSchedulingPlan',
   'getBusinessConsoleSchedulingPlanGantt',
 ]
-// TODO(#630): restore real pagination when the Scheduling summary facade returns total/horizon.
-const SINGLE_PAGE_PLAN_LIST_SIZE = 100
 
-export interface SchedulingPlanListFilters extends BusinessContextFields {
-  pageIndex: number
-  pageSize: number
+export interface SchedulingPlanListFilters extends BusinessContextFields, PagedListFilters {
+  status?: BusinessConsoleSchedulingPlanStatus
+  releasedOn: string
+  isInvalidated?: boolean
 }
 
 export interface SchedulingPlanSelection extends BusinessContextFields {
@@ -41,8 +45,9 @@ function defaultFilters(): SchedulingPlanListFilters {
     reactive({
       organizationId: '',
       environmentId: '',
-      pageIndex: 1,
-      pageSize: SINGLE_PAGE_PLAN_LIST_SIZE,
+      status: undefined,
+      releasedOn: '',
+      isInvalidated: undefined,
     }),
   )
 }
@@ -57,12 +62,12 @@ function defaultSelection(): SchedulingPlanSelection {
   )
 }
 
-function unwrapPlans(envelope: BusinessConsoleSchedulingPlanSummaryListEnvelope | undefined) {
+function unwrapPlans(envelope: BusinessConsoleSchedulingHistoryEnvelope | undefined) {
   if (!envelope?.success) {
     return []
   }
 
-  return envelope.data ?? []
+  return envelope.data?.items ?? []
 }
 
 function unwrapPlan(envelope: BusinessConsoleSchedulePlanEnvelope | undefined) {
@@ -90,28 +95,26 @@ function ignoreBackgroundError(_error: unknown) {}
 export function useBusinessScheduling() {
   const filters = defaultFilters()
   const detailSelection = defaultSelection()
-  const page = shallowRef(1)
-  const pageSize = shallowRef(String(SINGLE_PAGE_PLAN_LIST_SIZE))
+  const { page, pageSize, pageSizeNumber } = usePagedList(filters, {
+    resetOn: [() => filters.status, () => filters.releasedOn, () => filters.isInvalidated],
+  })
   const queryCache = useQueryCache()
 
   const plansQuery = useQuery(() => {
-    // Scheduling ListSchedulePlans is a 0-based pageIndex contract (Skip(pageIndex * pageSize),
-    // asserted by SchedulingEndpointContractTests). `page` is the 1-based UI page, so a page of 1
-    // must map to API pageIndex 0 — otherwise the first 100 plans are skipped and the workbench
-    // shows nothing until there are >100 plans.
-    filters.pageIndex = Math.max(0, page.value - 1)
-    filters.pageSize = Number(pageSize.value) || SINGLE_PAGE_PLAN_LIST_SIZE
-
     return {
-      ...listBusinessConsoleSchedulingPlansQueryOptions({
+      ...listBusinessConsoleSchedulingPlanHistoryQueryOptions({
         query: {
           organizationId: filters.organizationId,
           environmentId: filters.environmentId,
-          pageIndex: filters.pageIndex,
-          pageSize: filters.pageSize,
+          pageIndex: page.value - 1,
+          pageSize: pageSizeNumber.value,
+          status: filters.status,
+          releasedOn: filters.releasedOn || undefined,
+          isInvalidated: filters.isInvalidated,
         },
       }),
       enabled: hasBusinessContext(filters),
+      autoRefetch: () => SCHEDULING_POLL_INTERVAL_MS,
     }
   })
 
@@ -124,6 +127,7 @@ export function useBusinessScheduling() {
       },
     }),
     enabled: hasBusinessContext(detailSelection) && detailSelection.planId.trim().length > 0,
+    autoRefetch: () => SCHEDULING_POLL_INTERVAL_MS,
   }))
 
   const invalidateSchedulingQueries = () =>
@@ -168,10 +172,12 @@ export function useBusinessScheduling() {
     planDetailError: detailQuery.error,
     planDetailPending: detailQuery.isLoading,
     plans: computed<BusinessConsoleSchedulingPlanSummaryResponse[]>(() =>
-      unwrapPlans(
-        plansQuery.data.value as BusinessConsoleSchedulingPlanSummaryListEnvelope | undefined,
-      ),
+      unwrapPlans(plansQuery.data.value as BusinessConsoleSchedulingHistoryEnvelope | undefined),
     ),
+    plansTotal: computed(() => {
+      const envelope = plansQuery.data.value as BusinessConsoleSchedulingHistoryEnvelope | undefined
+      return envelope?.success ? (envelope.data?.total ?? 0) : 0
+    }),
     plansError: plansQuery.error,
     plansPending: plansQuery.isLoading,
     // 与 revoke/override 同款诚实失败：200 + success:false 一律抛错，不给界面假成功。
@@ -188,7 +194,7 @@ export function useBusinessScheduling() {
     revokePlan: (planId: string) => {
       const scope = mutationScope()
       if (!hasBusinessContext(scope) || !planId.trim()) {
-        return Promise.reject(new Error('缺少组织/环境上下文或方案标识，未发起撤销请求。'))
+        return Promise.reject(new Error('尚未确定当前组织或方案，未撤销。'))
       }
       return revokeMutation
         .mutateAsync({
@@ -214,9 +220,7 @@ export function useBusinessScheduling() {
         !input.operationId.trim() ||
         !input.resourceId.trim()
       ) {
-        return Promise.reject(
-          new Error('缺少组织/环境上下文、方案、工序或资源标识，未发起持久化请求。'),
-        )
+        return Promise.reject(new Error('尚未确定当前组织、方案、工序或资源，未持久锁定。'))
       }
       return operationOverrideMutation
         .mutateAsync({
@@ -228,7 +232,9 @@ export function useBusinessScheduling() {
             endUtc: input.endUtc,
           },
         })
-        .then((envelope) => assertEnvelopeSuccess(envelope, '排程服务未确认工序持久化结果。'))
+        .then((envelope) =>
+          assertEnvelopeSuccess(envelope, '未确认工序已持久锁定，请再点一次「持久锁定」。'),
+        )
     },
     upsertOperationOverrideError: operationOverrideMutation.error,
     upsertOperationOverridePending: operationOverrideMutation.isLoading,
@@ -238,4 +244,47 @@ export function useBusinessScheduling() {
         : Promise.resolve(),
     refreshPlans: () => refetchWithBusinessContext(filters, plansQuery),
   }
+}
+
+// 草案版本状态独立于历史表的查阅选择、筛选和分页。既有明细契约不带失效事实，
+// 因此从未筛选的 history 页中查找该版本，找到就结束，不重载 assignment 草案。
+export function useSchedulingPlanSummary(planId: MaybeRefOrGetter<string | undefined>) {
+  const scope = defaultFilters()
+  const query = useQuery(() => {
+    const trackedPlanId = toValue(planId)
+    const { organizationId, environmentId } = scope
+    return {
+      key: [
+        {
+          _id: 'listBusinessConsoleSchedulingPlanHistory',
+          organizationId,
+          environmentId,
+          trackedPlanId,
+        },
+      ],
+      enabled: hasBusinessContext(scope) && Boolean(trackedPlanId),
+      autoRefetch: () => SCHEDULING_POLL_INTERVAL_MS,
+      query: async ({
+        signal,
+      }): Promise<BusinessConsoleSchedulingPlanSummaryResponse | undefined> => {
+        const pageSize = 100
+        let pageIndex = 0
+        let total = 0
+        do {
+          const { data: envelope } = await listBusinessConsoleSchedulingPlanHistory({
+            query: { organizationId, environmentId, pageIndex, pageSize },
+            signal,
+            throwOnError: true,
+          })
+          assertEnvelopeSuccess(envelope, '未能读取草案方案状态')
+          const summary = envelope.data?.items?.find((plan) => plan.planId === trackedPlanId)
+          if (summary) return summary
+          total = envelope.data?.total ?? 0
+          pageIndex++
+        } while (pageIndex * pageSize < total)
+        return undefined
+      },
+    }
+  })
+  return { summary: query.data }
 }

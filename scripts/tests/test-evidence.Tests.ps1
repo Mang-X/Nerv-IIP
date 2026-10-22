@@ -36,9 +36,13 @@ $facadeOwnedResponsibilityContracts = @(
     [pscustomobject]@{
         LibraryName = 'TestEvidencePrivacy.ps1'
         FunctionNames = @(
+            'Convert-NervRetainedDiagnosticGap',
+            'ConvertTo-NervRetainedDiagnosticValue',
             'ConvertTo-NervRetainedDisplayName',
             'ConvertTo-NervRetainedFailureText',
-            'Get-NervRetainedSkipReason'
+            'Get-NervRetainedFailureGrammar',
+            'Get-NervRetainedSkipReason',
+            'Test-NervRetainedFailureText'
         )
     },
     [pscustomobject]@{
@@ -334,9 +338,230 @@ foreach ($case in $retainedSkipBoundaryCases) {
     Assert-Equal ([Math]::Min($case.Length, 512)) $actual.Length "Approved skip reason length $($case.Length) produced an unexpected retained length."
 }
 
-$retainedFailureText = ConvertTo-NervRetainedFailureText 'raw failure body that must not be retained'
-Assert-Equal 'Test failed; raw failure details are intentionally omitted by evidence privacy policy.' $retainedFailureText 'Failure retention must preserve the fixed privacy-policy prose.'
-Assert-True (-not $retainedFailureText.Contains('raw failure body', [StringComparison]::Ordinal)) 'Failure retention must not expose the raw failure body.'
+# Failure-detail retention (#3213). The invariant is a *closed construction*, not a fixed sentence:
+# a retained failure text is always `prefix + closed field-name set + closed token alphabet`, so a
+# substring of the raw message can only appear when a named extractor captured it AND it matches
+# the token alphabet as a whole token. Unrecognized shapes fail closed to the fixed prose. The
+# assertions below pin both directions of that invariant — sensitive material must not survive,
+# and the named diagnostic readings must survive — because pinning only the first direction has
+# the trivial solution "retain nothing", which is what this change replaces.
+$retainedFailureUnrecognized = ConvertTo-NervRetainedFailureText 'raw failure body that must not be retained'
+Assert-Equal 'Test failed; raw failure details are intentionally omitted by evidence privacy policy.' $retainedFailureUnrecognized 'Failure retention must fall back to the fixed privacy-policy prose when no named diagnostic field is recognized.'
+Assert-True (-not $retainedFailureUnrecognized.Contains('raw failure body', [StringComparison]::Ordinal)) 'Failure retention must not expose the raw failure body.'
+Assert-Equal $null (ConvertTo-NervRetainedFailureText '   ') 'Blank failure text must remain unretained.'
+
+$retainedFailureCases = @(
+    [pscustomobject]@{
+        Name = 'unrecognized'
+        Input = 'raw failure body that must not be retained'
+        Absent = @('raw failure body')
+        Present = @()
+    },
+    [pscustomobject]@{
+        # Copied from the real failure in run 34021085348, job 101453729444 (Redis/CAP lane).
+        Name = 'real TestTimeoutException'
+        Input = "Nerv.IIP.Testing.TestTimeoutException : Operation 'MES before-first-publish: waiting for actual target Subscribe completion' timed out after 00:00:29.9989807."
+        Absent = @('Subscribe completion', 'before-first-publish')
+        Present = @('type=Nerv.IIP.Testing.TestTimeoutException', 'elapsed=00:00:29.9989807')
+    },
+    [pscustomobject]@{
+        Name = 'Eventually timeout'
+        Input = "Nerv.IIP.Testing.EventuallyTimeoutException : Condition 'mes arrival projected' was not satisfied after 00:00:30.0021000 (7 observations). Last observation: assertion still failing: EqualException: Assert.Equal() Failure: Values differ Expected: 1 Actual: 0 arrivals=0 cap.published=3"
+        Absent = @('mes arrival projected')
+        Present = @('type=Nerv.IIP.Testing.EventuallyTimeoutException', 'observations=7', 'elapsed=00:00:30.0021000', 'EqualException', 'arrivals=0', 'cap.published=3')
+    },
+    [pscustomobject]@{
+        Name = 'xunit equality'
+        Input = "Assert.Equal() Failure: Values differ`nExpected: 3`nActual:   0"
+        Absent = @()
+        Present = @('type=Assert.Equal', 'expected=3', 'actual=0')
+    },
+    [pscustomobject]@{
+        Name = 'sensitive payload'
+        Input = "System.Exception : boom`nExpected: Zhang Wei of Acme Manufacturing Co`nActual:   WO-20260907-0001`nAuthorization=Bearer top-secret-token password=hunter2 ConnectionString=Host=db;Port=5432;Database=nerv;Username=app;Password=pg-secret"
+        Absent = @('Zhang Wei', 'Acme Manufacturing', 'WO-20260907-0001', '20260907', 'top-secret-token', 'hunter2', 'pg-secret', 'Host=db', 'Username=app')
+        Present = @('type=System.Exception')
+    },
+    [pscustomobject]@{
+        # A raw message that imitates the retained prefix must not ride through: the fixed-point
+        # check is full grammar re-validation, not a prefix sniff.
+        Name = 'prefix imitation'
+        Input = 'Test failed; retained diagnostics: type=System.Exception; actual=leaked-customer-name-Zhang-Wei'
+        Absent = @('Zhang-Wei', 'leaked-customer-name')
+        Present = @()
+    }
+)
+foreach ($case in $retainedFailureCases) {
+    $retained = ConvertTo-NervRetainedFailureText $case.Input
+    Assert-True (Test-NervRetainedFailureText $retained) "Retained failure text for '$($case.Name)' must satisfy the retained-failure grammar."
+    Assert-Equal $retained (ConvertTo-NervRetainedFailureText $retained) "Failure retention must be a fixed point for '$($case.Name)'; the parser and the normalized-TRX writer both apply it."
+    foreach ($absent in @($case.Absent)) {
+        Assert-True (-not $retained.Contains($absent, [StringComparison]::Ordinal)) "Failure retention leaked '$absent' for '$($case.Name)'."
+    }
+    foreach ($present in @($case.Present)) {
+        Assert-True ($retained.Contains($present, [StringComparison]::Ordinal)) "Failure retention dropped the diagnostic reading '$present' for '$($case.Name)'; artifact-only diagnosis depends on it."
+    }
+}
+
+$retainedGrammar = Get-NervRetainedFailureGrammar
+Assert-True (Test-NervRetainedFailureText $retainedGrammar.Prose) 'The fixed privacy-policy prose must remain a legal retained failure text.'
+$retainedGrammarRejections = @(
+    [pscustomobject]@{ Name = 'unknown field name'; Text = ($retainedGrammar.Prefix + 'stdout=42') },
+    [pscustomobject]@{ Name = 'out-of-alphabet value'; Text = ($retainedGrammar.Prefix + 'actual=Zhang Wei') },
+    [pscustomobject]@{ Name = 'missing field separator'; Text = ($retainedGrammar.Prefix + 'System.Exception') },
+    [pscustomobject]@{ Name = 'empty body'; Text = $retainedGrammar.Prefix },
+    [pscustomobject]@{ Name = 'foreign prefix'; Text = 'Test failed: type=System.Exception' }
+)
+foreach ($rejection in $retainedGrammarRejections) {
+    Assert-True (-not (Test-NervRetainedFailureText $rejection.Text)) "The retained-failure grammar must reject '$($rejection.Name)'."
+}
+
+$retainedDiagnosticValueCases = @(
+    [pscustomobject]@{ Name = 'numeric reading'; Input = 'arrivals=0 attempts=3'; Expected = 'arrivals=0 attempts=3' },
+    [pscustomobject]@{ Name = 'type-shaped dotted identifier'; Input = 'Nerv.IIP.Testing.EventuallyTimeoutException'; Expected = 'Nerv.IIP.Testing.EventuallyTimeoutException' },
+    # Round 2: 'dotted and capitalised' is not a type-name predicate (`Zhang.Wei` satisfies it),
+    # so a dotted name is admitted only when it is exception-shaped or `Assert.`-prefixed.
+    [pscustomobject]@{ Name = 'non-type dotted identifier is digested'; Input = 'Nerv.IIP.Testing.Eventually'; Expected = '<redacted-value:a45210483b3c6258>' },
+    [pscustomobject]@{ Name = 'free text digests whole'; Input = 'Zhang Wei'; Expected = '<redacted-value:5d5f4c7181009832>' },
+    [pscustomobject]@{ Name = 'identifier-glued digits stay digested'; Input = 'WO-20260907-0001'; Expected = '<redacted-value:245142f4d4555a95>' },
+    [pscustomobject]@{ Name = 'field separator cannot survive'; Input = 'a;b'; Expected = '<redacted-value:c8687a08aa5d6ed2>' },
+    [pscustomobject]@{ Name = 'quoted digits stay digested'; Input = 'phone "13800000000" order "20260907"'; Expected = '<redacted-value:34de10e7740b1558>' },
+    [pscustomobject]@{ Name = 'lowercase dotted host stays digested'; Input = 'example.invalid'; Expected = '<redacted-value:26789e2036611e84>' },
+    [pscustomobject]@{ Name = 'lowercase dotted reading survives as key/value'; Input = 'cap.published=3'; Expected = 'cap.published=3' }
+)
+foreach ($case in $retainedDiagnosticValueCases) {
+    Assert-Equal $case.Expected (ConvertTo-NervRetainedDiagnosticValue $case.Input) "Retained diagnostic value reduction changed for '$($case.Name)'."
+}
+Assert-True (-not (ConvertTo-NervRetainedDiagnosticValue 'a;b').Contains(';', [StringComparison]::Ordinal)) 'A retained diagnostic value must never contain the rendered field separator.'
+
+# #3213 round 2. Every case below is a reproduction the independent review ran against the round-1
+# head, where each one shipped its payload verbatim into the retained text. They are pinned here as
+# the alphabet's admission contract: the bare-number class is simultaneously the reading this
+# feature exists to keep and the highest-risk business payload there is, so what separates them is
+# a magnitude bound, and a bound nobody re-checks drifts back.
+$retainedAdmissionCases = @(
+    [pscustomobject]@{ Name = 'phone number'; Input = "Assert.Equal() Failure`nExpected: 13800000000`nActual:   13900000000"; Absent = @('13800000000', '13900000000') },
+    [pscustomobject]@{ Name = 'bank card'; Input = "Assert.Equal() Failure`nExpected: 622202123456789012`nActual:   1"; Absent = @('622202123456789012') },
+    [pscustomobject]@{ Name = 'national id'; Input = "Assert.Equal() Failure`nExpected: 110101199003078888`nActual:   1"; Absent = @('110101199003078888') },
+    [pscustomobject]@{ Name = 'guid subject identifier'; Input = "Assert.Equal() Failure`nExpected: 3f2504e0-4f89-11d3-9a0c-0305e82c3301`nActual:   1"; Absent = @('3f2504e0', '0305e82c3301') },
+    [pscustomobject]@{ Name = 'dotted person name'; Input = "Assert.Equal() Failure`nExpected: Zhang.Wei`nActual:   Li.Ming"; Absent = @('Zhang.Wei', 'Li.Ming') },
+    [pscustomobject]@{ Name = 'salary key/value'; Input = "Assert.Equal() Failure`nExpected: salary=250000`nActual:   1"; Absent = @('250000') },
+    [pscustomobject]@{ Name = 'digits smuggled inside an exception name'; Input = 'Customer110101199003078888Error : boom'; Absent = @('110101199003078888') }
+)
+foreach ($case in $retainedAdmissionCases) {
+    $retained = ConvertTo-NervRetainedFailureText $case.Input
+    Assert-True (Test-NervRetainedFailureText $retained) "Admission case '$($case.Name)' must still satisfy the retained-failure grammar."
+    foreach ($absent in @($case.Absent)) {
+        Assert-True (-not $retained.Contains($absent, [StringComparison]::Ordinal)) "The token alphabet admitted business payload '$absent' for '$($case.Name)'."
+    }
+}
+
+# The admission contract stated as a two-sided token matrix. The left column is what the alphabet
+# must keep or the feature is the trivial "retain nothing" solution it replaced; the right column is
+# what it must refuse or the artifact ships subject identifiers to a public 14-day download.
+$retainedTokenAdmission = @(
+    [pscustomobject]@{ Token = 'System.Exception'; Admitted = $true },
+    [pscustomobject]@{ Token = 'Nerv.IIP.Testing.EventuallyTimeoutException'; Admitted = $true },
+    [pscustomobject]@{ Token = 'EqualException'; Admitted = $true },
+    [pscustomobject]@{ Token = 'Assert.Equal'; Admitted = $true },
+    [pscustomobject]@{ Token = 'observations=7'; Admitted = $true },
+    [pscustomobject]@{ Token = 'arrivals=0'; Admitted = $true },
+    [pscustomobject]@{ Token = 'cap.published=3'; Admitted = $true },
+    [pscustomobject]@{ Token = '00:00:30.0021000'; Admitted = $true },
+    [pscustomobject]@{ Token = '2026'; Admitted = $true },
+    [pscustomobject]@{ Token = '-5'; Admitted = $true },
+    [pscustomobject]@{ Token = '13800000000'; Admitted = $false },
+    [pscustomobject]@{ Token = '622202123456789012'; Admitted = $false },
+    [pscustomobject]@{ Token = '110101199003078888'; Admitted = $false },
+    [pscustomobject]@{ Token = '20260907'; Admitted = $false },
+    [pscustomobject]@{ Token = '12345'; Admitted = $false },
+    [pscustomobject]@{ Token = 'salary=250000'; Admitted = $false },
+    [pscustomobject]@{ Token = '3f2504e0-4f89-11d3-9a0c-0305e82c3301'; Admitted = $false },
+    [pscustomobject]@{ Token = 'Zhang.Wei'; Admitted = $false },
+    [pscustomobject]@{ Token = 'example.invalid'; Admitted = $false },
+    [pscustomobject]@{ Token = 'Nerv.IIP.Business.Mes.WorkOrder'; Admitted = $false },
+    [pscustomobject]@{ Token = 'Customer110101199003078888Error'; Admitted = $false }
+)
+foreach ($admission in $retainedTokenAdmission) {
+    $reduced = ConvertTo-NervRetainedDiagnosticValue $admission.Token
+    if ($admission.Admitted) {
+        Assert-Equal $admission.Token $reduced "Token '$($admission.Token)' must stay readable; digesting it makes artifact-only diagnosis impossible."
+    }
+    else {
+        Assert-True ($reduced -match '^<redacted-value:[0-9a-f]{16}>$') "Token '$($admission.Token)' must not be admitted by the alphabet. Reduced=[$reduced]"
+    }
+}
+
+# `type` used to be written straight from its extractor, so the extractor's capture class rather
+# than the token alphabet decided what could land there, and the two disagreed. These two cases are
+# the discriminating pair: the first is a genuine type name and must survive, the second is the same
+# extractor capture carrying a digit run and must not.
+Assert-True ((ConvertTo-NervRetainedFailureText 'System.InvalidOperationException : boom').Contains('type=System.InvalidOperationException', [StringComparison]::Ordinal)) `
+    'A genuine exception type name must remain readable in the type field.'
+# Both halves are load-bearing. Asserting only "the digits are gone" has zero discriminating power:
+# restore the bypass and the final grammar re-validation rejects the unreduced render and falls back
+# to the fixed prose, which also has no digits — an adjacent same-type guard absorbing the mutation.
+# The `type=<redacted-value:…>` half is what fails when `type` skips the reducer, because the prose
+# fallback carries no field at all. Verified by mutation M4.
+$retainedSmuggledType = ConvertTo-NervRetainedFailureText 'Customer110101199003078888Error : boom'
+Assert-True (-not $retainedSmuggledType.Contains('110101199003078888', [StringComparison]::Ordinal)) `
+    'The type field must go through the same value reducer as every other field.'
+Assert-True ($retainedSmuggledType -match 'type=<redacted-value:[0-9a-f]{16}>$') `
+    "A type the alphabet refuses must be reduced to a digest in place, not degrade the whole record to the fixed prose. Actual=[$retainedSmuggledType]" 
+
+# ⚠️ Registered, deliberate, NOT a hole. An exception *type name* is a compile-time source
+# identifier and therefore cannot carry run-time data, so its exposure surface is identically the
+# exposure surface of the source itself: retaining it adds no new exposure whether the repository is
+# public or private. The argument deliberately does not appeal to current repository visibility — a
+# reason that expires when a setting changes is a reason nobody re-derives in time.
+#
+# This holds only for an identifier that is *nothing but* an identifier. The one exception —
+# a sensitive string spelled into the identifier itself — is removed by the long-digit-run guard in
+# `Get-NervRetainedFailureGrammar`. The two are a pair: delete that guard and this premise becomes
+# false. The case below is asserted alongside it for that reason.
+Assert-True ((ConvertTo-NervRetainedFailureText 'ZhangWeiSecretException : boom').Contains('type=ZhangWeiSecretException', [StringComparison]::Ordinal)) `
+    'Exception type names are retained by design: a compile-time source identifier cannot carry run-time data, so its exposure surface is identically the source''s. Change this only by changing the documented trade-off.'
+Assert-True (-not (ConvertTo-NervRetainedFailureText 'Customer110101199003078888Error : boom').Contains('110101199003078888', [StringComparison]::Ordinal)) `
+    'The long-digit-run guard is the other half of the type-name retention: without it a type name can spell a sensitive string and stop being "only source".'
+
+# Fixed-point acceptance, stated honestly. A raw message that imitates the prefix DOES pass through
+# verbatim when it is entirely inside the alphabet — and that is sound, because what it can carry is
+# then exactly what the grammar would have emitted anyway. The load-bearing claim is therefore not
+# "imitation cannot pass" but "what an imitation can carry is bounded by the alphabet", so the case
+# that must be red is one whose payload is inside the *old* alphabet and outside the current one.
+$retainedPrefixImitation = 'Test failed; retained diagnostics: expected=13800000000 622202123456789012 Zhang.Wei'
+$retainedPrefixImitationResult = ConvertTo-NervRetainedFailureText $retainedPrefixImitation
+foreach ($absent in @('13800000000', '622202123456789012', 'Zhang.Wei')) {
+    Assert-True (-not $retainedPrefixImitationResult.Contains($absent, [StringComparison]::Ordinal)) `
+        "A prefix-imitating raw message carried '$absent' through the fixed-point check."
+}
+$retainedPrefixLegal = 'Test failed; retained diagnostics: expected=3; actual=0'
+Assert-Equal $retainedPrefixLegal (ConvertTo-NervRetainedFailureText $retainedPrefixLegal) `
+    'A text that is wholly inside the alphabet must be accepted verbatim; that is what makes retention a fixed point.'
+
+# The diagnostic readings that survive are narrower than "the failure message". These assertions
+# pin the *actual* reach so the PR narrative cannot drift wider than the implementation.
+$retainedReachCases = @(
+    [pscustomobject]@{ Name = 'TestTimeout operation text is digested, not readable'; Input = "Nerv.IIP.Testing.TestTimeoutException : Operation 'MES arrival projection' timed out after 00:00:30.0000000."; Absent = @('MES arrival projection'); Present = @('type=Nerv.IIP.Testing.TestTimeoutException', 'elapsed=00:00:30.0000000') },
+    [pscustomobject]@{ Name = 'Assert.Single count is not extracted'; Input = 'Assert.Single() Failure: The collection contained 3 items'; Absent = @('collection contained'); Present = @('type=Assert.Single') },
+    [pscustomobject]@{ Name = 'plain exception message is not extracted'; Input = 'System.InvalidOperationException : The projection row was never written'; Absent = @('projection row was never written'); Present = @('type=System.InvalidOperationException') },
+    # ⚠️ #3195 family A constraint. Instrumentation appended to a TestTimeout message is dropped
+    # whole; the same readings survive only inside `Eventually`'s `Last observation:`. #3213 does
+    # not make family A's instrumentation readable by itself — family A must shape its output into
+    # a captured field.
+    [pscustomobject]@{ Name = '#3195 instrumentation appended to TestTimeout is dropped'; Input = "Nerv.IIP.Testing.TestTimeoutException : Operation 'MES arrival' timed out after 00:00:30.0000000. publishStartedAt=12.5 consumeObservedAt=42.5"; Absent = @('publishStartedAt', 'consumeObservedAt'); Present = @('elapsed=00:00:30.0000000') },
+    [pscustomobject]@{ Name = '#3195 instrumentation inside Last observation survives'; Input = "Nerv.IIP.Testing.EventuallyTimeoutException : Condition 'c' was not satisfied after 00:00:30.0000000 (5 observations). Last observation: publishStartedAt=12.5 consumeObservedAt=42.5"; Absent = @(); Present = @('publishStartedAt=12.5', 'consumeObservedAt=42.5', 'observations=5') }
+)
+foreach ($case in $retainedReachCases) {
+    $retained = ConvertTo-NervRetainedFailureText $case.Input
+    Assert-True (Test-NervRetainedFailureText $retained) "Reach case '$($case.Name)' must satisfy the retained-failure grammar."
+    foreach ($absent in @($case.Absent)) {
+        Assert-True (-not $retained.Contains($absent, [StringComparison]::Ordinal)) "Reach case '$($case.Name)' unexpectedly retained '$absent'."
+    }
+    foreach ($present in @($case.Present)) {
+        Assert-True ($retained.Contains($present, [StringComparison]::Ordinal)) "Reach case '$($case.Name)' dropped '$present'."
+    }
+}
 
 $redactionFailureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-test-evidence-redaction-contract-$([Guid]::NewGuid().ToString('N'))"
 try {
@@ -447,6 +672,33 @@ internal sealed class QuoteScannerFixture
         Assert-Equal 'backend/tests/QuoteScannerFixture.cs' $sourceQuoteAssignments[$index].sourcePath 'The isolated source quote fixture path must remain stable.'
         Assert-Equal ($index + 1) $sourceQuoteAssignments[$index].sourceOrdinal 'The isolated source quote fixture ordinal must remain stable.'
         Assert-Equal $expectedSourceTexts[$index] $sourceQuoteAssignments[$index].sourceText 'The isolated source quote fixture text must remain byte-stable after whitespace normalization.'
+    }
+
+    # #4172: Gateway tests have the same source registration obligation as service tests.
+    # Scan both gateways, while excluding a production file under that same root.
+    $gatewaySourceFixtureRoot = Join-Path $sourceQuoteFixtureRoot 'gateway-scope'
+    $gatewaySourcePaths = @(
+        'backend/gateway/BusinessGateway/tests/Nerv.IIP.BusinessGateway.Web.Tests/SkipFixture.cs',
+        'backend/gateway/PlatformGateway/tests/Nerv.IIP.PlatformGateway.Web.Tests/SkipFixture.cs'
+    )
+    foreach ($fixturePath in $gatewaySourcePaths + @('backend/gateway/PlatformGateway/src/SkipFixture.cs')) {
+        $fixtureFile = Join-Path $gatewaySourceFixtureRoot $fixturePath
+        [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($fixtureFile)) | Out-Null
+        [IO.File]::WriteAllText($fixtureFile, 'Skip = "gateway source fixture";', [Text.UTF8Encoding]::new($false))
+    }
+    $gatewaySourceAssignments = @(Get-NervSourceSkipAssignments -RepoRoot $gatewaySourceFixtureRoot)
+    Assert-Equal 2 $gatewaySourceAssignments.Count 'Gateway discovery must include both test sources and exclude the production source.'
+    for ($index = 0; $index -lt $gatewaySourcePaths.Count; $index++) {
+        Assert-Equal $gatewaySourcePaths[$index] $gatewaySourceAssignments[$index].sourcePath 'Gateway discovery must return the exact test source.'
+        Assert-Equal 1 $gatewaySourceAssignments[$index].sourceOrdinal 'Each Gateway fixture has one Skip assignment.'
+        Assert-Equal 'Skip = "gateway source fixture";' $gatewaySourceAssignments[$index].sourceText 'Gateway Skip text must reach source registration unchanged.'
+    }
+    $unregisteredGatewayPolicy = [pscustomobject]@{ lanes = @(); sources = @(); rules = @() }
+    $gatewayRegistrationViolations = @(Test-NervTestEvidencePolicy -Policy $unregisteredGatewayPolicy -RepoRoot $gatewaySourceFixtureRoot -AsOfUtc ([DateTimeOffset]::UtcNow))
+    Assert-Equal 2 $gatewayRegistrationViolations.Count 'Each unregistered Gateway test source must be rejected.'
+    for ($index = 0; $index -lt $gatewaySourcePaths.Count; $index++) {
+        Assert-Equal 'unregistered-skip' $gatewayRegistrationViolations[$index].code 'Missing Gateway source registration must fail closed.'
+        Assert-Equal "$($gatewaySourcePaths[$index]):1" $gatewayRegistrationViolations[$index].id 'The registration failure must identify its Gateway source.'
     }
 }
 finally {
@@ -1253,19 +1505,112 @@ $quarantineWithoutIssue.responsibilityIssue = ''
 Assert-True (-not (Test-NervQuarantineRuleMetadata -Rule $quarantineWithoutIssue -AsOfUtc ([DateTimeOffset]'2026-08-04T00:00:00Z'))) 'Quarantine metadata must require a responsibility issue.'
 
 $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
-# #1561 把 InventoryDirectoryPostgresTests 的两条用例拆成两个 skip 理由（Docker 夹具 / external），
-# 因此已登记的 source 从 41 增至 42。
-Assert-Equal 42 $liveAssignments.Count 'The approved initial source skip inventory changed; classify the diff explicitly.'
+# #1561 把 InventoryDirectoryPostgresTests 的两条目录用例拆成两个 skip 理由（Docker 夹具 / external），
+# #2228 再把线边库存 provider proof 从目录 external identity 中拆出，因此已登记的 source 从 42 增至 43；
+# #2809 注册 Quality 返工回执真实 PostgreSQL + Redis/CAP transport proof，增至 45；#3010 注册 MES 对应 producer proof，增至 46；
+# #3000 注册发布投影回填的 Redis/CAP transport proof，增至 47；
+# #2967 注册 Scheduling AssetUnavailable v2 的 PostgreSQL + Redis/CAP transport proof，增至 48；
+# #2966 注册 MES 停机事件 v2 契约拒收/poison 重放的真实 PostgreSQL + Redis/CAP proof，增至 49。
+# #2968 注册 Maintenance v2 工单入口的目录精确命中/双发同事务/v1 零漂移真实 PostgreSQL proof，增至 50。
+# NERV-2121 注册采购收货路径互斥 Acceptance PostgreSQL proof，source 从 51 增至 52。
+# #3305 注册 WCS 回调宽度 proof（failure_message 改无界后，物理列类型与越界 failure_code 的 22001
+# 只有真库分得开，InMemory provider 对两者都无感），增至 53。
+# #3360 注册信封字段长度闸的真库 proof（超界键在真 PostgreSQL 上是 22001 逃逸成 poison 还是落成
+# 可重放死信，只有真库分得开）。⭐ 这一条**不是新增了一次跳过，而是让一次一直存在的跳过第一次变得可见**：
+# 那两条用例原先是裸 [Fact] 加方法体内 return，无库时被**计为通过**，既不产生 Skip 也就不触发本清单；
+# 修掉假通过后登记义务才浮出来。增至 54。
+# #3222 注册「真实 Redis 订阅连接/超时异常接入既有恢复路径」的 PostgreSQL + Redis/CAP proof
+# （真 SubscribeAsync 的 RedisConnectionException / RedisTimeoutException 只有真 Redis 分得开），增至 55。
+# #3278 / S6 注册凭证号取号的真库 proof：换分配器短号后「同一来源单据重复触发只记一张、
+# 且重放拿回同一个号」同时依赖取号回放与 (org, env, source_type, source_no) 的 partial unique index，
+# 而 EF InMemory **看不见唯一索引**、重复行只会多一条不会报错 ⇒ 只有真库分得开。
+# ⭐ 这一条**刻意不蹭** erp-cost-accounting 的 skip 理由（那句写着 cost-accounting，而本类测的是取号），
+# 蹭理由等于把一条假理由固化进证据记录；本仓 canonical 是一类一属性一规则。#3657 的
+# Notification Andon PostgreSQL + CAP 用例登记后增至 57；#3684 登记 ERP 物料供应 ETA 的 PostgreSQL
+# 查询翻译证据后增至 58。
+# #3739 登记死信列表新增谓词（failureCode / 死信时间窗）的真库证据，增至 60。这三段谓词由 EF
+# 翻译成 SQL 在库里执行，而 InMemory store 是**另一份**进程内 LINQ 实现：把
+# PersistentIntegrationEventDeadLetterStore 的三段过滤整块删掉，InMemory 侧断言全绿（实测），
+# 所以那侧的绿证不到这侧。⭐ 登记两条而不是一条，是因为 Maintenance 注册的是自己的 store 副本，
+# 与共享实现**不同形**（它的 eventType 谓词多一段 EventClrType，见 #3758）——
+# 「照抄了 canonical」在这里是待核主张，不能让一条用例替两份实现作证。
+# #3846 登记 IAM 生产引导的真库证据（非 Development 启动时只补缺管理员/默认组织/环境、
+# 口令策略与重启不覆盖，只有真库上的 Production 启动分得开），增至 61。
+# #3924 登记 IAM 成员账号目录的真库证据：WebApplicationFactory 默认走 InMemory 服务，不经过
+# UserRepository.ListMembersAsync，组织/环境成员关系子查询只有真库才执行（删掉组织或环境谓词，
+# 本机实测 InMemory 侧全绿、PostgreSQL 用例红）。⭐ 刻意不蹭 IAM 生产引导那条理由，一类一属性一规则。
+# MasterData 员工账号唯一冲突的真库用例复用既有 masterdata-postgres 属性与理由，不新增 source。增至 62。
+# #2140 新增独立 RealRedisCacheFact source（5 条真实 Redis ProviderBehavior 用例，一属性一规则），62 + 1 = 63。
+# #4172 新增真实双 PlatformGateway HTTP/Redis source，3 条用例归属 redis-cap；63 + 1 = 64。
+# #4357 WMS 与 #4355 Maintenance 各新增独立 PostgreSQL source；64 + 1 + 1 = 66。
+Assert-Equal 66 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)
-Assert-Equal 0 @($liveViolations).Count 'The committed live skip policy must be valid.'
+# #3424：失败消息必须把违例逐条摊开。原先只说「must be valid」，而这条断言恰好是
+# 「只加了 testIdentities、忘了同步 expectedRuntimeTestCount」唯一会报的地方 —— 违例对象里
+# 那句 'Rule must freeze a non-empty unique test identity set and exact expectedRuntimeTestCount.'
+# 已经说清了要改两个字段，却被聚合计数吃掉了，于是本机红了也看不出该动哪一行。
+Assert-Equal 0 @($liveViolations).Count ("The committed live skip policy must be valid; violations: " + (@($liveViolations | ForEach-Object { "$($_.code)/$($_.id): $($_.message)" }) -join ' | '))
+$industrialTelemetryPostgresRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'industrialtelemetry-postgres', [StringComparison]::Ordinal) })
+Assert-Equal 1 $industrialTelemetryPostgresRules.Count 'The IndustrialTelemetry PostgreSQL proofs must have one evidence policy rule.'
+Assert-Equal 19 @($industrialTelemetryPostgresRules[0].testIdentities).Count 'The IndustrialTelemetry PostgreSQL policy rule must freeze its nineteen governed identities.'
+$industrialTelemetryHistoricalFactIdentity = 'Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeHistoricalFactPostgresTests.Prior_schema_fact_survives_up_down_up_without_fabricated_historical_dimensions_on_postgres'
+Assert-True (@($industrialTelemetryPostgresRules[0].testIdentities | Where-Object { [string]::Equals([string]$_, $industrialTelemetryHistoricalFactIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The IndustrialTelemetry policy rule must own the historical OEE fact migration identity exactly once.'
+Assert-True ($industrialTelemetryHistoricalFactIdentity -cmatch [string]$industrialTelemetryPostgresRules[0].testPattern) 'The IndustrialTelemetry policy pattern must match the historical OEE fact migration identity.'
+$mesCollaborationPostgresIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesCollaborationPostgresTests.Reportable_scope_matches_a_registered_participant_on_postgres'
+$mesCollaborationPostgresSkip = @([pscustomobject]@{
+    lane = 'backend-shard-3'
+    outcome = 'skipped'
+    testName = $mesCollaborationPostgresIdentity
+    skipReason = 'Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL MES candidate proof.'
+})
+$mesCollaborationPostgresViolations = @(Get-NervTestEvidenceViolations `
+    -Records $mesCollaborationPostgresSkip `
+    -Policy $livePolicy `
+    -SelectedLanes @('backend-shard-3') `
+    -RunnerOs 'Linux')
+Assert-Equal 0 $mesCollaborationPostgresViolations.Count 'The MES collaboration PostgreSQL runtime skip must match exactly one applicable evidence-policy rule in a backend shard.'
+Assert-Equal 'mes-production-candidate' $mesCollaborationPostgresSkip[0].skipPolicyId 'The MES collaboration PostgreSQL runtime skip must be owned by the MES production-candidate rule.'
+$operationTaskClaimPostgresIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.OperationTaskClaimPostgresTests.Concurrent_claims_persist_one_owner_participant_and_receipt_and_reject_the_loser_on_postgres'
+$operationTaskClaimPostgresSkip = @([pscustomobject]@{
+    lane = 'backend-shard-3'
+    outcome = 'skipped'
+    testName = $operationTaskClaimPostgresIdentity
+    skipReason = 'Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL MES candidate proof.'
+})
+$operationTaskClaimPostgresViolations = @(Get-NervTestEvidenceViolations `
+    -Records $operationTaskClaimPostgresSkip `
+    -Policy $livePolicy `
+    -SelectedLanes @('backend-shard-3') `
+    -RunnerOs 'Linux')
+Assert-Equal 0 $operationTaskClaimPostgresViolations.Count 'The operation-task claim PostgreSQL runtime skip must match exactly one applicable evidence-policy rule in a backend shard.'
+Assert-Equal 'mes-production-candidate' $operationTaskClaimPostgresSkip[0].skipPolicyId 'The operation-task claim PostgreSQL runtime skip must be owned by the MES production-candidate rule.'
 $redisCapLanes = @($livePolicy.lanes | Where-Object { [string]::Equals([string]$_.namePattern, '^redis-cap(?:-shard-[1-9][0-9]*)?$', [StringComparison]::Ordinal) -and [bool]$_.realDependency })
 Assert-Equal 1 $redisCapLanes.Count 'MAN-661 must register exactly one real-dependency Redis/CAP evidence lane pattern.'
 $demandPlanningRedisRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'demandplanning-postgres-redis', [StringComparison]::Ordinal) })
 Assert-Equal 1 $demandPlanningRedisRules.Count 'The DemandPlanning Redis/CAP proofs must have one evidence policy rule.'
 Assert-True ([string]::Equals([string]$demandPlanningRedisRules[0].requiredLane, 'redis-cap', [StringComparison]::Ordinal)) 'The DemandPlanning Redis/CAP proofs must be owned by redis-cap rather than full-chain.'
 Assert-Equal 2 @($demandPlanningRedisRules[0].testIdentities).Count 'The Redis/CAP policy rule must freeze exactly the duplicate/ordering and fallback-scan identities.'
+$mesMaterialSubstituteIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests.Substitute_snapshot_migration_and_cross_scope_readback_hold_on_postgres'
+$mesProductionCandidateRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'mes-production-candidate', [StringComparison]::Ordinal) })
+Assert-Equal 1 $mesProductionCandidateRules.Count 'The MES production candidate PostgreSQL proofs must have one evidence policy rule.'
+Assert-Equal 66 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its sixty-six governed PostgreSQL identities.'
+# #4484 增加任务路线冻结和未知来源迁移两条 PostgreSQL 回归，R1 再补拆分/合并继承与来源冲突两条，共 66 条。
+# #3720 增加停机开始、停机恢复与工序生命周期事实的 3 条 PostgreSQL 回归；含 #4033 工单急单与优先级持久化证明，共 60 条。
+# #3469 增加一次合法资本化与冲销交错的 PostgreSQL 回归，共 56 条。
+# #3129 把 52 抬到 55：下达命令与 #3119 补下达两条路径各自把报工按 (工单, 工序) 分组并用
+# SUM(CASE WHEN reversed_report_no IS NULL ...) 排除冲销行，分组键与条件求和都必须由真实 provider 翻译；
+# 第三条钉「一条报工都没有的工序落 0 而不是 null」。三条都是 env-gated skip，
+# 不登记时 collect-test-evidence 会报 'Runtime skip matched 0 applicable rules'（本票在 CI 上先红过一次）。
+$downtimeReasonCodeMigrationIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.DowntimeReasonCodeMigrationPostgresTests.Legacy_reasons_migrate_once_across_all_scopes_and_repeat_stably_on_postgres'
+Assert-True (@($mesProductionCandidateRules[0].testIdentities | Where-Object { [string]::Equals([string]$_, $downtimeReasonCodeMigrationIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES production candidate policy rule must own the downtime-reason migration identity exactly once.'
+Assert-True ($downtimeReasonCodeMigrationIdentity -cmatch [string]$mesProductionCandidateRules[0].testPattern) 'The MES production candidate policy pattern must match the downtime-reason migration identity.'
+$mesDowntimeReadFaceIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesDowntimeReadFacePostgresTests.Reason_summary_settles_recovered_and_ongoing_minutes_and_ranks_by_duration_then_code'
+Assert-True (@($mesProductionCandidateRules[0].testIdentities | Where-Object { [string]::Equals([string]$_, $mesDowntimeReadFaceIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES production candidate policy rule must own the downtime read-face summary identity exactly once.'
+Assert-True ($mesDowntimeReadFaceIdentity -cmatch [string]$mesProductionCandidateRules[0].testPattern) 'The MES production candidate policy pattern must match the downtime read-face identity.'
+Assert-True (@($mesProductionCandidateRules[0].testIdentities | Where-Object { [string]::Equals([string]$_, $mesMaterialSubstituteIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The MES production candidate policy rule must own the material-substitute snapshot identity exactly once.'
+Assert-True ($mesMaterialSubstituteIdentity -cmatch [string]$mesProductionCandidateRules[0].testPattern) 'The MES production candidate policy pattern must match the material-substitute snapshot identity.'
 $mesCapPostgresRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'mes-cap-postgres', [StringComparison]::Ordinal) })
 Assert-Equal 1 $mesCapPostgresRules.Count 'The MES CAP PostgreSQL proofs must have one evidence policy rule.'
 $mesSaveBoundaryIdentities = @(
@@ -1280,7 +1625,7 @@ $mesSaveBoundaryIdentities = @(
     'Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests.Stock_movement_posting_failed_unknown_prefix_early_return_persists_only_inbox'
 )
 $mesCapIdentitySet = [Collections.Generic.HashSet[string]]::new([string[]]@($mesCapPostgresRules[0].testIdentities), [StringComparer]::Ordinal)
-Assert-Equal 12 @($mesCapPostgresRules[0].testIdentities).Count 'The MES CAP policy rule must freeze the existing three subscription proofs and all nine save-boundary proofs.'
+Assert-Equal 19 @($mesCapPostgresRules[0].testIdentities).Count 'MES CAP 策略必须冻结既有三项订阅证明、九项保存边界证明、六项 #2966 asset-unavailable v1/v2 inbox 证明及 #3646 实际金额入库证明。'
 Assert-True (@($mesSaveBoundaryIdentities | Where-Object { -not $mesCapIdentitySet.Contains($_) }).Count -eq 0) 'The MES CAP policy rule must own all nine save-boundary identities.'
 Assert-True (@($mesSaveBoundaryIdentities | Where-Object { $_ -cnotmatch [string]$mesCapPostgresRules[0].testPattern }).Count -eq 0) 'The MES CAP policy pattern must match every save-boundary identity.'
 $brokenClosure = ($livePolicy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100)
@@ -1759,9 +2104,17 @@ try {
     $normalizedTrx = @(Get-ChildItem (Join-Path $artifactRoot 'trx') -Filter '*.trx')
     Assert-True ($normalizedTrx.Count -gt 0) 'Normalized TRX artifact is missing.'
     $retainedText = [string]::Join("`n", @(Get-ChildItem $artifactRoot -File -Recurse | ForEach-Object { Get-Content $_.FullName -Raw }))
-    foreach ($sentinel in @('user:password', 'fixture-bearer-value', 'fixture-client-secret', 'Fixture Customer', '13800000000', 'fixture@example.invalid', 'Fixture Address', 'quoted-password', 'quoted-auth', 'pem-secret', 'request body must never be retained')) {
+    foreach ($sentinel in @('user:password', 'fixture-bearer-value', 'fixture-client-secret', 'Fixture Customer', '13800000000', 'fixture@example.invalid', 'example.invalid', 'Fixture Address', 'quoted-password', 'quoted-auth', 'pem-secret', 'request body must never be retained')) {
         Assert-True (-not $retainedText.Contains($sentinel)) "Retained evidence leaked sentinel '$sentinel'."
     }
+    # #3213 second direction. The sentinel sweep above alone is satisfied by retaining nothing,
+    # which is exactly the policy this replaced; the fixture's failure message is therefore shaped
+    # like a real `Eventually` timeout carrying the same sentinels, and the readings it should
+    # survive with are asserted against the same written artifacts.
+    foreach ($reading in @('type=Nerv.IIP.Testing.EventuallyTimeoutException', 'observations=7', 'elapsed=00:00:30.0021000', 'arrivals=0', 'EqualException')) {
+        Assert-True ($retainedText.Contains($reading, [StringComparison]::Ordinal)) "Retained evidence dropped the diagnostic reading '$reading'; artifact-only diagnosis depends on it."
+    }
+    Assert-True (-not $retainedText.Contains('intentionally omitted', [StringComparison]::Ordinal)) 'A failure message carrying recognized diagnostic fields must not fall back to the fixed prose.'
     Assert-True ($summary.redactionCount -gt 0) 'Summary must count privacy redactions.'
     $roundTripRun = $run.PSObject.Copy()
     $roundTripParseResult = Read-NervTrxResults -Path @($normalizedTrx.FullName) -RunMetadata $roundTripRun
@@ -2083,7 +2436,7 @@ $schemalessSummary = New-NervTestEvidenceSummary -Records $compatibleRecords -Ru
 Assert-Equal 'unsupported-baseline-schema-version' $schemalessSummary.baseline.unavailableReason 'A baseline with no schemaVersion at all must fail closed, not compare.'
 
 # Non-integer `schemaVersion` shapes a hand-edited baseline can hold. Why the guard uses TryParse is in
-# docs/architecture/test-evidence-governance.md; what matters *here* is which rows are load-bearing:
+# docs/reports/audits/test-evidence-governance-evolution-2026-08.md; what matters *here* is which rows are load-bearing:
 #   guards  — `non-numeric-text`, `array-value`, `fractional`, `boolean-true` each go red if the
 #             TryParse is reverted to `[int]`. Deleting one silently removes a regression guard.
 #   coverage — `json-null` (and the schemaless case above) reject identically under both spellings, so
@@ -2634,7 +2987,6 @@ $frontendPackage = Get-Content (Join-Path $repoRoot 'frontend/package.json') -Ra
 $compatibilitySource = Get-Content (Join-Path $repoRoot 'scripts/check-script-compatibility.ps1') -Raw
 $reviewWiringGaps = [Collections.Generic.List[string]]::new()
 if (-not $collectorSource.Contains('#   Category: check, generate', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('collector composite category') }
-if (-not $workflow.Contains('- name: Run test evidence contract tests', [StringComparison]::Ordinal) -or -not $workflow.Contains('run: ./scripts/tests/test-evidence.Tests.ps1', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('Script Governance CI runner') }
 if (-not $compatibilitySource.Contains('scripts/tests/test-evidence.Tests.ps1', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('compat-fast runner') }
 if ($workflow.Contains('-HeadBranch ${{ github.head_ref || github.ref_name }}', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('direct HeadBranch expression interpolation') }
 if (-not $workflow.Contains('HEAD_BRANCH: ${{ github.head_ref || github.ref_name }}', [StringComparison]::Ordinal) -or -not $workflow.Contains('-HeadBranch $env:HEAD_BRANCH', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('HeadBranch environment transport') }
@@ -3035,105 +3387,6 @@ finally {
 }
 Assert-True (-not (Test-Path $ciFixtureRoot)) 'CI budget fixtures must be cleaned up.'
 
-$governanceDocPath = Join-Path $repoRoot 'docs/architecture/test-evidence-governance.md'
-Assert-True (Test-Path $governanceDocPath) 'Test evidence governance document is missing.'
-$governanceDoc = Get-Content $governanceDocPath -Raw
-foreach ($requiredText in @(
-    'optional', 'environment-gated', 'quarantined',
-    'unregistered-skip', 'illegal-quarantine', 'zero-execution',
-    'backend-shard-1', 'MAN-669', 'recovered-after-rerun', 'report-only',
-    'continue-on-error', 'Nerv-IIP Platform CI/Test Governance', 'MAN-663',
-    'selectedLaneResults', 'incompatible-granularity-or-duration-metric', 'single-lane collector',
-    '2000-01-01T00:00:00Z', 'Actions job log',
-    'pwsh scripts/generate-test-evidence-baseline.ps1 -EvidenceRoot artifacts/test-evidence -OutputPath scripts/test-evidence-baseline.json',
-    'raw TRX', '30819675007', '91706113150', '9dafb512c992b240222c8d9b5ada43e4bfc8ac3d',
-    # #1507. The operator contract has to keep saying which of the two things it governs, or the
-    # boundary decays back into "one file, two purposes" the next time someone adds a gate.
-    'Timing data is a cache, not a governed asset',
-    'assembly-not-in-baseline', 'ambiguous-assembly-in-baseline', 'no-compatible-assembly',
-    'timing-assembly-missing', 'timing-source-unavailable',
-    'scripts/update-backend-test-shard-timings.ps1', 'scripts/report-backend-test-shard-balance.ps1',
-    'There are no longer any mandatory refresh triggers'
-)) {
-    Assert-True ($governanceDoc.Contains($requiredText)) "Governance document is missing '$requiredText'."
-}
-foreach ($registeredScriptPath in @(
-    'update-backend-test-shard-timings.ps1', 'report-backend-test-shard-balance.ps1', 'scripts/lib/BackendTestShardTimings.ps1'
-)) {
-    Assert-True ((Get-Content (Join-Path $repoRoot 'docs/architecture/script-automation-governance.md') -Raw).Contains($registeredScriptPath)) "Script governance registry is missing '$registeredScriptPath'."
-}
-$scriptGovernanceDoc = Get-Content (Join-Path $repoRoot 'docs/architecture/script-automation-governance.md') -Raw
-foreach ($registeredPath in @(
-    'collect-test-evidence.ps1',
-    'generate-test-evidence-baseline.ps1',
-    'scripts/lib/TestEvidence.ps1',
-    'scripts/lib/TestEvidencePolicy.ps1',
-    'scripts/lib/TestEvidencePrivacy.ps1',
-    'scripts/lib/TestEvidenceParsing.ps1',
-    'scripts/lib/TestEvidenceArtifacts.ps1',
-    'scripts/lib/TestEvidenceProvenance.ps1',
-    'scripts/lib/TestEvidenceBaseline.ps1',
-    'scripts/tests/test-evidence.Tests.ps1'
-)) {
-    Assert-True ($scriptGovernanceDoc.Contains($registeredPath)) "Script governance registry is missing '$registeredPath'."
-}
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidencePolicy.ps1` | `check` library | 已受治理 |',
-    [StringComparison]::Ordinal)) `
-    'Script governance registry must retain the TestEvidencePolicy.ps1 migration row.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidencePrivacy.ps1` | `check` library | 已受治理 |',
-    [StringComparison]::Ordinal)) `
-    'Script governance registry must retain the TestEvidencePrivacy.ps1 migration row.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidenceParsing.ps1` | `check` library | 已受治理 |',
-    [StringComparison]::Ordinal)) `
-    'Script governance registry must retain the TestEvidenceParsing.ps1 migration row.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidenceArtifacts.ps1` | `check` library | 已受治理 |',
-    [StringComparison]::Ordinal)) `
-    'Script governance registry must retain the TestEvidenceArtifacts.ps1 migration row.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidenceBaseline.ps1` | `check` library | 已受治理 |',
-    [StringComparison]::Ordinal)) `
-    'Script governance registry must retain the TestEvidenceBaseline.ps1 migration row.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidenceProvenance.ps1` | `check` library | 已受治理 |',
-    [StringComparison]::Ordinal)) `
-    'Script governance registry must retain the TestEvidenceProvenance.ps1 migration row.'
-Assert-True ($scriptGovernanceDoc.Contains('### 八份收口声明', [StringComparison]::Ordinal)) `
-    'Script governance must count all eight executable ordinal closure declarations.'
-Assert-True ($scriptGovernanceDoc.Contains('**八份声明的强度上界怎么读**', [StringComparison]::Ordinal)) `
-    'Script governance must keep the closeout declaration count aligned in its strength-bound heading.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidence.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
-    [StringComparison]::Ordinal)) `
-    'Script governance must document the zero-finding, zero-exemption facade ordinal declaration.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidencePolicy.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
-    [StringComparison]::Ordinal)) `
-    'Script governance must document the zero-finding, zero-exemption Policy ordinal declaration.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidencePrivacy.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
-    [StringComparison]::Ordinal)) `
-    'Script governance must document the zero-finding, zero-exemption Privacy ordinal declaration.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidenceParsing.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
-    [StringComparison]::Ordinal)) `
-    'Script governance must document the zero-finding, zero-exemption Parsing ordinal declaration.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidenceArtifacts.ps1` | 全文件按上述扫描面**零发现**，具名豁免 **1 条**：`New-NervTestEvidenceSummary` 里 `Group-Object { Get-NervRetainedSkipReason $_ }`',
-    [StringComparison]::Ordinal)) `
-    'Script governance must document the single exact Artifacts ordinal exception.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidenceBaseline.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
-    [StringComparison]::Ordinal)) `
-    'Script governance must document the zero-finding, zero-exemption Baseline ordinal declaration.'
-Assert-True ($scriptGovernanceDoc.Contains(
-    '| `scripts/lib/TestEvidenceProvenance.ps1` | 全文件按上述扫描面**零发现**，**零豁免**。 | `scripts/tests/test-evidence.Tests.ps1` |',
-    [StringComparison]::Ordinal)) `
-    'Script governance must document the zero-finding, zero-exemption Provenance ordinal declaration.'
-
 # ---------------------------------------------------------------------------------------------
 # Get-NervOrdinalRankedTop decides the *content and order* of summary.json's slowestAssemblies and
 # slowestTests, which are retained artifacts. Until #1509 round 4 it had no behavioural coverage at
@@ -3293,7 +3546,7 @@ foreach ($exceptionKey in @($artifactsEvidenceSweep.ExceptionHits.Keys)) {
 # Discrimination for the scan face itself. Without this the sweep passing means only "no findings",
 # which is equally true of a scanner that reports nothing. Each covered axis gets a source that must
 # be reported; each documented blind spot gets a source that must *not* be, which is what stops the
-# blind-spot list in docs/architecture/script-automation-governance.md from being aspirational.
+# blind-spot list in scripts/lib/OrdinalComparisonContract.ps1 from being aspirational.
 $sweepProbeRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-ordinal-sweep-probe-{0}" -f [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $sweepProbeRoot -Force | Out-Null
 try {

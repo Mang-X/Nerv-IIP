@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
@@ -11,6 +12,19 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 /// </summary>
 public sealed class BusinessMesAcceptedReceiptClientTests
 {
+    [Fact]
+    public async Task Work_order_reads_preserve_mes_source_references_and_detail_completed_quantity()
+    {
+        const string row = """{"workOrderId":"WO-A","skuId":"SKU-A","quantity":10,"completedQuantity":3.25,"status":"started","readinessStatus":"Ready","blockingReasons":[],"operationTasks":[],"dueUtc":"2026-10-02T08:00:00Z","sourcePlanReference":{"sourceSystem":"DemandPlanning","sourceDocumentType":"PlanningSuggestion","sourceDocumentId":"SUG-A","sourceDemandReference":"SO-A","sourceDemandReferences":["SO-A","SO-B"]}}""";
+        var detail = await ClientReturning("{\"data\":" + row + "}").GetWorkOrderDetailAsync("token", "WO-A", new("org-a", "env-dev"), CancellationToken.None);
+        var list = await ClientReturning("{\"data\":{\"items\":[" + row + "],\"total\":1}}").ListWorkOrdersAsync("token", new("org-a", "env-dev"), CancellationToken.None);
+        Assert.Equal(3.25m, detail.CompletedQuantity);
+        Assert.Equal(detail.CompletedQuantity, Assert.Single(list.Items).CompletedQuantity);
+        Assert.Equal(new[] { "SO-A", "SO-B" }, detail.SourcePlanReference!.SourceDemandReferences);
+        Assert.Equal("SUG-A", Assert.Single(list.Items).SourcePlanReference!.SourceDocumentId);
+        Assert.Equal(new[] { "SO-A", "SO-B" }, Assert.Single(list.Items).SourcePlanReference!.SourceDemandReferences);
+    }
+
     [Fact]
     public async Task Convert_plan_to_work_order_returns_an_accepted_receipt_carrying_the_work_order_no() =>
         await AssertAcceptedReceiptAsync(
@@ -31,7 +45,7 @@ public sealed class BusinessMesAcceptedReceiptClientTests
             client => client.ReleaseWorkOrderAsync(
                 "token",
                 "WO-20260731-001",
-                new BusinessConsoleMesReleaseWorkOrderRequest("WO-20260731-001", "org", "env", false, "idem-release"),
+                new BusinessConsoleMesReleaseWorkOrderRequest("WO-20260731-001", "org", "env", false),
                 CancellationToken.None));
 
     [Fact]
@@ -54,6 +68,7 @@ public sealed class BusinessMesAcceptedReceiptClientTests
                 "token",
                 "WO-20260731-001",
                 new BusinessConsoleMesWorkOrderReasonRequest("WO-20260731-001", "org", "env", "订单取消", null),
+                "user:planner",
                 CancellationToken.None));
 
     [Fact]
@@ -95,6 +110,44 @@ public sealed class BusinessMesAcceptedReceiptClientTests
             // The dismiss endpoint answers status "dismissed"; a 2xx body is still an acceptance.
             status: "dismissed");
 
+    /// <summary>
+    /// #3844：MES 端候选号是强类型标识，HTTP 端点没注册它的 JSON 转换器，只能从路由绑定；请求体里再带一份
+    /// 字符串候选号，JSON 反序列化失败，转正 / 忽略整单 400。候选号只能出现在路径上；转正应答按真实下游形状（报工单号是 { id } 对象）读。
+    /// </summary>
+    [Fact]
+    public async Task Telemetry_candidate_promote_and_dismiss_use_the_real_mes_wire_shapes()
+    {
+        const string candidateId = "019f0000-0000-7000-8000-000000000001";
+        string? promoteBody = null;
+        var promoteClient = ClientReturning(
+            // MES 转正应答与直接报工同形：报工单号是 { id } 对象，不是字符串。
+            "{\"productionReportId\":{\"id\":\"019f0000-0000-7000-8000-000000000002\"},\"reportNo\":\"PRPT-000001\",\"serialNumbers\":[]}",
+            capturedBody: body => promoteBody = body);
+        var promoted = await promoteClient.PromoteTelemetryCandidateAsync(
+            "token",
+            candidateId,
+            new BusinessConsoleMesTelemetryCandidatePromoteRequest(candidateId, "org", "env", "WO-1", "WO-1-OP-10"),
+            "user:operator",
+            CancellationToken.None);
+        string? dismissBody = null;
+        var dismissClient = ClientReturning(AcceptedJson(candidateId, "dismissed"), capturedBody: body => dismissBody = body);
+        await dismissClient.DismissTelemetryCandidateAsync(
+            "token",
+            candidateId,
+            new BusinessConsoleMesTelemetryCandidateDismissRequest(candidateId, "org", "env", "重复采集"),
+            "user:operator",
+            CancellationToken.None);
+
+        Assert.Equal("019f0000-0000-7000-8000-000000000002", promoted.ProductionReportId);
+        Assert.Equal("PRPT-000001", promoted.ReportNo);
+        using var promote = JsonDocument.Parse(promoteBody!);
+        Assert.False(promote.RootElement.TryGetProperty("candidateId", out _));
+        Assert.Equal("WO-1-OP-10", promote.RootElement.GetProperty("operationTaskId").GetString());
+        using var dismiss = JsonDocument.Parse(dismissBody!);
+        Assert.False(dismiss.RootElement.TryGetProperty("candidateId", out _));
+        Assert.Equal("重复采集", dismiss.RootElement.GetProperty("reason").GetString());
+    }
+
     [Fact]
     public async Task Record_defect_returns_an_accepted_receipt_carrying_the_defect_no() =>
         await AssertAcceptedReceiptAsync(
@@ -102,8 +155,30 @@ public sealed class BusinessMesAcceptedReceiptClientTests
             "Defect",
             client => client.RecordDefectAsync(
                 "token",
-                new BusinessConsoleMesRecordDefectRequest("org", "env", "WO-20260731-001", "OP-000210", "SCRATCH", 2m, null, null, "idem-defect"),
+                new BusinessMesRecordDefectRequest(
+                    "org", "env", "WO-20260731-001", "OP-000210", "SCRATCH", 2m,
+                    DateTimeOffset.Parse("2026-08-25T14:30:00Z"), "idem-defect"),
                 CancellationToken.None));
+
+    [Fact]
+    public async Task Record_defect_maps_the_public_contract_to_the_exact_mes_wire_payload()
+    {
+        string? capturedBody = null;
+        var client = ClientReturning(AcceptedJson("DEF-000031"), capturedBody: body => capturedBody = body);
+        var request = new BusinessMesRecordDefectRequest(
+            "org", "env", "WO-20260731-001", "OP-000210", "SCRATCH", 2.5m,
+            DateTimeOffset.Parse("2026-08-25T14:30:00Z"), "idem-defect");
+
+        await client.RecordDefectAsync("token", request, CancellationToken.None);
+
+        using var document = JsonDocument.Parse(capturedBody!);
+        var body = document.RootElement;
+        Assert.Equal(2.5m, body.GetProperty("quantity").GetDecimal());
+        Assert.Equal("2026-08-25T14:30:00+00:00", body.GetProperty("recordedAtUtc").GetString());
+        Assert.False(body.TryGetProperty("defectQuantity", out _));
+        Assert.False(body.TryGetProperty("scopeKind", out _));
+        Assert.False(body.TryGetProperty("scopeId", out _));
+    }
 
     [Fact]
     public async Task Record_downtime_event_returns_an_accepted_receipt_carrying_the_downtime_no() =>
@@ -117,6 +192,42 @@ public sealed class BusinessMesAcceptedReceiptClientTests
                 CancellationToken.None));
 
     [Fact]
+    public async Task Record_downtime_v2_maps_real_context_and_recorded_time_to_the_exact_mes_wire_payload()
+    {
+        string? capturedBody = null;
+        var capturedHeaders = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var client = ClientReturning(
+            AcceptedJson("DTE-000008"),
+            capturedHeaders,
+            body => capturedBody = body);
+        var startedAtUtc = DateTimeOffset.Parse("2026-08-25T14:30:00Z");
+        var request = new BusinessMesRecordDowntimeEventRequest(
+            "org",
+            "env",
+            "WO-20260731-001",
+            "OP-000210",
+            "WC-CNC-01",
+            "DEV-1",
+            "MECH-FAULT",
+            startedAtUtc,
+            "idem-downtime-v2",
+            DateTimeOffset.Parse("2026-08-25T15:00:00Z"));
+
+        await client.RecordDowntimeEventAsync("token", request, CancellationToken.None);
+
+        using var document = JsonDocument.Parse(capturedBody!);
+        var body = document.RootElement;
+        Assert.Equal("WC-CNC-01", body.GetProperty("workCenterId").GetString());
+        Assert.Equal("MECH-FAULT", body.GetProperty("reasonCode").GetString());
+        Assert.Equal("2026-08-25T14:30:00+00:00", body.GetProperty("startedAtUtc").GetString());
+        Assert.Equal("2026-08-25T15:00:00+00:00", body.GetProperty("toUtc").GetString());
+        Assert.Equal("idem-downtime-v2", body.GetProperty("idempotencyKey").GetString());
+        Assert.False(body.TryGetProperty("reason", out _));
+        Assert.False(body.TryGetProperty("fromUtc", out _));
+        Assert.Equal("idem-downtime-v2", capturedHeaders["Idempotency-Key"]);
+    }
+
+    [Fact]
     public async Task Confirm_downtime_recovery_returns_an_accepted_receipt_carrying_the_downtime_no() =>
         await AssertAcceptedReceiptAsync(
             "DTE-000007",
@@ -125,7 +236,7 @@ public sealed class BusinessMesAcceptedReceiptClientTests
                 "token",
                 "DTE-000007",
                 new BusinessConsoleMesRecoverDowntimeEventRequest(
-                    "DTE-000007", "org", "env", new DateTimeOffset(2026, 7, 31, 9, 0, 0, TimeSpan.Zero), "idem-recover"),
+                    "DTE-000007", "org", "env", new DateTimeOffset(2026, 7, 31, 9, 0, 0, TimeSpan.Zero)),
                 CancellationToken.None));
 
     [Fact]
@@ -135,7 +246,8 @@ public sealed class BusinessMesAcceptedReceiptClientTests
             "ShiftHandover",
             client => client.CreateShiftHandoverAsync(
                 "token",
-                new BusinessConsoleMesCreateShiftHandoverRequest("org", "env", "SHIFT-A", "TEAM-1", null, "idem-handover"),
+                new BusinessConsoleMesCreateShiftHandoverForwardRequest(
+                    "org", "env", "SHIFT-A", "TEAM-1", null, "idem-handover", null, "user-admin", "张三", null, null, null, null),
                 CancellationToken.None));
 
     [Fact]
@@ -146,7 +258,7 @@ public sealed class BusinessMesAcceptedReceiptClientTests
             client => client.AcceptShiftHandoverAsync(
                 "token",
                 "SH-000012",
-                new BusinessConsoleMesAcceptShiftHandoverRequest("SH-000012", "org", "env", "idem-accept"),
+                new BusinessConsoleMesAcceptShiftHandoverForwardRequest("org", "env", "user-admin", "李四"),
                 CancellationToken.None));
 
     [Fact]
@@ -156,7 +268,9 @@ public sealed class BusinessMesAcceptedReceiptClientTests
 
         var response = await client.RecordDefectAsync(
             "token",
-            new BusinessConsoleMesRecordDefectRequest("org", "env", "WO-20260731-001", "OP-000210", "SCRATCH", 2m, null, null, "idem-defect"),
+            new BusinessMesRecordDefectRequest(
+                "org", "env", "WO-20260731-001", "OP-000210", "SCRATCH", 2m,
+                DateTimeOffset.Parse("2026-08-25T14:30:00Z"), "idem-defect"),
             CancellationToken.None);
 
         Assert.True(response.Accepted);
@@ -187,20 +301,58 @@ public sealed class BusinessMesAcceptedReceiptClientTests
         Assert.Equal("QH-000045", response.DownstreamDocumentId);
     }
 
+    /// <summary>
+    /// #3858：MES 取消端点在内部服务令牌下要求 <c>X-Authenticated-Actor</c>，网关漏转发时取消整单被拒。
+    /// </summary>
     [Fact]
-    public async Task Assign_dispatch_task_keeps_forwarding_the_authenticated_actor_header()
+    public async Task Cancel_work_order_forwards_the_authenticated_actor_header()
     {
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var client = ClientReturning(AcceptedJson("OP-000210"), headers);
+        var client = ClientReturning(AcceptedJson("WO-20260731-001"), headers);
 
-        var response = await client.AssignDispatchTaskAsync(
+        await client.CancelWorkOrderAsync(
             "token",
-            "OP-000210",
-            new BusinessConsoleMesAssignDispatchTaskForwardRequest("org", "env", "user-1", "张三", null, "SHIFT-A", "idem-assign"),
+            "WO-20260731-001",
+            new BusinessConsoleMesWorkOrderReasonRequest("WO-20260731-001", "org", "env", "订单取消", null),
             "user:planner",
             CancellationToken.None);
 
         Assert.Equal("user:planner", headers["X-Authenticated-Actor"]);
+    }
+
+    [Fact]
+    public async Task Assign_dispatch_task_keeps_forwarding_the_authenticated_actor_header()
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string? requestJson = null;
+        var client = ClientReturning(AcceptedJson("OP-000210"), headers, body => requestJson = body);
+
+        var response = await client.AssignDispatchTaskAsync(
+            "token",
+            "OP-000210",
+            new BusinessConsoleMesAssignDispatchTaskForwardRequest(
+                "org",
+                "env",
+                "user-1",
+                "张三",
+                null,
+                "SHIFT-A",
+                "idem-assign",
+                Participants:
+                [
+                    new BusinessConsoleMesDispatchParticipantForwardInput("user-1", "张三", 60m),
+                    new BusinessConsoleMesDispatchParticipantForwardInput("user-2", "李四", 40m),
+                ]),
+            "user:planner",
+            CancellationToken.None);
+
+        Assert.Equal("user:planner", headers["X-Authenticated-Actor"]);
+        using var requestDocument = JsonDocument.Parse(Assert.IsType<string>(requestJson));
+        var participants = requestDocument.RootElement.GetProperty("participants");
+        Assert.Equal(2, participants.GetArrayLength());
+        Assert.Equal("user-1", participants[0].GetProperty("workerId").GetString());
+        Assert.Equal("张三", participants[0].GetProperty("workerName").GetString());
+        Assert.Equal(60m, participants[0].GetProperty("sharePercent").GetDecimal());
         Assert.True(response.Accepted);
         Assert.Equal("OP-000210", response.DownstreamDocumentId);
     }
@@ -221,16 +373,109 @@ public sealed class BusinessMesAcceptedReceiptClientTests
         Assert.Equal(referenceId, response.DownstreamDocumentId);
     }
 
+    // #4034 PublicContract: MES 的急单与优先级事实必须在 Gateway 读回时保留。
+    [Fact]
+    public async Task Work_order_detail_preserves_rush_and_priority_from_mes()
+    {
+        var client = ClientReturning("""{"data":{"workOrderId":"WO-001","skuId":"SKU-001","quantity":10,"status":"Released","readinessStatus":"Ready","blockingReasons":[],"operationTasks":[],"isRush":true,"priority":-7}}""");
+        var detail = await client.GetWorkOrderDetailAsync("token", "WO-001", new("org", "env"), CancellationToken.None);
+        var json = JsonSerializer.SerializeToElement(detail, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.True(json.GetProperty("isRush").GetBoolean());
+        Assert.Equal(-7, json.GetProperty("priority").GetInt32());
+    }
+
+    [Fact]
+    public async Task Priority_write_maps_mes_receipt_and_preserves_the_request_values()
+    {
+        string? body = null;
+        var client = ClientReturning(AcceptedJson("WO-001"), capturedBody: value => body = value);
+        var response = await client.AdjustWorkOrderPriorityAsync("token", "WO-001",
+            new("WO-001", "org", "env", true, -7, null), CancellationToken.None);
+        Assert.True(response.Accepted);
+        Assert.Equal("WorkOrder", response.DownstreamDocumentType);
+        Assert.Equal("WO-001", response.DownstreamDocumentId);
+        using var document = JsonDocument.Parse(body!);
+        Assert.True(document.RootElement.GetProperty("isRush").GetBoolean());
+        Assert.Equal(-7, document.RootElement.GetProperty("priority").GetInt32());
+    }
+
+    [Fact]
+    public async Task Work_order_list_preserves_rush_and_priority_from_mes()
+    {
+        var client = ClientReturning("""{"data":{"items":[{"workOrderId":"WO-001","skuId":"SKU-001","quantity":10,"status":"Released","dueUtc":"2026-10-01T00:00:00Z","operationTasks":[],"isRush":true,"priority":-7}],"total":1}}""");
+        var list = await client.ListWorkOrdersAsync("token", new("org", "env"), CancellationToken.None);
+        Assert.True(list.Items.Single().IsRush);
+        Assert.Equal(-7, list.Items.Single().Priority);
+    }
+
+    // #4079 PublicContract: 完成量属于 MES 权威事实，Gateway 列表读取与公开响应必须保留原值。
+    [Fact]
+    public async Task Work_order_list_preserves_completed_quantity_from_mes()
+    {
+        var client = ClientReturning("""{"data":{"items":[{"workOrderId":"WO-001","skuId":"SKU-001","quantity":10,"completedQuantity":3.25,"status":"Released","dueUtc":"2026-10-01T00:00:00Z","operationTasks":[],"priority":0}],"total":1}}""");
+
+        var list = await client.ListWorkOrdersAsync("token", new("org", "env"), CancellationToken.None);
+        var json = JsonSerializer.SerializeToElement(list.Items.Single(), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.Equal(3.25m, json.GetProperty("completedQuantity").GetDecimal());
+    }
+
+    // #4443：空授权集合不能在 HTTP 序列化后退化为 organization scope。
+    [Theory]
+    [InlineData("organization")]
+    [InlineData("empty")]
+    [InlineData("work-centers")]
+    public async Task Downtime_scope_transport_preserves_unrestricted_empty_and_work_center_scopes(string scope)
+    {
+        IReadOnlyCollection<string>? ids = scope == "organization" ? null : scope == "empty" ? [] : ["WC-A", "WC-C"];
+        Uri? uri = null;
+        var client = ClientReturning("""{"data":{"items":[],"total":0,"reasonSummary":[]}}""",
+            capturedUri: value => uri = value);
+        await client.ListDowntimeEventsAsync("internal-token", new("org", "env"), CancellationToken.None, ids);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri!.Query);
+        Assert.Equal(ids is not null, query.ContainsKey("restrictToWorkCenters"));
+        if (ids is not null)
+        {
+            Assert.Equal("true", query["restrictToWorkCenters"].ToString());
+            query.TryGetValue("authorizedWorkCenterIds", out var workCenters);
+            Assert.Equal(string.Join(',', ids), workCenters.ToString());
+        }
+
+        string? body = null;
+        client = ClientReturning(AcceptedJson("DT-A"), capturedBody: value => body = value);
+        await client.ConfirmDowntimeRecoveryAsync("internal-token", "DT-A",
+            new("DT-A", "org", "env", DateTimeOffset.Parse("2026-10-16T12:00:00Z")), CancellationToken.None, ids);
+        using var json = JsonDocument.Parse(body!);
+        var property = json.RootElement.GetProperty("authorizedWorkCenterIds");
+        if (ids is null)
+        {
+            Assert.Equal(JsonValueKind.Null, property.ValueKind);
+        }
+        else
+        {
+            Assert.Equal(ids, property.EnumerateArray().Select(x => x.GetString()!).ToArray());
+        }
+    }
+
     private static string AcceptedJson(string referenceId, string status = "Accepted") =>
         "{\"data\":{\"status\":\"" + status + "\",\"referenceId\":\"" + referenceId + "\",\"acceptedAtUtc\":\"2026-07-31T08:00:00Z\"}}";
 
-    private static HttpBusinessMesClient ClientReturning(string json, IDictionary<string, string>? capturedHeaders = null) =>
-        new(new HttpClient(new StubHandler(json, capturedHeaders)) { BaseAddress = new Uri("http://mes") });
+    private static HttpBusinessMesClient ClientReturning(
+        string json,
+        IDictionary<string, string>? capturedHeaders = null,
+        Action<string>? capturedBody = null,
+        Action<Uri>? capturedUri = null) =>
+        new(new HttpClient(new StubHandler(json, capturedHeaders, capturedBody, capturedUri)) { BaseAddress = new Uri("http://mes") });
 
-    private sealed class StubHandler(string json, IDictionary<string, string>? capturedHeaders) : HttpMessageHandler
+    private sealed class StubHandler(
+        string json,
+        IDictionary<string, string>? capturedHeaders,
+        Action<string>? capturedBody,
+        Action<Uri>? capturedUri) : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            capturedUri?.Invoke(request.RequestUri!);
             if (capturedHeaders is not null)
             {
                 foreach (var header in request.Headers)
@@ -239,10 +484,15 @@ public sealed class BusinessMesAcceptedReceiptClientTests
                 }
             }
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            if (capturedBody is not null && request.Content is not null)
+            {
+                capturedBody(await request.Content.ReadAsStringAsync(cancellationToken));
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json"),
-            });
+            };
         }
     }
 }

@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Quality.Domain.AggregatesModel.MeasuringDeviceAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.NonconformanceReportAggregate;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionRecords;
+using Nerv.IIP.Business.Quality.Web.Application.Queries;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 
@@ -57,7 +58,7 @@ public sealed record ListInspectionRecordsRequest(
     string? SkuCode,
     string? Result,
     int Skip = 0,
-    int Take = 100);
+    int Take = OffsetPage.DefaultTake);
 
 public sealed record ListInspectionRecordsEndpointResponse(IReadOnlyCollection<InspectionRecordResponse> Items, int Total);
 

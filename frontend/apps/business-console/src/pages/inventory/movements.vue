@@ -11,17 +11,13 @@ import {
   inventoryMovementTypeLabel,
 } from '@/data/inventoryReference'
 import { useInventoryMovement } from '@/composables/useBusinessInventory'
+import { maintenanceWorkOrderNoLabel } from '@/composables/useEquipmentPickerCatalog'
+import { makeIdempotencyKey } from '@/composables/useBusinessMes'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useSkuNames } from '@/composables/useSkuNames'
-import {
-  useWarehouseCodeCatalog,
-  WAREHOUSE_CATALOG_SOURCE_TEXT,
-  WAREHOUSE_LOCATION_EMPTY_TEXT,
-  WAREHOUSE_LOT_EMPTY_TEXT,
-  WAREHOUSE_SERIAL_EMPTY_TEXT,
-} from '@/composables/useWarehouseCodeCatalog'
 import { useBusinessContextStore } from '@/stores/businessContext'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
@@ -44,10 +40,10 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { SendIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, reactive, shallowRef, watch, watchEffect } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
 definePage({
@@ -62,16 +58,8 @@ const route = useRoute()
 const businessContext = useBusinessContextStore()
 const { movementRows, movementsPending, movementsTotal, postMovement, postMovementPending } =
   useInventoryMovement()
-// 物料 / 工厂走主数据目录；库位/批次/序列号后端无读面，从既有台账与作业记录派生。
-const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
-  useInventoryScopeCatalog()
-const { locationOptions, lotOptions, serialOptions, warehouseCatalogPending } =
-  useWarehouseCodeCatalog()
-/** 单位随物料的基本单位带出，不给手输：单位写错这笔移动就落不到正确台账。 */
-function onSkuChange(skuCode: string) {
-  form.skuCode = skuCode
-  form.uomCode = skuCode ? resolveUomCode(skuCode) : ''
-}
+// 物料 / 工厂走主数据目录；库位/批次/序列号走库存可搜目录（服务端搜索）。
+const { siteOptions, sitesPending, resolveUomCode } = useInventoryScopeCatalog()
 
 // 受控值：UI 说人话，下发仍是后端码值。
 const QUALITY_OPTIONS = [
@@ -87,7 +75,10 @@ const form = reactive({
   sourceService: 'business-console',
   sourceDocumentId: '',
   sourceDocumentLineId: '',
-  idempotencyKey: '',
+  // 一次填写一把键：网络重试沿用同一把（后端按键去重），过账成功后才换新键。
+  // 键只用网关白名单字符（字母数字与 . _ : / -）；过去把表单字段用「|」拼成键，
+  // 中文来源单号也原样进键，一提交就被网关 400 拒掉（#3922）。
+  idempotencyKey: makeIdempotencyKey('movement'),
   skuCode: '',
   // 单位跟随物料主档带出（onSkuChange），不预填假单位：写死通用单位会让后端单位换算直接失败。
   uomCode: '',
@@ -96,8 +87,6 @@ const form = reactive({
   lotNo: '',
   serialNo: '',
   qualityStatus: 'available',
-  ownerType: 'owned',
-  ownerId: '',
   quantity: '1',
   // 调拨专用：入库库位。调拨必须两腿配平，缺腿后端整笔拒绝。
   transferInLocationCode: '',
@@ -107,6 +96,12 @@ const form = reactive({
 const isTransfer = computed(() => form.movementType === 'transfer')
 
 const movementSheetOpen = shallowRef(false)
+
+// 单位随物料的基本单位带出，不给手输：单位写错这笔移动就落不到正确台账。
+// 跟着物料目录重算：就地新建的物料要等目录刷新回来才查得到基本单位。
+watchEffect(() => {
+  form.uomCode = resolveUomCode(form.skuCode)
+})
 
 // 上下文穿透：从来源单据（收货/完工入库/领料/盘点）带入 SKU/库位/批次。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
@@ -129,20 +124,6 @@ watch(
   { immediate: true },
 )
 
-const stableSubmissionKey = computed(() =>
-  [
-    form.movementType,
-    form.sourceDocumentId,
-    form.sourceDocumentLineId,
-    form.skuCode,
-    form.siteCode,
-    form.locationCode,
-    form.transferInLocationCode,
-    form.quantity,
-  ]
-    .map((part) => String(part || '').trim() || 'none')
-    .join('|'),
-)
 const canSubmit = computed(
   () =>
     isNonEmpty(businessContext.organizationId) &&
@@ -176,8 +157,24 @@ function locationLabel(siteCode?: string | null, locationCode?: string | null) {
 }
 
 type MovementRow = BusinessConsoleInventoryMovementLineResponse
+// 维修备件出库的来源单据（#3852，docs/product/maintenance/design.md §3.4.1）：新流水是正式单号，原样显示；
+// 早期流水存的是工单 ID（GUID），不上屏，显示为「维修工单」。其它来源的单据号照原样显示。
+const MAINTENANCE_SOURCE_SERVICE = 'maintenance'
+function sourceDocumentLabel(row: MovementRow) {
+  const documentId = row.sourceDocumentId ?? ''
+  return row.sourceService === MAINTENANCE_SOURCE_SERVICE
+    ? maintenanceWorkOrderNoLabel(documentId)
+    : documentId
+}
 const columns: NvDataTableColumn<MovementRow>[] = [
-  { key: 'sourceDocumentId', header: '来源单据', cellClass: 'font-medium' },
+  // 来源单据号（如 MWO-yyyyMMdd-NNNNNN）较长，固定列宽避免挤进类型列
+  {
+    key: 'sourceDocumentId',
+    header: '来源单据',
+    width: 'w-52',
+    cellClass: 'font-medium whitespace-nowrap',
+    accessor: (r) => sourceDocumentLabel(r),
+  },
   {
     key: 'movementType',
     header: '类型',
@@ -218,7 +215,7 @@ async function submitMovement() {
     sourceService: form.sourceService.trim() || 'business-console',
     sourceDocumentId: form.sourceDocumentId.trim(),
     sourceDocumentLineId: optionalText(form.sourceDocumentLineId),
-    idempotencyKey: optionalText(form.idempotencyKey) ?? `movement-${stableSubmissionKey.value}`,
+    idempotencyKey: form.idempotencyKey,
     skuCode: form.skuCode.trim(),
     uomCode: form.uomCode.trim(),
     siteCode: form.siteCode.trim(),
@@ -226,8 +223,8 @@ async function submitMovement() {
     lotNo: optionalText(form.lotNo),
     serialNo: optionalText(form.serialNo),
     qualityStatus: form.qualityStatus.trim(),
-    ownerType: form.ownerType.trim(),
-    ownerId: optionalText(form.ownerId),
+    // 手工移动只记本公司库存；寄售库存的货主差异走盘点差异确认，不在这里补录。
+    ownerType: 'owned',
     quantity: transferQuantity === undefined ? quantity : -transferQuantity,
     transferInLocationCode: isTransfer.value ? form.transferInLocationCode.trim() : undefined,
     transferInQuantity: transferQuantity,
@@ -240,6 +237,7 @@ async function submitMovement() {
     return
   }
   // 列表来自服务端读面：过账成功后失效查询即可，新过账的流水刷新之后仍然在。
+  form.idempotencyKey = makeIdempotencyKey('movement')
   movementSheetOpen.value = false
   notifySuccess(`来源单据 ${body.sourceDocumentId} 的库存移动已受理`)
 }
@@ -342,18 +340,12 @@ function isNonEmpty(value: string) {
             </NvField>
             <NvField>
               <NvFieldLabel for="movement-sku">物料</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="movement-sku"
-                :model-value="form.skuCode"
-                :options="skuOptions"
-                title="选择物料"
-                placeholder="选择物料"
-                source-text="数据来自基础数据物料主数据"
-                empty-text="暂无物料主数据，请先在基础数据维护物料"
-                :loading="skusPending"
+                v-model="form.skuCode"
+                directory-type="material"
+                creatable
                 clearable
-                aria-label="物料"
-                @update:model-value="onSkuChange"
               />
             </NvField>
             <NvField>
@@ -373,7 +365,6 @@ function isNonEmpty(value: string) {
                 :options="siteOptions"
                 title="选择工厂"
                 placeholder="选择工厂"
-                source-text="数据来自基础数据工厂主数据"
                 empty-text="暂无工厂主数据，请先在基础数据维护工厂"
                 :loading="sitesPending"
                 clearable
@@ -384,15 +375,14 @@ function isNonEmpty(value: string) {
               <NvFieldLabel for="movement-location">{{
                 isTransfer ? '出库库位' : '库位'
               }}</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="movement-location"
                 v-model="form.locationCode"
-                :options="locationOptions"
+                directory-type="location"
+                creatable
+                :form-site-code="form.siteCode"
                 title="选择库位"
                 placeholder="选择库位"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 :aria-label="isTransfer ? '出库库位' : '库位'"
               />
@@ -400,15 +390,14 @@ function isNonEmpty(value: string) {
             <!-- 调拨两腿配平：入库库位必填且不能与出库库位相同，否则整笔拒绝。 -->
             <NvField v-if="isTransfer">
               <NvFieldLabel for="movement-transfer-in-location">入库库位</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="movement-transfer-in-location"
                 v-model="form.transferInLocationCode"
-                :options="locationOptions"
+                directory-type="location"
+                creatable
+                :form-site-code="form.siteCode"
                 title="选择入库库位"
                 placeholder="选择入库库位"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 aria-label="入库库位"
               />
@@ -437,39 +426,27 @@ function isNonEmpty(value: string) {
               </NvSelect>
             </NvField>
             <NvField>
-              <NvFieldLabel for="movement-owner-id">货主</NvFieldLabel>
-              <NvInput
-                id="movement-owner-id"
-                v-model="form.ownerId"
-                placeholder="可选货主名称或编码"
-              />
-            </NvField>
-            <NvField>
               <NvFieldLabel for="movement-lot">批次</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="movement-lot"
                 v-model="form.lotNo"
-                :options="lotOptions"
+                directory-type="batch"
+                :form-site-code="form.siteCode"
                 title="选择批次"
                 placeholder="选择批次"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-                :empty-text="WAREHOUSE_LOT_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 aria-label="批次"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="movement-serial">序列号</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="movement-serial"
                 v-model="form.serialNo"
-                :options="serialOptions"
+                directory-type="serial"
+                :form-site-code="form.siteCode"
                 title="选择序列号"
                 placeholder="选择序列号"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-                :empty-text="WAREHOUSE_SERIAL_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 aria-label="序列号"
               />
@@ -478,7 +455,7 @@ function isNonEmpty(value: string) {
 
           <div class="flex justify-end">
             <NvButton type="submit" :disabled="postMovementPending || !canSubmit">
-              <Spinner v-if="postMovementPending" aria-hidden="true" />
+              <NvSpinner v-if="postMovementPending" aria-hidden="true" />
               <SendIcon v-else aria-hidden="true" />
               提交库存移动
             </NvButton>

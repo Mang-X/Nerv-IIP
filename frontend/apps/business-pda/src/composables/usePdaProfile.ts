@@ -236,7 +236,6 @@ export function usePdaProfile() {
   })
 
   return {
-    principalId: identity.principalId,
     principalType: computed(() => auth.principal?.principalType ?? ''),
     loginName: identity.loginName,
     displayName: computed(

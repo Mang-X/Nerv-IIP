@@ -474,6 +474,21 @@ export type NervIipPlatformGatewayWebApplicationIamAdminConsoleResetIamUserPassw
     newPassword?: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfConsoleIamUserMembershipResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipPlatformGatewayWebApplicationIamAdminConsoleIamUserMembershipResponse | null;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleIamUserMembershipResponse = {
+    userId?: string;
+    organizationId?: string;
+    environmentId?: string;
+    roleIds?: Array<string>;
+};
+
+export type NervIipPlatformGatewayWebApplicationIamAdminConsoleReplaceIamUserMembershipRequest = {
+    roleIds?: Array<string>;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfPagedListResponseOfConsoleIamRoleResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipPlatformGatewayWebApplicationIamAdminPagedListResponseOfConsoleIamRoleResponse | null;
 };
@@ -563,9 +578,7 @@ export type NervIipContractsFileStorageTransferInstructions = {
     };
 };
 
-export type NervIipContractsFileStorageCreateUploadSessionRequest = {
-    organizationId?: string;
-    environmentId?: string;
+export type NervIipPlatformGatewayWebEndpointsFilesConsoleCreateUploadSessionRequest = {
     owner?: NervIipContractsFileStorageOwnerReference;
     filePurpose?: string;
     fileName?: string;
@@ -599,9 +612,7 @@ export type NervIipContractsFileStorageFileMetadataResponse = {
     completedAtUtc?: string;
 };
 
-export type NervIipContractsFileStorageCompleteUploadSessionRequest = {
-    organizationId?: string;
-    environmentId?: string;
+export type NervIipPlatformGatewayWebEndpointsFilesConsoleCompleteUploadSessionRequest = {
     filePurpose?: string;
     checksum?: string | null;
     sizeBytes?: number | null;
@@ -636,19 +647,9 @@ export type NervIipPlatformGatewayWebEndpointsFilesConsoleFileStorageUsageReques
     [key: string]: never;
 };
 
-export type NetCorePalExtensionsDtoResponseDataOfDownloadGrantResponse = NetCorePalExtensionsDtoResponseData & {
-    data?: NervIipContractsFileStorageDownloadGrantResponse | null;
-};
-
-export type NervIipContractsFileStorageDownloadGrantResponse = {
-    fileId?: string;
-    expiresAtUtc?: string;
-    download?: NervIipContractsFileStorageTransferInstructions;
-};
-
-export type NervIipContractsFileStorageCreateDownloadGrantRequest = {
-    organizationId?: string;
-    environmentId?: string;
+export type NervIipPlatformGatewayWebEndpointsCacheInvalidateGatewayCacheScopeRequest = {
+    organizationId: string;
+    environmentId: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfConsoleAuthResponse = NetCorePalExtensionsDtoResponseData & {
@@ -691,6 +692,11 @@ export type NervIipPlatformGatewayWebApplicationAuthConsoleLogoutRequest = {
 
 export type NetCorePalExtensionsDtoResponseDataOfConsolePrincipalResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipPlatformGatewayWebApplicationAuthConsolePrincipalResponse | null;
+};
+
+export type NervIipPlatformGatewayWebApplicationAuthConsoleChangePasswordRequest = {
+    currentPassword?: string;
+    newPassword?: string;
 };
 
 export type RestartConsoleInstanceData = {
@@ -1418,6 +1424,64 @@ export type ResetConsoleIamUserPasswordResponses = {
 
 export type ResetConsoleIamUserPasswordResponse = ResetConsoleIamUserPasswordResponses[keyof ResetConsoleIamUserPasswordResponses];
 
+export type GetConsoleIamUserMembershipData = {
+    body?: never;
+    path: {
+        userId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/iam/users/{userId}/membership';
+};
+
+export type GetConsoleIamUserMembershipErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetConsoleIamUserMembershipResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfConsoleIamUserMembershipResponse;
+};
+
+export type GetConsoleIamUserMembershipResponse = GetConsoleIamUserMembershipResponses[keyof GetConsoleIamUserMembershipResponses];
+
+export type ReplaceConsoleIamUserMembershipData = {
+    body: NervIipPlatformGatewayWebApplicationIamAdminConsoleReplaceIamUserMembershipRequest;
+    path: {
+        userId: string;
+    };
+    query?: never;
+    url: '/api/console/v1/iam/users/{userId}/membership';
+};
+
+export type ReplaceConsoleIamUserMembershipErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ReplaceConsoleIamUserMembershipResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfConsoleIamUserMembershipResponse;
+};
+
+export type ReplaceConsoleIamUserMembershipResponse = ReplaceConsoleIamUserMembershipResponses[keyof ReplaceConsoleIamUserMembershipResponses];
+
 export type ListConsoleIamRolesData = {
     body?: never;
     path?: never;
@@ -1633,7 +1697,7 @@ export type GetBuildInfoEndpointResponses = {
 export type GetBuildInfoEndpointResponse = GetBuildInfoEndpointResponses[keyof GetBuildInfoEndpointResponses];
 
 export type CreateConsoleFileUploadSessionData = {
-    body: NervIipContractsFileStorageCreateUploadSessionRequest;
+    body: NervIipPlatformGatewayWebEndpointsFilesConsoleCreateUploadSessionRequest;
     path?: never;
     query?: never;
     url: '/api/console/v1/files/upload-sessions';
@@ -1660,7 +1724,7 @@ export type CreateConsoleFileUploadSessionResponses = {
 export type CreateConsoleFileUploadSessionResponse = CreateConsoleFileUploadSessionResponses[keyof CreateConsoleFileUploadSessionResponses];
 
 export type CompleteConsoleFileUploadSessionData = {
-    body: NervIipContractsFileStorageCompleteUploadSessionRequest;
+    body: NervIipPlatformGatewayWebEndpointsFilesConsoleCompleteUploadSessionRequest;
     path: {
         uploadSessionId: string;
     };
@@ -1694,6 +1758,7 @@ export type ListConsoleFilesData = {
     query?: {
         filePurpose?: string | null;
         uploaderId?: string | null;
+        ownerId?: string | null;
         createdFromUtc?: string | null;
         createdToUtc?: string | null;
         status?: string | null;
@@ -1781,35 +1846,6 @@ export type GetConsoleFileMetadataResponses = {
 
 export type GetConsoleFileMetadataResponse = GetConsoleFileMetadataResponses[keyof GetConsoleFileMetadataResponses];
 
-export type CreateConsoleFileDownloadGrantData = {
-    body: NervIipContractsFileStorageCreateDownloadGrantRequest;
-    path: {
-        fileId: string;
-    };
-    query?: never;
-    url: '/api/console/v1/files/{fileId}/download-grants';
-};
-
-export type CreateConsoleFileDownloadGrantErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-};
-
-export type CreateConsoleFileDownloadGrantResponses = {
-    /**
-     * Success
-     */
-    200: NetCorePalExtensionsDtoResponseDataOfDownloadGrantResponse;
-};
-
-export type CreateConsoleFileDownloadGrantResponse = CreateConsoleFileDownloadGrantResponses[keyof CreateConsoleFileDownloadGrantResponses];
-
 export type GetConsoleTusUploadOffsetData = {
     body?: never;
     path: {
@@ -1868,16 +1904,16 @@ export type PatchConsoleTusUploadResponses = {
 
 export type PatchConsoleTusUploadResponse = PatchConsoleTusUploadResponses[keyof PatchConsoleTusUploadResponses];
 
-export type DownloadConsoleFileGrantContentData = {
+export type DownloadConsoleFileContentData = {
     body?: never;
     path: {
-        downloadGrantId: string;
+        fileId: string;
     };
     query?: never;
-    url: '/api/console/v1/files/download-grants/{downloadGrantId}/content';
+    url: '/api/console/v1/files/{fileId}/content';
 };
 
-export type DownloadConsoleFileGrantContentErrors = {
+export type DownloadConsoleFileContentErrors = {
     /**
      * Unauthorized
      */
@@ -1888,14 +1924,14 @@ export type DownloadConsoleFileGrantContentErrors = {
     403: unknown;
 };
 
-export type DownloadConsoleFileGrantContentResponses = {
+export type DownloadConsoleFileContentResponses = {
     /**
-     * No Content
+     * Success
      */
-    204: void;
+    200: Blob | File;
 };
 
-export type DownloadConsoleFileGrantContentResponse = DownloadConsoleFileGrantContentResponses[keyof DownloadConsoleFileGrantContentResponses];
+export type DownloadConsoleFileContentResponse = DownloadConsoleFileContentResponses[keyof DownloadConsoleFileContentResponses];
 
 export type InvalidateGatewayCacheEndpointData = {
     body?: never;
@@ -1923,6 +1959,40 @@ export type InvalidateGatewayCacheEndpointResponses = {
 };
 
 export type InvalidateGatewayCacheEndpointResponse = InvalidateGatewayCacheEndpointResponses[keyof InvalidateGatewayCacheEndpointResponses];
+
+export type InvalidateGatewayCacheScopeData = {
+    body: NervIipPlatformGatewayWebEndpointsCacheInvalidateGatewayCacheScopeRequest;
+    path?: never;
+    query?: never;
+    url: '/internal/gateway/cache/invalidate-scope';
+};
+
+export type InvalidateGatewayCacheScopeErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+};
+
+export type InvalidateGatewayCacheScopeError = InvalidateGatewayCacheScopeErrors[keyof InvalidateGatewayCacheScopeErrors];
+
+export type InvalidateGatewayCacheScopeResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type InvalidateGatewayCacheScopeResponse = InvalidateGatewayCacheScopeResponses[keyof InvalidateGatewayCacheScopeResponses];
 
 export type LoginConsoleUserData = {
     body: NervIipPlatformGatewayWebApplicationAuthConsoleLoginRequest;
@@ -2009,3 +2079,30 @@ export type GetConsolePrincipalResponses = {
 };
 
 export type GetConsolePrincipalResponse = GetConsolePrincipalResponses[keyof GetConsolePrincipalResponses];
+
+export type ChangeConsolePasswordData = {
+    body: NervIipPlatformGatewayWebApplicationAuthConsoleChangePasswordRequest;
+    path?: never;
+    query?: never;
+    url: '/api/console/v1/auth/change-password';
+};
+
+export type ChangeConsolePasswordErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ChangeConsolePasswordResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type ChangeConsolePasswordResponse = ChangeConsolePasswordResponses[keyof ChangeConsolePasswordResponses];

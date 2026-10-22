@@ -33,7 +33,6 @@ const {
   loadingMore,
   loadMoreError,
   actionError,
-  lastUpdatedAt,
   actionPending,
   actionUnconfirmed,
   actionConfirmedSequence,
@@ -98,15 +97,11 @@ async function execute(intent: WarehouseTaskExecutionIntent) {
         :loading-more="loadingMore"
         :load-more-error="loadMoreError"
         :action-error="actionError"
-        :updated-at="lastUpdatedAt"
         :current-principal-id="principalId"
         :scope-options="scopeOptions"
         :location-options="candidates.locationOptions.value"
         :lot-options="candidates.lotOptions.value"
         :candidate-ready="candidates.ready.value"
-        :candidate-source-label="candidates.sourceLabel.value"
-        :candidate-as-of-utc="candidates.asOfUtc.value"
-        :candidate-freshness-utc="candidates.freshnessUtc.value"
         :candidate-truncated="candidates.truncated.value"
         :candidate-pending="candidates.pending.value"
         :candidate-error="candidates.error.value"

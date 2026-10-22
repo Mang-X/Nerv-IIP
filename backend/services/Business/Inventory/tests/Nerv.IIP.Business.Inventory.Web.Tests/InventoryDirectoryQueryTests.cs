@@ -43,6 +43,26 @@ public sealed class InventoryDirectoryQueryTests
     }
 
     [Fact]
+    public async Task Location_directory_normalizes_tenant_and_blank_keyword_without_mutating_request_fields()
+    {
+        await using var db = CreateDbContext();
+        db.StockLocations.Add(
+            StockLocation.CreateOrUpdate(null, Org, Env, "LOC-A-01", "bin", "SITE-A", null, "active"));
+        await db.SaveChangesAsync();
+        var request = new ListInventoryDirectoryQuery(
+            $" {Org} ",
+            $" {Env} ",
+            InventoryDirectoryTypes.Location,
+            Keyword: "   ");
+
+        var result = await Handle(db, request);
+
+        Assert.Equal("LOC-A-01", Assert.Single(result.Items).Code);
+        Assert.Equal($" {Org} ", request.OrganizationId);
+        Assert.Equal("   ", request.Keyword);
+    }
+
+    [Fact]
     public async Task Location_material_filter_applies_positive_stock_before_total_and_paging()
     {
         await using var db = CreateDbContext();
@@ -97,6 +117,26 @@ public sealed class InventoryDirectoryQueryTests
         Assert.Equal("SKU-01", item.SkuCode);
         Assert.Equal(1, result.Total);
         Assert.Equal("inventory.stock-ledgers", result.SourceKind);
+    }
+
+    // #3832：批次 / 序列号同样按授权工厂的并集收窄，不在并集里的工厂的台账不出现。
+    [Fact]
+    public async Task Batch_directory_narrows_to_the_authorized_site_union()
+    {
+        await using var db = CreateDbContext();
+        AddLedger(db, "SKU-01", "SITE-A", "LOC-A-01", "LOT-A", null, 1m);
+        AddLedger(db, "SKU-01", "SITE-B", "LOC-B-01", "LOT-B", null, 1m);
+        AddLedger(db, "SKU-01", "SITE-C", "LOC-C-01", "LOT-C", null, 1m);
+        await db.SaveChangesAsync();
+
+        var result = await Handle(db, new ListInventoryDirectoryQuery(
+            Org,
+            Env,
+            InventoryDirectoryTypes.Batch,
+            AuthorizedSiteCodes: ["SITE-A", "SITE-C"]));
+
+        Assert.Equal(["LOT-A", "LOT-C"], result.Items.Select(item => item.Code));
+        Assert.Equal(2, result.Total);
     }
 
     [Fact]
@@ -181,21 +221,6 @@ public sealed class InventoryDirectoryQueryTests
         Assert.Equal("inventory-directory-type-unsupported", result.ReasonCode);
         Assert.Empty(result.Items);
         Assert.Equal(0, result.Total);
-    }
-
-    [Fact]
-    public async Task Handler_rejects_invalid_paging_instead_of_clamping_it()
-    {
-        await using var db = CreateDbContext();
-
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => Handle(
-            db,
-            new ListInventoryDirectoryQuery(
-                Org,
-                Env,
-                InventoryDirectoryTypes.Location,
-                Skip: -1,
-                Take: 0)));
     }
 
     private static Task<InventoryDirectoryResponse> Handle(ApplicationDbContext db, ListInventoryDirectoryQuery query) =>

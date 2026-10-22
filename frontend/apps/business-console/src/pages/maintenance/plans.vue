@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { i18n } from '@/i18n'
 import type {
   BusinessConsoleCreateMaintenancePlanRequest,
   BusinessConsoleMaintenancePlanItem,
@@ -24,6 +25,7 @@ import {
 } from '@/utils/notify'
 import {
   NvButton,
+  NvDatePicker,
   NvDataTable,
   NvDialog,
   NvDialogClose,
@@ -37,13 +39,14 @@ import {
   NvFieldError,
   NvFieldGroup,
   NvFieldLabel,
-  NvInput,
   NvPageHeader,
   NvRowActions,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { CalendarClockIcon, PencilIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef } from 'vue'
+
+const locale = i18n.global.locale
 
 definePage({
   meta: {
@@ -111,7 +114,7 @@ const generateForm = reactive({
 })
 const generateError = shallowRef('')
 
-const listErrorMessage = computed(() => formatError(plansError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(plansError.value))
 // 服务端错误走 toast；这里只留点提交后的字段级校验汇总。
 const generateErrorMessage = computed(() => generateError.value)
 // 发起人由当前登录账号带出，不让用户手打自己的名字。
@@ -128,7 +131,8 @@ const MISSING_PLAN_CODE = '无计划编号'
 const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
 
 type PlanRow = BusinessConsoleMaintenancePlanItem
-const columns: NvDataTableColumn<PlanRow>[] = [
+// 没有可用操作的角色不渲染「操作」列，免得只剩表头、整列空白。
+const columns = computed<NvDataTableColumn<PlanRow>[]>(() => [
   {
     key: 'planCode',
     header: '计划编号',
@@ -146,8 +150,10 @@ const columns: NvDataTableColumn<PlanRow>[] = [
   { key: 'triggerMode', header: '触发模式', accessor: (r) => triggerModeLabel(r) },
   { key: 'interval', header: '保养周期', accessor: (r) => intervalLabel(r.interval) },
   { key: 'nextDue', header: '下次到期', accessor: (r) => nextDueLabel(r) },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
-]
+  ...(canManagePlans.value
+    ? [{ key: 'actions', header: '操作', align: 'end' as const, width: 'w-12' }]
+    : []),
+])
 
 /** 保养周期：先查预置选项，其余按 ISO 8601 周期翻译（P7D → 每 7 天），不回吐原串。 */
 function intervalLabel(value?: string | null) {
@@ -184,12 +190,12 @@ function nextDueLabel(row: PlanRow) {
         ? '运行小时读取失败'
         : entry?.status === 'invalid'
           ? '运行小时阈值缺失'
-          : '暂无运行样本'
+          : '暂无运行记录'
     if (row.interval && row.nextDueOn) return `${row.nextDueOn}（${note}）`
     // Runtime-only plan (no calendar fallback): surface the settled runtime state as the value.
     if (entry?.status === 'error') return '运行小时（读取失败）'
     if (entry?.status === 'invalid') return '运行小时（阈值缺失）'
-    return '运行小时（暂无样本）'
+    return '运行小时（暂无运行记录）'
   }
   return row.nextDueOn ?? row.startsOn ?? '—'
 }
@@ -256,10 +262,6 @@ async function submitGenerate() {
     notifyOperationFailure('生成到期工单失败', error, '生成到期工单失败，请稍后重试。')
   }
 }
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 </script>
 
 <template>
@@ -280,11 +282,17 @@ function formatError(error: unknown) {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" variant="outline" @click="openGenerate">
+        <NvButton
+          v-if="canManagePlans"
+          size="sm"
+          type="button"
+          variant="outline"
+          @click="openGenerate"
+        >
           <CalendarClockIcon aria-hidden="true" />
           生成到期工单
         </NvButton>
-        <NvButton size="sm" type="button" @click="openCreate">
+        <NvButton v-if="canManagePlans" size="sm" type="button" @click="openCreate">
           <PlusIcon aria-hidden="true" />
           新建保养计划
         </NvButton>
@@ -318,10 +326,7 @@ function formatError(error: unknown) {
         />
       </template>
       <template #cell-actions="{ row }">
-        <NvRowActions
-          v-if="canManagePlans"
-          :label="`保养计划操作 ${row.planCode ?? MISSING_PLAN_CODE}`"
-        >
+        <NvRowActions :label="`保养计划操作 ${row.planCode ?? MISSING_PLAN_CODE}`">
           <NvDropdownMenuItem :disabled="!row.planId" @click="openEdit(row)">
             <PencilIcon aria-hidden="true" />
             编辑触发条件
@@ -355,7 +360,12 @@ function formatError(error: unknown) {
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="gen-date">业务日期</NvFieldLabel>
-              <NvInput id="gen-date" v-model="generateForm.businessDate" type="date" />
+              <NvDatePicker
+                id="gen-date"
+                v-model="generateForm.businessDate"
+                :locale="locale"
+                clearable
+              />
             </NvField>
           </NvFieldGroup>
 
@@ -366,7 +376,7 @@ function formatError(error: unknown) {
               <NvButton type="button" variant="outline">取消</NvButton>
             </NvDialogClose>
             <NvButton type="submit" :disabled="generateDuePending">
-              <Spinner v-if="generateDuePending" aria-hidden="true" />
+              <NvSpinner v-if="generateDuePending" aria-hidden="true" />
               <CalendarClockIcon v-else aria-hidden="true" />
               生成到期工单
             </NvButton>

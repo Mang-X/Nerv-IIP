@@ -1,9 +1,11 @@
+using System.Reflection;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.Business.Wms.Domain;
+using Nerv.IIP.Business.Wms.Domain.AggregatesModel.BackorderOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
@@ -118,6 +120,68 @@ public sealed class WmsSchemaConventionTests
                     nameof(WarehouseTaskActionReceipt.WarehouseTaskId),
                     nameof(WarehouseTaskActionReceipt.Action),
                     nameof(WarehouseTaskActionReceipt.IdempotencyKey)));
+    }
+
+    /// <summary>
+    /// <see cref="WmsOperationalCodeKind"/> 里每一个 <c>*ColumnMaxLength</c> 常量都必须绑定到一列真实存在的列，
+    /// 且取值与 EF 模型一致（#3228）。
+    /// </summary>
+    /// <remarks>
+    /// **实际强度，别读成完备**：闭集枚举只覆盖「常量集合」这一维——反射拿到该类型上全部同名后缀的常量，
+    /// 新加一个列宽常量却不说它是哪一列会红。但 <c>bindings</c> 这张「常量↔列」对照表是**手写的**，
+    /// 它证明不了「某个单号还落进了别的列」。退供单号落进 <c>outbound_order_no</c> 这条关键承载关系
+    /// 写在 <c>QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate</c> 里，
+    /// 由 <c>WmsQualityInspectionGateConsumerTests</c> 的真 PostgreSQL 用例断言，不由本测试覆盖。
+    /// </remarks>
+    [Fact]
+    public void Operational_code_policy_column_widths_match_the_ef_model()
+    {
+        var bindings = new Dictionary<string, (Type Entity, string Property)>(StringComparer.Ordinal)
+        {
+            [nameof(WmsOperationalCodeKind.OutboundOrderNoColumnMaxLength)] = (typeof(OutboundOrder), nameof(OutboundOrder.OutboundOrderNo)),
+            [nameof(WmsOperationalCodeKind.SupplierReturnNoColumnMaxLength)] = (typeof(SupplierReturnRequest), nameof(SupplierReturnRequest.SupplierReturnNo)),
+            [nameof(WmsOperationalCodeKind.BackorderOrderNoColumnMaxLength)] = (typeof(BackorderOrder), nameof(BackorderOrder.BackorderOrderNo)),
+            [nameof(WmsOperationalCodeKind.WarehouseTaskNoColumnMaxLength)] = (typeof(WarehouseTask), nameof(WarehouseTask.TaskNo)),
+        };
+
+        var declaredConstants = typeof(WmsOperationalCodeKind)
+            .GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(field => field.IsLiteral && field.FieldType == typeof(int) && field.Name.EndsWith("ColumnMaxLength", StringComparison.Ordinal))
+            .ToArray();
+
+        using var fixture = CreateFixture();
+        var model = fixture.DbContext.GetService<IDesignTimeModel>().Model;
+        var failures = new List<string>();
+
+        foreach (var constant in declaredConstants)
+        {
+            if (!bindings.TryGetValue(constant.Name, out var binding))
+            {
+                failures.Add($"WmsOperationalCodeKind.{constant.Name} 没有绑定到任何真实列，无法核对列宽。");
+                continue;
+            }
+
+            var property = model.FindEntityType(binding.Entity)?.FindProperty(binding.Property);
+            if (property is null)
+            {
+                failures.Add($"{binding.Entity.Name}.{binding.Property} 不在 EF 模型里。");
+                continue;
+            }
+
+            var declared = (int)constant.GetValue(null)!;
+            if (property.GetMaxLength() != declared)
+            {
+                failures.Add(
+                    $"WmsOperationalCodeKind.{constant.Name}={declared} 与 {property.DeclaringType.GetTableName()}.{property.GetColumnName()} 的列宽 {property.GetMaxLength()} 不一致。");
+            }
+        }
+
+        foreach (var orphan in bindings.Keys.Where(name => declaredConstants.All(constant => constant.Name != name)))
+        {
+            failures.Add($"绑定表里的 {orphan} 已不是 WmsOperationalCodeKind 上的列宽常量。");
+        }
+
+        Assert.True(failures.Count == 0, string.Join(Environment.NewLine, failures));
     }
 
     private static IEnumerable<string> NoStockBalanceColumns(ApplicationDbContext dbContext)

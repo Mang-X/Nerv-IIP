@@ -117,21 +117,61 @@ public sealed record AssignCountExecutionCommand(
     public string ResourceLockKey => $"count:{CountExecutionId}";
 }
 
-public sealed class WarehouseAssignmentCommandValidator<TCommand>
-    : AbstractValidator<TCommand>
-    where TCommand : IWarehouseAssignmentCommand
+public sealed class AssignInboundOrderCommandValidator : AbstractValidator<AssignInboundOrderCommand>
 {
-    public WarehouseAssignmentCommandValidator()
+    public AssignInboundOrderCommandValidator() => WarehouseAssignmentValidation.Configure(this);
+}
+
+public sealed class AssignPutawayTaskCommandValidator : AbstractValidator<AssignPutawayTaskCommand>
+{
+    public AssignPutawayTaskCommandValidator() => WarehouseAssignmentValidation.Configure(this);
+}
+
+public sealed class AssignOutboundOrderCommandValidator : AbstractValidator<AssignOutboundOrderCommand>
+{
+    public AssignOutboundOrderCommandValidator() => WarehouseAssignmentValidation.Configure(this);
+}
+
+public sealed class AssignPickingTaskCommandValidator : AbstractValidator<AssignPickingTaskCommand>
+{
+    public AssignPickingTaskCommandValidator() => WarehouseAssignmentValidation.Configure(this);
+}
+
+public sealed class AssignCountExecutionCommandValidator : AbstractValidator<AssignCountExecutionCommand>
+{
+    public AssignCountExecutionCommandValidator() => WarehouseAssignmentValidation.Configure(this);
+}
+
+/// <summary>
+/// 受控分配家族 5 条命令共享的入参规则入口。
+/// </summary>
+/// <remarks>
+/// <para>姿势与 <c>WarehouseTaskActionValidation.Configure</c> 一致：规则写在一处，
+/// 由每条命令**自己的具体校验器**调用。原先这里是
+/// <c>sealed class WarehouseAssignmentCommandValidator&lt;TCommand&gt; : AbstractValidator&lt;TCommand&gt;</c>——
+/// sealed 开放泛型无法派生闭合，全仓零引用，唯一注册路径
+/// <c>AddValidatorsFromAssembly</c> 不注册泛型定义（实测：5 条命令
+/// <c>IValidator&lt;C&gt;</c> 在真实 host 里解析数均为 0），
+/// 于是这 9 条规则一条都没跑过（#3291）。</para>
+/// <para><b>不要改回泛型校验器形态</b>：只要具体校验器消失，程序集扫描就再也看不见这些规则，
+/// 而且不会有任何编译错误。<c>WarehouseAssignmentValidatorRegistrationTests</c>
+/// 按「实现 <see cref="IWarehouseAssignmentCommand"/> 的每个命令类型都必须能从真实容器解析出校验器」
+/// 断言，新增第 6 条分配命令而不给它校验器同样会红。</para>
+/// </remarks>
+internal static class WarehouseAssignmentValidation
+{
+    public static void Configure<TCommand>(AbstractValidator<TCommand> validator)
+        where TCommand : IWarehouseAssignmentCommand
     {
-        RuleFor(command => command.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(command => command.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(command => command.AssignerPrincipalId).NotEmpty().MaximumLength(150);
-        RuleFor(command => command.AuthorizedSiteCodes).NotEmpty();
-        RuleForEach(command => command.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
-        RuleFor(command => command.PoolCode).NotEmpty().MaximumLength(150);
-        RuleFor(command => command.OperatorPrincipalId).MaximumLength(150);
-        RuleFor(command => command.IdempotencyKey).NotEmpty().MaximumLength(128);
-        RuleFor(command => command.ExpectedVersion).GreaterThan(0);
+        validator.RuleFor(command => command.OrganizationId).NotEmpty().MaximumLength(100);
+        validator.RuleFor(command => command.EnvironmentId).NotEmpty().MaximumLength(100);
+        validator.RuleFor(command => command.AssignerPrincipalId).NotEmpty().MaximumLength(150);
+        validator.RuleFor(command => command.AuthorizedSiteCodes).NotEmpty();
+        validator.RuleForEach(command => command.AuthorizedSiteCodes).NotEmpty().MaximumLength(100);
+        validator.RuleFor(command => command.PoolCode).NotEmpty().MaximumLength(150);
+        validator.RuleFor(command => command.OperatorPrincipalId).MaximumLength(150);
+        validator.RuleFor(command => command.IdempotencyKey).NotEmpty().MaximumLength(128);
+        validator.RuleFor(command => command.ExpectedVersion).GreaterThan(0);
     }
 }
 

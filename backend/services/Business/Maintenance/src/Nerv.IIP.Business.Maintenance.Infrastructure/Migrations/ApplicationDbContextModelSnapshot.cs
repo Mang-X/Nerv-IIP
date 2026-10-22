@@ -448,6 +448,11 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("estimated_labor_minutes")
                         .HasComment("Estimated technician labor minutes.");
 
+                    b.Property<DateTimeOffset?>("ExpectedRestoreAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expected_restore_at_utc")
+                        .HasComment("Optional UTC expected asset restoration time; a prediction, not an actual restoration fact.");
+
                     b.Property<decimal?>("ExternalServiceCostAmount")
                         .HasPrecision(18, 6)
                         .HasColumnType("numeric(18,6)")
@@ -545,10 +550,21 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("version")
                         .HasComment("Optimistic concurrency version advanced by every state-changing work-order command.");
 
+                    b.Property<string>("WorkOrderNo")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("work_order_no")
+                        .HasComment("Formal maintenance work order number allocated by the maintenance-work-order code rule; unique per organization and environment.");
+
                     b.HasKey("Id");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceAlarmId")
                         .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderNo")
+                        .IsUnique()
+                        .HasDatabaseName("ux_maintenance_work_orders_work_order_no");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "AssignedTeamId", "OpenedAtUtc")
                         .HasDatabaseName("ix_maintenance_work_orders_scope_team_opened");
@@ -692,6 +708,12 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Spare part line id.");
 
+                    b.Property<string>("LocationCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("location_code")
+                        .HasComment("Registered inventory location the spare part is issued from; null only on lines recorded before issue locations were captured.");
+
                     b.Property<Guid>("MaintenanceWorkOrderId")
                         .HasColumnType("uuid")
                         .HasColumnName("maintenance_work_order_id")
@@ -702,6 +724,12 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("quantity")
                         .HasComment("Required spare part quantity.");
+
+                    b.Property<string>("SiteCode")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("Inventory site the spare part is issued from; null only on lines recorded before issue locations were captured.");
 
                     b.Property<string>("SkuCode")
                         .IsRequired()

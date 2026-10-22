@@ -1,7 +1,16 @@
 <script setup lang="ts">
+import { traceabilityReturnPath } from '@/composables/mes/traceWorkOrderLink'
+import WorkOrderSourceFacts from '@/components/mes/WorkOrderSourceFacts.vue'
 import { statusActionGate } from '@nerv-iip/business-core'
-import type { NvDataTableColumn, NvMetricStatus, NvMetricTone } from '@nerv-iip/ui'
+import type {
+  EntityPickerOption,
+  NvDataTableColumn,
+  NvMetricStatus,
+  NvMetricTone,
+  StatusTone,
+} from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import QualityHoldPanel from '@/components/mes/QualityHoldPanel.vue'
@@ -11,7 +20,19 @@ import {
   SINGLE_ORDER_SCHEDULING_DENIED_REASON,
   useCanScheduleSingleOrder,
 } from '@/composables/useSingleOrderScheduling'
-import { describeMesReadinessReasons, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
+import {
+  describeMesReadinessReasons,
+  makeIdempotencyKey,
+  useMesWorkOrderTransformations,
+  useMesWorkOrderDetail,
+  type MesWorkOrderTransformationResult,
+} from '@/composables/useBusinessMes'
+import WorkOrderTransformationDialog, {
+  type MergeTransformationSubmit,
+  type SplitTransformationSubmit,
+  type WorkOrderTransformationState,
+} from '@/components/mes/WorkOrderTransformationDialog.vue'
+import { isTransformationConflict } from '@/composables/mes/workOrderTransformation'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
   describeMaterialShortageStage,
@@ -28,8 +49,10 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { readFaceText } from '@/utils/readFace'
+import { formatDateTime as formatSnapshotCapturedAt } from '@/utils/format'
 import {
   inlineErrorMessage,
+  isForbiddenError,
   notifyError,
   notifyOperationFailure,
   notifySuccess,
@@ -43,6 +66,7 @@ import {
   NvAlertDialogTitle,
   NvButton,
   NvDataTable,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -59,7 +83,7 @@ import {
   NvTooltipContent,
   NvTooltipProvider,
   NvTooltipTrigger,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import {
   CalendarCogIcon,
@@ -70,8 +94,10 @@ import {
   ShieldCheckIcon,
   XCircleIcon,
 } from '@lucide/vue'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+
+import { operationTaskLabel } from '@/utils/mesTaskIdentity'
 
 definePage({
   meta: {
@@ -90,16 +116,23 @@ const {
   cancelPreviewReady,
   cancelWorkOrder,
   cancelWorkOrderPending,
+  holdWorkOrder,
+  holdWorkOrderPending,
+  closeWorkOrder,
+  closeWorkOrderPending,
   confirmLineSideReceipt,
   confirmLineSideReceiptPending,
+  returnLineSideMaterial,
+  returnLineSideMaterialPending,
   createMaterialIssueRequest,
   createMaterialIssueRequestPending,
-  detail,
+  detail: sourceDetail,
   detailError,
   detailPending,
   filters,
   finishedGoodsReceiptRequests,
   materialIssueRequests,
+  materialIssueRequestsError,
   materialIssueRequestsPending,
   materialReadiness,
   materialReadinessError,
@@ -107,19 +140,23 @@ const {
   refreshDetail,
   refreshMaterialIssueRequests,
   refreshMaterialReadiness,
+  recordEngineeringChangeDecision,
+  recordEngineeringChangeDecisionPending,
   retryCancelPreview,
   workOrderManageScopeMessage,
+  workOrderManageScope,
   workOrderManageScopeReady,
+  workOrderReadScope,
   workOrderReadScopeMessage,
-} = useMesWorkOrderDetail()
-
-watch(
-  () => (route.params as Record<string, string | string[] | undefined>).workOrderId,
-  (value) => {
-    filters.workOrderId = (Array.isArray(value) ? value[0] : value) ?? ''
-  },
-  { immediate: true },
-)
+} = useMesWorkOrderDetail(() => {
+  const value = (route.params as Record<string, string | string[] | undefined>).workOrderId
+  return (Array.isArray(value) ? value[0] : value) ?? ''
+})
+const workOrderTransformations = useMesWorkOrderTransformations({
+  filters,
+  readScope: workOrderReadScope,
+  manageScope: workOrderManageScope,
+})
 
 // 工序行的班次只有标识，班次名在主数据里（shifts: true 才会拉这份名录）。
 const { resolveShiftLabel, resolveSkuLabel } = useMesDisplayNames({ shifts: true })
@@ -135,6 +172,44 @@ const canReadInspectionRecords = computed(() =>
   permissionCodes.value.includes(P.qualityInspectionRecordsRead),
 )
 
+const canReadReports = computed(() => permissionCodes.value.includes(P.mesReportingRead))
+const canReadInventory = computed(() => permissionCodes.value.includes(P.inventoryLedgerRead))
+const canReadReceipts = computed(() => permissionCodes.value.includes(P.mesReceiptsRead))
+const sourceSuggestionRoute = computed(() => {
+  const source = detail.value?.sourcePlanReference
+  if (
+    !permissionCodes.value.includes(P.planningMrpRead) ||
+    source?.sourceDocumentType !== 'PlanningSuggestion' ||
+    !source.sourceDocumentId
+  )
+    return undefined
+  return { path: '/planning', query: { suggestionId: source.sourceDocumentId } }
+})
+
+const traceReturn = computed(() => traceabilityReturnPath(route.query.traceReturn))
+const traceSourceMessage = computed(() => {
+  if (!traceReturn.value) return ''
+  if (
+    route.query.traceOrganizationId !== filters.organizationId ||
+    route.query.traceEnvironmentId !== filters.environmentId
+  ) {
+    return '当前查看范围已改变，请返回追溯重新查询。'
+  }
+  if (!sourceDetail.value) return ''
+  if (sourceDetail.value.workOrderId !== filters.workOrderId) {
+    return '工单详情与追溯来源不一致，请返回追溯核对。'
+  }
+  const operationTaskId = route.query.operationTaskId
+  if (
+    operationTaskId &&
+    !sourceDetail.value.operationTasks?.some((task) => task.operationTaskId === operationTaskId)
+  ) {
+    return '工单详情中未找到来源工序，请返回追溯核对。'
+  }
+  return ''
+})
+// 公开读回与来源身份不一致时，不把另一对象的事实展示成来源工单。
+const detail = computed(() => (traceSourceMessage.value ? undefined : sourceDetail.value))
 const operationTasks = computed(() => detail.value?.operationTasks ?? [])
 const workOrderLabel = computed(() => readFaceText(filters.workOrderId, '未编号工单'))
 // 工单质量保留（活跃 + 已释放周期）。定位键齐备（sourceService + sourceDocumentId）的才渲染。
@@ -161,12 +236,100 @@ const blockingReasons = computed(() => [
   ...(materialReadiness.value?.blockingReasons ?? []),
 ])
 const blockingReasonDisplays = computed(() => describeMesReadinessReasons(blockingReasons.value))
-const errorMessage = computed(
-  () => formatError(detailError.value) || formatError(materialReadinessError.value),
+// 三张子表各读各的面，失败也各归各的表：合成一条页面级错误行会让「哪张表挂了」丢失。
+const detailErrorMessage = computed(() => inlineErrorMessage(detailError.value))
+const materialReadinessErrorMessage = computed(() =>
+  inlineErrorMessage(materialReadinessError.value),
+)
+const materialIssueRequestsErrorMessage = computed(() =>
+  inlineErrorMessage(materialIssueRequestsError.value),
 )
 
 // 工单头部四卡：状态与用料给「能不能开工」的结论，工序进度给「做到哪了」。
 const skuLabel = computed(() => resolveSkuLabel(detail.value?.skuId))
+const splitDialogOpen = ref(false)
+const splitState = ref<WorkOrderTransformationState>('idle')
+const splitError = ref('')
+const splitResult = ref<MesWorkOrderTransformationResult | null>(null)
+const splitIdempotencyKey = ref('')
+const splitSource = computed(() =>
+  detail.value?.workOrderId
+    ? {
+        workOrderId: detail.value.workOrderId,
+        label: workOrderLabel.value,
+        skuId: detail.value.skuId,
+        skuLabel: skuLabel.value,
+        productionVersionId: detail.value.productionVersionId,
+        quantity: detail.value.quantity,
+        // PR-C 当前详情读契约没有返回 UOM；拆分结果由服务端继承单位，页面不猜测。
+        uomCode: undefined,
+        status: detail.value.status,
+      }
+    : undefined,
+)
+const canTransformWorkOrder = computed(
+  () =>
+    workOrderManageScopeReady.value &&
+    Boolean(detail.value) &&
+    ['created', 'released'].includes((detail.value?.status ?? '').toLowerCase()),
+)
+const splitPending = computed(
+  () => workOrderTransformations.splitWorkOrderPending.value || splitState.value === 'loading',
+)
+
+function openSplitDialog() {
+  if (!canTransformWorkOrder.value) return
+  splitState.value = 'idle'
+  splitError.value = ''
+  splitResult.value = null
+  splitIdempotencyKey.value = makeIdempotencyKey(`split-work-order-${filters.workOrderId}`)
+  splitDialogOpen.value = true
+}
+
+async function submitSplit(payload: SplitTransformationSubmit | MergeTransformationSubmit) {
+  if (!('targets' in payload)) return
+  splitState.value = 'loading'
+  splitError.value = ''
+  try {
+    const result = await workOrderTransformations.splitWorkOrder(filters.workOrderId, payload)
+    splitResult.value = result
+    if (result.readback) {
+      splitState.value = 'success'
+      notifySuccess(`工单 ${workOrderLabel.value} 已拆分，结果已回读。`)
+      await refreshDetail()
+    } else {
+      splitState.value = 'accepted'
+      notifySuccess('拆分请求已受理，但结果暂未回读；请在本窗口重试回读。')
+    }
+  } catch (error) {
+    splitState.value = isTransformationConflict(error) ? 'conflict' : 'error'
+    splitError.value = inlineErrorMessage(error, '拆分工单失败，请刷新后重试。')
+    notifyOperationFailure('拆分工单失败', error, '拆分工单失败，请刷新后重试。')
+  }
+}
+
+async function retrySplitReadback() {
+  const current = splitResult.value
+  if (!current) return
+  splitState.value = 'loading'
+  try {
+    const readback = await workOrderTransformations.readTransformation(
+      current.mutation.transformationId,
+    )
+    splitResult.value = { ...current, readback, readbackError: undefined }
+    splitState.value = 'success'
+    notifySuccess('拆分结果已回读。')
+    await refreshDetail()
+  } catch (error) {
+    splitResult.value = { ...current, readbackError: error }
+    splitState.value = 'accepted'
+    notifyOperationFailure(
+      '回读拆分结果失败',
+      error,
+      '拆分已受理，但结果暂不可用，请稍后重试回读。',
+    )
+  }
+}
 const completedTaskCount = computed(
   () =>
     operationTasks.value.filter((task) =>
@@ -199,9 +362,28 @@ const workOrderStatusPill = computed<NvMetricStatus>(() => {
 const materialShortageCount = computed(
   () => materialRows.value.filter((row) => (row.shortageQuantity ?? 0) > 0).length,
 )
+const materialConclusion = computed(() =>
+  materialReadinessError.value || materialReadinessPending.value
+    ? undefined
+    : materialReadiness.value,
+)
+const materialReadForbidden = computed(() => isForbiddenError(materialReadinessError.value))
+const materialIssueReadForbidden = computed(() =>
+  isForbiddenError(materialIssueRequestsError.value),
+)
+const materialReadPermissionMessage = '当前角色没有用料读取权限，请联系管理员确认岗位授权。'
+const materialReadStateLabel = computed(() =>
+  materialReadForbidden.value
+    ? '无用料读取权限'
+    : materialReadinessError.value
+      ? '齐套更新失败'
+      : materialReadinessPending.value
+        ? '正在更新齐套'
+        : '未取得',
+)
 const materialTone = computed<NvMetricTone>(() => {
-  if (materialShortageCount.value > 0) return 'danger'
-  return materialRows.value.length ? 'success' : 'neutral'
+  if (materialConclusion.value?.readinessStatus === 'Blocked') return 'danger'
+  return materialConclusion.value?.readinessStatus === 'Ready' ? 'success' : 'neutral'
 })
 
 type TaskRow = (typeof operationTasks)['value'][number]
@@ -209,8 +391,9 @@ const taskColumns: NvDataTableColumn<TaskRow>[] = [
   {
     key: 'operationTaskId',
     header: '任务',
-    cellClass: 'font-medium',
-    accessor: (r) => r.operationTaskNo?.trim() || '—',
+    width: 'w-64',
+    cellClass: 'font-medium whitespace-normal break-all',
+    accessor: (r) => operationTaskLabel(r),
   },
   { key: 'status', header: '状态', width: 'w-24' },
   { key: 'scheduleStatus', header: '排程状态', width: 'w-28' },
@@ -225,18 +408,30 @@ const taskColumns: NvDataTableColumn<TaskRow>[] = [
   {
     key: 'workCenterId',
     header: '工作中心',
+    width: 'w-48',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) => r.workCenterName?.trim() || r.workCenterCode?.trim() || '—',
   },
   {
     key: 'deviceAssetId',
     header: '设备',
+    width: 'w-48',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) => r.deviceAssetName?.trim() || r.deviceAssetCode?.trim() || '未指定',
   },
-  { key: 'shiftId', header: '班次', accessor: (r) => resolveShiftLabel(r.shiftId) },
+  {
+    key: 'shiftId',
+    header: '班次',
+    width: 'w-40',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => resolveShiftLabel(r.shiftId),
+  },
   { key: 'startedAtUtc', header: '开始', width: 'w-44' },
   {
     key: 'qualityStatus',
     header: '质量',
+    width: 'w-32',
+    cellClass: 'whitespace-normal break-all',
     // 这一列会收到总体判定值（ready/warning/blocked），走库存质量状态表会把 `Ready`
     // 原样上屏（#1418）——统一走判定优先的口径。
     accessor: (r) => operationQualityStatusLabel(r.qualityStatus),
@@ -261,7 +456,12 @@ const materialColumns: NvDataTableColumn<MaterialRow>[] = [
   { key: 'availableQuantity', header: '线边可用', align: 'end', width: 'w-24' },
   { key: 'stagedQuantity', header: '已备', align: 'end', width: 'w-20' },
   { key: 'shortageQuantity', header: '短缺', align: 'end', width: 'w-20' },
-  { key: 'status', header: '状态', width: 'w-24' },
+  {
+    key: 'status',
+    header: '状态',
+    width: 'w-24',
+    accessor: (r) => materialRowStatus(r.status).label,
+  },
   // 缺口卡在哪个环节 + 下一步动作（#1291：齐套页要能讲清「缺什么、缺在哪个环节、下一步动作」）。
   { key: 'shortageStage', header: '缺在哪个环节', width: 'w-56' },
   { key: 'actions', header: '操作', width: 'w-28' },
@@ -286,14 +486,12 @@ const receiveOpen = ref(false)
 const receiveError = ref('')
 const receiveForm = reactive({
   requestId: '',
+  materialCode: '',
   quantity: '',
   materialLotId: '',
-  idempotencyKey: '',
 })
-
-function newMaterialIdempotencyKey(scope: string) {
-  return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-}
+const returnOpen = ref(false)
+const returnForm = reactive({ requestId: '', quantity: '', idempotencyKey: '' })
 
 const materialIssueRows = computed(() => materialIssueRequests.value)
 type MaterialIssueRow = (typeof materialIssueRows)['value'][number]
@@ -316,6 +514,25 @@ const materialIssueColumns: NvDataTableColumn<MaterialIssueRow>[] = [
   { key: 'wmsRequestId', header: '出库单', width: 'w-32' },
   { key: 'actions', header: '操作', width: 'w-28' },
 ]
+
+const operationTaskOptions = computed<EntityPickerOption[]>(() =>
+  [...operationTasks.value]
+    .sort((a, b) => (a.operationSequence ?? 0) - (b.operationSequence ?? 0))
+    .flatMap((task) => {
+      const value = task.operationTaskId?.trim()
+      if (!value) return []
+      const sequence = `第 ${task.operationSequence ?? 0} 道工序`
+      const taskNo = task.operationTaskNo?.trim()
+      const workCenter = task.workCenterName?.trim() || task.workCenterCode?.trim()
+      return [
+        {
+          value,
+          label: taskNo || sequence,
+          hint: [taskNo ? sequence : '', workCenter].filter(Boolean).join(' · '),
+        },
+      ]
+    }),
+)
 
 const issueUomCode = computed(() => resolveBaseUom(issueForm.materialId.trim()))
 const issueUomBlockReason = computed(() => {
@@ -346,7 +563,7 @@ function openIssueDialog(materialId?: string) {
   issueForm.materialId = materialId ?? ''
   issueForm.quantity = ''
   issueForm.operationTaskId = ''
-  issueForm.idempotencyKey = newMaterialIdempotencyKey(
+  issueForm.idempotencyKey = makeIdempotencyKey(
     `issue-${filters.workOrderId}-${materialId ?? 'material'}`,
   )
   issueOpen.value = true
@@ -359,14 +576,40 @@ function canReceive(row: MaterialIssueRow) {
   )
 }
 
+function returnableQuantityOfRow(row: MaterialIssueRow) {
+  return Math.max(0, (row.receivedQuantity ?? 0) - (row.consumedQuantity ?? 0))
+}
+
+const returnFormMaxQuantity = computed(() => {
+  const row = materialIssueRows.value.find((item) => item.requestId === returnForm.requestId)
+  return row ? returnableQuantityOfRow(row) : undefined
+})
+
+function canReturn(row: MaterialIssueRow) {
+  return (
+    canManageMaterials.value &&
+    Boolean(row.materialLotId?.trim()) &&
+    returnableQuantityOfRow(row) > 0 &&
+    ['received', 'partiallyreceived'].includes((row.status ?? '').toLowerCase())
+  )
+}
+
 function openReceiveDialog(row: MaterialIssueRow) {
   if (!canReceive(row)) return
   receiveError.value = ''
   receiveForm.requestId = row.requestId ?? ''
+  receiveForm.materialCode = row.materialCode ?? row.materialId ?? ''
   receiveForm.quantity = ''
   receiveForm.materialLotId = row.materialLotId ?? ''
-  receiveForm.idempotencyKey = newMaterialIdempotencyKey(`receipt-${row.requestId ?? 'request'}`)
   receiveOpen.value = true
+}
+
+function openReturnDialog(row: MaterialIssueRow) {
+  if (!canReturn(row)) return
+  returnForm.requestId = row.requestId ?? ''
+  returnForm.quantity = String(returnableQuantityOfRow(row))
+  returnForm.idempotencyKey = makeIdempotencyKey(`return-${row.requestId ?? 'request'}`)
+  returnOpen.value = true
 }
 
 async function submitIssue() {
@@ -400,14 +643,38 @@ async function submitReceipt() {
     await confirmLineSideReceipt(receiveForm.requestId, {
       receivedQuantity,
       materialLotId: receiveForm.materialLotId.trim() || undefined,
-      idempotencyKey: receiveForm.idempotencyKey,
     })
     receiveOpen.value = false
-    notifySuccess('已确认线边收料。')
-    void refreshMaterialReadiness()
+    notifySuccess('收料已受理，正在更新齐套。')
   } catch (error) {
     receiveError.value = inlineErrorMessage(error, '线边收料失败，请稍后重试。')
     notifyOperationFailure('线边收料失败', error, '线边收料失败，请稍后重试。')
+  }
+}
+
+async function submitReturn() {
+  if (!returnForm.requestId || returnLineSideMaterialPending.value) return
+  const returnedQuantity = Number(returnForm.quantity)
+  const row = materialIssueRows.value.find((item) => item.requestId === returnForm.requestId)
+  const returnableQuantity = row ? returnableQuantityOfRow(row) : 0
+  if (!Number.isFinite(returnedQuantity) || returnedQuantity <= 0) {
+    notifyError('退料数量必须大于 0。')
+    return
+  }
+  if (returnedQuantity > returnableQuantity) {
+    notifyError(`退料数量不能超过当前可退数量 ${returnableQuantity}。`)
+    return
+  }
+  try {
+    await returnLineSideMaterial(returnForm.requestId, {
+      returnedQuantity,
+      idempotencyKey: returnForm.idempotencyKey,
+    })
+    returnOpen.value = false
+    notifySuccess('已提交线边退料，线边可用量将随库存过账回读更新。')
+    void refreshMaterialReadiness()
+  } catch (error) {
+    notifyOperationFailure('线边退料失败', error, '线边退料失败，请稍后重试。')
   }
 }
 
@@ -435,6 +702,120 @@ const cancelOpen = ref(false)
 const cancelForm = reactive({ reasonCode: '', remark: '' })
 
 const currentStatus = computed(() => (detail.value?.status ?? '').toLowerCase())
+const holdOpen = shallowRef(false)
+const holdReason = shallowRef('')
+const holdShowErrors = shallowRef(false)
+const HOLD_REASON_MAX_LENGTH = 500
+const canHold = computed(
+  () =>
+    workOrderManageScopeReady.value &&
+    statusActionGate({
+      domain: 'mes-work-order',
+      action: 'hold',
+      facts: { status: detail.value?.status },
+    }).executable,
+)
+const holdReasonError = computed(() => (holdReason.value.trim() ? '' : '请输入挂起原因。'))
+function openHoldDialog() {
+  if (!canHold.value) return
+  holdReason.value = ''
+  holdShowErrors.value = false
+  holdOpen.value = true
+}
+async function submitHold() {
+  if (!canHold.value || holdWorkOrderPending.value) return
+  holdShowErrors.value = true
+  if (holdReasonError.value) return
+  try {
+    await holdWorkOrder(holdReason.value.trim())
+    holdOpen.value = false
+    notifySuccess(`工单 ${workOrderLabel.value} 已挂起。`)
+    await refreshDetail()
+  } catch (error) {
+    if (
+      await recoverLifecycleAction(error, {
+        reset: () => {
+          holdOpen.value = false
+          holdReason.value = ''
+        },
+        refresh: refreshDetail,
+        notify: (message) => notifyError(message),
+      })
+    ) {
+      return
+    }
+    notifyOperationFailure('挂起工单失败', error, '挂起工单失败，请稍后重试。')
+  }
+}
+const closeOpen = ref(false)
+const decisionOpen = ref(false)
+const decisionShowErrors = ref(false)
+const decisionForm = reactive({ changeNumber: '', decision: '', reason: '' })
+const ENGINEERING_CHANGE_NUMBER_MAX_LENGTH = 100
+const ENGINEERING_CHANGE_REASON_MAX_LENGTH = 500
+const canClose = computed(
+  () => workOrderManageScopeReady.value && currentStatus.value === 'completed',
+)
+const canRecordEngineeringDecision = computed(
+  () => workOrderManageScopeReady.value && !['closed', 'cancelled'].includes(currentStatus.value),
+)
+const decisionFieldErrors = computed(() => ({
+  changeNumber: !decisionForm.changeNumber.trim()
+    ? '请输入变更单号。'
+    : decisionForm.changeNumber.trim().length > ENGINEERING_CHANGE_NUMBER_MAX_LENGTH
+      ? `变更单号不能超过 ${ENGINEERING_CHANGE_NUMBER_MAX_LENGTH} 个字符。`
+      : '',
+  decision: decisionForm.decision ? '' : '请选择处理意见。',
+  reason: !decisionForm.reason.trim()
+    ? '请输入决策说明。'
+    : decisionForm.reason.trim().length > ENGINEERING_CHANGE_REASON_MAX_LENGTH
+      ? `决策说明不能超过 ${ENGINEERING_CHANGE_REASON_MAX_LENGTH} 个字符。`
+      : '',
+}))
+const decisionValidationSummary = computed(() =>
+  Object.values(decisionFieldErrors.value).filter(Boolean),
+)
+const canSubmitDecision = computed(
+  () => canRecordEngineeringDecision.value && decisionValidationSummary.value.length === 0,
+)
+async function submitClose() {
+  if (!canClose.value || closeWorkOrderPending.value) return
+  try {
+    await closeWorkOrder()
+    closeOpen.value = false
+    notifySuccess(`工单 ${workOrderLabel.value} 已关闭。`)
+    await refreshDetail()
+  } catch (error) {
+    notifyOperationFailure('关闭工单失败', error, '关闭工单失败，请稍后重试。')
+  }
+}
+function openDecisionDialog() {
+  if (!canRecordEngineeringDecision.value) return
+  decisionForm.changeNumber = ''
+  decisionForm.decision = ''
+  decisionForm.reason = ''
+  decisionShowErrors.value = false
+  decisionOpen.value = true
+}
+async function submitDecision() {
+  if (!canRecordEngineeringDecision.value || recordEngineeringChangeDecisionPending.value) return
+  decisionShowErrors.value = true
+  if (!canSubmitDecision.value) return
+  try {
+    await recordEngineeringChangeDecision({
+      changeNumber: decisionForm.changeNumber.trim(),
+      decision: decisionForm.decision,
+      reason: decisionForm.reason.trim(),
+    })
+    decisionOpen.value = false
+    notifySuccess(
+      `工程变更决策已记录：${decisionForm.decision === 'continue-with-archived-version' ? '继续使用现行版本' : '停止工单'}。`,
+    )
+    await refreshDetail()
+  } catch (error) {
+    notifyOperationFailure('记录工程变更决策失败', error, '记录工程变更决策失败，请稍后重试。')
+  }
+}
 
 // 「对该单排产」（MAN-694 / #1262）：终态工单排不了，读权限也生成不了方案——
 // 两种情况都禁用并说明原因，而不是让用户点完吃一个 400。
@@ -450,6 +831,13 @@ const scheduleDisabledReason = computed(() => {
   if (!canScheduleSingleOrder.value) return SINGLE_ORDER_SCHEDULING_DENIED_REASON
   return ''
 })
+// 空态复用同一份 scheduleDisabledReason：禁用原因只有一处真实来源，避免空态文案与
+// tooltip（:947）各写各的、漏分支或说反原因（#2707）。
+const operationTasksEmptyMessage = computed(() =>
+  scheduleDisabledReason.value
+    ? `暂无工序任务。${scheduleDisabledReason.value}`
+    : '暂无工序任务。点击上方「对该单排产」生成方案，在「排产工作台」发布后可在这里派工与报工。',
+)
 const canCancel = computed(
   () =>
     workOrderManageScopeReady.value &&
@@ -631,6 +1019,13 @@ function formatDateTime(value?: string | null) {
 function formatQuantity(value?: number) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value ?? 0)
 }
+/** 齐套行状态（MES 齐套读面只回 Shortage / Ready）；词表外的码显示「—」。 */
+function materialRowStatus(value?: string | null): { label: string; tone: StatusTone } {
+  const status = value?.toLowerCase()
+  if (status === 'shortage') return { label: '缺料', tone: 'warning' }
+  if (status === 'ready') return { label: '已齐套', tone: 'success' }
+  return { label: '—', tone: 'neutral' }
+}
 function formatStatus(value?: string | null) {
   const map: Record<string, string> = {
     blocked: '阻塞',
@@ -642,13 +1037,11 @@ function formatStatus(value?: string | null) {
     ready: '可开工',
     released: '已下达',
     running: '执行中',
+    scrapped: '已报废',
     started: '已开工',
     warning: '预警',
   }
-  return value ? (map[value.toLowerCase()] ?? value) : '未知'
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
+  return (value && map[value.toLowerCase()]) || '—'
 }
 </script>
 
@@ -659,7 +1052,59 @@ function formatError(error: unknown) {
       :breadcrumbs="[{ label: '制造执行' }, { label: '工单与派工' }]"
     >
       <template #actions>
+        <NvButton v-if="traceReturn" size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="traceReturn">返回追溯</RouterLink>
+        </NvButton>
+        <NvButton v-if="sourceSuggestionRoute" size="sm" type="button" variant="outline" as-child>
+          <RouterLink :to="sourceSuggestionRoute">返回来源建议</RouterLink>
+        </NvButton>
         <!-- 对该单排产：只生成一个含本工单的新方案（MAN-694 / #1262）。 -->
+        <NvButton
+          v-if="canRecordEngineeringDecision"
+          size="sm"
+          type="button"
+          variant="outline"
+          data-testid="record-engineering-change-decision"
+          @click="openDecisionDialog"
+        >
+          记录工程变更决策
+        </NvButton>
+        <NvButton
+          v-if="workOrderManageScopeReady"
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="!canTransformWorkOrder || splitPending"
+          :title="
+            canTransformWorkOrder
+              ? '将当前工单拆成多个新的子工单'
+              : '只有已创建或已下达状态的工单可以拆分'
+          "
+          data-testid="open-split-work-order"
+          @click="openSplitDialog"
+        >
+          拆分工单
+        </NvButton>
+        <NvButton
+          v-if="canHold"
+          size="sm"
+          type="button"
+          variant="outline"
+          data-testid="open-hold-work-order"
+          @click="openHoldDialog"
+        >
+          挂起工单
+        </NvButton>
+        <NvButton
+          v-if="canClose"
+          size="sm"
+          type="button"
+          variant="default"
+          data-testid="close-work-order"
+          @click="closeOpen = true"
+        >
+          关闭工单
+        </NvButton>
         <NvButton
           v-if="!scheduleDisabledReason"
           size="sm"
@@ -685,6 +1130,7 @@ function formatError(error: unknown) {
           </NvTooltip>
         </NvTooltipProvider>
         <NvButton
+          v-if="canReadReports"
           size="sm"
           type="button"
           variant="outline"
@@ -693,11 +1139,19 @@ function formatError(error: unknown) {
           <ClipboardCheckIcon aria-hidden="true" />
           报工记录
         </NvButton>
-        <NvButton size="sm" type="button" variant="outline" @click="openRoute('/mes/receipts')">
+        <NvButton
+          v-if="canReadReceipts"
+          size="sm"
+          type="button"
+          variant="outline"
+          :disabled="detailPending || !!detailError || !detail?.skuId"
+          @click="openRoute('/mes/receipts')"
+        >
           <PackageCheckIcon aria-hidden="true" />
           完工入库
         </NvButton>
         <NvButton
+          v-if="canReadInspectionRecords"
           size="sm"
           type="button"
           variant="outline"
@@ -744,12 +1198,34 @@ function formatError(error: unknown) {
       </template>
     </NvPageHeader>
 
+    <p
+      v-if="traceSourceMessage"
+      role="alert"
+      data-testid="trace-source-message"
+      class="text-sm text-destructive"
+    >
+      {{ traceSourceMessage }}
+    </p>
+
     <!-- v-if 按需挂载：关闭时不持有候选工单查询，也不残留上一次的窗口输入。 -->
     <SingleOrderSchedulingDialog
       v-if="scheduleOpen"
       v-model:open="scheduleOpen"
       :work-order-id="detail?.workOrderId ?? filters.workOrderId"
       :context-label="`MES 工单 ${workOrderLabel}`"
+    />
+
+    <WorkOrderTransformationDialog
+      v-model:open="splitDialogOpen"
+      mode="split"
+      :state="splitState"
+      :pending="splitPending"
+      :source="splitSource"
+      :result="splitResult"
+      :error-message="splitError"
+      :idempotency-key="splitIdempotencyKey"
+      @submit="submitSplit"
+      @retry-readback="retrySplitReadback"
     />
 
     <!-- 作业范围未就绪：说明缺什么，并直接给选择入口，不让整页只剩一句拒载（#1288）。 -->
@@ -763,7 +1239,12 @@ function formatError(error: unknown) {
       <MesWorkScopeSelect permission-code="business.mes.work-orders.read" />
     </div>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
+    <WorkOrderSourceFacts
+      v-if="detail"
+      :source="detail.sourcePlanReference"
+      :organization-id="filters.organizationId"
+      :environment-id="filters.environmentId"
+    />
 
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <NvMetricCard
@@ -787,21 +1268,42 @@ function formatError(error: unknown) {
       <NvMetricCard
         variant="alert"
         label="用料齐套"
-        :value="materialReadiness ? formatStatus(materialReadiness.readinessStatus) : '未取得'"
+        :value="
+          materialConclusion
+            ? formatStatus(materialConclusion.readinessStatus)
+            : materialReadStateLabel
+        "
+        :action="
+          materialReadinessError && !materialReadForbidden ? { label: '重试更新齐套' } : undefined
+        "
+        @action="refreshMaterialReadiness"
         :tone="materialTone"
         :status="
-          materialReadiness
-            ? materialShortageCount > 0
-              ? { label: `${materialShortageCount} 项缺料`, tone: 'danger' }
-              : { label: '已齐套', tone: 'success' }
-            : { label: '结论未取得', tone: 'neutral' }
+          materialConclusion
+            ? materialConclusion.readinessStatus === 'Ready'
+              ? { label: '已齐套', tone: 'success' }
+              : {
+                  label: materialShortageCount > 0 ? `${materialShortageCount} 项缺料` : '阻塞',
+                  tone: 'danger',
+                }
+            : { label: materialReadStateLabel, tone: 'neutral' }
         "
         :foot-start="
-          materialReadiness
-            ? materialShortageCount > 0
-              ? '缺料项需先由仓库补发，否则无法开工。'
-              : '用料已备齐，可按工序顺序开工。'
-            : '尚未取得用料齐套结论，先解决上方读取阻塞后刷新。'
+          materialConclusion
+            ? materialConclusion.readinessStatus === 'Ready'
+              ? '用料已备齐，可按工序顺序开工。'
+              : materialShortageCount > 0
+                ? '缺料项需先发起领料，物料到线边后确认收料，否则无法开工。'
+                : describeMesReadinessReasons(materialConclusion.blockingReasons)
+                    .map((reason) => reason.detail || reason.label)
+                    .join('；')
+            : materialReadForbidden
+              ? materialReadPermissionMessage
+              : materialReadinessError
+                ? '读取未完成，请重试更新齐套，无需重复收料。'
+                : materialReadinessPending
+                  ? '正在等待收料过账与最新齐套结果。'
+                  : '尚未取得用料齐套结论，可在下方「用料齐套」表查看读取状态并重试。'
         "
       />
     </div>
@@ -861,17 +1363,37 @@ function formatError(error: unknown) {
       />
     </div>
 
-    <div class="grid gap-2">
+    <div class="grid min-w-0 gap-2 [&>*]:min-w-0">
       <span class="text-sm font-semibold text-foreground">工序任务</span>
       <NvDataTable
         :columns="taskColumns"
         :rows="operationTasks"
         row-key="operationTaskId"
         :loading="detailPending"
-        empty-message="暂无工序任务。先确认工艺路线已发布并完成排程，再回到这里派工与报工。"
+        :error="detailError"
+        :error-message="detailErrorMessage"
+        :empty-message="operationTasksEmptyMessage"
         :searchable="false"
         :column-settings="false"
+        @retry="refreshDetail"
       >
+        <template #cell-operationTaskId="{ row }">
+          <span
+            class="flex flex-col items-start gap-1"
+            :data-andon-source="
+              Boolean(row.operationTaskId && route.query.operationTaskId === row.operationTaskId)
+            "
+          >
+            <span class="break-all whitespace-normal" :title="row.operationTaskId">{{
+              operationTaskLabel(row)
+            }}</span>
+            <NvStatusBadge
+              v-if="row.operationTaskId && route.query.operationTaskId === row.operationTaskId"
+              label="来源工序"
+              tone="info"
+            />
+          </span>
+        </template>
         <template #cell-status="{ row }">
           <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
         </template>
@@ -915,17 +1437,35 @@ function formatError(error: unknown) {
         </NvButton>
       </div>
       <!-- 口径自解释：齐套只认线边/备料范围，与 MRP 的全厂库存口径本来就不同（#1291）。 -->
+      <p
+        v-if="materialReadiness"
+        class="text-xs text-muted-foreground"
+        data-testid="material-readiness-snapshot"
+      >
+        齐套快照捕获时间：{{
+          materialReadiness.snapshotCapturedAtUtc
+            ? formatSnapshotCapturedAt(materialReadiness.snapshotCapturedAtUtc)
+            : '未记录'
+        }}
+      </p>
       <p class="text-xs text-muted-foreground" data-testid="material-readiness-scope">
         {{ MATERIAL_READINESS_SCOPE_NOTE }}
       </p>
+      <p v-if="materialReadForbidden" class="text-sm text-muted-foreground" role="status">
+        {{ materialReadPermissionMessage }}
+      </p>
       <NvDataTable
+        v-else
         :columns="materialColumns"
         :rows="materialRows"
         :row-key="(r) => `${r.materialId}-${r.materialLotId}`"
         :loading="materialReadinessPending"
-        empty-message="暂无用料行。先确认物料清单已发布，再回到这里查看齐套与领料进度。"
+        :error="materialReadinessError"
+        :error-message="materialReadinessErrorMessage"
+        empty-message="暂无用料行。先到「制造 BOM」发布物料清单；还需工单已下达/排产、且有生效生产版本，三者缺一不可。"
         :searchable="false"
         :column-settings="false"
+        @retry="refreshMaterialReadiness"
       >
         <template #cell-requiredQuantity="{ row }"
           ><span class="tabular-nums">{{ formatQuantity(row.requiredQuantity) }}</span></template
@@ -940,7 +1480,10 @@ function formatError(error: unknown) {
           ><span class="tabular-nums">{{ formatQuantity(row.shortageQuantity) }}</span></template
         >
         <template #cell-status="{ row }">
-          <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
+          <NvStatusBadge
+            :label="materialRowStatus(row.status).label"
+            :tone="materialRowStatus(row.status).tone"
+          />
         </template>
         <template #cell-shortageStage="{ row }">
           <div class="grid gap-0.5">
@@ -969,7 +1512,7 @@ function formatError(error: unknown) {
       </NvDataTable>
       <!-- 全厂库存对照入口：穿透到库存可用量页，核对「原料仓有没有货」。 -->
       <RouterLink
-        v-if="materialShortageCount > 0"
+        v-if="materialShortageCount > 0 && canReadInventory"
         class="justify-self-start text-sm font-medium text-brand hover:underline"
         :to="{ path: '/inventory/availability' }"
         >去库存可用量核对全厂是否有货</RouterLink
@@ -984,22 +1527,29 @@ function formatError(error: unknown) {
           type="button"
           variant="ghost"
           size="sm"
-          :disabled="materialIssueRequestsPending"
+          :disabled="materialIssueRequestsPending || materialIssueReadForbidden"
           @click="refreshMaterialIssueRequests"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
       </div>
+      <p v-if="materialIssueReadForbidden" class="text-sm text-muted-foreground" role="status">
+        {{ materialReadPermissionMessage }}
+      </p>
       <NvDataTable
+        v-else
         :columns="materialIssueColumns"
         :rows="materialIssueRows"
         :row-key="(r) => r.requestId ?? ''"
         :loading="materialIssueRequestsPending"
+        :error="materialIssueRequestsError"
+        :error-message="materialIssueRequestsErrorMessage"
         empty-message="本工单还没有领料单。缺料时在上方「发起领料」，仓库接单后这里会出现出库单号。"
         :searchable="false"
         :column-settings="false"
         data-testid="material-issue-requests"
+        @retry="refreshMaterialIssueRequests"
       >
         <template #cell-requestedQuantity="{ row }"
           ><span class="tabular-nums">{{ formatQuantity(row.requestedQuantity) }}</span></template
@@ -1027,7 +1577,19 @@ function formatError(error: unknown) {
           >
             线边收料
           </NvButton>
-          <span v-else class="text-xs text-muted-foreground">无需收料</span>
+          <NvButton
+            v-if="canReturn(row)"
+            type="button"
+            variant="ghost"
+            size="sm"
+            :data-testid="`return-material-${row.requestId}`"
+            @click="openReturnDialog(row)"
+          >
+            线边退料
+          </NvButton>
+          <span v-if="!canReceive(row) && !canReturn(row)" class="text-xs text-muted-foreground"
+            >无需操作</span
+          >
         </template>
       </NvDataTable>
     </div>
@@ -1046,7 +1608,11 @@ function formatError(error: unknown) {
             <NvFieldLabel for="issue-material">
               物料 <span class="text-destructive">*</span>
             </NvFieldLabel>
-            <NvInput id="issue-material" v-model="issueForm.materialId" placeholder="物料标识" />
+            <DirectoryPicker
+              id="issue-material"
+              v-model="issueForm.materialId"
+              directory-type="material"
+            />
           </NvField>
           <NvField>
             <NvFieldLabel for="issue-uom">单位</NvFieldLabel>
@@ -1069,10 +1635,16 @@ function formatError(error: unknown) {
           </NvField>
           <NvField>
             <NvFieldLabel for="issue-operation">工序任务</NvFieldLabel>
-            <NvInput
+            <NvEntityPicker
               id="issue-operation"
               v-model="issueForm.operationTaskId"
+              :options="operationTaskOptions"
+              title="选择工序任务"
               placeholder="可留空，指定后领料归属该工序"
+              empty-text="本工单还没有工序任务"
+              :show-code="false"
+              clearable
+              aria-label="工序任务"
             />
           </NvField>
         </NvFieldGroup>
@@ -1091,7 +1663,7 @@ function formatError(error: unknown) {
             data-testid="submit-material-issue"
             @click="submitIssue"
           >
-            <Spinner v-if="createMaterialIssueRequestPending" aria-hidden="true" />
+            <NvSpinner v-if="createMaterialIssueRequestPending" aria-hidden="true" />
             确认发起领料
           </NvButton>
         </NvAlertDialogFooter>
@@ -1129,10 +1701,13 @@ function formatError(error: unknown) {
           </NvField>
           <NvField>
             <NvFieldLabel for="receive-lot">物料批次</NvFieldLabel>
-            <NvInput
+            <DirectoryPicker
               id="receive-lot"
               v-model="receiveForm.materialLotId"
-              placeholder="退料与追溯依赖批次，建议如实填写"
+              directory-type="batch"
+              :sku-code="receiveForm.materialCode"
+              placeholder="退料与追溯依赖批次，建议如实选择"
+              clearable
             />
           </NvField>
         </NvFieldGroup>
@@ -1151,8 +1726,52 @@ function formatError(error: unknown) {
             data-testid="submit-line-side-receipt"
             @click="submitReceipt"
           >
-            <Spinner v-if="confirmLineSideReceiptPending" aria-hidden="true" />
+            <NvSpinner v-if="confirmLineSideReceiptPending" aria-hidden="true" />
             确认收料
+          </NvButton>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
+
+    <!-- 线边退料 -->
+    <NvAlertDialog v-model:open="returnOpen">
+      <NvAlertDialogContent class="sm:max-w-md">
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle
+            >线边退料 · {{ readFaceText(returnForm.requestId) }}</NvAlertDialogTitle
+          >
+          <NvAlertDialogDescription>
+            退料会把当前线边物料退回仓库；数量不得超过当前可退余额。
+          </NvAlertDialogDescription>
+        </NvAlertDialogHeader>
+        <NvFieldGroup class="grid gap-3">
+          <NvField>
+            <NvFieldLabel for="return-quantity">退料数量</NvFieldLabel>
+            <NvInput
+              id="return-quantity"
+              v-model="returnForm.quantity"
+              inputmode="decimal"
+              :max="returnFormMaxQuantity"
+            />
+          </NvField>
+        </NvFieldGroup>
+        <NvAlertDialogFooter>
+          <NvButton
+            type="button"
+            variant="outline"
+            :disabled="returnLineSideMaterialPending"
+            @click="returnOpen = false"
+          >
+            返回
+          </NvButton>
+          <NvButton
+            type="button"
+            :disabled="returnLineSideMaterialPending"
+            data-testid="submit-line-side-return"
+            @click="submitReturn"
+          >
+            <NvSpinner v-if="returnLineSideMaterialPending" aria-hidden="true" />
+            提交退料
           </NvButton>
         </NvAlertDialogFooter>
       </NvAlertDialogContent>
@@ -1176,7 +1795,7 @@ function formatError(error: unknown) {
           <span class="font-semibold text-foreground">补偿预览</span>
 
           <div v-if="cancelPreviewPending" class="flex items-center gap-2 text-muted-foreground">
-            <Spinner aria-hidden="true" />
+            <NvSpinner aria-hidden="true" />
             <span>正在加载补偿预览…</span>
           </div>
           <div
@@ -1353,9 +1972,189 @@ function formatError(error: unknown) {
             :disabled="!canSubmitCancel || cancelWorkOrderPending"
             @click="submitCancel"
           >
-            <Spinner v-if="cancelWorkOrderPending" aria-hidden="true" />
+            <NvSpinner v-if="cancelWorkOrderPending" aria-hidden="true" />
             <XCircleIcon v-else aria-hidden="true" />
             确认取消工单
+          </NvButton>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
+
+    <NvAlertDialog v-model:open="closeOpen">
+      <NvAlertDialogContent class="sm:max-w-md">
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle>关闭工单 · {{ workOrderLabel }}</NvAlertDialogTitle>
+          <NvAlertDialogDescription>关闭后工单进入终态，不能再继续执行。</NvAlertDialogDescription>
+        </NvAlertDialogHeader>
+        <CarriedContextSummary
+          label="关闭对象"
+          :items="[
+            { label: '工单', value: workOrderLabel },
+            { label: '当前状态', value: formatStatus(detail?.status) },
+          ]"
+        />
+        <NvAlertDialogFooter>
+          <NvButton
+            type="button"
+            variant="outline"
+            :disabled="closeWorkOrderPending"
+            @click="closeOpen = false"
+          >
+            返回
+          </NvButton>
+          <NvButton
+            type="button"
+            :disabled="closeWorkOrderPending"
+            data-testid="confirm-close-work-order"
+            @click="submitClose"
+          >
+            <NvSpinner v-if="closeWorkOrderPending" aria-hidden="true" />
+            确认关闭
+          </NvButton>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
+
+    <NvAlertDialog v-model:open="holdOpen">
+      <NvAlertDialogContent class="sm:max-w-md">
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle>挂起工单 · {{ workOrderLabel }}</NvAlertDialogTitle>
+          <NvAlertDialogDescription
+            >挂起后工单暂停后续执行；确认原因后可在工单状态中追溯。</NvAlertDialogDescription
+          >
+        </NvAlertDialogHeader>
+        <p
+          v-if="holdShowErrors && holdReasonError"
+          class="text-sm text-destructive"
+          role="alert"
+          data-testid="hold-validation-summary"
+        >
+          请完整填写带 * 的必填项（已标红）。
+        </p>
+        <NvField :data-invalid="holdShowErrors && !!holdReasonError">
+          <NvFieldLabel for="hold-reason"
+            >挂起原因 <span class="text-destructive">*</span></NvFieldLabel
+          >
+          <NvInput
+            id="hold-reason"
+            v-model="holdReason"
+            :maxlength="HOLD_REASON_MAX_LENGTH"
+            placeholder="请说明挂起原因"
+          />
+          <p v-if="holdShowErrors && holdReasonError" class="text-xs text-destructive" role="alert">
+            {{ holdReasonError }}
+          </p>
+        </NvField>
+        <NvAlertDialogFooter>
+          <NvButton
+            type="button"
+            variant="outline"
+            :disabled="holdWorkOrderPending"
+            @click="holdOpen = false"
+          >
+            返回
+          </NvButton>
+          <NvButton
+            type="button"
+            :disabled="holdWorkOrderPending"
+            data-testid="confirm-hold-work-order"
+            @click="submitHold"
+          >
+            <NvSpinner v-if="holdWorkOrderPending" aria-hidden="true" />
+            确认挂起
+          </NvButton>
+        </NvAlertDialogFooter>
+      </NvAlertDialogContent>
+    </NvAlertDialog>
+
+    <NvAlertDialog v-model:open="decisionOpen">
+      <NvAlertDialogContent class="sm:max-w-md">
+        <NvAlertDialogHeader>
+          <NvAlertDialogTitle>记录工程变更决策 · {{ workOrderLabel }}</NvAlertDialogTitle>
+          <NvAlertDialogDescription
+            >填写变更单号和处理意见，决策会回写到该工单。</NvAlertDialogDescription
+          >
+        </NvAlertDialogHeader>
+        <NvFieldGroup class="grid gap-3">
+          <p
+            v-if="decisionShowErrors && decisionValidationSummary.length"
+            class="text-sm text-destructive"
+            role="alert"
+            data-testid="engineering-change-decision-errors"
+          >
+            请修正标红的必填项后再保存。
+          </p>
+          <NvField :data-invalid="decisionShowErrors && !!decisionFieldErrors.changeNumber">
+            <NvFieldLabel for="engineering-change-number"
+              >变更单号 <span class="text-destructive">*</span></NvFieldLabel
+            >
+            <NvInput
+              id="engineering-change-number"
+              v-model="decisionForm.changeNumber"
+              :maxlength="ENGINEERING_CHANGE_NUMBER_MAX_LENGTH"
+              placeholder="请输入变更单号"
+            />
+            <p
+              v-if="decisionShowErrors && decisionFieldErrors.changeNumber"
+              class="text-xs text-destructive"
+            >
+              {{ decisionFieldErrors.changeNumber }}
+            </p>
+          </NvField>
+          <NvField :data-invalid="decisionShowErrors && !!decisionFieldErrors.decision">
+            <NvFieldLabel for="engineering-change-decision"
+              >处理意见 <span class="text-destructive">*</span></NvFieldLabel
+            >
+            <NvSelect v-model="decisionForm.decision">
+              <NvSelectTrigger id="engineering-change-decision"
+                ><NvSelectValue placeholder="请选择处理意见"
+              /></NvSelectTrigger>
+              <NvSelectContent>
+                <NvSelectItem value="continue-with-archived-version">继续使用现行版本</NvSelectItem>
+                <NvSelectItem value="abort-work-order">停止工单</NvSelectItem>
+              </NvSelectContent>
+            </NvSelect>
+            <p
+              v-if="decisionShowErrors && decisionFieldErrors.decision"
+              class="text-xs text-destructive"
+            >
+              {{ decisionFieldErrors.decision }}
+            </p>
+          </NvField>
+          <NvField :data-invalid="decisionShowErrors && !!decisionFieldErrors.reason">
+            <NvFieldLabel for="engineering-change-reason"
+              >决策说明 <span class="text-destructive">*</span></NvFieldLabel
+            >
+            <NvInput
+              id="engineering-change-reason"
+              v-model="decisionForm.reason"
+              :maxlength="ENGINEERING_CHANGE_REASON_MAX_LENGTH"
+              placeholder="请说明决策依据"
+            />
+            <p
+              v-if="decisionShowErrors && decisionFieldErrors.reason"
+              class="text-xs text-destructive"
+            >
+              {{ decisionFieldErrors.reason }}
+            </p>
+          </NvField>
+        </NvFieldGroup>
+        <NvAlertDialogFooter>
+          <NvButton
+            type="button"
+            variant="outline"
+            :disabled="recordEngineeringChangeDecisionPending"
+            @click="decisionOpen = false"
+            >返回</NvButton
+          >
+          <NvButton
+            type="button"
+            :disabled="recordEngineeringChangeDecisionPending"
+            data-testid="confirm-engineering-change-decision"
+            @click="submitDecision"
+          >
+            <NvSpinner v-if="recordEngineeringChangeDecisionPending" aria-hidden="true" />
+            保存决策
           </NvButton>
         </NvAlertDialogFooter>
       </NvAlertDialogContent>

@@ -70,6 +70,10 @@ public sealed record WmsInventoryReservationRenewalRequest(string ReservationId)
 
 public sealed record WmsInventoryReservationRenewalResult(string ReservationId, DateTime ExpiresAtUtc);
 
+public sealed record WmsInventoryReservationPickedRequest(string ReservationId);
+
+public sealed record WmsInventoryReservationPickedResult(string ReservationId, string Status, decimal OpenQuantity);
+
 public sealed record WmsInventoryCountTaskRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -110,6 +114,11 @@ public interface IWmsInventoryReservationClient
 
     Task<WmsInventoryReservationRenewalResult> RenewAsync(
         WmsInventoryReservationRenewalRequest request,
+        CancellationToken cancellationToken);
+
+    /// <summary>拣货完成：让预留保持到出库过账核销，不再因超时过期（#3836）。</summary>
+    Task<WmsInventoryReservationPickedResult> MarkPickedAsync(
+        WmsInventoryReservationPickedRequest request,
         CancellationToken cancellationToken);
 
     Task<WmsInventoryCountTaskResult> CreateCountTaskAsync(
@@ -204,6 +213,27 @@ public sealed class HttpWmsInventoryReservationClient(
         if (envelope is null || !envelope.Success || envelope.Data is null)
         {
             throw new KnownException("库存预留续期失败，请刷新后重试。");
+        }
+
+        return envelope.Data;
+    }
+
+    public async Task<WmsInventoryReservationPickedResult> MarkPickedAsync(
+        WmsInventoryReservationPickedRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/inventory/v1/reservations/{Uri.EscapeDataString(request.ReservationId)}/pick")
+        {
+            Content = JsonContent.Create(request),
+        };
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
+
+        using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<WmsInventoryReservationPickedResult>>(cancellationToken);
+        if (envelope is null || !envelope.Success || envelope.Data is null)
+        {
+            throw new KnownException("库存预留已失效，无法确认拣货完成，请刷新后重新创建拣货任务。");
         }
 
         return envelope.Data;

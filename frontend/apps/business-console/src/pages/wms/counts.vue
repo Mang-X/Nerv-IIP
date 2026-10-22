@@ -7,6 +7,7 @@ import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
+import WmsAssignWorkPoolDialog from '@/components/wms/WmsAssignWorkPoolDialog.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
@@ -17,14 +18,8 @@ import {
 } from '@/composables/lifecycleAction'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import { createWmsIdempotencyKey, useWmsCountExecutions } from '@/composables/useBusinessWms'
-import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import {
-  useWarehouseCodeCatalog,
-  WAREHOUSE_CATALOG_SOURCE_TEXT,
-  WAREHOUSE_LOCATION_EMPTY_TEXT,
-} from '@/composables/useWarehouseCodeCatalog'
 import {
   wmsCountExecutionStatusFilterOptions,
   wmsCountExecutionStatusLabel,
@@ -34,6 +29,7 @@ import { usePagedList } from '@/composables/usePagedList'
 import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -66,12 +62,12 @@ import {
   NvMetricStrip,
   NvPageHeader,
   NvRowActions,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { CheckCircle2Icon, PlusIcon, RefreshCwIcon, UsersRoundIcon } from '@lucide/vue'
+import { computed, reactive, shallowRef, watch, watchEffect } from 'vue'
 
 definePage({
   meta: {
@@ -92,22 +88,26 @@ const {
   completeCountExecution,
   completeCountExecutionPending,
   filters,
-  countExecutionsLastUpdatedAt,
-  countExecutionsHasSuccessfulResponse,
-  countExecutionsHasFailedResponse,
 } = useWmsCountExecutions({ workScopeRequired: true })
 const auth = useAuthStore()
 const canManageCounts = computed(() =>
   (auth.principal?.permissionCodes ?? []).includes(P.inventoryCountsManage),
 )
+const canManagePools = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(P.wmsWorkPoolsManage),
+)
+const assignOpen = shallowRef(false)
+const assignTarget = shallowRef<CountRow>()
+function openAssign(row: CountRow) {
+  assignTarget.value = row
+  assignOpen.value = true
+}
 const {
   scopeKey,
   scopeOptions,
-  selectedScopeLabel,
   hasSelection: countScopeReady,
   unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
-  error: workScopeError,
   refresh: refreshWorkScopes,
 } = bindWmsWorkScopeFilters(filters, 'counts')
 const operationalCandidates = useWmsOperationalCandidates('count', filters)
@@ -120,12 +120,8 @@ const { page, pageSize } = usePagedList(filters, {
     () => filters.scopeId,
   ],
 })
-// 物料 / 单位 / 工厂走主数据目录；库位后端无读面，从既有台账与作业记录派生。
-const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
-  useInventoryScopeCatalog()
-const { locationOptions, warehouseCatalogPending } = useWarehouseCodeCatalog(undefined, {
-  scope: () => ({ scopeKind: filters.scopeKind, scopeId: filters.scopeId }),
-})
+// 物料 / 单位 / 工厂走主数据目录；库位走库存可搜目录（服务端搜索）。
+const { siteOptions, sitesPending, resolveUomCode } = useInventoryScopeCatalog()
 // 状态是后端枚举而不是目录，用哨兵值表达「全部」。
 const statusFilter = computed({
   get: () => filters.status || WMS_STATUS_ANY,
@@ -133,11 +129,6 @@ const statusFilter = computed({
     filters.status = value === WMS_STATUS_ANY ? undefined : value
   },
 })
-/** 单位随物料的基本单位带出，不给手输：盘点单位写错就核不上账。 */
-function onCountSkuChange(skuCode: string) {
-  createForm.skuCode = skuCode
-  createForm.uomCode = skuCode ? resolveUomCode(skuCode) : ''
-}
 
 function isOpen(row: BusinessConsoleWmsCountExecutionItem) {
   return statusActionGate({
@@ -178,14 +169,20 @@ const varianceCardNote = computed(() => {
 })
 
 const createOpen = shallowRef(false)
+// 盘点单号由系统按编码规则生成；同一次填写的重试沿用同一个幂等键。
+const createIdempotencyKey = shallowRef('')
 const createForm = reactive({
-  countNo: '',
   skuCode: '',
   // 单位跟随物料主档带出，不预填假单位：写死通用单位会让后端单位换算直接失败。
   uomCode: '',
   siteCode: '',
   locationCode: '',
   expectedQuantity: '',
+})
+// 单位随物料的基本单位带出，不给手输：盘点单位写错就核不上账。
+// 跟着物料目录重算：就地新建的物料要等目录刷新回来才查得到基本单位。
+watchEffect(() => {
+  createForm.uomCode = resolveUomCode(createForm.skuCode)
 })
 const createError = shallowRef('')
 
@@ -209,7 +206,7 @@ watch(
   },
 )
 
-const listErrorMessage = computed(() => formatError(countExecutionsError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(countExecutionsError.value))
 // 弹窗内只留字段级校验汇总；提交失败一律 toast，不留常驻错误条。
 const createErrorMessage = computed(() => createError.value)
 const completeErrorMessage = computed(() => completeError.value)
@@ -291,7 +288,7 @@ function varianceLabel(value?: number | null) {
 
 function openCreate() {
   if (!canManageCounts.value) return
-  createForm.countNo = ''
+  createIdempotencyKey.value = createWmsIdempotencyKey()
   createForm.skuCode = ''
   createForm.uomCode = ''
   createForm.siteCode = ''
@@ -303,13 +300,12 @@ function openCreate() {
 async function submitCreate() {
   if (!canManageCounts.value) return
   if (
-    !createForm.countNo.trim() ||
     !createForm.skuCode.trim() ||
     !createForm.uomCode.trim() ||
     !createForm.siteCode.trim() ||
     !createForm.locationCode.trim()
   ) {
-    createError.value = '请填写盘点单号、物料、工厂与库位；单位在选定物料后自动带出。'
+    createError.value = '请填写物料、工厂与库位；单位在选定物料后自动带出。'
     return
   }
   const expected =
@@ -321,17 +317,17 @@ async function submitCreate() {
   const body: BusinessConsoleCreateWmsCountExecutionRequest = {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
-    countNo: createForm.countNo.trim(),
     skuCode: createForm.skuCode.trim(),
     uomCode: createForm.uomCode.trim(),
     siteCode: createForm.siteCode.trim(),
     locationCode: createForm.locationCode.trim(),
     expectedQuantity: expected,
+    idempotencyKey: createIdempotencyKey.value,
   }
   try {
     await createCountExecution(body)
     createOpen.value = false
-    notifySuccess('盘点单已创建')
+    notifySuccess('盘点单已创建，单号由系统生成')
   } catch (error) {
     notifyOperationFailure('创建盘点单失败', error, '创建盘点单失败，请稍后重试。')
   }
@@ -433,10 +429,6 @@ async function submitComplete() {
   }
 }
 
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
-
 function refreshAll() {
   void refreshWorkScopes()
   void refreshCountExecutions()
@@ -468,24 +460,6 @@ function refreshAll() {
         </NvButton>
       </template>
     </NvPageHeader>
-
-    <ListScopeMeta
-      :scope="selectedScopeLabel || 'WMS 作业范围未就绪'"
-      source="WMS 盘点作业范围目录"
-      :loaded="countExecutions.length"
-      :total="countExecutionsTotal"
-      :updated-at="countExecutionsLastUpdatedAt"
-      :empty="
-        countExecutionsHasSuccessfulResponse &&
-        !countExecutionsError &&
-        countExecutions.length === 0
-      "
-      :failed="
-        countExecutionsHasFailedResponse || Boolean(countExecutionsError) || Boolean(workScopeError)
-      "
-      failure-explanation="WMS 盘点作业范围或盘点任务未成功返回，请重试。"
-      :empty-explanation="countScopeReady ? '当前作业范围没有盘点任务。' : workScopeUnreadyMessage"
-    />
 
     <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
       <NvMetricStrip
@@ -611,6 +585,14 @@ function refreshAll() {
       /></template>
       <template #cell-actions="{ row }">
         <NvRowActions v-if="canManageCounts" :label="`盘点操作 ${row.countNo ?? MISSING_COUNT_NO}`">
+          <NvDropdownMenuItem
+            v-if="canManagePools"
+            :disabled="!isOpen(row)"
+            @click="openAssign(row)"
+          >
+            <UsersRoundIcon aria-hidden="true" />
+            分配作业池
+          </NvDropdownMenuItem>
           <NvDropdownMenuItem :disabled="!isOpen(row)" @click="openComplete(row)">
             <CheckCircle2Icon aria-hidden="true" />
             完成盘点
@@ -618,6 +600,18 @@ function refreshAll() {
         </NvRowActions>
       </template>
     </NvDataTable>
+
+    <WmsAssignWorkPoolDialog
+      v-if="canManagePools"
+      v-model:open="assignOpen"
+      target="count"
+      :resource-id="assignTarget?.countExecutionId"
+      :resource-label="`盘点单 ${assignTarget?.countNo ?? ''}`"
+      :site-code="assignTarget?.siteCode"
+      :version="assignTarget?.version"
+      :current-pool-code="assignTarget?.assignedPoolCode"
+      @assigned="refreshCountExecutions"
+    />
 
     <NvDialog v-if="canManageCounts" v-model:open="createOpen">
       <NvDialogContent>
@@ -629,28 +623,13 @@ function refreshAll() {
         <form class="grid gap-4" @submit.prevent="submitCreate">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
-              <NvFieldLabel for="cnt-no">盘点单号</NvFieldLabel>
-              <NvInput
-                id="cnt-no"
-                v-model="createForm.countNo"
-                autocomplete="off"
-                placeholder="如 CNT-2026-0003"
-              />
-            </NvField>
-            <NvField>
               <NvFieldLabel for="cnt-sku">物料</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="cnt-sku"
-                :model-value="createForm.skuCode"
-                :options="skuOptions"
-                title="选择物料"
-                placeholder="选择物料"
-                source-text="数据来自基础数据物料主数据"
-                empty-text="暂无物料主数据，请先在基础数据维护物料"
-                :loading="skusPending"
+                v-model="createForm.skuCode"
+                directory-type="material"
+                creatable
                 clearable
-                aria-label="物料"
-                @update:model-value="onCountSkuChange"
               />
             </NvField>
             <NvField>
@@ -661,7 +640,6 @@ function refreshAll() {
                 :options="siteOptions"
                 title="选择工厂"
                 placeholder="选择工厂"
-                source-text="数据来自基础数据工厂主数据"
                 empty-text="暂无工厂主数据，请先在基础数据维护工厂"
                 :loading="sitesPending"
                 clearable
@@ -670,15 +648,14 @@ function refreshAll() {
             </NvField>
             <NvField>
               <NvFieldLabel for="cnt-location">库位</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="cnt-location"
                 v-model="createForm.locationCode"
-                :options="locationOptions"
+                directory-type="location"
+                creatable
+                :form-site-code="createForm.siteCode"
                 title="选择库位"
                 placeholder="选择库位"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 aria-label="库位"
               />
@@ -714,7 +691,7 @@ function refreshAll() {
               <NvButton type="button" variant="outline">取消</NvButton>
             </NvDialogClose>
             <NvButton type="submit" :disabled="createCountExecutionPending">
-              <Spinner v-if="createCountExecutionPending" aria-hidden="true" />
+              <NvSpinner v-if="createCountExecutionPending" aria-hidden="true" />
               创建盘点单
             </NvButton>
           </NvDialogFooter>
@@ -760,7 +737,7 @@ function refreshAll() {
               </NvButton>
             </NvDialogClose>
             <NvButton type="submit" :disabled="completeCountExecutionPending">
-              <Spinner v-if="completeCountExecutionPending" aria-hidden="true" />
+              <NvSpinner v-if="completeCountExecutionPending" aria-hidden="true" />
               <CheckCircle2Icon v-else aria-hidden="true" />
               {{ completeIntentLocked ? '按原内容重试' : '完成盘点' }}
             </NvButton>

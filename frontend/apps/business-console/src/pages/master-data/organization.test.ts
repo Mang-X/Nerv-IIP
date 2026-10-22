@@ -179,6 +179,10 @@ const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 // 对话框就地渲染（不 teleport），便于断言/填写表单内容。
 const dialogStubs = {
   NvDialog: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
+  // 这个 `DialogRoot` 键**不是** Nv 别名的残留：实测它命中的是 reka `AlertDialogRoot`
+  // 的内部实现（父链 AlertDialogRoot < NvAlertDialog < MasterDataLifecycleDialog），
+  // 即**可达**；但删掉后本文件全绿，说明**零鉴别力、没有用例依赖它**。保留只是维持现状，
+  // 别把它当防线。见 #2879 跟进项。
   DialogRoot: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
@@ -196,9 +200,15 @@ const formSelectStubs = {
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
-  SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  // 班组表单的「所属班次」是班次选择器（就地新增由 DirectoryPicker 自己的测试覆盖），这里换成原生 <select>。
+  DirectoryPicker: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value=""></option><option value="SHIFT-A">白班</option></select>',
+  },
 }
 
 // 找到树里某节点的「选中」按钮（按文本，排除带「新建」aria-label 的 + 按钮）。
@@ -379,7 +389,7 @@ describe('master-data organization (department tree) page', () => {
     // 新建态不再有编码输入框（编码由系统自动生成）。
     expect(wrapper.find('#team-code').exists()).toBe(false)
     await wrapper.find('#team-name').setValue('夜班班组')
-    // 班次 Select 桩渲染为 <select>；按其 SHIFT-A 选项定位（id 落在 SelectTrigger span 上）。
+    // 班次选择器桩渲染为 <select>；按其 SHIFT-A 选项定位。
     const shiftSelect = wrapper.findAll('select').find((s) => s.html().includes('SHIFT-A'))!
     await shiftSelect.setValue('SHIFT-A')
     await flushPromises()

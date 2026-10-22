@@ -1,0 +1,765 @@
+{
+  "description": "#3349：Redis/CAP 首轮订阅停顿基线的样本登记表。每条对应一个 redis-cap-dependency-summary-<runId>-<attempt> artifact 的 observation/ 产物。",
+  "source": "laneOutcome 取自 GitHub Actions repos/Mang-X/Nerv-IIP/actions/runs/<runId>/attempts/<runAttempt>/jobs 中名为 Redis/CAP Transport Tests 的 job 结论；只登记 runAttempt=1 的自然 run，重跑会把样本偏向绿侧。",
+  "capturedUtc": "2026-09-11",
+  "retentionWarning": "observation/ artifact 保留 14 天。超期后本表仍可读，但无法再从 GitHub 取回产物复算；冻结读数见 docs/reports/redis-cap-subscription-stall-baseline-2026-09-11.md。",
+  "memberId": "mes-asset-unavailable-redis-cap",
+  "samples": [
+    {
+      "runId": "34198184196",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "pull_request",
+      "headBranch": "nerv-2127-redis-cap-ci-observation",
+      "jobStartedUtc": "2026-09-08T07:12:55Z",
+      "artifactName": "redis-cap-dependency-summary-34198184196-1"
+    },
+    {
+      "runId": "34199409173",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "nerv-2127-redis-cap-ci-observation",
+      "jobStartedUtc": "2026-09-08T07:28:14Z",
+      "artifactName": "redis-cap-dependency-summary-34199409173-1"
+    },
+    {
+      "runId": "34200311047",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "nerv-2127-redis-cap-ci-observation",
+      "jobStartedUtc": "2026-09-08T07:39:14Z",
+      "artifactName": "redis-cap-dependency-summary-34200311047-1"
+    },
+    {
+      "runId": "34201495616",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "pull_request",
+      "headBranch": "nerv-2127-redis-cap-ci-observation",
+      "jobStartedUtc": "2026-09-08T07:53:16Z",
+      "artifactName": "redis-cap-dependency-summary-34201495616-1"
+    },
+    {
+      "runId": "34207367410",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "nerv-2127-redis-cap-ci-observation",
+      "jobStartedUtc": "2026-09-08T08:58:20Z",
+      "artifactName": "redis-cap-dependency-summary-34207367410-1"
+    },
+    {
+      "runId": "34208988897",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-08T09:16:03Z",
+      "artifactName": "redis-cap-dependency-summary-34208988897-1"
+    },
+    {
+      "runId": "34211319521",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "nerv-2118-mes-company-material",
+      "jobStartedUtc": "2026-09-08T09:41:18Z",
+      "artifactName": "redis-cap-dependency-summary-34211319521-1"
+    },
+    {
+      "runId": "34211364545",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "nerv-2120-erp-receipt-route",
+      "jobStartedUtc": "2026-09-08T09:41:50Z",
+      "artifactName": "redis-cap-dependency-summary-34211364545-1"
+    },
+    {
+      "runId": "34212990135",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-08T09:59:40Z",
+      "artifactName": "redis-cap-dependency-summary-34212990135-1"
+    },
+    {
+      "runId": "34213096351",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "nerv-2120-erp-receipt-route",
+      "jobStartedUtc": "2026-09-08T10:00:47Z",
+      "artifactName": "redis-cap-dependency-summary-34213096351-1"
+    },
+    {
+      "runId": "34214703933",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-08T10:18:38Z",
+      "artifactName": "redis-cap-dependency-summary-34214703933-1"
+    },
+    {
+      "runId": "34228850137",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "agent/nerv-2121-wms-receipt-route",
+      "jobStartedUtc": "2026-09-08T12:55:50Z",
+      "artifactName": "redis-cap-dependency-summary-34228850137-1"
+    },
+    {
+      "runId": "34231336137",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-08T13:20:49Z",
+      "artifactName": "redis-cap-dependency-summary-34231336137-1"
+    },
+    {
+      "runId": "34234984377",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-08T13:56:23Z",
+      "artifactName": "redis-cap-dependency-summary-34234984377-1"
+    },
+    {
+      "runId": "34306809060",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3097-upload-commit-storage",
+      "jobStartedUtc": "2026-09-09T03:22:00Z",
+      "artifactName": "redis-cap-dependency-summary-34306809060-1"
+    },
+    {
+      "runId": "34308040661",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "agent/nerv-2130-erp-receipt-valuation",
+      "jobStartedUtc": "2026-09-09T03:41:11Z",
+      "artifactName": "redis-cap-dependency-summary-34308040661-1"
+    },
+    {
+      "runId": "34308848278",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3085-handover-attachment-facade",
+      "jobStartedUtc": "2026-09-09T03:53:54Z",
+      "artifactName": "redis-cap-dependency-summary-34308848278-1"
+    },
+    {
+      "runId": "34309239545",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3229-voucher-no-bound",
+      "jobStartedUtc": "2026-09-09T04:00:32Z",
+      "artifactName": "redis-cap-dependency-summary-34309239545-1"
+    },
+    {
+      "runId": "34309660777",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-2870-shard-timeout",
+      "jobStartedUtc": "2026-09-09T04:06:48Z",
+      "artifactName": "redis-cap-dependency-summary-34309660777-1"
+    },
+    {
+      "runId": "34309845492",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3097-upload-commit-storage",
+      "jobStartedUtc": "2026-09-09T04:09:37Z",
+      "artifactName": "redis-cap-dependency-summary-34309845492-1"
+    },
+    {
+      "runId": "34310681488",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-09T04:22:35Z",
+      "artifactName": "redis-cap-dependency-summary-34310681488-1"
+    },
+    {
+      "runId": "34312132608",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "agent/nerv-2131-wms-receipt-valuation",
+      "jobStartedUtc": "2026-09-09T04:44:48Z",
+      "artifactName": "redis-cap-dependency-summary-34312132608-1"
+    },
+    {
+      "runId": "34324272015",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3259",
+      "jobStartedUtc": "2026-09-09T07:31:53Z",
+      "artifactName": "redis-cap-dependency-summary-34324272015-1"
+    },
+    {
+      "runId": "34324596177",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3042-template-retirement-proof",
+      "jobStartedUtc": "2026-09-09T07:35:41Z",
+      "artifactName": "redis-cap-dependency-summary-34324596177-1"
+    },
+    {
+      "runId": "34326065696",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-09T07:52:46Z",
+      "artifactName": "redis-cap-dependency-summary-34326065696-1"
+    },
+    {
+      "runId": "34326417218",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3042-template-retirement-proof",
+      "jobStartedUtc": "2026-09-09T07:56:50Z",
+      "artifactName": "redis-cap-dependency-summary-34326417218-1"
+    },
+    {
+      "runId": "34337209468",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "pull_request",
+      "headBranch": "issue-3229-voucher-no-bound",
+      "jobStartedUtc": "2026-09-09T09:53:43Z",
+      "artifactName": "redis-cap-dependency-summary-34337209468-1"
+    },
+    {
+      "runId": "34339996525",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "pull_request",
+      "headBranch": "issue-3229-voucher-no-bound",
+      "jobStartedUtc": "2026-09-09T10:24:38Z",
+      "artifactName": "redis-cap-dependency-summary-34339996525-1"
+    },
+    {
+      "runId": "34343740815",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-09T11:06:25Z",
+      "artifactName": "redis-cap-dependency-summary-34343740815-1"
+    },
+    {
+      "runId": "34343939691",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3229-voucher-no-bound",
+      "jobStartedUtc": "2026-09-09T11:08:37Z",
+      "artifactName": "redis-cap-dependency-summary-34343939691-1"
+    },
+    {
+      "runId": "34345700694",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-09T11:28:37Z",
+      "artifactName": "redis-cap-dependency-summary-34345700694-1"
+    },
+    {
+      "runId": "34357157389",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-09T13:27:49Z",
+      "artifactName": "redis-cap-dependency-summary-34357157389-1"
+    },
+    {
+      "runId": "34362511090",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "pull_request",
+      "headBranch": "issue-3112-mes-sku-single-source",
+      "jobStartedUtc": "2026-09-09T14:16:54Z",
+      "artifactName": "redis-cap-dependency-summary-34362511090-1"
+    },
+    {
+      "runId": "34367277351",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3112-mes-sku-single-source",
+      "jobStartedUtc": "2026-09-09T15:00:40Z",
+      "artifactName": "redis-cap-dependency-summary-34367277351-1"
+    },
+    {
+      "runId": "34372422224",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-2870-shard-timeout",
+      "jobStartedUtc": "2026-09-09T15:46:47Z",
+      "artifactName": "redis-cap-dependency-summary-34372422224-1"
+    },
+    {
+      "runId": "34374471972",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-09T16:05:48Z",
+      "artifactName": "redis-cap-dependency-summary-34374471972-1"
+    },
+    {
+      "runId": "34376354938",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3097-upload-commit-storage",
+      "jobStartedUtc": "2026-09-09T16:23:35Z",
+      "artifactName": "redis-cap-dependency-summary-34376354938-1"
+    },
+    {
+      "runId": "34376409292",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-2870-shard-timeout",
+      "jobStartedUtc": "2026-09-09T16:24:01Z",
+      "artifactName": "redis-cap-dependency-summary-34376409292-1"
+    },
+    {
+      "runId": "34376686851",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3112-mes-sku-single-source",
+      "jobStartedUtc": "2026-09-09T16:26:33Z",
+      "artifactName": "redis-cap-dependency-summary-34376686851-1"
+    },
+    {
+      "runId": "34378402774",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-09T16:43:02Z",
+      "artifactName": "redis-cap-dependency-summary-34378402774-1"
+    },
+    {
+      "runId": "34380169627",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-2870-shard-timeout",
+      "jobStartedUtc": "2026-09-09T17:00:25Z",
+      "artifactName": "redis-cap-dependency-summary-34380169627-1"
+    },
+    {
+      "runId": "34424109395",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3112-mes-sku-single-source",
+      "jobStartedUtc": "2026-09-10T01:06:55Z",
+      "artifactName": "redis-cap-dependency-summary-34424109395-1"
+    },
+    {
+      "runId": "34425359111",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T01:25:12Z",
+      "artifactName": "redis-cap-dependency-summary-34425359111-1"
+    },
+    {
+      "runId": "34426934271",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T01:49:04Z",
+      "artifactName": "redis-cap-dependency-summary-34426934271-1"
+    },
+    {
+      "runId": "34428118123",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T02:06:42Z",
+      "artifactName": "redis-cap-dependency-summary-34428118123-1"
+    },
+    {
+      "runId": "34433909052",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-2870-shard-timeout",
+      "jobStartedUtc": "2026-09-10T03:35:57Z",
+      "artifactName": "redis-cap-dependency-summary-34433909052-1"
+    },
+    {
+      "runId": "34435207724",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T03:56:25Z",
+      "artifactName": "redis-cap-dependency-summary-34435207724-1"
+    },
+    {
+      "runId": "34437117623",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T04:25:49Z",
+      "artifactName": "redis-cap-dependency-summary-34437117623-1"
+    },
+    {
+      "runId": "34437757554",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "pull_request",
+      "headBranch": "issue-3085-handover-attachment-facade",
+      "jobStartedUtc": "2026-09-10T04:35:49Z",
+      "artifactName": "redis-cap-dependency-summary-34437757554-1"
+    },
+    {
+      "runId": "34438184776",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T04:42:27Z",
+      "artifactName": "redis-cap-dependency-summary-34438184776-1"
+    },
+    {
+      "runId": "34438490277",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3085-handover-attachment-facade",
+      "jobStartedUtc": "2026-09-10T04:48:15Z",
+      "artifactName": "redis-cap-dependency-summary-34438490277-1"
+    },
+    {
+      "runId": "34440250635",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3085-handover-attachment-facade",
+      "jobStartedUtc": "2026-09-10T05:14:43Z",
+      "artifactName": "redis-cap-dependency-summary-34440250635-1"
+    },
+    {
+      "runId": "34440402168",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T05:16:49Z",
+      "artifactName": "redis-cap-dependency-summary-34440402168-1"
+    },
+    {
+      "runId": "34444231601",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3085-handover-attachment-facade",
+      "jobStartedUtc": "2026-09-10T06:13:27Z",
+      "artifactName": "redis-cap-dependency-summary-34444231601-1"
+    },
+    {
+      "runId": "34446374635",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T06:42:26Z",
+      "artifactName": "redis-cap-dependency-summary-34446374635-1"
+    },
+    {
+      "runId": "34446815486",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3085-handover-attachment-facade",
+      "jobStartedUtc": "2026-09-10T06:48:57Z",
+      "artifactName": "redis-cap-dependency-summary-34446815486-1"
+    },
+    {
+      "runId": "34449765762",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3085-handover-attachment-facade",
+      "jobStartedUtc": "2026-09-10T07:24:41Z",
+      "artifactName": "redis-cap-dependency-summary-34449765762-1"
+    },
+    {
+      "runId": "34450824237",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3085-handover-attachment-facade",
+      "jobStartedUtc": "2026-09-10T07:38:00Z",
+      "artifactName": "redis-cap-dependency-summary-34450824237-1"
+    },
+    {
+      "runId": "34451267272",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T07:42:27Z",
+      "artifactName": "redis-cap-dependency-summary-34451267272-1"
+    },
+    {
+      "runId": "34452570647",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3315-mes-quality-hold-source-identity-width",
+      "jobStartedUtc": "2026-09-10T07:57:40Z",
+      "artifactName": "redis-cap-dependency-summary-34452570647-1"
+    },
+    {
+      "runId": "34452712300",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3085-handover-attachment-facade",
+      "jobStartedUtc": "2026-09-10T07:59:22Z",
+      "artifactName": "redis-cap-dependency-summary-34452712300-1"
+    },
+    {
+      "runId": "34454785637",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3315-mes-quality-hold-source-identity-width",
+      "jobStartedUtc": "2026-09-10T08:22:42Z",
+      "artifactName": "redis-cap-dependency-summary-34454785637-1"
+    },
+    {
+      "runId": "34456315515",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T08:39:41Z",
+      "artifactName": "redis-cap-dependency-summary-34456315515-1"
+    },
+    {
+      "runId": "34458217625",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "pull_request",
+      "headBranch": "issue-3085-handover-attachment-facade",
+      "jobStartedUtc": "2026-09-10T09:00:44Z",
+      "artifactName": "redis-cap-dependency-summary-34458217625-1"
+    },
+    {
+      "runId": "34460812247",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "pull_request",
+      "headBranch": "issue-3318-mes-defect-disposition-reference-width",
+      "jobStartedUtc": "2026-09-10T09:28:44Z",
+      "artifactName": "redis-cap-dependency-summary-34460812247-1"
+    },
+    {
+      "runId": "34463381525",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3318-mes-defect-disposition-reference-width",
+      "jobStartedUtc": "2026-09-10T09:56:49Z",
+      "artifactName": "redis-cap-dependency-summary-34463381525-1"
+    },
+    {
+      "runId": "34468482190",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T10:55:05Z",
+      "artifactName": "redis-cap-dependency-summary-34468482190-1"
+    },
+    {
+      "runId": "34470124913",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T11:13:43Z",
+      "artifactName": "redis-cap-dependency-summary-34470124913-1"
+    },
+    {
+      "runId": "34472724877",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "pull_request",
+      "headBranch": "issue-3319-inspection-record-source-line",
+      "jobStartedUtc": "2026-09-10T11:43:07Z",
+      "artifactName": "redis-cap-dependency-summary-34472724877-1"
+    },
+    {
+      "runId": "34475129962",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3319-inspection-record-source-line",
+      "jobStartedUtc": "2026-09-10T12:10:33Z",
+      "artifactName": "redis-cap-dependency-summary-34475129962-1"
+    },
+    {
+      "runId": "34476468370",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T12:24:21Z",
+      "artifactName": "redis-cap-dependency-summary-34476468370-1"
+    },
+    {
+      "runId": "34480813215",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "pull_request",
+      "headBranch": "issue-3319-inspection-record-source-line",
+      "jobStartedUtc": "2026-09-10T13:11:16Z",
+      "artifactName": "redis-cap-dependency-summary-34480813215-1"
+    },
+    {
+      "runId": "34481403503",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T13:14:56Z",
+      "artifactName": "redis-cap-dependency-summary-34481403503-1"
+    },
+    {
+      "runId": "34489186091",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3319-inspection-record-source-line",
+      "jobStartedUtc": "2026-09-10T14:28:17Z",
+      "artifactName": "redis-cap-dependency-summary-34489186091-1"
+    },
+    {
+      "runId": "34489625176",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T14:31:54Z",
+      "artifactName": "redis-cap-dependency-summary-34489625176-1"
+    },
+    {
+      "runId": "34491469754",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3319-inspection-record-source-line",
+      "jobStartedUtc": "2026-09-10T14:48:56Z",
+      "artifactName": "redis-cap-dependency-summary-34491469754-1"
+    },
+    {
+      "runId": "34493310117",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T15:05:39Z",
+      "artifactName": "redis-cap-dependency-summary-34493310117-1"
+    },
+    {
+      "runId": "34495875018",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T15:29:04Z",
+      "artifactName": "redis-cap-dependency-summary-34495875018-1"
+    },
+    {
+      "runId": "34505586864",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T17:01:25Z",
+      "artifactName": "redis-cap-dependency-summary-34505586864-1"
+    },
+    {
+      "runId": "34508318084",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T17:28:29Z",
+      "artifactName": "redis-cap-dependency-summary-34508318084-1"
+    },
+    {
+      "runId": "34510730399",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "pull_request",
+      "headBranch": "issue-3305-wcs-failure-message-unbounded",
+      "jobStartedUtc": "2026-09-10T17:51:33Z",
+      "artifactName": "redis-cap-dependency-summary-34510730399-1"
+    },
+    {
+      "runId": "34517685346",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "pull_request",
+      "headBranch": "issue-3305-wcs-failure-message-unbounded",
+      "jobStartedUtc": "2026-09-10T18:59:58Z",
+      "artifactName": "redis-cap-dependency-summary-34517685346-1"
+    },
+    {
+      "runId": "34522826541",
+      "runAttempt": 1,
+      "laneOutcome": "success",
+      "event": "push",
+      "headBranch": "main",
+      "jobStartedUtc": "2026-09-10T19:51:36Z",
+      "artifactName": "redis-cap-dependency-summary-34522826541-1"
+    },
+    {
+      "runId": "34522968634",
+      "runAttempt": 1,
+      "laneOutcome": "failure",
+      "event": "pull_request",
+      "headBranch": "issue-3305-wcs-failure-message-unbounded",
+      "jobStartedUtc": "2026-09-10T19:53:07Z",
+      "artifactName": "redis-cap-dependency-summary-34522968634-1"
+    }
+  ]
+}

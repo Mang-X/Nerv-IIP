@@ -60,3 +60,17 @@ export function inventoryMovementTypeLabel(movementType?: string | null, fallbac
   if (!movementType) return fallback
   return INVENTORY_MOVEMENT_TYPE_LABELS[movementType] ?? movementType
 }
+
+/**
+ * WMS 收货质量状态（控制台新建入库单）。码值是后端契约 `WmsReceivingQualityStatuses`（免检判定）
+ * 与库存 `InventoryQualityStatuses` 的交集口径（#3923）：
+ * - 「可用」= 合格来料，必须下发 `unrestricted`——它在 WMS 免检清单里，收货后直接可上架；
+ *   `available` 只是库存侧别名，不在免检清单，会让合格来料被误判成待检、上架永远被卡住。
+ * - 「待检 / 冻结 / 不合格」不在免检清单，入库后先走质检。
+ */
+export const WMS_RECEIVING_QUALITY_OPTIONS: RefOption[] = [
+  { label: '可用', value: 'unrestricted' },
+  { label: '待检', value: 'inspection' },
+  { label: '冻结', value: 'blocked' },
+  { label: '不合格', value: 'rejected' },
+]

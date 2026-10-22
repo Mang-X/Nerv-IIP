@@ -20,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../../../common/Testing/Nerv.IIP.Testing/Nerv.IIP.Testing.csproj" />
     <ProjectReference Include="..\..\src\Nerv.IIP.PlatformGateway.Web\Nerv.IIP.PlatformGateway.Web.csproj" />
   </ItemGroup>
 

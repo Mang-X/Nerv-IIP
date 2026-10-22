@@ -133,6 +133,7 @@ public sealed class QualityCapaRedrivePostgresProfileTests
             "receiving",
             "purchase-receipt",
             sourceDocumentId,
+            sourceDocumentLineId: null,
             "SKU-RM-1000",
             10m,
             null,

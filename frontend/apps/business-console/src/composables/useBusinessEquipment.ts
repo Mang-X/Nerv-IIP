@@ -17,7 +17,9 @@ import {
   type EquipmentRuntimeAlarmSummary,
   type EquipmentRuntimeAvailabilityEnvelope,
   type EquipmentRuntimeAvailabilityWindow,
+  type EquipmentRuntimeSourceType,
 } from '@nerv-iip/api-client'
+import type { NvMetricTone } from '@nerv-iip/ui'
 import {
   acquirePendingBusinessIntent,
   completePendingBusinessIntent,
@@ -26,12 +28,9 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery } from '@pinia/colada'
-import { computed, reactive } from 'vue'
-import {
-  useListFreshness,
-  useListResponseState,
-  useScopeBoundListResponse,
-} from './useListFreshness'
+import { refDebounced } from '@vueuse/core'
+import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
+import { useScopeBoundListResponse } from './useScopeBoundListResponse'
 import { useBusinessMasterDataResources } from './useBusinessMasterData'
 import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 import { executeLifecycleAction } from './lifecycleAction'
@@ -40,7 +39,7 @@ const DEFAULT_DEVICE_ASSET_IDS = ''
 
 function requirePendingPayloadSnapshot<T extends object>(snapshot: unknown, operation: string): T {
   if (!snapshot || typeof snapshot !== 'object') {
-    throw new Error(`${operation}缺少冻结的待处理载荷，请保留当前页面并人工核实。`)
+    throw new Error(`${operation}缺少上次未完成提交的内容，请保留当前页面并人工核实。`)
   }
   return snapshot as T
 }
@@ -61,7 +60,12 @@ export interface EquipmentReasonDisplay {
   code: string
   label: string
   nextStep: string
+  /** 阻塞徽标色。 */
+  tone: NvMetricTone
 }
+
+/** 字典条目：tone 缺省为危险色，只有「尚未接入」这类还没配置、不算异常的原因才标中性色。 */
+type EquipmentReasonEntry = Omit<EquipmentReasonDisplay, 'tone'> & { tone?: NvMetricTone }
 
 export interface BusinessEquipmentOverviewFilters {
   deviceAssetIds: string
@@ -77,7 +81,7 @@ export interface BusinessEquipmentDeviceFilters {
   deviceAssetId: string
 }
 
-const equipmentReasonDisplays: Record<string, EquipmentReasonDisplay> = {
+const equipmentReasonDisplays: Record<string, EquipmentReasonEntry> = {
   'equipment.activeAlarm': {
     code: 'equipment.activeAlarm',
     label: '设备报警未解除',
@@ -108,6 +112,12 @@ const equipmentReasonDisplays: Record<string, EquipmentReasonDisplay> = {
     label: '采集数据过期',
     nextStep: '检查采集连接并刷新设备状态',
   },
+  'equipment.sourceNotConnected': {
+    code: 'equipment.sourceNotConnected',
+    label: '尚未接入采集',
+    nextStep: '为设备配置采集连接后即可看到运行状态',
+    tone: 'neutral',
+  },
   'equipment.tagMappingMissing': {
     code: 'equipment.tagMappingMissing',
     label: '采集点未配置',
@@ -123,13 +133,78 @@ const equipmentReasonDisplays: Record<string, EquipmentReasonDisplay> = {
 export function describeEquipmentReason(code: string): EquipmentReasonDisplay {
   const normalizedCode = code.trim()
 
+  // 词表外的原因码不把英文码送上屏，显示「—」。
+  const entry = equipmentReasonDisplays[normalizedCode] ?? {
+    code: normalizedCode,
+    label: '—',
+    nextStep: '查看设备详情并处理来源业务单据',
+  }
+  return { ...entry, tone: entry.tone ?? 'danger' }
+}
+
+const SOURCE_NOT_CONNECTED_REASON = 'equipment.sourceNotConnected'
+
+export type EquipmentSourceStatus = 'fresh' | 'stale' | 'notConnected'
+
+/**
+ * 设备采集接入状态。是否接入以 IIoT 的可用性窗口为准：它只在设备既没有状态快照、也没有任何样本时
+ * 发「尚未接入采集」（只上报样本不带状态的连接器照样算已接入）；已接入的按当前是否新鲜判断。
+ * 页面不要再从 currentState 自行推断。
+ */
+export function equipmentSourceStatus(
+  isSourceFresh: boolean | null | undefined,
+  windows: ReadonlyArray<Pick<EquipmentRuntimeAvailabilityWindow, 'deviceAssetId' | 'reasonCode'>>,
+  deviceAssetId?: string | null,
+): EquipmentSourceStatus {
+  if (isSourceFresh) return 'fresh'
+  const notConnected = windows.some(
+    (w) =>
+      w.reasonCode === SOURCE_NOT_CONNECTED_REASON &&
+      (deviceAssetId == null || w.deviceAssetId === deviceAssetId),
+  )
+  return notConnected ? 'notConnected' : 'stale'
+}
+
+const AVAILABILITY_STATUS_DISPLAY: Record<string, { label: string; tone: NvMetricTone }> = {
+  available: { label: '可用', tone: 'success' },
+  unavailable: { label: '不可用', tone: 'danger' },
+}
+
+/**
+ * 可用性窗口状态的说法与颜色。只有明确「可用」才是绿色；未知（尚未接入、采集过期等）不能说成可用，
+ * 用中性色照实说。词表漏了的码值同样按未知处理，不把后端码值上屏。
+ */
+export function describeAvailabilityStatus(status: string | null | undefined) {
   return (
-    equipmentReasonDisplays[normalizedCode] ?? {
-      code: normalizedCode,
-      label: normalizedCode,
-      nextStep: '查看设备详情并处理来源业务单据',
+    AVAILABILITY_STATUS_DISPLAY[status?.trim().toLowerCase() ?? ''] ?? {
+      label: '状态未知',
+      tone: 'neutral' as NvMetricTone,
     }
   )
+}
+
+/** 列表 / 抽屉里「实时数据」一格的说法与颜色：从没接入采集不是数据中断，用中性色照实说。 */
+export const EQUIPMENT_FRESHNESS_DISPLAY: Record<
+  EquipmentSourceStatus,
+  { label: string; tone: NvMetricTone }
+> = {
+  fresh: { label: '实时', tone: 'success' },
+  stale: { label: '暂无实时数据', tone: 'warning' },
+  notConnected: { label: '尚未接入采集', tone: 'neutral' },
+}
+
+/**
+ * 可用性窗口的「关联业务」。设备状态 / 采集类窗口没有来源单据，关联的就是设备本身，显示设备编码；
+ * IIoT 在这类窗口里回填的是调用方传入的设备引用（可能是公开 ID），不能上屏。其余窗口显示来源单据的人读标识。
+ */
+export function describeAvailabilityWindowReference(
+  window: { sourceType?: EquipmentRuntimeSourceType | null; sourceReferenceLabel?: string | null },
+  deviceCode: string,
+) {
+  if (window.sourceType === 'device-state' || window.sourceType === 'stale-source') {
+    return deviceCode || '—'
+  }
+  return window.sourceReferenceLabel?.trim() || '—'
 }
 
 export function equipmentStatusTone(status: string | null | undefined): EquipmentTone {
@@ -410,6 +485,35 @@ export function useBusinessEquipmentDevice(deviceAssetId?: string) {
   }
 }
 
+/**
+ * 一台设备的活动报警，**由服务端按设备过滤**：报警是全组织共用的大列表，
+ * 拉一页再在前端按设备筛，排在后面的设备会被误报成「没有报警」。没选设备时不发请求。
+ */
+export function useEquipmentDeviceAlarms(deviceAssetId: MaybeRefOrGetter<string>) {
+  const businessContext = useBusinessContextStore()
+  const current = computed(() => toValue(deviceAssetId).trim())
+  // 设备框允许直接敲编号，逐键发请求没有意义：停手 300ms 再查。
+  const device = refDebounced(current, 300)
+  const alarmsQuery = useQuery(() => ({
+    ...listBusinessConsoleEquipmentAlarmsQueryOptions({
+      query: { ...toContextQuery(businessContext), deviceAssetId: device.value },
+    }),
+    enabled: hasBusinessContext(businessContext) && Boolean(device.value),
+  }))
+  return {
+    // 还在等去抖时，结果属于上一台设备，不能拿来当这台设备的报警。
+    alarms: computed<BusinessConsoleTelemetryAlarmEventItem[]>(() =>
+      device.value && device.value === current.value
+        ? listItems<
+            BusinessConsoleTelemetryAlarmEventItem,
+            BusinessConsoleEquipmentAlarmListEnvelope
+          >(alarmsQuery.data.value)
+        : [],
+    ),
+    alarmsPending: alarmsQuery.isLoading,
+  }
+}
+
 export function useBusinessEquipmentAlarms() {
   const auth = useAuthStore()
   const businessContext = useBusinessContextStore()
@@ -461,11 +565,6 @@ export function useBusinessEquipmentAlarms() {
     () => `${businessContext.organizationId.trim()}:${businessContext.environmentId.trim()}`,
     alarmsScopeReady,
   )
-  const alarmsLastUpdatedAt = useListFreshness(alarmsResponse, alarmsScopeReady)
-  const {
-    hasSuccessfulResponse: alarmsHasSuccessfulResponse,
-    hasFailedResponse: alarmsHasFailedResponse,
-  } = useListResponseState(alarmsResponse, alarmsScopeReady, () => alarmsQuery.isLoading.value)
 
   async function acknowledgeAlarm(alarmEventId: string, acknowledgedBy: string) {
     const scope = {
@@ -639,14 +738,6 @@ export function useBusinessEquipmentAlarms() {
     ),
     alarmsError: alarmsQuery.error,
     alarmsPending: alarmsQuery.isLoading,
-    alarmsTotal: computed(() =>
-      alarmsResponse.value?.success ? (alarmsResponse.value.data?.total ?? 0) : 0,
-    ),
-    alarmsOrganizationId: computed(() => businessContext.organizationId),
-    alarmsEnvironmentId: computed(() => businessContext.environmentId),
-    alarmsLastUpdatedAt,
-    alarmsHasSuccessfulResponse,
-    alarmsHasFailedResponse,
     refreshAlarms: () => refetchWithBusinessContext(businessContext, alarmsQuery),
     shelveAlarm,
     unshelveAlarm,

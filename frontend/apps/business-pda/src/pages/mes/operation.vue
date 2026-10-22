@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
-import { openDownloadGrantBlob } from '@nerv-iip/business-core'
+import { openSopFileContent } from '@nerv-iip/business-core'
 import {
-  createTimeoutFetch,
   describeRequestError,
   isIndeterminateError,
   REQUEST_TIMEOUT_MS,
 } from '@/api/request-timeout'
 import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
+import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
 import TaskListShell from '@/components/task-list/TaskListShell.vue'
 import {
   type OperationActionContext,
@@ -27,7 +27,6 @@ import {
   NvMobileDropdownMenu,
   NvMobileDropdownMenuItem,
   NvMobileToast,
-  NvScanBar,
   type DropdownOption,
 } from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
@@ -42,6 +41,10 @@ import {
   type OperationActionKind as ActionKind,
   type OperationResultState as ResultState,
 } from './components/operationPresentation'
+import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
+import { useMesScanGate } from '@/composables/mes/useMesScanGate'
+import { useMesAndonCall, type AndonOperationContext } from '@/composables/mes/useMesAndonCall'
+import MesAndonCallPanel from './components/MesAndonCallPanel.vue'
 
 definePage({
   meta: {
@@ -68,8 +71,10 @@ const {
   pauseTask,
   resumeTask,
   completeTask,
+  claimTask,
   actionPending,
   operationListScope,
+  operationActionScope,
   operationListContextIdentity,
   operationActionContextIdentity,
   operationListScopeMessage,
@@ -79,7 +84,6 @@ const {
   captureOperationActionContext,
   isOperationActionContextCurrent,
   refresh,
-  lastUpdatedAt,
   hasSuccessfulResponse,
   hasFailedResponse,
 } = useMesOperationTasks()
@@ -125,24 +129,8 @@ const visibleOperationTasks = computed(() =>
         )
       : operationTasks.value,
 )
-const workScopeKindLabels: Record<string, string> = {
-  self: '本人',
-  team: '班组',
-  'work-center': '工作中心',
-  workshop: '车间',
-  organization: '组织',
-}
-const mesScope = computed(() => {
-  const selectedScope = operationListScope.value
-  if (!selectedScope) return '当前主体授权作业范围未就绪'
-  const kind = workScopeKindLabels[selectedScope.kind] ?? selectedScope.kind
-  const name = selectedScope.displayName || selectedScope.id
-  return `当前主体授权作业范围 · ${name}（${kind}）`
-})
 const mesEmptyExplanation = computed(() =>
-  operationListScopeReady.value
-    ? '当前主体授权作业范围内暂无工序任务。'
-    : operationListScopeMessage.value || '尚未取得当前主体的授权作业范围，未发起查询。',
+  operationListScopeReady.value ? '当前作业范围内暂无工序任务。' : operationListScopeMessage.value,
 )
 const showOperationTasksEmpty = computed(
   () =>
@@ -154,7 +142,7 @@ const showOperationTasksEmpty = computed(
 )
 const operationListError = computed(() =>
   error.value || hasFailedResponse.value
-    ? (error.value ?? new Error('工序任务服务未成功返回'))
+    ? (error.value ?? new Error('工序任务加载失败，请重试。'))
     : undefined,
 )
 const {
@@ -163,11 +151,9 @@ const {
   pending: sopsPending,
   error: sopsError,
   refresh: refreshSops,
-  createSopFileDownloadGrant,
 } = useMesCurrentOperationSops()
 
 // SOP 文件下载走 PDA 全局超时 fetch —— 弱网/离线有界失败，不无限挂起（#814）。
-const downloadFetch = createTimeoutFetch()
 
 const ACTION_FNS: Record<
   ActionKind,
@@ -194,7 +180,6 @@ const operationKey = ref('')
 const operationContext = shallowRef<OperationActionContext | null>(null)
 const operationResultUnknown = ref(false)
 const operationResultContextConflict = shallowRef<'identity' | 'route' | null>(null)
-usePendingWriteLeaveGuard(operationResultUnknown)
 
 // --- BottomSheet 状态 ---
 const selected = ref<Task | null>(null)
@@ -211,11 +196,74 @@ const confirmingComplete = ref(false)
 const result = ref<ResultState | null>(null)
 const openingSopFileId = ref<string | null>(null)
 const sopFileError = ref('')
-const toast = reactive({ show: false, message: '', type: 'error' as const })
+const toast = reactive<{ show: boolean; message: string; type: 'success' | 'error' }>({
+  show: false,
+  message: '',
+  type: 'error',
+})
 
 const availableActions = computed(() => actionsFor(selected.value))
+const canClaimSelectedTask = computed(() => {
+  const task = selected.value
+  return (
+    operationListScope.value?.kind === 'work-center' &&
+    task?.status?.trim().toLowerCase() === 'queued' &&
+    !task.assignedUserId?.trim()
+  )
+})
 
 const scanActive = computed(() => selected.value === null && result.value === null)
+const scanGate = useMesScanGate()
+const scanGuarded = scanGate.guarded
+const andonScopeMessage = computed(() => {
+  if (!operationScopeReady.value) return operationScopeMessage.value
+  const read = operationListScope.value
+  const write = operationActionScope.value
+  if (!read || !write || read.kind !== write.kind || read.id !== write.id)
+    return '呼叫授权范围与当前列表不一致，请重新选择作业范围。'
+  if (
+    !selected.value?.workOrderId ||
+    !selected.value.operationTaskId ||
+    !selected.value.workCenterId
+  )
+    return '工序来源尚未就绪，请刷新后重试。'
+  if (scanGuarded.value) return '请先完成当前扫码核验。'
+  return ''
+})
+const andonContext = computed<AndonOperationContext | null>(() => {
+  const task = selected.value
+  const scope = operationActionScope.value
+  if (
+    andonScopeMessage.value ||
+    !task?.workOrderId ||
+    !task.operationTaskId ||
+    !task.workCenterId ||
+    !scope
+  )
+    return null
+  return {
+    identity: operationPageIdentity.value,
+    organizationId: filters.organizationId,
+    environmentId: filters.environmentId,
+    scopeKind: scope.kind,
+    scopeId: scope.id,
+    workOrderId: task.workOrderId,
+    operationTaskId: task.operationTaskId,
+    workCenterId: task.workCenterId,
+  }
+})
+const andon = reactive(useMesAndonCall(andonContext))
+usePendingWriteLeaveGuard(() => operationResultUnknown.value || andon.unresolved)
+const actionOrScanPending = computed(() => actionPending.value || scanGuarded.value)
+const validatedDeviceAssetId = ref('')
+const validatedPersonnelId = ref('')
+watch(
+  () => `${selected.value?.workOrderId ?? ''}\u0000${selected.value?.operationTaskId ?? ''}`,
+  () => {
+    validatedDeviceAssetId.value = ''
+    validatedPersonnelId.value = ''
+  },
+)
 const statusOptions: DropdownOption[] = [
   { label: '全部状态', value: '' },
   { label: '待开始', value: 'queued' },
@@ -274,6 +322,7 @@ function restoreTaskListState(state: { filters: Record<string, unknown> }) {
 
 function openSheet(task: Task) {
   if (operationResultUnknown.value) return
+  scanGate.clear('list')
   const selectionIdentity = `${task.workOrderId ?? ''}\u0000${task.operationTaskId ?? ''}`
   if (operationSelectionIdentity.value !== selectionIdentity) {
     operationSelectionIdentity.value = selectionIdentity
@@ -338,7 +387,7 @@ watch(
       return
     const exactTask = tasks[0]
     if (!exactTask) {
-      deepLinkMessage.value = '未在当前主体授权作业范围内找到指定工序任务。'
+      deepLinkMessage.value = '未在当前作业范围内找到指定工序任务。'
       return
     }
     deepLinkMessage.value = ''
@@ -420,9 +469,11 @@ async function openSopFile(sop: CurrentSop) {
   sopFileError.value = ''
   openingSopFileId.value = fileId
   try {
-    const grant = await createSopFileDownloadGrant(fileId)
-    if (!grant) throw new Error('无法获取SOP查看授权。')
-    await openDownloadGrantBlob(grant, { fetch: downloadFetch, timeoutMs: REQUEST_TIMEOUT_MS })
+    await openSopFileContent(
+      fileId,
+      { organizationId: sopFilters.organizationId, environmentId: sopFilters.environmentId },
+      { timeoutMs: REQUEST_TIMEOUT_MS },
+    )
   } catch (error) {
     sopFileError.value = error instanceof Error ? error.message : '无法打开SOP。'
   } finally {
@@ -431,6 +482,7 @@ async function openSopFile(sop: CurrentSop) {
 }
 
 async function runAction(action: ActionKind) {
+  if (scanGuarded.value) return
   if (!operationScopeReady.value) {
     toast.message = operationScopeMessage.value
     toast.show = true
@@ -510,6 +562,36 @@ async function runAction(action: ActionKind) {
       taskId: id,
       context,
     }
+  }
+}
+
+async function claimSelectedTask() {
+  if (!operationScopeReady.value) {
+    toast.type = 'error'
+    toast.message = operationScopeMessage.value
+    toast.show = true
+    return
+  }
+  const task = selected.value
+  if (!task?.workOrderId || !task.operationTaskId || !canClaimSelectedTask.value) return
+  const context = captureOperationActionContext('claim', task.workOrderId, task.operationTaskId)
+  try {
+    const claimed = await claimTask(task.workOrderId, task.operationTaskId, {
+      idempotencyKey: makeIdempotencyKey(),
+      context,
+    })
+    if (!isOperationActionContextCurrent(context)) return
+    selected.value = claimed
+    await refresh()
+    closeSheet()
+    toast.type = 'success'
+    toast.message = '任务领取请求已受理'
+    toast.show = true
+  } catch (error) {
+    if (!isOperationActionContextCurrent(context)) return
+    toast.type = 'error'
+    toast.message = describeRequestError(error, '领取任务失败，请刷新后重试。').message
+    toast.show = true
   }
 }
 
@@ -602,8 +684,28 @@ function backToList() {
   router.push('/').catch(() => {})
 }
 
-function onScan(value: string) {
-  filters.keyword = value
+async function onScanAccepted(value: MesScanAccepted) {
+  if (value.kind === 'work-order') {
+    await router.replace({ path: '/mes/operation', query: {} })
+    filters.keyword = undefined
+    filters.workOrderId = value.workOrderId
+    filters.operationTaskId = undefined
+    return
+  }
+  if (value.kind === 'operation-task') {
+    await router.replace({
+      path: '/mes/operation',
+      query: { workOrderId: value.workOrderId, operationTaskId: value.operationTaskId },
+    })
+    return
+  }
+  if (value.kind === 'device') {
+    validatedDeviceAssetId.value = value.scannedObjectId
+    return
+  }
+  if (value.kind === 'personnel') {
+    validatedPersonnelId.value = value.scannedObjectId
+  }
 }
 </script>
 
@@ -630,7 +732,7 @@ function onScan(value: string) {
       :result="result"
       :selected="selected"
       :open="sheetOpen"
-      :action-pending="actionPending"
+      :action-pending="actionOrScanPending"
       :operation-scope-ready="operationScopeReady"
       :confirming-complete="confirmingComplete"
       :current-sops="currentSops"
@@ -639,6 +741,7 @@ function onScan(value: string) {
       :opening-sop-file-id="openingSopFileId"
       :sop-file-error="sopFileError"
       :operation-result-unknown="operationResultUnknown"
+      :can-claim="canClaimSelectedTask"
       @update:open="sheetOpen = $event"
       @action="runAction"
       @retry="retry"
@@ -647,16 +750,56 @@ function onScan(value: string) {
       @cancel-complete="confirmingComplete = false"
       @refresh-sops="() => refreshSops()"
       @open-sop="openSopFile"
-    />
+      @claim="claimSelectedTask"
+    >
+      <template #andon-call>
+        <MesAndonCallPanel
+          :category="andon.category"
+          :pending="andon.pending"
+          :unresolved="andon.unresolved"
+          :can-submit="andon.canSubmit"
+          :scope-message="andonScopeMessage"
+          :message="andon.message"
+          :receipt="andon.receipt"
+          @select-category="andon.selectCategory"
+          @submit="andon.submit"
+          @reset="andon.reset"
+        />
+      </template>
+      <template #context-scan>
+        <MesScanPrevalidation
+          :organization-id="filters.organizationId"
+          :environment-id="filters.environmentId"
+          :work-order-id="selected?.workOrderId"
+          :operation-task-id="selected?.operationTaskId"
+          placeholder="扫描当前工序 / 设备 / 工牌"
+          :active="selected !== null && !result"
+          :accepted-kinds="['operation-task', 'device', 'personnel']"
+          @accepted="onScanAccepted"
+          @status-change="scanGate.set('context', $event)"
+        />
+        <p
+          v-if="validatedDeviceAssetId"
+          data-testid="operation-validated-device"
+          class="text-sm text-muted-foreground"
+        >
+          已核验当前工序设备
+        </p>
+        <p
+          v-if="validatedPersonnelId"
+          data-testid="operation-validated-personnel"
+          class="text-sm text-muted-foreground"
+        >
+          已核验当前工序人员
+        </p>
+      </template>
+    </MesOperationExecutionPanel>
 
     <TaskListShell
       v-if="!result"
       state-key="mes-operation-tasks"
-      :scope="mesScope"
-      source="工序任务服务（服务端按当前主体与所选授权作业范围过滤）"
       :loaded="loaded"
       :total="total"
-      :updated-at="lastUpdatedAt"
       :pending="pending"
       :refreshing="refreshing"
       :loading-more="loadingMore"
@@ -665,7 +808,6 @@ function onScan(value: string) {
       :filter-state="taskFilterState"
       :empty-description="mesEmptyExplanation"
       error-test-id="operation-tasks-error"
-      failure-explanation="工序任务服务未成功返回，请刷新重试。"
       @refresh="() => refresh()"
       @retry="() => refresh()"
       @load-more="loadMore"
@@ -674,7 +816,17 @@ function onScan(value: string) {
     >
       <template #filters>
         <div class="space-y-3 px-4 py-3">
-          <NvScanBar placeholder="扫描工单 / 工序号" :active="scanActive" @scan="onScan" />
+          <MesScanPrevalidation
+            :organization-id="filters.organizationId"
+            :environment-id="filters.environmentId"
+            :work-order-id="requestedWorkOrderId"
+            :operation-task-id="requestedOperationTaskId"
+            placeholder="扫描工单或工序"
+            :active="scanActive"
+            :accepted-kinds="['work-order', 'operation-task']"
+            @accepted="onScanAccepted"
+            @status-change="scanGate.set('list', $event)"
+          />
           <MesWorkScopeFilter permission-code="business.mes.operations.read" />
           <NvMobileDropdownMenu>
             <NvMobileDropdownMenuItem
@@ -715,7 +867,7 @@ function onScan(value: string) {
           v-if="showOperationTasksEmpty"
           class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
         >
-          当前主体授权作业范围内暂无工序任务
+          当前作业范围内暂无工序任务
         </div>
 
         <div v-else class="overflow-hidden rounded-lg border border-border">

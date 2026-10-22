@@ -2,6 +2,7 @@
 import type { BusinessConsoleTelemetryDeviceControlBindingItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import { useBusinessDeviceControlBindings } from '@/composables/useBusinessDeviceControlBinding'
 import {
   useConnectorInstanceCatalog,
@@ -72,7 +73,7 @@ const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.devic
 const { deviceOptions, devicesPending } = useEquipmentDeviceCatalog()
 const { connectorInstanceOptions, connectorsPending } = useConnectorInstanceCatalog()
 
-const errorMessage = computed(() => formatError(bindingsError.value))
+const errorMessage = computed(() => inlineErrorMessage(bindingsError.value))
 
 const dialogOpen = ref(false)
 const editing = ref(false)
@@ -206,16 +207,13 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 </script>
 
 <template>
   <BusinessLayout>
     <NvPageHeader
       title="设备控制通道绑定"
-      :breadcrumbs="[{ label: '设备监控（IoT）' }]"
+      :breadcrumbs="[{ label: '设备监控' }]"
       :count="`${bindingsTotal} 条绑定`"
     >
       <template #actions>
@@ -250,15 +248,11 @@ function formatError(error: unknown) {
                   <NvFieldLabel for="binding-device"
                     >设备编号 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvEntityPicker
+                  <DirectoryPicker
                     id="binding-device"
                     v-model="form.deviceAssetId"
-                    :options="deviceOptions"
-                    title="选择设备"
-                    placeholder="选择设备"
-                    source-text="数据来自基础数据设备资产"
-                    empty-text="暂无设备资产，请先在基础数据登记设备"
-                    :loading="devicesPending"
+                    directory-type="equipment"
+                    creatable
                     aria-label="设备编号"
                   />
                   <p
@@ -277,7 +271,7 @@ function formatError(error: unknown) {
                   <NvInput
                     id="binding-host"
                     v-model="form.connectorHostId"
-                    placeholder="连接器主机 ID"
+                    placeholder="填写连接主机标识"
                     :aria-invalid="!!hostError"
                   />
                   <p v-if="hostError" class="text-xs text-destructive" role="alert">
@@ -294,7 +288,6 @@ function formatError(error: unknown) {
                     :options="instancePickerOptions"
                     title="选择连接器实例"
                     placeholder="选择连接器实例"
-                    source-text="数据来自连接器采集健康上报"
                     empty-text="还没有连接器上报采集健康，请先让连接器接入并上报"
                     :loading="connectorsPending"
                     aria-label="实例标识"
@@ -326,7 +319,6 @@ function formatError(error: unknown) {
           :options="deviceOptions"
           title="选择设备"
           placeholder="全部设备"
-          source-text="数据来自基础数据设备资产"
           empty-text="暂无设备资产，请先在基础数据登记设备"
           :loading="devicesPending"
           clearable

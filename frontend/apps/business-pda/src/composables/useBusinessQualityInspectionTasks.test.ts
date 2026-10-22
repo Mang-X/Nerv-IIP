@@ -903,7 +903,6 @@ describe('useBusinessQualityInspectionTasks', () => {
     expect(result.total.value).toBe(0)
     expect(result.hasSuccessfulResponse.value).toBe(false)
     expect(result.hasFailedResponse.value).toBe(false)
-    expect(result.lastUpdatedAt.value).toBeNull()
   })
 
   it('discards an in-flight extra page when it resolves after the org/env scope changes', async () => {

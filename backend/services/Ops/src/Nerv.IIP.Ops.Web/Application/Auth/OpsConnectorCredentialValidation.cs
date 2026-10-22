@@ -215,8 +215,9 @@ public sealed class IamOpsConnectorCredentialValidator(HttpClient httpClient, IL
 
     // Deliberate boundary duplication of Nerv.IIP.Testing's NetworkFailureClassifier: a shipped
     // assembly must not reference a test assembly. The two must stay semantically identical —
-    // docs/architecture/backend-test-determinism.md ("网络结果与预算") requires either side to sync
-    // the other and the table whenever the split changes.
+    // docs/governance/testing/determinism.md ("Cancellation 与网络失败") requires either side to sync
+    // the other and the mirror test `OpsConnectorCredentialValidationTests.TransportFailures` whenever
+    // the split changes.
     // OpsConnectorCredentialValidationTests.TransportFailures asserts both sides agree row by row.
     private static string ClassifyTransportFailure(HttpRequestException exception)
     {

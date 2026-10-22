@@ -1,4 +1,5 @@
 using System.Globalization;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Seed;
 
@@ -289,11 +290,11 @@ public static class WorldHistoryMetrologySpec
     public static IReadOnlyList<WorldHistorySpcSeries> BuildSpcSeries(DateOnly asOfDate, double scale)
     {
         var facts = WorldHistoryQualitySpec.BuildInspectionFacts(asOfDate, scale);
-        var plan = WorldHistoryQualitySpec.PlanFor("operation");
+        var plan = WorldHistoryQualitySpec.PlanFor(QualityInspectionSourceTypes.Operation);
         var series = new Dictionary<(string Sku, string Code), List<WorldHistorySpcMeasurement>>();
 
         foreach (var fact in facts
-            .Where(fact => string.Equals(fact.SourceType, "operation", StringComparison.Ordinal))
+            .Where(fact => string.Equals(fact.SourceType, QualityInspectionSourceTypes.Operation, StringComparison.Ordinal))
             .Where(fact => fact.HasRecord)
             .OrderBy(fact => fact.CompletedAtUtc!.Value)
             .ThenBy(fact => fact.SourceDocumentId, StringComparer.Ordinal))

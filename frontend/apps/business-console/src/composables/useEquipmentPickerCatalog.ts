@@ -8,10 +8,12 @@
  * 口径：`value` 一律是提交体真正需要的标识（设备编号 / tagKey / 单位编码 / 工单 ID），
  * `label` 是人读名称，`hint` 放辅助识别信息（单位 / 值类型 / 状态 / 归属设备）。
  */
+import type { BusinessConsoleMaintenanceWorkOrderItem } from '@nerv-iip/api-client'
 import type { EntityPickerOption } from '@nerv-iip/ui'
 import { computed, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { useMaintenancePlans, useMaintenanceWorkOrders } from './useBusinessMaintenance'
 import { toBaseUomBySku } from './skuBaseUom'
+import { useEquipmentDeviceAlarms } from './useBusinessEquipment'
 import {
   useBusinessMasterDataResources,
   useBusinessSkus,
@@ -47,41 +49,6 @@ function joinHint(...parts: (string | null | undefined)[]) {
     .join(' · ')
 }
 
-/**
- * 采集标签的中文名对照。遥测读面只回工程标识 `tagKey`（`spindle-speed` / `bath-ph`），
- * 后端没有标签名字段，所以这里用常量把常见测点译成业务语言；对不上的仍原样显示
- * tagKey（不臆造名称），新增测点扩这张表即可。
- */
-export const TELEMETRY_TAG_LABELS: Record<string, string> = {
-  'air-pressure': '气压',
-  'bath-ph': '槽液 pH',
-  'bath-temperature': '槽液温度',
-  'bearing-temperature': '轴承温度',
-  'coolant-flow': '冷却液流量',
-  current: '电流',
-  'cycle-count': '循环计数',
-  'damping-force': '阻尼力',
-  flow: '流量',
-  humidity: '湿度',
-  level: '液位',
-  power: '功率',
-  'press-force': '压装力',
-  pressure: '压力',
-  runtime: '运行时长',
-  'runtime-state': '运行状态',
-  speed: '转速',
-  'spindle-speed': '主轴转速',
-  'spindle-temperature': '主轴温度',
-  state: '运行状态',
-  'temp-bearing': '轴承温度',
-  temperature: '温度',
-  torque: '扭矩',
-  vibration: '振动',
-  voltage: '电压',
-  'weld-current': '焊接电流',
-  'wheel-speed': '砂轮转速',
-}
-
 const TELEMETRY_VALUE_TYPE_LABELS: Record<string, string> = {
   bool: '布尔',
   boolean: '布尔',
@@ -90,28 +57,13 @@ const TELEMETRY_VALUE_TYPE_LABELS: Record<string, string> = {
   text: '文本',
 }
 
-/** tagKey 的分隔符各连接器不统一（`.` / `_` / `-`），对照表按连字符归一后查。 */
-function normalizeTagKey(tagKey: string) {
-  return tagKey
-    .trim()
-    .toLowerCase()
-    .replace(/[._\s]+/g, '-')
-}
-
-/** 采集标签的人读名：对照表命中就用中文名，否则如实回落到 tagKey。 */
-export function telemetryTagLabel(tagKey?: string | null) {
-  const key = (tagKey ?? '').trim()
-  if (!key) return ''
-  return TELEMETRY_TAG_LABELS[normalizeTagKey(key)] ?? key
-}
-
 function telemetryValueTypeLabel(valueType?: string | null) {
   const key = (valueType ?? '').trim().toLowerCase()
   if (!key) return ''
   return TELEMETRY_VALUE_TYPE_LABELS[key] ?? key
 }
 
-/** 设备资产目录：遥测筛选条与维护建单共用的「哪台设备」。 */
+/** 设备资产目录：遥测页的「哪台设备」。 */
 export function useEquipmentDeviceCatalog() {
   const deviceCatalog = useBusinessMasterDataResources('device-asset')
   deviceCatalog.filters.take = CATALOG_TAKE
@@ -123,6 +75,36 @@ export function useEquipmentDeviceCatalog() {
         .flatMap((row) => toOption(row.code, row.displayName, row.workCenterCode ?? row.lineCode))
         .sort(byLabel),
     ),
+    devicesPending: deviceCatalog.resourcesPending,
+  }
+}
+
+/**
+ * 设备所在工厂（#3902）：维修工单归属设备所在工厂，备件从该工厂已登记的库位领出。
+ * 维保侧的设备标识可能是设备编号，也可能是主数据设备 ID，两种都能查到；查不到返回空串，
+ * 由调用方提示「设备未登记所属工厂」，不猜一个工厂。
+ */
+export function useDeviceSiteLookup() {
+  const deviceCatalog = useBusinessMasterDataResources('device-asset')
+  deviceCatalog.filters.take = CATALOG_TAKE
+  const siteCatalog = useBusinessMasterDataResources('site')
+  const siteByDevice = computed(() => {
+    const map = new Map<string, string>()
+    for (const row of deviceCatalog.resources.value) {
+      const site = row.siteCode?.trim()
+      if (!site) continue
+      if (row.code) map.set(row.code, site)
+      if (row.deviceAssetId) map.set(row.deviceAssetId, site)
+    }
+    return map
+  })
+  return {
+    deviceSiteCode: (deviceAssetId?: string | null) =>
+      deviceAssetId ? (siteByDevice.value.get(deviceAssetId.trim()) ?? '') : '',
+    siteLabel: (siteCode: string) => {
+      const site = siteCatalog.resources.value.find((row) => row.code === siteCode)
+      return site?.displayName?.trim() || siteCode
+    },
     devicesPending: deviceCatalog.resourcesPending,
   }
 }
@@ -150,7 +132,7 @@ export function useTelemetryTagCatalog(deviceAssetId: MaybeRefOrGetter<string>) 
         .flatMap((row) =>
           toOption(
             row.tagKey,
-            telemetryTagLabel(row.tagKey),
+            row.displayName?.trim() || '—',
             joinHint(row.unitCode, telemetryValueTypeLabel(row.valueType)),
           ),
         )
@@ -241,10 +223,43 @@ export function useConnectorInstanceCatalog() {
   }
 }
 
-/** 维修工单的人读单号：工单身份是 GUID，列表页统一取末段大写成 `WO-xxxxxxxx`。 */
-export function maintenanceWorkOrderNo(workOrderId?: string | null) {
-  const id = (workOrderId ?? '').trim()
-  return id ? `WO-${id.slice(-8).toUpperCase()}` : ''
+const GUID_SHAPED = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * 维修工单的人读单号（#3852）：后端按编码规则分配的正式单号（MWO-yyyyMMdd-NNNNNN）。
+ * 早期记录里只存了工单 ID（GUID）的引用，GUID 不上屏，统一显示「维修工单」。
+ */
+export function maintenanceWorkOrderNoLabel(workOrderNo?: string | null) {
+  const value = (workOrderNo ?? '').trim()
+  return value && !GUID_SHAPED.test(value) ? value : '维修工单'
+}
+
+/** 维修工单选项：提交工单 ID（维护内部按 ID 关联），显示正式单号，提示设备与状态。 */
+export function maintenanceWorkOrderOption(
+  row: Pick<
+    BusinessConsoleMaintenanceWorkOrderItem,
+    'workOrderId' | 'workOrderNo' | 'deviceAssetId' | 'status'
+  >,
+): EntityPickerOption | undefined {
+  return toOption(
+    row.workOrderId,
+    maintenanceWorkOrderNoLabel(row.workOrderNo),
+    joinHint(row.deviceAssetId, maintenanceWorkOrderStatusLabel(row.status)),
+  )[0]
+}
+
+/**
+ * 维修工单作为「来源单据」时的选项（成本候选、质量检验）：跨域引用存的是正式单号，
+ * 所以 `value` 也是单号——存下去的值本身就能上屏、能按单号反查。
+ */
+export function maintenanceWorkOrderDocumentOption(
+  row: Pick<BusinessConsoleMaintenanceWorkOrderItem, 'workOrderNo' | 'deviceAssetId' | 'status'>,
+): EntityPickerOption | undefined {
+  return toOption(
+    row.workOrderNo,
+    row.workOrderNo,
+    joinHint(row.deviceAssetId, maintenanceWorkOrderStatusLabel(row.status)),
+  )[0]
 }
 
 /**
@@ -257,6 +272,10 @@ export function useMaintenanceDocumentCatalog() {
   const workOrderCatalog = useMaintenanceWorkOrders({ take: DOCUMENT_CATALOG_TAKE })
 
   return {
+    /** 工单 ID → 设备标识：选了工单就能推出设备所在工厂。 */
+    workOrderDeviceId: (workOrderId?: string | null) =>
+      workOrderCatalog.workOrders.value.find((row) => row.workOrderId === workOrderId)
+        ?.deviceAssetId ?? '',
     planOptions: computed<EntityPickerOption[]>(() =>
       planCatalog.plans.value.flatMap((row) =>
         toOption(
@@ -268,15 +287,44 @@ export function useMaintenanceDocumentCatalog() {
     ),
     plansPending: planCatalog.plansPending,
     workOrderOptions: computed<EntityPickerOption[]>(() =>
-      workOrderCatalog.workOrders.value.flatMap((row) =>
+      workOrderCatalog.workOrders.value.flatMap((row) => maintenanceWorkOrderOption(row) ?? []),
+    ),
+    workOrdersPending: workOrderCatalog.workOrdersPending,
+  }
+}
+
+/** 发生时间只留「月/日 时:分」：辅助信息不截断，写全了会把报警代码挤成省略号。 */
+function formatAlarmRaisedAt(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  })
+}
+
+/**
+ * 报警目录，**只列已选设备的报警**（服务端按设备过滤）：维修工单关联的是这台设备上的某次报警。
+ * 报警标识是系统 ID，`label` 用报警代码，`hint` 标出发生时间，同一代码反复报警时靠时间分辨；
+ * 选择器要关掉编码行。
+ */
+export function useEquipmentAlarmCatalog(deviceAssetId: MaybeRefOrGetter<string>) {
+  const { alarms, alarmsPending } = useEquipmentDeviceAlarms(deviceAssetId)
+
+  return {
+    alarmOptions: computed<EntityPickerOption[]>(() =>
+      alarms.value.flatMap((row) =>
         toOption(
-          row.workOrderId,
-          maintenanceWorkOrderNo(row.workOrderId),
-          joinHint(row.deviceAssetId, maintenanceWorkOrderStatusLabel(row.status)),
+          row.alarmEventId,
+          row.alarmCode,
+          row.raisedAtUtc ? formatAlarmRaisedAt(row.raisedAtUtc) : '',
         ),
       ),
     ),
-    workOrdersPending: workOrderCatalog.workOrdersPending,
+    alarmsPending,
   }
 }
 
@@ -294,20 +342,15 @@ function maintenanceWorkOrderStatusLabel(status?: string | null) {
   return WORK_ORDER_STATUS_LABELS[key] ?? key
 }
 
-/** 备件物料目录：备件需求与工单完工登记的换件行。 */
+/**
+ * 备件物料的基本单位：备件需求与工单完工登记的换件行选完物料后自动带出单位。
+ * 物料本身用可新增的物料选择器（`DirectoryPicker material`）选。
+ */
 export function useEquipmentSkuCatalog() {
   const skuCatalog = useBusinessSkus()
   skuCatalog.filters.take = CATALOG_TAKE
 
   return {
-    skuOptions: computed<EntityPickerOption[]>(() =>
-      skuCatalog.skus.value
-        .filter((row) => row.active !== false)
-        .flatMap((row) => toOption(row.code, row.displayName, row.baseUomCode))
-        .sort(byLabel),
-    ),
-    skusPending: skuCatalog.skusPending,
-    /** 所选物料的基本单位，用来在选完物料后自动带出单位。 */
     baseUomBySku: toBaseUomBySku(skuCatalog.skus),
   }
 }

@@ -18,7 +18,7 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
     [
         Target($"{InventoryInfrastructureRoot}/ApplicationDbContext.cs", "ApplicationDbContext", "SaveChangesAsync", 1, "公开命令保存边界的并发拒绝"),
         Target($"{InventoryWebRoot}/Application/Approval/StockCountApprovalClient.cs", "HttpStockCountApprovalClient", "StartApprovalAsync", 1, "公开盘点调整 facade 的审批启动同步链"),
-        Excluded($"{InventoryWebRoot}/Application/IntegrationEventHandlers/QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer.cs", "QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer", "HandleValidEventAsync", 3, "Quality 集成事件消费者，无原始 HTTP facade"),
+        Excluded($"{InventoryWebRoot}/Application/IntegrationEventHandlers/QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer.cs", "QualityInspectionResultIntegrationEventHandlerForStockStatusTransfer", "HandleValidEventAsync", 5, "Quality 集成事件消费者，无原始 HTTP facade"),
         Target($"{InventoryWebRoot}/Application/Queries/GetStockAvailabilityQuery.cs", "GetStockAvailabilityQueryHandler", "Handle", 1, "公开库存可用量查询 facade"),
         Target($"{InventoryWebRoot}/Application/Commands/StockCounts/RestartStockCountTaskCommand.cs", "RestartStockCountTaskCommandHandler", "Handle", 3, "公开盘点重盘 facade"),
         Target($"{InventoryWebRoot}/Application/Commands/StockCounts/CreateStockCountTaskCommand.cs", "CreateStockCountTaskCommandHandler", "Handle", 3, "公开盘点任务创建 facade"),
@@ -29,13 +29,17 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
         Excluded($"{InventoryWebRoot}/Application/Commands/StockReservations/ReserveStockCommand.cs", "ReserveFefoStockCommandHandler", "Handle", 3, "reservation FEFO 为 internal endpoint"),
         Target($"{InventoryWebRoot}/Application/Queries/GetStockBySourceQuery.cs", "GetStockBySourceQueryHandler", "Handle", 1, "公开库存来源流水查询 facade"),
         Target($"{InventoryWebRoot}/Application/Commands/StockCounts/ConfirmStockCountAdjustmentCommand.cs", "ConfirmStockCountAdjustmentCommandHandler", "Handle", 6, "公开盘点调整确认 facade"),
-        Excluded($"{InventoryWebRoot}/Application/Commands/StockStatusTransfers/PostStockStatusTransferCommand.cs", "PostStockStatusTransferCommandHandler", "Handle", 5, "质量状态转移为 internal endpoint"),
+        Excluded($"{InventoryWebRoot}/Application/Commands/StockStatusTransfers/PostStockStatusTransferCommand.cs", "PostStockStatusTransferCommandHandler", "Handle", 7, "质量状态转移为 internal endpoint"),
         Excluded($"{InventoryWebRoot}/Application/Commands/StockReservations/RenewStockReservationCommand.cs", "RenewStockReservationCommandHandler", "Handle", 1, "reservation renew 为 internal endpoint"),
+        Excluded($"{InventoryWebRoot}/Application/Commands/StockReservations/MarkStockReservationPickedCommand.cs", "MarkStockReservationPickedCommandHandler", "Handle", 1, "reservation pick 为 internal endpoint"),
+        Target($"{InventoryWebRoot}/Application/Errors/InventoryDomainExceptionMiddleware.cs", "InventoryDomainExceptionMiddleware", "InvokeAsync", 5, "预留、续期、确认拣货等内部端点领域拒绝的 HTTP 边界映射（#3836）"),
+        Target($"{InventoryWebRoot}/Application/Validation/InventoryIdempotencyKeyPolicy.cs", "InventoryIdempotencyKeyPolicy", "Compose", 1, "公开 postInventoryMovement facade 的调拨腿键拼接兜底（#3176）"),
     ];
 
     private static readonly IReadOnlyCollection<InventoryPostingRejectedSite> ExpectedPostingRejectedSites =
     [
         PostingTarget($"{InventoryWebRoot}/Application/Commands/StockMovements/PostStockMovementCommand.cs", "PostStockMovementCommandHandler", "Handle", 4, 3, "公开 postInventoryMovement facade"),
+        PostingTarget($"{InventoryWebRoot}/Application/Commands/StockMovements/PostStockMovementCommand.cs", "PostStockMovementCommandHandler", "EnsureRegisteredLocationAsync", 1, 0, "公开 postInventoryMovement facade 的库位登记校验"),
         PostingTarget($"{InventoryWebRoot}/Application/Commands/StockMovements/PostStockMovementCommand.cs", "PostStockMovementCommandHandler", "ValidateTransferLegsOrReject", 7, 0, "公开 postInventoryMovement facade 的调拨校验"),
         PostingTarget($"{InventoryWebRoot}/Application/Commands/StockMovements/PostStockMovementCommand.cs", "PostStockMovementCommandHandler", "CreateTransferInMovementOrReject", 1, 0, "公开 postInventoryMovement facade 的入库腿校验"),
         PostingTarget($"{InventoryWebRoot}/Application/Commands/StockMovements/PostStockMovementCommand.cs", "PostStockMovementCommandHandler", "CreateMovementOrReject", 1, 0, "公开 postInventoryMovement facade 的移动创建校验"),
@@ -46,6 +50,7 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
         PostingExcluded($"{InventoryWebRoot}/Application/IntegrationEventHandlers/InventoryMovementRequestedIntegrationEventHandlerForPostingMovement.cs", "InventoryMovementRequestedIntegrationEventHandlerForPostingMovement", "SendStatusTransferAsync", 1, 0, "状态转移集成事件消费者，无原始 HTTP facade"),
         PostingExcluded($"{InventoryWebRoot}/Application/IntegrationEventHandlers/InventoryMovementRequestedIntegrationEventHandlerForPostingMovement.cs", "InventoryMovementRequestedIntegrationEventHandlerForPostingMovement", "ParseReservationId", 1, 0, "库存移动请求集成事件消费者，无原始 HTTP facade"),
         PostingExcluded($"{InventoryWebRoot}/Application/Commands/StockMovements/InventoryPostingRejectedException.cs", "InventoryPostingRejectedException", "FromDomain", 1, 0, "FromDomain 工厂自身的构造点由行为测试覆盖，不计入公开调用点"),
+        PostingExcluded($"{InventoryWebRoot}/Application/Commands/StockMovements/InventoryPostingRejectedException.cs", "InventoryPostingRejectedException", "ForUnitCostAuthority", 1, 0, "成本权威拒绝由集成事件消费者触发，无原始 HTTP facade"),
     ];
 
     [Fact]
@@ -55,11 +60,11 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
         var discovered = InventoryKnownExceptionUserMessageSourceAnalyzer.DiscoverKnownExceptions(documents);
         var expectedKeys = ExpectedKnownExceptionSites.Select(site => site.Key).ToArray();
 
-        Assert.Equal(37, discovered.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(19, ExpectedKnownExceptionSites
+        Assert.Equal(48, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(25, ExpectedKnownExceptionSites
             .Where(site => site.Kind == InventoryKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(18, ExpectedKnownExceptionSites
+        Assert.Equal(23, ExpectedKnownExceptionSites
             .Where(site => site.Kind == InventoryKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
@@ -101,16 +106,16 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
         var discovered = InventoryKnownExceptionUserMessageSourceAnalyzer.DiscoverPostingRejectedCalls(documents);
         var expectedKeys = ExpectedPostingRejectedSites.Select(site => site.Key).ToArray();
 
-        Assert.Equal(17, ExpectedPostingRejectedSites
+        Assert.Equal(18, ExpectedPostingRejectedSites
             .Where(site => site.Kind == InventoryKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectConstructionCount));
         Assert.Equal(3, ExpectedPostingRejectedSites
             .Where(site => site.Kind == InventoryKnownExceptionSiteKind.Target)
             .Sum(site => site.FromDomainCallCount));
-        Assert.Equal(3, ExpectedPostingRejectedSites
+        Assert.Equal(4, ExpectedPostingRejectedSites
             .Where(site => site.Kind == InventoryKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectConstructionCount));
-        Assert.Equal(20, ExpectedPostingRejectedSites
+        Assert.Equal(21, ExpectedPostingRejectedSites
             .Where(site => site.Kind == InventoryKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectConstructionCount + site.FromDomainCallCount));
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());

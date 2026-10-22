@@ -15,10 +15,39 @@ using Nerv.IIP.Business.Maintenance.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Maintenance.Web.Application.Errors;
 using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
 using Nerv.IIP.Coding;
+using Nerv.IIP.Contracts.Maintenance;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 
-public sealed record MaintenanceSparePartInput(string SkuCode, decimal Quantity, string? UomCode);
+/// <summary>
+/// 备件领用输入。<c>SiteCode</c>/<c>LocationCode</c> 是领出工厂与已登记库位（#3902），写入口必填：
+/// 出库请求按它们扣减库存，不再使用占位值。
+/// </summary>
+public sealed record MaintenanceSparePartInput(
+    string SkuCode,
+    decimal Quantity,
+    string? UomCode,
+    string? SiteCode = null,
+    string? LocationCode = null);
+
+/// <summary>三个备件写入口（完工 v1、生命周期完工、单独登记备件）共用的逐行校验。</summary>
+public sealed class MaintenanceSparePartInputValidator : AbstractValidator<MaintenanceSparePartInput>
+{
+    public MaintenanceSparePartInputValidator()
+    {
+        RuleFor(p => p.SkuCode).NotEmpty().MaximumLength(100);
+        RuleFor(p => p.Quantity)
+            .GreaterThan(0)
+            .Must(MaintenanceNumericValidation.FitsNumeric18Scale6)
+            .WithMessage("Spare part quantity must fit numeric(18,6).");
+        // The spare part's unit drives the inventory issue posting; it must come from the part's
+        // master data. Reject the write instead of letting the integration event converter guess.
+        RuleFor(p => p.UomCode).NotEmpty().MaximumLength(50);
+        // 领出工厂与库位决定从哪条库存台账扣减；缺了就拒绝写入，不让出库请求带占位值（#3902）。
+        RuleFor(p => p.SiteCode).NotEmpty().MaximumLength(100);
+        RuleFor(p => p.LocationCode).NotEmpty().MaximumLength(100);
+    }
+}
 
 public sealed record MaintenanceInspectionMeasurementInput(
     string CharacteristicCode,
@@ -60,7 +89,8 @@ public sealed record CreateMaintenanceWorkOrderCommand(
     string? FailureCauseCode = null,
     string? AssignedTechnicianUserId = null,
     int? EstimatedLaborMinutes = null,
-    string? IdempotencyKey = null) : ICommand<MaintenanceWorkOrderCommandResult>;
+    string? IdempotencyKey = null,
+    DateTimeOffset? ExpectedRestoreAtUtc = null) : ICommand<MaintenanceWorkOrderCommandResult>;
 
 public sealed class CreateMaintenanceWorkOrderCommandValidator : AbstractValidator<CreateMaintenanceWorkOrderCommand>
 {
@@ -73,6 +103,7 @@ public sealed class CreateMaintenanceWorkOrderCommandValidator : AbstractValidat
         RuleFor(x => x.SourceAlarmId).MaximumLength(150);
         RuleFor(x => x.OpenedBy).NotEmpty().MaximumLength(150);
         RuleFor(x => x.AssetUnavailableReason).MaximumLength(500);
+        RuleFor(x => x.AssetUnavailableReason).NotEmpty().When(x => x.ExpectedRestoreAtUtc is not null);
         RuleFor(x => x.DiagnosticDescription).MaximumLength(1000);
         RuleFor(x => x.FailureModeCode).MaximumLength(100);
         RuleFor(x => x.FailureCauseCode).MaximumLength(100);
@@ -82,18 +113,23 @@ public sealed class CreateMaintenanceWorkOrderCommandValidator : AbstractValidat
     }
 }
 
-public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContext dbContext)
+public sealed class CreateMaintenanceWorkOrderCommandHandler(
+    ApplicationDbContext dbContext,
+    MaintenanceCodingService? codingService = null)
     : ICommandHandler<CreateMaintenanceWorkOrderCommand, MaintenanceWorkOrderCommandResult>
 {
-    private const string CreateRuleKey = "maintenance-work-order-create";
-    private const string CreateReceiptVersion = "v1";
+    private readonly MaintenanceCodingService _codingService = codingService ?? new MaintenanceCodingService();
+
+    private const string CreateRuleKey = MaintenanceWorkOrderCreateIntents.CreateRuleKey;
 
     public async Task<MaintenanceWorkOrderCommandResult> Handle(
         CreateMaintenanceWorkOrderCommand request,
         CancellationToken cancellationToken)
     {
-        var idempotencyKey = NormalizeIdempotencyKey(request.IdempotencyKey);
-        var fingerprint = CreateFingerprint(request);
+        var idempotencyKey = MaintenanceWorkOrderCreateIntents.NormalizeIdempotencyKey(request.IdempotencyKey);
+        var fingerprint = request.ExpectedRestoreAtUtc is null
+            ? CreateFingerprint(request)
+            : MaintenanceIdempotencyFingerprints.Hash(new { Legacy = CreateFingerprint(request), request.ExpectedRestoreAtUtc });
         var receipt = idempotencyKey is null
             ? null
             : await dbContext.CodeIdempotencyKeys.AsNoTracking().SingleOrDefaultAsync(
@@ -105,7 +141,7 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
         if (receipt is not null)
         {
             if (!string.Equals(receipt.PayloadFingerprint, fingerprint, StringComparison.Ordinal) ||
-                !TryParseCreateReceipt(receipt.Code, out var parsedReceipt))
+                !MaintenanceWorkOrderCreateIntents.TryParseCreateReceipt(receipt.Code, out var parsedReceipt))
             {
                 throw new MaintenanceIdempotencyConflictException();
             }
@@ -115,7 +151,7 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
                     && x.OrganizationId == request.OrganizationId
                     && x.EnvironmentId == request.EnvironmentId,
                 cancellationToken)
-                ?? throw new KnownException("stored-maintenance-work-order-receipt-is-invalid");
+                ?? throw new KnownException(MaintenanceStableWireCodes.StoredWorkOrderReceiptIsInvalid);
             return new MaintenanceWorkOrderCommandResult(
                 replayed.Id,
                 parsedReceipt.Status,
@@ -131,14 +167,21 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
                 cancellationToken);
             if (existing is not null)
             {
-                throw new KnownException("source-alarm-already-bound-to-a-different-create-intent");
+                throw new KnownException(MaintenanceStableWireCodes.SourceAlarmAlreadyBound);
             }
         }
 
+        var workOrderNo = await MaintenanceWorkOrderNumbers.AllocateAsync(
+            _codingService,
+            request.OrganizationId,
+            request.EnvironmentId,
+            MaintenanceWorkOrderNumbers.CreateIntent(request.SourceAlarmId, idempotencyKey),
+            cancellationToken);
         var workOrder = string.IsNullOrWhiteSpace(request.SourceAlarmId)
             ? MaintenanceWorkOrder.OpenManual(
                 request.OrganizationId,
                 request.EnvironmentId,
+                workOrderNo,
                 request.DeviceAssetId,
                 request.Priority,
                 request.OpenedBy,
@@ -147,6 +190,7 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
             : MaintenanceWorkOrder.OpenFromAlarm(
                 request.OrganizationId,
                 request.EnvironmentId,
+                workOrderNo,
                 request.DeviceAssetId,
                 request.SourceAlarmId,
                 request.Priority,
@@ -159,7 +203,7 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
 
         if (!string.IsNullOrWhiteSpace(request.AssetUnavailableReason))
         {
-            workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, request.AssetUnavailableReason);
+            workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, request.AssetUnavailableReason, request.ExpectedRestoreAtUtc);
         }
 
         dbContext.MaintenanceWorkOrders.Add(workOrder);
@@ -170,7 +214,7 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
                 request.EnvironmentId,
                 CreateRuleKey,
                 idempotencyKey,
-                CreateReceiptCode(workOrder),
+                MaintenanceWorkOrderCreateIntents.CreateReceiptCode(workOrder),
                 fingerprint,
                 DateTimeOffset.UtcNow));
         }
@@ -191,16 +235,56 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
             AssignedTechnicianUserId = MaintenanceText.Optional(request.AssignedTechnicianUserId),
             request.EstimatedLaborMinutes,
         });
+}
 
-    private static string? NormalizeIdempotencyKey(string? value) =>
+public sealed class CreateMaintenanceWorkOrderCommandLock : ICommandLock<CreateMaintenanceWorkOrderCommand>
+{
+    public Task<CommandLockSettings> GetLockKeysAsync(
+        CreateMaintenanceWorkOrderCommand command,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(MaintenanceWorkOrderCreateIntents.CreateLockSettings(
+            command.OrganizationId,
+            command.EnvironmentId,
+            command.DeviceAssetId,
+            command.IdempotencyKey));
+    }
+}
+
+/// <summary>
+/// v1/v2 创建工单入口共用的 create-intent 收据与锁键约定。两个版本共享同一 <see cref="CreateRuleKey"/>：
+/// 同一 organization/environment 下同一个 idempotencyKey 只代表一个创建意图，跨版本复用同一 key 而请求形状不同
+/// 会按既有 create-intent 冲突语义失败，不会各建一张工单。
+/// </summary>
+internal static class MaintenanceWorkOrderCreateIntents
+{
+    public const string CreateRuleKey = "maintenance-work-order-create";
+    private const string CreateReceiptVersion = "v1";
+
+    public static string? NormalizeIdempotencyKey(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static string CreateReceiptCode(MaintenanceWorkOrder workOrder) =>
+    public static string CreateReceiptCode(MaintenanceWorkOrder workOrder) =>
         string.Create(
             CultureInfo.InvariantCulture,
             $"{CreateReceiptVersion}|{workOrder.Id}|{workOrder.Status}|{workOrder.OpenedAtUtc:O}");
 
-    private static bool TryParseCreateReceipt(string code, out CreateWorkOrderReceipt receipt)
+    public static CommandLockSettings CreateLockSettings(
+        string organizationId,
+        string environmentId,
+        string deviceAssetId,
+        string? idempotencyKey)
+    {
+        var operationReference = string.IsNullOrWhiteSpace(idempotencyKey)
+            ? $"legacy:{deviceAssetId.Trim()}"
+            : idempotencyKey.Trim();
+        return new CommandLockSettings(
+            $"business-maintenance:work-order-create:{organizationId}:{environmentId}:{operationReference}",
+            MaintenancePmCommandLockKeys.AcquireTimeoutSeconds);
+    }
+
+    public static bool TryParseCreateReceipt(string code, out CreateWorkOrderReceipt receipt)
     {
         if (Guid.TryParse(code, out var legacyWorkOrderId))
         {
@@ -232,25 +316,208 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(ApplicationDbContex
         return false;
     }
 
-    private sealed record CreateWorkOrderReceipt(
+    public sealed record CreateWorkOrderReceipt(
         MaintenanceWorkOrderId WorkOrderId,
         MaintenanceWorkOrderStatus Status,
         DateTimeOffset? OpenedAtUtc);
 }
 
-public sealed class CreateMaintenanceWorkOrderCommandLock : ICommandLock<CreateMaintenanceWorkOrderCommand>
+/// <summary>
+/// <c>POST /api/business/v2/maintenance/work-orders</c> 的写边界（#2964 C/D 阶段）。相对 v1 只把自由文本
+/// <c>AssetUnavailableReason</c> 换成 nullable 的 <see cref="AssetUnavailableReasonCode"/>；其它字段与 v1 HTTP 请求相同。
+/// </summary>
+public sealed record CreateMaintenanceWorkOrderV2Command(
+    string OrganizationId,
+    string EnvironmentId,
+    string DeviceAssetId,
+    string Priority,
+    string? SourceAlarmId,
+    string OpenedBy,
+    string? AssetUnavailableReasonCode,
+    string? AssignedTechnicianUserId = null,
+    int? EstimatedLaborMinutes = null,
+    string? IdempotencyKey = null,
+    DateTimeOffset? ExpectedRestoreAtUtc = null) : ICommand<MaintenanceWorkOrderCommandResult>;
+
+public sealed class CreateMaintenanceWorkOrderV2CommandValidator : AbstractValidator<CreateMaintenanceWorkOrderV2Command>
+{
+    public CreateMaintenanceWorkOrderV2CommandValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.Priority).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.SourceAlarmId).MaximumLength(150);
+        RuleFor(x => x.OpenedBy).NotEmpty().MaximumLength(150);
+        // null = 不标记不可用；非 null 必须是 1–100 字符的目录码。空字符串在这里失败，纯空白与近似值在目录精确命中处失败。
+        RuleFor(x => x.AssetUnavailableReasonCode).NotEmpty().When(x => x.ExpectedRestoreAtUtc is not null);
+        RuleFor(x => x.AssetUnavailableReasonCode)
+            .Length(1, MaintenanceWorkOrder.MaxAssetUnavailableReasonCodeLength)
+            .When(x => x.AssetUnavailableReasonCode is not null)
+            .WithMessage($"Asset unavailable reason code must contain between 1 and {MaintenanceWorkOrder.MaxAssetUnavailableReasonCodeLength} characters.");
+        RuleFor(x => x.AssignedTechnicianUserId).MaximumLength(150);
+        RuleFor(x => x.EstimatedLaborMinutes).GreaterThan(0).When(x => x.EstimatedLaborMinutes is not null);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+    }
+}
+
+/// <summary>
+/// v2 创建工单：目录精确命中在写入工单与 outbox 之前完成；命中失败抛 <see cref="KnownException"/>，此时聚合从未创建、
+/// UoW 没有任何待写入变更，工单与双发 outbox 一起不落盘。原因码全程使用请求原值——查询谓词、幂等指纹、聚合事实与事件 payload
+/// 都不 trim、不改大小写。
+/// </summary>
+public sealed class CreateMaintenanceWorkOrderV2CommandHandler(
+    ApplicationDbContext dbContext,
+    MaintenanceCodingService? codingService = null)
+    : ICommandHandler<CreateMaintenanceWorkOrderV2Command, MaintenanceWorkOrderCommandResult>
+{
+    private readonly MaintenanceCodingService _codingService = codingService ?? new MaintenanceCodingService();
+
+    public const string ReasonCodeNotFoundErrorCode = "maintenance-asset-unavailable-reason-code-not-found";
+
+    public async Task<MaintenanceWorkOrderCommandResult> Handle(
+        CreateMaintenanceWorkOrderV2Command request,
+        CancellationToken cancellationToken)
+    {
+        var idempotencyKey = MaintenanceWorkOrderCreateIntents.NormalizeIdempotencyKey(request.IdempotencyKey);
+        var fingerprint = request.ExpectedRestoreAtUtc is null
+            ? CreateFingerprint(request)
+            : MaintenanceIdempotencyFingerprints.Hash(new { Legacy = CreateFingerprint(request), request.ExpectedRestoreAtUtc });
+        var receipt = idempotencyKey is null
+            ? null
+            : await dbContext.CodeIdempotencyKeys.AsNoTracking().SingleOrDefaultAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.RuleKey == MaintenanceWorkOrderCreateIntents.CreateRuleKey
+                    && x.IdempotencyKey == idempotencyKey,
+                cancellationToken);
+        if (receipt is not null)
+        {
+            if (!string.Equals(receipt.PayloadFingerprint, fingerprint, StringComparison.Ordinal) ||
+                !MaintenanceWorkOrderCreateIntents.TryParseCreateReceipt(receipt.Code, out var parsedReceipt))
+            {
+                throw new MaintenanceIdempotencyConflictException();
+            }
+
+            var replayed = await dbContext.MaintenanceWorkOrders.SingleOrDefaultAsync(
+                x => x.Id == parsedReceipt.WorkOrderId
+                    && x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId,
+                cancellationToken)
+                ?? throw new KnownException(MaintenanceStableWireCodes.StoredWorkOrderReceiptIsInvalid);
+            return new MaintenanceWorkOrderCommandResult(
+                replayed.Id,
+                parsedReceipt.Status,
+                parsedReceipt.OpenedAtUtc ?? replayed.OpenedAtUtc);
+        }
+
+        var reasonCode = request.AssetUnavailableReasonCode;
+        if (reasonCode is not null)
+        {
+            // 精确命中：谓词用请求原值；数据库 `=` 比较不折叠大小写、不忽略前后空白，其它 organization/environment 的码不可见。
+            var reasonCodeExists = await dbContext.DowntimeReasons.AnyAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.ReasonCode == reasonCode,
+                cancellationToken);
+            if (!reasonCodeExists)
+            {
+                throw new KnownException(ReasonCodeNotFoundErrorCode);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.SourceAlarmId))
+        {
+            var existing = await dbContext.MaintenanceWorkOrders.SingleOrDefaultAsync(
+                x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.SourceAlarmId == request.SourceAlarmId,
+                cancellationToken);
+            if (existing is not null)
+            {
+                throw new KnownException(MaintenanceStableWireCodes.SourceAlarmAlreadyBound);
+            }
+        }
+
+        var workOrderNo = await MaintenanceWorkOrderNumbers.AllocateAsync(
+            _codingService,
+            request.OrganizationId,
+            request.EnvironmentId,
+            MaintenanceWorkOrderNumbers.CreateIntent(request.SourceAlarmId, idempotencyKey),
+            cancellationToken);
+        var workOrder = string.IsNullOrWhiteSpace(request.SourceAlarmId)
+            ? MaintenanceWorkOrder.OpenManual(
+                request.OrganizationId,
+                request.EnvironmentId,
+                workOrderNo,
+                request.DeviceAssetId,
+                request.Priority,
+                request.OpenedBy,
+                request.AssignedTechnicianUserId,
+                request.EstimatedLaborMinutes)
+            : MaintenanceWorkOrder.OpenFromAlarm(
+                request.OrganizationId,
+                request.EnvironmentId,
+                workOrderNo,
+                request.DeviceAssetId,
+                request.SourceAlarmId,
+                request.Priority,
+                request.OpenedBy,
+                assignedTechnicianUserId: request.AssignedTechnicianUserId,
+                estimatedLaborMinutes: request.EstimatedLaborMinutes);
+
+        if (reasonCode is not null)
+        {
+            workOrder.MarkAssetUnavailableByReasonCode(DateTimeOffset.UtcNow, reasonCode, request.ExpectedRestoreAtUtc);
+        }
+
+        dbContext.MaintenanceWorkOrders.Add(workOrder);
+        if (idempotencyKey is not null)
+        {
+            dbContext.CodeIdempotencyKeys.Add(new CodeIdempotencyKey(
+                request.OrganizationId,
+                request.EnvironmentId,
+                MaintenanceWorkOrderCreateIntents.CreateRuleKey,
+                idempotencyKey,
+                MaintenanceWorkOrderCreateIntents.CreateReceiptCode(workOrder),
+                fingerprint,
+                DateTimeOffset.UtcNow));
+        }
+
+        return new MaintenanceWorkOrderCommandResult(workOrder.Id, workOrder.Status, workOrder.OpenedAtUtc);
+    }
+
+    /// <summary>
+    /// 指纹字段名与 v1 不同（<c>AssetUnavailableReasonCode</c> 而非 <c>AssetUnavailableReason</c>），且原因码取请求原值：
+    /// 同一 key 下原因码或其它字段不同 → 冲突；同一 key 跨 v1/v2 复用 → 冲突，不会把不同原因合并为同一意图。
+    /// </summary>
+    private static string CreateFingerprint(CreateMaintenanceWorkOrderV2Command request) =>
+        MaintenanceIdempotencyFingerprints.Hash(new
+        {
+            Version = "v2",
+            DeviceAssetId = request.DeviceAssetId.Trim(),
+            Priority = request.Priority.Trim().ToUpperInvariant(),
+            SourceAlarmId = MaintenanceText.Optional(request.SourceAlarmId),
+            OpenedBy = request.OpenedBy.Trim(),
+            AssetUnavailableReasonCode = request.AssetUnavailableReasonCode,
+            AssignedTechnicianUserId = MaintenanceText.Optional(request.AssignedTechnicianUserId),
+            request.EstimatedLaborMinutes,
+        });
+}
+
+public sealed class CreateMaintenanceWorkOrderV2CommandLock : ICommandLock<CreateMaintenanceWorkOrderV2Command>
 {
     public Task<CommandLockSettings> GetLockKeysAsync(
-        CreateMaintenanceWorkOrderCommand command,
+        CreateMaintenanceWorkOrderV2Command command,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var operationReference = string.IsNullOrWhiteSpace(command.IdempotencyKey)
-            ? $"legacy:{command.DeviceAssetId.Trim()}"
-            : command.IdempotencyKey.Trim();
-        return Task.FromResult(new CommandLockSettings(
-            $"business-maintenance:work-order-create:{command.OrganizationId}:{command.EnvironmentId}:{operationReference}",
-            MaintenancePmCommandLockKeys.AcquireTimeoutSeconds));
+        // 与 v1 同一把锁：同一 key 的 v1/v2 并发请求串行化后落到同一条 create-intent 收据上。
+        return Task.FromResult(MaintenanceWorkOrderCreateIntents.CreateLockSettings(
+            command.OrganizationId,
+            command.EnvironmentId,
+            command.DeviceAssetId,
+            command.IdempotencyKey));
     }
 }
 
@@ -317,17 +584,7 @@ public sealed class CompleteMaintenanceWorkOrderCommandValidator : AbstractValid
         RuleFor(x => x.CostCurrencyCode).MaximumLength(10);
         RuleFor(x => x.ActualTechnicianUserId).MaximumLength(150);
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
-        RuleForEach(x => x.SpareParts).ChildRules(x =>
-        {
-            x.RuleFor(p => p.SkuCode).NotEmpty().MaximumLength(100);
-            x.RuleFor(p => p.Quantity)
-                .GreaterThan(0)
-                .Must(MaintenanceNumericValidation.FitsNumeric18Scale6)
-                .WithMessage("Spare part quantity must fit numeric(18,6).");
-            // The spare part's unit drives the inventory issue posting; it must come from the part's
-            // master data. Reject the write instead of letting the integration event converter guess.
-            x.RuleFor(p => p.UomCode).NotEmpty().MaximumLength(50);
-        });
+        RuleForEach(x => x.SpareParts).SetValidator(new MaintenanceSparePartInputValidator());
     }
 }
 
@@ -382,7 +639,7 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(
             request.Result,
             downtimeReasonCode,
             request.DowntimeMinutes,
-            request.SpareParts.Select(x => new SparePartLineDraft(x.SkuCode, x.Quantity, x.UomCode)),
+            request.SpareParts.Select(x => new SparePartLineDraft(x.SkuCode, x.Quantity, x.UomCode, x.SiteCode, x.LocationCode)),
             request.ActualLaborMinutes,
             request.SparePartCostAmount,
             request.ExternalServiceCostAmount,
@@ -442,7 +699,7 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(
                 out var changedAtUtc) ||
             changedAtUtc == default)
         {
-            throw new KnownException("stored-maintenance-completion-receipt-is-invalid");
+            throw new KnownException(MaintenanceStableWireCodes.StoredCompletionReceiptIsInvalid);
         }
 
         var storedVersion = workOrder.Version;
@@ -452,7 +709,7 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(
                 System.Globalization.CultureInfo.InvariantCulture,
                 out storedVersion) || storedVersion < 0))
         {
-            throw new KnownException("stored-maintenance-completion-receipt-is-invalid");
+            throw new KnownException(MaintenanceStableWireCodes.StoredCompletionReceiptIsInvalid);
         }
 
         return new MaintenanceWorkOrderCommandResult(
@@ -501,9 +758,13 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(
                     SkuCode = x.SkuCode.Trim().ToUpperInvariant(),
                     Quantity = MaintenanceIdempotencyFingerprints.CanonicalDecimal(x.Quantity),
                     UomCode = x.UomCode?.Trim().ToUpperInvariant(),
+                    SiteCode = MaintenanceText.Optional(x.SiteCode),
+                    LocationCode = MaintenanceText.Optional(x.LocationCode),
                 })
                 .OrderBy(x => x.SkuCode, StringComparer.Ordinal)
                 .ThenBy(x => x.UomCode, StringComparer.Ordinal)
+                .ThenBy(x => x.SiteCode, StringComparer.Ordinal)
+                .ThenBy(x => x.LocationCode, StringComparer.Ordinal)
                 .ThenBy(x => x.Quantity)
                 .ToArray(),
         });
@@ -646,7 +907,7 @@ internal static class MaintenancePmCommandLockKeys
     public static string For(string organizationId, string environmentId)
     {
         return string.Join(':',
-            "business-maintenance",
+            MaintenanceIntegrationEventSources.BusinessMaintenance,
             "pm-generation",
             Normalize(organizationId),
             Normalize(environmentId));
@@ -700,9 +961,12 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandValidator : AbstractV
 public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(
     ApplicationDbContext dbContext,
     IAssetRuntimeHoursProvider? runtimeHoursProvider = null,
-    ILogger<GenerateDueMaintenanceWorkOrdersCommandHandler>? logger = null)
+    ILogger<GenerateDueMaintenanceWorkOrdersCommandHandler>? logger = null,
+    MaintenanceCodingService? codingService = null)
     : ICommandHandler<GenerateDueMaintenanceWorkOrdersCommand, GenerateDueMaintenanceWorkOrdersResult>
 {
+    private readonly MaintenanceCodingService _codingService = codingService ?? new MaintenanceCodingService();
+
     private readonly ILogger<GenerateDueMaintenanceWorkOrdersCommandHandler> logger = logger ?? NullLogger<GenerateDueMaintenanceWorkOrdersCommandHandler>.Instance;
 
     public async Task<GenerateDueMaintenanceWorkOrdersResult> Handle(GenerateDueMaintenanceWorkOrdersCommand request, CancellationToken cancellationToken)
@@ -728,7 +992,7 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(
             foreach (var dueDate in plan.ConsumeDueDates(request.BusinessDate))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                AddPlanWorkOrder(plan, request.OpenedBy, $"date:{dueDate:yyyyMMdd}", workOrderIds);
+                await AddPlanWorkOrderAsync(plan, request.OpenedBy, $"date:{dueDate:yyyyMMdd}", workOrderIds, cancellationToken);
             }
 
             if (plan.RuntimeHourInterval is null)
@@ -768,18 +1032,30 @@ public sealed class GenerateDueMaintenanceWorkOrdersCommandHandler(
             var runtimeThresholds = plan.ConsumeRuntimeDue(runtime.RuntimeHours).ToArray();
             for (var i = 0; i < runtimeThresholds.Length; i++)
             {
-                AddPlanWorkOrder(plan, request.OpenedBy, $"runtime:{runtimeThresholds[i]:0.######}:{i + 1}", workOrderIds);
+                await AddPlanWorkOrderAsync(plan, request.OpenedBy, $"runtime:{runtimeThresholds[i]:0.######}:{i + 1}", workOrderIds, cancellationToken);
             }
         }
 
         return new GenerateDueMaintenanceWorkOrdersResult(workOrderIds.Count, workOrderIds);
     }
 
-    private void AddPlanWorkOrder(MaintenancePlan plan, string openedBy, string dueSuffix, List<MaintenanceWorkOrderId> workOrderIds)
+    private async Task AddPlanWorkOrderAsync(
+        MaintenancePlan plan,
+        string openedBy,
+        string dueSuffix,
+        List<MaintenanceWorkOrderId> workOrderIds,
+        CancellationToken cancellationToken)
     {
+        var workOrderNo = await MaintenanceWorkOrderNumbers.AllocateAsync(
+            _codingService,
+            plan.OrganizationId,
+            plan.EnvironmentId,
+            MaintenanceWorkOrderNumbers.PlanIntent(plan.PlanCode, dueSuffix),
+            cancellationToken);
         var workOrder = MaintenanceWorkOrder.OpenFromPlan(
             plan.OrganizationId,
             plan.EnvironmentId,
+            workOrderNo,
             plan.DeviceAssetId,
             plan.PlanCode,
             openedBy,
@@ -795,7 +1071,9 @@ public sealed record CreateMaintenanceSparePartCommand(
     MaintenanceWorkOrderId WorkOrderId,
     string SkuCode,
     decimal Quantity,
-    string? UomCode) : ICommand<SparePartLineId>;
+    string? UomCode,
+    string? SiteCode = null,
+    string? LocationCode = null) : ICommand<SparePartLineId>;
 
 public sealed class CreateMaintenanceSparePartCommandValidator : AbstractValidator<CreateMaintenanceSparePartCommand>
 {
@@ -808,6 +1086,9 @@ public sealed class CreateMaintenanceSparePartCommandValidator : AbstractValidat
         RuleFor(x => x.Quantity).GreaterThan(0);
         // Same rule as the completion path: no unit, no inventory issue — do not fabricate one downstream.
         RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
+        // 同完工路径：领出工厂与库位必填（#3902）。
+        RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.LocationCode).NotEmpty().MaximumLength(100);
     }
 }
 
@@ -829,7 +1110,12 @@ public sealed class CreateMaintenanceSparePartCommandHandler(ApplicationDbContex
             throw new KnownException("Completed maintenance work orders are immutable.");
         }
 
-        var sparePart = workOrder.AddSparePartLine(new SparePartLineDraft(request.SkuCode, request.Quantity, request.UomCode));
+        var sparePart = workOrder.AddSparePartLine(new SparePartLineDraft(
+            request.SkuCode,
+            request.Quantity,
+            request.UomCode,
+            request.SiteCode,
+            request.LocationCode));
         return sparePart.Id;
     }
 }
@@ -1034,9 +1320,13 @@ public sealed class RecordMaintenanceInspectionCommandValidator : AbstractValida
     }
 }
 
-public sealed class RecordMaintenanceInspectionCommandHandler(ApplicationDbContext dbContext)
+public sealed class RecordMaintenanceInspectionCommandHandler(
+    ApplicationDbContext dbContext,
+    MaintenanceCodingService? codingService = null)
     : ICommandHandler<RecordMaintenanceInspectionCommand, MaintenanceInspectionId>
 {
+    private readonly MaintenanceCodingService _codingService = codingService ?? new MaintenanceCodingService();
+
     public async Task<MaintenanceInspectionId> Handle(RecordMaintenanceInspectionCommand request, CancellationToken cancellationToken)
     {
         var inspectedAtUtc = request.InspectedAtUtc.ToUniversalTime();
@@ -1177,9 +1467,16 @@ public sealed class RecordMaintenanceInspectionCommandHandler(ApplicationDbConte
         }
 
         var deviceAssetId = await ResolveInspectionDeviceAssetIdAsync(inspection, cancellationToken);
+        var workOrderNo = await MaintenanceWorkOrderNumbers.AllocateAsync(
+            _codingService,
+            inspection.OrganizationId,
+            inspection.EnvironmentId,
+            MaintenanceWorkOrderNumbers.InspectionIntent(inspection.Id.ToString()),
+            cancellationToken);
         var workOrder = MaintenanceWorkOrder.OpenFromInspection(
             inspection.OrganizationId,
             inspection.EnvironmentId,
+            workOrderNo,
             deviceAssetId,
             inspection.Id,
             inspection.Result);
@@ -1225,8 +1522,13 @@ public sealed class CreateDowntimeReasonCommandValidator : AbstractValidator<Cre
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Description).NotEmpty().MaximumLength(500);
-        RuleFor(x => x.ReasonCategory).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.LossCategory).NotEmpty().MaximumLength(100);
+        // 分类与损失类别只收 Maintenance 词表里的受控码（#3855）；界面按码显示中文，自由文本会变成「其他」。
+        RuleFor(x => x.ReasonCategory)
+            .Must(DowntimeReasonVocabulary.ReasonCategories.All.Contains)
+            .WithMessage("Downtime reason category is not a supported code.");
+        RuleFor(x => x.LossCategory)
+            .Must(DowntimeReasonVocabulary.LossCategories.All.Contains)
+            .WithMessage("Downtime loss category is not a supported code.");
     }
 }
 
@@ -1243,7 +1545,9 @@ public sealed class CreateDowntimeReasonCommandHandler(ApplicationDbContext dbCo
             cancellationToken);
         if (existing is not null)
         {
-            return existing.Id;
+            // 编码即身份：已存在就明确拒绝（409），不悄悄把原记录当成「新建成功」返回——
+            // 控制台就地新增会据此提示「编码已存在」，而不是误选另一条原因（#3855 审核阻断 6）。
+            throw new MaintenanceDowntimeReasonCodeConflictException();
         }
 
         var reason = DowntimeReason.Create(request.OrganizationId, request.EnvironmentId, normalizedReasonCode, request.Description, request.ReasonCategory, request.LossCategory);
@@ -1268,8 +1572,13 @@ public sealed class UpdateDowntimeReasonCommandValidator : AbstractValidator<Upd
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ReasonCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Description).NotEmpty().MaximumLength(500);
-        RuleFor(x => x.ReasonCategory).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.LossCategory).NotEmpty().MaximumLength(100);
+        // 分类与损失类别只收 Maintenance 词表里的受控码（#3855）；界面按码显示中文，自由文本会变成「其他」。
+        RuleFor(x => x.ReasonCategory)
+            .Must(DowntimeReasonVocabulary.ReasonCategories.All.Contains)
+            .WithMessage("Downtime reason category is not a supported code.");
+        RuleFor(x => x.LossCategory)
+            .Must(DowntimeReasonVocabulary.LossCategories.All.Contains)
+            .WithMessage("Downtime loss category is not a supported code.");
     }
 }
 

@@ -41,6 +41,7 @@ public sealed class LeaderDemoSeedService(ApplicationDbContext dbContext)
         dbContext.MaintenanceWorkOrders.Add(MaintenanceWorkOrder.OpenFromAlarm(
             organizationId,
             environmentId,
+            WorkOrderReference,
             DeviceAssetId,
             AlarmExternalId,
             "critical",

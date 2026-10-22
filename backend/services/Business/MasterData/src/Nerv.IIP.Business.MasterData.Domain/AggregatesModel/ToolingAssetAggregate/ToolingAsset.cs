@@ -1,3 +1,5 @@
+using System.Runtime.Serialization;
+
 namespace Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ToolingAssetAggregate;
 
 public partial record ToolingAssetId : IGuidStronglyTypedId;
@@ -9,8 +11,11 @@ public enum ChangeoverSourceType { Sku = 0, ProductCategory = 1 }
 
 public enum ToolingAssetStatus
 {
+    [EnumMember(Value = "available")]
     Available = 0,
+    [EnumMember(Value = "maintenance")]
     Maintenance = 1,
+    [EnumMember(Value = "retired")]
     Retired = 2
 }
 
@@ -70,6 +75,24 @@ public class ToolingAsset : Entity<ToolingAssetId>, IAggregateRoot
     public bool IsApplicable(string workCenterCode, string skuCode) => IsSchedulable && applicability.Any(x =>
         string.Equals(x.WorkCenterCode, workCenterCode, StringComparison.OrdinalIgnoreCase) &&
         string.Equals(x.SkuCode, skuCode, StringComparison.OrdinalIgnoreCase));
+
+    public bool MatchesRegistration(
+        string name,
+        string toolingType,
+        IEnumerable<string> workCenterCodes,
+        IEnumerable<string> skuCodes,
+        long? maintenanceLifeCount) =>
+        string.Equals(Name, Required(name), StringComparison.Ordinal) &&
+        string.Equals(ToolingType, Required(toolingType), StringComparison.Ordinal) &&
+        MaintenanceLifeCount == maintenanceLifeCount &&
+        Normalize(workCenterCodes).SequenceEqual(
+            applicability.Select(item => item.WorkCenterCode).Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.OrdinalIgnoreCase),
+            StringComparer.OrdinalIgnoreCase) &&
+        Normalize(skuCodes).SequenceEqual(
+            applicability.Select(item => item.SkuCode).Distinct(StringComparer.OrdinalIgnoreCase)
+                .Order(StringComparer.OrdinalIgnoreCase),
+            StringComparer.OrdinalIgnoreCase);
 
     public void RecordUsage(long count)
     {
@@ -139,10 +162,15 @@ public class ChangeoverMatrixEntry : Entity<ChangeoverMatrixEntryId>, IAggregate
         var now = DateTime.UtcNow;
         var entry = new ChangeoverMatrixEntry
         {
-            OrganizationId = Required(organizationId), EnvironmentId = Required(environmentId), WorkCenterCode = Required(workCenterCode),
+            OrganizationId = Required(organizationId),
+            EnvironmentId = Required(environmentId),
+            WorkCenterCode = Required(workCenterCode),
             SourceType = string.IsNullOrWhiteSpace(fromSkuCode) ? ChangeoverSourceType.ProductCategory : ChangeoverSourceType.Sku,
-            SourceCode = Required(fromSkuCode ?? fromProductCategoryCode!), ToSkuCode = Required(toSkuCode),
-            SetupMinutes = setupMinutes, CreatedAtUtc = now, UpdatedAtUtc = now
+            SourceCode = Required(fromSkuCode ?? fromProductCategoryCode!),
+            ToSkuCode = Required(toSkuCode),
+            SetupMinutes = setupMinutes,
+            CreatedAtUtc = now,
+            UpdatedAtUtc = now
         };
         entry.requiredTooling.AddRange(tooling.Select(ChangeoverRequiredTooling.Create));
         return entry;

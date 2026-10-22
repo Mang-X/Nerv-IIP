@@ -4,7 +4,6 @@ using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.MasterData;
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Contracts.DemandPlanning;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -39,7 +38,6 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
             dbContext,
             new ConvertPlanToWorkOrderCommandHandler(
                 dbContext,
-                new RuleScheduler(),
                 null,
                 materialSnapshotProvider,
                 skuAvailabilityScopeCoordinator ?? new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),
@@ -81,16 +79,20 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
             return;
         }
 
-        var existing = await dbContext.WorkOrders.AnyAsync(
+        var existing = await dbContext.WorkOrders.Where(
             x => x.OrganizationId == integrationEvent.OrganizationId &&
                 x.EnvironmentId == integrationEvent.EnvironmentId &&
                 x.SourcePlanReference != null &&
                 x.SourcePlanReference.SourceSystem == DemandPlanningSourceReferences.DemandPlanning &&
                 x.SourcePlanReference.SourceDocumentType == DemandPlanningSourceReferences.PlanningSuggestion &&
-                x.SourcePlanReference.SourceDocumentId == payload.SuggestionId,
-            cancellationToken);
-        if (existing)
+                x.SourcePlanReference.SourceDocumentId == payload.SuggestionId)
+            .ToListAsync(cancellationToken);
+        if (existing.Count > 0)
         {
+            foreach (var workOrder in existing)
+            {
+                workOrder.RecordAssemblyParentSuggestionIds(payload.AssemblyParentSuggestionIds);
+            }
             await dbContext.SaveChangesAsync(cancellationToken);
             return;
         }
@@ -127,7 +129,8 @@ public sealed class PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMe
                     payload.SuggestionId,
                     payload.DemandSourceReference,
                     integrationEvent.IdempotencyKey,
-                    payload.DemandSourceReferences),
+                    payload.DemandSourceReferences,
+                    payload.AssemblyParentSuggestionIds),
                 cancellationToken);
         }
         catch (DisabledMesSkuException)

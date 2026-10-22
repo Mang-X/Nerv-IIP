@@ -2,6 +2,8 @@ using System.Data.Common;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -30,21 +32,24 @@ using DotNetCore.CAP.Persistence;
 
 namespace Nerv.IIP.Business.MasterData.Web.Tests;
 
+[Collection(MasterDataPostgresProfileCollection.Name)]
 public sealed class MasterDataPostgresProfileTests
 {
+    private const string TrackingPolicyNormalizationPredecessor = "20260825081539_AddToolingOperationAudit";
+    private const string StationBackfillPredecessor = "20260922083128_NormalizeSkuTrackingPolicyCodes";
+
     [PostgresFact]
     public async Task Postgres_device_reference_batch_uses_two_fixed_relational_reads_for_one_and_two_hundred_references()
     {
         var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
         var counter = new RelationalReadCounter();
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql(connectionString)
-            .AddInterceptors(counter)
-            .Options;
-        await using var dbContext = new ApplicationDbContext(options, new NoopMediator());
+        await using var provider = BuildPersistenceProvider(connectionString, options => options.AddInterceptors(counter));
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         AssertUsesGovernedDatabase(dbContext);
         await DropMasterDataSchemaAsync(dbContext);
         await dbContext.Database.MigrateAsync();
+        await AssertMigrationsHistoryTableInSchemaAsync(dbContext, MasterDataFacts.Schema);
         var devices = Enumerable.Range(1, 200)
             .Select(index => DeviceAsset.Register(
                 "org-001",
@@ -185,6 +190,25 @@ public sealed class MasterDataPostgresProfileTests
         return services;
     }
 
+    private static ServiceProvider BuildPersistenceProvider(
+        string connectionString,
+        Action<DbContextOptionsBuilder>? configureOptions = null)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging(builder => builder.AddConsole());
+        services.AddMediatR(configuration =>
+        {
+            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
+        });
+        services.AddMasterDataPostgreSqlPersistence(connectionString);
+        if (configureOptions is not null)
+        {
+            services.AddDbContext<ApplicationDbContext>(configureOptions);
+        }
+
+        return services.BuildServiceProvider();
+    }
+
     private static async Task SendLifecycleCommandAsync(
         ServiceProvider provider,
         SetMasterDataResourceEnabledCommand command)
@@ -224,16 +248,7 @@ public sealed class MasterDataPostgresProfileTests
     public async Task Postgres_store_persists_master_data_aggregates()
     {
         var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-
-        var services = new ServiceCollection();
-        services.AddLogging(builder => builder.AddConsole());
-        services.AddMediatR(configuration =>
-        {
-            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
-        });
-        services.AddMasterDataPostgreSqlPersistence(connectionString);
-
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = BuildPersistenceProvider(connectionString);
 
         using (var scope = provider.CreateScope())
         {
@@ -270,20 +285,196 @@ public sealed class MasterDataPostgresProfileTests
         }
     }
 
+    /// <summary>
+    /// `20260922083128_NormalizeSkuTrackingPolicyCodes` 的两条 UPDATE 是本次唯一有行为的数据迁移。
+    /// 夹具用**当时 `Sku.Create` 写出的那两个码集外同义词**建行（域层不校验码集，所以这条路和历史库一致），
+    /// 另一行取码集内的合法值作对照——它必须原样不动，否则 UPDATE 的 WHERE 就形同虚设。
+    /// 走服务注册而不是手搓 <c>DbContextOptionsBuilder</c>：只有前者把 `__EFMigrationsHistory`
+    /// 放进服务 schema，drop schema 才能真的把迁移状态一起清掉；手搓 options 的 history 落在
+    /// `public`，本类里别的用例留下的记录会让 `MigrateAsync` 变成空操作，表根本建不出来。
+    /// </summary>
+    [PostgresFact]
+    public async Task Postgres_migration_normalizes_legacy_sku_tracking_policy_synonyms_and_leaves_valid_rows()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        await using var provider = BuildPersistenceProvider(connectionString);
+
+        using (var seedScope = provider.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            AssertUsesGovernedDatabase(db);
+            await DropMasterDataSchemaAsync(db);
+            await db.GetService<IMigrator>().MigrateAsync(TrackingPolicyNormalizationPredecessor);
+            await AssertMigrationsHistoryTableInSchemaAsync(db, MasterDataFacts.Schema);
+
+            db.Skus.Add(LegacySku("SKU-LEGACY", "not-tracked", "not-serialized"));
+            db.Skus.Add(LegacySku("SKU-VALID", "mandatory", "on-production"));
+            await db.SaveChangesAsync();
+        }
+
+        using (var upgradeScope = provider.CreateScope())
+        {
+            var db = upgradeScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Database.MigrateAsync();
+
+            var persisted = await db.Skus
+                .AsNoTracking()
+                .OrderBy(x => x.Code)
+                .Select(x => new { x.Code, x.BatchTrackingPolicy, x.SerialTrackingPolicy })
+                .ToArrayAsync();
+
+            Assert.Equal(
+                [
+                    ("SKU-LEGACY", "none", "none"),
+                    ("SKU-VALID", "mandatory", "on-production")
+                ],
+                persisted.Select(x => (x.Code, x.BatchTrackingPolicy, x.SerialTrackingPolicy)));
+        }
+    }
+
+    /// <summary>
+    /// `AddStations` 从存量设备的 `station_code` 回填工位：迁移前目录里能看到的工位，迁移后一条不少也不多；
+    /// 同一工位的设备工作中心不一致时只留空这条可选关联，不挑其中一条，而按其中任一工作中心收窄的目录仍能看到它（工位挂在产线下）；
+    /// 只挂在已停用设备上的工位回填为停用，启用与停用设备混挂的工位保持启用。
+    /// </summary>
+    [PostgresFact]
+    public async Task Postgres_migration_backfills_stations_from_legacy_device_station_codes()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        await using var provider = BuildPersistenceProvider(connectionString);
+
+        using (var seedScope = provider.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            AssertUsesGovernedDatabase(db);
+            await DropMasterDataSchemaAsync(db);
+            await db.GetService<IMigrator>().MigrateAsync(StationBackfillPredecessor);
+            await AssertMigrationsHistoryTableInSchemaAsync(db, MasterDataFacts.Schema);
+
+            var retired = LegacyStationDevice("org-001", "DEV-C", "LINE-2", "WC-3", "ST-B");
+            retired.Disable("retired");
+            var mixedRetired = LegacyStationDevice("org-001", "DEV-G", "LINE-2", "WC-3", "ST-C");
+            mixedRetired.Disable("retired");
+            db.WorkCenters.AddRange(
+                WorkCenter.CreateResource("org-001", "env-dev", "WC-1", "WC 1", 480, "work-center", "SITE-1", "LINE-1", "WS-1", "CAL-1", "minute", true),
+                WorkCenter.CreateResource("org-001", "env-dev", "WC-2", "WC 2", 480, "work-center", "SITE-1", "LINE-1", "WS-1", "CAL-1", "minute", true));
+            db.DeviceAssets.AddRange(
+                mixedRetired,
+                LegacyStationDevice("org-001", "DEV-F", "LINE-2", "WC-3", "ST-C"),
+                LegacyStationDevice("org-001", "DEV-A", "LINE-1", "WC-1", "ST-A"),
+                LegacyStationDevice("org-001", "DEV-B", "LINE-1", "WC-2", "ST-A"),
+                retired,
+                LegacyStationDevice("org-001", "DEV-D", "LINE-1", "WC-1", string.Empty),
+                LegacyStationDevice("org-other", "DEV-E", "LINE-9", "WC-9", "ST-A"));
+            await db.SaveChangesAsync();
+        }
+
+        using (var upgradeScope = provider.CreateScope())
+        {
+            var db = upgradeScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Database.MigrateAsync();
+
+            var stations = await db.Stations
+                .AsNoTracking()
+                .OrderBy(x => x.OrganizationId)
+                .ThenBy(x => x.Code)
+                .Select(x => new { x.OrganizationId, x.Code, x.Name, x.LineCode, x.WorkCenterCode, x.Disabled })
+                .ToArrayAsync();
+            Assert.Equal(
+                [
+                    ("org-001", "ST-A", "ST-A", "LINE-1", (string?)null, false),
+                    ("org-001", "ST-B", "ST-B", "LINE-2", "WC-3", true),
+                    ("org-001", "ST-C", "ST-C", "LINE-2", "WC-3", false),
+                    ("org-other", "ST-A", "ST-A", "LINE-9", "WC-9", false),
+                ],
+                stations.Select(x => (x.OrganizationId, x.Code, x.Name, x.LineCode, x.WorkCenterCode, x.Disabled)));
+
+            var directory = await new ListMasterDataResourcesQueryHandler(db).Handle(
+                new ListMasterDataResourcesQuery("org-001", "env-dev", "station"),
+                CancellationToken.None);
+            Assert.Equal(["ST-A", "ST-C"], directory.Resources.Select(x => x.StationCode));
+
+            foreach (var workCenter in new[] { "WC-1", "WC-2" })
+            {
+                var scoped = await new ListMasterDataResourcesQueryHandler(db).Handle(
+                    new ListMasterDataResourcesQuery("org-001", "env-dev", "station", WorkCenterCode: workCenter),
+                    CancellationToken.None);
+                Assert.Equal(["ST-A"], scoped.Resources.Select(x => x.StationCode));
+            }
+
+            // WC-3 在 work_centers 里没有行，ST-C 只凭自身关联的工作中心命中。
+            var unregisteredWorkCenter = await new ListMasterDataResourcesQueryHandler(db).Handle(
+                new ListMasterDataResourcesQuery("org-001", "env-dev", "station", WorkCenterCode: "WC-3"),
+                CancellationToken.None);
+            Assert.Equal(["ST-C"], unregisteredWorkCenter.Resources.Select(x => x.StationCode));
+        }
+    }
+
+    [PostgresFact]
+    public async Task Postgres_station_backfill_aborts_and_lists_codes_attached_to_different_lines()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        await using var provider = BuildPersistenceProvider(connectionString);
+
+        using (var seedScope = provider.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            AssertUsesGovernedDatabase(db);
+            await DropMasterDataSchemaAsync(db);
+            await db.GetService<IMigrator>().MigrateAsync(StationBackfillPredecessor);
+            db.DeviceAssets.AddRange(
+                LegacyStationDevice("org-001", "DEV-A", "LINE-1", "WC-1", "ST-X"),
+                LegacyStationDevice("org-001", "DEV-B", "LINE-2", "WC-2", "ST-X"),
+                LegacyStationDevice("org-001", "DEV-C", "LINE-1", "WC-1", "ST-OK"));
+            await db.SaveChangesAsync();
+        }
+
+        using (var upgradeScope = provider.CreateScope())
+        {
+            var db = upgradeScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var exception = await Assert.ThrowsAsync<PostgresException>(() => db.Database.MigrateAsync());
+
+            Assert.Contains("org-001/env-dev/ST-X -> lines [LINE-1, LINE-2]", exception.MessageText, StringComparison.Ordinal);
+            Assert.DoesNotContain("ST-OK", exception.MessageText, StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "20260923110913_AddStations",
+                (await db.Database.GetAppliedMigrationsAsync()).ToArray());
+        }
+    }
+
+    private static DeviceAsset LegacyStationDevice(
+        string organizationId,
+        string code,
+        string lineCode,
+        string workCenterCode,
+        string stationCode) =>
+        DeviceAsset.Register(organizationId, "env-dev", code, code, lineCode, workCenterCode)
+            .WithLedger(null, null, string.Empty, null, string.Empty, "SITE-1", "WS-1", lineCode, stationCode, null, null);
+
+    private static Sku LegacySku(string code, string batchTrackingPolicy, string serialTrackingPolicy)
+    {
+        return Sku.CreateIndustrial(
+            "org-001",
+            "env-dev",
+            code,
+            code,
+            "pcs",
+            "electronic",
+            "electronic",
+            batchTrackingPolicy,
+            serialTrackingPolicy,
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            false,
+            []);
+    }
+
     [PostgresFact]
     public async Task Postgres_work_calendar_update_replaces_owned_details_after_reload()
     {
         var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
-
-        var services = new ServiceCollection();
-        services.AddLogging(builder => builder.AddConsole());
-        services.AddMediatR(configuration =>
-        {
-            configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
-        });
-        services.AddMasterDataPostgreSqlPersistence(connectionString);
-
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = BuildPersistenceProvider(connectionString);
 
         using (var seedScope = provider.CreateScope())
         {
@@ -377,9 +568,13 @@ public sealed class MasterDataPostgresProfileTests
     private static async Task DropMasterDataSchemaAsync(ApplicationDbContext db)
     {
         var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(MasterDataFacts.Schema);
+        var quotedCapSchema = new NpgsqlCommandBuilder().QuoteIdentifier("cap");
         await db.Database.OpenConnectionAsync();
         await using var command = db.Database.GetDbConnection().CreateCommand();
-        command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
+        // CAP's EF-Core storage provisions its own "cap" schema (see ReadCapPublishedRowsAsync)
+        // independent of MasterDataFacts.Schema; it must be dropped alongside the service schema
+        // or published/received rows from a prior run make outbox assertions overmatch on rerun.
+        command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE; DROP SCHEMA IF EXISTS {quotedCapSchema} CASCADE";
         await command.ExecuteNonQueryAsync();
     }
 
@@ -435,31 +630,6 @@ public sealed class MasterDataPostgresProfileTests
             ReadCount++;
             return ValueTask.FromResult(result);
         }
-    }
-
-    private sealed class NoopMediator : IMediator
-    {
-        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
-            where TNotification : INotification => Task.CompletedTask;
-
-        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
-            where TRequest : IRequest => throw new NotSupportedException();
-
-        public Task<object?> Send(object request, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-
-        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
-            IStreamRequest<TResponse> request,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
-
-        public IAsyncEnumerable<object?> CreateStream(
-            object request,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
 }

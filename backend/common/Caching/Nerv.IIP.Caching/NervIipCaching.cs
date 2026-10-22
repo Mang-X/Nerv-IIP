@@ -1,55 +1,179 @@
-using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Caching.StackExchangeRedis;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using ZiggyCreatures.Caching.Fusion.Backplane.StackExchangeRedis;
+using ZiggyCreatures.Caching.Fusion.Serialization.SystemTextJson;
+using ZiggyCreatures.Caching.Fusion;
+using StackExchange.Redis;
 
 namespace Nerv.IIP.Caching;
 
 public interface IAppCache
 {
-    Task<T> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan ttl);
-    void InvalidatePrefix(string prefix);
+    Task<T> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan ttl, params string[] tags);
+    void RemoveByTag(string tag);
     void Clear();
 }
 
-public sealed class MemoryAppCache : IAppCache
+public static class NervIipCacheTags
 {
-    private readonly ConcurrentDictionary<string, CacheEntry> _entries = new();
+    public const string Gateway = "gateway";
+}
 
-    public async Task<T> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan ttl)
+/// <summary>L1 budget is an entry count: each business value costs one unit.
+/// FusionCache's fixed tag metadata costs zero units. MemoryCache controls admission/compaction;
+/// this is neither byte accounting nor an exact LRU guarantee.</summary>
+public sealed class FusionAppCache : IAppCache, IDisposable
+{
+    public const int DefaultMaxEntries = 10_000;
+    private readonly MemoryCache _memory;
+    private readonly FusionCache _cache;
+    private readonly RedisCache? _distributed;
+    private readonly ILogger<FusionAppCache>? _logger;
+
+    public FusionAppCache(int maxEntries = DefaultMaxEntries)
+        : this(maxEntries, "FusionCache", null, null) { }
+
+    internal FusionAppCache(int maxEntries, string identity, ConfigurationOptions? redis, ILogger<FusionAppCache>? logger)
     {
-        if (_entries.TryGetValue(key, out var existing) && existing.ExpiresAtUtc > DateTimeOffset.UtcNow)
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxEntries);
+        _logger = logger;
+        _memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = maxEntries });
+        var options = new FusionCacheOptions
         {
-            return (T)existing.Value;
+            CacheName = identity,
+            CacheKeyPrefix = identity + ":",
+            DistributedCacheKeyModifierMode = CacheKeyModifierMode.Suffix,
+            WaitForInitialBackplaneSubscribe = true,
+            EnableAutoRecovery = false,
+            DistributedCacheCircuitBreakerDuration = TimeSpan.Zero,
+            BackplaneCircuitBreakerDuration = TimeSpan.Zero,
+        };
+        ApplyFailurePolicy(options.TagsDefaultEntryOptions);
+        _cache = new FusionCache(Options.Create(options), _memory);
+        if (redis is null) return;
+        _distributed = new RedisCache(Options.Create(new RedisCacheOptions { ConfigurationOptions = redis }));
+        try
+        {
+            _cache.SetupDistributedCache(_distributed, new FusionCacheSystemTextJsonSerializer(new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+            var backplane = new SubscriptionCheckedRedisBackplane(new RedisBackplane(new RedisBackplaneOptions { ConfigurationOptions = redis }));
+            _cache.SetupBackplane(backplane);
+            if (!backplane.IsSubscribed)
+                throw new InvalidOperationException("Caching:Redis backplane subscription failed.");
         }
-
-        var value = await factory();
-        _entries[key] = new CacheEntry(value!, DateTimeOffset.UtcNow.Add(ttl));
-        return value;
+        catch
+        {
+            Dispose();
+            throw;
+        }
     }
 
-    public void InvalidatePrefix(string prefix)
+    public async Task<T> GetOrCreateAsync<T>(string key, Func<Task<T>> factory, TimeSpan ttl, params string[] tags)
     {
-        foreach (var key in _entries.Keys.Where(key => key.StartsWith(prefix, StringComparison.Ordinal)))
+        var options = new FusionCacheEntryOptions { Duration = ttl, Size = 1 };
+        ApplyFailurePolicy(options);
+        var loaded = false;
+        try
         {
-            _entries.TryRemove(key, out _);
+            var value = await _cache.GetOrSetAsync<T>(key, (_, _) => { loaded = true; return factory(); },
+                options: options, tags: tags);
+            _logger?.LogDebug("Cache {Outcome}", loaded ? "miss" : "hit");
+            return value;
+        }
+        catch (Exception error)
+        {
+            LogError("get", error);
+            throw;
         }
     }
 
-    public void Clear() => _entries.Clear();
+    private static void ApplyFailurePolicy(FusionCacheEntryOptions options)
+    {
+        options.IsFailSafeEnabled = false;
+        options.EagerRefreshThreshold = null;
+        options.AllowTimedOutFactoryBackgroundCompletion = false;
+        options.AllowBackgroundDistributedCacheOperations = false;
+        options.AllowBackgroundBackplaneOperations = false;
+        options.ReThrowDistributedCacheExceptions = true;
+        options.ReThrowSerializationExceptions = true;
+        options.ReThrowBackplaneExceptions = true;
+    }
 
-    private sealed record CacheEntry(object Value, DateTimeOffset ExpiresAtUtc);
+    // Includes FusionCache metadata; the capacity budget counts Size units, not raw entry count.
+    public int L1EntryCount => _memory.Count;
+
+    public void RemoveByTag(string tag)
+    {
+        try { _cache.RemoveByTag(tag); }
+        catch (Exception error) { LogError("remove-by-tag", error); throw; }
+    }
+
+    public void Clear()
+    {
+        try { _cache.Clear(allowFailSafe: false); }
+        catch (Exception error) { LogError("clear", error); throw; }
+    }
+
+    // The library's verbose logs include raw keys and provider errors. Log only safe boundary metadata.
+    private void LogError(string operation, Exception error) =>
+        _logger?.LogWarning("Cache operation {Operation} failed ({ExceptionType})", operation, error.GetType().Name);
+
+    public void Dispose()
+    {
+        _cache.Dispose();
+        _distributed?.Dispose();
+        _memory.Dispose();
+    }
 }
 
 public static class NervIipCachingRegistration
 {
     public static IServiceCollection AddNervIipCaching(this IServiceCollection services, IConfiguration configuration, string serviceName)
     {
+        var redis = configuration["Caching:Redis"];
+        var provider = configuration["Caching:Provider"] ?? (string.IsNullOrWhiteSpace(redis) ? "L1" : "Redis");
+        if (provider is not ("L1" or "Redis"))
+            throw new InvalidOperationException("Caching:Provider must be L1 or Redis.");
+        if (provider == "L1" && !string.IsNullOrWhiteSpace(redis))
+            throw new InvalidOperationException("Caching:Provider L1 conflicts with Caching:Redis.");
+        var maxEntriesText = configuration["Caching:L1MaxEntries"];
+        var maxEntries = FusionAppCache.DefaultMaxEntries;
+        if (maxEntriesText is not null && (!int.TryParse(maxEntriesText, out maxEntries) || maxEntries <= 0))
+            throw new InvalidOperationException("Caching:L1MaxEntries must be a positive integer.");
+        if (string.IsNullOrWhiteSpace(serviceName))
+            throw new InvalidOperationException("Caching requires a service name.");
+        string? environment = null;
+        ConfigurationOptions? redisOptions = null;
+        if (provider == "Redis")
+        {
+            if (string.IsNullOrWhiteSpace(redis))
+                throw new InvalidOperationException("Caching:Provider Redis requires Caching:Redis.");
+            environment = configuration["Caching:Environment"] ?? configuration["DOTNET_ENVIRONMENT"] ?? configuration["ASPNETCORE_ENVIRONMENT"];
+            if (string.IsNullOrWhiteSpace(environment))
+                throw new InvalidOperationException("Caching:Environment or the host environment must be specified for Redis.");
+            try
+            {
+                redisOptions = ConfigurationOptions.Parse(redis);
+                if (redisOptions.EndPoints.Count == 0)
+                    throw new InvalidOperationException("Caching:Redis requires an endpoint.");
+            }
+            catch (ArgumentException)
+            {
+                throw new InvalidOperationException("Caching:Redis contains invalid connection options.");
+            }
+        }
         services.AddMemoryCache();
-        services.AddSingleton<IAppCache, MemoryAppCache>();
-        services.AddSingleton(new NervIipCacheOptions(serviceName, configuration.GetValue("Caching:Redis", string.Empty) ?? string.Empty));
+        var identity = $"nerv-iip:{Uri.EscapeDataString(serviceName)}:{Uri.EscapeDataString(environment ?? "L1")}:json-v1";
+        services.AddSingleton<IAppCache>(sp => new FusionAppCache(maxEntries, identity, redisOptions, sp.GetService<ILogger<FusionAppCache>>()));
+        services.AddHostedService<CachingStartup>();
+        services.AddSingleton(new NervIipCacheOptions(serviceName, redis ?? string.Empty));
         return services;
     }
 }
@@ -79,4 +203,11 @@ public static class NervIipCacheKeys
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(json));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
+}
+
+// Resolve the selected provider when the host starts, including the actual backplane subscription.
+internal sealed class CachingStartup(IAppCache cache) : IHostedService
+{
+    public Task StartAsync(CancellationToken cancellationToken) { _ = cache; return Task.CompletedTask; }
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

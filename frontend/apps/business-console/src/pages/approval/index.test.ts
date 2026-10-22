@@ -1,6 +1,7 @@
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
+import { NvEntityPicker } from '@nerv-iip/ui'
 import { createPinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
 import ApprovalPage from './index.vue'
@@ -9,8 +10,15 @@ const approvalState = vi.hoisted(() => ({
   createDelegation: vi.fn(async () => undefined),
   resolveTask: vi.fn(async () => undefined),
   revokeDelegation: vi.fn(async () => undefined),
+  saveTemplate: vi.fn(async () => undefined),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
+  taskDocumentType: 'purchase-order',
+  workers: [
+    { userId: 'manager-a', displayName: '张敏', employeeNo: 'YG001', active: true },
+    { userId: 'manager-c', displayName: '李华', employeeNo: 'YG003', active: true },
+    { userId: 'internal-user-without-name', displayName: '', employeeNo: 'YG004', active: true },
+  ],
 }))
 
 // 反馈走真实 notify 分层透传，只把 toast 换成 spy：断言的是「用户最终看到的那句话」。
@@ -20,6 +28,17 @@ vi.mock('@nerv-iip/ui', async (importOriginal) => ({
     error: (...args: unknown[]) => approvalState.toastError(...args),
     success: (...args: unknown[]) => approvalState.toastSuccess(...args),
   },
+}))
+
+vi.mock('@/composables/useBusinessMasterData', () => ({
+  useBusinessWorkers: () => ({
+    workers: computed(() => approvalState.workers),
+    workersPending: shallowRef(false),
+  }),
+  useBusinessMasterDataResources: () => ({
+    resources: computed(() => []),
+    resourcesPending: shallowRef(false),
+  }),
 }))
 
 vi.mock('@/composables/useBusinessApproval', () => ({
@@ -101,7 +120,7 @@ vi.mock('@/composables/useBusinessApproval', () => ({
     revokeDelegation: approvalState.revokeDelegation,
     revokeDelegationError: shallowRef(undefined),
     revokeDelegationPending: shallowRef(false),
-    saveTemplate: vi.fn(),
+    saveTemplate: approvalState.saveTemplate,
     saveTemplateError: shallowRef(undefined),
     saveTemplatePending: shallowRef(false),
     tasks: computed(() => [
@@ -109,7 +128,7 @@ vi.mock('@/composables/useBusinessApproval', () => ({
         chainId: 'chain-1',
         stepNo: 10,
         stepName: '采购经理审批',
-        documentType: '采购订单',
+        documentType: approvalState.taskDocumentType,
         documentId: 'PO-260701-001',
       },
     ]),
@@ -161,7 +180,7 @@ const tabsStubs = {
   NvTabsContent: { props: ['value'], template: '<section><slot /></section>' },
 }
 
-function mountApproval(permissionCodes: string[]) {
+function mountApproval(permissionCodes: string[], realPickers = false) {
   const pinia = createPinia()
   const auth = useAuthStore(pinia)
   auth.$patch({
@@ -183,7 +202,25 @@ function mountApproval(permissionCodes: string[]) {
         NvDataTable: tableStub,
         // 代理人已从自由文本改成只选的实体选择器；这个用例关心的是「提交体的时区换算」，
         // 所以把选择器桩成带同名 id 的输入位，让 setValue 仍然表达「选中了某个代理人」。
-        NvEntityPicker: entityPickerStub,
+        NvEntityPicker: realPickers ? false : entityPickerStub,
+        ...(realPickers
+          ? {
+              NvSelect: {
+                name: 'NvSelect',
+                props: ['modelValue'],
+                emits: ['update:modelValue'],
+                template:
+                  '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
+              },
+              NvSelectValue: { template: '<span />' },
+              NvSelectTrigger: { template: '<span><slot /></span>' },
+              NvSelectContent: { template: '<span><slot /></span>' },
+              NvSelectItem: {
+                props: ['value'],
+                template: '<option :value="value"><slot /></option>',
+              },
+            }
+          : {}),
         NvSearchSelect: entityPickerStub,
         NvDialog: { props: ['open'], template: '<section v-if="open"><slot /></section>' },
         NvDialogClose: { template: '<span><slot /></span>' },
@@ -211,6 +248,8 @@ function mountApproval(permissionCodes: string[]) {
 }
 
 beforeEach(() => {
+  approvalState.saveTemplate.mockClear()
+  approvalState.taskDocumentType = 'purchase-order'
   approvalState.createDelegation.mockClear()
   approvalState.resolveTask.mockClear()
   approvalState.revokeDelegation.mockClear()
@@ -317,5 +356,96 @@ describe('approval center page permissions and actions', () => {
         effectiveToUtc: new Date('2026-07-03T18:45').toISOString(),
       }),
     )
+  })
+})
+
+describe('approval display identities', () => {
+  it.each([
+    ['purchase-order', '采购订单'],
+    ['unregistered-system-type', '—'],
+  ])('translates the rejection document type %s', async (code, label) => {
+    approvalState.taskDocumentType = code
+    const wrapper = mountApproval(['business.approvals.manage'])
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('驳回'))!
+      .trigger('click')
+    const context = wrapper.findComponent({ name: 'CarriedContextSummary' })
+    expect(context.text()).toContain(label)
+    expect(context.text()).not.toContain(code)
+  })
+
+  it('shows personnel business information, searches and delegates with the original identity', async () => {
+    const wrapper = mountApproval(['business.approvals.manage'], true)
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('新建委托'))!
+      .trigger('click')
+    await wrapper.find('#approval-delegate').trigger('click')
+    await flushPromises()
+    const popup = new DOMWrapper(document.body)
+    expect(popup.text()).toContain('李华')
+    expect(popup.text()).toContain('YG003')
+    expect(popup.text()).toContain('—')
+    expect(popup.text()).not.toContain('internal-user-without-name')
+    expect(popup.text()).not.toContain('manager-c')
+    const search = popup.find('input[role="combobox"]')
+    await search.setValue('YG003')
+    expect(popup.findAll('[role="option"]')).toHaveLength(1)
+    await popup.find('[role="option"]').trigger('click')
+    expect(wrapper.find('#approval-delegate').text()).toBe('李华')
+    await wrapper.find('#approval-delegation-from').setValue('2026-07-01T09:30')
+    await wrapper.find('#approval-delegation-to').setValue('2026-07-03T18:45')
+    await wrapper
+      .findAll('form')
+      .find((form) => form.find('#approval-delegate').exists())!
+      .trigger('submit')
+    expect(approvalState.createDelegation).toHaveBeenCalledWith(
+      expect.objectContaining({ delegateActorRef: 'manager-c' }),
+    )
+    wrapper.unmount()
+  })
+
+  it('retains an approver identity without using it as the selected display name', async () => {
+    const wrapper = mountApproval(['business.approvals.manage'], true)
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('维护模板'))!
+      .trigger('click')
+    const typeSelect = wrapper
+      .findAllComponents({ name: 'NvSelect' })
+      .find((select) => select.props('modelValue') === 'role')!
+    typeSelect.vm.$emit('update:modelValue', 'user')
+    await flushPromises()
+    const picker = wrapper.findComponent(NvEntityPicker)
+    picker.vm.$emit('update:modelValue', 'unavailable-user')
+    await flushPromises()
+    expect(wrapper.find('#approval-template-actor-ref').text()).toBe('—')
+    expect(picker.props('modelValue')).toBe('unavailable-user')
+    await wrapper.find('#approval-template-actor-ref').trigger('click')
+    await flushPromises()
+    const popup = new DOMWrapper(document.body)
+    await popup.find('input[role="combobox"]').setValue('李华')
+    await popup.find('[role="option"]').trigger('click')
+    expect(wrapper.find('#approval-template-actor-ref').text()).toBe('李华')
+    wrapper.findComponent({ name: 'NvCombobox' }).vm.$emit('update:modelValue', 'purchase-order')
+    wrapper
+      .findAllComponents({ name: 'NvSelect' })
+      .find((select) => select.find('#approval-template-doc').exists())!
+      .vm.$emit('update:modelValue', 'purchase-order')
+    await wrapper.find('#approval-template-step-name').setValue('采购经理审批')
+    await wrapper
+      .findAll('form')
+      .find((form) => form.find('#approval-template-actor-ref').exists())!
+      .trigger('submit')
+    expect(approvalState.saveTemplate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        steps: [expect.objectContaining({ approverType: 'user', approverRef: 'manager-c' })],
+      }),
+    )
+    wrapper.unmount()
   })
 })

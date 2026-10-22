@@ -20,11 +20,32 @@ const receiptFilters = reactive({
   workOrderId: undefined as string | undefined,
 })
 const workOrderFilters = reactive({
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
   keyword: undefined as string | undefined,
   workOrderId: undefined as string | undefined,
 })
 
-const receipts = [
+// costCapitalization 是可选字段：网关只在调用者有 ERP 财务读权限时附带（#3767）。
+interface MockReceipt {
+  receiptRequestId: string
+  requestNo: string
+  workOrderId: string
+  skuId: string
+  quantity: number
+  unitCost?: number
+  receiptStatus: string
+  costCapitalization?: {
+    workOrderCompleted?: boolean
+    receivedReportCount?: number
+    expectedReportCount?: number
+    receivedMaterialMovementCount?: number
+    expectedMaterialMovementCount?: number
+    capitalizationPublished?: boolean
+  }
+}
+
+const receipts: MockReceipt[] = [
   {
     receiptRequestId: 'RCPT-1',
     requestNo: 'FGR-2026-0001',
@@ -41,7 +62,9 @@ const receipts = [
     skuId: 'SKU-B',
     quantity: 50,
     unitCost: 23.45,
-    receiptStatus: 'Received',
+    // 用域里真实存在的码（FinishedGoodsReceiptRequest.PostedStatus），不是 `Received`——
+    // 入库申请的已入库态叫 Posted，`Received` 是完工入库前记的别的东西，从不作为本字段取值（#3898）。
+    receiptStatus: 'Posted',
   },
 ]
 
@@ -54,7 +77,6 @@ const workOrders = [
 const receiptsPending = ref(false)
 const receiptsError = ref<unknown>(null)
 const receiptRows = ref(receipts)
-const receiptsLastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
 const receiptsHasSuccessfulResponse = ref(true)
 const receiptsHasFailedResponse = ref(false)
 
@@ -65,7 +87,6 @@ vi.mock('@/composables/useBusinessMes', () => ({
     total: computed(() => receiptRows.value.length),
     pending: receiptsPending,
     error: receiptsError,
-    lastUpdatedAt: receiptsLastUpdatedAt,
     hasSuccessfulResponse: receiptsHasSuccessfulResponse,
     hasFailedResponse: receiptsHasFailedResponse,
     refresh: refreshReceipts,
@@ -89,9 +110,11 @@ describe('PDA MES finished-goods receipt page', () => {
     createReceipt.mockResolvedValue(undefined)
     push.mockClear()
     receiptFilters.keyword = undefined
+    receiptFilters.workOrderId = undefined
     receiptFilters.organizationId = 'org-001'
     receiptFilters.environmentId = 'env-dev'
     workOrderFilters.keyword = undefined
+    workOrderFilters.workOrderId = undefined
     receiptsPending.value = false
     receiptsError.value = null
     receiptRows.value = receipts
@@ -110,10 +133,34 @@ describe('PDA MES finished-goods receipt page', () => {
     expect(wrapper.text()).toContain('已入库')
     expect(wrapper.text()).not.toContain('Requested')
     expect(wrapper.text()).not.toContain('Received')
-    expect(wrapper.text()).toContain('范围：当前登录组织 / 当前业务环境')
-    expect(wrapper.text()).toContain('来源：生产完工入库申请服务（组织/环境范围）')
-    expect(wrapper.text()).toContain('已加载 2 / 共 2')
-    expect(wrapper.text()).toContain('最近成功响应')
+  })
+
+  it('shows which stage a pending receipt is stuck on, same wording as business console (#3767)', async () => {
+    // 同一份 costCapitalization 输入，business-console 与 PDA 走同一份 receiptPendingReason
+    // （@nerv-iip/business-core），判断逻辑只有一份，不是两份复制。
+    const pendingReceipt: MockReceipt = {
+      receiptRequestId: 'RCPT-3',
+      requestNo: 'FGR-2026-0003',
+      workOrderId: 'WO-2026-0003',
+      skuId: 'SKU-C',
+      quantity: 10,
+      receiptStatus: 'Requested',
+      costCapitalization: {
+        workOrderCompleted: true,
+        receivedReportCount: 0,
+        expectedReportCount: 8,
+        receivedMaterialMovementCount: 3,
+        expectedMaterialMovementCount: 3,
+      },
+    }
+    receiptRows.value = [pendingReceipt]
+    const wrapper = mount(ReceiptPage)
+    await flushPromises()
+
+    const reason = wrapper.find('[data-testid="receipt-pending-reason"]')
+    expect(reason.exists()).toBe(true)
+    expect(reason.text()).toContain('报工成本 0/8')
+    expect(reason.text()).toContain('物料过账 3/3')
   })
 
   it('shows the list error (not the empty state) when the receipts query fails', async () => {
@@ -127,16 +174,14 @@ describe('PDA MES finished-goods receipt page', () => {
     expect(alert.text()).toContain('加载失败：网络异常')
     // 错误态不应退化为「暂无完工入库申请」空态
     expect(wrapper.text()).not.toContain('暂无完工入库申请')
-    expect(wrapper.find('[data-testid="list-empty-explanation"]').exists()).toBe(false)
   })
 
-  it('explains a successful empty organization-scope response without claiming personal ownership', async () => {
+  it('shows the business empty state for a successful empty response', async () => {
     receiptRows.value = []
     const wrapper = mount(ReceiptPage)
     await flushPromises()
 
-    expect(wrapper.text()).toContain('当前组织/环境范围暂无完工入库申请')
-    expect(wrapper.text()).toContain('不代表当前人员没有入库任务')
+    expect(wrapper.text()).toContain('暂无完工入库申请')
   })
 
   it('shows a retryable failure for success:false instead of a business empty state', async () => {
@@ -146,8 +191,8 @@ describe('PDA MES finished-goods receipt page', () => {
     const wrapper = mount(ReceiptPage)
     await flushPromises()
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('完工入库申请服务未返回成功结果')
-    expect(wrapper.text()).not.toContain('当前组织/环境范围暂无完工入库申请')
+    expect(wrapper.find('[role="alert"]').text()).toContain('完工入库申请加载失败')
+    expect(wrapper.text()).not.toContain('暂无完工入库申请')
     await wrapper.get('[data-testid="retry-list"]').trigger('click')
     expect(refreshReceipts).toHaveBeenCalledTimes(1)
   })
@@ -160,18 +205,19 @@ describe('PDA MES finished-goods receipt page', () => {
     receiptFilters.environmentId = ''
     await flushPromises()
 
-    expect(wrapper.text()).toContain('缺少组织或环境范围，未发起查询')
-    expect(wrapper.text()).toContain('已加载 0 / 共 0')
     expect(wrapper.text()).not.toContain('FGR-2026-0001')
     expect(wrapper.text()).not.toContain('SKU-A')
   })
 
-  it('scanning sets the receipt keyword filter', async () => {
+  it('uses the resolved work-order strong id as an exact receipt filter', async () => {
     const wrapper = mount(ReceiptPage)
-    const input = wrapper.get('input[placeholder^="扫"]')
-    await input.setValue('WO-2026-0002')
-    await input.trigger('keydown.enter')
-    expect(receiptFilters.keyword).toBe('WO-2026-0002')
+    await wrapper.getComponent({ name: 'MesScanPrevalidation' }).vm.$emit('accepted', {
+      kind: 'work-order',
+      candidate: {},
+      workOrderId: 'WO-2026-0002',
+    })
+    expect(receiptFilters.workOrderId).toBe('WO-2026-0002')
+    expect(receiptFilters.keyword).toBeUndefined()
   })
 
   it('starts the new-receipt flow on the select-work-order step', async () => {
@@ -185,7 +231,7 @@ describe('PDA MES finished-goods receipt page', () => {
     wrapper.unmount()
   })
 
-  it('creates a receipt with the bound fields after picking a work order and entering sku/quantity/unit cost/uom', async () => {
+  it('creates a receipt with the bound fields after picking a work order and entering sku/quantity/uom', async () => {
     const wrapper = mount(ReceiptPage, { attachTo: document.body })
     await wrapper.get('[data-testid="new-receipt"]').trigger('click')
     await flushPromises()
@@ -204,11 +250,6 @@ describe('PDA MES finished-goods receipt page', () => {
     )!
     qtyInput.value = '20'
     qtyInput.dispatchEvent(new Event('input'))
-    const costInput = document.body.querySelector<HTMLInputElement>(
-      '[data-testid="receipt-unit-cost"]',
-    )!
-    costInput.value = '12.34'
-    costInput.dispatchEvent(new Event('input'))
     const uomInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-uom"]')!
     uomInput.value = 'PCS'
     uomInput.dispatchEvent(new Event('input'))
@@ -219,13 +260,14 @@ describe('PDA MES finished-goods receipt page', () => {
 
     expect(createReceipt).toHaveBeenCalledTimes(1)
     const body = createReceipt.mock.calls[0][0]
+    expect(document.body.querySelector('[data-testid="receipt-unit-cost"]')).toBeNull()
     expect(body).toMatchObject({
       workOrderId: 'WO-2026-0001',
       skuId: 'SKU-A',
       quantity: 20,
-      unitCost: 12.34,
       uomCode: 'PCS',
     })
+    expect(body).not.toHaveProperty('unitCost')
     // idempotencyKey 现由页面提供（稳定逐操作键）；org/env/timestamp 仍由 composable 注入
     expect(body.idempotencyKey).toBeTruthy()
     expect(body).not.toHaveProperty('organizationId')
@@ -254,11 +296,6 @@ describe('PDA MES finished-goods receipt page', () => {
       )!
       qtyInput.value = '20'
       qtyInput.dispatchEvent(new Event('input'))
-      const costInput = document.body.querySelector<HTMLInputElement>(
-        '[data-testid="receipt-unit-cost"]',
-      )!
-      costInput.value = '12.34'
-      costInput.dispatchEvent(new Event('input'))
       const uomInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-uom"]')!
       uomInput.value = 'PCS'
       uomInput.dispatchEvent(new Event('input'))

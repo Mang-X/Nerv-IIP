@@ -619,7 +619,7 @@ try {
     Assert-True ([regex]::IsMatch($mainChainScenarioText, 'lotNo\s*:\s*producedLotNo')) 'The ERP delivery must preserve the exact produced lot in the WMS posting key.'
     Assert-True ($mainChainScenarioText.Contains("textOf(row.inventoryPostingStatus) === 'posted'", [StringComparison]::Ordinal)) 'The main chain must wait for public WMS Inventory-posted status before accepting ERP completion.'
     Assert-True ($mainChainScenarioText.Contains('Number(data.onHandQuantity ?? 0) === 0', [StringComparison]::Ordinal)) 'The main chain must prove the exact produced-stock balance is decremented to zero.'
-    Assert-True ($mainChainScenarioText.Contains("textOf(outboundLine.ownerType) !== 'production'", [StringComparison]::Ordinal)) 'The main chain must audit the production/null ownership partition rather than customer ownership.'
+    Assert-True ($mainChainScenarioText.Contains("textOf(outboundLine.ownerType) !== 'company'", [StringComparison]::Ordinal)) 'The main chain must audit the company/null legal-ownership partition shared by MES receipt and ERP delivery (#3930).'
     $leaderDemoEntryText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/leader-demo.ps1') -Raw
     Assert-True ($leaderDemoEntryText.Contains('Get-NervLeaderDemoFailureExitCode', [StringComparison]::Ordinal)) 'The leader-demo entrypoint must extract a structured verification exit code.'
     Assert-True ($leaderDemoEntryText.Contains('exit $exitCode', [StringComparison]::Ordinal)) 'The leader-demo entrypoint must propagate the structured nonzero code after evidence.'

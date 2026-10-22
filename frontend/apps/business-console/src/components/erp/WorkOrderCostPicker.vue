@@ -1,0 +1,33 @@
+<script setup lang="ts">
+/**
+ * 财务页工单选择器：候选取自 ERP 工单成本（有成本记录的工单），服务端按工单号 / 物料搜索。
+ * `v-model` 原样回传公开 workOrderId（业务工单号），缺名占位不改变提交身份。
+ */
+import { NvEntityPicker } from '@nerv-iip/ui'
+import { watch } from 'vue'
+import { useErpWorkOrderCostPicker } from '@/composables/useErpWorkOrderCostPicker'
+
+const model = defineModel<string>({ default: '' })
+const { search, options, pending, total } = useErpWorkOrderCostPicker(model)
+// 选定后清掉搜索词，下次打开从完整候选开始。
+watch(model, () => {
+  search.value = ''
+})
+</script>
+
+<template>
+  <NvEntityPicker
+    v-model="model"
+    v-model:search="search"
+    :options="options"
+    title="选择工单"
+    placeholder="选择工单"
+    search-placeholder="搜索工单号 / 物料…"
+    empty-text="没有匹配的工单"
+    :loading="pending"
+    server-search
+    :total-count="total"
+    :show-code="false"
+    aria-label="工单"
+  />
+</template>

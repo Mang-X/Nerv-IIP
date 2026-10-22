@@ -62,6 +62,7 @@ describe('business quality analysis summary', () => {
           sourceType: 'operation',
           defectReason: '尺寸超差',
           defectQuantity: 2,
+          reworkWorkOrderCreationStatus: 'not-requested',
         },
         {
           id: 'ncr-2',
@@ -71,6 +72,7 @@ describe('business quality analysis summary', () => {
           sourceType: 'operation',
           defectReason: '尺寸超差',
           defectQuantity: 3,
+          reworkWorkOrderCreationStatus: 'not-requested',
         },
         {
           id: 'ncr-3',
@@ -80,6 +82,7 @@ describe('business quality analysis summary', () => {
           sourceType: 'receiving',
           defectReason: '外观划伤',
           defectQuantity: 1,
+          reworkWorkOrderCreationStatus: 'not-requested',
         },
         {
           id: 'ncr-4',
@@ -87,6 +90,7 @@ describe('business quality analysis summary', () => {
           status: 'open',
           sourceType: 'receiving',
           defectQuantity: 4,
+          reworkWorkOrderCreationStatus: 'not-requested',
         },
       ],
       10,

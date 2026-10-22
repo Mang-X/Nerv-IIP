@@ -193,41 +193,31 @@ $inboundPlan = @(
 
 $inboundCreated = 0
 $putawayCreated = 0
+# 单号由 WMS 编码规则生成（#3848）：造数只给稳定幂等键，重跑时服务端按键重放同一张单，不会重复建单。
 foreach ($order in $inboundPlan) {
-    $existing = Invoke-NervDemoGet -Token $adminToken -PathAndQuery "/wms/inbound-orders?$scopeQuery&keyword=$($order.No)&take=1"
-    $orderId = $null
-    if ([int] $existing.data.total -gt 0) {
-        $orderId = [string] $existing.data.items[0].inboundOrderId
+    $body = @{
+        organizationId = $OrganizationId; environmentId = $EnvironmentId
+        idempotencyKey = "pda-demo-$($order.No)"; sourceDocumentType = 'purchase-receipt'; sourceDocumentId = $order.Source
+        siteCode = 'SITE-001'; lines = $order.Lines
     }
-    else {
-        $body = @{
-            organizationId = $OrganizationId; environmentId = $EnvironmentId
-            inboundOrderNo = $order.No; sourceDocumentType = 'purchase-receipt'; sourceDocumentId = $order.Source
-            siteCode = 'SITE-001'; lines = $order.Lines
-        }
-        $created = Invoke-NervDemoPost -Token $adminToken -PathAndQuery '/wms/inbound-orders' -Body $body
-        $orderId = [string] $created.data.inboundOrderId
-        $inboundCreated++
-    }
+    $created = Invoke-NervDemoPost -Token $adminToken -PathAndQuery '/wms/inbound-orders' -Body $body
+    $orderId = [string] $created.data.inboundOrderId
+    $inboundCreated++
 
     if ($order.Putaway -and $orderId) {
-        $tasks = Invoke-NervDemoGet -Token $adminToken -PathAndQuery "/wms/putaway-tasks?$scopeQuery&keyword=WT-$($order.No)&take=10"
-        if ([int] $tasks.data.total -eq 0) {
-            $index = 0
-            foreach ($line in $order.Lines) {
-                $index++
-                $taskNo = 'WT-{0}-{1:D2}' -f $order.No, $index
-                $body = @{
-                    taskNo = $taskNo; lineNo = $line.lineNo
-                    fromLocationCode = 'WH-WB-STG-01'; toLocationCode = 'WH-WB-RM-01'; quantity = $line.receivedQuantity
-                }
-                $result = Invoke-NervDemoPost -Token $adminToken -PathAndQuery "/wms/inbound-orders/$orderId/putaway-tasks?$scopeQuery" -Body $body -AllowBusinessReject
-                if ($null -ne $result) { $putawayCreated++ }
+        $index = 0
+        foreach ($line in $order.Lines) {
+            $index++
+            $body = @{
+                idempotencyKey = 'pda-demo-put-{0}-{1:D2}' -f $order.No, $index; lineNo = $line.lineNo
+                fromLocationCode = 'WH-WB-STG-01'; toLocationCode = 'WH-WB-RM-01'; quantity = $line.receivedQuantity
             }
+            $result = Invoke-NervDemoPost -Token $adminToken -PathAndQuery "/wms/inbound-orders/$orderId/putaway-tasks?$scopeQuery" -Body $body -AllowBusinessReject
+            if ($null -ne $result) { $putawayCreated++ }
         }
     }
 }
-$summary['wms:inbound'] = "新建收货单 $inboundCreated / 计划 $($inboundPlan.Count)，新建上架任务 $putawayCreated"
+$summary['wms:inbound'] = "提交收货单 $inboundCreated / 计划 $($inboundPlan.Count)（同键重放不重复建单），提交上架任务 $putawayCreated"
 
 # ---------- 3) WMS 出库单 + 行级钉批次拣货任务（避开 FEFO 拆分） ----------
 $fgCandidates = @('FG-QJ-M1-L', 'FG-HJ-M1-R', 'FG-QJ-P1-L', 'FG-HJ-S1-L', 'FG-QJ-P2-L', 'FG-HJ-P1-R')
@@ -250,42 +240,33 @@ for ($offset = 0; $offset + 1 -lt $fgLots.Count -and $groupIndex -lt 3; $offset 
     $orderNo = 'OB-SO-DEMO-{0:D2}' -f $groupIndex
     $group = @($fgLots[$offset], $fgLots[$offset + 1])
 
-    $existing = Invoke-NervDemoGet -Token $adminToken -PathAndQuery "/wms/outbound-orders?$scopeQuery&keyword=$orderNo&take=1"
-    $orderId = $null
-    if ([int] $existing.data.total -gt 0) {
-        $orderId = [string] $existing.data.items[0].outboundOrderId
-    }
-    else {
-        $lines = @()
-        $lineIndex = 0
-        foreach ($entry in $group) {
-            $lineIndex++
-            $lines += @{
-                lineNo = [string] ($lineIndex * 10); skuCode = $entry.Sku; uomCode = 'pcs'
-                requestedQuantity = $entry.Quantity; pickLocationCode = $entry.Location; lotNo = $entry.LotNo
-                qualityStatus = 'unrestricted'; ownerType = 'company'
-            }
+    $lines = @()
+    $lineIndex = 0
+    foreach ($entry in $group) {
+        $lineIndex++
+        $lines += @{
+            lineNo = [string] ($lineIndex * 10); skuCode = $entry.Sku; uomCode = 'pcs'
+            requestedQuantity = $entry.Quantity; pickLocationCode = $entry.Location; lotNo = $entry.LotNo
+            qualityStatus = 'unrestricted'; ownerType = 'company'
         }
-        # 词表与 WmsSourceDocumentTypes.DeliveryOrder 保持一致（写错字面量时链路不会报错，只会静默丢失应收）。
-        # 注意：本脚本的 sourceDocumentId 是 SO-DEMO-2xx 而非 DO-2026-#####，本就不进 ERP 应收链。
-        $body = @{
-            organizationId = $OrganizationId; environmentId = $EnvironmentId
-            outboundOrderNo = $orderNo; sourceDocumentType = 'erp-delivery-order'; sourceDocumentId = "SO-DEMO-2$('{0:D2}' -f $groupIndex)"
-            siteCode = 'SITE-001'; lines = $lines
-        }
-        $created = Invoke-NervDemoPost -Token $adminToken -PathAndQuery '/wms/outbound-orders' -Body $body
-        $orderId = [string] $created.data.outboundOrderId
-        $outboundCreated++
     }
+    # 词表与 WmsSourceDocumentTypes.DeliveryOrder 保持一致（写错字面量时链路不会报错，只会静默丢失应收）。
+    # 注意：本脚本的 sourceDocumentId 是 SO-DEMO-2xx 而非 DO-2026-#####，本就不进 ERP 应收链。
+    $body = @{
+        organizationId = $OrganizationId; environmentId = $EnvironmentId
+        idempotencyKey = "pda-demo-$orderNo"; sourceDocumentType = 'erp-delivery-order'; sourceDocumentId = "SO-DEMO-2$('{0:D2}' -f $groupIndex)"
+        siteCode = 'SITE-001'; lines = $lines
+    }
+    $created = Invoke-NervDemoPost -Token $adminToken -PathAndQuery '/wms/outbound-orders' -Body $body
+    $orderId = [string] $created.data.outboundOrderId
+    $outboundCreated++
 
-    $tasks = Invoke-NervDemoGet -Token $adminToken -PathAndQuery "/wms/picking-tasks?$scopeQuery&keyword=WT-$orderNo&take=10"
-    if ($orderId -and [int] $tasks.data.total -eq 0) {
+    if ($orderId) {
         $lineIndex = 0
         foreach ($entry in $group) {
             $lineIndex++
-            $taskNo = 'WT-{0}-{1:D2}' -f $orderNo, $lineIndex
             $body = @{
-                taskNo = $taskNo; lineNo = [string] ($lineIndex * 10)
+                idempotencyKey = 'pda-demo-pick-{0}-{1:D2}' -f $orderNo, $lineIndex; lineNo = [string] ($lineIndex * 10)
                 fromLocationCode = $entry.Location; toLocationCode = 'WH-WB-SHIP-01'; quantity = $entry.Quantity
             }
             $result = Invoke-NervDemoPost -Token $adminToken -PathAndQuery "/wms/outbound-orders/$orderId/picking-tasks?$scopeQuery" -Body $body -AllowBusinessReject
@@ -293,7 +274,7 @@ for ($offset = 0; $offset + 1 -lt $fgLots.Count -and $groupIndex -lt 3; $offset 
         }
     }
 }
-$summary['wms:outbound'] = "新建出库单 $outboundCreated / 3，新建拣货任务 $pickingCreated"
+$summary['wms:outbound'] = "提交出库单 $outboundCreated / 3（同键重放不重复建单），提交拣货任务 $pickingCreated"
 
 # ---------- 4) 汇总 ----------
 Write-Host ''

@@ -19,8 +19,8 @@ import type { EntityPickerOption, EntityPickerVariant } from './types'
 
 /**
  * Blocks — 实体选择器：从主数据目录（物料 / SKU / 设备 / 工厂 / 质量特性…）里挑一个实体，
- * **只能选、不能自由录入**。选项行给出「名称 + 业务编码 + 辅助信息」三段，
- * 底部 `sourceText` 注明数据来源，空态不留悬念。
+ * **只能选、不能自由录入**。选项行给出「名称 + 业务编码 + 辅助信息」三段，空态不留悬念。
+ * 下拉里只放用户做选择要用的东西：不写数据来自哪个模块、也不报「共 N 条」——那是开发者关心的事。
  *
  * ## 两种形态，什么时候用哪种
  *
@@ -32,7 +32,7 @@ import type { EntityPickerOption, EntityPickerVariant } from './types'
  *   给一个「重」场景付一次额外点击是值得的，给一个筛选条付就不值得。
  *
  * 需要选的是**枚举/字典值**（技师、停机原因、维护结果，没有业务编码）而不是主数据实体时，
- * 用更轻的 `NvSearchSelect`，别用这个 —— 那边不会硬塞一列编码和数据来源注脚。
+ * 用更轻的 `NvSearchSelect`，别用这个 —— 那边不会硬塞一列编码。
  */
 const props = withDefaults(
   defineProps<{
@@ -45,8 +45,6 @@ const props = withDefaults(
     placeholder?: string
     searchPlaceholder?: string
     emptyText?: string
-    /** 底部数据来源说明，如「数据来自物料主数据」。 */
-    sourceText?: string
     loading?: boolean
     disabled?: boolean
     /** 字段校验失败状态；同时标记容器并把 `aria-invalid` 传给触发按钮。 */
@@ -72,12 +70,22 @@ const props = withDefaults(
      * **目录条数超过一页时必须打开**：只拉前 N 条再本地过滤，等于「第 N+1 条起永远选不到」，
      * 新建的条目会凭空消失。打开后本组件不再本地过滤，`options` 就是当前搜索结果；
      * 调用方负责去抖并把搜索词发给服务端，并把匹配总数传进 `totalCount`。
+     * 列表滚到底部而匹配总数多于已列出的条数时发出 `load-more`，调用方加载下一页追加进 `options`；
+     * 条数上百时列表只渲染可视区附近的行（虚拟化），几千条也能顺滑滚动。
      */
     serverSearch?: boolean
-    /** 服务端搜索时目录的匹配总数（用于「显示 N / 共 M 条」的如实提示）。 */
+    /** 服务端搜索时目录的匹配总数；多于当前结果时，下拉底部提示「输入关键字继续筛选」。 */
     totalCount?: number
+    /**
+     * 新增入口文案（如「新增车间」）。传了才在候选列表下方出现入口；点击后收起选择器并发出
+     * `create`，由调用方打开新增表单，建好后把新值写回 `v-model`。
+     * 有没有新增权限由调用方判断：没有权限就不传。
+     */
+    createText?: string
     id?: string
     ariaLabel?: string
+    /** 字段错误提示的 id，挂到触发按钮上，读屏在这个字段上能念到错误。 */
+    ariaDescribedby?: string
     class?: HTMLAttributes['class']
   }>(),
   {
@@ -97,6 +105,9 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void
   (e: 'update:search', value: string): void
+  (e: 'create'): void
+  /** 服务端搜索时列表滚到底部、还有没加载的匹配项：调用方加载下一页追加进 `options`。 */
+  (e: 'load-more'): void
 }>()
 
 const open = ref(false)
@@ -147,6 +158,11 @@ function pick(option: EntityPickerOption) {
   open.value = false
 }
 
+function create() {
+  open.value = false
+  emit('create')
+}
+
 function clear() {
   emit('update:modelValue', '')
 }
@@ -171,6 +187,7 @@ function clear() {
           :aria-haspopup="variant === 'dialog' ? 'dialog' : 'listbox'"
           :aria-expanded="open"
           :aria-invalid="invalid || undefined"
+          :aria-describedby="ariaDescribedby"
           :disabled="disabled"
           :class="
             cn(
@@ -226,16 +243,18 @@ function clear() {
           :model-value="modelValue"
           :search-placeholder="searchPlaceholder"
           :empty-text="emptyText"
-          :source-text="sourceText"
           :loading="loading"
           :search-aria-label="searchAriaLabel"
           :show-code="showCode"
           :search="search"
           :server-search="serverSearch"
           :total-count="totalCount"
+          :create-text="createText"
           dense
           @pick="pick"
           @update:search="emit('update:search', $event)"
+          @create="create"
+          @load-more="emit('load-more')"
         />
       </PopoverContent>
     </PopoverPortal>
@@ -245,7 +264,7 @@ function clear() {
       <div class="border-b border-border px-6 py-4">
         <DialogTitle class="text-base leading-none font-semibold">{{ title }}</DialogTitle>
         <DialogDescription class="sr-only">
-          {{ sourceText ?? `搜索并选择${title.replace(/^选择/, '')}` }}
+          搜索并选择{{ title.replace(/^选择/, '') }}
         </DialogDescription>
       </div>
       <EntityPickerPanel
@@ -253,16 +272,18 @@ function clear() {
         :model-value="modelValue"
         :search-placeholder="searchPlaceholder"
         :empty-text="emptyText"
-        :source-text="sourceText"
         :loading="loading"
         :search-aria-label="searchAriaLabel"
         :show-code="showCode"
         :search="search"
         :server-search="serverSearch"
         :total-count="totalCount"
+        :create-text="createText"
         :dense="false"
         @pick="pick"
         @update:search="emit('update:search', $event)"
+        @create="create"
+        @load-more="emit('load-more')"
       />
     </NvDialogContent>
   </component>

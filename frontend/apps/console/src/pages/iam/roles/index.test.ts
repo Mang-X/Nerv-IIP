@@ -7,6 +7,7 @@ import RolesPage from './index.vue'
 
 const iamState = vi.hoisted(() => ({
   createRole: vi.fn(),
+  rejection: undefined as { message: string } | undefined,
   filters: { pageIndex: 1, pageSize: 20 } as { pageIndex: number; pageSize: number },
   refreshRoles: vi.fn(),
   totalCount: { value: 1 },
@@ -23,7 +24,7 @@ vi.mock('@/composables/usePermissions', () => ({
 vi.mock('@/composables/useIamAdmin', () => ({
   useIamRoles: () => ({
     createRole: iamState.createRole,
-    createRoleError: computed(() => undefined),
+    createRoleError: computed(() => iamState.rejection),
     createRolePending: shallowRef(false),
     filters: reactive(iamState.filters),
     permissions: computed(() => [
@@ -68,6 +69,7 @@ function mountPage() {
 describe('IAM roles page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    iamState.rejection = undefined
     document.body.innerHTML = ''
     iamState.createRole.mockResolvedValue(undefined)
     iamState.refreshRoles.mockResolvedValue(undefined)
@@ -76,6 +78,13 @@ describe('IAM roles page', () => {
     iamState.totalCount.value = 1
     iamState.updateRolePermissions.mockResolvedValue(undefined)
     permissionState.canManage.value = true
+  })
+
+  it('renders the Chinese duplicate-name rejection received from IAM', async () => {
+    iamState.rejection = { message: '角色名称「平台管理员」已被使用。' }
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toBe('角色名称「平台管理员」已被使用。')
   })
 
   it('renders roles and permissions with FE-2 blocks and no legacy color variables', async () => {
@@ -169,12 +178,9 @@ describe('IAM roles page', () => {
     await createButton!.trigger('click')
     await flushPromises()
 
-    expect(
-      document.body.querySelector('[data-testid="role-create-dialog-content"]')?.className,
-    ).toContain('overflow-y-auto')
-    expect(
-      document.body.querySelector('[data-testid="role-create-dialog-content"]')?.className,
-    ).toContain('max-h-')
+    const createDialog = dialogTitled('新建角色')
+    expect(createDialog.className).toContain('overflow-y-auto')
+    expect(createDialog.className).toContain('max-h-')
     expect(
       document.body.querySelector('[data-testid="role-permission-editor-scroll"]')?.className,
     ).toContain('overflow-y-auto')
@@ -182,11 +188,20 @@ describe('IAM roles page', () => {
     await wrapper.get('button[aria-label="编辑权限 Platform Administrator"]').trigger('click')
     await flushPromises()
 
-    expect(
-      document.body.querySelector('[data-testid="role-edit-dialog-content"]')?.className,
-    ).toContain('overflow-y-auto')
-    expect(
-      document.body.querySelector('[data-testid="role-edit-dialog-content"]')?.className,
-    ).toContain('max-h-')
+    // 新建弹框此时仍挂在 body 上，按标题取编辑弹框本身，别拿到新建弹框。
+    const editDialog = dialogTitled('编辑角色权限')
+    expect(editDialog.className).toContain('overflow-y-auto')
+    expect(editDialog.className).toContain('max-h-')
   })
 })
+
+function dialogTitled(title: string): HTMLElement {
+  const dialog = [
+    ...document.body.querySelectorAll<HTMLElement>('[data-slot="nv-dialog-content"]'),
+  ].find(
+    (element) =>
+      element.querySelector('[data-slot="nv-dialog-title"]')?.textContent?.trim() === title,
+  )
+  if (!dialog) throw new Error(`没有找到标题为「${title}」的弹框`)
+  return dialog
+}

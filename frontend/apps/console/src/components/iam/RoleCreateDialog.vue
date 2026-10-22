@@ -3,17 +3,17 @@ import type { ConsoleIamPermissionResponse } from '@nerv-iip/api-client'
 import RolePermissionEditor from '@/components/iam/RolePermissionEditor.vue'
 import {
   Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
   Field,
   FieldError,
   FieldGroup,
   FieldLabel,
-  Input,
+  NvInput,
 } from '@nerv-iip/ui'
 import { reactive, shallowRef, watch } from 'vue'
 
@@ -75,24 +75,22 @@ watch(open, (isOpen) => {
 </script>
 
 <template>
-  <Dialog v-model:open="open">
-    <DialogContent
-      data-testid="role-create-dialog-content"
-      class="max-h-[min(90vh,48rem)] overflow-y-auto sm:max-w-3xl"
-    >
-      <DialogHeader>
-        <DialogTitle>新建角色</DialogTitle>
-        <DialogDescription> 创建 IAM 角色并从权限目录中分配权限。 </DialogDescription>
-      </DialogHeader>
+  <NvDialog v-model:open="open">
+    <NvDialogContent class="max-h-[min(90vh,48rem)] overflow-y-auto sm:max-w-3xl">
+      <NvDialogHeader>
+        <NvDialogTitle>新建角色</NvDialogTitle>
+        <NvDialogDescription> 创建 IAM 角色并从权限目录中分配权限。 </NvDialogDescription>
+      </NvDialogHeader>
 
       <form class="grid gap-4" @submit.prevent="handleSubmit">
         <FieldGroup>
           <Field>
             <FieldLabel for="iam-create-role-name">角色名称</FieldLabel>
-            <Input
+            <NvInput
               id="iam-create-role-name"
               v-model="roleName"
               :aria-invalid="Boolean(errors.roleName)"
+              :invalid="Boolean(errors.roleName)"
               autocomplete="off"
             />
             <FieldError v-if="errors.roleName" :errors="[errors.roleName]" />
@@ -101,10 +99,10 @@ watch(open, (isOpen) => {
           <RolePermissionEditor v-model="permissionCodes" :permissions="props.permissions" />
         </FieldGroup>
 
-        <DialogFooter show-close-button>
+        <NvDialogFooter show-close-button>
           <Button type="submit" :disabled="props.pending"> 新建角色 </Button>
-        </DialogFooter>
+        </NvDialogFooter>
       </form>
-    </DialogContent>
-  </Dialog>
+    </NvDialogContent>
+  </NvDialog>
 </template>

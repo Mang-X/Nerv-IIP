@@ -24,6 +24,7 @@ const orderNodeId = (orderId: string): string => `order:${orderId}`
 /** APS SchedulePlanContract → 引擎无关 ScheduleModel(纯函数)。 */
 export function toModel(plan: SchedulePlanContract): ScheduleModel {
   const assignments = plan.assignments ?? []
+  const context = plan.validationContext
 
   const operations: ScheduleTask[] = assignments.map((a) => ({
     id: taskId(a),
@@ -46,6 +47,17 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
         : undefined,
     startUtc: a.startUtc ?? '',
     endUtc: a.endUtc ?? '',
+    segments: a.segments?.length
+      ? a.segments.map((segment) => ({
+          startUtc: segment.startUtc ?? '',
+          endUtc: segment.endUtc ?? '',
+        }))
+      : undefined,
+    dueUtc: context?.operations?.find(
+      (operation) => operation.orderId === a.orderId && operation.operationId === a.operationId,
+    )?.dueUtc,
+    currentExecution: a.currentExecution,
+    executionResourceId: a.resourceId,
     locked: a.isLocked ?? false,
     hasConflict: false,
     conflictReason: null,
@@ -70,20 +82,71 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
     }
   })
 
-  // 依赖链:同工单按 operationSequence 排序,相邻 finish_to_start。
+  // 有冻结校验依据时只消费真实前序；旧方案无依据时保留原有顺序契约。
   const links: ScheduleLink[] = []
-  for (const orderId of orderIds) {
-    const seq = operations
-      .filter((o) => o.orderId === orderId)
-      .sort((a, b) => a.operationSequence - b.operationSequence)
-    for (let i = 1; i < seq.length; i++) {
-      links.push({
-        id: `${seq[i - 1].id}->${seq[i].id}`,
-        source: seq[i - 1].id,
-        target: seq[i].id,
-        type: 'finish_to_start',
-      })
+  for (const target of operations) {
+    const operation = context?.operations?.find(
+      (item) => item.orderId === target.orderId && item.operationId === target.operationId,
+    )
+    const predecessors = operation
+      ? (operation.predecessorOperationIds ?? [])
+      : operations
+          .filter(
+            (item) =>
+              item.orderId === target.orderId && item.operationSequence < target.operationSequence,
+          )
+          .sort((a, b) => b.operationSequence - a.operationSequence)
+          .slice(0, 1)
+          .map((item) => item.operationId)
+    target.predecessors = predecessors.map((id) => `${target.orderId} · ${id}`)
+    for (const id of predecessors) {
+      const source = operations.find(
+        (item) => item.orderId === target.orderId && item.operationId === id,
+      )
+      if (source)
+        links.push({
+          id: `${source.id}->${target.id}`,
+          source: source.id,
+          target: target.id,
+          type: 'finish_to_start',
+        })
     }
+  }
+
+  // 装配前置来自方案快照；子件全部工序完成后，母单首道工序才能开始。
+  for (const dependency of plan.assemblyDependencies ?? []) {
+    const child = operations
+      .filter((task) => task.orderId === dependency.childOrderId)
+      .sort((a, b) => Date.parse(b.endUtc) - Date.parse(a.endUtc))[0]
+    const parent = operations
+      .filter((task) => task.orderId === dependency.parentOrderId)
+      .sort((a, b) => a.operationSequence - b.operationSequence)[0]
+    // 未排工单没有可连接的工序条，仍由未排列表呈现其原因。
+    if (!child || !parent) continue
+    links.push({
+      id: `${child.id}->${parent.id}`,
+      source: child.id,
+      target: parent.id,
+      type: 'finish_to_start',
+    })
+  }
+
+  for (const task of operations) {
+    const incoming = links
+      .filter((link) => link.target === task.id)
+      .map((link) => operations.find((item) => item.id === link.source)!)
+    task.predecessors = [
+      ...new Set([
+        ...(task.predecessors ?? []),
+        ...incoming.map((item) => `${item.orderId} · ${item.operationId}`),
+      ]),
+    ]
+    task.successors = links
+      .filter((link) => link.source === task.id)
+      .map((link) => {
+        const item = operations.find((item) => item.id === link.target)!
+        return `${item.orderId} · ${item.operationId}`
+      })
   }
 
   const conflicts: ScheduleConflict[] = (plan.conflicts ?? []).map((c) => {
@@ -102,7 +165,7 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
   // 把冲突标记回对应 task。
   for (const c of conflicts) {
     const t = operations.find((o) => o.id === c.taskId)
-    if (t) {
+    if (t && !(c.reason === 'equipment' && c.severity === 'warning')) {
       t.hasConflict = true
       t.conflictReason = c.reason
     }
@@ -122,6 +185,7 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
       shortageQuantity: s.shortageQuantity ?? 0,
     })),
     message: r.message ?? '',
+    materialReadyUtc: r.materialReadyUtc,
   }))
   for (const risk of materialRisks) {
     const t = operations.find(
@@ -211,7 +275,37 @@ export function toModel(plan: SchedulePlanContract): ScheduleModel {
 
   return {
     tasks: [...orderNodes, ...operations, ...blocks],
+    validationContext: context
+      ? {
+          horizon: { startUtc: context.horizonStartUtc ?? '', endUtc: context.horizonEndUtc ?? '' },
+          resources: (context.resources ?? []).map((resource) => ({
+            resourceId: resource.resourceId ?? '',
+            workCenterId: resource.workCenterId ?? '',
+            calendarId: resource.calendarId ?? '',
+            capacityUnits: resource.capacityUnits ?? 0,
+            utilizationRate: resource.utilizationRate ?? 0,
+          })),
+          operations: (context.operations ?? []).map((operation) => ({
+            orderId: operation.orderId ?? '',
+            operationId: operation.operationId ?? '',
+            predecessorOperationIds: [...(operation.predecessorOperationIds ?? [])],
+            dueUtc: operation.dueUtc,
+            durationMinutes: operation.durationMinutes,
+            setupMinutes: operation.setupMinutes,
+            isFixed: operation.isFixed ?? false,
+          })),
+          fixedReservations: (context.fixedReservations ?? []).map((reservation) => ({
+            orderId: reservation.orderId ?? '',
+            operationId: reservation.operationId ?? '',
+            resourceId: reservation.resourceId ?? undefined,
+            workCenterId: reservation.workCenterId ?? '',
+            startUtc: reservation.startUtc ?? '',
+            endUtc: reservation.endUtc ?? '',
+          })),
+        }
+      : undefined,
     calendars: calendars.length ? calendars : undefined,
+    freezeContext: plan.freezeContext,
     links,
     resources: [...new Set(operations.map((o) => o.resourceId).filter(Boolean) as string[])].map(
       (id) => ({ id, text: id }),
@@ -258,5 +352,6 @@ export function toLockedAssignments(model: ScheduleModel): ScheduleAssignmentCon
       startUtc: t.startUtc,
       endUtc: t.endUtc,
       isLocked: true,
+      segments: t.segments,
     }))
 }

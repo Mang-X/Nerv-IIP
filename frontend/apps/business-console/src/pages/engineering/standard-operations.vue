@@ -5,6 +5,7 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import { useStandardOperations } from '@/composables/useProductEngineering'
@@ -33,12 +34,7 @@ import {
   NvFieldLabel,
   NvInput,
   NvPageHeader,
-  NvSelect,
-  NvSelectContent,
-  NvSelectItem,
-  NvSelectTrigger,
-  NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -404,30 +400,22 @@ async function confirmArchive() {
                   <NvFieldLabel for="op-wc"
                     >默认工作中心 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvSelect v-model="form.defaultWorkCenterCode" :disabled="workCentersPending">
-                    <NvSelectTrigger id="op-wc"
-                      ><NvSelectValue placeholder="选择默认工作中心"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem
-                        v-for="o in workCenterOptions"
-                        :key="o.value"
-                        :value="o.value"
-                        >{{ o.label }}</NvSelectItem
-                      >
-                    </NvSelectContent>
-                  </NvSelect>
+                  <DirectoryPicker
+                    id="op-wc"
+                    v-model="form.defaultWorkCenterCode"
+                    directory-type="work-center"
+                    creatable
+                    placeholder="选择默认工作中心"
+                    :disabled="workCentersPending"
+                  />
                   <NvFieldDescription>工艺路线选此工序时自动带出。</NvFieldDescription>
                 </NvField>
                 <NvField :data-invalid="showErrors && !controlKeyValid">
                   <NvFieldLabel for="op-control"
                     >控制键 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvInput
-                    id="op-control"
-                    v-model="form.controlKey"
-                    placeholder="例如：INHOUSE / INHOUSE-QC"
-                  />
+                  <NvInput id="op-control" v-model="form.controlKey" />
+                  <NvFieldDescription>例如：INHOUSE / INHOUSE-QC。</NvFieldDescription>
                 </NvField>
               </NvFieldGroup>
 
@@ -496,7 +484,7 @@ async function confirmArchive() {
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="createPending || updatePending">
-                  <Spinner v-if="createPending || updatePending" aria-hidden="true" />
+                  <NvSpinner v-if="createPending || updatePending" aria-hidden="true" />
                   {{ editingCode ? '保存工序' : '创建工序' }}
                 </NvButton>
               </NvDialogFooter>
@@ -588,7 +576,7 @@ async function confirmArchive() {
           <!-- 普通 NvButton，不用 NvAlertDialogAction：后者点击即无条件关框（confirm-destroy 规则 3）。
                variant 不写 = NvAlertDialogAction 的默认值 'default'，换件不改外观。 -->
           <NvButton type="button" :disabled="archivePending" @click="confirmArchive">
-            <Spinner v-if="archivePending" aria-hidden="true" />
+            <NvSpinner v-if="archivePending" aria-hidden="true" />
             确认停用
           </NvButton>
         </NvAlertDialogFooter>

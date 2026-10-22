@@ -18,6 +18,23 @@ public sealed class EquipmentRuntimeContractSerializationTests
         Assert.Equal("alarm", item.GetProperty("sourceType").GetString());
     }
 
+    [Fact]
+    public void Legacy_availability_windows_without_prediction_fields_remain_readable()
+    {
+        var json = JsonSerializer.SerializeToElement(CreateAvailabilityResponse(), EquipmentRuntimeJson.Options);
+        var legacy = System.Text.Json.Nodes.JsonNode.Parse(json.GetRawText())!;
+        var item = legacy["items"]![0]!.AsObject();
+        item.Remove("expectedRestoreAtUtc");
+        item.Remove("restorePredictionSource");
+        item.Remove("restorePredictionSourceVersion");
+        var response = JsonSerializer.Deserialize<EquipmentRuntimeAvailabilityResponse>(legacy.ToJsonString(), EquipmentRuntimeJson.Options)!;
+        var window = Assert.Single(response.Items);
+        Assert.Null(window.ExpectedRestoreAtUtc);
+        Assert.Null(window.RestorePredictionSource);
+        Assert.Null(window.RestorePredictionSourceVersion);
+        Assert.Equal(new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero), window.EndUtc);
+    }
+
     [Theory]
     [InlineData(EquipmentRuntimeSourceType.DeviceState, "device-state")]
     [InlineData(EquipmentRuntimeSourceType.Alarm, "alarm")]
@@ -62,6 +79,7 @@ public sealed class EquipmentRuntimeContractSerializationTests
             EquipmentRuntimeReasonCodes.MaintenanceWindow,
             EquipmentRuntimeReasonCodes.InspectionRequired,
             EquipmentRuntimeReasonCodes.SourceStale,
+            EquipmentRuntimeReasonCodes.SourceNotConnected,
             EquipmentRuntimeReasonCodes.TagMappingMissing,
             EquipmentRuntimeReasonCodes.NoEligibleSubstitute
         };
@@ -74,6 +92,7 @@ public sealed class EquipmentRuntimeContractSerializationTests
                 "equipment.maintenanceWindow",
                 "equipment.inspectionRequired",
                 "equipment.sourceStale",
+                "equipment.sourceNotConnected",
                 "equipment.tagMappingMissing",
                 "equipment.noEligibleSubstitute"
             ],

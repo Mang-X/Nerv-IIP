@@ -24,11 +24,21 @@ public sealed class JournalVoucher : Entity<JournalVoucherId>, IAggregateRoot
     {
     }
 
-    private JournalVoucher(string organizationId, string environmentId, string voucherNo, DateOnly postingDate, IEnumerable<JournalVoucherLineDraft> lineDrafts)
+    private JournalVoucher(
+        string organizationId,
+        string environmentId,
+        string voucherNo,
+        DateOnly postingDate,
+        IEnumerable<JournalVoucherLineDraft> lineDrafts,
+        JournalVoucherSourceType sourceType,
+        string sourceNo)
     {
+        ArgumentNullException.ThrowIfNull(sourceType);
         OrganizationId = ErpText.Required(organizationId, nameof(organizationId));
         EnvironmentId = ErpText.Required(environmentId, nameof(environmentId));
         VoucherNo = ErpText.Required(voucherNo, nameof(voucherNo));
+        SourceType = sourceType.Code;
+        SourceNo = ErpText.Required(sourceNo, nameof(sourceNo));
         PostingDate = postingDate;
         lines.AddRange(lineDrafts.Select(x => JournalVoucherLine.Create(OrganizationId, EnvironmentId, x)));
         if (lines.Count < 2)
@@ -50,13 +60,52 @@ public sealed class JournalVoucher : Entity<JournalVoucherId>, IAggregateRoot
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
     public string VoucherNo { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// 来源单据类型码（<see cref="JournalVoucherSourceType.Code"/>）。#3278 / S2 新增。
+    ///
+    /// **可空**：列在数据库上是可空的，本次不回填存量行（owner 2026-09-14 裁定：演示库数据可重造），
+    /// 所以从旧行读回来就是 <see langword="null"/>。**新写入的行一律非空**——
+    /// <see cref="Post"/> 是唯一构造入口且这两个参数不可省略，
+    /// 空串/空白由 <c>ErpText.Required</c> 在构造期拒绝。
+    /// </summary>
+    public string? SourceType { get; private set; }
+
+    /// <summary>
+    /// 来源单据号。语义由 <see cref="SourceType"/> 决定（应付单号 / 发票号 / 收款单号 / 移动号 …）。
+    /// 可空性与写入保证同 <see cref="SourceType"/>。
+    /// </summary>
+    public string? SourceNo { get; private set; }
+
     public DateOnly PostingDate { get; private set; }
     public DateTime PostedAtUtc { get; private set; }
     public IReadOnlyCollection<JournalVoucherLine> Lines => lines;
 
-    public static JournalVoucher Post(string organizationId, string environmentId, string voucherNo, DateOnly postingDate, IEnumerable<JournalVoucherLineDraft> lines)
+    /// <summary>
+    /// 记账凭证的**唯一**构造入口（构造函数私有）。
+    ///
+    /// ⭐ <paramref name="sourceType"/> 与 <paramref name="sourceNo"/> **没有默认值，故不可省略**：
+    /// 这是 #3278 / S2 「17 个建凭证位点一个都不能漏」的承重装置——漏填在编译期就是 CS7036，
+    /// 不会退化成「某一行来源列恒空而门禁照绿」。**失效方向**有两条，都不由这个签名兜住：
+    /// ① 有人加一个带默认值的 <c>Post</c> 重载（由 <c>JournalVoucherSourceContractTests</c> 的反射断言看住）；
+    /// ② 有人绕开 EF 用原生 SQL 直接 INSERT。扫描面 <c>git grep -E "ExecuteSql|FromSql" --
+    ///    backend/services/Business/Erp/src/**/*.cs</c>：**代码命中 0**，唯一那 1 条命中是本注释自身
+    ///    （⚠️ 护栏自指，重扫时别把它读成一处旁路）。同名调用在 <c>tests/</c> 下有 2 处，都不写
+    ///    <c>journal_vouchers</c>。日后新增生产侧原生 SQL 写入会让这个保证**静默**失效。
+    ///
+    /// 另注：<see cref="Post"/> 是唯一**新建**入口，不是唯一写入口——EF 物化走本类的私有无参构造函数，
+    /// 绕开这两个参数，所以从库里读回来的存量行仍可能是 <see langword="null"/>。
+    /// </summary>
+    public static JournalVoucher Post(
+        string organizationId,
+        string environmentId,
+        string voucherNo,
+        DateOnly postingDate,
+        IEnumerable<JournalVoucherLineDraft> lines,
+        JournalVoucherSourceType sourceType,
+        string sourceNo)
     {
-        return new JournalVoucher(organizationId, environmentId, voucherNo, postingDate, lines);
+        return new JournalVoucher(organizationId, environmentId, voucherNo, postingDate, lines, sourceType, sourceNo);
     }
 
     public void Amend()

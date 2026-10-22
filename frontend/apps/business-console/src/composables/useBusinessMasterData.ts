@@ -4,6 +4,7 @@ import {
   createBusinessConsoleDepartmentMutationOptions,
   createBusinessConsoleProductionLineMutationOptions,
   createBusinessConsoleShiftMutationOptions,
+  createBusinessConsoleStationMutationOptions,
   createBusinessConsoleSiteMutationOptions,
   createBusinessConsoleBusinessPartnerMutationOptions,
   createBusinessConsoleReferenceDataCodeMutationOptions,
@@ -38,6 +39,7 @@ import {
   type BusinessConsolePersonnelSkillMatrixEnvelope,
   type BusinessConsolePersonnelSkillMatrixRow,
   type BusinessConsoleResourceItem,
+  type BusinessConsoleResourceItemEnvelope,
   type BusinessConsoleResourceListEnvelope,
   type BusinessConsoleSetMasterDataResourceEnabledRequest,
   type BusinessConsoleTeamMemberItem,
@@ -185,6 +187,18 @@ function isBusinessQuery(id: string) {
 
 function ignoreBackgroundError(_error: unknown) {}
 
+/**
+ * 新建之后要刷新的查询：该类自己的列表 + 网关可搜目录。选择器（`DirectoryPicker`）取的是目录，
+ * 不刷新的话刚建好的项搜不到，选中后也只能显示编码。
+ */
+function invalidateAfterCreate(queryCache: ReturnType<typeof useQueryCache>, listIds: string[]) {
+  for (const id of [...listIds, 'listBusinessConsoleSearchableDirectory']) {
+    void queryCache
+      .invalidateQueries({ predicate: isBusinessQuery(id) })
+      .catch(ignoreBackgroundError)
+  }
+}
+
 function newCreateIdempotencyKey(resourceType: string) {
   const cryptoApi = globalThis.crypto
   if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
@@ -212,7 +226,6 @@ function withCreateIdempotency<TBody>(resourceType: string, body: TBody): TBody 
 
 export function useBusinessSkus() {
   const filters = defaultListFilters()
-  const queryCache = useQueryCache()
 
   const skusQuery = useQuery(() =>
     withBusinessContextEnabled(
@@ -229,25 +242,26 @@ export function useBusinessSkus() {
     ),
   )
 
-  const createSkuMutation = useMutation({
-    ...createBusinessConsoleSkuMutationOptions(),
-    onSuccess() {
-      void queryCache
-        .invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleSkus') })
-        .catch(ignoreBackgroundError)
-    },
-  })
-
   return {
-    createSku: (body: BusinessConsoleCreateSkuRequest) => createSkuMutation.mutateAsync({ body }),
-    createSkuError: createSkuMutation.error,
-    createSkuPending: createSkuMutation.isLoading,
     filters,
     refreshSkus: () => refetchWithBusinessContext(filters, skusQuery),
     skus: computed<BusinessConsoleResourceItem[]>(() => resourceItems(skusQuery.data.value)),
     skusError: skusQuery.error,
     skusPending: skusQuery.isLoading,
     skusTotal: computed(() => resourceTotal(skusQuery.data.value)),
+  }
+}
+
+/** 新建物料。与列表分开：新增弹窗只要新建，不必连带拉一份物料列表。 */
+export function useCreateSku() {
+  const queryCache = useQueryCache()
+  const mutation = useMutation({
+    ...createBusinessConsoleSkuMutationOptions(),
+    onSuccess: () => invalidateAfterCreate(queryCache, ['listBusinessConsoleSkus']),
+  })
+  return {
+    create: (body: BusinessConsoleCreateSkuRequest) => mutation.mutateAsync({ body }),
+    pending: mutation.isLoading,
   }
 }
 
@@ -377,13 +391,11 @@ export function useBusinessWorkshops() {
 
   const createWorkshopMutation = useMutation({
     ...createBusinessConsoleWorkshopMutationOptions(),
-    onSuccess() {
-      for (const id of ['listBusinessConsoleWorkshops', 'listBusinessConsoleMasterDataResources']) {
-        void queryCache
-          .invalidateQueries({ predicate: isBusinessQuery(id) })
-          .catch(ignoreBackgroundError)
-      }
-    },
+    onSuccess: () =>
+      invalidateAfterCreate(queryCache, [
+        'listBusinessConsoleWorkshops',
+        'listBusinessConsoleMasterDataResources',
+      ]),
   })
 
   return {
@@ -466,6 +478,7 @@ export function useBusinessMasterDataResources(
           resourceType: filters.resourceType,
           ...optionalQuery('codeSet', filters.codeSet),
           ...optionalQuery('includeDisabled', filters.includeDisabled),
+          ...optionalQuery('keyword', filters.keyword),
           skip: filters.skip,
           take: filters.take,
         },
@@ -532,6 +545,7 @@ export function useBusinessMasterDataGroups(definitions: BusinessMasterDataGroup
 const RESOURCE_CREATE_OPTIONS = {
   site: createBusinessConsoleSiteMutationOptions,
   'production-line': createBusinessConsoleProductionLineMutationOptions,
+  station: createBusinessConsoleStationMutationOptions,
   'work-center': createBusinessConsoleWorkCenterMutationOptions,
   'device-asset': registerBusinessConsoleDeviceAssetMutationOptions,
   shift: createBusinessConsoleShiftMutationOptions,
@@ -544,12 +558,11 @@ export type MasterDataResourceType = keyof typeof RESOURCE_CREATE_OPTIONS
 
 /**
  * 单类基础数据资源的「列表 + 新建」。列表走通用 resources 端点（仅 5 字段，见
- * docs/architecture/master-data-module-product-design.md §0/§7），新建走各自 create 端点。
+ * docs/product/master-data/design.md §0/§7），新建走各自 create 端点。
  * 编辑/停用待后端 #344；本 Phase 1 只做查 + 增。
  */
 export function useMasterDataResource<TBody>(resourceType: MasterDataResourceType) {
   const filters = defaultResourceFilters(resourceType)
-  const queryCache = useQueryCache()
 
   const listQuery = useQuery(() =>
     withBusinessContextEnabled(
@@ -576,15 +589,7 @@ export function useMasterDataResource<TBody>(resourceType: MasterDataResourceTyp
     ),
   )
 
-  // 各实体 mutation options 仅 body 泛型不同，统一经本工厂收敛，故此处收窄类型。
-  const createMutation = useMutation({
-    ...RESOURCE_CREATE_OPTIONS[resourceType](),
-    onSuccess() {
-      void queryCache
-        .invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleMasterDataResources') })
-        .catch(ignoreBackgroundError)
-    },
-  } as unknown as UseMutationOptions)
+  const creation = useCreateMasterDataResource<TBody>(resourceType)
 
   return {
     filters,
@@ -593,12 +598,32 @@ export function useMasterDataResource<TBody>(resourceType: MasterDataResourceTyp
     error: listQuery.error,
     pending: listQuery.isLoading,
     refresh: () => refetchWithBusinessContext(filters, listQuery),
+    create: creation.create,
+    createError: creation.error,
+    createPending: creation.pending,
+  }
+}
+
+/** 单类基础数据资源的「新建」。与列表分开：新增弹窗只要新建，不必连带拉一份列表。 */
+export function useCreateMasterDataResource<TBody>(resourceType: MasterDataResourceType) {
+  const queryCache = useQueryCache()
+  // 各实体 mutation options 仅 body 泛型不同，统一经本工厂收敛，故此处收窄类型。
+  const mutation = useMutation({
+    ...RESOURCE_CREATE_OPTIONS[resourceType](),
+    onSuccess: () => invalidateAfterCreate(queryCache, ['listBusinessConsoleMasterDataResources']),
+  } as unknown as UseMutationOptions)
+
+  return {
     create: (body: TBody) =>
-      (createMutation.mutateAsync as unknown as (vars: { body: TBody }) => Promise<unknown>)({
+      (
+        mutation.mutateAsync as unknown as (vars: {
+          body: TBody
+        }) => Promise<BusinessConsoleResourceItemEnvelope>
+      )({
         body: withCreateIdempotency(resourceType, body),
       }),
-    createError: createMutation.error,
-    createPending: createMutation.isLoading,
+    error: mutation.error,
+    pending: mutation.isLoading,
   }
 }
 
@@ -708,6 +733,11 @@ export interface WorkerDirectoryFilters extends BusinessContextFilters {
   /** 在岗状态：active / on-leave / resigned。 */
   employmentStatus?: string
   includeDisabled?: boolean
+  /**
+   * 员工名册页要求带出关联账号的登录名（#3924）。只有员工维护权 + 组织级授权的主体才真的拿得到，
+   * 是否拿到看返回的 `loginNamesVisible`；各处员工选择器不要开，免得每次多一跳 IAM。
+   */
+  includeLoginNames?: boolean
   pageIndex: number
   pageSize: number
 }
@@ -768,6 +798,7 @@ export function useBusinessWorkers(initial: Partial<WorkerDirectoryFilters> = {}
           ...optionalQuery('skillCode', filters.skillCode),
           ...optionalQuery('employmentStatus', filters.employmentStatus),
           ...optionalQuery('includeDisabled', filters.includeDisabled),
+          ...optionalQuery('includeLoginNames', filters.includeLoginNames),
           pageIndex: filters.pageIndex,
           pageSize: filters.pageSize,
         },
@@ -785,6 +816,8 @@ export function useBusinessWorkers(initial: Partial<WorkerDirectoryFilters> = {}
     workersError: workersQuery.error,
     workersPending: workersQuery.isLoading,
     workersTotal: computed(() => workerTotal(workersQuery.data.value)),
+    /** 本次名册的 `loginName` 是否可信：为假时空值不代表「未关联」，只是当前主体看不到。 */
+    loginNamesVisible: computed(() => workersQuery.data.value?.data?.loginNamesVisible === true),
   }
 }
 
@@ -793,7 +826,12 @@ export function useBusinessWorkers(initial: Partial<WorkerDirectoryFilters> = {}
  * `master-data/resources/worker/{code}`，code 即工号）。
  */
 export function useWorkerRegistry(initial: Partial<WorkerDirectoryFilters> = {}) {
-  const directory = useBusinessWorkers({ includeDisabled: true, pageSize: 50, ...initial })
+  const directory = useBusinessWorkers({
+    includeDisabled: true,
+    includeLoginNames: true,
+    pageSize: 50,
+    ...initial,
+  })
   const actions = useMasterDataResourceActions('worker')
   const queryCache = useQueryCache()
 

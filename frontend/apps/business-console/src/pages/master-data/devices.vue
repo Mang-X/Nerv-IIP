@@ -1,56 +1,24 @@
 <script setup lang="ts">
-import type {
-  BusinessConsoleRegisterDeviceAssetRequest,
-  BusinessConsoleResourceItem,
-} from '@nerv-iip/api-client'
+import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import DeviceFormDialog from '@/components/masterData/DeviceFormDialog.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
 import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
 import {
-  useBusinessMasterDataResources,
-  useBusinessPartners,
   useBusinessWorkshops,
   useMasterDataResource,
   useMasterDataResourceActions,
 } from '@/composables/useBusinessMasterData'
 import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import {
-  NvButton,
-  NvCheckbox,
-  NvDataTable,
-  NvDialog,
-  NvDialogContent,
-  NvDialogDescription,
-  NvDialogFooter,
-  NvDialogHeader,
-  NvDialogTitle,
-  NvDialogTrigger,
-  NvEntityPicker,
-  NvField,
-  NvFieldDescription,
-  NvFieldGroup,
-  NvFieldLabel,
-  NvInput,
-  NvPageHeader,
-  NvSearchSelect,
-  NvSelect,
-  NvSelectContent,
-  NvSelectItem,
-  NvSelectTrigger,
-  NvSelectValue,
-  Spinner,
-  NvStatusBadge,
-  NvToolbar,
-} from '@nerv-iip/ui'
-import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
-import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { NvButton, NvDataTable, NvPageHeader, NvStatusBadge, NvToolbar } from '@nerv-iip/ui'
+import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { formatDate, formatDateTime } from '@/utils/format'
-import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { inlineErrorMessage } from '@/utils/notify'
 
 definePage({
   meta: {
@@ -60,30 +28,11 @@ definePage({
   },
 })
 
-const CRITICALITY_OPTIONS = [
-  { value: 'high', label: '高（关键设备）' },
-  { value: 'medium', label: '中' },
-  { value: 'low', label: '低' },
-]
-const DEVICE_DEFAULTS = {
-  capacityUomCode: 'pcs',
-  criticality: 'medium',
-  maintainable: true,
-  telemetryEnabled: false,
-  purchaseCurrencyCode: 'CNY',
-}
-interface DeviceComponentForm {
-  componentCode: string
-  componentName: string
-  quantity: string
-  critical: boolean
-}
-
-const devices = useMasterDataResource<BusinessConsoleRegisterDeviceAssetRequest>('device-asset')
-const sites = useMasterDataResource<BusinessConsoleRegisterDeviceAssetRequest>('site')
+const devices = useMasterDataResource('device-asset')
+const sites = useMasterDataResource('site')
 const workshops = useBusinessWorkshops()
-const lines = useMasterDataResource<BusinessConsoleRegisterDeviceAssetRequest>('production-line')
-const workCenters = useMasterDataResource<BusinessConsoleRegisterDeviceAssetRequest>('work-center')
+const lines = useMasterDataResource('production-line')
+const workCenters = useMasterDataResource('work-center')
 const deviceActions = useMasterDataResourceActions('device-asset')
 // 停用/启用确认框收在页面层单实例，行操作只负责指向当前行（#1591）。
 const lifecycle = useMasterDataLifecycleConfirm()
@@ -128,98 +77,31 @@ const includeDisabled = useIncludeDisabledFilter([devices.filters], () => {
   page.value = 1
 })
 const pageSize = ref('10')
-const createOpen = ref(false)
-const createShowErrors = ref(false)
-// 编辑态：null=新建，否则=正在编辑的设备编码（编码不可改）。
-const editingCode = shallowRef<string | null>(null)
-const editLoading = shallowRef(false)
-const createForm = reactive({
-  code: '',
-  model: '',
-  manufacturer: '',
-  serialNo: '',
-  assetClassCode: '',
-  siteCode: '',
-  workshopCode: '',
-  lineCode: '',
-  workCenterCode: '',
-  stationCode: '',
-  purchaseDate: '',
-  purchaseCost: '',
-  purchaseCurrencyCode: DEVICE_DEFAULTS.purchaseCurrencyCode,
-  warrantyExpiresOn: '',
-  supplierPartnerCode: '',
-  parentDeviceId: '',
-  retiredOn: '',
-  criticality: DEVICE_DEFAULTS.criticality,
-  maintainable: DEVICE_DEFAULTS.maintainable,
-  components: [] as DeviceComponentForm[],
-})
-
-// ── 三个原本手输的编码字段，改为从真实目录里选 ─────────────────
-// 设备类别取数据字典 `asset-class` CodeSet；字典为空时给空态引导，不编造码值。
-const assetClassCatalog = useBusinessMasterDataResources('reference-data', {
-  codeSet: 'asset-class',
-})
-const assetClassOptions = computed(() => {
-  const options = assetClassCatalog.resources.value
-    .filter((row) => !!row.code && row.active !== false)
-    .map((row) => ({
-      value: row.code as string,
-      label: row.displayName || (row.code as string),
-      hint: row.code ?? undefined,
-    }))
-  const current = createForm.assetClassCode.trim()
-  if (current && !options.some((option) => option.value === current)) {
-    return [{ value: current, label: current, hint: undefined }, ...options]
-  }
-  return options
-})
-
-// 供应商只列带 supplier 角色的业务伙伴（伙伴可同时是客户与供应商，按角色包含关系筛）。
-const { partners, partnersPending } = useBusinessPartners()
-const supplierOptions = computed(() => {
-  const options = partners.value
-    .filter((row) => row.active !== false)
-    .filter((row) =>
-      [row.partnerType, ...(row.partnerRoles ?? [])]
-        .map((role) => (role ?? '').trim())
-        .includes('supplier'),
-    )
-    .filter((row) => !!row.code)
-    .map((row) => ({
-      value: row.code as string,
-      label: row.displayName || (row.code as string),
-      hint: row.code ?? undefined,
-    }))
-  const current = createForm.supplierPartnerCode.trim()
-  if (current && !options.some((option) => option.value === current)) {
-    return [{ value: current, label: current, hint: undefined }, ...options]
-  }
-  return options
-})
-
-// 父设备来自设备台账本身，且必须排除正在编辑的这台——设备不能挂在自己名下。
-const parentDeviceOptions = computed(() => {
-  const self = editingCode.value?.trim()
-  const options = devices.items.value
-    .filter((row) => !!row.code && row.code !== self)
-    .map((row) => ({
-      value: row.code as string,
-      label: row.displayName || (row.code as string),
-      hint: row.code ?? undefined,
-    }))
-  const current = createForm.parentDeviceId.trim()
-  if (current && !options.some((option) => option.value === current)) {
-    return [{ value: current, label: current, hint: undefined }, ...options]
-  }
-  return options
-})
+// 设备弹窗：每次打开递增作 key，拿到全新实例（按 editing 初始化表单）；0 表示还没打开过。
+const formOpen = shallowRef(false)
+const formSession = shallowRef(0)
+const formEditing = shallowRef<BusinessConsoleResourceItem>()
 
 const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
-  { key: 'code', header: '设备编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
-  { key: 'displayName', header: '设备名称', accessor: (r) => r.displayName ?? '无' },
-  { key: 'siteCode', header: '工厂', width: 'w-28', accessor: (r) => siteName(r.siteCode) },
+  {
+    key: 'code',
+    header: '设备编码',
+    cellClass: 'font-medium whitespace-normal break-all',
+    accessor: (r) => r.code ?? '无',
+  },
+  {
+    key: 'displayName',
+    header: '设备名称',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => r.displayName ?? '无',
+  },
+  {
+    key: 'siteCode',
+    header: '工厂',
+    width: 'w-28',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => siteName(r.siteCode),
+  },
   {
     key: 'workshopCode',
     header: '车间',
@@ -267,24 +149,6 @@ function deviceDetailFields(row: BusinessConsoleResourceItem) {
     { label: '退役日期', value: formatDate(row.retiredOn) },
   ]
 }
-
-const workshopOptions = computed(() =>
-  workshops.workshops.value.filter(
-    (w) => !createForm.siteCode || (w.siteCode ?? '') === createForm.siteCode,
-  ),
-)
-const lineOptions = computed(() =>
-  lines.items.value.filter(
-    (l) =>
-      (!createForm.siteCode || (l.siteCode ?? '') === createForm.siteCode) &&
-      (!createForm.workshopCode || (l.workshopCode ?? '') === createForm.workshopCode),
-  ),
-)
-const workCenterOptions = computed(() =>
-  workCenters.items.value.filter(
-    (w) => !createForm.lineCode || (w.lineCode ?? '') === createForm.lineCode,
-  ),
-)
 const listRows = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   if (!kw) return devices.items.value
@@ -294,39 +158,8 @@ const listRows = computed(() => {
     ),
   )
 })
-const canCreateDevice = computed(
-  () =>
-    [
-      createForm.model,
-      createForm.manufacturer,
-      createForm.serialNo,
-      createForm.assetClassCode,
-      createForm.siteCode,
-      createForm.workshopCode,
-      createForm.lineCode,
-      createForm.workCenterCode,
-      createForm.stationCode,
-      createForm.criticality,
-    ].every(isNonEmpty) &&
-    !currencyValidationMessage.value &&
-    !componentValidationMessage.value,
-)
-const listErrorMessage = computed(() => formatError(devices.error.value))
-const currencyValidationMessage = computed(() => {
-  const code = createForm.purchaseCurrencyCode.trim()
-  if (!code) return ''
-  return /^[a-z]{3}$/i.test(code) ? '' : '币种必须是 3 位字母编码。'
-})
-const componentValidationMessage = computed(() => {
-  const invalid = createForm.components.find(
-    (component) => isComponentReady(component) && componentQuantity(component) <= 0,
-  )
-  return invalid ? '部件数量必须大于 0。' : ''
-})
+const listErrorMessage = computed(() => inlineErrorMessage(devices.error.value))
 
-watch(createOpen, (open) => {
-  if (open) createShowErrors.value = false
-})
 watch([keyword, pageSize], () => {
   page.value = 1
 })
@@ -342,15 +175,9 @@ watch(
 function rowKey(item: BusinessConsoleResourceItem) {
   return `${item.resourceType ?? 'device-asset'}:${item.code || item.displayName || ''}`
 }
-function isNonEmpty(value: string) {
-  return value.trim().length > 0
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 function formatMoney(value?: number | null, currency?: string | null) {
   if (value == null) return '无'
-  const code = currency?.trim() || DEVICE_DEFAULTS.purchaseCurrencyCode
+  const code = currency?.trim() || 'CNY'
   try {
     return new Intl.NumberFormat('zh-CN', {
       style: 'currency',
@@ -368,188 +195,14 @@ function refreshAll() {
   void lines.refresh()
   void workCenters.refresh()
 }
-function emptyComponent(): DeviceComponentForm {
-  return { componentCode: '', componentName: '', quantity: '1', critical: false }
+function openForm(row?: BusinessConsoleResourceItem) {
+  formEditing.value = row
+  formSession.value += 1
+  formOpen.value = true
 }
-function resetCreateForm() {
-  Object.assign(createForm, {
-    code: '',
-    model: '',
-    manufacturer: '',
-    serialNo: '',
-    assetClassCode: '',
-    siteCode: '',
-    workshopCode: '',
-    lineCode: '',
-    workCenterCode: '',
-    stationCode: '',
-    purchaseDate: '',
-    purchaseCost: '',
-    purchaseCurrencyCode: DEVICE_DEFAULTS.purchaseCurrencyCode,
-    warrantyExpiresOn: '',
-    supplierPartnerCode: '',
-    parentDeviceId: '',
-    retiredOn: '',
-    criticality: DEVICE_DEFAULTS.criticality,
-    maintainable: DEVICE_DEFAULTS.maintainable,
-  })
-  createForm.components.splice(0, createForm.components.length, emptyComponent())
-}
-function openCreate() {
-  editingCode.value = null
-  resetCreateForm()
-  createShowErrors.value = false
-  // 缺省值：工厂只有一个时自动选中，不让用户为唯一选项再点一次。
-  const onlySite = sites.items.value.length === 1 ? sites.items.value[0] : undefined
-  if (onlySite?.code) createForm.siteCode = onlySite.code
-  createOpen.value = true
-}
-async function openEdit(row: BusinessConsoleResourceItem) {
+function openEdit(row: BusinessConsoleResourceItem) {
   if (!row.code) return
-  editingCode.value = row.code
-  createShowErrors.value = false
-  editLoading.value = true
-  createOpen.value = true
-  try {
-    const d = await deviceActions.fetchDetail(row.code)
-    Object.assign(createForm, {
-      code: row.code,
-      model: d?.model ?? '',
-      manufacturer: d?.manufacturer ?? '',
-      serialNo: d?.serialNo ?? '',
-      assetClassCode: d?.assetClassCode ?? '',
-      siteCode: d?.siteCode ?? row.siteCode ?? '',
-      workshopCode: d?.workshopCode ?? row.workshopCode ?? '',
-      lineCode: d?.lineCode ?? row.lineCode ?? '',
-      workCenterCode: d?.workCenterCode ?? row.workCenterCode ?? '',
-      stationCode: d?.stationCode ?? row.stationCode ?? '',
-      purchaseDate: d?.purchaseDate ?? '',
-      purchaseCost: d?.purchaseCost == null ? '' : String(d.purchaseCost),
-      purchaseCurrencyCode: d?.purchaseCurrencyCode ?? DEVICE_DEFAULTS.purchaseCurrencyCode,
-      warrantyExpiresOn: d?.warrantyExpiresOn ?? row.warrantyExpiresOn ?? '',
-      supplierPartnerCode: d?.supplierPartnerCode ?? row.supplierPartnerCode ?? '',
-      parentDeviceId: d?.parentDeviceId ?? row.parentDeviceId ?? '',
-      retiredOn: d?.retiredOn ?? row.retiredOn ?? '',
-      criticality: d?.criticality ?? DEVICE_DEFAULTS.criticality,
-      maintainable: d?.maintainable ?? DEVICE_DEFAULTS.maintainable,
-    })
-    createForm.components.splice(
-      0,
-      createForm.components.length,
-      ...(d?.components?.length
-        ? d.components.map((c) => ({
-            componentCode: c.componentCode ?? '',
-            componentName: c.componentName ?? '',
-            quantity: c.quantity == null ? '1' : String(c.quantity),
-            critical: c.critical ?? false,
-          }))
-        : [emptyComponent()]),
-    )
-  } finally {
-    editLoading.value = false
-  }
-}
-function optionalText(value: string | number | null | undefined) {
-  const trimmed = value == null ? '' : String(value).trim()
-  return trimmed || undefined
-}
-function optionalNumber(value: string | number | null | undefined) {
-  const trimmed = value == null ? '' : String(value).trim()
-  if (!trimmed) return undefined
-  const parsed = Number(trimmed)
-  return Number.isFinite(parsed) ? parsed : undefined
-}
-function normalizedCurrencyCode(value: string) {
-  const code = value.trim()
-  return code ? code.toUpperCase() : undefined
-}
-function isComponentReady(component: DeviceComponentForm) {
-  return component.componentCode.trim().length > 0 && component.componentName.trim().length > 0
-}
-function componentQuantity(component: DeviceComponentForm) {
-  return optionalNumber(component.quantity) ?? 1
-}
-function componentPayload(): NonNullable<BusinessConsoleRegisterDeviceAssetRequest['components']> {
-  return createForm.components
-    .map((component) => ({
-      componentCode: component.componentCode.trim(),
-      componentName: component.componentName.trim(),
-      quantity: componentQuantity(component),
-      critical: component.critical,
-    }))
-    .filter((component) => component.componentCode.length > 0 && component.componentName.length > 0)
-}
-function deviceLedgerPayload() {
-  const components = componentPayload()
-  return {
-    siteCode: createForm.siteCode.trim(),
-    workshopCode: createForm.workshopCode.trim(),
-    stationCode: createForm.stationCode.trim(),
-    purchaseDate: optionalText(createForm.purchaseDate),
-    purchaseCost: optionalNumber(createForm.purchaseCost),
-    purchaseCurrencyCode: normalizedCurrencyCode(createForm.purchaseCurrencyCode),
-    warrantyExpiresOn: optionalText(createForm.warrantyExpiresOn),
-    supplierPartnerCode: optionalText(createForm.supplierPartnerCode),
-    parentDeviceId: optionalText(createForm.parentDeviceId),
-    retiredOn: optionalText(createForm.retiredOn),
-    components,
-  }
-}
-function addComponent() {
-  createForm.components.push(emptyComponent())
-}
-function removeComponent(index: number) {
-  createForm.components.splice(index, 1)
-  if (createForm.components.length === 0) createForm.components.push(emptyComponent())
-}
-async function submitDevice() {
-  if (!canCreateDevice.value) {
-    createShowErrors.value = true
-    return
-  }
-  const ledger = deviceLedgerPayload()
-  try {
-    if (editingCode.value) {
-      await deviceActions.update(editingCode.value, {
-        name: createForm.model.trim(),
-        model: createForm.model.trim(),
-        manufacturer: createForm.manufacturer.trim(),
-        serialNo: createForm.serialNo.trim(),
-        assetClassCode: createForm.assetClassCode.trim(),
-        lineCode: createForm.lineCode.trim(),
-        workCenterCode: createForm.workCenterCode.trim(),
-        ...ledger,
-        capacityUomCode: DEVICE_DEFAULTS.capacityUomCode,
-        criticality: createForm.criticality,
-        maintainable: createForm.maintainable,
-        telemetryEnabled: DEVICE_DEFAULTS.telemetryEnabled,
-      })
-      notifySuccess(`设备「${createForm.model.trim()}」已更新。`)
-    } else {
-      await devices.create({
-        organizationId: devices.filters.organizationId,
-        environmentId: devices.filters.environmentId,
-        model: createForm.model.trim(),
-        manufacturer: createForm.manufacturer.trim(),
-        serialNo: createForm.serialNo.trim(),
-        assetClassCode: createForm.assetClassCode.trim(),
-        lineCode: createForm.lineCode.trim(),
-        workCenterCode: createForm.workCenterCode.trim(),
-        ...ledger,
-        capacityUomCode: DEVICE_DEFAULTS.capacityUomCode,
-        criticality: createForm.criticality,
-        maintainable: createForm.maintainable,
-        telemetryEnabled: DEVICE_DEFAULTS.telemetryEnabled,
-      })
-      notifySuccess(`设备「${createForm.model.trim()}」已登记。`)
-    }
-    resetCreateForm()
-    editingCode.value = null
-    createShowErrors.value = false
-    createOpen.value = false
-  } catch (error) {
-    notifyOperationFailure('保存设备失败', error, '保存设备失败，请稍后重试。')
-  }
+  openForm(row)
 }
 </script>
 
@@ -571,349 +224,10 @@ async function submitDevice() {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvDialog v-model:open="createOpen">
-          <NvDialogTrigger as-child>
-            <NvButton size="sm" type="button" @click="openCreate">
-              <PlusIcon aria-hidden="true" />
-              新建设备
-            </NvButton>
-          </NvDialogTrigger>
-          <NvDialogContent class="sm:max-w-2xl">
-            <NvDialogHeader>
-              <NvDialogTitle>{{
-                editingCode ? `编辑设备 · ${editingCode}` : '新建设备'
-              }}</NvDialogTitle>
-              <NvDialogDescription class="sr-only">{{
-                editingCode ? `设备 ${editingCode}` : '新建设备档案'
-              }}</NvDialogDescription>
-            </NvDialogHeader>
-            <form class="grid gap-4" @submit.prevent="submitDevice">
-              <CarriedContextSummary
-                v-if="editingCode"
-                label="设备标识"
-                :items="[{ label: '设备编码', value: createForm.code }]"
-              />
-              <p
-                v-if="createShowErrors && !canCreateDevice"
-                class="text-sm text-destructive"
-                role="alert"
-              >
-                请检查标红字段后再提交。
-              </p>
-              <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.model)">
-                  <NvFieldLabel for="dev-model"
-                    >设备型号 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvInput id="dev-model" v-model="createForm.model" autocomplete="off" required />
-                </NvField>
-                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.manufacturer)">
-                  <NvFieldLabel for="dev-maker"
-                    >制造商 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvInput
-                    id="dev-maker"
-                    v-model="createForm.manufacturer"
-                    autocomplete="off"
-                    required
-                  />
-                </NvField>
-                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.serialNo)">
-                  <NvFieldLabel for="dev-serial"
-                    >出厂序列号 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvInput
-                    id="dev-serial"
-                    v-model="createForm.serialNo"
-                    autocomplete="off"
-                    required
-                  />
-                </NvField>
-                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.assetClassCode)">
-                  <NvFieldLabel for="dev-class"
-                    >设备类别 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvSearchSelect
-                    id="dev-class"
-                    v-model="createForm.assetClassCode"
-                    :options="assetClassOptions"
-                    placeholder="选择设备类别"
-                    :loading="assetClassCatalog.resourcesPending.value"
-                    empty-text="数据字典还没有设备类别，请先在「数据字典」维护"
-                    aria-label="设备类别"
-                  />
-                  <!-- 取值来源（非显而易见），保留一行。 -->
-                  <NvFieldDescription>取自「数据字典」的设备类别。</NvFieldDescription>
-                </NvField>
-                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.criticality)">
-                  <NvFieldLabel for="dev-criticality"
-                    >关键度 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvSelect v-model="createForm.criticality">
-                    <NvSelectTrigger id="dev-criticality"><NvSelectValue /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem
-                        v-for="o in CRITICALITY_OPTIONS"
-                        :key="o.value"
-                        :value="o.value"
-                        >{{ o.label }}</NvSelectItem
-                      >
-                    </NvSelectContent>
-                  </NvSelect>
-                </NvField>
-                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.siteCode)">
-                  <NvFieldLabel for="dev-site"
-                    >所属工厂 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvSelect v-model="createForm.siteCode">
-                    <NvSelectTrigger id="dev-site"
-                      ><NvSelectValue placeholder="请选择工厂"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem
-                        v-for="s in sites.items.value"
-                        :key="s.code"
-                        :value="s.code ?? '__none__'"
-                      >
-                        {{ s.displayName ?? s.code }}
-                      </NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
-                </NvField>
-                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.workshopCode)">
-                  <NvFieldLabel for="dev-workshop"
-                    >所属车间 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvSelect v-model="createForm.workshopCode">
-                    <NvSelectTrigger id="dev-workshop"
-                      ><NvSelectValue placeholder="请选择车间"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem
-                        v-for="w in workshopOptions"
-                        :key="w.code"
-                        :value="w.code ?? '__none__'"
-                      >
-                        {{ w.displayName ?? w.code }}
-                      </NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
-                </NvField>
-                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.lineCode)">
-                  <NvFieldLabel for="dev-line"
-                    >所属产线 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvSelect v-model="createForm.lineCode">
-                    <NvSelectTrigger id="dev-line"
-                      ><NvSelectValue placeholder="请选择产线"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem
-                        v-for="l in lineOptions"
-                        :key="l.code"
-                        :value="l.code ?? '__none__'"
-                      >
-                        {{ l.displayName ?? l.code }}
-                      </NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
-                </NvField>
-                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.workCenterCode)">
-                  <NvFieldLabel for="dev-wc"
-                    >所属工作中心 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvSelect v-model="createForm.workCenterCode">
-                    <NvSelectTrigger id="dev-wc"
-                      ><NvSelectValue placeholder="请选择工作中心"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem
-                        v-for="w in workCenterOptions"
-                        :key="w.code"
-                        :value="w.code ?? '__none__'"
-                      >
-                        {{ w.displayName ?? w.code }}
-                      </NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
-                </NvField>
-                <NvField :data-invalid="createShowErrors && !isNonEmpty(createForm.stationCode)">
-                  <NvFieldLabel for="dev-station"
-                    >所属工位 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvInput
-                    id="dev-station"
-                    v-model="createForm.stationCode"
-                    autocomplete="off"
-                    required
-                  />
-                </NvField>
-                <NvField>
-                  <NvFieldLabel for="dev-purchase-date">购置日期</NvFieldLabel>
-                  <NvInput id="dev-purchase-date" v-model="createForm.purchaseDate" type="date" />
-                </NvField>
-                <NvField>
-                  <NvFieldLabel for="dev-purchase-cost">购置成本</NvFieldLabel>
-                  <NvInput
-                    id="dev-purchase-cost"
-                    v-model="createForm.purchaseCost"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                  />
-                </NvField>
-                <NvField :data-invalid="createShowErrors && Boolean(currencyValidationMessage)">
-                  <NvFieldLabel for="dev-currency">币种</NvFieldLabel>
-                  <NvInput
-                    id="dev-currency"
-                    v-model="createForm.purchaseCurrencyCode"
-                    autocomplete="off"
-                    maxlength="3"
-                  />
-                  <NvFieldDescription v-if="createShowErrors && currencyValidationMessage">{{
-                    currencyValidationMessage
-                  }}</NvFieldDescription>
-                </NvField>
-                <NvField>
-                  <NvFieldLabel for="dev-warranty">保修到期</NvFieldLabel>
-                  <NvInput id="dev-warranty" v-model="createForm.warrantyExpiresOn" type="date" />
-                </NvField>
-                <NvField>
-                  <NvFieldLabel for="dev-supplier">供应商</NvFieldLabel>
-                  <NvEntityPicker
-                    id="dev-supplier"
-                    v-model="createForm.supplierPartnerCode"
-                    :options="supplierOptions"
-                    title="选择供应商"
-                    placeholder="可留空"
-                    source-text="数据来自业务伙伴（供应商角色）"
-                    empty-text="暂无供应商，请先在业务伙伴维护"
-                    :loading="partnersPending"
-                    aria-label="供应商"
-                    clearable
-                  />
-                </NvField>
-                <NvField>
-                  <NvFieldLabel for="dev-parent">父设备</NvFieldLabel>
-                  <NvEntityPicker
-                    id="dev-parent"
-                    v-model="createForm.parentDeviceId"
-                    :options="parentDeviceOptions"
-                    title="选择父设备"
-                    placeholder="可留空"
-                    source-text="数据来自设备台账（已排除本机）"
-                    empty-text="暂无可挂靠的设备"
-                    :loading="devices.pending.value"
-                    aria-label="父设备"
-                    clearable
-                  />
-                </NvField>
-                <NvField>
-                  <NvFieldLabel for="dev-retired">退役日期</NvFieldLabel>
-                  <NvInput id="dev-retired" v-model="createForm.retiredOn" type="date" />
-                </NvField>
-                <NvField
-                  orientation="horizontal"
-                  class="h-fit items-center justify-between gap-3 self-start rounded-lg border px-3 py-2 sm:col-span-2"
-                >
-                  <NvFieldLabel for="dev-maintainable" class="mb-0">纳入维护计划</NvFieldLabel>
-                  <NvCheckbox id="dev-maintainable" v-model="createForm.maintainable" />
-                </NvField>
-              </NvFieldGroup>
-              <div class="grid gap-3">
-                <div class="flex items-center justify-between gap-3">
-                  <NvFieldLabel>部件结构</NvFieldLabel>
-                  <NvButton size="sm" variant="outline" type="button" @click="addComponent">
-                    <PlusIcon aria-hidden="true" />
-                    添加部件
-                  </NvButton>
-                </div>
-                <div
-                  v-for="(component, index) in createForm.components"
-                  :key="index"
-                  class="grid gap-3 rounded-md border px-3 py-3 sm:grid-cols-[1fr_1fr_6rem_auto_auto]"
-                >
-                  <NvField>
-                    <NvFieldLabel :for="`dev-component-code-${index}`">部件编码</NvFieldLabel>
-                    <NvInput
-                      :id="`dev-component-code-${index}`"
-                      v-model="component.componentCode"
-                      autocomplete="off"
-                    />
-                  </NvField>
-                  <NvField>
-                    <NvFieldLabel :for="`dev-component-name-${index}`">部件名称</NvFieldLabel>
-                    <NvInput
-                      :id="`dev-component-name-${index}`"
-                      v-model="component.componentName"
-                      autocomplete="off"
-                    />
-                  </NvField>
-                  <NvField
-                    :data-invalid="
-                      createShowErrors &&
-                      isComponentReady(component) &&
-                      componentQuantity(component) <= 0
-                    "
-                  >
-                    <NvFieldLabel :for="`dev-component-qty-${index}`">数量</NvFieldLabel>
-                    <NvInput
-                      :id="`dev-component-qty-${index}`"
-                      v-model="component.quantity"
-                      type="number"
-                      min="0.001"
-                      step="0.001"
-                    />
-                    <NvFieldDescription
-                      v-if="
-                        createShowErrors &&
-                        isComponentReady(component) &&
-                        componentQuantity(component) <= 0
-                      "
-                      >必须大于 0。</NvFieldDescription
-                    >
-                  </NvField>
-                  <NvField orientation="horizontal" class="items-center gap-2 self-end pb-2">
-                    <NvCheckbox
-                      :id="`dev-component-critical-${index}`"
-                      v-model="component.critical"
-                    />
-                    <NvFieldLabel :for="`dev-component-critical-${index}`" class="mb-0"
-                      >关键</NvFieldLabel
-                    >
-                  </NvField>
-                  <NvButton
-                    class="self-end"
-                    size="icon"
-                    variant="ghost"
-                    type="button"
-                    :aria-label="`删除部件 ${index + 1}`"
-                    @click="removeComponent(index)"
-                  >
-                    <Trash2Icon aria-hidden="true" />
-                  </NvButton>
-                </div>
-              </div>
-              <NvDialogFooter>
-                <NvButton type="button" variant="outline" @click="createOpen = false"
-                  >取消</NvButton
-                >
-                <NvButton
-                  type="submit"
-                  :disabled="
-                    devices.createPending.value || deviceActions.updatePending.value || editLoading
-                  "
-                >
-                  <Spinner
-                    v-if="devices.createPending.value || deviceActions.updatePending.value"
-                    aria-hidden="true"
-                  />
-                  {{ editingCode ? '保存修改' : '保存设备' }}
-                </NvButton>
-              </NvDialogFooter>
-            </form>
-          </NvDialogContent>
-        </NvDialog>
+        <NvButton size="sm" type="button" @click="openForm()">
+          <PlusIcon aria-hidden="true" />
+          新建设备
+        </NvButton>
       </template>
     </NvPageHeader>
 
@@ -961,5 +275,11 @@ async function submitDevice() {
       </template>
     </NvDataTable>
     <MasterDataLifecycleDialog :controller="lifecycle" />
+    <DeviceFormDialog
+      v-if="formSession"
+      :key="formSession"
+      v-model:open="formOpen"
+      :editing="formEditing"
+    />
   </BusinessLayout>
 </template>

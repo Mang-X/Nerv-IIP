@@ -52,15 +52,15 @@
 
 ### 导航 / 外壳
 
-| UX 概念         | 桌面 PC                           | 移动 PDA                   | 一体机 touch   | 大屏 screen                            |
-| --------------- | --------------------------------- | -------------------------- | -------------- | -------------------------------------- |
-| 页头            | `NvAppHeader`                     | `NvNavBar`                 | `NvStationBar` | `NvScreenHeader` · `NvTitleBar`        |
-| 应用外壳        | `NvAppShellInset` · `NvSidebar*`  | `NvAppShellMobile`         | （复用 PC）    | `NvScreenScaler`（舞台缩放）           |
-| 面包屑          | `NvBreadcrumb`                    | `—`                        | `—`            | `—`                                    |
-| 底部标签栏      | `—`                               | `NvTabBar`                 | `—`            | `—`                                    |
-| 导航菜单        | `NvNavigationMenu`                | —（移动导航用 `NvTabBar`） | `—`            | `—`                                    |
-| 滚动区 / 滚动板 | `—`                               | `—`                        | `—`            | `NvScreenScrollArea` · `NvScrollBoard` |
-| 主题切换        | `NvThemeToggle` · `NvThemePicker` | `—`                        | `—`            | `—`（大屏固定深色）                    |
+| UX 概念         | 桌面 PC                                        | 移动 PDA                   | 一体机 touch   | 大屏 screen                            |
+| --------------- | ---------------------------------------------- | -------------------------- | -------------- | -------------------------------------- |
+| 页头            | `NvAppHeader`                                  | `NvNavBar`                 | `NvStationBar` | `NvScreenHeader` · `NvTitleBar`        |
+| 应用外壳        | `NvAppShellInset` · `NvSidebar` / `NvSidebar*` | `NvAppShellMobile`         | （复用 PC）    | `NvScreenScaler`（舞台缩放）           |
+| 面包屑          | `NvBreadcrumb`                                 | `—`                        | `—`            | `—`                                    |
+| 底部标签栏      | `—`                                            | `NvTabBar`                 | `—`            | `—`                                    |
+| 导航菜单        | `NvNavigationMenu`                             | —（移动导航用 `NvTabBar`） | `—`            | `—`                                    |
+| 滚动区 / 滚动板 | `—`                                            | `—`                        | `—`            | `NvScreenScrollArea` · `NvScrollBoard` |
+| 主题切换        | `NvThemeToggle` · `NvThemePicker`              | `—`                        | `—`            | `—`（大屏固定深色）                    |
 
 ### 反馈 / 覆盖层
 
@@ -74,7 +74,7 @@
 | 文字提示        | `NvTooltip`                                        | `—`                                     | `—`          | `—`                                              |
 | 轻提示 / 通知   | `nvMessage` · `nvNotification`（`NvNotifierHost`） | `NvMobileToast` · `NvNoticeBar`         | （复用 PC）  | `—`                                              |
 | 告警表          | `—`                                                | `—`                                     | `—`          | `NvAlarmTable`                                   |
-| 加载 / 骨架     | `NvLoader`                                         | `NvMobileSkeleton` · `NvMobileProgress` | `—`          | `—`                                              |
+| 加载 / 骨架     | `NvSpinner` · `NvLoader`                           | `NvMobileSkeleton` · `NvMobileProgress` | `—`          | `—`                                              |
 | 空态 / 结果     | （原版 Empty 复用）                                | `NvMobileEmpty` · `NvMobileResult`      | `—`          | `—`                                              |
 | 错误重试        | `—`                                                | `NvMobileErrorRetry`                    | `—`          | `—`                                              |
 | 仪表 / 翻牌     | `—`                                                | `—`                                     | `—`          | `NvRingGauge` · `NvCapsuleBar` · `NvDigitalFlop` |

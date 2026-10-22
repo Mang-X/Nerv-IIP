@@ -48,6 +48,32 @@ public sealed class PurchaseOrderReleasedIntegrationEventConverter
     }
 }
 
+public sealed class MaterialSupplyEtaChangedIntegrationEventConverter(IErpIntegrationEventContextAccessor contextAccessor)
+    : IIntegrationEventConverter<MaterialSupplyEtaChangedDomainEvent, MaterialSupplyEtaChangedIntegrationEvent>
+{
+    public MaterialSupplyEtaChangedIntegrationEvent Convert(MaterialSupplyEtaChangedDomainEvent domainEvent)
+    {
+        var context = contextAccessor.GetContext();
+        return new MaterialSupplyEtaChangedIntegrationEvent(
+            EventIds.New(),
+            ErpIntegrationEventTypes.MaterialSupplyEtaChanged,
+            ErpIntegrationEventVersions.V1,
+            domainEvent.ChangedAtUtc,
+            ErpIntegrationEventSources.BusinessErp,
+            context.CorrelationId,
+            context.CausationId,
+            domainEvent.OrganizationId,
+            domainEvent.EnvironmentId,
+            context.Actor,
+            EventIds.Idempotency("material-supply-eta-changed", domainEvent.OrganizationId, domainEvent.EnvironmentId, domainEvent.ChangeIdentity),
+            new MaterialSupplyEtaChangedPayload(
+                domainEvent.SourceDocumentType,
+                domainEvent.SourceDocumentNo,
+                domainEvent.ChangeReason,
+                domainEvent.SkuCodes.Distinct(StringComparer.Ordinal).OrderBy(skuCode => skuCode, StringComparer.Ordinal).ToArray()));
+    }
+}
+
 public sealed class PurchaseReceiptRecordedIntegrationEventConverter
     : IIntegrationEventConverter<PurchaseReceiptRecordedDomainEvent, PurchaseReceiptRecordedIntegrationEvent>
 {
@@ -125,7 +151,8 @@ public sealed class PurchaseReceiptInventoryMovementRequestedIntegrationEventCon
                 "company",
                 null,
                 line.ReceivedQuantity,
-                occurredAtUtc));
+                occurredAtUtc,
+                UnitCost: line.UnitPrice * receipt.ExchangeRate));
     }
 
 }
@@ -137,13 +164,14 @@ internal static class ErpIntegrationEventConverterHelpers
         string organizationId,
         string environmentId,
         string idempotencyKey,
-        TPayload payload)
+        TPayload payload,
+        DateTimeOffset? occurredAtUtc = null)
     {
         return new ErpIntegrationEvent<TPayload>(
             EventIds.New(),
             eventType,
             ErpIntegrationEventVersions.V1,
-            DateTimeOffset.UtcNow,
+            occurredAtUtc ?? DateTimeOffset.UtcNow,
             ErpIntegrationEventSources.BusinessErp,
             "system:erp",
             "system:erp",

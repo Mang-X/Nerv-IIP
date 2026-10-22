@@ -12,6 +12,7 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="MediatR" />
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="xunit" />
@@ -33,6 +34,7 @@
     <ProjectReference Include="..\..\services\Business\DemandPlanning\src\Nerv.IIP.Business.DemandPlanning.Domain\Nerv.IIP.Business.DemandPlanning.Domain.csproj" />
     <ProjectReference Include="..\..\services\Business\Wms\src\Nerv.IIP.Business.Wms.Web\Nerv.IIP.Business.Wms.Web.csproj" />
     <ProjectReference Include="..\..\services\Business\Mes\src\Nerv.IIP.Business.Mes.Infrastructure\Nerv.IIP.Business.Mes.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\services\Business\Mes\src\Nerv.IIP.Business.Mes.Web\Nerv.IIP.Business.Mes.Web.csproj" />
     <ProjectReference Include="..\..\services\Business\Maintenance\src\Nerv.IIP.Business.Maintenance.Web\Nerv.IIP.Business.Maintenance.Web.csproj" Aliases="global,MaintenanceWeb" />
     <ProjectReference Include="..\..\gateway\BusinessGateway\src\Nerv.IIP.BusinessGateway.Web\Nerv.IIP.BusinessGateway.Web.csproj" Aliases="BusinessGateway" />
     <ProjectReference Include="..\..\common\Contracts\Nerv.IIP.Contracts.Inventory\Nerv.IIP.Contracts.Inventory.csproj" />

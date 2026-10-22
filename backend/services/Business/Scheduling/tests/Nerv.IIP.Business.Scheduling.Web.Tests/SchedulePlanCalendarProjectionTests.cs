@@ -77,7 +77,10 @@ public sealed class SchedulePlanCalendarProjectionTests
     [Fact]
     public async Task Plan_detail_read_face_projects_the_persisted_problem_snapshot()
     {
-        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem() with
+        {
+            AssemblyDependencies = [new("WO-FRONT-001", "WO-RUSH-REAR-001")]
+        };
         await using var dbContext = CreateDbContext();
         var generated = SchedulePlanContractMapper.WithStatus(
             new FiniteCapacityScheduler().Schedule(
@@ -105,7 +108,11 @@ public sealed class SchedulePlanCalendarProjectionTests
             new GetSchedulePlanDetailQuery("plan-calendar-002", "org-001", "prod"),
             CancellationToken.None);
 
+        Assert.Equal(problem.AssemblyDependencies, detail.AssemblyDependencies);
         Assert.Equal("CAL-DAY", Assert.Single(detail.Calendars!).CalendarId);
+        Assert.NotNull(detail.ValidationContext);
+        Assert.Empty(detail.ValidationContext.FixedReservations);
+        Assert.All(detail.ValidationContext.Operations, x => Assert.False(x.IsFixed));
         Assert.Equal(ScheduleBlockKindContract.Maintenance, Assert.Single(detail.BlockWindows!).Kind);
     }
 
@@ -132,6 +139,7 @@ public sealed class SchedulePlanCalendarProjectionTests
 
         // 没有问题快照就不带日历——读面宁可少说,也不编一份日历出来。
         Assert.Null(detail.Calendars);
+        Assert.Null(detail.ValidationContext);
 
         // 但设备不可用窗口不再依赖问题快照:它随方案一起落库(#1409)。
         // 这里原来断言的是 Null,那是把缺陷当成了契约——问题快照存的是「设备可用性适配之前」

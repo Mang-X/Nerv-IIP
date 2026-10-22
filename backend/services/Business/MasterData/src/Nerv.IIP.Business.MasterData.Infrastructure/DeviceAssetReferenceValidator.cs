@@ -5,7 +5,8 @@ namespace Nerv.IIP.Business.MasterData.Infrastructure;
 
 public sealed record DeviceAssetReferenceValidationResult(
     string SupplierPartnerCode,
-    string ParentDeviceId);
+    string ParentDeviceId,
+    string StationCode);
 
 public interface IDeviceAssetReferenceValidator
 {
@@ -14,12 +15,14 @@ public interface IDeviceAssetReferenceValidator
         string environmentId,
         string? supplierPartnerCode,
         string? parentDeviceId,
+        string? stationCode,
         CancellationToken cancellationToken);
 
     Task<DeviceAssetReferenceValidationResult> ValidateForUpdateAsync(
         DeviceAsset device,
         string? supplierPartnerCode,
         string? parentDeviceId,
+        string? stationCode,
         CancellationToken cancellationToken);
 
     Task ValidateStoredReferencesForEnableAsync(
@@ -40,6 +43,7 @@ public sealed class DeviceAssetReferenceValidator(ApplicationDbContext dbContext
         string environmentId,
         string? supplierPartnerCode,
         string? parentDeviceId,
+        string? stationCode,
         CancellationToken cancellationToken)
     {
         var normalizedSupplierCode = await NormalizeAndValidateSupplierAsync(
@@ -53,13 +57,19 @@ public sealed class DeviceAssetReferenceValidator(ApplicationDbContext dbContext
             parentDeviceId,
             currentDeviceId: null,
             cancellationToken);
-        return new DeviceAssetReferenceValidationResult(normalizedSupplierCode, normalizedParentId);
+        var normalizedStationCode = await NormalizeAndValidateStationAsync(
+            organizationId,
+            environmentId,
+            stationCode,
+            cancellationToken);
+        return new DeviceAssetReferenceValidationResult(normalizedSupplierCode, normalizedParentId, normalizedStationCode);
     }
 
     public async Task<DeviceAssetReferenceValidationResult> ValidateForUpdateAsync(
         DeviceAsset device,
         string? supplierPartnerCode,
         string? parentDeviceId,
+        string? stationCode,
         CancellationToken cancellationToken)
     {
         var normalizedSupplierCode = supplierPartnerCode is null
@@ -77,7 +87,14 @@ public sealed class DeviceAssetReferenceValidator(ApplicationDbContext dbContext
                 parentDeviceId,
                 device.Id,
                 cancellationToken);
-        return new DeviceAssetReferenceValidationResult(normalizedSupplierCode, normalizedParentId);
+        var normalizedStationCode = stationCode is null
+            ? device.StationCode
+            : await NormalizeAndValidateStationAsync(
+                device.OrganizationId,
+                device.EnvironmentId,
+                stationCode,
+                cancellationToken);
+        return new DeviceAssetReferenceValidationResult(normalizedSupplierCode, normalizedParentId, normalizedStationCode);
     }
 
     public async Task ValidateStoredReferencesForEnableAsync(
@@ -148,6 +165,32 @@ public sealed class DeviceAssetReferenceValidator(ApplicationDbContext dbContext
         }
 
         return normalizedSupplierCode;
+    }
+
+    private async Task<string> NormalizeAndValidateStationAsync(
+        string organizationId,
+        string environmentId,
+        string? stationCode,
+        CancellationToken cancellationToken)
+    {
+        var normalizedStationCode = stationCode?.Trim() ?? string.Empty;
+        if (normalizedStationCode.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var exists = await dbContext.Stations.AnyAsync(
+            x => x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                x.Code == normalizedStationCode &&
+                !x.Disabled,
+            cancellationToken);
+        if (!exists)
+        {
+            throw new KnownException($"工位 '{normalizedStationCode}' 不存在或已停用。");
+        }
+
+        return normalizedStationCode;
     }
 
     private async Task<string> NormalizeAndValidateParentAsync(

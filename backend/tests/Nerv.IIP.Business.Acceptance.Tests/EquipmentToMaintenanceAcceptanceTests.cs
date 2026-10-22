@@ -29,7 +29,6 @@ public sealed class EquipmentToMaintenanceAcceptanceTests
             new EndpointSurface("BusinessMaintenance", "GET", "/api/business/v1/maintenance/work-orders", "listMaintenanceWorkOrders"),
             new EndpointSurface("BusinessMaintenance", "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/complete", "completeMaintenanceWorkOrder"),
             new EndpointSurface("BusinessMaintenance", "POST", "/api/business/v1/maintenance/plans/generate-due", "generateDueMaintenanceWorkOrders"),
-            new EndpointSurface("BusinessMes", "POST", "/api/business/v1/mes/schedules/run", "runBusinessMesSchedule"),
             new EndpointSurface("BusinessMes", "GET", "/api/business/v1/mes/capacity-impacts", "listBusinessMesCapacityImpacts"),
         ]);
     }

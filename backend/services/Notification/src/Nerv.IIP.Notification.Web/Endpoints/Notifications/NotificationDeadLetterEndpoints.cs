@@ -68,7 +68,7 @@ public sealed class ReplayNotificationDeadLetterEndpoint(IntegrationEventDeadLet
     public override async Task HandleAsync(CancellationToken ct)
     {
         var result = await replayExecutor.ReplayAsync(Route<Guid>("deadLetterId"), ct);
-        if (result.Status == "NotFound")
+        if (result.Status == IntegrationEventDeadLetterReplayStatus.NotFound)
         {
             await Send.NotFoundAsync(ct);
             return;
@@ -168,8 +168,13 @@ internal static class NotificationDeadLetterEndpointMapper
             message.DeadLetteredAtUtc,
             message.ReplayedAtUtc);
 
+    /// <remarks>
+    /// Notification 这套 DLQ 是共享模块之外的历史实现（并存关系登记在 #3751），它的 wire 契约
+    /// <see cref="NotificationDeadLetterReplayResponse"/> 仍是自由文本。#3739 把执行器的结果状态
+    /// 改成枚举后，这里显式 <c>ToString()</c> 保持该 facade 的取值逐字不变（PlatformGateway 快照因此无变化）。
+    /// </remarks>
     public static NotificationDeadLetterReplayResponse ToReplayResponse(IntegrationEventDeadLetterReplayResult result) =>
-        new(result.Id, result.Succeeded, result.Status, result.Message);
+        new(result.Id, result.Succeeded, result.Status.ToString(), result.Message);
 
     public static NotificationDeadLetterMetricsResponse ToMetricsResponse(IntegrationEventDeadLetterMetrics metrics) =>
         new(

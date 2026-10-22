@@ -13,12 +13,15 @@ public sealed class BackorderOrderAggregateTests
             "org-001", "env-dev", "BO-OUT-001-LINE-001", "OUT-001", "LINE-001",
             "SKU-001", "pcs", "SITE-01", "PICK-01", 3m);
 
-        var task = backorder.CreateReplenishmentRecommendation("RPL-OUT-001-LINE-001");
+        var task = backorder.CreateReplenishmentRecommendation();
 
         Assert.Equal(BackorderOrderStatus.Open, backorder.Status);
         Assert.Equal(3m, backorder.BackorderQuantity);
         Assert.Equal(WarehouseTaskType.Replenishment, task.TaskType);
         Assert.Equal(backorder.BackorderOrderNo, task.SourceOrderNo);
+        // 任务号由聚合按 RPL 种类自算，调用方拿不到「传错种类」的机会（#3228）。
+        Assert.Equal(BackorderOrder.ComposeReplenishmentTaskNo("OUT-001", "LINE-001"), task.TaskNo);
+        Assert.StartsWith("RPL-", task.TaskNo, StringComparison.Ordinal);
         Assert.Equal("PICK-01", task.ToLocationCode);
         Assert.Equal(3m, task.PlannedQuantity);
     }
@@ -41,8 +44,8 @@ public sealed class BackorderOrderAggregateTests
     [Fact]
     public void Stable_operational_code_is_deterministic_and_bounded()
     {
-        var first = WmsText.StableOperationalCode("BO", new string('O', 100), new string('L', 100));
-        var replay = WmsText.StableOperationalCode("BO", new string('O', 100), new string('L', 100));
+        var first = BackorderOrder.ComposeBackorderOrderNo(new string('O', 100), new string('L', 100));
+        var replay = BackorderOrder.ComposeBackorderOrderNo(new string('O', 100), new string('L', 100));
 
         Assert.Equal(first, replay);
         Assert.StartsWith("BO-", first, StringComparison.Ordinal);

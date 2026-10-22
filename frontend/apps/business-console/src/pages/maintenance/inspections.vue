@@ -6,6 +6,7 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMaintenanceInspections } from '@/composables/useBusinessMaintenance'
+import { labelFor, MAINTENANCE_INSPECTION_RESULT_LABELS } from '@/data/businessLabels'
 import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
 import {
   useEquipmentUomCatalog,
@@ -13,6 +14,7 @@ import {
 } from '@/composables/useEquipmentPickerCatalog'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -46,7 +48,7 @@ import {
   NvSheetFooter,
   NvSheetHeader,
   NvSheetTitle,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
 import {
@@ -84,6 +86,9 @@ const { workers } = useBusinessWorkers()
 const auth = useAuthStore()
 const { principal } = storeToRefs(auth)
 const currentUserId = computed(() => principal.value?.principalId ?? '')
+const canRecordInspections = computed(() =>
+  (principal.value?.permissionCodes ?? []).includes(P.maintenancePlansManage),
+)
 const workerOptions = computed(() =>
   workers.value
     .map((w) => ({
@@ -106,11 +111,9 @@ const { planOptions, plansPending, workOrderOptions, workOrdersPending } =
   useMaintenanceDocumentCatalog()
 const { uomOptions, uomsPending } = useEquipmentUomCatalog()
 
-const resultOptions = [
-  { label: '通过', value: 'passed' },
-  { label: '异常', value: 'failed' },
-  { label: '需复检', value: 'requires-review' },
-]
+const resultOptions = Object.entries(MAINTENANCE_INSPECTION_RESULT_LABELS).map(
+  ([value, label]) => ({ value, label }),
+)
 
 interface MeasurementFormRow extends MeasurementDraftRow {
   id: number
@@ -157,7 +160,7 @@ const characteristicOptions = computed(() => {
   return out
 })
 
-const listErrorMessage = computed(() => formatError(inspectionsError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(inspectionsError.value))
 // 服务端错误走 toast；这里只留点提交后的字段级校验汇总。
 const recordErrorMessage = computed(() => recordError.value)
 
@@ -198,8 +201,7 @@ function rowKey(row: InspectionRow) {
 }
 function resultLabel(value?: string | null) {
   // 选项里没有的结果就说「未知结果」，绝不把后端英文码回吐到界面上。
-  if (!value) return '未知'
-  return resultOptions.find((o) => o.value === value.toLowerCase())?.label ?? '未知结果'
+  return value ? labelFor(MAINTENANCE_INSPECTION_RESULT_LABELS, value, '未知结果') : '未知'
 }
 // 后端已算 isWithinSpec：超差 = 明确 false（未判定的 undefined 不当作超差）。
 function measurementOutOfSpec(m: MeasurementItem) {
@@ -291,9 +293,6 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 </script>
 
 <template>
@@ -314,7 +313,7 @@ function formatError(error: unknown) {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openRecord">
+        <NvButton v-if="canRecordInspections" size="sm" type="button" @click="openRecord">
           <PlusIcon aria-hidden="true" />
           记录点检
         </NvButton>
@@ -383,7 +382,6 @@ function formatError(error: unknown) {
                 :options="planOptions"
                 title="选择保养计划"
                 placeholder="可选，选择保养计划"
-                source-text="数据来自保养计划"
                 empty-text="暂无保养计划，可先在保养计划登记周期保养"
                 :loading="plansPending"
                 clearable
@@ -398,7 +396,6 @@ function formatError(error: unknown) {
                 :options="workOrderOptions"
                 title="选择维修工单"
                 placeholder="可选，选择维修工单"
-                source-text="数据来自维护工单"
                 empty-text="暂无维护工单"
                 :loading="workOrdersPending"
                 clearable
@@ -485,7 +482,6 @@ function formatError(error: unknown) {
                     :options="uomOptions"
                     title="选择单位"
                     placeholder="选择单位"
-                    source-text="数据来自基础数据计量单位"
                     empty-text="暂无计量单位，请先在基础数据维护单位"
                     :loading="uomsPending"
                     clearable
@@ -538,7 +534,7 @@ function formatError(error: unknown) {
           <NvSheetFooter class="px-0">
             <NvButton type="button" variant="outline" @click="recordOpen = false">取消</NvButton>
             <NvButton type="submit" :disabled="recordInspectionPending">
-              <Spinner v-if="recordInspectionPending" aria-hidden="true" />
+              <NvSpinner v-if="recordInspectionPending" aria-hidden="true" />
               <ClipboardCheckIcon v-else aria-hidden="true" />
               提交点检
             </NvButton>

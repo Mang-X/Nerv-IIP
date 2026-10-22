@@ -23,6 +23,7 @@ vi.mock('vue-router', async (importOriginal) => {
 interface Domain {
   id: string
   title: string
+  to: { path: string }
 }
 interface SideGroup {
   label?: string
@@ -47,7 +48,12 @@ function mountLayout(pinia = createPinia()) {
   return mount(BusinessLayout, {
     global: {
       plugins: [pinia, createBusinessConsoleI18n({ locale: 'en-US' })],
-      stubs: { AppShellT: AppShellTStub, ThemePicker: true, ThemeToggle: true },
+      stubs: {
+        AppShellT: AppShellTStub,
+        NotificationInbox: true,
+        ThemePicker: true,
+        ThemeToggle: true,
+      },
     },
     slots: { default: '<main>Business content</main>' },
   })
@@ -77,12 +83,13 @@ describe('BusinessLayout (T-shaped)', () => {
       'barcode',
       'equipment',
       'approval',
+      'ops',
     ])
     // Current domain resolved from the route, with its domain-local side nav.
     expect(shell.props('currentDomainId')).toBe('inventory')
     const sideNav = shell.props('sideNav') as SideGroup[]
     const sideTitles = sideNav.flatMap((g) => g.items.map((i) => i.title))
-    expect(sideTitles).toEqual(['库存可用量', '批次与预留', '库存移动', '库存盘点'])
+    expect(sideTitles).toEqual(['库存可用量', '批次与预留', '库存移动', '库存盘点', '库位'])
   })
 
   it('trims top domains and side navigation by principal permissions', () => {
@@ -134,6 +141,46 @@ describe('BusinessLayout (T-shaped)', () => {
     expect(sideNav[0]?.items.map((i) => i.title)).toEqual(['WCS 任务'])
   })
 
+  it.each([
+    ['planner', ['business.mes.work-orders.read'], '/mes/work-orders'],
+    [
+      'operator',
+      ['business.mes.operations.read', 'business.mes.reporting.read'],
+      '/mes/operation-tasks',
+    ],
+    ['overview reader', ['business.mes.overview.read', 'business.mes.work-orders.read'], '/mes'],
+  ])('lands the MES domain on an authorized page for %s', (_role, permissionCodes, path) => {
+    const pinia = createPinia()
+    useAuthStore(pinia).$patch({
+      principal: {
+        principalType: 'user',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        permissionCodes,
+      },
+    })
+
+    const wrapper = mountLayout(pinia)
+    const domains = wrapper.getComponent(AppShellTStub).props('topDomains') as Domain[]
+    expect(domains.find((domain) => domain.id === 'mes')?.to).toEqual({ path })
+  })
+
+  it('hides the MES domain when the principal cannot read any MES page', () => {
+    const pinia = createPinia()
+    useAuthStore(pinia).$patch({
+      principal: {
+        principalType: 'user',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        permissionCodes: ['business.mes.work-orders.manage'],
+      },
+    })
+
+    const wrapper = mountLayout(pinia)
+    const domains = wrapper.getComponent(AppShellTStub).props('topDomains') as Domain[]
+    expect(domains.some((domain) => domain.id === 'mes')).toBe(false)
+  })
+
   it('resolves WMS routes to the 仓储作业 domain', () => {
     routeState.path = '/wms/inbound'
     const wrapper = mountLayout()
@@ -148,6 +195,7 @@ describe('BusinessLayout (T-shaped)', () => {
       '拣货任务',
       'WCS 任务',
       '盘点执行',
+      '作业池',
     ])
   })
 
@@ -200,7 +248,7 @@ describe('BusinessLayout (T-shaped)', () => {
 
     const wrapper = mountLayout(pinia)
 
-    expect(wrapper.text()).toContain('未选择业务上下文')
+    expect(wrapper.text()).toContain('账号尚未分配组织')
     expect(wrapper.text()).toContain('重新登录')
   })
 

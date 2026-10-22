@@ -295,7 +295,9 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
                     WorldHistoryErpSpec.ReceivableAccountCode, plan.TotalAmount, 0m, $"{plan.SalesOrderNo} 发货确认收入"),
                 new JournalVoucherLineDraft(
                     WorldHistoryErpSpec.RevenueAccountCode, 0m, plan.TotalAmount, $"{plan.SalesOrderNo} 发货确认收入"),
-            ]);
+            ],
+            JournalVoucherSourceType.AccountReceivable,
+            receivable.ReceivableNo);
         dbContext.JournalVouchers.Add(revenueVoucher);
         BackdateUtc(revenueVoucher, x => x.PostedAtUtc, shippedAtUtc);
 
@@ -333,7 +335,9 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
                     WorldHistoryErpSpec.BankAccountCode, plan.TotalAmount, 0m, $"{plan.SalesOrderNo} 货款回收"),
                 new JournalVoucherLineDraft(
                     WorldHistoryErpSpec.ReceivableAccountCode, 0m, plan.TotalAmount, $"{plan.SalesOrderNo} 货款回收"),
-            ]);
+            ],
+            JournalVoucherSourceType.CashReceipt,
+            cashReceipt.CashReceiptNo);
         dbContext.JournalVouchers.Add(collectionVoucher);
         BackdateUtc(collectionVoucher, x => x.PostedAtUtc, collectedAtUtc);
     }

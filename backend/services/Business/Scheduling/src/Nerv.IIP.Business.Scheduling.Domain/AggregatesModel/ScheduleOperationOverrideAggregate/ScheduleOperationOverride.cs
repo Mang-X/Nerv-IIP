@@ -48,6 +48,7 @@ public sealed class ScheduleOperationOverride : Entity<ScheduleOperationOverride
     public string LockReasonCode { get; private set; } = string.Empty;
     public string SourceType { get; private set; } = string.Empty;
     public string? SourceEventId { get; private set; }
+    public string? SourcePlanId { get; private set; }
     public string Actor { get; private set; } = string.Empty;
     public DateTimeOffset SourceOccurredAtUtc { get; private set; }
     public DateTimeOffset UpdatedAtUtc { get; private set; }
@@ -61,10 +62,14 @@ public sealed class ScheduleOperationOverride : Entity<ScheduleOperationOverride
         int operationSequence, string resourceId, string workCenterId,
         DateTimeOffset startUtc, DateTimeOffset endUtc, string lockReasonCode,
         string sourceType, string? sourceEventId, string actor,
-        DateTimeOffset sourceOccurredAtUtc, DateTimeOffset updatedAtUtc) =>
+        DateTimeOffset sourceOccurredAtUtc, DateTimeOffset updatedAtUtc,
+        string? sourcePlanId = null) =>
         new(organizationId, environmentId, workOrderId, operationId, operationSequence,
             resourceId, workCenterId, startUtc, endUtc, lockReasonCode, sourceType,
-            sourceEventId, actor, sourceOccurredAtUtc, updatedAtUtc);
+            sourceEventId, actor, sourceOccurredAtUtc, updatedAtUtc)
+        {
+            SourcePlanId = sourcePlanId
+        };
 
     public static ScheduleOperationOverride CreateClearedMesDispatch(
         string organizationId, string environmentId, string workOrderId, string operationId,
@@ -146,6 +151,7 @@ public sealed class ScheduleOperationOverride : Entity<ScheduleOperationOverride
 
         IsActive = false;
         SourceEventId = Optional(sourceEventId);
+        SourcePlanId = null;
         Actor = Required(actor);
         SourceRevision = sourceRevision;
         SourceOccurredAtUtc = sourceOccurredAtUtc;
@@ -157,16 +163,27 @@ public sealed class ScheduleOperationOverride : Entity<ScheduleOperationOverride
 
     public void ReplaceManually(
         string resourceId, string workCenterId, DateTimeOffset startUtc, DateTimeOffset endUtc,
-        string actor, DateTimeOffset occurredAtUtc)
+        string actor, DateTimeOffset occurredAtUtc, string sourcePlanId)
     {
         SetMutableFacts(resourceId, workCenterId, startUtc, endUtc,
             ScheduleOperationOverrideLockReasonCodes.ManualOverride,
             ScheduleOperationOverrideSourceTypes.SchedulingApi,
             null, actor, occurredAtUtc, occurredAtUtc);
+        SourcePlanId = sourcePlanId;
         IsActive = true;
         SourceRevision = null;
         ClearedReasonCode = null;
         ClearedAtUtc = null;
+    }
+
+    public void ClearForWorkOrderSplit(string sourceEventId, string actor, DateTimeOffset occurredAtUtc)
+    {
+        IsActive = false;
+        SourceEventId = Required(sourceEventId);
+        Actor = Required(actor);
+        UpdatedAtUtc = occurredAtUtc;
+        ClearedReasonCode = "work-order-split";
+        ClearedAtUtc = occurredAtUtc;
     }
 
     private bool CanApplyMesFact(long sourceRevision, DateTimeOffset sourceOccurredAtUtc)
@@ -205,6 +222,7 @@ public sealed class ScheduleOperationOverride : Entity<ScheduleOperationOverride
         LockReasonCode = Required(lockReasonCode);
         SourceType = Required(sourceType);
         SourceEventId = Optional(sourceEventId);
+        SourcePlanId = null;
         Actor = Required(actor);
         SourceOccurredAtUtc = sourceOccurredAtUtc;
         UpdatedAtUtc = updatedAtUtc;

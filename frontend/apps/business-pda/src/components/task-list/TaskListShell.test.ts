@@ -7,15 +7,12 @@ import TaskListShell from './TaskListShell.vue'
 afterEach(() => sessionStorage.clear())
 
 describe('TaskListShell', () => {
-  it('统一呈现范围、计数、更新时间并透传刷新与加载', async () => {
+  it('呈现筛选区并透传刷新与加载', async () => {
     const wrapper = mount(TaskListShell, {
       props: {
         stateKey: 'quality-tasks',
-        scope: '当前账号 Self',
-        source: '质检待检任务服务',
         loaded: 20,
         total: 45,
-        updatedAt: '2026-08-01T01:02:03Z',
         pending: false,
         refreshing: false,
         loadingMore: false,
@@ -26,7 +23,6 @@ describe('TaskListShell', () => {
       },
     })
 
-    expect(wrapper.get('[data-testid="task-list-meta"]').text()).toContain('已加载 20 / 共 45')
     expect(wrapper.get('[data-testid="filters"]').text()).toContain('状态：待检')
 
     wrapper.getComponent(NvPullRefresh).vm.$emit('refresh')
@@ -41,8 +37,6 @@ describe('TaskListShell', () => {
     const wrapper = mount(TaskListShell, {
       props: {
         stateKey: 'quality-raw-offset',
-        scope: '当前账号 Self',
-        source: '质检待检任务服务',
         loaded: 2,
         total: 3,
         hasMore: false,
@@ -59,8 +53,6 @@ describe('TaskListShell', () => {
     const partial = mount(TaskListShell, {
       props: {
         stateKey: 'mes-tasks',
-        scope: '当前工作中心',
-        source: 'MES 工序任务服务',
         loaded: 20,
         total: 45,
         pending: false,
@@ -80,8 +72,6 @@ describe('TaskListShell', () => {
     const initial = mount(TaskListShell, {
       props: {
         stateKey: 'alarm-list',
-        scope: '当前组织',
-        source: '设备报警服务',
         loaded: 0,
         total: 0,
         pending: false,
@@ -98,8 +88,6 @@ describe('TaskListShell', () => {
     const wrapper = mount(TaskListShell, {
       props: {
         stateKey: 'wms-picking-tasks',
-        scope: '当前授权 WMS 作业范围',
-        source: 'WMS 仓储任务服务',
         loaded: 20,
         total: 45,
         pending: false,
@@ -125,8 +113,6 @@ describe('TaskListShell', () => {
     const wrapper = mount(TaskListShell, {
       props: {
         stateKey: 'quality-tasks',
-        scope: '当前账号 Self',
-        source: '质检待检任务服务',
         loaded: 20,
         total: 45,
         pending: false,
@@ -151,8 +137,6 @@ describe('TaskListShell', () => {
     const wrapper = mount(TaskListShell, {
       props: {
         stateKey: 'mes-operation-tasks',
-        scope: '当前工作中心',
-        source: 'MES 工序任务服务',
         loaded: 0,
         total: 45,
         pending: true,
@@ -198,8 +182,6 @@ describe('TaskListShell', () => {
     const wrapper = mount(TaskListShell, {
       props: {
         stateKey: 'deep-restore',
-        scope: '当前账号 Self',
-        source: '任务服务',
         loaded: 0,
         total: 45,
         pending: true,
@@ -251,8 +233,6 @@ describe('TaskListShell', () => {
     const wrapper = mount(TaskListShell, {
       props: {
         stateKey: 'deep-restore-retry',
-        scope: '当前账号 Self',
-        source: '任务服务',
         loaded: 20,
         total: 60,
         pending: false,

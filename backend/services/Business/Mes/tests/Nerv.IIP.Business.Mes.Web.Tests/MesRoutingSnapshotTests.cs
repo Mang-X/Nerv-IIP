@@ -9,7 +9,6 @@ using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
@@ -38,28 +37,36 @@ public sealed class MesRoutingSnapshotTests
         dbContext.OperationTasks.AddRange(
             OperationTask.Queue(
                 "org-001", "env-dev", "WO-2095", "OP-020", 20, "WC-PACK", [], releasedAtUtc,
-                TimeSpan.FromMinutes(15)),
+                TimeSpan.FromMinutes(15),
+                "SKU-001"),
             OperationTask.Queue(
                 "org-001", "env-dev", "WO-2095", "OP-010", 10, "WC-MIX", [], releasedAtUtc,
-                TimeSpan.FromMinutes(45)),
+                TimeSpan.FromMinutes(45),
+                "SKU-001"),
             OperationTask.Queue(
                 "org-001", "env-dev", "WO-2095", "OP-015-B", 15, "WC-TIE-B", [], releasedAtUtc,
-                TimeSpan.FromMinutes(20)),
+                TimeSpan.FromMinutes(20),
+                "SKU-001"),
             OperationTask.Queue(
                 "org-001", "env-dev", "WO-2095", "OP-015-A", 15, "WC-TIE-A", [], releasedAtUtc,
-                TimeSpan.FromMinutes(20)),
+                TimeSpan.FromMinutes(20),
+                "SKU-001"),
             OperationTask.Queue(
                 "org-001", "env-dev", "WO-2095", "OP-005", 30, "WC-FINISH", [], releasedAtUtc,
-                TimeSpan.FromMinutes(10)),
+                TimeSpan.FromMinutes(10),
+                "SKU-001"),
             OperationTask.Queue(
                 "org-other", "env-dev", "WO-2095", "OP-OTHER-ORG", 5, "WC-OTHER", [], releasedAtUtc,
-                TimeSpan.FromMinutes(10)),
+                TimeSpan.FromMinutes(10),
+                "SKU-001"),
             OperationTask.Queue(
                 "org-001", "env-other", "WO-2095", "OP-OTHER-ENV", 5, "WC-OTHER", [], releasedAtUtc,
-                TimeSpan.FromMinutes(10)),
+                TimeSpan.FromMinutes(10),
+                "SKU-001"),
             OperationTask.Queue(
                 "org-001", "env-dev", "WO-OTHER", "OP-OTHER-WO", 5, "WC-OTHER", [], releasedAtUtc,
-                TimeSpan.FromMinutes(10)));
+                TimeSpan.FromMinutes(10),
+                "SKU-001"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new ReleaseWorkOrderCommandHandler(
@@ -179,7 +186,7 @@ public sealed class MesRoutingSnapshotTests
         var captured = MesRoutingSnapshotResult.Captured(
             "product-engineering-http:PV-001:ROUTE-1000:A",
             [
-                new MesRoutingOperationSnapshot(10, "MIX", "WC-MIX", ["WC-MIX-ALT"], 45, true),
+                new MesRoutingOperationSnapshot(10, "MIX", "WC-MIX", ["WC-MIX-ALT"], 45, true, "cnc-operation"),
                 new MesRoutingOperationSnapshot(20, "PACK", "WC-PACK", [], 15, false),
             ]);
         var routingProvider = new FakeRoutingSnapshotProvider(captured);
@@ -187,7 +194,6 @@ public sealed class MesRoutingSnapshotTests
         var command = NewCommand(requestedAtUtc, idempotencyKey: "routing-snapshot-001");
         var handler = new ConvertPlanToWorkOrderCommandHandler(
             dbContext,
-            new RuleScheduler(),
             null,
             NoMaterialRequirementsProvider.Instance,
             new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),
@@ -226,6 +232,7 @@ public sealed class MesRoutingSnapshotTests
                 Assert.Equal("PCS", mix.UomCode);
                 Assert.Equal(12m, mix.PlannedQuantity);
                 Assert.True(mix.RequiresQualityInspection);
+                Assert.Equal("cnc-operation", mix.RequiredSkillCode);
             },
             pack =>
             {
@@ -236,6 +243,7 @@ public sealed class MesRoutingSnapshotTests
                 Assert.Empty(pack.AlternativeWorkCenterIdList);
                 Assert.Equal(TimeSpan.FromMinutes(15), pack.Duration);
                 Assert.False(pack.RequiresQualityInspection);
+                Assert.Null(pack.RequiredSkillCode);
             });
 
         var release = await new ReleaseWorkOrderCommandHandler(dbContext, NoMaterialRequirementsProvider.Instance).Handle(
@@ -262,7 +270,6 @@ public sealed class MesRoutingSnapshotTests
                 productionVersionId));
         var handler = new ConvertPlanToWorkOrderCommandHandler(
             dbContext,
-            new RuleScheduler(),
             null,
             NoMaterialRequirementsProvider.Instance,
             new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),
@@ -291,7 +298,6 @@ public sealed class MesRoutingSnapshotTests
             MesRoutingSnapshotResult.Missing("product-engineering:routing:ROUTE-MISSING:A"));
         var handler = new ConvertPlanToWorkOrderCommandHandler(
             dbContext,
-            new RuleScheduler(),
             null,
             NoMaterialRequirementsProvider.Instance,
             new PostgreSqlMesSkuAvailabilityScopeCoordinator(dbContext),
@@ -343,6 +349,7 @@ public sealed class MesRoutingSnapshotTests
                             requiresReporting = true,
                             requiresQualityInspection = true,
                             isOutsourced = false,
+                            requiredSkillCode = " cnc-operation ",
                         },
                         new
                         {
@@ -384,6 +391,11 @@ public sealed class MesRoutingSnapshotTests
 
         Assert.Equal(MesRoutingSnapshotStatus.Captured, result.Status);
         Assert.Equal("product-engineering-http:PV-001:opaque-routing-version-token", result.SourceSystem);
+        Assert.NotNull(result.RoutingIdentity);
+        Assert.Equal("PV-001", result.RoutingIdentity.ProductionVersionId);
+        Assert.Equal("opaque-routing-version-token", result.RoutingIdentity.RoutingVersionId);
+        Assert.Equal("ROUTE-1000", result.RoutingIdentity.RoutingCode);
+        Assert.Equal("A", result.RoutingIdentity.RoutingRevision);
         Assert.Collection(
             result.Operations,
             operation =>
@@ -394,6 +406,7 @@ public sealed class MesRoutingSnapshotTests
                 Assert.Empty(operation.AlternativeWorkCenterIds);
                 Assert.Equal(45, operation.StandardMinutes);
                 Assert.True(operation.RequiresQualityInspection);
+                Assert.Equal("cnc-operation", operation.RequiredSkillCode);
             },
             operation => Assert.Equal("PACK", operation.OperationCode));
         Assert.Single(requests);
@@ -614,7 +627,6 @@ public sealed class MesRoutingSnapshotTests
         var routingProvider = new ScopeAssertingRoutingSnapshotProvider(coordinator);
         var handler = new ConvertPlanToWorkOrderCommandHandler(
             dbContext,
-            new RuleScheduler(),
             null,
             NoMaterialRequirementsProvider.Instance,
             coordinator,
@@ -779,7 +791,7 @@ public sealed class MesRoutingSnapshotTests
     }
 }
 
-internal sealed class SingleOperationRoutingSnapshotProvider : IMesRoutingSnapshotProvider
+internal sealed class SingleOperationRoutingSnapshotProvider(int sequence = 10) : IMesRoutingSnapshotProvider
 {
     public static readonly SingleOperationRoutingSnapshotProvider Instance = new();
 
@@ -789,6 +801,6 @@ internal sealed class SingleOperationRoutingSnapshotProvider : IMesRoutingSnapsh
     {
         return Task.FromResult(MesRoutingSnapshotResult.Captured(
             $"test:{request.ProductionVersionId}:ROUTE-TEST:A",
-            [new MesRoutingOperationSnapshot(10, "OP-10", "WC-TEST", [], 30, false)]));
+            [new MesRoutingOperationSnapshot(sequence, "OP-10", "WC-TEST", [], 30, false)]));
     }
 }

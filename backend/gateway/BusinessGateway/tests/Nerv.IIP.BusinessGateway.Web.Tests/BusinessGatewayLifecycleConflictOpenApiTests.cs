@@ -39,6 +39,8 @@ public sealed class BusinessGatewayLifecycleConflictOpenApiTests
         "/api/business-console/v1/mes/work-orders/{workOrderId}/release",
         "/api/business-console/v1/mes/work-orders/{workOrderId}/hold",
         "/api/business-console/v1/mes/work-orders/{workOrderId}/cancel",
+        "/api/business-console/v1/mes/work-orders/{workOrderId}/split",
+        "/api/business-console/v1/mes/work-orders/merge",
         "/api/business-console/v1/mes/production-reports",
         "/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-receipts",
         "/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/complete",

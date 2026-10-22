@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.SpcControlChartAggregate;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Quality;
 using NetCorePal.Extensions.DistributedTransactions;
 
@@ -686,7 +687,14 @@ internal static class SpcAlertIntegrationEvents
             chart.OrganizationId,
             chart.EnvironmentId,
             context.Actor,
-            EventIds.Idempotency(
+            // 这里**不能**走 EventIds.Idempotency（#3370）：那条入口把第一段当「事件 kind」并入回落前缀，
+            // 而本处第一段是 alertKey——它自己就含 org/env/sku/characteristic/workCenter 五段实读列宽
+            // （100 各一，见 spc_control_charts），最坏 522 字符，超过 MaxPrefixLength 会抛。
+            // 直接用 Compose 把整条 alertKey 当尾段：产出与改动前**逐字相同**
+            // （"quality:" + alertKey + ":" + 时间戳 + ":" + 规则码，正是原来 string.Join 的结果），
+            // 回落前缀退化成 "quality:"。
+            IntegrationEventIdempotencyKey.Compose(
+                "quality:",
                 alertKey,
                 latestMeasuredAtUtc.ToString("O", CultureInfo.InvariantCulture),
                 string.Join(",", ruleCodes.Order(StringComparer.Ordinal))),

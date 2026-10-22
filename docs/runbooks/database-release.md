@@ -1,0 +1,319 @@
+# 数据库发布、迁移与恢复 Runbook
+
+本文把 ADR 0009 的迁移/发布决策落实为当前操作者步骤。它不声明 Nerv-IIP 已具备完整客户安装包，也不保存第五/六/七阶段等形成历史；历史形成过程见 [`../reports/audits/database-release-stage-history.md`](../reports/audits/database-release-stage-history.md)。
+
+命令事实以 `scripts/install/migrate-platform-databases.ps1`、`scripts/install/migrate-business-databases.ps1`、`scripts/install/migrate-file-storage.ps1`、两份 release database manifest、当前 EF migrations 和脚本帮助为准。执行前若本文与脚本参数不一致，**停止并先修正文档**。承载发布动作的脚本还必须满足 `docs/governance/script-automation.md`。
+
+## 1. 当前执行边界
+
+| Profile | 当前可执行边界 | 客户发布结论 | 权威入口 |
+| --- | --- | --- | --- |
+| PostgreSQL | AppHub、IAM、Ops、Notification 与 13 个业务数据库分别进入显式 migration manifest；FileStorage 使用独立受治理 migrator。 | 尚不等于完整客户发布；仍需备份恢复演练、seed 清单和现场诊断契约。 | `scripts/install/migrate-platform-databases.ps1`、`scripts/install/migrate-business-databases.ps1`、`scripts/install/migrate-file-storage.ps1` |
+| GaussDB | 候选项。 | 不支持。 | 需要 provider、CAP storage/outbox、migration、JSON、时间、事务和集成测试证据。 |
+| DMDB | 候选项。 | 不支持。 | 同上。 |
+| 其他数据库 | 评估阶段。 | 不支持。 | 不属于当前公开 profile 基线。 |
+
+`Persistence:AutoMigrate=true` 只用于受控本地或一次性开发验证。共享环境不建议使用；使用客户数据的 PoC、私有化部署和生产环境必须关闭，并走显式 migrator / release-install 入口。
+
+## 2. 发布前置与停止条件
+
+执行任何 migration 前确认：
+
+1. 发布 ID、Git commit、服务版本、目标环境和数据库 profile 已冻结。
+2. 连接串只来自受控输入，目标 database 名称与 manifest / `-ExpectedDatabase` 完全匹配；不得误连开发默认库、共享验证库或相邻客户库。
+3. PostgreSQL、Redis、对象存储和观测依赖满足当前发布 profile；消息 provider 为 Redis 时核对持久化与恢复策略，为 RabbitMQ 时才核对 RabbitMQ。
+4. 备份/快照已成功并记录位置、时间、校验方式和恢复负责人。**备份失败或无法确认位置时停止发布。**
+5. 本次服务清单、执行顺序、seed 清单、幂等规则和初始凭据处理方式已批准；seed 清单须包含第 7 节列出的、随 Web 启动默认执行的产品基线 seed。
+6. 任一 migration 或 seed 失败时停止后续服务启动（产品基线 seed 失败会让该服务启动失败）；结果不确定时先核对 migration history、公开健康状态和脚本日志，不盲重放。
+7. 发布脚本必须是 `release-install` 或受控 migrator；不得用临时 SQL、`verify` 脚本或 Web 启动时 AutoMigrate 处理客户数据。
+8. 执行 Quality migration `20260629074947_AddQualityLongtailReviewFixes` 前，先按 `docs/reports/remediation/business-quality-inspection-duplicates.md` 完成历史重复组检查/清理；不得静默删除或改写 NCR、事件或审计证据。
+9. 如果旧库仍把 AppHub/Ops `__EFMigrationsHistory` 放在 `public`，先执行第 3 节升级前置；服务 schema 已存在正确历史记录的库不得重复把这一条件当作必经“阶段”。
+
+## 3. 旧版 `public.__EFMigrationsHistory` 升级前置
+
+仅当**保留数据的旧库**仍把 AppHub/Ops EF migration history 放在 provider 默认 `public` schema 时执行。一次性本地验证库可直接删除重建；当前已使用服务 schema 的数据库跳过本节。
+
+AppHub：
+
+```sql
+DO $$
+BEGIN
+    CREATE SCHEMA IF NOT EXISTS apphub;
+    CREATE TABLE IF NOT EXISTS apphub."__EFMigrationsHistory" (
+        "MigrationId" varchar(150) NOT NULL,
+        "ProductVersion" varchar(32) NOT NULL,
+        CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
+    );
+
+    IF to_regclass('public."__EFMigrationsHistory"') IS NOT NULL THEN
+        INSERT INTO apphub."__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+        SELECT "MigrationId", "ProductVersion"
+        FROM public."__EFMigrationsHistory"
+        ON CONFLICT ("MigrationId") DO NOTHING;
+    END IF;
+END $$;
+```
+
+Ops：
+
+```sql
+DO $$
+BEGIN
+    CREATE SCHEMA IF NOT EXISTS ops;
+    CREATE TABLE IF NOT EXISTS ops."__EFMigrationsHistory" (
+        "MigrationId" varchar(150) NOT NULL,
+        "ProductVersion" varchar(32) NOT NULL,
+        CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
+    );
+
+    IF to_regclass('public."__EFMigrationsHistory"') IS NOT NULL THEN
+        INSERT INTO ops."__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+        SELECT "MigrationId", "ProductVersion"
+        FROM public."__EFMigrationsHistory"
+        ON CONFLICT ("MigrationId") DO NOTHING;
+    END IF;
+END $$;
+```
+
+核对：
+
+```sql
+SELECT * FROM apphub."__EFMigrationsHistory" ORDER BY "MigrationId";
+SELECT * FROM ops."__EFMigrationsHistory" ORDER BY "MigrationId";
+```
+
+确认服务 schema 已包含旧库已应用的 migration 后才继续。不要在同一次发布中删除 `public.__EFMigrationsHistory`；等备份、迁移和健康验证完成后再单独评估清理。
+
+## 4. 平台数据库 migrator
+
+当前 manifest 明确列出 `apphub`、`iam`、`ops`、`notification`。连接串只放在**当前 PowerShell 进程环境变量**中；脚本会验证目标 database、串行执行选中服务，任一服务失败即停止，不建库、不 seed、不删除或回滚已成功 migration。
+
+```powershell
+$env:NERV_IIP_APPHUB_DB = "<apphub-postgres-connection-string>"
+$env:NERV_IIP_IAM_DB = "<iam-postgres-connection-string>"
+$env:NERV_IIP_OPS_DB = "<ops-postgres-connection-string>"
+$env:NERV_IIP_NOTIFICATION_DB = "<notification-postgres-connection-string>"
+
+pwsh scripts/install/migrate-platform-databases.ps1 -ValidateOnly -ReleaseId "<release-id>"
+pwsh scripts/install/migrate-platform-databases.ps1 -ReleaseId "<release-id>"
+
+Remove-Item Env:\NERV_IIP_APPHUB_DB,Env:\NERV_IIP_IAM_DB,Env:\NERV_IIP_OPS_DB,Env:\NERV_IIP_NOTIFICATION_DB -ErrorAction SilentlyContinue
+```
+
+经过发布计划明确批准时可传 `-Service apphub,iam` 等子集；未传 `-Service` 时覆盖 manifest 全部服务。`-ValidateOnly` 只验证配置、目标 database 和仓库输入，不执行数据库 migration。
+
+直接 `dotnet-ef database update` 只用于实现原理核查或开发排障，不是客户 release-install 入口。
+
+### 4.1 业务数据库 migrator
+
+13 个业务数据库由 `scripts/install/business-release-database-migrations.json` 显式登记 service、当前进程连接变量、expected database、Infrastructure project、startup project 与 DbContext，并通过固定选择该 manifest 的受治理包装入口执行。目标 database 必须预先存在；实际 apply 会在任何 restore 或 EF migration 前使用 `psql` 逐库执行只读存在性检查，全部选中目标通过后才串行迁移，首个失败立即停止。
+
+```powershell
+# 按 business-release-database-migrations.json 的
+# connectionEnvironmentVariable 字段设置 13 个当前进程连接变量。
+pwsh scripts/install/migrate-business-databases.ps1 -ValidateOnly -ReleaseId "<release-id>"
+pwsh scripts/install/migrate-business-databases.ps1 -ReleaseId "<release-id>"
+
+Remove-Item Env:\NERV_IIP_BUSINESS_MASTER_DATA_DB,Env:\NERV_IIP_BUSINESS_PRODUCT_ENGINEERING_DB,Env:\NERV_IIP_BUSINESS_INVENTORY_DB,Env:\NERV_IIP_BUSINESS_QUALITY_DB,Env:\NERV_IIP_BUSINESS_MES_DB,Env:\NERV_IIP_BUSINESS_DEMAND_PLANNING_DB,Env:\NERV_IIP_BUSINESS_BARCODE_LABEL_DB,Env:\NERV_IIP_BUSINESS_APPROVAL_DB,Env:\NERV_IIP_BUSINESS_WMS_DB,Env:\NERV_IIP_BUSINESS_INDUSTRIAL_TELEMETRY_DB,Env:\NERV_IIP_BUSINESS_MAINTENANCE_DB,Env:\NERV_IIP_BUSINESS_ERP_DB,Env:\NERV_IIP_BUSINESS_SCHEDULING_DB -ErrorAction SilentlyContinue
+```
+
+经过发布计划明确批准时可传 `-Service business-quality,business-mes` 等子集；未传 `-Service` 时覆盖全部 13 项。`-ValidateOnly` 只验证配置、目标 database 名和仓库中的 project/context/factory 配对，不连接数据库。入口不执行 seed、建库、备份、删除或回滚；连接串不得复制进命令行、仓库文件或日志。
+
+## 5. FileStorage migrator
+
+```powershell
+$env:NERV_IIP_FILE_STORAGE_DB = "<file-storage-postgres-connection-string>"
+
+pwsh scripts/install/migrate-file-storage.ps1 -ValidateOnly -ReleaseId "<release-id>"
+pwsh scripts/install/migrate-file-storage.ps1 -ReleaseId "<release-id>"
+
+Remove-Item Env:\NERV_IIP_FILE_STORAGE_DB -ErrorAction SilentlyContinue
+```
+
+默认目标 database 必须精确匹配 `nerv_iip_filestorage`；受控环境使用其它库名时显式传 `-ExpectedDatabase <database-name>`。`-ValidateOnly` 不执行数据库命令。PoC、私有化部署和生产环境保持 `Persistence:AutoMigrate=false`。
+
+重跑规则：
+
+1. 已应用 migration 的 `database update` 应为 no-op。
+2. 失败后不得手工伪造 `__EFMigrationsHistory`；恢复备份或提交补救 migration。
+3. 同一目标 database 同一时间只允许一个 migrator。
+
+## 6. 备份、恢复与回滚
+
+Docker/本地 PostgreSQL 示例仅用于受控环境；真实客户环境优先使用平台快照，没有快照时才使用 `pg_dump` 或等价受控工具：
+
+```powershell
+New-Item -ItemType Directory -Force -Path .\artifacts\db-backups | Out-Null
+docker compose -f infra/docker-compose.dev.yml exec -T postgres pg_dump -U nerv -d nerv_iip_apphub > .\artifacts\db-backups\apphub-before-release.sql
+docker compose -f infra/docker-compose.dev.yml exec -T postgres pg_dump -U nerv -d nerv_iip_ops > .\artifacts\db-backups\ops-before-release.sql
+```
+
+- 备份文件不得提交仓库或写入公开日志；恢复能力至少在非生产库演练一次。
+- migration 未完成：停止新版本服务并回到旧版本服务。
+- migration 已完成但健康检查失败：优先前滚修复；存在数据破坏风险时按批准恢复点恢复备份。
+- seed 部分失败且未声明允许部分成功：停止发布。
+- 每次恢复记录 release ID、数据库、恢复点、执行人、开始/结束时间和结果。
+
+### 6.1 Quality 数量巡检 migrations
+
+Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`、`AddPeriodicInspectionQuantityContinuationInbox` 与 `AddPeriodicInspectionQuantityContinuationFairness`。执行前除本节外仍须满足第 2 节的备份、版本冻结与失败停止条件。
+
+1. 开始生成数量任务后，不执行 `AddPeriodicInspectionQuantityWatermark.Down`。该降级会丢失数量水位，再升级时既有任务唯一键会使后续消费者事务失败；使用补救 migration 前滚修复。
+2. 开始写入 `processed_integration_events`、数量续批锚点或恢复进度后，不执行 `AddPeriodicInspectionQuantityContinuationInbox.Down`。该降级会丢失消费去重事实与恢复进度；使用补救 migration 前滚修复。
+3. 开始写入 `quantity_continuation_next_attempt_at_utc` 或出现 closed + pending 上下文后，不执行 `AddPeriodicInspectionQuantityContinuationFairness.Down`。旧约束不能表达终态欠桶，且降级会丢失公平游标；使用补救 migration 前滚修复。
+4. 如果上述 migration 已应用但新版本健康检查失败，保留现有 schema 和数据，停止新版本服务，按第 6 节从批准恢复点恢复，或发布包含补救 migration 的前滚版本；不得手工删除水位、inbox、锚点或公平游标。
+
+### 6.2 BusinessMasterData 工装审计 migration
+
+`20260825081539_AddToolingOperationAudit` 是纯新增 migration，不回填既有 `tooling_assets` / `tooling_applicability` 的伪历史审计。发布或恢复仍使用第 4.1 节的业务数据库 migrator 与第 6 节的批准备份/恢复入口，不用测试 runner、临时 SQL 或 Web `AutoMigrate` 代替客户发布流程。
+
+1. migration 已应用但尚未产生工装审计事实时，旧版本服务可以忽略新增表继续运行；这不是执行 `Down` 的授权。
+2. `business_masterdata.tooling_audit_entries` 一旦存在事实，不执行会删除该证据的 `Down`；发布失败时停止新版本服务并优先前滚补救。
+3. 确需恢复备份时，记录 `releaseId`、目标数据库、批准恢复点、执行人、开始时间、结束时间和结果；恢复后重新核对 migration history 与工装业务/审计事实。
+4. CI 或本地一次性 PostgreSQL profile 只验证 runner 自有数据库中的 migration、事务、并发与隔离行为，不构成客户生产迁移、备份或恢复演练，也不能据此宣称 BusinessMasterData 已具备完整客户 migrator。
+
+### 6.3 BusinessScheduling 事件实例身份 migration
+
+`20260831142730_AddSchedulingProcessedEventInstanceIdentity` 在 `scheduling.processed_integration_events` 既有的 `(ConsumerName, IdempotencyKey)` 唯一索引之外新增 `(ConsumerName, EventId)` 唯一索引，用于 AssetUnavailable v1/v2 双投时按事件实例与业务事实分别去重（#2967）。旧模型允许同一 `ConsumerName/EventId` 出现多行，而既有唯一索引保证这些行的 `IdempotencyKey` 必然互不相同，即同一事件下曾产生过多个业务键。migration 对这种历史形状 fail-closed，不做任何自动清理；执行前仍须满足第 2 节的备份、版本冻结与失败停止条件：
+
+1. 历史库若存在同 `ConsumerName/EventId` 的多行，migration 以 `integrity_constraint_violation` 中止，错误消息列出每组冲突的 `ConsumerName/EventId` 与各 `IdempotencyKey@ProcessedAtUtc`（放在消息正文而非 `DETAIL`，因为 Npgsql 默认脱敏 `DETAIL`）。migration 在事务内执行，中止后不删除任何行、不创建索引、不写入 migration history。
+2. 不得为了让 migration 通过而手工删除任一冲突行：删除后该业务键的 inbox 痕迹消失，事件重投会再次产生 schedule invalidation。运维须按冲突清单逐组核对来源事件，确认哪一行对应真实业务事实并记录裁决，再以补救 migration 或经批准的数据修正前滚，随后重跑本 migration。
+3. 开始写入双身份 inbox 事实后，不执行本 migration 的 `Down`：降级只删除 `(ConsumerName, EventId)` 索引，旧版本消费者会退回仅按业务键去重，v2 重投可能被记为第二次失效；使用补救 migration 前滚修复。
+4. CI 与本地一次性 PostgreSQL profile 只在 runner 自有数据库上验证两种历史形状（无歧义历史前滚且安装精确索引、歧义形状中止且错误消息含冲突行），不构成客户生产迁移、备份或恢复演练。
+
+### 6.4 BusinessMES 停机事件收件箱 migration
+
+`AddMesProcessedEventInstanceIdentity` 为 `mes.processed_integration_events` 补回 `(ConsumerName, EventId)` 唯一索引，让 Maintenance AssetUnavailable 的 v1/v2 跨版本双投同时受事件实例身份与 `IdempotencyKey` 业务身份约束。该索引曾被 `UseIdempotencyKeyForProcessedIntegrationEvents` 移除，因此既有库里可能存在同 consumer、同 `EventId` 的多行历史。同一条历史 migration 在移除它的同时建立了 `(ConsumerName, IdempotencyKey)` 唯一索引，所以这些多行的 `IdempotencyKey` 必然两两不同：MES 不存在「同 `EventId` 且同 `IdempotencyKey`」的真重复分支，也就没有可自动清理的行。migration 按以下策略处理，不做静默清理：
+
+1. 同 consumer、同 `EventId` 但 `IdempotencyKey` 不同的行是语义歧义：migration **fail-closed 中止**（PostgreSQL `RAISE EXCEPTION`，SQLSTATE `23000`），错误信息逐行列出 `ConsumerName / EventId / IdempotencyKey / ProcessedAtUtc`，由运维按发布说明显式裁决（确认为同一事实的重复登记后保留一行，或确认为不同事实后重赋 `EventId`）再重跑 migration；migration 不会替运维选择保留哪一行。
+2. 中止时索引未创建、数据未改动、迁移历史未写入，旧版本服务可继续运行；这不是执行 `Down` 的授权。`Down` 只删除索引。
+3. 索引创建后，旧版本 MES（只按 `IdempotencyKey` 去重）仍可运行；新版本消费者在同一事务内先赢得两项身份再登记停机与重排，重放死信不会形成第二条停机事实。
+
+### 6.5 BusinessMES 报工单件序列号 migration
+
+`AddMesProductionReportSerialNumbers` 新建 `mes.production_report_serial_numbers`，并将正向报工的非空旧 `production_reports.serial_no` 在 trim 后迁为 `sequence_no=1`。冲销行只通过 `reversed_report_no` 追溯原报工，不重复占用序列号。发布前仍须执行第 2 节的备份、版本冻结与失败停止条件：
+
+1. migration 若发现同一 `organization_id/environment_id` 下两笔正向报工具有相同的 trim 后序列号，会以 SQLSTATE `23000` fail-closed；消息正文按 `OrganizationId / EnvironmentId / SerialNumber / ReportNos` 列出冲突组，且事务回滚，不建表、不改旧报工、不写 migration history。
+2. 不得通过改大小写、补空白、自动加后缀或静默丢弃任一报工来让 migration 通过。运维须逐组核对 BarcodeLabel/生产记录，显式裁决真实归属并走经批准的数据修正或补救 migration，再重跑本 migration。
+3. migration 成功后，旧单值字段继续承担现有 HTTP 兼容契约；新表是后续多序列号报工切片的持久化基础。本 migration 不安装长期双写开关，也不把冲销复制成第二份序列事实。
+
+### 6.6 BarcodeLabel 打印单件序列号 migration
+
+`AddBarcodeSerialAllocation` 为 `barcode.label_print_items` 回填批次的组织/环境归属，安装该 scope 内非空 `serial_number` 唯一索引，并新增按有效序列宽度隔离精确文本碰撞域的持久号段计数器。发布前仍须执行第 2 节的备份、版本冻结与失败停止条件：
+
+1. migration 若发现同一 `organization_id/environment_id` 内存在重复历史序列，会以 SQLSTATE `23000` fail-closed；消息正文逐组列出 `organization / environment / serial_number: item_id@label_print_batch_id`。事务回滚后原行、序列值及 migration history 均保持不变。
+2. migration 按当前固定宽度 Base62 正 `Int64` 生成域分类历史非空序列：可达值按 `(organization_id, environment_id, serial_number_length)` 的最大值初始化水位；非 Base62、全零、宽度不在 2–20 或数学值超出当前生成域的值与新生成空间可证明不相交，逐字保留且不推进水位。解析或算术失败必须中止，不得跳过或降级。
+3. 任一碰撞分区的历史最大可达值若已占用该宽度在当前生成器中的容量终点，migration 以 SQLSTATE `23000` fail-closed，并列出 `organization / environment / width / serial_number`；不得把必然失败延迟到升级后的第一个创建请求。
+4. 不得自动删除、覆盖、重新编号或给冲突值添加后缀。运维须逐项核对实际标签和来源批次，记录真实归属裁决，并通过经批准的数据修正或补救 migration 前滚，再重跑本 migration。
+5. migration 成功后，新批次的普通与 GS1 单件序列均由 BarcodeLabel 号段分配器产生；同 org/env、同有效宽度的不同规则共享原子水位，不同宽度互不消耗容量，`label_print_items` 仍保持 org/env 内最终序列文本全局唯一。调用方 `LabelValuesJson` 只承载模板变量及 GS1 lot，不再是序列号来源。已存在且无冲突的历史序列保持原值，历史空值保持为空。
+6. 开始分配新序列后不执行本 migration 的 `Down`：降级会删除号段水位和数据库唯一约束。发布失败时停止新版本服务并优先使用补救 migration 前滚；需要恢复时走第 6 节的批准恢复点。
+
+### 6.7 BarcodeLabel MES 激活生命周期 migration
+
+`AddBarcodeMesActivation` 为 `barcode.label_print_batches` 新增可空的 `production_report_id` 与 `production_report_no`，并把历史 `pending` 批次改为 `ready-to-print`。发布前仍须执行第 2 节的备份、版本冻结与失败停止条件：
+
+1. 升级期间暂停旧版本 BarcodeLabel 写入，先应用 migration，再启动只创建 `reserved` 新批次的新版本；不得让旧版本在 migration 后继续创建 `pending`。
+2. backfill 只改历史批次状态，不重建或重编号批次和打印项，不改变 `label_print_items.serial_number`，也不为历史批次伪造 MES 关联。
+3. 发布后抽查历史批次仍可 dispatch，新建 `reserved` 批次在 MES 关联前被 dispatch gate 拒绝；同一生产上报关联重放成功，不同关联不得覆盖。
+4. 开始创建 `reserved` 或写入 MES 关联后不执行本 migration 的 `Down`：旧版本无法表达激活门且会把未关联批次误当作可打印。发布失败时停止新版本服务并优先前滚补救；需要恢复时走第 6 节的批准恢复点。
+
+### 6.8 BusinessMES 规则排程结果删表 migration
+
+`20260922025318_DropMesScheduleResults` 删除 `mes.schedule_results` 表及其两个索引。该表的唯一写入方是已于 #3696 删除的规则排程器与已于本次删除的世界史种子；owner 裁决临时排程器整链下线（#3593），排程结果的当前权威产出方是 BusinessScheduling（APS）。执行前仍须满足第 2 节的备份、版本冻结与失败停止条件：
+
+1. 这是**破坏性删表**：`Up` 一次删掉该表全部行与全部列。发布前必须完成第 6 节的备份或平台快照，并确认该环境的 `mes.schedule_results` 内容已无业务需要；有保留需要时先按批准流程导出，不要依赖 migration。
+2. **`Down` 不是回滚授权，也不是数据恢复手段**：它只重建一张结构等价的空表，历史行不会回来。发布失败时停止新版本服务并优先前滚补救；确需还原数据时走第 6 节的批准恢复点。该 `Down` 与原 schema 的逐字段一致性只有静态核对，未在任何 lane 实跑。
+3. migration 已应用但新版本健康检查失败时，保留现有 schema，不手工重建该表、不回灌历史排程结果：读该表的应用代码（查询读面、种子与一致性校验）在同一版本内已一并删除，重建空表不会让任何功能回来。
+4. 旧版本 MES 服务不能在本 migration 之后继续运行：它的 `DbSet` 与种子仍指向已删除的表。升级窗口内先停旧版本再应用 migration。
+
+### 6.9 BusinessMES 设备工作中心映射删表 migration
+
+`20260928085507_DropMesDeviceAssetWorkCenterMappings` 删除 `mes.device_asset_work_center_mappings` 表及其唯一索引 `ix_asset_wc_mapping_scope_asset`。设备归属哪个工作中心由 BusinessMasterData 拥有（`docs/architecture/business/equipment-status-event-flow.md`）；自 #3878 起，MES 在消费遥测计数和停机事件时直接查询主数据设备台账，不再保存本地映射。该表在产品内没有维护入口，唯一的写入方是已在同一版本删除的演示种子。执行前仍须满足第 2 节的备份、版本冻结与失败停止条件：
+
+1. 这是**破坏性删表**：`Up` 会一次删掉该表的全部行和全部列。发布前必须完成第 6 节的备份或平台快照。有保留需要时，先按批准流程导出，不要依赖 migration。
+2. **`Down` 不是回滚授权，也不是数据恢复手段**：它只会重建一张结构等价的空表，原有映射行不会回来。发布失败时，先停止新版本服务，优先前滚补救；确需还原数据时，走第 6 节的批准恢复点。
+3. 旧版本 MES 服务不能在本 migration 之后继续运行：旧版的遥测计数消费者和停机消费者仍会查询这张已删除的表。升级窗口内先停旧版本，再应用 migration。
+4. **不需要回填**：表内只有演示种子写入的数据，其中 8 台设备的工作中心还与主数据不一致。新版本按主数据的当前值解析，已登记的设备在升级后立即生效。升级前已挂在「设备未绑定工作中心」的遥测候选不会自动重算，按需在「报工记录 › 遥测报工待确认」里人工确认或忽略。
+
+### 6.10 BusinessMaintenance 维修工单正式单号 migration
+
+`20260928113631_AddMaintenanceWorkOrderNo` 为 `maintenance.maintenance_work_orders` 新增必填列 `work_order_no`（维修工单正式单号，编码规则 `maintenance-work-order`，格式 `MWO-yyyyMMdd-NNNNNN`），给存量工单回填单号，并建唯一索引 `ux_maintenance_work_orders_work_order_no`（组织 / 环境 / 单号）与检索索引 `ix_maintenance_work_orders_search_work_order_no_trgm`。执行前仍须满足第 2 节的备份、版本冻结与失败停止条件：
+
+1. 回填按两步处理，不改工单 ID 或其它列：
+   - `source_reference_id` 已经以 `MWO-` 开头的（演示数据），沿用原值；同一组织 / 环境内同一个值出现多次时，只给开单最早的一张；
+   - 其余工单按开单时间的 UTC 日期、在同一组织 / 环境内按开单时间顺序编 `MWO-yyyyMMdd-NNNNNN`。
+2. 回填后按每天已用的最大序号推进 `maintenance.code_counters`（取 `GREATEST`，不回退已有水位），升级后新分配的单号不会与回填的号相撞。
+3. 唯一索引建不起来时，migration 失败，事务回滚，列、索引和迁移历史都不写入，旧版本服务可以继续运行。这时要人工核对冲突的单号（例如演示数据沿用的 `MWO-` 值恰好与补出的号同形），由运维裁决后再重跑；不要删行或手工改号来让 migration 通过。
+4. 旧版本 Maintenance 服务不能在本 migration 之后继续建单：旧版不写 `work_order_no`，插入会被非空约束拒绝。升级窗口内先停旧版本，再应用 migration。
+5. 开始分配新单号后不执行本 migration 的 `Down`：`Down` 会删掉单号列和索引，已经写进成本候选、质量检验与库存流水的单号将无处回查。发布失败时先停止新版本服务，优先前滚补救；确需还原时走第 6 节的批准恢复点。
+6. 已登记的成本候选、质量检验与库存流水里的来源单据不迁移：旧值（工单 ID 或前端截出的 `WO-XXXXXXXX`）保持原样，界面把工单 ID 显示为「维修工单」（`docs/product/maintenance/design.md` §3.4.1）。
+
+## 7. Seed 契约
+
+Seed 是显式步骤，不混入普通 Web 启动；例外是下表默认随 Web 启动执行的产品基线 seed，以及下文非 Development 下随 IAM 启动执行的平台引导。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。
+
+产品基线 seed 例外（#3805、#3811、#3855）：以下 seed 是基础功能必需的开箱数据，**默认在服务 Web 启动时执行**，不依赖 `Persistence:AutoMigrate`；显式设为 `false` 才关闭。它们只补缺、不覆盖已有行，重复执行不改变租户已有数据。
+
+| 开关 | 服务 | 写入内容 |
+|---|---|---|
+| `Approval:Seed:Enabled` | BusinessApproval | 缺失的审批模板 |
+| `Inventory:Seed:Enabled` | BusinessInventory | 缺失的库位 |
+| `Quality:Seed:Enabled` | BusinessQuality | 缺失的质量原因码等基础目录 |
+| `MasterData:Seed:Enabled` | BusinessMasterData | 缺失的编码规则、受控字典（不含工厂自定义码集的样例值）、计量单位与换算、班次、工作日历、部门 |
+| `Maintenance:Seed:Enabled` | BusinessMaintenance | 缺失的停机原因（12 条 TPM/OEE 标准原因）；库里还有未应用的迁移时跳过并记录，迁移后的下一次启动补齐 |
+
+IAM 平台引导：非 Development 下 IAM Web 启动时（库结构须已由第 4 节 migrator 建好）只补缺写入最高权限管理员、其默认组织与环境、平台管理员角色（全部权限 + 默认组织数据范围）和成员关系，以及固定 ID `role-production-planner` 的生产计划员角色和 `role-mes-downtime-team-leader` 的停机班组长角色（默认无数据范围，成员准备见[账号准备](mes-downtime-team-leader.md)）；不覆盖已存在的行。若旧库已有同名的运营角色，引导保留旧角色并以「生产计划员（系统预置）」命名固定 ID 角色，成员仍须通过现有 IAM 管理入口分配到固定 ID。唯一改名例外是仍叫旧英文默认名 `Platform Administrator` 的平台管理员角色一次性改名为「平台管理员」（记 manifest `iam-platform-admin-role-name-zh:v1`，运营改过名或中文名已被占用时不改）。默认执行，显式设 `Iam:Bootstrap:Enabled=false` 才关闭。
+
+| 键 | 作用 |
+|---|---|
+| `Iam:Seed:OrganizationId` / `Iam:Seed:OrganizationName` | 默认组织，缺省 `org-001` / `Nerv IIP` |
+| `Iam:Seed:EnvironmentId` / `Iam:Seed:EnvironmentName` | 默认环境，缺省 `env-dev` / `Development` |
+| `Iam:Seed:AdminUserId` / `Iam:Seed:AdminLoginName` / `Iam:Seed:AdminEmail` | 管理员账号，缺省 `user-admin` / `admin` / `admin@nerv-iip.local` |
+| `Iam:Seed:AdminRoleId` | 平台管理员角色，缺省 `role-platform-admin` |
+| `Iam:Seed:AdminPassword` | 初始口令，只从部署配置注入（AppHost 参数 `iam-seed-admin-password`、Compose `NERV_IIP_IAM_SEED_ADMIN_PASSWORD`、安装脚本 `-IamSeedAdminPassword`），不得写入仓库或日志 |
+
+- 管理员不存在时必须提供 `Iam:Seed:AdminPassword`，且须满足 `Iam:PasswordPolicy`，否则 IAM 启动失败；管理员已存在时不读、不改口令，修改配置里的口令不会回写。
+- 新建的管理员带「须改密」标记：登录响应的 `passwordChangeRequired=true`，用 `/api/iam/v1/auth/change-password` 改密后清除。首次登录后立即改密，并从部署配置里移除初始口令。
+- 该管理员不能被停用或设置账号过期，平台管理员角色不能去掉权限、不能去掉默认组织数据范围（IAM 返回 400）。IAM 没有删除用户的入口。
+- 连接器凭据、外部客户端、ERP 岗位角色、演示账号和 PDA 账号只随 Development 开发种子写入，不属于平台引导。
+
+目标租户与 IAM 平台引导读同一组键（#3812）：五个服务都读 `Iam:Seed:OrganizationId` / `Iam:Seed:EnvironmentId`，缺省为 `org-001` / `env-dev`；Approval 模板的审批人读 `Iam:Seed:AdminUserId`，缺省为 `user-admin`。这三个键在 IAM 与五个服务之间必须取同一值，产品基线数据和审批人才会落在平台引导建好的组织与管理员上。部署到其它租户时，这三个键要进到 IAM 与五个服务的进程环境：AppHost 拓扑下在 AppHost 进程环境里设置一次 `Iam__Seed__OrganizationId` / `Iam__Seed__EnvironmentId` / `Iam__Seed__AdminUserId` 即可，各服务继承；Compose 拓扑（`infra/compose/nerv-iip.platform.yml`）只把 `environment` 里列出的键传进容器，需要把这三个键加进 `dotnet-env` 锚点或逐个服务添加，只在 `.env` 或 shell 里设置不会生效。不设则开箱数据写进缺省租户。`LeaderDemo:*`、`Walkthrough:*` 演示种子与 IAM 开发种子不在此列。MasterData 的演示员工、班组、技能、产品分类、工厂自定义字典样例，以及 Maintenance 的点检保养计划，只随 `LeaderDemo:Seed:Enabled` 写入；Maintenance 的产品基线 seed 只有上表的停机原因（Approval 之外的四个服务只读组织与环境两个键）。
+
+只补缺意味着种子定义以后再改时（例如标准编码规则的段定义、字典显示名），不会回写到已有环境；需要改已有环境的值时，走对应的维护入口或单独的数据 migration。
+
+诊断输出至少能关联：
+
+```text
+releaseId=<id>
+service=<service>
+dbProfile=<profile>
+targetDatabase=<database-or-alias>
+migrationFrom=<migration-or-empty>
+migrationTo=<migration>
+seedName=<seed-or-empty>
+seedVersion=<version-or-empty>
+durationMs=<duration>
+correlationId=<id>
+logPath=<path>
+exitCode=<code>
+```
+
+## 8. CAP 系统表运维
+
+- `cap_published_messages`、`cap_received_messages`、`cap_locks` 由系统所有，不手工修改，也不作为业务读面。
+- 清理通过 CAP 配置、服务 migrator 或受控运维任务执行，不用临时 SQL。
+- CAP storage/outbox 必须进入数据库 profile 验证。
+- 锁或消息异常先核对并发 migrator、异常退出实例及当前消息 provider；Redis 与 RabbitMQ 按实际 profile 分别排障。
+
+## 9. 发布后验证与证据
+
+1. 核对每个服务实际已应用 migrations。
+2. 启动服务并验证数据库、Redis 与当前 profile 的外部依赖健康；验证消息消费在重启后可恢复。
+3. AppHub 至少做 registration/heartbeat/state-snapshot 冒烟；Ops 至少做操作任务创建/待处理/结果冒烟；IAM 至少做登录、refresh、logout、`/me` 与 Connector Host 凭据冒烟。
+4. CAP outbox/inbox 不应持续增长异常失败消息。
+5. 保存 release ID、commit、service/profile、target database、migration 起止、duration、correlation ID、脚本 logPath、备份位置和最终健康结论。
+6. 诊断日志保留到当前发布验收结束；敏感连接串和凭据不得进入证据包。
+
+## 10. 面向客户交付前的门禁
+
+至少具备：受治理的平台/业务数据库迁移编排、FileStorage migrator、PostgreSQL 备份恢复演练、seed/初始凭据安全方案、CAP 保留与排障策略、结构化诊断输出，以及 `Persistence:AutoMigrate=true` 在客户数据环境的失败关闭。发布安装脚本还必须满足 ADR 0010 的超时、结构化日志、进程树清理、作用域环境变量、敏感信息脱敏和诊断包要求。

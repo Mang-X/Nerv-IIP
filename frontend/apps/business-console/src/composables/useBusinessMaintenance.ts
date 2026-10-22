@@ -3,8 +3,10 @@ import {
   confirmBusinessConsoleOperation,
   createBusinessConsoleMaintenancePlanMutationOptions,
   createBusinessConsoleMaintenanceSparePartMutationOptions,
-  createBusinessConsoleMaintenanceWorkOrderMutationOptions,
+  createBusinessConsoleMaintenanceWorkOrderV2MutationOptions,
   generateDueBusinessConsoleMaintenanceWorkOrdersMutationOptions,
+  getBusinessConsolePrincipalWorkContextQueryOptions,
+  transitionBusinessConsoleMaintenanceWorkOrderMutationOptions,
   getBusinessConsoleMaintenanceWorkOrderQueryOptions,
   listBusinessConsoleMaintenanceInspectionsQueryOptions,
   listBusinessConsoleMaintenancePlansQueryOptions,
@@ -16,10 +18,11 @@ import {
   queryBusinessConsoleMaintenanceReliabilitySummaryQueryOptions,
   recordBusinessConsoleMaintenanceInspectionMutationOptions,
   updateBusinessConsoleMaintenancePlanMutationOptions,
+  type BusinessConsoleAuthorizedWorkScope,
   type BusinessConsoleCompleteMaintenanceWorkOrderRequest,
   type BusinessConsoleCreateMaintenancePlanRequest,
   type BusinessConsoleCreateMaintenanceSparePartRequest,
-  type BusinessConsoleCreateMaintenanceWorkOrderRequest,
+  type BusinessConsoleCreateMaintenanceWorkOrderV2Request,
   type BusinessConsoleMaintenanceAssetReliabilityEnvelope,
   type BusinessConsoleMaintenanceAssetReliabilityResponse,
   type BusinessConsoleMaintenanceInspectionItem,
@@ -47,11 +50,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive, shallowRef } from 'vue'
-import {
-  useListFreshness,
-  useListResponseState,
-  useScopeBoundListResponse,
-} from './useListFreshness'
+import { useScopeBoundListResponse } from './useScopeBoundListResponse'
 import {
   bindBusinessContext,
   hasBusinessContext,
@@ -59,12 +58,13 @@ import {
   withBusinessContextEnabled,
 } from './businessContextBinding'
 import { executeLifecycleAction } from './lifecycleAction'
+import { assertEnvelopeSuccess } from './serviceEnvelope'
 
 const DEFAULT_TAKE = 100
 
 function requirePendingPayloadSnapshot<T extends object>(snapshot: unknown, operation: string): T {
   if (!snapshot || typeof snapshot !== 'object') {
-    throw new Error(`${operation}缺少冻结的待处理载荷，请保留当前页面并人工核实。`)
+    throw new Error(`${operation}缺少上次未完成提交的内容，请保留当前页面并人工核实。`)
   }
   return snapshot as T
 }
@@ -95,7 +95,7 @@ export interface MaintenanceAvailabilityFilters {
 }
 
 type MaintenanceCreateIntent = Omit<
-  BusinessConsoleCreateMaintenanceWorkOrderRequest,
+  BusinessConsoleCreateMaintenanceWorkOrderV2Request,
   'idempotencyKey'
 > & {
   idempotencyKey?: string
@@ -226,18 +226,9 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
     () => `${filters.organizationId.trim()}:${filters.environmentId.trim()}`,
     workOrdersScopeReady,
   )
-  const workOrdersLastUpdatedAt = useListFreshness(workOrdersResponse, workOrdersScopeReady)
-  const {
-    hasSuccessfulResponse: workOrdersHasSuccessfulResponse,
-    hasFailedResponse: workOrdersHasFailedResponse,
-  } = useListResponseState(
-    workOrdersResponse,
-    workOrdersScopeReady,
-    () => workOrdersQuery.isLoading.value,
-  )
 
   const createMutation = useMutation({
-    ...createBusinessConsoleMaintenanceWorkOrderMutationOptions(),
+    ...createBusinessConsoleMaintenanceWorkOrderV2MutationOptions(),
     onSuccess() {
       void refetchWithBusinessContext(filters, workOrdersQuery)
     },
@@ -245,6 +236,97 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
   const completeMutation = useMutation({
     ...completeBusinessConsoleMaintenanceWorkOrderMutationOptions(),
   })
+  const expectedRestoreMutation = useMutation(
+    transitionBusinessConsoleMaintenanceWorkOrderMutationOptions(),
+  )
+  const expectedRestorePending = shallowRef(false)
+
+  async function readExpectedRestoreScopes() {
+    const contextOptions = getBusinessConsolePrincipalWorkContextQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        permissionCode: 'business.maintenance.work-orders.manage',
+      },
+    })
+    const context = assertEnvelopeSuccess(
+      await contextOptions.query({ signal: new AbortController().signal } as Parameters<
+        typeof contextOptions.query
+      >[0]),
+      '无法读取维修作业范围。',
+    )
+    return context.data?.authorizedScopes ?? []
+  }
+
+  async function updateExpectedRestore(
+    row: BusinessConsoleMaintenanceWorkOrderItem,
+    expectedRestoreAtUtc: string | null,
+    selection: BusinessConsoleAuthorizedWorkScope,
+  ) {
+    expectedRestorePending.value = true
+    try {
+      const intent = {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        action: 'updateExpectedRestore' as const,
+        reason: expectedRestoreAtUtc ? '更新预计恢复时间' : '清除预计恢复时间',
+        expectedVersion: row.version,
+        scopeKind: selection.kind!,
+        scopeId: selection.id!,
+        expectedRestoreAtUtc,
+      }
+      const scope = {
+        principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        operationType: 'maintenance.work-order.updateexpectedrestore',
+        payloadFingerprint: `${row.workOrderId}:${intentFingerprint(intent)}`,
+      }
+      const pending = acquirePendingBusinessIntent(
+        scope,
+        () => newMaintenanceIntentKey('expected-restore'),
+        intent,
+      )
+      const stableIntent = requirePendingPayloadSnapshot<typeof intent>(
+        pending.payloadSnapshot,
+        '预计恢复时间更新',
+      )
+      await completePendingBusinessIntent(scope, async () =>
+        confirmBusinessConsoleOperation(
+          await expectedRestoreMutation.mutateAsync({
+            path: { workOrderId: row.workOrderId! },
+            body: { ...stableIntent, idempotencyKey: pending.idempotencyKey },
+          }),
+          {
+            expectedOperationType: scope.operationType,
+            expectedIdempotencyKey: pending.idempotencyKey,
+            expectedResourceId: row.workOrderId!,
+          },
+        ),
+      )
+      const detailOptions = getBusinessConsoleMaintenanceWorkOrderQueryOptions({
+        path: { workOrderId: row.workOrderId! },
+        query: {
+          organizationId: filters.organizationId,
+          environmentId: filters.environmentId,
+          scopeKind: selection.kind!,
+          scopeId: selection.id!,
+        },
+      })
+      const detail = assertEnvelopeSuccess(
+        await detailOptions.query({ signal: new AbortController().signal } as Parameters<
+          typeof detailOptions.query
+        >[0]),
+        '无法读回预计恢复时间，请刷新工单。',
+      )
+      if (!detail.data) throw new Error('无法读回预计恢复时间，请刷新工单。')
+      await refetchWithBusinessContext(filters, workOrdersQuery)
+      return detail.data
+    } finally {
+      expectedRestorePending.value = false
+    }
+  }
+
   const completeWorkOrderPending = shallowRef(false)
   const completeWorkOrderError = shallowRef<unknown>()
 
@@ -366,13 +448,13 @@ export function useMaintenanceWorkOrders(initialFilters: Partial<MaintenanceList
         workOrdersResponse.value as BusinessConsoleMaintenanceWorkOrderListEnvelope | undefined,
       ),
     ),
-    workOrdersLastUpdatedAt,
-    workOrdersHasSuccessfulResponse,
-    workOrdersHasFailedResponse,
     refreshWorkOrders: () => refetchWithBusinessContext(filters, workOrdersQuery),
     createWorkOrder: createWithStableIntent,
     createWorkOrderPending: createMutation.isLoading,
     createWorkOrderError: createMutation.error,
+    readExpectedRestoreScopes,
+    updateExpectedRestore,
+    expectedRestorePending,
     completeWorkOrder,
     completeWorkOrderPending,
     completeWorkOrderError,

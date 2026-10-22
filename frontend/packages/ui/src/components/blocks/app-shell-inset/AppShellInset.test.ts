@@ -9,7 +9,7 @@ describe('NvAppShellInset', () => {
     const wrapper = mount(AppShellInset, {
       global: {
         stubs: {
-          Sidebar: passthrough,
+          NvSidebar: passthrough,
           SidebarContent: passthrough,
           SidebarFooter: passthrough,
           SidebarHeader: passthrough,
@@ -18,8 +18,8 @@ describe('NvAppShellInset', () => {
             template: '<main data-test="sidebar-inset" :class="$props.class"><slot /></main>',
           },
           SidebarProvider: passthrough,
-          SidebarRail: true,
-          SidebarTrigger: true,
+          NvSidebarRail: true,
+          NvSidebarTrigger: true,
           Separator: true,
         },
       },

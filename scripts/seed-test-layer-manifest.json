@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "issue": "#1244",
+  "linear": "NERV-677",
+  "entries": [
+    {
+      "id": "wms-world-history-warehouse-ops-pr-boundary",
+      "service": "Wms",
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WorldHistoryWarehouseOpsSeedServiceTests.cs",
+      "projectPath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/Nerv.IIP.Business.Wms.Web.Tests.csproj",
+      "testIdentity": "Nerv.IIP.Business.Wms.Web.Tests.WorldHistoryWarehouseOpsSeedServiceTests.Warehouse_ops_seed_preserves_all_boundary_contracts_with_one_setup_per_date",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Wms\\.Web\\.Tests\\.WorldHistoryWarehouseOpsSeedServiceTests\\.Warehouse_ops_seed_preserves_all_boundary_contracts_with_one_setup_per_date\\(.*$",
+      "layers": [
+        "SeedContract",
+        "SeedBoundary"
+      ],
+      "traits": {
+        "SeedContract": "wms-world-history-warehouse-ops",
+        "SeedBoundary": "go-live,go-live-plus-one,mid-year,demo,future"
+      },
+      "provider": "EF Core InMemory",
+      "requiredLane": "backend",
+      "executionShard": "business-gateway",
+      "environmentGate": null,
+      "expectedRuntimeTestCount": 5,
+      "setupCountPerDate": 1,
+      "asOfDateBoundaries": [
+        "2026-01-05",
+        "2026-01-06",
+        "2026-04-15",
+        "2026-07-27",
+        "2026-12-31"
+      ],
+      "contracts": [
+        "idempotency",
+        "reference-integrity",
+        "terminal-state",
+        "number-segments",
+        "current-queue-shape"
+      ],
+      "evidenceBoundary": "Structural registration only; runtime evidence is the exact-head test result. Does not prove PostgreSQL provider, migration, constraint, transaction, or scale behavior; those remain SeedScale/real-dependency scope."
+    },
+    {
+      "id": "wms-world-history-warehouse-ops-pr-fail-closed",
+      "service": "Wms",
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WorldHistoryWarehouseOpsSeedServiceTests.cs",
+      "projectPath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/Nerv.IIP.Business.Wms.Web.Tests.csproj",
+      "testIdentity": "Nerv.IIP.Business.Wms.Web.Tests.WorldHistoryWarehouseOpsSeedServiceTests.Validator_fails_closed_when_a_count_execution_disappears",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Wms\\.Web\\.Tests\\.WorldHistoryWarehouseOpsSeedServiceTests\\.Validator_fails_closed_when_a_count_execution_disappears$",
+      "layers": [
+        "SeedContract"
+      ],
+      "traits": {
+        "SeedContract": "wms-world-history-warehouse-ops"
+      },
+      "provider": "EF Core InMemory",
+      "requiredLane": "backend",
+      "executionShard": "business-gateway",
+      "environmentGate": null,
+      "expectedRuntimeTestCount": 1,
+      "setupCount": 1,
+      "asOfDateBoundaries": [
+        "2026-07-26"
+      ],
+      "contracts": [
+        "fail-closed"
+      ],
+      "evidenceBoundary": "Structural registration only; runtime evidence is the exact-head test result. Does not prove PostgreSQL provider, migration, constraint, transaction, or scale behavior; those remain SeedScale/real-dependency scope."
+    }
+  ]
+}

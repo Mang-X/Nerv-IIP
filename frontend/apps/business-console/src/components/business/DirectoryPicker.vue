@@ -1,0 +1,190 @@
+<script setup lang="ts">
+/**
+ * 目录选择器：`NvEntityPicker` 接业务目录，只能从目录里选、不接受自由文本。
+ * `v-model` 回传目录项的人读编码，与过去手填提交的值同口径。
+ *
+ * - 工作中心 / 工位 / 物料 / 设备 / 车间 / 库位 / 批次 / 序列号走网关可搜目录（服务端搜索，
+ *   滚到底再取下一页）；
+ * - 班次、产线、工厂不在可搜目录里，取基础数据资源列表，由选择器自带的本地过滤搜索；
+ * - 传了 `parent`（表单里的层级字段按已选上级收窄）也取资源列表，见 `useMasterDataListPicker`。
+ *
+ * `creatable`：表单里的选择器可以就地新增（筛选区不开）。该类型在 `directoryCreators.ts`
+ * 注册了新增弹窗、且当前用户有对应新增权限时才出现入口；建好后自动选中新建项。
+ */
+import { NvEntityPicker } from '@nerv-iip/ui'
+import { computed, shallowRef, watch } from 'vue'
+import {
+  useMasterDataListPicker,
+  useSearchableDirectoryPicker,
+  type DirectoryParent,
+} from '@/composables/useSearchableDirectoryPicker'
+import { useAuthStore } from '@/stores/auth'
+import {
+  directoryCreatorFor,
+  type DirectoryCreateContext,
+  type DirectoryCreatedItem,
+} from './directoryCreators'
+
+type ListType = 'shift' | 'production-line' | 'site'
+type SearchableType =
+  | 'work-center'
+  | 'station'
+  | 'material'
+  | 'equipment'
+  | 'workshop'
+  | 'location'
+  | 'batch'
+  | 'serial'
+  | 'login-account'
+
+const DIRECTORY_NOUN: Record<SearchableType | ListType, string> = {
+  'work-center': '工作中心',
+  station: '工位',
+  material: '物料',
+  equipment: '设备',
+  workshop: '车间',
+  location: '库位',
+  batch: '批次',
+  serial: '序列号',
+  'login-account': '登录账号',
+  shift: '班次',
+  'production-line': '产线',
+  site: '工厂',
+}
+
+// 其余 `NvEntityPicker` 属性（id / placeholder / clearable / disabled / invalid / aria-label /
+// aria-describedby / class）透传给选择器（模板里放在最后，调用方给的值覆盖这里的默认文案）。
+// 新增弹窗与选择器并列成两个根节点，所以关掉自动透传、显式绑定。
+defineOptions({ inheritAttrs: false })
+const props = defineProps<{
+  directoryType: SearchableType | ListType
+  /** 批次 / 序列号按物料收窄。 */
+  skuCode?: string
+  /** 允许就地新增（只在表单里开，筛选区不开）。 */
+  creatable?: boolean
+  /** 传给新增弹窗的上下文，用来预填父级（如已选的产线）。 */
+  createContext?: DirectoryCreateContext
+  /** 层级字段按已选上级收窄候选（如工位只列所选产线下的）；只对层级类型有效。 */
+  parent?: DirectoryParent
+  /**
+   * 表单已选的工厂（库位 / 批次 / 序列号这类按工厂切分的库存目录）。表单里的这类字段都要传，
+   * 工厂口径只从这里来：
+   * - 候选只列这个工厂的（服务端再与授权工厂取交集）；
+   * - 库位「新增」弹窗预填这个工厂。
+   * 可新增的库位选择器（`creatable`）没有工厂时——无论是还没选（空串）还是调用点漏传——一律按「未选工厂」
+   * 处理：提示先选、不给候选也不给新增入口，不会静默落到别的工厂。批次 / 序列号不可新增，漏传不会显形，
+   * 由页面断言钉住。筛选区不传。
+   */
+  formSiteCode?: string
+  /** 还没有工厂时的提示；工厂从单据推出的表单（上架、拣货）要提示先选单据，而不是去找工厂字段。 */
+  siteMissingText?: string
+}>()
+const model = defineModel<string>({ default: '' })
+
+const type = props.directoryType
+const noun = DIRECTORY_NOUN[type]
+const formSite = computed(() => props.formSiteCode?.trim())
+const siteMissing = computed(() => !!props.creatable && type === 'location' && !formSite.value)
+const source =
+  isListType(type) || (props.parent && isHierarchyType(type))
+    ? useMasterDataListPicker(type, () => props.parent)
+    : useSearchableDirectoryPicker(type, {
+        selected: model,
+        skuCode: () => props.skuCode,
+        siteCode: formSite,
+        enabled: () => !siteMissing.value,
+        // 登录账号回传账号 ID，登录名只作显示（选项的 code）。
+        ...(type === 'login-account' ? { valueKey: 'id' as const } : {}),
+      })
+const { options, pending } = source
+const serverSearch = source.serverSearch
+const search = computed(() => (source.serverSearch ? source.search.value : undefined))
+const total = computed(() => (source.serverSearch ? source.total.value : undefined))
+const failure = computed(() => (source.serverSearch ? source.failure.value : undefined))
+const emptyText = computed(() => {
+  if (siteMissing.value) return props.siteMissingText ?? '请先选择工厂'
+  if (failure.value === 'forbidden') return `当前角色无权查看${noun}`
+  if (failure.value === 'failed') return `${noun}加载失败，请稍后重试`
+  return `没有匹配的${noun}`
+})
+function updateSearch(value: string) {
+  if (source.serverSearch) source.search.value = value
+}
+function loadMore() {
+  if (source.serverSearch) source.loadMore()
+}
+// 服务端搜索的搜索词由这里持有，面板关闭不会清空它；选定后清掉，下次打开从完整候选开始。
+// 本地过滤时面板每次打开重新挂载，搜索词自然重置。
+if (source.serverSearch) {
+  watch(model, () => updateSearch(''))
+}
+// 库位目录的名称就是编码，批次 / 序列号目录的名称是「编码 · 物料」，再印一行编码是重复。
+// 登录账号的值是内部账号 ID，不能当编码显示；登录名走候选的 hint。
+const showCode =
+  type !== 'location' && type !== 'batch' && type !== 'serial' && type !== 'login-account'
+
+const auth = useAuthStore()
+const creator = props.creatable ? directoryCreatorFor(type) : undefined
+const canCreate = computed(
+  () => !!creator && (auth.principal?.permissionCodes ?? []).includes(creator.permission),
+)
+// 新增弹窗的工厂就是表单工厂（与候选收窄同一个来源）；没有表单工厂的类型才用调用方给的上下文。
+const dialogContext = computed<DirectoryCreateContext | undefined>(() =>
+  formSite.value ? { siteCode: formSite.value } : props.createContext,
+)
+const createOpen = shallowRef(false)
+// 每次点入口递增，作弹窗的 key：每次打开都是全新实例，按当次的 context 预填、表单从空白开始。
+// 0 表示还没点过，弹窗不挂载（异步组件首次点入口时才加载，之后有缓存）。
+const createSession = shallowRef(0)
+
+function openCreate() {
+  createSession.value += 1
+  createOpen.value = true
+}
+
+function onCreated(item: DirectoryCreatedItem) {
+  source.remember({ value: item.code, label: item.name })
+  model.value = item.code
+}
+
+function isListType(type: SearchableType | ListType): type is ListType {
+  return type === 'shift' || type === 'production-line' || type === 'site'
+}
+
+/** 可搜目录里能按上级收窄的层级类型（产线本来就取资源列表）。 */
+function isHierarchyType(type: SearchableType): type is 'workshop' | 'work-center' | 'station' {
+  return type === 'workshop' || type === 'work-center' || type === 'station'
+}
+</script>
+
+<template>
+  <NvEntityPicker
+    v-model="model"
+    :search="search"
+    :options="options"
+    :title="`选择${noun}`"
+    :placeholder="`选择${noun}`"
+    :search-placeholder="
+      type === 'login-account' ? '搜索姓名 / 登录名…' : `搜索${noun}名称 / 编码…`
+    "
+    :empty-text="emptyText"
+    :loading="pending"
+    :server-search="serverSearch"
+    :total-count="total"
+    :show-code="showCode"
+    :aria-label="noun"
+    :create-text="canCreate && !failure && !siteMissing ? `新增${noun}` : undefined"
+    @update:search="updateSearch"
+    v-bind="$attrs"
+    @create="openCreate"
+    @load-more="loadMore"
+  />
+  <component
+    :is="creator.dialog"
+    v-if="creator && createSession"
+    :key="createSession"
+    v-model:open="createOpen"
+    :context="dialogContext"
+    @created="onCreated"
+  />
+</template>

@@ -16,6 +16,7 @@ public sealed class SearchableDirectoryOpenApiDocumentProcessor : IDocumentProce
             [
                 "personnel", "team", "equipment", "work-center", "station", "workshop", "material", "priority",
                 "location", "batch", "serial", "defect-code", "scrap-reason", "downtime-reason", "maintenance-reason",
+                "login-account",
             ],
             ["scopeKind"] = ["team", "workshop", "work-center", "site"],
             ["rankingMode"] = ["default", "recent", "suggested"],

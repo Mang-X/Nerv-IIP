@@ -106,12 +106,12 @@ const canZoomIn = computed(
 )
 const navigationUnit = computed(() => {
   if (props.kind === 'office-pptx') {
-    return 'slide'
+    return '张幻灯片'
   }
   if (props.kind === 'office-xlsx') {
-    return 'sheet'
+    return '个工作表'
   }
-  return 'page'
+  return '页'
 })
 const jumpSelectLabel = computed(() => {
   if (props.kind === 'office-xlsx') {
@@ -564,7 +564,7 @@ onBeforeUnmount(() => {
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Zoom out document"
+            aria-label="缩小文档"
             :disabled="!canZoomOut"
             @click="zoomOut"
           >
@@ -574,7 +574,7 @@ onBeforeUnmount(() => {
             variant="ghost"
             size="sm"
             class="h-7 min-w-12 px-2 font-mono text-xs"
-            aria-label="Reset document zoom"
+            aria-label="重置文档缩放"
             :disabled="loading || Math.abs(zoomScale - 1) < 0.001"
             @click="resetZoom"
           >
@@ -583,7 +583,7 @@ onBeforeUnmount(() => {
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Zoom in document"
+            aria-label="放大文档"
             :disabled="!canZoomIn"
             @click="zoomIn"
           >
@@ -594,7 +594,7 @@ onBeforeUnmount(() => {
           <Button
             variant="ghost"
             size="icon-sm"
-            :aria-label="`Previous ${navigationUnit}`"
+            :aria-label="`上一${navigationUnit}`"
             :disabled="!canGoPrevious"
             @click="goPrevious"
           >
@@ -603,7 +603,7 @@ onBeforeUnmount(() => {
           <Button
             variant="ghost"
             size="icon-sm"
-            :aria-label="`Next ${navigationUnit}`"
+            :aria-label="`下一${navigationUnit}`"
             :disabled="!canGoNext"
             @click="goNext"
           >

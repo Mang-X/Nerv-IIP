@@ -15,7 +15,6 @@ vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ logoutAndRevoke }) }))
 vi.mock('@/composables/usePdaProfile', () => ({
   usePdaProfile: () => ({
-    principalId: ref('user-emp-010'),
     principalType: ref('User'),
     loginName: ref('emp010'),
     displayName: ref('王建国'),
@@ -53,7 +52,6 @@ describe('PDA profile page', () => {
   it('renders verified identity, worker, roles, scope and network facts', () => {
     const wrapper = mount(MePage)
 
-    expect(wrapper.text()).toContain('user-emp-010')
     expect(wrapper.text()).toContain('EMP-010')
     expect(wrapper.text()).toContain('操作工')
     expect(wrapper.text()).toContain('机加早班')

@@ -91,6 +91,8 @@ public sealed class MasterDataStartupGovernanceTests
             ["ConnectionStrings:Redis"] = "localhost:6379",
             ["ConnectionStrings:PostgreSQL"] = "Host=unused;Database=nerv_iip_masterdata_governance;Username=nerv;Password=nerv",
             ["InternalService:BearerToken"] = "test-internal-service-token",
+            // 产品基线 seed 默认开启；这里的连接串不可达，关掉它，否则启动即连库失败。
+            ["MasterData:Seed:Enabled"] = "false",
         };
 
         if (overrides is not null)

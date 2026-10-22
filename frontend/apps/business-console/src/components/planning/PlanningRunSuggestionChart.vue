@@ -65,9 +65,7 @@ const series: BarSeries[] = [
     </div>
     <template v-else>
       <NvBarChart :data="rows" x-key="period" :series="series" :height="180" value-suffix=" 条" />
-      <p class="mt-2 text-xs text-muted-foreground">
-        统计范围＝建议 Tab 当前的状态筛选（待评审 / 已接受）。
-      </p>
+      <p class="mt-2 text-xs text-muted-foreground">统计范围＝计划建议页当前的状态筛选。</p>
     </template>
   </article>
 </template>

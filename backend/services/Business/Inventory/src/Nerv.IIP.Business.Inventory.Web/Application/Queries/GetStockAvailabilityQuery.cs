@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Queries;
 
@@ -16,50 +17,6 @@ public sealed record GetStockAvailabilityQuery(
     string? OwnerType,
     string? OwnerId,
     DateOnly? AsOfDate = null) : IQuery<StockAvailabilityResponse>;
-
-public sealed record StockAvailabilityResponse(
-    string OrganizationId,
-    string EnvironmentId,
-    string SkuCode,
-    string UomCode,
-    string SiteCode,
-    string? LocationCode,
-    string? LotNo,
-    string? SerialNo,
-    string? QualityStatus,
-    string? OwnerType,
-    string? OwnerId,
-    decimal OnHandQuantity,
-    decimal ReservedQuantity,
-    decimal AvailableQuantity,
-    decimal InventoryValue,
-    IReadOnlyCollection<StockAvailabilityLineResponse> Items);
-
-public sealed record StockAvailabilityLineResponse(
-    string LocationCode,
-    string? LotNo,
-    string? SerialNo,
-    string QualityStatus,
-    string OwnerType,
-    string? OwnerId,
-    DateOnly? ProductionDate,
-    DateOnly? ExpiryDate,
-    int? ShelfLifeDays,
-    string? ExpiryDateSource,
-    bool IsExpired,
-    bool IsBlocked,
-    string? BlockReasonCode,
-    string? BlockReason,
-    bool MovementAllowed,
-    string? MovementBlockReasonCode,
-    string? MovementBlockReason,
-    bool CountAllowed,
-    string? CountBlockReasonCode,
-    string? CountBlockReason,
-    decimal OnHandQuantity,
-    decimal ReservedQuantity,
-    decimal AvailableQuantity,
-    decimal InventoryValue);
 
 public sealed class GetStockAvailabilityQueryValidator : AbstractValidator<GetStockAvailabilityQuery>
 {

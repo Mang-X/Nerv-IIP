@@ -207,6 +207,7 @@ public sealed class ReleaseRoutingRequestValidator : Validator<ReleaseRoutingReq
             operation.RuleFor(x => x.OperationCode).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(100);
             operation.RuleFor(x => x.OperationName).MaximumLength(200);
             operation.RuleFor(x => x.StandardMinutes).GreaterThanOrEqualTo(0);
+            operation.RuleFor(x => x.RequiredSkillCode).MaximumLength(100);
         });
     }
 }

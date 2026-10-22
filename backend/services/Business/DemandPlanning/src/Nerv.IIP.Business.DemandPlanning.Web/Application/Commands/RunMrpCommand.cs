@@ -159,7 +159,8 @@ public sealed class ExecuteMrpRunCommandHandler(ApplicationDbContext dbContext, 
                 calculatedSuggestion.Quantity,
                 calculatedSuggestion.RequiredDate,
                 calculatedSuggestion.ReleaseDate,
-                calculatedSuggestion.ReasonCode);
+                calculatedSuggestion.ReasonCode,
+                netRequirementReference: calculatedSuggestion.NetRequirementReference);
             suggestion.SetNetRequirementExplanation(
                 calculatedSuggestion.NetRequirementExplanation.GrossDemandQuantity,
                 calculatedSuggestion.NetRequirementExplanation.OnHandQuantity,
@@ -186,10 +187,42 @@ public sealed class ExecuteMrpRunCommandHandler(ApplicationDbContext dbContext, 
                     link.ManufacturingBomReference,
                     link.RoutingReference,
                     link.SourceType,
-                    link.GrossDemandQuantity);
+                    link.GrossDemandQuantity,
+                    link.SourceLineReference);
             }
 
             dbContext.PlanningSuggestions.Add(suggestion);
+        }
+
+        var newerRun = await dbContext.MrpRuns.AsNoTracking()
+            .Where(x => x.OrganizationId == run.OrganizationId
+                && x.EnvironmentId == run.EnvironmentId
+                && x.Status == MrpRunStatus.Completed
+                && x.CreatedAtUtc > run.CreatedAtUtc)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Select(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (newerRun is not null)
+        {
+            foreach (var suggestion in dbContext.PlanningSuggestions.Local.Where(x => x.MrpRunId == run.Id))
+            {
+                suggestion.Supersede(newerRun);
+            }
+        }
+        else
+        {
+            var olderOpenSuggestions = await dbContext.PlanningSuggestions
+                .Where(x => x.OrganizationId == run.OrganizationId
+                    && x.EnvironmentId == run.EnvironmentId
+                    && dbContext.MrpRuns.Any(previous => previous.Id == x.MrpRunId
+                        && previous.Status == MrpRunStatus.Completed
+                        && previous.CreatedAtUtc < run.CreatedAtUtc)
+                    && x.Status == PlanningSuggestionStatus.Open)
+                .ToListAsync(cancellationToken);
+            foreach (var suggestion in olderOpenSuggestions)
+            {
+                suggestion.Supersede(run.Id);
+            }
         }
 
         run.Complete(calculated.Count);

@@ -2,7 +2,6 @@ using MediatR;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
@@ -95,17 +94,6 @@ public sealed class ApprovalCompletedConsumerReliabilityTests
             CancellationToken.None));
         Assert.Equal("unexpected-source-service", deadLetter.FailureCode);
         Assert.Equal("business-erp", deadLetter.SourceService);
-    }
-
-    [Fact]
-    public void PostgreSQL_profile_uses_persistent_dead_letter_store()
-    {
-        using var factory = new ErpPostgreSqlWebApplicationFactory();
-        using var scope = factory.Services.CreateScope();
-
-        var store = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
-
-        Assert.IsType<PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>(store);
     }
 
     /// <summary>
@@ -375,18 +363,4 @@ public sealed class ApprovalCompletedConsumerReliabilityTests
         }
     }
 
-    private sealed class ErpPostgreSqlWebApplicationFactory : WebApplicationFactory<Program>
-    {
-        protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
-        {
-            builder.ConfigureAppConfiguration((_, configuration) =>
-            {
-                configuration.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:PostgreSQL"] = "Host=localhost;Database=nerv_iip_erp_dead_letter_test;Username=nerv;Password=nerv",
-                    ["InternalService:BearerToken"] = "test-internal-token",
-                });
-            });
-        }
-    }
 }

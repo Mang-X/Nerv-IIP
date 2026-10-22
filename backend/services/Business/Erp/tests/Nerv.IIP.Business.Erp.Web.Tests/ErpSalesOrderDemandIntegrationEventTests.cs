@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
@@ -10,6 +11,23 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 
 public sealed class ErpSalesOrderDemandIntegrationEventTests
 {
+    [Fact]
+    public void Released_delivery_publishes_order_snapshot_with_delivered_quantity()
+    {
+        var order = CreateReleasedOrder();
+        order.ClearDomainEvents();
+
+        DeliveryOrder.Release(order, "DO-DEMO-001", [new DeliveryOrderLineDraft("10", 1m)]);
+
+        var fact = Assert.IsType<SalesOrderDeliveryRegisteredDomainEvent>(Assert.Single(order.GetDomainEvents()));
+        var integrationEvent = new SalesOrderDeliveryRegisteredIntegrationEventConverter(Context).Convert(fact);
+        Assert.Equal(ErpIntegrationEventTypes.SalesOrderDeliveryRegistered, integrationEvent.EventType);
+        Assert.Equal(2, integrationEvent.Payload.OrderVersion);
+        Assert.Equal(2m, Assert.Single(integrationEvent.Payload.Lines).Quantity);
+        Assert.Equal(1m, Assert.Single(integrationEvent.Payload.Lines).DeliveredQuantity);
+        Assert.Contains(":v2:delivery-registered", integrationEvent.IdempotencyKey, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Released_converter_emits_complete_versioned_sales_order_snapshot()
     {

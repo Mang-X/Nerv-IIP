@@ -70,7 +70,7 @@ public sealed class WorkerTests
     public async Task Connection_monitor_reporting_and_ops_run_while_collection_is_blocked()
     {
         var clock = new ControllableTimeProvider();
-        var signal = new ConnectorReportSignal();
+        var signal = new RecordingReportSignal(new ConnectorReportSignal());
         var collection = new BlockingCollector();
         var monitor = new RecordingConnectionMonitor();
         var protocol = new RecordingProtocolClient();
@@ -99,6 +99,16 @@ public sealed class WorkerTests
                 () => $"reportingCycles={protocol.ReportingCycles}, now={clock.GetUtcNow():O}");
             Assert.Equal(DateTimeOffset.Parse("2026-07-17T00:00:00Z"), clock.GetUtcNow());
 
+            await ObserveAsync(
+                signal.SecondWaitEntered.Task,
+                "second reporting wait entered before timer registration",
+                () => $"reportingCycles={protocol.ReportingCycles}, now={clock.GetUtcNow():O}");
+
+            signal.ReleaseSecondWait();
+            await ObserveAsync(
+                signal.SecondWaitArmed.Task,
+                "second reporting wait armed (new heartbeat timer registered)",
+                () => $"reportingCycles={protocol.ReportingCycles}, now={clock.GetUtcNow():O}");
             clock.Advance(TimeSpan.FromSeconds(4));
             await ObserveAsync(
                 monitor.Checked.Task,
@@ -592,6 +602,40 @@ public sealed class WorkerTests
             Enumerable.Range(0, count)
                 .Select(_ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously))
                 .ToArray();
+    }
+
+    private sealed class RecordingReportSignal(IConnectorReportSignal inner) : IConnectorReportSignal
+    {
+        private readonly TaskCompletionSource _releaseSecondWait = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _waits;
+
+        public TaskCompletionSource SecondWaitEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource SecondWaitArmed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Signal(string connectorId) => inner.Signal(connectorId);
+
+        public void ReleaseSecondWait() => _releaseSecondWait.TrySetResult();
+
+        public async Task<string?> WaitAsync(TimeSpan timeout, TimeProvider timeProvider, CancellationToken cancellationToken)
+        {
+            var secondWait = Interlocked.Increment(ref _waits) == 2;
+            if (secondWait)
+            {
+                // Hold the reachable gap after SecondCycle but before the next heartbeat timer.
+                SecondWaitEntered.TrySetResult();
+                await _releaseSecondWait.Task.WaitAsync(cancellationToken);
+            }
+
+            var underlyingTask = inner.WaitAsync(timeout, timeProvider, cancellationToken);
+            if (secondWait && !underlyingTask.IsCompleted)
+            {
+                // The real signal creates Task.Delay synchronously before its first await.
+                // An already-completed pending-signal path is not an armed timer.
+                SecondWaitArmed.TrySetResult();
+            }
+
+            return await underlyingTask;
+        }
     }
 
     private sealed class BlockingCollector : IIndustrialTelemetryCollectionConnector

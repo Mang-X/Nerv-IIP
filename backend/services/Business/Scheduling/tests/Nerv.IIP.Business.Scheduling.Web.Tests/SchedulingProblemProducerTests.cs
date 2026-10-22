@@ -34,7 +34,8 @@ public sealed class SchedulingProblemProducerTests
                     Code: "WC-MIX-01",
                     DefaultCalendarCode: "CAL-DAY",
                     NumberOfCapacities: 2,
-                    CapabilityCodes: ["mixing", "skill.operator"])
+                    CapabilityCodes: ["mixing", "skill.operator"],
+                    UtilizationRate: 0.8m)
             ],
             Calendars:
             [
@@ -96,6 +97,7 @@ public sealed class SchedulingProblemProducerTests
         Assert.Equal("DEV-MIX-01", resource.ResourceId);
         Assert.Equal("WC-MIX-01", resource.WorkCenterId);
         Assert.Equal(1, resource.CapacityUnits);
+        Assert.Equal(0.8m, resource.UtilizationRate);
         Assert.Contains("mixing", resource.CapabilityCodes);
         Assert.Contains("skill.operator", resource.CapabilityCodes);
         var calendar = Assert.Single(problem.Calendars);
@@ -111,6 +113,83 @@ public sealed class SchedulingProblemProducerTests
         Assert.Empty(plan.UnscheduledOperations);
         Assert.Equal(2, plan.Assignments.Count);
         Assert.All(plan.Assignments, scheduled => Assert.Equal("DEV-MIX-01", scheduled.ResourceId));
+    }
+
+    [Fact]
+    public async Task Producer_resolves_both_changeover_directions_before_resource_placement()
+    {
+        var masterData = new StubSchedulingProblemMasterDataClient(
+            WorkCenters: [new("WC-MIX-01", "CAL-DAY", 1, ["mixing"])],
+            Calendars: [new("CAL-DAY", [new(HorizonStart, HorizonEnd, "day-shift")])],
+            DeviceAssets: [new("DEV-MIX-01", "WC-MIX-01")],
+            ToolingFacts:
+            [
+                new("WO-A-10-mixing", 0, []),
+                new("WO-A-10-mixing::from:B", 7, ["tool.b-to-a"]),
+                new("WO-B-10-mixing", 0, []),
+                new("WO-B-10-mixing::from:A", 30, ["tool.a-to-b"])
+            ]);
+        var producer = new SchedulingProblemProducer(
+            new StubSchedulingProblemProductEngineeringClient(
+                new SchedulingProblemRoutingSnapshot("ROUTE-MIX", "A", "A",
+                    [new(10, "WC-MIX-01", "mixing", "Mixing", 11, 60, 0)])),
+            masterData);
+        var problem = await producer.AssembleAsync(RequestFor(
+            new SchedulingProblemSourceOrder("WO-A", "A", 1, HorizonEnd, 20, false, HorizonStart, "ROUTE-MIX:A"),
+            new SchedulingProblemSourceOrder("WO-B", "B", 1, HorizonStart.AddHours(2), 10, false, HorizonStart, "ROUTE-MIX:A")),
+            CancellationToken.None);
+
+        var a = problem.Orders.Single(x => x.OrderId == "WO-A").Operations.Single();
+        var b = problem.Orders.Single(x => x.OrderId == "WO-B").Operations.Single();
+        Assert.Equal(11, a.Changeovers!.Single(x => x.FromSkuCode == "A").SetupMinutes);
+        Assert.Equal(7, a.Changeovers!.Single(x => x.FromSkuCode == "B").SetupMinutes);
+        Assert.Equal(30, b.Changeovers!.Single(x => x.FromSkuCode == "A").SetupMinutes);
+        Assert.Equal(["tool.a-to-b"], b.Changeovers!.Single(x => x.FromSkuCode == "A").RequiredToolingIds);
+        Assert.Equal(4, masterData.RequestedTransitions!.Count);
+
+        var plan = new FiniteCapacityScheduler().Schedule(problem, "plan-changeover-producer", HorizonStart);
+        Assert.Equal(HorizonStart.AddMinutes(90), plan.Assignments.Single(x => x.OrderId == "WO-B").StartUtc);
+    }
+
+    [Fact]
+    public async Task Producer_maps_interruptible_and_legacy_routing_operations_to_split_policy()
+    {
+        var producer = new SchedulingProblemProducer(
+            new StubSchedulingProblemProductEngineeringClient(
+                new SchedulingProblemRoutingSnapshot("ROUTE-MIX", "A", "SKU-FG-1000",
+                [
+                    new SchedulingProblemRoutingOperationSnapshot(10, "WC-MIX-01", "mixing", "Mixing", 0, 30, 0, Interruptible: true),
+                    new SchedulingProblemRoutingOperationSnapshot(20, "WC-MIX-01", "packing", "Packing", 0, 30, 0)
+                ])),
+            MasterDataForWorkCenter(new SchedulingProblemWorkCenterSnapshot(
+                "WC-MIX-01", "CAL-DAY", 1, ["mixing", "packing"])));
+        var problem = await producer.AssembleAsync(RequestFor(new SchedulingProblemSourceOrder(
+            "WO-MIX-001", "SKU-FG-1000", 1, HorizonEnd, 10, false, HorizonStart, "ROUTE-MIX:A")), CancellationToken.None);
+
+        var operations = problem.Orders.Single().Operations.OrderBy(x => x.OperationSequence).ToArray();
+        Assert.Equal(ScheduleSplitPolicyContract.Interruptible, operations[0].SplitPolicy);
+        Assert.Equal(ScheduleSplitPolicyContract.NonSplittable, operations[1].SplitPolicy);
+    }
+
+    [Fact]
+    public async Task Product_engineering_client_reads_interruptible_and_missing_legacy_flag()
+    {
+        var httpClient = new HttpClient(new StubHttpMessageHandler(_ => JsonResponse("""
+            {
+              "data": {
+                "routingCode": "ROUTE-MIX", "revision": "A", "skuCode": "SKU-FG-1000", "status": "Published",
+                "operations": [
+                  { "sequence": 10, "workCenterCode": "WC-MIX-01", "operationCode": "mixing", "operationName": "Mixing", "standardMinutes": 30, "setupMinutes": 0, "runMinutes": 30, "teardownMinutes": 0, "controlKey": "standard", "requiresReporting": true, "requiresQualityInspection": false, "isOutsourced": false, "interruptible": true },
+                  { "sequence": 20, "workCenterCode": "WC-MIX-01", "operationCode": "packing", "operationName": "Packing", "standardMinutes": 30, "setupMinutes": 0, "runMinutes": 30, "teardownMinutes": 0, "controlKey": "standard", "requiresReporting": true, "requiresQualityInspection": false, "isOutsourced": false }
+                ]
+              }, "success": true, "message": "", "code": 0
+            }
+            """))) { BaseAddress = new Uri("http://product-engineering") };
+        var routing = await new HttpSchedulingProblemProductEngineeringClient(httpClient)
+            .GetRoutingAsync("org-001", "env-dev", "ROUTE-MIX:A", CancellationToken.None);
+
+        Assert.True(routing.Operations.Single(x => x.Sequence == 10).Interruptible);
+        Assert.False(routing.Operations.Single(x => x.Sequence == 20).Interruptible);
     }
 
     [Fact]
@@ -154,6 +233,45 @@ public sealed class SchedulingProblemProducerTests
         var operation = problem.Orders.Single().Operations.Single();
         Assert.Equal(11, operation.SetupMinutes);
         Assert.Equal(38, operation.DurationMinutes);
+    }
+
+    [Fact]
+    public async Task Producer_scales_only_run_minutes_by_work_center_efficiency()
+    {
+        var producer = new SchedulingProblemProducer(
+            new StubSchedulingProblemProductEngineeringClient(
+                new SchedulingProblemRoutingSnapshot(
+                    "ROUTE-MIX", "A", "SKU-FG-1000",
+                    [new SchedulingProblemRoutingOperationSnapshot(10, "WC-MIX-01", "mixing", "Mixing", 11, 7, 3)])),
+            MasterDataForWorkCenter(
+                new SchedulingProblemWorkCenterSnapshot("WC-MIX-01", "CAL-DAY", 1, ["mixing"], 1.2m)));
+        var request = RequestFor(new SchedulingProblemSourceOrder(
+            "WO-EFF-001", "SKU-FG-1000", 5, HorizonEnd, 10, false, HorizonStart, "ROUTE-MIX:A"));
+
+        var problem = await producer.AssembleAsync(request, CancellationToken.None);
+
+        var operation = problem.Orders.Single().Operations.Single();
+        Assert.Equal(11, operation.SetupMinutes);
+        Assert.Equal(33, operation.DurationMinutes); // ceiling(7 * 5 / 1.2) + 3
+    }
+
+    [Fact]
+    public async Task Master_data_client_reads_work_center_efficiency_for_scheduling()
+    {
+        var httpClient = new HttpClient(new StubHttpMessageHandler(_ => JsonResponse("""
+            { "data": {
+                "resourceType": "work-center", "code": "WC-MIX-01", "displayName": "Mixing",
+                "active": true, "snapshotVersion": "1", "organizationId": "org-001",
+                "environmentId": "env-dev", "defaultCalendarCode": "CAL-DAY",
+                "numberOfCapacities": 1, "efficiencyRate": 1.2, "utilizationRate": 0.8
+              }, "success": true, "message": "", "code": 0 }
+            """))) { BaseAddress = new Uri("http://master-data") };
+
+        var workCenter = await new HttpSchedulingProblemMasterDataClient(httpClient)
+            .GetWorkCenterAsync("org-001", "env-dev", "WC-MIX-01", CancellationToken.None);
+
+        Assert.Equal(1.2m, workCenter.EfficiencyRate);
+        Assert.Equal(0.8m, workCenter.UtilizationRate);
     }
 
     [Fact]
@@ -203,18 +321,24 @@ public sealed class SchedulingProblemProducerTests
         Assert.All(problem.Resources, x => Assert.Equal(1, x.CapacityUnits));
     }
 
-    [Fact]
-    public async Task Master_data_client_preserves_shift_boundaries_when_paid_minutes_is_net_capacity()
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task Master_data_client_preserves_shift_boundaries_with_legal_null_rates(
+        bool calendarHasNullRates, bool shiftHasNullRates)
     {
         var httpClient = new HttpClient(new StubHttpMessageHandler(request =>
         {
             var path = request.RequestUri?.AbsolutePath ?? string.Empty;
             if (path.EndsWith("/api/business/v1/master-data/resources/work-calendar/CAL-DAY", StringComparison.Ordinal))
             {
-                return JsonResponse("""
+                return JsonResponse($$"""
                     {
                       "data": {
                         "resourceType": "work-calendar",
+                        {{(calendarHasNullRates ? "\"utilizationRate\": null, \"efficiencyRate\": null," : "")}}
                         "code": "CAL-DAY",
                         "displayName": "Day calendar",
                         "active": true,
@@ -258,10 +382,11 @@ public sealed class SchedulingProblemProducerTests
 
             if (path.EndsWith("/api/business/v1/master-data/resources/shift/DAY", StringComparison.Ordinal))
             {
-                return JsonResponse("""
+                return JsonResponse($$"""
                     {
                       "data": {
                         "resourceType": "shift",
+                        {{(shiftHasNullRates ? "\"utilizationRate\": null, \"efficiencyRate\": null," : "")}}
                         "code": "DAY",
                         "displayName": "Day shift",
                         "active": true,
@@ -428,6 +553,7 @@ public sealed class SchedulingProblemProducerTests
         IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>? ToolingFacts = null)
         : ISchedulingProblemMasterDataClient
     {
+        public IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot>? RequestedTransitions { get; private set; }
         public Task<SchedulingProblemWorkCenterSnapshot> GetWorkCenterAsync(
             string organizationId,
             string environmentId,
@@ -462,7 +588,11 @@ public sealed class SchedulingProblemProducerTests
             string organizationId,
             string environmentId,
             IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot> transitions,
-            CancellationToken cancellationToken) => Task.FromResult(ToolingFacts ?? (IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>)[]);
+            CancellationToken cancellationToken)
+        {
+            RequestedTransitions = transitions;
+            return Task.FromResult(ToolingFacts ?? (IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>)[]);
+        }
     }
 
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handler) : HttpMessageHandler

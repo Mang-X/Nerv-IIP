@@ -657,6 +657,12 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("status")
                         .HasComment("Posting status for the Inventory request.");
 
+                    b.Property<decimal?>("UnitCost")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("unit_cost")
+                        .HasComment("Frozen receipt cost per movement UOM in base currency; null for legacy or unvalued requests.");
+
                     b.Property<string>("UomCode")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -1743,10 +1749,9 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasComment("WCS failure diagnostic code.");
 
                     b.Property<string>("FailureMessage")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)")
+                        .HasColumnType("text")
                         .HasColumnName("failure_message")
-                        .HasComment("WCS failure diagnostic message.");
+                        .HasComment("WCS failure diagnostic message; unbounded raw text from the external WCS.");
 
                     b.Property<bool>("IsTerminalFailure")
                         .ValueGeneratedOnAdd()
@@ -1855,6 +1860,141 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                     b.ToTable("processed_integration_events", "wms", t =>
                         {
                             t.HasComment("Integration events already processed by BusinessWMS for idempotent consumption.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Coding.CodeCounter", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasComment("Code counter surrogate identifier.");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("CurrentValue")
+                        .HasColumnType("bigint")
+                        .HasColumnName("current_value")
+                        .HasComment("Last allocated sequence value within the counter scope.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment scope for the code counter.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization scope for the code counter.");
+
+                    b.Property<string>("ResetKey")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("reset_key")
+                        .HasComment("Sequence reset bucket derived from the active code rule.");
+
+                    b.Property<string>("RuleKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("rule_key")
+                        .HasComment("Code rule key governed by this counter.");
+
+                    b.Property<string>("SiteCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("Optional site or plant scope; empty string means global within organization and environment.");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("version")
+                        .HasComment("Optimistic concurrency token incremented whenever the counter advances.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "RuleKey", "SiteCode", "ResetKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_code_counters_scope");
+
+                    b.ToTable("code_counters", "wms", t =>
+                        {
+                            t.HasComment("Service-local code counters scoped by organization, environment, rule key, optional site and reset bucket.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Coding.CodeIdempotencyKey", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasComment("Code idempotency record surrogate identifier.");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("code")
+                        .HasComment("Allocated business code returned for this idempotency key.");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC timestamp when the idempotency key was first recorded.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment scope for the idempotency key.");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("idempotency_key")
+                        .HasComment("Client supplied stable idempotency key for ordinary create requests.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization scope for the idempotency key.");
+
+                    b.Property<string>("PayloadFingerprint")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("payload_fingerprint")
+                        .HasComment("Canonical request payload fingerprint used to reject key reuse with different create data.");
+
+                    b.Property<string>("RuleKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("rule_key")
+                        .HasComment("Code rule key governed by the idempotency key.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "RuleKey", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_code_idempotency_keys_scope");
+
+                    b.ToTable("code_idempotency_keys", "wms", t =>
+                        {
+                            t.HasComment("Service-local idempotency records that bind create request keys to allocated codes.");
                         });
                 });
 

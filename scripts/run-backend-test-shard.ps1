@@ -12,6 +12,12 @@
 #     - PowerShell 7
 #     - .NET SDK 10
 
+<#
+.PARAMETER TimeoutSeconds
+Budget for the single `dotnet test` invocation. Exceeding it fails as a timeout, not as a test
+failure; raise it for a local run whose CPU is shared with other worktrees (#2870).
+#>
+
 [CmdletBinding()]
 param(
     # The manifest is the single source of shard identity; it fails closed below when the id is
@@ -25,7 +31,7 @@ param(
     [Parameter(Mandatory)]
     [string] $TrxFilePrefix,
 
-    [ValidateRange(1, 1800)]
+    # Bounds are owned by Invoke-NativeCommandOutput; 1800 is a default, not a ceiling (#2870).
     [int] $TimeoutSeconds = 1800,
 
     [string] $ManifestPath = (Join-Path $PSScriptRoot 'backend-test-shards.json')

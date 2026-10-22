@@ -1,7 +1,7 @@
 import {
   queryBusinessConsoleQualityProcessCapabilityQueryOptions,
   queryBusinessConsoleQualitySpcControlChartQueryOptions,
-  type BusinessConsoleQualityItem,
+  type BusinessConsoleQualityNcrItem,
   type BusinessConsoleQualityProcessCapabilityEnvelope,
   type BusinessConsoleQualityProcessCapabilityResponse,
   type BusinessConsoleQualitySpcControlChartEnvelope,
@@ -117,7 +117,7 @@ export function useQualitySpcAnalysis(initialFilters: Partial<QualitySpcFilters>
 }
 
 export function buildQualityAnalysisSummary(
-  ncrs: ReadonlyArray<BusinessConsoleQualityItem>,
+  ncrs: ReadonlyArray<BusinessConsoleQualityNcrItem>,
   totalNcrCount: number,
 ): QualityAnalysisSummary {
   const sampledNcrCount = ncrs.length
@@ -147,7 +147,7 @@ export interface QualityBucketDetail {
   defectQuantity: number
   openNcrCount: number
   defectReasons: QualityAnalysisBucket[]
-  records: BusinessConsoleQualityItem[]
+  records: BusinessConsoleQualityNcrItem[]
 }
 
 /**
@@ -155,14 +155,14 @@ export interface QualityBucketDetail {
  * （缺陷原因分布 + 逐条记录），不引入窗口之外的字段。
  */
 export function buildQualityBucketDetail(
-  ncrs: ReadonlyArray<BusinessConsoleQualityItem>,
+  ncrs: ReadonlyArray<BusinessConsoleQualityNcrItem>,
   dimension: 'sku' | 'sourceType',
   label: string,
 ): QualityBucketDetail {
   const getLabel =
     dimension === 'sku'
-      ? (item: BusinessConsoleQualityItem) => item.skuCode
-      : (item: BusinessConsoleQualityItem) => item.sourceType
+      ? (item: BusinessConsoleQualityNcrItem) => item.skuCode
+      : (item: BusinessConsoleQualityNcrItem) => item.sourceType
   const records = ncrs.filter((item) => displayLabel(getLabel(item)) === label)
 
   return {
@@ -307,8 +307,8 @@ interface SummarizeByOptions {
 }
 
 function summarizeBy(
-  ncrs: ReadonlyArray<BusinessConsoleQualityItem>,
-  getLabel: (item: BusinessConsoleQualityItem) => string | null | undefined,
+  ncrs: ReadonlyArray<BusinessConsoleQualityNcrItem>,
+  getLabel: (item: BusinessConsoleQualityNcrItem) => string | null | undefined,
   options: SummarizeByOptions = {},
 ): QualityAnalysisBucket[] {
   const buckets = new Map<string, { count: number; defectQuantity: number }>()
@@ -348,7 +348,7 @@ function summarizeBy(
     )
 }
 
-function countByStatus(ncrs: ReadonlyArray<BusinessConsoleQualityItem>, status: string) {
+function countByStatus(ncrs: ReadonlyArray<BusinessConsoleQualityNcrItem>, status: string) {
   return ncrs.filter((item) => item.status?.toLowerCase() === status).length
 }
 

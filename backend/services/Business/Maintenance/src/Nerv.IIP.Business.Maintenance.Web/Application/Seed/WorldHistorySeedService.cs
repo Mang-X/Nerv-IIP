@@ -281,6 +281,7 @@ public sealed class WorldHistorySeedService(ApplicationDbContext dbContext)
             var workOrder = MaintenanceWorkOrder.OpenFromAlarm(
                 organizationId,
                 environmentId,
+                plan.WorkOrderNo!,
                 plan.DeviceAssetId,
                 plan.ExternalAlarmId,
                 plan.Severity == "critical" ? "high" : "medium",

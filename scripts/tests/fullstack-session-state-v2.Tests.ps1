@@ -125,6 +125,12 @@ function Assert-OrdinalSetEqual(
     }
 }
 
+# ⭐ 覆盖边界当断言写，⛔ 不能只靠一行 SKIP 输出。
+# 每个被平台守卫跳过的运行时面都必须把自己登记进来，文件末尾按平台断言这张表的**全集**：
+# macOS 上必须为空，非 macOS 上必须恰好是下面声明的那两条。⇒ 谁再加一道守卫、或悄悄扩大
+# 已有守卫的范围，都必须同时改动末尾那份声明，⛔ 跳过面无法在不留 diff 的情况下变宽。
+$script:a4SkippedRuntimeFaces = [System.Collections.Generic.List[string]]::new()
+
 function Get-CaseMutation([string] $Value) {
     if ($Value -cmatch '[A-Z]') {
         return $Value.ToLowerInvariant()
@@ -252,6 +258,23 @@ $missingA4Commands = @($expectedA4Commands | Where-Object {
 })
 Assert-True ($missingA4Commands.Count -eq 0) "A4 interfaces are missing: $($missingA4Commands -join ', ')."
 
+# ⚠️⚠️ 本护栏的扫描面（#3405 复审点名，⛔ 别把它读成「裸读在全仓都被挡住了」）
+#
+# 【扫描面】**只有 `$a4Library` 这一个文件的 AST**（`scripts/lib/FullStackProtocolClassifier.ps1`）。
+#   它证明的是「**签进仓库的这一版分类器**没有未经批准的调用/成员入口」，⛔ 不是
+#   「本协议栈没有裸读」，更不是任何运行时证据。
+# 【已知在扫描面之外的一处，如实点名】#3405 把「按证据取字节」收敛成单一入口
+#   `Read-NervFullStackProofRecordBytes`，它连同其中那条降级用的
+#   `[System.IO.File]::ReadAllBytes` 一起住在 **`scripts/lib/FullStackVerifiedRecordStore.ps1`**
+#   —— **本护栏看不见那个文件**。⇒ 这是「结构变更会静默抽掉上一票断言的前提」的形状：
+#   护栏还在跑、还在绿，但它当初要挡的那条裸读已经搬到它的扫描面之外了。
+# 【失效方向】往 `FullStackVerifiedRecordStore.ps1` / `FullStackControlFileSystem.ps1` 里新增
+#   裸读、进程启动或破坏性成员，**本护栏不会红**；只有新增在分类器**本文件**里才会被抓到。
+# 【本 PR 对这张表本身的改动方向】把 `Read-NervFullStackOpenedRecordBytes` 换成
+#   `Read-NervFullStackProofRecordBytes`（分类器不再直接调前者）——⭐ 这是**收窄**（表里不再
+#   放一个已不被调用的名字），⛔ 不是放宽。
+# 【⛔ 不在本票扩这道扫描面】把扫描面扩到多文件是另一件事；按本仓「文本扫描护栏永不收敛」的
+#   判例，扩它要单独立项评估，⛔ 不在一张 p3 bug 票里顺手做，也⛔ 不另开无人认领的待办票。
 # Governance/PublicContract: this read-only classifier may call only the frozen
 # set of parsing, trusted-read, and protocol-observation commands below.  AST
 # command nodes are used so call operators, native executables, Start-Process,
@@ -277,7 +300,7 @@ foreach ($commandName in @(
     'Join-Path',
     'Open-NervFullStackVerifiedPathHandle',
     'Read-NervFullStackClassifierJsonRecord',
-    'Read-NervFullStackOpenedRecordBytes',
+    'Read-NervFullStackProofRecordBytes',
     'Read-NervFullStackVerifiedRecord',
     'Set-StrictMode',
     'Test-NervFullStackClassifierActivationMarker',
@@ -313,6 +336,23 @@ foreach ($commandAst in $classifierCommandAsts) {
 }
 Assert-True ($unapprovedClassifierInvocations.Count -eq 0) "The A4 classifier must not invoke external commands, Start-Process, Aspire, Docker, or destructive process helpers. Observed: $($unapprovedClassifierInvocations -join ' | ')"
 
+# ⚠️⚠️ 本护栏的扫描面（#3405 复审点名，⛔ 别把它读成「裸读在全仓都被挡住了」）
+#
+# 【扫描面】**只有 `$a4Library` 这一个文件的 AST**（`scripts/lib/FullStackProtocolClassifier.ps1`）。
+#   它证明的是「**签进仓库的这一版分类器**没有未经批准的调用/成员入口」，⛔ 不是
+#   「本协议栈没有裸读」，更不是任何运行时证据。
+# 【已知在扫描面之外的一处，如实点名】#3405 把「按证据取字节」收敛成单一入口
+#   `Read-NervFullStackProofRecordBytes`，它连同其中那条降级用的
+#   `[System.IO.File]::ReadAllBytes` 一起住在 **`scripts/lib/FullStackVerifiedRecordStore.ps1`**
+#   —— **本护栏看不见那个文件**。⇒ 这是「结构变更会静默抽掉上一票断言的前提」的形状：
+#   护栏还在跑、还在绿，但它当初要挡的那条裸读已经搬到它的扫描面之外了。
+# 【失效方向】往 `FullStackVerifiedRecordStore.ps1` / `FullStackControlFileSystem.ps1` 里新增
+#   裸读、进程启动或破坏性成员，**本护栏不会红**；只有新增在分类器**本文件**里才会被抓到。
+# 【本 PR 对这张表本身的改动方向】把 `Read-NervFullStackOpenedRecordBytes` 换成
+#   `Read-NervFullStackProofRecordBytes`（分类器不再直接调前者）——⭐ 这是**收窄**（表里不再
+#   放一个已不被调用的名字），⛔ 不是放宽。
+# 【⛔ 不在本票扩这道扫描面】把扫描面扩到多文件是另一件事；按本仓「文本扫描护栏永不收敛」的
+#   判例，扩它要单独立项评估，⛔ 不在一张 p3 bug 票里顺手做，也⛔ 不另开无人认领的待办票。
 # Governance/PublicContract: CommandAst does not include .NET member calls.  Freeze
 # the classifier's necessary pure/read-only members plus collection bookkeeping and
 # verified-handle disposal so process launch and destructive static members fail
@@ -860,6 +900,39 @@ function Assert-A5PublicationPair([object] $Publication, [string] $Root, [string
     Assert-True (-not [bool] $manifest.runtimeStartAttempted -and @($manifest.runtimeIdentities).Count -eq 0) 'Initial publication must not imply runtime startup.'
 }
 
+# ⚠️⚠️ 覆盖边界（⛔ 读这一段，别只看下面那行 SKIP 输出就以为本文件被 CI 覆盖了）
+#
+# 【跳的是哪几段】authority-publication-and-residue 的运行时面：authority 发布、租约、崩溃边界断言。
+#   ⚠️ 块名说准：这是 **A5 块**（`scripts/lib/FullStackAuthorityPublication.ps1` 的发布面），
+#   ⛔ **不是 A2**。A2 段在本文件**末尾**（member 同名 `verified-session-cas-and-leases`），
+#   它本来就写了细粒度的 `if ($IsMacOS)`，#3405 **未改动它**。
+#   ⭐ 与 A3 块不同，本块**没有可在 Linux 上跑的运行时断言**：首条运行时语句
+#   `Publish-NervFullStackInitialV2Session` 就直接撞 `path:identity-unavailable`，
+#   ⇒ 整块跳是实测结论，不是图省事。
+# 【为什么跳】它们依赖 macOS-only 的 opened-object identity provider —— `open`/`fstat`/`flock`
+#   经 libSystem 的 P/Invoke（`DarwinPathHandle`）。非 macOS 宿主上
+#   `Open-NervFullStackLeaseHandle` 按**既有契约**抛 `path:identity-unavailable`；
+#   那是该能力声明过的平台边界，不是被测记录或本测试的缺陷（#3405）。
+# 【后果，逐字说清】承载本文件的 `script-governance` job 只有 `runs-on: ubuntu-latest`，
+#   仓库里**没有** macOS job ⇒ 这几段运行时断言在 CI 上**零 job 覆盖**。
+#   ⛔ 本文件在 CI 上显示 PASS **不等于**这几段被验证过。
+# 【失效方向，这条最要命】若有人改坏 authority 发布 / 租约 / CAS / 并发写入者的实现或断言，
+#   **CI 不会红** —— 它们在 Linux 上根本没跑。只有在**本机 macOS** 上跑本文件才会红。
+#   ⇒ 动 FullStackAuthorityPublication.ps1 / FullStackVerifiedRecordStore.ps1 /
+#   FullStackControlFileSystem.ps1 的租约与 CAS 面时，⭐ 必须本机 macOS 跑一遍本文件，
+#   ⛔ 不许拿 CI 绿当证据。
+# 【怎么消除】需要一个 Linux identity provider（`open`/`fstat`/`flock` 那套的 Linux 实现）。
+#   那是新平台能力，不属于 #3405 射程；按本仓原则写进覆盖边界，⛔ 不另开无人认领的待办票。
+#
+# ⛔ 这里刻意**不重排块内缩进**：范围内含 `@'…'@` here-string，其闭合定界符必须停在行首，
+# 重排会改坏子进程命令；`if` 在 PowerShell 里也不另开作用域，所以不重排不影响语义。
+# 本文件末段（`verified-session-cas-and-leases`）里的 `if ($IsMacOS)` 已经是同一写法，
+# ⛔ 别按行号找它，行号会随编辑漂移。
+if (-not $IsMacOS) {
+    Write-Host "  SKIP $member 的运行时面：本宿主没有 opened-object identity provider（open/fstat/flock，目前仅 macOS 有实现），因此未执行 authority 发布、租约与崩溃边界断言。本段的静态源码契约不受影响，已在上方执行。"
+    $script:a4SkippedRuntimeFaces.Add('authority-publication-and-residue:runtime')
+}
+else {
 $a5Roots = [System.Collections.Generic.List[string]]::new()
 try {
     $publicationRoot = New-A5FixtureRoot -Name 'publication'
@@ -1320,6 +1393,7 @@ finally {
         }
     }
 }
+}
 
 Write-Host "Full-stack v2 protocol tests passed: $member"
 
@@ -1433,6 +1507,34 @@ try {
     } 'record:target-exists' 'A duplicate CreateNew must fail instead of overwriting authority.'
     Assert-True ([System.Linq.Enumerable]::SequenceEqual([byte[]] $authorityBytesBeforeDuplicate, [byte[]] [System.IO.File]::ReadAllBytes($a3Paths.AuthorityPath))) 'A rejected duplicate create must preserve authority bytes.'
 
+    # ⚠️⚠️ 覆盖边界（⛔ 读这一段，别只看下面那行 SKIP 输出就以为本文件被 CI 覆盖了）
+    #
+    # 【跳的是哪几段】⭐ 只跳**从这里往下**的这一段：已验证记录读回的 opened-object identity
+    #   绑定、CAS、租约、并发写入者断言。⛔ **别把这道守卫上移** —— 上方的 CreateNew 面
+    #   （精确 UTF-8 无 BOM、UTF-8 字段往返、重复创建 `record:target-exists` fail closed、
+    #   被拒重复不改字节，共 4 条）在 Linux 上**跑得通且确实在跑**，上移会白丢这 4 条覆盖。
+    # 【为什么从这一条起跳】本段第一条断言 `Test-NervFullStackRecordSnapshotEqual` 要比对
+    #   **opened-object identity**，而非 macOS 宿主上身份未获证明（`IdentityProven=$false`、
+    #   `Identity=$null`）；再往下的 CAS 与租约直接撞 macOS-only 的 `open`/`fstat`/`flock`
+    #   （libSystem P/Invoke，`DarwinPathHandle`），`Open-NervFullStackLeaseHandle` 按**既有契约**
+    #   抛 `path:identity-unavailable`。那是该能力声明过的平台边界，不是缺陷（#3405）。
+    # 【后果，逐字说清】承载本文件的 `script-governance` job 只有 `runs-on: ubuntu-latest`，
+    #   仓库里**没有** macOS job ⇒ 本段断言在 CI 上**零 job 覆盖**。
+    #   ⛔ 本文件在 CI 上显示 PASS **不等于**本段被验证过。
+    # 【失效方向，这条最要命】若有人改坏 CAS / 租约 / 并发写入者的实现或断言，**CI 不会红**
+    #   —— 它们在 Linux 上根本没跑。只有在**本机 macOS** 上跑本文件才会红。
+    #   ⇒ 动 FullStackVerifiedRecordStore.ps1 / FullStackControlFileSystem.ps1 的租约与 CAS 面时，
+    #   ⭐ 必须本机 macOS 跑一遍本文件，⛔ 不许拿 CI 绿当证据。
+    # 【怎么消除】需要一个 Linux identity provider（`open`/`fstat`/`flock` 那套的 Linux 实现）。
+    #   那是新平台能力，不属于 #3405 射程；按本仓原则写进覆盖边界，⛔ 不另开无人认领的待办票。
+    #
+    # ⛔ 刻意**不重排块内缩进**：范围内含 `@'…'@` here-string，其闭合定界符必须停在行首，
+    # 重排会改坏子进程命令；`if` 在 PowerShell 里也不另开作用域，所以不重排不影响语义。
+    if (-not $IsMacOS) {
+        Write-Host "  SKIP $member 的已验证记录身份绑定/CAS/租约/并发写入者面：本宿主没有 opened-object identity provider（open/fstat/flock，目前仅 macOS 有实现）。⭐ 本段之前的 CreateNew 面（UTF-8 字节、字段往返、重复创建 fail closed、被拒不改字节）已在本宿主上执行。"
+        $script:a4SkippedRuntimeFaces.Add('verified-session-cas-and-leases-a3:identity-cas-lease')
+    }
+    else {
     $authorityExistingTarget = Test-NervFullStackTrustedPathGraph `
         -StateRoot $a3StateRoot `
         -CandidatePath $a3Paths.AuthorityPath `
@@ -1721,6 +1823,7 @@ catch {
         -VerifiedTarget (Test-NervFullStackTrustedPathGraph -StateRoot $a3StateRoot -CandidatePath $a3Paths.GuardianRequestPath -ExpectedKind File) `
         -RecordKind 'request'
     Assert-True ([string]::Equals($concurrentFinal.Record.writer, $successfulOutcomes[0].writer, [StringComparison]::Ordinal)) 'The final bytes must belong to the sole successful concurrent writer.'
+    }
 }
 finally {
     Remove-Variable -Name NervFullStackVerifiedRecordStoreCrashAction -Scope Script -ErrorAction SilentlyContinue
@@ -1990,3 +2093,29 @@ finally {
 }
 
 Write-Host "Full-stack v2 protocol tests passed: $member"
+
+# ⭐ 覆盖边界收口：把「这一跑到底跳过了什么」当断言写，而不是只打印出来。
+# ⚠️ 这条断言**不**声称被跳过的那几段没问题；它只声称**跳过面正好是声明过的那些**。
+# 失效方向：谁新加一道平台守卫、或把已有守卫的范围扩大到别的段落，这里必然红，
+# ⛔ 跳过面无法在不留 diff 的情况下变宽。macOS 上则断言**一段都没跳**。
+$expectedSkippedRuntimeFaces = if ($IsMacOS) {
+    @()
+}
+else {
+    @(
+        'authority-publication-and-residue:runtime'
+        'verified-session-cas-and-leases-a3:identity-cas-lease'
+    )
+}
+Assert-OrdinalSetEqual `
+    -Actual ([string[]] $script:a4SkippedRuntimeFaces.ToArray()) `
+    -Expected ([string[]] $expectedSkippedRuntimeFaces) `
+    -Message 'The declared platform-skipped runtime faces must match exactly what this run actually skipped.'
+$coverageNote = if ($script:a4SkippedRuntimeFaces.Count -eq 0) {
+    '本跑没有跳过任何运行时面'
+}
+else {
+    '⚠️ 被跳过的这些面在 script-governance 的 ubuntu-latest job 上零覆盖，本文件的 PASS 不为它们背书'
+}
+Write-Host ("COVERAGE-BOUNDARY: platform-skipped runtime faces = {0} [{1}] (IsMacOS={2}; {3})" -f `
+    $script:a4SkippedRuntimeFaces.Count, ($script:a4SkippedRuntimeFaces -join ', '), $IsMacOS, $coverageNote)

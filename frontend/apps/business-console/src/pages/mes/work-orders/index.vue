@@ -5,13 +5,35 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
-import { mesWorkOrderStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import {
+  mesWorkOrderStatusOptions,
+  useMesReferenceLabels,
+} from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
+import {
+  mesWorkOrderReleaseBlocker,
+  mesWorkOrderRetroactiveReleaseNotice,
+} from '@/composables/mes/workOrderRelease'
 import {
   useBusinessMasterDataResources,
   useBusinessSkus,
 } from '@/composables/useBusinessMasterData'
-import { useMesOperationTasks, useMesWorkOrders } from '@/composables/useBusinessMes'
+import {
+  useMesOperationTasks,
+  useMesWorkOrderTransformations,
+  useMesWorkOrders,
+  type MesWorkOrderTransformationResult,
+} from '@/composables/useBusinessMes'
+import WorkOrderTransformationDialog, {
+  type MergeTransformationSubmit,
+  type SplitTransformationSubmit,
+  type WorkOrderTransformationState,
+} from '@/components/mes/WorkOrderTransformationDialog.vue'
+import {
+  isTransformationConflict,
+  type WorkOrderTransformationSource,
+} from '@/composables/mes/workOrderTransformation'
+import { toBaseUomBySku } from '@/composables/skuBaseUom'
 import { useMesMaterialVersionCatalog } from '@/composables/useMesPickerCatalog'
 import { useOrderUrgencies } from '@/composables/useOrderUrgency'
 import {
@@ -21,15 +43,25 @@ import {
 } from '@/composables/useUrgencyDisplayMode'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
+import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
+import { isSchedulableWorkbenchCandidate } from '@/composables/useSchedulingWorkbench'
+import {
+  useCanScheduleSingleOrder,
+  SINGLE_ORDER_SCHEDULING_DENIED_REASON,
+} from '@/composables/useSingleOrderScheduling'
 import WorkOrderDetailSheet from '@/components/mes/WorkOrderDetailSheet.vue'
-import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
+import WorkOrderDemandChangeBadges from '@/components/mes/WorkOrderDemandChangeBadges.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
+  NvCheckbox,
   NvDataTable,
   NvDialog,
   NvDialogContent,
@@ -51,7 +83,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -85,17 +117,25 @@ const {
   createRushWorkOrderPending,
   filters,
   refreshWorkOrders,
+  releaseWorkOrder,
+  releaseWorkOrderPending,
   workOrders,
   workOrdersError,
-  workOrdersHasFailedResponse,
-  workOrdersHasSuccessfulResponse,
-  workOrdersLastUpdatedAt,
   workOrdersPending,
   workOrdersTotal,
   workOrderReadScope,
   workOrderReadScopeMessage,
-  workOrderReadScopeReady,
+  readWorkOrderForRelease,
+  workOrderManageScopeMessage,
+  workOrderManageScopePending,
+  workOrderManageScopeReady,
+  workOrderManageScope,
 } = useMesWorkOrders()
+const workOrderTransformations = useMesWorkOrderTransformations({
+  filters,
+  readScope: workOrderReadScope,
+  manageScope: workOrderManageScope,
+})
 const orderUrgencies = useOrderUrgencies(
   computed(() => workOrders.value.map((order) => order.workOrderId)),
 )
@@ -107,6 +147,7 @@ function refreshUrgency() {
 
 const router = useRouter()
 const { skus } = useBusinessSkus()
+const baseUomBySku = toBaseUomBySku(skus)
 const { resolveSku, resolveWorkCenter } = useMesDisplayNames()
 const { resources: workCenterResources } = useBusinessMasterDataResources('work-center')
 
@@ -134,9 +175,25 @@ watch(workCenterFilter, (value) => {
 })
 
 const statusOptions = mesWorkOrderStatusOptions
+const { statusLabel } = useMesReferenceLabels()
+const canScheduleSingleOrder = useCanScheduleSingleOrder()
+const scheduleTarget = shallowRef<Row | null>(null)
+const scheduleOpen = shallowRef(false)
+function scheduleDisabledReason(order: Row) {
+  if (!isSchedulableWorkbenchCandidate(order)) {
+    return order.productionVersionId
+      ? '工单已处于终态，不能再排产。'
+      : '工单没有生产版本，排程无法展开工艺路线。'
+  }
+  return canScheduleSingleOrder.value ? '' : SINGLE_ORDER_SCHEDULING_DENIED_REASON
+}
+function openSchedule(order: Row) {
+  if (scheduleDisabledReason(order)) return
+  scheduleTarget.value = order
+  scheduleOpen.value = true
+}
+// 组织与环境不进表单：它们由壳层异步绑定到 filters，整页直开时表单初始化那一刻还是空串（#3858）。
 const rushForm = reactive({
-  organizationId: filters.organizationId,
-  environmentId: filters.environmentId,
   skuId: '',
   productionVersionId: '',
   quantity: '1',
@@ -151,33 +208,234 @@ const rushForm = reactive({
 // 报工对象由所选工单行带出（工单 + 该工单的首道可报工序），弹窗不提供任何挑选入口。
 const reportContext = shallowRef<ProductionReportContext | null>(null)
 
-const listErrorMessage = computed(() => formatError(workOrdersError.value))
-const workScopeKindLabels: Record<string, string> = {
-  self: '本人',
-  team: '班组',
-  'work-center': '工作中心',
-  workshop: '车间',
-  organization: '组织',
-}
-const workOrderScopeLabel = computed(() => {
-  const selectedScope = workOrderReadScope.value
-  if (!selectedScope) return '当前主体授权工单范围未就绪'
-  const kind = workScopeKindLabels[selectedScope.kind] ?? selectedScope.kind
-  return `当前主体授权工单范围 · ${selectedScope.displayName || selectedScope.id}（${kind}）`
-})
-const workOrderEmptyExplanation = computed(() =>
-  workOrderReadScopeReady.value
-    ? '当前主体授权工单范围内暂无生产工单。'
-    : workOrderReadScopeMessage.value || '尚未取得当前主体的授权工单范围，未发起查询。',
-)
+const listErrorMessage = computed(() => inlineErrorMessage(workOrdersError.value))
 
 const workCenterOptions = computed(() => toResourceOptions(workCenterResources.value))
-const skuOptions = computed(() => toResourceOptions(skus.value))
 
 // ── 急单表单的四个选择器 ────────────────────────────────────────
 // 物料 ▸ 生产版本 从属，工作中心 ▸ 工序任务 从属：上游变了清空下游。
-const { productionVersionOptions, productionVersionsPending } = useMesMaterialVersionCatalog()
-const { operationTasks, operationTasksPending } = useMesOperationTasks()
+const { productionVersionLabel, productionVersionOptions, productionVersionsPending } =
+  useMesMaterialVersionCatalog()
+const { operationTasks, operationTasksPending, refreshOperationTasks } = useMesOperationTasks()
+
+const auth = useAuthStore()
+const canManageWorkOrders = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(P.mesWorkOrdersManage),
+)
+
+const selectedWorkOrderIds = ref<(string | number)[]>([])
+const mergeDialogOpen = ref(false)
+const mergeState = ref<WorkOrderTransformationState>('idle')
+const mergeError = ref('')
+const mergeResult = shallowRef<MesWorkOrderTransformationResult | null>(null)
+const mergeIdempotencyKey = ref('')
+const mergeSources = computed<
+  Array<WorkOrderTransformationSource & { label?: string; skuLabel?: string }>
+>(() =>
+  selectedWorkOrderIds.value
+    .map((id) => workOrders.value.find((order) => rowKey(order) === id))
+    .filter((order): order is Row & { workOrderId: string } => Boolean(order?.workOrderId))
+    .map((order) => ({
+      workOrderId: order.workOrderId,
+      label: order.workOrderNo ?? order.workOrderId,
+      skuLabel: resolveSku(order.skuCode ?? order.skuId),
+      skuId: order.skuId,
+      productionVersionId: order.productionVersionId,
+      quantity: order.quantity,
+      // PR-C 工单列表没有 UOM；使用既有 MasterData SKU 读面中的基本单位事实，不臆造单位。
+      uomCode: baseUomBySku.value.get((order.skuCode ?? order.skuId)?.trim() ?? ''),
+      status: order.status,
+    })),
+)
+const mergeUnitUnavailable = computed(
+  () =>
+    selectedWorkOrderIds.value.length >= 2 &&
+    mergeSources.value.some((source) => !source.uomCode?.trim()),
+)
+const mergeButtonDisabled = computed(
+  () =>
+    !canManageWorkOrders.value ||
+    !workOrderManageScopeReady.value ||
+    workOrderManageScopePending.value ||
+    selectedWorkOrderIds.value.length < 2 ||
+    mergeUnitUnavailable.value ||
+    Boolean(mergeState.value === 'loading'),
+)
+const mergeButtonTitle = computed(() => {
+  if (mergeUnitUnavailable.value) {
+    return '选中的工单未返回单位信息，无法确认数量单位；请刷新列表后重试。'
+  }
+  if (mergeButtonDisabled.value) {
+    return '请选择至少两个工单，并确认当前主体具有工单管理权限。'
+  }
+  return '将选中工单合并为新的工单'
+})
+const mergePending = computed(
+  () => workOrderTransformations.mergeWorkOrdersPending.value || mergeState.value === 'loading',
+)
+
+function openMergeDialog() {
+  if (mergeButtonDisabled.value) return
+  mergeError.value = ''
+  mergeState.value = 'idle'
+  mergeResult.value = null
+  mergeIdempotencyKey.value = newMesIdempotencyKey('merge-work-orders')
+  mergeDialogOpen.value = true
+}
+
+async function submitMerge(payload: SplitTransformationSubmit | MergeTransformationSubmit) {
+  if (!('sourceWorkOrderIds' in payload)) return
+  mergeState.value = 'loading'
+  mergeError.value = ''
+  try {
+    const result = await workOrderTransformations.mergeWorkOrders(payload)
+    mergeResult.value = result
+    if (result.readback) {
+      mergeState.value = 'success'
+      notifySuccess(`已合并 ${payload.sourceWorkOrderIds.length} 个工单，结果已回读。`)
+      selectedWorkOrderIds.value = []
+      await refreshWorkOrders()
+    } else {
+      mergeState.value = 'accepted'
+      notifySuccess('合并请求已受理，但结果暂未回读；请在本窗口重试回读。')
+    }
+  } catch (error) {
+    mergeState.value = isTransformationConflict(error) ? 'conflict' : 'error'
+    mergeError.value = inlineErrorMessage(error, '合并工单失败，请刷新后重试。')
+    notifyOperationFailure('合并工单失败', error, '合并工单失败，请刷新后重试。')
+  }
+}
+
+async function retryMergeReadback() {
+  const current = mergeResult.value
+  if (!current) return
+  mergeState.value = 'loading'
+  try {
+    const readback = await workOrderTransformations.readTransformation(
+      current.mutation.transformationId,
+    )
+    mergeResult.value = { ...current, readback, readbackError: undefined }
+    mergeState.value = 'success'
+    selectedWorkOrderIds.value = []
+    notifySuccess('合并结果已回读。')
+    await refreshWorkOrders()
+  } catch (error) {
+    mergeResult.value = { ...current, readbackError: error }
+    mergeState.value = 'accepted'
+    notifyOperationFailure(
+      '回读合并结果失败',
+      error,
+      '合并已受理，但结果暂不可用，请稍后重试回读。',
+    )
+  }
+}
+
+type ReleaseIntent = {
+  workOrderId: string
+  workOrderLabel: string
+}
+
+const releaseIntent = shallowRef<ReleaseIntent | null>(null)
+const releaseWarningsConfirmed = shallowRef(false)
+const releasePreflightPending = shallowRef(false)
+const releaseDialogOpen = computed({
+  get: () => releaseIntent.value !== null,
+  set: (open: boolean) => {
+    if (!open && !releaseWorkOrderPending.value) clearReleaseIntent()
+  },
+})
+const releaseIntentOrder = computed(() => {
+  const intent = releaseIntent.value
+  return intent
+    ? (workOrders.value.find((order) => order.workOrderId === intent.workOrderId) ?? null)
+    : null
+})
+const releaseValidationMessage = computed(() => {
+  if (!releaseIntent.value) return ''
+  if (!releaseIntentOrder.value) return '工单已不在当前主体授权工单范围，请刷新后重试。'
+  return releaseBlocker(releaseIntentOrder.value) ?? ''
+})
+const releaseRetroactiveNotice = computed(() =>
+  releaseIntentOrder.value ? mesWorkOrderRetroactiveReleaseNotice(releaseIntentOrder.value) : null,
+)
+const canSubmitRelease = computed(
+  () =>
+    releaseIntent.value !== null &&
+    releaseWarningsConfirmed.value &&
+    !releaseValidationMessage.value &&
+    !releaseWorkOrderPending.value,
+)
+
+function releaseBlocker(order: Parameters<typeof mesWorkOrderReleaseBlocker>[0]) {
+  if (!canManageWorkOrders.value) return '没有工单下达权限'
+  if (workOrderManageScopePending.value) return '正在确认主体授权工单范围'
+  if (!workOrderManageScopeReady.value) {
+    return workOrderManageScopeMessage.value || '主体授权工单范围未就绪'
+  }
+  return mesWorkOrderReleaseBlocker(order)
+}
+
+async function openReleaseDialog(order: Row) {
+  if (releaseBlocker(order) || !order.workOrderId) return
+  releasePreflightPending.value = true
+  try {
+    const latest = await readWorkOrderForRelease(order.workOrderId)
+    const blocker = releaseBlocker(latest)
+    if (blocker) throw new Error(blocker)
+    releaseIntent.value = {
+      workOrderId: order.workOrderId,
+      workOrderLabel: order.workOrderNo || order.workOrderId,
+    }
+    releaseWarningsConfirmed.value = false
+  } catch (error) {
+    notifyOperationFailure(
+      '工单下达前置检查失败',
+      error,
+      '未能在当前管理范围内确认工单下达条件，请检查授权范围和就绪状态后重试。',
+    )
+  } finally {
+    releasePreflightPending.value = false
+  }
+}
+
+function clearReleaseIntent() {
+  releaseIntent.value = null
+  releaseWarningsConfirmed.value = false
+}
+
+async function submitReleaseWorkOrder() {
+  const intent = releaseIntent.value
+  const order = releaseIntentOrder.value
+  if (!intent || !order || !canSubmitRelease.value) return
+
+  try {
+    const response = await releaseWorkOrder(intent.workOrderId, {
+      organizationId: filters.organizationId.trim(),
+      environmentId: filters.environmentId.trim(),
+      confirmWarnings: true,
+    })
+    if (response?.data?.accepted !== true) {
+      throw new Error('工单下达结果未确认，请刷新列表核实后再重试。')
+    }
+
+    // 服务端已确认受理后不再保留可重试入口，避免刷新失败导致重复提交；两个权威读面都显式刷新。
+    clearReleaseIntent()
+    const refreshResults = await Promise.allSettled([refreshWorkOrders(), refreshOperationTasks()])
+    notifySuccess(`工单 ${intent.workOrderLabel} 已下达。`)
+    const refreshFailure = refreshResults.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    )
+    if (refreshFailure) {
+      notifyOperationFailure(
+        '工单已下达，但状态刷新失败',
+        refreshFailure.reason,
+        '工单已下达，但最新状态刷新失败，请手动刷新列表。',
+      )
+    }
+  } catch (error) {
+    notifyOperationFailure('工单下达失败', error, '工单下达失败，请检查就绪条件后重试。')
+  }
+}
 
 const rushVersionOptions = computed(() => productionVersionOptions(rushForm.skuId))
 const rushOperationTaskOptions = computed(() => {
@@ -211,9 +469,10 @@ const visibleWorkOrders = computed(() => workOrders.value)
 
 const canCreateRush = computed(
   () =>
-    isNonEmpty(rushForm.organizationId) &&
-    isNonEmpty(rushForm.environmentId) &&
+    isNonEmpty(filters.organizationId) &&
+    isNonEmpty(filters.environmentId) &&
     isNonEmpty(rushForm.skuId) &&
+    isNonEmpty(rushForm.productionVersionId) &&
     toOptionalNumber(rushForm.quantity) !== undefined &&
     isNonEmpty(rushForm.dueUtc) &&
     isNonEmpty(rushForm.workCenterId) &&
@@ -226,6 +485,7 @@ const canCreateRush = computed(
 const sort = ref<NvDataTableSort | null>(null)
 function sortValue(order: Row, key: string): string | number {
   if (key === 'quantity') return order.quantity ?? 0
+  if (key === 'completedQuantity') return order.completedQuantity ?? 0
   if (key === 'dueUtc') return order.dueUtc ? new Date(order.dueUtc).getTime() : 0
   if (key === 'operationCount') return order.operationTasks?.length ?? 0
   return (order[key as keyof Row] as string | null) ?? ''
@@ -281,6 +541,7 @@ const columns: NvDataTableColumn<Row>[] = [
     width: 'w-24',
     accessor: (r) => r.quantity ?? 0,
   },
+  { key: 'completedQuantity', header: '完成量', align: 'end', sortable: true, width: 'w-24' },
   {
     key: 'dueUtc',
     header: '交期',
@@ -361,10 +622,10 @@ function openReportFromSheet(operationTaskId: string) {
 async function submitRushWorkOrder() {
   if (!canCreateRush.value) return
   const body: BusinessConsoleCreateRushWorkOrderRequest = {
-    organizationId: rushForm.organizationId.trim(),
-    environmentId: rushForm.environmentId.trim(),
+    organizationId: filters.organizationId.trim(),
+    environmentId: filters.environmentId.trim(),
     skuId: rushForm.skuId.trim(),
-    productionVersionId: optionalText(rushForm.productionVersionId),
+    productionVersionId: rushForm.productionVersionId.trim(),
     quantity: toOptionalNumber(rushForm.quantity),
     dueUtc: toIsoFromLocalInput(rushForm.dueUtc),
     workCenterId: rushForm.workCenterId.trim(),
@@ -375,12 +636,7 @@ async function submitRushWorkOrder() {
   }
   try {
     const response = await createRushWorkOrder(body)
-    const affected = response?.data?.affectedWorkOrderIds ?? []
-    // 排程反馈是结果、不是常驻说明：随成功 toast 一次说清，弹窗即关，不在表单里堆一块「反馈区」。
-    notifySuccess(
-      `已创建急单 ${response?.data?.workOrderId ?? ''}` +
-        (affected.length ? ` · 重排影响 ${affected.length} 个在制工单` : ''),
-    )
+    notifySuccess(`已创建急单 ${response?.data?.workOrderId ?? ''}`)
     rushForm.idempotencyKey = newMesIdempotencyKey('rush-work-order')
     rushSheetOpen.value = false
   } catch (error) {
@@ -426,18 +682,16 @@ function formatDateTime(value?: string | null) {
 function formatQuantity(value?: number) {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(value ?? 0)
 }
-function formatStatus(value?: string | null) {
-  const map: Record<string, string> = {
-    blocked: '阻塞',
-    closed: '已关闭',
-    completed: '已完成',
-    inprogress: '执行中',
-    queued: '排队中',
-    ready: '可开工',
-    released: '已下达',
-    running: '执行中',
-  }
-  return value ? (map[value.toLowerCase()] ?? value) : '未知'
+const terminalWorkOrderStatuses = new Set([
+  'completed',
+  'closed',
+  'cancelled',
+  'scrapped',
+  'split',
+  'merged',
+])
+function isTerminalWorkOrderStatus(status?: string | null) {
+  return terminalWorkOrderStatuses.has(status?.toLowerCase() ?? '')
 }
 function newMesIdempotencyKey(scope: string) {
   return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
@@ -449,9 +703,6 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
       label: item.displayName ? `${item.displayName} (${item.code})` : item.code!,
       value: item.code!,
     }))
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 function isNonEmpty(value: string) {
   return value.trim().length > 0
@@ -487,20 +738,6 @@ function isNonEmpty(value: string) {
       </template>
     </NvPageHeader>
 
-    <ListScopeMeta
-      :scope="workOrderScopeLabel"
-      source="生产工单服务（服务端按当前主体与所选授权工单范围过滤）"
-      :loaded="workOrders.length"
-      :total="workOrdersTotal"
-      :updated-at="workOrdersLastUpdatedAt"
-      :empty="
-        !workOrderReadScopeReady ||
-        (workOrdersHasSuccessfulResponse && !workOrdersError && workOrders.length === 0)
-      "
-      :failed="workOrdersHasFailedResponse || Boolean(workOrdersError)"
-      failure-explanation="生产工单服务未成功返回，请重试。"
-      :empty-explanation="workOrderEmptyExplanation"
-    />
     <p
       v-if="workOrderReadScopeMessage"
       class="text-sm text-destructive"
@@ -547,10 +784,6 @@ function isNonEmpty(value: string) {
       </template>
     </NvToolbar>
 
-    <p v-if="listErrorMessage" class="text-sm text-destructive" role="alert">
-      {{ listErrorMessage }}
-    </p>
-
     <NvDataTable
       manual
       :page="page"
@@ -564,10 +797,36 @@ function isNonEmpty(value: string) {
       :row-key="rowKey"
       :client-sort="false"
       :loading="workOrdersPending"
+      :error="workOrdersError"
+      :error-message="listErrorMessage"
       empty-message="当前筛选下没有工单。正常生产请先进入生产计划转工单，急单只处理临时插单。"
       :searchable="false"
       :column-settings="false"
+      selectable
+      v-model:selected="selectedWorkOrderIds"
+      @retry="refreshWorkOrders"
     >
+      <template #bulk-actions>
+        <NvButton
+          type="button"
+          size="sm"
+          variant="outline"
+          :disabled="mergeButtonDisabled"
+          :title="mergeButtonTitle"
+          data-testid="open-merge-work-orders"
+          @click="openMergeDialog"
+        >
+          合并选中工单
+        </NvButton>
+        <span
+          v-if="mergeUnitUnavailable"
+          class="text-xs text-destructive"
+          role="alert"
+          data-testid="merge-unit-unavailable"
+        >
+          选中的工单未返回单位信息，无法确认数量单位；请刷新列表后重试。
+        </span>
+      </template>
       <template #cell-workOrderId="{ row }">
         <RouterLink
           v-if="row.workOrderId"
@@ -590,7 +849,11 @@ function isNonEmpty(value: string) {
       </template>
       <template #cell-status="{ row }">
         <div class="flex items-center gap-1.5">
-          <NvStatusBadge :value="row.status" />
+          <NvStatusBadge :value="row.status" :label="statusLabel(row.status)" />
+          <WorkOrderDemandChangeBadges
+            :has-changed-demand="row.hasChangedDemand"
+            :has-cancelled-demand="row.hasCancelledDemand"
+          />
           <!-- 质量保留锁定标记：与工单生命周期状态无关，来源为活跃 quality hold（#886）。 -->
           <LockIcon
             v-if="row.hasActiveQualityHold"
@@ -601,7 +864,11 @@ function isNonEmpty(value: string) {
         </div>
       </template>
       <template #cell-urgency="{ row }">
+        <span v-if="isTerminalWorkOrderStatus(row.status)" class="text-xs text-muted-foreground">
+          已结束
+        </span>
         <OrderUrgencyBadge
+          v-else
           :order-reference="row.workOrderId ?? ''"
           :mode="displayMode"
           :urgency="
@@ -614,10 +881,20 @@ function isNonEmpty(value: string) {
       <template #cell-quantity="{ row }"
         ><span class="tabular-nums">{{ formatQuantity(row.quantity) }}</span></template
       >
+      <template #cell-completedQuantity="{ row }"
+        ><span class="tabular-nums">{{
+          row.completedQuantity == null
+            ? '—'
+            : row.completedQuantity.toLocaleString(undefined, { maximumFractionDigits: 6 })
+        }}</span></template
+      >
       <template #cell-dueUtc="{ row }">{{ formatDateTime(row.dueUtc) }}</template>
       <template #cell-operationCount="{ row }">
         <div class="grid gap-1">
-          <!-- 一行四段斜杠拼接读不出主次：第一行给「第几道 · 在哪做」，第二行给单号与状态。 -->
+          <!-- 一行四段斜杠拼接读不出主次：第一行给「第几道 · 在哪做」，第二行只给状态。
+               工序任务号（WO-…-OP-10）此前每道都印一遍——左边〈工单〉列已经有同一个
+               WO-…，前缀完全重复，8 道工序就把真正有用的「第几道 · 在哪做」淹了，
+               行高涨到约 320px 没法扫读。工序号不是这一格要回答的问题。 -->
           <div
             v-for="task in row.operationTasks ?? []"
             :key="task.operationTaskId ?? `${row.workOrderId}-${task.operationSequence}`"
@@ -631,10 +908,7 @@ function isNonEmpty(value: string) {
                 '未指定工作中心'
               }}
             </span>
-            <span class="text-xs text-muted-foreground">
-              {{ task.operationTaskNo ?? task.operationTaskId ?? '未生成任务' }} ·
-              {{ formatStatus(task.status) }}
-            </span>
+            <span class="text-xs text-muted-foreground">{{ statusLabel(task.status) }}</span>
           </div>
           <span v-if="!row.operationTasks?.length" class="text-xs text-muted-foreground"
             >暂无工序任务</span
@@ -652,6 +926,25 @@ function isNonEmpty(value: string) {
             <ClipboardCheckIcon aria-hidden="true" />
             {{ canReportOrder(row) ? '生产报工' : '暂无工序，不能报工' }}
           </NvDropdownMenuItem>
+          <NvDropdownMenuItem
+            :aria-label="`下达工单 ${row.workOrderNo || row.workOrderId || ''}`"
+            :disabled="releasePreflightPending || Boolean(releaseBlocker(row))"
+            :title="
+              releasePreflightPending ? '正在确认下达条件' : (releaseBlocker(row) ?? '下达当前工单')
+            "
+            @click="openReleaseDialog(row)"
+          >
+            <FactoryIcon aria-hidden="true" />
+            {{ releaseBlocker(row) ? `不能下达：${releaseBlocker(row)}` : '下达工单' }}
+          </NvDropdownMenuItem>
+          <NvDropdownMenuItem
+            :disabled="Boolean(scheduleDisabledReason(row))"
+            :title="scheduleDisabledReason(row) || '对当前工单生成排程方案'"
+            @click="openSchedule(row)"
+          >
+            <CalendarCogIcon aria-hidden="true" />
+            对该单排产
+          </NvDropdownMenuItem>
           <NvDropdownMenuSeparator />
           <NvDropdownMenuItem :disabled="!row.workOrderId" @click="openOrderDetail(row)">
             <ExternalLinkIcon aria-hidden="true" />
@@ -661,12 +954,101 @@ function isNonEmpty(value: string) {
       </template>
     </NvDataTable>
 
+    <SingleOrderSchedulingDialog
+      v-if="scheduleOpen && scheduleTarget"
+      v-model:open="scheduleOpen"
+      :work-order-id="scheduleTarget.workOrderId"
+      :context-label="`MES 工单 ${scheduleTarget.workOrderNo ?? scheduleTarget.workOrderId}`"
+      @scheduled="refreshWorkOrders"
+    />
+
+    <WorkOrderTransformationDialog
+      v-model:open="mergeDialogOpen"
+      mode="merge"
+      :state="mergeState"
+      :pending="mergePending"
+      :sources="mergeSources"
+      :result="mergeResult"
+      :error-message="mergeError"
+      :idempotency-key="mergeIdempotencyKey"
+      @submit="submitMerge"
+      @retry-readback="retryMergeReadback"
+    />
+
+    <NvDialog v-model:open="releaseDialogOpen">
+      <NvDialogContent class="sm:max-w-lg">
+        <NvDialogHeader>
+          <NvDialogTitle>确认下达工单</NvDialogTitle>
+          <NvDialogDescription>
+            下达时系统会再次校验物料、设备、质量与工序就绪条件，未通过则不会下达。
+          </NvDialogDescription>
+        </NvDialogHeader>
+        <form class="grid gap-4" @submit.prevent="submitReleaseWorkOrder">
+          <dl v-if="releaseIntentOrder" class="grid gap-2 rounded-md border p-3 text-sm">
+            <div class="flex justify-between gap-4">
+              <dt class="text-muted-foreground">工单</dt>
+              <dd class="font-medium">{{ releaseIntent?.workOrderLabel }}</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+              <dt class="text-muted-foreground">当前状态</dt>
+              <dd>{{ statusLabel(releaseIntentOrder.status) }}</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+              <dt class="text-muted-foreground">生产版本</dt>
+              <dd>{{ productionVersionLabel(releaseIntentOrder.productionVersionId) }}</dd>
+            </div>
+            <div class="flex justify-between gap-4">
+              <dt class="text-muted-foreground">工序任务</dt>
+              <dd>{{ releaseIntentOrder.operationTasks?.length ?? 0 }} 道</dd>
+            </div>
+          </dl>
+          <p
+            v-if="releaseRetroactiveNotice"
+            class="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-muted-foreground"
+            data-testid="release-retroactive-notice"
+          >
+            {{ releaseRetroactiveNotice }}
+          </p>
+          <p
+            v-if="releaseValidationMessage"
+            class="text-sm text-destructive"
+            role="alert"
+            data-testid="release-validation-message"
+          >
+            {{ releaseValidationMessage }}
+          </p>
+          <label class="flex items-start gap-2 text-sm">
+            <NvCheckbox
+              v-model="releaseWarningsConfirmed"
+              :disabled="releaseWorkOrderPending"
+              aria-label="确认已核对工单下达警告"
+            />
+            <span>我已核对当前工单、生产版本与工序信息，确认下达。</span>
+          </label>
+          <NvDialogFooter>
+            <NvButton
+              type="button"
+              variant="outline"
+              :disabled="releaseWorkOrderPending"
+              @click="clearReleaseIntent"
+            >
+              取消
+            </NvButton>
+            <NvButton type="submit" :disabled="!canSubmitRelease">
+              <NvSpinner v-if="releaseWorkOrderPending" aria-hidden="true" />
+              确认下达
+            </NvButton>
+          </NvDialogFooter>
+        </form>
+      </NvDialogContent>
+    </NvDialog>
+
     <NvDialog v-model:open="rushSheetOpen">
       <NvDialogContent class="sm:max-w-2xl">
         <NvDialogHeader>
           <NvDialogTitle>创建急单</NvDialogTitle>
           <NvDialogDescription class="sr-only"
-            >临时插单，填写物料、数量、交期与工作中心后提交。</NvDialogDescription
+            >临时插单，填写物料、生产版本、数量、交期与工作中心后提交。</NvDialogDescription
           >
         </NvDialogHeader>
         <form class="grid gap-4" @submit.prevent="submitRushWorkOrder">
@@ -675,32 +1057,30 @@ function isNonEmpty(value: string) {
               <NvFieldLabel for="rush-sku"
                 >物料 <span class="text-destructive">*</span></NvFieldLabel
               >
-              <NvEntityPicker
+              <DirectoryPicker
                 id="rush-sku"
                 v-model="rushForm.skuId"
-                :options="skuOptions"
-                title="选择物料"
-                placeholder="选择物料"
-                source-text="数据来自基础数据物料主数据"
-                empty-text="暂无物料，请先在基础数据维护"
-                aria-label="物料"
+                directory-type="material"
+                creatable
                 clearable
               />
             </NvField>
             <NvField>
-              <NvFieldLabel for="rush-version">生产版本</NvFieldLabel>
+              <NvFieldLabel for="rush-version"
+                >生产版本 <span class="text-destructive">*</span></NvFieldLabel
+              >
               <NvEntityPicker
                 id="rush-version"
                 v-model="rushForm.productionVersionId"
                 :options="rushVersionOptions"
                 title="选择生产版本"
-                :placeholder="rushForm.skuId ? '可留空，按生效日自动解析' : '先选物料'"
+                :placeholder="rushForm.skuId ? '选择当前有效的生产版本' : '先选物料'"
                 :disabled="!rushForm.skuId"
-                source-text="仅列所选物料的生产版本"
                 empty-text="该物料暂无生产版本，请先在工程数据维护"
                 :loading="productionVersionsPending"
                 aria-label="生产版本"
                 clearable
+                :show-code="false"
               />
             </NvField>
             <NvField>
@@ -725,15 +1105,11 @@ function isNonEmpty(value: string) {
               <NvFieldLabel for="rush-work-center"
                 >工作中心 <span class="text-destructive">*</span></NvFieldLabel
               >
-              <NvEntityPicker
+              <DirectoryPicker
                 id="rush-work-center"
                 v-model="rushForm.workCenterId"
-                :options="workCenterOptions"
-                title="选择工作中心"
-                placeholder="选择工作中心"
-                source-text="数据来自基础数据工作中心主数据"
-                empty-text="暂无工作中心，请先在基础数据维护"
-                aria-label="工作中心"
+                directory-type="work-center"
+                creatable
                 clearable
               />
             </NvField>
@@ -746,11 +1122,11 @@ function isNonEmpty(value: string) {
                 title="选择工序任务"
                 :placeholder="rushForm.workCenterId ? '可留空' : '先选工作中心'"
                 :disabled="!rushForm.workCenterId"
-                source-text="仅列所选工作中心的在办工序任务"
                 empty-text="该工作中心暂无在办工序任务"
                 :loading="operationTasksPending"
                 aria-label="工序任务"
                 clearable
+                :show-code="false"
               />
             </NvField>
             <NvField>
@@ -787,7 +1163,7 @@ function isNonEmpty(value: string) {
                 >取消</NvButton
               >
               <NvButton type="submit" :disabled="createRushWorkOrderPending || !canCreateRush">
-                <Spinner v-if="createRushWorkOrderPending" aria-hidden="true" />
+                <NvSpinner v-if="createRushWorkOrderPending" aria-hidden="true" />
                 <FactoryIcon v-else aria-hidden="true" />
                 创建急单
               </NvButton>

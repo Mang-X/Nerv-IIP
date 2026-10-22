@@ -8,6 +8,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<StoredFileRecord> StoredFiles => Set<StoredFileRecord>();
     public DbSet<UploadSessionRecord> UploadSessions => Set<UploadSessionRecord>();
     public DbSet<DownloadGrantRecord> DownloadGrants => Set<DownloadGrantRecord>();
+    public DbSet<TemplateAssetRetirementRecord> TemplateAssetRetirements => Set<TemplateAssetRetirementRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

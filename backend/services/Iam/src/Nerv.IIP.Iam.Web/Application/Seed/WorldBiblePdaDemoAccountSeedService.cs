@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.Iam.Domain.AggregatesModel.MembershipAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.OrganizationAggregate;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
@@ -30,54 +31,57 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
     /// <summary>PDA 产线操作工角色：派工/工序执行/报工/领料/完工入库/SOP/报警/报修。</summary>
     public const string OperatorRoleId = "role-pda-operator";
 
-    /// <summary>PDA 仓储库管角色：收货/上架/拣货/出库/盘点 + 库存联动字段。</summary>
+    /// <summary>PDA 仓储库管角色：收货/上架/拣货/出库/盘点、SKU 查询 + 库存联动字段。</summary>
     public const string WarehouseRoleId = "role-pda-warehouse";
 
     /// <summary>PDA 质量检验员角色：检验任务执行与记录/NCR 查看。</summary>
     public const string InspectorRoleId = "role-pda-inspector";
 
-    private const string WarehouseCountsReadPermission = "business.wms.counts.read";
+    private const string WarehouseProductsReadPermission = NervIipPermissionCodes.MasterDataProductsRead;
+    private const string WarehouseCountsReadPermission = NervIipPermissionCodes.WmsCountsRead;
 
     public static readonly (string RoleId, string RoleName, string[] PermissionCodes)[] Roles =
     [
         (OperatorRoleId, "产线操作工（PDA）",
         [
-            "business.mes.work-orders.read",
-            "business.mes.dispatch.read",
-            "business.mes.operations.read",
-            "business.mes.operations.manage",
-            "business.mes.reporting.read",
-            "business.mes.reporting.write",
-            "business.mes.materials.read",
-            "business.mes.materials.manage",
-            "business.mes.receipts.read",
-            "business.mes.receipts.manage",
-            "business.engineering.documents.read",
-            "business.iiot.alarms.read",
-            "business.iiot.alarms.write",
-            "business.maintenance.work-orders.read",
-            "business.maintenance.work-orders.manage",
-            "business.maintenance.plans.read",
-            "business.masterdata.resources.read",
+            NervIipPermissionCodes.MesWorkOrdersRead,
+            NervIipPermissionCodes.MesDispatchRead,
+            NervIipPermissionCodes.MesOperationsRead,
+            NervIipPermissionCodes.MesOperationsManage,
+            NervIipPermissionCodes.MesReportingRead,
+            NervIipPermissionCodes.MesReportingWrite,
+            NervIipPermissionCodes.MesMaterialsRead,
+            NervIipPermissionCodes.MesMaterialsManage,
+            NervIipPermissionCodes.MesReceiptsRead,
+            NervIipPermissionCodes.MesReceiptsManage,
+            NervIipPermissionCodes.EngineeringDocumentsRead,
+            NervIipPermissionCodes.IiotAlarmsRead,
+            NervIipPermissionCodes.IiotAlarmsWrite,
+            NervIipPermissionCodes.MaintenanceWorkOrdersRead,
+            NervIipPermissionCodes.MaintenanceWorkOrdersManage,
+            NervIipPermissionCodes.MaintenancePlansRead,
+            NervIipPermissionCodes.MaintenanceDowntimeReasonsRead,
+            NervIipPermissionCodes.MasterDataResourcesRead,
         ]),
         (WarehouseRoleId, "仓储库管（PDA）",
         [
-            "business.wms.receipts.read",
-            "business.wms.receipts.manage",
-            "business.wms.shipments.read",
-            "business.wms.shipments.manage",
+            NervIipPermissionCodes.WmsReceiptsRead,
+            NervIipPermissionCodes.WmsReceiptsManage,
+            NervIipPermissionCodes.WmsShipmentsRead,
+            NervIipPermissionCodes.WmsShipmentsManage,
+            WarehouseProductsReadPermission,
             WarehouseCountsReadPermission,
-            "business.inventory.ledger.read",
-            "business.inventory.counts.manage",
-            "business.inventory.movements.create",
-            "business.masterdata.resources.read",
+            NervIipPermissionCodes.InventoryLedgerRead,
+            NervIipPermissionCodes.InventoryCountsManage,
+            NervIipPermissionCodes.InventoryMovementsCreate,
+            NervIipPermissionCodes.MasterDataResourcesRead,
         ]),
         (InspectorRoleId, "质量检验员（PDA）",
         [
-            "business.quality.inspection-records.read",
-            "business.quality.inspection-records.create",
-            "business.mes.work-orders.read",
-            "business.masterdata.resources.read",
+            NervIipPermissionCodes.QualityInspectionRecordsRead,
+            NervIipPermissionCodes.QualityInspectionRecordsCreate,
+            NervIipPermissionCodes.MesWorkOrdersRead,
+            NervIipPermissionCodes.MasterDataResourcesRead,
         ]),
     ];
 
@@ -115,6 +119,10 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
             new SeedManifestId("iam-pda-warehouse-counts-read-permission:v1");
         var warehouseCountsReadApplied = await dbContext.SeedManifests
             .FindAsync([warehouseCountsReadManifestId], cancellationToken) is not null;
+        var warehouseProductsReadManifestId =
+            new SeedManifestId("iam-pda-warehouse-products-read-permission:v1");
+        var warehouseProductsReadApplied = await dbContext.SeedManifests
+            .FindAsync([warehouseProductsReadManifestId], cancellationToken) is not null;
         var now = DateTimeOffset.UtcNow;
         var rolesById = new Dictionary<string, Role>(StringComparer.Ordinal);
 
@@ -150,6 +158,27 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
             dbContext.SeedManifests.Add(new SeedManifest(
                 warehouseCountsReadManifestId,
                 "iam-pda-warehouse-counts-read-permission",
+                "v1",
+                "iam",
+                now));
+        }
+
+        if (!warehouseProductsReadApplied)
+        {
+            var warehouseRole = rolesById[WarehouseRoleId];
+            if (IsLegacyWarehouseRoleBeforeProductsRead(
+                    warehouseRole,
+                    warehouseSiteScopeApplied))
+            {
+                warehouseRole.ReplacePermissions([
+                    .. warehouseRole.Permissions.Select(permission => permission.PermissionCode),
+                    WarehouseProductsReadPermission,
+                ]);
+            }
+
+            dbContext.SeedManifests.Add(new SeedManifest(
+                warehouseProductsReadManifestId,
+                "iam-pda-warehouse-products-read-permission",
                 "v1",
                 "iam",
                 now));
@@ -251,6 +280,43 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
                 !string.Equals(
                     permissionCode,
                     WarehouseCountsReadPermission,
+                    StringComparison.Ordinal)
+                && !string.Equals(
+                    permissionCode,
+                    WarehouseProductsReadPermission,
+                    StringComparison.Ordinal))
+            .ToHashSet(StringComparer.Ordinal);
+        var permissionCodesWithProductsRead = baseline.PermissionCodes
+            .Where(permissionCode =>
+                !string.Equals(
+                    permissionCode,
+                    WarehouseCountsReadPermission,
+                    StringComparison.Ordinal))
+            .ToHashSet(StringComparer.Ordinal);
+        return role.RoleName == baseline.RoleName
+            && (role.Permissions
+                    .Select(permission => permission.PermissionCode)
+                    .ToHashSet(StringComparer.Ordinal)
+                    .SetEquals(previousPermissionCodes)
+                || role.Permissions
+                    .Select(permission => permission.PermissionCode)
+                    .ToHashSet(StringComparer.Ordinal)
+                    .SetEquals(permissionCodesWithProductsRead))
+            && IsManagedLegacyWarehouseScope(
+                role,
+                warehouseSiteScopeApplied);
+    }
+
+    private static bool IsLegacyWarehouseRoleBeforeProductsRead(
+        Role role,
+        bool warehouseSiteScopeApplied)
+    {
+        var baseline = Roles.Single(x => x.RoleId == WarehouseRoleId);
+        var previousPermissionCodes = baseline.PermissionCodes
+            .Where(permissionCode =>
+                !string.Equals(
+                    permissionCode,
+                    WarehouseProductsReadPermission,
                     StringComparison.Ordinal))
             .ToHashSet(StringComparer.Ordinal);
         return role.RoleName == baseline.RoleName

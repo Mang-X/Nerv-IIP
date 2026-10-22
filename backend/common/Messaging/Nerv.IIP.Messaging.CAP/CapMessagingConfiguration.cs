@@ -87,6 +87,9 @@ public static class CapMessagingConfiguration
             var redisConfiguration = ConfigurationOptions.Parse(redisConnectionString);
             redisConfiguration.AbortOnConnectFail = false;
             options.UseRedis(redisOptions => redisOptions.Configuration = redisConfiguration);
+            // Must come after UseRedis: AddCap runs ICapOptionsExtension.AddServices in registration order, and the
+            // decoration extension captures the IConsumerClientFactory descriptor the Redis extension registers.
+            options.RegisterExtension(new ConsumerClientDecorationExtension());
             return options;
         }
 

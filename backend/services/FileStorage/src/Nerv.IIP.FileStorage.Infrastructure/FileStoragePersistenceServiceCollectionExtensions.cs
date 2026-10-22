@@ -22,8 +22,18 @@ public static class FileStoragePersistenceServiceCollectionExtensions
         services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(
             connectionString,
             npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "filestorage")));
+        services.AddScoped<IDbContextFactory<ApplicationDbContext>>(services =>
+            new FileStorageDbContextFactory(
+                services.GetRequiredService<DbContextOptions<ApplicationDbContext>>()));
+        services.AddScoped<UploadCommitExecutionLeaseStore>();
         services.AddScoped<FileStorageDatabaseMigrationRunner>();
 
         return services;
+    }
+
+    private sealed class FileStorageDbContextFactory(DbContextOptions<ApplicationDbContext> options)
+        : IDbContextFactory<ApplicationDbContext>
+    {
+        public ApplicationDbContext CreateDbContext() => new(options);
     }
 }

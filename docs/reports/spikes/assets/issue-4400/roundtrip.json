@@ -1,0 +1,489 @@
+{
+  "sourceSha": "bc205af1f3e3724e16371a69355ee729973be0c3",
+  "sessionId": "nerv-4400-bc205b",
+  "app": "http://localhost:54890",
+  "scope": {
+    "organizationId": "org-001",
+    "environmentId": "env-dev"
+  },
+  "workOrderId": "WO-20261013-000001",
+  "operationId": "WO-20261013-000001-OP-10",
+  "stages": [
+    {
+      "timezoneId": "Asia/Shanghai",
+      "planId": "plan-01a135df9bde769cbc91b1f1b12b5373",
+      "beforeStart": "2026-10-13T15:25:29.452321+00:00",
+      "beforeEnd": "2026-10-13T15:32:29.452321+00:00",
+      "beforeDraftTask": {
+        "taskId": "assign-WO-20261013-000001-WO-20261013-000001-OP-10",
+        "orderId": "WO-20261013-000001",
+        "operationId": "WO-20261013-000001-OP-10",
+        "resourceId": "WC-TUB-01",
+        "workCenterId": "WC-TUB-01",
+        "startUtc": "2026-10-13T15:25:29.452321+00:00",
+        "endUtc": "2026-10-13T15:32:29.452321+00:00",
+        "locked": false,
+        "segments": null
+      },
+      "beforePlanAssignment": {
+        "assignmentId": "assign-WO-20261013-000001-WO-20261013-000001-OP-10",
+        "orderId": "WO-20261013-000001",
+        "operationId": "WO-20261013-000001-OP-10",
+        "operationSequence": 10,
+        "resourceId": "WC-TUB-01",
+        "workCenterId": "WC-TUB-01",
+        "startUtc": "2026-10-13T15:25:29.452321+00:00",
+        "endUtc": "2026-10-13T15:32:29.452321+00:00",
+        "isLocked": false,
+        "explanationCode": "scheduled",
+        "standardOperationCode": "OP-WB-CUT",
+        "segments": null,
+        "currentExecution": {
+          "observedAtUtc": "2026-10-13T15:29:54.03877+00:00",
+          "workOrderProgress": {
+            "completedQuantity": 0,
+            "plannedQuantity": 1
+          },
+          "materialReadyUtc": null,
+          "isMaterialReady": false,
+          "equipmentState": null,
+          "equipmentStateOccurredAtUtc": null,
+          "isEquipmentSourceFresh": false
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/working-drafts",
+          "status": 200,
+          "correlationId": "efdb597c37174fe5a7b946fa9ebcfc1f"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/history",
+          "status": 200,
+          "correlationId": "cf3984da6c5c4ff596324c2af91956fd"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373",
+          "status": 200,
+          "correlationId": "6ad91f759dd048379d9304f6b0e8c54f"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/history",
+          "status": 200,
+          "correlationId": "c216cc77865f43718f184189447c2255"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/downtime-impact",
+          "status": 200,
+          "correlationId": "8c41927bc38548a3aa929028a502c092"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/history",
+          "status": 200,
+          "correlationId": "17fffc48edb147ad81ec0962a139ffc7"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/working-drafts",
+          "status": 200,
+          "correlationId": "6b11b7b06e5d4efe813864d22c6bc15c"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373",
+          "status": 200,
+          "correlationId": "89277811950242edaab0dcd1641fe9c2"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/history",
+          "status": 200,
+          "correlationId": "5f2b30a3773e47d29d27bc6e90546772"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/downtime-impact",
+          "status": 200,
+          "correlationId": "a0f73dca8c3e4d3fabc32a626d572e02"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/working-drafts",
+          "status": 200,
+          "correlationId": "5fb580f76207406fbfe5c9cdd97c372a"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/history",
+          "status": 200,
+          "correlationId": "308db88588a649c7bef00dd66107c790"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373",
+          "status": 200,
+          "correlationId": "b24d38f6ea704e7495b5c9252e5db329"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/history",
+          "status": 200,
+          "correlationId": "5286779b14284b96b368d6b2ab4a60ed"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/downtime-impact",
+          "status": 200,
+          "correlationId": "abcc84c67a5844998ada523f97e06526"
+        },
+        {
+          "method": "PUT",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+          "status": 200,
+          "correlationId": "630bd731a3764846bf58feff9a8ee797"
+        },
+        {
+          "method": "PUT",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+          "status": 200,
+          "correlationId": "ec1a092544cd40bda31d9716c481802b"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/working-drafts",
+          "status": 200,
+          "correlationId": "b7dd7b42411444cd896edbda75625f62"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/history",
+          "status": 200,
+          "correlationId": "f1bb0610fc7b4b069a5cd135b2b8a082"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373",
+          "status": 200,
+          "correlationId": "a9d1385327d64856b4fd56340c72dbd3"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/history",
+          "status": 200,
+          "correlationId": "1a077707e2404aa9962ea0fe443c2702"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/downtime-impact",
+          "status": 200,
+          "correlationId": "9c621cf88a0343d4bc5d5593c6173ffb"
+        }
+      ],
+      "noop": {
+        "start": "2026-10-13T15:25:29.452321+00:00",
+        "end": "2026-10-13T15:32:29.452321+00:00"
+      },
+      "noopDraftTask": {
+        "taskId": "assign-WO-20261013-000001-WO-20261013-000001-OP-10",
+        "orderId": "WO-20261013-000001",
+        "operationId": "WO-20261013-000001-OP-10",
+        "resourceId": "WC-TUB-01",
+        "workCenterId": "WC-TUB-01",
+        "startUtc": "2026-10-13T15:25:29.452321+00:00",
+        "endUtc": "2026-10-13T15:32:29.452321+00:00",
+        "locked": false,
+        "segments": null
+      },
+      "edited": {
+        "requestedStart": "2026-10-13T16:25:29.452Z",
+        "requestedEnd": "2026-10-13T16:32:29.452Z",
+        "draftTask": {
+          "taskId": "assign-WO-20261013-000001-WO-20261013-000001-OP-10",
+          "orderId": "WO-20261013-000001",
+          "operationId": "WO-20261013-000001-OP-10",
+          "resourceId": "WC-TUB-01",
+          "workCenterId": "WC-TUB-01",
+          "startUtc": "2026-10-13T16:25:29.452+00:00",
+          "endUtc": "2026-10-13T16:32:29.452+00:00",
+          "locked": false,
+          "segments": null
+        }
+      },
+      "reopened": {
+        "start": "2026-10-13T16:25:29.452+00:00",
+        "end": "2026-10-13T16:32:29.452+00:00"
+      },
+      "ganttText": "N\nNerv-IIP 业务控制台\n需求与物料计划\n排产工作台\n展开或收起侧栏\n数字化工作台\n基础数据\n产品工程\n需求与计划\n更多\n搜索菜单、单号、物料…\n⌘K\n收件箱\n0\nAD\n需求与计划\n排产工作台\n1 个方案\n刷新\n排程总览\n表格\n甘特图\n\n批量待排 → 编辑锁定 → 重预览 → 对比发布\n\n已选择 0 个工单，锁定 0 道工序。\n\n撤销\n重做\n生成首版\n发布新版\n草稿已保存 · 2026-10-13 23:29\nplan-01a135df9bde769cbc91b1f1b12b5373\n清空草稿\n排程窗口\n现在起 7 天\n\n排程窗口：2026/10/13 23:00:00 至 2026/10/20 23:00:00\n\n待排工单池\n\n异步首版最多选择 500 单；已选 0 单。\n\n作业范围\n当前组织（组织）\n全部加入\n全部移出\n加入\t工单\t物料\t交期\t紧迫度\t优先级\t急单\t保存\n\n\t\nWO-20261013-000001\n\t\n活塞杆 φ20×380\nSF-ROD-01\n\t2026/10/16 23:25:29\t\n高风险\n\t\n\t\n\t保存\n局部重排候选\n\n比较当前事实下的预览，选定后进入草稿确认发布。\n\n生成重排候选\n\n草稿有人工编辑，请先锁定重预览生成新基线，再生成局部候选。\n\n1 道人工修改尚未锁定；重预览前需锁定，避免修改被候选方案覆盖。\n锁定全部修改\n锁定重预览\n排程草案工作区\n\n甘特拖拽、资源泳道和表格编辑共享同一份草稿状态。\n\n工序待排池\n0 道工序\n\n暂无未排、移回或受失效影响的工序。\n\n方案级缺料汇总\n\n整批方案的物料缺口与受影响工序，需在开工前完成备料。\n\n物料 / 批次\t缺口数量\t受影响工单 / 工序\n\n\nRM-BAR-01\n\n\t1.4 kg\t\nWO-20261013-000001 · WO-20261013-000001-OP-10\nWO-20261013-000001 · WO-20261013-000001-OP-20\nWO-20261013-000001 · WO-20261013-000001-OP-30\n\n即时反馈随草案更新；发布前仍需锁定重预览，由后端确认最终可排结果。\n\n即时反馈 · 1 道工序需核对\nWO-20261013-000001 · WO-20261013-000001-OP-20\n\n前序倒置：开始早于前序工序 WO-20261013-000001-OP-10 结束。\n\n3 道工序有物料风险 · 需在开工前完成备料\n\nWO-20261013-000001 · WO-20261013-000001-OP-10 — RM-BAR-01 缺 1.4\nWO-20261013-000001 · WO-20261013-000001-OP-20 — RM-BAR-01 缺 1.4\nWO-20261013-000001 · WO-20261013-000001-OP-30 — RM-BAR-01 缺 1.4\n\n3 道工序的设备状态未知 · 开工前请人工确认设备可用\n\nWO-20261013-000001 · WO-20261013-000001-OP-10 — 设备 WC-TUB-01 状态未知(设备尚未接入采集)。已按计划排入,开工前请人工确认设备可用。\nWO-20261013-000001 · WO-20261013-000001-OP-20 — 设备 WC-ROD-01 状态未知(设备尚未接入采集)。已按计划排入,开工前请人工确认设备可用。\nWO-20261013-000001 · WO-20261013-000001-OP-30 — 设备 WC-GRD-01 状态未知(设备尚未接入采集)。已按计划排入,开工前请人工确认设备可用。\n工单甘特\n资源排产板\n表格编辑\n自适应\n任务名称负责人优先级状态工时工单进度\nWO-20261013-000001\nWO-20261013-000001-OP-10\n—\n<1h\n0 / 1\nWO-20261013-000001-OP-20\n—\n<1h\n0 / 1\nWO-20261013-000001-OP-30\n—\n<1h\n0 / 1\n10月13日 周二\n10月14日 周三\n21:00\n23:00\n01:00\n03:00\nWO-20261013-000001-OP-10\nWO-20261013-000001-OP-20\nWO-20261013-000001-OP-30\n现在\n甘特语义\n依赖箭头\n状态\n冲突\n缺料待备\n设备状态未知\n日历\n非工作时段\n班次边界\n现在",
+      "afterPlanAssignment": {
+        "assignmentId": "assign-WO-20261013-000001-WO-20261013-000001-OP-10",
+        "orderId": "WO-20261013-000001",
+        "operationId": "WO-20261013-000001-OP-10",
+        "operationSequence": 10,
+        "resourceId": "WC-TUB-01",
+        "workCenterId": "WC-TUB-01",
+        "startUtc": "2026-10-13T15:25:29.452321+00:00",
+        "endUtc": "2026-10-13T15:32:29.452321+00:00",
+        "isLocked": false,
+        "explanationCode": "scheduled",
+        "standardOperationCode": "OP-WB-CUT",
+        "segments": null,
+        "currentExecution": {
+          "observedAtUtc": "2026-10-13T15:30:00.370191+00:00",
+          "workOrderProgress": {
+            "completedQuantity": 0,
+            "plannedQuantity": 1
+          },
+          "materialReadyUtc": null,
+          "isMaterialReady": false,
+          "equipmentState": null,
+          "equipmentStateOccurredAtUtc": null,
+          "isEquipmentSourceFresh": false
+        }
+      }
+    },
+    {
+      "timezoneId": "UTC",
+      "planId": "plan-01a135df9bde769cbc91b1f1b12b5373",
+      "beforeStart": "2026-10-13T16:25:29.452+00:00",
+      "beforeEnd": "2026-10-13T16:32:29.452+00:00",
+      "beforeDraftTask": {
+        "taskId": "assign-WO-20261013-000001-WO-20261013-000001-OP-10",
+        "orderId": "WO-20261013-000001",
+        "operationId": "WO-20261013-000001-OP-10",
+        "resourceId": "WC-TUB-01",
+        "workCenterId": "WC-TUB-01",
+        "startUtc": "2026-10-13T16:25:29.452+00:00",
+        "endUtc": "2026-10-13T16:32:29.452+00:00",
+        "locked": false,
+        "segments": null
+      },
+      "beforePlanAssignment": {
+        "assignmentId": "assign-WO-20261013-000001-WO-20261013-000001-OP-10",
+        "orderId": "WO-20261013-000001",
+        "operationId": "WO-20261013-000001-OP-10",
+        "operationSequence": 10,
+        "resourceId": "WC-TUB-01",
+        "workCenterId": "WC-TUB-01",
+        "startUtc": "2026-10-13T15:25:29.452321+00:00",
+        "endUtc": "2026-10-13T15:32:29.452321+00:00",
+        "isLocked": false,
+        "explanationCode": "scheduled",
+        "standardOperationCode": "OP-WB-CUT",
+        "segments": null,
+        "currentExecution": {
+          "observedAtUtc": "2026-10-13T15:30:07.495407+00:00",
+          "workOrderProgress": {
+            "completedQuantity": 0,
+            "plannedQuantity": 1
+          },
+          "materialReadyUtc": null,
+          "isMaterialReady": false,
+          "equipmentState": null,
+          "equipmentStateOccurredAtUtc": null,
+          "isEquipmentSourceFresh": false
+        }
+      },
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/working-drafts",
+          "status": 200,
+          "correlationId": "547057ba6297494d9b687e8487738769"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/history",
+          "status": 200,
+          "correlationId": "6be09f6c8342489a8adc0e71b2fa9b19"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373",
+          "status": 200,
+          "correlationId": "05c10c8e9801434e9eaaaa2cab8dd297"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/history",
+          "status": 200,
+          "correlationId": "9f6c4f3d373d49068c9340335aca0896"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/downtime-impact",
+          "status": 200,
+          "correlationId": "d80d65f762de4ba4a89689f73f339cad"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/working-drafts",
+          "status": 200,
+          "correlationId": "a0bbcc047db5446e9c97f43471c1710f"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/history",
+          "status": 200,
+          "correlationId": "13003d89f3464abf82cda72729d65588"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373",
+          "status": 200,
+          "correlationId": "7364769ca0584f27a3f6d20a641e86ac"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/history",
+          "status": 200,
+          "correlationId": "81f08dad9134454587cdb25d67b3e815"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/downtime-impact",
+          "status": 200,
+          "correlationId": "0375ea0901354cc7988a8d0987fe5679"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/working-drafts",
+          "status": 200,
+          "correlationId": "b09562ea73bd45509edf3e28aab3bfbb"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/history",
+          "status": 200,
+          "correlationId": "a2e54406d7664c45ab5777bd2b3acf81"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373",
+          "status": 200,
+          "correlationId": "6912e85a84a24441bfc13f38385ea39f"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/history",
+          "status": 200,
+          "correlationId": "7f808be7fbb94310926dd86537c1bbf8"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/downtime-impact",
+          "status": 200,
+          "correlationId": "d25debf5336e4d4e90de6106a8ac7042"
+        },
+        {
+          "method": "PUT",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+          "status": 200,
+          "correlationId": "6185641f61594ddcbe9d0b881e91ba23"
+        },
+        {
+          "method": "PUT",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+          "status": 200,
+          "correlationId": "559e2996a0da468186b2458d5f6476aa"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/working-drafts",
+          "status": 200,
+          "correlationId": "2e2753ba940248a89d16f98383d04fb0"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/history",
+          "status": 200,
+          "correlationId": "3ab39607e2cb429faf80eabca5e1edb1"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373",
+          "status": 200,
+          "correlationId": "14ceede65ff6407783c918917836cf28"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/history",
+          "status": 200,
+          "correlationId": "e05057d469a44b32a736940f90c20bf6"
+        },
+        {
+          "method": "GET",
+          "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/downtime-impact",
+          "status": 200,
+          "correlationId": "28322abffc104854a87a5bf7c2c0f18d"
+        }
+      ],
+      "noop": {
+        "start": "2026-10-13T16:25:29.452+00:00",
+        "end": "2026-10-13T16:32:29.452+00:00"
+      },
+      "noopDraftTask": {
+        "taskId": "assign-WO-20261013-000001-WO-20261013-000001-OP-10",
+        "orderId": "WO-20261013-000001",
+        "operationId": "WO-20261013-000001-OP-10",
+        "resourceId": "WC-TUB-01",
+        "workCenterId": "WC-TUB-01",
+        "startUtc": "2026-10-13T16:25:29.452+00:00",
+        "endUtc": "2026-10-13T16:32:29.452+00:00",
+        "locked": false,
+        "segments": null
+      },
+      "edited": {
+        "requestedStart": "2026-10-13T17:25:29.452Z",
+        "requestedEnd": "2026-10-13T17:32:29.452Z",
+        "draftTask": {
+          "taskId": "assign-WO-20261013-000001-WO-20261013-000001-OP-10",
+          "orderId": "WO-20261013-000001",
+          "operationId": "WO-20261013-000001-OP-10",
+          "resourceId": "WC-TUB-01",
+          "workCenterId": "WC-TUB-01",
+          "startUtc": "2026-10-13T17:25:29.452+00:00",
+          "endUtc": "2026-10-13T17:32:29.452+00:00",
+          "locked": false,
+          "segments": null
+        }
+      },
+      "reopened": {
+        "start": "2026-10-13T17:25:29.452+00:00",
+        "end": "2026-10-13T17:32:29.452+00:00"
+      },
+      "ganttText": "N\nNerv-IIP 业务控制台\n需求与物料计划\n排产工作台\n展开或收起侧栏\n数字化工作台\n基础数据\n产品工程\n需求与计划\n更多\n搜索菜单、单号、物料…\n⌘K\n收件箱\n0\nAD\n需求与计划\n排产工作台\n1 个方案\n刷新\n排程总览\n表格\n甘特图\n\n批量待排 → 编辑锁定 → 重预览 → 对比发布\n\n已选择 0 个工单，锁定 0 道工序。\n\n撤销\n重做\n生成首版\n发布新版\n草稿已保存 · 2026-10-13 15:30\nplan-01a135df9bde769cbc91b1f1b12b5373\n清空草稿\n排程窗口\n现在起 7 天\n\n排程窗口：2026/10/13 15:00:00 至 2026/10/20 15:00:00\n\n待排工单池\n\n异步首版最多选择 500 单；已选 0 单。\n\n作业范围\n当前组织（组织）\n全部加入\n全部移出\n加入\t工单\t物料\t交期\t紧迫度\t优先级\t急单\t保存\n\n\t\nWO-20261013-000001\n\t\n活塞杆 φ20×380\nSF-ROD-01\n\t2026/10/16 15:25:29\t\n高风险\n\t\n\t\n\t保存\n局部重排候选\n\n比较当前事实下的预览，选定后进入草稿确认发布。\n\n生成重排候选\n\n草稿有人工编辑，请先锁定重预览生成新基线，再生成局部候选。\n\n1 道人工修改尚未锁定；重预览前需锁定，避免修改被候选方案覆盖。\n锁定全部修改\n锁定重预览\n排程草案工作区\n\n甘特拖拽、资源泳道和表格编辑共享同一份草稿状态。\n\n工序待排池\n0 道工序\n\n暂无未排、移回或受失效影响的工序。\n\n方案级缺料汇总\n\n整批方案的物料缺口与受影响工序，需在开工前完成备料。\n\n物料 / 批次\t缺口数量\t受影响工单 / 工序\n\n\nRM-BAR-01\n\n\t1.4 kg\t\nWO-20261013-000001 · WO-20261013-000001-OP-10\nWO-20261013-000001 · WO-20261013-000001-OP-20\nWO-20261013-000001 · WO-20261013-000001-OP-30\n\n即时反馈随草案更新；发布前仍需锁定重预览，由后端确认最终可排结果。\n\n即时反馈 · 1 道工序需核对\nWO-20261013-000001 · WO-20261013-000001-OP-20\n\n前序倒置：开始早于前序工序 WO-20261013-000001-OP-10 结束。\n\n3 道工序有物料风险 · 需在开工前完成备料\n\nWO-20261013-000001 · WO-20261013-000001-OP-10 — RM-BAR-01 缺 1.4\nWO-20261013-000001 · WO-20261013-000001-OP-20 — RM-BAR-01 缺 1.4\nWO-20261013-000001 · WO-20261013-000001-OP-30 — RM-BAR-01 缺 1.4\n\n3 道工序的设备状态未知 · 开工前请人工确认设备可用\n\nWO-20261013-000001 · WO-20261013-000001-OP-10 — 设备 WC-TUB-01 状态未知(设备尚未接入采集)。已按计划排入,开工前请人工确认设备可用。\nWO-20261013-000001 · WO-20261013-000001-OP-20 — 设备 WC-ROD-01 状态未知(设备尚未接入采集)。已按计划排入,开工前请人工确认设备可用。\nWO-20261013-000001 · WO-20261013-000001-OP-30 — 设备 WC-GRD-01 状态未知(设备尚未接入采集)。已按计划排入,开工前请人工确认设备可用。\n工单甘特\n资源排产板\n表格编辑\n自适应\n任务名称负责人优先级状态工时工单进度\nWO-20261013-000001\nWO-20261013-000001-OP-10\n—\n<1h\n0 / 1\nWO-20261013-000001-OP-20\n—\n<1h\n0 / 1\nWO-20261013-000001-OP-30\n—\n<1h\n0 / 1\n10月13日 周二\n13:00\n15:00\n17:00\n19:00\nWO-20261013-000001-OP-10\nWO-20261013-000001-OP-20\nWO-20261013-000001-OP-30\n现在\n甘特语义\n依赖箭头\n状态\n冲突\n缺料待备\n设备状态未知\n日历\n非工作时段\n班次边界\n现在",
+      "afterPlanAssignment": {
+        "assignmentId": "assign-WO-20261013-000001-WO-20261013-000001-OP-10",
+        "orderId": "WO-20261013-000001",
+        "operationId": "WO-20261013-000001-OP-10",
+        "operationSequence": 10,
+        "resourceId": "WC-TUB-01",
+        "workCenterId": "WC-TUB-01",
+        "startUtc": "2026-10-13T15:25:29.452321+00:00",
+        "endUtc": "2026-10-13T15:32:29.452321+00:00",
+        "isLocked": false,
+        "explanationCode": "scheduled",
+        "standardOperationCode": "OP-WB-CUT",
+        "segments": null,
+        "currentExecution": {
+          "observedAtUtc": "2026-10-13T15:30:15.177496+00:00",
+          "workOrderProgress": {
+            "completedQuantity": 0,
+            "plannedQuantity": 1
+          },
+          "materialReadyUtc": null,
+          "isMaterialReady": false,
+          "equipmentState": null,
+          "equipmentStateOccurredAtUtc": null,
+          "isEquipmentSourceFresh": false
+        }
+      }
+    }
+  ]
+}

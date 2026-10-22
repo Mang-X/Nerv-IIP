@@ -1,0 +1,33 @@
+# Runbook 文档入口
+
+本目录只承载**当前可执行操作**：启动、部署、迁移、恢复、排障以及操作者需要遵守的停止条件和证据要求。命令、参数、端口、版本与运行行为最终以当前脚本、CLI help、配置和代码为准；Runbook 不保存项目进度或阶段历史。
+
+## 按操作路由
+
+| 操作 | 当前 Runbook | 主要权威生产者 |
+| --- | --- | --- |
+| 本地开发、Aspire、worktree、真实依赖与排障 | [`local-development.md`](local-development.md) | `nerv.ps1 help`、`nerv.ps1 ports`、AppHost、配置与脚本 |
+| bootstrap、Compose 生成/部署、release-install 与交付排障 | [`deployment.md`](deployment.md) | `nerv.ps1 help`、AppHost、`scripts/bootstrap-online.ps1`、`scripts/install/`、`scripts/package/` |
+| API/OpenAPI 导出、client 生成与 drift 排障 | [`api-codegen.md`](api-codegen.md) | `scripts/export-gateway-openapi.ps1`、`scripts/verify-openapi-client-drift.ps1`、`frontend/package.json` |
+| 脚本执行、验证、兼容性与治理排障 | [`script-automation.md`](script-automation.md) | `nerv.ps1 help`、目标脚本 `Get-Help`、`scripts/check-script-governance.ps1`、共享脚本 library/tests |
+| 测试 evidence、determinism、真实依赖、PDA smoke 与前端单测判读 | [`testing/README.md`](testing/README.md) | `scripts/tests/**`、test/lane manifests、runner/verifier、Vitest/Playwright/Android producer |
+| 数据库发布、迁移、备份、恢复与 seed | [`database-release.md`](database-release.md) | `scripts/install/migrate-*.ps1`、migration manifest、EF migrations、ADR 0009 |
+| 班组长停机最小角色、账号与工作中心准备 | [`mes-downtime-team-leader.md`](mes-downtime-team-leader.md) | IAM 岗位模板、成员范围、MasterData 员工/班组及 MES 派工公开合同 |
+| FileStorage 停服离线迁移、切换与回滚 | [`file-storage-offline-migration.md`](file-storage-offline-migration.md) | ADR 0027、FileStorage/provider 实现、对应迁移实现 |
+| PDA / Capacitor / APK 构建与部署 | [`mobile-pda-deployment.md`](mobile-pda-deployment.md) | `frontend/apps/business-pda/scripts/pda-apk-build.ps1`、Capacitor/Android 配置 |
+| ERP 销售订单 → DemandPlanning 演示与跨进程验证 | [`erp-sales-order-demand-planning.md`](erp-sales-order-demand-planning.md) | ERP/DemandPlanning 当前代码、AppHost 配置与 `scripts/verify-erp-sales-order-demand-planning.ps1` |
+| Scheduling 订单紧急度归档/恢复与保留发布 | [`scheduling-order-urgency-retention.md`](scheduling-order-urgency-retention.md) | BusinessScheduling/FileStorage 当前代码、配置、迁移与 `scripts/verify-business-scheduling-urgency-retention.ps1` |
+| Quality 工单发布事实缺失的观测与回填恢复 | [`quality-release-fact-backlog.md`](quality-release-fact-backlog.md) | BusinessQuality 巡检与指标当前代码、`Quality:ReleaseFactBacklog` 配置、MES 回填端点 |
+
+## 操作纪律
+
+1. **先核对前置条件，再执行有副作用命令。** 目标环境、身份、连接、备份、工具链或受治理入口不满足时停止，不靠临时脚本绕过。
+2. **优先使用仓库公开入口。** 如果 Runbook 文本与 `nerv.ps1 help`、脚本参数、配置或当前实现冲突，以生产者为准并修正文档。
+3. **失败要有停止条件。** 不确定写入是否完成时先用权威读面或工具状态核实，禁止盲目重放非幂等动作。
+4. **恢复/回滚必须说明边界。** 能否回滚、需要前滚修复、是否依赖备份或新 run，都以各 Runbook 的明确契约为准。
+5. **证据与秘密分开。** 记录 commit/release/run、目标、命令结果、日志或 fingerprint；口令、token、连接串等敏感输入不得进入仓库或公开日志。
+6. **Runbook 不保存阶段历史。** 一次性调查、历史形成过程和完成记录进入 Reports/Archive；任务状态和验收证据留在 GitHub/Linear。
+
+## M4 后的路径规则
+
+M2/M4 已退出 `docs/architecture/` 根目录旧 Runbook/Governance 文件名。当前操作文档只链接本目录与其它 canonical owner；ADR、Reports、Status archive、Superpowers 等冻结材料中的旧路径作为历史坐标保留，通过 Git 追溯，不恢复为当前兼容入口。

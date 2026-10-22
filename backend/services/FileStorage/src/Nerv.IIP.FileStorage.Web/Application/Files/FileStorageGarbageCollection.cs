@@ -34,7 +34,9 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
     {
         var now = clock.GetUtcNow();
         var expiredUploadSessions = await dbContext.UploadSessions
-            .Where(x => !x.Completed && x.ExpiresAtUtc <= now)
+            .Where(x => !x.LegacyCompleted
+                && x.State == UploadSessionState.Open
+                && x.ExpiresAtUtc <= now)
             .ToArrayAsync(cancellationToken);
         var expiredDownloadGrants = await dbContext.DownloadGrants
             .Where(x => x.ExpiresAtUtc <= now)
@@ -105,7 +107,9 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
             }
 
             var retainedTusUploadSessionIds = await dbContext.UploadSessions
-                .Where(x => x.Completed || x.ExpiresAtUtc > now)
+                .Where(x => x.LegacyCompleted
+                    || x.State != UploadSessionState.Open
+                    || x.ExpiresAtUtc > now)
                 .Select(x => x.UploadSessionId)
                 .ToArrayAsync(cancellationToken);
             localTusFilesRemoved += store.DeleteFilesExcept(
@@ -133,13 +137,14 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
 public sealed class FileStorageGarbageCollectionHostedService(
     IServiceScopeFactory scopeFactory,
     ILogger<FileStorageGarbageCollectionHostedService> logger,
-    IConfiguration configuration) : BackgroundService
+    IConfiguration configuration,
+    TimeProvider timeProvider) : BackgroundService
 {
     private readonly TimeSpan interval = ResolveInterval(configuration);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        using var timer = new PeriodicTimer(interval);
+        using var timer = new PeriodicTimer(interval, timeProvider);
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
             await CollectOnceAsync(stoppingToken);

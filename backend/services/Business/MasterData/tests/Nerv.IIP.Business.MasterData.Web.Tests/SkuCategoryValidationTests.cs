@@ -17,7 +17,7 @@ namespace Nerv.IIP.Business.MasterData.Web.Tests;
 /// 下拉里选什么都被拒，新建物料表单根本提交不出去。
 ///
 /// 裁决：分类以**实体**为权威值域；`product-category` CodeSet 降级为 legacy，按
-/// `master-data-dictionary-rules.md` §1「独立目录兼容」保留兼容读取，不再是新写入的校验源。
+/// `docs/governance/data/reference-data.md`「独立目录与 legacy CodeSet」保留兼容读取，不再是新写入的校验源。
 /// </summary>
 public sealed class SkuCategoryValidationTests
 {

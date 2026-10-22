@@ -34,21 +34,11 @@ function mountList(tasks: Task[]) {
       hasMore: false,
       pending: false,
       error: null,
-      scope: '当前登录组织 / 当前业务环境',
-      updatedAt: '2026-07-28T10:20:30.000Z',
     },
   })
 }
 
 describe('QualityTaskListStep', () => {
-  it('shows scope, source, counts, and stable successful-response time', () => {
-    const wrapper = mountList([task({ inspectionTaskId: 'T1' })])
-    expect(wrapper.text()).toContain('范围：当前登录组织 / 当前业务环境')
-    expect(wrapper.text()).toContain('已加载 1 / 共 1')
-    expect(wrapper.text()).toContain('更新时间（最近成功响应）：2026/7/28 18:20')
-    expect(wrapper.text()).toContain('质检待检任务服务（当前账号 Self 范围，状态：待检）')
-  })
-
   it('passes the independent refresh lifecycle to the shared task-list shell', () => {
     const wrapper = mount(QualityTaskListStep, {
       props: {
@@ -76,13 +66,9 @@ describe('QualityTaskListStep', () => {
         error: null,
         hasSuccessfulResponse: false,
         hasFailedResponse: true,
-        scope: '当前登录组织 / 当前业务环境',
       },
     })
 
-    expect(wrapper.get('[data-testid="list-failure-explanation"]').text()).toContain(
-      '质检待检任务服务未成功返回，请刷新重试。',
-    )
     expect(wrapper.find('[data-testid="tasks-error"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('暂无待检任务')
   })

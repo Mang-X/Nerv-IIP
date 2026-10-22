@@ -13,6 +13,48 @@ namespace Nerv.IIP.Business.Mes.Domain.Tests;
 public sealed class MesAggregateTests
 {
     [Fact]
+    public void Rework_work_order_captures_quality_source_facts_and_creation_event()
+    {
+        var requestedAtUtc = DateTimeOffset.Parse("2026-08-29T08:00:00Z");
+
+        var workOrder = WorkOrder.CreateRework(
+            "org-001",
+            "env-dev",
+            "WO-RW-001",
+            "SKU-001",
+            "PV-001",
+            "PCS",
+            3m,
+            100,
+            DateTimeOffset.Parse("2026-08-30T08:00:00Z"),
+            "WO-SOURCE-001",
+            "OP-SOURCE-10",
+            "DEF-001",
+            "ncr-001",
+            "NCR-2026-0001",
+            "LOT-001",
+            "SN-001",
+            requestedAtUtc,
+            "corr-001",
+            "evt-rework-requested-001");
+
+        Assert.Equal(WorkOrder.ReworkType, workOrder.WorkOrderType);
+        Assert.Equal("WO-SOURCE-001", workOrder.SourceWorkOrderId);
+        Assert.Equal("OP-SOURCE-10", workOrder.SourceOperationTaskId);
+        Assert.Equal("DEF-001", workOrder.SourceDefectNo);
+        Assert.Equal("ncr-001", workOrder.SourceNcrId);
+        Assert.Equal("NCR-2026-0001", workOrder.SourceNcrCode);
+        Assert.Equal("LOT-001", workOrder.SourceLotNo);
+        Assert.Equal("SN-001", workOrder.SourceSerialNo);
+        Assert.Equal(requestedAtUtc, workOrder.SourceReworkRequestedAtUtc);
+        var created = Assert.IsType<ReworkWorkOrderCreatedDomainEvent>(Assert.Single(workOrder.GetDomainEvents()));
+        Assert.Same(workOrder, created.WorkOrder);
+        Assert.Equal(requestedAtUtc, created.RequestedAtUtc);
+        Assert.Equal("corr-001", created.CorrelationId);
+        Assert.Equal("evt-rework-requested-001", created.CausationId);
+    }
+
+    [Fact]
     public void WorkOrder_references_ProductEngineering_production_version_by_public_id()
     {
         var workOrder = WorkOrder.Create(
@@ -27,6 +69,8 @@ public sealed class MesAggregateTests
 
         Assert.Equal("production-version-from-issue-95", workOrder.ProductionVersionId);
         Assert.Equal("SKU-001", workOrder.SkuId);
+        Assert.Equal(WorkOrder.StandardType, workOrder.WorkOrderType);
+        Assert.Null(workOrder.SourceNcrId);
     }
 
     [Fact]
@@ -42,13 +86,20 @@ public sealed class MesAggregateTests
             10,
             DateTimeOffset.Parse("2026-05-23T10:00:00Z"));
 
+        var earliestStartUtc = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
         var tasks = workOrder.Release(
-            DateTimeOffset.Parse("2026-05-23T08:00:00Z"),
+            earliestStartUtc,
+            WorkOrderReleaseFactTime.NotLaterThan(earliestStartUtc, null),
             [
                 new RoutingStepSnapshot("OP-10", 10, "WC-A", ["WC-B"], TimeSpan.FromMinutes(30)),
                 new RoutingStepSnapshot("OP-20", 20, "WC-C", [], TimeSpan.FromMinutes(45)),
             ]);
 
+        // 本用例里两个入参恰好同值，只钉住「事件带走的是调用方交出的发布事实时刻」这一点；
+        // 「两者不可一值两用」由下一条用例分开钉。
+        var domainEvent = Assert.IsType<WorkOrderReleasedDomainEvent>(
+            Assert.Single(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent));
+        Assert.Equal(earliestStartUtc, domainEvent.ReleasedAt.Value);
         Assert.Collection(
             tasks,
             first =>
@@ -59,6 +110,109 @@ public sealed class MesAggregateTests
                 Assert.Equal(OperationTaskLifecycleStatus.Queued, first.Status);
             },
             second => Assert.Equal("OP-20", second.OperationTaskId));
+    }
+
+    /// <summary>
+    /// <c>earliestStartUtc</c>（排产用的最早可开工时刻，**允许落在未来**：下达后下一班开工是正常排产）
+    /// 与发布事实的时刻是两件事。若把前者当后者用，该工单工序此后的每一条报工都会被 Quality 的
+    /// <c>PeriodicInspectionOperation</c> 判为「报工早于发布」抛出、整封进死信——正是 #3117 修的那个缺陷
+    /// 换了个入口原样重演。本用例把两者拉开：工序拿到未来的可开工时刻，发布事实拿到过去的发布时刻。
+    /// </summary>
+    [Fact]
+    public void WorkOrder_release_does_not_reuse_the_earliest_start_as_the_release_fact_time()
+    {
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-3117-SPLIT",
+            "SKU-001",
+            "PV-001",
+            5m,
+            10,
+            DateTimeOffset.Parse("2026-05-30T10:00:00Z"));
+        var releasedAtUtc = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
+        var earliestStartUtc = releasedAtUtc.AddDays(3);
+
+        var tasks = workOrder.Release(
+            earliestStartUtc,
+            WorkOrderReleaseFactTime.NotLaterThan(releasedAtUtc, null),
+            [
+                new RoutingStepSnapshot("OP-10", 10, "WC-A", [], TimeSpan.FromMinutes(30)),
+            ]);
+
+        var domainEvent = Assert.IsType<WorkOrderReleasedDomainEvent>(
+            Assert.Single(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent));
+        Assert.Equal(releasedAtUtc, domainEvent.ReleasedAt.Value);
+        Assert.Equal(earliestStartUtc, Assert.Single(tasks).EarliestStartUtc);
+    }
+
+    /// <summary>
+    /// 不携带工序的那条发布：事件时刻取**调用当刻**的 <c>CreatedAtUtc</c>，不取墙钟。
+    /// 唯一生产调用方（<c>WorldHistorySeedService</c>）先把 <c>CreatedAtUtc</c> 回拨到历史创建时刻再调它，
+    /// 顺序反了事件带走的就是播种当下的 <c>UtcNow</c>——既非历史创建时刻，也晚于该工单全部历史报工。
+    /// </summary>
+    [Fact]
+    public void WorkOrder_mark_released_without_operations_dates_the_release_fact_at_the_creation_moment()
+    {
+        var workOrder = WorkOrder.Create(
+            "org-001",
+            "env-dev",
+            "WO-3117-NO-OPS",
+            "SKU-001",
+            "PV-001",
+            5m,
+            10,
+            DateTimeOffset.Parse("2026-05-30T10:00:00Z"));
+        workOrder.ClearDomainEvents();
+
+        workOrder.MarkReleased();
+
+        var domainEvent = Assert.IsType<WorkOrderReleasedDomainEvent>(
+            Assert.Single(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent));
+        Assert.Equal(workOrder.CreatedAtUtc, domainEvent.ReleasedAt.Value);
+        Assert.Empty(domainEvent.OperationTasks);
+    }
+
+    /// <summary>
+    /// 报工下界：取「更早者」，不是「有报工就取报工」。第三条钉住**恰好相等**这个边界
+    /// （<c>&lt;</c> 变 <c>&lt;=</c> 时取值不变，但它是唯一能把「严格早于」与「不晚于」区分开的输入）。
+    /// </summary>
+    [Theory]
+    [InlineData("2026-06-01T10:00:00Z", null, "2026-06-01T10:00:00Z")]
+    [InlineData("2026-06-01T10:00:00Z", "2026-06-01T06:00:00Z", "2026-06-01T06:00:00Z")]
+    [InlineData("2026-06-01T10:00:00Z", "2026-06-01T10:00:00Z", "2026-06-01T10:00:00Z")]
+    [InlineData("2026-06-01T10:00:00Z", "2026-06-01T14:00:00Z", "2026-06-01T10:00:00Z")]
+    public void WorkOrderReleaseFactTime_takes_the_earlier_of_the_candidate_and_the_earliest_report(
+        string candidate,
+        string? earliestReport,
+        string expected)
+    {
+        var factTime = WorkOrderReleaseFactTime.NotLaterThan(
+            DateTimeOffset.Parse(candidate),
+            earliestReport is null ? null : DateTimeOffset.Parse(earliestReport));
+
+        Assert.Equal(DateTimeOffset.Parse(expected), factTime.Value);
+    }
+
+    /// <summary>
+    /// 信任边界上的那一夹：外部给来的候选落在未来时压到当前时刻，不在未来时原样通过。
+    /// 未来值会让该工序此后的每一条报工进死信；原样通过那一半同样要钉，
+    /// 否则「一律取当前时刻」这个变异不可分辨，#3117 本身就会被这一夹撤销。
+    /// </summary>
+    [Theory]
+    [InlineData("2026-06-01T14:00:00Z", "2026-06-01T10:00:00Z", "2026-06-01T10:00:00Z")]
+    [InlineData("2026-06-01T06:00:00Z", "2026-06-01T10:00:00Z", "2026-06-01T06:00:00Z")]
+    [InlineData("2026-06-01T10:00:00Z", "2026-06-01T10:00:00Z", "2026-06-01T10:00:00Z")]
+    public void WorkOrderReleaseFactTime_clamps_an_untrusted_candidate_to_now(
+        string candidate,
+        string now,
+        string expected)
+    {
+        var clamped = WorkOrderReleaseFactTime.UntrustedCandidate(
+            DateTimeOffset.Parse(candidate),
+            DateTimeOffset.Parse(now));
+
+        Assert.Equal(DateTimeOffset.Parse(expected), clamped);
     }
 
     [Fact]
@@ -75,7 +229,7 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-08-24T08:00:00Z"));
         workOrder.ClearDomainEvents();
 
-        Assert.Throws<ArgumentException>(() => workOrder.MarkReleased([]));
+        Assert.Throws<ArgumentException>(() => workOrder.MarkReleased([], WorkOrderReleaseFactTime.NotLaterThan(DateTimeOffset.Parse("2026-08-24T08:00:00Z"), null), new Dictionary<string, decimal>()));
 
         Assert.Equal(WorkOrder.CreatedStatus, workOrder.Status);
         Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent);
@@ -98,17 +252,20 @@ public sealed class MesAggregateTests
         {
             OperationTask.Queue(
                 "org-001", "env-dev", "WO-2095-RELEASE", "OP-10", 10, "WC-MIX", [], releasedAtUtc,
-                TimeSpan.FromMinutes(30)),
+                TimeSpan.FromMinutes(30),
+                "SKU-001"),
             OperationTask.Queue(
                 "org-001", "env-dev", "WO-2095-RELEASE", "OP-20", 20, "WC-PACK", [], releasedAtUtc,
-                TimeSpan.FromMinutes(15)),
+                TimeSpan.FromMinutes(15),
+                "SKU-001"),
         };
         workOrder.ClearDomainEvents();
 
-        workOrder.MarkReleased(operationTasks);
+        workOrder.MarkReleased(operationTasks, WorkOrderReleaseFactTime.NotLaterThan(releasedAtUtc, null), new Dictionary<string, decimal>());
 
         Assert.Equal(WorkOrder.ReleasedStatus, workOrder.Status);
         var domainEvent = Assert.IsType<WorkOrderReleasedDomainEvent>(Assert.Single(workOrder.GetDomainEvents()));
+        Assert.Equal(releasedAtUtc, domainEvent.ReleasedAt.Value);
         Assert.Collection(
             domainEvent.OperationTasks,
             first => Assert.Same(operationTasks[0], first),
@@ -129,26 +286,10 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-08-24T08:00:00Z"));
         workOrder.ClearDomainEvents();
 
-        Assert.Throws<ArgumentNullException>(() => workOrder.MarkReleased(null!));
+        Assert.Throws<ArgumentNullException>(() => workOrder.MarkReleased(null!, WorkOrderReleaseFactTime.NotLaterThan(DateTimeOffset.Parse("2026-08-24T08:00:00Z"), null), new Dictionary<string, decimal>()));
 
         Assert.Equal(WorkOrder.CreatedStatus, workOrder.Status);
         Assert.DoesNotContain(workOrder.GetDomainEvents(), x => x is WorkOrderReleasedDomainEvent);
-    }
-
-    [Fact]
-    public void Rule_schedule_result_is_deterministic_for_same_assignments()
-    {
-        var scheduledAt = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
-        var assignments = new[]
-        {
-            new ScheduledOperationSnapshot("WO-001", "OP-10", "WC-A", scheduledAt, scheduledAt.AddMinutes(30), "rule-sequenced"),
-        };
-
-        var first = ScheduleResult.Create(1, ScheduleTrigger.Manual, scheduledAt, assignments, []);
-        var second = ScheduleResult.Create(1, ScheduleTrigger.Manual, scheduledAt, assignments, []);
-
-        Assert.Equal(first.AssignmentsJson, second.AssignmentsJson);
-        Assert.Contains("\"_v\":1", first.AssignmentsJson, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -180,6 +321,35 @@ public sealed class MesAggregateTests
         Assert.Equal("SN-FG-001", report.SerialNo);
         Assert.True(report.CompletesOperation);
         Assert.IsType<ProductionReportRecordedDomainEvent>(report.GetDomainEvents().Single());
+    }
+
+    [Fact]
+    public void ProductionReport_keeps_the_submitting_operator_and_carries_it_onto_the_reversal_row()
+    {
+        var report = ProductionReport.Record(
+            "org-001",
+            "env-dev",
+            "PRPT-OP-001",
+            "WO-001",
+            "OP-10",
+            9m,
+            0m,
+            false,
+            DateTimeOffset.Parse("2026-05-23T09:00:00Z"),
+            reportedBy: "  user-emp-010  ");
+
+        Assert.Equal("user-emp-010", report.ReportedBy);
+
+        var reversal = ProductionReport.Reverse(
+            report,
+            "PRPT-OP-001-R",
+            DateTimeOffset.Parse("2026-05-23T10:00:00Z"),
+            "reported on the wrong operation",
+            "user-supervisor");
+
+        // 冲销行是另一条报工事实，提交它的是执行冲销的人，不是原报工人。
+        Assert.Equal("user-supervisor", reversal.ReportedBy);
+        Assert.Equal("user-supervisor", reversal.ReversedBy);
     }
 
     [Fact]
@@ -244,7 +414,7 @@ public sealed class MesAggregateTests
         var dueUtc = DateTimeOffset.Parse("2026-05-23T10:00:00Z");
 
         Assert.Throws<ArgumentException>(() => WorkOrder.Create("", "env-dev", "WO-001", "SKU-001", "PV-001", 1m, 10, dueUtc));
-        Assert.Throws<ArgumentException>(() => OperationTask.Queue("", "env-dev", "WO-001", "OP-10", 10, "WC-A", [], dueUtc, TimeSpan.FromMinutes(30)));
+        Assert.Throws<ArgumentException>(() => OperationTask.Queue("", "env-dev", "WO-001", "OP-10", 10, "WC-A", [], dueUtc, TimeSpan.FromMinutes(30), "SKU-001"));
         Assert.Throws<ArgumentException>(() => ProductionReport.Record("", "env-dev", "PRPT-001", "WO-001", "OP-10", 1m, 0m, true, dueUtc));
         Assert.Throws<ArgumentException>(() => FinishedGoodsReceiptRequest.Create("", "env-dev", "FGR-001", "WO-001", "SKU-001", 1m, "PCS", dueUtc));
     }
@@ -266,10 +436,16 @@ public sealed class MesAggregateTests
             new RoutingStepSnapshot("OP-10", 10, "WC-A", [], TimeSpan.FromMinutes(30)),
         };
 
-        _ = workOrder.Release(DateTimeOffset.Parse("2026-05-23T08:00:00Z"), routingSteps);
+        _ = workOrder.Release(
+            DateTimeOffset.Parse("2026-05-23T08:00:00Z"),
+            WorkOrderReleaseFactTime.NotLaterThan(DateTimeOffset.Parse("2026-05-23T08:00:00Z"), null),
+            routingSteps);
 
         Assert.Throws<InvalidOperationException>(() =>
-            workOrder.Release(DateTimeOffset.Parse("2026-05-23T08:00:00Z"), routingSteps));
+            workOrder.Release(
+            DateTimeOffset.Parse("2026-05-23T08:00:00Z"),
+            WorkOrderReleaseFactTime.NotLaterThan(DateTimeOffset.Parse("2026-05-23T08:00:00Z"), null),
+            routingSteps));
     }
 
     [Theory]
@@ -290,7 +466,8 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
             TimeSpan.FromMinutes(30),
             DateTimeOffset.Parse("2026-06-01T08:05:00Z"),
-            null);
+            null,
+            "SKU-001");
 
         var exception = Assert.Throws<KnownException>(() => task.ApplyScheduleAssignment(
             "WC-OIL",
@@ -317,7 +494,8 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-06-01T08:00:00Z"),
             TimeSpan.FromMinutes(30),
             DateTimeOffset.Parse("2026-06-01T08:05:00Z"),
-            null);
+            null,
+            "SKU-001");
 
         var exception = Assert.Throws<KnownException>(() => task.Assign(
             "operator-001",
@@ -470,10 +648,127 @@ public sealed class MesAggregateTests
             DateTimeOffset.Parse("2026-05-23T08:10:00Z"));
 
         Assert.Equal(MaterialIssueRequest.RequestedStatus, request.Status);
+        Assert.False(request.IsSupplementary);
+        Assert.Null(request.OriginalMaterialIssueRequestNo);
         // 创建只发「领料已申请」（仓库据此建出库/拣货，#1324）；库存移动仍然只在收料/退料时发生。
         Assert.Single(request.GetDomainEvents().OfType<MaterialIssueRequestCreatedDomainEvent>());
         Assert.Empty(request.GetDomainEvents().OfType<MaterialIssueRequestedDomainEvent>());
         Assert.Empty(request.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>());
+    }
+
+    [Fact]
+    public void MaterialIssueRequest_creation_tracks_supplementary_semantics_and_original_request_no()
+    {
+        var request = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-002",
+            "WO-001",
+            "OP-10",
+            "MAT-001",
+            "PCS",
+            3m,
+            DateTimeOffset.Parse("2026-05-23T08:10:00Z"),
+            isSupplementary: true,
+            originalMaterialIssueRequestNo: "MIR-001");
+
+        Assert.True(request.IsSupplementary);
+        Assert.Equal("MIR-001", request.OriginalMaterialIssueRequestNo);
+    }
+
+    [Fact]
+    public void MaterialIssueRequest_creation_rejects_inconsistent_supplementary_semantics()
+    {
+        var timestamp = DateTimeOffset.Parse("2026-05-23T08:10:00Z");
+
+        Assert.Throws<ArgumentException>(() => MaterialIssueRequest.Create(
+            "org-001", "env-dev", "MIR-003", "WO-001", "OP-10", "MAT-001", "PCS", 3m, timestamp,
+            isSupplementary: true));
+
+        Assert.Throws<ArgumentException>(() => MaterialIssueRequest.Create(
+            "org-001", "env-dev", "MIR-004", "WO-001", "OP-10", "MAT-001", "PCS", 3m, timestamp,
+            originalMaterialIssueRequestNo: "MIR-001"));
+    }
+
+    [Fact]
+    public void MaterialIssueRequest_creation_rejects_self_reference()
+    {
+        Assert.Throws<ArgumentException>(() => MaterialIssueRequest.Create(
+            "org-001", "env-dev", "MIR-005", "WO-001", "OP-10", "MAT-001", "PCS", 3m,
+            DateTimeOffset.Parse("2026-05-23T08:10:00Z"),
+            isSupplementary: true,
+            originalMaterialIssueRequestNo: "MIR-005"));
+    }
+
+    [Fact]
+    public void MaterialIssueRequest_new_receipt_waits_for_outbound_before_emitting_inbound_once()
+    {
+        // #3646 / DomainInvariant：收料确认不能先于实际出库价值发入库。
+        var at = DateTimeOffset.Parse("2026-09-20T08:00:00Z");
+        var request = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-3646", "WO-001", null, "MAT-001", "KG", 1.4m, at);
+        request.ClearDomainEvents();
+        request.ConfirmLineSideReceipt(MaterialSupplyTestFixtures.Locations, at);
+        Assert.Empty(request.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>());
+        Assert.Equal(0m, request.ReceivedQuantity);
+        request.ClearDomainEvents();
+        var token = request.PendingPostingToken!;
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, at, 0, 8m, -11.2m);
+        Assert.Equal(8m, Assert.Single(request.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>()).UnitCost);
+        request.ClearDomainEvents();
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, at, 0, 8m, -11.2m);
+        Assert.Empty(request.GetDomainEvents());
+        Assert.Equal(0m, request.ReceivedQuantity);
+        request.MarkInventoryPosted(token, MaterialTransferLeg.LineSideReceipt, at);
+        Assert.Equal(1.4m, request.ReceivedQuantity);
+    }
+
+    [Fact]
+    public void MaterialIssueRequest_mixed_value_receipt_retries_only_inbound_and_preserves_amount()
+    {
+        var at = DateTimeOffset.Parse("2026-09-20T08:00:00Z");
+        var request = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-MIX", "WO-001", null, "MAT-001", "KG", 3m, at);
+        var locations = new MaterialTransferLocations("SITE", "WH-A", "SITE", "LINE",
+            [new("SITE", "WH-A", "A", 1.4m), new("SITE", "WH-B", "B", 1.6m)]);
+        request.ConfirmLineSideReceipt(locations, at);
+        request.ClearDomainEvents();
+        var token = request.PendingPostingToken!;
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, at, 1, 12m, -19.2m);
+        Assert.Empty(request.GetDomainEvents());
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, at, 0, 8m, -11.2m);
+        var inbound = Assert.Single(request.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>());
+        Assert.Equal(30.4m, decimal.Round(inbound.UnitCost!.Value * inbound.ReceivedQuantity, 6));
+        request.MarkInventoryPostingFailed("rejected", "入库失败", at, token);
+        request.ClearDomainEvents();
+        request.ConfirmLineSideReceipt(locations, at);
+        Assert.Empty(request.GetDomainEvents().OfType<MaterialIssueRequestedDomainEvent>());
+        Assert.Equal(inbound.UnitCost, Assert.Single(request.GetDomainEvents().OfType<MaterialLineSideReceiptConfirmedDomainEvent>()).UnitCost);
+        request.MarkInventoryPosted(request.PendingPostingToken!, MaterialTransferLeg.LineSideReceipt, at);
+        Assert.Equal(3m, request.ReceivedQuantity);
+    }
+
+    [Theory]
+    [InlineData(MaterialTransferLeg.WarehouseIssue)]
+    [InlineData(MaterialTransferLeg.LineSideReceipt)]
+    public void MaterialIssueRequest_legacy_inflight_keeps_original_protocol_on_partial_retry(MaterialTransferLeg settledLeg)
+    {
+        var at = DateTimeOffset.Parse("2026-09-20T08:00:00Z");
+        var request = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-LEGACY", "WO-001", null, "MAT-001", "KG", 2m, at);
+        request.ConfirmLineSideReceipt(MaterialSupplyTestFixtures.Locations, at);
+        // 模拟新增协议列之前已发出两腿的持久行；false 是 migration 对旧行的缺省值。
+        typeof(MaterialIssueRequest).GetProperty(nameof(MaterialIssueRequest.ReceiptUsesActualIssueValue))!.SetValue(request, false);
+        request.MarkInventoryPosted(request.PendingPostingToken!, settledLeg, at);
+        request.MarkInventoryPostingFailed("rejected", "旧腿失败", at, request.PendingPostingToken);
+        request.ClearDomainEvents();
+        request.ConfirmLineSideReceipt(MaterialSupplyTestFixtures.Locations, at);
+        Assert.False(request.ReceiptUsesActualIssueValue);
+        Assert.Single(request.GetDomainEvents());
+        if (settledLeg == MaterialTransferLeg.WarehouseIssue)
+        {
+            Assert.Null(Assert.IsType<MaterialLineSideReceiptConfirmedDomainEvent>(request.GetDomainEvents().Single()).UnitCost);
+        }
+        request.MarkInventoryPosted(request.PendingPostingToken!, settledLeg == MaterialTransferLeg.WarehouseIssue
+            ? MaterialTransferLeg.LineSideReceipt : MaterialTransferLeg.WarehouseIssue, at);
+        Assert.Equal(2m, request.ReceivedQuantity);
     }
 
     [Fact]
@@ -534,14 +829,40 @@ public sealed class MesAggregateTests
             "LOT-WO");
 
         var token = request.PendingPostingToken!;
-        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:31:00Z"), 0);
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:31:00Z"), 1, 12m, -24m);
+        request.MarkInventoryPostingFailed("rejected", "来源 A 出库失败", DateTimeOffset.Parse("2026-05-23T08:31:30Z"), token);
+        request.ClearDomainEvents();
+        request.ConfirmLineSideReceipt(request.RequireTransferLocations(), DateTimeOffset.Parse("2026-05-23T08:31:40Z"), 5m, "LOT-WO");
+        var retryIssue = Assert.Single(request.GetDomainEvents().OfType<MaterialIssueRequestedDomainEvent>());
+        Assert.Equal(3m, retryIssue.IssuedQuantity);
+        Assert.Equal(12m, request.GetSourceAllocations()[1].UnitCost);
+        Assert.Equal(-24m, request.GetSourceAllocations()[1].MovementAmount);
+        // 旧尝试重复回执不能改写已保存价值，也不能增加完成来源数。
+        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:31:50Z"), 1, 99m, -198m);
         request.MarkInventoryPosted(token, MaterialTransferLeg.LineSideReceipt, DateTimeOffset.Parse("2026-05-23T08:32:00Z"));
         Assert.Equal(0m, request.ReceivedQuantity);
 
-        request.MarkInventoryPosted(token, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:33:00Z"), 1);
+        request.MarkInventoryPosted(request.PendingPostingToken!, MaterialTransferLeg.WarehouseIssue, DateTimeOffset.Parse("2026-05-23T08:33:00Z"), 0, 8m, -24m);
 
         Assert.Equal(5m, request.ReceivedQuantity);
         Assert.Equal(MaterialIssueRequest.ReceivedStatus, request.Status);
+        var allocations = request.GetSourceAllocations();
+        Assert.Equal(("LOT-A", 3m, 8m, -24m), (allocations[0].SourceLotNo, allocations[0].Quantity, allocations[0].UnitCost, allocations[0].MovementAmount));
+        Assert.Equal(("LOT-B", 2m, 12m, -24m), (allocations[1].SourceLotNo, allocations[1].Quantity, allocations[1].UnitCost, allocations[1].MovementAmount));
+    }
+
+    [Fact]
+    public void MaterialIssueRequest_legacy_source_json_keeps_actual_value_unknown()
+    {
+        var request = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-OLD", "WO-001", null, "MAT-001", "KG", 1.4m, DateTimeOffset.Parse("2026-09-20T08:00:00Z"));
+        typeof(MaterialIssueRequest).GetProperty(nameof(MaterialIssueRequest.SourceAllocationsJson))!.SetValue(request,
+            """[{"SourceSiteCode":"SITE-001","SourceLocationCode":"WH-001","SourceLotNo":"LOT-OLD","Quantity":1.4}]""");
+
+        var allocation = Assert.Single(request.GetSourceAllocations());
+        Assert.Equal(1.4m, allocation.Quantity);
+        Assert.Equal("production", allocation.OwnerType);
+        Assert.Null(allocation.UnitCost);
+        Assert.Null(allocation.MovementAmount);
     }
 
     [Fact]
@@ -823,5 +1144,55 @@ public sealed class MesAggregateTests
         Assert.Throws<NotSupportedException>(() =>
             ((IList<string>)reference.SourceDemandReferences!).Add("DEMAND-003"));
         Assert.Equal(2, reference.SourceDemandReferences!.Count);
+    }
+
+    /// <summary>
+    /// 停机恢复时刻不得早于停机开始时刻——否则落库的是一段**负时长**的不可用窗口（#3343）。
+    /// </summary>
+    /// <remarks>
+    /// <para><b>夹具刻意只触犯这一条守卫</b>：<c>Open</c> 传 <c>toUtc: null</c>，所以
+    /// <c>Close</c> 的第一条守卫（「已有结束时刻则拒绝」）在本夹具上**不可达**。
+    /// 两条守卫抛的是同一个 <c>KnownException</c> 类型，若夹具同时触犯两条，
+    /// 删掉本条守卫仍会被另一条兜住、<c>Assert.Throws</c> 照样绿——所以这里既隔离夹具、
+    /// 又断言到**消息**，两道都用上。</para>
+    ///
+    /// <para><b>为什么负时长窗口有害而不只是难看</b>：这段窗口会进工序动作的开工拦截
+    /// （<c>MesOperationTaskActionReadinessEvaluator</c> 判 <c>ToUtc > evaluatedAtUtc</c>）。
+    /// 一个 <c>ToUtc &lt; FromUtc</c> 的窗口在这里会被静默当成「已经结束」。</para>
+    ///
+    /// <para><b>本用例不证明什么</b>：不证明 <c>WorkCenterUnavailability.Open</c> 也拒绝负时长窗口
+    /// ——它**不拒**，<c>Open(..., toUtc:</c> 早于 <c>fromUtc, ...)</c> 今天仍然构造得出来。
+    /// 那是构造器不是生命周期方法，#3343 按「只登记不修」处置，见 PR 正文的同族登记清单。</para>
+    /// </remarks>
+    [Fact]
+    public void Closing_a_downtime_earlier_than_its_start_is_rejected()
+    {
+        var fromUtc = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
+        var downtime = WorkCenterUnavailability.Open(
+            "org-001", "env-dev", "DTE-000009", "WC-A", fromUtc, null, "设备待修", "DEV-CNC-01");
+
+        var exception = Assert.Throws<KnownException>(() => downtime.Close(fromUtc.AddHours(-1)));
+
+        Assert.Equal("停机恢复时间不能早于停机开始时间。", exception.Message);
+        Assert.Null(downtime.ToUtc);
+    }
+
+    /// <summary>
+    /// 恰好等于停机开始时刻的恢复是**允许**的：守卫是 <c>&lt;</c> 不是 <c>&lt;=</c>，零时长窗口合法。
+    /// </summary>
+    /// <remarks>
+    /// 这条钉的是边界方向。没有它，把 <c>restoredAtUtc &lt; FromUtc</c> 收紧成 <c>&lt;=</c>
+    /// 不会被任何断言发现——而那会拒掉一次「开机瞬间就恢复」的合法补录。
+    /// </remarks>
+    [Fact]
+    public void Closing_a_downtime_exactly_at_its_start_is_allowed()
+    {
+        var fromUtc = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
+        var downtime = WorkCenterUnavailability.Open(
+            "org-001", "env-dev", "DTE-000010", "WC-A", fromUtc, null, "设备待修", "DEV-CNC-01");
+
+        downtime.Close(fromUtc);
+
+        Assert.Equal(fromUtc, downtime.ToUtc);
     }
 }

@@ -28,27 +28,16 @@ public sealed record InspectionMeasuringDeviceUsage(
 
 public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoot
 {
+    // 取值域与公开契约词表同源（#2976）：跨服务消费者按 payload.SourceType 分流时引的是
+    // QualityInspectionSourceTypes，两边各写一份字面量就会悄悄漂移。
     private static readonly HashSet<string> SourceTypes =
-    [
-        "receiving",
-        "operation",
-        "final",
-        "first-article",
-        "maintenance",
-        "customer-return",
-    ];
+        new(QualityInspectionSourceTypes.All, StringComparer.Ordinal);
 
+    // 取值域与公开契约词表同源（#3191）：跨服务消费者按 payload.SourceService 分流时引的是
+    // QualityInspectionSourceServices，两边各写一份字面量就会悄悄漂移——排程侧那道恒真的门
+    // 正是因为这条轴当年没有可引的词表，才拿信封面常量凑数。
     private static readonly HashSet<string> SourceServices =
-    [
-        "inventory",
-        "wms",
-        "mes",
-        "erp",
-        "maintenance",
-        "purchase-receipt",
-        "mes-operation",
-        "customer-return",
-    ];
+        new(QualityInspectionSourceServices.All, StringComparer.Ordinal);
 
     private InspectionRecord()
     {
@@ -61,6 +50,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         string sourceType,
         string sourceService,
         string sourceDocumentId,
+        string? sourceDocumentLineId,
         string skuCode,
         decimal inspectedQuantity,
         string? batchNo,
@@ -79,6 +69,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         SourceType = Supported(sourceType, SourceTypes, nameof(sourceType));
         SourceService = Supported(sourceService, SourceServices, nameof(sourceService));
         SourceDocumentId = Required(sourceDocumentId);
+        SourceDocumentLineId = Optional(sourceDocumentLineId);
         SkuCode = Required(skuCode);
         InspectedQuantity = Positive(inspectedQuantity, nameof(inspectedQuantity));
         BatchNo = Optional(batchNo);
@@ -119,6 +110,14 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
     public string SourceType { get; private set; } = string.Empty;
     public string SourceService { get; private set; } = string.Empty;
     public string SourceDocumentId { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// 来源单据行身份（收货行号、工序任务 id、周期检窗口复合行号），无来源行的直录检验为 null。
+    /// 它与 <see cref="SourceDocumentId"/> 一起构成检验链身份，并进 <c>ux_inspection_records_source_attempt</c>
+    /// ——同一工单不同工序做同一 SKU 检验因此各成独立 attempt 链（#3319）。
+    /// </summary>
+    public string? SourceDocumentLineId { get; private set; }
+
     public string SkuCode { get; private set; } = string.Empty;
     public int AttemptNumber { get; private set; } = 1;
     public InspectionRecordId? ReinspectionOfInspectionRecordId { get; private set; }
@@ -143,6 +142,9 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime UpdatedAtUtc { get; private set; }
 
+    /// <summary>
+    /// <paramref name="sourceDocumentLineId"/> 是来源单据行身份，参与检验链身份；直录检验（无来源行）传 null。
+    /// </summary>
     public static InspectionRecord Create(
         string organizationId,
         string environmentId,
@@ -150,6 +152,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         string sourceType,
         string sourceService,
         string sourceDocumentId,
+        string? sourceDocumentLineId,
         string skuCode,
         decimal inspectedQuantity,
         string? batchNo,
@@ -167,6 +170,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             sourceType,
             sourceService,
             sourceDocumentId,
+            sourceDocumentLineId,
             skuCode,
             inspectedQuantity,
             batchNo,
@@ -178,11 +182,15 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             measuringDeviceUsage: measuringDeviceUsage);
     }
 
+    /// <summary>
+    /// <paramref name="sourceDocumentLineId"/> 是来源单据行身份，参与检验链身份；直录检验（无来源行）传 null。
+    /// </summary>
     public static InspectionRecord CreateFromPlan(
         InspectionPlan inspectionPlan,
         string sourceType,
         string sourceService,
         string sourceDocumentId,
+        string? sourceDocumentLineId,
         string skuCode,
         decimal inspectedQuantity,
         string? batchNo,
@@ -220,6 +228,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             normalizedSourceType,
             sourceService,
             sourceDocumentId,
+            sourceDocumentLineId,
             skuCode,
             inspectedQuantity,
             batchNo,
@@ -291,6 +300,7 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
             previousInspection.SourceType,
             previousInspection.SourceService,
             previousInspection.SourceDocumentId,
+            previousInspection.SourceDocumentLineId,
             previousInspection.SkuCode,
             previousInspection.InspectedQuantity,
             previousInspection.BatchNo,

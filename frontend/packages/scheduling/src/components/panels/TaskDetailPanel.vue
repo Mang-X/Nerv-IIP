@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { scheduleTime } from '../../model/factory-time'
+import TaskFacts from './TaskFacts.vue'
 import '../../styles/scheduling.css'
 import { NvButton } from '@nerv-iip/ui'
 import { LockIcon, UnlockIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { conflictReasonLabel } from '../../model/labels'
+import { materialReadyLabel } from '../../model/material-risk'
 import type { ScheduleTask } from '../../model/types'
 
 // 选中工序/工单的完整详情(取代弹出抽屉,常驻右侧栏顶部)。
@@ -13,6 +16,7 @@ const emit = defineEmits<{ 'toggle-lock': [taskId: string, locked: boolean] }>()
 
 const isOrder = computed(() => props.task?.type === 'order')
 const isBlock = computed(() => !!props.task?.blockKind)
+const materialReadyText = computed(() => materialReadyLabel(props.task?.materialRisk))
 const PRIO = { high: ['高', 'danger'], medium: ['中', 'warning'], low: ['低', 'muted'] } as const
 const BLOCK = {
   maintenance: {
@@ -22,7 +26,7 @@ const BLOCK = {
   },
   downtime: {
     label: '计划停机',
-    desc: '计划性停机,资源不可用',
+    desc: '停机时段，资源不可用；预计恢复不代表实际恢复',
     tone: 'var(--nv-scheduling-block-downtime)',
   },
   lineChange: {
@@ -39,6 +43,13 @@ const BLOCK = {
 
 function fmt(iso?: string) {
   if (!iso) return '—'
+  if (props.task?.timezone !== undefined)
+    return scheduleTime(iso, props.task.timezone, {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
   const d = new Date(iso)
   return Number.isNaN(d.getTime())
     ? iso
@@ -52,6 +63,8 @@ function fmt(iso?: string) {
 }
 function fmtDate(iso?: string) {
   if (!iso) return '—'
+  if (props.task?.timezone !== undefined)
+    return scheduleTime(iso, props.task.timezone, { month: '2-digit', day: '2-digit' })
   const d = new Date(iso)
   return Number.isNaN(d.getTime())
     ? iso
@@ -60,7 +73,11 @@ function fmtDate(iso?: string) {
 const durationH = computed(() => {
   const t = props.task
   if (!t?.startUtc || !t?.endUtc) return '—'
-  const h = (Date.parse(t.endUtc) - Date.parse(t.startUtc)) / 3_600_000
+  const h =
+    (t.segments?.length ? t.segments : [t]).reduce(
+      (sum, segment) => sum + Date.parse(segment.endUtc) - Date.parse(segment.startUtc),
+      0,
+    ) / 3_600_000
   return h >= 1 ? `${Math.round(h)} 小时` : '<1 小时'
 })
 const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
@@ -68,6 +85,9 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
 
 <template>
   <div class="border-b border-border/60">
+    <p v-if="task?.factoryTimeLabel" class="px-4 pt-3 text-xs text-muted-foreground">
+      {{ task.factoryTimeLabel }}
+    </p>
     <div v-if="!task" class="flex flex-col items-center gap-1.5 px-4 py-8 text-center">
       <span class="text-sm font-medium text-muted-foreground">未选择工序</span>
     </div>
@@ -80,7 +100,7 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
           :style="{ '--bk': BLOCK[task.blockKind!].tone }"
         ></span>
         <span class="text-sm font-semibold text-foreground">{{
-          BLOCK[task.blockKind!].label
+          task.text || BLOCK[task.blockKind!].label
         }}</span>
       </div>
       <p class="mt-1 text-xs text-muted-foreground">{{ BLOCK[task.blockKind!].desc }}</p>
@@ -169,7 +189,10 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
         class="nv-sched-material-risk mt-2.5 rounded-md px-2.5 py-1.5 text-xs"
         data-testid="task-material-risk"
       >
-        <p class="font-medium">物料风险 · 需在开工前完成备料</p>
+        <p class="font-medium">方案物料风险 · 需在开工前完成备料</p>
+        <p v-if="materialReadyText" class="mt-1 font-medium">
+          {{ materialReadyText }}
+        </p>
         <ul v-if="task.materialRisk.shortages.length" class="mt-1 grid gap-0.5">
           <li
             v-for="s in task.materialRisk.shortages"
@@ -192,9 +215,26 @@ const pct = (v?: number) => (v == null ? '—' : `${Math.round(v * 100)}%`)
         class="nv-sched-equipment-risk mt-2.5 rounded-md px-2.5 py-1.5 text-xs"
         data-testid="task-equipment-risk"
       >
-        <p class="font-medium">设备状态未知 · 开工前请人工确认设备可用</p>
+        <p class="font-medium">方案设备风险 · 保存时状态未知，开工前请人工确认设备可用</p>
         <p class="mt-1">{{ task.equipmentRisk.message }}</p>
       </div>
+
+      <div v-if="(task.segments?.length ?? 0) > 1" class="mt-3 grid gap-1 text-xs">
+        <p class="font-medium">实际排程 · {{ task.segments!.length }} 段</p>
+        <p v-for="(segment, index) in task.segments" :key="index">
+          第 {{ index + 1 }} 段 · {{ fmt(segment.startUtc) }} 至 {{ fmt(segment.endUtc) }}
+        </p>
+        <p class="text-muted-foreground">段间间隙不计入工时；分段时间由重新排程确定。</p>
+      </div>
+
+      <p
+        v-if="task.downtimeRisk"
+        class="mt-3 rounded border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive"
+        role="status"
+      >
+        {{ task.downtimeRisk }}
+      </p>
+      <TaskFacts :task="task" class="mt-3" />
 
       <!-- 明细网格 -->
       <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 text-xs">

@@ -1,0 +1,51 @@
+{
+  "investigationDate": "2026-10-19",
+  "sourceReviewSha": "ee3b1388d331ebd25a62a6ed30db1297a0306033",
+  "runtimeBaseline": "a9b625b297e7797c058e40b428c24bf611750daf",
+  "session": "nerv-a016-1016ab",
+  "frozenEvidenceCommit": "a154cf38a774c5addc9090f17d86300c930cdd16",
+  "sourceFiles": {
+    "evidence.json": "f1b9b7dc2a73a237877b6849bbfff6342754f0eb985470d13ac40b3b92c099c3",
+    "11-cost-precision.png": "3444f67f915c9b3b8145164c5c8b229637903d5c3e4a54c1cc998e2925078b3a",
+    "sessionManifest": "5cc38883ed98764c30a30cabc1408465c60837e2b46924180090828cd4163d8e"
+  },
+  "identity": {
+    "workOrderId": "WO-20261016-000001",
+    "operationTaskId": "WO-20261016-000001-OP-80",
+    "reportNo": "PRPT-20261016-000008",
+    "lot": "LOT-PRPT-20261016-000008",
+    "receipt": "FGR-20261016-000001"
+  },
+  "arithmeticFromFrozenSummary": {
+    "accumulated": "7.595523",
+    "capitalized": "7.456728",
+    "difference": "0.138795",
+    "receiptUnitCostTimesQuantity": "7.4567280",
+    "accumulatedMinusActualLabor": "1.265920",
+    "note": "差值复算不是来源项、凭证或事件时序证明；剩余金额未分解为机器与物料。"
+  },
+  "runtimeAvailability": {
+    "manifestState": "Stopped",
+    "cleanup": {
+      "completedAtUtc": "2026-10-16T14:02:33.6648600+00:00",
+      "remaining": [],
+      "errors": []
+    },
+    "httpReadbackExitCode": 7,
+    "stdout": "http_code=000\n",
+    "stderr": "curl: (7) Failed to connect to localhost port 53810 after 0 ms: Couldn't connect to server\n",
+    "newRuntimeStarted": false
+  },
+  "erpSourceComparison": {
+    "command": "git diff --exit-code a9b625b297e7797c058e40b428c24bf611750daf ee3b1388d331ebd25a62a6ed30db1297a0306033 -- backend/services/Business/Erp/src",
+    "exitCode": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "unresolved": [
+    "原单逐工序人工/机器结算来源、active revision与费率快照",
+    "原事件ID/版本/消费顺序及资本化发布时成本集合",
+    "原单Inventory公开计价、WOC/WOCADJ凭证明细及WIP清理",
+    "允许差额/错配的业务裁决"
+  ]
+}

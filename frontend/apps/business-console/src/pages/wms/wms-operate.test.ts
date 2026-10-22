@@ -1,7 +1,9 @@
+import { WMS_RECEIVING_QUALITY_OPTIONS } from '@/data/inventoryReference'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
-import { NvAlertDialog, NvDialog } from '@nerv-iip/ui'
+import { NvAlertDialog, NvDialog, toast } from '@nerv-iip/ui'
+import { BusinessOperationPendingError } from '@nerv-iip/api-client'
 
 import { LifecycleStateChangedError } from '@/composables/lifecycleAction'
 import CountsPage from './counts.vue'
@@ -47,7 +49,6 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
       resolveWorkshop: () => undefined,
       resolveLine: () => undefined,
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
-      deviceByCode: emptyIndex,
       locationByCode: emptyIndex,
       workCenterByCode: emptyIndex,
       teamByCode: emptyIndex,
@@ -64,6 +65,9 @@ const wms = vi.hoisted(() => ({
   completeOutbound: vi.fn(),
   completeCountExecution: vi.fn(),
   failWcs: vi.fn(),
+  dispatchWcs: vi.fn(),
+  completeWcs: vi.fn(),
+  wcsRows: undefined as unknown[] | undefined,
   createInbound: vi.fn(),
   createOutbound: vi.fn(),
   inventoryContext: undefined as unknown,
@@ -71,6 +75,7 @@ const wms = vi.hoisted(() => ({
   supplierReturns: [] as unknown[],
   qualityGateStatus: undefined as string | undefined,
   isReleasedForPutaway: true,
+  inboundStatus: 'open',
   permissionCodes: [
     'business.wms.receipts.read',
     'business.wms.receipts.manage',
@@ -88,7 +93,7 @@ const routeGuardState = vi.hoisted(() => ({
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
   ...(await orig<typeof import('@nerv-iip/ui')>()),
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }))
 
 vi.mock('vue-router', () => ({
@@ -116,26 +121,6 @@ vi.mock('@/composables/useInventoryScope', async () => {
     FALLBACK_INVENTORY_SITE_CODE: 'SITE-001',
     useInventoryScopeCatalog: () => catalog,
     useInventoryScopeDefaults: () => catalog,
-  }
-})
-
-// 库位/批次目录后端无读面，真实实现从仓储作业记录派生；测试给确定选项。
-vi.mock('@/composables/useWarehouseCodeCatalog', async () => {
-  const { computed, shallowRef } = await import('vue')
-  return {
-    WAREHOUSE_CATALOG_SOURCE_TEXT: '数据来自现有库存与仓储作业记录（暂无库位主数据）',
-    WAREHOUSE_LOCATION_EMPTY_TEXT: '系统里还没有出现过库位，可直接录入新库位编码',
-    WAREHOUSE_LOT_EMPTY_TEXT: '系统里还没有出现过批次',
-    WAREHOUSE_SERIAL_EMPTY_TEXT: '系统里还没有出现过序列号',
-    useWarehouseCodeCatalog: () => ({
-      locationOptions: computed(() => [
-        { value: 'STAGE-01', label: 'STAGE-01' },
-        { value: 'RACK-A-01', label: 'RACK-A-01' },
-      ]),
-      lotOptions: computed(() => [{ value: 'LOT-001', label: 'LOT-001' }]),
-      serialOptions: computed(() => [{ value: 'SN-001', label: 'SN-001' }]),
-      warehouseCatalogPending: shallowRef(false),
-    }),
   }
 })
 
@@ -168,7 +153,8 @@ vi.mock('@/composables/useBusinessWms', () => ({
       {
         inboundOrderId: 'ib-1',
         inboundOrderNo: 'IB-1',
-        status: 'open',
+        siteCode: 'SITE-001',
+        status: wms.inboundStatus,
         createdAtUtc: '2026-06-01T00:00:00Z',
         qualityGateStatus: wms.qualityGateStatus,
         isReleasedForPutaway: wms.isReleasedForPutaway,
@@ -246,27 +232,33 @@ vi.mock('@/composables/useBusinessWms', () => ({
   }),
   useWmsWcsTasks: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
-    wcsTasks: computed(() => [
-      {
-        wcsTaskId: 'w-1',
-        externalTaskId: 'EXT-1',
-        warehouseTaskId: 'WT-1',
-        adapterType: 'docker',
-        status: 'dispatched',
-        attemptCount: 1,
-      },
-    ]),
+    wcsTasks: computed(
+      () =>
+        wms.wcsRows ?? [
+          {
+            wcsTaskId: 'w-1',
+            externalTaskId: 'EXT-1',
+            warehouseTaskId: 'WT-1',
+            adapterType: 'agv',
+            status: 'Failed',
+            attemptCount: 1,
+            warehouseTaskVersion: 7,
+            plannedQuantity: 10,
+            executedQuantity: 4,
+          },
+        ],
+    ),
     wcsTasksError: shallowRef(undefined),
     wcsTasksPending: shallowRef(false),
     wcsTasksTotal: computed(() => 1),
     refreshWcsTasks: vi.fn(),
-    dispatchWcs: vi.fn(),
+    dispatchWcs: wms.dispatchWcs,
     dispatchWcsPending: shallowRef(false),
     dispatchWcsError: shallowRef(undefined),
     failWcs: wms.failWcs,
     failWcsPending: shallowRef(false),
     failWcsError: shallowRef(undefined),
-    completeWcs: vi.fn(),
+    completeWcs: wms.completeWcs,
     completeWcsPending: shallowRef(false),
     completeWcsError: shallowRef(undefined),
   }),
@@ -278,16 +270,18 @@ vi.mock('@/composables/useBusinessWms', () => ({
  * 所以把选择器桩成输入位（透传 id 与 aria-label），让下面的 setInput 仍然表达「选中了某个候选」。
  */
 const onlySelectStub = {
-  props: ['modelValue', 'options', 'id'],
+  props: ['modelValue', 'options', 'id', 'formSiteCode'],
   emits: ['update:modelValue'],
   template:
-    '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+    '<input :id="id" :data-form-site="formSiteCode" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
 }
 
 const layoutStub = {
   BusinessLayout: { template: '<main><slot /></main>' },
   NvEntityPicker: onlySelectStub,
   NvSearchSelect: onlySelectStub,
+  DirectoryPicker: onlySelectStub,
+  DirectorySuggestInput: onlySelectStub,
 }
 
 describe('WMS operate actions', () => {
@@ -326,6 +320,7 @@ describe('WMS operate actions', () => {
       },
     )
     wms.failWcs.mockResolvedValue(undefined)
+    wms.wcsRows = undefined
     wms.createInbound.mockResolvedValue(undefined)
     wms.createOutbound.mockResolvedValue(undefined)
     wms.inventoryContext = undefined
@@ -333,6 +328,7 @@ describe('WMS operate actions', () => {
     wms.supplierReturns = []
     wms.qualityGateStatus = undefined
     wms.isReleasedForPutaway = true
+    wms.inboundStatus = 'open'
     wms.permissionCodes = [
       'business.wms.receipts.read',
       'business.wms.receipts.manage',
@@ -489,25 +485,14 @@ describe('WMS operate actions', () => {
     )
   })
 
-  it('requires a pack review number before completing outbound review', async () => {
+  it('completes outbound review without asking for a pack review number (#3848)', async () => {
     const wrapper = mount(OutboundPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
     await wrapper.get('button[aria-label="完成复核 OB-1"]').trigger('click')
     await flushPromises()
 
-    // Submit without a review number → validation blocks the mutation.
-    document.body
-      .querySelector('form')!
-      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    await flushPromises()
-    expect(wms.completeOutbound).not.toHaveBeenCalled()
-    expect(document.body.textContent).toContain('请输入复核单号。')
-
-    const input = document.body.querySelector<HTMLInputElement>('#wms-pack-review-no')!
-    input.value = 'PR-1'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    await flushPromises()
+    // 复核单号由系统按编码规则生成：直接提交复核结论即可。
     document.body
       .querySelector('form')!
       .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -515,13 +500,35 @@ describe('WMS operate actions', () => {
 
     expect(wms.completeOutbound).toHaveBeenCalledWith(
       'ob-1',
-      {
-        packReviewNo: 'PR-1',
-        passed: true,
-      },
+      { passed: true },
       'wms-intent-1',
       expect.objectContaining({ attempt: 'initial' }),
     )
+  })
+
+  it('closes the outbound review as submitted while inventory posting is still running', async () => {
+    // #3926：复核已落库、过账异步未完，过去报「提交出库复核失败：操作结果尚未确认」。
+    wms.completeOutbound.mockRejectedValueOnce(
+      new BusinessOperationPendingError('wms.outbound-order.complete'),
+    )
+    const wrapper = mount(OutboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+    await wrapper.get('button[aria-label="完成复核 OB-1"]').trigger('click')
+    await flushPromises()
+    wms.refreshOutboundOrders.mockClear()
+
+    document.body
+      .querySelector('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    const reviewDialog = wrapper.findAllComponents(NvDialog).find((dialog) => dialog.props('open'))
+    expect(reviewDialog).toBeUndefined()
+    expect(document.body.textContent).not.toContain('提交出库复核失败')
+    expect(toast.warning).toHaveBeenCalledWith(
+      '出库复核已提交，库存正在过账。请稍后刷新查看过账结果。',
+    )
+    expect(wms.refreshOutboundOrders).toHaveBeenCalled()
   })
 
   it('marks only the second same-key outbound submission as a retry', async () => {
@@ -540,10 +547,6 @@ describe('WMS operate actions', () => {
     await flushPromises()
 
     await wrapper.get('button[aria-label="完成复核 OB-1"]').trigger('click')
-    await flushPromises()
-    const input = document.body.querySelector<HTMLInputElement>('#wms-pack-review-no')!
-    input.value = 'PR-1'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
     const submit = () =>
       document.body
@@ -568,14 +571,14 @@ describe('WMS operate actions', () => {
     expect(wms.completeOutbound).toHaveBeenNthCalledWith(
       1,
       'ob-1',
-      { packReviewNo: 'PR-1', passed: true },
+      { passed: true },
       'wms-intent-1',
       expect.objectContaining({ attempt: 'initial' }),
     )
     expect(wms.completeOutbound).toHaveBeenNthCalledWith(
       2,
       'ob-1',
-      { packReviewNo: 'PR-1', passed: true },
+      { passed: true },
       'wms-intent-1',
       expect.objectContaining({ attempt: 'retry' }),
     )
@@ -649,17 +652,13 @@ describe('WMS operate actions', () => {
         options?: { onCommandAttempt?: () => void },
       ) => {
         options?.onCommandAttempt?.()
-        return Promise.reject({ success: false, statusCode: 422, message: '复核单号无效' })
+        return Promise.reject({ success: false, statusCode: 422, message: '复核结论无效' })
       },
     )
     const wrapper = mount(OutboundPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
     await wrapper.get('button[aria-label="完成复核 OB-1"]').trigger('click')
-    await flushPromises()
-    const input = document.body.querySelector<HTMLInputElement>('#wms-pack-review-no')!
-    input.value = 'PR-1'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
     const submit = () =>
       document.body
@@ -668,8 +667,7 @@ describe('WMS operate actions', () => {
     submit()
     await flushPromises()
 
-    input.value = 'PR-2'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
+    document.body.querySelector<HTMLButtonElement>('#wms-pack-passed')!.click()
     await flushPromises()
     submit()
     await flushPromises()
@@ -677,11 +675,43 @@ describe('WMS operate actions', () => {
     expect(wms.completeOutbound).toHaveBeenNthCalledWith(
       2,
       'ob-1',
-      { packReviewNo: 'PR-2', passed: true },
+      { passed: false },
       'wms-intent-2',
       expect.objectContaining({ attempt: 'initial' }),
     )
   })
+
+  // #3832 审核 R3-2：库位选择器的工厂只从表单工厂来，每页一条轻量断言证明它传进去了。
+  it.each([
+    [
+      '出库单 · 拣货库位',
+      OutboundPage,
+      '新建出库单',
+      '#wms-out-site',
+      '[aria-label="第 1 行拣货库位"]',
+    ],
+    ['出库单 · 批次', OutboundPage, '新建出库单', '#wms-out-site', '[aria-label="第 1 行批次"]'],
+    ['入库单 · 批次建议', InboundPage, '新建入库单', '#wms-in-site', '[aria-label="第 1 行批次"]'],
+    ['WMS 盘点', CountsPage, '新建盘点单', '#cnt-site', '#cnt-location'],
+  ])(
+    '%s的库位选择器拿到表单工厂',
+    async (_name, Page, createLabel, siteSelector, locationSelector) => {
+      const wrapper = mount(Page, { global: { stubs: layoutStub } })
+      await flushPromises()
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text().includes(createLabel))!
+        .trigger('click')
+      await flushPromises()
+
+      setInput(siteSelector, 'S1')
+      await flushPromises()
+
+      expect(document.body.querySelector(locationSelector)!.getAttribute('data-form-site')).toBe(
+        'S1',
+      )
+    },
+  )
 
   it('creates an inbound order with a line item', async () => {
     const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
@@ -693,7 +723,6 @@ describe('WMS operate actions', () => {
       .trigger('click')
     await flushPromises()
 
-    setInput('#wms-in-no', 'IB-NEW')
     setInput('#wms-in-site', 'S1')
     setInput('#wms-in-srctype', '采购收货')
     setInput('#wms-in-srcid', 'PO-1')
@@ -702,6 +731,10 @@ describe('WMS operate actions', () => {
     setInput('[aria-label="第 1 行收货数量"]', '5')
     setInput('[aria-label="第 1 行暂存库位"]', 'A-01')
     await flushPromises()
+    // 暂存库位按表单工厂收窄候选、就地新增预填它（#3832）。
+    expect(
+      document.body.querySelector('[aria-label="第 1 行暂存库位"]')!.getAttribute('data-form-site'),
+    ).toBe('S1')
 
     document.body
       .querySelector('form')!
@@ -713,12 +746,16 @@ describe('WMS operate actions', () => {
     expect(body).toMatchObject({
       organizationId: 'org-001',
       environmentId: 'env-dev',
-      inboundOrderNo: 'IB-NEW',
+      idempotencyKey: expect.any(String),
       siteCode: 'S1',
       sourceDocumentType: '采购收货',
       sourceDocumentId: 'PO-1',
     })
     expect(body.lines).toHaveLength(1)
+    // 新行默认质量状态是「可用」对应的 WMS 免检码（#3923），不是库存侧别名 available。
+    expect(body.lines[0].qualityStatus).toBe(
+      WMS_RECEIVING_QUALITY_OPTIONS.find((option) => option.label === '可用')!.value,
+    )
     // 后端契约要求的行字段必须全部下发。
     expect(body.lines[0]).toMatchObject({
       lineNo: '1',
@@ -726,9 +763,39 @@ describe('WMS operate actions', () => {
       uomCode: 'pcs',
       receivedQuantity: 5,
       stagingLocationCode: 'A-01',
-      qualityStatus: 'available',
+      qualityStatus: 'unrestricted',
       ownerType: 'owned',
     })
+  })
+
+  it('创建内容冲突时展示服务端中文原因并保留入库表单', async () => {
+    const reason = '本次提交与此前的创建内容不一致，请重新发起创建。'
+    wms.createInbound.mockRejectedValueOnce({ success: false, message: reason })
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建入库单'))!
+      .trigger('click')
+    await flushPromises()
+
+    setInput('#wms-in-site', 'S1')
+    setInput('#wms-in-srctype', '采购收货')
+    setInput('#wms-in-srcid', 'PO-1')
+    setInput('[aria-label="第 1 行物料"]', 'SKU1')
+    setInput('[aria-label="第 1 行收货数量"]', '5')
+    setInput('[aria-label="第 1 行暂存库位"]', 'A-01')
+    await flushPromises()
+
+    document.body
+      .querySelector('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(toast.error).toHaveBeenCalledWith(`创建入库单失败：${reason}`)
+    expect(document.body.querySelector('#wms-in-site')).not.toBeNull()
+    expect(toast.success).not.toHaveBeenCalled()
   })
 
   it('links inbound orders to scan records through the SPA router', async () => {
@@ -926,6 +993,8 @@ describe('WMS operate actions', () => {
     expect(wrapper.get('a[aria-label="受限上架 IB-1"]').attributes('data-to')).toContain(
       '/wms/putaway',
     )
+    // 入库单的工厂一并带进上架页（#3832 审核 R3-1）。
+    expect(wrapper.get('a[aria-label="受限上架 IB-1"]').attributes('data-to')).toContain('SITE-001')
   })
 
   it('keeps putaway disabled when the inbound response has not released the order', async () => {
@@ -944,6 +1013,29 @@ describe('WMS operate actions', () => {
 
     expect(wrapper.get('button[aria-label="上架 IB-1"]').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('WMS 尚未返回整单上架放行权限')
+  })
+
+  it('offers no putaway entry once a not-released inbound order is completed', async () => {
+    // #3927：已完成的免检单曾留着可点的「上架」，点进去建任务被后端拒。
+    wms.inboundStatus = 'Completed'
+    wms.isReleasedForPutaway = false
+    wms.receivingQualityGates = [
+      {
+        inboundOrderNo: 'IB-1',
+        lineNo: '1',
+        skuCode: 'SKU-001',
+        qualityGateStatus: 'not-required',
+        qualityStatus: 'available',
+        stagingLocationCode: 'STAGE-01',
+      },
+    ]
+
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.find('[aria-label="上架 IB-1"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('入库单已完成，不再提供上架入口。')
+    expect(wrapper.text()).not.toContain('可进入上架')
   })
 
   it('keeps putaway disabled for a read-only WMS principal', async () => {
@@ -1012,7 +1104,6 @@ describe('WMS operate actions', () => {
       .trigger('click')
     await flushPromises()
 
-    setInput('#wms-in-no', 'IB-NEW')
     setInput('#wms-in-site', 'S1')
     setInput('#wms-in-srctype', '采购收货')
     setInput('#wms-in-srcid', 'PO-1')
@@ -1046,7 +1137,7 @@ describe('WMS operate actions', () => {
     await flushPromises()
 
     expect(wms.createInbound).not.toHaveBeenCalled()
-    expect(document.body.textContent).toContain('请填写入库单号、来源类型、来源单据与工厂。')
+    expect(document.body.textContent).toContain('请填写来源类型、来源单据与工厂。')
   })
 
   it('renders per-row WCS action menus', async () => {
@@ -1054,6 +1145,132 @@ describe('WMS operate actions', () => {
     await flushPromises()
 
     expect(wrapper.find('button[aria-label="WCS 任务操作 EXT-1"]').exists()).toBe(true)
+  })
+
+  describe('WCS 人工处置', () => {
+    const wcsStubs = {
+      ...layoutStub,
+      RowActions: { template: '<div><slot /></div>' },
+      NvDropdownMenuItem: {
+        props: ['disabled'],
+        emits: ['click'],
+        template:
+          '<button type="button" data-menu-item :disabled="disabled" @click="$emit(\'click\')"><slot /></button>',
+      },
+    }
+    async function openAction(label: string) {
+      const wrapper = mount(WcsPage, { global: { stubs: wcsStubs }, attachTo: document.body })
+      await flushPromises()
+      await wrapper
+        .findAll('[data-menu-item]')
+        .find((item) => item.text().includes(label))!
+        .trigger('click')
+      await flushPromises()
+      return document.querySelector<HTMLElement>('[role="dialog"]')!
+    }
+    async function submitDialog(dialog: HTMLElement) {
+      dialog
+        .querySelector('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await flushPromises()
+    }
+
+    it('re-dispatches with the row warehouse-task version and lets the backend resend the original payload', async () => {
+      wms.dispatchWcs.mockResolvedValue(undefined)
+      const dialog = await openAction('重新下发')
+
+      expect(dialog.querySelector('input')).toBeNull()
+      await submitDialog(dialog)
+
+      expect(wms.dispatchWcs).toHaveBeenCalledWith('WT-1', {
+        adapterType: 'agv',
+        externalTaskId: 'EXT-1',
+        expectedVersion: 7,
+      })
+    })
+
+    it('reports a completion receipt as the cumulative quantity and does not claim a partial one finished', async () => {
+      wms.completeWcs.mockResolvedValue(undefined)
+      const { toast } = await import('@nerv-iip/ui')
+      const dialog = await openAction('标记完成')
+      const quantity = dialog.querySelector<HTMLInputElement>('#wcs-completion')!
+      expect(quantity.value).toBe('10')
+
+      quantity.value = '6'
+      quantity.dispatchEvent(new Event('input', { bubbles: true }))
+      await flushPromises()
+      await submitDialog(dialog)
+
+      expect(wms.completeWcs).toHaveBeenCalledWith('EXT-1', {
+        completionPayloadJson: '{"actualQuantity":6}',
+      })
+      expect(toast.success).toHaveBeenCalledWith('已记录进度，未完成：累计 6，计划 10')
+    })
+
+    it.each([
+      ['重新下发', 'wcs-retry-not-due', '还没到允许重新下发的时间'],
+      ['重新下发', 'wcs-retry-limit-reached', '重新下发次数已用完'],
+      ['重新下发', 'wcs-device-circuit-open', '已暂停向它下发任务'],
+      ['标记完成', 'wcs-completion-quantity-out-of-range', '累计完成数量不能超过计划数量'],
+    ])('names the real reason when %s is refused with %s', async (action, code, reason) => {
+      // 网关对 409/422 的信封：稳定原因码放在 message 位。
+      const refusal = { success: false, message: code, code, errorData: [] }
+      wms.dispatchWcs.mockRejectedValue(refusal)
+      wms.completeWcs.mockRejectedValue(refusal)
+      const { toast } = await import('@nerv-iip/ui')
+      const dialog = await openAction(action)
+
+      await submitDialog(dialog)
+
+      const shown = String(vi.mocked(toast.error).mock.calls.at(-1)?.[0])
+      expect(shown).toContain(reason)
+      expect(shown).not.toContain('状态已被其他操作更新')
+      expect(shown).not.toContain('服务暂时不可用')
+    })
+
+    it('stops counting a re-dispatched task as failed and drops its old failure reason', async () => {
+      wms.wcsRows = [
+        {
+          wcsTaskId: 'w-1',
+          externalTaskId: 'EXT-1',
+          warehouseTaskId: 'WT-1',
+          adapterType: 'agv',
+          status: 'Completed',
+          attemptCount: 2,
+          failureCode: '设备故障',
+          failureMessage: '小车在上架途中报急停',
+          failedAtUtc: '2026-09-27T08:09:28Z',
+          warehouseTaskVersion: 4,
+          plannedQuantity: 1,
+          executedQuantity: 1,
+        },
+      ]
+      const wrapper = mount(WcsPage, { global: { stubs: wcsStubs } })
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('本页无失败')
+      expect(wrapper.text()).toMatch(/本页执行中\s*0/)
+      // 不在失败状态的任务不能重新下发：点了设备侧什么也收不到。
+      const redispatch = wrapper
+        .findAll('[data-menu-item]')
+        .find((item) => item.text().includes('重新下发'))!
+      expect(redispatch.attributes('disabled')).toBeDefined()
+      expect(wrapper.text()).not.toContain('设备故障')
+      expect(wrapper.text()).not.toContain('需人工跟进')
+    })
+
+    it('reports a full completion receipt as finished', async () => {
+      wms.completeWcs.mockResolvedValue(undefined)
+      const { toast } = await import('@nerv-iip/ui')
+      const dialog = await openAction('标记完成')
+
+      await submitDialog(dialog)
+
+      expect(wms.completeWcs).toHaveBeenCalledWith('EXT-1', {
+        completionPayloadJson: '{"actualQuantity":10}',
+      })
+      expect(toast.success).toHaveBeenCalledWith('设备任务已完成')
+    })
   })
 })
 vi.mock('@/composables/useWmsOperationalCandidates', async () => {

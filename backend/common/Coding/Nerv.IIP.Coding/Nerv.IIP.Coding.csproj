@@ -8,6 +8,9 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <!-- #3307：共享编码实体的 EF 配置收进本包后需要 ToTable / HasColumnName / HasComment /
+         HasDatabaseName 这些 relational 扩展；与同层的 Nerv.IIP.Messaging.CAP.EntityFrameworkCore 同形。 -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
     <PackageReference Include="NetCorePal.Extensions.Primitives" />
   </ItemGroup>
 

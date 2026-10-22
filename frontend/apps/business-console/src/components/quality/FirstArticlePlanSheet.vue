@@ -3,10 +3,8 @@ import type {
   BusinessConsoleCreateInspectionPlanRequest,
   BusinessConsoleInspectionPlanCharacteristicInput,
 } from '@nerv-iip/api-client'
-import type { EntityPickerOption } from '@nerv-iip/ui'
 import {
   NvButton,
-  NvEntityPicker,
   NvField,
   NvFieldDescription,
   NvFieldGroup,
@@ -23,11 +21,12 @@ import {
   NvSheetFooter,
   NvSheetHeader,
   NvSheetTitle,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { PlusIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
 
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import { useQualityFirstArticlePlanActions } from '@/composables/useBusinessQuality'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
@@ -35,10 +34,6 @@ const props = defineProps<{
   open: boolean
   organizationId: string
   environmentId: string
-  skuOptions: EntityPickerOption[]
-  skusPending: boolean
-  workCenterOptions: EntityPickerOption[]
-  workCentersPending: boolean
 }>()
 const emit = defineEmits<{
   'update:open': [value: boolean]
@@ -72,7 +67,7 @@ const openModel = computed({
 const blockers = computed(() => {
   const messages: string[] = []
   if (!props.organizationId.trim() || !props.environmentId.trim()) {
-    messages.push('业务范围尚未就绪，请先选择组织与环境。')
+    messages.push('尚未确定当前组织。')
   }
   if (!form.planCode.trim()) messages.push('请填写方案编号。')
   if (!form.skuCode.trim()) messages.push('请选择适用物料。')
@@ -219,32 +214,24 @@ async function submit() {
           </NvField>
           <NvField :data-invalid="submitted && !form.skuCode.trim()">
             <NvFieldLabel for="first-article-sku">适用物料</NvFieldLabel>
-            <NvEntityPicker
+            <DirectoryPicker
               id="first-article-sku"
               v-model="form.skuCode"
-              :options="skuOptions"
-              :loading="skusPending"
-              title="选择适用物料"
-              placeholder="选择物料"
-              source-text="数据来自物料主数据"
+              directory-type="material"
+              creatable
               aria-label="适用物料"
               :invalid="submitted && !form.skuCode.trim()"
-              :aria-invalid="submitted && !form.skuCode.trim()"
             />
           </NvField>
           <NvField :data-invalid="submitted && !form.workCenterId.trim()">
             <NvFieldLabel for="first-article-work-center">工序工作中心</NvFieldLabel>
-            <NvEntityPicker
+            <DirectoryPicker
               id="first-article-work-center"
               v-model="form.workCenterId"
-              :options="workCenterOptions"
-              :loading="workCentersPending"
-              title="选择工序工作中心"
-              placeholder="选择工作中心"
-              source-text="数据来自工作中心主数据"
+              directory-type="work-center"
+              creatable
               aria-label="工序工作中心"
               :invalid="submitted && !form.workCenterId.trim()"
-              :aria-invalid="submitted && !form.workCenterId.trim()"
             />
           </NvField>
         </NvFieldGroup>
@@ -341,7 +328,7 @@ async function submit() {
               submitted && blockers.length ? 'first-article-plan-errors' : undefined
             "
           >
-            <Spinner v-if="createFirstArticlePlanPending" aria-hidden="true" />
+            <NvSpinner v-if="createFirstArticlePlanPending" aria-hidden="true" />
             创建并启用
           </NvButton>
         </NvSheetFooter>

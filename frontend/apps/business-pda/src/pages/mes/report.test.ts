@@ -1,4 +1,5 @@
 import { RequestTimeoutError } from '@/api/request-timeout'
+import { clearPendingBusinessIntent } from '@nerv-iip/business-core'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
@@ -9,7 +10,7 @@ async function applyNavigation(to: string | { query?: Record<string, unknown> })
     if (to === '/mes/report') route.query = {}
     return
   }
-  route.query = { ...(to.query ?? {}) }
+  route.query = { ...to.query }
 }
 const push = vi.fn(applyNavigation)
 const replace = vi.fn(applyNavigation)
@@ -22,7 +23,14 @@ vi.mock('vue-router', () => ({
 type ReportEnvelope = {
   success: boolean
   message?: string
-  data?: { productionReportId?: string; reportNo?: string } | null
+  data?: {
+    productionReportId?: string
+    reportNo?: string
+    serialNumbers?: string[]
+    printBatchId?: string
+    printStatus?: string
+    printingPreparationPending?: boolean
+  } | null
 }
 const successfulReceipt: ReportEnvelope = {
   success: true,
@@ -34,18 +42,38 @@ const successfulReceipt: ReportEnvelope = {
 const recordReport = vi.fn(
   async (_input: Record<string, unknown>): Promise<ReportEnvelope> => successfulReceipt,
 )
+const confirmReport = vi.fn(
+  async (input: {
+    reportNo: string
+    productionReportId: string
+    workOrderId: string
+    operationTaskId: string
+  }) => ({ ...input }),
+)
 const refreshWorkOrders = vi.fn(async () => {})
 const refreshTasks = vi.fn(async () => {})
 const refreshExactTask = vi.fn(async () => {})
 const cancelPendingTasks = vi.fn()
 const workOrdersErrorRef = ref<unknown>(null)
-const workOrdersLastUpdatedAtRef = ref<string | null>('2026-07-28T10:20:30Z')
 const tasksErrorRef = ref<unknown>(null)
 const workOrdersPendingRef = ref(false)
 const tasksPendingRef = ref(false)
 const reportScopeMessageRef = ref('')
 const reportScopePendingRef = ref(false)
 const reportScopeReadyRef = ref(true)
+const contextGenerationRef = ref(1)
+const reportableTasksPendingRef = ref(false)
+const reportableTasksErrorRef = ref<unknown>(null)
+const reportableTasksReadyRef = ref(true)
+const reportScopeRef = ref({ kind: 'organization', id: 'org-001' })
+const reportContextRef = ref({
+  principalId: 'principal-1',
+  organizationId: 'org-001',
+  environmentId: 'env-dev',
+  scopeKind: 'organization',
+  scopeId: 'org-001',
+  generation: 1,
+})
 let operationTaskDiscoveryCalls = 0
 
 const workOrderFilters = reactive({
@@ -60,35 +88,61 @@ const taskFilters = reactive({
 })
 
 const defaultWorkOrders = [
-  { workOrderId: 'WO-2026-0001', skuId: 'SKU-A', quantity: 100, status: 'Released' },
-  { workOrderId: 'WO-2026-0002', skuId: 'SKU-B', quantity: 50, status: 'Released' },
+  {
+    workOrderId: 'WO-2026-0001',
+    workOrderNo: 'WONO-A',
+    skuId: 'SKU-A',
+    quantity: 100,
+    status: 'Released',
+  },
+  {
+    workOrderId: 'WO-2026-0002',
+    workOrderNo: 'WONO-B',
+    skuId: 'SKU-B',
+    quantity: 50,
+    status: 'Released',
+  },
 ]
 const workOrdersRef = ref<Array<Record<string, unknown>>>(defaultWorkOrders)
+const telemetryCandidatesRef = ref<Array<Record<string, unknown>>>([])
+const telemetryTargetTasksRef = ref<Array<Record<string, unknown>>>([])
+const telemetryPromote = vi.fn()
+const telemetryDismiss = vi.fn()
 
 const defaultOperationTasks = [
   {
     operationTaskId: 'OP-1',
+    operationTaskNo: 'OPNO-1',
     workOrderId: 'WO-2026-0001',
+    workOrderNo: 'WONO-A',
     status: 'InProgress',
+    allowedActions: ['report'],
     operationSequence: 10,
     workCenterId: 'WC-A',
   },
   {
     operationTaskId: 'OP-2',
+    operationTaskNo: 'OPNO-2',
     workOrderId: 'WO-2026-0001',
+    workOrderNo: 'WONO-A',
     status: 'Queued',
+    allowedActions: ['report'],
     operationSequence: 20,
     workCenterId: 'WC-B',
   },
   {
     operationTaskId: 'OP-3',
+    operationTaskNo: 'OPNO-3',
     workOrderId: 'WO-2026-0002',
+    workOrderNo: 'WONO-B',
     status: 'Ready',
+    allowedActions: ['report'],
     operationSequence: 10,
     workCenterId: 'WC-C',
   },
 ]
 const operationTasksRef = ref<Array<Record<string, unknown>>>(defaultOperationTasks)
+const reportableTasksOverrideRef = ref<Array<Record<string, unknown>> | null>(null)
 const workOrderDetailRef = ref<Record<string, unknown> | null>({
   ...defaultWorkOrders[0],
   operationTasks: defaultOperationTasks.filter(
@@ -97,7 +151,6 @@ const workOrderDetailRef = ref<Record<string, unknown> | null>({
 })
 const workOrderDetailPendingRef = ref(false)
 const workOrderDetailErrorRef = ref<unknown>(null)
-const workOrderDetailLastUpdatedAtRef = ref<string | null>('2026-07-28T10:20:31Z')
 const workOrderDetailHasSuccessfulResponseRef = ref(true)
 const workOrderDetailHasFailedResponseRef = ref(false)
 const refreshWorkOrderDetail = vi.fn(async () => {})
@@ -106,11 +159,32 @@ const exactTaskPendingRef = ref(false)
 const exactTaskErrorRef = ref<unknown>(null)
 const exactTaskScopeReadyRef = ref(true)
 const exactTaskScopeMessageRef = ref('')
+const materialLotsRef = ref<Array<Record<string, unknown>>>([])
+const materialsReadPermissionRef = ref(true)
+const materialLotsPendingRef = ref(false)
+const materialLotsErrorRef = ref<unknown>(null)
+const scrapReasonCodesRef = ref<Array<Record<string, unknown>>>([
+  {
+    reasonCode: 'SCRAP-SURFACE',
+    reasonName: '表面缺陷',
+    groupName: '外观',
+    severity: 'major',
+    defaultDisposition: 'scrap',
+    enabled: true,
+    snapshotVersion: 'v1',
+  },
+])
+const qualityInspectionRecordsReadPermissionRef = ref(true)
+const scrapReasonCodesPendingRef = ref(false)
+const scrapReasonCodesErrorRef = ref<unknown>(null)
 const workScopeOptionsRef = ref([
   { label: '精加工一线（工作中心）', value: 'work-center:WC-A' },
   { label: '精加工二线（工作中心）', value: 'work-center:WC-B' },
 ])
 const workScopeSelectionRef = ref<string | undefined>('work-center:WC-A')
+const workOrderListScopeReadyRef = ref(true)
+const workOrderListScopeUnavailableRef = ref(false)
+const workOrderListScopeMessageRef = ref('')
 
 vi.mock('@/composables/useBusinessMes', () => ({
   useMesWorkOrders: () => ({
@@ -120,7 +194,6 @@ vi.mock('@/composables/useBusinessMes', () => ({
     pending: workOrdersPendingRef,
     error: workOrdersErrorRef,
     refresh: refreshWorkOrders,
-    lastUpdatedAt: workOrdersLastUpdatedAtRef,
     hasSuccessfulResponse: computed(() => !workOrdersPendingRef.value && !workOrdersErrorRef.value),
     hasFailedResponse: computed(() => false),
     workOrderReadScope: ref({
@@ -128,8 +201,10 @@ vi.mock('@/composables/useBusinessMes', () => ({
       id: 'WC-A',
       displayName: '精加工一线',
     }),
-    workOrderReadScopeMessage: ref(''),
-    workOrderReadScopeReady: ref(true),
+    workOrderReadScopeMessage: workOrderListScopeMessageRef,
+    workOrderReadScopePending: ref(false),
+    workOrderReadScopeReady: workOrderListScopeReadyRef,
+    workOrderReadScopeUnavailable: workOrderListScopeUnavailableRef,
   }),
   useMesOperationTasks: () => {
     operationTaskDiscoveryCalls += 1
@@ -168,7 +243,6 @@ vi.mock('@/composables/useBusinessMes', () => ({
     pending: workOrderDetailPendingRef,
     error: workOrderDetailErrorRef,
     refresh: refreshWorkOrderDetail,
-    lastUpdatedAt: workOrderDetailLastUpdatedAtRef,
     hasSuccessfulResponse: workOrderDetailHasSuccessfulResponseRef,
     hasFailedResponse: workOrderDetailHasFailedResponseRef,
     workOrderReadScope: ref({
@@ -210,16 +284,45 @@ vi.mock('@/composables/useBusinessMes', () => ({
     error: ref(null),
     refresh: vi.fn(),
     recordReport,
+    confirmReport,
     reportScopeMessage: reportScopeMessageRef,
     reportScopePending: reportScopePendingRef,
     reportScopeReady: reportScopeReadyRef,
+    reportScope: reportScopeRef,
+    reportContext: reportContextRef,
+    contextGeneration: contextGenerationRef,
+    reportableTasks: computed(() => reportableTasksOverrideRef.value ?? operationTasksRef.value),
+    reportableTasksPending: reportableTasksPendingRef,
+    reportableTasksError: reportableTasksErrorRef,
+    reportableTasksReady: reportableTasksReadyRef,
+    refreshReportableTasks: vi.fn(async () => undefined),
+  }),
+  useMesProductionMaterialLots: () => ({
+    materialsReadPermission: materialsReadPermissionRef,
+    materialLotsPending: materialLotsPendingRef,
+    materialLotsError: materialLotsErrorRef,
+    availableMaterialLots: materialLotsRef,
+    refreshMaterialLots: vi.fn(async () => undefined),
+  }),
+  useMesScrapReasonCodes: () => ({
+    qualityInspectionRecordsReadPermission: qualityInspectionRecordsReadPermissionRef,
+    scrapReasonCodes: scrapReasonCodesRef,
+    scrapReasonCodesPending: scrapReasonCodesPendingRef,
+    scrapReasonCodesError: scrapReasonCodesErrorRef,
+    refreshScrapReasonCodes: vi.fn(async () => undefined),
   }),
   useMesTelemetryProductionReportCandidates: () => ({
-    candidates: computed(() => []),
-    total: computed(() => 0),
+    candidates: computed(() => telemetryCandidatesRef.value),
+    total: computed(() => telemetryCandidatesRef.value.length),
     pending: ref(false),
-    promote: vi.fn(),
-    dismiss: vi.fn(),
+    promote: telemetryPromote,
+    dismiss: telemetryDismiss,
+  }),
+  useMesTelemetryCandidateTargetTasks: () => ({
+    tasks: computed(() => telemetryTargetTasksRef.value),
+    pending: ref(false),
+    error: ref(null),
+    refresh: vi.fn(),
   }),
   // 作业范围选择入口自带一个独立实例（#1297）：页面挂载时必须能解析到它。
   useMesWorkScopeSelection: () => ({
@@ -228,7 +331,34 @@ vi.mock('@/composables/useBusinessMes', () => ({
   }),
 }))
 
+const deviceNames: Record<string, string> = {
+  'DEV-CNC-01': '数控车床一号（EQ00001）',
+  'DEV-CNC-99': '数控车床九号（EQ00099）',
+}
+vi.mock('@/composables/useBusinessDeviceDirectory', () => ({
+  useDeviceAssetNames: () => ({
+    resolveDeviceName: (deviceAssetId?: string | null) =>
+      deviceAssetId ? deviceNames[deviceAssetId] : undefined,
+  }),
+}))
+
 import ReportPage from './report.vue'
+
+const serialRequired = ref(false)
+const serialValid = ref(true)
+const serialTemplateId = ref('')
+vi.mock('@/composables/mes/useProductionReportSerials', () => ({
+  useProductionReportSerials: () => ({
+    required: serialRequired,
+    valid: serialValid,
+    templateId: serialTemplateId,
+    pending: ref(false),
+    message: ref(''),
+    templates: ref([{ templateId: 'tpl-1', templateName: '成品标签', status: 'active' }]),
+    pendingCount: ref(2),
+    refresh: vi.fn(),
+  }),
+}))
 
 async function selectWorkOrder(wrapper: ReturnType<typeof mount>, index = 0) {
   const rows = wrapper.findAll('[data-row]')
@@ -247,9 +377,48 @@ function deferred<T>() {
 }
 
 describe('PDA MES production reporting page', () => {
+  it('shows every allocated serial and transport status without claiming paper output', async () => {
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    recordReport.mockResolvedValue({
+      success: true,
+      data: {
+        ...successfulReceipt.data,
+        serialNumbers: ['SN-001', 'SN-002'],
+        printBatchId: 'batch-1',
+        printStatus: 'sent-to-printer',
+      },
+    })
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    input.value = '2'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+    await flushPromises()
+    expect(wrapper.text()).toContain('SN-001')
+    expect(wrapper.text()).toContain('SN-002')
+    expect(wrapper.text()).toContain('已发送至打印机')
+    expect(wrapper.text()).not.toContain('已打印')
+  })
+
   beforeEach(() => {
-    recordReport.mockClear()
+    for (const entry of JSON.parse(
+      sessionStorage.getItem('nerv-iip.pending-business-intents.v1') ?? '[]',
+    ))
+      clearPendingBusinessIntent(entry)
+    sessionStorage.clear()
+    telemetryCandidatesRef.value = []
+    telemetryTargetTasksRef.value = []
+    telemetryPromote.mockReset().mockResolvedValue('PRPT-20260927-000001')
+    telemetryDismiss.mockReset().mockResolvedValue(undefined)
+    serialRequired.value = false
+    serialValid.value = true
+    serialTemplateId.value = ''
+    recordReport.mockReset()
     recordReport.mockResolvedValue(successfulReceipt)
+    confirmReport.mockClear()
+    confirmReport.mockImplementation(async (input) => ({ ...input }))
     push.mockClear()
     replace.mockClear()
     refreshWorkOrders.mockClear()
@@ -258,14 +427,31 @@ describe('PDA MES production reporting page', () => {
     refreshExactTask.mockClear()
     cancelPendingTasks.mockClear()
     workOrdersErrorRef.value = null
+    workOrderListScopeReadyRef.value = true
+    workOrderListScopeUnavailableRef.value = false
+    workOrderListScopeMessageRef.value = ''
     tasksErrorRef.value = null
     workOrdersPendingRef.value = false
     tasksPendingRef.value = false
     reportScopeMessageRef.value = ''
     reportScopePendingRef.value = false
     reportScopeReadyRef.value = true
+    contextGenerationRef.value = 1
+    reportableTasksPendingRef.value = false
+    reportableTasksErrorRef.value = null
+    reportableTasksReadyRef.value = true
+    reportScopeRef.value = { kind: 'organization', id: 'org-001' }
+    reportContextRef.value = {
+      principalId: 'principal-1',
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      scopeKind: 'organization',
+      scopeId: 'org-001',
+      generation: 1,
+    }
     workOrdersRef.value = defaultWorkOrders
     operationTasksRef.value = defaultOperationTasks
+    reportableTasksOverrideRef.value = null
     workOrderDetailRef.value = {
       ...defaultWorkOrders[0],
       operationTasks: defaultOperationTasks.filter(
@@ -282,10 +468,178 @@ describe('PDA MES production reporting page', () => {
     exactTaskErrorRef.value = null
     exactTaskScopeReadyRef.value = true
     exactTaskScopeMessageRef.value = ''
+    materialLotsRef.value = []
+    materialsReadPermissionRef.value = true
+    materialLotsPendingRef.value = false
+    materialLotsErrorRef.value = null
+    scrapReasonCodesRef.value = [
+      {
+        reasonCode: 'SCRAP-SURFACE',
+        reasonName: '表面缺陷',
+        groupName: '外观',
+        severity: 'major',
+        defaultDisposition: 'scrap',
+        enabled: true,
+        snapshotVersion: 'v1',
+      },
+    ]
+    qualityInspectionRecordsReadPermissionRef.value = true
+    scrapReasonCodesPendingRef.value = false
+    scrapReasonCodesErrorRef.value = null
     operationTaskDiscoveryCalls = 0
     workOrderFilters.keyword = undefined
+    workOrderFilters.workOrderId = undefined
     taskFilters.workOrderId = undefined
     route.query = {}
+  })
+
+  it('keeps a successful report and retries pending label preparation with the same frozen template', async () => {
+    serialRequired.value = true
+    serialTemplateId.value = 'tpl-1'
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    recordReport.mockResolvedValueOnce({
+      success: true,
+      data: {
+        ...successfulReceipt.data,
+        serialNumbers: ['SN-001'],
+        printBatchId: 'batch-1',
+        printStatus: 'reserved',
+        printingPreparationPending: true,
+      },
+    })
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    input.value = '1'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+    await flushPromises()
+    expect(wrapper.text()).toContain('报工成功')
+    expect(recordReport.mock.calls[0][0].labelTemplateId).toBe('tpl-1')
+    serialTemplateId.value = 'tpl-2'
+    await wrapper.get('[data-testid="retry-label-preparation"]').trigger('click')
+    await flushPromises()
+    expect(recordReport.mock.calls[1][0]).toEqual(recordReport.mock.calls[0][0])
+  })
+
+  it('keeps confirmed reporting successful while label preparation retry is pending or fails', async () => {
+    serialRequired.value = true
+    serialTemplateId.value = 'tpl-1'
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    recordReport.mockResolvedValueOnce({
+      success: true,
+      data: {
+        ...successfulReceipt.data,
+        serialNumbers: ['SN-001'],
+        printBatchId: 'batch-1',
+        printStatus: 'reserved',
+        printingPreparationPending: true,
+      },
+    })
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    input.value = '1'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+    await flushPromises()
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    let rejectRetry!: (error: Error) => void
+    recordReport.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectRetry = reject
+        }),
+    )
+    await wrapper.get('[data-testid="retry-label-preparation"]').trigger('click')
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    rejectRetry(new Error('标签准备服务暂不可用，请稍后重试。'))
+    await flushPromises()
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('报工成功')
+    expect(wrapper.text()).toContain('SN-001')
+    expect(wrapper.text()).toContain('RPT-DEFAULT')
+    expect(wrapper.text()).not.toContain('报工已受理，待核验')
+    expect(wrapper.get('[data-testid="label-preparation-error"]').text()).toContain(
+      '标签准备服务暂不可用',
+    )
+    expect(recordReport.mock.calls[1][0]).toEqual(recordReport.mock.calls[0][0])
+    confirmReport.mockRejectedValueOnce(new Error('标签准备结果核对暂不可用，请重试。'))
+    await wrapper.get('[data-testid="retry-label-preparation"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="label-preparation-error"]').text()).toContain(
+      '标签准备结果核对暂不可用',
+    )
+    await wrapper.get('[data-testid="retry-label-preparation"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="label-preparation-error"]').exists()).toBe(false)
+    expect(recordReport.mock.calls[2][0]).toEqual(recordReport.mock.calls[0][0])
+  })
+
+  it.each(['principalId', 'organizationId', 'environmentId', 'scopeId'] as const)(
+    'does not restore pending preparation for a different %s',
+    async (field) => {
+      route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+      recordReport.mockResolvedValueOnce({
+        success: true,
+        data: { ...successfulReceipt.data, printingPreparationPending: true },
+      })
+      const first = mount(ReportPage, { attachTo: document.body })
+      await flushPromises()
+      const input = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+      input.value = '1'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      await flushPromises()
+      document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+      await flushPromises()
+      expect(first.find('[data-result][data-status="success"]').exists()).toBe(true)
+      reportContextRef.value = { ...reportContextRef.value, [field]: 'other-context' }
+      const other = mount(ReportPage)
+      await flushPromises()
+      expect(other.find('[data-result]').exists()).toBe(false)
+      expect(other.find('[data-testid="retry-label-preparation"]').exists()).toBe(false)
+      expect(recordReport).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('hides preparation in another context and restores it only after returning to its context', async () => {
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    recordReport.mockResolvedValueOnce({
+      success: true,
+      data: { ...successfulReceipt.data, printingPreparationPending: true },
+    })
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    input.value = '1'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+    await flushPromises()
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    const originalContext = { ...reportContextRef.value }
+    contextGenerationRef.value += 1
+    reportContextRef.value = {
+      ...reportContextRef.value,
+      scopeId: 'other-scope',
+      generation: contextGenerationRef.value,
+    }
+    await flushPromises()
+    expect(wrapper.find('[data-result]').exists()).toBe(false)
+    const reentered = mount(ReportPage)
+    await flushPromises()
+    expect(reentered.find('[data-result]').exists()).toBe(false)
+    expect(recordReport).toHaveBeenCalledTimes(1)
+    contextGenerationRef.value += 1
+    reportContextRef.value = { ...originalContext, generation: contextGenerationRef.value }
+    await flushPromises()
+    expect(reentered.find('[data-result][data-status="success"]').exists()).toBe(true)
+    await reentered.get('[data-testid="retry-label-preparation"]').trigger('click')
+    await flushPromises()
+    expect(recordReport.mock.calls[1][0]).toEqual(recordReport.mock.calls[0][0])
   })
 
   it('starts on the select-work-order step listing work orders', () => {
@@ -297,6 +651,61 @@ describe('PDA MES production reporting page', () => {
     expect(wrapper.text()).toContain('WO-2026-0002')
     // 尚未到选工序，列表里不应出现工序序号
     expect(wrapper.text()).not.toContain('工序 10')
+  })
+
+  it('marks rework work orders and tasks from server authority while standard rows stay unchanged', async () => {
+    const reworkAuthority = {
+      workOrderType: 'rework',
+      sourceWorkOrderId: 'WO-SOURCE-001',
+      sourceNcrId: 'ncr-001',
+      sourceNcrCode: 'NCR-2026-0001',
+    }
+    workOrdersRef.value = [{ ...defaultWorkOrders[0], ...reworkAuthority }, defaultWorkOrders[1]]
+    operationTasksRef.value = defaultOperationTasks.map((task) =>
+      task.workOrderId === defaultWorkOrders[0].workOrderId
+        ? { ...task, ...reworkAuthority }
+        : task,
+    )
+    workOrderDetailRef.value = {
+      ...defaultWorkOrders[0],
+      ...reworkAuthority,
+      operationTasks: operationTasksRef.value.filter(
+        (task) => task.workOrderId === defaultWorkOrders[0].workOrderId,
+      ),
+    }
+    const wrapper = mount(ReportPage)
+
+    expect(wrapper.text()).toContain('返工 · WO-2026-0001')
+    expect(wrapper.text()).toContain('来源 NCR NCR-2026-0001 · 源工单 WO-SOURCE-001')
+    expect(wrapper.text()).toContain('WO-2026-0002')
+    expect(wrapper.text()).not.toContain('返工 · WO-2026-0002')
+
+    await selectWorkOrder(wrapper, 0)
+    expect(wrapper.text()).toContain('返工 · WO-2026-0001 · 工序 10')
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    await flushPromises()
+    expect(
+      document.body.querySelector('[data-testid="report-rework-source"]')?.textContent?.trim(),
+    ).toBe('来源 NCR NCR-2026-0001 · 源工单 WO-SOURCE-001')
+  })
+
+  it('fails closed when a deep-linked rework work order omits source authority', async () => {
+    workOrderDetailRef.value = {
+      ...defaultWorkOrders[0],
+      workOrderType: 'rework',
+      sourceWorkOrderId: null,
+      sourceNcrId: null,
+      sourceNcrCode: null,
+      operationTasks: [{ ...defaultOperationTasks[0], workOrderType: 'rework' }],
+    }
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain('返工来源信息不完整')
+    expect(document.body.querySelector('[data-testid="submit-report"]')).toBeNull()
+    expect(recordReport).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('shows the missing-scope reason and keeps production reporting disabled', async () => {
@@ -343,7 +752,6 @@ describe('PDA MES production reporting page', () => {
       await flushPromises()
 
       const issue = wrapper.get('[data-testid="report-route-issue"]').text()
-      expect(issue).toContain('报工任务读取范围未就绪')
       expect(issue).toContain(scopeMessage)
       expect(issue).not.toContain('未找到工单')
       expect(issue).not.toContain('未找到工单 WO-2026-0001 下的工序任务')
@@ -352,21 +760,20 @@ describe('PDA MES production reporting page', () => {
     },
   )
 
-  it('shows scope, source, count, and successful-response time for both report lists', async () => {
+  it('tells the operator in business terms when the account has no work-order scope', () => {
+    workOrdersRef.value = []
+    workOrderListScopeReadyRef.value = false
+    workOrderListScopeUnavailableRef.value = true
+    workOrderListScopeMessageRef.value = '请联系管理员在 IAM 为该账号配置数据范围'
+
     const wrapper = mount(ReportPage)
 
-    expect(wrapper.text()).toContain('范围：当前主体授权工单范围 · 精加工一线（工作中心）')
-    expect(wrapper.text()).toContain('来源：生产工单服务（服务端按当前主体与所选授权工单范围过滤）')
-    expect(wrapper.text()).toContain('已加载 2 / 共 2')
-    expect(wrapper.text()).toContain('最近成功响应')
-
-    await selectWorkOrder(wrapper, 0)
-
-    expect(wrapper.text()).toContain('来源：生产工序服务（当前主体授权工单详情返回集合')
-    expect(wrapper.text()).toContain('已加载 2 / 共 2')
+    const notice = wrapper.get('[data-testid="work-order-scope-notice"]').text()
+    expect(notice).toBe('当前账号没有可查看的工单范围，请联系管理员开通。')
+    expect(wrapper.text()).not.toContain('IAM')
   })
 
-  it('explains that an empty operation collection is not a personal-task empty state', async () => {
+  it('shows the business empty state for a work order without operations', async () => {
     workOrderDetailRef.value = {
       ...defaultWorkOrders[0],
       operationTasks: [],
@@ -374,10 +781,10 @@ describe('PDA MES production reporting page', () => {
     const wrapper = mount(ReportPage)
     await selectWorkOrder(wrapper, 0)
 
-    expect(wrapper.text()).toContain('当前空态只代表所选授权工单返回的工序集合为空')
+    expect(wrapper.text()).toContain('该工单暂无工序')
   })
 
-  it('detail failure blocks route identity and shows failed metadata plus a retry action', async () => {
+  it('detail failure blocks route identity and shows a retry action', async () => {
     route.query = { workOrderId: 'WO-2026-0001' }
     workOrderDetailRef.value = null
     workOrderDetailErrorRef.value = new Error('工单详情查询失败')
@@ -388,9 +795,6 @@ describe('PDA MES production reporting page', () => {
     await flushPromises()
 
     expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain('详情加载失败')
-    expect(wrapper.get('[data-testid="list-failure-explanation"]').text()).toContain(
-      '工单详情服务未成功返回',
-    )
     expect(wrapper.get('[data-testid="work-order-detail-error"]').text()).toContain(
       '工单详情查询失败',
     )
@@ -401,12 +805,75 @@ describe('PDA MES production reporting page', () => {
     expect(refreshWorkOrderDetail).toHaveBeenCalledTimes(1)
   })
 
-  it('scanning sets the work-order keyword filter', async () => {
+  it('uses the resolved work-order strong id as the exact report route', async () => {
     const wrapper = mount(ReportPage)
-    const input = wrapper.get('input[placeholder^="扫"]')
-    await input.setValue('WO-2026-0002')
-    await input.trigger('keydown.enter')
-    expect(workOrderFilters.keyword).toBe('WO-2026-0002')
+    await wrapper.getComponent({ name: 'MesScanPrevalidation' }).vm.$emit('accepted', {
+      kind: 'work-order',
+      candidate: {},
+      workOrderId: 'WO-2026-0002',
+    })
+    await flushPromises()
+    expect(workOrderFilters.workOrderId).toBe('WO-2026-0002')
+    expect(workOrderFilters.keyword).toBeUndefined()
+    expect(replace).toHaveBeenCalledWith({
+      path: '/mes/report',
+      query: { workOrderId: 'WO-2026-0002' },
+    })
+  })
+
+  it('applies accepted material, device, and personnel scans to the selected report context', async () => {
+    materialLotsRef.value = [
+      {
+        requestId: 'MIR-PDA-001',
+        workOrderId: 'WO-2026-0001',
+        operationTaskId: 'OP-1',
+        materialId: 'MAT-OIL',
+        uomCode: 'L',
+        materialLotId: 'LOT-OIL-001',
+        requestedQuantity: 5,
+        receivedQuantity: 5,
+        consumedQuantity: 1,
+        status: 'received',
+      },
+    ]
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await selectWorkOrder(wrapper, 0)
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    const scanner = wrapper
+      .findAllComponents({ name: 'MesScanPrevalidation' })
+      .find((item) => (item.props('acceptedKinds') as string[]).includes('material'))!
+
+    await scanner.vm.$emit('accepted', {
+      kind: 'material',
+      candidate: {},
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+      materialIssueRequestId: 'MIR-PDA-001',
+    })
+    await scanner.vm.$emit('accepted', {
+      kind: 'device',
+      candidate: {},
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+      scannedObjectId: 'DEVICE-1',
+    })
+    await scanner.vm.$emit('accepted', {
+      kind: 'personnel',
+      candidate: {},
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+      scannedObjectId: 'USER-1',
+    })
+    await flushPromises()
+
+    expect(
+      document.body.querySelector<HTMLInputElement>('[data-testid="material-lot-MIR-PDA-001"]')!
+        .checked,
+    ).toBe(true)
+    expect(document.body.querySelector('[data-testid="report-validated-device"]')).not.toBeNull()
+    expect(document.body.querySelector('[data-testid="report-validated-personnel"]')).not.toBeNull()
+    wrapper.unmount()
   })
 
   it('shows detail operations after a work order is selected without list discovery', async () => {
@@ -478,6 +945,9 @@ describe('PDA MES production reporting page', () => {
     expect(document.body.querySelector('[data-testid="good-quantity"]')).not.toBeNull()
 
     workOrderDetailPendingRef.value = true
+    reportableTasksPendingRef.value = true
+    reportableTasksReadyRef.value = false
+    reportableTasksOverrideRef.value = []
     route.query = {
       workOrderId: 'WO-2026-0002',
       operationTaskId: 'OP-3',
@@ -502,17 +972,17 @@ describe('PDA MES production reporting page', () => {
       operationTasks: [defaultOperationTasks[2]],
     }
     workOrderDetailPendingRef.value = false
+    reportableTasksPendingRef.value = false
+    reportableTasksReadyRef.value = true
+    reportableTasksOverrideRef.value = [defaultOperationTasks[2]]
     await flushPromises()
     expect(document.body.textContent).toContain('WO-2026-0002 · 工序 10')
     expect(document.body.querySelector('[data-testid="good-quantity"]')).not.toBeNull()
   })
 
-  it('旧提交迟到不能覆盖或清除新 pair 的提交状态', async () => {
+  it('旧提交等待时新 pair 被占用阻断，迟到响应不能释放该占用', async () => {
     const firstRequest = deferred<ReportEnvelope>()
-    const secondRequest = deferred<ReportEnvelope>()
-    recordReport
-      .mockImplementationOnce(() => firstRequest.promise)
-      .mockImplementationOnce(() => secondRequest.promise)
+    recordReport.mockImplementationOnce(() => firstRequest.promise)
 
     route.query = {
       workOrderId: 'WO-2026-0001',
@@ -544,7 +1014,8 @@ describe('PDA MES production reporting page', () => {
     await flushPromises()
     document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
     await flushPromises()
-    expect(recordReport).toHaveBeenCalledTimes(2)
+    expect(recordReport).toHaveBeenCalledTimes(1)
+    expect(document.body.querySelector('[data-testid="occupied-report"]')).not.toBeNull()
 
     firstRequest.resolve(successfulReceipt)
     await flushPromises()
@@ -553,14 +1024,18 @@ describe('PDA MES production reporting page', () => {
       document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.disabled,
     ).toBe(true)
 
-    secondRequest.resolve(successfulReceipt)
+    document.body.querySelector<HTMLButtonElement>('[data-testid="return-to-preparation"]')!.click()
     await flushPromises()
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="retry-report"]').trigger('click')
+    await flushPromises()
+    expect(recordReport).toHaveBeenCalledTimes(2)
+    expect(recordReport.mock.calls[1][0]).toEqual(recordReport.mock.calls[0][0])
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('WO-2026-0002 · OP-3')
-    expect(wrapper.text()).not.toContain('WO-2026-0001 · OP-1')
+    expect(wrapper.text()).toContain('WO-2026-0001 · 工序 10')
   })
 
-  it('A pending → B → A 重新绑定同一 intent，不得铸新 key 或重复写，A 成功可恢复', async () => {
+  it('A pending → B → A 保留原意图，迟到成功不自动确认，显式重试仍同 key', async () => {
     const firstRequest = deferred<ReportEnvelope>()
     recordReport.mockImplementationOnce(() => firstRequest.promise)
     route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
@@ -581,10 +1056,11 @@ describe('PDA MES production reporting page', () => {
     await flushPromises()
 
     expect(recordReport).toHaveBeenCalledTimes(1)
-    expect(
-      document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.disabled,
-    ).toBe(true)
+    expect(document.body.querySelector('[data-testid="submit-report"]')).toBeNull()
     firstRequest.resolve(successfulReceipt)
+    await flushPromises()
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="retry-report"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('RPT-DEFAULT')
@@ -630,6 +1106,7 @@ describe('PDA MES production reporting page', () => {
       operationTaskId: 'OP-OUTSIDE-101',
       workOrderId: targetWorkOrder.workOrderId,
       status: 'Ready',
+      allowedActions: ['report'],
       operationSequence: 1010,
       workCenterId: 'WC-OUTSIDE',
     }
@@ -650,6 +1127,7 @@ describe('PDA MES production reporting page', () => {
       ...targetWorkOrder,
       operationTasks: [...operationTasksRef.value, targetTask],
     }
+    reportableTasksOverrideRef.value = [targetTask]
     route.query = {
       workOrderId: targetWorkOrder.workOrderId,
       operationTaskId: targetTask.operationTaskId,
@@ -682,9 +1160,11 @@ describe('PDA MES production reporting page', () => {
       operationTaskId,
       workOrderId,
       status: 'Ready',
+      allowedActions: ['report'],
       operationSequence: 501,
       workCenterId: 'WC-MANY',
     }
+    reportableTasksOverrideRef.value = [exactTaskRef.value]
     route.query = { workOrderId, operationTaskId }
 
     const wrapper = mount(ReportPage, { attachTo: document.body })
@@ -730,6 +1210,116 @@ describe('PDA MES production reporting page', () => {
     expect(wrapper.text()).toContain('回执实体校验失败')
     expect(wrapper.text()).not.toContain('报工成功')
   })
+
+  it('POST confirmed 但公开 GET 回读错实体时不得显示报工成功', async () => {
+    confirmReport.mockRejectedValueOnce(
+      new Error('报工已受理，但公开记录尚未回读到同一工单与工序，请重试核验。'),
+    )
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    input.value = '1'
+    input.dispatchEvent(new Event('input'))
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+    await flushPromises()
+
+    expect(confirmReport).toHaveBeenCalledWith({
+      reportNo: 'RPT-DEFAULT',
+      productionReportId: '019f-report-default',
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+      context: reportContextRef.value,
+    })
+    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('尚未回读到同一工单与工序')
+    expect(wrapper.text()).not.toContain('报工成功')
+
+    await wrapper.get('[data-testid="retry-report"]').trigger('click')
+    await flushPromises()
+    expect(recordReport).toHaveBeenCalledTimes(1)
+    expect(confirmReport).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+  })
+
+  it('POST 后主体切换时旧回执不得覆盖新上下文或显示成功', async () => {
+    const pendingReceipt = deferred<ReportEnvelope>()
+    recordReport.mockReturnValueOnce(pendingReceipt.promise)
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+    input.value = '1'
+    input.dispatchEvent(new Event('input'))
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+    await flushPromises()
+
+    reportContextRef.value = { ...reportContextRef.value, principalId: 'principal-2' }
+    await flushPromises()
+    pendingReceipt.resolve(successfulReceipt)
+    await flushPromises()
+
+    expect(confirmReport).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('报工成功')
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['principal', { principalId: 'principal-2' }],
+    ['organization', { organizationId: 'org-002' }],
+    ['environment', { environmentId: 'env-prod' }],
+    ['reporting scope', { scopeKind: 'work-center', scopeId: 'WC-B' }],
+  ])(
+    'GET pending 时 %s A→B→A 失效旧 attempt，但保留凭据供当前 context 重新核验',
+    async (_dimension, changedContext) => {
+      const pendingConfirmation = deferred<{
+        reportNo: string
+        productionReportId: string
+        workOrderId: string
+        operationTaskId: string
+      }>()
+      confirmReport.mockReturnValueOnce(pendingConfirmation.promise)
+      route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+      const wrapper = mount(ReportPage, { attachTo: document.body })
+      await flushPromises()
+      const input = document.body.querySelector<HTMLInputElement>('[data-testid="good-quantity"]')!
+      input.value = '1'
+      input.dispatchEvent(new Event('input'))
+      await flushPromises()
+      document.body.querySelector<HTMLButtonElement>('[data-testid="submit-report"]')!.click()
+      await flushPromises()
+      const oldIdempotencyKey = recordReport.mock.calls[0][0].idempotencyKey
+
+      const contextA = { ...reportContextRef.value }
+      contextGenerationRef.value = 2
+      reportContextRef.value = { ...contextA, ...changedContext, generation: 2 }
+      await flushPromises()
+      contextGenerationRef.value = 3
+      reportContextRef.value = { ...contextA, generation: 3 }
+      await flushPromises()
+
+      pendingConfirmation.resolve({
+        reportNo: 'RPT-DEFAULT',
+        productionReportId: '019f-report-default',
+        workOrderId: 'WO-2026-0001',
+        operationTaskId: 'OP-1',
+      })
+      await flushPromises()
+      expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('报工成功')
+
+      await wrapper.get('[data-testid="retry-report"]').trigger('click')
+      await flushPromises()
+      expect(recordReport).toHaveBeenCalledTimes(1)
+      expect(recordReport.mock.calls[0][0].idempotencyKey).toBe(oldIdempotencyKey)
+      expect(confirmReport).toHaveBeenCalledTimes(2)
+      expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+      wrapper.unmount()
+    },
+  )
 
   it.each([
     ['data null', null],
@@ -795,7 +1385,7 @@ describe('PDA MES production reporting page', () => {
   })
 
   it.each([
-    ['缺少工单 ID', { operationTaskId: 'OP-1' }, '报工链接缺少工单 ID'],
+    ['缺少工单 ID', { operationTaskId: 'OP-1' }, '报工链接缺少工单'],
     [
       '工单不存在',
       { workOrderId: 'WO-MISSING', operationTaskId: 'OP-404' },
@@ -804,12 +1394,12 @@ describe('PDA MES production reporting page', () => {
     [
       '工序任务不存在',
       { workOrderId: 'WO-2026-0002', operationTaskId: 'OP-MISSING' },
-      '未找到工单 WO-2026-0002 下的工序任务 OP-MISSING',
+      '未在工单 WO-2026-0002 下找到链接中的工序',
     ],
     [
       'pair 不匹配',
       { workOrderId: 'WO-2026-0002', operationTaskId: 'OP-1' },
-      '未找到工单 WO-2026-0002 下的工序任务 OP-1',
+      '未在工单 WO-2026-0002 下找到链接中的工序',
     ],
   ])('%s 时显示明确安全状态且不写入', async (_name, query, message) => {
     route.query = query
@@ -819,6 +1409,328 @@ describe('PDA MES production reporting page', () => {
     expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain(message)
     expect(document.body.querySelector('[data-testid="good-quantity"]')).toBeNull()
     expect(recordReport).not.toHaveBeenCalled()
+  })
+
+  it('遥测待确认候选显示设备名称（编码）与中文状态，不露设备标识和原始状态码', async () => {
+    telemetryCandidatesRef.value = [
+      {
+        candidateId: 'cand-1',
+        deviceAssetId: 'DEV-CNC-01',
+        goodQuantity: 12,
+        status: 'draft',
+        suspensionReason: 'active-alarm',
+      },
+      {
+        candidateId: 'cand-2',
+        deviceAssetId: 'DEV-CNC-02',
+        goodQuantity: 8,
+        status: 'pending-confirmation',
+        suspensionReason: null,
+      },
+    ]
+    const wrapper = mount(ReportPage)
+    await flushPromises()
+    const text = wrapper.text()
+    expect(text).toContain('设备 数控车床一号（EQ00001） · 12 件')
+    expect(text).toContain('设备存在未处理报警')
+    // 主数据查不到名称时用占位，不把设备标识露给用户。
+    expect(text).toMatch(/设备 — · 8 件[^设]*待确认/)
+    expect(text).not.toContain('DEV-CNC-01')
+    expect(text).not.toContain('DEV-CNC-02')
+    expect(text).not.toContain('active-alarm')
+    expect(text).not.toContain('pending-confirmation')
+  })
+
+  async function openTelemetryCandidate(candidate: Record<string, unknown>) {
+    telemetryCandidatesRef.value = [
+      { goodQuantity: 12, status: 'pending-confirmation', ...candidate },
+    ]
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('12 件'))!
+      .trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+  const deviceTasks = [
+    { operationTaskId: 'OP-1', workOrderId: 'WO-2026-0001', operationSequence: 10 },
+    { operationTaskId: 'OP-3', workOrderId: 'WO-2026-0002', operationSequence: 10 },
+  ]
+
+  it('遥测候选区的输入框获焦时扫码框让出焦点，失焦后恢复扫码', async () => {
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-focus',
+      deviceAssetId: 'DEV-CNC-01',
+    })
+    const listScanner = () => wrapper.getComponent({ name: 'MesScanPrevalidation' })
+    expect(listScanner().props('active')).toBe(true)
+
+    const search = wrapper.get('input[placeholder="按工单号搜索执行中的工序"]')
+    await search.trigger('focusin')
+    expect(listScanner().props('active')).toBe(false)
+
+    await search.trigger('focusout')
+    expect(listScanner().props('active')).toBe(true)
+  })
+
+  it('遥测候选区的按钮获焦时扫码框不让出焦点，点过按钮仍能直接扫码', async () => {
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-button-focus',
+      deviceAssetId: 'DEV-CNC-01',
+    })
+    const listScanner = () => wrapper.getComponent({ name: 'MesScanPrevalidation' })
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('12 件'))!
+      .trigger('focusin')
+    expect(listScanner().props('active')).toBe(true)
+  })
+
+  it('遥测候选已关联工单工序时直接带出，确认转正不需要输入任何编号', async () => {
+    telemetryTargetTasksRef.value = deviceTasks
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-1',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'active-alarm',
+      workOrderId: 'WO-2026-0002',
+      operationTaskId: 'OP-3',
+    })
+
+    expect(wrapper.get('[data-testid="telemetry-target"]').text()).toBe('WO-2026-0002 · 工序 10')
+    expect(wrapper.find('input[placeholder*="工单号"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="telemetry-promote"]').trigger('click')
+    await flushPromises()
+    expect(telemetryPromote).toHaveBeenCalledWith('cand-1', 'WO-2026-0002', 'OP-3')
+  })
+
+  it('转正成功后提示报工单号并收起候选', async () => {
+    telemetryTargetTasksRef.value = [deviceTasks[0]]
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-ok',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    await wrapper.get('[data-testid="telemetry-promote"]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('已转为报工 PRPT-20260927-000001')
+    expect(wrapper.find('[data-testid="telemetry-target"]').exists()).toBe(false)
+  })
+
+  it('转正被拒时上屏业务原因且保留当前选择', async () => {
+    telemetryPromote.mockRejectedValueOnce({
+      success: false,
+      code: 400,
+      message: '工序已完工，不能再报工。',
+      errorData: [],
+    })
+    telemetryTargetTasksRef.value = [deviceTasks[0]]
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-reject',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    await wrapper.get('[data-testid="telemetry-promote"]').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('工序已完工，不能再报工。')
+    expect(document.body.textContent).not.toContain('已转为报工')
+    expect(wrapper.get('[data-testid="telemetry-target"]').text()).toBe('WO-2026-0001 · 工序 10')
+  })
+
+  it('忽略成功后给出提示', async () => {
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-dismiss',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    await wrapper.get('input[placeholder="忽略原因（忽略时必填）"]').setValue('重复采集')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '忽略')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(telemetryDismiss).toHaveBeenCalledWith('cand-dismiss', '重复采集')
+    expect(document.body.textContent).toContain('已忽略这条遥测记录')
+  })
+
+  it('候选自带的工序不在设备列表里时仍按候选自带的转正', async () => {
+    telemetryTargetTasksRef.value = []
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-linked-only',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'active-alarm',
+      workOrderId: 'WO-2026-0009',
+      operationTaskId: 'OP-9',
+    })
+
+    expect(wrapper.get('[data-testid="telemetry-target"]').text()).toBe('WO-2026-0009')
+    await wrapper.get('[data-testid="telemetry-promote"]').trigger('click')
+    await flushPromises()
+    expect(telemetryPromote).toHaveBeenCalledWith('cand-linked-only', 'WO-2026-0009', 'OP-9')
+  })
+
+  it('改选后可以取消，回到原来的目标', async () => {
+    telemetryTargetTasksRef.value = [deviceTasks[0]]
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-cancel',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    await wrapper.get('[data-testid="telemetry-change-target"]').trigger('click')
+    expect(wrapper.find('[data-testid="telemetry-target"]').exists()).toBe(false)
+    await wrapper.get('input[placeholder="按工单号搜索执行中的工序"]').setValue('WO-2026')
+    await wrapper.get('[data-testid="telemetry-cancel-change"]').trigger('click')
+    // 取消改选要连同关键词一起清掉，否则「设备上唯一一道」的自动目标回不来（下一行断言）。
+    expect(wrapper.get('[data-testid="telemetry-target"]').text()).toBe('WO-2026-0001 · 工序 10')
+  })
+
+  it('其它设备上的工序标出「非本设备」，选中后目标上也保留标记', async () => {
+    telemetryTargetTasksRef.value = [
+      { ...deviceTasks[0], deviceAssetId: 'DEV-CNC-01' },
+      { ...deviceTasks[1], deviceAssetId: 'DEV-CNC-99' },
+    ]
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-other-device',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    const own = wrapper.get('[data-testid="telemetry-target-option-OP-1"]')
+    const other = wrapper.get('[data-testid="telemetry-target-option-OP-3"]')
+    expect(own.text()).not.toContain('非本设备')
+    expect(own.text()).toContain('工序 10 · 数控车床一号（EQ00001）')
+    expect(other.text()).toContain('非本设备')
+    expect(other.text()).toContain('工序 10 · 数控车床九号（EQ00099）')
+    await other.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="telemetry-target-other-device"]').text()).toBe('非本设备')
+    expect(wrapper.text()).toContain('数控车床九号（EQ00099）')
+  })
+
+  it('改选期间禁用确认转正，选定新工序后恢复', async () => {
+    telemetryTargetTasksRef.value = deviceTasks
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-choosing',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'active-alarm',
+      workOrderId: 'WO-2026-0001',
+      operationTaskId: 'OP-1',
+    })
+
+    expect(wrapper.get('[data-testid="telemetry-promote"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-testid="telemetry-change-target"]').trigger('click')
+    expect(wrapper.get('[data-testid="telemetry-promote"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="telemetry-target-option-OP-3"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="telemetry-promote"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-testid="telemetry-promote"]').trigger('click')
+    await flushPromises()
+    expect(telemetryPromote).toHaveBeenCalledWith('cand-choosing', 'WO-2026-0002', 'OP-3')
+  })
+
+  it('返工工序在列表行标「返工」', async () => {
+    telemetryTargetTasksRef.value = [
+      {
+        ...deviceTasks[0],
+        deviceAssetId: 'DEV-CNC-01',
+        workOrderType: 'rework',
+        sourceWorkOrderId: 'WO-2026-0000',
+        sourceNcrId: 'ncr-1',
+        sourceNcrCode: 'NCR-0001',
+      },
+      { ...deviceTasks[1], deviceAssetId: 'DEV-CNC-01' },
+    ]
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-rework',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    expect(wrapper.get('[data-testid="telemetry-target-option-OP-1"]').text()).toContain('返工')
+    expect(wrapper.get('[data-testid="telemetry-target-option-OP-3"]').text()).not.toContain('返工')
+  })
+
+  it('设备名查不到时列表行说「设备信息未提供」，不露设备标识', async () => {
+    telemetryTargetTasksRef.value = [
+      { ...deviceTasks[0], deviceAssetId: 'DEV-CNC-01' },
+      { ...deviceTasks[1], deviceAssetId: 'DEV-UNKNOWN-7' },
+    ]
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-unknown-device',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    const other = wrapper.get('[data-testid="telemetry-target-option-OP-3"]')
+    expect(other.text()).toContain('工序 10 · 设备信息未提供')
+    expect(other.text()).toContain('非本设备')
+    expect(other.text()).not.toContain('DEV-UNKNOWN-7')
+  })
+
+  it('忽略被拒时上屏业务原因且候选保留', async () => {
+    telemetryDismiss.mockRejectedValueOnce({
+      success: false,
+      code: 400,
+      message: '该遥测记录已被处理。',
+      errorData: [],
+    })
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-dismiss-reject',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    await wrapper.get('input[placeholder="忽略原因（忽略时必填）"]').setValue('重复采集')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '忽略')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('该遥测记录已被处理。')
+    expect(document.body.textContent).not.toContain('已忽略这条遥测记录')
+    expect(wrapper.find('input[placeholder="忽略原因（忽略时必填）"]').exists()).toBe(true)
+  })
+
+  it('设备上只有一道执行中的工序时直接带出', async () => {
+    telemetryTargetTasksRef.value = [deviceTasks[0]]
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-2',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    expect(wrapper.get('[data-testid="telemetry-target"]').text()).toBe('WO-2026-0001 · 工序 10')
+    await wrapper.get('[data-testid="telemetry-promote"]').trigger('click')
+    await flushPromises()
+    expect(telemetryPromote).toHaveBeenCalledWith('cand-2', 'WO-2026-0001', 'OP-1')
+  })
+
+  it('设备上有多道执行中的工序时点选后才能转正', async () => {
+    telemetryTargetTasksRef.value = deviceTasks
+    const wrapper = await openTelemetryCandidate({
+      candidateId: 'cand-3',
+      deviceAssetId: 'DEV-CNC-01',
+      suspensionReason: 'no-current-work-order',
+    })
+
+    expect(wrapper.find('[data-testid="telemetry-target"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="telemetry-promote"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="telemetry-target-option-OP-3"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="telemetry-target"]').text()).toBe('WO-2026-0002 · 工序 10')
+    await wrapper.get('[data-testid="telemetry-promote"]').trigger('click')
+    await flushPromises()
+    expect(telemetryPromote).toHaveBeenCalledWith('cand-3', 'WO-2026-0002', 'OP-3')
   })
 
   it('命令与可见 pair 精确一致，并只显示契约实际返回的回执字段', async () => {
@@ -851,9 +1763,9 @@ describe('PDA MES production reporting page', () => {
       operationTaskId: 'OP-3',
       goodQuantity: 4,
     })
-    expect(wrapper.text()).toContain('WO-2026-0002 · OP-3')
+    expect(wrapper.text()).toContain('WO-2026-0002 · 工序 10')
     expect(wrapper.text()).toContain('报工单号 RPT-2026-0003')
-    expect(wrapper.text()).toContain('回执 ID 019f-report-0003')
+    expect(wrapper.text()).not.toContain('019f-report-0003')
   })
 
   it('records a report with the bound fields after entering quantity', async () => {
@@ -896,13 +1808,83 @@ describe('PDA MES production reporting page', () => {
     wrapper.unmount()
   })
 
-  it('keeps ordinary reporting available for a completed task without allowing completion again', async () => {
+  it('submits rework quantity and the selected received material lot consumption', async () => {
+    materialLotsRef.value = [
+      {
+        requestId: 'MIR-PDA-001',
+        workOrderId: 'WO-2026-0001',
+        operationTaskId: 'OP-1',
+        materialId: 'MAT-OIL',
+        uomCode: 'L',
+        materialLotId: 'LOT-OIL-001',
+        requestedQuantity: 5,
+        receivedQuantity: 5,
+        consumedQuantity: 1,
+        status: 'received',
+      },
+    ]
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await selectWorkOrder(wrapper, 0)
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+
+    const reworkInput = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="rework-quantity"]',
+    )!
+    reworkInput.value = '2'
+    reworkInput.dispatchEvent(new Event('input'))
+    const scrapInput = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="scrap-quantity"]',
+    )!
+    scrapInput.value = '1'
+    scrapInput.dispatchEvent(new Event('input'))
+    await flushPromises()
+    const scrapReason = document.body.querySelector<HTMLSelectElement>(
+      '[data-testid="scrap-reason-code"]',
+    )!
+    scrapReason.value = 'SCRAP-SURFACE'
+    scrapReason.dispatchEvent(new Event('change'))
+    const materialCheckbox = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="material-lot-MIR-PDA-001"]',
+    )!
+    materialCheckbox.click()
+    const materialQuantity = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="material-quantity-MIR-PDA-001"]',
+    )!
+    materialQuantity.value = '3'
+    materialQuantity.dispatchEvent(new Event('input'))
+    const goodInput = document.body.querySelector<HTMLInputElement>(
+      '[data-testid="good-quantity"]',
+    )!
+    goodInput.value = '8'
+    goodInput.dispatchEvent(new Event('input'))
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="submit-report"]')!.click()
+    await flushPromises()
+
+    expect(recordReport.mock.calls[0][0]).toMatchObject({
+      scrapReasonCode: 'SCRAP-SURFACE',
+      reworkQuantity: 2,
+      consumedMaterialLots: [
+        {
+          materialId: 'MAT-OIL',
+          materialLotId: 'LOT-OIL-001',
+          consumedQuantity: 3,
+          materialIssueRequestNo: 'MIR-PDA-001',
+        },
+      ],
+    })
+    wrapper.unmount()
+  })
+
+  it('rejects a deep-linked completed task when server allowedActions omits report', async () => {
     operationTasksRef.value = [
       {
         operationTaskId: 'OP-DONE',
         workOrderId: 'WO-2026-0001',
         status: 'Completed',
         operationSequence: 10,
+        allowedActions: [],
       },
     ]
     workOrderDetailRef.value = {
@@ -910,30 +1892,163 @@ describe('PDA MES production reporting page', () => {
       operationTasks: operationTasksRef.value,
     }
     const wrapper = mount(ReportPage, { attachTo: document.body })
-    await selectWorkOrder(wrapper, 0)
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-DONE' }
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain('当前不可报工')
+    expect(document.body.querySelector('[data-testid="submit-report"]')).toBeNull()
+    expect(recordReport).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('names a non-reportable rework task by sequence and never shows its OPT-…-<GUID> number', async () => {
+    const reworkTaskId = 'OPT-0000-0190a7c2d4e84b6f9a1b2c3d4e5f6a7b'
+    operationTasksRef.value = [
+      {
+        operationTaskId: reworkTaskId,
+        operationTaskNo: reworkTaskId,
+        workOrderId: 'WO-2026-0001',
+        status: 'Completed',
+        operationSequence: 10,
+        allowedActions: [],
+      },
+    ]
+    workOrderDetailRef.value = {
+      ...defaultWorkOrders[0],
+      operationTasks: operationTasksRef.value,
+    }
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: reworkTaskId }
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain(
+      '工序 10 当前不可报工',
+    )
+    expect(document.body.textContent).not.toContain('0190a7c2d4e84b6f9a1b2c3d4e5f6a7b')
+    expect(document.body.textContent).not.toContain('OPT-')
+    expect(recordReport).not.toHaveBeenCalled()
+  })
+
+  it('hides a task outside the reporting-write work-center scope', async () => {
+    reportScopeRef.value = { kind: 'work-center', id: 'WC-A' }
+    reportContextRef.value = {
+      ...reportContextRef.value,
+      scopeKind: 'work-center',
+      scopeId: 'WC-A',
+    }
+    reportableTasksOverrideRef.value = [defaultOperationTasks[0]]
+    route.query = { workOrderId: 'WO-2026-0001' }
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('工序 10')
+    expect(wrapper.text()).not.toContain('工序 20')
+    expect(wrapper.findAll('[data-row]')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('workshop scope only exposes tasks returned by the server reportable authority set', async () => {
+    reportScopeRef.value = { kind: 'workshop', id: 'WS-1' }
+    reportContextRef.value = {
+      ...reportContextRef.value,
+      scopeKind: 'workshop',
+      scopeId: 'WS-1',
+    }
+    reportableTasksOverrideRef.value = [defaultOperationTasks[0]]
+    route.query = { workOrderId: 'WO-2026-0001' }
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('工序 10')
+    expect(wrapper.text()).not.toContain('工序 20')
     await wrapper.findAll('[data-row]')[0].trigger('click')
     await flushPromises()
+    expect(document.body.querySelector('[data-testid="good-quantity"]')).not.toBeNull()
 
-    const complete = document.body.querySelector<HTMLInputElement>(
-      '[data-testid="completes-operation"]',
-    )!
-    expect(complete.disabled).toBe(true)
-
-    const goodInput = document.body.querySelector<HTMLInputElement>(
-      '[data-testid="good-quantity"]',
-    )!
-    goodInput.value = '1'
-    goodInput.dispatchEvent(new Event('input'))
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-2' }
     await flushPromises()
-    document.body.querySelector<HTMLElement>('[data-testid="submit-report"]')!.click()
+    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain('当前不可报工')
+    expect(document.body.querySelector('[data-testid="submit-report"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('scope authority pending/error/empty are fail-closed and distinguishable', async () => {
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    reportableTasksPendingRef.value = true
+    reportableTasksReadyRef.value = false
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="submit-report"]')).toBeNull()
+
+    reportableTasksPendingRef.value = false
+    reportableTasksErrorRef.value = new Error('authority unavailable')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain('可报工工序读取失败')
+
+    reportableTasksErrorRef.value = null
+    reportableTasksReadyRef.value = true
+    reportableTasksOverrideRef.value = []
+    await flushPromises()
+    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain('当前不可报工')
+    wrapper.unmount()
+  })
+
+  it('scope switch keeps a late old authority set disabled until the new set is ready', async () => {
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="good-quantity"]')).not.toBeNull()
+
+    contextGenerationRef.value = 2
+    reportContextRef.value = {
+      ...reportContextRef.value,
+      scopeKind: 'work-center',
+      scopeId: 'WC-B',
+      generation: 2,
+    }
+    reportableTasksPendingRef.value = true
+    reportableTasksReadyRef.value = false
+    reportableTasksOverrideRef.value = [defaultOperationTasks[0]]
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="good-quantity"]')).toBeNull()
+
+    reportableTasksOverrideRef.value = [defaultOperationTasks[1]]
+    reportableTasksPendingRef.value = false
+    reportableTasksReadyRef.value = true
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-2' }
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="good-quantity"]')).not.toBeNull()
+    wrapper.unmount()
+  })
+
+  it('fails closed when task rework authority does not match its parent work order', async () => {
+    const parent = {
+      ...defaultWorkOrders[0],
+      workOrderType: 'rework',
+      sourceWorkOrderId: 'WO-SOURCE-A',
+      sourceNcrId: 'NCR-A',
+      sourceNcrCode: 'NCR-A-CODE',
+    }
+    const mismatchedTask = {
+      ...defaultOperationTasks[0],
+      workOrderType: 'rework',
+      sourceWorkOrderId: 'WO-SOURCE-B',
+      sourceNcrId: 'NCR-B',
+      sourceNcrCode: 'NCR-B-CODE',
+    }
+    workOrderDetailRef.value = { ...parent, operationTasks: [mismatchedTask] }
+    operationTasksRef.value = [mismatchedTask]
+    route.query = {
+      workOrderId: parent.workOrderId,
+      operationTaskId: mismatchedTask.operationTaskId,
+    }
+    const wrapper = mount(ReportPage, { attachTo: document.body })
     await flushPromises()
 
-    expect(recordReport).toHaveBeenCalledWith(
-      expect.objectContaining({
-        operationTaskId: 'OP-DONE',
-        completesOperation: false,
-      }),
+    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain(
+      '返工来源与工单不一致',
     )
+    expect(document.body.querySelector('[data-testid="submit-report"]')).toBeNull()
     wrapper.unmount()
   })
 

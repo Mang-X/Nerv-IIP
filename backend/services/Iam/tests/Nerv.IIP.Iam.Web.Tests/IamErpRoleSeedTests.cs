@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Iam.Domain.AggregatesModel.RoleAggregate;
+using Nerv.IIP.Iam.Domain.AggregatesModel.SeedAggregate;
 using Nerv.IIP.Iam.Infrastructure;
 using Nerv.IIP.Iam.Web.Application.Auth;
 using Nerv.IIP.Iam.Web.Application.Seed;
@@ -17,6 +18,189 @@ namespace Nerv.IIP.Iam.Web.Tests;
 /// </summary>
 public sealed class IamErpRoleSeedTests
 {
+    // #4440：岗位只授予停机接力所需动作；具体工作中心由成员范围单独配置。
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Team_leader_template_supports_downtime_without_granting_organization_scope(bool bootstrap)
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        if (bootstrap) await seed.BootstrapAsync();
+        else await seed.SeedAsync();
+
+        var role = await dbContext.Roles.Include(role => role.Permissions).Include(role => role.DataScopes)
+            .SingleAsync(role => role.Id == new RoleId("role-mes-downtime-team-leader"));
+        Assert.Equal("班组长（停机登记）", role.RoleName);
+        Assert.Equal(new[]
+        {
+            "business.maintenance.downtime-reasons.read",
+            "business.masterdata.resources.read",
+            "business.mes.downtime.manage",
+            "business.mes.downtime.read",
+            "business.mes.operations.read",
+            "business.mes.work-orders.read",
+        }, role.Permissions.Select(permission => permission.PermissionCode).Order(StringComparer.Ordinal));
+        Assert.Empty(role.DataScopes);
+        Assert.DoesNotContain(await dbContext.Memberships.Include(member => member.Roles).ToListAsync(),
+            member => member.Roles.Any(binding => binding.RoleId == role.Id));
+    }
+
+    [Fact]
+    public async Task Team_leader_reseed_preserves_operator_adjusted_permissions_and_scope()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+        var role = await dbContext.Roles.Include(role => role.Permissions).Include(role => role.DataScopes)
+            .SingleAsync(role => role.Id == new RoleId("role-mes-downtime-team-leader"));
+        role.ReplacePermissions(["business.mes.downtime.read"]);
+        role.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.WorkCenter, "WC-A")]);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        await seed.BootstrapAsync();
+        await seed.SeedAsync();
+        role = await dbContext.Roles.Include(role => role.Permissions).Include(role => role.DataScopes)
+            .SingleAsync(role => role.Id == new RoleId("role-mes-downtime-team-leader"));
+        Assert.Equal(["business.mes.downtime.read"], role.Permissions.Select(permission => permission.PermissionCode));
+        Assert.Equal([new DataScopeBinding(DataScopeBinding.WorkCenter, "WC-A")],
+            role.DataScopes.Select(scope => new DataScopeBinding(scope.ScopeType, scope.ScopeCode)));
+    }
+
+    [Fact]
+    public void Team_leader_template_in_memory_requires_explicit_member_scope()
+    {
+        var store = new InMemoryIamStore();
+        var role = Assert.Single(store.Roles, role => role.RoleId == "role-mes-downtime-team-leader");
+        Assert.Equal(6, role.PermissionCodes.Count);
+        Assert.Contains("business.mes.downtime.manage", role.PermissionCodes);
+        Assert.Contains("business.maintenance.downtime-reasons.read", role.PermissionCodes);
+        store.ReplaceMembershipRoles("user-admin", "org-001", "env-dev", [role.RoleId]);
+        Assert.Empty(store.ListPermissionDataScopeGrants("user-admin", "org-001", "env-dev", "business.mes.downtime.manage"));
+        store.ReplaceMembershipDataScopes("user-admin", "org-001", "env-dev", [new DataScopeBinding(DataScopeBinding.WorkCenter, "WC-A")]);
+        var grant = Assert.Single(store.ListPermissionDataScopeGrants("user-admin", "org-001", "env-dev", "business.mes.downtime.manage"));
+        Assert.Equal("work-center", grant.ScopeKind);
+        Assert.Equal("WC-A", grant.ScopeId);
+    }
+
+    [Fact]
+    public async Task Team_leader_template_preserves_a_same_name_custom_role()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.Roles.Add(new Role(new RoleId("custom-leader"), "班组长（停机登记）", ["business.mes.downtime.read"]));
+        await dbContext.SaveChangesAsync();
+        await CreateSeed(dbContext).BootstrapAsync();
+        var roles = await dbContext.Roles.Include(role => role.Permissions).Include(role => role.DataScopes).ToListAsync();
+        var template = Assert.Single(roles, role => role.Id == new RoleId("role-mes-downtime-team-leader"));
+        Assert.Equal("班组长（停机登记，系统预置）", template.RoleName);
+        Assert.Empty(template.DataScopes);
+        Assert.Equal(["business.mes.downtime.read"],
+            Assert.Single(roles, role => role.Id == new RoleId("custom-leader")).Permissions.Select(permission => permission.PermissionCode));
+    }
+
+    [Fact]
+    public async Task Bootstrap_creates_planner_role_with_workbench_read_permissions()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.BootstrapAsync();
+
+        var role = await dbContext.Roles
+            .Include(candidate => candidate.Permissions)
+            .Include(candidate => candidate.DataScopes)
+            .SingleAsync(candidate => candidate.Id == new RoleId(Nerv.IIP.Iam.Domain.NervIipSeedRoles.ProductionPlannerRoleId));
+        Assert.Equal("生产计划员", role.RoleName);
+        Assert.Contains(role.Permissions, permission => permission.PermissionCode == "business.planning.mps.release");
+        Assert.Contains(role.Permissions, permission => permission.PermissionCode == "business.scheduling.plans.manage");
+        Assert.Contains(role.Permissions, permission => permission.PermissionCode == "business.mes.work-orders.read");
+        Assert.Contains(role.Permissions, permission => permission.PermissionCode == "notifications.messages.read");
+        Assert.Contains(role.Permissions, permission => permission.PermissionCode == "notifications.tasks.read");
+        var scope = Assert.Single(role.DataScopes);
+        Assert.Equal(DataScopeBinding.Organization, scope.ScopeType);
+        Assert.Equal("org-001", scope.ScopeCode);
+    }
+
+    [Fact]
+    public async Task Bootstrap_upgrades_only_the_fixed_planner_role_and_preserves_custom_permissions_and_members()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.BootstrapAsync();
+
+        var plannerRoleId = new RoleId("role-production-planner");
+        var planner = await dbContext.Roles
+            .Include(role => role.Permissions)
+            .Include(role => role.DataScopes)
+            .SingleAsync(role => role.Id == plannerRoleId);
+        planner.ReplacePermissions(["business.planning.mps.read", "business.masterdata.products.read"]);
+        planner.ReplaceDataScopes([new DataScopeBinding(DataScopeBinding.Site, "SITE-CUSTOM")]);
+        dbContext.Roles.Add(new Role(new RoleId("role-custom-planner"), "计划员自定义", ["business.planning.mps.read"]));
+        var membership = await dbContext.Memberships.Include(item => item.Roles).SingleAsync();
+        membership.ReplaceRoles([new RoleId("role-platform-admin"), plannerRoleId]);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        await seed.BootstrapAsync();
+        await seed.BootstrapAsync();
+        await seed.SeedAsync();
+        dbContext.ChangeTracker.Clear();
+
+        planner = await dbContext.Roles
+            .Include(role => role.Permissions)
+            .Include(role => role.DataScopes)
+            .SingleAsync(role => role.Id == plannerRoleId);
+        Assert.Equal(
+            ["business.masterdata.products.read", "business.mes.work-orders.read", "business.planning.mps.read", "notifications.messages.read", "notifications.tasks.read"],
+            planner.Permissions.Select(permission => permission.PermissionCode).Order(StringComparer.Ordinal));
+        var custom = await dbContext.Roles.Include(role => role.Permissions)
+            .SingleAsync(role => role.Id == new RoleId("role-custom-planner"));
+        Assert.Equal("计划员自定义", custom.RoleName);
+        Assert.Equal(["business.planning.mps.read"], custom.Permissions.Select(permission => permission.PermissionCode));
+        Assert.Equal([new DataScopeBinding(DataScopeBinding.Site, "SITE-CUSTOM")],
+            planner.DataScopes.Select(scope => new DataScopeBinding(scope.ScopeType, scope.ScopeCode)));
+        membership = await dbContext.Memberships.Include(item => item.Roles).SingleAsync();
+        Assert.Equal(
+            ["role-platform-admin", "role-production-planner"],
+            membership.Roles.Select(role => role.RoleId.Id).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task Bootstrap_preserves_an_existing_same_name_role_and_creates_the_canonical_planner_role()
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.Roles.Add(new Role(new RoleId("role-operator-created"), "生产计划员", ["business.planning.mps.read"]));
+        await dbContext.SaveChangesAsync();
+
+        await CreateSeed(dbContext).BootstrapAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var roles = await dbContext.Roles.Include(role => role.Permissions).ToListAsync();
+        var existing = Assert.Single(roles, role => role.Id == new RoleId("role-operator-created"));
+        Assert.Equal("生产计划员", existing.RoleName);
+        Assert.Equal(["business.planning.mps.read"], existing.Permissions.Select(permission => permission.PermissionCode));
+
+        var canonical = Assert.Single(roles, role => role.Id == new RoleId("role-production-planner"));
+        Assert.Equal("生产计划员（系统预置）", canonical.RoleName);
+        Assert.Contains(canonical.Permissions, permission => permission.PermissionCode == "business.planning.mps.release");
+    }
+
+    [Fact]
+    public async Task Template_asset_retirement_is_in_the_catalog_and_only_the_default_platform_administrator()
+    {
+        const string permission = "business.barcodes.template-assets.retire";
+        await using var dbContext = CreateDbContext();
+        await CreateSeed(dbContext).SeedAsync();
+        var roles = await dbContext.Roles.Include(role => role.Permissions).ToListAsync();
+        var granted = Assert.Single(roles, role => role.Permissions.Any(p => p.PermissionCode == permission));
+        Assert.Equal("平台管理员", granted.RoleName);
+        Assert.Contains(permission, Nerv.IIP.Iam.Domain.NervIipSeedPermissions.All);
+        var catalog = Nerv.IIP.Iam.Web.Application.Permissions.IamPermissionCatalog.List();
+        Assert.True(Assert.Single(catalog.Items, item => item.Code == permission).Seeded);
+        var memoryRole = Assert.Single(new InMemoryIamStore().Roles, role => role.PermissionCodes.Contains(permission));
+        Assert.Equal("平台管理员", memoryRole.RoleName);
+    }
+
     private static readonly IReadOnlyDictionary<string, (string RoleName, string[] PermissionCodes)> ExpectedRoles =
         new Dictionary<string, (string RoleName, string[] PermissionCodes)>(StringComparer.Ordinal)
         {
@@ -44,8 +228,18 @@ public sealed class IamErpRoleSeedTests
                 "business.erp.sales.read",
                 "business.erp.finance.read",
                 "business.erp.finance.manage",
+                "business.maintenance.work-orders.read",
             ]),
         };
+
+    private static readonly string[] FinanceBaselineBeforeMaintenanceRead =
+    [
+        "business.masterdata.resources.read",
+        "business.erp.procurement.read",
+        "business.erp.sales.read",
+        "business.erp.finance.read",
+        "business.erp.finance.manage",
+    ];
 
     [Fact]
     public async Task Default_seed_creates_three_organization_scoped_erp_job_roles()
@@ -134,6 +328,175 @@ public sealed class IamErpRoleSeedTests
         Assert.Equal("SITE-CUSTOM", scope.ScopeCode);
     }
 
+    // #3827：存量环境里的财务专员是按上一版默认权限建的，重启后要补上维修工单只读。
+    [Fact]
+    public async Task Reseed_adds_maintenance_work_order_read_to_a_finance_role_still_on_the_previous_default()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+        await RewindToBeforeMaintenanceReadBackfill(dbContext, FinanceBaselineBeforeMaintenanceRead);
+
+        await seed.SeedAsync();
+
+        Assert.Equal(
+            ExpectedRoles["role-erp-finance"].PermissionCodes.Order(StringComparer.Ordinal),
+            await FinancePermissionCodes(dbContext));
+    }
+
+    [Fact]
+    public async Task Reseed_leaves_an_operator_adjusted_finance_role_untouched()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+        await RewindToBeforeMaintenanceReadBackfill(dbContext, ["business.erp.finance.read"]);
+
+        await seed.SeedAsync();
+
+        Assert.Equal(["business.erp.finance.read"], await FinancePermissionCodes(dbContext));
+    }
+
+    [Fact]
+    public async Task Reseed_does_not_restore_maintenance_read_after_an_operator_revoked_it()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+        var role = await dbContext.Roles
+            .Include(candidate => candidate.Permissions)
+            .SingleAsync(candidate => candidate.Id == new RoleId("role-erp-finance"));
+        role.ReplacePermissions(FinanceBaselineBeforeMaintenanceRead);
+        await dbContext.SaveChangesAsync();
+
+        await seed.SeedAsync();
+
+        Assert.Equal(
+            FinanceBaselineBeforeMaintenanceRead.Order(StringComparer.Ordinal),
+            await FinancePermissionCodes(dbContext));
+    }
+
+    // #3838：存量环境里平台管理员的角色名是英文，重启后改成中文；运营改过名的不动。
+    [Fact]
+    public async Task Reseed_renames_the_platform_administrator_still_on_the_english_default()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+        await RewindAdminRoleName(dbContext, "Platform Administrator");
+
+        await seed.SeedAsync();
+
+        Assert.Equal("平台管理员", await AdminRoleName(dbContext));
+    }
+
+    // 生产环境只跑启动引导不跑基线 seed，存量英文名也要在引导时改掉。
+    [Fact]
+    public async Task Bootstrap_renames_the_platform_administrator_still_on_the_english_default()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+        await RewindAdminRoleName(dbContext, "Platform Administrator");
+
+        await seed.BootstrapAsync();
+
+        Assert.Equal("平台管理员", await AdminRoleName(dbContext));
+    }
+
+    [Fact]
+    public async Task Reseed_keeps_an_operator_renamed_platform_administrator()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+        await RewindAdminRoleName(dbContext, "超级管理员");
+
+        await seed.SeedAsync();
+
+        Assert.Equal("超级管理员", await AdminRoleName(dbContext));
+    }
+
+    // 中文名已被运营自建角色占用时不改：角色名唯一，硬改会让每次启动都在 SaveChanges 上失败。
+    [Fact]
+    public async Task Reseed_keeps_the_english_name_when_an_operator_role_already_uses_the_chinese_name()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+        await RewindAdminRoleName(dbContext, "Platform Administrator");
+        dbContext.Roles.Add(new Role(new RoleId("role-operator-zh"), "平台管理员", ["iam.users.read"]));
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        await seed.SeedAsync();
+
+        Assert.Equal("Platform Administrator", await AdminRoleName(dbContext));
+    }
+
+    // 改过一次（manifest 已记录）之后，运营再改回英文名也不会被再次改掉。
+    [Fact]
+    public async Task Reseed_does_not_rename_again_once_the_manifest_is_recorded()
+    {
+        await using var dbContext = CreateDbContext();
+        var seed = CreateSeed(dbContext);
+        await seed.SeedAsync();
+        await RewindAdminRoleName(dbContext, "Platform Administrator", removeManifest: false);
+
+        await seed.SeedAsync();
+
+        Assert.Equal("Platform Administrator", await AdminRoleName(dbContext));
+    }
+
+    private static async Task RewindAdminRoleName(
+        ApplicationDbContext dbContext,
+        string roleName,
+        bool removeManifest = true)
+    {
+        var role = await dbContext.Roles.SingleAsync(candidate => candidate.Id == new RoleId("role-platform-admin"));
+        role.Rename(roleName);
+        if (removeManifest)
+        {
+            dbContext.SeedManifests.Remove(await dbContext.SeedManifests.SingleAsync(
+                manifest => manifest.Id == new SeedManifestId("iam-platform-admin-role-name-zh:v1")));
+        }
+
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+    }
+
+    private static async Task<string> AdminRoleName(ApplicationDbContext dbContext)
+    {
+        dbContext.ChangeTracker.Clear();
+        return (await dbContext.Roles.SingleAsync(candidate => candidate.Id == new RoleId("role-platform-admin"))).RoleName;
+    }
+
+    private static async Task RewindToBeforeMaintenanceReadBackfill(
+        ApplicationDbContext dbContext,
+        IEnumerable<string> financePermissionCodes)
+    {
+        var role = await dbContext.Roles
+            .Include(candidate => candidate.Permissions)
+            .SingleAsync(candidate => candidate.Id == new RoleId("role-erp-finance"));
+        role.ReplacePermissions(financePermissionCodes);
+        dbContext.SeedManifests.Remove(await dbContext.SeedManifests.SingleAsync(
+            manifest => manifest.Id == new SeedManifestId("iam-erp-finance-maintenance-work-orders-read:v1")));
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+    }
+
+    private static async Task<string[]> FinancePermissionCodes(ApplicationDbContext dbContext)
+    {
+        dbContext.ChangeTracker.Clear();
+        var role = await dbContext.Roles
+            .Include(candidate => candidate.Permissions)
+            .SingleAsync(candidate => candidate.Id == new RoleId("role-erp-finance"));
+        return role.Permissions
+            .Select(permission => permission.PermissionCode)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+    }
+
     private static ApplicationDbContext CreateDbContext()
     {
         var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -146,6 +509,9 @@ public sealed class IamErpRoleSeedTests
     {
         var services = new ServiceCollection()
             .AddSingleton(dbContext)
+            .AddSingleton(Options.Create(new IamPasswordPolicyOptions()))
+            .AddSingleton<IamPasswordService>()
+            .AddSingleton<IamPasswordPolicy>()
             .BuildServiceProvider();
         return new IamSeedService(
             services,

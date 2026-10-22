@@ -7,6 +7,7 @@ using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
+using Nerv.IIP.Notification.Web.Application.Notifications;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Primitives;
 using System.Globalization;
@@ -19,7 +20,8 @@ public sealed class AlarmRaisedIntegrationEventHandlerForNotification(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
     IConfiguration configuration,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<AlarmRaisedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.industrial-telemetry-alarm-raised";
@@ -88,7 +90,7 @@ public sealed class AlarmRaisedIntegrationEventHandlerForNotification(
             Summary: BuildRaisedSummary(payload, deviceAssetId, alarmCode),
             SuggestedRecipientRefs: recipientRefs);
 
-        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, NotificationSummary.Render(request.Summary, summaryBudget), timeProvider.GetUtcNow()), cancellationToken);
     }
 
     private static string BuildRaisedSummary(AlarmRaisedPayload payload, string deviceAssetId, string alarmCode)
@@ -115,6 +117,10 @@ public sealed class AlarmRaisedIntegrationEventHandlerForNotification(
         }
 
         parts.Add($"raised at {payload.RaisedAtUtc:O}");
+        // ⚠️ 这里的 parts 是异构语义段（alarm / tag / observed / threshold / raised-at，项数上界 5），
+        // 不是同质枚举集合：无界的是「单项长度」（TagKey / UnitCode 来自外部 payload），不是项数。
+        // 丢掉任何一段都是丢语义而不是丢枚举项，所以本处只做整体夹紧（在命令层由 Render 完成），
+        // 不得套用 NotificationSummaryList.Describe 的截项 + 计数提示。
         return string.Join("; ", parts) + ".";
     }
 
@@ -158,7 +164,8 @@ public sealed class AlarmClearedIntegrationEventHandlerForNotification(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
     IConfiguration configuration,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<AlarmClearedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.industrial-telemetry-alarm-cleared";
@@ -226,7 +233,7 @@ public sealed class AlarmClearedIntegrationEventHandlerForNotification(
             Summary: $"Alarm {alarmCode} on device {deviceAssetId} cleared at {payload.ClearedAtUtc:O}.",
             SuggestedRecipientRefs: recipientRefs);
 
-        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, NotificationSummary.Render(request.Summary, summaryBudget), timeProvider.GetUtcNow()), cancellationToken);
     }
 
 }
@@ -236,7 +243,8 @@ public sealed class AlarmEscalatedIntegrationEventHandlerForNotification(
     ISender sender,
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<AlarmEscalatedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.industrial-telemetry-alarm-escalated";
@@ -313,7 +321,7 @@ public sealed class AlarmEscalatedIntegrationEventHandlerForNotification(
             Summary: $"Alarm {alarmCode} on device {deviceAssetId} escalated by {escalationReason} at {payload.EscalatedAtUtc:O}.",
             SuggestedRecipientRefs: recipientRefs);
 
-        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(organizationId, environmentId, request, NotificationSummary.Render(request.Summary, summaryBudget), timeProvider.GetUtcNow()), cancellationToken);
     }
 }
 

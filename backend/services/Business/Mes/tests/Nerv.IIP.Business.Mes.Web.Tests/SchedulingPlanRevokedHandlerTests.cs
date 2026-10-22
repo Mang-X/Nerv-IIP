@@ -19,7 +19,7 @@ public sealed class SchedulingPlanRevokedHandlerTests
             .UseInMemoryDatabase($"mes-schedule-revoke-invalid-{Guid.CreateVersion7():N}")
             .Options;
         await using var dbContext = new ApplicationDbContext(options, new NoopMediator());
-        var task = OperationTask.Queue("org-001", "env-dev", "WO-001", "OP-10", 10, "WC-1", [], At(0), TimeSpan.FromHours(1));
+        var task = OperationTask.Queue("org-001", "env-dev", "WO-001", "OP-10", 10, "WC-1", [], At(0), TimeSpan.FromHours(1), "SKU-001");
         task.ApplyScheduleAssignment("WC-1", "DEV-1", At(1), At(2), At(0), schedulePlanId: "plan-1", scheduleReleaseRevision: 1);
         dbContext.OperationTasks.Add(task);
         await dbContext.SaveChangesAsync();

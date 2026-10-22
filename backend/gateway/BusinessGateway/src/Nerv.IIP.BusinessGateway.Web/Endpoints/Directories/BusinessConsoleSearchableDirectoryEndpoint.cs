@@ -21,6 +21,7 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
     IBusinessInventoryClient inventory,
     IBusinessQualityClient quality,
     IBusinessMaintenanceClient maintenance,
+    IBusinessIamAccountDirectoryClient iamAccounts,
     IInternalServiceTokenProvider tokenProvider)
     : Endpoint<BusinessConsoleSearchableDirectoryRequest, ResponseData<BusinessConsoleSearchableDirectoryResponse>>
 {
@@ -40,16 +41,20 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
 
         var scopeError = BusinessConsoleSearchableDirectoryPolicy.ValidateScope(directoryType, req.ScopeKind, req.ScopeId);
         var rankingError = BusinessConsoleSearchableDirectoryPolicy.ValidateRankingMode(req.RankingMode);
+        // 表单工厂只对按工厂切分的库存目录有意义；别的目录不静默忽略它。
+        var siteError = !string.IsNullOrWhiteSpace(req.SiteCode) && definition.Owner != "inventory"
+            ? "directory-site-unsupported"
+            : null;
         var tenantScopeInvalid = string.IsNullOrWhiteSpace(req.OrganizationId) || string.IsNullOrWhiteSpace(req.EnvironmentId);
         var pageOffsetValid = TryCalculatePageOffset(req.PageIndex, req.PageSize, out var pageOffset);
-        if (tenantScopeInvalid || scopeError is not null || rankingError is not null || !pageOffsetValid)
+        if (tenantScopeInvalid || scopeError is not null || rankingError is not null || siteError is not null || !pageOffsetValid)
         {
             await ResponseDataEndpointResults.WriteErrorAsync(
                 HttpContext,
                 StatusCodes.Status400BadRequest,
                 tenantScopeInvalid
                     ? "directory-tenant-scope-invalid"
-                    : scopeError ?? rankingError ?? "directory-page-invalid",
+                    : scopeError ?? rankingError ?? siteError ?? "directory-page-invalid",
                 ct);
             return;
         }
@@ -64,7 +69,10 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
                 req.OrganizationId,
                 req.EnvironmentId,
                 scopeKind ?? "organization",
-                scopeId ?? req.OrganizationId),
+                scopeId ?? req.OrganizationId,
+                // 本端点用 ResolveAuthorizedScope 消费 scope grants；IAM 只在该开关为真时回传 grants，
+                // 否则 ScopeGrants 恒为 null 而落入「无授权范围」分支。
+                IncludePrincipalContext: true),
             BusinessGatewayAuthorizationContinuityMode.ReadCacheAllowed,
             ct);
         if (bearerToken is null)
@@ -74,46 +82,119 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
 
         var authorization = HttpContext.Items[BusinessGatewayAuthorization.PrincipalItemKey]
             as BusinessGatewayAuthorizationResult;
-        var authorizedScope = BusinessConsoleSearchableDirectoryPolicy.ResolveAuthorizedScope(
-            definition,
-            authorization,
-            req.OrganizationId,
-            scopeKind,
-            scopeId);
-        if (authorizedScope is null)
-        {
-            await ResponseDataEndpointResults.WriteErrorAsync(
-                HttpContext,
-                StatusCodes.Status403Forbidden,
-                "directory-scope-not-authorized",
-                ct);
-            return;
-        }
-        scopeKind = authorizedScope.Kind;
-        scopeId = authorizedScope.Id;
-
         try
         {
-            var response = definition.Owner switch
+            var response = await QueryAuthorizedAsync(
+                definition,
+                authorization,
+                req with { DirectoryType = directoryType },
+                scopeKind,
+                scopeId,
+                pageOffset,
+                ct);
+            if (response is null)
             {
-                "master-data" => await QueryMasterDataAsync(req with { DirectoryType = directoryType }, scopeKind, scopeId, pageOffset, ct),
-                "inventory" => await QueryInventoryAsync(req with { DirectoryType = directoryType }, scopeKind, scopeId, pageOffset, ct),
-                "quality" => await QueryQualityAsync(req with { DirectoryType = directoryType }, pageOffset, ct),
-                "maintenance" => await QueryMaintenanceAsync(req with { DirectoryType = directoryType }, pageOffset, ct),
-                _ => throw new InvalidOperationException("Unknown directory owner."),
-            };
+                await ResponseDataEndpointResults.WriteErrorAsync(
+                    HttpContext,
+                    StatusCodes.Status403Forbidden,
+                    "directory-scope-not-authorized",
+                    ct);
+                return;
+            }
+
             await ResponseDataEndpointResults.WriteDataAsync(HttpContext, StatusCodes.Status200OK, response, ct);
         }
         catch (BusinessServiceProxyException ex)
         {
-            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, (int)ex.StatusCode, ex.Message, ct);
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, ex, ct);
         }
+    }
+
+    /// <summary>按授权范围查询目录；授权范围解析不出来（拒绝）时返回 null。</summary>
+    private async Task<BusinessConsoleSearchableDirectoryResponse?> QueryAuthorizedAsync(
+        BusinessConsoleSearchableDirectoryDefinition definition,
+        BusinessGatewayAuthorizationResult? authorization,
+        BusinessConsoleSearchableDirectoryRequest request,
+        string? scopeKind,
+        string? scopeId,
+        int pageOffset,
+        CancellationToken cancellationToken)
+    {
+        if (request.DirectoryType == "equipment")
+        {
+            var scopes = BusinessConsoleSearchableDirectoryPolicy.ResolveAuthorizedDeviceScopes(
+                authorization, request.OrganizationId);
+            if (scopes is null)
+            {
+                return null;
+            }
+            if (!string.IsNullOrWhiteSpace(scopeKind) && !scopes.Any(x => x.Kind == "organization"
+                    || x.Kind == scopeKind && x.Id == scopeId))
+            {
+                var resource = await masterData.GetResourceDetailAsync(tokenProvider.BearerToken,
+                    new(request.OrganizationId, request.EnvironmentId, scopeKind, scopeId!), cancellationToken);
+                var authorized = resource.OrganizationId == request.OrganizationId
+                    && resource.EnvironmentId == request.EnvironmentId
+                    && scopes.Any(x => x.Kind switch
+                    {
+                        "site" => x.Id == (resource.SiteCode ?? resource.PlantCode),
+                        "workshop" => x.Id == resource.WorkshopCode,
+                        "production-line" => x.Id == resource.LineCode,
+                        _ => false,
+                    });
+                if (!authorized)
+                {
+                    return null;
+                }
+            }
+            return await QueryEquipmentAsync(request, scopeKind, scopeId, scopes, pageOffset, cancellationToken);
+        }
+
+        // 按工厂切分的目录（库位 / 批次 / 序列号 / 工作中心 / 车间）：可见范围取授权工厂的并集；其余目录解析成单一范围。
+        if (definition.SplitBySite)
+        {
+            var sites = BusinessConsoleSearchableDirectoryPolicy.ResolveAuthorizedSites(
+                definition,
+                authorization,
+                request.OrganizationId,
+                scopeKind,
+                scopeId);
+            if (sites is null)
+            {
+                return null;
+            }
+
+            return definition.Owner == "inventory"
+                ? await QueryInventoryAsync(request, sites, pageOffset, cancellationToken)
+                : await QueryMasterDataAsync(request, null, null, sites.SiteFilter, pageOffset, cancellationToken);
+        }
+
+        var scope = BusinessConsoleSearchableDirectoryPolicy.ResolveAuthorizedScope(
+            definition,
+            authorization,
+            request.OrganizationId,
+            scopeKind,
+            scopeId);
+        if (scope is null)
+        {
+            return null;
+        }
+
+        return definition.Owner switch
+        {
+            "master-data" => await QueryMasterDataAsync(request, scope.Kind, scope.Id, null, pageOffset, cancellationToken),
+            "quality" => await QueryQualityAsync(request, pageOffset, cancellationToken),
+            "maintenance" => await QueryMaintenanceAsync(request, pageOffset, cancellationToken),
+            "iam" => await QueryLoginAccountsAsync(request, pageOffset, cancellationToken),
+            _ => throw new InvalidOperationException("Unknown directory owner."),
+        };
     }
 
     private async Task<BusinessConsoleSearchableDirectoryResponse> QueryMasterDataAsync(
         BusinessConsoleSearchableDirectoryRequest request,
         string? scopeKind,
         string? scopeId,
+        IReadOnlyList<string>? siteCodes,
         int pageOffset,
         CancellationToken cancellationToken)
     {
@@ -166,11 +247,10 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
             Skip: pageOffset,
             Take: request.PageSize,
             CodeSet: request.DirectoryType == "priority" ? "priority" : null,
-            SiteCode: scopeKind == "site" ? scopeId : null,
             WorkCenterCode: scopeKind == "work-center" ? scopeId : null,
             Keyword: request.Keyword,
             WorkshopCode: scopeKind == "workshop" ? scopeId : null);
-        var resources = await masterData.ListResourcesAsync(tokenProvider.BearerToken, query, cancellationToken);
+        var resources = await masterData.ListResourcesInSitesAsync(tokenProvider.BearerToken, query, siteCodes, cancellationToken);
         ValidateResources(resources, request, pageOffset);
         var authorityConfigured = true;
         if (request.DirectoryType == "priority" && resources.Total == 0)
@@ -188,6 +268,34 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
             authorityConfigured = probe.Total > 0;
         }
 
+        return ResourceDirectoryResponse(request, resources, authorityConfigured);
+    }
+
+    private async Task<BusinessConsoleSearchableDirectoryResponse> QueryEquipmentAsync(
+        BusinessConsoleSearchableDirectoryRequest request,
+        string? scopeKind,
+        string? scopeId,
+        IReadOnlyList<BusinessConsoleSearchableDirectoryScope> scopes,
+        int pageOffset,
+        CancellationToken cancellationToken)
+    {
+        var query = new BusinessConsoleListResourcesRequest(request.OrganizationId, request.EnvironmentId,
+            "device-asset", Skip: pageOffset, Take: request.PageSize, Keyword: request.Keyword,
+            SiteCode: scopeKind == "site" ? scopeId : null,
+            WorkshopCode: scopeKind == "workshop" ? scopeId : null,
+            LineCode: scopeKind == "production-line" ? scopeId : null,
+            WorkCenterCode: scopeKind == "work-center" ? scopeId : null);
+        var resources = await masterData.ListDeviceResourcesInScopesAsync(
+            tokenProvider.BearerToken, query, scopes, cancellationToken);
+        ValidateResources(resources, request, pageOffset);
+        return ResourceDirectoryResponse(request, resources, true);
+    }
+
+    private static BusinessConsoleSearchableDirectoryResponse ResourceDirectoryResponse(
+        BusinessConsoleSearchableDirectoryRequest request,
+        BusinessConsoleResourceListResponse resources,
+        bool authorityConfigured)
+    {
         return BusinessConsoleSearchableDirectoryResponse.FromItems(
             request.DirectoryType,
             [.. resources.Resources.Select(resource => new BusinessConsoleSearchableDirectoryItem(
@@ -195,7 +303,7 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
                     ? resource.DeviceAssetId
                     : resource.Code,
                 resource.DisplayName,
-                request.DirectoryType == "station" ? resource.StationCode : resource.Code,
+                resource.Code,
                 "master-data",
                 Context(
                     ("siteCode", resource.SiteCode),
@@ -210,8 +318,7 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
 
     private async Task<BusinessConsoleSearchableDirectoryResponse> QueryInventoryAsync(
         BusinessConsoleSearchableDirectoryRequest request,
-        string? scopeKind,
-        string? scopeId,
+        BusinessConsoleAuthorizedSites authorizedSites,
         int pageOffset,
         CancellationToken cancellationToken)
     {
@@ -222,10 +329,12 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
                 request.EnvironmentId,
                 request.DirectoryType,
                 request.Keyword,
-                scopeKind == "site" ? scopeId : null,
+                // 表单工厂：库存目录再与授权工厂取交集，不能借此读到授权外的工厂。
+                request.SiteCode?.Trim(),
                 request.SkuCode,
                 pageOffset,
-                request.PageSize),
+                request.PageSize,
+                authorizedSites.SiteFilter),
             cancellationToken);
         ValidateInventory(response, request, pageOffset);
 
@@ -305,6 +414,58 @@ public sealed class BusinessConsoleSearchableDirectoryEndpoint(
             "maintenance",
             authorityDirectoryType: "downtime-reason",
             rankingMode: request.RankingMode);
+    }
+
+    /// <summary>
+    /// 员工「关联登录账号」候选：本组织/环境里已启用的成员账号（#3924）。值是账号 ID，展示登录名与显示名，
+    /// 不回传邮箱等联系方式。
+    /// </summary>
+    private async Task<BusinessConsoleSearchableDirectoryResponse> QueryLoginAccountsAsync(
+        BusinessConsoleSearchableDirectoryRequest request,
+        int pageOffset,
+        CancellationToken cancellationToken)
+    {
+        var response = await iamAccounts.ListMemberAccountsAsync(
+            tokenProvider.BearerToken,
+            new BusinessIamMemberAccountListRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.Keyword,
+                PageIndex: request.PageIndex,
+                PageSize: request.PageSize),
+            cancellationToken);
+        ValidateLoginAccounts(response, request, pageOffset);
+        return BusinessConsoleSearchableDirectoryResponse.FromItems(
+            request.DirectoryType,
+            [.. response.Items.Select(account => new BusinessConsoleSearchableDirectoryItem(
+                account.UserId,
+                string.IsNullOrWhiteSpace(account.DisplayName) ? account.LoginName : account.DisplayName,
+                account.LoginName,
+                "iam",
+                Context(("loginName", account.LoginName))))],
+            response.TotalCount,
+            "iam",
+            rankingMode: request.RankingMode);
+    }
+
+    private static void ValidateLoginAccounts(
+        BusinessIamMemberAccountPage response,
+        BusinessConsoleSearchableDirectoryRequest request,
+        int offset)
+    {
+        if (response.Items is null
+            || response.PageIndex != request.PageIndex
+            || response.PageSize != request.PageSize
+            || response.TotalCount < 0
+            || response.Items.Count > request.PageSize
+            || response.Items.Count > 0 && response.TotalCount < (long)offset + response.Items.Count
+            || response.Items.Any(item =>
+                string.IsNullOrWhiteSpace(item.UserId)
+                || string.IsNullOrWhiteSpace(item.LoginName)
+                || !item.Enabled))
+        {
+            throw InvalidOwnerResponse();
+        }
     }
 
     private static IReadOnlyDictionary<string, string?> Context(params (string Key, string? Value)[] values) =>

@@ -171,7 +171,7 @@ public sealed class QualitySchemaConventionTests
             script,
             StringComparison.Ordinal);
         Assert.Contains(
-            "docs/architecture/business-quality-inspection-duplicate-remediation.md",
+            "docs/reports/remediation/business-quality-inspection-duplicates.md",
             script,
             StringComparison.Ordinal);
     }

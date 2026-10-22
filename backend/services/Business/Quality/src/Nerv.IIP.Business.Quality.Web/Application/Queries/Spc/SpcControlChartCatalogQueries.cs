@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.SpcControlChartAggregate;
+using Nerv.IIP.Business.Quality.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Queries.Spc;
 
@@ -45,20 +46,18 @@ public sealed record ListSpcControlChartsQuery(
     bool? Locked = null,
     string? Keyword = null,
     int Skip = 0,
-    int Take = 100) : IQuery<ListSpcControlChartsResponse>;
+    int Take = OffsetPage.DefaultTake) : IQuery<ListSpcControlChartsResponse>;
 
 public sealed class ListSpcControlChartsQueryValidator : AbstractValidator<ListSpcControlChartsQuery>
 {
     public ListSpcControlChartsQueryValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
         RuleFor(x => x.SkuCode).MaximumLength(100);
         RuleFor(x => x.CharacteristicCode).MaximumLength(100);
         RuleFor(x => x.WorkCenterId).MaximumLength(100);
-        RuleFor(x => x.Keyword).MaximumLength(200);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 500);
+        this.AddSearchTermRule(x => x.Keyword);
+        this.AddOffsetPageRules(x => x.Skip, x => x.Take);
     }
 }
 
@@ -69,10 +68,12 @@ public sealed class ListSpcControlChartsQueryHandler(ApplicationDbContext dbCont
         ListSpcControlChartsQuery request,
         CancellationToken cancellationToken)
     {
-        var take = Math.Clamp(request.Take, 1, 500);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword);
         var baseQuery = dbContext.SpcControlCharts
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.SkuCode))
         {
@@ -92,13 +93,12 @@ public sealed class ListSpcControlChartsQueryHandler(ApplicationDbContext dbCont
             baseQuery = baseQuery.Where(x => x.WorkCenterId == workCenterId);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword.Value is not null)
         {
-            var keyword = request.Keyword.Trim().ToLower();
             baseQuery = baseQuery.Where(x =>
-                x.SkuCode.ToLower().Contains(keyword)
-                || x.CharacteristicCode.ToLower().Contains(keyword)
-                || x.WorkCenterId.ToLower().Contains(keyword));
+                x.SkuCode.ToLower().Contains(keyword.Value)
+                || x.CharacteristicCode.ToLower().Contains(keyword.Value)
+                || x.WorkCenterId.ToLower().Contains(keyword.Value));
         }
 
         var lockedCount = await baseQuery.CountAsync(x => x.Locked, cancellationToken);
@@ -109,8 +109,8 @@ public sealed class ListSpcControlChartsQueryHandler(ApplicationDbContext dbCont
             .OrderBy(x => x.SkuCode)
             .ThenBy(x => x.CharacteristicCode)
             .ThenBy(x => x.WorkCenterId)
-            .Skip(request.Skip)
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new SpcControlChartCatalogItemResponse(
                 x.Id,
                 x.OrganizationId,

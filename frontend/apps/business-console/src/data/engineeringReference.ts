@@ -2,7 +2,7 @@
  * 产品工程域 · 前端受控值常量。
  *
  * 这些取值后端存自由字符串、且**没有对应 CodeSet**（见
- * `docs/architecture/master-data-dictionary-rules.md` §2 权威清单），所以由前端集中固定，
+ * `docs/reference/master-data/dictionary.md` §2 权威清单），所以由前端集中固定，
  * 避免各页手输拼写漂移。后端补字典后改由 `?codeSet=` 实时拉取，本文件降级为兜底。
  */
 import type { RefOption } from './masterDataReference'

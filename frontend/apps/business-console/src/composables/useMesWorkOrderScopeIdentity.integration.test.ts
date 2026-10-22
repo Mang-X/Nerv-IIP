@@ -134,14 +134,12 @@ async function createHarness() {
     organizationId: 'org-001',
     environmentId: 'env-dev',
   })
-  let listLastUpdatedAt: Readonly<{ value: string | null }> | undefined
 
   const Harness = defineComponent({
     setup() {
       const list = useMesWorkOrders()
       const detail = useMesWorkOrderDetail()
       detail.filters.workOrderId = 'WO-SHARED'
-      listLastUpdatedAt = list.workOrdersLastUpdatedAt
       return () =>
         h(
           'div',
@@ -149,7 +147,6 @@ async function createHarness() {
             list.workOrderReadScope.value?.id ?? 'no-scope',
             list.workOrders.value[0]?.workOrderId ?? 'no-row',
             list.workOrdersTotal.value,
-            list.workOrdersLastUpdatedAt.value ? 'fresh' : 'not-fresh',
             detail.detail.value?.skuId ?? 'no-detail',
           ].join('|'),
         )
@@ -162,11 +159,7 @@ async function createHarness() {
     },
   })
   await flushPromises()
-  return {
-    auth,
-    wrapper,
-    listLastUpdatedAt: () => listLastUpdatedAt?.value ?? null,
-  }
+  return { auth, wrapper }
 }
 
 describe('PC MES work-order principal scope identity', () => {
@@ -177,8 +170,8 @@ describe('PC MES work-order principal scope identity', () => {
     localStorage.clear()
   })
 
-  it('keeps current rows, total, freshness, and detail when old scope responses arrive late', async () => {
-    const { auth, wrapper, listLastUpdatedAt } = await createHarness()
+  it('keeps current rows, total, and detail when old scope responses arrive late', async () => {
+    const { auth, wrapper } = await createHarness()
     resolveWorkContext('business.mes.work-orders.read', 0, 'WC-A')
     await flushPromises()
 
@@ -198,7 +191,7 @@ describe('PC MES work-order principal scope identity', () => {
       environmentId: 'env-dev',
     } as never
     await flushPromises()
-    expect(wrapper.text()).toBe('no-scope|no-row|0|not-fresh|no-detail')
+    expect(wrapper.text()).toBe('no-scope|no-row|0|no-detail')
 
     resolveWorkContext('business.mes.work-orders.read', 1, 'WC-B')
     await flushPromises()
@@ -233,11 +226,8 @@ describe('PC MES work-order principal scope identity', () => {
       },
     })
     await flushPromises()
-    expect(wrapper.text()).toBe('WC-B|WO-B|1|fresh|SKU-B')
-    const currentFreshness = listLastUpdatedAt()
-    expect(currentFreshness).not.toBeNull()
+    expect(wrapper.text()).toBe('WC-B|WO-B|1|SKU-B')
 
-    await new Promise((resolve) => setTimeout(resolve, 5))
     oldListRequest.resolve({
       success: true,
       data: {
@@ -258,7 +248,6 @@ describe('PC MES work-order principal scope identity', () => {
       },
     })
     await flushPromises()
-    expect(wrapper.text()).toBe('WC-B|WO-B|1|fresh|SKU-B')
-    expect(listLastUpdatedAt()).toBe(currentFreshness)
+    expect(wrapper.text()).toBe('WC-B|WO-B|1|SKU-B')
   })
 })

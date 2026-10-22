@@ -8,16 +8,11 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import { useInventoryCounts } from '@/composables/useBusinessInventory'
+import { useErpPartnerCatalog } from '@/composables/useErpPickerCatalog'
 import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useSkuNames } from '@/composables/useSkuNames'
-import {
-  useWarehouseCodeCatalog,
-  WAREHOUSE_CATALOG_SOURCE_TEXT,
-  WAREHOUSE_LOCATION_EMPTY_TEXT,
-  WAREHOUSE_LOT_EMPTY_TEXT,
-  WAREHOUSE_SERIAL_EMPTY_TEXT,
-} from '@/composables/useWarehouseCodeCatalog'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
@@ -41,7 +36,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, ClipboardPlusIcon, RotateCcwIcon, XCircleIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
@@ -93,8 +88,9 @@ const adjustmentSheetOpen = shallowRef(false)
 const closeSheetOpen = shallowRef(false)
 let adjustmentKeySequence = 0
 
+// 盘点任务号由系统按编码规则生成；同一次填写的重试沿用同一个幂等键，拿回同一个任务号。
+const createTaskIdempotencyKey = shallowRef('')
 const taskForm = reactive({
-  countTaskCode: '',
   skuCode: '',
   // 单位不手填：盘点任务必须落在与库存台账完全一致的维度上，单位跟随所选物料的基本单位。
   uomCode: '',
@@ -145,10 +141,20 @@ watch(
 )
 
 // 工厂给默认值、单位跟随物料，仓管只需要选物料与库位。
-const { siteOptions, sitesPending, skuOptions, skusPending } = useInventoryScopeDefaults(taskForm)
-// 库位/批次/序列号后端无主数据读面，从既有台账与仓储作业记录派生可选项。
-const { locationOptions, lotOptions, serialOptions, warehouseCatalogPending } =
-  useWarehouseCodeCatalog()
+const { siteOptions, sitesPending } = useInventoryScopeDefaults(taskForm)
+// 寄售库存的货主是业务伙伴：客户寄售选客户、供应商寄售选供应商；其余货主类型没有货主可选。
+const { customerOptions, supplierOptions, partnersPending } = useErpPartnerCatalog()
+const ownerPartner = computed(() => {
+  if (taskForm.ownerType === 'customer') return { options: customerOptions.value, role: '客户' }
+  if (taskForm.ownerType === 'supplier') return { options: supplierOptions.value, role: '供应商' }
+  return undefined
+})
+watch(
+  () => taskForm.ownerType,
+  () => {
+    taskForm.ownerId = ''
+  },
+)
 // 物料 / 工厂 / 库位读面只回编码，名称在主数据里，按编码 join 出中文名。
 const { resolveSkuName } = useSkuNames()
 const { resolveLocation } = useMasterDataDisplayNames({ locations: true })
@@ -208,30 +214,53 @@ const canConfirmAdjustment = computed(
 
 type CountTaskRow = BusinessConsoleInventoryCountTaskLineResponse
 const columns: NvDataTableColumn<CountTaskRow>[] = [
-  { key: 'countTaskCode', header: '任务号', cellClass: 'font-medium' },
+  {
+    key: 'countTaskCode',
+    header: '任务号',
+    width: 'w-56',
+    cellClass: 'font-medium whitespace-normal break-all',
+  },
   // 物料 / 库位读面只回编码，名称在主数据里，按编码 join 出中文名。
-  { key: 'skuCode', header: '物料', accessor: (r) => skuText(r.skuCode) },
+  {
+    key: 'skuCode',
+    header: '物料',
+    width: 'w-56',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => skuText(r.skuCode),
+  },
   {
     key: 'location',
     header: '库位',
+    width: 'w-56',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) => locationLabel(r.siteCode, r.locationCode),
   },
-  { key: 'lotNo', header: '批次', accessor: (r) => r.lotNo || '—' },
+  {
+    key: 'lotNo',
+    header: '批次',
+    width: 'w-40',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => r.lotNo || '—',
+  },
   {
     key: 'countedQuantity',
     header: '实盘',
+    width: 'w-28',
     align: 'end',
     accessor: (r) => formatQuantity(r.countedQuantity),
   },
   {
     key: 'varianceQuantity',
     header: '差异',
+    width: 'w-28',
     align: 'end',
     accessor: (r) => formatSignedQuantity(r.varianceQuantity),
   },
   {
     key: 'approvalChainId',
     header: '审批链',
+    width: 'w-40',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) => approvalChainByCountTaskCode.value[r.countTaskCode ?? ''] ?? '—',
   },
   { key: 'status', header: '状态', width: 'w-24', accessor: (r) => statusLabel(r.status) },
@@ -243,7 +272,6 @@ async function submitTask() {
   const body: BusinessConsoleCreateStockCountTaskRequest = {
     organizationId: filters.organizationId.trim(),
     environmentId: filters.environmentId.trim(),
-    countTaskCode: taskForm.countTaskCode.trim() || `COUNT-${Date.now()}`,
     skuCode: taskForm.skuCode.trim(),
     uomCode: taskForm.uomCode.trim(),
     siteCode: taskForm.siteCode.trim(),
@@ -253,6 +281,7 @@ async function submitTask() {
     qualityStatus: optionalText(taskForm.qualityStatus),
     ownerType: optionalText(taskForm.ownerType),
     ownerId: optionalText(taskForm.ownerId),
+    idempotencyKey: createTaskIdempotencyKey.value,
   }
   let response
   try {
@@ -262,9 +291,8 @@ async function submitTask() {
     return
   }
   // 列表来自服务端读面：mutation 成功后失效查询即可，新建的任务刷新之后仍然在。
-  const taskId = response?.data?.countTaskId
   taskSheetOpen.value = false
-  notifySuccess(`盘点任务 ${body.countTaskCode || taskId} 已创建`)
+  notifySuccess(`盘点任务 ${response?.data?.countTaskCode ?? ''} 已创建`)
 }
 
 async function submitAdjustment() {
@@ -336,6 +364,15 @@ function canCloseRow(row: CountTaskRow) {
   )
 }
 
+function openTaskSheet() {
+  createTaskIdempotencyKey.value = createTaskKey()
+  taskSheetOpen.value = true
+}
+function createTaskKey() {
+  const c = globalThis.crypto
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID()
+  return `count-task-${Date.now()}-${Math.round(Math.random() * 1e9)}`
+}
 function openAdjustment(row: CountTaskRow) {
   const countTaskId = row.countTaskId ?? ''
   adjustmentTarget.value = row
@@ -389,7 +426,7 @@ function isNonEmpty(value: string) {
             >返回工单 {{ contextWorkOrderId }}</RouterLink
           >
         </NvButton>
-        <NvButton size="sm" type="button" @click="taskSheetOpen = true">
+        <NvButton size="sm" type="button" @click="openTaskSheet">
           <ClipboardPlusIcon aria-hidden="true" />
           创建盘点任务
         </NvButton>
@@ -411,7 +448,7 @@ function isNonEmpty(value: string) {
           这里显示盘点任务与差异确认入口；已下发到仓库执行的盘点单在「仓储作业 · 盘点执行」跟进。
         </p>
         <div class="flex gap-2">
-          <NvButton size="sm" type="button" @click="taskSheetOpen = true">
+          <NvButton size="sm" type="button" @click="openTaskSheet">
             <ClipboardPlusIcon aria-hidden="true" />
             创建盘点任务
           </NvButton>
@@ -457,16 +494,11 @@ function isNonEmpty(value: string) {
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="count-task-sku">物料</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="count-task-sku"
                 v-model="taskForm.skuCode"
-                :options="skuOptions"
-                title="选择物料"
-                placeholder="选择物料"
-                source-text="数据来自基础数据物料主数据"
-                empty-text="暂无物料主数据，请先在基础数据维护物料"
-                :loading="skusPending"
-                aria-label="物料"
+                directory-type="material"
+                creatable
               />
             </NvField>
             <NvField>
@@ -481,7 +513,6 @@ function isNonEmpty(value: string) {
                 :options="siteOptions"
                 title="选择工厂"
                 placeholder="选择工厂"
-                source-text="数据来自基础数据工厂主数据"
                 empty-text="暂无工厂主数据，请先在基础数据维护工厂"
                 :loading="sitesPending"
                 aria-label="工厂"
@@ -489,15 +520,14 @@ function isNonEmpty(value: string) {
             </NvField>
             <NvField>
               <NvFieldLabel for="count-task-location">库位</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="count-task-location"
                 v-model="taskForm.locationCode"
-                :options="locationOptions"
+                directory-type="location"
+                creatable
+                :form-site-code="taskForm.siteCode"
                 title="选择库位"
                 placeholder="选择库位"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 aria-label="库位"
               />
@@ -524,40 +554,42 @@ function isNonEmpty(value: string) {
                 </NvSelectContent>
               </NvSelect>
             </NvField>
-            <NvField>
+            <NvField v-if="ownerPartner">
               <NvFieldLabel for="count-task-owner-id">货主</NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
                 id="count-task-owner-id"
                 v-model="taskForm.ownerId"
-                placeholder="可选货主名称或编码"
+                :options="ownerPartner.options"
+                :title="`选择${ownerPartner.role}`"
+                :placeholder="`选择${ownerPartner.role}`"
+                :empty-text="`暂无${ownerPartner.role}，请先在基础数据维护业务伙伴`"
+                :loading="partnersPending"
+                clearable
+                aria-label="货主"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="count-task-lot">批次</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="count-task-lot"
                 v-model="taskForm.lotNo"
-                :options="lotOptions"
+                directory-type="batch"
+                :form-site-code="taskForm.siteCode"
                 title="选择批次"
                 placeholder="选择批次"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-                :empty-text="WAREHOUSE_LOT_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 aria-label="批次"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="count-task-serial">序列号</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="count-task-serial"
                 v-model="taskForm.serialNo"
-                :options="serialOptions"
+                directory-type="serial"
+                :form-site-code="taskForm.siteCode"
                 title="选择序列号"
                 placeholder="选择序列号"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-                :empty-text="WAREHOUSE_SERIAL_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 aria-label="序列号"
               />
@@ -565,7 +597,7 @@ function isNonEmpty(value: string) {
           </NvFieldGroup>
           <div class="flex justify-end">
             <NvButton type="submit" :disabled="createCountTaskPending || !canCreateTask">
-              <Spinner v-if="createCountTaskPending" aria-hidden="true" />
+              <NvSpinner v-if="createCountTaskPending" aria-hidden="true" />
               <ClipboardPlusIcon v-else aria-hidden="true" />
               创建任务
             </NvButton>
@@ -600,7 +632,7 @@ function isNonEmpty(value: string) {
           </NvFieldGroup>
           <div class="flex justify-end">
             <NvButton type="submit" :disabled="confirmAdjustmentPending || !canConfirmAdjustment">
-              <Spinner v-if="confirmAdjustmentPending" aria-hidden="true" />
+              <NvSpinner v-if="confirmAdjustmentPending" aria-hidden="true" />
               <CheckCircle2Icon v-else aria-hidden="true" />
               确认调整
             </NvButton>
@@ -638,7 +670,7 @@ function isNonEmpty(value: string) {
               variant="destructive"
               :disabled="cancelCountTaskPending || !canCloseTask"
             >
-              <Spinner v-if="cancelCountTaskPending" aria-hidden="true" />
+              <NvSpinner v-if="cancelCountTaskPending" aria-hidden="true" />
               <XCircleIcon v-else aria-hidden="true" />
               关闭任务
             </NvButton>

@@ -1,16 +1,22 @@
-﻿using FastEndpoints;
+﻿using System.Reflection;
+using FastEndpoints;
+using Nerv.IIP.Business.Mes.Web.Endpoints.DeadLetters;
+using Nerv.IIP.Business.Mes.Web.Application.Andon;
 using FastEndpoints.Swagger;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Mes.Web.Application.Approvals;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.ProductEngineering;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
+using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
 using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Seed;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
@@ -29,7 +35,14 @@ var isTesting = builder.Environment.IsEnvironment("Testing");
 builder.Services.AddNervIipObservability(builder.Configuration, "business-mes");
 
 builder.Services
-    .AddFastEndpoints()
+    .AddFastEndpoints(o =>
+    {
+        if (builder.Configuration.GetValue<bool>("FastEndpoints:RestrictDiscoveryToEntryAssembly"))
+        {
+            o.Assemblies = [Assembly.GetExecutingAssembly()];
+            o.DisableAutoDiscovery = true;
+        }
+    })
     .SwaggerDocument(o =>
     {
         o.DocumentSettings = s =>
@@ -42,9 +55,23 @@ builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, 
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IMesIntegrationEventContextAccessor, HttpMesIntegrationEventContextAccessor>();
+builder.Services.AddScoped<OperationActualTimeSettledV1IntegrationEventConverter>();
+builder.Services.AddScoped<OperationActualTimeSettledIntegrationEventConverter>();
+builder.Services.AddScoped<OperationActualTimeSettlementVoidedV1IntegrationEventConverter>();
+builder.Services.AddScoped<OperationActualTimeSettlementVoidedIntegrationEventConverter>();
+builder.Services.AddScoped<OperationTaskStartedIntegrationEventConverter>();
+builder.Services.AddScoped<OperationTaskPausedIntegrationEventConverter>();
+builder.Services.AddScoped<OperationTaskResumedIntegrationEventConverter>();
+builder.Services.AddScoped<DowntimeStartedIntegrationEventConverter>();
+builder.Services.AddScoped<DowntimeRestoredIntegrationEventConverter>();
+builder.Services.AddScoped<IMesIntegrationEventOutboxPublisher, CapMesIntegrationEventOutboxPublisher>();
+builder.Services.AddSingleton(new MesActualTimeTopicOptions(builder.Environment.EnvironmentName));
 var productEngineeringBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "ProductEngineering:BaseUrl", "http://localhost:5108");
 var inventoryBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Inventory:BaseUrl", "http://localhost:5109");
 var masterDataBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+var qualityBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Quality:BaseUrl", "http://localhost:5110");
+var approvalBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Approval:BaseUrl", "http://localhost:5114");
+var erpBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
 // `Inventory:SiteCode` 是唯一权威的站点键。`Inventory:SiteCodes`（复数）保留给真正的多站点部署
 // —— 齐套可用量需要跨站点求和，与「本服务归属哪个站点」不是同一件事，因此不能合并；
 // 未显式配置时它回落到权威键，不再各自留一份默认值。
@@ -67,19 +94,78 @@ builder.Services.AddHttpClient<MesProductEngineeringHttpClient>(client =>
 {
     client.BaseAddress = productEngineeringBaseAddress;
 });
-builder.Services.AddHttpClient<MesInventoryHttpClient>(client =>
-{
-    client.BaseAddress = inventoryBaseAddress;
-});
+builder.Services
+    .AddOptions<MesInventoryHttpClientOptions>()
+    .Bind(builder.Configuration.GetSection(MesInventoryHttpClientOptions.SectionName))
+    .Validate(
+        options => options.ConnectTimeout > TimeSpan.Zero,
+        "Mes:InventoryClient:ConnectTimeout must be positive.")
+    .Validate(
+        options => options.RequestTimeout > TimeSpan.Zero,
+        "Mes:InventoryClient:RequestTimeout must be positive.")
+    .ValidateOnStart();
+builder.Services
+    .AddHttpClient<MesInventoryHttpClient>((services, client) =>
+    {
+        client.BaseAddress = inventoryBaseAddress;
+        client.Timeout = services.GetRequiredService<IOptions<MesInventoryHttpClientOptions>>().Value.RequestTimeout;
+    })
+    .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
+    {
+        ConnectTimeout = services.GetRequiredService<IOptions<MesInventoryHttpClientOptions>>().Value.ConnectTimeout,
+    });
 builder.Services.AddHttpClient<MesMasterDataHttpClient>(client =>
 {
     client.BaseAddress = masterDataBaseAddress;
 });
+builder.Services.AddHttpClient<MesErpHttpClient>(client =>
+{
+    client.BaseAddress = erpBaseAddress;
+});
+builder.Services
+    .AddOptions<MesQualityHttpClientOptions>()
+    .Bind(builder.Configuration.GetSection(MesQualityHttpClientOptions.SectionName))
+    .Validate(
+        options => options.ConnectTimeout > TimeSpan.Zero,
+        "Mes:QualityClient:ConnectTimeout must be positive.")
+    .Validate(
+        options => options.RequestTimeout > TimeSpan.Zero,
+        "Mes:QualityClient:RequestTimeout must be positive.")
+    .ValidateOnStart();
+builder.Services
+    .AddHttpClient<MesQualityHttpClient>((services, client) =>
+    {
+        client.BaseAddress = qualityBaseAddress;
+        client.Timeout = services.GetRequiredService<IOptions<MesQualityHttpClientOptions>>().Value.RequestTimeout;
+    })
+    .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
+    {
+        ConnectTimeout = services.GetRequiredService<IOptions<MesQualityHttpClientOptions>>().Value.ConnectTimeout,
+    });
+builder.Services.AddHttpClient<IMesOperationTaskStartApprovalClient, HttpMesOperationTaskStartApprovalClient>(client =>
+{
+    client.BaseAddress = approvalBaseAddress;
+});
 builder.Services.Configure<MesMaterialSupplyLocationOptions>(builder.Configuration.GetSection("Inventory"));
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<MesMaterialSupplyLocationOptions>>().Value);
 builder.Services.AddScoped<IMesMaterialSupplyLocationResolver, InventoryMesMaterialSupplyLocationResolver>();
-builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider, HttpMesProductEngineeringMaterialRequirementSnapshotProvider>();
+builder.Services.AddScoped<IMesMaterialAvailabilityReader, HttpMesMaterialAvailabilityReader>();
+builder.Services.AddScoped<IMesMaterialRequirementSnapshotProvider>(services =>
+    new HttpMesProductEngineeringMaterialRequirementSnapshotProvider(
+        services.GetRequiredService<MesProductEngineeringHttpClient>(),
+        services.GetRequiredService<IMesMaterialAvailabilityReader>(),
+        services.GetRequiredService<IInternalServiceTokenProvider>(),
+        services.GetRequiredService<ILogger<HttpMesProductEngineeringMaterialRequirementSnapshotProvider>>()));
+builder.Services.AddScoped<IMesMaterialReadinessLiveCoverageProvider, HttpMesMaterialReadinessLiveCoverageProvider>();
+builder.Services.AddScoped<IMesMaterialLotAvailabilityProvider, HttpMesMaterialLotAvailabilityProvider>();
 builder.Services.AddScoped<IMesRoutingSnapshotProvider, HttpMesProductEngineeringRoutingSnapshotProvider>();
+builder.Services.AddScoped<IMesWorkerSkillQualificationGate, HttpMesWorkerSkillQualificationGate>();
+builder.Services.AddScoped<IProductionReportOeeDimensionSnapshotProvider, HttpProductionReportOeeDimensionSnapshotProvider>();
+builder.Services.AddScoped<IMesDeviceWorkCenterResolver, HttpMesDeviceWorkCenterResolver>();
+builder.Services.AddScoped<IMesFirstArticleGate, HttpMesFirstArticleGate>();
+builder.Services.AddScoped<MesQualityInspectionPlanClient>();
+builder.Services.AddScoped<IMesQualityInspectionPlanReader>(sp =>
+    sp.GetRequiredService<MesQualityInspectionPlanClient>());
 builder.Services.AddScoped<LeaderDemoSeedService>();
 builder.Services.AddScoped<LeaderDemoScaleSeedService>();
 builder.Services.AddScoped<IWorldHistoryProductionVersionResolver, WorldHistoryProductionVersionResolver>();
@@ -87,7 +173,6 @@ builder.Services.AddScoped<WorldHistorySeedService>();
 builder.Services.AddScoped<WorldHistoryFloorEventsSeedService>();
 builder.Services.AddScoped<WorldHistoryGenealogySeedService>();
 builder.Services.AddScoped<WorldHistoryFoundationSeedService>();
-builder.Services.AddScoped<WorldHistoryScheduleResultSeedService>();
 // Register the FluentValidation command validators (CancelWorkOrder/ReturnLineSideMaterial/... — 11 in total)
 // so the MediatR AddKnownExceptionValidationBehavior below can execute them. Without both lines the validators
 // are dead code and command-level validation never runs — matching every other business service.
@@ -102,10 +187,19 @@ builder.Services.AddMediatR(configuration => configuration
     .AddOpenBehavior(typeof(NervIipCommandLockBehavior<,>))
     .AddKnownExceptionValidationBehavior()
     .AddOpenBehavior(typeof(ManualDispatchConcurrencyRetryBehavior<,>))
+    .AddOpenBehavior(typeof(ReturnLineSideMaterialConcurrencyRetryBehavior<,>))
+    .AddOpenBehavior(typeof(WorkOrderConcurrencyRetryBehavior<,>))
+    .AddOpenBehavior(typeof(AndonCallConcurrencyBehavior<,>))
     .AddUnitOfWorkBehaviors());
 builder.Services.AddScoped<
     NetCorePal.Extensions.Primitives.ICommandLock<ChangeOperationTaskStateCommand>,
     ChangeOperationTaskStateCommandLock>();
+builder.Services.AddScoped<
+    NetCorePal.Extensions.Primitives.ICommandLock<AuthorizeAndStartOperationTaskCommand>,
+    AuthorizeAndStartOperationTaskCommandLock>();
+builder.Services.AddScoped<
+    NetCorePal.Extensions.Primitives.ICommandLock<ReturnLineSideMaterialCommand>,
+    ReturnLineSideMaterialCommandLock>();
 // Surface KnownException (business-rule violations, e.g. cancelling a work order whose received
 // material has no returnable lot) as the standard success=false envelope instead of an unhandled
 // HTTP 500 — matching every other business service. Without it the gateway sees a 500 and returns
@@ -119,20 +213,20 @@ if (!builder.Environment.IsProduction() && string.IsNullOrWhiteSpace(connectionS
 
 builder.Services.AddMesPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
 builder.Services.AddScoped<IMesPlanningStore, PersistentMesPlanningStore>();
+builder.Services.AddScoped<IMesFoundationSourceReader, HttpMesFoundationSourceReader>();
 builder.Services.AddScoped<MesFoundationReadinessService>();
 builder.Services.Configure<MesEngineeringChangeOptions>(
     builder.Configuration.GetSection("Mes:EngineeringChange"));
-builder.Services.AddSingleton<RuleScheduler>();
 builder.Services.AddScoped<MesCodingService>();
 builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+builder.Services.AddOptions<AndonEscalationOptions>()
+    .Bind(builder.Configuration.GetSection(AndonEscalationOptions.SectionName))
+    .Validate(options => options.IsValid(), "Mes:AndonEscalation 配置无效：扫描间隔和时限必须为正，组织/环境/类别必须唯一且完整，接收人必须显式指定。")
+    .ValidateOnStart();
+builder.Services.AddSingleton<AndonEscalationScanner>();
+builder.Services.AddHostedService<AndonEscalationWorker>();
 builder.Services.AddMesCapIntegrationEvents(builder.Configuration, builder.Environment.EnvironmentName, isTesting);
-builder.Services.AddSingleton(new MesRescheduleOptions
-{
-    AutoRescheduleOnAssetUnavailable = builder.Configuration.GetValue("Mes:AutoRescheduleOnAssetUnavailable", true),
-    AutoRescheduleOnAssetRestored = builder.Configuration.GetValue("Mes:AutoRescheduleOnAssetRestored", true),
-});
 builder.Services.AddMesIntegrationEventConsumers();
 
 var app = builder.Build();
@@ -157,9 +251,16 @@ app.UseAuthorization();
 app.UseFastEndpoints(c =>
 {
     c.Endpoints.NameGenerator = ctx =>
-        MesEndpointContracts.TryGet(ctx.EndpointType, out var contract)
-            ? contract.OperationId
+    {
+        if (MesEndpointContracts.TryGet(ctx.EndpointType, out var contract))
+        {
+            return contract.OperationId;
+        }
+
+        return MesDeadLetterEndpointContracts.TryGet(ctx.EndpointType, out var deadLetterContract)
+            ? deadLetterContract.OperationId
             : ToLowerCamelEndpointName(ctx.EndpointType.Name);
+    };
 }).UseSwaggerGen();
 
 var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");
@@ -238,27 +339,15 @@ if (leaderDemoSeedEnabled)
             genealogy.Validation.OutputLotGenealogiesChecked,
             genealogy.Validation.MaterialConsumptionsChecked);
 
-        // L1「生产准备底座」块：设备 ↔ 工作中心映射 / SKU 停用投影（主数据投影，与工单链无先后依赖）。
+        // L1「生产准备底座」块：SKU 停用投影（主数据投影，与工单链无先后依赖）。
+        // 设备 ↔ 工作中心归属由主数据拥有，MES 运行时直接查询，不再写本地映射（#3878）。
         var foundation = await scope.ServiceProvider.GetRequiredService<WorldHistoryFoundationSeedService>().SeedAsync(
             leaderDemoOrganizationId,
             leaderDemoEnvironmentId);
         app.Logger.LogInformation(
-            "World-history MES foundation seed completed: {Mappings} device-asset mappings, {DisabledSkus} disabled SKUs; " +
-            "validator checked {CheckedMappings}/{CheckedDisabled}.",
-            foundation.DeviceAssetMappingsWritten,
+            "World-history MES foundation seed completed: {DisabledSkus} disabled SKUs; validator checked {CheckedDisabled}.",
             foundation.DisabledSkusWritten,
-            foundation.Validation.DeviceAssetMappingsChecked,
             foundation.Validation.DisabledSkusChecked);
-
-        // L1「规则排程」块：历次排程运行。分配只引用已落库的工序任务，故排在工单链之后。
-        var scheduleResults = await scope.ServiceProvider.GetRequiredService<WorldHistoryScheduleResultSeedService>().SeedAsync(
-            leaderDemoOrganizationId,
-            leaderDemoEnvironmentId,
-            WorldHistoryConfiguration.ResolveScale(builder.Configuration));
-        app.Logger.LogInformation(
-            "World-history MES schedule-result seed completed: {ScheduleResults} schedule runs; validator checked {Checked}.",
-            scheduleResults.ScheduleResultsWritten,
-            scheduleResults.Validation.ScheduleResultsChecked);
     }
 }
 

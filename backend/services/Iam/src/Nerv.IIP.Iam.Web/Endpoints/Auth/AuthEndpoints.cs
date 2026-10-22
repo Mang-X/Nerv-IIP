@@ -53,7 +53,8 @@ public sealed class LogoutEndpoint(IMediator mediator) : Endpoint<LogoutRequest>
 
 [HttpPost("/api/iam/v1/auth/change-password")]
 [AllowAnonymous]
-public sealed class ChangePasswordEndpoint(IIamAuthService auth, IMediator mediator) : Endpoint<ChangePasswordRequest>
+public sealed class ChangePasswordEndpoint(IIamAuthService auth, IamTokenService tokenService, IMediator mediator)
+    : Endpoint<ChangePasswordRequest>
 {
     public override async Task HandleAsync(ChangePasswordRequest req, CancellationToken ct)
     {
@@ -64,7 +65,11 @@ public sealed class ChangePasswordEndpoint(IIamAuthService auth, IMediator media
             return;
         }
 
-        await mediator.Send(new ChangePasswordCommand(userId, req.CurrentPassword, req.NewPassword), ct);
+        // 上一步已校验该 bearer 的会话属于此用户且仍有效；改密后只保留这一个会话。
+        var currentSessionId = tokenService.TryReadPrincipal(HttpContext)!.SessionId;
+        await mediator.Send(
+            new ChangePasswordCommand(userId, currentSessionId, req.CurrentPassword, req.NewPassword),
+            ct);
         HttpContext.Response.StatusCode = StatusCodes.Status204NoContent;
     }
 }

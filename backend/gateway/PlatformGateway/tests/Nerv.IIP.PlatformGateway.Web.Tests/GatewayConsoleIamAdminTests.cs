@@ -27,6 +27,61 @@ public sealed class GatewayConsoleIamAdminTests
         ["iam.users.read", "iam.users.manage"],
         ["role-platform-admin"]);
 
+    [Theory]
+    [InlineData("users", "登录名「admin」已被使用。")]
+    [InlineData("roles", "角色名称「平台管理员」已被使用。")]
+    public async Task Console_duplicate_name_rejection_preserves_chinese_reason_through_public_http(
+        string resource, string message)
+    {
+        await using var factory = CreateFactory(
+            FakeGatewayAuthorizationClient.Allowed(), new FakeGatewayIamAuthClient(), new FakeGatewayIamAdminClient())
+            .WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IGatewayIamAdminClient>();
+                services.AddHttpClient<IGatewayIamAdminClient, HttpGatewayIamAdminClient>(client =>
+                    client.BaseAddress = new Uri("http://iam.local"))
+                    .ConfigurePrimaryHttpMessageHandler(() => new StubHttpMessageHandler(_ =>
+                        new HttpResponseMessage(HttpStatusCode.BadRequest)
+                        {
+                            Content = JsonContent.Create(new { success = false, message, code = 400, errorData = Array.Empty<object>() })
+                        }));
+            }));
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
+        var response = resource == "users"
+            ? await client.PostAsJsonAsync("/api/console/v1/iam/users",
+                new ConsoleCreateIamUserRequest("admin", "admin@nerv.local", "P@ssw0rd!", null))
+            : await client.PostAsJsonAsync("/api/console/v1/iam/roles",
+                new ConsoleCreateIamRoleRequest("平台管理员", ["iam.users.read"]));
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var envelope = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.False(envelope.GetProperty("success").GetBoolean());
+        Assert.Equal(message, envelope.GetProperty("message").GetString());
+    }
+
+    [Fact]
+    public async Task Iam_admin_client_passes_iam_rejection_reason_through_as_bad_request()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    "{\"success\":false,\"message\":\"平台管理员账号不能停用。\",\"code\":400,\"errorData\":[]}",
+                    System.Text.Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("http://iam.local")
+        };
+        var admin = new HttpGatewayIamAdminClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<GatewayAuthException>(() =>
+            admin.DisableUserAsync("access-token", "user-admin", CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.Equal("平台管理员账号不能停用。", exception.Reason);
+    }
+
     [Fact]
     public void Console_iam_admin_endpoints_use_authorized_proxy_endpoint()
     {
@@ -120,6 +175,48 @@ public sealed class GatewayConsoleIamAdminTests
         Assert.Equal("user-created", body.UserId);
         Assert.Equal(request.LoginName, body.LoginName);
         Assert.Equal(request.Email, body.Email);
+    }
+
+    [Fact]
+    public async Task Console_iam_replace_user_membership_forwards_after_manage_permission_check()
+    {
+        var auth = FakeGatewayAuthorizationClient.Allowed();
+        var iam = new FakeGatewayIamAuthClient();
+        var admin = new FakeGatewayIamAdminClient();
+        await using var factory = CreateFactory(auth, iam, admin);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PutAsJsonAsync(
+            "/api/console/v1/iam/users/user-created/membership",
+            new ConsoleReplaceIamUserMembershipRequest(["role-erp-sales"]));
+        var body = await ReadResponseDataAsync<ConsoleIamUserMembershipResponse>(response);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("iam.users.manage", auth.LastRequirement!.PermissionCode);
+        Assert.Equal(client.DefaultRequestHeaders.Authorization.Parameter, admin.LastBearerToken);
+        Assert.Equal("user-created", admin.LastMembershipUserId);
+        Assert.Equal(["role-erp-sales"], admin.LastReplaceMembershipRequest!.RoleIds);
+        Assert.Equal(["role-erp-sales"], body.RoleIds);
+    }
+
+    [Fact]
+    public async Task Console_iam_replace_user_membership_returns_forbidden_when_manage_permission_check_denies()
+    {
+        var auth = FakeGatewayAuthorizationClient.Forbidden();
+        var iam = new FakeGatewayIamAuthClient();
+        var admin = new FakeGatewayIamAdminClient();
+        await using var factory = CreateFactory(auth, iam, admin);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", GatewayTestTokens.ValidAccessToken());
+
+        var response = await client.PutAsJsonAsync(
+            "/api/console/v1/iam/users/user-admin/membership",
+            new ConsoleReplaceIamUserMembershipRequest([]));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal("iam.users.manage", auth.LastRequirement!.PermissionCode);
+        Assert.Null(admin.LastReplaceMembershipRequest);
     }
 
     [Fact]
@@ -314,6 +411,12 @@ public sealed class GatewayConsoleIamAdminTests
         public Task LogoutAsync(string bearerToken, ConsoleLogoutRequest request, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task ChangePasswordAsync(
+            string bearerToken,
+            ConsoleChangePasswordRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<ConsolePrincipalResponse> GetMeAsync(string bearerToken, CancellationToken cancellationToken)
         {
             GetMeCallCount++;
@@ -329,6 +432,8 @@ public sealed class GatewayConsoleIamAdminTests
         public string? LastBearerToken { get; private set; }
         public ConsoleIamListRequest? LastListUsersRequest { get; private set; }
         public ConsoleCreateIamUserRequest? LastCreateUserRequest { get; private set; }
+        public string? LastMembershipUserId { get; private set; }
+        public ConsoleReplaceIamUserMembershipRequest? LastReplaceMembershipRequest { get; private set; }
 
         public Task<PagedListResponse<ConsoleIamUserResponse>> ListUsersAsync(
             string bearerToken,
@@ -383,6 +488,24 @@ public sealed class GatewayConsoleIamAdminTests
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
+        public Task<ConsoleIamUserMembershipResponse> GetUserMembershipAsync(
+            string bearerToken,
+            string userId,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<ConsoleIamUserMembershipResponse> ReplaceUserMembershipAsync(
+            string bearerToken,
+            string userId,
+            ConsoleReplaceIamUserMembershipRequest request,
+            CancellationToken cancellationToken)
+        {
+            LastBearerToken = bearerToken;
+            LastMembershipUserId = userId;
+            LastReplaceMembershipRequest = request;
+            return Task.FromResult(new ConsoleIamUserMembershipResponse(userId, "org-001", "env-dev", request.RoleIds));
+        }
+
         public Task<PagedListResponse<ConsoleIamRoleResponse>> ListRolesAsync(
             string bearerToken,
             ConsoleIamListRequest request,
@@ -430,5 +553,14 @@ public sealed class GatewayConsoleIamAdminTests
         Assert.True(envelope.Success, envelope.Message);
         Assert.NotNull(envelope.Data);
         return envelope.Data;
+    }
+
+    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
+        : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(responseFactory(request));
     }
 }

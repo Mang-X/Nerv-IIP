@@ -49,19 +49,25 @@ export const WMS_OUTBOUND_ORDER_STATUS_OPTIONS: SearchSelectOption[] = [
   { value: 'Cancelled', label: '已取消' },
 ]
 
-/** 上下游单据类型：入库来自采购收货或生产完工，出库去向生产领料或销售发货。 */
+/**
+ * 控制台手建出入库单的来源类型：只保留没有上游单据的类型。
+ *
+ * 采购收货、生产完工入库、销售退货、生产领料、销售发货、采购退货都由上游业务单据
+ * （ERP 采购收货/发货单、质检放行、MES 领料/完工申请）自动生成对应的 WMS 出入库单，
+ * 手建会跳过上游单据本该携带的关联字段（如发货单行号、采购收货过账路径），要么
+ * 生成不了下游应收/成本，要么直接把单据送进死信（owner 2026-09-26 裁定，见 #3822）。
+ * 库存调拨没有上游单据、天然只能由仓库手建，因此是控制台仅保留的入库/出库来源类型。
+ *
+ * `inventory-transfer` 码值是本 PR 把旧值 `InventoryTransfer` 改的小写-连字符形式，
+ * 后端 `WmsSourceDocumentTypes` 没有为它声明常量，全仓也没有任何下游按字面量比对这个值，
+ * 所以字面量本身可以自由选取。
+ */
 export const WMS_INBOUND_SOURCE_TYPE_OPTIONS: SearchSelectOption[] = [
-  { value: 'PurchaseReceipt', label: '采购收货' },
-  { value: 'ProductionReceipt', label: '生产完工入库' },
-  { value: 'SalesReturn', label: '销售退货' },
-  { value: 'InventoryTransfer', label: '库存调拨' },
+  { value: 'inventory-transfer', label: '库存调拨' },
 ]
 
 export const WMS_OUTBOUND_SOURCE_TYPE_OPTIONS: SearchSelectOption[] = [
-  { value: 'ProductionIssue', label: '生产领料' },
-  { value: 'SalesDelivery', label: '销售发货' },
-  { value: 'PurchaseReturn', label: '采购退货' },
-  { value: 'InventoryTransfer', label: '库存调拨' },
+  { value: 'inventory-transfer', label: '库存调拨' },
 ]
 
 export const wmsWarehouseTaskStatusFilterOptions = withAnyOption(

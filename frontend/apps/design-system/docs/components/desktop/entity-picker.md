@@ -49,8 +49,14 @@ const scopeLevels = computed(() => [
 ## NvEntityPicker 实体选择弹窗
 
 相比 [`NvSearchSelect`](/components/desktop/combobox) 的弹出列表，对话框给出更大的展示
-空间：每行展示**名称 + 编码 + 辅助信息**，底部注明数据来源。`clearable` 时触发按钮出现
-清除叉。
+空间：每行展示**名称 + 编码 + 辅助信息**。`clearable` 时触发按钮出现清除叉。
+
+下拉里只放用户做选择要用的东西：不写数据来自哪个模块，也不报「共 N 条」。目录大到要服务端
+搜索时（`server-search` + `total-count`），结果多于当前列出的条目才在底部提示「输入关键字继续
+筛选」；列表滚近底部时发出 `load-more`，调用方取下一页追加进 `options`。
+
+候选超过 100 条时列表只渲染可视区附近的行（虚拟化），几千条也能顺滑滚动；键盘上下移动高亮项时
+会把它滚进可视区。
 
 <Demo>
   <div style="max-width: 360px">
@@ -62,7 +68,6 @@ const scopeLevels = computed(() => [
         :options="materialOptions"
         title="选择物料"
         placeholder="请选择物料"
-        source-text="数据来自物料主数据"
         aria-label="物料"
         clearable
       />
@@ -77,7 +82,6 @@ const scopeLevels = computed(() => [
   :options="[{ value: 'SKU-FG-100', label: '前减振器总成', hint: '成品' }]"
   title="选择物料"
   placeholder="请选择物料"
-  source-text="数据来自物料主数据"
   :invalid="submitted && !material"
   clearable
 />
@@ -85,6 +89,29 @@ const scopeLevels = computed(() => [
 
 表单提交后校验失败时传入 `invalid`。组件会给根节点设置 `data-invalid`、给触发按钮设置
 `aria-invalid`，并使用错误态边框；打开表单时不要提前传入错误态。
+
+字段下方有错误提示时，把提示的 id 传给 `aria-describedby`，组件会把它转发到触发按钮上，读屏
+在这个字段上能念到错误。它必须作为组件属性传入：组件的根节点不是 DOM 元素，写在外层包装上的同名
+属性不会落到按钮上。
+
+### 就地新增
+
+表单里要选的实体可能还没建（比如登记设备时车间还不存在），传 `create-text` 后候选列表下方
+出现一个新增入口。点击后选择器收起并发出 `create`，由调用方打开新增表单；建好后调用方把
+新建项写回 `v-model`，并确保 `options` 里有这一项，触发器才显示名称而不是编码。
+
+- 有没有新增权限由调用方判断：没有权限就不传 `create-text`，入口不出现。
+- 只在表单字段上用；筛选条上的选择器不带新增入口。
+
+```vue
+<NvEntityPicker
+  v-model="workshop"
+  :options="workshopOptions"
+  title="选择车间"
+  :create-text="canCreateWorkshop ? '新增车间' : undefined"
+  @create="workshopDialogOpen = true"
+/>
+```
 
 ## NvCascadePicker 级联选择器
 

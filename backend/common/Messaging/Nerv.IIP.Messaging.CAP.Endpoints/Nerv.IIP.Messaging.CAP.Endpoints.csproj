@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="FastEndpoints" />
+    <PackageReference Include="NetCorePal.Extensions.AspNetCore" />
+    <PackageReference Include="NetCorePal.Extensions.Primitives" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nerv.IIP.Messaging.CAP\Nerv.IIP.Messaging.CAP.csproj" />
+    <ProjectReference Include="..\..\ServiceAuth\Nerv.IIP.ServiceAuth\Nerv.IIP.ServiceAuth.csproj" />
+    <ProjectReference Include="..\..\Contracts\Nerv.IIP.Contracts.Iam\Nerv.IIP.Contracts.Iam.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

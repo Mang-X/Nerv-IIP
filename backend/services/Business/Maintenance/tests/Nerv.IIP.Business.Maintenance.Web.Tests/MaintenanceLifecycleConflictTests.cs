@@ -26,6 +26,7 @@ public sealed class MaintenanceLifecycleConflictTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-001",
             "env-dev",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-CNC-01",
             "medium",
             "operator-001");
@@ -58,6 +59,7 @@ public sealed class MaintenanceLifecycleConflictTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-001",
             "env-dev",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-CNC-01",
             "medium",
             "operator-001");
@@ -104,6 +106,7 @@ public sealed class MaintenanceLifecycleConflictTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-001",
             "env-dev",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-CNC-01",
             "medium",
             "operator-001");
@@ -132,6 +135,7 @@ public sealed class MaintenanceLifecycleConflictTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-b",
             "env-b",
+            $"MWO-T-{Guid.NewGuid():N}",
             "DEV-TENANT-B",
             "medium",
             "operator-b");
@@ -253,6 +257,30 @@ public sealed class MaintenanceLifecycleConflictTests
         Assert.Contains("\"success\":false", body, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("\"message\":\"lifecycle-conflict\"", body, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(nameof(MaintenanceWorkOrderStatus.Completed), body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Create_downtime_reason_http_endpoint_returns_409_with_the_stable_duplicate_code()
+    {
+        await using var factory = CreateFactory(new MaintenanceDowntimeReasonCodeConflictException());
+        using var client = CreateAuthorizedClient(factory);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business/v1/maintenance/downtime-reasons",
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                reasonCode = "DT-MECH",
+                description = "液压系统故障",
+                reasonCategory = "breakdown",
+                lossCategory = "availability",
+            });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"success\":false", body, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains($"\"message\":\"{MaintenanceDowntimeReasonCodeConflictException.SafeCode}\"", body, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

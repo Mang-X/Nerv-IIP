@@ -6,9 +6,11 @@ public partial record BarcodeRuleId : IGuidStronglyTypedId;
 
 public sealed class BarcodeRule : Entity<BarcodeRuleId>, IAggregateRoot
 {
+    public const string ActiveStatus = "active";
+
     private static readonly HashSet<string> SupportedTypes = ["code128", "qr", "datamatrix", "gs1-128", "gs1-datamatrix"];
 
-    private static readonly HashSet<string> SupportedStatuses = ["active", "inactive"];
+    private static readonly HashSet<string> SupportedStatuses = [ActiveStatus, "inactive"];
 
     private BarcodeRule()
     {
@@ -63,6 +65,22 @@ public sealed class BarcodeRule : Entity<BarcodeRuleId>, IAggregateRoot
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public DateTimeOffset UpdatedAtUtc { get; private set; }
 
+    public int AllocatedSerialNumberLength
+    {
+        get
+        {
+            if (BarcodeType.StartsWith("gs1-", StringComparison.Ordinal))
+            {
+                return 20;
+            }
+
+            var availableLength = Length - Prefix.Length;
+            return availableLength >= 2
+                ? Math.Min(availableLength, 20)
+                : throw new InvalidOperationException("Barcode rule length must leave at least two characters for an allocated serial number.");
+        }
+    }
+
     public static BarcodeRule Create(
         string organizationId,
         string environmentId,
@@ -96,7 +114,7 @@ public sealed class BarcodeRule : Entity<BarcodeRuleId>, IAggregateRoot
 
     public string GenerateValue(string sourceDocumentType, string sourceDocumentId, int sequence)
     {
-        if (Status != "active")
+        if (Status != ActiveStatus)
         {
             throw new InvalidOperationException("Only active barcode rules can generate label values.");
         }
@@ -121,8 +139,58 @@ public sealed class BarcodeRule : Entity<BarcodeRuleId>, IAggregateRoot
         return value;
     }
 
+    public string GenerateSerializedValue(string sourceDocumentType, string serialNumber)
+    {
+        EnsureCanGenerate(sourceDocumentType);
+        var value = $"{Prefix}{BarcodeLabelText.Required(serialNumber, nameof(serialNumber))}";
+        if (value.Length > Length)
+        {
+            throw new InvalidOperationException($"Generated barcode exceeds configured length {Length}.");
+        }
+
+        return value;
+    }
+
+    public Gs1BarcodeValue GenerateGs1Value(string sourceDocumentType, string lotNo, string serialNumber)
+    {
+        EnsureCanGenerateGs1(sourceDocumentType);
+        return Gs1BarcodeValue.Create(
+            Prefix,
+            lotNo,
+            BarcodeLabelText.Required(serialNumber, nameof(serialNumber)),
+            Gs1CompanyPrefixLength);
+    }
+
     public Gs1BarcodeValue GenerateGs1Value(string sourceDocumentType, string lotNo, string serialPrefix, int sequence)
     {
+        EnsureCanGenerateGs1(sourceDocumentType);
+
+        if (sequence <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sequence), "Sequence must be positive.");
+        }
+
+        var serialNumber = $"{BarcodeLabelText.Required(serialPrefix, nameof(serialPrefix))}{sequence:D4}";
+        return Gs1BarcodeValue.Create(Prefix, lotNo, serialNumber, Gs1CompanyPrefixLength);
+    }
+
+    private void EnsureCanGenerate(string sourceDocumentType)
+    {
+        if (Status != ActiveStatus)
+        {
+            throw new InvalidOperationException("Only active barcode rules can generate label values.");
+        }
+
+        var sourceType = BarcodeLabelText.Required(sourceDocumentType, nameof(sourceDocumentType)).ToLowerInvariant();
+        if (!AllowedSourceDocumentTypes.Contains(sourceType, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException($"Source document type '{sourceDocumentType}' is not allowed by barcode rule '{RuleCode}'.");
+        }
+    }
+
+    private void EnsureCanGenerateGs1(string sourceDocumentType)
+    {
+        EnsureCanGenerate(sourceDocumentType);
         if (!BarcodeType.StartsWith("gs1-", StringComparison.Ordinal))
         {
             throw new InvalidOperationException("Only GS1 barcode rules can generate GS1 values.");
@@ -132,20 +200,6 @@ public sealed class BarcodeRule : Entity<BarcodeRuleId>, IAggregateRoot
         {
             throw new InvalidOperationException("GS1 barcode rules require gs1-mod10 checksum.");
         }
-
-        var sourceType = BarcodeLabelText.Required(sourceDocumentType, nameof(sourceDocumentType)).ToLowerInvariant();
-        if (!AllowedSourceDocumentTypes.Contains(sourceType, StringComparer.Ordinal))
-        {
-            throw new InvalidOperationException($"Source document type '{sourceDocumentType}' is not allowed by barcode rule '{RuleCode}'.");
-        }
-
-        if (sequence <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(sequence), "Sequence must be positive.");
-        }
-
-        var serialNumber = $"{BarcodeLabelText.Required(serialPrefix, nameof(serialPrefix))}{sequence:D4}";
-        return Gs1BarcodeValue.Create(Prefix, lotNo, serialNumber, Gs1CompanyPrefixLength);
     }
 
     private void ValidateGs1Settings()

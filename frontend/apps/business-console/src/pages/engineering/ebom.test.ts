@@ -11,6 +11,12 @@ const stub = vi.hoisted(() => ({
   toastError: vi.fn(),
 }))
 
+// 就地新建的物料：物料列表刷新回来之前查不到，用例里手动「刷新」进来。
+const createdSkus = await vi.hoisted(async () => {
+  const { shallowRef } = await import('vue')
+  return shallowRef<{ code: string; displayName: string; baseUomCode: string }[]>([])
+})
+
 const ebomRow = {
   bomCode: 'EBOM-1',
   revision: 'A',
@@ -54,6 +60,7 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
     skus: computed(() => [
       { code: 'SKU-1', displayName: '智能网关主机', baseUomCode: 'PCS' },
       { code: 'SKU-2', displayName: '主控板', baseUomCode: 'PCS' },
+      ...createdSkus.value,
     ]),
   }),
   useBusinessUoms: () => ({
@@ -71,8 +78,8 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const dialogStubs = {
-  DialogRoot: { template: '<div><slot /></div>' },
-  DialogTrigger: { template: '<div><slot /></div>' },
+  NvDialog: { template: '<div><slot /></div>' },
+  NvDialogTrigger: { template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogFooter: { template: '<div><slot /></div>' },
@@ -80,7 +87,10 @@ const dialogStubs = {
   NvDialogDescription: { template: '<p><slot /></p>' },
 }
 const sheetStubs = {
-  // NvSheet 根 = reka DialogRoot（与对话框共用 DialogRoot stub），内容/标头为真 .vue 按 Pro 名打桩。
+  // NvSheet 根与 NvDialog 同为 reka DialogRoot，但 barrel 已给两个别名各自的 name，
+  // 因而这里能分开打桩（过去只能共用一个 DialogRoot 键）。
+  NvSheet: { template: '<div><slot /></div>' },
+  NvSheetTrigger: { template: '<div><slot /></div>' },
   NvSheetContent: { template: '<div data-testid="sheet"><slot /></div>' },
   NvSheetHeader: { template: '<div><slot /></div>' },
   NvSheetTitle: { template: '<h2><slot /></h2>' },
@@ -102,9 +112,16 @@ const formSelectStubs = {
       '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
-  SelectValue: { template: '<span />' },
+  NvSelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  // 目录选择器（取数、就地新增由 DirectoryPicker 自己的用例覆盖）换成原生 <select>，下标顺序不变。
+  DirectoryPicker: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value=""></option><option value="SKU-1">SKU-1</option><option value="SKU-2">SKU-2</option><option value="SKU-NEW">SKU-NEW</option></select>',
+  },
 }
 
 const allStubs = {
@@ -127,6 +144,7 @@ beforeEach(() => {
   stub.toastError.mockClear()
   filters.parentItemCode = undefined
   filters.status = undefined
+  createdSkus.value = []
 })
 
 describe('engineering ebom page', () => {
@@ -214,6 +232,23 @@ describe('engineering ebom page', () => {
 
     const uomSelect = wrapper.findAll('select')[2]!
     expect((uomSelect.element as HTMLSelectElement).value).toBe('PCS')
+  })
+
+  it('就地新建的组件物料：物料列表刷新回来后再带出单位', async () => {
+    const wrapper = mount(EbomPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '发布新版本')!.trigger('click')
+    await flushPromises()
+
+    // 选择器建好后自动选中新物料，这时物料列表还没刷新回来，查不到基本单位。
+    await wrapper.findAll('select')[1]!.setValue('SKU-NEW')
+    await flushPromises()
+    const uomSelect = () => wrapper.findAll('select')[2]!.element as HTMLSelectElement
+    expect(uomSelect().value).toBe('')
+
+    createdSkus.value = [{ code: 'SKU-NEW', displayName: '新主控板', baseUomCode: 'SET' }]
+    await flushPromises()
+    expect(uomSelect().value).toBe('SET')
   })
 
   it('打开向导：生效日默认今天', async () => {

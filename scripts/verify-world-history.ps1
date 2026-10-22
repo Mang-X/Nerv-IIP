@@ -48,6 +48,11 @@ NERV_IIP_TEST_POSTGRES 门控的真机测试跑一遍全量生成 + 校验，并
 .PARAMETER PostgresConnectionString
 PostgreSQL 连接串。缺省读环境变量 NERV_IIP_TEST_POSTGRES，再缺省用本地 dev compose 实例。
 
+.PARAMETER TimeoutSeconds
+每个服务那一次 `dotnet test` 的预算。撑穿它是**超时**失败而不是断言失败；本机多工作树争用
+CPU 时可以调高（#2870 / #3295）。上下界由 Invoke-NativeCommandOutput 拥有，1800 是默认值不是
+上限，因此这里不再抄一份 ValidateRange。
+
 .EXAMPLE
 scripts/verify-world-history.ps1
 
@@ -63,7 +68,13 @@ param(
     [string] $PostgresConnectionString,
 
     [ValidatePattern('^[a-zA-Z0-9][a-zA-Z0-9._-]{0,47}$')]
-    [string] $RunId
+    [string] $RunId,
+
+    # Budget for each service's `dotnet test` invocation. Exceeding it fails as a timeout, not as a
+    # test failure; raise it for a local run whose CPU is shared with other worktrees
+    # (#2870 / #3295). Bounds are owned by Invoke-NativeCommandOutput; 1800 is a default, not a
+    # ceiling, so no ValidateRange is repeated here.
+    [int] $TimeoutSeconds = 1800
 )
 
 $ErrorActionPreference = 'Stop'
@@ -162,7 +173,7 @@ foreach ($target in $targets) {
     $exitCode = 0
     $stdout = ''
     try {
-        $result = Invoke-DotNetOutput -Arguments $arguments -WorkingDirectory $repoRoot -TimeoutSeconds 1800
+        $result = Invoke-DotNetOutput -Arguments $arguments -WorkingDirectory $repoRoot -TimeoutSeconds $TimeoutSeconds
         $stdout = "$($result.Stdout)`n$($result.Stderr)"
         $exitCode = $result.ExitCode
     }

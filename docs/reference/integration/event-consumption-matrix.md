@@ -1,0 +1,148 @@
+# 集成事件消费矩阵
+
+本页索引当前公开/跨服务事件和关键业务本地事件的**生产者—消费者关系**。它用于回答“当前代码里谁发布、谁消费、这条关系如何分类”，不维护 Issue 完成状态、历轮扫描时间线或项目缺口总账。
+
+分类与复核规则见 [`../../governance/integration/event-consumption.md`](../../governance/integration/event-consumption.md)。M2 拆分前包含逐轮 provenance 与实现说明的完整审计快照保留在 [`../../reports/audits/integration-event-consumption-matrix-2026-08-28.md`](../../reports/audits/integration-event-consumption-matrix-2026-08-28.md)。
+
+## Producer / consumer 证据
+
+- 公开契约：`backend/common/Contracts/**`。
+- 业务本地集成事件：`backend/services/Business/**/Application/IntegrationEvents`。
+- 活动消费者：各服务 `Application/IntegrationEventHandlers`、`IntegrationEventConsumer` / `IIntegrationEventHandler` / `CapSubscribe` 实现与注册。
+- 可靠性与副作用：对应 inbox/outbox、dead-letter、事务/幂等实现和行为测试。
+- 跨服务事件信封、版本和幂等基线：ADR 0011。
+
+Reference 与源码冲突时，以当前代码/契约/测试为准并修正本页。下表保留“当前有无活动消费方、交接到谁、如何分类”这一查询能力；重放、锁、revision、历史 Issue、日期化验证过程等实现细节回到源码/测试或冻结 Audit。
+
+## 公开契约矩阵
+
+| 契约域 | 事件 | 当前 producer | 当前内部 consumer / 交接 | 分类 |
+| --- | --- | --- | --- | --- |
+| Approval | `ApprovalStartedIntegrationEvent` | BusinessApproval | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
+| Approval | `ApprovalStepResolvedIntegrationEvent` | BusinessApproval | Notification | `consumed-internally` |
+| Approval | `ApprovalStepOverdueIntegrationEvent` | BusinessApproval | Notification | `consumed-internally` |
+| Approval | `ApprovalActionRecordedIntegrationEvent` | BusinessApproval | Notification | `consumed-internally` |
+| Approval | `ApprovalCompletedIntegrationEvent`（approved/rejected/returned） | BusinessApproval | ERP、Inventory；Notification 消费相关结果/拒绝通知 | `consumed-internally` |
+| BarcodeLabel | `BarcodeScanAcceptedIntegrationEvent` | BarcodeLabel | 当前库存副作用通过 `InventoryMovementRequestedIntegrationEvent` 交接；本事件没有强制状态消费者 | `producer-only-until-feature` |
+| DemandPlanning | `MrpRunCompletedPayload` / `DemandPlanningIntegrationEvent` | DemandPlanning | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
+| DemandPlanning | `PlanningSuggestionPayload` / `PlannedPurchaseSuggested` | DemandPlanning | ERP 实际采购交接使用已接受建议事件 | `deprecated/covered-by-other-contract` |
+| DemandPlanning | `PlanningSuggestionPayload` / `PlannedWorkOrderSuggested` | DemandPlanning | MES 实际工单交接使用已接受建议事件 | `deprecated/covered-by-other-contract` |
+| DemandPlanning | `PlanningSuggestionAcceptedIntegrationEvent` | DemandPlanning | MES；指向采购申请的建议由 ERP 消费 | `consumed-internally` |
+| DemandPlanning | `SalesOrderDemandChangedForWorkOrderIntegrationEvent` | DemandPlanning | MES 按组织、环境、工单、来源建议与需求引用持久标记需求变更或取消，不改变工单执行状态；Notification 按 IAM 当前组织/环境的有效计划员成员逐人生成站内消息与待办 | `consumed-internally` |
+| ERP | `PurchaseRequisitionCreatedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
+| ERP | `PurchaseOrderReleasedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
+| ERP | `MaterialSupplyEtaChangedIntegrationEvent` | ERP | Scheduling 按受影响 SKU 精确失效 generated 排程方案 | `consumed-internally` |
+| ERP | `PurchaseReceiptRecordedIntegrationEvent` | ERP | ERP GR/IR 处理；Quality 来料检验 | `consumed-internally` |
+| ERP | `SalesReturnAuthorizedIntegrationEvent` | ERP | WMS | `consumed-internally` |
+| ERP | `SalesOrderReleased` / `SalesOrderChanged` / `SalesOrderCancelled` / `SalesOrderDeliveryRegisteredIntegrationEvent` | ERP | DemandPlanning 销售订单未交付需求投影 | `consumed-internally` |
+| ERP | `DeliveryOrderReleasedPayload` | ERP | 实际仓储交接使用公开 `wms.OutboundOrderRequested` | `deprecated/covered-by-other-contract` |
+| ERP | `AccountPayableCreatedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
+| ERP | `AccountReceivableCreatedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
+| ERP | `CostCandidateCreatedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
+| ERP | `JournalVoucherPostedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
+| ERP | `WorkOrderCostCapitalizedIntegrationEvent` | ERP | MES | `consumed-internally` |
+| IndustrialTelemetry | `DeviceStateChangedIntegrationEvent` | IndustrialTelemetry | Scheduling；MES 消费规范化运行时可用性查询而非直接解释本事件 | `consumed-internally` |
+| IndustrialTelemetry | `AlarmRaisedIntegrationEvent` | IndustrialTelemetry | Maintenance、Notification | `consumed-internally` |
+| IndustrialTelemetry | `AlarmClearedIntegrationEvent` | IndustrialTelemetry | Maintenance、Notification | `consumed-internally` |
+| IndustrialTelemetry | `AlarmEscalatedIntegrationEvent` | IndustrialTelemetry | Notification | `consumed-internally` |
+| IndustrialTelemetry | `TelemetryProductionCountDeltaIntegrationEvent` | IndustrialTelemetry | MES | `consumed-internally` |
+| Inventory | `InventoryMovementRequestedIntegrationEvent` | MES、WMS、BarcodeLabel、Maintenance、ERP 邻接流程 | Inventory | `consumed-internally` |
+| Inventory | `InventoryReservationReleaseRequestedIntegrationEvent` | MES | Inventory | `consumed-internally` |
+| Inventory | `InventoryReservationExpiredIntegrationEvent` | Inventory | WMS、MES | `consumed-internally` |
+| Inventory | `StockMovementPostedIntegrationEvent` | Inventory | WMS、MES、ERP | `consumed-internally` |
+| Inventory | `StockMovementPostingFailedIntegrationEvent` | Inventory | WMS | `consumed-internally` |
+| Inventory | `StockCountVarianceConfirmedIntegrationEvent` | Inventory | 当前无必须改变平台状态的活动消费者 | `producer-only-until-feature` |
+| Inventory | `StockAvailabilityChangedIntegrationEvent` | Inventory | Scheduling：仅失效问题快照中缺料项含该物料的方案，记录命中工序；无匹配时留痕 | `consumed-internally` |
+| Maintenance | V1 `AssetUnavailableIntegrationEvent`；V2 `AssetUnavailableV2IntegrationEvent` | V1 Maintenance（v1 自由文本入口只发 V1；v2 原因码入口双发 V1 companion + V2）；V2 Maintenance（`POST /api/business/v2/maintenance/work-orders`，#2964 C/D 阶段） | V1 MES、Scheduling；V2 MES、Scheduling 均精确订阅 canonical topic，并按共享 `idempotencyKey` 折叠双发 | V1/V2 `consumed-internally` |
+| Maintenance | `AssetRestoredIntegrationEvent` | Maintenance | MES、Scheduling | `consumed-internally` |
+| MasterData | `SkuChangedIntegrationEvent` | MasterData | 当前下游主要使用 API/快照；无活动状态消费者 | `producer-only-until-feature` |
+| MasterData | `SkuDisabledIntegrationEvent` | MasterData | MES | `consumed-internally` |
+| MasterData | `UnitOfMeasureChangedIntegrationEvent` | MasterData | 当前下游主要使用 API/快照；无活动状态消费者 | `producer-only-until-feature` |
+| MasterData | `BusinessPartnerChangedIntegrationEvent` | MasterData | ERP | `consumed-internally` |
+| MasterData | `ResourceChangedIntegrationEvent` | MasterData | Scheduling | `consumed-internally` |
+| MasterData | `WorkCalendarChangedIntegrationEvent` | MasterData | Scheduling | `consumed-internally` |
+| MasterData | `DeviceAssetChangedIntegrationEvent` | MasterData | Maintenance | `consumed-internally` |
+| MasterData | `ReferenceDataCodeChangedIntegrationEvent` | MasterData | 当前无必须改变平台状态的活动消费者 | `producer-only-until-feature` |
+| Ops | `OperationTaskCompletedIntegrationEvent` | Ops | AppHub、Notification、IndustrialTelemetry | `consumed-internally` |
+| Ops | `OperationTaskFailedIntegrationEvent` | Ops | AppHub、Notification、IndustrialTelemetry | `consumed-internally` |
+| Ops | `OperationTaskRequestedIntegrationEvent` | Ops | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
+| Ops | `OperationApprovalRequestedIntegrationEvent` | Ops | Notification | `consumed-internally` |
+| Ops | `OperationApprovalApprovedIntegrationEvent` | Ops | Notification | `consumed-internally` |
+| Ops | `OperationApprovalRejectedIntegrationEvent` | Ops | Notification、IndustrialTelemetry | `consumed-internally` |
+| Ops | `OperationTaskClaimedIntegrationEvent` | Ops | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
+| Ops | `AuditRecordedIntegrationEvent` | Ops | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
+| ProductEngineering | `BomReleasedIntegrationEvent` | ProductEngineering | 当前下游主要通过查询/解析边界使用 | `producer-only-until-feature` |
+| ProductEngineering | `RoutingReleasedIntegrationEvent` | ProductEngineering | 当前下游主要通过查询/解析边界使用 | `producer-only-until-feature` |
+| ProductEngineering | `ProductionVersionCreatedIntegrationEvent` | ProductEngineering | MES | `consumed-internally` |
+| ProductEngineering | `EngineeringChangeReleasedIntegrationEvent` | ProductEngineering | 当前下游主要通过查询/解析边界使用 | `producer-only-until-feature` |
+| Quality | `DefectRaisedIntegrationEvent` | MES / Quality 公共契约生产路径 | Quality | `consumed-internally`。MES 登记命令从同组织、环境的来源工单取得 `SkuId`，在 payload 可选字段 `skuCode` 发布；缺字段的旧消息按 `null` 读取。按 ADR 0011 保持 v1、既有路由与不良编号幂等键。当前 Quality 消费者容忍该字段，NCR 的产品消费规则另由 Quality 实现负责 |
+| Quality | `NcrOpenedIntegrationEvent` | Quality | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
+| Quality | `NcrDispositionDecidedIntegrationEvent` | Quality | MES | `consumed-internally` |
+| Quality | `NcrReworkRequestedIntegrationEvent` | Quality | MES | `consumed-internally` |
+| Quality | `NcrClosedIntegrationEvent` | Quality | MES：报废关闭后，按同组织/环境已建立的 NCR 来源关联回写原不良的库存移动引用；首次来源关联未就绪时不登记 inbox，抛出临时失败交既有 CAP 有限重试；关联就绪后原事实可重放 | `consumed-internally`。首次空引用处置结论晚到不清空已知返工/报废引用 |
+| Quality | `InspectionResultIntegrationEvent`（passed/conditional/rejected） | Quality | Inventory、MES、Scheduling；RMA 场景下 ERP 处理相应财务结果 | `consumed-internally` |
+| Quality | `InspectionTaskOverdueIntegrationEvent` | Quality | Notification | `consumed-internally` |
+| Quality | `MeasuringDeviceCalibrationDueIntegrationEvent` | Quality | Notification | `consumed-internally` |
+| MES | `WorkOrderReleasedIntegrationEvent` | MES | Scheduling、Quality | `consumed-internally`。信封 `occurredAtUtc` 与 payload `releasedAtUtc` 同取**发布动作给出的发布事实时刻**（按该工单**既有活动**取下界——最早报工与最早工序完工中更早者，#3117），不再取转换那一刻的 `UtcNow`。按 ADR 0011 §5 这是把原先违反「`occurredAtUtc` 必须是领域事实发生时间」的取值修回合规，属修正而非 §4 意义上的语义变更，**不提升 `eventVersion`**；Scheduling 只读 `Payload.WorkOrderId`/`SkuCode`，不校验也不消费任一时刻。payload `operations[]` 自 #3129 起多带一个**可空可选**字段 `preReleaseGoodQuantity`：下达动作那一刻该工序已经存在的净良品量（非冲销报工行的 `goodQuantity` 之和）。按 ADR 0011 §4「同一 `eventType` 下新增可选字段不提升版本」，**不提升 `eventVersion`**。**消费关系不变**（消费方仍是 Scheduling 与 Quality）：Scheduling 只读上述两个字段、对新增字段无感；Quality 的直投消费分支用它落实「下达之前已产出的数量不补开周期巡检任务」这条裁定。**已知不生效面**：本次发布之前入队、仍在在途队列或 DLQ 里的旧消息不带该字段，Quality 对 `null` 按改动前的老行为处理（不跳过），与彼时 main 逐字相同、不进死信；该面随那批旧消息被消费干净而消失 |
+| MES | `WorkOrderReleaseProjectionBackfilledIntegrationEvent` | MES（运维触发的一次性内部端点，非领域事件转换） | 仅 Quality：把存量在制工单的发布事实补进工序巡检投影，只补空缺不覆盖既有行。Scheduling **不**订阅——它对发布事件只按问题快照中的工单或 SKU 失效命中方案，不能被回填误触发。本通道复用 `WorkOrderReleasedPayload`，其 #3129 新增字段 `preReleaseGoodQuantity` 在这里**有意恒为 `null`**：该事件的消费分支（`ReleaseFactAuthority.ReconstructedLowerBound`）**根本不读这个字段**——全仓对 `PreReleaseGoodQuantity` 的唯一读取点在 `Authoritative` 分支内，该分支在补上发布事实后无条件跳过到回填执行时刻为止的全部累计产量与流逝时间（#3000 既有取舍）。填与不填行为逐字相同，依据是这条**结构性**事实，**不是**「下达前产量是其子集」——那个子集关系只在领域意义上成立，实现出来的两个数（Quality 本地水位 vs MES 自有事实）在报工事件滞后时可反向 | `consumed-internally` |
+| MES | `ReworkWorkOrderCreatedIntegrationEvent` | MES | Quality：按 organization/environment/NCR 来源事实绑定系统返工工单回执；ERP：在既有 `WorkOrderCost` 上登记 NCR 与来源工单归因 | `consumed-internally` |
+| MES | `AndonCallEscalatedIntegrationEvent` | MES：未认领呼叫到期后的单次升级，事实与 CAP outbox 同事务；canonical topic 由部署环境构造，稳定业务幂等键为 `andon-call-escalated:{CallId}` | Notification 为事件携带的明确接收人生成 `critical` 站内任务，复用 inbox 与通知意图去重，处理入口为 `/mes/andon` | `consumed-internally` |
+| MES | `WorkOrderCompletedIntegrationEvent` | MES | ERP | `consumed-internally` |
+| MES | `WorkOrderClosedIntegrationEvent` | MES | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
+| MES | `MesOperationTaskCompletedIntegrationEvent` | MES | Quality、Scheduling | `consumed-internally`。payload `skuCode` 取 `OperationTask.SkuCode`，而该列按持久化契约是**从工单抄来的产出 SKU**；此前有三条建工序路径不传 SKU、令其回落成工单号，Quality 的工序巡检一致性守卫按 SKU 比对 `WorkOrderReleased` 与本事件，凡这三条路径建出的工序**先发布后完工必进死信**（#3112）。修源后同一道工序两个事件的 `skuCode` 恒相等，该死信在新数据上归零。存量数据的订正与 Quality 侧校正层的收缩归 #3286；Scheduling 消费该事实更新工序执行投影的完成时间；配置执行偏差容差后，仅当完成事实通过生命周期水位且严格超过同工单、同工序 assignment 的计划结束时，登记精确工序失效 |
+| MES | `MesOperationTaskStartedIntegrationEvent` / `MesOperationTaskPausedIntegrationEvent` / `MesOperationTaskResumedIntegrationEvent` | MES；canonical topic 分别为 `nerv-iip.{deployment-profile}.business-mes.mes.operation-task-started.v1`、`...operation-task-paused.v1`、`...operation-task-resumed.v1` | Scheduling | `consumed-internally`。三类事实均更新工序执行投影；配置执行偏差容差后，开始事实严格超过同工单、同工序 assignment 的计划开始时另登记精确工序失效，暂停与恢复不触发方案失效 |
+| MES | `MesDowntimeStartedIntegrationEvent` / `MesDowntimeRestoredIntegrationEvent` | MES；canonical topic 分别为 `nerv-iip.{deployment-profile}.business-mes.mes.downtime-started.v1`、`...downtime-restored.v1` | Scheduling | `consumed-internally` |
+| MES | V1 `MesOperationActualTimeSettledIntegrationEvent`；V2 `MesOperationActualTimeSettledV2IntegrationEvent` | MES | ERP：V1 归集实际人工；V2 归集机器制造费用 | `consumed-internally`（V1/V2） |
+| MES | V1 `MesOperationActualTimeSettlementVoidedIntegrationEvent`；V2 `MesOperationActualTimeSettlementVoidedV2IntegrationEvent` | MES | ERP：V1 精确冲销实际人工；V2 精确冲销机器制造费用 | `consumed-internally`（V1/V2） |
+| MES | `MesOperationTaskManuallyDispatchedIntegrationEvent` | MES | Scheduling | `consumed-internally` |
+| MES | `MesOperationTaskManualDispatchClearedIntegrationEvent` | MES | Scheduling | `consumed-internally` |
+| MES | `WorkOrderSplitIntegrationEvent` | MES | Scheduling：精确失效含母单的 Generated/Released 方案，并按子单数量与工序序号迁移母单锁定 | `consumed-internally` |
+| MES | `ProductionReportRecordedIntegrationEvent` | MES | IndustrialTelemetry、ERP、Quality、Scheduling | `consumed-internally` |
+| MES | `MesMaterialIssueRequestedIntegrationEvent` | MES | WMS | `consumed-internally` |
+| MES | `FinishedGoodsReceiptRequestedIntegrationEvent` | MES | Quality | `consumed-internally` |
+| Scheduling | `SchedulePlanGenerated` / `SchedulingIntegrationEvent` | Scheduling | 当前无必须改变平台状态的活动消费者 | `producer-only-until-feature` |
+| Scheduling | `ScheduleConflictDetectedIntegrationEvent` | Scheduling | Notification | `consumed-internally` |
+| Scheduling | `SchedulePlanReleasedIntegrationEvent` | Scheduling | MES | `consumed-internally` |
+| Scheduling | `SchedulePlanRevokedIntegrationEvent` | Scheduling | MES | `consumed-internally` |
+| Scheduling | `SchedulePlanInvalidatedIntegrationEvent` | Scheduling | MES、Notification | `consumed-internally` |
+| WMS | `InboundOrderCompleted` / `WmsIntegrationEvent` | WMS | ERP、Quality | `consumed-internally` |
+| WMS | `OutboundOrderCompleted` / `WmsIntegrationEvent` | WMS | ERP | `consumed-internally` |
+| WMS | `OutboundOrderCancelled` / `WmsIntegrationEvent` | WMS | ERP | `consumed-internally` |
+| WMS | `WmsOutboundOrderRequestedIntegrationEvent` | ERP | WMS | `consumed-internally` |
+| WMS | `WmsMaterialIssueOutboundPreparedIntegrationEvent` | WMS | MES | `consumed-internally` |
+| WMS | `CountExecutionCompleted` / `WmsIntegrationEvent` | WMS | 当前无必须改变平台状态的活动消费者 | `producer-only-until-feature` |
+| WMS | `WcsTaskDispatched` / `WmsIntegrationEvent` | WMS | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
+| WMS | `WcsTaskFailed` / `WmsIntegrationEvent` | WMS | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
+| WMS | `WcsTaskRetryExhausted` / `WmsIntegrationEvent` | WMS | Notification | `consumed-internally` |
+| WMS | `WcsTaskCompleted` / `WmsIntegrationEvent` | WMS | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
+| WMS | `WcsTaskCancelled` / `WmsIntegrationEvent` | WMS | WMS WCS adapter 边界 | `consumed-internally` |
+
+ERP 的 `erp.MaterialSupplyEtaChanged` 当前受 #3690 的窄例外约束：仓库锁定的 NetCorePal CAP 3.3.0 按 CLR `Type.Name` 发布，因此在 Scheduling 消费链接入前以 `MaterialSupplyEtaChangedIntegrationEvent` 作为可精确订阅的具名 alias；它不是 ADR 0011 canonical topic，也不构成其它泛型 ERP 事件的迁移先例。目标 canonical 路由是 `nerv-iip.<deployment-env>.business-erp.erp.material-supply-eta-changed.v1`；发布链具备按 envelope 与部署环境选择 canonical topic 的能力后，另行迁移已登记消费者，并在回放窗口结束、相关 DLQ 清理完成后退役该 alias。
+
+MES 工序工时结算事件按 ADR 0011 并行发布：V1 使用 `nerv-iip.<deployment-env>.business-mes.mes.operation-actual-time-settled.v1` 与 `nerv-iip.<deployment-env>.business-mes.mes.operation-actual-time-settlement-voided.v1`，且迁移期继续向当前 ERP 已订阅的 CLR-name legacy alias 发布同一个 V1 envelope；V2 使用相同事件名的 `.v2` 路由并携带满足状态组合约束的完整冻结机器工时事实。ERP 的 V1 消费者归集实际人工，V2 消费者按 `completedAtUtc` 冻结独立机器制造费用；`unavailable`、缺少适用期间/费率及币种冲突均失败关闭并保留重放能力。V1 禁止携带机器事实；V2 的 `available` 可携带真实零值，且当前唯一 basis 为 `single-device-active-minus-explicit-pause-v1`；无设备或执行中设备变化为 `unavailable` 且不写零，`notApplicable` 仅来自显式业务判定，未知状态字符串失败关闭。只有所有已登记及外部消费者均完成规范路由升级、旧版回放窗口结束且所有相关 DLQ 清理完成后，才可同时退役 V1 legacy alias 与 V1 契约；当前 ERP 消费者不是退役门的唯一判据。
+
+## 业务服务本地事件
+
+没有公共信封和跨服务契约的本地事件不能因为出现在本矩阵就被其它服务直接依赖。
+
+| 服务 | 本地事件 | 当前跨服务消费情况 | 分类 |
+| --- | --- | --- | --- |
+| BarcodeLabel | `LabelPrintBatchCreatedIntegrationEvent` | 无跨服务状态消费者 | `audit-or-external-only` |
+| BarcodeLabel | `LabelPrintBatchCompletedIntegrationEvent` | 无跨服务状态消费者 | `audit-or-external-only` |
+| BarcodeLabel | `LabelScannedIntegrationEvent` | 公开扫描交接使用 `BarcodeScanAcceptedIntegrationEvent`，库存副作用使用 `InventoryMovementRequestedIntegrationEvent` | `deprecated/covered-by-other-contract` |
+| BarcodeLabel | `ScanRejectedIntegrationEvent` | 无跨服务状态消费者 | `audit-or-external-only` |
+| Maintenance | `MaintenanceWorkOrderOpenedIntegrationEvent` | 公开产能影响使用 `AssetUnavailableIntegrationEvent` | `audit-or-external-only` |
+| Maintenance | `MaintenanceWorkOrderCompletedIntegrationEvent` | 公开恢复/产能影响使用 `AssetRestoredIntegrationEvent` | `deprecated/covered-by-other-contract` |
+
+若本地事件未来需要跨服务消费，先升级到受治理的公开契约，再登记跨服务 consumer。
+
+## 更新要求
+
+新增/删除/替换公开事件或活动消费者时，在同一变更中：
+
+1. 核对 producer、consumer 注册与副作用实现；
+2. 按 [`../../governance/integration/event-consumption.md`](../../governance/integration/event-consumption.md) 重新分类；
+3. 更新本页受影响行，而不是追加日期化“已验证”时间线；
+4. 需要保留一次性审计证据时新建冻结 Report，不把运行 ID/Issue 状态写入当前矩阵。
+
+本矩阵不替代契约测试。公开事件的信封/版本/幂等性继续由 ADR 0011 及相应契约测试证明；“存在契约”也不自动证明有业务消费者。

@@ -82,6 +82,7 @@ internal static class InspectionIntegrationEventPayloads
 {
     public static InspectionResultPayload ToPayload(InspectionRecord record, DateTimeOffset occurredAtUtc, string? targetQualityStatus)
     {
+        var (workOrderId, operationTaskId) = InspectionResultMesScope.Resolve(record);
         return new InspectionResultPayload(
             record.Id.ToString(),
             record.InspectionPlanId?.ToString(),
@@ -103,7 +104,9 @@ internal static class InspectionIntegrationEventPayloads
             record.LocationCode,
             record.OwnerType,
             record.OwnerId,
-            record.UomCode);
+            record.UomCode,
+            workOrderId,
+            operationTaskId);
     }
 
     private static StockReleaseDimensionPayload? ToStockRelease(InspectionRecord record, string? targetQualityStatus)

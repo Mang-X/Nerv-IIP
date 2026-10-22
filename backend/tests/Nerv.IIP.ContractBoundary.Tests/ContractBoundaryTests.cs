@@ -5,12 +5,14 @@ using Nerv.IIP.AppHub.Domain;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Inventory;
+using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Ops.Domain;
 
@@ -32,6 +34,8 @@ public sealed class ContractBoundaryTests
             ["Nerv.IIP.Contracts.AppHubQueries", "Nerv.IIP.Contracts.Ops", "Nerv.IIP.Contracts.Scheduling"]),
         new(typeof(InspectionRecord).Assembly,
             ["Nerv.IIP.Contracts.AppHubQueries", "Nerv.IIP.Contracts.Ops", "Nerv.IIP.Contracts.Scheduling"]),
+        new(typeof(ProductionReportSerialNumber).Assembly,
+            ["Nerv.IIP.Contracts.AppHubQueries", "Nerv.IIP.Contracts.Ops", "Nerv.IIP.Contracts.Scheduling"]),
     ];
 
     /// <summary>
@@ -51,16 +55,30 @@ public sealed class ContractBoundaryTests
         new(
             typeof(PurchaseReceipt).Assembly,
             typeof(ErpReceiptQualityStatuses).Assembly,
-            [typeof(ErpReceiptQualityStatuses).FullName!]),
+            [typeof(ErpReceiptQualityStatuses).FullName!, typeof(PurchaseReceiptInventoryPostingRoute).FullName!]),
         // #1891 / #1892 将在对应 Domain 引用化时使用；先登记开门边界，禁止放宽到整个契约程序集。
         new(
             typeof(StockMovement).Assembly,
             typeof(InventoryQualityStatuses).Assembly,
             [typeof(InventoryQualityStatuses).FullName!, typeof(InventoryMovementTypes).FullName!]),
+        // #3747：序列号追踪策略是 MasterData 字典的 SystemEnum 码集，MES 领域、MES 读写面与业务网关
+        // 报工判定此前各抄一份；下沉到 Contracts.MasterData 后 Domain 直接引它。
+        new(
+            typeof(ProductionReportSerialNumber).Assembly,
+            typeof(MasterDataSerialTrackingPolicies).Assembly,
+            [typeof(MasterDataSerialTrackingPolicies).FullName!]),
         new(
             typeof(InspectionRecord).Assembly,
             typeof(QualityInspectionDispositionStatuses).Assembly,
-            [typeof(QualityInspectionDispositionStatuses).FullName!]),
+            [
+                typeof(QualityInspectionDispositionStatuses).FullName!,
+                // #2976：检验来源环节值域下沉到共享词表，Domain 的 SourceTypes 直接引它，
+                // 免得 Domain 与跨服务消费者各留一份字面量再悄悄漂移。
+                typeof(QualityInspectionSourceTypes).FullName!,
+                // #3191：来源**服务**轴同样下沉。此前这条轴没有词表，跨服务消费者无物可引，
+                // 排程侧那道门于是拿事件信封面常量凑数，恒不相等。
+                typeof(QualityInspectionSourceServices).FullName!,
+            ]),
     ];
 
     /// <summary>
@@ -119,11 +137,15 @@ public sealed class ContractBoundaryTests
                 "Nerv.IIP.Business.Approval.Domain -> Nerv.IIP.Contracts.Approval: "
                 + "Nerv.IIP.Contracts.Approval.ApprovalChainStatuses,Nerv.IIP.Contracts.Approval.ApprovalDecisions",
                 "Nerv.IIP.Business.Erp.Domain -> Nerv.IIP.Contracts.Erp: "
-                + "Nerv.IIP.Contracts.Erp.ErpReceiptQualityStatuses",
+                + "Nerv.IIP.Contracts.Erp.ErpReceiptQualityStatuses,Nerv.IIP.Contracts.Erp.PurchaseReceiptInventoryPostingRoute",
                 "Nerv.IIP.Business.Inventory.Domain -> Nerv.IIP.Contracts.Inventory: "
                 + "Nerv.IIP.Contracts.Inventory.InventoryMovementTypes,Nerv.IIP.Contracts.Inventory.InventoryQualityStatuses",
+                "Nerv.IIP.Business.Mes.Domain -> Nerv.IIP.Contracts.MasterData: "
+                + "Nerv.IIP.Contracts.MasterData.MasterDataSerialTrackingPolicies",
                 "Nerv.IIP.Business.Quality.Domain -> Nerv.IIP.Contracts.Quality: "
-                + "Nerv.IIP.Contracts.Quality.QualityInspectionDispositionStatuses",
+                + "Nerv.IIP.Contracts.Quality.QualityInspectionDispositionStatuses,"
+                + "Nerv.IIP.Contracts.Quality.QualityInspectionSourceServices,"
+                + "Nerv.IIP.Contracts.Quality.QualityInspectionSourceTypes",
             ],
             registrations);
     }

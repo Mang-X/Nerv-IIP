@@ -13,6 +13,7 @@
   "dependencies": {
     "@lucide/vue": "1.24.0",
     "@nerv-iip/api-client": "workspace:*",
+    "@nerv-iip/business-core": "workspace:*",
     "@nerv-iip/ui": "workspace:*",
     "@vueuse/core": "^14.3.0",
     "vue": "3.5.39"

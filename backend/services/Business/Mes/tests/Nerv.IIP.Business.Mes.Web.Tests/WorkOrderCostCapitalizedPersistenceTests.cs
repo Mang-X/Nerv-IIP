@@ -146,7 +146,8 @@ public sealed class WorkOrderCostCapitalizedPersistenceTests
                     10m,
                     "ea",
                     completedAtUtc.AddMinutes(1),
-                    UnitCost: null,
+                    // 等价旧调用仍可能带客户端成本，但创建必须只采用 ERP 资本化读面。
+                    UnitCost: 12.34m,
                     IdempotencyKey: "receipt-after-capitalization",
                     ProducedLotNo: "LOT-001"),
                 CancellationToken.None);

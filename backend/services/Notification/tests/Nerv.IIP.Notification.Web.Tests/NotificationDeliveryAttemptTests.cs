@@ -37,10 +37,7 @@ public sealed class NotificationDeliveryAttemptTests
         var deliveryService = fixture.CreateDeliveryService(emailProvider);
         var handler = fixture.CreateSubmitHandler(deliveryService);
 
-        await handler.Handle(new SubmitNotificationIntentCommand(
-            "org-001",
-            "env-dev",
-            CreateIntent("dedupe-email-dispatch", ["user:admin"]),
+        await handler.Handle(SubmitCommand(fixture, CreateIntent("dedupe-email-dispatch", ["user:admin"]),
             DateTimeOffset.Parse("2026-07-03T00:01:00Z")), CancellationToken.None);
 
         Assert.Empty(emailProvider.Sent);
@@ -96,10 +93,7 @@ public sealed class NotificationDeliveryAttemptTests
         var emailProvider = new RecordingDeliveryProvider(NotificationDeliveryChannels.Email);
         var handler = fixture.CreateSubmitHandler(emailProvider);
 
-        await handler.Handle(new SubmitNotificationIntentCommand(
-            "org-001",
-            "env-dev",
-            CreateIntent("dedupe-email-muted", ["user:admin"], severity: NotificationContractConstants.SeverityWarning),
+        await handler.Handle(SubmitCommand(fixture, CreateIntent("dedupe-email-muted", ["user:admin"], severity: NotificationContractConstants.SeverityWarning),
             DateTimeOffset.Parse("2026-07-03T00:01:00Z")), CancellationToken.None);
 
         Assert.Empty(emailProvider.Sent);
@@ -132,10 +126,7 @@ public sealed class NotificationDeliveryAttemptTests
         var deliveryService = fixture.CreateDeliveryService(weComProvider);
         var handler = fixture.CreateSubmitHandler(deliveryService);
 
-        await handler.Handle(new SubmitNotificationIntentCommand(
-            "org-001",
-            "env-dev",
-            CreateIntent(
+        await handler.Handle(SubmitCommand(fixture, CreateIntent(
                 "dedupe-critical-wecom",
                 ["user:admin"],
                 sourceEventType: "industrialTelemetry.AlarmRaised",
@@ -177,10 +168,7 @@ public sealed class NotificationDeliveryAttemptTests
         var deliveryService = fixture.CreateDeliveryService(webhookProvider);
         var handler = fixture.CreateSubmitHandler(deliveryService);
 
-        await handler.Handle(new SubmitNotificationIntentCommand(
-            "org-001",
-            "env-dev",
-            CreateIntent("dedupe-webhook-retry", ["user:admin"]),
+        await handler.Handle(SubmitCommand(fixture, CreateIntent("dedupe-webhook-retry", ["user:admin"]),
             DateTimeOffset.Parse("2026-07-03T00:01:00Z")), CancellationToken.None);
 
         await deliveryService.DispatchDueAttemptsAsync(DateTimeOffset.Parse("2026-07-03T00:01:01Z"), CancellationToken.None);
@@ -225,10 +213,7 @@ public sealed class NotificationDeliveryAttemptTests
         var deliveryService = fixture.CreateDeliveryService([emailProvider], emailMaxPerMinute: 1);
         var handler = fixture.CreateSubmitHandler(deliveryService);
 
-        await handler.Handle(new SubmitNotificationIntentCommand(
-            "org-001",
-            "env-dev",
-            CreateIntent("dedupe-email-rate-limit", ["user:admin", "user:operator"]),
+        await handler.Handle(SubmitCommand(fixture, CreateIntent("dedupe-email-rate-limit", ["user:admin", "user:operator"]),
             DateTimeOffset.Parse("2026-07-03T00:01:00Z")), CancellationToken.None);
 
         await deliveryService.DispatchDueAttemptsAsync(DateTimeOffset.Parse("2026-07-03T00:01:01Z"), CancellationToken.None);
@@ -263,19 +248,13 @@ public sealed class NotificationDeliveryAttemptTests
 
         var firstProvider = new RecordingDeliveryProvider(NotificationDeliveryChannels.Email);
         var firstDeliveryService = fixture.CreateDeliveryService([firstProvider], emailMaxPerMinute: 1);
-        await fixture.CreateSubmitHandler(firstDeliveryService).Handle(new SubmitNotificationIntentCommand(
-            "org-001",
-            "env-dev",
-            CreateIntent("dedupe-email-rate-limit-first", ["user:admin"]),
+        await fixture.CreateSubmitHandler(firstDeliveryService).Handle(SubmitCommand(fixture, CreateIntent("dedupe-email-rate-limit-first", ["user:admin"]),
             DateTimeOffset.Parse("2026-07-03T00:01:00Z")), CancellationToken.None);
         await firstDeliveryService.DispatchDueAttemptsAsync(DateTimeOffset.Parse("2026-07-03T00:01:01Z"), CancellationToken.None);
 
         var secondProvider = new RecordingDeliveryProvider(NotificationDeliveryChannels.Email);
         var secondDeliveryService = fixture.CreateDeliveryService([secondProvider], emailMaxPerMinute: 1);
-        await fixture.CreateSubmitHandler(secondDeliveryService).Handle(new SubmitNotificationIntentCommand(
-            "org-001",
-            "env-dev",
-            CreateIntent("dedupe-email-rate-limit-second", ["user:admin"]),
+        await fixture.CreateSubmitHandler(secondDeliveryService).Handle(SubmitCommand(fixture, CreateIntent("dedupe-email-rate-limit-second", ["user:admin"]),
             DateTimeOffset.Parse("2026-07-03T00:01:10Z")), CancellationToken.None);
         await secondDeliveryService.DispatchDueAttemptsAsync(DateTimeOffset.Parse("2026-07-03T00:01:11Z"), CancellationToken.None);
 
@@ -293,10 +272,7 @@ public sealed class NotificationDeliveryAttemptTests
         await using var fixture = await NotificationSqliteFixture.CreateAsync();
         var handler = fixture.CreateSubmitHandler();
 
-        var response = await handler.Handle(new SubmitNotificationIntentCommand(
-            "org-001",
-            "env-dev",
-            CreateIntent("dedupe-delivery-attempt", ["user:admin", "user:operator"]),
+        var response = await handler.Handle(SubmitCommand(fixture, CreateIntent("dedupe-delivery-attempt", ["user:admin", "user:operator"]),
             DateTimeOffset.Parse("2026-06-29T00:00:00Z")), CancellationToken.None);
 
         var attempts = await fixture.Db.DeliveryAttempts.OrderBy(x => x.NotificationMessageId).ToListAsync();
@@ -352,10 +328,7 @@ public sealed class NotificationDeliveryAttemptTests
     {
         await using var fixture = await NotificationSqliteFixture.CreateAsync();
         var firstHandler = fixture.CreateSubmitHandler();
-        var first = await firstHandler.Handle(new SubmitNotificationIntentCommand(
-            "org-001",
-            "env-dev",
-            CreateIntent("dedupe-race", ["user:admin"]),
+        var first = await firstHandler.Handle(SubmitCommand(fixture, CreateIntent("dedupe-race", ["user:admin"]),
             DateTimeOffset.Parse("2026-06-29T00:00:00Z")), CancellationToken.None);
 
         await using var secondDb = fixture.CreateContext();
@@ -365,10 +338,7 @@ public sealed class NotificationDeliveryAttemptTests
             secondDb,
             fixture.CreateDeliveryService(secondDb));
 
-        var second = await secondHandler.Handle(new SubmitNotificationIntentCommand(
-            "org-001",
-            "env-dev",
-            CreateIntent("dedupe-race", ["user:operator"]),
+        var second = await secondHandler.Handle(SubmitCommand(fixture, CreateIntent("dedupe-race", ["user:operator"]),
             DateTimeOffset.Parse("2026-06-29T00:00:01Z")), CancellationToken.None);
 
         Assert.True(second.Duplicate);
@@ -377,6 +347,18 @@ public sealed class NotificationDeliveryAttemptTests
         Assert.Equal(1, await fixture.Db.NotificationIntents.CountAsync());
         Assert.Equal(1, await fixture.Db.NotificationMessages.CountAsync());
     }
+
+    // 命令不收裸 string 摘要：测试与生产走同一个具名工厂，上界同样从 EF 模型派生而不是手抄列宽。
+    private static SubmitNotificationIntentCommand SubmitCommand(
+        NotificationSqliteFixture fixture,
+        SubmitNotificationIntentRequest request,
+        DateTimeOffset now) =>
+        new(
+            "org-001",
+            "env-dev",
+            request,
+            NotificationSummary.Render(request.Summary, NotificationSummaryBudget.FromModel(fixture.Db.Model)),
+            now);
 
     private static SubmitNotificationIntentRequest CreateIntent(string dedupeKey, IReadOnlyCollection<string> recipients)
     {

@@ -35,12 +35,18 @@ public sealed class HttpMasterDataIntegrationEventContextAccessor(IHttpContextAc
 
     private static string ResolveActor(ClaimsPrincipal? user, IHeaderDictionary? headers)
     {
+        if (user?.Identity?.IsAuthenticated != true)
+        {
+            return $"system:{MasterDataIntegrationEventSources.BusinessMasterData}";
+        }
+
         var forwardedActor = ReadHeader(headers, "X-Authenticated-Actor");
         var tokenType = user?.FindFirstValue("token_type");
-        if (string.Equals(tokenType, "internal_service", StringComparison.Ordinal)
-            && IsCanonicalActor(forwardedActor))
+        if (string.Equals(tokenType, "internal_service", StringComparison.Ordinal))
         {
-            return forwardedActor!;
+            return IsCanonicalActor(forwardedActor)
+                ? forwardedActor!
+                : $"system:{MasterDataIntegrationEventSources.BusinessMasterData}";
         }
 
         var subject = user?.FindFirstValue(ClaimTypes.NameIdentifier)

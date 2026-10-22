@@ -46,7 +46,8 @@ function Wait-NervFullStackPostgresRelations {
                 ) `
                 -WorkingDirectory $runtimeLibraryRoot `
                 -TimeoutSeconds 30 `
-                -Name "fullstack-postgres-relations-$OwnedDatabase"
+                -Name "fullstack-postgres-relations-$OwnedDatabase" `
+                -Environment (Get-NervFullStackNonSeedEnvironment)
             $count = 0
             if (-not [int]::TryParse("$($result.Stdout)".Trim(), [ref] $count)) {
                 throw "PostgreSQL relation readiness returned a non-integer result for '$OwnedDatabase'."
@@ -287,7 +288,8 @@ function Get-NervAspireDescribeObject {
         -WorkingDirectory $WorkingDirectory `
         -TimeoutSeconds 60 `
         -Name 'fullstack-aspire-describe' `
-        -AllowPartialOutput
+        -AllowPartialOutput `
+        -Environment (Get-NervFullStackNonSeedEnvironment)
     return (Read-NervAspireJson -Text "$($result.Stdout)" -RequireResources)
 }
 
@@ -304,7 +306,8 @@ function Wait-NervAspireResource {
         -WorkingDirectory $WorkingDirectory `
         -TimeoutSeconds ($TimeoutSeconds + 30) `
         -Name "fullstack-aspire-wait-$ResourceName" `
-        -AllowPartialOutput | Out-Null
+        -AllowPartialOutput `
+        -Environment (Get-NervFullStackNonSeedEnvironment) | Out-Null
 }
 
 function Get-NervAspireDescribeObjectWithEndpoints {
@@ -401,6 +404,7 @@ function Invoke-NervFullStackSmokeScenario {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
         [Parameter(Mandatory)] [string] $SessionAdminPassword,
+        [string] $SessionWorkerPassword,
         [scriptblock] $WaitAction,
         [scriptblock] $HttpCheckAction,
         [scriptblock] $AspireSnapshotAction,
@@ -462,6 +466,9 @@ function Invoke-NervFullStackSmokeScenario {
         NERV_IIP_PLAYWRIGHT_BASE_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'business-console'
         NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $SessionAdminPassword
     }
+    if (-not [string]::IsNullOrWhiteSpace($SessionWorkerPassword)) {
+        $childEnvironment.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD = $SessionWorkerPassword
+    }
     & $BrowserAction $childEnvironment $Manifest | Out-Null
     return [pscustomobject]@{ ExitCode = 0; ChildEnvironment = $childEnvironment; CheckedResources = $resourceNames }
 }
@@ -495,17 +502,21 @@ function Invoke-NervFullStackProxyBrowserCheck {
     $browserEnvironment = @{}
     foreach ($entry in $Environment.GetEnumerator()) { $browserEnvironment[$entry.Key] = "$($entry.Value)" }
     $browserEnvironment.PLAYWRIGHT_JSON_OUTPUT_FILE = $reportPath
-    Invoke-WithScopedEnvironment -Variables $browserEnvironment -ScriptBlock {
-        Invoke-Pnpm `
-            -Arguments @(
-                '-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test',
-                'e2e/fullstack-proxy.spec.ts', '--project=desktop', '--reporter=json',
-                '--output', (Join-Path "$($Manifest.artifactPath)" 'test-results')
-            ) `
-            -WorkingDirectory "$($Manifest.worktreeRoot)" `
-            -TimeoutSeconds 300 `
-            -Name "fullstack-$($Manifest.sessionId)-playwright" | Out-Null
+    if (-not $browserEnvironment.ContainsKey('NERV_IIP_LEADER_DEMO_WORKER_PASSWORD')) {
+        $browserEnvironment.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD = $null
     }
+    $browserEnvironment['Parameters__iam-seed-demo-worker-password'] = $null
+    Invoke-Pnpm `
+        -Arguments @(
+            '-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test',
+            'e2e/fullstack-proxy.spec.ts', '--project=desktop', '--reporter=json',
+            '--output', (Join-Path "$($Manifest.artifactPath)" 'test-results')
+        ) `
+        -WorkingDirectory "$($Manifest.worktreeRoot)" `
+        -TimeoutSeconds 300 `
+        -Name "fullstack-$($Manifest.sessionId)-playwright" `
+        -Environment $browserEnvironment `
+        -SensitiveValues @($Environment['NERV_IIP_FULLSTACK_ADMIN_PASSWORD'], $Environment['NERV_IIP_LEADER_DEMO_WORKER_PASSWORD']) | Out-Null
     return Assert-NervPlaywrightJsonReport -ReportPath $reportPath
 }
 
@@ -593,25 +604,252 @@ function Invoke-NervLeaderDemoMainChainBrowserCheck {
     foreach ($entry in $Environment.GetEnumerator()) { $browserEnvironment[$entry.Key] = "$($entry.Value)" }
     $browserEnvironment.PLAYWRIGHT_JSON_OUTPUT_FILE = $reportPath
     $browserEnvironment.NERV_IIP_MAIN_CHAIN_EVIDENCE_PATH = $evidencePath
+    if (-not $browserEnvironment.ContainsKey('NERV_IIP_LEADER_DEMO_WORKER_PASSWORD')) {
+        $browserEnvironment.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD = $null
+    }
+    $browserEnvironment['Parameters__iam-seed-demo-worker-password'] = $null
+    Invoke-Pnpm `
+        -Arguments @(
+            '-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test',
+            'e2e/leader-demo-main-chain.spec.ts', '--project=desktop', '--reporter=json',
+            '--output', (Join-Path "$($Manifest.artifactPath)" 'test-results')
+        ) `
+        -WorkingDirectory "$($Manifest.worktreeRoot)" `
+        -TimeoutSeconds 1200 `
+        -Name "fullstack-$($Manifest.sessionId)-leader-demo-main-chain" `
+        -Environment $browserEnvironment `
+        -SensitiveValues @($Environment['NERV_IIP_FULLSTACK_ADMIN_PASSWORD'], $Environment['NERV_IIP_LEADER_DEMO_WORKER_PASSWORD']) | Out-Null
+    Assert-NervPlaywrightJsonReport -ReportPath $reportPath | Out-Null
+    return Assert-NervLeaderDemoMainChainEvidence -EvidencePath $evidencePath
+}
+
+function Assert-NervIssue1912WalkthroughEvidence {
+    param([Parameter(Mandatory)] [string] $EvidencePath)
+
+    if (-not (Test-Path -LiteralPath $EvidencePath -PathType Leaf)) {
+        throw "Issue #1912 walkthrough evidence was not created at '$EvidencePath'."
+    }
+    $evidence = Get-Content -LiteralPath $EvidencePath -Raw | ConvertFrom-Json -Depth 100
+    if (-not [string]::Equals([string]$evidence.issue, 'GitHub #1912 / NERV-1127', [StringComparison]::Ordinal)) {
+        throw 'Issue #1912 walkthrough evidence must identify GitHub #1912 / NERV-1127.'
+    }
+    $requiredProfile = [ordered]@{
+        runtimeProfileSource = 'session-manifest'
+        transport = 'redis-cross-process'
+        persistence = 'postgresql'
+        worldEnabled = 'false'
+        historyEnabled = 'false'
+        scaleOrderCount = '0'
+    }
+    foreach ($profile in $requiredProfile.GetEnumerator()) {
+        if (-not [string]::Equals([string]$evidence.($profile.Key), [string]$profile.Value, [StringComparison]::Ordinal)) {
+            throw "Issue #1912 walkthrough evidence must declare $($profile.Key)=$($profile.Value)."
+        }
+    }
+    $requiredIdentity = [ordered]@{
+        rfqNo = 'RFQ-WALK-001'
+        supplierQuotationNo = 'SQ-WALK-001'
+        salesQuotationNo = 'QUO-WALK-001'
+        purchaseOrderNo = 'PO-WALK-001'
+        purchaseReceiptNo = 'PR-WALK-001'
+        salesOrderNo = 'SO-WALK-001'
+        deliveryOrderNo = 'DO-WALK-001'
+    }
+    foreach ($identity in $requiredIdentity.GetEnumerator()) {
+        if (-not [string]::Equals([string]$evidence.($identity.Key), [string]$identity.Value, [StringComparison]::Ordinal)) {
+            throw "Issue #1912 walkthrough evidence must identify $($identity.Key)=$($identity.Value)."
+        }
+    }
+
+    $requiredNodes = @(
+        'rfq-supplier-quotation',
+        'supplier-quotation-purchase-order',
+        'purchase-order-approval',
+        'purchase-order-receipt',
+        'receipt-inbound-inventory',
+        'sales-quotation-sales-order',
+        'sales-order-demand',
+        'demand-mrp-suggestion',
+        'mrp-suggestion-mes-work-order',
+        'mes-work-order-production',
+        'production-finished-goods-receipt',
+        'finished-goods-inventory',
+        'sales-order-delivery',
+        'delivery-wms-outbound',
+        'wms-completed-erp-delivery',
+        'erp-account-receivable'
+    )
+    $requiredNodeSet = [Collections.Generic.HashSet[string]]::new([string[]]@($requiredNodes), [StringComparer]::Ordinal)
+    $entries = @($evidence.entries)
+    if ($entries.Count -ne $requiredNodes.Count) {
+        throw "Issue #1912 walkthrough evidence must contain exactly $($requiredNodes.Count) entries; found $($entries.Count)."
+    }
+    foreach ($node in $requiredNodes) {
+        $nodeEntries = @($entries | Where-Object { [string]::Equals([string]$_.node, $node, [StringComparison]::Ordinal) })
+        if ($nodeEntries.Count -ne 1) {
+            throw "Issue #1912 walkthrough evidence must contain exactly one '$node' entry; found $($nodeEntries.Count)."
+        }
+    }
+    foreach ($entry in $entries) {
+        if (-not [string]::Equals([string]$entry.conclusion, 'runtime-confirmed', [StringComparison]::Ordinal)) {
+            throw "Issue #1912 walkthrough evidence cannot pass with node '$($entry.node)' conclusion '$($entry.conclusion)'."
+        }
+        foreach ($field in @('sourceObject', 'downstreamObject', 'stableKey', 'demoWording')) {
+            if ([string]::IsNullOrWhiteSpace([string]$entry.$field)) {
+                throw "Issue #1912 walkthrough evidence node '$($entry.node)' is missing '$field'."
+            }
+        }
+    }
+
+    $uiProofs = @($evidence.uiEvidence)
+    $uiProofNodeSet = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($proof in $uiProofs) {
+        if ([int]$proof.pageHttpStatus -ne 200 -or [int]$proof.listHttpStatus -ne 200) {
+            throw "Issue #1912 UI proof for '$($proof.page)' must record page/list HTTP 200."
+        }
+        if (-not $requiredNodeSet.Contains([string]$proof.node)) {
+            throw "Issue #1912 UI proof references unknown walkthrough node '$($proof.node)'."
+        }
+        [void] $uiProofNodeSet.Add([string]$proof.node)
+        foreach ($field in @('node', 'page', 'listPath', 'stableKey', 'renderedRowText', 'emptyText', 'screenshot')) {
+            if ([string]::IsNullOrWhiteSpace([string]$proof.$field)) {
+                throw "Issue #1912 UI proof is missing '$field'."
+            }
+        }
+        if (-not (Test-Path -LiteralPath ([string]$proof.screenshot) -PathType Leaf)) {
+            throw "Issue #1912 UI proof screenshot was not created at '$($proof.screenshot)'."
+        }
+    }
+    foreach ($node in $requiredNodes) {
+        if (-not $uiProofNodeSet.Contains($node)) {
+            throw "Issue #1912 walkthrough evidence is missing a UI proof for required node '$node'."
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$evidence.requestFailurePolicy)) {
+        throw 'Issue #1912 walkthrough evidence must declare its request failure policy.'
+    }
+    if (@($evidence.failedRequests).Count -ne 0) { throw 'Issue #1912 walkthrough evidence contains failed browser requests.' }
+    if (@($evidence.pageErrors).Count -ne 0) { throw 'Issue #1912 walkthrough evidence contains browser page errors.' }
+    if (-not [string]::Equals([string]$evidence.conclusion, 'runtime-confirmed', [StringComparison]::Ordinal)) {
+        throw 'Issue #1912 walkthrough evidence conclusion is not runtime-confirmed.'
+    }
+    if ([int]$evidence.summary.'runtime-confirmed' -ne $requiredNodes.Count -or [int]$evidence.summary.gap -ne 0 -or [int]$evidence.summary.'not-verified' -ne 0) {
+        throw 'Issue #1912 walkthrough evidence summary is not a complete runtime-confirmed set.'
+    }
+    $raw = Get-Content -LiteralPath $EvidencePath -Raw
+    foreach ($forbiddenPattern in @('(?i)authorization', '(?i)bearer\s+', '(?i)password', '(?i)access[_-]?token', '(?i)refresh[_-]?token', '(?i)\b(?:token|secret|connectionString|jwt)\b\s*["'']?\s*[:=]\s*(?!["'']?<redacted)')) {
+        if ($raw -match $forbiddenPattern) { throw "Issue #1912 walkthrough evidence contains forbidden secret-shaped text matching '$forbiddenPattern'." }
+    }
+    return $evidence
+}
+
+function Invoke-NervIssue1912WalkthroughBrowserCheck {
+    param(
+        [Parameter(Mandatory)] [hashtable] $Environment,
+        [Parameter(Mandatory)] [object] $Manifest
+    )
+
+    [void] [System.IO.Directory]::CreateDirectory("$($Manifest.artifactPath)")
+    $reportPath = Join-Path "$($Manifest.artifactPath)" 'playwright-issue1912-real-machine-walkthrough.json'
+    $evidencePath = Join-Path "$($Manifest.artifactPath)" 'issue1912-real-machine-walkthrough.json'
+    Remove-Item -LiteralPath $reportPath, $evidencePath -Force -ErrorAction SilentlyContinue
+    $browserEnvironment = @{}
+    foreach ($entry in $Environment.GetEnumerator()) { $browserEnvironment[$entry.Key] = "$($entry.Value)" }
+    $browserEnvironment.PLAYWRIGHT_JSON_OUTPUT_FILE = $reportPath
+    $browserEnvironment.NERV_IIP_ISSUE_1912_EVIDENCE_PATH = $evidencePath
     Invoke-WithScopedEnvironment -Variables $browserEnvironment -ScriptBlock {
         Invoke-Pnpm `
             -Arguments @(
                 '-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test',
-                'e2e/leader-demo-main-chain.spec.ts', '--project=desktop', '--reporter=json',
+                'e2e/issue1912-real-machine-walkthrough.spec.ts', '--project=desktop', '--reporter=json',
                 '--output', (Join-Path "$($Manifest.artifactPath)" 'test-results')
             ) `
             -WorkingDirectory "$($Manifest.worktreeRoot)" `
-            -TimeoutSeconds 1200 `
-            -Name "fullstack-$($Manifest.sessionId)-leader-demo-main-chain" | Out-Null
+            -TimeoutSeconds 1800 `
+            -Name "fullstack-$($Manifest.sessionId)-issue1912-real-machine-walkthrough" `
+            -SensitiveValues @($Environment['NERV_IIP_FULLSTACK_ADMIN_PASSWORD'], $Environment['NERV_IIP_LEADER_DEMO_WORKER_PASSWORD']) | Out-Null
     }
     Assert-NervPlaywrightJsonReport -ReportPath $reportPath | Out-Null
-    return Assert-NervLeaderDemoMainChainEvidence -EvidencePath $evidencePath
+    return Assert-NervIssue1912WalkthroughEvidence -EvidencePath $evidencePath
+}
+
+function Invoke-NervIssue1912WalkthroughScenario {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [string] $SessionAdminPassword,
+        [Parameter(Mandatory)] [string] $SessionWorkerPassword,
+        [scriptblock] $WaitAction,
+        [scriptblock] $AspireSnapshotAction,
+        [scriptblock] $BrowserAction
+    )
+
+    if ([string]::IsNullOrWhiteSpace($SessionWorkerPassword)) {
+        throw 'Issue #1912 walkthrough requires the managed WMS worker password; rerun with -EnableWmsDemoWorker.'
+    }
+
+    if ($null -eq $WaitAction) {
+        $WaitAction = {
+            param($Name, $InputManifest)
+            Wait-NervAspireResource `
+                -AppHostProject "$($InputManifest.appHostProject)" `
+                -ResourceName $Name `
+                -WorkingDirectory "$($InputManifest.worktreeRoot)"
+        }
+    }
+    if ($null -eq $AspireSnapshotAction) {
+        $AspireSnapshotAction = {
+            param($InputManifest)
+            Get-NervAspireDescribeObject -AppHostProject "$($InputManifest.appHostProject)" -WorkingDirectory "$($InputManifest.worktreeRoot)"
+        }
+    }
+    if ($null -eq $BrowserAction) {
+        $BrowserAction = {
+            param($Environment, $InputManifest)
+            Invoke-NervIssue1912WalkthroughBrowserCheck -Environment $Environment -Manifest $InputManifest | Out-Null
+        }
+    }
+    if (-not [string]::Equals([string]$Manifest.runtime.messagingProvider, 'Redis', [StringComparison]::Ordinal)) {
+        throw "Issue #1912 walkthrough requires a Redis session profile; manifest recorded '$($Manifest.runtime.messagingProvider)'."
+    }
+    if (-not [string]::Equals([string]$Manifest.runtime.persistenceProvider, 'PostgreSQL', [StringComparison]::Ordinal)) {
+        throw "Issue #1912 walkthrough requires a PostgreSQL session profile; manifest recorded '$($Manifest.runtime.persistenceProvider)'."
+    }
+    $resourceNames = @(
+        'postgres', 'redis', 'iam', 'gateway', 'business-gateway', 'business-console',
+        'business-master-data', 'business-product-engineering', 'business-inventory',
+        'business-quality', 'business-mes', 'business-demand-planning', 'business-wms',
+        'business-erp', 'business-approval'
+    )
+    foreach ($resourceName in $resourceNames) { & $WaitAction $resourceName $Manifest | Out-Null }
+    $snapshot = & $AspireSnapshotAction $Manifest
+    $resourceNameSet = [Collections.Generic.HashSet[string]]::new([string[]]@($resourceNames), [StringComparer]::Ordinal)
+    $finishedProjects = @($snapshot.resources | Where-Object {
+        "$($_.resourceType)" -like 'Project*' -and [string]::Equals([string]$_.state, 'Finished', [StringComparison]::OrdinalIgnoreCase) -and
+        $resourceNameSet.Contains([string]$_.displayName)
+    })
+    if ($finishedProjects.Count -gt 0) {
+        throw "Aspire project resources finished unexpectedly: $($finishedProjects.displayName -join ', ')."
+    }
+    $childEnvironment = @{
+        NERV_IIP_PLAYWRIGHT_BASE_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'business-console'
+        NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $SessionAdminPassword
+        NERV_IIP_LEADER_DEMO_WORKER_PASSWORD = $SessionWorkerPassword
+        NERV_IIP_ISSUE_1912_RUNTIME_PROFILE_SOURCE = 'session-manifest'
+        NERV_IIP_ISSUE_1912_TRANSPORT = 'redis-cross-process'
+        NERV_IIP_ISSUE_1912_PERSISTENCE = 'postgresql'
+        NERV_IIP_ISSUE_1912_WORLD_ENABLED = 'false'
+        NERV_IIP_ISSUE_1912_HISTORY_ENABLED = 'false'
+        NERV_IIP_ISSUE_1912_SCALE_ORDER_COUNT = '0'
+    }
+    & $BrowserAction $childEnvironment $Manifest | Out-Null
+    return [pscustomobject]@{ ExitCode = 0; ChildEnvironment = $childEnvironment; CheckedResources = $resourceNames }
 }
 
 function Invoke-NervLeaderDemoMainChainScenario {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
         [Parameter(Mandatory)] [string] $SessionAdminPassword,
+        [string] $SessionWorkerPassword,
         [scriptblock] $WaitAction,
         [scriptblock] $AspireSnapshotAction,
         [scriptblock] $BrowserAction
@@ -669,6 +907,9 @@ function Invoke-NervLeaderDemoMainChainScenario {
         NERV_IIP_MAIN_CHAIN_RUNTIME_PROFILE_SOURCE = 'session-manifest'
         NERV_IIP_MAIN_CHAIN_TRANSPORT = 'redis-cross-process'
         NERV_IIP_MAIN_CHAIN_PERSISTENCE = 'postgresql'
+    }
+    if (-not [string]::IsNullOrWhiteSpace($SessionWorkerPassword)) {
+        $childEnvironment.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD = $SessionWorkerPassword
     }
     & $BrowserAction $childEnvironment $Manifest | Out-Null
     return [pscustomobject]@{ ExitCode = 0; ChildEnvironment = $childEnvironment; CheckedResources = $resourceNames }
@@ -847,17 +1088,21 @@ function Invoke-NervLeaderDemoBranchBrowserCheck {
     foreach ($entry in $Environment.GetEnumerator()) { $browserEnvironment[$entry.Key] = "$($entry.Value)" }
     $browserEnvironment.PLAYWRIGHT_JSON_OUTPUT_FILE = $reportPath
     $browserEnvironment[$EvidenceEnvironmentVariable] = $evidencePath
-    Invoke-WithScopedEnvironment -Variables $browserEnvironment -ScriptBlock {
-        Invoke-Pnpm `
-            -Arguments @(
-                '-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test',
-                $SpecFile, '--project=desktop', '--reporter=json',
-                '--output', (Join-Path "$($Manifest.artifactPath)" 'test-results')
-            ) `
-            -WorkingDirectory "$($Manifest.worktreeRoot)" `
-            -TimeoutSeconds 900 `
-            -Name "fullstack-$($Manifest.sessionId)-$ArtifactSlug" | Out-Null
+    if (-not $browserEnvironment.ContainsKey('NERV_IIP_LEADER_DEMO_WORKER_PASSWORD')) {
+        $browserEnvironment.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD = $null
     }
+    $browserEnvironment['Parameters__iam-seed-demo-worker-password'] = $null
+    Invoke-Pnpm `
+        -Arguments @(
+            '-C', 'frontend', '--filter', '@nerv-iip/business-console', 'exec', 'playwright', 'test',
+            $SpecFile, '--project=desktop', '--reporter=json',
+            '--output', (Join-Path "$($Manifest.artifactPath)" 'test-results')
+        ) `
+        -WorkingDirectory "$($Manifest.worktreeRoot)" `
+        -TimeoutSeconds 900 `
+        -Name "fullstack-$($Manifest.sessionId)-$ArtifactSlug" `
+        -Environment $browserEnvironment `
+        -SensitiveValues @($Environment['NERV_IIP_FULLSTACK_ADMIN_PASSWORD'], $Environment['NERV_IIP_LEADER_DEMO_WORKER_PASSWORD']) | Out-Null
     Assert-NervPlaywrightJsonReport -ReportPath $reportPath | Out-Null
     return & $EvidenceAssertion $evidencePath
 }
@@ -896,6 +1141,7 @@ function Invoke-NervLeaderDemoBranchScenario {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
         [Parameter(Mandatory)] [string] $SessionAdminPassword,
+        [string] $SessionWorkerPassword,
         [Parameter(Mandatory)] [string] $ScenarioLabel,
         [Parameter(Mandatory)] [string[]] $ResourceNames,
         [Parameter(Mandatory)] [System.Collections.IDictionary] $ScenarioEnvironment,
@@ -944,6 +1190,9 @@ function Invoke-NervLeaderDemoBranchScenario {
         NERV_IIP_PLAYWRIGHT_BASE_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'business-console'
         NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $SessionAdminPassword
     }
+    if (-not [string]::IsNullOrWhiteSpace($SessionWorkerPassword)) {
+        $childEnvironment.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD = $SessionWorkerPassword
+    }
     foreach ($entry in $ScenarioEnvironment.GetEnumerator()) { $childEnvironment[$entry.Key] = "$($entry.Value)" }
     & $BrowserAction $childEnvironment $Manifest | Out-Null
     return [pscustomobject]@{ ExitCode = 0; ChildEnvironment = $childEnvironment; CheckedResources = $ResourceNames }
@@ -953,6 +1202,7 @@ function Invoke-NervLeaderDemoQualityBranchScenario {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
         [Parameter(Mandatory)] [string] $SessionAdminPassword,
+        [string] $SessionWorkerPassword,
         [scriptblock] $WaitAction,
         [scriptblock] $AspireSnapshotAction,
         [scriptblock] $BrowserAction
@@ -961,6 +1211,7 @@ function Invoke-NervLeaderDemoQualityBranchScenario {
     return Invoke-NervLeaderDemoBranchScenario `
         -Manifest $Manifest `
         -SessionAdminPassword $SessionAdminPassword `
+        -SessionWorkerPassword $SessionWorkerPassword `
         -ScenarioLabel 'Leader-demo quality-branch' `
         -ResourceNames @(
             'postgres', 'redis', 'iam', 'gateway', 'business-gateway', 'business-console',
@@ -984,6 +1235,7 @@ function Invoke-NervLeaderDemoEquipmentBranchScenario {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
         [Parameter(Mandatory)] [string] $SessionAdminPassword,
+        [string] $SessionWorkerPassword,
         [scriptblock] $WaitAction,
         [scriptblock] $AspireSnapshotAction,
         [scriptblock] $BrowserAction
@@ -992,6 +1244,7 @@ function Invoke-NervLeaderDemoEquipmentBranchScenario {
     return Invoke-NervLeaderDemoBranchScenario `
         -Manifest $Manifest `
         -SessionAdminPassword $SessionAdminPassword `
+        -SessionWorkerPassword $SessionWorkerPassword `
         -ScenarioLabel 'Leader-demo equipment-branch' `
         -ResourceNames @(
             'postgres', 'redis', 'iam', 'gateway', 'business-gateway', 'business-console',
@@ -1019,6 +1272,7 @@ function Get-NervFullStackGuardianSensitiveValues {
         'Parameters__iam-secrets-pepper',
         'Parameters__iam-enterprise-identity-mfa-code',
         'Parameters__internal-service-bearer-token',
+        'Parameters__template-asset-retirement-proof-secret-base64',
         'Parameters__redis-password',
         'Parameters__minio-root-password',
         'Parameters__iam-seed-admin-password',
@@ -1096,14 +1350,16 @@ function Invoke-NervFullStackGuardian {
     }
     if ($null -eq $StopAction) {
         $StopAction = {
-            Invoke-WithScopedEnvironment -Variables @{ NERV_IIP_FULLSTACK_CALLER_GUARDIAN_PID = "$PID" } -ScriptBlock {
-                Invoke-PwshScript `
-                    -ScriptPath (Join-Path $runtimeLibraryRoot 'scripts/fullstack-session.ps1') `
-                    -Arguments @('stop', '-SessionId', $SessionId) `
-                    -WorkingDirectory $runtimeLibraryRoot `
-                    -TimeoutSeconds 300 `
-                    -Name "fullstack-$SessionId-guardian-stop" | Out-Null
-            }
+            $stopEnvironment = Get-NervFullStackNonSeedEnvironment
+            $stopEnvironment.NERV_IIP_FULLSTACK_CALLER_GUARDIAN_PID = "$PID"
+            Invoke-PwshScript `
+                -ScriptPath (Join-Path $runtimeLibraryRoot 'scripts/fullstack-session.ps1') `
+                -Arguments @('stop', '-SessionId', $SessionId) `
+                -WorkingDirectory $runtimeLibraryRoot `
+                -TimeoutSeconds 300 `
+                -Name "fullstack-$SessionId-guardian-stop" `
+                -Environment $stopEnvironment `
+                -SensitiveValues @($effectiveSensitiveValues) | Out-Null
         }
     }
     if ($null -eq $DelayAction) { $DelayAction = { param($Seconds) Start-Sleep -Seconds $Seconds } }
@@ -1353,12 +1609,14 @@ function Collect-NervFullStackDiagnostics {
 
     if ($null -eq $LogAction) {
         $LogAction = {
-            param($ResourceName, $InputManifest, $BoundedTimeoutSeconds)
+            param($ResourceName, $InputManifest, $BoundedTimeoutSeconds, $InputSensitiveValues)
             $result = Invoke-AspireOutput `
                 -Arguments @('logs', $ResourceName, '--tail', '500', '--format', 'Json', '--apphost', "$($InputManifest.appHostProject)", '--non-interactive', '--nologo') `
                 -WorkingDirectory "$($InputManifest.worktreeRoot)" `
                 -TimeoutSeconds $BoundedTimeoutSeconds `
-                -Name "fullstack-$($InputManifest.sessionId)-collect-$ResourceName"
+                -Name "fullstack-$($InputManifest.sessionId)-collect-$ResourceName" `
+                -Environment (Get-NervFullStackNonSeedEnvironment) `
+                -SensitiveValues @($InputSensitiveValues)
             return "$($result.Stdout)"
         }
     }
@@ -1380,7 +1638,7 @@ function Collect-NervFullStackDiagnostics {
     )
     foreach ($resourceName in $resourceNames) {
         try {
-            $raw = (& $LogAction $resourceName $Manifest $TimeoutSeconds) -join "`n"
+            $raw = (& $LogAction $resourceName $Manifest $TimeoutSeconds $SensitiveValues) -join "`n"
             $safe = Protect-NervFullStackDiagnosticText -Text $raw -SensitiveValues $SensitiveValues
             [System.IO.File]::WriteAllText(
                 (Join-Path $logDirectory "$resourceName.ndjson"),
@@ -1428,16 +1686,17 @@ function Invoke-NervManagedFullStackRun {
     )
 
     $manifest = $null
+    $startupState = [pscustomobject]@{ SessionCreated = $false }
     $scenarioFailure = $null
     $cleanupFailure = $null
     $collectionFailures = [System.Collections.Generic.List[string]]::new()
     try {
-        $manifest = & $StartAction
+        $manifest = & $StartAction $startupState
         & $ScenarioAction $manifest | Out-Null
     }
     catch {
         $scenarioFailure = $_
-        if ($null -eq $manifest -and $null -ne $ResolveFailedManifestAction) {
+        if ($null -eq $manifest -and $startupState.SessionCreated -and $null -ne $ResolveFailedManifestAction) {
             try { $manifest = & $ResolveFailedManifestAction } catch { }
         }
         if ($null -ne $manifest -and $null -ne $FailureAction) {
@@ -1492,6 +1751,13 @@ function Get-NervFullStackEnvironment {
     }
 }
 
+function Get-NervFullStackNonSeedEnvironment {
+    return @{
+        'NERV_IIP_LEADER_DEMO_WORKER_PASSWORD' = $null
+        'Parameters__iam-seed-demo-worker-password' = $null
+    }
+}
+
 function New-NervFullStackSecretValue {
     param(
         [ValidateRange(16, 256)]
@@ -1519,7 +1785,9 @@ function ConvertTo-NervBase64Url {
 function New-NervFullStackSecretEnvironment {
     param(
         [Parameter(Mandatory)]
-        [string] $SessionId
+        [string] $SessionId,
+
+        [switch] $IncludeDemoWorkerPassword
     )
 
     if ($SessionId -notmatch $script:NervFullStackSessionIdPattern) {
@@ -1541,6 +1809,12 @@ function New-NervFullStackSecretEnvironment {
             })
         } | ConvertTo-Json -Compress -Depth 5
         $adminPassword = New-NervFullStackSecretValue -Bytes 24
+        $workerPassword = if ($IncludeDemoWorkerPassword) {
+            New-NervFullStackSecretValue -Bytes 24
+        }
+        else {
+            $null
+        }
         $environment = @{
             'Parameters__iam-jwt-signing-key-id' = $kid
             'Parameters__iam-jwt-private-key-pem' = $rsa.ExportPkcs8PrivateKeyPem()
@@ -1548,6 +1822,9 @@ function New-NervFullStackSecretEnvironment {
             'Parameters__iam-secrets-pepper' = New-NervFullStackSecretValue -Bytes 48
             'Parameters__iam-enterprise-identity-mfa-code' = '654321'
             'Parameters__internal-service-bearer-token' = New-NervFullStackSecretValue -Bytes 48
+            'Parameters__template-asset-retirement-proof-issuer' = 'nerv-fullstack-template-asset-retirement'
+            'Parameters__template-asset-retirement-proof-audience' = 'nerv-barcodelabel-template-asset-retirement'
+            'Parameters__template-asset-retirement-proof-secret-base64' = New-NervFullStackSecretValue -Bytes 32
             'Parameters__redis-password' = New-NervFullStackSecretValue -Bytes 24
             'Parameters__minio-root-user' = "nerv-$SessionId"
             'Parameters__minio-root-password' = New-NervFullStackSecretValue -Bytes 24
@@ -1555,10 +1832,14 @@ function New-NervFullStackSecretEnvironment {
             'Parameters__iam-seed-connector-host-secret' = New-NervFullStackSecretValue -Bytes 32
             'Parameters__connector-ingestion-token-signing-key' = New-NervFullStackSecretValue -Bytes 48
         }
+        if ($IncludeDemoWorkerPassword) {
+            $environment['Parameters__iam-seed-demo-worker-password'] = $workerPassword
+        }
 
         return [pscustomobject]@{
             Environment = $environment
             AdminPassword = $adminPassword
+            WorkerPassword = $workerPassword
         }
     }
     finally {
@@ -1570,15 +1851,19 @@ function Get-NervDockerListedValues {
     param(
         [Parameter(Mandatory)] [string[]] $Arguments,
         [Parameter(Mandatory)] [string] $WorkingDirectory,
-        [Parameter(Mandatory)] [string] $Name
+        [Parameter(Mandatory)] [string] $Name,
+        [System.Collections.IDictionary] $Environment
     )
+
+    if ($null -eq $Environment) { $Environment = Get-NervFullStackNonSeedEnvironment }
 
     $result = Invoke-NativeCommandOutput `
         -Command 'docker' `
         -Arguments $Arguments `
         -WorkingDirectory $WorkingDirectory `
         -TimeoutSeconds 30 `
-        -Name $Name
+        -Name $Name `
+        -Environment $Environment
 
     return @($result.Stdout -split '\r?\n' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
@@ -1588,8 +1873,11 @@ function Get-NervDockerInspectObjects {
         [Parameter(Mandatory)] [ValidateSet('container', 'network', 'volume')] [string] $Kind,
         [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $Identifiers,
         [Parameter(Mandatory)] [string] $WorkingDirectory,
-        [Parameter(Mandatory)] [string] $Name
+        [Parameter(Mandatory)] [string] $Name,
+        [System.Collections.IDictionary] $Environment
     )
+
+    if ($null -eq $Environment) { $Environment = Get-NervFullStackNonSeedEnvironment }
 
     if ($Identifiers.Count -eq 0) {
         return @()
@@ -1600,25 +1888,31 @@ function Get-NervDockerInspectObjects {
         -Arguments (@($Kind, 'inspect') + $Identifiers) `
         -WorkingDirectory $WorkingDirectory `
         -TimeoutSeconds 30 `
-        -Name $Name
+        -Name $Name `
+        -Environment $Environment
     return @($result.Stdout | ConvertFrom-Json -Depth 30)
 }
 
 function Get-NervFullStackContainerRecords {
     param(
         [Parameter(Mandatory)] [string] $OwnedSessionId,
-        [string] $WorkingDirectory = (Get-Location).Path
+        [string] $WorkingDirectory = (Get-Location).Path,
+        [System.Collections.IDictionary] $Environment
     )
+
+    if ($null -eq $Environment) { $Environment = Get-NervFullStackNonSeedEnvironment }
 
     $ids = @(Get-NervDockerListedValues `
         -Arguments @('container', 'ls', '-a', '--no-trunc', '--filter', "label=com.nerv-iip.session=$OwnedSessionId", '--format', '{{.ID}}') `
         -WorkingDirectory $WorkingDirectory `
-        -Name "fullstack-$OwnedSessionId-container-discovery")
+        -Name "fullstack-$OwnedSessionId-container-discovery" `
+        -Environment $Environment)
     $objects = @(Get-NervDockerInspectObjects `
         -Kind container `
         -Identifiers $ids `
         -WorkingDirectory $WorkingDirectory `
-        -Name "fullstack-$OwnedSessionId-container-discovery-inspect")
+        -Name "fullstack-$OwnedSessionId-container-discovery-inspect" `
+        -Environment $Environment)
     return @($objects | ForEach-Object {
         $containerName = "$($_.Name)".TrimStart('/')
         $resourceName = @('postgres', 'redis', 'minio', 'victoria-logs') |
@@ -1694,8 +1988,11 @@ function Get-NervFullStackDcpNetworkIds {
     param(
         [Parameter(Mandatory)] [string] $SessionId,
         [object[]] $ContainerRecords = @(),
-        [Parameter(Mandatory)] [string] $WorkingDirectory
+        [Parameter(Mandatory)] [string] $WorkingDirectory,
+        [System.Collections.IDictionary] $Environment
     )
+
+    if ($null -eq $Environment) { $Environment = Get-NervFullStackNonSeedEnvironment }
 
     $recordedContainerIds = @($ContainerRecords | ForEach-Object { "$($_.id)" })
     if ($recordedContainerIds.Count -eq 0) { return @() }
@@ -1704,7 +2001,8 @@ function Get-NervFullStackDcpNetworkIds {
         -Kind container `
         -Identifiers $recordedContainerIds `
         -WorkingDirectory $WorkingDirectory `
-        -Name "fullstack-$SessionId-startup-container-inspect")
+        -Name "fullstack-$SessionId-startup-container-inspect" `
+        -Environment $Environment)
     $ownedContainers = @($containerInspect | Where-Object {
         Test-NervDockerResourceOwnership -InspectObject $_ -SessionId $SessionId -RecordedIds $recordedContainerIds
     })
@@ -1716,15 +2014,19 @@ function Get-NervFullStackDcpNetworkIds {
         -Kind network `
         -Identifiers $candidateNetworkIds `
         -WorkingDirectory $WorkingDirectory `
-        -Name "fullstack-$SessionId-startup-network-inspect")
+        -Name "fullstack-$SessionId-startup-network-inspect" `
+        -Environment $Environment)
     return @(Get-NervRecordableDcpNetworkIds -Networks $networkInspect -OwnedContainerIds $ownedContainerIds)
 }
 
 function Get-NervSessionDockerResources {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
-        [string] $WorkingDirectory = (Get-NervFullStackCleanupWorkingDirectory)
+        [string] $WorkingDirectory = (Get-NervFullStackCleanupWorkingDirectory),
+        [System.Collections.IDictionary] $Environment
     )
+
+    if ($null -eq $Environment) { $Environment = Get-NervFullStackNonSeedEnvironment }
 
     $sessionId = "$($Manifest.sessionId)"
     if ($sessionId -notmatch $script:NervFullStackSessionIdPattern) {
@@ -1738,12 +2040,12 @@ function Get-NervSessionDockerResources {
     $discoveredNetworkIds = @()
 
     try {
-        $discoveredContainers = @(Get-NervFullStackContainerRecords -OwnedSessionId $sessionId -WorkingDirectory $WorkingDirectory)
+        $discoveredContainers = @(Get-NervFullStackContainerRecords -OwnedSessionId $sessionId -WorkingDirectory $WorkingDirectory -Environment $Environment)
         $candidateContainerIds = @(Merge-NervSessionContainerIds -RecordedIds $recordedContainerIds -DiscoveredRecords $discoveredContainers)
-        $listedContainerIds = Get-NervDockerListedValues -Arguments @('container', 'ls', '-a', '--no-trunc', '--format', '{{.ID}}') -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-container-list"
+        $listedContainerIds = Get-NervDockerListedValues -Arguments @('container', 'ls', '-a', '--no-trunc', '--format', '{{.ID}}') -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-container-list" -Environment $Environment
         $presentContainerIds = @($candidateContainerIds | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@($listedContainerIds), [StringComparer]::Ordinal).Contains([string]$_) })
         $containerInspect = if ($presentContainerIds.Count -gt 0) {
-            @(Get-NervDockerInspectObjects -Kind container -Identifiers $presentContainerIds -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-container-inspect")
+            @(Get-NervDockerInspectObjects -Kind container -Identifiers $presentContainerIds -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-container-inspect" -Environment $Environment)
         }
         else { @() }
         $containers = @($containerInspect | Where-Object {
@@ -1762,10 +2064,10 @@ function Get-NervSessionDockerResources {
 
     try {
         $candidateNetworkIds = @(Get-NervStringsSorted -Values @($recordedNetworkIds + $discoveredNetworkIds) -Comparer ([StringComparer]::Ordinal) -Unique)
-        $listedNetworkIds = Get-NervDockerListedValues -Arguments @('network', 'ls', '--no-trunc', '--format', '{{.ID}}') -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-network-list"
+        $listedNetworkIds = Get-NervDockerListedValues -Arguments @('network', 'ls', '--no-trunc', '--format', '{{.ID}}') -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-network-list" -Environment $Environment
         $presentNetworkIds = @($candidateNetworkIds | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@($listedNetworkIds), [StringComparer]::Ordinal).Contains([string]$_) })
         $networkInspect = if ($presentNetworkIds.Count -gt 0) {
-            @(Get-NervDockerInspectObjects -Kind network -Identifiers $presentNetworkIds -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-network-inspect")
+            @(Get-NervDockerInspectObjects -Kind network -Identifiers $presentNetworkIds -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-network-inspect" -Environment $Environment)
         }
         else { @() }
         $networks = @($networkInspect | Where-Object {
@@ -1782,10 +2084,10 @@ function Get-NervSessionDockerResources {
     }
 
     try {
-        $listedVolumeNames = Get-NervDockerListedValues -Arguments @('volume', 'ls', '--format', '{{.Name}}') -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-volume-list"
+        $listedVolumeNames = Get-NervDockerListedValues -Arguments @('volume', 'ls', '--format', '{{.Name}}') -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-volume-list" -Environment $Environment
         $presentVolumeNames = @($recordedVolumeNames | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@($listedVolumeNames), [StringComparer]::Ordinal).Contains([string]$_) })
         $volumeInspect = if ($presentVolumeNames.Count -gt 0) {
-            @(Get-NervDockerInspectObjects -Kind volume -Identifiers $presentVolumeNames -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-volume-inspect")
+            @(Get-NervDockerInspectObjects -Kind volume -Identifiers $presentVolumeNames -WorkingDirectory $WorkingDirectory -Name "fullstack-$sessionId-volume-inspect" -Environment $Environment)
         }
         else { @() }
         $volumes = @($volumeInspect | Where-Object {
@@ -1815,11 +2117,14 @@ function Remove-NervSessionDockerResources {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
         [string] $WorkingDirectory = (Get-NervFullStackCleanupWorkingDirectory),
-        [ValidateRange(1, 600)] [int] $TimeoutSeconds = 120
+        [ValidateRange(1, 600)] [int] $TimeoutSeconds = 120,
+        [System.Collections.IDictionary] $Environment
     )
 
+    if ($null -eq $Environment) { $Environment = Get-NervFullStackNonSeedEnvironment }
+
     $sessionId = "$($Manifest.sessionId)"
-    $resources = Get-NervSessionDockerResources -Manifest $Manifest -WorkingDirectory $WorkingDirectory
+    $resources = Get-NervSessionDockerResources -Manifest $Manifest -WorkingDirectory $WorkingDirectory -Environment $Environment
     $unresolved = [System.Collections.Generic.List[string]]::new()
     foreach ($item in $resources.Unresolved) { $unresolved.Add("$item") }
 
@@ -1836,7 +2141,8 @@ function Remove-NervSessionDockerResources {
                 -Arguments ($removal.Arguments + $removal.Values) `
                 -WorkingDirectory $WorkingDirectory `
                 -TimeoutSeconds $TimeoutSeconds `
-                -Name "fullstack-$sessionId-$($removal.Kind)-remove" | Out-Null
+                -Name "fullstack-$sessionId-$($removal.Kind)-remove" `
+                -Environment $Environment | Out-Null
         }
         catch {
             foreach ($value in $removal.Values) { $unresolved.Add("$($removal.Kind):$value") }
@@ -1853,17 +2159,20 @@ function Get-NervFullStackStatusSummary {
     param(
         [Parameter(Mandatory)] [object] $Manifest,
         [string] $WorkingDirectory = (Get-NervFullStackCleanupWorkingDirectory),
-        [scriptblock] $DockerResourcesAction
+        [scriptblock] $DockerResourcesAction,
+        [System.Collections.IDictionary] $Environment
     )
+
+    if ($null -eq $Environment) { $Environment = Get-NervFullStackNonSeedEnvironment }
 
     if ($null -eq $DockerResourcesAction) {
         $DockerResourcesAction = {
-            param($InputManifest, $InputWorkingDirectory)
-            Get-NervSessionDockerResources -Manifest $InputManifest -WorkingDirectory $InputWorkingDirectory
+            param($InputManifest, $InputWorkingDirectory, $InputEnvironment)
+            Get-NervSessionDockerResources -Manifest $InputManifest -WorkingDirectory $InputWorkingDirectory -Environment $InputEnvironment
         }
     }
 
-    $resources = & $DockerResourcesAction $Manifest $WorkingDirectory
+    $resources = & $DockerResourcesAction $Manifest $WorkingDirectory $Environment
     if ($null -eq $resources) {
         throw "Full-stack status Docker ownership inspection returned no result for '$($Manifest.sessionId)'."
     }
@@ -2063,8 +2372,11 @@ function Stop-NervFullStackSession {
         [string] $StateRoot = (Get-NervFullStackStateRoot),
         [scriptblock] $AspireStopAction,
         [scriptblock] $ProcessStopAction,
-        [scriptblock] $DockerRemoveAction
+        [scriptblock] $DockerRemoveAction,
+        [System.Collections.IDictionary] $Environment
     )
+
+    if ($null -eq $Environment) { $Environment = Get-NervFullStackNonSeedEnvironment }
 
     if ($null -eq $AspireStopAction) {
         $AspireStopAction = {
@@ -2075,7 +2387,8 @@ function Stop-NervFullStackSession {
                 -WorkingDirectory (Get-NervFullStackCleanupWorkingDirectory -StateRoot $StateRoot) `
                 -TimeoutSeconds 150 `
                 -Name "fullstack-$($Manifest.sessionId)-aspire-stop" `
-                -AllowPartialOutput | Out-Null
+                -AllowPartialOutput `
+                -Environment (Get-NervFullStackNonSeedEnvironment) | Out-Null
         }
     }
     if ($null -eq $ProcessStopAction) {
@@ -2110,7 +2423,7 @@ function Stop-NervFullStackSession {
     if ($null -eq $DockerRemoveAction) {
         $DockerRemoveAction = {
             param($Manifest)
-            Remove-NervSessionDockerResources -Manifest $Manifest -WorkingDirectory (Get-NervFullStackCleanupWorkingDirectory -StateRoot $StateRoot)
+            Remove-NervSessionDockerResources -Manifest $Manifest -WorkingDirectory (Get-NervFullStackCleanupWorkingDirectory -StateRoot $StateRoot) -Environment $Environment
         }
     }
 

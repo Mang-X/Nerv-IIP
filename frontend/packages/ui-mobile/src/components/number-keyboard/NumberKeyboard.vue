@@ -89,6 +89,9 @@ function confirm() {
         <div class="px-4 py-2.5">
           <span class="text-sm text-muted-foreground">{{ title ?? '请输入' }}</span>
         </div>
+        <!-- 键面文字走 v-text 而不是 `{{ }}` 插值：插值写法下 fmt 会把文本折到独立行，
+             键的 textContent 变成 " 0 " 这类带首尾空白的串，按 textContent 精确匹配的
+             定位器（如 Playwright `hasText: /^0$/`）就找不到元素。v-text 直接写 textContent。 -->
         <div class="grid grid-cols-4 gap-1.5 px-1.5 pb-2">
           <!-- digits 1-9 span the first three columns -->
           <button
@@ -96,10 +99,9 @@ function confirm() {
             :key="k"
             type="button"
             class="nv-m-nk-key col-span-1 grid h-14 place-items-center rounded-xl bg-muted text-2xl font-medium text-foreground tabular-nums"
+            v-text="k"
             @click="input(k)"
-          >
-            {{ k }}
-          </button>
+          />
           <!-- backspace, spanning the right column across the top two rows -->
           <button
             type="button"
@@ -113,19 +115,17 @@ function confirm() {
           <button
             type="button"
             class="nv-m-nk-key col-start-4 row-start-3 row-span-2 grid h-auto place-items-center rounded-xl bg-brand text-base font-medium text-brand-foreground"
+            v-text="confirmText"
             @click="confirm"
-          >
-            {{ confirmText }}
-          </button>
+          />
           <!-- extra key (decimal / alnum) -->
           <button
             v-if="extraKey"
             type="button"
             class="nv-m-nk-key col-span-1 grid h-14 place-items-center rounded-xl bg-muted text-2xl font-medium text-foreground"
+            v-text="extraKey"
             @click="input(extraKey)"
-          >
-            {{ extraKey }}
-          </button>
+          />
           <!-- zero, widening to fill the remaining bottom-row columns.
                signToggle 恒为 ± 预留一列（含 extraKey='' 组合），避免 ± 溢出到第 5 行破版。 -->
           <button
@@ -140,20 +140,18 @@ function confirm() {
                   ? 'col-span-2'
                   : 'col-span-3'
             "
+            v-text="'0'"
             @click="input('0')"
-          >
-            0
-          </button>
+          />
           <!-- sign toggle (±) for negative values (温度 / 压力 / 上下限)，opt-in -->
           <button
             v-if="signToggle"
             type="button"
             class="nv-m-nk-key col-span-1 grid h-14 place-items-center rounded-xl bg-muted text-2xl font-medium text-foreground"
             aria-label="正负号"
+            v-text="'±'"
             @click="toggleSign"
-          >
-            ±
-          </button>
+          />
         </div>
       </div>
     </Transition>

@@ -2,6 +2,8 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Nerv.IIP.Business.Quality.Web.Endpoints.DeadLetters;
+using Nerv.IIP.Business.Quality.Web.Endpoints.QualityReasons;
 using Nerv.IIP.Business.Quality.Web.Endpoints.InspectionPlans;
 using Nerv.IIP.Business.Quality.Web.Endpoints.NonconformanceReports;
 
@@ -17,6 +19,7 @@ public sealed class QualityOpenApiTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
+                builder.UseSetting("Quality:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>
                     {
@@ -38,6 +41,28 @@ public sealed class QualityOpenApiTests
                 GetOperationId(document, contract.Route, contract.HttpMethod.ToLowerInvariant()));
         }
 
+        foreach (var contract in QualityReasonEndpointContracts.All)
+        {
+            Assert.Equal(
+                contract.OperationId,
+                GetOperationId(document, contract.Route, contract.HttpMethod.ToLowerInvariant()));
+        }
+
+        // #3738：死信登记表是 operationId 的唯一产出方，本服务 NameGenerator 通过
+        // QualityDeadLetterEndpointContracts.TryGet 直接取它。这一圈钉的是那条链真的接上了——
+        // 漏接则 swagger 回落到类型名、与登记值分叉，这里红，而不是等 #3739 按矩阵去快照里找不到 operation。
+        // 证明范围：只有 Quality 一个服务有这条实跑对照，另外 8 个服务的链是否接上无门禁（#3750）。
+        foreach (var contract in QualityDeadLetterEndpointContracts.All)
+        {
+            Assert.Equal(
+                contract.OperationId,
+                GetOperationId(document, contract.Route, contract.HttpMethod.ToLowerInvariant()));
+        }
+
+        Assert.Equal(
+            "listBusinessQualityScrapReasonCodes",
+            GetOperationId(document, "/api/business/v1/quality/scrap-reason-codes", "get"));
+
         foreach (var contract in QualityInspectionEndpointContracts.All)
         {
             Assert.Equal(
@@ -45,7 +70,44 @@ public sealed class QualityOpenApiTests
                 GetOperationId(document, contract.Route, contract.HttpMethod.ToLowerInvariant()));
         }
 
+        var scrapReasonOperation = document.RootElement
+            .GetProperty("paths")
+            .GetProperty("/api/business/v1/quality/scrap-reason-codes")
+            .GetProperty("get");
+        AssertQueryParameter(scrapReasonOperation, "organizationId", required: true);
+        AssertQueryParameter(scrapReasonOperation, "environmentId", required: true);
+        AssertQueryParameter(scrapReasonOperation, "search", required: false);
+        AssertQueryParameter(scrapReasonOperation, "skip", required: false);
+        AssertQueryParameter(scrapReasonOperation, "take", required: false);
+
+        AssertListQueryContract(
+            document,
+            "/api/business/v1/quality/inspection-plans",
+            hasKeyword: true);
+        AssertListQueryContract(
+            document,
+            "/api/business/v1/quality/inspection-records",
+            hasKeyword: false);
+        AssertListQueryContract(
+            document,
+            "/api/business/v1/quality/inspection-tasks",
+            hasKeyword: true);
+        AssertListQueryContract(
+            document,
+            "/api/business/v1/quality/spc/control-charts",
+            hasKeyword: true);
+
         AssertRequiredReason(document, "/api/business/v1/quality/ncrs/{ncrId}/close");
+        AssertRequestSchemaDeprecatedProperty(
+            document,
+            "/api/business/v1/quality/ncrs/{ncrId}/close",
+            "post",
+            "reworkWorkOrderId");
+        AssertSchemaProperties(
+            document,
+            "NervIIPBusinessQualityWebEndpointsNonconformanceReportsNonconformanceReportDto",
+            "reworkWorkOrderCreationStatus",
+            "reworkWorkOrderId");
         AssertSchemaProperties(
             document,
             "NervIIPBusinessQualityWebEndpointsInspectionPlansCreateInspectionPlanRequest",
@@ -83,6 +145,55 @@ public sealed class QualityOpenApiTests
         Assert.Contains("reason", schema.GetProperty("required").EnumerateArray().Select(x => x.GetString()));
         Assert.Equal(500, schema.GetProperty("properties").GetProperty("reason").GetProperty("maxLength").GetInt32());
     }
+
+    private static void AssertRequestSchemaDeprecatedProperty(
+        JsonDocument document,
+        string route,
+        string method,
+        string propertyName)
+    {
+        var operation = document.RootElement.GetProperty("paths").GetProperty(route).GetProperty(method);
+        var schemaRef = operation.GetProperty("requestBody").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()!;
+        var property = document.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty(schemaRef.Split('/')[^1]).GetProperty("properties").GetProperty(propertyName);
+
+        Assert.True(property.GetProperty("deprecated").GetBoolean());
+    }
+
+    private static void AssertQueryParameter(JsonElement operation, string name, bool required)
+    {
+        var parameter = operation.GetProperty("parameters")
+            .EnumerateArray()
+            .SingleOrDefault(item => item.GetProperty("name").GetString() == name);
+
+        Assert.False(parameter.ValueKind == JsonValueKind.Undefined, $"Missing query parameter '{name}'.");
+        var actualRequired = parameter.TryGetProperty("required", out var requiredProperty)
+            && requiredProperty.ValueKind != JsonValueKind.Null
+            && requiredProperty.GetBoolean();
+        Assert.Equal(required, actualRequired);
+    }
+
+    private static void AssertListQueryContract(JsonDocument document, string route, bool hasKeyword)
+    {
+        var operation = document.RootElement.GetProperty("paths").GetProperty(route).GetProperty("get");
+        AssertQueryParameter(operation, "organizationId", required: true);
+        AssertQueryParameter(operation, "environmentId", required: true);
+        AssertQueryParameter(operation, "skip", required: false);
+        AssertQueryParameter(operation, "take", required: false);
+        if (hasKeyword)
+        {
+            AssertQueryParameter(operation, "keyword", required: false);
+        }
+
+        Assert.Equal(0, GetQueryParameter(operation, "skip").GetProperty("schema").GetProperty("default").GetInt32());
+        Assert.Equal(100, GetQueryParameter(operation, "take").GetProperty("schema").GetProperty("default").GetInt32());
+    }
+
+    private static JsonElement GetQueryParameter(JsonElement operation, string name) =>
+        operation.GetProperty("parameters")
+            .EnumerateArray()
+            .Single(item => item.GetProperty("name").GetString() == name);
 
     private static async Task<JsonDocument> GetOpenApiDocumentAsync(HttpClient client)
     {

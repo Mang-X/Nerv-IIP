@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { tooltipHtml } from './DhtmlxEngine'
+import { cardHtml, tooltipHtml } from './DhtmlxEngine'
 import type { ScheduleTask } from '../../model/types'
 
 /**
@@ -51,5 +51,65 @@ describe('tooltipHtml 颜色事实源', () => {
     // color:/background: 后面若直接跟 oklch(/#/rgb( 就是绕过了 token
     const rawColor = /(?:color|background)\s*:\s*(?:oklch\(|#[0-9a-fA-F]{3}|rgba?\()/
     expect(rawColor.test(html)).toBe(false)
+  })
+
+  it('物料风险有真实 ETA 时显示统一的预计到料日期', () => {
+    const html = tooltipHtml(
+      task({
+        materialRisk: {
+          orderId: 'WO-2026-03008',
+          operationId: 'OP-10',
+          reasonCodes: ['material-shortage'],
+          shortages: [],
+          message: '物料未齐套。已按计划排入，需在开工前完成备料。',
+          materialReadyUtc: '2026-09-28T08:00:00.000Z',
+        },
+      }),
+    )
+
+    expect(html).toContain('预计到料 09-28')
+  })
+
+  it('物料风险无 ETA 时不伪造预计到料日期', () => {
+    const html = tooltipHtml(
+      task({
+        materialRisk: {
+          orderId: 'WO-2026-03008',
+          operationId: 'OP-10',
+          reasonCodes: ['material-shortage'],
+          shortages: [],
+          message: '物料未齐套。已按计划排入，需在开工前完成备料。',
+        },
+      }),
+    )
+
+    expect(html).not.toContain('预计到料')
+    expect(html).toContain('需在开工前完成备料')
+  })
+})
+
+// Spec r1: 工序名称、真实起止与状态在条内可读，完整详情保留原文。
+describe('资源工序卡片阅读', () => {
+  it.each([
+    ['2026-08-01T00:00:00.000Z', '2026-08-01T03:00:00.000Z'],
+    ['2026-10-12T01:17:00.000Z', '2026-10-12T02:43:00.000Z'],
+  ])('按模型有序呈现 %s 至 %s、完整名称与文字状态', (startUtc, endUtc) => {
+    const value = task({
+      text: '精密壳体去毛刺及尺寸复核',
+      startUtc,
+      endUtc,
+      status: { label: '进行中', tone: 'info' },
+    })
+    const node = document.createElement('div')
+    node.innerHTML = cardHtml(value)
+    const time = (iso: string) =>
+      new Date(iso).toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      })
+    expect(node.textContent).toContain(value.text)
+    expect(node.textContent).toContain('进行中')
+    expect(node.textContent).toContain(`${time(startUtc)}–${time(endUtc)}`)
   })
 })

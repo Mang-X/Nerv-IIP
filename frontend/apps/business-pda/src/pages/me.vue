@@ -1,13 +1,5 @@
 <script setup lang="ts">
-import {
-  Building2,
-  CircleUserRound,
-  IdCard,
-  ShieldCheck,
-  UsersRound,
-  Wifi,
-  WifiOff,
-} from '@lucide/vue'
+import { Building2, IdCard, KeyRound, ShieldCheck, UsersRound, Wifi, WifiOff } from '@lucide/vue'
 import {
   NvAppShellMobile,
   NvCell,
@@ -89,11 +81,8 @@ function formatResolvedAt(value: string) {
       </section>
 
       <section>
-        <h2 class="mb-2 text-sm font-semibold text-foreground">主体与岗位</h2>
+        <h2 class="mb-2 text-sm font-semibold text-foreground">岗位信息</h2>
         <NvCellGroup class="overflow-hidden rounded-xl border border-border">
-          <NvCell title="当前主体" :value="profile.principalId.value || '未返回'">
-            <template #icon><CircleUserRound /></template>
-          </NvCell>
           <NvCell title="工号" :value="profile.employeeNo.value || '未关联'">
             <template #icon><IdCard /></template>
           </NvCell>
@@ -185,6 +174,20 @@ function formatResolvedAt(value: string) {
             >当前未选择 WMS 作业范围</span
           >
         </div>
+      </section>
+
+      <section>
+        <h2 class="mb-2 text-sm font-semibold text-foreground">账号安全</h2>
+        <NvCellGroup class="overflow-hidden rounded-xl border border-border">
+          <NvCell
+            data-testid="change-password"
+            title="修改密码"
+            arrow
+            @click="router.push('/change-password')"
+          >
+            <template #icon><KeyRound /></template>
+          </NvCell>
+        </NvCellGroup>
       </section>
 
       <p class="text-xs text-muted-foreground">

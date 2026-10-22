@@ -25,14 +25,16 @@ describe('business console scheduling navigation', () => {
     expect(scheduling?.title).toBe('排产工作台')
     expect(scheduling?.requiredPermissions).toEqual([P.schedulingPlansRead])
   })
+})
 
-  // 规则排程（过渡）已从 MES 菜单撤下：菜单里只留一个权威排程入口（/scheduling），
-  // 页面本身保留为可直达的诊断入口，域归属不变。
-  it('keeps MES rule scheduling out of the menu while the page stays reachable', () => {
+describe('business console MES production report navigation', () => {
+  it('exposes the production daily report to the reporting reader', () => {
     const mesItems = DOMAIN_SIDE_NAV.mes?.flatMap((section) => section.items) ?? []
+    const report = mesItems.find((item) => pathOf(item.to) === '/mes/reports')
 
-    expect(mesItems.find((item) => pathOf(item.to) === '/mes/schedules')).toBeUndefined()
-    expect(resolveDomainId('/mes/schedules')).toBe('mes')
+    expect(resolveDomainId('/mes/reports')).toBe('mes')
+    expect(report?.title).toBe('生产日报')
+    expect(report?.requiredPermissions).toEqual([P.mesReportingRead])
   })
 })
 
@@ -45,6 +47,7 @@ describe('business console maintenance navigation', () => {
 
     expect(resolveDomainId('/maintenance/inspections')).toBe('equipment')
     expect(resolveDomainId('/maintenance/spare-parts')).toBe('equipment')
+    expect(resolveDomainId('/maintenance/downtime-reasons')).toBe('equipment')
     expect(resolveDomainId('/maintenance/reliability')).toBe('equipment')
     expect(resolveDomainId('/maintenance/availability')).toBe('equipment')
     expect(maintenancePaths).toEqual([
@@ -52,6 +55,7 @@ describe('business console maintenance navigation', () => {
       '/maintenance/plans',
       '/maintenance/inspections',
       '/maintenance/spare-parts',
+      '/maintenance/downtime-reasons',
       '/maintenance/reliability',
       '/maintenance/availability',
     ])
@@ -126,6 +130,10 @@ describe('business console ERP navigation', () => {
       '/erp/finance/ar-ap',
       '/erp/finance/vouchers',
       '/erp/finance/cost-candidates',
+      '/erp/finance/machine-overhead',
+      '/erp/finance/machine-overhead-rates',
+      '/erp/finance/cost-variance',
+      '/erp/finance/work-center-cost-rates',
     ])
   })
 
@@ -161,6 +169,9 @@ describe('business console ERP navigation', () => {
       '/erp/finance/ar-ap',
       '/erp/finance/vouchers',
       '/erp/finance/cost-candidates',
+      '/erp/finance/machine-overhead',
+      '/erp/finance/machine-overhead-rates',
+      '/erp/finance/work-center-cost-rates',
     ]) {
       expect(byPath.get(path)).toEqual([P.erpFinanceRead])
     }
@@ -186,6 +197,19 @@ describe('business console WMS count navigation', () => {
     expect(countExecution?.requiredPermissions).toEqual([P.wmsCountsRead])
     expect(permittedBy([countExecution!], [P.wmsCountsRead])).toEqual([countExecution])
     expect(permittedBy([countExecution!], [P.wmsReceiptsRead])).toEqual([])
+  })
+})
+
+describe('business console dead-letter ops navigation', () => {
+  it('只对持有死信读权限的人露出集成运维入口', () => {
+    const opsItems = DOMAIN_SIDE_NAV.ops?.flatMap((section) => section.items) ?? []
+    const deadLetters = opsItems.find((item) => pathOf(item.to) === '/ops/dead-letters')
+
+    expect(resolveDomainId('/ops/dead-letters')).toBe('ops')
+    expect(deadLetters?.title).toBe('集成事件死信')
+    expect(deadLetters?.requiredPermissions).toEqual([P.deadLettersRead])
+    expect(permittedBy([deadLetters!], [P.deadLettersRead])).toEqual([deadLetters])
+    expect(permittedBy([deadLetters!], [P.approvalsRead])).toEqual([])
   })
 })
 

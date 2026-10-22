@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
 import { useAuthStore } from '@/stores/auth'
+import { i18n } from '@/i18n'
 import InspectionsPage from './inspections.vue'
 import PlansPage from './plans.vue'
 import WorkOrdersPage from './work-orders.vue'
@@ -16,7 +17,12 @@ const state = vi.hoisted(() => ({
   plans: [] as Array<Record<string, unknown>>,
   remainingByPlanId: {} as Record<string, { status: string; hours?: number }>,
   remainingPending: false,
+  maintenanceFilters: { organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 },
+  directory: { state: 'ok', message: '' },
   createWorkOrder: vi.fn(async (_body: Record<string, unknown>) => ({})),
+  expectedRestoreScopes: [] as Array<{ kind: string; id: string; displayName?: string }>,
+  updateExpectedRestore: vi.fn(async () => ({})),
+  createReason: vi.fn(async (_body: Record<string, unknown>): Promise<unknown> => ({})),
   completeWorkOrder: vi.fn(async (_id: string, _body: Record<string, unknown>) => ({})),
   recordInspection: vi.fn(async (_body: Record<string, unknown>) => ({})),
   createPlan: vi.fn(async (_body: Record<string, unknown>) => ({})),
@@ -28,6 +34,8 @@ const state = vi.hoisted(() => ({
   refreshRemaining: vi.fn(async () => {}),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
+  // 物料编码 → 基本单位；用例里改它来模拟物料列表晚一步刷新回来。
+  baseUomBySku: undefined as unknown as { value: Map<string, string> },
 }))
 
 vi.mock('@nerv-iip/ui', async (importOriginal) => {
@@ -53,7 +61,7 @@ vi.mock('vue-router', async (importOriginal) => {
 
 vi.mock('@/composables/useBusinessMaintenance', () => ({
   useMaintenanceWorkOrders: () => ({
-    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
+    filters: state.maintenanceFilters,
     workOrders: computed(() => state.workOrders),
     workOrdersError: shallowRef(),
     workOrdersPending: shallowRef(false),
@@ -62,6 +70,9 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     createWorkOrder: state.createWorkOrder,
     createWorkOrderPending: shallowRef(false),
     createWorkOrderError: shallowRef(),
+    readExpectedRestoreScopes: vi.fn(async () => state.expectedRestoreScopes),
+    updateExpectedRestore: state.updateExpectedRestore,
+    expectedRestorePending: shallowRef(false),
     completeWorkOrder: state.completeWorkOrder,
     completeWorkOrderPending: shallowRef(false),
     completeWorkOrderError: shallowRef(),
@@ -93,6 +104,41 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     generateDue: state.generateDue,
     generateDuePending: shallowRef(false),
     generateDueError: shallowRef(),
+  }),
+}))
+
+vi.mock('@/composables/useMaintenanceDowntimeReasonDirectory', () => ({
+  useMaintenanceDowntimeReasonDirectory: () => ({
+    keyword: shallowRef(''),
+    reasons: computed(() =>
+      state.directory.state === 'ok'
+        ? [
+            {
+              reasonCode: 'Line-A.Spindle',
+              description: '主轴检修',
+              reasonCategory: 'breakdown',
+              lossCategory: 'availability',
+            },
+          ]
+        : [],
+    ),
+    options: computed(() =>
+      state.directory.state === 'ok' ? [{ value: 'Line-A.Spindle', label: '主轴检修' }] : [],
+    ),
+    state: computed(() => state.directory.state),
+    message: computed(() => state.directory.message),
+    total: computed(() => 1),
+    refresh: vi.fn(),
+  }),
+}))
+
+vi.mock('@/composables/useMaintenanceDowntimeReasonMutations', () => ({
+  useMaintenanceDowntimeReasonMutations: () => ({
+    createReason: state.createReason,
+    updateReason: vi.fn(),
+    deleteReason: vi.fn(),
+    saving: shallowRef(false),
+    deleting: shallowRef(false),
   }),
 }))
 
@@ -140,6 +186,10 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
 
 // 设备 / 班组 / 单位 / 物料 / 单据目录都走真实读面（useQuery）；单测给确定目录，只验页面提交行为。
 vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
+  useEquipmentAlarmCatalog: () => ({
+    alarmOptions: computed(() => [{ value: 'ALARM-1', label: 'OVERHEAT' }]),
+    alarmsPending: shallowRef(false),
+  }),
   useEquipmentDeviceCatalog: () => ({
     deviceOptions: computed(() => [
       { value: 'DEV-SMT-01', label: '贴片机 01' },
@@ -147,11 +197,10 @@ vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
     ]),
     devicesPending: shallowRef(false),
   }),
-  useEquipmentSkuCatalog: () => ({
-    baseUomBySku: computed(() => new Map([['BRG-6205', 'pcs']])),
-    skuOptions: computed(() => [{ value: 'BRG-6205', label: '深沟球轴承 6205', hint: 'pcs' }]),
-    skusPending: shallowRef(false),
-  }),
+  useEquipmentSkuCatalog: () => {
+    state.baseUomBySku ??= shallowRef(new Map([['BRG-6205', 'pcs']]))
+    return { baseUomBySku: state.baseUomBySku }
+  },
   useEquipmentTeamCatalog: () => ({
     teamOptions: computed(() => [{ value: '设备保全班', label: '设备保全班', hint: 'TEAM-PM' }]),
     teamsPending: shallowRef(false),
@@ -162,6 +211,14 @@ vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
       { value: 'CEL', label: '摄氏度' },
     ]),
     uomsPending: shallowRef(false),
+  }),
+  maintenanceWorkOrderNoLabel: (no?: string | null) =>
+    no && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(no) ? no : '维修工单',
+  // 设备所在工厂：DEV-1 登记在 SITE-001，其余设备没有所属工厂。
+  useDeviceSiteLookup: () => ({
+    deviceSiteCode: (device?: string | null) => (device === 'DEV-1' ? 'SITE-001' : ''),
+    siteLabel: (code: string) => (code === 'SITE-001' ? '一号工厂' : code),
+    devicesPending: shallowRef(false),
   }),
   useMaintenanceDocumentCatalog: () => ({
     planOptions: computed(() => [{ value: 'plan-1', label: 'PM-SMT-01-M' }]),
@@ -211,9 +268,22 @@ function mountOptions() {
 }
 
 beforeEach(() => {
+  i18n.global.locale.value = 'zh-CN'
+  state.maintenanceFilters = reactive({
+    organizationId: 'org-001',
+    environmentId: 'env-dev',
+    skip: 0,
+    take: 100,
+  })
+  state.directory = reactive({ state: 'ok', message: '' })
   document.body.innerHTML = ''
+  state.expectedRestoreScopes = [{ kind: 'self', id: 'user-admin' }]
+  state.updateExpectedRestore.mockReset()
+  state.updateExpectedRestore.mockResolvedValue({})
   state.createWorkOrder.mockClear()
   state.completeWorkOrder.mockClear()
+  state.createReason.mockReset()
+  state.createReason.mockResolvedValue({})
   state.recordInspection.mockClear()
   state.createPlan.mockClear()
   state.updatePlan.mockClear()
@@ -232,6 +302,7 @@ beforeEach(() => {
   state.workOrders = [
     {
       workOrderId: '11111111-2222-3333-4444-55555555abcd',
+      workOrderNo: 'MWO-20260706-000001',
       deviceAssetId: 'DEV-PRESS-01',
       priority: 'high',
       status: 'open',
@@ -250,12 +321,75 @@ beforeEach(() => {
       principalType: 'user',
       principalId: 'user-admin',
       loginName: 'admin',
-      permissionCodes: ['business.maintenance.plans.read', 'business.maintenance.plans.manage'],
+      permissionCodes: [
+        'business.maintenance.work-orders.read',
+        'business.maintenance.work-orders.manage',
+        'business.maintenance.plans.read',
+        'business.maintenance.plans.manage',
+      ],
     },
   })
 })
 
+/** 完工抽屉的必填项：停机原因从目录选、每条备件选领出库位（#3855 / #3902）。 */
+async function fillCompleteReasonAndLocation(locationCode = 'loc-spare-01') {
+  const reason = document.body.querySelector<HTMLInputElement>('#mwo-reason')!
+  reason.value = 'Line-A.Spindle'
+  reason.dispatchEvent(new Event('input', { bubbles: true }))
+  for (const location of document.body.querySelectorAll<HTMLInputElement>(
+    '[id^="spare-location-"]',
+  )) {
+    location.value = locationCode
+    location.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  await flushPromises()
+}
+
+async function openCompleteSheet() {
+  document.body.querySelector<HTMLButtonElement>('[aria-label^="维护工单操作"]')!.click()
+  await flushPromises()
+  ;[...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    .find((el) => el.textContent?.includes('完成工单'))!
+    .click()
+  await flushPromises()
+}
+
+/** 表头里有没有「操作」这一列。 */
+function hasActionsColumn() {
+  return [...document.body.querySelectorAll('th')].some((th) => th.textContent?.trim() === '操作')
+}
+
+/** 只读角色（如财务专员）：两块维护读权限都有，manage 一个都没有。 */
+function signInAsMaintenanceReader() {
+  useAuthStore().$patch({
+    principal: {
+      principalType: 'user',
+      principalId: 'user-reader',
+      loginName: 'reader',
+      permissionCodes: ['business.maintenance.work-orders.read', 'business.maintenance.plans.read'],
+    },
+  })
+}
+
 describe('maintenance work orders page', () => {
+  it('开单列与完工上下文固定本地日期时间，不随英文默认语言变化', async () => {
+    state.query = {}
+    // 使用本地时刻构造 UTC 输入，不改变测试进程时区。
+    state.workOrders[0]!.openedAtUtc = new Date(2026, 6, 6, 8, 15).toISOString()
+    const wrapper = mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+    const headers = [...document.body.querySelectorAll('th')]
+    const openedIndex = headers.findIndex((header) => header.textContent?.includes('开单时间'))
+    expect(openedIndex).toBeGreaterThanOrEqual(0)
+    const row = document.body.querySelector('tbody tr')!
+    expect(row.querySelectorAll('td')[openedIndex]?.textContent?.trim()).toBe('2026-07-06 08:15')
+    await openCompleteSheet()
+    expect(document.body.querySelector('[data-slot="carried-context"]')?.textContent).toContain(
+      '2026-07-06 08:15',
+    )
+    wrapper.unmount()
+  })
+
   it('renders plan-generated work orders with a stable Chinese priority', async () => {
     state.query = {}
     state.workOrders = [
@@ -274,6 +408,49 @@ describe('maintenance work orders page', () => {
     expect(document.body.textContent).toContain('计划保养')
   })
 
+  it('只读角色看不到新建和行内菜单，从设备/报警带参进来也不自动弹出建单', async () => {
+    signInAsMaintenanceReader()
+
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+
+    expect(document.body.textContent).not.toContain('新建维护工单')
+    expect(
+      document.body.querySelector('[aria-label="维护工单操作 MWO-20260706-000001"]'),
+    ).toBeNull()
+    expect(document.body.querySelector('[data-slot="carried-context"]')).toBeNull()
+  })
+
+  it('只读角色的维护工单列表不渲染「操作」列', async () => {
+    signInAsMaintenanceReader()
+    state.query = {}
+
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+
+    // 哨兵：表头确实渲染出来了。
+    expect(
+      [...document.body.querySelectorAll('th')].some((th) => th.textContent?.includes('开单时间')),
+    ).toBe(true)
+    expect(hasActionsColumn()).toBe(false)
+  })
+
+  it('有维护工单管理权限时新建按钮与行内菜单都在', async () => {
+    state.query = {}
+
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+
+    expect(
+      [...document.body.querySelectorAll('button')].some((b) =>
+        b.textContent?.includes('新建维护工单'),
+      ),
+    ).toBe(true)
+    expect(
+      document.body.querySelector('[aria-label="维护工单操作 MWO-20260706-000001"]'),
+    ).not.toBeNull()
+  })
+
   it('prefills maintenance work order creation from equipment alarm context', async () => {
     mount(WorkOrdersPage, mountOptions())
     await flushPromises()
@@ -289,6 +466,56 @@ describe('maintenance work orders page', () => {
     expect(document.body.querySelector('#mwo-alarm')).toBeNull()
   })
 
+  it('从报警带入建单时，提交的来源报警就是带入的那一条', async () => {
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+
+    const submit = [
+      ...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button[type="submit"]'),
+    ].find((b) => b.textContent?.includes('创建维护工单'))!
+    submit.click()
+    await flushPromises()
+
+    expect(state.createWorkOrder.mock.calls[0][0]).toMatchObject({
+      deviceAssetId: 'DEV-PRESS-01',
+      sourceAlarmId: 'ALARM-9001',
+    })
+  })
+
+  it('手工建单：先选设备才能挑报警，选中的报警随提交带出，换设备清掉原先挑的报警', async () => {
+    state.query = {}
+    const wrapper = mount(WorkOrdersPage, mountOptions())
+    ;(wrapper.vm as unknown as { openCreate: () => void }).openCreate()
+    await flushPromises()
+    function input(selector: string) {
+      return document.body.querySelector<HTMLInputElement>(selector)!
+    }
+    async function type(selector: string, value: string) {
+      input(selector).value = value
+      input(selector).dispatchEvent(new Event('input', { bubbles: true }))
+      await flushPromises()
+    }
+    // 选择器在本文件被桩成输入位，读占位文案判断「先选设备」。
+    expect(input('#mwo-alarm').placeholder).toBe('先选设备')
+
+    await type('#mwo-device', 'DEV-PRESS-01')
+    expect(input('#mwo-alarm').placeholder).toBe('可选')
+    await type('#mwo-alarm', 'ALARM-1')
+    await type('#mwo-device', 'DEV-SMT-01')
+    expect(input('#mwo-alarm').value).toBe('')
+
+    await type('#mwo-alarm', 'ALARM-1')
+    const submit = [
+      ...document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button[type="submit"]'),
+    ].find((b) => b.textContent?.includes('创建维护工单'))!
+    submit.click()
+    await flushPromises()
+    expect(state.createWorkOrder.mock.calls[0][0]).toMatchObject({
+      deviceAssetId: 'DEV-SMT-01',
+      sourceAlarmId: 'ALARM-1',
+    })
+  })
+
   it('offers a technician selector and estimated labor on the create sheet', async () => {
     mount(WorkOrdersPage, mountOptions())
     await flushPromises()
@@ -297,6 +524,85 @@ describe('maintenance work orders page', () => {
     expect(document.body.textContent).toContain('指派技师')
     expect(document.body.querySelector('#mwo-est-labor')).not.toBeNull()
   })
+
+  it('submits the selected authority code unchanged without the v1 field', async () => {
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+    await new DOMWrapper(document.body.querySelector('#mwo-unavailability-mode')!).trigger('click')
+    const register = [...document.body.querySelectorAll('[role="option"]')].find(
+      (element) =>
+        element.textContent?.includes('登记设备不可用') && !element.textContent?.includes('不登记'),
+    )!
+    await new DOMWrapper(register).trigger('click')
+    const reasonInput = document.body.querySelector<HTMLInputElement>(
+      '#mwo-asset-unavailable-reason',
+    )
+    expect(reasonInput).not.toBeNull()
+    reasonInput!.value = 'Line-A.Spindle'
+    reasonInput!.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    const predictionInput = document.body.querySelector<HTMLInputElement>(
+      '#mwo-create-expected-restore',
+    )!
+    predictionInput.value = '2026-10-10T13:30'
+    predictionInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+
+    const form = reasonInput!.closest('form')!
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(state.createWorkOrder).toHaveBeenCalledTimes(1)
+    expect(state.createWorkOrder.mock.calls[0][0]).toMatchObject({
+      deviceAssetId: 'DEV-PRESS-01',
+      assetUnavailableReasonCode: 'Line-A.Spindle',
+      expectedRestoreAtUtc: new Date('2026-10-10T13:30').toISOString(),
+    })
+    expect(state.createWorkOrder.mock.calls[0][0]).not.toHaveProperty('assetUnavailableReason')
+  })
+
+  it.each(['scope', 'failed'])(
+    'does not silently submit null after a %s change',
+    async (change) => {
+      mount(WorkOrdersPage, mountOptions())
+      await flushPromises()
+      await new DOMWrapper(document.body.querySelector('#mwo-unavailability-mode')!).trigger(
+        'click',
+      )
+      await new DOMWrapper(
+        [...document.body.querySelectorAll('[role="option"]')].find(
+          (element) => element.textContent?.trim() === '登记设备不可用',
+        )!,
+      ).trigger('click')
+      const input = new DOMWrapper(
+        document.body.querySelector<HTMLInputElement>('#mwo-asset-unavailable-reason')!,
+      )
+      await input.setValue('Line-A.Spindle')
+      if (change === 'scope') state.maintenanceFilters.environmentId = 'env-other'
+      else Object.assign(state.directory, { state: 'failed', message: '停机原因读取失败，请重试' })
+      await flushPromises()
+      if (change === 'scope') expect(input.element.value).toBe('')
+      else expect(input.element.value).toBe('Line-A.Spindle')
+      const form = new DOMWrapper(input.element.closest('form')!)
+      await form.trigger('submit')
+      await flushPromises()
+      expect(state.createWorkOrder).not.toHaveBeenCalled()
+      await new DOMWrapper(document.body.querySelector('#mwo-unavailability-mode')!).trigger(
+        'click',
+      )
+      await new DOMWrapper(
+        [...document.body.querySelectorAll('[role="option"]')].find(
+          (element) => element.textContent?.trim() === '不登记设备不可用',
+        )!,
+      ).trigger('click')
+      await form.trigger('submit')
+      await flushPromises()
+      expect(state.createWorkOrder).toHaveBeenCalledWith(
+        expect.objectContaining({ assetUnavailableReasonCode: null }),
+      )
+    },
+  )
 
   // 回归：number 输入框经 v-model 可能回传 number；预估工时校验若对 number 调用
   // .trim() 会抛异常，令 submitCreate 静默失败、不发请求（真机走查发现）。
@@ -326,6 +632,7 @@ describe('maintenance work orders page', () => {
     expect(body.estimatedLaborMinutes).toBe(45)
     // 开单人默认解析为当前用户显示名（验证「默认当前用户」）。
     expect(body.openedBy).toBe('admin')
+    expect(body.assetUnavailableReasonCode).toBeNull()
   })
 
   // 审核：备件成本人工覆盖为负/非法时必须拦截，不得发出负成本或静默丢字段。
@@ -359,6 +666,7 @@ describe('maintenance work orders page', () => {
     costInput.value = '-1'
     costInput.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
+    await fillCompleteReasonAndLocation()
 
     const form = costInput.closest('form')!
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -403,6 +711,7 @@ describe('maintenance work orders page', () => {
     spareSku.value = 'BRG-6205'
     spareSku.dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
+    await fillCompleteReasonAndLocation()
 
     const form = spareSku.closest('form')!
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -415,6 +724,286 @@ describe('maintenance work orders page', () => {
     expect(body.actualTechnicianUserId).toBe('user-1')
     // 回归 #1285：备件单位来自物料主档的基本单位，不是页面写死的兜底单位。
     expect(body).toMatchObject({ spareParts: [expect.objectContaining({ uomCode: 'pcs' })] })
+  })
+
+  it('换件行就地新建物料后物料列表晚一步刷新回来，单位仍按新物料的基本单位带出', async () => {
+    state.query = {}
+    state.baseUomBySku.value = new Map([['BRG-6205', 'pcs']])
+    state.workOrders = [
+      {
+        workOrderId: 'wo-new-sku',
+        deviceAssetId: 'DEV-1',
+        priority: 'high',
+        status: 'open',
+        openedAtUtc: '2026-06-10T08:00:00Z',
+        assignedTechnicianUserId: 'user-1',
+      },
+    ]
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[aria-label^="维护工单操作"]')!.click()
+    await flushPromises()
+    ;[...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      .find((el) => el.textContent?.includes('完成工单'))!
+      .click()
+    await flushPromises()
+
+    // 选择器选中新建的物料时，物料列表还没刷新回它，查不到基本单位。
+    const spareSku = document.body.querySelector<HTMLInputElement>('[id^="spare-sku-"]')!
+    spareSku.value = 'SKU-NEW'
+    spareSku.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    const spareUom = document.body.querySelector<HTMLInputElement>('[id^="spare-uom-"]')!
+    expect(spareUom.value).toBe('')
+
+    // 物料列表刷新回来，基本单位查得到了。
+    state.baseUomBySku.value = new Map([
+      ['BRG-6205', 'pcs'],
+      ['SKU-NEW', 'kg'],
+    ])
+    await flushPromises()
+    expect(spareUom.value).toBe('kg')
+    await fillCompleteReasonAndLocation()
+
+    spareSku
+      .closest('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    const [, body] = state.completeWorkOrder.mock.calls.at(-1)!
+    expect(body).toMatchObject({
+      spareParts: [expect.objectContaining({ skuCode: 'SKU-NEW', uomCode: 'kg' })],
+    })
+  })
+
+  // #3855：完工停机原因来自权威目录，不再预填目录里根本不存在的写死码。
+  it('完工停机原因从目录选择，不预填；未选原因不提交', async () => {
+    state.query = {}
+    state.workOrders = [
+      {
+        workOrderId: 'wo-reason',
+        deviceAssetId: 'DEV-1',
+        priority: 'high',
+        status: 'open',
+        openedAtUtc: '2026-06-10T08:00:00Z',
+      },
+    ]
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+    await openCompleteSheet()
+
+    const reason = document.body.querySelector<HTMLInputElement>('#mwo-reason')!
+    expect(reason.value).toBe('')
+    const spareSku = document.body.querySelector<HTMLInputElement>('[id^="spare-sku-"]')!
+    spareSku.value = 'BRG-6205'
+    spareSku.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    spareSku
+      .closest('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(state.completeWorkOrder).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('请选择停机原因')
+
+    await fillCompleteReasonAndLocation()
+    spareSku
+      .closest('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    const [, body] = state.completeWorkOrder.mock.calls.at(-1)!
+    expect(body.downtimeReasonCode).toBe('Line-A.Spindle')
+  })
+
+  // #3902：备件从设备所在工厂的已登记库位领出，出库请求带上工厂与库位。
+  it('完工换件行带出设备所在工厂，并要求每条备件选择领出库位', async () => {
+    state.query = {}
+    state.workOrders = [
+      {
+        workOrderId: 'wo-location',
+        deviceAssetId: 'DEV-1',
+        priority: 'high',
+        status: 'open',
+        openedAtUtc: '2026-06-10T08:00:00Z',
+      },
+    ]
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+    await openCompleteSheet()
+
+    expect(document.body.textContent).toContain('一号工厂')
+    const spareSku = document.body.querySelector<HTMLInputElement>('[id^="spare-sku-"]')!
+    spareSku.value = 'BRG-6205'
+    spareSku.dispatchEvent(new Event('input', { bubbles: true }))
+    const reason = document.body.querySelector<HTMLInputElement>('#mwo-reason')!
+    reason.value = 'Line-A.Spindle'
+    reason.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    const form = spareSku.closest('form')!
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(state.completeWorkOrder).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('请为每条备件选择领出库位')
+
+    await fillCompleteReasonAndLocation('loc-spare-01')
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    const [, body] = state.completeWorkOrder.mock.calls.at(-1)!
+    expect(body).toMatchObject({
+      spareParts: [
+        expect.objectContaining({
+          skuCode: 'BRG-6205',
+          siteCode: 'SITE-001',
+          locationCode: 'loc-spare-01',
+        }),
+      ],
+    })
+  })
+
+  it('设备没有所属工厂时如实提示，不猜工厂也不提交', async () => {
+    state.query = {}
+    state.workOrders = [
+      {
+        workOrderId: 'wo-no-site',
+        deviceAssetId: 'DEV-NO-SITE',
+        priority: 'high',
+        status: 'open',
+        openedAtUtc: '2026-06-10T08:00:00Z',
+      },
+    ]
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+    await openCompleteSheet()
+
+    expect(document.body.textContent).toContain('设备未登记所属工厂')
+    const spareSku = document.body.querySelector<HTMLInputElement>('[id^="spare-sku-"]')!
+    spareSku.value = 'BRG-6205'
+    spareSku.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    await fillCompleteReasonAndLocation()
+    spareSku
+      .closest('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(state.completeWorkOrder).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('该设备未登记所属工厂')
+  })
+})
+
+describe('maintenance work orders inline downtime reason and issue location', () => {
+  async function openCreateWithReasonMode() {
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+    await new DOMWrapper(document.body.querySelector('#mwo-unavailability-mode')!).trigger('click')
+    await new DOMWrapper(
+      [...document.body.querySelectorAll('[role="option"]')].find(
+        (element) => element.textContent?.trim() === '登记设备不可用',
+      )!,
+    ).trigger('click')
+    await flushPromises()
+  }
+
+  async function chooseOption(triggerSelector: string, label: string) {
+    await new DOMWrapper(document.body.querySelector(triggerSelector)!).trigger('click')
+    await flushPromises()
+    await new DOMWrapper(
+      [...document.body.querySelectorAll('[role="option"]')].find(
+        (element) => element.textContent?.trim() === label,
+      )!,
+    ).trigger('click')
+    await flushPromises()
+  }
+
+  async function fillInlineReason(code: string) {
+    ;[...document.body.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.includes('新增停机原因'))!
+      .click()
+    await flushPromises()
+    const codeInput = document.body.querySelector<HTMLInputElement>('#dtr-code')!
+    codeInput.value = code
+    codeInput.dispatchEvent(new Event('input', { bubbles: true }))
+    const description = document.body.querySelector<HTMLInputElement>('#dtr-description')!
+    description.value = '液压系统故障'
+    description.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    await chooseOption('#dtr-category', '设备故障')
+    await chooseOption('#dtr-loss', '可用率损失')
+    codeInput
+      .closest('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+  }
+
+  it('就地新增停机原因后自动选中新建的原因，并随建单提交（#3855）', async () => {
+    await openCreateWithReasonMode()
+    await fillInlineReason('DT-HYD')
+
+    expect(state.createReason).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reasonCode: 'DT-HYD',
+        reasonCategory: 'breakdown',
+        lossCategory: 'availability',
+      }),
+    )
+    const reasonInput = document.body.querySelector<HTMLInputElement>(
+      '#mwo-asset-unavailable-reason',
+    )!
+    expect(reasonInput.value).toBe('DT-HYD')
+
+    reasonInput
+      .closest('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(state.createWorkOrder.mock.calls.at(-1)![0]).toMatchObject({
+      assetUnavailableReasonCode: 'DT-HYD',
+    })
+  })
+
+  it('就地新增时编码已存在：提示换编码，不报新建成功，也不选中任何原因（#3855）', async () => {
+    state.createReason.mockRejectedValue({
+      success: false,
+      message: 'downtime-reason-code-already-exists',
+      code: 409,
+    })
+    await openCreateWithReasonMode()
+    await fillInlineReason('DT-MECH')
+
+    expect(state.createReason).toHaveBeenCalledTimes(1)
+    expect(document.body.textContent).toContain('该原因编码已存在')
+    expect(state.toastSuccess).not.toHaveBeenCalled()
+    expect(
+      document.body.querySelector<HTMLInputElement>('#mwo-asset-unavailable-reason')!.value,
+    ).toBe('')
+  })
+
+  it('完工换件行的领出库位只在设备所在工厂里选（#3902）', async () => {
+    state.query = {}
+    state.workOrders = [
+      {
+        workOrderId: 'wo-site',
+        deviceAssetId: 'DEV-1',
+        priority: 'high',
+        status: 'open',
+        openedAtUtc: '2026-06-10T08:00:00Z',
+      },
+    ]
+    const wrapper = mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[aria-label^="维护工单操作"]')!.click()
+    await flushPromises()
+    ;[...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      .find((el) => el.textContent?.includes('完成工单'))!
+      .click()
+    await flushPromises()
+
+    const locationPicker = wrapper
+      .findAllComponents({ name: 'DirectoryPicker' })
+      .find((picker) =>
+        String(picker.attributes('id') ?? picker.vm.$attrs.id).startsWith('spare-location-'),
+      )
+    expect(locationPicker).toBeDefined()
+    expect(locationPicker!.props('directoryType')).toBe('location')
+    expect(locationPicker!.props('formSiteCode')).toBe('SITE-001')
   })
 })
 
@@ -483,6 +1072,35 @@ describe('maintenance inspections page', () => {
     expect(wrapper.find('[data-testid^="measurements-"]').exists()).toBe(false)
   })
 
+  it('只读角色看不到「记录点检」', async () => {
+    signInAsMaintenanceReader()
+
+    mount(InspectionsPage, mountOptions())
+    await flushPromises()
+
+    expect(document.body.textContent).not.toContain('记录点检')
+  })
+
+  it('记录点检只看保养计划管理权限：只有计划管理、没有工单管理也能记录', async () => {
+    useAuthStore().$patch({
+      principal: {
+        principalType: 'user',
+        principalId: 'user-planner',
+        loginName: 'planner',
+        permissionCodes: ['business.maintenance.plans.read', 'business.maintenance.plans.manage'],
+      },
+    })
+
+    mount(InspectionsPage, mountOptions())
+    await flushPromises()
+
+    expect(
+      [...document.body.querySelectorAll('button')].some((b) =>
+        b.textContent?.includes('记录点检'),
+      ),
+    ).toBe(true)
+  })
+
   it('defaults the inspector to the current user and makes characteristic a select (not free text)', async () => {
     mount(InspectionsPage, mountOptions())
     await flushPromises()
@@ -526,7 +1144,7 @@ describe('maintenance plans page', () => {
     await flushPromises()
   }
 
-  it('does not expose the edit row action to a principal with plans.read only', async () => {
+  it('does not expose any write entry to a principal with plans.read only', async () => {
     useAuthStore().$patch({
       principal: {
         principalType: 'user',
@@ -550,6 +1168,39 @@ describe('maintenance plans page', () => {
 
     expect(document.body.textContent).not.toContain('编辑触发条件')
     expect(document.body.querySelector('[aria-label="保养计划操作 PM-READ-ONLY"]')).toBeNull()
+    expect(document.body.textContent).not.toContain('新建保养计划')
+    expect(document.body.textContent).not.toContain('生成到期工单')
+  })
+
+  it('只读角色的保养计划列表不渲染「操作」列', async () => {
+    signInAsMaintenanceReader()
+    state.plans = [
+      {
+        planId: 'p-ro',
+        deviceAssetId: 'DEV-RO',
+        planCode: 'PM-RO',
+        interval: 'P30D',
+        startsOn: '2026-07-01',
+      },
+    ]
+
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    expect(
+      [...document.body.querySelectorAll('th')].some((th) => th.textContent?.includes('计划编号')),
+    ).toBe(true)
+    expect(hasActionsColumn()).toBe(false)
+  })
+
+  it('有计划管理权限时「生成到期工单」「新建保养计划」与「操作」列都在', async () => {
+    mount(PlansPage, mountOptions())
+    await flushPromises()
+
+    const buttons = [...document.body.querySelectorAll('button')].map((b) => b.textContent ?? '')
+    expect(buttons.some((text) => text.includes('生成到期工单'))).toBe(true)
+    expect(buttons.some((text) => text.includes('新建保养计划'))).toBe(true)
+    expect(hasActionsColumn()).toBe(true)
   })
 
   it('allows a principal with plans.manage to open the edit dialog', async () => {
@@ -653,9 +1304,9 @@ describe('maintenance plans page', () => {
     const wrapper = mount(PlansPage, mountOptions())
     await flushPromises()
 
-    // A failed telemetry read is never mislabeled as "暂无样本".
+    // A failed telemetry read is never mislabeled as "暂无运行记录".
     expect(wrapper.text()).toContain('运行小时（读取失败）')
-    expect(wrapper.text()).toContain('运行小时（暂无样本）')
+    expect(wrapper.text()).toContain('运行小时（暂无运行记录）')
   })
 
   it('shows a loading state for a runtime plan whose remaining read is in flight (not a stale value)', async () => {
@@ -760,6 +1411,89 @@ describe('maintenance plans page', () => {
     // Must not hide the calendar date behind a bare runtime-only "读取失败".
     expect(wrapper.text()).not.toContain('运行小时（读取失败）')
   })
+
+  // PublicContract：#3905 r1 / #4387；真实日期交互保持 ISO 请求和既有当天默认值。
+  it.each(['plan', 'generate'] as const)(
+    '%s 日期选择、响应式 locale 与清空保持请求语义',
+    async (kind) => {
+      const wrapper = mount(PlansPage, mountOptions())
+      await flushPromises()
+      const openingText = kind === 'plan' ? '新建保养计划' : '生成到期工单'
+      ;[...document.body.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent?.includes(openingText))!
+        .click()
+      await flushPromises()
+
+      const id = kind === 'plan' ? 'plan-starts' : 'gen-date'
+      const today = new Date().toISOString().slice(0, 10)
+      const trigger = bodyWrapper<HTMLButtonElement>(`#${id}`)
+      expect(document.querySelector(`label[for="${id}"]`)).not.toBeNull()
+      expect(trigger.text()).toBe(
+        new Intl.DateTimeFormat('zh-CN', {
+          year: 'numeric',
+          month: 'numeric',
+          day: 'numeric',
+          timeZone: 'UTC',
+        }).format(new Date(`${today}T00:00:00Z`)),
+      )
+      await trigger.trigger('click')
+      await flushPromises()
+      const selectedDay = [...document.querySelectorAll<HTMLButtonElement>('.nv-dp-cell')].find(
+        (button) => button.textContent?.trim() === '19',
+      )!
+      selectedDay.click()
+      await flushPromises()
+      const picked = `${today.slice(0, 7)}-19`
+      i18n.global.locale.value = 'en-US'
+      await flushPromises()
+      expect(trigger.text()).toBe(
+        new Intl.DateTimeFormat('en-US', {
+          year: 'numeric',
+          month: 'numeric',
+          day: 'numeric',
+          timeZone: 'UTC',
+        }).format(new Date(`${picked}T00:00:00Z`)),
+      )
+
+      if (kind === 'plan') {
+        await bodyWrapper<HTMLInputElement>('#plan-device').setValue('DEV-SMT-01')
+        await bodyWrapper<HTMLInputElement>('#plan-owner').setValue('设备保全班')
+      }
+      await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
+      await flushPromises()
+      const request = kind === 'plan' ? state.createPlan : state.generateDue
+      const field = kind === 'plan' ? 'startsOn' : 'businessDate'
+      expect(request.mock.calls[0][0][field]).toBe(picked)
+
+      ;[...document.body.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent?.includes(openingText))!
+        .click()
+      await flushPromises()
+      await bodyWrapper<HTMLButtonElement>(`#${id}`).trigger('click')
+      await flushPromises()
+      ;[...document.querySelectorAll<HTMLButtonElement>('.nv-dp-cell')]
+        .find((button) => button.textContent?.trim() === '19')!
+        .click()
+      await flushPromises()
+      const picker = document.querySelector(`#${id}`)!.closest('[data-slot="nv-date-picker"]')!
+      ;(picker.querySelector('[aria-label="清除所选日期"]') as HTMLButtonElement).click()
+      await flushPromises()
+      expect(document.querySelector(`#${id}`)?.textContent).toContain('选择日期')
+      if (kind === 'plan') {
+        // 清空日期不会绕过原有必填校验。
+        await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
+        await flushPromises()
+        expect(request).toHaveBeenCalledTimes(1)
+        expect(document.body.textContent).toContain('请完善标红的必填项。')
+        await bodyWrapper<HTMLInputElement>('#plan-device').setValue('DEV-SMT-01')
+        await bodyWrapper<HTMLInputElement>('#plan-owner').setValue('设备保全班')
+      }
+      await bodyWrapper<HTMLFormElement>('[role="dialog"] form').trigger('submit')
+      await flushPromises()
+      expect(request.mock.calls[1][0][field]).toBe(today)
+      wrapper.unmount()
+    },
+  )
 
   it('creates a genuine runtime-only plan (no calendar interval)', async () => {
     mount(PlansPage, mountOptions())
@@ -1095,5 +1829,117 @@ describe('maintenance plans page', () => {
       .querySelector<HTMLInputElement>('#plan-runtime-hours')!
       .closest('[data-slot="nv-input"]')!
     expect(runtimeWrapper.getAttribute('data-invalid')).toBe('true')
+  })
+})
+
+describe('维修工单预计恢复', () => {
+  async function openPrediction() {
+    document.body.querySelector<HTMLButtonElement>('[aria-label^="维护工单操作"]')!.click()
+    await flushPromises()
+    ;[...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+      .find((el) => el.textContent?.includes('预计恢复'))!
+      .click()
+    await flushPromises()
+  }
+
+  it('预填本地时间、提交 UTC 和版本，清空可删除预测', async () => {
+    state.query = {}
+    state.workOrders[0]!.assignedTechnicianUserId = 'user-admin'
+    state.workOrders[0]!.expectedRestoreAtUtc = '2026-10-09T08:45:00Z'
+    state.workOrders[0]!.version = 4
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+    await openPrediction()
+    const input = document.body.querySelector<HTMLInputElement>('#mwo-expected-restore')!
+    expect(new Date(input.value).toISOString()).toBe('2026-10-09T08:45:00.000Z')
+    input.value = '2026-10-10T13:30'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    input.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(state.updateExpectedRestore).toHaveBeenCalledWith(
+      state.workOrders[0],
+      new Date('2026-10-10T13:30').toISOString(),
+      { kind: 'self', id: 'user-admin' },
+    )
+    expect(state.toastSuccess).toHaveBeenCalled()
+    await openPrediction()
+    const clear = document.body.querySelector<HTMLInputElement>('#mwo-expected-restore')!
+    clear.value = ''
+    clear.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    clear.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(state.updateExpectedRestore).toHaveBeenLastCalledWith(state.workOrders[0], null, {
+      kind: 'self',
+      id: 'user-admin',
+    })
+  })
+
+  it('其他技师不可编辑预测', async () => {
+    state.query = {}
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[aria-label^="维护工单操作"]')!.click()
+    await flushPromises()
+    const action = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (el) => el.textContent?.includes('预计恢复'),
+    )!
+    expect(action.getAttribute('data-disabled')).not.toBeNull()
+  })
+
+  it('更新失败保留抽屉并显示错误反馈', async () => {
+    state.query = {}
+    state.workOrders[0]!.assignedTechnicianUserId = 'user-admin'
+    state.updateExpectedRestore.mockRejectedValueOnce(new Error('工单版本已变化，请刷新后重试。'))
+    mount(WorkOrdersPage, mountOptions())
+    await flushPromises()
+    await openPrediction()
+    const input = document.body.querySelector<HTMLInputElement>('#mwo-expected-restore')!
+    input.value = '2026-10-10T13:30'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    input.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(state.toastError).toHaveBeenCalled()
+    expect(input.value).toBe('2026-10-10T13:30')
+    expect(document.body.querySelector('#mwo-expected-restore')).not.toBeNull()
+  })
+})
+
+it('多授权范围维修人员可按工单团队更新，并只选择 Maintenance 支持的范围', async () => {
+  state.query = {}
+  state.workOrders[0]!.assignedTechnicianUserId = 'user-admin'
+  state.workOrders[0]!.assignedTeamId = 'TEAM-A'
+  state.expectedRestoreScopes = [
+    { kind: 'work-center', id: 'WC-B', displayName: '冲压中心' },
+    { kind: 'self', id: 'user-admin', displayName: '本人' },
+    { kind: 'team', id: 'TEAM-A', displayName: '维修一班' },
+  ]
+  mount(WorkOrdersPage, mountOptions())
+  await flushPromises()
+  document.body.querySelector<HTMLButtonElement>('[aria-label^="维护工单操作"]')!.click()
+  await flushPromises()
+  ;[...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    .find((el) => el.textContent?.includes('预计恢复'))!
+    .click()
+  await flushPromises()
+  const picker = document.body.querySelector<HTMLButtonElement>('#mwo-expected-restore-scope')!
+  expect(picker.textContent).toContain('维修一班')
+  picker.click()
+  await flushPromises()
+  const options = [...document.body.querySelectorAll<HTMLElement>('[role="option"]')]
+  expect(options.some((el) => el.textContent?.includes('冲压中心'))).toBe(false)
+  options.find((el) => el.textContent?.includes('本人'))!.click()
+  await flushPromises()
+  document.body
+    .querySelector('#mwo-expected-restore')!
+    .closest('form')!
+    .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  await flushPromises()
+  expect(state.updateExpectedRestore).toHaveBeenCalledWith(state.workOrders[0], null, {
+    kind: 'self',
+    id: 'user-admin',
+    displayName: '本人',
   })
 })

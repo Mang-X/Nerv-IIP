@@ -44,7 +44,6 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
       resolveWorkshop: () => undefined,
       resolveLine: () => undefined,
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
-      deviceByCode: emptyIndex,
       locationByCode: emptyIndex,
       workCenterByCode: emptyIndex,
       teamByCode: emptyIndex,
@@ -521,7 +520,7 @@ describe('equipment telemetry connectors page', () => {
     hideConnectors()
     contextMock.organizationId = ''
     const idle = mount(ConnectorsPage, { global: { stubs } })
-    expect(idle.text()).toContain('业务上下文未就绪，采集健康尚未查询。')
+    expect(idle.text()).toContain('尚未确定当前组织，暂未查询采集健康。')
     expect(idle.text()).not.toContain('暂无现场采集连接')
 
     contextMock.organizationId = 'org-001'

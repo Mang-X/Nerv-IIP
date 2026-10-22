@@ -28,12 +28,11 @@ describe('WMS PC 作业范围契约', () => {
     expect(source).not.toContain('v-model="filters.scopeId"')
   })
 
-  it.each(cases)('$page 切换作业范围时重置分页并展示当前真实范围', ({ page }) => {
+  it.each(cases)('$page 切换作业范围时重置分页', ({ page }) => {
     const source = pageSource(page)
 
     expect(source).toContain('() => filters.scopeKind')
     expect(source).toContain('() => filters.scopeId')
-    expect(source).toContain(':scope="selectedScopeLabel ||')
     expect(source).not.toContain('暂不支持按操作员归属筛选')
     expect(source).not.toContain('当前登录组织 / 当前业务环境')
   })

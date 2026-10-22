@@ -8,6 +8,7 @@ using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Domain.AggregatesModel.NotificationIntentAggregate;
 using Nerv.IIP.Notification.Domain.ObservabilityAlerts;
 using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
+using Nerv.IIP.Notification.Web.Application.Notifications;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Notification.Web.Application.ObservabilityAlerts;
@@ -77,6 +78,7 @@ public interface IObservabilityAlertProbe
 public sealed class ObservabilityAlertMonitor(
     IServiceScopeFactory scopeFactory,
     IOptions<ObservabilityAlertOptions> options,
+    NotificationSummaryBudget summaryBudget,
     ILogger<ObservabilityAlertMonitor> logger)
 {
     private readonly Dictionary<string, AlertState> alertStates = new(StringComparer.Ordinal);
@@ -209,21 +211,23 @@ public sealed class ObservabilityAlertMonitor(
         var severity = resolved
             ? NotificationContractConstants.SeverityInfo
             : NormalizeSeverity(sample.Severity);
+        var request = new SubmitNotificationIntentRequest(
+            SourceService: "observability",
+            SourceEventType: resolved ? "observability.AlertResolved" : "observability.AlertFiring",
+            SourceEventId: dedupeKey,
+            IntentType: resolved ? NotificationContractConstants.IntentTypeMessage : NotificationContractConstants.IntentTypeTask,
+            Severity: severity,
+            DedupeKey: dedupeKey,
+            Resource: new NotificationResourceRef("observability-alert-rule", sample.ResourceId ?? sample.RuleId, null),
+            Title: resolved ? $"{sample.RuleName} resolved" : $"{sample.RuleName} firing",
+            Summary: resolved ? $"{sample.RuleName} resolved. {sample.Summary}" : sample.Summary,
+            SuggestedRecipientRefs: currentOptions.RecipientRefs.Where(IsNonEmpty).Select(x => x.Trim()).Distinct(StringComparer.Ordinal).ToArray());
         var response = await mediator.Send(
             new SubmitNotificationIntentCommand(
                 currentOptions.OrganizationId!,
                 currentOptions.EnvironmentId!,
-                new SubmitNotificationIntentRequest(
-                    SourceService: "observability",
-                    SourceEventType: resolved ? "observability.AlertResolved" : "observability.AlertFiring",
-                    SourceEventId: dedupeKey,
-                    IntentType: resolved ? NotificationContractConstants.IntentTypeMessage : NotificationContractConstants.IntentTypeTask,
-                    Severity: severity,
-                    DedupeKey: dedupeKey,
-                    Resource: new NotificationResourceRef("observability-alert-rule", sample.ResourceId ?? sample.RuleId, null),
-                    Title: resolved ? $"{sample.RuleName} resolved" : $"{sample.RuleName} firing",
-                    Summary: resolved ? $"{sample.RuleName} resolved. {sample.Summary}" : sample.Summary,
-                    SuggestedRecipientRefs: currentOptions.RecipientRefs.Where(IsNonEmpty).Select(x => x.Trim()).Distinct(StringComparer.Ordinal).ToArray()),
+                request,
+                NotificationSummary.Render(request.Summary, summaryBudget),
                 now),
             cancellationToken);
 

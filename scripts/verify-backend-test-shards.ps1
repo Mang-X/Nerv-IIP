@@ -467,6 +467,226 @@ function Get-NervCSharpContainingClassRange {
     return $containingClass
 }
 
+function Get-NervCSharpTestAttributeNames {
+    <#
+        Resolves the attribute spellings that make a method an xUnit test case, by closing the
+        inheritance graph over `FactAttribute` / `TheoryAttribute` rather than by listing names.
+
+        #3444：一个**按名字列举**的集合在这里必然退化成白名单——本仓今天有 48 个自定义派生属性
+        （`QualityPostgresFactAttribute`、`WmsWcsDispatchPostgresFactAttribute` …），下一个 PR 新增的
+        第 49 个不会有人回来补名单，而漏掉一个的失效方向是**假绿**：那条方法不被当成用例，于是它
+        缺少 lane 归属也不会报红。所以这里解的是继承闭包：`class X : YFactAttribute` 的边由
+        `$SourceTexts` 里实际写着的基类列表给出，递归展开到不动点。
+
+        ⚠️ 失效方向（两个，方向相反，都要写明）：
+        - **假绿**：派生属性声明在 `$SourceTexts` 覆盖不到的地方，闭包就看不见它。调用方因此**并集**
+          一条后缀判据（名字以 Fact/Theory 结尾）；后缀判据单独用是白名单的另一种写法，和闭包并起来
+          则只会变宽、不会变窄。
+          ⚠️ 这条兜底**今天就在承重**，不是理论余量：调用方传进来的 `$SourceTexts` 只有 `$backendRoot`
+          下 `*.Tests.csproj` 所在目录的源码，闭包从这张面只解得出 **45** 个派生属性；另外 3 个
+          （`DockerCliFactAttribute` / `OpcUaSimulatorFactAttribute` / `UnixHostProcessFactAttribute`）
+          声明在 `connector-hosts/`，在扫描面之外，闭包够不到，**全靠后缀兜底救回**。
+          ⇒ 两条路同时够不到的情形是：一个**不以 Fact/Theory 结尾**的派生属性声明在 `$backendRoot`
+          之外。那一格是假绿，边界已写进
+          docs/governance/testing/real-dependency-lanes.md「类级排除的覆盖闭合」的覆盖边界段。
+        - **假红**：基类按**短名**匹配，所以任何恰好叫 `FooFactAttribute` 而与 xUnit 无关的类型会被
+          并进来。后果是它的方法被要求登记，是一条看得见、改得掉的红，不是静默放行。
+
+        基类列表用原始源码文本（而非 structural text）匹配也只会往"更宽"错：注释掉的声明被算进来
+        会多一个属性名，不会少一个。别名（`using Probe = Xunit.FactAttribute;`）不解析，同样记在上面
+        那份覆盖边界里。
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $SourceTexts
+    )
+
+    $derivedByBase = @{}
+    foreach ($sourceText in $SourceTexts) {
+        if ([string]::IsNullOrEmpty($sourceText)) {
+            continue
+        }
+        foreach ($declaration in [regex]::Matches($sourceText, '(?m)^\s*(?:(?:public|internal|private|protected|sealed|abstract|static|partial|file|new)\s+)*class\s+(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^<>{;]*>)?\s*:\s*(?<bases>[^{;\r\n]+)')) {
+            $derivedName = $declaration.Groups['name'].Value
+            foreach ($baseMatch in [regex]::Matches($declaration.Groups['bases'].Value, '[A-Za-z_][A-Za-z0-9_.]*')) {
+                $baseSegments = @([string]($baseMatch.Value) -split '\.')
+                $baseName = [string] $baseSegments[$baseSegments.Count - 1]
+                if (-not $derivedByBase.ContainsKey($baseName)) {
+                    $derivedByBase[$baseName] = [System.Collections.Generic.List[string]]::new()
+                }
+                [void] $derivedByBase[$baseName].Add([string] $derivedName)
+            }
+        }
+    }
+
+    $closedTypes = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $frontier = [System.Collections.Generic.Stack[string]]::new()
+    foreach ($rootType in @('FactAttribute', 'TheoryAttribute')) {
+        $frontier.Push([string] $rootType)
+    }
+    while ($frontier.Count -gt 0) {
+        $currentType = [string] $frontier.Pop()
+        if (-not $closedTypes.Add($currentType)) {
+            continue
+        }
+        if (-not $derivedByBase.ContainsKey($currentType)) {
+            continue
+        }
+        foreach ($derivedType in $derivedByBase[$currentType]) {
+            if (-not $closedTypes.Contains([string] $derivedType)) {
+                $frontier.Push([string] $derivedType)
+            }
+        }
+    }
+
+    # C# lets an attribute be written with or without the `Attribute` suffix, and both spellings
+    # appear in this repository (`[Fact]`, `[QualityPostgresFact]`), so both go into the set.
+    $attributeNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($closedType in $closedTypes) {
+        [void] $attributeNames.Add([string] $closedType)
+        if ($closedType.EndsWith('Attribute', [StringComparison]::Ordinal)) {
+            [void] $attributeNames.Add($closedType.Substring(0, $closedType.Length - 'Attribute'.Length))
+        }
+    }
+
+    return , $attributeNames
+}
+
+function Get-NervCSharpTestMethodDeclarations {
+    <#
+        Enumerates the test methods declared directly in each class of one C# source file.
+
+        Returned identities are `MethodName` plus the innermost containing class range, which is the
+        unit VSTest's `FullyQualifiedName` filter — and therefore the shard manifest's class selector
+        — actually addresses. A method in a *nested* class is deliberately not attributed to the
+        outer class: VSTest spells it `Outer+Inner.Method`, which the runner's `FullyQualifiedName!~Outer.`
+        clause does not match either, so counting it here would invent a gap the exclusion never opened.
+
+        The scan is written against structural text (comments and string bodies blanked, indices
+        preserved), so a `[Fact]` inside a comment or a verbatim string cannot be mistaken for a
+        declaration. Expression-bodied members (`public Task X() => ...`, which carry no `async`
+        keyword) are found the same way as block-bodied ones because the scan stops at the first
+        top-level `(`, not at a fixed keyword window — #3444 记录过按 `public async Task` grep 会**系统性
+        漏掉**表达式体写法这一条。
+    #>
+    param(
+        [Parameter(Mandatory)] [string] $StructuralText,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $ClassRanges,
+        [Parameter(Mandatory)] [Collections.Generic.HashSet[string]] $TestAttributeNames
+    )
+
+    $openBracket = [char]0x005B
+    $closeBracket = [char]0x005D
+    $openParen = [char]0x0028
+    $openBrace = [char]0x007B
+    $closeBrace = [char]0x007D
+    $semicolon = [char]0x003B
+    $equals = [char]0x003D
+    $openAngle = [char]0x003C
+    $closeAngle = [char]0x003E
+
+    $index = 0
+    while ($index -lt $StructuralText.Length) {
+        if ($StructuralText[$index] -ne $openBracket) {
+            $index++
+            continue
+        }
+
+        # An attribute list only starts where a member declaration may start. Anchoring on the
+        # preceding non-whitespace character keeps indexers, collection initializers and array
+        # subscripts out; none of those may follow `{`, `}` or `;`.
+        $previousIndex = $index - 1
+        while ($previousIndex -ge 0 -and [char]::IsWhiteSpace($StructuralText[$previousIndex])) {
+            $previousIndex--
+        }
+        $previousCharacter = if ($previousIndex -lt 0) { $openBrace } else { $StructuralText[$previousIndex] }
+        if ($previousCharacter -ne $openBrace -and $previousCharacter -ne $closeBrace -and
+            $previousCharacter -ne $semicolon -and $previousCharacter -ne $closeBracket) {
+            $index++
+            continue
+        }
+
+        $attributeStart = $index
+        $hasTestAttribute = $false
+        $cursor = $index
+        while ($cursor -lt $StructuralText.Length -and $StructuralText[$cursor] -eq $openBracket) {
+            $depth = 0
+            $groupEnd = -1
+            for ($scan = $cursor; $scan -lt $StructuralText.Length; $scan++) {
+                if ($StructuralText[$scan] -eq $openBracket) { $depth++ }
+                elseif ($StructuralText[$scan] -eq $closeBracket) {
+                    $depth--
+                    if ($depth -eq 0) { $groupEnd = $scan; break }
+                }
+            }
+            if ($groupEnd -lt 0) { break }
+
+            $groupBody = $StructuralText.Substring($cursor + 1, $groupEnd - $cursor - 1)
+            foreach ($segment in @(Get-NervCSharpTopLevelSegments -StructuralText $groupBody -ContentStart 0 -ContentEnd $groupBody.Length)) {
+                $segmentText = [string] $segment.Text
+                # `[method: Fact]` and `[Xunit.Fact(Skip = "…")]` both reduce to the last identifier
+                # before the argument list.
+                $nameMatch = [regex]::Match($segmentText, '^\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*:\s*)?(?<name>[A-Za-z_][A-Za-z0-9_.]*)')
+                if (-not $nameMatch.Success) { continue }
+                $nameSegments = @([string]($nameMatch.Groups['name'].Value) -split '\.')
+                $attributeName = [string] $nameSegments[$nameSegments.Count - 1]
+                if ($TestAttributeNames.Contains($attributeName) -or
+                    $attributeName.EndsWith('Fact', [StringComparison]::Ordinal) -or
+                    $attributeName.EndsWith('Theory', [StringComparison]::Ordinal) -or
+                    $attributeName.EndsWith('FactAttribute', [StringComparison]::Ordinal) -or
+                    $attributeName.EndsWith('TheoryAttribute', [StringComparison]::Ordinal)) {
+                    $hasTestAttribute = $true
+                }
+            }
+
+            $cursor = $groupEnd + 1
+            while ($cursor -lt $StructuralText.Length -and [char]::IsWhiteSpace($StructuralText[$cursor])) {
+                $cursor++
+            }
+        }
+
+        if (-not $hasTestAttribute) {
+            $index = [Math]::Max($attributeStart + 1, $cursor)
+            continue
+        }
+
+        # The declaration runs from the end of the attribute list to its parameter list. Stopping at
+        # `{`, `}`, `;` and `=` keeps a field or property initializer from being read as a method.
+        $parenIndex = -1
+        $angleDepth = 0
+        for ($scan = $cursor; $scan -lt $StructuralText.Length; $scan++) {
+            $character = $StructuralText[$scan]
+            if ($character -eq $openAngle) { $angleDepth++ ; continue }
+            if ($character -eq $closeAngle) { $angleDepth-- ; continue }
+            if ($character -eq $openParen -and $angleDepth -le 0) { $parenIndex = $scan; break }
+            if ($character -eq $openBrace -or $character -eq $closeBrace -or
+                $character -eq $semicolon -or $character -eq $equals) { break }
+        }
+        if ($parenIndex -lt 0) {
+            $index = [Math]::Max($attributeStart + 1, $cursor)
+            continue
+        }
+
+        $declarationText = $StructuralText.Substring($cursor, $parenIndex - $cursor)
+        $methodMatch = [regex]::Match($declarationText, '(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^<>]*>)?\s*$')
+        if (-not $methodMatch.Success) {
+            $index = [Math]::Max($attributeStart + 1, $cursor)
+            continue
+        }
+
+        $containingClass = Get-NervCSharpContainingClassRange -ClassRanges $ClassRanges -Index $attributeStart
+        if ($null -ne $containingClass) {
+            [pscustomobject]@{
+                ClassName = [string] $containingClass.Name
+                ClassOpenBraceIndex = [int] $containingClass.OpenBraceIndex
+                MethodName = [string] $methodMatch.Groups['name'].Value
+                Index = [int] $attributeStart
+            }
+        }
+
+        $index = [Math]::Max($attributeStart + 1, $parenIndex)
+    }
+}
+
 function Get-NervCSharpBraceRanges {
     param(
         [Parameter(Mandatory)] [string] $StructuralText
@@ -806,10 +1026,18 @@ function Get-NervCSharpAuditedDockerFileNameAssignmentMatches {
     }
 }
 
-$repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$resolvedManifestPath = (Resolve-Path $ManifestPath).Path
-$manifest = Get-Content -LiteralPath $resolvedManifestPath -Raw | ConvertFrom-Json
-$errors = [System.Collections.Generic.List[string]]::new()
+function Invoke-BackendTestShardManifestPolicyStage {
+    param(
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [string] $PolicyPath
+    )
+
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    Write-Host "Backend test shard stage 'manifest-policy' started."
+    $resolvedManifestPath = (Resolve-Path $ManifestPath).Path
+    $manifest = Get-Content -LiteralPath $resolvedManifestPath -Raw | ConvertFrom-Json
+    $errors = [System.Collections.Generic.List[string]]::new()
 
 if ($manifest.schemaVersion -ne 1) {
     $errors.Add('backend test shard manifest schemaVersion must be 1.')
@@ -910,6 +1138,10 @@ foreach ($shard in $fastShards) {
     $excludedClassSelectorsByFastShard[[string] $shard.id] = $shardClassSelectors
 }
 
+# Hoisted out of the policy branch below so the inventory-source stage can run the *same* rule set
+# through the same matcher; #3444 的缺陷正是「类级排除有没有据」与「类里每条用例有没有据」用了两份
+# 口径，所以这里只允许有一份规则。策略文件缺失时它保持为空数组，见下面 stage 对空集的处理。
+$realDependencyRules = @()
 if (-not (Test-Path -LiteralPath $PolicyPath -PathType Leaf)) {
     $errors.Add("MAN-661 test evidence policy does not exist: $PolicyPath.")
 }
@@ -1024,6 +1256,37 @@ foreach ($entry in $classificationEntries) {
     }
 }
 
+    $stopwatch.Stop()
+    Write-Host "Backend test shard stage 'manifest-policy' completed in $($stopwatch.ElapsedMilliseconds) ms."
+    return [pscustomobject]@{
+        Manifest = $manifest
+        FastShards = $fastShards
+        HeavyLanes = $heavyLanes
+        ExcludedClassOwners = $excludedClassOwners
+        ExcludedClassSelectorsByFastShard = $excludedClassSelectorsByFastShard
+        RealDependencyRules = @($realDependencyRules)
+        HeavyLaneIdSet = $heavyLaneIdSet
+        ProjectOwners = $projectOwners
+        AmbiguousProjectOwners = $ambiguousProjectOwners
+        Errors = @($errors)
+    }
+}
+
+function Invoke-BackendTestShardInventorySourceStage {
+    param(
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [AllowEmptyString()] [string] $BackendInventoryRoot,
+        [Parameter(Mandatory)] [hashtable] $ProjectOwners,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [Collections.Generic.HashSet[string]] $AmbiguousProjectOwners,
+        [Parameter(Mandatory)] [hashtable] $ExcludedClassSelectorsByFastShard,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $RealDependencyRules,
+        [Parameter(Mandatory)] [Collections.Generic.HashSet[string]] $HeavyLaneIdSet
+    )
+
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    Write-Host "Backend test shard stage 'inventory-source' started."
+    $errors = [System.Collections.Generic.List[string]]::new()
+
 $backendRoot = if ([string]::IsNullOrWhiteSpace($BackendInventoryRoot)) { Join-Path $repositoryRoot 'backend' } else { (Resolve-Path $BackendInventoryRoot).Path }
 $discoveredProjects = @(
     Get-NervStringsSorted -Values @(Get-ChildItem -LiteralPath $backendRoot -Recurse -File -Filter '*.Tests.csproj' |
@@ -1045,6 +1308,51 @@ $testProjectPaths = @(
         Where-Object { $_.FullName -notmatch '[/\\](bin|obj)[/\\]' } |
         ForEach-Object { $_.FullName }) -Comparer ([StringComparer]::Ordinal) -Unique
 )
+# ---------------------------------------------------------------------------------------------
+# #3444：类级排除的「有据」判据。
+#
+# 缺陷形状：`excludedTestClasses` 是**类级**过滤器（runner 发出 `FullyQualifiedName!~<类>.`），而
+# manifest-policy stage 只问「这个 selector 覆盖到了 ≥1 条 MAN-661 身份吗」。同一个类里只要有一条
+# env-gated 用例被登记，整条类级排除就算有据，同类其余**裸 [Fact]/[Theory]** 随之被排除：它们不在
+# 任何 fast shard 里跑，不在任何 heavy lane 的 filter 里，也**不产生 skipped 记录**——TRX 里根本没有
+# 这一行，所以 zero-execution 那套证据检查在构造上也看不见它们。
+#
+# 闭合方式：类级排除必须**整类**都有 lane 归属。下面按源码枚举该类直接声明的每一条用例，逐条过
+# 同一个 Get-BackendTestShardPolicyIdentityMatches。这里刻意不重新读一遍文件、也不再算一遍
+# structural text——沿用本 stage 已经付过的那一份（改之前本 stage 就已对每个测试项目的每个 .cs
+# 算 ConvertTo-NervCSharpStructuralText）。
+#
+# ⚠️ 分母来自源码、分子来自策略文件，两者不同源；如果类级 selector 在源码里一个类都对不上（写错
+# 名字、类被删被改名），分母会变成 0 而检查静默通过——所以下面额外要求每条类级 selector 至少解析
+# 到一个声明了用例的类，否则报红。
+# ---------------------------------------------------------------------------------------------
+$excludedClassSelectorOwners = @{}
+foreach ($ownerShardId in @($excludedClassSelectorsByFastShard.Keys)) {
+    foreach ($classSelector in @($excludedClassSelectorsByFastShard[$ownerShardId])) {
+        $excludedClassSelectorOwners[[string] $classSelector] = [string] $ownerShardId
+    }
+}
+$excludedClassShortNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+foreach ($classSelector in @($excludedClassSelectorOwners.Keys)) {
+    $selectorSegments = @([string] $classSelector -split '\.')
+    [void] $excludedClassShortNames.Add([string] $selectorSegments[$selectorSegments.Count - 1])
+}
+$resolvedExcludedClassSelectors = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+# Read once, keep once: the derivation closure needs every test source before the first file can be
+# judged, and the per-file loop below needs the same text. Two passes over the same 900-odd files
+# would otherwise pay the read twice.
+$testSourceTextCache = @{}
+foreach ($testProjectPath in $testProjectPaths) {
+    foreach ($sourceFile in Get-ChildItem -LiteralPath (Split-Path -Parent $testProjectPath) -Recurse -File -Filter '*.cs' |
+            Where-Object { $_.FullName -notmatch '[/\\](bin|obj)[/\\]' }) {
+        if ($testSourceTextCache.ContainsKey([string] $sourceFile.FullName)) {
+            continue
+        }
+        $testSourceTextCache[[string] $sourceFile.FullName] = [string] (Get-Content -LiteralPath $sourceFile.FullName -Raw)
+    }
+}
+$testAttributeNames = Get-NervCSharpTestAttributeNames -SourceTexts @($testSourceTextCache.Values | ForEach-Object { [string] $_ })
+
 $auditedSourceProjects = @{}
 foreach ($testProjectPath in $testProjectPaths) {
     $testProjectDirectory = Split-Path -Parent $testProjectPath
@@ -1057,9 +1365,71 @@ foreach ($testProjectPath in $testProjectPaths) {
         }
         $auditedSourceProjects[[string] $sourceFile.FullName] = $relativeTestProjectPath
 
-        $sourceText = Get-Content -LiteralPath $sourceFile.FullName -Raw
+        $sourceText = if ($testSourceTextCache.ContainsKey([string] $sourceFile.FullName)) {
+            [string] $testSourceTextCache[[string] $sourceFile.FullName]
+        }
+        else {
+            [string] (Get-Content -LiteralPath $sourceFile.FullName -Raw)
+        }
         $structuralText = ConvertTo-NervCSharpStructuralText -SourceText $sourceText
         $classRanges = $null
+
+        # #3444: whole-class coverage for every class-level fast-shard exclusion. Only files that
+        # mention one of the excluded class short names pay for class-range and method enumeration.
+        $mentionsExcludedClass = $false
+        foreach ($excludedClassShortName in $excludedClassShortNames) {
+            if ($structuralText.Contains([string] $excludedClassShortName, [StringComparison]::Ordinal)) {
+                $mentionsExcludedClass = $true
+                break
+            }
+        }
+        if ($mentionsExcludedClass) {
+            $classRanges = @(Get-NervCSharpClassRanges -StructuralText $structuralText)
+            $namespaceDeclarations = @([regex]::Matches($structuralText, '(?m)^\s*namespace\s+(?<name>[A-Za-z_][A-Za-z0-9_.]*)\s*[;{]'))
+            $testMethodDeclarations = @(Get-NervCSharpTestMethodDeclarations -StructuralText $structuralText -ClassRanges $classRanges -TestAttributeNames $testAttributeNames)
+            foreach ($classRange in $classRanges) {
+                # The namespace a type lives in is the last one opened before its declaration; this
+                # spells file-scoped and block-scoped namespaces the same way, and a file carrying
+                # two namespaces does not collapse into one.
+                $enclosingNamespace = ''
+                foreach ($namespaceDeclaration in $namespaceDeclarations) {
+                    if ($namespaceDeclaration.Index -lt $classRange.StartIndex) {
+                        $enclosingNamespace = [string] $namespaceDeclaration.Groups['name'].Value
+                    }
+                }
+                if ([string]::IsNullOrWhiteSpace($enclosingNamespace)) {
+                    continue
+                }
+
+                $classSelector = "$enclosingNamespace.$($classRange.Name)"
+                if (-not $excludedClassSelectorOwners.ContainsKey($classSelector)) {
+                    continue
+                }
+
+                $declaredTestMethods = @($testMethodDeclarations |
+                    Where-Object { $_.ClassOpenBraceIndex -eq $classRange.OpenBraceIndex })
+                if ($declaredTestMethods.Count -eq 0) {
+                    continue
+                }
+                [void] $resolvedExcludedClassSelectors.Add([string] $classSelector)
+
+                $ownerShardId = [string] $excludedClassSelectorOwners[$classSelector]
+                foreach ($declaredTestMethod in @(Get-NervStringsSorted -Values @($declaredTestMethods | ForEach-Object { [string] $_.MethodName }) -Comparer ([StringComparer]::Ordinal) -Unique)) {
+                    $declaredIdentity = "$classSelector.$declaredTestMethod"
+                    # An empty rule set means the policy file itself is missing or carries no
+                    # environment-gated real-dependency rule; both are already reported by the
+                    # manifest-policy stage, and re-reporting every method here would bury them.
+                    if ($RealDependencyRules.Count -eq 0) {
+                        continue
+                    }
+                    if (@(Get-BackendTestShardPolicyIdentityMatches -Selector $declaredIdentity -Rules $RealDependencyRules).Count -gt 0) {
+                        continue
+                    }
+                    $errors.Add("Fast shard '$ownerShardId' excludes the whole class '$classSelector', but '$declaredTestMethod' is not registered in the MAN-661 evidence policy as an environment-gated real-dependency skip; a class-level exclusion removes it from the shard without any lane picking it up, and without leaving a skipped record.")
+                }
+            }
+        }
+
         $unqualifiedProcessStartInfoNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
         if ($structuralText.Contains('ProcessStartInfo', [StringComparison]::Ordinal)) {
             $hasLocalProcessStartInfoType = [regex]::IsMatch($structuralText, '(?m)^\s*(?:(?:public|internal|private|protected|sealed|abstract|static|partial)\s+)*(?:class|struct|record)\s+ProcessStartInfo\b')
@@ -1144,6 +1514,13 @@ foreach ($testProjectPath in $testProjectPaths) {
                 # A heavy lane is the intended home for real-dependency tests. Its owner script and
                 # evidence policy govern execution, so fast-shard exclusion is neither required nor
                 # meaningful for a project classified wholly into that lane.
+                #
+                # #3135：上面这句「classified wholly into that lane」此前是**愿望而不是事实**。
+                # full-chain 的 owner 脚本当时只按 5 个成员的 FullyQualifiedName 精确 filter 跑，
+                # 项目里另外 16 条用例既被本分支放行、又不在名单里，于是跑在 0 个 CI job 上。
+                # 本检查器管不到这一层（静态看不到测试框架的用例发现结果），闭合由 lane owner 自己
+                # 承担：见 scripts/run-full-chain-test-lane.ps1 的 residual 覆盖段与
+                # docs/governance/testing/real-dependency-lanes.md「Lane 接管整个项目时的覆盖闭合」。
                 continue
             }
             else {
@@ -1178,6 +1555,16 @@ foreach ($testProjectPath in $testProjectPaths) {
     }
 }
 
+# ⚠️ The "every method is registered" check above has a source-derived denominator. A selector that
+# resolves to no declared test class contributes zero methods and would pass vacuously — which is
+# exactly how a renamed or deleted test class turns a live exclusion into a dead one nobody notices.
+foreach ($classSelector in @(Get-NervStringsSorted -Values @($excludedClassSelectorOwners.Keys | ForEach-Object { [string] $_ }) -Comparer ([StringComparer]::Ordinal) -Unique)) {
+    if ($resolvedExcludedClassSelectors.Contains([string] $classSelector)) {
+        continue
+    }
+    $errors.Add("Fast shard '$($excludedClassSelectorOwners[$classSelector])' excludes class '$classSelector', but no backend test source declares that class with any test method; the exclusion covers nothing and its whole-class coverage cannot be checked.")
+}
+
 $unclassifiedProjects = @($discoveredProjects | Where-Object { -not $projectOwners.ContainsKey($_) })
 if ($unclassifiedProjects.Count -gt 0) {
     $errors.Add("Unclassified backend test projects: $($unclassifiedProjects -join ', ').")
@@ -1188,6 +1575,28 @@ $unknownClassifications = @($projectOwners.Keys | Where-Object { -not $discovere
 if ($unknownClassifications.Count -gt 0) {
     $errors.Add("Classified projects are not discovered backend test projects: $($unknownClassifications -join ', ').")
 }
+
+    $stopwatch.Stop()
+    Write-Host "Backend test shard stage 'inventory-source' completed in $($stopwatch.ElapsedMilliseconds) ms."
+    return [pscustomobject]@{
+        DiscoveredProjects = $discoveredProjects
+        DiscoveredBackendProjects = $discoveredBackendProjects
+        Errors = @($errors)
+    }
+}
+
+function Invoke-BackendTestShardSolutionMembershipStage {
+    param(
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [object[]] $FastShards,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $DiscoveredProjects,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $DiscoveredBackendProjects
+    )
+
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    Write-Host "Backend test shard stage 'solution-membership' started."
+    $errors = [System.Collections.Generic.List[string]]::new()
 
 $solutionPath = Join-Path $repositoryRoot ([string] $manifest.solution)
 if (-not (Test-Path -LiteralPath $solutionPath -PathType Leaf)) {
@@ -1224,7 +1633,7 @@ else {
     # coverage is currently 163/163 with no gap, and keeping it that way is cheaper than governing
     # exceptions. If a future change genuinely needs a backend project outside the solution, the
     # exemption path is to edit this script (with its own contract test) and go through script
-    # governance; see docs/architecture/script-automation-governance.md.
+    # governance; see docs/governance/script-automation.md.
     $projectsMissingFromSolutionSet = Get-NervStringSet -Values $projectsMissingFromSolution -Comparer ([StringComparer]::Ordinal)
     $backendProjectsMissingFromSolution = @(
         $discoveredBackendProjects |
@@ -1243,7 +1652,7 @@ foreach ($shard in $fastShards) {
     # A shard exists to restore and build only its own dependency closure. Pointing it at
     # backend/Nerv.IIP.sln would keep the "shard" label while every job rebuilt the whole solution
     # again, which MAN-669 PR-B measured and rejected. The measurements, run ids and re-open
-    # conditions live in exactly one place — docs/architecture/backend-ci-build-strategy.md — and
+    # conditions live in exactly one place — docs/reports/audits/backend-ci-build-strategy-man-669.md — and
     # are deliberately not restated here: a restated number is a number that drifts the next time
     # MAN-664 re-measures. The rejection is explicit because the JSON parse below would otherwise
     # report the solution as a malformed solution filter and hide what actually happened.
@@ -1290,6 +1699,22 @@ foreach ($shard in $fastShards) {
         $errors.Add("Fast shard '$($shard.id)' solution filter is invalid JSON: $($_.Exception.Message)")
     }
 }
+
+    $stopwatch.Stop()
+    Write-Host "Backend test shard stage 'solution-membership' completed in $($stopwatch.ElapsedMilliseconds) ms."
+    return [pscustomobject]@{ Errors = @($errors) }
+}
+
+function Invoke-BackendTestShardWorkflowWiringStage {
+    param(
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [string] $WorkflowPath,
+        [Parameter(Mandatory)] [object[]] $FastShards
+    )
+
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    Write-Host "Backend test shard stage 'workflow-wiring' started."
+    $errors = [System.Collections.Generic.List[string]]::new()
 
 $resolvedWorkflowPath = Resolve-Path $WorkflowPath -ErrorAction SilentlyContinue
 if ($null -eq $resolvedWorkflowPath) {
@@ -1491,11 +1916,62 @@ test "${{ needs.backend-tests-business-core-b.result }}" = "$expected_result"
     }
 }
 
+    $stopwatch.Stop()
+    Write-Host "Backend test shard stage 'workflow-wiring' completed in $($stopwatch.ElapsedMilliseconds) ms."
+    return [pscustomobject]@{ Errors = @($errors) }
+}
+
+function Invoke-BackendTestShardValidation {
+    param(
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [string] $WorkflowPath,
+        [Parameter(Mandatory)] [string] $PolicyPath,
+        [AllowEmptyString()] [string] $BackendInventoryRoot
+    )
+
+    $errors = [System.Collections.Generic.List[string]]::new()
+    $manifestPolicy = Invoke-BackendTestShardManifestPolicyStage `
+        -RepositoryRoot $RepositoryRoot `
+        -ManifestPath $ManifestPath `
+        -PolicyPath $PolicyPath
+    foreach ($failure in @($manifestPolicy.Errors)) { $errors.Add([string] $failure) }
+
+    $inventorySource = Invoke-BackendTestShardInventorySourceStage `
+        -RepositoryRoot $RepositoryRoot `
+        -BackendInventoryRoot $BackendInventoryRoot `
+        -ProjectOwners $manifestPolicy.ProjectOwners `
+        -AmbiguousProjectOwners $manifestPolicy.AmbiguousProjectOwners `
+        -ExcludedClassSelectorsByFastShard $manifestPolicy.ExcludedClassSelectorsByFastShard `
+        -RealDependencyRules @($manifestPolicy.RealDependencyRules) `
+        -HeavyLaneIdSet $manifestPolicy.HeavyLaneIdSet
+    foreach ($failure in @($inventorySource.Errors)) { $errors.Add([string] $failure) }
+
+    $solutionMembership = Invoke-BackendTestShardSolutionMembershipStage `
+        -RepositoryRoot $RepositoryRoot `
+        -Manifest $manifestPolicy.Manifest `
+        -FastShards $manifestPolicy.FastShards `
+        -DiscoveredProjects $inventorySource.DiscoveredProjects `
+        -DiscoveredBackendProjects $inventorySource.DiscoveredBackendProjects
+    foreach ($failure in @($solutionMembership.Errors)) { $errors.Add([string] $failure) }
+
+    $workflowWiring = Invoke-BackendTestShardWorkflowWiringStage `
+        -RepositoryRoot $RepositoryRoot `
+        -WorkflowPath $WorkflowPath `
+        -FastShards $manifestPolicy.FastShards
+    foreach ($failure in @($workflowWiring.Errors)) { $errors.Add([string] $failure) }
+
+    $fastShards = $manifestPolicy.FastShards
+    $heavyLanes = $manifestPolicy.HeavyLanes
+    $excludedClassOwners = $manifestPolicy.ExcludedClassOwners
+    $discoveredProjects = $inventorySource.DiscoveredProjects
+    $discoveredBackendProjects = $inventorySource.DiscoveredBackendProjects
+
 # Findings go to stdout and the script exits nonzero, the same shape as
 # scripts/check-script-governance.ps1 and scripts/verify-solution-configuration-membership.ps1 —
 # deliberately not `throw`, and callers must therefore check the exit code. In particular this file
 # must never share a `run:` block with another script; .github/workflows/ci.yml gives it its own
-# step. Why both rules hold is argued once, in docs/architecture/backend-ci-build-strategy.md
+# step. Why both rules hold is argued once, in docs/reports/audits/backend-ci-build-strategy-man-669.md
 # ("走查收尾" 第 3 条).
 if ($errors.Count -gt 0) {
     Write-Host 'Backend test shard governance failed:'
@@ -1507,3 +1983,14 @@ if ($errors.Count -gt 0) {
 }
 
 Write-Output "Backend test shard governance passed: $($discoveredProjects.Count) projects classified exactly once across $($fastShards.Count) fast shards and $($heavyLanes.Count) heavy lanes; $($excludedClassOwners.Count) real test selectors are explicitly owned outside fast shards; $($discoveredBackendProjects.Count) backend projects are solution members and therefore build under the shard's own Release configuration."
+}
+
+if (-not [string]::Equals($MyInvocation.InvocationName, '.', [StringComparison]::Ordinal)) {
+    $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+    Invoke-BackendTestShardValidation `
+        -RepositoryRoot $repositoryRoot `
+        -ManifestPath $ManifestPath `
+        -WorkflowPath $WorkflowPath `
+        -PolicyPath $PolicyPath `
+        -BackendInventoryRoot $BackendInventoryRoot
+}

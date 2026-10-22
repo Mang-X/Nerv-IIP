@@ -1,7 +1,8 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { shallowRef } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { useBusinessDeviceDirectory } from './useBusinessDeviceDirectory'
+import { useBusinessDeviceDirectory, useDeviceAssetNames } from './useBusinessDeviceDirectory'
 
 const queryState = vi.hoisted(() => ({
   generatedOptions: vi.fn(),
@@ -10,10 +11,12 @@ const queryState = vi.hoisted(() => ({
   error: { value: undefined as unknown },
   isLoading: { value: false },
   refetch: vi.fn(),
+  resourceFetch: vi.fn(),
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleDeviceAssetsQueryOptions: queryState.generatedOptions,
+  listBusinessConsoleMasterDataResources: queryState.resourceFetch,
   getConsolePrincipal: vi.fn(),
   loginConsoleUser: vi.fn(),
   logoutConsoleSession: vi.fn(),
@@ -142,5 +145,43 @@ describe('useBusinessDeviceDirectory', () => {
         code: 'LATHE-01',
       }),
     ])
+  })
+})
+
+describe('useDeviceAssetNames', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    queryState.optionsFactory = undefined
+    seedPrincipal()
+  })
+
+  it('按设备标识精确查主数据，称呼为「设备名（编码）」，查不到的不给称呼', async () => {
+    queryState.resourceFetch.mockImplementation(async ({ query }) =>
+      query.deviceAssetId === 'dev-1'
+        ? {
+            data: {
+              success: true,
+              data: { resources: [{ displayName: 'CK6150', code: 'EQ00001' }] },
+            },
+          }
+        : { data: { success: false, message: '未找到' } },
+    )
+    useDeviceAssetNames(shallowRef(['dev-2', 'dev-1', 'dev-1', '']))
+    const options = queryState.optionsFactory!() as {
+      enabled: boolean
+      query: (context: { signal: AbortSignal }) => Promise<Map<string, string>>
+    }
+
+    expect(options.enabled).toBe(true)
+    const names = await options.query({ signal: new AbortController().signal })
+    expect(queryState.resourceFetch).toHaveBeenCalledTimes(2)
+    expect(queryState.resourceFetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({ resourceType: 'device-asset', deviceAssetId: 'dev-1' }),
+      }),
+    )
+    expect(names.get('dev-1')).toBe('CK6150（EQ00001）')
+    expect(names.has('dev-2')).toBe(false)
   })
 })

@@ -18,6 +18,118 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 
 public sealed class QualityCapaAutomationTests
 {
+    [Theory]
+    [InlineData(false, true, "org-001", "env-dev")]
+    [InlineData(true, false, "org-001", "env-dev")]
+    [InlineData(true, true, "org-other", "env-dev")]
+    [InlineData(true, true, "org-001", "env-other")]
+    public async Task Verify_effectiveness_rejects_unfinished_actions_or_ineligible_inspection(
+        bool completed, bool passed, string inspectionOrganizationId, string inspectionEnvironmentId)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var capa = completed ? NewCompletedCapa() : CorrectiveAction.OpenStandalone(
+            "org-001", "env-dev", "CAPA-UNFINISHED", "cause", "contain", "owner", DateTimeOffset.Parse("2026-10-30T00:00:00Z"));
+        if (!completed)
+        {
+            capa.AddAction("corrective", "Unfinished", "owner", DateTimeOffset.Parse("2026-10-30T00:00:00Z"));
+        }
+        var inspection = NewInspectionRecord("VERIFY-REJECT", passed, inspectionOrganizationId, inspectionEnvironmentId);
+        db.CorrectiveActions.Add(capa);
+        db.InspectionRecords.Add(inspection);
+        await db.SaveChangesAsync();
+        var handler = new VerifyCorrectiveActionEffectivenessCommandHandler(
+            new CorrectiveActionRepository(db), new NonconformanceReportRepository(db), db);
+        var command = new VerifyCorrectiveActionEffectivenessCommand(
+            capa.Id, "qa-user", "No recurrence", DateTimeOffset.Parse("2026-10-12T08:00:00Z"), inspection.Id, "org-001", "env-dev");
+        if (completed)
+        {
+            await Assert.ThrowsAsync<KnownException>(() => handler.Handle(command, CancellationToken.None));
+        }
+        else
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(command, CancellationToken.None));
+        }
+        Assert.Equal("open", capa.Status);
+        Assert.Null(capa.EffectivenessInspectionRecordId);
+    }
+
+    [Theory]
+    [InlineData("org-001", "env-dev", true)]
+    [InlineData("org-other", "env-dev", false)]
+    [InlineData("org-001", "env-other", false)]
+    public async Task Verify_effectiveness_enforces_capa_scope_and_reads_back_verification(string organizationId, string environmentId, bool allowed)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var capa = NewCompletedCapa();
+        var inspection = NewInspectionRecord("VERIFY-SCOPE", passed: true);
+        db.CorrectiveActions.Add(capa);
+        db.InspectionRecords.Add(inspection);
+        await db.SaveChangesAsync();
+        var handler = new VerifyCorrectiveActionEffectivenessCommandHandler(
+            new CorrectiveActionRepository(db), new NonconformanceReportRepository(db), db);
+        var verified = DateTimeOffset.Parse("2026-10-12T08:00:00Z");
+        var command = new VerifyCorrectiveActionEffectivenessCommand(
+            capa.Id, "qa-user", "No recurrence", verified, inspection.Id, organizationId, environmentId);
+        if (allowed)
+        {
+            await handler.Handle(command, CancellationToken.None);
+        }
+        else
+        {
+            await Assert.ThrowsAsync<KnownException>(() => handler.Handle(command, CancellationToken.None));
+        }
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var readback = await db.CorrectiveActions.SingleAsync();
+        Assert.Equal(allowed ? "effectiveness-verified" : "open", readback.Status);
+        Assert.Equal(allowed ? inspection.Id : null, readback.EffectivenessInspectionRecordId);
+        Assert.Equal(allowed ? "qa-user" : null, readback.EffectivenessVerifiedByUserId);
+    }
+
+    [Theory]
+    [InlineData("org-001", "env-dev", true)]
+    [InlineData("org-other", "env-dev", false)]
+    [InlineData("org-001", "env-other", false)]
+    public async Task Complete_action_enforces_capa_scope_and_reads_back_completed(string organizationId, string environmentId, bool allowed)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var due = DateTimeOffset.Parse("2026-10-30T00:00:00Z");
+        var completed = DateTimeOffset.Parse("2026-10-12T08:00:00Z");
+        var capa = CorrectiveAction.OpenStandalone("org-001", "env-dev", "CAPA-SCOPE", "cause", "contain", "owner", due);
+        capa.AddAction("corrective", "Correct", "owner", due);
+        capa.AddAction("preventive", "Prevent", "owner", due);
+        db.CorrectiveActions.Add(capa);
+        await db.SaveChangesAsync();
+        var handler = new CompleteCorrectiveActionItemCommandHandler(new CorrectiveActionRepository(db));
+        foreach (var action in capa.Actions)
+        {
+            var command = new CompleteCorrectiveActionItemCommand(capa.Id, action.Id, "qa-user", completed, organizationId, environmentId);
+            if (allowed)
+            {
+                await handler.Handle(command, CancellationToken.None);
+            }
+            else
+            {
+                await Assert.ThrowsAsync<KnownException>(() => handler.Handle(command, CancellationToken.None));
+            }
+        }
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var readback = await db.CorrectiveActions.Include(x => x.Actions).SingleAsync();
+        Assert.All(readback.Actions, action =>
+        {
+            Assert.Equal(allowed ? "completed" : "open", action.Status);
+            Assert.Equal(allowed ? "qa-user" : null, action.CompletedByUserId);
+            Assert.Equal(allowed ? completed : (DateTimeOffset?)null, action.CompletedAtUtc);
+        });
+    }
+
     [Fact]
     public async Task High_severity_scrap_disposition_automatically_opens_linked_capa()
     {
@@ -50,11 +162,15 @@ public sealed class QualityCapaAutomationTests
                     Dispositions = [QualityNcrDispositionTypes.Rework, QualityNcrDispositionTypes.Scrap],
                     OwnerUserId = "qa-manager-001",
                     DueDays = 14,
-                })));
+                })),
+            db,
+            QualityEvidenceTestFiles.Client(ncr, "file-screening-result-001"));
 
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
                 ncr.Id,
+                "org-001",
+                "env-dev",
                 QualityNcrDispositionTypes.Scrap,
                 "approval-chain-approved",
                 [],
@@ -102,15 +218,20 @@ public sealed class QualityCapaAutomationTests
                     Dispositions = [QualityNcrDispositionTypes.Rework, QualityNcrDispositionTypes.Scrap],
                     OwnerUserId = "qa-manager-001",
                     DueDays = 14,
-                })));
+                })),
+            db,
+            QualityEvidenceTestFiles.Client(ncr, "file-screening-result-001"));
 
         await handler.Handle(
             new SubmitNonconformanceReportDispositionCommand(
                 ncr.Id,
+                "org-001",
+                "env-dev",
                 QualityNcrDispositionTypes.Rework,
                 "approval-chain-approved",
                 [],
-                [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-07-07T08:00:00Z"))]),
+                [MrbReviewInput.Approve("qa-manager-001", "MRB accepted", DateTimeOffset.Parse("2026-07-07T08:00:00Z"))],
+                "quality-capa-rework-001"),
             CancellationToken.None);
 
         Assert.Empty(db.CorrectiveActions);
@@ -246,15 +367,16 @@ public sealed class QualityCapaAutomationTests
         return capa;
     }
 
-    private static InspectionRecord NewInspectionRecord(string sourceDocumentId, bool passed)
+    private static InspectionRecord NewInspectionRecord(string sourceDocumentId, bool passed, string organizationId = "org-001", string environmentId = "env-dev")
     {
         return InspectionRecord.Create(
-            "org-001",
-            "env-dev",
+            organizationId,
+            environmentId,
             null,
             "receiving",
             "purchase-receipt",
             sourceDocumentId,
+            sourceDocumentLineId: null,
             "SKU-RM-1000",
             10m,
             null,

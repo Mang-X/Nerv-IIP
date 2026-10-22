@@ -1305,6 +1305,13 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
                                 .HasColumnName("control_key")
                                 .HasComment("Standard operation control key snapshot.");
 
+                            b1.Property<bool>("Interruptible")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("boolean")
+                                .HasDefaultValue(false)
+                                .HasColumnName("interruptible")
+                                .HasComment("Whether this routing operation may be interrupted across scheduling windows.");
+
                             b1.Property<bool>("IsOutsourced")
                                 .HasColumnType("boolean")
                                 .HasColumnName("is_outsourced")
@@ -1323,6 +1330,12 @@ namespace Nerv.IIP.Business.ProductEngineering.Infrastructure.Migrations
                                 .HasColumnType("character varying(200)")
                                 .HasColumnName("operation_name")
                                 .HasComment("Operation display name submitted with routing release.");
+
+                            b1.Property<string>("RequiredSkillCode")
+                                .HasMaxLength(100)
+                                .HasColumnType("character varying(100)")
+                                .HasColumnName("required_skill_code")
+                                .HasComment("Optional MasterData skill code required to perform the routing operation, captured at routing release.");
 
                             b1.Property<bool>("RequiresQualityInspection")
                                 .HasColumnType("boolean")

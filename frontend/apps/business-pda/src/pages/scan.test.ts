@@ -1,16 +1,36 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { computed } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 
+const resolveBarcode = vi.hoisted(() => vi.fn())
+vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@nerv-iip/api-client')>()),
+  resolveBusinessConsoleBarcode: resolveBarcode,
+}))
+
 vi.mock('@/composables/useWorkbenchHome', () => ({
-  usePdaIdentity: () => ({ can: (permission: string) => permission.includes('reporting') }),
+  usePdaIdentity: () => ({
+    organizationId: computed(() => 'org-1'),
+    environmentId: computed(() => 'env-1'),
+    can: (permission: string) => permission.includes('reporting'),
+  }),
 }))
 
 import ScanPage from './scan.vue'
 
 describe('PDA scan page', () => {
-  it('captures a code without pretending it was resolved and only offers permitted work', async () => {
+  it('shares strong-ID resolution and only offers permitted work', async () => {
+    resolveBarcode.mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          status: 'resolved',
+          candidates: [{ objectType: 'mes-work-order', strongIds: { workOrderId: 'WO-1' } }],
+        },
+      },
+    })
     const target = defineComponent({ template: '<div>target</div>' })
     const router = createRouter({
       history: createMemoryHistory(),
@@ -27,10 +47,10 @@ describe('PDA scan page', () => {
     await input.setValue('WO-2026-00001')
     await input.trigger('keydown.enter')
 
-    expect(wrapper.get('[data-testid="scan-result"]').text()).toContain('WO-2026-00001')
+    await flushPromises()
     expect(wrapper.text()).toContain('生产报工')
     expect(wrapper.text()).not.toContain('收货入库')
-    expect(router.currentRoute.value.fullPath).toBe('/scan')
+    expect(router.currentRoute.value.fullPath).toBe('/mes/report?workOrderId=WO-1')
   })
 
   it('renders a permitted work entrance as a real, named link', async () => {

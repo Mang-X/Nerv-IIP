@@ -153,6 +153,10 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
 
         Status = PurchaseOrderStatus.Released;
         this.AddDomainEvent(new PurchaseOrderReleasedDomainEvent(this));
+        AddMaterialSupplyEtaChanged(
+            "purchase-order-released",
+            $"purchase-order:{PurchaseOrderNo}:release:{Version}",
+            lines.Select(line => line.SkuCode));
     }
 
     public void ReturnToEditableAfterApprovalRejected(string approvalChainId)
@@ -248,15 +252,39 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         var change = changeHistory.SingleOrDefault(x => string.Equals(x.ApprovalChainId, ErpText.Required(approvalChainId, nameof(approvalChainId)), StringComparison.Ordinal))
             ?? throw new InvalidOperationException("Purchase order change approval chain was not found.");
         change.EnsurePending();
-        foreach (var lineChange in change.Lines)
+        var etaChanges = change.Lines
+            .Select(lineChange =>
+            {
+                var line = lines.Single(x => x.LineNo == lineChange.LineNo);
+                return new
+                {
+                    Line = line,
+                    OpenQuantity = line.OpenQuantity,
+                    line.PromisedDate,
+                };
+            })
+            .ToArray();
+        foreach (var etaChange in etaChanges)
         {
-            var line = lines.Single(x => x.LineNo == lineChange.LineNo);
-            line.ApplyChange(lineChange.OrderedQuantity, lineChange.UnitPrice, lineChange.PromisedDate);
+            var lineChange = change.Lines.Single(x => x.LineNo == etaChange.Line.LineNo);
+            etaChange.Line.ApplyChange(lineChange.OrderedQuantity, lineChange.UnitPrice, lineChange.PromisedDate);
         }
 
         change.Approve();
         TotalAmount = lines.Sum(x => x.LineAmount);
         Version++;
+        var affectedSkuCodes = etaChanges
+            .Where(etaChange => etaChange.OpenQuantity != etaChange.Line.OpenQuantity
+                || etaChange.PromisedDate != etaChange.Line.PromisedDate)
+            .Select(etaChange => etaChange.Line.SkuCode)
+            .ToArray();
+        if (affectedSkuCodes.Length > 0)
+        {
+            AddMaterialSupplyEtaChanged(
+                "purchase-order-change-approved",
+                $"purchase-order:{PurchaseOrderNo}:change:{Version}",
+                affectedSkuCodes);
+        }
     }
 
     public void RejectChange(string approvalChainId)
@@ -274,6 +302,49 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         line.CloseRemaining();
         changeHistory.Add(PurchaseOrderChange.Applied("final-delivery", [line.ToChangeDraft()], reason));
         Version++;
+        AddMaterialSupplyEtaChanged(
+            "purchase-order-line-closed",
+            $"purchase-order:{PurchaseOrderNo}:close:{Version}",
+            [line.SkuCode]);
+        if (lines.All(x => x.OpenQuantity == 0 || x.FinalDelivery))
+        {
+            Status = PurchaseOrderStatus.Closed;
+        }
+    }
+
+    public void RescheduleLine(string lineNo, DateOnly promisedDate)
+    {
+        EnsureOpen();
+        var line = lines.SingleOrDefault(x => x.LineNo == ErpText.Required(lineNo, nameof(lineNo)))
+            ?? throw new InvalidOperationException($"Purchase order line '{lineNo}' was not found.");
+        if (!line.Reschedule(promisedDate))
+        {
+            return;
+        }
+        Version++;
+        AddMaterialSupplyEtaChanged(
+            "purchase-order-line-rescheduled",
+            $"purchase-order:{PurchaseOrderNo}:reschedule:{Version}",
+            [line.SkuCode]);
+    }
+
+    public void CancelLine(string lineNo, string reason)
+    {
+        var line = lines.SingleOrDefault(x => x.LineNo == ErpText.Required(lineNo, nameof(lineNo)))
+            ?? throw new InvalidOperationException($"Purchase order line '{lineNo}' was not found.");
+        if (line.FinalDelivery && line.ReceivedQuantity == 0m)
+        {
+            return;
+        }
+
+        EnsureOpen();
+        line.Cancel();
+        changeHistory.Add(PurchaseOrderChange.Applied("line-cancel", [line.ToChangeDraft()], reason));
+        Version++;
+        AddMaterialSupplyEtaChanged(
+            "purchase-order-line-cancelled",
+            $"purchase-order:{PurchaseOrderNo}:line-cancel:{Version}",
+            [line.SkuCode]);
         if (lines.All(x => x.OpenQuantity == 0 || x.FinalDelivery))
         {
             Status = PurchaseOrderStatus.Closed;
@@ -291,6 +362,23 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         changeHistory.Add(PurchaseOrderChange.Applied("cancel", [], reason));
         Version++;
         Status = PurchaseOrderStatus.Cancelled;
+        AddMaterialSupplyEtaChanged(
+            "purchase-order-cancelled",
+            $"purchase-order:{PurchaseOrderNo}:cancel:{Version}",
+            lines.Select(line => line.SkuCode));
+    }
+
+    private void AddMaterialSupplyEtaChanged(string changeReason, string changeIdentity, IEnumerable<string> skuCodes)
+    {
+        this.AddDomainEvent(new MaterialSupplyEtaChangedDomainEvent(
+            OrganizationId,
+            EnvironmentId,
+            "purchase-order",
+            PurchaseOrderNo,
+            changeReason,
+            changeIdentity,
+            DateTimeOffset.UtcNow,
+            skuCodes.Distinct(StringComparer.Ordinal).OrderBy(skuCode => skuCode, StringComparer.Ordinal).ToArray()));
     }
 
     private void EnsureOpen()
@@ -398,6 +486,37 @@ public sealed class PurchaseOrderLine : Entity<PurchaseOrderLineId>
         if (ReceivedQuantity < minimumReceipt)
         {
             throw new InvalidOperationException("Final delivery shortage exceeds the configured under-receipt tolerance.");
+        }
+
+        FinalDelivery = true;
+    }
+
+    internal bool Reschedule(DateOnly promisedDate)
+    {
+        if (FinalDelivery || OpenQuantity == 0)
+        {
+            throw new InvalidOperationException("Only open purchase order lines can be rescheduled.");
+        }
+
+        if (promisedDate == default)
+        {
+            throw new ArgumentException("Promised date is required.", nameof(promisedDate));
+        }
+
+        if (PromisedDate == promisedDate)
+        {
+            return false;
+        }
+
+        PromisedDate = promisedDate;
+        return true;
+    }
+
+    internal void Cancel()
+    {
+        if (FinalDelivery || ReceivedQuantity > 0m)
+        {
+            throw new InvalidOperationException("Only unreceived open purchase order lines can be cancelled.");
         }
 
         FinalDelivery = true;

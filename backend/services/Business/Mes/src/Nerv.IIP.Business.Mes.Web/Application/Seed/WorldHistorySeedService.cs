@@ -369,9 +369,15 @@ public sealed class WorldHistorySeedService(
             dueUtc,
             WorldHistorySpec.UomCode,
             sourcePlanReference);
-        workOrder.MarkReleased();
         dbContext.WorkOrders.Add(workOrder);
+        // **顺序要求**：先把 CreatedAtUtc 回拨到历史创建时刻，再 MarkReleased()。
+        // MarkReleased() 读取**调用当刻**的 CreatedAtUtc 当发布事实的下界；反过来写，
+        // 事件带走的是 WorkOrder.Create 里那个 DateTimeOffset.UtcNow（播种当下的墙钟），
+        // 既不是历史创建时刻，也晚于本工单全部被回填的历史报工。
+        // 该事件今天不出域（SaveHistoryFactsAsync 统一 ClearDomainEvents），
+        // 但顺序反了它带的就是个错值，不留给下一个人踩。
         Backdate(workOrder, x => x.CreatedAtUtc, createdAtUtc);
+        workOrder.MarkReleased();
 
         var tasks = WriteOperationTasks(organizationId, environmentId, plan, timeline, execution, releasedAtUtc);
         WriteMaterialFacts(
@@ -499,7 +505,7 @@ public sealed class WorldHistorySeedService(
 
             if (isCompleted)
             {
-                task.Complete(endUtc);
+                task.CompleteLegacyHistoryWithoutSettlement(endUtc);
             }
 
             dbContext.OperationTasks.Add(task);
@@ -598,7 +604,9 @@ public sealed class WorldHistorySeedService(
                 stagedQuantity: staged,
                 sourceSystem: SourceSystem,
                 sourceSnapshotId: $"{plan.WorkOrderNo}-KIT",
-                capturedAtUtc: capturedAtUtc);
+                capturedAtUtc: capturedAtUtc,
+                substituteMaterialIds: [],
+                uomCode: component.UomCode);
             dbContext.MaterialRequirements.Add(requirement);
         }
 
@@ -718,7 +726,9 @@ public sealed class WorldHistorySeedService(
                 completesOperation: isLast && execution == WorldHistoryExecution.Closed,
                 reportedAtUtc,
                 scrapReasonCode: scrap > 0m ? "SCRAP-DIM" : null,
-                producedLotNo: WorldHistoryMesSpec.ProducedLotNo(plan.WorkOrderNo));
+                producedLotNo: WorldHistoryMesSpec.ProducedLotNo(plan.WorkOrderNo),
+                // 报工人就是这道工序的派工对象；追溯图的人员节点据此点亮。
+                reportedBy: finalTask.Assignee.UserId);
             dbContext.ProductionReports.Add(report);
 
             workOrder.RecordProductionProgress(good, scrap, reportedAtUtc);

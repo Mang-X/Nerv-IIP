@@ -50,13 +50,15 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
             handler.Requests.Select(x => x.GetProperty("action").GetRawText()));
         Assert.All(handler.Requests, request =>
         {
-            Assert.Equal(workOrderId, request.GetProperty("workOrderId").GetProperty("id").GetString());
+            // 工单 ID 只放在路由里，请求体不带（#3902 审核阻断 1）：请求体里强类型 ID 的形态随 Maintenance
+            // 的序列化配置变化，路由不受影响。
+            Assert.False(request.TryGetProperty("workOrderId", out _));
             Assert.Equal("tech-001", request.GetProperty("actorPrincipalId").GetString());
         });
     }
 
     [Fact]
-    public async Task Gateway_client_writes_assignment_work_order_id_as_the_strong_id_wire_contract()
+    public async Task Gateway_client_carries_the_assignment_work_order_id_only_in_the_route()
     {
         var workOrderId = Guid.CreateVersion7().ToString();
         var handler = new RecordingAssignmentWireHandler(workOrderId);
@@ -73,7 +75,8 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
             CancellationToken.None);
 
         Assert.Equal("Open", response.Status);
-        Assert.Equal(workOrderId, handler.AssignmentRequest.GetProperty("workOrderId").GetProperty("id").GetString());
+        Assert.False(handler.AssignmentRequest.TryGetProperty("workOrderId", out _));
+        Assert.EndsWith($"/work-orders/{workOrderId}/assignment", handler.AssignmentPath, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -186,6 +189,8 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
     {
         public JsonElement AssignmentRequest { get; private set; }
 
+        public string AssignmentPath { get; private set; } = string.Empty;
+
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
@@ -214,6 +219,7 @@ public sealed class MaintenanceLifecycleWireRoundTripTests
                 };
             }
 
+            AssignmentPath = request.RequestUri!.AbsolutePath;
             AssignmentRequest = JsonSerializer.Deserialize<JsonElement>(
                 await request.Content!.ReadAsStringAsync(cancellationToken));
             return new HttpResponseMessage(HttpStatusCode.OK)

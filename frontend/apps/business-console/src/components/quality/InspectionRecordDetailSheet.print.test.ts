@@ -31,7 +31,7 @@ const stubs = {
   NvSheetTitle: { template: '<h2><slot /></h2>' },
   NvButton: { template: '<button type="button"><slot /></button>' },
   NvStatusBadge: { props: ['value'], template: '<span>{{ value }}</span>' },
-  Spinner: { template: '<span />' },
+  NvSpinner: { template: '<span />' },
 }
 
 describe('检验记录详情打印', () => {

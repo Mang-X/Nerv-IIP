@@ -99,9 +99,29 @@ public sealed class PostgreSqlIamAuthService(
             throw InvalidCredentials(remainingAttempts <= 2 ? remainingAttempts : null);
         }
 
+        // 密码已校验通过，才告诉调用方「账号没有分配到任何组织或角色」；在此之前一律按口令错误处理，
+        // 不泄露账号是否存在。没有成员关系的账号签出的令牌读不到当前主体，登录必然失败，提前说清原因。
+        if (await membershipRepository.GetFirstByUserIdAsync(user.Id, cancellationToken) is null)
+        {
+            var auditContext = await CreateUserAuditContextAsync(user, $"user:{user.Id.Id}", ipAddress, cancellationToken);
+            await securityAudit.RecordAndSaveAsync(
+                auditContext,
+                "iam.auth.login.failed",
+                "user",
+                user.Id.Id,
+                "failure",
+                new { reason = "no-membership" },
+                now,
+                cancellationToken);
+            throw NoMembership();
+        }
+
         user.RecordSuccessfulLogin(now);
         return await CreateSessionResponseAsync(user, clientInfo, ipAddress, cancellationToken);
     }
+
+    private static IamLoginRejectedException NoMembership() =>
+        new(IamLoginFailureCodes.NoMembership);
 
     private static IamLoginRejectedException InvalidCredentials(int? remainingAttempts = null) =>
         new(IamLoginFailureCodes.InvalidCredentials, remainingAttempts: remainingAttempts);

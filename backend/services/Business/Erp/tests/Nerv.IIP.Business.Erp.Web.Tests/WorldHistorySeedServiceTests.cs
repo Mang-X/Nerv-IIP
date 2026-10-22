@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseRequisitionAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.QuotationAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesOrderAggregate;
@@ -48,6 +49,32 @@ public sealed class WorldHistorySeedServiceTests(ITestOutputHelper output)
         Assert.Equal(delivered, await dbContext.AccountReceivables.CountAsync());
         Assert.Equal(collected, await dbContext.CashReceipts.CountAsync());
         Assert.Equal(delivered + collected, await dbContext.JournalVouchers.CountAsync());
+
+        // #3278 / S2：seed 是 17 个建凭证位点里的 2 处，漏填时来源列恒空而其余断言照绿。
+        // 这里逐行读回来源两列：既断言「没有空值」，也断言取到的是**收入/收款各自的驱动单据**
+        // （应收单号 / 收款单号），免得两处都填成同一个占位串也能过。
+        var seededVouchers = await dbContext.JournalVouchers
+            .Select(x => new { x.VoucherNo, x.SourceType, x.SourceNo })
+            .ToListAsync();
+        Assert.All(seededVouchers, voucher =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(voucher.SourceType), $"凭证 {voucher.VoucherNo} 的 source_type 为空。");
+            Assert.False(string.IsNullOrWhiteSpace(voucher.SourceNo), $"凭证 {voucher.VoucherNo} 的 source_no 为空。");
+        });
+        var receivableNos = await dbContext.AccountReceivables.Select(x => x.ReceivableNo).ToListAsync();
+        var cashReceiptNos = await dbContext.CashReceipts.Select(x => x.CashReceiptNo).ToListAsync();
+        Assert.Equal(
+            receivableNos.Order(StringComparer.Ordinal),
+            seededVouchers
+                .Where(x => x.SourceType == JournalVoucherSourceType.AccountReceivable.Code)
+                .Select(x => x.SourceNo!)
+                .Order(StringComparer.Ordinal));
+        Assert.Equal(
+            cashReceiptNos.Order(StringComparer.Ordinal),
+            seededVouchers
+                .Where(x => x.SourceType == JournalVoucherSourceType.CashReceipt.Code)
+                .Select(x => x.SourceNo!)
+                .Order(StringComparer.Ordinal));
 
         // 采购侧节奏跟着生产量走。
         Assert.Equal(

@@ -398,7 +398,13 @@ public sealed class ProductionVersionApiContractTests
                 EngineeringVersionStatus.Published,
                 EngineeringVersionStatus.Published));
         dbContext.Routings.AddRange(
-            ReleasedRouting("ROUTE-PINNED", "A", "SKU-FG-1000", new DateOnly(2026, 1, 1)),
+            ReleasedRouting(
+                "ROUTE-PINNED",
+                "A",
+                "SKU-FG-1000",
+                new DateOnly(2026, 1, 1),
+                requiredSkillCode: "cnc-operation",
+                interruptible: true),
             ReleasedRouting("ROUTE-CURRENT", "A", "SKU-FG-1000", new DateOnly(2026, 1, 1)));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -416,7 +422,10 @@ public sealed class ProductionVersionApiContractTests
         Assert.Equal("ROUTE-PINNED", response.RoutingCode);
         Assert.Equal("active", response.ProductionVersionStatus);
         Assert.Equal("published", response.RoutingStatus);
-        Assert.Equal("mixing", Assert.Single(response.Operations).OperationCode);
+        var operation = Assert.Single(response.Operations);
+        Assert.Equal("mixing", operation.OperationCode);
+        Assert.Equal("cnc-operation", operation.RequiredSkillCode);
+        Assert.True(operation.Interruptible);
     }
 
     [Fact]
@@ -502,10 +511,12 @@ public sealed class ProductionVersionApiContractTests
         string revision,
         string skuCode,
         DateOnly effectiveDate,
-        string organizationId = "org-001")
+        string organizationId = "org-001",
+        string? requiredSkillCode = null,
+        bool interruptible = false)
     {
         var routing = Routing.CreateDraft(organizationId, "env-dev", routingCode, revision, skuCode)
-            .AddOperation(10, "WC-MIX-01", "mixing", "Mix", 30);
+            .AddOperation(10, "WC-MIX-01", "mixing", "Mix", 30, requiredSkillCode, interruptible);
         routing.Release(effectiveDate);
         return routing;
     }

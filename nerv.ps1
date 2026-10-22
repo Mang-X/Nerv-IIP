@@ -8,6 +8,8 @@ param(
 
     [switch] $NoBuild,
 
+    [switch] $EnableWmsDemoWorker,
+
     [switch] $InfraOnly,
 
     [switch] $OpenDashboard,
@@ -37,7 +39,7 @@ param(
 
     [switch] $All,
 
-    [ValidateSet('smoke', 'man-440', 'man-528', 'leader-demo-main-chain', 'leader-demo-quality-branch', 'leader-demo-equipment-branch')]
+    [ValidateSet('smoke', 'man-440', 'man-528', 'leader-demo-main-chain', 'leader-demo-quality-branch', 'leader-demo-equipment-branch', 'issue-1912-real-machine-walkthrough')]
     [string] $Scenario,
 
     [string] $SessionId,
@@ -60,6 +62,9 @@ function Write-NervHelp {
     Write-Host @'
 Nerv-IIP development commands
 
+fullstack run is one-shot and automatically stops and cleans up its session when complete.
+Use fullstack start for interactive diagnostic walkthroughs; run fullstack stop before handoff or ending the task.
+
 Usage:
   .\nerv.ps1 bootstrap [-InstallMissing] [-Start]
   .\nerv.ps1 dev [-NoBuild] [-InfraOnly] [-OpenDashboard]
@@ -69,6 +74,8 @@ Usage:
   .\nerv.ps1 logs [resource] [-Tail 120] [-Follow]
   .\nerv.ps1 describe [resource] [-IncludeHidden]
   .\nerv.ps1 fullstack run -Scenario smoke
+  .\nerv.ps1 fullstack run -Scenario smoke -EnableWmsDemoWorker
+  .\nerv.ps1 fullstack start -EnableWmsDemoWorker
   .\nerv.ps1 demo start
   .\nerv.ps1 demo reset
   .\nerv.ps1 demo seed
@@ -77,6 +84,7 @@ Usage:
   .\nerv.ps1 fullstack run -Scenario leader-demo-main-chain
   .\nerv.ps1 fullstack run -Scenario leader-demo-quality-branch
   .\nerv.ps1 fullstack run -Scenario leader-demo-equipment-branch
+  .\nerv.ps1 fullstack run -Scenario issue-1912-real-machine-walkthrough
   .\nerv.ps1 publish-compose [-EnvironmentName Production] [-OutputPath artifacts/aspire-output/compose]
   .\nerv.ps1 prepare-compose [-EnvironmentName Production]
   .\nerv.ps1 deploy-compose [-EnvironmentName Production]
@@ -158,6 +166,7 @@ switch ($Command.ToLowerInvariant()) {
         if ($PSBoundParameters.ContainsKey('Scenario')) { $fullStackParameters['Scenario'] = $Scenario }
         if ($PSBoundParameters.ContainsKey('SessionId')) { $fullStackParameters['SessionId'] = $SessionId }
         if ($PSBoundParameters.ContainsKey('NoBuild')) { $fullStackParameters['NoBuild'] = $true }
+        if ($PSBoundParameters.ContainsKey('EnableWmsDemoWorker')) { $fullStackParameters['EnableWmsDemoWorker'] = [bool] $EnableWmsDemoWorker }
         if ($PSBoundParameters.ContainsKey('Tail')) { $fullStackParameters['Tail'] = $Tail }
         if ($PSBoundParameters.ContainsKey('Follow')) { $fullStackParameters['Follow'] = $true }
         & $fullStackScript @fullStackParameters @fullStackArguments

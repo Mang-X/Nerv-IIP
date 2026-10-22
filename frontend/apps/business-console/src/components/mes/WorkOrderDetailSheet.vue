@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'
+import WorkOrderSourceFacts from '@/components/mes/WorkOrderSourceFacts.vue'
 import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import type { DispatchAssignTarget } from '@/components/mes/DispatchAssignDialog.vue'
@@ -43,7 +45,7 @@ import {
   NvSheetHeader,
   NvSheetTitle,
   NvStatusBadge,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import {
   CheckCheckIcon,
@@ -55,6 +57,7 @@ import {
   UserCheckIcon,
 } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
+import { formatDateTime } from '@/utils/format'
 import { RouterLink } from 'vue-router'
 
 /**
@@ -73,6 +76,7 @@ const lifecycleIntent = useLifecycleWriteIntent<MesLifecycleActionKey>(
 )
 usePendingWriteLeaveGuard(lifecycleIntent.locked)
 
+const { statusLabel } = useMesReferenceLabels()
 const emit = defineEmits<{ report: [operationTaskId: string] }>()
 
 const { detail, detailError, detailPending, filters, materialReadiness, refreshDetail } =
@@ -293,7 +297,7 @@ function formatQuantity(value?: number | null) {
           class="flex items-center gap-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
           role="status"
         >
-          <Spinner aria-hidden="true" />
+          <NvSpinner aria-hidden="true" />
           正在加载工单…
         </p>
 
@@ -302,7 +306,11 @@ function formatQuantity(value?: number | null) {
           <section class="grid gap-3 rounded-lg border p-3 sm:grid-cols-4">
             <div class="grid gap-1">
               <span class="text-xs text-muted-foreground">状态</span>
-              <NvStatusBadge class="justify-self-start" :value="detail.status" />
+              <NvStatusBadge
+                class="justify-self-start"
+                :value="detail.status"
+                :label="statusLabel(detail.status)"
+              />
             </div>
             <div class="grid gap-1">
               <span class="text-xs text-muted-foreground">开工就绪</span>
@@ -319,6 +327,13 @@ function formatQuantity(value?: number | null) {
               <span class="text-sm font-medium">{{ resolveSkuLabel(detail.skuId) }}</span>
             </div>
           </section>
+
+          <WorkOrderSourceFacts
+            v-if="detail"
+            :source="detail.sourcePlanReference"
+            :organization-id="filters.organizationId"
+            :environment-id="filters.environmentId"
+          />
 
           <!-- 阻塞（有就先显，最要紧） -->
           <section
@@ -418,11 +433,34 @@ function formatQuantity(value?: number | null) {
           <section class="grid gap-2">
             <div class="flex items-center justify-between gap-3">
               <h3 class="text-sm font-semibold text-foreground">用料齐套</h3>
-              <span v-if="materialShortages.length" class="text-xs text-warning">
-                {{ materialShortages.length }} 项缺料
+              <span
+                v-if="materialReadiness"
+                class="text-xs"
+                :class="
+                  materialReadiness.readinessStatus === 'Ready' ? 'text-success' : 'text-warning'
+                "
+              >
+                {{
+                  materialReadiness.readinessStatus === 'Ready'
+                    ? '已齐套'
+                    : materialShortages.length
+                      ? `${materialShortages.length} 项缺料`
+                      : '阻塞'
+                }}
               </span>
             </div>
             <!-- 口径自解释：齐套 ≠ MRP 的全厂库存口径，必须写在表格旁边（#1291）。 -->
+            <p
+              v-if="materialReadiness"
+              class="text-xs text-muted-foreground"
+              data-testid="material-readiness-snapshot"
+            >
+              齐套快照捕获时间：{{
+                materialReadiness.snapshotCapturedAtUtc
+                  ? formatDateTime(materialReadiness.snapshotCapturedAtUtc)
+                  : '未记录'
+              }}
+            </p>
             <p class="text-xs text-muted-foreground" data-testid="material-readiness-scope">
               {{ MATERIAL_READINESS_SCOPE_NOTE }}
             </p>

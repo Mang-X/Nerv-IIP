@@ -8,13 +8,17 @@ public class SchedulingContractSerializationTests
     [Fact]
     public void Scheduling_problem_round_trips_contract_version_and_core_inputs()
     {
-        var problem = SchedulingContractSamples.CreateShockAbsorberProblem();
+        var problem = SchedulingContractSamples.CreateShockAbsorberProblem() with
+        {
+            AssemblyDependencies = [new("WO-FRONT-001", "WO-RUSH-REAR-001")]
+        };
 
         var json = JsonSerializer.Serialize(problem, SchedulingJson.Options);
         var roundTrip = JsonSerializer.Deserialize<SchedulingProblemContract>(json, SchedulingJson.Options);
 
         Assert.NotNull(roundTrip);
         Assert.Equal(1, roundTrip!.ContractVersion);
+        Assert.Equal(problem.AssemblyDependencies, roundTrip.AssemblyDependencies);
         Assert.Equal("org-001", roundTrip.OrganizationId);
         Assert.Contains(roundTrip.Orders, x => x.OrderId == "WO-RUSH-REAR-001");
         Assert.Contains(roundTrip.Resources, x => x.ResourceId == "DEV-OIL-01");
@@ -31,15 +35,33 @@ public class SchedulingContractSerializationTests
     }
 
     [Fact]
+    public void Scheduling_resource_utilization_round_trips_and_old_input_defaults_to_one()
+    {
+        var resource = SchedulingContractSamples.CreateShockAbsorberProblem().Resources.First();
+        var rated = resource with { UtilizationRate = 0.8m };
+        var json = JsonSerializer.Serialize(rated, SchedulingJson.Options);
+
+        Assert.Equal(0.8m, JsonSerializer.Deserialize<SchedulingResourceContract>(json, SchedulingJson.Options)!.UtilizationRate);
+        var previousJson = JsonSerializer.Serialize(resource, SchedulingJson.Options);
+        previousJson = previousJson.Replace(",\"utilizationRate\":1", "", StringComparison.Ordinal);
+        Assert.Equal(1m, JsonSerializer.Deserialize<SchedulingResourceContract>(previousJson, SchedulingJson.Options)!.UtilizationRate);
+    }
+
+    [Fact]
     public void Schedule_plan_round_trips_assignments_conflicts_and_gantt_items()
     {
-        var plan = SchedulingContractSamples.CreateExpectedShockAbsorberPlan();
+        var plan = SchedulingContractSamples.CreateExpectedShockAbsorberPlan() with
+        {
+            AssemblyDependencies = [new("WO-FRONT-001", "WO-RUSH-REAR-001")]
+        };
 
         var json = JsonSerializer.Serialize(plan, SchedulingJson.Options);
         var roundTrip = JsonSerializer.Deserialize<SchedulePlanContract>(json, SchedulingJson.Options);
 
         Assert.NotNull(roundTrip);
         Assert.Equal("aps-lite-v1", roundTrip!.AlgorithmVersion);
+        Assert.Null(roundTrip.ValidationContext);
+        Assert.Equal(plan.AssemblyDependencies, roundTrip.AssemblyDependencies);
         Assert.NotEmpty(roundTrip.Assignments);
         Assert.NotEmpty(roundTrip.ResourceLoads);
         Assert.NotEmpty(roundTrip.GanttItems);
@@ -52,6 +74,31 @@ public class SchedulingContractSerializationTests
             x.ItemId == "gantt-conflict-001"
             && x.HasConflict
             && x.ConflictReasonCode == ScheduleConflictReasonCodeContract.DueDate);
+    }
+
+    [Fact]
+    public void Schedule_plan_freeze_context_round_trips_and_legacy_response_has_no_snapshot()
+    {
+        var baseline = SchedulingContractSamples.CreateExpectedShockAbsorberPlan();
+        var assignment = baseline.Assignments.First();
+        var plan = baseline with
+        {
+            FreezeContext = new(assignment.StartUtc, assignment.StartUtc.AddHours(1),
+                [new(assignment.WorkCenterId, assignment.StartUtc)],
+                [new(assignment, [SchedulePlanFreezeReasonContract.Started, SchedulePlanFreezeReasonContract.ManualLock])])
+        };
+        var json = JsonSerializer.Serialize(plan, SchedulingJson.Options);
+        var reread = JsonSerializer.Deserialize<SchedulePlanContract>(json, SchedulingJson.Options)!;
+
+        Assert.Equal(plan.FreezeContext.AsOfUtc, reread.FreezeContext!.AsOfUtc);
+        Assert.Equal(plan.FreezeContext.DefaultWindowEndUtc, reread.FreezeContext.DefaultWindowEndUtc);
+        Assert.Equal(plan.FreezeContext.WorkCenterWindows, reread.FreezeContext.WorkCenterWindows);
+        Assert.Equal(assignment, Assert.Single(reread.FreezeContext.Assignments).Assignment);
+        Assert.Equal(new[] { SchedulePlanFreezeReasonContract.Started, SchedulePlanFreezeReasonContract.ManualLock },
+            reread.FreezeContext.Assignments.Single().Reasons);
+        var legacy = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
+        legacy.Remove("freezeContext");
+        Assert.Null(JsonSerializer.Deserialize<SchedulePlanContract>(legacy.ToJsonString(), SchedulingJson.Options)!.FreezeContext);
     }
 
     [Fact]

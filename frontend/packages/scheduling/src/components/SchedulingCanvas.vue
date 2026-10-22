@@ -2,7 +2,7 @@
 import { Skeleton } from '@nerv-iip/ui'
 import { CalendarClockIcon } from '@lucide/vue'
 import { computed, ref, toRef } from 'vue'
-import type { EngineCommand, TaskDragPayload, TimeScale } from '../engine/engine'
+import type { TaskDragPayload, TimeScale } from '../engine/engine'
 import type { LaneOrder, ScheduleModel } from '../model/types'
 import ReadonlyScheduleTimeline from './ReadonlyScheduleTimeline.vue'
 import { useEngine } from './useEngine'
@@ -31,9 +31,10 @@ const emit = defineEmits<{
 }>()
 
 const container = ref<HTMLElement>()
+const unresolvedFactoryTime = computed(() => props.model?.timezones?.length === 0)
 const isEmpty = computed(() => props.model != null && props.model.tasks.length === 0)
 
-const { engine, engineName } = useEngine({
+const { command, engineName } = useEngine({
   container,
   model: toRef(props, 'model'),
   view: props.view,
@@ -51,9 +52,6 @@ const { engine, engineName } = useEngine({
 })
 
 /** 供父组件(工作台)下发命令,如缩放/定位/选中。 */
-function command(cmd: EngineCommand) {
-  engine.value?.applyCommand(cmd)
-}
 defineExpose({ command, engineName })
 </script>
 
@@ -64,15 +62,18 @@ defineExpose({ command, engineName })
     </div>
     <template v-else>
       <div
-        v-show="engineName === 'dhtmlx'"
+        v-show="engineName === 'dhtmlx' && !unresolvedFactoryTime"
         ref="container"
         :data-view="view"
         :data-engine="engineName"
         class="h-full w-full"
       />
       <!-- 无可用引擎时的优雅占位:容器仍在 DOM 中,引擎一旦可用即可挂载。 -->
+      <p v-if="unresolvedFactoryTime" role="status" class="p-4 text-sm text-muted-foreground">
+        工厂时区尚未解析，保留当前草案；请核对工厂配置后查看时间轴。
+      </p>
       <div
-        v-if="isEmpty"
+        v-else-if="isEmpty"
         data-testid="gantt-empty"
         role="status"
         aria-live="polite"

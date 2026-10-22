@@ -1,3 +1,4 @@
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NetCorePal.Extensions.Primitives;
@@ -5,6 +6,7 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAg
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 using Nerv.IIP.Business.Mes.Infrastructure;
@@ -18,17 +20,120 @@ using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Planning;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
-using Nerv.IIP.Business.Mes.Web.Application.Scheduling;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Maintenance;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Messaging.CAP;
+using System.Net;
+using System.Text;
+using Nerv.IIP.Contracts.MasterData;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesPersistenceContractTests
 {
+    [Fact]
+    public void Material_requirement_capture_rejects_the_legacy_unspecified_uom_for_new_rows()
+    {
+        var exception = Assert.Throws<ArgumentException>(() => MaterialRequirement.Capture(
+            "org-001", "env-dev", "WO-UOM-GUARD", null, "MAT-PRIMARY", null,
+            1m, 0m, 0m, "product-engineering-http", "MBOM-GUARD:MAT-PRIMARY",
+            DateTimeOffset.Parse("2026-09-21T08:00:00Z"), [], MaterialIssueRequest.UnspecifiedUomCode));
+
+        Assert.Equal("uomCode", exception.ParamName);
+    }
+
+    [Fact]
+    public void Material_requirement_uom_has_no_database_default_for_new_rows()
+    {
+        var services = CreateServices(nameof(Material_requirement_uom_has_no_database_default_for_new_rows));
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var property = dbContext.Model.FindEntityType(typeof(MaterialRequirement))!
+            .FindProperty(nameof(MaterialRequirement.UomCode))!;
+
+        Assert.Null(property.GetDefaultValue());
+    }
+
+    // Contract: DomainInvariant + Regression. Authority: Issue #2222 acceptance 2; omitted input must not be interpreted as a genuine empty set.
+    [Fact]
+    public void Material_requirement_capture_rejects_an_omitted_substitute_candidate_collection()
+    {
+        var exception = Assert.Throws<ArgumentNullException>(() => MaterialRequirement.Capture(
+            "org-001", "env-dev", "WO-SUBSTITUTE-GUARD", null, "MAT-PRIMARY", null,
+            1m, 0m, 0m, "product-engineering-http", "MBOM-GUARD:MAT-PRIMARY",
+            DateTimeOffset.Parse("2026-08-25T13:00:00Z"), null!, "PCS"));
+
+        Assert.Equal("substituteMaterialIds", exception.ParamName);
+    }
+
+    // Contract: DomainInvariant + Regression. Authority: Issue #2222 acceptance 1 and the #2246 schema-first boundary;
+    // this InMemory test proves substitute snapshot scope recreation and that issue auditing remains inactive, not persistence of a non-null audit value.
+    [Fact]
+    public async Task Material_substitute_snapshot_survives_scope_recreation_without_activating_issue_audit()
+    {
+        var services = CreateServices(nameof(Material_substitute_snapshot_survives_scope_recreation_without_activating_issue_audit));
+        var now = DateTimeOffset.Parse("2026-08-25T13:00:00Z");
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.WorkOrders.Add(WorkOrder.Create(
+                "org-001", "env-dev", "WO-SUBSTITUTE-001", "FG-001", "PV-001", 10m, 10, now));
+            dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
+                "org-001", "env-dev", "WO-SUBSTITUTE-001", null, "MAT-PRIMARY", null,
+                10m, 2m, 0m, "product-engineering-http", "MBOM-001:A:MAT-PRIMARY", now,
+                ["MAT-ALT-A", "MAT-ALT-B"], "PCS"));
+            dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+                "org-001", "env-dev", "MIR-SUBSTITUTE-001", "WO-SUBSTITUTE-001", null,
+                "MAT-PRIMARY", "PCS", 1m, now));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var recreatedScope = services.CreateScope();
+        var recreatedDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var requirement = await recreatedDbContext.MaterialRequirements.SingleAsync();
+        var issue = await recreatedDbContext.MaterialIssueRequests.SingleAsync();
+
+        Assert.Equal(["MAT-ALT-A", "MAT-ALT-B"], requirement.GetSubstituteMaterialIds());
+        Assert.Null(issue.SubstitutedMaterialId);
+    }
+
+    [Fact]
+    public async Task Supplementary_material_issue_semantics_survive_persistence_scope_recreation()
+    {
+        var services = CreateServices(nameof(Supplementary_material_issue_semantics_survive_persistence_scope_recreation));
+        var now = DateTimeOffset.Parse("2026-08-25T08:00:00Z");
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.WorkOrders.Add(WorkOrder.Create(
+                "org-001", "env-dev", "WO-SUPPLEMENTARY-001", "FG-001", "PV-001", 10m, 10, now));
+            dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+                "org-001", "env-dev", "MIR-ORIGINAL-001", "WO-SUPPLEMENTARY-001", "OP-10", "MAT-001", "PCS", 4m, now));
+            dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+                "org-001", "env-dev", "MIR-SUPPLEMENTARY-001", "WO-SUPPLEMENTARY-001", "OP-10", "MAT-001", "PCS", 2m, now.AddMinutes(1),
+                isSupplementary: true,
+                originalMaterialIssueRequestNo: "MIR-ORIGINAL-001"));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var recreatedScope = services.CreateScope();
+        var recreatedDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var original = await recreatedDbContext.MaterialIssueRequests.SingleAsync(x => x.RequestNo == "MIR-ORIGINAL-001");
+        var supplementary = await recreatedDbContext.MaterialIssueRequests.SingleAsync(x => x.RequestNo == "MIR-SUPPLEMENTARY-001");
+
+        Assert.False(original.IsSupplementary);
+        Assert.Null(original.OriginalMaterialIssueRequestNo);
+        Assert.True(supplementary.IsSupplementary);
+        Assert.Equal("MIR-ORIGINAL-001", supplementary.OriginalMaterialIssueRequestNo);
+    }
+
     [Fact]
     public async Task Rush_work_order_survives_service_scope_recreation_when_persistence_is_enabled()
     {
@@ -38,8 +143,7 @@ public sealed class MesPersistenceContractTests
         using (var scope = services.CreateScope())
         {
             var handler = new CreateRushWorkOrderCommandHandler(
-                scope.ServiceProvider.GetRequiredService<IMesPlanningStore>(),
-                scope.ServiceProvider.GetRequiredService<RuleScheduler>());
+                scope.ServiceProvider.GetRequiredService<IMesPlanningStore>(), routingSnapshotProvider: SingleOperationRoutingSnapshotProvider.Instance);
 
             await handler.Handle(
                 new CreateRushWorkOrderCommand(
@@ -65,38 +169,6 @@ public sealed class MesPersistenceContractTests
 
         Assert.Contains(await store.GetWorkOrdersAsync(), x => x.WorkOrderId == "WO-PERSISTED");
         Assert.Contains(await store.GetOperationTasksAsync(), x => x.OperationTaskId == "OP-10");
-        Assert.Contains(await store.GetScheduleResultsAsync(), x => x.Trigger == RescheduleTrigger.RushOrder);
-    }
-
-    [Fact]
-    public async Task Reschedule_uses_persisted_work_order_and_schedule_facts()
-    {
-        var services = CreateServices(nameof(Reschedule_uses_persisted_work_order_and_schedule_facts));
-        var now = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
-
-        using (var scope = services.CreateScope())
-        {
-            var store = scope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
-            store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddHours(12)));
-            store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2)));
-
-            var handler = new RescheduleCommandHandler(store, scope.ServiceProvider.GetRequiredService<RuleScheduler>());
-            await handler.Handle(new RescheduleCommand("org-001", "env-dev", RescheduleTrigger.Manual, now), CancellationToken.None);
-
-            await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
-        }
-
-        using (var scope = services.CreateScope())
-        {
-            var store = scope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
-            store.AddUnavailability(new WorkCenterUnavailability("WC-A", now, now.AddHours(4), "breakdown"));
-
-            var handler = new RescheduleCommandHandler(store, scope.ServiceProvider.GetRequiredService<RuleScheduler>());
-            var second = await handler.Handle(new RescheduleCommand("org-001", "env-dev", RescheduleTrigger.AssetUnavailable, now.AddMinutes(5)), CancellationToken.None);
-
-            Assert.Equal(2, second.ScheduleVersion);
-            Assert.Contains("WO-001", second.AffectedWorkOrderIds);
-        }
     }
 
     [Fact]
@@ -108,19 +180,15 @@ public sealed class MesPersistenceContractTests
         using (var scope = services.CreateScope())
         {
             var store = scope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
-            store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
             store.AddWorkOrder(new PlannedWorkOrder("org-001", "env-dev", "WO-001", "SKU-1", null, 1m, 10, now.AddDays(1)));
-            store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2)));
+            store.AddOperationTask(new PlannedOperationTask("WO-001", "OP-10", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(2), "SKU-001"));
             await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
         }
 
         using (var scope = services.CreateScope())
         {
             var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
-                scope.ServiceProvider.GetRequiredService<IMesPlanningStore>(),
-                scope.ServiceProvider.GetRequiredService<RuleScheduler>(),
-                new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = true },
-                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                new MesAssetUnavailableCanonicalProcessor(scope.ServiceProvider.GetRequiredService<ISender>()),
                 new InMemoryIntegrationEventDeadLetterStore());
 
             await handler.HandleAsync(CreateUnavailableEvent(now), CancellationToken.None);
@@ -133,62 +201,33 @@ public sealed class MesPersistenceContractTests
         Assert.Equal("WC-A", window.WorkCenterId);
         Assert.Equal("ASSET-CNC-01", window.DeviceAssetId);
         Assert.Null(window.ToUtc);
-        Assert.Equal(RescheduleTrigger.AssetUnavailable, Assert.Single(await recreatedStore.GetScheduleResultsAsync()).Trigger);
-    }
-
-    [Fact]
-    public async Task Scheduling_reads_operation_tasks_only_for_requested_organization_and_environment()
-    {
-        var services = CreateServices(nameof(Scheduling_reads_operation_tasks_only_for_requested_organization_and_environment));
-        var now = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
-
-        using var scope = services.CreateScope();
-        var store = scope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
-        store.AddWorkOrder(new PlannedWorkOrder("org-a", "env-dev", "WO-SHARED", "SKU-A", null, 1m, 10, now.AddHours(4)));
-        store.AddOperationTask(new PlannedOperationTask("WO-SHARED", "OP-A", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromMinutes(30), OrganizationId: "org-a", EnvironmentId: "env-dev"));
-        store.AddWorkOrder(new PlannedWorkOrder("org-b", "env-dev", "WO-SHARED", "SKU-B", null, 1m, 10, now.AddHours(4)));
-        store.AddOperationTask(new PlannedOperationTask("WO-SHARED", "OP-B", OperationTaskStatus.Queued, 10, "WC-B", [], now, TimeSpan.FromMinutes(30), OrganizationId: "org-b", EnvironmentId: "env-dev"));
-        await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
-
-        var orgAOperations = await store.GetScheduleOperationsAsync("org-a", "env-dev");
-
-        var operation = Assert.Single(orgAOperations);
-        Assert.Equal("OP-A", operation.OperationTaskId);
-        Assert.Equal("WC-A", operation.WorkCenterId);
     }
 
     [Fact]
     public async Task Maintenance_unavailability_constraints_are_scoped_to_event_organization_and_environment()
     {
-        var services = CreateServices(nameof(Maintenance_unavailability_constraints_are_scoped_to_event_organization_and_environment));
+        var services = CreateServices(
+            nameof(Maintenance_unavailability_constraints_are_scoped_to_event_organization_and_environment));
         var now = DateTimeOffset.Parse("2026-05-23T08:00:00Z");
 
         using var scope = services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IMesPlanningStore>();
-        store.MapDeviceAssetToWorkCenter("ASSET-CNC-01", "WC-A");
         store.AddWorkOrder(new PlannedWorkOrder("org-a", "env-dev", "WO-A", "SKU-A", null, 1m, 10, now.AddHours(4)));
-        store.AddOperationTask(new PlannedOperationTask("WO-A", "OP-A", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(1), OrganizationId: "org-a", EnvironmentId: "env-dev"));
+        store.AddOperationTask(new PlannedOperationTask("WO-A", "OP-A", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(1), "SKU-001", OrganizationId: "org-a", EnvironmentId: "env-dev"));
         store.AddWorkOrder(new PlannedWorkOrder("org-b", "env-dev", "WO-B", "SKU-B", null, 1m, 10, now.AddHours(4)));
-        store.AddOperationTask(new PlannedOperationTask("WO-B", "OP-B", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(1), OrganizationId: "org-b", EnvironmentId: "env-dev"));
+        store.AddOperationTask(new PlannedOperationTask("WO-B", "OP-B", OperationTaskStatus.Queued, 10, "WC-A", [], now, TimeSpan.FromHours(1), "SKU-001", OrganizationId: "org-b", EnvironmentId: "env-dev"));
         await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SaveChangesAsync();
 
         var handler = new AssetUnavailableIntegrationEventHandlerForReschedule(
-            store,
-            scope.ServiceProvider.GetRequiredService<RuleScheduler>(),
-            new MesRescheduleOptions { AutoRescheduleOnAssetUnavailable = false },
-            scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            new MesAssetUnavailableCanonicalProcessor(scope.ServiceProvider.GetRequiredService<ISender>()),
             new InMemoryIntegrationEventDeadLetterStore());
         await handler.HandleAsync(CreateUnavailableEvent(now, organizationId: "org-b"), CancellationToken.None);
 
-        var orgAPlan = new RuleScheduler().Schedule(
-            await store.GetScheduleOperationsAsync("org-a", "env-dev"),
-            await store.GetUnavailabilitiesAsync("org-a", "env-dev"));
-        var orgBPlan = new RuleScheduler().Schedule(
-            await store.GetScheduleOperationsAsync("org-b", "env-dev"),
-            await store.GetUnavailabilitiesAsync("org-b", "env-dev"));
-
-        Assert.Equal(now, Assert.Single(orgAPlan.Assignments).StartUtc);
-        Assert.True(Assert.Single(orgBPlan.Assignments).StartUtc > now);
+        // #3696：排程器已删除；这里直接断言停机约束只落在事件所属组织，不再经由排程结果观察。
+        Assert.Empty(await store.GetUnavailabilitiesAsync("org-a", "env-dev"));
+        var window = Assert.Single(await store.GetUnavailabilitiesAsync("org-b", "env-dev"));
+        Assert.Equal("WC-A", window.WorkCenterId);
+        Assert.Equal("org-b", window.OrganizationId);
     }
 
     [Fact]
@@ -239,7 +278,8 @@ public sealed class MesPersistenceContractTests
                 now,
                 TimeSpan.FromMinutes(45),
                 null,
-                null));
+                null,
+                "SKU-001"));
             dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
                 "org-001",
                 "env-dev",
@@ -252,7 +292,9 @@ public sealed class MesPersistenceContractTests
                 stagedQuantity: 1m,
                 sourceSystem: "Inventory",
                 sourceSnapshotId: "inv-snap-001",
-                capturedAtUtc: now));
+                capturedAtUtc: now,
+                substituteMaterialIds: ["MAT-OIL-ALT-A", "MAT-OIL-ALT-B"],
+                uomCode: "L"));
             await dbContext.SaveChangesAsync();
         }
 
@@ -278,7 +320,7 @@ public sealed class MesPersistenceContractTests
 
         using var recreatedScope = services.CreateScope();
         var recreatedDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var readiness = await new GetMaterialReadinessQueryHandler(recreatedDbContext).Handle(
+        var readiness = await new GetMaterialReadinessQueryHandler(recreatedDbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-MAT-001"),
             CancellationToken.None);
 
@@ -294,6 +336,7 @@ public sealed class MesPersistenceContractTests
         Assert.Equal(4m, row.ReceivedQuantity);
         Assert.Equal(2m, row.ShortageQuantity);
         Assert.Equal("Shortage", row.Status);
+        Assert.Equal(["MAT-OIL-ALT-A", "MAT-OIL-ALT-B"], row.SubstituteMaterialIds);
         // 齐套口径显式带出(#1291):读面据此写明「线边 + 已备 + 已收」范围,不让用户拿它和 MRP 全厂口径对撞。
         Assert.Equal(MesMaterialReadinessScopes.LineSideAndStaged, readiness.ReadinessScope);
         // 已发起的 4 已经全部收齐(requested == received),残余的 2 没有任何在途领料
@@ -324,7 +367,9 @@ public sealed class MesPersistenceContractTests
                 stagedQuantity: 0m,
                 sourceSystem: "Inventory",
                 sourceSnapshotId: "inv-snap-inflight",
-                capturedAtUtc: now));
+                capturedAtUtc: now,
+                substituteMaterialIds: [],
+                uomCode: "L"));
             dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
                 "org-001",
                 "env-dev",
@@ -340,7 +385,7 @@ public sealed class MesPersistenceContractTests
 
         using var recreatedScope = services.CreateScope();
         var recreatedDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var readiness = await new GetMaterialReadinessQueryHandler(recreatedDbContext).Handle(
+        var readiness = await new GetMaterialReadinessQueryHandler(recreatedDbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-INFLIGHT-001"),
             CancellationToken.None);
 
@@ -374,7 +419,9 @@ public sealed class MesPersistenceContractTests
                 stagedQuantity: 0m,
                 sourceSystem: "Inventory",
                 sourceSnapshotId: "inv-snap-cancelled",
-                capturedAtUtc: now));
+                capturedAtUtc: now,
+                substituteMaterialIds: [],
+                uomCode: "L"));
 
             // 一张已取消的领料单:没有收过任何料,取消后不该再被算成「仓库在配」。
             var cancelled = MaterialIssueRequest.Create(
@@ -394,7 +441,7 @@ public sealed class MesPersistenceContractTests
 
         using var recreatedScope = services.CreateScope();
         var recreatedDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var readiness = await new GetMaterialReadinessQueryHandler(recreatedDbContext).Handle(
+        var readiness = await new GetMaterialReadinessQueryHandler(recreatedDbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-CANCELLED-001"),
             CancellationToken.None);
 
@@ -427,7 +474,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001",
             "env-dev",
@@ -440,7 +488,9 @@ public sealed class MesPersistenceContractTests
             stagedQuantity: 1m,
             sourceSystem: "Inventory",
             sourceSnapshotId: "inv-snap-lot-a",
-            capturedAtUtc: now));
+            capturedAtUtc: now,
+            substituteMaterialIds: [],
+            uomCode: "L"));
         var wrongLotRequest = MaterialIssueRequest.Create(
             "org-001",
             "env-dev",
@@ -455,7 +505,7 @@ public sealed class MesPersistenceContractTests
         dbContext.MaterialIssueRequests.Add(wrongLotRequest);
         await dbContext.SaveChangesAsync();
 
-        var readiness = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+        var readiness = await new GetMaterialReadinessQueryHandler(dbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-LOT-001"),
             CancellationToken.None);
 
@@ -509,7 +559,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001",
             "env-dev",
@@ -522,7 +573,9 @@ public sealed class MesPersistenceContractTests
             stagedQuantity: 0m,
             sourceSystem: "Inventory",
             sourceSnapshotId: "inv-snap-002",
-            capturedAtUtc: now));
+            capturedAtUtc: now,
+            substituteMaterialIds: [],
+            uomCode: "PCS"));
         await dbContext.SaveChangesAsync();
 
         var releaseException = await Assert.ThrowsAsync<KnownException>(() =>
@@ -561,7 +614,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var snapshotProvider = new FakeMesMaterialRequirementSnapshotProvider(
@@ -576,7 +630,8 @@ public sealed class MesPersistenceContractTests
                         "pcs",
                         20m,
                         0m,
-                        "MBOM-FSA-1:MAT-SEAL"),
+                        "MBOM-FSA-1:MAT-SEAL",
+                        []),
                     new MesMaterialRequirementSnapshotLine(
                         "OP-CAPTURE-10",
                         "MAT-OIL",
@@ -585,7 +640,8 @@ public sealed class MesPersistenceContractTests
                         "L",
                         5m,
                         0m,
-                        "MBOM-FSA-1:MAT-OIL"),
+                        "MBOM-FSA-1:MAT-OIL",
+                        []),
                 ]));
 
         var release = await new ReleaseWorkOrderCommandHandler(dbContext, snapshotProvider).Handle(
@@ -620,6 +676,68 @@ public sealed class MesPersistenceContractTests
             });
     }
 
+    // Contract: DomainInvariant + Regression. Authority: Issue #2222 acceptance 1; the released MES snapshot remains frozen after the upstream snapshot changes.
+    [Fact]
+    public async Task Convert_then_upstream_change_then_release_keeps_the_conversion_snapshot_without_refetching()
+    {
+        var services = CreateServices(nameof(Convert_then_upstream_change_then_release_keeps_the_conversion_snapshot_without_refetching));
+        var now = DateTimeOffset.Parse("2026-08-25T13:00:00Z");
+        var snapshotProvider = new FakeMesMaterialRequirementSnapshotProvider(
+            MesMaterialRequirementSnapshotResult.Captured(
+                "product-engineering-http:PV-FROZEN:MBOM-A",
+                [
+                    new MesMaterialRequirementSnapshotLine(
+                        null, "MAT-PRIMARY", null, 10m, "PCS", 10m, 0m,
+                        "MBOM-A:MAT-PRIMARY", ["MAT-ALT-A"]),
+                ]));
+        string workOrderId;
+
+        using (var convertScope = services.CreateScope())
+        {
+            var dbContext = convertScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var converted = await new ConvertPlanToWorkOrderCommandHandler(
+                dbContext,
+                null,
+                snapshotProvider).Handle(
+                    new ConvertPlanToWorkOrderCommand(
+                        "org-001", "env-dev", "PLAN-FROZEN-001", null, now,
+                        "FG-001", "PV-FROZEN", 10m, "PCS", now.AddDays(2), "WC-FROZEN",
+                        "DemandPlanning", "PlanningSuggestion", "SUG-FROZEN-001", "DEMAND-FROZEN-001",
+                        "convert-plan-frozen-material-snapshot"),
+                    CancellationToken.None);
+            workOrderId = converted.ReferenceId;
+            await dbContext.SaveChangesAsync();
+        }
+
+        snapshotProvider.Result = MesMaterialRequirementSnapshotResult.Captured(
+            "product-engineering-http:PV-FROZEN:MBOM-B",
+            [
+                new MesMaterialRequirementSnapshotLine(
+                    null, "MAT-PRIMARY", null, 10m, "PCS", 10m, 0m,
+                    "MBOM-B:MAT-PRIMARY", ["MAT-ALT-B"]),
+            ]);
+
+        using (var releaseScope = services.CreateScope())
+        {
+            var dbContext = releaseScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var released = await new ReleaseWorkOrderCommandHandler(dbContext, snapshotProvider).Handle(
+                new ReleaseWorkOrderCommand("org-001", "env-dev", workOrderId, now.AddMinutes(1)),
+                CancellationToken.None);
+            Assert.Equal("Accepted", released.Status);
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var readScope = services.CreateScope();
+        var frozenRequirement = Assert.Single(await readScope.ServiceProvider
+            .GetRequiredService<ApplicationDbContext>()
+            .MaterialRequirements.Where(x => x.WorkOrderId == workOrderId)
+            .ToArrayAsync());
+
+        Assert.Single(snapshotProvider.Requests);
+        Assert.Equal("MBOM-A:MAT-PRIMARY", frozenRequirement.SourceSnapshotId);
+        Assert.Equal(["MAT-ALT-A"], frozenRequirement.GetSubstituteMaterialIds());
+    }
+
     [Fact]
     public async Task Convert_plan_to_work_order_captures_material_requirements_from_real_production_snapshot()
     {
@@ -640,9 +758,10 @@ public sealed class MesPersistenceContractTests
                         "L",
                         4m,
                         0m,
-                        "MBOM-FSA-1:MAT-OIL"),
+                        "MBOM-FSA-1:MAT-OIL",
+                        []),
                 ]));
-        var handler = new ConvertPlanToWorkOrderCommandHandler(dbContext, new RuleScheduler(), null, snapshotProvider);
+        var handler = new ConvertPlanToWorkOrderCommandHandler(dbContext, null, snapshotProvider);
 
         var response = await handler.Handle(
             new ConvertPlanToWorkOrderCommand(
@@ -699,7 +818,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var releaseException = await Assert.ThrowsAsync<KnownException>(() =>
@@ -738,7 +858,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001",
             "env-dev",
@@ -751,7 +872,9 @@ public sealed class MesPersistenceContractTests
             stagedQuantity: 0m,
             sourceSystem: "Inventory",
             sourceSnapshotId: "inv-ready-qh",
-            capturedAtUtc: now));
+            capturedAtUtc: now,
+            substituteMaterialIds: [],
+            uomCode: "PCS"));
         await dbContext.SaveChangesAsync();
 
         var qualityConsumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(dbContext, deadLetters);
@@ -768,7 +891,8 @@ public sealed class MesPersistenceContractTests
             new ReleaseWorkOrderCommandHandler(dbContext).Handle(
                 new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-QH-001", now.AddMinutes(5)),
                 CancellationToken.None));
-        Assert.Contains(MesReadinessReasonCodes.QualityHoldActive, releaseHold.Message);
+        // #3858：拒绝文案经网关原样上屏，只给中文说明，不拼英文码。
+        Assert.Equal("工单存在有效质量保留，无法放行或开工：critical-defect", releaseHold.Message);
 
         await qualityConsumer.HandleAsync(CreateInspectionResultEvent(
             "evt-qh-passed-001",
@@ -967,6 +1091,78 @@ public sealed class MesPersistenceContractTests
         Assert.Empty(await dbContext.QualityHoldContexts.ToArrayAsync());
     }
 
+    /// <summary>
+    /// #3177 / #3191：首件检验的 <c>SourceDocumentId</c> 是 <c>{workOrderId}:{operationTaskId}</c> 复合串，
+    /// 按它去查工单表与工序任务表两边都查不到，整条结论进死信（<c>unknown-source-document</c>）——
+    /// 本仓在修 #3191 前实测过这条：deadLetters=1 / holds=0。生产者结构化发布工单／工序身份之后，
+    /// 定位改走结构化身份，保留上下文正常落库。两组入参同一条 Theory，缺了结构化身份仍然进死信。
+    /// </summary>
+    [Theory]
+    [InlineData("OP-3191-10", 0, 1)]
+    [InlineData(null, 1, 0)]
+    public async Task First_article_composite_source_document_resolves_through_structured_identity(
+        string? operationTaskId,
+        int expectedDeadLetterCount,
+        int expectedHoldCount)
+    {
+        var services = CreateServices(
+            $"{nameof(First_article_composite_source_document_resolves_through_structured_identity)}-{operationTaskId ?? "none"}");
+        var now = DateTimeOffset.Parse("2026-09-06T03:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-3191-FA", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-3191-FA",
+            "OP-3191-10",
+            OperationTaskLifecycleStatus.Queued,
+            10,
+            "WC-FILL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            null,
+            null,
+            "SKU-001"));
+        await dbContext.SaveChangesAsync();
+
+        var consumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(dbContext, deadLetters);
+        await consumer.HandleAsync(
+            MesInspectionResultEventFactory.Create(
+                $"evt-3191-first-article-{operationTaskId ?? "none"}",
+                QualityIntegrationEventTypes.InspectionRejected,
+                "QI-3191-FA",
+                "WO-3191-FA:OP-3191-10",
+                now,
+                "PLAN-QH-001",
+                "FG-FSA",
+                QualityInspectionSourceServices.Mes,
+                dispositionReason: "critical-defect",
+                sourceType: QualityInspectionSourceTypes.FirstArticle,
+                workOrderId: operationTaskId is null ? null : "WO-3191-FA",
+                operationTaskId: operationTaskId),
+            CancellationToken.None);
+
+        var pending = await deadLetters.ListAsync(
+            QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None);
+        Assert.Equal(expectedDeadLetterCount, pending.Count);
+
+        dbContext.ChangeTracker.Clear();
+        var holds = await dbContext.QualityHoldContexts.AsNoTracking().ToArrayAsync();
+        Assert.Equal(expectedHoldCount, holds.Length);
+        if (expectedHoldCount == 1)
+        {
+            Assert.Equal("WO-3191-FA", holds[0].WorkOrderId);
+            Assert.Equal("OP-3191-10", holds[0].OperationTaskId);
+            Assert.Equal("WO-3191-FA:OP-3191-10", holds[0].SourceDocumentId);
+        }
+    }
+
     [Fact]
     public async Task Conditional_release_clears_only_matching_operation_hold_and_allows_dispatch_without_manual_intervention()
     {
@@ -990,7 +1186,8 @@ public sealed class MesPersistenceContractTests
                 now,
                 TimeSpan.FromMinutes(45),
                 null,
-                null),
+                null,
+                "SKU-001"),
             OperationTask.Create(
                 "org-001",
                 "env-dev",
@@ -1003,7 +1200,8 @@ public sealed class MesPersistenceContractTests
                 now,
                 TimeSpan.FromMinutes(45),
                 null,
-                null));
+                null,
+                "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var qualityConsumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(dbContext, deadLetters);
@@ -1027,7 +1225,7 @@ public sealed class MesPersistenceContractTests
             new AssignDispatchTaskCommandHandler(dbContext).Handle(
                 new AssignDispatchTaskCommand("org-001", "env-dev", "OP-QH-SCOPE-10", "operator-a", null, "shift-a", now.AddMinutes(3)),
                 CancellationToken.None));
-        Assert.Contains(MesReadinessReasonCodes.QualityHoldActive, blockedDispatch.Message);
+        Assert.Equal("工单存在有效质量保留，无法放行或开工：critical-defect", blockedDispatch.Message);
 
         await qualityConsumer.HandleAsync(CreateInspectionResultEvent(
             "evt-qh-scope-conditional-10",
@@ -1048,7 +1246,7 @@ public sealed class MesPersistenceContractTests
             new AssignDispatchTaskCommandHandler(dbContext).Handle(
                 new AssignDispatchTaskCommand("org-001", "env-dev", "OP-QH-SCOPE-20", "operator-b", null, "shift-b", now.AddMinutes(6)),
                 CancellationToken.None));
-        Assert.Contains(MesReadinessReasonCodes.QualityHoldActive, stillBlockedDispatch.Message);
+        Assert.Equal("工单存在有效质量保留，无法放行或开工：critical-defect", stillBlockedDispatch.Message);
 
         var releasedHold = await dbContext.QualityHoldContexts.SingleAsync(x => x.SourceDocumentId == "OP-QH-SCOPE-10");
         var activeHold = await dbContext.QualityHoldContexts.SingleAsync(x => x.SourceDocumentId == "OP-QH-SCOPE-20");
@@ -1082,7 +1280,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var qualityConsumer = new QualityInspectionResultIntegrationEventHandlerForUpdateMesHoldContext(dbContext, deadLetters);
@@ -1326,7 +1525,7 @@ public sealed class MesPersistenceContractTests
             "ASSET-FILL-01"));
         await dbContext.SaveChangesAsync();
 
-        var handler = new GetMesFoundationReadinessAreaQueryHandler(new MesFoundationReadinessService(dbContext));
+        var handler = new GetMesFoundationReadinessAreaQueryHandler(FoundationReadinessServices.Create(dbContext, MissingQualityInspectionPlanReader.Instance));
         var quality = await handler.Handle(
             new GetMesFoundationReadinessAreaQuery(
                 "org-001",
@@ -1364,13 +1563,158 @@ public sealed class MesPersistenceContractTests
     }
 
     [Fact]
+    public async Task Foundation_readiness_quality_is_ready_only_when_quality_returns_an_active_plan()
+    {
+        using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "{\"data\":{\"items\":[{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"status\":\"active\",\"planCode\":\"IP-SKU-FSA\",\"skuCode\":\"FG-FSA\",\"category\":\"operation\",\"workCenterId\":\"WC-FILL\"}],\"total\":1},\"success\":true}",
+                Encoding.UTF8,
+                "application/json"),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var services = CreateServices(nameof(Foundation_readiness_quality_is_ready_only_when_quality_returns_an_active_plan));
+
+        using var scope = services.CreateScope();
+        var readiness = await new GetMesFoundationReadinessAreaQueryHandler(
+            FoundationReadinessServices.Create(
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                new MesQualityInspectionPlanClient(new MesQualityHttpClient(httpClient))))
+            .Handle(
+                new GetMesFoundationReadinessAreaQuery(
+                    "org-001", "env-dev", "quality", null, null, "WC-FILL", "FG-FSA", "PV-FSA-1", null, null),
+                CancellationToken.None);
+
+        Assert.Equal("Ready", readiness.Status);
+        Assert.DoesNotContain(readiness.Issues, x => x.Code == MesReadinessReasonCodes.QualityPlanMissing);
+        var requestQuery = Assert.Single(handler.Requests).RequestUri!.Query;
+        Assert.Contains("organizationId=org-001", requestQuery, StringComparison.Ordinal);
+        Assert.Contains("environmentId=env-dev", requestQuery, StringComparison.Ordinal);
+        Assert.Contains("category=operation", requestQuery, StringComparison.Ordinal);
+        Assert.Contains("skuCode=FG-FSA", requestQuery, StringComparison.Ordinal);
+        Assert.Contains("status=active", requestQuery, StringComparison.Ordinal);
+        Assert.Contains("workCenterId=WC-FILL", requestQuery, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Foundation_readiness_quality_blocks_when_quality_returns_no_active_plan()
+    {
+        using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "{\"data\":{\"items\":[],\"total\":0},\"success\":true}",
+                Encoding.UTF8,
+                "application/json"),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var services = CreateServices(nameof(Foundation_readiness_quality_blocks_when_quality_returns_no_active_plan));
+
+        using var scope = services.CreateScope();
+        var readiness = await new GetMesFoundationReadinessAreaQueryHandler(
+            FoundationReadinessServices.Create(
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                new MesQualityInspectionPlanClient(new MesQualityHttpClient(httpClient))))
+            .Handle(
+                new GetMesFoundationReadinessAreaQuery(
+                    "org-001", "env-dev", "quality", null, null, "WC-FILL", "FG-FSA", "PV-FSA-1", null, null),
+                CancellationToken.None);
+
+        Assert.Equal("Blocked", readiness.Status);
+        Assert.Contains(readiness.Issues, x =>
+            x.Code == MesReadinessReasonCodes.QualityPlanMissing &&
+            !x.Message.Contains("首检", StringComparison.Ordinal) &&
+            !x.Message.Contains("巡检", StringComparison.Ordinal) &&
+            !x.Message.Contains("终检", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("OTHER-SKU", "operation", "WC-FILL")]
+    [InlineData("FG-FSA", "final", "WC-FILL")]
+    [InlineData("FG-FSA", "operation", "WC-OTHER")]
+    public async Task Foundation_readiness_quality_does_not_accept_plan_outside_requested_applicability(
+        string responseSkuCode,
+        string responseCategory,
+        string responseWorkCenterId)
+    {
+        using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                $"{{\"data\":{{\"items\":[{{\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"status\":\"active\",\"planCode\":\"IP-MISMATCH\",\"skuCode\":\"{responseSkuCode}\",\"category\":\"{responseCategory}\",\"workCenterId\":\"{responseWorkCenterId}\"}}],\"total\":1}},\"success\":true}}",
+                Encoding.UTF8,
+                "application/json"),
+        });
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var services = CreateServices($"{nameof(Foundation_readiness_quality_does_not_accept_plan_outside_requested_applicability)}-{responseCategory}-{responseWorkCenterId}");
+
+        using var scope = services.CreateScope();
+        var readiness = await new GetMesFoundationReadinessAreaQueryHandler(
+            FoundationReadinessServices.Create(
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                new MesQualityInspectionPlanClient(new MesQualityHttpClient(httpClient))))
+            .Handle(
+                new GetMesFoundationReadinessAreaQuery(
+                    "org-001", "env-dev", "quality", null, null, "WC-FILL", "FG-FSA", "PV-FSA-1", null, null),
+                CancellationToken.None);
+
+        Assert.Equal("Blocked", readiness.Status);
+        Assert.Contains(readiness.Issues, x => x.Code == MesReadinessReasonCodes.QualityPlanMissing);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.NotFound)]
+    public async Task Foundation_readiness_quality_does_not_translate_quality_http_failure_to_missing_plan(
+        HttpStatusCode statusCode)
+    {
+        using var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(statusCode));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://quality.local") };
+        var services = CreateServices($"{nameof(Foundation_readiness_quality_does_not_translate_quality_http_failure_to_missing_plan)}-{statusCode}");
+
+        using var scope = services.CreateScope();
+        var exception = await Assert.ThrowsAsync<KnownException>(() => new GetMesFoundationReadinessAreaQueryHandler(
+                FoundationReadinessServices.Create(
+                    scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                    new MesQualityInspectionPlanClient(new MesQualityHttpClient(httpClient))))
+            .Handle(
+                new GetMesFoundationReadinessAreaQuery(
+                    "org-001", "env-dev", "quality", null, null, "WC-FILL", "FG-FSA", "PV-FSA-1", null, null),
+                CancellationToken.None));
+
+        Assert.Contains("QUALITY_PLAN_SOURCE_UNAVAILABLE", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("QUALITY_PLAN_MISSING", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Foundation_readiness_quality_fails_closed_for_production_version_without_sku()
+    {
+        var services = CreateServices(nameof(Foundation_readiness_quality_fails_closed_for_production_version_without_sku));
+        var reader = new RecordingQualityInspectionPlanReader { Result = true };
+
+        using var scope = services.CreateScope();
+        var readiness = await new GetMesFoundationReadinessAreaQueryHandler(
+            FoundationReadinessServices.Create(
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                reader))
+            .Handle(
+                new GetMesFoundationReadinessAreaQuery(
+                    "org-001", "env-dev", "quality", null, null, "WC-FILL", null, "PV-FSA-1", null, null),
+                CancellationToken.None);
+
+        Assert.Equal("Blocked", readiness.Status);
+        Assert.Contains(readiness.Issues, x => x.Code == MesReadinessReasonCodes.QualityPlanMissing);
+        Assert.Equal(0, reader.CallCount);
+    }
+
+    [Fact]
     public async Task Foundation_readiness_without_execution_context_does_not_block_contextual_quality_or_equipment_checks()
     {
         var services = CreateServices(nameof(Foundation_readiness_without_execution_context_does_not_block_contextual_quality_or_equipment_checks));
 
         using var scope = services.CreateScope();
         var handler = new GetMesFoundationReadinessAreaQueryHandler(
-            new MesFoundationReadinessService(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()));
+            FoundationReadinessServices.Create(
+                scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+                MissingQualityInspectionPlanReader.Instance));
 
         var quality = await handler.Handle(
             new GetMesFoundationReadinessAreaQuery(
@@ -1424,7 +1768,7 @@ public sealed class MesPersistenceContractTests
             "DEV-OIL-01"));
         await dbContext.SaveChangesAsync();
 
-        var readiness = await new GetMesFoundationReadinessAreaQueryHandler(new MesFoundationReadinessService(dbContext)).Handle(
+        var readiness = await new GetMesFoundationReadinessAreaQueryHandler(FoundationReadinessServices.Create(dbContext, MissingQualityInspectionPlanReader.Instance)).Handle(
             new GetMesFoundationReadinessAreaQuery(
                 "org-001",
                 "env-dev",
@@ -1466,7 +1810,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.WorkCenterUnavailabilities.Add(Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open(
             "org-001",
             "env-dev",
@@ -1482,19 +1827,20 @@ public sealed class MesPersistenceContractTests
             new ReleaseWorkOrderCommandHandler(dbContext).Handle(
                 new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-QUALITY-001", now.AddMinutes(30)),
                 CancellationToken.None));
-        Assert.Contains("QUALITY_PLAN_MISSING", qualityException.Message);
+        Assert.Equal(ReleaseWorkOrderCommandHandler.ReleaseProductionVersionMissingMessage, qualityException.Message);
 
         var releaseEquipmentException = await Assert.ThrowsAsync<KnownException>(() =>
             new ReleaseWorkOrderCommandHandler(dbContext).Handle(
                 new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-EQUIP-001", now.AddMinutes(30)),
                 CancellationToken.None));
-        Assert.Contains(EquipmentRuntimeReasonCodes.MaintenanceWindow, releaseEquipmentException.Message);
+        Assert.Equal("工作中心 WC-FILL：设备存在维修或保养占用，当前工序不能派工或开工。", releaseEquipmentException.Message);
 
         var startException = await Assert.ThrowsAsync<KnownException>(() =>
             new ChangeOperationTaskStateCommandHandler(dbContext).Handle(
                 new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-EQUIP-10", "start", now.AddMinutes(35)),
                 CancellationToken.None));
-        Assert.Contains(EquipmentRuntimeReasonCodes.MaintenanceWindow, startException.Message);
+        Assert.Contains("设备存在维修或保养占用，当前工序不能派工或开工。", startException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(EquipmentRuntimeReasonCodes.MaintenanceWindow, startException.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1520,7 +1866,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.WorkCenterUnavailabilities.Add(Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open(
             "org-001",
             "env-dev",
@@ -1537,7 +1884,8 @@ public sealed class MesPersistenceContractTests
                 new ChangeOperationTaskStateCommand("org-001", "env-dev", "OP-EQUIP-RUNTIME-10", "start", now.AddMinutes(15)),
                 CancellationToken.None));
 
-        Assert.Contains(EquipmentRuntimeReasonCodes.MaintenanceWindow, exception.Message);
+        Assert.Contains("设备存在维修或保养占用，当前工序不能派工或开工。", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(EquipmentRuntimeReasonCodes.MaintenanceWindow, exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1563,7 +1911,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.WorkCenterUnavailabilities.Add(Domain.AggregatesModel.ScheduleAggregate.WorkCenterUnavailability.Open(
             "org-001",
             "env-dev",
@@ -1587,7 +1936,7 @@ public sealed class MesPersistenceContractTests
                     now.AddMinutes(15)),
                 CancellationToken.None));
 
-        Assert.Contains(EquipmentRuntimeReasonCodes.ActiveAlarm, exception.Message);
+        Assert.Equal("工作中心 WC-OIL：工业遥测存在未解除报警，设备不可用于当前工序。", exception.Message);
     }
 
     [Fact]
@@ -1611,7 +1960,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var response = await new AssignDispatchTaskCommandHandler(dbContext).Handle(
@@ -1668,7 +2018,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001",
             "env-dev",
@@ -1681,7 +2032,9 @@ public sealed class MesPersistenceContractTests
             stagedQuantity: 0m,
             sourceSystem: "Inventory",
             sourceSnapshotId: "inv-snap-old",
-            capturedAtUtc: now));
+            capturedAtUtc: now,
+            substituteMaterialIds: [],
+            uomCode: "PCS"));
         dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001",
             "env-dev",
@@ -1694,13 +2047,15 @@ public sealed class MesPersistenceContractTests
             stagedQuantity: 0m,
             sourceSystem: "Inventory",
             sourceSnapshotId: "inv-snap-new",
-            capturedAtUtc: now.AddMinutes(5)));
+            capturedAtUtc: now.AddMinutes(5),
+            substituteMaterialIds: [],
+            uomCode: "PCS"));
         await dbContext.SaveChangesAsync();
 
         var release = await new ReleaseWorkOrderCommandHandler(dbContext).Handle(
             new ReleaseWorkOrderCommand("org-001", "env-dev", "WO-SNAPSHOT-001", now.AddMinutes(10)),
             CancellationToken.None);
-        var readiness = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+        var readiness = await new GetMaterialReadinessQueryHandler(dbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-SNAPSHOT-001"),
             CancellationToken.None);
 
@@ -1734,7 +2089,8 @@ public sealed class MesPersistenceContractTests
                 now,
                 TimeSpan.FromMinutes(45),
                 null,
-                null));
+                null,
+                "SKU-001"));
             dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
                 "org-001",
                 "env-dev",
@@ -1747,7 +2103,9 @@ public sealed class MesPersistenceContractTests
                 stagedQuantity: 0m,
                 sourceSystem: "Inventory",
                 sourceSnapshotId: "inv-ready-001",
-                capturedAtUtc: now));
+                capturedAtUtc: now,
+                substituteMaterialIds: [],
+                uomCode: "PCS"));
             await dbContext.SaveChangesAsync();
 
             var response = await new ReleaseWorkOrderCommandHandler(dbContext).Handle(
@@ -1788,7 +2146,8 @@ public sealed class MesPersistenceContractTests
                 now,
                 TimeSpan.FromMinutes(45),
                 null,
-                null));
+                null,
+                "SKU-001"));
             await dbContext.SaveChangesAsync();
 
             await new AssignDispatchTaskCommandHandler(dbContext).Handle(
@@ -1836,7 +2195,8 @@ public sealed class MesPersistenceContractTests
         var task = OperationTask.Create(
             "org-001", "env-dev", "WO-LEGACY-001", "OP-LEGACY-10",
             OperationTaskLifecycleStatus.Queued, 10, "WC-FILL", [], now,
-            TimeSpan.FromMinutes(45), null, null);
+            TimeSpan.FromMinutes(45), null, null,
+            "SKU-001");
         task.ApplyScheduleAssignment("WC-FILL", "device-legacy-01", now, now.AddMinutes(45), now);
         dbContext.OperationTasks.Add(task);
         await dbContext.SaveChangesAsync();
@@ -1874,7 +2234,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var workOrder = WorkOrder.Create(
+        var workOrder = ReleasedForReportingWithoutEvents(WorkOrder.Create(
             "org-001",
             "env-dev",
             "WO-LIFE-001",
@@ -1882,7 +2242,7 @@ public sealed class MesPersistenceContractTests
             "PV-FSA-1",
             10m,
             20,
-            now.AddHours(8));
+            now.AddHours(8)));
         workOrder.RecordMaterialRequirementSnapshot(
             WorkOrder.MaterialRequirementSnapshotCapturedStatus,
             now);
@@ -1899,7 +2259,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001",
             "env-dev",
@@ -1912,7 +2273,12 @@ public sealed class MesPersistenceContractTests
             stagedQuantity: 0m,
             sourceSystem: "Inventory",
             sourceSnapshotId: "inv-life-ready",
-            capturedAtUtc: now));
+            capturedAtUtc: now,
+            substituteMaterialIds: [],
+            uomCode: "PCS"));
+        dbContext.ProductionReports.Add(ProductionReport.Record(
+            "org-001", "env-dev", "PR-LIFE-001", "WO-LIFE-001", "OP-LIFE-10",
+            1m, 0m, false, now.AddMinutes(30)));
         await dbContext.SaveChangesAsync();
 
         var handler = new ChangeOperationTaskStateCommandHandler(dbContext);
@@ -1934,16 +2300,17 @@ public sealed class MesPersistenceContractTests
     {
         var services = CreateServices(nameof(Production_report_that_completes_operation_persists_operation_completion));
         var now = DateTimeOffset.Parse("2026-05-30T08:00:00Z");
+        var operationTaskId = $"OP-{new string('A', 78)}";
 
         using (var scope = services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-REPORT-COMPLETE-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+            dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-REPORT-COMPLETE-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
             dbContext.OperationTasks.Add(OperationTask.Create(
                 "org-001",
                 "env-dev",
                 "WO-REPORT-COMPLETE-001",
-                "OP-REPORT-COMPLETE-10",
+                operationTaskId,
                 OperationTaskLifecycleStatus.InProgress,
                 10,
                 "WC-FILL",
@@ -1951,13 +2318,14 @@ public sealed class MesPersistenceContractTests
                 now,
                 TimeSpan.FromMinutes(45),
                 now,
-                null));
+                null,
+                "SKU-001"));
             var materialIssue = MaterialIssueRequest.Create(
                 "org-001",
                 "env-dev",
                 "MIR-REPORT-COMPLETE-001",
                 "WO-REPORT-COMPLETE-001",
-                "OP-REPORT-COMPLETE-10",
+                operationTaskId,
                 "MAT-SCRAP",
                 "PCS",
                 10m,
@@ -1967,12 +2335,12 @@ public sealed class MesPersistenceContractTests
             dbContext.MaterialIssueRequests.Add(materialIssue);
             await dbContext.SaveChangesAsync();
 
-            await new RecordProductionReportCommandHandler(dbContext).Handle(
+            await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing).Handle(
                 new RecordProductionReportCommand(
                     "org-001",
                     "env-dev",
                     "WO-REPORT-COMPLETE-001",
-                    "OP-REPORT-COMPLETE-10",
+                    operationTaskId,
                     9m,
                     1m,
                     true,
@@ -1986,10 +2354,115 @@ public sealed class MesPersistenceContractTests
         using var recreatedScope = services.CreateScope();
         var task = await recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
             .OperationTasks
-            .SingleAsync(x => x.OperationTaskIdValue == "OP-REPORT-COMPLETE-10");
+            .SingleAsync(x => x.OperationTaskIdValue == operationTaskId);
 
         Assert.Equal(OperationTaskLifecycleStatus.Completed, task.Status);
         Assert.Equal(now.AddMinutes(40), task.ExistingEndUtc);
+        var report = await recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .ProductionReports.SingleAsync(x => x.WorkOrderId == "WO-REPORT-COMPLETE-001");
+        Assert.Equal($"LOT-{report.ReportNo}", report.ProducedLotNo);
+        Assert.DoesNotContain("WO-REPORT-COMPLETE-001", report.ProducedLotNo);
+        Assert.True(report.ProducedLotNo!.Length <= 100);
+    }
+
+    [Fact]
+    public async Task Completed_production_report_persists_registered_participant_labor_allocations()
+    {
+        var services = CreateServices(nameof(Completed_production_report_persists_registered_participant_labor_allocations));
+        var now = DateTimeOffset.Parse("2026-08-25T08:00:00Z");
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-COLLAB-001", "FG-001", "PV-001", 10m, 10, now.AddHours(8))));
+            dbContext.OperationTasks.Add(OperationTask.Create(
+                "org-001", "env-dev", "WO-COLLAB-001", "OP-COLLAB-10",
+                OperationTaskLifecycleStatus.InProgress, 10, "WC-001", [], now,
+                TimeSpan.FromMinutes(40), now, null,
+                "SKU-001"));
+            await dbContext.SaveChangesAsync();
+
+            await new AssignDispatchTaskCommandHandler(dbContext).Handle(
+                new AssignDispatchTaskCommand(
+                    "org-001", "env-dev", "OP-COLLAB-10", "worker-a", null, "shift-a", now,
+                    AssignedUserName: "Alice",
+                    Participants:
+                    [
+                        new DispatchParticipantInput("worker-a", "Alice", 60m),
+                        new DispatchParticipantInput("worker-b", "Bob", 40m),
+                    ]),
+                CancellationToken.None);
+            await dbContext.SaveChangesAsync();
+
+            await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing).Handle(
+                new RecordProductionReportCommand(
+                    "org-001", "env-dev", "WO-COLLAB-001", "OP-COLLAB-10",
+                    10m, 0m, true, now.AddMinutes(40), "report-collab-001"),
+                CancellationToken.None);
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var recreatedScope = services.CreateScope();
+        var recreatedDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var participants = await recreatedDbContext.OperationTaskParticipants
+            .OrderBy(x => x.WorkerId)
+            .ToArrayAsync();
+        Assert.Collection(
+            participants,
+            first => Assert.Equal(("worker-a", 60m), (first.WorkerId, first.SharePercent)),
+            second => Assert.Equal(("worker-b", 40m), (second.WorkerId, second.SharePercent)));
+
+        var reportNo = await recreatedDbContext.ProductionReports.Select(x => x.ReportNo).SingleAsync();
+        var detail = await new GetProductionReportQueryHandler(recreatedDbContext).Handle(
+            new GetProductionReportQuery("org-001", "env-dev", reportNo),
+            CancellationToken.None);
+        Assert.Collection(
+            detail.LaborAllocations,
+            first => Assert.Equal(("worker-a", TimeSpan.FromMinutes(24).Ticks), (first.WorkerId, first.AllocatedLaborTicks)),
+            second => Assert.Equal(("worker-b", TimeSpan.FromMinutes(16).Ticks), (second.WorkerId, second.AllocatedLaborTicks)));
+        Assert.Equal(TimeSpan.FromMinutes(40).Ticks, detail.LaborAllocations.Sum(x => x.AllocatedLaborTicks));
+    }
+
+    [Fact]
+    public async Task Stage_production_report_does_not_allocate_labor_and_legacy_assignee_falls_back_to_full_share_on_completion()
+    {
+        var services = CreateServices(nameof(Stage_production_report_does_not_allocate_labor_and_legacy_assignee_falls_back_to_full_share_on_completion));
+        var now = DateTimeOffset.Parse("2026-08-25T09:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-LEGACY-001", "FG-001", "PV-001", 10m, 10, now.AddHours(8))));
+        var task = OperationTask.Create(
+            "org-001", "env-dev", "WO-LEGACY-001", "OP-LEGACY-10",
+            OperationTaskLifecycleStatus.InProgress, 10, "WC-001", [], now,
+            TimeSpan.FromMinutes(40), now, null,
+            "SKU-001");
+        task.Assign("legacy-worker", null, "shift-a", now, assignedUserName: "Legacy Worker");
+        dbContext.OperationTasks.Add(task);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance,
+            TestMesFirstArticleGate.Allowing);
+        await handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001", "env-dev", "WO-LEGACY-001", "OP-LEGACY-10",
+                4m, 0m, false, now.AddMinutes(10), "report-stage-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        Assert.Empty(await dbContext.ProductionReportLaborAllocations.ToArrayAsync());
+
+        await handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001", "env-dev", "WO-LEGACY-001", "OP-LEGACY-10",
+                6m, 0m, true, now.AddMinutes(40), "report-complete-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var allocation = Assert.Single(await dbContext.ProductionReportLaborAllocations.ToArrayAsync());
+        Assert.Equal("legacy-worker", allocation.WorkerId);
+        Assert.Equal("Legacy Worker", allocation.WorkerName);
+        Assert.Equal(100m, allocation.SharePercent);
+        Assert.Equal(TimeSpan.FromMinutes(40).Ticks, allocation.AllocatedLaborTicks);
     }
 
     [Fact]
@@ -2001,7 +2474,7 @@ public sealed class MesPersistenceContractTests
         using (var scope = services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-BATCH-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+            dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-BATCH-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
             dbContext.OperationTasks.Add(OperationTask.Create(
                 "org-001",
                 "env-dev",
@@ -2014,7 +2487,8 @@ public sealed class MesPersistenceContractTests
                 now,
                 TimeSpan.FromMinutes(45),
                 now,
-                null));
+                null,
+                "SKU-001"));
             dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
                 "org-001",
                 "env-dev",
@@ -2030,7 +2504,7 @@ public sealed class MesPersistenceContractTests
             request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(10), materialLotId: "LOT-BATCH-A");
             await dbContext.SaveChangesAsync();
 
-            await new RecordProductionReportCommandHandler(dbContext).Handle(
+            await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing).Handle(
                 new RecordProductionReportCommand(
                     "org-001",
                     "env-dev",
@@ -2054,6 +2528,360 @@ public sealed class MesPersistenceContractTests
         Assert.Contains(traceability.Nodes, x => x.NodeId == "LOT-BATCH-A" && x.NodeType == "MaterialLot");
         Assert.Contains(traceability.Nodes, x => x.NodeId == "WO-BATCH-001" && x.NodeType == "WorkOrder");
         Assert.Contains(traceability.Edges, x => x.RelationType == "consumed-by-report");
+    }
+
+    // Regression: #2688 验收 1、2。同一物料批跨工序耗用时，三个读面都只发一个物料/批次节点，保留各次耗用关系。
+    // EF InMemory 仅证明读面响应装配，不声明真实数据库行为。
+    [Theory]
+    [InlineData("work-order")]
+    [InlineData("batch")]
+    [InlineData("material-lot")]
+    public async Task Traceability_deduplicates_material_consumed_by_multiple_operations(string readFace)
+    {
+        var services = CreateServices($"{nameof(Traceability_deduplicates_material_consumed_by_multiple_operations)}-{readFace}");
+        var now = DateTimeOffset.Parse("2026-05-30T08:00:00Z");
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            SeedTraceabilityWorkOrder(dbContext, "org-001", "WO-DEDUPE", now);
+            foreach (var sequence in new[] { 10, 20 })
+            {
+                SeedTraceabilityOperationReport(
+                    dbContext, "org-001", "WO-DEDUPE", $"OP-DEDUPE-{sequence}", $"PRPT-DEDUPE-{sequence}",
+                    now, "user-emp-010", "DEV-CNC-01", operationSequence: sequence);
+                dbContext.ProductionReportMaterialConsumptions.Add(ProductionReportMaterialConsumption.Record(
+                    "org-001", "env-dev", $"PRPT-DEDUPE-{sequence}", "WO-DEDUPE", $"OP-DEDUPE-{sequence}",
+                    "MAT-OIL", "LOT-DEDUPE", "L", 2m, $"MIR-DEDUPE-{sequence}", "SITE-1", "LINE-SIDE"));
+            }
+
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var recreatedScope = services.CreateScope();
+        var queryDbContext = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var traceability = readFace switch
+        {
+            "work-order" => await new GetWorkOrderTraceabilityQueryHandler(queryDbContext).Handle(
+                new GetWorkOrderTraceabilityQuery("org-001", "env-dev", "WO-DEDUPE"), CancellationToken.None),
+            "batch" => await new GetBatchTraceabilityQueryHandler(queryDbContext).Handle(
+                new GetBatchTraceabilityQuery("org-001", "env-dev", "LOT-DEDUPE"), CancellationToken.None),
+            _ => await new GetMaterialLotTraceabilityQueryHandler(queryDbContext).Handle(
+                new GetMaterialLotTraceabilityQuery("org-001", "env-dev", "LOT-DEDUPE"), CancellationToken.None),
+        };
+
+        Assert.Single(traceability.Nodes, x => x.NodeId == "MAT-OIL" && x.NodeType == MesTraceabilityNodeType.Material);
+        Assert.Single(traceability.Nodes, x => x.NodeId == "LOT-DEDUPE" && x.NodeType == MesTraceabilityNodeType.MaterialLot);
+        Assert.Single(traceability.Edges, x => x.FromNodeId == "MAT-OIL" && x.ToNodeId == "LOT-DEDUPE" && x.RelationType == "has-lot");
+        foreach (var reportNo in new[] { "PRPT-DEDUPE-10", "PRPT-DEDUPE-20" })
+        {
+            Assert.Single(traceability.Edges, x => x.FromNodeId == "LOT-DEDUPE" && x.ToNodeId == reportNo && x.RelationType == "consumed-by-report");
+        }
+    }
+
+    // 验收 2（#1948）：从成品序列号反查，追溯图必须同时给出人员、设备、时间与检验结论。
+    [Fact]
+    public async Task Serial_traceability_returns_operator_device_time_and_inspection_verdict()
+    {
+        var services = CreateServices(nameof(Serial_traceability_returns_operator_device_time_and_inspection_verdict));
+        var reportedAtUtc = DateTimeOffset.Parse("2026-05-30T09:15:00Z");
+        var inspectedAtUtc = DateTimeOffset.Parse("2026-05-30T09:40:00Z");
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            SeedTraceabilityWorkOrder(dbContext, "org-001", "WO-TRACE-001", reportedAtUtc);
+            SeedTraceabilityOperationReport(
+                dbContext,
+                "org-001",
+                "WO-TRACE-001",
+                "OP-TRACE-10",
+                "PRPT-TRACE-001",
+                reportedAtUtc,
+                "user-emp-010",
+                "DEV-CNC-01",
+                serialNo: "SN-TRACE-001");
+            dbContext.DefectRecords.Add(DefectRecord.Create(
+                "org-001",
+                "env-dev",
+                "DEF-TRACE-001",
+                "WO-TRACE-001",
+                "OP-TRACE-10",
+                "SCRAP-SURFACE",
+                1m,
+                inspectedAtUtc));
+            // 跨租户对照：同工单号、同工序号、同序列号落在另一个组织，且操作人与设备取不同值——
+            // 报工查询与不良查询任一侧丢掉 org/env 谓词，都会让外租户的人员/设备/检验结论漏进本图。
+            SeedTraceabilityWorkOrder(dbContext, "org-002", "WO-TRACE-001", reportedAtUtc);
+            SeedTraceabilityOperationReport(
+                dbContext,
+                "org-002",
+                "WO-TRACE-001",
+                "OP-TRACE-10",
+                "PRPT-TRACE-FOREIGN",
+                reportedAtUtc,
+                "user-foreign-999",
+                "DEV-FOREIGN-99",
+                serialNo: "SN-TRACE-001");
+            dbContext.DefectRecords.Add(DefectRecord.Create(
+                "org-002",
+                "env-dev",
+                "DEF-TRACE-FOREIGN",
+                "WO-TRACE-001",
+                "OP-TRACE-10",
+                "FOREIGN-TENANT",
+                1m,
+                inspectedAtUtc));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var recreatedScope = services.CreateScope();
+        var traceability = await new GetBatchTraceabilityQueryHandler(
+            recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>())
+            .Handle(new GetBatchTraceabilityQuery("org-001", "env-dev", "SN-TRACE-001"), CancellationToken.None);
+
+        var operatorNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeType.Operator);
+        Assert.Equal("user-emp-010", operatorNode.NodeId);
+        Assert.Equal(reportedAtUtc, operatorNode.OccurredAtUtc);
+
+        var deviceNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeType.DeviceAsset);
+        Assert.Equal("DEV-CNC-01", deviceNode.NodeId);
+        Assert.Equal(reportedAtUtc, deviceNode.OccurredAtUtc);
+
+        var inspectionNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeTypes.InspectionResult);
+        Assert.Equal("DEF-TRACE-001", inspectionNode.NodeId);
+        Assert.Equal("SCRAP-SURFACE", inspectionNode.DisplayName);
+        Assert.Equal(DefectRecord.OpenStatus, inspectionNode.Status);
+        Assert.Equal(inspectedAtUtc, inspectionNode.OccurredAtUtc);
+
+        var reportNode = Assert.Single(traceability.Nodes, x => x.NodeType == "ProductionReport");
+        Assert.Equal(reportedAtUtc, reportNode.OccurredAtUtc);
+
+        Assert.Contains(traceability.Edges, x => x.FromNodeId == "PRPT-TRACE-001" && x.ToNodeId == "user-emp-010" && x.RelationType == "reported-by");
+        Assert.Contains(traceability.Edges, x => x.FromNodeId == "PRPT-TRACE-001" && x.ToNodeId == "DEV-CNC-01" && x.RelationType == "reported-on-device");
+        Assert.Contains(traceability.Edges, x => x.FromNodeId == "OP-TRACE-10" && x.ToNodeId == "DEF-TRACE-001" && x.RelationType == "inspected-as");
+    }
+
+    // 验收 2（#1948）：工单追溯读面与序列号读面共用同一份装配逻辑。本用例同时钉住两条：
+    // 同一操作人的多条报工只发一个人员节点；
+    // 不良只能扣到它自己那道工序头上（工单下有两道工序，不良只记在第一道）。
+    [Fact]
+    public async Task Work_order_traceability_attaches_each_inspection_to_its_own_operation_without_duplicating_shared_nodes()
+    {
+        var services = CreateServices(nameof(Work_order_traceability_attaches_each_inspection_to_its_own_operation_without_duplicating_shared_nodes));
+        var reportedAtUtc = DateTimeOffset.Parse("2026-05-30T09:15:00Z");
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            SeedTraceabilityWorkOrder(dbContext, "org-001", "WO-TRACE-WO", reportedAtUtc);
+            SeedTraceabilityOperationReport(
+                dbContext,
+                "org-001",
+                "WO-TRACE-WO",
+                "OP-TRACE-WO-10",
+                "PRPT-TRACE-WO-A",
+                reportedAtUtc,
+                "user-emp-010",
+                "DEV-CNC-01",
+                operationSequence: 10);
+            // 同一操作人、同一台设备上的第二条报工，仍落在第一道工序。
+            dbContext.ProductionReports.Add(ProductionReport.Record(
+                "org-001",
+                "env-dev",
+                "PRPT-TRACE-WO-B",
+                "WO-TRACE-WO",
+                "OP-TRACE-WO-10",
+                3m,
+                0m,
+                false,
+                reportedAtUtc.AddMinutes(30),
+                oeeProjection: new ProductionReportOeeProjection("WC-FILL", "DEV-CNC-01", "PCS", null),
+                reportedBy: "user-emp-010"));
+            // 第二道工序也有报工，但没有不良：检验结论不得被扣到它头上。
+            SeedTraceabilityOperationReport(
+                dbContext,
+                "org-001",
+                "WO-TRACE-WO",
+                "OP-TRACE-WO-20",
+                "PRPT-TRACE-WO-C",
+                reportedAtUtc.AddMinutes(60),
+                "user-emp-010",
+                "DEV-CNC-01",
+                operationSequence: 20);
+            dbContext.DefectRecords.Add(DefectRecord.Create(
+                "org-001",
+                "env-dev",
+                "DEF-TRACE-WO",
+                "WO-TRACE-WO",
+                "OP-TRACE-WO-10",
+                "SCRAP-SURFACE",
+                1m,
+                reportedAtUtc.AddMinutes(40)));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var recreatedScope = services.CreateScope();
+        var traceability = await new GetWorkOrderTraceabilityQueryHandler(
+            recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>())
+            .Handle(new GetWorkOrderTraceabilityQuery("org-001", "env-dev", "WO-TRACE-WO"), CancellationToken.None);
+
+        var operatorNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeType.Operator);
+        Assert.Equal("user-emp-010", operatorNode.NodeId);
+        Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeType.DeviceAsset);
+        Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeTypes.InspectionResult);
+        Assert.Equal(3, traceability.Nodes.Count(x => x.NodeType == "ProductionReport"));
+        Assert.All(
+            traceability.Nodes.Where(x => x.NodeType == "ProductionReport"),
+            node => Assert.NotNull(node.OccurredAtUtc));
+
+        var inspectionEdge = Assert.Single(traceability.Edges, x => x.RelationType == "inspected-as");
+        Assert.Equal("OP-TRACE-WO-10", inspectionEdge.FromNodeId);
+        Assert.Equal("DEF-TRACE-WO", inspectionEdge.ToNodeId);
+        Assert.Contains(traceability.Edges, x => x.FromNodeId == "PRPT-TRACE-WO-B" && x.ToNodeId == "user-emp-010" && x.RelationType == "reported-by");
+    }
+
+    // 验收 2（#1948）：投入批次两个读面（物料批读面、批次读面的消耗侧）同样要能查到「谁在哪台设备上用掉的」。
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Consumed_material_lot_traceability_returns_operator_and_device_on_both_read_faces(bool viaMaterialLotReadFace)
+    {
+        var services = CreateServices($"{nameof(Consumed_material_lot_traceability_returns_operator_and_device_on_both_read_faces)}-{viaMaterialLotReadFace}");
+        var now = DateTimeOffset.Parse("2026-05-30T08:00:00Z");
+
+        using (var scope = services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-CONSUME-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+            dbContext.OperationTasks.Add(OperationTask.Create(
+                "org-001",
+                "env-dev",
+                "WO-CONSUME-001",
+                "OP-CONSUME-10",
+                OperationTaskLifecycleStatus.InProgress,
+                10,
+                "WC-FILL",
+                [],
+                now,
+                TimeSpan.FromMinutes(45),
+                now,
+                null,
+                "SKU-001"));
+            dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
+                "org-001",
+                "env-dev",
+                "MIR-CONSUME-001",
+                "WO-CONSUME-001",
+                "OP-CONSUME-10",
+                "MAT-OIL",
+                "L",
+                4m,
+                now.AddMinutes(5)));
+            await dbContext.SaveChangesAsync();
+            var request = await dbContext.MaterialIssueRequests.SingleAsync();
+            request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(10), materialLotId: "LOT-CONSUME-A");
+            await dbContext.SaveChangesAsync();
+
+            dbContext.ProductionReports.Add(ProductionReport.Record(
+                "org-001",
+                "env-dev",
+                "PRPT-CONSUME-001",
+                "WO-CONSUME-001",
+                "OP-CONSUME-10",
+                9m,
+                0m,
+                false,
+                now.AddMinutes(30),
+                oeeProjection: new ProductionReportOeeProjection("WC-FILL", "DEV-CNC-02", "PCS", null),
+                reportedBy: "user-emp-020"));
+            dbContext.ProductionReportMaterialConsumptions.Add(ProductionReportMaterialConsumption.Record(
+                "org-001",
+                "env-dev",
+                "PRPT-CONSUME-001",
+                "WO-CONSUME-001",
+                "OP-CONSUME-10",
+                "MAT-OIL",
+                "LOT-CONSUME-A",
+                "L",
+                4m,
+                "MIR-CONSUME-001",
+                "SITE-1",
+                "LINE-SIDE"));
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var recreatedScope = services.CreateScope();
+        var dbContextForQuery = recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var traceability = viaMaterialLotReadFace
+            ? await new GetMaterialLotTraceabilityQueryHandler(dbContextForQuery)
+                .Handle(new GetMaterialLotTraceabilityQuery("org-001", "env-dev", "LOT-CONSUME-A"), CancellationToken.None)
+            : await new GetBatchTraceabilityQueryHandler(dbContextForQuery)
+                .Handle(new GetBatchTraceabilityQuery("org-001", "env-dev", "LOT-CONSUME-A"), CancellationToken.None);
+
+        var operatorNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeType.Operator);
+        Assert.Equal("user-emp-020", operatorNode.NodeId);
+        var deviceNode = Assert.Single(traceability.Nodes, x => x.NodeType == MesTraceabilityNodeType.DeviceAsset);
+        Assert.Equal("DEV-CNC-02", deviceNode.NodeId);
+        var reportNode = Assert.Single(traceability.Nodes, x => x.NodeType == "ProductionReport");
+        Assert.Equal(now.AddMinutes(30), reportNode.OccurredAtUtc);
+        Assert.Contains(traceability.Edges, x => x.FromNodeId == "PRPT-CONSUME-001" && x.ToNodeId == "user-emp-020" && x.RelationType == "reported-by");
+    }
+
+    private static void SeedTraceabilityWorkOrder(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string workOrderId,
+        DateTimeOffset reportedAtUtc) =>
+        dbContext.WorkOrders.Add(WorkOrder.Create(organizationId, "env-dev", workOrderId, "FG-FSA", "PV-FSA-1", 10m, 20, reportedAtUtc.AddHours(8)));
+
+    /// <summary>一道工序 + 一条带操作人与设备快照的产出报工，供追溯读面用例复用。</summary>
+    private static void SeedTraceabilityOperationReport(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string workOrderId,
+        string operationTaskId,
+        string reportNo,
+        DateTimeOffset reportedAtUtc,
+        string reportedBy,
+        string deviceAssetId,
+        int operationSequence = 10,
+        string? serialNo = null)
+    {
+        dbContext.OperationTasks.Add(OperationTask.Create(
+            organizationId,
+            "env-dev",
+            workOrderId,
+            operationTaskId,
+            OperationTaskLifecycleStatus.InProgress,
+            operationSequence,
+            "WC-FILL",
+            [],
+            reportedAtUtc,
+            TimeSpan.FromMinutes(45),
+            reportedAtUtc,
+            null,
+            "SKU-001"));
+        var report = ProductionReport.Record(
+            organizationId,
+            "env-dev",
+            reportNo,
+            workOrderId,
+            operationTaskId,
+            9m,
+            1m,
+            true,
+            reportedAtUtc,
+            producedLotNo: $"LOT-{reportNo}",
+            serialNo: serialNo,
+            oeeProjection: new ProductionReportOeeProjection("WC-FILL", deviceAssetId, "PCS", null),
+            reportedBy: reportedBy);
+        dbContext.ProductionReports.Add(report);
+        if (serialNo is not null)
+        {
+            dbContext.ProductionReportSerialNumbers.AddRange(
+                ProductionReportSerialNumber.CreateForReport(report, [serialNo]));
+        }
     }
 
     [Fact]
@@ -2094,7 +2922,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.MaterialRequirements.Add(MaterialRequirement.Capture(
             "org-001",
             "env-dev",
@@ -2107,7 +2936,9 @@ public sealed class MesPersistenceContractTests
             stagedQuantity: 0m,
             sourceSystem: "Inventory",
             sourceSnapshotId: "inv-snap-001",
-            capturedAtUtc: now));
+            capturedAtUtc: now,
+            substituteMaterialIds: [],
+            uomCode: "L"));
         dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
             "org-001",
             "env-dev",
@@ -2126,7 +2957,7 @@ public sealed class MesPersistenceContractTests
         await dbContext.SaveChangesAsync();
 
         // 过账回执之前：单据在途，齐套一分钱都不能认（消灭「MES 单方面翻绿」的假绿路径，#1322）。
-        var pendingReadiness = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+        var pendingReadiness = await new GetMaterialReadinessQueryHandler(dbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-PARTIAL-001"),
             CancellationToken.None);
         Assert.Equal(0m, Assert.Single(pendingReadiness.Items).ReceivedQuantity);
@@ -2136,7 +2967,7 @@ public sealed class MesPersistenceContractTests
 
         await MaterialSupplyTestFixtures.PostPendingReceiptAsync(dbContext, "MIR-PARTIAL-001", now.AddMinutes(6));
 
-        var readiness = await new GetMaterialReadinessQueryHandler(dbContext).Handle(
+        var readiness = await new GetMaterialReadinessQueryHandler(dbContext, FrozenMaterialReadinessLiveCoverageProvider.Instance).Handle(
             new GetMaterialReadinessQuery("org-001", "env-dev", "WO-PARTIAL-001"),
             CancellationToken.None);
 
@@ -2147,16 +2978,18 @@ public sealed class MesPersistenceContractTests
         Assert.Equal(MaterialIssueRequest.PartiallyReceivedStatus, await dbContext.MaterialIssueRequests.Select(x => x.Status).SingleAsync());
     }
 
-    [Fact]
-    public async Task Production_report_can_reference_consumed_material_lots_for_traceability()
+    [Theory]
+    [InlineData("production")]
+    [InlineData("company")]
+    public async Task Production_report_can_reference_consumed_material_lots_for_traceability(string ownerType)
     {
-        var services = CreateServices(nameof(Production_report_can_reference_consumed_material_lots_for_traceability));
+        var services = CreateServices($"{nameof(Production_report_can_reference_consumed_material_lots_for_traceability)}-{ownerType}");
         var now = DateTimeOffset.Parse("2026-05-27T08:00:00Z");
 
         using (var scope = services.CreateScope())
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-TRACE-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+            dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-TRACE-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
             dbContext.OperationTasks.Add(OperationTask.Create(
                 "org-001",
                 "env-dev",
@@ -2169,7 +3002,8 @@ public sealed class MesPersistenceContractTests
                 now,
                 TimeSpan.FromMinutes(45),
                 now,
-                now.AddMinutes(45)));
+                now.AddMinutes(45),
+                "SKU-001"));
             dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
                 "org-001",
                 "env-dev",
@@ -2187,10 +3021,14 @@ public sealed class MesPersistenceContractTests
         {
             var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var request = await dbContext.MaterialIssueRequests.SingleAsync();
-            request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(10), materialLotId: "LOT-OIL-A");
+            var locations = MaterialSupplyTestFixtures.Locations;
+            request.ConfirmAndPostLineSideReceipt(new MaterialTransferLocations(
+                locations.SourceSiteCode, locations.SourceLocationCode, locations.TargetSiteCode, locations.TargetLocationCode,
+                [new MaterialTransferAllocation(locations.SourceSiteCode, locations.SourceLocationCode, "LOT-OIL-A", 4m, ownerType)]),
+                now.AddMinutes(10), materialLotId: "LOT-OIL-A");
             await dbContext.SaveChangesAsync();
 
-            var handler = new RecordProductionReportCommandHandler(dbContext);
+            var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing);
             await handler.Handle(
                 new RecordProductionReportCommand(
                     "org-001",
@@ -2208,6 +3046,10 @@ public sealed class MesPersistenceContractTests
         }
 
         using var recreatedScope = services.CreateScope();
+        var consumption = await recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .ProductionReportMaterialConsumptions.SingleAsync();
+        Assert.Equal(ownerType, consumption.OwnerType);
+        Assert.Null(consumption.OwnerId);
         var traceability = await new GetMaterialLotTraceabilityQueryHandler(
             recreatedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>())
             .Handle(new GetMaterialLotTraceabilityQuery("org-001", "env-dev", "LOT-OIL-A"), CancellationToken.None);
@@ -2226,7 +3068,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-CONSUME-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-CONSUME-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
             "env-dev",
@@ -2239,11 +3081,12 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            now.AddMinutes(45)));
+            now.AddMinutes(45),
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new RecordProductionReportCommandHandler(dbContext).Handle(
+            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing).Handle(
                 new RecordProductionReportCommand(
                     "org-001",
                     "env-dev",
@@ -2268,7 +3111,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-CUM-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-CUM-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
             "env-dev",
@@ -2281,7 +3124,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            now.AddMinutes(45)));
+            now.AddMinutes(45),
+            "SKU-001"));
         dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
             "org-001",
             "env-dev",
@@ -2297,7 +3141,8 @@ public sealed class MesPersistenceContractTests
         request.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(5), 10m, "LOT-OIL-A");
         await dbContext.SaveChangesAsync();
 
-        var handler = new RecordProductionReportCommandHandler(dbContext);
+        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance,
+            TestMesFirstArticleGate.Allowing);
         await handler.Handle(
             new RecordProductionReportCommand(
                 "org-001",
@@ -2339,7 +3184,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-REPORT-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-REPORT-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
             "env-dev",
@@ -2352,7 +3197,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            now.AddMinutes(45)));
+            now.AddMinutes(45),
+            "SKU-001"));
         var otherRequest = MaterialIssueRequest.Create(
             "org-001",
             "env-dev",
@@ -2368,7 +3214,7 @@ public sealed class MesPersistenceContractTests
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new RecordProductionReportCommandHandler(dbContext).Handle(
+            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing).Handle(
                 new RecordProductionReportCommand(
                     "org-001",
                     "env-dev",
@@ -2393,8 +3239,8 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-REPORT-A", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
-        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-REPORT-B", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-REPORT-A", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
+        dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-REPORT-B", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
             "env-dev",
@@ -2407,11 +3253,12 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            now.AddMinutes(45)));
+            now.AddMinutes(45),
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new RecordProductionReportCommandHandler(dbContext).Handle(
+            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing).Handle(
                 new RecordProductionReportCommand(
                     "org-001",
                     "env-dev",
@@ -2435,7 +3282,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-IDEMP-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-IDEMP-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
             "env-dev",
@@ -2448,7 +3295,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            now.AddMinutes(45)));
+            now.AddMinutes(45),
+            "SKU-001"));
         var lotARequest = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-IDEMP-A", "WO-IDEMP-001", "OP-IDEMP-10", "MAT-OIL", "L", 10m, now.AddMinutes(1));
         lotARequest.ConfirmAndPostLineSideReceipt(MaterialSupplyTestFixtures.Locations, now.AddMinutes(5), 10m, "LOT-OIL-A");
         var lotBRequest = MaterialIssueRequest.Create("org-001", "env-dev", "MIR-IDEMP-B", "WO-IDEMP-001", "OP-IDEMP-10", "MAT-OIL", "L", 10m, now.AddMinutes(2));
@@ -2456,7 +3304,7 @@ public sealed class MesPersistenceContractTests
         dbContext.MaterialIssueRequests.AddRange(lotARequest, lotBRequest);
         await dbContext.SaveChangesAsync();
 
-        var handler = new RecordProductionReportCommandHandler(dbContext);
+        var handler = new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing);
         await handler.Handle(
             new RecordProductionReportCommand(
                 "org-001",
@@ -2470,8 +3318,25 @@ public sealed class MesPersistenceContractTests
                 "report-idempotent-lot",
                 [new ConsumedMaterialLotInput("MAT-OIL", "LOT-OIL-A", 1m, "MIR-IDEMP-A")]),
             CancellationToken.None);
+        // 这次 SaveChanges 不是收尾，是这条用例成立的前提（#3156）。
+        // 直呼 handler 的夹具没有 UoW，第一次报工只把 ProductionReport 放进变更跟踪器、不落库；
+        // 于是重放分支的 `dbContext.ProductionReports.SingleAsync(...)` 查不到它，
+        // 抛 `InvalidOperationException: Sequence contains no elements`。
+        // 那也是个异常，所以原来的 `ThrowsAnyAsync<Exception>` 照样绿——
+        // 把 MesProductionCommands.cs 里 Fingerprint 的最后一个参数换成 string.Empty
+        // （即幂等指纹不再含耗料批次）后实测仍 `通过: 1`，对本用例名字里那条不变量零鉴别力。
+        // 真实路径上第一次报工是落库的，补这一行让重放分支查得到它，
+        // 变异下第二次调用就变成「换了耗料批次却被当作重放接受」并正常返回，
+        // 下面的断言随即以「没抛异常」转红——红因正是这条不变量本身。
+        await dbContext.SaveChangesAsync();
 
-        await Assert.ThrowsAnyAsync<Exception>(() =>
+        // 断类型不断消息：MesIdempotencyConflictException 没有自定义消息，
+        // 写消息等于断言一句框架默认文本。
+        // 这份第二次调用的载荷除幂等指纹冲突外不触犯任何其它守卫——实测把它的幂等键换成新键后
+        // 报工正常成功、不抛异常，所以下面的绿只可能来自指纹一致性这一条。
+        // 边界：本用例经 handler 的默认 MesCodingService（进程内 CodeAllocator，无 store），
+        // 不覆盖 EF 持久化分配器那条冲突路径。
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() =>
             handler.Handle(
                 new RecordProductionReportCommand(
                     "org-001",
@@ -2495,7 +3360,7 @@ public sealed class MesPersistenceContractTests
 
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.WorkOrders.Add(WorkOrder.Create("org-001", "env-dev", "WO-DUP-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8)));
+        dbContext.WorkOrders.Add(ReleasedForReportingWithoutEvents(WorkOrder.Create("org-001", "env-dev", "WO-DUP-001", "FG-FSA", "PV-FSA-1", 10m, 20, now.AddHours(8))));
         dbContext.OperationTasks.Add(OperationTask.Create(
             "org-001",
             "env-dev",
@@ -2508,7 +3373,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            now.AddMinutes(45)));
+            now.AddMinutes(45),
+            "SKU-001"));
         dbContext.MaterialIssueRequests.Add(MaterialIssueRequest.Create(
             "org-001",
             "env-dev",
@@ -2525,7 +3391,7 @@ public sealed class MesPersistenceContractTests
         await dbContext.SaveChangesAsync();
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            new RecordProductionReportCommandHandler(dbContext).Handle(
+            new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing).Handle(
                 new RecordProductionReportCommand(
                     "org-001",
                     "env-dev",
@@ -2543,6 +3409,228 @@ public sealed class MesPersistenceContractTests
                 CancellationToken.None));
 
         Assert.Contains("重复", exception.Message);
+    }
+
+    [Fact]
+    public async Task Production_report_serial_collection_is_idempotent_queryable_traceable_and_inactive_after_reversal()
+    {
+        var services = CreateServices(nameof(Production_report_serial_collection_is_idempotent_queryable_traceable_and_inactive_after_reversal));
+        var now = DateTimeOffset.Parse("2026-09-13T08:00:00Z");
+
+        using var scope = services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var codingService = new MesCodingService();
+        var workOrder = WorkOrder.Create(
+            "org-001", "env-dev", "WO-SERIAL-001", "SKU-SERIAL", "PV-001", 10m, 20, now.AddHours(8), "PCS");
+        workOrder.MarkReleased();
+        workOrder.Start(now);
+        dbContext.WorkOrders.Add(workOrder);
+        var operationTask = OperationTask.Create(
+            "org-001",
+            "env-dev",
+            "WO-SERIAL-001",
+            "OP-SERIAL-10",
+            OperationTaskLifecycleStatus.InProgress,
+            10,
+            "WC-SERIAL",
+            [],
+            now,
+            TimeSpan.FromMinutes(45),
+            now,
+            null,
+            "SKU-SERIAL");
+        operationTask.Assign(null, "DEVICE-SERIAL-01", null, now, "user:operator-setup");
+        operationTask.ClearDomainEvents();
+        dbContext.OperationTasks.Add(operationTask);
+        var materialIssue = MaterialIssueRequest.Create(
+            "org-001",
+            "env-dev",
+            "MIR-SERIAL-001",
+            "WO-SERIAL-001",
+            "OP-SERIAL-10",
+            "MAT-SERIAL",
+            "PCS",
+            2m,
+            now.AddMinutes(1));
+        materialIssue.ConfirmAndPostLineSideReceipt(
+            MaterialSupplyTestFixtures.Locations,
+            now.AddMinutes(2),
+            2m,
+            "LOT-MAT-SERIAL");
+        materialIssue.ClearDomainEvents();
+        dbContext.MaterialIssueRequests.Add(materialIssue);
+        await dbContext.SaveChangesAsync();
+
+        var handler = new RecordProductionReportCommandHandler(
+            dbContext,
+            TestProductionReportOeeDimensionSnapshotProvider.Instance,
+            TestMesFirstArticleGate.Allowing,
+            codingService);
+        var first = await handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-SERIAL-001",
+                "OP-SERIAL-10",
+                2m,
+                0m,
+                false,
+                now.AddMinutes(30),
+                "report-serial-001",
+                [new ConsumedMaterialLotInput("MAT-SERIAL", "LOT-MAT-SERIAL", 2m, "MIR-SERIAL-001")],
+                ProducedLotNo: "LOT-FG-SERIAL",
+                SerialTrackingPolicy: MasterDataSerialTrackingPolicies.OnProduction,
+                SerialNumbers: ["  SN-SERIAL-02  ", "SN-SERIAL-01"],
+                ReportedBy: "operator-serial"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var replay = await handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-SERIAL-001",
+                "OP-SERIAL-10",
+                2m,
+                0m,
+                false,
+                now.AddMinutes(30),
+                "report-serial-001",
+                [new ConsumedMaterialLotInput("MAT-SERIAL", "LOT-MAT-SERIAL", 2m, "MIR-SERIAL-001")],
+                ProducedLotNo: "LOT-FG-SERIAL",
+                SerialTrackingPolicy: MasterDataSerialTrackingPolicies.OnProduction,
+                SerialNumbers: ["SN-SERIAL-02", "  SN-SERIAL-01  "],
+                ReportedBy: "operator-serial"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(first.ReportNo, replay.ReportNo);
+        Assert.Equal(
+            ["SN-SERIAL-02", "SN-SERIAL-01"],
+            await dbContext.ProductionReportSerialNumbers
+                .OrderBy(x => x.SequenceNo)
+                .Select(x => x.SerialNumber)
+                .ToArrayAsync());
+        var detail = await new GetProductionReportQueryHandler(dbContext).Handle(
+            new GetProductionReportQuery("org-001", "env-dev", first.ReportNo),
+            CancellationToken.None);
+        Assert.Equal(["SN-SERIAL-02", "SN-SERIAL-01"], detail.Report.SerialNumbers);
+
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-SERIAL-001",
+                "OP-SERIAL-10",
+                2m,
+                0m,
+                false,
+                now.AddMinutes(30),
+                "report-serial-001",
+                [new ConsumedMaterialLotInput("MAT-SERIAL", "LOT-MAT-SERIAL", 2m, "MIR-SERIAL-001")],
+                ProducedLotNo: "LOT-FG-SERIAL",
+                SerialTrackingPolicy: MasterDataSerialTrackingPolicies.OnProduction,
+                SerialNumbers: ["SN-SERIAL-02", "SN-SERIAL-03"],
+                ReportedBy: "operator-serial"),
+            CancellationToken.None));
+
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() => handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-SERIAL-001",
+                "OP-SERIAL-10",
+                2m,
+                0m,
+                false,
+                now.AddMinutes(30),
+                "report-serial-001",
+                [new ConsumedMaterialLotInput("MAT-SERIAL", "LOT-MAT-SERIAL", 2m, "MIR-SERIAL-001")],
+                ProducedLotNo: "LOT-FG-SERIAL",
+                SerialTrackingPolicy: MasterDataSerialTrackingPolicies.OnProduction,
+                SerialNumbers: ["SN-SERIAL-01", "SN-SERIAL-02"],
+                ReportedBy: "operator-serial"),
+            CancellationToken.None));
+
+        var serialConflict = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-SERIAL-001",
+                "OP-SERIAL-10",
+                2m,
+                0m,
+                false,
+                now.AddMinutes(35),
+                "report-serial-002",
+                ProducedLotNo: "LOT-FG-SERIAL-2",
+                SerialTrackingPolicy: MasterDataSerialTrackingPolicies.OnProduction,
+                SerialNumbers: ["SN-SERIAL-01", "SN-SERIAL-03"],
+                ReportedBy: "operator-serial"),
+            CancellationToken.None));
+        Assert.Contains("SN-SERIAL-01", serialConflict.Message, StringComparison.Ordinal);
+
+        foreach (var serialNumber in new[] { "SN-SERIAL-02", "SN-SERIAL-01" })
+        {
+            var serialTrace = await new GetBatchTraceabilityQueryHandler(dbContext).Handle(
+                new GetBatchTraceabilityQuery("org-001", "env-dev", serialNumber),
+                CancellationToken.None);
+            Assert.Contains(serialTrace.Nodes, x => x.NodeId == first.ReportNo && x.NodeType == MesTraceabilityNodeType.ProductionReport);
+            Assert.Contains(serialTrace.Nodes, x => x.NodeId == "OP-SERIAL-10" && x.NodeType == MesTraceabilityNodeType.OperationTask);
+            Assert.Contains(serialTrace.Nodes, x => x.NodeId == "WO-SERIAL-001" && x.NodeType == MesTraceabilityNodeType.WorkOrder);
+            Assert.Contains(serialTrace.Nodes, x => x.NodeId == "operator-serial" && x.NodeType == MesTraceabilityNodeType.Operator);
+            Assert.Contains(serialTrace.Nodes, x => x.NodeId == "DEVICE-SERIAL-01" && x.NodeType == MesTraceabilityNodeType.DeviceAsset);
+            Assert.Contains(serialTrace.Nodes, x => x.NodeId == "LOT-MAT-SERIAL" && x.NodeType == MesTraceabilityNodeType.MaterialLot);
+        }
+
+        var workOrderTrace = await new GetWorkOrderTraceabilityQueryHandler(dbContext).Handle(
+            new GetWorkOrderTraceabilityQuery("org-001", "env-dev", "WO-SERIAL-001"),
+            CancellationToken.None);
+        Assert.Equal(2, workOrderTrace.Nodes.Count(x => x.NodeType == MesTraceabilityNodeType.Serial));
+        Assert.Equal(2, workOrderTrace.Edges.Count(x => x.RelationType == "produced-serial"));
+
+        var legacy = await handler.Handle(
+            new RecordProductionReportCommand(
+                "org-001",
+                "env-dev",
+                "WO-SERIAL-001",
+                "OP-SERIAL-10",
+                4m,
+                0m,
+                false,
+                now.AddMinutes(40),
+                "report-serial-legacy-001",
+                ProducedLotNo: "LOT-FG-SERIAL-LEGACY",
+                SerialNo: "  SN-SERIAL-LEGACY  ",
+                ReportedBy: "operator-serial"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        Assert.Equal(["SN-SERIAL-LEGACY"], legacy.SerialNumbers);
+        Assert.Equal(
+            ["SN-SERIAL-LEGACY"],
+            await dbContext.ProductionReportSerialNumbers
+                .Where(x => x.ReportNo == legacy.ReportNo)
+                .Select(x => x.SerialNumber)
+                .ToArrayAsync());
+
+        await new ReverseProductionReportCommandHandler(dbContext, codingService).Handle(
+            new ReverseProductionReportCommand(
+                "org-001",
+                "env-dev",
+                first.ReportNo,
+                "serial reversal",
+                now.AddMinutes(45),
+                "operator-reversal",
+                "reverse-serial-001"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var reversedTrace = await new GetBatchTraceabilityQueryHandler(dbContext).Handle(
+            new GetBatchTraceabilityQuery("org-001", "env-dev", "SN-SERIAL-01"),
+            CancellationToken.None);
+        Assert.Single(reversedTrace.Nodes);
+        Assert.Equal("Unknown", reversedTrace.Nodes.Single().Status);
+        Assert.Empty(reversedTrace.Edges);
     }
 
     [Fact]
@@ -2570,7 +3658,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            null));
+            null,
+            "SKU-001"));
         var materialIssue = MaterialIssueRequest.Create(
             "org-001",
             "env-dev",
@@ -2586,7 +3675,7 @@ public sealed class MesPersistenceContractTests
         dbContext.MaterialIssueRequests.Add(materialIssue);
         await dbContext.SaveChangesAsync();
 
-        var reportResult = await new RecordProductionReportCommandHandler(dbContext, codingService).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing, codingService).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -2599,7 +3688,8 @@ public sealed class MesPersistenceContractTests
                 "report-rev-001",
                 [new ConsumedMaterialLotInput("MAT-OIL", "LOT-OIL-REV", 3m, "MIR-REV-001")],
                 ReworkQuantity: 2m,
-                ProducedLotNo: "LOT-FG-REV"),
+                ProducedLotNo: "LOT-FG-REV",
+                SerialNo: "  SN-REV-001  "),
             CancellationToken.None);
         await dbContext.SaveChangesAsync();
 
@@ -2647,6 +3737,10 @@ public sealed class MesPersistenceContractTests
         Assert.Equal(-2m, reversalReport.ReworkQuantity);
         Assert.Equal(reportResult.ReportNo, reversal.OriginalReportNo);
 
+        var serial = Assert.Single(await dbContext.ProductionReportSerialNumbers.ToArrayAsync());
+        Assert.Equal(reportResult.ReportNo, serial.ReportNo);
+        Assert.Equal("SN-REV-001", serial.SerialNumber);
+
         var netConsumed = await dbContext.ProductionReportMaterialConsumptions
             .Where(x => x.MaterialLotId == "LOT-OIL-REV")
             .SumAsync(x => x.ConsumedQuantity);
@@ -2692,10 +3786,11 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
-        var reportResult = await new RecordProductionReportCommandHandler(dbContext, codingService).Handle(
+        var reportResult = await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing, codingService).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -2769,10 +3864,11 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
 
-        var report = await new RecordProductionReportCommandHandler(dbContext, codingService).Handle(
+        var report = await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing, codingService).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -2810,9 +3906,10 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             now,
-            null));
+            null,
+            "SKU-001"));
         await dbContext.SaveChangesAsync();
-        var duplicateReport = await new RecordProductionReportCommandHandler(dbContext, codingService).Handle(
+        var duplicateReport = await new RecordProductionReportCommandHandler(dbContext, TestProductionReportOeeDimensionSnapshotProvider.Instance, TestMesFirstArticleGate.Allowing, codingService).Handle(
             new RecordProductionReportCommand(
                 "org-001",
                 "env-dev",
@@ -2860,7 +3957,8 @@ public sealed class MesPersistenceContractTests
             now,
             TimeSpan.FromMinutes(45),
             null,
-            null));
+            null,
+            "SKU-001"));
         dbContext.WorkOrders.Add(WorkOrder.Create("org-b", "env-dev", "WO-B", "SKU-B", null, 1m, 5, now.AddDays(2)));
         await dbContext.SaveChangesAsync();
 
@@ -2888,7 +3986,8 @@ public sealed class MesPersistenceContractTests
         services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
         services.AddScoped<IOperationTaskRepository, OperationTaskRepository>();
         services.AddScoped<IMesPlanningStore, PersistentMesPlanningStore>();
-        services.AddSingleton<RuleScheduler>();
+        services.AddScoped<IMesAssetUnavailableInboxClaimCoordinator, PostgreSqlMesAssetUnavailableInboxClaimCoordinator>();
+        services.AddSingleton<IMesDeviceWorkCenterResolver>(new FakeMesDeviceWorkCenterResolver().Map("ASSET-CNC-01", "WC-A"));
         return services.BuildServiceProvider();
     }
 
@@ -2899,12 +3998,58 @@ public sealed class MesPersistenceContractTests
 
         public List<MesMaterialRequirementSnapshotRequest> Requests { get; } = [];
 
+        public MesMaterialRequirementSnapshotResult Result { get; set; } = result;
+
         public Task<MesMaterialRequirementSnapshotResult> GetSnapshotAsync(
             MesMaterialRequirementSnapshotRequest request,
             CancellationToken cancellationToken)
         {
             Requests.Add(request);
-            return Task.FromResult(result);
+            return Task.FromResult(Result);
+        }
+    }
+
+    private sealed class MissingQualityInspectionPlanReader : IMesQualityInspectionPlanReader
+    {
+        public static readonly MissingQualityInspectionPlanReader Instance = new();
+
+        public Task<bool> HasActiveOperationPlanAsync(
+            string organizationId,
+            string environmentId,
+            string skuCode,
+            string? workCenterId,
+            CancellationToken cancellationToken) => Task.FromResult(false);
+    }
+
+    private sealed class RecordingQualityInspectionPlanReader : IMesQualityInspectionPlanReader
+    {
+        public bool Result { get; init; }
+
+        public int CallCount { get; private set; }
+
+        public Task<bool> HasActiveOperationPlanAsync(
+            string organizationId,
+            string environmentId,
+            string skuCode,
+            string? workCenterId,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(Result);
+        }
+    }
+
+    private sealed class StubHttpMessageHandler(
+        Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
+    {
+        public List<HttpRequestMessage> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return Task.FromResult(responseFactory(request));
         }
     }
 
@@ -2950,4 +4095,17 @@ public sealed class MesPersistenceContractTests
             "maintenance.AssetUnavailable:ASSET-CNC-01:20260523080000",
             new AssetUnavailablePayload("ASSET-CNC-01", "breakdown", fromUtc));
     }
+
+    /// <summary>
+    /// #3119：未下达（<c>created</c>）的工单不受理报工，报工类夹具因此必须先补记发布——
+    /// 生产上这一步由「下达」完成，夹具直接走聚合的补记入口，不必把三道 readiness 也搭出来。
+    /// 顺手清掉发布留下的领域事件：这些用例断言的是报工与结算事实，不该被夹具自己造的事件干扰。
+    /// </summary>
+    private static WorkOrder ReleasedForReportingWithoutEvents(WorkOrder workOrder)
+    {
+        workOrder.MarkReleased();
+        workOrder.ClearDomainEvents();
+        return workOrder;
+    }
+
 }

@@ -16,6 +16,13 @@ public sealed record ListQualityReasonsRequest(
     int Take = 100,
     string? DefaultDisposition = null);
 
+public sealed record ListScrapQualityReasonCodesRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Search,
+    int Skip = 0,
+    int Take = 100);
+
 public sealed record GetQualityReasonRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -64,6 +71,26 @@ public sealed class ListQualityReasonsEndpoint(ISender sender)
             req.Skip,
             req.Take,
             req.DefaultDisposition), ct);
+        await Send.OkAsync(response.AsResponseData(), cancellation: ct);
+    }
+}
+
+public sealed class ListScrapQualityReasonCodesEndpoint(ISender sender)
+    : QualityEndpoint<ListScrapQualityReasonCodesRequest, ResponseData<QualityReasonListResponse>>
+{
+    public override void Configure()
+    {
+        ConfigureQualityContract(QualityReasonEndpointContracts.Get<ListScrapQualityReasonCodesEndpoint>());
+    }
+
+    public override async Task HandleAsync(ListScrapQualityReasonCodesRequest req, CancellationToken ct)
+    {
+        var response = await sender.Send(new ListScrapQualityReasonCodesQuery(
+            req.OrganizationId,
+            req.EnvironmentId,
+            req.Search,
+            req.Skip,
+            req.Take), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -150,6 +177,7 @@ public static class QualityReasonEndpointContracts
     public static readonly IReadOnlyCollection<QualityEndpointContract> All =
     [
         new(typeof(ListQualityReasonsEndpoint), "GET", "/api/business/v1/quality/reason-codes", BusinessPermissionCodes.QualityNcrRead, "listBusinessQualityReasonCodes"),
+        new(typeof(ListScrapQualityReasonCodesEndpoint), "GET", "/api/business/v1/quality/scrap-reason-codes", BusinessPermissionCodes.QualityNcrRead, "listBusinessQualityScrapReasonCodes"),
         new(typeof(GetQualityReasonEndpoint), "GET", "/api/business/v1/quality/reason-codes/{reasonCode}", BusinessPermissionCodes.QualityNcrRead, "getBusinessQualityReasonCode"),
         new(typeof(CreateQualityReasonEndpoint), "POST", "/api/business/v1/quality/reason-codes", BusinessPermissionCodes.QualityNcrManage, "createBusinessQualityReasonCode"),
         new(typeof(UpdateQualityReasonEndpoint), "PUT", "/api/business/v1/quality/reason-codes/{reasonCode}", BusinessPermissionCodes.QualityNcrManage, "updateBusinessQualityReasonCode"),

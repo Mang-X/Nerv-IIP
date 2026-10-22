@@ -31,6 +31,7 @@ export const messages = {
       notificationInbox: '通知中心',
       notificationDlq: '死信队列',
       authenticatedUser: '已登录用户',
+      changePassword: '修改密码',
       signOut: '退出登录',
     },
     routes: {
@@ -75,6 +76,7 @@ export const messages = {
       notificationInbox: 'Inbox',
       notificationDlq: 'Dead letters',
       authenticatedUser: 'Authenticated user',
+      changePassword: 'Change password',
       signOut: 'Sign out',
     },
     routes: {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsOutboundOrderItem } from '@nerv-iip/api-client'
+import { BusinessOperationPendingError } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { statusActionGate } from '@nerv-iip/business-core'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
@@ -8,34 +9,33 @@ import {
   recoverLifecycleAction,
 } from '@/composables/lifecycleAction'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
+import WmsAssignWorkPoolDialog from '@/components/wms/WmsAssignWorkPoolDialog.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
-import { wmsStatusTone } from '@/data/businessLabels'
+import { WMS_LINE_OWNER_TYPE_OPTIONS, wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { createWmsIdempotencyKey, useWmsOutboundOrders } from '@/composables/useBusinessWms'
-import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
 import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
-import {
-  useWarehouseCodeCatalog,
-  WAREHOUSE_CATALOG_SOURCE_TEXT,
-  WAREHOUSE_LOCATION_EMPTY_TEXT,
-  WAREHOUSE_LOT_EMPTY_TEXT,
-} from '@/composables/useWarehouseCodeCatalog'
 import {
   wmsOutboundOrderStatusFilterOptions,
   wmsOutboundOrderStatusLabel,
   WMS_OUTBOUND_SOURCE_TYPE_OPTIONS,
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
+import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import {
   inlineErrorMessage,
   notifyError,
   notifyOperationFailure,
   notifySuccess,
+  notifyWarning,
 } from '@/utils/notify'
 import {
   NvButton,
@@ -66,7 +66,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, reactive, shallowRef, watch, watchEffect } from 'vue'
 
 definePage({
   meta: {
@@ -88,18 +88,13 @@ const {
   createOutbound,
   createOutboundPending,
   createOutboundError,
-  outboundOrdersLastUpdatedAt,
-  outboundOrdersHasSuccessfulResponse,
-  outboundOrdersHasFailedResponse,
 } = useWmsOutboundOrders({ workScopeRequired: true })
 const {
   scopeKey,
   scopeOptions,
-  selectedScopeLabel,
   hasSelection: outboundScopeReady,
   unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
-  error: workScopeError,
   refresh: refreshWorkScopes,
 } = bindWmsWorkScopeFilters(filters, 'shipments')
 const operationalCandidates = useWmsOperationalCandidates('shipment', filters)
@@ -113,13 +108,8 @@ const { page, pageSize } = usePagedList(filters, {
     () => filters.scopeId,
   ],
 })
-// 物料 / 单位 / 工厂走主数据目录；库位与批次后端无读面，从既有台账与作业记录派生。
-const { skuOptions, skusPending, siteOptions, sitesPending, resolveUomCode } =
-  useInventoryScopeCatalog()
-const { locationOptions, lotOptions, warehouseCatalogPending } = useWarehouseCodeCatalog(
-  undefined,
-  { scope: () => ({ scopeKind: filters.scopeKind, scopeId: filters.scopeId }) },
-)
+// 物料 / 单位 / 工厂走主数据目录；库位与批次走库存可搜目录（服务端搜索）。
+const { siteOptions, sitesPending, resolveUomCode } = useInventoryScopeCatalog()
 // 状态是后端枚举而不是目录，用哨兵值表达「全部」。
 const statusFilter = computed({
   get: () => filters.status || WMS_STATUS_ANY,
@@ -127,14 +117,6 @@ const statusFilter = computed({
     filters.status = value === WMS_STATUS_ANY ? undefined : value
   },
 })
-/**
- * 单位不是独立选择项：出库行的单位由物料的基本单位决定，手输只会写出查不到货的组合。
- * 选完物料就把单位带出来，行上只读展示。
- */
-function onLineSkuChange(line: { skuCode: string; uomCode: string }, skuCode: string) {
-  line.skuCode = skuCode
-  line.uomCode = skuCode ? resolveUomCode(skuCode) : ''
-}
 
 /**
  * 读错误只归列表区域。提交（创建 / 复核）失败一律走 toast，不并进这一条：
@@ -142,7 +124,7 @@ function onLineSkuChange(line: { skuCode: string; uomCode: string }, skuCode: st
  */
 const listErrorMessage = computed(() =>
   outboundOrdersError.value
-    ? `取不到出库单列表，当前出库情况无法判断：${formatError(outboundOrdersError.value)}`
+    ? `取不到出库单列表，当前出库情况无法判断：${inlineErrorMessage(outboundOrdersError.value)}`
     : '',
 )
 
@@ -153,12 +135,7 @@ const QUALITY_OPTIONS = [
   { label: '冻结', value: 'blocked' },
   { label: '不合格', value: 'rejected' },
 ]
-const OWNER_OPTIONS = [
-  { label: '自有', value: 'owned' },
-  { label: '客户', value: 'customer' },
-  { label: '供应商', value: 'supplier' },
-  { label: '寄售', value: 'consignment' },
-]
+const OWNER_OPTIONS = WMS_LINE_OWNER_TYPE_OPTIONS
 interface OutboundLine {
   skuCode: string
   uomCode: string
@@ -181,22 +158,34 @@ function emptyLine(): OutboundLine {
 }
 const createOpen = shallowRef(false)
 const createError = shallowRef('')
+// 出库单号由系统按编码规则生成；同一次填写的重试沿用同一个幂等键，不会重复建单。
+const createIdempotencyKey = shallowRef('')
 const createForm = reactive({
-  outboundOrderNo: '',
   sourceDocumentType: '',
   sourceDocumentId: '',
   siteCode: '',
   lines: [emptyLine()] as OutboundLine[],
 })
 
+// 单位随物料的基本单位带出，不给手输：手输单位只会写出查不到货的组合。
+// 跟着物料目录重算：就地新建的物料要等目录刷新回来才查得到基本单位。
+watchEffect(() => {
+  for (const line of createForm.lines) line.uomCode = resolveUomCode(line.skuCode)
+})
+
 function openCreate() {
-  createForm.outboundOrderNo = ''
+  createIdempotencyKey.value = createWmsIdempotencyKey()
   createForm.sourceDocumentType = ''
   createForm.sourceDocumentId = ''
   createForm.siteCode = ''
   createForm.lines = [emptyLine()]
   createError.value = ''
   createOpen.value = true
+}
+// 换了来源类型，已选的来源单据就不属于这一类了。
+function changeSourceDocumentType(value: string) {
+  createForm.sourceDocumentType = value
+  createForm.sourceDocumentId = ''
 }
 function addLine() {
   createForm.lines.push(emptyLine())
@@ -207,12 +196,11 @@ function removeLine(index: number) {
 }
 async function submitCreate() {
   if (
-    !createForm.outboundOrderNo.trim() ||
     !createForm.sourceDocumentType.trim() ||
     !createForm.sourceDocumentId.trim() ||
     !createForm.siteCode.trim()
   ) {
-    createError.value = '请填写出库单号、来源类型、来源单据与工厂。'
+    createError.value = '请填写来源类型、来源单据与工厂。'
     return
   }
   const filled = createForm.lines.filter(
@@ -246,17 +234,29 @@ async function submitCreate() {
     await createOutbound({
       organizationId: filters.organizationId,
       environmentId: filters.environmentId,
-      outboundOrderNo: createForm.outboundOrderNo.trim(),
       sourceDocumentType: createForm.sourceDocumentType.trim(),
       sourceDocumentId: createForm.sourceDocumentId.trim(),
       siteCode: createForm.siteCode.trim(),
       lines,
+      idempotencyKey: createIdempotencyKey.value,
     })
     createOpen.value = false
-    notifySuccess('出库单已创建')
+    notifySuccess('出库单已创建，单号由系统生成')
   } catch (error) {
     notifyOperationFailure('创建出库单失败', error, '创建出库单失败，请稍后重试。')
   }
+}
+
+// 分配作业池由仓库主管（作业池维护权限）操作；出库单进池后池内成员才能拣货、复核。
+const auth = useAuthStore()
+const canManagePools = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes(P.wmsWorkPoolsManage),
+)
+const assignOpen = shallowRef(false)
+const assignTarget = shallowRef<OutboundRow>()
+function openAssign(row: OutboundRow) {
+  assignTarget.value = row
+  assignOpen.value = true
 }
 
 const reviewOpen = shallowRef(false)
@@ -265,11 +265,11 @@ const reviewIntentKey = shallowRef('')
 const reviewIntentAttempted = shallowRef(false)
 const reviewIntentLocked = shallowRef(false)
 usePendingWriteLeaveGuard(reviewIntentLocked)
-const reviewFrozenPayload = shallowRef<{ packReviewNo: string; passed: boolean }>()
-const form = reactive({ packReviewNo: '', passed: true })
+const reviewFrozenPayload = shallowRef<{ passed: boolean }>()
+const form = reactive({ passed: true })
 const formError = shallowRef('')
 watch(
-  () => `${form.packReviewNo}\u0000${form.passed}`,
+  () => form.passed,
   () => {
     if (!reviewIntentAttempted.value || reviewIntentLocked.value) return
     reviewIntentKey.value = createWmsIdempotencyKey()
@@ -292,7 +292,6 @@ function openReview(row: OutboundRow) {
   reviewIntentAttempted.value = false
   reviewIntentLocked.value = false
   reviewFrozenPayload.value = undefined
-  form.packReviewNo = ''
   form.passed = true
   formError.value = ''
   reviewOpen.value = true
@@ -301,18 +300,18 @@ function onReviewOpenChange(open: boolean) {
   if (!open && reviewIntentLocked.value) return
   reviewOpen.value = open
 }
+function closeSettledReview() {
+  reviewOpen.value = false
+  reviewIntentKey.value = ''
+  reviewIntentAttempted.value = false
+  reviewIntentLocked.value = false
+  reviewFrozenPayload.value = undefined
+}
 async function submitReview() {
   const id = pendingOrder.value?.outboundOrderId
   if (!id) return
-  if (!form.packReviewNo.trim()) {
-    formError.value = '请输入复核单号。'
-    return
-  }
   try {
-    const payload = reviewFrozenPayload.value ?? {
-      packReviewNo: form.packReviewNo.trim(),
-      passed: form.passed,
-    }
+    const payload = reviewFrozenPayload.value ?? { passed: form.passed }
     reviewFrozenPayload.value = payload
     await completeOutbound(id, payload, reviewIntentKey.value, {
       attempt: reviewIntentAttempted.value ? 'retry' : 'initial',
@@ -320,19 +319,21 @@ async function submitReview() {
         reviewIntentAttempted.value = true
       },
     })
-    reviewOpen.value = false
-    reviewIntentKey.value = ''
-    reviewIntentAttempted.value = false
-    reviewIntentLocked.value = false
-    reviewFrozenPayload.value = undefined
-    notifySuccess('出库复核已提交')
+    closeSettledReview()
+    notifySuccess('出库复核已完成，库存已过账')
   } catch (error) {
+    // 复核已落库、库存还在异步过账：这是中间态不是失败（#3926），收起弹框、刷新列表看「过账中」。
+    if (error instanceof BusinessOperationPendingError) {
+      closeSettledReview()
+      notifyWarning('出库复核已提交，库存正在过账。请稍后刷新查看过账结果。')
+      void refreshOutboundOrders()
+      return
+    }
     if (
       await recoverLifecycleAction(error, {
         reset: () => {
           reviewOpen.value = false
           pendingOrder.value = undefined
-          form.packReviewNo = ''
           reviewIntentKey.value = ''
           reviewIntentAttempted.value = false
           reviewIntentLocked.value = false
@@ -428,7 +429,8 @@ const columns: NvDataTableColumn<OutboundRow>[] = [
   },
   { key: 'status', header: '状态', width: 'w-28' },
   { key: 'createdAtUtc', header: '创建时间', accessor: (r) => formatDateTime(r.createdAtUtc) },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-28' },
+  // 分配作业池与完成动作并排（#3849）：按钮数决定列宽，列宽不够会压到相邻列上。
+  { key: 'actions', header: '操作', align: 'end', width: 'w-[14rem]' },
 ]
 
 function rowKey(row: OutboundRow) {
@@ -446,10 +448,6 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
-
 function refreshAll() {
   void refreshWorkScopes()
   void refreshOutboundOrders()
@@ -477,22 +475,6 @@ function refreshAll() {
         </NvButton>
       </template>
     </NvPageHeader>
-
-    <ListScopeMeta
-      :scope="selectedScopeLabel || 'WMS 作业范围未就绪'"
-      source="WMS 发货作业范围目录"
-      :loaded="outboundOrders.length"
-      :total="outboundOrdersTotal"
-      :updated-at="outboundOrdersLastUpdatedAt"
-      :empty="
-        outboundOrdersHasSuccessfulResponse && !outboundOrdersError && outboundOrders.length === 0
-      "
-      :failed="
-        outboundOrdersHasFailedResponse || Boolean(outboundOrdersError) || Boolean(workScopeError)
-      "
-      failure-explanation="WMS 发货作业范围或出库单未成功返回，请重试。"
-      :empty-explanation="outboundScopeReady ? '当前作业范围没有出库单。' : workScopeUnreadyMessage"
-    />
 
     <NvMetricStrip :cells="metricCells" />
 
@@ -570,18 +552,43 @@ function refreshAll() {
           :tone="wmsStatusTone(row.status)"
       /></template>
       <template #cell-actions="{ row }">
-        <NvButton
-          size="sm"
-          type="button"
-          variant="outline"
-          :aria-label="`完成复核 ${row.outboundOrderNo ?? ''}`"
-          :disabled="!canComplete(row) || !row.outboundOrderId"
-          @click="openReview(row)"
-        >
-          完成复核
-        </NvButton>
+        <div class="flex justify-end gap-2">
+          <NvButton
+            v-if="canManagePools"
+            size="sm"
+            type="button"
+            variant="outline"
+            :aria-label="`分配作业池 ${row.outboundOrderNo ?? ''}`"
+            :disabled="!canComplete(row) || !row.outboundOrderId"
+            @click="openAssign(row)"
+          >
+            {{ row.assignedPoolCode ? `作业池 ${row.assignedPoolCode}` : '分配作业池' }}
+          </NvButton>
+          <NvButton
+            size="sm"
+            type="button"
+            variant="outline"
+            :aria-label="`完成复核 ${row.outboundOrderNo ?? ''}`"
+            :disabled="!canComplete(row) || !row.outboundOrderId"
+            @click="openReview(row)"
+          >
+            完成复核
+          </NvButton>
+        </div>
       </template>
     </NvDataTable>
+
+    <WmsAssignWorkPoolDialog
+      v-if="canManagePools"
+      v-model:open="assignOpen"
+      target="outbound"
+      :resource-id="assignTarget?.outboundOrderId"
+      :resource-label="`出库单 ${assignTarget?.outboundOrderNo ?? ''}`"
+      :site-code="assignTarget?.siteCode"
+      :version="assignTarget?.version"
+      :current-pool-code="assignTarget?.assignedPoolCode"
+      @assigned="refreshOutboundOrders"
+    />
 
     <NvDialog :open="reviewOpen" @update:open="onReviewOpenChange">
       <NvDialogContent>
@@ -595,17 +602,6 @@ function refreshAll() {
         <form class="grid gap-4" @submit.prevent="submitReview">
           <CarriedContextSummary label="复核对象" :items="reviewContextItems" />
           <NvFieldGroup>
-            <NvField>
-              <NvFieldLabel for="wms-pack-review-no">复核单号</NvFieldLabel>
-              <NvInput
-                id="wms-pack-review-no"
-                v-model="form.packReviewNo"
-                :disabled="reviewIntentLocked"
-                :aria-invalid="Boolean(formError)"
-                autocomplete="off"
-              />
-              <NvFieldError v-if="formError" :errors="[formError]" />
-            </NvField>
             <NvField
               orientation="horizontal"
               class="items-center justify-between rounded-lg border p-3"
@@ -617,6 +613,7 @@ function refreshAll() {
                 :disabled="reviewIntentLocked"
               />
             </NvField>
+            <NvFieldError v-if="formError" :errors="[formError]" />
           </NvFieldGroup>
           <NvDialogFooter>
             <NvDialogClose as-child>
@@ -642,10 +639,6 @@ function refreshAll() {
         <form class="grid gap-4" @submit.prevent="submitCreate">
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField>
-              <NvFieldLabel for="wms-out-no">出库单号</NvFieldLabel>
-              <NvInput id="wms-out-no" v-model="createForm.outboundOrderNo" autocomplete="off" />
-            </NvField>
-            <NvField>
               <NvFieldLabel for="wms-out-site">工厂</NvFieldLabel>
               <NvEntityPicker
                 id="wms-out-site"
@@ -653,7 +646,6 @@ function refreshAll() {
                 :options="siteOptions"
                 title="选择工厂"
                 placeholder="选择工厂"
-                source-text="数据来自基础数据工厂主数据"
                 empty-text="暂无工厂主数据，请先在基础数据维护工厂"
                 :loading="sitesPending"
                 clearable
@@ -664,19 +656,16 @@ function refreshAll() {
               <NvFieldLabel for="wms-out-srctype">来源类型</NvFieldLabel>
               <NvSearchSelect
                 id="wms-out-srctype"
-                v-model="createForm.sourceDocumentType"
+                :model-value="createForm.sourceDocumentType"
                 :options="WMS_OUTBOUND_SOURCE_TYPE_OPTIONS"
                 placeholder="选择来源类型"
                 aria-label="来源类型"
+                @update:model-value="changeSourceDocumentType"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-out-srcid">来源单据</NvFieldLabel>
-              <NvInput
-                id="wms-out-srcid"
-                v-model="createForm.sourceDocumentId"
-                autocomplete="off"
-              />
+              <SourceDocumentPicker id="wms-out-srcid" v-model="createForm.sourceDocumentId" />
             </NvField>
           </NvFieldGroup>
 
@@ -693,17 +682,13 @@ function refreshAll() {
               :key="index"
               class="flex flex-wrap items-end gap-2 rounded-md border p-2"
             >
-              <NvEntityPicker
-                :model-value="line.skuCode"
+              <DirectoryPicker
+                v-model="line.skuCode"
                 class="w-44"
-                :options="skuOptions"
-                title="选择物料"
+                directory-type="material"
+                creatable
                 placeholder="物料*"
-                source-text="数据来自基础数据物料主数据"
-                empty-text="暂无物料主数据，请先在基础数据维护物料"
-                :loading="skusPending"
                 :aria-label="`第 ${index + 1} 行物料`"
-                @update:model-value="(value: string) => onLineSkuChange(line, value)"
               />
               <!-- 单位随物料的基本单位带出，不给手输：手输单位只会写出查不到货的组合。 -->
               <span
@@ -720,27 +705,24 @@ function refreshAll() {
                 placeholder="需求数量*"
                 :aria-label="`第 ${index + 1} 行需求数量`"
               />
-              <NvEntityPicker
+              <DirectoryPicker
                 v-model="line.pickLocationCode"
                 class="w-36"
-                :options="locationOptions"
+                directory-type="location"
+                creatable
+                :form-site-code="createForm.siteCode"
                 title="选择拣货库位"
                 placeholder="拣货库位*"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 :aria-label="`第 ${index + 1} 行拣货库位`"
               />
-              <NvEntityPicker
+              <DirectoryPicker
                 v-model="line.lotNo"
                 class="w-36"
-                :options="lotOptions"
+                directory-type="batch"
+                :form-site-code="createForm.siteCode"
                 title="选择批次"
                 placeholder="批次"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-                :empty-text="WAREHOUSE_LOT_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 :aria-label="`第 ${index + 1} 行批次`"
               />
@@ -755,7 +737,7 @@ function refreshAll() {
                 </NvSelectContent>
               </NvSelect>
               <NvSelect v-model="line.ownerType">
-                <NvSelectTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行货主类型`"
+                <NvSelectTrigger class="h-9 w-44" :aria-label="`第 ${index + 1} 行货主类型`"
                   ><NvSelectValue
                 /></NvSelectTrigger>
                 <NvSelectContent>

@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
@@ -8,8 +10,12 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Readiness;
 
 public sealed record MesOperationTaskActionReadiness(
     IReadOnlyCollection<string> AllowedActions,
-    IReadOnlyCollection<string> BlockReasons,
-    DateTimeOffset EvaluatedAtUtc);
+    IReadOnlyCollection<MesReadinessReason> Reasons,
+    DateTimeOffset EvaluatedAtUtc)
+{
+    /// <summary>读面契约：<c>CODE: 中文</c> 串，由结构化原因拼出。写操作被拒时用 <see cref="Reasons"/>。</summary>
+    public IReadOnlyCollection<string> BlockReasons => Reasons.Select(x => x.ToWireText()).ToArray();
+}
 
 public sealed class MesOperationTaskActionReadinessEvaluator(
     ApplicationDbContext dbContext)
@@ -60,9 +66,23 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                 workOrderIds.Contains(x.WorkOrderIdValue))
             .Select(x => new WorkOrderFact(
                 x.WorkOrderIdValue,
+                x.Status,
                 x.ProductionVersionId,
                 x.MaterialRequirementSnapshotStatus,
                 x.MaterialRequirementSnapshotProductionVersionId))
+            .ToArrayAsync(cancellationToken);
+        var automaticRebinds = await dbContext.EngineeringChangeWorkOrderImpacts
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId &&
+                workOrderIds.Contains(x.WorkOrderId) &&
+                x.Status == MesEngineeringChangeImpactStatuses.AutoRebound &&
+                x.WorkOrderStatusAtDetection == WorkOrder.ReleasedStatus)
+            .Select(x => new MaterialReadinessGuards.AutomaticRebindEdge(
+                x.WorkOrderId,
+                x.ArchivedProductionVersionId,
+                x.SupersededByProductionVersionId))
             .ToArrayAsync(cancellationToken);
         var activeQualityHolds = await dbContext.QualityHoldContexts
             .AsNoTracking()
@@ -86,43 +106,12 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                 (x.ToUtc == null || x.ToUtc > evaluatedAtUtc))
             .Select(x => new UnavailabilityFact(x.WorkCenterId, x.Reason))
             .ToArrayAsync(cancellationToken);
-        var persistedRequirements = await dbContext.MaterialRequirements
-            .AsNoTracking()
-            .Where(x =>
-                x.OrganizationId == organizationId &&
-                x.EnvironmentId == environmentId &&
-                workOrderIds.Contains(x.WorkOrderId))
-            .Select(x => new MaterialRequirementFact(
-                x.WorkOrderId,
-                x.OperationTaskId,
-                x.MaterialId,
-                x.MaterialLotId,
-                x.RequiredQuantity,
-                x.AvailableQuantity,
-                x.StagedQuantity,
-                x.CapturedAtUtc))
-            .ToArrayAsync(cancellationToken);
-        var localRequirements = dbContext.MaterialRequirements.Local
-            .Where(x =>
-                x.OrganizationId == organizationId &&
-                x.EnvironmentId == environmentId &&
-                workOrderIds.Contains(x.WorkOrderId))
-            .Select(x => new MaterialRequirementFact(
-                x.WorkOrderId,
-                x.OperationTaskId,
-                x.MaterialId,
-                x.MaterialLotId,
-                x.RequiredQuantity,
-                x.AvailableQuantity,
-                x.StagedQuantity,
-                x.CapturedAtUtc));
-        var requirements = persistedRequirements
-            .Concat(localRequirements)
-            .GroupBy(
-                x => $"{x.WorkOrderId.ToUpperInvariant()}|{x.OperationTaskId?.ToUpperInvariant()}|{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId?.ToUpperInvariant()}",
-                StringComparer.Ordinal)
-            .Select(x => x.OrderByDescending(y => y.CapturedAtUtc).First())
-            .ToArray();
+        var requirements = await MaterialRequirementSnapshotReader.LoadLatestByWorkOrdersAsync(
+            dbContext,
+            organizationId,
+            environmentId,
+            workOrderIds,
+            cancellationToken);
         var receipts = await dbContext.MaterialIssueRequests
             .AsNoTracking()
             .Where(x =>
@@ -146,6 +135,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                 evaluatedAtUtc,
                 allOperations,
                 workOrderMap,
+                automaticRebinds,
                 activeQualityHolds,
                 activeUnavailabilities,
                 requirements,
@@ -160,9 +150,10 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
         DateTimeOffset evaluatedAtUtc,
         IReadOnlyCollection<OperationFact> allOperations,
         IReadOnlyDictionary<string, WorkOrderFact> workOrders,
+        IReadOnlyCollection<MaterialReadinessGuards.AutomaticRebindEdge> automaticRebinds,
         IReadOnlyCollection<QualityHoldFact> activeQualityHolds,
         IReadOnlyCollection<UnavailabilityFact> activeUnavailabilities,
-        IReadOnlyCollection<MaterialRequirementFact> requirements,
+        IReadOnlyCollection<MaterialRequirementSnapshot> requirements,
         IReadOnlyCollection<ReceiptFact> receipts)
     {
         if (task.Status == OperationTaskLifecycleStatus.InProgress)
@@ -180,7 +171,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
             return new([], [], evaluatedAtUtc);
         }
 
-        var blockReasons = new List<string>();
+        var blockReasons = new List<MesReadinessReason>();
         var previousOperations = allOperations
             .Where(x =>
                 x.WorkOrderId == task.WorkOrderId &&
@@ -191,17 +182,39 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
             .ToArray();
         if (previousOperations.Length > 0)
         {
-            blockReasons.Add(
-                $"PREVIOUS_OPERATION_INCOMPLETE: 前序工序尚未完成（{string.Join('、', previousOperations)}）");
+            blockReasons.Add(new(
+                MesReadinessReasonCodes.PreviousOperationIncomplete,
+                $"前序工序尚未完成（{string.Join('、', previousOperations)}）"));
         }
 
         if (!workOrders.TryGetValue(task.WorkOrderId, out var workOrder))
         {
-            blockReasons.Add("WORK_ORDER_NOT_FOUND: 未找到所属生产工单");
+            blockReasons.Add(new(MesReadinessReasonCodes.WorkOrderNotFound, "未找到所属生产工单"));
         }
-        else if (string.IsNullOrWhiteSpace(workOrder.ProductionVersionId))
+        else
         {
-            blockReasons.Add($"{MesReadinessReasonCodes.QualityPlanMissing}: 工单缺少已发布生产版本或检验方案");
+            // 未下达的工单不得开工（#3119）。这一条与生产版本那一条写成**并列**的两条阻断。
+            //
+            // **理由按实测写，别读强了**：写成 `else if (created)` 时，对「created ∧ 生产版本非空」
+            // 的工单，前一支为假、控制流照样落到本条，阻断仍然产出——
+            // 上一版注释声称「写成 else-if 恰好会漏掉唯一能走到本缺陷的那一批」，**不成立**（复审实测证伪）。
+            // else-if 真正丢的是「created ∧ **缺**生产版本」时少报一条次要理由：
+            // 读面只显示一条阻断，用户补齐生产版本后才发现还有第二条。
+            // 并列写法的收益就是这一条**读面完整性**，由下面那条
+            // `Created_work_order_without_a_production_version_reports_both_reasons` 用例钉住。
+            //
+            // 授权跳站入口（MesWorkbenchCommands 的 AuthorizeAndStartOperationTaskCommandHandler）
+            // 只把 PREVIOUS_OPERATION_INCOMPLETE: 前缀从阻断集合里剔除，本条不带该前缀，
+            // 因此它同样拦得住授权跳站——两个开工入口共用这一处判断，不各写一份。
+            if (string.Equals(workOrder.Status, WorkOrder.CreatedStatus, StringComparison.Ordinal))
+            {
+                blockReasons.Add(MesReadinessReasonTexts.WorkOrderNotReleased);
+            }
+
+            if (string.IsNullOrWhiteSpace(workOrder.ProductionVersionId))
+            {
+                blockReasons.Add(new(MesReadinessReasonCodes.QualityPlanMissing, "工单缺少已发布生产版本或检验方案"));
+            }
         }
 
         foreach (var hold in activeQualityHolds.Where(x =>
@@ -211,36 +224,41 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
             var detail = string.IsNullOrWhiteSpace(hold.DispositionReason)
                 ? "工单存在有效质量保留，无法开工"
                 : $"工单存在有效质量保留，无法开工：{hold.DispositionReason}";
-            blockReasons.Add($"{MesReadinessReasonCodes.QualityHoldActive}: {detail}");
+            blockReasons.Add(new(MesReadinessReasonCodes.QualityHoldActive, detail));
         }
 
         foreach (var unavailable in activeUnavailabilities.Where(x => x.WorkCenterId == task.WorkCenterId))
         {
             var classification = MesReadinessReasonCodes.ClassifyEquipmentReason(unavailable.Reason);
-            blockReasons.Add($"{classification.Code}: {classification.Message}");
+            blockReasons.Add(new(classification.Code, classification.Message));
         }
 
-        var scopedRequirements = requirements
+        var workOrderRequirements = requirements
+            .Where(x => x.WorkOrderId == task.WorkOrderId)
+            .ToArray();
+        var scopedRequirements = workOrderRequirements
             .Where(x =>
-                x.WorkOrderId == task.WorkOrderId &&
                 (x.OperationTaskId == null || x.OperationTaskId == task.OperationTaskIdValue))
             .ToArray();
-        var expectedSnapshotStatus = scopedRequirements.Length == 0
+        var expectedSnapshotStatus = workOrderRequirements.Length == 0
             ? WorkOrder.MaterialRequirementSnapshotNoRequirementsStatus
             : WorkOrder.MaterialRequirementSnapshotCapturedStatus;
-        var materialSnapshotProven =
-            workOrders.TryGetValue(task.WorkOrderId, out var materialWorkOrder)
+        var materialSnapshotProven = false;
+        if (workOrders.TryGetValue(task.WorkOrderId, out var materialWorkOrder)
             && string.Equals(
                 materialWorkOrder.MaterialRequirementSnapshotStatus,
                 expectedSnapshotStatus,
-                StringComparison.Ordinal)
-            && string.Equals(
+                StringComparison.Ordinal))
+        {
+            materialSnapshotProven = MaterialReadinessGuards.IsSnapshotVersionCompatible(
+                task.WorkOrderId,
                 materialWorkOrder.MaterialRequirementSnapshotProductionVersionId,
                 materialWorkOrder.ProductionVersionId,
-                StringComparison.Ordinal);
+                automaticRebinds);
+        }
         if (!materialSnapshotProven)
         {
-            blockReasons.Add(MaterialReadinessGuards.MissingRequirementSnapshotReason);
+            blockReasons.Add(MaterialReadinessGuards.MissingRequirementSnapshot);
         }
 
         if (scopedRequirements.Length > 0)
@@ -263,7 +281,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
                     receivedQuantity);
                 if (shortage > 0m)
                 {
-                    blockReasons.Add(MaterialReadinessGuards.FormatShortageReason(
+                    blockReasons.Add(MaterialReadinessGuards.ShortageReason(
                         group.Key.MaterialId,
                         group.Key.MaterialLotId,
                         shortage));
@@ -271,22 +289,12 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
             }
         }
 
-        var canonicalReasons = blockReasons.Distinct(StringComparer.Ordinal).ToArray();
+        var canonicalReasons = blockReasons.Distinct().ToArray();
         return new(
             canonicalReasons.Length == 0 ? ["start"] : [],
             canonicalReasons,
             evaluatedAtUtc);
     }
-
-    private sealed record MaterialRequirementFact(
-        string WorkOrderId,
-        string? OperationTaskId,
-        string MaterialId,
-        string? MaterialLotId,
-        decimal RequiredQuantity,
-        decimal AvailableQuantity,
-        decimal StagedQuantity,
-        DateTimeOffset CapturedAtUtc);
 
     private sealed record OperationFact(
         string WorkOrderId,
@@ -295,6 +303,7 @@ public sealed class MesOperationTaskActionReadinessEvaluator(
 
     private sealed record WorkOrderFact(
         string WorkOrderIdValue,
+        string Status,
         string? ProductionVersionId,
         string? MaterialRequirementSnapshotStatus,
         string? MaterialRequirementSnapshotProductionVersionId);

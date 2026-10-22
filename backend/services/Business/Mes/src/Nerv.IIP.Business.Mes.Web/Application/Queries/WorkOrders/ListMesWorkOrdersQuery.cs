@@ -1,6 +1,10 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Queries;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
+using Nerv.IIP.Contracts.DemandPlanning;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 
@@ -9,7 +13,7 @@ public sealed record ListMesWorkOrdersQuery(
     string EnvironmentId,
     string? Status,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -19,7 +23,10 @@ public sealed record ListMesWorkOrdersQuery(
     string? Statuses = null,
     string? AssignedUserIds = null,
     string? TeamIds = null,
-    string? WorkOrderId = null) : IQuery<ListMesWorkOrdersResponse>;
+    string? WorkOrderId = null,
+    string? AuthorizedAssignedUserIds = null,
+    string? AuthorizedTeamIds = null,
+    string? AuthorizedWorkCenterIds = null) : IQuery<ListMesWorkOrdersResponse>;
 
 public sealed record ListMesWorkOrdersResponse(
     IReadOnlyCollection<MesWorkOrderExecutionFact> Items,
@@ -40,8 +47,21 @@ public sealed record MesWorkOrderExecutionFact(
     string? SkuCode = null,
     // 工单当前是否存在活跃质量保留(quality hold);供列表锁定图标标记。与工单生命周期 Status 无关
     // (质量保留不改工单状态),故用独立标志而非从 Status 推断。
-    bool HasActiveQualityHold = false);
+    bool HasActiveQualityHold = false,
+    string WorkOrderType = WorkOrder.StandardType,
+    string? SourceWorkOrderId = null,
+    string? SourceNcrId = null,
+    string? SourceNcrCode = null,
+    bool HasChangedDemand = false,
+    bool HasCancelledDemand = false,
+    IReadOnlyCollection<string>? AssemblyParentWorkOrderIds = null,
+    bool IsRush = false,
+    MesSourcePlanReferenceResponse? SourcePlanReference = null);
 
+/// <summary>
+/// MES 工单列表公开的工序执行事实。<paramref name="OperationTaskId"/> 是 MES 持久化工序身份，
+/// Scheduling 等跨服务消费者必须原样沿用；<paramref name="OperationSequence"/> 只表达同一工单内的路线顺序。
+/// </summary>
 public sealed record MesOperationTaskExecutionFact(
     string OperationTaskId,
     string Status,
@@ -70,11 +90,12 @@ public sealed class ListMesWorkOrdersQueryHandler(
 {
     public async Task<ListMesWorkOrdersResponse> Handle(ListMesWorkOrdersQuery request, CancellationToken cancellationToken)
     {
-        var skip = Math.Max(0, request.Skip);
-        var take = Math.Clamp(request.Take, 1, 500);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var workOrdersQuery = dbContext.WorkOrders
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.WorkOrderId))
         {
@@ -97,9 +118,8 @@ public sealed class ListMesWorkOrdersQueryHandler(
             workOrdersQuery = workOrdersQuery.Where(x => statuses.Contains(x.Status.ToLower()));
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = request.Keyword.Trim().ToLower();
             workOrdersQuery = workOrdersQuery.Where(x =>
                 x.WorkOrderIdValue.ToLower().Contains(keyword) ||
                 x.SkuId.ToLower().Contains(keyword) ||
@@ -123,27 +143,39 @@ public sealed class ListMesWorkOrdersQueryHandler(
             !string.IsNullOrWhiteSpace(request.DeviceAssetIds) ||
             request.AssignedUserIds is not null ||
             request.TeamIds is not null;
-        if (hasTaskFilters)
+        var authorizedUsers = SplitCsv(request.AuthorizedAssignedUserIds);
+        var authorizedTeams = SplitCsv(request.AuthorizedTeamIds);
+        var authorizedWorkCenters = SplitCsv(request.AuthorizedWorkCenterIds);
+        var hasAuthorizationScope = request.AuthorizedAssignedUserIds is not null ||
+            request.AuthorizedTeamIds is not null || request.AuthorizedWorkCenterIds is not null;
+        // 同一查询同时用于工单 EXISTS 和返回工序；授权维度 OR，业务筛选仍为 AND。
+        var visibleTasks = dbContext.OperationTasks.AsNoTracking().Where(task =>
+            task.OrganizationId == tenant.OrganizationId &&
+            task.EnvironmentId == tenant.EnvironmentId &&
+            (!hasTaskFilters ||
+                ((workCenterId == null || task.WorkCenterId == workCenterId) &&
+                 (!hasWorkCenterScope || workCenterIds.Contains(task.WorkCenterId)) &&
+                 (shiftId == null || task.ShiftId == shiftId) &&
+                 (deviceAssetId == null || task.DeviceAssetId == deviceAssetId) &&
+                 (deviceAssetIds.Count == 0 || deviceAssetIds.Contains(task.DeviceAssetId)) &&
+                 (!hasAssignedUserScope || assignedUserIds.Contains(task.AssignedUserId)) &&
+                 (!hasTeamScope || teamIds.Contains(task.TeamId)))) &&
+            (!hasAuthorizationScope ||
+                authorizedUsers.Contains(task.AssignedUserId) ||
+                authorizedTeams.Contains(task.TeamId) ||
+                authorizedWorkCenters.Contains(task.WorkCenterId)));
+        if (hasTaskFilters || hasAuthorizationScope)
         {
-            workOrdersQuery = workOrdersQuery.Where(x => dbContext.OperationTasks.Any(task =>
-                task.OrganizationId == request.OrganizationId &&
-                task.EnvironmentId == request.EnvironmentId &&
-                task.WorkOrderId == x.WorkOrderIdValue &&
-                (workCenterId == null || task.WorkCenterId == workCenterId) &&
-                (!hasWorkCenterScope || workCenterIds.Contains(task.WorkCenterId)) &&
-                (shiftId == null || task.ShiftId == shiftId) &&
-                (deviceAssetId == null || task.DeviceAssetId == deviceAssetId) &&
-                (deviceAssetIds.Count == 0 || deviceAssetIds.Contains(task.DeviceAssetId)) &&
-                (!hasAssignedUserScope || assignedUserIds.Contains(task.AssignedUserId)) &&
-                (!hasTeamScope || teamIds.Contains(task.TeamId))));
+            workOrdersQuery = workOrdersQuery.Where(x =>
+                visibleTasks.Any(task => task.WorkOrderId == x.WorkOrderIdValue));
         }
 
         var total = await workOrdersQuery.CountAsync(cancellationToken);
         var workOrders = await workOrdersQuery
             .OrderBy(x => x.DueUtc)
             .ThenBy(x => x.WorkOrderIdValue)
-            .Skip(skip)
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new
             {
                 x.WorkOrderIdValue,
@@ -153,28 +185,40 @@ public sealed class ListMesWorkOrdersQueryHandler(
                 x.UomCode,
                 x.CompletedQuantity,
                 x.Priority,
+                x.IsRush,
                 x.DueUtc,
                 x.Status,
+                x.WorkOrderType,
+                x.SourceWorkOrderId,
+                x.SourceNcrId,
+                x.SourceNcrCode,
+                x.SourcePlanReference,
             })
             .ToListAsync(cancellationToken);
+
+        var parentSuggestionIds = workOrders
+            .SelectMany(x => x.SourcePlanReference?.AssemblyParentSuggestionIds ?? [])
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var parentWorkOrders = await dbContext.WorkOrders
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == tenant.OrganizationId &&
+                x.EnvironmentId == tenant.EnvironmentId &&
+                x.SourcePlanReference != null &&
+                x.SourcePlanReference.SourceSystem == DemandPlanningSourceReferences.DemandPlanning &&
+                x.SourcePlanReference.SourceDocumentType == DemandPlanningSourceReferences.PlanningSuggestion &&
+                parentSuggestionIds.Contains(x.SourcePlanReference.SourceDocumentId))
+            .Select(x => new { x.WorkOrderIdValue, x.SourcePlanReference!.SourceDocumentId })
+            .ToListAsync(cancellationToken);
+        var parentIdsBySuggestion = parentWorkOrders
+            .GroupBy(x => x.SourceDocumentId, StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => x.Select(order => order.WorkOrderIdValue).ToArray(), StringComparer.Ordinal);
 
         // Keep this IN-list bounded by the clamped `take` value above; this endpoint returns a
         // compact execution snapshot for scheduling/acceptance flows, not an unbounded export.
         var workOrderIds = workOrders.Select(x => x.WorkOrderIdValue).ToArray();
-        var tasks = await dbContext.OperationTasks
-            .AsNoTracking()
-            .Where(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
-                workOrderIds.Contains(x.WorkOrderId) &&
-                (!hasTaskFilters ||
-                    ((workCenterId == null || x.WorkCenterId == workCenterId) &&
-                     (!hasWorkCenterScope || workCenterIds.Contains(x.WorkCenterId)) &&
-                     (shiftId == null || x.ShiftId == shiftId) &&
-                     (deviceAssetId == null || x.DeviceAssetId == deviceAssetId) &&
-                     (deviceAssetIds.Count == 0 || deviceAssetIds.Contains(x.DeviceAssetId)) &&
-                     (!hasAssignedUserScope || assignedUserIds.Contains(x.AssignedUserId)) &&
-                     (!hasTeamScope || teamIds.Contains(x.TeamId)))))
+        var tasks = await visibleTasks
+            .Where(x => workOrderIds.Contains(x.WorkOrderId))
             .OrderBy(x => x.OperationSequence)
             .ThenBy(x => x.OperationTaskIdValue)
             .ToListAsync(cancellationToken);
@@ -187,14 +231,27 @@ public sealed class ListMesWorkOrdersQueryHandler(
         var heldWorkOrderIds = await dbContext.QualityHoldContexts
             .AsNoTracking()
             .Where(x =>
-                x.OrganizationId == request.OrganizationId &&
-                x.EnvironmentId == request.EnvironmentId &&
+                x.OrganizationId == tenant.OrganizationId &&
+                x.EnvironmentId == tenant.EnvironmentId &&
                 x.Active &&
                 workOrderIds.Contains(x.WorkOrderId))
             .Select(x => x.WorkOrderId)
             .Distinct()
             .ToListAsync(cancellationToken);
         var heldWorkOrderIdSet = heldWorkOrderIds.ToHashSet(StringComparer.Ordinal);
+
+        var demandChanges = await dbContext.WorkOrderDemandChanges
+            .AsNoTracking()
+            .Where(x =>
+                x.OrganizationId == tenant.OrganizationId &&
+                x.EnvironmentId == tenant.EnvironmentId &&
+                workOrderIds.Contains(x.WorkOrderId))
+            .Select(x => new { x.WorkOrderId, x.Cancelled })
+            .ToListAsync(cancellationToken);
+        var changedDemandIds = demandChanges.Where(x => !x.Cancelled)
+            .Select(x => x.WorkOrderId).ToHashSet(StringComparer.Ordinal);
+        var cancelledDemandIds = demandChanges.Where(x => x.Cancelled)
+            .Select(x => x.WorkOrderId).ToHashSet(StringComparer.Ordinal);
 
         var tasksByWorkOrder = tasks
             .GroupBy(x => x.WorkOrderId, StringComparer.OrdinalIgnoreCase)
@@ -236,7 +293,22 @@ public sealed class ListMesWorkOrdersQueryHandler(
             tasksByWorkOrder.GetValueOrDefault(x.WorkOrderIdValue, []),
             x.WorkOrderIdValue,
             x.SkuId,
-            heldWorkOrderIdSet.Contains(x.WorkOrderIdValue))).ToArray();
+            heldWorkOrderIdSet.Contains(x.WorkOrderIdValue),
+            x.WorkOrderType,
+            x.SourceWorkOrderId,
+            x.SourceNcrId,
+            x.SourceNcrCode,
+            changedDemandIds.Contains(x.WorkOrderIdValue),
+            cancelledDemandIds.Contains(x.WorkOrderIdValue),
+            (x.SourcePlanReference?.AssemblyParentSuggestionIds ?? [])
+                .SelectMany(id => parentIdsBySuggestion.GetValueOrDefault(id, []))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray(),
+            x.IsRush,
+            x.SourcePlanReference is null ? null : new MesSourcePlanReferenceResponse(
+                x.SourcePlanReference.SourceSystem, x.SourcePlanReference.SourceDocumentType,
+                x.SourcePlanReference.SourceDocumentId, x.SourcePlanReference.SourceDemandReference,
+                x.SourcePlanReference.SourceDemandReferences))).ToArray();
 
         return new ListMesWorkOrdersResponse(items, total);
     }

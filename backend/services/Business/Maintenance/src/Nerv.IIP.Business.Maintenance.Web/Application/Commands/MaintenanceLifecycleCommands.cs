@@ -32,7 +32,8 @@ public sealed record TransitionMaintenanceWorkOrderCommand(
     int? ActualLaborMinutes = null,
     decimal? SparePartCostAmount = null,
     decimal? ExternalServiceCostAmount = null,
-    string? CostCurrencyCode = null) : ICommand<MaintenanceWorkOrderCommandResult>;
+    string? CostCurrencyCode = null,
+    DateTimeOffset? ExpectedRestoreAtUtc = null) : ICommand<MaintenanceWorkOrderCommandResult>;
 
 public sealed class AssignMaintenanceWorkOrderCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<AssignMaintenanceWorkOrderCommand, MaintenanceWorkOrderCommandResult>
@@ -139,7 +140,9 @@ public sealed class TransitionMaintenanceWorkOrderCommandHandler(ApplicationDbCo
         TransitionMaintenanceWorkOrderCommand request,
         CancellationToken cancellationToken)
     {
-        var fingerprint = Fingerprint(request);
+        var fingerprint = request.Action == MaintenanceWorkOrderAction.UpdateExpectedRestore
+            ? MaintenanceIdempotencyFingerprints.Hash(new { Legacy = Fingerprint(request), request.ExpectedRestoreAtUtc })
+            : Fingerprint(request);
         var replay = await LifecycleReplay.FindAsync(
             dbContext, request.OrganizationId, request.EnvironmentId, request.IdempotencyKey, fingerprint, cancellationToken);
         if (replay is not null)
@@ -181,6 +184,9 @@ public sealed class TransitionMaintenanceWorkOrderCommandHandler(ApplicationDbCo
     {
         switch (request.Action)
         {
+            case MaintenanceWorkOrderAction.UpdateExpectedRestore:
+                workOrder.UpdateExpectedRestore(request.ExpectedRestoreAtUtc);
+                break;
             case MaintenanceWorkOrderAction.Accept:
                 workOrder.Accept(request.ActorPrincipalId);
                 break;
@@ -210,7 +216,7 @@ public sealed class TransitionMaintenanceWorkOrderCommandHandler(ApplicationDbCo
                     MaintenanceText.Required(request.Result ?? string.Empty, nameof(request.Result)),
                     reasonCode,
                     request.DowntimeMinutes ?? throw new KnownException("Downtime minutes are required."),
-                    request.SpareParts?.Select(x => new SparePartLineDraft(x.SkuCode, x.Quantity, x.UomCode)).ToArray(),
+                    request.SpareParts?.Select(x => new SparePartLineDraft(x.SkuCode, x.Quantity, x.UomCode, x.SiteCode, x.LocationCode)).ToArray(),
                     request.ActorPrincipalId,
                     request.ActualLaborMinutes,
                     request.SparePartCostAmount,
@@ -279,7 +285,13 @@ public sealed class TransitionMaintenanceWorkOrderCommandHandler(ApplicationDbCo
                 SkuCode = x.SkuCode.Trim(),
                 Quantity = MaintenanceIdempotencyFingerprints.CanonicalDecimal(x.Quantity),
                 UomCode = x.UomCode?.Trim(),
-            }).OrderBy(x => x.SkuCode, StringComparer.Ordinal).ThenBy(x => x.UomCode, StringComparer.Ordinal).ToArray(),
+                SiteCode = x.SiteCode?.Trim(),
+                LocationCode = x.LocationCode?.Trim(),
+            }).OrderBy(x => x.SkuCode, StringComparer.Ordinal)
+                .ThenBy(x => x.UomCode, StringComparer.Ordinal)
+                .ThenBy(x => x.SiteCode, StringComparer.Ordinal)
+                .ThenBy(x => x.LocationCode, StringComparer.Ordinal)
+                .ToArray(),
         });
 }
 
@@ -340,6 +352,7 @@ public sealed class TransitionMaintenanceWorkOrderCommandValidator : AbstractVal
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.WorkOrderId).NotEmpty();
         RuleFor(x => x.Action).IsInEnum().NotEqual(MaintenanceWorkOrderAction.Assign);
+        RuleFor(x => x.ExpectedRestoreAtUtc).Null().When(x => x.Action != MaintenanceWorkOrderAction.UpdateExpectedRestore);
         RuleFor(x => x.ActorPrincipalId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
@@ -349,6 +362,7 @@ public sealed class TransitionMaintenanceWorkOrderCommandValidator : AbstractVal
             RuleFor(x => x.Result).NotEmpty().MaximumLength(1000);
             RuleFor(x => x.DowntimeReasonCode).NotEmpty().MaximumLength(100);
             RuleFor(x => x.DowntimeMinutes).NotNull().GreaterThan(0);
+            RuleForEach(x => x.SpareParts).SetValidator(new MaintenanceSparePartInputValidator());
         });
     }
 }

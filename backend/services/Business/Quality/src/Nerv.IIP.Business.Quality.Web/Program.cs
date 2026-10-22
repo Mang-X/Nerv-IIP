@@ -1,7 +1,11 @@
 using System.Reflection;
+using System.Net.Http.Headers;
+using Nerv.IIP.Sdk.FileStorage;
+using Nerv.IIP.Business.Quality.Web;
 using System.Text.Json;
 using DotNetCore.CAP;
 using FastEndpoints;
+using Nerv.IIP.Business.Quality.Web.Endpoints.DeadLetters;
 using FastEndpoints.Swagger;
 using FluentValidation.AspNetCore;
 using Hangfire;
@@ -18,6 +22,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionTasks;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.NonconformanceReports;
 using Nerv.IIP.Business.Quality.Web.Application.Errors;
 using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Quality.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Quality.Web.Application.Seed;
 using Nerv.IIP.Business.Quality.Web.Application.InspectionRecords;
 using Nerv.IIP.Business.Quality.Web.Application.Scheduling;
@@ -59,6 +64,15 @@ try
     builder.Services.AddHttpClient<IErpPurchaseReceiptFactClient, HttpErpPurchaseReceiptFactClient>(client =>
     {
         client.BaseAddress = erpBaseAddress;
+    }).UseHttpClientMetrics();
+
+    var fileStorageBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
+        builder.Configuration, builder.Environment, "FileStorage:BaseUrl", "http://localhost:5104");
+    builder.Services.AddHttpClient<IFileStorageClient, HttpFileStorageClient>((services, client) =>
+    {
+        client.BaseAddress = fileStorageBaseAddress;
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken);
     }).UseHttpClientMetrics();
 
     if (isTesting)
@@ -120,6 +134,10 @@ try
         QualityFacts.ServiceName);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddIntegrationEventDeadLetterEndpoints();
+    builder.Services.AddQualityDeadLetterReplay();
+    builder.Services.AddScoped<IReworkWorkOrderBindingWriter, PostgresReworkWorkOrderBindingWriter>();
+    builder.Services.AddScoped<ReworkWorkOrderBindingStore>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<QualityCodingService>();
     builder.Services.AddScoped<QualitySeedService>();
@@ -138,7 +156,12 @@ try
     builder.Services.AddScoped<ICorrectiveActionCodeGenerator, CorrectiveActionCodeGenerator>();
     builder.Services.AddScoped<ICapaAutomationService, CapaAutomationService>();
     builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddSingleton<CollectorRegistry>(Metrics.DefaultRegistry);
+    builder.Services.AddSingleton<WorkOrderReleaseFactBacklogMetrics>();
     builder.Services.AddHostedService<InspectionTaskOverdueScheduler>();
+    builder.Services.AddHostedService<PeriodicInspectionTimeTaskScheduler>();
+    builder.Services.AddHostedService<PeriodicInspectionQuantityContinuationScheduler>();
+    builder.Services.AddHostedService<WorkOrderReleaseFactBacklogScanner>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)
@@ -180,6 +203,9 @@ try
         ICommandLock<ClaimInspectionTaskCommand>,
         ClaimInspectionTaskCommandLock>();
     builder.Services.AddScoped<
+        ICommandLock<SubmitNonconformanceReportDispositionCommand>,
+        SubmitNonconformanceReportDispositionCommandLock>();
+    builder.Services.AddScoped<
         IQualityPersistenceConflictClassifier,
         QualityPersistenceConflictClassifier>();
 
@@ -208,15 +234,16 @@ try
         await dbContext.Database.MigrateAsync();
     }
 
-    // 质量基础目录 seed（原因码等）：与 MasterData 同口径——显式开关或本地 autoMigrate 时执行，幂等。
-    var seedEnabled = builder.Configuration.GetValue<bool>("Quality:Seed:Enabled") || autoMigrate;
+    // 质量基础目录 seed（原因码等）：默认开启（#3805），显式 false 可关闭；幂等补缺。
+    // 目标租户读 IAM 引导种子的同一组键（#3812），不再单独配置。
+    var seedEnabled = builder.Configuration.GetValue("Quality:Seed:Enabled", true);
     if (seedEnabled)
     {
         using var scope = app.Services.CreateScope();
         var seed = scope.ServiceProvider.GetRequiredService<QualitySeedService>();
         await seed.SeedAsync(
-            builder.Configuration["Quality:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["Quality:Seed:EnvironmentId"] ?? "env-dev");
+            builder.Configuration["Iam:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["Iam:Seed:EnvironmentId"] ?? "env-dev");
     }
 
     var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");
@@ -321,8 +348,13 @@ try
                 return inspectionContract.OperationId;
             }
 
-            return QualityReasonEndpointContracts.TryGet(ctx.EndpointType, out var reasonContract)
-                ? reasonContract.OperationId
+            if (QualityReasonEndpointContracts.TryGet(ctx.EndpointType, out var reasonContract))
+            {
+                return reasonContract.OperationId;
+            }
+
+            return QualityDeadLetterEndpointContracts.TryGet(ctx.EndpointType, out var deadLetterContract)
+                ? deadLetterContract.OperationId
                 : ToLowerCamelEndpointName(ctx.EndpointType.Name);
         };
     }).UseSwaggerGen();

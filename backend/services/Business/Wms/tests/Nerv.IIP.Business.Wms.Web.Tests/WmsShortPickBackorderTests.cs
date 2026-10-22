@@ -34,7 +34,7 @@ public sealed class WmsShortPickBackorderTests
         dbContext.AddRange(outbound, picking);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var handler = new CompleteOutboundOrderCommandHandler(dbContext);
-        var command = new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "complete-out-001")
+        var command = new CompleteOutboundOrderCommand(outbound.Id, true, "complete-out-001")
             .TrustedFor(dbContext, outbound);
 
         var first = await handler.Handle(command, CancellationToken.None);
@@ -68,7 +68,7 @@ public sealed class WmsShortPickBackorderTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var query = await new ListBackorderOrdersQueryHandler(dbContext).Handle(
-            new ListBackorderOrdersQuery("org-001", "env-dev"), CancellationToken.None);
+            new ListBackorderOrdersQuery(" org-001 ", " env-dev ", Keyword: " bo-001 "), CancellationToken.None);
         await new CloseBackorderOrderCommandHandler(dbContext).Handle(
             new CloseBackorderOrderCommand(backorder.Id, "stock-restored"), CancellationToken.None);
         await new CloseBackorderOrderCommandHandler(dbContext).Handle(
@@ -133,7 +133,7 @@ public sealed class WmsShortPickBackorderTests
             dbContext.AddRange(outbound, picking);
             await dbContext.SaveChangesAsync();
             var handler = new CompleteOutboundOrderCommandHandler(dbContext);
-            var command = new CompleteOutboundOrderCommand(outbound.Id, "PACK-PG-001", true, "complete-pg-001")
+            var command = new CompleteOutboundOrderCommand(outbound.Id, true, "complete-pg-001")
                 .TrustedFor(dbContext, outbound);
 
             await handler.Handle(command, CancellationToken.None);
@@ -150,6 +150,9 @@ public sealed class WmsShortPickBackorderTests
             var replenishment = Assert.Single(await assertionContext.WarehouseTasks.AsNoTracking()
                 .Where(x => x.TaskType == WarehouseTaskType.Replenishment).ToListAsync());
             Assert.Equal(backorder.BackorderOrderNo, replenishment.SourceOrderNo);
+            // 上一行由聚合自洽，换错种类仍成立；这两行才分得清「号是哪一类」（#3228）。
+            Assert.StartsWith("BO-", backorder.BackorderOrderNo, StringComparison.Ordinal);
+            Assert.StartsWith("RPL-", replenishment.TaskNo, StringComparison.Ordinal);
             await new CloseBackorderOrderCommandHandler(assertionContext).Handle(
                 new CloseBackorderOrderCommand(backorderId, "stock-restored"), CancellationToken.None);
             await assertionContext.SaveChangesAsync();

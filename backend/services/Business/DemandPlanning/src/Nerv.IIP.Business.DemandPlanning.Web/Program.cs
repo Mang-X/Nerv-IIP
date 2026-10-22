@@ -1,6 +1,8 @@
 using System.Reflection;
+using Nerv.IIP.Business.DemandPlanning.Web;
 using System.Text.Json;
 using FastEndpoints;
+using Nerv.IIP.Business.DemandPlanning.Web.Endpoints.DeadLetters;
 using FastEndpoints.Swagger;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
@@ -58,7 +60,16 @@ try
     {
         client.BaseAddress = erpBaseAddress;
     }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient<HttpScheduledReceiptSuggestionDownstreamBridge>(client =>
+    {
+        client.BaseAddress = erpBaseAddress;
+    }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient("planning-mes-command", client => client.BaseAddress = mesBaseAddress).UseHttpClientMetrics();
     builder.Services.AddScoped<IPlanningSuggestionDownstreamBridge, HttpPlanningSuggestionDownstreamBridge>();
+    var schedulingBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Scheduling:BaseUrl", "http://localhost:5120");
+    builder.Services.AddHttpClient("material-delivery-erp", client => client.BaseAddress = erpBaseAddress).UseHttpClientMetrics();
+    builder.Services.AddHttpClient("material-delivery-scheduling", client => client.BaseAddress = schedulingBaseAddress).UseHttpClientMetrics();
+    builder.Services.AddScoped<IMaterialDeliverySourcesClient, HttpMaterialDeliverySourcesClient>();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
@@ -85,6 +96,8 @@ try
 
     builder.Services.AddDemandPlanningPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddIntegrationEventDeadLetterEndpoints();
+    builder.Services.AddDemandPlanningDeadLetterReplay();
     builder.Services.AddScoped<DemandPlanningCodingService>();
     builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddInMemoryDistributedLock();
@@ -100,6 +113,8 @@ try
     // MRP 异步任务模式（#1306）：受理端点入队，后台 worker 在独立事务中执行计算。
     builder.Services.AddSingleton<IMrpRunExecutionQueue, MrpRunExecutionQueue>();
     builder.Services.AddHostedService<MrpRunWorker>();
+    builder.Services.AddSingleton(TimeProvider.System);
+    builder.Services.AddHostedService<DailyMrpScheduler>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)
@@ -196,9 +211,16 @@ try
     app.UseFastEndpoints(c =>
     {
         c.Endpoints.NameGenerator = ctx =>
-            DemandPlanningEndpointContracts.TryGet(ctx.EndpointType, out var contract)
-                ? contract.OperationId
+        {
+            if (DemandPlanningEndpointContracts.TryGet(ctx.EndpointType, out var contract))
+            {
+                return contract.OperationId;
+            }
+
+            return PlanningDeadLetterEndpointContracts.TryGet(ctx.EndpointType, out var deadLetterContract)
+                ? deadLetterContract.OperationId
                 : ToLowerCamelEndpointName(ctx.EndpointType.Name);
+        };
     }).UseSwaggerGen();
     app.UseHttpMetrics();
     app.MapHealthChecks("/health");

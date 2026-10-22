@@ -439,7 +439,7 @@ public sealed record ListBackorderOrdersQuery(
     string OrganizationId,
     string EnvironmentId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Status = null,
     string? Keyword = null) : IQuery<ListBackorderOrdersResponse>;
 
@@ -465,8 +465,11 @@ public sealed class ListBackorderOrdersQueryHandler(ApplicationDbContext dbConte
 {
     public async Task<ListBackorderOrdersResponse> Handle(ListBackorderOrdersQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = ListQueryCriteria.NormalizeKeyword(request.Keyword);
         var query = dbContext.BackorderOrders.AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
         if (WmsListQueryFilters.TryParseStatus<BackorderOrderStatus>(request.Status, out var status))
         {
             query = query.Where(x => x.Status == status);
@@ -476,19 +479,16 @@ public sealed class ListBackorderOrdersQueryHandler(ApplicationDbContext dbConte
             return new ListBackorderOrdersResponse([], 0);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = WmsListQueryFilters.NormalizeKeyword(request.Keyword);
-            query = query.Where(x => x.BackorderOrderNo.ToUpper().Contains(keyword)
-                || x.OutboundOrderNo.ToUpper().Contains(keyword)
-                || x.SkuCode.ToUpper().Contains(keyword));
+            query = query.Where(x => x.BackorderOrderNo.ToLower().Contains(keyword)
+                || x.OutboundOrderNo.ToLower().Contains(keyword)
+                || x.SkuCode.ToLower().Contains(keyword));
         }
 
-        var skip = Math.Max(0, request.Skip);
-        var take = request.Take <= 0 ? 100 : Math.Clamp(request.Take, 1, 500);
         var total = await query.CountAsync(cancellationToken);
         var items = await query.OrderByDescending(x => x.CreatedAtUtc).ThenBy(x => x.BackorderOrderNo)
-            .Skip(skip).Take(take)
+            .Skip(page.Skip).Take(page.Take)
             .Select(x => new BackorderOrderFact(x.Id, x.BackorderOrderNo, x.OutboundOrderNo, x.OutboundOrderLineNo,
                 x.SkuCode, x.UomCode, x.SiteCode, x.PickLocationCode, x.BackorderQuantity, x.Status.ToString(),
                 x.CreatedAtUtc, x.ClosedAtUtc, x.ClosureReason))
@@ -501,7 +501,7 @@ public sealed record ListInboundOrdersQuery(
     string? OrganizationId,
     string? EnvironmentId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Status = null,
     string? Keyword = null,
     InboundOrderId? InboundOrderId = null,
@@ -542,9 +542,25 @@ internal static class InboundOrderQualityAggregate
         return InboundQualityGateStatuses.NotRequired;
     }
 
-    // 整单可上架：至少一行且无任何一行待检/不合格（其余为合格/有条件放行/免检）。
-    public static bool ReleasedForPutaway(bool hasAnyLine, bool hasRejected, bool hasPending)
-        => hasAnyLine && !hasRejected && !hasPending;
+    // 整单可上架：至少一行且无任何一行待检/不合格（其余为合格/有条件放行/免检），
+    // 并且单据状态还允许建上架任务——与 InboundOrder.EnsureCanCreatePutawayTask 对齐（#3927）：
+    // 已完成的单只剩质检放行（合格/有条件放行）的行可以补建上架；过账失败、已取消一律不行。
+    public static bool ReleasedForPutaway(
+        InboundOrderStatus status,
+        bool hasAnyLine,
+        bool hasRejected,
+        bool hasPending,
+        bool hasConditional,
+        bool hasPassed)
+    {
+        if (!hasAnyLine || hasRejected || hasPending) return false;
+        return status switch
+        {
+            InboundOrderStatus.Open or InboundOrderStatus.PendingQualityCheck => true,
+            InboundOrderStatus.Completed => hasConditional || hasPassed,
+            _ => false,
+        };
+    }
 }
 
 public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext)
@@ -552,18 +568,13 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
 {
     public async Task<ListInboundOrdersResponse> Handle(ListInboundOrdersQuery request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.OrganizationId)
-            || string.IsNullOrWhiteSpace(request.EnvironmentId))
-        {
-            return new ListInboundOrdersResponse([], 0);
-        }
-
-        var skip = Math.Max(0, request.Skip);
-        var take = request.Take <= 0 ? 100 : Math.Clamp(request.Take, 1, 500);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = ListQueryCriteria.NormalizeKeyword(request.Keyword);
         var query = dbContext.InboundOrders
             .AsNoTracking()
-            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId)
+            .Where(x => x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.InboundOrderId == null || x.Id == request.InboundOrderId);
         if (!WmsOwnershipQueryFilters.TryResolve(
                 request.AssignedOperatorUserIds,
@@ -601,10 +612,9 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
             return new ListInboundOrdersResponse([], 0);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = WmsListQueryFilters.NormalizeKeyword(request.Keyword);
-            query = query.Where(x => x.InboundOrderNo.ToUpper().Contains(keyword));
+            query = query.Where(x => x.InboundOrderNo.ToLower().Contains(keyword));
         }
 
         if (!string.IsNullOrWhiteSpace(request.LocationCode))
@@ -621,13 +631,13 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
         var rows = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .ThenByDescending(x => x.InboundOrderNo)
-            .Skip(skip)
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new
             {
                 x.Id,
                 x.InboundOrderNo,
-                Status = x.Status.ToString(),
+                StatusValue = x.Status,
                 x.CreatedAtUtc,
                 x.SiteCode,
                 x.AssignedOperatorUserId,
@@ -644,10 +654,16 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
             .Select(x => new InboundOrderListItem(
                 x.Id,
                 x.InboundOrderNo,
-                x.Status,
+                x.StatusValue.ToString(),
                 x.CreatedAtUtc,
                 InboundOrderQualityAggregate.Derive(x.HasAnyLine, x.HasRejected, x.HasPending, x.HasConditional, x.HasPassed),
-                InboundOrderQualityAggregate.ReleasedForPutaway(x.HasAnyLine, x.HasRejected, x.HasPending),
+                InboundOrderQualityAggregate.ReleasedForPutaway(
+                    x.StatusValue,
+                    x.HasAnyLine,
+                    x.HasRejected,
+                    x.HasPending,
+                    x.HasConditional,
+                    x.HasPassed),
                 x.SiteCode,
                 x.AssignedOperatorUserId,
                 x.AssignedPoolCode,
@@ -661,7 +677,7 @@ public sealed record ListOutboundOrdersQuery(
     string? OrganizationId,
     string? EnvironmentId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Status = null,
     string? Keyword = null,
     OutboundOrderId? OutboundOrderId = null,
@@ -711,18 +727,13 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
 {
     public async Task<ListOutboundOrdersResponse> Handle(ListOutboundOrdersQuery request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.OrganizationId)
-            || string.IsNullOrWhiteSpace(request.EnvironmentId))
-        {
-            return new ListOutboundOrdersResponse([], 0);
-        }
-
-        var skip = Math.Max(0, request.Skip);
-        var take = request.Take <= 0 ? 100 : Math.Clamp(request.Take, 1, 500);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = ListQueryCriteria.NormalizeKeyword(request.Keyword);
         var query = dbContext.OutboundOrders
             .AsNoTracking()
-            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId)
+            .Where(x => x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.OutboundOrderId == null || x.Id == request.OutboundOrderId);
         if (!WmsOwnershipQueryFilters.TryResolve(
                 request.AssignedOperatorUserIds,
@@ -760,10 +771,9 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
             return new ListOutboundOrdersResponse([], 0);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = WmsListQueryFilters.NormalizeKeyword(request.Keyword);
-            query = query.Where(x => x.OutboundOrderNo.ToUpper().Contains(keyword));
+            query = query.Where(x => x.OutboundOrderNo.ToLower().Contains(keyword));
         }
 
         if (!string.IsNullOrWhiteSpace(request.LocationCode))
@@ -780,8 +790,8 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
         var rows = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .ThenByDescending(x => x.OutboundOrderNo)
-            .Skip(skip)
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new
             {
                 x.Id,
@@ -915,7 +925,7 @@ public sealed record ListWarehouseTasksQuery(
     string EnvironmentId,
     WarehouseTaskType TaskType,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Status = null,
     string? LocationCode = null,
     string? Keyword = null,
@@ -960,10 +970,13 @@ public sealed class ListWarehouseTasksQueryHandler(ApplicationDbContext dbContex
 {
     public async Task<ListWarehouseTasksResponse> Handle(ListWarehouseTasksQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = ListQueryCriteria.NormalizeKeyword(request.Keyword);
         var query = dbContext.WarehouseTasks
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId)
-            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId)
+            .Where(x => x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => x.TaskType == request.TaskType);
         if (!WmsOwnershipQueryFilters.TryResolve(
                 request.AssignedOperatorUserIds,
@@ -1012,23 +1025,20 @@ public sealed class ListWarehouseTasksQueryHandler(ApplicationDbContext dbContex
             query = query.Where(x => x.LotNo == request.LotNo);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = WmsListQueryFilters.NormalizeKeyword(request.Keyword);
             query = query.Where(x =>
-                x.TaskNo.ToUpper().Contains(keyword)
-                || x.SourceOrderNo.ToUpper().Contains(keyword)
-                || x.SkuCode.ToUpper().Contains(keyword));
+                x.TaskNo.ToLower().Contains(keyword)
+                || x.SourceOrderNo.ToLower().Contains(keyword)
+                || x.SkuCode.ToLower().Contains(keyword));
         }
 
-        var skip = Math.Max(0, request.Skip);
-        var take = request.Take <= 0 ? 100 : Math.Clamp(request.Take, 1, 500);
         var total = await query.CountAsync(cancellationToken);
         var rows = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .ThenByDescending(x => x.TaskNo)
-            .Skip(skip)
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .ToArrayAsync(cancellationToken);
         var items = rows
             .Select(x =>
@@ -1246,7 +1256,7 @@ public sealed record ListCountExecutionsQuery(
     string OrganizationId,
     string EnvironmentId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Status = null,
     string? LocationCode = null,
     string? Keyword = null,
@@ -1287,10 +1297,13 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
 {
     public async Task<ListCountExecutionsResponse> Handle(ListCountExecutionsQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = ListQueryCriteria.NormalizeKeyword(request.Keyword);
         var query = dbContext.CountExecutions
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId)
-            .Where(x => x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId)
+            .Where(x => x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.CountExecutionId == null || x.Id == request.CountExecutionId);
         if (!WmsOwnershipQueryFilters.TryResolve(
                 request.AssignedOperatorUserIds,
@@ -1334,23 +1347,20 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
             query = query.Where(x => x.LocationCode == request.LocationCode);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = WmsListQueryFilters.NormalizeKeyword(request.Keyword);
             query = query.Where(x =>
-                x.CountNo.ToUpper().Contains(keyword)
-                || x.SkuCode.ToUpper().Contains(keyword)
-                || x.LocationCode.ToUpper().Contains(keyword));
+                x.CountNo.ToLower().Contains(keyword)
+                || x.SkuCode.ToLower().Contains(keyword)
+                || x.LocationCode.ToLower().Contains(keyword));
         }
 
-        var skip = Math.Max(0, request.Skip);
-        var take = request.Take <= 0 ? 100 : Math.Clamp(request.Take, 1, 500);
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .ThenByDescending(x => x.CountNo)
-            .Skip(skip)
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new CountExecutionFact(
                 x.Id,
                 x.OrganizationId,
@@ -1408,7 +1418,7 @@ public sealed record ListWcsTasksQuery(
     string? ExternalTaskId,
     WarehouseTaskId? WarehouseTaskId = null,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Status = null,
     bool? Failed = null,
     string? Keyword = null) : IQuery<ListWcsTasksResponse>;
@@ -1428,7 +1438,10 @@ public sealed record WcsTaskFact(
     string? FailureMessage,
     DateTime DispatchedAtUtc,
     DateTime? FailedAtUtc,
-    DateTime? CompletedAtUtc);
+    DateTime? CompletedAtUtc,
+    long WarehouseTaskVersion,
+    decimal PlannedQuantity,
+    decimal ExecutedQuantity);
 
 public sealed record ListWcsDispatchCircuitsQuery(string OrganizationId, string EnvironmentId) : IQuery<IReadOnlyCollection<WcsDispatchCircuitFact>>;
 
@@ -1448,10 +1461,13 @@ public sealed class ListWcsTasksQueryHandler(ApplicationDbContext dbContext)
 {
     public async Task<ListWcsTasksResponse> Handle(ListWcsTasksQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = ListQueryCriteria.NormalizeKeyword(request.Keyword);
         var query = dbContext.WcsTasks
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId)
-            .Where(x => x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId)
+            .Where(x => x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.ExternalTaskId))
         {
@@ -1481,34 +1497,39 @@ public sealed class ListWcsTasksQueryHandler(ApplicationDbContext dbContext)
             query = query.Where(x => x.FailedAtUtc == null);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = WmsListQueryFilters.NormalizeKeyword(request.Keyword);
-            query = query.Where(x => x.ExternalTaskId.ToUpper().Contains(keyword));
+            query = query.Where(x => x.ExternalTaskId.ToLower().Contains(keyword));
         }
 
-        var skip = Math.Max(0, request.Skip);
-        var take = request.Take <= 0 ? 100 : Math.Clamp(request.Take, 1, 500);
         var total = await query.CountAsync(cancellationToken);
         var items = await query
-            .OrderByDescending(x => x.DispatchedAtUtc)
-            .ThenByDescending(x => x.ExternalTaskId)
-            .Skip(skip)
-            .Take(take)
+            .Join(
+                dbContext.WarehouseTasks.AsNoTracking(),
+                x => x.WarehouseTaskId,
+                t => t.Id,
+                (x, t) => new { Wcs = x, Task = t })
+            .OrderByDescending(x => x.Wcs.DispatchedAtUtc)
+            .ThenByDescending(x => x.Wcs.ExternalTaskId)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new WcsTaskFact(
-                x.Id,
-                x.OrganizationId,
-                x.EnvironmentId,
-                x.WarehouseTaskId,
-                x.AdapterType,
-                x.ExternalTaskId,
-                x.Status.ToString(),
-                x.AttemptCount,
-                x.FailureCode,
-                x.FailureMessage,
-                x.DispatchedAtUtc,
-                x.FailedAtUtc,
-                x.CompletedAtUtc))
+                x.Wcs.Id,
+                x.Wcs.OrganizationId,
+                x.Wcs.EnvironmentId,
+                x.Wcs.WarehouseTaskId,
+                x.Wcs.AdapterType,
+                x.Wcs.ExternalTaskId,
+                x.Wcs.Status.ToString(),
+                x.Wcs.AttemptCount,
+                x.Wcs.FailureCode,
+                x.Wcs.FailureMessage,
+                x.Wcs.DispatchedAtUtc,
+                x.Wcs.FailedAtUtc,
+                x.Wcs.CompletedAtUtc,
+                x.Task.Version,
+                x.Task.PlannedQuantity,
+                x.Task.ExecutedQuantity))
             .ToArrayAsync(cancellationToken);
         return new ListWcsTasksResponse(items, total);
     }
@@ -1518,7 +1539,7 @@ public sealed record ListReceivingQualityGatesQuery(
     string? OrganizationId,
     string? EnvironmentId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? GateStatus = null,
     string? Keyword = null,
     bool IncludeNotRequired = false,
@@ -1562,18 +1583,13 @@ public sealed class ListReceivingQualityGatesQueryHandler(ApplicationDbContext d
 {
     public async Task<ListReceivingQualityGatesResponse> Handle(ListReceivingQualityGatesQuery request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.OrganizationId)
-            || string.IsNullOrWhiteSpace(request.EnvironmentId))
-        {
-            return new ListReceivingQualityGatesResponse([], 0);
-        }
-
-        var skip = Math.Max(0, request.Skip);
-        var take = request.Take <= 0 ? 100 : Math.Clamp(request.Take, 1, 500);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = ListQueryCriteria.NormalizeKeyword(request.Keyword);
         var orderQuery = dbContext.InboundOrders
             .AsNoTracking()
-            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId)
+            .Where(x => x.EnvironmentId == tenant.EnvironmentId);
         if (!WmsOwnershipQueryFilters.TryResolve(
                 request.AssignedOperatorUserIds,
                 request.AssignedPoolCodes,
@@ -1659,13 +1675,12 @@ public sealed class ListReceivingQualityGatesQueryHandler(ApplicationDbContext d
             query = query.Where(x => x.line.QualityGateStatus == gateStatus);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = WmsListQueryFilters.NormalizeKeyword(request.Keyword);
             query = query.Where(x =>
-                x.order.InboundOrderNo.ToUpper().Contains(keyword)
-                || x.line.SkuCode.ToUpper().Contains(keyword)
-                || (x.line.InspectionRecordId != null && x.line.InspectionRecordId.ToUpper().Contains(keyword)));
+                x.order.InboundOrderNo.ToLower().Contains(keyword)
+                || x.line.SkuCode.ToLower().Contains(keyword)
+                || (x.line.InspectionRecordId != null && x.line.InspectionRecordId.ToLower().Contains(keyword)));
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -1673,8 +1688,8 @@ public sealed class ListReceivingQualityGatesQueryHandler(ApplicationDbContext d
             .OrderByDescending(x => x.order.CreatedAtUtc)
             .ThenByDescending(x => x.order.InboundOrderNo)
             .ThenBy(x => x.line.LineNo)
-            .Skip(skip)
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new ReceivingQualityGateFact(
                 x.order.Id,
                 x.line.Id,
@@ -1708,7 +1723,7 @@ public sealed record ListSupplierReturnRequestsQuery(
     string? OrganizationId,
     string? EnvironmentId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Status = null,
     string? Keyword = null) : IQuery<ListSupplierReturnRequestsResponse>;
 
@@ -1741,12 +1756,13 @@ public sealed class ListSupplierReturnRequestsQueryHandler(ApplicationDbContext 
 {
     public async Task<ListSupplierReturnRequestsResponse> Handle(ListSupplierReturnRequestsQuery request, CancellationToken cancellationToken)
     {
-        var skip = Math.Max(0, request.Skip);
-        var take = request.Take <= 0 ? 100 : Math.Clamp(request.Take, 1, 500);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = ListQueryCriteria.NormalizeKeyword(request.Keyword);
         var query = dbContext.SupplierReturnRequests
             .AsNoTracking()
-            .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
-            .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId);
+            .Where(x => request.OrganizationId == null || x.OrganizationId == tenant.OrganizationId)
+            .Where(x => request.EnvironmentId == null || x.EnvironmentId == tenant.EnvironmentId);
         if (WmsListQueryFilters.TryParseStatus<SupplierReturnRequestStatus>(request.Status, out var status))
         {
             query = query.Where(x => x.Status == status);
@@ -1756,22 +1772,21 @@ public sealed class ListSupplierReturnRequestsQueryHandler(ApplicationDbContext 
             return new ListSupplierReturnRequestsResponse([], 0);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = WmsListQueryFilters.NormalizeKeyword(request.Keyword);
             query = query.Where(x =>
-                x.SupplierReturnNo.ToUpper().Contains(keyword)
-                || x.InboundOrderNo.ToUpper().Contains(keyword)
-                || x.InspectionRecordId.ToUpper().Contains(keyword)
-                || x.SkuCode.ToUpper().Contains(keyword));
+                x.SupplierReturnNo.ToLower().Contains(keyword)
+                || x.InboundOrderNo.ToLower().Contains(keyword)
+                || x.InspectionRecordId.ToLower().Contains(keyword)
+                || x.SkuCode.ToLower().Contains(keyword));
         }
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.CreatedAtUtc)
             .ThenByDescending(x => x.SupplierReturnNo)
-            .Skip(skip)
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new SupplierReturnRequestFact(
                 x.Id,
                 x.OrganizationId,
@@ -1813,8 +1828,61 @@ internal static class WmsListQueryFilters
         return Enum.TryParse(trimmed, true, out status) && Enum.IsDefined(status);
     }
 
-    public static string NormalizeKeyword(string? value)
+}
+
+public sealed record WarehouseWorkPoolMemberItem(string PrincipalId, DateTime EffectiveFromUtc, DateTime? EffectiveToUtc);
+
+public sealed record WarehouseWorkPoolItem(
+    string PoolCode,
+    string DisplayName,
+    string SiteCode,
+    IReadOnlyCollection<WarehouseWorkPoolMemberItem> Members);
+
+public sealed record ListWarehouseWorkPoolsResponse(IReadOnlyCollection<WarehouseWorkPoolItem> Items);
+
+/// <summary>主管维护与分配用：列出调用方授权站点内的有效作业池及当前有效成员。</summary>
+public sealed record ListWarehouseWorkPoolsQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes) : IQuery<ListWarehouseWorkPoolsResponse>;
+
+public sealed class ListWarehouseWorkPoolsQueryHandler(ApplicationDbContext dbContext, TimeProvider timeProvider)
+    : IQueryHandler<ListWarehouseWorkPoolsQuery, ListWarehouseWorkPoolsResponse>
+{
+    public async Task<ListWarehouseWorkPoolsResponse> Handle(
+        ListWarehouseWorkPoolsQuery request,
+        CancellationToken cancellationToken)
     {
-        return value?.Trim().ToUpperInvariant() ?? string.Empty;
+        var siteCodes = request.AuthorizedSiteCodes.ToArray();
+        var pools = await dbContext.WarehouseWorkPools.AsNoTracking()
+            .Where(pool => pool.OrganizationId == request.OrganizationId
+                && pool.EnvironmentId == request.EnvironmentId
+                && pool.Active
+                && siteCodes.Contains(pool.SiteCode))
+            .OrderBy(pool => pool.PoolCode)
+            .ToListAsync(cancellationToken);
+        var poolCodes = pools.Select(pool => pool.PoolCode).ToArray();
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var members = await dbContext.WarehouseWorkPoolMemberships.AsNoTracking()
+            .Where(membership => membership.OrganizationId == request.OrganizationId
+                && membership.EnvironmentId == request.EnvironmentId
+                && membership.Active
+                && poolCodes.Contains(membership.PoolCode)
+                && (membership.EffectiveToUtc == null || now < membership.EffectiveToUtc))
+            .OrderBy(membership => membership.EffectiveFromUtc)
+            .ToListAsync(cancellationToken);
+        var membersByPool = members.ToLookup(membership => membership.PoolCode, StringComparer.Ordinal);
+        return new ListWarehouseWorkPoolsResponse(pools
+            .Select(pool => new WarehouseWorkPoolItem(
+                pool.PoolCode,
+                pool.DisplayName,
+                pool.SiteCode,
+                membersByPool[pool.PoolCode]
+                    .Select(membership => new WarehouseWorkPoolMemberItem(
+                        membership.PrincipalId,
+                        membership.EffectiveFromUtc,
+                        membership.EffectiveToUtc))
+                    .ToArray()))
+            .ToArray());
     }
 }

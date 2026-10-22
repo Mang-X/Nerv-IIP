@@ -86,7 +86,7 @@ public sealed class WmsEndpointContractTests
     {
         var contracts = WmsEndpointContracts.All.ToArray();
 
-        Assert.Equal(49, contracts.Length);
+        Assert.Equal(51, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsInboundOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/assignment" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "assignWmsInboundOrder");
@@ -124,6 +124,8 @@ public sealed class WmsEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/supplier-return-requests" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsSupplierReturnRequests");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/work-pools" && x.PermissionCode == WmsPermissionCodes.WorkPoolsManage && x.OperationId == "provisionWmsWorkPool");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/work-pools/{poolCode}/members" && x.PermissionCode == WmsPermissionCodes.WorkPoolsManage && x.OperationId == "addWmsWorkPoolMember");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/work-pools" && x.PermissionCode == WmsPermissionCodes.WorkPoolsManage && x.OperationId == "listWmsWorkPools");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/work-pools/{poolCode}/members/{principalId}/remove" && x.PermissionCode == WmsPermissionCodes.WorkPoolsManage && x.OperationId == "removeWmsWorkPoolMember");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/work-scopes/receipts" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "getWmsReceiptWorkScopes");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/work-scopes/shipments" && x.PermissionCode == WmsPermissionCodes.ShipmentsRead && x.OperationId == "getWmsShipmentWorkScopes");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/work-scopes/counts" && x.PermissionCode == WmsPermissionCodes.CountsRead && x.OperationId == "getWmsCountWorkScopes");
@@ -281,21 +283,56 @@ public sealed class WmsEndpointContractTests
     }
 
     [Fact]
-    public async Task Wms_registers_persistent_integration_event_dead_letter_store()
+    // Contract: PublicContract + Regression. Authority: Issue #2120 acceptance and pre-migration WMS v1 behavior.
+    public async Task Backorder_list_http_endpoint_keeps_empty_success_for_missing_tenant()
     {
-        await using var factory = new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseSetting("environment", "Testing");
-                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
-            });
+        await using var factory = CreateAuthorizedFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", "test-internal-token");
 
-        using var scope = factory.Services.CreateScope();
-        var store = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+        using var response = await client.GetAsync(
+            "/api/business/v1/wms/backorder-orders?environmentId=env-dev");
 
-        Assert.Equal(
-            "Nerv.IIP.Messaging.CAP.PersistentIntegrationEventDeadLetterStore`1[[Nerv.IIP.Business.Wms.Infrastructure.ApplicationDbContext, Nerv.IIP.Business.Wms.Infrastructure, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]",
-            store.GetType().FullName);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = System.Text.Json.JsonDocument.Parse(body);
+        Assert.True(document.RootElement.GetProperty("success").GetBoolean(), body);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(0, data.GetProperty("total").GetInt32());
+        Assert.Empty(data.GetProperty("items").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Backorder_list_http_endpoint_composes_tenant_keyword_and_legacy_page_bounds()
+    {
+        await using var factory = CreateAuthorizedFactory();
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.BackorderOrders.AddRange(
+                CreateBackorder("org-001", "env-dev", "BO-HTTP-001"),
+                CreateBackorder("org-001", "env-dev", "BO-HTTP-002"),
+                CreateBackorder("org-002", "env-dev", "BO-HTTP-OTHER-ORG"),
+                CreateBackorder("org-001", "env-test", "BO-HTTP-OTHER-ENV"));
+            await dbContext.SaveChangesAsync();
+        }
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        using var response = await client.GetAsync(
+            "/api/business/v1/wms/backorder-orders" +
+            "?organizationId=%20org-001%20&environmentId=%20env-dev%20" +
+            "&keyword=%20bO-hTtP%20&skip=-1&take=0");
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = System.Text.Json.JsonDocument.Parse(body);
+        Assert.True(document.RootElement.GetProperty("success").GetBoolean(), body);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal(2, data.GetProperty("total").GetInt32());
+        Assert.Equal(2, data.GetProperty("items").GetArrayLength());
     }
 
     [Fact]
@@ -634,7 +671,7 @@ public sealed class WmsEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListWcsTasksQueryHandler(dbContext).Handle(
-            new ListWcsTasksQuery("org-001", "env-dev", null),
+            new ListWcsTasksQuery(" org-001 ", " env-dev ", null),
             CancellationToken.None);
 
         var fact = Assert.Single(result.Items);
@@ -646,6 +683,38 @@ public sealed class WmsEndpointContractTests
         Assert.Equal("org-001", fact.OrganizationId);
         Assert.Equal("env-dev", fact.EnvironmentId);
         Assert.NotNull(fact.CompletedAtUtc);
+    }
+
+    [Fact]
+    public async Task Wcs_task_query_carries_the_warehouse_task_version_and_quantities_for_console_actions()
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var warehouseTask = WarehouseTask.CreatePutaway("org-001", "env-dev", "WT-PARTIAL-001", "IN-001", "10", "SKU-FG-1000", "kg", "SITE-01", "RECV-01", "STAGE-01", 10m, assignedPoolCode: "POOL-WCS");
+        AddWcsPool(dbContext, "org-001");
+        dbContext.WarehouseTasks.Add(warehouseTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new Application.Commands.DispatchWcsTaskCommandHandler(
+            dbContext,
+            CreateWcsAuthorizer(dbContext)).Handle(
+            WcsDispatchCommand(warehouseTask, "EXT-PARTIAL-001", """{"step":1}""", 1),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new Application.Commands.CompleteWcsTaskCommandHandler(dbContext).Handle(
+            new Application.Commands.CompleteWcsTaskCommand("org-001", "env-dev", "EXT-PARTIAL-001", """{"actualQuantity":4}"""),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ListWcsTasksQueryHandler(dbContext).Handle(
+            new ListWcsTasksQuery("org-001", "env-dev", null),
+            CancellationToken.None);
+
+        var fact = Assert.Single(result.Items);
+        Assert.Equal("Dispatched", fact.Status);
+        Assert.Equal(warehouseTask.Version, fact.WarehouseTaskVersion);
+        Assert.Equal(10m, fact.PlannedQuantity);
+        Assert.Equal(4m, fact.ExecutedQuantity);
     }
 
     [Fact]
@@ -729,12 +798,12 @@ public sealed class WmsEndpointContractTests
 
         var result = await new ListInboundOrdersQueryHandler(dbContext).Handle(
             new ListInboundOrdersQuery(
-                "org-001",
-                "env-dev",
+                " org-001 ",
+                " env-dev ",
                 1,
                 1,
                 "Open",
-                "page",
+                "  PaGe ",
                 AssignedPoolCodes: ["POOL-TEST"],
                 SiteCodes: ["SITE-01"]),
             CancellationToken.None);
@@ -761,8 +830,8 @@ public sealed class WmsEndpointContractTests
 
         var exact = await handler.Handle(
             new ListInboundOrdersQuery(
-                "org-001",
-                "env-dev",
+                " org-001 ",
+                " env-dev ",
                 Skip: 0,
                 Take: 1,
                 InboundOrderId: target.Id,
@@ -810,10 +879,11 @@ public sealed class WmsEndpointContractTests
         var handler = new ListReceivingQualityGatesQueryHandler(dbContext);
         var all = await handler.Handle(
             new ListReceivingQualityGatesQuery(
-                "org-001",
-                "env-dev",
+                " org-001 ",
+                " env-dev ",
                 0,
                 100,
+                Keyword: "  gAtE ",
                 AssignedPoolCodes: ["POOL-TEST"],
                 SiteCodes: ["SITE-01"]),
             CancellationToken.None);
@@ -847,6 +917,39 @@ public sealed class WmsEndpointContractTests
         Assert.Equal(expiryDate, fact.ExpiryDate);
     }
 
+    // Issue #2120: preserve the v1 independently optional tenant filters.
+    [Theory]
+    [Trait("Category", "PublicContract")]
+    [Trait("Category", "Regression")]
+    [InlineData(null, "env-dev", 2)]
+    [InlineData("org-001", null, 2)]
+    [InlineData(null, null, 3)]
+    [InlineData("org-001", "env-dev", 1)]
+    [InlineData("", "env-dev", 0)]
+    [InlineData("org-001", "", 0)]
+    public async Task Supplier_return_query_preserves_optional_tenant_filters(string? organizationId, string? environmentId, int expectedCount)
+    {
+        await using var provider = WmsTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.SupplierReturnRequests.AddRange(
+            CreateSupplierReturnRequest("IN-OPTIONAL-001", "QI-1"),
+            CreateSupplierReturnRequest("IN-OPTIONAL-002", "QI-2", "org-002"),
+            CreateSupplierReturnRequest("IN-OPTIONAL-003", "QI-3", environmentId: "env-other"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var result = await new ListSupplierReturnRequestsQueryHandler(dbContext).Handle(
+            new ListSupplierReturnRequestsQuery(organizationId, environmentId), CancellationToken.None);
+
+        Assert.Equal(expectedCount, result.Total);
+        Assert.Equal(expectedCount, result.Items.Count);
+        Assert.All(result.Items, item =>
+        {
+            if (organizationId is not null) Assert.Equal(organizationId, item.OrganizationId);
+            if (environmentId is not null) Assert.Equal(environmentId, item.EnvironmentId);
+        });
+    }
+
     [Fact]
     public async Task Supplier_return_query_filters_status_keyword_before_offset_page_and_total_count()
     {
@@ -862,7 +965,7 @@ public sealed class WmsEndpointContractTests
 
         var handler = new ListSupplierReturnRequestsQueryHandler(dbContext);
         var result = await handler.Handle(
-            new ListSupplierReturnRequestsQuery("org-001", "env-dev", 1, 1, "Open", "page"),
+            new ListSupplierReturnRequestsQuery(" org-001 ", " env-dev ", 1, 1, "Open", "  PaGe "),
             CancellationToken.None);
 
         Assert.Equal(2, result.Total);
@@ -897,12 +1000,12 @@ public sealed class WmsEndpointContractTests
 
         var result = await new ListOutboundOrdersQueryHandler(dbContext).Handle(
             new ListOutboundOrdersQuery(
-                "org-001",
-                "env-dev",
+                " org-001 ",
+                " env-dev ",
                 1,
                 1,
                 "Open",
-                "page",
+                "  PaGe ",
                 AssignedPoolCodes: ["POOL-TEST"],
                 SiteCodes: ["SITE-01"]),
             CancellationToken.None);
@@ -964,7 +1067,7 @@ public sealed class WmsEndpointContractTests
             "erp-delivery-order",
             "DO-FAILED-001",
             "finished-goods",
-            [new OutboundOrderLineDraft("SO-LINE-001", "SKU-FG-1000", "kg", 4m, "receiving", "LOT-001", null, "unrestricted", "production", null)],
+            [new OutboundOrderLineDraft("SO-LINE-001", "SKU-FG-1000", "kg", 4m, "receiving", "LOT-001", null, "unrestricted", "company", null)],
             assignedPoolCode: "POOL-TEST");
         var movementRequest = Assert.Single(outbound.CompletePackReview(
             "PACK-001",
@@ -1000,7 +1103,7 @@ public sealed class WmsEndpointContractTests
         Assert.Equal("receiving", line.LocationCode);
         Assert.Equal("LOT-001", line.LotNo);
         Assert.Equal("unrestricted", line.QualityStatus);
-        Assert.Equal("production", line.OwnerType);
+        Assert.Equal("company", line.OwnerType);
         Assert.Null(line.OwnerId);
         Assert.Equal("failed", line.InventoryPostingStatus);
         Assert.Equal("NEGATIVE_ON_HAND", line.FailureCode);
@@ -1026,7 +1129,7 @@ public sealed class WmsEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new ListWcsTasksQueryHandler(dbContext).Handle(
-            new ListWcsTasksQuery("org-001", "env-dev", null, null, 1, 1, "Failed", true, "page"),
+            new ListWcsTasksQuery(" org-001 ", " env-dev ", null, null, 1, 1, "Failed", true, "  PaGe "),
             CancellationToken.None);
 
         Assert.Equal(2, result.Total);
@@ -1052,14 +1155,14 @@ public sealed class WmsEndpointContractTests
 
         var result = await new ListWarehouseTasksQueryHandler(dbContext).Handle(
             new ListWarehouseTasksQuery(
-                "org-001",
-                "env-dev",
+                " org-001 ",
+                " env-dev ",
                 WarehouseTaskType.Putaway,
                 1,
                 1,
                 "Open",
                 "BIN-A",
-                "page",
+                "  PaGe ",
                 AssignedPoolCodes: ["POOL-TEST"],
                 SiteCodes: ["SITE-01"]),
             CancellationToken.None);
@@ -1133,13 +1236,13 @@ public sealed class WmsEndpointContractTests
 
         var result = await new ListCountExecutionsQueryHandler(dbContext).Handle(
             new ListCountExecutionsQuery(
-                "org-001",
-                "env-dev",
+                " org-001 ",
+                " env-dev ",
                 1,
                 1,
                 "Open",
                 "BIN-A",
-                "page",
+                "  PaGe ",
                 AssignedPoolCodes: ["POOL-TEST"],
                 SiteCodes: ["SITE-01"]),
             CancellationToken.None);
@@ -1398,6 +1501,22 @@ public sealed class WmsEndpointContractTests
         return new WmsLiveHttpTestFactory();
     }
 
+    private static Domain.AggregatesModel.BackorderOrderAggregate.BackorderOrder CreateBackorder(
+        string organizationId,
+        string environmentId,
+        string backorderOrderNo) =>
+        Domain.AggregatesModel.BackorderOrderAggregate.BackorderOrder.Create(
+            organizationId,
+            environmentId,
+            backorderOrderNo,
+            "OUT-HTTP-001",
+            "LINE-001",
+            "SKU-HTTP-001",
+            "pcs",
+            "SITE-01",
+            "PICK-01",
+            1m);
+
     private static async Task PostJsonAndAssertOkAsync(HttpClient client, string route, object request)
     {
         var response = await client.PostAsJsonAsync(route, request);
@@ -1427,6 +1546,7 @@ public sealed class WmsEndpointContractTests
                 services.RemoveAll<IIntegrationEventPublisher>();
                 services.AddInMemoryDistributedLock();
                 services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
+                services.AddSingleton<Nerv.IIP.Business.Wms.Web.Application.Inventory.IWmsPurchaseReceiptPostingRouteClient>(new WmsReceiptRouteFixture());
                 services.AddDbContext<ApplicationDbContext>(options =>
                     options
                         .UseInMemoryDatabase(databaseName)
@@ -1557,11 +1677,11 @@ public sealed class WmsEndpointContractTests
             assignedPoolCode: "POOL-TEST");
     }
 
-    private static SupplierReturnRequest CreateSupplierReturnRequest(string inboundOrderNo, string inspectionRecordId, string organizationId = "org-001")
+    private static SupplierReturnRequest CreateSupplierReturnRequest(string inboundOrderNo, string inspectionRecordId, string organizationId = "org-001", string environmentId = "env-dev")
     {
         return SupplierReturnRequest.Create(
             organizationId,
-            "env-dev",
+            environmentId,
             inboundOrderNo,
             "10",
             inspectionRecordId,

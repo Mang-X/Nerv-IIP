@@ -5,6 +5,7 @@ import type {
   BusinessConsoleStandardOperationItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/ui'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import {
@@ -15,6 +16,7 @@ import { useEngineeringRoutings, useStandardOperations } from '@/composables/use
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
+  NvCheckbox,
   NvDataTable,
   NvDatePicker,
   NvDialog,
@@ -40,7 +42,7 @@ import {
   NvSheetDescription,
   NvSheetHeader,
   NvSheetTitle,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -134,11 +136,6 @@ function wcLabel(code?: string | null) {
   return wcNameByCode.value.get(code) ?? code
 }
 
-const skuOptions = computed(() =>
-  skus.value
-    .filter((s) => s.code)
-    .map((s) => ({ value: s.code as string, label: `${s.displayName ?? s.code} · ${s.code}` })),
-)
 const workCenterOptions = computed(() =>
   workCenters.value
     .filter((w) => w.code)
@@ -210,7 +207,7 @@ const routingSegments = computed(() => {
   return pagedBreakdownSegments(routingsTotal.value, segments)
 })
 
-const listErrorMessage = computed(() => formatError(routingsError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(routingsError.value))
 
 const columns: NvDataTableColumn<BusinessConsoleRoutingItem>[] = [
   { key: 'routingCode', header: '路线号', cellClass: 'font-medium' },
@@ -227,6 +224,7 @@ interface Operation {
   workCenterCode: string
   operationCode: string
   standardMinutes: string | number
+  interruptible: boolean
 }
 interface RoutingForm {
   skuCode: string
@@ -238,7 +236,13 @@ function blankOperation(sequence: number): Operation {
   // 全厂只有一个工作中心时直接带出——没有选择余地的「选择」不该让用户做。
   const onlyWorkCenter =
     workCenterOptions.value.length === 1 ? (workCenterOptions.value[0]?.value ?? '') : ''
-  return { sequence, workCenterCode: onlyWorkCenter, operationCode: '', standardMinutes: '' }
+  return {
+    sequence,
+    workCenterCode: onlyWorkCenter,
+    operationCode: '',
+    standardMinutes: '',
+    interruptible: false,
+  }
 }
 function blankForm(): RoutingForm {
   return { skuCode: '', revision: '', effectiveDate: today(), operations: [blankOperation(10)] }
@@ -339,6 +343,7 @@ async function submitForm() {
       operationName:
         operationNameByCode.value.get(op.operationCode.trim()) ?? op.operationCode.trim(),
       standardMinutes: parseNumber(op.standardMinutes) ?? 0,
+      interruptible: op.interruptible,
     })),
   }
   try {
@@ -373,10 +378,6 @@ async function openView(row: BusinessConsoleRoutingItem) {
   } finally {
     detailPending.value = false
   }
-}
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 
@@ -447,16 +448,13 @@ function formatError(error: unknown) {
                   <NvFieldLabel for="rt-sku"
                     >产出物料 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvSelect v-model="form.skuCode">
-                    <NvSelectTrigger id="rt-sku"
-                      ><NvSelectValue placeholder="选择产出物料"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{
-                        o.label
-                      }}</NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
+                  <DirectoryPicker
+                    id="rt-sku"
+                    v-model="form.skuCode"
+                    directory-type="material"
+                    creatable
+                    placeholder="选择产出物料"
+                  />
                 </NvField>
                 <NvField :data-invalid="showErrors && !revisionValid">
                   <NvFieldLabel for="rt-rev"
@@ -494,7 +492,7 @@ function formatError(error: unknown) {
                 <div
                   v-for="(op, index) in form.operations"
                   :key="index"
-                  class="grid grid-cols-[4.5rem_1fr_1fr_6rem_auto] items-end gap-2 rounded-md border p-2"
+                  class="grid sm:grid-cols-[4.5rem_1fr_1fr_6rem_10rem_auto] items-end gap-2 rounded-md border p-2"
                 >
                   <NvField :data-invalid="showErrors && !sequencesValid">
                     <NvFieldLabel :for="`rt-seq-${index}`"
@@ -512,19 +510,12 @@ function formatError(error: unknown) {
                     <NvFieldLabel :for="`rt-wc-${index}`"
                       >工作中心 <span class="text-destructive">*</span></NvFieldLabel
                     >
-                    <NvSelect v-model="op.workCenterCode">
-                      <NvSelectTrigger :id="`rt-wc-${index}`"
-                        ><NvSelectValue placeholder="选择工作中心"
-                      /></NvSelectTrigger>
-                      <NvSelectContent>
-                        <NvSelectItem
-                          v-for="o in workCenterOptions"
-                          :key="o.value"
-                          :value="o.value"
-                          >{{ o.label }}</NvSelectItem
-                        >
-                      </NvSelectContent>
-                    </NvSelect>
+                    <DirectoryPicker
+                      :id="`rt-wc-${index}`"
+                      v-model="op.workCenterCode"
+                      directory-type="work-center"
+                      creatable
+                    />
                   </NvField>
                   <NvField :data-invalid="showErrors && !op.operationCode.trim()">
                     <NvFieldLabel :for="`rt-name-${index}`"
@@ -558,6 +549,13 @@ function formatError(error: unknown) {
                       min="0"
                       step="any"
                     />
+                  </NvField>
+                  <NvField>
+                    <NvFieldLabel :for="`rt-interruptible-${index}`">排程方式</NvFieldLabel>
+                    <label class="flex items-center gap-2 text-sm">
+                      <NvCheckbox :id="`rt-interruptible-${index}`" v-model="op.interruptible" />
+                      可中断（跨班次续排）
+                    </label>
                   </NvField>
                   <div class="flex gap-1">
                     <NvButton
@@ -597,7 +595,7 @@ function formatError(error: unknown) {
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="releasePending">
-                  <Spinner v-if="releasePending" aria-hidden="true" />
+                  <NvSpinner v-if="releasePending" aria-hidden="true" />
                   发布版本
                 </NvButton>
               </NvDialogFooter>
@@ -716,7 +714,7 @@ function formatError(error: unknown) {
             v-if="detailPending"
             class="flex items-center gap-2 py-4 text-sm text-muted-foreground"
           >
-            <Spinner aria-hidden="true" />
+            <NvSpinner aria-hidden="true" />
             加载工序明细…
           </div>
           <div v-else-if="viewOperations.length" class="overflow-hidden rounded-md border">
@@ -727,6 +725,7 @@ function formatError(error: unknown) {
                   <th class="px-3 py-2 text-left font-medium">工作中心</th>
                   <th class="px-3 py-2 text-left font-medium">工序</th>
                   <th class="px-3 py-2 text-right font-medium">工时(分)</th>
+                  <th class="px-3 py-2 text-left font-medium">排程方式</th>
                 </tr>
               </thead>
               <tbody>
@@ -737,6 +736,7 @@ function formatError(error: unknown) {
                     {{ operationLabel(op.operationCode, op.operationName) }}
                   </td>
                   <td class="px-3 py-2 text-right tabular-nums">{{ op.standardMinutes ?? '—' }}</td>
+                  <td class="px-3 py-2">{{ op.interruptible ? '可中断' : '不可中断' }}</td>
                 </tr>
               </tbody>
             </table>

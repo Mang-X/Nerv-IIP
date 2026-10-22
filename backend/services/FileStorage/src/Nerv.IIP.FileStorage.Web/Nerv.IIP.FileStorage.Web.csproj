@@ -3,6 +3,7 @@
   <ItemGroup>
     <PackageReference Include="FastEndpoints" />
     <PackageReference Include="Minio" />
+    <PackageReference Include="tusdotnet" />
     <ProjectReference Include="..\Nerv.IIP.FileStorage.Domain\Nerv.IIP.FileStorage.Domain.csproj" />
     <ProjectReference Include="..\Nerv.IIP.FileStorage.Infrastructure\Nerv.IIP.FileStorage.Infrastructure.csproj" />
     <ProjectReference Include="..\..\..\..\common\Contracts\Nerv.IIP.Contracts.FileStorage\Nerv.IIP.Contracts.FileStorage.csproj" />
@@ -11,6 +12,10 @@
     <ProjectReference Include="..\..\..\..\common\Observability\Nerv.IIP.Observability\Nerv.IIP.Observability.csproj" />
     <ProjectReference Include="..\..\..\..\common\Persistence\Nerv.IIP.Persistence\Nerv.IIP.Persistence.csproj" />
     <ProjectReference Include="..\..\..\..\common\ServiceAuth\Nerv.IIP.ServiceAuth\Nerv.IIP.ServiceAuth.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nerv.IIP.FileStorage.Web.Tests" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -26,13 +26,14 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PencilIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { BARCODE_TYPE_OPTIONS, barcodeTypeLabel } from './workflow-options'
 
 definePage({
   meta: {
@@ -74,13 +75,6 @@ const SOURCE_DOCUMENT_OPTIONS = [
  * 只影响展示：编辑时仍原样带出，保存不丢数据。
  */
 const NON_BUSINESS_SOURCE_TYPES = new Set(['facade'])
-
-const BARCODE_TYPE_OPTIONS = [
-  { value: 'code128', label: 'Code 128' },
-  { value: 'gs1-128', label: 'GS1-128' },
-  { value: 'datamatrix', label: 'Data Matrix' },
-  { value: 'qr', label: 'QR Code' },
-]
 
 const STATUS_OPTIONS = [
   { value: 'active', label: '启用' },
@@ -201,8 +195,7 @@ const canSubmit = computed(
 )
 
 function typeLabel(value?: string | null) {
-  if (!value) return '无'
-  return BARCODE_TYPE_OPTIONS.find((o) => o.value === value)?.label ?? value
+  return barcodeTypeLabel(value) ?? '无'
 }
 
 function sourceLabels(values?: readonly string[] | null) {
@@ -456,7 +449,7 @@ async function submitRule() {
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
                 <NvButton type="submit" :disabled="saveRulePending">
-                  <Spinner v-if="saveRulePending" aria-hidden="true" />
+                  <NvSpinner v-if="saveRulePending" aria-hidden="true" />
                   保存规则
                 </NvButton>
               </NvDialogFooter>
@@ -521,7 +514,6 @@ async function submitRule() {
           <RouterLink class="text-primary underline-offset-4 hover:underline" to="/master-data/skus"
             >打开物料页</RouterLink
           >
-          <span class="text-xs text-muted-foreground">按默认条码规则反查待 SKU facade 支持。</span>
         </div>
       </template>
       <template #cell-actions="{ row }">

@@ -44,7 +44,6 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
       resolveWorkshop: () => undefined,
       resolveLine: () => undefined,
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
-      deviceByCode: emptyIndex,
       locationByCode: emptyIndex,
       workCenterByCode: emptyIndex,
       teamByCode: emptyIndex,
@@ -60,6 +59,7 @@ const state = vi.hoisted(() => ({
   payables: [] as Array<Record<string, unknown>>,
   vouchers: [] as Array<Record<string, unknown>>,
   costCandidates: [] as Array<Record<string, unknown>>,
+  createCostCandidate: vi.fn(async (_body: Record<string, unknown>) => undefined),
 }))
 
 function listShape(itemsRef: () => Array<Record<string, unknown>>) {
@@ -115,7 +115,7 @@ vi.mock('@/composables/useBusinessErp', () => ({
   }),
   useErpCostCandidates: () => ({
     ...listShape(() => state.costCandidates),
-    createCostCandidate: vi.fn(),
+    createCostCandidate: state.createCostCandidate,
     createCostCandidatePending: shallowRef(false),
     createCostCandidateError: shallowRef(undefined),
   }),
@@ -156,7 +156,7 @@ const selectStubs = {
       '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
-  SelectValue: { template: '<span />' },
+  NvSelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
@@ -207,5 +207,80 @@ describe('ERP finance voucher and cost pages', () => {
         select.findAll('option').some((option) => option.attributes('value') === 'all'),
       )
     expect(allSentinelSelects).toHaveLength(0)
+  })
+
+  it('成本候选的来源单据按成本大类取对应单据目录，选中的单号原样提交，换大类清掉已选单据', async () => {
+    state.createCostCandidate.mockClear()
+    const wrapper = mount(CostCandidatesPage, {
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...selectStubs,
+          NvDialog: { template: '<div><slot /></div>' },
+          NvDialogContent: { template: '<div><slot /></div>' },
+          NvDialogHeader: { template: '<div><slot /></div>' },
+          NvDialogTitle: { template: '<h2><slot /></h2>' },
+          NvDialogDescription: { template: '<p><slot /></p>' },
+          NvDialogFooter: { template: '<div><slot /></div>' },
+          NvDialogClose: { template: '<div><slot /></div>' },
+          // 选择器桩成带同名 id 的输入位；data-options 暴露候选。
+          NvEntityPicker: {
+            props: ['modelValue', 'options', 'id'],
+            emits: ['update:modelValue'],
+            template:
+              '<input :id="id" data-picker :value="modelValue" :data-options="options.map((o) => o.value).join(\',\')" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+          },
+          // 生产 / 维护成本的工单选择器各自取目录，这里只关心用的是哪个目录。
+          WorkOrderCostPicker: {
+            props: ['modelValue', 'id'],
+            emits: ['update:modelValue'],
+            template:
+              '<input :id="id" data-catalog="work-order-cost" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+          },
+          SourceDocumentPicker: {
+            props: ['modelValue', 'id', 'kind'],
+            emits: ['update:modelValue'],
+            template:
+              '<input :id="id" :data-catalog="kind" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+          },
+        },
+      },
+    })
+    await flushPromises()
+    const typeSelect = () => wrapper.get('form select')
+    // 生产成本挂工单号，候选取财务已归集成本的工单；维护成本挂维修工单（#3827）。
+    expect(wrapper.get('#erp-cc-source').attributes('data-catalog')).toBe('work-order-cost')
+    await typeSelect().setValue('maintenance')
+    expect(wrapper.get('#erp-cc-source').attributes('data-catalog')).toBe('maintenance-work-order')
+    // 选择器回传维修工单正式单号（#3852），原样提交（列表显示与按单号搜索都用它）。
+    await wrapper.get('#erp-cc-source').setValue('MWO-20260928-000001')
+    await wrapper.get('#erp-cc-amount').setValue('860')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(state.createCostCandidate).toHaveBeenLastCalledWith({
+      sourceType: 'maintenance',
+      sourceDocumentNo: 'MWO-20260928-000001',
+      amount: 860,
+      currencyCode: 'CNY',
+    })
+
+    await typeSelect().setValue('procurement')
+    expect(wrapper.get('#erp-cc-source').attributes('data-options')).toBe('PO-001')
+    await wrapper.get('#erp-cc-source').setValue('PO-001')
+
+    await typeSelect().setValue('logistics')
+    expect(wrapper.get('#erp-cc-source').attributes('data-options')).toBe('SO-001')
+    expect((wrapper.get('#erp-cc-source').element as HTMLInputElement).value).toBe('')
+
+    await wrapper.get('#erp-cc-source').setValue('SO-001')
+    await wrapper.get('#erp-cc-amount').setValue('120.5')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(state.createCostCandidate).toHaveBeenLastCalledWith({
+      sourceType: 'logistics',
+      sourceDocumentNo: 'SO-001',
+      amount: 120.5,
+      currencyCode: 'CNY',
+    })
   })
 })

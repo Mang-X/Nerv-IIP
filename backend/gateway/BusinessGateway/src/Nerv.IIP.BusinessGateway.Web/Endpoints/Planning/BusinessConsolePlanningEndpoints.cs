@@ -104,8 +104,14 @@ public sealed class ReviewBusinessConsolePlanningMpsBucketEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
+        var (_, actorRef) = RequireAuthorizedPrincipalActor();
         var mpsId = Route<string>("mpsId") ?? request.MpsId;
-        return planning.ReviewMpsBucketAsync(tokenProvider.BearerToken, mpsId, request with { MpsId = mpsId }, cancellationToken);
+        return planning.ReviewMpsBucketAsync(
+            tokenProvider.BearerToken,
+            mpsId,
+            actorRef,
+            request with { MpsId = mpsId },
+            cancellationToken);
     }
 }
 
@@ -133,8 +139,14 @@ public sealed class ReleaseBusinessConsolePlanningMpsBucketEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
+        var (_, actorRef) = RequireAuthorizedPrincipalActor();
         var mpsId = Route<string>("mpsId") ?? request.MpsId;
-        return planning.ReleaseMpsBucketAsync(tokenProvider.BearerToken, mpsId, request with { MpsId = mpsId }, cancellationToken);
+        return planning.ReleaseMpsBucketAsync(
+            tokenProvider.BearerToken,
+            mpsId,
+            actorRef,
+            request with { MpsId = mpsId },
+            cancellationToken);
     }
 }
 
@@ -145,16 +157,16 @@ public sealed class ListBusinessConsolePlanningDemandsEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessPlanningClient planning,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsolePlanningContextRequest, BusinessConsoleDemandSourceListResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleDemandSourceListRequest, BusinessConsoleDemandSourceListResponse>(
         auth,
         BusinessGatewayPermissions.PlanningDemandsRead)
 {
-    protected override string OrganizationId(BusinessConsolePlanningContextRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleDemandSourceListRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsolePlanningContextRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleDemandSourceListRequest request) => request.EnvironmentId;
 
     protected override Task<BusinessConsoleDemandSourceListResponse> ForwardAsync(
-        BusinessConsolePlanningContextRequest request,
+        BusinessConsoleDemandSourceListRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
         planning.ListDemandSourcesAsync(tokenProvider.BearerToken, request, cancellationToken);

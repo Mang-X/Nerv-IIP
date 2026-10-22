@@ -1,9 +1,11 @@
+import { describeMesReadinessReasons as describeReadinessReasons } from '@nerv-iip/business-core'
 import { mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { reactive, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/stores/auth'
+import { formatDateTime } from '@/utils/format'
 import WorkOrderDetailPage from './[workOrderId].vue'
 
 /**
@@ -17,11 +19,12 @@ import WorkOrderDetailPage from './[workOrderId].vue'
 const routeState = vi.hoisted(() => ({
   params: { workOrderId: 'WO-1' },
   query: {} as Record<string, string>,
+  push: vi.fn(),
 }))
 vi.mock('vue-router', () => ({
   useRoute: () => routeState,
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
-  RouterLink: { props: ['to'], template: '<a><slot /></a>' },
+  useRouter: () => ({ push: routeState.push, replace: vi.fn() }),
+  RouterLink: { props: ['to'], template: '<a :data-to="JSON.stringify(to)"><slot /></a>' },
 }))
 
 vi.mock('@/composables/useScheduleInvalidation', () => ({
@@ -47,6 +50,7 @@ const detailState = vi.hoisted(() => ({
 vi.mock('@/composables/useBusinessMes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   describeMesReadinessReason: (code: string) => ({ code, label: code, nextStep: '' }),
+  describeMesReadinessReasons: (reasons: string[]) => describeReadinessReasons(reasons),
   useMesWorkScopeSelection: () => ({
     scopeOptions: ref([]),
     scopeSelectionValue: ref(undefined),
@@ -71,19 +75,29 @@ vi.mock('@/composables/useBusinessMes', () => ({
     filters: reactive({ organizationId: 'org', environmentId: 'dev', workOrderId: 'WO-1' }),
     finishedGoodsReceiptRequests: ref([]),
     materialIssueRequests: ref([]),
+    materialIssueRequestsError: ref(undefined),
     materialReadiness: ref(detailState.materialReadiness),
     materialReadinessError: ref(undefined),
     materialReadinessPending: ref(false),
     refreshDetail: vi.fn(),
     refreshMaterialReadiness: vi.fn(),
     retryCancelPreview: vi.fn(),
+    workOrderManageScope: ref(undefined),
     workOrderManageScopeMessage: ref(detailState.scopeMessage),
     workOrderManageScopeReady: ref(!detailState.scopeMessage),
+    workOrderReadScope: ref(undefined),
     workOrderReadScopeMessage: ref(detailState.scopeMessage),
+  }),
+  useMesWorkOrderTransformations: () => ({
+    splitWorkOrder: vi.fn(),
+    mergeWorkOrders: vi.fn(),
+    readTransformation: vi.fn(),
+    splitWorkOrderPending: ref(false),
+    mergeWorkOrdersPending: ref(false),
   }),
 }))
 
-function mountDetail() {
+function mountDetail(permissionCodes = ['business.mes.work-orders.read']) {
   const pinia = createPinia()
   const auth = useAuthStore(pinia)
   auth.$patch({
@@ -93,7 +107,7 @@ function mountDetail() {
       organizationId: 'org',
       environmentId: 'dev',
       loginName: 'op',
-      permissionCodes: ['business.mes.work-orders.read'],
+      permissionCodes,
     },
   })
   return mount(WorkOrderDetailPage, {
@@ -103,7 +117,11 @@ function mountDetail() {
         BusinessLayout: { template: '<main><slot /></main>' },
         QualityHoldPanel: { template: '<div />' },
         NvPageHeader: { template: '<header><slot name="actions" /></header>' },
-        NvDataTable: { props: ['rows'], template: '<div />' },
+        NvDataTable: {
+          props: ['rows'],
+          template:
+            '<div><slot v-for="row in rows" name="cell-operationTaskId" :row="row" /></div>',
+        },
         NvButton: { template: '<button><slot /></button>' },
         NvStatusBadge: {
           props: ['label', 'value'],
@@ -121,9 +139,248 @@ function mountDetail() {
 
 describe('work-order detail — 拒载时不反显安全假文案 (#1288)', () => {
   beforeEach(() => {
+    routeState.push.mockClear()
+    routeState.query = {}
     detailState.detail = undefined
     detailState.materialReadiness = undefined
     detailState.scopeMessage = ''
+  })
+
+  // #4464：缺业务号时仍能按公开身份区分任务；显示值不承担来源工序匹配。
+  it.each([null, '', '   '])('工序业务号为 %j 时完整呈现真实公开身份', (operationTaskNo) => {
+    const id = 'WO-宁波精密制管长工单-20261017-000001-OP-20'
+    detailState.detail = {
+      workOrderId: 'WO-1',
+      operationTasks: [{ operationTaskId: id, operationTaskNo }],
+    }
+    routeState.query = { operationTaskId: id }
+    const wrapper = mountDetail()
+    const source = wrapper.get('[data-andon-source="true"]')
+    expect(source.text()).toContain(id)
+    expect(source.get('[title]').attributes('title')).toBe(id)
+    expect(source.text()).toContain('来源工序')
+    wrapper.unmount()
+  })
+
+  it('公开身份为系统 UUID 时用真实工序序号定位，完整身份仍可查看和匹配', () => {
+    const id = '019fbb41-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
+    detailState.detail = {
+      workOrderId: 'WO-1',
+      operationTasks: [{ operationTaskId: id, operationTaskNo: null, operationSequence: 20 }],
+    }
+    routeState.query = { operationTaskId: id }
+    const wrapper = mountDetail()
+    const source = wrapper.get('[data-andon-source="true"]')
+    expect(source.text()).toContain('工序 20')
+    expect(source.text()).not.toContain(id)
+    expect(source.get('[title]').attributes('title')).toBe(id)
+    wrapper.unmount()
+  })
+
+  it('工序有业务号时优先显示业务号，同时可查看完整公开身份', () => {
+    detailState.detail = {
+      workOrderId: 'WO-1',
+      operationTasks: [{ operationTaskId: 'task-strong-20', operationTaskNo: 'WO-1-OP-20' }],
+    }
+    const wrapper = mountDetail()
+    expect(wrapper.text()).toContain('WO-1-OP-20')
+    expect(wrapper.find('[title="task-strong-20"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('来源建议返回使用公开强ID，不从当前query猜测建议或run', () => {
+    routeState.query = { suggestionId: 'unrelated-suggestion', runId: 'unrelated-run' }
+    detailState.detail = {
+      workOrderId: 'WO-1',
+      sourcePlanReference: {
+        sourceSystem: 'DemandPlanning',
+        sourceDocumentType: 'PlanningSuggestion',
+        sourceDocumentId: 'suggestion-origin',
+      },
+    }
+    const wrapper = mountDetail(['business.mes.work-orders.read', 'business.planning.mrp.read'])
+    const back = wrapper.findAll('a').find((link) => link.text() === '返回来源建议')!
+    expect(back).toBeDefined()
+    expect(JSON.parse(back.attributes('data-to')!)).toEqual({
+      path: '/planning',
+      query: { suggestionId: 'suggestion-origin' },
+    })
+    wrapper.unmount()
+  })
+
+  it.each([
+    undefined,
+    { sourceDocumentType: 'PlanningSuggestion' },
+    { sourceDocumentType: 'ProductionPlan', sourceDocumentId: 'plan-1' },
+  ])('无建议强ID或非建议来源时不猜测来源入口：%j', (sourcePlanReference) => {
+    detailState.detail = { workOrderId: 'WO-1', sourcePlanReference }
+    const wrapper = mountDetail(['business.mes.work-orders.read', 'business.planning.mrp.read'])
+    expect(wrapper.text()).not.toContain('返回来源建议')
+    wrapper.unmount()
+  })
+
+  it('只有需求读权不能打开需要MRP读权的来源建议', () => {
+    detailState.detail = {
+      workOrderId: 'WO-1',
+      sourcePlanReference: { sourceDocumentType: 'PlanningSuggestion', sourceDocumentId: 'origin' },
+    }
+    const wrapper = mountDetail(['business.mes.work-orders.read', 'business.planning.demands.read'])
+    expect(wrapper.text()).not.toContain('返回来源建议')
+    wrapper.unmount()
+  })
+
+  it('计划员无目标权限时不提供报工、入库或检验死路，保留工序摘要', () => {
+    detailState.detail = {
+      workOrderId: 'WO-1',
+      skuId: 'FG-1',
+      quantity: 10,
+      operationTasks: [{ operationTaskId: 'task-20', operationTaskNo: 'WO-1-OP-20' }],
+    }
+    const wrapper = mountDetail(['business.mes.work-orders.read', 'business.planning.mrp.read'])
+    for (const label of ['报工记录', '完工入库', '质量检验']) {
+      expect(wrapper.findAll('button').some((button) => button.text() === label)).toBe(false)
+    }
+    expect(wrapper.text()).toContain('WO-1-OP-20')
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['business.mes.reporting.read', '报工记录', '/mes/production-reports'],
+    ['business.mes.receipts.read', '完工入库', '/mes/receipts'],
+    ['business.quality.inspection-records.read', '质量检验', '/quality/inspections'],
+  ])('目标有权时保留%s的同工单带参入口', async (permission, label, path) => {
+    detailState.detail = { workOrderId: 'WO-1', skuId: 'FG-1', quantity: 10, operationTasks: [] }
+    const wrapper = mountDetail(['business.mes.work-orders.read', permission])
+    const button = wrapper.findAll('button').find((item) => item.text() === label)!
+    expect(button).toBeDefined()
+    await button.trigger('click')
+    expect(routeState.push).toHaveBeenCalledWith({
+      path,
+      query: { workOrderId: 'WO-1', skuId: 'FG-1', quantity: '10' },
+    })
+    wrapper.unmount()
+  })
+
+  it.each([false, true])('缺料核对库存入口遵守目标台账读权：%s', (authorized) => {
+    detailState.detail = { workOrderId: 'WO-1', operationTasks: [] }
+    detailState.materialReadiness = {
+      readinessStatus: 'Blocked',
+      items: [
+        { materialId: 'PK-BOX-01', requiredQuantity: 5, availableQuantity: 0, shortageQuantity: 5 },
+      ],
+    }
+    const wrapper = mountDetail([
+      'business.mes.work-orders.read',
+      ...(authorized ? ['business.inventory.ledger.read'] : []),
+    ])
+    const links = wrapper
+      .findAll('a')
+      .filter((link) => link.text() === '去库存可用量核对全厂是否有货')
+    expect(links).toHaveLength(authorized ? 1 : 0)
+    if (authorized)
+      expect(JSON.parse(links[0]!.attributes('data-to')!)).toEqual({
+        path: '/inventory/availability',
+      })
+    wrapper.unmount()
+  })
+
+  it('安灯来源链接在工单详情标识同一来源工序，不把其它工序标成来源', () => {
+    routeState.query = { operationTaskId: 'task-20' }
+    detailState.detail = {
+      workOrderId: 'WO-1',
+      operationTasks: [
+        { operationTaskId: 'task-10', operationTaskNo: 'WO-1-OP-10' },
+        { operationTaskId: 'task-20', operationTaskNo: 'WO-1-OP-20' },
+      ],
+    }
+    const wrapper = mountDetail()
+    expect(wrapper.findAll('[data-andon-source="true"]')).toHaveLength(1)
+    expect(wrapper.get('[data-andon-source="true"]').text()).toContain('WO-1-OP-20')
+    expect(wrapper.get('[data-andon-source="true"]').text()).toContain('来源工序')
+    wrapper.unmount()
+  })
+
+  it('追溯来源在详情提供限定到追溯页的返回入口，保留原查询', () => {
+    const traceReturn = '/mes/traceability?mode=batch&batchOrSerial=SER-001&workOrderId=WO-QUERY'
+    routeState.query = {
+      traceReturn,
+      traceOrganizationId: 'org',
+      traceEnvironmentId: 'dev',
+      operationTaskId: 'task-20',
+    }
+    detailState.detail = {
+      workOrderId: 'WO-1',
+      operationTasks: [{ operationTaskId: 'task-20', operationTaskNo: 'WO-1-OP-20' }],
+    }
+    const wrapper = mountDetail()
+    const back = wrapper.findAll('a').find((link) => link.text() === '返回追溯')!
+    expect(JSON.parse(back.attributes('data-to')!)).toBe(traceReturn)
+    expect(wrapper.text()).toContain('来源工序')
+    expect(wrapper.text()).not.toContain('与追溯来源不一致')
+    wrapper.unmount()
+  })
+
+  it.each(['https://example.com/', '/mes/work-orders/WO-OTHER', '//example.com/mes/traceability'])(
+    '不把任意返回地址 %s 变成导航入口',
+    (traceReturn) => {
+      routeState.query = { traceReturn }
+      const wrapper = mountDetail()
+      expect(wrapper.text()).not.toContain('返回追溯')
+      wrapper.unmount()
+    },
+  )
+
+  it.each([
+    {
+      workOrderId: 'WO-OTHER',
+      operationTasks: [{ operationTaskId: 'task-20', operationTaskNo: 'WO-OTHER-OP-20' }],
+      hiddenOperationTaskNo: 'WO-OTHER-OP-20',
+      expected: '工单详情与追溯来源不一致',
+    },
+    {
+      workOrderId: 'WO-1',
+      operationTasks: [{ operationTaskId: 'task-10', operationTaskNo: 'WO-1-OP-10' }],
+      hiddenOperationTaskNo: 'WO-1-OP-10',
+      expected: '工单详情中未找到来源工序',
+    },
+  ])(
+    '公开详情与来源不一致时解释并停止展示错误对象：$expected',
+    ({ expected, hiddenOperationTaskNo, ...detail }) => {
+      routeState.query = {
+        traceReturn: '/mes/traceability?mode=batch&batchOrSerial=SER-001',
+        traceOrganizationId: 'org',
+        traceEnvironmentId: 'dev',
+        operationTaskId: 'task-20',
+      }
+      detailState.detail = detail
+      const wrapper = mountDetail()
+      expect(wrapper.get('[role="alert"][data-testid="trace-source-message"]').text()).toContain(
+        expected,
+      )
+      expect(wrapper.findAll('[data-andon-source="true"]')).toHaveLength(0)
+      expect(wrapper.text()).not.toContain(hiddenOperationTaskNo)
+      expect(wrapper.text()).toContain('返回追溯')
+      wrapper.unmount()
+    },
+  )
+
+  it('组织环境已变时解释上下文不一致，不把另一范围的详情冒称来源对象', () => {
+    routeState.query = {
+      traceReturn: '/mes/traceability?workOrderId=WO-1',
+      traceOrganizationId: 'other-org',
+      traceEnvironmentId: 'dev',
+    }
+    detailState.detail = {
+      workOrderId: 'WO-1',
+      operationTasks: [{ operationTaskId: 'task-10', operationTaskNo: 'WO-1-OP-10' }],
+    }
+    const wrapper = mountDetail()
+    expect(wrapper.get('[data-testid="trace-source-message"]').text()).toContain(
+      '当前查看范围已改变',
+    )
+    expect(wrapper.text()).not.toContain('WO-1-OP-10')
+    expect(wrapper.text()).toContain('返回追溯')
+    wrapper.unmount()
   })
 
   it('作业范围未就绪整页拒载时，不渲染「无阻塞 / 已齐套 / 用料已备齐」', () => {
@@ -137,6 +394,54 @@ describe('work-order detail — 拒载时不反显安全假文案 (#1288)', () =
     expect(wrapper.text()).not.toContain('已齐套')
     expect(wrapper.text()).not.toContain('用料已备齐')
     expect(wrapper.text()).toContain('结论未取得')
+  })
+
+  it('缺料时展示冻结快照的真实捕获时间和领料、线边收料路径', () => {
+    const capturedAtUtc = '2026-09-22T08:15:00Z'
+    detailState.detail = { workOrderId: 'WO-1', operationTasks: [], blockingReasons: [] }
+    detailState.materialReadiness = {
+      readinessStatus: 'Blocked',
+      snapshotCapturedAtUtc: capturedAtUtc,
+      items: [
+        {
+          materialId: 'PK-BOX-01',
+          requiredQuantity: 5.05,
+          availableQuantity: 0,
+          shortageQuantity: 5.05,
+        },
+      ],
+    }
+    const wrapper = mountDetail()
+
+    expect(wrapper.get('[data-testid="material-readiness-snapshot"]').text()).toContain(
+      formatDateTime(capturedAtUtc),
+    )
+    expect(wrapper.get('[data-testid="material-readiness-scope"]').text()).toContain(
+      '原料仓补库存不会直接改变下达结论',
+    )
+    expect(wrapper.text()).toContain('发起领料')
+    expect(wrapper.text()).toContain('确认收料')
+    expect(wrapper.text()).not.toContain('已齐套')
+    wrapper.unmount()
+  })
+
+  it('快照时间未记录时不补造钟点', () => {
+    detailState.detail = { workOrderId: 'WO-1', operationTasks: [], blockingReasons: [] }
+    detailState.materialReadiness = {
+      readinessStatus: 'Blocked',
+      snapshotCapturedAtUtc: null,
+      blockingReasons: ['MATERIAL_REQUIREMENT_SNAPSHOT_MISSING: 工单缺少齐套需求快照'],
+      items: [],
+    }
+    const wrapper = mountDetail()
+
+    expect(wrapper.get('[data-testid="material-readiness-snapshot"]').text()).toBe(
+      '齐套快照捕获时间：未记录',
+    )
+    expect(wrapper.text()).toContain('工单缺少齐套需求快照')
+    expect(wrapper.text()).not.toContain('已齐套')
+    expect(wrapper.text()).not.toContain('MATERIAL_REQUIREMENT_SNAPSHOT_MISSING')
+    wrapper.unmount()
   })
 
   it('详情与齐套读面都取到且确实无阻塞时才渲染安全结论', () => {

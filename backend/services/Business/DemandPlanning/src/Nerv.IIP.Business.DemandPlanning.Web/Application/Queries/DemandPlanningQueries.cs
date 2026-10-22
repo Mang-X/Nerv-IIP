@@ -83,7 +83,20 @@ public sealed class ListMasterProductionScheduleBucketsQueryHandler(ApplicationD
     }
 }
 
-public sealed record ListDemandSourcesQuery(string OrganizationId, string EnvironmentId) : IQuery<IReadOnlyCollection<DemandSourceResponse>>;
+public sealed record ListDemandSourcesQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Keyword = null,
+    int Skip = 0,
+    int Take = OffsetPage.DefaultTake) : IQuery<IReadOnlyCollection<DemandSourceResponse>>;
+
+public sealed class ListDemandSourcesQueryValidator : AbstractValidator<ListDemandSourcesQuery>
+{
+    public ListDemandSourcesQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+    }
+}
 
 public sealed record DemandSourceResponse(
     string DemandSourceId,
@@ -104,10 +117,23 @@ public sealed class ListDemandSourcesQueryHandler(ApplicationDbContext dbContext
 {
     public async Task<IReadOnlyCollection<DemandSourceResponse>> Handle(ListDemandSourcesQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         return await dbContext.DemandSources.AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId)
+            .Where(x => x.EnvironmentId == tenant.EnvironmentId)
+            .Where(x => keyword == null
+                || x.SourceReference.ToLower().Contains(keyword)
+                || x.SourceLineReference.ToLower().Contains(keyword)
+                || x.CustomerCode.ToLower().Contains(keyword)
+                || x.SkuCode.ToLower().Contains(keyword)
+                || x.SiteCode.ToLower().Contains(keyword))
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SourceReference)
+            .ThenBy(x => x.Id)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new DemandSourceResponse(
                 x.Id.ToString(),
                 x.DemandType,
@@ -209,7 +235,8 @@ public sealed record MrpRunResponse(
     IReadOnlyCollection<string> InputSources,
     DateOnly? InputCoverageStart,
     DateOnly? InputCoverageEnd,
-    string? FailureReason);
+    string? FailureReason,
+    int DemandChangeCount);
 
 public sealed class ListMrpRunsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMrpRunsQuery, IReadOnlyCollection<MrpRunResponse>>
@@ -220,6 +247,27 @@ public sealed class ListMrpRunsQueryHandler(ApplicationDbContext dbContext)
             .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
             .OrderByDescending(x => x.CreatedAtUtc)
             .ToListAsync(cancellationToken);
+
+        var latestCompleted = runs
+            .Where(x => x.Status == MrpRunStatus.Completed)
+            .OrderByDescending(x => x.CompletedAtUtc)
+            .FirstOrDefault();
+        var demandChangeCount = 0;
+        if (latestCompleted is not null)
+        {
+            var completedAt = latestCompleted.CompletedAtUtc!.Value;
+            var horizonStart = latestCompleted.HorizonStart;
+            var horizonEnd = latestCompleted.HorizonEnd;
+            demandChangeCount = await dbContext.MrpInputChanges.AsNoTracking()
+                .Where(x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.OccurredAtUtc > completedAt
+                    && (x.PreviouslyEligible && x.PreviousStartDate <= horizonEnd && x.PreviousEndDate >= horizonStart
+                        || x.CurrentlyEligible && x.CurrentStartDate <= horizonEnd && x.CurrentEndDate >= horizonStart))
+                .Select(x => new { x.InputType, x.DemandType, x.SourceReference, x.SourceLineReference })
+                .Distinct()
+                .CountAsync(cancellationToken);
+        }
 
         return runs.Select(x => new MrpRunResponse(
             x.Id,
@@ -236,7 +284,8 @@ public sealed class ListMrpRunsQueryHandler(ApplicationDbContext dbContext)
             x.InputSources,
             x.InputCoverageStart,
             x.InputCoverageEnd,
-            x.FailureReason)).ToList();
+            x.FailureReason,
+            x.Id == latestCompleted?.Id ? demandChangeCount : 0)).ToList();
     }
 }
 
@@ -269,6 +318,7 @@ public sealed record PlanningSuggestionResponse(
     DateOnly RequiredDate,
     DateOnly ReleaseDate,
     PlanningSuggestionStatus Status,
+    MrpRunId? SupersededByRunId,
     string ReasonCode,
     string? AcceptedDownstreamService,
     string? AcceptedDownstreamDocumentType,
@@ -305,6 +355,7 @@ public sealed class ListPlanningSuggestionsQueryHandler(ApplicationDbContext dbC
                 x.RequiredDate,
                 x.ReleaseDate,
                 x.Status,
+                x.SupersededByRunId,
                 x.ReasonCode,
                 x.AcceptedDownstreamService,
                 x.AcceptedDownstreamDocumentType,

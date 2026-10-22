@@ -8,6 +8,7 @@ using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ShiftAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SiteAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.SkuAggregate;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.StationAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.TeamAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UnitOfMeasureAggregate;
 using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.UomConversionAggregate;
@@ -264,12 +265,12 @@ public sealed class CreateSkuCommandHandler : ICommandHandler<CreateSkuCommand, 
 /// SKU 的「产品分类」值域校验（#1596，口径裁决 A）。
 ///
 /// 权威值域是**产品分类目录实体**（ProductCategory，`PCAT-*` 层级树），不是 reference-data
-/// 的 `product-category` CodeSet——后者已按 <c>master-data-dictionary-rules.md</c> §1
-/// 「独立目录兼容」降级为 legacy。此前后端只认 CodeSet，而界面下拉给的是实体编码，
+/// 的 `product-category` CodeSet——后者已按 <c>docs/governance/data/reference-data.md</c>
+/// 「独立目录与 legacy CodeSet」降级为 legacy。此前后端只认 CodeSet，而界面下拉给的是实体编码，
 /// 两个值空间不相交，新建物料表单提交必 400。
 ///
-/// legacy 兼容**只给更新路径**（<c>allowLegacyFallback</c>）：文档要求「完全切换前
-/// 不得破坏 SKU <c>category</c> 对 CodeSet 的兼容读取」，而这条理由只覆盖「编辑一条老物料不该被
+/// legacy 兼容**只给更新路径**（<c>allowLegacyFallback</c>）：<c>6b4847a4e^:docs/architecture/master-data-dictionary-rules.md</c>
+/// §1 曾规定「完全切换前不得破坏 SKU <c>category</c> 对 CodeSet 的兼容读取」，而这条理由只覆盖「编辑一条老物料不该被
 /// 它自己的历史分类挡住」。**新建一律只认实体**，否则新数据会持续流入待退役的值空间。
 /// 旧码迁移与 CodeSet 正式退役另行处理。
 ///
@@ -913,6 +914,92 @@ public sealed class CreateProductionLineCommandHandler(
     }
 }
 
+public sealed record CreateStationCommand(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Code,
+    string Name,
+    string LineCode,
+    string? WorkCenterCode = null,
+    string? IdempotencyKey = null) : ICommand<MasterDataResourceResult>;
+
+public sealed class CreateStationCommandHandler(
+    IStationRepository repository,
+    ApplicationDbContext dbContext,
+    MasterDataCodingService? codingService = null)
+    : ICommandHandler<CreateStationCommand, MasterDataResourceResult>
+{
+    public async Task<MasterDataResourceResult> Handle(CreateStationCommand request, CancellationToken cancellationToken)
+    {
+        var allocation = await MasterDataCodeGenerator.AllocateAsync(
+            codingService,
+            "station",
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.Code,
+            request.IdempotencyKey,
+            MasterDataCodingService.Fingerprint(request.Name, request.LineCode, request.WorkCenterCode),
+            cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return new MasterDataResourceResult("station", allocation.Code, request.Name);
+        }
+
+        var code = allocation.Code;
+        if (await repository.ExistsAsync(request.OrganizationId, request.EnvironmentId, code, cancellationToken))
+        {
+            throw new KnownException($"工位 '{code}' 已存在。");
+        }
+
+        await StationParentValidator.EnsureAsync(
+            dbContext,
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.LineCode,
+            request.WorkCenterCode,
+            cancellationToken);
+        var station = Station.Create(
+            request.OrganizationId,
+            request.EnvironmentId,
+            code,
+            request.Name,
+            request.LineCode,
+            request.WorkCenterCode);
+        await repository.AddAsync(station, cancellationToken);
+        return new MasterDataResourceResult("station", station.Code, station.Name);
+    }
+}
+
+internal static class StationParentValidator
+{
+    /// <summary>工位的上级产线必须存在且未停用；可选关联的工作中心给了就同样要求存在且未停用。</summary>
+    public static async Task EnsureAsync(
+        ApplicationDbContext dbContext,
+        string organizationId,
+        string environmentId,
+        string lineCode,
+        string? workCenterCode,
+        CancellationToken cancellationToken)
+    {
+        var line = lineCode.Trim();
+        if (!await dbContext.ProductionLines.AnyAsync(
+                x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == line && !x.Disabled,
+                cancellationToken))
+        {
+            throw new KnownException($"产线 '{line}' 不存在或已停用。");
+        }
+
+        var workCenter = workCenterCode?.Trim();
+        if (!string.IsNullOrEmpty(workCenter) &&
+            !await dbContext.WorkCenters.AnyAsync(
+                x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.Code == workCenter && !x.Disabled,
+                cancellationToken))
+        {
+            throw new KnownException($"工作中心 '{workCenter}' 不存在或已停用。");
+        }
+    }
+}
+
 public sealed record CreateShiftCommand(
     string OrganizationId,
     string EnvironmentId,
@@ -1257,7 +1344,7 @@ public sealed class RegisterDeviceAssetCommandHandler
                 request.SiteCode ?? string.Empty,
                 request.WorkshopCode ?? string.Empty,
                 request.LineCode,
-                request.StationCode ?? string.Empty,
+                references.StationCode,
                 references.ParentDeviceId,
                 request.RetiredOn)
             .ReplaceComponents(request.Components ?? []);
@@ -1276,16 +1363,18 @@ public sealed class RegisterDeviceAssetCommandHandler
                 request.EnvironmentId,
                 request.SupplierPartnerCode,
                 request.ParentDeviceId,
+                request.StationCode,
                 cancellationToken);
         }
 
         if (!string.IsNullOrWhiteSpace(request.SupplierPartnerCode) ||
-            !string.IsNullOrWhiteSpace(request.ParentDeviceId))
+            !string.IsNullOrWhiteSpace(request.ParentDeviceId) ||
+            !string.IsNullOrWhiteSpace(request.StationCode))
         {
             throw new KnownException("校验设备资产引用需要 MasterData 持久化上下文。");
         }
 
-        return Task.FromResult(new DeviceAssetReferenceValidationResult(string.Empty, string.Empty));
+        return Task.FromResult(new DeviceAssetReferenceValidationResult(string.Empty, string.Empty, string.Empty));
     }
 }
 

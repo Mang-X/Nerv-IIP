@@ -44,6 +44,12 @@ if (usePostgreSql)
     healthChecks.AddCheck<NotificationDatabaseHealthCheck>("notification-db");
 }
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
+var iamBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
+    builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
+builder.Services.AddHttpClient<IProductionPlannerMemberDirectory, HttpProductionPlannerMemberDirectory>(client =>
+{
+    client.BaseAddress = iamBaseAddress;
+});
 builder.Services.AddMediatR(configuration =>
 {
     configuration.RegisterServicesFromAssembly(typeof(Program).Assembly);
@@ -65,6 +71,7 @@ if (usePostgreSql)
         options.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
         options.UseIntegrationEventDeadLetterOnFailedThreshold();
     });
+    builder.Services.AddNervIipCanonicalTopicSubscriptions(builder.Environment.EnvironmentName);
 }
 else
 {
@@ -72,6 +79,13 @@ else
     builder.Services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
 }
 builder.Services.AddNotificationPersistence(builder.Configuration, persistence.PostgreSqlConnectionStringName);
+// 摘要上界从 EF 模型现读并取全部承载列的最小值；全仓只有这一处派生，调用方不出现列宽字面量。
+builder.Services.AddSingleton(serviceProvider =>
+{
+    using var modelScope = serviceProvider.CreateScope();
+    return NotificationSummaryBudget.FromModel(
+        modelScope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Model);
+});
 builder.Services.Configure<NotificationDeliveryOptions>(
     builder.Configuration.GetSection("Notification:Delivery"));
 builder.Services.Configure<NotificationDeadLetterAlertOptions>(
@@ -126,6 +140,7 @@ builder.Services.AddScoped<ApprovalRejectedIntegrationEventHandlerForNotificatio
 builder.Services.AddScoped<ScheduleConflictDetectedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<SchedulePlanInvalidatedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<WorkOrderEngineeringChangeImpactDetectedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<AndonCallEscalatedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<AlarmRaisedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<AlarmClearedIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<AlarmEscalatedIntegrationEventHandlerForNotification>();
@@ -133,6 +148,7 @@ builder.Services.AddScoped<ConnectorHostUnreachableIntegrationEventHandlerForNot
 builder.Services.AddScoped<ConnectorHostRestoredIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<InspectionTaskOverdueIntegrationEventHandlerForNotification>();
 builder.Services.AddScoped<SpcAlertRaisedIntegrationEventHandlerForNotification>();
+builder.Services.AddScoped<SalesOrderDemandChangedForWorkOrderIntegrationEventHandlerForNotification>();
 
 var app = builder.Build();
 if (usePostgreSql && persistence.AutoMigrate)

@@ -140,6 +140,9 @@ const kpiItems = computed<KpiCell[]>(() => {
 <template>
   <ScreenLayout title="Nerv-IIP 产线监控大屏" :line="factoryName" screen="指挥中心大屏 03">
     <div v-if="cards" class="ls">
+      <p class="ls-meta">
+        本页产线聚合为演示数据 · <RouterLink to="/andon">进入真实安灯队列</RouterLink>
+      </p>
       <div class="ls-kpi">
         <NvKpiBar v-if="kpiItems.length" :items="kpiItems" />
       </div>

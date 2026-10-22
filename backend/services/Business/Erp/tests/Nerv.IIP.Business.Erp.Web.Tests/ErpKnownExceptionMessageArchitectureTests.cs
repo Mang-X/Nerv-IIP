@@ -18,6 +18,8 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
         "backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Finance/AccountReceivableSourceDocumentGuard.cs";
     private const string ConfigureWorkCenterCostRateCommandPath =
         "backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Finance/ConfigureWorkCenterCostRateCommand.cs";
+    private const string WorkCenterRateRevisionAllocatorPath =
+        "backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Infrastructure/WorkCenterRateRevisionAllocator.cs";
     private const string ErpFinanceCommandsPath =
         "backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Finance/ErpFinanceCommands.cs";
     private const string ErpProcurementCommandsPath =
@@ -31,6 +33,9 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
     private const string ErpReturnHandlersPath =
         "backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/IntegrationEventHandlers/ErpReturnIntegrationEventHandlers.cs";
 
+    private const string ErpCodingIdempotencyKeyPolicyPath =
+        "backend/services/Business/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Validation/ErpCodingIdempotencyKeyPolicy.cs";
+
     private static readonly IReadOnlyCollection<string> SourcePaths =
     [
         PurchaseOrderApprovalClientPath,
@@ -40,12 +45,14 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
         AccountPayableSourceDocumentGuardPath,
         AccountReceivableSourceDocumentGuardPath,
         ConfigureWorkCenterCostRateCommandPath,
+        WorkCenterRateRevisionAllocatorPath,
         ErpFinanceCommandsPath,
         ErpProcurementCommandsPath,
         ErpSalesCommandsPath,
         ErpSalesFinanceQueriesPath,
         ApprovalCompletedHandlerPath,
         ErpReturnHandlersPath,
+        ErpCodingIdempotencyKeyPolicyPath,
     ];
 
     private static readonly IReadOnlyCollection<ErpKnownExceptionSite> ExpectedSites =
@@ -56,7 +63,7 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
         Excluded(WmsOutboundCancellationClientPath, "HttpWmsOutboundCancellationClient", "FindOutboundOrderAsync", 1, "deferred sales-order cancellation; no public facade"),
         Target(AccountPayableSourceDocumentGuardPath, "AccountPayableSourceDocumentGuard", "EnsureSourceDocumentAndSupplierAsync", 2, "sync payable commands"),
         Target(AccountReceivableSourceDocumentGuardPath, "AccountReceivableSourceDocumentGuard", "EnsureSourceDocumentAndCustomerAsync", 2, "sync receivable commands"),
-        Target(ConfigureWorkCenterCostRateCommandPath, "ConfigureWorkCenterCostRateCommandHandler", "Handle", 1, "sync work-center cost-rate facade"),
+        Target(WorkCenterRateRevisionAllocatorPath, "WorkCenterRateRevisionAllocator", "EnsureCurrencyIsFixed", 1, "shared helper reaches sync work-center rate facades"),
 
         Target(ErpFinanceCommandsPath, "AccountingPeriodPostingGuard", "FindPeriodAsync", 1, "shared helper reaches sync finance facades"),
         Target(ErpFinanceCommandsPath, "AccountingPeriodPostingGuard", "EnsureOpenAsync", 1, "shared helper reaches sync finance facades"),
@@ -73,6 +80,8 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
         Excluded(ErpProcurementCommandsPath, "ReleaseSupplierInvoicePaymentHoldCommandHandler", "Handle", 3, "deferred supplier-invoice payment hold; no public facade"),
         Excluded(ErpProcurementCommandsPath, "VoidSupplierInvoicePaymentHoldCommandHandler", "Handle", 2, "deferred supplier-invoice payment hold; no public facade"),
         Excluded(ErpProcurementCommandsPath, "RequestPurchaseOrderChangeCommandHandler", "Handle", 2, "deferred purchase-order change; no public facade"),
+        Excluded(ErpProcurementCommandsPath, "ReschedulePurchaseOrderLineCommandHandler", "Handle", 2, "internal purchase-order line reschedule; no public facade"),
+        Excluded(ErpProcurementCommandsPath, "CancelPurchaseOrderLineCommandHandler", "Handle", 2, "internal purchase-order line cancellation; no public facade"),
         Excluded(ErpProcurementCommandsPath, "ClosePurchaseOrderLineCommandHandler", "Handle", 2, "deferred purchase-order close; no public facade"),
         Excluded(ErpProcurementCommandsPath, "CancelPurchaseOrderCommandHandler", "Handle", 5, "deferred purchase-order cancellation; no public facade"),
 
@@ -92,6 +101,13 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
         Excluded(ApprovalCompletedHandlerPath, "ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder", "HandleValidEventAsync", 2, "async integration-event consumer; no public facade"),
         Excluded(ErpReturnHandlersPath, "WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn", "HandleValidEventCoreAsync", 5, "async integration-event consumer; no public facade"),
         Excluded(ErpReturnHandlersPath, "QualityInspectionResultIntegrationEventHandlerForSettleSalesReturnCredit", "HandleValidEventAsync", 3, "async integration-event consumer; no public facade"),
+
+        // #3288：幂等键加后缀后越界时就地拒绝。调用方之一是
+        // ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler（同步申请转换 facade），故为 Target。
+        // 它是**防御性**分支——走 HTTP 时命令校验器先按派生上界拒在入口，当前只有绕过校验器的
+        // 调用方能走到；但「类型上沿 facade 可达」成立，所以消息仍按 Target 受中文/安全/长度约束。
+        // 同一句话也写在 ErpCodingIdempotencyKeyPolicy.Compose 的 summary 里，两处必须一致。
+        Target(ErpCodingIdempotencyKeyPolicyPath, "ErpCodingIdempotencyKeyPolicy", "Compose", 1, "defensive helper; reaches sync requisition conversion facade behind the command validator"),
     ];
 
     private static readonly IReadOnlyDictionary<string, int> DynamicTargetSiteCounts = new Dictionary<string, int>(StringComparer.Ordinal)
@@ -114,16 +130,16 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
         Assert.Equal(SourcePaths.Count, documents.Count);
         Assert.All(documents, document => Assert.False(string.IsNullOrWhiteSpace(document.Text), $"Erp 源文件缺失或为空：{document.Path}"));
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(80, discovered.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(40, ExpectedSites
+        Assert.Equal(85, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Equal(41, ExpectedSites
             .Where(site => site.Kind == ErpKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(40, ExpectedSites
+        Assert.Equal(44, ExpectedSites
             .Where(site => site.Kind == ErpKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(7, DynamicTargetSiteCounts.Values.Sum());
         Assert.Equal(
-            33,
+            34,
             ExpectedSites
                 .Where(site => site.Kind == ErpKnownExceptionSiteKind.Target)
                 .Sum(site => site.DirectKnownExceptionCount) - DynamicTargetSiteCounts.Values.Sum());

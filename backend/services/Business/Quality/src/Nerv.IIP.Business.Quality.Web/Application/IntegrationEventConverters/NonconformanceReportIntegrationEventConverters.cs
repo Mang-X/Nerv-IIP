@@ -1,4 +1,5 @@
 using Nerv.IIP.Business.Quality.Domain.DomainEvents;
+using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Quality;
 
@@ -85,6 +86,37 @@ public sealed class NcrDispositionDecidedIntegrationEventConverter(IQualityInteg
                 OwnerType = ncr.OwnerType,
                 OwnerId = ncr.OwnerId
             });
+    }
+}
+
+public sealed class NcrReworkRequestedIntegrationEventConverter(IQualityIntegrationEventContextAccessor contextAccessor)
+    : IIntegrationEventConverter<NonconformanceReportReworkRequestedDomainEvent, NcrReworkRequestedIntegrationEvent>
+{
+    public NcrReworkRequestedIntegrationEvent Convert(NonconformanceReportReworkRequestedDomainEvent domainEvent)
+    {
+        var ncr = domainEvent.NonconformanceReport;
+        var context = contextAccessor.GetContext();
+        return new NcrReworkRequestedIntegrationEvent(
+            EventIds.New(),
+            QualityIntegrationEventTypes.NcrReworkRequested,
+            QualityIntegrationEventVersions.V1,
+            domainEvent.RequestedAtUtc,
+            QualityIntegrationEventSources.BusinessQuality,
+            context.CorrelationId,
+            context.CausationId,
+            ncr.OrganizationId,
+            ncr.EnvironmentId,
+            context.Actor,
+            EventIds.Idempotency("ncr-rework-requested", ncr.OrganizationId, ncr.EnvironmentId, ncr.Id.ToString()),
+            new NcrReworkRequestedPayload(
+                ncr.Id.ToString(),
+                ncr.NcrCode,
+                ncr.SourceDocumentId,
+                ncr.SkuCode,
+                ncr.DefectQuantity,
+                ncr.BatchNo,
+                ncr.SerialNo,
+                domainEvent.RequestedAtUtc));
     }
 }
 
@@ -201,5 +233,6 @@ internal static class EventIds
 {
     public static string New() => $"evt-{Guid.CreateVersion7():N}";
 
-    public static string Idempotency(params string[] parts) => $"quality:{string.Join(':', parts)}";
+    public static string Idempotency(params string[] parts) =>
+        IntegrationEventIdempotencyKey.ComposeServiceScoped("quality:", parts);
 }

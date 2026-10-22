@@ -4,15 +4,18 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
-import { openDownloadGrantBlob, statusActionGate } from '@nerv-iip/business-core'
+import { openSopFileContent, statusActionGate } from '@nerv-iip/business-core'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
+import ActualHoursCell from '@/components/mes/ActualHoursCell.vue'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
 import { recoverLifecycleAction, useLifecycleWriteIntent } from '@/composables/lifecycleAction'
-import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
-import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
+import {
+  type MesStatusValue,
+  mesOperationTaskStatusOptions,
+} from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import {
@@ -43,6 +46,7 @@ import {
 import { usePagedList } from '@/composables/usePagedList'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { useAuthStore } from '@/stores/auth'
 import {
   NvButton,
   NvDataTable,
@@ -63,6 +67,7 @@ import {
   CheckCheckIcon,
   ClipboardCheckIcon,
   EyeIcon,
+  FileCheckIcon,
   FileTextIcon,
   PauseIcon,
   PlayIcon,
@@ -75,6 +80,8 @@ import {
 } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+
+import { operationTaskLabel } from '@/utils/mesTaskIdentity'
 
 definePage({
   meta: {
@@ -94,42 +101,28 @@ const {
   operationTasksError,
   operationTasksPending,
   operationTasksTotal,
+  operationTasksState,
   operationListScope,
+  operationListScopeError,
+  operationListScopePending,
   operationListScopeMessage,
-  operationListScopeReady,
   operationScopeMessage,
   operationScopeReady,
-  operationTasksLastUpdatedAt,
-  operationTasksHasSuccessfulResponse,
-  operationTasksHasFailedResponse,
   pauseOperationTask,
   refreshOperationTasks,
   resumeOperationTask,
   startOperationTask,
 } = useMesOperationTasks()
-const workScopeKindLabels: Record<string, string> = {
-  self: '本人',
-  team: '班组',
-  'work-center': '工作中心',
-  workshop: '车间',
-  organization: '组织',
-}
-const mesScope = computed(() => {
-  const selectedScope = operationListScope.value
-  if (!selectedScope) return '当前主体授权作业范围未就绪'
-  const kind = workScopeKindLabels[selectedScope.kind] ?? selectedScope.kind
-  const name = selectedScope.displayName || selectedScope.id
-  return `当前主体授权作业范围 · ${name}（${kind}）`
-})
-const mesEmptyExplanation = computed(() =>
-  operationListScopeReady.value
-    ? '当前主体授权作业范围内暂无工序任务。'
-    : operationListScopeMessage.value || '尚未取得当前主体的授权作业范围，未发起查询。',
-)
 // 派工在本页行内直接完成：一线看着工序表就能把没人的活派出去，不必先跳派工看板。
 const { assignDispatchTask, assignDispatchTaskPending } = useMesDispatchTasks()
 
 const router = useRouter()
+const auth = useAuthStore()
+const canCallQuality = computed(() =>
+  ['business.quality.inspection-records.read', 'business.quality.inspection-records.create'].every(
+    (permission) => (auth.principal?.permissionCodes ?? []).includes(permission),
+  ),
+)
 // devices:true：工序读面只回设备编码，中文设备名要靠设备台账名录在前端补。
 const { resolveDevice, resolveShiftLabel, resolveWorkCenter } = useMesDisplayNames({
   shifts: true,
@@ -154,6 +147,7 @@ const { resources: workCenterResources } = useBusinessMasterDataResources('work-
 const { resources: shiftResources } = useBusinessMasterDataResources('shift')
 
 const quickViewWorkOrderId = ref<string | null>(null)
+const quickViewOperationTaskId = ref<string | null>(null)
 // 报工在本页行内直接打开，上下文随行带出，不再跳到工单页只带两个 ID。
 const reportOpen = ref(false)
 const reportContext = ref<ProductionReportContext | null>(null)
@@ -166,14 +160,46 @@ const {
   currentSopsError,
   currentSopsPending,
   refreshCurrentSops,
-  createSopFileDownloadGrant,
 } = useMesCurrentOperationSops()
+
+const sopContextMessage = computed(() => {
+  const task = selectedSopTask.value
+  if (!task) return ''
+  if (!task.routingCode?.trim() || !task.routingRevision?.trim())
+    return '当前任务缺少工艺路线号或版本，无法确定适用的SOP。'
+  if (!task.workCenterCode?.trim()) return '当前任务缺少工作中心编码，无法确定适用的SOP。'
+  return ''
+})
 
 // --- Filters (live) ---
 const keyword = ref('')
 const statusFilter = ref('all')
 const workCenterFilter = ref('all')
 const shiftFilter = ref('all')
+
+function closeSops() {
+  selectedSopTask.value = null
+  sopFilters.operationCode = ''
+  sopFileError.value = ''
+}
+
+// SOP 属于打开它的任务范围；切换范围后由操作员重新选择任务。
+watch(
+  () => [
+    auth.principal?.principalId,
+    filters.organizationId,
+    filters.environmentId,
+    operationListScope.value?.kind,
+    operationListScope.value?.id,
+    keyword.value,
+    statusFilter.value,
+    workCenterFilter.value,
+    shiftFilter.value,
+    filters.skip,
+    filters.take,
+  ],
+  closeSops,
+)
 
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
@@ -230,47 +256,84 @@ const columns: NvDataTableColumn<Row>[] = [
   {
     key: 'operationTaskId',
     header: '工序任务',
-    cellClass: 'font-medium',
-    accessor: (r) => r.operationTaskNo ?? r.operationTaskId ?? '无编号',
+    width: 'w-64',
+    cellClass: 'font-medium whitespace-normal break-all',
+    accessor: (r) => operationTaskLabel(r),
   },
-  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无' },
+  {
+    key: 'workOrderId',
+    header: '工单',
+    width: 'w-56',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => r.workOrderNo ?? r.workOrderId ?? '无',
+  },
   { key: 'status', header: '执行状态', width: 'w-24' },
   { key: 'scheduleStatus', header: '排程', width: 'w-40' },
   {
     key: 'operationSequence',
     header: '序号',
     align: 'end',
-    width: 'w-16',
+    width: 'w-20',
     accessor: (r) => r.operationSequence ?? 0,
   },
   {
     key: 'workCenterId',
     header: '工作中心',
+    width: 'w-48',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) =>
       r.workCenterName ?? resolveWorkCenter(r.workCenterCode ?? r.workCenterId) ?? '无',
   },
   {
     key: 'deviceAssetId',
     header: '设备',
+    width: 'w-64',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) => deviceText(r),
   },
-  { key: 'shiftId', header: '班次', width: 'w-28', accessor: (r) => resolveShiftLabel(r.shiftId) },
+  {
+    key: 'shiftId',
+    header: '班次',
+    width: 'w-40',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => resolveShiftLabel(r.shiftId),
+  },
   { key: 'assignedUserName', header: '派工', width: 'w-40' },
+  { key: 'actualHours', header: '实际工时', width: 'w-36' },
   {
     key: 'plannedStartUtc',
     header: '计划开始',
+    width: 'w-48',
+    cellClass: 'whitespace-normal',
     accessor: (r) => (r.plannedStartUtc ? new Date(r.plannedStartUtc).getTime() : 0),
   },
-  { key: 'qualityStatus', header: '质量状态' },
+  {
+    key: 'qualityStatus',
+    header: '质量状态',
+    width: 'w-56',
+    cellClass: 'whitespace-normal break-all',
+  },
   { key: 'sop', header: 'SOP', align: 'end', width: 'w-20' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-24' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-40' },
 ]
 
 function rowKey(task: Row) {
   return task.operationTaskId ?? `${task.workOrderId}-${task.operationSequence}`
 }
 
-const errorMessage = computed(() => formatError(operationTasksError.value))
+const taskReadError = computed(() => operationListScopeError.value ?? operationTasksError.value)
+const errorMessage = computed(() =>
+  operationListScopeError.value
+    ? '范围读取失败，尚未读取任务。请重新加载。'
+    : inlineErrorMessage(operationTasksError.value),
+)
+const taskCount = computed(() => {
+  if (operationListScopeError.value) return '范围读取失败，尚未读取任务'
+  if (operationTasksState.value === 'idle') return '尚未读取任务'
+  if (operationTasksState.value === 'loading') return '正在读取任务…'
+  if (operationTasksState.value === 'error') return '任务读取失败'
+  return `${operationTasksTotal.value} 个工序任务`
+})
 
 function resetFilters() {
   keyword.value = ''
@@ -280,21 +343,30 @@ function resetFilters() {
 }
 
 // 「排程已失效」快捷项：一键把状态筛选切到失效任务，再点一次取消。
-const invalidatedFilterActive = computed(() => statusFilter.value === 'scheduleInvalidated')
+//
+// 取值写法与 index.vue 的四格计数统一为**字面量**（不做 label 反查）：字面量在
+// `statusFilter` 被声明为 MesStatusValue 时会被类型检查挡住，而按中文 label 反查
+// 做不到这点 —— 改个文案就静默返回 undefined，筛选恒不激活。同理不按数组下标取：
+// 选项表增删一项就会串位。工序状态的运行时拼写是 PascalCase（#3912），
+// 而 `MesListFilters.status` 是 string，所以这里必须自己保证拼写。
+const invalidatedStatus: MesStatusValue = 'ScheduleInvalidated'
+const invalidatedFilterActive = computed(() => statusFilter.value === invalidatedStatus)
 function toggleInvalidatedFilter() {
-  statusFilter.value = invalidatedFilterActive.value ? 'all' : 'scheduleInvalidated'
+  statusFilter.value = invalidatedFilterActive.value ? 'all' : invalidatedStatus
 }
 
-function openWorkOrder(workOrderId?: string | null) {
-  if (workOrderId) quickViewWorkOrderId.value = workOrderId
+function openWorkOrder(task: Row) {
+  if (!task.workOrderId) return
+  quickViewOperationTaskId.value = task.operationTaskId ?? null
+  quickViewWorkOrderId.value = task.workOrderId
 }
 function openSops(task: Row) {
   selectedSopTask.value = task
   sopFileError.value = ''
-  sopFilters.operationCode = task.operationCode?.trim() ?? ''
-  sopFilters.workCenterCode = (task.workCenterCode ?? task.workCenterId)?.trim() ?? ''
-  sopFilters.routingCode = ''
-  sopFilters.routingRevision = ''
+  sopFilters.operationCode = sopContextMessage.value ? '' : (task.operationCode?.trim() ?? '')
+  sopFilters.workCenterCode = task.workCenterCode?.trim() ?? ''
+  sopFilters.routingCode = task.routingCode?.trim() ?? ''
+  sopFilters.routingRevision = task.routingRevision?.trim() ?? ''
   sopFilters.asOfDate = ''
 }
 async function openSopFile(sop: CurrentSop) {
@@ -306,9 +378,10 @@ async function openSopFile(sop: CurrentSop) {
   sopFileError.value = ''
   openingSopFileId.value = fileId
   try {
-    const grant = await createSopFileDownloadGrant(fileId)
-    if (!grant) throw new Error('无法获取SOP查看授权。')
-    await openDownloadGrantBlob(grant)
+    await openSopFileContent(fileId, {
+      organizationId: sopFilters.organizationId,
+      environmentId: sopFilters.environmentId,
+    })
   } catch (error) {
     sopFileError.value = inlineErrorMessage(error, '无法打开SOP。')
   } finally {
@@ -324,6 +397,13 @@ function openRoute(path: string, task: Row) {
       workCenterId: task.workCenterId ?? undefined,
     },
   })
+}
+// 只带 view，不带任何单据上下文：`quality/inspections` 的 query watch 一旦看到
+// workOrderId / operationTaskId / sourceDocumentId 就会**自动弹开「创建检验记录」抽屉**
+// （inspections.vue 的 `if (source) recordSheetOpen.value = true`）。本入口是去**看**首件结论的，
+// 把人丢进新建表单是走错门。真机走查抓到过一次，别再加回去。
+function openFirstArticleRecords() {
+  void router.push({ path: '/quality/inspections', query: { view: 'first-article-records' } })
 }
 function canOpenReport(task: Row) {
   return Boolean(task.workOrderId && task.operationTaskId)
@@ -466,7 +546,7 @@ function formatDate(value?: string | null) {
 function canOpenSops(task: Row) {
   return Boolean(task.operationCode?.trim())
 }
-const selectedSopErrorMessage = computed(() => formatError(currentSopsError.value))
+const selectedSopErrorMessage = computed(() => inlineErrorMessage(currentSopsError.value))
 const selectedSopTitle = computed(() => {
   const task = selectedSopTask.value
   if (!task) return ''
@@ -497,24 +577,17 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
       value: item.code!,
     }))
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 </script>
 
 <template>
   <BusinessLayout>
-    <NvPageHeader
-      title="工序执行"
-      :breadcrumbs="[{ label: '制造执行' }]"
-      :count="`${operationTasksTotal} 个工序任务`"
-    >
+    <NvPageHeader title="工序执行" :breadcrumbs="[{ label: '制造执行' }]" :count="taskCount">
       <template #actions>
         <NvButton
           size="sm"
           type="button"
           variant="outline"
-          :disabled="operationTasksPending"
+          :disabled="operationTasksPending || operationListScopePending"
           @click="refreshOperationTasks"
         >
           <RefreshCwIcon aria-hidden="true" />
@@ -522,21 +595,6 @@ function formatError(error: unknown) {
         </NvButton>
       </template>
     </NvPageHeader>
-
-    <ListScopeMeta
-      :scope="mesScope"
-      source="工序任务服务（服务端按当前主体与所选授权作业范围过滤）"
-      :loaded="operationTasks.length"
-      :total="operationTasksTotal"
-      :updated-at="operationTasksLastUpdatedAt"
-      :empty="
-        !operationListScopeReady ||
-        (operationTasksHasSuccessfulResponse && !operationTasksError && operationTasks.length === 0)
-      "
-      :failed="operationTasksHasFailedResponse || Boolean(operationTasksError)"
-      failure-explanation="工序任务服务未成功返回，请重试。"
-      :empty-explanation="mesEmptyExplanation"
-    />
 
     <p
       v-if="operationListScopeMessage"
@@ -549,7 +607,11 @@ function formatError(error: unknown) {
 
     <NvToolbar v-model:search="keyword" search-placeholder="搜索任务、工单、设备">
       <template #filters>
-        <MesWorkScopeSelect permission-code="business.mes.operations.read" />
+        <MesWorkScopeSelect
+          permission-code="business.mes.operations.read"
+          :read-failed="!!operationListScopeError"
+          :read-pending="operationListScopePending"
+        />
         <NvSelect v-model="statusFilter">
           <NvSelectTrigger class="h-9 w-32" aria-label="工序状态"
             ><NvSelectValue
@@ -607,7 +669,6 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
     <p
       v-if="operationScopeMessage"
       data-testid="operation-scope-message"
@@ -629,11 +690,23 @@ function formatError(error: unknown) {
       :rows="pagedTasks"
       :row-key="rowKey"
       :client-sort="false"
-      :loading="operationTasksPending"
+      :loading="operationTasksPending || operationListScopePending"
+      :error="taskReadError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
-      empty-message="当前没有工序任务。确认工单已释放、排程已生成后，可开工任务会出现在这里。"
+      :empty-message="
+        operationTasksState === 'ready'
+          ? '当前没有工序任务。确认工单已释放、排程已生成后，可开工任务会出现在这里。'
+          : '尚未读取任务，请先确认作业范围。'
+      "
+      @retry="refreshOperationTasks"
     >
+      <template #cell-operationTaskId="{ row }">
+        <span class="whitespace-normal break-all" :title="row.operationTaskId">{{
+          operationTaskLabel(row)
+        }}</span>
+      </template>
       <template #cell-operationSequence="{ row }">
         <span class="tabular-nums">工序 {{ row.operationSequence ?? '—' }}</span>
       </template>
@@ -642,7 +715,7 @@ function formatError(error: unknown) {
           v-if="row.workOrderId"
           type="button"
           class="text-brand underline-offset-4 hover:underline"
-          @click="openWorkOrder(row.workOrderId)"
+          @click="openWorkOrder(row)"
         >
           {{ row.workOrderNo ?? row.workOrderId }}
         </button>
@@ -674,8 +747,16 @@ function formatError(error: unknown) {
       </template>
       <template #cell-assignedUserName="{ row }">
         <NvStatusBadge
+          class="max-w-full"
+          :title="resolveDispatchState(row).label"
           :label="resolveDispatchState(row).label"
           :tone="resolveDispatchState(row).tone"
+        />
+      </template>
+      <template #cell-actualHours="{ row }">
+        <ActualHoursCell
+          :labor-hours="row.actualLaborHours"
+          :machine-hours="row.actualMachineHours"
         />
       </template>
       <template #cell-plannedStartUtc="{ row }">
@@ -752,15 +833,20 @@ function formatError(error: unknown) {
               <ClipboardCheckIcon aria-hidden="true" />
               {{ canOpenReport(row) ? '报工' : '暂不可报工（缺工单）' }}
             </NvDropdownMenuItem>
-            <NvDropdownMenuItem
-              :disabled="!row.workOrderId"
-              @click="openWorkOrder(row.workOrderId)"
-            >
+            <!-- 首件未判合格时服务端会拒绝批量报工（#2780），入口留在报工旁边，被拦下的人一步可达。 -->
+            <NvDropdownMenuItem @click="openFirstArticleRecords()">
+              <FileCheckIcon aria-hidden="true" />
+              首件检验记录
+            </NvDropdownMenuItem>
+            <NvDropdownMenuItem :disabled="!row.workOrderId" @click="openWorkOrder(row)">
               <EyeIcon aria-hidden="true" />
               查看工单
             </NvDropdownMenuItem>
             <NvDropdownMenuSeparator />
-            <NvDropdownMenuItem @click="openRoute('/quality/inspections', row)">
+            <NvDropdownMenuItem
+              v-if="canCallQuality"
+              @click="openRoute('/quality/inspections', row)"
+            >
               <ShieldCheckIcon aria-hidden="true" />
               呼叫质检
             </NvDropdownMenuItem>
@@ -791,19 +877,23 @@ function formatError(error: unknown) {
             }}
           </p>
         </div>
-        <NvButton
-          size="sm"
-          type="button"
-          variant="outline"
-          :disabled="currentSopsPending"
-          @click="refreshCurrentSops"
-        >
-          <RefreshCwIcon aria-hidden="true" />
-          刷新SOP
-        </NvButton>
+        <div class="flex items-center gap-2">
+          <NvButton
+            size="sm"
+            type="button"
+            variant="outline"
+            :disabled="Boolean(sopContextMessage) || currentSopsPending"
+            @click="refreshCurrentSops"
+          >
+            <RefreshCwIcon aria-hidden="true" />
+            刷新SOP
+          </NvButton>
+          <NvButton size="sm" type="button" variant="ghost" @click="closeSops">关闭SOP</NvButton>
+        </div>
       </div>
+      <p v-if="sopContextMessage" class="text-sm text-muted-foreground">{{ sopContextMessage }}</p>
       <p
-        v-if="selectedSopErrorMessage || sopFileError"
+        v-else-if="selectedSopErrorMessage || sopFileError"
         class="text-sm text-destructive"
         role="alert"
       >
@@ -818,7 +908,7 @@ function formatError(error: unknown) {
         >
           <span class="font-medium text-foreground">{{ sop.fileName || sop.documentNumber }}</span>
           <span class="text-xs text-muted-foreground">
-            {{ sop.documentNumber }} · rev {{ sop.revision }} · 生效
+            {{ sop.documentNumber }} · 版本 {{ sop.revision }} · 生效
             {{ formatDate(sop.effectiveDate) }}
           </span>
           <NvButton
@@ -843,7 +933,10 @@ function formatError(error: unknown) {
       @reported="refreshOperationTasks"
     />
 
-    <WorkOrderQuickView v-model:work-order-id="quickViewWorkOrderId" />
+    <WorkOrderQuickView
+      v-model:work-order-id="quickViewWorkOrderId"
+      :operation-task-id="quickViewOperationTaskId"
+    />
 
     <DispatchAssignDialog
       v-model:open="assignOpen"

@@ -23,6 +23,186 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OperationExecutionProjectionAggregate.OperationExecutionDowntimeState", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Downtime state row id.");
+
+                    b.Property<string>("DowntimeEventNo")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("downtime_event_no")
+                        .HasComment("MES downtime business identity.");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active")
+                        .HasComment("Whether this downtime still blocks the operation.");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at_utc")
+                        .HasComment("Ordering watermark for this downtime identity in UTC.");
+
+                    b.Property<Guid>("OperationExecutionProjectionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("operation_execution_projection_id")
+                        .HasComment("Owning operation execution projection id.");
+
+                    b.Property<string>("SourceEventId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("source_event_id")
+                        .HasComment("Integration event id that supplied this downtime state.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OperationExecutionProjectionId", "DowntimeEventNo")
+                        .IsUnique();
+
+                    b.ToTable("operation_execution_downtime_states", "scheduling", t =>
+                        {
+                            t.HasComment("Latest state of each MES downtime fact associated with a Scheduling operation execution projection.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OperationExecutionProjectionAggregate.OperationExecutionProjection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Projection row id.");
+
+                    b.Property<DateTimeOffset?>("ActualCompletedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("actual_completed_at_utc")
+                        .HasComment("Latest accepted operation completion timestamp in UTC.");
+
+                    b.Property<DateTimeOffset?>("ActualStartedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("actual_started_at_utc")
+                        .HasComment("Earliest observed operation start timestamp in UTC.");
+
+                    b.Property<decimal>("CompletedQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("completed_quantity")
+                        .HasComment("Net reported good quantity, including negative reversal deltas.");
+
+                    b.Property<string>("DowntimeEventId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("downtime_event_id")
+                        .HasComment("Integration event id that supplied the current downtime state.");
+
+                    b.Property<DateTimeOffset?>("DowntimeOccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("downtime_occurred_at_utc")
+                        .HasComment("Ordering watermark for downtime state facts in UTC.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Business environment id.");
+
+                    b.Property<bool>("IsDowntimeBlocked")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_downtime_blocked")
+                        .HasComment("Whether any operation-scoped downtime fact is active.");
+
+                    b.Property<bool>("IsPaused")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_paused")
+                        .HasComment("Whether the latest lifecycle fact leaves the operation paused.");
+
+                    b.Property<bool>("IsQualityBlocked")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_quality_blocked")
+                        .HasComment("Whether the latest operation-scoped quality result blocks execution.");
+
+                    b.Property<string>("LatestSourceEventId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("latest_source_event_id")
+                        .HasComment("Integration event id for the latest accepted source fact.");
+
+                    b.Property<DateTimeOffset>("LatestSourceOccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("latest_source_occurred_at_utc")
+                        .HasComment("Latest accepted source-fact timestamp across all execution axes in UTC.");
+
+                    b.Property<string>("LifecycleEventId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("lifecycle_event_id")
+                        .HasComment("Integration event id that supplied the current lifecycle state.");
+
+                    b.Property<DateTimeOffset?>("LifecycleOccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("lifecycle_occurred_at_utc")
+                        .HasComment("Ordering watermark for lifecycle state facts in UTC.");
+
+                    b.Property<string>("OperationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("operation_id")
+                        .HasComment("MES operation-task public id.");
+
+                    b.Property<int?>("OperationSequence")
+                        .HasColumnType("integer")
+                        .HasColumnName("operation_sequence")
+                        .HasComment("Optional operation sequence supplied by MES lifecycle facts.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Tenant organization id.");
+
+                    b.Property<string>("QualityEventId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("quality_event_id")
+                        .HasComment("Integration event id that supplied the current quality state.");
+
+                    b.Property<DateTimeOffset?>("QualityOccurredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("quality_occurred_at_utc")
+                        .HasComment("Ordering watermark for quality state facts in UTC.");
+
+                    b.Property<string>("WorkCenterId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("work_center_id")
+                        .HasComment("Optional work center supplied by MES execution facts.");
+
+                    b.Property<string>("WorkOrderId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("work_order_id")
+                        .HasComment("MES work-order public id.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "WorkOrderId", "OperationId")
+                        .IsUnique();
+
+                    b.ToTable("operation_execution_projections", "scheduling", t =>
+                        {
+                            t.HasComment("Latest MES and quality execution facts projected at operation-task grain.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OrderUrgencyAggregate.OrderUrgencyBusinessPriority", b =>
                 {
                     b.Property<Guid>("Id")
@@ -296,6 +476,145 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleFirstPlanJobAggregate.ScheduleFirstPlanJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("First-plan job id.");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC acceptance timestamp.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Business environment id.");
+
+                    b.Property<string>("FailureReason")
+                        .HasColumnType("text")
+                        .HasColumnName("failure_reason")
+                        .HasComment("Displayable calculation failure reason.");
+
+                    b.Property<DateTimeOffset?>("FinishedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finished_at_utc")
+                        .HasComment("UTC terminal timestamp.");
+
+                    b.Property<string>("InputJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("input_json")
+                        .HasComment("SchedulingFirstPlanInputContract v1; Scheduling owns and reads the accepted horizon and order selections.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Tenant organization id.");
+
+                    b.Property<string>("PlanId")
+                        .HasMaxLength(96)
+                        .HasColumnType("character varying(96)")
+                        .HasColumnName("plan_id")
+                        .HasComment("First plan persisted in the same transaction as Completed.");
+
+                    b.Property<DateTimeOffset?>("StartedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at_utc")
+                        .HasComment("UTC calculation start timestamp.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status")
+                        .HasComment("Created, Running, Completed or Failed execution fact.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status", "CreatedAtUtc");
+
+                    b.ToTable("schedule_first_plan_jobs", "scheduling", t =>
+                        {
+                            t.HasComment("Scheduling-owned asynchronous first-plan generation jobs.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleInsertionPreviewJobAggregate.ScheduleInsertionPreviewJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Insertion-preview job id.");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at_utc")
+                        .HasComment("UTC acceptance timestamp.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Business environment id.");
+
+                    b.Property<string>("FailureReason")
+                        .HasColumnType("text")
+                        .HasColumnName("failure_reason")
+                        .HasComment("Displayable calculation failure reason.");
+
+                    b.Property<DateTimeOffset?>("FinishedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finished_at_utc")
+                        .HasComment("UTC terminal timestamp.");
+
+                    b.Property<string>("InputJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("input_json")
+                        .HasComment("SchedulingInsertionPreviewInputContract v1; Scheduling owns and reads the accepted horizon and order selections.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Tenant organization id.");
+
+                    b.Property<string>("PreviewJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("preview_json")
+                        .HasComment("SchedulePlanContract v1 Preview result; Scheduling writes and reads it without persisting a plan.");
+
+                    b.Property<DateTimeOffset?>("StartedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at_utc")
+                        .HasComment("UTC calculation start timestamp.");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status")
+                        .HasComment("Created, Running, Completed or Failed execution fact.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status", "CreatedAtUtc");
+
+                    b.ToTable("schedule_insertion_preview_jobs", "scheduling", t =>
+                        {
+                            t.HasComment("Scheduling-owned asynchronous insertion preview jobs.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleOperationOverrideAggregate.ScheduleOperationOverride", b =>
                 {
                     b.Property<Guid>("Id")
@@ -384,6 +703,12 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("source_occurred_at_utc")
                         .HasComment("Source ordering timestamp and optimistic concurrency token used to reject stale updates.");
+
+                    b.Property<string>("SourcePlanId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("source_plan_id")
+                        .HasComment("Source APS plan public id for the current manual override; null for historical or MES facts.");
 
                     b.Property<long?>("SourceRevision")
                         .IsConcurrencyToken()
@@ -711,6 +1036,44 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     b.ToTable("schedule_plan_assignments", "scheduling", t =>
                         {
                             t.HasComment("BusinessScheduling operation assignments in a schedule plan.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlanAssignmentSegment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Schedule assignment segment row id.");
+
+                    b.Property<DateTimeOffset>("EndUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("end_utc")
+                        .HasComment("Actual segment end timestamp in UTC.");
+
+                    b.Property<Guid>("SchedulePlanAssignmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("schedule_plan_assignment_id")
+                        .HasComment("Owning schedule assignment row id.");
+
+                    b.Property<int>("SegmentIndex")
+                        .HasColumnType("integer")
+                        .HasColumnName("segment_index")
+                        .HasComment("Zero-based order of the production interval within its assignment.");
+
+                    b.Property<DateTimeOffset>("StartUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("start_utc")
+                        .HasComment("Actual segment start timestamp in UTC.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SchedulePlanAssignmentId", "SegmentIndex")
+                        .IsUnique();
+
+                    b.ToTable("schedule_plan_assignment_segments", "scheduling", t =>
+                        {
+                            t.HasComment("Actual production intervals within an interruptible schedule assignment.");
                         });
                 });
 
@@ -1067,6 +1430,63 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleWorkingDraftAggregate.ScheduleWorkingDraft", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasComment("Working draft row id.");
+
+                    b.Property<string>("EnvironmentId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Business environment id.");
+
+                    b.Property<string>("OrganizationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Tenant organization id.");
+
+                    b.Property<string>("PlanId")
+                        .IsRequired()
+                        .HasMaxLength(96)
+                        .HasColumnType("character varying(96)")
+                        .HasColumnName("plan_id")
+                        .HasComment("Persisted baseline plan version id.");
+
+                    b.Property<DateTimeOffset>("SavedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("saved_at_utc")
+                        .HasComment("UTC timestamp of the most recent draft save.");
+
+                    b.Property<string>("StateJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("state_json")
+                        .HasComment("SchedulingWorkingDraftStateContract v1 editing state; producer and consumer are Scheduling API and Business Console. Baseline and undo history are excluded.");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("user_id")
+                        .HasComment("Authenticated planner id forwarded by an internal caller.");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "UserId", "PlanId")
+                        .IsUnique();
+
+                    b.ToTable("schedule_working_drafts", "scheduling", t =>
+                        {
+                            t.HasComment("User-owned scheduling editing state, separate from authoritative plan assignments.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Infrastructure.IntegrationEvents.ProcessedIntegrationEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1112,6 +1532,10 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .HasComment("Service that produced the integration event.");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ConsumerName", "EventId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_processed_integration_events_consumer_event_id");
 
                     b.HasIndex("ConsumerName", "IdempotencyKey")
                         .IsUnique()
@@ -1690,11 +2114,29 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     b.ToTable("cap_received_messages", "scheduling");
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OperationExecutionProjectionAggregate.OperationExecutionDowntimeState", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OperationExecutionProjectionAggregate.OperationExecutionProjection", null)
+                        .WithMany("DowntimeStates")
+                        .HasForeignKey("OperationExecutionProjectionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlanAssignment", b =>
                 {
                     b.HasOne("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlan", null)
                         .WithMany("Assignments")
                         .HasForeignKey("SchedulePlanId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlanAssignmentSegment", b =>
+                {
+                    b.HasOne("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlanAssignment", null)
+                        .WithMany("Segments")
+                        .HasForeignKey("SchedulePlanAssignmentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
@@ -1735,6 +2177,11 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OperationExecutionProjectionAggregate.OperationExecutionProjection", b =>
+                {
+                    b.Navigation("DowntimeStates");
+                });
+
             modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlan", b =>
                 {
                     b.Navigation("Assignments");
@@ -1744,6 +2191,11 @@ namespace Nerv.IIP.Business.Scheduling.Infrastructure.Migrations
                     b.Navigation("ResourceLoads");
 
                     b.Navigation("UnscheduledOperations");
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate.SchedulePlanAssignment", b =>
+                {
+                    b.Navigation("Segments");
                 });
 #pragma warning restore 612, 618
         }

@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
@@ -43,7 +44,7 @@ public sealed class ProcureToPayWmsErpClosureAcceptanceTests
         wmsDb.InboundOrders.Add(inbound);
         await wmsDb.SaveChangesAsync(CancellationToken.None);
 
-        await new CompleteInboundOrderCommandHandler(wmsDb).Handle(
+        await new CompleteInboundOrderCommandHandler(wmsDb, new WmsTrustedCompletionAcceptanceFixture.ReceiptRoute()).Handle(
             new CompleteInboundOrderCommand(
                 inbound.Id,
                 "wms-complete:p2p:001",
@@ -64,7 +65,8 @@ public sealed class ProcureToPayWmsErpClosureAcceptanceTests
             erpDb,
             deadLetters,
             new ErpCodingService(),
-            NullLogger<WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt>.Instance);
+            NullLogger<WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt>.Instance,
+            new HttpErpIntegrationEventContextAccessor(new HttpContextAccessor()));
 
         await wmsToErpHandler.HandleAsync(wmsEvent, CancellationToken.None);
         await erpDb.SaveChangesAsync(CancellationToken.None);
@@ -76,7 +78,7 @@ public sealed class ProcureToPayWmsErpClosureAcceptanceTests
         Assert.Empty(erpDb.AccountPayables);
         Assert.Empty(erpDb.JournalVouchers);
 
-        var grIrHandler = new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(erpDb, deadLetters);
+        var grIrHandler = new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(erpDb, deadLetters, new ErpCodingService());
         var receiptEvent = new PurchaseReceiptRecordedIntegrationEventConverter()
             .Convert(new PurchaseReceiptRecordedDomainEvent(receipt));
         await grIrHandler.HandleAsync(receiptEvent, CancellationToken.None);
@@ -146,6 +148,8 @@ public sealed class ProcureToPayWmsErpClosureAcceptanceTests
     {
         var options = new DbContextOptionsBuilder<ErpDbContext>()
             .UseInMemoryDatabase($"p2p-wms-erp-{Guid.NewGuid():N}")
+            .ConfigureWarnings(warnings => warnings.Ignore(
+                Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         return new ErpDbContext(options, new NoopMediator());
     }

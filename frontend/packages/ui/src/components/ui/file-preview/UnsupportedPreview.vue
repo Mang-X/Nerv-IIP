@@ -39,7 +39,7 @@ const emit = defineEmits<{
       v-if="src"
       variant="outline"
       size="sm"
-      :aria-label="`Open ${fileName}`"
+      :aria-label="`打开 ${fileName}`"
       @click="emit('openSource', src)"
     >
       <ExternalLinkIcon data-icon="inline-start" aria-hidden="true" />

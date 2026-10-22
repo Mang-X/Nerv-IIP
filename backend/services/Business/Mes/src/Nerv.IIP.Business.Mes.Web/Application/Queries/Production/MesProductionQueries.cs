@@ -1,7 +1,14 @@
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using NJsonSchema.Annotations;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure;
+using Nerv.IIP.Business.Mes.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
 
@@ -10,7 +17,7 @@ public sealed record ListProductionReportsQuery(
     string EnvironmentId,
     string? WorkOrderId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -44,16 +51,40 @@ public sealed record ProductionReportFact(
     string? WorkOrderStatus = null,
     // 冲销本报工的负向记录单号(服务端逐行反查,若本报工已被冲销则非空)。供 Console「已冲销」判定与
     // 原单→冲销单互链**跨服务端分页稳定**,避免前端只从当前页推断已冲销状态(MAN-444/#798 review)。
-    string? ReversalReportNo = null);
+    string? ReversalReportNo = null,
+    // 当前工序完成后冻结的累计实绩，不是本条报工的工时分摊。工序未完成或冲销后重新打开时为 null。
+    [property: JsonIgnore] MesActualHours? OperationActualHours = null,
+    // 提交本条报工的操作人（经认证 principal）。升级前的历史报工与未确认的遥测报工为 null。
+    string? ReportedBy = null,
+    IReadOnlyCollection<string>? SerialNumbers = null)
+{
+    [Description("工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    public decimal? OperationActualLaborHours => OperationActualHours?.LaborHours;
+
+    [Description("工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。")]
+    public decimal? OperationActualMachineHours => OperationActualHours?.MachineHours;
+}
 
 public sealed record GetProductionReportQuery(
     string OrganizationId,
     string EnvironmentId,
     string ReportNo) : IQuery<GetProductionReportResponse>;
 
+public sealed record GetProductionReportByIdempotencyKeyQuery(
+    string OrganizationId,
+    string EnvironmentId,
+    string IdempotencyKey) : IQuery<ProductionReportIntentReceiptResponse>;
+
+public sealed record ProductionReportIntentReceiptResponse(
+    [property: Required, JsonRequired, JsonSchemaExtensionData("nullable", true)] string? ReportIntentFingerprint,
+    ProductionReportId ProductionReportId,
+    string ReportNo,
+    IReadOnlyCollection<string> SerialNumbers);
+
 public sealed record GetProductionReportResponse(
     ProductionReportFact Report,
-    IReadOnlyCollection<ConsumedMaterialLotFact> ConsumedMaterialLots);
+    IReadOnlyCollection<ConsumedMaterialLotFact> ConsumedMaterialLots,
+    IReadOnlyCollection<ProductionLaborAllocationFact> LaborAllocations);
 
 public sealed record ConsumedMaterialLotFact(
     string MaterialId,
@@ -61,6 +92,12 @@ public sealed record ConsumedMaterialLotFact(
     decimal ConsumedQuantity,
     string UomCode,
     string MaterialIssueRequestNo);
+
+public sealed record ProductionLaborAllocationFact(
+    string WorkerId,
+    string? WorkerName,
+    decimal SharePercent,
+    long AllocatedLaborTicks);
 
 internal static class ProductionReportFactProjection
 {
@@ -119,7 +156,24 @@ internal static class ProductionReportFactProjection
                     && reversal.EnvironmentId == x.EnvironmentId
                     && reversal.ReversedReportNo == x.ReportNo)
                 .Select(reversal => reversal.ReportNo)
-                .FirstOrDefault()));
+                .FirstOrDefault(),
+            dbContext.OperationTasks
+                .Where(task => task.OrganizationId == x.OrganizationId
+                    && task.EnvironmentId == x.EnvironmentId
+                    && task.OperationTaskIdValue == x.OperationTaskId
+                    && task.Status == OperationTaskLifecycleStatus.Completed)
+                .Select(task => new MesActualHours(
+                    task.LaborTimeTicks / (decimal)TimeSpan.TicksPerHour,
+                    task.MachineTimeTicks / (decimal)TimeSpan.TicksPerHour))
+                .FirstOrDefault(),
+            x.ReportedBy,
+            dbContext.ProductionReportSerialNumbers
+                .Where(serial => serial.OrganizationId == x.OrganizationId
+                    && serial.EnvironmentId == x.EnvironmentId
+                    && serial.ReportNo == x.ReportNo)
+                .OrderBy(serial => serial.SequenceNo)
+                .Select(serial => serial.SerialNumber)
+                .ToArray()));
 }
 
 public sealed class GetProductionReportQueryHandler(ApplicationDbContext dbContext)
@@ -147,7 +201,68 @@ public sealed class GetProductionReportQueryHandler(ApplicationDbContext dbConte
                 x.MaterialId, x.MaterialLotId, x.ConsumedQuantity, x.UomCode, x.MaterialIssueRequestNo))
             .ToArrayAsync(cancellationToken);
 
-        return new GetProductionReportResponse(report, consumedMaterialLots);
+        var laborAllocations = await dbContext.ProductionReportLaborAllocations
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.ReportNo == request.ReportNo)
+            .OrderBy(x => x.WorkerId)
+            .Select(x => new ProductionLaborAllocationFact(
+                x.WorkerId, x.WorkerName, x.SharePercent, x.AllocatedLaborTicks))
+            .ToArrayAsync(cancellationToken);
+
+        return new GetProductionReportResponse(report, consumedMaterialLots, laborAllocations);
+    }
+}
+
+public sealed class GetProductionReportByIdempotencyKeyQueryHandler(ApplicationDbContext dbContext)
+    : IQueryHandler<GetProductionReportByIdempotencyKeyQuery, ProductionReportIntentReceiptResponse>
+{
+    private const string ProductionReportRuleKey = "production-report";
+
+    public async Task<ProductionReportIntentReceiptResponse> Handle(
+        GetProductionReportByIdempotencyKeyQuery request,
+        CancellationToken cancellationToken)
+    {
+        var reportNo = await dbContext.CodeIdempotencyKeys
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.RuleKey == ProductionReportRuleKey
+                && x.IdempotencyKey == request.IdempotencyKey.Trim())
+            .Select(x => x.Code)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (reportNo is null)
+        {
+            throw new KnownException("未找到生产报工。");
+        }
+
+        var report = await dbContext.ProductionReports
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.ReportNo == reportNo)
+            .Select(x => new { x.Id, x.ReportNo, x.ReportIntentFingerprint })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (report is null)
+        {
+            throw new KnownException("未找到生产报工。");
+        }
+
+        var serialNumbers = await dbContext.ProductionReportSerialNumbers
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId
+                && x.ReportNo == report.ReportNo)
+            .OrderBy(x => x.SequenceNo)
+            .Select(x => x.SerialNumber)
+            .ToArrayAsync(cancellationToken);
+
+        return new ProductionReportIntentReceiptResponse(
+            report.ReportIntentFingerprint,
+            report.Id,
+            report.ReportNo,
+            serialNumbers);
     }
 }
 
@@ -156,20 +271,21 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
 {
     public async Task<ListProductionReportsResponse> Handle(ListProductionReportsQuery request, CancellationToken cancellationToken)
     {
-        var take = Math.Clamp(request.Take, 1, 500);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var query = dbContext.ProductionReports
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.WorkOrderId))
         {
             query = query.Where(x => x.WorkOrderId == request.WorkOrderId);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
             // Keep this provider-neutral for the EF InMemory contract tests; Npgsql-specific ILike would need a separate test path.
-            var keyword = request.Keyword.Trim().ToLower();
             query = query.Where(x =>
                 x.ReportNo.ToLower().Contains(keyword) ||
                 x.WorkOrderId.ToLower().Contains(keyword) ||
@@ -184,8 +300,8 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
             var shiftId = request.ShiftId?.Trim();
             var deviceAssetId = request.DeviceAssetId?.Trim();
             query = query.Where(x => dbContext.OperationTasks.Any(task =>
-                task.OrganizationId == request.OrganizationId &&
-                task.EnvironmentId == request.EnvironmentId &&
+                task.OrganizationId == tenant.OrganizationId &&
+                task.EnvironmentId == tenant.EnvironmentId &&
                 task.OperationTaskIdValue == x.OperationTaskId &&
                 (workCenterId == null || task.WorkCenterId == workCenterId) &&
                 (shiftId == null || task.ShiftId == shiftId) &&
@@ -195,8 +311,8 @@ public sealed class ListProductionReportsQueryHandler(ApplicationDbContext dbCon
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.ReportedAtUtc)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .SelectFacts(dbContext)
             .ToArrayAsync(cancellationToken);
         return new ListProductionReportsResponse(items, total);
@@ -287,7 +403,7 @@ public sealed record ListFinishedGoodsReceiptRequestsQuery(
     string EnvironmentId,
     string? WorkOrderId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
@@ -325,10 +441,12 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
 {
     public async Task<ListFinishedGoodsReceiptRequestsResponse> Handle(ListFinishedGoodsReceiptRequestsQuery request, CancellationToken cancellationToken)
     {
-        var take = Math.Clamp(request.Take, 1, 500);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var query = dbContext.FinishedGoodsReceiptRequests
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.WorkOrderId))
         {
@@ -341,9 +459,8 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
             query = query.Where(x => x.RequestNo == requestNo);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = request.Keyword.Trim().ToLower();
             query = query.Where(x =>
                 x.RequestNo.ToLower().Contains(keyword) ||
                 x.WorkOrderId.ToLower().Contains(keyword) ||
@@ -364,8 +481,8 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
             var shiftId = request.ShiftId?.Trim();
             var deviceAssetId = request.DeviceAssetId?.Trim();
             query = query.Where(x => dbContext.OperationTasks.Any(task =>
-                task.OrganizationId == request.OrganizationId &&
-                task.EnvironmentId == request.EnvironmentId &&
+                task.OrganizationId == tenant.OrganizationId &&
+                task.EnvironmentId == tenant.EnvironmentId &&
                 task.WorkOrderId == x.WorkOrderId &&
                 (workCenterId == null || task.WorkCenterId == workCenterId) &&
                 (shiftId == null || task.ShiftId == shiftId) &&
@@ -375,8 +492,8 @@ public sealed class ListFinishedGoodsReceiptRequestsQueryHandler(ApplicationDbCo
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.RequestedAtUtc)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new FinishedGoodsReceiptRequestFact(
                 x.Id.ToString(),
                 x.RequestNo,
@@ -407,7 +524,7 @@ public sealed record ListCapacityImpactsQuery(
     string EnvironmentId,
     string? DeviceAssetId,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? WorkCenterId = null,
     string? Keyword = null,
     string? ShiftId = null,
@@ -435,10 +552,12 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
 {
     public async Task<ListCapacityImpactsResponse> Handle(ListCapacityImpactsQuery request, CancellationToken cancellationToken)
     {
-        var take = Math.Clamp(request.Take, 1, 500);
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword).Value;
         var query = dbContext.WorkCenterUnavailabilities
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (!string.IsNullOrWhiteSpace(request.DeviceAssetId))
         {
@@ -450,9 +569,8 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
             query = query.Where(x => x.WorkCenterId == request.WorkCenterId);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword is not null)
         {
-            var keyword = request.Keyword.Trim().ToLower();
             query = query.Where(x =>
                 x.DowntimeEventNo.ToLower().Contains(keyword) ||
                 x.WorkCenterId.ToLower().Contains(keyword) ||
@@ -475,8 +593,8 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
         {
             var shiftId = request.ShiftId.Trim();
             query = query.Where(x => dbContext.OperationTasks.Any(task =>
-                task.OrganizationId == request.OrganizationId &&
-                task.EnvironmentId == request.EnvironmentId &&
+                task.OrganizationId == tenant.OrganizationId &&
+                task.EnvironmentId == tenant.EnvironmentId &&
                 task.WorkCenterId == x.WorkCenterId &&
                 task.ShiftId == shiftId &&
                 (x.DeviceAssetId == null || task.DeviceAssetId == x.DeviceAssetId)));
@@ -485,13 +603,13 @@ public sealed class ListCapacityImpactsQueryHandler(ApplicationDbContext dbConte
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.FromUtc)
-            .Skip(Math.Max(0, request.Skip))
-            .Take(take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new CapacityImpactFact(
                 x.DowntimeEventNo,
                 x.WorkCenterId,
                 x.DeviceAssetId,
-                x.ToUtc == null ? "Open" : "Recovered",
+                x.ToUtc == null ? WorkCenterUnavailability.OpenStatus : WorkCenterUnavailability.RecoveredStatus,
                 x.FromUtc,
                 x.ToUtc,
                 x.Reason,

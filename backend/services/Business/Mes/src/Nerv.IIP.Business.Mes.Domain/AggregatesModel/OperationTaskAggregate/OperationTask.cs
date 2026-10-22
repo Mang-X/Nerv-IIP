@@ -33,11 +33,13 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         TimeSpan duration,
         DateTimeOffset? existingStartUtc,
         DateTimeOffset? existingEndUtc,
-        string? skuCode,
+        string skuCode,
         string? uomCode,
         decimal plannedQuantity,
         bool requiresQualityInspection,
-        string? operationCode)
+        string? operationCode,
+        string? requiredSkillCode,
+        OperationTaskRoutingIdentity? routingIdentity)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -53,11 +55,16 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             : throw new ArgumentOutOfRangeException(nameof(duration), "Duration must be positive.");
         ExistingStartUtc = existingStartUtc;
         ExistingEndUtc = existingEndUtc;
-        SkuCode = NormalizeOptional(skuCode) ?? workOrderId;
+        SkuCode = DomainGuard.Required(skuCode, nameof(skuCode));
         UomCode = NormalizeOptional(uomCode) ?? "pcs";
         PlannedQuantity = plannedQuantity > 0m ? plannedQuantity : 1m;
         RequiresQualityInspection = requiresQualityInspection;
         OperationCode = NormalizeOptional(operationCode);
+        RequiredSkillCode = NormalizeOptional(requiredSkillCode);
+        RoutingSourceProductionVersionId = routingIdentity?.ProductionVersionId;
+        RoutingVersionId = routingIdentity?.RoutingVersionId;
+        RoutingCode = routingIdentity?.RoutingCode;
+        RoutingRevision = routingIdentity?.RoutingRevision;
         CreatedAtUtc = DateTimeOffset.UtcNow;
     }
 
@@ -77,6 +84,10 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public long PausedDurationTicks { get; private set; }
     public long LaborTimeTicks { get; private set; }
     public long MachineTimeTicks { get; private set; }
+    public string? MachineTimeExecutionDeviceAssetId { get; private set; }
+    public bool MachineTimeEvidenceUnavailable { get; private set; } = true;
+    public long ActualTimeSettlementRevision { get; private set; }
+    public RowVersion RowVersion { get; private set; } = new(0);
     public string? AssignedUserId { get; private set; }
 
     /// <summary>Display name of the assigned worker captured when the task was dispatched.</summary>
@@ -113,6 +124,11 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
     public decimal PlannedQuantity { get; private set; }
     public bool RequiresQualityInspection { get; private set; }
     public string? OperationCode { get; private set; }
+    public string? RequiredSkillCode { get; private set; }
+    public string? RoutingSourceProductionVersionId { get; private set; }
+    public string? RoutingVersionId { get; private set; }
+    public string? RoutingCode { get; private set; }
+    public string? RoutingRevision { get; private set; }
     public string? ScheduleInvalidationReasonCode { get; private set; }
 
     public string OperationTaskId => OperationTaskIdValue;
@@ -140,11 +156,13 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         IReadOnlyCollection<string> alternativeWorkCenterIds,
         DateTimeOffset earliestStartUtc,
         TimeSpan duration,
-        string? skuCode = null,
+        string skuCode,
         string? uomCode = null,
         decimal plannedQuantity = 0m,
         bool requiresQualityInspection = false,
-        string? operationCode = null)
+        string? operationCode = null,
+        string? requiredSkillCode = null,
+        OperationTaskRoutingIdentity? routingIdentity = null)
     {
         return Create(
             organizationId,
@@ -163,7 +181,9 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             uomCode,
             plannedQuantity,
             requiresQualityInspection,
-            operationCode);
+            operationCode,
+            requiredSkillCode,
+            routingIdentity);
     }
 
     public static OperationTask Create(
@@ -179,11 +199,13 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         TimeSpan duration,
         DateTimeOffset? existingStartUtc,
         DateTimeOffset? existingEndUtc,
-        string? skuCode = null,
+        string skuCode,
         string? uomCode = null,
         decimal plannedQuantity = 0m,
         bool requiresQualityInspection = false,
-        string? operationCode = null)
+        string? operationCode = null,
+        string? requiredSkillCode = null,
+        OperationTaskRoutingIdentity? routingIdentity = null)
     {
         return new OperationTask(
             organizationId,
@@ -202,7 +224,9 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             uomCode,
             plannedQuantity,
             requiresQualityInspection,
-            operationCode);
+            operationCode,
+            requiredSkillCode,
+            routingIdentity);
     }
 
     public void Start(DateTimeOffset startedAtUtc)
@@ -215,6 +239,8 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         Status = OperationTaskLifecycleStatus.InProgress;
         ExistingStartUtc ??= startedAtUtc;
         ExistingEndUtc = null;
+        StartMachineTimeExecutionWindow();
+        AddDomainEvent(new OperationTaskStartedDomainEvent(this, startedAtUtc));
     }
 
     public void MarkScheduleInvalidated(string? reasonCode = null)
@@ -240,6 +266,7 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
         Status = OperationTaskLifecycleStatus.Paused;
         PausedAtUtc = pausedAtUtc;
+        AddDomainEvent(new OperationTaskPausedDomainEvent(this, pausedAtUtc));
     }
 
     public void Resume(DateTimeOffset resumedAtUtc)
@@ -253,13 +280,47 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         Status = OperationTaskLifecycleStatus.InProgress;
         ExistingStartUtc ??= resumedAtUtc;
         ExistingEndUtc = null;
+        AddDomainEvent(new OperationTaskResumedDomainEvent(this, resumedAtUtc));
     }
 
-    public void Complete(DateTimeOffset completedAtUtc)
+    public void Complete(
+        DateTimeOffset completedAtUtc,
+        IReadOnlyCollection<string> coveredProductionReportNos)
+    {
+        ArgumentNullException.ThrowIfNull(coveredProductionReportNos);
+        FreezeCompletion(completedAtUtc);
+
+        ActualTimeSettlementRevision = checked(ActualTimeSettlementRevision + 1);
+        var normalizedReportNos = NormalizeCoveredProductionReportNos(coveredProductionReportNos);
+        AddDomainEvent(new OperationTaskCompletedDomainEvent(this));
+        AddDomainEvent(new OperationActualTimeSettledDomainEvent(CreateActualTimeSettlementSnapshot(normalizedReportNos)));
+    }
+
+    /// <summary>
+    /// Imports a completed historical task without inventing a settlement revision or integration fact.
+    /// Runtime completion must use the governed settlement coordinator instead.
+    /// </summary>
+    internal void CompleteLegacyHistoryWithoutSettlement(DateTimeOffset completedAtUtc)
+    {
+        if (ActualTimeSettlementRevision != 0)
+        {
+            throw new InvalidOperationException("Settled operation task cannot be imported as legacy history.");
+        }
+
+        FreezeCompletion(completedAtUtc);
+        AddDomainEvent(new OperationTaskCompletedDomainEvent(this));
+    }
+
+    private void FreezeCompletion(DateTimeOffset completedAtUtc)
     {
         if (Status != OperationTaskLifecycleStatus.InProgress)
         {
             throw new InvalidOperationException("Only in-progress operation task can be completed.");
+        }
+
+        if (ExistingStartUtc is { } existingStartUtc && completedAtUtc < existingStartUtc)
+        {
+            throw new InvalidOperationException("Operation task cannot be completed before its current start time.");
         }
 
         Status = OperationTaskLifecycleStatus.Completed;
@@ -268,21 +329,72 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
         var elapsedTicks = Math.Max(0L, (completedAtUtc - ExistingStartUtc.Value).Ticks - PausedDurationTicks);
         LaborTimeTicks = elapsedTicks;
         MachineTimeTicks = elapsedTicks;
-        AddDomainEvent(new OperationTaskCompletedDomainEvent(this));
     }
 
-    public void ReopenAfterReportReversal()
+    public void ReopenAfterReportReversal(
+        OperationActualTimeSettlementSnapshot settlement,
+        DateTimeOffset voidedAtUtc)
     {
+        ArgumentNullException.ThrowIfNull(settlement);
         if (Status != OperationTaskLifecycleStatus.Completed)
         {
             return;
         }
 
+        if (ActualTimeSettlementRevision <= 0 ||
+            settlement.SettlementRevision != ActualTimeSettlementRevision ||
+            !string.Equals(settlement.OperationTaskId, OperationTaskIdValue, StringComparison.Ordinal) ||
+            !string.Equals(settlement.OrganizationId, OrganizationId, StringComparison.Ordinal) ||
+            !string.Equals(settlement.EnvironmentId, EnvironmentId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Completed operation task has no matching active actual-time settlement.");
+        }
+
+        if (voidedAtUtc < settlement.CompletedAtUtc)
+        {
+            throw new InvalidOperationException("Actual-time settlement cannot be voided before its completion time.");
+        }
+
         Status = OperationTaskLifecycleStatus.InProgress;
+        ExistingStartUtc = voidedAtUtc;
         ExistingEndUtc = null;
+        PausedAtUtc = null;
+        PausedDurationTicks = 0;
         LaborTimeTicks = 0;
         MachineTimeTicks = 0;
+        StartMachineTimeExecutionWindow();
+        AddDomainEvent(new OperationActualTimeSettlementVoidedDomainEvent(settlement, voidedAtUtc));
     }
+
+    private OperationActualTimeSettlementSnapshot CreateActualTimeSettlementSnapshot(
+        IReadOnlyCollection<string> coveredProductionReportNos) =>
+        new(
+            OrganizationId,
+            EnvironmentId,
+            WorkOrderId,
+            OperationTaskIdValue,
+            WorkCenterId,
+            ActualTimeSettlementRevision,
+            ExistingEndUtc ?? throw new InvalidOperationException("Completed operation task must have an end time."),
+            LaborTimeTicks,
+            MachineTimeTicks,
+            coveredProductionReportNos.ToArray(),
+            MachineTimeEvidenceUnavailable ? null : MachineTimeExecutionDeviceAssetId,
+            MachineTimeEvidenceUnavailable
+                ? MachineTimeFactStatus.Unavailable
+                : MachineTimeFactStatus.Available,
+            MachineTimeEvidenceUnavailable ? null : MachineTimeTicks,
+            MachineTimeEvidenceUnavailable
+                ? null
+                : MachineTimeBasisCodes.SingleDeviceActiveMinusExplicitPauseV1);
+
+    private static string[] NormalizeCoveredProductionReportNos(
+        IReadOnlyCollection<string> coveredProductionReportNos) =>
+        coveredProductionReportNos
+            .Select(x => DomainGuard.Required(x, nameof(coveredProductionReportNos)))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
 
     public void Assign(
         string? assignedUserId,
@@ -309,6 +421,11 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
             : null;
         var previousAssignedAtUtc = AssignedAtUtc;
         var normalizedDeviceAssetId = NormalizeOptional(deviceAssetId);
+        if (Status is OperationTaskLifecycleStatus.InProgress or OperationTaskLifecycleStatus.Paused &&
+            !string.Equals(MachineTimeExecutionDeviceAssetId, normalizedDeviceAssetId, StringComparison.Ordinal))
+        {
+            MachineTimeEvidenceUnavailable = true;
+        }
         var isManualDispatch = normalizedDeviceAssetId is not null && Duration > TimeSpan.Zero;
         var clearsManualDispatch = previousDeviceAssetId is not null && !isManualDispatch;
         var canonicalActor = isManualDispatch || clearsManualDispatch
@@ -347,6 +464,37 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
                 CreateManualDispatchSnapshot(normalizedDeviceAssetId!, assignedAtUtc, ManualDispatchRevision),
                 canonicalActor!));
         }
+    }
+
+    public void Claim(
+        string assignedUserId,
+        string assignedUserName,
+        string? deviceAssetId,
+        string? shiftId,
+        DateTimeOffset assignedAtUtc,
+        string actor,
+        string? teamId = null,
+        string? teamName = null)
+    {
+        if (Status != OperationTaskLifecycleStatus.Queued)
+        {
+            throw new KnownException("只有待领取的工序任务可以领取。");
+        }
+
+        if (AssignedUserId is not null)
+        {
+            throw new KnownException("该工序任务已被领取。");
+        }
+
+        Assign(
+            assignedUserId,
+            deviceAssetId,
+            shiftId,
+            assignedAtUtc,
+            actor,
+            assignedUserName,
+            teamId,
+            teamName);
     }
 
     public void Cancel(DateTimeOffset cancelledAtUtc, string actor = "system:mes")
@@ -518,6 +666,12 @@ public sealed class OperationTask : Entity<OperationTaskId>, IAggregateRoot
 
     private bool HasLegacyUnknownManualDispatch =>
         ManualDispatchRevision == 0 && !HasActiveManualDispatch && DeviceAssetId is not null;
+
+    private void StartMachineTimeExecutionWindow()
+    {
+        MachineTimeExecutionDeviceAssetId = NormalizeOptional(DeviceAssetId);
+        MachineTimeEvidenceUnavailable = MachineTimeExecutionDeviceAssetId is null;
+    }
 
     private OperationTaskManualDispatchSnapshot CreateManualDispatchSnapshot(
         string resourceId,

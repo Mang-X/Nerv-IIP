@@ -78,6 +78,11 @@ public sealed class InMemoryIamStore
                 throw InvalidCredentials(remainingAttempts <= 2 ? remainingAttempts : null);
             }
 
+            if (!_memberships.Any(x => x.UserId == user.UserId))
+            {
+                throw new IamLoginRejectedException(IamLoginFailureCodes.NoMembership);
+            }
+
             var successful = user with
             {
                 FailedLoginCount = 0,
@@ -485,6 +490,57 @@ public sealed class InMemoryIamStore
         }
     }
 
+    public IReadOnlyList<string> GetMembershipRoleIds(string userId, string organizationId, string environmentId)
+    {
+        lock (_gate)
+        {
+            return FindMembership(userId, organizationId, environmentId)?.RoleIds.Order(StringComparer.Ordinal).ToArray() ?? [];
+        }
+    }
+
+    public IReadOnlyList<string> ReplaceMembershipRoles(
+        string userId,
+        string organizationId,
+        string environmentId,
+        IReadOnlyCollection<string> roleIds)
+    {
+        lock (_gate)
+        {
+            if (_users.All(x => x.UserId != userId))
+            {
+                throw new InvalidOperationException($"User '{userId}' was not found.");
+            }
+
+            var missingRoleId = roleIds.FirstOrDefault(roleId => _roles.All(x => x.RoleId != roleId));
+            if (missingRoleId is not null)
+            {
+                throw new InvalidOperationException($"Role '{missingRoleId}' was not found.");
+            }
+
+            var existing = FindMembership(userId, organizationId, environmentId);
+            if (existing is not null)
+            {
+                _memberships.Remove(existing);
+            }
+
+            if (roleIds.Count == 0)
+            {
+                _membershipDataScopes.Remove(MembershipDataScopeKey(userId, organizationId, environmentId));
+                return [];
+            }
+
+            var desired = roleIds.ToHashSet(StringComparer.Ordinal);
+            _memberships.Add(new MembershipFact(userId, organizationId, environmentId, desired));
+            return desired.Order(StringComparer.Ordinal).ToArray();
+        }
+    }
+
+    private MembershipFact? FindMembership(string userId, string organizationId, string environmentId) =>
+        _memberships.SingleOrDefault(x =>
+            x.UserId == userId
+            && x.OrganizationId == organizationId
+            && x.EnvironmentId == environmentId);
+
     public UserFact UpdateUser(string userId, string loginName, string email, bool enabled, DateTimeOffset? accountExpiresAtUtc)
     {
         lock (_gate)
@@ -588,6 +644,7 @@ public sealed class InMemoryIamStore
 
     public void ChangePassword(
         string userId,
+        string currentSessionId,
         string currentPassword,
         string newPassword,
         InMemoryIamPasswordPolicy passwordPolicy)
@@ -614,6 +671,8 @@ public sealed class InMemoryIamStore
                 SecurityStamp = Guid.NewGuid().ToString("n"),
                 PermissionVersion = user.PermissionVersion + 1
             };
+
+            RevokeActiveUserSessions(userId, now, exceptSessionId: currentSessionId);
         }
     }
 
@@ -760,13 +819,13 @@ public sealed class InMemoryIamStore
     {
         _organizations.Add(new OrganizationFact("org-001", "Nerv IIP", "active"));
         _environments.Add(new IamEnvironmentFact("env-dev", "org-001", "Development", "active"));
-        _roles.Add(new RoleFact("role-platform-admin", "Platform Administrator", NervIipSeedPermissions.All.ToHashSet(StringComparer.Ordinal)));
+        _roles.Add(new RoleFact("role-platform-admin", NervIipSeedRoles.PlatformAdministratorRoleName, NervIipSeedPermissions.All.ToHashSet(StringComparer.Ordinal)));
         _roleDataScopes["role-platform-admin"] =
             new HashSet<DataScopeBinding>
             {
                 new(DataScopeBinding.Organization, "org-001"),
             };
-        foreach (var role in NervIipSeedRoles.ErpJobRoles)
+        foreach (var role in NervIipSeedRoles.ErpJobRoles.Append(NervIipSeedRoles.ProductionPlanner))
         {
             _roles.Add(new RoleFact(
                 role.RoleId,
@@ -778,6 +837,9 @@ public sealed class InMemoryIamStore
                     new(DataScopeBinding.Organization, "org-001"),
                 };
         }
+
+        var teamLeader = NervIipSeedRoles.MesDowntimeTeamLeader;
+        _roles.Add(new RoleFact(teamLeader.RoleId, teamLeader.RoleName, teamLeader.PermissionCodes.ToHashSet(StringComparer.Ordinal)));
 
         var now = DateTimeOffset.UtcNow;
         _users.Add(new UserFact(
@@ -833,12 +895,12 @@ public sealed class InMemoryIamStore
     {
         if (_users.Any(x => x.UserId != currentUserId && string.Equals(x.LoginName, loginName, StringComparison.OrdinalIgnoreCase)))
         {
-            throw new InvalidOperationException($"Login name '{loginName}' is already used.");
+            throw new InvalidOperationException($"登录名「{loginName}」已被使用。");
         }
 
         if (_users.Any(x => x.UserId != currentUserId && string.Equals(x.Email, email, StringComparison.OrdinalIgnoreCase)))
         {
-            throw new InvalidOperationException($"Email '{email}' is already used.");
+            throw new InvalidOperationException($"邮箱「{email}」已被使用。");
         }
     }
 
@@ -895,12 +957,15 @@ public sealed class InMemoryIamStore
             : changedAtUtc.AddDays(passwordPolicy.PasswordExpiresDays);
     }
 
-    private void RevokeActiveUserSessions(string userId, DateTimeOffset now)
+    private void RevokeActiveUserSessions(string userId, DateTimeOffset now, string? exceptSessionId = null)
     {
         for (var i = 0; i < _sessions.Count; i++)
         {
             var session = _sessions[i];
-            if (session.UserId == userId && session.RevokedAtUtc is null && session.ExpiresAtUtc > now)
+            if (session.UserId == userId
+                && session.SessionId != exceptSessionId
+                && session.RevokedAtUtc is null
+                && session.ExpiresAtUtc > now)
             {
                 _sessions[i] = session with { RevokedAtUtc = now };
             }
@@ -919,7 +984,7 @@ public sealed class InMemoryIamStore
     {
         if (_roles.Any(x => x.RoleId != currentRoleId && string.Equals(x.RoleName, roleName, StringComparison.OrdinalIgnoreCase)))
         {
-            throw new InvalidOperationException($"Role name '{roleName}' is already used.");
+            throw new InvalidOperationException($"角色名称「{roleName}」已被使用。");
         }
     }
 

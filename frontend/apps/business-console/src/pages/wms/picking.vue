@@ -1,23 +1,22 @@
 <script setup lang="ts">
 import type { BusinessConsoleWmsWarehouseTaskItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
-import ListScopeMeta from '@/components/business/ListScopeMeta.vue'
-import { useWmsOutboundOrders, useWmsPickingTasks } from '@/composables/useBusinessWms'
+import {
+  createWmsIdempotencyKey,
+  useWmsOutboundOrders,
+  useWmsPickingTasks,
+} from '@/composables/useBusinessWms'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
-import {
-  useWarehouseCodeCatalog,
-  WAREHOUSE_CATALOG_SOURCE_TEXT,
-  WAREHOUSE_LOCATION_EMPTY_TEXT,
-} from '@/composables/useWarehouseCodeCatalog'
 import {
   warehouseTaskBlockReasonText,
   wmsWarehouseTaskStatusFilterOptions,
@@ -78,18 +77,13 @@ const {
   startPicking,
   completePicking,
   pickingActionPending,
-  pickingTasksLastUpdatedAt,
-  pickingTasksHasSuccessfulResponse,
-  pickingTasksHasFailedResponse,
 } = useWmsPickingTasks({ workScopeRequired: true })
 const {
   scopeKey,
   scopeOptions,
-  selectedScopeLabel,
   hasSelection: pickingScopeReady,
   unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
-  error: workScopeError,
   refresh: refreshWorkScopes,
 } = bindWmsWorkScopeFilters(filters, 'shipments')
 const operationalCandidates = useWmsOperationalCandidates('shipment', filters)
@@ -103,10 +97,6 @@ const { page, pageSize } = usePagedList(filters, {
     () => filters.scopeKind,
     () => filters.scopeId,
   ],
-})
-// 库位后端无主数据读面，从真实的上架/拣货/盘点任务与出库单行里派生可选项。
-const { locationOptions, warehouseCatalogPending } = useWarehouseCodeCatalog(undefined, {
-  scope: () => ({ scopeKind: filters.scopeKind, scopeId: filters.scopeId }),
 })
 // 出库单是真实读面（只要组织/环境即可列出），拣货任务必须挂在已存在的出库单下。
 const {
@@ -149,6 +139,16 @@ const outboundOrderNoById = computed(() => {
   for (const [no, id] of outboundOrderIdByNo.value) map.set(id, no)
   return map
 })
+// 任务读面只回编码（SKU-… / WH-…），名称在主数据里，按编码 join 出中文名。
+const { resolveSkuName } = useSkuNames()
+const { resolveLocation } = useMasterDataDisplayNames({ locations: true })
+// 就地新增库位时预填所选出库单的工厂：库位要建在单据所在的工厂下。
+const createSiteCode = computed(
+  () =>
+    outboundOrders.value.find(
+      (order) => order.outboundOrderId?.trim() === createForm.outboundOrderId,
+    )?.siteCode ?? '',
+)
 const outboundOrderSelection = computed({
   // 目录还没到位时如实回落显示已有值，不让选择框看起来是空的。
   get: () =>
@@ -180,19 +180,44 @@ watch(
 // 拣货任务挂在出库单下（领料齐套 → 出库拣货扣减）。创建需绑定出库单与单行任务。
 const createOpen = shallowRef(false)
 const createError = shallowRef('')
+// 拣货任务号由系统按编码规则生成；同一次填写的重试沿用同一个幂等键。
+const createIdempotencyKey = shallowRef('')
 const createForm = reactive({
   outboundOrderId: '',
-  taskNo: '',
   lineNo: '',
   fromLocationCode: '',
   toLocationCode: '',
   quantity: '',
 })
+// 行号只能是所选出库单上真实存在的行：出库单列表每张单自带它的行。
+const outboundLineOptions = computed(() =>
+  (
+    outboundOrders.value.find(
+      (order) => order.outboundOrderId?.trim() === createForm.outboundOrderId,
+    )?.lines ?? []
+  ).flatMap((line) => {
+    const lineNo = line.lineNo?.trim()
+    if (!lineNo) return []
+    // 物料名放进主文案（可截断），辅助信息只留数量：辅助信息不截断，放长了会把行号挤没。
+    const sku = line.skuCode ? (resolveSkuName(line.skuCode) ?? line.skuCode) : ''
+    const label = sku ? `第 ${lineNo} 行 · ${sku}` : `第 ${lineNo} 行`
+    const hint =
+      line.requestedQuantity == null
+        ? ''
+        : `需求 ${line.requestedQuantity} ${line.uomCode ?? ''}`.trim()
+    return [{ value: lineNo, label, ...(hint ? { hint } : {}) }]
+  }),
+)
+// 换了出库单，上一张单的行号就不再成立；新单只有一行时直接带上。
+watch(outboundLineOptions, (options) => {
+  if (options.some((option) => option.value === createForm.lineNo)) return
+  createForm.lineNo = options.length === 1 ? options[0]!.value : ''
+})
 
 function openCreate() {
   createForm.outboundOrderId = ''
-  createForm.taskNo = ''
-  createForm.lineNo = '1'
+  createIdempotencyKey.value = createWmsIdempotencyKey()
+  createForm.lineNo = ''
   createForm.fromLocationCode = ''
   createForm.toLocationCode = ''
   createForm.quantity = ''
@@ -202,12 +227,11 @@ function openCreate() {
 async function submitCreate() {
   if (
     !createForm.outboundOrderId.trim() ||
-    !createForm.taskNo.trim() ||
     !createForm.lineNo.trim() ||
     !createForm.fromLocationCode.trim() ||
     !createForm.toLocationCode.trim()
   ) {
-    createError.value = '请填写出库单、任务号、行号与起讫库位。'
+    createError.value = '请填写出库单、出库单行与起讫库位。'
     return
   }
   if (createForm.quantity !== '' && !(Number(createForm.quantity) > 0)) {
@@ -216,14 +240,14 @@ async function submitCreate() {
   }
   try {
     await createPicking(createForm.outboundOrderId.trim(), {
-      taskNo: createForm.taskNo.trim(),
       lineNo: createForm.lineNo.trim(),
       fromLocationCode: createForm.fromLocationCode.trim(),
       toLocationCode: createForm.toLocationCode.trim(),
       quantity: createForm.quantity === '' ? undefined : Number(createForm.quantity),
+      idempotencyKey: createIdempotencyKey.value,
     })
     createOpen.value = false
-    notifySuccess('拣货任务已创建')
+    notifySuccess('拣货任务已创建，任务号由系统生成')
   } catch (error) {
     notifyOperationFailure('创建拣货任务失败', error, '创建拣货任务失败，请稍后重试。')
   }
@@ -338,7 +362,7 @@ async function submitComplete() {
  */
 const listErrorMessage = computed(() =>
   pickingTasksError.value
-    ? `取不到拣货任务列表，当前拣货进度无法判断：${formatError(pickingTasksError.value)}`
+    ? `取不到拣货任务列表，当前拣货进度无法判断：${inlineErrorMessage(pickingTasksError.value)}`
     : '',
 )
 /**
@@ -354,10 +378,6 @@ const headerCount = computed(() => {
   if (pickingTasksPending.value) return '加载中'
   return `${pickingTasksTotal.value} 个拣货任务`
 })
-
-// 任务读面只回编码（SKU-… / WH-…），名称在主数据里，按编码 join 出中文名。
-const { resolveSkuName } = useSkuNames()
-const { resolveLocation } = useMasterDataDisplayNames({ locations: true })
 
 /** 库位展示串：优先中文名，名录查不到就只显编码。 */
 function locationLabel(code?: string | null) {
@@ -385,30 +405,57 @@ const columns: NvDataTableColumn<PickingRow>[] = [
   {
     key: 'taskNo',
     header: '任务号',
+    width: 'w-64',
     cellClass: 'font-medium',
     // warehouseTaskId 是系统 GUID，不上屏；没有人读任务号就如实留空。
     accessor: (r) => r.taskNo ?? '无任务号',
   },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'sourceOrderNo', header: '来源单据', accessor: (r) => r.sourceOrderNo ?? '—' },
+  {
+    key: 'sourceOrderNo',
+    header: '来源单据',
+    width: 'w-56',
+    accessor: (r) => r.sourceOrderNo ?? '—',
+  },
   {
     key: 'skuCode',
     header: '物料',
+    width: 'w-48',
     accessor: (r) => skuText(r.skuCode),
   },
   { key: 'inventoryContext', header: '库存上下文', width: 'w-72' },
   {
     key: 'location',
     header: '起讫库位',
+    width: 'w-56',
     accessor: (r) => `${locationLabel(r.fromLocationCode)} → ${locationLabel(r.toLocationCode)}`,
   },
   {
-    key: 'quantity',
-    header: '数量',
+    key: 'plannedQuantity',
+    header: '计划数量',
+    width: 'w-28',
     align: 'end',
-    accessor: (r) => formatQuantity(r.executedQuantity ?? r.plannedQuantity),
+    accessor: (r) => formatQuantity(r.plannedQuantity),
   },
-  { key: 'createdAtUtc', header: '创建时间', accessor: (r) => formatDateTime(r.createdAtUtc) },
+  {
+    key: 'executedQuantity',
+    header: '已执行数量',
+    width: 'w-28',
+    align: 'end',
+    accessor: (r) => formatQuantity(r.executedQuantity),
+  },
+  {
+    key: 'uomCode',
+    header: '单位',
+    width: 'w-16',
+    accessor: (r) => r.uomCode ?? '—',
+  },
+  {
+    key: 'createdAtUtc',
+    header: '创建时间',
+    width: 'w-48',
+    accessor: (r) => formatDateTime(r.createdAtUtc),
+  },
   {
     key: 'actions',
     header: '操作',
@@ -429,10 +476,6 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
-
 function refreshAll() {
   void refreshWorkScopes()
   void refreshPickingTasks()
@@ -464,22 +507,6 @@ function firstQuery(value: unknown) {
         </NvButton>
       </template>
     </NvPageHeader>
-
-    <ListScopeMeta
-      :scope="selectedScopeLabel || 'WMS 作业范围未就绪'"
-      source="WMS 发货作业范围目录"
-      :loaded="pickingTasks.length"
-      :total="pickingTasksTotal"
-      :updated-at="pickingTasksLastUpdatedAt"
-      :empty="pickingTasksHasSuccessfulResponse && !pickingTasksError && pickingTasks.length === 0"
-      :failed="
-        pickingTasksHasFailedResponse || Boolean(pickingTasksError) || Boolean(workScopeError)
-      "
-      failure-explanation="WMS 发货作业范围或拣货任务未成功返回，请重试。"
-      :empty-explanation="
-        pickingScopeReady ? '当前作业范围没有拣货任务。' : workScopeUnreadyMessage
-      "
-    />
 
     <NvToolbar :show-search="false">
       <template #filters>
@@ -681,7 +708,6 @@ function firstQuery(value: unknown) {
                 :options="outboundOrderOptions"
                 title="选择出库单"
                 placeholder="选择出库单"
-                source-text="数据来自仓储出库单"
                 empty-text="暂无出库单，请先创建出库单"
                 :loading="outboundOrdersPending"
                 clearable
@@ -689,39 +715,46 @@ function firstQuery(value: unknown) {
               />
             </NvField>
             <NvField>
-              <NvFieldLabel for="wms-picking-no">任务号</NvFieldLabel>
-              <NvInput id="wms-picking-no" v-model="createForm.taskNo" autocomplete="off" />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="wms-picking-line">行号</NvFieldLabel>
-              <NvInput id="wms-picking-line" v-model="createForm.lineNo" autocomplete="off" />
+              <NvFieldLabel for="wms-picking-line">出库单行</NvFieldLabel>
+              <NvEntityPicker
+                id="wms-picking-line"
+                v-model="createForm.lineNo"
+                :options="outboundLineOptions"
+                :show-code="false"
+                :disabled="!createForm.outboundOrderId"
+                title="选择出库单行"
+                :placeholder="createForm.outboundOrderId ? '选择出库单行' : '先选出库单'"
+                empty-text="该出库单没有明细行"
+                :loading="outboundOrdersPending"
+                aria-label="出库单行"
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-picking-from">拣货库位</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="wms-picking-from"
                 v-model="createForm.fromLocationCode"
-                :options="locationOptions"
+                directory-type="location"
+                creatable
+                :form-site-code="createSiteCode"
+                site-missing-text="请先选择出库单"
                 title="选择货架库位"
                 placeholder="货架库位"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 aria-label="拣货库位"
               />
             </NvField>
             <NvField>
               <NvFieldLabel for="wms-picking-to">目标库位</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="wms-picking-to"
                 v-model="createForm.toLocationCode"
-                :options="locationOptions"
+                directory-type="location"
+                creatable
+                :form-site-code="createSiteCode"
+                site-missing-text="请先选择出库单"
                 title="选择集货库位"
                 placeholder="集货/暂存库位"
-                :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-                :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-                :loading="warehouseCatalogPending"
                 clearable
                 aria-label="目标库位"
               />

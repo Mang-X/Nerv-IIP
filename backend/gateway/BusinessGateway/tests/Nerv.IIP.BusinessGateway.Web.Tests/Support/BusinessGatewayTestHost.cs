@@ -471,7 +471,8 @@ internal static class BusinessGatewayTestHost
     {
         services.RemoveAll<BusinessGatewayDownstreamHealthState>();
         services.AddScoped(serviceProvider =>
-            ResolveScope(serviceProvider)?.HealthState ?? new BusinessGatewayDownstreamHealthState());
+            ResolveScope(serviceProvider)?.HealthState
+            ?? new BusinessGatewayDownstreamHealthState(serviceProvider.GetRequiredService<TimeProvider>()));
     }
 
     private static BusinessGatewayTestScope? ResolveScope(IServiceProvider serviceProvider)

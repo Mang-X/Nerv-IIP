@@ -1,62 +1,8 @@
 using Microsoft.EntityFrameworkCore;
-using System.Text;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.DeviceAssetAggregate;
+using Nerv.IIP.Contracts.MasterData;
 
 namespace Nerv.IIP.Business.MasterData.Web.Application.Queries;
-
-public sealed record MasterDataResourceItem(
-    string ResourceType,
-    string Code,
-    string DisplayName,
-    bool Active,
-    string SnapshotVersion,
-    string? PartnerType = null,
-    IReadOnlyCollection<string>? PartnerRoles = null,
-    string? SiteCode = null,
-    string? PlantCode = null,
-    string? LineCode = null,
-    string? WorkshopCode = null,
-    int? CapacityMinutesPerDay = null,
-    string? WorkCenterCode = null,
-    string? Status = null,
-    string? Category = null,
-    string? MaterialType = null,
-    string? CodeSet = null,
-    string? BaseUomCode = null,
-    string? TaxId = null,
-    string? ParentDepartmentCode = null,
-    string? DepartmentCode = null,
-    string? ShiftCode = null,
-    string? UserId = null,
-    string? SkillCode = null,
-    string? SkillLevel = null,
-    DateOnly? EffectiveFrom = null,
-    DateOnly? EffectiveTo = null,
-    string? FromUomCode = null,
-    string? ToUomCode = null,
-    decimal? Factor = null,
-    decimal? Offset = null,
-    int? Precision = null,
-    string? RoundingMode = null,
-    string? DeviceAssetId = null,
-    DateOnly? PurchaseDate = null,
-    decimal? PurchaseCost = null,
-    string? PurchaseCurrencyCode = null,
-    DateOnly? WarrantyExpiresOn = null,
-    string? SupplierPartnerCode = null,
-    string? StationCode = null,
-    string? ParentDeviceId = null,
-    DateOnly? RetiredOn = null,
-    decimal? CreditLimit = null,
-    string? CreditCurrencyCode = null,
-    string? JobTitle = null,
-    string? EmploymentStatus = null,
-    string? Phone = null);
-
-public sealed record ListMasterDataResourcesResponse(
-    IReadOnlyCollection<MasterDataResourceItem> Resources,
-    int Total,
-    bool Truncated = false,
-    int? Limit = null);
 
 public sealed record ListMasterDataResourcesQuery(
     string OrganizationId,
@@ -64,7 +10,7 @@ public sealed record ListMasterDataResourcesQuery(
     string ResourceType,
     bool IncludeDisabled = false,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     string? CodeSet = null,
     string? ParentCode = null,
     string? SiteCode = null,
@@ -78,91 +24,99 @@ public sealed record ListMasterDataResourcesQuery(
     string? ShiftCode = null,
     string? UserId = null,
     string? SkillCode = null,
-    string? WorkshopCode = null) : IQuery<ListMasterDataResourcesResponse>;
+    string? WorkshopCode = null,
+    string? DeviceAssetId = null,
+    IReadOnlyCollection<string>? SiteCodes = null,
+    IReadOnlyCollection<string>? DeviceScopeSiteCodes = null,
+    IReadOnlyCollection<string>? DeviceScopeWorkshopCodes = null,
+    IReadOnlyCollection<string>? DeviceScopeLineCodes = null,
+    IReadOnlyCollection<string>? DeviceScopeWorkCenterCodes = null) : IQuery<ListMasterDataResourcesResponse>;
+
+public sealed class ListMasterDataResourcesQueryValidator : AbstractValidator<ListMasterDataResourcesQuery>
+{
+    public ListMasterDataResourcesQueryValidator()
+    {
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+        RuleFor(query => query.SiteCodes).Must(x => x == null || x.Count is > 0 and <= 100);
+        RuleForEach(query => query.SiteCodes).NotEmpty().MaximumLength(100);
+    }
+}
 
 public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMasterDataResourcesQuery, ListMasterDataResourcesResponse>
 {
     public async Task<ListMasterDataResourcesResponse> Handle(ListMasterDataResourcesQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var keyword = SearchTerm.From(request.Keyword);
         var type = request.ResourceType.Trim().ToLowerInvariant();
+        DeviceAssetId? resolvedDeviceAssetId = null;
+        if (type == "device-asset" && !string.IsNullOrWhiteSpace(request.DeviceAssetId))
+        {
+            var reference = request.DeviceAssetId.Trim();
+            var resolution = await DeviceAssetReferenceResolver.ResolveAsync(
+                dbContext,
+                tenant.OrganizationId,
+                tenant.EnvironmentId,
+                [reference],
+                cancellationToken);
+            if (resolution.InvalidReason == "not-found")
+            {
+                return new ListMasterDataResourcesResponse([], 0);
+            }
+            if (resolution.InvalidReason.Length > 0)
+            {
+                throw new KnownException($"主数据设备引用 '{reference}' 对应多条记录，无法唯一确定。");
+            }
+            resolvedDeviceAssetId = resolution.Devices[reference].DeviceAssetId;
+        }
         var query = type switch
         {
-            "sku" => ListSkus(request, type),
-            "unit-of-measure" or "uom" => ListUnits(request, "unit-of-measure"),
-            "uom-conversion" => ListUomConversions(request, type),
-            "business-partner" or "partner" => ListPartners(request, "business-partner"),
-            "department" => ListDepartments(request, type),
-            "team" => ListTeams(request, type),
-            "worker" => ListWorkers(request, type),
-            "personnel-skill" => ListPersonnelSkills(request, type),
-            "workshop" => ListWorkshops(request, type),
-            "work-center" => ListWorkCenters(request, type),
-            "work-calendar" => ListWorkCalendars(request, type),
-            "device-asset" => ListDeviceAssets(request, type),
-            "station" => ListStations(request, type),
-            "site" => ListSites(request, type),
-            "production-line" => ListProductionLines(request, type),
-            "shift" => ListShifts(request, type),
-            "reference-data" or "reference-data-code" => ListReferenceDataCodes(request, "reference-data"),
+            "sku" => ListSkus(request, tenant, keyword.Value, type),
+            "unit-of-measure" or "uom" => ListUnits(request, tenant, keyword.Value, "unit-of-measure"),
+            "uom-conversion" => ListUomConversions(request, tenant, keyword.Value, type),
+            "business-partner" or "partner" => ListPartners(request, tenant, keyword.Value, "business-partner"),
+            "department" => ListDepartments(request, tenant, keyword.Value, type),
+            "team" => ListTeams(request, tenant, keyword.Value, type),
+            "worker" => ListWorkers(request, tenant, keyword.Value, type),
+            "personnel-skill" => ListPersonnelSkills(request, tenant, keyword.Value, type),
+            "workshop" => ListWorkshops(request, tenant, keyword.Value, type),
+            "work-center" => ListWorkCenters(request, tenant, keyword.Value, type),
+            "work-calendar" => ListWorkCalendars(request, tenant, keyword.Value, type),
+            "device-asset" => ListDeviceAssets(request, tenant, keyword.Value, type, resolvedDeviceAssetId),
+            "station" => ListStations(request, tenant, keyword.Value, type),
+            "site" => ListSites(request, tenant, keyword.Value, type),
+            "production-line" => ListProductionLines(request, tenant, keyword.Value, type),
+            "shift" => ListShifts(request, tenant, keyword.Value, type),
+            "reference-data" or "reference-data-code" => ListReferenceDataCodes(request, tenant, keyword.Value, "reference-data"),
             _ => null,
         };
         return query is null
             ? new ListMasterDataResourcesResponse([], 0)
-            : await ToPageAsync(query, request, cancellationToken);
+            : await ToPageAsync(query, request, page, cancellationToken);
     }
 
     private static async Task<ListMasterDataResourcesResponse> ToPageAsync(
         IQueryable<MasterDataResourceItem> query,
         ListMasterDataResourcesQuery request,
+        OffsetPage page,
         CancellationToken cancellationToken)
     {
         var total = await query.CountAsync(cancellationToken);
-        var limit = request.All ? 5000 : Math.Clamp(request.Take, 1, 500);
+        var limit = request.All ? 5000 : page.Take;
         var resources = await query
-            .Skip(request.All ? 0 : Math.Max(0, request.Skip))
+            .Skip(request.All ? 0 : page.Skip)
             .Take(limit)
             .ToListAsync(cancellationToken);
-        if (string.Equals(request.ResourceType, "station", StringComparison.OrdinalIgnoreCase))
-        {
-            resources = resources
-                .Select(resource => resource with
-                {
-                    Code = StableStationId(
-                        request.OrganizationId,
-                        request.EnvironmentId,
-                        resource.SiteCode,
-                        resource.WorkshopCode,
-                        resource.LineCode,
-                        resource.WorkCenterCode,
-                        resource.StationCode),
-                })
-                .ToList();
-        }
-
         return new ListMasterDataResourcesResponse(resources, total, request.All && total > limit, request.All ? limit : null);
     }
 
-    private static string StableStationId(params string?[] components)
+    private IQueryable<MasterDataResourceItem> ListSkus(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
     {
-        var builder = new StringBuilder("station:");
-        foreach (var component in components)
-        {
-            var value = component ?? string.Empty;
-            builder.Append(Encoding.UTF8.GetByteCount(value));
-            builder.Append(':');
-            builder.Append(value);
-        }
-
-        return builder.ToString();
-    }
-
-    private IQueryable<MasterDataResourceItem> ListSkus(ListMasterDataResourcesQuery request, string resourceType)
-    {
-        var keyword = NormalizeKeyword(request.Keyword);
         return dbContext.Skus
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.Category) || x.Category == request.Category)
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
@@ -170,24 +124,22 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, null, x.Disabled ? "disabled" : "active", x.Category, x.MaterialType, null, x.BaseUomCode));
     }
 
-    private IQueryable<MasterDataResourceItem> ListUnits(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListUnits(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
         return dbContext.UnitsOfMeasure
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, null, x.Disabled ? "disabled" : "active"));
     }
 
-    private IQueryable<MasterDataResourceItem> ListUomConversions(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListUomConversions(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
         return dbContext.UomConversions
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => keyword == null || x.FromUomCode.ToLower().Contains(keyword) || x.ToUomCode.ToLower().Contains(keyword))
             .OrderBy(x => x.FromUomCode)
@@ -228,12 +180,11 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
                 x.RoundingMode));
     }
 
-    private IQueryable<MasterDataResourceItem> ListPartners(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListPartners(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
         return dbContext.BusinessPartners
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.PartnerType) || x.PartnerType == request.PartnerType || x.PartnerRoles.Contains(request.PartnerType))
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
@@ -254,12 +205,11 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             });
     }
 
-    private IQueryable<MasterDataResourceItem> ListDepartments(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListDepartments(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
         return dbContext.Departments
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.ParentCode) || x.ParentDepartmentCode == request.ParentCode)
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
@@ -267,12 +217,11 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, null, x.Disabled ? "disabled" : "active", null, null, null, null, null, x.ParentDepartmentCode));
     }
 
-    private IQueryable<MasterDataResourceItem> ListTeams(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListTeams(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
         return dbContext.Teams
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.DepartmentCode) || x.DepartmentCode == request.DepartmentCode)
             .Where(x => string.IsNullOrWhiteSpace(request.ShiftCode) || x.ShiftCode == request.ShiftCode)
@@ -282,12 +231,11 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, x.WorkshopCode, null, null, x.Disabled ? "disabled" : "active", null, null, null, null, null, null, x.DepartmentCode, x.ShiftCode));
     }
 
-    private IQueryable<MasterDataResourceItem> ListWorkers(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListWorkers(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
         return dbContext.Workers
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.DepartmentCode) || x.DepartmentCode == request.DepartmentCode)
             .Where(x => string.IsNullOrWhiteSpace(request.UserId) || x.UserId == request.UserId)
@@ -296,12 +244,11 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, null, x.Disabled ? "disabled" : "active", null, null, null, null, null, null, x.DepartmentCode, null, x.UserId, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, x.JobTitle, x.EmploymentStatus, x.Phone));
     }
 
-    private IQueryable<MasterDataResourceItem> ListPersonnelSkills(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListPersonnelSkills(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
         return dbContext.PersonnelSkills
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.UserId) || x.UserId == request.UserId)
             .Where(x => string.IsNullOrWhiteSpace(request.SkillCode) || x.SkillCode == request.SkillCode)
@@ -311,55 +258,74 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             .Select(x => Item(resourceType, $"{x.UserId}:{x.SkillCode}", x.Level, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, null, x.Disabled ? "disabled" : "active", null, null, null, null, null, null, null, null, x.UserId, x.SkillCode, x.Level, x.EffectiveFrom, x.EffectiveTo));
     }
 
-    private IQueryable<MasterDataResourceItem> ListWorkshops(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListWorkshops(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
         return dbContext.Workshops
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.SiteCode) || x.SiteCode == request.SiteCode)
+            .Where(x => request.SiteCodes == null || request.SiteCodes.Contains(x.SiteCode))
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, x.SiteCode, null, null, null, null, null, x.Disabled ? "disabled" : "active"));
     }
 
-    private IQueryable<MasterDataResourceItem> ListWorkCenters(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListWorkCenters(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
         return dbContext.WorkCenters
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.LineCode) || x.LineCode == request.LineCode)
             .Where(x => string.IsNullOrWhiteSpace(request.SiteCode) || x.PlantCode == request.SiteCode)
+            .Where(x => request.SiteCodes == null || request.SiteCodes.Contains(x.PlantCode))
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, x.PlantCode, x.LineCode, x.WorkshopCode, x.CapacityMinutesPerDay, null, x.Disabled ? "disabled" : "active"));
     }
 
-    private IQueryable<MasterDataResourceItem> ListWorkCalendars(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListWorkCalendars(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
         return dbContext.WorkCalendars
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, null, x.Disabled ? "disabled" : "active"));
     }
 
-    private IQueryable<MasterDataResourceItem> ListDeviceAssets(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListDeviceAssets(
+        ListMasterDataResourcesQuery request,
+        TenantScope tenant,
+        string? keyword,
+        string resourceType,
+        DeviceAssetId? resolvedDeviceAssetId)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
-        return dbContext.DeviceAssets
+        var restricted = request.DeviceScopeSiteCodes is not null || request.DeviceScopeWorkshopCodes is not null
+            || request.DeviceScopeLineCodes is not null || request.DeviceScopeWorkCenterCodes is not null;
+        var sites = request.DeviceScopeSiteCodes ?? [];
+        var workshops = request.DeviceScopeWorkshopCodes ?? [];
+        var lines = request.DeviceScopeLineCodes ?? [];
+        var workCenters = request.DeviceScopeWorkCenterCodes ?? [];
+        var query = dbContext.DeviceAssets
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
+            .Where(x => !restricted || sites.Contains(x.SiteCode) || workshops.Contains(x.WorkshopCode)
+                || lines.Contains(x.LineCode) || workCenters.Contains(x.WorkCenterCode))
+            .Where(x => string.IsNullOrWhiteSpace(request.SiteCode) || x.SiteCode == request.SiteCode)
+            .Where(x => string.IsNullOrWhiteSpace(request.WorkshopCode) || x.WorkshopCode == request.WorkshopCode)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.LineCode) || x.LineCode == request.LineCode)
             .Where(x => string.IsNullOrWhiteSpace(request.WorkCenterCode) || x.WorkCenterCode == request.WorkCenterCode)
-            .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Model.ToLower().Contains(keyword))
+            .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Model.ToLower().Contains(keyword));
+        if (resolvedDeviceAssetId is not null)
+        {
+            query = query.Where(x => x.Id == resolvedDeviceAssetId);
+        }
+
+        return query
             .OrderBy(x => x.Code)
             .Select(x => new MasterDataResourceItem(
                 resourceType,
@@ -385,83 +351,113 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             });
     }
 
-    private IQueryable<MasterDataResourceItem> ListStations(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListStations(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
-        return dbContext.DeviceAssets
+        // 厂区与车间沿产线继承，不在工位上冗余；上级产线缺失时两列留空而不是丢行。
+        return dbContext.Stations
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
-            .Where(x => x.StationCode != null && x.StationCode != "")
-            .Where(x => string.IsNullOrWhiteSpace(request.WorkCenterCode) || x.WorkCenterCode == request.WorkCenterCode)
-            .Where(x => keyword == null || x.StationCode!.ToLower().Contains(keyword))
-            .GroupBy(x => new { x.SiteCode, x.WorkshopCode, x.LineCode, x.WorkCenterCode, StationCode = x.StationCode! })
-            .OrderBy(x => x.Key.StationCode)
-            .ThenBy(x => x.Key.SiteCode)
-            .ThenBy(x => x.Key.WorkshopCode)
-            .ThenBy(x => x.Key.LineCode)
-            .ThenBy(x => x.Key.WorkCenterCode)
+            .Where(x => string.IsNullOrWhiteSpace(request.LineCode) || x.LineCode == request.LineCode)
+            // 工位挂在产线下：按工作中心收窄时给出该工作中心所在产线下的全部工位，
+            // 另并回工位自身关联到该工作中心的工位（工作中心改挂产线、未登记或无产线时不丢）。
+            .Where(x => string.IsNullOrWhiteSpace(request.WorkCenterCode) ||
+                x.WorkCenterCode == request.WorkCenterCode ||
+                dbContext.WorkCenters.Any(workCenter =>
+                    workCenter.OrganizationId == x.OrganizationId &&
+                    workCenter.EnvironmentId == x.EnvironmentId &&
+                    workCenter.Code == request.WorkCenterCode &&
+                    workCenter.LineCode == x.LineCode))
+            .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
+            .GroupJoin(
+                dbContext.ProductionLines.AsNoTracking(),
+                station => new { station.OrganizationId, station.EnvironmentId, Code = station.LineCode },
+                line => new { line.OrganizationId, line.EnvironmentId, line.Code },
+                (station, lines) => new { station, lines })
+            .SelectMany(x => x.lines.DefaultIfEmpty(), (x, line) => new { x.station, line })
+            .OrderBy(x => x.station.Code)
             .Select(x => new MasterDataResourceItem(
                 resourceType,
-                x.Key.StationCode,
-                x.Key.StationCode,
-                true,
-                x.Max(asset => asset.UpdatedAtUtc).ToString("O"))
+                x.station.Code,
+                x.station.Name,
+                !x.station.Disabled,
+                x.station.UpdatedAtUtc.ToString("O"))
             {
-                SiteCode = x.Key.SiteCode,
-                WorkshopCode = x.Key.WorkshopCode,
-                LineCode = x.Key.LineCode,
-                WorkCenterCode = x.Key.WorkCenterCode,
-                StationCode = x.Key.StationCode,
-                Status = "active",
+                SiteCode = x.line == null ? null : x.line.SiteCode,
+                WorkshopCode = x.line == null ? null : x.line.WorkshopCode,
+                LineCode = x.station.LineCode,
+                WorkCenterCode = x.station.WorkCenterCode,
+                StationCode = x.station.Code,
+                Status = x.station.Disabled ? "disabled" : "active",
             });
     }
 
-    private IQueryable<MasterDataResourceItem> ListSites(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListSites(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
         return dbContext.Sites
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.SiteCode) || x.Code == request.SiteCode)
+            .Where(x => request.SiteCodes == null || request.SiteCodes.Contains(x.Code))
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
-            .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, null, x.Disabled ? "disabled" : "active"));
+            .Select(x => new MasterDataResourceItem(
+                resourceType,
+                x.Code,
+                x.Name,
+                !x.Disabled,
+                x.UpdatedAtUtc.ToString("O"))
+            {
+                Status = x.Disabled ? "disabled" : "active",
+                Timezone = x.Timezone,
+            });
     }
 
-    private IQueryable<MasterDataResourceItem> ListProductionLines(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListProductionLines(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
         return dbContext.ProductionLines
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.SiteCode) || x.SiteCode == request.SiteCode)
+            .Where(x => request.SiteCodes == null || request.SiteCodes.Contains(x.SiteCode))
             .Where(x => string.IsNullOrWhiteSpace(request.LineCode) || x.Code == request.LineCode)
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
             .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, x.SiteCode, null, null, x.WorkshopCode, null, null, x.Disabled ? "disabled" : "active"));
     }
 
-    private IQueryable<MasterDataResourceItem> ListShifts(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListShifts(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
         return dbContext.Shifts
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
+            .Where(x => string.IsNullOrWhiteSpace(request.ShiftCode) || x.Code == request.ShiftCode)
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword))
             .OrderBy(x => x.Code)
-            .Select(x => Item(resourceType, x.Code, x.Name, !x.Disabled, x.UpdatedAtUtc, null, null, null, null, null, null, null, null, x.Disabled ? "disabled" : "active"));
+            .Select(x => new MasterDataResourceItem(
+                resourceType,
+                x.Code,
+                x.Name,
+                !x.Disabled,
+                x.UpdatedAtUtc.ToString("O"))
+            {
+                Status = x.Disabled ? "disabled" : "active",
+                StartsAt = x.StartsAt,
+                EndsAt = x.EndsAt,
+                CrossesMidnight = x.CrossesMidnight,
+                PaidMinutes = x.PaidMinutes,
+                BreakMinutes = x.BreakMinutes,
+            });
     }
 
-    private IQueryable<MasterDataResourceItem> ListReferenceDataCodes(ListMasterDataResourcesQuery request, string resourceType)
+    private IQueryable<MasterDataResourceItem> ListReferenceDataCodes(ListMasterDataResourcesQuery request, TenantScope tenant, string? keyword, string resourceType)
     {
-        var keyword = NormalizeKeyword(request.Keyword);
         return dbContext.ReferenceDataCodes
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.IncludeDisabled || !x.Disabled)
             .Where(x => string.IsNullOrWhiteSpace(request.CodeSet) || x.CodeSet == request.CodeSet)
             .Where(x => keyword == null || x.Code.ToLower().Contains(keyword) || x.Name.ToLower().Contains(keyword) || x.CodeSet.ToLower().Contains(keyword))
@@ -569,8 +565,4 @@ public sealed class ListMasterDataResourcesQueryHandler(ApplicationDbContext dbC
             Phone);
     }
 
-    private static string? NormalizeKeyword(string? keyword)
-    {
-        return string.IsNullOrWhiteSpace(keyword) ? null : keyword.Trim().ToLowerInvariant();
-    }
 }

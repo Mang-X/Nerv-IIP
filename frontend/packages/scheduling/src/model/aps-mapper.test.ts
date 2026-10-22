@@ -4,6 +4,75 @@ import { toLockedAssignments, toModel } from './aps-mapper'
 import { conflictReasonLabel } from './labels'
 
 describe('toModel', () => {
+  it('consumes current work-order facts without replacing saved risks or inventing operation progress', () => {
+    const currentExecution = {
+      workOrderProgress: { completedQuantity: 25, plannedQuantity: 100 },
+      isMaterialReady: false,
+      materialReadyUtc: null,
+      equipmentState: 'Running',
+      isEquipmentSourceFresh: false,
+    }
+    const model = toModel({
+      ...samplePlan,
+      assignments: [{ ...samplePlan.assignments![0], currentExecution }],
+    })
+    const task = model.tasks.find((task) => task.id === 'a1')!
+    expect(task.currentExecution).toEqual(currentExecution)
+    expect(task.progress).toBeUndefined()
+  })
+
+  it('未知设备警告不会被画作已确认冲突，已知设备阻塞仍保留冲突', () => {
+    const assignment = samplePlan.assignments![0]!
+    const conflict = {
+      conflictId: 'equipment-risk',
+      reasonCode: 'equipment' as const,
+      orderId: assignment.orderId,
+      operationId: assignment.operationId,
+      resourceId: assignment.resourceId,
+      message: '设备状态未知，开工前请人工确认设备可用',
+    }
+    const warning = toModel({ ...samplePlan, conflicts: [{ ...conflict, severity: 'warning' }] })
+    expect(warning.tasks.find((task) => task.id === assignment.assignmentId)?.hasConflict).toBe(
+      false,
+    )
+    const blocked = toModel({
+      ...samplePlan,
+      conflicts: [{ ...conflict, severity: 'error', message: '设备停机' }],
+    })
+    expect(blocked.tasks.find((task) => task.id === assignment.assignmentId)?.hasConflict).toBe(
+      true,
+    )
+    expect(blocked.conflicts[0]!.message).toBe('设备停机')
+  })
+
+  it('uses the frozen predecessor graph instead of connecting adjacent sequence numbers', () => {
+    const model = toModel({
+      ...samplePlan,
+      validationContext: {
+        operations: [
+          { orderId: 'WO-001', operationId: 'op-10', predecessorOperationIds: [] },
+          { orderId: 'WO-001', operationId: 'op-20', predecessorOperationIds: [] },
+        ],
+      },
+    })
+    expect(model.links).toEqual([])
+  })
+
+  it('preserves real schedule segments when locking an operation (#4004)', () => {
+    const segments = [
+      { startUtc: '2026-06-10T08:00:00Z', endUtc: '2026-06-10T10:00:00Z' },
+      { startUtc: '2026-06-11T08:00:00Z', endUtc: '2026-06-11T10:00:00Z' },
+    ]
+    const model = toModel({
+      ...samplePlan,
+      assignments: [
+        { ...samplePlan.assignments![0], endUtc: segments[1]!.endUtc, segments, isLocked: true },
+      ],
+    })
+    expect(model.tasks.find((task) => task.id === 'a1')?.segments).toEqual(segments)
+    expect(toLockedAssignments(model)[0]?.segments).toEqual(segments)
+  })
+
   it('maps assignments to operation tasks with stable ids and grouping parents', () => {
     const m = toModel(samplePlan)
     const op = m.tasks.find((t) => t.id === 'a1')!
@@ -17,6 +86,61 @@ describe('toModel', () => {
   it('derives finish_to_start links from operationSequence within an order', () => {
     const m = toModel(samplePlan)
     expect(m.links).toEqual([{ id: 'a1->a2', source: 'a1', target: 'a2', type: 'finish_to_start' }])
+  })
+
+  it('links each assembly child completion to its parent first operation using assignment identities', () => {
+    const m = toModel({
+      ...samplePlan,
+      assignments: [
+        ...samplePlan.assignments!,
+        {
+          ...samplePlan.assignments![0],
+          assignmentId: 'parent-first',
+          orderId: 'WO-ASSEMBLY',
+          operationId: 'op-10',
+        },
+        {
+          ...samplePlan.assignments![1],
+          assignmentId: 'parent-last',
+          orderId: 'WO-ASSEMBLY',
+          operationId: 'op-20',
+        },
+      ].reverse(),
+      assemblyDependencies: [{ childOrderId: 'WO-001', parentOrderId: 'WO-ASSEMBLY' }],
+    })
+    expect(m.links).toContainEqual({
+      id: 'a2->parent-first',
+      source: 'a2',
+      target: 'parent-first',
+      type: 'finish_to_start',
+    })
+    expect(m.links).toHaveLength(3)
+  })
+
+  it('uses the child actual completion even when sequence order differs from finish order', () => {
+    const m = toModel({
+      ...samplePlan,
+      assignments: [
+        { ...samplePlan.assignments![0], endUtc: '2026-06-10T15:00:00.000Z' },
+        samplePlan.assignments![1]!,
+        { ...samplePlan.assignments![0], assignmentId: 'assembly', orderId: 'WO-ASSEMBLY' },
+      ],
+      assemblyDependencies: [{ childOrderId: 'WO-001', parentOrderId: 'WO-ASSEMBLY' }],
+    })
+    expect(m.links).toContainEqual({
+      id: 'a1->assembly',
+      source: 'a1',
+      target: 'assembly',
+      type: 'finish_to_start',
+    })
+  })
+
+  it('does not draw a dependency to an unscheduled assembly parent', () => {
+    const m = toModel({
+      ...samplePlan,
+      assemblyDependencies: [{ childOrderId: 'WO-001', parentOrderId: 'WO-ASSEMBLY' }],
+    })
+    expect(m.links).toEqual(toModel(samplePlan).links)
   })
 
   it('flags conflicts onto their tasks and carries taskId', () => {
@@ -61,6 +185,7 @@ describe('toModel', () => {
             },
           ],
           message: '物料未齐套：RM-OIL-01 缺 145.86。已按计划排入,需在开工前完成备料。',
+          materialReadyUtc: '2026-09-28T08:00:00.000Z',
         },
       ],
     })
@@ -68,6 +193,8 @@ describe('toModel', () => {
     const op10 = m.tasks.find((t) => t.id === 'a1')!
     expect(op10.materialRisk?.shortages[0]!.shortageQuantity).toBe(145.86)
     expect(op10.materialRisk?.message).toContain('需在开工前完成备料')
+    expect(op10.materialRisk?.materialReadyUtc).toBe('2026-09-28T08:00:00.000Z')
+    expect(m.materialRisks?.[0]?.materialReadyUtc).toBe('2026-09-28T08:00:00.000Z')
     expect(m.materialRisks).toHaveLength(1)
     // 风险挂在已排 task 上，不是把工序标成「未排」。
     expect(op10.type).toBe('operation')

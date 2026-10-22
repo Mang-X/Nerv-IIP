@@ -136,7 +136,6 @@ public static class BusinessFullChainAcceptanceSurface
             Endpoint("BusinessMaintenance", "GET", "/api/business/v1/maintenance/work-orders", "listMaintenanceWorkOrders"),
             Endpoint("BusinessMaintenance", "POST", "/api/business/v1/maintenance/work-orders/{workOrderId}/complete", "completeMaintenanceWorkOrder"),
             Endpoint("BusinessMaintenance", "POST", "/api/business/v1/maintenance/plans/generate-due", "generateDueMaintenanceWorkOrders"),
-            Endpoint("BusinessMes", "POST", "/api/business/v1/mes/schedules/run", "runBusinessMesSchedule"),
             Endpoint("BusinessMes", "GET", "/api/business/v1/mes/capacity-impacts", "listBusinessMesCapacityImpacts"),
         ],
             [

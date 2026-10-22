@@ -6,7 +6,8 @@ using Nerv.IIP.Business.Mes.Web.Application.Seed;
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 /// <summary>
-/// 《工厂世界观设定集》L1「生产准备底座」块（设备 ↔ 工作中心映射 / SKU 停用投影）的形状与幂等性证据。
+/// 《工厂世界观设定集》L1「生产准备底座」块（SKU 停用投影）的形状与幂等性证据。
+/// 设备 ↔ 工作中心归属由 MasterData 拥有，MES 不再写本地映射（#3878）。
 ///
 /// 最关键的一条断言在 <see cref="Disabled_skus_never_block_the_demo_chain"/>：
 /// <c>mes_sku_availabilities</c> 是**黑名单**，写错一行就当场废掉某个 SKU 的建工单能力。
@@ -28,7 +29,7 @@ public sealed class WorldHistoryFoundationSeedServiceTests
 
     [Theory]
     [MemberData(nameof(AsOfDates))]
-    public async Task Foundation_seed_fills_both_tables_for_any_as_of_date(int year, int month, int day)
+    public async Task Foundation_seed_fills_the_sku_availability_table_for_any_as_of_date(int year, int month, int day)
     {
         var asOfDate = new DateOnly(year, month, day);
         await using var dbContext = WorldHistorySeedTestContext.Create();
@@ -36,12 +37,9 @@ public sealed class WorldHistoryFoundationSeedServiceTests
 
         var report = await new WorldHistoryFoundationSeedService(dbContext).SeedAsync("org-001", "env-dev");
 
-        Assert.Equal(WorldHistoryFoundationSpec.DeviceAssetMappings.Count, report.DeviceAssetMappingsWritten);
         Assert.Equal(WorldHistoryFoundationSpec.DisabledSkus.Count, report.DisabledSkusWritten);
-        Assert.Equal(report.DeviceAssetMappingsWritten, await dbContext.DeviceAssetWorkCenterMappings.CountAsync());
         Assert.Equal(report.DisabledSkusWritten, await dbContext.MesSkuAvailabilities.CountAsync());
 
-        Assert.Equal(report.DeviceAssetMappingsWritten, report.Validation.DeviceAssetMappingsChecked);
         Assert.Equal(report.DisabledSkusWritten, report.Validation.DisabledSkusChecked);
     }
 
@@ -55,16 +53,13 @@ public sealed class WorldHistoryFoundationSeedServiceTests
         var seed = new WorldHistoryFoundationSeedService(dbContext);
 
         var first = await seed.SeedAsync("org-001", "env-dev");
-        var mappingCount = await dbContext.DeviceAssetWorkCenterMappings.CountAsync();
         var disabledCount = await dbContext.MesSkuAvailabilities.CountAsync();
 
         var second = await seed.SeedAsync("org-001", "env-dev");
 
-        Assert.Equal(0, second.DeviceAssetMappingsWritten);
         Assert.Equal(0, second.DisabledSkusWritten);
-        Assert.Equal(mappingCount, await dbContext.DeviceAssetWorkCenterMappings.CountAsync());
         Assert.Equal(disabledCount, await dbContext.MesSkuAvailabilities.CountAsync());
-        Assert.True(first.DeviceAssetMappingsWritten > 0);
+        Assert.True(first.DisabledSkusWritten > 0);
     }
 
     /// <summary>
@@ -129,50 +124,6 @@ public sealed class WorldHistoryFoundationSeedServiceTests
         });
 
         Assert.Equal(disabled.Count, disabled.Select(x => x.SkuCode).Distinct(StringComparer.Ordinal).Count());
-    }
-
-    /// <summary>设备映射必须符合设定集 §2/§3 的车间归属，且辅助设备段刻意不映射。</summary>
-    [Fact]
-    public void Device_asset_mappings_follow_the_world_bible_workshop_layout()
-    {
-        var mappings = WorldHistoryFoundationSpec.DeviceAssetMappings;
-        Assert.Equal(38, mappings.Count);
-        Assert.Equal(mappings.Count, mappings.Select(x => x.DeviceAssetId).Distinct(StringComparer.Ordinal).Count());
-
-        Assert.All(mappings, mapping =>
-        {
-            Assert.Matches(@"^DEV-(CNC|GRD|ASM|WLD|CTG|TST|PKG)-\d{2}$", mapping.DeviceAssetId);
-            Assert.Contains(mapping.WorkCenterId, WorldHistoryFloorEventsSpec.WorkCenterIds);
-            Assert.DoesNotContain("-DEMO", mapping.DeviceAssetId, StringComparison.Ordinal);
-        });
-
-        // 辅助设备服务全厂，不绑产线——否则其压力/温度遥测会被当成产量计数。
-        Assert.DoesNotContain(
-            mappings,
-            mapping => mapping.DeviceAssetId.StartsWith(
-                WorldHistoryFoundationSpec.UnmappedAuxiliaryDevicePrefix, StringComparison.Ordinal));
-
-        // 机加设备只挂机加工作中心，装配设备只挂装配工作中心，表面/包装同理。
-        var machining = new[] { "WC-ROD-01", "WC-ROD-02", "WC-TUB-01", "WC-TUB-02", "WC-GRD-01" };
-        var assembly = new[] { "WC-FA-01", "WC-FA-02", "WC-FA-03", "WC-RA-01", "WC-RA-02", "WC-VA-01" };
-        var surface = new[] { "WC-CT-01", "WC-TS-01", "WC-PK-01" };
-
-        Assert.All(
-            mappings.Where(x => x.DeviceAssetId.StartsWith("DEV-CNC-", StringComparison.Ordinal)
-                || x.DeviceAssetId.StartsWith("DEV-GRD-", StringComparison.Ordinal)),
-            mapping => Assert.Contains(mapping.WorkCenterId, machining));
-        Assert.All(
-            mappings.Where(x => x.DeviceAssetId.StartsWith("DEV-ASM-", StringComparison.Ordinal)
-                || x.DeviceAssetId.StartsWith("DEV-WLD-", StringComparison.Ordinal)),
-            mapping => Assert.Contains(mapping.WorkCenterId, assembly));
-        Assert.All(
-            mappings.Where(x => x.DeviceAssetId.StartsWith("DEV-CTG-", StringComparison.Ordinal)
-                || x.DeviceAssetId.StartsWith("DEV-TST-", StringComparison.Ordinal)
-                || x.DeviceAssetId.StartsWith("DEV-PKG-", StringComparison.Ordinal)),
-            mapping => Assert.Contains(mapping.WorkCenterId, surface));
-
-        // 14 个生产工作中心中，除阀系/涂装/检测/包装外的产线都至少有一台设备。
-        Assert.Equal(14, mappings.Select(x => x.WorkCenterId).Distinct(StringComparer.Ordinal).Count());
     }
 
     /// <summary>停用时点必须落在上线日之后的生产日上（历史时间线自洽）。</summary>

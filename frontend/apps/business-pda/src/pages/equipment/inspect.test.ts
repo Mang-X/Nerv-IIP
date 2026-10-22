@@ -32,7 +32,6 @@ const plans = ref<Array<Record<string, unknown>>>([
 const plansPending = ref(false)
 const plansError = ref<unknown>(null)
 const plansTotal = ref(2)
-const plansLastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
 const refreshPlans = vi.fn(async () => {})
 const loadMorePlans = vi.fn()
 const planFilters = { skip: 0, take: 100 }
@@ -60,7 +59,6 @@ const inspections = ref<Array<Record<string, unknown>>>([
 const inspectionsPending = ref(false)
 const inspectionsError = ref<unknown>(null)
 const inspectionsTotal = computed(() => inspections.value.length)
-const inspectionsLastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
 const organizationId = ref('org-001')
 const environmentId = ref('env-dev')
 const scopeReady = ref(true)
@@ -73,7 +71,6 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     plansPending,
     plansError,
     plansTotal,
-    plansLastUpdatedAt,
     plansHasSuccessfulResponse: computed(() => !plansPending.value && !plansError.value),
     plansHasFailedResponse: computed(() => false),
     refreshPlans,
@@ -83,7 +80,6 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
     recordPending,
     inspections,
     inspectionsTotal,
-    inspectionsLastUpdatedAt,
     inspectionsHasSuccessfulResponse: computed(
       () => !inspectionsPending.value && !inspectionsError.value,
     ),
@@ -147,7 +143,8 @@ describe('PDA equipment inspect page', () => {
     const wrapper = mount(InspectPage)
     const text = wrapper.text()
     expect(text).toContain('通过') // result pass → 通过
-    expect(text).toContain('PLAN-A') // planId resolved to business plan code is not available; planId shown
+    expect(text).toContain('计划 PLAN-A')
+    expect(text).not.toContain('p1111111-1111-1111-1111-111111111111')
   })
 
   it('shows the empty state when there are no inspections', () => {

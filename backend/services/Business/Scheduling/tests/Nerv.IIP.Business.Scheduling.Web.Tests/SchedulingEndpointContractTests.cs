@@ -1,3 +1,4 @@
+using FastEndpoints;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -11,6 +12,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OperationExecutionProjectionAggregate;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleOperationOverrideAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Web.Application.Auth;
 using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
@@ -27,9 +30,414 @@ using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
-public sealed class SchedulingEndpointContractTests
+public sealed partial class SchedulingEndpointContractTests
 {
     private static readonly DateTimeOffset FixedNow = new(2026, 6, 1, 7, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task First_plan_job_accepts_without_waiting_for_source_assembly()
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var response = await client.PostAsJsonAsync("/api/business/v1/scheduling/workbench/first-plan-jobs",
+            new CreateSchedulingWorkbenchPlanRequest("org-001", "prod", FixedNow, FixedNow.AddDays(7),
+                [new("order-001", 1, false)]), SchedulingJson.Options);
+        Assert.Equal(System.Net.HttpStatusCode.Accepted, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Working_draft_discovery_requires_internal_authentication_and_forwarded_user()
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        const string route = "/api/business/v1/scheduling/working-drafts?organizationId=org-001&environmentId=prod";
+        using var anonymous = await client.GetAsync(route);
+        Assert.Equal(System.Net.HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var missingUser = await client.GetAsync(route);
+        var error = await missingUser.Content.ReadAsStringAsync();
+        Assert.Contains("用户", error);
+        client.DefaultRequestHeaders.Add("X-Scheduling-User-Id", "planner-a");
+        using var discovered = await client.GetAsync(route);
+        discovered.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await discovered.Content.ReadAsStringAsync());
+        Assert.Empty(document.RootElement.GetProperty("data").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task Preview_and_historical_detail_return_current_execution_without_persisting_it()
+    {
+        await using var baseFactory = new SchedulingLiveHttpTestFactory();
+        await using var factory = baseFactory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.AddHttpClient(HttpSchedulingMaterialReadinessProvider.MesClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => new CurrentExecutionSourceHandler());
+            services.AddHttpClient(HttpSchedulingEquipmentAvailabilityProvider.IndustrialTelemetryClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => new CurrentExecutionSourceHandler());
+        }));
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var previewResponse = await client.PostAsJsonAsync("/api/business/v1/scheduling/plans/preview",
+            new PreviewSchedulePlanRequest(ShockAbsorberSchedulingFixture.CreateProblem()), SchedulingJson.Options);
+        previewResponse.EnsureSuccessStatusCode();
+        var preview = await previewResponse.Content.ReadFromJsonAsync<ResponseData<SchedulePlanContract>>(SchedulingJson.Options);
+        Assert.NotEmpty(preview!.Data.Assignments);
+        Assert.All(preview.Data.Assignments, assignment => Assert.Equal(new ScheduleWorkOrderProgressContract(25m, 100m), assignment.CurrentExecution!.WorkOrderProgress));
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.SchedulePlans.Add(CreatePersistedPlan("current-read", "historical-problem", FixedNow));
+            await db.SaveChangesAsync();
+        }
+        var detail = await client.GetFromJsonAsync<ResponseData<SchedulePlanContract>>(
+            "/api/business/v1/scheduling/plans/current-read?organizationId=org-001&environmentId=prod", SchedulingJson.Options);
+        var current = Assert.Single(detail!.Data.Assignments).CurrentExecution!;
+        Assert.Equal(new ScheduleWorkOrderProgressContract(25m, 100m), current.WorkOrderProgress);
+        Assert.Equal("faulted", current.EquipmentState);
+        Assert.True(current.IsEquipmentSourceFresh);
+        Assert.Null(current.IsMaterialReady);
+        Assert.Null(current.MaterialReadyUtc);
+        using var checkScope = factory.Services.CreateScope();
+        var stored = await checkScope.ServiceProvider.GetRequiredService<ApplicationDbContext>().SchedulePlans.Include(x => x.Assignments).SingleAsync();
+        Assert.Null(SchedulePlanContractMapper.ToContract(stored).Assignments.Single().CurrentExecution);
+    }
+
+    private sealed class CurrentExecutionSourceHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Assert.Equal("test-internal-token", request.Headers.Authorization?.Parameter);
+            if (request.Method == HttpMethod.Post) return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.ServiceUnavailable));
+            object payload = request.RequestUri!.AbsolutePath.Contains("/mes/", StringComparison.Ordinal)
+                ? new { quantity = 100m, completedQuantity = 25m }
+                : new { data = new { currentState = "faulted", stateOccurredAtUtc = FixedNow, isSourceFresh = true } };
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = JsonContent.Create(payload) });
+        }
+    }
+
+    [Theory]
+    [InlineData(SchedulePlanStatusContract.Generated)]
+    [InlineData(SchedulePlanStatusContract.Released)]
+    [InlineData(SchedulePlanStatusContract.Revoked)]
+    public async Task Csv_download_exports_all_assignments_with_plan_status_and_roundtrip_fields(SchedulePlanStatusContract status)
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var plan = CreatePersistedPlan("csv-plan", "csv-problem", FixedNow,
+                includeUnscheduledOperation: false, assignmentCount: 101);
+            if (status != SchedulePlanStatusContract.Generated) plan.Release(FixedNow.AddHours(1), 1);
+            if (status == SchedulePlanStatusContract.Revoked) plan.Revoke(FixedNow.AddHours(2));
+            db.SchedulePlans.Add(plan);
+            await db.SaveChangesAsync();
+        }
+
+        using var response = await client.GetAsync("/api/business/v1/scheduling/plans/csv-plan/csv?organizationId=org-001&environmentId=prod");
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("text/csv", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("utf-8", response.Content.Headers.ContentType?.CharSet);
+        Assert.Equal("attachment", response.Content.Headers.ContentDisposition?.DispositionType);
+        using var parser = new Microsoft.VisualBasic.FileIO.TextFieldParser(new StringReader(await response.Content.ReadAsStringAsync()));
+        parser.SetDelimiters(",");
+        parser.HasFieldsEnclosedInQuotes = true;
+        Assert.Equal(new[] { "OrderId", "OperationId", "ResourceId", "StartUtc", "EndUtc", "PlanStatus" }, parser.ReadFields());
+        var rows = new List<string[]>();
+        while (!parser.EndOfData) rows.Add(parser.ReadFields()!);
+        Assert.Equal(101, rows.Count);
+        for (var index = 0; index < rows.Count; index++)
+        {
+            Assert.Equal($"wo,csv-plan-{index:D3}", rows[index][0]);
+            Assert.Equal($"op\"csv-plan-{index:D3}", rows[index][1]);
+            Assert.Equal("DEV-OIL-01\nline2", rows[index][2]);
+            Assert.Equal(FixedNow, DateTimeOffset.Parse(rows[index][3], System.Globalization.CultureInfo.InvariantCulture));
+            Assert.Equal(FixedNow.AddMinutes(30), DateTimeOffset.Parse(rows[index][4], System.Globalization.CultureInfo.InvariantCulture));
+            Assert.EndsWith("Z", rows[index][3]);
+            Assert.Equal(status.ToString(), rows[index][5]);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Csv_export_preserves_utf8_without_bom_crlf_and_utc_roundtrip_format(bool empty)
+    {
+        var plan = SchedulePlanContractMapper.ToContract(CreatePersistedPlan("csv-bytes", "csv-problem", FixedNow));
+        plan = plan with
+        {
+            Assignments = empty ? [] :
+            [
+                plan.Assignments.Single() with
+                {
+                    OrderId = "工单,一",
+                    OperationId = "op\"one",
+                    ResourceId = "设备\rline2\nline3",
+                    StartUtc = FixedNow.ToOffset(TimeSpan.FromHours(8)),
+                    EndUtc = FixedNow.AddMinutes(30).ToOffset(TimeSpan.FromHours(8)),
+                }
+            ],
+        };
+        var expected = "OrderId,OperationId,ResourceId,StartUtc,EndUtc,PlanStatus\r\n";
+        if (!empty)
+        {
+            expected += "\"工单,一\",\"op\"\"one\",\"设备\rline2\nline3\",2026-06-01T07:00:00.0000000Z,2026-06-01T07:30:00.0000000Z,Generated\r\n";
+        }
+        Assert.Equal(System.Text.Encoding.UTF8.GetBytes(expected), SchedulePlanCsv.Export(plan));
+    }
+
+    [Theory]
+    [InlineData("csv-plan", "other-org", "prod")]
+    [InlineData("csv-plan", "org-001", "other-env")]
+    [InlineData("missing-plan", "org-001", "prod")]
+    public async Task Csv_download_rejects_missing_or_out_of_scope_plan(string planId, string organizationId, string environmentId)
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.SchedulePlans.Add(CreatePersistedPlan("csv-plan", "csv-problem", FixedNow));
+            await db.SaveChangesAsync();
+        }
+        using var response = await client.GetAsync($"/api/business/v1/scheduling/plans/{planId}/csv?organizationId={organizationId}&environmentId={environmentId}");
+        await AssertRejectedKnownExceptionEnvelopeAsync(response);
+    }
+
+    [Fact]
+    public async Task Material_delivery_internal_endpoint_requires_token_and_binds_explicit_plan_route()
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.SchedulePlans.Add(CreatePersistedPlan("delivery-http", "delivery-problem", FixedNow));
+            await db.SaveChangesAsync();
+        }
+        var request = new
+        {
+            OrganizationId = "org-001", EnvironmentId = "prod",
+            Sources = new[] { new MaterialDeliverySourceSelection("suggestion", null,
+                [new MaterialDeliveryDueSourceContract("sales", FixedNow.AddDays(1))]) }
+        };
+        const string path = "/api/business/internal/v1/scheduling/plans/delivery-http/material-delivery-sources";
+        using var unauthorized = await client.PostAsJsonAsync(path, request);
+        Assert.Equal(System.Net.HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var response = await client.PostAsJsonAsync(path, request);
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var result = document.RootElement.GetProperty("data").Deserialize<MaterialDeliverySourcesResponse>(SchedulingJson.Options)!;
+        Assert.Equal("delivery-http", result.PlanId);
+        Assert.Equal("work-order-not-linked", Assert.Single(result.Items).Status);
+    }
+
+    [Fact]
+    public async Task Revision_http_returns_snapshot_freeze_context_and_detail_preserves_it()
+    {
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var app = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(new FixedTimeProvider(problem.HorizonStartUtc));
+            services.RemoveAll<SchedulingFreezeSettings>();
+            services.AddSingleton(new SchedulingFreezeSettings(TimeSpan.FromHours(2), new Dictionary<string, TimeSpan>()));
+        }));
+        using var client = app.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var seedResponse = await client.PostAsJsonAsync("/api/business/v1/scheduling/plans",
+            new CreateSchedulePlanRequest(problem), SchedulingJson.Options);
+        seedResponse.EnsureSuccessStatusCode();
+        var baseline = (await seedResponse.Content.ReadFromJsonAsync<ResponseData<SchedulePlanContract>>(SchedulingJson.Options))!.Data!;
+        Assert.Null(baseline.FreezeContext);
+
+        using var response = await client.PostAsJsonAsync($"/api/business/v1/scheduling/plans/{baseline.PlanId}/revisions",
+            new CreateSchedulePlanRevisionRequest(baseline.PlanId, problem.OrganizationId, problem.EnvironmentId,
+                problem.Orders.Select(x => x.OrderId).ToArray(), []), SchedulingJson.Options);
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var candidate = document.RootElement.GetProperty("data").GetProperty("candidate");
+        var context = candidate.GetProperty("freezeContext");
+        Assert.Equal(problem.HorizonStartUtc, context.GetProperty("asOfUtc").GetDateTimeOffset());
+        Assert.Equal(problem.HorizonStartUtc.AddHours(2), context.GetProperty("defaultWindowEndUtc").GetDateTimeOffset());
+        Assert.NotEmpty(context.GetProperty("assignments").EnumerateArray());
+        Assert.All(context.GetProperty("assignments").EnumerateArray(), assignment =>
+            Assert.Equal(new[] { "stableWindow" }, assignment.GetProperty("reasons").EnumerateArray().Select(x => x.GetString())));
+        var candidatePlan = candidate.Deserialize<SchedulePlanContract>(SchedulingJson.Options)!;
+        Assert.NotNull(candidatePlan.FreezeContext);
+        foreach (var frozen in candidatePlan.FreezeContext.Assignments)
+        {
+            Assert.Equal(baseline.Assignments.Single(x => x.AssignmentId == frozen.Assignment.AssignmentId)
+                with { CurrentExecution = null }, frozen.Assignment);
+        }
+        using var detailResponse = await client.GetAsync(
+            $"/api/business/v1/scheduling/plans/{candidatePlan.PlanId}?organizationId={problem.OrganizationId}&environmentId={problem.EnvironmentId}");
+        detailResponse.EnsureSuccessStatusCode();
+        using var detailDocument = JsonDocument.Parse(await detailResponse.Content.ReadAsStringAsync());
+        Assert.Equal(context.GetRawText(), detailDocument.RootElement.GetProperty("data").GetProperty("freezeContext").GetRawText());
+    }
+
+    [Fact]
+    public async Task Workbench_preview_http_freezes_execution_and_preserves_business_records()
+    {
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var app = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<ISchedulingWorkbenchSourceProvider>();
+            services.RemoveAll<ISchedulingProblemProducer>();
+            var source = new PreviewWorkbenchSource(problem);
+            services.AddSingleton<ISchedulingWorkbenchSourceProvider>(source);
+            services.AddSingleton<ISchedulingProblemProducer>(source);
+        }));
+        using var client = app.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var seedResponse = await client.PostAsJsonAsync("/api/business/v1/scheduling/plans", new CreateSchedulePlanRequest(problem), SchedulingJson.Options);
+        seedResponse.EnsureSuccessStatusCode();
+        var order = problem.Orders.First();
+        var operation = order.Operations.First();
+        var resource = problem.Resources.Single(x => x.ResourceId == operation.PrimaryResourceId);
+        var overriddenOperation = order.Operations.Last();
+        var overriddenResource = problem.Resources.Single(x => x.ResourceId == overriddenOperation.PrimaryResourceId);
+        using (var scope = app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var projection = OperationExecutionProjection.Create(problem.OrganizationId, problem.EnvironmentId,
+                order.OrderId, operation.OperationId, operation.OperationSequence, resource.WorkCenterId,
+                problem.HorizonStartUtc, "preview-created");
+            projection.ApplyStarted(problem.HorizonStartUtc, "preview-started");
+            db.OperationExecutionProjections.Add(projection);
+            db.ScheduleOperationOverrides.Add(ScheduleOperationOverride.Create(
+                problem.OrganizationId, problem.EnvironmentId, order.OrderId, overriddenOperation.OperationId,
+                overriddenOperation.OperationSequence, overriddenResource.ResourceId, overriddenResource.WorkCenterId,
+                problem.HorizonStartUtc.AddMinutes(5), problem.HorizonStartUtc.AddHours(1),
+                ScheduleOperationOverrideLockReasonCodes.ManualOverride,
+                ScheduleOperationOverrideSourceTypes.SchedulingApi, "preview-override", "planner",
+                FixedNow, FixedNow));
+            await db.SaveChangesAsync();
+        }
+        var before = await ReadPreviewBusinessRecordsAsync(app.Services);
+        var request = new CreateSchedulingWorkbenchPlanRequest(problem.OrganizationId, problem.EnvironmentId,
+            problem.HorizonStartUtc, problem.HorizonEndUtc,
+            problem.Orders.Select(x => new SchedulingWorkbenchOrderSelection(x.OrderId, x.Priority, x.IsRush)).ToArray());
+
+        using var response = await client.PostAsJsonAsync("/api/business/v1/scheduling/workbench/plans/preview", request, SchedulingJson.Options);
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseData<SchedulePlanContract>>(SchedulingJson.Options);
+        var preview = Assert.IsType<SchedulePlanContract>(envelope?.Data);
+        Assert.Equal(SchedulePlanStatusContract.Preview, preview.Status);
+        Assert.NotEmpty(preview.Assignments);
+        Assert.NotNull(preview.Metrics);
+        var frozen = Assert.Single(preview.Assignments, x => x.OrderId == order.OrderId && x.OperationId == operation.OperationId);
+        Assert.True(frozen.IsLocked);
+        Assert.Equal("in-progress", frozen.ExplanationCode);
+        Assert.Equal(problem.HorizonStartUtc, frozen.StartUtc);
+        Assert.Equal(problem.HorizonEndUtc, frozen.EndUtc);
+        Assert.Equal(before, await ReadPreviewBusinessRecordsAsync(app.Services));
+
+        using var createResponse = await client.PostAsJsonAsync("/api/business/v1/scheduling/workbench/plans", request, SchedulingJson.Options);
+        createResponse.EnsureSuccessStatusCode();
+        var created = (await createResponse.Content.ReadFromJsonAsync<ResponseData<SchedulePlanContract>>(SchedulingJson.Options))!.Data!;
+        Assert.Equal(preview.Metrics, created.Metrics);
+        Assert.Equal(preview.Assignments.Select(x => (x.OrderId, x.OperationId, x.ResourceId, x.StartUtc, x.EndUtc, x.IsLocked)),
+            created.Assignments.Select(x => (x.OrderId, x.OperationId, x.ResourceId, x.StartUtc, x.EndUtc, x.IsLocked)));
+    }
+
+    private static async Task<string> ReadPreviewBusinessRecordsAsync(IServiceProvider services)
+    {
+        using var scope = services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        return JsonSerializer.Serialize(new
+        {
+            Plans = await db.SchedulePlans.Include(x => x.Assignments).Include(x => x.ResourceLoads)
+                .Include(x => x.Conflicts).Include(x => x.UnscheduledOperations).ToArrayAsync(),
+            Problems = await db.ScheduleProblems.ToArrayAsync(),
+            Urgencies = await db.OrderUrgencySnapshots.ToArrayAsync(),
+            Overrides = await db.ScheduleOperationOverrides.ToArrayAsync(),
+            Execution = await db.OperationExecutionProjections.ToArrayAsync(),
+        }, SchedulingJson.Options);
+    }
+
+    private sealed class PreviewWorkbenchSource(SchedulingProblemContract problem)
+        : ISchedulingWorkbenchSourceProvider, ISchedulingProblemProducer
+    {
+        public Task<IReadOnlyCollection<SchedulingWorkbenchProblemSourceOrder>> ResolveOrdersAsync(
+            string organizationId, string environmentId, DateTimeOffset earliestStartFallbackUtc,
+            IReadOnlyCollection<SchedulingWorkbenchOrderSelection> selections, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyCollection<SchedulingWorkbenchProblemSourceOrder>>(problem.Orders.Select(order =>
+                new SchedulingWorkbenchProblemSourceOrder(new SchedulingProblemSourceOrder(
+                    order.OrderId, order.SkuCode, order.Quantity, order.DueUtc, order.Priority, order.IsRush,
+                    earliestStartFallbackUtc, "routing"), order.Operations.Select(operation =>
+                        new SchedulingWorkbenchOperationSource(operation.OperationId, operation.OperationSequence, "WC-001")).ToArray())).ToArray());
+
+        public Task<SchedulingProblemContract> AssembleWorkbenchAsync(AssembleSchedulingWorkbenchProblemRequest request,
+            CancellationToken cancellationToken) => Task.FromResult(problem with { ProblemId = request.ProblemId });
+
+        public Task<SchedulingProblemContract> AssembleAsync(AssembleSchedulingProblemRequest request,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
+    [Fact]
+    public async Task Overrides_read_current_facts_for_snapshot_keys_and_keep_source_plan()
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        var problem = ShockAbsorberSchedulingFixture.CreateProblem();
+        async Task<SchedulePlanContract> CreatePlan(string problemId)
+        {
+            var response = await client.PostAsJsonAsync("/api/business/v1/scheduling/plans",
+                new CreateSchedulePlanRequest(problem with { ProblemId = problemId }));
+            response.EnsureSuccessStatusCode();
+            return (await response.Content.ReadFromJsonAsync<ResponseData<SchedulePlanContract>>(SchedulingJson.Options))!.Data!;
+        }
+        var p1 = await CreatePlan("problem-p1");
+        var p2 = await CreatePlan("problem-p2");
+        var order = problem.Orders.First();
+        var operation = order.Operations.First();
+        var resource = problem.Resources.First(x => operation.EligibleResourceIds.Contains(x.ResourceId));
+        var put = await client.PutAsJsonAsync(
+            $"/api/business/v1/scheduling/plans/{p1.PlanId}/operations/{operation.OperationId}/override",
+            new { problem.OrganizationId, problem.EnvironmentId, resource.ResourceId,
+                StartUtc = FixedNow.AddHours(1), EndUtc = FixedNow.AddHours(2) });
+        put.EnsureSuccessStatusCode();
+        var written = (await put.Content.ReadFromJsonAsync<ResponseData<ScheduleOperationOverrideResponse>>(SchedulingJson.Options))!.Data!;
+        Assert.Equal(p1.PlanId, written.SourcePlanId);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            ScheduleOperationOverride Fact(string org, string env, string workOrder, string op) =>
+                ScheduleOperationOverride.Create(org, env, workOrder, op, 1, resource.ResourceId, resource.WorkCenterId,
+                    FixedNow, FixedNow.AddHours(1), "manual-override", "scheduling-api", null, "planner", FixedNow, FixedNow, p1.PlanId);
+            db.ScheduleOperationOverrides.AddRange(
+                Fact("other-org", problem.EnvironmentId, order.OrderId, operation.OperationId),
+                Fact(problem.OrganizationId, "other-env", order.OrderId, operation.OperationId),
+                Fact(problem.OrganizationId, problem.EnvironmentId, order.OrderId, "outside-snapshot"));
+            var remaining = problem.Orders.SelectMany(o => o.Operations.Select(op => (Order: o, Operation: op)))
+                .Where(x => x.Operation.OperationId != operation.OperationId).Take(2).ToArray();
+            db.ScheduleOperationOverrides.Add(Fact(problem.OrganizationId, problem.EnvironmentId, "other-order", remaining[0].Operation.OperationId));
+            db.ScheduleOperationOverrides.Add(ScheduleOperationOverride.CreateClearedMesDispatch(
+                problem.OrganizationId, problem.EnvironmentId, remaining[1].Order.OrderId, remaining[1].Operation.OperationId,
+                1, resource.ResourceId, resource.WorkCenterId, FixedNow, FixedNow.AddHours(1), "clear-event", "dispatcher",
+                2, FixedNow, "device-cleared", FixedNow));
+            await db.SaveChangesAsync();
+        }
+        var context = $"organizationId={problem.OrganizationId}&environmentId={problem.EnvironmentId}";
+        var read = await client.GetFromJsonAsync<ResponseData<IReadOnlyCollection<ScheduleOperationOverrideResponse>>>(
+            $"/api/business/v1/scheduling/plans/{p2.PlanId}/overrides?{context}", SchedulingJson.Options);
+        Assert.Equal(written, Assert.Single(read!.Data!));
+        using var queryScope = factory.Services.CreateScope();
+        var query = new GetSchedulePlanOverridesQueryHandler(queryScope.ServiceProvider.GetRequiredService<ApplicationDbContext>());
+        await Assert.ThrowsAsync<KnownException>(() => query.Handle(new(p2.PlanId, "other-org", problem.EnvironmentId), CancellationToken.None));
+        await Assert.ThrowsAsync<KnownException>(() => query.Handle(new(p2.PlanId, problem.OrganizationId, "other-env"), CancellationToken.None));
+    }
 
     [Fact]
     public void Scheduling_endpoints_expose_issue_206_routes_permissions_policies_and_operation_ids()
@@ -42,10 +450,18 @@ public sealed class SchedulingEndpointContractTests
             SchedulingPermissionCodes.PlansRelease
         };
 
-        Assert.Equal(15, contracts.Length);
+        Assert.Equal(30, contracts.Length);
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/workbench/candidates/preview" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "previewSchedulingCandidates");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/workbench/candidates/select" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "selectSchedulingCandidate");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/workbench/insertion-preview-jobs" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "acceptSchedulingInsertionPreviewJob");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/workbench/insertion-preview-jobs/{jobId}" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingInsertionPreviewJob");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/workbench/first-plan-jobs" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "acceptSchedulingFirstPlanJob");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/workbench/first-plan-jobs/{jobId}" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingFirstPlanJob");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/internal/v1/scheduling/plans/{planId}/material-delivery-sources" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingMaterialDeliverySources");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans/preview" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "previewSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createSchedulingPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/workbench/plans" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createSchedulingWorkbenchPlan");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/workbench/plans/preview" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "previewSchedulingWorkbenchPlan");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/plans/{planId}/revisions" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "createSchedulingPlanRevision");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/scheduling/problems/assemble" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "assembleSchedulingProblem");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/plans" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "listSchedulingPlans");
@@ -58,6 +474,7 @@ public sealed class SchedulingEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/order-urgencies/{orderReference}" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getOrderUrgency");
         Assert.Contains(contracts, x => x.HttpMethod == "PUT" && x.Route == "/api/business/v1/scheduling/order-urgencies/{orderReference}/business-priority" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "setOrderUrgencyBusinessPriority");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/internal/v1/scheduling/order-urgency-archives/restore" && x.PermissionCode == SchedulingPermissionCodes.PlansManage && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "restoreOrderUrgencyArchive");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/scheduling/plans/{planId}/overrides" && x.PermissionCode == SchedulingPermissionCodes.PlansRead && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name && x.OperationId == "getSchedulingPlanOverrides");
         Assert.All(contracts, x => Assert.Contains(x.PermissionCode, allowedPermissions));
     }
 
@@ -65,11 +482,14 @@ public sealed class SchedulingEndpointContractTests
     [InlineData(typeof(PreviewSchedulePlanEndpoint))]
     [InlineData(typeof(CreateSchedulePlanEndpoint))]
     [InlineData(typeof(CreateSchedulingWorkbenchPlanEndpoint))]
+    [InlineData(typeof(PreviewSchedulingWorkbenchPlanEndpoint))]
     [InlineData(typeof(CreateSchedulePlanRevisionEndpoint))]
     [InlineData(typeof(AssembleSchedulingProblemEndpoint))]
+    [InlineData(typeof(ListSchedulePlanHistoryEndpoint))]
     [InlineData(typeof(ListSchedulePlansEndpoint))]
     [InlineData(typeof(GetSchedulePlanEndpoint))]
     [InlineData(typeof(GetSchedulePlanGanttEndpoint))]
+    [InlineData(typeof(GetSchedulePlanOverridesEndpoint))]
     [InlineData(typeof(ReleaseSchedulePlanEndpoint))]
     [InlineData(typeof(RevokeSchedulePlanEndpoint))]
     [InlineData(typeof(UpsertScheduleOperationOverrideEndpoint))]
@@ -201,6 +621,143 @@ public sealed class SchedulingEndpointContractTests
         Assert.Contains(plan.MaterialRisks ?? [], x =>
             x.OperationId == "WO-SNAPSHOT-001-OP10"
             && x.Shortages.Any(y => y.MaterialId == "MAT-A" && y.ShortageQuantity == 2m));
+        var summary = Assert.Single(plan.MaterialShortageSummary ?? []);
+        Assert.Equal(2m, summary.ShortageQuantity);
+        Assert.Contains(summary.AffectedOperations, x =>
+            x.OrderId == "WO-SNAPSHOT-001" && x.OperationId == "WO-SNAPSHOT-001-OP10");
+    }
+
+    [Fact]
+    public async Task Create_persists_material_readiness_in_problem_snapshot()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var problem = CreateSingleOperationProblem();
+        var clock = new FixedTimeProvider(FixedNow);
+        var createHandler = new CreateSchedulePlanCommandHandler(
+            dbContext,
+            new FiniteCapacityScheduler(),
+            clock,
+            new NoopSchedulingEquipmentAvailabilityProvider(),
+            new StubSchedulingMaterialReadinessProvider(
+                [
+                    new SchedulingMaterialReadinessContract(
+                        ScopeType: "order",
+                        ScopeId: "WO-SNAPSHOT-001",
+                        MaterialReadyUtc: FixedNow.AddHours(2),
+                        IsReady: false,
+                        ReasonCodes: ["MAT-A shortage 2"],
+                        Shortages: [new SchedulingMaterialShortageContract("MAT-A", null, 5m, 3m, 2m)])
+                ]),
+            new SchedulingOperationOverrideOverlay(dbContext),
+            new OrderUrgencyService(dbContext, clock),
+            SchedulingEquipmentUnknownModeOption.Default);
+
+        var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var detail = await new GetSchedulePlanDetailQueryHandler(
+                dbContext,
+                NullLogger<GetSchedulePlanDetailQueryHandler>.Instance)
+            .Handle(
+                new GetSchedulePlanDetailQuery(created.PlanId, problem.OrganizationId, problem.EnvironmentId),
+                CancellationToken.None);
+
+        var snapshot = await dbContext.ScheduleProblems.SingleAsync();
+        var persistedProblem = JsonSerializer.Deserialize<SchedulingProblemContract>(
+            snapshot.ProblemJson,
+            SchedulingJson.Options);
+        var readiness = Assert.Single(persistedProblem!.MaterialReadiness);
+        var shortage = Assert.Single(readiness.Shortages!);
+        Assert.Equal("MAT-A", shortage.MaterialId);
+        Assert.Equal(FixedNow.AddHours(2), readiness.MaterialReadyUtc);
+        Assert.Equal(
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(snapshot.ProblemJson))).ToLowerInvariant(),
+            snapshot.ProblemFingerprint);
+        Assert.Equal(FixedNow.AddHours(2), Assert.Single(created.Assignments).StartUtc);
+        Assert.Equal(FixedNow.AddHours(2), Assert.Single(created.MaterialRisks ?? []).MaterialReadyUtc);
+        Assert.Equal(FixedNow.AddHours(2), Assert.Single(detail.MaterialRisks ?? []).MaterialReadyUtc);
+        Assert.Equal(
+            JsonSerializer.Serialize(created.MaterialShortageSummary, SchedulingJson.Options),
+            JsonSerializer.Serialize(detail.MaterialShortageSummary, SchedulingJson.Options));
+    }
+
+    [Fact]
+    public async Task Hard_material_block_remains_in_saved_plan_summary_after_reload()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var problem = CreateSingleOperationProblem();
+        var clock = new FixedTimeProvider(FixedNow);
+        var createHandler = new CreateSchedulePlanCommandHandler(
+            dbContext,
+            new FiniteCapacityScheduler(SchedulingMaterialConstraintModeContract.Hard),
+            clock,
+            new NoopSchedulingEquipmentAvailabilityProvider(),
+            new StubSchedulingMaterialReadinessProvider(
+            [
+                new SchedulingMaterialReadinessContract("order", "WO-SNAPSHOT-001", null, false,
+                    ["material.shortage"],
+                    [new SchedulingMaterialShortageContract("RM-1", null, 10m, 6m, 4m, "KG")])
+            ]),
+            new SchedulingOperationOverrideOverlay(dbContext),
+            new OrderUrgencyService(dbContext, clock),
+            SchedulingEquipmentUnknownModeOption.Default);
+
+        var created = await createHandler.Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var detail = await new GetSchedulePlanDetailQueryHandler(
+                dbContext, NullLogger<GetSchedulePlanDetailQueryHandler>.Instance)
+            .Handle(new GetSchedulePlanDetailQuery(created.PlanId, problem.OrganizationId, problem.EnvironmentId),
+                CancellationToken.None);
+
+        Assert.Empty(created.MaterialRisks ?? []);
+        Assert.Empty(detail.MaterialRisks ?? []);
+        var summary = Assert.Single(detail.MaterialShortageSummary ?? []);
+        Assert.Equal(4m, summary.ShortageQuantity);
+        Assert.Contains(summary.AffectedOperations, x => x.OrderId == "WO-SNAPSHOT-001" &&
+            x.OperationId == "WO-SNAPSHOT-001-OP10");
+        Assert.Equal(
+            JsonSerializer.Serialize(created.MaterialShortageSummary, SchedulingJson.Options),
+            JsonSerializer.Serialize(detail.MaterialShortageSummary, SchedulingJson.Options));
+    }
+
+    [Fact]
+    public async Task Create_rejects_same_problem_id_when_provider_material_readiness_changes()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var problem = CreateSingleOperationProblem();
+        var clock = new FixedTimeProvider(FixedNow);
+
+        CreateSchedulePlanCommandHandler CreateHandler(DateTimeOffset materialReadyUtc) => new(
+            dbContext,
+            new FiniteCapacityScheduler(),
+            clock,
+            new NoopSchedulingEquipmentAvailabilityProvider(),
+            new StubSchedulingMaterialReadinessProvider(
+                [
+                    new SchedulingMaterialReadinessContract(
+                        "order",
+                        "WO-SNAPSHOT-001",
+                        materialReadyUtc,
+                        false,
+                        ["MAT-A shortage 2"],
+                        [new SchedulingMaterialShortageContract("MAT-A", null, 5m, 3m, 2m)])
+                ]),
+            new SchedulingOperationOverrideOverlay(dbContext),
+            new OrderUrgencyService(dbContext, clock),
+            SchedulingEquipmentUnknownModeOption.Default);
+
+        await CreateHandler(FixedNow.AddHours(2)).Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<KnownException>(() =>
+            CreateHandler(FixedNow.AddHours(3)).Handle(new CreateSchedulePlanCommand(problem), CancellationToken.None));
     }
 
     [Fact]
@@ -519,7 +1076,7 @@ public sealed class SchedulingEndpointContractTests
     }
 
     [Fact]
-    public async Task Release_updates_header_without_tracking_plan_child_collections()
+    public async Task Release_preserves_saved_assignments_for_dispatch_without_loading_unrelated_collections()
     {
         await using var provider = CreateInMemoryProvider();
         using var seedScope = provider.CreateScope();
@@ -541,7 +1098,13 @@ public sealed class SchedulingEndpointContractTests
 
         Assert.Equal(SchedulePlanStatusContract.Released, response.Status);
         Assert.DoesNotContain(releaseContext.ChangeTracker.Entries(), x =>
-            x.Entity is SchedulePlanAssignment or SchedulePlanResourceLoad or SchedulePlanConflict or SchedulePlanUnscheduledOperation);
+            x.Entity is SchedulePlanResourceLoad or SchedulePlanConflict or SchedulePlanUnscheduledOperation);
+        var assignment = Assert.Single(releaseContext.ChangeTracker.Entries<SchedulePlanAssignment>());
+        Assert.Equal(EntityState.Unchanged, assignment.State);
+        Assert.Equal(plan.Assignments.Single().AssignmentId, assignment.Entity.AssignmentId);
+        Assert.Equal(plan.Assignments.Single().ResourceId, assignment.Entity.ResourceId);
+        Assert.Equal(plan.Assignments.Single().StartUtc, assignment.Entity.StartUtc);
+        Assert.Equal(plan.Assignments.Single().EndUtc, assignment.Entity.EndUtc);
     }
 
     [Fact]
@@ -568,6 +1131,54 @@ public sealed class SchedulingEndpointContractTests
             ganttHandler.Handle(new GetSchedulePlanGanttQuery(created.PlanId, problem.OrganizationId, "env-other"), CancellationToken.None));
         await Assert.ThrowsAsync<KnownException>(() =>
             releaseHandler.Handle(new ReleaseSchedulePlanCommand(created.PlanId, "org-other", "env-other"), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task History_http_returns_total_and_later_pages_from_release_facts()
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            for (var index = 0; index < 105; index++)
+            {
+                var plan = CreatePersistedPlan($"history-{index:000}", $"history-problem-{index:000}", FixedNow.AddMinutes(105 - index));
+                plan.Release(FixedNow.AddDays(1).AddMinutes(index), index + 1);
+                plan.Revoke(FixedNow.AddDays(2));
+                dbContext.SchedulePlans.Add(plan);
+                dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(plan.ProblemId, 1, "org-001", "prod",
+                    plan.ProblemFingerprint, "{}", FixedNow.AddDays(-1), FixedNow.AddDays(3), FixedNow));
+            }
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var response = await client.GetAsync("/api/business/v1/scheduling/plans/history?organizationId=org-001&environmentId=prod&pageIndex=1&pageSize=100&status=revoked&releasedOn=2026-06-02&isInvalidated=false");
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var data = json.RootElement.GetProperty("data");
+        Assert.Equal(105, data.GetProperty("total").GetInt32());
+        var items = data.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal(5, items.Length);
+        Assert.Equal("history-004", items[0].GetProperty("planId").GetString());
+        Assert.Equal("history-000", items[4].GetProperty("planId").GetString());
+        Assert.Equal(FixedNow.AddDays(-1), items[0].GetProperty("horizonStartUtc").GetDateTimeOffset());
+        Assert.Equal(FixedNow.AddDays(3), items[0].GetProperty("horizonEndUtc").GetDateTimeOffset());
+    }
+
+    [Theory]
+    [InlineData("pageIndex=-1")]
+    [InlineData("pageSize=101")]
+    [InlineData("status=preview")]
+    [InlineData("status=999")]
+    public async Task History_http_rejects_invalid_filter_or_pagination(string parameter)
+    {
+        await using var factory = new SchedulingLiveHttpTestFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var response = await client.GetAsync($"/api/business/v1/scheduling/plans/history?organizationId=org-001&environmentId=prod&{parameter}");
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -685,8 +1296,11 @@ public sealed class SchedulingEndpointContractTests
 
     public static IEnumerable<object[]> AnonymousEndpointRequests()
     {
+        yield return [JsonRequest(HttpMethod.Post, "/api/business/v1/scheduling/workbench/plans/preview",
+            new CreateSchedulingWorkbenchPlanRequest("org-001", "prod", FixedNow, FixedNow.AddDays(1), [new("WO-001", 10, false)]))];
         yield return [JsonRequest(HttpMethod.Post, "/api/business/v1/scheduling/plans/preview", new PreviewSchedulePlanRequest(ShockAbsorberSchedulingFixture.CreateProblem()))];
         yield return [JsonRequest(HttpMethod.Post, "/api/business/v1/scheduling/plans", new CreateSchedulePlanRequest(ShockAbsorberSchedulingFixture.CreateProblem()))];
+        yield return [new HttpRequestMessage(HttpMethod.Get, "/api/business/v1/scheduling/plans/history?organizationId=org-001&environmentId=prod")];
         yield return [new HttpRequestMessage(HttpMethod.Get, "/api/business/v1/scheduling/plans?organizationId=org-001&environmentId=prod")];
         yield return [new HttpRequestMessage(HttpMethod.Get, "/api/business/v1/scheduling/plans/plan-missing")];
         yield return [new HttpRequestMessage(HttpMethod.Get, "/api/business/v1/scheduling/plans/plan-missing/gantt")];
@@ -882,7 +1496,8 @@ public sealed class SchedulingEndpointContractTests
         string planId,
         string problemId,
         DateTimeOffset generatedAtUtc,
-        bool includeUnscheduledOperation = true)
+        bool includeUnscheduledOperation = true,
+        int assignmentCount = 1)
     {
         IReadOnlyCollection<UnscheduledOperationContract> unscheduledOperations = includeUnscheduledOperation
             ?
@@ -912,20 +1527,17 @@ public sealed class SchedulingEndpointContractTests
                 LateOperationCount: 0,
                 OnTimeRate: 1m,
                 AverageResourceUtilization: 0.0625m),
-            Assignments:
-            [
-                new ScheduleAssignmentContract(
-                    AssignmentId: $"assign-{planId}",
-                    OrderId: $"wo-{planId}",
-                    OperationId: $"op-{planId}",
-                    OperationSequence: 10,
-                    ResourceId: "DEV-OIL-01",
-                    WorkCenterId: "WC-OIL",
-                    StartUtc: generatedAtUtc,
-                    EndUtc: generatedAtUtc.AddMinutes(30),
-                    IsLocked: false,
-                    ExplanationCode: "scheduled")
-            ],
+            Assignments: Enumerable.Range(0, assignmentCount).Select(index => new ScheduleAssignmentContract(
+                AssignmentId: assignmentCount == 1 ? $"assign-{planId}" : $"assign-{planId}-{index:D3}",
+                OrderId: assignmentCount == 1 ? $"wo-{planId}" : $"wo,{planId}-{index:D3}",
+                OperationId: assignmentCount == 1 ? $"op-{planId}" : $"op\"{planId}-{index:D3}",
+                OperationSequence: 10,
+                ResourceId: assignmentCount == 1 ? "DEV-OIL-01" : "DEV-OIL-01\nline2",
+                WorkCenterId: "WC-OIL",
+                StartUtc: generatedAtUtc,
+                EndUtc: generatedAtUtc.AddMinutes(30),
+                IsLocked: false,
+                ExplanationCode: "scheduled")).ToArray(),
             ResourceLoads:
             [
                 new ScheduleResourceLoadContract(
@@ -1109,6 +1721,12 @@ public sealed class SchedulingEndpointContractTests
             ConfigureRequiredUpstreamBaseUrls(builder);
             builder.ConfigureTestServices(services =>
             {
+                services.AddFastEndpoints(options =>
+                {
+                    options.Assemblies = [typeof(Program).Assembly];
+                    options.DisableAutoDiscovery = true;
+                    options.IncludeAbstractValidators = true;
+                });
                 services.RemoveAll<ApplicationDbContext>();
                 services.RemoveAll<DbContextOptions>();
                 services.RemoveAll<DbContextOptions<ApplicationDbContext>>();

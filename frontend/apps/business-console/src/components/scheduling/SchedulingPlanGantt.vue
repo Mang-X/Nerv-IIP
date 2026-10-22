@@ -1,5 +1,10 @@
 <script setup lang="ts">
+import type { SchedulingWorkOrderFacts } from '@/composables/useBusinessMes'
+import SchedulingPlanOrders from './SchedulingPlanOrders.vue'
+import SchedulingWorkOrderLink from './SchedulingWorkOrderLink.vue'
+import SchedulingMaterialShortageSummary from './SchedulingMaterialShortageSummary.vue'
 import type {
+  SchedulingTimeContextItem,
   BusinessConsoleResourceItem,
   BusinessConsoleMesWorkOrderItem,
   BusinessConsoleSchedulePlan,
@@ -8,11 +13,14 @@ import type {
 } from '@nerv-iip/api-client'
 import {
   conflictReasonLabel,
+  withFactoryTimeContext,
+  scheduleTime,
   ResourceSchedulerBoard,
   SchedulingLegend,
   SchedulingToolbar,
   TaskDetailPanel,
   toModel,
+  withWorkOrderFacts,
   type ScheduleModel,
   type ScheduleTask,
   type DimensionValue,
@@ -29,7 +37,7 @@ import {
   schedulingPlanStatusTone,
   schedulingPlanTerminalReleaseReason,
 } from '@/utils/schedulingPlanPresentation'
-import { NvButton, NvStatusBadge, Spinner } from '@nerv-iip/ui'
+import { NvButton, NvStatusBadge, NvSpinner } from '@nerv-iip/ui'
 import {
   CalendarDaysIcon,
   EyeIcon,
@@ -41,17 +49,19 @@ import {
 import { computed, shallowRef, watch } from 'vue'
 
 const props = defineProps<{
+  timeContext?: SchedulingTimeContextItem[]
   plan?: BusinessConsoleSchedulePlan
   summary?: BusinessConsoleSchedulingPlanSummaryResponse
   loading?: boolean
   error?: unknown
   releasePending?: boolean
   /**
-   * MES 权威工单（与「待排工单池」同一份查询缓存，这里不另发请求）。
+   * MES 权威工单：待排池基本信息与方案关联工单详情事实。
    * APS 的 assignment 契约只有工单号/工序号/资源/起止，物料、数量、交期在工单上；
    * 工序详情要展示这些字段就只能在呈现层 join，join 不到的字段一律不上屏。
    */
-  workOrders?: BusinessConsoleMesWorkOrderItem[]
+  workOrders?: SchedulingWorkOrderFacts[]
+  workOrderFactsUnavailable?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -229,7 +239,11 @@ const renderableAssignments = computed(() =>
 
 const model = computed<ScheduleModel | undefined>(() => {
   if (!props.plan) return undefined
-  const mapped = toModel({ ...props.plan, assignments: renderableAssignments.value })
+  const mapped = withWorkOrderFacts(
+    toModel({ ...props.plan, assignments: renderableAssignments.value }),
+    props.workOrders ?? [],
+    props.workOrderFactsUnavailable,
+  )
   const grouped = buildGroupedTasks(
     mapped.tasks.map((task) => {
       // 资源时间块(维护/停机/换线/换型)不是工序:只把工作中心换成人话名,不套工序标题。
@@ -261,7 +275,7 @@ const model = computed<ScheduleModel | undefined>(() => {
         colorKey: family?.key,
         product: skuCode ? (resolveSkuName(skuCode) ?? skuCode) : undefined,
         quantity: workOrder?.quantity,
-        dueUtc: workOrder?.dueUtc,
+        dueUtc: task.dueUtc,
         dimensions: task.workCenterId
           ? {
               ...task.dimensions,
@@ -280,12 +294,15 @@ const model = computed<ScheduleModel | undefined>(() => {
     },
     resolveWorkCenter,
   )
-  return {
-    ...mapped,
-    tasks: grouped.tasks,
-    groupDimensions: SCHEDULING_GROUP_DIMENSIONS,
-    groupValues: grouped.groupValues,
-  }
+  return withFactoryTimeContext(
+    {
+      ...mapped,
+      tasks: grouped.tasks,
+      groupDimensions: SCHEDULING_GROUP_DIMENSIONS,
+      groupValues: grouped.groupValues,
+    },
+    props.timeContext,
+  )
 })
 
 // 图例只列本方案实际用到的分类（不罗列全色板）。
@@ -372,6 +389,12 @@ function sendCommand(cmd: Parameters<NonNullable<typeof boardRef.value>['command
   boardRef.value?.command(cmd)
 }
 
+function selectPlanOperation(taskId: string) {
+  selectedTaskId.value = taskId
+  sendCommand({ kind: 'selectTask', taskId })
+  sendCommand({ kind: 'revealTask', taskId })
+}
+
 const search = shallowRef('')
 /**
  * 命中判定跨「工单号 / 工序号 / 条上标题 / 资源 / 工作中心人话名」五个字段。
@@ -435,7 +458,14 @@ const resourceCount = computed(() => model.value?.resources.length ?? 0)
 const planRange = computed(() => {
   const horizon = model.value?.horizon
   if (!horizon?.startUtc || !horizon.endUtc) return '暂无有效时间范围'
-  return `${formatDateTime(horizon.startUtc)} 至 ${formatDateTime(horizon.endUtc)}`
+  return (
+    model.value?.timezones
+      ?.map(
+        (zone) =>
+          `${zone} · ${scheduleTime(horizon.startUtc, zone)} 至 ${scheduleTime(horizon.endUtc, zone)}`,
+      )
+      .join('；') || '工厂时区尚未读取'
+  )
 })
 const invalidationReason = computed(() =>
   props.summary?.isInvalidated
@@ -478,11 +508,6 @@ function isForbidden(error: unknown, visited = new Set<object>()): boolean {
   return isForbidden(record.response, visited) || isForbidden(record.cause, visited)
 }
 
-function formatDateTime(value: string) {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false })
-}
-
 function setGroupBy(value: string) {
   if (SCHEDULING_GROUP_DIMENSIONS.some((dimension) => dimension.key === value)) {
     groupBy.value = value as SchedulingGroupKey
@@ -499,12 +524,12 @@ function setLaneOrder(value: LaneOrder) {
 </script>
 
 <template>
-  <section class="grid gap-4" data-testid="scheduling-plan-gantt">
+  <section class="grid grid-cols-1 gap-4" data-testid="scheduling-plan-gantt">
     <div
       v-if="loading"
       class="flex min-h-80 items-center justify-center gap-2 rounded-lg border bg-card text-sm text-muted-foreground"
     >
-      <Spinner aria-hidden="true" />
+      <NvSpinner aria-hidden="true" />
       正在读取方案时间轴
     </div>
 
@@ -524,6 +549,7 @@ function setLaneOrder(value: LaneOrder) {
     </div>
 
     <template v-else-if="plan && model">
+      <SchedulingMaterialShortageSummary :shortages="plan.materialShortageSummary ?? []" />
       <div
         v-if="summary?.isInvalidated"
         class="flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm"
@@ -565,7 +591,7 @@ function setLaneOrder(value: LaneOrder) {
             :title="summary?.isInvalidated ? `方案已失效（${invalidationReason}）` : '发布当前方案'"
             @click="emit('release')"
           >
-            <Spinner v-if="releasePending" aria-hidden="true" />
+            <NvSpinner v-if="releasePending" aria-hidden="true" />
             <SendIcon v-else aria-hidden="true" />
             发布当前方案
           </NvButton>
@@ -584,9 +610,10 @@ function setLaneOrder(value: LaneOrder) {
           <p class="mt-1 text-lg font-semibold text-foreground">{{ resourceCount }}</p>
         </div>
         <div class="rounded-lg border bg-card p-3">
-          <p class="text-xs text-muted-foreground">冲突</p>
+          <p class="text-xs text-muted-foreground">冲突 / 预警</p>
           <p class="mt-1 text-lg font-semibold text-foreground">
-            {{ plan.conflicts?.length ?? 0 }}
+            {{ plan.conflicts?.filter((item) => item.severity === 'error').length ?? 0 }} /
+            {{ plan.conflicts?.filter((item) => item.severity !== 'error').length ?? 0 }}
           </p>
         </div>
         <div class="rounded-lg border bg-card p-3">
@@ -623,10 +650,19 @@ function setLaneOrder(value: LaneOrder) {
         >
       </div>
 
-      <!-- 甘特与详情并排：详情是同一行里的一列（不是覆盖层），
-           打开时甘特只是变窄，仍然可见、可点、可继续换选。 -->
-      <div class="flex h-[34rem] min-h-[28rem] gap-3">
-        <div class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card">
+      <!-- 宽窗甘特与详情并排，窄窗详情在图面下方展开；两者均保留完整查阅空间。 -->
+      <div class="flex flex-col gap-3 xl:h-[34rem] xl:min-h-[28rem] xl:flex-row">
+        <SchedulingPlanOrders
+          v-if="model"
+          :model="model"
+          :work-orders="workOrders ?? []"
+          :selected-task-id="selectedTaskId"
+          :facts-unavailable="workOrderFactsUnavailable"
+          @select="selectPlanOperation"
+        />
+        <div
+          class="flex h-[34rem] min-w-0 flex-none flex-col overflow-hidden rounded-lg border bg-card xl:h-auto xl:flex-1"
+        >
           <!-- 时间线工具栏。这是只读面:不给撤销/重做/解锁(canEdit=false),也不在这里发布
                (发布走上方带失效守卫与禁用原因的「发布当前方案」,不要在工具栏再放一个)。 -->
           <SchedulingToolbar
@@ -673,7 +709,7 @@ function setLaneOrder(value: LaneOrder) {
 
         <aside
           v-if="detailPanelOpen && selectedTask"
-          class="flex w-[21rem] flex-none flex-col overflow-y-auto rounded-lg border bg-card"
+          class="flex max-h-[34rem] min-w-0 flex-col overflow-y-auto rounded-lg border bg-card xl:w-[21rem] xl:flex-none"
           :aria-label="detailPanelTitle"
           data-testid="scheduling-task-detail"
           :data-detail-kind="selectedKind"
@@ -695,6 +731,15 @@ function setLaneOrder(value: LaneOrder) {
           <TaskDetailPanel :task="selectedTask" :read-only="true" />
 
           <div class="grid gap-3 px-4 py-3">
+            <p v-if="selectedKind !== 'block'" class="text-sm">
+              工单
+              <SchedulingWorkOrderLink
+                :work-order-id="selectedTask.orderId"
+                :operation-task-id="
+                  selectedKind === 'operation' ? selectedTask.operationId : undefined
+                "
+              />
+            </p>
             <dl class="grid gap-2 text-xs">
               <div v-if="selectedWorkCenterLabel" class="flex justify-between gap-3">
                 <dt class="text-muted-foreground">工作中心</dt>
@@ -733,6 +778,7 @@ function setLaneOrder(value: LaneOrder) {
                 :key="conflict.id || conflict.message"
                 class="rounded-md border border-warning/30 bg-warning/10 px-2.5 py-1.5 text-xs text-foreground"
               >
+                {{ conflict.severity === 'error' ? '阻塞' : '预警' }} ·
                 {{ conflict.message || conflictReasonLabel[conflict.reason] }}
               </p>
             </div>
@@ -746,7 +792,7 @@ function setLaneOrder(value: LaneOrder) {
             >
               物料 / 数量 / 交期取自 MES 工单{{
                 selectedWorkOrder ? '' : '（当前工单不在已加载的工单窗口内，故未显示）'
-              }}。齐套率排程契约未返回，请在物料齐套页核对，此处不做估算。
+              }}。齐套情况请到「领料与齐套」页核对。
             </p>
 
             <NvButton size="sm" variant="outline" type="button" @click="emit('openDetail')">
@@ -758,6 +804,14 @@ function setLaneOrder(value: LaneOrder) {
 
       <div class="overflow-hidden rounded-lg border bg-card">
         <!-- 图例要知道当前刻度:班次边界在日级视图下一条都画不出来,不能照列(台账 #41)。 -->
+        <div
+          v-if="plan?.freezeContext"
+          class="flex flex-wrap items-center gap-2 border-t border-border/50 px-4 py-2 text-xs text-muted-foreground"
+        >
+          <span class="nv-scheduling-freeze-swatch" aria-hidden="true" />
+          <span>稳定窗口：保留已有工序位置，仍可安排新工序；不是停机时段。</span>
+          <span v-if="groupBy !== 'workCenter'">切换到工作中心查看各中心窗口。</span>
+        </div>
         <SchedulingLegend
           :categories="legendCategories"
           view="resource"

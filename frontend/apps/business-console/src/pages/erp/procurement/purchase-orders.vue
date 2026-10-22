@@ -11,10 +11,13 @@ import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { usePagedList } from '@/composables/usePagedList'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { i18n } from '@/i18n'
 import {
   NvButton,
   NvDataTable,
+  NvDatePicker,
   NvDialog,
   NvDialogClose,
   NvDialogContent,
@@ -34,7 +37,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -49,6 +52,8 @@ import {
   pickerInvalidClass,
 } from '../shared'
 
+const { locale } = i18n.global
+
 definePage({
   meta: {
     requiresAuth: true,
@@ -61,7 +66,7 @@ const orders = useErpPurchaseOrders()
 // 供应商 / 工厂 / 物料 / 单位一律从主数据目录里选，手输编码只会在提交时才发现敲错。
 const { supplierOptions, partnersPending } = useErpPartnerCatalog()
 const { siteOptions, sitesPending } = useErpSiteCatalog()
-const { skuOptions, skusPending, uomOptions, uomsPending, baseUomBySku } = useErpItemCatalog()
+const { uomOptions, uomsPending, baseUomBySku } = useErpItemCatalog()
 // 列表侧另需 code→name 反查（目录只给下拉选项，不做反查）；底层同一份查询，不会重复请求。
 const { resolvePartner } = useBusinessPartnerNames()
 const { resolveSkuName } = useSkuNames()
@@ -102,10 +107,25 @@ const rows = computed(() =>
 )
 
 const columns: NvDataTableColumn<(typeof rows.value)[number]>[] = [
-  { key: 'purchaseOrderNo', header: '采购单', cellClass: 'font-medium' },
-  { key: 'supplierCode', header: '供应商' },
-  { key: 'skuCode', header: '物料' },
-  { key: 'sourceRequisitions', header: '来源申请', width: 'w-40' },
+  {
+    key: 'purchaseOrderNo',
+    header: '采购单',
+    width: 'w-56',
+    cellClass: 'font-medium whitespace-normal break-all',
+  },
+  {
+    key: 'supplierCode',
+    header: '供应商',
+    width: 'w-64',
+    cellClass: 'whitespace-normal break-all',
+  },
+  { key: 'skuCode', header: '物料', width: 'w-56', cellClass: 'whitespace-normal break-all' },
+  {
+    key: 'sourceRequisitions',
+    header: '来源申请',
+    width: 'w-40',
+    cellClass: 'whitespace-normal break-all',
+  },
   { key: 'orderedQuantity', header: '订单数量', align: 'end', width: 'w-28' },
   { key: 'receivedQuantity', header: '已收数量', align: 'end', width: 'w-28' },
   { key: 'openQuantity', header: '未到数量', align: 'end', width: 'w-28' },
@@ -158,13 +178,10 @@ const form = reactive({
   promisedDate: '',
 })
 // 采购单位默认跟随物料的基本单位；用户仍可改成采购包装单位。
-watch(
-  () => form.skuCode,
-  (skuCode) => {
-    const baseUom = baseUomBySku.value.get(skuCode.trim())
-    if (baseUom) form.uomCode = baseUom
-  },
-)
+// 除了换物料，也跟着「所选物料的基本单位」变：就地新建的物料要等物料目录刷新回来才查得到。
+watch([() => form.skuCode, () => baseUomBySku.value.get(form.skuCode.trim())], ([, baseUom]) => {
+  if (baseUom) form.uomCode = baseUom
+})
 // 点提交才标红；结果一律 toast，弹窗不留常驻结果条。
 const showErrors = shallowRef(false)
 const invalid = computed(() => ({
@@ -333,7 +350,6 @@ async function submit() {
                 :options="supplierOptions"
                 title="选择供应商"
                 placeholder="选择供应商"
-                source-text="数据来自基础数据业务伙伴（供应商角色）"
                 empty-text="暂无供应商，请先在「基础数据 · 业务伙伴」维护"
                 :loading="partnersPending"
                 aria-label="供应商"
@@ -350,7 +366,6 @@ async function submit() {
                 :options="siteOptions"
                 title="选择工厂"
                 placeholder="选择收货工厂"
-                source-text="数据来自基础数据工厂主数据"
                 empty-text="暂无工厂，请先在「基础数据 · 工厂」维护"
                 :loading="sitesPending"
                 aria-label="工厂"
@@ -361,16 +376,11 @@ async function submit() {
               <NvFieldLabel for="erp-po-sku">
                 物料 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="erp-po-sku"
                 v-model="form.skuCode"
-                :options="skuOptions"
-                title="选择物料"
-                placeholder="选择物料"
-                source-text="数据来自基础数据物料主数据"
-                empty-text="暂无物料，请先在「基础数据 · 物料」维护"
-                :loading="skusPending"
-                aria-label="物料"
+                directory-type="material"
+                creatable
                 :class="pickerInvalidClass(showErrors && invalid.skuCode)"
               />
             </NvField>
@@ -384,7 +394,6 @@ async function submit() {
                 :options="uomOptions"
                 title="选择单位"
                 placeholder="选择采购单位"
-                source-text="数据来自基础数据计量单位；选定物料后默认带出基本单位"
                 empty-text="暂无计量单位，请先在「基础数据 · 计量单位」维护"
                 :loading="uomsPending"
                 aria-label="单位"
@@ -421,11 +430,13 @@ async function submit() {
               <NvFieldLabel for="erp-po-date">
                 承诺日期 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvDatePicker
                 id="erp-po-date"
                 v-model="form.promisedDate"
-                type="date"
-                :data-invalid="showErrors && invalid.promisedDate ? '' : undefined"
+                :locale="locale"
+                clearable
+                :aria-invalid="showErrors && invalid.promisedDate"
+                :class="pickerInvalidClass(showErrors && invalid.promisedDate)"
               />
             </NvField>
           </NvFieldGroup>
@@ -437,7 +448,7 @@ async function submit() {
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             >
             <NvButton type="submit" :disabled="orders.createPurchaseOrderPending.value">
-              <Spinner v-if="orders.createPurchaseOrderPending.value" aria-hidden="true" />
+              <NvSpinner v-if="orders.createPurchaseOrderPending.value" aria-hidden="true" />
               创建采购单
             </NvButton>
           </NvDialogFooter>

@@ -33,7 +33,7 @@ public sealed class TelemetryProductionReportCandidatePostgresTests
         var confirmedCandidate = await db.TelemetryProductionReportCandidates.SingleAsync(x => x.SourceIdempotencyKey == "source-001");
         var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-01", "SKU-01", "PV-01", 10m, 1, start.AddHours(1), "PCS");
         workOrder.MarkReleased(); workOrder.Start(start);
-        var operation = OperationTask.Create("org-001", "env-dev", "WO-01", "OP-10", OperationTaskLifecycleStatus.InProgress, 10, "WC-01", [], start, TimeSpan.FromHours(1), start, null);
+        var operation = OperationTask.Create("org-001", "env-dev", "WO-01", "OP-10", OperationTaskLifecycleStatus.InProgress, 10, "WC-01", [], start, TimeSpan.FromHours(1), start, null, "SKU-001");
         db.WorkOrders.Add(workOrder); db.OperationTasks.Add(operation);
         await db.SaveChangesAsync();
         var report = ProductionReport.Record("org-001", "env-dev", "PR-PG-001", "WO-01", "OP-10", 2m, 0m, false, start.AddMinutes(1), source: ProductionReport.TelemetrySource);

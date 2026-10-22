@@ -13,6 +13,7 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Maintenance work order id.");
         AddTenantColumns(builder);
+        builder.Property(x => x.WorkOrderNo).HasColumnName("work_order_no").IsRequired().HasMaxLength(50).HasComment("Formal maintenance work order number allocated by the maintenance-work-order code rule; unique per organization and environment.");
         builder.Property(x => x.DeviceAssetId).HasColumnName("device_asset_id").IsRequired().HasMaxLength(150).HasComment("MasterData device asset public id or code reference.");
         builder.Property(x => x.Priority).HasColumnName("priority").IsRequired().HasMaxLength(50).HasComment("Maintenance priority.");
         builder.Property(x => x.SourceAlarmId).HasColumnName("source_alarm_id").HasMaxLength(150).HasComment("IndustrialTelemetry alarm id that opened this work order, when applicable.");
@@ -34,6 +35,7 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.AssetUnavailable).HasColumnName("asset_unavailable").IsRequired().HasComment("Whether Maintenance marked the device unavailable.");
         builder.Property(x => x.AssetUnavailableReason).HasColumnName("asset_unavailable_reason").HasMaxLength(500).HasComment("Reason published with maintenance.AssetUnavailable.");
         builder.Property(x => x.AssetUnavailableFromUtc).HasColumnName("asset_unavailable_from_utc").HasComment("UTC start time of asset unavailability.");
+        builder.Property(x => x.ExpectedRestoreAtUtc).HasColumnName("expected_restore_at_utc").HasComment("Optional UTC expected asset restoration time; a prediction, not an actual restoration fact.");
         builder.Property(x => x.CompletionResult).HasColumnName("completion_result").HasMaxLength(1000).HasComment("Maintenance completion result.");
         builder.Property(x => x.DowntimeReasonCode).HasColumnName("downtime_reason_code").HasMaxLength(100).HasComment("Downtime reason attribution code.");
         builder.Property(x => x.DowntimeMinutes).HasColumnName("downtime_minutes").HasComment("Attributed downtime minutes.");
@@ -58,9 +60,12 @@ public sealed class MaintenanceWorkOrderEntityTypeConfiguration : IEntityTypeCon
             .HasDatabaseName("ix_maintenance_work_orders_scope_technician_opened");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.AssignedTeamId, x.OpenedAtUtc })
             .HasDatabaseName("ix_maintenance_work_orders_scope_team_opened");
-        // The five lower(column) substring predicates in ListMaintenanceWorkOrdersQueryHandler are backed by
-        // PostgreSQL pg_trgm GIN expression indexes in AddMaintenanceKeywordSearchIndexes. EF cannot model
+        // The six lower(column) substring predicates in ListMaintenanceWorkOrdersQueryHandler are backed by
+        // PostgreSQL pg_trgm GIN expression indexes in AddMaintenanceKeywordSearchIndexes (work_order_no in AddMaintenanceWorkOrderNo). EF cannot model
         // expression indexes, so that provider-specific query support stays migration-owned.
+        builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.WorkOrderNo })
+            .IsUnique()
+            .HasDatabaseName("ux_maintenance_work_orders_work_order_no");
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceAlarmId }).IsUnique();
         // PostgreSQL treats NULL values as distinct, so manual and planned rows without source metadata do not collide.
         builder.HasIndex(x => new { x.OrganizationId, x.EnvironmentId, x.SourceType, x.SourceReferenceId })
@@ -115,6 +120,8 @@ public sealed class SparePartLineEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("Referenced spare part SKU code.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired().HasPrecision(18, 6).HasComment("Required spare part quantity.");
         builder.Property(x => x.UomCode).HasColumnName("uom_code").HasMaxLength(50).HasComment("Optional spare part unit of measure code.");
+        builder.Property(x => x.SiteCode).HasColumnName("site_code").HasMaxLength(100).HasComment("Inventory site the spare part is issued from; null only on lines recorded before issue locations were captured.");
+        builder.Property(x => x.LocationCode).HasColumnName("location_code").HasMaxLength(100).HasComment("Registered inventory location the spare part is issued from; null only on lines recorded before issue locations were captured.");
     }
 }
 

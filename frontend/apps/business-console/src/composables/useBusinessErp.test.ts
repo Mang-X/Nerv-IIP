@@ -8,7 +8,12 @@ import {
   listBusinessConsoleErpPurchaseRequisitionsQueryOptions,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
+import { useMutation } from '@pinia/colada'
 import { useBusinessErp, useErpPurchaseRequisitions } from './useBusinessErp'
+import {
+  useErpWorkCenterCostRates,
+  useErpWorkCenterMachineOverheadRates,
+} from './useErpCostAccounting'
 
 const coladaState = vi.hoisted(() => ({
   queryFactoriesById: new Map<string, () => unknown>(),
@@ -18,6 +23,20 @@ const coladaState = vi.hoisted(() => ({
 }))
 
 vi.mock('@nerv-iip/api-client', () => ({
+  configureBusinessConsoleErpWorkCenterCostRateMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(),
+  })),
+  listBusinessConsoleErpWorkCenterCostRatesQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleErpWorkCenterCostRates' }],
+    query: vi.fn(),
+  })),
+  configureBusinessConsoleErpWorkCenterMachineOverheadRateMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(),
+  })),
+  listBusinessConsoleErpWorkCenterMachineOverheadRatesQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsoleErpWorkCenterMachineOverheadRates' }],
+    query: vi.fn(),
+  })),
   convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderMutationOptions: vi.fn(() => ({
     mutation: vi.fn(),
   })),
@@ -193,5 +212,81 @@ describe('business ERP composable', () => {
     expect(
       coladaState.refetchById.get('listBusinessConsoleErpPurchaseRequisitions'),
     ).not.toHaveBeenCalled()
+  })
+
+  it('新增工作中心费率修订成功后重拉该工作中心的费率', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    const rates = useErpWorkCenterCostRates()
+    rates.workCenterId.value = 'WC-CT-01'
+
+    await rates.addRevision({
+      hourlyRate: 58.5,
+      currencyCode: 'CNY',
+      effectiveFromUtc: '2026-09-22T16:00:00.000Z',
+      reason: '年度人工费率核定',
+    })
+    expect(coladaState.mutateAsync).toHaveBeenCalledWith({
+      body: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        workCenterId: 'WC-CT-01',
+        hourlyRate: 58.5,
+        currencyCode: 'CNY',
+        effectiveFromUtc: '2026-09-22T16:00:00.000Z',
+        reason: '年度人工费率核定',
+      },
+    })
+    const refetch = coladaState.refetchById.get('listBusinessConsoleErpWorkCenterCostRates')
+    expect(refetch).not.toHaveBeenCalled()
+    const options = vi.mocked(useMutation).mock.calls.at(-1)?.[0] as { onSuccess?: () => void }
+    options.onSuccess?.()
+    expect(refetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('机器制造费用率按工作中心和会计期间读取，新增修订带上期间并在成功后重拉', async () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    const rates = useErpWorkCenterMachineOverheadRates()
+    rates.workCenterId.value = 'WC-CNC-01'
+    rates.accountingPeriodCode.value = '2026-09'
+
+    const factory = coladaState.queryFactoriesById.get(
+      'listBusinessConsoleErpWorkCenterMachineOverheadRates',
+    ) as () => { enabled: boolean }
+    expect(factory().enabled).toBe(true)
+    rates.accountingPeriodCode.value = ''
+    expect(factory().enabled).toBe(false)
+    rates.accountingPeriodCode.value = '2026-09'
+
+    await rates.addRevision({
+      applicability: 'applicable',
+      fixedOverheadBudget: 12000,
+      variableOverheadBudget: 3600,
+      normalCapacityMachineHours: 400,
+      currencyCode: 'CNY',
+      reason: '九月预算核定',
+    })
+    expect(coladaState.mutateAsync).toHaveBeenCalledWith({
+      body: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        workCenterId: 'WC-CNC-01',
+        accountingPeriodCode: '2026-09',
+        applicability: 'applicable',
+        fixedOverheadBudget: 12000,
+        variableOverheadBudget: 3600,
+        normalCapacityMachineHours: 400,
+        currencyCode: 'CNY',
+        reason: '九月预算核定',
+      },
+    })
+    const refetch = coladaState.refetchById.get(
+      'listBusinessConsoleErpWorkCenterMachineOverheadRates',
+    )
+    expect(refetch).not.toHaveBeenCalled()
+    const options = vi.mocked(useMutation).mock.calls.at(-1)?.[0] as { onSuccess?: () => void }
+    options.onSuccess?.()
+    expect(refetch).toHaveBeenCalledTimes(1)
   })
 })

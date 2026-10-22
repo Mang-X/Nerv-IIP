@@ -17,10 +17,10 @@ import {
   NvSheetFooter,
   NvSheetHeader,
   NvSheetTitle,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { PackageCheckIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
@@ -67,6 +67,7 @@ const {
   invalid,
   createReceiptRequestPending,
   submit,
+  beginRegistration,
 } = useReceiptCreateForm(
   () => ({
     organizationId: props.organizationId,
@@ -75,7 +76,19 @@ const {
     skuId: props.skuId,
     initialQuantity: props.initialQuantity,
   }),
-  { onCreated: () => emit('created') },
+  {
+    onCreated: () => {
+      emit('update:open', false)
+      emit('created')
+    },
+  },
+)
+
+watch(
+  () => props.open,
+  (open) => {
+    if (open) beginRegistration()
+  },
 )
 
 function formatQuantity(value?: number) {
@@ -104,7 +117,7 @@ const contextItems = computed(() => [
       </NvSheetHeader>
 
       <!-- 结果一律走 toast（成功/失败/超量均 notifySuccess·notifyError）：Sheet 内不留常驻结果条。
-           成功后重置表单留在原地支持高频连录，失败保持打开可修正重提。 -->
+           成功后关闭表单，失败保持打开可修正重提。 -->
       <form class="grid content-start gap-4 p-4" @submit.prevent="submit">
         <!-- 工单与成品由工单详情/报工带出：只读上下文区呈现，不做 readonly 输入框（会被误当成可改的输入位）。 -->
         <CarriedContextSummary label="入库对象" :items="contextItems" />
@@ -173,19 +186,6 @@ const contextItems = computed(() => [
             </p>
           </NvField>
           <NvField>
-            <NvFieldLabel for="receipt-unit-cost">单位成本</NvFieldLabel>
-            <NvInput
-              id="receipt-unit-cost"
-              v-model="form.unitCost"
-              inputmode="decimal"
-              min="0.000001"
-              step="0.000001"
-              required
-              type="number"
-              :data-invalid="showErrors && invalid.unitCost ? '' : undefined"
-            />
-          </NvField>
-          <NvField>
             <NvFieldLabel for="receipt-uom">单位</NvFieldLabel>
             <NvSearchSelect
               id="receipt-uom"
@@ -221,8 +221,16 @@ const contextItems = computed(() => [
 
         <NvSheetFooter>
           <NvButton type="button" variant="outline" @click="openModel = false">取消</NvButton>
-          <NvButton type="submit" :disabled="createReceiptRequestPending">
-            <Spinner v-if="createReceiptRequestPending" aria-hidden="true" />
+          <NvButton
+            type="submit"
+            :disabled="
+              createReceiptRequestPending ||
+              producedLotsPending ||
+              !!producedLotsError ||
+              !selectedLot
+            "
+          >
+            <NvSpinner v-if="createReceiptRequestPending" aria-hidden="true" />
             <PackageCheckIcon v-else aria-hidden="true" />
             登记入库
           </NvButton>

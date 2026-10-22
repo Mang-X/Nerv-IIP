@@ -16,6 +16,7 @@ import {
   useQualityInspectionPlanCharacteristics,
   useQualityInspectionPlans,
 } from '@/composables/useBusinessQuality'
+import { useQualityOperationContext } from '@/composables/useQualityOperationContext'
 import { useQualityInspectionTaskActions } from '@/composables/useQualityInspectionTasks'
 import {
   useQualityInspectionPlanCatalog,
@@ -25,7 +26,6 @@ import {
 } from '@/composables/useQualityPickerCatalog'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { useEquipmentWorkCenterCatalog } from '@/composables/useEquipmentPickerCatalog'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { usePagedList } from '@/composables/usePagedList'
 import {
@@ -36,6 +36,10 @@ import {
 } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
+import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
+import type { SourceDocumentKind } from '@/composables/useSourceDocumentCatalog'
+import { readFaceText } from '@/utils/readFace'
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDetailSheet.vue'
 import FirstArticleInspectionRecords from '@/components/quality/FirstArticleInspectionRecords.vue'
@@ -65,7 +69,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvTabs,
   NvTabsContent,
@@ -137,7 +141,7 @@ const recordForm = reactive({
   sourceType: 'operation',
   sourceService: 'mes-operation',
   sourceDocumentId: '',
-  skuCode: 'SKU-001',
+  skuCode: '',
   inspectedQuantity: '1' as NumericFieldValue,
   batchNo: '',
   serialNo: '',
@@ -146,8 +150,100 @@ const recordForm = reactive({
   resultLines: [emptyLine()],
 })
 
+// 来源单据按来源类型从单据目录里选，取值与下游比对的值一致：工序检验、终检的结论按工单 ID 回写
+// 制造执行的质量保留，维修检验挂维修工单 ID。收货检验按采购收货单号核对、客户退货没有可搜列表，
+// 这两类自由输入。
+const SOURCE_DOCUMENT_KINDS: Readonly<Record<string, SourceDocumentKind>> = {
+  operation: 'mes-work-order',
+  final: 'mes-work-order',
+  maintenance: 'maintenance-work-order',
+}
+
+// 换了来源类型，已选的来源单据就不属于这一类了。
+function changeSourceType(value: unknown) {
+  recordForm.sourceType = typeof value === 'string' ? value : ''
+  recordForm.sourceDocumentId = ''
+}
+
 // 上下文穿透：从工单/工序/收货带入来源单据、批次、序列号。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
+const contextOperationTaskId = computed(() => firstQuery(route.query.operationTaskId))
+const isOperationInspectionFlow = computed(
+  () => !!contextOperationTaskId.value && !firstQuery(route.query.inspectionTaskId),
+)
+const operationContext = useQualityOperationContext(filters, () =>
+  isOperationInspectionFlow.value ? contextWorkOrderId.value : '',
+)
+const contextOperation = computed(() =>
+  operationContext.detail.value?.workOrderId === contextWorkOrderId.value
+    ? operationContext.detail.value.operationTasks?.find(
+        (task) => task.operationTaskId === contextOperationTaskId.value,
+      )
+    : undefined,
+)
+const operationContextReady = computed(
+  () =>
+    !!contextOperation.value &&
+    !!operationContext.detail.value?.skuId?.trim() &&
+    !operationContext.pending.value &&
+    !operationContext.errorMessage.value,
+)
+// 只接续成功提交时已公开核实的工单/工序；不把检验记录当不良领域关联。
+const submittedOperationSource = shallowRef<{
+  workOrderId: string
+  operationTaskId: string
+} | null>(null)
+const canContinueDefect = computed(() =>
+  ['business.mes.quality.read', 'business.mes.quality.write', 'business.mes.operations.read'].every(
+    (permission) => (auth.principal?.permissionCodes ?? []).includes(permission),
+  ),
+)
+const defectContinuationRoute = computed(() =>
+  submittedOperationSource.value && canContinueDefect.value
+    ? { path: '/mes/quality', query: submittedOperationSource.value }
+    : undefined,
+)
+const sourceWorkOrderRoute = computed(() => ({
+  path: `/mes/work-orders/${encodeURIComponent(contextWorkOrderId.value)}`,
+  query: {
+    operationTaskId: operationContextReady.value ? contextOperationTaskId.value : undefined,
+  },
+}))
+const operationSourceIdentity = computed(() =>
+  [
+    auth.principal?.principalId,
+    filters.organizationId,
+    filters.environmentId,
+    contextWorkOrderId.value,
+    contextOperationTaskId.value,
+  ].join(':'),
+)
+watch(operationSourceIdentity, () => {
+  submittedOperationSource.value = null
+})
+const operationContextMessage = computed(() => {
+  if (!isOperationInspectionFlow.value || operationContextReady.value) return ''
+  if (operationContext.errorMessage.value) return operationContext.errorMessage.value
+  if (operationContext.pending.value || !hasBusinessContext(filters)) return '正在加载工序检验对象…'
+  return '未取得该工序的产品上下文，请重试检验对象。'
+})
+watch(
+  [
+    isOperationInspectionFlow,
+    operationContextReady,
+    () => operationContext.detail.value?.skuId,
+    contextWorkOrderId,
+    contextOperationTaskId,
+  ],
+  ([operationFlow, ready, skuId, workOrderId]) => {
+    if (!operationFlow) return
+    recordForm.skuCode = ready ? skuId!.trim() : ''
+    recordForm.sourceDocumentId = workOrderId
+    recordForm.sourceType = 'operation'
+    recordForm.sourceService = 'mes-operation'
+  },
+  { immediate: true, flush: 'sync' },
+)
 const targetInspectionPlanId = computed(() => firstQuery(route.query.inspectionPlanId))
 const targetInspectionPlan = computed(() =>
   targetInspectionPlanId.value
@@ -233,7 +329,7 @@ watch(
     const batch = firstQuery(query.batchNo) || firstQuery(query.materialLotId)
     const serial = firstQuery(query.serialNo)
     if (source) recordForm.sourceDocumentId = source
-    if (skuCode) recordForm.skuCode = skuCode
+    if (skuCode && !isOperationInspectionFlow.value) recordForm.skuCode = skuCode
     if (quantity) recordForm.inspectedQuantity = quantity
     if (batch) recordForm.batchNo = batch
     if (serial) recordForm.serialNo = serial
@@ -306,7 +402,6 @@ const planCatalog = useQualityInspectionPlanCatalog()
 const skuCatalog = useQualitySkuCatalog()
 const uomCatalog = useQualityUomCatalog()
 const reasonCatalog = useQualityReasonCatalog()
-const { workCenterOptions, workCentersPending } = useEquipmentWorkCenterCatalog()
 const { activateFirstArticlePlan, activateFirstArticlePlanPending } =
   useQualityFirstArticlePlanActions(filters)
 // 换检验方案等于换了检验对象：方案自带的物料要跟着走，已填的特性行不再属于新方案，重置回一行空行。
@@ -318,11 +413,11 @@ const recordPlanModel = computed({
     characteristicsAppliedPlanId.value = ''
     recordForm.resultLines = [emptyLine()]
     const plan = planCatalog.inspectionPlans.value.find((item) => item.id === value)
-    if (plan?.skuCode) recordForm.skuCode = plan.skuCode
+    if (plan?.skuCode && !isOperationInspectionFlow.value) recordForm.skuCode = plan.skuCode
   },
 })
 
-const listErrorMessage = computed(() => formatError(inspectionPlansError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(inspectionPlansError.value))
 const inspectedQuantity = computed(() => toOptionalNumber(recordForm.inspectedQuantity))
 const isInspectionTaskFlow = computed(() => !!firstQuery(route.query.inspectionTaskId))
 const inspectionTaskSubmissionAllowed = shallowRef(false)
@@ -378,6 +473,16 @@ const recordContextItems = computed(() => [
   { label: '来源类型', value: sourceTypeLabel(recordForm.sourceType) },
   { label: '来源单据', value: recordForm.sourceDocumentId },
   { label: '物料', value: recordForm.skuCode },
+  ...(isOperationInspectionFlow.value
+    ? [
+        {
+          label: '来源工序',
+          value:
+            contextOperation.value?.operationCode ||
+            (contextOperation.value ? `工序 ${contextOperation.value.operationSequence}` : ''),
+        },
+      ]
+    : []),
   { label: '检验数量', value: recordForm.inspectedQuantity },
   { label: '批次', value: recordForm.batchNo },
   { label: '序列号', value: recordForm.serialNo },
@@ -405,12 +510,15 @@ const validResultLines = computed(() =>
 const submitBlockers = computed<string[]>(() => {
   const blockers: string[] = []
   if (!hasBusinessContext(filters)) {
-    blockers.push('业务范围（组织 / 环境）尚未就绪，请在顶部业务范围条选择组织与环境。')
+    blockers.push('尚未确定当前组织。')
   }
   if (isInspectionTaskFlow.value && !inspectionTaskSubmissionAllowed.value) {
     blockers.push(
       '该待检任务当前不允许提交检验（可能已被他人接手或已闭合），请返回待检工作台重新选取任务。',
     )
+  }
+  if (isOperationInspectionFlow.value && !operationContextReady.value) {
+    blockers.push(operationContextMessage.value)
   }
   if (!isNonEmpty(recordForm.sourceType)) blockers.push('请选择来源类型。')
   if (!isNonEmpty(recordForm.sourceService)) blockers.push('请选择来源服务。')
@@ -527,7 +635,8 @@ function formatSpecification(characteristic: {
 }
 function useInspectionPlan(plan: BusinessConsoleQualityItem) {
   recordForm.inspectionPlanId = plan.id ?? ''
-  if (plan.skuCode && !firstQuery(route.query.skuCode)) recordForm.skuCode = plan.skuCode
+  if (plan.skuCode && !isOperationInspectionFlow.value && !firstQuery(route.query.skuCode))
+    recordForm.skuCode = plan.skuCode
   if (plan.category?.trim().toLowerCase() === 'first-article') {
     recordForm.sourceType = 'first-article'
     recordForm.sourceService = 'mes-operation'
@@ -673,6 +782,13 @@ async function resetInspectionTaskContext() {
   await router.replace({ query })
 }
 
+function inspectionSubmissionSubject() {
+  const sourceDocumentNo = readFaceText(firstQuery(route.query.sourceDocumentNo), '')
+  return sourceDocumentNo && sourceDocumentNo === recordForm.sourceDocumentId.trim()
+    ? `来源单据 ${sourceDocumentNo} 的检验记录`
+    : '检验记录'
+}
+
 async function submitInspectionRecord() {
   if (!hasBusinessContext(filters)) {
     notifyError('业务范围尚未就绪，请稍后重试。')
@@ -681,9 +797,8 @@ async function submitInspectionRecord() {
   if (!canCreateRecord.value) return
   const inspectionTaskId = firstQuery(route.query.inspectionTaskId)
   if (inspectionTaskId) {
-    let response
     try {
-      response = await taskActions.startInspection(inspectionTaskId, {
+      await taskActions.startInspection(inspectionTaskId, {
         resultLines: toCharacteristicResults(),
         dispositionReason: optionalText(recordForm.dispositionReason),
         dispositionAttachmentFileIds: splitCsv(recordForm.dispositionAttachmentFileIds),
@@ -702,9 +817,7 @@ async function submitInspectionRecord() {
       return
     }
     recordSheetOpen.value = false
-    notifySuccess(
-      `检验记录 ${response?.data?.inspectionRecordId ?? inspectionTaskId} 已提交，待检任务已闭合。`,
-    )
+    notifySuccess(`${inspectionSubmissionSubject()}已提交，待检任务已闭合。`)
     await router.push({
       path: '/quality/inspection-tasks',
     })
@@ -725,15 +838,26 @@ async function submitInspectionRecord() {
     dispositionReason: optionalText(recordForm.dispositionReason),
     dispositionAttachmentFileIds: splitCsv(recordForm.dispositionAttachmentFileIds),
   }
-  let response
+  const sourceIdentity = operationSourceIdentity.value
+  const operationSource =
+    isOperationInspectionFlow.value &&
+    operationContextReady.value &&
+    body.sourceType === 'operation' &&
+    body.sourceService === 'mes-operation' &&
+    body.sourceDocumentId === contextWorkOrderId.value
+      ? { workOrderId: contextWorkOrderId.value, operationTaskId: contextOperationTaskId.value }
+      : null
+  submittedOperationSource.value = null
   try {
-    response = await createInspectionRecord(body)
+    await createInspectionRecord(body)
   } catch (error) {
     notifyOperationFailure('检验记录提交失败', error, '检验记录提交失败，请稍后重试。')
     return
   }
   recordSheetOpen.value = false
-  notifySuccess(`检验记录 ${response?.data?.inspectionRecordId ?? body.sourceDocumentId} 已提交。`)
+  if (sourceIdentity === operationSourceIdentity.value)
+    submittedOperationSource.value = operationSource
+  notifySuccess(`${inspectionSubmissionSubject()}已提交。`)
 }
 
 function toCharacteristicResults(): BusinessConsoleInspectionCharacteristicResult[] {
@@ -805,9 +929,6 @@ function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 function isNonEmpty(value: string) {
   return value.trim().length > 0
 }
@@ -834,10 +955,11 @@ function isPresent(value: string | undefined | null): value is string {
           <Settings2Icon aria-hidden="true" />
           配置首件检验方案
         </NvButton>
+        <NvButton v-if="defectContinuationRoute" size="sm" type="button" as-child>
+          <RouterLink :to="defectContinuationRoute">登记同工序不良</RouterLink>
+        </NvButton>
         <NvButton v-if="contextWorkOrderId" size="sm" type="button" variant="outline" as-child>
-          <RouterLink :to="`/mes/work-orders/${encodeURIComponent(contextWorkOrderId)}`"
-            >返回工单 {{ contextWorkOrderId }}</RouterLink
-          >
+          <RouterLink :to="sourceWorkOrderRoute">返回工单 {{ contextWorkOrderId }}</RouterLink>
         </NvButton>
         <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink :to="scanAuditRoute">扫码记录</RouterLink>
@@ -960,10 +1082,6 @@ function isPresent(value: string | undefined | null): value is string {
       v-model:open="firstArticlePlanSheetOpen"
       :organization-id="filters.organizationId"
       :environment-id="filters.environmentId"
-      :sku-options="skuCatalog.skuOptions.value"
-      :skus-pending="skuCatalog.skusPending.value"
-      :work-center-options="workCenterOptions"
-      :work-centers-pending="workCentersPending"
       @completed="refreshInspectionPlans"
     />
 
@@ -983,12 +1101,29 @@ function isPresent(value: string | undefined | null): value is string {
         <form class="grid content-start gap-4" @submit.prevent="submitInspectionRecord">
           <!-- 从待检任务行进入：来源单据 / 物料 / 数量 / 批次 全部由任务带出，只读呈现。 -->
           <CarriedContextSummary
-            v-if="isInspectionTaskFlow"
+            v-if="isInspectionTaskFlow || isOperationInspectionFlow"
             label="检验对象"
             :items="recordContextItems"
           />
 
-          <NvFieldGroup v-else class="grid gap-3 sm:grid-cols-2">
+          <div
+            v-if="isOperationInspectionFlow && operationContextMessage"
+            class="flex items-center gap-2 text-sm"
+            aria-live="polite"
+          >
+            <NvSpinner v-if="operationContext.pending.value" aria-hidden="true" />
+            {{ operationContextMessage }}
+            <NvButton
+              v-if="!operationContext.pending.value"
+              type="button"
+              variant="outline"
+              size="sm"
+              @click="operationContext.refresh"
+            >
+              重试检验对象
+            </NvButton>
+          </div>
+          <NvFieldGroup v-if="!isInspectionTaskFlow" class="grid gap-3 sm:grid-cols-2">
             <NvField>
               <NvFieldLabel for="record-plan">检验方案</NvFieldLabel>
               <NvEntityPicker
@@ -997,16 +1132,15 @@ function isPresent(value: string | undefined | null): value is string {
                 :options="planCatalog.inspectionPlanOptions.value"
                 title="选择检验方案"
                 placeholder="选择检验方案"
-                source-text="数据来自质量检验方案"
                 empty-text="当前范围内没有检验方案"
                 :loading="planCatalog.inspectionPlansPending.value"
                 clearable
                 aria-label="检验方案"
               />
             </NvField>
-            <NvField>
+            <NvField v-if="!isOperationInspectionFlow">
               <NvFieldLabel>来源类型</NvFieldLabel>
-              <NvSelect v-model="recordForm.sourceType">
+              <NvSelect :model-value="recordForm.sourceType" @update:model-value="changeSourceType">
                 <NvSelectTrigger aria-label="来源类型"><NvSelectValue /></NvSelectTrigger>
                 <NvSelectContent>
                   <NvSelectItem value="operation">工序</NvSelectItem>
@@ -1017,7 +1151,7 @@ function isPresent(value: string | undefined | null): value is string {
                 </NvSelectContent>
               </NvSelect>
             </NvField>
-            <NvField>
+            <NvField v-if="!isOperationInspectionFlow">
               <NvFieldLabel>来源服务</NvFieldLabel>
               <NvSelect v-model="recordForm.sourceService">
                 <NvSelectTrigger aria-label="来源服务"><NvSelectValue /></NvSelectTrigger>
@@ -1033,20 +1167,22 @@ function isPresent(value: string | undefined | null): value is string {
                 </NvSelectContent>
               </NvSelect>
             </NvField>
-            <NvField>
+            <NvField v-if="!isOperationInspectionFlow">
               <NvFieldLabel for="record-source-document">来源单据</NvFieldLabel>
-              <NvInput id="record-source-document" v-model="recordForm.sourceDocumentId" required />
+              <SourceDocumentPicker
+                id="record-source-document"
+                v-model="recordForm.sourceDocumentId"
+                :kind="SOURCE_DOCUMENT_KINDS[recordForm.sourceType]"
+              />
             </NvField>
-            <NvField>
+            <NvField v-if="!isOperationInspectionFlow">
               <NvFieldLabel for="record-sku">SKU</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="record-sku"
                 v-model="recordForm.skuCode"
-                :options="skuCatalog.skuOptions.value"
-                title="选择 SKU"
+                directory-type="material"
+                creatable
                 placeholder="选择 SKU"
-                source-text="数据来自基础数据物料主数据"
-                :loading="skuCatalog.skusPending.value"
                 aria-label="SKU"
               />
             </NvField>
@@ -1064,11 +1200,23 @@ function isPresent(value: string | undefined | null): value is string {
             </NvField>
             <NvField>
               <NvFieldLabel for="record-batch">批次</NvFieldLabel>
-              <NvInput id="record-batch" v-model="recordForm.batchNo" />
+              <DirectoryPicker
+                id="record-batch"
+                v-model="recordForm.batchNo"
+                directory-type="batch"
+                :sku-code="recordForm.skuCode"
+                clearable
+              />
             </NvField>
             <NvField>
               <NvFieldLabel for="record-serial">序列号</NvFieldLabel>
-              <NvInput id="record-serial" v-model="recordForm.serialNo" />
+              <DirectoryPicker
+                id="record-serial"
+                v-model="recordForm.serialNo"
+                directory-type="serial"
+                :sku-code="recordForm.skuCode"
+                clearable
+              />
             </NvField>
           </NvFieldGroup>
 
@@ -1207,7 +1355,6 @@ function isPresent(value: string | undefined | null): value is string {
                     :options="uomCatalog.uomOptions.value"
                     title="选择计量单位"
                     placeholder="选择单位"
-                    source-text="数据来自基础数据计量单位"
                     :loading="uomCatalog.uomsPending.value"
                     clearable
                     :aria-label="`第 ${index + 1} 个特性单位`"
@@ -1312,7 +1459,7 @@ function isPresent(value: string | undefined | null): value is string {
                 :aria-describedby="submitBlockers.length ? 'record-submit-blockers' : undefined"
                 :disabled="createInspectionRecordPending || !canCreateRecord"
               >
-                <Spinner v-if="createInspectionRecordPending" aria-hidden="true" />
+                <NvSpinner v-if="createInspectionRecordPending" aria-hidden="true" />
                 <ClipboardCheckIcon v-else aria-hidden="true" />
                 提交检验记录
               </NvButton>

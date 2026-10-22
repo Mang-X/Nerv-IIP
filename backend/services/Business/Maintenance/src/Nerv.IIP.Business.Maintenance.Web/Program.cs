@@ -1,12 +1,16 @@
 using System.Reflection;
+using System.Net.Http.Headers;
+using Nerv.IIP.Sdk.Notification;
 using System.Text.Json;
 using FastEndpoints;
+using Nerv.IIP.Business.Maintenance.Web.Endpoints.DeadLetters;
 using FastEndpoints.Swagger;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Maintenance.Domain;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
+using Nerv.IIP.Business.Maintenance.Web;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
 using Nerv.IIP.Business.Maintenance.Web.Application.Errors;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventHandlers;
@@ -72,12 +76,19 @@ try
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
     builder.Services.Configure<MaintenanceCompletionOptions>(builder.Configuration.GetSection("Maintenance:Completion"));
+    builder.Services.AddOptions<MaintenanceRestorePredictionOptions>()
+        .Bind(builder.Configuration.GetSection("Maintenance:RestorePrediction"))
+        .Validate(x => x.DefaultDowntimeMinutes > 0, "Default downtime minutes must be positive.")
+        .ValidateOnStart();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, MaintenanceIntegrationEventDeadLetterStore>();
+    builder.Services.AddIntegrationEventDeadLetterEndpoints();
     builder.Services.AddScoped<OpenWorkOrderWhenAlarmRaisedHandler>();
     builder.Services.AddScoped<MarkWorkOrderAlarmClearedHandler>();
     builder.Services.AddScoped<PauseMaintenancePlansWhenDeviceDisabledHandler>();
+    builder.Services.AddMaintenanceDeadLetterReplay();
     builder.Services.AddScoped<ICommandLock<GenerateDueMaintenanceWorkOrdersCommand>, GenerateDueMaintenanceWorkOrdersCommandLock>();
     builder.Services.AddScoped<ICommandLock<CreateMaintenanceWorkOrderCommand>, CreateMaintenanceWorkOrderCommandLock>();
+    builder.Services.AddScoped<ICommandLock<CreateMaintenanceWorkOrderV2Command>, CreateMaintenanceWorkOrderV2CommandLock>();
     builder.Services.AddScoped<ICommandLock<CompleteMaintenanceWorkOrderCommand>, CompleteMaintenanceWorkOrderCommandLock>();
     builder.Services.AddScoped<ICommandLock<AssignMaintenanceWorkOrderCommand>, AssignMaintenanceWorkOrderCommandLock>();
     builder.Services.AddScoped<ICommandLock<TransitionMaintenanceWorkOrderCommand>, TransitionMaintenanceWorkOrderCommandLock>();
@@ -86,6 +97,26 @@ try
     builder.Services.AddScoped<ICommandLock<UpdateMaintenancePlanCommand>, UpdateMaintenancePlanCommandLock>();
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddHostedService<MaintenancePlanDueScheduler>();
+    builder.Services.AddOptions<MaintenanceDowntimeEscalationOptions>()
+        .Bind(builder.Configuration.GetSection("Maintenance:DowntimeEscalation"))
+        .Validate(x => x.Threshold > TimeSpan.Zero && x.ScanInterval > TimeSpan.Zero,
+            "Downtime escalation threshold and scan interval must be positive.")
+        .Validate(x => x.Scopes.All(s => !string.IsNullOrWhiteSpace(s.OrganizationId)
+            && !string.IsNullOrWhiteSpace(s.EnvironmentId) && s.PlannerRecipientRefs.Length > 0
+            && s.PlannerRecipientRefs.All(r => r.StartsWith("user:", StringComparison.Ordinal) && r.Length > 5)),
+            "Each downtime escalation scope requires organization, environment and user planner recipients.")
+        .Validate(x => x.Scopes.Select(s => (s.OrganizationId, s.EnvironmentId)).Distinct().Count() == x.Scopes.Count,
+            "Downtime escalation scopes must be unique by organization and environment.")
+        .ValidateOnStart();
+    builder.Services.AddHttpClient<INotificationClient, HttpNotificationClient>((services, client) =>
+    {
+        client.BaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
+            builder.Configuration, builder.Environment, "Notification:BaseUrl", "http://localhost:5106");
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer",
+            services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken);
+    }).UseHttpClientMetrics();
+    builder.Services.AddScoped<MaintenanceDowntimeEscalationScanner>();
+    builder.Services.AddHostedService<MaintenanceDowntimeEscalationScheduler>();
 
     var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");
     if (isTesting && string.IsNullOrWhiteSpace(connectionString))
@@ -112,33 +143,13 @@ try
         MaintenanceFacts.ServiceName);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<MaintenanceCodingService>();
+    builder.Services.AddScoped<DowntimeReasonBaselineSeedService>();
     builder.Services.AddScoped<MaintenanceSeedService>();
     builder.Services.AddScoped<LeaderDemoSeedService>();
     builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
-    if (isTesting)
-    {
-        builder.Services.AddIntegrationEvents(typeof(Program));
-    }
-    else
-    {
-        builder.Services.AddIntegrationEvents(typeof(Program))
-            .UseCap<ApplicationDbContext>(b =>
-            {
-                b.RegisterServicesFromAssemblies(typeof(Program));
-                b.AddContextIntegrationFilters();
-            });
-
-        builder.Services.AddCap(x =>
-        {
-            x.Version = builder.Configuration["Cap:Version"] ?? "v1";
-            x.UseEntityFramework<ApplicationDbContext>();
-            x.JsonSerializerOptions.AddNetCorePalJsonConverters();
-            x.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
-            x.UseDashboard();
-        });
-    }
+    builder.Services.AddMaintenanceCapIntegrationEvents(builder.Configuration, builder.Environment.EnvironmentName, isTesting);
 
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssemblies(Assembly.GetExecutingAssembly())
@@ -164,16 +175,30 @@ try
         await dbContext.Database.MigrateAsync();
     }
 
-    // 点检保养计划 seed（默认随 autoMigrate 开启，或显式 Maintenance:Seed:Enabled）：
-    // 全新环境补齐可选保养计划，供 PDA 点检页选计划 → 录测量值/超差/拍照走通（幂等只补缺失）。
-    var seedEnabled = builder.Configuration.GetValue<bool>("Maintenance:Seed:Enabled") || autoMigrate;
-    if (seedEnabled)
+    // 停机原因产品基线 seed（#3855）：默认开启、只补缺，显式 false 可关闭；目标租户读 IAM 引导种子的
+    // 同一组键（与 Inventory 产品基线同一姿势）。Testing 宿主默认不跑：它没有真实数据库，需要的用例显式打开。
+    var baselineSeedEnabled = builder.Configuration.GetValue("Maintenance:Seed:Enabled", !isTesting);
+    if (baselineSeedEnabled)
     {
         using var scope = app.Services.CreateScope();
-        var seed = scope.ServiceProvider.GetRequiredService<MaintenanceSeedService>();
-        await seed.SeedAsync(
-            builder.Configuration["Maintenance:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["Maintenance:Seed:EnvironmentId"] ?? "env-dev");
+        // 基线 seed 只在库结构已迁移到当前版本后执行：Development 由上面的 AutoMigrate 先迁移；
+        // 非 Development 由发布流程的独立迁移器先迁移。库里还有未应用的迁移时（迁移器尚未跑、或测试宿主
+        // 在迁移前启动）跳过并记录，不在未就绪的库上写数据，下次启动再补。
+        var pendingMigrations = (await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>()
+            .Database.GetPendingMigrationsAsync()).Count();
+        if (pendingMigrations > 0)
+        {
+            app.Logger.LogWarning(
+                "Maintenance product seed skipped: {PendingMigrations} migrations are not applied yet; it runs on the next start after migration.",
+                pendingMigrations);
+        }
+        else
+        {
+            var written = await scope.ServiceProvider.GetRequiredService<DowntimeReasonBaselineSeedService>().SeedAsync(
+                builder.Configuration["Iam:Seed:OrganizationId"] ?? "org-001",
+                builder.Configuration["Iam:Seed:EnvironmentId"] ?? "env-dev");
+            app.Logger.LogInformation("Maintenance product seed completed: {DowntimeReasons} missing downtime reasons added.", written);
+        }
     }
 
     var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");
@@ -190,6 +215,10 @@ try
     if (leaderDemoSeedEnabled)
     {
         using var scope = app.Services.CreateScope();
+        // 点检保养计划绑定设定集设备（DEV-CNC-01 等），属演示数据，只随 LeaderDemo 写入（#3811）。
+        await scope.ServiceProvider.GetRequiredService<MaintenanceSeedService>().SeedAsync(
+            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");
         await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(
             builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
             builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");
@@ -243,9 +272,16 @@ try
     {
         c.Serializer.Options.Converters.Add(new EquipmentRuntimeSourceTypeJsonConverter());
         c.Endpoints.NameGenerator = ctx =>
-            MaintenanceEndpointContracts.TryGet(ctx.EndpointType, out var contract)
-                ? contract.OperationId
+        {
+            if (MaintenanceEndpointContracts.TryGet(ctx.EndpointType, out var contract))
+            {
+                return contract.OperationId;
+            }
+
+            return MaintenanceDeadLetterEndpointContracts.TryGet(ctx.EndpointType, out var deadLetterContract)
+                ? deadLetterContract.OperationId
                 : ToLowerCamelEndpointName(ctx.EndpointType.Name);
+        };
     }).UseSwaggerGen();
     app.UseHttpMetrics();
     app.MapHealthChecks("/health");

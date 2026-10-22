@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { LockIcon, TriangleAlertIcon } from '@lucide/vue'
+import { scheduleTime } from '../model/factory-time'
 import { computed } from 'vue'
 import type { TimeScale } from '../engine/engine'
+import { freezeWindow, projectFreezeWindow } from '../model/freeze-window'
+import { taskFactRows } from '../model/task-facts'
+import { materialReadyLabel } from '../model/material-risk'
 import type { LaneOrder, ScheduleModel, ScheduleTask } from '../model/types'
 
 const props = withDefaults(
@@ -23,6 +27,7 @@ const emit = defineEmits<{
 const EIGHT_HOURS = 8 * 60 * 60 * 1000
 const ONE_DAY = 24 * 60 * 60 * 1000
 const LABEL_WIDTH = 224
+const TASK_ROW_HEIGHT = 280
 
 interface PositionedTask {
   task: ScheduleTask
@@ -36,6 +41,7 @@ interface TimelineLane {
   label: string
   tasks: PositionedTask[]
   rowCount: number
+  freeze?: ReturnType<typeof projectFreezeWindow>
 }
 
 const operationTasks = computed(() =>
@@ -61,6 +67,10 @@ const stepMs = computed(() => (resolvedScale.value === 'shift' ? EIGHT_HOURS : O
 
 function floorToLocalBoundary(timestamp: number) {
   const value = new Date(timestamp)
+  if (props.model.timezones) {
+    const step = stepMs.value
+    return Math.floor(timestamp / step) * step
+  }
   if (resolvedScale.value === 'day') {
     value.setHours(0, 0, 0, 0)
   } else {
@@ -70,6 +80,7 @@ function floorToLocalBoundary(timestamp: number) {
 }
 
 function nextLocalBoundary(timestamp: number) {
+  if (props.model.timezones) return timestamp + stepMs.value
   const value = new Date(timestamp)
   if (resolvedScale.value === 'day') value.setDate(value.getDate() + 1)
   else value.setHours(value.getHours() + 8)
@@ -200,13 +211,53 @@ const lanes = computed<TimelineLane[]>(() => {
         }
       })
 
+    const window =
+      props.view === 'resource' && props.groupBy === 'workCenter'
+        ? freezeWindow(props.model.freezeContext, id)
+        : undefined
     return {
       id,
       label: laneLabel(tasks[0], id),
       tasks: positioned,
       rowCount: Math.max(1, rowEnds.length),
+      freeze: window ? projectFreezeWindow(window, range.value.start, range.value.end) : undefined,
     }
   })
+})
+
+const laneHeight = (lane: TimelineLane) => Math.max(72, lane.rowCount * TASK_ROW_HEIGHT + 12)
+
+const dependencyLayout = computed(() => {
+  const positions = new Map<string, { orderId: string; start: number; end: number; y: number }>()
+  let height = 0
+  for (const lane of lanes.value) {
+    for (const positioned of lane.tasks) {
+      positions.set(positioned.task.id, {
+        orderId: positioned.task.orderId,
+        start: (positioned.left / 100) * timelineWidth.value,
+        end: ((positioned.left + positioned.width) / 100) * timelineWidth.value,
+        y: height + positioned.row * TASK_ROW_HEIGHT + TASK_ROW_HEIGHT / 2,
+      })
+    }
+    height += laneHeight(lane)
+  }
+  const links = props.model.links.flatMap((link) => {
+    const source = positions.get(link.source)
+    const target = positions.get(link.target)
+    if (!source || !target || source.orderId === target.orderId) return []
+    const elbow = (source.end + target.start) / 2
+    return [
+      {
+        ...link,
+        path:
+          source.y === target.y
+            ? `M ${source.end} ${source.y} H ${source.end + 12} V ${source.y - 28} H ${target.start - 12} V ${target.y} H ${target.start}`
+            : `M ${source.end} ${source.y} H ${elbow} V ${target.y} H ${target.start}`,
+        arrow: `${target.start - 5},${target.y - 4} ${target.start},${target.y} ${target.start - 5},${target.y + 4}`,
+      },
+    ]
+  })
+  return { links, height }
 })
 
 const groupLabel = computed(() => {
@@ -218,6 +269,13 @@ const groupLabel = computed(() => {
 })
 
 function tickLabel(timestamp: number) {
+  if (props.model.timezones)
+    return props.model.timezones
+      .map(
+        (zone) =>
+          `${zone} · ${scheduleTime(new Date(timestamp).toISOString(), zone, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`,
+      )
+      .join(' / ')
   const value = new Date(timestamp)
   if (resolvedScale.value === 'shift') {
     const start = value.toLocaleTimeString('zh-CN', {
@@ -243,13 +301,22 @@ function taskTime(task: ScheduleTask) {
     minute: '2-digit',
     hour12: false,
   }
-  return `${new Date(task.startUtc).toLocaleString('zh-CN', options)}–${new Date(task.endUtc).toLocaleString('zh-CN', options)}`
+  return `${task.factoryTimeLabel ?? ''} ${scheduleTime(task.startUtc, task.timezone, options)}–${scheduleTime(task.endUtc, task.timezone, options)}`
 }
 
 function taskLabel(task: ScheduleTask) {
   if (task.text.trim()) return task.text
   const sequence = task.operationSequence > 0 ? `第 ${task.operationSequence} 道` : '工序'
   return `${task.orderId || '未关联工单'} · ${sequence}`
+}
+
+function taskAriaLabel(task: ScheduleTask) {
+  const parts = [taskLabel(task), taskTime(task)]
+  if (task.hasConflict) parts.push('冲突')
+  if (task.downtimeRisk) parts.push(task.downtimeRisk)
+  if (task.locked) parts.push('锁定')
+  if (task.materialRisk) parts.push(materialReadyLabel(task.materialRisk) ?? '缺料待备')
+  return parts.join('，')
 }
 
 function selectTask(task: ScheduleTask) {
@@ -281,60 +348,110 @@ function selectTask(task: ScheduleTask) {
         </div>
       </div>
 
-      <div
-        v-for="lane in lanes"
-        :key="lane.id"
-        :data-resource-lane="view === 'resource' ? lane.id : undefined"
-        class="nv-timeline-grid nv-timeline-lane"
-        :style="{
-          gridTemplateColumns: `${LABEL_WIDTH}px ${timelineWidth}px`,
-          minHeight: `${Math.max(72, lane.rowCount * 58 + 12)}px`,
-        }"
-      >
-        <div class="nv-timeline-label">
-          <span class="nv-timeline-label__name">{{ lane.label }}</span>
-          <span class="nv-timeline-label__count">{{ lane.tasks.length }} 道工序</span>
+      <div class="nv-timeline-body">
+        <div
+          v-for="lane in lanes"
+          :key="lane.id"
+          :data-resource-lane="view === 'resource' ? lane.id : undefined"
+          class="nv-timeline-grid nv-timeline-lane"
+          :style="{
+            gridTemplateColumns: `${LABEL_WIDTH}px ${timelineWidth}px`,
+            minHeight: `${laneHeight(lane)}px`,
+          }"
+        >
+          <div class="nv-timeline-label">
+            <span class="nv-timeline-label__name">{{ lane.label }}</span>
+            <span class="nv-timeline-label__count">{{ lane.tasks.length }} 道工序</span>
+          </div>
+          <div class="nv-timeline-track">
+            <span
+              v-if="lane.freeze"
+              class="nv-scheduling-freeze-window"
+              data-freeze-window
+              :data-start-utc="lane.freeze.startUtc"
+              :data-end-utc="lane.freeze.endUtc"
+              :style="{ left: `${lane.freeze.left}%`, width: `${lane.freeze.width}%` }"
+              aria-hidden="true"
+            />
+            <span
+              v-for="tick in ticks"
+              :key="tick.key"
+              class="nv-timeline-gridline"
+              :style="{ left: `${tick.left}%` }"
+              aria-hidden="true"
+            />
+            <button
+              v-for="positioned in lane.tasks"
+              :key="positioned.task.id"
+              type="button"
+              :data-task-id="positioned.task.id"
+              :data-conflict="positioned.task.hasConflict || undefined"
+              :data-locked="positioned.task.locked || undefined"
+              class="nv-timeline-task"
+              :class="{
+                'nv-timeline-task--conflict':
+                  positioned.task.hasConflict || Boolean(positioned.task.downtimeRisk),
+                'nv-timeline-task--locked': positioned.task.locked,
+              }"
+              :style="{
+                left: `${positioned.left}%`,
+                top: `${positioned.row * TASK_ROW_HEIGHT + 8}px`,
+                width: `${positioned.width}%`,
+              }"
+              :aria-label="taskAriaLabel(positioned.task)"
+              :title="
+                taskFactRows(positioned.task)
+                  .map(([label, value]) => `${label} ${value}`)
+                  .join('\n')
+              "
+              @click="selectTask(positioned.task)"
+            >
+              <span class="nv-timeline-task__title">{{ taskLabel(positioned.task) }}</span>
+              <span
+                v-for="([label, value], index) in taskFactRows(positioned.task)"
+                :key="index"
+                class="nv-timeline-task__fact"
+              >
+                <span>{{ label }}</span
+                ><span>{{ value }}</span>
+              </span>
+              <span class="nv-timeline-task__meta">
+                <span>{{ taskTime(positioned.task) }}</span>
+                <span v-if="positioned.task.hasConflict" class="nv-timeline-task__status">
+                  <TriangleAlertIcon aria-hidden="true" />冲突
+                </span>
+                <span v-if="positioned.task.downtimeRisk" class="nv-timeline-task__status"
+                  >停机风险</span
+                >
+                <span v-if="positioned.task.locked" class="nv-timeline-task__status">
+                  <LockIcon aria-hidden="true" />锁定
+                </span>
+                <span v-if="positioned.task.materialRisk" class="nv-timeline-task__status">
+                  {{ materialReadyLabel(positioned.task.materialRisk) ?? '缺料待备' }}
+                </span>
+              </span>
+            </button>
+          </div>
         </div>
-        <div class="nv-timeline-track">
-          <span
-            v-for="tick in ticks"
-            :key="tick.key"
-            class="nv-timeline-gridline"
-            :style="{ left: `${tick.left}%` }"
-            aria-hidden="true"
-          />
-          <button
-            v-for="positioned in lane.tasks"
-            :key="positioned.task.id"
-            type="button"
-            :data-task-id="positioned.task.id"
-            :data-conflict="positioned.task.hasConflict || undefined"
-            :data-locked="positioned.task.locked || undefined"
-            class="nv-timeline-task"
-            :class="{
-              'nv-timeline-task--conflict': positioned.task.hasConflict,
-              'nv-timeline-task--locked': positioned.task.locked,
-            }"
-            :style="{
-              left: `${positioned.left}%`,
-              top: `${positioned.row * 58 + 8}px`,
-              width: `${positioned.width}%`,
-            }"
-            :aria-label="`${taskLabel(positioned.task)}，${taskTime(positioned.task)}${positioned.task.hasConflict ? '，冲突' : ''}${positioned.task.locked ? '，锁定' : ''}`"
-            @click="selectTask(positioned.task)"
+        <svg
+          v-if="dependencyLayout.links.length"
+          class="nv-timeline-dependencies"
+          :style="{ left: `${LABEL_WIDTH}px` }"
+          :width="timelineWidth"
+          :height="dependencyLayout.height"
+          aria-label="装配工单依赖"
+        >
+          <g
+            v-for="link in dependencyLayout.links"
+            :key="link.id"
+            :data-dependency-id="link.id"
+            :data-source="link.source"
+            :data-target="link.target"
           >
-            <span class="nv-timeline-task__title">{{ taskLabel(positioned.task) }}</span>
-            <span class="nv-timeline-task__meta">
-              <span>{{ taskTime(positioned.task) }}</span>
-              <span v-if="positioned.task.hasConflict" class="nv-timeline-task__status">
-                <TriangleAlertIcon aria-hidden="true" />冲突
-              </span>
-              <span v-if="positioned.task.locked" class="nv-timeline-task__status">
-                <LockIcon aria-hidden="true" />锁定
-              </span>
-            </span>
-          </button>
-        </div>
+            <path :d="link.path" />
+            <polygon :points="link.arrow" />
+          </g>
+        </svg>
       </div>
     </div>
   </div>
@@ -342,6 +459,28 @@ function selectTask(task: ScheduleTask) {
 
 <style scoped>
 @layer nv-components {
+  .nv-timeline-body {
+    position: relative;
+  }
+
+  .nv-timeline-dependencies {
+    position: absolute;
+    top: 0;
+    z-index: 3;
+    pointer-events: none;
+    color: var(--primary);
+  }
+
+  .nv-timeline-dependencies path {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+  }
+
+  .nv-timeline-dependencies polygon {
+    fill: currentColor;
+  }
+
   .nv-timeline-grid {
     display: grid;
   }
@@ -423,11 +562,19 @@ function selectTask(task: ScheduleTask) {
     border-left: 1px dashed color-mix(in oklch, var(--border), transparent 25%);
   }
 
+  .nv-timeline-task__fact {
+    display: flex;
+    gap: 0.35rem;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 0.7rem;
+  }
+
   .nv-timeline-task {
     position: absolute;
     z-index: 2;
     display: flex;
-    height: 3rem;
+    height: 16.5rem;
     min-width: 0;
     flex-direction: column;
     justify-content: center;

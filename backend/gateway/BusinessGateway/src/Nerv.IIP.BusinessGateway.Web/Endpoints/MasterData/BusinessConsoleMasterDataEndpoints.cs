@@ -394,6 +394,7 @@ public sealed class BusinessConsoleCreateSkuRequestValidator : Validator<Busines
         RuleFor(x => x.ShelfLifePolicyCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.StorageConditionCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.DefaultBarcodeRuleCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -649,6 +650,20 @@ public sealed class BusinessConsoleCreateProductionLineRequestValidator : Valida
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.SiteCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.WorkshopCode).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+    }
+}
+
+public sealed class BusinessConsoleCreateStationRequestValidator : Validator<BusinessConsoleCreateStationRequest>
+{
+    public BusinessConsoleCreateStationRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Code).MaximumLength(100);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.LineCode).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.WorkCenterCode).MaximumLength(100);
         RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
@@ -916,7 +931,7 @@ public sealed class BusinessConsoleSetMasterDataResourceEnabledRequestValidator 
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ResourceType).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Code).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(512);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(200);
         RuleFor(x => x.CodeSet).MaximumLength(100);
         // 生命周期原因是审计事实，MasterData 侧对空原因稳定拒绝（#878）。
         // 网关同口径先拦一道：非空 + 同一 500 长度上限，拒绝信息在此就已明确。
@@ -1165,6 +1180,7 @@ public sealed class CreateBusinessConsoleWorkshopEndpoint(
 public sealed class ListBusinessConsoleWorkersEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMasterDataClient masterData,
+    IBusinessIamAccountDirectoryClient iamAccounts,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleWorkerDirectoryRequest, BusinessConsoleWorkerDirectoryResponse>(
         auth,
@@ -1174,11 +1190,33 @@ public sealed class ListBusinessConsoleWorkersEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleWorkerDirectoryRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleWorkerDirectoryResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleWorkerDirectoryResponse> ForwardAsync(
         BusinessConsoleWorkerDirectoryRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        masterData.ListWorkersAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var workers = await masterData.ListWorkersAsync(tokenProvider.BearerToken, request, cancellationToken);
+        // 登录名只给员工名册页（显式请求）且有员工维护权 + 组织级授权的主体；其余调用方（各处员工选择器、PDA 首页）
+        // 不多一跳 IAM，也拿不到登录名。
+        if (!request.IncludeLoginNames
+            || !await BusinessConsoleWorkerLoginAccounts.CanSeeLoginNamesAsync(
+                AuthorizationClient,
+                bearerToken,
+                request.OrganizationId,
+                request.EnvironmentId,
+                cancellationToken))
+        {
+            return workers;
+        }
+
+        return await BusinessConsoleWorkerLoginAccounts.AttachLoginNamesAsync(
+            iamAccounts,
+            tokenProvider.BearerToken,
+            request.OrganizationId,
+            request.EnvironmentId,
+            workers,
+            cancellationToken);
+    }
 }
 
 [Tags("Business Console MasterData")]
@@ -1187,6 +1225,7 @@ public sealed class ListBusinessConsoleWorkersEndpoint(
 public sealed class CreateBusinessConsoleWorkerEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMasterDataClient masterData,
+    IBusinessIamAccountDirectoryClient iamAccounts,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateWorkerRequest, BusinessConsoleResourceItem>(
         auth,
@@ -1196,11 +1235,31 @@ public sealed class CreateBusinessConsoleWorkerEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleCreateWorkerRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleResourceItem> ForwardAsync(
+    protected override async Task<BusinessConsoleResourceItem> ForwardAsync(
         BusinessConsoleCreateWorkerRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        masterData.CreateWorkerAsync(tokenProvider.BearerToken, request, RequireAuditContext(request), cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        // 关联登录账号（#3924）：账号是否存在、是否启用、是否属于本组织/环境是 IAM 的事实，由网关在转发前核验；
+        // 「一个账号只关联一名员工」由 MasterData 的唯一索引把关。
+        var userId = string.IsNullOrWhiteSpace(request.UserId) ? null : request.UserId.Trim();
+        if (userId is not null)
+        {
+            await BusinessConsoleWorkerLoginAccounts.EnsureLinkableAsync(
+                iamAccounts,
+                tokenProvider.BearerToken,
+                request.OrganizationId,
+                request.EnvironmentId,
+                userId,
+                cancellationToken);
+        }
+
+        return await masterData.CreateWorkerAsync(
+            tokenProvider.BearerToken,
+            request with { UserId = userId },
+            RequireAuditContext(request),
+            cancellationToken);
+    }
 }
 
 [Tags("Business Console MasterData")]
@@ -1245,6 +1304,28 @@ public sealed class CreateBusinessConsoleProductionLineEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         masterData.CreateProductionLineAsync(tokenProvider.BearerToken, request, RequireAuditContext(request), cancellationToken);
+}
+
+[Tags("Business Console MasterData")]
+[HttpPost("/api/business-console/v1/master-data/stations")]
+[BusinessGatewayOperationId("createBusinessConsoleStation")]
+public sealed class CreateBusinessConsoleStationEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateStationRequest, BusinessConsoleResourceItem>(
+        auth,
+        BusinessGatewayPermissions.MasterDataResourcesManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateStationRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCreateStationRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleResourceItem> ForwardAsync(
+        BusinessConsoleCreateStationRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        masterData.CreateStationAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console MasterData")]

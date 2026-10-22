@@ -60,10 +60,9 @@ import {
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useAuthStore } from '@/stores/auth'
 import {
-  useListFreshness,
   useListResponseState,
   useScopeBoundListResponse,
-} from '@/composables/useListFreshness'
+} from '@/composables/useScopeBoundListResponse'
 import { useWmsWorkScope, type WmsWorkScopeCatalogKind } from '@/composables/useWmsWorkScope'
 
 const DEFAULT_TAKE = 100
@@ -332,7 +331,6 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
     scope.responseScopeKey,
     scope.hasScope,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scope.hasScope)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scope.hasScope,
@@ -473,7 +471,6 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
     loadMoreError,
     refreshing,
     loadingMore,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh,
@@ -594,7 +591,6 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
     scope.responseScopeKey,
     scope.hasScope,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scope.hasScope)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scope.hasScope,
@@ -735,7 +731,6 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
     loadMoreError,
     refreshing,
     loadingMore,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh,
@@ -745,13 +740,10 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
       input: CompleteOutboundInput,
       options: WmsCompletionAttemptOptions = { attempt: 'initial' },
     ) => {
-      // 页面提供 packReviewNo/passed/idempotencyKey（幂等键跨重试复用）；
+      // 页面提供 passed/idempotencyKey（幂等键跨重试复用）；复核单号由系统生成；
       // org/env 不取自 input，恒由登录主体注入 query，敌意 org/env 永远落空。
       const suppliedKey = input.idempotencyKey
-      const payload = {
-        packReviewNo: input.packReviewNo,
-        ...(input.passed === undefined ? {} : { passed: input.passed }),
-      }
+      const payload = input.passed === undefined ? {} : { passed: input.passed }
       const intentScope = {
         principalId: scope.principalId.value,
         organizationId: scope.organizationId.value,
@@ -820,6 +812,10 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
             expectedIdempotencyKey: pending.idempotencyKey,
             expectedResourceId: outboundOrderId,
             readbackScope: { scopeKind: frozen.scopeKind, scopeId: frozen.scopeId },
+            // 库存过账是异步事件，通常几秒内落定：多等一会儿拿到过账结果（#3926）；
+            // 仍在过账就以「已提交、正在过账」收尾，不按结果不明处理。
+            attempts: 20,
+            retryDelayMs: 500,
           },
         ),
       )
@@ -921,7 +917,7 @@ function unwrapTaskActionResult(
     !envelope.data ||
     envelope.data.warehouseTaskId !== warehouseTaskId
   ) {
-    throw new Error('WMS 作业动作回执无效，请刷新后重试')
+    throw new Error('作业提交结果无法确认，请刷新后重试')
   }
   return envelope.data
 }
@@ -1032,7 +1028,6 @@ function useWmsWarehouseTasks(
     scope.responseScopeKey,
     scope.hasScope,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scope.hasScope)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scope.hasScope,
@@ -1386,7 +1381,6 @@ function useWmsWarehouseTasks(
     actionPending,
     actionUnconfirmed,
     actionConfirmedSequence,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh,
@@ -1520,7 +1514,6 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     scope.responseScopeKey,
     scope.hasScope,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scope.hasScope)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scope.hasScope,
@@ -1659,7 +1652,6 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
     loadMoreError,
     refreshing,
     loadingMore,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh,

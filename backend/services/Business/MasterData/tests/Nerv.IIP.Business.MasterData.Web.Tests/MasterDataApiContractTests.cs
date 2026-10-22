@@ -1,6 +1,7 @@
 using System.Data.Common;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
@@ -52,6 +53,7 @@ public sealed class MasterDataApiContractTests
     [InlineData(typeof(ListPersonnelSkillMatrixEndpoint))]
     [InlineData(typeof(CreateSiteEndpoint))]
     [InlineData(typeof(CreateProductionLineEndpoint))]
+    [InlineData(typeof(CreateStationEndpoint))]
     [InlineData(typeof(CreateShiftEndpoint))]
     [InlineData(typeof(CreateWorkCalendarEndpoint))]
     [InlineData(typeof(CreateWorkCenterEndpoint))]
@@ -107,7 +109,7 @@ public sealed class MasterDataApiContractTests
     {
         var contracts = MasterDataEndpointContracts.All;
 
-        Assert.Equal(49, contracts.Count);
+        Assert.Equal(52, contracts.Count);
         Assert.Equal(contracts.Count, contracts.Select(x => x.EndpointType).Distinct().Count());
         Assert.Equal(contracts.Count, contracts.Select(x => x.OperationId).Distinct(StringComparer.Ordinal).Count());
         Assert.All(contracts, contract =>
@@ -116,8 +118,32 @@ public sealed class MasterDataApiContractTests
             Assert.Contains("BusinessMasterData", contract.OperationId, StringComparison.Ordinal);
             Assert.StartsWith("/api/business/v1/master-data/", contract.Route, StringComparison.Ordinal);
             Assert.Contains(contract.HttpMethod, new[] { "GET", "POST", "PUT", "PATCH", "DELETE" });
-            Assert.Contains(contract.PermissionCode, NervIipBusinessMasterDataPermissionSet);
+            if (contract.EndpointType == typeof(ResolveSchedulingTimeContextEndpoint))
+            {
+                // PublicContract: #4405 r1 / #4448 limited projection; no directory permission grant.
+                Assert.Equal("POST", contract.HttpMethod);
+                Assert.Equal("/api/business/v1/master-data/scheduling-time-context/resolve", contract.Route);
+                Assert.Equal("resolveBusinessMasterDataSchedulingTimeContext", contract.OperationId);
+                Assert.Equal("business.scheduling.plans.read", contract.PermissionCode);
+            }
+            else
+            {
+                Assert.Contains(contract.PermissionCode, NervIipBusinessMasterDataPermissionSet);
+            }
         });
+    }
+
+    [Fact]
+    public void Tooling_directory_has_a_dedicated_stable_read_contract()
+    {
+        Assert.Contains(
+            MasterDataEndpointContracts.All,
+            contract =>
+                contract.EndpointType == typeof(ListToolingAssetsEndpoint)
+                && contract.HttpMethod == "GET"
+                && contract.Route == "/api/business/v1/master-data/tooling-assets"
+                && contract.PermissionCode == BusinessPermissionCodes.MasterDataResourcesRead
+                && contract.OperationId == "listBusinessMasterDataToolingAssets");
     }
 
     [Fact]
@@ -220,18 +246,24 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
-    public void MasterData_endpoints_define_permissions_from_contracts()
+    public void MasterData_endpoints_register_contract_routes_methods_and_internal_service_policy()
     {
-        var source = File.ReadAllText(Path.Combine(MasterDataServiceRoot(), "src", "Nerv.IIP.Business.MasterData.Web", "Endpoints", "MasterData", "MasterDataEndpoints.cs"));
-        var failures = MasterDataEndpointContracts.All
-            .Where(contract =>
-                !source.Contains($"MasterDataEndpointContracts.Get<{contract.EndpointType.Name}>()", StringComparison.Ordinal) ||
-                !source.Contains("ConfigureMasterDataContract(contract);", StringComparison.Ordinal))
-            .Select(contract => $"{contract.EndpointType.Name} does not configure permission contract")
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+        var endpoints = factory.Services.GetRequiredService<IEnumerable<EndpointDataSource>>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
             .ToArray();
 
-        Assert.Empty(failures);
-        Assert.DoesNotContain("Description(builder => builder.WithName(contract.OperationId));", source, StringComparison.Ordinal);
+        Assert.All(MasterDataEndpointContracts.All, contract =>
+        {
+            var endpoint = Assert.Single(endpoints, endpoint =>
+                endpoint.Metadata.GetMetadata<FastEndpoints.EndpointDefinition>()?.EndpointType == contract.EndpointType);
+            Assert.Equal(contract.Route, endpoint.RoutePattern.RawText);
+            Assert.Contains(contract.HttpMethod, endpoint.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods);
+            Assert.Contains(endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
+                authorization => authorization.Policy == InternalServiceAuthorizationPolicy.Name);
+        });
     }
 
     [Fact]
@@ -391,7 +423,9 @@ public sealed class MasterDataApiContractTests
             .Options;
         using var dbContext = new ApplicationDbContext(options, new NoopMediator());
         var deviceId = new DeviceAssetId(Guid.CreateVersion7());
-        var queryMethod = typeof(ResolveMasterDataReferencesQueryHandler).GetMethod(
+        var resolverType = typeof(ResolveMasterDataReferencesQueryHandler).Assembly.GetType(
+            "Nerv.IIP.Business.MasterData.Web.Application.Queries.DeviceAssetReferenceResolver");
+        var queryMethod = resolverType?.GetMethod(
             "DeviceAuthorityCandidatesQuery",
             System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
         var query = Assert.IsAssignableFrom<IQueryable>(queryMethod?.Invoke(
@@ -782,6 +816,47 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public async Task List_resources_exposes_site_timezone_and_shift_window_for_reporting_consumers()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.Sites.Add(Domain.AggregatesModel.SiteAggregate.Site.Create(
+            "org-001",
+            "env-dev",
+            "SITE-001",
+            "上海工厂",
+            "Asia/Shanghai"));
+        dbContext.Shifts.Add(Domain.AggregatesModel.ShiftAggregate.Shift.Create(
+            "org-001",
+            "env-dev",
+            "SHIFT-NIGHT",
+            "夜班",
+            new TimeOnly(20, 0),
+            new TimeOnly(4, 0),
+            420,
+            60));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var handler = new ListMasterDataResourcesQueryHandler(dbContext);
+        var site = Assert.Single((await handler.Handle(
+            new ListMasterDataResourcesQuery("org-001", "env-dev", "site"),
+            CancellationToken.None)).Resources);
+        var shift = Assert.Single((await handler.Handle(
+            new ListMasterDataResourcesQuery("org-001", "env-dev", "shift"),
+            CancellationToken.None)).Resources);
+
+        var siteJson = JsonSerializer.SerializeToElement(site, JsonSerializerOptions.Web);
+        Assert.Equal("Asia/Shanghai", siteJson.GetProperty("timezone").GetString());
+        var shiftJson = JsonSerializer.SerializeToElement(shift, JsonSerializerOptions.Web);
+        Assert.Equal("20:00:00", shiftJson.GetProperty("startsAt").GetString());
+        Assert.Equal("04:00:00", shiftJson.GetProperty("endsAt").GetString());
+        Assert.True(shiftJson.GetProperty("crossesMidnight").GetBoolean());
+        Assert.Equal(420, shiftJson.GetProperty("paidMinutes").GetInt32());
+        Assert.Equal(60, shiftJson.GetProperty("breakMinutes").GetInt32());
+    }
+
+    [Fact]
     public async Task List_resources_returns_typed_fields_and_filters_reference_data_code_set()
     {
         await using var provider = CreateInMemoryProvider();
@@ -806,6 +881,7 @@ public sealed class MasterDataApiContractTests
         dbContext.Workshops.Add(Workshop.Create("org-001", "env-dev", "WS-001", "Mixing Workshop", "SITE-001", "manager-001", "Wet process"));
         dbContext.ProductionLines.Add(Domain.AggregatesModel.ProductionLineAggregate.ProductionLine.Create("org-001", "env-dev", "LINE-001", "Line 1", "SITE-001", "WS-001"));
         dbContext.WorkCenters.Add(Domain.AggregatesModel.WorkCenterAggregate.WorkCenter.CreateResource("org-001", "env-dev", "WC-001", "Mixing", 960, "work-center", "PLANT-001", "LINE-001", "WS-001", "CAL-001", "minute", true));
+        dbContext.Stations.Add(Domain.AggregatesModel.StationAggregate.Station.Create("org-001", "env-dev", "ST-001", "Mixing Station", "LINE-001", "WC-001"));
         dbContext.DeviceAssets.Add(
             Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset.RegisterCapability("org-001", "env-dev", "DEV-001", "Mixer", "LINE-001", "WC-001", "mixer", "ACME", "SN-001", 10m, 500m, "kg", "critical", true, true, new Dictionary<string, string>())
                 .WithLedger(new DateOnly(2024, 1, 15), 125000m, "CNY", new DateOnly(2027, 1, 14), "SUP-001", "SITE-001", "WS-001", "LINE-001", "ST-001", "DEV-PARENT-01", null)
@@ -860,8 +936,8 @@ public sealed class MasterDataApiContractTests
         var station = Assert.Single((await handler.Handle(
             new ListMasterDataResourcesQuery("org-001", "env-dev", "station", WorkCenterCode: "WC-001"),
             CancellationToken.None)).Resources);
-        Assert.Equal("station:7:org-0017:env-dev8:SITE-0016:WS-0018:LINE-0016:WC-0016:ST-001", station.Code);
-        Assert.Equal("ST-001", station.DisplayName);
+        Assert.Equal("ST-001", station.Code);
+        Assert.Equal("Mixing Station", station.DisplayName);
         Assert.Equal("ST-001", station.StationCode);
         Assert.Equal("SITE-001", station.SiteCode);
         Assert.Equal("WS-001", station.WorkshopCode);
@@ -943,91 +1019,6 @@ public sealed class MasterDataApiContractTests
 
         Assert.Contains("无法唯一确定", exception.Message, StringComparison.Ordinal);
     }
-
-    [Fact]
-    public async Task Station_directory_keeps_local_codes_distinct_and_pages_deterministically()
-    {
-        await using var provider = CreateInMemoryProvider();
-        using var scope = provider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.DeviceAssets.AddRange(
-            StationAsset("DEV-A", "LINE-A", "WC-A", "ST-01"),
-            StationAsset("DEV-B", "LINE-B", "WC-B", "ST-01"),
-            StationAsset("DEV-C", "LINE-A", "WC-A", "ST-02"));
-        await dbContext.SaveChangesAsync(CancellationToken.None);
-
-        var handler = new ListMasterDataResourcesQueryHandler(dbContext);
-        var firstPage = await handler.Handle(
-            new ListMasterDataResourcesQuery("org-001", "env-dev", "station", Skip: 0, Take: 2),
-            CancellationToken.None);
-        var secondPage = await handler.Handle(
-            new ListMasterDataResourcesQuery("org-001", "env-dev", "station", Skip: 2, Take: 2),
-            CancellationToken.None);
-
-        Assert.Equal(3, firstPage.Total);
-        Assert.Equal(2, firstPage.Resources.Count);
-        Assert.Single(secondPage.Resources);
-        var resources = firstPage.Resources.Concat(secondPage.Resources).ToArray();
-        Assert.Equal(3, resources.Select(resource => resource.Code).Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(2, resources.Count(resource => resource.StationCode == "ST-01"));
-        Assert.Contains(resources, resource => resource.Code.Contains("4:WC-A5:ST-01", StringComparison.Ordinal));
-        Assert.Contains(resources, resource => resource.Code.Contains("4:WC-B5:ST-01", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public async Task Station_directory_id_is_stable_and_collision_safe_for_opaque_component_values()
-    {
-        await using var provider = CreateInMemoryProvider();
-        using var scope = provider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.DeviceAssets.AddRange(
-            StationAsset("DEV-COLON-A", "LINE-01", "WC:0", "工位 站"),
-            StationAsset("DEV-COLON-B", "LINE-01", "WC", "0:工位 站"));
-        await dbContext.SaveChangesAsync(CancellationToken.None);
-
-        var handler = new ListMasterDataResourcesQueryHandler(dbContext);
-        var request = new ListMasterDataResourcesQuery("org-001", "env-dev", "station", Take: 10);
-        var first = await handler.Handle(request, CancellationToken.None);
-        var repeated = await handler.Handle(request, CancellationToken.None);
-
-        Assert.Equal(2, first.Total);
-        Assert.Equal(
-            first.Resources.Select(resource => resource.Code),
-            repeated.Resources.Select(resource => resource.Code));
-        Assert.Equal(2, first.Resources.Select(resource => resource.Code).Distinct(StringComparer.Ordinal).Count());
-        Assert.All(first.Resources, resource =>
-        {
-            Assert.StartsWith("station:", resource.Code, StringComparison.Ordinal);
-            Assert.NotEqual(resource.StationCode, resource.Code);
-        });
-        Assert.Contains(first.Resources, resource => resource.WorkCenterCode == "WC:0" && resource.StationCode == "工位 站");
-        Assert.Contains(first.Resources, resource => resource.WorkCenterCode == "WC" && resource.StationCode == "0:工位 站");
-    }
-
-    private static Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset StationAsset(
-        string deviceCode,
-        string lineCode,
-        string workCenterCode,
-        string stationCode) =>
-        Domain.AggregatesModel.DeviceAssetAggregate.DeviceAsset
-            .RegisterCapability(
-                "org-001",
-                "env-dev",
-                deviceCode,
-                "Station asset",
-                lineCode,
-                workCenterCode,
-                "station",
-                "ACME",
-                "SN-" + deviceCode,
-                1m,
-                1m,
-                "unit",
-                "normal",
-                true,
-                false,
-                new Dictionary<string, string>())
-            .WithLedger(null, null, "", null, "", "SITE-001", "WS-001", lineCode, stationCode, null, null);
 
     [Fact]
     public async Task List_resources_all_mode_reports_truncation_when_limit_is_reached()
@@ -2624,8 +2615,7 @@ public sealed class MasterDataApiContractTests
             new CreateSkuCommand("org-001", "env-dev", null, "Changed Name", "kg", "electronic", "finished-goods", "none", "none", "none", "ambient", "ean13", true, [], "sku-idempotent-name"),
             CancellationToken.None));
 
-        Assert.Contains("conflicts with a different", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("create payload", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("本次提交与此前的创建内容不一致，请重新发起创建。", exception.Message);
     }
 
     [Fact]
@@ -2663,8 +2653,7 @@ public sealed class MasterDataApiContractTests
             new CreateUnitOfMeasureCommand("org-001", "env-dev", null, "Gram", "mass", 3, "half-up", "uom-idempotent-conflict"),
             CancellationToken.None));
 
-        Assert.Contains("conflicts with a different", exception.Message, StringComparison.Ordinal);
-        Assert.Contains("create payload", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("本次提交与此前的创建内容不一致，请重新发起创建。", exception.Message);
     }
 
     [Fact]
@@ -2958,6 +2947,8 @@ public sealed class MasterDataApiContractTests
         {
             ["ConnectionStrings:PostgreSQL"] = "Host=unused;Database=nerv_iip_masterdata_policy;Username=nerv;Password=nerv",
             ["InternalService:BearerToken"] = "test-internal-service-token",
+            // 产品基线 seed 默认开启；这里的连接串不可达，关掉它，否则启动即连库失败。
+            ["MasterData:Seed:Enabled"] = "false",
         };
 
         return new WebApplicationFactory<Program>()

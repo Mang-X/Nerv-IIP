@@ -1,21 +1,27 @@
+import { mesReportIntentScope } from './mes/mesReportIntent'
 import {
+  claimBusinessConsoleMesOperationTaskMutationOptions,
   completeBusinessConsoleMesOperationTaskMutationOptions,
   confirmBusinessConsoleOperation,
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
+  returnBusinessConsoleMesLineSideMaterialMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
-  createBusinessConsoleSopFileDownloadGrantMutationOptions,
   getBusinessConsolePrincipalWorkContextQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
+  getBusinessConsoleMesWorkOrderDetail,
   getBusinessConsoleMesWorkOrderDetailQueryKey,
+  getBusinessConsoleMesProductionReport,
   getBusinessConsoleMesCurrentOperationSopsQueryOptions,
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
   listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
+  listBusinessConsoleMesLineSideInventoryBalancesQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesOperationTasks,
   listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesReportableOperationTasks,
+  listBusinessConsoleQualityScrapReasonCodesQueryOptions,
   listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions,
   promoteBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
   dismissBusinessConsoleMesTelemetryProductionReportCandidateMutationOptions,
@@ -26,17 +32,19 @@ import {
   startBusinessConsoleMesOperationTaskMutationOptions,
   type BusinessConsoleCurrentSopDocumentItem,
   type BusinessConsoleCurrentSopDocumentsEnvelope,
-  type BusinessConsoleSopFileDownloadGrantEnvelope,
-  type BusinessConsoleSopFileDownloadGrantResponse,
   type BusinessConsoleMesConfirmLineSideReceiptRequest,
+  type BusinessConsoleMesReturnLineSideMaterialRequest,
   type BusinessConsoleMesCreateMaterialIssueRequest,
   type BusinessConsoleMesCreateReceiptRequest,
   type BusinessConsoleMesMaterialIssueRequestListEnvelope,
   type BusinessConsoleMesMaterialIssueRequestRow,
+  type BusinessConsoleMesLineSideInventoryBalanceItem,
+  type BusinessConsoleMesLineSideInventoryBalancesEnvelope,
   type BusinessConsoleMesOperationTaskActionRequest,
   type BusinessConsoleMesOperationTaskListEnvelope,
   type BusinessConsoleMesOperationTaskRow,
   type BusinessConsoleMesProductionReportListEnvelope,
+  type BusinessConsoleMesProductionReportDetail,
   type BusinessConsoleMesProductionReportRow,
   type BusinessConsoleMesTelemetryCandidateRow,
   type BusinessConsoleMesReceiptRequestListEnvelope,
@@ -50,17 +58,23 @@ import {
   acquirePendingBusinessIntent,
   clearPendingBusinessIntent,
   completePendingBusinessIntent,
+  createServerPaginationState,
   formatWorkScopeKey,
+  isAvailableMaterialLot,
+  lastPageForTotal,
   parseWorkScopeKey,
   peekPendingBusinessIntent,
+  shouldRetainPendingBusinessIntent,
+  reduceServerPagination,
+  serverPaginationIdentity,
   statusActionGate,
 } from '@nerv-iip/business-core'
+import type { AvailableMaterialLotFields } from '@nerv-iip/business-core'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import {
-  useListFreshness,
   useListResponseState,
   useScopeBoundListResponse,
-} from '@/composables/useListFreshness'
+} from '@/composables/useScopeBoundListResponse'
 import { computed, reactive, shallowRef, watch, watchEffect, type Ref } from 'vue'
 import {
   assertLifecycleActionExecutable,
@@ -68,6 +82,8 @@ import {
 } from '@/composables/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
 import { useTaskListPagination } from './useTaskListPagination'
+
+type AvailableMaterialLot = BusinessConsoleMesMaterialIssueRequestRow & AvailableMaterialLotFields
 
 const DEFAULT_TAKE = 100
 const TASK_LIST_PAGE_SIZE = 20
@@ -82,7 +98,7 @@ export const MES_WORK_SCOPE_REQUIRED_MESSAGE =
 
 export const MES_WORK_SCOPE_UNAVAILABLE_MESSAGE =
   '当前账号在本组织没有已授权的作业范围，无法读取现场数据。' +
-  '请联系管理员在 IAM 为该账号配置数据范围（组织/车间/工作中心/班组/本人）后重新登录。'
+  '请联系管理员为该账号配置数据范围（组织/车间/工作中心/班组/本人）后重新登录。'
 
 export interface MesListFilters {
   organizationId: string
@@ -154,10 +170,33 @@ function scopeQuery(filters: MesScope) {
   }
 }
 
-interface MesSelectedWorkScope {
+export interface MesSelectedWorkScope {
   kind: string
   id: string
   displayName?: string
+}
+
+export interface MesReportExecutionContext {
+  principalId: string
+  organizationId: string
+  environmentId: string
+  scopeKind: string
+  scopeId: string
+  generation: number
+}
+
+function hasSameReportExecutionContext(
+  current: MesReportExecutionContext,
+  frozen: MesReportExecutionContext,
+) {
+  return (
+    current.principalId === frozen.principalId &&
+    current.organizationId === frozen.organizationId &&
+    current.environmentId === frozen.environmentId &&
+    current.scopeKind === frozen.scopeKind &&
+    current.scopeId === frozen.scopeId &&
+    current.generation === frozen.generation
+  )
 }
 
 export interface MesWorkScopeOption {
@@ -496,7 +535,6 @@ export function useMesWorkOrders() {
     workOrdersIdentity,
     scopeReady,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scopeReady,
@@ -517,7 +555,7 @@ export function useMesWorkOrders() {
     workOrderReadScopeMessage: workOrderReadScope.scopeMessage,
     workOrderReadScopePending: workOrderReadScope.scopePending,
     workOrderReadScopeReady: workOrderReadScope.scopeReady,
-    lastUpdatedAt,
+    workOrderReadScopeUnavailable: workOrderReadScope.scopeUnavailable,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh: () => (scopeReady.value ? workOrdersQuery.refetch() : Promise.resolve()),
@@ -619,7 +657,6 @@ export function useMesWorkOrderDetail(workOrderId: Readonly<Ref<string>>) {
   const boundDetailResponse = computed(() =>
     bindWorkOrderDetailResponse(currentResponse.value, workOrderId.value.trim()),
   )
-  const lastUpdatedAt = useListFreshness(boundDetailResponse, detailEnabled)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     boundDetailResponse,
     detailEnabled,
@@ -649,7 +686,6 @@ export function useMesWorkOrderDetail(workOrderId: Readonly<Ref<string>>) {
     workOrderReadScopeMessage: workOrderReadScope.scopeMessage,
     workOrderReadScopePending: workOrderReadScope.scopePending,
     workOrderReadScopeReady: workOrderReadScope.scopeReady,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh: () => (detailEnabled.value ? detailQuery.refetch() : Promise.resolve()),
@@ -821,7 +857,8 @@ export interface OperationActionOptions {
   context: OperationActionContext
 }
 
-export type OperationAction = 'start' | 'pause' | 'resume' | 'complete'
+export type OperationAction = 'claim' | 'start' | 'pause' | 'resume' | 'complete'
+type OperationLifecycleAction = Exclude<OperationAction, 'claim'>
 
 export interface OperationActionContext {
   readonly principalId: string
@@ -933,7 +970,6 @@ export function useMesOperationTasks() {
     operationTasksIdentity,
     scopeReady,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scopeReady,
@@ -993,6 +1029,10 @@ export function useMesOperationTasks() {
   })
   const completeMutation = useMutation({
     ...completeBusinessConsoleMesOperationTaskMutationOptions(),
+    onSuccess: invalidate,
+  })
+  const claimMutation = useMutation({
+    ...claimBusinessConsoleMesOperationTaskMutationOptions(),
     onSuccess: invalidate,
   })
 
@@ -1107,7 +1147,7 @@ export function useMesOperationTasks() {
   }
 
   async function performAction(
-    action: OperationAction,
+    action: OperationLifecycleAction,
     mutation: typeof startMutation,
     workOrderId: string,
     operationTaskId: string,
@@ -1178,6 +1218,57 @@ export function useMesOperationTasks() {
     )
   }
 
+  async function claimTask(
+    workOrderId: string,
+    operationTaskId: string,
+    options: OperationActionOptions,
+  ) {
+    const context = requireFrozenOperationActionContext(
+      options.context,
+      'claim',
+      workOrderId,
+      operationTaskId,
+    )
+    assertOperationActionContextCurrent(context)
+    if (context.scopeKind !== 'work-center') {
+      throw new Error('请选择工作中心作业范围后领取任务。')
+    }
+    const scope = {
+      principalId: context.principalId,
+      organizationId: context.organizationId,
+      environmentId: context.environmentId,
+      operationType: 'mes.operation-task.claim',
+      payloadFingerprint: `${context.workOrderId}:${context.operationTaskId}:${context.scopeKind}:${context.scopeId}`,
+    }
+    const pendingIntent = acquirePendingBusinessIntent(scope, () => options.idempotencyKey)
+    const envelope = await completePendingBusinessIntent(scope, () =>
+      claimMutation.mutateAsync({
+        path: { operationTaskId: context.operationTaskId },
+        query: {
+          organizationId: context.organizationId,
+          environmentId: context.environmentId,
+          scopeKind: context.scopeKind,
+          scopeId: context.scopeId,
+        },
+        body: { idempotencyKey: pendingIntent.idempotencyKey },
+      }),
+    )
+    if (envelope?.success !== true) {
+      throw new Error(envelope?.message?.trim() || '领取任务失败，请刷新后重试。')
+    }
+    assertOperationActionContextCurrent(context)
+    const authoritative = await readExactOperationTask(
+      { organizationId: context.organizationId, environmentId: context.environmentId },
+      context.operationTaskId,
+      { kind: context.scopeKind, id: context.scopeId },
+      context.workOrderId,
+    )
+    if (authoritative?.assignedUserId !== context.principalId) {
+      throw new Error('领取结果尚未核实，请刷新任务列表。')
+    }
+    return authoritative
+  }
+
   return {
     filters,
     operationTasks: taskPager.items,
@@ -1191,6 +1282,7 @@ export function useMesOperationTasks() {
     pending: operationTasksQuery.isLoading,
     error: operationTasksQuery.error,
     operationListScope: operationListScope.selectedScope,
+    operationActionScope: operationScope.selectedScope,
     operationListContextIdentity,
     operationActionContextIdentity,
     operationListScopeMessage: operationListScope.scopeMessage,
@@ -1201,7 +1293,6 @@ export function useMesOperationTasks() {
     operationScopeReady: operationScope.scopeReady,
     captureOperationActionContext,
     isOperationActionContextCurrent,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh: () => (scopeReady.value ? taskPager.refresh() : Promise.resolve()),
@@ -1217,12 +1308,14 @@ export function useMesOperationTasks() {
       performAction('resume', resumeMutation, workOrderId, operationTaskId, options),
     completeTask: (workOrderId: string, operationTaskId: string, options: OperationActionOptions) =>
       performAction('complete', completeMutation, workOrderId, operationTaskId, options),
+    claimTask,
     actionPending: computed(
       () =>
         startMutation.isLoading.value ||
         pauseMutation.isLoading.value ||
         resumeMutation.isLoading.value ||
-        completeMutation.isLoading.value,
+        completeMutation.isLoading.value ||
+        claimMutation.isLoading.value,
     ),
   }
 }
@@ -1263,28 +1356,6 @@ export function useMesCurrentOperationSops() {
     }),
     enabled: enabled.value,
   }))
-  const downloadGrantMutation = useMutation(
-    createBusinessConsoleSopFileDownloadGrantMutationOptions(),
-  )
-
-  async function createSopFileDownloadGrant(
-    fileId: string,
-  ): Promise<BusinessConsoleSopFileDownloadGrantResponse | null> {
-    const envelope = await downloadGrantMutation.mutateAsync({
-      path: { fileId },
-      body: {
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-      },
-    })
-    return (
-      envelopeData<
-        BusinessConsoleSopFileDownloadGrantResponse,
-        BusinessConsoleSopFileDownloadGrantEnvelope
-      >(envelope as BusinessConsoleSopFileDownloadGrantEnvelope) ?? null
-    )
-  }
-
   return {
     filters,
     currentSops: computed<BusinessConsoleCurrentSopDocumentItem[]>(
@@ -1298,7 +1369,6 @@ export function useMesCurrentOperationSops() {
     pending: currentSopsQuery.isLoading,
     error: currentSopsQuery.error,
     refresh: currentSopsQuery.refetch,
-    createSopFileDownloadGrant,
   }
 }
 
@@ -1307,12 +1377,188 @@ export type RecordReportInput = Omit<
   'organizationId' | 'environmentId' | 'reportedAtUtc' | 'scopeKind' | 'scopeId'
 >
 
-export function useMesProductionReports() {
+export function useMesProductionMaterialLots(
+  context: () => { workOrderId?: string | null; operationTaskId?: string | null } | null,
+) {
+  const auth = useAuthStore()
+  const filters = defaultFilters()
+  const materialsReadPermission = computed(() =>
+    (auth.principal?.permissionCodes ?? []).includes('business.mes.materials.read'),
+  )
+
+  watch(
+    () => {
+      const current = context()
+      return [current?.workOrderId?.trim() ?? '', current?.operationTaskId?.trim() ?? '']
+    },
+    ([workOrderId, operationTaskId]) => {
+      filters.workOrderId = workOrderId
+      filters.operationTaskId = operationTaskId
+    },
+    { immediate: true },
+  )
+
+  const enabled = computed(
+    () =>
+      hasScope(filters) &&
+      materialsReadPermission.value &&
+      Boolean(filters.workOrderId && filters.operationTaskId),
+  )
+  const materialLotsQuery = useQuery(() => ({
+    ...listBusinessConsoleMesMaterialIssueRequestsQueryOptions({
+      query: {
+        ...toListQuery(filters),
+        skip: 0,
+        take: 500,
+      },
+    }),
+    enabled: enabled.value,
+  }))
+
+  return {
+    materialsReadPermission,
+    materialLotsPending: materialLotsQuery.isLoading,
+    materialLotsError: materialLotsQuery.error,
+    availableMaterialLots: computed<AvailableMaterialLot[]>(() => {
+      if (!materialLotsQuery.data.value?.success) return []
+      return (materialLotsQuery.data.value.data?.items ?? []).filter(isAvailableMaterialLot)
+    }),
+    refreshMaterialLots: () => (enabled.value ? materialLotsQuery.refetch() : Promise.resolve()),
+  }
+}
+
+/** 只消费 Quality 域发布的 scrap 专用原因码目录，不在 PDA 维护原因码字典。 */
+export function useMesScrapReasonCodes(shouldLoad: () => boolean) {
+  const auth = useAuthStore()
+  const filters = defaultFilters()
+  const qualityInspectionRecordsReadPermission = computed(() =>
+    (auth.principal?.permissionCodes ?? []).includes('business.quality.inspection-records.read'),
+  )
+  const enabled = computed(
+    () => hasScope(filters) && qualityInspectionRecordsReadPermission.value && shouldLoad(),
+  )
+  const query = useQuery(() => ({
+    ...listBusinessConsoleQualityScrapReasonCodesQueryOptions({
+      query: {
+        ...scopeQuery(filters),
+        skip: 0,
+        take: 100,
+      },
+    }),
+    enabled: enabled.value,
+  }))
+
+  return {
+    qualityInspectionRecordsReadPermission,
+    scrapReasonCodesPending: query.isLoading,
+    scrapReasonCodesError: query.error,
+    scrapReasonCodes: computed(() =>
+      query.data.value?.success ? (query.data.value.data?.items ?? []) : [],
+    ),
+    refreshScrapReasonCodes: () => (enabled.value ? query.refetch() : Promise.resolve()),
+  }
+}
+
+const REPORTABLE_TASK_PAGE_SIZE = 100
+
+export function useMesProductionReports(workOrderId?: Readonly<Ref<string>>) {
   const auth = useAuthStore()
   const filters = defaultFilters()
   const reportScope = useMesPrincipalWorkScope(filters, MES_REPORTING_WRITE_PERMISSION)
   const queryCache = useQueryCache()
   const scopeReady = computed(() => hasScope(filters))
+  const reportContextIdentity = computed(() => {
+    const selectedScope = reportScope.selectedScope.value
+    return [
+      reportScope.principalIdentity.value,
+      filters.organizationId,
+      filters.environmentId,
+      selectedScope?.kind ?? '',
+      selectedScope?.id ?? '',
+    ].join('\u0000')
+  })
+  const contextGeneration = shallowRef(0)
+  watch(
+    reportContextIdentity,
+    () => {
+      contextGeneration.value += 1
+    },
+    { immediate: true, flush: 'sync' },
+  )
+  const reportContext = computed<MesReportExecutionContext | undefined>(() => {
+    const selectedScope = reportScope.selectedScope.value
+    if (!selectedScope || !hasScope(filters)) return undefined
+    return {
+      principalId: reportScope.principalIdentity.value,
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      scopeKind: selectedScope.kind,
+      scopeId: selectedScope.id,
+      generation: contextGeneration.value,
+    }
+  })
+
+  const reportableTasksQuery = useQuery(() => {
+    const context = reportContext.value
+    const requestedWorkOrderId = workOrderId?.value.trim() ?? ''
+    return {
+      key: [
+        'mes-reporting-write-authority',
+        context?.principalId ?? '',
+        context?.organizationId ?? '',
+        context?.environmentId ?? '',
+        context?.scopeKind ?? '',
+        context?.scopeId ?? '',
+        context?.generation ?? 0,
+        requestedWorkOrderId,
+      ],
+      enabled: Boolean(context && requestedWorkOrderId),
+      query: async ({ signal }) => {
+        if (!context || !requestedWorkOrderId) return undefined
+        const items: BusinessConsoleMesOperationTaskRow[] = []
+        let skip = 0
+        while (true) {
+          const response = await listBusinessConsoleMesReportableOperationTasks({
+            query: {
+              organizationId: context.organizationId,
+              environmentId: context.environmentId,
+              workOrderId: requestedWorkOrderId,
+              scopeKind: context.scopeKind,
+              scopeId: context.scopeId,
+              skip,
+              take: REPORTABLE_TASK_PAGE_SIZE,
+            },
+            signal,
+          })
+          const envelope = response.data
+          if (!envelope?.success || !envelope.data) {
+            throw new Error(envelope?.message?.trim() || '可报工工序读取失败，请重试。')
+          }
+          const page = envelope.data.items ?? []
+          items.push(...page)
+          skip += page.length
+          if (
+            page.length < REPORTABLE_TASK_PAGE_SIZE ||
+            (envelope.data.total !== undefined && skip >= envelope.data.total)
+          ) {
+            return { generation: context.generation, items }
+          }
+        }
+      },
+    }
+  })
+  const reportableTasks = computed(() => {
+    const context = reportContext.value
+    const response = reportableTasksQuery.data.value
+    return context && response?.generation === context.generation ? response.items : undefined
+  })
+  const reportableTasksReady = computed(
+    () =>
+      Boolean(reportContext.value && workOrderId?.value.trim()) &&
+      !reportableTasksQuery.isLoading.value &&
+      !reportableTasksQuery.error.value &&
+      reportableTasks.value !== undefined,
+  )
 
   const reportsQuery = useQuery(() => ({
     ...listBusinessConsoleMesProductionReportsQueryOptions({
@@ -1325,7 +1571,6 @@ export function useMesProductionReports() {
     () => scopeKey(filters),
     scopeReady,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scopeReady,
@@ -1352,28 +1597,90 @@ export function useMesProductionReports() {
     total: computed(() => envelopeTotal(currentResponse.value)),
     pending: reportsQuery.isLoading,
     error: reportsQuery.error,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh: () => (scopeReady.value ? reportsQuery.refetch() : Promise.resolve()),
     reportScopeMessage: reportScope.scopeMessage,
     reportScopePending: reportScope.scopePending,
     reportScopeReady: reportScope.scopeReady,
-    recordReport: async (input: RecordReportInput) => {
-      const selectedScope = reportScope.requireSelectedScope()
-      const { idempotencyKey: suppliedKey, ...payload } = input
-      const scope = {
-        principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
-        organizationId: filters.organizationId,
-        environmentId: filters.environmentId,
-        operationType: 'mes.production-report.record',
-        payloadFingerprint: JSON.stringify({
-          ...payload,
-          scopeKind: selectedScope.kind,
-          scopeId: selectedScope.id,
-        }),
+    reportScope: reportScope.selectedScope,
+    reportContext,
+    contextGeneration,
+    reportableTasks,
+    reportableTasksPending: reportableTasksQuery.isLoading,
+    reportableTasksError: reportableTasksQuery.error,
+    reportableTasksReady,
+    refreshReportableTasks: () =>
+      reportContext.value && workOrderId?.value.trim()
+        ? reportableTasksQuery.refetch()
+        : Promise.resolve(),
+    confirmReport: async (input: {
+      reportNo: string
+      productionReportId: string
+      workOrderId: string
+      operationTaskId: string
+      context: MesReportExecutionContext
+    }): Promise<BusinessConsoleMesProductionReportDetail> => {
+      const reportNo = input.reportNo.trim()
+      const assertCurrentContext = () => {
+        const currentContext = reportContext.value
+        if (
+          !currentContext ||
+          !reportNo ||
+          !hasSameReportExecutionContext(currentContext, input.context)
+        ) {
+          throw new Error('报工公开回读上下文无效，尚不能确认成功。')
+        }
       }
-      const isReplay = Boolean(peekPendingBusinessIntent(scope))
+      assertCurrentContext()
+      let report: BusinessConsoleMesProductionReportDetail | undefined
+      try {
+        const { data } = await getBusinessConsoleMesProductionReport({
+          path: { reportNo },
+          query: {
+            organizationId: input.context.organizationId,
+            environmentId: input.context.environmentId,
+          },
+          throwOnError: true,
+        })
+        report = data?.success ? data.data?.report : undefined
+      } catch {
+        assertCurrentContext()
+        throw new Error('报工已受理，但公开记录尚未回读到同一工单与工序，请重试核验。')
+      }
+      assertCurrentContext()
+      if (
+        report?.reportNo?.trim() !== reportNo ||
+        report.productionReportId?.trim() !== input.productionReportId.trim() ||
+        report.workOrderId?.trim() !== input.workOrderId.trim() ||
+        report.operationTaskId?.trim() !== input.operationTaskId.trim()
+      ) {
+        throw new Error('报工已受理，但公开记录尚未回读到同一工单与工序，请重试核验。')
+      }
+      return report
+    },
+    recordReport: async (
+      input: RecordReportInput,
+      isCurrent?: () => boolean,
+      recovering?: boolean,
+    ) => {
+      const selectedScope = reportScope.requireSelectedScope()
+      const executionContext = reportContext.value
+      const assertCurrent = () => {
+        const current = reportContext.value
+        if (
+          !executionContext ||
+          !current ||
+          !hasSameReportExecutionContext(current, executionContext) ||
+          isCurrent?.() === false
+        ) {
+          throw new Error('作业身份或范围已变化，请重新选择工单与工序后报工。')
+        }
+      }
+      assertCurrent()
+      const suppliedKey = input.idempotencyKey
+      const scope = mesReportIntentScope(executionContext!, input)
+      const isReplay = recovering ?? Boolean(peekPendingBusinessIntent(scope))
       const currentPayload = {
         ...input,
         organizationId: filters.organizationId,
@@ -1390,39 +1697,71 @@ export function useMesProductionReports() {
           `mes-report-${Date.now()}-${Math.random()}`,
         currentPayload,
       )
-      if (input.completesOperation) {
-        try {
-          const workOrderId = input.workOrderId?.trim()
-          const operationTaskId = input.operationTaskId?.trim()
-          const authoritative = operationTaskId
-            ? await readExactOperationTask(
-                filters,
-                operationTaskId,
-                selectedScope,
-                workOrderId,
-                'reportable',
-              )
-            : undefined
+      try {
+        const workOrderId = input.workOrderId?.trim()
+        const operationTaskId = input.operationTaskId?.trim()
+        let authoritative: BusinessConsoleMesOperationTaskRow | undefined
+        if (isReplay && workOrderId) {
+          const { data } = await getBusinessConsoleMesWorkOrderDetail({
+            path: { workOrderId },
+            query: {
+              ...scopeQuery(filters),
+              scopeKind: selectedScope.kind,
+              scopeId: selectedScope.id,
+            },
+            throwOnError: true,
+          })
+          if (!data?.success || data.data?.workOrderId !== workOrderId) {
+            throw new Error('原报工的工单工序核验失败，请重试核验。')
+          }
+          authoritative = data.data.operationTasks?.find(
+            (task) => task.workOrderId === workOrderId && task.operationTaskId === operationTaskId,
+          )
+        } else if (operationTaskId) {
+          authoritative = await readExactOperationTask(
+            filters,
+            operationTaskId,
+            selectedScope,
+            workOrderId,
+            'reportable',
+          )
+        }
+        const samePair =
+          authoritative?.workOrderId === workOrderId &&
+          authoritative?.operationTaskId === operationTaskId
+        assertCurrent()
+        const reportAllowed = authoritative?.allowedActions?.some(
+          (action) => action.trim().toLowerCase() === 'report',
+        )
+        if (input.completesOperation) {
           assertLifecycleActionExecutable({
             domain: 'mes-operation-task',
             action: 'report-complete',
             facts: {
-              status:
-                authoritative?.workOrderId === workOrderId ? authoritative?.status : undefined,
+              status: samePair ? authoritative?.status : undefined,
               idempotentReplay: isReplay,
             },
           })
-        } catch (error) {
-          if (!isReplay) clearPendingBusinessIntent(scope)
-          throw error
         }
+        if (!samePair || (!isReplay && !reportAllowed)) {
+          throw new Error('当前工序不可报工。')
+        }
+      } catch (error) {
+        if (!isReplay) {
+          assertCurrent()
+          clearPendingBusinessIntent(scope)
+          throw Object.assign(error instanceof Object ? error : new Error(String(error)), {
+            reportNotAccepted: true,
+          })
+        }
+        throw error
       }
       const frozenPayload =
         pending.payloadSnapshot !== undefined
           ? (pending.payloadSnapshot as BusinessConsoleRecordProductionReportRequest)
           : currentPayload
-      return completePendingBusinessIntent(scope, async () =>
-        confirmBusinessConsoleOperation(
+      try {
+        const result = await confirmBusinessConsoleOperation(
           await recordMutation.mutateAsync({
             body: {
               ...frozenPayload,
@@ -1434,8 +1773,25 @@ export function useMesProductionReports() {
             expectedIdempotencyKey: pending.idempotencyKey,
             expectedResourceIdSelector: (envelope) => envelope.data?.productionReportId,
           },
-        ),
-      )
+        )
+        try {
+          assertCurrent()
+        } catch (error) {
+          // A dispatched write may have committed; a stale response cannot release its intent.
+          throw Object.assign(error as Error, { indeterminate: true })
+        }
+        if (!result?.data?.printingPreparationPending) clearPendingBusinessIntent(scope)
+        return result
+      } catch (error) {
+        if (!isReplay && !shouldRetainPendingBusinessIntent(error)) {
+          assertCurrent()
+          clearPendingBusinessIntent(scope)
+          throw Object.assign(error instanceof Object ? error : new Error(String(error)), {
+            reportNotAccepted: true,
+          })
+        }
+        throw error
+      }
     },
   }
 }
@@ -1484,24 +1840,239 @@ export function useMesTelemetryProductionReportCandidates() {
     ),
     total: computed(() => envelopeTotal(query.data.value as CandidateEnvelope | undefined)),
     pending: query.isLoading,
-    promote: (candidateId: string, workOrderId: string, operationTaskId: string) =>
-      promoteMutation.mutateAsync({
+    /** 转为正式报工，返回报工单号；业务拒绝（含 success=false 信封）一律抛出，交给页面上屏原因。 */
+    promote: async (candidateId: string, workOrderId: string, operationTaskId: string) => {
+      const envelope = await promoteMutation.mutateAsync({
         path: { candidateId },
         query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
         body: { workOrderId, operationTaskId },
-      }),
-    dismiss: (candidateId: string, reason: string) =>
-      dismissMutation.mutateAsync({
+      })
+      if (!envelope?.success) throw envelope
+      return envelope.data?.reportNo ?? ''
+    },
+    dismiss: async (candidateId: string, reason: string) => {
+      const envelope = await dismissMutation.mutateAsync({
         path: { candidateId },
         query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
         body: { reason },
-      }),
+      })
+      if (!envelope?.success) throw envelope
+    },
+  }
+}
+
+const TELEMETRY_TARGET_TASK_TAKE = 20
+
+/**
+ * 遥测候选转正时「报到哪道工序」的候选：只取可报工（执行中）的工序任务。
+ * 没输关键词时按候选设备收窄——即这台设备当前在制的工序；输入工单号搜索时放开设备限制。
+ */
+export function useMesTelemetryCandidateTargetTasks(
+  context: Readonly<Ref<MesReportExecutionContext | undefined>>,
+  deviceAssetId: Readonly<Ref<string>>,
+  keyword: Readonly<Ref<string>>,
+) {
+  const query = useQuery(() => {
+    const current = context.value
+    const device = deviceAssetId.value.trim()
+    const search = keyword.value.trim()
+    return {
+      key: [
+        'mes-telemetry-candidate-target-tasks',
+        current?.principalId ?? '',
+        current?.organizationId ?? '',
+        current?.environmentId ?? '',
+        current?.scopeKind ?? '',
+        current?.scopeId ?? '',
+        current?.generation ?? 0,
+        device,
+        search,
+      ],
+      enabled: Boolean(current && (device || search)),
+      query: async ({ signal }) => {
+        if (!current) return []
+        const response = await listBusinessConsoleMesReportableOperationTasks({
+          query: {
+            organizationId: current.organizationId,
+            environmentId: current.environmentId,
+            scopeKind: current.scopeKind,
+            scopeId: current.scopeId,
+            deviceAssetId: search ? undefined : device || undefined,
+            keyword: search || undefined,
+            skip: 0,
+            take: TELEMETRY_TARGET_TASK_TAKE,
+          },
+          signal,
+        })
+        const envelope = response.data
+        if (!envelope?.success || !envelope.data) {
+          throw new Error(envelope?.message?.trim() || '执行中工序读取失败，请重试。')
+        }
+        return envelope.data.items ?? []
+      },
+    }
+  })
+  return {
+    tasks: computed(() => query.data.value ?? []),
+    pending: query.isLoading,
+    error: query.error,
+    refresh: () => query.refetch(),
   }
 }
 
 export type CreateIssueInput = BusinessConsoleMesCreateMaterialIssueRequest
 
 export type ConfirmLineSideReceiptInput = BusinessConsoleMesConfirmLineSideReceiptRequest
+export type ReturnLineSideMaterialInput = BusinessConsoleMesReturnLineSideMaterialRequest
+
+export function useMesLineSideInventoryBalances() {
+  const pageSize = 200
+  const scope = bindAuthScope(reactive({ organizationId: '', environmentId: '' }))
+  const queryCache = useQueryCache()
+  const scopeReady = computed(() => hasScope(scope))
+  const scopeIdentity = computed(() => (scopeReady.value ? scopeKey(scope) : ''))
+  const pagination = shallowRef(createServerPaginationState(pageSize, scopeIdentity.value))
+  const page = computed(() => pagination.value.page)
+  watch(
+    scopeIdentity,
+    (identity) => {
+      pagination.value = reduceServerPagination(pagination.value, {
+        type: 'scope-changed',
+        scopeIdentity: identity,
+      })
+    },
+    { flush: 'sync' },
+  )
+  const identity = computed(() => serverPaginationIdentity(scopeIdentity.value, page.value))
+  function queryOptions(targetPage: number) {
+    const requestIdentity = serverPaginationIdentity(scopeIdentity.value, targetPage)
+    const { key, query: executeQuery } =
+      listBusinessConsoleMesLineSideInventoryBalancesQueryOptions({
+        query: {
+          organizationId: scope.organizationId,
+          environmentId: scope.environmentId,
+          page: targetPage,
+          pageSize,
+        },
+      })
+    return {
+      key: [...key, `scope-page:${requestIdentity}`],
+      query: async (context: Parameters<typeof executeQuery>[0]) => ({
+        identity: requestIdentity,
+        response: await executeQuery(context),
+      }),
+      enabled: scopeReady.value,
+    }
+  }
+  const query = useQuery(() => queryOptions(page.value))
+  const currentResponse = computed(() => {
+    const scopedResponse = query.data.value
+    if (scopedResponse?.identity !== identity.value) return undefined
+    const response = scopedResponse.response
+    if (response?.success === true && (response.data?.page ?? 1) !== page.value) return undefined
+    return response
+  })
+  const responsePageMismatch = computed(() => {
+    const scopedResponse = query.data.value
+    if (scopedResponse?.identity !== identity.value) return false
+    const response = scopedResponse.response
+    return response?.success === true && (response.data?.page ?? 1) !== page.value
+  })
+  watch(
+    currentResponse,
+    (response) => {
+      if (response?.success !== true) return
+      const nextPagination = reduceServerPagination(pagination.value, {
+        type: 'response-succeeded',
+        identity: identity.value,
+        responsePage: response.data?.page ?? 1,
+        total: response.data?.totalCount ?? 0,
+      })
+      if (nextPagination.page !== pagination.value.page) {
+        // A correction can return to a still-fresh cached page. Mark only that target stale,
+        // then let the reactive key transition remain the single fetch trigger.
+        void queryCache.invalidateQueries(
+          { key: queryOptions(nextPagination.page).key, exact: true },
+          false,
+        )
+      }
+      pagination.value = nextPagination
+    },
+    { flush: 'sync', immediate: true },
+  )
+  const pending = computed(() => query.isLoading.value || pagination.value.navigationPending)
+  const failure = computed(() =>
+    query.error.value != null
+      ? query.error.value
+      : responsePageMismatch.value
+        ? new Error('线边库存响应页码与请求不一致，请重试。')
+        : currentResponse.value !== undefined && currentResponse.value.success !== true
+          ? new Error(currentResponse.value.message ?? '线边库存加载失败，请重试。')
+          : null,
+  )
+  const total = computed(() => pagination.value.lastSuccessfulTotal)
+  const pageCount = computed(() => lastPageForTotal(total.value, pageSize))
+  const hasPreviousPage = computed(() => page.value > 1)
+  const hasNextPage = computed(
+    () => currentResponse.value?.success === true && page.value < pageCount.value,
+  )
+
+  watch(
+    [page, currentResponse, responsePageMismatch, () => query.error.value],
+    ([currentPage, response, pageMismatch, error]) => {
+      if (
+        error != null ||
+        pageMismatch ||
+        (response !== undefined &&
+          (response.success !== true || (response.data?.page ?? 1) === currentPage))
+      ) {
+        pagination.value = reduceServerPagination(pagination.value, {
+          type: 'response-failed',
+          identity: identity.value,
+        })
+      }
+    },
+    { flush: 'sync' },
+  )
+
+  function previousPage() {
+    if (pending.value || !hasPreviousPage.value) return
+    pagination.value = reduceServerPagination(pagination.value, {
+      type: 'navigate',
+      targetPage: page.value - 1,
+      pageCount: pageCount.value,
+    })
+  }
+
+  function nextPage() {
+    if (pending.value || !hasNextPage.value) return
+    pagination.value = reduceServerPagination(pagination.value, {
+      type: 'navigate',
+      targetPage: page.value + 1,
+      pageCount: pageCount.value,
+    })
+  }
+
+  return {
+    balances: computed<BusinessConsoleMesLineSideInventoryBalanceItem[]>(() =>
+      envelopeItems<
+        BusinessConsoleMesLineSideInventoryBalanceItem,
+        BusinessConsoleMesLineSideInventoryBalancesEnvelope
+      >(currentResponse.value),
+    ),
+    total,
+    page,
+    pageCount,
+    hasPreviousPage,
+    hasNextPage,
+    pending,
+    error: failure,
+    ready: computed(() => currentResponse.value?.success === true),
+    previousPage,
+    nextPage,
+    refresh: () => (scopeReady.value ? query.refetch() : Promise.resolve()),
+  }
+}
 
 export function useMesMaterialIssue() {
   const filters = defaultFilters()
@@ -1522,7 +2093,6 @@ export function useMesMaterialIssue() {
     scopeKey,
     scopeReady,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scopeReady,
@@ -1531,10 +2101,8 @@ export function useMesMaterialIssue() {
 
   const createMutation = useMutation({
     ...createBusinessConsoleMesMaterialIssueRequestMutationOptions(),
-    onSuccess() {
-      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests']).catch(
-        ignoreBackgroundError,
-      )
+    async onSuccess() {
+      await invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests'])
     },
   })
 
@@ -1544,6 +2112,13 @@ export function useMesMaterialIssue() {
       void invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests']).catch(
         ignoreBackgroundError,
       )
+    },
+  })
+
+  const returnMutation = useMutation({
+    ...returnBusinessConsoleMesLineSideMaterialMutationOptions(),
+    async onSuccess() {
+      await invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests'])
     },
   })
 
@@ -1559,7 +2134,6 @@ export function useMesMaterialIssue() {
     total: computed(() => envelopeTotal(currentResponse.value)),
     pending: requestsQuery.isLoading,
     error: requestsQuery.error,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh: () => (hasScope(filters) ? requestsQuery.refetch() : Promise.resolve()),
@@ -1608,6 +2182,43 @@ export function useMesMaterialIssue() {
         body: { ...body } satisfies BusinessConsoleMesConfirmLineSideReceiptRequest,
       })
     },
+    returnLineSideMaterial: async (
+      requestId: string,
+      body: ReturnLineSideMaterialInput,
+      context: { workOrderId?: string } = {},
+    ) => {
+      let skip = 0
+      let authoritative: BusinessConsoleMesMaterialIssueRequestRow | undefined
+      while (!authoritative) {
+        const { data } = await listBusinessConsoleMesMaterialIssueRequests({
+          query: {
+            ...scopeQuery(filters),
+            ...(context.workOrderId?.trim() ? { workOrderId: context.workOrderId.trim() } : {}),
+            skip,
+            take: DEFAULT_TAKE,
+          },
+          throwOnError: true,
+        })
+        const envelope = data as BusinessConsoleMesMaterialIssueRequestListEnvelope | undefined
+        authoritative = exactItem(
+          envelope,
+          (item: BusinessConsoleMesMaterialIssueRequestRow) => item.requestId === requestId,
+        )
+        if (authoritative) break
+        const items = envelope?.success ? (envelope.data?.items ?? []) : []
+        const total = envelope?.success ? (envelope.data?.total ?? 0) : 0
+        if (items.length === 0 || skip + items.length >= total) break
+        skip += items.length
+      }
+      if (!authoritative) {
+        throw new Error('当前领料单没有可退回的线边物料。')
+      }
+      return returnMutation.mutateAsync({
+        path: { requestId },
+        query: scopeQuery(filters),
+        body,
+      })
+    },
   }
 }
 
@@ -1635,7 +2246,6 @@ export function useMesReceipts() {
     scopeKey,
     scopeReady,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scopeReady,
@@ -1663,19 +2273,29 @@ export function useMesReceipts() {
     total: computed(() => envelopeTotal(currentResponse.value)),
     pending: receiptsQuery.isLoading,
     error: receiptsQuery.error,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh: () => (hasScope(filters) ? receiptsQuery.refetch() : Promise.resolve()),
-    createReceipt: (input: CreateReceiptInput) =>
-      createMutation.mutateAsync({
+    createReceipt: (input: CreateReceiptInput) => {
+      // 只组装公共写契约字段，旧运行时对象中的未知字段不会进入请求体。
+      const safeInput: CreateReceiptInput = {
+        workOrderId: input.workOrderId,
+        skuId: input.skuId,
+        quantity: input.quantity,
+        uomCode: input.uomCode,
+        idempotencyKey: input.idempotencyKey,
+        producedLotNo: input.producedLotNo,
+        serialNo: input.serialNo,
+      }
+      return createMutation.mutateAsync({
         body: {
-          ...input,
+          ...safeInput,
           // org/env + timestamp injected LAST from principal scope — never the caller.
           organizationId: filters.organizationId,
           environmentId: filters.environmentId,
           requestedAtUtc: new Date().toISOString(),
         } satisfies BusinessConsoleMesCreateReceiptRequest,
-      }),
+      })
+    },
   }
 }

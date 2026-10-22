@@ -200,7 +200,6 @@ describe('PDA WMS operational candidates', () => {
                 lotOptions: candidates.lotOptions.value,
                 ready: candidates.ready.value,
                 error: candidates.error.value,
-                sourceLabel: candidates.sourceLabel.value,
                 scanOverrides: candidates.scanOverrides.value,
                 'onUpdate:locationCode': (value) => {
                   filters.locationCode = value
@@ -242,7 +241,7 @@ describe('PDA WMS operational candidates', () => {
     queryState.error!.value = new Error('network')
     await nextTick()
     expect(filters.locationCode).toBe('UNKNOWN-BIN')
-    expect(wrapper.text()).toContain('未验证为主数据')
+    expect(wrapper.text()).toContain('不在当前候选中')
     expect(wrapper.text()).toContain('清除扫码筛选')
 
     queryState.error!.value = undefined
@@ -254,7 +253,7 @@ describe('PDA WMS operational candidates', () => {
     pickerVisible.value = true
     await nextTick()
     expect(filters.locationCode).toBe('UNKNOWN-BIN')
-    expect(wrapper.text()).toContain('未验证为主数据')
+    expect(wrapper.text()).toContain('不在当前候选中')
     expect(wrapper.text()).toContain('清除扫码筛选')
 
     await wrapper
@@ -263,6 +262,6 @@ describe('PDA WMS operational candidates', () => {
       .trigger('click')
 
     expect(filters.locationCode).toBeUndefined()
-    expect(wrapper.text()).not.toContain('未验证为主数据')
+    expect(wrapper.text()).not.toContain('不在当前候选中')
   })
 })

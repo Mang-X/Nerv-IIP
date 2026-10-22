@@ -151,13 +151,32 @@ public static class GatewayAuthorization
         return result;
     }
 
-    public static async Task<(string BearerToken, ConsolePrincipalResponse Principal)?> RequireCurrentPrincipalPermissionAsync(
+    public static Task<(string BearerToken, ConsolePrincipalResponse Principal)?> RequireCurrentPrincipalPermissionAsync(
         HttpContext context,
         IGatewayIamAuthClient iam,
         IGatewayAuthorizationClient auth,
         string permissionCode,
+        CancellationToken cancellationToken) =>
+        RequireCurrentPrincipalPermissionsAsync(context, iam, auth, [permissionCode], cancellationToken);
+
+    /// <summary>
+    /// 要求主体**同时**持有 <paramref name="permissionCodes"/> 里的每一个码。多码不是装饰：一条路由
+    /// 若把过去需要两个码才能走完的序列合并成一跳，只检查其中一个码就等于**收窄了所需权限**，
+    /// 让只持其中一个码的角色新获得一项能力（#3314 第 1 轮审核 P1）。
+    /// 任一码不通过即 403，且**不继续问后面的码**——失败关闭。
+    /// </summary>
+    public static async Task<(string BearerToken, ConsolePrincipalResponse Principal)?> RequireCurrentPrincipalPermissionsAsync(
+        HttpContext context,
+        IGatewayIamAuthClient iam,
+        IGatewayAuthorizationClient auth,
+        IReadOnlyList<string> permissionCodes,
         CancellationToken cancellationToken)
     {
+        if (permissionCodes.Count == 0)
+        {
+            throw new ArgumentException("At least one permission code is required.", nameof(permissionCodes));
+        }
+
         var bearerToken = await context.GetTokenAsync("access_token");
         if (string.IsNullOrWhiteSpace(bearerToken))
         {
@@ -185,41 +204,47 @@ public static class GatewayAuthorization
             return null;
         }
 
-        GatewayAuthorizationResult result;
-        try
+        GatewayAuthorizationResult? lastResult = null;
+        foreach (var permissionCode in permissionCodes)
         {
-            result = await auth.CheckAsync(
-                bearerToken,
-                new GatewayPermissionRequirement(
-                    permissionCode,
-                    principal.OrganizationId,
-                    principal.EnvironmentId,
-                    null,
-                    null),
-                ContinuityModeFor(context.Request.Method),
-                cancellationToken);
-        }
-        catch (Exception ex) when (IsAuthorizationUnavailable(ex, cancellationToken))
-        {
-            await ResponseDataEndpointResults.WriteErrorAsync(
-                context,
-                StatusCodes.Status503ServiceUnavailable,
-                "Authorization service unavailable.",
-                cancellationToken);
-            return null;
+            GatewayAuthorizationResult result;
+            try
+            {
+                result = await auth.CheckAsync(
+                    bearerToken,
+                    new GatewayPermissionRequirement(
+                        permissionCode,
+                        principal.OrganizationId,
+                        principal.EnvironmentId,
+                        null,
+                        null),
+                    ContinuityModeFor(context.Request.Method),
+                    cancellationToken);
+            }
+            catch (Exception ex) when (IsAuthorizationUnavailable(ex, cancellationToken))
+            {
+                await ResponseDataEndpointResults.WriteErrorAsync(
+                    context,
+                    StatusCodes.Status503ServiceUnavailable,
+                    "Authorization service unavailable.",
+                    cancellationToken);
+                return null;
+            }
+
+            if (!result.IsAllowed)
+            {
+                await ResponseDataEndpointResults.WriteErrorAsync(
+                    context,
+                    StatusCodes.Status403Forbidden,
+                    "Forbidden.",
+                    cancellationToken);
+                return null;
+            }
+
+            lastResult = result;
         }
 
-        if (!result.IsAllowed)
-        {
-            await ResponseDataEndpointResults.WriteErrorAsync(
-                context,
-                StatusCodes.Status403Forbidden,
-                "Forbidden.",
-                cancellationToken);
-            return null;
-        }
-
-        context.Items[PrincipalItemKey] = result;
+        context.Items[PrincipalItemKey] = lastResult!;
         return (bearerToken, principal);
     }
 

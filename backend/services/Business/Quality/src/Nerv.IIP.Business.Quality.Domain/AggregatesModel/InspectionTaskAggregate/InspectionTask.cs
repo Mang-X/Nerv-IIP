@@ -7,7 +7,7 @@ public partial record InspectionTaskId : IGuidStronglyTypedId;
 
 public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
 {
-    private static readonly HashSet<string> SourceTypes = ["receiving", "operation", "final"];
+    private static readonly HashSet<string> SourceTypes = ["receiving", "operation", "final", "first-article"];
     private static readonly HashSet<string> SourceServices = ["wms", "erp", "mes"];
 
     private InspectionTask()
@@ -38,6 +38,9 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
         SourceType = Supported(sourceType, SourceTypes, nameof(sourceType));
         SourceService = Supported(sourceService, SourceServices, nameof(sourceService));
         SourceDocumentId = Required(sourceDocumentId);
+        TriggerIdempotencyKey = InspectionTaskTriggerKey.EnsureWithinColumn(
+            Required(triggerIdempotencyKey),
+            nameof(triggerIdempotencyKey));
         SourceDocumentLineId = Optional(sourceDocumentLineId);
         SkuCode = Required(skuCode);
         Quantity = Positive(quantity, nameof(quantity));
@@ -49,7 +52,6 @@ public sealed class InspectionTask : Entity<InspectionTaskId>, IAggregateRoot
         CreatedAtUtc = createdAtUtc;
         UpdatedAtUtc = createdAtUtc;
         DueAtUtc = dueAtUtc;
-        TriggerIdempotencyKey = Required(triggerIdempotencyKey);
     }
 
     public string OrganizationId { get; private set; } = string.Empty;

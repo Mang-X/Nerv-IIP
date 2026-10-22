@@ -51,7 +51,7 @@ function onImageError() {
     class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]"
   >
     <div class="flex items-center gap-1 border-b border-border/70 bg-muted/35 px-2 py-1.5">
-      <Button variant="ghost" size="icon-sm" :aria-label="`Zoom out ${fileName}`" @click="zoomOut">
+      <Button variant="ghost" size="icon-sm" :aria-label="`缩小 ${fileName}`" @click="zoomOut">
         <ZoomOutIcon aria-hidden="true" />
       </Button>
       <span
@@ -60,14 +60,14 @@ function onImageError() {
       >
         {{ Math.round(scale * 100) }}%
       </span>
-      <Button variant="ghost" size="icon-sm" :aria-label="`Zoom in ${fileName}`" @click="zoomIn">
+      <Button variant="ghost" size="icon-sm" :aria-label="`放大 ${fileName}`" @click="zoomIn">
         <ZoomInIcon aria-hidden="true" />
       </Button>
       <div class="ml-1 h-5 w-px bg-border" aria-hidden="true" />
       <Button
         variant="ghost"
         size="icon-sm"
-        :aria-label="`Rotate left ${fileName}`"
+        :aria-label="`向左旋转 ${fileName}`"
         @click="rotateLeft"
       >
         <RotateCcwIcon aria-hidden="true" />
@@ -75,7 +75,7 @@ function onImageError() {
       <Button
         variant="ghost"
         size="icon-sm"
-        :aria-label="`Rotate right ${fileName}`"
+        :aria-label="`向右旋转 ${fileName}`"
         @click="rotateRight"
       >
         <RotateCwIcon aria-hidden="true" />

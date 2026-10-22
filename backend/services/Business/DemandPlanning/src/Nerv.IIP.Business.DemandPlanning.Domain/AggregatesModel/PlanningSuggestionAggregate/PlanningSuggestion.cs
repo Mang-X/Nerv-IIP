@@ -12,6 +12,7 @@ public enum PlanningSuggestionStatus
     Accepted = 1,
     Rejected = 2,
     Closed = 3,
+    Superseded = 4,
 }
 
 public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregateRoot
@@ -33,11 +34,13 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         decimal quantity,
         DateOnly requiredDate,
         DateOnly releaseDate,
-        string reasonCode)
+        string reasonCode,
+        Guid? netRequirementReference)
     {
         OrganizationId = DemandPlanningText.Required(organizationId, nameof(organizationId));
         EnvironmentId = DemandPlanningText.Required(environmentId, nameof(environmentId));
         MrpRunId = mrpRunId;
+        NetRequirementReference = netRequirementReference;
         SuggestionType = DemandPlanningText.Required(suggestionType, nameof(suggestionType)).ToLowerInvariant();
         SkuCode = DemandPlanningText.Required(skuCode, nameof(skuCode));
         UomCode = DemandPlanningText.Required(uomCode, nameof(uomCode));
@@ -61,6 +64,7 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
     public MrpRunId MrpRunId { get; private set; } = default!;
+    public Guid? NetRequirementReference { get; private set; }
     public string SuggestionType { get; private set; } = string.Empty;
     public string SkuCode { get; private set; } = string.Empty;
     public string UomCode { get; private set; } = string.Empty;
@@ -83,6 +87,7 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
     public string Formula { get; private set; } = string.Empty;
     public string UomConversionSummary { get; private set; } = string.Empty;
     public PlanningSuggestionStatus Status { get; private set; }
+    public MrpRunId? SupersededByRunId { get; private set; }
     public string? AcceptedDownstreamService { get; private set; }
     public string? AcceptedDownstreamDocumentType { get; private set; }
     public string? AcceptedDownstreamDocumentId { get; private set; }
@@ -102,7 +107,8 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         DateOnly requiredDate,
         DateOnly releaseDate,
         string reasonCode,
-        PlanningSuggestionId? suggestionId = null)
+        PlanningSuggestionId? suggestionId = null,
+        Guid? netRequirementReference = null)
     {
         var suggestion = new PlanningSuggestion(
             organizationId,
@@ -115,7 +121,8 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
             quantity,
             requiredDate,
             releaseDate,
-            reasonCode);
+            reasonCode,
+            netRequirementReference);
         if (suggestionId is not null)
         {
             suggestion.Id = suggestionId;
@@ -164,7 +171,8 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         string? manufacturingBomReference,
         string? routingReference,
         string? sourceType = null,
-        decimal grossDemandQuantity = 0m)
+        decimal grossDemandQuantity = 0m,
+        string? sourceLineReference = null)
     {
         peggingLinks.Add(new PeggingLink(
             peggingType,
@@ -176,7 +184,8 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
             manufacturingBomReference,
             routingReference,
             sourceType,
-            grossDemandQuantity));
+            grossDemandQuantity,
+            sourceLineReference));
     }
 
     /// <summary>
@@ -223,7 +232,8 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
             : peggingLinks.Select(x => x.DemandSourceReference).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
     }
 
-    public void Accept(string downstreamService, string downstreamDocumentType, string? downstreamDocumentId)
+    public void Accept(string downstreamService, string downstreamDocumentType, string? downstreamDocumentId,
+        IReadOnlyCollection<string>? assemblyParentSuggestionIds = null)
     {
         if (Status == PlanningSuggestionStatus.Accepted)
         {
@@ -247,7 +257,7 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         AcceptedDownstreamDocumentId = DemandPlanningText.Optional(downstreamDocumentId);
         AcceptedAtUtc = DateTimeOffset.UtcNow;
         Status = PlanningSuggestionStatus.Accepted;
-        this.AddDomainEvent(new PlanningSuggestionAcceptedDomainEvent(this));
+        this.AddDomainEvent(new PlanningSuggestionAcceptedDomainEvent(this, assemblyParentSuggestionIds));
     }
 
     public void Reject(string actor, string reason)
@@ -260,6 +270,69 @@ public sealed class PlanningSuggestion : Entity<PlanningSuggestionId>, IAggregat
         }
 
         Status = PlanningSuggestionStatus.Rejected;
+    }
+
+    public void Supersede(MrpRunId successorRunId)
+    {
+        if (Status != PlanningSuggestionStatus.Open)
+        {
+            return;
+        }
+
+        Status = PlanningSuggestionStatus.Superseded;
+        SupersededByRunId = successorRunId;
+    }
+
+    public bool IsAssemblyParentOf(PlanningSuggestion component) =>
+        Id != component.Id && MrpRunId == component.MrpRunId &&
+        OrganizationId == component.OrganizationId && EnvironmentId == component.EnvironmentId && SiteCode == component.SiteCode &&
+        SuggestionType == "planned-work-order" && ReleaseDate == component.RequiredDate &&
+        component.PeggingLinks.Any(link => link.PeggingType is "demand" or "safety-stock" or "negative-availability" &&
+            link.ComponentSkuCode == component.SkuCode && link.ParentSkuCode == SkuCode &&
+            PeggingLinks.Any(parentLink => parentLink.PeggingType == link.PeggingType &&
+                parentLink.DemandSourceReference == link.DemandSourceReference && parentLink.SourceLineReference == link.SourceLineReference));
+
+    public void InvalidateDemandLines(string demandSourceReference, IReadOnlyCollection<string?> sourceLineReferences)
+    {
+        if (Status != PlanningSuggestionStatus.Open)
+        {
+            return;
+        }
+
+        var demandLinks = peggingLinks.Where(x => string.Equals(x.PeggingType, "demand", StringComparison.OrdinalIgnoreCase)).ToArray();
+        var invalidQuantity = demandLinks
+            .Where(x => string.Equals(x.DemandSourceReference, demandSourceReference, StringComparison.Ordinal)
+                && sourceLineReferences.Contains(x.SourceLineReference))
+            .Sum(x => x.Quantity);
+        if (invalidQuantity == 0m)
+        {
+            return;
+        }
+
+        var remainingQuantity = demandLinks.Sum(x => x.Quantity) - invalidQuantity;
+        if (remainingQuantity == 0m)
+        {
+            Status = PlanningSuggestionStatus.Closed;
+            return;
+        }
+
+        Quantity = decimal.Round(Quantity * remainingQuantity / (remainingQuantity + invalidQuantity), 6, MidpointRounding.AwayFromZero);
+        if (Quantity == 0m)
+        {
+            Status = PlanningSuggestionStatus.Closed;
+            return;
+        }
+
+        peggingLinks.RemoveAll(x => string.Equals(x.PeggingType, "demand", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.DemandSourceReference, demandSourceReference, StringComparison.Ordinal)
+            && sourceLineReferences.Contains(x.SourceLineReference));
+        PlannedQuantity = Quantity;
+    }
+
+    public void NotifySalesOrderDemandChanged(string demandSourceReference, string salesOrderId, int orderVersion, bool cancelled)
+    {
+        this.AddDomainEvent(new SalesOrderDemandChangedForWorkOrderDomainEvent(
+            this, demandSourceReference, salesOrderId, orderVersion, cancelled));
     }
 }
 
@@ -279,7 +352,8 @@ public sealed class PeggingLink : Entity<PeggingLinkId>
         string? manufacturingBomReference,
         string? routingReference,
         string? sourceType = null,
-        decimal grossDemandQuantity = 0m)
+        decimal grossDemandQuantity = 0m,
+        string? sourceLineReference = null)
     {
         PeggingType = DemandPlanningText.Required(peggingType, nameof(peggingType));
         DemandSourceReference = DemandPlanningText.Required(demandSourceReference, nameof(demandSourceReference));
@@ -291,11 +365,13 @@ public sealed class PeggingLink : Entity<PeggingLinkId>
         RoutingReference = DemandPlanningText.Optional(routingReference);
         SourceType = DemandPlanningText.Optional(sourceType) ?? "unknown";
         GrossDemandQuantity = Math.Max(0m, grossDemandQuantity);
+        SourceLineReference = DemandPlanningText.Optional(sourceLineReference);
     }
 
     public PlanningSuggestionId PlanningSuggestionId { get; private set; } = default!;
     public string PeggingType { get; private set; } = string.Empty;
     public string DemandSourceReference { get; private set; } = string.Empty;
+    public string? SourceLineReference { get; private set; }
     public string ParentSkuCode { get; private set; } = string.Empty;
     public string? ComponentSkuCode { get; private set; }
     public decimal Quantity { get; private set; }

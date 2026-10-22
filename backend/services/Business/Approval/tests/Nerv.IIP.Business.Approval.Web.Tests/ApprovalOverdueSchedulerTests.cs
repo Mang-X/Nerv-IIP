@@ -136,8 +136,9 @@ public sealed class ApprovalOverdueSchedulerTests
         // vacuously and turn this test intermittently red elsewhere. This scheduler's registration order is the
         // mirror of the Inventory worker's, so the pre-shutdown race that makes the post-StopAsync position
         // provably load-bearing there does not reproduce here — the position is taken anyway, as the one that
-        // holds structurally rather than by timing. The reasoning, the scope of the guard and the measurement
-        // behind them are recorded once in docs/architecture/backend-test-determinism.md, §MAN-808.
+        // holds structurally rather than by timing. The barrier rule itself is docs/governance/testing/determinism.md,
+        // §假时钟推进屏障; the reasoning, the scope of the guard and the measurement behind them are recorded once
+        // in git 6e8747a8f93a6398c45c8eb2f2a33ad3a7b64019:docs/architecture/backend-test-determinism.md, §MAN-808.
         Assert.Equal(1, clock.TimersCreated);
     }
 

@@ -408,6 +408,8 @@ import { WrenchIcon, CircleCheckIcon, ClockIcon, TriangleAlertIcon } from '@luci
 
 `NvMetricStripCell`：`{ label, value, unit?, valueTone?, meta?, metaTone?, delta?, series?, seriesLabels?, seriesUnit?, key? }`。
 
+各格是 `flex-1` 等分，但格子本身带 `min-w-0`：不带的话 flex 项默认的 `min-width: auto` 会让带迷你图的格子（unovis 的 SVG 按上一帧测得的容器宽定死）压不下去，等宽时格子装不下就被顶宽，整条指标带溢出到内容宽度、末尾几格被裁（#3735）。需要整体宽度时给 `class="w-full"` 或任意 `w-*`——组件根节点带 `data-slot="nv-metric-strip"`。
+
 | 字段                | 说明                                                                                                                                                                                                                                             | 类型                                             |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
 | `meta` / `metaTone` | 副行文本与其趋势图标；`metaTone` 取 `'up' \| 'down' \| 'flat' \| 'neutral'`，向上/下附趋势图标与语义色                                                                                                                                           | `string` / `NvMetricDeltaDirection \| 'neutral'` |

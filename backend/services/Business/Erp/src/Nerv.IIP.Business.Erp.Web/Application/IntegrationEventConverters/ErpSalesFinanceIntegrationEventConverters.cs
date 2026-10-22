@@ -78,6 +78,29 @@ public sealed class SalesOrderCancelledIntegrationEventConverter(IErpIntegration
     }
 }
 
+public sealed class SalesOrderDeliveryRegisteredIntegrationEventConverter(IErpIntegrationEventContextAccessor contextAccessor)
+    : IIntegrationEventConverter<SalesOrderDeliveryRegisteredDomainEvent, SalesOrderDeliveryRegisteredIntegrationEvent>
+{
+    public SalesOrderDeliveryRegisteredIntegrationEvent Convert(SalesOrderDeliveryRegisteredDomainEvent domainEvent)
+    {
+        var order = domainEvent.SalesOrder;
+        var context = contextAccessor.GetContext();
+        return new SalesOrderDeliveryRegisteredIntegrationEvent(
+            EventIds.New(),
+            ErpIntegrationEventTypes.SalesOrderDeliveryRegistered,
+            ErpIntegrationEventVersions.V1,
+            DateTimeOffset.UtcNow,
+            ErpIntegrationEventSources.BusinessErp,
+            context.CorrelationId,
+            context.CausationId,
+            order.OrganizationId,
+            order.EnvironmentId,
+            context.Actor,
+            SalesOrderIntegrationEventConverterHelpers.IdempotencyKey(order, "delivery-registered"),
+            SalesOrderIntegrationEventConverterHelpers.Payload(order));
+    }
+}
+
 internal static class SalesOrderIntegrationEventConverterHelpers
 {
     public static SalesOrderLifecyclePayload Payload(
@@ -97,7 +120,8 @@ internal static class SalesOrderIntegrationEventConverterHelpers
                     x.OrderedQuantity,
                     x.UomCode,
                     x.RequiredDate,
-                    x.Cancelled))
+                    x.Cancelled,
+                    x.DeliveredQuantity))
                 .ToArray());
 
     public static string IdempotencyKey(

@@ -34,6 +34,26 @@ public sealed class WorldHistoryFloorEventsSeedServiceTests
             { 2026, 12, 31 },
         };
 
+    // Contract: ReferenceData + Regression. Authority: owner-approved #2681 C mapping and the
+    // Maintenance downtime-reason producer. A swapped or still-free-text seed reason must fail.
+    [Fact]
+    public void Downtime_seed_reasons_use_the_authoritative_directory_codes()
+    {
+        var expected = new[]
+        {
+            (Reason: "DT-SETUP", MinimumMinutes: 20, MaximumMinutes: 60),
+            (Reason: "DT-MECH", MinimumMinutes: 60, MaximumMinutes: 360),
+            (Reason: "DT-MATERIAL", MinimumMinutes: 15, MaximumMinutes: 120),
+            (Reason: "DT-PM", MinimumMinutes: 120, MaximumMinutes: 240),
+            (Reason: "DT-QUALITY", MinimumMinutes: 30, MaximumMinutes: 150),
+        };
+
+        Assert.Equal(
+            expected,
+            WorldHistoryFloorEventsSpec.DowntimeReasons
+                .Select(reason => (reason.Reason, reason.MinimumMinutes, reason.MaximumMinutes)));
+    }
+
     [Theory]
     [MemberData(nameof(AsOfDates))]
     public async Task Floor_event_seed_fills_all_three_tables_for_any_as_of_date(int year, int month, int day)

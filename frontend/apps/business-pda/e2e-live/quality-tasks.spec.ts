@@ -1,5 +1,5 @@
 import { expect, test, type Response } from '@playwright/test'
-import { loginViaUi } from './support/login'
+import { loginViaUi, readAuthenticatedPrincipalId } from './support/login'
 import { assertLiveStackReachable } from './support/preflight'
 import { simulateScanGun } from './support/scan-gun'
 
@@ -36,18 +36,7 @@ test('live 只读链路：真实登录 → /quality/tasks 渲染 → S1 常驻�
 }) => {
   await assertLiveStackReachable()
   await loginViaUi(page)
-  const authenticatedPrincipalId = await page.evaluate(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem('nerv-iip.business-pda.auth') ?? '{}') as {
-        principal?: { principalId?: unknown }
-      }
-      return typeof stored.principal?.principalId === 'string'
-        ? stored.principal.principalId.trim()
-        : ''
-    } catch {
-      return ''
-    }
-  })
+  const authenticatedPrincipalId = await readAuthenticatedPrincipalId(page)
   expect(authenticatedPrincipalId.length).toBeGreaterThan(0)
 
   const initialListResponsePromise = page.waitForResponse(
@@ -167,13 +156,6 @@ test('live 只读链路：真实登录 → /quality/tasks 渲染 → S1 常驻�
     }
   } else {
     expect(filteredTotal).toBe(0)
-    await expect(
-      page
-        .getByText('当前账号没有符合筛选条件的质检任务；缺少登录主体或组织环境时不会发起查询。')
-        .last(),
-    ).toBeVisible()
+    await expect(page.getByText('当前账号没有符合筛选条件的质检任务。').last()).toBeVisible()
   }
-  await expect(page.getByTestId('list-scope-meta')).toContainText(
-    `已加载 ${filteredItems.length} / 共 ${filteredTotal}`,
-  )
 })

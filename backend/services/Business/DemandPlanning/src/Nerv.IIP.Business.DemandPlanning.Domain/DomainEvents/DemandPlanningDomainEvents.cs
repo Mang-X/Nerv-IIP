@@ -15,4 +15,13 @@ public sealed record PlannedPurchaseSuggestedDomainEvent(PlanningSuggestion Plan
 
 public sealed record PlannedWorkOrderSuggestedDomainEvent(PlanningSuggestion PlanningSuggestion) : IDomainEvent;
 
-public sealed record PlanningSuggestionAcceptedDomainEvent(PlanningSuggestion PlanningSuggestion) : IDomainEvent;
+public sealed record PlanningSuggestionAcceptedDomainEvent(
+    PlanningSuggestion PlanningSuggestion,
+    IReadOnlyCollection<string>? AssemblyParentSuggestionIds = null) : IDomainEvent;
+
+public sealed record SalesOrderDemandChangedForWorkOrderDomainEvent(
+    PlanningSuggestion PlanningSuggestion,
+    string DemandSourceReference,
+    string SalesOrderId,
+    int OrderVersion,
+    bool Cancelled) : IDomainEvent;

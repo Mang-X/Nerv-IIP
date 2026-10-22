@@ -1,0 +1,1447 @@
+{
+  "runtimeSha": "14f873264cfa452bcf10747ec21a33ffabc4c4a2",
+  "sessionId": "nerv-bcf2-e9ad2f",
+  "identities": {
+    "planner": {
+      "principalId": "user-01a13040cd417534b58f3ab307ef7057",
+      "roleIds": [
+        "role-01a13040cc9e775aaac40c3b939d7de0"
+      ],
+      "permissionCodes": [
+        "business.engineering.production-versions.read",
+        "business.engineering.routings.read",
+        "business.masterdata.products.read",
+        "business.masterdata.resources.read",
+        "business.mes.work-orders.manage",
+        "business.mes.work-orders.read",
+        "business.scheduling.plans.manage",
+        "business.scheduling.plans.read",
+        "business.scheduling.plans.release",
+        "notifications.messages.read",
+        "notifications.tasks.read"
+      ],
+      "organizationId": "org-001",
+      "environmentId": "env-dev",
+      "executionScopeBindings": [
+        {
+          "scopeType": "organization",
+          "scopeCode": "org-001"
+        }
+      ]
+    },
+    "operator": {
+      "principalId": "user-01a13040d19e7bee9959de8fe9c8bfd6",
+      "roleIds": [
+        "role-01a13040d14a74c0ab86ee5f55516a81",
+        "role-01a1304d9e51730aa55d0c0811d0fd72"
+      ],
+      "permissionCodes": [
+        "business.engineering.documents.read",
+        "business.engineering.standard-operations.read",
+        "business.maintenance.downtime-reasons.read",
+        "business.masterdata.resources.read",
+        "business.mes.downtime.manage",
+        "business.mes.downtime.read",
+        "business.mes.foundation.read",
+        "business.mes.materials.read",
+        "business.mes.operations.manage",
+        "business.mes.operations.read",
+        "business.mes.quality.read",
+        "business.mes.reporting.read",
+        "business.mes.reporting.write",
+        "business.mes.work-orders.read"
+      ],
+      "organizationId": "org-001",
+      "environmentId": "env-dev",
+      "executionScopeBindings": [
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-TUB-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-ROD-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-GRD-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-VA-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-FA-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-CT-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-TS-01"
+        },
+        {
+          "scopeType": "work-center",
+          "scopeCode": "WC-PK-01"
+        }
+      ],
+      "referenceRole": {
+        "roleId": "role-01a1304d9e51730aa55d0c0811d0fd72",
+        "scopeBindings": [
+          {
+            "scopeType": "organization",
+            "scopeCode": "org-001"
+          }
+        ]
+      }
+    }
+  },
+  "baseline": {
+    "planId": "plan-01a1304768ed7942a3d0e82061dd76c3",
+    "problemId": "workbench-01a1304763027e919245574644d1cb86",
+    "status": "generated",
+    "generatedAtUtc": "2026-10-12T13:22:28.717545+00:00",
+    "metrics": {
+      "scheduledOperationCount": 8,
+      "unscheduledOperationCount": 0,
+      "assignedMinutes": 59,
+      "makespanMinutes": 59,
+      "totalTardinessMinutes": 0,
+      "lateOperationCount": 0,
+      "onTimeRate": 1.0,
+      "averageResourceUtilization": 0.0019,
+      "lockedOperationCount": 0,
+      "optimizableOperationCount": 8,
+      "materialRiskOperationCount": 8,
+      "equipmentRiskOperationCount": 8
+    },
+    "freezeContext": null,
+    "calendars": [
+      {
+        "calendarId": "STANDARD",
+        "resourceIds": [
+          "WC-CT-01",
+          "WC-FA-01",
+          "WC-GRD-01",
+          "WC-PK-01",
+          "WC-ROD-01",
+          "WC-TS-01",
+          "WC-TUB-01",
+          "WC-VA-01"
+        ],
+        "workCenterIds": [
+          "WC-CT-01",
+          "WC-FA-01",
+          "WC-GRD-01",
+          "WC-PK-01",
+          "WC-ROD-01",
+          "WC-TS-01",
+          "WC-TUB-01",
+          "WC-VA-01"
+        ],
+        "shiftWindows": [
+          {
+            "startUtc": "2026-10-13T08:00:00+00:00",
+            "endUtc": "2026-10-13T16:00:00+00:00",
+            "shiftCode": "EARLY"
+          },
+          {
+            "startUtc": "2026-10-13T08:00:00+00:00",
+            "endUtc": "2026-10-13T20:00:00+00:00",
+            "shiftCode": "DAY"
+          },
+          {
+            "startUtc": "2026-10-13T16:00:00+00:00",
+            "endUtc": "2026-10-14T00:00:00+00:00",
+            "shiftCode": "MIDDLE"
+          },
+          {
+            "startUtc": "2026-10-13T20:00:00+00:00",
+            "endUtc": "2026-10-14T08:00:00+00:00",
+            "shiftCode": "NIGHT"
+          },
+          {
+            "startUtc": "2026-10-14T08:00:00+00:00",
+            "endUtc": "2026-10-14T10:00:00+00:00",
+            "shiftCode": "DAY"
+          },
+          {
+            "startUtc": "2026-10-14T08:00:00+00:00",
+            "endUtc": "2026-10-14T10:00:00+00:00",
+            "shiftCode": "EARLY"
+          }
+        ]
+      }
+    ],
+    "assignments": [
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-10",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-10",
+        "operationSequence": 10,
+        "resourceId": "WC-TUB-01",
+        "workCenterId": "WC-TUB-01",
+        "startUtc": "2026-10-13T08:00:00+00:00",
+        "endUtc": "2026-10-13T08:07:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-20",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-20",
+        "operationSequence": 20,
+        "resourceId": "WC-ROD-01",
+        "workCenterId": "WC-ROD-01",
+        "startUtc": "2026-10-13T08:07:00+00:00",
+        "endUtc": "2026-10-13T08:18:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-30",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-30",
+        "operationSequence": 30,
+        "resourceId": "WC-GRD-01",
+        "workCenterId": "WC-GRD-01",
+        "startUtc": "2026-10-13T08:18:00+00:00",
+        "endUtc": "2026-10-13T08:26:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-40",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-40",
+        "operationSequence": 40,
+        "resourceId": "WC-VA-01",
+        "workCenterId": "WC-VA-01",
+        "startUtc": "2026-10-13T08:26:00+00:00",
+        "endUtc": "2026-10-13T08:32:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-50",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-50",
+        "operationSequence": 50,
+        "resourceId": "WC-FA-01",
+        "workCenterId": "WC-FA-01",
+        "startUtc": "2026-10-13T08:32:00+00:00",
+        "endUtc": "2026-10-13T08:41:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-60",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-60",
+        "operationSequence": 60,
+        "resourceId": "WC-CT-01",
+        "workCenterId": "WC-CT-01",
+        "startUtc": "2026-10-13T08:41:00+00:00",
+        "endUtc": "2026-10-13T08:52:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-70",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-70",
+        "operationSequence": 70,
+        "resourceId": "WC-TS-01",
+        "workCenterId": "WC-TS-01",
+        "startUtc": "2026-10-13T08:52:00+00:00",
+        "endUtc": "2026-10-13T08:56:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-80",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-80",
+        "operationSequence": 80,
+        "resourceId": "WC-PK-01",
+        "workCenterId": "WC-PK-01",
+        "startUtc": "2026-10-13T08:56:00+00:00",
+        "endUtc": "2026-10-13T08:59:00+00:00",
+        "isLocked": false,
+        "segments": null
+      }
+    ]
+  },
+  "insertion": {
+    "planId": "insertion-01a1304818cd76548dbbc7c31259f9b2",
+    "problemId": "insertion-01a1304818cd76548dbbc7c31259f9b2",
+    "status": "released",
+    "generatedAtUtc": "2026-10-12T13:23:13.788716+00:00",
+    "metrics": {
+      "scheduledOperationCount": 16,
+      "unscheduledOperationCount": 0,
+      "assignedMinutes": 118,
+      "makespanMinutes": 59,
+      "totalTardinessMinutes": 0,
+      "lateOperationCount": 0,
+      "onTimeRate": 1.0,
+      "averageResourceUtilization": 0.0037,
+      "lockedOperationCount": 0,
+      "optimizableOperationCount": 16,
+      "materialRiskOperationCount": 16,
+      "equipmentRiskOperationCount": 16
+    },
+    "freezeContext": {
+      "asOfUtc": "2026-10-12T13:23:13.788716+00:00",
+      "defaultWindowEndUtc": "2026-10-12T13:23:13.788716+00:00",
+      "workCenterWindows": [],
+      "assignments": []
+    },
+    "calendars": [
+      {
+        "calendarId": "STANDARD",
+        "resourceIds": [
+          "WC-CT-01",
+          "WC-FA-01",
+          "WC-GRD-01",
+          "WC-PK-01",
+          "WC-ROD-01",
+          "WC-TS-01",
+          "WC-TUB-01",
+          "WC-VA-01"
+        ],
+        "workCenterIds": [
+          "WC-CT-01",
+          "WC-FA-01",
+          "WC-GRD-01",
+          "WC-PK-01",
+          "WC-ROD-01",
+          "WC-TS-01",
+          "WC-TUB-01",
+          "WC-VA-01"
+        ],
+        "shiftWindows": [
+          {
+            "startUtc": "2026-10-13T08:00:00+00:00",
+            "endUtc": "2026-10-13T16:00:00+00:00",
+            "shiftCode": "EARLY"
+          },
+          {
+            "startUtc": "2026-10-13T08:00:00+00:00",
+            "endUtc": "2026-10-13T20:00:00+00:00",
+            "shiftCode": "DAY"
+          },
+          {
+            "startUtc": "2026-10-13T16:00:00+00:00",
+            "endUtc": "2026-10-14T00:00:00+00:00",
+            "shiftCode": "MIDDLE"
+          },
+          {
+            "startUtc": "2026-10-13T20:00:00+00:00",
+            "endUtc": "2026-10-14T08:00:00+00:00",
+            "shiftCode": "NIGHT"
+          },
+          {
+            "startUtc": "2026-10-14T08:00:00+00:00",
+            "endUtc": "2026-10-14T10:00:00+00:00",
+            "shiftCode": "DAY"
+          },
+          {
+            "startUtc": "2026-10-14T08:00:00+00:00",
+            "endUtc": "2026-10-14T10:00:00+00:00",
+            "shiftCode": "EARLY"
+          }
+        ]
+      }
+    ],
+    "assignments": [
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-10",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-10",
+        "operationSequence": 10,
+        "resourceId": "WC-TUB-01",
+        "workCenterId": "WC-TUB-01",
+        "startUtc": "2026-10-13T08:00:00+00:00",
+        "endUtc": "2026-10-13T08:07:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-10",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-10",
+        "operationSequence": 10,
+        "resourceId": "WC-TUB-01",
+        "workCenterId": "WC-TUB-01",
+        "startUtc": "2026-10-13T08:00:00+00:00",
+        "endUtc": "2026-10-13T08:07:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-20",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-20",
+        "operationSequence": 20,
+        "resourceId": "WC-ROD-01",
+        "workCenterId": "WC-ROD-01",
+        "startUtc": "2026-10-13T08:07:00+00:00",
+        "endUtc": "2026-10-13T08:18:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-20",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-20",
+        "operationSequence": 20,
+        "resourceId": "WC-ROD-01",
+        "workCenterId": "WC-ROD-01",
+        "startUtc": "2026-10-13T08:07:00+00:00",
+        "endUtc": "2026-10-13T08:18:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-30",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-30",
+        "operationSequence": 30,
+        "resourceId": "WC-GRD-01",
+        "workCenterId": "WC-GRD-01",
+        "startUtc": "2026-10-13T08:18:00+00:00",
+        "endUtc": "2026-10-13T08:26:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-30",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-30",
+        "operationSequence": 30,
+        "resourceId": "WC-GRD-01",
+        "workCenterId": "WC-GRD-01",
+        "startUtc": "2026-10-13T08:18:00+00:00",
+        "endUtc": "2026-10-13T08:26:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-40",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-40",
+        "operationSequence": 40,
+        "resourceId": "WC-VA-01",
+        "workCenterId": "WC-VA-01",
+        "startUtc": "2026-10-13T08:26:00+00:00",
+        "endUtc": "2026-10-13T08:32:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-40",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-40",
+        "operationSequence": 40,
+        "resourceId": "WC-VA-01",
+        "workCenterId": "WC-VA-01",
+        "startUtc": "2026-10-13T08:26:00+00:00",
+        "endUtc": "2026-10-13T08:32:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-50",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-50",
+        "operationSequence": 50,
+        "resourceId": "WC-FA-01",
+        "workCenterId": "WC-FA-01",
+        "startUtc": "2026-10-13T08:32:00+00:00",
+        "endUtc": "2026-10-13T08:41:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-50",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-50",
+        "operationSequence": 50,
+        "resourceId": "WC-FA-01",
+        "workCenterId": "WC-FA-01",
+        "startUtc": "2026-10-13T08:32:00+00:00",
+        "endUtc": "2026-10-13T08:41:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-60",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-60",
+        "operationSequence": 60,
+        "resourceId": "WC-CT-01",
+        "workCenterId": "WC-CT-01",
+        "startUtc": "2026-10-13T08:41:00+00:00",
+        "endUtc": "2026-10-13T08:52:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-60",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-60",
+        "operationSequence": 60,
+        "resourceId": "WC-CT-01",
+        "workCenterId": "WC-CT-01",
+        "startUtc": "2026-10-13T08:41:00+00:00",
+        "endUtc": "2026-10-13T08:52:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-70",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-70",
+        "operationSequence": 70,
+        "resourceId": "WC-TS-01",
+        "workCenterId": "WC-TS-01",
+        "startUtc": "2026-10-13T08:52:00+00:00",
+        "endUtc": "2026-10-13T08:56:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-70",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-70",
+        "operationSequence": 70,
+        "resourceId": "WC-TS-01",
+        "workCenterId": "WC-TS-01",
+        "startUtc": "2026-10-13T08:52:00+00:00",
+        "endUtc": "2026-10-13T08:56:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-80",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-80",
+        "operationSequence": 80,
+        "resourceId": "WC-PK-01",
+        "workCenterId": "WC-PK-01",
+        "startUtc": "2026-10-13T08:56:00+00:00",
+        "endUtc": "2026-10-13T08:59:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-80",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-80",
+        "operationSequence": 80,
+        "resourceId": "WC-PK-01",
+        "workCenterId": "WC-PK-01",
+        "startUtc": "2026-10-13T08:56:00+00:00",
+        "endUtc": "2026-10-13T08:59:00+00:00",
+        "isLocked": false,
+        "segments": null
+      }
+    ]
+  },
+  "nonemptyDowntimeImpact": {
+    "baselinePlanId": "insertion-01a1304818cd76548dbbc7c31259f9b2",
+    "problemId": "insertion-01a1304818cd76548dbbc7c31259f9b2",
+    "observedAtUtc": "2026-10-12T13:30:31.528213+00:00",
+    "items": [
+      {
+        "fact": {
+          "source": "business-mes",
+          "sourceReferenceId": "DOWNTIME-20261012-000001",
+          "deviceAssetId": "WC-CT-01",
+          "workCenterId": "WC-CT-01",
+          "startedAtUtc": "2026-10-12T13:29:00+00:00",
+          "recoveredAtUtc": null,
+          "expectedRestoreAtUtc": null,
+          "originSource": null,
+          "originSourceType": null,
+          "originSourceReferenceId": null,
+          "predictedRestoreAtUtc": null,
+          "restorePredictionSource": null,
+          "restorePredictionSourceVersion": null
+        },
+        "affectedOperations": [
+          {
+            "workOrderId": "WO-20261012-000001",
+            "operationId": "WO-20261012-000001-OP-60",
+            "availableAlternativeResourceIds": []
+          },
+          {
+            "workOrderId": "WO-20261012-000002",
+            "operationId": "WO-20261012-000002-OP-60",
+            "availableAlternativeResourceIds": []
+          }
+        ],
+        "operationsWithAlternativesCount": 0
+      }
+    ],
+    "affectedOperations": [
+      {
+        "workOrderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-60",
+        "availableAlternativeResourceIds": []
+      },
+      {
+        "workOrderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-60",
+        "availableAlternativeResourceIds": []
+      }
+    ],
+    "operationsWithAlternativesCount": 0
+  },
+  "freezeCandidate": {
+    "planId": "plan-01a13051edbe7221bec0bc19b2ffed8b",
+    "problemId": "candidate-01a13051edbe7979b28a43146df5d0db",
+    "status": "generated",
+    "generatedAtUtc": "2026-10-12T13:33:45.30414+00:00",
+    "metrics": {
+      "scheduledOperationCount": 16,
+      "unscheduledOperationCount": 0,
+      "assignedMinutes": 118,
+      "makespanMinutes": 59,
+      "totalTardinessMinutes": 0,
+      "lateOperationCount": 0,
+      "onTimeRate": 1.0,
+      "averageResourceUtilization": 0.0008,
+      "lockedOperationCount": 1,
+      "optimizableOperationCount": 15,
+      "materialRiskOperationCount": 16,
+      "equipmentRiskOperationCount": 16
+    },
+    "freezeContext": {
+      "asOfUtc": "2026-10-12T13:33:45.30414+00:00",
+      "defaultWindowEndUtc": "2026-10-12T13:33:45.30414+00:00",
+      "workCenterWindows": [],
+      "assignments": [
+        {
+          "assignment": {
+            "assignmentId": "override-WO-20261012-000001-OP-10",
+            "orderId": "WO-20261012-000001",
+            "operationId": "WO-20261012-000001-OP-10",
+            "operationSequence": 10,
+            "resourceId": "WC-TUB-01",
+            "workCenterId": "WC-TUB-01",
+            "startUtc": "2026-10-13T08:00:00+00:00",
+            "endUtc": "2026-10-13T08:07:00+00:00",
+            "isLocked": true,
+            "explanationCode": "manual-override",
+            "standardOperationCode": null,
+            "segments": null,
+            "currentExecution": null
+          },
+          "reasons": [
+            "manualLock"
+          ]
+        }
+      ]
+    },
+    "calendars": [
+      {
+        "calendarId": "STANDARD",
+        "resourceIds": [
+          "WC-CT-01",
+          "WC-FA-01",
+          "WC-GRD-01",
+          "WC-PK-01",
+          "WC-ROD-01",
+          "WC-TS-01",
+          "WC-TUB-01",
+          "WC-VA-01"
+        ],
+        "workCenterIds": [
+          "WC-CT-01",
+          "WC-FA-01",
+          "WC-GRD-01",
+          "WC-PK-01",
+          "WC-ROD-01",
+          "WC-TS-01",
+          "WC-TUB-01",
+          "WC-VA-01"
+        ],
+        "shiftWindows": [
+          {
+            "startUtc": "2026-10-12T13:00:00+00:00",
+            "endUtc": "2026-10-12T16:00:00+00:00",
+            "shiftCode": "EARLY"
+          },
+          {
+            "startUtc": "2026-10-12T13:00:00+00:00",
+            "endUtc": "2026-10-12T20:00:00+00:00",
+            "shiftCode": "DAY"
+          },
+          {
+            "startUtc": "2026-10-12T16:00:00+00:00",
+            "endUtc": "2026-10-13T00:00:00+00:00",
+            "shiftCode": "MIDDLE"
+          },
+          {
+            "startUtc": "2026-10-12T20:00:00+00:00",
+            "endUtc": "2026-10-13T08:00:00+00:00",
+            "shiftCode": "NIGHT"
+          },
+          {
+            "startUtc": "2026-10-13T08:00:00+00:00",
+            "endUtc": "2026-10-13T16:00:00+00:00",
+            "shiftCode": "EARLY"
+          },
+          {
+            "startUtc": "2026-10-13T08:00:00+00:00",
+            "endUtc": "2026-10-13T20:00:00+00:00",
+            "shiftCode": "DAY"
+          },
+          {
+            "startUtc": "2026-10-13T16:00:00+00:00",
+            "endUtc": "2026-10-14T00:00:00+00:00",
+            "shiftCode": "MIDDLE"
+          },
+          {
+            "startUtc": "2026-10-13T20:00:00+00:00",
+            "endUtc": "2026-10-14T08:00:00+00:00",
+            "shiftCode": "NIGHT"
+          },
+          {
+            "startUtc": "2026-10-14T08:00:00+00:00",
+            "endUtc": "2026-10-14T16:00:00+00:00",
+            "shiftCode": "EARLY"
+          },
+          {
+            "startUtc": "2026-10-14T08:00:00+00:00",
+            "endUtc": "2026-10-14T20:00:00+00:00",
+            "shiftCode": "DAY"
+          },
+          {
+            "startUtc": "2026-10-14T16:00:00+00:00",
+            "endUtc": "2026-10-15T00:00:00+00:00",
+            "shiftCode": "MIDDLE"
+          },
+          {
+            "startUtc": "2026-10-14T20:00:00+00:00",
+            "endUtc": "2026-10-15T08:00:00+00:00",
+            "shiftCode": "NIGHT"
+          },
+          {
+            "startUtc": "2026-10-15T08:00:00+00:00",
+            "endUtc": "2026-10-15T16:00:00+00:00",
+            "shiftCode": "EARLY"
+          },
+          {
+            "startUtc": "2026-10-15T08:00:00+00:00",
+            "endUtc": "2026-10-15T20:00:00+00:00",
+            "shiftCode": "DAY"
+          },
+          {
+            "startUtc": "2026-10-15T16:00:00+00:00",
+            "endUtc": "2026-10-16T00:00:00+00:00",
+            "shiftCode": "MIDDLE"
+          },
+          {
+            "startUtc": "2026-10-15T20:00:00+00:00",
+            "endUtc": "2026-10-16T08:00:00+00:00",
+            "shiftCode": "NIGHT"
+          },
+          {
+            "startUtc": "2026-10-16T08:00:00+00:00",
+            "endUtc": "2026-10-16T16:00:00+00:00",
+            "shiftCode": "EARLY"
+          },
+          {
+            "startUtc": "2026-10-16T08:00:00+00:00",
+            "endUtc": "2026-10-16T20:00:00+00:00",
+            "shiftCode": "DAY"
+          },
+          {
+            "startUtc": "2026-10-16T16:00:00+00:00",
+            "endUtc": "2026-10-17T00:00:00+00:00",
+            "shiftCode": "MIDDLE"
+          },
+          {
+            "startUtc": "2026-10-16T20:00:00+00:00",
+            "endUtc": "2026-10-17T08:00:00+00:00",
+            "shiftCode": "NIGHT"
+          },
+          {
+            "startUtc": "2026-10-19T08:00:00+00:00",
+            "endUtc": "2026-10-19T13:00:00+00:00",
+            "shiftCode": "DAY"
+          },
+          {
+            "startUtc": "2026-10-19T08:00:00+00:00",
+            "endUtc": "2026-10-19T13:00:00+00:00",
+            "shiftCode": "EARLY"
+          }
+        ]
+      }
+    ],
+    "assignments": [
+      {
+        "assignmentId": "override-WO-20261012-000001-OP-10",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-10",
+        "operationSequence": 10,
+        "resourceId": "WC-TUB-01",
+        "workCenterId": "WC-TUB-01",
+        "startUtc": "2026-10-13T08:00:00+00:00",
+        "endUtc": "2026-10-13T08:07:00+00:00",
+        "isLocked": true,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-10",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-10",
+        "operationSequence": 10,
+        "resourceId": "WC-TUB-01",
+        "workCenterId": "WC-TUB-01",
+        "startUtc": "2026-10-13T08:00:00+00:00",
+        "endUtc": "2026-10-13T08:07:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-20",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-20",
+        "operationSequence": 20,
+        "resourceId": "WC-ROD-01",
+        "workCenterId": "WC-ROD-01",
+        "startUtc": "2026-10-13T08:07:00+00:00",
+        "endUtc": "2026-10-13T08:18:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-20",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-20",
+        "operationSequence": 20,
+        "resourceId": "WC-ROD-01",
+        "workCenterId": "WC-ROD-01",
+        "startUtc": "2026-10-13T08:07:00+00:00",
+        "endUtc": "2026-10-13T08:18:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-30",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-30",
+        "operationSequence": 30,
+        "resourceId": "WC-GRD-01",
+        "workCenterId": "WC-GRD-01",
+        "startUtc": "2026-10-13T08:18:00+00:00",
+        "endUtc": "2026-10-13T08:26:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-30",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-30",
+        "operationSequence": 30,
+        "resourceId": "WC-GRD-01",
+        "workCenterId": "WC-GRD-01",
+        "startUtc": "2026-10-13T08:18:00+00:00",
+        "endUtc": "2026-10-13T08:26:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-40",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-40",
+        "operationSequence": 40,
+        "resourceId": "WC-VA-01",
+        "workCenterId": "WC-VA-01",
+        "startUtc": "2026-10-13T08:26:00+00:00",
+        "endUtc": "2026-10-13T08:32:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-40",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-40",
+        "operationSequence": 40,
+        "resourceId": "WC-VA-01",
+        "workCenterId": "WC-VA-01",
+        "startUtc": "2026-10-13T08:26:00+00:00",
+        "endUtc": "2026-10-13T08:32:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-50",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-50",
+        "operationSequence": 50,
+        "resourceId": "WC-FA-01",
+        "workCenterId": "WC-FA-01",
+        "startUtc": "2026-10-13T08:32:00+00:00",
+        "endUtc": "2026-10-13T08:41:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-50",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-50",
+        "operationSequence": 50,
+        "resourceId": "WC-FA-01",
+        "workCenterId": "WC-FA-01",
+        "startUtc": "2026-10-13T08:32:00+00:00",
+        "endUtc": "2026-10-13T08:41:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-60",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-60",
+        "operationSequence": 60,
+        "resourceId": "WC-CT-01",
+        "workCenterId": "WC-CT-01",
+        "startUtc": "2026-10-13T08:41:00+00:00",
+        "endUtc": "2026-10-13T08:52:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-60",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-60",
+        "operationSequence": 60,
+        "resourceId": "WC-CT-01",
+        "workCenterId": "WC-CT-01",
+        "startUtc": "2026-10-13T08:41:00+00:00",
+        "endUtc": "2026-10-13T08:52:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-70",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-70",
+        "operationSequence": 70,
+        "resourceId": "WC-TS-01",
+        "workCenterId": "WC-TS-01",
+        "startUtc": "2026-10-13T08:52:00+00:00",
+        "endUtc": "2026-10-13T08:56:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-70",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-70",
+        "operationSequence": 70,
+        "resourceId": "WC-TS-01",
+        "workCenterId": "WC-TS-01",
+        "startUtc": "2026-10-13T08:52:00+00:00",
+        "endUtc": "2026-10-13T08:56:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000001-WO-20261012-000001-OP-80",
+        "orderId": "WO-20261012-000001",
+        "operationId": "WO-20261012-000001-OP-80",
+        "operationSequence": 80,
+        "resourceId": "WC-PK-01",
+        "workCenterId": "WC-PK-01",
+        "startUtc": "2026-10-13T08:56:00+00:00",
+        "endUtc": "2026-10-13T08:59:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-80",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-80",
+        "operationSequence": 80,
+        "resourceId": "WC-PK-01",
+        "workCenterId": "WC-PK-01",
+        "startUtc": "2026-10-13T08:56:00+00:00",
+        "endUtc": "2026-10-13T08:59:00+00:00",
+        "isLocked": false,
+        "segments": null
+      }
+    ]
+  },
+  "publicRevokeTasks": {
+    "items": [
+      {
+        "operationTaskId": "WO-20261012-000001-OP-60",
+        "workOrderId": "WO-20261012-000001",
+        "status": "ScheduleInvalidated",
+        "operationSequence": 60,
+        "workCenterId": "WC-CT-01",
+        "deviceAssetId": null,
+        "plannedStartUtc": "2026-10-13T08:41:00+00:00",
+        "scheduledAtUtc": null,
+        "scheduleInvalidationReasonCode": "explicit",
+        "allowedActions": [],
+        "readinessReasonCodes": []
+      },
+      {
+        "operationTaskId": "WO-20261012-000002-OP-60",
+        "workOrderId": "WO-20261012-000002",
+        "status": "ScheduleInvalidated",
+        "operationSequence": 60,
+        "workCenterId": "WC-CT-01",
+        "deviceAssetId": null,
+        "plannedStartUtc": "2026-10-13T08:41:00+00:00",
+        "scheduledAtUtc": null,
+        "scheduleInvalidationReasonCode": "explicit",
+        "allowedActions": [],
+        "readinessReasonCodes": []
+      }
+    ]
+  },
+  "recoveredDowntime": {
+    "items": [
+      {
+        "downtimeEventId": "DOWNTIME-20261012-000001",
+        "workOrderId": null,
+        "operationTaskId": null,
+        "deviceAssetId": "WC-CT-01",
+        "workCenterId": "WC-CT-01",
+        "status": "Recovered",
+        "startedAtUtc": "2026-10-12T13:29:00+00:00",
+        "recoveredAtUtc": "2026-10-12T13:36:12.8+00:00",
+        "reasonCode": "DT-MECH"
+      }
+    ]
+  },
+  "crossShift": {
+    "planId": "plan-01a13054c20a7390b8e1ad4b48586fbe",
+    "problemId": "workbench-01a13054c13d73759cbd8ed170ca0aad",
+    "status": "released",
+    "generatedAtUtc": "2026-10-12T13:37:03.498622+00:00",
+    "metrics": {
+      "scheduledOperationCount": 8,
+      "unscheduledOperationCount": 0,
+      "assignedMinutes": 59,
+      "makespanMinutes": 59,
+      "totalTardinessMinutes": 1507,
+      "lateOperationCount": 8,
+      "onTimeRate": 0.0,
+      "averageResourceUtilization": 0.0029,
+      "lockedOperationCount": 0,
+      "optimizableOperationCount": 8,
+      "materialRiskOperationCount": 8,
+      "equipmentRiskOperationCount": 8
+    },
+    "freezeContext": null,
+    "calendars": [
+      {
+        "calendarId": "STANDARD",
+        "resourceIds": [
+          "WC-CT-01",
+          "WC-FA-01",
+          "WC-GRD-01",
+          "WC-PK-01",
+          "WC-ROD-01",
+          "WC-TS-01",
+          "WC-TUB-01",
+          "WC-VA-01"
+        ],
+        "workCenterIds": [
+          "WC-CT-01",
+          "WC-FA-01",
+          "WC-GRD-01",
+          "WC-PK-01",
+          "WC-ROD-01",
+          "WC-TS-01",
+          "WC-TUB-01",
+          "WC-VA-01"
+        ],
+        "shiftWindows": [
+          {
+            "startUtc": "2026-10-13T15:50:00+00:00",
+            "endUtc": "2026-10-13T16:00:00+00:00",
+            "shiftCode": "EARLY"
+          },
+          {
+            "startUtc": "2026-10-13T15:50:00+00:00",
+            "endUtc": "2026-10-13T20:00:00+00:00",
+            "shiftCode": "DAY"
+          },
+          {
+            "startUtc": "2026-10-13T16:00:00+00:00",
+            "endUtc": "2026-10-14T00:00:00+00:00",
+            "shiftCode": "MIDDLE"
+          },
+          {
+            "startUtc": "2026-10-13T20:00:00+00:00",
+            "endUtc": "2026-10-14T08:00:00+00:00",
+            "shiftCode": "NIGHT"
+          },
+          {
+            "startUtc": "2026-10-14T08:00:00+00:00",
+            "endUtc": "2026-10-14T10:00:00+00:00",
+            "shiftCode": "DAY"
+          },
+          {
+            "startUtc": "2026-10-14T08:00:00+00:00",
+            "endUtc": "2026-10-14T10:00:00+00:00",
+            "shiftCode": "EARLY"
+          }
+        ]
+      }
+    ],
+    "assignments": [
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-10",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-10",
+        "operationSequence": 10,
+        "resourceId": "WC-TUB-01",
+        "workCenterId": "WC-TUB-01",
+        "startUtc": "2026-10-13T15:50:00+00:00",
+        "endUtc": "2026-10-13T15:57:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-20",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-20",
+        "operationSequence": 20,
+        "resourceId": "WC-ROD-01",
+        "workCenterId": "WC-ROD-01",
+        "startUtc": "2026-10-13T15:57:00+00:00",
+        "endUtc": "2026-10-13T16:08:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-30",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-30",
+        "operationSequence": 30,
+        "resourceId": "WC-GRD-01",
+        "workCenterId": "WC-GRD-01",
+        "startUtc": "2026-10-13T16:08:00+00:00",
+        "endUtc": "2026-10-13T16:16:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-40",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-40",
+        "operationSequence": 40,
+        "resourceId": "WC-VA-01",
+        "workCenterId": "WC-VA-01",
+        "startUtc": "2026-10-13T16:16:00+00:00",
+        "endUtc": "2026-10-13T16:22:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-50",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-50",
+        "operationSequence": 50,
+        "resourceId": "WC-FA-01",
+        "workCenterId": "WC-FA-01",
+        "startUtc": "2026-10-13T16:22:00+00:00",
+        "endUtc": "2026-10-13T16:31:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-60",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-60",
+        "operationSequence": 60,
+        "resourceId": "WC-CT-01",
+        "workCenterId": "WC-CT-01",
+        "startUtc": "2026-10-13T16:31:00+00:00",
+        "endUtc": "2026-10-13T16:42:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-70",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-70",
+        "operationSequence": 70,
+        "resourceId": "WC-TS-01",
+        "workCenterId": "WC-TS-01",
+        "startUtc": "2026-10-13T16:42:00+00:00",
+        "endUtc": "2026-10-13T16:46:00+00:00",
+        "isLocked": false,
+        "segments": null
+      },
+      {
+        "assignmentId": "assign-WO-20261012-000002-WO-20261012-000002-OP-80",
+        "orderId": "WO-20261012-000002",
+        "operationId": "WO-20261012-000002-OP-80",
+        "operationSequence": 80,
+        "resourceId": "WC-PK-01",
+        "workCenterId": "WC-PK-01",
+        "startUtc": "2026-10-13T16:46:00+00:00",
+        "endUtc": "2026-10-13T16:49:00+00:00",
+        "isLocked": false,
+        "segments": null
+      }
+    ]
+  },
+  "crossShiftPublicMesTasks": {
+    "items": [
+      {
+        "operationTaskId": "WO-20261012-000001-OP-20",
+        "workOrderId": "WO-20261012-000001",
+        "status": "ScheduleInvalidated",
+        "operationSequence": 20,
+        "workCenterId": "WC-ROD-01",
+        "deviceAssetId": null,
+        "plannedStartUtc": "2026-10-13T08:07:00+00:00",
+        "scheduledAtUtc": null,
+        "scheduleInvalidationReasonCode": "explicit",
+        "allowedActions": [],
+        "readinessReasonCodes": []
+      },
+      {
+        "operationTaskId": "WO-20261012-000002-OP-20",
+        "workOrderId": "WO-20261012-000002",
+        "status": "Queued",
+        "operationSequence": 20,
+        "workCenterId": "WC-ROD-01",
+        "deviceAssetId": "WC-ROD-01",
+        "plannedStartUtc": "2026-10-13T15:57:00+00:00",
+        "scheduledAtUtc": "2026-10-12T13:38:25.025355+00:00",
+        "scheduleInvalidationReasonCode": null,
+        "allowedActions": [],
+        "readinessReasonCodes": [
+          "PREVIOUS_OPERATION_INCOMPLETE",
+          "WORK_ORDER_NOT_RELEASED",
+          "MATERIAL_SHORTAGE",
+          "MATERIAL_SHORTAGE",
+          "MATERIAL_SHORTAGE",
+          "MATERIAL_SHORTAGE",
+          "MATERIAL_SHORTAGE",
+          "MATERIAL_SHORTAGE",
+          "MATERIAL_SHORTAGE",
+          "MATERIAL_SHORTAGE",
+          "MATERIAL_SHORTAGE",
+          "MATERIAL_SHORTAGE",
+          "MATERIAL_SHORTAGE"
+        ]
+      }
+    ]
+  },
+  "planStatuses": [
+    {
+      "planId": "plan-01a13054c20a7390b8e1ad4b48586fbe",
+      "problemId": "workbench-01a13054c13d73759cbd8ed170ca0aad",
+      "status": "released",
+      "generatedAtUtc": "2026-10-12T13:37:03.498622+00:00",
+      "releasedAtUtc": "2026-10-12T13:38:25.012045+00:00",
+      "assignmentCount": 8,
+      "conflictCount": 25,
+      "unscheduledOperationCount": 0,
+      "isInvalidated": false,
+      "latestInvalidationReasonCode": null,
+      "latestInvalidatedAtUtc": null,
+      "horizonStartUtc": null,
+      "horizonEndUtc": null
+    },
+    {
+      "planId": "plan-01a13051edbe7221bec0bc19b2ffed8b",
+      "problemId": "candidate-01a13051edbe7979b28a43146df5d0db",
+      "status": "revoked",
+      "generatedAtUtc": "2026-10-12T13:33:45.30414+00:00",
+      "releasedAtUtc": "2026-10-12T13:35:58.440026+00:00",
+      "assignmentCount": 16,
+      "conflictCount": 32,
+      "unscheduledOperationCount": 0,
+      "isInvalidated": false,
+      "latestInvalidationReasonCode": null,
+      "latestInvalidatedAtUtc": null,
+      "horizonStartUtc": null,
+      "horizonEndUtc": null
+    },
+    {
+      "planId": "plan-01a1305154f5723baba99f8b70076ad3",
+      "problemId": "workbench-01a13051541379cda9b9d538bf9c44d5",
+      "status": "generated",
+      "generatedAtUtc": "2026-10-12T13:33:18.965539+00:00",
+      "releasedAtUtc": null,
+      "assignmentCount": 16,
+      "conflictCount": 34,
+      "unscheduledOperationCount": 0,
+      "isInvalidated": false,
+      "latestInvalidationReasonCode": null,
+      "latestInvalidatedAtUtc": null,
+      "horizonStartUtc": null,
+      "horizonEndUtc": null
+    },
+    {
+      "planId": "insertion-01a1304818cd76548dbbc7c31259f9b2",
+      "problemId": "insertion-01a1304818cd76548dbbc7c31259f9b2",
+      "status": "superseded",
+      "generatedAtUtc": "2026-10-12T13:23:13.788716+00:00",
+      "releasedAtUtc": "2026-10-12T13:25:30.299814+00:00",
+      "assignmentCount": 16,
+      "conflictCount": 33,
+      "unscheduledOperationCount": 0,
+      "isInvalidated": false,
+      "latestInvalidationReasonCode": null,
+      "latestInvalidatedAtUtc": null,
+      "horizonStartUtc": null,
+      "horizonEndUtc": null
+    },
+    {
+      "planId": "plan-01a1304768ed7942a3d0e82061dd76c3",
+      "problemId": "workbench-01a1304763027e919245574644d1cb86",
+      "status": "generated",
+      "generatedAtUtc": "2026-10-12T13:22:28.717545+00:00",
+      "releasedAtUtc": null,
+      "assignmentCount": 8,
+      "conflictCount": 17,
+      "unscheduledOperationCount": 0,
+      "isInvalidated": false,
+      "latestInvalidationReasonCode": null,
+      "latestInvalidatedAtUtc": null,
+      "horizonStartUtc": null,
+      "horizonEndUtc": null
+    },
+    {
+      "planId": "plan-01a13045b4a2728fb017aa47a97e8925",
+      "problemId": "workbench-01a13045aa7672ac8c778d6f9d30cbfd",
+      "status": "superseded",
+      "generatedAtUtc": "2026-10-12T13:20:37.026274+00:00",
+      "releasedAtUtc": "2026-10-12T13:21:44.005887+00:00",
+      "assignmentCount": 8,
+      "conflictCount": 17,
+      "unscheduledOperationCount": 0,
+      "isInvalidated": false,
+      "latestInvalidationReasonCode": null,
+      "latestInvalidatedAtUtc": null,
+      "horizonStartUtc": null,
+      "horizonEndUtc": null
+    }
+  ],
+  "publicCommandReceipts": [
+    {
+      "at": "2026-10-12T13:21:44.046Z",
+      "path": "/api/business-console/v1/scheduling/plans/plan-01a13045b4a2728fb017aa47a97e8925/release?organizationId=org-001&environmentId=env-dev",
+      "method": "POST",
+      "httpStatus": 200,
+      "result": {
+        "planId": "plan-01a13045b4a2728fb017aa47a97e8925",
+        "status": "released",
+        "releaseRevision": 1,
+        "releasedAtUtc": "2026-10-12T13:21:44.005887+00:00"
+      }
+    },
+    {
+      "at": "2026-10-12T13:35:58.519Z",
+      "path": "/api/business-console/v1/scheduling/plans/plan-01a13051edbe7221bec0bc19b2ffed8b/release?organizationId=org-001&environmentId=env-dev",
+      "method": "POST",
+      "httpStatus": 200,
+      "result": {
+        "planId": "plan-01a13051edbe7221bec0bc19b2ffed8b",
+        "status": "released",
+        "releaseRevision": 3,
+        "releasedAtUtc": "2026-10-12T13:35:58.440026+00:00"
+      }
+    },
+    {
+      "at": "2026-10-12T13:36:26.136Z",
+      "path": "/api/business-console/v1/scheduling/plans/plan-01a13051edbe7221bec0bc19b2ffed8b/revoke?organizationId=org-001&environmentId=env-dev",
+      "method": "POST",
+      "httpStatus": 200,
+      "result": {
+        "planId": "plan-01a13051edbe7221bec0bc19b2ffed8b",
+        "status": "revoked",
+        "releaseRevision": 3,
+        "revokedAtUtc": "2026-10-12T13:36:26.090798+00:00"
+      }
+    },
+    {
+      "at": "2026-10-12T13:38:25.066Z",
+      "path": "/api/business-console/v1/scheduling/plans/plan-01a13054c20a7390b8e1ad4b48586fbe/release?organizationId=org-001&environmentId=env-dev",
+      "method": "POST",
+      "httpStatus": 200,
+      "result": {
+        "planId": "plan-01a13054c20a7390b8e1ad4b48586fbe",
+        "status": "released",
+        "releaseRevision": 4,
+        "releasedAtUtc": "2026-10-12T13:38:25.012045+00:00"
+      }
+    }
+  ],
+  "verification": {
+    "runtimeSha": "14f873264cfa452bcf10747ec21a33ffabc4c4a2",
+    "sessionId": "nerv-bcf2-e9ad2f",
+    "checkedAtUtc": "2026-10-12T13:42:24.042741+00:00",
+    "passedAssertions": 14,
+    "checks": [
+      "planner exact principal, permissions, roles and tenant",
+      "operator exact principal, permissions, roles and tenant",
+      "operator selected work-center and no organization execution grant",
+      "baseline and insertion superseded; frozen revision revoked; cross-shift released",
+      "insertion adds eight real operations to eight-operation baseline",
+      "insertion preserves baseline assignments",
+      "nonempty downtime source and exact two affected tasks",
+      "nonempty manual freeze retained exact assignment",
+      "explicit revoke invalidates both observed MES tasks",
+      "downtime recovered with real nonzero elapsed interval",
+      "real solver assignments cross explicit EARLY/MIDDLE boundary",
+      "all eight cross-shift assignments publicly reflected in MES",
+      "published plan does not bypass material and order release readiness",
+      "first order remains withdrawn after later single-order publication"
+    ],
+    "proofBoundary": "Actual cross-shift scheduling calculation/publication, not elapsed cross-shift MES production or physical midnight execution"
+  },
+  "mesIntegrationEvents": [
+    "business-mes.schedule-plan-released-dispatch|scheduling.SchedulePlanReleased|evt-01a13046ba547fe8b3987017498e9255|scheduling:schedule-plan-released:org-001:env-dev:plan-01a13045b4a2728fb017aa47a97e8925",
+    "business-mes.schedule-plan-released-dispatch|scheduling.SchedulePlanReleased|evt-01a1304a2e467242ba713cb711f73ce8|scheduling:schedule-plan-released:org-001:env-dev:insertion-01a1304818cd76548dbbc7c31259f9b2",
+    "business-mes.schedule-plan-revoked-withdraw-dispatch|scheduling.SchedulePlanRevoked|evt-01a1304a2e437515abf8cb72b833f149|scheduling:schedule-plan-revoked:org-001:env-dev:plan-01a13045b4a2728fb017aa47a97e8925:1:superseded",
+    "business-mes.schedule-plan-revoked-withdraw-dispatch|scheduling.SchedulePlanRevoked|evt-01a13053c3f77e419fd63d21e17612da|scheduling:schedule-plan-revoked:org-001:env-dev:insertion-01a1304818cd76548dbbc7c31259f9b2:2:superseded",
+    "business-mes.schedule-plan-released-dispatch|scheduling.SchedulePlanReleased|evt-01a13053c3fa7e1aa4c55225792e7228|scheduling:schedule-plan-released:org-001:env-dev:plan-01a13051edbe7221bec0bc19b2ffed8b",
+    "business-mes.schedule-plan-revoked-withdraw-dispatch|scheduling.SchedulePlanRevoked|evt-01a130542ff1730a8ae6db161451a1b5|scheduling:schedule-plan-revoked:org-001:env-dev:plan-01a13051edbe7221bec0bc19b2ffed8b:3:explicit",
+    "business-mes.schedule-plan-released-dispatch|scheduling.SchedulePlanReleased|evt-01a1305600817c7298c8b262cc4f84c0|scheduling:schedule-plan-released:org-001:env-dev:plan-01a13054c20a7390b8e1ad4b48586fbe"
+  ],
+  "capReceivedStatus": [
+    "SchedulePlanReleasedIntegrationEvent|Succeeded|0|2060189037674497",
+    "SchedulePlanReleasedIntegrationEvent|Succeeded|0|2060189037674498",
+    "SchedulePlanRevokedIntegrationEvent|Succeeded|0|2060189037674499",
+    "SchedulePlanRevokedIntegrationEvent|Succeeded|0|2060189037674501",
+    "SchedulePlanReleasedIntegrationEvent|Succeeded|0|2060189037674502",
+    "SchedulePlanRevokedIntegrationEvent|Succeeded|0|2060189037674504",
+    "SchedulePlanReleasedIntegrationEvent|Succeeded|0|2060189037674505"
+  ],
+  "boundaries": {
+    "elapsedCrossShiftMesProduction": "not-run",
+    "physicalMidnightProduction": "not-run",
+    "equipment": "not-run; manually registered logical work-center resource",
+    "printer": "not-run",
+    "pda": "not-run",
+    "parentAcceptance": "not-run"
+  },
+  "cleanup": {
+    "command": "pwsh ./nerv.ps1 fullstack stop -SessionId nerv-bcf2-e9ad2f",
+    "exitCode": 0,
+    "sessionState": "Stopped",
+    "remainingResources": 0,
+    "containerReadback": [],
+    "volumeReadback": [],
+    "checkedAfterLocal": "2026-10-12T21:46:43+08:00"
+  }
+}

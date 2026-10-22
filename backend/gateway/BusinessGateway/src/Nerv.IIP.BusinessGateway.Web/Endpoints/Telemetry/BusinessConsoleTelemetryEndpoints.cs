@@ -4,6 +4,7 @@ using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
 using Nerv.IIP.Contracts.EquipmentRuntime;
+using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.ServiceAuth;
 using System.Text.Json;
 
@@ -42,6 +43,58 @@ public sealed class ListBusinessConsoleTelemetryTagsEndpoint(
         string bearerToken,
         CancellationToken cancellationToken) =>
         telemetry.ListTagsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Telemetry")]
+[HttpPost("/api/business-console/v1/telemetry/tags")]
+[BusinessGatewayOperationId("createOrUpdateBusinessConsoleTelemetryTag")]
+public sealed class CreateOrUpdateBusinessConsoleTelemetryTagEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIndustrialTelemetryClient telemetry,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateOrUpdateTelemetryTagRequest, BusinessConsoleCreateOrUpdateTelemetryTagResponse>(
+        auth,
+        BusinessGatewayPermissions.IiotTagsManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateOrUpdateTelemetryTagRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCreateOrUpdateTelemetryTagRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleCreateOrUpdateTelemetryTagRequest request) => "device-asset";
+
+    protected override string ResourceId(BusinessConsoleCreateOrUpdateTelemetryTagRequest request) => request.DeviceAssetId;
+
+    protected override Task<BusinessConsoleCreateOrUpdateTelemetryTagResponse> ForwardAsync(
+        BusinessConsoleCreateOrUpdateTelemetryTagRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        telemetry.CreateOrUpdateTagAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Telemetry")]
+[HttpPost("/api/business-console/v1/telemetry/tags/disable")]
+[BusinessGatewayOperationId("disableBusinessConsoleTelemetryTag")]
+public sealed class DisableBusinessConsoleTelemetryTagEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessIndustrialTelemetryClient telemetry,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleDisableTelemetryTagRequest, BusinessConsoleDisableTelemetryTagResponse>(
+        auth,
+        BusinessGatewayPermissions.IiotTagsManage)
+{
+    protected override string OrganizationId(BusinessConsoleDisableTelemetryTagRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleDisableTelemetryTagRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleDisableTelemetryTagRequest request) => "device-asset";
+
+    protected override string ResourceId(BusinessConsoleDisableTelemetryTagRequest request) => request.DeviceAssetId;
+
+    protected override Task<BusinessConsoleDisableTelemetryTagResponse> ForwardAsync(
+        BusinessConsoleDisableTelemetryTagRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        telemetry.DisableTagAsync(tokenProvider.BearerToken, request, cancellationToken);
 }
 
 [Tags("Business Console Telemetry")]
@@ -421,6 +474,36 @@ public sealed class QueryBusinessConsoleTelemetryOeeEndpoint(
 }
 
 [Tags("Business Console Telemetry")]
+[HttpGet("/api/business-console/v1/telemetry/oee/aggregates")]
+[BusinessGatewayOperationId("queryBusinessConsoleTelemetryOeeAggregates")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status400BadRequest)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status502BadGateway)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status503ServiceUnavailable)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status504GatewayTimeout)]
+public sealed class QueryBusinessConsoleTelemetryOeeAggregatesEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessOeeAggregateCapability capability)
+    : AuthorizedBusinessProxyEndpoint<QueryOeeAggregateBucketsRequest, OeeAggregateBucketsResponse>(
+        auth,
+        BusinessGatewayPermissions.IiotTelemetryRead)
+{
+    protected override bool IncludePrincipalContext => true;
+
+    protected override BusinessGatewayAuthorizationContinuityMode AuthorizationContinuityMode =>
+        BusinessGatewayAuthorizationContinuityMode.RealtimeRequired;
+
+    protected override string OrganizationId(QueryOeeAggregateBucketsRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(QueryOeeAggregateBucketsRequest request) => request.EnvironmentId;
+
+    protected override Task<OeeAggregateBucketsResponse> ForwardAsync(
+        QueryOeeAggregateBucketsRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        capability.QueryAsync(AuthorizationResult!, request, cancellationToken);
+}
+
+[Tags("Business Console Telemetry")]
 [HttpGet("/api/business-console/v1/telemetry/runtime-availability")]
 [BusinessGatewayOperationId("queryBusinessConsoleTelemetryRuntimeAvailability")]
 public sealed class QueryBusinessConsoleTelemetryRuntimeAvailabilityEndpoint(
@@ -475,6 +558,52 @@ public sealed class BusinessConsoleTelemetryTagListRequestValidator : Validator<
         RuleFor(x => x.DeviceAssetId).MaximumLength(150);
         RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
         RuleFor(x => x.Take).InclusiveBetween(1, 500);
+    }
+}
+
+public sealed class BusinessConsoleCreateOrUpdateTelemetryTagRequestValidator
+    : Validator<BusinessConsoleCreateOrUpdateTelemetryTagRequest>
+{
+    /// <summary>与 IndustrialTelemetry 点位值类型闭集一致（#3870）；两种 production-count 让点位参与计数报工。</summary>
+    public static readonly IReadOnlyCollection<string> ValueTypes =
+    [
+        "number",
+        "bool",
+        "text",
+        "production-count-posted",
+        "production-count-draft",
+    ];
+
+    public BusinessConsoleCreateOrUpdateTelemetryTagRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.DisplayName).MaximumLength(100);
+        RuleFor(x => x.ValueType)
+            .NotEmpty()
+            .Must(value => value is not null && ValueTypes.Contains(value.Trim().ToLowerInvariant(), StringComparer.Ordinal))
+            .WithMessage("数据类型只能是数值、开关、文本或计数。");
+        RuleFor(x => x.UnitCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.SamplingPolicy).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.ControlMinValue)
+            .LessThanOrEqualTo(x => x.ControlMaxValue)
+            .When(x => x.ControlMinValue.HasValue && x.ControlMaxValue.HasValue)
+            .WithMessage("写入下限不能大于上限。");
+        RuleForEach(x => x.ControlAllowedValues).MaximumLength(100);
+    }
+}
+
+public sealed class BusinessConsoleDisableTelemetryTagRequestValidator
+    : Validator<BusinessConsoleDisableTelemetryTagRequest>
+{
+    public BusinessConsoleDisableTelemetryTagRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.DeviceAssetId).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.TagKey).NotEmpty().MaximumLength(150);
     }
 }
 

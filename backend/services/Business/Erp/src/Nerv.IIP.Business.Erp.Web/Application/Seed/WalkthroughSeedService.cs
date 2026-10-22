@@ -17,7 +17,8 @@ public sealed class WalkthroughSeedService(ApplicationDbContext dbContext)
         CancellationToken cancellationToken = default)
     {
         await SeedSalesQuotationAsync(organizationId, environmentId, cancellationToken);
-        await SeedSourcingAsync(organizationId, environmentId, cancellationToken);
+        await SeedSourcingAsync(organizationId, environmentId, WalkthroughSeedSpec.RfqNo, WalkthroughSeedSpec.PurchasePrices, cancellationToken);
+        await SeedSourcingAsync(organizationId, environmentId, WalkthroughSeedSpec.MaterialSupplyRfqNo, WalkthroughSeedSpec.MaterialSupplyPrices, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
@@ -57,38 +58,40 @@ public sealed class WalkthroughSeedService(ApplicationDbContext dbContext)
     private async Task SeedSourcingAsync(
         string organizationId,
         string environmentId,
+        string rfqNo,
+        IReadOnlyList<WalkthroughPurchasePrice> prices,
         CancellationToken cancellationToken)
     {
-        var expectedLines = BuildRfqLines();
+        var expectedLines = BuildRfqLines(prices);
         var rfq = await dbContext.RequestForQuotations
             .Include(x => x.Lines)
             .Include(x => x.Suppliers)
             .SingleOrDefaultAsync(x =>
                 x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
-                x.RfqNo == WalkthroughSeedSpec.RfqNo,
+                x.RfqNo == rfqNo,
                 cancellationToken);
         if (rfq is null)
         {
             dbContext.RequestForQuotations.Add(RequestForQuotation.Create(
                 organizationId,
                 environmentId,
-                WalkthroughSeedSpec.RfqNo,
-                WalkthroughSeedSpec.PurchasePrices.Select(x => x.SupplierCode),
+                rfqNo,
+                prices.Select(x => x.SupplierCode).Distinct(StringComparer.Ordinal),
                 expectedLines));
         }
-        else if (rfq.Lines.Count != WalkthroughSeedSpec.PurchasePrices.Count ||
+        else if (rfq.Lines.Count != prices.Count ||
                  !rfq.Lines.OrderBy(x => x.LineNo, StringComparer.Ordinal)
                      .Select(x => new RfqLineDraft(
                          x.LineNo, x.SkuCode, x.UomCode, x.Quantity, x.SiteCode, x.RequiredDate))
                      .SequenceEqual(expectedLines.OrderBy(x => x.LineNo, StringComparer.Ordinal)) ||
                  !rfq.Suppliers.Select(x => x.SupplierCode).Order(StringComparer.Ordinal).SequenceEqual(
-                     WalkthroughSeedSpec.PurchasePrices.Select(x => x.SupplierCode).Order(StringComparer.Ordinal),
+                     prices.Select(x => x.SupplierCode).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal),
                      StringComparer.Ordinal))
         {
-            throw Collision(WalkthroughSeedSpec.RfqNo);
+            throw Collision(rfqNo);
         }
 
-        foreach (var price in WalkthroughSeedSpec.PurchasePrices)
+        foreach (var price in prices)
         {
             var existing = await dbContext.SupplierQuotations.Include(x => x.Lines).SingleOrDefaultAsync(x =>
                 x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
@@ -100,14 +103,14 @@ public sealed class WalkthroughSeedService(ApplicationDbContext dbContext)
                     organizationId,
                     environmentId,
                     price.QuotationNo,
-                    WalkthroughSeedSpec.RfqNo,
+                    rfqNo,
                     price.SupplierCode,
                     [new SupplierQuotationLineDraft("10", price.SkuCode, price.UomCode, price.Quantity, price.UnitPrice, WalkthroughSeedSpec.ValidUntil)]));
                 continue;
             }
 
             var line = existing.Lines.SingleOrDefault();
-            if (existing.RfqNo != WalkthroughSeedSpec.RfqNo || existing.SupplierCode != price.SupplierCode ||
+            if (existing.RfqNo != rfqNo || existing.SupplierCode != price.SupplierCode ||
                 line is null || line.SkuCode != price.SkuCode || line.UnitPrice != price.UnitPrice)
             {
                 throw Collision(price.QuotationNo);
@@ -115,9 +118,9 @@ public sealed class WalkthroughSeedService(ApplicationDbContext dbContext)
         }
     }
 
-    private static RfqLineDraft[] BuildRfqLines() =>
+    private static RfqLineDraft[] BuildRfqLines(IReadOnlyList<WalkthroughPurchasePrice> prices) =>
     [
-        .. WalkthroughSeedSpec.PurchasePrices.Select((price, index) => new RfqLineDraft(
+        .. prices.Select((price, index) => new RfqLineDraft(
             $"{(index + 1) * 10}", price.SkuCode, price.UomCode, price.Quantity,
             WalkthroughSeedSpec.SiteCode, WalkthroughSeedSpec.ValidUntil)),
     ];

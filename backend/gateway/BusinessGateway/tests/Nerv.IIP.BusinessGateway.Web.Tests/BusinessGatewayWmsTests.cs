@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,8 +14,253 @@ using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
-public sealed class BusinessGatewayWmsTests
+public sealed partial class BusinessGatewayWmsTests
 {
+    [Theory]
+    [InlineData(HttpStatusCode.Conflict, "wcs-retry-not-due")]
+    [InlineData(HttpStatusCode.Conflict, "wcs-retry-limit-reached")]
+    [InlineData(HttpStatusCode.Conflict, "wcs-redispatch-requires-failed-task")]
+    [InlineData(HttpStatusCode.Conflict, "wcs-device-circuit-open")]
+    [InlineData(HttpStatusCode.UnprocessableEntity, "wcs-completion-quantity-out-of-range")]
+    public async Task Wms_http_client_preserves_the_wcs_manual_action_refusal_reason(
+        HttpStatusCode status,
+        string downstreamCode)
+    {
+        // #3842：此前这两类拒绝在控制台上被说成「状态已被其他操作更新」/「服务暂时不可用」。
+        var handler = new RecordingHandler(_ =>
+            JsonResponse(status, new JsonObject { ["success"] = false, ["message"] = downstreamCode }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://wms.local") };
+        var client = new HttpBusinessWmsClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.CompleteWcsTaskAsync(
+                "internal-token-001",
+                "EXT-001",
+                new BusinessConsoleCompleteWmsWcsTaskRequest("EXT-001", "org-001", "env-dev", "{\"actualQuantity\":1}"),
+                CancellationToken.None));
+
+        Assert.Equal(status, exception.StatusCode);
+        Assert.Equal(downstreamCode, exception.Message);
+    }
+
+    [Theory]
+    [InlineData("missing-work-pool-assignment", false)]
+    [InlineData("resource-not-assigned-to-self", true)]
+    [InlineData("assignment-principal-mismatch", false)]
+    public async Task Wms_http_client_preserves_semantic_code_from_legacy_403_error_envelope(
+        string downstreamCode,
+        bool includeTransportCode)
+    {
+        var envelope = new JsonObject
+        {
+            ["success"] = false,
+            ["message"] = downstreamCode,
+        };
+        if (includeTransportCode)
+        {
+            envelope["code"] = (int)HttpStatusCode.Forbidden;
+        }
+
+        var handler = new RecordingHandler(_ =>
+            JsonResponse(HttpStatusCode.Forbidden, envelope));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://wms.local") };
+        var client = new HttpBusinessWmsClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.AssignInboundOrderAsync(
+                "internal-token-001",
+                "inbound-order-001",
+                new BusinessWmsAssignInboundOrderRequest(
+                    "inbound-order-001",
+                    "org-001",
+                    "env-dev",
+                    "user-admin",
+                    ["SITE-A"],
+                    "POOL-A",
+                    "user-admin",
+                    "assign-inbound-order-001",
+                    3),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Forbidden, exception.StatusCode);
+        Assert.Equal(downstreamCode, exception.SemanticCode);
+        Assert.Equal(downstreamCode, exception.Message);
+        Assert.Empty(exception.ErrorData);
+    }
+
+    [Theory]
+    [InlineData("Forbidden", false)]
+    [InlineData("top-secret", true)]
+    [InlineData("xxx.yyy.zzz", false)]
+    [InlineData("403.0", true)]
+    [InlineData("hello-world", false)]
+    public async Task Wms_http_client_does_not_promote_unregistered_legacy_messages(
+        string downstreamMessage,
+        bool includeTransportCode)
+    {
+        var envelope = new JsonObject
+        {
+            ["success"] = false,
+            ["message"] = downstreamMessage,
+        };
+        if (includeTransportCode)
+        {
+            envelope["code"] = (int)HttpStatusCode.Forbidden;
+        }
+
+        var handler = new RecordingHandler(_ =>
+            JsonResponse(HttpStatusCode.Forbidden, envelope));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://wms.local") };
+        var client = new HttpBusinessWmsClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.AssignInboundOrderAsync(
+                "internal-token-001",
+                "inbound-order-001",
+                new BusinessWmsAssignInboundOrderRequest(
+                    "inbound-order-001",
+                    "org-001",
+                    "env-dev",
+                    "user-admin",
+                    ["SITE-A"],
+                    "POOL-A",
+                    "user-admin",
+                    "assign-inbound-order-001",
+                    3),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Forbidden, exception.StatusCode);
+        Assert.Equal(BusinessServiceProxyException.DownstreamRequestFailedMessage, exception.SemanticCode);
+        Assert.Equal(BusinessServiceProxyException.DownstreamRequestFailedMessage, exception.Message);
+        Assert.Empty(exception.ErrorData);
+    }
+
+    [Fact]
+    public async Task Wms_assignment_public_http_preserves_semantic_code_from_downstream_403()
+    {
+        var handler = new RecordingHandler(_ =>
+            JsonResponse(
+                HttpStatusCode.Forbidden,
+                new
+                {
+                    success = false,
+                    message = "missing-work-pool-assignment",
+                }));
+        using var downstreamHttpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://wms.local"),
+        };
+        var wms = new HttpBusinessWmsClient(downstreamHttpClient);
+        var auth = ScopeAuth(
+            [BusinessGatewayPermissions.WmsReceiptsManage],
+            new AuthorizationScopeGrant(
+                "role",
+                "role-warehouse",
+                "site",
+                "SITE-A",
+                [BusinessGatewayPermissions.WmsReceiptsManage]));
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(
+                new TestInternalServiceTokenProvider("internal-wms-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/wms/inbound-orders/inbound-001/assignment?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                poolCode = "POOL-WAREHOUSE",
+                operatorPrincipalId = "user-emp-049",
+                idempotencyKey = "assign-inbound",
+                expectedVersion = 3,
+            });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            "missing-work-pool-assignment",
+            document.RootElement.GetProperty("code").GetString());
+        Assert.Equal(
+            "missing-work-pool-assignment",
+            document.RootElement.GetProperty("message").GetString());
+        Assert.Empty(document.RootElement.GetProperty("errorData").EnumerateArray());
+        var downstreamRequest = Assert.Single(handler.Requests);
+        Assert.Equal("internal-wms-token", downstreamRequest.Headers.Authorization!.Parameter);
+    }
+
+    [Theory]
+    [InlineData("eyJhbGciOiJIUzI1NiJ9.e30.x")]
+    [InlineData("TOP-SECRET")]
+    [InlineData("sk_live_51H8ExampleApiKey")]
+    [InlineData("AKIAIOSFODNN7EXAMPLE")]
+    public async Task Wms_assignment_public_http_redacts_untrusted_message_with_valid_semantic_code(
+        string downstreamMessage)
+    {
+        var handler = new RecordingHandler(_ =>
+            JsonResponse(
+                HttpStatusCode.InternalServerError,
+                new
+                {
+                    success = false,
+                    message = downstreamMessage,
+                    code = "downstream-internal-error",
+                    data = new
+                    {
+                        field = "poolCode",
+                        reason = "assignment-required",
+                        detail = downstreamMessage,
+                    },
+                }));
+        using var downstreamHttpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://wms.local"),
+        };
+        var wms = new HttpBusinessWmsClient(downstreamHttpClient);
+        var auth = ScopeAuth(
+            [BusinessGatewayPermissions.WmsReceiptsManage],
+            new AuthorizationScopeGrant(
+                "role",
+                "role-warehouse",
+                "site",
+                "SITE-A",
+                [BusinessGatewayPermissions.WmsReceiptsManage]));
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/wms/inbound-orders/inbound-001/assignment?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                poolCode = "POOL-WAREHOUSE",
+                operatorPrincipalId = "user-emp-049",
+                idempotencyKey = "assign-inbound",
+                expectedVersion = 3,
+            });
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal("downstream-internal-error", document.RootElement.GetProperty("code").GetString());
+        Assert.Equal(
+            BusinessServiceProxyException.DownstreamRequestFailedMessage,
+            document.RootElement.GetProperty("message").GetString());
+        var errorData = Assert.Single(document.RootElement.GetProperty("errorData").EnumerateArray());
+        Assert.Equal("poolCode", errorData.GetProperty("field").GetString());
+        Assert.Equal("assignment-required", errorData.GetProperty("reason").GetString());
+        Assert.False(errorData.TryGetProperty("detail", out _));
+        Assert.DoesNotContain(downstreamMessage, body, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Wms_http_client_forwards_operational_candidate_filters_and_trusted_context()
     {
@@ -518,7 +764,7 @@ public sealed class BusinessGatewayWmsTests
         {
             organizationId = "org-001",
             environmentId = "env-dev",
-            inboundOrderNo = "IN-NEW",
+            idempotencyKey = "IN-NEW",
             sourceDocumentType = "purchase-receipt",
             sourceDocumentId = "PR-001",
             siteCode = "S1",
@@ -543,7 +789,7 @@ public sealed class BusinessGatewayWmsTests
         });
         var putaway = await client.PostAsJsonAsync("/api/business-console/v1/wms/inbound-orders/inbound-order-001/putaway-tasks?organizationId=org-001&environmentId=env-dev", new
         {
-            taskNo = "PUT-001",
+            idempotencyKey = "PUT-001",
             lineNo = "10",
             fromLocationCode = "STAGE-01",
             toLocationCode = "BIN-01",
@@ -570,7 +816,7 @@ public sealed class BusinessGatewayWmsTests
         {
             organizationId = "org-001",
             environmentId = "env-dev",
-            countNo = "COUNT-001",
+            idempotencyKey = "COUNT-001",
             skuCode = "SKU-001",
             uomCode = "EA",
             siteCode = "S1",
@@ -604,7 +850,7 @@ public sealed class BusinessGatewayWmsTests
             auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
         Assert.Equal(["create-inbound", "create-putaway", "complete-inbound", "create-count", "complete-count"], wms.Calls);
         Assert.Equal("internal-test-token", wms.LastInternalToken);
-        Assert.Equal("IN-NEW", wms.LastCreateInboundRequest!.InboundOrderNo);
+        Assert.Equal("IN-NEW", wms.LastCreateInboundRequest!.IdempotencyKey);
         var createInboundLine = Assert.Single(wms.LastCreateInboundRequest.Lines);
         Assert.Equal(new DateOnly(2026, 1, 15), createInboundLine.ProductionDate);
         Assert.Equal(new DateOnly(2027, 1, 15), createInboundLine.ExpiryDate);
@@ -621,7 +867,7 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal("LOT-CAPTURED-001", completeInboundLine.LotNo);
         Assert.Equal(new DateOnly(2026, 1, 16), completeInboundLine.ProductionDate);
         Assert.Equal(new DateOnly(2027, 1, 16), completeInboundLine.ExpiryDate);
-        Assert.Equal("COUNT-001", wms.LastCreateCountRequest!.CountNo);
+        Assert.Equal("COUNT-001", wms.LastCreateCountRequest!.IdempotencyKey);
         Assert.Equal("count-execution-001", wms.LastCompleteCountRequest!.CountExecutionId);
         Assert.Equal("user-admin", wms.LastCompleteCountRequest.ActorPrincipalId);
         Assert.Equal(["S1"], wms.LastCompleteCountRequest.AuthorizedSiteCodes);
@@ -649,7 +895,7 @@ public sealed class BusinessGatewayWmsTests
             {
                 organizationId = "org-001",
                 environmentId = "env-dev",
-                countNo = "COUNT-001",
+                idempotencyKey = "COUNT-001",
                 skuCode = "SKU-001",
                 uomCode = "EA",
                 siteCode = "S1",
@@ -709,7 +955,7 @@ public sealed class BusinessGatewayWmsTests
             {
                 organizationId = "org-001",
                 environmentId = "env-dev",
-                countNo = "COUNT-001",
+                idempotencyKey = "COUNT-001",
                 skuCode = "SKU-001",
                 uomCode = "EA",
                 siteCode = "S1",
@@ -769,7 +1015,7 @@ public sealed class BusinessGatewayWmsTests
         {
             organizationId = "org-001",
             environmentId = "env-dev",
-            outboundOrderNo = "OUT-NEW",
+            idempotencyKey = "OUT-NEW",
             sourceDocumentType = "sales-shipment",
             sourceDocumentId = "SO-001",
             siteCode = "S1",
@@ -792,7 +1038,7 @@ public sealed class BusinessGatewayWmsTests
         });
         var picking = await client.PostAsJsonAsync("/api/business-console/v1/wms/outbound-orders/outbound-order-001/picking-tasks?organizationId=org-001&environmentId=env-dev", new
         {
-            taskNo = "PICK-001",
+            idempotencyKey = "PICK-001",
             lineNo = "10",
             fromLocationCode = "BIN-01",
             toLocationCode = "SHIP-01",
@@ -800,7 +1046,6 @@ public sealed class BusinessGatewayWmsTests
         });
         var completeOutbound = await client.PostAsJsonAsync("/api/business-console/v1/wms/outbound-orders/outbound-order-001/complete?organizationId=org-001&environmentId=env-dev", new
         {
-            packReviewNo = "PACK-001",
             passed = true,
             idempotencyKey = "complete-out-001",
             expectedVersion = 3,
@@ -819,7 +1064,7 @@ public sealed class BusinessGatewayWmsTests
         Assert.All(auth.Requirements, requirement => Assert.Equal(BusinessGatewayPermissions.WmsShipmentsManage, requirement.PermissionCode));
         Assert.Equal(["create-outbound", "create-picking", "complete-outbound", "retry-outbound"], wms.Calls);
         Assert.Equal("internal-test-token", wms.LastInternalToken);
-        Assert.Equal("OUT-NEW", wms.LastCreateOutboundRequest!.OutboundOrderNo);
+        Assert.Equal("OUT-NEW", wms.LastCreateOutboundRequest!.IdempotencyKey);
         Assert.Equal("outbound-order-001", wms.LastCreatePickingRequest!.OutboundOrderId);
         Assert.Equal("outbound-order-001", wms.LastCompleteOutboundRequest!.OutboundOrderId);
         Assert.Equal("user-admin", wms.LastCompleteOutboundRequest.ActorPrincipalId);
@@ -831,6 +1076,24 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal("retry-out-001", wms.LastRetryOutboundRequest.IdempotencyKey);
     }
 
+    /// <summary>
+    /// WCS 写门面：域权限、内部服务令牌与路由 id，**并拒绝 dispatch 的 expectedVersion = 0**（#3336）。
+    /// </summary>
+    /// <remarks>
+    /// 名字里的第四段是 #3336 追加的。这一处的下游权威**不是** FluentValidation：
+    /// <c>DispatchWcsTaskCommand</c> 没有校验器。<c>DispatchWcsTaskCommandHandler</c> 里
+    /// 与该字段相关的出口有四个，**只有两个消费它**——新建走
+    /// <c>ClaimWcsExecution(_, ExpectedVersion)</c>、<c>Failed</c> 重试走
+    /// <c>ValidateWcsExecution</c> 的**双参**重载，两者都落到
+    /// <c>WarehouseTask.EnsureExpectedVersion</c> 的相等判定（<c>Version</c> 从 1 起且只增），
+    /// 0 永远匹配不上；另两个出口不看该字段（幂等重放走**单参**重载、已有非 <c>Failed</c> 任务直接 409）。
+    /// 网关此前写 <c>GreaterThanOrEqualTo(0)</c>，放行的是**在消费该字段的两条路径上**必被拒绝的值。
+    /// **直接承担这条规则的是那条 <c>BadRequest</c> 断言**（M5 实测：回退这一条，它先红）。
+    /// 那次 400 仍然必须留在 <c>wms.Calls</c> 这条**闭集**断言之前：那是第二道网——若状态码断言
+    /// 日后被放宽或删掉，被放行的请求会被转发，<c>Calls</c> 多一次 <c>dispatch-wcs</c>，
+    /// 且 <c>LastDispatchWcsRequest</c> 会被 0 覆盖，末尾那条
+    /// <c>Assert.Equal(3, ...ExpectedVersion)</c> 一起接住。不要把它挪到闭集断言之后。
+    /// </remarks>
     [Fact]
     public async Task Wcs_write_facades_use_automation_permission_internal_token_and_route_ids()
     {
@@ -846,12 +1109,12 @@ public sealed class BusinessGatewayWmsTests
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
+        // 控制台「确认重新下发」不带派发内容：网关原样不带，由 WMS 沿用已存的原报文。
         var dispatch = await client.PostAsJsonAsync("/api/business-console/v1/wms/wcs-tasks/warehouse-task-001/dispatch?organizationId=org-001&environmentId=env-dev", new
         {
             expectedVersion = 3,
             adapterType = "agv",
             externalTaskId = "EXT-001",
-            payloadJson = "{}",
         });
         var fail = await client.PostAsJsonAsync("/api/business-console/v1/wms/wcs-tasks/EXT-001/fail?organizationId=org-001&environmentId=env-dev", new
         {
@@ -867,14 +1130,111 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(HttpStatusCode.OK, fail.StatusCode);
         Assert.Equal(HttpStatusCode.OK, complete.StatusCode);
         Assert.All(auth.Requirements, requirement => Assert.Equal(BusinessGatewayPermissions.WmsAutomationManage, requirement.PermissionCode));
+
+        // #3336：除 expectedVersion 外与上面通过的那次 dispatch 逐字相同，所以 400 只可能来自这一条规则。
+        var rejectedZeroVersion = await client.PostAsJsonAsync("/api/business-console/v1/wms/wcs-tasks/warehouse-task-001/dispatch?organizationId=org-001&environmentId=env-dev", new
+        {
+            expectedVersion = 0,
+            adapterType = "agv",
+            externalTaskId = "EXT-001",
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, rejectedZeroVersion.StatusCode);
+
         Assert.Equal(["dispatch-wcs", "fail-wcs", "complete-wcs"], wms.Calls);
         Assert.Equal("internal-test-token", wms.LastInternalToken);
         Assert.Equal("warehouse-task-001", wms.LastDispatchWcsRequest!.WarehouseTaskId);
         Assert.Equal("user-admin", wms.LastDispatchWcsRequest.DispatcherPrincipalId);
         Assert.Equal(["S1"], wms.LastDispatchWcsRequest.AuthorizedSiteCodes);
         Assert.Equal(3, wms.LastDispatchWcsRequest.ExpectedVersion);
+        Assert.Null(wms.LastDispatchWcsRequest.PayloadJson);
         Assert.Equal("EXT-001", wms.LastFailWcsRequest!.ExternalTaskId);
         Assert.Equal("EXT-001", wms.LastCompleteWcsRequest!.ExternalTaskId);
+    }
+
+    [Theory]
+    [InlineData("GET", "/api/business-console/v1/wms/work-pools?organizationId=org-001&environmentId=env-dev", "list-work-pools")]
+    [InlineData("POST", "/api/business-console/v1/wms/work-pools?organizationId=org-001&environmentId=env-dev", "provision-work-pool")]
+    [InlineData("POST", "/api/business-console/v1/wms/work-pools/WP-0001/members?organizationId=org-001&environmentId=env-dev", "add-work-pool-member")]
+    [InlineData("POST", "/api/business-console/v1/wms/work-pools/WP-0001/members/EMP-0001/remove?organizationId=org-001&environmentId=env-dev", "remove-work-pool-member")]
+    public async Task Wms_work_pool_facades_require_the_work_pool_manage_permission(
+        string method,
+        string path,
+        string expectedCall)
+    {
+        var body = new { displayName = "收货组", siteCode = "S1", idempotencyKey = "pool-intent-001", principalId = "EMP-0001" };
+
+        async Task<(HttpStatusCode Status, RecordingWmsClient Wms, FakeBusinessGatewayAuthorizationClient Auth)> CallAsync(string grantedPermission)
+        {
+            var wms = new RecordingWmsClient();
+            var auth = OrganizationScopeAuth(grantedPermission);
+            await using var lease = LeaseHost(auth, services =>
+            {
+                services.RemoveAll<IBusinessWmsClient>();
+                services.AddSingleton<IBusinessWmsClient>(wms);
+                services.RemoveAll<IInternalServiceTokenProvider>();
+                services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+            });
+            var client = lease.CreateClient();
+            BusinessGatewayTestHost.Authenticated(client);
+            var response = method == "GET"
+                ? await client.GetAsync(path)
+                : await client.PostAsJsonAsync(path, body);
+            return (response.StatusCode, wms, auth);
+        }
+
+        var granted = await CallAsync(BusinessGatewayPermissions.WmsWorkPoolsManage);
+        var denied = await CallAsync(BusinessGatewayPermissions.WmsReceiptsManage);
+
+        Assert.Equal(HttpStatusCode.OK, granted.Status);
+        Assert.Equal([expectedCall], granted.Wms.Calls);
+        Assert.All(granted.Auth.Requirements, requirement =>
+            Assert.Equal(BusinessGatewayPermissions.WmsWorkPoolsManage, requirement.PermissionCode));
+        Assert.Equal(HttpStatusCode.Forbidden, denied.Status);
+        Assert.Empty(denied.Wms.Calls);
+    }
+
+    [Fact]
+    public async Task Wms_work_pool_creation_forwards_trusted_principal_and_sites_and_never_a_client_pool_code()
+    {
+        var wms = new RecordingWmsClient();
+        var auth = ScopeAuth(
+            [BusinessGatewayPermissions.WmsWorkPoolsManage],
+            new AuthorizationScopeGrant(
+                "role",
+                "role-warehouse-supervisor",
+                "site",
+                "SITE-A",
+                [BusinessGatewayPermissions.WmsWorkPoolsManage]));
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(
+                new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/wms/work-pools?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                poolCode = "HAND-TYPED",
+                displayName = "收货组",
+                siteCode = "SITE-A",
+                idempotencyKey = "create-pool-001",
+                actorPrincipalId = "forged",
+                authorizedSiteCodes = new[] { "FORGED-SITE" },
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var forwarded = wms.LastProvisionWorkPoolRequest!;
+        Assert.Null(forwarded.PoolCode);
+        Assert.Equal("user-admin", forwarded.ActorPrincipalId);
+        Assert.Equal(["SITE-A"], forwarded.AuthorizedSiteCodes);
+        Assert.Equal("create-pool-001", forwarded.IdempotencyKey);
+        Assert.Equal("internal-test-token", wms.LastInternalToken);
     }
 
     [Fact]
@@ -1132,8 +1492,24 @@ public sealed class BusinessGatewayWmsTests
         Assert.Null(wms.LastWorkScopeCatalogRequest);
     }
 
+    /// <summary>
+    /// 分配门面：注入可信 assigner 与站点、按路由分派资源 id，**并拒绝 expectedVersion = 0**（#3326）。
+    /// </summary>
+    /// <remarks>
+    /// 名字里的第三段是 #3326 追加的：网关端点级 <c>ExpectedVersion</c> 规则曾写
+    /// <c>GreaterThanOrEqualTo(0)</c>，而下游 5 条分配命令一律 <c>GreaterThan(0)</c>。
+    /// 该断言故意放在 <c>wms.Calls</c> 这条**闭集**断言之前：规则一旦被放宽，
+    /// 那次请求会被转发，<c>Calls</c> 多一项，两条断言一起红。
+    /// 改动本用例时不要把那次 400 请求挪到闭集断言之后。
+    /// <para><b>#3330 起 <c>auth.Requirements</c> 换了鉴别对象，不是失去了鉴别力</b>：
+    /// 鉴权已前移到 DTO 校验之前，那次被 400 拒掉的请求同样会走一次鉴权，
+    /// 所以 <c>Requirements</c> 里恒定多出一项 <c>WmsReceiptsManage</c>。
+    /// 这一项现在钉的是「<b>鉴权先于校验</b>」——把鉴权挪回 <c>HandleAsync</c> 体内，
+    /// 这条闭集立刻转红（#3330 的 M1 变异实测）。**因此它不是冗余断言，不要删。**
+    /// 换过去之后，承担 <c>ExpectedVersion</c> 那条规则的是 <c>wms.Calls</c>。</para>
+    /// </remarks>
     [Fact]
-    public async Task Wms_assignment_facades_inject_trusted_assigner_sites_and_route_resource_ids()
+    public async Task Wms_assignment_facades_inject_trusted_assigner_sites_route_resource_ids_and_reject_a_zero_expected_version()
     {
         var wms = new RecordingWmsClient();
         var auth = ScopeAuth(
@@ -1205,11 +1581,32 @@ public sealed class BusinessGatewayWmsTests
                 });
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(JsonValueKind.Number, document.RootElement.GetProperty("code").ValueKind);
             AssertTrustedAssignment(
                 wms.LastAssignmentRequest!,
                 resourceId,
                 idempotencyKey);
         }
+
+        // #3326：下游 5 条分配命令一律 GreaterThan(0)（WarehouseAssignmentValidation.Configure），
+        // 领域 Version 从 1 起且只增，0 不是合法的乐观并发版本。网关此前写 GreaterThanOrEqualTo(0)，
+        // 会把一个下游必然拒绝的值放行出去。除 expectedVersion 外的字段与上面通过的场景逐字相同，
+        // 所以 400 只可能来自这一条规则；下面两条集合断言同时证明它在转发与鉴权之前就被拒。
+        var rejectedZeroVersion = await client.PostAsJsonAsync(
+            "/api/business-console/v1/wms/inbound-orders/inbound-001/assignment"
+            + "?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                inboundOrderId = "forged-resource",
+                poolCode = "POOL-WAREHOUSE",
+                operatorPrincipalId = "user-emp-049",
+                idempotencyKey = "assign-inbound-zero-version",
+                expectedVersion = 0,
+                assignerPrincipalId = "forged-principal",
+                authorizedSiteCodes = new[] { "FORGED-SITE" },
+            });
+        Assert.Equal(HttpStatusCode.BadRequest, rejectedZeroVersion.StatusCode);
 
         Assert.Equal(
             [
@@ -1227,6 +1624,8 @@ public sealed class BusinessGatewayWmsTests
                 BusinessGatewayPermissions.WmsShipmentsManage,
                 BusinessGatewayPermissions.WmsShipmentsManage,
                 BusinessGatewayPermissions.InventoryCountsManage,
+                // #3330：expectedVersion = 0 那次请求先鉴权、后被端点级规则拒成 400。
+                BusinessGatewayPermissions.WmsReceiptsManage,
             ],
             auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
         Assert.All(auth.Requirements, requirement => Assert.True(requirement.IncludePrincipalContext));
@@ -1237,6 +1636,8 @@ public sealed class BusinessGatewayWmsTests
     }
 
     [Theory]
+    [InlineData(HttpStatusCode.BadRequest, "invalid-assignment")]
+    [InlineData(HttpStatusCode.Forbidden, "missing-work-pool-assignment")]
     [InlineData(HttpStatusCode.Conflict, "stale-version")]
     [InlineData(HttpStatusCode.UnprocessableEntity, "assignment-target-invalid")]
     public async Task Wms_assignment_facade_preserves_governed_downstream_failure(
@@ -1246,9 +1647,29 @@ public sealed class BusinessGatewayWmsTests
         var wms = new RecordingWmsClient
         {
             AssignmentFailure =
-                BusinessServiceProxyException.FromSafeDownstreamMessage(
-                    statusCode,
-                    safeCode),
+                statusCode == HttpStatusCode.BadRequest
+                    ? BusinessServiceProxyException.FromDownstreamBusinessMessage(safeCode)
+                    : BusinessServiceProxyException.FromDownstreamError(
+                        statusCode,
+                        safeCode,
+                        safeCode,
+                        [
+                            JsonSerializer.SerializeToElement(new
+                            {
+                                field = "poolCode",
+                                reason = "assignment-required",
+                                token = "top-secret",
+                                detail = "internal-detail",
+                                pin = "7314",
+                                actorId = "user-admin",
+                            }),
+                            JsonSerializer.SerializeToElement(new
+                            {
+                                field = "actorId",
+                                reason = "top-secret",
+                            }),
+                        ],
+                        allowMessageAsSemanticCode: false),
         };
         var auth = ScopeAuth(
             [BusinessGatewayPermissions.WmsReceiptsManage],
@@ -1279,6 +1700,32 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(statusCode, response.StatusCode);
         using var document = JsonDocument.Parse(
             await response.Content.ReadAsStringAsync());
+        var code = document.RootElement.GetProperty("code");
+        if (statusCode == HttpStatusCode.BadRequest)
+        {
+            Assert.Equal(JsonValueKind.Number, code.ValueKind);
+            Assert.Equal((int)statusCode, code.GetInt32());
+            Assert.Empty(document.RootElement.GetProperty("errorData").EnumerateArray());
+        }
+        else
+        {
+            Assert.Equal(safeCode, code.GetString());
+            var errorData = Assert.Single(
+                document.RootElement.GetProperty("errorData").EnumerateArray());
+            Assert.Equal("poolCode", errorData.GetProperty("field").GetString());
+            Assert.Equal("assignment-required", errorData.GetProperty("reason").GetString());
+            Assert.False(errorData.TryGetProperty("token", out _));
+            Assert.False(errorData.TryGetProperty("detail", out _));
+            Assert.False(errorData.TryGetProperty("pin", out _));
+            Assert.False(errorData.TryGetProperty("actorId", out _));
+            Assert.DoesNotContain(
+                "top-secret",
+                errorData.GetRawText(),
+                StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("internal-detail", errorData.GetRawText(), StringComparison.Ordinal);
+            Assert.DoesNotContain("7314", errorData.GetRawText(), StringComparison.Ordinal);
+            Assert.DoesNotContain("user-admin", errorData.GetRawText(), StringComparison.Ordinal);
+        }
         Assert.Equal(safeCode, document.RootElement.GetProperty("message").GetString());
     }
 
@@ -2113,6 +2560,22 @@ public sealed class BusinessGatewayWmsTests
         Assert.Null(wms.LastPutawayTaskRequest);
     }
 
+    /// <summary>
+    /// 工序动作门面：逐条透出可信 actor 与作业范围，**并拒绝 expectedVersion = 0**（#3336）。
+    /// </summary>
+    /// <remarks>
+    /// 名字里的第二段是 #3336 追加的：四条网关端点级 <c>ExpectedVersion</c> 规则曾写
+    /// <c>GreaterThanOrEqualTo(0)</c>，而下游共享入口
+    /// <c>WarehouseTaskActionValidation.Configure</c> 写 <c>GreaterThan(0)</c>
+    /// （领域 <c>WarehouseTask.Version</c> 从 1 起且只增）。
+    /// **直接承担这四条规则的是那四条 <c>BadRequest</c> 断言**（M1-M4 实测：回退任一条，
+    /// 对应那行先红，闭集断言根本走不到）。四次 400 仍然必须留在 <c>wms.Calls</c> 这条**闭集**断言
+    /// 之前：那是第二道网——若日后有人把状态码断言放宽或删掉，被放行的请求会被转发，
+    /// <c>Calls</c> 多一项，闭集接住。挪到闭集之后就同时拆掉这道网。
+    /// <para><b><c>auth.Requirements</c> 里因此恒定多出四项 <c>WmsReceiptsManage</c></b>：
+    /// #3330 起鉴权前移到 DTO 校验之前（<c>AuthorizedBusinessProxyEndpoint.OnBeforeValidateAsync</c>），
+    /// 被 400 拒掉的请求同样会走一次鉴权。这四项钉的是「鉴权先于校验」，不是 <c>ExpectedVersion</c>。</para>
+    /// </remarks>
     [Fact]
     public async Task Wms_manual_actions_attest_actor_and_scope_for_all_putaway_and_picking_transitions()
     {
@@ -2167,6 +2630,22 @@ public sealed class BusinessGatewayWmsTests
         Assert.Equal(HttpStatusCode.OK, pickingComplete.StatusCode);
         AssertTaskScope(wms.LastCompleteTaskRequest!, "picking-001", "site", "SITE-A");
 
+        // #3336：四条动作规则各自的隔离位点。除 expectedVersion 外与上面 putaway 那四次逐字相同
+        // （同一 taskKind、同一 scope），所以 400 只可能来自被点名的那一条规则。
+        // 四次刻意**不**写成循环：回退任一条规则时，失败行号直接点出是哪一条。
+        var startZeroVersion = await PostTaskActionAsync(
+            client, "putaway", "putaway-001", "start", "work-pool", "POOL-A", expectedVersion: 0);
+        Assert.Equal(HttpStatusCode.BadRequest, startZeroVersion.StatusCode);
+        var progressZeroVersion = await PostTaskActionAsync(
+            client, "putaway", "putaway-001", "progress", "work-pool", "POOL-A", expectedVersion: 0);
+        Assert.Equal(HttpStatusCode.BadRequest, progressZeroVersion.StatusCode);
+        var exceptionZeroVersion = await PostTaskActionAsync(
+            client, "putaway", "putaway-001", "exception", "work-pool", "POOL-A", expectedVersion: 0);
+        Assert.Equal(HttpStatusCode.BadRequest, exceptionZeroVersion.StatusCode);
+        var completeZeroVersion = await PostTaskActionAsync(
+            client, "putaway", "putaway-001", "complete", "work-pool", "POOL-A", expectedVersion: 0);
+        Assert.Equal(HttpStatusCode.BadRequest, completeZeroVersion.StatusCode);
+
         Assert.Equal(
             [
                 "start-putaway",
@@ -2190,6 +2669,11 @@ public sealed class BusinessGatewayWmsTests
                 BusinessGatewayPermissions.WmsShipmentsManage,
                 BusinessGatewayPermissions.WmsShipmentsManage,
                 BusinessGatewayPermissions.WmsShipmentsManage,
+                // #3330/#3336：四次 expectedVersion = 0 的 putaway 请求先鉴权、后被端点级规则拒成 400。
+                BusinessGatewayPermissions.WmsReceiptsManage,
+                BusinessGatewayPermissions.WmsReceiptsManage,
+                BusinessGatewayPermissions.WmsReceiptsManage,
+                BusinessGatewayPermissions.WmsReceiptsManage,
             ],
             auth.Requirements.Select(requirement => requirement.PermissionCode).ToArray());
         Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
@@ -2265,7 +2749,8 @@ public sealed class BusinessGatewayWmsTests
         string warehouseTaskId,
         string action,
         string scopeKind,
-        string scopeId)
+        string scopeId,
+        long expectedVersion = 3)
     {
         object body = action switch
         {
@@ -2273,7 +2758,7 @@ public sealed class BusinessGatewayWmsTests
             {
                 warehouseTaskId = "forged-task-id",
                 idempotencyKey = $"idem-{taskKind}-{action}",
-                expectedVersion = 3,
+                expectedVersion,
                 actorUserId = "forged-user",
                 authorizedTeamIds = new[] { "forged-team" },
                 authorizedSiteCodes = new[] { "forged-site" },
@@ -2283,7 +2768,7 @@ public sealed class BusinessGatewayWmsTests
             {
                 warehouseTaskId = "forged-task-id",
                 idempotencyKey = $"idem-{taskKind}-{action}",
-                expectedVersion = 3,
+                expectedVersion,
                 executedQuantity = 2m,
                 actorUserId = "forged-user",
                 authorizedTeamIds = new[] { "forged-team" },
@@ -2294,7 +2779,7 @@ public sealed class BusinessGatewayWmsTests
             {
                 warehouseTaskId = "forged-task-id",
                 idempotencyKey = $"idem-{taskKind}-{action}",
-                expectedVersion = 3,
+                expectedVersion,
                 exceptionCode = "LOCATION_BLOCKED",
                 reason = "Location is blocked.",
                 actorUserId = "forged-user",
@@ -2306,7 +2791,7 @@ public sealed class BusinessGatewayWmsTests
             {
                 warehouseTaskId = "forged-task-id",
                 idempotencyKey = $"idem-{taskKind}-{action}",
-                expectedVersion = 3,
+                expectedVersion,
                 executedQuantity = 2m,
                 differenceReason = "Verified difference.",
                 actorUserId = "forged-user",
@@ -2537,14 +3022,14 @@ public sealed class BusinessGatewayWmsTests
         new(
             "org-001",
             "env-dev",
-            "IN-001",
             "purchase-receipt",
             "PR-001",
             "S1",
-            [new("10", "SKU-001", "EA", 1, "STAGE-01", "LOT-001", null, "qualified", "company", null, new DateOnly(2026, 1, 15), new DateOnly(2027, 1, 15))]);
+            [new("10", "SKU-001", "EA", 1, "STAGE-01", "LOT-001", null, "qualified", "company", null, new DateOnly(2026, 1, 15), new DateOnly(2027, 1, 15))],
+            "create-in-001");
 
     private static BusinessConsoleCreateWmsPutawayTaskRequest ValidPutawayRequest() =>
-        new("inbound-order-001", "org-001", "env-dev", "PUT-001", "10", "STAGE-01", "BIN-01", 1);
+        new("inbound-order-001", "org-001", "env-dev", "10", "STAGE-01", "BIN-01", 1, "create-put-001");
 
     private static BusinessWmsCompleteInboundOrderRequest ValidCompleteInboundRequest() =>
         new(
@@ -2563,14 +3048,14 @@ public sealed class BusinessGatewayWmsTests
         new(
             "org-001",
             "env-dev",
-            "OUT-001",
             "sales-shipment",
             "SO-001",
             "S1",
-            [new("10", "SKU-001", "EA", 1, "BIN-01", "LOT-001", null, "qualified", "company", null)]);
+            [new("10", "SKU-001", "EA", 1, "BIN-01", "LOT-001", null, "qualified", "company", null)],
+            "create-out-001");
 
     private static BusinessConsoleCreateWmsPickingTaskRequest ValidPickingRequest() =>
-        new("outbound-order-001", "org-001", "env-dev", "PICK-001", "10", "BIN-01", "SHIP-01", 1);
+        new("outbound-order-001", "org-001", "env-dev", "10", "BIN-01", "SHIP-01", 1, "create-pick-001");
 
     private static BusinessWmsCompleteOutboundOrderRequest ValidCompleteOutboundRequest() =>
         new(
@@ -2582,7 +3067,6 @@ public sealed class BusinessGatewayWmsTests
             "work-pool",
             "POOL-A",
             1,
-            "PACK-001",
             true,
             "complete-out-001");
 
@@ -2590,7 +3074,7 @@ public sealed class BusinessGatewayWmsTests
         new("outbound-order-001", "org-001", "env-dev", "retry-out-001");
 
     private static BusinessConsoleCreateWmsCountExecutionRequest ValidCreateCountRequest() =>
-        new("org-001", "env-dev", "COUNT-001", "SKU-001", "EA", "S1", "BIN-01", 1);
+        new("org-001", "env-dev", "SKU-001", "EA", "S1", "BIN-01", 1, "create-count-001");
 
     private static BusinessWmsCompleteCountExecutionRequest ValidCompleteCountRequest() =>
         new(
@@ -2778,6 +3262,48 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
     public BusinessConsoleFailWmsWcsTaskRequest? LastFailWcsRequest { get; private set; }
 
     public BusinessConsoleCompleteWmsWcsTaskRequest? LastCompleteWcsRequest { get; private set; }
+
+    public BusinessWmsProvisionWorkPoolRequest? LastProvisionWorkPoolRequest { get; private set; }
+
+    public Task<BusinessConsoleWmsWorkPoolListResponse> ListWorkPoolsAsync(
+        string internalBearerToken,
+        BusinessWmsWorkScopeCatalogRequest request,
+        CancellationToken cancellationToken)
+    {
+        Calls.Add("list-work-pools");
+        LastInternalToken = internalBearerToken;
+        LastWorkScopeCatalogRequest = request;
+        return Task.FromResult(new BusinessConsoleWmsWorkPoolListResponse([]));
+    }
+
+    public Task<BusinessConsoleWmsWorkPoolResult> ProvisionWorkPoolAsync(
+        string internalBearerToken,
+        BusinessWmsProvisionWorkPoolRequest request,
+        CancellationToken cancellationToken)
+    {
+        Calls.Add("provision-work-pool");
+        LastInternalToken = internalBearerToken;
+        LastProvisionWorkPoolRequest = request;
+        return Task.FromResult(new BusinessConsoleWmsWorkPoolResult("WP-0001", request.DisplayName, request.SiteCode, true, true));
+    }
+
+    public Task<BusinessConsoleWmsWorkPoolMemberResult> AddWorkPoolMemberAsync(
+        string internalBearerToken,
+        BusinessWmsAddWorkPoolMemberRequest request,
+        CancellationToken cancellationToken)
+    {
+        Calls.Add("add-work-pool-member");
+        return Task.FromResult(new BusinessConsoleWmsWorkPoolMemberResult(request.PoolCode, request.PrincipalId, DateTime.UtcNow, null, true));
+    }
+
+    public Task<BusinessConsoleWmsWorkPoolMemberRemovalResult> RemoveWorkPoolMemberAsync(
+        string internalBearerToken,
+        BusinessWmsRemoveWorkPoolMemberRequest request,
+        CancellationToken cancellationToken)
+    {
+        Calls.Add("remove-work-pool-member");
+        return Task.FromResult(new BusinessConsoleWmsWorkPoolMemberRemovalResult(request.PoolCode, request.PrincipalId, 1));
+    }
 
     public Task<BusinessConsoleWmsWorkScopeCatalog> GetReceiptWorkScopesAsync(
         string internalBearerToken,
@@ -3248,7 +3774,10 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
                 null,
                 DateTime.Parse("2026-06-01T10:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal),
                 null,
-                null),
+                null,
+                3,
+                10m,
+                4m),
         ],
         14));
     }

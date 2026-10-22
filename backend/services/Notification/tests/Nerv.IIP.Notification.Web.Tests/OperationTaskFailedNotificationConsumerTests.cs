@@ -1,7 +1,10 @@
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Nerv.IIP.Notification.Web.Application.Queries.Notifications;
 using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Ops;
@@ -422,11 +425,46 @@ public sealed class OperationTaskFailedNotificationConsumerTests
         Assert.Equal(NotificationContractConstants.SeverityWarning, intent.Severity);
         Assert.Equal("schedule-plan", intent.ResourceType);
         Assert.Equal("plan-001", intent.ResourceId);
-        Assert.Equal("role:scheduler", Assert.Single(intent.Messages).RecipientRef);
-        Assert.Single(intent.Tasks);
+        Assert.Equal(["user:planner-a", "user:planner-b"], intent.Messages.Select(x => x.RecipientRef).Order(StringComparer.Ordinal));
+        Assert.Equal(2, intent.Tasks.Count);
+        Assert.Equal("排产方案已失效", intent.Title);
+        Assert.Equal("排产方案 plan-001 因 equipmentUnavailable 失效；影响 1 道工序，资源：DEV-OIL-01。", intent.Summary);
+        var messages = new ListNotificationMessagesQueryHandler(dbContext);
+        var tasks = new ListNotificationTasksQueryHandler(dbContext);
+        foreach (var recipient in new[] { "user:planner-a", "user:planner-b" })
+        {
+            var message = Assert.Single((await messages.Handle(
+                new ListNotificationMessagesQuery("org-001", "env-001", recipient, null), CancellationToken.None)).Items);
+            Assert.Equal(intent.Title, message.Title);
+            Assert.Equal(intent.Summary, message.Summary);
+            Assert.Single((await tasks.Handle(
+                new ListNotificationTasksQuery("org-001", "env-001", recipient, null), CancellationToken.None)).Items);
+            Assert.Empty((await messages.Handle(
+                new ListNotificationMessagesQuery("org-other", "env-001", recipient, null), CancellationToken.None)).Items);
+            Assert.Empty((await messages.Handle(
+                new ListNotificationMessagesQuery("org-001", "env-other", recipient, null), CancellationToken.None)).Items);
+        }
+        Assert.Empty((await messages.Handle(
+            new ListNotificationMessagesQuery("org-001", "env-001", "user:non-member", null), CancellationToken.None)).Items);
         Assert.Contains("equipmentUnavailable", intent.Summary, StringComparison.Ordinal);
         Assert.Equal(SchedulePlanInvalidatedIntegrationEventHandlerForNotification.ConsumerName, processed.ConsumerName);
         Assert.Equal("scheduling-invalidated:plan-001:maintenance-event-001", processed.IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task Handle_schedule_plan_invalidated_without_planners_records_event_without_orphan_notification()
+    {
+        using var factory = new NotificationConsumerWebApplicationFactory(plannerIds: []);
+        var integrationEvent = CreateSchedulePlanInvalidatedEvent("event-no-planners", "invalidation-no-planners");
+        await HandleSchedulePlanInvalidatedAsync(factory, integrationEvent);
+        await HandleSchedulePlanInvalidatedAsync(factory, integrationEvent);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Empty(await db.NotificationIntents.ToListAsync());
+        Assert.Empty(await db.NotificationMessages.ToListAsync());
+        Assert.Empty(await db.NotificationTasks.ToListAsync());
+        Assert.Single(await db.ProcessedIntegrationEvents.ToListAsync());
     }
 
     [Fact]
@@ -993,7 +1031,7 @@ public sealed class OperationTaskFailedNotificationConsumerTests
                 ]));
     }
 
-    private sealed class NotificationConsumerWebApplicationFactory(IReadOnlyDictionary<string, string?>? settings = null) : WebApplicationFactory<Program>
+    private sealed class NotificationConsumerWebApplicationFactory(IReadOnlyDictionary<string, string?>? settings = null, IReadOnlyList<string>? plannerIds = null) : WebApplicationFactory<Program>
     {
         protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
         {
@@ -1014,7 +1052,19 @@ public sealed class OperationTaskFailedNotificationConsumerTests
 
                 configuration.AddInMemoryCollection(mergedSettings);
             });
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IProductionPlannerMemberDirectory>();
+                services.AddSingleton<IProductionPlannerMemberDirectory>(new ScopedPlannerDirectory(plannerIds ?? ["planner-a", "planner-b"]));
+            });
         }
+    }
+
+    private sealed class ScopedPlannerDirectory(IReadOnlyList<string> plannerIds) : IProductionPlannerMemberDirectory
+    {
+        public Task<IReadOnlyList<string>> ListMemberIdsAsync(string organizationId, string environmentId, CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<string>>(
+                organizationId == "org-001" && environmentId == "env-001" ? plannerIds : []);
     }
 
     private sealed class NotificationPostgreSqlWebApplicationFactory : WebApplicationFactory<Program>

@@ -1231,6 +1231,101 @@
         ]
       }
     },
+    "/api/console/v1/iam/users/{userId}/membership": {
+      "get": {
+        "tags": [
+          "Console IAM",
+          "Api"
+        ],
+        "operationId": "getConsoleIamUserMembership",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfConsoleIamUserMembershipResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "Console IAM",
+          "Api"
+        ],
+        "operationId": "replaceConsoleIamUserMembership",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "x-name": "ConsoleReplaceIamUserMembershipRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationIamAdminConsoleReplaceIamUserMembershipRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfConsoleIamUserMembershipResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/console/v1/iam/roles": {
       "get": {
         "tags": [
@@ -1621,12 +1716,12 @@
         ],
         "operationId": "createConsoleFileUploadSession",
         "requestBody": {
-          "x-name": "CreateUploadSessionRequest",
+          "x-name": "ConsoleCreateUploadSessionRequest",
           "description": "",
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NervIIPContractsFileStorageCreateUploadSessionRequest"
+                "$ref": "#/components/schemas/NervIIPPlatformGatewayWebEndpointsFilesConsoleCreateUploadSessionRequest"
               }
             }
           },
@@ -1676,12 +1771,12 @@
           }
         ],
         "requestBody": {
-          "x-name": "CompleteUploadSessionRequest",
+          "x-name": "ConsoleCompleteUploadSessionRequest",
           "description": "",
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NervIIPContractsFileStorageCompleteUploadSessionRequest"
+                "$ref": "#/components/schemas/NervIIPPlatformGatewayWebEndpointsFilesConsoleCompleteUploadSessionRequest"
               }
             }
           },
@@ -1731,6 +1826,14 @@
           },
           {
             "name": "uploaderId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "ownerId",
             "in": "query",
             "schema": {
               "type": "string",
@@ -1891,61 +1994,6 @@
         ]
       }
     },
-    "/api/console/v1/files/{fileId}/download-grants": {
-      "post": {
-        "tags": [
-          "Console Files",
-          "Api"
-        ],
-        "operationId": "createConsoleFileDownloadGrant",
-        "parameters": [
-          {
-            "name": "fileId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "x-name": "CreateDownloadGrantRequest",
-          "description": "",
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NervIIPContractsFileStorageCreateDownloadGrantRequest"
-              }
-            }
-          },
-          "required": true,
-          "x-position": 1
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseDataOfDownloadGrantResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "403": {
-            "description": "Forbidden"
-          }
-        },
-        "security": [
-          {
-            "JWTBearerAuth": []
-          }
-        ]
-      }
-    },
     "/api/console/v1/files/tus/{uploadSessionId}": {
       "head": {
         "tags": [
@@ -2014,16 +2062,16 @@
         ]
       }
     },
-    "/api/console/v1/files/download-grants/{downloadGrantId}/content": {
+    "/api/console/v1/files/{fileId}/content": {
       "get": {
         "tags": [
           "Console Files",
           "Api"
         ],
-        "operationId": "downloadConsoleFileGrantContent",
+        "operationId": "downloadConsoleFileContent",
         "parameters": [
           {
-            "name": "downloadGrantId",
+            "name": "fileId",
             "in": "path",
             "required": true,
             "schema": {
@@ -2032,8 +2080,16 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "No Content"
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthorized"
@@ -2064,6 +2120,70 @@
           },
           "403": {
             "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/internal/gateway/cache/invalidate-scope": {
+      "post": {
+        "tags": [
+          "Internal"
+        ],
+        "operationId": "invalidateGatewayCacheScope",
+        "requestBody": {
+          "x-name": "InvalidateGatewayCacheScopeRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPPlatformGatewayWebEndpointsCacheInvalidateGatewayCacheScopeRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized"
           }
         },
         "security": [
@@ -2192,6 +2312,43 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "JWTBearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/console/v1/auth/change-password": {
+      "post": {
+        "tags": [
+          "Api"
+        ],
+        "operationId": "changeConsolePassword",
+        "requestBody": {
+          "x-name": "ConsoleChangePasswordRequest",
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationAuthConsoleChangePasswordRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-position": 1
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
           },
           "401": {
             "description": "Unauthorized"
@@ -3785,6 +3942,60 @@
           }
         }
       },
+      "NetCorePalExtensionsDtoResponseDataOfConsoleIamUserMembershipResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "nullable": true,
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamUserMembershipResponse"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "NervIIPPlatformGatewayWebApplicationIamAdminConsoleIamUserMembershipResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "userId": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string"
+          },
+          "environmentId": {
+            "type": "string"
+          },
+          "roleIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "NervIIPPlatformGatewayWebApplicationIamAdminConsoleReplaceIamUserMembershipRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "roleIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "NetCorePalExtensionsDtoResponseDataOfPagedListResponseOfConsoleIamRoleResponse": {
         "allOf": [
           {
@@ -4098,16 +4309,10 @@
           }
         }
       },
-      "NervIIPContractsFileStorageCreateUploadSessionRequest": {
+      "NervIIPPlatformGatewayWebEndpointsFilesConsoleCreateUploadSessionRequest": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "organizationId": {
-            "type": "string"
-          },
-          "environmentId": {
-            "type": "string"
-          },
           "owner": {
             "$ref": "#/components/schemas/NervIIPContractsFileStorageOwnerReference"
           },
@@ -4212,16 +4417,10 @@
           }
         }
       },
-      "NervIIPContractsFileStorageCompleteUploadSessionRequest": {
+      "NervIIPPlatformGatewayWebEndpointsFilesConsoleCompleteUploadSessionRequest": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "organizationId": {
-            "type": "string"
-          },
-          "environmentId": {
-            "type": "string"
-          },
           "filePurpose": {
             "type": "string"
           },
@@ -4327,52 +4526,21 @@
         "type": "object",
         "additionalProperties": false
       },
-      "NetCorePalExtensionsDtoResponseDataOfDownloadGrantResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
-          },
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "data": {
-                "nullable": true,
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/NervIIPContractsFileStorageDownloadGrantResponse"
-                  }
-                ]
-              }
-            }
-          }
-        ]
-      },
-      "NervIIPContractsFileStorageDownloadGrantResponse": {
+      "NervIIPPlatformGatewayWebEndpointsCacheInvalidateGatewayCacheScopeRequest": {
         "type": "object",
         "additionalProperties": false,
-        "properties": {
-          "fileId": {
-            "type": "string"
-          },
-          "expiresAtUtc": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "download": {
-            "$ref": "#/components/schemas/NervIIPContractsFileStorageTransferInstructions"
-          }
-        }
-      },
-      "NervIIPContractsFileStorageCreateDownloadGrantRequest": {
-        "type": "object",
-        "additionalProperties": false,
+        "required": [
+          "organizationId",
+          "environmentId"
+        ],
         "properties": {
           "organizationId": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "environmentId": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           }
         }
       },
@@ -4513,6 +4681,18 @@
             }
           }
         ]
+      },
+      "NervIIPPlatformGatewayWebApplicationAuthConsoleChangePasswordRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "currentPassword": {
+            "type": "string"
+          },
+          "newPassword": {
+            "type": "string"
+          }
+        }
       }
     },
     "securitySchemes": {

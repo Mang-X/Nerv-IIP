@@ -7,6 +7,21 @@ public partial record TelemetryTagId : IGuidStronglyTypedId;
 
 public sealed class TelemetryTag : Entity<TelemetryTagId>, IAggregateRoot
 {
+    public const int DisplayNameMaxLength = 100;
+
+    /// <summary>
+    /// 产品入口可登记的值类型闭集（#3870）。两种 production-count 值类型让该点位参与计数报工：
+    /// posted 直接过账，draft 生成待人工确认的遥测候选。
+    /// </summary>
+    public static readonly IReadOnlyCollection<string> ValueTypes =
+    [
+        "number",
+        "bool",
+        "text",
+        "production-count-posted",
+        "production-count-draft",
+    ];
+
     private TelemetryTag()
     {
     }
@@ -40,6 +55,14 @@ public sealed class TelemetryTag : Entity<TelemetryTagId>, IAggregateRoot
     public string ValueType { get; private set; } = string.Empty;
     public string UnitCode { get; private set; } = string.Empty;
     public string SamplingPolicy { get; private set; } = string.Empty;
+
+    /// <summary>点位显示名（可空）；点位编码 <see cref="TagKey"/> 是与连接器配置对接的键，保存后不可改。</summary>
+    public string? DisplayName { get; private set; }
+
+    /// <summary>软停用：停用后不再计数、不能作为控制写入目标、默认不出现在点位目录里；历史采样保留可追溯。</summary>
+    public bool IsEnabled { get; private set; } = true;
+
+    public DateTimeOffset? DisabledAtUtc { get; private set; }
     public bool IsWritable { get; private set; }
     public decimal? ControlMinValue { get; private set; }
     public decimal? ControlMaxValue { get; private set; }
@@ -65,6 +88,24 @@ public sealed class TelemetryTag : Entity<TelemetryTagId>, IAggregateRoot
         UnitCode = IndustrialTelemetryText.Required(unitCode, nameof(unitCode));
         SamplingPolicy = IndustrialTelemetryText.RequiredLower(samplingPolicy, nameof(samplingPolicy));
         UpdatedAtUtc = DateTimeOffset.UtcNow;
+    }
+
+    public void Rename(string? displayName)
+    {
+        DisplayName = IndustrialTelemetryText.OptionalSanitized(displayName, DisplayNameMaxLength);
+        UpdatedAtUtc = DateTimeOffset.UtcNow;
+    }
+
+    public void Disable(DateTimeOffset disabledAtUtc)
+    {
+        if (!IsEnabled)
+        {
+            return;
+        }
+
+        IsEnabled = false;
+        DisabledAtUtc = disabledAtUtc;
+        UpdatedAtUtc = disabledAtUtc;
     }
 
     public void ConfigureControl(

@@ -34,6 +34,17 @@ public interface IGatewayIamAdminClient
         ConsoleResetIamUserPasswordRequest request,
         CancellationToken cancellationToken);
 
+    Task<ConsoleIamUserMembershipResponse> GetUserMembershipAsync(
+        string bearerToken,
+        string userId,
+        CancellationToken cancellationToken);
+
+    Task<ConsoleIamUserMembershipResponse> ReplaceUserMembershipAsync(
+        string bearerToken,
+        string userId,
+        ConsoleReplaceIamUserMembershipRequest request,
+        CancellationToken cancellationToken);
+
     Task<PagedListResponse<ConsoleIamRoleResponse>> ListRolesAsync(
         string bearerToken,
         ConsoleIamListRequest request,
@@ -123,6 +134,29 @@ public sealed class HttpGatewayIamAdminClient(HttpClient httpClient) : IGatewayI
             () => JsonContent.Create(request),
             HttpMethod.Post,
             $"/api/iam/v1/users/{Uri.EscapeDataString(userId)}/reset-password",
+            bearerToken,
+            cancellationToken);
+
+    public Task<ConsoleIamUserMembershipResponse> GetUserMembershipAsync(
+        string bearerToken,
+        string userId,
+        CancellationToken cancellationToken) =>
+        SendForJsonAsync<ConsoleIamUserMembershipResponse>(
+            () => null,
+            HttpMethod.Get,
+            $"/api/iam/v1/users/{Uri.EscapeDataString(userId)}/membership",
+            bearerToken,
+            cancellationToken);
+
+    public Task<ConsoleIamUserMembershipResponse> ReplaceUserMembershipAsync(
+        string bearerToken,
+        string userId,
+        ConsoleReplaceIamUserMembershipRequest request,
+        CancellationToken cancellationToken) =>
+        SendForJsonAsync<ConsoleIamUserMembershipResponse>(
+            () => JsonContent.Create(request),
+            HttpMethod.Put,
+            $"/api/iam/v1/users/{Uri.EscapeDataString(userId)}/membership",
             bearerToken,
             cancellationToken);
 
@@ -251,9 +285,19 @@ public sealed class HttpGatewayIamAdminClient(HttpClient httpClient) : IGatewayI
                 return response;
             }
 
-            var statusCode = response.StatusCode;
-            response.Dispose();
-            throw ToGatewayException(statusCode);
+            GatewayAuthException exception;
+            try
+            {
+                exception = response.StatusCode == HttpStatusCode.BadRequest
+                    ? await ToBadRequestExceptionAsync(response, cancellationToken)
+                    : ToGatewayException(response.StatusCode);
+            }
+            finally
+            {
+                response.Dispose();
+            }
+
+            throw exception;
         }
         catch (GatewayAuthException)
         {
@@ -305,6 +349,27 @@ public sealed class HttpGatewayIamAdminClient(HttpClient httpClient) : IGatewayI
         }
 
         values.Add($"{Uri.EscapeDataString(name)}={Uri.EscapeDataString(value)}");
+    }
+
+    /// <summary>
+    /// IAM 以 400 返回 KnownException（如平台管理员保护、名称重复），信封 message 是 IAM 发布的安全业务文案，
+    /// 按 400 原样透传给控制台；信封读不出 message 时退回稳定码 <c>iam-bad-request</c>。与认证客户端同口径。
+    /// </summary>
+    private static async Task<GatewayAuthException> ToBadRequestExceptionAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        string? message;
+        try
+        {
+            message = (await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<JsonElement>>(cancellationToken))?.Message;
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            message = null;
+        }
+
+        return GatewayAuthException.BadRequest(string.IsNullOrWhiteSpace(message) ? "iam-bad-request" : message);
     }
 
     private static GatewayAuthException ToGatewayException(HttpStatusCode statusCode)

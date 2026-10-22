@@ -3,7 +3,15 @@ import * as businessConsoleClient from './business-console'
 import { client } from './generated/client.gen'
 import type {
   CreateBusinessConsoleCodeRuleVersionData,
+  CreateBusinessConsoleMaintenanceWorkOrderData,
+  CreateBusinessConsoleMaintenanceWorkOrderV2Data,
+  NetCorePalExtensionsDtoResponseData,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest,
+  NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListResponse,
   NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRemoveTeamMemberRequest,
+  PrevalidateBusinessConsoleMesMaterialScanErrors,
+  PrevalidateBusinessConsoleMesContextScanErrors,
+  RecordBusinessConsoleMesDowntimeEventErrors,
   RemoveBusinessConsoleTeamMemberData,
 } from './generated/business-console/types.gen'
 import type { ListConsoleInstancesData } from './generated/types.gen'
@@ -42,6 +50,8 @@ import type {
   BusinessConsoleMaintenanceAssetReliabilityEnvelope,
   BusinessConsoleMesFinishedGoodsInventoryLinkEnvelope,
   BusinessConsoleMesFinishedGoodsInventoryLinkResponse,
+  BusinessConsoleMesRecordDowntimeEventRequest,
+  BusinessConsoleMesRecordDowntimeEventV2Request,
   BusinessConsoleMesQualityHoldTimelineItem,
   BusinessConsoleMesQualityHoldTimelineRequest,
   BusinessConsoleMesQualityHoldTimelineResponse,
@@ -61,13 +71,26 @@ import type {
   BusinessConsoleSearchResponse,
   BusinessConsoleSetMasterDataResourceEnabledRequest,
   BusinessConsoleTelemetryOeeEnvelope,
+  BusinessConsoleTelemetryOeeAggregateBucket,
+  BusinessConsoleTelemetryOeeAggregateDegradedReason,
+  BusinessConsoleTelemetryOeeAggregateDimension,
+  BusinessConsoleTelemetryOeeAggregateEnvelope,
+  BusinessConsoleTelemetryOeeAggregateRequest,
+  BusinessConsoleTelemetryOeeAggregateResponse,
   BusinessConsoleCompleteMaintenanceWorkOrderRequest,
+  BusinessConsoleCreateMaintenanceWorkOrderV2Request,
   BusinessConsoleAssignWmsResourceRequest,
   BusinessConsoleCompleteWmsInboundOrderRequest,
   BusinessConsoleCreateInspectionRecordFromTaskRequest,
   BusinessConsoleClaimQualityInspectionTaskRequest,
   BusinessConsoleCreateMaintenanceWorkOrderRequest,
   BusinessConsoleMesOperationTaskActionRequest,
+  BusinessConsoleMesProductionStatisticsBucket,
+  BusinessConsoleMesProductionStatisticsDegradedReason,
+  BusinessConsoleMesProductionStatisticsDimension,
+  BusinessConsoleMesProductionStatisticsRequest,
+  BusinessConsoleMesProductionStatisticsResolutionStatus,
+  BusinessConsoleMesProductionStatisticsResponse,
   BusinessConsoleRecordProductionReportRequest,
   BusinessConsoleCompleteWmsWarehouseTaskRequest,
   BusinessConsoleRecordWmsWarehouseTaskProgressRequest,
@@ -85,6 +108,9 @@ import type {
   BusinessConsoleWorkbenchSummaryResponse,
   BusinessConsoleWorkScopeAuthorizationPath,
   CancelBusinessConsolePlanningDemandData,
+  QueryBusinessConsoleTelemetryOeeAggregatesData,
+  QueryBusinessConsoleMesProductionStatisticsData,
+  QueryBusinessConsoleMesProductionStatisticsErrors,
   CancelScheduledBusinessConsoleEngineeringChangeData,
   CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionData,
   CreateOrUpdateBusinessConsolePlanningForecastData,
@@ -100,15 +126,22 @@ import type {
   GetBusinessConsoleErpPayableBySourceDocumentData,
   GetBusinessConsoleErpReceivableBySourceDocumentData,
   GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkData,
+  GetBusinessConsoleMesWorkOrderTransformationData,
+  GetBusinessConsoleMesWorkOrderTransformationErrors,
+  GetBusinessConsoleMesWorkOrderTransformationResponse,
   GetBusinessConsolePrincipalWorkContextData,
   GetBusinessConsolePrincipalWorkContextErrors,
   ListBusinessConsoleDeviceAssetsData,
+  ListBusinessConsoleMasterDataResourcesData,
   ListBusinessConsoleMesOperationTasksData,
   ListBusinessConsolePlanningForecastsData,
   ListBusinessConsoleQualityInspectionRecordsData,
   ListBusinessConsoleWmsCountOperationalCandidatesData,
   ListBusinessConsoleWmsReceiptOperationalCandidatesData,
   ListBusinessConsoleWmsShipmentOperationalCandidatesData,
+  MergeBusinessConsoleMesWorkOrdersData,
+  MergeBusinessConsoleMesWorkOrdersErrors,
+  MergeBusinessConsoleMesWorkOrdersResponse,
   OpenBusinessConsoleQualityNcrFromInspectionData,
   PreviewBusinessConsoleCodeRuleData,
   PublishBusinessConsoleEngineeringSopDocumentData,
@@ -116,6 +149,9 @@ import type {
   ResolveBusinessConsoleEngineeringProductionVersionData,
   RevokeBusinessConsoleSchedulingPlanData,
   SearchBusinessConsoleObjectsData,
+  SplitBusinessConsoleMesWorkOrderData,
+  SplitBusinessConsoleMesWorkOrderErrors,
+  SplitBusinessConsoleMesWorkOrderResponse,
 } from './business-console'
 import {
   getConsoleNotificationDeadLetterMetricsQueryOptions,
@@ -136,6 +172,7 @@ import {
 import {
   acceptBusinessConsoleMesShiftHandoverMutationOptions,
   assignBusinessConsoleMesDispatchTaskMutationOptions,
+  claimBusinessConsoleMesOperationTaskMutationOptions,
   completeBusinessConsoleMesOperationTaskMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
@@ -154,6 +191,7 @@ import {
   getBusinessConsoleMesWipSummaryQueryOptions,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
+  getBusinessConsoleMesWorkOrderTransformationQueryOptions,
   listBusinessConsoleMesCapacityImpactsQueryOptions,
   listBusinessConsoleMesDispatchTasksQueryOptions,
   listBusinessConsoleMesDowntimeEventsQueryOptions,
@@ -163,6 +201,7 @@ import {
   listBusinessConsoleMesReportableOperationTasksQueryOptions,
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
+  queryBusinessConsoleMesProductionStatisticsQueryOptions,
   listBusinessConsoleMesRelatedQualityItemsQueryOptions,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
@@ -171,12 +210,15 @@ import {
   listBusinessConsoleWmsInboundOrdersQueryOptions,
   listBusinessConsoleWmsOutboundOrdersQueryOptions,
   listBusinessConsoleWmsWcsTasksQueryOptions,
+  mergeBusinessConsoleMesWorkOrdersMutationOptions,
   pauseBusinessConsoleMesOperationTaskMutationOptions,
   postBusinessConsoleInventoryMovementMutationOptions,
   recordBusinessConsoleMesDefectMutationOptions,
   recordBusinessConsoleMesDowntimeEventMutationOptions,
+  recordBusinessConsoleMesDowntimeEventV2MutationOptions,
   releaseBusinessConsoleMesWorkOrderMutationOptions,
   resumeBusinessConsoleMesOperationTaskMutationOptions,
+  splitBusinessConsoleMesWorkOrderMutationOptions,
   startBusinessConsoleMesOperationTaskMutationOptions,
 } from './business-console'
 import {
@@ -206,6 +248,22 @@ import {
   type BusinessConsoleTransitionMaintenanceWorkOrderRequest,
   type TransitionBusinessConsoleMaintenanceWorkOrderData,
 } from './business-console'
+import {
+  dispatchBusinessConsoleBarcodePrintBatch,
+  dispatchBusinessConsoleBarcodePrintBatchMutationOptions,
+  reprintBusinessConsoleBarcodeLabel,
+  reprintBusinessConsoleBarcodeLabelMutationOptions,
+  voidBusinessConsoleBarcodeLabel,
+  voidBusinessConsoleBarcodeLabelMutationOptions,
+  type BusinessConsoleDispatchBarcodePrintBatchBody,
+  type BusinessConsoleReprintBarcodeLabelBody,
+  type BusinessConsoleVoidBarcodeLabelBody,
+  type DispatchBusinessConsoleBarcodePrintBatchData,
+  type DispatchBusinessConsoleBarcodePrintBatchErrors,
+  type ReprintBusinessConsoleBarcodeLabelData,
+  type VoidBusinessConsoleBarcodeLabelData,
+  type VoidBusinessConsoleBarcodeLabelErrors,
+} from './business-console'
 
 describe('generated API client contract', () => {
   it('requires archive reasons for ProductCategory and Skill requests', () => {
@@ -215,6 +273,104 @@ describe('generated API client contract', () => {
     expectTypeOf<BusinessConsoleArchiveSkillRequest>().toEqualTypeOf<{
       reason: string
     }>()
+  })
+
+  it('keeps the legacy downtime request shape separate from the strict v2 context contract', () => {
+    expectTypeOf<BusinessConsoleMesRecordDowntimeEventRequest>().toEqualTypeOf<{
+      organizationId?: string
+      environmentId?: string
+      workOrderId?: string
+      operationTaskId?: string | null
+      deviceAssetId?: string | null
+      reasonCode?: string
+      startedAtUtc?: string
+      idempotencyKey?: string
+    }>()
+    expectTypeOf<BusinessConsoleMesRecordDowntimeEventV2Request>().toEqualTypeOf<{
+      organizationId: string
+      environmentId: string
+      workOrderId: string
+      operationTaskId?: string | null
+      workCenterId: string
+      deviceAssetId?: string | null
+      reasonCode: string
+      startedAtUtc: string
+      idempotencyKey: string
+      scopeKind: string
+      scopeId: string
+      toUtc?: string | null
+    }>()
+  })
+
+  it('keeps the v1 free-text maintenance create request separate from the v2 reason-code contract', () => {
+    expectTypeOf<BusinessConsoleCreateMaintenanceWorkOrderRequest>().toEqualTypeOf<{
+      organizationId: string
+      environmentId: string
+      deviceAssetId: string
+      priority: string
+      sourceAlarmId?: string | null
+      openedBy?: string
+      idempotencyKey: string
+      assetUnavailableReason?: string | null
+      assignedTechnicianUserId?: string | null
+      estimatedLaborMinutes?: number | null
+      expectedRestoreAtUtc?: string | null
+    }>()
+    expectTypeOf<BusinessConsoleCreateMaintenanceWorkOrderV2Request>().toEqualTypeOf<{
+      organizationId: string
+      environmentId: string
+      deviceAssetId: string
+      priority: string
+      sourceAlarmId?: string | null
+      openedBy?: string
+      idempotencyKey: string
+      assetUnavailableReasonCode?: string | null
+      assignedTechnicianUserId?: string | null
+      estimatedLaborMinutes?: number | null
+      expectedRestoreAtUtc?: string | null
+    }>()
+  })
+
+  // 由 vue-tsc typecheck 承担（vitest 不求值 expectTypeOf）：v2 与 v1 必须对称地在公开契约里
+  // 声明标准 Idempotency-Key 头，否则 #2970 的 PDA 只能深层导入或手搓。
+  it('declares the standard Idempotency-Key header on both maintenance create versions', () => {
+    expectTypeOf<CreateBusinessConsoleMaintenanceWorkOrderV2Data['headers']>().toEqualTypeOf<
+      CreateBusinessConsoleMaintenanceWorkOrderData['headers']
+    >()
+    expectTypeOf<
+      NonNullable<CreateBusinessConsoleMaintenanceWorkOrderV2Data['headers']>['Idempotency-Key']
+    >().toEqualTypeOf<string | undefined>()
+  })
+
+  it('exposes the maintenance v2 create mutation from the stable entry point', () => {
+    expect(
+      typeof businessConsoleClient.createBusinessConsoleMaintenanceWorkOrderMutationOptions,
+    ).toBe('function')
+    expect(
+      typeof businessConsoleClient.createBusinessConsoleMaintenanceWorkOrderV2MutationOptions,
+    ).toBe('function')
+  })
+
+  it('exposes the v1 downtime fail-closed 400 response in generated contracts', () => {
+    type HasV1DowntimeBadRequest = RecordBusinessConsoleMesDowntimeEventErrors extends {
+      400: NetCorePalExtensionsDtoResponseData
+    }
+      ? true
+      : false
+
+    expectTypeOf<HasV1DowntimeBadRequest>().toEqualTypeOf<true>()
+  })
+
+  it('keeps every documented material-scan transport failure in the generated error union', () => {
+    expectTypeOf<keyof PrevalidateBusinessConsoleMesMaterialScanErrors>().toEqualTypeOf<
+      400 | 401 | 403 | 502 | 503 | 504
+    >()
+  })
+
+  it('keeps every documented MES context-scan transport failure in the generated error union', () => {
+    expectTypeOf<keyof PrevalidateBusinessConsoleMesContextScanErrors>().toEqualTypeOf<
+      400 | 401 | 403 | 502 | 503 | 504
+    >()
   })
 
   it('requires a non-null change reason for code-rule versions through the stable boundary', () => {
@@ -272,6 +428,7 @@ describe('generated API client contract', () => {
       | 'verify'
       | 'close'
       | 'cancel'
+      | 'updateExpectedRestore'
     >()
     expectTypeOf<BusinessConsoleAssignMaintenanceWorkOrderRequest>().toMatchTypeOf<
       AssignBusinessConsoleMaintenanceWorkOrderData['body']
@@ -279,8 +436,48 @@ describe('generated API client contract', () => {
     expectTypeOf<BusinessConsoleTransitionMaintenanceWorkOrderRequest>().toMatchTypeOf<
       TransitionBusinessConsoleMaintenanceWorkOrderData['body']
     >()
+    expectTypeOf<
+      BusinessConsoleTransitionMaintenanceWorkOrderRequest['expectedRestoreAtUtc']
+    >().toEqualTypeOf<string | null | undefined>()
+    expectTypeOf<
+      businessConsoleClient.EquipmentRuntimeAvailabilityWindow['expectedRestoreAtUtc']
+    >().toEqualTypeOf<string | null | undefined>()
+    expectTypeOf<
+      businessConsoleClient.EquipmentRuntimeAvailabilityWindow['restorePredictionSource']
+    >().toEqualTypeOf<string | null | undefined>()
+    expectTypeOf<
+      businessConsoleClient.EquipmentRuntimeAvailabilityWindow['restorePredictionSourceVersion']
+    >().toEqualTypeOf<string | null | undefined>()
     expectTypeOf<BusinessConsoleMaintenanceWorkOrderActionResponse>().not.toBeNever()
     expectTypeOf<BusinessConsoleMaintenanceWorkOrderLifecycleEventItem>().not.toBeNever()
+  })
+
+  it('exports the barcode lifecycle API through the stable business-console barrel', () => {
+    expect(dispatchBusinessConsoleBarcodePrintBatch).toBeTypeOf('function')
+    expect(dispatchBusinessConsoleBarcodePrintBatchMutationOptions).toBeTypeOf('function')
+    expect(reprintBusinessConsoleBarcodeLabel).toBeTypeOf('function')
+    expect(reprintBusinessConsoleBarcodeLabelMutationOptions).toBeTypeOf('function')
+    expect(voidBusinessConsoleBarcodeLabel).toBeTypeOf('function')
+    expect(voidBusinessConsoleBarcodeLabelMutationOptions).toBeTypeOf('function')
+    expectTypeOf<
+      DispatchBusinessConsoleBarcodePrintBatchData['body']
+    >().toEqualTypeOf<BusinessConsoleDispatchBarcodePrintBatchBody>()
+    expectTypeOf<
+      ReprintBusinessConsoleBarcodeLabelData['body']
+    >().toEqualTypeOf<BusinessConsoleReprintBarcodeLabelBody>()
+    expectTypeOf<
+      VoidBusinessConsoleBarcodeLabelData['body']
+    >().toEqualTypeOf<BusinessConsoleVoidBarcodeLabelBody>()
+    expectTypeOf<ReprintBusinessConsoleBarcodeLabelData['path']>().toEqualTypeOf<{
+      printBatchId: string
+      sequenceNo: number
+    }>()
+    expectTypeOf<VoidBusinessConsoleBarcodeLabelData['path']>().toEqualTypeOf<{
+      printBatchId: string
+      sequenceNo: number
+    }>()
+    expectTypeOf<DispatchBusinessConsoleBarcodePrintBatchErrors[502]>().not.toBeNever()
+    expectTypeOf<VoidBusinessConsoleBarcodeLabelErrors[502]>().not.toBeNever()
   })
 
   it('requires optimistic versions for public quality assignment and claim mutations', () => {
@@ -352,6 +549,40 @@ describe('generated API client contract', () => {
     >().toEqualTypeOf<502 | 503>()
     expectTypeOf(businessConsoleClient.getBusinessConsolePrincipalWorkContext).toBeFunction()
     expectTypeOf(getBusinessConsolePrincipalWorkContextQueryOptions).toBeFunction()
+  })
+
+  it('exports exact MasterData device and shift filters through the stable boundary', () => {
+    expectTypeOf<
+      Pick<ListBusinessConsoleMasterDataResourcesData['query'], 'deviceAssetId' | 'shiftCode'>
+    >().toEqualTypeOf<{
+      deviceAssetId?: string | null
+      shiftCode?: string | null
+    }>()
+    expectTypeOf(businessConsoleClient.listBusinessConsoleMasterDataResources).toBeFunction()
+  })
+
+  it('exports MES work-order transformation operations through the stable boundary', () => {
+    expectTypeOf<SplitBusinessConsoleMesWorkOrderData>().toBeObject()
+    expectTypeOf<MergeBusinessConsoleMesWorkOrdersData>().toBeObject()
+    expectTypeOf<GetBusinessConsoleMesWorkOrderTransformationData>().toBeObject()
+    expectTypeOf<
+      Extract<keyof SplitBusinessConsoleMesWorkOrderErrors, 502 | 503 | 504>
+    >().toEqualTypeOf<502 | 503 | 504>()
+    expectTypeOf<
+      Extract<keyof MergeBusinessConsoleMesWorkOrdersErrors, 502 | 503 | 504>
+    >().toEqualTypeOf<502 | 503 | 504>()
+    expectTypeOf<
+      Extract<keyof GetBusinessConsoleMesWorkOrderTransformationErrors, 502 | 503 | 504>
+    >().toEqualTypeOf<502 | 503 | 504>()
+    expectTypeOf<SplitBusinessConsoleMesWorkOrderResponse>().toBeObject()
+    expectTypeOf<MergeBusinessConsoleMesWorkOrdersResponse>().toBeObject()
+    expectTypeOf<GetBusinessConsoleMesWorkOrderTransformationResponse>().toBeObject()
+    expectTypeOf(businessConsoleClient.splitBusinessConsoleMesWorkOrder).toBeFunction()
+    expectTypeOf(businessConsoleClient.mergeBusinessConsoleMesWorkOrders).toBeFunction()
+    expectTypeOf(businessConsoleClient.getBusinessConsoleMesWorkOrderTransformation).toBeFunction()
+    expectTypeOf(splitBusinessConsoleMesWorkOrderMutationOptions).toBeFunction()
+    expectTypeOf(mergeBusinessConsoleMesWorkOrdersMutationOptions).toBeFunction()
+    expectTypeOf(getBusinessConsoleMesWorkOrderTransformationQueryOptions).toBeFunction()
   })
 
   it('requires the governed ERP work-center cost-rate effective start', () => {
@@ -506,6 +737,7 @@ describe('generated API client contract', () => {
     expect(listBusinessConsoleMesDispatchTasksQueryOptions).toBeTypeOf('function')
     expect(assignBusinessConsoleMesDispatchTaskMutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesOperationTasksQueryOptions).toBeTypeOf('function')
+    expect(claimBusinessConsoleMesOperationTaskMutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesReportableOperationTasksQueryOptions).toBeTypeOf('function')
     expect(businessConsoleClient.listBusinessConsoleMesReportableOperationTasks).toBeTypeOf(
       'function',
@@ -528,6 +760,7 @@ describe('generated API client contract', () => {
     )
     expect(listBusinessConsoleMesDowntimeEventsQueryOptions).toBeTypeOf('function')
     expect(recordBusinessConsoleMesDowntimeEventMutationOptions).toBeTypeOf('function')
+    expect(recordBusinessConsoleMesDowntimeEventV2MutationOptions).toBeTypeOf('function')
     expect(listBusinessConsoleMesShiftHandoversQueryOptions).toBeTypeOf('function')
     expect(createBusinessConsoleMesShiftHandoverMutationOptions).toBeTypeOf('function')
     expect(acceptBusinessConsoleMesShiftHandoverMutationOptions).toBeTypeOf('function')
@@ -538,6 +771,23 @@ describe('generated API client contract', () => {
     expect(listBusinessConsoleWmsInboundOrdersQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleWmsOutboundOrdersQueryOptions).toBeTypeOf('function')
     expect(listBusinessConsoleWmsWcsTasksQueryOptions).toBeTypeOf('function')
+  })
+
+  it('types the MES supplementary material issue contract from OpenAPI', () => {
+    const request: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateMaterialIssueRequest =
+      {
+        isSupplementary: true,
+        originalMaterialIssueRequestNo: 'MIR-000123',
+      }
+    const response: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListResponse =
+      {
+        supplementaryCount: 1,
+        items: [request],
+      }
+
+    expect(request.isSupplementary).toBe(true)
+    expect(request.originalMaterialIssueRequestNo).toBe('MIR-000123')
+    expect(response.supplementaryCount).toBe(1)
   })
 
   it('exports lifecycle-conflict SDK operations and mutation options through the stable boundary', () => {
@@ -551,6 +801,7 @@ describe('generated API client contract', () => {
       'cancelBusinessConsoleMesWorkOrder',
       'recordBusinessConsoleMesProductionReport',
       'confirmBusinessConsoleMesLineSideMaterialReceipt',
+      'returnBusinessConsoleMesLineSideMaterial',
       'completeBusinessConsoleWmsInboundOrder',
       'completeBusinessConsoleWmsOutboundOrder',
       'completeBusinessConsoleWmsCountExecution',
@@ -797,11 +1048,14 @@ describe('generated API client contract', () => {
       'listBusinessConsoleTelemetryTagsQueryOptions',
       'listBusinessConsoleTelemetryAlarmRulesQueryOptions',
       'createOrUpdateBusinessConsoleTelemetryAlarmRuleMutationOptions',
+      'createOrUpdateBusinessConsoleTelemetryTagMutationOptions',
+      'disableBusinessConsoleTelemetryTagMutationOptions',
       'recordBusinessConsoleTelemetrySampleMutationOptions',
       'listBusinessConsoleTelemetryAlarmsQueryOptions',
       'postBusinessConsoleTelemetryAlarmMutationOptions',
       'queryBusinessConsoleTelemetryDeviceHistoryQueryOptions',
       'queryBusinessConsoleTelemetryOeeQueryOptions',
+      'queryBusinessConsoleTelemetryOeeAggregatesQueryOptions',
       'queryBusinessConsoleTelemetryRuntimeAvailabilityQueryOptions',
       'queryBusinessConsoleTelemetryRuntimeHoursQueryOptions',
       'listBusinessConsoleNotificationMessagesQueryOptions',
@@ -812,6 +1066,7 @@ describe('generated API client contract', () => {
       'createBusinessConsoleSchedulingPlanMutationOptions',
       'getBusinessConsoleSchedulingPlanQueryOptions',
       'getBusinessConsoleSchedulingPlanGanttQueryOptions',
+      'getBusinessConsoleSchedulingPlanOverridesQueryOptions',
       'releaseBusinessConsoleSchedulingPlanMutationOptions',
       'revokeBusinessConsoleSchedulingPlanMutationOptions',
       'listBusinessConsoleMaintenanceSparePartsQueryOptions',
@@ -852,11 +1107,14 @@ describe('generated API client contract', () => {
       'listBusinessConsoleTelemetryTags',
       'listBusinessConsoleTelemetryAlarmRules',
       'createOrUpdateBusinessConsoleTelemetryAlarmRule',
+      'createOrUpdateBusinessConsoleTelemetryTag',
+      'disableBusinessConsoleTelemetryTag',
       'recordBusinessConsoleTelemetrySample',
       'listBusinessConsoleTelemetryAlarms',
       'postBusinessConsoleTelemetryAlarm',
       'queryBusinessConsoleTelemetryDeviceHistory',
       'queryBusinessConsoleTelemetryOee',
+      'queryBusinessConsoleTelemetryOeeAggregates',
       'queryBusinessConsoleTelemetryRuntimeAvailability',
       'queryBusinessConsoleTelemetryRuntimeHours',
       'listBusinessConsoleNotificationMessages',
@@ -867,6 +1125,7 @@ describe('generated API client contract', () => {
       'createBusinessConsoleSchedulingPlan',
       'getBusinessConsoleSchedulingPlan',
       'getBusinessConsoleSchedulingPlanGantt',
+      'getBusinessConsoleSchedulingPlanOverrides',
       'releaseBusinessConsoleSchedulingPlan',
       'revokeBusinessConsoleSchedulingPlan',
       'listBusinessConsoleMaintenanceSpareParts',
@@ -968,6 +1227,48 @@ describe('generated API client contract', () => {
     }
   })
 
+  it('exports MES production statistics through the stable api-client entry point (#2856)', () => {
+    expect(businessConsoleClient.queryBusinessConsoleMesProductionStatistics).toBeTypeOf('function')
+    expect(queryBusinessConsoleMesProductionStatisticsQueryOptions).toBeTypeOf('function')
+    expectTypeOf<BusinessConsoleMesProductionStatisticsRequest>().toEqualTypeOf<
+      QueryBusinessConsoleMesProductionStatisticsData['query']
+    >()
+    expectTypeOf<BusinessConsoleMesProductionStatisticsDimension>().toEqualTypeOf<
+      'day' | 'shift' | 'workCenter' | 'sku'
+    >()
+    expectTypeOf<BusinessConsoleMesProductionStatisticsResolutionStatus>().toEqualTypeOf<
+      'resolved' | 'degraded'
+    >()
+    expectTypeOf<BusinessConsoleMesProductionStatisticsDegradedReason>().toEqualTypeOf<
+      | 'historicalDimensionLegacyUnresolved'
+      | 'historicalTimezoneMissing'
+      | 'historicalTimezoneInvalid'
+      | 'historicalShiftDefinitionMissing'
+      | 'historicalShiftDefinitionInvalid'
+      | 'historicalReportOutsideShiftWindow'
+      | 'historicalLocalTimeInvalid'
+      | 'historicalLocalTimeAmbiguous'
+      | 'historicalDimensionSnapshotDegraded'
+      | 'workCenterMissing'
+      | 'nonPositiveTotalOutput'
+      | 'deviceMissing'
+    >()
+    expectTypeOf<BusinessConsoleMesProductionStatisticsResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleMesProductionStatisticsBucket>().toBeObject()
+    expectTypeOf<keyof QueryBusinessConsoleMesProductionStatisticsErrors>().toEqualTypeOf<
+      400 | 401 | 403 | 502
+    >()
+  })
+
+  it('exports line-side inventory balances through the stable Business Console entry point (#2228)', () => {
+    expect(businessConsoleClient.listBusinessConsoleMesLineSideInventoryBalances).toBeTypeOf(
+      'function',
+    )
+    expect(
+      businessConsoleClient.listBusinessConsoleMesLineSideInventoryBalancesQueryOptions,
+    ).toBeTypeOf('function')
+  })
+
   it('exports device-control command result/history read-face (#842) Business Console operations through stable api-client entry points', () => {
     const expectedFunctions = [
       'getBusinessConsoleTelemetryDeviceControlCommandQueryOptions',
@@ -1062,6 +1363,58 @@ describe('generated API client contract', () => {
     expectTypeOf<BusinessConsoleBarcodePrintBatchResponse>().toBeObject()
     expectTypeOf<BusinessConsoleApprovalChainResponse>().toBeObject()
     expectTypeOf<BusinessConsoleTelemetryOeeEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleTelemetryOeeAggregateEnvelope>().toBeObject()
+    expectTypeOf<BusinessConsoleTelemetryOeeAggregateRequest>().toBeObject()
+    expectTypeOf<BusinessConsoleTelemetryOeeAggregateRequest>().toEqualTypeOf<{
+      organizationId: string
+      environmentId: string
+      dimension: 'device' | 'workCenter' | 'line' | 'workshop' | 'shift' | 'day'
+      windowStartUtc: string
+      windowEndUtc: string
+      deviceAssetId?: string | null
+      workCenterId?: string | null
+      shiftCode?: string | null
+      lineCode?: string | null
+      workshopCode?: string | null
+      businessDate?: string | null
+      skip?: number
+      take?: number
+    }>()
+    expectTypeOf<BusinessConsoleTelemetryOeeAggregateRequest>().toEqualTypeOf<
+      QueryBusinessConsoleTelemetryOeeAggregatesData['query']
+    >()
+    expectTypeOf<BusinessConsoleTelemetryOeeAggregateResponse>().toBeObject()
+    expectTypeOf<BusinessConsoleTelemetryOeeAggregateBucket>().toBeObject()
+    expectTypeOf<QueryBusinessConsoleTelemetryOeeAggregatesData>().toBeObject()
+    expectTypeOf<BusinessConsoleTelemetryOeeAggregateDimension>().toEqualTypeOf<
+      'device' | 'workCenter' | 'line' | 'workshop' | 'shift' | 'day'
+    >()
+    expectTypeOf<BusinessConsoleTelemetryOeeAggregateDegradedReason>().toEqualTypeOf<
+      | 'runtimeStateFactsMissing'
+      | 'runtimeStateCoverageIncomplete'
+      | 'productionUomAmbiguous'
+      | 'productionOutputMissing'
+      | 'theoreticalRateMissingOrAmbiguous'
+      | 'productiveRuntimeMissing'
+      | 'loadingRuntimeMissing'
+      | 'historicalDimensionLegacyUnresolved'
+      | 'historicalHierarchyMissing'
+      | 'historicalTimezoneMissing'
+      | 'historicalTimezoneInvalid'
+      | 'historicalShiftDefinitionMissing'
+      | 'historicalShiftDefinitionInvalid'
+      | 'historicalReportOutsideShiftWindow'
+      | 'historicalLocalTimeInvalid'
+      | 'historicalLocalTimeAmbiguous'
+      | 'siteDimensionMissing'
+      | 'workshopDimensionMissing'
+      | 'lineDimensionMissing'
+      | 'siteDimensionAmbiguous'
+      | 'workshopDimensionAmbiguous'
+      | 'lineDimensionAmbiguous'
+      | 'siteTimezoneOrDayBoundaryMissing'
+      | 'shiftDefinitionOrBoundaryMissing'
+    >()
     expectTypeOf<BusinessConsoleSchedulingPlanSummaryResponse>().toBeObject()
     expectTypeOf<BusinessConsoleMaintenanceAssetReliabilityEnvelope>().toBeObject()
     expectTypeOf<CancelBusinessConsolePlanningDemandData>().toBeObject()

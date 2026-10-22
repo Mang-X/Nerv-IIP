@@ -1,7 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -9,7 +8,9 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
+using Nerv.IIP.Business.Scheduling.Infrastructure;
 using Nerv.IIP.Business.Scheduling.Domain.DomainEvents;
+using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
@@ -47,11 +48,12 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
         await schedulingDb.SaveChangesAsync();
         releasedPlan.ClearDomainEvents();
         var domainEventRecorder = schedulingScope.ServiceProvider.GetRequiredService<SchedulePlanInvalidatedDomainEventRecorder>();
-        var schedulingHandler = new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
-            schedulingDb,
-            new InMemoryIntegrationEventDeadLetterStore(),
+        var schedulingProcessor = new AssetUnavailableCanonicalProcessor(
             schedulingScope.ServiceProvider.GetRequiredService<ISender>(),
-            NullLogger<AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans>.Instance);
+            NullLogger<AssetUnavailableCanonicalProcessor>.Instance);
+        var schedulingHandler = new AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans(
+            new InMemoryIntegrationEventDeadLetterStore(),
+            schedulingProcessor);
 
         await schedulingHandler.HandleAsync(CreateAssetUnavailableEvent(), CancellationToken.None);
 
@@ -85,7 +87,8 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
             "WC-OIL",
             [],
             DateTimeOffset.Parse("2026-06-01T12:00:00Z"),
-            TimeSpan.FromMinutes(90)));
+            TimeSpan.FromMinutes(90),
+            "SKU-001"));
         await mesDb.SaveChangesAsync();
         var mesHandler = new SchedulePlanInvalidatedIntegrationEventHandlerForMarkInvalidated(
             mesDb,
@@ -103,11 +106,9 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
             new NotificationSender(notificationDb),
             notificationDb,
             new InMemoryIntegrationEventDeadLetterStore(),
-            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Scheduling:InvalidationNotification:RecipientRefs:0"] = "role:scheduler",
-            }).Build(),
-            new FixedTimeProvider(FixedNow));
+            new PlannerDirectory(),
+            new FixedTimeProvider(FixedNow),
+            NotificationSummaryBudget.FromModel(notificationDb.Model));
 
         await notificationHandler.HandleAsync(invalidatedEvent, CancellationToken.None);
         await notificationHandler.HandleAsync(invalidatedEvent, CancellationToken.None);
@@ -118,7 +119,9 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
             .SingleAsync();
         Assert.Equal(SchedulingIntegrationEventTypes.SchedulePlanInvalidated, intent.SourceEventType);
         Assert.Equal("plan-released", intent.ResourceId);
-        Assert.Equal("role:scheduler", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Equal("user:planner-001", Assert.Single(intent.Messages).RecipientRef);
+        Assert.Equal("排产方案已失效", intent.Title);
+        Assert.Contains("plan-released", intent.Summary, StringComparison.Ordinal);
         Assert.Single(intent.Tasks);
         Assert.Equal(1, await notificationDb.ProcessedIntegrationEvents.CountAsync());
     }
@@ -138,6 +141,9 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
             .RegisterServicesFromAssembly(typeof(AssetUnavailableIntegrationEventHandlerForInvalidateSchedulePlans).Assembly)
             .RegisterServicesFromAssembly(typeof(SchedulingInvalidationPropagationAcceptanceTests).Assembly)
             .AddUnitOfWorkBehaviors());
+        // 与 Program.cs（AddSchedulingPostgreSqlPersistence）同一实现：非 PostgreSQL provider 上它是显式 no-op，
+        // 不会在运行期才失败；这里跑 InMemory，串行化由用例顺序保证，唯一索引与吞噬由 PG profile 用例证明。
+        services.AddScoped<IAssetUnavailableInboxIdentityLock, PostgreSqlAssetUnavailableInboxIdentityLock>();
         services.AddDbContext<SchedulingDbContext>(options =>
             options
                 .UseInMemoryDatabase($"scheduling-invalidation-acceptance-{Guid.NewGuid():N}")
@@ -212,6 +218,13 @@ public sealed class SchedulingInvalidationPropagationAcceptanceTests
             "system:maintenance",
             "maintenance:asset-unavailable:DEV-OIL-01",
             new AssetUnavailablePayload("DEV-OIL-01", "breakdown", DateTimeOffset.Parse("2026-06-01T09:00:00Z")));
+    }
+
+    private sealed class PlannerDirectory : IProductionPlannerMemberDirectory
+    {
+        public Task<IReadOnlyList<string>> ListMemberIdsAsync(string organizationId, string environmentId, CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<string>>(
+                organizationId == "org-001" && environmentId == "env-dev" ? ["planner-001"] : []);
     }
 
     private sealed class NotificationSender(NotificationDbContext dbContext) : ISender

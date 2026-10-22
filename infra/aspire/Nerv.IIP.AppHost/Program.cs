@@ -83,6 +83,27 @@ if (fullStackEphemeral &&
 string SessionVolume(string persistentName) =>
     fullStackEphemeral ? $"{persistentName}-{fullStackSessionId}" : persistentName;
 
+// 与 scripts/lib/FullStackSessionState.ps1 的 Get-NervFullStackStateRoot 同一推导，本机项目资源的持久数据落在这里。
+static string LocalStateRoot()
+{
+    var configured = Environment.GetEnvironmentVariable("NERV_IIP_FULLSTACK_STATE_ROOT");
+    if (!string.IsNullOrWhiteSpace(configured))
+    {
+        return Path.GetFullPath(configured);
+    }
+
+    if (OperatingSystem.IsWindows())
+    {
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Nerv-IIP");
+    }
+
+    var xdgStateHome = Environment.GetEnvironmentVariable("XDG_STATE_HOME");
+    var stateBase = string.IsNullOrWhiteSpace(xdgStateHome)
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "state")
+        : xdgStateHome;
+    return Path.Combine(stateBase, "nerv-iip");
+}
+
 builder.AddDockerComposeEnvironment("compose");
 
 var iamJwtSigningKeyId = builder.AddParameter("iam-jwt-signing-key-id", secret: true);
@@ -90,6 +111,7 @@ var iamJwtPrivateKeyPem = builder.AddParameter("iam-jwt-private-key-pem", secret
 var iamJwtJwksJson = builder.AddParameter("iam-jwt-jwks-json", secret: true);
 var iamSecretsPepper = builder.AddParameter("iam-secrets-pepper", secret: true);
 var iamEnterpriseIdentityMfaCode = builder.AddParameter("iam-enterprise-identity-mfa-code", secret: true);
+var schedulingTimeContextSigningKey = builder.AddParameter("scheduling-time-context-signing-key", new GenerateParameterDefault { MinLength = 64 }, secret: true);
 var internalServiceBearerToken = builder.AddParameter("internal-service-bearer-token", secret: true);
 var minioRootUser = builder.AddParameter("minio-root-user", secret: true);
 var minioRootPassword = builder.AddParameter("minio-root-password", secret: true);
@@ -98,6 +120,10 @@ var iamSeedAdminPassword = builder.AddParameter("iam-seed-admin-password", secre
 var iamSeedConnectorHostSecret = builder.AddParameter("iam-seed-connector-host-secret", secret: true);
 // 可选：PDA 演示工人统一口令（缺省为空 = 不开通演示工人账号），不建为必填 Parameter 以免阻塞常规启动。
 var iamSeedDemoWorkerPassword = builder.Configuration["Parameters:iam-seed-demo-worker-password"] ?? string.Empty;
+// 仅向 WMS 下发非敏感的显式种子开关；工人口令仍只提供给 IAM。
+var wmsWorkPoolSeedEnabled = builder.Configuration.GetValue(
+    "LeaderDemo:Wms:WorkPoolSeed:Enabled",
+    !string.IsNullOrWhiteSpace(iamSeedDemoWorkerPassword));
 var connectorIngestionTokenSigningKey = builder.AddParameter("connector-ingestion-token-signing-key", secret: true);
 var messagingProvider = builder.Configuration["Messaging:Provider"] ?? "InMemory";
 var useRabbitMq = string.Equals(messagingProvider, "RabbitMQ", StringComparison.OrdinalIgnoreCase);
@@ -126,7 +152,14 @@ if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
         : throw new InvalidOperationException("Security:Cors:AllowedOrigins is required outside Development.");
 }
 
-// 主线产品站点/库位（SITE-001 + loc-*）是本地主线种子事实，只在 Development 成立。
+// 本地站点/库位只在 Development 成立，且按 profile 分叉（#3137）：
+// - leader-demo profile（判据 leaderDemoHistoryEnabled）下发 WH-WB-*。只有该 profile 会让 Inventory
+//   跑 WorldHistorySeedService，把 WorldHistoryPhase2Spec.StockLocations 的七个库位真的建成行，
+//   线边收料/领料才查得到可用量。
+// - 普通 Development 维持 loc-*（MasterData inventory-location 码表候选码）。库位主数据属于开箱数据
+//   （#3770 owner 裁决）：Inventory 产品基线种子 InventoryLocationSeedService 在每个 profile 都会补齐
+//   这四个 loc-* 库位行（loc-line-01 为 line-side）；改这里的回落码必须同步改那份种子。
+//   在手量仍须经真实流程建立（#2058），本处不改变它。
 // 非 Development 下 AppHost 不再无条件下发它们（#2008）：部署方要么用与服务同名的配置键显式
 // 给出真实站点/库位（例如 Inventory__SiteCode、MaterialIssue__SourceLocationCode），要么这些键
 // 根本不下发，由服务侧 fail-closed 自己暴露——WMS 领料进死信 unresolved-location，MES 抛
@@ -263,10 +296,26 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
+// 上传字节走 tus：complete 的提交证据由 FileStorage 从本地 tus 盘读回，默认的 server-proxy 没有字节面。
+// tus 盘同时承载已 complete 文件的字节，FileStorage:Tus:RootPath 必须显式、绝对、持久（ADR 0024 §5），缺它服务拒绝启动：
+//  - 运行模式：与 fullstack 会话状态同根的本机状态目录；ephemeral 会话按 session id 隔离。
+//  - publish 模式：容器内路径 + 命名卷。挂载点取 /home/app：SDK 生成的镜像以非 root 的 app(1654) 运行，
+//    /home/app 是镜像里唯一归 app 所有的目录，命名卷首次创建时继承该属主；挂到镜像里不存在的路径会得到 root 所有、进程写不进的挂载点。
+const string FileStorageContainerDataRoot = "/home/app";
+var fileStorageTusRootPath = builder.ExecutionContext.IsPublishMode
+    ? $"{FileStorageContainerDataRoot}/nerv-iip/file-storage/tus"
+    : Path.Combine(LocalStateRoot(), "file-storage", SessionVolume("tus"));
 var fileStorage = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_FileStorage_Web>("file-storage")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5104, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
+    .WithEnvironment("FileStorage__UploadProvider", "tus")
+    .WithEnvironment("FileStorage__Tus__RootPath", fileStorageTusRootPath)
+    .WithAnnotation(new ContainerMountAnnotation(
+        "nerv-iip-file-storage",
+        FileStorageContainerDataRoot,
+        ContainerMountType.Volume,
+        isReadOnly: false))
     .WithEnvironment("Storage__Provider", "MinIO")
     .WithEnvironment("Storage__MinIO__Endpoint", minio.GetEndpoint("api"))
     .WithEnvironment("Storage__MinIO__AccessKey", minioRootUser)
@@ -285,6 +334,7 @@ var notification = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProjec
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
+    .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
     // 设备预警可达工作台：Notification 对 alarm-raised 的收件人默认回退 role:maintenance，
     // 但消息面按 principalRef（user:user-admin）精确匹配、没有角色展开层——演示管理员必须显式列入。
     .WithEnvironment("IndustrialTelemetry__AlarmNotification__RecipientRefs__0", "user:user-admin")
@@ -323,8 +373,10 @@ var notification = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProjec
     .WithEnvironment("Observability__Alerts__Rules__4__CapacityMegabytes", "10240")
     .WithEnvironment("Approval__OverdueEscalation__RecipientRefs__0", "role:business-approval-manager")
     .WithReference(apphub)
+    .WithReference(iam)
     .WithReference(notificationDatabase, "NotificationDb")
     .WaitFor(apphub)
+    .WaitFor(iam)
     .WaitFor(notificationDatabase);
 notification = WithRedisMessagingTransport(notification);
 if (rabbitmq is not null)
@@ -336,6 +388,7 @@ if (rabbitmq is not null)
 
 var businessMasterData = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_MasterData_Web>("business-master-data")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5107, name: "http")
+    .WithEnvironment("MasterData__SchedulingTimeContext__SigningKey", schedulingTimeContextSigningKey)
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
@@ -419,6 +472,9 @@ if (rabbitmq is not null)
 }
 
 var businessQuality = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Quality_Web>("business-quality")))
+    .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"))
+    .WithReference(fileStorage)
+    .WaitFor(fileStorage)
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5110, name: "http")
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
@@ -453,18 +509,24 @@ var businessMes = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
+    .WithEnvironment("Quality__BaseUrl", businessQuality.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMesDatabase, "PostgreSQL")
     .WithReference(businessMasterData)
     .WithReference(businessProductEngineering)
     .WithReference(businessInventory)
+    .WithReference(businessQuality)
     .WaitFor(businessMesDatabase)
     .WaitFor(businessMasterData)
     .WaitFor(businessProductEngineering)
-    .WaitFor(businessInventory);
-// 站点/库位必须与主线产品配置事实一致：MES 过去按 warehouse/production + line-side 臆造位置，库存一律
-// NEGATIVE_ON_HAND 拒绝（#1322）。Development 回落到主线种子事实（SITE-001 + loc-*），其他环境
-// 只下发部署方显式配置的真实值，未配置就不下发（#2008）。
+    .WaitFor(businessInventory)
+    .WaitFor(businessQuality);
+// 站点/库位必须与库存里真实存在的库位行一致：MES 过去按 warehouse/production + line-side 臆造
+// 位置，库存一律 NEGATIVE_ON_HAND 拒绝（#1322）。Development 回落按 profile 分叉（#3137）：
+// leader-demo 取 Inventory 世界观种子真的建出来的 WH-WB-*（此前该 profile 也发 loc-*，而库存里
+// 没有 loc-* 库位行，线边收料对任何 SKU、任何水位恒报 MATERIAL_SOURCE_LOCATION_UNAVAILABLE）；
+// 普通 Development 维持 loc-*，不推翻 #2058。其他环境只下发部署方显式配置的真实值，
+// 未配置就不下发（#2008）。
 // 单一权威站点键：齐套可用量查询与线边过账都从它回落，避免三份语义重叠的站点配置。
 // 只有真正的多站点部署才需要额外设置 Inventory__SiteCodes__N（跨站点求可用量）。
 businessMes = WithDeploymentEnvironment(
@@ -473,7 +535,9 @@ businessMes = WithDeploymentEnvironment(
     DeploymentWarehouseLocation("Inventory:SiteCode", "SITE-001"));
 var mesSourceLocationCodes = DeploymentWarehouseLocations(
     "Inventory:SourceLocationCodes",
-    ["loc-raw-01", "loc-semi-01", "loc-fg-01"]);
+    leaderDemoHistoryEnabled
+        ? ["WH-WB-RM-01", "WH-WB-SF-01", "WH-WB-FG-01"]
+        : ["loc-raw-01", "loc-semi-01", "loc-fg-01"]);
 for (var sourceLocationIndex = 0; sourceLocationIndex < mesSourceLocationCodes.Count; sourceLocationIndex++)
 {
     businessMes = businessMes.WithEnvironment(
@@ -485,13 +549,17 @@ for (var sourceLocationIndex = 0; sourceLocationIndex < mesSourceLocationCodes.C
 businessMes = WithDeploymentEnvironment(
     businessMes,
     "Inventory__LineSideLocationCode",
-    DeploymentWarehouseLocation("Inventory:LineSideLocationCode", "loc-line-01"));
+    DeploymentWarehouseLocation(
+        "Inventory:LineSideLocationCode",
+        leaderDemoHistoryEnabled ? "WH-WB-LINE-01" : "loc-line-01"));
 // 完工入库目标库位（#1331）：成品仓库位同样取种子事实，站点复用上面的权威 Inventory__SiteCode，
 // 不再让 MES 硬编码 finished-goods/receiving 命名空间。
 businessMes = WithDeploymentEnvironment(
     businessMes,
     "Inventory__FinishedGoodsLocationCode",
-    DeploymentWarehouseLocation("Inventory:FinishedGoodsLocationCode", "loc-fg-01"));
+    DeploymentWarehouseLocation(
+        "Inventory:FinishedGoodsLocationCode",
+        leaderDemoHistoryEnabled ? "WH-WB-FG-01" : "loc-fg-01"));
 businessMes = WithRedisMessagingTransport(businessMes);
 if (rabbitmq is not null)
 {
@@ -499,6 +567,12 @@ if (rabbitmq is not null)
         .WithReference(rabbitmq)
         .WaitFor(rabbitmq);
 }
+
+// Inventory 的成品入库权威成本读取回查 MES；MES 已等待 Inventory，反向只回填服务发现，
+// 不加 WaitFor，避免 Aspire 资源依赖成环并避免 ephemeral 会话回落到固定端口 5111。
+businessInventory = businessInventory
+    .WithEnvironment("Mes__BaseUrl", businessMes.GetEndpoint("http"))
+    .WithReference(businessMes);
 
 var businessDemandPlanning = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_DemandPlanning_Web>("business-demand-planning")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5112, name: "http")
@@ -539,9 +613,41 @@ var businessBarcodeLabel = WithNervIipTelemetry(WithAppHostEnvironment(builder.A
     .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
     .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
     .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
+    .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessBarcodeLabelDatabase, "PostgreSQL")
-    .WaitFor(businessBarcodeLabelDatabase);
+    .WithReference(fileStorage)
+    .WaitFor(businessBarcodeLabelDatabase)
+    .WaitFor(fileStorage);
+if (localDevelopmentAppHost)
+{
+    businessBarcodeLabel = businessBarcodeLabel
+        .WithEnvironment("LabelPrinter__Mode", "simulated")
+        .WithEnvironment("LabelPrinter__Printers__0__Id", "development-label-printer")
+        .WithEnvironment("LabelPrinter__Printers__0__Name", "开发模拟打印机")
+        .WithEnvironment("LabelPrinter__Printers__0__Enabled", "true");
+}
+else
+{
+    var barcodeLabelPrinterId = builder.AddParameter("barcode-label-printer-id");
+    var barcodeLabelPrinterHost = builder.AddParameter("barcode-label-printer-host");
+    var barcodeLabelPrinterPort = builder.AddParameter("barcode-label-printer-port");
+    var barcodeLabelPrinterConnectTimeout = builder.AddParameter("barcode-label-printer-connect-timeout-seconds");
+    var barcodeLabelPrinterWriteTimeout = builder.AddParameter("barcode-label-printer-write-timeout-seconds");
+    var barcodeLabelPrinterDpi = builder.AddParameter("barcode-label-printer-dpi");
+    var barcodeLabelPrinterCapabilities = builder.AddParameter("barcode-label-printer-capabilities");
+    businessBarcodeLabel = businessBarcodeLabel
+        .WithEnvironment("LabelPrinter__Mode", "zpl-tcp")
+        .WithEnvironment("LabelPrinter__Printers__0__Id", barcodeLabelPrinterId)
+        .WithEnvironment("LabelPrinter__Printers__0__Host", barcodeLabelPrinterHost)
+        .WithEnvironment("LabelPrinter__Printers__0__Port", barcodeLabelPrinterPort)
+        .WithEnvironment("LabelPrinter__Printers__0__ConnectTimeoutSeconds", barcodeLabelPrinterConnectTimeout)
+        .WithEnvironment("LabelPrinter__Printers__0__WriteTimeoutSeconds", barcodeLabelPrinterWriteTimeout)
+        .WithEnvironment("LabelPrinter__Printers__0__Dpi", barcodeLabelPrinterDpi)
+        .WithEnvironment("LabelPrinter__Printers__0__Language", "zpl")
+        .WithEnvironment("LabelPrinter__Printers__0__Capabilities", barcodeLabelPrinterCapabilities)
+        .WithEnvironment("LabelPrinter__Printers__0__Enabled", "true");
+}
 businessBarcodeLabel = WithRedisMessagingTransport(businessBarcodeLabel);
 if (rabbitmq is not null)
 {
@@ -573,14 +679,19 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
-// Inventory 盘点调整审批链（HttpStockCountApprovalClient）与 ProductEngineering 工程审批校验
-// （HttpEngineeringApprovalVerifier）都通过 HTTP 访问 Approval；Approval 声明晚于二者，
+// Inventory 盘点调整审批链（HttpStockCountApprovalClient）、ProductEngineering 工程审批校验
+// （HttpEngineeringApprovalVerifier）与 Mes 工序开工审批（HttpMesOperationTaskStartApprovalClient）
+// 都通过 HTTP 访问 Approval；Approval 声明晚于三者，
 // 只能在此回填端点环境变量，否则 ephemeral 会话回退固定端口 5114 必打错端口。
 businessInventory = businessInventory
     .WithEnvironment("Approval__BaseUrl", businessApproval.GetEndpoint("http"))
     .WithReference(businessApproval)
     .WaitFor(businessApproval);
 businessProductEngineering = businessProductEngineering
+    .WithEnvironment("Approval__BaseUrl", businessApproval.GetEndpoint("http"))
+    .WithReference(businessApproval)
+    .WaitFor(businessApproval);
+businessMes = businessMes
     .WithEnvironment("Approval__BaseUrl", businessApproval.GetEndpoint("http"))
     .WithReference(businessApproval)
     .WaitFor(businessApproval);
@@ -593,22 +704,28 @@ var businessWms = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject
     .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
     .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
     .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
+    .WithEnvironment("LeaderDemo__Wms__WorkPoolSeed__Enabled", wmsWorkPoolSeedEnabled ? "true" : "false")
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessWmsDatabase, "PostgreSQL")
     .WithReference(businessInventory)
     .WaitFor(businessWmsDatabase)
     .WaitFor(businessInventory);
-// MES 领料事件不带库位时的默认库位：Development 与主线产品种子（loc-*）同码，其他环境只下发
+// MES 领料事件不带库位时的默认库位：Development 按 profile 分叉——leader-demo 取 Inventory 世界观
+// 种子真的建出来的 WH-WB-*，普通 Development 维持主线码表 loc-*（#3137 / #2058）。其他环境只下发
 // 部署方显式配置的真实库位（#2008）。仓库代码里不再内置演示库位兜底，两者都缺就进死信（#1754）。
 businessWms = WithDeploymentEnvironment(
     businessWms,
     "MaterialIssue__SourceLocationCode",
-    DeploymentWarehouseLocation("MaterialIssue:SourceLocationCode", "loc-raw-01"));
+    DeploymentWarehouseLocation(
+        "MaterialIssue:SourceLocationCode",
+        leaderDemoHistoryEnabled ? "WH-WB-RM-01" : "loc-raw-01"));
 businessWms = WithDeploymentEnvironment(
     businessWms,
     "MaterialIssue__LineSideLocationCode",
-    DeploymentWarehouseLocation("MaterialIssue:LineSideLocationCode", "loc-line-01"));
+    DeploymentWarehouseLocation(
+        "MaterialIssue:LineSideLocationCode",
+        leaderDemoHistoryEnabled ? "WH-WB-LINE-01" : "loc-line-01"));
 businessWms = WithRedisMessagingTransport(businessWms);
 if (rabbitmq is not null)
 {
@@ -653,12 +770,15 @@ var businessMaintenance = WithNervIipTelemetry(WithAppHostEnvironment(builder.Ad
     .WithEnvironment("Maintenance__PmGeneration__Enabled", maintenancePmGenerationEnabled ? "true" : "false")
     .WithEnvironment("Maintenance__PmGeneration__OrganizationId", maintenancePmGenerationOrganizationId ?? string.Empty)
     .WithEnvironment("Maintenance__PmGeneration__EnvironmentId", maintenancePmGenerationEnvironmentId ?? string.Empty)
+    .WithEnvironment("Notification__BaseUrl", notification.GetEndpoint("http"))
     .WithEnvironment("IndustrialTelemetry__BaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMaintenanceDatabase, "PostgreSQL")
+    .WithReference(notification)
     .WithReference(businessIndustrialTelemetry)
     .WaitFor(businessMaintenanceDatabase)
-    .WaitFor(businessIndustrialTelemetry);
+    .WaitFor(businessIndustrialTelemetry)
+    .WaitFor(notification);
 if (!string.IsNullOrWhiteSpace(maintenancePmGenerationInterval))
 {
     businessMaintenance = businessMaintenance.WithEnvironment("Maintenance__PmGeneration__Interval", maintenancePmGenerationInterval);
@@ -698,6 +818,22 @@ var businessErp = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject
     .WaitFor(businessApproval)
     .WaitFor(businessWms)
     .WaitFor(iam);
+// 工单成本差异、机器制造费用核对这组 ERP 端点只认 scoped caller 名单（每个令牌绑定一个
+// organization/environment），不认通用内部服务策略。BusinessGateway 用会话内部服务令牌转发，
+// 所以本地栈要把这枚令牌登记成绑定演示租户的只读调用方，否则两页恒 401（#3784）。
+// 下标用 1：0 号是 appsettings.Development.json 里的固定本地调用方，写 0 会与它逐字段合并。
+// 非 Development 的名单属于部署配置，不在这里下发。
+if (localDevelopmentAppHost)
+{
+    const string gatewayScopedCaller = "Erp__MachineOverheadReconciliation__ScopedCallers__Profiles__1__";
+    businessErp = businessErp
+        .WithEnvironment(gatewayScopedCaller + "Name", "business-gateway")
+        .WithEnvironment(gatewayScopedCaller + "BearerToken", internalServiceBearerToken)
+        .WithEnvironment(gatewayScopedCaller + "Subject", "business-gateway")
+        .WithEnvironment(gatewayScopedCaller + "OrganizationId", "org-001")
+        .WithEnvironment(gatewayScopedCaller + "EnvironmentId", "env-dev")
+        .WithEnvironment(gatewayScopedCaller + "Permissions__0", "business.erp.finance.read");
+}
 businessErp = WithRedisMessagingTransport(businessErp);
 if (rabbitmq is not null)
 {
@@ -706,7 +842,16 @@ if (rabbitmq is not null)
         .WaitFor(rabbitmq);
 }
 
+businessWms = businessWms
+    .WithEnvironment("Erp__BaseUrl", businessErp.GetEndpoint("http"))
+    .WithReference(businessErp);
+
 businessDemandPlanning = businessDemandPlanning
+    .WithEnvironment("Erp__BaseUrl", businessErp.GetEndpoint("http"))
+    .WithReference(businessErp)
+    .WaitFor(businessErp);
+
+businessMes = businessMes
     .WithEnvironment("Erp__BaseUrl", businessErp.GetEndpoint("http"))
     .WithReference(businessErp)
     .WaitFor(businessErp);
@@ -737,6 +882,11 @@ var businessScheduling = WithNervIipTelemetry(WithAppHostEnvironment(builder.Add
     .WithEnvironment("Mes__BaseUrl", businessMes.GetEndpoint("http"))
     .WithEnvironment("IndustrialTelemetry__BaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
     .WithEnvironment("Maintenance__BaseUrl", businessMaintenance.GetEndpoint("http"))
+    // 订单紧急度留存归档（HttpOrderUrgencyArchiveStore）把归档体 POST 给 FileStorage。它直接读
+    // Configuration["FileStorage:BaseUrl"] 设 HttpClient.BaseAddress（Scheduling.Web/Program.cs:114），
+    // 未走 InternalServiceBaseAddress.Resolve*，因此基址门禁的需求集枚举不到它——删掉这行门禁照绿
+    // （实测：UnexemptedViolations 仍为 0），而 OrderUrgencyArchiveClient.cs:55 会在运行时抛
+    // 「FileStorage:BaseUrl is required for urgency retention.」。
     .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     // 排产工作台的 L1 背景历史引擎（排程方案 / 资源负荷 / 冲突 / 订单紧急度）。
@@ -758,6 +908,10 @@ var businessScheduling = WithNervIipTelemetry(WithAppHostEnvironment(builder.Add
     .WaitFor(businessMes)
     .WaitFor(businessIndustrialTelemetry)
     .WaitFor(businessMaintenance);
+businessDemandPlanning = businessDemandPlanning
+    .WithEnvironment("Scheduling__BaseUrl", businessScheduling.GetEndpoint("http"))
+    .WithReference(businessScheduling);
+
 businessScheduling = businessScheduling.WaitFor(fileStorage);
 businessScheduling = WithRedisMessagingTransport(businessScheduling);
 if (rabbitmq is not null)
@@ -775,7 +929,9 @@ var gateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Pro
     .WithEnvironment("Security__Cors__AllowedOrigins", gatewayCorsAllowedOrigins)
     .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
     .WithEnvironment("Notification__BaseUrl", notification.GetEndpoint("http"))
-    .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
+    // PlatformGateway 的控制台文件面缺这行，客户端回落到固定端口 5104：ephemeral 会话上打不到本会话的
+    // file-storage，落到端口 5104 上碰巧存在的另一套栈时会拿到 401（该栈的内部令牌是另一个随机值）。
+    .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(apphub)
     .WithReference(iam)
@@ -815,6 +971,11 @@ var gateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Pro
     .WaitFor(businessErp)
     .WaitFor(businessScheduling)
     .WaitFor(redis);
+// 控制台日志查询面（ConsoleLogEndpoints）经 AddVictoriaLogsClient 读 VictoriaLogsOptions.FromConfiguration，
+// 后者直接读 Configuration["VictoriaLogs:BaseUrl"]（NervIipObservability.cs:359），未走
+// InternalServiceBaseAddress.Resolve*，因此基址门禁的需求集枚举不到它——删掉这行门禁照绿（实测：
+// UnexemptedViolations 仍为 0）。缺这行时该方回落到内置的 http://victoria-logs:9428，那是容器网络里的
+// 名字，而 gateway 是 AddProject 的宿主进程，拿不到本会话 victoria-logs 容器实际映射出的端口。
 if (victoriaLogs is not null)
 {
     gateway = gateway
@@ -829,6 +990,7 @@ else
 
 var businessGateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_BusinessGateway_Web>("business-gateway")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5119, name: "http")
+    .WithEnvironment("MasterData__SchedulingTimeContext__SigningKey", schedulingTimeContextSigningKey)
     .WithEnvironment("AppHub__BaseUrl", apphub.GetEndpoint("http"))
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
     .WithEnvironment("Iam__Jwt__JwksJson", iamJwtJwksJson)
@@ -849,9 +1011,13 @@ var businessGateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddPro
     .WithEnvironment("Notification__BaseUrl", notification.GetEndpoint("http"))
     .WithEnvironment("IndustrialTelemetry__BaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
     .WithEnvironment("Maintenance__BaseUrl", businessMaintenance.GetEndpoint("http"))
+    // BusinessGateway 的 FileStorage 门面（工程 SOP 下载、交接班附件上传下载）此前没有这行，
+    // 客户端回落到固定端口 5104；在动态端口的 ephemeral 会话上必然连不上，整个文件面 500。
+    .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(apphub)
     .WithReference(iam)
+    .WithReference(fileStorage)
     .WithReference(businessMasterData)
     .WithReference(businessInventory)
     .WithReference(businessQuality)
@@ -869,6 +1035,7 @@ var businessGateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddPro
     .WithReference(redis)
     .WaitFor(apphub)
     .WaitFor(iam)
+    .WaitFor(fileStorage)
     .WaitFor(businessMasterData)
     .WaitFor(businessInventory)
     .WaitFor(businessQuality)
@@ -884,6 +1051,21 @@ var businessGateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddPro
     .WaitFor(businessIndustrialTelemetry)
     .WaitFor(businessMaintenance)
     .WaitFor(redis);
+
+if (fullStackEphemeral)
+{
+    var templateAssetRetirementProofIssuer = builder.AddParameter("template-asset-retirement-proof-issuer");
+    var templateAssetRetirementProofAudience = builder.AddParameter("template-asset-retirement-proof-audience");
+    var templateAssetRetirementProofSecretBase64 = builder.AddParameter("template-asset-retirement-proof-secret-base64", secret: true);
+    businessBarcodeLabel = businessBarcodeLabel
+        .WithEnvironment("TemplateAssetRetirementProof__Issuer", templateAssetRetirementProofIssuer)
+        .WithEnvironment("TemplateAssetRetirementProof__Audience", templateAssetRetirementProofAudience)
+        .WithEnvironment("TemplateAssetRetirementProof__SecretBase64", templateAssetRetirementProofSecretBase64);
+    businessGateway = businessGateway
+        .WithEnvironment("TemplateAssetRetirementProof__Issuer", templateAssetRetirementProofIssuer)
+        .WithEnvironment("TemplateAssetRetirementProof__Audience", templateAssetRetirementProofAudience)
+        .WithEnvironment("TemplateAssetRetirementProof__SecretBase64", templateAssetRetirementProofSecretBase64);
+}
 
 var connectorHost = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_ConnectorHost_Host>("connector-host")))
     .WithEnvironment("ConnectorHost__CycleSeconds", "1")

@@ -154,20 +154,22 @@ public static class WorldHistoryMesSpec
     }
 
     /// <summary>
-    /// 工序任务的排产时长（分钟）：准备 + 单件工时 × 数量 / 并行工位数 + 收尾，
-    /// 夹到 [20, 300] 分钟——单道工序不会长过一个班次（480 分钟），排产才排得进班次窗口。
+    /// 工序任务的排产时长（分钟）：<c>ceil(单件工时 × 数量) + 收尾</c>，与排程运行时
+    /// <c>SchedulingProblemProducer.CalculateDurationMinutes</c> **同一公式**，且同样取路线原值
+    /// ——不除并行工位数，也不夹取上限。
+    ///
+    /// 注意「同一公式」不等于「与 ProductEngineering 路线的常量逐位相同」：这份路线镜像
+    /// 与 PE 侧 <c>WorldBibleSpec</c> 的取值一致性没有任何断言钉住，归 #3723。
+    ///
+    /// 并行性在运行时由「每个工作中心若干台 <c>DEV-*</c> 设备」建模，种子再摊一次并行工位
+    /// 等于把产能算两遍，只会让种子快照在测试里好看，对用户真实走的「生成」路径零影响（#3594）。
+    /// 准备工时不计入时长：排产契约用独立的 <c>SetupMinutes</c> 字段承载，算进时长会重复计一次。
     /// </summary>
-    public const int MinOperationMinutes = 20;
-    public const int MaxOperationMinutes = 300;
-    private const double ParallelStations = 6.0;
-
     public static int OperationMinutes(WorldHistoryOperation operation, decimal quantity)
     {
         ArgumentNullException.ThrowIfNull(operation);
-        var minutes = operation.SetupMinutes
-            + ((double)quantity * operation.RunMinutesPerUnit / ParallelStations)
-            + operation.TeardownMinutes;
-        return Math.Clamp((int)Math.Round(minutes, MidpointRounding.AwayFromZero), MinOperationMinutes, MaxOperationMinutes);
+        var totalRunMinutes = (int)Math.Ceiling(operation.RunMinutesPerUnit * (double)Math.Max(0m, quantity));
+        return Math.Max(1, totalRunMinutes + Math.Max(0, operation.TeardownMinutes));
     }
 
     public static WorldHistoryOperation Operation(int sequence) =>

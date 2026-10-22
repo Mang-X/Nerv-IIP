@@ -8,6 +8,7 @@ using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
+using Nerv.IIP.Notification.Web.Application.Notifications;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Primitives;
 
@@ -18,7 +19,8 @@ public sealed class OperationTaskFailedIntegrationEventHandlerForNotification(
     ISender sender,
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    IOptions<OpsNotificationRecipientOptions> recipientOptions)
+    IOptions<OpsNotificationRecipientOptions> recipientOptions,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<OperationTaskFailedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.operation-task-failed";
@@ -87,6 +89,7 @@ public sealed class OperationTaskFailedIntegrationEventHandlerForNotification(
             organizationId,
             environmentId,
             request,
+            NotificationSummary.Render(request.Summary, summaryBudget),
             DateTimeOffset.UtcNow), cancellationToken);
     }
 

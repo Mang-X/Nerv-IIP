@@ -8,6 +8,15 @@ namespace Nerv.IIP.Business.Erp.Domain.DomainEvents;
 public sealed record PurchaseRequisitionCreatedDomainEvent(PurchaseRequisition PurchaseRequisition) : IDomainEvent;
 public sealed record PurchaseRequisitionConvertedDomainEvent(PurchaseRequisition PurchaseRequisition) : IDomainEvent;
 public sealed record PurchaseOrderReleasedDomainEvent(PurchaseOrder PurchaseOrder) : IDomainEvent;
+public sealed record MaterialSupplyEtaChangedDomainEvent(
+    string OrganizationId,
+    string EnvironmentId,
+    string SourceDocumentType,
+    string SourceDocumentNo,
+    string ChangeReason,
+    string ChangeIdentity,
+    DateTimeOffset ChangedAtUtc,
+    IReadOnlyCollection<string> SkuCodes) : IDomainEvent;
 public sealed record PurchaseReceiptRecordedDomainEvent(PurchaseReceipt PurchaseReceipt) : IDomainEvent;
 public sealed record PurchaseReceiptInventoryMovementRequestedDomainEvent(PurchaseReceipt PurchaseReceipt, PurchaseReceiptLine Line) : IDomainEvent;
 public sealed record SupplierInvoiceMatchedDomainEvent(SupplierInvoice SupplierInvoice) : IDomainEvent;

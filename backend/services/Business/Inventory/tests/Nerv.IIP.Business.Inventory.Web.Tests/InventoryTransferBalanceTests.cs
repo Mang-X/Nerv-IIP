@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Inventory.Infrastructure;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 
 namespace Nerv.IIP.Business.Inventory.Web.Tests;
@@ -123,7 +124,9 @@ public sealed class InventoryTransferBalanceTests
         await using var dbContext = CreateContext();
         var handler = new PostStockMovementCommandHandler(dbContext);
         await SeedSourceStockAsync(handler, dbContext, 10m);
-        var prefix = new string('k', PostStockMovementCommandHandler.TransferBaseIdempotencyKeyMaxLength - 4);
+        // 后缀长度取自 handler 自己，不手抄魔数（#3176 S-G：这正是本票要消灭的那类 - 4）。
+        var prefix = new string('k', PostStockMovementCommandHandler.TransferBaseIdempotencyKeyMaxLength
+            - PostStockMovementCommandHandler.TransferOutLegSuffix.Length);
 
         await handler.Handle(
             TransferCommand($"{prefix}aaaa", quantity: -1m, transferInLocationCode: TargetLocation, transferInQuantity: 1m),
@@ -169,6 +172,25 @@ public sealed class InventoryTransferBalanceTests
         Assert.Contains(transferMovements, x => x.LocationCode == TargetLocation && x.Quantity == 4m);
         // 全库存量守恒：调拨不产生也不消灭库存。
         Assert.Equal(10m, dbContext.StockLedgers.Sum(x => x.OnHandQuantity));
+    }
+
+    [Fact]
+    public async Task Transfer_to_an_unregistered_location_rejects_both_legs()
+    {
+        await using var dbContext = CreateContext();
+        var handler = new PostStockMovementCommandHandler(dbContext);
+        await SeedSourceStockAsync(handler, dbContext, 10m);
+        dbContext.StockLocations.Remove(await dbContext.StockLocations.SingleAsync(x => x.LocationCode == TargetLocation));
+        await dbContext.SaveChangesAsync();
+
+        var rejection = await Assert.ThrowsAsync<InventoryPostingRejectedException>(() => handler.Handle(
+            TransferCommand("idem-transfer-unregistered-target", -3m, TargetLocation, 3m),
+            CancellationToken.None));
+
+        Assert.Equal(InventoryPostingFailureCodes.PostingRejected, rejection.FailureCode);
+        await dbContext.SaveChangesAsync();
+        Assert.Equal(10m, Assert.Single(dbContext.StockLedgers).OnHandQuantity);
+        Assert.Empty(dbContext.StockMovements.Where(x => x.MovementType == "transfer"));
     }
 
     [Fact]
@@ -277,7 +299,12 @@ public sealed class InventoryTransferBalanceTests
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase($"inventory-transfer-balance-{Guid.NewGuid():N}")
             .Options;
-        return new ApplicationDbContext(options, new NoopTransferMediator());
+        var db = new ApplicationDbContext(options, new NoopTransferMediator());
+        db.StockLocations.AddRange(
+            StockLocation.CreateOrUpdate(null, "org-001", "env-dev", SourceLocation, "storage", "SITE-001", null, "active"),
+            StockLocation.CreateOrUpdate(null, "org-001", "env-dev", TargetLocation, "line-side", "SITE-001", null, "active"));
+        db.SaveChanges();
+        return db;
     }
 
     private sealed class NoopTransferMediator : IMediator

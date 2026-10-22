@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpCostCandidateItem } from '@nerv-iip/api-client'
-import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
+import type { EntityPickerOption, NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
+import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
+import WorkOrderCostPicker from '@/components/erp/WorkOrderCostPicker.vue'
 import { useErpCostCandidates, useErpFinanceSummary } from '@/composables/useBusinessErp'
+import {
+  useErpPayableSourceCatalog,
+  useErpReceivableSourceCatalog,
+} from '@/composables/useErpPickerCatalog'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -14,6 +20,7 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -25,12 +32,12 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import { UNAVAILABLE_TEXT, erpReadState, formatAmount, readCount } from '../shared'
 
@@ -143,6 +150,44 @@ const invalid = computed(() => ({
 }))
 const canSubmit = computed(() => !Object.values(invalid.value).some(Boolean))
 
+// 来源单据按成本大类挑：采购成本挂采购订单，物流成本挂销售订单 / 发货单（经营管理单据目录）；
+// 生产成本挂工单号，候选取财务已归集成本的工单（财务读权限即可，与成本差异页同一个选择器）；
+// 维护成本挂维修工单：财务专员有维修工单只读（#3827）。选择器回传工单 ID，提交时换成人读单号
+// （ERP 只原样保存来源单号，列表显示和按单号搜索都用它）。
+const { payableSourceOptions, payableSourcesPending } = useErpPayableSourceCatalog()
+const { receivableSourceOptions, receivableSourcesPending } = useErpReceivableSourceCatalog()
+const sourceDocumentCatalog = computed<{
+  options: EntityPickerOption[]
+  pending: boolean
+  placeholder: string
+  emptyText: string
+} | null>(() => {
+  if (form.sourceType === 'procurement') {
+    return {
+      options: payableSourceOptions.value,
+      pending: payableSourcesPending.value,
+      placeholder: '选择采购订单',
+      emptyText: '暂无采购订单',
+    }
+  }
+  if (form.sourceType === 'logistics') {
+    return {
+      options: receivableSourceOptions.value,
+      pending: receivableSourcesPending.value,
+      placeholder: '选择销售订单或发货单',
+      emptyText: '暂无销售订单或发货单',
+    }
+  }
+  return null
+})
+// 换了成本大类，原先挑的单据就不再是这一类的来源。
+watch(
+  () => form.sourceType,
+  () => {
+    form.sourceDocumentNo = ''
+  },
+)
+
 function openDialog() {
   form.sourceType = 'production'
   form.sourceDocumentNo = ''
@@ -157,6 +202,7 @@ async function submit() {
   try {
     await costs.createCostCandidate({
       sourceType: form.sourceType,
+      // 维修工单的来源单据就是正式单号（#3852），与其它来源一样原样提交。
       sourceDocumentNo: form.sourceDocumentNo.trim(),
       amount: Number(form.amount),
       currencyCode: 'CNY',
@@ -266,10 +312,30 @@ async function submit() {
               <NvFieldLabel for="erp-cc-source">
                 来源单据 <span class="text-destructive">*</span>
               </NvFieldLabel>
-              <NvInput
+              <NvEntityPicker
+                v-if="sourceDocumentCatalog"
                 id="erp-cc-source"
                 v-model="form.sourceDocumentNo"
-                :data-invalid="showErrors && invalid.sourceDocumentNo ? '' : undefined"
+                :options="sourceDocumentCatalog.options"
+                title="选择来源单据"
+                :placeholder="sourceDocumentCatalog.placeholder"
+                :empty-text="sourceDocumentCatalog.emptyText"
+                :loading="sourceDocumentCatalog.pending"
+                aria-label="来源单据"
+                :invalid="showErrors && invalid.sourceDocumentNo"
+              />
+              <WorkOrderCostPicker
+                v-else-if="form.sourceType === 'production'"
+                id="erp-cc-source"
+                v-model="form.sourceDocumentNo"
+                :invalid="showErrors && invalid.sourceDocumentNo"
+              />
+              <SourceDocumentPicker
+                v-else
+                id="erp-cc-source"
+                v-model="form.sourceDocumentNo"
+                kind="maintenance-work-order"
+                :invalid="showErrors && invalid.sourceDocumentNo"
               />
             </NvField>
             <NvField>
@@ -293,7 +359,7 @@ async function submit() {
             ><NvDialogClose as-child
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             ><NvButton type="submit" :disabled="costs.createCostCandidatePending.value"
-              ><Spinner
+              ><NvSpinner
                 v-if="costs.createCostCandidatePending.value"
                 aria-hidden="true"
               />登记成本</NvButton

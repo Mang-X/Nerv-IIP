@@ -31,7 +31,7 @@ import {
   NvSheetTitle,
   NvStatusBadge,
   NvToolbar,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import {
   CheckCircle2Icon,
@@ -350,7 +350,7 @@ function actionRowKey(row: QualityCapaActionItem) {
             class="flex items-center gap-2 text-sm text-muted-foreground"
             role="status"
           >
-            <Spinner aria-hidden="true" />
+            <NvSpinner aria-hidden="true" />
             正在加载纠正措施详情…
           </p>
 

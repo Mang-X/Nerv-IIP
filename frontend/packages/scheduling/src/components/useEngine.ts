@@ -1,6 +1,7 @@
 import { useColorMode } from '@nerv-iip/ui'
 import { onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import type {
+  EngineCommand,
   EngineEvents,
   SchedulingEngine,
   SchedulingEngineOptions,
@@ -51,6 +52,16 @@ export function useEngine(opts: UseEngineOptions) {
   const engine = ref<SchedulingEngine>()
   const engineName = ref<'dhtmlx' | 'unavailable'>('unavailable')
   const { isDark } = useColorMode()
+  let initializing = true
+  const pendingCommands: EngineCommand[] = []
+  // 工具栏可先于 vendor 就绪；命令由初始化 owner 在 mount/setData 后消费。
+  function command(value: EngineCommand) {
+    if (initializing) {
+      pendingCommands.push(value)
+      return
+    }
+    engine.value?.applyCommand(value)
+  }
 
   async function build(): Promise<SchedulingEngine | undefined> {
     await preloadGantt()
@@ -71,7 +82,11 @@ export function useEngine(opts: UseEngineOptions) {
     if (!opts.container.value || engine.value) return
     const e = await build()
     // 无可用引擎(DHTMLX vendor 缺失):不挂载,保持 engineName='unavailable',组件显示占位。
-    if (!e) return
+    if (!e) {
+      initializing = false
+      pendingCommands.length = 0
+      return
+    }
     // 容器可能在 await 期间被卸载。
     if (!opts.container.value) return
     const options: SchedulingEngineOptions = {
@@ -101,6 +116,8 @@ export function useEngine(opts: UseEngineOptions) {
     }
     if (opts.model.value) e.setData(opts.model.value)
     engine.value = e
+    initializing = false
+    pendingCommands.splice(0).forEach(command)
   }
 
   watch(
@@ -130,9 +147,10 @@ export function useEngine(opts: UseEngineOptions) {
   )
 
   onBeforeUnmount(() => {
+    pendingCommands.length = 0
     engine.value?.destroy()
     engine.value = undefined
   })
 
-  return { engine, engineName }
+  return { engine, engineName, command }
 }

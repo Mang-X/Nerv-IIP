@@ -1,9 +1,13 @@
+import type { BusinessConsoleQualityNcrItem } from '@nerv-iip/api-client'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 import InspectionsPage from './inspections.vue'
 import NcrsPage from './ncrs.vue'
+import NcrEvidenceUpload from '@/components/quality/NcrEvidenceUpload.vue'
+import { FileUpload } from '@nerv-iip/ui'
 
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
 // 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
@@ -43,7 +47,6 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
       resolveWorkshop: () => undefined,
       resolveLine: () => undefined,
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
-      deviceByCode: emptyIndex,
       locationByCode: emptyIndex,
       workCenterByCode: emptyIndex,
       teamByCode: emptyIndex,
@@ -57,6 +60,23 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
 const routeState = vi.hoisted(() => ({
   route: undefined as { query: Record<string, string> } | undefined,
 }))
+const authState = vi.hoisted(() => ({
+  permissionCodes: [
+    'business.quality.ncr.read',
+    'business.quality.ncr.manage',
+    'business.mes.work-orders.read',
+  ],
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    principal: {
+      principalId: 'qa-user-001',
+      loginName: 'qa-user',
+      permissionCodes: authState.permissionCodes,
+    },
+  }),
+}))
 
 const notifySpies = vi.hoisted(() => ({
   error: vi.fn(),
@@ -67,7 +87,15 @@ const taskActionSpies = vi.hoisted(() => ({
   startInspection: vi.fn(),
   refreshInspectionTasks: vi.fn(),
 }))
+const createRecordSpy = vi.hoisted(() => vi.fn())
 const qualityTaskRead = vi.hoisted(() => vi.fn())
+const evidenceApi = vi.hoisted(() => ({
+  create: vi.fn(),
+  head: vi.fn(),
+  patch: vi.fn(),
+  complete: vi.fn(),
+  read: vi.fn(),
+}))
 const routerSpies = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }))
 const ncrActionSpies = vi.hoisted(() => ({ closeNcr: vi.fn(), submitDisposition: vi.fn() }))
 vi.mock('@/utils/notify', async (importOriginal) => ({
@@ -86,7 +114,37 @@ vi.mock('@/composables/useQualityInspectionTasks', () => ({
 vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@nerv-iip/api-client')>()),
   listBusinessConsoleQualityInspectionTasks: qualityTaskRead,
+  createBusinessConsoleQualityEvidenceUploadSession: evidenceApi.create,
+  getBusinessConsoleQualityEvidenceTusOffset: evidenceApi.head,
+  patchBusinessConsoleQualityEvidenceTusUpload: evidenceApi.patch,
+  completeBusinessConsoleQualityEvidenceUpload: evidenceApi.complete,
+  getBusinessConsoleQualityNcrQueryOptions: (options: unknown) => ({
+    query: () => evidenceApi.read(options),
+  }),
 }))
+
+const operationContextState = vi.hoisted(() => ({
+  detail: undefined as { value: Record<string, unknown> | undefined } | undefined,
+  pending: undefined as { value: boolean } | undefined,
+  error: undefined as { value: string } | undefined,
+  refresh: vi.fn(),
+}))
+vi.mock('@/composables/useQualityOperationContext', async () => {
+  const { shallowRef } = await import('vue')
+  return {
+    useQualityOperationContext: () => {
+      operationContextState.detail = shallowRef()
+      operationContextState.pending = shallowRef(true)
+      operationContextState.error = shallowRef('')
+      return {
+        detail: operationContextState.detail,
+        pending: operationContextState.pending,
+        errorMessage: operationContextState.error,
+        refresh: operationContextState.refresh,
+      }
+    },
+  }
+})
 
 const qualityState = vi.hoisted(() => ({
   inspectionFilters: undefined as
@@ -129,8 +187,10 @@ const qualityState = vi.hoisted(() => ({
       id: 'NCR-001',
       code: 'NCR-001',
       status: 'open',
+      reworkWorkOrderCreationStatus: 'created',
+      reworkWorkOrderId: 'RW-001',
     },
-  ],
+  ] as BusinessConsoleQualityNcrItem[],
 }))
 
 vi.mock('vue-router', async (importOriginal) => {
@@ -140,7 +200,7 @@ vi.mock('vue-router', async (importOriginal) => {
 
   return {
     ...actual,
-    RouterLink: { props: ['to'], template: '<a data-router-link><slot /></a>' },
+    RouterLink: { name: 'RouterLink', props: ['to'], template: '<a data-router-link><slot /></a>' },
     useRoute: () => routeState.route,
     useRouter: () => ({ push: routerSpies.push, replace: routerSpies.replace }),
   }
@@ -183,16 +243,6 @@ vi.mock('@/composables/useQualityPickerCatalog', async () => {
       defectReasonOptions: computed(() => [{ value: 'DEF-01', label: '尺寸超差' }]),
       dispositionReasonOptions: computed(() => [{ value: '让步接收', label: '让步接收' }]),
       reasonGroupSuggestions: computed(() => []),
-    }),
-  }
-})
-
-vi.mock('@/composables/useEquipmentPickerCatalog', async () => {
-  const { computed, shallowRef } = await import('vue')
-  return {
-    useEquipmentWorkCenterCatalog: () => ({
-      workCenterOptions: computed(() => [{ value: 'WC-001', label: '总装一线' }]),
-      workCentersPending: shallowRef(false),
     }),
   }
 })
@@ -248,7 +298,7 @@ vi.mock('@/composables/useBusinessQuality', async () => {
       qualityState.inspectionFilters = filters
 
       return {
-        createInspectionRecord: vi.fn(),
+        createInspectionRecord: createRecordSpy,
         createInspectionRecordError: shallowRef(),
         createInspectionRecordPending: shallowRef(false),
         filters,
@@ -293,6 +343,20 @@ vi.mock('@/composables/useBusinessQuality', async () => {
         closeNcrError: shallowRef(),
         closeNcrPending: shallowRef(false),
         filters,
+        ncrActionGate: (
+          _ncrId: string,
+          status: string | undefined,
+          dispositionType: string | undefined,
+          action: 'submit-disposition' | 'close',
+        ) => {
+          const normalizedStatus = status?.toLowerCase()
+          const executable =
+            (action === 'submit-disposition' && normalizedStatus === 'open') ||
+            (action === 'close' &&
+              normalizedStatus === 'disposition-in-progress' &&
+              Boolean(dispositionType))
+          return { executable }
+        },
         ncrs: computed(() => qualityState.ncrs),
         ncrsError: shallowRef(),
         ncrsPending: shallowRef(false),
@@ -387,7 +451,6 @@ const uiStubs = {
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogTitle: { template: '<h2><slot /></h2>' },
   SelectTrigger: { template: '<button><slot /></button>' },
-  SelectValue: true,
   Sheet: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
   SheetContent: { template: '<div><slot /></div>' },
   SheetDescription: { template: '<p><slot /></p>' },
@@ -399,7 +462,7 @@ const uiStubs = {
   NvSheetDescription: { template: '<p><slot /></p>' },
   NvSheetHeader: { template: '<div><slot /></div>' },
   NvSheetTitle: { template: '<h2><slot /></h2>' },
-  Spinner: true,
+  NvSpinner: true,
   StatusBadge: { props: ['value'], template: '<span>{{ value }}</span>' },
   NvStatusBadge: { props: ['value'], template: '<span>{{ value }}</span>' },
   Toolbar: { template: '<div><slot name="filters" /></div>' },
@@ -415,12 +478,56 @@ function mountQualityPage(component: unknown) {
 
 describe('quality route location behavior', () => {
   beforeEach(() => {
+    evidenceApi.create.mockReset().mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          uploadSessionId: 'session-1',
+          fileId: 'reserved-file',
+          expiresAtUtc: '2099-01-01T00:00:00Z',
+          uploadUrl: '/api/business-console/v1/files/quality-evidence/tus/session-1',
+          uploadHeaders: {},
+        },
+      },
+    })
+    evidenceApi.head
+      .mockReset()
+      .mockResolvedValue({ response: new Response(null, { headers: { 'Upload-Offset': '0' } }) })
+    evidenceApi.patch
+      .mockReset()
+      .mockResolvedValue({ response: new Response(null, { status: 204 }) })
+    evidenceApi.complete
+      .mockReset()
+      .mockResolvedValue({ data: { success: true, data: { fileId: 'completed-file' } } })
+    evidenceApi.read.mockReset().mockResolvedValue({
+      success: true,
+      data: {
+        id: 'NCR-001',
+        code: 'NCR-001',
+        status: 'disposition-in-progress',
+        attachmentFileIds: ['completed-file'],
+      },
+    })
     setActivePinia(createPinia())
     routeState.route!.query = {}
     qualityState.inspectionFilters = undefined
     qualityState.inspectionContextInitiallyEmpty = false
     qualityState.ncrInitialContext = { organizationId: 'org-001', environmentId: 'env-dev' }
     qualityState.ncrFilters = undefined
+    qualityState.ncrs = [
+      {
+        id: 'NCR-001',
+        code: 'NCR-001',
+        status: 'open',
+        reworkWorkOrderCreationStatus: 'created',
+        reworkWorkOrderId: 'RW-001',
+      },
+    ]
+    authState.permissionCodes = [
+      'business.quality.ncr.read',
+      'business.quality.ncr.manage',
+      'business.mes.work-orders.read',
+    ]
     qualityState.recordError = undefined
     qualityState.inspectionPlans = [
       {
@@ -445,6 +552,7 @@ describe('quality route location behavior', () => {
     notifySpies.error.mockReset()
     notifySpies.operationFailure.mockReset()
     notifySpies.success.mockReset()
+    createRecordSpy.mockReset()
     taskActionSpies.startInspection.mockReset()
     taskActionSpies.refreshInspectionTasks.mockReset()
     taskActionSpies.refreshInspectionTasks.mockResolvedValue(undefined)
@@ -473,6 +581,252 @@ describe('quality route location behavior', () => {
     ncrActionSpies.submitDisposition.mockReset()
   })
 
+  it('uses the work-order product for operation inspection and submits its real source', async () => {
+    routeState.route!.query = { workOrderId: 'WO-ROD-02', operationTaskId: 'OP-ROD-10' }
+    const wrapper = mountQualityPage(InspectionsPage)
+    await flushPromises()
+    const vm = wrapper.vm as unknown as {
+      recordForm: {
+        skuCode: string
+        resultLines: Array<{ characteristicCode: string; observedValue: string }>
+      }
+      submitInspectionRecord: () => Promise<void>
+    }
+    expect(wrapper.text()).toContain('正在加载工序检验对象')
+    expect(vm.recordForm.skuCode).toBe('')
+    vm.recordForm.resultLines[0]!.characteristicCode = 'DIM-01'
+    vm.recordForm.resultLines[0]!.observedValue = '10.1'
+    await vm.submitInspectionRecord()
+    expect(createRecordSpy).not.toHaveBeenCalled()
+
+    operationContextState.detail!.value = {
+      workOrderId: 'WO-ROD-02',
+      skuId: 'SF-ROD-01',
+      operationTasks: [
+        { operationTaskId: 'OP-ROD-10', operationSequence: 10, operationCode: 'OP10' },
+      ],
+    }
+    operationContextState.pending!.value = false
+    await flushPromises()
+    expect(wrapper.text()).toContain('SF-ROD-01')
+    expect(wrapper.text()).toContain('OP10')
+    expect(vm.recordForm.skuCode).toBe('SF-ROD-01')
+    await vm.submitInspectionRecord()
+    expect(createRecordSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceType: 'operation',
+        sourceService: 'mes-operation',
+        sourceDocumentId: 'WO-ROD-02',
+        skuCode: 'SF-ROD-01',
+      }),
+    )
+    wrapper.unmount()
+  })
+
+  // #4421：批准的同 WO/OP 接力，不创建领域关联或自动登记不良。
+  async function submittedOperationPage(
+    permissions = [
+      'business.mes.quality.read',
+      'business.mes.quality.write',
+      'business.mes.operations.read',
+    ],
+  ) {
+    authState.permissionCodes.push(...permissions)
+    routeState.route!.query = { workOrderId: 'WO-ROD-02', operationTaskId: 'OP-ROD-10' }
+    const wrapper = mountQualityPage(InspectionsPage)
+    operationContextState.detail!.value = {
+      workOrderId: 'WO-ROD-02',
+      skuId: 'SF-ROD-01',
+      operationTasks: [{ operationTaskId: 'OP-ROD-10', operationSequence: 10 }],
+    }
+    operationContextState.pending!.value = false
+    await flushPromises()
+    const vm = wrapper.vm as unknown as {
+      recordForm: { resultLines: Array<{ characteristicCode: string; observedValue: string }> }
+      submitInspectionRecord: () => Promise<void>
+    }
+    vm.recordForm.resultLines[0]!.characteristicCode = 'DIM-01'
+    vm.recordForm.resultLines[0]!.observedValue = '10.1'
+    await flushPromises()
+    return { wrapper, vm }
+  }
+  function sourceLinks(wrapper: ReturnType<typeof mountQualityPage>) {
+    return wrapper.findAllComponents({ name: 'RouterLink' })
+  }
+
+  it('offers same-operation defect registration only after successful inspection submission', async () => {
+    const { wrapper, vm } = await submittedOperationPage()
+    expect(wrapper.text()).not.toContain('登记同工序不良')
+    await vm.submitInspectionRecord()
+    await flushPromises()
+    const link = sourceLinks(wrapper).find((item) => item.text() === '登记同工序不良')!
+    expect(link).toBeDefined()
+    expect(link.props('to')).toEqual({
+      path: '/mes/quality',
+      query: { workOrderId: 'WO-ROD-02', operationTaskId: 'OP-ROD-10' },
+    })
+    expect(createRecordSpy).toHaveBeenCalledOnce()
+    expect(routerSpies.push).not.toHaveBeenCalled()
+    const back = sourceLinks(wrapper).find((item) => item.text().startsWith('返回工单'))!
+    expect(back.props('to')).toEqual({
+      path: '/mes/work-orders/WO-ROD-02',
+      query: { operationTaskId: 'OP-ROD-10' },
+    })
+  })
+
+  it.each([
+    { permissions: ['business.mes.operations.read'] },
+    { permissions: ['business.mes.quality.read', 'business.mes.operations.read'] },
+    { permissions: ['business.mes.quality.write', 'business.mes.operations.read'] },
+    { permissions: ['business.mes.quality.read', 'business.mes.quality.write'] },
+  ])(
+    'hides submitted defect continuation without all target permissions: %j',
+    async ({ permissions }) => {
+      const { wrapper, vm } = await submittedOperationPage(permissions)
+      await vm.submitInspectionRecord()
+      await flushPromises()
+      expect(createRecordSpy).toHaveBeenCalledOnce()
+      expect(wrapper.text()).not.toContain('登记同工序不良')
+    },
+  )
+
+  it('does not offer defect continuation after inspection submission fails', async () => {
+    const { wrapper, vm } = await submittedOperationPage()
+    createRecordSpy.mockRejectedValueOnce(new Error('检验拒绝'))
+    await vm.submitInspectionRecord()
+    await flushPromises()
+    expect(notifySpies.operationFailure).toHaveBeenCalledOnce()
+    expect(wrapper.text()).not.toContain('登记同工序不良')
+  })
+
+  it('drops submitted continuation when the source work order changes', async () => {
+    const { wrapper, vm } = await submittedOperationPage()
+    await vm.submitInspectionRecord()
+    await flushPromises()
+    expect(wrapper.text()).toContain('登记同工序不良')
+    routeState.route!.query = { workOrderId: 'WO-OTHER' }
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('登记同工序不良')
+    const back = sourceLinks(wrapper).find((item) => item.text().startsWith('返回工单'))!
+    expect(back.props('to')).toEqual({
+      path: '/mes/work-orders/WO-OTHER',
+      query: { operationTaskId: undefined },
+    })
+  })
+
+  it('never returns or continues an operation absent from the source work order', async () => {
+    const { wrapper, vm } = await submittedOperationPage()
+    operationContextState.detail!.value = {
+      workOrderId: 'WO-ROD-02',
+      skuId: 'SF-ROD-01',
+      operationTasks: [{ operationTaskId: 'OP-OTHER' }],
+    }
+    await flushPromises()
+    await vm.submitInspectionRecord()
+    expect(createRecordSpy).not.toHaveBeenCalled()
+    expect(wrapper.text()).not.toContain('登记同工序不良')
+    const back = sourceLinks(wrapper).find((item) => item.text().startsWith('返回工单'))!
+    expect(back.props('to')).toEqual({
+      path: '/mes/work-orders/WO-ROD-02',
+      query: { operationTaskId: undefined },
+    })
+  })
+
+  it('does not restore old continuation when the source changes during submission', async () => {
+    const { wrapper, vm } = await submittedOperationPage()
+    let finish!: () => void
+    createRecordSpy.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve
+        }),
+    )
+    const submission = vm.submitInspectionRecord()
+    routeState.route!.query = { workOrderId: 'WO-OTHER' }
+    await flushPromises()
+    finish()
+    await submission
+    await flushPromises()
+    expect(createRecordSpy).toHaveBeenCalledOnce()
+    expect(wrapper.text()).not.toContain('登记同工序不良')
+  })
+
+  it.each<Record<string, string>>([{}, { workOrderId: 'WO-ROD-02' }])(
+    'keeps normal inspection entry without inventing an operation: %j',
+    async (query) => {
+      routeState.route!.query = query
+      const wrapper = mountQualityPage(InspectionsPage)
+      await flushPromises()
+      expect(wrapper.text()).toContain('创建检验记录')
+      expect(wrapper.text()).not.toContain('登记同工序不良')
+      if (query.workOrderId) {
+        const back = sourceLinks(wrapper).find((item) => item.text().startsWith('返回工单'))!
+        expect(back.props('to')).toEqual({
+          path: '/mes/work-orders/WO-ROD-02',
+          query: { operationTaskId: undefined },
+        })
+      }
+    },
+  )
+
+  it('blocks a failed operation context and offers retry without a default product', async () => {
+    routeState.route!.query = { workOrderId: 'WO-ROD-02', operationTaskId: 'OP-ROD-10' }
+    const wrapper = mountQualityPage(InspectionsPage)
+    await flushPromises()
+    operationContextState.pending!.value = false
+    operationContextState.error!.value = '工单读取失败'
+    await flushPromises()
+    expect(wrapper.text()).toContain('工单读取失败')
+    const retry = wrapper.findAll('button').find((button) => button.text() === '重试检验对象')!
+    expect(retry).toBeDefined()
+    await retry.trigger('click')
+    expect(operationContextState.refresh).toHaveBeenCalled()
+    expect((wrapper.vm as unknown as { recordForm: { skuCode: string } }).recordForm.skuCode).toBe(
+      '',
+    )
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['SKU-FG-1000', 'SKU-FG-1000'],
+    ['MES-SKU-UNRESOLVED', '未解析物料'],
+  ])(
+    'shows %s consistently in the NCR list and located disposition detail',
+    async (skuCode, label) => {
+      qualityState.ncrs = [
+        {
+          id: 'NCR-MES-001',
+          code: 'NCR-MES-001',
+          sourceType: 'in-process',
+          sourceDocumentId: 'DEF-001',
+          skuCode,
+          defectQuantity: 2,
+          defectReason: 'SURFACE',
+          status: 'open',
+          reworkWorkOrderCreationStatus: 'not-requested',
+        },
+      ]
+      routeState.route!.query = {
+        ncrId: 'NCR-MES-001',
+        workOrderId: 'WO-001',
+        operationTaskId: 'OP-10',
+      }
+      const wrapper = mountQualityPage(NcrsPage)
+      await flushPromises()
+
+      expect(wrapper.get('[data-plan-summary]').text()).toContain(label)
+      expect(wrapper.get('[data-plan-summary]').text()).toContain('DEF-001')
+      const context = wrapper.get('section[aria-label="不合格品信息"]')
+      const material = context.findAll('dl > div').find((item) => item.get('dt').text() === '物料')!
+      expect(material.get('dd').text()).toBe(label)
+      expect(context.text()).toContain('DEF-001')
+      expect(context.text()).not.toContain('WO-001')
+      expect(context.text()).not.toContain('OP-10')
+      expect(wrapper.text()).not.toContain('MES-SKU-UNRESOLVED')
+      wrapper.unmount()
+    },
+  )
+
   it('keeps the user-selected NCR status filter when ncrId is removed from the route', async () => {
     routeState.route!.query = { ncrId: 'NCR-001' }
     mountQualityPage(NcrsPage)
@@ -485,6 +839,89 @@ describe('quality route location behavior', () => {
     expect(qualityState.ncrFilters!.status).toBe('open')
   })
 
+  it.each<{ name: string; query: Record<string, string>; expected: string }>([
+    {
+      name: 'operation source',
+      query: { workOrderId: 'WO-source', operationTaskId: 'OP-source' },
+      expected: '/mes/work-orders/WO-source?operationTaskId=OP-source',
+    },
+    {
+      name: 'work-order source',
+      query: { workOrderId: 'WO-source' },
+      expected: '/mes/work-orders/WO-source',
+    },
+  ])('returns NCR $name without guessing another operation', async ({ query, expected }) => {
+    routeState.route!.query = query
+    const wrapper = mountQualityPage(NcrsPage)
+    await flushPromises()
+
+    const link = wrapper
+      .findAllComponents({ name: 'RouterLink' })
+      .find((item) => item.text().startsWith('返回工单'))
+    expect(link).toBeDefined()
+    const router = createRouter({ history: createMemoryHistory(), routes: [] })
+    expect(router.resolve(link!.props('to')).fullPath).toBe(expected)
+    wrapper.unmount()
+  })
+
+  it.each<{ name: string; query: Record<string, string>; permissions: string[] }>([
+    { name: 'no source', query: {}, permissions: ['business.mes.work-orders.read'] },
+    {
+      name: 'operation without work order',
+      query: { operationTaskId: 'OP-source' },
+      permissions: ['business.mes.work-orders.read'],
+    },
+    {
+      name: 'no destination permission',
+      query: { workOrderId: 'WO-source', operationTaskId: 'OP-source' },
+      permissions: [],
+    },
+  ])('keeps NCR usable with $name and no return dead end', async ({ query, permissions }) => {
+    routeState.route!.query = query
+    authState.permissionCodes = ['business.quality.ncr.read', ...permissions]
+    const wrapper = mountQualityPage(NcrsPage)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('不合格品处理')
+    expect(
+      wrapper
+        .findAllComponents({ name: 'RouterLink' })
+        .filter((item) => item.text().startsWith('返回工单')),
+    ).toHaveLength(0)
+    expect(wrapper.text()).toContain('查看详情')
+    wrapper.unmount()
+  })
+
+  it('keeps NCR read access separate from manage actions and MES work-order navigation', async () => {
+    authState.permissionCodes = ['business.quality.ncr.read']
+    const wrapper = mountQualityPage(NcrsPage)
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '查看详情')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('当前账号只有 NCR 查看权限')
+    expect(wrapper.find('#ncr-disposition-files').exists()).toBe(false)
+    expect(wrapper.find('#ncr-close-reason').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('查看返工工单')
+  })
+
+  it('shows the system-created rework work order link only with MES read permission', async () => {
+    const wrapper = mountQualityPage(NcrsPage)
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '打开处置')!
+      .trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('查看返工工单 RW-001')
+  })
+
   it.each(['organizationId', 'environmentId'] as const)(
     'blocks both NCR actions when %s is empty and recovers when context returns',
     async (missingField) => {
@@ -494,7 +931,8 @@ describe('quality route location behavior', () => {
         canCloseNcr: boolean
         canSubmitDisposition: boolean
         closeForm: { reason: string }
-        dispositionForm: { dispositionType: string; attachmentFileIds: string }
+        dispositionForm: { dispositionType: string }
+        evidenceFiles: Array<{ fileId: string; fileName: string }>
         openNcr: (ncr: Record<string, unknown>) => void
         submitCloseNcr: () => Promise<void>
         submitNcrDisposition: () => Promise<void>
@@ -504,8 +942,8 @@ describe('quality route location behavior', () => {
       // 本用例只考察业务范围这一维门禁：选一个不需要 MRB 评审 / 中央审批链的处置类型，
       // 免得把 #1327 新增的处置前置条件混进来。
       vm.dispositionForm.dispositionType = 'sort-and-screen'
-      vm.dispositionForm.attachmentFileIds = 'file-001'
       await nextRenderTick()
+      vm.evidenceFiles = [{ fileId: 'completed-file', fileName: '尺寸复检.txt' }]
 
       expect(vm.canSubmitDisposition).toBe(false)
       expect(vm.canCloseNcr).toBe(false)
@@ -527,11 +965,134 @@ describe('quality route location behavior', () => {
       qualityState.ncrFilters![missingField] =
         missingField === 'organizationId' ? 'org-001' : 'env-dev'
       await nextRenderTick()
+      await wrapper
+        .findComponent(FileUpload)
+        .vm.addFiles([new File(['inspection'], '尺寸复检.txt', { type: 'text/plain' })])
+      await nextRenderTick()
 
       expect(vm.canSubmitDisposition).toBe(true)
       expect(vm.canCloseNcr).toBe(false)
       expect(dispositionButton?.attributes('disabled')).toBeUndefined()
       expect(closeButton?.attributes('disabled')).toBeDefined()
+    },
+  )
+
+  it('preserves disposition input after a lost final PATCH response and recovers HEAD 404 evidence with public readback', async () => {
+    evidenceApi.patch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    const wrapper = mountQualityPage(NcrsPage)
+    const vm = wrapper.vm as unknown as {
+      dispositionForm: { dispositionType: string; mrbComment: string }
+      canSubmitDisposition: boolean
+      selectedNcr: BusinessConsoleQualityNcrItem
+      openNcr: (ncr: BusinessConsoleQualityNcrItem) => void
+      submitNcrDisposition: () => Promise<void>
+    }
+    vm.openNcr(qualityState.ncrs[0]!)
+    vm.dispositionForm.dispositionType = 'sort-and-screen'
+    vm.dispositionForm.mrbComment = '保留尺寸复检说明'
+    await nextRenderTick()
+    const upload = wrapper.findComponent(FileUpload)
+    await upload.vm.addFiles([new File(['inspection'], '尺寸复检.txt', { type: 'text/plain' })])
+    await nextRenderTick()
+    expect(vm.dispositionForm).toMatchObject({
+      dispositionType: 'sort-and-screen',
+      mrbComment: '保留尺寸复检说明',
+    })
+    expect(vm.canSubmitDisposition).toBe(false)
+    expect(ncrActionSpies.submitDisposition).not.toHaveBeenCalled()
+    const actual =
+      await vi.importActual<typeof import('@nerv-iip/api-client')>('@nerv-iip/api-client')
+    evidenceApi.head.mockImplementationOnce((options) =>
+      actual.getBusinessConsoleQualityEvidenceTusOffset({
+        ...options,
+        baseUrl: 'http://quality.invalid',
+        fetch: async () => new Response(null, { status: 404 }),
+      }),
+    )
+    await upload.vm.retryFailed()
+    await nextRenderTick()
+    expect(evidenceApi.create).toHaveBeenCalledTimes(1)
+    expect(evidenceApi.patch).toHaveBeenCalledTimes(1)
+    expect(evidenceApi.complete).toHaveBeenCalledWith(
+      expect.objectContaining({ path: { uploadSessionId: 'session-1' } }),
+    )
+    expect(vm.canSubmitDisposition).toBe(true)
+    await vm.submitNcrDisposition()
+    await nextRenderTick()
+    expect(ncrActionSpies.submitDisposition).toHaveBeenCalledWith(
+      'NCR-001',
+      expect.objectContaining({
+        dispositionType: 'sort-and-screen',
+        attachmentFileIds: ['completed-file'],
+        mrbReviews: undefined,
+      }),
+    )
+    expect(evidenceApi.read).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { ncrId: 'NCR-001' },
+        query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      }),
+    )
+    expect(vm.selectedNcr).toMatchObject({
+      id: 'NCR-001',
+      status: 'disposition-in-progress',
+      attachmentFileIds: ['completed-file'],
+    })
+    expect(wrapper.text()).toContain('已关联证据')
+    expect(wrapper.text()).toContain('1 个')
+  })
+
+  it.each(['close', 'switch'] as const)(
+    'discards late HEAD 404 recovery results after dialog %s',
+    async (action) => {
+      const actual =
+        await vi.importActual<typeof import('@nerv-iip/api-client')>('@nerv-iip/api-client')
+      evidenceApi.head.mockImplementationOnce((options) =>
+        actual.getBusinessConsoleQualityEvidenceTusOffset({
+          ...options,
+          baseUrl: 'http://quality.invalid',
+          fetch: async () => new Response(null, { status: 404 }),
+        }),
+      )
+      let finish!: (value: unknown) => void
+      evidenceApi.complete.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+      )
+      const wrapper = mountQualityPage(NcrsPage)
+      const vm = wrapper.vm as unknown as {
+        detailOpen: boolean
+        evidenceFiles: Array<{ fileId: string }>
+        dispositionForm: { dispositionType: string }
+        canSubmitDisposition: boolean
+        openNcr: (ncr: BusinessConsoleQualityNcrItem) => void
+      }
+      vm.openNcr(qualityState.ncrs[0]!)
+      vm.dispositionForm.dispositionType = 'sort-and-screen'
+      await nextRenderTick()
+      const pending = wrapper
+        .findComponent(FileUpload)
+        .vm.addFiles([new File(['inspection'], '尺寸复检.txt', { type: 'text/plain' })])
+      await flushPromises()
+      expect(evidenceApi.complete).toHaveBeenCalledTimes(1)
+      if (action === 'close') {
+        vm.detailOpen = false
+        await nextRenderTick()
+      }
+      vm.openNcr({
+        id: 'NCR-002',
+        code: 'NCR-002',
+        status: 'open',
+        reworkWorkOrderCreationStatus: 'not-requested',
+      })
+      await nextRenderTick()
+      finish({ data: { success: true, data: { fileId: 'old-file' } } })
+      await pending
+      await nextRenderTick()
+      expect(wrapper.findComponent(NcrEvidenceUpload).props('ncrId')).toBe('NCR-002')
+      expect(vm.evidenceFiles).toEqual([])
+      expect(vm.canSubmitDisposition).toBe(false)
     },
   )
 
@@ -951,6 +1512,84 @@ describe('quality route location behavior', () => {
     expect(vm.recordForm.resultLines[0]!.observedValue).toBe('10.1')
     expect(taskActionSpies.refreshInspectionTasks).not.toHaveBeenCalled()
   })
+
+  it.each([true, false])(
+    'uses explicit source document numbers in the %s task submission flow',
+    async (taskFlow) => {
+      routeState.route!.query = {
+        ...(taskFlow ? { inspectionTaskId: 'TASK-001' } : {}),
+        inspectionPlanId: 'PLAN-001',
+        sourceDocumentNo: 'GR-20261011-000008',
+        sourceType: 'receiving',
+        sourceService: 'wms',
+        skuCode: 'SKU-RM-001',
+        quantity: '12',
+        action: 'create',
+      }
+      const submit = taskFlow ? taskActionSpies.startInspection : createRecordSpy
+      submit.mockResolvedValueOnce({
+        data: { inspectionRecordId: '01a0f250-1234-7234-8234-123456789abc' },
+      })
+      const wrapper = mountQualityPage(InspectionsPage)
+      await nextRenderTick()
+      const vm = wrapper.vm as unknown as {
+        recordForm: { resultLines: Array<{ observedValue: string }> }
+        recordSheetOpen: boolean
+        submitInspectionRecord: () => Promise<void>
+      }
+      vm.recordForm.resultLines[0]!.observedValue = '10.1'
+      await nextRenderTick()
+      await vm.submitInspectionRecord()
+      expect(notifySpies.success).toHaveBeenCalledWith(
+        `来源单据 GR-20261011-000008 的检验记录已提交${taskFlow ? '，待检任务已闭合。' : '。'}`,
+      )
+      expect(vm.recordSheetOpen).toBe(false)
+      if (taskFlow)
+        expect(routerSpies.push).toHaveBeenCalledWith({ path: '/quality/inspection-tasks' })
+      else
+        expect(createRecordSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            sourceDocumentId: 'GR-20261011-000008',
+            inspectedQuantity: 12,
+          }),
+        )
+    },
+  )
+
+  it.each([
+    [true, '01a0f250-1234-7234-8234-123456789abc'],
+    [false, '01a0f250-1234-7234-8234-123456789abc'],
+    [true, undefined],
+    [false, undefined],
+  ])(
+    'does not use internal identifiers when the %s task flow has no business number (%s)',
+    async (taskFlow, recordId) => {
+      routeState.route!.query = {
+        ...(taskFlow ? { inspectionTaskId: 'TASK-001' } : {}),
+        inspectionPlanId: 'PLAN-001',
+        sourceDocumentId: 'source-internal-001',
+        sourceType: 'receiving',
+        sourceService: 'wms',
+        skuCode: 'SKU-RM-001',
+        quantity: '12',
+        action: 'create',
+      }
+      const submit = taskFlow ? taskActionSpies.startInspection : createRecordSpy
+      submit.mockResolvedValueOnce({ data: { inspectionRecordId: recordId } })
+      const wrapper = mountQualityPage(InspectionsPage)
+      await nextRenderTick()
+      const vm = wrapper.vm as unknown as {
+        recordForm: { resultLines: Array<{ observedValue: string }> }
+        submitInspectionRecord: () => Promise<void>
+      }
+      vm.recordForm.resultLines[0]!.observedValue = '10.1'
+      await nextRenderTick()
+      await vm.submitInspectionRecord()
+      expect(notifySpies.success).toHaveBeenCalledWith(
+        `检验记录已提交${taskFlow ? '，待检任务已闭合。' : '。'}`,
+      )
+    },
+  )
 
   // #1326：计量型（variable）特性必须提交数值 measuredValue，缺失时后端会以领域 400 拒绝。
   it('submits measuredValue for variable characteristics and gates submit on a numeric value', async () => {

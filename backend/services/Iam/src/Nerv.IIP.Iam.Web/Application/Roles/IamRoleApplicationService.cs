@@ -68,7 +68,7 @@ public sealed class InMemoryIamRoleApplicationService(InMemoryIamStore store) : 
         var trimmedRoleName = RoleNameValidation.NormalizeRoleName(roleName);
         if (store.RoleNameExists(trimmedRoleName))
         {
-            throw new KnownException($"Role name '{trimmedRoleName}' is already used.");
+            throw new KnownException($"角色名称「{trimmedRoleName}」已被使用。");
         }
 
         var seededCodes = IamPermissionCatalog.EnsureSeeded(permissionCodes ?? []);
@@ -143,7 +143,7 @@ public sealed class PostgreSqlIamRoleApplicationService(
         var seededCodes = IamPermissionCatalog.EnsureSeeded(permissionCodes ?? []);
         if (await repository.GetByNameAsync(trimmedRoleName, cancellationToken) is not null)
         {
-            throw new KnownException($"Role name '{trimmedRoleName}' is already used.");
+            throw new KnownException($"角色名称「{trimmedRoleName}」已被使用。");
         }
 
         var role = new Role(
@@ -156,7 +156,7 @@ public sealed class PostgreSqlIamRoleApplicationService(
         }
         catch (DuplicateRoleNameException)
         {
-            throw new KnownException($"Role name '{trimmedRoleName}' is already used.");
+            throw new KnownException($"角色名称「{trimmedRoleName}」已被使用。");
         }
 
         return ToResponse(role);
@@ -216,13 +216,13 @@ internal static class RoleNameValidation
     {
         if (string.IsNullOrWhiteSpace(roleName))
         {
-            throw new KnownException("Role name is required.");
+            throw new KnownException("请填写角色名称。");
         }
 
         var trimmedRoleName = roleName.Trim();
         if (trimmedRoleName.Length > 128)
         {
-            throw new KnownException("Role name must be 128 characters or fewer.");
+            throw new KnownException("角色名称不能超过 128 个字符。");
         }
 
         return trimmedRoleName;

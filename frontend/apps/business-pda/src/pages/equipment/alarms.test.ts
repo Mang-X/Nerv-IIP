@@ -43,7 +43,6 @@ const refreshing = ref(false)
 const scopeReady = ref(true)
 const organizationId = ref('org-001')
 const environmentId = ref('env-dev')
-const lastUpdatedAt = ref('2026-07-28T10:20:30.000Z')
 const refresh = vi.fn(async () => {})
 const loadMore = vi.fn(async () => {})
 const acknowledge = vi.fn(async (_id: string, _atUtc: string) => ({ success: true }))
@@ -73,7 +72,6 @@ vi.mock('@/composables/useBusinessEquipmentAlarms', () => ({
     organizationId,
     environmentId,
     scopeReady,
-    lastUpdatedAt,
     hasSuccessfulResponse: computed(() => !pending.value && !error.value),
     hasFailedResponse: computed(() => false),
     pending,
@@ -362,7 +360,7 @@ describe('PDA equipment alarms page', () => {
   it('shows the empty state only when not pending and no error', () => {
     alarms.value = []
     const wrapper = mount(AlarmsPage)
-    expect(wrapper.text()).toContain('暂无设备报警')
+    expect(wrapper.text()).toContain('暂无符合筛选条件的设备报警')
   })
 
   it('shows an error banner (not the empty state) when error is set', () => {

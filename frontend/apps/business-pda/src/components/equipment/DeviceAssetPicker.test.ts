@@ -100,6 +100,31 @@ describe('DeviceAssetPicker', () => {
     ).toBe(true)
   })
 
+  it('re-queries the full directory when the keyword is cleared', async () => {
+    const directory = createDirectory()
+    directoryMock.mockReturnValue(directory)
+    mount(DeviceAssetPicker, {
+      props: { open: true },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    const search = document.body.querySelector<HTMLInputElement>('input[type="search"]')!
+    search.value = '车床'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await flushPromises()
+    expect(directory.search).toHaveBeenLastCalledWith('车床')
+
+    // 清除按钮只置空输入框、不重查 = 输入框空了而列表仍按「车床」过滤，空结果还会显示
+    // 「没有找到可选设备」——用户据此误判本组织没有这台设备。
+    document.body.querySelector<HTMLButtonElement>('button[aria-label="清除"]')!.click()
+    await flushPromises()
+    expect(directory.search).toHaveBeenLastCalledWith('')
+    expect(search.value).toBe('')
+  })
+
   it.each([
     [{ deviceAssetsPending: ref(true) }, '正在加载设备…'],
     [{ deviceAssets: ref([]) }, '没有找到可选设备'],

@@ -12,6 +12,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseAssignmentReceiptAgg
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseWorkPoolAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure.IntegrationEvents;
+using Nerv.IIP.Coding;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 
@@ -38,6 +39,8 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     public DbSet<WcsDispatchCircuit> WcsDispatchCircuits => Set<WcsDispatchCircuit>();
     public DbSet<InventoryMovementRequest> InventoryMovementRequests => Set<InventoryMovementRequest>();
     public DbSet<ProcessedIntegrationEvent> ProcessedIntegrationEvents => Set<ProcessedIntegrationEvent>();
+    public DbSet<CodeCounter> CodeCounters => Set<CodeCounter>();
+    public DbSet<CodeIdempotencyKey> CodeIdempotencyKeys => Set<CodeIdempotencyKey>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -45,6 +48,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         modelBuilder.HasDefaultSchema(WmsFacts.Schema);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
         modelBuilder.ConfigureIntegrationEventDeadLetters();
+        modelBuilder.ConfigureCodingEntities();
         base.OnModelCreating(modelBuilder);
     }
 

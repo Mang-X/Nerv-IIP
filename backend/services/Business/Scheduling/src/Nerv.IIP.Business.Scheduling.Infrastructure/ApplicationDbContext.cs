@@ -1,9 +1,13 @@
 using MediatR;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleInsertionPreviewJobAggregate;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Scheduling.Domain;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleFirstPlanJobAggregate;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleWorkingDraftAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.ScheduleOperationOverrideAggregate;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OrderUrgencyAggregate;
+using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.OperationExecutionProjectionAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Scheduling.Infrastructure.Urgency;
 using Nerv.IIP.Messaging.CAP;
@@ -15,10 +19,14 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
     : AppDbContextBase(options, mediator)
     , IPostgreSqlCapDataStorage
 {
+    public DbSet<ScheduleInsertionPreviewJob> ScheduleInsertionPreviewJobs => Set<ScheduleInsertionPreviewJob>();
+    public DbSet<ScheduleFirstPlanJob> ScheduleFirstPlanJobs => Set<ScheduleFirstPlanJob>();
+    public DbSet<ScheduleWorkingDraft> ScheduleWorkingDrafts => Set<ScheduleWorkingDraft>();
     public DbSet<ScheduleProblemSnapshot> ScheduleProblems => Set<ScheduleProblemSnapshot>();
     public DbSet<SchedulePlan> SchedulePlans => Set<SchedulePlan>();
     public DbSet<SchedulePlanInvalidation> SchedulePlanInvalidations => Set<SchedulePlanInvalidation>();
     public DbSet<ScheduleOperationOverride> ScheduleOperationOverrides => Set<ScheduleOperationOverride>();
+    public DbSet<OperationExecutionProjection> OperationExecutionProjections => Set<OperationExecutionProjection>();
     public DbSet<OrderUrgencyBusinessPriority> OrderUrgencyBusinessPriorities => Set<OrderUrgencyBusinessPriority>();
     public DbSet<OrderUrgencyBusinessPriorityChange> OrderUrgencyBusinessPriorityChanges => Set<OrderUrgencyBusinessPriorityChange>();
     public DbSet<OrderUrgencySnapshot> OrderUrgencySnapshots => Set<OrderUrgencySnapshot>();
@@ -55,16 +63,31 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken = default)
     {
-        return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync<ProcessedIntegrationEvent>(
-            this,
-            token => base.SaveChangesAsync(acceptAllChangesOnSuccess, token),
-            cancellationToken);
+        return SaveInboxChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
-        return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicate<ProcessedIntegrationEvent>(
-            this,
-            () => base.SaveChanges(acceptAllChangesOnSuccess));
+        try { return base.SaveChanges(acceptAllChangesOnSuccess); }
+        catch (DbUpdateException exception) when (IsInboxIdentityConflict(exception))
+        {
+            ChangeTracker.Clear();
+            return 0;
+        }
     }
+
+    private async Task<int> SaveInboxChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken)
+    {
+        try { return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken); }
+        catch (DbUpdateException exception) when (IsInboxIdentityConflict(exception))
+        {
+            ChangeTracker.Clear();
+            return 0;
+        }
+    }
+
+    private bool IsInboxIdentityConflict(DbUpdateException exception) =>
+        ChangeTracker.Entries<ProcessedIntegrationEvent>().Any(x => x.State == EntityState.Added) &&
+        (ProcessedIntegrationEventInbox.IsUniqueConflict(exception, this, "ux_processed_integration_events_consumer_idempotency_key") ||
+         ProcessedIntegrationEventInbox.IsUniqueConflict(exception, this, "ux_processed_integration_events_consumer_event_id"));
 }

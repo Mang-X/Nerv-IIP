@@ -115,11 +115,7 @@ const stubs = {
       '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
-  // `NvSelectValue` is reka's `SelectValue` re-exported under an Nv alias; the
-  // component's own name stays `SelectValue`, which is the key test-utils matches
-  // when stubbing (an `NvSelectValue` key misses and the real reka value throws
-  // "must be used within SelectRoot").
-  SelectValue: { template: '<span />' },
+  NvSelectValue: { template: '<span />' },
   NvSelectContent: { template: '<span><slot /></span>' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
@@ -146,7 +142,7 @@ describe('OrderUrgencyBadge display modes', () => {
     ['dynamicUrgency', '高风险'],
     ['executionRisk', '关注'],
     ['criticalRatio', 'CR 0.8'],
-    ['slack', 'Slack -2h'],
+    ['slack', '松弛 -2h'],
     ['expectedDelay', '延误 5h'],
   ]
 
@@ -331,7 +327,7 @@ describe('OrderUrgencyBadge priority editing', () => {
     expect(wrapper.find('[data-testid="priority-editor"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('仅排产管理权限可调整人工优先级')
     // Read-only users still inspect the urgency explanation.
-    expect(wrapper.text()).toContain('CR / Slack')
+    expect(wrapper.text()).toContain('CR / 松弛时间')
     expect(wrapper.text()).toContain('执行风险')
   })
 })

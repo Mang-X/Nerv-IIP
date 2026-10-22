@@ -5,6 +5,7 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessSkus } from '@/composables/useBusinessMasterData'
 import {
@@ -49,7 +50,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -190,7 +191,7 @@ const versionCells = computed<NvMetricStripCell[]>(() => [
   },
 ])
 
-const listErrorMessage = computed(() => formatError(productionVersionsError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(productionVersionsError.value))
 
 function formatLotRange(min?: number | null, max?: number | null) {
   if (min == null && max == null) return '不限'
@@ -422,10 +423,6 @@ async function runResolve() {
     notifyOperationFailure('解析生产版本失败', error, '解析生产版本失败，请稍后重试。')
   }
 }
-
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 </script>
 
 <template>
@@ -483,16 +480,12 @@ function formatError(error: unknown) {
                   <NvFieldLabel for="pv-sku"
                     >物料 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvSelect v-model="form.skuCode">
-                    <NvSelectTrigger id="pv-sku"
-                      ><NvSelectValue placeholder="选择物料"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem v-for="o in skuOptions" :key="o.value" :value="o.value">{{
-                        o.label
-                      }}</NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
+                  <DirectoryPicker
+                    id="pv-sku"
+                    v-model="form.skuCode"
+                    directory-type="material"
+                    creatable
+                  />
                 </NvField>
                 <NvField class="self-start">
                   <NvFieldLabel>设为默认</NvFieldLabel>
@@ -584,7 +577,7 @@ function formatError(error: unknown) {
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="createPending || updatePending">
-                  <Spinner v-if="createPending || updatePending" aria-hidden="true" />
+                  <NvSpinner v-if="createPending || updatePending" aria-hidden="true" />
                   {{ editingId ? '保存生产版本' : '创建生产版本' }}
                 </NvButton>
               </NvDialogFooter>
@@ -633,7 +626,7 @@ function formatError(error: unknown) {
           </NvField>
           <div class="flex flex-wrap items-center gap-2">
             <NvButton type="button" :disabled="!canResolve || resolvePending" @click="runResolve">
-              <Spinner v-if="resolvePending" aria-hidden="true" />
+              <NvSpinner v-if="resolvePending" aria-hidden="true" />
               <SearchIcon v-else aria-hidden="true" />
               解析
             </NvButton>
@@ -778,7 +771,7 @@ function formatError(error: unknown) {
           <!-- 普通 NvButton，不用 NvAlertDialogAction：后者点击即无条件关框（confirm-destroy 规则 3）。 -->
           <!-- variant 不写 = NvAlertDialogAction 的默认值 'default'，换件不改外观。 -->
           <NvButton type="button" :disabled="archivePending" @click="confirmArchive">
-            <Spinner v-if="archivePending" aria-hidden="true" />
+            <NvSpinner v-if="archivePending" aria-hidden="true" />
             确认归档
           </NvButton>
         </NvAlertDialogFooter>

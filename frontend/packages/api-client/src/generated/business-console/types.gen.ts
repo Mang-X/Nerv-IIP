@@ -82,20 +82,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
 export type NetCorePalExtensionsDtoResponseData = {
     success?: boolean;
     message?: string;
-    code?: number;
+    code?: number | string;
     errorData?: Array<unknown>;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchSummaryRequest = {
     [key: string]: never;
-};
-
-export type FastEndpointsErrorResponse = {
-    statusCode?: number;
-    message?: string;
-    errors?: {
-        [key: string]: Array<string>;
-    };
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateWmsInboundOrderResponse = NetCorePalExtensionsDtoResponseData & {
@@ -109,11 +101,11 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsInboundOrderRequest = {
     organizationId: string;
     environmentId: string;
-    inboundOrderNo: string;
     sourceDocumentType: string;
     sourceDocumentId: string;
     siteCode: string;
     lines: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundLineInput>;
+    idempotencyKey: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInboundLineInput = {
@@ -292,11 +284,11 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsPutawayTaskRequest = {
-    taskNo: string;
     lineNo: string;
     fromLocationCode: string;
     toLocationCode: string;
     quantity?: number;
+    idempotencyKey: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWarehouseTaskListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -421,11 +413,11 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsOutboundOrderRequest = {
     organizationId: string;
     environmentId: string;
-    outboundOrderNo: string;
     sourceDocumentType: string;
     sourceDocumentId: string;
     siteCode: string;
     lines: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOutboundLineInput>;
+    idempotencyKey: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOutboundLineInput = {
@@ -488,15 +480,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsPickingTaskRequest = {
-    taskNo: string;
     lineNo: string;
     fromLocationCode: string;
     toLocationCode: string;
     quantity?: number;
+    idempotencyKey: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteWmsOutboundOrderRequest = {
-    packReviewNo: string;
     passed?: boolean;
     idempotencyKey: string;
     scopeKind?: string | null;
@@ -519,12 +510,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsCountExecutionRequest = {
     organizationId: string;
     environmentId: string;
-    countNo: string;
     skuCode: string;
     uomCode: string;
     siteCode: string;
     locationCode: string;
     expectedQuantity?: number;
+    idempotencyKey: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsCountExecutionListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -583,8 +574,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleD
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDispatchWmsWcsTaskRequest = {
     expectedVersion: number;
     adapterType: string;
-    externalTaskId: string;
-    payloadJson: string;
+    externalTaskId?: string | null;
+    payloadJson?: string | null;
     deviceId?: string | null;
 };
 
@@ -632,6 +623,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     dispatchedAtUtc?: string;
     failedAtUtc?: string | null;
     completedAtUtc?: string | null;
+    warehouseTaskVersion?: number;
+    plannedQuantity?: number;
+    executedQuantity?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWcsTaskListRequest = {
@@ -710,6 +704,79 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWorkPoolListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPool>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPool = {
+    poolCode?: string;
+    displayName?: string;
+    siteCode?: string;
+    members?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolMember>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolMember = {
+    principalId?: string;
+    effectiveFromUtc?: string;
+    effectiveToUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWorkPoolResult = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolResult | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolResult = {
+    poolCode?: string;
+    displayName?: string;
+    siteCode?: string;
+    active?: boolean;
+    created?: boolean;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsWorkPoolRequest = {
+    displayName: string;
+    siteCode: string;
+    idempotencyKey: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWorkPoolMemberResult = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolMemberResult | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolMemberResult = {
+    poolCode?: string;
+    principalId?: string;
+    effectiveFromUtc?: string;
+    effectiveToUtc?: string | null;
+    created?: boolean;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAddWmsWorkPoolMemberRequest = {
+    principalId: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWorkPoolMemberRemovalResult = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolMemberRemovalResult | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsWorkPoolMemberRemovalResult = {
+    poolCode?: string;
+    principalId?: string;
+    removedCount?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRemoveWmsWorkPoolMemberRequest = {
     [key: string]: never;
 };
 
@@ -832,10 +899,50 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     controlMinValue?: number | null;
     controlMaxValue?: number | null;
     controlAllowedValues?: Array<string> | null;
+    displayName?: string | null;
+    isEnabled?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryTagListRequest = {
     [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateOrUpdateTelemetryTagResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateTelemetryTagResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateTelemetryTagResponse = {
+    telemetryTagId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateTelemetryTagRequest = {
+    organizationId: string;
+    environmentId: string;
+    deviceAssetId: string;
+    tagKey: string;
+    valueType: string;
+    unitCode: string;
+    samplingPolicy: string;
+    displayName?: string | null;
+    isWritable?: boolean;
+    controlMinValue?: number | null;
+    controlMaxValue?: number | null;
+    controlAllowedValues?: Array<string> | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDisableTelemetryTagResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDisableTelemetryTagResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDisableTelemetryTagResponse = {
+    telemetryTagId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDisableTelemetryTagRequest = {
+    organizationId: string;
+    environmentId: string;
+    deviceAssetId: string;
+    tagKey: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleTelemetryTagCurrentValueResponse = NetCorePalExtensionsDtoResponseData & {
@@ -1203,9 +1310,63 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     oeeRate?: number | null;
     isDegraded?: boolean;
     degradedReasons?: Array<string>;
+    changeoverLossMinutes?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleTelemetryOeeRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfOeeAggregateBucketsResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsIndustrialTelemetryOeeAggregateBucketsResponse | null;
+};
+
+export type NervIipContractsIndustrialTelemetryOeeAggregateBucketsResponse = {
+    organizationId?: string;
+    environmentId?: string;
+    dimension?: NervIipContractsIndustrialTelemetryOeeAggregateDimension;
+    windowStartUtc?: string;
+    windowEndUtc?: string;
+    buckets?: Array<NervIipContractsIndustrialTelemetryOeeAggregateBucket>;
+    totalCount?: number;
+    skip?: number;
+    take?: number;
+};
+
+export type NervIipContractsIndustrialTelemetryOeeAggregateDimension = 'device' | 'workCenter' | 'line' | 'workshop' | 'shift' | 'day';
+
+export type NervIipContractsIndustrialTelemetryOeeAggregateBucket = {
+    dimension?: NervIipContractsIndustrialTelemetryOeeAggregateDimension;
+    dimensionValue?: string | null;
+    siteCode?: string | null;
+    workshopCode?: string | null;
+    lineCode?: string | null;
+    workCenterId?: string | null;
+    deviceAssetId?: string | null;
+    shiftCode?: string | null;
+    businessDate?: string | null;
+    bucketStartUtc?: string;
+    bucketEndUtc?: string;
+    deviceCount?: number;
+    stateSampleCount?: number;
+    productionFactCount?: number;
+    availabilityRate?: number | null;
+    performanceRate?: number | null;
+    qualityRate?: number | null;
+    oeeRate?: number | null;
+    goodQuantity?: number;
+    scrapQuantity?: number;
+    reworkQuantity?: number;
+    outputUomCode?: string | null;
+    expectedOutputQuantity?: number | null;
+    isDegraded?: boolean;
+    degradedReasons?: Array<NervIipContractsIndustrialTelemetryOeeAggregateDegradedReason>;
+    changeoverLossMinutes?: number;
+};
+
+export type NervIipContractsIndustrialTelemetryOeeAggregateDegradedReason = 'runtimeStateFactsMissing' | 'runtimeStateCoverageIncomplete' | 'productionUomAmbiguous' | 'productionOutputMissing' | 'theoreticalRateMissingOrAmbiguous' | 'productiveRuntimeMissing' | 'loadingRuntimeMissing' | 'historicalDimensionLegacyUnresolved' | 'historicalHierarchyMissing' | 'historicalTimezoneMissing' | 'historicalTimezoneInvalid' | 'historicalShiftDefinitionMissing' | 'historicalShiftDefinitionInvalid' | 'historicalReportOutsideShiftWindow' | 'historicalLocalTimeInvalid' | 'historicalLocalTimeAmbiguous' | 'siteDimensionMissing' | 'workshopDimensionMissing' | 'lineDimensionMissing' | 'siteDimensionAmbiguous' | 'workshopDimensionAmbiguous' | 'lineDimensionAmbiguous' | 'siteTimezoneOrDayBoundaryMissing' | 'shiftDefinitionOrBoundaryMissing';
+
+export type NervIipContractsIndustrialTelemetryQueryOeeAggregateBucketsRequest = {
     [key: string]: never;
 };
 
@@ -1235,6 +1396,9 @@ export type NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityWindowCo
     messageKey?: string;
     substituteDeviceAssetIds?: Array<string>;
     sourceReferenceLabel?: string | null;
+    expectedRestoreAtUtc?: string | null;
+    restorePredictionSource?: string | null;
+    restorePredictionSourceVersion?: string | null;
 };
 
 export type NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityStatus = 'available' | 'unavailable' | 'unknown';
@@ -1317,9 +1481,29 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     [key: string]: never;
 };
 
-export type NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract = NetCorePalExtensionsDtoResponseData & {
-    data?: NervIipContractsSchedulingSchedulePlanContract | null;
+export type NetCorePalExtensionsDtoResponseDataOfSchedulingCandidateSetContract = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingSchedulingCandidateSetContract | null;
 };
+
+export type NervIipContractsSchedulingSchedulingCandidateSetContract = {
+    contractVersion?: number;
+    baselinePlanId?: string;
+    asOfUtc?: string;
+    inputFingerprint?: string;
+    candidates?: Array<NervIipContractsSchedulingSchedulingCandidateContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateContract = {
+    strategy?: NervIipContractsSchedulingSchedulingReschedulingStrategyContract;
+    inputFingerprint?: string;
+    plan?: NervIipContractsSchedulingSchedulePlanContract;
+    kpis?: NervIipContractsSchedulingSchedulingCandidateKpisContract;
+    movements?: Array<NervIipContractsSchedulingSchedulingCandidateMovementContract>;
+    explanations?: Array<NervIipContractsSchedulingSchedulingCandidateExplanationContract>;
+    transfers?: Array<NervIipContractsSchedulingSchedulingCandidateTransferContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingReschedulingStrategyContract = 'rightShift' | 'resourceTransfer';
 
 export type NervIipContractsSchedulingSchedulePlanContract = {
     contractVersion?: number;
@@ -1340,6 +1524,10 @@ export type NervIipContractsSchedulingSchedulePlanContract = {
     blockWindows?: Array<NervIipContractsSchedulingSchedulePlanBlockWindowContract> | null;
     materialRisks?: Array<NervIipContractsSchedulingSchedulePlanMaterialRiskContract> | null;
     equipmentRisks?: Array<NervIipContractsSchedulingSchedulePlanEquipmentRiskContract> | null;
+    materialShortageSummary?: Array<NervIipContractsSchedulingSchedulePlanMaterialShortageSummaryContract> | null;
+    validationContext?: NervIipContractsSchedulingSchedulePlanValidationContextContract | null;
+    assemblyDependencies?: Array<NervIipContractsSchedulingSchedulingAssemblyDependencyContract> | null;
+    freezeContext?: NervIipContractsSchedulingSchedulePlanFreezeContextContract | null;
 };
 
 export type NervIipContractsSchedulingSchedulePlanStatusContract = 'preview' | 'generated' | 'released' | 'superseded' | 'revoked';
@@ -1371,6 +1559,28 @@ export type NervIipContractsSchedulingScheduleAssignmentContract = {
     isLocked?: boolean;
     explanationCode?: string;
     standardOperationCode?: string | null;
+    segments?: Array<NervIipContractsSchedulingScheduleAssignmentSegmentContract> | null;
+    currentExecution?: NervIipContractsSchedulingScheduleAssignmentCurrentExecutionContract | null;
+};
+
+export type NervIipContractsSchedulingScheduleAssignmentSegmentContract = {
+    startUtc?: string;
+    endUtc?: string;
+};
+
+export type NervIipContractsSchedulingScheduleAssignmentCurrentExecutionContract = {
+    observedAtUtc?: string;
+    workOrderProgress?: NervIipContractsSchedulingScheduleWorkOrderProgressContract | null;
+    materialReadyUtc?: string | null;
+    isMaterialReady?: boolean | null;
+    equipmentState?: string | null;
+    equipmentStateOccurredAtUtc?: string | null;
+    isEquipmentSourceFresh?: boolean | null;
+};
+
+export type NervIipContractsSchedulingScheduleWorkOrderProgressContract = {
+    completedQuantity?: number;
+    plannedQuantity?: number;
 };
 
 export type NervIipContractsSchedulingScheduleResourceLoadContract = {
@@ -1458,6 +1668,7 @@ export type NervIipContractsSchedulingSchedulePlanMaterialRiskContract = {
     reasonCodes?: Array<string>;
     shortages?: Array<NervIipContractsSchedulingSchedulingMaterialShortageContract>;
     message?: string;
+    materialReadyUtc?: string | null;
 };
 
 export type NervIipContractsSchedulingSchedulingMaterialShortageContract = {
@@ -1466,6 +1677,7 @@ export type NervIipContractsSchedulingSchedulingMaterialShortageContract = {
     requiredQuantity?: number;
     availableQuantity?: number;
     shortageQuantity?: number;
+    uomCode?: string | null;
 };
 
 export type NervIipContractsSchedulingSchedulePlanEquipmentRiskContract = {
@@ -1474,6 +1686,307 @@ export type NervIipContractsSchedulingSchedulePlanEquipmentRiskContract = {
     resourceId?: string;
     reasonCodes?: Array<string>;
     message?: string;
+};
+
+export type NervIipContractsSchedulingSchedulePlanMaterialShortageSummaryContract = {
+    materialId?: string;
+    materialLotId?: string | null;
+    uomCode?: string | null;
+    shortageQuantity?: number;
+    affectedOperations?: Array<NervIipContractsSchedulingSchedulePlanMaterialAffectedOperationContract>;
+};
+
+export type NervIipContractsSchedulingSchedulePlanMaterialAffectedOperationContract = {
+    orderId?: string;
+    operationId?: string;
+};
+
+export type NervIipContractsSchedulingSchedulePlanValidationContextContract = {
+    horizonStartUtc?: string;
+    horizonEndUtc?: string;
+    resources?: Array<NervIipContractsSchedulingSchedulePlanResourceContextContract>;
+    operations?: Array<NervIipContractsSchedulingSchedulePlanOperationContextContract>;
+    fixedReservations?: Array<NervIipContractsSchedulingSchedulePlanFixedReservationContract>;
+};
+
+export type NervIipContractsSchedulingSchedulePlanResourceContextContract = {
+    resourceId?: string;
+    workCenterId?: string;
+    calendarId?: string;
+    capacityUnits?: number;
+    utilizationRate?: number;
+};
+
+export type NervIipContractsSchedulingSchedulePlanOperationContextContract = {
+    orderId?: string;
+    operationId?: string;
+    predecessorOperationIds?: Array<string>;
+    dueUtc?: string;
+    durationMinutes?: number;
+    setupMinutes?: number;
+    isFixed?: boolean;
+};
+
+export type NervIipContractsSchedulingSchedulePlanFixedReservationContract = {
+    orderId?: string;
+    operationId?: string;
+    workCenterId?: string;
+    startUtc?: string;
+    endUtc?: string;
+    resourceId?: string | null;
+};
+
+export type NervIipContractsSchedulingSchedulingAssemblyDependencyContract = {
+    childOrderId?: string;
+    parentOrderId?: string;
+};
+
+export type NervIipContractsSchedulingSchedulePlanFreezeContextContract = {
+    asOfUtc?: string;
+    defaultWindowEndUtc?: string;
+    workCenterWindows?: Array<NervIipContractsSchedulingSchedulePlanFreezeWorkCenterWindowContract>;
+    assignments?: Array<NervIipContractsSchedulingSchedulePlanFrozenAssignmentContract>;
+};
+
+export type NervIipContractsSchedulingSchedulePlanFreezeWorkCenterWindowContract = {
+    workCenterId?: string;
+    endUtc?: string;
+};
+
+export type NervIipContractsSchedulingSchedulePlanFrozenAssignmentContract = {
+    assignment?: NervIipContractsSchedulingScheduleAssignmentContract;
+    reasons?: Array<NervIipContractsSchedulingSchedulePlanFreezeReasonContract>;
+};
+
+export type NervIipContractsSchedulingSchedulePlanFreezeReasonContract = 'completed' | 'started' | 'manualLock' | 'stableWindow';
+
+export type NervIipContractsSchedulingSchedulingCandidateKpisContract = {
+    baselineOnTimeRate?: number;
+    candidateOnTimeRate?: number;
+    onTimeRateChange?: number;
+    baselineOnTimeDenominator?: number;
+    candidateOnTimeDenominator?: number;
+    baselineLateOrderCount?: number;
+    candidateLateOrderCount?: number;
+    lateOrderCountChange?: number;
+    movedOperationCount?: number;
+    baselineResourceUtilization?: number;
+    candidateResourceUtilization?: number;
+    resourceUtilizationChange?: number;
+    baselineUnscheduledCount?: number;
+    candidateUnscheduledCount?: number;
+    unscheduledCountChange?: number;
+    preservedLockedCount?: number;
+    totalLockedCount?: number;
+    lockedAssignments?: Array<NervIipContractsSchedulingSchedulingCandidateLockPreservationContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateLockPreservationContract = {
+    original?: NervIipContractsSchedulingScheduleAssignmentContract;
+    candidate?: NervIipContractsSchedulingScheduleAssignmentContract | null;
+    preserved?: boolean;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateMovementContract = {
+    original?: NervIipContractsSchedulingScheduleAssignmentContract;
+    candidate?: NervIipContractsSchedulingScheduleAssignmentContract;
+    reasons?: Array<NervIipContractsSchedulingSchedulingCandidateReasonContract>;
+    paths?: Array<NervIipContractsSchedulingSchedulingCandidatePathContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateReasonContract = {
+    code?: NervIipContractsSchedulingSchedulingCandidateReasonCodeContract;
+    source?: NervIipContractsSchedulingSchedulingCandidateDeviationContract;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateReasonCodeContract = 'operationDeviation' | 'newOperation' | 'resourceUnavailable' | 'predecessorDependency' | 'resourceCapacity';
+
+export type NervIipContractsSchedulingSchedulingCandidateDeviationContract = {
+    kind?: NervIipContractsSchedulingSchedulingCandidateDeviationKindContract;
+    sourceReference?: string;
+    sourceVersion?: string;
+    occurredAtUtc?: string;
+    reasonCode?: string;
+    resourceId?: string | null;
+    startUtc?: string | null;
+    endUtc?: string | null;
+    orderId?: string | null;
+    operationId?: string | null;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateDeviationKindContract = 'resourceUnavailable' | 'operationDeviation' | 'newOperation';
+
+export type NervIipContractsSchedulingSchedulingCandidatePathContract = {
+    source?: NervIipContractsSchedulingSchedulingCandidateDeviationContract;
+    root?: NervIipContractsSchedulingSchedulingCandidateOperationContract;
+    steps?: Array<NervIipContractsSchedulingSchedulingCandidateStepContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateOperationContract = {
+    orderId?: string;
+    operationId?: string;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateStepContract = {
+    from?: NervIipContractsSchedulingSchedulingCandidateOperationContract;
+    to?: NervIipContractsSchedulingSchedulingCandidateOperationContract;
+    code?: NervIipContractsSchedulingSchedulingCandidateReasonCodeContract;
+    competitionWindow?: NervIipContractsSchedulingScheduleAssignmentSegmentContract | null;
+    capacityUnits?: number | null;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateExplanationContract = {
+    orderId?: string;
+    operationId?: string;
+    code?: string;
+    reasons?: Array<NervIipContractsSchedulingSchedulingCandidateReasonContract>;
+    paths?: Array<NervIipContractsSchedulingSchedulingCandidatePathContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateTransferContract = {
+    orderId?: string;
+    operationId?: string;
+    originalResourceId?: string;
+    resourceId?: string;
+    setupMinutes?: number;
+    deviceSources?: Array<NervIipContractsSchedulingSchedulingCandidateDeviceSourceContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateDeviceSourceContract = {
+    resourceId?: string;
+    substituteResourceId?: string;
+    sourceReference?: string;
+    reasonCode?: string;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidatePreviewRequestContract = {
+    organizationId?: string;
+    environmentId?: string;
+    baselinePlanId?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfSchedulingCandidateSelectionContract = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingSchedulingCandidateSelectionContract | null;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateSelectionContract = {
+    plan?: NervIipContractsSchedulingSchedulePlanContract;
+    workingDraft?: NervIipContractsSchedulingSchedulingWorkingDraftContract;
+    comparison?: NervIipContractsSchedulingSchedulePlanComparisonContract;
+};
+
+export type NervIipContractsSchedulingSchedulingWorkingDraftContract = {
+    planId?: string;
+    savedAtUtc?: string;
+    state?: NervIipContractsSchedulingSchedulingWorkingDraftStateContract;
+};
+
+export type NervIipContractsSchedulingSchedulingWorkingDraftStateContract = {
+    contractVersion?: number;
+    orders?: Array<NervIipContractsSchedulingSchedulingWorkingDraftOrderContract>;
+    tasks?: Array<NervIipContractsSchedulingSchedulingWorkingDraftTaskContract>;
+    pendingOperations?: Array<NervIipContractsSchedulingSchedulingWorkingDraftPendingOperationContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingWorkingDraftOrderContract = {
+    workOrderId?: string;
+    priority?: number;
+    isRush?: boolean;
+    included?: boolean;
+};
+
+export type NervIipContractsSchedulingSchedulingWorkingDraftTaskContract = {
+    taskId?: string;
+    orderId?: string;
+    operationId?: string;
+    resourceId?: string;
+    workCenterId?: string;
+    startUtc?: string;
+    endUtc?: string;
+    locked?: boolean;
+    segments?: Array<NervIipContractsSchedulingScheduleAssignmentSegmentContract> | null;
+};
+
+export type NervIipContractsSchedulingSchedulingWorkingDraftPendingOperationContract = {
+    id?: string;
+    orderId?: string;
+    operationId?: string;
+    source?: NervIipContractsSchedulingSchedulingWorkingDraftPendingSource;
+    message?: string;
+    canRestore?: boolean;
+    taskId?: string | null;
+    reasonCode?: string | null;
+    task?: NervIipContractsSchedulingSchedulingWorkingDraftTaskContract | null;
+};
+
+export type NervIipContractsSchedulingSchedulingWorkingDraftPendingSource = 'unscheduled' | 'invalidated' | 'removed';
+
+export type NervIipContractsSchedulingSchedulePlanComparisonContract = {
+    basePlanId?: string;
+    candidatePlanId?: string;
+    baseMetrics?: NervIipContractsSchedulingSchedulePlanMetricsContract;
+    candidateMetrics?: NervIipContractsSchedulingSchedulePlanMetricsContract;
+    movedOperationCount?: number;
+    lockedOperationCount?: number;
+    unscheduledOperationCount?: number;
+};
+
+export type NervIipContractsSchedulingSchedulingCandidateSelectRequestContract = {
+    organizationId?: string;
+    environmentId?: string;
+    baselinePlanId?: string;
+    asOfUtc?: string;
+    inputFingerprint?: string;
+    strategy?: NervIipContractsSchedulingSchedulingReschedulingStrategyContract;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfSchedulingDowntimeImpactResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingSchedulingDowntimeImpactResponse | null;
+};
+
+export type NervIipContractsSchedulingSchedulingDowntimeImpactResponse = {
+    baselinePlanId?: string;
+    problemId?: string;
+    observedAtUtc?: string;
+    items?: Array<NervIipContractsSchedulingSchedulingDowntimeImpactContract>;
+    affectedOperations?: Array<NervIipContractsSchedulingSchedulingDowntimeAffectedOperationContract>;
+    operationsWithAlternativesCount?: number;
+};
+
+export type NervIipContractsSchedulingSchedulingDowntimeImpactContract = {
+    fact?: NervIipContractsSchedulingSchedulingDowntimeFactContract;
+    affectedOperations?: Array<NervIipContractsSchedulingSchedulingDowntimeAffectedOperationContract>;
+    operationsWithAlternativesCount?: number;
+};
+
+export type NervIipContractsSchedulingSchedulingDowntimeFactContract = {
+    source?: string;
+    sourceReferenceId?: string;
+    deviceAssetId?: string | null;
+    workCenterId?: string | null;
+    startedAtUtc?: string;
+    recoveredAtUtc?: string | null;
+    expectedRestoreAtUtc?: string | null;
+    originSource?: string | null;
+    originSourceType?: string | null;
+    originSourceReferenceId?: string | null;
+    predictedRestoreAtUtc?: string | null;
+    restorePredictionSource?: string | null;
+    restorePredictionSourceVersion?: string | null;
+};
+
+export type NervIipContractsSchedulingSchedulingDowntimeAffectedOperationContract = {
+    workOrderId?: string;
+    operationId?: string;
+    availableAlternativeResourceIds?: Array<string>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingPlanRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingSchedulePlanContract | null;
 };
 
 export type NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest = {
@@ -1495,6 +2008,7 @@ export type NervIipContractsSchedulingSchedulingProblemContract = {
     qualityBlocks?: Array<NervIipContractsSchedulingSchedulingQualityBlockContract>;
     lockedAssignments?: Array<NervIipContractsSchedulingSchedulingLockedAssignmentContract>;
     equipmentDataRisks?: Array<NervIipContractsSchedulingSchedulingEquipmentDataRiskContract> | null;
+    assemblyDependencies?: Array<NervIipContractsSchedulingSchedulingAssemblyDependencyContract> | null;
 };
 
 export type NervIipContractsSchedulingSchedulingOrderContract = {
@@ -1528,9 +2042,17 @@ export type NervIipContractsSchedulingSchedulingOperationContract = {
     requiredSkillCodes?: Array<string> | null;
     requiredToolingIds?: Array<string> | null;
     toolingAvailable?: boolean;
+    changeovers?: Array<NervIipContractsSchedulingSchedulingChangeoverContract> | null;
 };
 
-export type NervIipContractsSchedulingScheduleSplitPolicyContract = 'nonSplittable';
+export type NervIipContractsSchedulingScheduleSplitPolicyContract = 'nonSplittable' | 'interruptible';
+
+export type NervIipContractsSchedulingSchedulingChangeoverContract = {
+    fromSkuCode?: string;
+    setupMinutes?: number;
+    requiredToolingIds?: Array<string>;
+    toolingAvailable?: boolean;
+};
 
 export type NervIipContractsSchedulingSchedulingResourceContract = {
     resourceId?: string;
@@ -1539,6 +2061,7 @@ export type NervIipContractsSchedulingSchedulingResourceContract = {
     capacityUnits?: number;
     calendarId?: string;
     sortKey?: string;
+    utilizationRate?: number;
 };
 
 export type NervIipContractsSchedulingSchedulingCalendarContract = {
@@ -1586,6 +2109,7 @@ export type NervIipContractsSchedulingSchedulingLockedAssignmentContract = {
     startUtc?: string;
     endUtc?: string;
     lockReasonCode?: string;
+    segments?: Array<NervIipContractsSchedulingScheduleAssignmentSegmentContract> | null;
 };
 
 export type NervIipContractsSchedulingSchedulingEquipmentDataRiskContract = {
@@ -1632,16 +2156,6 @@ export type NervIipContractsSchedulingSchedulePlanImpactContract = {
     affectedOperationIds?: Array<string>;
 };
 
-export type NervIipContractsSchedulingSchedulePlanComparisonContract = {
-    basePlanId?: string;
-    candidatePlanId?: string;
-    baseMetrics?: NervIipContractsSchedulingSchedulePlanMetricsContract;
-    candidateMetrics?: NervIipContractsSchedulingSchedulePlanMetricsContract;
-    movedOperationCount?: number;
-    lockedOperationCount?: number;
-    unscheduledOperationCount?: number;
-};
-
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulePlanRevisionRequest = {
     organizationId: string;
     environmentId: string;
@@ -1665,18 +2179,44 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     isInvalidated?: boolean;
     latestInvalidationReasonCode?: string | null;
     latestInvalidatedAtUtc?: string | null;
+    horizonStartUtc?: string | null;
+    horizonEndUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingContextRequest = {
     [key: string]: never;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingPlanRequest = {
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSchedulingHistoryResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingHistoryResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingHistoryResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulePlanSummaryResponse>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingHistoryRequest = {
     [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfGanttScheduleItemContract = NetCorePalExtensionsDtoResponseData & {
     data?: Array<NervIipContractsSchedulingGanttScheduleItemContract> | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfBusinessConsoleScheduleOperationOverrideResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse = {
+    operationId?: string;
+    workOrderId?: string;
+    resourceId?: string;
+    workCenterId?: string;
+    startUtc?: string;
+    endUtc?: string;
+    lockReasonCode?: string;
+    sourcePlanId?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReleaseSchedulePlanResponse = NetCorePalExtensionsDtoResponseData & {
@@ -1705,16 +2245,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleScheduleOperationOverrideResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse | null;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideResponse = {
-    operationId?: string;
-    workOrderId?: string;
-    resourceId?: string;
-    workCenterId?: string;
-    startUtc?: string;
-    endUtc?: string;
-    lockReasonCode?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduleOperationOverrideRequest = {
@@ -1815,6 +2345,255 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     expiresAtUtc?: string | null;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfSchedulingFirstPlanJobContract = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingSchedulingFirstPlanJobContract | null;
+};
+
+export type NervIipContractsSchedulingSchedulingFirstPlanJobContract = {
+    jobId?: string;
+    status?: NervIipContractsSchedulingSchedulingFirstPlanJobStatusContract;
+    input?: NervIipContractsSchedulingSchedulingFirstPlanInputContract;
+    createdAtUtc?: string;
+    startedAtUtc?: string | null;
+    finishedAtUtc?: string | null;
+    planId?: string | null;
+    failureReason?: string | null;
+};
+
+export type NervIipContractsSchedulingSchedulingFirstPlanJobStatusContract = 'created' | 'running' | 'completed' | 'failed';
+
+export type NervIipContractsSchedulingSchedulingFirstPlanInputContract = {
+    organizationId?: string;
+    environmentId?: string;
+    horizonStartUtc?: string;
+    horizonEndUtc?: string;
+    orders?: Array<NervIipContractsSchedulingSchedulingFirstPlanOrderContract>;
+    contractVersion?: number;
+};
+
+export type NervIipContractsSchedulingSchedulingFirstPlanOrderContract = {
+    workOrderId?: string;
+    priority?: number;
+    isRush?: boolean;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingFirstPlanJobRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfSchedulingInsertionPreviewJobDetailContract = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingSchedulingInsertionPreviewJobDetailContract | null;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionPreviewJobDetailContract = {
+    jobId?: string;
+    status?: NervIipContractsSchedulingSchedulingInsertionPreviewJobStatusContract;
+    input?: NervIipContractsSchedulingSchedulingInsertionPreviewInputContract;
+    createdAtUtc?: string;
+    startedAtUtc?: string | null;
+    finishedAtUtc?: string | null;
+    preview?: NervIipContractsSchedulingSchedulePlanContract | null;
+    failureReason?: string | null;
+    result?: NervIipContractsSchedulingSchedulingInsertionPreviewResultContract | null;
+    acceptedBaseline?: NervIipContractsSchedulingSchedulingInsertionAcceptedBaselineContract | null;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionPreviewJobStatusContract = 'created' | 'running' | 'completed' | 'failed';
+
+export type NervIipContractsSchedulingSchedulingInsertionPreviewInputContract = {
+    organizationId?: string;
+    environmentId?: string;
+    planId?: string;
+    workOrderId?: string;
+    horizonStartUtc?: string;
+    horizonEndUtc?: string;
+    workOrderIds?: Array<string>;
+    contractVersion?: number;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionPreviewResultContract = {
+    contractVersion?: number;
+    baselinePlanId?: string;
+    candidatePlanId?: string;
+    inputFingerprint?: string;
+    candidate?: NervIipContractsSchedulingSchedulePlanContract;
+    promiseUtc?: string | null;
+    failures?: Array<NervIipContractsSchedulingSchedulingInsertionFailureContract>;
+    snapshot?: NervIipContractsSchedulingSchedulingInsertionCalculationSnapshotContract;
+    kpis?: NervIipContractsSchedulingSchedulingInsertionKpisContract;
+    orders?: Array<NervIipContractsSchedulingSchedulingInsertionOrderImpactContract>;
+    operations?: Array<NervIipContractsSchedulingSchedulingInsertionOperationImpactContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionFailureContract = 'unknownMaterialEta' | 'incompleteChain' | 'blockingConflict';
+
+export type NervIipContractsSchedulingSchedulingInsertionCalculationSnapshotContract = {
+    problem?: NervIipContractsSchedulingSchedulingProblemContract;
+    baseline?: NervIipContractsSchedulingSchedulePlanContract;
+    calculationBaseline?: NervIipContractsSchedulingSchedulePlanContract;
+    freeze?: NervIipContractsSchedulingSchedulePlanFreezeContextContract;
+    execution?: Array<NervIipContractsSchedulingSchedulingInsertionExecutionFactContract>;
+    fixedReservations?: Array<NervIipContractsSchedulingSchedulePlanFixedReservationContract>;
+    materialMode?: NervIipContractsSchedulingSchedulingMaterialConstraintModeContract;
+    qualityMode?: NervIipContractsSchedulingSchedulingQualityConstraintModeContract;
+    equipmentUnknownMode?: NervIipContractsSchedulingSchedulingEquipmentUnknownModeContract;
+    equipmentAvailability?: NervIipContractsSchedulingSchedulingEquipmentAvailabilitySnapshotContract | null;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionExecutionFactContract = {
+    orderId?: string;
+    operationId?: string;
+    actualStartedAtUtc?: string | null;
+    actualCompletedAtUtc?: string | null;
+};
+
+export type NervIipContractsSchedulingSchedulingMaterialConstraintModeContract = 'soft' | 'hard';
+
+export type NervIipContractsSchedulingSchedulingQualityConstraintModeContract = 'soft' | 'hard';
+
+export type NervIipContractsSchedulingSchedulingEquipmentUnknownModeContract = 'soft' | 'hard';
+
+export type NervIipContractsSchedulingSchedulingEquipmentAvailabilitySnapshotContract = {
+    asOfUtc?: string;
+    contractVersion?: number;
+    windows?: Array<NervIipContractsSchedulingSchedulingEquipmentAvailabilityInputContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingEquipmentAvailabilityInputContract = {
+    window?: NervIipContractsEquipmentRuntimeEquipmentRuntimeAvailabilityWindowContract;
+    restorePredictionExpired?: boolean;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionKpisContract = {
+    onTimeRate?: NervIipContractsSchedulingSchedulingInsertionRateComparisonContract;
+    lateOrderCount?: NervIipContractsSchedulingSchedulingInsertionCountComparisonContract;
+    movedOperationCount?: number;
+    resourceUtilization?: NervIipContractsSchedulingSchedulingInsertionUtilizationComparisonContract;
+    unscheduledOperationCount?: NervIipContractsSchedulingSchedulingInsertionCountComparisonContract;
+    lockRetention?: NervIipContractsSchedulingSchedulingInsertionLockRetentionContract;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionRateComparisonContract = {
+    baseline?: number;
+    candidate?: number;
+    delta?: number;
+    baselineDenominator?: number;
+    candidateDenominator?: number;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionCountComparisonContract = {
+    baseline?: number;
+    candidate?: number;
+    delta?: number;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionUtilizationComparisonContract = {
+    baseline?: number;
+    candidate?: number;
+    delta?: number;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionLockRetentionContract = {
+    preserved?: number;
+    total?: number;
+    notPreserved?: Array<NervIipContractsSchedulingSchedulingInsertionOperationKeyContract>;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionOperationKeyContract = {
+    orderId?: string;
+    operationId?: string;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionOrderImpactContract = {
+    orderId?: string;
+    isNew?: boolean;
+    status?: NervIipContractsSchedulingSchedulingInsertionOrderStatusContract;
+    baselineCompletionUtc?: string | null;
+    candidateCompletionUtc?: string | null;
+    delayDays?: number | null;
+    baselineLate?: boolean;
+    candidateLate?: boolean;
+    newlyLate?: boolean;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionOrderStatusContract = 'unchanged' | 'delayed' | 'new' | 'unscheduled';
+
+export type NervIipContractsSchedulingSchedulingInsertionOperationImpactContract = {
+    orderId?: string;
+    operationId?: string;
+    dueUtc?: string;
+    baseline?: NervIipContractsSchedulingScheduleAssignmentContract | null;
+    candidate?: NervIipContractsSchedulingScheduleAssignmentContract | null;
+    reasonCodes?: Array<string>;
+    sourceReference?: string;
+    paths?: Array<Array<NervIipContractsSchedulingSchedulingInsertionPropagationStepContract>>;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionPropagationStepContract = {
+    fromOrderId?: string;
+    fromOperationId?: string;
+    toOrderId?: string;
+    toOperationId?: string;
+    reasonCode?: string;
+    competitionWindow?: NervIipContractsSchedulingScheduleAssignmentSegmentContract | null;
+    capacityUnits?: number | null;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionAcceptedBaselineContract = {
+    baseline?: NervIipContractsSchedulingSchedulePlanContract;
+    problem?: NervIipContractsSchedulingSchedulingProblemContract;
+};
+
+export type NervIipContractsSchedulingSchedulingInsertionPreviewRequestContract = {
+    organizationId?: string;
+    environmentId?: string;
+    planId?: string;
+    workOrderId?: string;
+    contractVersion?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSchedulingInsertionPreviewJobRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfSchedulingTimeContextItem = NetCorePalExtensionsDtoResponseData & {
+    data?: Array<NervIipContractsMasterDataSchedulingTimeContextItem> | null;
+};
+
+export type NervIipContractsMasterDataSchedulingTimeContextItem = {
+    workCenterCode?: string;
+    plantCode?: string | null;
+    plantName?: string | null;
+    timezone?: string | null;
+    unresolvedReason?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfSchedulingWorkingDraftContract = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsSchedulingSchedulingWorkingDraftContract | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSaveSchedulingWorkingDraftRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    state?: NervIipContractsSchedulingSchedulingWorkingDraftStateContract;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfIReadOnlyListOfSchedulingWorkingDraftContract = NetCorePalExtensionsDtoResponseData & {
+    data?: Array<NervIipContractsSchedulingSchedulingWorkingDraftContract> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListSchedulingWorkingDraftsRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfObject = NetCorePalExtensionsDtoResponseData & {
+    data?: unknown;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleClearSchedulingWorkingDraftRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateInspectionPlanResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateInspectionPlanResponse | null;
 };
@@ -1895,7 +2674,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     serialNo?: string | null;
     attemptNumber?: number | null;
     reinspectionOfInspectionRecordId?: string | null;
-    closeReason?: string | null;
     timeIntervalHours?: number | null;
     quantityInterval?: number | null;
     assignedInspectorUserId?: string | null;
@@ -2122,6 +2900,31 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityNcrListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrItem>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrItem = {
+    id?: string;
+    code?: string;
+    status?: string;
+    sourceType?: string;
+    sourceDocumentId?: string;
+    skuCode?: string;
+    defectQuantity?: number;
+    defectReason?: string;
+    batchNo?: string | null;
+    serialNo?: string | null;
+    closeReason?: string | null;
+    reworkWorkOrderCreationStatus: string;
+    reworkWorkOrderId?: string | null;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityListRequest = {
     [key: string]: never;
 };
@@ -2142,9 +2945,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     batchNo?: string | null;
     serialNo?: string | null;
     sourceInspectionRecordId?: string | null;
+    reworkWorkOrderCreationStatus: string;
     dispositionType?: string | null;
     dispositionApprovalChainId?: string | null;
     closeReason?: string | null;
+    reworkWorkOrderId?: string | null;
+    attachmentFileIds?: Array<string> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityNcrDetailRequest = {
@@ -2450,6 +3256,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQ
     [key: string]: never;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScrapQualityReasonCodeListRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityReasonItem = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityReasonItem | null;
 };
@@ -2481,10 +3291,11 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNcrDispositionRequest = {
-    dispositionType?: string;
+    dispositionType: string;
     dispositionApprovalChainId?: string | null;
     attachmentFileIds?: Array<string> | null;
     mrbReviews?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMrbReview> | null;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMrbReview = {
@@ -2495,10 +3306,27 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNcrCloseRequest = {
+    /**
+     * @deprecated
+     */
     reworkWorkOrderId?: string | null;
     scrapMovementId?: string | null;
     returnDocumentId?: string | null;
     reason: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteQualityCapaActionRequest = {
+    organizationId: string;
+    environmentId: string;
+    completedAtUtc: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleVerifyQualityCapaEffectivenessRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    result?: string;
+    verifiedAtUtc?: string;
+    effectivenessInspectionRecordId?: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringEntityResponse = NetCorePalExtensionsDtoResponseData & {
@@ -2943,6 +3771,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     operationCode?: string;
     operationName?: string;
     standardMinutes?: number;
+    interruptible?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListRoutingsRequest = {
@@ -2974,6 +3803,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     operationCode?: string;
     operationName?: string;
     standardMinutes?: number;
+    interruptible?: boolean;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleStandardOperationListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -3444,7 +4274,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleD
     dueDate?: string;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePlanningContextRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDemandSourceListRequest = {
     [key: string]: never;
 };
 
@@ -3553,6 +4383,11 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     inputCoverageStart?: string | null;
     inputCoverageEnd?: string | null;
     failureReason?: string | null;
+    demandChangeCount?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsolePlanningContextRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMrpPeggingListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -3604,6 +4439,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleP
     downstreamService?: string | null;
     downstreamDocumentType?: string | null;
     downstreamDocumentId?: string | null;
+    supersededByRunId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleNetRequirementExplanation = {
@@ -3644,6 +4480,158 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleP
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRejectPlanningSuggestionRequest = {
     reason: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfMaterialDeliveriesResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsDemandPlanningMaterialDeliveriesResponse | null;
+};
+
+export type NervIipContractsDemandPlanningMaterialDeliveriesResponse = {
+    runId?: string;
+    planId?: string | null;
+    evaluatedAtUtc?: string;
+    supplyCoverageScope?: string;
+    items?: Array<NervIipContractsDemandPlanningMaterialDeliveryResponse>;
+    unknownRequirementSuggestions?: Array<NervIipContractsDemandPlanningMaterialDeliveryUnknownRequirementSource>;
+};
+
+export type NervIipContractsDemandPlanningMaterialDeliveryResponse = {
+    netRequirementReference?: string;
+    runId?: string;
+    suggestionType?: string;
+    skuCode?: string;
+    uomCode?: string;
+    siteCode?: string;
+    requiredDate?: string;
+    netRequirementQuantity?: number;
+    latestProcurementDate?: string;
+    latestProcurementUtc?: string;
+    expectedArrivalDate?: string | null;
+    expectedArrivalUtc?: string | null;
+    expectedStartUtc?: string | null;
+    latestStartUtc?: string | null;
+    coveredQuantity?: number;
+    uncoveredQuantity?: number;
+    status?: NervIipContractsDemandPlanningMaterialDeliveryStatus;
+    reasons?: Array<string>;
+    netRequirementSource?: NervIipContractsDemandPlanningMaterialDeliveryNetRequirementSource;
+    demandSources?: Array<NervIipContractsDemandPlanningMaterialDeliveryDemandSource>;
+    supplySources?: Array<NervIipContractsDemandPlanningMaterialDeliverySupplySource>;
+    schedulingSources?: Array<NervIipContractsSchedulingMaterialDeliveryOrderSourceContract>;
+    suggestionSources?: Array<NervIipContractsDemandPlanningMaterialDeliverySuggestionSource>;
+};
+
+export type NervIipContractsDemandPlanningMaterialDeliveryStatus = 'yellow' | 'green' | 'red';
+
+export type NervIipContractsDemandPlanningMaterialDeliveryNetRequirementSource = {
+    grossDemandQuantity?: number;
+    onHandQuantity?: number;
+    reservedQuantity?: number;
+    availableToNetQuantity?: number;
+    scheduledReceiptQuantity?: number;
+    safetyStockQuantity?: number;
+    netRequirementQuantity?: number;
+    plannedQuantity?: number;
+    scrapRate?: number;
+    yieldRate?: number;
+    formula?: string;
+    uomConversionSummary?: string;
+};
+
+export type NervIipContractsDemandPlanningMaterialDeliveryDemandSource = {
+    sourceReference?: string;
+    sourceLineReference?: string | null;
+    sourceType?: string;
+    parentSkuCode?: string;
+    componentSkuCode?: string | null;
+    grossDemandQuantity?: number;
+    demandSourceId?: string | null;
+    sourceDocumentId?: string | null;
+    sourceVersion?: number | null;
+    dueDate?: string | null;
+    productionVersionReference?: string | null;
+    manufacturingBomReference?: string | null;
+    routingReference?: string | null;
+};
+
+export type NervIipContractsDemandPlanningMaterialDeliverySupplySource = {
+    purchaseOrderNo?: string;
+    lineNo?: string;
+    siteCode?: string;
+    skuCode?: string;
+    uomCode?: string;
+    promisedDate?: string;
+    openQuantity?: number;
+    sources?: Array<NervIipContractsDemandPlanningMaterialDeliveryPurchaseSource>;
+};
+
+export type NervIipContractsDemandPlanningMaterialDeliveryPurchaseSource = {
+    purchaseRequisitionNo?: string;
+    purchaseRequisitionLineNo?: string;
+    quantity?: number;
+    suggestionId?: string | null;
+};
+
+export type NervIipContractsSchedulingMaterialDeliveryOrderSourceContract = {
+    suggestionId?: string;
+    workOrderId?: string | null;
+    status?: string;
+    scheduledStartUtc?: string | null;
+    latestStartUtc?: string | null;
+    tightestDueSourceReference?: string | null;
+    operations?: Array<NervIipContractsSchedulingMaterialDeliveryOperationSourceContract>;
+    dueBounds?: Array<NervIipContractsSchedulingMaterialDeliveryBoundContract>;
+};
+
+export type NervIipContractsSchedulingMaterialDeliveryOperationSourceContract = {
+    operationId?: string;
+    operationSequence?: number;
+    executionStatus?: string;
+    netGoodQuantity?: number;
+    remainingQuantity?: number;
+    remainingMinutes?: number;
+    earliestStartUtc?: string;
+    assignmentStartUtc?: string | null;
+    assignmentStatus?: string;
+    predecessorOperationIds?: Array<string>;
+    routingVersionId?: string;
+};
+
+export type NervIipContractsSchedulingMaterialDeliveryBoundContract = {
+    sourceReference?: string;
+    dueUtc?: string;
+    remainingMinutes?: number;
+    latestStartUtc?: string;
+    criticalPathOperationIds?: Array<string>;
+};
+
+export type NervIipContractsDemandPlanningMaterialDeliverySuggestionSource = {
+    suggestionId?: string;
+    status?: string;
+    quantity?: number;
+    plannedQuantity?: number;
+    reasonCode?: string;
+    downstreamService?: string | null;
+    downstreamDocumentType?: string | null;
+    downstreamDocumentId?: string | null;
+};
+
+export type NervIipContractsDemandPlanningMaterialDeliveryUnknownRequirementSource = {
+    reason?: string;
+    runId?: string;
+    suggestionType?: string;
+    skuCode?: string;
+    uomCode?: string;
+    siteCode?: string;
+    requiredDate?: string;
+    releaseDate?: string;
+    suggestionSource?: NervIipContractsDemandPlanningMaterialDeliverySuggestionSource;
+    rawNetRequirementSource?: NervIipContractsDemandPlanningMaterialDeliveryNetRequirementSource;
+    demandSources?: Array<NervIipContractsDemandPlanningMaterialDeliveryDemandSource>;
+};
+
+export type NervIipBusinessGatewayWebEndpointsPlanningBusinessConsoleMaterialDeliveriesRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfNotificationMessageListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -3710,6 +4698,72 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     environmentId?: string;
     recipientRef?: string | null;
 };
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesAndonCallResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCallResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCallResponse = {
+    id?: string;
+    organizationId?: string;
+    environmentId?: string;
+    category?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCategory;
+    status?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonStatus;
+    workOrderId?: string;
+    operationTaskId?: string;
+    workCenterId?: string;
+    callerId?: string;
+    raisedAtUtc?: string;
+    responderId?: string | null;
+    firstRespondedAtUtc?: string | null;
+    responseDurationSeconds?: number | null;
+    closedAtUtc?: string | null;
+    escalatedAtUtc?: string | null;
+    escalationRecipientId?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCategory = 'materialShortage' | 'equipment' | 'quality' | 'process';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonStatus = 'open' | 'claimed' | 'closed';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRaiseAndonCallRequest = {
+    organizationId: string;
+    environmentId: string;
+    scopeKind?: string | null;
+    scopeId?: string | null;
+    idempotencyKey: string;
+    category?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCategory;
+    workOrderId: string;
+    operationTaskId: string;
+    workCenterId: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCallActionRequest = {
+    organizationId: string;
+    environmentId: string;
+    scopeKind?: string | null;
+    scopeId?: string | null;
+    idempotencyKey: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCallRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesAndonCallListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCallListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCallListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCallResponse>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListAndonCallsRequest = {
+    [key: string]: never;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonQueue = 'awaitingResponse' | 'unclosed' | 'all';
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesFoundationReadinessResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesFoundationReadinessResponse | null;
@@ -3848,16 +4902,26 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     quantity?: number;
     priority?: number;
     dueUtc?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'created' | 'released' | 'started' | 'hold' | 'completed' | 'closed' | 'cancelled' | 'scrapped' | 'split' | 'merged';
     operationTasks?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskItem>;
     workOrderNo?: string | null;
     skuCode?: string | null;
     hasActiveQualityHold?: boolean;
+    workOrderType?: string;
+    sourceWorkOrderId?: string | null;
+    sourceNcrId?: string | null;
+    sourceNcrCode?: string | null;
+    hasChangedDemand?: boolean;
+    hasCancelledDemand?: boolean;
+    isRush?: boolean;
+    completedQuantity?: number;
+    sourcePlanReference?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference | null;
+    commercialSourceFacts?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCommercialSourceFacts | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskItem = {
     operationTaskId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
     operationSequence?: number;
     workCenterId?: string;
     alternativeWorkCenterIds?: Array<string>;
@@ -3871,6 +4935,27 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     allowedActions?: Array<string> | null;
     blockReasons?: Array<string> | null;
     evaluatedAtUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference = {
+    sourceSystem?: string;
+    sourceDocumentType?: string;
+    sourceDocumentId?: string;
+    sourceDemandReference?: string | null;
+    sourceDemandReferences?: Array<string> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCommercialSourceFacts = {
+    status?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCommercialSourceStatus;
+    salesOrders?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSalesOrderLink>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCommercialSourceStatus = 'available' | 'forbidden';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSalesOrderLink = {
+    salesOrderNo?: string;
+    sourceLineReference?: string;
+    customerCode?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderListRequest = {
@@ -3892,12 +4977,20 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     operationTasks?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskRow>;
     sourcePlanReference?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference | null;
     qualityHolds?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderQualityHoldSummary> | null;
+    workOrderType?: string;
+    sourceWorkOrderId?: string | null;
+    sourceNcrId?: string | null;
+    sourceNcrCode?: string | null;
+    isRush?: boolean;
+    priority?: number;
+    completedQuantity?: number;
+    commercialSourceFacts?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCommercialSourceFacts | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesOperationTaskRow = {
     operationTaskId?: string;
     workOrderId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
     operationSequence?: number;
     workCenterId?: string;
     deviceAssetId?: string | null;
@@ -3921,13 +5014,26 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     allowedActions?: Array<string> | null;
     blockReasons?: Array<string> | null;
     evaluatedAtUtc?: string | null;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSourcePlanReference = {
-    sourceSystem?: string;
-    sourceDocumentType?: string;
-    sourceDocumentId?: string;
-    sourceDemandReference?: string | null;
+    /**
+     * 工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。
+     */
+    actualLaborHours?: number | null;
+    /**
+     * 工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。
+     */
+    actualMachineHours?: number | null;
+    workOrderType?: string;
+    sourceWorkOrderId?: string | null;
+    sourceNcrId?: string | null;
+    sourceNcrCode?: string | null;
+    /**
+     * 任务创建时保存的权威工艺路线号；无权威来源时为 null。
+     */
+    routingCode?: string | null;
+    /**
+     * 任务创建时保存的权威工艺路线修订；无权威来源时为 null。
+     */
+    routingRevision?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderQualityHoldSummary = {
@@ -3952,14 +5058,29 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     [key: string]: never;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAdjustWorkOrderPriorityRequest = {
+    isRush?: boolean;
+    priority?: number;
+    changedAtUtc?: string | null;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReleaseWorkOrderRequest = {
     confirmWarnings?: boolean;
-    idempotencyKey?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderReasonRequest = {
     reason?: string;
     changedAtUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCloseWorkOrderRequest = {
+    closedAtUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeDecisionRequest = {
+    changeNumber?: string;
+    decision?: string;
+    reason?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesForceReleaseQualityHoldRequest = {
@@ -4032,25 +5153,6 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateRushWorkOr
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateRushWorkOrderResponse = {
     workOrderId?: string;
-    schedule?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResult;
-    affectedWorkOrderIds?: Array<string>;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResult = {
-    scheduleVersion?: number;
-    trigger?: string;
-    scheduledAtUtc?: string;
-    assignments?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduledOperation>;
-    affectedWorkOrderIds?: Array<string>;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduledOperation = {
-    workOrderId?: string;
-    operationTaskId?: string;
-    workCenterId?: string;
-    startUtc?: string;
-    endUtc?: string;
-    reason?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateRushWorkOrderRequest = {
@@ -4078,6 +5180,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     blockingReasons?: Array<string>;
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialReadinessRow>;
     readinessScope?: string | null;
+    snapshotCapturedAtUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialReadinessRow = {
@@ -4091,6 +5194,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     shortageQuantity?: number;
     status?: string;
     shortageStage?: string | null;
+    substituteMaterialIds?: Array<string> | null;
+    uomCode?: string | null;
+    expectedAvailableAtUtc?: string | null;
+    expectedAvailabilitySource?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialReadinessRequest = {
@@ -4126,6 +5233,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     quantity?: number | null;
     materialIds?: Array<string> | null;
     idempotencyKey?: string;
+    isSupplementary?: boolean;
+    originalMaterialIssueRequestNo?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesMaterialIssueRequestListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -4135,6 +5244,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesMaterialIssue
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestRow>;
     total?: number;
+    supplementaryCount?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestRow = {
@@ -4147,23 +5257,92 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     requestedQuantity?: number;
     receivedQuantity?: number;
     consumedQuantity?: number;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Requested' | 'PartiallyReceived' | 'ReceiptPosting' | 'Received' | 'Cancelled' | 'ReturnRequested' | 'ReservationExpired';
     wmsRequestId?: string | null;
     requestedAtUtc?: string;
     workOrderNo?: string | null;
     operationTaskNo?: string | null;
     materialCode?: string | null;
+    isSupplementary?: boolean;
+    originalMaterialIssueRequestNo?: string | null;
+    substitutedMaterialId?: string | null;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestListRequest = {
     [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesMaterialIssueRequestRow = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestRow | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMaterialIssueRequestDetailRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfMesMaterialScanPrevalidationResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsMesMesMaterialScanPrevalidationResponse | null;
+};
+
+export type NervIipContractsMesMesMaterialScanPrevalidationResponse = {
+    decision: NervIipContractsMesMesMaterialScanDecision;
+    reasonCode: string;
+    materialIssueRequestId: string;
+    workOrderId: string;
+    operationTaskId: string;
+    materialId?: string | null;
+    materialLotId?: string | null;
+    materialQualification?: string | null;
+    evaluatedAtUtc: string;
+};
+
+export type NervIipContractsMesMesMaterialScanDecision = 'accepted' | 'rejected';
+
+export type NervIipContractsMesMesMaterialScanPrevalidationRequest = {
+    organizationId: string;
+    environmentId: string;
+    materialIssueRequestId: string;
+    workOrderId: string;
+    operationTaskId: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfMesContextScanPrevalidationResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsMesMesContextScanPrevalidationResponse | null;
+};
+
+export type NervIipContractsMesMesContextScanPrevalidationResponse = {
+    decision: NervIipContractsMesMesContextScanDecision;
+    reasonCode: string;
+    workOrderId: string;
+    operationTaskId: string;
+    objectType: NervIipContractsMesMesContextScanObjectType;
+    scannedObjectId: string;
+    evaluatedAtUtc: string;
+};
+
+export type NervIipContractsMesMesContextScanDecision = 'accepted' | 'rejected';
+
+export type NervIipContractsMesMesContextScanObjectType = 'operationTask' | 'deviceAsset' | 'personnel';
+
+export type NervIipContractsMesMesContextScanPrevalidationRequest = {
+    organizationId: string;
+    environmentId: string;
+    workOrderId: string;
+    operationTaskId: string;
+    objectType: NervIipContractsMesMesContextScanObjectType;
+    scannedObjectId: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest = {
     materialLotId?: string | null;
     receivedQuantity?: number | null;
     evidenceFileIds?: Array<string> | null;
-    idempotencyKey?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReturnLineSideMaterialRequest = {
+    returnedAtUtc?: string | null;
+    returnedQuantity?: number;
+    idempotencyKey: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesDispatchTaskListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -4178,7 +5357,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchTaskRow = {
     operationTaskId?: string;
     workOrderId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
     workCenterId?: string;
     deviceAssetId?: string | null;
     shiftId?: string | null;
@@ -4207,7 +5386,16 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     assignedUserId?: string | null;
     deviceAssetId?: string | null;
     shiftId?: string | null;
-    idempotencyKey?: string;
+    participants?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchParticipantRequest> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDispatchParticipantRequest = {
+    workerId?: string;
+    sharePercent?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesClaimOperationTaskRequest = {
+    idempotencyKey: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesOperationTaskListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -4256,7 +5444,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderId?: string;
     operationTaskId?: string;
     workCenterId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
     plannedQuantity?: number;
     goodQuantity?: number;
     scrapQuantity?: number;
@@ -4265,6 +5453,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     operationTaskNo?: string | null;
     workCenterCode?: string | null;
     workCenterName?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionReportListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -4293,9 +5485,71 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     reversalReportNo?: string | null;
     producedLotNo?: string | null;
     serialNo?: string | null;
+    /**
+     * 对应工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。
+     */
+    operationActualLaborHours?: number | null;
+    /**
+     * 对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。
+     */
+    operationActualMachineHours?: number | null;
+    /**
+     * 提交本条报工的操作人引用；升级前的历史报工为 null。
+     */
+    reportedBy?: string | null;
+    serialNumbers?: Array<string> | null;
+    /**
+     * 当前组织/环境成员账号的 IAM 显示名；账号无匹配或无显示名时为 null。
+     */
+    reportedByDisplayName?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListWithoutStatusRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionStatisticsResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsResponse = {
+    organizationId: string;
+    environmentId: string;
+    dimension: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDimension;
+    windowStartUtc: string;
+    windowEndUtc: string;
+    items: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsBucket>;
+    totalCount: number;
+    skip: number;
+    take: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDimension = 'day' | 'shift' | 'workCenter' | 'sku';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsBucket = {
+    dimension: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDimension;
+    dimensionValue?: string | null;
+    businessDate?: string | null;
+    shiftCode?: string | null;
+    workCenterId?: string | null;
+    skuId?: string | null;
+    goodQuantity: number;
+    scrapQuantity: number;
+    reworkQuantity: number;
+    totalOutputQuantity: number;
+    goodRate?: number | null;
+    scrapRate?: number | null;
+    reworkRate?: number | null;
+    productionReportCount: number;
+    resolutionStatus: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsResolutionStatus;
+    degradedReasons: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDegradedReason>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsResolutionStatus = 'resolved' | 'degraded';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDegradedReason = 'historicalDimensionLegacyUnresolved' | 'historicalTimezoneMissing' | 'historicalTimezoneInvalid' | 'historicalShiftDefinitionMissing' | 'historicalShiftDefinitionInvalid' | 'historicalReportOutsideShiftWindow' | 'historicalLocalTimeInvalid' | 'historicalLocalTimeAmbiguous' | 'historicalDimensionSnapshotDegraded' | 'workCenterMissing' | 'nonPositiveTotalOutput' | 'deviceMissing';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsRequest = {
     [key: string]: never;
 };
 
@@ -4306,6 +5560,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionRep
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetailResponse = {
     report?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetail;
     consumedMaterialLots?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConsumedMaterialLot>;
+    laborAllocations?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLaborAllocation>;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetail = {
@@ -4330,6 +5585,23 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     inventoryPostingFailedAtUtc?: string | null;
     workOrderStatus?: string | null;
     reversalReportNo?: string | null;
+    /**
+     * 对应工序完成后冻结的累计实际人工工时，单位为小时；工序未完成或冲销后重新打开时为 null。
+     */
+    operationActualLaborHours?: number | null;
+    /**
+     * 对应工序完成后冻结的累计实际机器工时，单位为小时；工序未完成或冲销后重新打开时为 null。
+     */
+    operationActualMachineHours?: number | null;
+    /**
+     * 提交本条报工的操作人引用；升级前的历史报工为 null。
+     */
+    reportedBy?: string | null;
+    serialNumbers?: Array<string> | null;
+    /**
+     * 当前组织/环境成员账号的 IAM 显示名；账号无匹配或无显示名时为 null。
+     */
+    reportedByDisplayName?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConsumedMaterialLot = {
@@ -4338,6 +5610,13 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     consumedQuantity?: number;
     uomCode?: string;
     materialIssueRequestNo?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesLaborAllocation = {
+    workerId?: string;
+    workerName?: string | null;
+    sharePercent?: number;
+    allocatedLaborTicks?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionReportDetailRequest = {
@@ -4351,7 +5630,11 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordProduction
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordProductionReportResponse = {
     productionReportId?: string;
     reportNo?: string;
+    serialNumbers?: Array<string>;
     operationReceipt?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt | null;
+    printBatchId?: string | null;
+    printStatus?: string | null;
+    printingPreparationPending?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordProductionReportRequest = {
@@ -4372,6 +5655,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     defectRecordNo?: string | null;
     producedLotNo?: string | null;
     serialNo?: string | null;
+    serialTrackingPolicy?: string;
+    serialNumbers?: Array<string> | null;
+    labelTemplateId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConsumedMaterialLotInput = {
@@ -4454,6 +5740,19 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     idempotencyKey?: string;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectV2Request = {
+    organizationId?: string;
+    environmentId?: string;
+    workOrderId: string;
+    operationTaskId?: string | null;
+    defectCode: string;
+    quantity: number;
+    recordedAtUtc: string;
+    idempotencyKey: string;
+    scopeKind: string;
+    scopeId: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesRelatedQualityItemListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRelatedQualityItemListResponse | null;
 };
@@ -4467,9 +5766,11 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     qualityItemId?: string;
     sourceType?: string;
     sourceDocumentId?: string;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Open' | 'ReworkPending' | 'ScrapAccepted' | 'ReturnAccepted' | 'DispositionAccepted';
     defectCode?: string | null;
     ncrId?: string | null;
+    workOrderId?: string | null;
+    operationTaskId?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesReceiptRequestListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -4488,7 +5789,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     skuId?: string;
     quantity?: number;
     unitCost?: number | null;
-    receiptStatus?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    receiptStatus?: 'Requested' | 'PartiallyPosted' | 'Posted' | 'InventoryPostingFailed' | 'Cancelled';
     requestedAtUtc?: string;
     workOrderNo?: string | null;
     skuCode?: string | null;
@@ -4501,6 +5802,16 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     inventoryPostingFailedAtUtc?: string | null;
     postedQuantity?: number | null;
     remainingQuantity?: number | null;
+    costCapitalization?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceiptCostCapitalizationProgress | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReceiptCostCapitalizationProgress = {
+    workOrderCompleted?: boolean;
+    receivedReportCount?: number;
+    expectedReportCount?: number;
+    receivedMaterialMovementCount?: number;
+    expectedMaterialMovementCount?: number;
+    capitalizationPublished?: boolean;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesFinishedGoodsInventoryLinkResponse = NetCorePalExtensionsDtoResponseData & {
@@ -4586,7 +5897,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     quantity?: number;
     uomCode?: string;
     requestedAtUtc?: string;
-    unitCost?: number | null;
     idempotencyKey?: string;
     producedLotNo?: string | null;
     serialNo?: string | null;
@@ -4599,6 +5909,7 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesDowntimeEvent
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventListResponse = {
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventRow>;
     total?: number;
+    reasonSummary?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonSummaryRow>;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventRow = {
@@ -4606,7 +5917,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workOrderId?: string | null;
     operationTaskId?: string | null;
     deviceAssetId?: string | null;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Open' | 'Recovered';
     startedAtUtc?: string;
     recoveredAtUtc?: string | null;
     workOrderNo?: string | null;
@@ -4615,6 +5926,18 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     deviceAssetName?: string | null;
     workCenterId?: string | null;
     reasonCode?: string | null;
+    reasonName?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeReasonSummaryRow = {
+    reasonCode?: string;
+    openCount?: number;
+    durationMinutes?: number;
+    reasonName?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesDowntimeEventListRequest = {
+    [key: string]: never;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventRequest = {
@@ -4628,32 +5951,23 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     idempotencyKey?: string;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventV2Request = {
+    organizationId: string;
+    environmentId: string;
+    workOrderId: string;
+    operationTaskId?: string | null;
+    workCenterId: string;
+    deviceAssetId?: string | null;
+    reasonCode: string;
+    startedAtUtc: string;
+    idempotencyKey: string;
+    scopeKind: string;
+    scopeId: string;
+    toUtc?: string | null;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecoverDowntimeEventRequest = {
     recoveredAtUtc?: string;
-    idempotencyKey?: string;
-};
-
-export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesScheduleResultListResponse = NetCorePalExtensionsDtoResponseData & {
-    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResultListResponse | null;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResultListResponse = {
-    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResultRow>;
-    total?: number;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResultRow = {
-    scheduleVersion?: number;
-    trigger?: string;
-    scheduledAtUtc?: string;
-    assignmentCount?: number;
-    affectedWorkOrderCount?: number;
-    affectedWorkOrderIds?: Array<string>;
-    assignments?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleScheduledOperation>;
-};
-
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResultListRequest = {
-    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesShiftHandoverListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -4673,6 +5987,68 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     openIssueCount?: number;
     createdAtUtc?: string;
     teamName?: string | null;
+    outgoingUserId?: string | null;
+    outgoingUserName?: string | null;
+    incomingUserId?: string | null;
+    incomingUserName?: string | null;
+    acceptedAtUtc?: string | null;
+    wipItemCount?: number;
+    unfinishedWorkOrderCount?: number;
+    openIssueDetailCount?: number;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesShiftHandoverDetail = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverDetail | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverDetail = {
+    handoverId?: string;
+    shiftId?: string;
+    teamId?: string;
+    handoverStatus?: string;
+    openIssueCount?: number;
+    createdAtUtc?: string;
+    acceptedAtUtc?: string | null;
+    teamName?: string | null;
+    outgoingUserId?: string | null;
+    outgoingUserName?: string | null;
+    incomingUserId?: string | null;
+    incomingUserName?: string | null;
+    wipItems?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverWipItem>;
+    unfinishedWorkOrders?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverUnfinishedWorkOrder>;
+    openIssues?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverOpenIssue>;
+    attachments?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverAttachment>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverWipItem = {
+    workOrderId?: string;
+    operationTaskId?: string | null;
+    quantity?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverUnfinishedWorkOrder = {
+    workOrderId?: string;
+    plannedQuantity?: number;
+    completedQuantity?: number;
+    workOrderStatus?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverOpenIssue = {
+    category?: string;
+    severity?: string;
+    description?: string;
+    referenceId?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverAttachment = {
+    fileId?: string;
+    fileName?: string;
+    contentType?: string;
+    sizeBytes?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverDetailRequest = {
+    [key: string]: never;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCreateShiftHandoverRequest = {
@@ -4683,10 +6059,14 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     openIssueIds?: Array<string> | null;
     idempotencyKey?: string;
     teamName?: string | null;
+    wipItems?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverWipItem> | null;
+    unfinishedWorkOrders?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverUnfinishedWorkOrder> | null;
+    openIssues?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverOpenIssue> | null;
+    attachments?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverAttachment> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAcceptShiftHandoverRequest = {
-    idempotencyKey?: string;
+    [key: string]: never;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesTraceabilityResponse = NetCorePalExtensionsDtoResponseData & {
@@ -4703,6 +6083,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     nodeType?: string;
     displayName?: string;
     status?: string;
+    /**
+     * 该节点对应事实的发生时刻；主数据类节点没有单一发生时刻时为 null。
+     */
+    occurredAtUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesTraceabilityEdge = {
@@ -4736,7 +6120,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     impactId?: string;
     workCenterId?: string;
     deviceAssetId?: string | null;
-    status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+    status?: 'Open' | 'Recovered';
     effectiveFromUtc?: string;
     effectiveToUtc?: string | null;
     reasonCode?: string;
@@ -4746,14 +6130,115 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     deviceAssetName?: string | null;
 };
 
-export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesScheduleResult = NetCorePalExtensionsDtoResponseData & {
-    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesScheduleResult | null;
+export type NetCorePalExtensionsDtoResponseDataOfLineSideInventoryBalancesResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsInventoryLineSideInventoryBalancesResponse | null;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRunScheduleRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    trigger?: string;
+export type NervIipContractsInventoryLineSideInventoryBalancesResponse = {
+    items?: Array<NervIipContractsInventoryLineSideInventoryBalanceItem>;
+    totalCount?: number;
+    page?: number;
+    pageSize?: number;
+    asOfDate?: string;
+};
+
+export type NervIipContractsInventoryLineSideInventoryBalanceItem = {
+    siteCode?: string;
+    locationCode?: string;
+    skuCode?: string;
+    uomCode?: string;
+    onHandQuantity?: number;
+    reservedQuantity?: number;
+    availableQuantity?: number;
+    lotCount?: number;
+    oldestProductionDate?: string | null;
+    ageDays?: number | null;
+    ageCompleteness?: NervIipContractsInventoryLineSideInventoryAgeCompleteness;
+};
+
+export type NervIipContractsInventoryLineSideInventoryAgeCompleteness = 'complete' | 'partial' | 'unavailable';
+
+export type NervIipContractsInventoryLineSideInventoryBalancesRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderTransformationMutationResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationMutationResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationMutationResponse = {
+    accepted: boolean;
+    transformationId: string;
+    type: string;
+    sourceWorkOrderIds: Array<string>;
+    targetWorkOrderIds: Array<string>;
+    isIdempotentReplay: boolean;
+    operationReceipt: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSplitWorkOrderRequest = {
+    targets: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationTargetRequest>;
+    reason: string;
+    idempotencyKey: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationTargetRequest = {
+    workOrderId: string;
+    quantity: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMergeWorkOrdersRequest = {
+    sourceWorkOrderIds: Array<string>;
+    targetWorkOrderId: string;
+    reason: string;
+    idempotencyKey: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderTransformationReadbackResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationReadbackResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationReadbackResponse = {
+    transformationId: string;
+    type: string;
+    idempotencyKey: string;
+    actor: string;
+    reason: string;
+    occurredAtUtc: string;
+    lines: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationLineResponse>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationLineResponse = {
+    sourceWorkOrderId: string;
+    targetWorkOrderId: string;
+    quantity: number;
+    uomCode: string;
+    sourceStatus: string;
+    targetStatus: string;
+    sourceVersion: number;
+    targetVersion: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWorkOrderTransformationReadbackRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesHistoricalProducedLotListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesHistoricalProducedLotListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesHistoricalProducedLotListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesHistoricalProducedLotRow>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesHistoricalProducedLotRow = {
+    producedLotNo?: string;
+    reportNo?: string;
+    operationTaskId?: string;
+    quantity?: number;
+    createdAtUtc?: string;
+    serialNo?: string | null;
+    serialNumbers?: Array<string>;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleResourceListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -4815,6 +6300,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     jobTitle?: string | null;
     employmentStatus?: string | null;
     phone?: string | null;
+    timezone?: string | null;
+    startsAt?: string | null;
+    endsAt?: string | null;
+    crossesMidnight?: boolean | null;
+    paidMinutes?: number | null;
+    breakMinutes?: number | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListResourcesRequest = {
@@ -5220,6 +6711,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     pageSize?: number;
     totalCount?: number;
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerDirectoryItem>;
+    loginNamesVisible?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerDirectoryItem = {
@@ -5235,6 +6727,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     teams?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerTeamItem>;
     skills?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerSkillItem>;
     snapshotVersion?: string;
+    loginName?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkerTeamItem = {
@@ -5283,6 +6776,16 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     name: string;
     siteCode: string;
     workshopCode?: string | null;
+    idempotencyKey?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateStationRequest = {
+    organizationId: string;
+    environmentId: string;
+    code?: string | null;
+    name: string;
+    lineCode: string;
+    workCenterCode?: string | null;
     idempotencyKey?: string | null;
 };
 
@@ -5570,6 +7073,72 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleP
     siteCode?: string;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleToolingAssetListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetItem>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetItem = {
+    code?: string;
+    name?: string;
+    toolingType?: string;
+    status?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetStatus;
+    maintenanceLifeCount?: number | null;
+    usageCount?: number;
+    isSchedulable?: boolean;
+    workCenterCodes?: Array<string>;
+    skuCodes?: Array<string>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetStatus = 'available' | 'maintenance' | 'retired';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListToolingAssetsRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleToolingRegistrationResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingRegistrationResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingRegistrationResponse = {
+    resourceType?: string;
+    code?: string;
+    displayName?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRegisterToolingAssetRequest = {
+    organizationId: string;
+    environmentId: string;
+    code?: string | null;
+    name: string;
+    toolingType: string;
+    workCenterCodes: Array<string>;
+    skuCodes: Array<string>;
+    maintenanceLifeCount?: number | null;
+    idempotencyKey?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleChangeToolingStatusRequest = {
+    organizationId: string;
+    environmentId: string;
+    code: string;
+    status?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetStatus;
+    reason: string;
+    idempotencyKey?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordToolingUsageRequest = {
+    organizationId: string;
+    environmentId: string;
+    code: string;
+    count?: number;
+    idempotencyKey?: string | null;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanceWorkOrderResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceWorkOrderResponse | null;
 };
@@ -5590,6 +7159,30 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     assetUnavailableReason?: string | null;
     assignedTechnicianUserId?: string | null;
     estimatedLaborMinutes?: number | null;
+    expectedRestoreAtUtc?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanceWorkOrderV2Response = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceWorkOrderV2Response | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceWorkOrderV2Response = {
+    workOrderId?: string;
+    operationReceipt?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleOperationReceipt | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceWorkOrderV2Request = {
+    organizationId: string;
+    environmentId: string;
+    deviceAssetId: string;
+    priority: string;
+    sourceAlarmId?: string | null;
+    openedBy?: string;
+    idempotencyKey: string;
+    assetUnavailableReasonCode?: string | null;
+    assignedTechnicianUserId?: string | null;
+    estimatedLaborMinutes?: number | null;
+    expectedRestoreAtUtc?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCompleteMaintenanceWorkOrderResponse = NetCorePalExtensionsDtoResponseData & {
@@ -5620,6 +7213,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     skuCode?: string;
     quantity?: number;
     uomCode?: string | null;
+    siteCode?: string | null;
+    locationCode?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceWorkOrderListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -5657,6 +7252,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     allowedActions?: Array<string> | null;
     lifecycle?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderLifecycleEventItem> | null;
     blockReasons?: Array<string> | null;
+    expectedRestoreAtUtc?: string | null;
+    workOrderNo?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderLifecycleEventItem = {
@@ -5724,9 +7321,10 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleT
     sparePartCostAmount?: number | null;
     externalServiceCostAmount?: number | null;
     costCurrencyCode?: string | null;
+    expectedRestoreAtUtc?: string | null;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderAction = 'accept' | 'start' | 'pause' | 'waitForParts' | 'resume' | 'complete' | 'verify' | 'close' | 'cancel';
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderAction = 'accept' | 'start' | 'pause' | 'waitForParts' | 'resume' | 'complete' | 'verify' | 'close' | 'cancel' | 'updateExpectedRestore';
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenancePlanResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenancePlanResponse | null;
@@ -5917,6 +7515,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     skuCode?: string;
     quantity?: number;
     uomCode?: string | null;
+    siteCode?: string | null;
+    locationCode?: string | null;
+    workOrderNo?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanceSparePartResponse = NetCorePalExtensionsDtoResponseData & {
@@ -5934,6 +7535,38 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     skuCode: string;
     quantity?: number;
     uomCode?: string | null;
+    siteCode?: string | null;
+    locationCode?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceDowntimeReasonMutationResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceDowntimeReasonMutationResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceDowntimeReasonMutationResponse = {
+    reasonCode?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceDowntimeReasonRequest = {
+    organizationId: string;
+    environmentId: string;
+    reasonCode: string;
+    description: string;
+    reasonCategory: string;
+    lossCategory: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateMaintenanceDowntimeReasonRequest = {
+    organizationId: string;
+    environmentId: string;
+    description: string;
+    reasonCategory: string;
+    lossCategory: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeleteMaintenanceDowntimeReasonRequest = {
+    organizationId: string;
+    environmentId: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAssetReliabilityResponse = NetCorePalExtensionsDtoResponseData & {
@@ -6101,6 +7734,49 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleI
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleInventoryLocationListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryLocationListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryLocationListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryLocationResponse>;
+    totalCount?: number;
+    page?: number;
+    pageSize?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryLocationResponse = {
+    locationId?: string;
+    locationCode?: string;
+    locationType?: string;
+    siteCode?: string;
+    parentLocationCode?: string | null;
+    status?: string;
+    updatedAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryLocationListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateOrUpdateInventoryLocationResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateInventoryLocationResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateInventoryLocationResponse = {
+    locationId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateInventoryLocationRequest = {
+    organizationId?: string;
+    environmentId?: string;
+    locationCode?: string;
+    locationType?: string;
+    siteCode?: string;
+    parentLocationCode?: string | null;
+    status?: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleInventoryCountTaskListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleInventoryCountTaskListResponse | null;
 };
@@ -6225,12 +7901,12 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateStockCount
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateStockCountTaskResponse = {
     countTaskId?: string;
     expectedLedgerVersion?: number;
+    countTaskCode?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateStockCountTaskRequest = {
-    organizationId?: string;
-    environmentId?: string;
-    countTaskCode?: string;
+    organizationId: string;
+    environmentId: string;
     skuCode?: string;
     uomCode?: string;
     siteCode?: string;
@@ -6240,6 +7916,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     qualityStatus?: string;
     ownerType?: string;
     ownerId?: string | null;
+    idempotencyKey: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConfirmStockCountAdjustmentResponse = NetCorePalExtensionsDtoResponseData & {
@@ -6286,22 +7963,166 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     reason: string;
 };
 
-export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFileDownloadGrantResponse = NetCorePalExtensionsDtoResponseData & {
-    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFileDownloadGrantResponse | null;
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleShiftHandoverAttachmentUploadSessionResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleShiftHandoverAttachmentUploadSessionResponse | null;
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFileDownloadGrantResponse = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleShiftHandoverAttachmentUploadSessionResponse = {
+    uploadSessionId?: string;
     fileId?: string;
+    uploadProtocol?: string;
     expiresAtUtc?: string;
-    downloadUrl?: string;
-    downloadHeaders?: {
+    uploadUrl?: string;
+    uploadHeaders?: {
         [key: string]: string;
     };
 };
 
-export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSopFileDownloadGrantRequest = {
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateShiftHandoverAttachmentUploadSessionRequest = {
     organizationId: string;
     environmentId: string;
+    fileName: string;
+    contentType: string;
+    expectedSizeBytes?: number;
+    checksum?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesShiftHandoverAttachment = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesShiftHandoverAttachment | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteShiftHandoverAttachmentUploadRequest = {
+    organizationId: string;
+    environmentId: string;
+    checksum?: string | null;
+    sizeBytes?: number | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeTemplateAssetUploadSessionResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodeTemplateAssetUploadSessionResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodeTemplateAssetUploadSessionResponse = {
+    uploadSessionId?: string;
+    fileId?: string;
+    uploadProtocol?: string;
+    expiresAtUtc?: string;
+    uploadUrl?: string;
+    uploadHeaders?: {
+        [key: string]: string;
+    };
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequest = {
+    organizationId: string;
+    environmentId: string;
+    templateCode: string;
+    fileName: string;
+    expectedSizeBytes?: number;
+    checksum: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeTemplateAsset = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodeTemplateAsset | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodeTemplateAsset = {
+    fileId?: string;
+    fileName?: string;
+    sizeBytes?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteBarcodeTemplateAssetUploadRequest = {
+    organizationId: string;
+    environmentId: string;
+    checksum: string;
+    sizeBytes?: number;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityEvidenceUploadSessionResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityEvidenceUploadSessionResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityEvidenceUploadSessionResponse = {
+    uploadSessionId?: string;
+    fileId?: string;
+    uploadProtocol?: string;
+    expiresAtUtc?: string;
+    uploadUrl?: string;
+    uploadHeaders?: {
+        [key: string]: string;
+    };
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateQualityEvidenceUploadSessionRequest = {
+    organizationId: string;
+    environmentId: string;
+    ncrId: string;
+    fileName: string;
+    contentType: string;
+    expectedSizeBytes?: number;
+    checksum?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityEvidenceFile = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityEvidenceFile | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleQualityEvidenceFile = {
+    fileId?: string;
+    fileName?: string;
+    contentType?: string;
+    sizeBytes?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteQualityEvidenceUploadRequest = {
+    organizationId: string;
+    environmentId: string;
+    ncrId: string;
+    checksum?: string | null;
+    sizeBytes?: number | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFileUploadSessionResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFileUploadSessionResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFileUploadSessionResponse = {
+    uploadSessionId?: string;
+    fileId?: string;
+    uploadProtocol?: string;
+    expiresAtUtc?: string;
+    uploadUrl?: string;
+    uploadHeaders?: {
+        [key: string]: string;
+    };
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSopFileUploadSessionRequest = {
+    organizationId: string;
+    environmentId: string;
+    fileName: string;
+    contentType: string;
+    expectedSizeBytes?: number;
+    checksum?: string | null;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFile = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFile | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSopFile = {
+    fileId?: string;
+    fileName?: string;
+    contentType?: string;
+    sizeBytes?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteSopFileUploadRequest = {
+    organizationId: string;
+    environmentId: string;
+    checksum?: string | null;
+    sizeBytes?: number | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpPurchaseOrderListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -6343,6 +8164,246 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkOrderCostListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostListResponse = {
+    items: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostItem>;
+    total: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostItem = {
+    workOrderId: string;
+    skuCode: string;
+    costKind: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostKind;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostKind = 'ordinary' | 'rework';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListErpWorkOrderCostsRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkOrderCostVarianceResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostVarianceResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkOrderCostVarianceResponse = {
+    organizationId?: string;
+    environmentId?: string;
+    workOrderId?: string;
+    currencyCode?: string | null;
+    laborCostBasis?: string;
+    laborVarianceStatus?: string;
+    unavailableReason?: string | null;
+    actualLaborHours?: number | null;
+    actualLaborCost?: number | null;
+    standardLaborHours?: number | null;
+    standardLaborCost?: number | null;
+    laborEfficiencyVarianceHours?: number | null;
+    laborEfficiencyVarianceAmount?: number | null;
+    laborEfficiencyVarianceDirection?: string | null;
+    laborRateVarianceStatus?: string;
+    laborRateVarianceReason?: string;
+    materialCost?: number | null;
+    totalAccumulatedCost?: number | null;
+    capitalizedCost?: number | null;
+    capitalizationVarianceAmount?: number | null;
+    actualMachineHours: number | null;
+    machineCostStatus: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMachineOverheadReadStatus;
+    machineCostUnavailableReason: string | null;
+    machineCurrencyCode: string | null;
+    pageNumber?: number;
+    pageSize?: number;
+    totalOperations?: number;
+    operations?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpOperationLaborVarianceItem>;
+    appliedFixedMachineOverhead: number | null;
+    appliedVariableMachineOverhead: number | null;
+    appliedMachineOverheadTotal: number | null;
+    machineOverheadPageNumber: number;
+    machineOverheadPageSize: number;
+    totalMachineOverheadOperations: number;
+    machineOverheadOperations: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpOperationMachineOverheadItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMachineOverheadReadStatus = 'available' | 'notApplicable' | 'unavailable';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpOperationLaborVarianceItem = {
+    operationTaskId?: string;
+    workCenterId?: string;
+    settlementRevision?: number;
+    status?: string;
+    unavailableReason?: string | null;
+    actualLaborTicks?: number;
+    actualLaborHours?: number;
+    actualLaborCost?: number;
+    standardLaborHours?: number | null;
+    standardLaborCost?: number | null;
+    laborEfficiencyVarianceHours?: number | null;
+    laborEfficiencyVarianceAmount?: number | null;
+    laborEfficiencyVarianceDirection?: string | null;
+    currencyCode?: string;
+    workCenterCostRateId?: string;
+    rateRevision?: number;
+    hourlyRate?: number;
+    rateBasis?: string;
+    rateBasisAtUtc?: string;
+    coveredReports?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCoveredLaborReportItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpCoveredLaborReportItem = {
+    reportNo?: string;
+    goodQuantity?: number;
+    scrapQuantity?: number;
+    reworkQuantity?: number;
+    uomCode?: string;
+    theoreticalRatePerHour?: number | null;
+    reportedAtUtc?: string;
+    isReversal?: boolean;
+    reversedReportNo?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpOperationMachineOverheadItem = {
+    operationTaskId: string;
+    workCenterId: string;
+    settlementId: string;
+    settlementRevision: number;
+    status: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMachineOverheadReadStatus;
+    unavailableReason: string | null;
+    actualMachineHours: number | null;
+    appliedFixedMachineOverhead: number | null;
+    appliedVariableMachineOverhead: number | null;
+    appliedMachineOverheadTotal: number | null;
+    accountingPeriodCode: string;
+    currencyCode: string;
+    deviceAssetId?: string | null;
+    machineTimeBasisCode?: string | null;
+    workCenterMachineOverheadRateId: string;
+    rateRevision: number;
+    completedAtUtc: string;
+    sourceEventId: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleGetErpWorkOrderCostVarianceRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpMachineOverheadReconciliationListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadReconciliationListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadReconciliationListResponse = {
+    organizationId?: string;
+    environmentId?: string;
+    accountingPeriodCode?: string;
+    workCenterId?: string | null;
+    pageNumber: number;
+    pageSize: number;
+    totalCount: number;
+    items: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadReconciliationItem>;
+    accountingPeriodStatus: 'open' | 'closed' | null;
+    reconciliationStatus: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMachineOverheadReadStatus;
+    reconciliationUnavailableReason: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadReconciliationItem = {
+    id: string;
+    workCenterId: string;
+    accountingPeriodCode: string;
+    revision: number;
+    rateRevision: number;
+    currencyCode: string;
+    actualFixedOverheadAmount: number;
+    actualVariableOverheadAmount: number;
+    actualTotalOverheadAmount: number;
+    appliedMachineTicks: number;
+    appliedMachineHours: number;
+    appliedFixedAmount: number;
+    appliedVariableAmount: number;
+    appliedTotalAmount: number;
+    appliedRoundingDifferenceAmount: number;
+    underOverAppliedFixedAmount: number;
+    underOverAppliedVariableAmount: number;
+    underOverAppliedTotalAmount: number;
+    unallocatedFixedOverheadAmount: number;
+    overAppliedFixedOverheadAmount: number;
+    abnormalDowntimeTicks: number;
+    abnormalDowntimeHours: number;
+    abnormalDowntimeDisposition: 'None' | 'Pending' | 'PeriodExpense';
+    isReadyForClose: boolean;
+    reconciliationStatus: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMachineOverheadReadStatus;
+    unavailableReason: string | null;
+    recordedBy: string;
+    sourceReference: string;
+    reason: string;
+    recordedAtUtc: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListErpMachineOverheadReconciliationsRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConfigureErpWorkCenterMachineOverheadRateResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterMachineOverheadRateResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterMachineOverheadRateResponse = {
+    workCenterMachineOverheadRateId: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest = {
+    organizationId: string;
+    environmentId: string;
+    workCenterId: string;
+    accountingPeriodCode: string;
+    applicability?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadApplicability;
+    fixedOverheadBudget?: number;
+    variableOverheadBudget?: number;
+    normalCapacityMachineHours?: number;
+    currencyCode?: string;
+    reason: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadApplicability = 'applicable' | 'notApplicable';
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkCenterMachineOverheadRateListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterMachineOverheadRateListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterMachineOverheadRateListResponse = {
+    organizationId: string;
+    environmentId: string;
+    workCenterId: string;
+    accountingPeriodCode: string;
+    currentRevision: number;
+    pageNumber: number;
+    pageSize: number;
+    totalCount: number;
+    items: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterMachineOverheadRateItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpWorkCenterMachineOverheadRateItem = {
+    workCenterMachineOverheadRateId: string;
+    accountingPeriodCode: string;
+    applicability: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpMachineOverheadApplicability;
+    fixedOverheadBudget: number;
+    variableOverheadBudget: number;
+    normalCapacityMachineHours: number;
+    fixedHourlyRate: number;
+    variableHourlyRate: number;
+    totalHourlyRate: number;
+    currencyCode: string;
+    revision: number;
+    changedBy: string;
+    reason: string;
+    changedAtUtc: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleListErpWorkCenterMachineOverheadRatesRequest = {
     [key: string]: never;
 };
 
@@ -6576,22 +8637,26 @@ export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordErpPurchas
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordErpPurchaseReceiptResponse = {
     purchaseReceiptId?: string;
+    purchaseReceiptNo?: string;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordErpPurchaseReceiptRequest = {
     organizationId: string;
     environmentId: string;
-    purchaseReceiptNo?: string | null;
     purchaseOrderNo: string;
     lines: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseReceiptLine>;
     idempotencyKey?: string | null;
+    inventoryPostingRoute?: NervIipContractsErpPurchaseReceiptInventoryPostingRoute;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseReceiptLine = {
     purchaseOrderLineNo: string;
     receivedQuantity?: number;
     qualityStatus: string;
+    locationCode?: string | null;
 };
+
+export type NervIipContractsErpPurchaseReceiptInventoryPostingRoute = 'direct' | 'wms';
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpSalesOrderListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSalesOrderListResponse | null;
@@ -6951,6 +9016,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpJournalVoucherItem = {
+    id?: string;
     voucherNo?: string;
     postingDate?: string;
     status?: string;
@@ -7370,6 +9436,156 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     [key: string]: never;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDeadLetterListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterListResponse = {
+    items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterItem>;
+    sourceStatuses?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceStatus>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterItem = {
+    service?: string;
+    deadLetter?: NervIipMessagingCapIntegrationEventDeadLetterResponse;
+};
+
+export type NervIipMessagingCapIntegrationEventDeadLetterResponse = {
+    id?: string;
+    consumerName?: string;
+    eventId?: string | null;
+    eventType?: string | null;
+    eventVersion?: number | null;
+    sourceService?: string | null;
+    idempotencyKey?: string | null;
+    failureCode?: string;
+    failureMessage?: string;
+    status?: NervIipMessagingCapIntegrationEventDeadLetterStatus;
+    deadLetteredAtUtc?: string;
+    replayedAtUtc?: string | null;
+};
+
+export type NervIipMessagingCapIntegrationEventDeadLetterStatus = 'pending' | 'replayed' | 'failed' | 'ignored';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceStatus = {
+    service?: string;
+    status?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceState;
+    reason?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceFailureReason | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceState = 'available' | 'unavailable';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceFailureReason = 'sourceTimeout' | 'sourceUnavailable';
+
+export type NervIipBusinessGatewayWebEndpointsDeadLettersBusinessConsoleDeadLetterListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDeadLetterMetricsResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterMetricsResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterMetricsResponse = {
+    actionableCount?: number;
+    pendingCount?: number;
+    failedCount?: number;
+    ignoredCount?: number;
+    replayedCount?: number;
+    services?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterServiceMetrics>;
+    sourceStatuses?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterSourceStatus>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeadLetterServiceMetrics = {
+    service?: string;
+    metrics?: NervIipMessagingCapIntegrationEventDeadLetterMetricsResponse;
+};
+
+export type NervIipMessagingCapIntegrationEventDeadLetterMetricsResponse = {
+    actionableCount?: number;
+    pendingCount?: number;
+    failedCount?: number;
+    ignoredCount?: number;
+    replayedCount?: number;
+    eventTypes?: Array<NervIipMessagingCapIntegrationEventDeadLetterEventTypeMetricsResponse>;
+};
+
+export type NervIipMessagingCapIntegrationEventDeadLetterEventTypeMetricsResponse = {
+    eventType?: string;
+    actionableCount?: number;
+    pendingCount?: number;
+    failedCount?: number;
+    ignoredCount?: number;
+    replayedCount?: number;
+};
+
+export type NervIipBusinessGatewayWebEndpointsDeadLettersBusinessConsoleDeadLetterMetricsRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfIntegrationEventDeadLetterDetailResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipMessagingCapIntegrationEventDeadLetterDetailResponse | null;
+};
+
+export type NervIipMessagingCapIntegrationEventDeadLetterDetailResponse = {
+    id?: string;
+    consumerName?: string;
+    eventId?: string | null;
+    eventType?: string | null;
+    eventVersion?: number | null;
+    sourceService?: string | null;
+    idempotencyKey?: string | null;
+    eventClrType?: string;
+    eventJson?: string;
+    failureCode?: string;
+    failureMessage?: string;
+    status?: NervIipMessagingCapIntegrationEventDeadLetterStatus;
+    deadLetteredAtUtc?: string;
+    replayedAtUtc?: string | null;
+};
+
+export type NervIipBusinessGatewayWebEndpointsDeadLettersBusinessConsoleDeadLetterItemRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfIntegrationEventDeadLetterReplayResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipMessagingCapIntegrationEventDeadLetterReplayResponse | null;
+};
+
+export type NervIipMessagingCapIntegrationEventDeadLetterReplayResponse = {
+    id?: string;
+    succeeded?: boolean;
+    status?: NervIipMessagingCapIntegrationEventDeadLetterReplayStatus;
+    message?: string | null;
+};
+
+export type NervIipMessagingCapIntegrationEventDeadLetterReplayStatus = 'replayed' | 'failed' | 'noHandler' | 'notFound';
+
+export type NetCorePalExtensionsDtoResponseDataOfIntegrationEventDeadLetterBatchReplayResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipMessagingCapIntegrationEventDeadLetterBatchReplayResponse | null;
+};
+
+export type NervIipMessagingCapIntegrationEventDeadLetterBatchReplayResponse = {
+    items?: Array<NervIipMessagingCapIntegrationEventDeadLetterReplayResponse>;
+};
+
+export type NervIipBusinessGatewayWebEndpointsDeadLettersBusinessConsoleReplayDeadLettersRequest = {
+    organizationId: string;
+    environmentId: string;
+    consumerName?: string | null;
+    eventType?: string | null;
+    failureCode?: string | null;
+    status?: NervIipMessagingCapIntegrationEventDeadLetterStatus | null;
+    deadLetteredFromUtc?: string | null;
+    deadLetteredToUtc?: string | null;
+    take?: number | null;
+};
+
+export type NervIipBusinessGatewayWebEndpointsDeadLettersBusinessConsoleIgnoreDeadLetterRequest = {
+    organizationId: string;
+    environmentId: string;
+    reason?: string;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeRuleListResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodeRuleListResponse | null;
 };
@@ -7474,6 +9690,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     idempotencyKey?: string;
     labelValuesJson?: string;
     requestedQuantity?: number;
+    reportIntentFingerprint?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrintBatchListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -7514,19 +9731,81 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleB
     sourceDocumentType?: string;
     sourceDocumentId?: string;
     idempotencyKey?: string;
+    reportIntentKey?: string;
+    reportIntentFingerprint: string | null;
     requestedQuantity?: number;
     status?: string;
+    printerId?: string | null;
+    printJobId?: string | null;
+    failureReason?: string | null;
+    productionReportId?: string | null;
+    productionReportNo?: string | null;
     items?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintItemDetail>;
+    completedAtUtc?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintItemDetail = {
     sequenceNo?: number;
     labelValue?: string;
     fileId?: string | null;
+    status?: string;
+    voidReason?: string | null;
+    serialNumber?: string | null;
+    lotNo?: string | null;
+    gtin?: string | null;
+    epcUri?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintBatchRequest = {
     [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrintLifecycleResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintLifecycleResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrintLifecycleResponse = {
+    printBatchId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDispatchBarcodePrintBatchRequest = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDispatchBarcodePrintBatchBody;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDispatchBarcodePrintBatchBody = {
+    printBatchId: string;
+    printerId: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReprintBarcodeLabelResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReprintBarcodeLabelResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReprintBarcodeLabelResponse = {
+    printBatchId?: string;
+    status?: string;
+    printJobId?: string | null;
+    failureReason?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReprintBarcodeLabelRequest = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReprintBarcodeLabelBody;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReprintBarcodeLabelBody = {
+    printBatchId: string;
+    sequenceNo: number;
+    printerId: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleVoidBarcodeLabelRequest = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleVoidBarcodeLabelBody;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleVoidBarcodeLabelBody = {
+    printBatchId: string;
+    sequenceNo: number;
+    reason: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleRecordBarcodeScanResponse = NetCorePalExtensionsDtoResponseData & {
@@ -7572,6 +9851,91 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleB
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodeScanListRequest = {
     [key: string]: never;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfirmBarcodePrintBatchRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfTemplateAssetRetirementResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsBarcodeLabelTemplateAssetRetirementResponse | null;
+};
+
+export type NervIipContractsBarcodeLabelTemplateAssetRetirementResponse = {
+    fileId?: string;
+    checksum?: string | null;
+    decisionId?: string | null;
+    status?: NervIipContractsBarcodeLabelTemplateAssetRetirementStatus | null;
+};
+
+export type NervIipContractsBarcodeLabelTemplateAssetRetirementStatus = 'pending' | 'quota-released' | 'execution-outcome-unknown' | 'replay-window-expired';
+
+export type NervIipContractsBarcodeLabelGetTemplateAssetRetirementRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrinterListResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrinterListResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrinterListResponse = {
+    printers: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrinterItem>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrinterItem = {
+    printerId: string;
+    name: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleBarcodePrinterListRequest = {
+    [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeResolveResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveResponse | null;
+};
+
+export type NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveResponse = {
+    status?: string;
+    reasonCode?: string | null;
+    candidates?: Array<NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveCandidate>;
+    total?: number;
+};
+
+export type NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveCandidate = {
+    objectType?: string;
+    strongIds?: {
+        [key: string]: string;
+    };
+    authority?: string;
+    source?: string;
+    observedAtUtc?: string;
+};
+
+export type NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveRequest = {
+    organizationId: string;
+    environmentId: string;
+    scannedValue: string;
+    pageIndex?: number;
+    pageSize?: number;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfRetireTemplateAssetResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipContractsBarcodeLabelRetireTemplateAssetResponse | null;
+};
+
+export type NervIipContractsBarcodeLabelRetireTemplateAssetResponse = {
+    decisionId?: string;
+};
+
+export type NervIipBusinessGatewayWebEndpointsBarcodeRetireBusinessConsoleBarcodeTemplateAssetRequest = {
+    organizationId: string;
+    environmentId: string;
+    templateId: string;
+    fileId: string;
+    checksum: string;
+    reason: string;
+    idempotencyKey: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleApprovalTemplateListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -7900,7 +10264,7 @@ export type GetBusinessConsoleWorkbenchSummaryErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -7952,7 +10316,7 @@ export type ListBusinessConsoleWmsInboundOrdersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -7985,7 +10349,7 @@ export type CreateBusinessConsoleWmsInboundOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8021,7 +10385,7 @@ export type GetBusinessConsoleWmsReceiptWorkScopesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8057,7 +10421,7 @@ export type GetBusinessConsoleWmsShipmentWorkScopesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8093,7 +10457,7 @@ export type GetBusinessConsoleWmsCountWorkScopesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8248,7 +10612,7 @@ export type AssignBusinessConsoleWmsInboundOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8288,7 +10652,7 @@ export type AssignBusinessConsoleWmsPutawayTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8328,7 +10692,7 @@ export type AssignBusinessConsoleWmsOutboundOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8368,7 +10732,7 @@ export type AssignBusinessConsoleWmsPickingTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8408,7 +10772,7 @@ export type AssignBusinessConsoleWmsCountExecutionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8448,7 +10812,7 @@ export type CreateBusinessConsoleWmsPutawayTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8492,7 +10856,7 @@ export type ListBusinessConsoleWmsPutawayTasksErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8532,7 +10896,7 @@ export type StartBusinessConsoleWmsPutawayTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8574,7 +10938,7 @@ export type RecordBusinessConsoleWmsPutawayTaskProgressErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8616,7 +10980,7 @@ export type ReportBusinessConsoleWmsPutawayTaskExceptionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8658,7 +11022,7 @@ export type CompleteBusinessConsoleWmsPutawayTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8704,7 +11068,7 @@ export type CompleteBusinessConsoleWmsInboundOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8751,7 +11115,7 @@ export type ListBusinessConsoleWmsOutboundOrdersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8784,7 +11148,7 @@ export type CreateBusinessConsoleWmsOutboundOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8822,7 +11186,7 @@ export type CreateBusinessConsoleWmsPickingTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8866,7 +11230,7 @@ export type ListBusinessConsoleWmsPickingTasksErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8906,7 +11270,7 @@ export type StartBusinessConsoleWmsPickingTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8948,7 +11312,7 @@ export type RecordBusinessConsoleWmsPickingTaskProgressErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -8990,7 +11354,7 @@ export type ReportBusinessConsoleWmsPickingTaskExceptionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9032,7 +11396,7 @@ export type CompleteBusinessConsoleWmsPickingTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9078,7 +11442,7 @@ export type CompleteBusinessConsoleWmsOutboundOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9116,6 +11480,10 @@ export type RetryBusinessConsoleWmsOutboundInventoryPostingData = {
 
 export type RetryBusinessConsoleWmsOutboundInventoryPostingErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -9124,6 +11492,8 @@ export type RetryBusinessConsoleWmsOutboundInventoryPostingErrors = {
      */
     403: unknown;
 };
+
+export type RetryBusinessConsoleWmsOutboundInventoryPostingError = RetryBusinessConsoleWmsOutboundInventoryPostingErrors[keyof RetryBusinessConsoleWmsOutboundInventoryPostingErrors];
 
 export type RetryBusinessConsoleWmsOutboundInventoryPostingResponses = {
     /**
@@ -9156,7 +11526,7 @@ export type ListBusinessConsoleWmsCountExecutionsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9189,7 +11559,7 @@ export type CreateBusinessConsoleWmsCountExecutionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9233,7 +11603,7 @@ export type CompleteBusinessConsoleWmsCountExecutionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9273,7 +11643,7 @@ export type DispatchBusinessConsoleWmsWcsTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9313,7 +11683,7 @@ export type FailBusinessConsoleWmsWcsTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9351,7 +11721,7 @@ export type CompleteBusinessConsoleWmsWcsTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9394,7 +11764,7 @@ export type ListBusinessConsoleWmsWcsTasksErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9438,7 +11808,7 @@ export type ListBusinessConsoleWmsReceivingQualityGatesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9478,7 +11848,7 @@ export type ListBusinessConsoleWmsSupplierReturnRequestsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9499,6 +11869,152 @@ export type ListBusinessConsoleWmsSupplierReturnRequestsResponses = {
 };
 
 export type ListBusinessConsoleWmsSupplierReturnRequestsResponse = ListBusinessConsoleWmsSupplierReturnRequestsResponses[keyof ListBusinessConsoleWmsSupplierReturnRequestsResponses];
+
+export type ListBusinessConsoleWmsWorkPoolsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/wms/work-pools';
+};
+
+export type ListBusinessConsoleWmsWorkPoolsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ListBusinessConsoleWmsWorkPoolsError = ListBusinessConsoleWmsWorkPoolsErrors[keyof ListBusinessConsoleWmsWorkPoolsErrors];
+
+export type ListBusinessConsoleWmsWorkPoolsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWorkPoolListResponse;
+};
+
+export type ListBusinessConsoleWmsWorkPoolsResponse = ListBusinessConsoleWmsWorkPoolsResponses[keyof ListBusinessConsoleWmsWorkPoolsResponses];
+
+export type CreateBusinessConsoleWmsWorkPoolData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWmsWorkPoolRequest;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/wms/work-pools';
+};
+
+export type CreateBusinessConsoleWmsWorkPoolErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: NetCorePalExtensionsDtoResponseData;
+};
+
+export type CreateBusinessConsoleWmsWorkPoolError = CreateBusinessConsoleWmsWorkPoolErrors[keyof CreateBusinessConsoleWmsWorkPoolErrors];
+
+export type CreateBusinessConsoleWmsWorkPoolResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWorkPoolResult;
+};
+
+export type CreateBusinessConsoleWmsWorkPoolResponse = CreateBusinessConsoleWmsWorkPoolResponses[keyof CreateBusinessConsoleWmsWorkPoolResponses];
+
+export type AddBusinessConsoleWmsWorkPoolMemberData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleAddWmsWorkPoolMemberRequest;
+    path: {
+        poolCode: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/wms/work-pools/{poolCode}/members';
+};
+
+export type AddBusinessConsoleWmsWorkPoolMemberErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: NetCorePalExtensionsDtoResponseData;
+    422: NetCorePalExtensionsDtoResponseData;
+};
+
+export type AddBusinessConsoleWmsWorkPoolMemberError = AddBusinessConsoleWmsWorkPoolMemberErrors[keyof AddBusinessConsoleWmsWorkPoolMemberErrors];
+
+export type AddBusinessConsoleWmsWorkPoolMemberResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWorkPoolMemberResult;
+};
+
+export type AddBusinessConsoleWmsWorkPoolMemberResponse = AddBusinessConsoleWmsWorkPoolMemberResponses[keyof AddBusinessConsoleWmsWorkPoolMemberResponses];
+
+export type RemoveBusinessConsoleWmsWorkPoolMemberData = {
+    body?: never;
+    path: {
+        poolCode: string;
+        principalId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/wms/work-pools/{poolCode}/members/{principalId}/remove';
+};
+
+export type RemoveBusinessConsoleWmsWorkPoolMemberErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: NetCorePalExtensionsDtoResponseData;
+};
+
+export type RemoveBusinessConsoleWmsWorkPoolMemberError = RemoveBusinessConsoleWmsWorkPoolMemberErrors[keyof RemoveBusinessConsoleWmsWorkPoolMemberErrors];
+
+export type RemoveBusinessConsoleWmsWorkPoolMemberResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsWorkPoolMemberRemovalResult;
+};
+
+export type RemoveBusinessConsoleWmsWorkPoolMemberResponse = RemoveBusinessConsoleWmsWorkPoolMemberResponses[keyof RemoveBusinessConsoleWmsWorkPoolMemberResponses];
 
 export type QueryBusinessConsoleTelemetryConnectorCollectionHealthData = {
     body?: never;
@@ -9578,7 +12094,7 @@ export type GetBusinessConsoleTelemetryConnectorTagCoverageErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9609,6 +12125,7 @@ export type ListBusinessConsoleTelemetryTagsData = {
         deviceAssetId?: string | null;
         skip?: number;
         take?: number;
+        includeDisabled?: boolean;
     };
     url: '/api/business-console/v1/telemetry/tags';
 };
@@ -9617,7 +12134,7 @@ export type ListBusinessConsoleTelemetryTagsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9639,6 +12156,72 @@ export type ListBusinessConsoleTelemetryTagsResponses = {
 
 export type ListBusinessConsoleTelemetryTagsResponse = ListBusinessConsoleTelemetryTagsResponses[keyof ListBusinessConsoleTelemetryTagsResponses];
 
+export type CreateOrUpdateBusinessConsoleTelemetryTagData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateTelemetryTagRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/telemetry/tags';
+};
+
+export type CreateOrUpdateBusinessConsoleTelemetryTagErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateOrUpdateBusinessConsoleTelemetryTagError = CreateOrUpdateBusinessConsoleTelemetryTagErrors[keyof CreateOrUpdateBusinessConsoleTelemetryTagErrors];
+
+export type CreateOrUpdateBusinessConsoleTelemetryTagResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateOrUpdateTelemetryTagResponse;
+};
+
+export type CreateOrUpdateBusinessConsoleTelemetryTagResponse = CreateOrUpdateBusinessConsoleTelemetryTagResponses[keyof CreateOrUpdateBusinessConsoleTelemetryTagResponses];
+
+export type DisableBusinessConsoleTelemetryTagData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDisableTelemetryTagRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/telemetry/tags/disable';
+};
+
+export type DisableBusinessConsoleTelemetryTagErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type DisableBusinessConsoleTelemetryTagError = DisableBusinessConsoleTelemetryTagErrors[keyof DisableBusinessConsoleTelemetryTagErrors];
+
+export type DisableBusinessConsoleTelemetryTagResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDisableTelemetryTagResponse;
+};
+
+export type DisableBusinessConsoleTelemetryTagResponse = DisableBusinessConsoleTelemetryTagResponses[keyof DisableBusinessConsoleTelemetryTagResponses];
+
 export type GetBusinessConsoleTelemetryTagCurrentValueData = {
     body?: never;
     path?: never;
@@ -9655,7 +12238,7 @@ export type GetBusinessConsoleTelemetryTagCurrentValueErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9695,7 +12278,7 @@ export type ListBusinessConsoleTelemetryAlarmRulesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9728,7 +12311,7 @@ export type CreateOrUpdateBusinessConsoleTelemetryAlarmRuleErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9770,7 +12353,7 @@ export type ListBusinessConsoleTelemetryDeviceControlCommandsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9803,7 +12386,7 @@ export type CreateBusinessConsoleTelemetryDeviceControlCommandErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9842,7 +12425,7 @@ export type GetBusinessConsoleTelemetryDeviceControlCommandErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9882,7 +12465,7 @@ export type ListBusinessConsoleTelemetryDeviceControlBindingsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9915,7 +12498,7 @@ export type CreateOrUpdateBusinessConsoleTelemetryDeviceControlBindingErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9950,7 +12533,7 @@ export type DisableBusinessConsoleTelemetryDeviceControlBindingErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -9983,7 +12566,7 @@ export type RecordBusinessConsoleTelemetrySampleErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10025,7 +12608,7 @@ export type ListBusinessConsoleTelemetryAlarmsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10058,7 +12641,7 @@ export type PostBusinessConsoleTelemetryAlarmErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10098,7 +12681,7 @@ export type QueryBusinessConsoleTelemetryDeviceHistoryErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10137,7 +12720,7 @@ export type QueryBusinessConsoleTelemetryOeeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10159,6 +12742,56 @@ export type QueryBusinessConsoleTelemetryOeeResponses = {
 
 export type QueryBusinessConsoleTelemetryOeeResponse = QueryBusinessConsoleTelemetryOeeResponses[keyof QueryBusinessConsoleTelemetryOeeResponses];
 
+export type QueryBusinessConsoleTelemetryOeeAggregatesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        dimension: NervIipContractsIndustrialTelemetryOeeAggregateDimension;
+        windowStartUtc: string;
+        windowEndUtc: string;
+        deviceAssetId?: string | null;
+        workCenterId?: string | null;
+        shiftCode?: string | null;
+        lineCode?: string | null;
+        workshopCode?: string | null;
+        businessDate?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/telemetry/oee/aggregates';
+};
+
+export type QueryBusinessConsoleTelemetryOeeAggregatesErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
+};
+
+export type QueryBusinessConsoleTelemetryOeeAggregatesError = QueryBusinessConsoleTelemetryOeeAggregatesErrors[keyof QueryBusinessConsoleTelemetryOeeAggregatesErrors];
+
+export type QueryBusinessConsoleTelemetryOeeAggregatesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfOeeAggregateBucketsResponse;
+};
+
+export type QueryBusinessConsoleTelemetryOeeAggregatesResponse = QueryBusinessConsoleTelemetryOeeAggregatesResponses[keyof QueryBusinessConsoleTelemetryOeeAggregatesResponses];
+
 export type QueryBusinessConsoleTelemetryRuntimeAvailabilityData = {
     body?: never;
     path?: never;
@@ -10177,7 +12810,7 @@ export type QueryBusinessConsoleTelemetryRuntimeAvailabilityErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10216,7 +12849,7 @@ export type QueryBusinessConsoleTelemetryRuntimeHoursErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10253,7 +12886,7 @@ export type SearchBusinessConsoleObjectsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10275,6 +12908,98 @@ export type SearchBusinessConsoleObjectsResponses = {
 
 export type SearchBusinessConsoleObjectsResponse = SearchBusinessConsoleObjectsResponses[keyof SearchBusinessConsoleObjectsResponses];
 
+export type PreviewBusinessConsoleSchedulingCandidatesData = {
+    body: NervIipContractsSchedulingSchedulingCandidatePreviewRequestContract;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/scheduling/workbench/candidates/preview';
+};
+
+export type PreviewBusinessConsoleSchedulingCandidatesErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PreviewBusinessConsoleSchedulingCandidatesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulingCandidateSetContract;
+};
+
+export type PreviewBusinessConsoleSchedulingCandidatesResponse = PreviewBusinessConsoleSchedulingCandidatesResponses[keyof PreviewBusinessConsoleSchedulingCandidatesResponses];
+
+export type SelectBusinessConsoleSchedulingCandidateData = {
+    body: NervIipContractsSchedulingSchedulingCandidateSelectRequestContract;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/scheduling/workbench/candidates/select';
+};
+
+export type SelectBusinessConsoleSchedulingCandidateErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type SelectBusinessConsoleSchedulingCandidateResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulingCandidateSelectionContract;
+};
+
+export type SelectBusinessConsoleSchedulingCandidateResponse = SelectBusinessConsoleSchedulingCandidateResponses[keyof SelectBusinessConsoleSchedulingCandidateResponses];
+
+export type GetBusinessConsoleSchedulingDowntimeImpactData = {
+    body?: never;
+    path: {
+        planId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/plans/{planId}/downtime-impact';
+};
+
+export type GetBusinessConsoleSchedulingDowntimeImpactErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleSchedulingDowntimeImpactError = GetBusinessConsoleSchedulingDowntimeImpactErrors[keyof GetBusinessConsoleSchedulingDowntimeImpactErrors];
+
+export type GetBusinessConsoleSchedulingDowntimeImpactResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulingDowntimeImpactResponse;
+};
+
+export type GetBusinessConsoleSchedulingDowntimeImpactResponse = GetBusinessConsoleSchedulingDowntimeImpactResponses[keyof GetBusinessConsoleSchedulingDowntimeImpactResponses];
+
 export type PreviewBusinessConsoleSchedulingPlanData = {
     body: NervIipBusinessGatewayWebEndpointsSchedulingBusinessConsoleSchedulingProblemRequest;
     path?: never;
@@ -10286,7 +13011,7 @@ export type PreviewBusinessConsoleSchedulingPlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10324,7 +13049,7 @@ export type ListBusinessConsoleSchedulingPlansErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10357,7 +13082,7 @@ export type CreateBusinessConsoleSchedulingPlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10390,7 +13115,7 @@ export type CreateBusinessConsoleSchedulingWorkbenchPlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10412,6 +13137,39 @@ export type CreateBusinessConsoleSchedulingWorkbenchPlanResponses = {
 
 export type CreateBusinessConsoleSchedulingWorkbenchPlanResponse = CreateBusinessConsoleSchedulingWorkbenchPlanResponses[keyof CreateBusinessConsoleSchedulingWorkbenchPlanResponses];
 
+export type PreviewBusinessConsoleSchedulingWorkbenchPlanData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulingWorkbenchPlanRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/scheduling/workbench/plans/preview';
+};
+
+export type PreviewBusinessConsoleSchedulingWorkbenchPlanErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PreviewBusinessConsoleSchedulingWorkbenchPlanError = PreviewBusinessConsoleSchedulingWorkbenchPlanErrors[keyof PreviewBusinessConsoleSchedulingWorkbenchPlanErrors];
+
+export type PreviewBusinessConsoleSchedulingWorkbenchPlanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulePlanContract;
+};
+
+export type PreviewBusinessConsoleSchedulingWorkbenchPlanResponse = PreviewBusinessConsoleSchedulingWorkbenchPlanResponses[keyof PreviewBusinessConsoleSchedulingWorkbenchPlanResponses];
+
 export type CreateBusinessConsoleSchedulingPlanRevisionData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSchedulePlanRevisionRequest;
     path: {
@@ -10425,7 +13183,7 @@ export type CreateBusinessConsoleSchedulingPlanRevisionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10447,6 +13205,47 @@ export type CreateBusinessConsoleSchedulingPlanRevisionResponses = {
 
 export type CreateBusinessConsoleSchedulingPlanRevisionResponse = CreateBusinessConsoleSchedulingPlanRevisionResponses[keyof CreateBusinessConsoleSchedulingPlanRevisionResponses];
 
+export type ListBusinessConsoleSchedulingPlanHistoryData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        pageIndex?: number;
+        pageSize?: number;
+        status?: NervIipContractsSchedulingSchedulePlanStatusContract | null;
+        releasedOn?: string | null;
+        isInvalidated?: boolean | null;
+    };
+    url: '/api/business-console/v1/scheduling/plans/history';
+};
+
+export type ListBusinessConsoleSchedulingPlanHistoryErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleSchedulingPlanHistoryError = ListBusinessConsoleSchedulingPlanHistoryErrors[keyof ListBusinessConsoleSchedulingPlanHistoryErrors];
+
+export type ListBusinessConsoleSchedulingPlanHistoryResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSchedulingHistoryResponse;
+};
+
+export type ListBusinessConsoleSchedulingPlanHistoryResponse = ListBusinessConsoleSchedulingPlanHistoryResponses[keyof ListBusinessConsoleSchedulingPlanHistoryResponses];
+
 export type GetBusinessConsoleSchedulingPlanData = {
     body?: never;
     path: {
@@ -10463,7 +13262,7 @@ export type GetBusinessConsoleSchedulingPlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10485,6 +13284,44 @@ export type GetBusinessConsoleSchedulingPlanResponses = {
 
 export type GetBusinessConsoleSchedulingPlanResponse = GetBusinessConsoleSchedulingPlanResponses[keyof GetBusinessConsoleSchedulingPlanResponses];
 
+export type ExportBusinessConsoleSchedulingPlanCsvData = {
+    body?: never;
+    path: {
+        planId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/plans/{planId}/csv';
+};
+
+export type ExportBusinessConsoleSchedulingPlanCsvErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ExportBusinessConsoleSchedulingPlanCsvError = ExportBusinessConsoleSchedulingPlanCsvErrors[keyof ExportBusinessConsoleSchedulingPlanCsvErrors];
+
+export type ExportBusinessConsoleSchedulingPlanCsvResponses = {
+    /**
+     * Success
+     */
+    200: Blob | File;
+};
+
+export type ExportBusinessConsoleSchedulingPlanCsvResponse = ExportBusinessConsoleSchedulingPlanCsvResponses[keyof ExportBusinessConsoleSchedulingPlanCsvResponses];
+
 export type GetBusinessConsoleSchedulingPlanGanttData = {
     body?: never;
     path: {
@@ -10501,7 +13338,7 @@ export type GetBusinessConsoleSchedulingPlanGanttErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10523,6 +13360,44 @@ export type GetBusinessConsoleSchedulingPlanGanttResponses = {
 
 export type GetBusinessConsoleSchedulingPlanGanttResponse = GetBusinessConsoleSchedulingPlanGanttResponses[keyof GetBusinessConsoleSchedulingPlanGanttResponses];
 
+export type GetBusinessConsoleSchedulingPlanOverridesData = {
+    body?: never;
+    path: {
+        planId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/plans/{planId}/overrides';
+};
+
+export type GetBusinessConsoleSchedulingPlanOverridesErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleSchedulingPlanOverridesError = GetBusinessConsoleSchedulingPlanOverridesErrors[keyof GetBusinessConsoleSchedulingPlanOverridesErrors];
+
+export type GetBusinessConsoleSchedulingPlanOverridesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfBusinessConsoleScheduleOperationOverrideResponse;
+};
+
+export type GetBusinessConsoleSchedulingPlanOverridesResponse = GetBusinessConsoleSchedulingPlanOverridesResponses[keyof GetBusinessConsoleSchedulingPlanOverridesResponses];
+
 export type ReleaseBusinessConsoleSchedulingPlanData = {
     body?: never;
     path: {
@@ -10539,7 +13414,7 @@ export type ReleaseBusinessConsoleSchedulingPlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10577,7 +13452,7 @@ export type RevokeBusinessConsoleSchedulingPlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10613,7 +13488,7 @@ export type UpsertBusinessConsoleSchedulingOperationOverrideErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10650,7 +13525,7 @@ export type ListBusinessConsoleOrderUrgenciesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10688,7 +13563,7 @@ export type GetBusinessConsoleOrderUrgencyErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10723,7 +13598,7 @@ export type SetBusinessConsoleOrderUrgencyBusinessPriorityErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10745,6 +13620,254 @@ export type SetBusinessConsoleOrderUrgencyBusinessPriorityResponses = {
 
 export type SetBusinessConsoleOrderUrgencyBusinessPriorityResponse = SetBusinessConsoleOrderUrgencyBusinessPriorityResponses[keyof SetBusinessConsoleOrderUrgencyBusinessPriorityResponses];
 
+export type AcceptBusinessConsoleSchedulingFirstPlanJobData = {
+    body: NervIipContractsSchedulingSchedulingFirstPlanInputContract;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/scheduling/workbench/first-plan-jobs';
+};
+
+export type AcceptBusinessConsoleSchedulingFirstPlanJobErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type AcceptBusinessConsoleSchedulingFirstPlanJobResponses = {
+    /**
+     * Accepted
+     */
+    202: NetCorePalExtensionsDtoResponseDataOfSchedulingFirstPlanJobContract;
+};
+
+export type AcceptBusinessConsoleSchedulingFirstPlanJobResponse = AcceptBusinessConsoleSchedulingFirstPlanJobResponses[keyof AcceptBusinessConsoleSchedulingFirstPlanJobResponses];
+
+export type GetBusinessConsoleSchedulingFirstPlanJobData = {
+    body?: never;
+    path: {
+        jobId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/workbench/first-plan-jobs/{jobId}';
+};
+
+export type GetBusinessConsoleSchedulingFirstPlanJobErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleSchedulingFirstPlanJobResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulingFirstPlanJobContract;
+};
+
+export type GetBusinessConsoleSchedulingFirstPlanJobResponse = GetBusinessConsoleSchedulingFirstPlanJobResponses[keyof GetBusinessConsoleSchedulingFirstPlanJobResponses];
+
+export type AcceptBusinessConsoleSchedulingInsertionPreviewJobData = {
+    body: NervIipContractsSchedulingSchedulingInsertionPreviewRequestContract;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/scheduling/workbench/insertion-preview-jobs';
+};
+
+export type AcceptBusinessConsoleSchedulingInsertionPreviewJobErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type AcceptBusinessConsoleSchedulingInsertionPreviewJobResponses = {
+    /**
+     * Accepted
+     */
+    202: NetCorePalExtensionsDtoResponseDataOfSchedulingInsertionPreviewJobDetailContract;
+};
+
+export type AcceptBusinessConsoleSchedulingInsertionPreviewJobResponse = AcceptBusinessConsoleSchedulingInsertionPreviewJobResponses[keyof AcceptBusinessConsoleSchedulingInsertionPreviewJobResponses];
+
+export type GetBusinessConsoleSchedulingInsertionPreviewJobData = {
+    body?: never;
+    path: {
+        jobId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/workbench/insertion-preview-jobs/{jobId}';
+};
+
+export type GetBusinessConsoleSchedulingInsertionPreviewJobErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleSchedulingInsertionPreviewJobResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulingInsertionPreviewJobDetailContract;
+};
+
+export type GetBusinessConsoleSchedulingInsertionPreviewJobResponse = GetBusinessConsoleSchedulingInsertionPreviewJobResponses[keyof GetBusinessConsoleSchedulingInsertionPreviewJobResponses];
+
+export type GetBusinessConsoleSchedulingTimeContextData = {
+    body?: never;
+    path: {
+        planId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/plans/{planId}/time-context';
+};
+
+export type GetBusinessConsoleSchedulingTimeContextErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleSchedulingTimeContextError = GetBusinessConsoleSchedulingTimeContextErrors[keyof GetBusinessConsoleSchedulingTimeContextErrors];
+
+export type GetBusinessConsoleSchedulingTimeContextResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIReadOnlyCollectionOfSchedulingTimeContextItem;
+};
+
+export type GetBusinessConsoleSchedulingTimeContextResponse = GetBusinessConsoleSchedulingTimeContextResponses[keyof GetBusinessConsoleSchedulingTimeContextResponses];
+
+export type ClearBusinessConsoleSchedulingWorkingDraftData = {
+    body?: never;
+    path: {
+        planId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/scheduling/plans/{planId}/working-draft';
+};
+
+export type ClearBusinessConsoleSchedulingWorkingDraftErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ClearBusinessConsoleSchedulingWorkingDraftResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfObject;
+};
+
+export type ClearBusinessConsoleSchedulingWorkingDraftResponse = ClearBusinessConsoleSchedulingWorkingDraftResponses[keyof ClearBusinessConsoleSchedulingWorkingDraftResponses];
+
+export type SaveBusinessConsoleSchedulingWorkingDraftData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleSaveSchedulingWorkingDraftRequest;
+    path: {
+        planId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/scheduling/plans/{planId}/working-draft';
+};
+
+export type SaveBusinessConsoleSchedulingWorkingDraftErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type SaveBusinessConsoleSchedulingWorkingDraftResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfSchedulingWorkingDraftContract;
+};
+
+export type SaveBusinessConsoleSchedulingWorkingDraftResponse = SaveBusinessConsoleSchedulingWorkingDraftResponses[keyof SaveBusinessConsoleSchedulingWorkingDraftResponses];
+
+export type ListBusinessConsoleSchedulingWorkingDraftsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        planId?: string | null;
+    };
+    url: '/api/business-console/v1/scheduling/working-drafts';
+};
+
+export type ListBusinessConsoleSchedulingWorkingDraftsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleSchedulingWorkingDraftsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIReadOnlyListOfSchedulingWorkingDraftContract;
+};
+
+export type ListBusinessConsoleSchedulingWorkingDraftsResponse = ListBusinessConsoleSchedulingWorkingDraftsResponses[keyof ListBusinessConsoleSchedulingWorkingDraftsResponses];
+
 export type ListBusinessConsoleQualityInspectionPlansData = {
     body?: never;
     path?: never;
@@ -10764,7 +13887,7 @@ export type ListBusinessConsoleQualityInspectionPlansErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10797,7 +13920,7 @@ export type CreateBusinessConsoleQualityInspectionPlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10832,7 +13955,7 @@ export type ActivateBusinessConsoleQualityInspectionPlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10873,7 +13996,7 @@ export type ListBusinessConsoleQualityInspectionRecordsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10938,7 +14061,7 @@ export type CreateBusinessConsoleQualityReinspectionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -10976,7 +14099,7 @@ export type OpenBusinessConsoleQualityNcrFromInspectionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11023,7 +14146,7 @@ export type ListBusinessConsoleQualityInspectionTasksErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11063,7 +14186,7 @@ export type GetBusinessConsoleQualityInspectionTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11103,7 +14226,7 @@ export type AssignBusinessConsoleQualityInspectionTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11145,7 +14268,7 @@ export type ClaimBusinessConsoleQualityInspectionTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11191,7 +14314,7 @@ export type CreateBusinessConsoleQualityInspectionRecordFromTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11230,7 +14353,7 @@ export type ListBusinessConsoleQualityInspectionPlanCharacteristicsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11281,7 +14404,7 @@ export type ListBusinessConsoleQualityNcrsResponses = {
     /**
      * Success
      */
-    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityListResponse;
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityNcrListResponse;
 };
 
 export type ListBusinessConsoleQualityNcrsResponse = ListBusinessConsoleQualityNcrsResponses[keyof ListBusinessConsoleQualityNcrsResponses];
@@ -11302,7 +14425,7 @@ export type GetBusinessConsoleQualityNcrErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11340,7 +14463,7 @@ export type GetBusinessConsoleQualityInspectionRecordErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11381,7 +14504,7 @@ export type QueryBusinessConsoleQualitySpcControlChartErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11422,7 +14545,7 @@ export type QueryBusinessConsoleQualityProcessCapabilityErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11643,7 +14766,7 @@ export type ListBusinessConsoleQualityReasonCodesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11676,7 +14799,7 @@ export type CreateBusinessConsoleQualityReasonCodeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11698,6 +14821,45 @@ export type CreateBusinessConsoleQualityReasonCodeResponses = {
 
 export type CreateBusinessConsoleQualityReasonCodeResponse = CreateBusinessConsoleQualityReasonCodeResponses[keyof CreateBusinessConsoleQualityReasonCodeResponses];
 
+export type ListBusinessConsoleQualityScrapReasonCodesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        search?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/quality/scrap-reason-codes';
+};
+
+export type ListBusinessConsoleQualityScrapReasonCodesErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleQualityScrapReasonCodesError = ListBusinessConsoleQualityScrapReasonCodesErrors[keyof ListBusinessConsoleQualityScrapReasonCodesErrors];
+
+export type ListBusinessConsoleQualityScrapReasonCodesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityReasonListResponse;
+};
+
+export type ListBusinessConsoleQualityScrapReasonCodesResponse = ListBusinessConsoleQualityScrapReasonCodesResponses[keyof ListBusinessConsoleQualityScrapReasonCodesResponses];
+
 export type GetBusinessConsoleQualityReasonCodeData = {
     body?: never;
     path: {
@@ -11714,7 +14876,7 @@ export type GetBusinessConsoleQualityReasonCodeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11752,7 +14914,7 @@ export type UpdateBusinessConsoleQualityReasonCodeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11790,7 +14952,7 @@ export type ArchiveBusinessConsoleQualityReasonCodeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11838,6 +15000,9 @@ export type SubmitBusinessConsoleQualityNcrDispositionErrors = {
      */
     403: unknown;
     409: NetCorePalExtensionsDtoResponseData;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
 };
 
 export type SubmitBusinessConsoleQualityNcrDispositionError = SubmitBusinessConsoleQualityNcrDispositionErrors[keyof SubmitBusinessConsoleQualityNcrDispositionErrors];
@@ -11890,6 +15055,71 @@ export type CloseBusinessConsoleQualityNcrResponses = {
 
 export type CloseBusinessConsoleQualityNcrResponse = CloseBusinessConsoleQualityNcrResponses[keyof CloseBusinessConsoleQualityNcrResponses];
 
+export type CompleteBusinessConsoleQualityCapaActionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteQualityCapaActionRequest;
+    path: {
+        correctiveActionId: string;
+        correctiveActionItemId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/quality/capas/{correctiveActionId}/actions/{correctiveActionItemId}/complete';
+};
+
+export type CompleteBusinessConsoleQualityCapaActionErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CompleteBusinessConsoleQualityCapaActionError = CompleteBusinessConsoleQualityCapaActionErrors[keyof CompleteBusinessConsoleQualityCapaActionErrors];
+
+export type CompleteBusinessConsoleQualityCapaActionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type CompleteBusinessConsoleQualityCapaActionResponse = CompleteBusinessConsoleQualityCapaActionResponses[keyof CompleteBusinessConsoleQualityCapaActionResponses];
+
+export type VerifyBusinessConsoleQualityCapaEffectivenessData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleVerifyQualityCapaEffectivenessRequest;
+    path: {
+        correctiveActionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/quality/capas/{correctiveActionId}/effectiveness';
+};
+
+export type VerifyBusinessConsoleQualityCapaEffectivenessErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type VerifyBusinessConsoleQualityCapaEffectivenessResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type VerifyBusinessConsoleQualityCapaEffectivenessResponse = VerifyBusinessConsoleQualityCapaEffectivenessResponses[keyof VerifyBusinessConsoleQualityCapaEffectivenessResponses];
+
 export type ListBusinessConsoleEngineeringDocumentsData = {
     body?: never;
     path?: never;
@@ -11935,7 +15165,7 @@ export type RegisterBusinessConsoleEngineeringDocumentErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -11966,6 +15196,10 @@ export type PublishBusinessConsoleEngineeringSopDocumentData = {
 
 export type PublishBusinessConsoleEngineeringSopDocumentErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -11974,6 +15208,8 @@ export type PublishBusinessConsoleEngineeringSopDocumentErrors = {
      */
     403: unknown;
 };
+
+export type PublishBusinessConsoleEngineeringSopDocumentError = PublishBusinessConsoleEngineeringSopDocumentErrors[keyof PublishBusinessConsoleEngineeringSopDocumentErrors];
 
 export type PublishBusinessConsoleEngineeringSopDocumentResponses = {
     /**
@@ -12097,7 +15333,7 @@ export type CreateBusinessConsoleEngineeringItemRevisionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12163,7 +15399,7 @@ export type ReleaseBusinessConsoleEngineeringBomErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12271,7 +15507,7 @@ export type GetBusinessConsoleEngineeringBomExplosionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12309,7 +15545,7 @@ export type GetBusinessConsoleEngineeringBomWhereUsedErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12350,7 +15586,7 @@ export type GetBusinessConsoleEngineeringBomDiffErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12458,7 +15694,7 @@ export type GetBusinessConsoleEngineeringManufacturingBomExplosionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12496,7 +15732,7 @@ export type GetBusinessConsoleEngineeringManufacturingBomWhereUsedErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12529,7 +15765,7 @@ export type ReleaseBusinessConsoleEngineeringManufacturingBomErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12629,7 +15865,7 @@ export type ReleaseBusinessConsoleEngineeringRoutingErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12696,7 +15932,7 @@ export type CreateBusinessConsoleEngineeringStandardOperationErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12763,7 +15999,7 @@ export type UpdateBusinessConsoleEngineeringStandardOperationErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12798,7 +16034,7 @@ export type ArchiveBusinessConsoleEngineeringStandardOperationErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12831,7 +16067,7 @@ export type ReleaseBusinessConsoleEngineeringChangeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12864,7 +16100,7 @@ export type CancelScheduledBusinessConsoleEngineeringChangeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12897,7 +16133,7 @@ export type RescheduleBusinessConsoleEngineeringChangeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -12930,7 +16166,7 @@ export type PreviewBusinessConsoleEngineeringChangeImpactErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13062,7 +16298,7 @@ export type CreateBusinessConsoleEngineeringProductionVersionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13100,7 +16336,7 @@ export type UpdateBusinessConsoleEngineeringProductionVersionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13138,7 +16374,7 @@ export type ArchiveBusinessConsoleEngineeringProductionVersionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13210,7 +16446,7 @@ export type GetBusinessConsolePrincipalWorkContextErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13253,7 +16489,7 @@ export type ListBusinessConsolePlanningMpsBucketsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13286,7 +16522,7 @@ export type CreateBusinessConsolePlanningMpsBucketErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13321,7 +16557,7 @@ export type UpdateBusinessConsolePlanningMpsBucketErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13359,7 +16595,7 @@ export type ReviewBusinessConsolePlanningMpsBucketErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13397,7 +16633,7 @@ export type ReleaseBusinessConsolePlanningMpsBucketErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13425,6 +16661,9 @@ export type ListBusinessConsolePlanningDemandsData = {
     query: {
         organizationId: string;
         environmentId: string;
+        keyword?: string | null;
+        skip?: number;
+        take?: number;
     };
     url: '/api/business-console/v1/planning/demands';
 };
@@ -13460,7 +16699,7 @@ export type CreateOrUpdateBusinessConsolePlanningDemandErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13498,7 +16737,7 @@ export type CancelBusinessConsolePlanningDemandErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13538,7 +16777,7 @@ export type ListBusinessConsolePlanningForecastsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13571,7 +16810,7 @@ export type CreateOrUpdateBusinessConsolePlanningForecastErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13634,7 +16873,7 @@ export type RunBusinessConsolePlanningMrpErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13735,7 +16974,7 @@ export type AcceptBusinessConsolePlanningSuggestionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13773,7 +17012,7 @@ export type RejectBusinessConsolePlanningSuggestionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -13794,6 +17033,45 @@ export type RejectBusinessConsolePlanningSuggestionResponses = {
 };
 
 export type RejectBusinessConsolePlanningSuggestionResponse = RejectBusinessConsolePlanningSuggestionResponses[keyof RejectBusinessConsolePlanningSuggestionResponses];
+
+export type GetBusinessConsolePlanningMaterialDeliveriesData = {
+    body?: never;
+    path: {
+        runId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        planId?: string | null;
+    };
+    url: '/api/business-console/v1/planning/mrp-runs/{runId}/material-deliveries';
+};
+
+export type GetBusinessConsolePlanningMaterialDeliveriesErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsolePlanningMaterialDeliveriesError = GetBusinessConsolePlanningMaterialDeliveriesErrors[keyof GetBusinessConsolePlanningMaterialDeliveriesErrors];
+
+export type GetBusinessConsolePlanningMaterialDeliveriesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfMaterialDeliveriesResponse;
+};
+
+export type GetBusinessConsolePlanningMaterialDeliveriesResponse = GetBusinessConsolePlanningMaterialDeliveriesResponses[keyof GetBusinessConsolePlanningMaterialDeliveriesResponses];
 
 export type ListBusinessConsoleNotificationMessagesData = {
     body?: never;
@@ -13889,6 +17167,195 @@ export type MarkBusinessConsoleNotificationMessageReadResponses = {
 };
 
 export type MarkBusinessConsoleNotificationMessageReadResponse = MarkBusinessConsoleNotificationMessageReadResponses[keyof MarkBusinessConsoleNotificationMessageReadResponses];
+
+export type ListBusinessConsoleMesAndonCallsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+        queue: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonQueue;
+        category?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCategory | null;
+        workCenterId?: string | null;
+        skip: number;
+        take: number;
+    };
+    url: '/api/business-console/v1/mes/andon-calls';
+};
+
+export type ListBusinessConsoleMesAndonCallsErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleMesAndonCallsError = ListBusinessConsoleMesAndonCallsErrors[keyof ListBusinessConsoleMesAndonCallsErrors];
+
+export type ListBusinessConsoleMesAndonCallsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesAndonCallListResponse;
+};
+
+export type ListBusinessConsoleMesAndonCallsResponse = ListBusinessConsoleMesAndonCallsResponses[keyof ListBusinessConsoleMesAndonCallsResponses];
+
+export type RaiseBusinessConsoleMesAndonCallData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRaiseAndonCallRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/mes/andon-calls';
+};
+
+export type RaiseBusinessConsoleMesAndonCallErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type RaiseBusinessConsoleMesAndonCallError = RaiseBusinessConsoleMesAndonCallErrors[keyof RaiseBusinessConsoleMesAndonCallErrors];
+
+export type RaiseBusinessConsoleMesAndonCallResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesAndonCallResponse;
+};
+
+export type RaiseBusinessConsoleMesAndonCallResponse = RaiseBusinessConsoleMesAndonCallResponses[keyof RaiseBusinessConsoleMesAndonCallResponses];
+
+export type ClaimBusinessConsoleMesAndonCallData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCallActionRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/mes/andon-calls/{id}/claim';
+};
+
+export type ClaimBusinessConsoleMesAndonCallErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ClaimBusinessConsoleMesAndonCallError = ClaimBusinessConsoleMesAndonCallErrors[keyof ClaimBusinessConsoleMesAndonCallErrors];
+
+export type ClaimBusinessConsoleMesAndonCallResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesAndonCallResponse;
+};
+
+export type ClaimBusinessConsoleMesAndonCallResponse = ClaimBusinessConsoleMesAndonCallResponses[keyof ClaimBusinessConsoleMesAndonCallResponses];
+
+export type CloseBusinessConsoleMesAndonCallData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAndonCallActionRequest;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/mes/andon-calls/{id}/close';
+};
+
+export type CloseBusinessConsoleMesAndonCallErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type CloseBusinessConsoleMesAndonCallError = CloseBusinessConsoleMesAndonCallErrors[keyof CloseBusinessConsoleMesAndonCallErrors];
+
+export type CloseBusinessConsoleMesAndonCallResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesAndonCallResponse;
+};
+
+export type CloseBusinessConsoleMesAndonCallResponse = CloseBusinessConsoleMesAndonCallResponses[keyof CloseBusinessConsoleMesAndonCallResponses];
+
+export type GetBusinessConsoleMesAndonCallData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/andon-calls/{id}';
+};
+
+export type GetBusinessConsoleMesAndonCallErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleMesAndonCallError = GetBusinessConsoleMesAndonCallErrors[keyof GetBusinessConsoleMesAndonCallErrors];
+
+export type GetBusinessConsoleMesAndonCallResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesAndonCallResponse;
+};
+
+export type GetBusinessConsoleMesAndonCallResponse = GetBusinessConsoleMesAndonCallResponses[keyof GetBusinessConsoleMesAndonCallResponses];
 
 export type GetBusinessConsoleMesFoundationReadinessData = {
     body?: never;
@@ -14185,7 +17652,7 @@ export type ListBusinessConsoleMesProductionPlansData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'created' | 'released' | 'started' | 'hold' | 'completed' | 'closed' | 'cancelled' | 'scrapped' | 'split' | 'merged';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -14264,6 +17731,10 @@ export type ConvertBusinessConsoleMesPlanToWorkOrderData = {
 
 export type ConvertBusinessConsoleMesPlanToWorkOrderErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -14272,6 +17743,8 @@ export type ConvertBusinessConsoleMesPlanToWorkOrderErrors = {
      */
     403: unknown;
 };
+
+export type ConvertBusinessConsoleMesPlanToWorkOrderError = ConvertBusinessConsoleMesPlanToWorkOrderErrors[keyof ConvertBusinessConsoleMesPlanToWorkOrderErrors];
 
 export type ConvertBusinessConsoleMesPlanToWorkOrderResponses = {
     /**
@@ -14288,7 +17761,7 @@ export type ListBusinessConsoleMesWorkOrdersData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'created' | 'released' | 'started' | 'hold' | 'completed' | 'closed' | 'cancelled' | 'scrapped' | 'split' | 'merged';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -14357,6 +17830,43 @@ export type GetBusinessConsoleMesWorkOrderDetailResponses = {
 };
 
 export type GetBusinessConsoleMesWorkOrderDetailResponse = GetBusinessConsoleMesWorkOrderDetailResponses[keyof GetBusinessConsoleMesWorkOrderDetailResponses];
+
+export type AdjustBusinessConsoleMesWorkOrderPriorityData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAdjustWorkOrderPriorityRequest;
+    path: {
+        workOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/work-orders/{workOrderId}/priority';
+};
+
+export type AdjustBusinessConsoleMesWorkOrderPriorityErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type AdjustBusinessConsoleMesWorkOrderPriorityError = AdjustBusinessConsoleMesWorkOrderPriorityErrors[keyof AdjustBusinessConsoleMesWorkOrderPriorityErrors];
+
+export type AdjustBusinessConsoleMesWorkOrderPriorityResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type AdjustBusinessConsoleMesWorkOrderPriorityResponse = AdjustBusinessConsoleMesWorkOrderPriorityResponses[keyof AdjustBusinessConsoleMesWorkOrderPriorityResponses];
 
 export type ReleaseBusinessConsoleMesWorkOrderData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReleaseWorkOrderRequest;
@@ -14469,6 +17979,74 @@ export type CancelBusinessConsoleMesWorkOrderResponses = {
 
 export type CancelBusinessConsoleMesWorkOrderResponse = CancelBusinessConsoleMesWorkOrderResponses[keyof CancelBusinessConsoleMesWorkOrderResponses];
 
+export type CloseBusinessConsoleMesWorkOrderData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesCloseWorkOrderRequest;
+    path: {
+        workOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/work-orders/{workOrderId}/close';
+};
+
+export type CloseBusinessConsoleMesWorkOrderErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CloseBusinessConsoleMesWorkOrderResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type CloseBusinessConsoleMesWorkOrderResponse = CloseBusinessConsoleMesWorkOrderResponses[keyof CloseBusinessConsoleMesWorkOrderResponses];
+
+export type RecordBusinessConsoleMesEngineeringChangeDecisionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeDecisionRequest;
+    path: {
+        workOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/work-orders/{workOrderId}/engineering-change-decisions';
+};
+
+export type RecordBusinessConsoleMesEngineeringChangeDecisionErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RecordBusinessConsoleMesEngineeringChangeDecisionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type RecordBusinessConsoleMesEngineeringChangeDecisionResponse = RecordBusinessConsoleMesEngineeringChangeDecisionResponses[keyof RecordBusinessConsoleMesEngineeringChangeDecisionResponses];
+
 export type ForceReleaseBusinessConsoleMesQualityHoldData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesForceReleaseQualityHoldRequest;
     path: {
@@ -14483,6 +18061,10 @@ export type ForceReleaseBusinessConsoleMesQualityHoldData = {
 
 export type ForceReleaseBusinessConsoleMesQualityHoldErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -14491,6 +18073,8 @@ export type ForceReleaseBusinessConsoleMesQualityHoldErrors = {
      */
     403: unknown;
 };
+
+export type ForceReleaseBusinessConsoleMesQualityHoldError = ForceReleaseBusinessConsoleMesQualityHoldErrors[keyof ForceReleaseBusinessConsoleMesQualityHoldErrors];
 
 export type ForceReleaseBusinessConsoleMesQualityHoldResponses = {
     /**
@@ -14548,6 +18132,10 @@ export type ReverseBusinessConsoleMesProductionReportData = {
 
 export type ReverseBusinessConsoleMesProductionReportErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -14555,7 +18143,10 @@ export type ReverseBusinessConsoleMesProductionReportErrors = {
      * Forbidden
      */
     403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
 };
+
+export type ReverseBusinessConsoleMesProductionReportError = ReverseBusinessConsoleMesProductionReportErrors[keyof ReverseBusinessConsoleMesProductionReportErrors];
 
 export type ReverseBusinessConsoleMesProductionReportResponses = {
     /**
@@ -14580,6 +18171,10 @@ export type RetryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingData = {
 
 export type RetryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -14588,6 +18183,8 @@ export type RetryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingErrors = 
      */
     403: unknown;
 };
+
+export type RetryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingError = RetryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingErrors[keyof RetryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingErrors];
 
 export type RetryBusinessConsoleMesFinishedGoodsReceiptInventoryPostingResponses = {
     /**
@@ -14607,6 +18204,10 @@ export type CreateBusinessConsoleMesRushWorkOrderData = {
 
 export type CreateBusinessConsoleMesRushWorkOrderErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -14615,6 +18216,8 @@ export type CreateBusinessConsoleMesRushWorkOrderErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleMesRushWorkOrderError = CreateBusinessConsoleMesRushWorkOrderErrors[keyof CreateBusinessConsoleMesRushWorkOrderErrors];
 
 export type CreateBusinessConsoleMesRushWorkOrderResponses = {
     /**
@@ -14703,6 +18306,10 @@ export type CreateBusinessConsoleMesMaterialIssueRequestData = {
 
 export type CreateBusinessConsoleMesMaterialIssueRequestErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -14711,6 +18318,8 @@ export type CreateBusinessConsoleMesMaterialIssueRequestErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleMesMaterialIssueRequestError = CreateBusinessConsoleMesMaterialIssueRequestErrors[keyof CreateBusinessConsoleMesMaterialIssueRequestErrors];
 
 export type CreateBusinessConsoleMesMaterialIssueRequestResponses = {
     /**
@@ -14727,7 +18336,7 @@ export type ListBusinessConsoleMesMaterialIssueRequestsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Requested' | 'PartiallyReceived' | 'ReceiptPosting' | 'Received' | 'Cancelled' | 'ReturnRequested' | 'ReservationExpired';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -14735,6 +18344,7 @@ export type ListBusinessConsoleMesMaterialIssueRequestsData = {
         workOrderId?: string | null;
         skip?: number;
         take?: number;
+        operationTaskId?: string | null;
     };
     url: '/api/business-console/v1/mes/material-issue-requests';
 };
@@ -14758,6 +18368,110 @@ export type ListBusinessConsoleMesMaterialIssueRequestsResponses = {
 };
 
 export type ListBusinessConsoleMesMaterialIssueRequestsResponse = ListBusinessConsoleMesMaterialIssueRequestsResponses[keyof ListBusinessConsoleMesMaterialIssueRequestsResponses];
+
+export type GetBusinessConsoleMesMaterialIssueRequestData = {
+    body?: never;
+    path: {
+        requestId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/mes/material-issue-requests/{requestId}';
+};
+
+export type GetBusinessConsoleMesMaterialIssueRequestErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleMesMaterialIssueRequestResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesMaterialIssueRequestRow;
+};
+
+export type GetBusinessConsoleMesMaterialIssueRequestResponse = GetBusinessConsoleMesMaterialIssueRequestResponses[keyof GetBusinessConsoleMesMaterialIssueRequestResponses];
+
+export type PrevalidateBusinessConsoleMesMaterialScanData = {
+    body: NervIipContractsMesMesMaterialScanPrevalidationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/mes/material-scan-prevalidation';
+};
+
+export type PrevalidateBusinessConsoleMesMaterialScanErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
+};
+
+export type PrevalidateBusinessConsoleMesMaterialScanError = PrevalidateBusinessConsoleMesMaterialScanErrors[keyof PrevalidateBusinessConsoleMesMaterialScanErrors];
+
+export type PrevalidateBusinessConsoleMesMaterialScanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfMesMaterialScanPrevalidationResponse;
+};
+
+export type PrevalidateBusinessConsoleMesMaterialScanResponse = PrevalidateBusinessConsoleMesMaterialScanResponses[keyof PrevalidateBusinessConsoleMesMaterialScanResponses];
+
+export type PrevalidateBusinessConsoleMesContextScanData = {
+    body: NervIipContractsMesMesContextScanPrevalidationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/mes/context-scan-prevalidation';
+};
+
+export type PrevalidateBusinessConsoleMesContextScanErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
+};
+
+export type PrevalidateBusinessConsoleMesContextScanError = PrevalidateBusinessConsoleMesContextScanErrors[keyof PrevalidateBusinessConsoleMesContextScanErrors];
+
+export type PrevalidateBusinessConsoleMesContextScanResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfMesContextScanPrevalidationResponse;
+};
+
+export type PrevalidateBusinessConsoleMesContextScanResponse = PrevalidateBusinessConsoleMesContextScanResponses[keyof PrevalidateBusinessConsoleMesContextScanResponses];
 
 export type ConfirmBusinessConsoleMesLineSideMaterialReceiptData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesConfirmLineSideReceiptRequest;
@@ -14794,13 +18508,52 @@ export type ConfirmBusinessConsoleMesLineSideMaterialReceiptResponses = {
 
 export type ConfirmBusinessConsoleMesLineSideMaterialReceiptResponse = ConfirmBusinessConsoleMesLineSideMaterialReceiptResponses[keyof ConfirmBusinessConsoleMesLineSideMaterialReceiptResponses];
 
+export type ReturnBusinessConsoleMesLineSideMaterialData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReturnLineSideMaterialRequest;
+    path: {
+        requestId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-returns';
+};
+
+export type ReturnBusinessConsoleMesLineSideMaterialErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ReturnBusinessConsoleMesLineSideMaterialError = ReturnBusinessConsoleMesLineSideMaterialErrors[keyof ReturnBusinessConsoleMesLineSideMaterialErrors];
+
+export type ReturnBusinessConsoleMesLineSideMaterialResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type ReturnBusinessConsoleMesLineSideMaterialResponse = ReturnBusinessConsoleMesLineSideMaterialResponses[keyof ReturnBusinessConsoleMesLineSideMaterialResponses];
+
 export type ListBusinessConsoleMesDispatchTasksData = {
     body?: never;
     path?: never;
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -14846,6 +18599,10 @@ export type AssignBusinessConsoleMesDispatchTaskData = {
 
 export type AssignBusinessConsoleMesDispatchTaskErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -14854,6 +18611,8 @@ export type AssignBusinessConsoleMesDispatchTaskErrors = {
      */
     403: unknown;
 };
+
+export type AssignBusinessConsoleMesDispatchTaskError = AssignBusinessConsoleMesDispatchTaskErrors[keyof AssignBusinessConsoleMesDispatchTaskErrors];
 
 export type AssignBusinessConsoleMesDispatchTaskResponses = {
     /**
@@ -14864,13 +18623,53 @@ export type AssignBusinessConsoleMesDispatchTaskResponses = {
 
 export type AssignBusinessConsoleMesDispatchTaskResponse = AssignBusinessConsoleMesDispatchTaskResponses[keyof AssignBusinessConsoleMesDispatchTaskResponses];
 
+export type ClaimBusinessConsoleMesOperationTaskData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesClaimOperationTaskRequest;
+    path: {
+        operationTaskId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind: string;
+        scopeId: string;
+    };
+    url: '/api/business-console/v1/mes/operation-tasks/{operationTaskId}/claim';
+};
+
+export type ClaimBusinessConsoleMesOperationTaskErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ClaimBusinessConsoleMesOperationTaskError = ClaimBusinessConsoleMesOperationTaskErrors[keyof ClaimBusinessConsoleMesOperationTaskErrors];
+
+export type ClaimBusinessConsoleMesOperationTaskResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type ClaimBusinessConsoleMesOperationTaskResponse = ClaimBusinessConsoleMesOperationTaskResponses[keyof ClaimBusinessConsoleMesOperationTaskResponses];
+
 export type ListBusinessConsoleMesOperationTasksData = {
     body?: never;
     path?: never;
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -15004,7 +18803,7 @@ export type StartBusinessConsoleMesOperationTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -15051,7 +18850,7 @@ export type PauseBusinessConsoleMesOperationTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -15098,7 +18897,7 @@ export type ResumeBusinessConsoleMesOperationTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -15145,7 +18944,7 @@ export type CompleteBusinessConsoleMesOperationTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -15174,7 +18973,7 @@ export type GetBusinessConsoleMesWipSummaryData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -15259,7 +19058,7 @@ export type RecordBusinessConsoleMesProductionReportErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -15281,6 +19080,52 @@ export type RecordBusinessConsoleMesProductionReportResponses = {
 };
 
 export type RecordBusinessConsoleMesProductionReportResponse = RecordBusinessConsoleMesProductionReportResponses[keyof RecordBusinessConsoleMesProductionReportResponses];
+
+export type QueryBusinessConsoleMesProductionStatisticsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        dimension: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesProductionStatisticsDimension;
+        windowStartUtc: string;
+        windowEndUtc: string;
+        businessDate?: string | null;
+        shiftCode?: string | null;
+        workCenterId?: string | null;
+        skuId?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/mes/production-statistics';
+};
+
+export type QueryBusinessConsoleMesProductionStatisticsErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+};
+
+export type QueryBusinessConsoleMesProductionStatisticsError = QueryBusinessConsoleMesProductionStatisticsErrors[keyof QueryBusinessConsoleMesProductionStatisticsErrors];
+
+export type QueryBusinessConsoleMesProductionStatisticsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesProductionStatisticsResponse;
+};
+
+export type QueryBusinessConsoleMesProductionStatisticsResponse = QueryBusinessConsoleMesProductionStatisticsResponses[keyof QueryBusinessConsoleMesProductionStatisticsResponses];
 
 export type GetBusinessConsoleMesProductionReportData = {
     body?: never;
@@ -15456,6 +19301,10 @@ export type RecordBusinessConsoleMesDefectData = {
 
 export type RecordBusinessConsoleMesDefectErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -15464,6 +19313,8 @@ export type RecordBusinessConsoleMesDefectErrors = {
      */
     403: unknown;
 };
+
+export type RecordBusinessConsoleMesDefectError = RecordBusinessConsoleMesDefectErrors[keyof RecordBusinessConsoleMesDefectErrors];
 
 export type RecordBusinessConsoleMesDefectResponses = {
     /**
@@ -15474,13 +19325,46 @@ export type RecordBusinessConsoleMesDefectResponses = {
 
 export type RecordBusinessConsoleMesDefectResponse = RecordBusinessConsoleMesDefectResponses[keyof RecordBusinessConsoleMesDefectResponses];
 
+export type RecordBusinessConsoleMesDefectV2Data = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDefectV2Request;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v2/mes/defects';
+};
+
+export type RecordBusinessConsoleMesDefectV2Errors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RecordBusinessConsoleMesDefectV2Error = RecordBusinessConsoleMesDefectV2Errors[keyof RecordBusinessConsoleMesDefectV2Errors];
+
+export type RecordBusinessConsoleMesDefectV2Responses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type RecordBusinessConsoleMesDefectV2Response = RecordBusinessConsoleMesDefectV2Responses[keyof RecordBusinessConsoleMesDefectV2Responses];
+
 export type ListBusinessConsoleMesRelatedQualityItemsData = {
     body?: never;
     path?: never;
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Open' | 'ReworkPending' | 'ScrapAccepted' | 'ReturnAccepted' | 'DispositionAccepted';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -15518,7 +19402,7 @@ export type ListBusinessConsoleMesFinishedGoodsReceiptRequestsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Requested' | 'PartiallyPosted' | 'Posted' | 'InventoryPostingFailed' | 'Cancelled';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -15559,6 +19443,10 @@ export type CreateBusinessConsoleMesFinishedGoodsReceiptRequestData = {
 
 export type CreateBusinessConsoleMesFinishedGoodsReceiptRequestErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -15567,6 +19455,8 @@ export type CreateBusinessConsoleMesFinishedGoodsReceiptRequestErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleMesFinishedGoodsReceiptRequestError = CreateBusinessConsoleMesFinishedGoodsReceiptRequestErrors[keyof CreateBusinessConsoleMesFinishedGoodsReceiptRequestErrors];
 
 export type CreateBusinessConsoleMesFinishedGoodsReceiptRequestResponses = {
     /**
@@ -15616,12 +19506,15 @@ export type ListBusinessConsoleMesDowntimeEventsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Open' | 'Recovered';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
         deviceAssetId?: string | null;
         workOrderId?: string | null;
+        reasonCode?: string | null;
+        windowStartUtc?: string | null;
+        windowEndUtc?: string | null;
         skip?: number;
         take?: number;
     };
@@ -15657,6 +19550,10 @@ export type RecordBusinessConsoleMesDowntimeEventData = {
 
 export type RecordBusinessConsoleMesDowntimeEventErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -15666,6 +19563,8 @@ export type RecordBusinessConsoleMesDowntimeEventErrors = {
     403: unknown;
 };
 
+export type RecordBusinessConsoleMesDowntimeEventError = RecordBusinessConsoleMesDowntimeEventErrors[keyof RecordBusinessConsoleMesDowntimeEventErrors];
+
 export type RecordBusinessConsoleMesDowntimeEventResponses = {
     /**
      * Success
@@ -15674,6 +19573,39 @@ export type RecordBusinessConsoleMesDowntimeEventResponses = {
 };
 
 export type RecordBusinessConsoleMesDowntimeEventResponse = RecordBusinessConsoleMesDowntimeEventResponses[keyof RecordBusinessConsoleMesDowntimeEventResponses];
+
+export type RecordBusinessConsoleMesDowntimeEventV2Data = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecordDowntimeEventV2Request;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v2/mes/downtime-events';
+};
+
+export type RecordBusinessConsoleMesDowntimeEventV2Errors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RecordBusinessConsoleMesDowntimeEventV2Error = RecordBusinessConsoleMesDowntimeEventV2Errors[keyof RecordBusinessConsoleMesDowntimeEventV2Errors];
+
+export type RecordBusinessConsoleMesDowntimeEventV2Responses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type RecordBusinessConsoleMesDowntimeEventV2Response = RecordBusinessConsoleMesDowntimeEventV2Responses[keyof RecordBusinessConsoleMesDowntimeEventV2Responses];
 
 export type ConfirmBusinessConsoleMesDowntimeRecoveryData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesRecoverDowntimeEventRequest;
@@ -15707,46 +19639,13 @@ export type ConfirmBusinessConsoleMesDowntimeRecoveryResponses = {
 
 export type ConfirmBusinessConsoleMesDowntimeRecoveryResponse = ConfirmBusinessConsoleMesDowntimeRecoveryResponses[keyof ConfirmBusinessConsoleMesDowntimeRecoveryResponses];
 
-export type ListBusinessConsoleMesScheduleResultsData = {
-    body?: never;
-    path?: never;
-    query: {
-        organizationId: string;
-        environmentId: string;
-        trigger?: string | null;
-        skip?: number;
-        take?: number;
-    };
-    url: '/api/business-console/v1/mes/schedules';
-};
-
-export type ListBusinessConsoleMesScheduleResultsErrors = {
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-};
-
-export type ListBusinessConsoleMesScheduleResultsResponses = {
-    /**
-     * Success
-     */
-    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesScheduleResultListResponse;
-};
-
-export type ListBusinessConsoleMesScheduleResultsResponse = ListBusinessConsoleMesScheduleResultsResponses[keyof ListBusinessConsoleMesScheduleResultsResponses];
-
 export type ListBusinessConsoleMesShiftHandoversData = {
     body?: never;
     path?: never;
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Open' | 'Accepted';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -15787,6 +19686,10 @@ export type CreateBusinessConsoleMesShiftHandoverData = {
 
 export type CreateBusinessConsoleMesShiftHandoverErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -15795,6 +19698,8 @@ export type CreateBusinessConsoleMesShiftHandoverErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleMesShiftHandoverError = CreateBusinessConsoleMesShiftHandoverErrors[keyof CreateBusinessConsoleMesShiftHandoverErrors];
 
 export type CreateBusinessConsoleMesShiftHandoverResponses = {
     /**
@@ -15805,8 +19710,40 @@ export type CreateBusinessConsoleMesShiftHandoverResponses = {
 
 export type CreateBusinessConsoleMesShiftHandoverResponse = CreateBusinessConsoleMesShiftHandoverResponses[keyof CreateBusinessConsoleMesShiftHandoverResponses];
 
+export type GetBusinessConsoleMesShiftHandoverData = {
+    body?: never;
+    path: {
+        handoverId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/mes/shift-handovers/{handoverId}';
+};
+
+export type GetBusinessConsoleMesShiftHandoverErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleMesShiftHandoverResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesShiftHandoverDetail;
+};
+
+export type GetBusinessConsoleMesShiftHandoverResponse = GetBusinessConsoleMesShiftHandoverResponses[keyof GetBusinessConsoleMesShiftHandoverResponses];
+
 export type AcceptBusinessConsoleMesShiftHandoverData = {
-    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesAcceptShiftHandoverRequest;
+    body?: never;
     path: {
         handoverId: string;
     };
@@ -15939,7 +19876,7 @@ export type ListBusinessConsoleMesCapacityImpactsData = {
     query: {
         organizationId: string;
         environmentId: string;
-        status?: 'accepted' | 'active' | 'blocked' | 'cancelled' | 'closed' | 'completed' | 'created' | 'dispositionAccepted' | 'hold' | 'inProgress' | 'inventoryPostingFailed' | 'open' | 'partiallyPosted' | 'partiallyReceived' | 'paused' | 'posted' | 'queued' | 'ready' | 'received' | 'recovered' | 'released' | 'returnAccepted' | 'reworkPending' | 'scrapAccepted' | 'scrapped' | 'requested' | 'scheduleInvalidated' | 'started' | 'warning';
+        status?: 'Open' | 'Recovered';
         keyword?: string | null;
         workCenterId?: string | null;
         shiftId?: string | null;
@@ -15971,14 +19908,27 @@ export type ListBusinessConsoleMesCapacityImpactsResponses = {
 
 export type ListBusinessConsoleMesCapacityImpactsResponse = ListBusinessConsoleMesCapacityImpactsResponses[keyof ListBusinessConsoleMesCapacityImpactsResponses];
 
-export type RunBusinessConsoleMesScheduleData = {
-    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRunScheduleRequest;
+export type ListBusinessConsoleMesLineSideInventoryBalancesData = {
+    body?: never;
     path?: never;
-    query?: never;
-    url: '/api/business-console/v1/mes/schedules/run';
+    query: {
+        organizationId: string;
+        environmentId: string;
+        siteCode?: string | null;
+        locationCode?: string | null;
+        skuCode?: string | null;
+        asOfDate?: string | null;
+        page?: number;
+        pageSize?: number;
+    };
+    url: '/api/business-console/v1/mes/line-side-inventory-balances';
 };
 
-export type RunBusinessConsoleMesScheduleErrors = {
+export type ListBusinessConsoleMesLineSideInventoryBalancesErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -15989,14 +19939,177 @@ export type RunBusinessConsoleMesScheduleErrors = {
     403: unknown;
 };
 
-export type RunBusinessConsoleMesScheduleResponses = {
+export type ListBusinessConsoleMesLineSideInventoryBalancesError = ListBusinessConsoleMesLineSideInventoryBalancesErrors[keyof ListBusinessConsoleMesLineSideInventoryBalancesErrors];
+
+export type ListBusinessConsoleMesLineSideInventoryBalancesResponses = {
     /**
      * Success
      */
-    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesScheduleResult;
+    200: NetCorePalExtensionsDtoResponseDataOfLineSideInventoryBalancesResponse;
 };
 
-export type RunBusinessConsoleMesScheduleResponse = RunBusinessConsoleMesScheduleResponses[keyof RunBusinessConsoleMesScheduleResponses];
+export type ListBusinessConsoleMesLineSideInventoryBalancesResponse = ListBusinessConsoleMesLineSideInventoryBalancesResponses[keyof ListBusinessConsoleMesLineSideInventoryBalancesResponses];
+
+export type SplitBusinessConsoleMesWorkOrderData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesSplitWorkOrderRequest;
+    path: {
+        workOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/work-orders/{workOrderId}/split';
+};
+
+export type SplitBusinessConsoleMesWorkOrderErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
+};
+
+export type SplitBusinessConsoleMesWorkOrderError = SplitBusinessConsoleMesWorkOrderErrors[keyof SplitBusinessConsoleMesWorkOrderErrors];
+
+export type SplitBusinessConsoleMesWorkOrderResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderTransformationMutationResponse;
+};
+
+export type SplitBusinessConsoleMesWorkOrderResponse = SplitBusinessConsoleMesWorkOrderResponses[keyof SplitBusinessConsoleMesWorkOrderResponses];
+
+export type MergeBusinessConsoleMesWorkOrdersData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesMergeWorkOrdersRequest;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/work-orders/merge';
+};
+
+export type MergeBusinessConsoleMesWorkOrdersErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
+};
+
+export type MergeBusinessConsoleMesWorkOrdersError = MergeBusinessConsoleMesWorkOrdersErrors[keyof MergeBusinessConsoleMesWorkOrdersErrors];
+
+export type MergeBusinessConsoleMesWorkOrdersResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderTransformationMutationResponse;
+};
+
+export type MergeBusinessConsoleMesWorkOrdersResponse = MergeBusinessConsoleMesWorkOrdersResponses[keyof MergeBusinessConsoleMesWorkOrdersResponses];
+
+export type GetBusinessConsoleMesWorkOrderTransformationData = {
+    body?: never;
+    path: {
+        transformationId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/work-order-transformations/{transformationId}';
+};
+
+export type GetBusinessConsoleMesWorkOrderTransformationErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
+};
+
+export type GetBusinessConsoleMesWorkOrderTransformationError = GetBusinessConsoleMesWorkOrderTransformationErrors[keyof GetBusinessConsoleMesWorkOrderTransformationErrors];
+
+export type GetBusinessConsoleMesWorkOrderTransformationResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesWorkOrderTransformationReadbackResponse;
+};
+
+export type GetBusinessConsoleMesWorkOrderTransformationResponse = GetBusinessConsoleMesWorkOrderTransformationResponses[keyof GetBusinessConsoleMesWorkOrderTransformationResponses];
+
+export type ListBusinessConsoleMesHistoricalProducedLotsData = {
+    body?: never;
+    path: {
+        workOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/mes/traceability/work-orders/{workOrderId}/produced-lots';
+};
+
+export type ListBusinessConsoleMesHistoricalProducedLotsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleMesHistoricalProducedLotsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesHistoricalProducedLotListResponse;
+};
+
+export type ListBusinessConsoleMesHistoricalProducedLotsResponse = ListBusinessConsoleMesHistoricalProducedLotsResponses[keyof ListBusinessConsoleMesHistoricalProducedLotsResponses];
 
 export type ListBusinessConsoleMasterDataResourcesData = {
     body?: never;
@@ -16022,6 +20135,7 @@ export type ListBusinessConsoleMasterDataResourcesData = {
         userId?: string | null;
         skillCode?: string | null;
         workshopCode?: string | null;
+        deviceAssetId?: string | null;
     };
     url: '/api/business-console/v1/master-data/resources';
 };
@@ -16093,7 +20207,7 @@ export type RegisterBusinessConsoleDeviceAssetErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16159,7 +20273,7 @@ export type CreateBusinessConsoleSkuErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16200,7 +20314,7 @@ export type ListBusinessConsoleProductCategoriesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16233,7 +20347,7 @@ export type CreateBusinessConsoleProductCategoryErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16271,7 +20385,7 @@ export type GetBusinessConsoleProductCategoryErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16309,7 +20423,7 @@ export type UpdateBusinessConsoleProductCategoryErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16347,7 +20461,7 @@ export type ArchiveBusinessConsoleProductCategoryErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16388,7 +20502,7 @@ export type ListBusinessConsoleSkillsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16421,7 +20535,7 @@ export type CreateBusinessConsoleSkillErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16459,7 +20573,7 @@ export type GetBusinessConsoleSkillErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16497,7 +20611,7 @@ export type UpdateBusinessConsoleSkillErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16535,7 +20649,7 @@ export type ArchiveBusinessConsoleSkillErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16576,7 +20690,7 @@ export type GetBusinessConsoleMasterDataResourceDetailErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16612,7 +20726,7 @@ export type UpdateBusinessConsoleMasterDataResourceErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16648,7 +20762,7 @@ export type DisableBusinessConsoleMasterDataResourceErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16684,7 +20798,7 @@ export type EnableBusinessConsoleMasterDataResourceErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16717,7 +20831,7 @@ export type CreateBusinessConsoleBusinessPartnerErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16750,7 +20864,7 @@ export type CreateBusinessConsoleUnitOfMeasureErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16783,7 +20897,7 @@ export type CreateBusinessConsoleUomConversionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16822,7 +20936,7 @@ export type ListBusinessConsoleWorkshopsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16855,7 +20969,7 @@ export type CreateBusinessConsoleWorkshopErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16894,6 +21008,7 @@ export type ListBusinessConsoleWorkersData = {
         pageIndex?: number;
         pageSize?: number;
         includeDisabled?: boolean;
+        includeLoginNames?: boolean;
     };
     url: '/api/business-console/v1/master-data/workers';
 };
@@ -16902,7 +21017,7 @@ export type ListBusinessConsoleWorkersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16935,7 +21050,7 @@ export type CreateBusinessConsoleWorkerErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -16968,7 +21083,7 @@ export type CreateBusinessConsoleSiteErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17001,7 +21116,7 @@ export type CreateBusinessConsoleProductionLineErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17023,6 +21138,39 @@ export type CreateBusinessConsoleProductionLineResponses = {
 
 export type CreateBusinessConsoleProductionLineResponse = CreateBusinessConsoleProductionLineResponses[keyof CreateBusinessConsoleProductionLineResponses];
 
+export type CreateBusinessConsoleStationData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateStationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/master-data/stations';
+};
+
+export type CreateBusinessConsoleStationErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleStationError = CreateBusinessConsoleStationErrors[keyof CreateBusinessConsoleStationErrors];
+
+export type CreateBusinessConsoleStationResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleResourceItem;
+};
+
+export type CreateBusinessConsoleStationResponse = CreateBusinessConsoleStationResponses[keyof CreateBusinessConsoleStationResponses];
+
 export type CreateBusinessConsoleWorkCenterData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateWorkCenterRequest;
     path?: never;
@@ -17034,7 +21182,7 @@ export type CreateBusinessConsoleWorkCenterErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17067,7 +21215,7 @@ export type CreateBusinessConsoleShiftErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17100,7 +21248,7 @@ export type CreateBusinessConsoleWorkCalendarErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17133,7 +21281,7 @@ export type CreateBusinessConsoleTeamErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17172,7 +21320,7 @@ export type ListBusinessConsoleTeamMembersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17207,7 +21355,7 @@ export type AddBusinessConsoleTeamMemberErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17243,7 +21391,7 @@ export type RemoveBusinessConsoleTeamMemberErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17276,7 +21424,7 @@ export type CreateBusinessConsoleDepartmentErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17309,7 +21457,7 @@ export type AssignBusinessConsolePersonnelSkillErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17375,7 +21523,7 @@ export type CreateBusinessConsoleReferenceDataCodeErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17411,7 +21559,7 @@ export type ListBusinessConsoleCodeRulesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17449,7 +21597,7 @@ export type GetBusinessConsoleCodeRuleErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17484,7 +21632,7 @@ export type CreateBusinessConsoleCodeRuleVersionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17519,7 +21667,7 @@ export type PreviewBusinessConsoleCodeRuleErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17540,6 +21688,166 @@ export type PreviewBusinessConsoleCodeRuleResponses = {
 };
 
 export type PreviewBusinessConsoleCodeRuleResponse = PreviewBusinessConsoleCodeRuleResponses[keyof PreviewBusinessConsoleCodeRuleResponses];
+
+export type ListBusinessConsoleToolingAssetsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        keyword?: string | null;
+        status?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleToolingAssetStatus | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/master-data/tooling-assets';
+};
+
+export type ListBusinessConsoleToolingAssetsErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleToolingAssetsError = ListBusinessConsoleToolingAssetsErrors[keyof ListBusinessConsoleToolingAssetsErrors];
+
+export type ListBusinessConsoleToolingAssetsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleToolingAssetListResponse;
+};
+
+export type ListBusinessConsoleToolingAssetsResponse = ListBusinessConsoleToolingAssetsResponses[keyof ListBusinessConsoleToolingAssetsResponses];
+
+export type RegisterBusinessConsoleToolingAssetData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRegisterToolingAssetRequest;
+    headers?: {
+        /**
+         * At least one idempotency key must be supplied using the standard Idempotency-Key header, the legacy X-Idempotency-Key header, or the JSON idempotencyKey field; when multiple are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/master-data/tooling-assets';
+};
+
+export type RegisterBusinessConsoleToolingAssetErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type RegisterBusinessConsoleToolingAssetError = RegisterBusinessConsoleToolingAssetErrors[keyof RegisterBusinessConsoleToolingAssetErrors];
+
+export type RegisterBusinessConsoleToolingAssetResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleToolingRegistrationResponse;
+};
+
+export type RegisterBusinessConsoleToolingAssetResponse = RegisterBusinessConsoleToolingAssetResponses[keyof RegisterBusinessConsoleToolingAssetResponses];
+
+export type ChangeBusinessConsoleToolingStatusData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleChangeToolingStatusRequest;
+    headers?: {
+        /**
+         * At least one idempotency key must be supplied using the standard Idempotency-Key header, the legacy X-Idempotency-Key header, or the JSON idempotencyKey field; when multiple are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/master-data/tooling-assets/status';
+};
+
+export type ChangeBusinessConsoleToolingStatusErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ChangeBusinessConsoleToolingStatusError = ChangeBusinessConsoleToolingStatusErrors[keyof ChangeBusinessConsoleToolingStatusErrors];
+
+export type ChangeBusinessConsoleToolingStatusResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type ChangeBusinessConsoleToolingStatusResponse = ChangeBusinessConsoleToolingStatusResponses[keyof ChangeBusinessConsoleToolingStatusResponses];
+
+export type RecordBusinessConsoleToolingUsageData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordToolingUsageRequest;
+    headers?: {
+        /**
+         * At least one idempotency key must be supplied using the standard Idempotency-Key header, the legacy X-Idempotency-Key header, or the JSON idempotencyKey field; when multiple are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/master-data/tooling-assets/usage';
+};
+
+export type RecordBusinessConsoleToolingUsageErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type RecordBusinessConsoleToolingUsageError = RecordBusinessConsoleToolingUsageErrors[keyof RecordBusinessConsoleToolingUsageErrors];
+
+export type RecordBusinessConsoleToolingUsageResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type RecordBusinessConsoleToolingUsageResponse = RecordBusinessConsoleToolingUsageResponses[keyof RecordBusinessConsoleToolingUsageResponses];
 
 export type ListBusinessConsoleMaintenanceWorkOrdersData = {
     body?: never;
@@ -17567,7 +21875,7 @@ export type ListBusinessConsoleMaintenanceWorkOrdersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17606,7 +21914,7 @@ export type CreateBusinessConsoleMaintenanceWorkOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17628,6 +21936,45 @@ export type CreateBusinessConsoleMaintenanceWorkOrderResponses = {
 
 export type CreateBusinessConsoleMaintenanceWorkOrderResponse = CreateBusinessConsoleMaintenanceWorkOrderResponses[keyof CreateBusinessConsoleMaintenanceWorkOrderResponses];
 
+export type CreateBusinessConsoleMaintenanceWorkOrderV2Data = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceWorkOrderV2Request;
+    headers?: {
+        /**
+         * Standard idempotency key for this governed write. The legacy JSON idempotencyKey field remains accepted for v1 compatibility; when both are supplied they must match.
+         */
+        'Idempotency-Key'?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v2/maintenance/work-orders';
+};
+
+export type CreateBusinessConsoleMaintenanceWorkOrderV2Errors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleMaintenanceWorkOrderV2Error = CreateBusinessConsoleMaintenanceWorkOrderV2Errors[keyof CreateBusinessConsoleMaintenanceWorkOrderV2Errors];
+
+export type CreateBusinessConsoleMaintenanceWorkOrderV2Responses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanceWorkOrderV2Response;
+};
+
+export type CreateBusinessConsoleMaintenanceWorkOrderV2Response = CreateBusinessConsoleMaintenanceWorkOrderV2Responses[keyof CreateBusinessConsoleMaintenanceWorkOrderV2Responses];
+
 export type CompleteBusinessConsoleMaintenanceWorkOrderData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteMaintenanceWorkOrderRequest;
     headers?: {
@@ -17647,7 +21994,7 @@ export type CompleteBusinessConsoleMaintenanceWorkOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17688,7 +22035,7 @@ export type GetBusinessConsoleMaintenanceWorkOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17723,7 +22070,7 @@ export type AssignBusinessConsoleMaintenanceWorkOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17759,7 +22106,7 @@ export type TransitionBusinessConsoleMaintenanceWorkOrderErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17799,7 +22146,7 @@ export type ListBusinessConsoleMaintenancePlansErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17832,7 +22179,7 @@ export type CreateBusinessConsoleMaintenancePlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17867,7 +22214,7 @@ export type UpdateBusinessConsoleMaintenancePlanErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17900,7 +22247,7 @@ export type GenerateDueBusinessConsoleMaintenanceWorkOrdersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17938,7 +22285,7 @@ export type ListBusinessConsoleMaintenanceInspectionsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -17971,7 +22318,7 @@ export type RecordBusinessConsoleMaintenanceInspectionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18011,7 +22358,7 @@ export type QueryBusinessConsoleMaintenanceInspectionMeasurementTrendErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18049,7 +22396,7 @@ export type ListBusinessConsoleMaintenanceSparePartsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18082,7 +22429,7 @@ export type CreateBusinessConsoleMaintenanceSparePartErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18104,6 +22451,110 @@ export type CreateBusinessConsoleMaintenanceSparePartResponses = {
 
 export type CreateBusinessConsoleMaintenanceSparePartResponse = CreateBusinessConsoleMaintenanceSparePartResponses[keyof CreateBusinessConsoleMaintenanceSparePartResponses];
 
+export type CreateBusinessConsoleMaintenanceDowntimeReasonData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateMaintenanceDowntimeReasonRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/maintenance/downtime-reasons';
+};
+
+export type CreateBusinessConsoleMaintenanceDowntimeReasonErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    409: NetCorePalExtensionsDtoResponseData;
+};
+
+export type CreateBusinessConsoleMaintenanceDowntimeReasonError = CreateBusinessConsoleMaintenanceDowntimeReasonErrors[keyof CreateBusinessConsoleMaintenanceDowntimeReasonErrors];
+
+export type CreateBusinessConsoleMaintenanceDowntimeReasonResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceDowntimeReasonMutationResponse;
+};
+
+export type CreateBusinessConsoleMaintenanceDowntimeReasonResponse = CreateBusinessConsoleMaintenanceDowntimeReasonResponses[keyof CreateBusinessConsoleMaintenanceDowntimeReasonResponses];
+
+export type DeleteBusinessConsoleMaintenanceDowntimeReasonData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDeleteMaintenanceDowntimeReasonRequest;
+    path: {
+        reasonCode: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/maintenance/downtime-reasons/{reasonCode}';
+};
+
+export type DeleteBusinessConsoleMaintenanceDowntimeReasonErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type DeleteBusinessConsoleMaintenanceDowntimeReasonError = DeleteBusinessConsoleMaintenanceDowntimeReasonErrors[keyof DeleteBusinessConsoleMaintenanceDowntimeReasonErrors];
+
+export type DeleteBusinessConsoleMaintenanceDowntimeReasonResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceDowntimeReasonMutationResponse;
+};
+
+export type DeleteBusinessConsoleMaintenanceDowntimeReasonResponse = DeleteBusinessConsoleMaintenanceDowntimeReasonResponses[keyof DeleteBusinessConsoleMaintenanceDowntimeReasonResponses];
+
+export type UpdateBusinessConsoleMaintenanceDowntimeReasonData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleUpdateMaintenanceDowntimeReasonRequest;
+    path: {
+        reasonCode: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/maintenance/downtime-reasons/{reasonCode}';
+};
+
+export type UpdateBusinessConsoleMaintenanceDowntimeReasonErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type UpdateBusinessConsoleMaintenanceDowntimeReasonError = UpdateBusinessConsoleMaintenanceDowntimeReasonErrors[keyof UpdateBusinessConsoleMaintenanceDowntimeReasonErrors];
+
+export type UpdateBusinessConsoleMaintenanceDowntimeReasonResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMaintenanceDowntimeReasonMutationResponse;
+};
+
+export type UpdateBusinessConsoleMaintenanceDowntimeReasonResponse = UpdateBusinessConsoleMaintenanceDowntimeReasonResponses[keyof UpdateBusinessConsoleMaintenanceDowntimeReasonResponses];
+
 export type QueryBusinessConsoleMaintenanceAssetReliabilityData = {
     body?: never;
     path: {
@@ -18122,7 +22573,7 @@ export type QueryBusinessConsoleMaintenanceAssetReliabilityErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18162,7 +22613,7 @@ export type QueryBusinessConsoleMaintenanceReliabilitySummaryErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18202,7 +22653,7 @@ export type QueryBusinessConsoleMaintenanceAvailabilityWindowsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18352,6 +22803,10 @@ export type PostBusinessConsoleInventoryMovementData = {
 
 export type PostBusinessConsoleInventoryMovementErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -18361,6 +22816,8 @@ export type PostBusinessConsoleInventoryMovementErrors = {
     403: unknown;
 };
 
+export type PostBusinessConsoleInventoryMovementError = PostBusinessConsoleInventoryMovementErrors[keyof PostBusinessConsoleInventoryMovementErrors];
+
 export type PostBusinessConsoleInventoryMovementResponses = {
     /**
      * Success
@@ -18369,6 +22826,66 @@ export type PostBusinessConsoleInventoryMovementResponses = {
 };
 
 export type PostBusinessConsoleInventoryMovementResponse = PostBusinessConsoleInventoryMovementResponses[keyof PostBusinessConsoleInventoryMovementResponses];
+
+export type ListBusinessConsoleInventoryLocationsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        keyword?: string | null;
+        page?: number;
+        pageSize?: number;
+    };
+    url: '/api/business-console/v1/inventory/locations';
+};
+
+export type ListBusinessConsoleInventoryLocationsErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleInventoryLocationsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleInventoryLocationListResponse;
+};
+
+export type ListBusinessConsoleInventoryLocationsResponse = ListBusinessConsoleInventoryLocationsResponses[keyof ListBusinessConsoleInventoryLocationsResponses];
+
+export type CreateOrUpdateBusinessConsoleInventoryLocationData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateOrUpdateInventoryLocationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/inventory/locations';
+};
+
+export type CreateOrUpdateBusinessConsoleInventoryLocationErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateOrUpdateBusinessConsoleInventoryLocationResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateOrUpdateInventoryLocationResponse;
+};
+
+export type CreateOrUpdateBusinessConsoleInventoryLocationResponse = CreateOrUpdateBusinessConsoleInventoryLocationResponses[keyof CreateOrUpdateBusinessConsoleInventoryLocationResponses];
 
 export type ListBusinessConsoleInventoryCountTasksData = {
     body?: never;
@@ -18416,6 +22933,10 @@ export type CreateBusinessConsoleInventoryCountTaskData = {
 
 export type CreateBusinessConsoleInventoryCountTaskErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -18424,6 +22945,8 @@ export type CreateBusinessConsoleInventoryCountTaskErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleInventoryCountTaskError = CreateBusinessConsoleInventoryCountTaskErrors[keyof CreateBusinessConsoleInventoryCountTaskErrors];
 
 export type CreateBusinessConsoleInventoryCountTaskResponses = {
     /**
@@ -18485,7 +23008,7 @@ export type ConfirmBusinessConsoleInventoryCountAdjustmentErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18523,7 +23046,7 @@ export type RestartBusinessConsoleInventoryCountTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18561,7 +23084,7 @@ export type CancelBusinessConsoleInventoryCountTaskErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18599,48 +23122,13 @@ export type HealthEndpointResponses = {
 
 export type HealthEndpointResponse = HealthEndpointResponses[keyof HealthEndpointResponses];
 
-export type CreateBusinessConsoleSopFileDownloadGrantData = {
-    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSopFileDownloadGrantRequest;
+export type DownloadBusinessConsoleSopFileContentData = {
+    body?: never;
     path: {
         fileId: string;
     };
     query?: never;
-    url: '/api/business-console/v1/files/{fileId}/download-grants';
-};
-
-export type CreateBusinessConsoleSopFileDownloadGrantErrors = {
-    /**
-     * Bad Request
-     */
-    400: FastEndpointsErrorResponse;
-    /**
-     * Unauthorized
-     */
-    401: unknown;
-    /**
-     * Forbidden
-     */
-    403: unknown;
-};
-
-export type CreateBusinessConsoleSopFileDownloadGrantError = CreateBusinessConsoleSopFileDownloadGrantErrors[keyof CreateBusinessConsoleSopFileDownloadGrantErrors];
-
-export type CreateBusinessConsoleSopFileDownloadGrantResponses = {
-    /**
-     * Success
-     */
-    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFileDownloadGrantResponse;
-};
-
-export type CreateBusinessConsoleSopFileDownloadGrantResponse = CreateBusinessConsoleSopFileDownloadGrantResponses[keyof CreateBusinessConsoleSopFileDownloadGrantResponses];
-
-export type DownloadBusinessConsoleSopFileContentData = {
-    body?: never;
-    path: {
-        downloadGrantId: string;
-    };
-    query?: never;
-    url: '/api/business-console/v1/files/download-grants/{downloadGrantId}/content';
+    url: '/api/business-console/v1/files/sop-documents/{fileId}/content';
 };
 
 export type DownloadBusinessConsoleSopFileContentErrors = {
@@ -18663,6 +23151,535 @@ export type DownloadBusinessConsoleSopFileContentResponses = {
 
 export type DownloadBusinessConsoleSopFileContentResponse = DownloadBusinessConsoleSopFileContentResponses[keyof DownloadBusinessConsoleSopFileContentResponses];
 
+export type CreateBusinessConsoleShiftHandoverAttachmentUploadSessionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateShiftHandoverAttachmentUploadSessionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/files/shift-handover-attachments/upload-sessions';
+};
+
+export type CreateBusinessConsoleShiftHandoverAttachmentUploadSessionErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleShiftHandoverAttachmentUploadSessionError = CreateBusinessConsoleShiftHandoverAttachmentUploadSessionErrors[keyof CreateBusinessConsoleShiftHandoverAttachmentUploadSessionErrors];
+
+export type CreateBusinessConsoleShiftHandoverAttachmentUploadSessionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleShiftHandoverAttachmentUploadSessionResponse;
+};
+
+export type CreateBusinessConsoleShiftHandoverAttachmentUploadSessionResponse = CreateBusinessConsoleShiftHandoverAttachmentUploadSessionResponses[keyof CreateBusinessConsoleShiftHandoverAttachmentUploadSessionResponses];
+
+export type CompleteBusinessConsoleShiftHandoverAttachmentUploadData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteShiftHandoverAttachmentUploadRequest;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/shift-handover-attachments/upload-sessions/{uploadSessionId}/complete';
+};
+
+export type CompleteBusinessConsoleShiftHandoverAttachmentUploadErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CompleteBusinessConsoleShiftHandoverAttachmentUploadError = CompleteBusinessConsoleShiftHandoverAttachmentUploadErrors[keyof CompleteBusinessConsoleShiftHandoverAttachmentUploadErrors];
+
+export type CompleteBusinessConsoleShiftHandoverAttachmentUploadResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesShiftHandoverAttachment;
+};
+
+export type CompleteBusinessConsoleShiftHandoverAttachmentUploadResponse = CompleteBusinessConsoleShiftHandoverAttachmentUploadResponses[keyof CompleteBusinessConsoleShiftHandoverAttachmentUploadResponses];
+
+export type GetBusinessConsoleShiftHandoverAttachmentTusOffsetData = {
+    body?: never;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/shift-handover-attachments/tus/{uploadSessionId}';
+};
+
+export type GetBusinessConsoleShiftHandoverAttachmentTusOffsetErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleShiftHandoverAttachmentTusOffsetResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type GetBusinessConsoleShiftHandoverAttachmentTusOffsetResponse = GetBusinessConsoleShiftHandoverAttachmentTusOffsetResponses[keyof GetBusinessConsoleShiftHandoverAttachmentTusOffsetResponses];
+
+export type PatchBusinessConsoleShiftHandoverAttachmentTusUploadData = {
+    body?: never;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/shift-handover-attachments/tus/{uploadSessionId}';
+};
+
+export type PatchBusinessConsoleShiftHandoverAttachmentTusUploadErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PatchBusinessConsoleShiftHandoverAttachmentTusUploadResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type PatchBusinessConsoleShiftHandoverAttachmentTusUploadResponse = PatchBusinessConsoleShiftHandoverAttachmentTusUploadResponses[keyof PatchBusinessConsoleShiftHandoverAttachmentTusUploadResponses];
+
+export type DownloadBusinessConsoleShiftHandoverAttachmentContentData = {
+    body?: never;
+    path: {
+        fileId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/shift-handover-attachments/{fileId}/content';
+};
+
+export type DownloadBusinessConsoleShiftHandoverAttachmentContentErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type DownloadBusinessConsoleShiftHandoverAttachmentContentResponses = {
+    /**
+     * Success
+     */
+    200: Blob | File;
+};
+
+export type DownloadBusinessConsoleShiftHandoverAttachmentContentResponse = DownloadBusinessConsoleShiftHandoverAttachmentContentResponses[keyof DownloadBusinessConsoleShiftHandoverAttachmentContentResponses];
+
+export type CreateBusinessConsoleBarcodeTemplateAssetUploadSessionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateBarcodeTemplateAssetUploadSessionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/files/barcode-template-assets/upload-sessions';
+};
+
+export type CreateBusinessConsoleBarcodeTemplateAssetUploadSessionErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleBarcodeTemplateAssetUploadSessionError = CreateBusinessConsoleBarcodeTemplateAssetUploadSessionErrors[keyof CreateBusinessConsoleBarcodeTemplateAssetUploadSessionErrors];
+
+export type CreateBusinessConsoleBarcodeTemplateAssetUploadSessionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeTemplateAssetUploadSessionResponse;
+};
+
+export type CreateBusinessConsoleBarcodeTemplateAssetUploadSessionResponse = CreateBusinessConsoleBarcodeTemplateAssetUploadSessionResponses[keyof CreateBusinessConsoleBarcodeTemplateAssetUploadSessionResponses];
+
+export type CompleteBusinessConsoleBarcodeTemplateAssetUploadData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteBarcodeTemplateAssetUploadRequest;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/barcode-template-assets/upload-sessions/{uploadSessionId}/complete';
+};
+
+export type CompleteBusinessConsoleBarcodeTemplateAssetUploadErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CompleteBusinessConsoleBarcodeTemplateAssetUploadError = CompleteBusinessConsoleBarcodeTemplateAssetUploadErrors[keyof CompleteBusinessConsoleBarcodeTemplateAssetUploadErrors];
+
+export type CompleteBusinessConsoleBarcodeTemplateAssetUploadResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeTemplateAsset;
+};
+
+export type CompleteBusinessConsoleBarcodeTemplateAssetUploadResponse = CompleteBusinessConsoleBarcodeTemplateAssetUploadResponses[keyof CompleteBusinessConsoleBarcodeTemplateAssetUploadResponses];
+
+export type GetBusinessConsoleBarcodeTemplateAssetTusOffsetData = {
+    body?: never;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/barcode-template-assets/tus/{uploadSessionId}';
+};
+
+export type GetBusinessConsoleBarcodeTemplateAssetTusOffsetErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleBarcodeTemplateAssetTusOffsetResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type GetBusinessConsoleBarcodeTemplateAssetTusOffsetResponse = GetBusinessConsoleBarcodeTemplateAssetTusOffsetResponses[keyof GetBusinessConsoleBarcodeTemplateAssetTusOffsetResponses];
+
+export type PatchBusinessConsoleBarcodeTemplateAssetTusUploadData = {
+    body?: never;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/barcode-template-assets/tus/{uploadSessionId}';
+};
+
+export type PatchBusinessConsoleBarcodeTemplateAssetTusUploadErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PatchBusinessConsoleBarcodeTemplateAssetTusUploadResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type PatchBusinessConsoleBarcodeTemplateAssetTusUploadResponse = PatchBusinessConsoleBarcodeTemplateAssetTusUploadResponses[keyof PatchBusinessConsoleBarcodeTemplateAssetTusUploadResponses];
+
+export type CreateBusinessConsoleQualityEvidenceUploadSessionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateQualityEvidenceUploadSessionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/files/quality-evidence/upload-sessions';
+};
+
+export type CreateBusinessConsoleQualityEvidenceUploadSessionErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleQualityEvidenceUploadSessionError = CreateBusinessConsoleQualityEvidenceUploadSessionErrors[keyof CreateBusinessConsoleQualityEvidenceUploadSessionErrors];
+
+export type CreateBusinessConsoleQualityEvidenceUploadSessionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityEvidenceUploadSessionResponse;
+};
+
+export type CreateBusinessConsoleQualityEvidenceUploadSessionResponse = CreateBusinessConsoleQualityEvidenceUploadSessionResponses[keyof CreateBusinessConsoleQualityEvidenceUploadSessionResponses];
+
+export type CompleteBusinessConsoleQualityEvidenceUploadData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteQualityEvidenceUploadRequest;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/quality-evidence/upload-sessions/{uploadSessionId}/complete';
+};
+
+export type CompleteBusinessConsoleQualityEvidenceUploadErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CompleteBusinessConsoleQualityEvidenceUploadError = CompleteBusinessConsoleQualityEvidenceUploadErrors[keyof CompleteBusinessConsoleQualityEvidenceUploadErrors];
+
+export type CompleteBusinessConsoleQualityEvidenceUploadResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleQualityEvidenceFile;
+};
+
+export type CompleteBusinessConsoleQualityEvidenceUploadResponse = CompleteBusinessConsoleQualityEvidenceUploadResponses[keyof CompleteBusinessConsoleQualityEvidenceUploadResponses];
+
+export type GetBusinessConsoleQualityEvidenceTusOffsetData = {
+    body?: never;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/quality-evidence/tus/{uploadSessionId}';
+};
+
+export type GetBusinessConsoleQualityEvidenceTusOffsetErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleQualityEvidenceTusOffsetResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type PatchBusinessConsoleQualityEvidenceTusUploadData = {
+    body: Blob | File;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/quality-evidence/tus/{uploadSessionId}';
+};
+
+export type PatchBusinessConsoleQualityEvidenceTusUploadErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PatchBusinessConsoleQualityEvidenceTusUploadResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type PatchBusinessConsoleQualityEvidenceTusUploadResponse = PatchBusinessConsoleQualityEvidenceTusUploadResponses[keyof PatchBusinessConsoleQualityEvidenceTusUploadResponses];
+
+export type CreateBusinessConsoleSopFileUploadSessionData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSopFileUploadSessionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/files/sop-documents/upload-sessions';
+};
+
+export type CreateBusinessConsoleSopFileUploadSessionErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CreateBusinessConsoleSopFileUploadSessionError = CreateBusinessConsoleSopFileUploadSessionErrors[keyof CreateBusinessConsoleSopFileUploadSessionErrors];
+
+export type CreateBusinessConsoleSopFileUploadSessionResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFileUploadSessionResponse;
+};
+
+export type CreateBusinessConsoleSopFileUploadSessionResponse = CreateBusinessConsoleSopFileUploadSessionResponses[keyof CreateBusinessConsoleSopFileUploadSessionResponses];
+
+export type CompleteBusinessConsoleSopFileUploadData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCompleteSopFileUploadRequest;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/sop-documents/upload-sessions/{uploadSessionId}/complete';
+};
+
+export type CompleteBusinessConsoleSopFileUploadErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CompleteBusinessConsoleSopFileUploadError = CompleteBusinessConsoleSopFileUploadErrors[keyof CompleteBusinessConsoleSopFileUploadErrors];
+
+export type CompleteBusinessConsoleSopFileUploadResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleSopFile;
+};
+
+export type CompleteBusinessConsoleSopFileUploadResponse = CompleteBusinessConsoleSopFileUploadResponses[keyof CompleteBusinessConsoleSopFileUploadResponses];
+
+export type GetBusinessConsoleSopFileTusOffsetData = {
+    body?: never;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/sop-documents/tus/{uploadSessionId}';
+};
+
+export type GetBusinessConsoleSopFileTusOffsetErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleSopFileTusOffsetResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type PatchBusinessConsoleSopFileTusUploadData = {
+    body: Blob | File;
+    path: {
+        uploadSessionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/files/sop-documents/tus/{uploadSessionId}';
+};
+
+export type PatchBusinessConsoleSopFileTusUploadErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type PatchBusinessConsoleSopFileTusUploadResponses = {
+    /**
+     * No Content
+     */
+    204: void;
+};
+
+export type PatchBusinessConsoleSopFileTusUploadResponse = PatchBusinessConsoleSopFileTusUploadResponses[keyof PatchBusinessConsoleSopFileTusUploadResponses];
+
 export type ListBusinessConsoleErpPurchaseOrdersData = {
     body?: never;
     path?: never;
@@ -18681,7 +23698,7 @@ export type ListBusinessConsoleErpPurchaseOrdersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18712,6 +23729,10 @@ export type CreateBusinessConsoleErpPurchaseOrderData = {
 
 export type CreateBusinessConsoleErpPurchaseOrderErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -18721,6 +23742,8 @@ export type CreateBusinessConsoleErpPurchaseOrderErrors = {
     403: unknown;
 };
 
+export type CreateBusinessConsoleErpPurchaseOrderError = CreateBusinessConsoleErpPurchaseOrderErrors[keyof CreateBusinessConsoleErpPurchaseOrderErrors];
+
 export type CreateBusinessConsoleErpPurchaseOrderResponses = {
     /**
      * Success
@@ -18729,6 +23752,198 @@ export type CreateBusinessConsoleErpPurchaseOrderResponses = {
 };
 
 export type CreateBusinessConsoleErpPurchaseOrderResponse = CreateBusinessConsoleErpPurchaseOrderResponses[keyof CreateBusinessConsoleErpPurchaseOrderResponses];
+
+export type ListBusinessConsoleErpWorkOrderCostsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        keyword?: string | null;
+        skip?: number;
+        take?: number;
+    };
+    url: '/api/business-console/v1/erp/finance/work-order-costs';
+};
+
+export type ListBusinessConsoleErpWorkOrderCostsErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleErpWorkOrderCostsError = ListBusinessConsoleErpWorkOrderCostsErrors[keyof ListBusinessConsoleErpWorkOrderCostsErrors];
+
+export type ListBusinessConsoleErpWorkOrderCostsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkOrderCostListResponse;
+};
+
+export type ListBusinessConsoleErpWorkOrderCostsResponse = ListBusinessConsoleErpWorkOrderCostsResponses[keyof ListBusinessConsoleErpWorkOrderCostsResponses];
+
+export type GetBusinessConsoleErpWorkOrderCostVarianceData = {
+    body?: never;
+    path: {
+        workOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+        pageNumber?: number;
+        pageSize?: number;
+    };
+    url: '/api/business-console/v1/erp/finance/work-order-costs/{workOrderId}';
+};
+
+export type GetBusinessConsoleErpWorkOrderCostVarianceErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleErpWorkOrderCostVarianceError = GetBusinessConsoleErpWorkOrderCostVarianceErrors[keyof GetBusinessConsoleErpWorkOrderCostVarianceErrors];
+
+export type GetBusinessConsoleErpWorkOrderCostVarianceResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkOrderCostVarianceResponse;
+};
+
+export type GetBusinessConsoleErpWorkOrderCostVarianceResponse = GetBusinessConsoleErpWorkOrderCostVarianceResponses[keyof GetBusinessConsoleErpWorkOrderCostVarianceResponses];
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        accountingPeriodCode: string;
+        workCenterId?: string | null;
+        pageNumber?: number;
+        pageSize?: number;
+    };
+    url: '/api/business-console/v1/erp/finance/work-center-machine-overhead-reconciliations';
+};
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsError = ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsErrors[keyof ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsErrors];
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpMachineOverheadReconciliationListResponse;
+};
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsResponse = ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsResponses[keyof ListBusinessConsoleErpWorkCenterMachineOverheadReconciliationsResponses];
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadRatesData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        workCenterId: string;
+        accountingPeriodCode: string;
+        pageNumber?: number;
+        pageSize?: number;
+    };
+    url: '/api/business-console/v1/erp/finance/work-center-machine-overhead-rates';
+};
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadRatesErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadRatesError = ListBusinessConsoleErpWorkCenterMachineOverheadRatesErrors[keyof ListBusinessConsoleErpWorkCenterMachineOverheadRatesErrors];
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadRatesResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpWorkCenterMachineOverheadRateListResponse;
+};
+
+export type ListBusinessConsoleErpWorkCenterMachineOverheadRatesResponse = ListBusinessConsoleErpWorkCenterMachineOverheadRatesResponses[keyof ListBusinessConsoleErpWorkCenterMachineOverheadRatesResponses];
+
+export type ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfigureErpWorkCenterMachineOverheadRateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/erp/finance/work-center-machine-overhead-rates';
+};
+
+export type ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateError = ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateErrors[keyof ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateErrors];
+
+export type ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConfigureErpWorkCenterMachineOverheadRateResponse;
+};
+
+export type ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateResponse = ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateResponses[keyof ConfigureBusinessConsoleErpWorkCenterMachineOverheadRateResponses];
 
 export type ListBusinessConsoleErpRequestsForQuotationData = {
     body?: never;
@@ -18748,7 +23963,7 @@ export type ListBusinessConsoleErpRequestsForQuotationErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18779,6 +23994,10 @@ export type CreateBusinessConsoleErpRequestForQuotationData = {
 
 export type CreateBusinessConsoleErpRequestForQuotationErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -18787,6 +24006,8 @@ export type CreateBusinessConsoleErpRequestForQuotationErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleErpRequestForQuotationError = CreateBusinessConsoleErpRequestForQuotationErrors[keyof CreateBusinessConsoleErpRequestForQuotationErrors];
 
 export type CreateBusinessConsoleErpRequestForQuotationResponses = {
     /**
@@ -18841,6 +24062,10 @@ export type ReceiveBusinessConsoleErpSupplierQuotationData = {
 
 export type ReceiveBusinessConsoleErpSupplierQuotationErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -18849,6 +24074,8 @@ export type ReceiveBusinessConsoleErpSupplierQuotationErrors = {
      */
     403: unknown;
 };
+
+export type ReceiveBusinessConsoleErpSupplierQuotationError = ReceiveBusinessConsoleErpSupplierQuotationErrors[keyof ReceiveBusinessConsoleErpSupplierQuotationErrors];
 
 export type ReceiveBusinessConsoleErpSupplierQuotationResponses = {
     /**
@@ -18877,7 +24104,7 @@ export type ListBusinessConsoleErpPurchaseRequisitionsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18910,7 +24137,7 @@ export type CreateBusinessConsoleErpPurchaseRequisitionFromSuggestionErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18943,7 +24170,7 @@ export type ConvertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderErrors =
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -18976,7 +24203,7 @@ export type RecordBusinessConsoleErpPurchaseReceiptErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19016,7 +24243,7 @@ export type ListBusinessConsoleErpSalesOrdersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19047,6 +24274,10 @@ export type CreateBusinessConsoleErpSalesOrderData = {
 
 export type CreateBusinessConsoleErpSalesOrderErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -19055,6 +24286,8 @@ export type CreateBusinessConsoleErpSalesOrderErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleErpSalesOrderError = CreateBusinessConsoleErpSalesOrderErrors[keyof CreateBusinessConsoleErpSalesOrderErrors];
 
 export type CreateBusinessConsoleErpSalesOrderResponses = {
     /**
@@ -19083,7 +24316,7 @@ export type ListBusinessConsoleErpOpportunitiesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19114,6 +24347,10 @@ export type OpenBusinessConsoleErpOpportunityData = {
 
 export type OpenBusinessConsoleErpOpportunityErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -19122,6 +24359,8 @@ export type OpenBusinessConsoleErpOpportunityErrors = {
      */
     403: unknown;
 };
+
+export type OpenBusinessConsoleErpOpportunityError = OpenBusinessConsoleErpOpportunityErrors[keyof OpenBusinessConsoleErpOpportunityErrors];
 
 export type OpenBusinessConsoleErpOpportunityResponses = {
     /**
@@ -19150,7 +24389,7 @@ export type ListBusinessConsoleErpQuotationsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19181,6 +24420,10 @@ export type CreateBusinessConsoleErpQuotationData = {
 
 export type CreateBusinessConsoleErpQuotationErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -19189,6 +24432,8 @@ export type CreateBusinessConsoleErpQuotationErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleErpQuotationError = CreateBusinessConsoleErpQuotationErrors[keyof CreateBusinessConsoleErpQuotationErrors];
 
 export type CreateBusinessConsoleErpQuotationResponses = {
     /**
@@ -19275,7 +24520,7 @@ export type ListBusinessConsoleErpDeliveryOrdersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19306,6 +24551,10 @@ export type ReleaseBusinessConsoleErpDeliveryOrderData = {
 
 export type ReleaseBusinessConsoleErpDeliveryOrderErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -19314,6 +24563,8 @@ export type ReleaseBusinessConsoleErpDeliveryOrderErrors = {
      */
     403: unknown;
 };
+
+export type ReleaseBusinessConsoleErpDeliveryOrderError = ReleaseBusinessConsoleErpDeliveryOrderErrors[keyof ReleaseBusinessConsoleErpDeliveryOrderErrors];
 
 export type ReleaseBusinessConsoleErpDeliveryOrderResponses = {
     /**
@@ -19342,7 +24593,7 @@ export type ListBusinessConsoleErpPayablesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19373,6 +24624,10 @@ export type CreateBusinessConsoleErpAccountPayableData = {
 
 export type CreateBusinessConsoleErpAccountPayableErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -19381,6 +24636,8 @@ export type CreateBusinessConsoleErpAccountPayableErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleErpAccountPayableError = CreateBusinessConsoleErpAccountPayableErrors[keyof CreateBusinessConsoleErpAccountPayableErrors];
 
 export type CreateBusinessConsoleErpAccountPayableResponses = {
     /**
@@ -19409,7 +24666,7 @@ export type ListBusinessConsoleErpReceivablesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19440,6 +24697,10 @@ export type CreateBusinessConsoleErpAccountReceivableData = {
 
 export type CreateBusinessConsoleErpAccountReceivableErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -19448,6 +24709,8 @@ export type CreateBusinessConsoleErpAccountReceivableErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleErpAccountReceivableError = CreateBusinessConsoleErpAccountReceivableErrors[keyof CreateBusinessConsoleErpAccountReceivableErrors];
 
 export type CreateBusinessConsoleErpAccountReceivableResponses = {
     /**
@@ -19476,7 +24739,7 @@ export type ListBusinessConsoleErpCostCandidatesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19507,6 +24770,10 @@ export type CreateBusinessConsoleErpCostCandidateData = {
 
 export type CreateBusinessConsoleErpCostCandidateErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -19515,6 +24782,8 @@ export type CreateBusinessConsoleErpCostCandidateErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleErpCostCandidateError = CreateBusinessConsoleErpCostCandidateErrors[keyof CreateBusinessConsoleErpCostCandidateErrors];
 
 export type CreateBusinessConsoleErpCostCandidateResponses = {
     /**
@@ -19543,7 +24812,7 @@ export type ListBusinessConsoleErpJournalVouchersErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19574,6 +24843,10 @@ export type PostBusinessConsoleErpJournalVoucherData = {
 
 export type PostBusinessConsoleErpJournalVoucherErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -19582,6 +24855,8 @@ export type PostBusinessConsoleErpJournalVoucherErrors = {
      */
     403: unknown;
 };
+
+export type PostBusinessConsoleErpJournalVoucherError = PostBusinessConsoleErpJournalVoucherErrors[keyof PostBusinessConsoleErpJournalVoucherErrors];
 
 export type PostBusinessConsoleErpJournalVoucherResponses = {
     /**
@@ -19601,6 +24876,10 @@ export type ApproveBusinessConsoleErpPaymentExecutionData = {
 
 export type ApproveBusinessConsoleErpPaymentExecutionErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -19609,6 +24888,8 @@ export type ApproveBusinessConsoleErpPaymentExecutionErrors = {
      */
     403: unknown;
 };
+
+export type ApproveBusinessConsoleErpPaymentExecutionError = ApproveBusinessConsoleErpPaymentExecutionErrors[keyof ApproveBusinessConsoleErpPaymentExecutionErrors];
 
 export type ApproveBusinessConsoleErpPaymentExecutionResponses = {
     /**
@@ -19657,6 +24938,10 @@ export type RegisterBusinessConsoleErpCashReceiptData = {
 
 export type RegisterBusinessConsoleErpCashReceiptErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -19665,6 +24950,8 @@ export type RegisterBusinessConsoleErpCashReceiptErrors = {
      */
     403: unknown;
 };
+
+export type RegisterBusinessConsoleErpCashReceiptError = RegisterBusinessConsoleErpCashReceiptErrors[keyof RegisterBusinessConsoleErpCashReceiptErrors];
 
 export type RegisterBusinessConsoleErpCashReceiptResponses = {
     /**
@@ -19863,7 +25150,7 @@ export type GetBusinessConsoleErpFinanceSummaryErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -19997,7 +25284,7 @@ export type ListBusinessConsoleErpWorkCenterCostRatesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20030,7 +25317,7 @@ export type ConfigureBusinessConsoleErpWorkCenterCostRateErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20067,7 +25354,7 @@ export type GetBusinessConsoleEquipmentOverviewErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20105,7 +25392,7 @@ export type GetBusinessConsoleEquipmentDeviceErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20143,7 +25430,7 @@ export type GetBusinessConsoleEquipmentDeviceHealthErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20183,7 +25470,7 @@ export type GetBusinessConsoleEquipmentAvailabilityErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20225,7 +25512,7 @@ export type ListBusinessConsoleEquipmentAlarmsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20266,7 +25553,7 @@ export type AcknowledgeBusinessConsoleEquipmentAlarmErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20308,7 +25595,7 @@ export type ShelveBusinessConsoleEquipmentAlarmErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20350,7 +25637,7 @@ export type UnshelveBusinessConsoleEquipmentAlarmErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20375,7 +25662,7 @@ export type UnshelveBusinessConsoleEquipmentAlarmResponse = UnshelveBusinessCons
 export type ListBusinessConsoleSearchableDirectoryData = {
     body?: never;
     path: {
-        directoryType: 'personnel' | 'team' | 'equipment' | 'work-center' | 'station' | 'workshop' | 'material' | 'priority' | 'location' | 'batch' | 'serial' | 'defect-code' | 'scrap-reason' | 'downtime-reason' | 'maintenance-reason';
+        directoryType: 'personnel' | 'team' | 'equipment' | 'work-center' | 'station' | 'workshop' | 'material' | 'priority' | 'location' | 'batch' | 'serial' | 'defect-code' | 'scrap-reason' | 'downtime-reason' | 'maintenance-reason' | 'login-account';
     };
     query: {
         organizationId: string;
@@ -20387,6 +25674,7 @@ export type ListBusinessConsoleSearchableDirectoryData = {
         pageIndex?: number;
         pageSize?: number;
         rankingMode?: 'default' | 'recent' | 'suggested';
+        siteCode?: string | null;
     };
     url: '/api/business-console/v1/directories/{directoryType}';
 };
@@ -20419,6 +25707,236 @@ export type ListBusinessConsoleSearchableDirectoryResponses = {
 
 export type ListBusinessConsoleSearchableDirectoryResponse = ListBusinessConsoleSearchableDirectoryResponses[keyof ListBusinessConsoleSearchableDirectoryResponses];
 
+export type ListBusinessConsoleDeadLettersData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        service?: string | null;
+        consumerName?: string | null;
+        eventType?: string | null;
+        failureCode?: string | null;
+        status?: NervIipMessagingCapIntegrationEventDeadLetterStatus | null;
+        deadLetteredFromUtc?: string | null;
+        deadLetteredToUtc?: string | null;
+        take?: number | null;
+    };
+    url: '/api/business-console/v1/dead-letters';
+};
+
+export type ListBusinessConsoleDeadLettersErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleDeadLettersError = ListBusinessConsoleDeadLettersErrors[keyof ListBusinessConsoleDeadLettersErrors];
+
+export type ListBusinessConsoleDeadLettersResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDeadLetterListResponse;
+};
+
+export type ListBusinessConsoleDeadLettersResponse = ListBusinessConsoleDeadLettersResponses[keyof ListBusinessConsoleDeadLettersResponses];
+
+export type GetBusinessConsoleDeadLetterMetricsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        service?: string | null;
+    };
+    url: '/api/business-console/v1/dead-letters/metrics';
+};
+
+export type GetBusinessConsoleDeadLetterMetricsErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleDeadLetterMetricsError = GetBusinessConsoleDeadLetterMetricsErrors[keyof GetBusinessConsoleDeadLetterMetricsErrors];
+
+export type GetBusinessConsoleDeadLetterMetricsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleDeadLetterMetricsResponse;
+};
+
+export type GetBusinessConsoleDeadLetterMetricsResponse = GetBusinessConsoleDeadLetterMetricsResponses[keyof GetBusinessConsoleDeadLetterMetricsResponses];
+
+export type GetBusinessConsoleDeadLetterData = {
+    body?: never;
+    path: {
+        service: string;
+        deadLetterId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/dead-letters/{service}/{deadLetterId}';
+};
+
+export type GetBusinessConsoleDeadLetterErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleDeadLetterError = GetBusinessConsoleDeadLetterErrors[keyof GetBusinessConsoleDeadLetterErrors];
+
+export type GetBusinessConsoleDeadLetterResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIntegrationEventDeadLetterDetailResponse;
+};
+
+export type GetBusinessConsoleDeadLetterResponse = GetBusinessConsoleDeadLetterResponses[keyof GetBusinessConsoleDeadLetterResponses];
+
+export type ReplayBusinessConsoleDeadLetterData = {
+    body?: never;
+    path: {
+        service: string;
+        deadLetterId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/dead-letters/{service}/{deadLetterId}/replay';
+};
+
+export type ReplayBusinessConsoleDeadLetterErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ReplayBusinessConsoleDeadLetterError = ReplayBusinessConsoleDeadLetterErrors[keyof ReplayBusinessConsoleDeadLetterErrors];
+
+export type ReplayBusinessConsoleDeadLetterResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIntegrationEventDeadLetterReplayResponse;
+};
+
+export type ReplayBusinessConsoleDeadLetterResponse = ReplayBusinessConsoleDeadLetterResponses[keyof ReplayBusinessConsoleDeadLetterResponses];
+
+export type ReplayBusinessConsoleDeadLettersData = {
+    body: NervIipBusinessGatewayWebEndpointsDeadLettersBusinessConsoleReplayDeadLettersRequest;
+    path: {
+        service: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/dead-letters/{service}/replay-batch';
+};
+
+export type ReplayBusinessConsoleDeadLettersErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ReplayBusinessConsoleDeadLettersError = ReplayBusinessConsoleDeadLettersErrors[keyof ReplayBusinessConsoleDeadLettersErrors];
+
+export type ReplayBusinessConsoleDeadLettersResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIntegrationEventDeadLetterBatchReplayResponse;
+};
+
+export type ReplayBusinessConsoleDeadLettersResponse = ReplayBusinessConsoleDeadLettersResponses[keyof ReplayBusinessConsoleDeadLettersResponses];
+
+export type IgnoreBusinessConsoleDeadLetterData = {
+    body: NervIipBusinessGatewayWebEndpointsDeadLettersBusinessConsoleIgnoreDeadLetterRequest;
+    path: {
+        service: string;
+        deadLetterId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/dead-letters/{service}/{deadLetterId}/ignore';
+};
+
+export type IgnoreBusinessConsoleDeadLetterErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type IgnoreBusinessConsoleDeadLetterError = IgnoreBusinessConsoleDeadLetterErrors[keyof IgnoreBusinessConsoleDeadLetterErrors];
+
+export type IgnoreBusinessConsoleDeadLetterResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfIntegrationEventDeadLetterDetailResponse;
+};
+
+export type IgnoreBusinessConsoleDeadLetterResponse = IgnoreBusinessConsoleDeadLetterResponses[keyof IgnoreBusinessConsoleDeadLetterResponses];
+
 export type ListBusinessConsoleBarcodeRulesData = {
     body?: never;
     path?: never;
@@ -20437,7 +25955,7 @@ export type ListBusinessConsoleBarcodeRulesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20503,7 +26021,7 @@ export type ListBusinessConsoleBarcodeTemplatesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20571,7 +26089,7 @@ export type ListBusinessConsoleBarcodePrintBatchesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20602,6 +26120,10 @@ export type CreateBusinessConsoleBarcodePrintBatchData = {
 
 export type CreateBusinessConsoleBarcodePrintBatchErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -20610,6 +26132,8 @@ export type CreateBusinessConsoleBarcodePrintBatchErrors = {
      */
     403: unknown;
 };
+
+export type CreateBusinessConsoleBarcodePrintBatchError = CreateBusinessConsoleBarcodePrintBatchErrors[keyof CreateBusinessConsoleBarcodePrintBatchErrors];
 
 export type CreateBusinessConsoleBarcodePrintBatchResponses = {
     /**
@@ -20652,6 +26176,125 @@ export type GetBusinessConsoleBarcodePrintBatchResponses = {
 
 export type GetBusinessConsoleBarcodePrintBatchResponse = GetBusinessConsoleBarcodePrintBatchResponses[keyof GetBusinessConsoleBarcodePrintBatchResponses];
 
+export type DispatchBusinessConsoleBarcodePrintBatchData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleDispatchBarcodePrintBatchBody;
+    path: {
+        printBatchId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/barcode/print-batches/{printBatchId}/dispatch';
+};
+
+export type DispatchBusinessConsoleBarcodePrintBatchErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+};
+
+export type DispatchBusinessConsoleBarcodePrintBatchError = DispatchBusinessConsoleBarcodePrintBatchErrors[keyof DispatchBusinessConsoleBarcodePrintBatchErrors];
+
+export type DispatchBusinessConsoleBarcodePrintBatchResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrintLifecycleResponse;
+};
+
+export type DispatchBusinessConsoleBarcodePrintBatchResponse = DispatchBusinessConsoleBarcodePrintBatchResponses[keyof DispatchBusinessConsoleBarcodePrintBatchResponses];
+
+export type ReprintBusinessConsoleBarcodeLabelData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReprintBarcodeLabelBody;
+    path: {
+        printBatchId: string;
+        sequenceNo: number;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/reprint';
+};
+
+export type ReprintBusinessConsoleBarcodeLabelErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ReprintBusinessConsoleBarcodeLabelError = ReprintBusinessConsoleBarcodeLabelErrors[keyof ReprintBusinessConsoleBarcodeLabelErrors];
+
+export type ReprintBusinessConsoleBarcodeLabelResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReprintBarcodeLabelResponse;
+};
+
+export type ReprintBusinessConsoleBarcodeLabelResponse = ReprintBusinessConsoleBarcodeLabelResponses[keyof ReprintBusinessConsoleBarcodeLabelResponses];
+
+export type VoidBusinessConsoleBarcodeLabelData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleVoidBarcodeLabelBody;
+    path: {
+        printBatchId: string;
+        sequenceNo: number;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/barcode/print-batches/{printBatchId}/items/{sequenceNo}/void';
+};
+
+export type VoidBusinessConsoleBarcodeLabelErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+};
+
+export type VoidBusinessConsoleBarcodeLabelError = VoidBusinessConsoleBarcodeLabelErrors[keyof VoidBusinessConsoleBarcodeLabelErrors];
+
+export type VoidBusinessConsoleBarcodeLabelResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrintLifecycleResponse;
+};
+
+export type VoidBusinessConsoleBarcodeLabelResponse = VoidBusinessConsoleBarcodeLabelResponses[keyof VoidBusinessConsoleBarcodeLabelResponses];
+
 export type ListBusinessConsoleBarcodeScansData = {
     body?: never;
     path?: never;
@@ -20672,7 +26315,7 @@ export type ListBusinessConsoleBarcodeScansErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20703,6 +26346,10 @@ export type RecordBusinessConsoleBarcodeScanData = {
 
 export type RecordBusinessConsoleBarcodeScanErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
@@ -20712,6 +26359,8 @@ export type RecordBusinessConsoleBarcodeScanErrors = {
     403: unknown;
 };
 
+export type RecordBusinessConsoleBarcodeScanError = RecordBusinessConsoleBarcodeScanErrors[keyof RecordBusinessConsoleBarcodeScanErrors];
+
 export type RecordBusinessConsoleBarcodeScanResponses = {
     /**
      * Success
@@ -20720,6 +26369,185 @@ export type RecordBusinessConsoleBarcodeScanResponses = {
 };
 
 export type RecordBusinessConsoleBarcodeScanResponse = RecordBusinessConsoleBarcodeScanResponses[keyof RecordBusinessConsoleBarcodeScanResponses];
+
+export type ConfirmBusinessConsoleBarcodePrintBatchData = {
+    body?: never;
+    path: {
+        printBatchId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/barcode/print-batches/{printBatchId}/confirm';
+};
+
+export type ConfirmBusinessConsoleBarcodePrintBatchErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+    502: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ConfirmBusinessConsoleBarcodePrintBatchError = ConfirmBusinessConsoleBarcodePrintBatchErrors[keyof ConfirmBusinessConsoleBarcodePrintBatchErrors];
+
+export type ConfirmBusinessConsoleBarcodePrintBatchResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrintLifecycleResponse;
+};
+
+export type ConfirmBusinessConsoleBarcodePrintBatchResponse = ConfirmBusinessConsoleBarcodePrintBatchResponses[keyof ConfirmBusinessConsoleBarcodePrintBatchResponses];
+
+export type GetBusinessConsoleBarcodeTemplateAssetRetirementData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        templateId: string;
+        fileId: string;
+    };
+    url: '/api/business-console/v1/barcode/template-assets/retirement';
+};
+
+export type GetBusinessConsoleBarcodeTemplateAssetRetirementErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type GetBusinessConsoleBarcodeTemplateAssetRetirementError = GetBusinessConsoleBarcodeTemplateAssetRetirementErrors[keyof GetBusinessConsoleBarcodeTemplateAssetRetirementErrors];
+
+export type GetBusinessConsoleBarcodeTemplateAssetRetirementResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfTemplateAssetRetirementResponse;
+};
+
+export type GetBusinessConsoleBarcodeTemplateAssetRetirementResponse = GetBusinessConsoleBarcodeTemplateAssetRetirementResponses[keyof GetBusinessConsoleBarcodeTemplateAssetRetirementResponses];
+
+export type ListBusinessConsoleBarcodePrintersData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/barcode/printers';
+};
+
+export type ListBusinessConsoleBarcodePrintersErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ListBusinessConsoleBarcodePrintersError = ListBusinessConsoleBarcodePrintersErrors[keyof ListBusinessConsoleBarcodePrintersErrors];
+
+export type ListBusinessConsoleBarcodePrintersResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodePrinterListResponse;
+};
+
+export type ListBusinessConsoleBarcodePrintersResponse = ListBusinessConsoleBarcodePrintersResponses[keyof ListBusinessConsoleBarcodePrintersResponses];
+
+export type ResolveBusinessConsoleBarcodeData = {
+    body: NervIipBusinessGatewayWebEndpointsBarcodeBusinessConsoleBarcodeResolveRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/barcode/resolve';
+};
+
+export type ResolveBusinessConsoleBarcodeErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ResolveBusinessConsoleBarcodeError = ResolveBusinessConsoleBarcodeErrors[keyof ResolveBusinessConsoleBarcodeErrors];
+
+export type ResolveBusinessConsoleBarcodeResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleBarcodeResolveResponse;
+};
+
+export type ResolveBusinessConsoleBarcodeResponse = ResolveBusinessConsoleBarcodeResponses[keyof ResolveBusinessConsoleBarcodeResponses];
+
+export type RetireBusinessConsoleBarcodeTemplateAssetData = {
+    body: NervIipBusinessGatewayWebEndpointsBarcodeRetireBusinessConsoleBarcodeTemplateAssetRequest;
+    path?: never;
+    query?: never;
+    url: '/api/business-console/v1/barcode/template-assets/retire';
+};
+
+export type RetireBusinessConsoleBarcodeTemplateAssetErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RetireBusinessConsoleBarcodeTemplateAssetError = RetireBusinessConsoleBarcodeTemplateAssetErrors[keyof RetireBusinessConsoleBarcodeTemplateAssetErrors];
+
+export type RetireBusinessConsoleBarcodeTemplateAssetResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfRetireTemplateAssetResponse;
+};
+
+export type RetireBusinessConsoleBarcodeTemplateAssetResponse = RetireBusinessConsoleBarcodeTemplateAssetResponses[keyof RetireBusinessConsoleBarcodeTemplateAssetResponses];
 
 export type ListBusinessConsoleApprovalTemplatesData = {
     body?: never;
@@ -20739,7 +26567,7 @@ export type ListBusinessConsoleApprovalTemplatesErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20809,7 +26637,7 @@ export type ListBusinessConsoleApprovalChainsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20908,7 +26736,7 @@ export type ListBusinessConsoleApprovalTasksErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -20952,7 +26780,7 @@ export type ListBusinessConsoleApprovalDecisionsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21024,7 +26852,7 @@ export type ListBusinessConsoleApprovalDelegationsErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21057,7 +26885,7 @@ export type CreateBusinessConsoleApprovalDelegationErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */
@@ -21095,7 +26923,7 @@ export type RevokeBusinessConsoleApprovalDelegationErrors = {
     /**
      * Bad Request
      */
-    400: FastEndpointsErrorResponse;
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */

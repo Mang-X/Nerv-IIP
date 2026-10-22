@@ -14,6 +14,7 @@ import {
   useBusinessMasterDataGroups,
   useBusinessMasterDataResources,
   useBusinessSkus,
+  useCreateSku,
   useTeamMembers,
   useBusinessWorkers,
   WORKER_DIRECTORY_MAX_PAGE_SIZE,
@@ -39,6 +40,7 @@ vi.mock('@nerv-iip/api-client', () => ({
     })),
   })),
   createBusinessConsoleSiteMutationOptions: mutationOptionStub(),
+  createBusinessConsoleStationMutationOptions: mutationOptionStub(),
   createBusinessConsoleProductionLineMutationOptions: mutationOptionStub(),
   createBusinessConsoleWorkCenterMutationOptions: mutationOptionStub(),
   registerBusinessConsoleDeviceAssetMutationOptions: mutationOptionStub(),
@@ -176,9 +178,9 @@ describe('business master data composables', () => {
   })
 
   it('creates SKUs and invalidates the SKU list query', async () => {
-    const { createSku } = useBusinessSkus()
+    const { create } = useCreateSku()
 
-    await createSku({
+    await create({
       organizationId: 'org-001',
       environmentId: 'env-dev',
       code: 'SKU-002',
@@ -239,7 +241,7 @@ describe('business master data composables', () => {
       },
     })
 
-    const { resources, resourcesTotal } = useBusinessMasterDataResources('uom')
+    const { filters, resources, resourcesTotal } = useBusinessMasterDataResources('uom')
 
     expect(listBusinessConsoleMasterDataResourcesQueryOptions).toHaveBeenCalledWith({
       query: {
@@ -257,6 +259,19 @@ describe('business master data composables', () => {
         code: 'EA',
       },
     ])
+
+    filters.keyword = '精加工'
+    coladaState.queryFactoriesById.get('listBusinessConsoleMasterDataResources')?.()
+    expect(listBusinessConsoleMasterDataResourcesQueryOptions).toHaveBeenLastCalledWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        resourceType: 'uom',
+        keyword: '精加工',
+        skip: 0,
+        take: 100,
+      },
+    })
   })
 
   it('lists multiple master data resource groups for linked selectors', () => {

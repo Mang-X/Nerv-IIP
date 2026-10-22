@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import NotificationInbox from '@/components/notifications/NotificationInbox.vue'
 import { AppShellT } from '@nerv-iip/app-shell'
-import { NvThemePicker, NvThemeToggle } from '@nerv-iip/ui'
+import { NvDropdownMenuItem, NvThemePicker, NvThemeToggle } from '@nerv-iip/ui'
+import { KeyRoundIcon } from '@lucide/vue'
 import { storeToRefs } from 'pinia'
 import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -21,7 +23,17 @@ const permissionCodes = computed(() =>
 const currentDomainId = computed(() => resolveDomainId(route.path))
 
 // Top capability areas, RBAC-filtered (permissive default — see navigation.ts).
-const topDomains = computed(() => permittedBy(BUSINESS_DOMAINS, permissionCodes.value))
+const topDomains = computed(() =>
+  permittedBy(BUSINESS_DOMAINS, permissionCodes.value).flatMap((domain) => {
+    if (domain.id !== 'mes') return [domain]
+
+    const firstPage = permittedBy(
+      DOMAIN_SIDE_NAV.mes.flatMap((group) => group.items),
+      permissionCodes.value,
+    )[0]
+    return firstPage ? [{ ...domain, to: firstPage.to }] : []
+  }),
+)
 
 // Current domain's side nav, with empty groups dropped after permission filtering.
 const sideNav = computed(() =>
@@ -78,8 +90,20 @@ function openSearch() {
     @open-search="openSearch"
   >
     <template #header-actions>
+      <NotificationInbox
+        v-if="
+          hasSelectedBusinessContext &&
+          principal?.permissionCodes?.includes('notifications.messages.read')
+        "
+      />
       <NvThemePicker />
       <NvThemeToggle />
+    </template>
+    <template #user-menu-items>
+      <NvDropdownMenuItem @select="router.push('/change-password')">
+        <KeyRoundIcon class="size-4" aria-hidden="true" />
+        修改密码
+      </NvDropdownMenuItem>
     </template>
     <section
       v-if="showBusinessContextEmptyState"
@@ -88,9 +112,9 @@ function openSearch() {
     >
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p class="font-medium">未选择业务上下文</p>
+          <p class="font-medium">账号尚未分配组织</p>
           <p class="text-muted-foreground">
-            当前账号未返回组织或环境。请联系管理员补齐业务上下文，或退出后使用已配置账号登录。
+            请联系管理员为当前账号分配组织，或退出后换用已分配组织的账号登录。
           </p>
         </div>
         <button

@@ -12,11 +12,17 @@ using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
+using Nerv.IIP.Business.Mes.Web.Application.Quality;
+using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using NetCorePal.Extensions.Repository;
+using Nerv.IIP.Contracts.MasterData;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 
-public sealed record ProductionReportCommandResult(ProductionReportId Id, string ReportNo);
+public sealed record ProductionReportCommandResult(
+    ProductionReportId Id,
+    string ReportNo,
+    IReadOnlyCollection<string> SerialNumbers);
 
 public sealed record ReverseProductionReportCommandResult(ProductionReportId Id, string ReportNo, string OriginalReportNo);
 
@@ -44,7 +50,12 @@ public sealed record RecordProductionReportCommand(
     string? DefectRecordNo = null,
     string? ProducedLotNo = null,
     string? SerialNo = null,
-    string Source = "manual") : ICommand<ProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand
+    string SerialTrackingPolicy = MasterDataSerialTrackingPolicies.None,
+    IReadOnlyCollection<string>? SerialNumbers = null,
+    string Source = "manual",
+    // 操作人由前线 HTTP 边界从已认证 principal 注入，不由业务载荷携带。
+    string? ReportedBy = null,
+    string? ReportIntentFingerprint = null) : ICommand<ProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand
 {
     internal bool PersistsCallerIntentReceipt { get; private init; } = true;
 
@@ -67,7 +78,10 @@ public sealed record RecordProductionReportCommand(
         string? DefectRecordNo = null,
         string? ProducedLotNo = null,
         string? SerialNo = null,
-        string Source = "manual")
+        string SerialTrackingPolicy = MasterDataSerialTrackingPolicies.None,
+        IReadOnlyCollection<string>? SerialNumbers = null,
+        string Source = "manual",
+        string? ReportedBy = null)
         : this(
             OrganizationId,
             EnvironmentId,
@@ -94,7 +108,10 @@ public sealed record RecordProductionReportCommand(
             DefectRecordNo,
             ProducedLotNo,
             SerialNo,
-            Source)
+            SerialTrackingPolicy,
+            SerialNumbers,
+            Source,
+            ReportedBy)
     {
         PersistsCallerIntentReceipt = false;
     }
@@ -122,6 +139,11 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
         RuleFor(x => x.Source).NotEmpty().MaximumLength(50).Must(ProductionReport.IsSupportedSource)
             .WithMessage("Production report source must be manual or telemetry.");
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.ReportedBy).MaximumLength(ProductionReport.ReportedByMaxLength);
+        RuleFor(x => x.ReportIntentFingerprint)
+            .Must(value => value is null || !string.IsNullOrWhiteSpace(value))
+            .WithMessage("Report intent fingerprint must be nonblank when provided.")
+            .MaximumLength(ProductionReport.ReportIntentFingerprintMaxLength);
         RuleForEach(x => x.ConsumedMaterialLots).ChildRules(lot =>
         {
             lot.RuleFor(x => x.MaterialId).NotEmpty().MaximumLength(100);
@@ -132,32 +154,29 @@ public sealed class RecordProductionReportCommandValidator : AbstractValidator<R
     }
 }
 
-public sealed class RecordProductionReportCommandHandler(ApplicationDbContext dbContext, MesCodingService? codingService = null)
+public sealed class RecordProductionReportCommandHandler(
+    ApplicationDbContext dbContext,
+    IProductionReportOeeDimensionSnapshotProvider oeeDimensionSnapshotProvider,
+    IMesFirstArticleGate firstArticleGate,
+    MesCodingService? codingService = null)
     : ICommandHandler<RecordProductionReportCommand, ProductionReportCommandResult>
 {
     private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
 
     public async Task<ProductionReportCommandResult> Handle(RecordProductionReportCommand request, CancellationToken cancellationToken)
     {
+        var serialAssignment = MesDomainRuleGuard.Enforce(() => ProductionReportSerialNumberAssignment.Create(
+            request.SerialTrackingPolicy,
+            request.GoodQuantity,
+            request.SerialNumbers,
+            request.SerialNo));
+
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId, "production-report",
             null,
             request.PersistsCallerIntentReceipt ? request.IdempotencyKey : null,
-            MesCodingService.Fingerprint(
-                request.WorkOrderId,
-                request.OperationTaskId,
-                request.GoodQuantity,
-                request.ScrapQuantity,
-                request.ReworkQuantity,
-                request.CompletesOperation,
-                request.ReportedAtUtc,
-                request.ScrapReasonCode,
-                request.DefectRecordNo,
-                request.ProducedLotNo,
-                request.SerialNo,
-                request.Source,
-                ConsumedMaterialLotsFingerprint(request.ConsumedMaterialLots)),
+            ProductionReportFingerprint(request, serialAssignment),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -166,7 +185,33 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                     x.EnvironmentId == request.EnvironmentId &&
                     x.ReportNo == allocation.Code,
                 cancellationToken);
-            return new ProductionReportCommandResult(existing.Id, existing.ReportNo);
+            var existingSerialNumbers = await dbContext.ProductionReportSerialNumbers
+                .AsNoTracking()
+                .Where(x =>
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.ReportNo == existing.ReportNo)
+                .OrderBy(x => x.SequenceNo)
+                .Select(x => x.SerialNumber)
+                .ToArrayAsync(cancellationToken);
+            return new ProductionReportCommandResult(existing.Id, existing.ReportNo, existingSerialNumbers);
+        }
+
+        var normalizedSerialNumbers = serialAssignment.SerialNumbers;
+        if (normalizedSerialNumbers.Count > 0)
+        {
+            var conflictingSerialNumber = await dbContext.ProductionReportSerialNumbers
+                .AsNoTracking()
+                .Where(x =>
+                    x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    normalizedSerialNumbers.Contains(x.SerialNumber))
+                .Select(x => x.SerialNumber)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (conflictingSerialNumber is not null)
+            {
+                throw new KnownException($"生产序列号已被报工占用，SerialNumber = {conflictingSerialNumber}");
+            }
         }
 
         var workOrder = await dbContext.WorkOrders.SingleOrDefaultAsync(
@@ -175,6 +220,28 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 x.WorkOrderIdValue == request.WorkOrderId,
             cancellationToken)
             ?? throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
+
+        // 未下达的工单不受理报工（#3119）。
+        //
+        // **为什么这条守卫落在受理路径上、而不是落在 WorkOrder.RecordProductionProgress 里**
+        // （票面原建议是后者）：本文件下方 `if (isOutputOperation)` 只在**产出工序**上调那个域方法，
+        // 非产出工序的报工根本不经过它。而 #3113 记下的最坏形态恰恰是多工序工单的非末工序报工
+        // ——它既不翻工单状态、也不会被域方法拦住。把守卫写进域方法会得到一条**只覆盖产出工序**的护栏，
+        // 而它的名字（"工单是否可执行"）会让后来人以为报工这一面已经关死。
+        // 受理是唯一一处**新增**报工都必经的关口，所以不变量只在这里把一次。
+        // 说清楚它不覆盖什么：`ProductionReports` 在生产面还有第二个写入点——
+        // 冲销（本文件 ReverseProductionReportCommandHandler），它同样改工单进度、
+        // 还能经 OperationTask.ReopenAfterReportReversal 把工序推回 InProgress。
+        // **有意不拦冲销**：它只能冲销**既有**报工，在 created 工单上纠正误报是合理的，
+        // 而补救跑完后 created 工单本就不该再有报工。别把这里读成「报工面已全关死」。
+        // 域侧 WorkOrder.NonExecutableStatuses 保持原样不动——#3000 的回填用它的补集选人，
+        // 把 created 塞进去会同时改掉那份选人口径（票面已写明）。
+        if (string.Equals(workOrder.Status, WorkOrder.CreatedStatus, StringComparison.Ordinal))
+        {
+            throw new KnownException(
+                MesReadinessReasonTexts.WorkOrderNotReleasedMessage);
+        }
+
         var operationTask = await dbContext.OperationTasks.SingleOrDefaultAsync(
             x => x.OrganizationId == request.OrganizationId &&
                 x.EnvironmentId == request.EnvironmentId &&
@@ -192,6 +259,17 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 "report",
                 operationTask.Status.ToString());
         }
+
+        // 首件门禁（#2780）：拦的是**批量**报工，不是首件那一件。
+        // 「这一次是不是首件那一件」由 Quality 的首件进度直接回答（not-opened = 任务未开出，
+        // 而开单的唯一触发点就是本次报工的事件），MES 不用本地报工历史去猜——猜出来的判据
+        // 与 Quality 的建单条件不等价，会把「已报过工但任务还没开出」的工序永久锁死。
+        await firstArticleGate.EnsureBatchReportAllowedAsync(
+            request.OrganizationId,
+            request.EnvironmentId,
+            request.WorkOrderId,
+            request.OperationTaskId,
+            cancellationToken);
 
         // 工序级累计合格量是所有工序报工的共同权威边界；不能只依赖末工序对工单聚合的回写。
         var reportedGoodQuantity = await dbContext.ProductionReports
@@ -226,9 +304,18 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
         var producedLotNo = request.ProducedLotNo;
         if (isOutputOperation && request.GoodQuantity > 0m && string.IsNullOrWhiteSpace(producedLotNo))
         {
-            producedLotNo = $"{request.WorkOrderId}-{request.OperationTaskId}-{allocation.Code}";
+            producedLotNo = $"LOT-{allocation.Code}";
         }
 
+        var oeeProjection = ProductionReportOeeProjectionFactory.Create(operationTask);
+        var oeeDimensionSnapshot = await oeeDimensionSnapshotProvider.CaptureAsync(
+            new ProductionReportOeeDimensionSnapshotRequest(
+                request.OrganizationId,
+                request.EnvironmentId,
+                operationTask.DeviceAssetId,
+                operationTask.WorkCenterId,
+                operationTask.ShiftId),
+            cancellationToken);
         var report = ProductionReport.Record(
             request.OrganizationId,
             request.EnvironmentId,
@@ -243,10 +330,13 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
             request.ScrapReasonCode,
             request.DefectRecordNo,
             producedLotNo,
-            request.SerialNo,
-            ProductionReportOeeProjectionFactory.Create(operationTask),
+            null,
+            oeeProjection,
             request.Source,
-            consumedMaterialLots.Count);
+            consumedMaterialLots.Count,
+            request.ReportedBy,
+            oeeDimensionSnapshot,
+            request.ReportIntentFingerprint);
 
         var duplicateLot = consumedMaterialLots
             .GroupBy(x => $"{x.MaterialId.ToUpperInvariant()}|{x.MaterialLotId.ToUpperInvariant()}", StringComparer.Ordinal)
@@ -291,7 +381,6 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                     (x.OperationTaskId == null || x.OperationTaskId == request.OperationTaskId) &&
                     x.MaterialId == lot.MaterialId &&
                     x.MaterialLotId == lot.MaterialLotId)
-                .Select(x => new { x.RequestNo, x.UomCode, x.ReceivedQuantity, x.TargetSiteCode, x.TargetLocationCode })
                 .SingleOrDefaultAsync(cancellationToken);
             if (materialIssueRequest is null)
             {
@@ -312,6 +401,7 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 throw new KnownException($"累计耗料超过线边接收数量，MaterialLotId = {lot.MaterialLotId}");
             }
 
+            var ownership = materialIssueRequest.GetSourceAllocations().FirstOrDefault();
             materialConsumptions.Add(ProductionReportMaterialConsumption.Record(
                 request.OrganizationId,
                 request.EnvironmentId,
@@ -325,7 +415,9 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 lot.MaterialIssueRequestNo,
                 // 耗料位置来自领料单落库的线边库位（#1322），不再硬编码 production/line-side。
                 materialIssueRequest.TargetSiteCode,
-                materialIssueRequest.TargetLocationCode));
+                materialIssueRequest.TargetLocationCode,
+                ownership?.OwnerType ?? "production",
+                ownership?.OwnerId));
         }
 
         workOrder.RegisterCostReport(consumedMaterialLots.Count);
@@ -341,10 +433,49 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 dbContext,
                 operationTask,
                 cancellationToken);
-            MesDomainRuleGuard.Enforce(() => operationTask.Complete(request.ReportedAtUtc));
+            await OperationActualTimeSettlementCoordinator.CompleteAsync(
+                dbContext,
+                operationTask,
+                request.ReportedAtUtc,
+                [report.ReportNo],
+                cancellationToken);
         }
 
         dbContext.ProductionReports.Add(report);
+        dbContext.ProductionReportSerialNumbers.AddRange(serialAssignment.CreateFacts(report));
+
+        if (request.CompletesOperation)
+        {
+            var participants = await dbContext.OperationTaskParticipants
+                .AsNoTracking()
+                .Where(x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId &&
+                    x.OperationTaskId == request.OperationTaskId)
+                .ToArrayAsync(cancellationToken);
+            if (participants.Length == 0 && !string.IsNullOrWhiteSpace(operationTask.AssignedUserId))
+            {
+                participants =
+                [
+                    OperationTaskParticipant.Register(
+                        request.OrganizationId,
+                        request.EnvironmentId,
+                        request.OperationTaskId,
+                        operationTask.AssignedUserId,
+                        operationTask.AssignedUserName,
+                        100m),
+                ];
+            }
+
+            dbContext.ProductionReportLaborAllocations.AddRange(
+                ProductionReportLaborAllocation.Allocate(
+                    request.OrganizationId,
+                    request.EnvironmentId,
+                    report.ReportNo,
+                    request.WorkOrderId,
+                    request.OperationTaskId,
+                    operationTask.LaborTimeTicks,
+                    participants));
+        }
         dbContext.ProductionReportMaterialConsumptions.AddRange(materialConsumptions);
         if (isOutputOperation && request.GoodQuantity > 0m)
         {
@@ -355,13 +486,13 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 request.OperationTaskId,
                 report.ReportNo,
                 report.ProducedLotNo!,
-                report.SerialNo,
+                null,
                 request.GoodQuantity,
                 request.ReportedAtUtc));
         }
 
         await Task.CompletedTask;
-        return new ProductionReportCommandResult(report.Id, report.ReportNo);
+        return new ProductionReportCommandResult(report.Id, report.ReportNo, serialAssignment.SerialNumbers);
     }
 
     private static string ConsumedMaterialLotsFingerprint(IReadOnlyCollection<ConsumedMaterialLotInput>? lots)
@@ -372,6 +503,51 @@ public sealed class RecordProductionReportCommandHandler(ApplicationDbContext db
                 .Select(x => $"{x.MaterialId.Trim().ToUpperInvariant()}|{x.MaterialLotId.Trim().ToUpperInvariant()}|{x.ConsumedQuantity:0.######}|{x.MaterialIssueRequestNo.Trim().ToUpperInvariant()}")
                 .Order(StringComparer.Ordinal));
     }
+
+    private static string ProductionReportFingerprint(
+        RecordProductionReportCommand request,
+        ProductionReportSerialNumberAssignment serialAssignment)
+    {
+        List<object?> parts =
+        [
+            request.WorkOrderId,
+            request.OperationTaskId,
+            request.GoodQuantity,
+            request.ScrapQuantity,
+            request.ReworkQuantity,
+            request.CompletesOperation,
+            request.ReportedAtUtc,
+            request.ScrapReasonCode,
+            request.DefectRecordNo,
+            request.ProducedLotNo,
+        ];
+
+        if (request.SerialNumbers is null &&
+            string.Equals(
+                request.SerialTrackingPolicy.Trim(),
+                MasterDataSerialTrackingPolicies.None,
+                StringComparison.Ordinal))
+        {
+            parts.Add(request.SerialNo);
+        }
+        else
+        {
+            parts.Add(serialAssignment.SerialTrackingPolicy);
+            parts.Add(SerialNumbersFingerprint(serialAssignment.SerialNumbers));
+        }
+
+        parts.Add(request.Source);
+        if (request.ReportIntentFingerprint is not null)
+        {
+            parts.Add($"report-intent-fingerprint:value:{request.ReportIntentFingerprint}");
+        }
+
+        parts.Add(ConsumedMaterialLotsFingerprint(request.ConsumedMaterialLots));
+        return MesCodingService.Fingerprint(parts.ToArray());
+    }
+
+    private static string SerialNumbersFingerprint(IReadOnlyList<string> serialNumbers) =>
+        string.Concat(serialNumbers.Select(x => $"{x.Length}:{x}"));
 }
 
 public sealed record ReverseProductionReportCommand(
@@ -381,7 +557,7 @@ public sealed record ReverseProductionReportCommand(
     string Reason,
     DateTimeOffset ReversedAtUtc,
     string ActorRef,
-    string? IdempotencyKey = null) : ICommand<ReverseProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand;
+    string? IdempotencyKey = null) : ICommand<ReverseProductionReportCommandResult>, IOperationTaskConcurrencyRetryCommand, IWorkOrderConcurrencyRetryCommand;
 
 public sealed class ReverseProductionReportCommandValidator : AbstractValidator<ReverseProductionReportCommand>
 {
@@ -499,7 +675,11 @@ public sealed class ReverseProductionReportCommandHandler(ApplicationDbContext d
 
         if (original.CompletesOperation)
         {
-            operationTask.ReopenAfterReportReversal();
+            await OperationActualTimeSettlementCoordinator.VoidAsync(
+                dbContext,
+                operationTask,
+                request.ReversedAtUtc,
+                cancellationToken);
         }
 
         var reversal = ProductionReport.Reverse(
@@ -616,7 +796,7 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(
             request.EnvironmentId, "finished-goods-receipt-request",
             null,
             request.IdempotencyKey,
-            MesCodingService.Fingerprint(request.WorkOrderId, request.SkuId, request.Quantity, request.UomCode, request.RequestedAtUtc, request.UnitCost, request.ProducedLotNo, request.SerialNo, request.ProductionDate, request.ExpiryDate),
+            MesCodingService.Fingerprint(request.WorkOrderId, request.SkuId, request.Quantity, request.UomCode, request.RequestedAtUtc, request.ProducedLotNo, request.SerialNo, request.ProductionDate, request.ExpiryDate),
             cancellationToken);
         if (allocation.IsIdempotentReplay)
         {
@@ -714,7 +894,7 @@ public sealed class CreateFinishedGoodsReceiptRequestCommandHandler(
                     request.RequestedAtUtc,
                     request.ProducedLotNo,
                     request.SerialNo,
-                    request.UnitCost ?? workOrder.CapitalizedUnitCost,
+                    workOrder.CapitalizedUnitCost,
                     request.ProductionDate,
                     request.ExpiryDate);
                 dbContext.FinishedGoodsReceiptRequests.Add(receiptRequest);

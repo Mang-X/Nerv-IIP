@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
@@ -49,7 +50,7 @@ public sealed class WmsInventoryMultilinePostingAcceptanceTests
         wmsDb.InboundOrders.Add(inbound);
         await wmsDb.SaveChangesAsync(CancellationToken.None);
 
-        await new CompleteInboundOrderCommandHandler(wmsDb).Handle(
+        await new CompleteInboundOrderCommandHandler(wmsDb, new WmsTrustedCompletionAcceptanceFixture.ReceiptRoute()).Handle(
             new CompleteInboundOrderCommand(
                 inbound.Id,
                 "idem-in-multi-001",
@@ -141,7 +142,6 @@ public sealed class WmsInventoryMultilinePostingAcceptanceTests
         await new CompleteOutboundOrderCommandHandler(wmsDb).Handle(
             new CompleteOutboundOrderCommand(
                 outbound.Id,
-                "PACK-001",
                 true,
                 "idem-out-multi-001",
                 OrganizationId: outbound.OrganizationId,
@@ -264,7 +264,12 @@ public sealed class WmsInventoryMultilinePostingAcceptanceTests
         var options = new DbContextOptionsBuilder<InventoryDbContext>()
             .UseInMemoryDatabase($"wms-inventory-multiline-{Guid.NewGuid():N}")
             .Options;
-        return new InventoryDbContext(options, new NoopMediator());
+        var db = new InventoryDbContext(options, new NoopMediator());
+        db.StockLocations.AddRange(
+            StockLocation.CreateOrUpdate(null, "org-001", "env-dev", "LOC-A-01", "storage", "SITE-01", null, "active"),
+            StockLocation.CreateOrUpdate(null, "org-001", "env-dev", "LOC-A-02", "storage", "SITE-01", null, "active"));
+        db.SaveChanges();
+        return db;
     }
 
     private sealed class InventoryCommandExecutingSender(InventoryDbContext dbContext) : ISender

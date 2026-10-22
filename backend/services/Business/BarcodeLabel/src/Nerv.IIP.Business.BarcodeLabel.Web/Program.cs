@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text.Json;
 using FastEndpoints;
@@ -6,6 +7,11 @@ using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Auth;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.TemplateAssetRetirements;
+using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Retirement;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Commands.PrintBatches;
 using Nerv.IIP.Business.BarcodeLabel.Web.Application.Seed;
 using Nerv.IIP.Business.BarcodeLabel.Web.Endpoints.BarcodeLabel;
 using Nerv.IIP.Business.BarcodeLabel.Domain.Printing;
@@ -13,6 +19,7 @@ using Nerv.IIP.Business.BarcodeLabel.Infrastructure.Printing;
 using Nerv.IIP.Localization;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Observability;
+using Nerv.IIP.Sdk.FileStorage;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Context.CAP;
 using NetCorePal.Extensions.DistributedLocks;
@@ -34,9 +41,19 @@ try
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
+    builder.Services.AddSingleton<IValidateOptions<TemplateAssetRetirementProofOptions>, TemplateAssetRetirementProofOptionsValidator>();
+    builder.Services.AddOptions<TemplateAssetRetirementProofOptions>()
+        .Bind(builder.Configuration.GetSection(TemplateAssetRetirementProofOptions.SectionName))
+        .ValidateOnStart();
+    builder.Services.AddSingleton<TemplateAssetRetirementProofVerifier>();
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
-        .AddFastEndpoints(o => o.IncludeAbstractValidators = true)
+        .AddFastEndpoints(o =>
+        {
+            o.IncludeAbstractValidators = true;
+            o.Assemblies = [Assembly.GetExecutingAssembly()];
+            o.DisableAutoDiscovery = true;
+        })
         .SwaggerDocument(o =>
         {
             o.DocumentSettings = s =>
@@ -58,9 +75,96 @@ try
     }
 
     builder.Services.AddBarcodeLabelPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
-    builder.Services.Configure<LabelPrinterOptions>(builder.Configuration.GetSection("LabelPrinter"));
+    builder.Services.TryAddSingleton(TimeProvider.System);
+    builder.Services.AddSingleton(TemplateAssetRetirementExecutorOptions.Load(builder.Configuration));
+    builder.Services.AddSingleton<ITemplateAssetRetirementSigner, TemplateAssetRetirementSigner>();
+    builder.Services.AddScoped<TemplateAssetRetirementExecutionStore>();
+    builder.Services.AddScoped<TemplateAssetRetirementExecutor>();
+    builder.Services.AddSingleton<CollectorRegistry>(Metrics.DefaultRegistry);
+    builder.Services.AddSingleton<TemplateAssetRetirementMetrics>();
+    if (!isTesting) builder.Services.AddHostedService<TemplateAssetRetirementWorker>();
+    var fileStorageBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
+        builder.Configuration,
+        builder.Environment,
+        "FileStorage:BaseUrl",
+        "http://localhost:5104");
+    if (fileStorageBaseAddress.Scheme != Uri.UriSchemeHttp
+        && fileStorageBaseAddress.Scheme != Uri.UriSchemeHttps)
+    {
+        throw new InvalidOperationException(
+            "FileStorage:BaseUrl must be an absolute HTTP(S) URI for BarcodeLabel template assets.");
+    }
+
+    builder.Services
+        .AddOptions<FileStorageClientOptions>()
+        .Bind(builder.Configuration.GetSection(FileStorageClientOptions.SectionName))
+        .Validate(
+            options => options.ConnectTimeout > TimeSpan.Zero,
+            "FileStorage:ConnectTimeout must be positive.")
+        .Validate(
+            options => options.RequestTimeout > TimeSpan.Zero,
+            "FileStorage:RequestTimeout must be positive.")
+        .Validate(
+            options => options.DownloadTimeout > TimeSpan.Zero,
+            "FileStorage:DownloadTimeout must be positive.")
+        .ValidateOnStart();
+    builder.Services
+        .AddHttpClient<IFileStorageClient, HttpFileStorageClient>((services, client) =>
+        {
+            var options = services.GetRequiredService<IOptions<FileStorageClientOptions>>().Value;
+            client.BaseAddress = fileStorageBaseAddress;
+            client.Timeout = options.RequestTimeout;
+            var token = services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken;
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        })
+        .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            ConnectTimeout = services.GetRequiredService<IOptions<FileStorageClientOptions>>().Value.ConnectTimeout,
+        })
+        .UseHttpClientMetrics();
+    builder.Services
+        .AddHttpClient(FileStorageClientOptions.DownloadClientName, (services, client) =>
+        {
+            client.BaseAddress = fileStorageBaseAddress;
+            client.Timeout = Timeout.InfiniteTimeSpan;
+            var token = services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken;
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        })
+        .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            ConnectTimeout = services.GetRequiredService<IOptions<FileStorageClientOptions>>().Value.ConnectTimeout,
+        })
+        .UseHttpClientMetrics();
+    builder.Services.AddHttpClient<TemplateAssetRetirementClient>((services, client) =>
+        {
+            client.BaseAddress = fileStorageBaseAddress;
+            client.Timeout = services.GetRequiredService<IOptions<FileStorageClientOptions>>().Value.RequestTimeout;
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer",
+                services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken);
+        })
+        .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            ConnectTimeout = services.GetRequiredService<IOptions<FileStorageClientOptions>>().Value.ConnectTimeout,
+        })
+        .UseHttpClientMetrics();
+    builder.Services.AddScoped<HttpFileStorageLabelTemplateAssetAdapter>(services =>
+        new HttpFileStorageLabelTemplateAssetAdapter(
+            services.GetRequiredService<IFileStorageClient>(),
+            services.GetRequiredService<IHttpClientFactory>().CreateClient(FileStorageClientOptions.DownloadClientName),
+            services.GetRequiredService<IOptions<FileStorageClientOptions>>().Value.DownloadTimeout));
+    builder.Services.AddScoped<ILabelTemplateAssetPort>(services =>
+        services.GetRequiredService<HttpFileStorageLabelTemplateAssetAdapter>());
+    builder.Services.AddSingleton<IValidateOptions<LabelPrinterOptions>, LabelPrinterOptionsValidator>();
+    builder.Services
+        .AddOptions<LabelPrinterOptions>()
+        .Bind(builder.Configuration.GetSection("LabelPrinter"))
+        .ValidateOnStart();
     builder.Services.AddSingleton<ZplTcpLabelPrinter>();
     builder.Services.AddSingleton<ILabelPrinter, ConfiguredLabelPrinter>();
+    builder.Services.AddScoped<ILabelPrintAttemptRecorder, IndependentLabelPrintAttemptRecorder>();
     builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
@@ -171,7 +275,14 @@ try
     }).UseSwaggerGen();
     app.UseHttpMetrics();
     app.MapHealthChecks("/health");
-    app.MapMetrics();
+    app.MapMetrics(options => options.Registry = app.Services.GetRequiredService<CollectorRegistry>());
+    var retirementMetrics = app.Services.GetRequiredService<TemplateAssetRetirementMetrics>();
+    app.Services.GetRequiredService<CollectorRegistry>().AddBeforeCollectCallback(async ct =>
+    {
+        await using var scope = app.Services.CreateAsyncScope();
+        await retirementMetrics.RefreshAsync(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
+            scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow(), ct);
+    });
 
     await app.RunAsync();
 }

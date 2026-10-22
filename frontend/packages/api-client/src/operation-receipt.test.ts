@@ -6,11 +6,13 @@ import {
   verifyBusinessConsoleOperationReadback,
 } from './operation-receipt'
 import {
+  getBusinessConsoleQualityNcr,
   listBusinessConsoleWmsCountExecutions,
   listBusinessConsoleWmsOutboundOrders,
 } from './generated/business-console/sdk.gen'
 
 vi.mock('./generated/business-console/sdk.gen', () => ({
+  getBusinessConsoleQualityNcr: vi.fn(),
   getBusinessConsoleMesProductionReport: vi.fn(),
   listBusinessConsoleEquipmentAlarms: vi.fn(),
   listBusinessConsoleWmsCountExecutions: vi.fn(),
@@ -293,6 +295,115 @@ describe('business operation receipt confirmation', () => {
     expect(readback).toHaveBeenCalledTimes(2)
   })
 
+  it('confirms NCR rework only after the authoritative detail exposes a created system work order', async () => {
+    const receipt = { operationType: 'quality.ncr.rework', resourceId: 'ncr-1' }
+    expect(
+      verifyBusinessConsoleOperationReadback(receipt, {
+        success: true,
+        data: {
+          id: 'ncr-1',
+          dispositionType: 'rework',
+          reworkWorkOrderCreationStatus: 'requested',
+        },
+      }),
+    ).toEqual({ state: 'pending' })
+    expect(
+      verifyBusinessConsoleOperationReadback(receipt, {
+        success: true,
+        data: {
+          id: 'ncr-1',
+          dispositionType: 'rework',
+          reworkWorkOrderCreationStatus: 'created',
+        },
+      }),
+    ).toEqual({ state: 'indeterminate' })
+    expect(
+      verifyBusinessConsoleOperationReadback(receipt, {
+        success: true,
+        data: {
+          id: 'ncr-1',
+          dispositionType: 'rework',
+          reworkWorkOrderCreationStatus: 'created',
+          reworkWorkOrderId: 'RW-001',
+        },
+      }),
+    ).toEqual({ state: 'confirmed-success' })
+    expect(
+      verifyBusinessConsoleOperationReadback(receipt, {
+        success: true,
+        data: {
+          id: 'ncr-1',
+          dispositionType: 'rework',
+          reworkWorkOrderCreationStatus: 'failed',
+        },
+      }),
+    ).toEqual({
+      state: 'confirmed-business-failure',
+      message: '返工工单创建失败，请刷新后按最新状态处理',
+      failureCode: 'rework-work-order-creation-failed',
+    })
+  })
+
+  it('reports an accepted NCR rework as processing while the system work order remains requested', async () => {
+    const envelope = accepted(
+      'quality.ncr.rework',
+      'ncr-1',
+      '/api/business-console/v1/quality/ncrs/ncr-1?organizationId=org-1&environmentId=env-1',
+    )
+    const readback = vi.fn().mockResolvedValue({
+      success: true,
+      data: {
+        id: 'ncr-1',
+        dispositionType: 'rework',
+        reworkWorkOrderCreationStatus: 'requested',
+      },
+    })
+
+    await expect(
+      confirmBusinessConsoleOperation(envelope, {
+        expectedOperationType: 'quality.ncr.rework',
+        expectedIdempotencyKey: 'idem:quality.ncr.rework:ncr-1',
+        expectedResourceId: 'ncr-1',
+        readback,
+        retryDelayMs: 0,
+      }),
+    ).rejects.toMatchObject({
+      name: 'BusinessOperationPendingError',
+      message: '返工请求已受理，系统工单仍在创建中。请刷新查看最新状态。',
+    })
+    expect(readback).toHaveBeenCalledTimes(3)
+  })
+
+  it('reports an NCR rework as unknown when the latest authoritative readback is unavailable', async () => {
+    const envelope = accepted(
+      'quality.ncr.rework',
+      'ncr-unknown',
+      '/api/business-console/v1/quality/ncrs/ncr-unknown?organizationId=org-1&environmentId=env-1',
+    )
+    const readback = vi
+      .fn()
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          id: 'ncr-unknown',
+          dispositionType: 'rework',
+          reworkWorkOrderCreationStatus: 'requested',
+        },
+      })
+      .mockRejectedValueOnce(new Error('quality unavailable'))
+
+    await expect(
+      confirmBusinessConsoleOperation(envelope, {
+        expectedOperationType: 'quality.ncr.rework',
+        expectedIdempotencyKey: 'idem:quality.ncr.rework:ncr-unknown',
+        expectedResourceId: 'ncr-unknown',
+        readback,
+        attempts: 2,
+        retryDelayMs: 0,
+      }),
+    ).rejects.toMatchObject({ name: 'BusinessOperationUnconfirmedError' })
+  })
+
   it('surfaces a failed count movement and keeps completed-without-posting indeterminate', async () => {
     expect(
       verifyBusinessConsoleOperationReadback(
@@ -345,6 +456,73 @@ describe('business operation receipt confirmation', () => {
       }),
     ).resolves.toBe(envelope)
     expect(readback).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps polling an outbound review while inventory posting is still pending', async () => {
+    // #3926：复核已落库、过账是异步的；刚提交读到「过账中」不能判成「尚未确认」。
+    const envelope = accepted('wms.outbound-order.complete', 'out-1')
+    const postingPending = {
+      success: true,
+      data: {
+        items: [
+          {
+            outboundOrderId: 'out-1',
+            status: 'InventoryPostingPending',
+            inventoryPostingStatus: 'pending',
+          },
+        ],
+      },
+    }
+    const posted = {
+      success: true,
+      data: {
+        items: [
+          { outboundOrderId: 'out-1', status: 'Completed', inventoryPostingStatus: 'posted' },
+        ],
+      },
+    }
+    const options = {
+      expectedOperationType: 'wms.outbound-order.complete',
+      expectedIdempotencyKey: 'idem:wms.outbound-order.complete:out-1',
+      expectedResourceId: 'out-1',
+      retryDelayMs: 0,
+    }
+
+    const settles = vi.fn().mockResolvedValueOnce(postingPending).mockResolvedValue(posted)
+    await expect(
+      confirmBusinessConsoleOperation(envelope, { ...options, readback: settles }),
+    ).resolves.toBe(envelope)
+    expect(settles).toHaveBeenCalledTimes(2)
+
+    const stillPosting = vi.fn().mockResolvedValue(postingPending)
+    await expect(
+      confirmBusinessConsoleOperation(envelope, { ...options, readback: stillPosting }),
+    ).rejects.toMatchObject({
+      name: 'BusinessOperationPendingError',
+      message: '出库复核已提交，库存正在过账。请稍后刷新查看过账结果。',
+    })
+  })
+
+  it('treats either posting signal alone as an outbound review still posting', () => {
+    const receipt = { operationType: 'wms.outbound-order.complete', resourceId: 'out-1' }
+    const readback = (item: Record<string, string>) => ({
+      success: true,
+      data: { items: [{ outboundOrderId: 'out-1', ...item }] },
+    })
+    // 只有行级过账状态是 pending：单头已是 Completed（两条判据各自要有鉴别力）。
+    expect(
+      verifyBusinessConsoleOperationReadback(
+        receipt,
+        readback({ status: 'Completed', inventoryPostingStatus: 'pending' }),
+      ),
+    ).toEqual({ state: 'pending' })
+    // 只有单头是 InventoryPostingPending：行级状态尚未派生。
+    expect(
+      verifyBusinessConsoleOperationReadback(
+        receipt,
+        readback({ status: 'InventoryPostingPending', inventoryPostingStatus: 'not-started' }),
+      ),
+    ).toEqual({ state: 'pending' })
   })
 
   it('surfaces a confirmed WMS posting failure without retrying readback', async () => {
@@ -472,6 +650,34 @@ describe('business operation receipt confirmation', () => {
         scopeKind: 'work-pool',
         scopeId: 'POOL-A',
       },
+      throwOnError: true,
+    })
+  })
+
+  it('dispatches NCR rework readback through the generated detail operation', async () => {
+    vi.mocked(getBusinessConsoleQualityNcr).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          id: 'ncr-1',
+          dispositionType: 'rework',
+          reworkWorkOrderCreationStatus: 'created',
+          reworkWorkOrderId: 'RW-001',
+        },
+      },
+    } as never)
+    const path =
+      '/api/business-console/v1/quality/ncrs/ncr-1?organizationId=org-1&environmentId=env-1'
+
+    await expect(
+      readBusinessConsoleOperationState(path, {
+        operationType: 'quality.ncr.rework',
+        resourceId: 'ncr-1',
+      }),
+    ).resolves.toMatchObject({ success: true })
+    expect(getBusinessConsoleQualityNcr).toHaveBeenCalledWith({
+      path: { ncrId: 'ncr-1' },
+      query: { organizationId: 'org-1', environmentId: 'env-1' },
       throwOnError: true,
     })
   })

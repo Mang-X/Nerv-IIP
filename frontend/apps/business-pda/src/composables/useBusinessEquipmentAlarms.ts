@@ -16,10 +16,9 @@ import {
 } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import {
-  useListFreshness,
   useListResponseState,
   useScopeBoundListResponse,
-} from '@/composables/useListFreshness'
+} from '@/composables/useScopeBoundListResponse'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
@@ -171,7 +170,6 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
     scopeKey,
     scopeReady,
   )
-  const lastUpdatedAt = useListFreshness(currentResponse, scopeReady)
   const { hasSuccessfulResponse, hasFailedResponse } = useListResponseState(
     currentResponse,
     scopeReady,
@@ -401,7 +399,6 @@ export function useBusinessEquipmentAlarms(initialFilters: Partial<EquipmentAlar
     organizationId,
     environmentId,
     scopeReady,
-    lastUpdatedAt,
     hasSuccessfulResponse,
     hasFailedResponse,
     pending: listQuery.isLoading,

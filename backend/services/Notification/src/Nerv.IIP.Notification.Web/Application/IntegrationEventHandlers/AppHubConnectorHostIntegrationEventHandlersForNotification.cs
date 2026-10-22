@@ -6,6 +6,7 @@ using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Notification.Infrastructure;
 using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
+using Nerv.IIP.Notification.Web.Application.Notifications;
 using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.Notification.Web.Application.IntegrationEventHandlers;
@@ -16,7 +17,8 @@ public sealed class ConnectorHostUnreachableIntegrationEventHandlerForNotificati
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
     IConfiguration configuration,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<ConnectorHostUnreachableIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.apphub-connector-host-unreachable";
@@ -87,7 +89,7 @@ public sealed class ConnectorHostUnreachableIntegrationEventHandlerForNotificati
             Summary: $"Connector Host {connectorHostId} for instance {instanceKey} is unreachable; last heartbeat {payload.LastHeartbeatAtUtc:O}, detected at {payload.DetectedAtUtc:O}, timeout {payload.HeartbeatTimeoutSeconds}s.",
             SuggestedRecipientRefs: recipientRefs);
 
-        await sender.Send(new SubmitNotificationIntentCommand(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, request, NotificationSummary.Render(request.Summary, summaryBudget), timeProvider.GetUtcNow()), cancellationToken);
     }
 }
 
@@ -97,7 +99,8 @@ public sealed class ConnectorHostRestoredIntegrationEventHandlerForNotification(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
     IConfiguration configuration,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    NotificationSummaryBudget summaryBudget)
     : IIntegrationEventHandler<ConnectorHostRestoredIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "notification.apphub-connector-host-restored";
@@ -168,7 +171,7 @@ public sealed class ConnectorHostRestoredIntegrationEventHandlerForNotification(
             Summary: $"Connector Host {connectorHostId} for instance {instanceKey} restored at {payload.RestoredAtUtc:O}.",
             SuggestedRecipientRefs: recipientRefs);
 
-        await sender.Send(new SubmitNotificationIntentCommand(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, request, timeProvider.GetUtcNow()), cancellationToken);
+        await sender.Send(new SubmitNotificationIntentCommand(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, request, NotificationSummary.Render(request.Summary, summaryBudget), timeProvider.GetUtcNow()), cancellationToken);
     }
 }
 

@@ -12,6 +12,7 @@ internal static class BusinessConsoleTestRequestBodies
         "/api/business-console/v1/master-data/workshops" or
         "/api/business-console/v1/master-data/sites" or
         "/api/business-console/v1/master-data/production-lines" or
+        "/api/business-console/v1/master-data/stations" or
         "/api/business-console/v1/master-data/work-centers" or
         "/api/business-console/v1/master-data/device-assets" or
         "/api/business-console/v1/master-data/shifts" or
@@ -131,6 +132,14 @@ internal static class BusinessConsoleTestRequestBodies
             ["code"] = "LINE-01",
             ["name"] = "Line 1",
             ["siteCode"] = "SITE-01",
+        },
+        "/api/business-console/v1/master-data/stations" => new()
+        {
+            ["organizationId"] = "org-001",
+            ["environmentId"] = "env-dev",
+            ["code"] = "ST-01",
+            ["name"] = "Station 1",
+            ["lineCode"] = "LINE-01",
         },
         "/api/business-console/v1/master-data/work-centers" => new()
         {

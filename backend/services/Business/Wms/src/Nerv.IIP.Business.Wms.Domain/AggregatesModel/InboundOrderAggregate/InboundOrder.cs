@@ -149,13 +149,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         string? assignedOperatorUserId = null,
         string? assignedPoolCode = null)
     {
-        var line = FindLine(lineNo);
-        EnsureCanCreatePutawayTask(line);
-        if (quantity > line.ReceivedQuantity)
-        {
-            throw new ArgumentOutOfRangeException(nameof(quantity), quantity, "Putaway quantity cannot exceed inbound line quantity.");
-        }
-
+        var line = EnsureCanCreatePutawayTask(lineNo, quantity);
         return WarehouseTask.CreatePutaway(
             OrganizationId,
             EnvironmentId,
@@ -174,10 +168,28 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             assignedPoolCode);
     }
 
+    /// <summary>
+    /// 上架任务的全部前置校验，不改状态。新建上架任务在分号之前先调它，
+    /// 失败的请求不占号、不留幂等绑定（#3918 审核）。
+    /// </summary>
+    public InboundOrderLine EnsureCanCreatePutawayTask(string lineNo, decimal quantity)
+    {
+        var line = FindLine(lineNo);
+        EnsureCanCreatePutawayTask(line);
+        if (quantity > line.ReceivedQuantity)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity), quantity, "Putaway quantity cannot exceed inbound line quantity.");
+        }
+
+        return line;
+    }
+
     public IReadOnlyCollection<InventoryMovementRequest> Complete(
         string idempotencyKey,
         long expectedVersion,
-        IReadOnlyCollection<InboundOrderLineCapture>? captures = null)
+        IReadOnlyCollection<InboundOrderLineCapture>? captures = null,
+        IReadOnlyDictionary<string, string>? inventoryLocationByLine = null,
+        IReadOnlyDictionary<string, decimal>? unitCostsByLine = null)
     {
         EnsureExpectedVersion(expectedVersion);
         EnsureOpen();
@@ -205,7 +217,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 line.SkuCode,
                 line.UomCode,
                 SiteCode,
-                line.StagingLocationCode,
+                InventoryLocationFor(line, inventoryLocationByLine),
                 line.LotNo,
                 line.SerialNo,
                 line.ReceiptQualityStatus,
@@ -213,7 +225,8 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 line.OwnerId,
                 line.ReceivedQuantity,
                 ProductionDate: line.ProductionDate,
-                ExpiryDate: line.ExpiryDate))
+                ExpiryDate: line.ExpiryDate,
+                unitCost: unitCostsByLine?[line.LineNo]))
             .ToArray();
         this.AddDomainEvent(new InboundOrderCompletedDomainEvent(this));
         return requests;
@@ -279,7 +292,11 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         Status = InboundOrderStatus.InventoryPostingFailed;
     }
 
-    public IReadOnlyCollection<InventoryMovementRequest> RetryInventoryPosting(string idempotencyKey)
+    public IReadOnlyCollection<InventoryMovementRequest> RetryInventoryPosting(
+        string idempotencyKey,
+        IReadOnlyDictionary<string, string>? inventoryLocationByLine = null,
+        IReadOnlyCollection<string>? failedLineNos = null,
+        IReadOnlyDictionary<string, decimal?>? unitCostsByLine = null)
     {
         if (Status != InboundOrderStatus.InventoryPostingFailed)
         {
@@ -288,9 +305,10 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
 
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
         EnsureHasLines();
+        var retryLines = RetryLines(failedLineNos);
         Status = InboundOrderStatus.Completed;
         var singleLine = lines.Count == 1;
-        var requests = lines.Select(line => InventoryMovementRequest.Create(
+        var requests = retryLines.Select(line => InventoryMovementRequest.Create(
                 OrganizationId,
                 EnvironmentId,
                 "inbound",
@@ -300,7 +318,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 line.SkuCode,
                 line.UomCode,
                 SiteCode,
-                line.StagingLocationCode,
+                InventoryLocationFor(line, inventoryLocationByLine),
                 line.LotNo,
                 line.SerialNo,
                 line.ReceiptQualityStatus,
@@ -308,9 +326,49 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 line.OwnerId,
                 line.ReceivedQuantity,
                 ProductionDate: line.ProductionDate,
-                ExpiryDate: line.ExpiryDate))
+                ExpiryDate: line.ExpiryDate,
+                unitCost: unitCostsByLine?[line.LineNo]))
             .ToArray();
         return requests;
+    }
+
+    private IReadOnlyCollection<InboundOrderLine> RetryLines(IReadOnlyCollection<string>? failedLineNos)
+    {
+        if (failedLineNos is null)
+        {
+            return lines;
+        }
+
+        var requestedLineNos = failedLineNos
+            .Select(lineNo => WmsText.Required(lineNo, nameof(failedLineNos)))
+            .ToHashSet(StringComparer.Ordinal);
+        if (requestedLineNos.Count == 0)
+        {
+            throw new InvalidOperationException("At least one failed inbound line is required for Inventory posting retry.");
+        }
+
+        var retryLines = lines
+            .Where(line => requestedLineNos.Contains(line.LineNo))
+            .ToArray();
+        if (retryLines.Length != requestedLineNos.Count)
+        {
+            var unknownLineNo = requestedLineNos
+                .Except(retryLines.Select(line => line.LineNo), StringComparer.Ordinal)
+                .First();
+            throw new InvalidOperationException($"Inbound line '{unknownLineNo}' was not found.");
+        }
+
+        return retryLines;
+    }
+
+    private static string InventoryLocationFor(
+        InboundOrderLine line,
+        IReadOnlyDictionary<string, string>? inventoryLocationByLine)
+    {
+        return inventoryLocationByLine is not null
+            && inventoryLocationByLine.TryGetValue(line.LineNo, out var locationCode)
+            ? WmsText.Required(locationCode, nameof(inventoryLocationByLine))
+            : line.StagingLocationCode;
     }
 
     private InboundOrderLine FindLine(string lineNo)

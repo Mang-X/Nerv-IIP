@@ -50,7 +50,8 @@ public sealed class PrepareMesMaterialIssueOutboundCommandHandler(ApplicationDbC
 {
     public const string LineNo = "1";
     private const string MaterialIssueQualityStatus = WmsReceivingQualityStatuses.Unrestricted;
-    private const string MaterialIssueOwnerType = "production";
+    // 领料出库拣的是本公司库存（#3930）：与 MES 来源解析取 company 货权一致；工单不是货主，不写 ownerId。
+    private const string MaterialIssueOwnerType = "company";
 
     public async Task<PrepareMesMaterialIssueOutboundResult> Handle(
         PrepareMesMaterialIssueOutboundCommand request,
@@ -96,7 +97,7 @@ public sealed class PrepareMesMaterialIssueOutboundCommandHandler(ApplicationDbC
                     null,
                     MaterialIssueQualityStatus,
                     MaterialIssueOwnerType,
-                    request.WorkOrderId)
+                    null)
             ]);
         dbContext.OutboundOrders.Add(order);
 

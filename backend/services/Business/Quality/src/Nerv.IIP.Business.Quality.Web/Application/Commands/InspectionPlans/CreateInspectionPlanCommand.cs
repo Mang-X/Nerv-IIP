@@ -1,5 +1,6 @@
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure.Repositories;
+using Nerv.IIP.Contracts.Quality;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Commands.InspectionPlans;
 
@@ -63,7 +64,7 @@ public sealed class CreateInspectionPlanCommandValidator : AbstractValidator<Cre
         RuleFor(x => x.AssignedInspectorUserId).MaximumLength(150);
         RuleFor(x => x.AssignedTeamId).MaximumLength(150);
         RuleFor(x => x)
-            .Must(x => !HasPeriodicPolicy(x) || string.Equals(x.Category?.Trim(), "operation", StringComparison.OrdinalIgnoreCase))
+            .Must(x => !HasPeriodicPolicy(x) || string.Equals(x.Category?.Trim(), QualityInspectionSourceTypes.Operation, StringComparison.OrdinalIgnoreCase))
             .WithMessage("只有 operation 类检验方案可以配置巡检策略。");
         RuleFor(x => x)
             .Must(x => !HasPeriodicPolicy(x) || (!string.IsNullOrWhiteSpace(x.SkuCode) && !string.IsNullOrWhiteSpace(x.WorkCenterId)))

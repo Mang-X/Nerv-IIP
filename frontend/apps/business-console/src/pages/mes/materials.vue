@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import { useMesMaterialIssueRequests } from '@/composables/useBusinessMes'
+import {
+  useMesLineSideInventoryBalances,
+  useMesMaterialIssueRequests,
+} from '@/composables/useBusinessMes'
+import LineSideInventoryBalancesPanel from '@/components/mes/LineSideInventoryBalancesPanel.vue'
 import {
   mesMaterialIssueStatusOptions,
   useMesReferenceLabels,
@@ -42,6 +46,18 @@ const {
   materialIssueRequestsTotal,
   refreshMaterialIssueRequests,
 } = useMesMaterialIssueRequests()
+const {
+  lineSideInventoryBalances,
+  lineSideInventoryError,
+  lineSideInventoryPage,
+  lineSideInventoryPageCount,
+  lineSideInventoryPageSize,
+  lineSideInventoryPending,
+  lineSideInventoryReady,
+  lineSideInventoryTotal,
+  goToLineSideInventoryPage,
+  refreshLineSideInventory,
+} = useMesLineSideInventoryBalances()
 const { page, pageSize } = usePagedList(filters, { resetOn: [() => filters.status] })
 const { resolveSku } = useMesDisplayNames()
 const { statusLabel } = useMesReferenceLabels()
@@ -55,7 +71,7 @@ const awaitingReceiptCount = computed(
       (r) => r.status?.toLowerCase() !== 'closed' && receiptShortfall(r) > 0,
     ).length,
 )
-const errorMessage = computed(() => formatError(materialIssueRequestsError.value))
+const errorMessage = computed(() => inlineErrorMessage(materialIssueRequestsError.value))
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
 })
@@ -97,9 +113,6 @@ function formatDateTime(value?: string | null) {
   if (!value) return '未指定'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 </script>
 
@@ -153,6 +166,19 @@ function formatError(error: unknown) {
       />
     </div>
 
+    <LineSideInventoryBalancesPanel
+      :items="lineSideInventoryBalances"
+      :page="lineSideInventoryPage"
+      :page-count="lineSideInventoryPageCount"
+      :page-size="lineSideInventoryPageSize"
+      :total="lineSideInventoryTotal"
+      :pending="lineSideInventoryPending"
+      :error="lineSideInventoryError"
+      :ready="lineSideInventoryReady"
+      @update-page="goToLineSideInventoryPage"
+      @refresh="refreshLineSideInventory"
+    />
+
     <NvToolbar :show-search="false">
       <template #filters>
         <NvSelect v-model="statusFilter">
@@ -171,8 +197,6 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <NvDataTable
       manual
       :page="page"
@@ -184,9 +208,12 @@ function formatError(error: unknown) {
       :rows="materialIssueRequests"
       row-key="requestId"
       :loading="materialIssueRequestsPending"
+      :error="materialIssueRequestsError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无领料申请。齐套检查通过后，从工单详情发起领料即会在此跟踪收料进度。"
+      @retry="refreshMaterialIssueRequests"
     >
       <template #cell-receivedQuantity="{ row }">
         <div class="flex flex-col gap-1">

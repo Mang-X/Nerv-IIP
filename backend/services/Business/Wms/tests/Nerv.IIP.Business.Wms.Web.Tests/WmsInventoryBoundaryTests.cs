@@ -18,6 +18,8 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseWorkPoolAggregate;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
+using Nerv.IIP.Business.Wms.Web.Application.Coding;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -59,6 +61,36 @@ public sealed class WmsInventoryBoundaryTests
 
         Assert.Equal(firstId, replayId);
         Assert.Equal(1, await dbContext.InboundOrders.CountAsync());
+    }
+
+    [Fact]
+    public async Task Create_inbound_without_a_number_gets_one_from_the_coding_rule_and_replays_by_idempotency_key()
+    {
+        await using var dbContext = CreateContext();
+        var command = new CreateInboundOrderCommand(
+            "org-001",
+            "env-dev",
+            null,
+            "purchase-order",
+            "PO-CODED-001",
+            "SITE-01",
+            [new WmsInboundLineInput("LINE-001", "SKU-RM-1000", "kg", 10m, "LINE-SIDE", "LOT-001", null, "qualified", "company", null)],
+            IdempotencyKey: "console-create-inbound-001");
+        var handler = new CreateInboundOrderCommandHandler(dbContext);
+
+        var firstId = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var replayId = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var secondId = await handler.Handle(command with { IdempotencyKey = "console-create-inbound-002" }, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        Assert.Equal(firstId, replayId);
+        Assert.NotEqual(firstId, secondId);
+        var numbers = await dbContext.InboundOrders.OrderBy(x => x.InboundOrderNo).Select(x => x.InboundOrderNo).ToListAsync();
+        Assert.Equal(2, numbers.Count);
+        Assert.All(numbers, number => Assert.Matches(@"^IB-\d{8}-\d{6}$", number));
+        Assert.NotEqual(numbers[0], numbers[1]);
     }
 
     [Fact]
@@ -132,7 +164,7 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var command = new CompleteInboundOrderCommand(inbound.Id, "complete-inbound-replay-001")
             .TrustedFor(dbContext, inbound);
-        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture());
 
         var first = await handler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -164,7 +196,7 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var command = new CompleteInboundOrderCommand(inbound.Id, $"replay-{status}")
             .TrustedFor(dbContext, inbound);
-        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture());
         var first = await handler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         SetStatus(inbound, status);
@@ -198,7 +230,7 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var exception = await Assert.ThrowsAsync<WmsLifecycleConflictException>(() =>
-            new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
                 new CompleteInboundOrderCommand(inbound.Id, $"conflict-{status}")
                     .TrustedFor(dbContext, inbound),
                 CancellationToken.None));
@@ -222,7 +254,7 @@ public sealed class WmsInventoryBoundaryTests
         dbContext.InboundOrders.Add(inbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         const string idempotencyKey = "cancelled-replay";
-        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+        await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
             new CompleteInboundOrderCommand(inbound.Id, idempotencyKey)
                 .TrustedFor(dbContext, inbound),
             CancellationToken.None);
@@ -231,7 +263,7 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await Assert.ThrowsAsync<WmsLifecycleConflictException>(() =>
-            new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
                 new CompleteInboundOrderCommand(inbound.Id, idempotencyKey)
                     .TrustedFor(dbContext, inbound),
                 CancellationToken.None));
@@ -251,7 +283,7 @@ public sealed class WmsInventoryBoundaryTests
             [new InboundOrderLineDraft("LINE-001", "SKU-RM-1000", "kg", 10m, "LINE-SIDE", "LOT-ORIGINAL", null, "qualified", "company", null)]);
         dbContext.InboundOrders.Add(inbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture());
         const string idempotencyKey = "complete-inbound-replay-conflict-001";
 
         await handler.Handle(
@@ -292,7 +324,7 @@ public sealed class WmsInventoryBoundaryTests
             ]);
         dbContext.InboundOrders.Add(inbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture());
         var command = new CompleteInboundOrderCommand(inbound.Id, new string('k', 128))
             .TrustedFor(dbContext, inbound);
 
@@ -332,7 +364,7 @@ public sealed class WmsInventoryBoundaryTests
             ]);
         dbContext.InboundOrders.Add(inbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
-        var handler = new CompleteInboundOrderCommandHandler(dbContext);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture());
         var command = new CompleteInboundOrderCommand(inbound.Id, "complete-inbound-order-001")
             .TrustedFor(dbContext, inbound);
 
@@ -364,7 +396,7 @@ public sealed class WmsInventoryBoundaryTests
         dbContext.InboundOrders.Add(inbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+        await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
             new CompleteInboundOrderCommand(
                 inbound.Id,
                 "idem-capture-001",
@@ -475,7 +507,7 @@ public sealed class WmsInventoryBoundaryTests
         dbContext.InboundOrders.Add(inbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var result = await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+        var result = await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
             new CompleteInboundOrderCommand(inbound.Id, "idem-in-001")
                 .TrustedFor(dbContext, inbound),
             CancellationToken.None);
@@ -487,6 +519,302 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal("inbound", movementRequest.MovementType);
         Assert.Equal(Inbound001V2Key, movementRequest.IdempotencyKey);
         Assert.Equal("SKU-FG-1000", movementRequest.SkuCode);
+    }
+
+    [Fact]
+    public async Task Complete_inbound_uses_full_putaway_task_target_for_inventory_request()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-PUTAWAY-TARGET-001",
+            "purchase-receipt",
+            "PO-PUTAWAY-TARGET-001",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, "qualified", "company", null)]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CreatePutawayTaskCommandHandler(dbContext).Handle(
+            new CreatePutawayTaskCommand(
+                inbound.Id,
+                "PUT-TARGET-001",
+                "LINE-001",
+                "LOC-STAGE",
+                "LOC-TARGET",
+                5m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var command = new CompleteInboundOrderCommand(inbound.Id, "complete-putaway-target-001")
+            .TrustedFor(dbContext, inbound);
+        var handler = new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture());
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        var movementRequest = Assert.Single(dbContext.InventoryMovementRequests.Local);
+        Assert.Equal("LOC-TARGET", movementRequest.LocationCode);
+        var movementRequestedEvent = new InventoryMovementRequestCreatedIntegrationEventConverter()
+            .Convert(new InventoryMovementRequestCreatedDomainEvent(movementRequest));
+        Assert.Equal("LOC-TARGET", movementRequestedEvent.Payload.LocationCode);
+
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var replay = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(result.RequestId, replay.RequestId);
+        Assert.Equal(1, await dbContext.InventoryMovementRequests.CountAsync());
+        Assert.Equal("LOC-TARGET", await dbContext.InventoryMovementRequests.Select(x => x.LocationCode).SingleAsync());
+    }
+
+    [Fact]
+    public async Task Complete_inbound_keeps_staging_location_when_putaway_task_is_not_full_line_quantity()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-PUTAWAY-PARTIAL-001",
+            "purchase-receipt",
+            "PO-PUTAWAY-PARTIAL-001",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, "qualified", "company", null)]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CreatePutawayTaskCommandHandler(dbContext).Handle(
+            new CreatePutawayTaskCommand(
+                inbound.Id,
+                "PUT-PARTIAL-001",
+                "LINE-001",
+                "LOC-STAGE",
+                "LOC-TARGET",
+                4m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
+            new CompleteInboundOrderCommand(inbound.Id, "complete-putaway-partial-001")
+                .TrustedFor(dbContext, inbound),
+            CancellationToken.None);
+
+        Assert.Equal("LOC-STAGE", Assert.Single(dbContext.InventoryMovementRequests.Local).LocationCode);
+    }
+
+    [Fact]
+    public async Task Retry_inbound_inventory_posting_reuses_full_putaway_task_target()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-PUTAWAY-RETRY-001",
+            "purchase-receipt",
+            "PO-PUTAWAY-RETRY-001",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-STAGE", "LOT-001", null, "qualified", "company", null)]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CreatePutawayTaskCommandHandler(dbContext).Handle(
+            new CreatePutawayTaskCommand(
+                inbound.Id,
+                "PUT-RETRY-001",
+                "LINE-001",
+                "LOC-STAGE",
+                "LOC-TARGET",
+                5m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
+            new CompleteInboundOrderCommand(inbound.Id, "complete-putaway-retry-001")
+                .TrustedFor(dbContext, inbound),
+            CancellationToken.None);
+        Assert.Single(dbContext.InventoryMovementRequests.Local).MarkFailed("TEST_FAILURE", "test failure");
+        dbContext.WarehouseTasks.Single().Cancel();
+        inbound.MarkInventoryPostingFailed();
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var retryResult = await new RetryInboundInventoryPostingCommandHandler(dbContext).Handle(
+            new RetryInboundInventoryPostingCommand(inbound.Id, "retry-putaway-target-001"),
+            CancellationToken.None);
+
+        var retryRequest = Assert.Single(
+            dbContext.InventoryMovementRequests.Local,
+            x => x.Id == retryResult.RequestId);
+        Assert.Equal("LOC-TARGET", retryRequest.LocationCode);
+    }
+
+    [Fact]
+    public async Task Retry_inbound_inventory_posting_retries_only_failed_lines_and_keeps_failed_request_location()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-PUTAWAY-RETRY-MULTI-001",
+            "purchase-receipt",
+            "PO-PUTAWAY-RETRY-MULTI-001",
+            "SITE-01",
+            [
+                new InboundOrderLineDraft("LINE-A", "SKU-A", "kg", 5m, "LOC-STAGE-A", "LOT-A", null, "qualified", "company", null),
+                new InboundOrderLineDraft("LINE-B", "SKU-B", "kg", 3m, "LOC-STAGE-B", "LOT-B", null, "qualified", "company", null),
+            ]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var putawayHandler = new CreatePutawayTaskCommandHandler(dbContext);
+        await putawayHandler.Handle(
+            new CreatePutawayTaskCommand(inbound.Id, "PUT-RETRY-MULTI-A", "LINE-A", "LOC-STAGE-A", "LOC-TARGET-A", 5m),
+            CancellationToken.None);
+        await putawayHandler.Handle(
+            new CreatePutawayTaskCommand(inbound.Id, "PUT-RETRY-MULTI-B", "LINE-B", "LOC-STAGE-B", "LOC-TARGET-B", 3m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
+            new CompleteInboundOrderCommand(inbound.Id, "complete-putaway-retry-multi-001")
+                .TrustedFor(dbContext, inbound),
+            CancellationToken.None);
+        var initialRequests = dbContext.InventoryMovementRequests.Local
+            .OrderBy(x => x.SourceDocumentLineId, StringComparer.Ordinal)
+            .ToArray();
+        var postedRequest = Assert.Single(initialRequests, x => x.SourceDocumentLineId == "LINE-A");
+        var failedRequest = Assert.Single(initialRequests, x => x.SourceDocumentLineId == "LINE-B");
+        postedRequest.MarkPosted("inventory-a-001");
+        failedRequest.MarkFailed("TEST_FAILURE", "test failure");
+        foreach (var task in dbContext.WarehouseTasks.Local)
+        {
+            task.Cancel();
+        }
+
+        inbound.MarkInventoryPostingFailed();
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var retryResult = await new RetryInboundInventoryPostingCommandHandler(dbContext).Handle(
+            new RetryInboundInventoryPostingCommand(inbound.Id, "retry-putaway-multi-001"),
+            CancellationToken.None);
+
+        Assert.Equal(3, dbContext.InventoryMovementRequests.Local.Count);
+        Assert.Single(dbContext.InventoryMovementRequests.Local, x => x.SourceDocumentLineId == "LINE-A");
+        var retryRequest = Assert.Single(
+            dbContext.InventoryMovementRequests.Local,
+            x => x.SourceDocumentLineId == "LINE-B" && x.Id != failedRequest.Id);
+        Assert.Equal(retryResult.RequestId, retryRequest.Id);
+        Assert.Equal("LOC-TARGET-B", failedRequest.LocationCode);
+        Assert.Equal(failedRequest.LocationCode, retryRequest.LocationCode);
+    }
+
+    [Fact]
+    public async Task Retry_inbound_inventory_posting_uses_latest_failed_attempt_after_partial_retry()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-PUTAWAY-RETRY-LATEST-001",
+            "purchase-receipt",
+            "PO-PUTAWAY-RETRY-LATEST-001",
+            "SITE-01",
+            [
+                new InboundOrderLineDraft("LINE-A", "SKU-A", "kg", 5m, "LOC-STAGE-A", "LOT-A", null, "qualified", "company", null),
+                new InboundOrderLineDraft("LINE-B", "SKU-B", "kg", 3m, "LOC-STAGE-B", "LOT-B", null, "qualified", "company", null),
+            ]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var putawayHandler = new CreatePutawayTaskCommandHandler(dbContext);
+        await putawayHandler.Handle(
+            new CreatePutawayTaskCommand(inbound.Id, "PUT-RETRY-LATEST-A", "LINE-A", "LOC-STAGE-A", "LOC-TARGET-A", 5m),
+            CancellationToken.None);
+        await putawayHandler.Handle(
+            new CreatePutawayTaskCommand(inbound.Id, "PUT-RETRY-LATEST-B", "LINE-B", "LOC-STAGE-B", "LOC-TARGET-B", 3m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
+            new CompleteInboundOrderCommand(inbound.Id, "complete-putaway-retry-latest-001")
+                .TrustedFor(dbContext, inbound),
+            CancellationToken.None);
+        var initialRequests = dbContext.InventoryMovementRequests.Local
+            .OrderBy(x => x.SourceDocumentLineId, StringComparer.Ordinal)
+            .ToArray();
+        var firstFailedRequestA = Assert.Single(initialRequests, x => x.SourceDocumentLineId == "LINE-A");
+        var firstFailedRequestB = Assert.Single(initialRequests, x => x.SourceDocumentLineId == "LINE-B");
+        firstFailedRequestA.MarkFailed("TEST_FAILURE", "test failure");
+        firstFailedRequestB.MarkFailed("TEST_FAILURE", "test failure");
+        inbound.MarkInventoryPostingFailed();
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new RetryInboundInventoryPostingCommandHandler(dbContext).Handle(
+            new RetryInboundInventoryPostingCommand(inbound.Id, "retry-putaway-latest-001"),
+            CancellationToken.None);
+        var firstRetryRequestA = Assert.Single(
+            dbContext.InventoryMovementRequests.Local,
+            x => x.SourceDocumentLineId == "LINE-A" && x.Id != firstFailedRequestA.Id);
+        var firstRetryRequestB = Assert.Single(
+            dbContext.InventoryMovementRequests.Local,
+            x => x.SourceDocumentLineId == "LINE-B" && x.Id != firstFailedRequestB.Id);
+        firstRetryRequestA.MarkPosted("inventory-a-002");
+        firstRetryRequestB.MarkFailed("TEST_FAILURE_2", "second test failure");
+        foreach (var task in dbContext.WarehouseTasks.Local)
+        {
+            task.Cancel();
+        }
+
+        inbound.MarkInventoryPostingFailed();
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var secondRetryResult = await new RetryInboundInventoryPostingCommandHandler(dbContext).Handle(
+            new RetryInboundInventoryPostingCommand(inbound.Id, "retry-putaway-latest-002"),
+            CancellationToken.None);
+
+        Assert.Equal(2, dbContext.InventoryMovementRequests.Local.Count(x => x.SourceDocumentLineId == "LINE-A"));
+        Assert.Equal(3, dbContext.InventoryMovementRequests.Local.Count(x => x.SourceDocumentLineId == "LINE-B"));
+        var secondRetryRequestB = Assert.Single(
+            dbContext.InventoryMovementRequests.Local,
+            x => x.SourceDocumentLineId == "LINE-B" && x.Id != firstFailedRequestB.Id && x.Id != firstRetryRequestB.Id);
+        Assert.Equal(secondRetryResult.RequestId, secondRetryRequestB.Id);
+        Assert.Equal("LOC-TARGET-B", firstRetryRequestB.LocationCode);
+        Assert.Equal(firstRetryRequestB.LocationCode, secondRetryRequestB.LocationCode);
+        Assert.Equal(InventoryMovementRequestStatus.Posted, firstRetryRequestA.Status);
+        Assert.Equal(InventoryMovementRequestStatus.Failed, firstRetryRequestB.Status);
+    }
+
+    [Fact]
+    public async Task Retry_inbound_inventory_posting_fails_closed_when_no_latest_attempt_is_failed()
+    {
+        await using var dbContext = CreateContext();
+        var inbound = InboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "IN-RETRY-NO-LATEST-FAILURE-001",
+            "purchase-receipt",
+            "PO-RETRY-NO-LATEST-FAILURE-001",
+            "SITE-01",
+            [new InboundOrderLineDraft("LINE-001", "SKU-A", "kg", 5m, "LOC-STAGE", "LOT-A", null, "qualified", "company", null)]);
+        dbContext.InboundOrders.Add(inbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
+            new CompleteInboundOrderCommand(inbound.Id, "complete-retry-no-latest-failure-001")
+                .TrustedFor(dbContext, inbound),
+            CancellationToken.None);
+        var request = Assert.Single(dbContext.InventoryMovementRequests.Local);
+        request.MarkPosted("inventory-001");
+        inbound.MarkInventoryPostingFailed();
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new RetryInboundInventoryPostingCommandHandler(dbContext).Handle(
+                new RetryInboundInventoryPostingCommand(inbound.Id, "retry-no-latest-failure-001"),
+                CancellationToken.None));
+
+        Assert.Contains("failed inbound line", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(InboundOrderStatus.InventoryPostingFailed, inbound.Status);
+        Assert.Single(dbContext.InventoryMovementRequests.Local);
     }
 
     [Fact]
@@ -507,7 +835,7 @@ public sealed class WmsInventoryBoundaryTests
         dbContext.InboundOrders.Add(inbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var result = await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+        var result = await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
             new CompleteInboundOrderCommand(inbound.Id, "idem-in-001")
                 .TrustedFor(dbContext, inbound),
             CancellationToken.None);
@@ -545,7 +873,7 @@ public sealed class WmsInventoryBoundaryTests
         dbContext.InboundOrders.Add(inbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var result = await new CompleteInboundOrderCommandHandler(dbContext).Handle(
+        var result = await new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
             new CompleteInboundOrderCommand(inbound.Id, "idem-in-001")
                 .TrustedFor(dbContext, inbound),
             CancellationToken.None);
@@ -587,7 +915,7 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
-            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "idem-out-001")
+            new CompleteOutboundOrderCommand(outbound.Id, true, "idem-out-001")
                 .TrustedFor(dbContext, outbound),
             CancellationToken.None);
 
@@ -598,6 +926,40 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal("outbound", movementRequest.MovementType);
         Assert.Equal(Outbound001V2Key, movementRequest.IdempotencyKey);
         Assert.Equal(4m, movementRequest.Quantity);
+        Assert.Matches(@"^PKR-\d{8}-\d{6}$", outbound.PackReviewNo);
+    }
+
+    /// <summary>
+    /// #3836：预留过期会取消该行未完成的拣货任务，仓库随后重建任务拣完。作废的任务不是执行事实，
+    /// 不能让出库复核永远卡在「拣货未完成」；复核以重建任务的实拣为准。
+    /// </summary>
+    [Fact]
+    public async Task Complete_outbound_ignores_a_cancelled_picking_task_replaced_by_a_completed_one()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-RECREATED-001",
+            "sales-delivery",
+            "SO-RECREATED-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        dbContext.OutboundOrders.Add(outbound);
+        var cancelledTask = outbound.CreatePickingTask("TASK-CANCELLED-001", "LINE-001", "LOC-A-01", "PACK-01", 4m, assignedPoolCode: "POOL-PICKING");
+        cancelledTask.Cancel();
+        dbContext.WarehouseTasks.Add(cancelledTask);
+        dbContext.WarehouseTasks.Add(outbound.CreatePickingTask("TASK-RECREATED-001", "LINE-001", "LOC-A-01", "PACK-01", 4m, assignedPoolCode: "POOL-PICKING"));
+        CompletePickingTasks(dbContext, outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
+            new CompleteOutboundOrderCommand(outbound.Id, true, "idem-out-recreated-001")
+                .TrustedFor(dbContext, outbound),
+            CancellationToken.None);
+
+        Assert.Equal(OutboundOrderStatus.InventoryPostingPending, outbound.Status);
+        Assert.Equal(4m, Assert.Single(dbContext.InventoryMovementRequests.Local).Quantity);
     }
 
     [Fact]
@@ -607,7 +969,6 @@ public sealed class WmsInventoryBoundaryTests
         var settings = await new CompleteOutboundOrderCommandLock().GetLockKeysAsync(
             new CompleteOutboundOrderCommand(
                 outboundOrderId,
-                "PACK-LOCK",
                 true,
                 "outbound-complete-lock"),
             CancellationToken.None);
@@ -637,7 +998,7 @@ public sealed class WmsInventoryBoundaryTests
 
         var exception = await Assert.ThrowsAsync<WmsLifecycleConflictException>(() =>
             new CompleteOutboundOrderCommandHandler(dbContext).Handle(
-                new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "out-conflict")
+                new CompleteOutboundOrderCommand(outbound.Id, true, "out-conflict")
                     .TrustedFor(dbContext, outbound),
                 CancellationToken.None));
 
@@ -665,7 +1026,7 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         const string idempotencyKey = "outbound-replay";
         var first = await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
-            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, idempotencyKey)
+            new CompleteOutboundOrderCommand(outbound.Id, true, idempotencyKey)
                 .TrustedFor(dbContext, outbound),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -675,22 +1036,17 @@ public sealed class WmsInventoryBoundaryTests
         var replayHandler = new CompleteOutboundOrderCommandHandler(dbContext, inventory);
 
         var replay = await replayHandler.Handle(
-            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, idempotencyKey)
+            new CompleteOutboundOrderCommand(outbound.Id, true, idempotencyKey)
                 .TrustedFor(dbContext, outbound),
             CancellationToken.None);
         await Assert.ThrowsAsync<WmsIdempotencyConflictException>(() =>
             replayHandler.Handle(
-                new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "different-key")
+                new CompleteOutboundOrderCommand(outbound.Id, true, "different-key")
                     .TrustedFor(dbContext, outbound),
                 CancellationToken.None));
         await Assert.ThrowsAsync<WmsIdempotencyConflictException>(() =>
             replayHandler.Handle(
-                new CompleteOutboundOrderCommand(outbound.Id, "PACK-OTHER", true, idempotencyKey)
-                    .TrustedFor(dbContext, outbound),
-                CancellationToken.None));
-        await Assert.ThrowsAsync<WmsIdempotencyConflictException>(() =>
-            replayHandler.Handle(
-                new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", false, idempotencyKey)
+                new CompleteOutboundOrderCommand(outbound.Id, false, idempotencyKey)
                     .TrustedFor(dbContext, outbound),
                 CancellationToken.None));
 
@@ -723,7 +1079,7 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
-            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "idem-out-001")
+            new CompleteOutboundOrderCommand(outbound.Id, true, "idem-out-001")
                 .TrustedFor(dbContext, outbound),
             CancellationToken.None);
 
@@ -767,14 +1123,14 @@ public sealed class WmsInventoryBoundaryTests
         var handler = new CompleteOutboundOrderCommandHandler(dbContext);
 
         var first = await handler.Handle(
-            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, $"  {idempotencyKey}  ")
+            new CompleteOutboundOrderCommand(outbound.Id, true, $"  {idempotencyKey}  ")
                 .TrustedFor(dbContext, outbound),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         dbContext.ChangeTracker.Clear();
 
         var replay = await handler.Handle(
-            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, idempotencyKey)
+            new CompleteOutboundOrderCommand(outbound.Id, true, idempotencyKey)
                 .TrustedFor(dbContext, outbound),
             CancellationToken.None);
 
@@ -788,6 +1144,82 @@ public sealed class WmsInventoryBoundaryTests
                 .OrderBy(x => x.SourceDocumentLineId)
                 .Select(x => x.IdempotencyKey)
                 .ToArrayAsync());
+    }
+
+    /// <summary>
+    /// ADR 0031 的前提「同一条命令重试时任务号不变」：远程预留已成功、本地没落库（换 scope 重试），
+    /// 同一个幂等键必须拿回同一个系统生成的拣货号，预留键因此不变，库存侧只会有一份预留。
+    /// </summary>
+    [Fact]
+    public async Task Picking_retry_in_a_new_scope_with_the_same_idempotency_key_keeps_the_task_number_and_one_reservation()
+    {
+        await using var provider = CreateSharedDatabaseProvider();
+        await using (var seedScope = provider.CreateAsyncScope())
+        {
+            var seedDb = seedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            seedDb.OutboundOrders.Add(OutboundOrder.Create(
+                "org-001",
+                "env-dev",
+                "OUT-RETRY-001",
+                "sales-delivery",
+                "SO-001",
+                "SITE-01",
+                [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", null, null, "qualified", "company", "owner-001")]));
+            await seedDb.SaveChangesAsync(CancellationToken.None);
+        }
+
+        var inventory = new FakeWmsInventoryReservationClient("res-001");
+        var coding = new WmsCodingService(provider.GetRequiredService<IServiceScopeFactory>());
+        async Task<string> AttemptAsync(bool commit)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var outboundId = (await db.OutboundOrders.SingleAsync()).Id;
+            var taskId = await new CreatePickingTaskCommandHandler(db, inventory, coding).Handle(
+                new CreatePickingTaskCommand(outboundId, null, "LINE-001", "LOC-A-01", "PACK-01", 4m, "console-pick-intent-001"),
+                CancellationToken.None);
+            if (commit)
+            {
+                await db.SaveChangesAsync(CancellationToken.None);
+            }
+
+            return db.WarehouseTasks.Local.Single(x => x.Id == taskId).TaskNo;
+        }
+
+        var firstTaskNo = await AttemptAsync(commit: false);
+        var retriedTaskNo = await AttemptAsync(commit: true);
+
+        Assert.Equal(firstTaskNo, retriedTaskNo);
+        Assert.Matches(@"^PICK-\d{8}-\d{6}$", retriedTaskNo);
+        Assert.Single(inventory.FefoRequests.Select(x => x.IdempotencyKey).Distinct());
+    }
+
+    [Fact]
+    public async Task Count_retry_in_a_new_scope_with_the_same_idempotency_key_keeps_the_count_number_and_one_freeze()
+    {
+        await using var provider = CreateSharedDatabaseProvider();
+        var inventory = new FakeWmsInventoryReservationClient("res-001");
+        var coding = new WmsCodingService(provider.GetRequiredService<IServiceScopeFactory>());
+        var command = new CreateCountExecutionCommand("org-001", "env-dev", null, "SKU-FG-1000", "kg", "SITE-01", "LOC-A-01", 4m, "console-count-intent-001");
+        async Task<string> AttemptAsync(bool commit)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var countId = await new CreateCountExecutionCommandHandler(db, inventory, coding).Handle(command, CancellationToken.None);
+            if (commit)
+            {
+                await db.SaveChangesAsync(CancellationToken.None);
+            }
+
+            return db.CountExecutions.Local.Single(x => x.Id == countId).CountNo;
+        }
+
+        var firstCountNo = await AttemptAsync(commit: false);
+        var retriedCountNo = await AttemptAsync(commit: true);
+
+        Assert.Equal(firstCountNo, retriedCountNo);
+        Assert.Matches(@"^CNT-\d{8}-\d{6}$", retriedCountNo);
+        Assert.Single(inventory.CountTaskRequests.Select(x => x.IdempotencyKey).Distinct());
     }
 
     [Fact]
@@ -827,7 +1259,7 @@ public sealed class WmsInventoryBoundaryTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var result = await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
-            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "idem-out-001")
+            new CompleteOutboundOrderCommand(outbound.Id, true, "idem-out-001")
                 .TrustedFor(dbContext, outbound),
             CancellationToken.None);
 
@@ -874,7 +1306,7 @@ public sealed class WmsInventoryBoundaryTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new CompleteOutboundOrderCommandHandler(dbContext, inventory).Handle(
-            new CompleteOutboundOrderCommand(outbound.Id, "PACK-LOCATION-001", true, "idem-location-001")
+            new CompleteOutboundOrderCommand(outbound.Id, true, "idem-location-001")
                 .TrustedFor(dbContext, outbound),
             CancellationToken.None);
 
@@ -916,7 +1348,7 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await new CompleteOutboundOrderCommandHandler(dbContext, inventory).Handle(
-            new CompleteOutboundOrderCommand(outbound.Id, "PACK-SHORT-001", true, "idem-short-001")
+            new CompleteOutboundOrderCommand(outbound.Id, true, "idem-short-001")
                 .TrustedFor(dbContext, outbound),
             CancellationToken.None);
 
@@ -963,7 +1395,7 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         await Assert.ThrowsAsync<KnownException>(() => new CompleteOutboundOrderCommandHandler(dbContext).Handle(
-            new CompleteOutboundOrderCommand(outbound.Id, "PACK-SHORT-NO-CLIENT-001", true, "idem-short-no-client-001")
+            new CompleteOutboundOrderCommand(outbound.Id, true, "idem-short-no-client-001")
                 .TrustedFor(dbContext, outbound),
             CancellationToken.None));
 
@@ -1008,12 +1440,12 @@ public sealed class WmsInventoryBoundaryTests
 
         var missing = await Assert.ThrowsAsync<WmsUnprocessableException>(() =>
             new CompleteOutboundOrderCommandHandler(dbContext).Handle(
-                new CompleteOutboundOrderCommand(withoutTask.Id, "PACK-NO-TASK-001", true, "idem-no-task-001")
+                new CompleteOutboundOrderCommand(withoutTask.Id, true, "idem-no-task-001")
                     .TrustedFor(dbContext, withoutTask),
                 CancellationToken.None));
         var active = await Assert.ThrowsAsync<WmsUnprocessableException>(() =>
             new CompleteOutboundOrderCommandHandler(dbContext).Handle(
-                new CompleteOutboundOrderCommand(withActiveTask.Id, "PACK-ACTIVE-001", true, "idem-active-001")
+                new CompleteOutboundOrderCommand(withActiveTask.Id, true, "idem-active-001")
                     .TrustedFor(dbContext, withActiveTask),
                 CancellationToken.None));
 
@@ -1100,7 +1532,7 @@ public sealed class WmsInventoryBoundaryTests
         CompletePickingTasks(dbContext, outbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
-            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "idem-out-001")
+            new CompleteOutboundOrderCommand(outbound.Id, true, "idem-out-001")
                 .TrustedFor(dbContext, outbound),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1179,7 +1611,7 @@ public sealed class WmsInventoryBoundaryTests
         CompletePickingTasks(dbContext, outbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
-            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "idem-out-001")
+            new CompleteOutboundOrderCommand(outbound.Id, true, "idem-out-001")
                 .TrustedFor(dbContext, outbound),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -1262,7 +1694,7 @@ public sealed class WmsInventoryBoundaryTests
         CompletePickingTasks(dbContext, outbound);
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await new CompleteOutboundOrderCommandHandler(dbContext).Handle(
-            new CompleteOutboundOrderCommand(outbound.Id, "PACK-001", true, "idem-out-001")
+            new CompleteOutboundOrderCommand(outbound.Id, true, "idem-out-001")
                 .TrustedFor(dbContext, outbound),
             CancellationToken.None);
 
@@ -1767,6 +2199,190 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal("reservation-renew-001", renewal.ReservationId);
     }
 
+    /// <summary>
+    /// #3836：拣货完成时把该行的库存预留标记为已拣，让它保持到出库过账，不再在复核前超时过期。
+    /// 进行中的登记进度仍只续期，不标记已拣。
+    /// </summary>
+    [Fact]
+    public async Task Completing_a_picking_task_marks_its_inventory_reservation_picked()
+    {
+        await using var dbContext = CreateContext();
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            "OUT-PICKED-001",
+            "sales-order",
+            "SO-PICKED-001",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 5m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        var pickingTask = outbound.CreatePickingTask(
+            "TASK-PICKED-001",
+            "LINE-001",
+            "LOC-A-01",
+            "PACK-01",
+            5m,
+            "reservation-picked-001",
+            assignedPoolCode: "POOL-PICKING");
+        dbContext.OutboundOrders.Add(outbound);
+        dbContext.WarehouseTasks.Add(pickingTask);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var inventoryClient = new FakeWmsInventoryReservationClient("reservation-picked-001");
+        await GrantManualPoolAccessAsync(dbContext, pickingTask, "user-001");
+        pickingTask.Start("user-001", pickingTask.Version, claimPoolAssignment: true);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await new CompleteWarehouseTaskActionCommandHandler(
+            dbContext,
+            CreateWorkScopeAuthorizer(dbContext),
+            inventoryClient).Handle(
+            new CompleteWarehouseTaskActionCommand(
+                pickingTask.Id,
+                "org-001",
+                "env-dev",
+                "user-001",
+                "picked-complete-001",
+                pickingTask.Version,
+                5m,
+                null,
+                WarehouseTaskType.Picking,
+                ["SITE-01"],
+                "self",
+                "user-001"),
+            CancellationToken.None);
+
+        Assert.Equal(WarehouseTaskStatus.Completed, pickingTask.Status);
+        var picked = Assert.Single(inventoryClient.PickedRequests);
+        Assert.Equal("reservation-picked-001", picked.ReservationId);
+        Assert.Empty(inventoryClient.RenewalRequests);
+    }
+
+    /// <summary>
+    /// #3836 审核：WCS 驱动的三个拣货完成入口（完成回调、进度达到计划量、内部完成命令）
+    /// 同样要把该行预留标记为已拣，与人工完成入口一致。
+    /// </summary>
+    [Theory]
+    [InlineData("wcs-callback")]
+    [InlineData("wcs-progress")]
+    [InlineData("complete-command")]
+    public async Task Wcs_driven_picking_completion_marks_the_inventory_reservation_picked(string entry)
+    {
+        await using var dbContext = CreateContext();
+        var (pickingTask, inventory) = await CreateWcsDispatchedPickingTaskAsync(dbContext, $"PICKED-{entry}", new FakeWmsInventoryReservationClient($"res-{entry}"));
+
+        await CompleteThroughWcsEntryAsync(dbContext, inventory, pickingTask, entry, $"WCS-PICKED-{entry}");
+
+        Assert.Equal(WarehouseTaskStatus.Completed, pickingTask.Status);
+        Assert.Equal($"res-{entry}", Assert.Single(inventory.PickedRequests).ReservationId);
+    }
+
+    /// <summary>
+    /// #3836 审核：标记已拣失败时异常向上抛出、不被吞掉，命令的工作单元因此不提交，拣货完成随之回滚。
+    /// 反向读数：在同步里吞掉 <c>MarkPickedAsync</c> 的异常，本用例读到命令正常返回。
+    /// </summary>
+    [Theory]
+    [InlineData("wcs-callback")]
+    [InlineData("wcs-progress")]
+    [InlineData("complete-command")]
+    public async Task Picking_completion_fails_when_the_reservation_cannot_be_marked_picked(string entry)
+    {
+        await using var dbContext = CreateContext();
+        var (pickingTask, inventory) = await CreateWcsDispatchedPickingTaskAsync(
+            dbContext,
+            $"PICK-FAIL-{entry}",
+            new FakeWmsInventoryReservationClient($"res-fail-{entry}")
+            {
+                PickedException = new KnownException("库存预留已失效，无法确认拣货完成，请刷新后重新创建拣货任务。"),
+            });
+
+        await Assert.ThrowsAsync<KnownException>(() =>
+            CompleteThroughWcsEntryAsync(dbContext, inventory, pickingTask, entry, $"WCS-PICK-FAIL-{entry}"));
+
+        Assert.Single(inventory.PickedRequests);
+    }
+
+    /// <summary>
+    /// #3836 审核：迟到的 WCS 完成回调在本地被拒（WCS 任务已失败）时，不得先把 Inventory 预留标记为已拣——
+    /// 否则 WMS 回滚后预留却已 picked、不再过期，留下收不回的占用。
+    /// </summary>
+    [Fact]
+    public async Task Late_wcs_completion_for_a_failed_wcs_task_does_not_mark_the_reservation_picked()
+    {
+        await using var dbContext = CreateContext();
+        var (pickingTask, inventory) = await CreateWcsDispatchedPickingTaskAsync(dbContext, "PICK-LATE", new FakeWmsInventoryReservationClient("res-late"));
+        dbContext.WcsTasks.Single().Fail("DEVICE-TIMEOUT", "device timed out");
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<WmsLifecycleConflictException>(() =>
+            new CompleteWcsTaskCommandHandler(dbContext, inventory).Handle(
+                new CompleteWcsTaskCommand("org-001", "env-dev", "WCS-PICK-LATE", """{"actualQuantity":4}"""),
+                CancellationToken.None));
+
+        Assert.Empty(inventory.PickedRequests);
+    }
+
+    /// <summary>
+    /// #3842：WCS 回执的累计数量越界（超过计划数量）时，以稳定原因码拒绝，且不远程标记已拣。
+    /// </summary>
+    [Fact]
+    public async Task Out_of_range_wcs_completion_quantity_is_refused_without_marking_the_reservation_picked()
+    {
+        await using var dbContext = CreateContext();
+        var (pickingTask, inventory) = await CreateWcsDispatchedPickingTaskAsync(dbContext, "PICK-OVER", new FakeWmsInventoryReservationClient("res-over"));
+
+        var exception = await Assert.ThrowsAsync<WmsUnprocessableException>(() =>
+            new CompleteWcsTaskCommandHandler(dbContext, inventory).Handle(
+                new CompleteWcsTaskCommand("org-001", "env-dev", "WCS-PICK-OVER", """{"actualQuantity":5}"""),
+                CancellationToken.None));
+
+        Assert.Equal(WmsUnprocessableReasonCodes.WcsCompletionQuantityOutOfRange, exception.ReasonCode);
+        Assert.Empty(inventory.PickedRequests);
+        Assert.NotEqual(WarehouseTaskStatus.Completed, pickingTask.Status);
+        Assert.Equal(0m, pickingTask.ExecutedQuantity);
+    }
+
+    private static async Task<(WarehouseTask PickingTask, FakeWmsInventoryReservationClient Inventory)> CreateWcsDispatchedPickingTaskAsync(
+        ApplicationDbContext dbContext,
+        string suffix,
+        FakeWmsInventoryReservationClient inventory)
+    {
+        var outbound = OutboundOrder.Create(
+            "org-001",
+            "env-dev",
+            $"OUT-{suffix}",
+            "sales-delivery",
+            $"SO-{suffix}",
+            "SITE-01",
+            [new OutboundOrderLineDraft("LINE-001", "SKU-FG-1000", "kg", 4m, "LOC-A-01", "LOT-001", null, "qualified", "company", "owner-001")]);
+        dbContext.OutboundOrders.Add(outbound);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        await new CreatePickingTaskCommandHandler(dbContext, inventory).Handle(
+            new CreatePickingTaskCommand(outbound.Id, $"TASK-{suffix}", "LINE-001", "LOC-A-01", "PACK-01", 4m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var pickingTask = dbContext.WarehouseTasks.Single();
+        await DispatchWcsAsync(dbContext, pickingTask, $"WCS-{suffix}", """{"step":1}""");
+        return (pickingTask, inventory);
+    }
+
+    private static Task CompleteThroughWcsEntryAsync(
+        ApplicationDbContext dbContext,
+        FakeWmsInventoryReservationClient inventory,
+        WarehouseTask pickingTask,
+        string entry,
+        string externalTaskId) =>
+        entry switch
+        {
+            "wcs-callback" => new CompleteWcsTaskCommandHandler(dbContext, inventory).Handle(
+                new CompleteWcsTaskCommand("org-001", "env-dev", externalTaskId, """{"actualQuantity":4}"""),
+                CancellationToken.None),
+            "wcs-progress" => new RecordWarehouseTaskProgressCommandHandler(dbContext, inventory).Handle(
+                new RecordWarehouseTaskProgressCommand(pickingTask.Id, 4m),
+                CancellationToken.None),
+            _ => new CompleteWarehouseTaskCommandHandler(dbContext, inventory).Handle(
+                new CompleteWarehouseTaskCommand(pickingTask.Id),
+                CancellationToken.None),
+        };
+
     [Fact]
     public async Task Recording_picking_progress_keeps_the_local_progress_when_inventory_renewal_is_temporarily_unavailable()
     {
@@ -1938,7 +2554,7 @@ public sealed class WmsInventoryBoundaryTests
         await dbContext.SaveChangesAsync();
 
         await Assert.ThrowsAsync<WmsAuthorizationException>(() =>
-            new CompleteInboundOrderCommandHandler(dbContext).Handle(
+            new CompleteInboundOrderCommandHandler(dbContext, new WmsReceiptRouteFixture()).Handle(
                 new CompleteInboundOrderCommand(
                     inbound.Id,
                     "tenant-a-attempt",
@@ -1970,7 +2586,6 @@ public sealed class WmsInventoryBoundaryTests
             new CompleteOutboundOrderCommandHandler(dbContext).Handle(
                 new CompleteOutboundOrderCommand(
                     outbound.Id,
-                    "PACK-A",
                     true,
                     "tenant-a-attempt",
                     "org-a",
@@ -2011,6 +2626,16 @@ public sealed class WmsInventoryBoundaryTests
 
         Assert.Equal(CountExecutionStatus.Open, count.Status);
         Assert.Empty(dbContext.InventoryMovementRequests.Local);
+    }
+
+    /// <summary>每个 scope 各拿一个 DbContext，但共用同一个内存库：模拟「换请求重试」。</summary>
+    private static ServiceProvider CreateSharedDatabaseProvider()
+    {
+        var databaseName = $"wms-boundary-shared-{Guid.NewGuid():N}";
+        var services = new ServiceCollection();
+        services.AddScoped<MediatR.IMediator, NoopMediator>();
+        services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+        return services.BuildServiceProvider();
     }
 
     private static ApplicationDbContext CreateContext()
@@ -2161,6 +2786,7 @@ public sealed class WmsInventoryBoundaryTests
         public List<WmsInventoryFefoReservationRequest> FefoRequests { get; } = [];
         public List<WmsInventoryReservationReleaseRequest> ReleaseRequests { get; } = [];
         public List<WmsInventoryReservationRenewalRequest> RenewalRequests { get; } = [];
+        public List<WmsInventoryReservationPickedRequest> PickedRequests { get; } = [];
         public List<WmsInventoryCountTaskRequest> CountTaskRequests { get; } = [];
         public List<WmsInventoryCountAdjustmentRequest> CountAdjustmentRequests { get; } = [];
         public List<string> ReservationResults { get; } = [];
@@ -2168,6 +2794,7 @@ public sealed class WmsInventoryBoundaryTests
         public string CountTaskId { get; init; } = Guid.CreateVersion7().ToString();
         public string InventoryMovementId { get; init; } = Guid.CreateVersion7().ToString();
         public Exception? RenewalException { get; init; }
+        public Exception? PickedException { get; init; }
 
         public Task<WmsInventoryReservationResult> ReserveAsync(
             WmsInventoryReservationRequest request,
@@ -2220,6 +2847,19 @@ public sealed class WmsInventoryBoundaryTests
             }
 
             return Task.FromResult(new WmsInventoryReservationRenewalResult(request.ReservationId, DateTime.UtcNow.AddHours(2)));
+        }
+
+        public Task<WmsInventoryReservationPickedResult> MarkPickedAsync(
+            WmsInventoryReservationPickedRequest request,
+            CancellationToken cancellationToken)
+        {
+            PickedRequests.Add(request);
+            if (PickedException is not null)
+            {
+                throw PickedException;
+            }
+
+            return Task.FromResult(new WmsInventoryReservationPickedResult(request.ReservationId, "picked", 1m));
         }
 
         public Task<WmsInventoryCountTaskResult> CreateCountTaskAsync(

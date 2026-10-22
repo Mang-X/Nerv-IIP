@@ -83,6 +83,7 @@ public sealed class LeaderDemoScaleSeedServiceTests
             new DateTimeOffset(2026, 8, 15, 0, 0, 0, TimeSpan.Zero), "pcs");
         var frozenOperations = frozen.Release(
             new DateTimeOffset(2026, 7, 20, 0, 0, 0, TimeSpan.Zero),
+            WorkOrderReleaseFactTime.NotLaterThan(new DateTimeOffset(2026, 7, 20, 0, 0, 0, TimeSpan.Zero), null),
             [new RoutingStepSnapshot("OP-DEMO-Q01-010", 10, "WC-CNC-DEMO", [], TimeSpan.FromMinutes(30), true, "OP-CNC-DEMO")]);
         db.WorkOrders.Add(frozen);
         db.OperationTasks.AddRange(frozenOperations);

@@ -7,7 +7,11 @@
 - `/getting-started/planning-to-finished-goods`
 - `frontend/apps/business-console/src/pages/planning/index.vue`
 - `frontend/apps/business-console/src/pages/mes`
-- `docs/architecture/implementation-readiness.md` Scheduling、MES、Inventory/WMS 段落
+- `backend/services/Business/Scheduling/`
+- `backend/services/Business/Mes/`
+- `backend/services/Business/Inventory/`
+- `backend/services/Business/Wms/`
+- `docs/architecture/business/domain-architecture.md`
 
 ## 建议 Issue 标题
 
@@ -29,7 +33,7 @@
 
 ### 术语不清
 
-- `/mes/schedules` 的规则排程和 `/scheduling` 的 APS 轻量版容易被误解为完整 APS；文档和页面文案需要持续区分。
+- `/scheduling` 的排产工作台是 APS 轻量版，容易被误解为完整 APS；文档和页面文案需要持续区分。
 
 ### 反馈不足
 

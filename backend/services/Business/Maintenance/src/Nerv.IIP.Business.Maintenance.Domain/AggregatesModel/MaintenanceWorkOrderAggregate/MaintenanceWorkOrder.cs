@@ -21,6 +21,7 @@ public enum MaintenanceWorkOrderAction
     Verify = 7,
     Close = 8,
     Cancel = 9,
+    UpdateExpectedRestore = 10,
 }
 
 public enum MaintenanceWorkOrderStatus
@@ -49,7 +50,16 @@ public static class MaintenanceWorkOrderSourceActors
     public const string Inspection = "maintenanceInspection";
 }
 
-public sealed record SparePartLineDraft(string SkuCode, decimal Quantity, string? UomCode = null);
+/// <summary>
+/// 备件领用行草稿。<c>SiteCode</c>/<c>LocationCode</c> 是备件的领出工厂与库位（#3902）：写入口必填，
+/// 出库请求按它们扣减库存；聚合对历史行保持宽松（旧行没有领出库位）。
+/// </summary>
+public sealed record SparePartLineDraft(
+    string SkuCode,
+    decimal Quantity,
+    string? UomCode = null,
+    string? SiteCode = null,
+    string? LocationCode = null);
 
 public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggregateRoot
 {
@@ -62,6 +72,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     private MaintenanceWorkOrder(
         string organizationId,
         string environmentId,
+        string workOrderNo,
         string deviceAssetId,
         string priority,
         string? sourceAlarmId,
@@ -78,6 +89,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         Id = new MaintenanceWorkOrderId(Guid.CreateVersion7());
         OrganizationId = MaintenanceText.Required(organizationId, nameof(organizationId));
         EnvironmentId = MaintenanceText.Required(environmentId, nameof(environmentId));
+        WorkOrderNo = MaintenanceText.Required(workOrderNo, nameof(workOrderNo));
         DeviceAssetId = MaintenanceText.Required(deviceAssetId, nameof(deviceAssetId));
         Priority = MaintenanceText.Required(priority, nameof(priority)).ToLowerInvariant();
         SourceAlarmId = MaintenanceText.Optional(sourceAlarmId);
@@ -97,6 +109,12 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
 
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// 维修工单的正式单据编号（#3852）：由编码规则 <c>maintenance-work-order</c> 分配（MWO-yyyyMMdd-NNNNNN），
+    /// 组织 + 环境内唯一，是界面、成本候选、质检与库存流水引用的人读单号；工单身份仍是 <see cref="Entity{TKey}.Id"/>。
+    /// </summary>
+    public string WorkOrderNo { get; private set; } = string.Empty;
     public string DeviceAssetId { get; private set; } = string.Empty;
     public string Priority { get; private set; } = string.Empty;
     public string? SourceAlarmId { get; private set; }
@@ -118,6 +136,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public bool AssetUnavailable { get; private set; }
     public string? AssetUnavailableReason { get; private set; }
     public DateTimeOffset? AssetUnavailableFromUtc { get; private set; }
+    public DateTimeOffset? ExpectedRestoreAtUtc { get; private set; }
     public string? CompletionResult { get; private set; }
     public string? DowntimeReasonCode { get; private set; }
     public int? DowntimeMinutes { get; private set; }
@@ -137,6 +156,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public static MaintenanceWorkOrder OpenManual(
         string organizationId,
         string environmentId,
+        string workOrderNo,
         string deviceAssetId,
         string priority,
         string openedBy,
@@ -146,6 +166,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         return new MaintenanceWorkOrder(
             organizationId,
             environmentId,
+            workOrderNo,
             deviceAssetId,
             priority,
             null,
@@ -159,6 +180,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public static MaintenanceWorkOrder OpenFromPlan(
         string organizationId,
         string environmentId,
+        string workOrderNo,
         string deviceAssetId,
         string planCode,
         string openedBy,
@@ -168,6 +190,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         return new MaintenanceWorkOrder(
             organizationId,
             environmentId,
+            workOrderNo,
             deviceAssetId,
             "planned",
             null,
@@ -180,6 +203,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public static MaintenanceWorkOrder OpenFromAlarm(
         string organizationId,
         string environmentId,
+        string workOrderNo,
         string deviceAssetId,
         string sourceAlarmId,
         string priority,
@@ -195,6 +219,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         return new MaintenanceWorkOrder(
             organizationId,
             environmentId,
+            workOrderNo,
             deviceAssetId,
             priority,
             normalizedAlarmId,
@@ -211,6 +236,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
     public static MaintenanceWorkOrder OpenFromInspection(
         string organizationId,
         string environmentId,
+        string workOrderNo,
         string deviceAssetId,
         MaintenanceInspectionId inspectionId,
         string result,
@@ -220,6 +246,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         return new MaintenanceWorkOrder(
             organizationId,
             environmentId,
+            workOrderNo,
             deviceAssetId,
             "high",
             null,
@@ -357,6 +384,11 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
             MaintenanceWorkOrderStatus.WaitingForParts);
         Status = MaintenanceWorkOrderStatus.Cancelled;
         CancelledAtUtc = DateTimeOffset.UtcNow;
+        if (AssetUnavailable)
+        {
+            this.AddDomainEvent(new AssetRestoredDomainEvent(this, CancelledAtUtc.Value));
+        }
+
         IncrementVersion();
     }
 
@@ -373,7 +405,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         this.AddDomainEvent(new MaintenanceWorkOrderAlarmClearedDomainEvent(this, AlarmClearedAtUtc.Value));
     }
 
-    public void MarkAssetUnavailable(DateTimeOffset fromUtc, string reason)
+    public void MarkAssetUnavailable(DateTimeOffset fromUtc, string reason, DateTimeOffset? expectedRestoreAtUtc = null)
     {
         EnsureOpen();
         var normalizedReason = MaintenanceText.Required(reason, nameof(reason));
@@ -382,11 +414,62 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
             return;
         }
 
+        ExpectedRestoreAtUtc = expectedRestoreAtUtc?.ToUniversalTime();
         AssetUnavailable = true;
         AssetUnavailableReason = normalizedReason;
         AssetUnavailableFromUtc = fromUtc;
-        this.AddDomainEvent(new AssetUnavailableDomainEvent(this, normalizedReason, fromUtc));
+        this.AddDomainEvent(new AssetUnavailableDomainEvent(this, normalizedReason, fromUtc, ExpectedRestoreAtUtc));
     }
+
+    /// <summary>
+    /// v2 原因码入口（#2964）：<paramref name="reasonCode"/> 必须已由应用层按请求 organization/environment 在动态
+    /// <c>downtime-reason</c> 目录精确命中；聚合原样保存请求原值——不 trim、不改大小写——并只抛出
+    /// <see cref="AssetUnavailableByReasonCodeDomainEvent"/>，不复用 v1 自由文本事实。
+    /// </summary>
+    public void MarkAssetUnavailableByReasonCode(DateTimeOffset fromUtc, string reasonCode, DateTimeOffset? expectedRestoreAtUtc = null)
+    {
+        EnsureOpen();
+        if (string.IsNullOrWhiteSpace(reasonCode))
+        {
+            throw new ArgumentException("reasonCode is required.", nameof(reasonCode));
+        }
+
+        if (reasonCode.Length > MaxAssetUnavailableReasonCodeLength)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(reasonCode),
+                reasonCode.Length,
+                $"reasonCode cannot exceed {MaxAssetUnavailableReasonCodeLength} characters.");
+        }
+
+        if (AssetUnavailable)
+        {
+            return;
+        }
+
+        ExpectedRestoreAtUtc = expectedRestoreAtUtc?.ToUniversalTime();
+        AssetUnavailable = true;
+        AssetUnavailableReason = reasonCode;
+        AssetUnavailableFromUtc = fromUtc;
+        this.AddDomainEvent(new AssetUnavailableByReasonCodeDomainEvent(this, reasonCode, fromUtc, ExpectedRestoreAtUtc));
+    }
+
+    public void UpdateExpectedRestore(DateTimeOffset? expectedRestoreAtUtc)
+    {
+        EnsureOpen();
+        if (!AssetUnavailable || AssetUnavailableFromUtc is null)
+        {
+            throw new InvalidOperationException("Only an unavailable asset can update its restoration prediction.");
+        }
+        ExpectedRestoreAtUtc = expectedRestoreAtUtc?.ToUniversalTime();
+        IncrementVersion();
+        this.AddDomainEvent(new AssetUnavailableDomainEvent(
+            this, AssetUnavailableReason!, AssetUnavailableFromUtc.Value, ExpectedRestoreAtUtc,
+            Version, DateTimeOffset.UtcNow));
+    }
+
+    /// <summary>与 <c>DowntimeReason.ReasonCode</c> 的持久化长度（100）一致；目录里不存在更长的码。</summary>
+    public const int MaxAssetUnavailableReasonCodeLength = 100;
 
     public void Complete(
         string result,
@@ -569,11 +652,15 @@ public sealed class SparePartLine : Entity<SparePartLineId>
         SkuCode = MaintenanceText.Required(draft.SkuCode, nameof(draft.SkuCode));
         Quantity = MaintenanceText.Positive(draft.Quantity, nameof(draft.Quantity));
         UomCode = MaintenanceText.Optional(draft.UomCode);
+        SiteCode = MaintenanceText.Optional(draft.SiteCode);
+        LocationCode = MaintenanceText.Optional(draft.LocationCode);
     }
 
     public string SkuCode { get; private set; } = string.Empty;
     public decimal Quantity { get; private set; }
     public string? UomCode { get; private set; }
+    public string? SiteCode { get; private set; }
+    public string? LocationCode { get; private set; }
 
     public static SparePartLine Create(SparePartLineDraft draft)
     {

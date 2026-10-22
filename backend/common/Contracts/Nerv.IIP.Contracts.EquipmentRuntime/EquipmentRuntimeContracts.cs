@@ -19,6 +19,8 @@ public static class EquipmentRuntimeReasonCodes
     public const string MaintenanceWindow = "equipment.maintenanceWindow";
     public const string InspectionRequired = "equipment.inspectionRequired";
     public const string SourceStale = "equipment.sourceStale";
+    // 设备从来没有过任何状态观测：还没接入采集，不是「采集过期」。
+    public const string SourceNotConnected = "equipment.sourceNotConnected";
     public const string TagMappingMissing = "equipment.tagMappingMissing";
     public const string NoEligibleSubstitute = "equipment.noEligibleSubstitute";
 }
@@ -29,7 +31,8 @@ public enum EquipmentRuntimeDeviceStateCategory
     LoadingNonProductive = 1,
     PlannedDown = 2,
     Unavailable = 3,
-    Unknown = 4
+    Unknown = 4,
+    Changeover = 5
 }
 
 public static class EquipmentRuntimeDeviceStates
@@ -42,6 +45,7 @@ public static class EquipmentRuntimeDeviceStates
     public const string PlannedDown = "planned-down";
     public const string Stopped = "stopped";
     public const string Faulted = "faulted";
+    public const string Changeover = "changeover";
 
     private static readonly IReadOnlyDictionary<string, EquipmentRuntimeDeviceStateCategory> Categories =
         new Dictionary<string, EquipmentRuntimeDeviceStateCategory>(StringComparer.OrdinalIgnoreCase)
@@ -66,6 +70,11 @@ public static class EquipmentRuntimeDeviceStates
             ["就绪"] = EquipmentRuntimeDeviceStateCategory.LoadingNonProductive,
             ["空闲"] = EquipmentRuntimeDeviceStateCategory.LoadingNonProductive,
             ["待机"] = EquipmentRuntimeDeviceStateCategory.LoadingNonProductive,
+
+            [Changeover] = EquipmentRuntimeDeviceStateCategory.Changeover,
+            ["setup"] = EquipmentRuntimeDeviceStateCategory.Changeover,
+            ["换型"] = EquipmentRuntimeDeviceStateCategory.Changeover,
+            ["换模"] = EquipmentRuntimeDeviceStateCategory.Changeover,
 
             [PlannedDown] = EquipmentRuntimeDeviceStateCategory.PlannedDown,
             ["planned-stop"] = EquipmentRuntimeDeviceStateCategory.PlannedDown,
@@ -113,9 +122,16 @@ public static class EquipmentRuntimeDeviceStates
         return Classify(state) == EquipmentRuntimeDeviceStateCategory.PlannedDown;
     }
 
+    public static bool IsChangeoverState(string? state)
+    {
+        return Classify(state) == EquipmentRuntimeDeviceStateCategory.Changeover;
+    }
+
     public static bool IsRuntimeAvailable(string? state)
     {
-        return Classify(state) is EquipmentRuntimeDeviceStateCategory.Productive or EquipmentRuntimeDeviceStateCategory.LoadingNonProductive;
+        return Classify(state) is EquipmentRuntimeDeviceStateCategory.Productive
+            or EquipmentRuntimeDeviceStateCategory.LoadingNonProductive
+            or EquipmentRuntimeDeviceStateCategory.Changeover;
     }
 
     private static string? Normalize(string? state)
@@ -170,7 +186,11 @@ public sealed record EquipmentRuntimeAvailabilityWindowContract(
     // SourceReferenceId 多数情况下是聚合 GUID，整个窗口对象里再无第二个可读字段，界面「来源引用」
     // 列只能把 GUID 原样上屏，前端无从兜底。各 provider 必须回带本域的业务标识；确实没有业务编号
     // 可回时留 null，由界面显示占位而不是显示 GUID。
-    string? SourceReferenceLabel = null);
+    string? SourceReferenceLabel = null,
+    // Source-owned prediction; it never changes the actual unavailable interval or restores an asset.
+    DateTimeOffset? ExpectedRestoreAtUtc = null,
+    string? RestorePredictionSource = null,
+    string? RestorePredictionSourceVersion = null);
 
 public sealed record EquipmentRuntimeCurrentStateResponse(
     int ContractVersion,

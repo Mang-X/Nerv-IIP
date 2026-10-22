@@ -1,3 +1,4 @@
+import type { ScheduleAssignmentContract } from '@nerv-iip/api-client'
 import { describe, expect, it } from 'vitest'
 import { ref } from 'vue'
 import { toModel } from '../model/aps-mapper'
@@ -35,6 +36,48 @@ describe('useSchedulingEdits', () => {
 
     edits.redo()
     expect(model.value.tasks.find((t) => t.id === 'a1')!.startUtc).toBe('2026-06-10T09:00:00.000Z')
+  })
+
+  it('keeps the moved single segment consistent through undo/redo and locked repreview (#4054 review)', async () => {
+    const assignment = samplePlan.assignments![0]!
+    const model = ref<ScheduleModel>(
+      toModel({
+        ...samplePlan,
+        assignments: [
+          {
+            ...assignment,
+            segments: [{ startUtc: assignment.startUtc, endUtc: assignment.endUtc }],
+          },
+        ],
+      }),
+    )
+    let received: ScheduleAssignmentContract[] = []
+    const edits = useSchedulingEdits(model, {
+      preview: async (locked) => {
+        received = locked
+        return model.value
+      },
+      release: async () => {},
+    })
+    edits.onTaskDragEnd({
+      taskId: 'a1',
+      operationId: 'op-10',
+      kind: 'move',
+      startUtc: '2026-06-10T09:00:00.000Z',
+      endUtc: '2026-06-10T11:00:00.000Z',
+    })
+    edits.undo()
+    expect(model.value.tasks.find((task) => task.id === 'a1')?.segments).toEqual([
+      { startUtc: assignment.startUtc, endUtc: assignment.endUtc },
+    ])
+    edits.redo()
+    edits.setLocked('a1', true)
+    await edits.repreview()
+    expect(received[0]).toMatchObject({
+      startUtc: '2026-06-10T09:00:00.000Z',
+      endUtc: '2026-06-10T11:00:00.000Z',
+      segments: [{ startUtc: '2026-06-10T09:00:00.000Z', endUtc: '2026-06-10T11:00:00.000Z' }],
+    })
   })
 
   it('repreview replaces model with backend result and resets baseline', async () => {

@@ -12,7 +12,7 @@ namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Erp;
 [BusinessGatewayOperationId("configureBusinessConsoleErpWorkCenterCostRate")]
 public sealed class ConfigureBusinessConsoleErpWorkCenterCostRateEndpoint(
     IBusinessGatewayAuthorizationClient auth,
-    IBusinessErpClient erp,
+    IBusinessErpCostingClient erp,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<
         BusinessConsoleConfigureErpWorkCenterCostRateRequest,
@@ -42,7 +42,7 @@ public sealed class ConfigureBusinessConsoleErpWorkCenterCostRateEndpoint(
 [BusinessGatewayOperationId("listBusinessConsoleErpWorkCenterCostRates")]
 public sealed class ListBusinessConsoleErpWorkCenterCostRatesEndpoint(
     IBusinessGatewayAuthorizationClient auth,
-    IBusinessErpClient erp,
+    IBusinessErpCostingClient erp,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<
         BusinessConsoleListErpWorkCenterCostRatesRequest,

@@ -48,8 +48,7 @@ foreach ($requiredWorkflowToken in @(
         'test "$FRONTEND_SELECTED" = "false"',
         'test "$SHARD_RESULT" = "skipped"',
         'test "$CHECK_RESULT" = "skipped"',
-        'test "$VALIDATION_RESULT" = "skipped"',
-        'run: ./scripts/tests/frontend-workspace-plan.Tests.ps1')) {
+        'test "$VALIDATION_RESULT" = "skipped"')) {
     Assert-Contract ($workflow.Contains($requiredWorkflowToken, [StringComparison]::Ordinal)) "Frontend workflow is missing fail-closed token '$requiredWorkflowToken'."
 }
 Assert-Contract (-not $workflow.Contains('continue-on-error', [StringComparison]::Ordinal)) 'Frontend affected routing must not be weakened by continue-on-error.'

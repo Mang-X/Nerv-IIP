@@ -25,5 +25,12 @@
 
 ## 从哪里学
 
+- 操作指南：[核对工单成本差异](/how-to/check-work-order-cost)。
+
+- 操作指南：[核对机器制造费用](/how-to/check-machine-overhead)。
+- 操作指南：[维护工作中心人工费率](/how-to/maintain-work-center-cost-rates)。
+- 操作指南：[维护机器制造费用率](/how-to/maintain-machine-overhead-rates)。
+- 概念解释：[机器预定分配与月度差异](/explanation/machine-overhead)。
+
 - 概念解释中的 ERP 采购/销售/财务流程图尚未提供，随后续功能批次补齐；先按上表页面串对照操作。
 - 与计划联动（MRP 建议来源）见教程：[需求计划到完工入库](/getting-started/planning-to-finished-goods)

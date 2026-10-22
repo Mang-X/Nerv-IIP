@@ -1,4 +1,5 @@
 import type { StatusTone } from '@nerv-iip/ui'
+import { describeMesReadinessReasons } from '@nerv-iip/business-core'
 
 /**
  * 工序任务的状态语义单一事实源（派工看板 / 工序执行 / 工单详情共用）。
@@ -38,6 +39,8 @@ export interface MesOperationTaskLike {
   scheduledAtUtc?: string | null
   scheduleInvalidationReasonCode?: string | null
   blockingReasons?: string[] | null
+  allowedActions?: string[] | null
+  blockReasons?: string[] | null
 }
 
 const EXECUTION_STATES: Record<MesExecutionStateKey, MesTaskStateDisplay> = {
@@ -190,7 +193,8 @@ export interface MesLifecycleAction {
  * 工序生命周期动作的可用性，严格对齐后端 OperationTask 聚合的状态机：
  * start 仅 Queued → InProgress；pause 仅 InProgress → Paused；
  * resume 仅 Paused → InProgress；complete 仅 InProgress → Completed。
- * 前端按同一套规则禁用，避免点下去才被后端 409/400 顶回来。
+ * 开工还需通过服务端 readiness：allowedActions 包含 start 且无 blockReasons。
+ * 其余动作仍按生命周期状态机判断；readiness 只代表开工检查。
  */
 export function resolveLifecycleActions(row: MesOperationTaskLike): MesLifecycleAction[] {
   const key = EXECUTION_BY_STATUS[normalize(row.status)]
@@ -199,6 +203,12 @@ export function resolveLifecycleActions(row: MesOperationTaskLike): MesLifecycle
   const paused = key === 'paused'
   const settled = key ? SETTLED_STATES.has(key) : false
   const invalidated = key === 'scheduleInvalidated'
+  const startReady = row.allowedActions?.includes('start') === true && !row.blockReasons?.length
+  const startEnabled = queued && startReady
+  const readinessReasons = describeMesReadinessReasons(row.blockReasons)
+  const startBlockedReason = readinessReasons.length
+    ? readinessReasons.map((reason) => `${reason.label}：${reason.nextStep}`).join('；')
+    : '当前开工检查未放行，请刷新工序任务后确认。'
 
   function reason(available: boolean, need: string): string | undefined {
     if (available) return undefined
@@ -211,8 +221,12 @@ export function resolveLifecycleActions(row: MesOperationTaskLike): MesLifecycle
     {
       key: 'start',
       label: '开工',
-      enabled: queued,
-      blockedReason: reason(queued, '只有待开工的工序可以开工。'),
+      enabled: startEnabled,
+      blockedReason: queued
+        ? startEnabled
+          ? undefined
+          : startBlockedReason
+        : reason(false, '只有待开工的工序可以开工。'),
     },
     {
       key: 'pause',

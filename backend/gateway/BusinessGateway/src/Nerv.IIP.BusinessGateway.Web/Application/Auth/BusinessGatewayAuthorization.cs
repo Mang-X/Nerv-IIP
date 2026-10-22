@@ -28,16 +28,30 @@ public sealed record BusinessGatewayAuthorizationResult(
     string? DenialReason,
     AuthorizationDataScope? DataScope = null,
     IReadOnlyCollection<AuthorizationScopeGrant>? ScopeGrants = null,
-    IReadOnlyCollection<AuthorizationRole>? Roles = null)
+    IReadOnlyCollection<AuthorizationRole>? Roles = null,
+    string? AuthorizedOrganizationId = null,
+    string? AuthorizedEnvironmentId = null)
 {
     public static BusinessGatewayAuthorizationResult Allowed(
         string principalId,
         string principalType,
         string loginName,
+        string authorizedOrganizationId,
+        string authorizedEnvironmentId,
         AuthorizationDataScope? dataScope = null,
         IReadOnlyCollection<AuthorizationScopeGrant>? scopeGrants = null,
         IReadOnlyCollection<AuthorizationRole>? roles = null) =>
-        new(true, principalId, principalType, loginName, null, dataScope, scopeGrants, roles);
+        new(
+            true,
+            principalId,
+            principalType,
+            loginName,
+            null,
+            dataScope,
+            scopeGrants,
+            roles,
+            authorizedOrganizationId,
+            authorizedEnvironmentId);
 
     public static BusinessGatewayAuthorizationResult Forbidden(string reason) =>
         new(false, null, null, null, reason, null);
@@ -66,6 +80,12 @@ public enum BusinessGatewayAuthorizationContinuityMode
 
 public static class BusinessGatewayPermissions
 {
+    /// <summary>#3739：死信运维面。#3738 只登记了这两个码，强制点在本网关 facade 上。</summary>
+    public const string DeadLettersRead = "business.dlq.read";
+
+    /// <inheritdoc cref="DeadLettersRead"/>
+    public const string DeadLettersManage = "business.dlq.manage";
+
     public const string MasterDataProductsRead = "business.masterdata.products.read";
     public const string MasterDataProductsManage = "business.masterdata.products.manage";
     public const string MasterDataPartnersManage = "business.masterdata.partners.manage";
@@ -74,6 +94,7 @@ public static class BusinessGatewayPermissions
     public const string InventoryLedgerRead = "business.inventory.ledger.read";
     public const string InventoryMovementsCreate = "business.inventory.movements.create";
     public const string InventoryCountsManage = "business.inventory.counts.manage";
+    public const string InventoryLocationsManage = "business.inventory.locations.manage";
     public const string InventoryExpiredStockOverride = "business.inventory.expired-stock.override";
     public const string QualityInspectionRecordsRead = "business.quality.inspection-records.read";
     public const string QualityInspectionRecordsCreate = "business.quality.inspection-records.create";
@@ -110,6 +131,7 @@ public static class BusinessGatewayPermissions
     public const string IiotAlarmsRead = "business.iiot.alarms.read";
     public const string IiotAlarmsWrite = "business.iiot.alarms.write";
     public const string IiotAlarmRulesManage = "business.iiot.alarm-rules.manage";
+    public const string IiotTagsManage = "business.iiot.tags.manage";
     public const string IiotDeviceControlWrite = "business.iiot.device-control.write";
     public const string IiotDeviceControlManage = "business.iiot.device-control.manage";
     public const string IiotDeviceControlRead = "business.iiot.device-control.read";
@@ -117,6 +139,7 @@ public static class BusinessGatewayPermissions
     public const string MaintenanceWorkOrdersManage = "business.maintenance.work-orders.manage";
     public const string MaintenancePlansRead = "business.maintenance.plans.read";
     public const string MaintenancePlansManage = "business.maintenance.plans.manage";
+    public const string MaintenanceDowntimeReasonsRead = "business.maintenance.downtime-reasons.read";
     public const string ErpProcurementRead = "business.erp.procurement.read";
     public const string ErpProcurementManage = "business.erp.procurement.manage";
     public const string ErpSalesRead = "business.erp.sales.read";
@@ -129,9 +152,11 @@ public static class BusinessGatewayPermissions
     public const string WmsShipmentsManage = "business.wms.shipments.manage";
     public const string WmsCountsRead = "business.wms.counts.read";
     public const string WmsAutomationManage = "business.wms.automation.manage";
+    public const string WmsWorkPoolsManage = "business.wms.work-pools.manage";
     public const string ApprovalsRead = "business.approvals.read";
     public const string ApprovalsManage = "business.approvals.manage";
     public const string BarcodeTemplatesManage = "business.barcodes.templates.manage";
+    public const string BarcodeTemplateAssetsRetire = "business.barcodes.template-assets.retire";
     public const string BarcodePrint = "business.barcodes.print";
     public const string BarcodeScansWrite = "business.barcodes.scans.write";
     public const string NotificationMessagesRead = "notifications.messages.read";
@@ -248,6 +273,8 @@ public sealed class HttpBusinessGatewayAuthorizationClient(
                     body.PrincipalId!,
                     body.PrincipalType!,
                     body.LoginName!,
+                    requirement.OrganizationId,
+                    requirement.EnvironmentId,
                     body.DataScope,
                     body.ScopeGrants,
                     body.Roles)

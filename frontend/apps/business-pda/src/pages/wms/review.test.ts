@@ -3,6 +3,7 @@ import { NvBottomSheet, NvMobileDropdownMenuItem, NvPullRefresh } from '@nerv-ii
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, ref } from 'vue'
 import { RequestTimeoutError } from '@/api/request-timeout'
+import { BusinessOperationPendingError } from '@nerv-iip/api-client'
 
 const push = vi.fn()
 const routeGuardState = vi.hoisted(() => ({
@@ -25,9 +26,6 @@ vi.mock('@/composables/useWmsOperationalCandidates', async () => {
       ready: shallowRef(true),
       searchKeyword: shallowRef(''),
       scanOverrides: shallowRef({}),
-      sourceLabel: shallowRef('当前范围仓储作业记录候选'),
-      asOfUtc: shallowRef(),
-      freshnessUtc: shallowRef(),
       truncated: shallowRef(false),
       pending: shallowRef(false),
       error: shallowRef(),
@@ -61,7 +59,7 @@ const wmsState = vi.hoisted(() => ({
   completeOutbound: vi.fn(
     (
       _outboundOrderId: string,
-      _input: { packReviewNo: string; passed: boolean; idempotencyKey: string },
+      _input: { passed: boolean; idempotencyKey: string },
       options?: { attempt: 'initial' | 'retry'; onCommandAttempt?: () => void },
     ) => {
       options?.onCommandAttempt?.()
@@ -92,7 +90,6 @@ vi.mock('@/composables/useBusinessWms', () => ({
     organizationId: computed(() => 'org-001'),
     environmentId: computed(() => 'env-dev'),
     scopeReady: computed(() => true),
-    lastUpdatedAt: computed(() => '2026-07-28T10:20:30.000Z'),
     hasSuccessfulResponse: computed(() => !wmsState.pending && !wmsState.error),
     hasFailedResponse: computed(() => false),
     pending: computed(() => wmsState.pending),
@@ -172,52 +169,20 @@ describe('WMS 复核发货', () => {
 
     expect(scopeKey.value).toBe('work-pool:WMS-SITE-001-SHIPPING')
     expect(wmsState.filters.status).toBe('Completed')
-    expect(wrapper.text()).toContain('WMS 发货作业范围目录')
   })
 
-  it('点单 → 抽屉 → 复核单号未填时确认按钮禁用', async () => {
+  it('点单后不填复核单号直接确认 → 以该单 id 与 {passed,idempotencyKey} 调用 completeOutbound', async () => {
     const wrapper = mount(ReviewPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
-    const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
-    expect(confirm).toBeTruthy()
-    expect(confirm.disabled).toBe(true)
-    confirm.click()
-    expect(wmsState.completeOutbound).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('复核单号仅含空白（"   "）时确认按钮禁用且不调用 completeOutbound', async () => {
-    const wrapper = mount(ReviewPage, { attachTo: document.body })
-    await wrapper.findAll('[data-row]')[0].trigger('click')
-    const reviewInput = document.querySelector<HTMLInputElement>('[data-testid="pack-review-no"]')!
-    reviewInput.value = '   '
-    reviewInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await wrapper.vm.$nextTick()
-    const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
-    expect(confirm.disabled).toBe(true)
-    confirm.click()
-    expect(wmsState.completeOutbound).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('填写复核单号后 → 以该单 id 与 {packReviewNo,passed,idempotencyKey} 调用 completeOutbound', async () => {
-    const wrapper = mount(ReviewPage, { attachTo: document.body })
-    await wrapper.findAll('[data-row]')[0].trigger('click')
-    const reviewInput = document.querySelector<HTMLInputElement>('[data-testid="pack-review-no"]')!
-    expect(reviewInput).toBeTruthy()
-    reviewInput.value = 'PR-1'
-    reviewInput.dispatchEvent(new Event('input', { bubbles: true }))
-    await wrapper.vm.$nextTick()
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     expect(confirm.disabled).toBe(false)
     confirm.click()
     expect(wmsState.completeOutbound).toHaveBeenCalledTimes(1)
     const [id, input] = wmsState.completeOutbound.mock.calls[0] as [
       string,
-      { packReviewNo: string; passed: boolean; idempotencyKey: string },
+      { passed: boolean; idempotencyKey: string },
     ]
     expect(id).toBe('11111111-1111-1111-1111-111111111111')
-    expect(input.packReviewNo).toBe('PR-1')
     expect(input.passed).toBe(true)
     // 页面生成稳定幂等键并随业务字段一并传入。
     expect(typeof input.idempotencyKey).toBe('string')
@@ -235,15 +200,10 @@ describe('WMS 复核发货', () => {
     )
     const wrapper = mount(ReviewPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
-    const reviewInput = document.querySelector<HTMLInputElement>('[data-testid="pack-review-no"]')!
-    reviewInput.value = 'PR-1'
-    reviewInput.dispatchEvent(new Event('input', { bubbles: true }))
     await wrapper.vm.$nextTick()
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     confirm.click()
     await flushPromises()
-    reviewInput.value = 'PR-CHANGED'
-    reviewInput.dispatchEvent(new Event('input', { bubbles: true }))
     document.querySelector<HTMLButtonElement>('[data-testid="toggle-passed"]')!.click()
     await wrapper.vm.$nextTick()
     confirm.click()
@@ -264,9 +224,6 @@ describe('WMS 复核发货', () => {
 
     // 重新点单（新操作）→ 新键。
     await wrapper.findAll('[data-row]')[0].trigger('click')
-    const reviewInput2 = document.querySelector<HTMLInputElement>('[data-testid="pack-review-no"]')!
-    reviewInput2.value = 'PR-2'
-    reviewInput2.dispatchEvent(new Event('input', { bubbles: true }))
     await wrapper.vm.$nextTick()
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
     await flushPromises()
@@ -281,22 +238,18 @@ describe('WMS 复核发货', () => {
     wmsState.completeOutbound.mockImplementationOnce(
       (_id: string, _input: unknown, options?: { onCommandAttempt?: () => void }) => {
         options?.onCommandAttempt?.()
-        return Promise.reject({ success: false, statusCode: 422, message: '复核单号无效' })
+        return Promise.reject({ success: false, statusCode: 422, message: '复核结论无效' })
       },
     )
     const wrapper = mount(ReviewPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
-    const reviewInput = document.querySelector<HTMLInputElement>('[data-testid="pack-review-no"]')!
-    reviewInput.value = 'PR-1'
-    reviewInput.dispatchEvent(new Event('input', { bubbles: true }))
     await wrapper.vm.$nextTick()
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     confirm.click()
     await flushPromises()
     const firstKey = (wmsState.completeOutbound.mock.calls[0][1] as { idempotencyKey: string })
       .idempotencyKey
-    reviewInput.value = 'PR-2'
-    reviewInput.dispatchEvent(new Event('input', { bubbles: true }))
+    document.querySelector<HTMLButtonElement>('[data-testid="toggle-passed"]')!.click()
     await wrapper.vm.$nextTick()
     confirm.click()
     await flushPromises()
@@ -317,16 +270,15 @@ describe('WMS 复核发货', () => {
     )
     const wrapper = mount(ReviewPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
-    const reviewInput = document.querySelector<HTMLInputElement>('[data-testid="pack-review-no"]')!
-    reviewInput.value = 'PR-1'
-    reviewInput.dispatchEvent(new Event('input', { bubbles: true }))
     await wrapper.vm.$nextTick()
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     confirm.click()
     await flushPromises()
 
     const first = wmsState.completeOutbound.mock.calls[0]
-    expect(reviewInput.disabled).toBe(true)
+    expect(
+      document.querySelector<HTMLButtonElement>('[data-testid="toggle-passed"]')!.disabled,
+    ).toBe(true)
     expect(document.body.textContent).toContain('原内容重试')
     const sheet = wrapper.findAllComponents(NvBottomSheet).find((sheet) => sheet.props('open'))!
     sheet.vm.$emit('update:open', false)
@@ -353,9 +305,6 @@ describe('WMS 复核发货', () => {
     wmsState.completePending = true
     const wrapper = mount(ReviewPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
-    const reviewInput = document.querySelector<HTMLInputElement>('[data-testid="pack-review-no"]')!
-    reviewInput.value = 'PR-1'
-    reviewInput.dispatchEvent(new Event('input', { bubbles: true }))
     await wrapper.vm.$nextTick()
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     expect(confirm.disabled).toBe(true)
@@ -365,9 +314,6 @@ describe('WMS 复核发货', () => {
   it('完成后显示成功 Result', async () => {
     const wrapper = mount(ReviewPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
-    const reviewInput = document.querySelector<HTMLInputElement>('[data-testid="pack-review-no"]')!
-    reviewInput.value = 'PR-1'
-    reviewInput.dispatchEvent(new Event('input', { bubbles: true }))
     await wrapper.vm.$nextTick()
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
     await wrapper.vm.$nextTick()
@@ -378,6 +324,22 @@ describe('WMS 复核发货', () => {
     wrapper.unmount()
   })
 
+  it('复核已受理、库存仍在过账时进结果态说明正在过账，不报失败（#3926）', async () => {
+    wmsState.completeOutbound.mockRejectedValueOnce(
+      new BusinessOperationPendingError('wms.outbound-order.complete'),
+    )
+    const wrapper = mount(ReviewPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await wrapper.vm.$nextTick()
+    document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('出库复核已提交')
+    expect(wrapper.text()).toContain('库存正在过账')
+    expect(wrapper.text()).not.toContain('失败')
+    wrapper.unmount()
+  })
+
   it('409 后刷新并关闭旧抽屉、清除过期选择', async () => {
     wmsState.completeOutbound.mockRejectedValueOnce({
       success: false,
@@ -385,9 +347,6 @@ describe('WMS 复核发货', () => {
     })
     const wrapper = mount(ReviewPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
-    const reviewInput = document.querySelector<HTMLInputElement>('[data-testid="pack-review-no"]')!
-    reviewInput.value = 'PR-1'
-    reviewInput.dispatchEvent(new Event('input', { bubbles: true }))
     await wrapper.vm.$nextTick()
     document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
     await flushPromises()

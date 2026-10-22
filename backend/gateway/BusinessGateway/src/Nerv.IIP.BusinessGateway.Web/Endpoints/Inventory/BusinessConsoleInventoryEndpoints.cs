@@ -74,6 +74,50 @@ public sealed class ListBusinessConsoleInventoryMovementsEndpoint(
 }
 
 [Tags("Business Console Inventory")]
+[HttpGet("/api/business-console/v1/inventory/locations")]
+[BusinessGatewayOperationId("listBusinessConsoleInventoryLocations")]
+public sealed class ListBusinessConsoleInventoryLocationsEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessInventoryClient inventory,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleInventoryLocationListRequest, BusinessConsoleInventoryLocationListResponse>(
+        auth,
+        BusinessGatewayPermissions.InventoryLocationsManage)
+{
+    protected override string OrganizationId(BusinessConsoleInventoryLocationListRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleInventoryLocationListRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleInventoryLocationListResponse> ForwardAsync(
+        BusinessConsoleInventoryLocationListRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        inventory.ListLocationsAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Inventory")]
+[HttpPost("/api/business-console/v1/inventory/locations")]
+[BusinessGatewayOperationId("createOrUpdateBusinessConsoleInventoryLocation")]
+public sealed class CreateOrUpdateBusinessConsoleInventoryLocationEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessInventoryClient inventory,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCreateOrUpdateInventoryLocationRequest, BusinessConsoleCreateOrUpdateInventoryLocationResponse>(
+        auth,
+        BusinessGatewayPermissions.InventoryLocationsManage)
+{
+    protected override string OrganizationId(BusinessConsoleCreateOrUpdateInventoryLocationRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleCreateOrUpdateInventoryLocationRequest request) => request.EnvironmentId;
+
+    protected override Task<BusinessConsoleCreateOrUpdateInventoryLocationResponse> ForwardAsync(
+        BusinessConsoleCreateOrUpdateInventoryLocationRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        inventory.CreateOrUpdateLocationAsync(tokenProvider.BearerToken, request, cancellationToken);
+}
+
+[Tags("Business Console Inventory")]
 [HttpGet("/api/business-console/v1/inventory/count-tasks")]
 [BusinessGatewayOperationId("listBusinessConsoleInventoryCountTasks")]
 public sealed class ListBusinessConsoleInventoryCountTasksEndpoint(
@@ -220,6 +264,30 @@ public sealed class ConfirmBusinessConsoleInventoryCountAdjustmentEndpoint(
     }
 }
 
+public sealed class BusinessConsolePostStockMovementRequestValidator
+    : Validator<BusinessConsolePostStockMovementRequest>
+{
+    public BusinessConsolePostStockMovementRequestValidator()
+    {
+        // 只补长度上界，**不加 NotEmpty**：加必填是值域决定，归 #3287 的子票，不在这里顺手做。
+        // 原先写在这里的理由（「补上必填会把未授权调用方的 403 变成 400」）已由 #3330 消除：
+        // 鉴权与幂等键归一化都已前移到 DTO 校验之前
+        // （AuthorizedBusinessProxyEndpoint.OnBeforeValidateAsync），端点级规则命中不再改写鉴权结论。
+        RuleFor(x => x.IdempotencyKey).MaximumLength(128);
+    }
+}
+
+public sealed class BusinessConsoleCreateStockCountTaskRequestValidator
+    : Validator<BusinessConsoleCreateStockCountTaskRequest>
+{
+    public BusinessConsoleCreateStockCountTaskRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
+    }
+}
+
 public sealed class BusinessConsoleConfirmStockCountAdjustmentRequestValidator
     : Validator<BusinessConsoleConfirmStockCountAdjustmentRequest>
 {
@@ -228,8 +296,12 @@ public sealed class BusinessConsoleConfirmStockCountAdjustmentRequestValidator
         RuleFor(x => x.CountTaskId).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.CountedQuantity).GreaterThan(0);
-        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        // #3355：实盘数 0 是合法盘点结果（账面有货、实盘没有），差异调整正需要把它记下来。
+        // 下界与下游逐字对齐：Inventory 的 ConfirmStockCountAdjustmentCommandValidator 写
+        // GreaterThanOrEqualTo(0)，领域 StockCountTask.EnsureReadyForAdjustment 也只拒 < 0。
+        // 网关此前写 GreaterThan(0) 比下游更严，把「盘亏到零」挡在入口。负数仍然拒绝。
+        RuleFor(x => x.CountedQuantity).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(128);
     }
 }
 

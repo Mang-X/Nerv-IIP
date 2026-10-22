@@ -10,7 +10,7 @@ import {
   classifyFulfillmentFailure,
   describeMrpSuggestion,
   describeUrgencyLevel,
-  describeWorkOrderLink,
+  describeMergedWorkOrder,
   FulfillmentNodeError,
   matchDeliveryOrders,
   matchDemandPeggings,
@@ -285,8 +285,8 @@ describe('节点文案：不显裸 GUID、合批如实说明', () => {
 
   it('合批工单明说同时承接别的订单，非合批不加噪声', () => {
     const record = { workOrderNo: 'WO-20260731-000001', planRow: mergedPlanRows[0]! }
-    expect(describeWorkOrderLink(record, 'SO-B')).toContain('该工单为合批工单，同时承接 SO-A')
-    expect(describeWorkOrderLink(record, 'SO-A')).not.toContain('合批')
+    expect(describeMergedWorkOrder(record, 'SO-B')).toBe('该工单为合批工单，同时承接 SO-A 等订单')
+    expect(describeMergedWorkOrder(record, 'SO-A')).toBeUndefined()
   })
 
   // #1418：抽屉曾把后端 level 原值摆成徽标，演示里就是一枚英文 `highrisk`。
@@ -323,7 +323,6 @@ describe('resolveRecordNode — four-state machine', () => {
       detailStatus: record.status,
     }),
     pendingNote: '尚未产生规则说明',
-    source: 'ERP · 发货单读面',
   }
 
   it('established: exposes business number and drill fields', () => {

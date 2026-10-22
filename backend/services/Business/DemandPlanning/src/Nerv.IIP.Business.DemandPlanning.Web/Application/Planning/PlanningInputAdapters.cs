@@ -2,11 +2,13 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Nerv.IIP.ServiceAuth;
+using Nerv.IIP.Contracts.DemandPlanning;
 using Prometheus;
 using static Nerv.IIP.Business.DemandPlanning.Web.Application.Planning.PlanningHttpQuery;
 
@@ -435,7 +437,7 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 && x.Quantity > 0m
                 && x.DueDate >= horizonStart
                 && x.DueDate <= horizonEnd)
-            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
+            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType, x.SourceLineReference == "" ? null : x.SourceLineReference))
             .ToListAsync(cancellationToken);
         var forecastInputs = await dbContext.ForecastInputs
             .AsNoTracking()
@@ -463,9 +465,26 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 "mps"))
             .ToListAsync(cancellationToken);
         var converter = PlanningUomConverter.Create(uomConversions);
+        var coveredSales = demandSources
+            .Where(demand => IsSalesDemand(demand) && mpsBuckets.Any(mps =>
+                string.Equals(mps.SkuCode, demand.SkuCode, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(mps.SiteCode, demand.SiteCode, StringComparison.OrdinalIgnoreCase)
+                && mps.DueDate == demand.DueDate))
+            .ToArray();
+        var uncoveredSales = demandSources.Except(coveredSales).ToArray();
+        var salesExcess = mpsBuckets
+            .SelectMany(mps => BuildSalesExcess(mps, coveredSales, converter))
+            .ToArray();
         var forecastDemands = forecastInputs
             .Select(forecast =>
             {
+                if (mpsBuckets.Any(mps => string.Equals(mps.SkuCode, forecast.SkuCode, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(mps.SiteCode, forecast.SiteCode, StringComparison.OrdinalIgnoreCase)
+                    && mps.DueDate >= forecast.PeriodStartDate
+                    && mps.DueDate <= forecast.PeriodEndDate))
+                {
+                    return null;
+                }
                 var consumptionStart = forecast.PeriodStartDate.AddDays(-forecast.BackwardConsumptionDays);
                 var consumptionEnd = forecast.PeriodEndDate.AddDays(forecast.ForwardConsumptionDays);
                 var forecastUomCode = ResolvePlanningUom(forecast.SkuCode, forecast.SiteCode, forecast.UomCode, planningParameters);
@@ -477,7 +496,7 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                     forecastUomCode,
                     forecast.Quantity,
                     requireConversion: true);
-                var consumed = demandSources
+                var consumed = uncoveredSales
                     .Concat(mpsBuckets)
                     .Where(demand => IsForecastConsumingDemand(demand)
                         && string.Equals(demand.SkuCode, forecast.SkuCode, StringComparison.OrdinalIgnoreCase)
@@ -507,9 +526,10 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
             .Select(x => x!)
             .ToArray();
 
-        return demandSources
+        return uncoveredSales
             .Concat(forecastDemands)
             .Concat(mpsBuckets)
+            .Concat(salesExcess)
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SourceType)
             .ThenBy(x => x.DemandSourceReference)
@@ -532,7 +552,7 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
                 && x.Quantity > 0m
                 && x.DueDate >= horizonStart
                 && x.DueDate <= horizonEnd)
-            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
+            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType, x.SourceLineReference == "" ? null : x.SourceLineReference))
             .ToListAsync(cancellationToken);
         var forecastInputs = await dbContext.ForecastInputs
             .AsNoTracking()
@@ -578,6 +598,35 @@ public sealed class DemandPlanningUpstreamInputSnapshotProvider(
         return string.Equals(demand.SourceType, "sales-order", StringComparison.OrdinalIgnoreCase)
             || string.Equals(demand.SourceType, "sales", StringComparison.OrdinalIgnoreCase)
             || string.Equals(demand.SourceType, "mps", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSalesDemand(DemandSnapshot demand)
+    {
+        return string.Equals(demand.SourceType, "sales-order", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(demand.SourceType, "sales", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static IEnumerable<DemandSnapshot> BuildSalesExcess(
+        DemandSnapshot mps,
+        IReadOnlyCollection<DemandSnapshot> coveredSales,
+        PlanningUomConverter converter)
+    {
+        var remainingMpsQuantity = mps.Quantity;
+        foreach (var sale in coveredSales
+            .Where(x => string.Equals(x.SkuCode, mps.SkuCode, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(x.SiteCode, mps.SiteCode, StringComparison.OrdinalIgnoreCase)
+                && x.DueDate == mps.DueDate)
+            .OrderBy(x => x.DemandSourceReference, StringComparer.Ordinal)
+            .ThenBy(x => x.SourceLineReference, StringComparer.Ordinal))
+        {
+            var salesQuantity = converter.Convert(sale.SkuCode, sale.UomCode, mps.UomCode, sale.Quantity, "MPS sales consumption UOM");
+            var excess = Math.Max(0m, salesQuantity - remainingMpsQuantity);
+            remainingMpsQuantity = Math.Max(0m, remainingMpsQuantity - salesQuantity);
+            if (excess > 0m)
+            {
+                yield return sale with { UomCode = mps.UomCode, Quantity = excess, SourceType = "mps-sales-excess" };
+            }
+        }
     }
 
     private static DateOnly ClampForecastDueDate(DateOnly periodEndDate, DateOnly horizonStart, DateOnly horizonEnd)
@@ -769,7 +818,7 @@ public sealed class CompositePlanningScheduledReceiptSnapshotClient(
     }
 }
 
-public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient httpClient) : IPlanningScheduledReceiptSourceClient
+public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient httpClient, ApplicationDbContext dbContext) : IPlanningScheduledReceiptSourceClient
 {
     public string SourceName => "erp-purchase-orders";
 
@@ -793,7 +842,6 @@ public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient htt
                 "/api/business/v1/erp/purchase-orders?" + PlanningHttpQuery.Query(
                     ("organizationId", request.OrganizationId),
                     ("environmentId", request.EnvironmentId),
-                    ("status", "Released"),
                     ("skip", skip),
                     ("take", PageSize)));
             if (!string.IsNullOrWhiteSpace(internalBearerToken))
@@ -820,6 +868,7 @@ public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient htt
             .Select(x => $"{x.SkuCode}\u001f{x.UomCode}\u001f{x.SiteCode}")
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var receipts = orders
+            .Where(order => order.Status == "Released")
             .SelectMany(order => order.Lines
                 .Select(line => new
                 {
@@ -847,7 +896,60 @@ public sealed class HttpPlanningErpScheduledReceiptSnapshotClient(HttpClient htt
                 $"{x.PurchaseOrderNo}:{x.LineNo}"))
             .ToArray();
 
-        return new PlanningScheduledReceiptSnapshot($"erp-purchase-orders:{receipts.Length}", receipts);
+        var accepted = await dbContext.PlanningSuggestions.AsNoTracking()
+            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId
+                && x.Status == PlanningSuggestionStatus.Accepted && x.SuggestionType == DemandPlanningSuggestionTypes.PlannedPurchase
+                && x.RequiredDate <= request.HorizonEnd)
+            .ToArrayAsync(cancellationToken);
+        accepted = accepted.Where(x => itemKeys.Contains($"{x.SkuCode}\u001f{x.UomCode}\u001f{x.SiteCode}")).ToArray();
+        var commitments = new List<ScheduledReceiptSnapshot>();
+        if (accepted.Length > 0)
+        {
+            var requisitions = new List<ErpPlanningPurchaseRequisitionItem>();
+            skip = 0;
+            while (true)
+            {
+                using var httpRequest = new HttpRequestMessage(HttpMethod.Get,
+                    "/api/business/v1/erp/purchase-requisitions?" + PlanningHttpQuery.Query(
+                        ("organizationId", request.OrganizationId), ("environmentId", request.EnvironmentId),
+                        ("skip", skip), ("take", PageSize)));
+                if (!string.IsNullOrWhiteSpace(internalBearerToken))
+                {
+                    httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalBearerToken);
+                }
+                using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
+                response.EnsureSuccessStatusCode();
+                var body = await OptionalPlanningSnapshotHttp.ReadEnvelopeDataAsync<ErpPlanningPurchaseRequisitionsResponse>(
+                    response, "ERP returned an invalid purchase requisition response.",
+                    "ERP returned an empty purchase requisition response envelope.", cancellationToken);
+                requisitions.AddRange(body.Items);
+                skip += PageSize;
+                if (body.Items.Count == 0 || skip >= body.Total)
+                {
+                    break;
+                }
+            }
+
+            var requisitionBySuggestion = requisitions.ToDictionary(x => x.SuggestionId, StringComparer.Ordinal);
+            var orderByNumber = orders.ToDictionary(x => x.PurchaseOrderNo, StringComparer.Ordinal);
+            foreach (var suggestion in accepted)
+            {
+                // Released/terminal PO owns supply from now on, even when fully received or closed.
+                // Until then the accepted suggestion remains the commitment, not the pending PO quantity.
+                if (requisitionBySuggestion.TryGetValue(suggestion.Id.ToString(), out var requisition)
+                    && requisition.ConvertedPurchaseOrderNo is { } orderNo
+                    && orderByNumber.TryGetValue(orderNo, out var order)
+                    && order.Status != "PendingApproval")
+                {
+                    continue;
+                }
+                commitments.Add(new ScheduledReceiptSnapshot(suggestion.SkuCode, suggestion.UomCode, suggestion.SiteCode,
+                    suggestion.Quantity, suggestion.RequiredDate, "demand-planning", "planning-suggestion", suggestion.Id.ToString()));
+            }
+        }
+
+        return new PlanningScheduledReceiptSnapshot(
+            $"erp-purchase-orders:{receipts.Length};accepted-purchases:{commitments.Count}", [.. receipts, .. commitments]);
     }
 }
 
@@ -1365,6 +1467,10 @@ internal sealed record InventoryAvailabilityResponse(
     decimal ReservedQuantity,
     decimal AvailableQuantity);
 
+internal sealed record ErpPlanningPurchaseRequisitionsResponse(IReadOnlyCollection<ErpPlanningPurchaseRequisitionItem> Items, int Total);
+
+internal sealed record ErpPlanningPurchaseRequisitionItem(string SuggestionId, string? ConvertedPurchaseOrderNo);
+
 internal sealed record ErpPurchaseOrdersResponse(IReadOnlyCollection<ErpPurchaseOrderItem> Items, int Total);
 
 internal sealed record ErpPurchaseOrderItem(
@@ -1481,7 +1587,7 @@ public sealed class DemandPlanningFixtureInputSnapshotProvider(ApplicationDbCont
                 && x.DueDate <= horizonEnd)
             .OrderBy(x => x.DueDate)
             .ThenBy(x => x.SourceReference)
-            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType))
+            .Select(x => new DemandSnapshot(x.SourceReference, x.SkuCode, x.UomCode, x.SiteCode, x.Quantity, x.DueDate, x.DemandType, x.SourceLineReference == "" ? null : x.SourceLineReference))
             .ToListAsync(cancellationToken);
 
         return new PlanningInputSnapshotResult(

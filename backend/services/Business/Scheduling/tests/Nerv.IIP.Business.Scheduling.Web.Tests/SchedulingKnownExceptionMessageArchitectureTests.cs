@@ -7,34 +7,55 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
 
     private static readonly IReadOnlyCollection<string> SourcePaths =
     [
+        $"{SchedulingWebRoot}/Application/Commands/ScheduleWorkingDraftCommands.cs",
+        $"{SchedulingWebRoot}/Endpoints/Scheduling/ScheduleWorkingDraftEndpoints.cs",
         $"{SchedulingWebRoot}/Application/Commands/SchedulingWorkbenchCommands.cs",
         $"{SchedulingWebRoot}/Application/Commands/UpsertScheduleOperationOverrideCommand.cs",
         $"{SchedulingWebRoot}/Application/Commands/ReleaseSchedulePlanCommand.cs",
         $"{SchedulingWebRoot}/Application/Commands/AssembleSchedulingProblemCommand.cs",
         $"{SchedulingWebRoot}/Application/Commands/RevokeSchedulePlanCommand.cs",
         $"{SchedulingWebRoot}/Application/Commands/CreateSchedulePlanCommand.cs",
+        $"{SchedulingWebRoot}/Application/Commands/ScheduleInsertionPreviewJobCommands.cs",
+        $"{SchedulingWebRoot}/Application/Queries/GetScheduleInsertionPreviewJobQuery.cs",
+        $"{SchedulingWebRoot}/Application/Queries/GetScheduleFirstPlanJobQuery.cs",
         $"{SchedulingWebRoot}/Application/Queries/SchedulingQueries.cs",
+        $"{SchedulingWebRoot}/Application/Queries/GetSchedulePlanOverridesQuery.cs",
+        $"{SchedulingWebRoot}/Application/Queries/GetMaterialDeliverySourcesQuery.cs",
+        $"{SchedulingWebRoot}/Application/Queries/GetSchedulingDowntimeImpactQuery.cs",
         $"{SchedulingWebRoot}/Application/IntegrationEventConverters/SchedulingIntegrationEventConverters.cs",
         $"{SchedulingWebRoot}/Application/Scheduling/SchedulingWorkbenchSourceProvider.cs",
         $"{SchedulingWebRoot}/Application/Scheduling/SchedulingProblemProducer.cs",
+        $"{SchedulingWebRoot}/Application/Scheduling/SchedulingCandidateService.cs",
         $"{SchedulingWebRoot}/Application/Urgency/OrderUrgencyApplication.cs",
     ];
 
     private static readonly IReadOnlyCollection<SchedulingKnownExceptionSite> ExpectedSites =
     [
+        Target($"{SchedulingWebRoot}/Application/Queries/GetSchedulingDowntimeImpactQuery.cs", "GetSchedulingDowntimeImpactQueryHandler", "Handle", 1),
+        Target($"{SchedulingWebRoot}/Application/Scheduling/SchedulingCandidateService.cs", "SchedulingCandidateService", "ReadAsync", 1),
+        Target($"{SchedulingWebRoot}/Application/Scheduling/SchedulingCandidateService.cs", "SchedulingCandidateService", "SelectAsync", 3),
+        Excluded($"{SchedulingWebRoot}/Application/Commands/ScheduleWorkingDraftCommands.cs", "SaveScheduleWorkingDraftCommandHandler", "Handle", 1, "deferred/no-facade；#4143 交付 facade 时重新分类"),
+        Excluded($"{SchedulingWebRoot}/Endpoints/Scheduling/ScheduleWorkingDraftEndpoints.cs", "ScheduleWorkingDraftIdentity", "Read", 1, "deferred/no-facade；#4143 交付 facade 时重新分类"),
         Target($"{SchedulingWebRoot}/Application/Commands/SchedulingWorkbenchCommands.cs", "CreateSchedulePlanRevisionCommandHandler", "Handle", 3),
         Target($"{SchedulingWebRoot}/Application/Commands/SchedulingWorkbenchCommands.cs", "CreateSchedulePlanRevisionCommandHandler", "ValidateLocks", 3),
+        Target($"{SchedulingWebRoot}/Application/Commands/SchedulingWorkbenchCommands.cs", "CreateSchedulePlanRevisionCommandHandler", "SaveInsertionCandidateAsync", 3),
         Target($"{SchedulingWebRoot}/Application/Commands/UpsertScheduleOperationOverrideCommand.cs", "UpsertScheduleOperationOverrideCommandHandler", "Handle", 6),
         Target($"{SchedulingWebRoot}/Application/Commands/ReleaseSchedulePlanCommand.cs", "ReleaseSchedulePlanUniqueConflictBehavior", "Handle", 1),
         Target($"{SchedulingWebRoot}/Application/Commands/ReleaseSchedulePlanCommand.cs", "ReleaseSchedulePlanCommandHandler", "Handle", 4),
         Excluded($"{SchedulingWebRoot}/Application/Commands/AssembleSchedulingProblemCommand.cs", "AssembleSchedulingProblemCommandHandler", "Handle", 3, "deferred/no-facade；若 facade matrix 转为 exposed，必须重新分类"),
         Target($"{SchedulingWebRoot}/Application/Commands/RevokeSchedulePlanCommand.cs", "RevokeSchedulePlanCommandHandler", "Handle", 2),
         Target($"{SchedulingWebRoot}/Application/Commands/CreateSchedulePlanCommand.cs", "CreateSchedulePlanCommandHandler", "Handle", 2),
+        Excluded($"{SchedulingWebRoot}/Application/Queries/GetScheduleFirstPlanJobQuery.cs", "GetScheduleFirstPlanJobQueryHandler", "Handle", 1, "deferred/no-facade；#4136 交付 facade 时重新分类"),
+        Excluded($"{SchedulingWebRoot}/Application/Commands/ScheduleInsertionPreviewJobCommands.cs", "AcceptScheduleInsertionPreviewJobCommandHandler", "Handle", 4, "deferred/no-facade；#4162 交付 facade 时重新分类"),
+        Excluded($"{SchedulingWebRoot}/Application/Queries/GetScheduleInsertionPreviewJobQuery.cs", "GetScheduleInsertionPreviewJobQueryHandler", "Handle", 1, "deferred/no-facade；#4162 交付 facade 时重新分类"),
         Target($"{SchedulingWebRoot}/Application/Queries/SchedulingQueries.cs", "GetSchedulePlanDetailQueryHandler", "Handle", 1),
+        Excluded($"{SchedulingWebRoot}/Application/Queries/GetMaterialDeliverySourcesQuery.cs", "GetMaterialDeliverySourcesQueryHandler", "Handle", 1, "internal：仅 DemandPlanning 物料交付服务消费，不通过 Gateway 暴露"),
+        Target($"{SchedulingWebRoot}/Application/Queries/GetSchedulePlanOverridesQuery.cs", "GetSchedulePlanOverridesQueryHandler", "Handle", 2),
         Target($"{SchedulingWebRoot}/Application/Queries/SchedulingQueries.cs", "GetSchedulePlanGanttQueryHandler", "Handle", 1),
         Target($"{SchedulingWebRoot}/Application/IntegrationEventConverters/SchedulingIntegrationEventConverters.cs", "HttpSchedulingIntegrationEventContextAccessor", "ResolveActor", 1),
         Target($"{SchedulingWebRoot}/Application/Scheduling/SchedulingWorkbenchSourceProvider.cs", "HttpSchedulingWorkbenchSourceProvider", "ResolveOrdersAsync", 5),
         Target($"{SchedulingWebRoot}/Application/Scheduling/SchedulingWorkbenchSourceProvider.cs", "HttpSchedulingWorkbenchSourceProvider", "ReadMesWorkOrderListResponseAsync", 5),
+        Target($"{SchedulingWebRoot}/Application/Scheduling/SchedulingProblemProducer.cs", "SchedulingProblemProducer", "AssembleWorkbenchAsync", 2),
         Target($"{SchedulingWebRoot}/Application/Scheduling/SchedulingProblemProducer.cs", "HttpSchedulingProblemProductEngineeringClient", "ParseVersionId", 1),
         Target($"{SchedulingWebRoot}/Application/Scheduling/SchedulingProblemProducer.cs", "HttpSchedulingProblemMasterDataClient", "GetWorkCenterAsync", 1),
         Target($"{SchedulingWebRoot}/Application/Scheduling/SchedulingProblemProducer.cs", "HttpSchedulingProblemMasterDataClient", "ListDeviceAssetsAsync", 1),
@@ -65,9 +86,9 @@ public sealed class SchedulingKnownExceptionMessageArchitectureTests
 
         var expectedKeys = ExpectedSites.Select(site => site.Key).ToArray();
         Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(41, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Target)
+        Assert.Equal(53, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(3, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Excluded)
+        Assert.Equal(12, ExpectedSites.Where(site => site.Kind == SchedulingKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));
 
         var discovered = SchedulingUserMessageSourceAnalyzer.Discover(documents);

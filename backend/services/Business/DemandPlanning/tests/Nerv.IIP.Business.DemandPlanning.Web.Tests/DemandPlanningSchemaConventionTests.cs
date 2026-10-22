@@ -6,6 +6,7 @@ using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.DemandSourceAggreg
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.ForecastInputAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MasterProductionScheduleAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpRunAggregate;
+using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.MrpInputChangeAggregate;
 using Nerv.IIP.Business.DemandPlanning.Domain.AggregatesModel.PlanningSuggestionAggregate;
 using Nerv.IIP.Business.DemandPlanning.Infrastructure;
 using Nerv.IIP.Coding;
@@ -42,6 +43,7 @@ public sealed class DemandPlanningSchemaConventionTests
             typeof(ForecastInput),
             typeof(MasterProductionSchedule),
             typeof(MrpRun),
+            typeof(MrpInputChange),
             typeof(PlanningSuggestion),
             typeof(PeggingLink),
             typeof(CodeCounter),

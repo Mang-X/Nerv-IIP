@@ -13,6 +13,7 @@ public static class StandardCodeRules
         Document("material-issue-request", "领料申请", "MIR"),
         Document("defect", "不良记录", "DEF"),
         Document("downtime-event", "停机事件", "DOWNTIME"),
+        Document("changeover-record", "换型记录", "CHANGEOVER"),
         Document("shift-handover", "交接班记录", "SHO"),
         Document("opportunity", "销售商机", "OPP"),
         Document("quotation", "客户报价单", "QUO"),
@@ -40,6 +41,16 @@ public static class StandardCodeRules
         Document("manufacturing-bom", "制造 BOM", "MBOM"),
         Document("routing", "工艺路线", "RTG"),
         Document("engineering-change", "工程变更", "ECO"),
+        // #3852：维修工单正式单号。前缀 MWO 与生产工单 WO 区分开，沿用设定集演示数据的 MWO 惯例。
+        Document("maintenance-work-order", "维修工单", "MWO"),
+        Document("wms-inbound-order", "入库单", "IB"),
+        Document("wms-outbound-order", "出库单", "OB"),
+        Document("wms-putaway-task", "上架任务", "PUT"),
+        Document("wms-picking-task", "拣货任务", "PICK"),
+        Document("wms-pack-review", "出库复核单", "PKR"),
+        Document("wms-count-execution", "仓库盘点单", "CNT"),
+        Document("wms-wcs-task", "设备任务", "WCS"),
+        Document("inventory-stock-count-task", "库存盘点任务", "SCT"),
         Material(),
         SimpleResource("standard-operation", "标准工序", "OP", 4, separator: "-"),
         SimpleResource("quality-reason", "质量原因", "QR", 4, separator: "-"),
@@ -51,6 +62,7 @@ public static class StandardCodeRules
         SimpleResource("site", "工厂", "ST", 3),
         SimpleResource("workshop", "车间", "WS", 3),
         SimpleResource("production-line", "生产线", "PL", 3),
+        SimpleResource("station", "工位", "STN", 4),
         SimpleResource("shift", "班次", "SH", 2),
         SimpleResource("work-center", "工作中心", "WC", 4),
         SimpleResource("device-asset", "设备资产", "EQ", 5),
@@ -60,6 +72,7 @@ public static class StandardCodeRules
         SimpleResource("team", "班组", "TEAM", 4, separator: "-"),
         SimpleResource("worker", "员工", "EMP", 4, separator: "-"),
         SimpleResource("work-calendar", "工作日历", "CAL", 4, separator: "-"),
+        SimpleResource("wms-work-pool", "仓库作业池", "WP", 4, separator: "-"),
     ];
 
     private static readonly IReadOnlyDictionary<string, CodeRuleDefinition> RuleByKey =

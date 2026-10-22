@@ -1,8 +1,10 @@
 using MediatR;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.AndonCallAggregate;
 using NetCorePal.Extensions.DistributedTransactions.CAP.Persistence;
 using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Mes.Domain;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ChangeoverRecordAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.EngineeringChangeAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
@@ -11,6 +13,8 @@ using Nerv.IIP.Business.Mes.Domain.AggregatesModel.QualityAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ScheduleAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ShiftHandoverAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderDemandChangeAggregate;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderTransformationAggregate;
 using Nerv.IIP.Business.Mes.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Business.Mes.Infrastructure.MasterData;
 using Nerv.IIP.Messaging.CAP;
@@ -23,14 +27,33 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 {
     private const string ProductionReportReversalUniqueIndexName = "ux_production_reports_scope_reversed_report_no";
     private const string QualityHoldTransitionIdempotencyIndexName = "ux_quality_hold_transitions_scope_idempotency_kind";
+    private const string ProcessedIntegrationEventInstanceIndexName = "ux_processed_integration_events_consumer_event_id";
 
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
+
+    public DbSet<WorkOrderDemandChange> WorkOrderDemandChanges => Set<WorkOrderDemandChange>();
+
+    public DbSet<AndonCall> AndonCalls => Set<AndonCall>();
+
+    public DbSet<WorkOrderTransformation> WorkOrderTransformations => Set<WorkOrderTransformation>();
 
     public DbSet<MesEngineeringChangeWorkOrderImpact> EngineeringChangeWorkOrderImpacts => Set<MesEngineeringChangeWorkOrderImpact>();
 
     public DbSet<OperationTask> OperationTasks => Set<OperationTask>();
 
+    public DbSet<OperationActualTimeSettlement> OperationActualTimeSettlements => Set<OperationActualTimeSettlement>();
+
+    public DbSet<OperationActualTimeSettlementReport> OperationActualTimeSettlementReports => Set<OperationActualTimeSettlementReport>();
+
+    public DbSet<OperationTaskParticipant> OperationTaskParticipants => Set<OperationTaskParticipant>();
+
+    public DbSet<OperationTaskStartAuthorization> OperationTaskStartAuthorizations => Set<OperationTaskStartAuthorization>();
+
     public DbSet<ProductionReport> ProductionReports => Set<ProductionReport>();
+
+    public DbSet<ProductionReportSerialNumber> ProductionReportSerialNumbers => Set<ProductionReportSerialNumber>();
+
+    public DbSet<ProductionReportLaborAllocation> ProductionReportLaborAllocations => Set<ProductionReportLaborAllocation>();
 
     public DbSet<TelemetryProductionReportCandidate> TelemetryProductionReportCandidates => Set<TelemetryProductionReportCandidate>();
     public DbSet<TelemetryProductionReportCandidateTransition> TelemetryProductionReportCandidateTransitions => Set<TelemetryProductionReportCandidateTransition>();
@@ -48,11 +71,9 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public DbSet<MaterialIssueRequest> MaterialIssueRequests => Set<MaterialIssueRequest>();
 
-    public DbSet<ScheduleResult> ScheduleResults => Set<ScheduleResult>();
-
     public DbSet<WorkCenterUnavailability> WorkCenterUnavailabilities => Set<WorkCenterUnavailability>();
 
-    public DbSet<DeviceAssetWorkCenterMapping> DeviceAssetWorkCenterMappings => Set<DeviceAssetWorkCenterMapping>();
+    public DbSet<ChangeoverRecord> ChangeoverRecords => Set<ChangeoverRecord>();
 
     public DbSet<FinishedGoodsReceiptRequest> FinishedGoodsReceiptRequests => Set<FinishedGoodsReceiptRequest>();
 
@@ -78,6 +99,7 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         base.OnModelCreating(modelBuilder);
         modelBuilder.HasDefaultSchema(MesFacts.Schema);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+        modelBuilder.ConfigureCodingEntities();
         modelBuilder.ConfigureIntegrationEventDeadLetters();
         ConfigureCapStorage(modelBuilder);
     }
@@ -92,12 +114,18 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken = default)
     {
+        EnsureOperationTaskStartAuthorizationsAreAppendOnly();
         try
         {
             return await ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicateAsync<ProcessedIntegrationEvent>(
                 this,
                 token => base.SaveChangesAsync(acceptAllChangesOnSuccess, token),
                 cancellationToken);
+        }
+        catch (DbUpdateException exception) when (IsDuplicateProcessedIntegrationEventInstance(exception))
+        {
+            ChangeTracker.Clear();
+            return 0;
         }
         catch (DbUpdateException exception) when (IsDuplicateQualityHoldTransition(exception))
         {
@@ -168,16 +196,43 @@ public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext>
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
+        EnsureOperationTaskStartAuthorizationsAreAppendOnly();
         try
         {
             return ProcessedIntegrationEventInbox.SaveChangesOrIgnoreDuplicate<ProcessedIntegrationEvent>(
                 this,
                 () => base.SaveChanges(acceptAllChangesOnSuccess));
         }
+        catch (DbUpdateException exception) when (IsDuplicateProcessedIntegrationEventInstance(exception))
+        {
+            ChangeTracker.Clear();
+            return 0;
+        }
         catch (DbUpdateException exception) when (IsDuplicateProductionReportReversal(exception))
         {
             ChangeTracker.Clear();
             throw DuplicateProductionReportReversal(exception);
+        }
+    }
+
+    private bool IsDuplicateProcessedIntegrationEventInstance(DbUpdateException exception)
+    {
+        return ChangeTracker.Entries<ProcessedIntegrationEvent>().Any(entry => entry.State == EntityState.Added) &&
+            ProcessedIntegrationEventInbox.IsUniqueConflict(
+                exception,
+                this,
+                ProcessedIntegrationEventInstanceIndexName);
+    }
+
+    private void EnsureOperationTaskStartAuthorizationsAreAppendOnly()
+    {
+        var changed = ChangeTracker.Entries<OperationTaskStartAuthorization>()
+            .Where(entry => entry.State is EntityState.Modified or EntityState.Deleted)
+            .Select(entry => entry.Entity.Id.ToString())
+            .ToArray();
+        if (changed.Length > 0)
+        {
+            throw new InvalidOperationException("MES 授权跳站事实只允许追加，不能修改或删除。");
         }
     }
 

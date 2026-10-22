@@ -6,23 +6,20 @@ import type {
 import {
   finishedGoodsReceiptFlow,
   type ReceiptCtx,
+  receiptPendingReason,
   receiptStatusLabel,
   workOrderSubtitle,
   workOrderTitle,
 } from '@nerv-iip/business-core'
-import {
-  NvAppShellMobile,
-  NvBottomSheet,
-  NvListRow,
-  NvMobileResult,
-  NvScanBar,
-} from '@nerv-iip/ui-mobile'
+import { NvAppShellMobile, NvBottomSheet, NvListRow, NvMobileResult } from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMesReceipts, useMesWorkOrders } from '@/composables/useBusinessMes'
-import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
+import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
+import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
+import { useMesScanGate } from '@/composables/mes/useMesScanGate'
 
 definePage({
   meta: {
@@ -39,10 +36,8 @@ const router = useRouter()
 const {
   filters,
   receipts,
-  total,
   pending,
   error,
-  lastUpdatedAt,
   hasSuccessfulResponse,
   hasFailedResponse,
   refresh,
@@ -74,24 +69,13 @@ function receiptSubtitle(req: Receipt) {
   return parts.join(' · ')
 }
 
-const listScope = computed(() =>
-  filters.organizationId && filters.environmentId
-    ? '当前登录组织 / 当前业务环境'
-    : '组织/环境范围未就绪',
-)
 const scopeReady = computed(() => Boolean(filters.organizationId && filters.environmentId))
 const scopedReceipts = computed(() => (scopeReady.value ? receipts.value : []))
-const scopedTotal = computed(() => (scopeReady.value ? total.value : 0))
-const emptyExplanation = computed(() =>
-  !filters.organizationId || !filters.environmentId
-    ? '缺少组织或环境范围，未发起查询。'
-    : '当前组织/环境范围暂无完工入库申请；此列表暂不支持按当前人员归属筛选，不代表当前人员没有入库任务。',
-)
 const listFailure = computed(() =>
   error.value
     ? error.value
     : hasFailedResponse.value
-      ? new Error('完工入库申请服务未返回成功结果，请重试。')
+      ? new Error('完工入库申请加载失败，请重试。')
       : null,
 )
 
@@ -104,7 +88,6 @@ const ctx = reactive<ReceiptCtx>({
   workOrderId: undefined,
   skuId: undefined,
   quantityEntered: false,
-  unitCostEntered: false,
   created: false,
 })
 
@@ -116,14 +99,12 @@ const creating = ref(false)
 const selectedWorkOrder = ref<WorkOrder | null>(null)
 const skuId = ref('')
 const quantity = ref<number | null>(null)
-const unitCost = ref<number | null>(null)
 const uomCode = ref('')
 
-// SKU/数量/单位成本录入是否就绪（用于驱动流程第二步 done）
+// SKU/数量录入是否就绪（用于驱动流程第二步 done）
 function syncEnterStep() {
   ctx.skuId = skuId.value.trim() || undefined
   ctx.quantityEntered = quantity.value !== null && quantity.value > 0
-  ctx.unitCostEntered = unitCost.value !== null && unitCost.value > 0
 }
 
 const createValid = computed(() => {
@@ -131,7 +112,6 @@ const createValid = computed(() => {
   if (skuId.value.trim() === '') return false
   if (uomCode.value.trim() === '') return false
   if (quantity.value === null || !(quantity.value > 0)) return false
-  if (unitCost.value === null || !(unitCost.value > 0)) return false
   return true
 })
 
@@ -143,6 +123,11 @@ const submitting = ref(false)
 // 稳定的逐操作幂等键：提交时铸造一次，重试复用同键；
 // 开始新完工入库（重新打开新建、成功）时清空 → 下次提交铸造新键。
 const operationKey = ref('')
+const scanGate = useMesScanGate()
+const scanPending = scanGate.pending
+const scanGuarded = scanGate.guarded
+const scannedWorkOrderId = ref('')
+const scannedOperationTaskId = ref('')
 
 const createSheetOpen = computed({
   get: () => creating.value && result.value === null,
@@ -155,18 +140,17 @@ function resetForm() {
   selectedWorkOrder.value = null
   skuId.value = ''
   quantity.value = null
-  unitCost.value = null
   uomCode.value = ''
   ctx.workOrderId = undefined
   ctx.skuId = undefined
   ctx.quantityEntered = false
-  ctx.unitCostEntered = false
   ctx.created = false
   // 新一轮完工入库 → 作废上一个幂等键
   operationKey.value = ''
 }
 
 function openCreate() {
+  scanGate.clear('list')
   result.value = null
   resetForm()
   creating.value = true
@@ -191,21 +175,12 @@ function changeWorkOrder() {
 }
 
 async function submitCreate() {
+  if (scanGuarded.value) return
   const workOrderId = selectedWorkOrder.value?.workOrderId
   const sku = skuId.value.trim()
   const uom = uomCode.value.trim()
   const qty = quantity.value
-  const cost = unitCost.value
-  if (
-    !workOrderId ||
-    sku === '' ||
-    uom === '' ||
-    qty === null ||
-    !(qty > 0) ||
-    cost === null ||
-    !(cost > 0)
-  )
-    return
+  if (!workOrderId || sku === '' || uom === '' || qty === null || !(qty > 0)) return
   syncEnterStep()
   // 首次提交铸造稳定幂等键，重试复用同键。
   if (operationKey.value === '') {
@@ -218,7 +193,6 @@ async function submitCreate() {
       workOrderId,
       skuId: sku,
       quantity: qty,
-      unitCost: cost,
       uomCode: uom,
       idempotencyKey: operationKey.value,
     })
@@ -254,14 +228,23 @@ function goBack() {
   router.push('/').catch(() => {})
 }
 
-// ScanBar 仅在列表态活跃；新建/结果展开时不抢焦点
+// 扫码仅在列表态活跃；新建/结果展开时不抢焦点。
 const scanActive = computed(() => result.value === null && !creating.value)
 
-function onScan(value: string) {
-  filters.keyword = value
+function onScanAccepted(value: MesScanAccepted) {
+  if (value.kind !== 'work-order' && value.kind !== 'operation-task') return
+  scannedWorkOrderId.value = value.workOrderId
+  scannedOperationTaskId.value = value.kind === 'operation-task' ? value.operationTaskId : ''
+  filters.keyword = undefined
+  filters.workOrderId = value.workOrderId
 }
-function onScanWorkOrder(value: string) {
-  workOrderFilters.keyword = value
+
+function onCreateScanAccepted(value: MesScanAccepted) {
+  if (value.kind !== 'work-order' && value.kind !== 'operation-task') return
+  scannedWorkOrderId.value = value.workOrderId
+  scannedOperationTaskId.value = value.kind === 'operation-task' ? value.operationTaskId : ''
+  workOrderFilters.keyword = undefined
+  workOrderFilters.workOrderId = value.workOrderId
 }
 </script>
 
@@ -281,6 +264,7 @@ function onScanWorkOrder(value: string) {
         <button
           type="button"
           data-testid="new-receipt"
+          :disabled="scanPending"
           class="ml-auto rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
           @click="openCreate"
         >
@@ -326,21 +310,16 @@ function onScanWorkOrder(value: string) {
     </NvMobileResult>
 
     <div v-else class="space-y-4 p-4">
-      <NvScanBar placeholder="扫描工单号 / 入库单" :active="scanActive" @scan="onScan" />
-
-      <ListScopeMeta
-        :scope="listScope"
-        source="生产完工入库申请服务（组织/环境范围）"
-        :loaded="scopedReceipts.length"
-        :total="scopedTotal"
-        :updated-at="lastUpdatedAt"
-        :failed="hasFailedResponse"
-        failure-explanation="生产完工入库申请服务未成功返回，请刷新重试。"
-        :empty="
-          !scopeReady ||
-          (!pending && !error && hasSuccessfulResponse && scopedReceipts.length === 0)
-        "
-        :empty-explanation="emptyExplanation"
+      <MesScanPrevalidation
+        :organization-id="filters.organizationId"
+        :environment-id="filters.environmentId"
+        :work-order-id="scannedWorkOrderId"
+        :operation-task-id="scannedOperationTaskId"
+        placeholder="扫描工单或工序"
+        :active="scanActive"
+        :accepted-kinds="['work-order', 'operation-task']"
+        @accepted="onScanAccepted"
+        @status-change="scanGate.set('list', $event)"
       />
 
       <RetryableListError
@@ -358,7 +337,7 @@ function onScanWorkOrder(value: string) {
         "
         class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
       >
-        当前组织/环境范围暂无完工入库申请
+        暂无完工入库申请
       </div>
 
       <div
@@ -371,11 +350,22 @@ function onScanWorkOrder(value: string) {
           :title="receiptTitle(req)"
           :subtitle="receiptSubtitle(req)"
           :interactive="false"
-        />
+        >
+          <!-- 待入库卡在哪一环（#3728 在 PDA 的补齐，#3767）：判断逻辑与业务控制台共用
+               @nerv-iip/business-core 的 receiptPendingReason，不在这里另抄一份。 -->
+          <template v-if="receiptPendingReason(req)" #meta>
+            <p
+              data-testid="receipt-pending-reason"
+              class="text-xs leading-snug text-muted-foreground"
+            >
+              {{ receiptPendingReason(req) }}
+            </p>
+          </template>
+        </NvListRow>
       </div>
     </div>
 
-    <!-- 新建完工入库（finishedGoodsReceiptFlow：选工单 → 录 SKU/数量/单位成本/单位 → 创建）-->
+    <!-- 新建完工入库（finishedGoodsReceiptFlow：选工单 → 录 SKU/数量/单位 → 创建）-->
     <NvBottomSheet
       :open="createSheetOpen"
       title="新建完工入库"
@@ -392,7 +382,16 @@ function onScanWorkOrder(value: string) {
 
         <!-- 步骤 1：选工单 -->
         <div v-if="currentStep === 'selectWorkOrder' || !selectedWorkOrder" class="space-y-2">
-          <NvScanBar placeholder="扫描工单号" :active="false" @scan="onScanWorkOrder" />
+          <MesScanPrevalidation
+            :organization-id="filters.organizationId"
+            :environment-id="filters.environmentId"
+            :work-order-id="scannedWorkOrderId"
+            :operation-task-id="scannedOperationTaskId"
+            placeholder="扫描工单或工序"
+            :accepted-kinds="['work-order', 'operation-task']"
+            @accepted="onCreateScanAccepted"
+            @status-change="scanGate.set('create', $event)"
+          />
           <p class="text-sm text-muted-foreground">
             选择完工入库的工单（共 {{ workOrderTotal }} 张）
           </p>
@@ -425,7 +424,7 @@ function onScanWorkOrder(value: string) {
           </div>
         </div>
 
-        <!-- 步骤 2：录 SKU / 数量 / 单位成本 / 单位 -->
+        <!-- 步骤 2：录 SKU / 数量 / 单位 -->
         <div v-else class="space-y-4">
           <div
             class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3"
@@ -472,20 +471,6 @@ function onScanWorkOrder(value: string) {
           </label>
 
           <label class="block space-y-1">
-            <span class="text-sm font-medium text-foreground">单位成本</span>
-            <input
-              v-model.number="unitCost"
-              data-testid="receipt-unit-cost"
-              type="number"
-              inputmode="decimal"
-              min="0.000001"
-              step="0.000001"
-              class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base outline-none focus:border-primary"
-              @input="syncEnterStep"
-            />
-          </label>
-
-          <label class="block space-y-1">
             <span class="text-sm font-medium text-foreground">计量单位</span>
             <input
               v-model="uomCode"
@@ -496,13 +481,13 @@ function onScanWorkOrder(value: string) {
           </label>
 
           <p v-if="!createValid" class="text-sm text-muted-foreground">
-            请填写入库物料与计量单位，且入库数量、单位成本须大于 0。
+            请填写入库物料与计量单位，且入库数量须大于 0。
           </p>
 
           <button
             type="button"
             data-testid="submit-receipt"
-            :disabled="!createValid || submitting"
+            :disabled="!createValid || submitting || scanGuarded"
             class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground disabled:opacity-60"
             @click="submitCreate"
           >

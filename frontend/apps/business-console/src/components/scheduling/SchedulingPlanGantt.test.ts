@@ -1,9 +1,11 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { computed, nextTick } from 'vue'
+import { computed, defineComponent, nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SchedulingPlanGantt from './SchedulingPlanGantt.vue'
+import { useAuthStore } from '@/stores/auth'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 vi.mock('@/composables/useSkuNames', () => ({
   useSkuNames: () => ({ resolveSkuName: () => undefined }),
@@ -101,10 +103,49 @@ function plan(patch: Record<string, unknown> = {}) {
 
 function mountGantt(props: Record<string, unknown>) {
   return mount(SchedulingPlanGantt, {
-    props: { workOrders: [], ...props },
+    props: {
+      workOrders: [],
+      timeContext: ['WC-ROD-01', 'WC-CNC-02', 'WC-UNASSIGNED'].map((workCenterCode) => ({
+        workCenterCode,
+        plantCode: 'NB',
+        timezone: 'Asia/Shanghai',
+      })),
+      ...props,
+    },
     global: { plugins: [createPinia()] },
   })
 }
+
+// DomainInvariant: #4419，真实方案工序进入同 WO/OP，入口服从目标读权限。
+it('有工单读权限时从方案工序打开同一工单并保留来源工序', async () => {
+  const pinia = createPinia()
+  useAuthStore(pinia).$patch({
+    principal: {
+      principalId: 'planner',
+      principalType: 'user',
+      organizationId: 'org',
+      environmentId: 'dev',
+      loginName: 'planner',
+      permissionCodes: ['business.mes.work-orders.read'],
+    },
+  })
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
+  })
+  await router.push('/scheduling')
+  const wrapper = mount(SchedulingPlanGantt, {
+    props: { plan: { ...plan(), status: 'generated' } },
+    global: { plugins: [pinia, router] },
+  })
+  await wrapper.get('button[data-operation="a2"]').trigger('click')
+  const link = wrapper.get('[data-testid="scheduling-task-detail"] a')
+  await link.trigger('click')
+  await flushPromises()
+  expect(router.currentRoute.value.path).toBe('/mes/work-orders/WO-2026-03008')
+  expect(router.currentRoute.value.query).toEqual({ operationTaskId: 'OP-20' })
+  wrapper.unmount()
+})
 
 const GROUP_ASSIGNMENTS = [
   {
@@ -347,5 +388,86 @@ describe('SchedulingPlanGantt 分组维度', () => {
     const byName = laneNames(wrapper)
     expect(byName.length).toBe(allLanes)
     expect([...byName].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))).toEqual(byName)
+  })
+})
+
+// DomainInvariant: #3628 侧栏点击经包内命令同时选中、定位甘特。
+it('销售单侧栏工序选择同步甘特选中和定位，不离开页面', async () => {
+  const command = vi.fn()
+  const boardStub = defineComponent({
+    setup(_, { expose }) {
+      expose({ command })
+      return () => null
+    },
+  })
+  const wrapper = mount(SchedulingPlanGantt, {
+    props: {
+      plan: { ...plan(), status: 'generated' },
+      workOrders: [
+        {
+          workOrderId: 'WO-2026-03008',
+          commercialSourceFacts: {
+            status: 'available',
+            salesOrders: [{ salesOrderNo: 'SO-08001' }],
+          },
+        },
+      ],
+    },
+    global: { plugins: [createPinia()], stubs: { ResourceSchedulerBoard: boardStub } },
+  })
+  await settle()
+  expect(wrapper.find('[aria-label="销售订单计划视角"]').exists()).toBe(true)
+  await wrapper.get('button[data-operation="a2"]').trigger('click')
+  expect(command).toHaveBeenCalledWith({ kind: 'selectTask', taskId: 'a2' })
+  expect(command).toHaveBeenCalledWith({ kind: 'revealTask', taskId: 'a2' })
+  expect(wrapper.get('button[data-operation="a2"]').attributes('aria-pressed')).toBe('true')
+  expect(wrapper.get('[data-testid="scheduling-task-detail"]').text()).toContain('OP-20')
+})
+
+// #4124 / ADR 0032 §3: server windows are presentation facts, not downtime or a browser freeze set.
+describe('SchedulingPlanGantt 服务端稳定窗口', () => {
+  it('各中心使用覆盖或默认窗口，精确裁剪到时间轴；零窗口不画，工序仍可选', async () => {
+    const wrapper = mountGantt({
+      plan: plan({
+        assignments: GROUP_ASSIGNMENTS,
+        freezeContext: {
+          asOfUtc: '2026-08-01T01:00:00.000Z',
+          defaultWindowEndUtc: '2026-08-01T04:00:00.000Z',
+          workCenterWindows: [
+            { workCenterId: 'WC-ROD-01', endUtc: '2026-08-01T02:30:00.000Z' },
+            { workCenterId: 'WC-UNASSIGNED', endUtc: '2026-08-01T01:00:00.000Z' },
+          ],
+          assignments: [],
+        },
+      }),
+    })
+    await settle()
+    const rod = wrapper.get('[data-resource-lane="WC-ROD-01"] [data-freeze-window]')
+    const cnc = wrapper.get('[data-resource-lane="WC-CNC-02"] [data-freeze-window]')
+    expect(rod.attributes('data-start-utc')).toBe('2026-08-01T01:00:00.000Z')
+    expect(rod.attributes('data-end-utc')).toBe('2026-08-01T02:30:00.000Z')
+    expect(cnc.attributes('data-end-utc')).toBe('2026-08-01T04:00:00.000Z')
+    expect(parseFloat((cnc.element as HTMLElement).style.width)).toBeCloseTo(
+      parseFloat((rod.element as HTMLElement).style.width) * 2,
+    )
+    expect(wrapper.find('[data-resource-lane="WC-UNASSIGNED"] [data-freeze-window]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.text()).toContain('仍可安排新工序')
+    expect(taskCount(wrapper)).toBe(3)
+    await wrapper.get('[data-task-id="a1"]').trigger('click')
+    expect(wrapper.text()).toContain('工序详情')
+    await switchGroup(wrapper, 'workshop')
+    expect(wrapper.find('[data-freeze-window]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('切换到工作中心查看各中心窗口')
+    wrapper.unmount()
+  })
+
+  it('旧方案没有冻结信息时不宣称存在稳定窗口', async () => {
+    const wrapper = mountGantt({ plan: plan({ freezeContext: null }) })
+    await settle()
+    expect(wrapper.find('[data-freeze-window]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('仍可安排新工序')
+    wrapper.unmount()
   })
 })

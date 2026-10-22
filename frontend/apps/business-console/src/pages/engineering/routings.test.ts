@@ -88,8 +88,8 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 const dialogStubs = {
-  DialogRoot: { template: '<div><slot /></div>' },
-  DialogTrigger: { template: '<div><slot /></div>' },
+  NvDialog: { template: '<div><slot /></div>' },
+  NvDialogTrigger: { template: '<div><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
   NvDialogFooter: { template: '<div><slot /></div>' },
@@ -97,7 +97,10 @@ const dialogStubs = {
   NvDialogDescription: { template: '<p><slot /></p>' },
 }
 const sheetStubs = {
-  // NvSheet 根 = reka DialogRoot（与对话框共用 DialogRoot stub），内容/标头为真 .vue 按 Pro 名打桩。
+  // NvSheet 根与 NvDialog 同为 reka DialogRoot，但 barrel 已给两个别名各自的 name，
+  // 因而这里能分开打桩（过去只能共用一个 DialogRoot 键）。
+  NvSheet: { template: '<div><slot /></div>' },
+  NvSheetTrigger: { template: '<div><slot /></div>' },
   NvSheetContent: { template: '<div data-testid="sheet"><slot /></div>' },
   NvSheetHeader: { template: '<div><slot /></div>' },
   NvSheetTitle: { template: '<h2><slot /></h2>' },
@@ -119,13 +122,25 @@ const formSelectStubs = {
       '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>',
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
-  SelectValue: { template: '<span />' },
+  NvSelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
+  // 目录选择器（取数、就地新增由 DirectoryPicker 自己的用例覆盖）换成原生 <select>，下标顺序不变。
+  DirectoryPicker: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value=""></option><option value="SKU-1">SKU-1</option><option value="WC-A">WC-A</option><option value="WC-B">WC-B</option></select>',
+  },
 }
 const routerLinkStub = { RouterLink: { props: ['to'], template: '<a><slot /></a>' } }
 
 const allStubs = {
+  NvCheckbox: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: `<input type="checkbox" :checked="modelValue" @change="$emit('update:modelValue', $event.target.checked)" />`,
+  },
   ...layoutStub,
   ...dialogStubs,
   ...sheetStubs,
@@ -215,7 +230,21 @@ describe('engineering routings page', () => {
     expect(ops[0]!.operationCode).toBe('OP-WELD')
     expect(ops[0]!.operationName).toBe('焊接')
     expect(ops[0]!.standardMinutes).toBe(12)
+    expect(ops[0]!.interruptible).toBe(false)
     expect(stub.toastSuccess).toHaveBeenCalled()
+  })
+
+  it('publishes the interruptible choice on the selected operation (#4004)', async () => {
+    const wrapper = mount(RoutingsPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await openAndFillHeader(wrapper)
+    await wrapper.findAll('select')[1]!.setValue('WC-A')
+    await wrapper.findAll('select')[2]!.setValue('OP-WELD')
+    await wrapper.find('#rt-min-0').setValue('12')
+    await wrapper.find('#rt-interruptible-0').setValue(true)
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(stub.releaseRouting.mock.calls[0]![0].operations[0].interruptible).toBe(true)
   })
 
   it('工序可增删：增加工序后两道，序号自动 10/20', async () => {
@@ -322,6 +351,7 @@ describe('engineering routings page', () => {
           operationCode: 'OP-WELD',
           operationName: '焊接',
           standardMinutes: 12,
+          interruptible: true,
         },
       ],
     })
@@ -341,6 +371,7 @@ describe('engineering routings page', () => {
     // 按序号排序：第一道为序号 10（焊接）。
     const firstRow = sheet.findAll('tbody tr')[0]!
     expect(firstRow.text()).toContain('焊接')
+    expect(firstRow.text()).toContain('可中断')
   })
 
   it('无标准工序时给出「去标准工序维护」出路且禁用增加工序', async () => {

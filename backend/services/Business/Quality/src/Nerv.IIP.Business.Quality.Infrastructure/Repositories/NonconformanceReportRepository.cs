@@ -5,6 +5,12 @@ namespace Nerv.IIP.Business.Quality.Infrastructure.Repositories;
 public interface INonconformanceReportRepository : IRepository<NonconformanceReport, NonconformanceReportId>
 {
     Task<bool> CodeExistsAsync(string organizationId, string environmentId, string ncrCode, CancellationToken cancellationToken = default);
+
+    Task<NonconformanceReport?> GetScopedAsync(
+        NonconformanceReportId id,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class NonconformanceReportRepository(ApplicationDbContext context)
@@ -16,4 +22,15 @@ public sealed class NonconformanceReportRepository(ApplicationDbContext context)
             x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.NcrCode == ncrCode,
             cancellationToken);
     }
+
+    public Task<NonconformanceReport?> GetScopedAsync(
+        NonconformanceReportId id,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken = default) =>
+        DbContext.NonconformanceReports.SingleOrDefaultAsync(
+            x => x.Id == id &&
+                x.OrganizationId == organizationId &&
+                x.EnvironmentId == environmentId,
+            cancellationToken);
 }

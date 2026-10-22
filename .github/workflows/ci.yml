@@ -89,13 +89,13 @@ jobs:
   # 只提高 step 预算，否则严格不等式将不再保护证据 step。
   #
   # 由 scripts/tests/test-evidence.Tests.ps1 强制执行（由下方 Script Governance job 运行）。
-  # 此规则的叙述性副本：docs/architecture/test-evidence-governance.md。
+  # 当前证据治理：docs/governance/testing/evidence.md。
   #
   # ---------------------------------------------------------------------------------------------
   # 构建策略（MAN-669 PR-B / PR-C）。此主题与上述超时策略分开；两个 PR
   # 都未变更预算，因此这里的任何内容都不参与 Test-NervCiWorkflowBudgets 强制的算术。
   # 这里只保留结论——每项测量、run id、样本限制和重新开启条件仅位于唯一的
-  # 位置：docs/architecture/backend-ci-build-strategy.md。不得在此复述数字：MAN-664
+  # 位置：docs/reports/audits/backend-ci-build-strategy-man-669.md。不得在此复述数字：MAN-664
   # 将重新测量，而复制到四个文件中的数字会在其中三个文件中漂移。
   #
   #   * 每个分片继续只 restore 和 build 自己的 .slnf。build-once（一个串行 build job，
@@ -133,7 +133,19 @@ jobs:
       scripts: ${{ steps.plan.outputs.scripts }}
       docs: ${{ steps.plan.outputs.docs }}
       connector_hosts: ${{ steps.plan.outputs.connector_hosts }}
-      workflows: ${{ steps.plan.outputs.workflows }}
+      # `workflows` 不导出为 job output（#3510）。它不表示「改了 workflow 文件」：全仓唯一把它置真的
+      # 语句在 scripts/lib/CiImpactPlan.ps1 的 fail-open 分支体内，而该分支先调 Select-AllImpacts
+      # 把全部标志一并置真（Select-AllImpacts 另有 shared-control-input、unclassified-business-service、
+      # unclassified-path 三个调用点，同样全选）。所以 workflows=true 等价于「本次走了 fail-open」。
+      # 作用域限定（这是结论成立的边界，不是全称）：scripts/tests/ci-impact-plan.Tests.ps1 的
+      # $routingPolicies 是一张 10 个 job 的白名单，它们统一使用 `<flag> != 'false'` 的 fail-open
+      # 析取式；在该形状下再加 `outputs.workflows != 'false'`，恒被同时为真的 scripts/backend/… 覆盖，
+      # 改变不了选中结果。该白名单不覆盖本文件全部 22 个带 `if:` 的 job——名单外的 frontend-* 用
+      # `== 'true'` 的 fail-closed 形状，消费的 frontend_selected 也不属于 impact-plan 的标志集；
+      # 那三个 job 在 workflow 变更上仍被选中，靠的是 scripts/lib/FrontendWorkspacePlan.ps1 里另一条
+      # 独立的 '.github/workflows/' fail-open 规则——真正承重的是它，删掉它才会静默出洞。
+      # 导出一个在受管路由形状下无法承重的标志，会让后来人以为这个面已被路由覆盖；该信号仍留在
+      # impact-plan.json 与 step summary 里作为观测。
       infra: ${{ steps.plan.outputs.infra }}
       backend_contracts: ${{ steps.plan.outputs.backend_contracts }}
       backend_testing: ${{ steps.plan.outputs.backend_testing }}
@@ -272,7 +284,7 @@ jobs:
       # 每个 step 只运行一个 script，不在一个 `run:` 块中串联：两个 script 都会在 stdout 报告发现的问题
       # 并以 1 退出；若串联，第二个 script 的 `$LASTEXITCODE` 会覆盖第一个的值，
       # 使真实失败变绿（已测量）。原因：
-      # docs/architecture/backend-ci-build-strategy.md ("走查收尾" 第 3 条).
+      # docs/reports/audits/backend-ci-build-strategy-man-669.md ("走查收尾" 第 3 条).
       - name: Validate backend test shard classification
         timeout-minutes: 5
         shell: pwsh
@@ -302,8 +314,10 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -393,8 +407,10 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -484,8 +500,10 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -577,8 +595,10 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -687,8 +707,10 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -736,9 +758,8 @@ jobs:
         id: postgres-tests
         shell: pwsh
         run: |
-          $members = @('inventory-postgres-profile', 'masterdata-postgres-profile', 'scheduling-postgres-profile', 'apphub-postgres-profile', 'barcodelabel-postgres-profile', 'filestorage-postgres-profile', 'industrialtelemetry-postgres-profile', 'quality-postgres-profile', 'mes-postgres-profile', 'wms-postgres-profile', 'erp-postgres-profile', 'demandplanning-postgres-profile', 'acceptance-postgres-profile', 'maintenance-device-pause-postgres')
           ./scripts/run-postgres-test-lane.ps1 `
-            -MemberId $members `
+            -AllActiveMembers `
             -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `
             -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/postgres `
             -SummaryPath artifacts/postgres-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
@@ -837,8 +858,10 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -923,23 +946,79 @@ jobs:
         timeout-minutes: 3
         id: redis-cap-evidence-environment
         shell: pwsh
+        env:
+          REDIS_SERVICE_ID: ${{ job.services.redis.id }}
+          POSTGRES_SERVICE_ID: ${{ job.services.postgres.id }}
         run: |
+          . ./scripts/lib/ScriptAutomation.ps1
+          ./scripts/tests/redis-cap-observation.Tests.ps1
+          $observationDirectory = 'artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/observation'
+          [IO.Directory]::CreateDirectory($observationDirectory) | Out-Null
+          $toolsDirectory = Join-Path $env:RUNNER_TEMP 'redis-cap-observation-tools'
+          "counters-path=$(Join-Path $toolsDirectory 'dotnet-counters')" >> $env:GITHUB_OUTPUT
+          try {
+            $installation = Invoke-DotNetOutput -Arguments @('tool', 'install', 'dotnet-counters', '--version', '10.0.731102', '--tool-path', $toolsDirectory) -TimeoutSeconds 60 -Name 'redis-cap-observation-tool'
+            $toolVersion = (Invoke-NativeCommandOutput -Command (Join-Path $toolsDirectory 'dotnet-counters') -Arguments @('--version') -TimeoutSeconds 5 -Name 'redis-cap-observation-tool-version').Stdout.Trim()
+            @{ outcome = 'available'; dotnetCountersVersion = $toolVersion } | ConvertTo-Json | Set-Content (Join-Path $observationDirectory 'tool.json')
+          }
+          catch {
+            @{ outcome = 'unavailable'; failureType = $_.Exception.GetType().Name } | ConvertTo-Json | Set-Content (Join-Path $observationDirectory 'tool.json')
+            Write-Warning "Redis/CAP observation tool unavailable: $($_.Exception.GetType().Name)"
+          }
+          $images = @{}
+          foreach ($service in @(@('redis', $env:REDIS_SERVICE_ID), @('postgres', $env:POSTGRES_SERVICE_ID))) {
+            try {
+              $imageId = (Invoke-NativeCommandOutput -Command 'docker' -Arguments @('inspect', '--format', '{{.Image}}', $service[1]) -TimeoutSeconds 5 -Name "redis-cap-$($service[0])-image").Stdout.Trim()
+              $digests = (Invoke-NativeCommandOutput -Command 'docker' -Arguments @('image', 'inspect', '--format', '{{json .RepoDigests}}', $imageId) -TimeoutSeconds 5 -Name "redis-cap-$($service[0])-digest").Stdout.Trim() | ConvertFrom-Json
+              $images[$service[0]] = @{ outcome = 'available'; imageId = $imageId; repoDigests = $digests }
+            }
+            catch {
+              $images[$service[0]] = @{ outcome = 'unavailable'; failureType = $_.Exception.GetType().Name }
+              Write-Warning "Redis/CAP $($service[0]) image metadata unavailable: $($_.Exception.GetType().Name)"
+            }
+          }
+          $images | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $observationDirectory 'service-images.json')
           $testedSha = (git rev-parse HEAD).Trim()
           "runner-image=$env:ImageOS@$env:ImageVersion" >> $env:GITHUB_OUTPUT
           "dotnet-sdk=$(dotnet --version)" >> $env:GITHUB_OUTPUT
           "tested-sha=$testedSha" >> $env:GITHUB_OUTPUT
           Write-Host "tested-sha=$testedSha"
 
-      - name: Run DemandPlanning Redis/CAP transport profiles
+      - name: Run governed Redis/CAP transport profiles
         timeout-minutes: 20
         id: redis-cap-tests
         shell: pwsh
         run: |
-          ./scripts/run-redis-cap-test-lane.ps1 `
-            -MemberId demandplanning-sales-order-redis-cap `
-            -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `
-            -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap `
-            -SummaryPath artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+          . ./scripts/lib/ScriptAutomation.ps1
+          $observationDirectory = 'artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/observation'
+          $observer = $null
+          try {
+            try {
+              $observer = Start-ManagedBackgroundProcess -Command 'pwsh' -Arguments @('-NoProfile', '-File', './scripts/observe-redis-cap-lane.ps1', '-LaneProcessId', [string]$PID, '-ResultsDirectory', 'artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap', '-OutputDirectory', $observationDirectory, '-CountersPath', '${{ steps.redis-cap-evidence-environment.outputs.counters-path }}') -Name 'redis-cap-observation'
+            }
+            catch { Write-Warning "Redis/CAP observation start unavailable: $($_.Exception.GetType().Name)" }
+            ./scripts/run-redis-cap-test-lane.ps1 `
+              -AllActiveMembers `
+              -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `
+              -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap `
+              -SummaryPath artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+          }
+          finally {
+            if ($null -ne $observer) {
+              try {
+                [IO.File]::WriteAllText((Join-Path $observationDirectory 'stop'), 'stop')
+                [void]$observer.Process.WaitForExit(15000)
+                [void]$observer.Stop.Invoke('Redis/CAP lane completed')
+              }
+              catch { Write-Warning "Redis/CAP observation cleanup unavailable: $($_.Exception.GetType().Name)" }
+            }
+            try {
+              . ./scripts/lib/RedisCapObservation.ps1
+              $phaseCount = Export-RedisCapFixturePhases -ResultsDirectory 'artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap' -OutputPath (Join-Path $observationDirectory 'fixture-phases.jsonl')
+              Write-Host "Redis/CAP retained fixture phase count=$phaseCount"
+            }
+            catch { Write-Warning "Redis/CAP fixture phases unavailable: $($_.Exception.GetType().Name)" }
+          }
 
       - name: Collect Redis/CAP transport evidence
         timeout-minutes: 5
@@ -988,284 +1067,21 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: redis-cap-dependency-summary-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
-          if-no-files-found: error
-          retention-days: 14
-
-  acceptance-scenario-matrix-planning:
-    name: Business FullChain Acceptance / Planning
-    timeout-minutes: 55
-    runs-on: ubuntu-latest
-    needs: impact-plan
-    outputs:
-      sales-order-demand-selected: ${{ steps.plan.outputs.sales-order-demand-selected }}
-      tested-sha: ${{ steps.plan.outputs.tested-sha }}
-      manifest-digest: ${{ steps.plan.outputs.manifest-digest }}
-      artifact-digest: ${{ steps.plan.outputs.artifact-digest }}
-      artifact-name: ${{ steps.planning-artifact-identity.outputs.artifact-name }}
-      producer-run-attempt: ${{ steps.planning-artifact-identity.outputs.producer-run-attempt }}
-    if: >-
-      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}
-    steps:
-      - name: Checkout
-        timeout-minutes: 3
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        timeout-minutes: 5
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-
-      - name: Validate CI impact-plan artifact identity
-        timeout-minutes: 1
-        if: ${{ github.event_name == 'pull_request' && needs.impact-plan.result == 'success' }}
-        shell: bash --noprofile --norc -euo pipefail {0}
-        env:
-          ARTIFACT_NAME: ${{ needs.impact-plan.outputs.artifact-name }}
-          PRODUCER_RUN_ATTEMPT: ${{ needs.impact-plan.outputs.producer-run-attempt }}
-        run: |
-          case "$PRODUCER_RUN_ATTEMPT" in
-            ''|*[!0-9]*|0|0*) echo "Impact-plan producer run attempt is not canonical." >&2; exit 1 ;;
-          esac
-          test "$ARTIFACT_NAME" = "ci-impact-plan-${GITHUB_RUN_ID}-${PRODUCER_RUN_ATTEMPT}"
-
-      - name: Download CI impact plan
-        timeout-minutes: 3
-        if: ${{ github.event_name == 'pull_request' && needs.impact-plan.result == 'success' }}
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.impact-plan.outputs.artifact-name }}
-          path: artifacts/ci-impact-plan
-
-      - name: Plan acceptance scenario matrix
-        timeout-minutes: 30
-        id: plan
-        shell: pwsh
-        run: |
-          $eventName = '${{ github.event_name }}'
-          $impactRulesSucceeded = $eventName -ne 'pull_request' -or '${{ needs.impact-plan.result }}' -eq 'success'
-          $changedPaths = @()
-          if ($eventName -eq 'pull_request' -and $impactRulesSucceeded) {
-            $impactPlan = Get-Content -LiteralPath artifacts/ci-impact-plan/impact-plan.json -Raw | ConvertFrom-Json
-            $changedPaths = @($impactPlan.changed_paths | ForEach-Object { [string]$_ })
-          }
-          $testedSha = (git rev-parse HEAD).Trim()
-          ./scripts/plan-acceptance-scenario-matrix.ps1 `
-            -Event $eventName `
-            -ChangedPaths $changedPaths `
-            -ImpactRulesSucceeded $impactRulesSucceeded `
-            -Repository '${{ github.repository }}' `
-            -TestedSha $testedSha `
-            -RunId '${{ github.run_id }}' `
-            -RunAttempt ${{ github.run_attempt }}
-          $planningPath = 'artifacts/acceptance-scenario-matrix/planning.json'
-          $planningBytes = [IO.File]::ReadAllBytes($planningPath)
-          $planning = [Text.UTF8Encoding]::new($false, $true).GetString($planningBytes) | ConvertFrom-Json -Depth 50 -DateKind String
-          $salesMatches = @($planning.scenarios | Where-Object { [string]::Equals([string]$_.id, 'sales-order-demand', [StringComparison]::Ordinal) })
-          if ($salesMatches.Count -gt 1) { throw "Planning artifact selected sales-order-demand more than once." }
-          $sha256 = [Security.Cryptography.SHA256]::Create()
-          try { $artifactDigest = ([Convert]::ToHexString($sha256.ComputeHash($planningBytes))).ToLowerInvariant() }
-          finally { $sha256.Dispose() }
-          "sales-order-demand-selected=$($salesMatches.Count -eq 1)".ToLowerInvariant() >> $env:GITHUB_OUTPUT
-          "tested-sha=$([string]$planning.testedSha)" >> $env:GITHUB_OUTPUT
-          "manifest-digest=$([string]$planning.manifestDigest)" >> $env:GITHUB_OUTPUT
-          "artifact-digest=$artifactDigest" >> $env:GITHUB_OUTPUT
-
-      - name: Resolve planning artifact identity
-        timeout-minutes: 1
-        id: planning-artifact-identity
-        shell: pwsh
-        run: |
-          "artifact-name=acceptance-scenario-matrix-plan-${{ github.run_id }}-${{ github.run_attempt }}" >> $env:GITHUB_OUTPUT
-          "producer-run-attempt=${{ github.run_attempt }}" >> $env:GITHUB_OUTPUT
-
-      - name: Upload acceptance scenario matrix plan
-        timeout-minutes: 5
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.planning-artifact-identity.outputs.artifact-name }}
-          path: artifacts/acceptance-scenario-matrix/planning.json
-          if-no-files-found: error
-          retention-days: 14
-
-  acceptance-scenario-matrix-runtime:
-    name: Business FullChain Acceptance / sales-order-demand
-    # 显式 step 预算合计 101m，小于 110m job 预算，为 action setup/post 保留 9m。
-    timeout-minutes: 110
-    runs-on: ubuntu-latest
-    needs: acceptance-scenario-matrix-planning
-    outputs:
-      artifact-name: ${{ steps.shadow-artifact-identity.outputs.artifact-name }}
-      producer-run-attempt: ${{ steps.shadow-artifact-identity.outputs.producer-run-attempt }}
-    if: ${{ !cancelled() && needs.acceptance-scenario-matrix-planning.result == 'success' && needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected == 'true' }}
-    env:
-      NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=15432;Database=nerv_iip;Username=nerv;Password=nerv
-      NERV_IIP_TEST_REDIS: 127.0.0.1:6379
-    steps:
-      - name: Checkout
-        timeout-minutes: 3
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        timeout-minutes: 5
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-
-      - name: Cache NuGet packages
-        timeout-minutes: 8
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
-      - name: Validate planning artifact identity
-        timeout-minutes: 1
-        shell: bash --noprofile --norc -euo pipefail {0}
-        env:
-          ARTIFACT_NAME: ${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-name }}
-          PRODUCER_RUN_ATTEMPT: ${{ needs.acceptance-scenario-matrix-planning.outputs.producer-run-attempt }}
-        run: |
-          case "$PRODUCER_RUN_ATTEMPT" in
-            ''|*[!0-9]*|0|0*) echo "Planning producer run attempt is not canonical." >&2; exit 1 ;;
-          esac
-          test "$ARTIFACT_NAME" = "acceptance-scenario-matrix-plan-${GITHUB_RUN_ID}-${PRODUCER_RUN_ATTEMPT}"
-
-      - name: Download acceptance scenario matrix plan
-        timeout-minutes: 3
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-name }}
-          path: artifacts/acceptance-scenario-matrix
-
-      - name: Prepare shadow dependency images
-        timeout-minutes: 10
-        shell: bash --noprofile --norc -euo pipefail {0}
-        run: |
-          # `verify-erp-sales-order-demand-planning.ps1` 使用 `docker compose up --pull never`；
-          # hosted runner 必须先具备与 compose 契约一致的两个精确镜像。沿用 v1 的有限重试形状：
-          # 单次最多 2 × (75s + 10s SIGKILL 兜底) = 170s，最多 3 次并含两次 15s 退避，
-          # 最坏 540s，严格小于本 step 的 600s 预算。
-          docker_attempt=1
-          while true; do
-            if { docker image inspect postgres:18 >/dev/null 2>&1 || timeout --kill-after=10 75 docker pull postgres:18; } \
-              && { docker image inspect redis:8 >/dev/null 2>&1 || timeout --kill-after=10 75 docker pull redis:8; }; then
-              echo "Shadow 依赖镜像准备成功（第 ${docker_attempt} 次尝试）。"
-              break
-            fi
-            if [ "${docker_attempt}" -ge 3 ]; then
-              echo "Shadow 依赖镜像拉取失败：已连续尝试 3 次仍未成功。" >&2
-              exit 1
-            fi
-            echo "Shadow 依赖镜像拉取第 ${docker_attempt} 次尝试失败，15 秒后重试。" >&2
-            docker_attempt=$((docker_attempt + 1))
-            sleep 15
-          done
-
-      - name: Run acceptance scenario matrix
-        timeout-minutes: 45
-        id: acceptance-scenario-runtime
-        shell: pwsh
-        run: |
-          $artifactPath = [IO.Path]::GetFullPath('artifacts/acceptance-scenario-matrix/planning.json')
-          $artifactBytes = [IO.File]::ReadAllBytes($artifactPath)
-          $sha256 = [Security.Cryptography.SHA256]::Create()
-          try { $artifactDigest = ([Convert]::ToHexString($sha256.ComputeHash($artifactBytes))).ToLowerInvariant() }
-          finally { $sha256.Dispose() }
-          if (-not [string]::Equals($artifactDigest, '${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-digest }}', [StringComparison]::Ordinal)) {
-            throw 'Downloaded planning artifact digest does not match the planning job output.'
-          }
-          $manifestDigest = '${{ needs.acceptance-scenario-matrix-planning.outputs.manifest-digest }}'
-          ./scripts/run-acceptance-scenario-matrix.ps1 `
-            -ArtifactPath $artifactPath `
-            -ExpectedArtifactDigest $artifactDigest `
-            -ExpectedManifestDigest $manifestDigest `
-            -Repository '${{ github.repository }}' `
-            -TestedSha '${{ needs.acceptance-scenario-matrix-planning.outputs.tested-sha }}' `
-            -RunId '${{ github.run_id }}' `
-            -RunAttempt '${{ github.run_attempt }}' `
-            -PlanningRunAttempt '${{ needs.acceptance-scenario-matrix-planning.outputs.producer-run-attempt }}' `
-            -Event '${{ github.event_name }}' `
-            -SummaryPath artifacts/acceptance-scenario-matrix/shadow/runtime-summary.json `
-            -CanonicalResultPath artifacts/acceptance-scenario-matrix/shadow/sales-order-demand-result.json `
-            -TrackIdentifier 'shadow'
-
-      - name: Upload shadow runtime summary
-        timeout-minutes: 5
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: acceptance-scenario-matrix-runtime-summary-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/acceptance-scenario-matrix/shadow/runtime-summary.json
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Resolve shadow canonical artifact identity
-        timeout-minutes: 1
-        id: shadow-artifact-identity
-        if: always()
-        shell: pwsh
-        run: |
-          "artifact-name=acceptance-scenario-matrix-result-shadow-${{ github.run_id }}-${{ github.run_attempt }}" >> $env:GITHUB_OUTPUT
-          "producer-run-attempt=${{ github.run_attempt }}" >> $env:GITHUB_OUTPUT
-
-      - name: Upload shadow canonical result
-        timeout-minutes: 5
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.shadow-artifact-identity.outputs.artifact-name }}
-          path: artifacts/acceptance-scenario-matrix/shadow/sales-order-demand-result.json
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload shadow business evidence
-        timeout-minutes: 5
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: acceptance-scenario-matrix-business-shadow-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/acceptance/man517/sales-order-demand-planning-evidence.json
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload shadow cleanup evidence
-        timeout-minutes: 5
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: acceptance-scenario-matrix-cleanup-shadow-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/acceptance/man517/cleanup-evidence.json
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload shadow failure diagnostics
-        timeout-minutes: 5
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: acceptance-scenario-matrix-diagnostics-shadow-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            artifacts/acceptance/man517/diagnostics/**
-            artifacts/script-logs/man517-*
+            artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+            artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/observation/
           if-no-files-found: error
           retention-days: 14
 
   business-full-chain-acceptance-v1:
     name: Business FullChain Acceptance / v1 Authority
     # NERV-767：五条 active/core 跨服务真实依赖场景。层级 A；显式 step
-    # 预算合计 220m，小于 225m job 预算，为 Docker/Aspire setup 与 action post
-    # steps 保留 5m。场景顺序执行，避免共享端口和固定服务画像并发冲突。
+    # 预算合计 214m，小于 225m job 预算，为 Docker/Aspire setup 与 action post
+    # steps 保留 11m。场景顺序执行，避免共享端口和固定服务画像并发冲突。
     timeout-minutes: 225
     runs-on: ubuntu-latest
-    needs: acceptance-scenario-matrix-planning
-    outputs:
-      artifact-name: ${{ steps.v1-artifact-identity.outputs.artifact-name }}
-      producer-run-attempt: ${{ steps.v1-artifact-identity.outputs.producer-run-attempt }}
-    if: ${{ needs.acceptance-scenario-matrix-planning.result == 'success' }}
+    needs: impact-plan
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}
     env:
       NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=15432;Database=postgres;Username=nerv;Password=nerv
       NERV_IIP_TEST_REDIS: 127.0.0.1:6379
@@ -1278,8 +1094,10 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -1456,35 +1274,9 @@ jobs:
         id: full-chain-tests
         shell: pwsh
         run: |
-          $v1CanonicalResultPath = [IO.Path]::GetFullPath('artifacts/acceptance-scenario-matrix/v1/sales-order-demand-result.json')
           ./scripts/run-full-chain-test-lane.ps1 `
             -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain `
-            -SummaryPath artifacts/full-chain-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json `
-            -CanonicalResultPath $v1CanonicalResultPath `
-            -TrackIdentifier 'v1' `
-            -Repository '${{ github.repository }}' `
-            -RunId '${{ github.run_id }}' `
-            -RunAttempt '${{ github.run_attempt }}' `
-            -TestedSha '${{ needs.acceptance-scenario-matrix-planning.outputs.tested-sha }}' `
-            -ManifestDigest '${{ needs.acceptance-scenario-matrix-planning.outputs.manifest-digest }}' `
-            -ScenarioId 'sales-order-demand'
-
-      - name: Resolve v1 canonical artifact identity
-        timeout-minutes: 1
-        id: v1-artifact-identity
-        shell: pwsh
-        run: |
-          "artifact-name=acceptance-scenario-matrix-result-v1-${{ github.run_id }}-${{ github.run_attempt }}" >> $env:GITHUB_OUTPUT
-          "producer-run-attempt=${{ github.run_attempt }}" >> $env:GITHUB_OUTPUT
-
-      - name: Upload v1 sales-order-demand canonical result
-        timeout-minutes: 5
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.v1-artifact-identity.outputs.artifact-name }}
-          path: artifacts/acceptance-scenario-matrix/v1/sales-order-demand-result.json
-          if-no-files-found: error
-          retention-days: 14
+            -SummaryPath artifacts/full-chain-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
 
       - name: Collect FullChain evidence
         timeout-minutes: 5
@@ -1547,6 +1339,10 @@ jobs:
             artifacts/acceptance/**
             artifacts/fullstack/**
             artifacts/script-logs/**
+            artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/entrypoint-evidence.json
+            artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/diagnostics/failure-summary.json
+            artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/diagnostics/postgres-state.txt
+            artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/diagnostics/redis-stream-state.txt
           if-no-files-found: error
           retention-days: 14
 
@@ -1556,137 +1352,16 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - impact-plan
-      - acceptance-scenario-matrix-planning
       - business-full-chain-acceptance-v1
-      - acceptance-scenario-matrix-runtime
-      - acceptance-scenario-matrix-equivalence
     if: ${{ always() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.full_chain != 'false') }}
     steps:
-      - name: Require FullChain planning, v1 authority, and selected shadow equivalence
+      - name: Require FullChain authority
         timeout-minutes: 3
         shell: bash --noprofile --norc -euo pipefail {0}
         run: |
-          planning_result="${{ needs.acceptance-scenario-matrix-planning.result }}"
           v1_result="${{ needs.business-full-chain-acceptance-v1.result }}"
-          sales_order_demand_selected="${{ needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected }}"
-          shadow_result="${{ needs.acceptance-scenario-matrix-runtime.result }}"
-          equivalence_result="${{ needs.acceptance-scenario-matrix-equivalence.result }}"
 
-          test "$planning_result" = "success"
           test "$v1_result" = "success"
-          case "$sales_order_demand_selected" in
-            true)
-              test "$shadow_result" = "success"
-              test "$equivalence_result" = "success"
-              ;;
-            false)
-              test "$shadow_result" = "skipped"
-              test "$equivalence_result" = "skipped"
-              ;;
-            *)
-              echo "sales-order-demand-selected must be exactly 'true' or 'false'." >&2
-              exit 1
-              ;;
-          esac
-
-  acceptance-scenario-matrix-equivalence:
-    name: Business FullChain Acceptance / sales-order-demand equivalence (internal)
-    timeout-minutes: 35
-    runs-on: ubuntu-latest
-    needs:
-      - acceptance-scenario-matrix-planning
-      - business-full-chain-acceptance-v1
-      - acceptance-scenario-matrix-runtime
-    if: ${{ !cancelled() && needs.acceptance-scenario-matrix-planning.result == 'success' && needs.acceptance-scenario-matrix-planning.outputs.sales-order-demand-selected == 'true' }}
-    steps:
-      - name: Require successful two-track prerequisites
-        timeout-minutes: 3
-        shell: bash --noprofile --norc -euo pipefail {0}
-        env:
-          PLANNING_ARTIFACT_NAME: ${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-name }}
-          PLANNING_ATTEMPT: ${{ needs.acceptance-scenario-matrix-planning.outputs.producer-run-attempt }}
-          V1_ARTIFACT_NAME: ${{ needs.business-full-chain-acceptance-v1.outputs.artifact-name }}
-          V1_ATTEMPT: ${{ needs.business-full-chain-acceptance-v1.outputs.producer-run-attempt }}
-          SHADOW_ARTIFACT_NAME: ${{ needs.acceptance-scenario-matrix-runtime.outputs.artifact-name }}
-          SHADOW_ATTEMPT: ${{ needs.acceptance-scenario-matrix-runtime.outputs.producer-run-attempt }}
-        run: |
-          test "${{ needs.business-full-chain-acceptance-v1.result }}" = "success"
-          test "${{ needs.acceptance-scenario-matrix-runtime.result }}" = "success"
-          validate_artifact_identity() {
-            artifact_name="$1"
-            producer_attempt="$2"
-            expected_name="$3"
-            case "$producer_attempt" in
-              ''|*[!0-9]*|0|0*) echo "Producer run attempt is not canonical." >&2; exit 1 ;;
-            esac
-            test "$artifact_name" = "$expected_name"
-          }
-          validate_artifact_identity "$PLANNING_ARTIFACT_NAME" "$PLANNING_ATTEMPT" "acceptance-scenario-matrix-plan-${GITHUB_RUN_ID}-${PLANNING_ATTEMPT}"
-          validate_artifact_identity "$V1_ARTIFACT_NAME" "$V1_ATTEMPT" "acceptance-scenario-matrix-result-v1-${GITHUB_RUN_ID}-${V1_ATTEMPT}"
-          validate_artifact_identity "$SHADOW_ARTIFACT_NAME" "$SHADOW_ATTEMPT" "acceptance-scenario-matrix-result-shadow-${GITHUB_RUN_ID}-${SHADOW_ATTEMPT}"
-
-      - name: Checkout
-        timeout-minutes: 3
-        uses: actions/checkout@v4
-
-      - name: Download acceptance scenario matrix plan
-        timeout-minutes: 3
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-name }}
-          path: artifacts/equivalence/planning
-
-      - name: Download v1 canonical result
-        timeout-minutes: 3
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.business-full-chain-acceptance-v1.outputs.artifact-name }}
-          path: artifacts/equivalence/v1
-
-      - name: Download shadow canonical result
-        timeout-minutes: 3
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.acceptance-scenario-matrix-runtime.outputs.artifact-name }}
-          path: artifacts/equivalence/shadow
-
-      - name: Compare sales-order-demand tracks
-        timeout-minutes: 5
-        shell: pwsh
-        run: |
-          $artifactPath = 'artifacts/equivalence/planning/planning.json'
-          $artifactBytes = [IO.File]::ReadAllBytes($artifactPath)
-          $sha256 = [Security.Cryptography.SHA256]::Create()
-          try { $artifactDigest = ([Convert]::ToHexString($sha256.ComputeHash($artifactBytes))).ToLowerInvariant() }
-          finally { $sha256.Dispose() }
-          if (-not [string]::Equals($artifactDigest, '${{ needs.acceptance-scenario-matrix-planning.outputs.artifact-digest }}', [StringComparison]::Ordinal)) {
-            throw 'Downloaded planning artifact digest does not match the planning job output.'
-          }
-          ./scripts/verify-acceptance-scenario-matrix-equivalence.ps1 `
-            -ArtifactPath $artifactPath `
-            -ExpectedArtifactDigest $artifactDigest `
-            -ExpectedManifestDigest '${{ needs.acceptance-scenario-matrix-planning.outputs.manifest-digest }}' `
-            -Repository '${{ github.repository }}' `
-            -TestedSha '${{ needs.acceptance-scenario-matrix-planning.outputs.tested-sha }}' `
-            -RunId '${{ github.run_id }}' `
-            -RunAttempt '${{ github.run_attempt }}' `
-            -PlanningRunAttempt '${{ needs.acceptance-scenario-matrix-planning.outputs.producer-run-attempt }}' `
-            -Event '${{ github.event_name }}' `
-            -V1ResultPath artifacts/equivalence/v1/sales-order-demand-result.json `
-            -V1RunAttempt '${{ needs.business-full-chain-acceptance-v1.outputs.producer-run-attempt }}' `
-            -ShadowResultPath artifacts/equivalence/shadow/sales-order-demand-result.json `
-            -ShadowRunAttempt '${{ needs.acceptance-scenario-matrix-runtime.outputs.producer-run-attempt }}' `
-            -ReportPath artifacts/acceptance-scenario-matrix/equivalence-report.json
-
-      - name: Upload sales-order-demand equivalence report
-        timeout-minutes: 5
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: acceptance-scenario-matrix-equivalence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/acceptance-scenario-matrix/equivalence-report.json
-          if-no-files-found: error
-          retention-days: 14
 
   connector-host-tests:
     name: Connector Host Tests
@@ -1705,8 +1380,10 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -1952,7 +1629,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.impact-plan.outputs.frontend_validation_matrix) }}
-    timeout-minutes: 45
+    # A 级证据作业预算算术：显式步骤预算合计 71m，作业预算 80m，
+    # 留出 9m 给 Set up job 与 action 隐式后置步骤。
+    timeout-minutes: 80
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -2012,6 +1691,47 @@ jobs:
         timeout-minutes: 20
         run: pnpm -C frontend --filter "${{ matrix.name }}" build
 
+      - name: Resolve Business Console browser
+        if: matrix.name == '@nerv-iip/business-console'
+        timeout-minutes: 3
+        shell: bash --noprofile --norc -euo pipefail {0}
+        run: |
+          browser_path="$(command -v google-chrome || true)"
+          if [ -z "$browser_path" ]; then
+            echo "GitHub runner 未提供 google-chrome，无法执行 Business Console 浏览器不变量。" >&2
+            exit 1
+          fi
+          echo "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=$browser_path" >> "$GITHUB_ENV"
+
+      - name: Test Business Console browser invariants
+        id: business-console-browser-tests
+        if: matrix.name == '@nerv-iip/business-console'
+        timeout-minutes: 10
+        env:
+          NERV_IIP_OUT_DIR: ${{ runner.temp }}/issue-2098-tooling-browser
+        # 声明宽 == 渲染宽只能在真实浏览器里量：jsdom 不实现表格布局，用
+        # getComputedStyle 在单测里量列宽只会假绿（#3734）。所以列宽那条也走本
+        # lane，与工装视觉一起跑，不另开 step——同 lane 的 step 顺序受
+        # ci-impact-plan.Tests.ps1 的相邻有序断言约束，另开 step 会打破它。
+        # #3735 的三条（指标条横向截断、筛选条首屏被吃、工序列重复单号）同理：
+        # 全是 flex 布局与真实宽度，jsdom 量不出来。漏接线的话这个 job 会一直
+        # 绿着而修复没有回归防线，所以名字同时被 ci-impact-plan.Tests.ps1 断言。
+        run: >-
+          pnpm -C frontend --filter @nerv-iip/business-console exec playwright test
+          e2e/issue1974-tooling-visual.spec.ts e2e/issue3734-column-width.spec.ts
+          e2e/issue3735-layout.spec.ts
+          --project=desktop --reporter=list
+
+      - name: Upload Business Console browser diagnostics
+        timeout-minutes: 5
+        if: failure() && steps.business-console-browser-tests.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: business-console-browser-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/issue-2098-tooling-browser
+          if-no-files-found: error
+          retention-days: 7
+
   frontend:
     name: Frontend Typecheck and Build
     if: always()
@@ -2058,8 +1778,10 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
       - name: Cache NuGet packages
         timeout-minutes: 8
@@ -2091,25 +1813,31 @@ jobs:
 
   script-governance:
     name: Script Governance
-    # 层级 B（失败后没有 step 运行）。已包含证据契约测试 step 的 run 中，观测最大值为 1.9m、平均值为 1.8m；
-    # 本注释曾引用的 0.7m 平均值早于该证据契约测试 step。
-    # 10m job 预算是快速失败界限。step 预算合计 153m（31 个 step：3m checkout
-    # + 30 × 5m；2026-08-23 逐 step 实测求和），且仅为逐 step 上限。合计超过 job
-    # 预算对层级 B 是正确的，也不是 scripts/lib/CiWorkflowBudgets.ps1 执行的约束：
-    # “step 预算合计低于 job 预算”不变量只适用于层级 A，即会从
-    # `if: always()` step 发布证据、而该 step 会被 job 级超时取消的 job。本 job 没有
-    # 此类 step，因此门禁从不读取这个数字——新增 step 时须人工保持其准确。
-    # 该合计只保留一个当前值：增删 step 直接改这个数字，不要追加历史增量句。
-    # 判据不变：新增 step 若本地均在秒级完成，job 预算保持 10m
-    # （MAN-669 PR-C 的两个 solution-configuration-membership step、#1509 的扫描
-    # 边界契约 step、#1512 的两个 ordinal 合同 step、#1826 的跨域对账契约 step、
-    # #1876 的信号退出码契约 step、#1877 的 FullChain 内存证据契约 step、#1887 的 ADR
-    # 生命周期禁令契约 step（本机 4.3s）均按此判断）。
-    timeout-minutes: 10
+    # 无失败后续 evidence 职责；job timeout 是快速失败上限。
+    timeout-minutes: 35
     runs-on: ubuntu-latest
     needs: impact-plan
+    # `infra`（#3509）：本 job 的输入不止 scripts/ 与 backend/。这里跑的契约测试直接读 infra/ 下的文件
+    # 并对其内容逐字断言——scripts/tests/production-deployment-inputs.Tests.ps1 读 AppHost Program.cs 与
+    # infra/compose 的三个部署输入文件，发现式 runner 选中的 dev-entrypoint / fullstack-session-runtime /
+    # fullstack-worker-boundary 也读 Program.cs。选中维度按「改了哪类文件」算，断言维度按「谁读了这个文件」
+    # 成立；`infra` 之前零消费，于是只动 infra/ 的 PR 会把这些断言跳过（PR #3484 实见 skipping）。
+    # `docs`（#3510）：同一形状的第二格。本 job 的 scripts/verify-adr-format.ps1 在 CI 用默认参数运行，
+    # 扫描的是 docs/adr/ 的 ADR 身份与索引覆盖，外加整个仓库的 Markdown 本地链接目标
+    # （MarkdownRoot 回落到仓库根，因此 skills/、.claude/、.codex/ 下的 .md 同样在内）；
+    # scripts/tests/verify-adr-format-lifecycle.Tests.ps1 的
+    # Assert-Gate '当前仓库 ADR、索引与活文档本地目标' 对同一对真实目标再断言一次。
+    # 而 impact-plan 对 'docs/' 前缀与任意 '.md' 后缀只点亮 docs：只改一个 README.md 得到
+    # docs=true / scripts=false / backend=false / infra=false，本 job 因此被跳过——跳过的正是这两道
+    # 门禁存在的理由那一类变更。这里用 docs 标志本身而不是再开一张「哪些文档被门禁读」的白名单：
+    # docs 的选中集**严格包含**该门禁的输入集而非与之同形——只点亮 docs 的路径里还有 .claude/settings.json、
+    # t3.json、docs/**/*.png 这类该门禁一个字节都不读的文件，它们现在也会拉起本 job。超出部分只造成
+    # 多跑、不造成漏跑，这是刻意接受的取舍：白名单的失效方向是假绿（漏掉后来者，#3145/#3157 已实证），
+    # 超集的失效方向只是多跑一个 job。
+    # 这一项必须与 ci-summary 的 script_governance_selected 同步改：ci-summary 用同一个表达式断言
+    # 「选中即必须 success、未选中即必须 skipped」，两边不一致会让本 job 跑绿反而使 CI 红。
     if: >-
-      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false') }}
+      ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' || needs.impact-plan.outputs.infra != 'false' || needs.impact-plan.outputs.docs != 'false') }}
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -2118,173 +1846,40 @@ jobs:
       - name: Setup .NET
         timeout-minutes: 5
         uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.302
 
-      - name: Run script governance check
-        timeout-minutes: 5
+      - name: Run repository governance checks
+        timeout-minutes: 10
         shell: pwsh
-        run: ./scripts/check-script-governance.ps1
+        run: |
+          ./scripts/run-script-contract-tests.ps1 -ScriptPath @(
+            'scripts/check-script-governance.ps1',
+            'scripts/verify-adr-format.ps1',
+            'scripts/verify-ci-required-summary.ps1',
+            'scripts/check-backend-test-determinism.ps1',
+            'scripts/verify-solution-configuration-membership.ps1',
+            'scripts/verify-permission-code-producer-consistency.ps1',
+            'scripts/verify-restore-lock-contract.ps1',
+            'scripts/verify-stable-code-frontend-vocabulary.ps1'
+          )
 
-      - name: Run production deployment input contract tests
-        timeout-minutes: 5
+      - name: Run nested script contract suites
+        timeout-minutes: 10
         shell: pwsh
-        run: ./scripts/tests/production-deployment-inputs.Tests.ps1
+        run: |
+          ./scripts/run-script-contract-tests.ps1 -ScriptPath @(
+            'scripts/tests/postgres-test-lane.Tests.ps1',
+            'scripts/tests/redis-cap-test-lane.Tests.ps1',
+            'scripts/tests/script-automation-signal-exit.Tests.ps1'
+          )
 
-      - name: Verify ADR format
-        timeout-minutes: 5
+      - name: Run discovered script contract tests
+        timeout-minutes: 25
         shell: pwsh
-        run: ./scripts/verify-adr-format.ps1
-
-      # #1887：`日期戳增量段落` 与 `实施状态与票映射` 两档欠账刚清零，清完没有防复发门禁——按仓库
-      # 既有教训（同一红门在 #1508 里重生三次）它会回来。这一步守的是那条禁令本身的鉴别力：
-      # 禁令加上去时对 27 篇 ADR 零命中，「跑一遍 docs/adr 是绿的」什么都不证明，所以测试自带
-      # 变异矩阵，并把治理文档的禁用标题表与脚本里的三个列表双向锁定。
-      - name: Test ADR lifecycle section governance
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/verify-adr-format-lifecycle.Tests.ps1
-
-      - name: Verify CI required summary
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/verify-ci-required-summary.ps1
-
-      - name: Test CI required summary
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/ci-required-summary.Tests.ps1
-
-      - name: Test CI impact plan
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/ci-impact-plan.Tests.ps1
-
-      - name: Test acceptance scenario matrix contract
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/acceptance-scenario-matrix.Tests.ps1
-
-      - name: Test acceptance scenario matrix runtime contract
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/acceptance-scenario-matrix-runtime.Tests.ps1
-
-      - name: Test acceptance scenario matrix equivalence contract
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/acceptance-scenario-matrix-equivalence.Tests.ps1
-
-      - name: Test PostgreSQL lane contract
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/postgres-test-lane.Tests.ps1
-
-      - name: Test Redis/CAP lane contract
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/redis-cap-test-lane.Tests.ps1
-
-      - name: Test FullChain lane contract
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/full-chain-test-lane.Tests.ps1
-
-      - name: Test frontend workspace plan
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/frontend-workspace-plan.Tests.ps1
-
-      - name: Test nightly business performance workflow
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/nightly-business-performance-workflow.Tests.ps1
-
-      - name: Test business performance metric completeness
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/business-performance-metrics-completeness.Tests.ps1
-
-      - name: Test ordinal string primitives
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/ordinal-string.Tests.ps1
-
-      # 纯 fixture 契约：只跑 scripts/lib/WorldHistoryCrossDomain.ps1 的对账函数，不连库、不起进程。
-      # verify-world-history.ps1 本身按 #1826 的裁决不上门禁；上门禁的只有这份鉴别力测试，
-      # 否则对账器少查一类行、放宽一个量级都不会有人发现。
-      - name: Test world-history cross-domain reconciliation contract
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/world-history-cross-domain.Tests.ps1
-
-      # #1664：FullChain 的 man-440 两次被内核 SIGKILL（内层 137），而 lane 只报 `exited with 1`，
-      # 结果被当成场景断言失败或抖动。这一步守的是「信号死亡在它经过的每一层都自报家门」，包括
-      # 跨进程继承那一跳——它正是当时唯一断掉的一环。测试自带变异对照，拿掉分类后必须转红。
-      - name: Test script automation signal exit classification
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/script-automation-signal-exit.Tests.ps1
-
-      # #1664：man-440 的 137 被归因为 OOM，但诊断包里从来没有内存维度证据，结论一直是推断。这一步
-      # 守的是那条证据本身——精确解析 + best-effort 降级（采证绝不把被测 lane 弄红），并用 AST 断言
-      # 快照落在 entrypoint 前后而不是 lane 首尾。测试自带变异对照。
-      - name: Test FullChain memory evidence contract
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/full-chain-memory-evidence.Tests.ps1
-
-      # The checker above only reports on the files it decides to scan; this step is what holds that
-      # decision still. #1509 narrowed the exclusion list to three entries and put scripts/lib under
-      # a declared library scope, and a boundary nobody re-checks drifts back — so the exclusion list
-      # and the library rule set are asserted here, in CI, not only in the local gate. Deliberately
-      # split out of scripts/tests/check-script-governance.Tests.ps1, which also drives the
-      # ScriptAutomation stream-drain and detached-process fixtures; this file is 4.7s of checker
-      # runs against small fixtures. Ruling: docs/architecture/script-automation-governance.md.
-      - name: Test script governance scan boundary
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/script-governance-scan-boundary.Tests.ps1
-
-      - name: Test ordinal comparison layers
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/ordinal-comparison-layers.Tests.ps1
-
-      - name: Test worktree skill link layer
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/worktree-skill-links.Tests.ps1
-
-      - name: Test backend determinism checker
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/check-backend-test-determinism.Tests.ps1
-
-      - name: Test backend determinism verifier
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/verify-backend-test-determinism.Tests.ps1
-
-      - name: Run backend determinism checker
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/check-backend-test-determinism.ps1
-
-      - name: Run test evidence contract tests
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/test-evidence.Tests.ps1
-
-      - name: Test solution configuration membership checker
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/tests/solution-configuration-membership.Tests.ps1
-
-      - name: Run solution configuration membership check
-        timeout-minutes: 5
-        shell: pwsh
-        run: ./scripts/verify-solution-configuration-membership.ps1
+        run: ./scripts/run-script-contract-tests.ps1
 
   ci-summary:
     name: CI Summary
@@ -2317,7 +1912,7 @@ jobs:
           full_chain_result="${{ needs.business-full-chain-acceptance.result }}"
           backend_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.backend != 'false' }}"
           connector_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.connector_hosts != 'false' }}"
-          script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' }}"
+          script_governance_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.scripts != 'false' || needs.impact-plan.outputs.backend != 'false' || needs.impact-plan.outputs.infra != 'false' || needs.impact-plan.outputs.docs != 'false' }}"
           openapi_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.openapi_codegen != 'false' }}"
           postgres_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.postgresql != 'false' }}"
           redis_cap_selected="${{ github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.redis_cap != 'false' }}"

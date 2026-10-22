@@ -1,3 +1,4 @@
+using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -85,8 +86,8 @@ public sealed class ConnectorIngestionTokenService : IConnectorIngestionTokenSer
             issuedAt,
             issuedAt.Add(_tokenLifetime));
         var payloadBytes = JsonSerializer.SerializeToUtf8Bytes(identity, SerializerOptions);
-        var payload = Base64UrlEncode(payloadBytes);
-        var signature = Base64UrlEncode(Sign(Encoding.UTF8.GetBytes($"{Version}.{payload}")));
+        var payload = Base64Url.EncodeToString(payloadBytes);
+        var signature = Base64Url.EncodeToString(Sign(Encoding.UTF8.GetBytes($"{Version}.{payload}")));
 
         return $"{Version}.{payload}.{signature}";
     }
@@ -146,9 +147,6 @@ public sealed class ConnectorIngestionTokenService : IConnectorIngestionTokenSer
         using var hmac = new HMACSHA256(_signingKey);
         return hmac.ComputeHash(data);
     }
-
-    private static string Base64UrlEncode(byte[] bytes) =>
-        Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
     private static byte[] Base64UrlDecode(string value)
     {

@@ -39,7 +39,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvTabs,
   NvTabsContent,
@@ -301,7 +301,7 @@ const canCreateUom = computed(
     inOptions(ROUNDING_OPTIONS, createForm.roundingMode) &&
     isPrecisionValid(createForm.precision),
 )
-const listErrorMessage = computed(() => formatError(uomsError.value))
+const listErrorMessage = computed(() => inlineErrorMessage(uomsError.value))
 
 const conversionRows = computed(() => {
   const kw = conversionKeyword.value.trim().toLowerCase()
@@ -324,7 +324,7 @@ const canCreateConversion = computed(
     isOffsetValid(conversionForm.offset) &&
     isPrecisionValid(conversionForm.precision),
 )
-const conversionListError = computed(() => formatError(conversionsError.value))
+const conversionListError = computed(() => inlineErrorMessage(conversionsError.value))
 
 watch(createOpen, (open) => {
   if (open) createShowErrors.value = false
@@ -391,9 +391,6 @@ function isOffsetValid(value: string | number) {
 }
 function offsetNumber(value: string | number): number | undefined {
   return asText(value).trim() === '' ? undefined : Number(value)
-}
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
 }
 function resetCreateForm() {
   Object.assign(createForm, {
@@ -657,7 +654,7 @@ async function submitConversion() {
                       type="submit"
                       :disabled="createUomPending || uomActions.updatePending.value || editLoading"
                     >
-                      <Spinner
+                      <NvSpinner
                         v-if="createUomPending || uomActions.updatePending.value"
                         aria-hidden="true"
                       />
@@ -863,7 +860,7 @@ async function submitConversion() {
                       >取消</NvButton
                     >
                     <NvButton type="submit" :disabled="createUomConversionPending">
-                      <Spinner v-if="createUomConversionPending" aria-hidden="true" />
+                      <NvSpinner v-if="createUomConversionPending" aria-hidden="true" />
                       保存换算关系
                     </NvButton>
                   </NvDialogFooter>

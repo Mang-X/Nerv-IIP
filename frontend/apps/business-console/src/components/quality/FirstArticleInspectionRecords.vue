@@ -90,7 +90,6 @@ function recordIdOf(row: BusinessConsoleQualityItem) {
           :loading="skusPending"
           title="按物料筛选首件记录"
           placeholder="全部物料"
-          source-text="数据来自物料主数据"
           clearable
           aria-label="按物料筛选首件记录"
         />

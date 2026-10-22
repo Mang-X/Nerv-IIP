@@ -1,9 +1,53 @@
 <script setup lang="ts">
-import type { BusinessConsoleSchedulingPlanRevision } from '@nerv-iip/api-client'
+import type {
+  BusinessConsoleSchedulePlan,
+  BusinessConsoleSchedulingPlanRevision,
+} from '@nerv-iip/api-client'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
+import { ChangeSummaryPanel, toModel } from '@nerv-iip/scheduling'
+import { computed } from 'vue'
 import { NvStatusBadge } from '@nerv-iip/ui'
 
-defineProps<{ revision?: BusinessConsoleSchedulingPlanRevision }>()
+const props = defineProps<{
+  revision?: BusinessConsoleSchedulingPlanRevision
+  basePlan?: BusinessConsoleSchedulePlan
+}>()
+const candidateModel = computed(() => toModel(props.revision?.candidate ?? {}))
+const baseModel = computed(() => toModel(props.basePlan ?? {}))
+
+const comparisonChanges = computed(() =>
+  candidateModel.value.changes.map((change) => {
+    const before = baseModel.value.tasks.find(
+      (task) => task.orderId === change.orderId && task.operationId === change.operationId,
+    )
+    const after = candidateModel.value.tasks.find(
+      (task) => task.orderId === change.orderId && task.operationId === change.operationId,
+    )
+    if (!props.basePlan || !after) return change
+    const sameTime = (left: string, right: string) => Date.parse(left) === Date.parse(right)
+    const unchanged =
+      before &&
+      before.resourceId === after.resourceId &&
+      sameTime(before.startUtc, after.startUtc) &&
+      sameTime(before.endUtc, after.endUtc) &&
+      (before.segments ?? []).length === (after.segments ?? []).length &&
+      (before.segments ?? []).every((segment, index) => {
+        const next = after.segments![index]!
+        return sameTime(segment.startUtc, next.startUtc) && sameTime(segment.endUtc, next.endUtc)
+      })
+    const changeType = !before ? 'added' : unchanged ? 'preserved' : 'moved'
+    const message = !before
+      ? change.message
+      : unchanged
+        ? '资源、起止时间与分段保持不变'
+        : change.changeType === 'moved'
+          ? change.message
+          : after.locked
+            ? '相对基线已调整资源或排程时间，按调整后的位置锁定'
+            : '资源或排程时间已调整'
+    return { ...change, changeType: changeType as typeof change.changeType, message }
+  }),
+)
 
 function percent(value?: number) {
   return value === undefined ? '—' : `${Math.round(value * 100)}%`
@@ -62,5 +106,11 @@ function percent(value?: number) {
         <p class="font-semibold">{{ revision.comparison?.unscheduledOperationCount ?? 0 }}</p>
       </div>
     </div>
+    <ChangeSummaryPanel
+      :key="revision.candidate?.planId"
+      :changes="comparisonChanges"
+      :tasks="candidateModel.tasks"
+      :base-tasks="baseModel.tasks"
+    />
   </section>
 </template>

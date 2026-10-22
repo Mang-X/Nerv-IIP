@@ -5,12 +5,12 @@ title: Sidebar 侧栏
 <script setup>
 import { ref } from 'vue'
 import {
-  SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarFooter,
+  SidebarProvider, NvSidebar, SidebarHeader, SidebarContent, SidebarFooter,
   SidebarGroup, SidebarGroupLabel, SidebarGroupContent, SidebarGroupAction,
   SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarMenuAction, SidebarMenuBadge,
   SidebarMenuSub, SidebarMenuSubItem, SidebarMenuSubButton,
   SidebarSeparator, SidebarInput, SidebarRail, SidebarTrigger, SidebarInset,
-  NvSidebarBrand, NvSidebarDot, NvSidebarUser, NvSidebarSub,
+  NvSidebarBrand, NvSidebarDot, NvSidebarUser, NvSidebarSub, NvSidebarRail, NvSidebarTrigger,
   TooltipProvider,
 } from '@nerv-iip/ui'
 import {
@@ -31,7 +31,7 @@ const todo = ref('待派工单')
 
 # Sidebar 侧栏
 
-可折叠的控制台侧栏**原子件**：`SidebarProvider` 提供上下文，`Sidebar` 承载分组导航，配合 `SidebarRail` / `SidebarTrigger` 折叠。需要开箱即用的整页外壳时用 [NvAppShellInset](/components/desktop/dashboard)，需要自定义结构时用这些原子件自行拼装。
+可折叠的控制台侧栏**原子件**：`SidebarProvider` 提供上下文，`Sidebar` 承载分组导航，配合 `NvSidebarRail` / `NvSidebarTrigger` 折叠。需要开箱即用的整页外壳时用 [NvAppShellInset](/components/desktop/dashboard)，需要自定义结构时用这些原子件自行拼装。
 
 ## 完整控制台侧栏
 
@@ -41,7 +41,7 @@ const todo = ref('待派工单')
 <div class="nv-sb nv-nv-scr-collapse nv-nv-scr-tall">
   <TooltipProvider :delay-duration="0">
   <SidebarProvider>
-    <Sidebar collapsible="icon">
+    <NvSidebar collapsible="icon">
       <SidebarHeader>
         <NvSidebarBrand name="Nerv-IIP" sub="总装一厂 · 早班" logo="N" />
       </SidebarHeader>
@@ -88,11 +88,11 @@ const todo = ref('待派工单')
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
-      <SidebarRail />
-    </Sidebar>
+      <NvSidebarRail />
+    </NvSidebar>
     <SidebarInset class="nv-nv-scr-inset">
       <header class="nv-nv-scr-topbar">
-        <SidebarTrigger />
+        <NvSidebarTrigger />
         <span class="nv-nv-scr-topbar-divider" aria-hidden="true" />
         <span class="text-sm text-muted-foreground">控制台</span>
         <ChevronRightIcon class="size-3.5 text-muted-foreground/50" />
@@ -112,7 +112,7 @@ const todo = ref('待派工单')
 </Demo>
 
 ```vue
-<Sidebar collapsible="icon">
+<NvSidebar collapsible="icon">
   <SidebarHeader>
     <NvSidebarBrand name="Nerv-IIP" sub="总装一厂 · 早班" logo="N" />
   </SidebarHeader>
@@ -142,7 +142,7 @@ const todo = ref('待派工单')
       </SidebarMenuItem>
     </SidebarMenu>
   </SidebarFooter>
-</Sidebar>
+</NvSidebar>
 ```
 
 ## 子菜单 · 徽标 · 操作
@@ -152,7 +152,7 @@ const todo = ref('待派工单')
 <Demo>
 <div class="nv-sb">
   <SidebarProvider>
-    <Sidebar collapsible="none">
+    <NvSidebar collapsible="none">
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel>车间</SidebarGroupLabel>
@@ -204,7 +204,7 @@ const todo = ref('待派工单')
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>
-    </Sidebar>
+    </NvSidebar>
     <main class="nv-nv-scr-main">
       <span class="nv-nv-scr-hint"><ActivityIcon class="size-4" />点击车间展开 / 收起，二级带高度动画</span>
     </main>
@@ -236,7 +236,7 @@ const todo = ref('待派工单')
 <Demo>
 <div class="nv-sb nv-nv-scr-short">
   <SidebarProvider>
-    <Sidebar collapsible="none">
+    <NvSidebar collapsible="none">
       <SidebarHeader>
         <div class="relative">
           <SearchIcon class="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -253,7 +253,7 @@ const todo = ref('待派工单')
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>
-    </Sidebar>
+    </NvSidebar>
     <main class="nv-nv-scr-main">
       <span class="nv-nv-scr-hint"><SearchIcon class="size-4" />输入即过滤工单 / 工位</span>
     </main>
@@ -261,10 +261,12 @@ const todo = ref('待派工单')
 </div>
 </Demo>
 
+<!-- @include: ../../../../../DESIGN/components/sidebar.md -->
+
 ## 组成
 
 - `SidebarProvider` — 提供开合状态（`useSidebar()`）、快捷键与 Cookie 持久化；外层容器。
-- `Sidebar` — 侧栏本体；`side` 左/右、`variant` `sidebar`/`floating`/`inset`、`collapsible` `offcanvas`/`icon`/`none`。
+- `NvSidebar` — 产品侧栏本体，移动抽屉以中文说明导航用途并提供「关闭」按钮；`side` 左/右、`variant` `sidebar`/`floating`/`inset`、`collapsible` `offcanvas`/`icon`/`none`。
 - `SidebarHeader` / `SidebarFooter` — 顶部 / 底部固定区。
 - `SidebarContent` — 可滚动主体。
 - `SidebarGroup` / `SidebarGroupLabel` / `SidebarGroupContent` / `SidebarGroupAction` — 分组、分组标题与分组级操作。
@@ -272,13 +274,14 @@ const todo = ref('待派工单')
 - `SidebarMenuAction` / `SidebarMenuBadge` — 行内操作（`showOnHover`）与计数徽标。
 - `SidebarMenuSub` / `SidebarMenuSubItem` / `SidebarMenuSubButton` — 二级菜单（展开状态自管理）。
 - `SidebarSeparator` / `SidebarInput` — 分隔线与侧栏输入框。
-- `SidebarRail` — 右缘可点/可拖的折叠条；`SidebarTrigger` — 折叠按钮（放任意处）。
+- `SidebarRail` / `SidebarTrigger` — 原版折叠条与折叠按钮，读屏名称是英文 `Toggle Sidebar`；产品界面改用下方的 `NvSidebarRail` / `NvSidebarTrigger`。
 
 ### Pro 件（高级化封装，配合上面的原子件）
 
 - `NvSidebarBrand` — 工作区品牌锁头（渐变 logo + 名称 + 副标题），放 `SidebarHeader`；折叠为图标条时文字/箭头自动隐藏。属性：`name`、`sub?`、`logo?`、`caret?`。
 - `NvSidebarDot` — 行尾状态点（`tone` `ok` / `warn` / `danger`），作 `SidebarMenuButton` 末位子节点。
 - `NvSidebarUser` — 底栏用户行（首字头像 + 在线点 + 名称/角色），放页脚的 `SidebarMenuButton size="lg"`。属性：`name`、`role?`、`initials?`、`online?`、`caret?`。
+- `NvSidebarRail` — 右缘可点的折叠条；`NvSidebarTrigger` — 折叠按钮（放任意处）。二者与原版同形，读屏名称与悬停提示为中文「展开或收起侧栏」。
 - `NvSidebarSub` — 二级菜单高度动画外壳（`grid-rows 0fr→1fr` + 缩进导引线），`open` 用你自己的 `ref` 驱动，内裹 `SidebarMenuSub`。
 - 统一**选中态**（中性高起填充 + 品牌色图标）已是系统默认（`theme.css` 全局），无需额外样式即对所有侧栏生效。
 
@@ -286,9 +289,9 @@ const todo = ref('待派工单')
 
 | 组件                | 属性          | 说明           | 类型                                 | 默认          |
 | ------------------- | ------------- | -------------- | ------------------------------------ | ------------- |
-| `Sidebar`           | `side`        | 停靠侧         | `'left' \| 'right'`                  | `'left'`      |
-| `Sidebar`           | `variant`     | 形态           | `'sidebar' \| 'floating' \| 'inset'` | `'sidebar'`   |
-| `Sidebar`           | `collapsible` | 折叠方式       | `'offcanvas' \| 'icon' \| 'none'`    | `'offcanvas'` |
+| `NvSidebar`         | `side`        | 停靠侧         | `'left' \| 'right'`                  | `'left'`      |
+| `NvSidebar`         | `variant`     | 形态           | `'sidebar' \| 'floating' \| 'inset'` | `'sidebar'`   |
+| `NvSidebar`         | `collapsible` | 折叠方式       | `'offcanvas' \| 'icon' \| 'none'`    | `'offcanvas'` |
 | `SidebarMenuButton` | `isActive`    | 激活态         | `boolean`                            | `false`       |
 | `SidebarMenuButton` | `tooltip`     | 折叠时悬浮标签 | `string \| Component`                | —             |
 | `SidebarMenuButton` | `size`        | 尺寸           | `'default' \| 'sm' \| 'lg'`          | `'default'`   |

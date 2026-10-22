@@ -14,12 +14,12 @@ import {
   Button,
   NvDataTable,
   NvPagination,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+  NvDialog,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogHeader,
+  NvDialogTitle,
   NvPageHeader,
   NvToolbar,
   toast,
@@ -230,17 +230,14 @@ async function savePermissions() {
         @submit="handleCreate"
       />
 
-      <Dialog v-model:open="editOpen">
-        <DialogContent
-          data-testid="role-edit-dialog-content"
-          class="max-h-[min(90vh,48rem)] overflow-y-auto sm:max-w-3xl"
-        >
-          <DialogHeader>
-            <DialogTitle>编辑角色权限</DialogTitle>
-            <DialogDescription>
+      <NvDialog v-model:open="editOpen">
+        <NvDialogContent class="max-h-[min(90vh,48rem)] overflow-y-auto sm:max-w-3xl">
+          <NvDialogHeader>
+            <NvDialogTitle>编辑角色权限</NvDialogTitle>
+            <NvDialogDescription>
               更新分配给 {{ selectedRole?.roleName || '该角色' }} 的权限码。
-            </DialogDescription>
-          </DialogHeader>
+            </NvDialogDescription>
+          </NvDialogHeader>
 
           <form class="grid gap-4" @submit.prevent="savePermissions">
             <Alert v-if="selectedRole?.roleId === 'role-platform-admin'">
@@ -255,17 +252,17 @@ async function savePermissions() {
               :permissions="roles.permissions.value"
             />
 
-            <DialogFooter show-close-button>
+            <NvDialogFooter show-close-button>
               <Button
                 type="submit"
                 :disabled="roles.updateRolePermissionsPending.value || !canManageRoles"
               >
                 保存权限
               </Button>
-            </DialogFooter>
+            </NvDialogFooter>
           </form>
-        </DialogContent>
-      </Dialog>
+        </NvDialogContent>
+      </NvDialog>
     </section>
   </DefaultLayout>
 </template>

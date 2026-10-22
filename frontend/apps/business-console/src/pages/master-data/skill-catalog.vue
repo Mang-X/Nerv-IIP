@@ -30,7 +30,7 @@ import {
   NvFieldLabel,
   NvInput,
   NvPageHeader,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -297,9 +297,10 @@ async function confirmArchive() {
                     id="skill-group"
                     v-model="form.groupName"
                     :suggestions="groupSuggestions"
-                    placeholder="选择已有技能组或新建，例如：机加工"
+                    placeholder="选择或新建技能组"
                     empty-text="还没有技能组，填写即新建"
                   />
+                  <NvFieldDescription>例如：机加工。</NvFieldDescription>
                 </NvField>
               </NvFieldGroup>
 
@@ -342,7 +343,7 @@ async function confirmArchive() {
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="createPending || updatePending">
-                  <Spinner v-if="createPending || updatePending" aria-hidden="true" />
+                  <NvSpinner v-if="createPending || updatePending" aria-hidden="true" />
                   {{ editingCode ? '保存修改' : '创建技能' }}
                 </NvButton>
               </NvDialogFooter>
@@ -437,7 +438,7 @@ async function confirmArchive() {
             :disabled="!canConfirmArchive"
             @click="confirmArchive"
           >
-            <Spinner v-if="archivePending" aria-hidden="true" />
+            <NvSpinner v-if="archivePending" aria-hidden="true" />
             确认停用
           </NvButton>
         </NvAlertDialogFooter>

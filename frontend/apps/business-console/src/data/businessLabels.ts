@@ -75,11 +75,6 @@ export const APPROVAL_DECISION_LABELS: Readonly<Record<string, string>> = {
  * unrestricted / quality / restricted / blocked——写入时 Normalize，读面回的必是其一。
  * 别名（qualified/available → unrestricted，inspection/quality-inspection → quality，
  * conditional-release → restricted，rejected → blocked）一并登记，供直接展示别名的场合兜底。
- *
- * `quarantine` 是**质量域**的说法：`InspectionRecord.StockReleaseDimension.SourceQualityStatus`
- * 存的就是它（`Quality/.../Seed/WorldHistorySeedService.cs:32`），表示「已进质量冻结库位、等判定」。
- * 质量域这条路径不走 Inventory 的 Normalize，所以它不在上面那四个规范值里，但确实会上屏。
- * 两个域对同一语义用了不同码值，属跨域词汇不一致，已登记为后端缺口——在它统一之前这里必须收着。
  */
 export const QUALITY_STATUS_LABELS: Readonly<Record<string, string>> = {
   unrestricted: '非限制使用',
@@ -92,8 +87,6 @@ export const QUALITY_STATUS_LABELS: Readonly<Record<string, string>> = {
   'conditional-release': '条件放行',
   blocked: '冻结',
   rejected: '已拒收',
-  // 质量域专有（见上方说明）；译「隔离」而非「检验隔离」，避免与 quality=待检 混淆。
-  quarantine: '隔离',
 }
 
 /**
@@ -128,23 +121,67 @@ export const STOCK_OWNER_TYPE_LABELS: Readonly<Record<string, string>> = {
   subcontractor: '外协方',
 }
 
+/**
+ * WMS 入库单、出库单行上可选的货主类型。取值必须是 Inventory `StockOwnerType.Normalize`
+ * 接受的值（规范值或别名），否则过账会被拒成「库存归属类型无效」（#3930）。
+ * 库存归属只按法律所有权区分：寄售不另设取值，客户寄售/客供料用 `customer`，供应商寄售用 `supplier`。
+ */
+export const WMS_LINE_OWNER_TYPE_OPTIONS: ReadonlyArray<{ label: string; value: string }> = [
+  { label: '本公司', value: 'owned' },
+  { label: '客户寄售/客供料', value: 'customer' },
+  { label: '供应商寄售', value: 'supplier' },
+]
+
 // 不合格品处置方式**不在这里**：受控值与显示函数都在
 // `@/composables/useQualityPickerCatalog` 的 QUALITY_DISPOSITION_OPTIONS /
 // qualityDispositionLabel，那份还会把词表外的历史自由文本显式标成「未知处置：xxx」。
 // 单一事实源，别在本文件另起一份。
 
-/** 追溯节点类型（MES 追溯图 nodeType）。 */
+/**
+ * 追溯节点类型（MES 追溯图 nodeType）。
+ *
+ * 权威来源是 MES 读面的封闭类型 `MesTraceabilityNodeType`（构造函数私有、字符串无隐式转换，
+ * 调用点写不出表外的值），本表按它逐条对齐；`traceNodeType.contract.test.ts` 双向校验，
+ * 后端加一类节点而这里没跟进即红。
+ *
+ * 曾经这里是照着**边**的 relationType 抄的（`received-lot` / `produced-serial` /
+ * `consumed-serial`）外加两个后端从未发过的 `shipment` / `inspection`，
+ * 与节点类型集合只在四个键上碰巧对得上，其余节点在「类型」列上印英文码。
+ *
+ * 末两条不是受控节点类型，而是需求计划来源节点的**开放集**取值：那个节点的类型直接取工单上
+ * 持久化的 `SourceDocumentType`（外部写入方经公开端点给的自由文本，只限长不校验取值），
+ * 登记不进后端那个封闭类型。已知取值两个：`PlanningSuggestion` 有机读来源
+ * （`Nerv.IIP.Contracts.DemandPlanning` 的 `DemandPlanningSourceReferences.PlanningSuggestion`），
+ * `rework-work-order` 只出现在 MES 自己的返工建单路径上。未知取值仍如实回显原文。
+ */
 export const TRACE_NODE_TYPE_LABELS: Readonly<Record<string, string>> = {
   'work-order': '生产工单',
+  'demand-source': '需求来源',
   'operation-task': '工序任务',
-  'material-lot': '投入批次',
+  'production-report': '报工记录',
+  operator: '报工人',
+  'device-asset': '生产设备',
+  'inspection-result': '不良记录',
+  'nonconformance-report': '不合格品报告',
   'produced-lot': '产出批次',
-  'received-lot': '收货批次',
-  'produced-serial': '产出序列号',
-  'consumed-serial': '消耗序列号',
-  shipment: '发货',
-  inspection: '检验记录',
+  serial: '产出序列号',
+  'produced-lot-or-serial': '产出批次/序列号',
+  material: '物料',
+  'material-lot': '投入批次',
+  'material-issue-request': '领料单',
+  'batch-or-serial': '批次/序列号',
+  'planning-suggestion': '计划建议',
+  'rework-work-order': '返工工单',
 }
+
+/**
+ * 上表中不属于后端节点类型常量的键——见表头说明的开放集取值。
+ * 供 `traceNodeType.contract.test.ts` 反向校验时排除，别在这里堆无来源的键。
+ */
+export const TRACE_NODE_TYPE_OPEN_SET_KEYS: readonly string[] = [
+  'planning-suggestion',
+  'rework-work-order',
+]
 
 /** 报工候选挂起原因（TelemetryProductionReportCandidate.suspensionReason）。 */
 export const REPORT_SUSPENSION_REASON_LABELS: Readonly<Record<string, string>> = {
@@ -293,6 +330,7 @@ export const TELEMETRY_UNIT_LABELS: Readonly<Record<string, string>> = {
   mpa: '兆帕',
   ph: 'pH 值',
   count: '次',
+  pcs: '件',
   pct: '百分比',
   '%': '百分比',
   mm: '毫米',
@@ -321,6 +359,55 @@ export function formatTelemetryUnit(code?: string | null, fallback = '无'): str
   const name = TELEMETRY_UNIT_LABELS[normalizeUnitCode(code)]
   return name && name !== code ? `${name} (${code})` : code
 }
+
+/**
+ * 采集点位的数据类型（`valueType`，#3870 起后端收成闭集）。两种计数类型让点位参与报工：
+ * 自动报工直接过账，待人工确认生成遥测候选，由现场在 PDA 上确认。
+ */
+export const TELEMETRY_VALUE_TYPE_OPTIONS = [
+  { value: 'number', label: '数值' },
+  { value: 'bool', label: '开关' },
+  { value: 'text', label: '文本' },
+  { value: 'production-count-draft', label: '计数（待人工确认）' },
+  { value: 'production-count-posted', label: '计数（自动报工）' },
+] as const
+
+/** 闭集之前的历史写法（种子数据里的 decimal / string 等）归到闭集里的同义类型。 */
+const TELEMETRY_VALUE_TYPE_ALIASES: Readonly<Record<string, string>> = {
+  decimal: 'number',
+  numeric: 'number',
+  int: 'number',
+  integer: 'number',
+  boolean: 'bool',
+  string: 'text',
+}
+
+/** 把点位上的值类型归到闭集；归不上返回空串（表单里就是「未选」）。 */
+export function normalizeTelemetryValueType(value?: string | null): string {
+  const raw = (value ?? '').trim().toLowerCase()
+  const normalized = TELEMETRY_VALUE_TYPE_ALIASES[raw] ?? raw
+  return TELEMETRY_VALUE_TYPE_OPTIONS.some((option) => option.value === normalized)
+    ? normalized
+    : ''
+}
+
+/** 数据类型说人话；词表外显示「—」，不把后端英文码回吐到界面上。 */
+export function formatTelemetryValueType(value?: string | null): string {
+  const normalized = normalizeTelemetryValueType(value)
+  return TELEMETRY_VALUE_TYPE_OPTIONS.find((option) => option.value === normalized)?.label ?? '—'
+}
+
+export function isProductionCountValueType(value?: string | null): boolean {
+  return normalizeTelemetryValueType(value).startsWith('production-count-')
+}
+
+/** 采集周期候选：必须与连接器里该点位的采集周期一致，否则采样会被拒收。 */
+export const TELEMETRY_SAMPLING_POLICY_OPTIONS = [
+  { value: 'sample-10s', label: '每 10 秒' },
+  { value: 'sample-30s', label: '每 30 秒' },
+  { value: 'sample-60s', label: '每 1 分钟' },
+  { value: 'sample-300s', label: '每 5 分钟' },
+] as const
 
 const DURATION_UNIT_LABELS: Readonly<Record<string, string>> = {
   ms: '毫秒',
@@ -408,12 +495,14 @@ export const MES_READINESS_AREA_LABELS: Readonly<Record<string, string>> = {
   'master-data': '主数据',
   engineering: '工程',
   // 后端就绪检查按**来源服务**分区，区域码即服务名。权威清单是网关
-  // BusinessConsoleMesEndpoints.AreaCodes 的 7 条：master-data / product-engineering /
-  // supply / quality / equipment / barcode-coding / iam-context。缺词就把服务名印到「检查区域」列上。
+  // BusinessConsoleMesEndpoints.AreaCodes 的 9 条：master-data / product-engineering /
+  // supply / quality / equipment / barcode-coding / iam-context / erp / inventory。
+  // 缺词就把服务名印到「检查区域」列上。
   'product-engineering': '产品工程',
   supply: '供应与齐套',
   'barcode-coding': '条码与编码',
   'iam-context': '账号与权限',
+  erp: '成本费率',
   inventory: '库存',
   material: '物料',
   quality: '质量',
@@ -442,6 +531,22 @@ export const MES_HANDOVER_STATUS_LABELS: Readonly<Record<string, string>> = {
   accepted: '已接班',
 }
 
+/**
+ * 交接单遗留问题的来源域，取值来自 MES 域枚举 ShiftHandoverIssueCategory（Equipment / Quality），
+ * 读面按枚举名回显字符串，`normalizeCode` 归一后查表。
+ */
+export const MES_HANDOVER_ISSUE_CATEGORY_LABELS: Readonly<Record<string, string>> = {
+  equipment: '设备',
+  quality: '质量',
+}
+
+/** 交接单遗留问题的严重度，取值来自 MES 域枚举 ShiftHandoverIssueSeverity（Low / Medium / High）。 */
+export const MES_HANDOVER_ISSUE_SEVERITY_LABELS: Readonly<Record<string, string>> = {
+  low: '低',
+  medium: '中',
+  high: '高',
+}
+
 /** 不合格品报告（NCR）状态，与后端 NonconformanceReport 的三个状态字一一对应。 */
 export const NCR_STATUS_LABELS: Readonly<Record<string, string>> = {
   open: '待处置',
@@ -451,10 +556,11 @@ export const NCR_STATUS_LABELS: Readonly<Record<string, string>> = {
   'effectiveness-verified': '有效性已验证',
 }
 
-/** 规则排程给每条工序分配写的原因（后端 RuleScheduler 只产出这两种）。 */
-export const RULE_SCHEDULE_REASON_LABELS: Readonly<Record<string, string>> = {
-  'in-progress-preserved': '在制工序保留原时段',
-  'rule-sequenced': '按优先级与交期排序',
+/** MES 返工工单回执在 NCR 上的创建状态。 */
+export const REWORK_WORK_ORDER_CREATION_STATUS_LABELS: Readonly<Record<string, string>> = {
+  'not-requested': '未请求',
+  requested: '已请求',
+  created: '已创建',
 }
 
 /** 遥测报工候选状态（无挂起原因时展示，来自 TelemetryProductionReportCandidate.status）。 */
@@ -464,4 +570,11 @@ export const TELEMETRY_CANDIDATE_STATUS_LABELS: Readonly<Record<string, string>>
   promoted: '已转正',
   dismissed: '已忽略',
   suspended: '已挂起',
+}
+
+/** 维护点检结果（维护点检页录入的三个取值，设备详情页同一口径展示）。 */
+export const MAINTENANCE_INSPECTION_RESULT_LABELS: Readonly<Record<string, string>> = {
+  passed: '通过',
+  failed: '异常',
+  'requires-review': '需复检',
 }

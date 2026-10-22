@@ -13,6 +13,7 @@ namespace Nerv.IIP.BusinessGateway.Web.Endpoints.ProductEngineering;
 public sealed class RegisterBusinessConsoleEngineeringDocumentEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessProductEngineeringClient engineering,
+    IBusinessFileStorageClient files,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleRegisterEngineeringDocumentRequest, BusinessConsoleEngineeringEntityResponse>(
         auth,
@@ -22,11 +23,14 @@ public sealed class RegisterBusinessConsoleEngineeringDocumentEndpoint(
 
     protected override string EnvironmentId(BusinessConsoleRegisterEngineeringDocumentRequest request) => request.EnvironmentId;
 
-    protected override Task<BusinessConsoleEngineeringEntityResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleEngineeringEntityResponse> ForwardAsync(
         BusinessConsoleRegisterEngineeringDocumentRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        engineering.RegisterEngineeringDocumentAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        await files.ValidateSopFileForRegistrationAsync(tokenProvider.BearerToken, request, cancellationToken);
+        return await engineering.RegisterEngineeringDocumentAsync(tokenProvider.BearerToken, request, cancellationToken);
+    }
 }
 
 [Tags("Business Console Product Engineering")]
@@ -1000,6 +1004,15 @@ public sealed class BusinessConsoleRegisterEngineeringDocumentRequestValidator :
         RuleFor(x => x.ContentType).NotEmpty().MaximumLength(120);
         RuleFor(x => x.DocumentType).NotEmpty().MaximumLength(100);
         RuleFor(x => x.ItemCode).MaximumLength(100);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
+    }
+}
+
+public sealed class BusinessConsolePublishSopDocumentRequestValidator : Validator<BusinessConsolePublishSopDocumentRequest>
+{
+    public BusinessConsolePublishSopDocumentRequestValidator()
+    {
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -1012,6 +1025,7 @@ public sealed class BusinessConsoleCreateEngineeringItemRevisionRequestValidator
         RuleFor(x => x.ItemCode).MaximumLength(100);
         RuleFor(x => x.Revision).NotEmpty().MaximumLength(50);
         RuleFor(x => x.Name).NotEmpty().MaximumLength(255);
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -1031,6 +1045,7 @@ public sealed class BusinessConsoleReleaseEngineeringBomRequestValidator : Valid
             line.RuleFor(x => x.Quantity).GreaterThan(0);
             line.RuleFor(x => x.UnitOfMeasureCode).NotEmpty().MaximumLength(50);
         });
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -1096,6 +1111,7 @@ public sealed class BusinessConsoleReleaseManufacturingBomRequestValidator : Val
             line.RuleFor(x => x.TargetValue).NotEmpty().MaximumLength(200);
             line.RuleFor(x => x.UnitOfMeasureCode).NotEmpty().MaximumLength(50);
         });
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -1130,6 +1146,7 @@ public sealed class BusinessConsoleReleaseRoutingRequestValidator : Validator<Bu
             operation.RuleFor(x => x.OperationName).Must(value => !string.IsNullOrWhiteSpace(value)).MaximumLength(200);
             operation.RuleFor(x => x.StandardMinutes).GreaterThan(0);
         });
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 
@@ -1149,6 +1166,7 @@ public sealed class BusinessConsoleReleaseEngineeringChangeRequestValidator : Va
             version.RuleFor(x => x.VersionId).NotEmpty().MaximumLength(150);
             version.RuleFor(x => x.SupersededByVersionId).MaximumLength(150);
         });
+        RuleFor(x => x.IdempotencyKey).MaximumLength(150);
     }
 }
 

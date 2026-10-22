@@ -1,12 +1,6 @@
 {
   "schemaVersion": 2,
   "lane": "full-chain",
-  "planningBudget": {
-    "restorePerProjectSeconds": 600,
-    "discoveryPerProjectSeconds": 600,
-    "artifactWriteSeconds": 60,
-    "safetyMarginSeconds": 300
-  },
   "scenarios": [
     {
       "id": "sales-order-demand",

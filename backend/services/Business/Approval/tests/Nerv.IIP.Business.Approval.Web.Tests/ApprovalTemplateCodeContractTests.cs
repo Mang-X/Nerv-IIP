@@ -429,7 +429,7 @@ public sealed class ApprovalTemplateCodeContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await new ApprovalSeedService(dbContext).SeedAsync("org-001", "env-dev", CancellationToken.None);
+        await new ApprovalSeedService(dbContext).SeedAsync("org-001", "env-dev", WorldHistoryApprovalSpec.AdminUserId, CancellationToken.None);
         dbContext.ChangeTracker.Clear();
 
         var seededChangeTemplate = await dbContext.ApprovalTemplates
@@ -478,7 +478,7 @@ public sealed class ApprovalTemplateCodeContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await new ApprovalSeedService(dbContext).SeedAsync("org-001", "env-dev", CancellationToken.None);
+        await new ApprovalSeedService(dbContext).SeedAsync("org-001", "env-dev", WorldHistoryApprovalSpec.AdminUserId, CancellationToken.None);
         dbContext.ChangeTracker.Clear();
 
         var handler = new StartApprovalChainCommandHandler(dbContext);

@@ -4,7 +4,11 @@ using Nerv.IIP.Contracts.Scheduling;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 
-public sealed record PreviewSchedulePlanCommand(SchedulingProblemContract Problem) : ICommand<SchedulePlanContract>;
+public sealed record PreviewSchedulePlanCommand(
+    SchedulingProblemContract Problem,
+    IReadOnlyCollection<FixedWorkCenterReservation>? FixedReservations = null,
+    SchedulingFreezeSnapshot? Freeze = null,
+    DateTimeOffset? AsOfUtc = null) : ICommand<SchedulePlanContract>;
 
 public sealed class PreviewSchedulePlanCommandValidator : AbstractValidator<PreviewSchedulePlanCommand>
 {
@@ -37,11 +41,27 @@ public sealed class PreviewSchedulePlanCommandHandler(
     {
         var overlaidProblem = await overrideOverlay.ApplyAsync(request.Problem, cancellationToken);
         var availability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
+        // Ordinary scheduling uses its explicit horizon start; frozen revisions use the frozen AsOfUtc.
+        var equipmentInput = SchedulingEquipmentAvailabilitySnapshot.Create(availability,
+            request.AsOfUtc ?? request.Freeze?.AsOfUtc ?? overlaidProblem.HorizonStartUtc);
         var materialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
-        var schedulingProblem = MaterialReadinessSchedulingAdapter.Apply(
+        var schedulingProblem = SchedulingProblemNormalizer.Normalize(MaterialReadinessSchedulingAdapter.Apply(
             EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, availability, equipmentUnknownMode.Mode),
-            materialReadiness);
-        var plan = scheduler.Schedule(schedulingProblem, $"preview-{request.Problem.ProblemId}", timeProvider.GetUtcNow());
+            materialReadiness));
+        var fixedReservations = request.FixedReservations ?? [];
+        var operationKeys = schedulingProblem.Orders
+            .SelectMany(order => order.Operations.Select(operation => (order.OrderId, operation.OperationId)))
+            .ToHashSet();
+        var plan = scheduler.ScheduleNormalized(schedulingProblem, $"preview-{request.Problem.ProblemId}", timeProvider.GetUtcNow(),
+            fixedReservations.Where(x => operationKeys.Contains((x.OrderId, x.OperationId))).ToArray(),
+            fixedReservations.Where(x => !operationKeys.Contains((x.OrderId, x.OperationId))).ToArray(),
+            SchedulingFrozenOccupancy.ExternalFrozenAssignments(request.Freeze, schedulingProblem, fixedReservations))
+            with
+            {
+                ProblemFingerprint = CreateSchedulePlanCommandHandler.CalculateProblemFingerprint(
+                    schedulingProblem, fixedReservations, request.Freeze, equipmentInput),
+                FreezeContext = SchedulingFrozenOccupancy.ToContract(request.Freeze)
+            };
         return SchedulePlanContractMapper.WithStatus(plan, SchedulePlanStatusContract.Preview);
     }
 }

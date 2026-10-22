@@ -95,6 +95,8 @@ public sealed class CreateInspectionRecordCommandHandler(
             request.SourceService.Trim().ToLowerInvariant(),
             request.SkuCode.Trim(),
             request.SourceDocumentId.Trim(),
+            // 直录检验没有来源行：命令契约里就没有这一段身份，链身份因此只到来源单据一级（#3319）。
+            sourceDocumentLineId: null,
             cancellationToken);
         if (existing is not null)
         {
@@ -147,6 +149,7 @@ public sealed class CreateInspectionRecordCommandHandler(
                 request.SourceType,
                 request.SourceService,
                 request.SourceDocumentId,
+                sourceDocumentLineId: null,
                 request.SkuCode,
                 request.InspectedQuantity,
                 request.BatchNo,
@@ -167,6 +170,7 @@ public sealed class CreateInspectionRecordCommandHandler(
                 request.SourceType,
                 request.SourceService,
                 request.SourceDocumentId,
+                sourceDocumentLineId: null,
                 request.SkuCode,
                 request.InspectedQuantity,
                 request.BatchNo,

@@ -3,7 +3,6 @@ import WmsOperationalCandidatePicker from '@/components/wms/WmsOperationalCandid
 import WmsPagedListFrame from '@/components/wms/WmsPagedListFrame.vue'
 import WmsScopeStatusFilter from '@/components/wms/WmsScopeStatusFilter.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
-import ListScopeMeta from '@/components/ListScopeMeta.vue'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
 import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
@@ -62,7 +61,6 @@ const {
   scopeKind,
   scopeId,
   scopeReady,
-  lastUpdatedAt,
   hasSuccessfulResponse,
   hasFailedResponse,
 } = useWmsCount({ status: 'Open' })
@@ -300,9 +298,6 @@ function goHome() {
           :location-options="candidates.locationOptions.value"
           :lot-options="candidates.lotOptions.value"
           :ready="candidates.ready.value"
-          :source-label="candidates.sourceLabel.value"
-          :as-of-utc="candidates.asOfUtc.value"
-          :freshness-utc="candidates.freshnessUtc.value"
           :truncated="candidates.truncated.value"
           :pending="candidates.pending.value"
           :error="candidates.error.value"
@@ -312,28 +307,13 @@ function goHome() {
           @scan-override-change="candidates.setScanOverride"
           @retry="candidates.refresh"
         />
-        <ListScopeMeta
-          :scope="countScope"
-          source="WMS 盘点作业范围目录"
-          :loaded="executions.length"
-          :total="countTotal"
-          :updated-at="lastUpdatedAt"
-          :failed="hasFailedResponse"
-          failure-explanation="盘点任务服务未成功返回，请刷新重试。"
-          :empty="!scopeReady || showEmpty"
-          :empty-explanation="
-            scopeReady
-              ? `“${countScope}”在当前状态下没有盘点任务。`
-              : 'WMS 未返回可用作业范围，未发起列表查询。'
-          "
-        />
       </div>
 
       <WmsPagedListFrame
         state-key="wms-count-executions"
         empty-description="暂无盘点任务"
         :filter-state="taskListFilterState"
-        :error="error ?? (hasFailedResponse ? '盘点任务服务未成功返回' : undefined)"
+        :error="error ?? (hasFailedResponse ? '盘点任务加载失败，请重试。' : undefined)"
         :load-more-error="loadMoreError"
         :refreshing="refreshing"
         :loading-more="loadingMore"
@@ -351,7 +331,7 @@ function goHome() {
             v-if="showEmpty"
             class="rounded-lg border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground"
           >
-            “{{ countScope }}”在当前状态下暂无盘点任务；数据来自 WMS 派工
+            “{{ countScope }}”在当前状态下暂无盘点任务
           </div>
 
           <div v-else class="overflow-hidden rounded-lg border border-border">

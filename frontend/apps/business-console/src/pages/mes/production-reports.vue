@@ -1,13 +1,26 @@
 <script setup lang="ts">
-import type { BusinessConsoleMesProductionReportRow } from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
+import type {
+  BusinessConsoleMesProductionReportRow,
+  BusinessConsoleMesWorkOrderItem,
+} from '@nerv-iip/api-client'
+import type { EntityPickerOption, NvDataTableColumn } from '@nerv-iip/ui'
+import { RouterLink } from 'vue-router'
+import { useProductionReportDetailSelection } from '@/composables/mes/useProductionReportDetailSelection'
+import ProductionReportDetailDialog from '@/components/mes/ProductionReportDetailDialog.vue'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
+import ActualHoursCell from '@/components/mes/ActualHoursCell.vue'
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import {
   useMesProductionReports,
   useMesTelemetryProductionReportCandidates,
+  useMesWorkOrders,
 } from '@/composables/useBusinessMes'
+import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
+import {
+  buildOperationTaskPickerOptions,
+  buildWorkOrderPickerOptions,
+} from '@/composables/mes/workOrderPickerOptions'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
@@ -30,6 +43,7 @@ import {
   NvAlertDialogTitle,
   NvButton,
   NvDataTable,
+  NvEntityPicker,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -45,11 +59,11 @@ import {
   NvTooltipContent,
   NvTooltipProvider,
   NvTooltipTrigger,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { ClipboardPenIcon, RefreshCwIcon, Undo2Icon } from '@lucide/vue'
 import { storeToRefs } from 'pinia'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 
 definePage({
   meta: {
@@ -74,6 +88,7 @@ const {
   reverseProductionReport,
   reverseProductionReportPending,
 } = useMesProductionReports()
+const { detailReportNo, detailSource, reportReturnTo } = useProductionReportDetailSelection()
 const { page, pageSize } = usePagedList(filters)
 const candidateQueue = useMesTelemetryProductionReportCandidates()
 // 候选卡上只有设备标识，设备名在主数据里；查不到就只显标识，不编名字。
@@ -90,15 +105,52 @@ const candidateWorkOrderId = ref('')
 const candidateOperationTaskId = ref('')
 const dismissalReason = ref('')
 const selectedCandidateId = ref<string | null>(null)
-function resetCandidateAction() {
-  candidateWorkOrderId.value = ''
-  candidateOperationTaskId.value = ''
+
+// 转正要挑工单和它下面的工序任务。工单是持续新增的大目录，走服务端搜索（同追溯查询页）；
+// 工序任务取已选工单自带的工序，不另起一份目录。
+const workOrderCatalog = useMesWorkOrders({ initialTake: 50 })
+const { keyword: workOrderSearch } = useMesKeywordFilter(workOrderCatalog.filters)
+const candidateWorkOrderOptions = computed<EntityPickerOption[]>(() =>
+  buildWorkOrderPickerOptions(workOrderCatalog.workOrders.value, candidateWorkOrderId.value),
+)
+// 工序取自已选工单那一行。工单目录走服务端搜索，改搜别的单号后已选工单会滑出结果集，
+// 所以记住最后一次在结果里见到的那一行，别让已选工序凭空变成「未选择」。
+const candidateWorkOrder = shallowRef<BusinessConsoleMesWorkOrderItem>()
+watch(
+  [() => workOrderCatalog.workOrders.value, candidateWorkOrderId],
+  ([orders, workOrderId]) => {
+    const found = orders.find((order) => order.workOrderId?.trim() === workOrderId)
+    if (found) candidateWorkOrder.value = found
+    else if (candidateWorkOrder.value?.workOrderId?.trim() !== workOrderId)
+      candidateWorkOrder.value = undefined
+  },
+  { immediate: true },
+)
+const candidateOperationTaskOptions = computed<EntityPickerOption[]>(() =>
+  buildOperationTaskPickerOptions(candidateWorkOrder.value),
+)
+// 换了工单，上一张工单的工序任务就不再成立，跟着清掉。
+const candidateWorkOrderModel = computed({
+  get: () => candidateWorkOrderId.value,
+  set: (value: string) => {
+    if (value === candidateWorkOrderId.value) return
+    candidateWorkOrderId.value = value
+    candidateOperationTaskId.value = ''
+  },
+})
+
+function resetCandidateAction(candidate?: TelemetryCandidate) {
+  // 候选自带的工单 / 工序任务就是默认选中，操作员只在需要改派时才动。
+  candidateWorkOrderId.value = candidate?.workOrderId?.trim() ?? ''
+  candidateOperationTaskId.value = candidate?.operationTaskId?.trim() ?? ''
   dismissalReason.value = ''
+  // 选择器一页装不下整个工单目录：用候选自带的工单号当搜索词，让服务端把它和它的工序捞回来。
+  workOrderSearch.value = candidateWorkOrderId.value
 }
-function toggleCandidate(candidateId?: string) {
-  resetCandidateAction()
-  selectedCandidateId.value =
-    selectedCandidateId.value === candidateId ? null : (candidateId ?? null)
+function toggleCandidate(candidate: TelemetryCandidate) {
+  const opening = selectedCandidateId.value !== candidate.candidateId
+  resetCandidateAction(opening ? candidate : undefined)
+  selectedCandidateId.value = opening ? (candidate.candidateId ?? null) : null
 }
 
 // 冲销是写操作(网关按 business.mes.reporting.write 鉴权)。页面准入只需 read,故写权限需单独门控:
@@ -111,7 +163,7 @@ const canReport = computed(() =>
 
 const quickViewWorkOrderId = ref<string | null>(null)
 
-const errorMessage = computed(() => formatError(productionReportsError.value))
+const errorMessage = computed(() => inlineErrorMessage(productionReportsError.value))
 
 type ReportRow = BusinessConsoleMesProductionReportRow
 
@@ -380,13 +432,25 @@ function reReport(row: ReportRow) {
 }
 
 const columns: NvDataTableColumn<ReportRow>[] = [
-  { key: 'reportNo', header: '报工单', cellClass: 'font-medium' },
-  { key: 'workOrderId', header: '工单', accessor: (r) => r.workOrderNo?.trim() || '—' },
+  { key: 'reportNo', header: '报工单', cellClass: 'font-medium whitespace-normal break-all' },
+  {
+    key: 'workOrderId',
+    header: '工单',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => r.workOrderNo?.trim() || '—',
+  },
   { key: 'output', header: '产量', accessor: (r) => r.goodQuantity ?? 0 },
   {
     key: 'operationTaskId',
     header: '工序任务',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) => r.operationTaskNo?.trim() || '—',
+  },
+  { key: 'actualHours', header: '实际工时', width: 'w-36' },
+  {
+    key: 'reportedByDisplayName',
+    header: '操作人',
+    accessor: (r) => r.reportedByDisplayName?.trim() || '姓名不可用',
   },
   { key: 'reportedAtUtc', header: '报工时间', width: 'w-44' },
   { key: 'actions', header: '操作', align: 'end', width: 'w-40' },
@@ -403,19 +467,12 @@ function formatDateTime(value?: string | null) {
 function openWorkOrder(workOrderId?: string | null) {
   if (workOrderId) quickViewWorkOrderId.value = workOrderId
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
-async function promoteCandidate(candidate: {
-  candidateId?: string
-  workOrderId?: string | null
-  operationTaskId?: string | null
-}) {
-  if (!candidate.candidateId) return
-  const workOrderId = candidateWorkOrderId.value.trim() || candidate.workOrderId?.trim()
-  const operationTaskId = candidateOperationTaskId.value.trim() || candidate.operationTaskId?.trim()
+async function promoteCandidate(candidateId?: string) {
+  if (!candidateId) return
+  const workOrderId = candidateWorkOrderId.value
+  const operationTaskId = candidateOperationTaskId.value
   if (!workOrderId || !operationTaskId) return
-  await candidateQueue.promote(candidate.candidateId, workOrderId, operationTaskId)
+  await candidateQueue.promote(candidateId, workOrderId, operationTaskId)
   selectedCandidateId.value = null
   resetCandidateAction()
 }
@@ -435,6 +492,9 @@ async function dismissCandidate(candidateId?: string) {
       :count="`${productionReportsTotal} 条报工`"
     >
       <template #actions>
+        <NvButton v-if="reportReturnTo" variant="outline" size="sm" as-child>
+          <RouterLink :to="reportReturnTo">返回追溯</RouterLink>
+        </NvButton>
         <NvButton
           size="sm"
           type="button"
@@ -447,8 +507,6 @@ async function dismissCandidate(candidateId?: string) {
         </NvButton>
       </template>
     </NvPageHeader>
-
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
     <!-- 跨页互链定位:点击「查看冲销单/冲销自」时若对方在别页,按其单号筛选定位;给出可清除的说明 -->
     <div
@@ -475,9 +533,12 @@ async function dismissCandidate(candidateId?: string) {
       :rows="productionReports"
       row-key="productionReportId"
       :loading="productionReportsPending"
+      :error="productionReportsError"
+      :error-message="errorMessage"
       empty-message="还没有报工记录。报工后这里会出现对应记录，去工序执行报工。"
       :searchable="false"
       :column-settings="false"
+      @retry="refreshProductionReports"
     >
       <template #cell-reportNo="{ row }">
         <div
@@ -487,8 +548,16 @@ async function dismissCandidate(candidateId?: string) {
           @mouseenter="hasLink(row) && focusPair(row)"
           @mouseleave="clearFocus"
         >
-          <div class="flex items-center gap-1.5">
-            <span>{{ row.reportNo?.trim() || '—' }}</span>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button
+              v-if="row.reportNo"
+              type="button"
+              class="text-primary underline-offset-4 hover:underline"
+              @click="detailReportNo = row.reportNo"
+            >
+              {{ row.reportNo }}
+            </button>
+            <span v-else>—</span>
             <NvStatusBadge v-if="isReversalRow(row)" label="负向冲销" tone="danger" />
             <NvStatusBadge v-else-if="isAlreadyReversed(row)" label="已冲销" tone="warning" />
           </div>
@@ -549,6 +618,13 @@ async function dismissCandidate(candidateId?: string) {
         </div>
       </template>
 
+      <template #cell-actualHours="{ row }">
+        <ActualHoursCell
+          :labor-hours="row.operationActualLaborHours"
+          :machine-hours="row.operationActualMachineHours"
+        />
+      </template>
+
       <template #cell-reportedAtUtc="{ row }">{{ formatDateTime(row.reportedAtUtc) }}</template>
 
       <template #cell-actions="{ row }">
@@ -594,6 +670,13 @@ async function dismissCandidate(candidateId?: string) {
         <span v-else class="text-muted-foreground">—</span>
       </template>
     </NvDataTable>
+
+    <ProductionReportDetailDialog
+      v-model:report-no="detailReportNo"
+      :source-node-type="detailSource.nodeType"
+      :source-node-id="detailSource.nodeId"
+      :return-to="reportReturnTo"
+    />
 
     <!-- 冲销确认(破坏性,原因必填),A1 §2.5。用 :open + @update:open 统一拦截关闭(pending 时禁关) -->
     <NvAlertDialog :open="reverseOpen" @update:open="onReverseOpenChange">
@@ -643,6 +726,17 @@ async function dismissCandidate(candidateId?: string) {
               <dt class="text-muted-foreground">返工</dt>
               <dd class="font-medium tabular-nums">
                 {{ formatQuantity(reverseTarget.reworkQuantity) }}
+              </dd>
+            </div>
+            <div class="flex justify-between gap-2">
+              <dt class="text-muted-foreground">操作人</dt>
+              <dd class="font-medium">
+                {{
+                  reverseProductionReportDetailMatchesTarget
+                    ? reverseProductionReportDetail?.report?.reportedByDisplayName?.trim() ||
+                      '姓名不可用'
+                    : '姓名不可用'
+                }}
               </dd>
             </div>
             <div class="flex justify-between gap-2">
@@ -753,7 +847,7 @@ async function dismissCandidate(candidateId?: string) {
             :disabled="!canSubmitReverse || reverseProductionReportPending"
             @click="submitReverse"
           >
-            <Spinner v-if="reverseProductionReportPending" aria-hidden="true" />
+            <NvSpinner v-if="reverseProductionReportPending" aria-hidden="true" />
             <Undo2Icon v-else aria-hidden="true" />
             确认冲销
           </NvButton>
@@ -782,7 +876,7 @@ async function dismissCandidate(candidateId?: string) {
         </div>
       </div>
       <p v-if="candidateQueue.error.value" class="text-sm text-destructive" role="alert">
-        {{ formatError(candidateQueue.error.value) }}
+        {{ inlineErrorMessage(candidateQueue.error.value) }}
       </p>
       <div v-if="candidateQueue.candidates.value.length" class="space-y-3">
         <article
@@ -801,7 +895,7 @@ async function dismissCandidate(candidateId?: string) {
                 {{ candidateStateText(candidate) }}
               </p>
             </div>
-            <NvButton size="sm" variant="outline" @click="toggleCandidate(candidate.candidateId)"
+            <NvButton size="sm" variant="outline" @click="toggleCandidate(candidate)"
               >处理</NvButton
             >
           </div>
@@ -809,26 +903,56 @@ async function dismissCandidate(candidateId?: string) {
             v-if="selectedCandidateId === candidate.candidateId"
             class="mt-4 grid gap-3 md:grid-cols-2"
           >
-            <label class="text-sm"
-              >工单<NvInput
-                v-model="candidateWorkOrderId"
-                :placeholder="readFaceText(candidate.workOrderId, '输入真实工单号')"
-                class="mt-1"
-            /></label>
-            <label class="text-sm"
-              >工序任务<NvInput
+            <div class="grid gap-1 text-sm">
+              <NvFieldLabel :for="`candidate-work-order-${candidate.candidateId}`"
+                >工单</NvFieldLabel
+              >
+              <NvEntityPicker
+                :id="`candidate-work-order-${candidate.candidateId}`"
+                v-model="candidateWorkOrderModel"
+                v-model:search="workOrderSearch"
+                :options="candidateWorkOrderOptions"
+                title="选择工单"
+                placeholder="选择工单"
+                search-placeholder="搜索工单号 / 物料…"
+                empty-text="当前范围内没有匹配的工单"
+                :loading="workOrderCatalog.workOrdersPending.value"
+                server-search
+                :total-count="workOrderCatalog.workOrdersTotal.value"
+                clearable
+                aria-label="工单"
+              />
+            </div>
+            <div class="grid gap-1 text-sm">
+              <NvFieldLabel :for="`candidate-operation-task-${candidate.candidateId}`"
+                >工序任务</NvFieldLabel
+              >
+              <NvEntityPicker
+                :id="`candidate-operation-task-${candidate.candidateId}`"
                 v-model="candidateOperationTaskId"
-                :placeholder="readFaceText(candidate.operationTaskId, '输入真实工序任务号')"
-                class="mt-1"
-            /></label>
+                :options="candidateOperationTaskOptions"
+                :show-code="false"
+                :disabled="!candidateWorkOrderId"
+                title="选择工序任务"
+                :placeholder="candidateWorkOrderId ? '选择工序任务' : '先选工单'"
+                empty-text="该工单没有工序任务"
+                :loading="workOrderCatalog.workOrdersPending.value"
+                clearable
+                aria-label="工序任务"
+              />
+            </div>
             <label class="text-sm md:col-span-2"
               >忽略原因<NvInput v-model="dismissalReason" placeholder="忽略时必填" class="mt-1"
             /></label>
             <div class="flex gap-2 md:col-span-2">
               <NvButton
                 size="sm"
-                :disabled="candidateQueue.actionPending.value"
-                @click="promoteCandidate(candidate)"
+                :disabled="
+                  candidateQueue.actionPending.value ||
+                  !candidateWorkOrderId ||
+                  !candidateOperationTaskId
+                "
+                @click="promoteCandidate(candidate.candidateId)"
                 >确认并转正</NvButton
               ><NvButton
                 size="sm"

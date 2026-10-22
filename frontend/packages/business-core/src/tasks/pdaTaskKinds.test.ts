@@ -61,6 +61,29 @@ describe('PDA task kinds dictionary', () => {
     })
   })
 
+  it('adds the two shift-handover entries pointing at the PDA entry/accept routes (#2784)', () => {
+    // 两个入口不是一个页面的两种叫法：交班录入写 handovers.manage，接班确认先读 handovers.read，
+    // 首页按权限裁剪时必须能分别隐藏，所以字典里就是两条。
+    expect(getPdaTaskKind('mes.handover')).toMatchObject({
+      id: 'mes.handover',
+      label: '交班',
+      group: 'mes',
+      route: '/mes/handover',
+      routeReady: true,
+    })
+    expect(getPdaTaskKind('mes.handover-accept')).toMatchObject({
+      id: 'mes.handover-accept',
+      label: '接班',
+      group: 'mes',
+      route: '/mes/handovers',
+      routeReady: true,
+    })
+    // 两条路由必须不同：同一路由会让「交班」点进接班列表。
+    expect(getPdaTaskKind('mes.handover')?.route).not.toBe(
+      getPdaTaskKind('mes.handover-accept')?.route,
+    )
+  })
+
   it('returns undefined for unknown ids', () => {
     expect(getPdaTaskKind('nope')).toBeUndefined()
   })

@@ -41,6 +41,41 @@ public sealed record SeedRoleDefinition(
 
 public static class NervIipSeedRoles
 {
+    public const string PlatformAdministratorRoleName = "平台管理员";
+    public const string ProductionPlannerRoleId = "role-production-planner";
+
+    public static readonly SeedRoleDefinition MesDowntimeTeamLeader = new(
+        "role-mes-downtime-team-leader",
+        "班组长（停机登记）",
+        [
+            "business.masterdata.resources.read",
+            "business.mes.work-orders.read",
+            "business.mes.operations.read",
+            "business.mes.downtime.read",
+            "business.mes.downtime.manage",
+            "business.maintenance.downtime-reasons.read",
+        ]);
+
+    public static readonly SeedRoleDefinition ProductionPlanner = new(
+        ProductionPlannerRoleId,
+        "生产计划员",
+        [
+            "business.mes.work-orders.read",
+            "business.planning.demands.read",
+            "business.planning.demands.manage",
+            "business.planning.mps.read",
+            "business.planning.mps.manage",
+            "business.planning.mps.release",
+            "business.planning.mrp.read",
+            "business.planning.mrp.run",
+            "business.planning.suggestions.manage",
+            "business.scheduling.plans.read",
+            "business.scheduling.plans.manage",
+            "business.scheduling.plans.release",
+            "notifications.messages.read",
+            "notifications.tasks.read",
+        ]);
+
     public static readonly SeedRoleDefinition[] ErpJobRoles =
     [
         new(
@@ -70,6 +105,8 @@ public static class NervIipSeedRoles
                 "business.erp.sales.read",
                 "business.erp.finance.read",
                 "business.erp.finance.manage",
+                // 维护成本的来源单据是维修工单，登记成本候选时要能选（#3827）；只读。
+                "business.maintenance.work-orders.read",
             ]),
     ];
 }
@@ -78,6 +115,7 @@ public static class NervIipSeedPermissions
 {
     public static readonly string[] All =
     [
+        "internal.gateway-cache.invalidate",
         "iam.users.read",
         "iam.users.manage",
         "iam.roles.read",
@@ -113,6 +151,7 @@ public static class NervIipSeedPermissions
         "business.inventory.movements.create",
         "business.inventory.ledger.read",
         "business.inventory.counts.manage",
+        "business.inventory.expired-stock.override",
         "business.mes.foundation.read",
         "business.mes.overview.read",
         "business.mes.plans.read",
@@ -161,6 +200,7 @@ public static class NervIipSeedPermissions
         "business.planning.mrp.run",
         "business.planning.suggestions.manage",
         "business.barcodes.templates.manage",
+        "business.barcodes.template-assets.retire",
         "business.barcodes.print",
         "business.barcodes.scans.write",
         "business.approvals.read",
@@ -194,6 +234,9 @@ public static class NervIipSeedPermissions
         "business.maintenance.work-orders.manage",
         "business.maintenance.plans.read",
         "business.maintenance.plans.manage",
+        "business.maintenance.downtime-reasons.read",
+        "business.dlq.read",
+        "business.dlq.manage",
         "notifications.intents.submit",
         "notifications.dlq.read",
         "notifications.dlq.manage",

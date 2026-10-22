@@ -43,13 +43,16 @@ const { page, pageSize } = usePagedList(filters, {
   resetOn: [() => filters.status, () => filters.keyword],
 })
 const statusFilter = shallowRef('all')
+const wipStatusOptions = mesOperationTaskStatusOptions.filter(
+  (option) => option.value !== 'Completed' && option.value !== 'Cancelled',
+)
 watch(statusFilter, (value) => {
   filters.status = value === 'all' ? undefined : value
 })
 
 const quickViewWorkOrderId = ref<string | null>(null)
 
-const errorMessage = computed(() => formatError(wipError.value))
+const errorMessage = computed(() => inlineErrorMessage(wipError.value))
 
 type WipRow = (typeof wipRows)['value'][number]
 // facade 回显示字段（workOrderNo / operationTaskNo / workCenterName），accessor 优先取人读显示值。
@@ -92,9 +95,6 @@ function openWorkOrder(workOrderId?: string | null) {
 function formatQuantity(value?: number | null) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 3 }).format(value ?? 0)
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 </script>
 
 <template>
@@ -132,7 +132,7 @@ function formatError(error: unknown) {
           /></NvSelectTrigger>
           <NvSelectContent>
             <NvSelectItem
-              v-for="option in mesOperationTaskStatusOptions"
+              v-for="option in wipStatusOptions"
               :key="option.value"
               :value="option.value"
               >{{ option.label }}</NvSelectItem
@@ -141,8 +141,6 @@ function formatError(error: unknown) {
         </NvSelect>
       </template>
     </NvToolbar>
-
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
     <NvDataTable
       manual
@@ -155,9 +153,12 @@ function formatError(error: unknown) {
       :rows="wipRows"
       :row-key="(r) => `${r.workOrderId}-${r.operationTaskId}`"
       :loading="wipPending"
+      :error="wipError"
+      :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
       empty-message="暂无在制数据。工单释放并排程、工序开工后，在制行会出现在这里。"
+      @retry="refreshWip"
     >
       <template #cell-workOrderId="{ row }">
         <button

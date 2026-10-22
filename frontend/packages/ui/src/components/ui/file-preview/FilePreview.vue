@@ -124,7 +124,7 @@ function onChildReady(kind = previewKind.value) {
             v-if="hasSource"
             variant="ghost"
             size="icon-sm"
-            :aria-label="`Open ${fileName}`"
+            :aria-label="`打开 ${fileName}`"
             @click="openSource()"
           >
             <ExternalLinkIcon aria-hidden="true" />

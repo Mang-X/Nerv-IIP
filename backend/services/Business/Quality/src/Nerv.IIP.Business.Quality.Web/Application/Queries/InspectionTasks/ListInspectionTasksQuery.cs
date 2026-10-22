@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggregate;
 using Nerv.IIP.Business.Quality.Infrastructure;
 using Nerv.IIP.Business.Quality.Web.Application.Errors;
+using Nerv.IIP.Business.Quality.Web.Application.Queries;
 
 namespace Nerv.IIP.Business.Quality.Web.Application.Queries.InspectionTasks;
 
@@ -74,7 +75,7 @@ public sealed record ListInspectionTasksQuery(
     string? Status,
     string? SkuCode,
     int Skip = 0,
-    int Take = 100,
+    int Take = OffsetPage.DefaultTake,
     Domain.AggregatesModel.InspectionTaskAggregate.InspectionTaskId? InspectionTaskId = null,
     string? ScopeKind = null,
     string? PrincipalId = null,
@@ -90,10 +91,8 @@ public sealed class ListInspectionTasksQueryValidator : AbstractValidator<ListIn
 {
     public ListInspectionTasksQueryValidator()
     {
-        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Skip).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.Take).InclusiveBetween(1, 200);
+        this.AddTenantRules(x => x.OrganizationId, x => x.EnvironmentId);
+        this.AddOffsetPageRules(x => x.Skip, x => x.Take, maxTake: 200);
         RuleFor(x => x.ScopeKind)
             .Must(value => string.IsNullOrWhiteSpace(value)
                 || value.Equals("self", StringComparison.OrdinalIgnoreCase)
@@ -112,9 +111,12 @@ public sealed class ListInspectionTasksQueryHandler(ApplicationDbContext dbConte
 {
     public async Task<ListInspectionTasksResponse> Handle(ListInspectionTasksQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take, maxTake: 200);
+        var keyword = SearchTerm.From(request.Keyword);
         var query = dbContext.InspectionTasks
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId)
             .Where(x => request.InspectionTaskId == null || x.Id == request.InspectionTaskId);
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
@@ -161,15 +163,14 @@ public sealed class ListInspectionTasksQueryHandler(ApplicationDbContext dbConte
             query = query.Where(x => x.SourceService == sourceService);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        if (keyword.Value is not null)
         {
-            var keyword = request.Keyword.Trim().ToLowerInvariant();
             query = query.Where(x =>
-                x.SourceDocumentId.ToLower().Contains(keyword)
-                || (x.SourceDocumentLineId != null && x.SourceDocumentLineId.ToLower().Contains(keyword))
-                || x.SkuCode.ToLower().Contains(keyword)
-                || (x.BatchNo != null && x.BatchNo.ToLower().Contains(keyword))
-                || (x.SerialNo != null && x.SerialNo.ToLower().Contains(keyword)));
+                x.SourceDocumentId.ToLower().Contains(keyword.Value)
+                || (x.SourceDocumentLineId != null && x.SourceDocumentLineId.ToLower().Contains(keyword.Value))
+                || x.SkuCode.ToLower().Contains(keyword.Value)
+                || (x.BatchNo != null && x.BatchNo.ToLower().Contains(keyword.Value))
+                || (x.SerialNo != null && x.SerialNo.ToLower().Contains(keyword.Value)));
         }
 
         var asOfUtc = request.AsOfUtc ?? DateTimeOffset.UtcNow;
@@ -186,8 +187,8 @@ public sealed class ListInspectionTasksQueryHandler(ApplicationDbContext dbConte
             .ThenBy(x => x.DueAtUtc)
             .ThenBy(x => x.CreatedAtUtc)
             .ThenBy(x => x.Id)
-            .Skip(request.Skip)
-            .Take(request.Take)
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new
             {
                 x.Id,

@@ -1,14 +1,33 @@
 <script setup lang="ts">
 import {
   GanttChart,
+  withFactoryTimeContext,
   ResourceSchedulerBoard,
+  SchedulingToolbar,
+  SchedulingLegend,
+  TaskDetailPanel,
+  TaskFacts,
+  resolveTimeScale,
+  type EngineCommand,
+  type TimeScale,
   type ScheduleModel,
   type TaskDragPayload,
+  type DraftFeedback,
 } from '@nerv-iip/scheduling'
+import type {
+  SchedulingTimeContextItem,
+  BusinessConsoleSchedulingMaterialShortageSummary,
+} from '@nerv-iip/api-client'
+import SchedulingMaterialShortageSummary from './SchedulingMaterialShortageSummary.vue'
+import SchedulingPlanRisks from './SchedulingPlanRisks.vue'
+import SchedulingDraftFeedback from './SchedulingDraftFeedback.vue'
+import SchedulingWorkOrderLink from './SchedulingWorkOrderLink.vue'
 import type { WorkingSchedulePendingOperation } from '@/composables/useWorkingScheduleDraft'
 import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
+import type { EntityPickerOption } from '@nerv-iip/ui'
 import {
   NvButton,
+  NvEntityPicker,
   NvInput,
   NvStatusBadge,
   NvTabs,
@@ -16,10 +35,15 @@ import {
   NvTabsList,
   NvTabsTrigger,
 } from '@nerv-iip/ui'
-import { computed, shallowRef } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
+import { factoryTimeInput, factoryTimeInstant } from '@/utils/schedulingFactoryTime'
+import { WORK_CENTER_FAMILY_LIST } from '@/data/workCenterFamilies'
 
 const props = defineProps<{
+  timeContext?: SchedulingTimeContextItem[]
   model?: ScheduleModel
+  feedback?: DraftFeedback
+  materialShortageSummary?: BusinessConsoleSchedulingMaterialShortageSummary[] | null
   pendingOperations?: WorkingSchedulePendingOperation[]
   readOnly?: boolean
   /**
@@ -40,15 +64,162 @@ const emit = defineEmits<{
   restorePending: [taskId: string]
   persistOverride: [taskId: string]
 }>()
+const timeErrors = shallowRef<Record<string, string>>({})
+function timeZone(task: ScheduleModel['tasks'][number]) {
+  const context = props.timeContext?.find((item) => item.workCenterCode === task.workCenterId)
+  return context?.timezone ?? ''
+}
+function timeContextLabel(task: ScheduleModel['tasks'][number]) {
+  const context = props.timeContext?.find((item) => item.workCenterCode === task.workCenterId)
+  if (!context) return '工厂时区尚未读取，保留当前草案'
+  if (context.unresolvedReason) return context.unresolvedReason
+  if (!factoryTimeInput(task.startUtc, timeZone(task))) return '工厂时区不可解析，保留当前草案'
+  return `${context.plantName ?? context.plantCode} · ${context.timezone}`
+}
+function editTime(
+  task: ScheduleModel['tasks'][number],
+  field: 'startUtc' | 'endUtc',
+  value: string,
+) {
+  const instant = factoryTimeInstant(value, timeZone(task), task[field])
+  const key = `${task.id}:${field}`
+  timeErrors.value = {
+    ...timeErrors.value,
+    [key]: instant ? '' : '请输入该工厂时区内唯一有效的日期时间',
+  }
+  if (instant && instant !== task[field]) emit('update', task.id, { [field]: instant })
+}
+const timedModel = computed(() =>
+  props.model ? withFactoryTimeContext(props.model, props.timeContext) : undefined,
+)
 const view = shallowRef('gantt')
+const scale = shallowRef<TimeScale>('auto')
+const ganttRef = shallowRef<InstanceType<typeof GanttChart>>()
+const resourceRef = shallowRef<InstanceType<typeof ResourceSchedulerBoard>>()
+const activeBoard = computed(() => (view.value === 'gantt' ? ganttRef.value : resourceRef.value))
+const selectedTaskId = shallowRef('')
+const selectedTask = computed(() =>
+  timedModel.value?.tasks.find((task) => task.id === selectedTaskId.value),
+)
+const attentionTasks = computed(() =>
+  (props.model?.tasks ?? []).flatMap((task) => {
+    const feedback = props.feedback?.tasks[task.id]
+    const issues = feedback?.issues.filter((issue) => issue.kind !== 'unknown') ?? []
+    return issues.length ? [{ task, issues }] : []
+  }),
+)
+const detailTitle = computed(() =>
+  selectedTask.value?.blockKind
+    ? '资源时间块详情'
+    : selectedTask.value?.type === 'order'
+      ? '工单详情'
+      : '工序详情',
+)
+const search = shallowRef('')
+const matchCursor = shallowRef(0)
+const searchMatches = computed(() => {
+  const query = search.value.trim().toLowerCase()
+  if (!query) return []
+  return (props.model?.tasks ?? []).filter(
+    (task) =>
+      task.type === 'operation' &&
+      !task.blockKind &&
+      [
+        task.orderId,
+        task.operationId,
+        task.text,
+        task.resourceId,
+        task.workCenterId,
+        task.dimensions?.workCenter?.label,
+        task.product,
+      ].some((value) => value?.toLowerCase().includes(query)),
+  )
+})
+const legendCategories = computed(() => {
+  const used = new Set(
+    (props.model?.tasks ?? [])
+      .filter((task) => task.type === 'operation')
+      .map((task) => task.colorKey),
+  )
+  return WORK_CENTER_FAMILY_LIST.filter((family) => used.has(family.key)).map(({ key, label }) => ({
+    key,
+    label,
+  }))
+})
+function sendCommand(command: EngineCommand) {
+  activeBoard.value?.command(command)
+}
+function handleMove(payload: TaskDragPayload) {
+  selectedTaskId.value = payload.taskId
+  emit('move', payload)
+}
+function setScale(value: TimeScale) {
+  scale.value = value
+  sendCommand({ kind: 'scaleTo', scale: value })
+}
+function zoom(direction: -1 | 1) {
+  const scales: TimeScale[] = ['hour', 'day', 'week', 'month']
+  const current = resolveTimeScale(scale.value, props.model?.horizon)
+  setScale(scales[Math.max(0, Math.min(scales.length - 1, scales.indexOf(current) + direction))])
+}
+function revealMatch(index: number) {
+  const matches = searchMatches.value
+  if (!matches.length) return
+  const next = ((index % matches.length) + matches.length) % matches.length
+  matchCursor.value = next + 1
+  selectedTaskId.value = matches[next].id
+  sendCommand({ kind: 'revealTask', taskId: selectedTaskId.value })
+  sendCommand({ kind: 'selectTask', taskId: selectedTaskId.value })
+}
+// 切换图面时应用当前查阅状态，草案本身始终来自父页面。
+watch(
+  [activeBoard, searchMatches],
+  () => {
+    sendCommand({ kind: 'setSearchHighlight', taskIds: searchMatches.value.map((task) => task.id) })
+    matchCursor.value = 0
+    if (searchMatches.value.length) {
+      const selectedIndex = searchMatches.value.findIndex(
+        (task) => task.id === selectedTaskId.value,
+      )
+      revealMatch(selectedIndex < 0 ? 0 : selectedIndex)
+    } else if (selectedTask.value) {
+      sendCommand({ kind: 'revealTask', taskId: selectedTaskId.value })
+      sendCommand({ kind: 'selectTask', taskId: selectedTaskId.value })
+    }
+  },
+  { flush: 'post' },
+)
+watch(
+  () => props.model,
+  () => {
+    if (!selectedTask.value) selectedTaskId.value = ''
+  },
+)
+watch(
+  () => props.model?.meta.planId,
+  () => {
+    search.value = ''
+    selectedTaskId.value = ''
+  },
+)
 // 物料风险（软约束）：已排但缺料的工序，开工前必须先备料。
 const materialRisks = computed(() => props.model?.materialRisks ?? [])
 // 设备数据风险（软约束）：排在状态未知设备上的工序，开工前需人工确认设备可用。
 const equipmentRisks = computed(() => props.model?.equipmentRisks ?? [])
+// 改派资源只能在本排程的资源泳道之间挑，与资源排产板拖拽换泳道同一口径。
+const resourceOptions = computed<EntityPickerOption[]>(() =>
+  (props.model?.resources ?? []).map((resource) => ({
+    value: resource.id,
+    label: resource.text || resource.id,
+  })),
+)
 </script>
 
 <template>
-  <section class="grid gap-3 rounded-lg border bg-card p-4" data-testid="scheduling-draft-board">
+  <section
+    class="grid grid-cols-1 gap-3 rounded-lg border bg-card p-4"
+    data-testid="scheduling-draft-board"
+  >
     <header>
       <h2 class="font-semibold">排程草案工作区</h2>
       <p class="text-sm text-muted-foreground">甘特拖拽、资源泳道和表格编辑共享同一份草稿状态。</p>
@@ -103,44 +274,39 @@ const equipmentRisks = computed(() => props.model?.equipmentRisks ?? [])
         </li>
       </ul>
     </section>
-    <!--
-      物料风险横幅：齐套是开工门槛不是排产门槛。缺料工单照排进方案，
-      这里显式告诉规划员「哪些工序开工前必须先备料」，避免拿着方案去发布却被 MES 齐套门拦下。
-    -->
+    <SchedulingMaterialShortageSummary v-if="model" :shortages="materialShortageSummary ?? []" />
+    <p v-if="feedback" class="text-xs text-muted-foreground">
+      即时反馈随草案更新；发布前仍需锁定重预览，由后端确认最终可排结果。
+    </p>
+    <p v-if="feedback && !model?.validationContext" class="text-sm text-muted-foreground">
+      方案未记录校验依据，日历、占用、前序和交期暂无法核对。
+    </p>
     <section
-      v-if="materialRisks.length"
-      class="grid gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm"
-      data-testid="scheduling-material-risks"
+      v-if="attentionTasks.length"
+      class="grid gap-2 rounded-md border p-3"
+      data-testid="draft-feedback-attention"
     >
-      <p class="font-semibold">{{ materialRisks.length }} 道工序有物料风险 · 需在开工前完成备料</p>
-      <ul class="grid gap-1 text-xs">
-        <li v-for="risk in materialRisks" :key="`${risk.orderId}:${risk.operationId}`">
-          {{ risk.orderId }} · {{ risk.operationId }} —
-          <template v-if="risk.shortages.length">
-            {{ risk.shortages.map((s) => `${s.materialId} 缺 ${s.shortageQuantity}`).join('、') }}
-          </template>
-          <template v-else>{{ risk.message }}</template>
+      <h3 class="text-sm font-semibold">即时反馈 · {{ attentionTasks.length }} 道工序需核对</h3>
+      <ul class="grid max-h-40 gap-2 overflow-auto text-xs">
+        <li v-for="item in attentionTasks" :key="item.task.id">
+          <NvButton
+            size="sm"
+            variant="link"
+            type="button"
+            class="h-auto p-0 text-xs"
+            @click="selectedTaskId = item.task.id"
+          >
+            {{ item.task.orderId }} · {{ item.task.text }}
+          </NvButton>
+          <p class="text-warning">{{ item.issues.map((issue) => issue.message).join('；') }}</p>
         </li>
       </ul>
     </section>
-    <!--
-      设备数据风险横幅：「不知道」不等于「不可用」。无快照/快照过期的设备照排，
-      但必须显式告诉规划员哪些工序的设备状态是盲区，开工前要人工确认。
-    -->
-    <section
-      v-if="equipmentRisks.length"
-      class="grid gap-1.5 rounded-md border border-border bg-muted/40 px-3 py-2.5 text-sm"
-      data-testid="scheduling-equipment-risks"
-    >
-      <p class="font-semibold">
-        {{ equipmentRisks.length }} 道工序的设备状态未知 · 开工前请人工确认设备可用
-      </p>
-      <ul class="grid gap-1 text-xs text-muted-foreground">
-        <li v-for="risk in equipmentRisks" :key="`${risk.orderId}:${risk.operationId}`">
-          {{ risk.orderId }} · {{ risk.operationId }} — {{ risk.message }}
-        </li>
-      </ul>
-    </section>
+    <SchedulingPlanRisks
+      v-if="model"
+      :material-risks="materialRisks"
+      :equipment-risks="equipmentRisks"
+    />
     <div
       v-if="!model"
       class="flex min-h-48 items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground"
@@ -153,132 +319,264 @@ const equipmentRisks = computed(() => props.model?.equipmentRisks ?? [])
         <NvTabsTrigger value="resource">资源排产板</NvTabsTrigger>
         <NvTabsTrigger value="table">表格编辑</NvTabsTrigger>
       </NvTabsList>
-      <NvTabsContent value="gantt" class="h-[34rem] overflow-hidden rounded-md border">
-        <GanttChart
-          :model="model"
-          :read-only="readOnly"
-          @task-drag-end="emit('move', $event)"
-          @locked-drag-attempt="emit('lockedAttempt', $event)"
-        />
-      </NvTabsContent>
-      <NvTabsContent value="resource" class="h-[34rem] overflow-hidden rounded-md border">
-        <ResourceSchedulerBoard
-          :model="model"
-          :read-only="readOnly"
-          @task-drag-end="emit('move', $event)"
-          @locked-drag-attempt="emit('lockedAttempt', $event)"
-        />
-      </NvTabsContent>
-      <NvTabsContent value="table" class="max-h-[34rem] overflow-auto rounded-md border">
-        <table class="w-full text-sm">
-          <thead class="sticky top-0 z-10 bg-muted text-left [&_th]:whitespace-nowrap">
-            <tr>
-              <th class="p-2">工单 / 工序</th>
-              <th class="p-2">资源</th>
-              <th class="p-2">开始</th>
-              <th class="p-2">结束</th>
-              <th class="p-2">物料</th>
-              <th class="p-2">设备状态</th>
-              <th class="p-2">锁定</th>
-              <th class="p-2">待排</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="task in model.tasks.filter(
-                (item) => item.type === 'operation' && !item.blockKind,
-              )"
-              :key="task.id"
-              class="border-t"
+      <SchedulingToolbar
+        v-if="view !== 'table'"
+        :scale="scale"
+        :read-only="Boolean(readOnly)"
+        :can-undo="false"
+        :can-redo="false"
+        :dirty="false"
+        :busy="false"
+        :can-edit="false"
+        :can-repreview="false"
+        :can-release="false"
+        searchable
+        :search="search"
+        :match-count="searchMatches.length"
+        :match-index="matchCursor"
+        @scale-change="setScale"
+        @zoom-in="zoom(-1)"
+        @zoom-out="zoom(1)"
+        @today="sendCommand({ kind: 'scrollToToday' })"
+        @fit="sendCommand({ kind: 'fitToScreen' })"
+        @update:search="search = $event"
+        @search-prev="revealMatch(matchCursor - 2)"
+        @search-next="revealMatch(matchCursor)"
+      />
+      <div class="flex flex-col gap-3 xl:flex-row">
+        <div class="min-w-0 flex-1">
+          <NvTabsContent value="gantt" class="h-[34rem] overflow-hidden rounded-md border">
+            <GanttChart
+              ref="ganttRef"
+              :scale="scale"
+              :model="timedModel"
+              @task-select="selectedTaskId = $event"
+              :read-only="readOnly"
+              @task-drag-end="handleMove"
+              @locked-drag-attempt="emit('lockedAttempt', $event)"
+            />
+          </NvTabsContent>
+          <NvTabsContent value="resource" class="h-[34rem] overflow-hidden rounded-md border">
+            <ResourceSchedulerBoard
+              ref="resourceRef"
+              :scale="scale"
+              :model="timedModel"
+              @task-select="selectedTaskId = $event"
+              :read-only="readOnly"
+              @task-drag-end="handleMove"
+              @locked-drag-attempt="emit('lockedAttempt', $event)"
+            />
+          </NvTabsContent>
+          <NvTabsContent value="table" class="max-h-[34rem] overflow-auto rounded-md border">
+            <table class="w-full table-fixed text-sm">
+              <thead class="sticky top-0 z-10 bg-muted text-left">
+                <tr>
+                  <th class="w-[22%] p-2">工单 / 工序</th>
+                  <th class="w-[30%] p-2">资源与时间</th>
+                  <th class="w-[22%] p-2">锁定 / 待排</th>
+                  <th class="w-[26%] p-2">即时反馈 / 风险</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="task in model.tasks.filter(
+                    (item) => item.type === 'operation' && !item.blockKind,
+                  )"
+                  :key="task.id"
+                  class="border-t align-top"
+                >
+                  <td class="break-words p-2">
+                    <p class="font-medium">{{ task.orderId }} · {{ task.operationId }}</p>
+                    <TaskFacts
+                      :task="task"
+                      class="mt-2 [&_dl>div]:flex-col [&_dl>div]:gap-0.5 [&_dd]:min-w-0 [&_dd]:text-left [&_dd]:[overflow-wrap:anywhere]"
+                    />
+                  </td>
+                  <td class="space-y-2 p-2">
+                    <p class="text-xs text-muted-foreground">资源</p>
+                    <NvEntityPicker
+                      class="w-full"
+                      :disabled="readOnly || task.locked"
+                      :model-value="task.resourceId"
+                      :options="resourceOptions"
+                      title="选择资源"
+                      placeholder="选择资源"
+                      empty-text="本排程没有可用资源"
+                      :show-code="false"
+                      :aria-label="`${task.orderId} · ${task.operationId} 的资源`"
+                      @update:model-value="emit('update', task.id, { resourceId: $event })"
+                    />
+                    <p class="text-xs text-muted-foreground">{{ timeContextLabel(task) }}</p>
+                    <p class="text-xs text-muted-foreground">开始</p>
+                    <NvInput
+                      class="h-8 w-full min-w-0"
+                      :aria-label="`${task.orderId} · ${task.operationId} 的开始时间`"
+                      :disabled="
+                        readOnly ||
+                        task.locked ||
+                        !factoryTimeInput(task.startUtc, timeZone(task)) ||
+                        (task.segments?.length ?? 0) > 1
+                      "
+                      :model-value="factoryTimeInput(task.startUtc, timeZone(task))"
+                      type="datetime-local"
+                      step="1"
+                      @update:model-value="editTime(task, 'startUtc', String($event))"
+                    />
+                    <p class="text-xs text-muted-foreground">结束</p>
+                    <NvInput
+                      class="h-8 w-full min-w-0"
+                      :aria-label="`${task.orderId} · ${task.operationId} 的结束时间`"
+                      :disabled="
+                        readOnly ||
+                        task.locked ||
+                        !factoryTimeInput(task.startUtc, timeZone(task)) ||
+                        (task.segments?.length ?? 0) > 1
+                      "
+                      :model-value="factoryTimeInput(task.endUtc, timeZone(task))"
+                      type="datetime-local"
+                      step="1"
+                      @update:model-value="editTime(task, 'endUtc', String($event))"
+                    />
+                    <p
+                      v-if="timeErrors[`${task.id}:startUtc`] || timeErrors[`${task.id}:endUtc`]"
+                      class="text-sm text-destructive"
+                    >
+                      {{ timeErrors[`${task.id}:startUtc`] || timeErrors[`${task.id}:endUtc`] }}
+                    </p>
+                    <p
+                      v-for="(segment, index) in task.segments"
+                      :key="index"
+                      class="break-words text-xs"
+                    >
+                      第 {{ index + 1 }} 段 ·
+                      {{ factoryTimeInput(segment.startUtc, timeZone(task)).replace('T', ' ') }} 至
+                      {{ factoryTimeInput(segment.endUtc, timeZone(task)).replace('T', ' ') }}
+                    </p>
+                    <p
+                      v-if="(task.segments?.length ?? 0) > 1"
+                      class="text-xs text-muted-foreground"
+                    >
+                      分段时间由重新排程确定；可使用草案锁定保留各段。
+                    </p>
+                    <span v-else class="text-xs text-muted-foreground">连续排程</span>
+                  </td>
+                  <td class="space-y-2 p-2">
+                    <div class="flex flex-wrap items-center gap-1.5">
+                      <NvButton
+                        size="sm"
+                        :variant="task.locked ? 'secondary' : 'outline'"
+                        type="button"
+                        :disabled="readOnly"
+                        @click="emit('lock', task.id, !task.locked)"
+                        >{{ task.locked ? '解锁' : '锁定' }}</NvButton
+                      >
+                      <NvButton
+                        size="sm"
+                        variant="outline"
+                        type="button"
+                        :disabled="
+                          readOnly ||
+                          persistPending ||
+                          !task.resourceId ||
+                          (task.segments?.length ?? 0) > 1
+                        "
+                        :title="
+                          (task.segments?.length ?? 0) > 1
+                            ? '多段工序请使用草案锁定保留各段；暂不支持持久锁定'
+                            : task.resourceId
+                              ? '固定该工序的资源与起止时间，之后重新排程也保持不变'
+                              : '该工序未分配资源，先指定资源再持久锁定'
+                        "
+                        @click="emit('persistOverride', task.id)"
+                        >持久锁定</NvButton
+                      >
+                      <NvStatusBadge
+                        v-if="
+                          persistedOperationKeys?.includes(`${task.orderId}:${task.operationId}`)
+                        "
+                        label="已持久锁定"
+                        tone="success"
+                        title="该工序的资源与起止时间已固定，之后重新排程也保持不变。刷新页面后此标记不再显示，但锁定仍然有效。"
+                      />
+                    </div>
+                    <NvButton
+                      size="sm"
+                      variant="ghost"
+                      type="button"
+                      :disabled="readOnly || task.locked"
+                      @click="emit('moveToPending', task.id)"
+                      >移回待排</NvButton
+                    >
+                  </td>
+                  <td class="space-y-2 break-words p-2">
+                    <SchedulingDraftFeedback :feedback="feedback?.tasks[task.id]" />
+                    <p class="text-xs text-muted-foreground">方案物料风险</p>
+                    <span
+                      v-if="task.materialRisk"
+                      class="inline-flex items-center rounded border border-warning/50 bg-warning/10 px-1.5 text-xs font-semibold text-warning"
+                      :title="task.materialRisk.message"
+                      >缺料待备</span
+                    >
+                    <span v-else class="text-xs text-muted-foreground">无已记录风险</span>
+                    <p class="text-xs text-muted-foreground">方案设备风险</p>
+                    <span
+                      v-if="task.equipmentRisk"
+                      class="inline-flex items-center rounded border border-border bg-muted px-1.5 text-xs font-semibold text-muted-foreground"
+                      :title="task.equipmentRisk.message"
+                      >状态未知</span
+                    >
+                    <span v-else class="text-xs text-muted-foreground">无已记录风险</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </NvTabsContent>
+        </div>
+        <aside
+          v-if="selectedTask"
+          class="max-h-[34rem] overflow-y-auto rounded-md border xl:w-[21rem] xl:flex-none"
+          data-testid="scheduling-draft-task-detail"
+          :aria-label="detailTitle"
+        >
+          <div class="flex items-center justify-between gap-2 px-4 pt-3">
+            <h3 class="text-sm font-semibold">{{ detailTitle }}</h3>
+            <NvButton
+              size="sm"
+              variant="ghost"
+              type="button"
+              :aria-label="`关闭${detailTitle}`"
+              @click="selectedTaskId = ''"
+              >关闭</NvButton
             >
-              <td class="p-2 font-medium">{{ task.orderId }} · {{ task.operationId }}</td>
-              <td class="p-2">
-                <NvInput
-                  class="h-8 min-w-32"
-                  :disabled="readOnly || task.locked"
-                  :model-value="task.resourceId"
-                  @update:model-value="emit('update', task.id, { resourceId: String($event) })"
-                />
-              </td>
-              <td class="p-2">
-                <NvInput
-                  class="h-8 min-w-48"
-                  :disabled="readOnly || task.locked"
-                  :model-value="task.startUtc"
-                  @update:model-value="emit('update', task.id, { startUtc: String($event) })"
-                />
-              </td>
-              <td class="p-2">
-                <NvInput
-                  class="h-8 min-w-48"
-                  :disabled="readOnly || task.locked"
-                  :model-value="task.endUtc"
-                  @update:model-value="emit('update', task.id, { endUtc: String($event) })"
-                />
-              </td>
-              <td class="p-2">
-                <span
-                  v-if="task.materialRisk"
-                  class="inline-flex items-center rounded border border-warning/50 bg-warning/10 px-1.5 text-xs font-semibold text-warning"
-                  :title="task.materialRisk.message"
-                  >缺料待备</span
-                >
-                <span v-else class="text-xs text-muted-foreground">齐套</span>
-              </td>
-              <td class="p-2">
-                <span
-                  v-if="task.equipmentRisk"
-                  class="inline-flex items-center rounded border border-border bg-muted px-1.5 text-xs font-semibold text-muted-foreground"
-                  :title="task.equipmentRisk.message"
-                  >状态未知</span
-                >
-                <span v-else class="text-xs text-muted-foreground">正常</span>
-              </td>
-              <td class="p-2">
-                <div class="flex flex-wrap items-center gap-1.5">
-                  <NvButton
-                    size="sm"
-                    :variant="task.locked ? 'secondary' : 'outline'"
-                    type="button"
-                    :disabled="readOnly"
-                    @click="emit('lock', task.id, !task.locked)"
-                    >{{ task.locked ? '解锁' : '锁定' }}</NvButton
-                  >
-                  <NvButton
-                    size="sm"
-                    variant="outline"
-                    type="button"
-                    :disabled="readOnly || persistPending || !task.resourceId"
-                    :title="
-                      task.resourceId
-                        ? '把该工序的资源与起止落库为跨方案 override，重排程自动继承'
-                        : '该工序未分配资源，先指定资源再持久锁定'
-                    "
-                    @click="emit('persistOverride', task.id)"
-                    >持久锁定</NvButton
-                  >
-                  <NvStatusBadge
-                    v-if="persistedOperationKeys?.includes(`${task.orderId}:${task.operationId}`)"
-                    label="本次会话已持久化"
-                    tone="success"
-                    title="该工序 override 已在本次会话内落库；override 暂无读接口，刷新后徽标不再回显，但落库结果仍会被重排程继承"
-                  />
-                </div>
-              </td>
-              <td class="p-2">
-                <NvButton
-                  size="sm"
-                  variant="ghost"
-                  type="button"
-                  :disabled="readOnly || task.locked"
-                  @click="emit('moveToPending', task.id)"
-                  >移回待排</NvButton
-                >
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </NvTabsContent>
+          </div>
+          <TaskDetailPanel
+            :task="selectedTask"
+            :read-only="readOnly"
+            @toggle-lock="(taskId, locked) => emit('lock', taskId, locked)"
+          />
+          <p v-if="!selectedTask.blockKind" class="px-4 py-3 text-sm">
+            工单
+            <SchedulingWorkOrderLink
+              :work-order-id="selectedTask.orderId"
+              :operation-task-id="
+                selectedTask.type === 'operation' ? selectedTask.operationId : undefined
+              "
+            />
+          </p>
+          <SchedulingDraftFeedback
+            v-if="selectedTask.type === 'operation' && !selectedTask.blockKind"
+            class="px-4 py-3"
+            :feedback="feedback?.tasks[selectedTask.id]"
+          />
+        </aside>
+      </div>
+      <SchedulingLegend
+        v-if="view !== 'table'"
+        :model="timedModel"
+        :scale="scale"
+        :view="view === 'gantt' ? 'order' : 'resource'"
+        :categories="legendCategories"
+      />
     </NvTabs>
   </section>
 </template>

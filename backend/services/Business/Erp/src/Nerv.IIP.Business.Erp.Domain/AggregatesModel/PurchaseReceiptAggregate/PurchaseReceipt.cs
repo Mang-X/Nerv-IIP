@@ -29,9 +29,14 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
     {
     }
 
-    private PurchaseReceipt(PurchaseOrder order, string purchaseReceiptNo, IEnumerable<PurchaseReceiptLineDraft> lineDrafts, decimal exchangeRate)
+    private PurchaseReceipt(PurchaseOrder order, string purchaseReceiptNo, IEnumerable<PurchaseReceiptLineDraft> lineDrafts, decimal exchangeRate, PurchaseReceiptInventoryPostingRoute inventoryPostingRoute)
     {
         ArgumentNullException.ThrowIfNull(order);
+        if (!Enum.IsDefined(inventoryPostingRoute))
+        {
+            throw new ArgumentOutOfRangeException(nameof(inventoryPostingRoute));
+        }
+        InventoryPostingRoute = inventoryPostingRoute;
         OrganizationId = order.OrganizationId;
         EnvironmentId = order.EnvironmentId;
         PurchaseReceiptNo = ErpText.Required(purchaseReceiptNo, nameof(purchaseReceiptNo));
@@ -46,12 +51,23 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
         foreach (var draft in drafts)
         {
             PurchaseReceiptLine.ValidateQualityStatus(draft.QualityStatus, nameof(draft.QualityStatus));
+            // #3900：直接过账由 ERP 发起库存入库，库位必须是用户选定的真实库位；不再拿工厂编码冒充库位。
+            if (inventoryPostingRoute == PurchaseReceiptInventoryPostingRoute.Direct && string.IsNullOrWhiteSpace(draft.LocationCode))
+            {
+                throw new ArgumentException("直接过账的收货行必须指定收货库位。", nameof(lineDrafts));
+            }
         }
 
+        var affectedSkuCodes = new List<string>();
         foreach (var draft in drafts)
         {
+            var previousOpenQuantity = order.Lines.Single(line => line.LineNo == draft.PurchaseOrderLineNo).OpenQuantity;
             var orderLine = order.RegisterReceipt(draft.PurchaseOrderLineNo, draft.ReceivedQuantity, draft.FinalDelivery);
-            var line = PurchaseReceiptLine.Create(draft, orderLine, SiteCode);
+            if (previousOpenQuantity != orderLine.OpenQuantity)
+            {
+                affectedSkuCodes.Add(orderLine.SkuCode);
+            }
+            var line = PurchaseReceiptLine.Create(draft, orderLine);
             lines.Add(line);
         }
 
@@ -62,10 +78,25 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
 
         var qualityStatuses = lines.Select(x => x.QualityStatus).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         QualityStatus = qualityStatuses.Length == 1 ? qualityStatuses[0] : "mixed";
-        this.AddDomainEvent(new PurchaseReceiptRecordedDomainEvent(this));
-        foreach (var line in lines)
+        if (affectedSkuCodes.Count > 0)
         {
-            this.AddDomainEvent(new PurchaseReceiptInventoryMovementRequestedDomainEvent(this, line));
+            this.AddDomainEvent(new MaterialSupplyEtaChangedDomainEvent(
+                OrganizationId,
+                EnvironmentId,
+                "purchase-receipt",
+                PurchaseReceiptNo,
+                "purchase-receipt-recorded",
+                $"purchase-receipt:{PurchaseReceiptNo}",
+                DateTimeOffset.UtcNow,
+                affectedSkuCodes.Distinct(StringComparer.Ordinal).OrderBy(skuCode => skuCode, StringComparer.Ordinal).ToArray()));
+        }
+        this.AddDomainEvent(new PurchaseReceiptRecordedDomainEvent(this));
+        if (InventoryPostingRoute == PurchaseReceiptInventoryPostingRoute.Direct)
+        {
+            foreach (var line in lines)
+            {
+                this.AddDomainEvent(new PurchaseReceiptInventoryMovementRequestedDomainEvent(this, line));
+            }
         }
     }
 
@@ -79,12 +110,13 @@ public sealed class PurchaseReceipt : Entity<PurchaseReceiptId>, IAggregateRoot
     public decimal ExchangeRate { get; private set; }
     public string QualityStatus { get; private set; } = string.Empty;
     public PurchaseReceiptStatus Status { get; private set; }
+    public PurchaseReceiptInventoryPostingRoute InventoryPostingRoute { get; private set; }
     public DateTime RecordedAtUtc { get; private set; }
     public IReadOnlyCollection<PurchaseReceiptLine> Lines => lines;
 
-    public static PurchaseReceipt Record(PurchaseOrder order, string purchaseReceiptNo, IEnumerable<PurchaseReceiptLineDraft> lines, decimal exchangeRate = 1m)
+    public static PurchaseReceipt Record(PurchaseOrder order, string purchaseReceiptNo, IEnumerable<PurchaseReceiptLineDraft> lines, decimal exchangeRate = 1m, PurchaseReceiptInventoryPostingRoute inventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Direct)
     {
-        return new PurchaseReceipt(order, purchaseReceiptNo, lines, exchangeRate);
+        return new PurchaseReceipt(order, purchaseReceiptNo, lines, exchangeRate, inventoryPostingRoute);
     }
 
     public void Cancel()
@@ -110,14 +142,15 @@ public sealed class PurchaseReceiptLine : Entity<PurchaseReceiptLineId>
         LotNo = draft.LotNo;
     }
 
-    private PurchaseReceiptLine(PurchaseReceiptLineDraft draft, PurchaseOrderLine orderLine, string siteCode)
+    private PurchaseReceiptLine(PurchaseReceiptLineDraft draft, PurchaseOrderLine orderLine)
     {
         PurchaseOrderLineNo = ErpText.Required(draft.PurchaseOrderLineNo, nameof(draft.PurchaseOrderLineNo));
         ReceivedQuantity = ErpText.Positive(draft.ReceivedQuantity, nameof(draft.ReceivedQuantity));
         QualityStatus = ValidateQualityStatus(draft.QualityStatus, nameof(draft.QualityStatus));
         SkuCode = orderLine.SkuCode;
+        UnitPrice = orderLine.UnitPrice;
         UomCode = orderLine.UomCode;
-        LocationCode = string.IsNullOrWhiteSpace(draft.LocationCode) ? siteCode : draft.LocationCode.Trim();
+        LocationCode = draft.LocationCode?.Trim() ?? string.Empty;
         LotNo = string.IsNullOrWhiteSpace(draft.LotNo) ? null : draft.LotNo.Trim();
     }
 
@@ -127,6 +160,7 @@ public sealed class PurchaseReceiptLine : Entity<PurchaseReceiptLineId>
     public string LocationCode { get; private set; } = string.Empty;
     public string? LotNo { get; private set; }
     public decimal ReceivedQuantity { get; private set; }
+    public decimal? UnitPrice { get; private set; }
     public string QualityStatus { get; private set; } = string.Empty;
 
     internal static string ValidateQualityStatus(string value, string parameterName)
@@ -142,8 +176,8 @@ public sealed class PurchaseReceiptLine : Entity<PurchaseReceiptLineId>
         return new PurchaseReceiptLine(draft);
     }
 
-    public static PurchaseReceiptLine Create(PurchaseReceiptLineDraft draft, PurchaseOrderLine orderLine, string siteCode)
+    public static PurchaseReceiptLine Create(PurchaseReceiptLineDraft draft, PurchaseOrderLine orderLine)
     {
-        return new PurchaseReceiptLine(draft, orderLine, siteCode);
+        return new PurchaseReceiptLine(draft, orderLine);
     }
 }

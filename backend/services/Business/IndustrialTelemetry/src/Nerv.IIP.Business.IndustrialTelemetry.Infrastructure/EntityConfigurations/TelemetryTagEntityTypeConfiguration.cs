@@ -16,6 +16,9 @@ public sealed class TelemetryTagEntityTypeConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.ValueType).IsRequired().HasMaxLength(50).HasColumnName("value_type").HasComment("Telemetry value type such as number, bool, or text.");
         builder.Property(x => x.UnitCode).IsRequired().HasMaxLength(50).HasColumnName("unit_code").HasComment("Unit of measure code for summarized telemetry values.");
         builder.Property(x => x.SamplingPolicy).IsRequired().HasMaxLength(100).HasColumnName("sampling_policy").HasComment("Configured ingestion sampling policy.");
+        builder.Property(x => x.DisplayName).HasMaxLength(TelemetryTag.DisplayNameMaxLength).HasColumnName("display_name").HasComment("Optional human-readable telemetry tag name maintained in the product; the tag key stays the connector-facing identifier.");
+        builder.Property(x => x.IsEnabled).HasColumnName("is_enabled").HasComment("Soft-disable flag; disabled tags stop counting production and are hidden from tag catalogs while historical samples stay traceable.");
+        builder.Property(x => x.DisabledAtUtc).HasColumnName("disabled_at_utc").HasComment("UTC time when the telemetry tag was disabled; null while enabled.");
         builder.Property(x => x.IsWritable).HasColumnName("is_writable").HasComment("Whether this telemetry tag may be used as a validated device control write target.");
         builder.Property(x => x.ControlMinValue).HasColumnName("control_min_value").HasComment("Optional minimum allowed control value for numeric device control writes.");
         builder.Property(x => x.ControlMaxValue).HasColumnName("control_max_value").HasComment("Optional maximum allowed control value for numeric device control writes.");

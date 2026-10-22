@@ -15,7 +15,7 @@ Set-StrictMode -Version Latest
 <#
 MAN-799 CI timeout-budget invariants.
 
-The rules this library enforces (narrative: docs/architecture/test-evidence-governance.md):
+The rules this library enforces (narrative: docs/governance/testing/evidence.md):
 
   1. Every job declares `timeout-minutes`. Without one a job inherits GitHub's 360-minute default
      and a deadlock burns a full runner hour-block.

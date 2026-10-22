@@ -30,7 +30,7 @@ type RequiredFieldComparison = {
 
 class PublicCallError extends Error {
   constructor(
-    readonly method: 'GET' | 'POST',
+    readonly method: 'GET' | 'POST' | 'PATCH',
     readonly path: string,
     readonly status: number,
     readonly request: JsonRecord,
@@ -221,15 +221,17 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
   const producedLotNo = `LOT-MAN524-${suffix}`
   const uomCode = `UOM-M524-${suffix}`
   const siteCode = `SITE-M524-${suffix}`
-  const materialSiteCode = 'production'
-  const finishedGoodsSiteCode = 'finished-goods'
+  const materialSiteCode = siteCode
+  const finishedGoodsSiteCode = siteCode
   const finishedGoodsLocationCode = 'receiving'
   const workshopCode = `SHOP-M524-${suffix}`
   const lineCode = `LINE-M524-${suffix}`
   const workCenterCode = `WC-M524-${suffix}`
+  const workCalendarCode = `CAL-M524-${suffix}`
   const deviceCode = `DEV-M524-${suffix}`
   const customerCode = `CUST-M524-${suffix}`
   const supplierCode = `SUP-M524-${suffix}`
+  const productCategoryCode = `CAT-M524-${suffix}`
   const finishedSku = `FG-M524-${suffix}`
   const materialSku = `RM-M524-${suffix}`
   const rawMaterialQuantity = 10
@@ -246,8 +248,9 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
   const workCenterCostRateReason = `MAN-595 governed main-chain rate ${suffix}`
   const rawMaterialLotNo = `RMLOT-M524-${suffix}`
   const purchaseOrderNo = `PO-M524-${suffix}`
-  const inboundOrderNo = `IN-M524-${suffix}`
-  const putawayTaskNo = `PUT-M524-${suffix}`
+  // 入库单号、上架任务号由系统按编码规则生成（#3848）；造数只给幂等键，重放拿回同一张单。
+  const inboundIdempotencyKey = `IN-M524-${suffix}`
+  const putawayIdempotencyKey = `PUT-M524-${suffix}`
   const operationCode = `OP-M524-${suffix}`
   const engineeringBomCode = `EB-M524-${suffix}`
   const manufacturingBomCode = `MB-M524-${suffix}`
@@ -275,7 +278,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
 
   const record = (entry: EvidenceEntry) => evidence.set(entry.node, entry)
 
-  const call = async (method: 'GET' | 'POST', path: string, body?: JsonRecord) => {
+  const call = async (method: 'GET' | 'POST' | 'PATCH', path: string, body?: JsonRecord) => {
     const url = new URL(path, baseURL!).toString()
     const response = await page.request.fetch(url, {
       method,
@@ -515,7 +518,6 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
     }
 
     let prerequisitesReady = true
-    let productionVersionId = ''
     let rawMaterialSupplyEvidence: JsonRecord | null = null
     try {
       await create('/api/business-console/v1/master-data/units-of-measure', {
@@ -553,6 +555,13 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         workshopCode,
         idempotencyKey: `line-${suffix}`,
       })
+      await create('/api/business-console/v1/master-data/work-calendars', {
+        organizationId,
+        environmentId,
+        code: workCalendarCode,
+        name: 'MAN-524 work calendar',
+        idempotencyKey: `calendar-${suffix}`,
+      })
       await create('/api/business-console/v1/master-data/work-centers', {
         organizationId,
         environmentId,
@@ -562,7 +571,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         resourceType: 'machine',
         plantCode: siteCode,
         lineCode,
-        defaultCalendarCode: `CAL-M524-${suffix}`,
+        defaultCalendarCode: workCalendarCode,
         capacityUnit: 'minute',
         finiteCapacity: true,
         workshopCode,
@@ -715,6 +724,15 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         creditCurrencyCode: 'CNY',
         idempotencyKey: `supplier-${suffix}`,
       })
+      await create('/api/business-console/v1/master-data/product-categories', {
+        organizationId,
+        environmentId,
+        categoryCode: productCategoryCode,
+        categoryName: 'MAN-524 production material',
+        parentCode: null,
+        description: 'Run-scoped category for the sales-to-fulfillment chain',
+        idempotencyKey: `category-${suffix}`,
+      })
       for (const [code, name, materialType] of [
         [finishedSku, 'MAN-524 finished good', 'finished-goods'],
         [materialSku, 'MAN-524 raw material', 'raw-material'],
@@ -725,7 +743,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           code,
           name,
           baseUomCode: uomCode,
-          category: 'electronic',
+          category: productCategoryCode,
           materialType,
           batchTrackingPolicy: 'none',
           serialTrackingPolicy: 'none',
@@ -848,21 +866,18 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           'Routing release response did not expose data.versionId.',
         )
       }
-      const productionVersion = asRecord(
-        await create('/api/business-console/v1/engineering/production-versions', {
-          organizationId,
-          environmentId,
-          skuCode: finishedSku,
-          mbomVersionId,
-          routingVersionId,
-          validFrom: dateOnly(now),
-          lotSizeMin: 1,
-          lotSizeMax: 1_000,
-          priority: 1,
-          isDefault: true,
-        }),
-      )
-      productionVersionId = textOf(productionVersion.productionVersionId ?? productionVersion)
+      await create('/api/business-console/v1/engineering/production-versions', {
+        organizationId,
+        environmentId,
+        skuCode: finishedSku,
+        mbomVersionId,
+        routingVersionId,
+        validFrom: dateOnly(now),
+        lotSizeMin: 1,
+        lotSizeMax: 1_000,
+        priority: 1,
+        isDefault: true,
+      })
 
       // 采购下达审批走 Approval 产品基线种子的 purchase-order-release（documentType=purchase-order，
       // 审批人 user-admin，即本用例登录的 admin principal）。这里绝不能再 POST /approval/templates：
@@ -935,7 +950,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
       const wmsInboundRequest = {
         organizationId,
         environmentId,
-        inboundOrderNo,
+        idempotencyKey: inboundIdempotencyKey,
         sourceDocumentType: 'purchase-order',
         sourceDocumentId: purchaseOrderNo,
         siteCode: materialSiteCode,
@@ -965,7 +980,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         { organizationId, environmentId },
       )
       const putawayRequest = {
-        taskNo: putawayTaskNo,
+        idempotencyKey: putawayIdempotencyKey,
         lineNo: '1',
         fromLocationCode: 'RECEIVING',
         toLocationCode: 'LINE-SIDE',
@@ -1200,6 +1215,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
 
     let workOrderId = ''
     let operationTask: JsonRecord | null = null
+    let originalOperationTaskIds: string[] = []
     if (suggestion) {
       try {
         const accepted = await call(
@@ -1258,14 +1274,18 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         )
         const releasedDetail = await fetchWorkOrder(workOrderId)
         const releasedWorkOrder = asRecord(dataOf(releasedDetail.payload))
-        operationTask =
-          (Array.isArray(releasedWorkOrder.operationTasks)
-            ? releasedWorkOrder.operationTasks
-            : []
-          ).map(asRecord)[0] ?? null
-        if (!operationTask) {
-          throw new Error(`Released MES work order ${workOrderId} exposed no operation task.`)
+        const releasedOperationTasks = (
+          Array.isArray(releasedWorkOrder.operationTasks) ? releasedWorkOrder.operationTasks : []
+        ).map(asRecord)
+        originalOperationTaskIds = releasedOperationTasks.map((row) =>
+          textOf(row.operationTaskId).trim(),
+        )
+        if (originalOperationTaskIds.length !== 1 || !originalOperationTaskIds[0]) {
+          throw new Error(
+            `Released MES work order ${workOrderId} did not expose its single routing-derived operation task.`,
+          )
         }
+        operationTask = releasedOperationTasks[0]
       } catch (error) {
         markFailure('mes-work-order-schedule-plan', error, 'manual')
       }
@@ -1319,84 +1339,42 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
         // The five-minute rush operation must start within the 60-minute freshness window; the later horizon remains fail closed.
         const horizonStart = new Date(runtimeObservedAt.getTime() + 60_000)
         const horizonEnd = new Date(horizonStart.getTime() + 8 * 3_600_000)
-        const plan = await call('POST', '/api/business-console/v1/scheduling/plans', {
-          problem: {
-            contractVersion: 1,
-            problemId: `MAN524-${suffix}`,
+        const calendarDates = [...new Set([dateOnly(horizonStart), dateOnly(horizonEnd)])]
+        await call(
+          'PATCH',
+          `/api/business-console/v1/master-data/resources/work-calendar/${encodeURIComponent(workCalendarCode)}`,
+          {
             organizationId,
             environmentId,
-            horizonStartUtc: horizonStart.toISOString(),
-            horizonEndUtc: horizonEnd.toISOString(),
-            orders: [
-              {
-                orderId: workOrderId,
-                skuCode: finishedSku,
-                quantity: finishedGoodsQuantity,
-                dueUtc: horizonEnd.toISOString(),
-                priority: 1,
-                isRush: true,
-                operations: [
-                  {
-                    operationId: taskId,
-                    operationSequence: 10,
-                    predecessorOperationIds: [],
-                    durationMinutes: operationDurationMinutes,
-                    requiredCapabilityCode: operationCode,
-                    eligibleResourceIds: [deviceAssetId],
-                    primaryResourceId: deviceAssetId,
-                    earliestStartUtc: horizonStart.toISOString(),
-                    dueUtc: horizonEnd.toISOString(),
-                    priority: 1,
-                    isRush: true,
-                    splitPolicy: 'nonSplittable',
-                    materialReadyUtc: horizonStart.toISOString(),
-                    qualityBlockReason: null,
-                    sourceReference: salesOrderNo,
-                    setupMinutes: 1,
-                    toolingAvailable: true,
-                  },
-                ],
-              },
-            ],
-            resources: [
-              {
-                resourceId: deviceAssetId,
-                workCenterId: workCenterCode,
-                capabilityCodes: [operationCode],
-                capacityUnits: 1,
-                calendarId: `CAL-M524-${suffix}`,
-                sortKey: deviceAssetId,
-              },
-            ],
-            calendars: [
-              {
-                calendarId: `CAL-M524-${suffix}`,
-                shiftWindows: [
-                  {
-                    startUtc: horizonStart.toISOString(),
-                    endUtc: horizonEnd.toISOString(),
-                    reasonCode: 'MAN524',
-                  },
-                ],
-              },
-            ],
-            unavailabilityWindows: [],
-            materialReadiness: [
-              {
-                scopeType: 'operation',
-                scopeId: taskId,
-                materialReadyUtc: horizonStart.toISOString(),
-                isReady: true,
-                reasonCodes: [],
-              },
-            ],
-            qualityBlocks: [],
-            lockedAssignments: [],
+            resourceType: 'work-calendar',
+            code: workCalendarCode,
+            exceptions: calendarDates.map((date) => ({
+              date,
+              isWorkingDay: true,
+              startsAt: '00:00:00',
+              endsAt: '23:59:59',
+              reason: 'run-scoped scheduling horizon',
+            })),
           },
+        )
+        const plan = await call('POST', '/api/business-console/v1/scheduling/workbench/plans', {
+          organizationId,
+          environmentId,
+          horizonStartUtc: horizonStart.toISOString(),
+          horizonEndUtc: horizonEnd.toISOString(),
+          orders: [{ workOrderId, priority: 1, isRush: true }],
         })
         const planData = asRecord(dataOf(plan.payload))
         const planId = textOf(planData.planId)
         if (!planId) throw new Error('Scheduling plan creation returned no planId.')
+        const assignment = (Array.isArray(planData.assignments) ? planData.assignments : [])
+          .map(asRecord)
+          .find((row) => textOf(row.operationId) === taskId)
+        if (!assignment) {
+          throw new Error(
+            `Scheduling workbench plan ${planId} did not retain MES operation task ${taskId}.`,
+          )
+        }
         record({
           node: 'mes-work-order-schedule-plan',
           sourceObject: workOrderId,
@@ -1430,18 +1408,38 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             },
           ),
         )
-        await page.waitForTimeout(1_500)
-        const detail = await fetchWorkOrder(workOrderId)
-        const scheduledTask = (
-          asRecord(dataOf(detail.payload)).operationTasks as unknown[] | undefined
+        const scheduled = await pollData(
+          `/api/business-console/v1/mes/work-orders/${encodeURIComponent(workOrderId)}`,
+          { organizationId, environmentId },
+          (workOrder) => {
+            const scheduledOperationTasks = (
+              Array.isArray(workOrder.operationTasks) ? workOrder.operationTasks : []
+            ).map(asRecord)
+            const scheduledOperationTaskIds = scheduledOperationTasks.map((row) =>
+              textOf(row.operationTaskId).trim(),
+            )
+            const scheduledTask = scheduledOperationTasks.find(
+              (row) => textOf(row.operationTaskId) === taskId,
+            )
+            return (
+              scheduledOperationTaskIds.length === originalOperationTaskIds.length &&
+              !scheduledOperationTaskIds.some(
+                (operationTaskId) => !originalOperationTaskIds.includes(operationTaskId),
+              ) &&
+              Boolean(scheduledTask?.scheduledAtUtc) &&
+              textOf(scheduledTask?.schedulePlanId) === planId
+            )
+          },
         )
-          ?.map(asRecord)
-          .find((row) => row.operationTaskId === taskId)
-        if (!scheduledTask?.plannedStartUtc && !scheduledTask?.scheduledAtUtc) {
-          throw new Error(
-            `MES operation ${taskId} did not expose the released schedule assignment.`,
-          )
-        }
+        const scheduledOperationTasks = (
+          Array.isArray(scheduled.data.operationTasks) ? scheduled.data.operationTasks : []
+        ).map(asRecord)
+        const scheduledOperationTaskIds = scheduledOperationTasks.map((row) =>
+          textOf(row.operationTaskId).trim(),
+        )
+        const scheduledTask = scheduledOperationTasks.find(
+          (row) => textOf(row.operationTaskId) === taskId,
+        )!
         scheduleReleased = true
         operationTask = scheduledTask
         record({
@@ -1451,7 +1449,12 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           stableKey: `${planId} -> ${taskId}`,
           automationMode: 'automatic',
           request: released.summary,
-          responseOrLog: publicJson(scheduledTask) as JsonRecord,
+          responseOrLog: {
+            task: publicJson(scheduledTask),
+            originalOperationTaskIds,
+            scheduledOperationTaskIds,
+            poll: scheduled.poll,
+          },
           conclusion: 'runtime-confirmed',
           demoWording:
             'Scheduling release crossed Redis into MES and updated the exact operation task rather than a similarly named seeded task.',
@@ -1910,7 +1913,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
           textOf(outboundLine.locationCode) !== finishedGoodsLocationCode ||
           textOf(outboundLine.lotNo) !== producedLotNo ||
           textOf(outboundLine.qualityStatus) !== 'unrestricted' ||
-          textOf(outboundLine.ownerType) !== 'production' ||
+          textOf(outboundLine.ownerType) !== 'company' ||
           textOf(outboundLine.ownerId) !== ''
         ) {
           throw new Error(
@@ -1948,7 +1951,6 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
             { organizationId, environmentId },
           ),
           {
-            packReviewNo: `PACK-${suffix}`,
             passed: true,
             idempotencyKey: `complete-outbound-${suffix}`,
           },
@@ -1971,7 +1973,7 @@ test('MAN-524 records the public sales-to-fulfillment main chain', async ({ page
               textOf(line.locationCode) === finishedGoodsLocationCode &&
               textOf(line.lotNo) === producedLotNo &&
               textOf(line.qualityStatus) === 'unrestricted' &&
-              textOf(line.ownerType) === 'production' &&
+              textOf(line.ownerType) === 'company' &&
               textOf(line.ownerId) === '' &&
               textOf(line.inventoryPostingStatus) === 'posted' &&
               textOf(line.failureCode) === ''

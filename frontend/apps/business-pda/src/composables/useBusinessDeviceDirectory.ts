@@ -1,11 +1,12 @@
 import {
   listBusinessConsoleDeviceAssetsQueryOptions,
+  listBusinessConsoleMasterDataResources,
   type BusinessConsoleResourceItem,
   type BusinessConsoleResourceListEnvelope,
 } from '@nerv-iip/api-client'
 import { useAuthStore } from '@/stores/auth'
 import { useQuery } from '@pinia/colada'
-import { computed, reactive } from 'vue'
+import { computed, reactive, type Ref } from 'vue'
 
 const PAGE_SIZE = 20
 
@@ -102,5 +103,51 @@ export function useBusinessDeviceDirectory() {
     nextPage,
     refreshDeviceAssets: () =>
       scopeReady.value ? directoryQuery.refetch() : Promise.resolve(undefined),
+  }
+}
+
+/**
+ * 按设备标识解析设备称呼（设备名（编码））。MES 工序读面只回 deviceAssetId，名称要回主数据按标识精确查；
+ * 只查当前屏上出现的那几台，查不到就不给称呼，调用方决定怎么说。
+ */
+export function useDeviceAssetNames(deviceAssetIds: Readonly<Ref<string[]>>) {
+  const auth = useAuthStore()
+  const ids = computed(() =>
+    [...new Set(deviceAssetIds.value.map((id) => id.trim()).filter(Boolean))].sort(),
+  )
+  const query = useQuery(() => {
+    const organizationId = auth.principal?.organizationId ?? ''
+    const environmentId = auth.principal?.environmentId ?? ''
+    return {
+      key: ['pda-device-asset-names', organizationId, environmentId, ...ids.value],
+      enabled: Boolean(organizationId && environmentId && ids.value.length),
+      query: async ({ signal }) => {
+        const entries = await Promise.all(
+          ids.value.map(async (deviceAssetId) => {
+            const response = await listBusinessConsoleMasterDataResources({
+              query: {
+                organizationId,
+                environmentId,
+                resourceType: 'device-asset',
+                deviceAssetId,
+                includeDisabled: true,
+                take: 1,
+              },
+              signal,
+            })
+            const item = response.data?.success ? response.data.data?.resources?.[0] : undefined
+            const name = item?.displayName?.trim()
+            const code = item?.code?.trim()
+            const label = name && code && name !== code ? `${name}（${code}）` : name || code
+            return [deviceAssetId, label] as const
+          }),
+        )
+        return new Map(entries.filter((entry): entry is readonly [string, string] => !!entry[1]))
+      },
+    }
+  })
+  return {
+    resolveDeviceName: (deviceAssetId?: string | null) =>
+      deviceAssetId ? query.data.value?.get(deviceAssetId.trim()) : undefined,
   }
 }

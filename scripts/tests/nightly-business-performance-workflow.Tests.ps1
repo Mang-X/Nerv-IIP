@@ -15,7 +15,6 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $workflowPath = Join-Path $repoRoot '.github/workflows/nightly-business-performance.yml'
-$ciWorkflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $verifierPath = Join-Path $repoRoot 'scripts/verify-business-performance-baseline.ps1'
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 
@@ -539,8 +538,5 @@ finally {
     if (Test-Path -LiteralPath $mutationRoot) { Remove-Item -LiteralPath $mutationRoot -Recurse -Force }
 }
 
-$ciWorkflowText = [IO.File]::ReadAllText($ciWorkflowPath)
-$completenessTestInvocation = 'run: ./scripts/tests/business-performance-metrics-completeness.Tests.ps1'
-Assert-WorkflowContract ([regex]::Matches($ciWorkflowText, [regex]::Escape($completenessTestInvocation)).Count -eq 1) 'Script Governance CI must execute the business performance metric completeness contract exactly once.'
 
 Write-Host 'Nightly business performance workflow contract tests passed.'

@@ -151,7 +151,7 @@ const workerFilterOptions = computed(() => [
 
 type DispatchRow = (typeof dispatchTasks)['value'][number]
 
-const errorMessage = computed(() => formatError(dispatchTasksError.value))
+const errorMessage = computed(() => inlineErrorMessage(dispatchTasksError.value))
 
 // 分组只对当前这一页的工序生效——facade 的分页单位是工序、不是工单，
 // 所以组头写「本页 N 道」，不谎称这就是该工单的全部工序。
@@ -265,9 +265,6 @@ function formatDateTime(value?: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 </script>
 
 <template>
@@ -379,10 +376,8 @@ function formatError(error: unknown) {
       </template>
     </NvToolbar>
 
-    <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
-
     <!-- 分组视图：一张工单一块，组内按工序顺序排；组头写清本页规模与待办。 -->
-    <template v-if="viewMode === 'grouped'">
+    <template v-if="viewMode === 'grouped' && !dispatchTasksError">
       <div v-if="groups.length" class="grid gap-3">
         <NvGroupPanel
           v-for="group in groups"
@@ -517,6 +512,9 @@ function formatError(error: unknown) {
       :rows="dispatchTasks"
       row-key="operationTaskId"
       :loading="dispatchTasksPending"
+      :error="dispatchTasksError"
+      :error-message="errorMessage"
+      @retry="refreshDispatchTasks"
       :searchable="false"
       :column-settings="false"
       :empty-message="

@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CompleteConsoleFileUploadSessionData, CompleteConsoleFileUploadSessionErrors, CompleteConsoleFileUploadSessionResponses, CreateConsoleFileDownloadGrantData, CreateConsoleFileDownloadGrantErrors, CreateConsoleFileDownloadGrantResponses, CreateConsoleFileUploadSessionData, CreateConsoleFileUploadSessionErrors, CreateConsoleFileUploadSessionResponses, CreateConsoleIamRoleData, CreateConsoleIamRoleErrors, CreateConsoleIamRoleResponses, CreateConsoleIamUserData, CreateConsoleIamUserErrors, CreateConsoleIamUserResponses, DisableConsoleIamUserData, DisableConsoleIamUserErrors, DisableConsoleIamUserResponses, DownloadConsoleFileGrantContentData, DownloadConsoleFileGrantContentErrors, DownloadConsoleFileGrantContentResponses, EnableConsoleIamUserData, EnableConsoleIamUserErrors, EnableConsoleIamUserResponses, GetBuildInfoEndpointData, GetBuildInfoEndpointResponses, GetConsoleFileMetadataData, GetConsoleFileMetadataErrors, GetConsoleFileMetadataResponses, GetConsoleFileStorageUsageData, GetConsoleFileStorageUsageErrors, GetConsoleFileStorageUsageResponses, GetConsoleInstanceDetailData, GetConsoleInstanceDetailErrors, GetConsoleInstanceDetailResponses, GetConsoleNotificationDeadLetterData, GetConsoleNotificationDeadLetterErrors, GetConsoleNotificationDeadLetterMetricsData, GetConsoleNotificationDeadLetterMetricsErrors, GetConsoleNotificationDeadLetterMetricsResponses, GetConsoleNotificationDeadLetterResponses, GetConsoleOperationTaskData, GetConsoleOperationTaskErrors, GetConsoleOperationTaskResponses, GetConsolePrincipalData, GetConsolePrincipalErrors, GetConsolePrincipalResponses, GetConsoleTusUploadOffsetData, GetConsoleTusUploadOffsetErrors, GetConsoleTusUploadOffsetResponses, HealthEndpointData, HealthEndpointResponses, IgnoreConsoleNotificationDeadLetterData, IgnoreConsoleNotificationDeadLetterErrors, IgnoreConsoleNotificationDeadLetterResponses, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointErrors, InvalidateGatewayCacheEndpointResponses, ListConsoleFilesData, ListConsoleFilesErrors, ListConsoleFilesResponses, ListConsoleIamPermissionsData, ListConsoleIamPermissionsErrors, ListConsoleIamPermissionsResponses, ListConsoleIamRolesData, ListConsoleIamRolesErrors, ListConsoleIamRolesResponses, ListConsoleIamSessionsData, ListConsoleIamSessionsErrors, ListConsoleIamSessionsResponses, ListConsoleIamUsersData, ListConsoleIamUsersErrors, ListConsoleIamUsersResponses, ListConsoleInstancesData, ListConsoleInstancesErrors, ListConsoleInstancesResponses, ListConsoleNotificationDeadLettersData, ListConsoleNotificationDeadLettersErrors, ListConsoleNotificationDeadLettersResponses, ListConsoleNotificationMessagesData, ListConsoleNotificationMessagesErrors, ListConsoleNotificationMessagesResponses, ListConsoleNotificationTasksData, ListConsoleNotificationTasksErrors, ListConsoleNotificationTasksResponses, LoginConsoleUserData, LoginConsoleUserResponses, LogoutConsoleSessionData, LogoutConsoleSessionErrors, LogoutConsoleSessionResponses, MarkConsoleNotificationMessageReadData, MarkConsoleNotificationMessageReadErrors, MarkConsoleNotificationMessageReadResponses, MarkConsoleNotificationMessagesReadData, MarkConsoleNotificationMessagesReadErrors, MarkConsoleNotificationMessagesReadResponses, PatchConsoleTusUploadData, PatchConsoleTusUploadErrors, PatchConsoleTusUploadResponses, QueryConsoleLogsData, QueryConsoleLogsErrors, QueryConsoleLogsResponses, RefreshConsoleSessionData, RefreshConsoleSessionResponses, ReplayConsoleNotificationDeadLetterData, ReplayConsoleNotificationDeadLetterErrors, ReplayConsoleNotificationDeadLetterResponses, ReplayConsoleNotificationDeadLettersData, ReplayConsoleNotificationDeadLettersErrors, ReplayConsoleNotificationDeadLettersResponses, ResetConsoleIamUserPasswordData, ResetConsoleIamUserPasswordErrors, ResetConsoleIamUserPasswordResponses, RestartConsoleInstanceData, RestartConsoleInstanceErrors, RestartConsoleInstanceResponses, RevokeConsoleIamSessionData, RevokeConsoleIamSessionErrors, RevokeConsoleIamSessionResponses, SubmitConsoleNotificationIntentData, SubmitConsoleNotificationIntentErrors, SubmitConsoleNotificationIntentResponses, UpdateConsoleIamRolePermissionsData, UpdateConsoleIamRolePermissionsErrors, UpdateConsoleIamRolePermissionsResponses, UpdateConsoleIamUserData, UpdateConsoleIamUserErrors, UpdateConsoleIamUserResponses, UpsertConsoleNotificationPreferenceData, UpsertConsoleNotificationPreferenceErrors, UpsertConsoleNotificationPreferenceResponses, UpsertConsoleNotificationRecipientChannelBindingData, UpsertConsoleNotificationRecipientChannelBindingErrors, UpsertConsoleNotificationRecipientChannelBindingResponses, UpsertConsoleNotificationSubscriptionData, UpsertConsoleNotificationSubscriptionErrors, UpsertConsoleNotificationSubscriptionResponses } from './types.gen';
+import type { ChangeConsolePasswordData, ChangeConsolePasswordErrors, ChangeConsolePasswordResponses, CompleteConsoleFileUploadSessionData, CompleteConsoleFileUploadSessionErrors, CompleteConsoleFileUploadSessionResponses, CreateConsoleFileUploadSessionData, CreateConsoleFileUploadSessionErrors, CreateConsoleFileUploadSessionResponses, CreateConsoleIamRoleData, CreateConsoleIamRoleErrors, CreateConsoleIamRoleResponses, CreateConsoleIamUserData, CreateConsoleIamUserErrors, CreateConsoleIamUserResponses, DisableConsoleIamUserData, DisableConsoleIamUserErrors, DisableConsoleIamUserResponses, DownloadConsoleFileContentData, DownloadConsoleFileContentErrors, DownloadConsoleFileContentResponses, EnableConsoleIamUserData, EnableConsoleIamUserErrors, EnableConsoleIamUserResponses, GetBuildInfoEndpointData, GetBuildInfoEndpointResponses, GetConsoleFileMetadataData, GetConsoleFileMetadataErrors, GetConsoleFileMetadataResponses, GetConsoleFileStorageUsageData, GetConsoleFileStorageUsageErrors, GetConsoleFileStorageUsageResponses, GetConsoleIamUserMembershipData, GetConsoleIamUserMembershipErrors, GetConsoleIamUserMembershipResponses, GetConsoleInstanceDetailData, GetConsoleInstanceDetailErrors, GetConsoleInstanceDetailResponses, GetConsoleNotificationDeadLetterData, GetConsoleNotificationDeadLetterErrors, GetConsoleNotificationDeadLetterMetricsData, GetConsoleNotificationDeadLetterMetricsErrors, GetConsoleNotificationDeadLetterMetricsResponses, GetConsoleNotificationDeadLetterResponses, GetConsoleOperationTaskData, GetConsoleOperationTaskErrors, GetConsoleOperationTaskResponses, GetConsolePrincipalData, GetConsolePrincipalErrors, GetConsolePrincipalResponses, GetConsoleTusUploadOffsetData, GetConsoleTusUploadOffsetErrors, GetConsoleTusUploadOffsetResponses, HealthEndpointData, HealthEndpointResponses, IgnoreConsoleNotificationDeadLetterData, IgnoreConsoleNotificationDeadLetterErrors, IgnoreConsoleNotificationDeadLetterResponses, InvalidateGatewayCacheEndpointData, InvalidateGatewayCacheEndpointErrors, InvalidateGatewayCacheEndpointResponses, InvalidateGatewayCacheScopeData, InvalidateGatewayCacheScopeErrors, InvalidateGatewayCacheScopeResponses, ListConsoleFilesData, ListConsoleFilesErrors, ListConsoleFilesResponses, ListConsoleIamPermissionsData, ListConsoleIamPermissionsErrors, ListConsoleIamPermissionsResponses, ListConsoleIamRolesData, ListConsoleIamRolesErrors, ListConsoleIamRolesResponses, ListConsoleIamSessionsData, ListConsoleIamSessionsErrors, ListConsoleIamSessionsResponses, ListConsoleIamUsersData, ListConsoleIamUsersErrors, ListConsoleIamUsersResponses, ListConsoleInstancesData, ListConsoleInstancesErrors, ListConsoleInstancesResponses, ListConsoleNotificationDeadLettersData, ListConsoleNotificationDeadLettersErrors, ListConsoleNotificationDeadLettersResponses, ListConsoleNotificationMessagesData, ListConsoleNotificationMessagesErrors, ListConsoleNotificationMessagesResponses, ListConsoleNotificationTasksData, ListConsoleNotificationTasksErrors, ListConsoleNotificationTasksResponses, LoginConsoleUserData, LoginConsoleUserResponses, LogoutConsoleSessionData, LogoutConsoleSessionErrors, LogoutConsoleSessionResponses, MarkConsoleNotificationMessageReadData, MarkConsoleNotificationMessageReadErrors, MarkConsoleNotificationMessageReadResponses, MarkConsoleNotificationMessagesReadData, MarkConsoleNotificationMessagesReadErrors, MarkConsoleNotificationMessagesReadResponses, PatchConsoleTusUploadData, PatchConsoleTusUploadErrors, PatchConsoleTusUploadResponses, QueryConsoleLogsData, QueryConsoleLogsErrors, QueryConsoleLogsResponses, RefreshConsoleSessionData, RefreshConsoleSessionResponses, ReplaceConsoleIamUserMembershipData, ReplaceConsoleIamUserMembershipErrors, ReplaceConsoleIamUserMembershipResponses, ReplayConsoleNotificationDeadLetterData, ReplayConsoleNotificationDeadLetterErrors, ReplayConsoleNotificationDeadLetterResponses, ReplayConsoleNotificationDeadLettersData, ReplayConsoleNotificationDeadLettersErrors, ReplayConsoleNotificationDeadLettersResponses, ResetConsoleIamUserPasswordData, ResetConsoleIamUserPasswordErrors, ResetConsoleIamUserPasswordResponses, RestartConsoleInstanceData, RestartConsoleInstanceErrors, RestartConsoleInstanceResponses, RevokeConsoleIamSessionData, RevokeConsoleIamSessionErrors, RevokeConsoleIamSessionResponses, SubmitConsoleNotificationIntentData, SubmitConsoleNotificationIntentErrors, SubmitConsoleNotificationIntentResponses, UpdateConsoleIamRolePermissionsData, UpdateConsoleIamRolePermissionsErrors, UpdateConsoleIamRolePermissionsResponses, UpdateConsoleIamUserData, UpdateConsoleIamUserErrors, UpdateConsoleIamUserResponses, UpsertConsoleNotificationPreferenceData, UpsertConsoleNotificationPreferenceErrors, UpsertConsoleNotificationPreferenceResponses, UpsertConsoleNotificationRecipientChannelBindingData, UpsertConsoleNotificationRecipientChannelBindingErrors, UpsertConsoleNotificationRecipientChannelBindingResponses, UpsertConsoleNotificationSubscriptionData, UpsertConsoleNotificationSubscriptionErrors, UpsertConsoleNotificationSubscriptionResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -216,6 +216,22 @@ export const resetConsoleIamUserPassword = <ThrowOnError extends boolean = false
     }
 });
 
+export const getConsoleIamUserMembership = <ThrowOnError extends boolean = false>(options: Options<GetConsoleIamUserMembershipData, ThrowOnError>): RequestResult<GetConsoleIamUserMembershipResponses, GetConsoleIamUserMembershipErrors, ThrowOnError> => (options.client ?? client).get<GetConsoleIamUserMembershipResponses, GetConsoleIamUserMembershipErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/iam/users/{userId}/membership',
+    ...options
+});
+
+export const replaceConsoleIamUserMembership = <ThrowOnError extends boolean = false>(options: Options<ReplaceConsoleIamUserMembershipData, ThrowOnError>): RequestResult<ReplaceConsoleIamUserMembershipResponses, ReplaceConsoleIamUserMembershipErrors, ThrowOnError> => (options.client ?? client).put<ReplaceConsoleIamUserMembershipResponses, ReplaceConsoleIamUserMembershipErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/iam/users/{userId}/membership',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
 export const listConsoleIamRoles = <ThrowOnError extends boolean = false>(options?: Options<ListConsoleIamRolesData, ThrowOnError>): RequestResult<ListConsoleIamRolesResponses, ListConsoleIamRolesErrors, ThrowOnError> => (options?.client ?? client).get<ListConsoleIamRolesResponses, ListConsoleIamRolesErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/console/v1/iam/roles',
@@ -302,16 +318,6 @@ export const getConsoleFileMetadata = <ThrowOnError extends boolean = false>(opt
     ...options
 });
 
-export const createConsoleFileDownloadGrant = <ThrowOnError extends boolean = false>(options: Options<CreateConsoleFileDownloadGrantData, ThrowOnError>): RequestResult<CreateConsoleFileDownloadGrantResponses, CreateConsoleFileDownloadGrantErrors, ThrowOnError> => (options.client ?? client).post<CreateConsoleFileDownloadGrantResponses, CreateConsoleFileDownloadGrantErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/api/console/v1/files/{fileId}/download-grants',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
 export const getConsoleTusUploadOffset = <ThrowOnError extends boolean = false>(options: Options<GetConsoleTusUploadOffsetData, ThrowOnError>): RequestResult<GetConsoleTusUploadOffsetResponses, GetConsoleTusUploadOffsetErrors, ThrowOnError> => (options.client ?? client).head<GetConsoleTusUploadOffsetResponses, GetConsoleTusUploadOffsetErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/console/v1/files/tus/{uploadSessionId}',
@@ -324,9 +330,9 @@ export const patchConsoleTusUpload = <ThrowOnError extends boolean = false>(opti
     ...options
 });
 
-export const downloadConsoleFileGrantContent = <ThrowOnError extends boolean = false>(options: Options<DownloadConsoleFileGrantContentData, ThrowOnError>): RequestResult<DownloadConsoleFileGrantContentResponses, DownloadConsoleFileGrantContentErrors, ThrowOnError> => (options.client ?? client).get<DownloadConsoleFileGrantContentResponses, DownloadConsoleFileGrantContentErrors, ThrowOnError>({
+export const downloadConsoleFileContent = <ThrowOnError extends boolean = false>(options: Options<DownloadConsoleFileContentData, ThrowOnError>): RequestResult<DownloadConsoleFileContentResponses, DownloadConsoleFileContentErrors, ThrowOnError> => (options.client ?? client).get<DownloadConsoleFileContentResponses, DownloadConsoleFileContentErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/api/console/v1/files/download-grants/{downloadGrantId}/content',
+    url: '/api/console/v1/files/{fileId}/content',
     ...options
 });
 
@@ -334,6 +340,16 @@ export const invalidateGatewayCacheEndpoint = <ThrowOnError extends boolean = fa
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/internal/gateway/cache/invalidate',
     ...options
+});
+
+export const invalidateGatewayCacheScope = <ThrowOnError extends boolean = false>(options: Options<InvalidateGatewayCacheScopeData, ThrowOnError>): RequestResult<InvalidateGatewayCacheScopeResponses, InvalidateGatewayCacheScopeErrors, ThrowOnError> => (options.client ?? client).post<InvalidateGatewayCacheScopeResponses, InvalidateGatewayCacheScopeErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/internal/gateway/cache/invalidate-scope',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });
 
 export const loginConsoleUser = <ThrowOnError extends boolean = false>(options: Options<LoginConsoleUserData, ThrowOnError>): RequestResult<LoginConsoleUserResponses, unknown, ThrowOnError> => (options.client ?? client).post<LoginConsoleUserResponses, unknown, ThrowOnError>({
@@ -368,4 +384,14 @@ export const getConsolePrincipal = <ThrowOnError extends boolean = false>(option
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/console/v1/auth/me',
     ...options
+});
+
+export const changeConsolePassword = <ThrowOnError extends boolean = false>(options: Options<ChangeConsolePasswordData, ThrowOnError>): RequestResult<ChangeConsolePasswordResponses, ChangeConsolePasswordErrors, ThrowOnError> => (options.client ?? client).post<ChangeConsolePasswordResponses, ChangeConsolePasswordErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/console/v1/auth/change-password',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });

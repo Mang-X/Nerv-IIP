@@ -13,7 +13,7 @@ using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
-public sealed class BusinessConsoleSearchableDirectoryWireTests
+public sealed partial class BusinessConsoleSearchableDirectoryWireTests
 {
     [Fact]
     public async Task Directory_endpoint_authorizes_only_owner_permission_and_forwards_site_scope()
@@ -34,7 +34,7 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         Assert.Equal(BusinessGatewayPermissions.InventoryLedgerRead, auth.LastRequirement!.PermissionCode);
         Assert.Equal("site", auth.LastRequirement.ResourceType);
         Assert.Equal("SITE-A", auth.LastRequirement.ResourceId);
-        Assert.Contains("siteCode=SITE-A", downstream.RequestUri!.Query, StringComparison.Ordinal);
+        Assert.Equal(["SITE-A"], AuthorizedSites(downstream));
     }
 
     [Fact]
@@ -72,27 +72,134 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
             "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("siteCode=SITE-A", downstream.RequestUri!.Query, StringComparison.Ordinal);
+        Assert.Equal(["SITE-A"], AuthorizedSites(downstream));
     }
 
+    // #3832 审核 B1：库位 / 批次 / 序列号按工厂切分，可见范围是授权工厂的并集。
+    // 种子账号 user-emp-049「仓储库管（PDA）」= 角色 site:SITE-001 + membership self；
+    // 过去任一条 self 或第二个工厂都会让整个目录 403，WMS 表单里的库位选不到、单子提交不了。
     [Theory]
-    [InlineData("site", "SITE-A", "site", "SITE-B")]
-    [InlineData("self", "user-admin", null, null)]
-    public async Task Ambiguous_or_incompatible_implicit_grants_fail_closed(
-        string firstKind,
-        string firstId,
-        string? secondKind,
-        string? secondId)
+    [InlineData("location", new[] { "site:SITE-A", "site:SITE-B" }, new[] { "SITE-A", "SITE-B" })]
+    [InlineData("location", new[] { "site:SITE-001", "self:user-emp-049" }, new[] { "SITE-001" })]
+    [InlineData("batch", new[] { "site:SITE-B", "self:user-emp-049", "site:SITE-A" }, new[] { "SITE-A", "SITE-B" })]
+    [InlineData("serial", new[] { "site:SITE-A", "work-center:WC-01" }, new[] { "SITE-A" })]
+    public async Task Inventory_directory_narrows_to_the_union_of_authorized_sites(
+        string directoryType,
+        string[] grants,
+        string[] expectedSites)
     {
-        var grants = new List<AuthorizationScopeGrant>
-        {
-            Grant(firstKind, firstId, BusinessGatewayPermissions.InventoryLedgerRead),
-        };
-        if (secondKind is not null && secondId is not null)
-        {
-            grants.Add(Grant(secondKind, secondId, BusinessGatewayPermissions.InventoryLedgerRead));
-        }
-        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants: grants);
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            .. grants.Select(grant => grant.Split(':')).Select(parts =>
+                Grant(parts[0], parts[1], BusinessGatewayPermissions.InventoryLedgerRead)),
+        ]);
+        var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            $"/api/business-console/v1/directories/{directoryType}?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(expectedSites, AuthorizedSites(downstream));
+        Assert.DoesNotContain("siteCode=", downstream.RequestUri!.Query, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Organization_wide_grant_reads_inventory_directory_without_site_narrowing()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("organization", "org-001", BusinessGatewayPermissions.InventoryLedgerRead, organizationWide: true),
+            Grant("self", "user-admin", BusinessGatewayPermissions.InventoryLedgerRead),
+        ]);
+        var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(AuthorizedSites(downstream));
+    }
+
+    // 两条各自单独变异都会存活的防线：IAM 判定 DenyAll、或只有别的组织的组织级授权，都不能读到库存目录。
+    [Theory]
+    [InlineData("deny-all")]
+    [InlineData("other-organization")]
+    public async Task Deny_all_or_other_organization_grant_cannot_read_inventory_directory(string kind)
+    {
+        var auth = kind == "deny-all"
+            ? FakeBusinessGatewayAuthorizationClient.Allowed(
+                dataScope: new AuthorizationDataScope([], [], [], DenyAll: true),
+                scopeGrants: [Grant("site", "SITE-A", BusinessGatewayPermissions.InventoryLedgerRead)])
+            : FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+            [
+                Grant("organization", "org-999", BusinessGatewayPermissions.InventoryLedgerRead, organizationWide: true),
+            ]);
+        var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(downstream.RequestUri);
+    }
+
+    // #3832 审核 R3-2：表单已选的工厂原样下传给库存目录（库存侧再与授权工厂取交集），授权工厂仍一并下传。
+    [Fact]
+    public async Task Form_site_is_forwarded_alongside_the_authorized_sites()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("site", "SITE-A", BusinessGatewayPermissions.InventoryLedgerRead),
+            Grant("site", "SITE-B", BusinessGatewayPermissions.InventoryLedgerRead),
+        ]);
+        var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev&siteCode=SITE-B");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("siteCode=SITE-B", downstream.RequestUri!.Query, StringComparison.Ordinal);
+        Assert.Equal(["SITE-A", "SITE-B"], AuthorizedSites(downstream));
+    }
+
+    [Fact]
+    public async Task Form_site_is_rejected_on_directories_not_split_by_site()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("organization", "org-001", BusinessGatewayPermissions.MasterDataResourcesRead, organizationWide: true),
+        ]);
+        var downstream = new JsonHandler("{}");
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/material?organizationId=org-001&environmentId=env-dev&siteCode=SITE-B");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("directory-site-unsupported", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Grant_without_any_site_fails_closed()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("self", "user-admin", BusinessGatewayPermissions.InventoryLedgerRead),
+        ]);
         var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
         await using var lease = LeaseHost(auth, downstream);
         var client = lease.CreateClient();
@@ -131,10 +238,29 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         Assert.Null(downstream.RequestUri);
     }
 
+    // 不适用本权限的工厂授权不参与并集：它既不拒绝，也不把别的工厂放进来。
+    [Fact]
+    public async Task Site_grant_for_another_permission_is_not_part_of_the_union()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("site", "SITE-A", BusinessGatewayPermissions.InventoryLedgerRead),
+            Grant("site", "SITE-B", BusinessGatewayPermissions.MasterDataResourcesRead),
+        ]);
+        var downstream = new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}");
+        await using var lease = LeaseHost(auth, downstream);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/location?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(["SITE-A"], AuthorizedSites(downstream));
+    }
+
     [Theory]
     [InlineData("malformed-source")]
-    [InlineData("self-scope")]
-    [InlineData("wrong-permission")]
     [InlineData("restricted-organization")]
     public async Task Valid_grant_mixed_with_unrepresentable_grant_fails_closed_without_reaching_owner(
         string extraGrantKind)
@@ -147,8 +273,6 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
                 "site",
                 "SITE-B",
                 [BusinessGatewayPermissions.InventoryLedgerRead]),
-            "self-scope" => Grant("self", "user-admin", BusinessGatewayPermissions.InventoryLedgerRead),
-            "wrong-permission" => Grant("site", "SITE-B", BusinessGatewayPermissions.MasterDataResourcesRead),
             "restricted-organization" => Grant(
                 "organization",
                 "org-001",
@@ -171,6 +295,110 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal(1, auth.CallCount);
         Assert.Null(downstream.RequestUri);
+    }
+
+    // #3125：无范围维度的目录（SupportedScopeKinds 为空集）上，只持受限范围授权的主体也必须读到词表。
+    // 受影响的是同一类目录，不是单条登记：material / priority / defect-code / scrap-reason /
+    // downtime-reason / maintenance-reason。这里在 maintenance 与 quality 两个权威源上各取一条，
+    // 证明放行是「类的行为」而不是对 downtime-reason 的单例修补。
+    [Theory]
+    [InlineData("downtime-reason", "self", "user-emp-010")]
+    [InlineData("downtime-reason", "site", "SITE-001")]
+    [InlineData("defect-code", "self", "user-emp-010")]
+    public async Task Restricted_grant_reads_directories_without_a_scope_dimension(
+        string directoryType,
+        string scopeKind,
+        string scopeId)
+    {
+        var permissionCode = directoryType == "downtime-reason"
+            ? BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead
+            : BusinessGatewayPermissions.QualityInspectionRecordsRead;
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            new AuthorizationScopeGrant("membership", "user-emp-010:org-001:env-dev", scopeKind, scopeId, [permissionCode]),
+        ]);
+        var targetHandler = new JsonHandler(directoryType == "downtime-reason"
+            ? "{\"items\":[{\"downtimeReasonId\":{\"id\":\"01900000-0000-7000-8000-000000000001\"},\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"reasonCode\":\"BREAKDOWN\",\"description\":\"Breakdown\",\"reasonCategory\":\"unplanned\",\"lossCategory\":\"availability\"}],\"skip\":0,\"take\":20,\"total\":1}"
+            : "{\"items\":[{\"reasonCode\":\"SCRATCH\",\"reasonName\":\"Scratch\",\"groupName\":\"appearance\",\"severity\":\"minor\",\"defaultDisposition\":null,\"enabled\":true,\"snapshotVersion\":\"v1\"}],\"total\":1}");
+        await using var lease = LeaseHost(
+            auth,
+            new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}"),
+            quality: directoryType == "defect-code"
+                ? new HttpBusinessQualityClient(new HttpClient(targetHandler) { BaseAddress = new Uri("http://quality.local") })
+                : null,
+            maintenance: directoryType == "downtime-reason"
+                ? new HttpBusinessMaintenanceClient(new HttpClient(targetHandler) { BaseAddress = new Uri("http://maintenance.local") })
+                : null);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            $"/api/business-console/v1/directories/{directoryType}?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(permissionCode, auth.LastRequirement!.PermissionCode);
+        // 无范围维度的目录不会把 grant 的范围伪装成过滤条件转发给权威源。
+        Assert.NotNull(targetHandler.RequestUri);
+        Assert.DoesNotContain(scopeId, targetHandler.RequestUri!.Query, StringComparison.Ordinal);
+    }
+
+    // 放宽只覆盖「范围维度」这一条；租户边界仍然承重：范围落在别的组织上的 grant 依旧不可表示。
+    [Fact]
+    public async Task Cross_organization_grant_still_fails_closed_on_directories_without_a_scope_dimension()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            Grant("organization", "org-999", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead),
+        ]);
+        var maintenanceHandler = new JsonHandler("{\"items\":[],\"skip\":0,\"take\":20,\"total\":0}");
+        await using var lease = LeaseHost(
+            auth,
+            new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}"),
+            maintenance: new HttpBusinessMaintenanceClient(
+                new HttpClient(maintenanceHandler) { BaseAddress = new Uri("http://maintenance.local") }));
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/downtime-reason?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(1, auth.CallCount);
+        Assert.Null(maintenanceHandler.RequestUri);
+    }
+
+    // 无范围维度不等于「接受并忽略范围」：显式范围仍在授权前 400，不会静默返回全量。
+    [Fact]
+    public async Task Explicit_scope_on_a_directory_without_a_scope_dimension_still_fails_before_authorization()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            new AuthorizationScopeGrant(
+                "membership",
+                "user-emp-010:org-001:env-dev",
+                "self",
+                "user-emp-010",
+                [BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead]),
+        ]);
+        var maintenanceHandler = new JsonHandler("{\"items\":[],\"skip\":0,\"take\":20,\"total\":0}");
+        await using var lease = LeaseHost(
+            auth,
+            new JsonHandler("{\"status\":\"available\",\"reasonCode\":null,\"items\":[],\"total\":0,\"skip\":0,\"take\":20,\"sourceKind\":\"inventory.stock-locations\",\"asOfUtc\":\"2026-08-01T00:00:00Z\"}"),
+            maintenance: new HttpBusinessMaintenanceClient(
+                new HttpClient(maintenanceHandler) { BaseAddress = new Uri("http://maintenance.local") }));
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/directories/downtime-reason?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-emp-010");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains(
+            "directory-scope-unsupported",
+            await response.Content.ReadAsStringAsync(),
+            StringComparison.Ordinal);
+        Assert.Equal(0, auth.CallCount);
+        Assert.Null(maintenanceHandler.RequestUri);
     }
 
     [Fact]
@@ -332,9 +560,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
     }
 
     [Fact]
-    public async Task Station_route_preserves_scoped_stable_id_and_readable_code()
+    public async Task Station_route_uses_station_master_data_code_as_id_and_code()
     {
-        const string stableId = "station:7:org-0017:env-dev8:SITE-0016:WS-0018:LINE-0016:WC-0016:ST-001";
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
         [
             Grant("work-center", "WC-001", BusinessGatewayPermissions.MasterDataResourcesRead),
@@ -346,8 +573,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
             [
                 new BusinessConsoleResourceItem(
                     "station",
-                    stableId,
                     "ST-001",
+                    "装配工位 1",
                     true,
                     "v1",
                     SiteCode: "SITE-001",
@@ -367,8 +594,9 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var item = body.RootElement.GetProperty("data").GetProperty("items")[0];
-        Assert.Equal(stableId, item.GetProperty("id").GetString());
+        Assert.Equal("ST-001", item.GetProperty("id").GetString());
         Assert.Equal("ST-001", item.GetProperty("code").GetString());
+        Assert.Equal("装配工位 1", item.GetProperty("displayName").GetString());
         Assert.Equal("WC-001", item.GetProperty("context").GetProperty("workCenterCode").GetString());
         Assert.Equal("station", masterData.LastListResourcesRequest!.ResourceType);
         Assert.Equal("WC-001", masterData.LastListResourcesRequest.WorkCenterCode);
@@ -386,7 +614,14 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
 
         var response = await client.ListDirectoryAsync(
             "internal-token",
-            new BusinessConsoleInventoryDirectoryRequest("org-1", "env-1", "batch", "lot", "SITE-A", "SKU-1"),
+            new BusinessConsoleInventoryDirectoryRequest(
+                "org-1",
+                "env-1",
+                "batch",
+                Keyword: "lot",
+                SiteCode: "SITE-B",
+                SkuCode: "SKU-1",
+                AuthorizedSiteCodes: ["SITE-A"]),
             CancellationToken.None);
 
         var item = Assert.Single(response.Items);
@@ -398,7 +633,9 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         Assert.Contains("\"skip\":0", serialized, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("\"take\":20", serialized, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("directoryType=batch", handler.RequestUri!.Query, StringComparison.Ordinal);
-        Assert.Contains("siteCode=SITE-A", handler.RequestUri.Query, StringComparison.Ordinal);
+        Assert.Contains("authorizedSiteCodes=SITE-A", handler.RequestUri.Query, StringComparison.Ordinal);
+        Assert.Contains("siteCode=SITE-B", handler.RequestUri.Query, StringComparison.Ordinal);
+        Assert.Contains("skuCode=SKU-1", handler.RequestUri.Query, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -430,8 +667,8 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
         { "personnel", BusinessGatewayPermissions.MasterDataResourcesRead, "{\"items\":[{\"userId\":\"\",\"employeeNo\":\"\",\"name\":\"\",\"departmentCode\":null,\"departmentName\":null,\"jobTitle\":null,\"employmentStatus\":\"active\",\"phone\":null,\"active\":true,\"teams\":[],\"skills\":[],\"snapshotVersion\":\"v1\"}],\"totalCount\":0,\"pageIndex\":2,\"pageSize\":20}" },
         { "defect-code", BusinessGatewayPermissions.QualityInspectionRecordsRead, "{\"items\":null,\"total\":0}" },
         { "defect-code", BusinessGatewayPermissions.QualityInspectionRecordsRead, "{\"items\":[{\"reasonCode\":\"\",\"reasonName\":\"\",\"groupName\":\"group\",\"severity\":\"minor\",\"defaultDisposition\":null,\"enabled\":true,\"snapshotVersion\":\"v1\"}],\"total\":0}" },
-        { "downtime-reason", BusinessGatewayPermissions.MaintenanceWorkOrdersRead, "{\"items\":null,\"skip\":0,\"take\":20,\"total\":0}" },
-        { "downtime-reason", BusinessGatewayPermissions.MaintenanceWorkOrdersRead, "{\"items\":[{\"downtimeReasonId\":{\"id\":\"01900000-0000-7000-8000-000000000001\"},\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"reasonCode\":\"\",\"description\":\"\",\"reasonCategory\":\"\",\"lossCategory\":\"\"}],\"skip\":1,\"take\":20,\"total\":0}" },
+        { "downtime-reason", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead, "{\"items\":null,\"skip\":0,\"take\":20,\"total\":0}" },
+        { "downtime-reason", BusinessGatewayPermissions.MaintenanceDowntimeReasonsRead, "{\"items\":[{\"downtimeReasonId\":{\"id\":\"01900000-0000-7000-8000-000000000001\"},\"organizationId\":\"org-001\",\"environmentId\":\"env-dev\",\"reasonCode\":\"\",\"description\":\"\",\"reasonCategory\":\"\",\"lossCategory\":\"\"}],\"skip\":1,\"take\":20,\"total\":0}" },
     };
 
     public static TheoryData<string, string, string> AuthoritativeFailureEnvelopeCases => new()
@@ -672,6 +909,13 @@ public sealed class BusinessConsoleSearchableDirectoryWireTests
                 services.RemoveAll<IInternalServiceTokenProvider>();
                 services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-token"));
             });
+
+    private static string[] AuthorizedSites(JsonHandler downstream) =>
+    [
+        .. downstream.RequestUri!.Query.TrimStart('?').Split('&')
+            .Where(pair => pair.StartsWith("authorizedSiteCodes=", StringComparison.Ordinal))
+            .Select(pair => Uri.UnescapeDataString(pair["authorizedSiteCodes=".Length..])),
+    ];
 
     private static AuthorizationScopeGrant Grant(
         string scopeKind,

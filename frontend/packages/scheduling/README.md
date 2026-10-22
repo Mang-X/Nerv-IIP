@@ -56,6 +56,14 @@ DHTMLX 供应商包缺失时（CI、文档构建或未配置本地试用包）�
 `GanttChart` · `ResourceSchedulerBoard` · `useSchedulingPlan` · `useSchedulingEdits` ·
 `toModel` · `toLockedAssignments` · `runEngineConformance` · `isDhtmlxAvailable` · 全部模型与引擎类型。
 
+`toModel` 保留方案冻结的 `validationContext`，工序交期来自该上下文。纯函数 `evaluateDraft(model)` 输出逐工序浏览器建议：合并连续班次后的日历反馈、半开区间资源/工作中心分段并发容量、真实前序状态及交期差。占用计入 setup、利用率保留、固定/外部区间及不可用窗口，分段工序只计实际生产段；缺上下文如实返回无法核对。调用方随共享草案重算，不依赖引擎适配器或重预览响应，也不替代后端规则。`runEngineConformance` 仅证明引擎接口，APS 业务口径由 `draft-feedback.test.ts` 的直接断言证明。
+
+公开 `command` 在引擎初始化期间由组件暂存，待引擎 mount 并接收当前模型后按序消费；因此加载期间的搜索、定位及选中也会在图面就绪后成立。供应商模块不可用时沿用既有不可用展示。
+
+## 资源板端点调整
+
+可编辑资源板的工序条左右端由 DHTMLX 原生 resize 处理，按小时吸附；整条移动继续使用自定义虚影、跨泳道改派和取消区。端点调整通过既有 `TaskDragPayload.kind='resize'` 延后上报，保留工序与资源身份，由消费方写回共享草案。锁定、只读、资源时间块和多段工序不能拉伸；零或负时长不上报。
+
 ## 编辑语义:锁定—重预览
 
 后端（#206 BusinessScheduling）是确定性有限产能启发式算法，不做自动重排。前端「完整可编辑」具体为：

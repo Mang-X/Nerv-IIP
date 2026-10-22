@@ -31,6 +31,7 @@ public sealed class MaintenanceLifecycleDockerAcceptanceTests
             .Select(index => MaintenanceWorkOrder.OpenManual(
                 organizationId,
                 environmentId,
+                $"MWO-T-{Guid.NewGuid():N}",
                 $"DEV-MAN634-{index}",
                 "normal",
                 "reporter-001"))
@@ -90,7 +91,7 @@ public sealed class MaintenanceLifecycleDockerAcceptanceTests
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var completed = MaintenanceWorkOrder.OpenManual(
-                organizationId, environmentId, deviceAssetId, "high", "reporter-001", "tech-001", 40);
+                organizationId, environmentId, $"MWO-T-{Guid.NewGuid():N}", deviceAssetId, "high", "reporter-001", "tech-001", 40);
             completed.Accept("tech-001");
             completed.StartWork();
             completed.Finish(
@@ -102,12 +103,12 @@ public sealed class MaintenanceLifecycleDockerAcceptanceTests
             completedId = completed.Id;
 
             var open = MaintenanceWorkOrder.OpenManual(
-                organizationId, environmentId, deviceAssetId, "normal", "reporter-001", "tech-001", 11);
+                organizationId, environmentId, $"MWO-T-{Guid.NewGuid():N}", deviceAssetId, "normal", "reporter-001", "tech-001", 11);
             var accepted = MaintenanceWorkOrder.OpenManual(
-                organizationId, environmentId, deviceAssetId, "normal", "reporter-001", "tech-001", 12);
+                organizationId, environmentId, $"MWO-T-{Guid.NewGuid():N}", deviceAssetId, "normal", "reporter-001", "tech-001", 12);
             accepted.Accept("tech-001");
             var inProgress = MaintenanceWorkOrder.OpenManual(
-                organizationId, environmentId, deviceAssetId, "normal", "reporter-001", "tech-001", 13);
+                organizationId, environmentId, $"MWO-T-{Guid.NewGuid():N}", deviceAssetId, "normal", "reporter-001", "tech-001", 13);
             inProgress.Accept("tech-001");
             inProgress.StartWork();
 
@@ -145,7 +146,7 @@ public sealed class MaintenanceLifecycleDockerAcceptanceTests
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var workOrder = MaintenanceWorkOrder.OpenFromAlarm(
-                "org-man631-search", "env-man631", "DEV-MAN631-NEEDLE", "ALARM-MAN631-NEEDLE", "high",
+                "org-man631-search", "env-man631", "MWO-MAN631-NEEDLE", "DEV-MAN631-NEEDLE", "ALARM-MAN631-NEEDLE", "high",
                 assignedTechnicianUserId: "TECH-MAN631-NEEDLE");
             workOrder.Assign("TECH-MAN631-NEEDLE", "TEAM-MAN631-NEEDLE");
             db.MaintenanceWorkOrders.Add(workOrder);
@@ -160,7 +161,8 @@ public sealed class MaintenanceLifecycleDockerAcceptanceTests
             EXPLAIN (COSTS OFF)
             SELECT id
             FROM maintenance.maintenance_work_orders
-            WHERE lower(device_asset_id) LIKE '%man631-needle%'
+            WHERE lower(work_order_no) LIKE '%man631-needle%'
+               OR lower(device_asset_id) LIKE '%man631-needle%'
                OR lower(source_alarm_id) LIKE '%man631-needle%'
                OR lower(source_reference_id) LIKE '%man631-needle%'
                OR lower(assigned_technician_user_id) LIKE '%man631-needle%'
@@ -179,6 +181,7 @@ public sealed class MaintenanceLifecycleDockerAcceptanceTests
         Assert.Contains("BitmapOr", plan, StringComparison.Ordinal);
         foreach (var indexName in new[]
                  {
+                     "ix_maintenance_work_orders_search_work_order_no_trgm",
                      "ix_maintenance_work_orders_search_device_trgm",
                      "ix_maintenance_work_orders_search_alarm_trgm",
                      "ix_maintenance_work_orders_search_reference_trgm",
@@ -418,6 +421,7 @@ public sealed class MaintenanceLifecycleDockerAcceptanceTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             organizationId,
             "env-man631",
+            $"MWO-T-{Guid.NewGuid():N}",
             $"DEV-{suffix}",
             "high",
             "reporter-001",

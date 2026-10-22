@@ -11,7 +11,7 @@ import {
   NvInput,
   NvRadioGroup,
   NvRadioGroupItem,
-  Spinner,
+  NvSpinner,
 } from '@nerv-iip/ui'
 import { computed, watch } from 'vue'
 
@@ -70,14 +70,14 @@ function candidateLabel(candidate: (typeof candidates.value)[number]) {
       @update:model-value="mes.filters.keyword = String($event).trim() || undefined"
     />
     <p class="text-sm text-muted-foreground">
-      契约里还没有「销售订单 → MES 工单」的稳定关联键，检索词只是起点，请确认要排的工单。
+      按销售订单号检索不会自动带出对应工单，请确认要排的工单。
     </p>
 
     <div
       v-if="mes.workOrdersPending.value"
       class="flex items-center gap-2 text-sm text-muted-foreground"
     >
-      <Spinner aria-hidden="true" />
+      <NvSpinner aria-hidden="true" />
       正在读取候选工单
     </div>
     <!-- 作业范围未就绪：候选查询根本没发（enabled=false），不许说「没有匹配的可排工单」（#1288）。 -->

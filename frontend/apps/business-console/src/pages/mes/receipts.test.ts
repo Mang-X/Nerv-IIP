@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
-import { ref, shallowRef } from 'vue'
+import { reactive, ref, shallowRef } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAuthStore } from '@/stores/auth'
@@ -56,7 +56,6 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
       resolveWorkshop: () => undefined,
       resolveLine: () => undefined,
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
-      deviceByCode: emptyIndex,
       locationByCode: emptyIndex,
       workCenterByCode: emptyIndex,
       teamByCode: emptyIndex,
@@ -68,10 +67,18 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
 })
 
 const routeState = vi.hoisted(() => ({ query: {} as Record<string, string> }))
-const routerState = vi.hoisted(() => ({ replace: vi.fn(), push: vi.fn() }))
+const reactiveRoute = reactive(routeState)
+const routerState = vi.hoisted(() => ({
+  replace: vi.fn(),
+  push: vi.fn(),
+  resolve: (target: string) => ({
+    path: target.split('?')[0],
+    query: Object.fromEntries(new URLSearchParams(target.split('?')[1])),
+  }),
+}))
 
 vi.mock('vue-router', () => ({
-  useRoute: () => routeState,
+  useRoute: () => reactiveRoute,
   useRouter: () => routerState,
 }))
 
@@ -162,6 +169,11 @@ const tableStub = {
 const stubs = {
   BusinessLayout: { template: '<main><slot /></main>' },
   WorkOrderQuickView: true,
+  ReceiptInventorySource: {
+    props: ['receipt'],
+    template:
+      '<section data-testid="inventory-source">{{ receipt.requestNo }} {{ receipt.workOrderId }} {{ receipt.producedLotNo }}</section>',
+  },
   NvPageHeader: { template: '<header><slot name="actions" /></header>' },
   NvToolbar: { template: '<div><slot name="filters" /></div>' },
   NvDataTable: tableStub,
@@ -179,8 +191,8 @@ const stubs = {
   NvSelectTrigger: { template: '<button><slot /></button>' },
   NvSelectContent: { template: '<div><slot /></div>' },
   NvSelectItem: { props: ['value'], template: '<div data-testid="status-option"><slot /></div>' },
-  SelectValue: { template: '<span />' },
-  NvSheet: { props: ['open'], template: '<div><slot /></div>' },
+  NvSelectValue: { template: '<span />' },
+  NvSheet: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
   NvSheetContent: { template: '<div><slot /></div>' },
   NvSheetHeader: { template: '<div><slot /></div>' },
   NvSheetTitle: { template: '<h2><slot /></h2>' },
@@ -195,7 +207,7 @@ const stubs = {
     template:
       '<input :value="modelValue" v-bind="$attrs" @input="$emit(\'update:modelValue\', $event.target.value)" />',
   },
-  Spinner: true,
+  NvSpinner: true,
 }
 
 function mountPage(permissionCodes: string[] = ['business.mes.receipts.manage']) {
@@ -216,7 +228,7 @@ function mountPage(permissionCodes: string[] = ['business.mes.receipts.manage'])
 
 describe('MES receipts — failed inventory posting retry', () => {
   beforeEach(() => {
-    routeState.query = {}
+    reactiveRoute.query = {}
     routerState.replace.mockReset()
     notifySpies.success.mockReset()
     notifySpies.error.mockReset()
@@ -255,6 +267,45 @@ describe('MES receipts — failed inventory posting retry', () => {
     ]
   })
 
+  it('真实多条登记逐单打开来源，缺台账权限不读取库存', async () => {
+    receiptState.rows[0].producedLotNo = 'LOT-001'
+    receiptState.rows[1].producedLotNo = 'LOT-002'
+    const wrapper = mountPage(['business.mes.receipts.read', 'business.inventory.ledger.read'])
+    const buttons = wrapper.findAll('button').filter((button) => button.text() === '库存来源')
+    expect(buttons).toHaveLength(2)
+    await buttons[1].trigger('click')
+    expect(wrapper.get('[data-testid="inventory-source"]').text()).toBe('FGR-000002 WO-2 LOT-002')
+    wrapper.unmount()
+    const denied = mountPage(['business.mes.receipts.read'])
+    expect(denied.text()).toContain('无库存台账读取权限')
+    expect(denied.find('[data-testid="inventory-source"]').exists()).toBe(false)
+    expect(denied.findAll('button').some((button) => button.text() === '库存来源')).toBe(false)
+  })
+
+  it('返回追溯恢复原查询，来源参数不能跳到其它页面', async () => {
+    reactiveRoute.query = {
+      traceReturn:
+        '/mes/traceability?mode=batch&workOrderId=WO-1&batchOrSerial=LOT-1&materialLotId=MAT-1',
+    }
+    const wrapper = mountPage(['business.mes.receipts.read'])
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '返回追溯')!
+      .trigger('click')
+    expect(routerState.push).toHaveBeenLastCalledWith({
+      path: '/mes/traceability',
+      query: {
+        mode: 'batch',
+        workOrderId: 'WO-1',
+        batchOrSerial: 'LOT-1',
+        materialLotId: 'MAT-1',
+      },
+    })
+    reactiveRoute.query = { traceReturn: '/ops/dead-letters?mode=batch' }
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('返回追溯')
+  })
+
   it('offers a status filter option for failed postings', () => {
     const wrapper = mountPage()
     const optionTexts = wrapper.findAll('[data-testid="status-option"]').map((o) => o.text())
@@ -284,6 +335,31 @@ describe('MES receipts — failed inventory posting retry', () => {
     expect(notifySpies.success).toHaveBeenCalled()
   })
 
+  it('成本等待项携带原工单与登记单进入核实入口', async () => {
+    receiptState.rows = [
+      {
+        receiptRequestId: 'receipt-1',
+        requestNo: 'FGR-001',
+        workOrderId: 'WO-001',
+        receiptStatus: 'Requested',
+        unitCost: null,
+      },
+    ]
+    const wrapper = mountPage(['business.mes.receipts.read', 'business.dlq.read'])
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '核实成本等待项')!
+      .trigger('click')
+    expect(routerState.push).toHaveBeenCalledWith({
+      path: '/ops/dead-letters',
+      query: {
+        service: 'Erp',
+        workOrderId: 'WO-001',
+        receiptNo: 'FGR-001',
+      },
+    })
+  })
+
   it('hides the retry button for read-only users without receipts.manage', () => {
     const wrapper = mountPage(['business.mes.receipts.read'])
     const retry = wrapper
@@ -294,7 +370,7 @@ describe('MES receipts — failed inventory posting retry', () => {
   })
 
   it('hides the 登记完工入库 create entry for read-only users (create also needs manage)', () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     const wrapper = mountPage(['business.mes.receipts.read'])
     expect(wrapper.findAll('button').some((b) => b.text().includes('登记完工入库'))).toBe(false)
     expect(wrapper.text()).not.toContain('从工单详情发起')
@@ -345,43 +421,100 @@ describe('MES receipts — failed inventory posting retry', () => {
     expect(visibleText).not.toContain('user-emp-')
   })
 
-  // 工单/成品经 query 带入（工单详情发起），补齐必填单位成本后提交登记。
-  async function fillCostAndSubmit(wrapper: ReturnType<typeof mountPage>, unitCost = '3.5') {
-    await wrapper.get('#receipt-unit-cost').setValue(unitCost)
+  // 工单/成品经 query 带入（工单详情发起），成本由服务端权威回填。
+  async function submitReceipt(wrapper: ReturnType<typeof mountPage>) {
+    expect(wrapper.find('#receipt-unit-cost').exists()).toBe(false)
     await wrapper.get('form').trigger('submit')
     await flushPromises()
   }
 
-  it('rotates the idempotency key per registration → two receipts for the same work order', async () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+  it('成功后关闭表单并显示登记单号，下一笔须显式重新打开', async () => {
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    receiptState.createReceiptRequest = vi
+      .fn()
+      .mockResolvedValue({ success: true, data: { requestNo: 'FGR-4280-001' } })
+    const wrapper = mountPage()
+    await flushPromises()
+    await submitReceipt(wrapper)
+    expect(wrapper.find('form').exists()).toBe(false)
+    reactiveRoute.query = { ...reactiveRoute.query, status: 'Requested' }
+    await flushPromises()
+    expect(wrapper.find('form').exists()).toBe(false)
+    expect(notifySpies.success.mock.calls[0]![0]).toContain('FGR-4280-001')
+    expect(notifySpies.success.mock.calls[0]![0]).toContain('成本')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '登记完工入库')!
+      .trigger('click')
+    await submitReceipt(wrapper)
+    const bodies = receiptState.createReceiptRequest.mock.calls.map(
+      ([body]) => body as { idempotencyKey: string },
+    )
+    expect(bodies).toHaveLength(2)
+    expect(bodies[0]!.idempotencyKey).not.toBe(bodies[1]!.idempotencyKey)
+  })
+
+  it('只有工单标识的入口提供可操作的上下文恢复', async () => {
+    reactiveRoute.query = { workOrderId: 'WO-1' }
+    const wrapper = mountPage()
+    const recover = wrapper.findAll('button').find((button) => button.text().includes('工单详情'))!
+    expect(recover.attributes('disabled')).toBeUndefined()
+    await recover.trigger('click')
+    expect(routerState.push).toHaveBeenCalledWith('/mes/work-orders/WO-1')
+  })
+
+  it('返回已登记完的工单时不自动打开空表单', async () => {
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    receiptState.producedLots = []
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('form').exists()).toBe(false)
+    expect(wrapper.text()).toContain('暂无可入库产出')
+    expect(receiptState.createReceiptRequest).not.toHaveBeenCalled()
+  })
+
+  it('剩余量为零的产出批次不开放登记', async () => {
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    receiptState.producedLots = [
+      { producedLotNo: 'LOT-FG-1', goodQuantity: 8, remainingQuantity: 0 },
+    ]
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.find('form').exists()).toBe(false)
+    const entry = wrapper.findAll('button').find((button) => button.text() === '登记完工入库')!
+    expect(entry.attributes('disabled')).toBeDefined()
+    expect(receiptState.createReceiptRequest).not.toHaveBeenCalled()
+  })
+
+  it('复用失败登记的同一幂等键，避免失败重试产生新意图', async () => {
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    receiptState.createReceiptRequest = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('lost response'))
+      .mockResolvedValueOnce(undefined)
     const wrapper = mountPage()
     await flushPromises()
 
-    await fillCostAndSubmit(wrapper, '3.5')
-    // 成功后重置清空单位成本；连录第二笔需重新填。
-    await fillCostAndSubmit(wrapper, '4')
+    await submitReceipt(wrapper)
+    await submitReceipt(wrapper)
 
     expect(receiptState.createReceiptRequest).toHaveBeenCalledTimes(2)
-    const key1 = (
+    const firstKey = (
       receiptState.createReceiptRequest.mock.calls[0]![0] as { idempotencyKey?: string }
     ).idempotencyKey
-    const key2 = (
+    const retryKey = (
       receiptState.createReceiptRequest.mock.calls[1]![0] as { idempotencyKey?: string }
     ).idempotencyKey
-    expect(key1).toBeTruthy()
-    expect(key2).toBeTruthy()
-    expect(key1).not.toBe(key2)
-    // 不再是「按工单恒定」的键（否则第二笔会回放第一张或幂等冲突）。
-    expect(key1).not.toBe('receipt-WO-1')
-    expect(notifySpies.success).toHaveBeenCalledTimes(2)
+    expect(firstKey).toBeTruthy()
+    expect(retryKey).toBe(firstKey)
   })
 
   it('carries the selected produced lot in the create request (auto-selected when single)', async () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     const wrapper = mountPage()
     await flushPromises()
 
-    await fillCostAndSubmit(wrapper)
+    await submitReceipt(wrapper)
 
     expect(receiptState.createReceiptRequest).toHaveBeenCalledTimes(1)
     const body = receiptState.createReceiptRequest.mock.calls[0]![0] as { producedLotNo?: string }
@@ -390,27 +523,26 @@ describe('MES receipts — failed inventory posting retry', () => {
   })
 
   it('blocks create and guides reporting when the work order has no produced lots', async () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     receiptState.producedLots = []
     const wrapper = mountPage()
     await flushPromises()
 
-    await fillCostAndSubmit(wrapper)
+    expect(wrapper.find('form').exists()).toBe(false)
 
     // 无产出批次 → canCreate 为假，提交被拦截，且给出「先报工产出」引导而非盲提交后 500。
     expect(receiptState.createReceiptRequest).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('该工单暂无可入库的产出批次')
+    expect(wrapper.text()).toContain('暂无可入库产出')
   })
 
   it('blocks submit when quantity exceeds the selected lot remaining (no request, inline error)', async () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     receiptState.producedLots = [
       { producedLotNo: 'LOT-FG-1', reportNo: 'PRPT-1', goodQuantity: 8, remainingQuantity: 3 },
     ]
     const wrapper = mountPage()
     await flushPromises()
 
-    await wrapper.get('#receipt-unit-cost').setValue('3.5')
     await wrapper.get('#receipt-quantity').setValue('4') // 超过剩余 3
     await wrapper.get('form').trigger('submit')
     await flushPromises()
@@ -421,31 +553,37 @@ describe('MES receipts — failed inventory posting retry', () => {
     expect(notifySpies.operationFailure).not.toHaveBeenCalled()
   })
 
-  it('surfaces a retry (not “暂无产出批次”) when produced-lot loading fails', async () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+  it.each([
+    [
+      { message: '当前组织不能查看该工单产出，请切换业务上下文。' },
+      '当前组织不能查看该工单产出，请切换业务上下文。',
+    ],
+    [{}, '产出批次加载失败，请重试。'],
+  ])('preserves the produced-lot rejection reason with a retry: %s', async (error, message) => {
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     receiptState.producedLots = []
-    receiptState.producedLotsError = new Error('403 forbidden')
+    receiptState.producedLotsError = error
     const wrapper = mountPage()
     await flushPromises()
 
-    await fillCostAndSubmit(wrapper)
+    expect(wrapper.find('form').exists()).toBe(false)
 
     // 加载失败区别于真实空态：给重试出口、不误报「暂无」，提交仍被拦截（未选批次）。
     expect(receiptState.createReceiptRequest).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('产出批次加载失败')
+    expect(wrapper.get('[role="alert"]').text()).toBe(message)
     expect(wrapper.text()).not.toContain('该工单暂无可入库的产出批次')
     expect(wrapper.findAll('button').some((b) => b.text().includes('重试'))).toBe(true)
   })
 
   it('keeps success feedback when the post-create list refresh fails (no contradictory error toast)', async () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     receiptState.refreshReceiptRequests = vi.fn(async () => {
       throw new Error('refresh 500')
     })
     const wrapper = mountPage()
     await flushPromises()
 
-    await fillCostAndSubmit(wrapper)
+    await submitReceipt(wrapper)
 
     expect(receiptState.createReceiptRequest).toHaveBeenCalledTimes(1)
     expect(notifySpies.success).toHaveBeenCalledTimes(1)
@@ -454,7 +592,7 @@ describe('MES receipts — failed inventory posting retry', () => {
   })
 
   it('maps the over-quantity backend error to the business copy even for short work order ids', async () => {
-    routeState.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
+    reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
     receiptState.createReceiptRequest = vi.fn(async () => {
       throw new Error('mutation rejected')
     })
@@ -465,7 +603,7 @@ describe('MES receipts — failed inventory posting retry', () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    await fillCostAndSubmit(wrapper)
+    await submitReceipt(wrapper)
 
     expect(notifySpies.operationFailure).toHaveBeenCalledTimes(1)
     const [, arg] = notifySpies.operationFailure.mock.calls[0]!
@@ -473,5 +611,82 @@ describe('MES receipts — failed inventory posting retry', () => {
       '累计请求量超过完工数量，请先核对该工单的报工完成数量后再登记入库。',
     )
     expect(notifySpies.success).not.toHaveBeenCalled()
+  })
+})
+
+describe('MES receipts — why a receipt is still waiting (#3728)', () => {
+  const requested = (id: string, extra: Record<string, unknown>) => ({
+    receiptRequestId: id,
+    requestNo: id,
+    workOrderId: 'WO-1',
+    skuId: 'FG-1',
+    quantity: 10,
+    receiptStatus: 'Requested',
+    requestedAtUtc: '2026-09-22T02:00:00Z',
+    ...extra,
+  })
+  const progress = (overrides: Record<string, unknown>) => ({
+    workOrderCompleted: true,
+    receivedReportCount: 0,
+    expectedReportCount: 8,
+    receivedMaterialMovementCount: 3,
+    expectedMaterialMovementCount: 3,
+    capitalizationPublished: false,
+    ...overrides,
+  })
+
+  beforeEach(() => {
+    reactiveRoute.query = {}
+    receiptState.rows = [
+      requested('FGR-cost-stalled', {
+        unitCost: null,
+        costCapitalization: progress({ receivedMaterialMovementCount: 1 }),
+      }),
+      requested('FGR-no-erp-permission', { unitCost: null, costCapitalization: null }),
+      requested('FGR-not-completed', {
+        unitCost: null,
+        costCapitalization: progress({ workOrderCompleted: false, expectedReportCount: 0 }),
+      }),
+      requested('FGR-cost-published', {
+        unitCost: null,
+        costCapitalization: progress({ receivedReportCount: 8, capitalizationPublished: true }),
+      }),
+      requested('FGR-posting', { unitCost: 12.5 }),
+      { ...requested('FGR-posted', { unitCost: 12.5 }), receiptStatus: 'Posted' },
+    ]
+  })
+
+  function reasonsByRequestNo() {
+    const wrapper = mountPage()
+    return new Map(
+      wrapper.findAll('[data-testid="row"]').map((row, index) => {
+        const reason = row.find('[data-testid="receipt-pending-reason"]')
+        return [
+          receiptState.rows[index]?.requestNo as string,
+          reason.exists() ? reason.text() : null,
+        ]
+      }),
+    )
+  }
+
+  it('gives every Requested receipt a readable reason and none to settled ones', () => {
+    const reasons = reasonsByRequestNo()
+    for (const row of receiptState.rows.filter((r) => r.receiptStatus === 'Requested')) {
+      expect(reasons.get(row.requestNo as string)?.trim(), row.requestNo as string).toBeTruthy()
+    }
+    expect(reasons.get('FGR-posted')).toBeNull()
+  })
+
+  it('names the stage each Requested receipt is stuck on', () => {
+    const reasons = reasonsByRequestNo()
+    expect(reasons.get('FGR-cost-stalled')).toContain('报工成本 0/8')
+    expect(reasons.get('FGR-cost-stalled')).toContain('物料过账 1/3')
+    expect(reasons.get('FGR-cost-stalled')).toContain('联系系统管理员')
+    expect(reasons.get('FGR-no-erp-permission')).toBe('等待 ERP 成本归集回传单位成本')
+    expect(reasons.get('FGR-not-completed')).toBe(
+      '等待 ERP 收到工单完工后归集成本；长时间不变请联系系统管理员',
+    )
+    expect(reasons.get('FGR-cost-published')).toBe('ERP 已完成成本归集，等待单位成本回传')
+    expect(reasons.get('FGR-posting')).toBe('已提交库存过账，等待库存确认')
   })
 })

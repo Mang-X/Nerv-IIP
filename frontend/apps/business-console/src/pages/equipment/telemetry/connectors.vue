@@ -100,16 +100,12 @@ function toggle(key: string) {
 
 <template>
   <BusinessLayout>
-    <NvPageHeader
-      title="采集健康"
-      :breadcrumbs="[{ label: '设备监控（IoT）' }]"
-      :count="headerCount"
-    >
+    <NvPageHeader title="采集健康" :breadcrumbs="[{ label: '设备监控' }]" :count="headerCount">
       <template #actions>
         <span class="text-xs text-muted-foreground">每 10 秒自动刷新</span>
         <NvButton size="sm" type="button" variant="outline" as-child>
           <RouterLink to="/equipment/telemetry/tags"
-            ><HashIcon aria-hidden="true" />采集标签</RouterLink
+            ><HashIcon aria-hidden="true" />采集点位</RouterLink
           >
         </NvButton>
         <NvButton
@@ -156,7 +152,7 @@ function toggle(key: string) {
       v-if="connectorsState === 'idle'"
       class="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
     >
-      业务上下文未就绪，采集健康尚未查询。
+      尚未确定当前组织，暂未查询采集健康。
     </div>
 
     <div

@@ -41,7 +41,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvStatusBadge,
   NvToolbar,
 } from '@nerv-iip/ui'
@@ -483,7 +483,6 @@ async function submitPayable() {
                 :options="receivableSourceOptions"
                 title="选择来源单据"
                 placeholder="选择销售订单或发货单"
-                source-text="数据来自销售订单与发货单"
                 empty-text="暂无可开票的销售订单或发货单"
                 :loading="receivableSourcesPending"
                 aria-label="来源单据"
@@ -502,7 +501,6 @@ async function submitPayable() {
                 :options="customerOptions"
                 title="选择客户"
                 placeholder="选择客户"
-                source-text="数据来自基础数据业务伙伴（客户角色）"
                 empty-text="暂无客户，请先在「基础数据 · 业务伙伴」维护"
                 :loading="partnersPending"
                 aria-label="客户"
@@ -534,7 +532,7 @@ async function submitPayable() {
             ><NvDialogClose as-child
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             ><NvButton type="submit" :disabled="receivables.createReceivablePending.value"
-              ><Spinner
+              ><NvSpinner
                 v-if="receivables.createReceivablePending.value"
                 aria-hidden="true"
               />登记应收</NvButton
@@ -564,7 +562,6 @@ async function submitPayable() {
                 :options="payableSourceOptions"
                 title="选择来源单据"
                 placeholder="选择采购订单"
-                source-text="数据来自采购订单"
                 empty-text="暂无采购订单，请先在「采购 · 采购订单」下达"
                 :loading="payableSourcesPending"
                 aria-label="来源单据"
@@ -581,7 +578,6 @@ async function submitPayable() {
                 :options="supplierOptions"
                 title="选择供应商"
                 placeholder="选择供应商"
-                source-text="数据来自基础数据业务伙伴（供应商角色）"
                 empty-text="暂无供应商，请先在「基础数据 · 业务伙伴」维护"
                 :loading="partnersPending"
                 aria-label="供应商"
@@ -613,7 +609,7 @@ async function submitPayable() {
             ><NvDialogClose as-child
               ><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose
             ><NvButton type="submit" :disabled="payables.createPayablePending.value"
-              ><Spinner
+              ><NvSpinner
                 v-if="payables.createPayablePending.value"
                 aria-hidden="true"
               />登记应付</NvButton

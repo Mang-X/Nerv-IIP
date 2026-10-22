@@ -5,6 +5,15 @@ namespace Nerv.IIP.Business.Acceptance.Tests;
 
 internal static class WmsTrustedCompletionAcceptanceFixture
 {
+    public sealed class ReceiptRoute : Nerv.IIP.Business.Wms.Web.Application.Inventory.IWmsPurchaseReceiptPostingRouteClient
+    {
+        public Task<IReadOnlyDictionary<string, decimal>> GetUnitCostsAsync(
+            string organizationId, string environmentId, string receiptNo,
+            IReadOnlyCollection<Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate.InboundOrderLine> lines,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyDictionary<string, decimal>>(lines.ToDictionary(x => x.LineNo, _ => 2m));
+    }
+
     public const string ActorPrincipalId = "acceptance-warehouse-operator";
     public const string PoolCode = "POOL-ACCEPTANCE-SITE-01";
 

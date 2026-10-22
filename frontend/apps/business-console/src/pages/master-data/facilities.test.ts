@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
 import FacilitiesPage from './facilities.vue'
@@ -9,6 +10,7 @@ const stub = vi.hoisted(() => ({
   createWorkshop: vi.fn().mockResolvedValue({ data: { code: 'WS-NEW' } }),
   createLine: vi.fn().mockResolvedValue({ data: { code: 'LINE-NEW' } }),
   createWorkCenter: vi.fn().mockResolvedValue({ data: { code: 'WC-NEW' } }),
+  createStation: vi.fn().mockResolvedValue({ data: { code: 'ST-NEW', displayName: '拧紧工位' } }),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }))
@@ -49,6 +51,13 @@ const LINE_ROWS = [
     siteCode: 'PLANT-A',
     workshopCode: 'WS-A',
   },
+  {
+    resourceType: 'production-line',
+    code: 'LINE-B',
+    displayName: '后桥线',
+    active: true,
+    siteCode: 'PLANT-A',
+  },
 ]
 const WC_ROWS = [
   {
@@ -62,15 +71,34 @@ const WC_ROWS = [
   },
 ]
 
+// 工位挂在产线下（与工作中心并列），工作中心只是它的可选关联。
+const STATION_ROWS = [
+  {
+    resourceType: 'station',
+    code: 'ST-A1',
+    displayName: '前桥一号工位',
+    active: true,
+    lineCode: 'LINE-A',
+    workCenterCode: 'WC-A',
+  },
+]
+
 const CREATE_BY_TYPE: Record<string, ReturnType<typeof vi.fn>> = {
   site: stub.createSite,
   'production-line': stub.createLine,
   'work-center': stub.createWorkCenter,
+  station: stub.createStation,
+}
+
+const ROWS_BY_TYPE: Record<string, unknown[]> = {
+  site: SITE_ROWS,
+  'production-line': LINE_ROWS,
+  'work-center': WC_ROWS,
+  station: STATION_ROWS,
 }
 
 function stubResource(resourceType: string) {
-  const rows =
-    resourceType === 'site' ? SITE_ROWS : resourceType === 'production-line' ? LINE_ROWS : WC_ROWS
+  const rows = ROWS_BY_TYPE[resourceType] ?? []
   return {
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 200 }),
     items: computed(() => rows),
@@ -129,6 +157,17 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
   useMasterDataResource: (resourceType: string) => stubResource(resourceType),
   useBusinessWorkshops: () => stubWorkshops(),
   useMasterDataResourceActions: () => stubActions(),
+  // 新建弹窗走它：只建不列。
+  useCreateMasterDataResource: (resourceType: string) => ({
+    create: CREATE_BY_TYPE[resourceType],
+    error: shallowRef(undefined),
+    pending: shallowRef(false),
+  }),
+  // 新建弹窗用它把带出的上级编码显示成名称。
+  useBusinessMasterDataResources: (resourceType: string) => ({
+    filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 500 }),
+    resources: computed(() => ({ ...ROWS_BY_TYPE, workshop: WORKSHOP_ROWS })[resourceType] ?? []),
+  }),
 }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
@@ -136,7 +175,16 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
   toast: { success: stub.toastSuccess, error: stub.toastError },
 }))
 
-const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
+const layoutStub = {
+  BusinessLayout: { template: '<main><slot /></main>' },
+  // 表单里的层级选择器（取数与就地新增由 DirectoryPicker 自己的用例覆盖）。
+  DirectoryPicker: {
+    props: ['modelValue', 'id'],
+    emits: ['update:modelValue'],
+    template:
+      '<input :id="id" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
+}
 
 // RouterLink 桩：避免依赖真实 router；把 to（对象）序列化进 data-to 便于断言。
 const routerLinkStub = {
@@ -154,6 +202,10 @@ const routerLinkStub = {
 // 对话框就地渲染（不 teleport），便于断言/填写表单内容。
 const dialogStubs = {
   NvDialog: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
+  // 这个 `DialogRoot` 键**不是** Nv 别名的残留：实测它命中的是 reka `AlertDialogRoot`
+  // 的内部实现（父链 AlertDialogRoot < NvAlertDialog < MasterDataLifecycleDialog），
+  // 即**可达**；但删掉后本文件全绿，说明**零鉴别力、没有用例依赖它**。保留只是维持现状，
+  // 别把它当防线。见 #2879 跟进项。
   DialogRoot: { props: ['open'], template: '<div v-if="open"><slot /></div>' },
   NvDialogContent: { template: '<div><slot /></div>' },
   NvDialogHeader: { template: '<div><slot /></div>' },
@@ -172,7 +224,6 @@ const formSelectStubs = {
   },
   NvSelectTrigger: { template: '<span><slot /></span>' },
   NvSelectValue: { template: '<span />' },
-  SelectValue: { template: '<span />' },
   NvSelectContent: { template: '<slot />' },
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
@@ -187,6 +238,9 @@ function findNodeButton(wrapper: ReturnType<typeof mount>, label: string) {
 const mountOpts = { global: { stubs: { ...layoutStub, ...dialogStubs, ...routerLinkStub } } }
 
 describe('master-data facilities tree page', () => {
+  // 新建弹窗从业务上下文取组织 / 环境。
+  beforeEach(() => setActivePinia(createPinia()))
+
   it('renders title and tree nodes for all four levels', async () => {
     const wrapper = mount(FacilitiesPage, mountOpts)
     await flushPromises()
@@ -251,7 +305,7 @@ describe('master-data facilities tree page', () => {
 
     // 对话框：标题「新建车间」，父归属走只读上下文区（显示工厂名，不做 disabled 输入框）。
     expect(wrapper.text()).toContain('新建车间')
-    expect(wrapper.find('#create-site').exists()).toBe(false)
+    expect(wrapper.find('#workshop-site').exists()).toBe(false)
     const carried = wrapper.find('[data-slot="carried-context"]')
     expect(carried.exists()).toBe(true)
     expect(carried.text()).toContain('所属工厂')
@@ -273,9 +327,9 @@ describe('master-data facilities tree page', () => {
       .trigger('click')
     await flushPromises()
 
-    // 新建态不再有编码输入框（编码由系统自动生成）。
-    expect(wrapper.find('#create-code').exists()).toBe(false)
-    await wrapper.find('#create-name').setValue('涂装车间')
+    // 新建态不出现编码输入框（编码由系统自动生成）。
+    expect(wrapper.find('#workshop-code').exists()).toBe(false)
+    await wrapper.find('#workshop-name').setValue('涂装车间')
     await flushPromises()
     await wrapper.find('form').trigger('submit')
     await flushPromises()
@@ -293,6 +347,68 @@ describe('master-data facilities tree page', () => {
     expect(stub.toastError).not.toHaveBeenCalled()
   })
 
+  it('在车间上新建产线：工厂取自车间自身的归属，车间与工厂都带出为只读', async () => {
+    stub.createLine.mockClear()
+    const wrapper = mount(FacilitiesPage, mountOpts)
+    await flushPromises()
+
+    // 不先选工厂：归属只能来自车间节点自己，不来自选中路径。
+    await findNodeButton(wrapper, '总装车间')!.trigger('click')
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建产线'))!
+      .trigger('click')
+    await flushPromises()
+
+    const carried = wrapper.find('[data-slot="carried-context"]')
+    expect(carried.text()).toContain('宁波工厂')
+    expect(carried.text()).toContain('总装车间')
+    expect(wrapper.find('#line-site').exists()).toBe(false)
+    expect(wrapper.find('#line-workshop').exists()).toBe(false)
+    await wrapper.find('#line-name').setValue('涂装线')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.createLine).toHaveBeenCalledWith(
+      expect.objectContaining({ name: '涂装线', siteCode: 'PLANT-A', workshopCode: 'WS-A' }),
+    )
+  })
+
+  it('在产线上新建工作中心：工厂取自产线自身的归属，产线带出为只读', async () => {
+    stub.createWorkCenter.mockClear()
+    const wrapper = mount(FacilitiesPage, mountOpts)
+    await flushPromises()
+
+    await findNodeButton(wrapper, '后桥线')!.trigger('click')
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建工作中心'))!
+      .trigger('click')
+    await flushPromises()
+
+    const carried = wrapper.find('[data-slot="carried-context"]')
+    expect(carried.text()).toContain('宁波工厂')
+    expect(carried.text()).toContain('后桥线')
+    expect(wrapper.find('#wc-plant').exists()).toBe(false)
+    expect(wrapper.find('#wc-line').exists()).toBe(false)
+    await wrapper.find('#wc-name').setValue('装配中心')
+    await wrapper.find('#wc-cal').setValue('CAL-A')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.createWorkCenter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: '装配中心',
+        plantCode: 'PLANT-A',
+        lineCode: 'LINE-B',
+        defaultCalendarCode: 'CAL-A',
+        capacityMinutesPerDay: 480,
+      }),
+    )
+  })
+
   it('新建根工厂：填全必填后提交调用 create 并弹成功 toast', async () => {
     stub.createSite.mockClear()
     stub.toastSuccess.mockClear()
@@ -305,9 +421,9 @@ describe('master-data facilities tree page', () => {
       .trigger('click')
     await flushPromises()
 
-    // 新建态不再有编码输入框（编码由系统自动生成）。
-    expect(wrapper.find('#create-code').exists()).toBe(false)
-    await wrapper.find('#create-name').setValue('广州工厂')
+    // 新建态不出现编码输入框（编码由系统自动生成）。
+    expect(wrapper.find('#site-code').exists()).toBe(false)
+    await wrapper.find('#site-name').setValue('广州工厂')
     await flushPromises()
     await wrapper.find('form').trigger('submit')
     await flushPromises()
@@ -355,7 +471,7 @@ describe('master-data facilities tree page', () => {
       .find((b) => b.text().includes('新建工厂'))!
       .trigger('click')
     await flushPromises()
-    await wrapper.find('#create-name').setValue('广州工厂')
+    await wrapper.find('#site-name').setValue('广州工厂')
     await flushPromises()
     await wrapper.find('form').trigger('submit')
     await flushPromises()
@@ -366,7 +482,7 @@ describe('master-data facilities tree page', () => {
     )
     expect(stub.toastSuccess).not.toHaveBeenCalled()
     // 对话框仍开、输入保留。
-    expect((wrapper.find('#create-name').element as HTMLInputElement).value).toBe('广州工厂')
+    expect((wrapper.find('#site-name').element as HTMLInputElement).value).toBe('广州工厂')
   })
 
   const editStubs = {
@@ -521,5 +637,124 @@ describe('master-data facilities tree page', () => {
       'LINE-A',
       expect.objectContaining({ siteCode: 'PLANT-B', workshopCode: null }),
     )
+  })
+
+  it('工位挂在所属产线下；在产线上新建工位，归属带出为只读且提交该产线', async () => {
+    stub.createStation.mockClear()
+    const wrapper = mount(FacilitiesPage, mountOpts)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('前桥一号工位')
+    await findNodeButton(wrapper, '前桥一号工位')!.trigger('click')
+    await flushPromises()
+    const nav = wrapper.find('[aria-label="选中路径"]')
+    expect(nav.text()).toContain('前桥线')
+
+    await findNodeButton(wrapper, '前桥线')!.trigger('click')
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('新建工位'))!
+      .trigger('click')
+    await flushPromises()
+
+    const carried = wrapper.find('[data-slot="carried-context"]')
+    expect(carried.text()).toContain('所属产线')
+    expect(carried.text()).toContain('前桥线')
+    expect(wrapper.find('#station-line').exists()).toBe(false)
+    await wrapper.find('#station-name').setValue('拧紧工位')
+    await wrapper
+      .findAll('form')
+      .find((form) => form.find('#station-name').exists())!
+      .trigger('submit')
+    await flushPromises()
+
+    expect(stub.createStation).toHaveBeenCalledWith(
+      expect.objectContaining({ name: '拧紧工位', lineCode: 'LINE-A' }),
+    )
+  })
+
+  it('编辑工位：带出原关联的工作中心，取消关联时提交空串', async () => {
+    actionStub.update.mockClear()
+    const detail = { name: '前桥一号工位', lineCode: 'LINE-A', workCenterCode: 'WC-A' }
+    // 选中节点时右侧详情拉一次，每次打开编辑再拉一次。
+    for (let i = 0; i < 3; i++) actionStub.fetchDetail.mockResolvedValueOnce(detail)
+    const wrapper = mount(FacilitiesPage, {
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          ...routerLinkStub,
+          ...formSelectStubs,
+          ...editStubs,
+        },
+      },
+    })
+    await flushPromises()
+    await findNodeButton(wrapper, '前桥一号工位')!.trigger('click')
+    await flushPromises()
+    async function openEdit() {
+      await wrapper
+        .findAll('button')
+        .find((b) => b.text().trim() === '编辑')!
+        .trigger('click')
+      await flushPromises()
+    }
+
+    // 不改直接保存：原关联原样带回。
+    await openEdit()
+    expect(wrapper.text()).toContain('编辑工位')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(actionStub.update).toHaveBeenLastCalledWith('ST-A1', {
+      name: '前桥一号工位',
+      lineCode: 'LINE-A',
+      workCenterCode: 'WC-A',
+    })
+
+    await openEdit()
+    await wrapper.find('#edit-station-wc').setValue('')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(actionStub.update).toHaveBeenLastCalledWith('ST-A1', {
+      name: '前桥一号工位',
+      lineCode: 'LINE-A',
+      workCenterCode: '',
+    })
+  })
+
+  it('编辑工位改挂产线后清空原关联的工作中心', async () => {
+    actionStub.update.mockClear()
+    const detail = { name: '前桥一号工位', lineCode: 'LINE-A', workCenterCode: 'WC-A' }
+    for (let i = 0; i < 2; i++) actionStub.fetchDetail.mockResolvedValueOnce(detail)
+    const wrapper = mount(FacilitiesPage, {
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          ...routerLinkStub,
+          ...formSelectStubs,
+          ...editStubs,
+        },
+      },
+    })
+    await flushPromises()
+    await findNodeButton(wrapper, '前桥一号工位')!.trigger('click')
+    await flushPromises()
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().trim() === '编辑')!
+      .trigger('click')
+    await flushPromises()
+
+    // 改挂到同工厂的另一条产线（直挂工厂、无车间）。
+    await wrapper.get('#edit-station-line').setValue('LINE-B')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(actionStub.update).toHaveBeenLastCalledWith('ST-A1', {
+      name: '前桥一号工位',
+      lineCode: 'LINE-B',
+      workCenterCode: '',
+    })
   })
 })

@@ -16,6 +16,7 @@ using Newtonsoft.Json;
 using Nerv.IIP.Business.MasterData.Domain;
 using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.MasterData.Web.Application.OpenApi;
 using Nerv.IIP.Business.MasterData.Web.Application.Seed;
 using Nerv.IIP.Business.MasterData.Web.Endpoints.MasterData;
 using Nerv.IIP.Caching;
@@ -101,6 +102,7 @@ try
             {
                 s.Title = "Nerv IIP Business MasterData";
                 s.Version = "v1";
+                s.DocumentProcessors.Add(new ToolingAssetDirectoryOpenApiDocumentProcessor());
             };
         });
     builder.Services.Configure<JsonOptions>(o =>
@@ -147,6 +149,7 @@ try
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<IMasterDataIntegrationEventContextAccessor, HttpMasterDataIntegrationEventContextAccessor>();
+    builder.Services.AddScoped<IToolingOperationAdmission, ToolingOperationAuditContext.ToolingAuditSafeText.HttpAdmission>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     if (isTesting)
@@ -213,14 +216,17 @@ try
         await dbContext.Database.MigrateAsync();
     }
 
-    var seedEnabled = builder.Configuration.GetValue<bool>("MasterData:Seed:Enabled") || autoMigrate;
+    // 产品基线种子（编码规则/字典/计量单位/班次/日历/部门）：基础功能必需，默认开启、只补缺，
+    // 显式 false 才关闭（#3811）。演示数据在下方 LeaderDemo 开关里。
+    // 目标租户读 IAM 引导种子的同一组键（#3812），不再单独配置。
+    var seedEnabled = builder.Configuration.GetValue("MasterData:Seed:Enabled", true);
     if (seedEnabled)
     {
         using var scope = app.Services.CreateScope();
         var seed = scope.ServiceProvider.GetRequiredService<MasterDataSeedService>();
         await seed.SeedAsync(
-            builder.Configuration["MasterData:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["MasterData:Seed:EnvironmentId"] ?? "env-dev");
+            builder.Configuration["Iam:Seed:OrganizationId"] ?? "org-001",
+            builder.Configuration["Iam:Seed:EnvironmentId"] ?? "env-dev");
     }
 
     var walkthroughSeedEnabled = builder.Configuration.GetValue<bool>("Walkthrough:Seed:Enabled");

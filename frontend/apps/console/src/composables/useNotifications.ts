@@ -18,7 +18,7 @@ import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
 import { computed, shallowRef } from 'vue'
 
-const CONTEXT_UNAVAILABLE_MESSAGE = 'Console organization and environment context is unavailable.'
+const CONTEXT_UNAVAILABLE_MESSAGE = '当前组织与环境信息不可用。'
 const ignoreBackgroundError = (_error: unknown) => {}
 
 interface ConsoleContext {
@@ -132,10 +132,10 @@ export function useNotifications() {
     tasks.value.filter((task) => (task.status ?? '').toLowerCase() === 'open'),
   )
   const messagesEnvelopeError = computed(() =>
-    responseEnvelopeError(messagesQuery.data.value, 'Unable to load notification messages.'),
+    responseEnvelopeError(messagesQuery.data.value, '无法加载通知消息。'),
   )
   const tasksEnvelopeError = computed(() =>
-    responseEnvelopeError(tasksQuery.data.value, 'Unable to load notification tasks.'),
+    responseEnvelopeError(tasksQuery.data.value, '无法加载通知任务。'),
   )
   const allError = computed(
     () =>
@@ -154,7 +154,7 @@ export function useNotifications() {
     const results = await Promise.allSettled([messagesQuery.refetch(), tasksQuery.refetch()])
     const failed = results.find((result) => result.status === 'rejected')
     if (failed?.status === 'rejected') {
-      actionError.value = toError(failed.reason, 'Unable to refresh notifications.')
+      actionError.value = toError(failed.reason, '无法刷新通知。')
     }
   }
 
@@ -176,10 +176,10 @@ export function useNotifications() {
         } as Parameters<
           typeof markReadMutation.mutateAsync
         >[0])) as MarkNotificationMessageReadEnvelope,
-        'Unable to mark notification read.',
+        '无法将通知标记为已读。',
       )
     } catch (error) {
-      actionError.value = toError(error, 'Unable to mark notification read.')
+      actionError.value = toError(error, '无法将通知标记为已读。')
       throw actionError.value
     }
   }
@@ -206,10 +206,10 @@ export function useNotifications() {
         } as Parameters<
           typeof batchReadMutation.mutateAsync
         >[0])) as MarkNotificationMessagesReadEnvelope,
-        'Unable to mark notifications read.',
+        '无法将通知批量标记为已读。',
       )
     } catch (error) {
-      actionError.value = toError(error, 'Unable to mark notifications read.')
+      actionError.value = toError(error, '无法将通知批量标记为已读。')
       throw actionError.value
     }
   }
@@ -224,10 +224,10 @@ export function useNotifications() {
           body: request,
           headers: consoleContextHeaders(context),
         } as Parameters<typeof intentMutation.mutateAsync>[0])) as NotificationIntentEnvelope,
-        'Unable to submit notification intent.',
+        '无法提交通知。',
       )
     } catch (error) {
-      actionError.value = toError(error, 'Unable to submit notification intent.')
+      actionError.value = toError(error, '无法提交通知。')
       throw actionError.value
     }
   }

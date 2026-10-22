@@ -146,12 +146,9 @@ test('clicking an app-wall entry navigates to its work page', async ({ page }) =
   await expect(page).toHaveURL('/wms/inbound')
 })
 
-test('home scan: type + Enter echoes in-page and keeps the operator on the workbench', async ({
+test('home scan: an unknown result stays on the workbench and offers honest next steps', async ({
   page,
 }) => {
-  // R3 fix: scanning must NOT navigate to the not-yet-existent /scan route; it echoes
-  // the value in-page (`[data-testid="last-scan"]` → `已扫码：{value}`) so the operator
-  // stays on the workbench instead of being dropped on a dead route.
   await seedStoredSession(page)
   await page.goto('/')
 
@@ -160,10 +157,8 @@ test('home scan: type + Enter echoes in-page and keeps the operator on the workb
   await scanInput.type('SKU-12345')
   await scanInput.press('Enter')
 
-  // Still on the workbench — no fake jump to /scan or any dead route.
   await expect(page).toHaveURL('/')
-  // The in-page echo proves the scan was handled honestly.
-  await expect(page.getByTestId('last-scan')).toContainText('已扫码：SKU-12345')
+  await expect(page.getByTestId('barcode-status')).toContainText('无法确认')
 })
 
 test('fixed four-entrance navigation adapts the workbench, tasks, scan and profile at 375x812', async ({
@@ -200,7 +195,7 @@ test('fixed four-entrance navigation adapts the workbench, tasks, scan and profi
   const scanInput = page.locator('input[placeholder^="扫描"]')
   await scanInput.fill('WO-2026-00001')
   await scanInput.press('Enter')
-  await expect(page.getByTestId('scan-result')).toContainText('WO-2026-00001')
+  await expect(page.getByTestId('barcode-status')).toContainText('无法确认')
 
   await tabBar.getByRole('button', { name: '我的' }).click()
   await expect(page).toHaveURL('/me')

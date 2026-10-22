@@ -1,0 +1,794 @@
+[
+  {
+    "timestamp": "2026-10-13T23:29:49.4919910+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "be392c8b5a12dcc696de1ab0b60c7dae",
+    "correlationId": "efdb597c37174fe5a7b946fa9ebcfc1f",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:49.5725470+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "be392c8b5a12dcc696de1ab0b60c7dae",
+    "correlationId": "98af49dc48ff4d689d16335ca5e1e70c",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:53.0653140+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "160c77bb694062a4deb26618040291b3",
+    "correlationId": "6b11b7b06e5d4efe813864d22c6bc15c",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:53.0842120+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "160c77bb694062a4deb26618040291b3",
+    "correlationId": "db10ff0b32c843ce844e85b8dc1b8839",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:53.9697730+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "5bcd255d84012c111dbf617142b30119",
+    "correlationId": "3b0343f8189446b3bf9e5d9cd5d512da",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:53.9710150+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "5bcd255d84012c111dbf617142b30119",
+    "correlationId": "c9d33ad58a334763b745e1ab675eda9f",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:56.6901490+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "e315ab52f1e228fe8977e34d44741bb5",
+    "correlationId": "5fb580f76207406fbfe5c9cdd97c372a",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:56.7677310+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "e315ab52f1e228fe8977e34d44741bb5",
+    "correlationId": "2c7729ebe3044850b64374b8e3103011",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:57.5239810+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "afedcac6e52a9a37ce9ddf855870e48f",
+    "correlationId": "96ee6a818bf94bc39ff9637371bfc78f",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:57.5245560+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "afedcac6e52a9a37ce9ddf855870e48f",
+    "correlationId": "1f3ff6f5f85b40418b0a00ee722f58bc",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:57.5362050+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "dfa7475e99420f22fde06f5fb0d2d836",
+    "correlationId": "630bd731a3764846bf58feff9a8ee797",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:57.5460610+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "84b37f65f7ca5cd30f04624e6cec169e",
+    "correlationId": "3d4ce021045a4d1190af75094d1ad09c",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:57.5467610+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "84b37f65f7ca5cd30f04624e6cec169e",
+    "correlationId": "0c9394bf3f844f8e97df375bfb8c49a7",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:57.5550340+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "dfa7475e99420f22fde06f5fb0d2d836",
+    "correlationId": "12ec42f9fa5c4cb5bb342732ef9f5437",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:57.5700590+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "43fdd7361f7685e405b23911025c28f8",
+    "correlationId": "ec1a092544cd40bda31d9716c481802b",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:57.5828590+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "43fdd7361f7685e405b23911025c28f8",
+    "correlationId": "189b53ae018d4f4cb7dd6f7107c607d6",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:58.0567070+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "5c3c34c49afe1a6957ce317368adcab3",
+    "correlationId": "107d7a7b8f8143b6b9930688bd7bd8a7",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:58.3084070+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "5c3c34c49afe1a6957ce317368adcab3",
+    "correlationId": "445ec77638344977b1ab4952b6dc2793",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:58.6969100+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "e59a8b0f0b45b6529288588ee29f62bc",
+    "correlationId": "b7dd7b42411444cd896edbda75625f62",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:29:58.7503170+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "e59a8b0f0b45b6529288588ee29f62bc",
+    "correlationId": "3c45e36905394673b2c0427ffa07d4d6",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:02.1464280+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "66a94a396c8b1cd18409b5f95494fb2b",
+    "correlationId": "547057ba6297494d9b687e8487738769",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:02.1733540+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "66a94a396c8b1cd18409b5f95494fb2b",
+    "correlationId": "de685033c3274dc29060e38a8ccc2763",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:05.2339260+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "57bad53acdd00385522bb2501225fabe",
+    "correlationId": "a0bbcc047db5446e9c97f43471c1710f",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:05.4280020+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "57bad53acdd00385522bb2501225fabe",
+    "correlationId": "50bd0ea5b7d2438ba41724be69011996",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:07.0277560+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "d5c5ab40e68706c837e9f1fe7ff78ce0",
+    "correlationId": "4ebc182050d742a18ae7642de75b4037",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:07.0284870+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "d5c5ab40e68706c837e9f1fe7ff78ce0",
+    "correlationId": "f046b1082f6d464292ff500fbbf31891",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:10.2441100+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "afc06a2f302ced86c4be86acd1166bfe",
+    "correlationId": "b09562ea73bd45509edf3e28aab3bfbb",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:10.2766250+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "afc06a2f302ced86c4be86acd1166bfe",
+    "correlationId": "cf444e427b3f493a964b449709d39e74",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:12.0237930+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "a5f174d4f2b6ac9484935f6bb4931aea",
+    "correlationId": "c752800b73cb40b6a9dcf7e74b44bfed",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:12.0413750+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "a5f174d4f2b6ac9484935f6bb4931aea",
+    "correlationId": "9a9a59b0b7ed42a9884bbe4a73b1d459",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:12.1738300+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "eb73a5deefa1453eaeca2443f47b116d",
+    "correlationId": "6185641f61594ddcbe9d0b881e91ba23",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:12.1986950+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "41d201a0c7761e3321c2b5b51728a84c",
+    "correlationId": "16c3bbb01d5c4e1f80a4164a40d00b62",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:12.4498030+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "41d201a0c7761e3321c2b5b51728a84c",
+    "correlationId": "c857d3960e1b4d579df6ba1bc2cc494f",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:12.4500400+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "eb73a5deefa1453eaeca2443f47b116d",
+    "correlationId": "214822580a26480ea5cc866cbf56df5b",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:12.4654940+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "730125769bcec7b56b5385d23df72e88",
+    "correlationId": "559e2996a0da468186b2458d5f6476aa",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:12.4750310+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "730125769bcec7b56b5385d23df72e88",
+    "correlationId": "8de05ef3dd48417f906c61f79ec28fdd",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:12.9601810+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "ac0fa2b8d48b16ea8db797e326aca9f8",
+    "correlationId": "532912996fb2458293d625126cd67e99",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:12.9611700+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "ac0fa2b8d48b16ea8db797e326aca9f8",
+    "correlationId": "b6a508f8331a47419d1a997e8bcc2ed9",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:13.5972780+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "51c348cf91bdef91a9302bc1f0e2d1b6",
+    "correlationId": "2e2753ba940248a89d16f98383d04fb0",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:30:13.6237370+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "51c348cf91bdef91a9302bc1f0e2d1b6",
+    "correlationId": "0e0809671ab844f0ad3eb80780054f7a",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:06.2068790+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "ba9584f552ab352d08045de1fe484a0b",
+    "correlationId": "4d9aed1507744732a3717bcb68fa0f4b",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:06.9125290+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "ba9584f552ab352d08045de1fe484a0b",
+    "correlationId": "1502d9af50ce457b80a6e94f832835f5",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:09.9690430+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "be3cd253e9a1753ba76315722ef7347b",
+    "correlationId": "6aa9d1c745094bb28848fe097363b348",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:10.0024000+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "be3cd253e9a1753ba76315722ef7347b",
+    "correlationId": "b9a05825636b4ad3815a341076423542",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:12.2710270+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "e69e30880b6a63a5abf344ca322545c7",
+    "correlationId": "6bb1950d66d14821a6b1750e8ecc2d29",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:12.2786670+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "e69e30880b6a63a5abf344ca322545c7",
+    "correlationId": "a89fadc0c6c34851b7a7a98534444093",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:12.2929780+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "0a6e3a348ed08e149be3b6c4fb3a26db",
+    "correlationId": "83786cf776aa427587ac23664d1be760",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:12.3211600+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "0a6e3a348ed08e149be3b6c4fb3a26db",
+    "correlationId": "c61674a0d8cb4852ad54676f78d7012b",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:12.3740130+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "8dc7a49b8b0c7b2514ec085a86b1c561",
+    "correlationId": "6f2fd5010460433f9bcaf7d7bb4f390d",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:12.9690280+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "8dc7a49b8b0c7b2514ec085a86b1c561",
+    "correlationId": "2c652ac2bbe945eebe01f75aaee0c77f",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:14.3065550+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "d49a67301f835e74b4805271779e0957",
+    "correlationId": "0e474f21c4854e82994f29692107da88",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:14.3294190+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "d49a67301f835e74b4805271779e0957",
+    "correlationId": "d2b3691cd564485ca81037a98b7cfb6c",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:15.0336890+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "0a179df9388385ee25fcae8db48177a7",
+    "correlationId": "51946738265242cbb0513800e65f14cd",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:15.0647640+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "0a179df9388385ee25fcae8db48177a7",
+    "correlationId": "62b25f8ef857432e912b588d677f8fc5",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:15.7611140+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "2f2d9251bdf68e9dca9a9aca2b7af074",
+    "correlationId": "df8a04c9cf2e471ba789e583e44952a1",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:15.7617450+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "2f2d9251bdf68e9dca9a9aca2b7af074",
+    "correlationId": "2827146e52c349a58dfa2d8591bb9aac",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:17.7853750+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "c1970c3d26cf30b381dcdb6ce1e41256",
+    "correlationId": "5ed6012595d84b06850698e3d846c51b",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:17.7863220+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "c1970c3d26cf30b381dcdb6ce1e41256",
+    "correlationId": "2225aba41965442493cb778b69499611",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:18.7218900+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "90d2378f5a25ac3b254b270fa96ad1fc",
+    "correlationId": "1bd6882ce19d43059b4e4e6b312f8033",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:19.0301460+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "90d2378f5a25ac3b254b270fa96ad1fc",
+    "correlationId": "066c850ace4b44719cd542d19bc40c4e",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:19.4999890+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "3ce83cfbc997d5ed7407cea86d8ebe7c",
+    "correlationId": "6080c8234406458096176da1059e4a9c",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:19.5009810+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "3ce83cfbc997d5ed7407cea86d8ebe7c",
+    "correlationId": "acf097061baa4a79a2221fd5679e4baf",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:37.6076190+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "fef4db3968f8c2153cf09612d4fb9ca1",
+    "correlationId": "8ebf67ebe8f04d23a88726826be7c4cb",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:37.6599590+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "fef4db3968f8c2153cf09612d4fb9ca1",
+    "correlationId": "e4048dc23d57495ea40526ff57af4b96",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:40.8870670+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "af8b51ea85f15be0ee446e96cdb37ddc",
+    "correlationId": "b4ba287e7ce642d7887d3466e08406b1",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:40.9082600+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "af8b51ea85f15be0ee446e96cdb37ddc",
+    "correlationId": "7f758c71c2824c088f6f687fcdb008e6",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:41.2269010+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "2935a148b1efa7c934673325ffa56720",
+    "correlationId": "9aeb537e95994f3795f95fd470c99733",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:41.2279380+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "2935a148b1efa7c934673325ffa56720",
+    "correlationId": "0b9749ad5dd5440589bd1208bd766940",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:41.2434140+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "11567f9abfc9f4561938e43d0fb656c5",
+    "correlationId": "f87625b513b9421ca6a7324f7bb8bbad",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:41.2548700+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "11567f9abfc9f4561938e43d0fb656c5",
+    "correlationId": "54ff1c22520d44eebec826ab906b4e0b",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:41.2661010+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "b611a94c5824dd84db5e1d45b731c286",
+    "correlationId": "9b9364b66214498e8db187e804538d29",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:41.2751700+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "b611a94c5824dd84db5e1d45b731c286",
+    "correlationId": "c258d8dbb8b14aacba64c176969f1a75",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:43.2587320+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "882db7131c67629fa1d2960967abbae4",
+    "correlationId": "a3450f4c46f44839bd434566781ee275",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:43.2600980+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "882db7131c67629fa1d2960967abbae4",
+    "correlationId": "6af1472258ce432785bbbfb2a67baf78",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:43.6001690+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "9a084f4e4520f4ebc8fcc0c3e34fd64b",
+    "correlationId": "8e36ce7a87ed49a587d5ea8c6624486d",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:43.6133280+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "9a084f4e4520f4ebc8fcc0c3e34fd64b",
+    "correlationId": "ab6129e648d74c7aab499d354eb7c523",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:43.8767510+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "659b0302223835676205269d880bf1d3",
+    "correlationId": "85aafada087248039f094702e084b29d",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:43.8773590+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "659b0302223835676205269d880bf1d3",
+    "correlationId": "7f48a1f1a31146dbade25f037194c3d5",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:43.8917410+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "2c12d184772fbe1ff0bfbd77ed53537f",
+    "correlationId": "3a8df42693c34a77b1a45386f9f01a70",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:43.9347670+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "2c12d184772fbe1ff0bfbd77ed53537f",
+    "correlationId": "a7fe0f01862c4c339f67c060647aa51c",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:43.9574650+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "c5e38bc633e31e06510b2c20eee2b5c2",
+    "correlationId": "ac635061580f4e9485eebcef9e187030",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:43.9668920+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/plans/plan-01a135df9bde769cbc91b1f1b12b5373/working-draft",
+    "traceId": "c5e38bc633e31e06510b2c20eee2b5c2",
+    "correlationId": "dc48d2f30d27424d98de19fffdafc673",
+    "method": "PUT",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:45.9016140+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "92c8486dbd03de0729128a2da7fb4ee5",
+    "correlationId": "db9577182a4942c39689cc0783128e77",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:45.9023240+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "92c8486dbd03de0729128a2da7fb4ee5",
+    "correlationId": "e458ccacb2bf4f29b6e3bfff3f906992",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:46.3088730+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "cd51bc868418f216a584666d69576bd3",
+    "correlationId": "04274b213da34dad854076add90d8c4f",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:46.3249600+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "cd51bc868418f216a584666d69576bd3",
+    "correlationId": "9fe3dc87b5484d81b2a70d88f920314d",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:46.5424240+08:00",
+    "service": "business-gateway",
+    "path": "/api/business-console/v1/scheduling/working-drafts",
+    "traceId": "7d3fa2b68d2a8c71c784cb19fcaf460f",
+    "correlationId": "129670000bb34e129e5683a05d3f2deb",
+    "method": "GET",
+    "status": 200
+  },
+  {
+    "timestamp": "2026-10-13T23:32:46.5429600+08:00",
+    "service": "business-scheduling",
+    "path": "/api/business/v1/scheduling/working-drafts",
+    "traceId": "7d3fa2b68d2a8c71c784cb19fcaf460f",
+    "correlationId": "b2bcb15cf2704d9fbab067c21da957a0",
+    "method": "GET",
+    "status": 200
+  }
+]

@@ -120,6 +120,7 @@ try {
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/check-script-governance.ps1") -Name "compat-script-governance" -TimeoutSeconds 120
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/ordinal-string.Tests.ps1") -Name "compat-ordinal-string-tests" -TimeoutSeconds 60
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/check-script-governance.Tests.ps1") -Name "compat-script-governance-tests" -TimeoutSeconds 180
+  Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/pda-android-tool-resolution.Tests.ps1") -Name "compat-pda-android-tool-resolution" -TimeoutSeconds 180
   # The scan boundary lives in its own file (#1509) and is a compat-fast subject for the same reason
   # the checker itself is: it spawns the checker as a real process and builds a mirrored scripts tree
   # under the platform temp directory, so path separators and temp-dir semantics are exactly what a
@@ -128,8 +129,7 @@ try {
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/ordinal-comparison-layers.Tests.ps1") -Name "compat-ordinal-comparison-layers" -TimeoutSeconds 180
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/test-evidence.Tests.ps1") -Name "compat-test-evidence-contracts" -TimeoutSeconds 300
   Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/acceptance-scenario-matrix.Tests.ps1") -Name "compat-acceptance-scenario-matrix-contracts" -TimeoutSeconds 300
-  Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/acceptance-scenario-matrix-runtime.Tests.ps1") -Name "compat-acceptance-scenario-matrix-runtime-contracts" -TimeoutSeconds 300
-  Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/acceptance-scenario-matrix-equivalence.Tests.ps1") -Name "compat-acceptance-scenario-matrix-equivalence-contracts" -TimeoutSeconds 300
+  Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/acceptance-canonical-result.Tests.ps1") -Name "compat-acceptance-canonical-result-contracts" -TimeoutSeconds 300
   Invoke-RecordedNativeCommand -Command "git" -Arguments @("diff", "--check") -Name "compat-git-diff-check" -TimeoutSeconds 120 | Out-Null
 
   if (-not $FastOnly) {

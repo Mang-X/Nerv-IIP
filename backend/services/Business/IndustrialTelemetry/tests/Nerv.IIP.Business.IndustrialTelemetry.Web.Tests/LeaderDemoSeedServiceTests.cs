@@ -25,7 +25,7 @@ public sealed class LeaderDemoSeedServiceTests
             {
                 Assert.Equal("DEV-CNC-DEMO", temperature.DeviceAssetId);
                 Assert.Equal(LeaderDemoSeedService.TemperatureTagKey, temperature.TagKey);
-                Assert.Equal("decimal", temperature.ValueType);
+                Assert.Equal("number", temperature.ValueType);
                 Assert.Equal("degC", temperature.UnitCode);
                 Assert.Equal("sample-2s", temperature.SamplingPolicy);
                 Assert.Equal(2, TelemetrySamplingPolicy.Parse(temperature.SamplingPolicy).BucketSeconds);
@@ -34,7 +34,7 @@ public sealed class LeaderDemoSeedServiceTests
             {
                 Assert.Equal("DEV-CNC-DEMO", vibration.DeviceAssetId);
                 Assert.Equal(LeaderDemoSeedService.VibrationTagKey, vibration.TagKey);
-                Assert.Equal("decimal", vibration.ValueType);
+                Assert.Equal("number", vibration.ValueType);
                 Assert.Equal("mm/s", vibration.UnitCode);
                 Assert.Equal("sample-2s", vibration.SamplingPolicy);
                 Assert.Equal(2, TelemetrySamplingPolicy.Parse(vibration.SamplingPolicy).BucketSeconds);
@@ -50,6 +50,31 @@ public sealed class LeaderDemoSeedServiceTests
         Assert.Empty(await db.TelemetrySummaries.ToArrayAsync());
         Assert.Empty(await db.DeviceStateSnapshots.ToArrayAsync());
         Assert.Empty(await db.AlarmEvents.ToArrayAsync());
+    }
+
+    [Theory]
+    [InlineData("decimal")]
+    [InlineData("number")]
+    public async Task Seed_accepts_a_reserved_tag_renamed_in_the_product_or_written_by_an_older_seed(string valueType)
+    {
+        // 老版本种子写的是 decimal；在设备详情「采集点位」里改名称后，点位按闭集以 number 回写。
+        // 两种形态下次启动时都必须被种子当成自己的点位，而不是冲突（否则 LeaderDemo 下 IIoT 起不来）。
+        await using var db = CreateDbContext();
+        foreach (var (tagKey, unitCode) in new[] { (LeaderDemoSeedService.TemperatureTagKey, "degC"), (LeaderDemoSeedService.VibrationTagKey, "mm/s") })
+        {
+            var tag = TelemetryTag.Create("org-001", "env-dev", "DEV-CNC-DEMO", tagKey, valueType, unitCode, "sample-2s");
+            tag.Rename("演示点位");
+            db.TelemetryTags.Add(tag);
+        }
+
+        await db.SaveChangesAsync();
+
+        await new LeaderDemoSeedService(db).SeedAsync("org-001", "env-dev");
+
+        var tags = await db.TelemetryTags.ToArrayAsync();
+        Assert.Equal(2, tags.Length);
+        Assert.All(tags, tag => Assert.Equal("演示点位", tag.DisplayName));
+        Assert.Single(await db.AlarmRules.ToArrayAsync());
     }
 
     [Fact]

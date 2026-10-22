@@ -5,6 +5,17 @@ import { createConsoleI18n } from '@/i18n'
 import LoginForm from './LoginForm.vue'
 
 describe('LoginForm', () => {
+  // Regression: #4296 的加载读屏名称须为中文，并保留 pending 状态行为。
+  it('shows a Chinese loading name only while pending and keeps submit disabled', async () => {
+    const wrapper = mountForm({ props: { pending: true } })
+    expect(wrapper.get('[role="status"]').attributes('aria-label')).toBe('加载中')
+    expect(wrapper.get('[role="status"]').attributes('data-icon')).toBe('inline-start')
+    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeDefined()
+    await wrapper.setProps({ pending: false })
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.get('button[type="submit"]').attributes('disabled')).toBeUndefined()
+  })
+
   function mountForm(options: Parameters<typeof mount>[1] = {}) {
     return mount(LoginForm, {
       ...options,

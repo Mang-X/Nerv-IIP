@@ -66,7 +66,6 @@ const props = withDefaults(
     pending: boolean
     refreshing: boolean
     loadingMore: boolean
-    updatedAt?: string | null
     currentPrincipalId?: string
     status?: string
     scopeKey?: string
@@ -76,9 +75,6 @@ const props = withDefaults(
     locationOptions?: WarehouseTaskCandidateOption[]
     lotOptions?: WarehouseTaskCandidateOption[]
     candidateReady?: boolean
-    candidateSourceLabel?: string
-    candidateAsOfUtc?: string
-    candidateFreshnessUtc?: string
     candidateTruncated?: boolean
     candidatePending?: boolean
     candidateError?: unknown
@@ -94,7 +90,6 @@ const props = withDefaults(
   }>(),
   {
     currentPrincipalId: undefined,
-    updatedAt: null,
     status: undefined,
     scopeKey: undefined,
     keyword: undefined,
@@ -103,9 +98,6 @@ const props = withDefaults(
     locationOptions: () => [],
     lotOptions: () => [],
     candidateReady: false,
-    candidateSourceLabel: '当前范围仓储作业记录候选',
-    candidateAsOfUtc: undefined,
-    candidateFreshnessUtc: undefined,
     candidateTruncated: false,
     candidatePending: false,
     candidateError: undefined,
@@ -349,20 +341,16 @@ function emitQuantityAction(action: 'progress' | 'complete') {
 
     <TaskListShell
       :state-key="`wms-${taskType}-tasks`"
-      scope="当前授权 WMS 作业范围"
-      source="WMS 仓储任务服务"
       :loaded="tasks.length"
       :total="total"
-      :updated-at="updatedAt"
       :pending="pending"
       :refreshing="refreshing"
       :loading-more="loadingMore"
       :error="error"
       :load-more-error="loadMoreError"
       error-test-id="error-banner"
-      failure-explanation="任务服务未成功返回；已加载数据不会被清空。"
       :filter-state="filterState"
-      empty-description="当前范围暂无任务。任务来自 WMS 派工，可切换作业范围或状态后重试。"
+      empty-description="当前范围暂无任务，可切换作业范围或状态后重试。"
       @refresh="emit('refresh')"
       @load-more="emit('loadMore')"
       @retry="emit('retry')"
@@ -378,9 +366,6 @@ function emitQuantityAction(action: 'progress' | 'complete') {
             :location-options="locationOptions"
             :lot-options="lotOptions"
             :ready="candidateReady"
-            :source-label="candidateSourceLabel"
-            :as-of-utc="candidateAsOfUtc"
-            :freshness-utc="candidateFreshnessUtc"
             :truncated="candidateTruncated"
             :pending="candidatePending"
             :error="candidateError"

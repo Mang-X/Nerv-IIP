@@ -3,6 +3,7 @@
 - 状态：已接受
 - 日期：2026-08-17
 - 关联：[Issue #992](https://github.com/Mang-X/Nerv-IIP/issues/992)、[Issue #1617](https://github.com/Mang-X/Nerv-IIP/issues/1617)
+- 修订依据：[ADR 0030：BusinessGateway 按用途分面的受控文件字节通路](0030-business-gateway-purpose-scoped-file-transfer.md)
 
 ## 背景
 
@@ -173,3 +174,8 @@ sequenceDiagram
 4. canonical SHA-256 成为每个 completed 文件的服务端权威事实，增加完整字节读取成本，但获得跨 provider 一致的完整性证明、幂等判定和审计依据。
 5. staging 与 final 分离后，上传过期清理、提交恢复和 final 生命周期可以独立治理；清理实现必须遵守“不删除唯一恢复副本”的顺序。
 6. 本 ADR 与现有基线和公开契约会暂时并存冲突；权威文档和生成链的机械同步、兼容裁决及运行时代码由 #992 的独立后续层交付，不能从 ADR 已接受推导为实现完成。
+
+## 实施说明
+
+1. 决策 1.3 的「Console/浏览器只访问 **PlatformGateway** 暴露的受控 tus URL」，以及决策 1.1 中「自研 tus endpoint 不得新增消费方」这一面，自 [ADR 0030](0030-business-gateway-purpose-scoped-file-transfer.md) 起不再成立：BusinessGateway 可以并列暴露受控 tus 代理入口，业务面因此新增一个自研 tus endpoint 的消费方。决策 1.3 的其余部分——客户端不得取得内部 FileStorage URL、存储地址、`ObjectKey` 或长期存储凭据，网关只做鉴权与代理，FileStorage 拥有会话、权限、过期、complete 与文件事实——继续完全有效，并由 ADR 0030 决策 1 逐条继承。决策 1.1 的「自研 tus endpoint 与 `ServerProxyUploadProvider` 属待退役范围、目标实现是 `tusdotnet`」也继续有效，退役范围随消费方增加而扩大。
+2. 本 ADR 的第 2 节（staging、final 与 `ObjectKey`）、第 3 节（complete 通用不变量）、状态机、提交时序与失败矩阵不受 ADR 0030 影响，全部继续有效。

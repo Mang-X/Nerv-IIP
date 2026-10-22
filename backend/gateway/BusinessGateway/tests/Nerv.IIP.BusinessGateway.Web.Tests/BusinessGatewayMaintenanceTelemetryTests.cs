@@ -12,11 +12,61 @@ using Nerv.IIP.BusinessGateway.Web.Endpoints.Maintenance;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.ServiceAuth;
+using BusinessOeeAggregateRequest = Nerv.IIP.Contracts.IndustrialTelemetry.QueryOeeAggregateBucketsRequest;
+using BusinessOeeAggregateResponse = Nerv.IIP.Contracts.IndustrialTelemetry.OeeAggregateBucketsResponse;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
 public sealed class BusinessGatewayMaintenanceTelemetryTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Expected_restore_update_uses_realtime_manage_permission_and_trusted_actor(bool allowed)
+    {
+        var auth = allowed ? FakeBusinessGatewayAuthorizationClient.Allowed(scopeGrants:
+        [
+            new AuthorizationScopeGrant("membership", "org-001", "organization", "org-001",
+                [BusinessGatewayPermissions.MaintenanceWorkOrdersManage], OrganizationWide: true),
+        ]) : FakeBusinessGatewayAuthorizationClient.Forbidden();
+        var maintenance = new RecordingMaintenanceFacadeClient();
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = PrincipalWorkContext(
+                new BusinessMasterDataWorkContextCandidateScope("organization", "org-001", "Organization", "organization", [])),
+        };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        var expected = new DateTimeOffset(2026, 10, 7, 9, 0, 0, TimeSpan.Zero);
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/work-orders/wo-maint-001/actions", new
+        {
+            organizationId = "org-001", environmentId = "env-dev", scopeKind = "organization", scopeId = "org-001",
+            action = "updateExpectedRestore", reason = "estimate", idempotencyKey = "etr-update", expectedVersion = 0,
+            expectedRestoreAtUtc = expected, actorPrincipalId = "untrusted-client",
+        });
+        Assert.Equal(allowed ? HttpStatusCode.OK : HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.MaintenanceWorkOrdersManage, auth.LastRequirement!.PermissionCode);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+        Assert.Equal(allowed ? 1 : 0, maintenance.TransitionCallCount);
+        if (allowed)
+        {
+            Assert.Equal(expected, maintenance.LastTransitionRequest!.ExpectedRestoreAtUtc);
+            Assert.Equal("org-001", maintenance.LastTransitionRequest.OrganizationId);
+            Assert.Equal("env-dev", maintenance.LastTransitionRequest.EnvironmentId);
+            Assert.Equal("user-admin", maintenance.LastTransitionActor);
+            Assert.Equal("internal-test-token", maintenance.LastInternalToken);
+        }
+    }
+
     [Fact]
     public async Task Connector_collection_health_authorizes_connector_scope_and_preserves_field_connection_loss()
     {
@@ -1444,8 +1494,10 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Null(maintenance.LastWorkOrderListRequest);
     }
 
-    [Fact]
-    public async Task Same_team_different_technician_cannot_read_or_execute_owner_only_actions()
+    [Theory]
+    [InlineData("start")]
+    [InlineData("updateExpectedRestore")]
+    public async Task Same_team_different_technician_cannot_read_or_execute_owner_only_actions(string action)
     {
         var grants = new[]
         {
@@ -1462,7 +1514,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
                     "wo-team-a", "DEV-001", "high", "Accepted", null, null, DateTimeOffset.UtcNow,
                     AssignedTechnicianUserId: "tech-a", AssignedTeamId: "team-a"),
             ],
-            WorkOrderDetailAllowedActions = ["start", "cancel"],
+            WorkOrderDetailAllowedActions = [action, "cancel"],
         };
         var masterData = new RecordingMasterDataClient
         {
@@ -1496,7 +1548,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             {
                 organizationId = "org-001",
                 environmentId = "env-dev",
-                action = "start",
+                action,
                 reason = "starting",
                 idempotencyKey = "start-tech-b",
                 expectedVersion = 2,
@@ -2277,8 +2329,9 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal("SPARE-001", maintenance.LastCompleteWorkOrderRequest.GetProperty("spareParts")[0].GetProperty("skuCode").GetString());
     }
 
-    [Fact]
-    public async Task Alarm_sourced_repair_resolves_code_and_public_id_to_the_same_device_before_create()
+    [Theory]
+    [MemberData(nameof(AlarmRepairApiVersions))]
+    public async Task Alarm_sourced_repair_resolves_code_and_public_id_to_the_same_device_before_create(string version)
     {
         const string alarmId = "019f2000-0000-7000-8000-0000000000ab";
         var maintenance = new RecordingMaintenanceFacadeClient();
@@ -2308,10 +2361,12 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         var response = await PostAlarmRepairAsync(
             client,
             deviceId.ToUpperInvariant(),
-            alarmId.ToUpperInvariant());
+            alarmId.ToUpperInvariant(),
+            version);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(1, maintenance.CreateWorkOrderCallCount);
+        Assert.Equal(version, maintenance.LastCreateWorkOrderVersion);
         Assert.Equal(new BusinessConsoleTelemetryAlarmListRequest(
             "org-001", "env-dev", null, null, 0, 2, AlarmEventId: alarmId), telemetry.LastAlarmListRequest);
         Assert.Equal(alarmId, maintenance.LastCreateWorkOrderRequest.GetProperty("sourceAlarmId").GetString());
@@ -2320,8 +2375,9 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Contains(masterData.DetailRequests, x => x.Code == "DEV-PRESS-01");
     }
 
-    [Fact]
-    public async Task Alarm_sourced_repair_rejects_a_different_device_before_create()
+    [Theory]
+    [MemberData(nameof(AlarmRepairApiVersions))]
+    public async Task Alarm_sourced_repair_rejects_a_different_device_before_create(string version)
     {
         var maintenance = new RecordingMaintenanceFacadeClient();
         var telemetry = new RecordingIndustrialTelemetryClient
@@ -2338,27 +2394,41 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
-        var response = await PostAlarmRepairAsync(client, "DEV-REQUEST-B");
+        var response = await PostAlarmRepairAsync(client, "DEV-REQUEST-B", version: version);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Equal(0, maintenance.CreateWorkOrderCallCount);
     }
 
-    public static TheoryData<string, BusinessConsoleTelemetryAlarmEventListResponse> InvalidAlarmFacts => new()
+    public static TheoryData<string, BusinessConsoleTelemetryAlarmEventListResponse, string> InvalidAlarmFacts
     {
-        { "not found", new BusinessConsoleTelemetryAlarmEventListResponse([], 0) },
-        { "wrong scope", AlarmResponse(Alarm("alarm-001", "DEV-A", organizationId: "org-other")) },
-        { "multiple", new BusinessConsoleTelemetryAlarmEventListResponse([
-            Alarm("alarm-001", "DEV-A"),
-            Alarm("alarm-001", "DEV-B"),
-        ], 2) },
-    };
+        get
+        {
+            var data = new TheoryData<string, BusinessConsoleTelemetryAlarmEventListResponse, string>();
+            foreach (var version in new[] { "v1", "v2" })
+            {
+                data.Add("not found", new BusinessConsoleTelemetryAlarmEventListResponse([], 0), version);
+                data.Add("wrong scope", AlarmResponse(Alarm("alarm-001", "DEV-A", organizationId: "org-other")), version);
+                data.Add("multiple", new BusinessConsoleTelemetryAlarmEventListResponse([
+                    Alarm("alarm-001", "DEV-A"),
+                    Alarm("alarm-001", "DEV-B"),
+                ], 2), version);
+                // #2969 复审 D：单页只回一条但 Total 声明还有更多 —— 唯一能让 `alarms.Total == 1`
+                // 这个合取项承重的形状（Count==1 && Total!=1）。缺它时删掉该判断仍全绿。
+                data.Add("single item with ambiguous total",
+                    new BusinessConsoleTelemetryAlarmEventListResponse([Alarm("alarm-001", "DEV-A")], 2), version);
+            }
+
+            return data;
+        }
+    }
 
     [Theory]
     [MemberData(nameof(InvalidAlarmFacts))]
     public async Task Alarm_sourced_repair_rejects_missing_wrong_scope_or_multiple_alarm_facts(
         string _,
-        BusinessConsoleTelemetryAlarmEventListResponse alarmResponse)
+        BusinessConsoleTelemetryAlarmEventListResponse alarmResponse,
+        string version)
     {
         var maintenance = new RecordingMaintenanceFacadeClient();
         var telemetry = new RecordingIndustrialTelemetryClient { AlarmListResponse = alarmResponse };
@@ -2367,7 +2437,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
 
-        var response = await PostAlarmRepairAsync(client, "DEV-A");
+        var response = await PostAlarmRepairAsync(client, "DEV-A", version: version);
 
         Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
         Assert.Equal(0, maintenance.CreateWorkOrderCallCount);
@@ -2608,6 +2678,8 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             skuCode = "SPARE-001",
             quantity = 2m,
             uomCode = "EA",
+            siteCode = "SITE-001",
+            locationCode = "loc-spare-01",
         });
 
         Assert.Equal(HttpStatusCode.OK, inspectionsResponse.StatusCode);
@@ -2620,6 +2692,92 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Equal(new BusinessConsoleMaintenanceListRequest("org-001", "env-dev", 4, 5), maintenance.LastSparePartListRequest);
         Assert.Equal("wo-maint-001", maintenance.LastCreateSparePartRequest.GetProperty("workOrderId").GetString());
         Assert.Equal("SPARE-001", maintenance.LastCreateSparePartRequest.GetProperty("skuCode").GetString());
+        // #3902：领出工厂与库位原样转给维保服务。
+        Assert.Equal("SITE-001", maintenance.LastCreateSparePartRequest.GetProperty("siteCode").GetString());
+        Assert.Equal("loc-spare-01", maintenance.LastCreateSparePartRequest.GetProperty("locationCode").GetString());
+    }
+
+    [Fact]
+    public async Task Maintenance_downtime_reason_write_facades_use_work_order_manage_and_forward_route_code()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var maintenance = new RecordingMaintenanceFacadeClient();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var created = await client.PostAsJsonAsync("/api/business-console/v1/maintenance/downtime-reasons", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            reasonCode = "DT-HYD",
+            description = "液压系统故障",
+            reasonCategory = "breakdown",
+            lossCategory = "availability",
+        });
+        var updated = await client.PutAsJsonAsync("/api/business-console/v1/maintenance/downtime-reasons/DT-HYD", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            description = "液压系统泄漏",
+            reasonCategory = "breakdown",
+            lossCategory = "availability",
+        });
+        using var deleteRequest = new HttpRequestMessage(HttpMethod.Delete, "/api/business-console/v1/maintenance/downtime-reasons/DT-HYD")
+        {
+            Content = JsonContent.Create(new { organizationId = "org-001", environmentId = "env-dev" }),
+        };
+        var deleted = await client.SendAsync(deleteRequest);
+
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, updated.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
+        Assert.Equal(3, auth.Requirements.Count);
+        Assert.All(auth.Requirements, x => Assert.Equal(BusinessGatewayPermissions.MaintenanceWorkOrdersManage, x.PermissionCode));
+        Assert.Equal("DT-HYD", maintenance.LastCreateDowntimeReasonRequest?.ReasonCode);
+        Assert.Equal(("DT-HYD", "液压系统泄漏"), (maintenance.LastUpdateDowntimeReasonCode, maintenance.LastUpdateDowntimeReasonRequest?.Description));
+        Assert.Equal(("DT-HYD", "org-001"), (maintenance.LastDeleteDowntimeReasonCode, maintenance.LastDeleteDowntimeReasonRequest?.OrganizationId));
+        Assert.Equal("internal-test-token", maintenance.LastInternalToken);
+    }
+
+    /// <summary>
+    /// #3855 审核阻断 6：编码已存在时 Maintenance 返回 409 + 稳定码，网关原样保留状态与码，
+    /// 控制台据此提示「编码已存在」，不误报新建成功。
+    /// </summary>
+    [Fact]
+    public async Task Maintenance_downtime_reason_duplicate_code_conflict_keeps_409_and_the_stable_code()
+    {
+        using var httpClient = new HttpClient(new StaticJsonHandler(
+            HttpStatusCode.Conflict,
+            """{"success":false,"message":"downtime-reason-code-already-exists"}"""))
+        {
+            BaseAddress = new Uri("http://maintenance.local"),
+        };
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.CreateDowntimeReasonAsync(
+            "internal-token",
+            new BusinessConsoleCreateMaintenanceDowntimeReasonRequest(
+                "org-001", "env-dev", "DT-MECH", "液压系统故障", "breakdown", "availability"),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Conflict, exception.StatusCode);
+        Assert.Equal("downtime-reason-code-already-exists", exception.Message);
+    }
+
+    private sealed class StaticJsonHandler(HttpStatusCode statusCode, string body) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(statusCode)
+            {
+                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
+            });
     }
 
     [Fact]
@@ -2744,6 +2902,92 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
         Assert.Contains(auth.Requirements, x => x.PermissionCode == BusinessGatewayPermissions.IiotAlarmsRead);
         Assert.Equal(new BusinessConsoleTelemetryTagListRequest("org-001", "env-dev", "DEV-PRESS-01"), telemetry.LastTagListRequest);
         Assert.Equal(new BusinessConsoleTelemetryAlarmListRequest("org-001", "env-dev", "DEV-PRESS-01", "raised"), telemetry.LastAlarmListRequest);
+    }
+
+    [Fact]
+    public async Task Telemetry_tag_maintenance_uses_tags_manage_permission_scoped_to_the_device_and_forwards_payloads()
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var telemetry = new RecordingTelemetryFacadeClient();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var saveResponse = await client.PostAsJsonAsync("/api/business-console/v1/telemetry/tags", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "EQ00001",
+            tagKey = "parts_count",
+            displayName = "成品计数",
+            valueType = "production-count-draft",
+            unitCode = "pcs",
+            samplingPolicy = "sample-60s",
+            isWritable = true,
+            controlMinValue = 0m,
+            controlMaxValue = 9999m,
+            controlAllowedValues = new[] { "0" },
+        });
+        Assert.Equal(HttpStatusCode.OK, saveResponse.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.IiotTagsManage, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("device-asset", auth.LastRequirement.ResourceType);
+        Assert.Equal("EQ00001", auth.LastRequirement.ResourceId);
+        var saved = telemetry.LastCreateOrUpdateTagRequest!;
+        Assert.Equal("成品计数", saved.DisplayName);
+        Assert.Equal("production-count-draft", saved.ValueType);
+        Assert.True(saved.IsWritable);
+        Assert.Equal(0m, saved.ControlMinValue);
+        Assert.Equal(9999m, saved.ControlMaxValue);
+        Assert.Equal(["0"], saved.ControlAllowedValues!);
+        Assert.Equal("internal-test-token", telemetry.LastInternalToken);
+
+        var disableResponse = await client.PostAsJsonAsync("/api/business-console/v1/telemetry/tags/disable", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "EQ00002",
+            tagKey = "parts_count",
+        });
+        Assert.Equal(HttpStatusCode.OK, disableResponse.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.IiotTagsManage, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("EQ00002", auth.LastRequirement.ResourceId);
+        Assert.Equal(new BusinessConsoleDisableTelemetryTagRequest("org-001", "env-dev", "EQ00002", "parts_count"), telemetry.LastDisableTagRequest);
+    }
+
+    [Theory]
+    [InlineData("decimal")]
+    [InlineData("counter")]
+    public async Task Telemetry_tag_save_rejects_value_types_outside_the_closed_set_before_forwarding(string valueType)
+    {
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        var telemetry = new RecordingTelemetryFacadeClient();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessIndustrialTelemetryClient>();
+            services.AddSingleton<IBusinessIndustrialTelemetryClient>(telemetry);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/telemetry/tags", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            deviceAssetId = "EQ00001",
+            tagKey = "parts_count",
+            valueType,
+            unitCode = "pcs",
+            samplingPolicy = "sample-60s",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(telemetry.LastCreateOrUpdateTagRequest);
     }
 
     [Fact]
@@ -2941,11 +3185,16 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
             request.EnvironmentId,
             DeviceAssetId: deviceAssetId);
 
+    // #2969：v1 与 v2 创建代理共用同一份 source alarm/设备一致性校验，因此同一组事实必须在两条
+    // 路由上给出同一结果。version 参数让每条断言同时覆盖两个版本。
+    public static TheoryData<string> AlarmRepairApiVersions => new() { "v1", "v2" };
+
     private static async Task<HttpResponseMessage> PostAlarmRepairAsync(
         HttpClient client,
         string deviceAssetId,
-        string sourceAlarmId = "alarm-001") =>
-        await client.PostAsJsonAsync("/api/business-console/v1/maintenance/work-orders", new
+        string sourceAlarmId = "alarm-001",
+        string version = "v1") =>
+        await client.PostAsJsonAsync($"/api/business-console/{version}/maintenance/work-orders", new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
@@ -3077,6 +3326,37 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
 
     public string? LastInternalToken { get; private set; }
 
+    /// <summary>#1947：停机读面在门面层按这份目录把原因码解成中文名。</summary>
+    public IReadOnlyCollection<BusinessConsoleMaintenanceReasonDirectoryItem> DowntimeReasonDirectory { get; init; } =
+    [
+        new("downtime-reason-1", "DT-MECH", "机械故障（轴承/传动/密封）", "breakdown", "availability"),
+        new("downtime-reason-2", "DT-PM", "计划保养", "planned", "planned"),
+    ];
+
+    public BusinessConsoleMaintenanceReasonDirectoryRequest? LastDowntimeReasonDirectoryRequest { get; private set; }
+
+    /// <summary>设置后目录调用改为抛出该异常，用来覆盖 Maintenance 不可用时读面的降级路径。</summary>
+    public Exception? DowntimeReasonDirectoryFailure { get; init; }
+
+    public Task<BusinessConsoleMaintenanceReasonDirectoryResponse> ListDowntimeReasonsAsync(
+        string internalBearerToken,
+        BusinessConsoleMaintenanceReasonDirectoryRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDowntimeReasonDirectoryRequest = request;
+        if (DowntimeReasonDirectoryFailure is not null)
+        {
+            return Task.FromException<BusinessConsoleMaintenanceReasonDirectoryResponse>(DowntimeReasonDirectoryFailure);
+        }
+
+        return Task.FromResult(new BusinessConsoleMaintenanceReasonDirectoryResponse(
+            DowntimeReasonDirectory,
+            request.Skip,
+            request.Take,
+            DowntimeReasonDirectory.Count));
+    }
+
     public BusinessConsoleMaintenanceWorkOrderListRequest? LastWorkOrderListRequest { get; private set; }
 
     public BusinessConsoleMaintenanceListRequest? LastInspectionListRequest { get; private set; }
@@ -3128,6 +3408,12 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
     public int AssignCallCount { get; private set; }
 
     public int TransitionCallCount { get; private set; }
+    public BusinessConsoleTransitionMaintenanceWorkOrderRequest? LastTransitionRequest { get; private set; }
+    public string? LastTransitionActor { get; private set; }
+
+    public string? LastCreateWorkOrderVersion { get; private set; }
+
+    public BusinessConsoleCreateMaintenanceWorkOrderV2Request? LastCreateWorkOrderV2Request { get; private set; }
 
     public Task<BusinessConsoleCreateMaintenanceWorkOrderResponse> CreateWorkOrderAsync(
         string internalBearerToken,
@@ -3135,9 +3421,23 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
         CancellationToken cancellationToken)
     {
         CreateWorkOrderCallCount++;
+        LastCreateWorkOrderVersion = "v1";
         LastInternalToken = internalBearerToken;
         LastCreateWorkOrderRequest = JsonSerializer.SerializeToElement(request, JsonOptions);
         return Task.FromResult(new BusinessConsoleCreateMaintenanceWorkOrderResponse("wo-maint-created"));
+    }
+
+    public Task<BusinessConsoleCreateMaintenanceWorkOrderV2Response> CreateWorkOrderV2Async(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenanceWorkOrderV2Request request,
+        CancellationToken cancellationToken)
+    {
+        CreateWorkOrderCallCount++;
+        LastCreateWorkOrderVersion = "v2";
+        LastInternalToken = internalBearerToken;
+        LastCreateWorkOrderV2Request = request;
+        LastCreateWorkOrderRequest = JsonSerializer.SerializeToElement(request, JsonOptions);
+        return Task.FromResult(new BusinessConsoleCreateMaintenanceWorkOrderV2Response("wo-maint-created-v2"));
     }
 
     public Task<BusinessConsoleCompleteMaintenanceWorkOrderResponse> CompleteWorkOrderAsync(
@@ -3186,6 +3486,9 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
         CancellationToken cancellationToken)
     {
         TransitionCallCount++;
+        LastTransitionRequest = request;
+        LastTransitionActor = actorPrincipalId;
+        LastInternalToken = internalBearerToken;
         return Task.FromResult(new BusinessConsoleMaintenanceWorkOrderActionResponse(
             workOrderId, request.Action.ToString(), request.ExpectedVersion + 1, DateTimeOffset.UtcNow,
             new BusinessConsoleOperationReceipt("transition-maintenance-work-order", "maintenance", "maintenance-work-order",
@@ -3336,6 +3639,50 @@ internal sealed class RecordingMaintenanceFacadeClient : IBusinessMaintenanceCli
         ], request.Skip, request.Take, 1));
     }
 
+    public BusinessConsoleCreateMaintenanceDowntimeReasonRequest? LastCreateDowntimeReasonRequest { get; private set; }
+
+    public string? LastUpdateDowntimeReasonCode { get; private set; }
+
+    public BusinessConsoleUpdateMaintenanceDowntimeReasonRequest? LastUpdateDowntimeReasonRequest { get; private set; }
+
+    public string? LastDeleteDowntimeReasonCode { get; private set; }
+
+    public BusinessConsoleDeleteMaintenanceDowntimeReasonRequest? LastDeleteDowntimeReasonRequest { get; private set; }
+
+    public Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> CreateDowntimeReasonAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateMaintenanceDowntimeReasonRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateDowntimeReasonRequest = request;
+        return Task.FromResult(new BusinessConsoleMaintenanceDowntimeReasonMutationResponse(request.ReasonCode));
+    }
+
+    public Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> UpdateDowntimeReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleUpdateMaintenanceDowntimeReasonRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastUpdateDowntimeReasonCode = reasonCode;
+        LastUpdateDowntimeReasonRequest = request;
+        return Task.FromResult(new BusinessConsoleMaintenanceDowntimeReasonMutationResponse(reasonCode));
+    }
+
+    public Task<BusinessConsoleMaintenanceDowntimeReasonMutationResponse> DeleteDowntimeReasonAsync(
+        string internalBearerToken,
+        string reasonCode,
+        BusinessConsoleDeleteMaintenanceDowntimeReasonRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDeleteDowntimeReasonCode = reasonCode;
+        LastDeleteDowntimeReasonRequest = request;
+        return Task.FromResult(new BusinessConsoleMaintenanceDowntimeReasonMutationResponse(reasonCode));
+    }
+
     public Task<BusinessConsoleCreateMaintenanceSparePartResponse> CreateSparePartAsync(
         string internalBearerToken,
         BusinessConsoleCreateMaintenanceSparePartRequest request,
@@ -3481,6 +3828,10 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
 
     public BusinessConsoleTelemetryTagListRequest? LastTagListRequest { get; private set; }
 
+    public BusinessConsoleCreateOrUpdateTelemetryTagRequest? LastCreateOrUpdateTagRequest { get; private set; }
+
+    public BusinessConsoleDisableTelemetryTagRequest? LastDisableTagRequest { get; private set; }
+
     public BusinessConsoleTelemetryAlarmRuleListRequest? LastAlarmRuleListRequest { get; private set; }
 
     public BusinessConsoleTelemetryAlarmListRequest? LastAlarmListRequest { get; private set; }
@@ -3536,6 +3887,26 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
         [
             new BusinessConsoleTelemetryTagItem("tag-001", "org-001", "env-dev", "DEV-PRESS-01", "temperature", "decimal", "C", "1m"),
         ], 42));
+    }
+
+    public Task<BusinessConsoleCreateOrUpdateTelemetryTagResponse> CreateOrUpdateTagAsync(
+        string internalBearerToken,
+        BusinessConsoleCreateOrUpdateTelemetryTagRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCreateOrUpdateTagRequest = request;
+        return Task.FromResult(new BusinessConsoleCreateOrUpdateTelemetryTagResponse("tag-001"));
+    }
+
+    public Task<BusinessConsoleDisableTelemetryTagResponse> DisableTagAsync(
+        string internalBearerToken,
+        BusinessConsoleDisableTelemetryTagRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastDisableTagRequest = request;
+        return Task.FromResult(new BusinessConsoleDisableTelemetryTagResponse("tag-001"));
     }
 
     public Task<BusinessConsoleTelemetryTagCurrentValueResponse> GetTagCurrentValueAsync(
@@ -3656,6 +4027,12 @@ internal sealed class RecordingTelemetryFacadeClient : IBusinessIndustrialTeleme
             true,
             ["production-facts-missing"]));
     }
+
+    public Task<BusinessOeeAggregateResponse> QueryOeeAggregatesAsync(
+        string internalBearerToken,
+        Nerv.IIP.Contracts.IndustrialTelemetry.QueryInternalOeeAggregateBucketsRequest request,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
 
     public Task<EquipmentRuntimeAvailabilityResponse> GetRuntimeAvailabilityAsync(
         string internalBearerToken,

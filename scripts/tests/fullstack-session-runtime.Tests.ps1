@@ -3,8 +3,10 @@
 #   SideEffects:
 #     - Validates full-stack Docker ownership predicates against synthetic inspect data
 #     - Starts and stops one detached local PowerShell lifecycle probe
+#     - Runs short-lived PowerShell probes through the FullStack startup environment
 #   Writes:
 #     - Temporary detached-process stdout and stderr logs
+#     - Temporary proof startup stdout and stderr logs
 #   Cleanup:
 #     - Stops the exact lifecycle-probe process and removes its temporary directory
 #   Requires:
@@ -62,11 +64,47 @@ $parallelAcceptanceScript = Join-Path $repoRoot 'scripts/verify-parallel-fullsta
 Assert-True (Test-Path -LiteralPath $parallelAcceptanceScript -PathType Leaf) 'Parallel full-stack acceptance entrypoint is missing.'
 $parallelAcceptanceText = Get-Content -LiteralPath $parallelAcceptanceScript -Raw
 $fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Raw
+$runtimeSourceText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1') -Raw
 $nervEntrypointText = Get-Content -LiteralPath (Join-Path $repoRoot 'nerv.ps1') -Raw
 $appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
+Assert-True ($runtimeSourceText.Contains('function Get-NervFullStackNonSeedEnvironment', [StringComparison]::Ordinal)) 'Full-stack runtime must expose a reusable non-seed environment boundary.'
+foreach ($runtimeFunctionName in @('Get-NervAspireDescribeObject', 'Wait-NervAspireResource', 'Collect-NervFullStackDiagnostics', 'Stop-NervFullStackSession')) {
+    $runtimeFunctionDefinition = (Get-Command $runtimeFunctionName -ErrorAction Stop).Definition
+    Assert-True ($runtimeFunctionDefinition.Contains('Get-NervFullStackNonSeedEnvironment', [StringComparison]::Ordinal)) "$runtimeFunctionName must pass the non-seed environment to its child process operations."
+}
+foreach ($runtimeFunctionName in @(
+    'Get-NervDockerListedValues',
+    'Get-NervDockerInspectObjects',
+    'Get-NervFullStackContainerRecords',
+    'Get-NervFullStackDcpNetworkIds',
+    'Get-NervSessionDockerResources',
+    'Remove-NervSessionDockerResources',
+    'Get-NervFullStackStatusSummary'
+)) {
+    $runtimeFunctionDefinition = (Get-Command $runtimeFunctionName -ErrorAction Stop).Definition
+    Assert-True ($runtimeFunctionDefinition.Contains('Get-NervFullStackNonSeedEnvironment', [StringComparison]::Ordinal)) "$runtimeFunctionName must establish a non-seed environment boundary for lifecycle and Docker child processes."
+    Assert-True ($runtimeFunctionDefinition.Contains('-Environment', [StringComparison]::Ordinal)) "$runtimeFunctionName must pass its non-seed environment to the child process operation."
+}
+Assert-True ($fullStackSessionText.Contains('Get-NervFullStackNonSeedEnvironment', [StringComparison]::Ordinal)) 'Full-stack entrypoint lifecycle actions must use the non-seed environment boundary.'
+Assert-True ($fullStackSessionText.Contains('-Environment (Get-NervFullStackNonSeedEnvironment)', [StringComparison]::Ordinal)) 'Full-stack MAN acceptance Docker helpers must use a non-seed environment boundary.'
+$runtimeSource = $runtimeSourceText
 Assert-True ($fullStackSessionText -match '(?s)\[ValidateSet\((?:(?!\)\]).)*''man-440''(?:(?!\)\]).)*\)\]\s*\[string\]\s+\$Scenario') 'Full-stack scenarios must expose the MAN-440 runtime-hour PM acceptance.'
 Assert-True ($nervEntrypointText -match '(?s)\[ValidateSet\((?:(?!\)\]).)*''man-440''(?:(?!\)\]).)*\)\]\s*\[string\]\s+\$Scenario') 'The governed root entrypoint must accept the MAN-440 full-stack scenario.'
 Assert-True ($fullStackSessionText -match '(?m)^function Invoke-NervMan440RuntimeHoursAcceptance\s*\{') 'MAN-440 must run its PostgreSQL and Redis external-process acceptance probe.'
+Assert-True ($fullStackSessionText.Contains("NERV_IIP_WALKTHROUGH_SEED'] = 'true'", [StringComparison]::Ordinal)) 'GitHub #1912 must retain only the walkthrough seed in its isolated session.'
+Assert-True ($fullStackSessionText.Contains("NERV_IIP_LEADER_DEMO_WORLD'] = 'false'", [StringComparison]::Ordinal)) 'GitHub #1912 must disable the legacy full-world seed.'
+Assert-True ($fullStackSessionText.Contains("NERV_IIP_LEADER_DEMO_HISTORY'] = 'false'", [StringComparison]::Ordinal)) 'GitHub #1912 must disable legacy history in its isolated session.'
+Assert-True ($fullStackSessionText.Contains("NERV_IIP_LEADER_DEMO_SCALE_ORDERS'] = '0'", [StringComparison]::Ordinal)) 'GitHub #1912 must disable legacy scale orders in its isolated session.'
+$issue1912BrowserCheckStart = $runtimeSource.IndexOf('function Invoke-NervIssue1912WalkthroughBrowserCheck', [StringComparison]::Ordinal)
+$issue1912ScenarioStart = $runtimeSource.IndexOf('function Invoke-NervIssue1912WalkthroughScenario', $issue1912BrowserCheckStart, [StringComparison]::Ordinal)
+Assert-True ($issue1912BrowserCheckStart -ge 0 -and $issue1912ScenarioStart -gt $issue1912BrowserCheckStart) 'Issue #1912 browser-check source boundaries must remain discoverable for contract assertions.'
+$issue1912BrowserCheckText = $runtimeSource.Substring($issue1912BrowserCheckStart, $issue1912ScenarioStart - $issue1912BrowserCheckStart)
+Assert-True ($issue1912BrowserCheckText.Contains('-SensitiveValues @($Environment[''NERV_IIP_FULLSTACK_ADMIN_PASSWORD''], $Environment[''NERV_IIP_LEADER_DEMO_WORKER_PASSWORD''])', [StringComparison]::Ordinal)) 'Issue #1912 browser output must redact the governed admin and WMS worker secrets.'
+$issue1912InvocationStart = $fullStackSessionText.IndexOf('Invoke-NervIssue1912WalkthroughScenario', [StringComparison]::Ordinal)
+$issue1912InvocationEnd = $fullStackSessionText.IndexOf('elseif ', $issue1912InvocationStart + 1, [StringComparison]::Ordinal)
+Assert-True ($issue1912InvocationStart -ge 0 -and $issue1912InvocationEnd -gt $issue1912InvocationStart) 'Full-stack entrypoint Issue #1912 invocation boundaries must remain discoverable for contract assertions.'
+$issue1912InvocationText = $fullStackSessionText.Substring($issue1912InvocationStart, $issue1912InvocationEnd - $issue1912InvocationStart)
+Assert-True ($issue1912InvocationText.Contains('-SessionWorkerPassword $sessionWorkerPassword', [StringComparison]::Ordinal)) 'Full-stack Issue #1912 must pass the generated WMS worker password into the governed scenario.'
 Assert-True ($fullStackSessionText.Contains("['Maintenance__PmGeneration__Enabled'] = 'true'", [StringComparison]::Ordinal)) 'MAN-440 must enable the real Maintenance PM scheduler for its acceptance scope.'
 Assert-True ($fullStackSessionText.Contains('"$($Manifest.runtime.messagingProvider)"', [StringComparison]::Ordinal)) 'MAN-440 must verify the Redis profile recorded in the authoritative session manifest.'
 Assert-True ($fullStackSessionText.Contains("@('business-industrial-telemetry', 'business-maintenance')", [StringComparison]::Ordinal)) 'MAN-440 startup must wait only for the two services in its narrowed acceptance scope.'
@@ -263,9 +301,15 @@ $startParseIndex = $fullStackSessionText.IndexOf('$startObject = Read-NervAspire
 Assert-True ($startActionIndex -ge 0 -and $cleanupActionIndex -gt $startActionIndex -and $startParseIndex -gt $cleanupActionIndex) 'Full-stack Aspire start/retry boundaries must remain explicit.'
 $startActionText = $fullStackSessionText.Substring($startActionIndex, $cleanupActionIndex - $startActionIndex)
 Assert-True (-not $startActionText.Contains('-AllowPartialOutput', [StringComparison]::Ordinal)) 'Parse-critical Aspire start must reject partial redirected output.'
+Assert-True ($startActionText.Contains('-Environment $aspireEnvironment', [StringComparison]::Ordinal)) 'Aspire seed must receive its worker secret through an explicit child environment.'
+Assert-True ($startActionText.Contains('-SensitiveValues', [StringComparison]::Ordinal)) 'Aspire start diagnostics must redact the worker secret from child output, timeout, and exception paths.'
 $transientStopText = $fullStackSessionText.Substring($cleanupActionIndex, $startParseIndex - $cleanupActionIndex)
 Assert-True ($transientStopText.Contains("@('stop'", [StringComparison]::Ordinal)) 'Transient Aspire start cleanup must invoke stop.'
 Assert-True ($transientStopText.Contains('-AllowPartialOutput', [StringComparison]::Ordinal)) 'Transient Aspire start cleanup must allow partial discarded stop output.'
+$guardianFunctionIndex = $fullStackSessionText.IndexOf('function Start-NervFullStackGuardian', [StringComparison]::Ordinal)
+$sessionFunctionIndex = $fullStackSessionText.IndexOf('function Start-NervFullStackSession', $guardianFunctionIndex, [StringComparison]::Ordinal)
+$guardianFunctionText = $fullStackSessionText.Substring($guardianFunctionIndex, $sessionFunctionIndex - $guardianFunctionIndex)
+Assert-True ($guardianFunctionText.Contains('-Environment $nonSeedEnvironment', [StringComparison]::Ordinal)) 'Guardian must receive an explicit non-seed environment.'
 
 Assert-True `
     (Test-NervDockerResourceOwnership -InspectObject $inspectObjects[0] -SessionId $sessionId -RecordedIds $recordedContainerIds) `
@@ -402,8 +446,21 @@ Assert-True (
 $notificationStart = $appHostText.IndexOf('var notification =', [StringComparison]::Ordinal)
 $notificationEnd = $appHostText.IndexOf([char]';', $notificationStart)
 Assert-True (-not $appHostText.Substring($notificationStart, $notificationEnd - $notificationStart).Contains('LeaderDemo__Seed__Enabled', [StringComparison]::Ordinal)) 'AppHost must not leak the business leader-demo seed flag to Notification.'
+Assert-True ($appHostText.Contains('.WithEnvironment("Iam__Seed__DemoWorkerPassword", iamSeedDemoWorkerPassword)', [StringComparison]::Ordinal)) 'AppHost must bridge the controlled FullStack demo-worker seed to IAM without changing IAM permissions or membership.'
 
 $secretEnvironment = New-NervFullStackSecretEnvironment -SessionId $sessionId
+# #3160 PublicContract：FullStack 为模板资产退役签发独立、会话自有的 proof 配置。
+$proofIssuerName = 'Parameters__template-asset-retirement-proof-issuer'
+$proofAudienceName = 'Parameters__template-asset-retirement-proof-audience'
+$proofSecretName = 'Parameters__template-asset-retirement-proof-secret-base64'
+Assert-True ([string]::Equals($secretEnvironment.Environment[$proofIssuerName], 'nerv-fullstack-template-asset-retirement', [StringComparison]::Ordinal)) 'FullStack proof issuer must be fixed for the profile.'
+Assert-True ([string]::Equals($secretEnvironment.Environment[$proofAudienceName], 'nerv-barcodelabel-template-asset-retirement', [StringComparison]::Ordinal)) 'FullStack proof audience must be purpose-specific and fixed.'
+Assert-True ([Convert]::FromBase64String($secretEnvironment.Environment[$proofSecretName]).Length -ge 32) 'FullStack proof key must decode to at least 32 bytes.'
+Assert-True (-not [string]::Equals($secretEnvironment.Environment[$proofSecretName], $secretEnvironment.Environment['Parameters__internal-service-bearer-token'], [StringComparison]::Ordinal)) 'Proof signing must not reuse the internal bearer.'
+$otherProofSession = New-NervFullStackSecretEnvironment -SessionId 'nerv-abcd-654321'
+Assert-True (-not [string]::Equals($secretEnvironment.Environment[$proofSecretName], $otherProofSession.Environment[$proofSecretName], [StringComparison]::Ordinal)) 'Different sessions must not reuse a proof key.'
+$otherProofSession.Environment.Clear()
+$otherProofSession = $null
 foreach ($requiredName in @(
     'Parameters__iam-jwt-signing-key-id',
     'Parameters__iam-jwt-private-key-pem',
@@ -431,6 +488,33 @@ Assert-True `
     'The session JWKS key ID must match the private signing key ID.'
 $secretEnvironment.Environment.Clear()
 $secretEnvironment = $null
+
+$workerSecretEnvironment = New-NervFullStackSecretEnvironment `
+    -SessionId $sessionId `
+    -IncludeDemoWorkerPassword
+Assert-True ($workerSecretEnvironment.Environment.ContainsKey('Parameters__iam-seed-demo-worker-password')) 'WMS worker opt-in must inject a dedicated IAM demo-worker seed parameter.'
+Assert-True (-not [string]::IsNullOrWhiteSpace([string]$workerSecretEnvironment.WorkerPassword)) 'WMS worker opt-in must generate a non-empty worker password.'
+Assert-True (
+    -not [string]::Equals(
+        [string]$workerSecretEnvironment.AdminPassword,
+        [string]$workerSecretEnvironment.WorkerPassword,
+        [StringComparison]::Ordinal
+    )
+) 'WMS worker password must be independent from the admin password.'
+Assert-True (
+    [string]::Equals(
+        [string]$workerSecretEnvironment.WorkerPassword,
+        [string]$workerSecretEnvironment.Environment['Parameters__iam-seed-demo-worker-password'],
+        [StringComparison]::Ordinal
+    )
+) 'The generated WMS worker password must be the exact process-only IAM seed value.'
+$workerSecretEnvironment.Environment.Clear()
+$workerSecretEnvironment = $null
+
+$defaultSecretEnvironment = New-NervFullStackSecretEnvironment -SessionId $sessionId
+Assert-True (-not $defaultSecretEnvironment.Environment.ContainsKey('Parameters__iam-seed-demo-worker-password')) 'Full-stack sessions without WMS worker opt-in must remain fail-closed for worker account seeding.'
+$defaultSecretEnvironment.Environment.Clear()
+$defaultSecretEnvironment = $null
 
 $scenarioManifest = [pscustomobject]@{
     sessionId = $sessionId
@@ -475,6 +559,179 @@ $expectedBrowserEnvironment = @{
 Assert-True ($script:browserEnvironment.Count -eq $expectedBrowserEnvironment.Count) 'Browser child environment contained unexpected keys.'
 foreach ($key in $expectedBrowserEnvironment.Keys) {
     Assert-True ([string]::Equals([string]$script:browserEnvironment[$key], [string]$expectedBrowserEnvironment[$key], [StringComparison]::Ordinal)) "Unexpected browser environment value for '$key'."
+}
+$script:browserEnvironment = $null
+$workerScenarioResult = Invoke-NervFullStackSmokeScenario `
+    -Manifest $scenarioManifest `
+    -SessionAdminPassword 'admin-secret-sentinel' `
+    -SessionWorkerPassword 'worker-secret-sentinel' `
+    -WaitAction { param($Name, $Manifest) } `
+    -HttpCheckAction { param($Name, $Url) } `
+    -AspireSnapshotAction { param($Manifest) $healthySnapshot } `
+    -BrowserAction { param($Environment, $Manifest) $script:browserEnvironment = $Environment }
+Assert-True (
+    [string]::Equals(
+        [string]$script:browserEnvironment.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD,
+        'worker-secret-sentinel',
+        [StringComparison]::Ordinal
+    )
+) 'The WMS worker password must be passed to the Playwright child process only through its transient environment.'
+$script:browserEnvironment.Remove('NERV_IIP_LEADER_DEMO_WORKER_PASSWORD')
+$script:browserEnvironment = $null
+
+$script:issue1912BrowserEnvironment = $null
+$issue1912ScenarioResult = Invoke-NervIssue1912WalkthroughScenario `
+    -Manifest $scenarioManifest `
+    -SessionAdminPassword 'issue1912-admin-secret-sentinel' `
+    -SessionWorkerPassword 'issue1912-worker-secret-sentinel' `
+    -WaitAction { param($Name, $Manifest) } `
+    -AspireSnapshotAction { param($Manifest) $healthySnapshot } `
+    -BrowserAction { param($Environment, $Manifest) $script:issue1912BrowserEnvironment = $Environment }
+Assert-True ($issue1912ScenarioResult.ExitCode -eq 0) 'Issue #1912 walkthrough must complete its injected scenario boundary.'
+Assert-True (
+    [string]::Equals(
+        [string]$script:issue1912BrowserEnvironment.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD,
+        'issue1912-worker-secret-sentinel',
+        [StringComparison]::Ordinal
+    )
+) 'Issue #1912 must pass the generated WMS worker password to the Playwright child environment.'
+$script:issue1912BrowserEnvironment = $null
+
+$script:issue1912MissingWorkerBrowserInvoked = $false
+$issue1912MissingWorkerFailure = $null
+try {
+    Invoke-NervIssue1912WalkthroughScenario `
+        -Manifest $scenarioManifest `
+        -SessionAdminPassword 'issue1912-admin-secret-sentinel' `
+        -SessionWorkerPassword '   ' `
+        -WaitAction { param($Name, $Manifest) } `
+        -AspireSnapshotAction { param($Manifest) $healthySnapshot } `
+        -BrowserAction { param($Environment, $Manifest) $script:issue1912MissingWorkerBrowserInvoked = $true } | Out-Null
+}
+catch {
+    $issue1912MissingWorkerFailure = $_
+}
+Assert-True (
+    $null -ne $issue1912MissingWorkerFailure -and
+    $issue1912MissingWorkerFailure.Exception.Message.Contains('managed WMS worker password', [StringComparison]::Ordinal)
+) 'Issue #1912 must fail closed when the managed WMS worker password is missing.'
+Assert-True (-not $script:issue1912MissingWorkerBrowserInvoked) 'Issue #1912 must not invoke Playwright after a missing managed WMS worker password.'
+$script:issue1912MissingWorkerBrowserInvoked = $null
+
+$workerIsolationRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-worker-isolation-$([guid]::NewGuid().ToString('N'))"
+$workerIsolationStdout = Join-Path $workerIsolationRoot 'guardian.stdout.log'
+$workerIsolationStderr = Join-Path $workerIsolationRoot 'guardian.stderr.log'
+$workerIsolationMarker = Join-Path $workerIsolationRoot 'probe.marker'
+$workerIsolationTimeoutMarker = Join-Path $workerIsolationRoot 'timeout.marker'
+$workerIsolationInteractiveMarker = Join-Path $workerIsolationRoot 'interactive.marker'
+$workerIsolationRedactionRoot = Join-Path $workerIsolationRoot 'redaction-logs'
+$workerIsolationProbe = @'
+$names = @('NERV_IIP_LEADER_DEMO_WORKER_PASSWORD', 'Parameters__iam-seed-demo-worker-password')
+$probeToken = [string]::Concat('worker', '-probe', '-sentinel')
+$inherited = @($names | Where-Object { [string]::Equals([Environment]::GetEnvironmentVariable($_, 'Process'), $probeToken, [StringComparison]::Ordinal) })
+$marker = [Environment]::GetEnvironmentVariable('NERV_FULLSTACK_WORKER_ISOLATION_MARKER', 'Process')
+if ($inherited.Count -gt 0) { [IO.File]::WriteAllText($marker, 'worker-inherited'); exit 19 }
+[IO.File]::WriteAllText($marker, 'worker-isolated')
+'@
+$workerIsolationProbeToken = [string]::Concat('worker', '-probe', '-sentinel')
+$workerIsolationParentValues = @{
+    'NERV_IIP_LEADER_DEMO_WORKER_PASSWORD' = $workerIsolationProbeToken
+    'Parameters__iam-seed-demo-worker-password' = $workerIsolationProbeToken
+}
+try {
+    [IO.Directory]::CreateDirectory($workerIsolationRoot) | Out-Null
+    foreach ($entry in $workerIsolationParentValues.GetEnumerator()) {
+        Set-Item -LiteralPath "Env:$($entry.Key)" -Value $entry.Value
+    }
+    $workerIsolationEnvironment = @{
+        'NERV_IIP_LEADER_DEMO_WORKER_PASSWORD' = $null
+        'Parameters__iam-seed-demo-worker-password' = $null
+        'NERV_FULLSTACK_WORKER_ISOLATION_MARKER' = $workerIsolationMarker
+    }
+    $nativeWorkerIsolation = Invoke-NativeCommandOutput `
+        -Command (Get-Process -Id $PID).Path `
+        -Arguments @('-NoProfile', '-NonInteractive', '-Command', $workerIsolationProbe) `
+        -WorkingDirectory $repoRoot `
+        -Environment $workerIsolationEnvironment `
+        -TimeoutSeconds 10 `
+        -Name 'fullstack-worker-isolation-native-probe'
+    Assert-True ($nativeWorkerIsolation.ExitCode -eq 0) 'A non-seed child process must not inherit the worker secret from the parent environment.'
+
+    $timeoutWorkerEnvironment = @{}
+    foreach ($entry in $workerIsolationEnvironment.GetEnumerator()) { $timeoutWorkerEnvironment[$entry.Key] = $entry.Value }
+    $timeoutWorkerEnvironment.NERV_FULLSTACK_WORKER_ISOLATION_MARKER = $workerIsolationTimeoutMarker
+    Invoke-NativeCommandWithTimeout `
+        -Command (Get-Process -Id $PID).Path `
+        -Arguments @('-NoProfile', '-NonInteractive', '-Command', $workerIsolationProbe) `
+        -WorkingDirectory $repoRoot `
+        -Environment $timeoutWorkerEnvironment `
+        -TimeoutSeconds 10 `
+        -Name 'fullstack-worker-isolation-timeout-probe' | Out-Null
+    Assert-True ((Get-Content -LiteralPath $workerIsolationTimeoutMarker -Raw).Contains('worker-isolated', [StringComparison]::Ordinal)) 'A timeout-managed non-seed child process must prove its worker environment was isolated.'
+
+    $interactiveWorkerEnvironment = @{}
+    foreach ($entry in $workerIsolationEnvironment.GetEnumerator()) { $interactiveWorkerEnvironment[$entry.Key] = $entry.Value }
+    $interactiveWorkerEnvironment.NERV_FULLSTACK_WORKER_ISOLATION_MARKER = $workerIsolationInteractiveMarker
+    $interactiveWorkerIsolation = Invoke-NativeCommandInteractive `
+        -Command (Get-Process -Id $PID).Path `
+        -Arguments @('-NoProfile', '-NonInteractive', '-Command', $workerIsolationProbe) `
+        -WorkingDirectory $repoRoot `
+        -Environment $interactiveWorkerEnvironment `
+        -Name 'fullstack-worker-isolation-interactive-probe'
+    Assert-True ($interactiveWorkerIsolation.ExitCode -eq 0) 'An interactive non-seed child process must exit successfully after worker isolation.'
+    Assert-True ((Get-Content -LiteralPath $workerIsolationInteractiveMarker -Raw).Contains('worker-isolated', [StringComparison]::Ordinal)) 'An interactive non-seed child process must prove its worker environment was isolated.'
+
+    [IO.Directory]::CreateDirectory($workerIsolationRedactionRoot) | Out-Null
+    $redactionProbe = @'
+$probeToken = [string]::Concat('worker', '-probe', '-sentinel')
+[Console]::Out.Write("stdout=$probeToken")
+[Console]::Error.Write("stderr=$probeToken")
+exit 23
+'@
+    $redactionFailure = $null
+    try {
+        Invoke-NativeCommandOutput `
+            -Command (Get-Process -Id $PID).Path `
+            -Arguments @('-NoProfile', '-NonInteractive', '-Command', $redactionProbe) `
+            -WorkingDirectory $repoRoot `
+            -Environment $workerIsolationEnvironment `
+            -SensitiveValues @($workerIsolationProbeToken) `
+            -LogDirectory $workerIsolationRedactionRoot `
+            -TimeoutSeconds 10 `
+            -Name 'fullstack-worker-redaction-throw-probe' | Out-Null
+    }
+    catch { $redactionFailure = $_ }
+    Assert-True ($null -ne $redactionFailure) 'A controlled non-zero Playwright-like child must produce a failure for redaction verification.'
+    Assert-True (-not $redactionFailure.Exception.Message.Contains($workerIsolationProbeToken, [StringComparison]::Ordinal)) 'Child stdout/stderr must be redacted from the propagated exception.'
+    foreach ($logPath in @((Join-Path $workerIsolationRedactionRoot 'stdout.log'), (Join-Path $workerIsolationRedactionRoot 'stderr.log'))) {
+        if (Test-Path -LiteralPath $logPath -PathType Leaf) {
+            Assert-True (-not (Get-Content -LiteralPath $logPath -Raw).Contains($workerIsolationProbeToken, [StringComparison]::Ordinal)) "Child output log '$logPath' must redact the worker secret."
+        }
+    }
+
+    $detachedWorkerIsolation = Start-DetachedManagedProcess `
+        -Command (Get-Process -Id $PID).Path `
+        -Arguments @('-NoProfile', '-NonInteractive', '-Command', $workerIsolationProbe) `
+        -WorkingDirectory $repoRoot `
+        -Environment $workerIsolationEnvironment `
+        -StdoutPath $workerIsolationStdout `
+        -StderrPath $workerIsolationStderr
+    $detachedProcess = Get-Process -Id $detachedWorkerIsolation.Pid -ErrorAction Stop
+    try {
+        Assert-True ($detachedProcess.WaitForExit(10000)) 'A detached non-seed child process must exit within the bounded probe window.'
+    }
+    finally {
+        $detachedProcess.Dispose()
+    }
+    $detachedWorkerMarker = Get-Content -LiteralPath $workerIsolationMarker -Raw
+    Assert-True ($detachedWorkerMarker.Contains('worker-isolated', [StringComparison]::Ordinal)) 'A detached guardian-like child process must prove its worker environment was isolated.'
+    Assert-True (-not $detachedWorkerMarker.Contains('worker-inherited', [StringComparison]::Ordinal)) 'A detached guardian-like child process must not inherit the worker secret from the parent environment.'
+}
+finally {
+    foreach ($entry in $workerIsolationParentValues.GetEnumerator()) {
+        Remove-Item -LiteralPath "Env:$($entry.Key)" -ErrorAction SilentlyContinue
+    }
+    Remove-Item -LiteralPath $workerIsolationRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 $playwrightReportRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-fullstack-playwright-$([guid]::NewGuid().ToString('N'))"
 try {
@@ -1381,6 +1638,65 @@ Assert-True ([string]::Equals([string]$managedScenarioFailure, 'original scenari
 Assert-True ($script:managedCollectCalls -eq 1) 'Managed run must collect after scenario failure.'
 Assert-True ($script:managedStopCalls -eq 1) 'Managed run must stop after scenario failure.'
 
+$managedRunOwnerStartedAt = '2026-09-22T01:02:03.0000000Z'
+$ownedFailedStartManifest = [pscustomobject]@{
+    sessionId = 'nerv-dead-000006'
+    state = 'Failed'
+    coordinator = [pscustomobject]@{
+        pid = 4242
+        processStartTimeUtc = '2026-09-22T01:02:04.0000000Z'
+    }
+}
+$foreignFailedStartManifest = [pscustomobject]@{
+    sessionId = 'nerv-dead-000006'
+    state = 'Running'
+    coordinator = [pscustomobject]@{
+        pid = 12009
+        processStartTimeUtc = $managedRunOwnerStartedAt
+    }
+}
+$script:managedFailureCalls = 0
+$script:managedCollectCalls = 0
+$script:managedStopCalls = 0
+$foreignStartFailure = $null
+try {
+    Invoke-NervManagedFullStackRun `
+        -StartAction { param($SessionCreationState) throw "Full-stack session ID 'nerv-dead-000006' already exists and cannot be overwritten." } `
+        -ScenarioAction { param($Manifest) throw 'Scenario must not run after startup rejection.' } `
+        -ResolveFailedManifestAction { $foreignFailedStartManifest } `
+        -FailureAction { param($Manifest, $FailureRecord) $script:managedFailureCalls++ } `
+        -CollectAction { param($Manifest) $script:managedCollectCalls++ } `
+        -StopAction { param($Manifest) $script:managedStopCalls++; [pscustomobject]@{ Complete = $true; Manifest = $Manifest } } | Out-Null
+}
+catch { $foreignStartFailure = $_.Exception.Message }
+Assert-True ([string]::Equals([string]$foreignStartFailure, "Full-stack session ID 'nerv-dead-000006' already exists and cannot be overwritten.", [StringComparison]::Ordinal)) 'A conflicting SessionId must preserve the original startup rejection.'
+Assert-True ($script:managedFailureCalls -eq 0) 'A conflicting SessionId must not mutate the existing session failure state.'
+Assert-True ($script:managedCollectCalls -eq 0) 'A conflicting SessionId must not collect diagnostics from the existing session.'
+Assert-True ($script:managedStopCalls -eq 0) 'A conflicting SessionId must not stop the existing session.'
+
+$script:managedFailureCalls = 0
+$script:managedCollectCalls = 0
+$script:managedStopCalls = 0
+$ownedStartFailure = $null
+try {
+    Invoke-NervManagedFullStackRun `
+        -StartAction {
+            param($SessionCreationState)
+            $SessionCreationState.SessionCreated = $true
+            throw 'owned startup failure after AppHost coordinator registration'
+        } `
+        -ScenarioAction { param($Manifest) throw 'Scenario must not run after startup failure.' } `
+        -ResolveFailedManifestAction { $ownedFailedStartManifest } `
+        -FailureAction { param($Manifest, $FailureRecord) $script:managedFailureCalls++ } `
+        -CollectAction { param($Manifest) $script:managedCollectCalls++ } `
+        -StopAction { param($Manifest) $script:managedStopCalls++; [pscustomobject]@{ Complete = $true; Manifest = $Manifest } } | Out-Null
+}
+catch { $ownedStartFailure = $_.Exception.Message }
+Assert-True ([string]::Equals([string]$ownedStartFailure, 'owned startup failure after AppHost coordinator registration', [StringComparison]::Ordinal)) 'An owned startup failure after AppHost coordinator registration must preserve the original error.'
+Assert-True ($script:managedFailureCalls -eq 1) 'An owned startup failure must retain failure recording.'
+Assert-True ($script:managedCollectCalls -eq 1) 'An owned startup failure must retain diagnostic collection.'
+Assert-True ($script:managedStopCalls -eq 1) 'An owned startup failure must retain cleanup.'
+
 $script:preparedDiagnosticState = $null
 $script:collectedDiagnosticState = $null
 $failedDiagnosticResult = Invoke-NervFullStackDiagnosticCollection `
@@ -2164,6 +2480,140 @@ try {
 finally {
     [Environment]::SetEnvironmentVariable('NERV_IIP_SESSION_ID', $ambientSessionId, 'Process')
     Remove-Item -LiteralPath $stopStateRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# #3160 Regression/PublicContract：执行真实启动函数和短命子进程；仅替换外部宿主、资源与 manifest IO。
+& {
+    . (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Action help 6>$null
+    $probeRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-proof-start-$([guid]::NewGuid().ToString('N'))"
+    $probeState = @{ Manifest = $null; Failed = $false; FailReadiness = $false; Canary = 'synthetic-proof-canary-3160'; Calls = 0 }
+    $realProducer = ${function:New-NervFullStackSecretEnvironment}
+    function New-NervFullStackSecretEnvironment {
+        param($SessionId, [switch] $IncludeDemoWorkerPassword)
+        $result = & $realProducer -SessionId $SessionId -IncludeDemoWorkerPassword:$IncludeDemoWorkerPassword
+        if ($probeState.Failed) { $result.Environment[$proofSecretName] = $probeState.Canary }
+        return $result
+    }
+    function Claim-NervStaleFullStackSessions { param($TimeoutSeconds) }
+    function Invoke-WithNervFullStackSessionLock {
+        param($TimeoutSeconds, [scriptblock] $ScriptBlock)
+        if ($null -eq $probeState.Manifest) {
+            $probeState.Manifest = New-NervFullStackManifest -SessionId 'nerv-abcd-316000' -WorktreeRoot $repoRoot `
+                -AppHostProject (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj') -ArtifactPath $probeRoot
+            return $probeState.Manifest
+        }
+        & $ScriptBlock
+    }
+    function Update-NervFullStackManifest {
+        param($SessionId, $AllowedStates, [switch] $ReturnUnchangedOnStateMismatch, [scriptblock] $UpdateAction)
+        $probeState.Manifest = & $UpdateAction $probeState.Manifest
+        return $probeState.Manifest
+    }
+    function Read-NervFullStackManifest { param($SessionId) return $probeState.Manifest }
+    function Write-NervFullStackManifest { param($Manifest) }
+    function Get-NervAspireStartIdentity {
+        param($StartObject)
+        return @{ AppHostPid = $PID; CliPid = $PID; AppHostId = 'synthetic'; AppHostPath = 'synthetic'; LogFile = 'synthetic' }
+    }
+    function Wait-NervAspireResource {
+        param($AppHostProject, $ResourceName, $WorkingDirectory)
+        if ($probeState.FailReadiness) { throw 'synthetic readiness failure after AppHost coordinator registration' }
+    }
+    function Get-NervFullStackContainerRecords { param($OwnedSessionId, $Environment) }
+    function Get-NervFullStackDcpNetworkIds { param($SessionId, $ContainerRecords, $WorkingDirectory, $Environment) }
+    function Get-NervAspireDescribeObjectWithEndpoints { param($AppHostProject, $WorkingDirectory) return $null }
+    function Start-NervFullStackGuardian { param($Manifest, $Mode, $CoordinatorPid, $CoordinatorStartTimeUtc) return @{ Pid = $PID; ProcessStartTimeUtc = 'synthetic' } }
+    function Stop-NervFullStackSession { param($SessionId, $Environment) return @{ Complete = $true } }
+    function Invoke-AspireOutput {
+        param($Arguments, $WorkingDirectory, $TimeoutSeconds, $Name, $Environment, $SensitiveValues)
+        $probeState.Calls++
+        $probe = @'
+$issuer = [Environment]::GetEnvironmentVariable('Parameters__template-asset-retirement-proof-issuer')
+$audience = [Environment]::GetEnvironmentVariable('Parameters__template-asset-retirement-proof-audience')
+$key = [Environment]::GetEnvironmentVariable('Parameters__template-asset-retirement-proof-secret-base64')
+if (-not [string]::Equals($issuer, 'nerv-fullstack-template-asset-retirement', [StringComparison]::Ordinal)) { exit 41 }
+if (-not [string]::Equals($audience, 'nerv-barcodelabel-template-asset-retirement', [StringComparison]::Ordinal)) { exit 42 }
+if ([string]::Equals($key, 'synthetic-proof-canary-3160', [StringComparison]::Ordinal)) {
+    [Console]::Out.WriteLine("out=$key")
+    [Console]::Error.WriteLine("err=$key")
+    exit 43
+}
+if ([Convert]::FromBase64String($key).Length -lt 32) { exit 44 }
+[Console]::Out.WriteLine('{"proofInputsValid":true}')
+'@
+        Invoke-NativeCommandOutput -Command (Get-Process -Id $PID).Path -Arguments @('-NoProfile', '-NonInteractive', '-Command', $probe) `
+            -WorkingDirectory $WorkingDirectory -TimeoutSeconds 10 -Name 'proof-start-probe' `
+            -Environment $Environment -SensitiveValues $SensitiveValues -LogDirectory $probeRoot -PersistOutput
+    }
+    try {
+        # 三种父环境状态由同一真实入口在成功和异常路径分别恢复。
+        [IO.Directory]::CreateDirectory($probeRoot) | Out-Null
+        Invoke-WithScopedEnvironment -Variables @{
+            $proofIssuerName = 'parent-issuer'; $proofAudienceName = ''; $proofSecretName = $null
+        } -ScriptBlock {
+            foreach ($fail in @($false, $true)) {
+                $probeState.Manifest = $null
+                $probeState.Failed = $fail
+                $caught = $null
+                try { Start-NervFullStackSession -PassThru | Out-Null } catch { $caught = $_ }
+                if (-not $fail -and $null -ne $caught) { throw $caught }
+                Assert-True (($null -ne $caught) -eq $fail) 'Proof startup must preserve success and controlled child failure.'
+                Assert-True ([string]::Equals([Environment]::GetEnvironmentVariable($proofIssuerName), 'parent-issuer', [StringComparison]::Ordinal)) 'Startup must restore the parent issuer.'
+                Assert-True ((Test-Path -LiteralPath "Env:$proofAudienceName") -and [string]::Equals([Environment]::GetEnvironmentVariable($proofAudienceName), '', [StringComparison]::Ordinal)) 'Startup must restore an explicitly empty parent audience.'
+                Assert-True (-not (Test-Path -LiteralPath "Env:$proofSecretName")) 'Startup must restore an absent parent key.'
+                if ($fail) {
+                    Assert-True (-not $caught.Exception.Message.Contains($probeState.Canary, [StringComparison]::Ordinal)) 'Startup exception must redact the proof canary.'
+                    Assert-True ($caught.Exception.Message.Contains('<redacted>', [StringComparison]::Ordinal)) 'Startup failure must carry redaction evidence.'
+                    Assert-True (-not ($probeState.Manifest | ConvertTo-Json -Depth 20).Contains($probeState.Canary, [StringComparison]::Ordinal)) 'Failure manifest must not retain the proof canary.'
+                    foreach ($logName in @('stdout.log', 'stderr.log')) {
+                        $logText = Get-Content -LiteralPath (Join-Path $probeRoot $logName) -Raw
+                        Assert-True ($logText.Contains('<redacted>', [StringComparison]::Ordinal) -and -not $logText.Contains($probeState.Canary, [StringComparison]::Ordinal)) 'Both retained child streams must redact the proof canary.'
+                    }
+                }
+            }
+        }
+        Assert-True ($probeState.Calls -eq 2) 'Both success and failure must execute the real child boundary once.'
+
+        $sessionScriptAst = [Management.Automation.Language.Parser]::ParseInput($fullStackSessionText, [ref] $null, [ref] $null)
+        $managedRunCall = @($sessionScriptAst.FindAll({
+            param($node)
+            $node -is [Management.Automation.Language.CommandAst] -and
+                [string]::Equals($node.GetCommandName(), 'Invoke-NervManagedFullStackRun', [StringComparison]::Ordinal)
+        }, $true))[0]
+        $productionStartAction = $managedRunCall.CommandElements[2].ScriptBlock.GetScriptBlock()
+        $probeState.Manifest = $null
+        $probeState.Failed = $false
+        $probeState.FailReadiness = $true
+        $runProcess = Get-Process -Id $PID
+        $sessionAdminPassword = 'synthetic-admin-password'
+        $sessionWorkerPassword = $null
+        $EnableWmsDemoWorker = $false
+        $NoBuild = $false
+        $script:productionManagedFailureCalls = 0
+        $script:productionManagedCollectCalls = 0
+        $script:productionManagedStopCalls = 0
+        $productionManagedFailure = $null
+        try {
+            Invoke-NervManagedFullStackRun `
+                -StartAction $productionStartAction `
+                -ScenarioAction { param($Manifest) throw 'Scenario must not run after readiness failure.' } `
+                -ResolveFailedManifestAction { $probeState.Manifest } `
+                -FailureAction { param($Manifest, $FailureRecord) $script:productionManagedFailureCalls++ } `
+                -CollectAction { param($Manifest) $script:productionManagedCollectCalls++ } `
+                -StopAction { param($Manifest) $script:productionManagedStopCalls++; [pscustomobject]@{ Complete = $true; Manifest = $Manifest } } | Out-Null
+        }
+        catch { $productionManagedFailure = $_.Exception.Message }
+        Assert-True ($productionManagedFailure.Contains('synthetic readiness failure after AppHost coordinator registration', [StringComparison]::Ordinal)) 'The production managed StartAction must preserve a readiness failure after AppHost coordinator registration.'
+        Assert-True ($script:productionManagedFailureCalls -eq 1) 'The production managed StartAction must retain failure recording after readiness failure.'
+        Assert-True ($script:productionManagedCollectCalls -eq 1) 'The production managed StartAction must retain diagnostic collection after readiness failure.'
+        Assert-True ($script:productionManagedStopCalls -eq 1) 'The production managed StartAction must retain cleanup after readiness failure.'
+
+        Invoke-WithScopedEnvironment -Variables @{ $proofSecretName = $probeState.Canary } -ScriptBlock {
+            $protected = Protect-NervFullStackDiagnosticText -Text "inspection failed for $($probeState.Canary)" -SensitiveValues @(Get-NervFullStackGuardianSensitiveValues)
+            Assert-True ($protected.Contains('<redacted>', [StringComparison]::Ordinal) -and -not $protected.Contains($probeState.Canary, [StringComparison]::Ordinal)) 'Guardian diagnostics must protect the inherited proof key.'
+        }
+    }
+    finally { Remove-Item -LiteralPath $probeRoot -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 Write-Host 'Full-stack session runtime tests passed.'

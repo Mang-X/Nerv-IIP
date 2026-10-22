@@ -1,12 +1,12 @@
 import {
-  createBusinessConsoleMaintenanceWorkOrderMutationOptions,
+  createBusinessConsoleMaintenanceWorkOrderV2MutationOptions,
   confirmBusinessConsoleOperation,
   listBusinessConsoleMaintenanceWorkOrders,
   listBusinessConsoleMaintenanceInspectionsQueryOptions,
   listBusinessConsoleMaintenancePlansQueryOptions,
   listBusinessConsoleMaintenanceWorkOrdersQueryOptions,
   recordBusinessConsoleMaintenanceInspectionMutationOptions,
-  type BusinessConsoleCreateMaintenanceWorkOrderRequest as CreateMaintenanceWorkOrderRequest,
+  type BusinessConsoleCreateMaintenanceWorkOrderV2Request as CreateMaintenanceWorkOrderRequest,
   type BusinessConsoleMaintenanceInspectionItem as MaintenanceInspectionItem,
   type BusinessConsoleMaintenanceWorkOrderItem as MaintenanceWorkOrderItem,
   type BusinessConsoleRecordMaintenanceInspectionRequest as RecordMaintenanceInspectionRequest,
@@ -18,10 +18,9 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { canAccessMaintenanceWorkOrderReadModel } from '@/permissions/maintenanceReadModelAccess'
 import {
-  useListFreshness,
   useListResponseState,
   useScopeBoundListResponse,
-} from '@/composables/useListFreshness'
+} from '@/composables/useScopeBoundListResponse'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 import { confirmedMaintenanceCreateWorkOrderId } from './maintenanceCreateReceipt'
@@ -40,6 +39,10 @@ export interface MaintenanceListFilters {
 /**
  * 调用方传入的报修工单入参——org/env/openedBy 由 composable 注入，调用方不可覆盖
  * （`Omit` 收窄 + 注入后置，见 `createWorkOrder`）。
+ *
+ * v2 契约（#2964/#2970）：设备不可用由 `assetUnavailableReasonCode` 表达，值必须是
+ * 请求 organization/environment 下 `downtime-reason` 目录里的原值；`null` = 不登记不可用。
+ * 生产路径不再调用 v1 的自由文本 `assetUnavailableReason`。
  */
 export type CreateWorkOrderInput = Omit<
   CreateMaintenanceWorkOrderRequest,
@@ -142,9 +145,6 @@ export function useBusinessMaintenance() {
     scopeReady,
   )
   const plansResponse = useScopeBoundListResponse(() => plansQuery.data.value, scopeKey, scopeReady)
-  const workOrdersLastUpdatedAt = useListFreshness(workOrdersResponse, scopeReady)
-  const inspectionsLastUpdatedAt = useListFreshness(inspectionsResponse, scopeReady)
-  const plansLastUpdatedAt = useListFreshness(plansResponse, scopeReady)
   const {
     hasSuccessfulResponse: workOrdersHasSuccessfulResponse,
     hasFailedResponse: workOrdersHasFailedResponse,
@@ -192,7 +192,7 @@ export function useBusinessMaintenance() {
   })
 
   const createMutation = useMutation({
-    ...createBusinessConsoleMaintenanceWorkOrderMutationOptions(),
+    ...createBusinessConsoleMaintenanceWorkOrderV2MutationOptions(),
     onSuccess() {
       void workOrdersQuery.refetch()
     },
@@ -292,7 +292,6 @@ export function useBusinessMaintenance() {
     loadMoreWorkOrders: workOrderPager.loadMore,
     workOrdersPending: workOrdersQuery.isLoading,
     workOrdersError: workOrdersQuery.error,
-    workOrdersLastUpdatedAt,
     workOrdersHasSuccessfulResponse,
     workOrdersHasFailedResponse,
     refreshWorkOrders: () => (scopeReady.value ? workOrderPager.refresh() : Promise.resolve()),
@@ -310,7 +309,6 @@ export function useBusinessMaintenance() {
     ),
     inspectionsPending: inspectionsQuery.isLoading,
     inspectionsError: inspectionsQuery.error,
-    inspectionsLastUpdatedAt,
     inspectionsHasSuccessfulResponse,
     inspectionsHasFailedResponse,
     refreshInspections: () => (scopeReady.value ? inspectionsQuery.refetch() : Promise.resolve()),
@@ -322,7 +320,6 @@ export function useBusinessMaintenance() {
     plansTotal,
     plansPending: plansQuery.isLoading,
     plansError: plansQuery.error,
-    plansLastUpdatedAt,
     plansHasSuccessfulResponse,
     plansHasFailedResponse,
     refreshPlans: () => (scopeReady.value ? plansQuery.refetch() : Promise.resolve()),

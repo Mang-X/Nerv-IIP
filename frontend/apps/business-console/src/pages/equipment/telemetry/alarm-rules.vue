@@ -10,6 +10,7 @@ import {
   useEquipmentUomCatalog,
   useTelemetryTagCatalog,
 } from '@/composables/useEquipmentPickerCatalog'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -38,7 +39,7 @@ import {
   NvSelectItem,
   NvSelectTrigger,
   NvSelectValue,
-  Spinner,
+  NvSpinner,
   NvToolbar,
 } from '@nerv-iip/ui'
 import { EditIcon, LineChartIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
@@ -110,7 +111,7 @@ const unitPickerOptions = computed(() => {
   return [...uomOptions.value, { value: unitCode, label: unitCode, hint: '来自采集标签标注' }]
 })
 
-const errorMessage = computed(() => formatError(alarmRulesError.value))
+const errorMessage = computed(() => inlineErrorMessage(alarmRulesError.value))
 // 服务端错误走 toast；这里只留点提交后的字段级校验汇总。
 const formErrorMessage = computed(() => formError.value)
 // 编辑态：规则身份（设备 / 采集标签 / 规则编号 / 报警编号）由所选行带出，只读呈现。
@@ -263,16 +264,13 @@ function formatDateTime(value?: string | null) {
 function rowKey(row: BusinessConsoleTelemetryAlarmRuleItem) {
   return row.alarmRuleId ?? `${row.deviceAssetId}-${row.ruleCode}`
 }
-function formatError(error: unknown) {
-  return inlineErrorMessage(error)
-}
 </script>
 
 <template>
   <BusinessLayout>
     <NvPageHeader
       title="报警规则"
-      :breadcrumbs="[{ label: '设备监控（IoT）' }]"
+      :breadcrumbs="[{ label: '设备监控' }]"
       :count="`${alarmRulesTotal} 条规则`"
     >
       <template #actions>
@@ -301,7 +299,6 @@ function formatError(error: unknown) {
           :options="deviceOptions"
           title="选择设备"
           placeholder="全部设备"
-          source-text="数据来自基础数据设备资产"
           empty-text="暂无设备资产，请先在基础数据登记设备"
           :loading="devicesPending"
           clearable
@@ -395,16 +392,11 @@ function formatError(error: unknown) {
           <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
             <NvField v-if="!formEditing">
               <NvFieldLabel for="rule-device">设备</NvFieldLabel>
-              <NvEntityPicker
+              <DirectoryPicker
                 id="rule-device"
                 v-model="form.deviceAssetId"
-                :options="deviceOptions"
-                title="选择设备"
-                placeholder="选择设备"
-                source-text="数据来自基础数据设备资产"
-                empty-text="暂无设备资产，请先在基础数据登记设备"
-                :loading="devicesPending"
-                aria-label="设备"
+                directory-type="equipment"
+                creatable
               />
             </NvField>
             <NvField v-if="!formEditing">
@@ -413,10 +405,10 @@ function formatError(error: unknown) {
                 id="rule-tag"
                 v-model="form.tagKey"
                 :options="tagOptions"
+                :show-code="false"
                 title="选择采集标签"
                 :placeholder="form.deviceAssetId ? '选择采集标签' : '请先选择设备'"
                 :disabled="!form.deviceAssetId"
-                source-text="数据来自该设备已配置的采集标签"
                 empty-text="该设备还没有配置采集标签，请先完成采集映射"
                 :loading="tagsPending"
                 aria-label="采集标签"
@@ -489,7 +481,6 @@ function formatError(error: unknown) {
                 :options="unitPickerOptions"
                 title="选择单位"
                 placeholder="选择单位"
-                source-text="数据来自基础数据计量单位"
                 empty-text="暂无计量单位，请先在基础数据维护单位"
                 :loading="uomsPending"
                 aria-label="单位"
@@ -516,7 +507,7 @@ function formatError(error: unknown) {
               <NvButton type="button" variant="outline">取消</NvButton>
             </NvDialogClose>
             <NvButton type="submit" :disabled="saveAlarmRulePending">
-              <Spinner v-if="saveAlarmRulePending" aria-hidden="true" />
+              <NvSpinner v-if="saveAlarmRulePending" aria-hidden="true" />
               保存规则
             </NvButton>
           </NvDialogFooter>

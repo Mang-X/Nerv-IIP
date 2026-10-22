@@ -53,7 +53,10 @@ public sealed record SchedulingProblemContract(
     // 设备数据风险(软约束):设备没有运行时快照 / 快照已过期 / 采集源不可达。
     // 「不知道」不等于「不可用」——它不进 UnavailabilityWindows(那里只放真实停机与维护),
     // 只作为风险随计划带出,提示排产员这台设备的状态是盲区。
-    IReadOnlyCollection<SchedulingEquipmentDataRiskContract>? EquipmentDataRisks = null);
+    IReadOnlyCollection<SchedulingEquipmentDataRiskContract>? EquipmentDataRisks = null,
+    IReadOnlyCollection<SchedulingAssemblyDependencyContract>? AssemblyDependencies = null);
+
+public sealed record SchedulingAssemblyDependencyContract(string ChildOrderId, string ParentOrderId);
 
 public sealed record SchedulingOrderContract(
     string OrderId,
@@ -84,7 +87,14 @@ public sealed record SchedulingOperationContract(
     int SetupMinutes = 0,
     IReadOnlyCollection<string>? RequiredSkillCodes = null,
     IReadOnlyCollection<string>? RequiredToolingIds = null,
-    bool ToolingAvailable = true);
+    bool ToolingAvailable = true,
+    IReadOnlyCollection<SchedulingChangeoverContract>? Changeovers = null);
+
+public sealed record SchedulingChangeoverContract(
+    string FromSkuCode,
+    int SetupMinutes,
+    IReadOnlyCollection<string> RequiredToolingIds,
+    bool ToolingAvailable);
 
 public sealed record SchedulingResourceContract(
     string ResourceId,
@@ -92,7 +102,8 @@ public sealed record SchedulingResourceContract(
     IReadOnlyCollection<string> CapabilityCodes,
     int CapacityUnits,
     string CalendarId,
-    string SortKey);
+    string SortKey,
+    decimal UtilizationRate = 1m);
 
 public sealed record SchedulingCalendarContract(
     string CalendarId,
@@ -151,7 +162,8 @@ public sealed record SchedulingMaterialShortageContract(
     string? MaterialLotId,
     decimal RequiredQuantity,
     decimal AvailableQuantity,
-    decimal ShortageQuantity);
+    decimal ShortageQuantity,
+    string? UomCode = null);
 
 /// <summary>
 /// 物料约束口径:软约束(默认)= 可排 + 带物料风险标记;硬约束 = 缺料直接不可排。
@@ -191,7 +203,8 @@ public sealed record SchedulingLockedAssignmentContract(
     string WorkCenterId,
     DateTimeOffset StartUtc,
     DateTimeOffset EndUtc,
-    string LockReasonCode);
+    string LockReasonCode,
+    IReadOnlyCollection<ScheduleAssignmentSegmentContract>? Segments = null);
 
 public sealed record SchedulePlanContract(
     int ContractVersion,
@@ -211,7 +224,86 @@ public sealed record SchedulePlanContract(
     IReadOnlyCollection<SchedulePlanCalendarContract>? Calendars = null,
     IReadOnlyCollection<SchedulePlanBlockWindowContract>? BlockWindows = null,
     IReadOnlyCollection<SchedulePlanMaterialRiskContract>? MaterialRisks = null,
-    IReadOnlyCollection<SchedulePlanEquipmentRiskContract>? EquipmentRisks = null);
+    IReadOnlyCollection<SchedulePlanEquipmentRiskContract>? EquipmentRisks = null,
+    IReadOnlyCollection<SchedulePlanMaterialShortageSummaryContract>? MaterialShortageSummary = null,
+    SchedulePlanValidationContextContract? ValidationContext = null,
+    IReadOnlyCollection<SchedulingAssemblyDependencyContract>? AssemblyDependencies = null,
+    SchedulePlanFreezeContextContract? FreezeContext = null);
+
+/// <summary>
+/// 生成方案时保存的冻结依据；旧方案无冻结快照时为 null，不按读取时钟补算。
+/// 默认稳定窗口为 [AsOfUtc, DefaultWindowEndUtc)，工作中心覆盖替换默认结束时刻。
+/// 冻结窗口仅保持已有 assignment，不是资源不可用窗口，允许安排新工序。
+/// </summary>
+public sealed record SchedulePlanFreezeContextContract(
+    DateTimeOffset AsOfUtc,
+    DateTimeOffset DefaultWindowEndUtc,
+    IReadOnlyCollection<SchedulePlanFreezeWorkCenterWindowContract> WorkCenterWindows,
+    IReadOnlyCollection<SchedulePlanFrozenAssignmentContract> Assignments);
+
+/// <summary>工作中心稳定窗口为 [FreezeContext.AsOfUtc, EndUtc)，结束等于起点表示 N = 0。</summary>
+public sealed record SchedulePlanFreezeWorkCenterWindowContract(string WorkCenterId, DateTimeOffset EndUtc);
+
+/// <summary>冻结依据包含该 assignment 的原始资源、时间和 Segments，可同时具有多个原因。</summary>
+public sealed record SchedulePlanFrozenAssignmentContract(
+    ScheduleAssignmentContract Assignment,
+    IReadOnlyCollection<SchedulePlanFreezeReasonContract> Reasons);
+
+public enum SchedulePlanFreezeReasonContract
+{
+    Completed = 1,
+    Started = 2,
+    ManualLock = 4,
+    StableWindow = 8
+}
+
+public sealed record SchedulePlanMaterialShortageSummaryContract(
+    string MaterialId,
+    string? MaterialLotId,
+    string? UomCode,
+    decimal ShortageQuantity,
+    IReadOnlyCollection<SchedulePlanMaterialAffectedOperationContract> AffectedOperations);
+
+public sealed record SchedulePlanMaterialAffectedOperationContract(string OrderId, string OperationId);
+
+/// <summary>
+/// 方案依据的只读校验事实。缺少问题快照时为 null；日历和不可用窗口复用方案已有字段。
+/// 工作中心容量由同中心资源的 Math.Max(1, CapacityUnits) 求和，资源占用按 UtilizationRate 换算；
+/// IsFixed 工序及 FixedReservations 使用实际冻结区间，不作利用率或 setup 扩展。
+/// </summary>
+public sealed record SchedulePlanValidationContextContract(
+    DateTimeOffset HorizonStartUtc,
+    DateTimeOffset HorizonEndUtc,
+    IReadOnlyCollection<SchedulePlanResourceContextContract> Resources,
+    IReadOnlyCollection<SchedulePlanOperationContextContract> Operations,
+    IReadOnlyCollection<SchedulePlanFixedReservationContract> FixedReservations);
+
+public sealed record SchedulePlanResourceContextContract(
+    string ResourceId,
+    string WorkCenterId,
+    string CalendarId,
+    int CapacityUnits,
+    decimal UtilizationRate);
+
+public sealed record SchedulePlanOperationContextContract(
+    string OrderId,
+    string OperationId,
+    IReadOnlyCollection<string> PredecessorOperationIds,
+    DateTimeOffset DueUtc,
+    int DurationMinutes,
+    int SetupMinutes,
+    bool IsFixed);
+
+/// <summary>
+/// 包含本方案固定工序及未列入本方案工序的外部占用；ResourceId 缺失时仍占工作中心容量。
+/// </summary>
+public sealed record SchedulePlanFixedReservationContract(
+    string OrderId,
+    string OperationId,
+    string WorkCenterId,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc,
+    string? ResourceId);
 
 /// <summary>
 /// 设备数据风险(软约束):工序已排到这台设备上,但该设备在计划窗口内没有可信的运行时状态
@@ -232,7 +324,8 @@ public sealed record SchedulePlanMaterialRiskContract(
     string OperationId,
     IReadOnlyCollection<string> ReasonCodes,
     IReadOnlyCollection<SchedulingMaterialShortageContract> Shortages,
-    string Message);
+    string Message,
+    DateTimeOffset? MaterialReadyUtc = null);
 
 /// <summary>
 /// 计划所依据的工作日历(投影自排程问题的班次窗口),供读面画工作日/非工作日与班次边界。
@@ -319,7 +412,30 @@ public sealed record ScheduleAssignmentContract(
     DateTimeOffset EndUtc,
     bool IsLocked,
     string ExplanationCode,
-    string? StandardOperationCode = null);
+    string? StandardOperationCode = null,
+    IReadOnlyCollection<ScheduleAssignmentSegmentContract>? Segments = null,
+    ScheduleAssignmentCurrentExecutionContract? CurrentExecution = null);
+
+/// <summary>
+/// 响应读取时的权威执行信息，不属于方案保存时快照或发布依据。
+/// WorkOrderProgress 为 MES 工单总完成量/计划量，同工单各工序共享，不能解释为工序进度。
+/// MaterialReadyUtc 来自当前 MES 物料就绪 producer；未给预计日期时为 null。
+/// EquipmentState 来自 EquipmentRuntime 当前状态；null 或 IsSourceFresh=false 不表示设备可用。
+/// </summary>
+public sealed record ScheduleAssignmentCurrentExecutionContract(
+    DateTimeOffset ObservedAtUtc,
+    ScheduleWorkOrderProgressContract? WorkOrderProgress,
+    DateTimeOffset? MaterialReadyUtc,
+    bool? IsMaterialReady,
+    string? EquipmentState,
+    DateTimeOffset? EquipmentStateOccurredAtUtc,
+    bool? IsEquipmentSourceFresh);
+
+public sealed record ScheduleWorkOrderProgressContract(decimal CompletedQuantity, decimal PlannedQuantity);
+
+public sealed record ScheduleAssignmentSegmentContract(
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc);
 
 public sealed record ScheduleResourceLoadContract(
     string ResourceId,
@@ -529,7 +645,8 @@ public sealed record SchedulePlanAffectedOperationPayload(
 
 public enum ScheduleSplitPolicyContract
 {
-    NonSplittable = 0
+    NonSplittable = 0,
+    Interruptible = 1
 }
 
 public enum SchedulePlanStatusContract

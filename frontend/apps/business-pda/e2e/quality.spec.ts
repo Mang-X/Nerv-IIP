@@ -269,7 +269,7 @@ test('375x812：服务端筛选 → 领取 → 逐项录入 → task/record 强 
   await expect(page.getByRole('heading', { name: '检验任务' })).toBeVisible()
 
   await expect(page.getByText('来源单 RCV-OLD-640')).toBeVisible()
-  await expect(page.getByText('已加载 3 / 共 3')).toBeVisible()
+  await expect(page.getByTestId('task-row')).toHaveCount(3)
   const initialResponse = listResponses.find((response) => {
     const query = new URL(response.requestUrl).searchParams
     return query.get('status') === 'pending' && !query.has('sourceType')
@@ -301,11 +301,7 @@ test('375x812：服务端筛选 → 领取 → 逐项录入 → task/record 强 
       ),
     )
     .toBe(true)
-  await expect(
-    page
-      .getByText('当前账号没有符合筛选条件的质检任务；缺少登录主体或组织环境时不会发起查询。')
-      .last(),
-  ).toBeVisible()
+  await expect(page.getByText('当前账号没有符合筛选条件的质检任务。').last()).toBeVisible()
   await page.getByRole('button', { name: '进行中', exact: true }).first().click()
   await page.getByRole('button', { name: '待领取', exact: true }).click()
 
@@ -338,7 +334,6 @@ test('375x812：服务端筛选 → 领取 → 逐项录入 → task/record 强 
     .toBe(true)
   await expect(page.getByText('来源单 RCV-OLD-640')).toHaveCount(0)
   await expect(page.getByText('来源单 WO-9001')).toBeVisible()
-  await expect(page.getByText('已加载 1 / 共 1')).toBeVisible()
   await expect(page.getByTestId('task-row')).toHaveCount(1)
   const fullyFilteredResponse = listResponses.find((response) => {
     const query = new URL(response.requestUrl).searchParams

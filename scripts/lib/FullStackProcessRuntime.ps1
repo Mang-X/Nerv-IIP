@@ -77,18 +77,34 @@ function ConvertTo-NervFullStackProcessUtcTime {
     return $parsed.UtcDateTime
 }
 
-function ConvertTo-NervFullStackNormalizedProcessTicks {
+function Test-NervFullStackProcessStartTimeMatch {
+    <#
+        Two start-time readings of the *same* process never agree bit-for-bit across derivations:
+        an identity minted by `System.Diagnostics.Process.StartTime` and an inventory record read
+        from the platform provider carry independent quantization and (on Linux) an independent
+        boot-origin estimate. `processStartTimePrecisionTicks` is the budget for that disagreement.
+
+        This must compare the *difference* against that budget. Flooring both sides onto a
+        `PrecisionTicks` grid does not: grid membership is not a function of the difference, so two
+        readings 1 tick apart land in different buckets whenever they straddle a bucket boundary —
+        which is the normal case, not the corner case, because the provider's own readings sit
+        exactly on the grid (#3404).
+    #>
+    [OutputType([bool])]
     param(
         [Parameter(Mandatory)]
-        [DateTime] $UtcTime,
+        [DateTime] $ExpectedUtc,
 
         [Parameter(Mandatory)]
-        [long] $PrecisionTicks
+        [DateTime] $ActualUtc,
+
+        [Parameter(Mandatory)]
+        [long] $ToleranceTicks
     )
 
-    if ($PrecisionTicks -lt 1) { return $null }
-    $ticks = $UtcTime.ToUniversalTime().Ticks
-    return $ticks - ($ticks % $PrecisionTicks)
+    if ($ToleranceTicks -lt 1) { return $false }
+    $difference = $ExpectedUtc.ToUniversalTime().Ticks - $ActualUtc.ToUniversalTime().Ticks
+    return ([Math]::Abs($difference) -le $ToleranceTicks)
 }
 
 function New-NervFullStackProcessInventoryResult {
@@ -163,25 +179,85 @@ function Get-NervFullStackWindowsProcessInventory {
         -Diagnostics $diagnostics.ToArray()
 }
 
+function Get-NervFullStackLinuxProcessStatFields {
+    <#
+        Returns the `/proc/<pid>/stat` fields that follow the parenthesised command name, so field
+        index 0 is `state` (stat field 3). Callers therefore read `ppid` at index 1 and `starttime`
+        at index 19. The command name is skipped by its *last* ')' because it may itself contain
+        spaces and parentheses.
+    #>
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $StatPath
+    )
+
+    $stat = [IO.File]::ReadAllText($StatPath)
+    $commandEnd = $stat.LastIndexOf([string] ')', [StringComparison]::Ordinal)
+    if ($commandEnd -lt 0 -or ($commandEnd + 2) -ge $stat.Length) {
+        throw 'Malformed /proc stat command boundary.'
+    }
+    $fields = @($stat.Substring($commandEnd + 2).Split(' ', [StringSplitOptions]::RemoveEmptyEntries))
+    if ($fields.Count -lt 20) { throw 'Malformed /proc stat field count.' }
+    return $fields
+}
+
+function ConvertTo-NervFullStackLinuxProcessStartOffsetTicks {
+    [OutputType([long])]
+    param(
+        [Parameter(Mandatory)]
+        [long] $StartClockTicks,
+
+        [Parameter(Mandatory)]
+        [long] $ClockTicksPerSecond
+    )
+
+    return [long] [Math]::Round(
+        $StartClockTicks * [TimeSpan]::TicksPerSecond / [double] $ClockTicksPerSecond,
+        [MidpointRounding]::ToEven)
+}
+
 function Get-NervFullStackLinuxProcessInventory {
+    <#
+        `/proc/<pid>/stat` only gives the start time as clock ticks *since boot*; turning that into
+        a wall-clock instant needs a boot origin, and Linux has no single authoritative one:
+
+        - `/proc/stat -> btime` is truncated to whole seconds and is a per-boot constant;
+        - `System.Diagnostics.Process.StartTime` — which is what every identity producer in this
+          repo records (`$process.StartTime.ToUniversalTime().ToString('O')`) — reconstructs the
+          origin from a live `wall clock - monotonic uptime` sample instead.
+
+        The two origins differ by a per-boot sub-second amount (measured 570 ms and 839 ms in two
+        Linux containers, #3404). Deriving the inventory from `btime` therefore put every record in a
+        different time domain from every identity: the caller's own just-started process read as
+        `Mismatched`, and a foreign process that happened to start one origin-offset later read as
+        `Active`. So the origin here is anchored on the same authority that mints the identities.
+    #>
     $records = [Collections.Generic.List[object]]::new()
     $diagnostics = [Collections.Generic.List[string]]::new()
-    $provenance = 'linux-procfs:/proc/<pid>/stat+btime+sysconf'
+    $provenance = 'linux-procfs:/proc/<pid>/stat+sysconf+self-process-start-anchor'
 
     try {
-        $bootLine = @([IO.File]::ReadAllLines('/proc/stat') | Where-Object {
-            $_.StartsWith('btime ', [StringComparison]::Ordinal)
-        })
-        $bootSeconds = 0L
-        if ($bootLine.Count -ne 1 -or -not [long]::TryParse($bootLine[0].Substring(6), [ref] $bootSeconds)) {
-            throw 'Linux /proc/stat did not expose one parseable btime record.'
-        }
-
         # Linux glibc/musl use 2 for _SC_CLK_TCK.
         $clockTicksPerSecond = [Nerv.IIP.FullStackProcessRuntime.NativeMethods]::sysconf(2)
         if ($clockTicksPerSecond -le 0) { throw 'Linux sysconf(_SC_CLK_TCK) failed.' }
-        $precisionTicks = [long] [Math]::Ceiling([TimeSpan]::TicksPerSecond / [double] $clockTicksPerSecond)
-        $bootUtc = [DateTimeOffset]::FromUnixTimeSeconds($bootSeconds).UtcDateTime
+
+        # The anchor cancels the *systematic* origin difference. What it cannot cancel is that the
+        # producer sampled `wall clock - uptime` inside its own process at its own time, so records
+        # stay off by whatever the wall clock moved against the monotonic clock in between (six
+        # cross-process samples in the reference container stayed under 0.5 ms). The tolerance below
+        # has to cover that residue; it is deliberately the same one second the macOS provider has
+        # always had to declare because `ps lstart` only prints whole seconds.
+        $precisionTicks = [TimeSpan]::TicksPerSecond
+        $selfFields = Get-NervFullStackLinuxProcessStatFields -StatPath "/proc/$PID/stat"
+        $selfStartClockTicks = 0L
+        if (-not [long]::TryParse($selfFields[19], [ref] $selfStartClockTicks)) {
+            throw 'Malformed /proc start-time field for the current process.'
+        }
+        $selfStartUtc = (Get-Process -Id $PID -ErrorAction Stop).StartTime.ToUniversalTime()
+        $bootUtc = $selfStartUtc.AddTicks(-(ConvertTo-NervFullStackLinuxProcessStartOffsetTicks `
+            -StartClockTicks $selfStartClockTicks `
+            -ClockTicksPerSecond $clockTicksPerSecond))
         $entries = @([IO.Directory]::EnumerateDirectories('/proc'))
     }
     catch {
@@ -198,13 +274,7 @@ function Get-NervFullStackLinuxProcessInventory {
 
         $statPath = Join-Path $entry 'stat'
         try {
-            $stat = [IO.File]::ReadAllText($statPath)
-            $commandEnd = $stat.LastIndexOf([string] ')', [StringComparison]::Ordinal)
-            if ($commandEnd -lt 0 -or ($commandEnd + 2) -ge $stat.Length) {
-                throw 'Malformed /proc stat command boundary.'
-            }
-            $fields = @($stat.Substring($commandEnd + 2).Split(' ', [StringSplitOptions]::RemoveEmptyEntries))
-            if ($fields.Count -lt 20) { throw 'Malformed /proc stat field count.' }
+            $fields = Get-NervFullStackLinuxProcessStatFields -StatPath $statPath
 
             $parentValue = 0
             $startClockTicks = 0L
@@ -215,10 +285,9 @@ function Get-NervFullStackLinuxProcessInventory {
                 throw 'Malformed /proc parent or start-time field.'
             }
 
-            $startTicks = [long] [Math]::Round(
-                $startClockTicks * [TimeSpan]::TicksPerSecond / [double] $clockTicksPerSecond,
-                [MidpointRounding]::ToEven)
-            $startUtc = $bootUtc.AddTicks($startTicks)
+            $startUtc = $bootUtc.AddTicks((ConvertTo-NervFullStackLinuxProcessStartOffsetTicks `
+                -StartClockTicks $startClockTicks `
+                -ClockTicksPerSecond $clockTicksPerSecond))
             $records.Add([pscustomobject][ordered]@{
                 pid = $pidValue
                 ppid = $parentValue
@@ -371,10 +440,12 @@ function Get-NervFullStackProcessIdentityState {
         return 'Unknown'
     }
 
-    $expectedTicks = ConvertTo-NervFullStackNormalizedProcessTicks -UtcTime $expectedStart -PrecisionTicks $precisionTicks
-    $actualTicks = ConvertTo-NervFullStackNormalizedProcessTicks -UtcTime $actualStart -PrecisionTicks $precisionTicks
-    if ($null -eq $expectedTicks -or $null -eq $actualTicks) { return 'Unknown' }
-    if ($expectedTicks -eq $actualTicks) { return 'Active' }
+    if (Test-NervFullStackProcessStartTimeMatch `
+            -ExpectedUtc $expectedStart `
+            -ActualUtc $actualStart `
+            -ToleranceTicks $precisionTicks) {
+        return 'Active'
+    }
     return 'Mismatched'
 }
 
@@ -419,7 +490,6 @@ function Test-NervFullStackProcessExactExclusion {
         Get-NervFullStackProcessRuntimeProperty -InputObject $Record -Name 'processStartTimeUtc')
     $precisionTicks = [long] (Get-NervFullStackProcessRuntimeProperty -InputObject $Record -Name 'processStartTimePrecisionTicks')
     if ($null -eq $recordStart -or $precisionTicks -lt 1) { return $false }
-    $recordTicks = ConvertTo-NervFullStackNormalizedProcessTicks -UtcTime $recordStart -PrecisionTicks $precisionTicks
 
     foreach ($excluded in @($ExcludedIdentities)) {
         $excludedPid = 0
@@ -431,7 +501,10 @@ function Test-NervFullStackProcessExactExclusion {
                 [ref] $excludedPid) -and
             $excludedPid -eq $recordPid -and
             $null -ne $excludedStart -and
-            (ConvertTo-NervFullStackNormalizedProcessTicks -UtcTime $excludedStart -PrecisionTicks $precisionTicks) -eq $recordTicks
+            (Test-NervFullStackProcessStartTimeMatch `
+                -ExpectedUtc $excludedStart `
+                -ActualUtc $recordStart `
+                -ToleranceTicks $precisionTicks)
         ) {
             return $true
         }

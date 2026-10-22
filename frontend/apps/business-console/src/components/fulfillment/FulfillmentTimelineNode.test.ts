@@ -31,7 +31,6 @@ describe('FulfillmentTimelineNode — four-state state machine', () => {
       status: 'established',
       businessNo: 'SO-1',
       detailStatusLabel: '高风险',
-      source: 'Planning · 紧急度读面',
     })
     expect(wrapper.text()).toContain('高风险')
     expect(warn.mock.calls.flat().join(' ')).not.toContain('词表缺失')
@@ -45,7 +44,6 @@ describe('FulfillmentTimelineNode — four-state state machine', () => {
       status: 'established',
       businessNo: 'WO-1',
       detailStatus: 'released',
-      source: 'MES · 工单读面',
     })
     expect(wrapper.text()).toContain('已下达')
   })
@@ -57,16 +55,24 @@ describe('FulfillmentTimelineNode — four-state state machine', () => {
       status: 'established',
       businessNo: 'DO-1',
       detailStatus: 'released',
-      linkLabel: 'salesOrderNo = SO-1',
       drill: { path: '/erp/sales/deliveries' },
-      source: 'ERP · 发货单读面',
     })
     expect(wrapper.text()).toContain('DO-1')
     // 各来源回的英文状态码走全站状态字典映射，原文不上屏。
     expect(wrapper.text()).toContain('已下达')
     expect(wrapper.text()).not.toContain('released')
-    expect(wrapper.text()).toContain('salesOrderNo = SO-1')
     expect(wrapper.find('a').exists()).toBe(true)
+  })
+
+  it('established: 合批说明作为补充说明上屏', () => {
+    const wrapper = mountNode({
+      key: 'mes-work-order',
+      title: 'MES 工单',
+      status: 'established',
+      businessNo: 'WO-1',
+      note: '该工单为合批工单，同时承接 SO-A 等订单',
+    })
+    expect(wrapper.text()).toContain('该工单为合批工单，同时承接 SO-A 等订单')
   })
 
   it('unlinked: shows an explicit rule note and never fabricates data', () => {
@@ -112,7 +118,7 @@ describe('FulfillmentTimelineNode — four-state state machine', () => {
       status: 'failed',
       failureKind: 'conflict',
     })
-    expect(wrapper.text()).toContain('数据冲突（409）')
+    expect(wrapper.text()).toContain('数据已发生变化')
     const button = wrapper.find('button')
     expect(button.exists()).toBe(true)
     await button.trigger('click')

@@ -1,3 +1,5 @@
+import { DropdownMenuPortal } from 'reka-ui'
+
 export { default as NvDropdownMenu } from './NvDropdownMenu.vue'
 
 export { default as NvDropdownMenuCheckboxItem } from './NvDropdownMenuCheckboxItem.vue'
@@ -13,4 +15,7 @@ export { default as NvDropdownMenuSub } from './NvDropdownMenuSub.vue'
 export { default as NvDropdownMenuSubContent } from './NvDropdownMenuSubContent.vue'
 export { default as NvDropdownMenuSubTrigger } from './NvDropdownMenuSubTrigger.vue'
 export { default as NvDropdownMenuTrigger } from './NvDropdownMenuTrigger.vue'
-export { DropdownMenuPortal as NvDropdownMenuPortal } from 'reka-ui'
+// 浅拷贝补 `name` 的理由见 `../dialog/index.ts`。
+export const NvDropdownMenuPortal = /* @__PURE__ */ Object.assign({}, DropdownMenuPortal, {
+  name: 'NvDropdownMenuPortal',
+})

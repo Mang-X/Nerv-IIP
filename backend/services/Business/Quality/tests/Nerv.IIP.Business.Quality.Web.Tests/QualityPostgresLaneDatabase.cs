@@ -9,9 +9,8 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 // 被外层 finally 清理证明。每个用例先删除 quality schema 再迁移，因此同一成员数据库内的用例
 // 之间没有残留；这些类共用 QualityPostgresLaneCollection，xUnit 因而串行执行它们。
 //
-// 注意：本仓库这批 Quality Postgres profile 用例都不经由 UseCap/AddCap 走真实 CAP 事务性
-// outbox（都是用 stub IIntegrationEventPublisher 断言），因此实际落库的只有 quality schema，
-// 不涉及 CAP 默认的 cap schema —— 与 MasterData 那批需要同时声明 cap schema 的先例不同。
+// 普通 Quality Postgres profile 用例只落 quality schema；Redis/CAP transport profile 额外调用
+// ResetCapSchemaAsync 清理 CAP 默认 schema。两者仍由同一 collection 串行，避免共享成员库互扰。
 internal static class QualityPostgresLaneDatabase
 {
     internal const string CollectionName = "QualityPostgresLane";
@@ -28,6 +27,15 @@ internal static class QualityPostgresLaneDatabase
         var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(QualityFacts.Schema);
         await using var command = connection.CreateCommand();
         command.CommandText = $"DROP SCHEMA IF EXISTS {quotedSchema} CASCADE";
+        await command.ExecuteNonQueryAsync();
+    }
+
+    internal static async Task ResetCapSchemaAsync()
+    {
+        await using var connection = new NpgsqlConnection(ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DROP SCHEMA IF EXISTS cap CASCADE";
         await command.ExecuteNonQueryAsync();
     }
 

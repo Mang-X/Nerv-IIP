@@ -1,12 +1,15 @@
 using System.Reflection;
+using Nerv.IIP.Business.Wms.Web;
 using System.Text.Json;
 using FastEndpoints;
+using Nerv.IIP.Business.Wms.Web.Endpoints.DeadLetters;
 using FastEndpoints.Swagger;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Wms.Domain;
+using Nerv.IIP.Business.Wms.Web.Application.Coding;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
@@ -45,6 +48,11 @@ try
     {
         client.BaseAddress = inventoryBaseAddress;
     }).UseHttpClientMetrics();
+    var erpBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
+    builder.Services.AddHttpClient<IWmsPurchaseReceiptPostingRouteClient, HttpWmsPurchaseReceiptPostingRouteClient>(client =>
+    {
+        client.BaseAddress = erpBaseAddress;
+    }).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
@@ -72,8 +80,10 @@ try
     builder.Services.AddWmsPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddScoped<WorldHistoryWarehouseOpsSeedService>();
+    builder.Services.AddScoped<WmsWorkPoolMembershipSeedService>();
     builder.Services.AddScoped<WarehouseWorkScopeAuthorizer>();
     builder.Services.AddScoped<WarehouseAssignedResourceExecutionAuthorizer>();
+    builder.Services.AddScoped<WmsCodingService>();
     builder.Services.AddNervIipCommandLocking(
         builder.Configuration,
         builder.Environment,
@@ -81,6 +91,8 @@ try
         WmsFacts.ServiceName);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddIntegrationEventDeadLetterEndpoints();
+    builder.Services.AddWmsDeadLetterReplay();
     builder.Services.AddHttpClient<IWcsCancellationAdapter, HttpWcsCancellationAdapter>().UseHttpClientMetrics();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
@@ -157,6 +169,9 @@ try
     builder.Services.AddConfigurationServiceEndpointProvider();
 
     var app = builder.Build();
+    var wmsWorkPoolMembershipSeedEnabled = WmsWorkPoolMembershipSeedGate.ShouldSeed(
+        builder.Configuration,
+        app.Environment.IsDevelopment());
     app.UseNervIipCorrelation();
     var autoMigrate = builder.Configuration.GetValue<bool>("Persistence:AutoMigrate");
     if (autoMigrate && !app.Environment.IsDevelopment())
@@ -171,8 +186,24 @@ try
         await dbContext.Database.MigrateAsync();
     }
 
+    if (wmsWorkPoolMembershipSeedEnabled)
+    {
+        using var scope = app.Services.CreateScope();
+        var report = await scope.ServiceProvider
+            .GetRequiredService<WmsWorkPoolMembershipSeedService>()
+            .SeedAsync(
+                builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
+                builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");
+        app.Logger.LogInformation(
+            "WMS demo work-pool seed completed: {Pools} work pools, {Memberships} memberships, " +
+            "{Inbound} inbound orders written.",
+            report.WorkPoolsWritten,
+            report.WorkPoolMembershipsWritten,
+            report.InboundOrdersWritten);
+    }
+
     // 《工厂世界观设定集》L1 背景历史（仓储域侧）。校验器 fail-closed：对账不平就让启动失败。
-    // WMS 没有固定演示 seed，因此这里直接以 History 开关为准，并沿用「只在 Development 允许」的口径。
+    // 最小现场作业池 seed 已由上方独立 gate 控制；这里仍只处理完整 History，并沿用「只在 Development 允许」的口径。
     if (WorldHistoryConfiguration.IsEnabled(builder.Configuration))
     {
         if (!app.Environment.IsDevelopment())
@@ -265,9 +296,16 @@ try
     app.UseFastEndpoints(c =>
     {
         c.Endpoints.NameGenerator = ctx =>
-            WmsEndpointContracts.TryGet(ctx.EndpointType, out var contract)
-                ? contract.OperationId
+        {
+            if (WmsEndpointContracts.TryGet(ctx.EndpointType, out var contract))
+            {
+                return contract.OperationId;
+            }
+
+            return WmsDeadLetterEndpointContracts.TryGet(ctx.EndpointType, out var deadLetterContract)
+                ? deadLetterContract.OperationId
                 : ToLowerCamelEndpointName(ctx.EndpointType.Name);
+        };
     }).UseSwaggerGen();
     app.UseHttpMetrics();
     app.MapHealthChecks("/health");

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Contracts.Mes;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Contracts.Ops;
 using Nerv.IIP.Messaging.CAP;
@@ -40,10 +41,10 @@ public sealed class NotificationCapOutboxAcceptanceTests
             "nerv_notification_cap_inmemory");
         await using var factory = CreateFactory(database.ConnectionString, "InMemory");
         await MigrateAsync(factory, database);
-        await InitializeCapStorageAsync(factory);
+        await InitializeCapStorageAsync(factory, TopicName);
         using var client = factory.CreateClient();
 
-        await PublishAsync(factory, CreateFailedEvent("event-cap-inmemory", "operation-task-failed:cap-inmemory"), useTransaction: false);
+        await PublishAsync(factory, TopicName, CreateFailedEvent("event-cap-inmemory", "operation-task-failed:cap-inmemory"), useTransaction: false);
 
         await AssertEventuallyAsync(async token =>
         {
@@ -59,6 +60,43 @@ public sealed class NotificationCapOutboxAcceptanceTests
             Assert.Equal(NotificationContractConstants.IntentTypeTask, intent.IntentType);
             Assert.True(published, "CAP outbox should record the published message.");
             Assert.True(received, "CAP inbox should record the consumed message.");
+        });
+    }
+
+    [NotificationAndonCapPostgresFact]
+    [Trait("Category", "cap-inmemory")]
+    public async Task PostgreSQL_cap_outbox_delivers_duplicate_andon_escalation_once_to_the_explicit_recipient()
+    {
+        var adminConnectionString = ReadAndonPostgresConnectionString();
+
+        await using var database = await PostgreSqlTestDatabase.CreateAsync(
+            adminConnectionString,
+            "nerv_notification_andon_cap");
+        await using var factory = CreateFactory(database.ConnectionString, "InMemory");
+        await MigrateAsync(factory, database);
+        var topic = AndonCallEscalatedIntegrationEvent.Topic("Development");
+        await InitializeCapStorageAsync(factory, topic);
+        using var client = factory.CreateClient();
+        var integrationEvent = CreateAndonEscalatedEvent();
+
+        await PublishAsync(factory, topic, integrationEvent, useTransaction: false);
+        await PublishAsync(factory, topic, integrationEvent, useTransaction: false);
+
+        await AssertEventuallyAsync(async token =>
+        {
+            using var scope = factory.Services.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var intent = await dbContext.NotificationIntents
+                .Include(x => x.Messages)
+                .Include(x => x.Tasks)
+                .SingleOrDefaultAsync(x => x.SourceEventId == integrationEvent.EventId, token);
+
+            Assert.True(intent is not null, await ReadCapDebugAsync(dbContext, token));
+            Assert.Equal("org-001", intent.OrganizationId);
+            Assert.Equal("env-001", intent.EnvironmentId);
+            Assert.Equal("user:supervisor-001", Assert.Single(intent.Messages).RecipientRef);
+            Assert.Single(intent.Tasks);
+            Assert.Equal(1, await dbContext.ProcessedIntegrationEvents.CountAsync(token));
         });
     }
 
@@ -88,10 +126,10 @@ public sealed class NotificationCapOutboxAcceptanceTests
                 ["RabbitMQ:Password"] = Environment.GetEnvironmentVariable("NERV_IIP_TEST_RABBITMQ_PASSWORD") ?? "guest",
             });
         await MigrateAsync(factory, database);
-        await InitializeCapStorageAsync(factory);
+        await InitializeCapStorageAsync(factory, TopicName);
         using var client = factory.CreateClient();
 
-        await PublishAsync(factory, CreateFailedEvent("event-cap-rabbitmq", "operation-task-failed:cap-rabbitmq"), useTransaction: true);
+        await PublishAsync(factory, TopicName, CreateFailedEvent("event-cap-rabbitmq", "operation-task-failed:cap-rabbitmq"), useTransaction: true);
 
         await AssertEventuallyAsync(async token =>
         {
@@ -136,11 +174,12 @@ public sealed class NotificationCapOutboxAcceptanceTests
                 ["RabbitMQ:Password"] = Environment.GetEnvironmentVariable("NERV_IIP_TEST_RABBITMQ_PASSWORD") ?? "guest",
             });
         await MigrateAsync(factory, database);
-        await InitializeCapStorageAsync(factory);
+        await InitializeCapStorageAsync(factory, TopicName);
         using var client = factory.CreateClient();
 
         await PublishAsync(
             factory,
+            TopicName,
             CreateFailedEvent("event-cap-rabbitmq-poison", "operation-task-failed:cap-rabbitmq-poison")
                 with
             {
@@ -167,7 +206,7 @@ public sealed class NotificationCapOutboxAcceptanceTests
             Assert.StartsWith(OperationTaskFailedIntegrationEventHandlerForNotification.ConsumerName, deadLetter.ConsumerName, StringComparison.Ordinal);
         });
 
-        await PublishAsync(factory, CreateFailedEvent("event-cap-rabbitmq-after-poison", "operation-task-failed:cap-rabbitmq-after-poison"), useTransaction: true);
+        await PublishAsync(factory, TopicName, CreateFailedEvent("event-cap-rabbitmq-after-poison", "operation-task-failed:cap-rabbitmq-after-poison"), useTransaction: true);
 
         await AssertEventuallyAsync(async token =>
         {
@@ -241,7 +280,7 @@ public sealed class NotificationCapOutboxAcceptanceTests
         await dbContext.Database.MigrateAsync();
     }
 
-    private static async Task InitializeCapStorageAsync(WebApplicationFactory<Program> factory)
+    private static async Task InitializeCapStorageAsync(WebApplicationFactory<Program> factory, string topicName)
     {
         using var scope = factory.Services.CreateScope();
         var initializer = scope.ServiceProvider.GetRequiredService<IStorageInitializer>();
@@ -250,29 +289,30 @@ public sealed class NotificationCapOutboxAcceptanceTests
         await bootstrapper.BootstrapAsync(CancellationToken.None);
         var selector = scope.ServiceProvider.GetRequiredService<IConsumerServiceSelector>();
         var candidates = selector.SelectCandidates().ToArray();
-        if (!candidates.Any(CandidateSubscribesToTopic))
+        if (!candidates.Any(candidate => CandidateSubscribesToTopic(candidate, topicName)))
         {
             var discovered = string.Join(", ", candidates.Select(DescribeCandidate));
-            throw new InvalidOperationException($"CAP subscriber '{TopicName}' was not discovered. Discovered subscribers: {discovered}");
+            throw new InvalidOperationException($"CAP subscriber '{topicName}' was not discovered. Discovered subscribers: {discovered}");
         }
     }
 
-    private static async Task PublishAsync(
+    private static async Task PublishAsync<TIntegrationEvent>(
         WebApplicationFactory<Program> factory,
-        OperationTaskFailedIntegrationEvent integrationEvent,
+        string topicName,
+        TIntegrationEvent integrationEvent,
         bool useTransaction)
     {
         using var scope = factory.Services.CreateScope();
         var publisher = scope.ServiceProvider.GetRequiredService<ICapPublisher>();
         if (!useTransaction)
         {
-            await publisher.PublishAsync(TopicName, integrationEvent);
+            await publisher.PublishAsync(topicName, integrationEvent);
             return;
         }
 
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await using var transaction = await dbContext.Database.BeginTransactionAsync(publisher, autoCommit: true);
-        await publisher.PublishAsync(TopicName, integrationEvent);
+        await publisher.PublishAsync(topicName, integrationEvent);
     }
 
     private static async Task<bool> CapTableHasRowsAsync(
@@ -341,9 +381,9 @@ public sealed class NotificationCapOutboxAcceptanceTests
         }
     }
 
-    private static bool CandidateSubscribesToTopic(object candidate)
+    private static bool CandidateSubscribesToTopic(object candidate, string topicName)
     {
-        return DescribeCandidate(candidate).Contains(TopicName, StringComparison.Ordinal);
+        return DescribeCandidate(candidate).Contains(topicName, StringComparison.Ordinal);
     }
 
     private static string DescribeCandidate(object candidate)
@@ -377,6 +417,32 @@ public sealed class NotificationCapOutboxAcceptanceTests
                 FailureCode: "timeout"));
     }
 
+    private static AndonCallEscalatedIntegrationEvent CreateAndonEscalatedEvent()
+    {
+        return new AndonCallEscalatedIntegrationEvent(
+            EventId: "event-andon-cap-001",
+            EventType: AndonCallEscalatedIntegrationEvent.Type,
+            EventVersion: AndonCallEscalatedIntegrationEvent.Version,
+            OccurredAtUtc: DateTimeOffset.Parse("2026-09-20T06:05:00Z"),
+            SourceService: MesIntegrationEventSources.BusinessMes,
+            CorrelationId: "andon-call-escalated:call-cap-001",
+            CausationId: "raise-andon-call:call-cap-001",
+            OrganizationId: "org-001",
+            EnvironmentId: "env-001",
+            Actor: "system:business-mes",
+            IdempotencyKey: "andon-call-escalated:call-cap-001",
+            Payload: new AndonCallEscalatedPayload(
+                CallId: "call-cap-001",
+                Category: "Equipment",
+                WorkOrderId: "WO-001",
+                OperationTaskId: "OP-001",
+                WorkCenterId: "WC-001",
+                CallerId: "caller-001",
+                RaisedAtUtc: DateTimeOffset.Parse("2026-09-20T06:00:00Z"),
+                RecipientId: "supervisor-001",
+                UnclaimedTimeoutSeconds: 300));
+    }
+
     /// <summary>
     /// CAP delivery is real transport plus a real PostgreSQL round trip, so the completion instant is
     /// not knowable in advance — this polls the observable fact under a bounded budget. The hand-rolled
@@ -399,6 +465,15 @@ public sealed class NotificationCapOutboxAcceptanceTests
         return Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")
             ?? Environment.GetEnvironmentVariable("ConnectionStrings__NotificationDb")
             ?? "Host=localhost;Port=15432;Database=nerv_iip_notification_test;Username=postgres;Password=postgres";
+    }
+
+    private static string ReadAndonPostgresConnectionString()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES");
+        return string.IsNullOrWhiteSpace(connectionString)
+            ? throw new InvalidOperationException(
+                "NERV_IIP_TEST_POSTGRES is required for the MES Andon PostgreSQL + CAP proof.")
+            : connectionString;
     }
 
     private static async Task<bool> CanConnectPostgresAsync(string connectionString)
@@ -446,6 +521,17 @@ public sealed class NotificationCapOutboxAcceptanceTests
         return int.TryParse(Environment.GetEnvironmentVariable(environmentVariable), out var value) && value > 0
             ? value
             : defaultValue;
+    }
+
+    internal sealed class NotificationAndonCapPostgresFactAttribute : FactAttribute
+    {
+        public NotificationAndonCapPostgresFactAttribute()
+        {
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")))
+            {
+                Skip = "Set NERV_IIP_TEST_POSTGRES to run the MES Andon PostgreSQL + CAP notification proof.";
+            }
+        }
     }
 
 }

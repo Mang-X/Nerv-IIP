@@ -1,26 +1,36 @@
-using System.Net;
-using System.Net.Http.Json;
 using System.Globalization;
-using Microsoft.AspNetCore.Hosting;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Net;
+using DotNetCore.CAP;
 using MediatR;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.InMemory.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
-using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
 using Nerv.IIP.Business.Inventory.Web.Application.Approval;
 using Nerv.IIP.Business.Inventory.Web.Application.Auth;
-using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockLocations;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
+using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockLocations;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
 using Nerv.IIP.Business.Inventory.Web.Application.Queries;
 using Nerv.IIP.Business.Inventory.Web.Endpoints.Inventory;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Primitives;
@@ -34,7 +44,12 @@ public sealed class InventoryEndpointContractTests
     {
         var contracts = InventoryEndpointContracts.All.ToArray();
 
-        Assert.Equal(18, contracts.Length);
+        Assert.Equal(21, contracts.Length);
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/inventory/v1/line-side-balances"
+            && x.PermissionCode == InventoryPermissionCodes.LedgerRead
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "listInventoryLineSideBalances");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/inventory/v1/directory"
             && x.PermissionCode == InventoryPermissionCodes.LedgerRead
@@ -61,6 +76,11 @@ public sealed class InventoryEndpointContractTests
             && x.PermissionCode == InventoryPermissionCodes.LocationsManage
             && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
             && x.OperationId == "createOrUpdateInventoryLocation");
+        Assert.Contains(contracts, x => x.HttpMethod == "GET"
+            && x.Route == "/api/inventory/v1/locations"
+            && x.PermissionCode == InventoryPermissionCodes.LocationsManage
+            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.OperationId == "listInventoryLocations");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/inventory/v1/movements"
             && x.PermissionCode == InventoryPermissionCodes.MovementsCreate
@@ -141,6 +161,7 @@ public sealed class InventoryEndpointContractTests
     [InlineData(typeof(ReleaseStockReservationEndpoint))]
     [InlineData(typeof(RenewStockReservationEndpoint))]
     [InlineData(typeof(ListStockExpiryAlertsEndpoint))]
+    [InlineData(typeof(ListLineSideInventoryBalancesEndpoint))]
     [InlineData(typeof(PostStockStatusTransferEndpoint))]
     public void Inventory_endpoints_route_through_mediator(Type endpointType)
     {
@@ -928,6 +949,7 @@ public sealed class InventoryEndpointContractTests
             {
                 builder.UseSetting("environment", "Testing");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.UseSetting("Inventory:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
             });
         using var scope = factory.Services.CreateScope();
 
@@ -1085,6 +1107,7 @@ public sealed class InventoryEndpointContractTests
             {
                 builder.UseSetting("environment", "Testing");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.UseSetting("Inventory:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
             });
         using var client = factory.CreateClient();
 
@@ -1112,22 +1135,223 @@ public sealed class InventoryEndpointContractTests
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
+    /// <summary>
+    /// #3186：<c>POST /api/inventory/v1/status-transfers</c> 的质量状态取值来自调用方，命令校验器只管
+    /// 编码形状（<c>RequiredInventoryCode(50)</c>）不管值域，词表外的取值此前经
+    /// <c>StockQualityStatus.Normalize</c> 抛 <c>ArgumentOutOfRangeException</c>
+    /// → <c>500 / {"success":false,"message":"未知错误","code":99999}</c>，把调用方的输入错误
+    /// 报成了服务端故障，且回包里没有任何能定位的信息。
+    ///
+    /// **本用例断言的是 Inventory 今天真实的已知错误传输形态：`200` + `success:false` + 业务消息。**
+    /// 不是 400——Inventory 的 <c>app.UseKnownExceptionHandler()</c> 没有传
+    /// <c>KnownExceptionStatusCode</c>（19 个服务里有 8 个显式传了 BadRequest，Inventory 不在其中）。
+    /// 把它改成 400 是**服务级错误传输口径**变更，不在 #3186 范围内。
+    ///
+    /// 反向读数：把命令处理器里的 <c>TryNormalize</c> 改回 <c>Normalize</c>，本用例读到
+    /// <c>500 / 未知错误</c>。
+    ///
+    /// **本用例不覆盖空白取值**：命令校验器的 <c>RequiredInventoryCode(50)</c> 在管道里就把它挡下
+    /// （实测回包 <c>{"success":false,"message":"'source Quali…"}</c>），**根本走不到词表分支**。
+    /// 也就是说 <c>UnsupportedMessage</c> 的空白支在 HTTP 写面**不可达**，它唯一可达的入口是 CAP
+    /// 消费路径的 source 侧，由 <c>InventoryMovementRequestedConsumerTests</c> 的 <c>[InlineData("", null)]</c>
+    /// 覆盖——这是「存活变异的两种成因」里的**分支不可达**，不是覆盖缺口（#3186 复审 S7）。
+    /// </summary>
+    [Theory]
+    [InlineData("quarantine", InventoryQualityStatuses.Unrestricted)]
+    [InlineData(InventoryQualityStatuses.Quality, "quarantine")]
+    public async Task Inventory_status_transfer_endpoint_reports_unknown_quality_status_as_known_error_not_server_failure(
+        string sourceQualityStatus,
+        string targetQualityStatus)
+    {
+        var databaseName = $"status-transfer-vocabulary-{Guid.NewGuid():N}";
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.ConfigureTestServices(services =>
+                {
+                    services.RemoveAll<ApplicationDbContext>();
+                    services.RemoveAll<DbContextOptions>();
+                    services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+                    services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+                    // netcorepal 的 UoW 行为会在命令前开事务，InMemory provider 不支持事务，
+                    // 不放行这条警告的话所有写面请求都恒定 500，用例就失去了对异常类型的鉴别力。
+                    services.AddDbContext<ApplicationDbContext>(options => options
+                        .UseInMemoryDatabase(databaseName)
+                        .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+                });
+            });
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var response = await client.PostAsJsonAsync("/api/inventory/v1/status-transfers", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            sourceQualityStatus,
+            targetQualityStatus,
+            sourceService = "quality",
+            sourceDocumentId = "QI-001",
+            sourceDocumentLineId = (string?)null,
+            idempotencyKey = "idem-status-transfer-vocabulary-001",
+            skuCode = "SKU-FG-1000",
+            uomCode = "kg",
+            siteCode = "SITE-01",
+            locationCode = "LOC-A-01",
+            lotNo = "LOT-001",
+            serialNo = (string?)null,
+            ownerType = "company",
+            ownerId = "owner-001",
+            quantity = 1m,
+        });
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("\"success\":false", body, StringComparison.Ordinal);
+        // 缺陷侧的判别：非法取值不得再被报成「未知错误」（500 / code 99999）。
+        Assert.DoesNotContain("99999", body, StringComparison.Ordinal);
+        Assert.Contains("quarantine", body, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// #3836：库存领域规则拒绝在 HTTP 边界走服务既有的已知业务错误传输（200 + success:false + 业务消息），
+    /// 不再是「未知错误」500，且按操作给出原因（不能说成「无法过账」）。用例：对已过期的预留确认拣货完成、续期。
+    /// 反向读数：去掉 <c>InventoryDomainExceptionMiddleware</c> 的注册，本用例读到 500 / 99999。
+    /// </summary>
     [Fact]
-    public async Task Inventory_registers_persistent_integration_event_dead_letter_store()
+    public async Task Inventory_reports_reservation_domain_rejection_as_known_error_not_server_failure()
+    {
+        var databaseName = $"reservation-domain-rejection-{Guid.NewGuid():N}";
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.UseSetting("Inventory:Seed:Enabled", "false");
+                builder.ConfigureTestServices(services =>
+                {
+                    services.RemoveAll<ApplicationDbContext>();
+                    services.RemoveAll<DbContextOptions>();
+                    services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
+                    services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+                    services.AddDbContext<ApplicationDbContext>(options => options
+                        .UseInMemoryDatabase(databaseName)
+                        .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+                });
+            });
+
+        StockReservationId reservationId;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var ledger = StockLedger.Create("org-001", "env-dev", "SKU-FG-1000", "pcs", "SITE-01", "LOC-A-01", null, null, "unrestricted", "production", null);
+            ledger.ApplyMovement(StockMovement.Post("org-001", "env-dev", "inbound", "mes", "FGR-001", null, "fgr-inbound-001", "SKU-FG-1000", "pcs", "SITE-01", "LOC-A-01", null, null, "unrestricted", "production", null, 5m));
+            var deadline = DateTime.UtcNow.AddMinutes(5);
+            var reservation = StockReservation.Reserve(ledger, "wms", "DO-001", "10", "wms-pick-res:expired", 2m, deadline);
+            ledger.Reserve(reservation);
+            ledger.ExpireReservation(reservation, deadline.AddMinutes(1));
+            dbContext.StockLedgers.Add(ledger);
+            dbContext.StockReservations.Add(reservation);
+            await dbContext.SaveChangesAsync(CancellationToken.None);
+            reservationId = reservation.Id;
+        }
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        using var response = await client.PostAsJsonAsync(
+            $"/api/inventory/v1/reservations/{reservationId}/pick",
+            new { reservationId = reservationId.ToString() });
+
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("\"success\":false", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("99999", body, StringComparison.Ordinal);
+        Assert.Contains("库存预留已失效，无法确认拣货完成", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("过账", body, StringComparison.Ordinal);
+
+        using var renewResponse = await client.PostAsJsonAsync(
+            $"/api/inventory/v1/reservations/{reservationId}/renew",
+            new { reservationId = reservationId.ToString() });
+        var renewBody = await renewResponse.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, renewResponse.StatusCode);
+        Assert.Contains("库存预留已失效，无法续期", renewBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Inventory_registers_original_consumers_for_dead_letter_replay()
     {
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseSetting("environment", "Testing");
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.UseSetting("Inventory:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
             });
 
         using var scope = factory.Services.CreateScope();
-        var store = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
+        var handlers = scope.ServiceProvider.GetServices<IIntegrationEventDeadLetterReplayHandler>().ToArray();
+        // Durable storage behavior is covered by InventoryDeadLetterReplayPostgresTests.
+        // This fast probe verifies that the actual host reaches every declared production consumer.
+        var consumerTypes = typeof(Program).Assembly.GetTypes().Where(type =>
+            type.Namespace == "Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers"
+            && type.GetInterfaces().Any(contract => contract.IsGenericType
+                && contract.GetGenericTypeDefinition() == typeof(NetCorePal.Extensions.DistributedTransactions.IIntegrationEventHandler<>)));
+        foreach (var consumer in consumerTypes)
+        {
+            var contract = consumer.GetInterfaces().Single(type => type.IsGenericType
+                && type.GetGenericTypeDefinition() == typeof(NetCorePal.Extensions.DistributedTransactions.IIntegrationEventHandler<>));
+            var consumerName = (string)consumer.GetField("ConsumerName")!.GetValue(null)!;
+            var message = new IntegrationEventDeadLetterMessage(Guid.NewGuid(), consumerName, "event", "type", 1, "source", "key",
+                contract.GenericTypeArguments[0].FullName!, "{}", "original", "original failure", IntegrationEventDeadLetterStatus.Pending,
+                DateTimeOffset.Parse("2026-10-01T00:00:00Z"), null);
+            Assert.Single(handlers, handler => handler.CanReplay(message));
+        }
+        Assert.Equal(4, handlers.Length);
+    }
 
+    [Fact]
+    public async Task Inventory_cap_failed_threshold_callback_resolves_dead_letterer_and_dead_letters_subscribe_failure()
+    {
+        var deadLetterStore = new InMemoryIntegrationEventDeadLetterStore();
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Development");
+                builder.UseSetting("Messaging:Provider", "InMemory");
+                builder.ConfigureServices(services =>
+                    services.AddSingleton<IIntegrationEventDeadLetterStore>(deadLetterStore));
+            });
+
+        using var scope = factory.Services.CreateScope();
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IntegrationEventCapFailureDeadLetterer>());
+        var options = scope.ServiceProvider.GetRequiredService<IOptions<CapOptions>>();
+        var callback = options.Value.FailedThresholdCallback;
+        Assert.NotNull(callback);
+
+        var integrationEvent = CreateCapDeadLetterTestEvent();
+        callback!(new DotNetCore.CAP.Messages.FailedInfo
+        {
+            ServiceProvider = factory.Services,
+            MessageType = DotNetCore.CAP.Messages.MessageType.Subscribe,
+            Message = new DotNetCore.CAP.Messages.Message(
+                new Dictionary<string, string?>
+                {
+                    [DotNetCore.CAP.Messages.Headers.Group] = "business-inventory.movement-requested",
+                    [DotNetCore.CAP.Messages.Headers.MessageName] = nameof(InventoryMovementRequestedIntegrationEvent),
+                    [DotNetCore.CAP.Messages.Headers.Exception] = "InventoryUnitCostAuthorityPendingException"
+                },
+                integrationEvent)
+        });
+
+        var deadLetter = Assert.Single(await deadLetterStore.ListAsync(
+            "business-inventory.movement-requested",
+            IntegrationEventDeadLetterStatus.Pending,
+            CancellationToken.None));
+        Assert.Equal(integrationEvent.EventId, deadLetter.EventId);
         Assert.Equal(
-            "Nerv.IIP.Messaging.CAP.PersistentIntegrationEventDeadLetterStore`1[[Nerv.IIP.Business.Inventory.Infrastructure.ApplicationDbContext, Nerv.IIP.Business.Inventory.Infrastructure, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]",
-            store.GetType().FullName);
+            IntegrationEventCapFailureDeadLetterer.HandlerRetryExhaustedFailureCode,
+            deadLetter.FailureCode);
     }
 
     [Fact]
@@ -1440,7 +1664,13 @@ public sealed class InventoryEndpointContractTests
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseInMemoryDatabase(databaseName));
-        return services.BuildServiceProvider();
+        var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        db.StockLocations.Add(StockLocation.CreateOrUpdate(
+            null, "org-001", "env-dev", "LOC-A-01", "storage", "SITE-01", null, "active"));
+        db.SaveChanges();
+        return provider;
     }
 
     private static PostStockMovementCommand NewPostMovementCommand(string idempotencyKey, decimal quantity)
@@ -1481,6 +1711,39 @@ public sealed class InventoryEndpointContractTests
             "company",
             "owner-001",
             idempotencyKey);
+    }
+
+    private static InventoryMovementRequestedIntegrationEvent CreateCapDeadLetterTestEvent()
+    {
+        return new InventoryMovementRequestedIntegrationEvent(
+            "inventory-cap-dead-letter-001",
+            InventoryIntegrationEventTypes.InventoryMovementRequested,
+            InventoryIntegrationEventVersions.V1,
+            DateTimeOffset.Parse("2026-08-26T00:00:00Z", CultureInfo.InvariantCulture),
+            InventoryIntegrationEventSources.BusinessWms,
+            "corr-inventory-cap-dead-letter-001",
+            "cause-inventory-cap-dead-letter-001",
+            "org-001",
+            "env-dev",
+            "system:wms",
+            "wms:inventory-movement-requested:org-001:env-dev:IN-CAP-001:idem-cap-001",
+            new InventoryMovementRequestedPayload(
+                "inbound",
+                "wms",
+                "IN-CAP-001",
+                "LINE-001",
+                "idem-cap-001",
+                "SKU-FG-1000",
+                "kg",
+                "SITE-01",
+                "LOC-A-01",
+                "LOT-001",
+                null,
+                "qualified",
+                "company",
+                "owner-001",
+                5m,
+                DateTimeOffset.Parse("2026-08-26T00:00:00Z", CultureInfo.InvariantCulture)));
     }
 
     [Fact]

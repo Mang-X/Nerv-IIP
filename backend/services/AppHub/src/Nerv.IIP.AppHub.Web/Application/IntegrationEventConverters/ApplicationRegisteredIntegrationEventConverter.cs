@@ -2,6 +2,7 @@ using Nerv.IIP.AppHub.Domain.AggregatesModel.ApplicationAggregate;
 using Nerv.IIP.AppHub.Web.Application.IntegrationEvents;
 using Nerv.IIP.Contracts.AppHubQueries;
 using NetCorePal.Extensions.DistributedTransactions;
+using Nerv.IIP.Contracts.IntegrationEvents;
 
 namespace Nerv.IIP.AppHub.Web.Application.IntegrationEventConverters;
 
@@ -25,7 +26,12 @@ public sealed class ApplicationRegisteredIntegrationEventConverter
             domainEvent.OrganizationId,
             domainEvent.EnvironmentId,
             AppHubIntegrationEventSources.AppHub,
-            $"apphub:application-registered:{domainEvent.OrganizationId}:{domainEvent.EnvironmentId}:{domainEvent.ApplicationKey}:{domainEvent.Version}",
+            IntegrationEventIdempotencyKey.Compose(
+                "apphub:application-registered:",
+                domainEvent.OrganizationId,
+                domainEvent.EnvironmentId,
+                domainEvent.ApplicationKey,
+                domainEvent.Version),
             new ApplicationRegisteredPayload(domainEvent.ApplicationKey, domainEvent.Version));
     }
 }

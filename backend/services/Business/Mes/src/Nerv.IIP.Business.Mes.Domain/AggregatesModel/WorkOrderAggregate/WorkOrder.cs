@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.DomainEvents;
 
@@ -25,7 +26,8 @@ public sealed class SourcePlanReference
         string sourceDocumentType,
         string sourceDocumentId,
         string? sourceDemandReference,
-        IReadOnlyCollection<string>? sourceDemandReferences = null)
+        IReadOnlyCollection<string>? sourceDemandReferences = null,
+        IReadOnlyCollection<string>? assemblyParentSuggestionIds = null)
     {
         SourceSystem = DomainGuard.Required(sourceSystem, nameof(sourceSystem));
         SourceDocumentType = DomainGuard.Required(sourceDocumentType, nameof(sourceDocumentType));
@@ -51,6 +53,7 @@ public sealed class SourcePlanReference
         // AsReadOnly：`IReadOnlyList<string>` 只是静态类型上的只读，直接交出 List 实例
         // 调用方一个向下转型就能绕过聚合、在 EF 变更跟踪背后改掉这条追溯链。
         SourceDemandReferences = references.AsReadOnly();
+        RecordAssemblyParentSuggestionIds(assemblyParentSuggestionIds);
     }
 
     public string SourceSystem { get; private set; } = string.Empty;
@@ -65,10 +68,28 @@ public sealed class SourcePlanReference
     /// 升级前的历史行本列为 null，读面回退单值引用；新建工单恒为非空集合。
     /// </summary>
     public IReadOnlyList<string>? SourceDemandReferences { get; private set; }
+    public IReadOnlyList<string>? AssemblyParentSuggestionIds { get; private set; }
+
+    internal void RecordAssemblyParentSuggestionIds(IReadOnlyCollection<string>? suggestionIds) =>
+        AssemblyParentSuggestionIds = (suggestionIds ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
 }
 
 public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 {
+    /// <summary>
+    /// 「本次发布不存在任何下达前既有产量」的唯一写法（#3129）。用它而不是就地写 <c>[]</c>，
+    /// 是为了让「这是一个已被证明为空的事实」与「调用方随手传了个空字典」在阅读上可分辨：
+    /// 引用本字段的两处都在紧邻注释里给出了空成立的自证。
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, decimal> EmptyPreReleaseGoodQuantities =
+        ImmutableDictionary<string, decimal>.Empty;
+
+    public const string StandardType = "standard";
+    public const string ReworkType = "rework";
     public const string CreatedStatus = "created";
     public const string ReleasedStatus = "released";
     public const string StartedStatus = "started";
@@ -77,8 +98,88 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public const string ClosedStatus = "closed";
     public const string CancelledStatus = "cancelled";
     public const string ScrappedStatus = "scrapped";
+    public const string SplitStatus = "split";
+    public const string MergedStatus = "merged";
     public const string MaterialRequirementSnapshotCapturedStatus = "captured";
     public const string MaterialRequirementSnapshotNoRequirementsStatus = "no-requirements";
+
+    /// <summary>
+    /// 工单生命周期状态的**全集**：<see cref="TerminalStatuses"/> 与 <see cref="UnfinishedStatuses"/> 都以它为底集，
+    /// 两者是它的一个划分。新增一个 <c>*Status</c> 常量必须同时登记进本数组，
+    /// 否则 <c>ShiftHandoverUnfinishedWorkOrderStatusTests.Work_order_status_sets_partition_every_declared_status_constant</c>
+    /// 的反射完备性断言会红。
+    /// 物料需求快照状态（<see cref="MaterialRequirementSnapshotCapturedStatus"/> 等）不是工单状态，不在本集合内。
+    /// </summary>
+    public static readonly ImmutableArray<string> AllStatuses =
+    [
+        CreatedStatus,
+        ReleasedStatus,
+        StartedStatus,
+        HoldStatus,
+        CompletedStatus,
+        ClosedStatus,
+        CancelledStatus,
+        ScrappedStatus,
+        SplitStatus,
+        MergedStatus,
+    ];
+
+    /// <summary>
+    /// 工单的**终态**：进入这些状态后工单的生产生命周期已经结束。
+    /// <c>ThrowIfCannotRelease()</c> 与 <see cref="Hold"/> 用的就是本集合——它们原先各自内联一串
+    /// <c>or</c> 模式匹配，改引本集合是为了让「终态是哪几个」只有一处定义。
+    ///
+    /// <para><b>它与 <see cref="NonExecutableStatuses"/> 不是同一个集合</b>：后者少一个 <c>completed</c>
+    /// （超收容差为「已达量后继续报工」留了空间），两者含义不同，不要互相替代。</para>
+    /// </summary>
+    public static readonly ImmutableArray<string> TerminalStatuses =
+    [
+        CompletedStatus,
+        ClosedStatus,
+        CancelledStatus,
+        ScrappedStatus,
+        SplitStatus,
+        MergedStatus,
+    ];
+
+    /// <summary>
+    /// 工单的**未完状态** = <see cref="AllStatuses"/> 去掉 <see cref="TerminalStatuses"/>，即 <c>created</c> /
+    /// <c>released</c> / <c>started</c> / <c>hold</c>。有意写成推导式而不是再手抄一遍四个常量：
+    /// 将来新增一个非终态，只要它进了 <see cref="AllStatuses"/> 就会自动落进本集合，不会静默漏掉。
+    ///
+    /// <para>交接班的「未完工单」一列（<c>ShiftHandoverUnfinishedWorkOrder.WorkOrderStatus</c>）用本集合做值域校验：
+    /// 那一列按定义就是「未完」工单在交班时点的状态快照，终态工单不该出现在那张清单里。</para>
+    /// </summary>
+    public static readonly ImmutableArray<string> UnfinishedStatuses =
+        [.. AllStatuses.Where(status => !TerminalStatuses.Contains(status))];
+
+    /// <summary>
+    /// 报工不再受理的工单状态。<see cref="RecordProductionProgress"/> 用它判「工单是否还可执行」，
+    /// #3000 的发布投影回填用**同一份**集合挑「哪些工单的工序还会再撞首件门禁」。
+    ///
+    /// 两侧必须同源：报工命令的准入路径只看工序 <c>InProgress</c>，工单状态在准入判断里一次都不出现
+    /// （`MesProductionCommands` 的首件门禁调用点就紧跟在那句工序状态检查之后），
+    /// 真正筛掉工单的就是本集合。回填若另起一套工单状态白名单，白名单一旦比本集合窄，
+    /// 落在差集里的工序读首件确认就永远是 not-synchronized，被门禁永久拒且无自愈路径
+    /// —— <c>completed</c> 正是这样一个差集：它不在本集合里（超收容差显式为「已达量后继续报工」留了空间），
+    /// 却曾被回填的白名单排除。
+    ///
+    /// <para><b>这个集合不是「报工准入」的全部</b>（#3119）：<c>created</c>——尚未下达——同样不受理报工，
+    /// 但那条守卫**有意**落在受理路径（<c>RecordProductionReportCommandHandler</c>）而不是本集合里。
+    /// 两个理由：① <see cref="RecordProductionProgress"/> 只在**产出工序**的报工上被调用，
+    /// 写进这里会得到一条只覆盖一半的护栏（实测：把守卫改放进本方法后，
+    /// 「非产出工序在 created 工单上报工」这一格照样被受理）；
+    /// ② #3000 的回填按本集合的**补集**选人，把 <c>created</c> 塞进来会同时改掉那份选人口径。
+    /// 因此「本集合 = 报工不受理的全部工单状态」这句话是**假的**，不要按它推断。</para>
+    /// </summary>
+    public static readonly ImmutableArray<string> NonExecutableStatuses =
+    [
+        CancelledStatus,
+        ClosedStatus,
+        ScrappedStatus,
+        SplitStatus,
+        MergedStatus,
+    ];
 
     private WorkOrder()
     {
@@ -95,7 +196,16 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         int priority,
         DateTimeOffset dueUtc,
         SourcePlanReference? sourcePlanReference,
-        decimal overReceiptTolerancePercent)
+        decimal overReceiptTolerancePercent,
+        string workOrderType,
+        string? sourceWorkOrderId = null,
+        string? sourceOperationTaskId = null,
+        string? sourceDefectNo = null,
+        string? sourceNcrId = null,
+        string? sourceNcrCode = null,
+        string? sourceLotNo = null,
+        string? sourceSerialNo = null,
+        DateTimeOffset? sourceReworkRequestedAtUtc = null)
     {
         OrganizationId = DomainGuard.Required(organizationId, nameof(organizationId));
         EnvironmentId = DomainGuard.Required(environmentId, nameof(environmentId));
@@ -108,7 +218,17 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         DueUtc = dueUtc;
         SourcePlanReference = sourcePlanReference;
         OverReceiptTolerancePercent = DomainGuard.NonNegative(overReceiptTolerancePercent, nameof(overReceiptTolerancePercent));
+        WorkOrderType = DomainGuard.Required(workOrderType, nameof(workOrderType));
+        SourceWorkOrderId = string.IsNullOrWhiteSpace(sourceWorkOrderId) ? null : sourceWorkOrderId.Trim();
+        SourceOperationTaskId = string.IsNullOrWhiteSpace(sourceOperationTaskId) ? null : sourceOperationTaskId.Trim();
+        SourceDefectNo = string.IsNullOrWhiteSpace(sourceDefectNo) ? null : sourceDefectNo.Trim();
+        SourceNcrId = string.IsNullOrWhiteSpace(sourceNcrId) ? null : sourceNcrId.Trim();
+        SourceNcrCode = string.IsNullOrWhiteSpace(sourceNcrCode) ? null : sourceNcrCode.Trim();
+        SourceLotNo = string.IsNullOrWhiteSpace(sourceLotNo) ? null : sourceLotNo.Trim();
+        SourceSerialNo = string.IsNullOrWhiteSpace(sourceSerialNo) ? null : sourceSerialNo.Trim();
+        SourceReworkRequestedAtUtc = sourceReworkRequestedAtUtc;
         Status = CreatedStatus;
+        Version = 1;
         CreatedAtUtc = DateTimeOffset.UtcNow;
     }
 
@@ -120,9 +240,11 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public string? UomCode { get; private set; }
     public decimal Quantity { get; private set; }
     public int Priority { get; private set; }
+    public bool IsRush { get; private set; }
     public DateTimeOffset DueUtc { get; private set; }
     public SourcePlanReference? SourcePlanReference { get; private set; }
     public string Status { get; private set; } = string.Empty;
+    public long Version { get; private set; }
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public decimal CompletedQuantity { get; private set; }
     public decimal ScrapQuantity { get; private set; }
@@ -136,8 +258,23 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
     public string? MaterialRequirementSnapshotStatus { get; private set; }
     public DateTimeOffset? MaterialRequirementSnapshotEvaluatedAtUtc { get; private set; }
     public string? MaterialRequirementSnapshotProductionVersionId { get; private set; }
+    public string WorkOrderType { get; private set; } = StandardType;
+    public string? SourceWorkOrderId { get; private set; }
+    public string? SourceOperationTaskId { get; private set; }
+    public string? SourceDefectNo { get; private set; }
+    public string? SourceNcrId { get; private set; }
+    public string? SourceNcrCode { get; private set; }
+    public string? SourceLotNo { get; private set; }
+    public string? SourceSerialNo { get; private set; }
+    public DateTimeOffset? SourceReworkRequestedAtUtc { get; private set; }
 
     public string WorkOrderId => WorkOrderIdValue;
+
+    public void RecordAssemblyParentSuggestionIds(IReadOnlyCollection<string>? suggestionIds)
+    {
+        SourcePlanReference!.RecordAssemblyParentSuggestionIds(suggestionIds);
+        AdvanceVersion();
+    }
 
     public static WorkOrder Create(
         string organizationId,
@@ -150,7 +287,8 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         DateTimeOffset dueUtc,
         string? uomCode = null,
         SourcePlanReference? sourcePlanReference = null,
-        decimal overReceiptTolerancePercent = 0m)
+        decimal overReceiptTolerancePercent = 0m,
+        bool isRush = false)
     {
         var workOrder = new WorkOrder(
             organizationId,
@@ -163,13 +301,81 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             priority,
             dueUtc,
             sourcePlanReference,
-            overReceiptTolerancePercent);
+            overReceiptTolerancePercent,
+            StandardType);
+        workOrder.IsRush = isRush;
         workOrder.AddDomainEvent(new WorkOrderCreatedDomainEvent(workOrder));
         return workOrder;
     }
 
+    public static WorkOrder CreateRework(
+        string organizationId,
+        string environmentId,
+        string workOrderId,
+        string skuId,
+        string? productionVersionId,
+        string? uomCode,
+        decimal quantity,
+        int priority,
+        DateTimeOffset dueUtc,
+        string sourceWorkOrderId,
+        string? sourceOperationTaskId,
+        string sourceDefectNo,
+        string sourceNcrId,
+        string sourceNcrCode,
+        string? sourceLotNo,
+        string? sourceSerialNo,
+        DateTimeOffset requestedAtUtc,
+        string correlationId,
+        string causationId)
+    {
+        var workOrder = new WorkOrder(
+            organizationId,
+            environmentId,
+            workOrderId,
+            skuId,
+            productionVersionId,
+            uomCode,
+            quantity,
+            priority,
+            dueUtc,
+            null,
+            0m,
+            ReworkType,
+            DomainGuard.Required(sourceWorkOrderId, nameof(sourceWorkOrderId)),
+            sourceOperationTaskId,
+            DomainGuard.Required(sourceDefectNo, nameof(sourceDefectNo)),
+            DomainGuard.Required(sourceNcrId, nameof(sourceNcrId)),
+            DomainGuard.Required(sourceNcrCode, nameof(sourceNcrCode)),
+            sourceLotNo,
+            sourceSerialNo,
+            requestedAtUtc);
+        workOrder.AddDomainEvent(new ReworkWorkOrderCreatedDomainEvent(
+            workOrder,
+            requestedAtUtc,
+            DomainGuard.Required(correlationId, nameof(correlationId)),
+            DomainGuard.Required(causationId, nameof(causationId))));
+        return workOrder;
+    }
+
+    /// <summary>
+    /// 发布工单并当场按工艺路线建出工序任务。
+    ///
+    /// <para><paramref name="earliestStartUtc"/> 与 <paramref name="releasedAt"/> 是**两件事**，不可一值两用：
+    /// 前者是本次发布给工序定的**最早可开工时刻**，语义上允许落在未来（下达后下一班才开工是正常排产）；
+    /// 后者是**发布这件事发生的时刻**，会作为发布事实发给 Quality，落在未来会让该工序此后的每一条报工
+    /// 都被 <c>PeriodicInspectionOperation</c> 判为「报工早于发布」进死信。</para>
+    ///
+    /// <para><b>下界项归属：本方法要求调用方保证，本方法自己不检查。</b>
+    /// 唯一前置守卫 <c>ThrowIfCannotRelease()</c> **只看 <c>Status</c>**——一张 <c>created</c> 状态、
+    /// 却已经有工序任务与报工的工单（正是 #3113 那条形态）照样能进本方法。
+    /// 当前三个生产调用方都是**当场造新工单**（返工工单 + 两个演示种子），工序在这一刻才建出、
+    /// 不可能已有活动，因此传 <c>null</c> 成立；**这是调用方的性质，不是本方法的性质**。
+    /// 新增调用方若可能面对已有活动的工单，必须自己查出最早既有活动再传进来，否则 #3117 原样重演。</para>
+    /// </summary>
     public IReadOnlyCollection<OperationTask> Release(
         DateTimeOffset earliestStartUtc,
+        WorkOrderReleaseFactTime releasedAt,
         IReadOnlyCollection<RoutingStepSnapshot> routingSteps)
     {
         ArgumentNullException.ThrowIfNull(routingSteps);
@@ -199,21 +405,83 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
                 step.OperationCode))
             .ToList();
         Status = ReleasedStatus;
-        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, tasks));
+        AdvanceVersion();
+        // 下达前既有产量传空字典（#3129）。
+        // **成立依据是调用方的性质，不是本方法的性质**——上一版这里写反了，如实更正：
+        // 本方法体只保证「按 routingSteps 建出工序行」，**不保证那些 id 此前不存在**，
+        // 因为 OperationTaskId 来自调用方给的 `RoutingStepSnapshot`（上面 `OperationTask.Queue`
+        // 收的就是 `step.OperationTaskId`）。调用方若拿一组已被报工引用过的 id 进来，空字典就是错的。
+        // 当前三个生产调用方都**当场造新工单**（`NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder`
+        // 与两个演示种子 `LeaderDemoSeedService` / `LeaderDemoScaleSeedService`），
+        // 那些 id 在这一刻才生成、不可能已有报工，故空字典成立。
+        // 这与上面「下界项归属」那段是**同一类**要求、同一个限度：新增调用方若可能面对已有活动的工单，
+        // 必须自己按工序查出既有净良品量再走 MarkReleased 那个重载。
+        AddDomainEvent(new WorkOrderReleasedDomainEvent(
+            this,
+            tasks,
+            releasedAt,
+            EmptyPreReleaseGoodQuantities));
         return tasks;
     }
 
+    /// <summary>
+    /// 只翻状态、不携带工序的发布。
+    ///
+    /// <para><b>时刻取值。</b>本重载拿不到任何工序，也就拿不到报工集合，
+    /// 聚合自己知道的唯一下界是 <see cref="CreatedAtUtc"/>——工单不可能早于自己被创建就被发布。
+    /// 这个下界是**读取当刻**的 <see cref="CreatedAtUtc"/>：调用方若要把创建时刻回拨成历史时刻，
+    /// 必须在调用本方法**之前**回拨（唯一生产调用方 <c>WorldHistorySeedService</c> 已按此顺序，
+    /// 并在调用点写明了该顺序要求）。</para>
+    ///
+    /// <para><b>为什么这条不携带工序的发布事实不会伤到 Quality。</b>真实理由是
+    /// <c>WorldHistorySeedService.SaveHistoryFactsAsync</c> 在写盘前按 <c>ChangeTracker</c>
+    /// 统一 <c>ClearDomainEvents()</c>，**本事件从不出域**。
+    /// 不要拿「Quality 对空 operations 一律拒收」当安全性依据——
+    /// <c>PeriodicInspectionReleaseProjection.ValidateReleasedOperations</c> 对空 operations 是
+    /// <c>throw</c>，即**整封进死信**，不是无害跳过；那是「出事了」，不是「没事」。</para>
+    /// </summary>
     public void MarkReleased()
     {
         ThrowIfCannotRelease();
 
         Status = ReleasedStatus;
-        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, []));
+        AdvanceVersion();
+        // 下界传 null 的自证：本重载不携带工序，聚合手上没有任何报工或完工集合可查，
+        // 因此 CreatedAtUtc 本身就是它能给出的唯一下界（工单不可能早于自己被创建就被发布）。
+        // 这里不再走一个专用工厂——`AtAggregateCreation(x)` 与 `NotLaterThan(x, null)` 曾是逐字等价的
+        // 两条构造路径，而前者用「internal 挡住应用层」当依据，与 Mes.Domain.csproj 的
+        // `InternalsVisibleTo(Mes.Web)` 直接矛盾（Mes.Web 就是应用层）。删掉它，只留一个公开工厂。
+        AddDomainEvent(new WorkOrderReleasedDomainEvent(
+            this,
+            [],
+            WorkOrderReleaseFactTime.NotLaterThan(CreatedAtUtc, null),
+            // 本重载不携带任何工序，字典对哪道工序都无从取值，恒空即穷尽（#3129）。
+            EmptyPreReleaseGoodQuantities));
     }
 
-    public void MarkReleased(IReadOnlyCollection<OperationTask> operationTasks)
+    /// <summary>
+    /// 对已经有工序快照的工单补记发布（计划转工单后再下达这条主流程）。
+    /// 这些工序可能早已开工、报工、乃至完工，因此发布事实的时刻必须按
+    /// 「不晚于该工单任何一条**既有活动**（报工或工序完工）」取下界；
+    /// 该不变量由 <see cref="WorkOrderReleaseFactTime"/> 的构造口径承担，本方法不再收裸时刻。
+    ///
+    /// <para>当前有两个生产调用方：下达命令（<c>ReleaseWorkOrderCommandHandler</c>，过三道 readiness），
+    /// 与 <c>created</c> 存量工单的一次性补下达（#3119 的内部运维端点，**有意绕开 readiness**——
+    /// 那些拒因恰恰是这批工单当初没被下达的原因）。两者各自查出最早既有活动再传进来。</para>
+    ///
+    /// <para><paramref name="preReleaseGoodQuantityByOperationTaskId"/> 是 #3129 加的第三件事实：
+    /// 下达动作那一刻**每道工序**已经存在的净良品量。它与 <paramref name="releasedAt"/> 不可互相推导——
+    /// 后者是一个被夹紧过的**工单级标量**，既分不出工序、也不含数量。同样由调用方查出后传进来，
+    /// 本方法不检查其完备性；键的口径与「字典里没有某道工序即 0」的自证见
+    /// <see cref="WorkOrderReleasedDomainEvent"/> 的参数注释。</para>
+    /// </summary>
+    public void MarkReleased(
+        IReadOnlyCollection<OperationTask> operationTasks,
+        WorkOrderReleaseFactTime releasedAt,
+        IReadOnlyDictionary<string, decimal> preReleaseGoodQuantityByOperationTaskId)
     {
         ArgumentNullException.ThrowIfNull(operationTasks);
+        ArgumentNullException.ThrowIfNull(preReleaseGoodQuantityByOperationTaskId);
         if (operationTasks.Count == 0)
         {
             throw new ArgumentException("At least one operation task is required.", nameof(operationTasks));
@@ -222,7 +490,12 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         ThrowIfCannotRelease();
 
         Status = ReleasedStatus;
-        AddDomainEvent(new WorkOrderReleasedDomainEvent(this, operationTasks));
+        AdvanceVersion();
+        AddDomainEvent(new WorkOrderReleasedDomainEvent(
+            this,
+            operationTasks,
+            releasedAt,
+            preReleaseGoodQuantityByOperationTaskId));
     }
 
     public void BindProductionVersion(string productionVersionId)
@@ -239,7 +512,11 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             throw new InvalidOperationException("Work order is already bound to a different production version.");
         }
 
-        ProductionVersionId = normalizedProductionVersionId;
+        if (ProductionVersionId is null)
+        {
+            ProductionVersionId = normalizedProductionVersionId;
+            AdvanceVersion();
+        }
     }
 
     public void RecordMaterialRequirementSnapshot(string status, DateTimeOffset evaluatedAtUtc)
@@ -263,6 +540,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         MaterialRequirementSnapshotStatus = normalizedStatus;
         MaterialRequirementSnapshotEvaluatedAtUtc = evaluatedAtUtc;
         MaterialRequirementSnapshotProductionVersionId = ProductionVersionId;
+        AdvanceVersion();
     }
 
     public void RebindProductionVersionForEngineeringChange(string productionVersionId)
@@ -274,9 +552,13 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         }
 
         ProductionVersionId = normalizedProductionVersionId;
-        MaterialRequirementSnapshotStatus = null;
-        MaterialRequirementSnapshotEvaluatedAtUtc = null;
-        MaterialRequirementSnapshotProductionVersionId = null;
+        if (Status == CreatedStatus)
+        {
+            MaterialRequirementSnapshotStatus = null;
+            MaterialRequirementSnapshotEvaluatedAtUtc = null;
+            MaterialRequirementSnapshotProductionVersionId = null;
+        }
+        AdvanceVersion();
     }
 
     private void ThrowIfCannotRelease()
@@ -286,7 +568,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             throw new InvalidOperationException("Work order has already been released.");
         }
 
-        if (Status is CompletedStatus or ClosedStatus or CancelledStatus or ScrappedStatus)
+        if (TerminalStatuses.Contains(Status))
         {
             throw new InvalidOperationException("Work order is already in a closed state.");
         }
@@ -302,17 +584,52 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         Status = StartedStatus;
         HoldReason = null;
+        AdvanceVersion();
     }
 
     public void Hold(string reason)
     {
-        if (Status is CompletedStatus or ClosedStatus or CancelledStatus or ScrappedStatus)
+        if (TerminalStatuses.Contains(Status))
         {
             throw new InvalidOperationException("Closed work orders cannot be held.");
         }
 
         HoldReason = DomainGuard.Required(reason, nameof(reason));
         Status = HoldStatus;
+        AdvanceVersion();
+    }
+
+    public void AdjustPriority(bool isRush, int priority)
+    {
+        if (TerminalStatuses.Contains(Status))
+        {
+            throw new InvalidOperationException("Terminal work orders cannot have their priority adjusted.");
+        }
+
+        if (IsRush == isRush && Priority == priority)
+        {
+            return;
+        }
+
+        IsRush = isRush;
+        Priority = priority;
+        AdvanceVersion();
+    }
+
+    public void AdjustDueUtc(DateTimeOffset dueUtc)
+    {
+        if (TerminalStatuses.Contains(Status))
+        {
+            throw new InvalidOperationException("Terminal work orders cannot have their due time adjusted.");
+        }
+
+        if (DueUtc == dueUtc)
+        {
+            return;
+        }
+
+        DueUtc = dueUtc;
+        AdvanceVersion();
     }
 
     public void ResolveEngineeringChangeHold(string statusBeforeHold)
@@ -330,11 +647,12 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         Status = normalizedStatus;
         HoldReason = null;
+        AdvanceVersion();
     }
 
     public bool Cancel(string reason, DateTimeOffset cancelledAtUtc, IReadOnlyCollection<string>? materialIssueRequestNos = null)
     {
-        if (Status is CompletedStatus or ClosedStatus)
+        if (Status is CompletedStatus or ClosedStatus or SplitStatus or MergedStatus)
         {
             throw new InvalidOperationException("Completed work orders must be closed, not cancelled.");
         }
@@ -351,6 +669,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         CancelReason = DomainGuard.Required(reason, nameof(reason));
         Status = CancelledStatus;
+        AdvanceVersion();
         AddDomainEvent(new WorkOrderCancelledDomainEvent(
             this,
             cancelledAtUtc,
@@ -369,7 +688,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             throw new ArgumentOutOfRangeException(nameof(goodQuantity), "At least one progress quantity must be positive.");
         }
 
-        if (Status is CancelledStatus or ClosedStatus or ScrappedStatus)
+        if (NonExecutableStatuses.Contains(Status))
         {
             throw new InvalidOperationException("Work order is not executable.");
         }
@@ -393,6 +712,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         ScrapQuantity += scrapQuantity;
         var wasCompleted = Status == CompletedStatus;
         Status = CompletedQuantity + ScrapQuantity >= Quantity ? CompletedStatus : StartedStatus;
+        AdvanceVersion();
         if (!wasCompleted && Status == CompletedStatus)
         {
             AddDomainEvent(new WorkOrderCompletedDomainEvent(this, reportedAtUtc));
@@ -404,6 +724,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         if (materialMovementCount < 0) throw new ArgumentOutOfRangeException(nameof(materialMovementCount));
         CostReportCount++;
         MaterialMovementCount += materialMovementCount;
+        AdvanceVersion();
     }
 
     public void ApplyCapitalizedUnitCost(decimal unitCost)
@@ -415,6 +736,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         }
 
         CapitalizedUnitCost = normalizedUnitCost;
+        AdvanceVersion();
     }
 
     public void ReverseProductionProgress(decimal goodQuantity, decimal scrapQuantity, DateTimeOffset reversedAtUtc)
@@ -432,7 +754,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
             throw new InvalidOperationException("已关闭工单不允许冲销报工。");
         }
 
-        if (Status is CancelledStatus or ScrappedStatus)
+        if (Status is CancelledStatus or ScrappedStatus or SplitStatus or MergedStatus)
         {
             throw new InvalidOperationException("Work order is not executable.");
         }
@@ -448,6 +770,8 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         {
             Status = StartedStatus;
         }
+
+        AdvanceVersion();
     }
 
     public void Close(DateTimeOffset closedAtUtc)
@@ -459,6 +783,32 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
 
         Status = ClosedStatus;
         ClosedAtUtc = closedAtUtc;
+        AdvanceVersion();
         AddDomainEvent(new WorkOrderClosedDomainEvent(this, closedAtUtc));
     }
+
+    public void MarkSplit()
+    {
+        EnsureTransformable();
+        Status = SplitStatus;
+        AdvanceVersion();
+    }
+
+    public void MarkMerged()
+    {
+        EnsureTransformable();
+        Status = MergedStatus;
+        AdvanceVersion();
+    }
+
+    private void EnsureTransformable()
+    {
+        if (Status is not CreatedStatus and not ReleasedStatus)
+        {
+            throw new InvalidOperationException(
+                $"状态为 {Status} 的工单不允许拆分或合并，仅 created/released 可执行。");
+        }
+    }
+
+    private void AdvanceVersion() => Version++;
 }

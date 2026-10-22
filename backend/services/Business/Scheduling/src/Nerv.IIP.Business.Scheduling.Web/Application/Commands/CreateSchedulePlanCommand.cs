@@ -1,6 +1,6 @@
+using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Web.Application.Queries;
@@ -10,7 +10,11 @@ using Nerv.IIP.Business.Scheduling.Web.Application.Urgency;
 
 namespace Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 
-public sealed record CreateSchedulePlanCommand(SchedulingProblemContract Problem) : ICommand<SchedulePlanContract>;
+public sealed record CreateSchedulePlanCommand(
+    SchedulingProblemContract Problem,
+    IReadOnlyCollection<FixedWorkCenterReservation>? FixedReservations = null,
+    SchedulingFreezeSnapshot? Freeze = null,
+    DateTimeOffset? AsOfUtc = null) : ICommand<SchedulePlanContract>;
 
 public sealed class CreateSchedulePlanCommandValidator : AbstractValidator<CreateSchedulePlanCommand>
 {
@@ -43,8 +47,26 @@ public sealed class CreateSchedulePlanCommandHandler(
     public async Task<SchedulePlanContract> Handle(CreateSchedulePlanCommand request, CancellationToken cancellationToken)
     {
         var overlaidProblem = await overrideOverlay.ApplyAsync(request.Problem, cancellationToken);
-        var normalizedProblem = SchedulingProblemNormalizer.Normalize(overlaidProblem);
-        var problemFingerprint = CalculateProblemFingerprint(normalizedProblem);
+        var availability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
+        // Ordinary scheduling uses its explicit horizon start; frozen revisions use the frozen AsOfUtc.
+        var equipmentInput = SchedulingEquipmentAvailabilitySnapshot.Create(availability,
+            request.AsOfUtc ?? request.Freeze?.AsOfUtc ?? overlaidProblem.HorizonStartUtc);
+        var materialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
+        var schedulingProblem = SchedulingProblemNormalizer.Normalize(
+            MaterialReadinessSchedulingAdapter.Apply(
+                EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, availability, equipmentUnknownMode.Mode),
+                materialReadiness));
+        var fixedReservations = request.FixedReservations ?? [];
+        var operationKeys = schedulingProblem.Orders
+            .SelectMany(order => order.Operations.Select(operation => (order.OrderId, operation.OperationId)))
+            .ToHashSet();
+        var planReservations = fixedReservations
+            .Where(x => operationKeys.Contains((x.OrderId, x.OperationId)))
+            .ToArray();
+        var externalReservations = fixedReservations
+            .Where(x => !operationKeys.Contains((x.OrderId, x.OperationId)))
+            .ToArray();
+        var problemFingerprint = CalculateProblemFingerprint(schedulingProblem, fixedReservations, request.Freeze, equipmentInput);
         var existingSnapshot = await dbContext.ScheduleProblems.AsNoTracking()
             .SingleOrDefaultAsync(
                 x => x.OrganizationId == overlaidProblem.OrganizationId &&
@@ -70,38 +92,38 @@ public sealed class CreateSchedulePlanCommandHandler(
                         x.ProblemId == request.Problem.ProblemId,
                     cancellationToken)
                 ?? throw new KnownException($"排程问题快照已存在但未找到生成方案，请重新生成，问题 ID = {request.Problem.ProblemId}");
-            // 命中既有方案时同样带出日历/不可用窗口:口径与落库的问题快照一致(即 normalizedProblem)。
-            var existingPlanContract = SchedulePlanContractMapper.ToContract(existingPlan, normalizedProblem);
-            var currentAvailability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
-            var currentMaterialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
-            var currentProblem = MaterialReadinessSchedulingAdapter.Apply(
-                EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, currentAvailability, equipmentUnknownMode.Mode),
-                currentMaterialReadiness);
+            var persistedProblem = JsonSerializer.Deserialize<SchedulingProblemContract>(existingSnapshot.ProblemJson, SchedulingJson.Options);
+            var existingPlanContract = SchedulePlanContractMapper.ToContract(
+                existingPlan, persistedProblem, SchedulingFrozenOccupancy.ReadSnapshot(existingSnapshot.ProblemJson),
+                SchedulingFrozenOccupancy.ReadFreezeSnapshot(existingSnapshot.ProblemJson));
             await urgencyService.CapturePlanAsync(
-                currentProblem,
+                schedulingProblem,
                 existingPlanContract,
-                CalculateProblemFingerprint(currentProblem),
+                problemFingerprint,
                 timeProvider.GetUtcNow(),
                 cancellationToken);
             return existingPlanContract;
         }
 
         var generatedAtUtc = timeProvider.GetUtcNow();
-        var availability = await equipmentAvailabilityProvider.QueryAsync(overlaidProblem, cancellationToken);
-        var materialReadiness = await materialReadinessProvider.QueryAsync(overlaidProblem, cancellationToken);
-        var schedulingProblem = MaterialReadinessSchedulingAdapter.Apply(
-            EquipmentAvailabilitySchedulingAdapter.Apply(overlaidProblem, availability, equipmentUnknownMode.Mode),
-            materialReadiness);
-        var urgencyInputFingerprint = CalculateProblemFingerprint(schedulingProblem);
-        var preview = scheduler.Schedule(schedulingProblem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc);
-        var generated = SchedulePlanContractMapper.WithStatus(preview, SchedulePlanStatusContract.Generated);
+        var preview = scheduler.ScheduleNormalized(schedulingProblem, $"plan-{Guid.CreateVersion7():N}", generatedAtUtc,
+                planReservations, externalReservations,
+                SchedulingFrozenOccupancy.ExternalFrozenAssignments(request.Freeze, schedulingProblem, fixedReservations))
+            with
+            {
+                ProblemFingerprint = problemFingerprint,
+                FreezeContext = SchedulingFrozenOccupancy.ToContract(request.Freeze)
+            };
+        var generated = SchedulePlanValidationContextProjector.Attach(
+            SchedulePlanContractMapper.WithStatus(preview, SchedulePlanStatusContract.Generated),
+            schedulingProblem, fixedReservations);
         dbContext.ScheduleProblems.Add(new ScheduleProblemSnapshot(
             overlaidProblem.ProblemId,
             overlaidProblem.ContractVersion,
             overlaidProblem.OrganizationId,
             overlaidProblem.EnvironmentId,
             problemFingerprint,
-            JsonSerializer.Serialize(normalizedProblem, SchedulingJson.Options),
+            SchedulingFrozenOccupancy.SerializeSnapshot(schedulingProblem, fixedReservations, request.Freeze, equipmentInput),
             overlaidProblem.HorizonStartUtc,
             overlaidProblem.HorizonEndUtc,
             generatedAtUtc));
@@ -110,14 +132,18 @@ public sealed class CreateSchedulePlanCommandHandler(
             overlaidProblem.EnvironmentId,
             SchedulePlanContractMapper.ToDomainSnapshot(generated)));
         await urgencyService.CapturePlanAsync(
-            schedulingProblem, generated, urgencyInputFingerprint, generatedAtUtc, cancellationToken);
+            schedulingProblem, generated, problemFingerprint, generatedAtUtc, cancellationToken);
         return generated;
     }
 
-    private static string CalculateProblemFingerprint(SchedulingProblemContract problem)
+    internal static string CalculateProblemFingerprint(
+        SchedulingProblemContract problem,
+        IReadOnlyCollection<FixedWorkCenterReservation> fixedReservations,
+        SchedulingFreezeSnapshot? freeze = null,
+        SchedulingEquipmentAvailabilitySnapshotContract? equipmentAvailability = null)
     {
         var normalizedProblem = SchedulingProblemNormalizer.Normalize(problem);
-        var json = JsonSerializer.Serialize(normalizedProblem, SchedulingJson.Options);
+        var json = SchedulingFrozenOccupancy.SerializeSnapshot(normalizedProblem, fixedReservations, freeze, equipmentAvailability);
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(json));
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }

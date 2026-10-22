@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
+import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import InventoryExpiryStatusBadge from '@/components/inventory/InventoryExpiryStatusBadge.vue'
 import InventoryExpirySummaryCards from '@/components/inventory/InventoryExpirySummaryCards.vue'
@@ -23,13 +24,6 @@ import {
   useInventorySiteStockOverview,
   type SiteStockRow,
 } from '@/composables/useInventorySiteStock'
-import {
-  useWarehouseCodeCatalog,
-  WAREHOUSE_CATALOG_SOURCE_TEXT,
-  WAREHOUSE_LOCATION_EMPTY_TEXT,
-  WAREHOUSE_LOT_EMPTY_TEXT,
-  WAREHOUSE_SERIAL_EMPTY_TEXT,
-} from '@/composables/useWarehouseCodeCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { buildKpiTrend } from '@/utils/kpiTrend'
 import { notifyError } from '@/utils/notify'
@@ -125,9 +119,6 @@ const {
   siteStockScanning,
   siteStockTotalSkuCount,
 } = useInventorySiteStockOverview(() => filters.siteCode)
-// 库位/批次/序列号后端无主数据读面，从已加载的台账行与仓储作业记录里派生可选项。
-const { locationOptions, lotOptions, serialOptions, warehouseCatalogPending } =
-  useWarehouseCodeCatalog(() => availabilityLines.value)
 
 // 上下文穿透：从 MES 齐套/领料/完工入库带入 SKU/批次/库位/工厂查询库存事实。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
@@ -235,7 +226,7 @@ const availableTrend = computed(() =>
 const pageCount = computed(() => {
   if (nearExpiryOnly.value) {
     if (!hasExpirySite.value) return '请选择工厂'
-    if (!hasExpiryScope.value) return '业务上下文加载中'
+    if (!hasExpiryScope.value) return '尚未确定当前组织'
     if (expiryAlertsError.value) return '读取失败'
     if (expiryAlertsPending.value) return '加载中'
     if (!expiryAlertsSuccessful.value) return '等待查询'
@@ -268,7 +259,7 @@ const tableAwaitingScope = computed(() => {
 })
 const tableAwaitingScopeMessage = computed(() => {
   if (nearExpiryOnly.value && !hasExpirySite.value) return '请选择工厂查看效期预警批次。'
-  if (nearExpiryOnly.value) return '业务上下文加载中，请稍候。'
+  if (nearExpiryOnly.value) return '尚未确定当前组织，暂无法查看效期预警批次。'
   return '请先选择工厂，再查库存可用量。'
 })
 /** 走到这里才是真的查成功且 0 条。 */
@@ -581,7 +572,6 @@ async function refreshCurrentView() {
           :options="skuOptions"
           title="选择物料"
           placeholder="选择物料"
-          source-text="数据来自基础数据物料主数据"
           empty-text="暂无物料主数据，请先在基础数据维护物料"
           :loading="skusPending"
           clearable
@@ -599,48 +589,37 @@ async function refreshCurrentView() {
           :options="siteOptions"
           title="选择工厂"
           placeholder="选择工厂"
-          source-text="数据来自基础数据工厂主数据"
           empty-text="暂无工厂主数据，请先在基础数据维护工厂"
           :loading="sitesPending"
           aria-label="工厂"
         />
-        <!-- 库位/批次/序列号后端无主数据读面，选项从真实台账与仓储作业记录派生，来源已注明。 -->
-        <NvEntityPicker
+        <DirectoryPicker
           v-if="!showSiteOverview"
           v-model="filters.locationCode"
           class="w-36"
-          :options="locationOptions"
+          directory-type="location"
           title="选择库位"
           placeholder="库位"
-          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-          :empty-text="WAREHOUSE_LOCATION_EMPTY_TEXT"
-          :loading="warehouseCatalogPending"
           clearable
           aria-label="库位"
         />
-        <NvEntityPicker
+        <DirectoryPicker
           v-if="!nearExpiryOnly && !showSiteOverview"
           v-model="filters.lotNo"
           class="w-36"
-          :options="lotOptions"
+          directory-type="batch"
           title="选择批次"
           placeholder="批次"
-          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-          :empty-text="WAREHOUSE_LOT_EMPTY_TEXT"
-          :loading="warehouseCatalogPending"
           clearable
           aria-label="批次"
         />
-        <NvEntityPicker
+        <DirectoryPicker
           v-if="!nearExpiryOnly && !showSiteOverview"
           v-model="filters.serialNo"
           class="w-36"
-          :options="serialOptions"
+          directory-type="serial"
           title="选择序列号"
           placeholder="序列号"
-          :source-text="WAREHOUSE_CATALOG_SOURCE_TEXT"
-          :empty-text="WAREHOUSE_SERIAL_EMPTY_TEXT"
-          :loading="warehouseCatalogPending"
           clearable
           aria-label="序列号"
         />

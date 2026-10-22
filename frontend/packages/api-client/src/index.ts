@@ -1,6 +1,8 @@
 export { configureApiClient } from './transport/client-config'
+export { isForbiddenRequestError } from './transport/request-error-status'
 export {
   BusinessOperationFailedError,
+  BusinessOperationPendingError,
   BusinessOperationUnconfirmedError,
   confirmBusinessConsoleOperation,
   readBusinessConsoleOperationState,
@@ -15,3 +17,4 @@ export * from './auth'
 export * from './business-console'
 export * from './console'
 export * from './iam'
+export * from './internal-cache'

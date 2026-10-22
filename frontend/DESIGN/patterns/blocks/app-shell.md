@@ -9,7 +9,7 @@
 1. **页面只填内容槽**：一切导航/顶栏/用户菜单由外壳承载，页面组件内不得内联 shell chrome。
 2. **消费方 app 拥有导航模型与 RBAC 过滤**（如 business-console `src/navigation.ts`）以及
    路由→域的解析；外壳**不做任何权限强制**——`requiredPermissions` 只是消费方过滤的输入。
-   Business Console 菜单分域见 `docs/architecture/frontend-navigation-map.md`。
+   Business Console 产品 IA 见 `docs/product/navigation.md`；当前菜单生产者索引见 `docs/reference/frontend/navigation-map.md`。
 3. **每个导航项必须带 `icon`**：顶部 `NavDomain` 与侧栏每个叶子 `NavLink` 都必须设置
    `icon`（@lucide/vue 组件）。侧栏 rail/折叠态只渲染图标；漏 icon 会退化成首字竖排
    （生 / 工 / 派 …），视觉即坏——**漏 icon 当 bug 处理，不是风格选择**（历史上最常被遗忘的导航缺陷）。

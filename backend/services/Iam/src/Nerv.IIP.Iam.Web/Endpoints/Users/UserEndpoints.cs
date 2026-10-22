@@ -17,6 +17,7 @@ namespace Nerv.IIP.Iam.Web.Endpoints.Users;
 public sealed record CreateUserRequest(string LoginName, string Email, string Password, DateTimeOffset? AccountExpiresAtUtc);
 public sealed record UpdateUserRequest(string LoginName, string Email, bool Enabled, DateTimeOffset? AccountExpiresAtUtc);
 public sealed record ResetUserPasswordRequest(string NewPassword);
+public sealed record ReplaceUserMembershipRolesRequest(IReadOnlyList<string>? RoleIds);
 public sealed record ListUsersRequest(
     int? PageIndex,
     int? PageSize,
@@ -90,6 +91,107 @@ public sealed class ListWorkerDirectoryEndpoint(IMediator mediator)
             user.DepartmentName,
             status,
             user.Email);
+    }
+}
+
+public sealed record ListMemberAccountsRequest(
+    string? OrganizationId,
+    string? EnvironmentId,
+    string? Keyword,
+    string[]? UserIds,
+    bool? IncludeDisabled,
+    int? PageIndex,
+    int? PageSize);
+
+/// <summary>
+/// 组织/环境成员账号目录，仅供服务间调用（业务网关「关联登录账号」的候选与核验）。
+/// 只回账号 ID、登录名、显示名与启用状态；默认只列启用账号。
+/// </summary>
+[HttpGet("/internal/iam/v1/member-accounts")]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
+public sealed class ListMemberAccountsEndpoint(IMediator mediator)
+    : Endpoint<ListMemberAccountsRequest, ResponseData<PagedListResponse<MemberAccountResponse>>>
+{
+    public override async Task HandleAsync(ListMemberAccountsRequest req, CancellationToken ct)
+    {
+        var organizationId = req.OrganizationId?.Trim();
+        var environmentId = req.EnvironmentId?.Trim();
+        if (string.IsNullOrEmpty(organizationId) || string.IsNullOrEmpty(environmentId))
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status400BadRequest, "member-accounts-scope-required", ct);
+            return;
+        }
+
+        var pageIndex = req.PageIndex ?? 1;
+        var pageSize = req.PageSize ?? 20;
+        if (pageIndex < 1 || pageSize is < 1 or > MemberAccountListOptions.MaxPageSize)
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status400BadRequest, "member-accounts-page-invalid", ct);
+            return;
+        }
+
+        string[]? userIds = null;
+        if (req.UserIds is { Length: > 0 })
+        {
+            userIds = req.UserIds
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (userIds.Length > MemberAccountListOptions.MaxUserIds)
+            {
+                await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status400BadRequest, "member-accounts-user-ids-too-many", ct);
+                return;
+            }
+        }
+
+        var keyword = string.IsNullOrWhiteSpace(req.Keyword) ? null : req.Keyword.Trim();
+        var response = await mediator.Send(
+            new ListMemberAccountsQuery(new MemberAccountListOptions(
+                organizationId,
+                environmentId,
+                keyword,
+                userIds,
+                req.IncludeDisabled ?? false,
+                pageIndex,
+                pageSize)),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
+public sealed record ListProductionPlannerMembersRequest(
+    string? OrganizationId,
+    string? EnvironmentId,
+    int? PageIndex,
+    int? PageSize);
+
+[HttpGet("/internal/iam/v1/production-planner-members")]
+[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
+public sealed class ListProductionPlannerMembersEndpoint(IIamUserApplicationService users)
+    : Endpoint<ListProductionPlannerMembersRequest, ResponseData<PagedListResponse<string>>>
+{
+    public override async Task HandleAsync(ListProductionPlannerMembersRequest req, CancellationToken ct)
+    {
+        var organizationId = req.OrganizationId?.Trim();
+        var environmentId = req.EnvironmentId?.Trim();
+        if (string.IsNullOrEmpty(organizationId) || string.IsNullOrEmpty(environmentId))
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status400BadRequest, "planner-members-scope-required", ct);
+            return;
+        }
+
+        var pageIndex = req.PageIndex ?? 1;
+        var pageSize = req.PageSize ?? 100;
+        if (pageIndex < 1 || pageSize is < 1 or > ProductionPlannerMemberListOptions.MaxPageSize)
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status400BadRequest, "planner-members-page-invalid", ct);
+            return;
+        }
+
+        var result = await users.ListProductionPlannerMemberIdsAsync(
+            new ProductionPlannerMemberListOptions(organizationId, environmentId, pageIndex, pageSize), ct);
+        await Send.OkAsync(result.AsResponseData(), ct);
     }
 }
 
@@ -212,6 +314,78 @@ public sealed class PatchUserMembershipDataScopesEndpoint(
                 req.OrganizationId,
                 req.EnvironmentId,
                 req.DataScopes,
+                IamSecurityAuditEndpointContext.Create(HttpContext, principal)),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
+[HttpGet("/api/iam/v1/users/{userId}/membership")]
+[AllowAnonymous]
+public sealed class GetUserMembershipEndpoint(
+    IIamPermissionAuthorizer authorizer,
+    IIamAuthService auth,
+    IMediator mediator) : EndpointWithoutRequest<ResponseData<UserMembershipResponse>>
+{
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        if (!await authorizer.RequirePermissionAsync(HttpContext, "iam.users.read", ct))
+        {
+            return;
+        }
+
+        var principal = await auth.GetCurrentPrincipalAsync(HttpContext, ct);
+        if (principal is null)
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status401Unauthorized, "Unauthorized.", ct);
+            return;
+        }
+
+        var userId = Route<string>("userId") ?? string.Empty;
+        var response = await mediator.Send(
+            new GetUserMembershipQuery(userId, principal.OrganizationId, principal.EnvironmentId),
+            ct);
+        await Send.OkAsync(response.AsResponseData(), ct);
+    }
+}
+
+/// <summary>
+/// 在调用者当前组织环境里替换用户的角色；没有成员关系时新建，<c>roleIds</c> 为空时移除成员关系。
+/// </summary>
+[HttpPut("/api/iam/v1/users/{userId}/membership")]
+[AllowAnonymous]
+public sealed class ReplaceUserMembershipRolesEndpoint(
+    IIamPermissionAuthorizer authorizer,
+    IIamAuthService auth,
+    IMediator mediator) : EndpointWithoutRequest<ResponseData<UserMembershipResponse>>
+{
+    public override async Task HandleAsync(CancellationToken ct)
+    {
+        if (!await authorizer.RequirePermissionAsync(HttpContext, "iam.users.manage", ct))
+        {
+            return;
+        }
+
+        var principal = await auth.GetCurrentPrincipalAsync(HttpContext, ct);
+        if (principal is null)
+        {
+            await ResponseDataEndpointResults.WriteErrorAsync(HttpContext, StatusCodes.Status401Unauthorized, "Unauthorized.", ct);
+            return;
+        }
+
+        var req = await HttpContext.Request.ReadFromJsonAsync<ReplaceUserMembershipRolesRequest>(ct);
+        if (req?.RoleIds is null)
+        {
+            throw new BadHttpRequestException("roleIds is required.");
+        }
+
+        var userId = Route<string>("userId") ?? string.Empty;
+        var response = await mediator.Send(
+            new ReplaceUserMembershipRolesCommand(
+                userId,
+                principal.OrganizationId,
+                principal.EnvironmentId,
+                req.RoleIds,
                 IamSecurityAuditEndpointContext.Create(HttpContext, principal)),
             ct);
         await Send.OkAsync(response.AsResponseData(), ct);

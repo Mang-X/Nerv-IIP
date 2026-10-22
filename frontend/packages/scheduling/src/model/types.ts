@@ -1,3 +1,8 @@
+import type {
+  ScheduleAssignmentContract,
+  SchedulePlanFreezeContextContract,
+  BusinessConsoleMesWorkOrderItem,
+} from '@nerv-iip/api-client'
 // 引擎无关的排程数据模型。所有字段为引擎可消费的归一化形态,不含任何引擎私有结构。
 // 这是「换引擎」接缝的数据契约:DHTMLX 适配器与自研适配器都只消费 ScheduleModel。
 
@@ -51,6 +56,10 @@ export interface DimensionValue {
 export type LaneOrder = 'busiest' | 'name' | 'onlyScheduled'
 
 export interface ScheduleTask {
+  /** 展示时区来自已授权工厂上下文；空字符串表示未解析，不回退到浏览器。 */
+  timezone?: string
+  factoryTimeLabel?: string
+
   /** assignmentId 优先,缺则 `${orderId}:${operationId}`。 */
   id: string
   orderId: string
@@ -67,9 +76,18 @@ export interface ScheduleTask {
   dimensions?: Record<string, DimensionValue>
   startUtc: string
   endUtc: string
+  /** 后端实际生产段；缺省表示单段连续排程。 */
+  segments?: { startUtc: string; endUtc: string }[]
   /** 计划基线(与实际 start/end 对比;甘特画"计划 vs 实际"双层条)。 */
   plannedStartUtc?: string
   plannedEndUtc?: string
+  currentExecution?: ScheduleAssignmentContract['currentExecution']
+  /** 当前设备事实对应的原始资源；人工改派后不能套用旧设备状态。 */
+  executionResourceId?: string
+  commercialSourceFacts?: BusinessConsoleMesWorkOrderItem['commercialSourceFacts']
+  commercialSourceUnavailable?: boolean
+  predecessors?: string[]
+  successors?: string[]
   /** 0..1。 */
   progress?: number
   /** 网格列:负责人 / 优先级 / 状态。来源于 MES/工程数据(当前 APS 契约未提供 → 后端缺口)。 */
@@ -108,6 +126,8 @@ export interface ScheduleTask {
    * 设备数据风险（软约束）：工序排在了运行时状态未知的设备上（无快照 / 快照过期 /
    * 采集源不可达）。「不知道」不等于「不可用」——照排，但开工前需人工确认设备可用。
    */
+  /** 公开基线停机读面的展示覆盖，不改写排程冲突或 assignment。 */
+  downtimeRisk?: string
   equipmentRisk?: EquipmentRisk
 }
 
@@ -128,6 +148,8 @@ export interface MaterialRisk {
   shortages: MaterialShortage[]
   /** 中文人话提示，读面直接展示（含「需在开工前完成备料」）。 */
   message: string
+  /** 该风险工序的真实物料预计就绪时间；无值时保持开放缺料风险。 */
+  materialReadyUtc?: string | null
 }
 
 /** 某工序的设备数据风险：状态盲区的原因 + 已翻译成人话的提示。 */
@@ -147,7 +169,7 @@ export interface ScheduleLink {
   source: string
   /** ScheduleTask.id。 */
   target: string
-  /** MVP 仅 FS,由 operationSequence 派生。 */
+  /** FS：工单内由 operationSequence 派生，跨工单来自方案装配关系。 */
   type: 'finish_to_start'
 }
 
@@ -217,7 +239,62 @@ export interface ScheduleCalendar {
   shiftWindows: ScheduleShiftWindow[]
 }
 
+/** 方案冻结的即时反馈依据；不从当前 MES 分页或主数据补造。 */
+export interface ScheduleValidationContext {
+  horizon: { startUtc: string; endUtc: string }
+  resources: {
+    resourceId: string
+    workCenterId: string
+    calendarId: string
+    capacityUnits: number
+    utilizationRate: number
+  }[]
+  operations: {
+    orderId: string
+    operationId: string
+    predecessorOperationIds: string[]
+    dueUtc?: string
+    durationMinutes?: number
+    setupMinutes?: number
+    isFixed: boolean
+  }[]
+  fixedReservations: {
+    orderId: string
+    operationId: string
+    resourceId?: string
+    workCenterId: string
+    startUtc: string
+    endUtc: string
+  }[]
+}
+
+export interface DraftFeedbackIssue {
+  kind:
+    | 'calendar'
+    | 'capacity'
+    | 'predecessor'
+    | 'predecessorUnscheduled'
+    | 'unknown'
+    | 'invalidTime'
+  message: string
+  scope?: 'resource' | 'workCenter'
+  startUtc?: string
+  endUtc?: string
+}
+
+export interface DraftTaskFeedback {
+  issues: DraftFeedbackIssue[]
+  due?: { dueUtc: string; deltaMinutes: number; status: 'early' | 'onTime' | 'late' }
+}
+
+export interface DraftFeedback {
+  tasks: Record<string, DraftTaskFeedback>
+}
+
 export interface ScheduleModel {
+  /** 当前图面工厂时区；多时区各自显示刻度，不默选第一工厂。 */
+  timezones?: string[]
+
   tasks: ScheduleTask[]
   links: ScheduleLink[]
   resources: ScheduleResource[]
@@ -239,6 +316,9 @@ export interface ScheduleModel {
    * 无值时引擎退回「周末 + 夜间」的通用作息假设。
    */
   calendars?: ScheduleCalendar[]
+  /** 服务端冻结上下文，仅用于呈现稳定窗口，不在浏览器推导冻结集。 */
+  freezeContext?: SchedulePlanFreezeContextContract | null
+  validationContext?: ScheduleValidationContext
   horizon: { startUtc: string; endUtc: string }
   meta: { planId: string; status: PlanStatus; algorithmVersion: string }
 }

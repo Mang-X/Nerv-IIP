@@ -1,0 +1,502 @@
+import type {
+  BusinessConsoleTelemetryOeeAggregateBucket,
+  BusinessConsoleTelemetryOeeAggregateDimension,
+} from '@nerv-iip/api-client'
+import { formatDateTime } from '@/utils/format'
+
+export type OeeReportDimension = BusinessConsoleTelemetryOeeAggregateDimension
+
+export type OeeBucketIdentity = readonly [
+  dimension: BusinessConsoleTelemetryOeeAggregateDimension | null,
+  dimensionValue: string | null,
+  siteCode: string | null,
+  workshopCode: string | null,
+  lineCode: string | null,
+  businessDate: string | null,
+  bucketStartUtc: string | null,
+  bucketEndUtc: string | null,
+]
+
+export interface OeeTableRow {
+  key: string
+  identity: OeeBucketIdentity
+  dimension: BusinessConsoleTelemetryOeeAggregateDimension | null
+  primaryLabel: string
+  hierarchyLabel: string
+  businessDateLabel: string
+  windowLabel: string
+  oeeRate: number | null
+  availabilityRate: number | null
+  performanceRate: number | null
+  qualityRate: number | null
+  deviceCount: number
+  isDegraded: boolean
+  degradedReasons: string[]
+}
+
+export interface OeeTrendPoint {
+  key: string
+  identity: OeeBucketIdentity
+  time: string
+  businessDateLabel: string
+  oee: number
+  availability: number
+  performance: number
+  quality: number
+}
+
+export interface OeeTrendChartRow extends Record<string, string | number> {
+  time: string
+  oee: number
+  availability: number
+  performance: number
+  quality: number
+}
+
+export interface OeeTrendSeries {
+  key: 'oee' | 'availability' | 'performance' | 'quality'
+  label: string
+}
+
+export interface OeeTrendGroup {
+  key: string
+  siteCode: string | null
+  siteLabel: string
+  bucketCount: number
+  pointCount: number
+  omittedCount: number
+  segments: OeeTrendSegment[]
+  series: OeeTrendSeries[]
+}
+
+export interface OeeTrendRun {
+  key: string
+  displayMode: 'line' | 'point'
+  points: OeeTrendPoint[]
+  chartData: OeeTrendChartRow[]
+}
+
+export interface OeeTrendSegment {
+  key: string
+  ordinal: number
+  businessDateStartLabel: string
+  businessDateEndLabel: string
+  bucketCount: number
+  pointCount: number
+  omittedCount: number
+  runs: OeeTrendRun[]
+}
+
+/** 主数据编码 → 名称；查不到返回 undefined，由展示层退回编码。 */
+export interface OeeDisplayNames {
+  site: (code?: string | null) => string | undefined
+  workshop: (code?: string | null) => string | undefined
+  line: (code?: string | null) => string | undefined
+  workCenter: (code?: string | null) => string | undefined
+  shift: (code?: string | null) => string | undefined
+}
+
+const noNames: OeeDisplayNames = {
+  site: () => undefined,
+  workshop: () => undefined,
+  line: () => undefined,
+  workCenter: () => undefined,
+  shift: () => undefined,
+}
+
+export interface OeeReportPresentation {
+  trendGroups: OeeTrendGroup[]
+  tableRows: OeeTableRow[]
+  trendBucketCount: number
+  trendPointCount: number
+  omittedTrendBucketCount: number
+  tableTotal: number
+}
+
+export function presentOeeReport(input: {
+  dimension: OeeReportDimension
+  trendBuckets: readonly BusinessConsoleTelemetryOeeAggregateBucket[]
+  tableBuckets: readonly BusinessConsoleTelemetryOeeAggregateBucket[]
+  tableTotal: number
+  names?: OeeDisplayNames
+}): OeeReportPresentation {
+  const names = input.names ?? noNames
+  const trendGroups =
+    input.dimension === 'day' ? presentDayTrendGroups(input.trendBuckets, names) : []
+  const trendPointCount = trendGroups.reduce((total, group) => total + group.pointCount, 0)
+  const omittedTrendBucketCount = trendGroups.reduce(
+    (total, group) => total + group.omittedCount,
+    0,
+  )
+
+  return {
+    trendGroups,
+    tableRows: input.tableBuckets.map((bucket) => presentTableRow(bucket, names)),
+    trendBucketCount: input.trendBuckets.length,
+    trendPointCount,
+    omittedTrendBucketCount,
+    tableTotal: input.tableTotal,
+  }
+}
+
+function presentDayTrendGroups(
+  buckets: readonly BusinessConsoleTelemetryOeeAggregateBucket[],
+  names: OeeDisplayNames,
+): OeeTrendGroup[] {
+  const bucketsBySite = new Map<string, BusinessConsoleTelemetryOeeAggregateBucket[]>()
+  for (const bucket of buckets) {
+    const groupKey = JSON.stringify(['day-site', nullable(bucket.siteCode)])
+    const siteBuckets = bucketsBySite.get(groupKey) ?? []
+    siteBuckets.push(bucket)
+    bucketsBySite.set(groupKey, siteBuckets)
+  }
+
+  return [...bucketsBySite.entries()]
+    .map(([key, siteBuckets]) => {
+      const orderedBuckets = siteBuckets.slice().sort(compareTrendBuckets)
+      const siteCode = nullable(orderedBuckets[0]?.siteCode)
+      const siteLabel = displayName(names.site, siteCode, '—')
+      const segments = presentTrendSegments(orderedBuckets)
+      return {
+        key,
+        siteCode,
+        siteLabel,
+        bucketCount: orderedBuckets.length,
+        pointCount: segments.reduce((total, segment) => total + segment.pointCount, 0),
+        omittedCount: segments.reduce((total, segment) => total + segment.omittedCount, 0),
+        segments,
+        series: trendSeries(siteLabel),
+      }
+    })
+    .sort(
+      (left, right) =>
+        compareOrdinal(left.siteCode, right.siteCode) || compareOrdinal(left.key, right.key),
+    )
+}
+
+function presentTrendSegments(
+  orderedBuckets: readonly BusinessConsoleTelemetryOeeAggregateBucket[],
+): OeeTrendSegment[] {
+  const nextBucketByIndex = retainUnambiguousAdjacentEdges(orderedBuckets)
+  const previousBucketByIndex = new Map<number, number>()
+  for (const [sourceIndex, targetIndex] of nextBucketByIndex) {
+    previousBucketByIndex.set(targetIndex, sourceIndex)
+  }
+
+  const segmentBuckets: BusinessConsoleTelemetryOeeAggregateBucket[][] = []
+  for (let startIndex = 0; startIndex < orderedBuckets.length; startIndex += 1) {
+    if (previousBucketByIndex.has(startIndex)) continue
+    const segment: BusinessConsoleTelemetryOeeAggregateBucket[] = []
+    let bucketIndex: number | undefined = startIndex
+    while (bucketIndex !== undefined) {
+      segment.push(orderedBuckets[bucketIndex]!)
+      bucketIndex = nextBucketByIndex.get(bucketIndex)
+    }
+    segmentBuckets.push(segment)
+  }
+
+  return segmentBuckets
+    .sort((left, right) => compareTrendBuckets(left[0]!, right[0]!))
+    .map((buckets, index) => presentTrendSegment(buckets, index + 1))
+}
+
+function retainUnambiguousAdjacentEdges(
+  orderedBuckets: readonly BusinessConsoleTelemetryOeeAggregateBucket[],
+) {
+  const successorCandidates = orderedBuckets.map(() => [] as number[])
+  const predecessorCandidateCounts = orderedBuckets.map(() => 0)
+
+  for (let sourceIndex = 0; sourceIndex < orderedBuckets.length; sourceIndex += 1) {
+    for (let targetIndex = sourceIndex + 1; targetIndex < orderedBuckets.length; targetIndex += 1) {
+      if (!areAdjacentBuckets(orderedBuckets[sourceIndex]!, orderedBuckets[targetIndex]!)) continue
+      successorCandidates[sourceIndex]!.push(targetIndex)
+      predecessorCandidateCounts[targetIndex] += 1
+    }
+  }
+
+  const retainedEdges = new Map<number, number>()
+  for (let sourceIndex = 0; sourceIndex < successorCandidates.length; sourceIndex += 1) {
+    const candidates = successorCandidates[sourceIndex]!
+    const targetIndex = candidates[0]
+    if (
+      candidates.length === 1 &&
+      targetIndex !== undefined &&
+      predecessorCandidateCounts[targetIndex] === 1
+    ) {
+      retainedEdges.set(sourceIndex, targetIndex)
+    }
+  }
+
+  return retainedEdges
+}
+
+function areAdjacentBuckets(
+  source: BusinessConsoleTelemetryOeeAggregateBucket,
+  target: BusinessConsoleTelemetryOeeAggregateBucket,
+) {
+  const sourceDate = parseBusinessDate(source.businessDate)
+  const targetDate = parseBusinessDate(target.businessDate)
+  const sourceEnd = Date.parse(source.bucketEndUtc ?? '')
+  const targetStart = Date.parse(target.bucketStartUtc ?? '')
+  return (
+    sourceDate !== null &&
+    targetDate === sourceDate + 24 * 60 * 60 * 1000 &&
+    Number.isFinite(sourceEnd) &&
+    sourceEnd === targetStart
+  )
+}
+
+function parseBusinessDate(value?: string | null) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value ?? '')) return null
+  const parsed = Date.parse(`${value}T00:00:00.000Z`)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function presentTrendSegment(
+  buckets: readonly BusinessConsoleTelemetryOeeAggregateBucket[],
+  ordinal: number,
+): OeeTrendSegment {
+  const runs = presentTrendRuns(buckets)
+  const pointCount = runs.reduce((total, run) => total + run.points.length, 0)
+  const identities = buckets.map(bucketIdentity)
+  return {
+    key: JSON.stringify(['day-segment', identities]),
+    ordinal,
+    businessDateStartLabel: displayBusinessDate(buckets[0]?.businessDate),
+    businessDateEndLabel: displayBusinessDate(buckets.at(-1)?.businessDate),
+    bucketCount: buckets.length,
+    pointCount,
+    omittedCount: buckets.length - pointCount,
+    runs,
+  }
+}
+
+function presentTrendRuns(
+  buckets: readonly BusinessConsoleTelemetryOeeAggregateBucket[],
+): OeeTrendRun[] {
+  const bucketRuns: BusinessConsoleTelemetryOeeAggregateBucket[][] = []
+  let currentRun: BusinessConsoleTelemetryOeeAggregateBucket[] = []
+  for (const bucket of buckets) {
+    if (!hasCompleteRates(bucket)) {
+      if (currentRun.length > 0) bucketRuns.push(currentRun)
+      currentRun = []
+      continue
+    }
+    currentRun.push(bucket)
+  }
+  if (currentRun.length > 0) bucketRuns.push(currentRun)
+
+  return bucketRuns.map((run) => {
+    const points = run.map(presentTrendPoint)
+    return {
+      key: JSON.stringify(['day-run', run.map(bucketIdentity)]),
+      displayMode: run.length >= 2 ? 'line' : 'point',
+      points,
+      chartData: points.map(({ time, oee, availability, performance, quality }) => ({
+        time,
+        oee,
+        availability,
+        performance,
+        quality,
+      })),
+    }
+  })
+}
+
+function presentTrendPoint(bucket: BusinessConsoleTelemetryOeeAggregateBucket): OeeTrendPoint {
+  const identity = bucketIdentity(bucket)
+  return {
+    key: JSON.stringify(identity),
+    identity,
+    time: shortBusinessDate(bucket),
+    businessDateLabel: displayBusinessDate(bucket.businessDate),
+    oee: percentNumber(bucket.oeeRate),
+    availability: percentNumber(bucket.availabilityRate),
+    performance: percentNumber(bucket.performanceRate),
+    quality: percentNumber(bucket.qualityRate),
+  }
+}
+
+function presentTableRow(
+  bucket: BusinessConsoleTelemetryOeeAggregateBucket,
+  names: OeeDisplayNames,
+): OeeTableRow {
+  const identity = bucketIdentity(bucket)
+  return {
+    key: JSON.stringify(identity),
+    identity,
+    dimension: bucket.dimension ?? null,
+    primaryLabel: primaryLabel(bucket, names),
+    hierarchyLabel: hierarchyLabel(bucket, names),
+    businessDateLabel:
+      bucket.dimension === 'day' || bucket.dimension === 'shift'
+        ? bucket.businessDate?.trim() || '—'
+        : '—',
+    windowLabel: formatWindow(bucket.bucketStartUtc, bucket.bucketEndUtc),
+    oeeRate: bucket.oeeRate ?? null,
+    availabilityRate: bucket.availabilityRate ?? null,
+    performanceRate: bucket.performanceRate ?? null,
+    qualityRate: bucket.qualityRate ?? null,
+    deviceCount: bucket.deviceCount ?? 0,
+    isDegraded: bucket.isDegraded ?? false,
+    degradedReasons: [...(bucket.degradedReasons ?? [])],
+  }
+}
+
+function bucketIdentity(bucket: BusinessConsoleTelemetryOeeAggregateBucket): OeeBucketIdentity {
+  return [
+    bucket.dimension ?? null,
+    nullable(bucket.dimensionValue),
+    nullable(bucket.siteCode),
+    nullable(bucket.workshopCode),
+    nullable(bucket.lineCode),
+    nullable(bucket.businessDate),
+    nullable(bucket.bucketStartUtc),
+    nullable(bucket.bucketEndUtc),
+  ]
+}
+
+function primaryLabel(bucket: BusinessConsoleTelemetryOeeAggregateBucket, names: OeeDisplayNames) {
+  const value = bucket.dimensionValue
+  switch (bucket.dimension) {
+    case 'day':
+      return bucket.businessDate?.trim() || '—'
+    case 'shift':
+      return displayName(names.shift, value, '—')
+    case 'workCenter':
+      return displayName(names.workCenter, value, '—')
+    case 'line':
+      return displayName(names.line, value, '—')
+    case 'workshop':
+      return displayName(names.workshop, value, '—')
+    default:
+      return value?.trim() || '—'
+  }
+}
+
+function hierarchyLabel(
+  bucket: BusinessConsoleTelemetryOeeAggregateBucket,
+  names: OeeDisplayNames,
+) {
+  const parts = [`工厂 ${displayName(names.site, bucket.siteCode, '—')}`]
+  if (bucket.dimension === 'workshop') return parts.join(' › ')
+
+  if (
+    bucket.dimension === 'line' ||
+    bucket.dimension === 'workCenter' ||
+    bucket.dimension === 'shift'
+  ) {
+    parts.push(`车间 ${displayName(names.workshop, bucket.workshopCode, '—')}`)
+  }
+  if (bucket.dimension === 'workCenter' || bucket.dimension === 'shift') {
+    parts.push(`产线 ${displayName(names.line, bucket.lineCode, '—')}`)
+  }
+  return parts.join(' › ')
+}
+
+/** 优先主数据名称；名录里没有就显示编码；编码也没有才用兜底说法。 */
+function displayName(
+  resolve: (code?: string | null) => string | undefined,
+  code: string | null | undefined,
+  fallback: string,
+) {
+  const trimmed = code?.trim()
+  if (!trimmed) return fallback
+  return resolve(trimmed) ?? trimmed
+}
+
+function trendSeries(siteLabel: string): OeeTrendSeries[] {
+  return [
+    { key: 'oee', label: `${siteLabel} · OEE` },
+    { key: 'availability', label: `${siteLabel} · 可用率` },
+    { key: 'performance', label: `${siteLabel} · 性能率` },
+    { key: 'quality', label: `${siteLabel} · 质量率` },
+  ]
+}
+
+function hasCompleteRates(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
+  return (
+    bucket.oeeRate != null &&
+    bucket.availabilityRate != null &&
+    bucket.performanceRate != null &&
+    bucket.qualityRate != null
+  )
+}
+
+function compareTrendBuckets(
+  left: BusinessConsoleTelemetryOeeAggregateBucket,
+  right: BusinessConsoleTelemetryOeeAggregateBucket,
+) {
+  return (
+    compareOrdinal(left.bucketStartUtc, right.bucketStartUtc) ||
+    compareOrdinal(left.businessDate, right.businessDate) ||
+    compareOrdinal(JSON.stringify(bucketIdentity(left)), JSON.stringify(bucketIdentity(right)))
+  )
+}
+
+function compareOrdinal(left: string | null | undefined, right: string | null | undefined) {
+  const normalizedLeft = left ?? ''
+  const normalizedRight = right ?? ''
+  return normalizedLeft < normalizedRight ? -1 : normalizedLeft > normalizedRight ? 1 : 0
+}
+
+function shortBusinessDate(bucket: BusinessConsoleTelemetryOeeAggregateBucket) {
+  const businessDate = bucket.businessDate?.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (businessDate) return `${Number(businessDate[2])}/${Number(businessDate[3])}`
+  if (!bucket.bucketStartUtc) return '—'
+  const date = new Date(bucket.bucketStartUtc)
+  return Number.isNaN(date.getTime()) ? '—' : `${date.getMonth() + 1}/${date.getDate()}`
+}
+
+function displayBusinessDate(value?: string | null) {
+  return value?.trim() || '—'
+}
+
+/** 统计时段按使用者本地时间显示（与控制台其它时间列同一口径，见 `@/utils/format`）。 */
+function formatWindow(start?: string | null, end?: string | null) {
+  if (!start || !end) return '—'
+  return `${formatDateTime(start)} 至 ${formatDateTime(end)}`
+}
+
+function percentNumber(value: number | null | undefined) {
+  return Number((value! * 100).toFixed(1))
+}
+
+function nullable(value: string | null | undefined) {
+  return value ?? null
+}
+
+/**
+ * 统计时段在界面上按本地日期选择（起止均含当天），查询接口收的是时刻区间 `[起, 止)`。
+ * 两个方向的换算只在这里做：本地日期的 0 点 ⇄ 对应时刻。
+ */
+export function oeeWindowFromLocalDates(start: string, end: string) {
+  return { windowStartUtc: localMidnight(start, 0), windowEndUtc: localMidnight(end, 1) }
+}
+
+export function localDatesFromOeeWindow(windowStartUtc: string, windowEndUtc: string) {
+  return { start: localDate(windowStartUtc, 0), end: localDate(windowEndUtc, -1) }
+}
+
+/** 默认统计时段：含今天在内的最近 `days` 天。 */
+export function recentOeeWindow(days: number, now = new Date()) {
+  const today = localDateOf(now)
+  const first = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1))
+  return oeeWindowFromLocalDates(localDateOf(first), today)
+}
+
+function localMidnight(value: string, dayOffset: number) {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year!, month! - 1, day! + dayOffset).toISOString()
+}
+
+function localDate(value: string, dayOffset: number) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  date.setDate(date.getDate() + dayOffset)
+  return localDateOf(date)
+}
+
+function localDateOf(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}

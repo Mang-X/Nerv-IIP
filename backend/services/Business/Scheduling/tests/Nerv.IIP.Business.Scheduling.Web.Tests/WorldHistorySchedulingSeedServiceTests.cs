@@ -1,8 +1,8 @@
 using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
-using Nerv.IIP.Business.Scheduling.Domain.AggregatesModel.SchedulePlanAggregate;
 using Nerv.IIP.Business.Scheduling.Infrastructure;
+using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
 using Nerv.IIP.Business.Scheduling.Web.Application.Seed;
 using Nerv.IIP.Contracts.Scheduling;
 using Xunit.Abstractions;
@@ -10,12 +10,18 @@ using Xunit.Abstractions;
 namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 
 /// <summary>
-/// L1 背景历史（排产域侧）的常规门禁测试：形状、确定性、幂等、生命周期分布、
-/// 号段隔离、问题快照可反序列化（「锁定重预览」的前提）、fail-closed。
+/// L1 背景历史（排产域侧）的常规门禁测试：形状、确定性、幂等、号段隔离、
+/// 问题快照可反序列化、以及**排产方案表保持为空**。
+///
+/// 「最小数据集在引擎口径下能排满 ≥90%」由 #3723 承接：配平工单量 / 路线节拍 / 日历产能
+/// 不在本 PR 范围内，排入率的实测读数与阈值断言都归那张票。
 /// </summary>
 public sealed class WorldHistorySchedulingSeedServiceTests(ITestOutputHelper output)
 {
     private static readonly DateOnly AsOfDate = new(2026, 7, 27);
+
+    /// <summary>口径比对用的占位工作中心：时长与工作中心无关，只需装配得起来。</summary>
+    private const string WorkCenterCode = "WC-PARITY";
 
     /// <summary>库写入类用例的规模：足够覆盖全链，又不让 InMemory provider 变慢。</summary>
     private const double SmallScale = 0.05d;
@@ -25,73 +31,104 @@ public sealed class WorldHistorySchedulingSeedServiceTests(ITestOutputHelper out
     {
         var facts = WorldHistorySchedulingSpec.BuildSchedulingFacts(AsOfDate, 1.0d);
 
-        output.WriteLine($"scheduling-world-history-plans={facts.Plans.Count}");
-        output.WriteLine($"scheduling-world-history-assignments={facts.AssignmentCount}");
-        output.WriteLine($"scheduling-world-history-resource-loads={facts.ResourceLoadCount}");
-        output.WriteLine($"scheduling-world-history-conflicts={facts.ConflictCount}");
-        output.WriteLine($"scheduling-world-history-unscheduled={facts.UnscheduledOperationCount}");
+        output.WriteLine($"scheduling-world-history-problems={facts.Problems.Count}");
+        output.WriteLine($"scheduling-world-history-operations={facts.OperationCount}");
         output.WriteLine($"scheduling-world-history-urgencies={facts.Urgencies.Count}");
-        foreach (var status in Enum.GetValues<SchedulePlanLifecycleStatus>())
+
+        // 上线日到 asOfDate 约 29–30 周，每周一个排产问题。
+        Assert.InRange(facts.Problems.Count, 25, 35);
+
+        // 单个问题 60 单 × 6–8 工序 ≈ 200–500 道工序：春节低谷周与队尾未满周天然更小，
+        // 因此按均值卡形状、按上限卡单个问题。
+        Assert.InRange(facts.OperationCount / facts.Problems.Count, 200, 500);
+        foreach (var problem in facts.Problems)
         {
-            output.WriteLine($"scheduling-world-history-status-{status}={facts.CountOf(status)}");
+            Assert.InRange(problem.Orders.Count, 1, WorldHistorySchedulingSpec.MaxOrdersPerProblem);
+            Assert.NotEmpty(problem.Problem.Resources);
+            Assert.NotEmpty(problem.Problem.Calendars);
+            // 种子只造输入：方案是用户现场生成的，没有已锁定工序，齐套/质量门禁是生成时的实时读数。
+            Assert.Empty(problem.Problem.LockedAssignments);
+            Assert.Empty(problem.Problem.MaterialReadiness);
+            Assert.Empty(problem.Problem.QualityBlocks);
         }
 
-        // 上线日到 asOfDate 约 29–30 周，每周一版、约四成的周额外一版重排。
-        Assert.InRange(facts.Plans.Count, 30, 60);
-        Assert.Equal(1, facts.CountOf(SchedulePlanLifecycleStatus.Released));
-        Assert.Equal(WorldHistorySchedulingSpec.PendingGeneratedPlanCount, facts.CountOf(SchedulePlanLifecycleStatus.Generated));
-        Assert.InRange(facts.CountOf(SchedulePlanLifecycleStatus.Revoked), 0, WorldHistorySchedulingSpec.MaxRevokedPlanCount);
+        // 覆盖问题里出现过的每个工单，否则紧急度徽标全部走 MissingContract 兜底。
         Assert.Equal(
-            facts.Plans.Count - 1 - WorldHistorySchedulingSpec.PendingGeneratedPlanCount - facts.CountOf(SchedulePlanLifecycleStatus.Revoked),
-            facts.CountOf(SchedulePlanLifecycleStatus.Superseded));
-
-        // 单方案 200–500 条资源分配：春节低谷周与队尾未满周天然更小，因此按均值卡形状、按上限卡单方案。
-        Assert.InRange(facts.AssignmentCount / facts.Plans.Count, 200, 500);
-        foreach (var plan in facts.Plans)
-        {
-            Assert.InRange(plan.Assignments.Count, 1, 500);
-            Assert.NotEmpty(plan.ResourceLoads);
-            Assert.InRange(plan.Conflicts.Count, 0, 8);
-            Assert.InRange(plan.UnscheduledOperations.Count, 0, 15);
-        }
-
-        // 覆盖方案里出现过的每个工单，否则紧急度徽标全部走 MissingContract 兜底。
-        Assert.Equal(
-            facts.Plans.SelectMany(x => x.Orders).Select(x => x.WorkOrderNo).Distinct(StringComparer.Ordinal).Count(),
+            facts.Problems.SelectMany(x => x.Orders).Select(x => x.WorkOrderNo).Distinct(StringComparer.Ordinal).Count(),
             facts.Urgencies.Count);
     }
 
+    /// <summary>
+    /// 种子写进问题快照的工序时长，必须与排程运行时算出来的逐道相等——这是本 PR
+    /// 「工时口径真对齐」的承重点（#3594），也是 `WorldHistoryMesSpec.OperationMinutes`
+    /// 文档注释里那句「同一公式、同一取值口径」的断言化。
+    ///
+    /// 期望值**不在夹具里手抄**：把世界观的路线常量原样喂给真正的
+    /// <see cref="SchedulingProblemProducer"/>，由它自己算出时长当 oracle。
+    /// 种子那边只要重新引入并行工位除数、把准备工时算进时长、或加回时长夹取，这里就会红。
+    /// </summary>
     [Fact]
-    public void Assignments_stay_inside_shift_windows_on_working_days()
+    public async Task Seed_operation_durations_match_the_scheduling_runtime_producer()
     {
-        var facts = WorldHistorySchedulingSpec.BuildSchedulingFacts(AsOfDate, 0.1d);
+        // 前提：PE 路线契约里的单件工时是整数（SchedulingProblemRoutingOperationSnapshot.RunMinutes）。
+        // 世界观路线取非整数值时两侧口径不可能相等，先把这条前提钉住。
+        Assert.All(
+            WorldHistoryMesSpec.StandardOperations,
+            operation => Assert.Equal(Math.Truncate(operation.RunMinutesPerUnit), operation.RunMinutesPerUnit));
 
-        foreach (var assignment in facts.Plans.SelectMany(x => x.Assignments))
+        var facts = WorldHistorySchedulingSpec.BuildSchedulingFacts(AsOfDate, SmallScale);
+        var seededOrders = facts.Problems
+            .SelectMany(x => x.Problem.Orders)
+            .GroupBy(x => x.OrderId, StringComparer.Ordinal)
+            .Select(x => x.First())
+            .OrderBy(x => x.OrderId, StringComparer.Ordinal)
+            .ToArray();
+        Assert.NotEmpty(seededOrders);
+
+        var horizonStartUtc = facts.Problems[0].HorizonStartUtc;
+        var runtimeProblem = await new SchedulingProblemProducer(
+                new WorldHistoryRoutingClient(),
+                new WorldHistoryMasterDataClient())
+            .AssembleAsync(
+                new AssembleSchedulingProblemRequest(
+                    "world-history-duration-parity",
+                    "org-001",
+                    "env-dev",
+                    horizonStartUtc,
+                    horizonStartUtc.AddDays(WorldHistorySchedulingSpec.HorizonDays),
+                    [.. seededOrders.Select(order => new SchedulingProblemSourceOrder(
+                        order.OrderId,
+                        order.SkuCode,
+                        order.Quantity,
+                        order.DueUtc,
+                        order.Priority,
+                        order.IsRush,
+                        horizonStartUtc,
+                        // 工单号即路线号：喂给 producer 的是世界观路线常量本身。
+                        RoutingVersionId: order.OrderId))]),
+                CancellationToken.None);
+
+        var runtimeDurations = runtimeProblem.Orders
+            .SelectMany(order => order.Operations.Select(operation =>
+                (Key: (order.OrderId, operation.OperationSequence), operation.DurationMinutes)))
+            .ToDictionary(x => x.Key, x => x.DurationMinutes);
+
+        var compared = 0;
+        foreach (var order in seededOrders)
         {
-            var localStart = assignment.StartUtc.ToOffset(WorldHistoryCalendar.SiteUtcOffset);
-            var localEnd = assignment.EndUtc.ToOffset(WorldHistoryCalendar.SiteUtcOffset);
-            Assert.True(WorldHistoryCalendar.IsWorkingDay(DateOnly.FromDateTime(localStart.DateTime)),
-                $"{assignment.AssignmentId} 落在周日停产日。");
-            Assert.True(localStart.Hour >= WorldHistoryCalendar.EarlyShiftStartLocalHour,
-                $"{assignment.AssignmentId} 早于早班开班时间。");
-            Assert.True(localEnd.Date == localStart.Date || localEnd.TimeOfDay == TimeSpan.Zero,
-                $"{assignment.AssignmentId} 跨越了班次窗口。");
-            Assert.True(assignment.EndUtc > assignment.StartUtc);
+            foreach (var operation in order.Operations)
+            {
+                Assert.Equal(
+                    runtimeDurations[(order.OrderId, operation.OperationSequence)],
+                    operation.DurationMinutes);
+                compared++;
+            }
         }
-    }
 
-    [Fact]
-    public void Resource_utilization_looks_like_a_real_shop_floor()
-    {
-        var facts = WorldHistorySchedulingSpec.BuildSchedulingFacts(AsOfDate, 0.1d);
-
-        var loads = facts.Plans.SelectMany(x => x.ResourceLoads).ToArray();
-        Assert.NotEmpty(loads);
-        Assert.All(loads, load => Assert.InRange(load.Utilization, 0.5m, 1.1m));
-        // 瓶颈线（电泳 / 性能终检）必须出现高于 0.95 的负荷。
-        Assert.Contains(loads, load =>
-            WorldHistoryMesSpec.BottleneckWorkCenters.Contains(WorldHistorySchedulingSpec.WorkCenterOf(load.ResourceId)) &&
-            load.Utilization > 0.95m);
+        output.WriteLine($"duration-parity-operations={compared}");
+        // 下界哨兵：比对面若被 SmallScale 或工序子集悄悄缩到个位数，上面的逐道等式仍会全绿。
+        // （对 seededOrders 求和当哨兵是恒真的——两边同源。）
+        Assert.InRange(compared, 1000, 2000);
     }
 
     [Fact]
@@ -100,20 +137,17 @@ public sealed class WorldHistorySchedulingSeedServiceTests(ITestOutputHelper out
         var first = WorldHistorySchedulingSpec.BuildSchedulingFacts(AsOfDate, 0.1d);
         var second = WorldHistorySchedulingSpec.BuildSchedulingFacts(AsOfDate, 0.1d);
 
-        Assert.Equal(first.Plans.Count, second.Plans.Count);
-        for (var index = 0; index < first.Plans.Count; index++)
+        Assert.Equal(first.Problems.Count, second.Problems.Count);
+        for (var index = 0; index < first.Problems.Count; index++)
         {
-            var left = first.Plans[index];
-            var right = second.Plans[index];
-            Assert.Equal(left.PlanId, right.PlanId);
+            var left = first.Problems[index];
+            var right = second.Problems[index];
+            Assert.Equal(left.ProblemId, right.ProblemId);
             Assert.Equal(left.ProblemFingerprint, right.ProblemFingerprint);
-            Assert.Equal(left.GeneratedAtUtc, right.GeneratedAtUtc);
-            Assert.Equal(left.ReleaseRevision, right.ReleaseRevision);
-            Assert.Equal(left.Status, right.Status);
-            Assert.Equal(left.Assignments, right.Assignments);
-            Assert.Equal(left.ResourceLoads, right.ResourceLoads);
-            Assert.Equal(left.Conflicts, right.Conflicts);
-            Assert.Equal(left.UnscheduledOperations, right.UnscheduledOperations);
+            Assert.Equal(left.CapturedAtUtc, right.CapturedAtUtc);
+            Assert.Equal(
+                JsonSerializer.Serialize(left.Problem, SchedulingJson.Options),
+                JsonSerializer.Serialize(right.Problem, SchedulingJson.Options));
         }
 
         // 紧急度事实内嵌一个风险清单（record 相等对内嵌列表走引用比较），逐字段展平后比对。
@@ -127,103 +161,73 @@ public sealed class WorldHistorySchedulingSeedServiceTests(ITestOutputHelper out
             $"{fact.InputFingerprint}|{string.Join(',', fact.ExecutionRisks.Select(risk => risk.ReasonCode))}")];
 
     [Fact]
-    public void Assignments_pair_with_the_shared_mes_work_order_and_operation_task_formula()
+    public void Problem_operations_pair_with_the_shared_mes_work_order_and_operation_task_formula()
     {
         var facts = WorldHistorySchedulingSpec.BuildSchedulingFacts(AsOfDate, 0.1d);
 
-        foreach (var assignment in facts.Plans.SelectMany(x => x.Assignments))
+        foreach (var order in facts.Problems.SelectMany(x => x.Problem.Orders))
         {
-            Assert.StartsWith("WO-2026-", assignment.OrderId, StringComparison.Ordinal);
-            Assert.Equal(
-                WorldHistoryMesSpec.OperationTaskId(assignment.OrderId, assignment.OperationSequence),
-                assignment.OperationId);
-            Assert.Equal(
-                assignment.WorkCenterId,
-                WorldHistorySchedulingSpec.WorkCenterOf(assignment.ResourceId));
+            Assert.StartsWith("WO-2026-", order.OrderId, StringComparison.Ordinal);
+            foreach (var operation in order.Operations)
+            {
+                Assert.Equal(
+                    WorldHistoryMesSpec.OperationTaskId(order.OrderId, operation.OperationSequence),
+                    operation.OperationId);
+                Assert.Equal(
+                    WorldHistoryMesSpec.CapabilityCode(
+                        WorldHistoryMesSpec.WorkCenterCode(order.SkuCode, operation.OperationSequence)),
+                    operation.RequiredCapabilityCode);
+                Assert.Contains(operation.PrimaryResourceId, operation.EligibleResourceIds);
+            }
         }
     }
 
     /// <summary>
-    /// 演示走查缺口：排产工作台页完全空白（<c>nerv_iip_scheduling</c> 业务表 0 行）。
-    /// 全链写入 + 幂等重跑零写入，且对任意 asOfDate（含周日、春节段、月末冲量窗口）成立；
-    /// 量以 spec 事实流为准，不空断。
+    /// 种子不再写排产方案（#3594）：只写问题快照（引擎的输入）与订单紧急度快照，
+    /// <c>schedule_plans</c> 及其四张明细保持为空直到用户现场生成。
+    /// 幂等重跑零写入，且对任意 asOfDate（含周日、春节段、月末冲量窗口）成立。
     /// </summary>
     [Theory]
     [InlineData(2026, 7, 27)]
     [InlineData(2026, 7, 26)]
-    [InlineData(2026, 8, 2)]
     [InlineData(2026, 2, 16)]
-    [InlineData(2026, 7, 31)]
-    public async Task Seed_writes_the_full_chain_and_reruns_without_writing_anything(int year, int month, int day)
+    [InlineData(2026, 3, 31)]
+    public async Task Seed_writes_engine_inputs_only_and_is_idempotent(int year, int month, int day)
     {
-        await using var db = CreateDbContext();
-        var seed = new WorldHistorySeedService(db);
         var asOfDate = new DateOnly(year, month, day);
-
-        var first = await seed.SeedAsync("org-001", "env-dev", asOfDate, SmallScale);
-        var second = await seed.SeedAsync("org-001", "env-dev", asOfDate, SmallScale);
-
         var facts = WorldHistorySchedulingSpec.BuildSchedulingFacts(asOfDate, SmallScale);
-        output.WriteLine($"small-scale-{asOfDate:yyyy-MM-dd}-plans={first.SchedulePlansWritten}");
-        output.WriteLine($"small-scale-{asOfDate:yyyy-MM-dd}-assignments={first.AssignmentsWritten}");
+        await using var db = CreateDbContext();
 
-        Assert.Equal(facts.Plans.Count, first.SchedulePlansWritten);
-        Assert.Equal(facts.Plans.Count, first.ScheduleProblemsWritten);
-        Assert.Equal(facts.AssignmentCount, first.AssignmentsWritten);
-        Assert.Equal(facts.ResourceLoadCount, first.ResourceLoadsWritten);
-        Assert.Equal(facts.ConflictCount, first.ConflictsWritten);
-        Assert.Equal(facts.UnscheduledOperationCount, first.UnscheduledOperationsWritten);
+        var service = new WorldHistorySeedService(db);
+        var first = await service.SeedAsync("org-001", "env-dev", asOfDate, SmallScale);
+        var second = await service.SeedAsync("org-001", "env-dev", asOfDate, SmallScale);
+
+        output.WriteLine($"small-scale-{asOfDate:yyyy-MM-dd}-problems={first.ScheduleProblemsWritten}");
+        output.WriteLine($"small-scale-{asOfDate:yyyy-MM-dd}-urgencies={first.OrderUrgencySnapshotsWritten}");
+
+        Assert.Equal(facts.Problems.Count, first.ScheduleProblemsWritten);
         Assert.Equal(facts.Urgencies.Count, first.OrderUrgencySnapshotsWritten);
-
-        Assert.Equal(0, second.SchedulePlansWritten);
         Assert.Equal(0, second.ScheduleProblemsWritten);
-        Assert.Equal(0, second.AssignmentsWritten);
-        Assert.Equal(0, second.ResourceLoadsWritten);
-        Assert.Equal(0, second.ConflictsWritten);
-        Assert.Equal(0, second.UnscheduledOperationsWritten);
         Assert.Equal(0, second.OrderUrgencySnapshotsWritten);
 
-        // 库终态 == spec 事实流。
-        Assert.Equal(facts.Plans.Count, await db.SchedulePlans.CountAsync());
-        Assert.Equal(facts.Plans.Count, await db.ScheduleProblems.CountAsync());
+        // 库终态：排产方案表为空（待用户现场生成），问题快照与紧急度快照按规格完整。
+        Assert.Equal(0, await db.SchedulePlans.CountAsync());
+        Assert.Equal(facts.Problems.Count, await db.ScheduleProblems.CountAsync());
         Assert.Equal(facts.Urgencies.Count, await db.OrderUrgencySnapshots.CountAsync());
-        var persistedAssignments = await db.SchedulePlans.AsNoTracking().SumAsync(x => x.Assignments.Count);
-        Assert.Equal(facts.AssignmentCount, persistedAssignments);
-
-        // 生命周期分布：恰一个已发布（ux_schedule_plans_scope_active_release），队尾待发布。
-        Assert.Equal(1, await db.SchedulePlans.CountAsync(x => x.Status == SchedulePlanLifecycleStatus.Released));
-        Assert.Equal(
-            facts.CountOf(SchedulePlanLifecycleStatus.Generated),
-            await db.SchedulePlans.CountAsync(x => x.Status == SchedulePlanLifecycleStatus.Generated));
-        Assert.Equal(
-            facts.CountOf(SchedulePlanLifecycleStatus.Superseded),
-            await db.SchedulePlans.CountAsync(x => x.Status == SchedulePlanLifecycleStatus.Superseded));
-        Assert.Equal(
-            facts.CountOf(SchedulePlanLifecycleStatus.Revoked),
-            await db.SchedulePlans.CountAsync(x => x.Status == SchedulePlanLifecycleStatus.Revoked));
-
-        // 发布号单调唯一（ux_schedule_plans_scope_release_revision）。
-        var revisions = await db.SchedulePlans.AsNoTracking()
-            .Where(x => x.ReleaseRevision != null)
-            .Select(x => x.ReleaseRevision!.Value)
-            .ToArrayAsync();
-        Assert.Equal(revisions.Length, revisions.Distinct().Count());
-        Assert.Equal(Enumerable.Range(1, revisions.Length).Select(x => (long)x), revisions.OrderBy(x => x));
 
         // 号段格式与保留段隔离。
-        var planIds = await db.SchedulePlans.Select(x => x.PlanId).ToArrayAsync();
-        Assert.All(planIds, planId => Assert.Matches(@"^SP-2026-\d{4}$", planId));
         var problemIds = await db.ScheduleProblems.Select(x => x.ProblemId).ToArrayAsync();
         Assert.All(problemIds, problemId => Assert.Matches(@"^SPB-2026-\d{4}$", problemId));
         Assert.All(
-            planIds.Concat(problemIds),
+            problemIds,
             reference => Assert.DoesNotContain(
                 WorldHistorySchedulingSpec.ReservedInfixes,
                 infix => reference.Contains(infix, StringComparison.Ordinal)));
     }
 
     /// <summary>
-    /// 「锁定重预览」从 <c>ProblemJson</c> 反序列化重建 problem，没有它 <c>SingleAsync</c> 直接抛异常。
+    /// 问题快照是「基于既有问题再排一版」的前提：<c>ProblemJson</c> 反序列化不回来，
+    /// <c>CreateSchedulePlanRevisionCommandHandler</c> 会直接抛异常。
     /// </summary>
     [Fact]
     public async Task Problem_snapshots_deserialize_back_into_the_scheduling_contract()
@@ -244,18 +248,6 @@ public sealed class WorldHistorySchedulingSeedServiceTests(ITestOutputHelper out
             Assert.NotEmpty(problem.Resources);
             Assert.NotEmpty(problem.Calendars);
             Assert.All(problem.Orders, order => Assert.NotEmpty(order.Operations));
-
-            // 锁定工序必须落在本快照的订单/工序/合格资源集合内，否则重预览会 KnownException。
-            var operations = problem.Orders
-                .SelectMany(order => order.Operations.Select(operation => (order.OrderId, operation)))
-                .ToDictionary(x => (x.OrderId, x.operation.OperationId));
-            foreach (var locked in problem.LockedAssignments)
-            {
-                Assert.True(operations.TryGetValue((locked.OrderId, locked.OperationId), out var source));
-                Assert.Contains(locked.ResourceId, source.operation.EligibleResourceIds);
-                Assert.InRange(locked.StartUtc, problem.HorizonStartUtc, problem.HorizonEndUtc);
-                Assert.InRange(locked.EndUtc, problem.HorizonStartUtc, problem.HorizonEndUtc);
-            }
         }
     }
 
@@ -282,6 +274,75 @@ public sealed class WorldHistorySchedulingSeedServiceTests(ITestOutputHelper out
             .UseInMemoryDatabase($"scheduling-world-history-{Guid.CreateVersion7():N}")
             .Options;
         return new ApplicationDbContext(options, new WorldHistoryTestMediator());
+    }
+
+    /// <summary>把世界观的路线常量按 PE 路线快照的形状交给 producer（工单号即路线号）。</summary>
+    private sealed class WorldHistoryRoutingClient : ISchedulingProblemProductEngineeringClient
+    {
+        public Task<SchedulingProblemRoutingSnapshot> GetRoutingAsync(
+            string organizationId,
+            string environmentId,
+            string routingVersionId,
+            CancellationToken cancellationToken)
+        {
+            var operations = WorldHistoryMesSpec.OperationSequences(routingVersionId)
+                .Select(sequence =>
+                {
+                    var operation = WorldHistoryMesSpec.Operation(sequence);
+                    return new SchedulingProblemRoutingOperationSnapshot(
+                        sequence,
+                        WorkCenterCode,
+                        operation.OperationCode,
+                        operation.OperationName,
+                        operation.SetupMinutes,
+                        (int)operation.RunMinutesPerUnit,
+                        operation.TeardownMinutes,
+                        operation.RequiresQualityInspection);
+                })
+                .ToArray();
+            return Task.FromResult(new SchedulingProblemRoutingSnapshot(
+                routingVersionId, "1", routingVersionId, operations));
+        }
+    }
+
+    /// <summary>
+    /// 时长只取决于路线的单件工时、收尾与数量，与工作中心 / 日历 / 设备无关，
+    /// 因此这里只给 producer 装配所必需的最小主数据。
+    /// </summary>
+    private sealed class WorldHistoryMasterDataClient : ISchedulingProblemMasterDataClient
+    {
+        public Task<SchedulingProblemWorkCenterSnapshot> GetWorkCenterAsync(
+            string organizationId,
+            string environmentId,
+            string workCenterCode,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new SchedulingProblemWorkCenterSnapshot(
+                workCenterCode, WorldHistoryMesSpec.CalendarId, 1, [workCenterCode]));
+
+        public Task<SchedulingProblemCalendarSnapshot> GetCalendarAsync(
+            string organizationId,
+            string environmentId,
+            string calendarCode,
+            DateTimeOffset horizonStartUtc,
+            DateTimeOffset horizonEndUtc,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new SchedulingProblemCalendarSnapshot(
+                calendarCode, [new SchedulingProblemShiftWindowSnapshot(horizonStartUtc, horizonEndUtc, "parity")]));
+
+        public Task<IReadOnlyCollection<SchedulingProblemDeviceAssetSnapshot>> ListDeviceAssetsAsync(
+            string organizationId,
+            string environmentId,
+            string workCenterCode,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyCollection<SchedulingProblemDeviceAssetSnapshot>>(
+                [new SchedulingProblemDeviceAssetSnapshot($"DEV-{workCenterCode}", workCenterCode)]);
+
+        public Task<IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>> ResolveToolingFactsAsync(
+            string organizationId,
+            string environmentId,
+            IReadOnlyCollection<SchedulingProblemToolingTransitionSnapshot> transitions,
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyCollection<SchedulingProblemToolingFactSnapshot>>([]);
     }
 
     private sealed class WorldHistoryTestMediator : IMediator

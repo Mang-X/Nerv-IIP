@@ -1,8 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Mes.Domain.AggregatesModel.WorkOrderAggregate;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 using Nerv.IIP.Contracts.DemandPlanning;
 using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.Messaging.CAP;
@@ -11,6 +13,138 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed class MesDemandPlanningBridgeTests
 {
+    // DomainInvariant / Regression：#4026，母单查询必须覆盖分页外子件，来源关系不能混入普通工单或返工。
+    [Fact]
+    public async Task Assembly_child_query_returns_all_children_without_list_paging_or_unrelated_sources()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var dueUtc = DateTimeOffset.Parse("2026-10-10T00:00:00Z");
+        WorkOrder Order(string id, SourcePlanReference? source = null,
+            string org = "org-001", string env = "env-dev") =>
+            WorkOrder.Create(org, env, id, "SKU-001", "PV-001", 12m, 100, dueUtc, "PCS", source);
+        SourcePlanReference Source(string suggestion, string[]? parents = null,
+            string system = "DemandPlanning", string type = "PlanningSuggestion") =>
+            new(system, type, suggestion, null, assemblyParentSuggestionIds: parents);
+        dbContext.WorkOrders.AddRange(
+            Order("WO-PARENT", Source("SUG-PARENT")),
+            Order("WO-CHILD-A", Source("SUG-CHILD", ["SUG-PARENT"])),
+            Order("WO-CHILD-B", Source("SUG-CHILD", ["SUG-PARENT"])),
+            Order("WO-CHILD-C", Source("SUG-OTHER-CHILD", ["SUG-PARENT", "SUG-OTHER"])),
+            Order("WO-ORDINARY"),
+            Order("WO-UNRELATED", Source("SUG-UNRELATED", ["SUG-OTHER"])),
+            Order("WO-WRONG-SYSTEM", Source("SUG-X", ["SUG-PARENT"], system: "Erp")),
+            Order("WO-WRONG-TYPE", Source("SUG-X", ["SUG-PARENT"], type: "SalesOrder")),
+            Order("WO-OTHER-ORG", Source("SUG-X", ["SUG-PARENT"]), org: "org-other"),
+            Order("WO-OTHER-ENV", Source("SUG-X", ["SUG-PARENT"]), env: "env-other"),
+            Order("WO-FAKE-PARENT", Source("SUG-PARENT", system: "Erp")),
+            WorkOrder.CreateRework("org-001", "env-dev", "WO-REWORK", "SKU-001", "PV-001", "PCS",
+                1m, 100, dueUtc, "WO-PARENT", null, "DEF-001", "NCR-001", "NCR-001", null, null,
+                dueUtc, "corr-001", "cause-001"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var page = await new ListMesWorkOrdersQueryHandler(dbContext).Handle(
+            new ListMesWorkOrdersQuery("org-001", "env-dev", null, Take: 1, WorkOrderId: "WO-PARENT"),
+            CancellationToken.None);
+        Assert.Equal("WO-PARENT", Assert.Single(page.Items).WorkOrderId);
+        var handler = new GetAssemblyChildWorkOrdersQueryHandler(dbContext);
+        var result = await handler.Handle(
+            new GetAssemblyChildWorkOrdersQuery("org-001", "env-dev", "WO-PARENT"), CancellationToken.None);
+        Assert.Equal(["WO-CHILD-A", "WO-CHILD-B", "WO-CHILD-C"], result.AssemblyChildWorkOrderIds);
+        foreach (var parentId in new[] { "WO-ORDINARY", "WO-REWORK", "WO-FAKE-PARENT", "WO-MISSING" })
+        {
+            var empty = await handler.Handle(
+                new GetAssemblyChildWorkOrdersQuery("org-001", "env-dev", parentId), CancellationToken.None);
+            Assert.Empty(empty.AssemblyChildWorkOrderIds);
+        }
+    }
+
+    [Fact]
+    public async Task Assembly_parent_relation_resolves_after_parent_work_order_is_created()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var handler = new PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder(
+            dbContext, new InMemoryIntegrationEventDeadLetterStore(),
+            routingSnapshotProvider: SingleOperationRoutingSnapshotProvider.Instance);
+        var acceptedAtUtc = DateTimeOffset.Parse("2026-09-29T08:00:00Z");
+        var parentEvent = NewAcceptedSuggestionEvent(acceptedAtUtc, "SUG-PARENT") with
+        {
+            Payload = NewAcceptedSuggestionEvent(acceptedAtUtc, "SUG-PARENT").Payload with
+            {
+                SkuCode = "SKU-ASSEMBLY",
+            },
+        };
+        var childEvent = NewAcceptedSuggestionEvent(acceptedAtUtc, "SUG-CHILD") with
+        {
+            Payload = NewAcceptedSuggestionEvent(acceptedAtUtc, "SUG-CHILD").Payload with
+            {
+                SkuCode = "SKU-COMPONENT",
+                AssemblyParentSuggestionIds = ["SUG-PARENT"],
+            },
+        };
+
+        await handler.HandleAsync(childEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var child = Assert.Single(await dbContext.WorkOrders.ToListAsync(CancellationToken.None));
+        Assert.Equal(["SUG-PARENT"], child.SourcePlanReference?.AssemblyParentSuggestionIds);
+
+        await handler.HandleAsync(parentEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var parent = Assert.Single(await dbContext.WorkOrders
+            .Where(x => x.SkuId == "SKU-ASSEMBLY")
+            .ToListAsync(CancellationToken.None));
+        var result = await new ListMesWorkOrdersQueryHandler(dbContext).Handle(
+            new ListMesWorkOrdersQuery("org-001", "env-dev", null), CancellationToken.None);
+
+        Assert.Equal([parent.WorkOrderId], Assert.Single(result.Items, x => x.WorkOrderId == child.WorkOrderId)
+            .AssemblyParentWorkOrderIds);
+        Assert.Empty(Assert.Single(result.Items, x => x.WorkOrderId == parent.WorkOrderId)
+            .AssemblyParentWorkOrderIds!);
+        Assert.Null(child.SourceWorkOrderId);
+    }
+
+    [Fact]
+    public async Task Accepted_suggestion_event_adds_pegged_parent_to_existing_work_orders_from_same_suggestion()
+    {
+        await using var provider = MesTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var workOrder = WorkOrder.Create("org-001", "env-dev", "WO-CHILD", "SKU-COMPONENT", "PV-001",
+            12m, 100, DateTimeOffset.Parse("2026-10-10T00:00:00Z"), "PCS",
+            new SourcePlanReference("DemandPlanning", "PlanningSuggestion", "SUG-CHILD", "SO-1"));
+        dbContext.WorkOrders.AddRange(workOrder, WorkOrder.Create(
+            "org-001", "env-dev", "WO-CHILD-SPLIT", "SKU-COMPONENT", "PV-001",
+            6m, 100, DateTimeOffset.Parse("2026-10-10T00:00:00Z"), "PCS",
+            new SourcePlanReference("DemandPlanning", "PlanningSuggestion", "SUG-CHILD", "SO-1")));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var acceptedEvent = NewAcceptedSuggestionEvent(DateTimeOffset.Parse("2026-09-29T08:00:00Z"), "SUG-CHILD") with
+        {
+            Payload = NewAcceptedSuggestionEvent(DateTimeOffset.Parse("2026-09-29T08:00:00Z"), "SUG-CHILD").Payload with
+            {
+                AssemblyParentSuggestionIds = ["SUG-PARENT"],
+            },
+        };
+        var handler = new PlanningSuggestionAcceptedIntegrationEventHandlerForCreateMesWorkOrder(
+            dbContext, new InMemoryIntegrationEventDeadLetterStore());
+        await handler.HandleAsync(acceptedEvent, CancellationToken.None);
+        await handler.HandleAsync(acceptedEvent, CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        dbContext.ChangeTracker.Clear();
+
+        var persisted = await dbContext.WorkOrders.ToListAsync(CancellationToken.None);
+        Assert.Equal(2, persisted.Count);
+        Assert.All(persisted, order =>
+        {
+            Assert.Equal(["SUG-PARENT"], order.SourcePlanReference?.AssemblyParentSuggestionIds);
+            Assert.Equal(2, order.Version);
+        });
+    }
+
     [Fact]
     public async Task Missing_routing_snapshot_is_dead_lettered_as_terminal_without_retry_poisoning()
     {

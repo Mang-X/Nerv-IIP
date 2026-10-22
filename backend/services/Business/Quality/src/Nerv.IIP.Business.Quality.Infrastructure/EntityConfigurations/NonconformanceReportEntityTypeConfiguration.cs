@@ -14,7 +14,7 @@ public sealed class NonconformanceReportEntityTypeConfiguration : IEntityTypeCon
         builder.Property(x => x.EnvironmentId).HasColumnName("environment_id").IsRequired().HasMaxLength(100).HasComment("Environment id where the NCR was opened.");
         builder.Property(x => x.NcrCode).HasColumnName("ncr_code").IsRequired().HasMaxLength(100).HasComment("Human-readable automatically generated NCR code.");
         builder.Property(x => x.SourceType).HasColumnName("source_type").IsRequired().HasMaxLength(50).HasComment("NCR source type: receiving, in-process, final or customer-return.");
-        builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(150).HasComment("External source document id such as inspection plan, report or return id.");
+        builder.Property(x => x.SourceDocumentId).HasColumnName("source_document_id").IsRequired().HasMaxLength(250).HasComment("External source document id such as inspection plan, report or return id; NCRs opened from a first-article inspection carry that record's composite '{workOrderId}:{operationTaskId}' source identity.");
         builder.Property(x => x.SkuCode).HasColumnName("sku_code").IsRequired().HasMaxLength(100).HasComment("SKU code copied as a Quality reference.");
         builder.Property(x => x.DefectQuantity).HasColumnName("defect_quantity").IsRequired().HasPrecision(18, 6).HasComment("Quantity found defective.");
         builder.Property(x => x.DefectReason).HasColumnName("defect_reason").IsRequired().HasMaxLength(200).HasComment("Defect reason code or normalized reason.");

@@ -1,7 +1,13 @@
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 
 namespace Nerv.IIP.Business.BarcodeLabel.Domain.AggregatesModel.BarcodeRuleAggregate;
+
+public sealed record Gs1ApplicationIdentifierSegment(
+    string Identifier,
+    string Value,
+    bool VariableLength);
 
 public sealed record Gs1BarcodeValue(
     string Gtin,
@@ -32,43 +38,55 @@ public sealed record Gs1BarcodeValue(
 
     public string ToAiString()
     {
-        var segments = new List<(string Text, bool VariableLength)>();
-        if (!string.IsNullOrWhiteSpace(Sscc))
-        {
-            segments.Add(($"(00){Sscc}", false));
-        }
-
-        if (!string.IsNullOrWhiteSpace(Gtin))
-        {
-            segments.Add(($"(01){Gtin}", false));
-        }
-
-        if (!string.IsNullOrWhiteSpace(LotNo))
-        {
-            segments.Add(($"(10){LotNo}", true));
-        }
-
-        if (!string.IsNullOrWhiteSpace(SerialNumber))
-        {
-            segments.Add(($"(21){SerialNumber}", true));
-        }
-
-        if (Quantity is not null)
-        {
-            segments.Add(($"(30){Quantity.Value.ToString("0.#############################", CultureInfo.InvariantCulture)}", true));
-        }
-
+        var segments = GetApplicationIdentifierSegments();
         var builder = new StringBuilder();
-        for (var index = 0; index < segments.Count; index++)
+        for (var index = 0; index < segments.Length; index++)
         {
-            builder.Append(segments[index].Text);
-            if (segments[index].VariableLength && index < segments.Count - 1)
+            builder.Append('(')
+                .Append(segments[index].Identifier)
+                .Append(')')
+                .Append(segments[index].Value);
+            if (segments[index].VariableLength && index < segments.Length - 1)
             {
                 builder.Append('\u001D');
             }
         }
 
         return builder.ToString();
+    }
+
+    public ImmutableArray<Gs1ApplicationIdentifierSegment> GetApplicationIdentifierSegments()
+    {
+        var segments = ImmutableArray.CreateBuilder<Gs1ApplicationIdentifierSegment>();
+        if (!string.IsNullOrWhiteSpace(Sscc))
+        {
+            segments.Add(new("00", Sscc, false));
+        }
+
+        if (!string.IsNullOrWhiteSpace(Gtin))
+        {
+            segments.Add(new("01", Gtin, false));
+        }
+
+        if (!string.IsNullOrWhiteSpace(LotNo))
+        {
+            segments.Add(new("10", LotNo, true));
+        }
+
+        if (!string.IsNullOrWhiteSpace(SerialNumber))
+        {
+            segments.Add(new("21", SerialNumber, true));
+        }
+
+        if (Quantity is not null)
+        {
+            segments.Add(new(
+                "30",
+                Quantity.Value.ToString("0.#############################", CultureInfo.InvariantCulture),
+                true));
+        }
+
+        return segments.ToImmutable();
     }
 
     public static string AppendMod10CheckDigit(string digitsWithoutCheckDigit)

@@ -530,7 +530,6 @@ function spcViolationKey(row: QualitySpcViolation) {
                 v-model="skuModel"
                 :options="skuCatalog.skuOptions.value"
                 title="选择 SKU"
-                source-text="数据来自基础数据物料主数据"
                 :loading="skuCatalog.skusPending.value"
                 clearable
                 aria-label="SKU"
@@ -543,7 +542,6 @@ function spcViolationKey(row: QualitySpcViolation) {
                 :options="planOptions"
                 title="选择检验方案"
                 placeholder="选择检验方案"
-                source-text="数据来自质量检验方案"
                 empty-text="当前物料没有检验方案"
                 :loading="inspectionPlansPending"
                 clearable
@@ -557,7 +555,6 @@ function spcViolationKey(row: QualitySpcViolation) {
                 :options="characteristicOptions"
                 title="选择质量特性"
                 placeholder="选择特性"
-                source-text="数据来自该检验方案的特性清单"
                 :empty-text="characteristicEmptyText"
                 :loading="planCharacteristicsPending"
                 :disabled="!selectedInspectionPlanId"

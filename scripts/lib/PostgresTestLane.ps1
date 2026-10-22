@@ -9,10 +9,9 @@
 #   Requires:
 #     - PowerShell 7
 
-function Import-NervPostgresTestLaneMember {
+function Import-NervPostgresTestLaneManifest {
     param(
         [Parameter(Mandatory)] [string] $ManifestPath,
-        [Parameter(Mandatory)] [string] $MemberId,
         [Parameter(Mandatory)] [string] $RepositoryRoot
     )
 
@@ -49,6 +48,33 @@ function Import-NervPostgresTestLaneMember {
         if ($identities.Count -eq 0 -or @($identities | Where-Object { [string]::IsNullOrWhiteSpace($_) -or -not $identitySet.Add($_) }).Count -gt 0) { throw "PostgreSQL lane member '$id' must freeze a non-empty unique test identity set." }
     }
 
+    return $members
+}
+
+# NERV-3185：选择集必须由 manifest 的 active 状态**推导**，不能由调用方枚举。
+# 枚举式名单与 manifest 互为对照、一起不动就一起绿——`masterdata-device-reference-concurrency`
+# 因此以 active 身份跑在零个 job 上而所有门禁照绿（与 #3003 / #3135 同形）。
+# 本函数是 lane 选择集的唯一推导入口，redis-cap lane 用的是同一形状。
+function Import-NervPostgresTestLaneMembers {
+    param(
+        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [string] $RepositoryRoot
+    )
+
+    $members = @(Import-NervPostgresTestLaneManifest -ManifestPath $ManifestPath -RepositoryRoot $RepositoryRoot)
+    $activeMembers = @($members | Where-Object { [string]::Equals([string]$_.status, 'active', [StringComparison]::Ordinal) })
+    if ($activeMembers.Count -eq 0) { throw 'PostgreSQL lane manifest does not contain any active members.' }
+    return $activeMembers
+}
+
+function Import-NervPostgresTestLaneMember {
+    param(
+        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [string] $MemberId,
+        [Parameter(Mandatory)] [string] $RepositoryRoot
+    )
+
+    $members = @(Import-NervPostgresTestLaneManifest -ManifestPath $ManifestPath -RepositoryRoot $RepositoryRoot)
     $matches = @($members | Where-Object { [string]::Equals([string]$_.id, $MemberId, [StringComparison]::Ordinal) })
     if ($matches.Count -ne 1) { throw "PostgreSQL lane member '$MemberId' must resolve exactly once." }
     if (-not [string]::Equals([string]$matches[0].status, 'active', [StringComparison]::Ordinal)) { throw "PostgreSQL lane member '$MemberId' is not active." }

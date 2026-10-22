@@ -55,7 +55,11 @@ public sealed class AssembleSchedulingProblemCommandHandler(
                 resolvedLocks[(assignment.WorkOrderId, assignment.OperationId)] = new SchedulingLockedAssignmentContract(
                     assignment.AssignmentId, assignment.WorkOrderId, assignment.OperationId,
                     assignment.OperationSequence, assignment.ResourceId, assignment.WorkCenterId,
-                    assignment.StartUtc, assignment.EndUtc, "base-plan-lock");
+                    assignment.StartUtc, assignment.EndUtc, "base-plan-lock",
+                    assignment.Segments.Count == 0 ? null : assignment.Segments
+                        .OrderBy(x => x.SegmentIndex)
+                        .Select(x => new ScheduleAssignmentSegmentContract(x.StartUtc, x.EndUtc))
+                        .ToArray());
             }
         }
 

@@ -41,7 +41,6 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
       resolveWorkshop: () => undefined,
       resolveLine: () => undefined,
       formatUom: (code?: string | null, fallback = '') => code ?? fallback,
-      deviceByCode: emptyIndex,
       locationByCode: emptyIndex,
       workCenterByCode: emptyIndex,
       teamByCode: emptyIndex,
@@ -298,8 +297,7 @@ describe('quality inspection task workbench page', () => {
     filters.sourceType = 'operation'
     await nextTick()
 
-    expect(wrapper.text()).toContain('本页匹配 1 个 / 服务总数 4 个')
-    expect(wrapper.text()).toContain('筛选仅按当前页匹配')
+    expect(wrapper.text()).toContain('来源筛选只在当前页内生效')
   })
 
   it('claims before opening the existing inspection form without inventing a source document number', async () => {
@@ -319,6 +317,20 @@ describe('quality inspection task workbench page', () => {
       }),
     })
     expect(state.push.mock.calls[0]?.[0]?.query).not.toHaveProperty('sourceDocumentNo')
+  })
+
+  it('carries the existing source document business number into the inspection form', async () => {
+    state.query = { sourceDocumentNo: 'GR-001' }
+    const wrapper = mount(InspectionTasksPage, { global: { stubs } })
+    const action = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('认领并开始检验'))
+    await action?.trigger('click')
+    await flushPromises()
+    expect(state.push).toHaveBeenCalledWith({
+      path: '/quality/inspections',
+      query: expect.objectContaining({ sourceDocumentNo: 'GR-001', sourceDocumentId: 'GR-001' }),
+    })
   })
 
   it('offers reassignment for a claimed task and never renders its account id', () => {
