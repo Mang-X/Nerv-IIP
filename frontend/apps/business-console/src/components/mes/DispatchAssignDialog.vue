@@ -341,6 +341,7 @@ function formatDateTime(value?: string | null) {
                 directory-type="shift"
                 creatable
                 :placeholder="shiftLabel(target?.shiftId)"
+                clearable
               />
             </NvField>
           </div>
@@ -351,7 +352,7 @@ function formatDateTime(value?: string | null) {
           </p>
         </template>
 
-        <NvDialogFooter>
+        <NvDialogFooter class="static">
           <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
           <NvButton type="submit" :disabled="pending || !affordance.enabled">
             <NvSpinner v-if="pending" aria-hidden="true" />
