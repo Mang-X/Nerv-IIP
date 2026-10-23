@@ -69,6 +69,7 @@ interface DhxTask {
 }
 
 interface GridTask {
+  text?: string
   type?: string
   start_date?: Date
   end_date?: Date
@@ -188,7 +189,14 @@ const GRID_COLUMNS = (
         : []),
     ]
   }
-  const name = { name: 'text', label: '任务名称', tree: true, width: 196, resize: true }
+  const name = {
+    name: 'text',
+    label: '任务名称',
+    tree: true,
+    width: 196,
+    resize: true,
+    template: orderNameCell,
+  }
   return [
     name,
     { name: 'owner', label: '负责人', align: 'center', width: 72, template: ownerCell },
@@ -197,6 +205,21 @@ const GRID_COLUMNS = (
     { name: 'duration', label: '工时', align: 'center', width: 52, template: durationLabel },
     { name: 'progress', label: '工单进度', align: 'center', width: 98, template: progressCell },
   ]
+}
+
+function orderNameCell(t: GridTask): string {
+  const task = t.nerv
+  const fullName = t.text ?? task?.text ?? ''
+  // 工单已由父节点标明，子行优先展示真实工序序号，避免长编码挤掉区分尾号。
+  const label =
+    task?.type === 'operation' && task.operationSequence > 0
+      ? `工序 ${task.operationSequence}`
+      : fullName
+  const title =
+    task?.operationId && task.operationId !== fullName
+      ? `${fullName} · ${task.operationId}`
+      : fullName
+  return `<span title="${escapeHtml(title)}">${escapeHtml(label)}</span>`
 }
 
 function durationLabel(t: GridTask): string {
