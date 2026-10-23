@@ -31,11 +31,21 @@ const order = computed(() =>
     : costs.workOrderData.value,
 )
 const columns: NvDataTableColumn<BusinessConsoleErpOperationLaborVarianceItem>[] = [
-  { key: 'operationTaskId', header: '工序 / 工作中心' },
-  { key: 'actual', header: '实际人工' },
-  { key: 'standard', header: '标准人工' },
-  { key: 'efficiency', header: '效率差异' },
-  { key: 'lineage', header: '结算与覆盖报工' },
+  {
+    key: 'operationTaskId',
+    header: '工序 / 工作中心',
+    width: '16rem',
+    cellClass: 'whitespace-normal break-all',
+  },
+  { key: 'actual', header: '实际人工', width: '10rem' },
+  { key: 'standard', header: '标准人工', width: '10rem', cellClass: 'whitespace-normal' },
+  { key: 'efficiency', header: '效率差异', width: '10rem' },
+  {
+    key: 'lineage',
+    header: '结算与覆盖报工',
+    width: '24rem',
+    cellClass: 'whitespace-normal break-all',
+  },
 ]
 const actualCells = computed(() => [
   { key: 'actualHours', label: '实际人工工时', value: costHours(order.value?.actualLaborHours) },

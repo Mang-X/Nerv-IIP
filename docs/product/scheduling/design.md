@@ -109,7 +109,7 @@
 - 空状态:无计划时指引在需求与计划中生成方案。
 - 不暴露工程语言(reasonCode/operationId/source/demo/seed 等)。
 
-- **甘特阅读**：资源工序卡片显示工序名称、起止时间与已有执行状态；长名称单行省略，短工序保持真实时间长度。悬停可查看完整信息，点击工序后在页内详情查阅完整名称、开始与结束时间、状态及前后依赖。亮暗主题使用一致的文字与边框语义，缩放不改变排程时间。
+- **甘特阅读**：工单甘特树按父工单分组，子行优先显示真实工序序号（如“工序 10”），默认列宽下即可辨认工序顺序；悬停树列可查完整名称与工序号，无序号的历史任务保留原名称。资源工序卡片显示工序名称、起止时间与已有执行状态；长名称单行省略，短工序保持真实时间长度。悬停可查看完整信息，点击工序后在页内详情查阅完整名称、开始与结束时间、状态及前后依赖。亮暗主题使用一致的文字与边框语义，缩放不改变排程时间。
 
 - **销售订单计划视角**：方案甘特旁按销售单展开工单与工序表格，多销售单关联分别展示；工单显示执行状态和完成量 / 计划量，工序显示 MES 当前执行状态与冻结前序依赖，不以工单完成率代替工序进度。点击工序在同页选中表格行、定位并高亮甘特条，详情保持页内展开。商业关联无权限或读取失败时明确标注。
 
@@ -137,10 +137,10 @@ BusinessGateway 的 `POST /api/business-console/v1/scheduling/workbench/first-pl
 
 Scheduling owner 的首版创建、修订 candidate 和 detail 响应提供可空的 `validationContext`：资源/工作中心映射、日历标识、容量与利用率；所有快照工序的真实前序、工序交期、时长、setup 和固定身份；以及包含外部工序的冻结占用区间与方案 horizon。事实来自该方案持久化问题快照，日历和不可用窗口复用已有 `calendars` / `blockWindows`。Gateway 三种响应透传，稳定生成类型经 `toModel` 进入草案即时反馈。历史快照缺失时不提供上下文，不以当前主数据、已排条或通用作息补造依据。
 
-## 6. 技术落点(引擎可替换)
+## 6. 技术落点
 
-详见 `frontend/packages/scheduling/README.md`。两层:Vue 组件层(稳定契约)→ `SchedulingEngine` 适配器 / 包内只读时间轴(无商业引擎时)→ `ScheduleModel` + `aps-mapper`。
-DHTMLX Gantt 9.x 专业版仍是可选专业引擎(评估许可,禁分发,不入 git);无本地引擎包且 `readOnly=true` 时,`SchedulingCanvas` 使用同一 package 的只读 DOM 时间轴，不引入第二套第三方甘特库。编辑态无引擎时仍明确提示引擎未加载。
+详见 [`frontend/packages/scheduling/README.md`](../../../frontend/packages/scheduling/README.md)。Vue 组件层(稳定契约)→ `SchedulingEngine` 适配器 / 包内只读时间轴(无供应商包时)→ `ScheduleModel` + `aps-mapper`。
+DHTMLX Gantt Professional Evaluation 试用版供应商文件已纳入 Git。本仓库无商业部署、不涉及商业行为，按 [ADR 0036](../../adr/0036-dhtmlx-evaluation-permanent-retention.md) 永久保留现有试用版，不更换、不移除，不设采购或自研承诺，保留厂商声明、提示与水印。无本地引擎包且 `readOnly=true` 时,`SchedulingCanvas` 使用同一 package 的只读 DOM 时间轴，不引入第二套第三方甘特库。编辑态无引擎时仍明确提示引擎未加载。
 
 ## 7. 分期
 

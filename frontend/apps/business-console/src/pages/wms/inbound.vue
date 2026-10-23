@@ -694,80 +694,128 @@ function formatDateTime(value?: string | null) {
             <div
               v-for="(line, index) in createForm.lines"
               :key="index"
-              class="flex flex-wrap items-end gap-2 rounded-md border p-2"
+              role="group"
+              :aria-label="`第 ${index + 1} 行明细`"
+              class="min-w-0 space-y-3 rounded-md border p-3"
             >
-              <DirectoryPicker
-                v-model="line.skuCode"
-                class="w-44"
-                directory-type="material"
-                creatable
-                placeholder="物料*"
-                :aria-label="`第 ${index + 1} 行物料`"
-              />
-              <!-- 单位随物料的基本单位带出，不给手输：手输单位只会写出查不到货的组合。 -->
-              <span
-                class="inline-flex h-9 items-center rounded-md border border-input px-2.5 text-sm text-muted-foreground"
-                :aria-label="`第 ${index + 1} 行单位`"
-                >{{ line.uomCode || '单位' }}</span
-              >
-              <NvInput
-                v-model="line.receivedQuantity"
-                class="h-9 w-24"
-                type="number"
-                min="0"
-                step="any"
-                placeholder="收货数量*"
-                :aria-label="`第 ${index + 1} 行收货数量`"
-              />
-              <DirectoryPicker
-                v-model="line.stagingLocationCode"
-                class="w-36"
-                directory-type="location"
-                creatable
-                :form-site-code="createForm.siteCode"
-                title="选择暂存库位"
-                placeholder="暂存库位*"
-                clearable
-                :aria-label="`第 ${index + 1} 行暂存库位`"
-              />
-              <!-- 收货批次可能是本次新到货的新批次号，因此保留录入能力、只做既有批次建议。 -->
-              <DirectorySuggestInput
-                v-model="line.lotNo"
-                directory-type="batch"
-                :form-site-code="createForm.siteCode"
-                class="w-36"
-                placeholder="批次"
-                :aria-label="`第 ${index + 1} 行批次`"
-              />
-              <NvSelect v-model="line.qualityStatus">
-                <NvSelectTrigger class="h-9 w-24" :aria-label="`第 ${index + 1} 行质量状态`"
-                  ><NvSelectValue
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem v-for="o in QUALITY_OPTIONS" :key="o.value" :value="o.value">{{
-                    o.label
-                  }}</NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
-              <NvSelect v-model="line.ownerType">
-                <NvSelectTrigger class="h-9 w-44" :aria-label="`第 ${index + 1} 行货主类型`"
-                  ><NvSelectValue
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem v-for="o in OWNER_OPTIONS" :key="o.value" :value="o.value">{{
-                    o.label
-                  }}</NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
-              <NvButton
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                :aria-label="`删除第 ${index + 1} 行`"
-                @click="removeLine(index)"
-              >
-                <Trash2Icon class="size-4" aria-hidden="true" />
-              </NvButton>
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-sm font-medium">第 {{ index + 1 }} 行</span>
+                <NvButton
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  :aria-label="`删除第 ${index + 1} 行`"
+                  @click="removeLine(index)"
+                >
+                  <Trash2Icon class="size-4" aria-hidden="true" />
+                  删除
+                </NvButton>
+              </div>
+              <div class="grid min-w-0 grid-cols-2 items-start gap-3 sm:grid-cols-4">
+                <NvField class="col-span-2 min-w-0 gap-1.5">
+                  <NvFieldLabel :for="`wms-in-${index}-sku`">物料</NvFieldLabel>
+                  <DirectoryPicker
+                    :id="`wms-in-${index}-sku`"
+                    v-model="line.skuCode"
+                    class="w-full min-w-0"
+                    directory-type="material"
+                    creatable
+                    placeholder="物料*"
+                    :aria-label="`第 ${index + 1} 行物料`"
+                  />
+                </NvField>
+                <NvField class="min-w-0 gap-1.5">
+                  <NvFieldLabel :for="`wms-in-${index}-quantity`">收货数量</NvFieldLabel>
+                  <NvInput
+                    :id="`wms-in-${index}-quantity`"
+                    v-model="line.receivedQuantity"
+                    class="h-9 w-full min-w-0"
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="收货数量*"
+                    :aria-label="`第 ${index + 1} 行收货数量`"
+                  />
+                </NvField>
+                <NvField class="min-w-0 gap-1.5">
+                  <NvFieldLabel :for="`wms-in-${index}-uom`">单位</NvFieldLabel>
+                  <!-- 单位随物料的基本单位带出，不给手输。 -->
+                  <output
+                    :id="`wms-in-${index}-uom`"
+                    class="inline-flex min-h-9 items-center rounded-md border border-input px-2.5 text-sm text-muted-foreground"
+                    :aria-label="`第 ${index + 1} 行单位`"
+                    >{{ line.uomCode || '单位' }}</output
+                  >
+                </NvField>
+                <NvField class="col-span-2 min-w-0 gap-1.5">
+                  <NvFieldLabel :for="`wms-in-${index}-location`">暂存库位</NvFieldLabel>
+                  <DirectoryPicker
+                    :id="`wms-in-${index}-location`"
+                    v-model="line.stagingLocationCode"
+                    class="w-full min-w-0"
+                    directory-type="location"
+                    creatable
+                    :form-site-code="createForm.siteCode"
+                    title="选择暂存库位"
+                    placeholder="暂存库位*"
+                    clearable
+                    :aria-label="`第 ${index + 1} 行暂存库位`"
+                  />
+                  <p
+                    v-if="line.stagingLocationCode"
+                    class="break-all text-sm text-muted-foreground"
+                  >
+                    {{ line.stagingLocationCode }}
+                  </p>
+                </NvField>
+                <NvField class="col-span-2 min-w-0 gap-1.5">
+                  <NvFieldLabel :for="`wms-in-${index}-lot`">批次</NvFieldLabel>
+                  <DirectorySuggestInput
+                    :id="`wms-in-${index}-lot`"
+                    v-model="line.lotNo"
+                    directory-type="batch"
+                    :form-site-code="createForm.siteCode"
+                    class="w-full min-w-0"
+                    placeholder="批次"
+                    :aria-label="`第 ${index + 1} 行批次`"
+                  />
+                  <p v-if="line.lotNo" class="break-all text-sm text-muted-foreground">
+                    {{ line.lotNo }}
+                  </p>
+                </NvField>
+                <NvField class="min-w-0 gap-1.5 sm:col-span-2">
+                  <NvFieldLabel :for="`wms-in-${index}-quality`">质量状态</NvFieldLabel>
+                  <NvSelect v-model="line.qualityStatus">
+                    <NvSelectTrigger
+                      :id="`wms-in-${index}-quality`"
+                      class="h-9 w-full min-w-0"
+                      :aria-label="`第 ${index + 1} 行质量状态`"
+                      ><NvSelectValue
+                    /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem v-for="o in QUALITY_OPTIONS" :key="o.value" :value="o.value">{{
+                        o.label
+                      }}</NvSelectItem>
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
+                <NvField class="min-w-0 gap-1.5 sm:col-span-2">
+                  <NvFieldLabel :for="`wms-in-${index}-owner`">货主类型</NvFieldLabel>
+                  <NvSelect v-model="line.ownerType">
+                    <NvSelectTrigger
+                      :id="`wms-in-${index}-owner`"
+                      class="h-9 w-full min-w-0"
+                      :aria-label="`第 ${index + 1} 行货主类型`"
+                      ><NvSelectValue
+                    /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem v-for="o in OWNER_OPTIONS" :key="o.value" :value="o.value">{{
+                        o.label
+                      }}</NvSelectItem>
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
+              </div>
             </div>
           </div>
 

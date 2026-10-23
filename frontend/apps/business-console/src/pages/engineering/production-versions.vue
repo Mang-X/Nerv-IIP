@@ -202,14 +202,14 @@ function formatValidRange(from?: string | null, to?: string | null) {
 }
 
 const columns: NvDataTableColumn<BusinessConsoleProductionVersionItem>[] = [
-  { key: 'skuCode', header: '物料', cellClass: 'font-medium' },
-  { key: 'binding', header: 'MBOM / 工艺路线' },
+  { key: 'skuCode', header: '物料', cellClass: 'font-medium', width: 'w-48' },
+  { key: 'binding', header: 'MBOM / 工艺路线', width: 'w-56' },
   { key: 'valid', header: '有效期', width: 'w-52' },
   { key: 'lotSize', header: '批量区间', width: 'w-32' },
   { key: 'priority', header: '优先级', width: 'w-20', align: 'end' },
   { key: 'isDefault', header: '默认', width: 'w-20' },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
+  { key: 'actions', header: '操作', align: 'end', width: 'w-36' },
 ]
 
 // ── 新建 / 编辑表单 ─────────────────────────────────────────────
