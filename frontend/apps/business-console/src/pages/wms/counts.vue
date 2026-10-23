@@ -703,6 +703,7 @@ function refreshAll() {
             <NvField>
               <NvFieldLabel for="cnt-lot">批次</NvFieldLabel>
               <DirectoryPicker
+                :disabled="createIntentLocked"
                 id="cnt-lot"
                 v-model="createForm.lotNo"
                 directory-type="batch"

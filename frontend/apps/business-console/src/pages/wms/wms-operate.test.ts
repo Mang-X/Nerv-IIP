@@ -69,7 +69,6 @@ const wms = vi.hoisted(() => ({
   dispatchWcs: vi.fn(),
   completeWcs: vi.fn(),
   wcsRows: undefined as unknown[] | undefined,
-  createCountExecution: vi.fn(),
   createInbound: vi.fn(),
   createOutbound: vi.fn(),
   inventoryContext: undefined as unknown,
@@ -364,6 +363,7 @@ describe('WMS operate actions', () => {
     setInput('#cnt-sku', 'SKU-001')
     setInput('#cnt-site', 'SITE-001')
     setInput('#cnt-location', 'A-01')
+    setInput('#cnt-lot', 'LOT-COUNT-01')
     setInput('#cnt-expected', '5')
     await flushPromises()
     const form = document.querySelector<HTMLFormElement>('#cnt-expected')!.closest('form')!
@@ -373,6 +373,8 @@ describe('WMS operate actions', () => {
     }
     await submit()
     const original = { ...wms.createCountExecution.mock.calls[0]![0] }
+    expect(original.lotNo).toBe('LOT-COUNT-01')
+    expect(document.querySelector<HTMLInputElement>('#cnt-lot')!.disabled).toBe(unknown)
     await submit()
     expect(wms.createCountExecution.mock.calls[1]![0]).toEqual(original)
     setInput('#cnt-expected', '5.0')
@@ -399,6 +401,12 @@ describe('WMS operate actions', () => {
     expect(wms.createCountExecution.mock.calls[4]![0]).toEqual(edited)
     expect(routeGuardState.guard?.()).toBe(true)
     expect(wrapper.findAllComponents(NvDialog).some((d) => d.props('open'))).toBe(false)
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '新建盘点单')!
+      .trigger('click')
+    await flushPromises()
+    expect(document.querySelector<HTMLInputElement>('#cnt-lot')!.disabled).toBe(false)
     wrapper.unmount()
   })
 
