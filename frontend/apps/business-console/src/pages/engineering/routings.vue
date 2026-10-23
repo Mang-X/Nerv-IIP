@@ -592,7 +592,7 @@ async function openView(row: BusinessConsoleRoutingItem) {
                 </div>
               </div>
 
-              <NvDialogFooter>
+              <NvDialogFooter class="static">
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="releasePending">
                   <NvSpinner v-if="releasePending" aria-hidden="true" />
