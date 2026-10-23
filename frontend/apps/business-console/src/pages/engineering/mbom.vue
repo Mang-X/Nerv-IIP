@@ -560,7 +560,7 @@ function uomLabel(code?: string | null) {
                 <div
                   v-for="(line, index) in form.materialLines"
                   :key="index"
-                  class="grid grid-cols-[1fr_5rem_7rem_6rem_auto] items-end gap-2 rounded-md border p-2"
+                  class="grid grid-cols-1 items-end gap-2 rounded-md border p-2 sm:grid-cols-[1fr_5rem_7rem_6rem_auto]"
                 >
                   <NvField :data-invalid="showErrors && !line.skuCode.trim()">
                     <NvFieldLabel :for="`mbom-mat-${index}`"
@@ -638,7 +638,7 @@ function uomLabel(code?: string | null) {
                 <div
                   v-for="(line, index) in form.recipeLines"
                   :key="index"
-                  class="grid grid-cols-[1fr_1fr_6rem_auto] items-end gap-2 rounded-md border p-2"
+                  class="grid grid-cols-1 items-end gap-2 rounded-md border p-2 sm:grid-cols-[1fr_1fr_6rem_auto]"
                 >
                   <NvField :data-invalid="showErrors && !line.parameterCode.trim()">
                     <NvFieldLabel :for="`mbom-param-${index}`"
@@ -683,7 +683,8 @@ function uomLabel(code?: string | null) {
                 </div>
               </div>
 
-              <NvDialogFooter>
+              <!-- 多行表单的页脚随内容滚动，避免遮住 Tab 聚焦的物料/配方字段。 -->
+              <NvDialogFooter class="static">
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="releasePending">
                   <NvSpinner v-if="releasePending" aria-hidden="true" />
