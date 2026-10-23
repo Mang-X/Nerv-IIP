@@ -80,6 +80,6 @@ describe('NvDialog footer composition', () => {
       .click()
     await nextTick()
     expect(submit).toHaveBeenCalledOnce()
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('组合测试')
+    expect(wrapper!.findComponent(NvDialog).props('open')).toBe(true)
   })
 })
