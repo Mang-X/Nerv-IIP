@@ -49,6 +49,7 @@
 | [0033 文件门面的 owner 标识可取自服务端逐字比对的业务键](0033-file-face-owner-id-from-server-compared-business-key.md) | Gateway / File Storage / Security | 已接受 | 部分修订 [ADR 0030](0030-business-gateway-purpose-scoped-file-transfer.md) 决策 2 中「业务侧每条文件门面固定一个 `filePurpose` 与 owner，不从请求体读取」对 owner 标识的适用性 | 使用方放宽逐字比对、门面写权限收窄到业务键以下、条码模板不再要求文件必填或出现按 id 读取模板的接口时复评；第二个门面援引时逐条核对两个条件 | [`../architecture/platform/file-storage.md`](../architecture/platform/file-storage.md)、[`../../backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Files/BusinessConsoleFileStorageEndpoints.cs`](../../backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Endpoints/Files/BusinessConsoleFileStorageEndpoints.cs) |
 | [0034 平台通用工具与时间处理工具链](0034-common-tools-and-time-toolchain.md) | Platform / Common | 已接受 | 转录既有 Linear 裁决，不取代其它 ADR | 待核（原文未单列）；改变选择或所有权时新建取代记录 | [`../reference/technology-stack.md`](../reference/technology-stack.md) 导航到实际 manifest / 代码 |
 | [0035 业务文档、报表与媒体处理工具链](0035-business-documents-reports-and-media-toolchain.md) | Documents / Reports / Media | 已接受 | 转录既有 Linear 裁决，不取代其它 ADR | 待核（原文未单列）；改变基线、子域所有权或部署边界时新建取代记录 | [`../reference/technology-stack.md`](../reference/technology-stack.md) 导航到实际 manifest / 代码 |
+| [0036 永久保留 DHTMLX Evaluation 试用版](0036-dhtmlx-evaluation-permanent-retention.md) | Scheduling / Frontend | 已接受 | 落盘既有 owner 裁决，不取代其它 ADR | 无到期日；仅 owner 明确改变本裁决时以新记录取代 | [`../../frontend/packages/scheduling/README.md`](../../frontend/packages/scheduling/README.md)、[`../product/scheduling/design.md`](../product/scheduling/design.md) |
 
 ## 待核项的阅读边界
 

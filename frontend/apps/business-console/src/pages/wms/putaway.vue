@@ -319,30 +319,53 @@ const columns: NvDataTableColumn<PutawayRow>[] = [
   {
     key: 'taskNo',
     header: '任务号',
-    cellClass: 'font-medium',
+    width: 'w-56',
+    cellClass: 'font-medium whitespace-normal break-all',
     // warehouseTaskId 是系统 GUID，不上屏；没有人读任务号就如实留空。
     accessor: (r) => r.taskNo ?? '无任务号',
   },
   { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'sourceOrderNo', header: '来源单据', accessor: (r) => r.sourceOrderNo ?? '—' },
+  {
+    key: 'sourceOrderNo',
+    header: '来源单据',
+    width: 'w-56',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => r.sourceOrderNo ?? '—',
+  },
   {
     key: 'skuCode',
     header: '物料',
+    width: 'w-56',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) => skuText(r.skuCode),
   },
-  { key: 'inventoryContext', header: '库存上下文', width: 'w-72' },
+  {
+    key: 'inventoryContext',
+    header: '库存上下文',
+    width: 'w-72',
+    cellClass: 'whitespace-normal break-all',
+  },
   {
     key: 'location',
     header: '起讫库位',
+    width: 'w-64',
+    cellClass: 'whitespace-normal break-all',
     accessor: (r) => `${locationLabel(r.fromLocationCode)} → ${locationLabel(r.toLocationCode)}`,
   },
   {
     key: 'quantity',
     header: '数量',
+    width: 'w-24',
     align: 'end',
     accessor: (r) => formatQuantity(r.executedQuantity ?? r.plannedQuantity),
   },
-  { key: 'createdAtUtc', header: '创建时间', accessor: (r) => formatDateTime(r.createdAtUtc) },
+  {
+    key: 'createdAtUtc',
+    header: '创建时间',
+    width: 'w-48',
+    cellClass: 'whitespace-normal break-all',
+    accessor: (r) => formatDateTime(r.createdAtUtc),
+  },
 ]
 
 function rowKey(row: PutawayRow) {

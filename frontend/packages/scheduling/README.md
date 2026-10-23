@@ -1,9 +1,9 @@
 # @nerv-iip/scheduling
 
 统一接口的两个排程可视化组件：**工单甘特图**（`GanttChart`）与**资源甘特图**（`ResourceSchedulerBoard`）。
-通过一层「引擎无关」适配，最小可行产品（MVP）使用 DHTMLX Gantt 试用专业版渲染；后续切换自研引擎时**只更换适配器**，组件层与业务层零改动。
+通过一层「引擎无关」适配，使用 DHTMLX Gantt Professional Evaluation 试用版渲染。本仓库无商业部署、不涉及商业行为，永久保留现有试用版，不更换、不移除，也不承诺后续采购或自研；裁决见 [ADR 0036](../../../docs/adr/0036-dhtmlx-evaluation-permanent-retention.md)。
 
-## 三层架构(换引擎只换中间一层)
+## 三层架构
 
 ```
 Vue 组件层      GanttChart · ResourceSchedulerBoard（稳定 props/emits）
@@ -13,43 +13,23 @@ SchedulingEngine 适配器接口   mount/setData/applyCommand/on/destroy(engine/
 数据契约层      ScheduleModel + aps-mapper(model/) —— 引擎只消费它，不触及 APS 契约细节
 ```
 
-DHTMLX 供应商包缺失时（CI、文档构建或未配置本地试用包），`readOnly=true` 的 `SchedulingCanvas` 使用本包的只读 DOM 时间轴，仍展示真实任务、资源泳道、班次/日刻度、冲突与锁定状态；编辑态继续显示「排程引擎未加载」。该适配层不提供拖拽/改派，也没有引入第二套第三方甘特库。
+DHTMLX 供应商包缺失时，`readOnly=true` 的 `SchedulingCanvas` 使用本包的只读 DOM 时间轴，仍展示真实任务、资源泳道、班次/日刻度、冲突与锁定状态；编辑态继续显示「排程引擎未加载」。该适配层不提供拖拽/改派，也没有引入第二套第三方甘特库。
 
 **可替换性由 `engine/conformance.ts` 保证**：任何 `SchedulingEngine` 实现传入 `runEngineConformance(makeEngine)` 后，必须通过同一套契约测试。单元测试使用内联 `FakeEngine` 测试替身（仅存在于 `engine/conformance.selfcheck.test.ts`，不进入产品源码目录，也不导出）自校验；试用包存在时也会测试 `DhtmlxEngine`（见下）。
 
-## 安装 DHTMLX 试用专业版（生产渲染必需；缺失时显示占位）
+## DHTMLX Evaluation 供应商包
 
-> **许可与供应商包移出计划（TODO #1270）**：负责人已确认持有 DHTMLX **商业许可**。下面的试用包流程
-> 是过渡状态——正式授权包接入后，`vendor/dhtmlx/` 目录与本节安装步骤一并移除，适配层接口不变
-> （可替换性由 `engine/conformance.ts` 保证）。进度跟踪见议题 #1270。
+仓库已跟踪 `vendor/dhtmlx/dhtmlxgantt.es.js`、`dhtmlxgantt.css` 与 `dhtmlxgantt.d.ts`，保留厂商 Evaluation 许可声明、提示与水印。干净检出已有这些文件，无需手工拷贝供应商包或商业登录。
 
-试用版**评估许可禁止分发**，库文件**不提交至 Git**。两种方式任选：
+business-console 的 `vite.config.ts` 检测到供应商包后，会自动将 `@dhx/trial-gantt`（es.js）和
+`@dhx/trial-gantt/codebase/dhtmlxgantt.css` 别名到供应商包；DHTMLX 布局/网格 CSS 在 `main.ts` 与
+预览入口中以副作用方式导入。**CSS 子路径别名必须排在 `@dhx/trial-gantt` 之前**（Vite 字符串别名采用前缀匹配）。
 
-1. 从私有源安装（推荐）：
-   ```bash
-   npm config set @dhx:registry=https://npm.dhtmlx.com
-   pnpm add @dhx/trial-gantt --filter @nerv-iip/scheduling
-   ```
-2. 本地试用包（已验证）：将 `gantt_trial/codebase/` 拷到 `frontend/packages/scheduling/vendor/dhtmlx/`（已在 gitignore 中排除）：
-   ```powershell
-   Copy-Item 'C:\…\gantt_trial\codebase\*' 'frontend\packages\scheduling\vendor\dhtmlx\' -Recurse -Force
-   ```
-   business-console 的 `vite.config.ts` 检测到供应商包后，会自动将 `@dhx/trial-gantt`（es.js）和
-   `@dhx/trial-gantt/codebase/dhtmlxgantt.css` 别名到供应商包；DHTMLX 布局/网格 CSS 在 `main.ts` 与
-   预览入口中以副作用方式导入。**CSS 子路径别名必须排在 `@dhx/trial-gantt` 之前**（Vite 字符串别名采用前缀匹配）。
+适配器通过 `engine/dhtmlx/loader.ts` 动态加载；`engine-kind="auto"` 在检测到 DHTMLX 时使用它。
+供应商包缺失时沿用上述只读时间轴或编辑态未加载提示，不回退至 NativeEngine。
+条件别名让 `@dhx/trial-gantt` 可解析到供应商包或桩实现。
 
-无论哪种方式，适配器都通过 `engine/dhtmlx/loader.ts` 动态加载；`engine-kind="auto"` 在检测到 DHTMLX 时使用它，
-否则**不挂载引擎、显示占位**（不再回退至 NativeEngine；正式自研引擎见后续 PR）。
-条件别名让 `@dhx/trial-gantt` 始终可解析（供应商包或桩实现），保证无许可时 `vite build` 也不会失败。
-
-> CI 无供应商包时，只读组件渲染本包内置时间轴（`data-testid="readonly-schedule-timeline"`）；本地接入供应商包后，预览与页面使用真实 DHTMLX（`data-engine="dhtmlx"`）。
-
-## 换成自研引擎
-
-1. 新建 `engine/<your>/YourEngine.ts`，实现 `SchedulingEngine` 接口（`engine/engine.ts`）。
-2. 编写 `YourEngine.test.ts`：`describe('YourEngine conformance', () => runEngineConformance(() => new YourEngine()))`。
-3. 在 `components/useEngine.ts` 的 `build()` 选择逻辑中加入它（必要时扩展 `EngineKind`）。
-4. 组件层、组合式函数和业务页面**无需改动**。
+> 无供应商包时，只读组件渲染本包内置时间轴（`data-testid="readonly-schedule-timeline"`）；供应商包可用时，预览与页面使用 DHTMLX（`data-engine="dhtmlx"`）。
 
 ## 公开导出
 
