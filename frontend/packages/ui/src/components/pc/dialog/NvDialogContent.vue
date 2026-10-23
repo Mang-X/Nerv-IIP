@@ -26,6 +26,8 @@ import { cn } from '../../../lib/utils'
  * 按内容撑高,弹框矮时依旧居中,弹框高时行轨道长过遮罩、弹框贴着上边距排布,
  * 遮罩滚动即可读全 —— 不会出现 flex 居中那种「上半截永远滚不到」的经典陷阱。
  * 配套 `NvDialogFooter` 默认 `sticky bottom-0`,操作按钮常驻。
+ * 调用方也可选择 Content 或内层 form 限高滚动；只设置一个局部滚动容器，
+ * Footer 在该容器内正常占位，不再假设直接父级一定具有 Content 的 p-6。
  */
 const props = defineProps<DialogContentProps & { class?: HTMLAttributes['class'] }>()
 const emits = defineEmits<DialogContentEmits>()

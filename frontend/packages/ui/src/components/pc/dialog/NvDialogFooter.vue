@@ -9,10 +9,10 @@ import { NvButton } from '../button'
  * `show-close-button` for an auto outline "关闭" button, or compose your own
  * actions in the default slot.
  *
- * 默认 `sticky bottom-0`:长表单弹框滚动时操作按钮常驻底部,不跟着内容滚出视口
- * (#1418)。负外边距把 `bg-card` 铺到弹框自身 `p-6` 的内边距边缘,滚动内容不会从
- * 按钮下方的缝隙里透出来;`rounded-b-xl` 保证盖住圆角处不出现直角色块。弹框不滚动
- * 时 sticky 与 static 渲染完全一致 —— 短弹框零视觉变化。
+ * 默认 `sticky bottom-0`，相对最近的滚动容器吸底，并在正常文档流中保留完整高度。
+ * 不用负外边距抵消父级 padding：Footer 既可直接位于 Content，也可嵌入无 padding
+ * 或局部滚动的 form。水平边界由父容器负责，字段与操作区间距由父级 gap 负责。
+ * 自身上下 padding 留出按钮呼吸空间，不能用负底边距压缩末字段的滚动占位。
  */
 const props = withDefaults(
   defineProps<{
@@ -30,7 +30,7 @@ const props = withDefaults(
     data-slot="nv-dialog-footer"
     :class="
       cn(
-        'sticky bottom-0 z-10 -mx-6 -mb-6 flex flex-col-reverse gap-2 rounded-b-xl bg-card px-6 pt-3 pb-6 sm:flex-row sm:justify-end',
+        'sticky bottom-0 z-10 flex flex-col-reverse gap-2 rounded-b-xl bg-card py-3 sm:flex-row sm:justify-end',
         props.class,
       )
     "
