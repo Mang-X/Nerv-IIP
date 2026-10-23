@@ -1,0 +1,1146 @@
+[
+  {
+    "index": 1,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/01-materials.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "4bf1c2a548dbbbed391734304ccfaf38709ecc18c7f39264bee9652306ac064a"
+  },
+  {
+    "index": 2,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/01b-units.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "2479169023e3f750838eb7b4bfa1107c42923a5d6617a954a25c8cdccd35d7c9"
+  },
+  {
+    "index": 3,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/01c-facilities.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "f3ae51a2e06733b02066fedf977e642d89765db5e4f4446dc0c4b5d979e83e12"
+  },
+  {
+    "index": 4,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/01d-devices.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "8f8047c347cb3666cc38a170f060d775c7abb981d6d755d48a5c952b478b4e36"
+  },
+  {
+    "index": 5,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/02-item-revision.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      576,
+      526
+    ],
+    "sha256": "5aed86e5c68cdb30c2cbed5d1e7ded09086e09940e6becdeec1cb228f7ff8dc3"
+  },
+  {
+    "index": 6,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/03-item-published.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "f3a16dd9ce895629ac66ca05d3cd47aa15bb3fd37c2a4a3c2cb79f69fb9a1865"
+  },
+  {
+    "index": 7,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/04-ebom-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      768,
+      480
+    ],
+    "sha256": "2851c6bd1ae61c81094d3357ae4f2b6904a7778919c18106448ddb3d9fa9103c"
+  },
+  {
+    "index": 8,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/05-ebom-detail.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      512,
+      1000
+    ],
+    "sha256": "e58e0641711a7a72dc1e3e49709ac3c78f741b0a2197b8ddcfdf33ffc0fb4c93"
+  },
+  {
+    "index": 9,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/06-mbom-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      768,
+      612
+    ],
+    "sha256": "9cfe6f19d55b8e00593328340767c35bcaeb64a53012d2a19f353b793f844f6c"
+  },
+  {
+    "index": 10,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/07-mbom-detail.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      512,
+      1000
+    ],
+    "sha256": "d2cb553d207e99e38144416c7cf396b536df7ec795bf073af2b6bfea251dc8c2"
+  },
+  {
+    "index": 11,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/08-standard-operation.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      672,
+      922
+    ],
+    "sha256": "7a69ac6710e970a7a1a0f3e304da35e067e7d60fe3851decc6caf5fab204a368"
+  },
+  {
+    "index": 12,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/09-routing-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      768,
+      432
+    ],
+    "sha256": "282e4a1efb200ab0021319bfbbec3b4ffe8ea6d0c26a192fdb2d00500190966b"
+  },
+  {
+    "index": 13,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/10-routing-detail.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      512,
+      1000
+    ],
+    "sha256": "a0bce503c6b88d37d190d3161dd40ddc019c3983186f6ba837e43ad29bd97d7c"
+  },
+  {
+    "index": 14,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/11-production-versions.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "40e790e3654c34589c151b6ecf753160409deda34ddf6499577124a9f566f8c4"
+  },
+  {
+    "index": 15,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/12-production-version-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      672,
+      668
+    ],
+    "sha256": "cf6edbd6bc5f20f7a803aad4b219428613e495008e5f4c2deaf72d84558364d3"
+  },
+  {
+    "index": 16,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/13-version-resolved.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "8ab537fa00e3e1020eb154a5b60ef6cd0a456edb83fce06a4ac3105b7797677d"
+  },
+  {
+    "index": 17,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/14-document-uploaded.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      576,
+      746
+    ],
+    "sha256": "2dc9bc82a9e865b5d391c2a6d9c8ee729a3cd9018b3667d814575e8eb06ba47e"
+  },
+  {
+    "index": 18,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/15-document-detail.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      512,
+      1000
+    ],
+    "sha256": "6f77dfd4847d9ac20b2478c556f3b3b0355374886ffab5c35e84d8ad0a3fb67a"
+  },
+  {
+    "index": 19,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/16-document-open-link.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      512,
+      1000
+    ],
+    "sha256": "1b40b71f27f9a8a1d493f0bd26eaa78bbdd2e1f06006e7af170082b291004610"
+  },
+  {
+    "index": 20,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/20261023-eco-approval-approved.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      622,
+      529
+    ],
+    "sha256": "13109f6d625e760fedbdc971c47e6446e30216bfba404d4dc9ea2099992e8fba"
+  },
+  {
+    "index": 21,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/20261023-eco-approval-decision.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "21ebceeff7e02373f9512faf9e7cb4d25520fab2b77469610e0502cf3c6c808b"
+  },
+  {
+    "index": 22,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/20261023-eco-approval-pending.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      622,
+      451
+    ],
+    "sha256": "556d26b818451303d315581819e1454f890fa4ec3a24327d6351543168775a85"
+  },
+  {
+    "index": 23,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/20261023-eco-production-impact.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      672,
+      1406
+    ],
+    "sha256": "6d1dead847a7fd394e4887c905738da049d49cebabe35a4aa6d043efdf614ea7"
+  },
+  {
+    "index": 24,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/20261023-eco-production-released.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      512,
+      1000
+    ],
+    "sha256": "470a20f710da5ec9ebcba049e02e23830c2946d8290e7911ebe5e0a17f417279"
+  },
+  {
+    "index": 25,
+    "image": "frontend/apps/docs/docs/public/images/engineering-workflow/20261023-production-version-archived.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/engineering-to-production.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "e6e0ddd8797424e5e298151e06f361ea5f861054e3ed3b9611f54e4a5185bd7c"
+  },
+  {
+    "index": 26,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/01-master-plan-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      672,
+      362
+    ],
+    "sha256": "db6ffdd4921ada46d6e16d9df0d654ee629ed5f75f04b5a52f2709ddd9587b2f"
+  },
+  {
+    "index": 27,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/03-master-plan-release.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      1440,
+      1000
+    ],
+    "sha256": "27b16756b12fd4b2242636b2bc18f35389bc4db9627c8bae3ce34c13fbd95e2c"
+  },
+  {
+    "index": 28,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/04-master-plan-published.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      1440,
+      1000
+    ],
+    "sha256": "605a2cafed27b86ce8afa55126c65254957899ae8f791f6eae8ef9da2dbc20b1"
+  },
+  {
+    "index": 29,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/05-material-planning-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      448,
+      212
+    ],
+    "sha256": "44c4131172534d771e18126ef9ed279b1b11b62f0c430c6bc076707b94da744c"
+  },
+  {
+    "index": 30,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/07-suggestion-accepted.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      1296,
+      202
+    ],
+    "sha256": "ee3117e2228775a9477691059fcb2d5d164bbbf60a020feaf984fdb6ba84ab7b"
+  },
+  {
+    "index": 31,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/08-work-order-detail.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      1600,
+      1000
+    ],
+    "sha256": "436c87912d26e03d8d2e864a26fd51b4c7daa255fb7840b280d19dbe8c8a9b34"
+  },
+  {
+    "index": 32,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/09-material-issue-confirm.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      448,
+      468
+    ],
+    "sha256": "37c27745db18e5501fbced22206980e59e4b5cd90293b81fa146fad475f67e98"
+  },
+  {
+    "index": 33,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/10-line-side-receipt-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      448,
+      334
+    ],
+    "sha256": "bd663c4fc234fb2bf7d10de6cba76b07519d2278c2ef52e97778e7f6c5159be0"
+  },
+  {
+    "index": 34,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/12-work-order-release-confirm.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      512,
+      360
+    ],
+    "sha256": "b738b11a78041ad558e2a67d2a17a02b7e42989c574061f05004e37f45b87f65"
+  },
+  {
+    "index": 35,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/13-schedule-select.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md",
+      "frontend/apps/docs/docs/how-to/adjust-production-schedule.md"
+    ],
+    "size": [
+      1600,
+      1000
+    ],
+    "sha256": "a90fe08a4e4c5941368bf70308bab7ff194ce64287f681b1ed9e4fe1f8daf6dd"
+  },
+  {
+    "index": 36,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/14-schedule-gantt.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      1600,
+      1000
+    ],
+    "sha256": "a5c82000b637b4bac0de70004756621f3c996c2b5f50749e2333496bdf3ee4ab"
+  },
+  {
+    "index": 37,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/15-schedule-compare.png",
+    "docs": [
+      "frontend/apps/docs/docs/how-to/adjust-production-schedule.md"
+    ],
+    "size": [
+      1600,
+      1000
+    ],
+    "sha256": "c5ba555813c78b4f03328fb3acf071c47677b6b2705362a82d84486d487bf62f"
+  },
+  {
+    "index": 38,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/16-schedule-publish-confirm.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md",
+      "frontend/apps/docs/docs/how-to/adjust-production-schedule.md"
+    ],
+    "size": [
+      448,
+      178
+    ],
+    "sha256": "a0d4cb30cbe2727603f2ac70b8ce33a71a832ab326638b3aea9a972761495308"
+  },
+  {
+    "index": 39,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/17-dispatch-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      512,
+      546
+    ],
+    "sha256": "7bd86b119b1aba95f95d7f8b1fadd66b6e6285f2ac623f3438ee18400624817d"
+  },
+  {
+    "index": 40,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/18-current-instruction.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      1288,
+      159
+    ],
+    "sha256": "a60fe3f38ebd72d00f79348ca680d2ea1a55fbc999a8d5068679bdaec7bd7ca0"
+  },
+  {
+    "index": 41,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/19-operation-actions.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      1600,
+      1000
+    ],
+    "sha256": "cae8519c5b549c288fbee2f1df1db82787444faee9eda075de9c645265f4855e"
+  },
+  {
+    "index": 42,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/20-production-report-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      512,
+      598
+    ],
+    "sha256": "7a15e50a8ac90da217f1a30732f06266a6978f015744b7612280a72a11e1b657"
+  },
+  {
+    "index": 43,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/21-inspection-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      768,
+      816
+    ],
+    "sha256": "77f5b87bbd613d5ac99957b1b8518bc094f8c531366374bfbf240f6642b9a1c9"
+  },
+  {
+    "index": 44,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/24-operation-rescheduled.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md",
+      "frontend/apps/docs/docs/how-to/recover-production-workflow.md"
+    ],
+    "size": [
+      1600,
+      1000
+    ],
+    "sha256": "c6f45621857222d7613d239e329e07000bad40d7d1381eba0a09a2172c89e670"
+  },
+  {
+    "index": 45,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/25-finished-goods-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      512,
+      1000
+    ],
+    "sha256": "7cffcc131df3d0bdb583cfaa97443f18d0d1440a77cc1431eae9762509ce5ef6"
+  },
+  {
+    "index": 46,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/26-finished-goods-posted.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      1600,
+      1000
+    ],
+    "sha256": "5c5a019d28b45b1c587634bffba928ed7e6ad3499cef70f947fdd692607d0419"
+  },
+  {
+    "index": 47,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/27-inventory-source.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      1152,
+      636
+    ],
+    "sha256": "4de18de7711926ae2feb0f79f9a3b6bbaaa8b91337ce54c2e959bf22fd75da81"
+  },
+  {
+    "index": 48,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/28-cost-summary.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md",
+      "frontend/apps/docs/docs/how-to/check-work-order-cost.md"
+    ],
+    "size": [
+      1600,
+      1000
+    ],
+    "sha256": "607fa3c66d73904634b142ea3d350afe362463207b39048f50885a5d07ce40bc"
+  },
+  {
+    "index": 49,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/29-cost-details.png",
+    "docs": [
+      "frontend/apps/docs/docs/how-to/check-work-order-cost.md"
+    ],
+    "size": [
+      1600,
+      1000
+    ],
+    "sha256": "d71b3f7e0a88e7c20bf82c61e9bc3bb94b8a3f5b16f154459880644bd8ee5346"
+  },
+  {
+    "index": 50,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/30-historical-batch-picker.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      512,
+      164
+    ],
+    "sha256": "53a09083eeb31c1c7f462e98ce2e36aac9f7b57065058c196398287902dc2b8d"
+  },
+  {
+    "index": 51,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/31-trace-results.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      1600,
+      1000
+    ],
+    "sha256": "3d5191bebfdf70ae99369242c903f47dc6e91e7fd4439974e0a44ca5bd43eb72"
+  },
+  {
+    "index": 52,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/32-trace-report-detail.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/planning-to-finished-goods.md"
+    ],
+    "size": [
+      512,
+      502
+    ],
+    "sha256": "45c50b9762729ed9d92d6ce902cf7e6bca92c756bc668f2a7cf6863a06872804"
+  },
+  {
+    "index": 53,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/33-disposition-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/how-to/recover-production-workflow.md"
+    ],
+    "size": [
+      512,
+      1000
+    ],
+    "sha256": "8b769cedcb11e2bba386d7f58e20d55aef615ddaa7ab61221fbfe88db3da3db1"
+  },
+  {
+    "index": 54,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/34-disposition-evidence.png",
+    "docs": [
+      "frontend/apps/docs/docs/how-to/recover-production-workflow.md"
+    ],
+    "size": [
+      512,
+      1000
+    ],
+    "sha256": "b2b751f6f3830cf87d16dadcd9980642512c09638a4ea538374cd31f6452eb5d"
+  },
+  {
+    "index": 55,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/35-disposition-submitted.png",
+    "docs": [
+      "frontend/apps/docs/docs/how-to/recover-production-workflow.md"
+    ],
+    "size": [
+      512,
+      1000
+    ],
+    "sha256": "c28b0ff49699e44aecccf7446f66c09a4a950983b97c299fdc7a6d188b23d3ed"
+  },
+  {
+    "index": 56,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/36-downtime-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/how-to/recover-production-workflow.md"
+    ],
+    "size": [
+      448,
+      562
+    ],
+    "sha256": "e0fd1919ed2c9d5e7ada0934bfde4f2f714cae89de3c68de24860eb0736c960f"
+  },
+  {
+    "index": 57,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/37-downtime-recovery-confirm.png",
+    "docs": [
+      "frontend/apps/docs/docs/how-to/recover-production-workflow.md"
+    ],
+    "size": [
+      448,
+      326
+    ],
+    "sha256": "30b700ca382d9d84b93f287229da23b3cfed1720fd3b7ce351ac63649a0b68bf"
+  },
+  {
+    "index": 58,
+    "image": "frontend/apps/docs/docs/public/images/production-workflow/38-downtime-recovered.png",
+    "docs": [
+      "frontend/apps/docs/docs/how-to/recover-production-workflow.md"
+    ],
+    "size": [
+      1600,
+      1000
+    ],
+    "sha256": "9a0d31ae1773c99b3d8dd3f07c11203a2f1f197f186907f2124e7bd4e2a23d14"
+  },
+  {
+    "index": 59,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/00a-work-pool-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      448,
+      296
+    ],
+    "sha256": "c1cac135944ec956f30bd53395d2276705e19b75b3695c546fc6c38f90703349"
+  },
+  {
+    "index": 60,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/00b-work-pool-member.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      448,
+      274
+    ],
+    "sha256": "79d0dcb7a57fd2a167807a167ef2a06d46110f9217addfa4a050659661670072"
+  },
+  {
+    "index": 61,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/01-inbound-scope.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "114e29cdadc2d2c096bde0afdd4e86066baa00bda92c16327a28ca2d7a330a9c"
+  },
+  {
+    "index": 62,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/02-inbound-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      768,
+      442
+    ],
+    "sha256": "08e9bc631a75f74160998f9fde69d33a0cf9bf9e32f6e1ab568fde3780208a99"
+  },
+  {
+    "index": 63,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/04-inbound-confirm.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      448,
+      178
+    ],
+    "sha256": "79d3b0bf0bc97506aeb6f458d970d44d37368531147e43aa2348891fe990fa1c"
+  },
+  {
+    "index": 64,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/05-inbound-received.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "ce615a5390fd5b140e977218b0885432365c3dbdcce4eb79a1ac30141ad7fb8c"
+  },
+  {
+    "index": 65,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/06-inbound-assignment.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      448,
+      322
+    ],
+    "sha256": "4c80c649275c6d1b2550f19633453bb1ceae6c78e875c700fcf41659a4374b1c"
+  },
+  {
+    "index": 66,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/07-putaway-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      448,
+      368
+    ],
+    "sha256": "6ca5cb4be19297721910902485053c8fa6288e0cff9429be069ab205b889f673"
+  },
+  {
+    "index": 67,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/08-putaway-created.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "28bc8e81c0649843e17393d365c2d299eef70c3074ef8a21e06ce099ca28cfaf"
+  },
+  {
+    "index": 68,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/09-pda-putaway-list.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      430,
+      932
+    ],
+    "sha256": "7097cdc074cba8ebaea2842717df374866fccf357bdb47b3885dfed65a57a1a5"
+  },
+  {
+    "index": 69,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/10-pda-putaway-start.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      430,
+      221
+    ],
+    "sha256": "7b0b0d9a587e0ffded673b54a3ba947d0c138b3e269c3db0e7fe5c650d43543e"
+  },
+  {
+    "index": 70,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/11-pda-putaway-keypad.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      430,
+      932
+    ],
+    "sha256": "f5af4bfa6baab5221612effcb621cb3cd7ff212ef9ea9a8cb2883cbe87dec11b"
+  },
+  {
+    "index": 71,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/12-pda-putaway-quantity.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      430,
+      551
+    ],
+    "sha256": "b9465b6198bbc2581c4800c683068d11085b03857212e0d0d9f6875d4e8973f4"
+  },
+  {
+    "index": 72,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/13-pda-putaway-completed.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      430,
+      932
+    ],
+    "sha256": "ab826845dd696857f1228979e7c57b1df35d86d45c14707f9d19e56c4024e51a"
+  },
+  {
+    "index": 73,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/15-outbound-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      768,
+      442
+    ],
+    "sha256": "1e0f51c0fa806c93cb68c100be436de7003a6c463c0fdc3470e1a47d235d2ce5"
+  },
+  {
+    "index": 74,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/16-outbound-created.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "3596bc551b37beda1d0afb418e75c5b666716ebb92887362edaf7808cf913dae"
+  },
+  {
+    "index": 75,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/17-picking-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      448,
+      362
+    ],
+    "sha256": "fe66b78981d215b7cd02b5adc2f6cfb04206e47e24c41c9f6bf37a454c984306"
+  },
+  {
+    "index": 76,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/18-pda-picking-list.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      430,
+      932
+    ],
+    "sha256": "5f217a456b73f6c2837383be49a373a2b5533f24d384f4b9d37720cf35c6b25c"
+  },
+  {
+    "index": 77,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/19-pda-picking-quantity.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      430,
+      551
+    ],
+    "sha256": "17e0a974fc692553e49b7f454e92d6047ebb9f7beaa430b425bda3af1342786c"
+  },
+  {
+    "index": 78,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/20-outbound-picked.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "fae4ff1d2e8e89a4b5d8384fdc6155dcb6a541cfc1d7bd5097aeebdba730423a"
+  },
+  {
+    "index": 79,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/20261023-count-assign.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      448,
+      322
+    ],
+    "sha256": "f854367d495404c22d0e45cdad32b7c8f59876864235f94eb5b90414e99d3fa9"
+  },
+  {
+    "index": 80,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/20261023-count-batch-form.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      448,
+      392
+    ],
+    "sha256": "22ba49c68bb0979b7458511b153c558f398a3a4fb10f245f227ab5f97e940713"
+  },
+  {
+    "index": 81,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/20261023-count-console-filled.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      448,
+      408
+    ],
+    "sha256": "ec80c62860976297296671d87c3355f6cd930a198b6977d748ca72c8e80bce5e"
+  },
+  {
+    "index": 82,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/20261023-count-created.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "62e2f922595fd4c57904b419dc46cc65bc21db2ab6adbbfd20d0cd52287027ad"
+  },
+  {
+    "index": 83,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/20261023-counts-completed.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "d450690959c2d9f07dc73e1397228652ddd8cc42446a206afe33ff9f3037512a"
+  },
+  {
+    "index": 84,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/20261023-final-balance-identity.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "121c58f3660ca6928da0b4fc58e2a503a0bee4d2c06cca223235456b8d34d872"
+  },
+  {
+    "index": 85,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/20261023-final-balance-quantity.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "a78ecd390fc1b4ec7e81fcff009eb6236dd7168000c9b3b5dfd8b48101d40837"
+  },
+  {
+    "index": 86,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/20261023-pda-count-completed.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      390,
+      844
+    ],
+    "sha256": "061fb1f5b9145f697a63959e4e2aaf283608a062c55ff49ccf670852aa8c5d41"
+  },
+  {
+    "index": 87,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/20261023-pda-count-context.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      390,
+      421
+    ],
+    "sha256": "ec1c855218684bdff84c80a8087714cadbb6024594d897b7c6175aa3e97509a1"
+  },
+  {
+    "index": 88,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/20261023-pda-count-filled.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      390,
+      457
+    ],
+    "sha256": "f4750743a4ab348f98fc77d529d4fdff1753e4ac5fe54a3d76d609c8a00d9ff8"
+  },
+  {
+    "index": 89,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/20261023-pda-count-keypad.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      390,
+      844
+    ],
+    "sha256": "47e8cab8d9bdaeee85bf14dd2d9b8a08a170612a073638dd809dc1d0e38b0ef8"
+  },
+  {
+    "index": 90,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/20261023-pda-count-list.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      390,
+      844
+    ],
+    "sha256": "e200530e5bff6c467001029a73da9828725de41740192ccde1cd9b30144930a4"
+  },
+  {
+    "index": 91,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/20261023-pda-count-submitted.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      390,
+      844
+    ],
+    "sha256": "2c5cf4e99b0c64c549d745a6e39f1e38a3c9328d3b684f798475d747ea246439"
+  },
+  {
+    "index": 92,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/21-outbound-review.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      448,
+      274
+    ],
+    "sha256": "e21e5e948467ae6b9836ca6488074d7fd3f7011a48fc8549dc0ee7bb878c9e7f"
+  },
+  {
+    "index": 93,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/22-outbound-completed.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "d0c3e17a91d80da2c862a4a5abb99171b06dc50b2bb68f5f1b74751f01963b87"
+  },
+  {
+    "index": 94,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/23-stock-movements.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "0e808112e8552c1ba6fe5a84ed63e370f0f005d52445120f4f9fb43c26df740e"
+  },
+  {
+    "index": 95,
+    "image": "frontend/apps/docs/docs/public/images/warehouse-workflow/30-wcs.png",
+    "docs": [
+      "frontend/apps/docs/docs/getting-started/wms-inventory-cycle.md"
+    ],
+    "size": [
+      1176,
+      928
+    ],
+    "sha256": "25dec16aeb72406be539cd6894b6dfeddf5272148ea34c5f5310268fef91cee0"
+  }
+]
