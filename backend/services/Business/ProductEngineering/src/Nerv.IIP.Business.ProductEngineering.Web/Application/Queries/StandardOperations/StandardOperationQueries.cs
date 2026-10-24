@@ -26,36 +26,43 @@ public sealed record ListStandardOperationsQuery(
     bool? Enabled,
     string? Search,
     int Skip = 0,
-    int Take = 100) : IQuery<ListStandardOperationsResponse>;
+    int Take = OffsetPage.DefaultTake) : IQuery<ListStandardOperationsResponse>;
+
+public sealed class ListStandardOperationsQueryValidator : AbstractValidator<ListStandardOperationsQuery>
+{
+    public ListStandardOperationsQueryValidator() =>
+        this.AddTenantRules(query => query.OrganizationId, query => query.EnvironmentId);
+}
 
 public sealed class ListStandardOperationsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListStandardOperationsQuery, ListStandardOperationsResponse>
 {
     public async Task<ListStandardOperationsResponse> Handle(ListStandardOperationsQuery request, CancellationToken cancellationToken)
     {
+        var tenant = TenantScope.From(request.OrganizationId, request.EnvironmentId);
+        var page = OffsetPage.From(request.Skip, request.Take);
+        var search = SearchTerm.From(request.Search).Value;
         var query = dbContext.StandardOperations
             .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId);
+            .Where(x => x.OrganizationId == tenant.OrganizationId && x.EnvironmentId == tenant.EnvironmentId);
 
         if (request.Enabled is not null)
         {
             query = query.Where(x => x.Enabled == request.Enabled.Value);
         }
 
-        var search = EngineeringQueryParameters.NormalizeOptionalText(request.Search);
         if (search is not null)
         {
-            var normalizedSearch = search.ToUpperInvariant();
             query = query.Where(x =>
-                x.OperationCode.ToUpper().Contains(normalizedSearch) ||
-                x.OperationName.ToUpper().Contains(normalizedSearch));
+                x.OperationCode.ToLower().Contains(search) ||
+                x.OperationName.ToLower().Contains(search));
         }
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderBy(x => x.OperationCode)
-            .Skip(EngineeringQueryParameters.NormalizeSkip(request.Skip))
-            .Take(EngineeringQueryParameters.NormalizeTake(request.Take))
+            .Skip(page.Skip)
+            .Take(page.Take)
             .Select(x => new StandardOperationItem(
                 x.OperationCode,
                 x.OperationName,
