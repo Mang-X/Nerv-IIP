@@ -21,6 +21,7 @@ import {
   NvDatePicker,
   NvDialog,
   NvDialogContent,
+  NvDialogBody,
   NvDialogDescription,
   NvDialogFooter,
   NvDialogHeader,
@@ -408,7 +409,7 @@ async function openView(row: BusinessConsoleRoutingItem) {
           </NvDialogTrigger>
           <!-- 工序行数不定，弹框高度会超出视口（实测 970.75px > 950px）：内部滚动，
                别让「发布」按钮被挤到屏幕外够不着（GH#1292 第 7 项）。 -->
-          <NvDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+          <NvDialogContent scrollable class="sm:max-w-3xl">
             <NvDialogHeader>
               <NvDialogTitle>发布工艺路线新版本</NvDialogTitle>
               <!-- 说明不上界面：仅供读屏播报。 -->
@@ -416,183 +417,193 @@ async function openView(row: BusinessConsoleRoutingItem) {
                 按顺序编排工序并指派工作中心，发布为不可变版本。
               </NvDialogDescription>
             </NvDialogHeader>
-            <form class="grid gap-5" @submit.prevent="submitForm">
-              <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-                请完整填写带 *
-                的必填项，确保每道工序有工作中心、标准工序与非负工时，且序号正整数且不重复。
-              </p>
-              <p
-                v-if="!workCentersPending && !hasWorkCenters"
-                class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning"
-                role="alert"
-              >
-                还没有可指派的工作中心。
-                <RouterLink to="/master-data/facilities" class="font-medium underline"
-                  >去基础数据维护工作中心 →</RouterLink
-                >
-              </p>
-              <p
-                v-if="!standardOpsPending && !hasOperations"
-                class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning"
-                role="alert"
-              >
-                还没有可选的标准工序。
-                <RouterLink to="/engineering/standard-operations" class="font-medium underline"
-                  >去标准工序维护 →</RouterLink
-                >
-              </p>
+            <form @submit.prevent="submitForm">
+              <NvDialogBody>
+                <div class="grid gap-5">
+                  <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
+                    请完整填写带 *
+                    的必填项，确保每道工序有工作中心、标准工序与非负工时，且序号正整数且不重复。
+                  </p>
+                  <p
+                    v-if="!workCentersPending && !hasWorkCenters"
+                    class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning"
+                    role="alert"
+                  >
+                    还没有可指派的工作中心。
+                    <RouterLink to="/master-data/facilities" class="font-medium underline"
+                      >去基础数据维护工作中心 →</RouterLink
+                    >
+                  </p>
+                  <p
+                    v-if="!standardOpsPending && !hasOperations"
+                    class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning"
+                    role="alert"
+                  >
+                    还没有可选的标准工序。
+                    <RouterLink to="/engineering/standard-operations" class="font-medium underline"
+                      >去标准工序维护 →</RouterLink
+                    >
+                  </p>
 
-              <FormSectionTitle>版本头</FormSectionTitle>
-              <NvFieldGroup class="grid gap-3 sm:grid-cols-3">
-                <NvField :data-invalid="showErrors && !skuValid">
-                  <NvFieldLabel for="rt-sku"
-                    >产出物料 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <DirectoryPicker
-                    id="rt-sku"
-                    v-model="form.skuCode"
-                    directory-type="material"
-                    creatable
-                    placeholder="选择产出物料"
-                  />
-                </NvField>
-                <NvField :data-invalid="showErrors && !revisionValid">
-                  <NvFieldLabel for="rt-rev"
-                    >修订号 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvInput id="rt-rev" v-model="form.revision" placeholder="如 A、B、001" />
-                </NvField>
-                <NvField :data-invalid="showErrors && !effectiveValid">
-                  <NvFieldLabel>生效日 <span class="text-destructive">*</span></NvFieldLabel>
-                  <NvDatePicker
-                    v-model="form.effectiveDate"
-                    placeholder="选择生效日"
-                    class="w-full"
-                  />
-                </NvField>
-              </NvFieldGroup>
+                  <FormSectionTitle>版本头</FormSectionTitle>
+                  <NvFieldGroup class="grid gap-3 sm:grid-cols-3">
+                    <NvField :data-invalid="showErrors && !skuValid">
+                      <NvFieldLabel for="rt-sku"
+                        >产出物料 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <DirectoryPicker
+                        id="rt-sku"
+                        v-model="form.skuCode"
+                        directory-type="material"
+                        creatable
+                        placeholder="选择产出物料"
+                      />
+                    </NvField>
+                    <NvField :data-invalid="showErrors && !revisionValid">
+                      <NvFieldLabel for="rt-rev"
+                        >修订号 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <NvInput id="rt-rev" v-model="form.revision" placeholder="如 A、B、001" />
+                    </NvField>
+                    <NvField :data-invalid="showErrors && !effectiveValid">
+                      <NvFieldLabel>生效日 <span class="text-destructive">*</span></NvFieldLabel>
+                      <NvDatePicker
+                        v-model="form.effectiveDate"
+                        placeholder="选择生效日"
+                        class="w-full"
+                      />
+                    </NvField>
+                  </NvFieldGroup>
 
-              <div class="flex items-center justify-between">
-                <FormSectionTitle>工序（按顺序）</FormSectionTitle>
-                <NvButton
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  :disabled="!hasWorkCenters || !hasOperations"
-                  @click="addOperation"
-                >
-                  <PlusIcon aria-hidden="true" />
-                  增加工序
-                </NvButton>
-              </div>
-              <p v-if="showErrors && !sequencesValid" class="text-sm text-destructive" role="alert">
-                工序序号须为正整数且互不相同。
-              </p>
-              <div class="grid gap-2">
-                <div
-                  v-for="(op, index) in form.operations"
-                  :key="index"
-                  class="grid sm:grid-cols-[4.5rem_1fr_1fr_6rem_10rem_auto] items-end gap-2 rounded-md border p-2"
-                >
-                  <NvField :data-invalid="showErrors && !sequencesValid">
-                    <NvFieldLabel :for="`rt-seq-${index}`"
-                      >序号 <span class="text-destructive">*</span></NvFieldLabel
-                    >
-                    <NvInput
-                      :id="`rt-seq-${index}`"
-                      v-model.number="op.sequence"
-                      type="number"
-                      min="1"
-                      step="1"
-                    />
-                  </NvField>
-                  <NvField :data-invalid="showErrors && !op.workCenterCode.trim()">
-                    <NvFieldLabel :for="`rt-wc-${index}`"
-                      >工作中心 <span class="text-destructive">*</span></NvFieldLabel
-                    >
-                    <DirectoryPicker
-                      :id="`rt-wc-${index}`"
-                      v-model="op.workCenterCode"
-                      directory-type="work-center"
-                      creatable
-                    />
-                  </NvField>
-                  <NvField :data-invalid="showErrors && !op.operationCode.trim()">
-                    <NvFieldLabel :for="`rt-name-${index}`"
-                      >工序 <span class="text-destructive">*</span></NvFieldLabel
-                    >
-                    <NvSelect
-                      v-model="op.operationCode"
-                      @update:model-value="applyOperationDefaults(op)"
-                    >
-                      <NvSelectTrigger :id="`rt-name-${index}`"
-                        ><NvSelectValue placeholder="选择标准工序"
-                      /></NvSelectTrigger>
-                      <NvSelectContent>
-                        <NvSelectItem
-                          v-for="o in operationOptions"
-                          :key="o.value"
-                          :value="o.value"
-                          >{{ o.label }}</NvSelectItem
-                        >
-                      </NvSelectContent>
-                    </NvSelect>
-                  </NvField>
-                  <NvField
-                    :data-invalid="showErrors && (parseNumber(op.standardMinutes) ?? -1) < 0"
-                  >
-                    <NvFieldLabel :for="`rt-min-${index}`">工时(分)</NvFieldLabel>
-                    <NvInput
-                      :id="`rt-min-${index}`"
-                      v-model="op.standardMinutes"
-                      type="number"
-                      min="0"
-                      step="any"
-                    />
-                  </NvField>
-                  <NvField>
-                    <NvFieldLabel :for="`rt-interruptible-${index}`">排程方式</NvFieldLabel>
-                    <label class="flex items-center gap-2 text-sm">
-                      <NvCheckbox :id="`rt-interruptible-${index}`" v-model="op.interruptible" />
-                      可中断（跨班次续排）
-                    </label>
-                  </NvField>
-                  <div class="flex gap-1">
+                  <div class="flex items-center justify-between">
+                    <FormSectionTitle>工序（按顺序）</FormSectionTitle>
                     <NvButton
                       type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="上移工序"
-                      :disabled="index === 0"
-                      @click="moveUp(index)"
+                      variant="outline"
+                      size="sm"
+                      :disabled="!hasWorkCenters || !hasOperations"
+                      @click="addOperation"
                     >
-                      <ArrowUpIcon aria-hidden="true" />
-                    </NvButton>
-                    <NvButton
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="下移工序"
-                      :disabled="index === form.operations.length - 1"
-                      @click="moveDown(index)"
-                    >
-                      <ArrowDownIcon aria-hidden="true" />
-                    </NvButton>
-                    <NvButton
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      aria-label="删除该工序"
-                      :disabled="form.operations.length <= 1"
-                      @click="removeOperation(index)"
-                    >
-                      <Trash2Icon aria-hidden="true" />
+                      <PlusIcon aria-hidden="true" />
+                      增加工序
                     </NvButton>
                   </div>
+                  <p
+                    v-if="showErrors && !sequencesValid"
+                    class="text-sm text-destructive"
+                    role="alert"
+                  >
+                    工序序号须为正整数且互不相同。
+                  </p>
+                  <div class="grid gap-2">
+                    <div
+                      v-for="(op, index) in form.operations"
+                      :key="index"
+                      class="grid sm:grid-cols-[4.5rem_1fr_1fr_6rem_10rem_auto] items-end gap-2 rounded-md border p-2"
+                    >
+                      <NvField :data-invalid="showErrors && !sequencesValid">
+                        <NvFieldLabel :for="`rt-seq-${index}`"
+                          >序号 <span class="text-destructive">*</span></NvFieldLabel
+                        >
+                        <NvInput
+                          :id="`rt-seq-${index}`"
+                          v-model.number="op.sequence"
+                          type="number"
+                          min="1"
+                          step="1"
+                        />
+                      </NvField>
+                      <NvField :data-invalid="showErrors && !op.workCenterCode.trim()">
+                        <NvFieldLabel :for="`rt-wc-${index}`"
+                          >工作中心 <span class="text-destructive">*</span></NvFieldLabel
+                        >
+                        <DirectoryPicker
+                          :id="`rt-wc-${index}`"
+                          v-model="op.workCenterCode"
+                          directory-type="work-center"
+                          creatable
+                        />
+                      </NvField>
+                      <NvField :data-invalid="showErrors && !op.operationCode.trim()">
+                        <NvFieldLabel :for="`rt-name-${index}`"
+                          >工序 <span class="text-destructive">*</span></NvFieldLabel
+                        >
+                        <NvSelect
+                          v-model="op.operationCode"
+                          @update:model-value="applyOperationDefaults(op)"
+                        >
+                          <NvSelectTrigger :id="`rt-name-${index}`"
+                            ><NvSelectValue placeholder="选择标准工序"
+                          /></NvSelectTrigger>
+                          <NvSelectContent>
+                            <NvSelectItem
+                              v-for="o in operationOptions"
+                              :key="o.value"
+                              :value="o.value"
+                              >{{ o.label }}</NvSelectItem
+                            >
+                          </NvSelectContent>
+                        </NvSelect>
+                      </NvField>
+                      <NvField
+                        :data-invalid="showErrors && (parseNumber(op.standardMinutes) ?? -1) < 0"
+                      >
+                        <NvFieldLabel :for="`rt-min-${index}`">工时(分)</NvFieldLabel>
+                        <NvInput
+                          :id="`rt-min-${index}`"
+                          v-model="op.standardMinutes"
+                          type="number"
+                          min="0"
+                          step="any"
+                        />
+                      </NvField>
+                      <NvField>
+                        <NvFieldLabel :for="`rt-interruptible-${index}`">排程方式</NvFieldLabel>
+                        <label class="flex items-center gap-2 text-sm">
+                          <NvCheckbox
+                            :id="`rt-interruptible-${index}`"
+                            v-model="op.interruptible"
+                          />
+                          可中断（跨班次续排）
+                        </label>
+                      </NvField>
+                      <div class="flex gap-1">
+                        <NvButton
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label="上移工序"
+                          :disabled="index === 0"
+                          @click="moveUp(index)"
+                        >
+                          <ArrowUpIcon aria-hidden="true" />
+                        </NvButton>
+                        <NvButton
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label="下移工序"
+                          :disabled="index === form.operations.length - 1"
+                          @click="moveDown(index)"
+                        >
+                          <ArrowDownIcon aria-hidden="true" />
+                        </NvButton>
+                        <NvButton
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label="删除该工序"
+                          :disabled="form.operations.length <= 1"
+                          @click="removeOperation(index)"
+                        >
+                          <Trash2Icon aria-hidden="true" />
+                        </NvButton>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-
-              <NvDialogFooter class="static">
+              </NvDialogBody>
+              <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="releasePending">
                   <NvSpinner v-if="releasePending" aria-hidden="true" />

@@ -46,6 +46,36 @@ shadcn 原版 primitives，仅限组件库内部使用。
 </NvDialog>
 ```
 
+## 长表单的滚动边界
+
+包含动态行、较多字段或校验增长时，用 `NvDialogContent scrollable`：
+标题栏在上、`NvDialogBody` 为唯一滚动正文、`NvDialogFooter` 独立在下。
+三段共用弹窗表面；操作区横跨弹窗宽度，以轻分隔线划界，不做嵌套白卡片。
+桌面取消紧邻主按钮并靠右；窄屏按钮按组件统一规则纵向排列。
+
+```vue
+<NvDialogContent scrollable class="sm:max-w-lg">
+  <NvDialogHeader>
+    <NvDialogTitle>发布新版本</NvDialogTitle>
+    <NvDialogDescription>核对物料明细后发布。</NvDialogDescription>
+  </NvDialogHeader>
+  <form @submit.prevent="submit">
+    <NvDialogBody>
+      <div class="grid gap-4"><!-- 字段、动态行和校验提示 --></div>
+    </NvDialogBody>
+    <NvDialogFooter>
+      <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
+      <NvButton type="submit" :disabled="pending">发布版本</NvButton>
+    </NvDialogFooter>
+  </form>
+</NvDialogContent>
+```
+
+- `form` 只负责提交，不能再承担局部滚动；不得在 Footer 上补 `static`。
+- 不把 Footer 放进 Body，不叠加 Content/form 的限高和 `overflow-y-auto`。
+- Body 自带边距和焦点滚动空间，内部只编排字段间距；不靠负外边距贴边。
+- 未开启 `scrollable` 的旧组合保持原有遮罩滚动，不在同一个窗口混用新旧模式。
+
 ## NvAlertDialog 用法（确认破坏性操作）
 
 ```vue

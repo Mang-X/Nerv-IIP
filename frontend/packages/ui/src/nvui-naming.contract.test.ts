@@ -74,6 +74,7 @@ const NV_ALL = [
   'NvDateRangePicker',
   'NvDescriptions',
   'NvDialog',
+  'NvDialogBody',
   'NvDialogClose',
   'NvDialogContent',
   'NvDialogDescription',
