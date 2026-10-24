@@ -17,6 +17,7 @@ import {
   NvDatePicker,
   NvDialog,
   NvDialogContent,
+  NvDialogBody,
   NvDialogDescription,
   NvDialogFooter,
   NvDialogHeader,
@@ -375,7 +376,7 @@ function uomLabel(code?: string | null) {
             </NvButton>
           </NvDialogTrigger>
           <!-- 组件行数不定，弹框高度会超出视口：内部滚动，别让「发布」按钮被挤到屏幕外（GH#1292 第 7 项）。 -->
-          <NvDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+          <NvDialogContent scrollable class="sm:max-w-3xl">
             <NvDialogHeader>
               <NvDialogTitle>发布设计 BOM 新版本</NvDialogTitle>
               <!-- 说明不上界面：仅供读屏播报。 -->
@@ -383,143 +384,149 @@ function uomLabel(code?: string | null) {
                 填写父项物料、修订号与组件行，发布为不可变版本。
               </NvDialogDescription>
             </NvDialogHeader>
-            <form class="grid gap-5" @submit.prevent="submitForm">
-              <p
-                v-if="showErrors && selfReferenceComponent"
-                class="text-sm text-destructive"
-                role="alert"
-              >
-                组件不能与父项「{{
-                  skuLabel(selfReferenceComponent)
-                }}」相同——一个物料不能把自己当组件，请改选别的组件。
-              </p>
-              <p
-                v-else-if="showErrors && duplicateComponent"
-                class="text-sm text-destructive"
-                role="alert"
-              >
-                组件「{{
-                  skuLabel(duplicateComponent)
-                }}」重复了——同一组件只能有一行，请合并数量或删除重复行。
-              </p>
-              <p v-else-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-                请完整填写带 * 的必填项，并确保至少一行组件填好编码、数量（大于 0）与单位。
-              </p>
-
-              <FormSectionTitle>版本头</FormSectionTitle>
-              <NvFieldGroup class="grid gap-3 sm:grid-cols-3">
-                <NvField :data-invalid="showErrors && !parentValid">
-                  <NvFieldLabel for="ebom-parent"
-                    >父项物料 <span class="text-destructive">*</span></NvFieldLabel
+            <form @submit.prevent="submitForm">
+              <NvDialogBody>
+                <div class="grid gap-5">
+                  <p
+                    v-if="showErrors && selfReferenceComponent"
+                    class="text-sm text-destructive"
+                    role="alert"
                   >
-                  <DirectoryPicker
-                    id="ebom-parent"
-                    v-model="form.parentItemCode"
-                    directory-type="material"
-                    creatable
-                    placeholder="选择父项"
-                  />
-                </NvField>
-                <NvField :data-invalid="showErrors && !revisionValid">
-                  <NvFieldLabel for="ebom-rev"
-                    >修订号 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvCombobox
-                    id="ebom-rev"
-                    v-model="form.revision"
-                    :suggestions="takenRevisions"
-                    :disabled="!form.parentItemCode || takenRevisionsPending"
-                    :placeholder="form.parentItemCode ? '填写新修订号' : '请先选父项物料'"
-                    empty-text="该物料还没有历史修订"
-                  />
-                  <NvFieldDescription>例如 A、B、001。</NvFieldDescription>
-                  <p v-if="revisionTaken" class="text-sm text-destructive" role="alert">
-                    修订号「{{ form.revision.trim() }}」已存在，请换一个新号。
+                    组件不能与父项「{{
+                      skuLabel(selfReferenceComponent)
+                    }}」相同——一个物料不能把自己当组件，请改选别的组件。
                   </p>
-                  <p v-else-if="takenRevisions.length" class="text-xs text-muted-foreground">
-                    已占用：{{ takenRevisions.map((r) => r.value).join('、') }}
-                  </p>
-                </NvField>
-                <NvField :data-invalid="showErrors && !effectiveValid">
-                  <NvFieldLabel>生效日 <span class="text-destructive">*</span></NvFieldLabel>
-                  <NvDatePicker
-                    v-model="form.effectiveDate"
-                    placeholder="选择生效日"
-                    class="w-full"
-                  />
-                </NvField>
-              </NvFieldGroup>
-
-              <div class="flex items-center justify-between">
-                <FormSectionTitle>组件行</FormSectionTitle>
-                <NvButton type="button" variant="outline" size="sm" @click="addLine">
-                  <PlusIcon aria-hidden="true" />
-                  增加组件
-                </NvButton>
-              </div>
-              <div class="grid gap-2">
-                <div
-                  v-for="(line, index) in form.lines"
-                  :key="index"
-                  class="grid grid-cols-1 items-end gap-2 rounded-md border p-2 sm:grid-cols-[1fr_6rem_8rem_auto]"
-                >
-                  <NvField :data-invalid="showErrors && !line.componentCode.trim()">
-                    <NvFieldLabel :for="`ebom-comp-${index}`"
-                      >组件物料 <span class="text-destructive">*</span></NvFieldLabel
-                    >
-                    <DirectoryPicker
-                      :id="`ebom-comp-${index}`"
-                      v-model="line.componentCode"
-                      directory-type="material"
-                      creatable
-                      placeholder="选择组件"
-                      @update:model-value="(v: string) => applyComponentUom(line, v)"
-                    />
-                  </NvField>
-                  <NvField :data-invalid="showErrors && (parseNumber(line.quantity) ?? 0) <= 0">
-                    <NvFieldLabel :for="`ebom-qty-${index}`"
-                      >数量 <span class="text-destructive">*</span></NvFieldLabel
-                    >
-                    <NvInput
-                      :id="`ebom-qty-${index}`"
-                      v-model="line.quantity"
-                      type="number"
-                      min="0"
-                      step="any"
-                    />
-                  </NvField>
-                  <NvField :data-invalid="showErrors && !line.unitOfMeasureCode.trim()">
-                    <NvFieldLabel :for="`ebom-uom-${index}`"
-                      >单位 <span class="text-destructive">*</span></NvFieldLabel
-                    >
-                    <NvSelect v-model="line.unitOfMeasureCode">
-                      <NvSelectTrigger :id="`ebom-uom-${index}`"
-                        ><NvSelectValue placeholder="单位"
-                      /></NvSelectTrigger>
-                      <NvSelectContent>
-                        <NvSelectItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{
-                          o.label
-                        }}</NvSelectItem>
-                      </NvSelectContent>
-                    </NvSelect>
-                  </NvField>
-                  <NvButton
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label="删除该组件行"
-                    :disabled="form.lines.length <= 1"
-                    @click="removeLine(index)"
+                  <p
+                    v-else-if="showErrors && duplicateComponent"
+                    class="text-sm text-destructive"
+                    role="alert"
                   >
-                    <Trash2Icon aria-hidden="true" />
-                  </NvButton>
+                    组件「{{
+                      skuLabel(duplicateComponent)
+                    }}」重复了——同一组件只能有一行，请合并数量或删除重复行。
+                  </p>
+                  <p
+                    v-else-if="showErrors && !canSubmit"
+                    class="text-sm text-destructive"
+                    role="alert"
+                  >
+                    请完整填写带 * 的必填项，并确保至少一行组件填好编码、数量（大于 0）与单位。
+                  </p>
+
+                  <FormSectionTitle>版本头</FormSectionTitle>
+                  <NvFieldGroup class="grid gap-3 sm:grid-cols-3">
+                    <NvField :data-invalid="showErrors && !parentValid">
+                      <NvFieldLabel for="ebom-parent"
+                        >父项物料 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <DirectoryPicker
+                        id="ebom-parent"
+                        v-model="form.parentItemCode"
+                        directory-type="material"
+                        creatable
+                        placeholder="选择父项"
+                      />
+                    </NvField>
+                    <NvField :data-invalid="showErrors && !revisionValid">
+                      <NvFieldLabel for="ebom-rev"
+                        >修订号 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <NvCombobox
+                        id="ebom-rev"
+                        v-model="form.revision"
+                        :suggestions="takenRevisions"
+                        :disabled="!form.parentItemCode || takenRevisionsPending"
+                        :placeholder="form.parentItemCode ? '填写新修订号' : '请先选父项物料'"
+                        empty-text="该物料还没有历史修订"
+                      />
+                      <NvFieldDescription>例如 A、B、001。</NvFieldDescription>
+                      <p v-if="revisionTaken" class="text-sm text-destructive" role="alert">
+                        修订号「{{ form.revision.trim() }}」已存在，请换一个新号。
+                      </p>
+                      <p v-else-if="takenRevisions.length" class="text-xs text-muted-foreground">
+                        已占用：{{ takenRevisions.map((r) => r.value).join('、') }}
+                      </p>
+                    </NvField>
+                    <NvField :data-invalid="showErrors && !effectiveValid">
+                      <NvFieldLabel>生效日 <span class="text-destructive">*</span></NvFieldLabel>
+                      <NvDatePicker
+                        v-model="form.effectiveDate"
+                        placeholder="选择生效日"
+                        class="w-full"
+                      />
+                    </NvField>
+                  </NvFieldGroup>
+
+                  <div class="flex items-center justify-between">
+                    <FormSectionTitle>组件行</FormSectionTitle>
+                    <NvButton type="button" variant="outline" size="sm" @click="addLine">
+                      <PlusIcon aria-hidden="true" />
+                      增加组件
+                    </NvButton>
+                  </div>
+                  <div class="grid gap-2">
+                    <div
+                      v-for="(line, index) in form.lines"
+                      :key="index"
+                      class="grid grid-cols-1 items-end gap-2 rounded-md border p-2 sm:grid-cols-[1fr_6rem_8rem_auto]"
+                    >
+                      <NvField :data-invalid="showErrors && !line.componentCode.trim()">
+                        <NvFieldLabel :for="`ebom-comp-${index}`"
+                          >组件物料 <span class="text-destructive">*</span></NvFieldLabel
+                        >
+                        <DirectoryPicker
+                          :id="`ebom-comp-${index}`"
+                          v-model="line.componentCode"
+                          directory-type="material"
+                          creatable
+                          placeholder="选择组件"
+                          @update:model-value="(v: string) => applyComponentUom(line, v)"
+                        />
+                      </NvField>
+                      <NvField :data-invalid="showErrors && (parseNumber(line.quantity) ?? 0) <= 0">
+                        <NvFieldLabel :for="`ebom-qty-${index}`"
+                          >数量 <span class="text-destructive">*</span></NvFieldLabel
+                        >
+                        <NvInput
+                          :id="`ebom-qty-${index}`"
+                          v-model="line.quantity"
+                          type="number"
+                          min="0"
+                          step="any"
+                        />
+                      </NvField>
+                      <NvField :data-invalid="showErrors && !line.unitOfMeasureCode.trim()">
+                        <NvFieldLabel :for="`ebom-uom-${index}`"
+                          >单位 <span class="text-destructive">*</span></NvFieldLabel
+                        >
+                        <NvSelect v-model="line.unitOfMeasureCode">
+                          <NvSelectTrigger :id="`ebom-uom-${index}`"
+                            ><NvSelectValue placeholder="单位"
+                          /></NvSelectTrigger>
+                          <NvSelectContent>
+                            <NvSelectItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{
+                              o.label
+                            }}</NvSelectItem>
+                          </NvSelectContent>
+                        </NvSelect>
+                      </NvField>
+                      <NvButton
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="删除该组件行"
+                        :disabled="form.lines.length <= 1"
+                        @click="removeLine(index)"
+                      >
+                        <Trash2Icon aria-hidden="true" />
+                      </NvButton>
+                    </div>
+                  </div>
                 </div>
-              </div>
-
-              <!-- 多行表单的页脚随内容滚动，避免遮住 Tab 聚焦的组件字段。 -->
-              <NvDialogFooter class="static">
+              </NvDialogBody>
+              <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
-                <NvButton type="submit" :disabled="releasePending">
+                <NvButton variant="brand" type="submit" :disabled="releasePending">
                   <NvSpinner v-if="releasePending" aria-hidden="true" />
                   发布版本
                 </NvButton>

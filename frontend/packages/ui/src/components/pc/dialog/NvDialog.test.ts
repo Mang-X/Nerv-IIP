@@ -1,7 +1,14 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, nextTick, ref } from 'vue'
-import { NvDialog, NvDialogContent, NvDialogDescription, NvDialogFooter, NvDialogTitle } from '.'
+import {
+  NvDialog,
+  NvDialogBody,
+  NvDialogContent,
+  NvDialogDescription,
+  NvDialogFooter,
+  NvDialogTitle,
+} from '.'
 
 // 真实 Portal / Content / Footer 交互；几何与 Tab 由文档站浏览器回归证明。
 describe('NvDialog footer composition', () => {
@@ -12,7 +19,7 @@ describe('NvDialog footer composition', () => {
     document.body.innerHTML = ''
   })
 
-  async function open(nested: boolean) {
+  async function open(nested: boolean, scrollable = false) {
     const submit = vi.fn()
     wrapper = mount(
       defineComponent({
@@ -24,33 +31,37 @@ describe('NvDialog footer composition', () => {
               { open: isOpen.value, 'onUpdate:open': (v: boolean) => (isOpen.value = v) },
               {
                 default: () =>
-                  h(NvDialogContent, null, {
-                    default: () => {
-                      const footer = h(
-                        NvDialogFooter,
-                        { showCloseButton: true },
-                        {
-                          default: () => h('button', { type: 'submit' }, '确认'),
-                        },
-                      )
-                      return [
-                        h(NvDialogTitle, () => '组合测试'),
-                        h(NvDialogDescription, () => '验证真实页脚交互'),
-                        nested
-                          ? h(
-                              'form',
-                              {
-                                onSubmit: (event: Event) => {
-                                  event.preventDefault()
-                                  submit()
+                  h(
+                    NvDialogContent,
+                    { scrollable },
+                    {
+                      default: () => {
+                        const footer = h(
+                          NvDialogFooter,
+                          { showCloseButton: true },
+                          {
+                            default: () => h('button', { type: 'submit' }, '确认'),
+                          },
+                        )
+                        return [
+                          h(NvDialogTitle, () => '组合测试'),
+                          h(NvDialogDescription, () => '验证真实页脚交互'),
+                          nested
+                            ? h(
+                                'form',
+                                {
+                                  onSubmit: (event: Event) => {
+                                    event.preventDefault()
+                                    submit()
+                                  },
                                 },
-                              },
-                              [footer],
-                            )
-                          : footer,
-                      ]
+                                [h(NvDialogBody, () => h('input', { name: 'quantity' })), footer],
+                              )
+                            : footer,
+                        ]
+                      },
                     },
-                  }),
+                  ),
               },
             )
         },
@@ -81,5 +92,24 @@ describe('NvDialog footer composition', () => {
     await nextTick()
     expect(submit).toHaveBeenCalledOnce()
     expect(wrapper!.findComponent(NvDialog).props('open')).toBe(true)
+  })
+  it('ScrollableForm_SubmitUsesOriginalFormAndPreservesOpen', async () => {
+    const submit = await open(true, true)
+    const input = document.querySelector<HTMLInputElement>('input[name="quantity"]')!
+    const button = document.querySelector<HTMLButtonElement>(
+      '[data-slot="nv-dialog-footer"] button[type="submit"]',
+    )!
+    expect(input.form).not.toBeNull()
+    expect(button.form).toBe(input.form)
+    button.click()
+    await nextTick()
+    expect(submit).toHaveBeenCalledOnce()
+    expect(wrapper!.findComponent(NvDialog).props('open')).toBe(true)
+    const close = [
+      ...document.querySelectorAll<HTMLButtonElement>('[data-slot="nv-dialog-footer"] button'),
+    ].find((button) => button.textContent === '关闭')!
+    close.click()
+    await nextTick()
+    expect(wrapper!.findComponent(NvDialog).props('open')).toBe(false)
   })
 })

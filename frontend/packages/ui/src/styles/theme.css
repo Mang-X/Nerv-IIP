@@ -224,7 +224,8 @@
     /* Nv semantic layer — dark values (aliases inherit from :root and re-resolve
        against these via the var chain, so they need no redeclaration here). */
     --nv-brand: oklch(0.64 0.15 256);
-    --nv-brand-foreground: oklch(0.985 0 0);
+    /* 暗色主题使用较亮品牌底色，前景配对深色文字以保证主操作可读。 */
+    --nv-brand-foreground: var(--background);
     --nv-success: oklch(0.7 0.12 160);
     --nv-success-foreground: oklch(0.205 0 0);
     --nv-warning: oklch(0.79 0.12 70);

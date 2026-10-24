@@ -3,16 +3,12 @@ import type { HTMLAttributes } from 'vue'
 import { DialogClose } from 'reka-ui'
 import { cn } from '../../../lib/utils'
 import { NvButton } from '../button'
+import { inject } from 'vue'
+import { dialogScrollableKey } from './layout'
 
 /**
- * Pro — dialog footer. Mirrors base `DialogFooter`'s API so it drops in: pass
- * `show-close-button` for an auto outline "关闭" button, or compose your own
- * actions in the default slot.
- *
- * 默认 `sticky bottom-0`，相对最近的滚动容器吸底，并在正常文档流中保留完整高度。
- * 不用负外边距抵消父级 padding：Footer 既可直接位于 Content，也可嵌入无 padding
- * 或局部滚动的 form。水平边界由父容器负责，字段与操作区间距由父级 gap 负责。
- * 自身上下 padding 留出按钮呼吸空间，不能用负底边距压缩末字段的滚动占位。
+ * scrollable 模式下独立于正文滚动，共用弹窗表面，以分隔线标出操作区。
+ * 旧组合保留原有 sticky 行为；show-close-button 继续提供原生 DialogClose。
  */
 const props = withDefaults(
   defineProps<{
@@ -23,6 +19,7 @@ const props = withDefaults(
     showCloseButton: false,
   },
 )
+const scrollable = inject(dialogScrollableKey, undefined)
 </script>
 
 <template>
@@ -30,7 +27,10 @@ const props = withDefaults(
     data-slot="nv-dialog-footer"
     :class="
       cn(
-        'sticky bottom-0 z-10 flex flex-col-reverse gap-2 rounded-b-xl bg-card py-3 sm:flex-row sm:justify-end',
+        'flex shrink-0 flex-col-reverse gap-2 sm:flex-row sm:justify-end',
+        scrollable
+          ? 'border-t border-border bg-transparent px-6 py-4'
+          : 'sticky bottom-0 z-10 rounded-b-xl bg-card py-3',
         props.class,
       )
     "

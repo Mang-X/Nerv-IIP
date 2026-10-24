@@ -11,27 +11,21 @@ import {
   useForwardPropsEmits,
 } from 'reka-ui'
 import { cn } from '../../../lib/utils'
+import { provide, toRef } from 'vue'
+import { dialogScrollableKey } from './layout'
 
 /**
- * Pro — dialog content (does NOT touch原版 Dialog). Blurred overlay, centered
- * card with exponential scale-in, built-in close affordance.
- *
- * 滚动归属：**遮罩层滚动，弹框本体不定高**。此前本体用 `top-1/2 -translate-y-1/2`
- * 居中且既无 `max-height` 也无 `overflow`,内容一旦高过视口就上下对称裁切、底部
- * 操作按钮直接落到视口外够不着(#1418:ECO「发布变更」971px 弹框在 900px 视口
- * 上下各裁 35px,取消/发布两个按钮全在视口外)。这也是 9 个调用点各自手写
- * `max-h-[85vh] overflow-y-auto` 打补丁的原因。
- *
- * 改成遮罩层 `grid place-items-center overflow-y-auto` + 本体 `my-8`:网格行轨道
- * 按内容撑高,弹框矮时依旧居中,弹框高时行轨道长过遮罩、弹框贴着上边距排布,
- * 遮罩滚动即可读全 —— 不会出现 flex 居中那种「上半截永远滚不到」的经典陷阱。
- * 配套 `NvDialogFooter` 默认 `sticky bottom-0`,操作按钮常驻。
- * 调用方也可选择 Content 或内层 form 限高滚动；只设置一个局部滚动容器，
- * Footer 在该容器内正常占位，不再假设直接父级一定具有 Content 的 p-6。
+ * 品牌对话框。scrollable 模式：Header / Body / Footer 三段，只有 Body 滚动。
+ * form 仍拥有全部输入与提交按钮，操作区在滚动正文外正常占位。
+ * 未启用时保持既有遮罩滚动，兼容旧组合。
  */
-const props = defineProps<DialogContentProps & { class?: HTMLAttributes['class'] }>()
+const props = withDefaults(
+  defineProps<DialogContentProps & { class?: HTMLAttributes['class']; scrollable?: boolean }>(),
+  { scrollable: false },
+)
 const emits = defineEmits<DialogContentEmits>()
-const forwarded = useForwardPropsEmits(reactiveOmit(props, 'class'), emits)
+const forwarded = useForwardPropsEmits(reactiveOmit(props, 'class', 'scrollable'), emits)
+provide(dialogScrollableKey, toRef(props, 'scrollable'))
 
 /**
  * 遮罩层现在是滚动容器,点它的滚动条会落在弹框外侧、被判成 outside-click 而误关。
@@ -50,14 +44,16 @@ function guardScrollbarDismiss(event: CustomEvent<{ originalEvent: PointerEvent 
 <template>
   <DialogPortal>
     <DialogOverlay
-      class="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 grid place-items-center overflow-y-auto overscroll-contain bg-black/40 backdrop-blur-sm"
+      class="data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 grid place-items-center overflow-y-auto overscroll-contain bg-black/20 backdrop-blur-sm dark:bg-black/40"
     >
       <DialogContent
         data-slot="nv-dialog-content"
+        :data-scrollable="props.scrollable ? '' : undefined"
         v-bind="forwarded"
         :class="
           cn(
             'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 relative z-50 my-8 grid w-[calc(100%-2rem)] max-w-md grid-cols-1 gap-4 [&>*]:min-w-0 rounded-xl border border-border bg-card p-6 text-card-foreground shadow-lg duration-200 outline-none',
+            props.scrollable && 'flex max-h-[calc(100dvh-4rem)] flex-col gap-0 overflow-hidden p-0',
             props.class,
           )
         "
@@ -74,3 +70,16 @@ function guardScrollbarDismiss(event: CustomEvent<{ originalEvent: PointerEvent 
     </DialogOverlay>
   </DialogPortal>
 </template>
+
+<style>
+@layer nv-components {
+  /* form 保留原生提交语义；只有 NvDialogBody 滚动，不把操作区塞进滚动层。 */
+  [data-slot='nv-dialog-content'][data-scrollable] > form {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    overflow: hidden;
+  }
+}
+</style>

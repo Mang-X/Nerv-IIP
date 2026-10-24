@@ -1,6 +1,7 @@
 import { DialogClose, DialogRoot, DialogTrigger } from 'reka-ui'
 
 export { default as NvDialogContent } from './NvDialogContent.vue'
+export { default as NvDialogBody } from './NvDialogBody.vue'
 export { default as NvDialogTitle } from './NvDialogTitle.vue'
 export { default as NvDialogDescription } from './NvDialogDescription.vue'
 export { default as NvDialogHeader } from './NvDialogHeader.vue'

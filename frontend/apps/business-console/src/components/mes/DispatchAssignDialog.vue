@@ -15,6 +15,7 @@ import {
   NvButton,
   NvDialog,
   NvDialogContent,
+  NvDialogBody,
   NvDialogDescription,
   NvDialogFooter,
   NvDialogHeader,
@@ -232,7 +233,7 @@ function formatDateTime(value?: string | null) {
 
 <template>
   <NvDialog v-model:open="open">
-    <NvDialogContent class="sm:max-w-lg">
+    <NvDialogContent scrollable class="sm:max-w-lg">
       <NvDialogHeader>
         <NvDialogTitle>{{ target?.assignedUserId ? '改派工序' : '派工' }}</NvDialogTitle>
         <!-- 派工对象已在下方只读区完整呈现；此处仅供读屏播报。 -->
@@ -242,119 +243,124 @@ function formatDateTime(value?: string | null) {
         </NvDialogDescription>
       </NvDialogHeader>
 
-      <!-- 为局部滚动条留出右侧点击带，长值控件和页脚不伸到滚动条下方。 -->
-      <form
-        class="grid max-h-[70vh] content-start gap-4 overflow-y-auto pr-5 pl-1"
-        @submit.prevent="submit"
-      >
-        <CarriedContextSummary label="派工对象" :items="contextItems" />
+      <form @submit.prevent="submit">
+        <NvDialogBody>
+          <div class="grid content-start gap-4">
+            <CarriedContextSummary label="派工对象" :items="contextItems" />
 
-        <p
-          v-if="!affordance.enabled && affordance.blockedReason"
-          class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-foreground"
-          role="alert"
-        >
-          {{ affordance.blockedReason }}
-        </p>
-
-        <template v-else>
-          <div class="grid gap-3 sm:grid-cols-2">
-            <NvField>
-              <NvFieldLabel for="assign-scope">候选范围</NvFieldLabel>
-              <NvSelect v-model="candidateScope">
-                <NvSelectTrigger id="assign-scope"><NvSelectValue /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem value="work-center">本工作中心班组</NvSelectItem>
-                  <NvSelectItem value="all">全部在岗员工</NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="assign-skill">按技能筛选</NvFieldLabel>
-              <NvSelect v-model="skillFilter">
-                <NvSelectTrigger id="assign-skill"><NvSelectValue /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem value="all">不限技能</NvSelectItem>
-                  <NvSelectItem
-                    v-for="s in skills"
-                    :key="s.skillCode ?? ''"
-                    :value="s.skillCode ?? ''"
-                  >
-                    {{ s.skillName ?? s.skillCode }}
-                  </NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
-            </NvField>
-          </div>
-
-          <NvField>
-            <NvFieldLabel for="assign-operator">
-              操作员 <span class="text-destructive">*</span>
-            </NvFieldLabel>
-            <NvSearchSelect
-              id="assign-operator"
-              v-model="assignedUserId"
-              :options="workerOptions"
-              :loading="workersPending"
-              :disabled="workerOptions.length === 0"
-              placeholder="选择操作员"
-              search-placeholder="搜索姓名 / 工号 / 技能…"
-              empty-text="没有符合条件的候选人"
-              aria-label="操作员"
-              :class="showErrors && !assignedUserId ? 'border-destructive' : undefined"
-            />
-            <div v-if="selectedWorkerSkills.length" class="flex flex-wrap gap-1.5">
-              <NvBadge v-for="s in selectedWorkerSkills" :key="s.skillCode ?? ''" variant="neutral">
-                {{ s.skillName
-                }}<template v-if="s.level"> · {{ labelFor(SKILL_LEVEL_LABELS, s.level) }}</template>
-              </NvBadge>
-            </div>
             <p
-              v-else-if="!workersPending && workerOptions.length === 0"
-              class="text-sm text-muted-foreground"
+              v-if="!affordance.enabled && affordance.blockedReason"
+              class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-foreground"
+              role="alert"
             >
-              {{
-                candidateScope === 'work-center'
-                  ? '该工作中心暂无符合条件的在岗班组成员，可放宽到「全部在岗员工」或取消技能筛选。'
-                  : '暂无符合条件的在岗员工，请先在「基础数据 · 员工」维护人员与技能。'
-              }}
+              {{ affordance.blockedReason }}
             </p>
-          </NvField>
 
-          <div class="grid gap-3 sm:grid-cols-2">
-            <NvField>
-              <NvFieldLabel for="assign-device">设备</NvFieldLabel>
-              <DirectoryPicker
-                id="assign-device"
-                v-model="deviceAssetId"
-                directory-type="equipment"
-                creatable
-                placeholder="沿用排程设备"
-                clearable
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="assign-shift">班次</NvFieldLabel>
-              <DirectoryPicker
-                id="assign-shift"
-                v-model="shiftId"
-                directory-type="shift"
-                creatable
-                :placeholder="shiftLabel(target?.shiftId)"
-                clearable
-              />
-            </NvField>
+            <template v-else>
+              <div class="grid gap-3 sm:grid-cols-2">
+                <NvField>
+                  <NvFieldLabel for="assign-scope">候选范围</NvFieldLabel>
+                  <NvSelect v-model="candidateScope">
+                    <NvSelectTrigger id="assign-scope"><NvSelectValue /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem value="work-center">本工作中心班组</NvSelectItem>
+                      <NvSelectItem value="all">全部在岗员工</NvSelectItem>
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
+                <NvField>
+                  <NvFieldLabel for="assign-skill">按技能筛选</NvFieldLabel>
+                  <NvSelect v-model="skillFilter">
+                    <NvSelectTrigger id="assign-skill"><NvSelectValue /></NvSelectTrigger>
+                    <NvSelectContent>
+                      <NvSelectItem value="all">不限技能</NvSelectItem>
+                      <NvSelectItem
+                        v-for="s in skills"
+                        :key="s.skillCode ?? ''"
+                        :value="s.skillCode ?? ''"
+                      >
+                        {{ s.skillName ?? s.skillCode }}
+                      </NvSelectItem>
+                    </NvSelectContent>
+                  </NvSelect>
+                </NvField>
+              </div>
+
+              <NvField>
+                <NvFieldLabel for="assign-operator">
+                  操作员 <span class="text-destructive">*</span>
+                </NvFieldLabel>
+                <NvSearchSelect
+                  id="assign-operator"
+                  v-model="assignedUserId"
+                  :options="workerOptions"
+                  :loading="workersPending"
+                  :disabled="workerOptions.length === 0"
+                  placeholder="选择操作员"
+                  search-placeholder="搜索姓名 / 工号 / 技能…"
+                  empty-text="没有符合条件的候选人"
+                  aria-label="操作员"
+                  :class="showErrors && !assignedUserId ? 'border-destructive' : undefined"
+                />
+                <div v-if="selectedWorkerSkills.length" class="flex flex-wrap gap-1.5">
+                  <NvBadge
+                    v-for="s in selectedWorkerSkills"
+                    :key="s.skillCode ?? ''"
+                    variant="neutral"
+                  >
+                    {{ s.skillName
+                    }}<template v-if="s.level">
+                      · {{ labelFor(SKILL_LEVEL_LABELS, s.level) }}</template
+                    >
+                  </NvBadge>
+                </div>
+                <p
+                  v-else-if="!workersPending && workerOptions.length === 0"
+                  class="text-sm text-muted-foreground"
+                >
+                  {{
+                    candidateScope === 'work-center'
+                      ? '该工作中心暂无符合条件的在岗班组成员，可放宽到「全部在岗员工」或取消技能筛选。'
+                      : '暂无符合条件的在岗员工，请先在「基础数据 · 员工」维护人员与技能。'
+                  }}
+                </p>
+              </NvField>
+
+              <div class="grid gap-3 sm:grid-cols-2">
+                <NvField>
+                  <NvFieldLabel for="assign-device">设备</NvFieldLabel>
+                  <DirectoryPicker
+                    id="assign-device"
+                    v-model="deviceAssetId"
+                    directory-type="equipment"
+                    creatable
+                    placeholder="沿用排程设备"
+                    clearable
+                  />
+                </NvField>
+                <NvField>
+                  <NvFieldLabel for="assign-shift">班次</NvFieldLabel>
+                  <DirectoryPicker
+                    id="assign-shift"
+                    v-model="shiftId"
+                    directory-type="shift"
+                    creatable
+                    :placeholder="shiftLabel(target?.shiftId)"
+                    clearable
+                  />
+                </NvField>
+              </div>
+
+              <!-- 点提交才标红；未选操作员不发请求。 -->
+              <p v-if="showErrors && !assignedUserId" class="text-sm text-destructive" role="alert">
+                请选择操作员（已标红）。
+              </p>
+            </template>
           </div>
-
-          <!-- 点提交才标红；未选操作员不发请求。 -->
-          <p v-if="showErrors && !assignedUserId" class="text-sm text-destructive" role="alert">
-            请选择操作员（已标红）。
-          </p>
-        </template>
-
-        <NvDialogFooter class="static">
+        </NvDialogBody>
+        <NvDialogFooter>
           <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
-          <NvButton type="submit" :disabled="pending || !affordance.enabled">
+          <NvButton variant="brand" type="submit" :disabled="pending || !affordance.enabled">
             <NvSpinner v-if="pending" aria-hidden="true" />
             <UserCheckIcon v-else aria-hidden="true" />
             {{ target?.assignedUserId ? '确认改派' : '确认派工' }}

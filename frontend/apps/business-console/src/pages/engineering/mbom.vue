@@ -21,6 +21,7 @@ import {
   NvDatePicker,
   NvDialog,
   NvDialogContent,
+  NvDialogBody,
   NvDialogDescription,
   NvDialogFooter,
   NvDialogHeader,
@@ -451,7 +452,7 @@ function uomLabel(code?: string | null) {
             </NvButton>
           </NvDialogTrigger>
           <!-- 组件行数不定，弹框高度会超出视口：内部滚动，别让「发布」按钮被挤到屏幕外（GH#1292 第 7 项）。 -->
-          <NvDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+          <NvDialogContent scrollable class="sm:max-w-3xl">
             <NvDialogHeader>
               <NvDialogTitle>发布制造 BOM 新版本</NvDialogTitle>
               <!-- 说明不上界面：仅供读屏播报。 -->
@@ -459,234 +460,240 @@ function uomLabel(code?: string | null) {
                 引用一份已发布的设计 BOM，填写产出物料、修订号与物料行。
               </NvDialogDescription>
             </NvDialogHeader>
-            <form class="grid gap-5" @submit.prevent="submitForm">
-              <p
-                v-if="showErrors && selfReferenceMaterial"
-                class="text-sm text-destructive"
-                role="alert"
-              >
-                物料不能与产出物料「{{
-                  skuLabel(selfReferenceMaterial)
-                }}」相同——产出物料不能把自己当原料，请改选别的物料。
-              </p>
-              <p
-                v-else-if="showErrors && duplicateMaterial"
-                class="text-sm text-destructive"
-                role="alert"
-              >
-                物料「{{
-                  skuLabel(duplicateMaterial)
-                }}」重复了——同一物料只能有一行，请合并数量或删除重复行。
-              </p>
-              <p v-else-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-                请完整填写带 * 的必填项，并确保至少一行物料填好物料、数量（大于
-                0）与单位；填写了的配方行须含参数与目标值。
-              </p>
-              <p
-                v-if="!publishedEbomsPending && !hasSelectorData"
-                class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning"
-                role="alert"
-              >
-                当前没有已发布的设计 BOM 可引用。请先在 EBOM 页发布版本，再回来发布制造 BOM。
-              </p>
-
-              <FormSectionTitle>版本头</FormSectionTitle>
-              <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                <NvField :data-invalid="showErrors && !ebomValid">
-                  <NvFieldLabel for="mbom-ebom"
-                    >引用设计 BOM <span class="text-destructive">*</span></NvFieldLabel
+            <form @submit.prevent="submitForm">
+              <NvDialogBody>
+                <div class="grid gap-5">
+                  <p
+                    v-if="showErrors && selfReferenceMaterial"
+                    class="text-sm text-destructive"
+                    role="alert"
                   >
-                  <NvSelect v-model="form.ebomKey">
-                    <NvSelectTrigger id="mbom-ebom"
-                      ><NvSelectValue placeholder="选择已发布 EBOM"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem v-for="o in ebomOptions" :key="o.value" :value="o.value">{{
-                        o.label
-                      }}</NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
-                </NvField>
-                <NvField :data-invalid="showErrors && !skuValid">
-                  <NvFieldLabel for="mbom-sku"
-                    >产出物料 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <DirectoryPicker
-                    id="mbom-sku"
-                    v-model="form.skuCode"
-                    directory-type="material"
-                    creatable
-                    placeholder="选择产出物料"
-                  />
-                </NvField>
-                <NvField :data-invalid="showErrors && !revisionValid">
-                  <NvFieldLabel for="mbom-rev"
-                    >修订号 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvCombobox
-                    id="mbom-rev"
-                    v-model="form.revision"
-                    :suggestions="takenRevisions"
-                    :disabled="!form.skuCode || takenRevisionsPending"
-                    :placeholder="form.skuCode ? '填写新修订号' : '请先选产出物料'"
-                    empty-text="该物料还没有历史修订"
-                  />
-                  <NvFieldDescription>例如 A、B、001。</NvFieldDescription>
-                  <p v-if="revisionTaken" class="text-sm text-destructive" role="alert">
-                    修订号「{{ form.revision.trim() }}」已存在，请换一个新号。
+                    物料不能与产出物料「{{
+                      skuLabel(selfReferenceMaterial)
+                    }}」相同——产出物料不能把自己当原料，请改选别的物料。
                   </p>
-                  <p v-else-if="takenRevisions.length" class="text-xs text-muted-foreground">
-                    已占用：{{ takenRevisions.map((r) => r.value).join('、') }}
+                  <p
+                    v-else-if="showErrors && duplicateMaterial"
+                    class="text-sm text-destructive"
+                    role="alert"
+                  >
+                    物料「{{
+                      skuLabel(duplicateMaterial)
+                    }}」重复了——同一物料只能有一行，请合并数量或删除重复行。
                   </p>
-                </NvField>
-                <NvField :data-invalid="showErrors && !effectiveValid">
-                  <NvFieldLabel>生效日 <span class="text-destructive">*</span></NvFieldLabel>
-                  <NvDatePicker
-                    v-model="form.effectiveDate"
-                    placeholder="选择生效日"
-                    class="w-full"
-                  />
-                </NvField>
-              </NvFieldGroup>
-
-              <div class="flex items-center justify-between">
-                <FormSectionTitle>物料行</FormSectionTitle>
-                <NvButton type="button" variant="outline" size="sm" @click="addMaterialLine">
-                  <PlusIcon aria-hidden="true" />
-                  增加物料
-                </NvButton>
-              </div>
-              <div class="grid gap-2">
-                <div
-                  v-for="(line, index) in form.materialLines"
-                  :key="index"
-                  class="grid grid-cols-1 items-end gap-2 rounded-md border p-2 sm:grid-cols-[1fr_5rem_7rem_6rem_auto]"
-                >
-                  <NvField :data-invalid="showErrors && !line.skuCode.trim()">
-                    <NvFieldLabel :for="`mbom-mat-${index}`"
-                      >物料 <span class="text-destructive">*</span></NvFieldLabel
-                    >
-                    <DirectoryPicker
-                      :id="`mbom-mat-${index}`"
-                      v-model="line.skuCode"
-                      directory-type="material"
-                      creatable
-                      placeholder="选择物料"
-                      @update:model-value="(v: string) => applyMaterialUom(line, v)"
-                    />
-                  </NvField>
-                  <NvField :data-invalid="showErrors && (parseNumber(line.quantity) ?? 0) <= 0">
-                    <NvFieldLabel :for="`mbom-qty-${index}`"
-                      >数量 <span class="text-destructive">*</span></NvFieldLabel
-                    >
-                    <NvInput
-                      :id="`mbom-qty-${index}`"
-                      v-model="line.quantity"
-                      type="number"
-                      min="0"
-                      step="any"
-                    />
-                  </NvField>
-                  <NvField :data-invalid="showErrors && !line.unitOfMeasureCode.trim()">
-                    <NvFieldLabel :for="`mbom-uom-${index}`"
-                      >单位 <span class="text-destructive">*</span></NvFieldLabel
-                    >
-                    <NvSelect v-model="line.unitOfMeasureCode">
-                      <NvSelectTrigger :id="`mbom-uom-${index}`"
-                        ><NvSelectValue placeholder="单位"
-                      /></NvSelectTrigger>
-                      <NvSelectContent>
-                        <NvSelectItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{
-                          o.label
-                        }}</NvSelectItem>
-                      </NvSelectContent>
-                    </NvSelect>
-                  </NvField>
-                  <NvField>
-                    <NvFieldLabel :for="`mbom-scrap-${index}`">损耗率</NvFieldLabel>
-                    <NvInput
-                      :id="`mbom-scrap-${index}`"
-                      v-model="line.scrapRate"
-                      type="number"
-                      min="0"
-                      max="1"
-                      step="any"
-                      placeholder="0~1"
-                    />
-                  </NvField>
-                  <NvButton
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label="删除该物料行"
-                    :disabled="form.materialLines.length <= 1"
-                    @click="removeMaterialLine(index)"
+                  <p
+                    v-else-if="showErrors && !canSubmit"
+                    class="text-sm text-destructive"
+                    role="alert"
                   >
-                    <Trash2Icon aria-hidden="true" />
-                  </NvButton>
-                </div>
-              </div>
-
-              <div class="flex items-center justify-between">
-                <FormSectionTitle>配方行（可选）</FormSectionTitle>
-                <NvButton type="button" variant="outline" size="sm" @click="addRecipeLine">
-                  <PlusIcon aria-hidden="true" />
-                  增加配方
-                </NvButton>
-              </div>
-              <div v-if="form.recipeLines.length" class="grid gap-2">
-                <div
-                  v-for="(line, index) in form.recipeLines"
-                  :key="index"
-                  class="grid grid-cols-1 items-end gap-2 rounded-md border p-2 sm:grid-cols-[1fr_1fr_6rem_auto]"
-                >
-                  <NvField :data-invalid="showErrors && !line.parameterCode.trim()">
-                    <NvFieldLabel :for="`mbom-param-${index}`"
-                      >参数 <span class="text-destructive">*</span></NvFieldLabel
-                    >
-                    <NvInput
-                      :id="`mbom-param-${index}`"
-                      v-model="line.parameterCode"
-                      placeholder="如 温度"
-                    />
-                  </NvField>
-                  <NvField :data-invalid="showErrors && !line.targetValue.trim()">
-                    <NvFieldLabel :for="`mbom-target-${index}`"
-                      >目标值 <span class="text-destructive">*</span></NvFieldLabel
-                    >
-                    <NvInput
-                      :id="`mbom-target-${index}`"
-                      v-model="line.targetValue"
-                      placeholder="如 180"
-                    />
-                  </NvField>
-                  <NvField>
-                    <NvFieldLabel :for="`mbom-runit-${index}`">单位</NvFieldLabel>
-                    <NvSearchSelect
-                      :id="`mbom-runit-${index}`"
-                      v-model="line.unitOfMeasureCode"
-                      :options="uomOptions"
-                      placeholder="选择单位"
-                      empty-text="暂无计量单位，请先在基础数据维护"
-                      aria-label="工艺参数单位"
-                    />
-                  </NvField>
-                  <NvButton
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label="删除该配方行"
-                    @click="removeRecipeLine(index)"
+                    请完整填写带 * 的必填项，并确保至少一行物料填好物料、数量（大于
+                    0）与单位；填写了的配方行须含参数与目标值。
+                  </p>
+                  <p
+                    v-if="!publishedEbomsPending && !hasSelectorData"
+                    class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning"
+                    role="alert"
                   >
-                    <Trash2Icon aria-hidden="true" />
-                  </NvButton>
-                </div>
-              </div>
+                    当前没有已发布的设计 BOM 可引用。请先在 EBOM 页发布版本，再回来发布制造 BOM。
+                  </p>
 
-              <!-- 多行表单的页脚随内容滚动，避免遮住 Tab 聚焦的物料/配方字段。 -->
-              <NvDialogFooter class="static">
+                  <FormSectionTitle>版本头</FormSectionTitle>
+                  <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
+                    <NvField :data-invalid="showErrors && !ebomValid">
+                      <NvFieldLabel for="mbom-ebom"
+                        >引用设计 BOM <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <NvSelect v-model="form.ebomKey">
+                        <NvSelectTrigger id="mbom-ebom"
+                          ><NvSelectValue placeholder="选择已发布 EBOM"
+                        /></NvSelectTrigger>
+                        <NvSelectContent>
+                          <NvSelectItem v-for="o in ebomOptions" :key="o.value" :value="o.value">{{
+                            o.label
+                          }}</NvSelectItem>
+                        </NvSelectContent>
+                      </NvSelect>
+                    </NvField>
+                    <NvField :data-invalid="showErrors && !skuValid">
+                      <NvFieldLabel for="mbom-sku"
+                        >产出物料 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <DirectoryPicker
+                        id="mbom-sku"
+                        v-model="form.skuCode"
+                        directory-type="material"
+                        creatable
+                        placeholder="选择产出物料"
+                      />
+                    </NvField>
+                    <NvField :data-invalid="showErrors && !revisionValid">
+                      <NvFieldLabel for="mbom-rev"
+                        >修订号 <span class="text-destructive">*</span></NvFieldLabel
+                      >
+                      <NvCombobox
+                        id="mbom-rev"
+                        v-model="form.revision"
+                        :suggestions="takenRevisions"
+                        :disabled="!form.skuCode || takenRevisionsPending"
+                        :placeholder="form.skuCode ? '填写新修订号' : '请先选产出物料'"
+                        empty-text="该物料还没有历史修订"
+                      />
+                      <NvFieldDescription>例如 A、B、001。</NvFieldDescription>
+                      <p v-if="revisionTaken" class="text-sm text-destructive" role="alert">
+                        修订号「{{ form.revision.trim() }}」已存在，请换一个新号。
+                      </p>
+                      <p v-else-if="takenRevisions.length" class="text-xs text-muted-foreground">
+                        已占用：{{ takenRevisions.map((r) => r.value).join('、') }}
+                      </p>
+                    </NvField>
+                    <NvField :data-invalid="showErrors && !effectiveValid">
+                      <NvFieldLabel>生效日 <span class="text-destructive">*</span></NvFieldLabel>
+                      <NvDatePicker
+                        v-model="form.effectiveDate"
+                        placeholder="选择生效日"
+                        class="w-full"
+                      />
+                    </NvField>
+                  </NvFieldGroup>
+
+                  <div class="flex items-center justify-between">
+                    <FormSectionTitle>物料行</FormSectionTitle>
+                    <NvButton type="button" variant="outline" size="sm" @click="addMaterialLine">
+                      <PlusIcon aria-hidden="true" />
+                      增加物料
+                    </NvButton>
+                  </div>
+                  <div class="grid gap-2">
+                    <div
+                      v-for="(line, index) in form.materialLines"
+                      :key="index"
+                      class="grid grid-cols-1 items-end gap-2 rounded-md border p-2 sm:grid-cols-[1fr_5rem_7rem_6rem_auto]"
+                    >
+                      <NvField :data-invalid="showErrors && !line.skuCode.trim()">
+                        <NvFieldLabel :for="`mbom-mat-${index}`"
+                          >物料 <span class="text-destructive">*</span></NvFieldLabel
+                        >
+                        <DirectoryPicker
+                          :id="`mbom-mat-${index}`"
+                          v-model="line.skuCode"
+                          directory-type="material"
+                          creatable
+                          placeholder="选择物料"
+                          @update:model-value="(v: string) => applyMaterialUom(line, v)"
+                        />
+                      </NvField>
+                      <NvField :data-invalid="showErrors && (parseNumber(line.quantity) ?? 0) <= 0">
+                        <NvFieldLabel :for="`mbom-qty-${index}`"
+                          >数量 <span class="text-destructive">*</span></NvFieldLabel
+                        >
+                        <NvInput
+                          :id="`mbom-qty-${index}`"
+                          v-model="line.quantity"
+                          type="number"
+                          min="0"
+                          step="any"
+                        />
+                      </NvField>
+                      <NvField :data-invalid="showErrors && !line.unitOfMeasureCode.trim()">
+                        <NvFieldLabel :for="`mbom-uom-${index}`"
+                          >单位 <span class="text-destructive">*</span></NvFieldLabel
+                        >
+                        <NvSelect v-model="line.unitOfMeasureCode">
+                          <NvSelectTrigger :id="`mbom-uom-${index}`"
+                            ><NvSelectValue placeholder="单位"
+                          /></NvSelectTrigger>
+                          <NvSelectContent>
+                            <NvSelectItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{
+                              o.label
+                            }}</NvSelectItem>
+                          </NvSelectContent>
+                        </NvSelect>
+                      </NvField>
+                      <NvField>
+                        <NvFieldLabel :for="`mbom-scrap-${index}`">损耗率</NvFieldLabel>
+                        <NvInput
+                          :id="`mbom-scrap-${index}`"
+                          v-model="line.scrapRate"
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="any"
+                          placeholder="0~1"
+                        />
+                      </NvField>
+                      <NvButton
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="删除该物料行"
+                        :disabled="form.materialLines.length <= 1"
+                        @click="removeMaterialLine(index)"
+                      >
+                        <Trash2Icon aria-hidden="true" />
+                      </NvButton>
+                    </div>
+                  </div>
+
+                  <div class="flex items-center justify-between">
+                    <FormSectionTitle>配方行（可选）</FormSectionTitle>
+                    <NvButton type="button" variant="outline" size="sm" @click="addRecipeLine">
+                      <PlusIcon aria-hidden="true" />
+                      增加配方
+                    </NvButton>
+                  </div>
+                  <div v-if="form.recipeLines.length" class="grid gap-2">
+                    <div
+                      v-for="(line, index) in form.recipeLines"
+                      :key="index"
+                      class="grid grid-cols-1 items-end gap-2 rounded-md border p-2 sm:grid-cols-[1fr_1fr_6rem_auto]"
+                    >
+                      <NvField :data-invalid="showErrors && !line.parameterCode.trim()">
+                        <NvFieldLabel :for="`mbom-param-${index}`"
+                          >参数 <span class="text-destructive">*</span></NvFieldLabel
+                        >
+                        <NvInput
+                          :id="`mbom-param-${index}`"
+                          v-model="line.parameterCode"
+                          placeholder="如 温度"
+                        />
+                      </NvField>
+                      <NvField :data-invalid="showErrors && !line.targetValue.trim()">
+                        <NvFieldLabel :for="`mbom-target-${index}`"
+                          >目标值 <span class="text-destructive">*</span></NvFieldLabel
+                        >
+                        <NvInput
+                          :id="`mbom-target-${index}`"
+                          v-model="line.targetValue"
+                          placeholder="如 180"
+                        />
+                      </NvField>
+                      <NvField>
+                        <NvFieldLabel :for="`mbom-runit-${index}`">单位</NvFieldLabel>
+                        <NvSearchSelect
+                          :id="`mbom-runit-${index}`"
+                          v-model="line.unitOfMeasureCode"
+                          :options="uomOptions"
+                          placeholder="选择单位"
+                          empty-text="暂无计量单位，请先在基础数据维护"
+                          aria-label="工艺参数单位"
+                        />
+                      </NvField>
+                      <NvButton
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="删除该配方行"
+                        @click="removeRecipeLine(index)"
+                      >
+                        <Trash2Icon aria-hidden="true" />
+                      </NvButton>
+                    </div>
+                  </div>
+                </div>
+              </NvDialogBody>
+              <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
-                <NvButton type="submit" :disabled="releasePending">
+                <NvButton variant="brand" type="submit" :disabled="releasePending">
                   <NvSpinner v-if="releasePending" aria-hidden="true" />
                   发布版本
                 </NvButton>
