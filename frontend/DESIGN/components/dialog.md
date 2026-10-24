@@ -39,7 +39,7 @@ shadcn 原版 primitives，仅限组件库内部使用。
 
       <NvDialogFooter>
         <NvButton variant="outline" type="button" @click="dialogOpen = false">Cancel</NvButton>
-        <NvButton type="submit" :loading="pending">Create</NvButton>
+        <NvButton variant="brand" type="submit" :loading="pending">Create</NvButton>
       </NvDialogFooter>
     </form>
   </NvDialogContent>
@@ -53,6 +53,8 @@ shadcn 原版 primitives，仅限组件库内部使用。
 三段共用弹窗表面；操作区横跨弹窗宽度，以轻分隔线划界，不做嵌套白卡片。
 正文使用 Scroll Area 悬浮滚动条，透明轨道不单独占宽，悬停或滚动时显示。
 桌面取消紧邻主按钮并靠右；窄屏按钮按组件统一规则纵向排列。
+确认使用 `variant="brand"` 跟随当前主题色，取消使用 `outline`（用户确认，2026-10-24）。
+亮色玻璃表面保持清透白色，内部信息区用明确边界和轻微底色建立层次，避免灰底相叠。
 
 ```vue
 <NvDialogContent scrollable class="sm:max-w-lg">
@@ -66,7 +68,7 @@ shadcn 原版 primitives，仅限组件库内部使用。
     </NvDialogBody>
     <NvDialogFooter>
       <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
-      <NvButton type="submit" :disabled="pending">发布版本</NvButton>
+      <NvButton variant="brand" type="submit" :disabled="pending">发布版本</NvButton>
     </NvDialogFooter>
   </form>
 </NvDialogContent>

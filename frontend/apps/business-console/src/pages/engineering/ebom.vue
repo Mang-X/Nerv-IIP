@@ -526,7 +526,7 @@ function uomLabel(code?: string | null) {
               </NvDialogBody>
               <NvDialogFooter>
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
-                <NvButton type="submit" :disabled="releasePending">
+                <NvButton variant="brand" type="submit" :disabled="releasePending">
                   <NvSpinner v-if="releasePending" aria-hidden="true" />
                   发布版本
                 </NvButton>

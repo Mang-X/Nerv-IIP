@@ -34,7 +34,8 @@ function openScrollExample(mode) {
 // 文档示例支持直达状态，便于共享和同视口视觉对照。
 onMounted(() => {
   const example = new URLSearchParams(window.location.search).get('example')
-  if (['short', 'long', 'error', 'pending'].includes(example)) openScrollExample(example)
+  if (example === 'basic') dialogOpen.value = true
+  else if (['short', 'long', 'error', 'pending'].includes(example)) openScrollExample(example)
 })
 </script>
 
@@ -62,13 +63,13 @@ onMounted(() => {
         </NvDialogDescription>
       </NvDialogHeader>
       <NvDialogBody>
-      <div class="rounded-lg border border-border bg-muted/40 p-4 text-sm">
+      <div class="rounded-lg border border-border bg-muted p-4 text-sm">
         <div class="flex justify-between">
-          <span class="text-muted-foreground">数量</span>
+          <span class="text-foreground/70">数量</span>
           <span class="tabular-nums">480</span>
         </div>
         <div class="mt-2 flex justify-between">
-          <span class="text-muted-foreground">预计工时</span>
+          <span class="text-foreground/70">预计工时</span>
           <span class="tabular-nums">14.5 h</span>
         </div>
       </div>
@@ -77,7 +78,7 @@ onMounted(() => {
         <NvDialogClose as-child>
           <NvButton variant="outline">取消</NvButton>
         </NvDialogClose>
-        <NvButton @click="dialogOpen = false">确认派发</NvButton>
+        <NvButton variant="brand" @click="dialogOpen = false">确认派发</NvButton>
       </NvDialogFooter>
     </NvDialogContent>
   </NvDialog>
@@ -115,7 +116,7 @@ const dialogOpen = ref(false)
       </NvDialogHeader>
       <NvDialogFooter>
         <NvDialogClose as-child><NvButton variant="outline">取消</NvButton></NvDialogClose>
-        <NvButton @click="dialogOpen = false">确认派发</NvButton>
+        <NvButton variant="brand" @click="dialogOpen = false">确认派发</NvButton>
       </NvDialogFooter>
     </NvDialogContent>
   </NvDialog>
@@ -129,6 +130,8 @@ const dialogOpen = ref(false)
 正文复用 Scroll Area 的悬浮滚动条：悬停或滚动时显示，轨道透明且不占内容宽度；
 键盘与触控仍使用原生滚动。
 操作栏与弹窗共用表面、横跨完整宽度，以一条轻分隔线区别于正文；不是表单里的独立卡片。
+确认主操作使用 `variant="brand"` 跟随当前主题色，取消使用 `outline`。亮色表面保持清透的白色层次，
+信息摘要使用有明确边界的 `muted` 表面。
 
 form 保留原生提交语义，直接包含 Body 和 Footer。不要再对 Content/form 叠加
 `overflow-y-auto`、手写限高、负外边距或 Footer 的 `static` 补丁。
@@ -163,7 +166,7 @@ Body 内用 `grid gap-4` 组织字段；字段和操作区各自保留内边距�
         </NvDialogBody>
         <NvDialogFooter>
           <NvDialogClose as-child><NvButton type="button" variant="outline">取消</NvButton></NvDialogClose>
-          <NvButton type="submit" class="sm:min-w-28" :disabled="pending">{{ pending ? '正在发布…' : '发布版本' }}</NvButton>
+          <NvButton variant="brand" type="submit" class="sm:min-w-28" :disabled="pending">{{ pending ? '正在发布…' : '发布版本' }}</NvButton>
         </NvDialogFooter>
       </form>
     </NvDialogContent>
@@ -182,7 +185,7 @@ Body 内用 `grid gap-4` 组织字段；字段和操作区各自保留内边距�
     </NvDialogBody>
     <NvDialogFooter>
       <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
-      <NvButton type="submit" :disabled="pending">发布版本</NvButton>
+      <NvButton variant="brand" type="submit" :disabled="pending">发布版本</NvButton>
     </NvDialogFooter>
   </form>
 </NvDialogContent>

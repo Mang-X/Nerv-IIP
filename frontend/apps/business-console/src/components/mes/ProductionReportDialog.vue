@@ -458,6 +458,7 @@ async function onSubmit() {
         <NvDialogFooter>
           <NvButton type="button" variant="outline" @click="openModel = false">取消</NvButton>
           <NvButton
+            variant="brand"
             type="submit"
             :disabled="
               !reportScopeReady ||

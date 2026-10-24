@@ -360,7 +360,7 @@ function formatDateTime(value?: string | null) {
         </NvDialogBody>
         <NvDialogFooter>
           <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
-          <NvButton type="submit" :disabled="pending || !affordance.enabled">
+          <NvButton variant="brand" type="submit" :disabled="pending || !affordance.enabled">
             <NvSpinner v-if="pending" aria-hidden="true" />
             <UserCheckIcon v-else aria-hidden="true" />
             {{ target?.assignedUserId ? '确认改派' : '确认派工' }}

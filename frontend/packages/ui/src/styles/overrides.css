@@ -32,11 +32,21 @@
     backdrop-filter: blur(16px) saturate(1.6);
   }
   [data-slot='dialog-content'],
-  [data-slot='nv-dialog-content'],
   [data-slot='alert-dialog-content'],
   [data-slot='nv-alert-dialog-content'],
   [data-slot='sheet-content'],
   [data-slot='nv-sheet-content'] {
+    background-color: color-mix(in oklch, var(--card) 82%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(1.6);
+    backdrop-filter: blur(16px) saturate(1.6);
+  }
+  /* 亮色模态表面保留轻微透光，避免叠上遮罩后整块发灰；暗色沿用原有层次。 */
+  [data-slot='nv-dialog-content'] {
+    background-color: color-mix(in oklch, var(--card) 90%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
+    backdrop-filter: blur(20px) saturate(1.2);
+  }
+  .dark [data-slot='nv-dialog-content'] {
     background-color: color-mix(in oklch, var(--card) 82%, transparent);
     -webkit-backdrop-filter: blur(16px) saturate(1.6);
     backdrop-filter: blur(16px) saturate(1.6);
