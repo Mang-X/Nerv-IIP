@@ -43,6 +43,18 @@
 7. 在 `/engineering/production-versions` 绑定 SKU、MBOM、Routing 和有效日期，形成计划和 MES 可引用的版本。
 8. 如需变更，使用 `/engineering/eco` 释放 ECO/ECN；当前归档为即时执行。
 
+## 填写窗口核对
+
+制造 BOM 的下图是**尚未发布**的填写状态：产出物料为 `FG-QJ-P1-L`，引用设计 BOM 修订 2，拟填修订 3、生效日 2026-10-24；物料 `SF-ROD-01` 数量为 1 件。它只说明本次填写内容，不代表版本已经发布，也不与其它教程单据的数量合计。
+
+[![制造 BOM 未发布表单，末行物料、增加配方及取消和发布按钮完整可见](/images/dialog-forms/mbom-draft.png)](/images/dialog-forms/mbom-draft.png '查看完整原图')
+
+工艺路线下图沿用同一产出物料，是修订 3、生效日 2026-10-24 的**未发布**填写状态；所选标准工序带出 15 分钟工时。增加工序后可使用上移、下移调整顺序，并逐行核对工作中心、工时与排程方式；不要把截图中的未发布内容当作已生效路线。
+
+[![工艺路线未发布表单，工序行、排序和删除按钮及页脚完整可见](/images/dialog-forms/routing-draft.png)](/images/dialog-forms/routing-draft.png '查看完整原图')
+
+增加多行后，分别滚到顶部核对版本头、滚到底部核对最后一行、增删按钮和操作栏，再处理校验提示。390 像素宽窗口下，制造 BOM 和设计 BOM 的行字段按单列排列，操作栏随内容滚动；逐行填写后，可用 Tab 移到末字段并核对增删按钮。制造 BOM 的配方单位下拉列表使用原生滚动条，滚动条显示期间的右缘区域仍有交互边界待核实；请选择选项文字所在的内容区，不把滚动条带当作选项点击区。
+
 ## 业务对象/单据流
 
 SKU -> EngineeringItem -> EngineeringDocument -> EBOM -> MBOM -> StandardOperation -> Routing -> ProductionVersion -> ECO/ECN。

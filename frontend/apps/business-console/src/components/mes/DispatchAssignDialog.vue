@@ -242,8 +242,9 @@ function formatDateTime(value?: string | null) {
         </NvDialogDescription>
       </NvDialogHeader>
 
+      <!-- 为局部滚动条留出右侧点击带，长值控件和页脚不伸到滚动条下方。 -->
       <form
-        class="grid max-h-[70vh] content-start gap-4 overflow-y-auto px-1"
+        class="grid max-h-[70vh] content-start gap-4 overflow-y-auto pr-5 pl-1"
         @submit.prevent="submit"
       >
         <CarriedContextSummary label="派工对象" :items="contextItems" />
@@ -340,6 +341,7 @@ function formatDateTime(value?: string | null) {
                 directory-type="shift"
                 creatable
                 :placeholder="shiftLabel(target?.shiftId)"
+                clearable
               />
             </NvField>
           </div>
@@ -350,7 +352,7 @@ function formatDateTime(value?: string | null) {
           </p>
         </template>
 
-        <NvDialogFooter>
+        <NvDialogFooter class="static">
           <NvButton type="button" variant="outline" @click="open = false">取消</NvButton>
           <NvButton type="submit" :disabled="pending || !affordance.enabled">
             <NvSpinner v-if="pending" aria-hidden="true" />

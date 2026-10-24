@@ -444,7 +444,8 @@ async function onSubmit() {
           提交结果未知，当前内容已锁定；仅可按原内容重试。
         </p>
 
-        <NvDialogFooter>
+        <!-- Content 自身滚动：操作区随表单滚动，避免遮住 Tab 自动滚入的耗料控件。 -->
+        <NvDialogFooter class="static">
           <NvButton type="button" variant="outline" @click="openModel = false">取消</NvButton>
           <NvButton
             type="submit"

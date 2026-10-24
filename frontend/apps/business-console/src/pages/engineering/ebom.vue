@@ -461,7 +461,7 @@ function uomLabel(code?: string | null) {
                 <div
                   v-for="(line, index) in form.lines"
                   :key="index"
-                  class="grid grid-cols-[1fr_6rem_8rem_auto] items-end gap-2 rounded-md border p-2"
+                  class="grid grid-cols-1 items-end gap-2 rounded-md border p-2 sm:grid-cols-[1fr_6rem_8rem_auto]"
                 >
                   <NvField :data-invalid="showErrors && !line.componentCode.trim()">
                     <NvFieldLabel :for="`ebom-comp-${index}`"
@@ -516,7 +516,8 @@ function uomLabel(code?: string | null) {
                 </div>
               </div>
 
-              <NvDialogFooter>
+              <!-- 多行表单的页脚随内容滚动，避免遮住 Tab 聚焦的组件字段。 -->
+              <NvDialogFooter class="static">
                 <NvButton type="button" variant="outline" @click="formOpen = false">取消</NvButton>
                 <NvButton type="submit" :disabled="releasePending">
                   <NvSpinner v-if="releasePending" aria-hidden="true" />
