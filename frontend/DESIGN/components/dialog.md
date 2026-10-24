@@ -51,6 +51,7 @@ shadcn 原版 primitives，仅限组件库内部使用。
 包含动态行、较多字段或校验增长时，用 `NvDialogContent scrollable`：
 标题栏在上、`NvDialogBody` 为唯一滚动正文、`NvDialogFooter` 独立在下。
 三段共用弹窗表面；操作区横跨弹窗宽度，以轻分隔线划界，不做嵌套白卡片。
+正文使用 Scroll Area 悬浮滚动条，透明轨道不单独占宽，悬停或滚动时显示。
 桌面取消紧邻主按钮并靠右；窄屏按钮按组件统一规则纵向排列。
 
 ```vue

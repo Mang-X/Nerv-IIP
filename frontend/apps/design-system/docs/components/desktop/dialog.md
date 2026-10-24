@@ -126,6 +126,8 @@ const dialogOpen = ref(false)
 
 长表单使用 `NvDialogContent scrollable` 与 `NvDialogBody`。弹窗按内容自然增长，
 达到动态视口上限后，只有正文滚动。标题、关闭入口和底部操作始终保留位置。
+正文复用 Scroll Area 的悬浮滚动条：悬停或滚动时显示，轨道透明且不占内容宽度；
+键盘与触控仍使用原生滚动。
 操作栏与弹窗共用表面、横跨完整宽度，以一条轻分隔线区别于正文；不是表单里的独立卡片。
 
 form 保留原生提交语义，直接包含 Body 和 Footer。不要再对 Content/form 叠加
