@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { parse } from 'vue/compiler-sfc'
 
 const businessPages = import.meta.glob('./**/*.vue', {
   eager: true,
@@ -20,6 +21,35 @@ const screenLayouts = import.meta.glob('../../../screen/src/layouts/**/*.vue', {
   import: 'default',
   query: '?raw',
 }) as Record<string, string>
+
+interface LayoutNode {
+  tag?: string
+  props?: { type: number; name?: string }[]
+  children?: LayoutNode[]
+}
+
+function hasScrollableFormComposition(source: string) {
+  const { descriptor, errors } = parse(source)
+  if (errors.length || !descriptor.template?.ast) return false
+  const contents: LayoutNode[] = []
+  function visit(node: LayoutNode) {
+    if (node.tag === 'NvDialogContent') contents.push(node)
+    node.children?.forEach(visit)
+  }
+  visit(descriptor.template.ast as LayoutNode)
+  return (
+    contents.length > 0 &&
+    contents.every((content) => {
+      const scrollable = content.props?.some(
+        (prop) => prop.type === 6 && prop.name === 'scrollable',
+      )
+      const form = content.children?.find((node) => node.tag === 'form')
+      const body = form?.children?.find((node) => node.tag === 'NvDialogBody')
+      const footer = form?.children?.find((node) => node.tag === 'NvDialogFooter')
+      return scrollable && body && footer
+    })
+  )
+}
 
 describe('2026-07-26 leadership walkthrough remediation', () => {
   it('does not leave a single KPI card isolated from a metric group', () => {
@@ -90,17 +120,32 @@ describe('2026-07-26 leadership walkthrough remediation', () => {
       expect(source).toContain('入库库位')
     })
 
-    // GH#1292 第 7 项：发布弹框实测 970.75px > 950px 视口，没有内部滚动，主操作按钮够不着。
-    it('工程「发布新版本」弹框都能内部滚动', () => {
+    // #4544 的公开三段布局接线；这里只检查消费者组合，不声称 jsdom/AST 证明滚动几何。
+    // 可达性由真实浏览器证据负责，不能继续锁死已退役的 85vh/overflow 类名。
+    it('工程发布表单接入正文滚动区域，操作栏位于正文之外', () => {
       for (const page of [
         './engineering/routings.vue',
         './engineering/ebom.vue',
         './engineering/mbom.vue',
       ]) {
-        expect(businessPages[page], page).toMatch(
-          /<NvDialogContent class="max-h-\[85vh\] overflow-y-auto sm:max-w-3xl">/,
-        )
+        expect(hasScrollableFormComposition(businessPages[page]!), page).toBe(true)
       }
+    })
+
+    it.each([
+      ['未启用正文滚动', '<NvDialogContent>'],
+      ['正文丢失滚动载体', '<NvDialogContent scrollable>'],
+      ['操作栏重新放入正文', '<NvDialogContent scrollable>'],
+    ])('发布表单组合拒绝错误接线：%s', (kind, content) => {
+      const body = kind === '正文丢失滚动载体' ? 'div' : 'NvDialogBody'
+      const footer = '<NvDialogFooter />'
+      const fields = `<${body}><input />${kind === '操作栏重新放入正文' ? footer : ''}</${body}>`
+      const outsideFooter = kind === '操作栏重新放入正文' ? '' : footer
+      expect(
+        hasScrollableFormComposition(
+          `<template>${content}<form>${fields}${outsideFooter}</form></NvDialogContent></template>`,
+        ),
+      ).toBe(false)
     })
 
     // GH#1292 第 2 项：分页口径的统计卡此前不带任何范围标注，会被读成全局 KPI。
