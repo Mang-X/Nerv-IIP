@@ -31,13 +31,7 @@ const firstImportSpecifier = (source: string) => {
     ? statement.moduleSpecifier.text
     : undefined
 }
-const HOST_APPS = [
-  'business-console',
-  'business-pda',
-  'console',
-  'design-system',
-  'screen',
-] as const
+const HOST_APPS = ['business-console', 'business-pda', 'console', 'screen'] as const
 const LAYER_ORDER =
   '@layer theme, nv-tokens, base, components, nv-components, utilities, nv-overrides, app;'
 
@@ -330,6 +324,25 @@ describe('ADR 0020 §4.2 — VitePress isolation', () => {
     const config = ds('docs/.vitepress/config.mts')
     expect.soft(config).toContain('postcssIsolateStyles')
     expect.soft(config).toMatch(/includeFiles:\s*\[[^\]]*base\\.css[^\]]*vp-doc\\.css/)
+  })
+
+  it('sets the docs layer order before loading component styles', () => {
+    const style = stripComments(ds('docs/.vitepress/theme/style.css')).trimStart()
+    expect(style.split('\n')[0]).toBe('@layer theme, nv-tokens, base, components, nv-components;')
+
+    const entry = createSourceFile(
+      'index.ts',
+      ds('docs/.vitepress/theme/index.ts'),
+      ScriptTarget.Latest,
+      true,
+    )
+    const localImports = entry.statements
+      .filter(isImportDeclaration)
+      .map((statement) => statement.moduleSpecifier)
+      .filter(isStringLiteral)
+      .map((specifier) => specifier.text)
+      .filter((specifier) => specifier.startsWith('./'))
+    expect(localImports[0]).toBe('./style.css')
   })
 
   it('wraps every demo container root in vp-raw', () => {

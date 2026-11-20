@@ -742,7 +742,7 @@ Assert-ImpactCase -Name 'frontend-docs-markdown' -Paths @('frontend/apps/docs/do
     frontend = $true; frontend_apps = $true; frontend_docs = $true; docs = $true
 }
 
-Assert-ImpactCase -Name 'frontend-design-system-app' -Paths @('frontend/apps/design-system/src/App.vue') -Flags @{
+Assert-ImpactCase -Name 'frontend-design-system-app' -Paths @('frontend/apps/design-system/docs/.vitepress/theme/Layout.vue') -Flags @{
     frontend = $true; frontend_apps = $true; frontend_design_system = $true
 }
 

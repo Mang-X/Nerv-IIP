@@ -64,7 +64,7 @@ frontend/
 
 - 工作区、配置分层与生成隔离的决策理由：[ADR 0006](../../adr/0006-frontend-workspace-structure.md)。
 - 文件路由与页面共置的决策理由：[ADR 0007](../../adr/0007-vue-router-file-routing-colocation.md)。
-- 视觉 token、共享组件规则：[`../../governance/frontend/design-system.md`](../../governance/frontend/design-system.md)。
+- 视觉令牌、组件用法和交互模式见[独立设计文档站](../../../frontend/apps/design-system/docs/index.md)，工程边界见[前端设计系统治理](../../governance/frontend/design-system.md)。
 - API/OpenAPI/codegen：[`../integration/api-contracts.md`](../integration/api-contracts.md) 与 [`../../governance/api/contracts-and-codegen.md`](../../governance/api/contracts-and-codegen.md)。
 - 产品导航、角色旅程、页面语义：[`../../product/README.md`](../../product/README.md)。
 - 本地测试与命令操作：[`../../runbooks/testing/frontend-vitest-local.md`](../../runbooks/testing/frontend-vitest-local.md) 及各 package script。

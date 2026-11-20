@@ -26,14 +26,19 @@
     --nv-scr-cyan-dim: rgba(74, 166, 238, 0.45);
     /* unified "active fill" — every selected control (button / segmented /
        pagination / switch) references this, so the accent lives in one place. */
-    --nv-scr-accent-from: #4aa6ee;
+    --nv-scr-accent-from: var(--nv-scr-cyan);
     --nv-scr-accent-to: #2a72cc;
-    --nv-scr-accent-fill: linear-gradient(180deg, #4aa6ee, #2a72cc);
+    --nv-scr-accent-fill: linear-gradient(
+      180deg,
+      var(--nv-scr-accent-from),
+      var(--nv-scr-accent-to)
+    );
     --nv-scr-accent-edge: rgba(90, 165, 240, 0.5);
     --nv-scr-indigo: #8b9be6;
     --nv-scr-green: #45d089;
     --nv-scr-amber: #f2c14e;
     --nv-scr-red: #ef5a63;
+    --nv-scr-chart-attention: #f0ad4e;
 
     /* text — WHITE values; secondary tiers deliberately close to white
        (2026-07 生产走查：大屏远距阅读，灰字太灰，整体向白收拢). */

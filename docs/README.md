@@ -14,6 +14,7 @@
 | 引入、推翻或复评长期决策 | [`adr/README.md`](adr/README.md) | ADR 解释为什么选择；当前实现回到 Architecture / Governance / Runbook |
 | 本地启动、部署、迁移、恢复或排障 | [`runbooks/README.md`](runbooks/README.md) | Runbook 只维护当前可执行操作，精确命令回到脚本/CLI help |
 | 产品、角色、IA 或 UX 设计 | [`product/README.md`](product/README.md) | Product 只维护当前产品语义，不从状态页推断产品事实 |
+| 界面设计、令牌、组件与交互模式 | [独立设计文档站](../frontend/apps/design-system/docs/index.md) | 桌面 PC、移动 PDA、车间一体机和挂墙大屏 |
 | 调查、实验、审计或修复历史 | [`reports/README.md`](reports/README.md) | 报告只证明声明的时点与范围，不构成当前规则 |
 | 历史阶段、计划或规格核对 | `superpowers/`、[`status/archive/`](status/archive/) | 历史记录不自动构成当前执行入口 |
 

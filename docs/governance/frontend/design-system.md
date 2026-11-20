@@ -1,6 +1,6 @@
 # 前端设计系统治理
 
-本文规定 Nerv-IIP Console / Business Console 等桌面 Web 前端的设计系统、token、共享组件和样式隔离边界。历史阶段、迁移批次和“已完成多少组件”不在本页维护；当前实现以 `frontend/` 代码、workspace 配置和组件导出为准。
+视觉、交互、令牌和组件使用示例统一从[独立设计文档站](../../../frontend/apps/design-system/docs/index.md)进入。本文规定桌面 Web 的工程约束，当前实现以 `frontend/` 代码、workspace 配置和组件导出为准。
 
 ## 基线边界
 
@@ -12,7 +12,7 @@
 ## Token 规则
 
 1. 页面和共享组件优先使用语义 token，不复制品牌色/边框色/阴影/圆角的裸值形成局部主题。
-2. Console 的主题变量与 Tailwind 映射以当前 CSS producer 为准；需要精确 token 时直接读取 `frontend/apps/console/src/assets/main.css` 及共享样式配置，不在本文复制易漂移色值。
+2. 共享主题变量与 Tailwind 映射由 `frontend/packages/ui/src/styles/theme.css` 定义。各应用的 `main.css` 负责装配样式层，场景及状态令牌通过[设计令牌](../../../frontend/apps/design-system/docs/foundations/tokens.md)查找。
 3. `@theme inline` 或等价映射只负责把设计语义暴露给工具链，不建立第二套与 CSS variable 平行的 token source。
 4. 新 token 必须表达可复用语义，而不是某一页面坐标、某一临时截图颜色或单个组件的私有 hack。
 5. 状态色、危险动作、成功/警告/错误语义必须与可访问性和交互状态一起评审，不能只改视觉颜色。

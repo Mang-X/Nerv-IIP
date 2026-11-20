@@ -2,8 +2,7 @@
 
 > `@nerv-iip/ui` 的 `pc/` `blocks/` `layout/` 层 —— console（平台管理台）与
 > business-console（业务操作台）的组件库。AI 编码与人工开发**新建或改动本层组件、
-> 设计新页面前先读本文件**。参数细则见 `frontend/DESIGN/foundation.md`，
-> 交互验收口径见 `frontend/DESIGN/patterns/interaction-patterns.md`。
+> 设计新页面前先读本文件**。界面规范见[独立设计文档站](../../../../../apps/design-system/docs/guide/introduction.md)。
 
 ## 一句话定位
 
@@ -30,7 +29,7 @@
 ## 设计原则
 
 1. **信息密度优先** —— 高密度是对专家用户的尊重，一屏多一行就少一次翻页。
-   密度靠排版纪律获得（`foundation.md` 中的排版规范（Typography）/数据排版规范（Data Typography）），
+   密度靠排版纪律获得（见[桌面排版与布局](../../../../../apps/design-system/docs/foundations/desktop-layout.md)），
    不靠缩小字号到不可读。
 2. **可预期** —— 规范没覆盖时先问"成熟 B端产品怎么做"，再问"我们要不要不同"。
    同一事实同一数据源同一呈现。
@@ -46,7 +45,7 @@
 ## 动效契约
 
 与全系统同源：`--nv-ease-*` / `--nv-duration-*` 令牌；按压（press）反馈收缩不回弹，
-全部降级 `prefers-reduced-motion`。清单：`frontend/DESIGN/motion-interaction.md`。
+全部降级 `prefers-reduced-motion`。交互状态清单见[动效](../../../../../apps/design-system/docs/foundations/motion.md)。
 
 ## 应做 / 禁止
 
@@ -62,7 +61,7 @@
 
 - ✅ 用真实业务数据的形状设计（`WO-` 单号、真实数量级、真实产线名）。
 - ✅ 空态 / 失败态 / 无权限态给出下一步动作。
-- ✅ 文案使用业务语言（`DESIGN/index.md` 的 Copy Rule）。
+- ✅ 文案使用业务语言（见[界面文案](../../../../../apps/design-system/docs/guide/writing.md)）。
 - ✅ 状态完备：default / hover / focus-visible / active / disabled / loading / selected。
 
 ## 复用约定（负责人于 2026-07-27 二轮走查后固化）

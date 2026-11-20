@@ -77,6 +77,7 @@ export default defineConfig({
         items: [
           { text: '设计哲学', link: '/foundations/philosophy' },
           { text: '设计令牌', link: '/foundations/tokens' },
+          { text: '桌面排版与布局', link: '/foundations/desktop-layout' },
           { text: '色彩与动态色', link: '/foundations/color' },
           { text: '动效', link: '/foundations/motion' },
         ],
@@ -92,7 +93,8 @@ export default defineConfig({
         {
           text: '开始',
           items: [
-            { text: '介绍', link: '/guide/introduction' },
+            { text: '使用指南', link: '/guide/introduction' },
+            { text: '界面文案', link: '/guide/writing' },
             { text: '四个表面', link: '/guide/surfaces' },
             { text: '组件概览', link: '/components/overview' },
           ],
@@ -104,6 +106,7 @@ export default defineConfig({
           items: [
             { text: '设计哲学', link: '/foundations/philosophy' },
             { text: '设计令牌', link: '/foundations/tokens' },
+            { text: '桌面排版与布局', link: '/foundations/desktop-layout' },
             { text: '色彩与动态色', link: '/foundations/color' },
             { text: '动效', link: '/foundations/motion' },
           ],
@@ -113,7 +116,10 @@ export default defineConfig({
       '/patterns/': [
         {
           text: '交互模式',
-          items: [{ text: '交互模式规范 v1', link: '/patterns/interaction-patterns' }],
+          items: [
+            { text: '交互模式规范 v1', link: '/patterns/interaction-patterns' },
+            { text: '模式索引', link: '/patterns/overview' },
+          ],
         },
       ],
       // 桌面 PC —— 组件库式：每个组件一页，按分类分组

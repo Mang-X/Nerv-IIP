@@ -184,6 +184,7 @@ export default defineConfig({
           // `output` below): leaving them inside the input globs self-poisons the
           // cache — every build rewrites its own inputs, so it never hits.
           'apps/design-system/docs/**',
+          'DESIGN/patterns/**',
           '!apps/design-system/docs/.vitepress/dist/**',
           '!apps/design-system/docs/.vitepress/cache/**',
           'apps/design-system/package.json',

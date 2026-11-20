@@ -105,7 +105,7 @@ Nerv-IIP/
 - [当前 Runbook 入口](docs/runbooks/README.md)：启动、部署、迁移、恢复与排障操作。
 - [当前 Reference 入口](docs/reference/README.md)：Schema、码表、矩阵、术语与技术资料的人工查询索引。
 - [ADR 导航](docs/adr/README.md)：长期决策、选择理由及其后继关系。
-- [产品定位](PRODUCT.md) 与 [设计原则](DESIGN.md)。
+- [产品定位](PRODUCT.md) 与 [设计系统文档站](frontend/apps/design-system/docs/index.md)。
 - [上下文地图](docs/architecture/overview/context-map.md)、[仓库布局](docs/architecture/overview/repo-layout.md) 与 [API 契约及代码生成](docs/architecture/integration/api-contracts.md)。
 
 ## 权威来源

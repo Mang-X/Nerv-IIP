@@ -1,34 +1,28 @@
 # 色彩与动态色
 
-## 动态色（运行时品牌色）
+默认使用中性主题，主色随亮暗模式变化。彩色主题通过 `@nerv-iip/ui` 的预设同时更新主操作色、强调色和相关前景色。右上角的主题选择器与产品使用同一套预设。
 
-品牌强调色不是写死的，而是**运行时可切换的动态色**，写入 `<html>` 的 `--nv-brand`。右上角的取色器即可切换；选择持久化在 `localStorage`。
+<script setup>
+import { THEME_PRESETS } from '@nerv-iip/ui'
+</script>
 
-12 个预设是一个**等亮度的 12 色相轮**（OKLCH），任意一个选出来都读作"经过校准的品牌色"，而不是随机色：
-
-<div class="flex flex-wrap gap-2 my-6">
-  <span class="size-9 rounded-full border border-border" style="background:oklch(0.54 0.16 256)" title="blue"></span>
-  <span class="size-9 rounded-full border border-border" style="background:oklch(0.52 0.17 278)" title="indigo"></span>
-  <span class="size-9 rounded-full border border-border" style="background:oklch(0.55 0.17 300)" title="violet"></span>
-  <span class="size-9 rounded-full border border-border" style="background:oklch(0.56 0.19 340)" title="magenta"></span>
-  <span class="size-9 rounded-full border border-border" style="background:oklch(0.58 0.18 18)" title="rose"></span>
-  <span class="size-9 rounded-full border border-border" style="background:oklch(0.57 0.19 28)" title="red"></span>
-  <span class="size-9 rounded-full border border-border" style="background:oklch(0.66 0.16 52)" title="orange"></span>
-  <span class="size-9 rounded-full border border-border" style="background:oklch(0.72 0.13 68)" title="amber"></span>
-  <span class="size-9 rounded-full border border-border" style="background:oklch(0.7 0.15 130)" title="lime"></span>
-  <span class="size-9 rounded-full border border-border" style="background:oklch(0.6 0.12 160)" title="green"></span>
-  <span class="size-9 rounded-full border border-border" style="background:oklch(0.6 0.11 200)" title="teal"></span>
-  <span class="size-9 rounded-full border border-border" style="background:oklch(0.65 0.12 224)" title="cyan"></span>
+<div class="my-6 flex flex-wrap gap-2">
+  <span
+    v-for="(preset, name) in THEME_PRESETS"
+    :key="name"
+    class="size-9 rounded-full border border-border"
+    :style="{ backgroundColor: preset.primary }"
+    :title="name"
+    :aria-label="name"
+    role="img"
+  ></span>
 </div>
 
-默认 `blue` = `oklch(0.54 0.16 256)`。
+## 使用语义色
 
-## 亮 / 暗
+- 用 `--background`、`--card`、`--popover` 和 `--muted` 区分页面、面板、浮层与次要表面。
+- `--primary` 表达主题主色，`--nv-brand` 用于强调、选中和桌面页面级主操作。桌面页面或工具栏只设一个主操作。
+- 成功、警告和危险色独立于主题。业务状态优先用 [NvStatusBadge 或 NvStatusDot](/components/desktop/status)，一并提供名称或图标。正文对比度至少为 4.5:1。
+- 大屏采用固定深色场景。色彩语义见[大屏概览](/components/screen/)和[设计令牌](/foundations/tokens)。
 
-视觉基准是**深色**。亮色完整支持，通过 `<html>.dark` 类切换；所有语义令牌都有亮暗两组取值，组件无需关心当前模式。本文档站右上角的外观开关直接驱动它。
-
-## 用色原则
-
-- 大面积用中性表面（`--background` / `--card` / `--muted`），品牌色只用于**强调与可点击**。
-- 状态色（成功 / 警告 / 危险）语义固定，不参与动态色切换。
-- 对比度遵循可读性基线；强调文字用 `--*-strong` 变体保证对比。
+具体属性取值由主题样式提供，彩色预设由 [useTheme.ts](https://github.com/Mang-X/Nerv-IIP/blob/main/frontend/packages/ui/src/composables/useTheme.ts) 提供。
