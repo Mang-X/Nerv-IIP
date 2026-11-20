@@ -13,6 +13,9 @@ describe('PlanningWorkbench', () => {
     useAuthStore().$patch({
       principal: {
         permissionCodes: [
+          'business.planning.demands.read',
+          'business.planning.mps.read',
+          'business.planning.mrp.read',
           'business.planning.demands.manage',
           'business.planning.mps.manage',
           'business.planning.mps.release',
@@ -39,7 +42,9 @@ describe('PlanningWorkbench', () => {
 
   // Regression / DomainInvariant: #4417 accepted WO continuity and source identity.
   it('已承接建议的真实工单单号可进入同工单详情', async () => {
-    useAuthStore().principal = { permissionCodes: ['business.mes.work-orders.read'] }
+    useAuthStore().principal = {
+      permissionCodes: ['business.planning.mrp.read', 'business.mes.work-orders.read'],
+    }
     const wrapper = mount(PlanningWorkbench)
     const link = wrapper
       .findAll('.cell-downstream button')
@@ -53,7 +58,9 @@ describe('PlanningWorkbench', () => {
     const wrapper = mount(PlanningWorkbench)
     expect(wrapper.findAll('.cell-downstream button')).toHaveLength(0)
     expect(wrapper.text()).toContain('WO-2026-0007')
-    useAuthStore().principal = { permissionCodes: ['business.mes.work-orders.read'] }
+    useAuthStore().principal = {
+      permissionCodes: ['business.planning.mrp.read', 'business.mes.work-orders.read'],
+    }
     planningSpies.suggestionsRef!.value = [
       {
         suggestionId: 'purchase-1',
@@ -766,7 +773,9 @@ describe('PlanningWorkbench', () => {
 
   it('已承接成 MES 工单的建议行给出「对该单排产」入口（MAN-694 / #1262）', () => {
     useAuthStore().$patch({
-      principal: { permissionCodes: ['business.scheduling.plans.manage'] },
+      principal: {
+        permissionCodes: ['business.planning.mrp.read', 'business.scheduling.plans.manage'],
+      },
     } as never)
     const wrapper = mount(PlanningWorkbench)
 

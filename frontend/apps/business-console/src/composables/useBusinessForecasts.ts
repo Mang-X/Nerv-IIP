@@ -7,12 +7,10 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
+import { useAuthStore } from '@/stores/auth'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import {
-  bindBusinessContext,
-  hasBusinessContext,
-  withBusinessContextEnabled,
-} from './businessContextBinding'
+import { bindBusinessContext, hasBusinessContext } from './businessContextBinding'
 import { assertEnvelopeSuccess } from './serviceEnvelope'
 
 export interface ForecastFilters {
@@ -46,23 +44,30 @@ export function useBusinessForecasts() {
     }),
   )
 
-  const forecastsQuery = useQuery(() =>
-    withBusinessContextEnabled(
-      listBusinessConsolePlanningForecastsQueryOptions({
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-          skuCode: filters.skuCode === 'all' ? undefined : filters.skuCode.trim() || undefined,
-          siteCode: filters.siteCode === 'all' ? undefined : filters.siteCode.trim() || undefined,
-          fromDate: filters.fromDate || undefined,
-          toDate: filters.toDate || undefined,
-        },
-      }),
-      filters,
-    ),
+  const auth = useAuthStore()
+  const canQuery = computed(
+    () =>
+      hasBusinessContext(filters) &&
+      auth.principal?.permissionCodes?.includes(P.planningDemandsRead),
   )
+  const forecastsQuery = useQuery(() => ({
+    ...listBusinessConsolePlanningForecastsQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        skuCode: filters.skuCode === 'all' ? undefined : filters.skuCode.trim() || undefined,
+        siteCode: filters.siteCode === 'all' ? undefined : filters.siteCode.trim() || undefined,
+        fromDate: filters.fromDate || undefined,
+        toDate: filters.toDate || undefined,
+      },
+    }),
+    enabled: !!canQuery.value,
+  }))
   const saveMutation = useMutation(createOrUpdateBusinessConsolePlanningForecastMutationOptions())
 
+  async function refreshForecasts() {
+    if (canQuery.value) await forecastsQuery.refetch()
+  }
   return {
     filters,
     forecasts: computed(() =>
@@ -72,14 +77,11 @@ export function useBusinessForecasts() {
     ),
     forecastsError: forecastsQuery.error,
     forecastsPending: forecastsQuery.isLoading,
-    refreshForecasts: async () => {
-      if (!hasBusinessContext(filters)) return
-      await forecastsQuery.refetch()
-    },
+    refreshForecasts,
     saveForecast: async (form: ForecastForm) => {
       const envelope = await saveMutation.mutateAsync({ body: form })
       const result = assertEnvelopeSuccess(envelope, '保存预测失败，请稍后重试。')
-      await forecastsQuery.refetch()
+      await refreshForecasts()
       return result
     },
     saveForecastError: saveMutation.error,
