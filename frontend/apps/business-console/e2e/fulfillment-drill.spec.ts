@@ -61,11 +61,20 @@ async function salesSession(page: Page, permissions = ['business.erp.sales.read'
       if (pathname.endsWith('/erp/finance/receivables/by-source')) {
         const source = searchParams.get('sourceDocumentNo')
         if (
-          source !== 'DO-OLD' ||
           searchParams.get('organizationId') !== 'org-sales' ||
           searchParams.get('environmentId') !== 'env-sales'
         )
           throw new Error('应收复核范围错误')
+        if (source !== 'DO-OLD')
+          return route.fulfill({
+            status: 400,
+            json: {
+              success: false,
+              code: 400,
+              message: `来源单据『${source}』的应收单不存在。`,
+              errorData: [],
+            },
+          })
         data = { receivableNo: 'AR-OLD', sourceDocumentNo: source, openAmount: 30 }
       }
       if (pathname.endsWith('/erp/finance/receivables')) {
@@ -75,6 +84,11 @@ async function salesSession(page: Page, permissions = ['business.erp.sales.read'
             receivableNo: 'AR-NEAR-' + i,
             sourceDocumentNo: 'DO-OLD9',
             openAmount: 99,
+          })),
+          ...Array.from({ length: 201 }, (_, i) => ({
+            receivableNo: 'AR-OTHER-' + i,
+            sourceDocumentNo: targetDelivery + '9',
+            openAmount: 1,
           })),
           { receivableNo: 'AR-OLD', sourceDocumentNo: 'DO-OLD', openAmount: 30 },
         ].filter(
@@ -319,6 +333,34 @@ test('后发单尚无应收时仍能核对早先发货的应收', async ({ page 
   await page.getByRole('button', { name: '清空应收筛选' }).click()
   await expect(page).toHaveURL(/\/erp\/finance\/ar-ap\?from=timeline$/)
   await expect(page.getByRole('row').filter({ hasText: 'AR-NEAR-0' })).toBeVisible()
+})
+
+test('应收按来源保留可读账单，并区分拒绝与可重试错误', async ({ page }) => {
+  await salesSession(page, ['business.erp.sales.read', 'business.erp.finance.read'])
+  let status = 400
+  await page.route('**/erp/finance/receivables/by-source?**', (route) =>
+    new URL(route.request().url()).searchParams.get('sourceDocumentNo') === targetDelivery
+      ? route.fulfill({
+          status,
+          json: { success: false, code: status, message: '请求未通过校验。', errorData: [] },
+        })
+      : route.fallback(),
+  )
+  await openTimeline(page)
+  const node = page.locator('.nv-ft-node').filter({ has: page.getByText('应收', { exact: true }) })
+  await expect(node).toContainText('DO-314 · 读取失败')
+  await expect(node.getByRole('link', { name: '核对账单 · AR-OLD' })).toBeVisible()
+  status = 403
+  await node.getByRole('button', { name: '重试' }).click()
+  await expect(node).toContainText('DO-314 · 权限受限')
+  await expect(node.getByRole('link', { name: '按来源核对应收 · DO-314' })).toHaveCount(0)
+  await expect(node.getByRole('link', { name: '核对账单 · AR-OLD' })).toBeVisible()
+  await page.route('**/erp/finance/receivables?**', (route) =>
+    route.fulfill({ status: 403, json: { success: false, code: 403, message: '禁止访问。' } }),
+  )
+  await openTimeline(page)
+  await expect(node).toContainText('权限受限，无权查看该节点数据。')
+  await expect(node.getByRole('link')).toHaveCount(0)
 })
 
 for (const status of [403, 503]) {

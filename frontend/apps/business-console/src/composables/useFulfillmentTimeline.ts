@@ -834,6 +834,17 @@ export function useFulfillmentTimeline(
                   query: { ...scope, sourceDocumentNo: source },
                   throwOnError: false,
                 })
+              // ERP 的按来源接口用业务 400 表示无记录，同一状态也用于参数校验。
+              if (
+                response?.status === 400 &&
+                error &&
+                typeof error === 'object' &&
+                'success' in error &&
+                error.success === false &&
+                'message' in error &&
+                error.message === `来源单据『${source}』的应收单不存在。`
+              )
+                return { data: undefined }
               return { data: data?.data, error: data?.success === false ? data : error, response }
             })
             if (latest?.sourceDocumentNo === source) receipt.rows.push(latest)
@@ -862,12 +873,25 @@ export function useFulfillmentTimeline(
         ]
       : []
     const financeLinks = [so, ...deliveryNumbers.value]
-      .filter((value): value is string => Boolean(value))
+      .filter(
+        (source): source is string =>
+          Boolean(source) &&
+          !receipts.some(
+            (result) => result.source === source && httpStatusOf(result.error) === 403,
+          ),
+      )
       .map((source) => ({
         label: '按来源核对应收 · ' + source,
         to: { path: '/erp/finance/ar-ap', query: { keyword: source } },
       }))
-    const receiptFailure = receipts.find((result) => result.error)?.error
+    const retryableReceipt = receipts.find(
+      (result) => result.error && httpStatusOf(result.error) !== 403,
+    )
+    const receiptFailure = retryableReceipt?.error ?? receipts.find((result) => result.error)?.error
+    const receivableError = !canRead(P.erpFinanceRead)
+      ? new FulfillmentNodeError(403)
+      : (receivableQuery.error.value ??
+        (!receivable ? (deliveryQuery.error.value ?? receiptFailure) : null))
     const receiptNote = receipts
       .map(({ source, rows, limited, error }) =>
         [
@@ -1071,10 +1095,7 @@ export function useFulfillmentTimeline(
           title: '应收',
           enabled: hasScope.value,
           loading: deliveryQuery.isLoading.value || receivableQuery.isLoading.value,
-          error: !canRead(P.erpFinanceRead)
-            ? new FulfillmentNodeError(403)
-            : (receivableQuery.error.value ??
-              (!receivable ? (deliveryQuery.error.value ?? receiptFailure) : null)),
+          error: receivableError,
           record: receivable,
           present: (record) => ({
             businessNo: record.receivableNo ?? undefined,
@@ -1088,12 +1109,9 @@ export function useFulfillmentTimeline(
             .filter(Boolean)
             .join('；'),
         }),
-        retryable: Boolean(
-          receivable &&
-          receipts.some((result) => result.error && httpStatusOf(result.error) !== 403),
-        ),
+        retryable: Boolean(receivable && retryableReceipt),
         links:
-          canRead(P.erpFinanceRead) && httpStatusOf(receivableQuery.error.value) !== 403
+          httpStatusOf(receivableError) !== 403
             ? [
                 ...receipts.flatMap((result) =>
                   result.rows.flatMap((row) =>
