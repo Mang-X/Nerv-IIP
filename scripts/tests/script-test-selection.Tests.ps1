@@ -397,8 +397,7 @@ finally { Remove-Item -LiteralPath $registryRoot -Recurse -Force -ErrorAction Si
 # ─────────────────────────────────────────────────────────────────────────────
 $plan = Get-NervScriptTestSelectionPlan -RepositoryRoot $repoRoot
 
-$runnerTests = Get-NervStringSet -Values ([string[]] $plan.RunnerSelected) -Comparer ([StringComparer]::Ordinal)
-Assert-Selection ($runnerTests.Contains('redis-cap-observation.Tests.ps1')) `
+Assert-Selection ([Array]::IndexOf([string[]]$plan.RunnerSelected, 'redis-cap-observation.Tests.ps1') -ge 0) `
     'Script Governance must discover the Redis/CAP observation fixtures so they run on script-only changes.'
 
 $covered = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
