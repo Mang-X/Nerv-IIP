@@ -122,6 +122,9 @@ public sealed class ProductionReportRecordedIntegrationEventHandlerForAccumulate
             unitOfWork,
             async () =>
             {
+                // 物料流水按报工号关联。先锁报工号，再锁工单，确保待匹配写入与报工归集在提交时有序。
+                await mutationLock.AcquireReportAsync(
+                    integrationEvent.OrganizationId, integrationEvent.EnvironmentId, integrationEvent.Payload.ReportNo, cancellationToken);
                 await mutationLock.AcquireAsync(
                     integrationEvent.OrganizationId,
                     integrationEvent.EnvironmentId,
@@ -264,9 +267,11 @@ public sealed class StockMovementPostedIntegrationEventHandlerForAccumulateMater
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
     ITransactionUnitOfWork unitOfWork,
-    ErpCodingService codingService)
+    ErpCodingService codingService,
+    IWorkOrderCostMutationLock? mutationLock = null)
     : IIntegrationEventHandler<StockMovementPostedIntegrationEvent>, ICapSubscribe
 {
+    private readonly IWorkOrderCostMutationLock costLock = mutationLock ?? new PostgreSqlWorkOrderCostMutationLock(dbContext);
     public const string ConsumerName = "business-erp.production-material-cost";
     public Task HandleAsync(StockMovementPostedIntegrationEvent integrationEvent, CancellationToken cancellationToken) => HandleValidAsync(integrationEvent, cancellationToken);
     [CapSubscribe(nameof(StockMovementPostedIntegrationEvent), Group = ConsumerName)]
@@ -284,64 +289,80 @@ public sealed class StockMovementPostedIntegrationEventHandlerForAccumulateMater
             await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(ConsumerName, integrationEvent, "missing-actual-unit-cost", $"Inventory movement '{payload.InventoryMovementId}' has no actual moving-average cost."), cancellationToken);
             return;
         }
+        if (isProductionMaterial)
+        {
+            await CostingIntegrationEventUnitOfWork.ExecuteAsync(dbContext, unitOfWork,
+                () => RecordMaterialAsync(integrationEvent, unitCost.Value, cancellationToken), cancellationToken);
+            return;
+        }
         if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken)) return;
-        if (isFinishedGoods)
+        if (string.IsNullOrWhiteSpace(payload.SourceDocumentLineId))
         {
-            if (string.IsNullOrWhiteSpace(payload.SourceDocumentLineId))
-            {
-                await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(ConsumerName, integrationEvent, "missing-work-order-id", "Finished-goods Inventory posting must carry the MES work-order id."), cancellationToken);
-                return;
-            }
-            var completedCost = await dbContext.WorkOrderCosts.Include(x => x.Details).SingleOrDefaultAsync(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.WorkOrderId == payload.SourceDocumentLineId, cancellationToken)
-                ?? throw new InvalidOperationException($"Work-order cost '{payload.SourceDocumentLineId}' was not found for capitalization posting.");
-            var priorCapitalized = completedCost.CapitalizedCost;
-            var priorWipCleared = completedCost.WipClearedCost;
-            completedCost.Capitalize(payload.InventoryMovementId, payload.Quantity, unitCost.Value, payload.PostedAtUtc);
-            await EnsureCapitalizationAccountsAsync(dbContext, integrationEvent.OrganizationId, integrationEvent.EnvironmentId, cancellationToken);
-            var movementAmount = completedCost.CapitalizedCost - priorCapitalized;
-            var isFinalReceipt = completedCost.IsFullyCapitalized;
-            var variance = isFinalReceipt ? completedCost.TotalAccumulatedCost - completedCost.CapitalizedCost : 0m;
-            var wipClearance = isFinalReceipt ? completedCost.TotalAccumulatedCost - priorWipCleared : movementAmount;
-            var lines = new List<JournalVoucherLineDraft>
-            {
-                new("1406-FINISHED-GOODS", movementAmount, 0m, $"Finished goods {completedCost.WorkOrderId}"),
-                wipClearance >= 0m
-                    ? new("1405-WIP", 0m, wipClearance, $"Clear WIP {completedCost.WorkOrderId}")
-                    : new("1405-WIP", -wipClearance, 0m, $"Restore WIP {completedCost.WorkOrderId}"),
-            };
-            if (variance > 0m) lines.Add(new("5101-PRODUCTION-VARIANCE", variance, 0m, $"Uncapitalized variance {completedCost.WorkOrderId}"));
-            else if (variance < 0m) lines.Add(new("5101-PRODUCTION-VARIANCE", 0m, -variance, $"Over-capitalized variance {completedCost.WorkOrderId}"));
-            // #3278 / S7：凭证号改分配器短号，分配键取 (WOC, 库存移动号)。
-            // 先分配再改聚合状态：拿不到号时 RecordWipClearance 还没发生，
-            // Clear 之后本次零落库，而不是「清了 WIP 却没凭证」。
-            var capitalizationVoucher = await ConsumerJournalVoucherNumber.TryAllocateAsync(
-                codingService,
-                integrationEvent.OrganizationId,
-                integrationEvent.EnvironmentId,
-                JournalVoucherSourceType.WorkOrderCapitalization,
-                payload.InventoryMovementId,
-                cancellationToken);
-            if (capitalizationVoucher.Code is null)
-            {
-                dbContext.ChangeTracker.Clear();
-                await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(ConsumerName, integrationEvent, ConsumerJournalVoucherNumber.AllocationFailureCode, capitalizationVoucher.FailureMessage), cancellationToken);
-                return;
-            }
-            completedCost.RecordWipClearance(wipClearance);
-            dbContext.JournalVouchers.Add(JournalVoucher.Post(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, capitalizationVoucher.Code, DateOnly.FromDateTime(payload.PostedAtUtc.UtcDateTime), lines, JournalVoucherSourceType.WorkOrderCapitalization, payload.InventoryMovementId));
-            await CostingIntegrationEventUnitOfWork.SaveEntitiesAsync(dbContext, unitOfWork, cancellationToken);
+            await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(ConsumerName, integrationEvent, "missing-work-order-id", "Finished-goods Inventory posting must carry the MES work-order id."), cancellationToken);
             return;
         }
-        var cost = await dbContext.WorkOrderCosts.Include(x => x.Details).SingleOrDefaultAsync(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.Details.Any(d => d.SourceDocumentId == payload.SourceDocumentId), cancellationToken);
+        var completedCost = await dbContext.WorkOrderCosts.Include(x => x.Details).SingleOrDefaultAsync(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.WorkOrderId == payload.SourceDocumentLineId, cancellationToken)
+            ?? throw new InvalidOperationException($"Work-order cost '{payload.SourceDocumentLineId}' was not found for capitalization posting.");
+        var priorCapitalized = completedCost.CapitalizedCost;
+        var priorWipCleared = completedCost.WipClearedCost;
+        completedCost.Capitalize(payload.InventoryMovementId, payload.Quantity, unitCost.Value, payload.PostedAtUtc);
+        await EnsureCapitalizationAccountsAsync(dbContext, integrationEvent.OrganizationId, integrationEvent.EnvironmentId, cancellationToken);
+        var movementAmount = completedCost.CapitalizedCost - priorCapitalized;
+        var isFinalReceipt = completedCost.IsFullyCapitalized;
+        var variance = isFinalReceipt ? completedCost.TotalAccumulatedCost - completedCost.CapitalizedCost : 0m;
+        var wipClearance = isFinalReceipt ? completedCost.TotalAccumulatedCost - priorWipCleared : movementAmount;
+        var lines = new List<JournalVoucherLineDraft>
+        {
+            new("1406-FINISHED-GOODS", movementAmount, 0m, $"Finished goods {completedCost.WorkOrderId}"),
+            wipClearance >= 0m
+                ? new("1405-WIP", 0m, wipClearance, $"Clear WIP {completedCost.WorkOrderId}")
+                : new("1405-WIP", -wipClearance, 0m, $"Restore WIP {completedCost.WorkOrderId}"),
+        };
+        if (variance > 0m) lines.Add(new("5101-PRODUCTION-VARIANCE", variance, 0m, $"Uncapitalized variance {completedCost.WorkOrderId}"));
+        else if (variance < 0m) lines.Add(new("5101-PRODUCTION-VARIANCE", 0m, -variance, $"Over-capitalized variance {completedCost.WorkOrderId}"));
+        // #3278 / S7：凭证号改分配器短号，分配键取 (WOC, 库存移动号)。
+        // 先分配再改聚合状态：拿不到号时 RecordWipClearance 还没发生，
+        // Clear 之后本次零落库，而不是「清了 WIP 却没凭证」。
+        var capitalizationVoucher = await ConsumerJournalVoucherNumber.TryAllocateAsync(
+            codingService,
+            integrationEvent.OrganizationId,
+            integrationEvent.EnvironmentId,
+            JournalVoucherSourceType.WorkOrderCapitalization,
+            payload.InventoryMovementId,
+            cancellationToken);
+        if (capitalizationVoucher.Code is null)
+        {
+            dbContext.ChangeTracker.Clear();
+            await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(ConsumerName, integrationEvent, ConsumerJournalVoucherNumber.AllocationFailureCode, capitalizationVoucher.FailureMessage), cancellationToken);
+            return;
+        }
+        completedCost.RecordWipClearance(wipClearance);
+        dbContext.JournalVouchers.Add(JournalVoucher.Post(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, capitalizationVoucher.Code, DateOnly.FromDateTime(payload.PostedAtUtc.UtcDateTime), lines, JournalVoucherSourceType.WorkOrderCapitalization, payload.InventoryMovementId));
+        await CostingIntegrationEventUnitOfWork.SaveEntitiesAsync(dbContext, unitOfWork, cancellationToken);
+    }
+
+    private async Task RecordMaterialAsync(StockMovementPostedIntegrationEvent integrationEvent, decimal unitCost, CancellationToken cancellationToken)
+    {
+        var payload = integrationEvent.Payload;
+        await costLock.AcquireReportAsync(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, payload.SourceDocumentId, cancellationToken);
+        if (!await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken)) return;
+        var workOrderId = await dbContext.WorkOrderCosts
+            .Where(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId &&
+                x.Details.Any(d => d.SourceDocumentId == payload.SourceDocumentId))
+            .Select(x => x.WorkOrderId)
+            .SingleOrDefaultAsync(cancellationToken);
         var signedCostQuantity = payload.Quantity < 0m ? Math.Abs(payload.Quantity) : -Math.Abs(payload.Quantity);
-        if (cost is null)
+        if (workOrderId is null)
         {
-            dbContext.PendingMaterialCosts.Add(PendingMaterialCost.Create(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, payload.InventoryMovementId, payload.SourceDocumentId, payload.SkuCode, signedCostQuantity, unitCost.Value, payload.PostedAtUtc));
-            await CostingIntegrationEventUnitOfWork.SaveEntitiesAsync(dbContext, unitOfWork, cancellationToken);
+            dbContext.PendingMaterialCosts.Add(PendingMaterialCost.Create(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, payload.InventoryMovementId, payload.SourceDocumentId, payload.SkuCode, signedCostQuantity, unitCost, payload.PostedAtUtc));
             return;
         }
+        await costLock.AcquireAsync(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, workOrderId, cancellationToken);
+        var cost = await dbContext.WorkOrderCosts.Include(x => x.Details).SingleAsync(
+            x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.WorkOrderId == workOrderId,
+            cancellationToken);
         var priorMaterialTotal = cost.TotalAccumulatedCost;
-        cost.RecordMaterial(payload.InventoryMovementId, payload.SourceDocumentId, payload.SkuCode, signedCostQuantity, unitCost.Value, payload.PostedAtUtc);
+        cost.RecordMaterial(payload.InventoryMovementId, payload.SourceDocumentId, payload.SkuCode, signedCostQuantity, unitCost, payload.PostedAtUtc);
         if (cost.CapitalizationPublished && signedCostQuantity < 0m
             && !await CostVariancePosting.PostLateAdjustmentAsync(dbContext, codingService, cost, cost.TotalAccumulatedCost - priorMaterialTotal, payload.InventoryMovementId, payload.PostedAtUtc, cancellationToken))
         {
@@ -349,7 +370,6 @@ public sealed class StockMovementPostedIntegrationEventHandlerForAccumulateMater
             await deadLetterStore.AddAsync(IntegrationEventDeadLetterMessage.Create(ConsumerName, integrationEvent, ConsumerJournalVoucherNumber.AllocationFailureCode, "Journal voucher number could not be allocated for the late cost adjustment."), cancellationToken);
             return;
         }
-        await CostingIntegrationEventUnitOfWork.SaveEntitiesAsync(dbContext, unitOfWork, cancellationToken);
     }
 
     private static async Task EnsureCapitalizationAccountsAsync(ApplicationDbContext dbContext, string organizationId, string environmentId, CancellationToken cancellationToken)

@@ -1361,6 +1361,52 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
     }
 
     [ErpCostPostgresFact(Timeout = 30_000)]
+    public async Task PostgreSQL_material_posting_during_uncommitted_report_is_costed_once()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var application = $"erp-material-report-{Guid.CreateVersion7():N}";
+        var connection = new NpgsqlConnectionStringBuilder(ErpPostgresLaneDatabase.ConnectionString)
+            { ApplicationName = application }.ConnectionString;
+        var options = ErpPostgresLaneDatabase.CreateOptions(connection);
+        await using var reportDb = new ApplicationDbContext(options, new NoopMediator());
+        await reportDb.Database.MigrateAsync();
+        await using var transaction = await reportDb.Database.BeginTransactionAsync();
+        ((ITransactionUnitOfWork)reportDb).CurrentTransaction = transaction;
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var at = new DateTimeOffset(2026, 8, 1, 10, 0, 0, TimeSpan.Zero);
+        var report = new ProductionReportRecordedIntegrationEvent(
+            "evt-report", MesIntegrationEventTypes.ProductionReportRecorded, 1, at,
+            MesIntegrationEventSources.BusinessMes, "RPT-001", "WO-001", "org-001", "env-dev", "operator", "report-001",
+            new ProductionReportRecordedPayload("RPT-001", "WO-001", "OP-001", "WC-01",
+                null, 1m, 0m, 0m, "pcs", null, at, false, MaterialMovementCount: 1));
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
+            reportDb, deadLetters, reportDb, new PostgreSqlWorkOrderCostMutationLock(reportDb), ErpTestCoding.For(reportDb))
+            .HandleAsync(report, CancellationToken.None);
+
+        await using var stockDb = new ApplicationDbContext(options, new NoopMediator());
+        var movement = new StockMovementPostedIntegrationEvent(
+            "evt-material", InventoryIntegrationEventTypes.StockMovementPosted, 1, at,
+            InventoryIntegrationEventSources.BusinessInventory, "RPT-001", "RPT-001", "org-001", "env-dev", "inventory", "move-001",
+            new StockMovementPostedPayload("MOVE-001", "outbound", InventoryIntegrationEventSources.BusinessMes,
+                "RPT-001", "MIR-001", "mes:production-consumption:001", "RM-001", "kg",
+                "SITE-001", "line-side", "LOT-001", null, "unrestricted", "company", null, -3m, at, 20m, -60m));
+        var consumer = new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(
+            stockDb, deadLetters, stockDb, ErpTestCoding.For(stockDb));
+        var posting = consumer.HandleAsync(movement, CancellationToken.None);
+        // 旧实现会直接提交为待匹配；协调后的实现会等待报工提交。两种情况都可观察，无须定时休眠。
+        await WaitForAdvisoryLockWaitersAsync(connection, application, expectedCount: 1, completedWrite: posting);
+        await transaction.CommitAsync();
+        await posting;
+        await consumer.HandleAsync(movement, CancellationToken.None);
+
+        await using var readDb = new ApplicationDbContext(options, new NoopMediator());
+        Assert.Empty(await readDb.PendingMaterialCosts.ToListAsync());
+        var cost = await readDb.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        Assert.Equal(1, cost.ReceivedMaterialMovementCount);
+        Assert.Equal(60m, cost.MaterialCost);
+    }
+
+    [ErpCostPostgresFact(Timeout = 30_000)]
     public async Task PostgreSQL_concurrent_report_and_actual_settlement_leave_only_actual_labor_active()
     {
         await ErpPostgresLaneDatabase.ResetSchemaAsync();
@@ -2298,7 +2344,8 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         string connectionString,
         string applicationName,
         int expectedCount,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Task? completedWrite = null)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         // Opening the probe connection is a single operation that can hang, so it keeps its own explicit
@@ -2323,7 +2370,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         await Eventually.WaitAsync(
             condition: $"{expectedCount} PostgreSQL advisory-lock waiters for {applicationName}",
             observe: async token => Convert.ToInt32(await command.ExecuteScalarAsync(token)),
-            isSatisfied: waitingCount => waitingCount >= expectedCount,
+            isSatisfied: waitingCount => waitingCount >= expectedCount || completedWrite?.IsCompleted == true,
             describe: waitingCount => $"waiters={waitingCount}; expected>={expectedCount}",
             options: new EventuallyOptions(
                 Timeout: TimeSpan.FromSeconds(10),
