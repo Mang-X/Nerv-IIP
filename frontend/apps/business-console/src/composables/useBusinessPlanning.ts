@@ -227,6 +227,22 @@ function unwrapItems<T>(
   return envelope.data?.items ?? []
 }
 
+function planningReadError(
+  query: {
+    error: { value: Error | null }
+    data: { value?: { success?: boolean; message?: string | null } }
+  },
+  fallback: string,
+) {
+  return computed(
+    () =>
+      query.error.value ??
+      (query.data.value?.success === false
+        ? new Error(query.data.value.message || fallback)
+        : null),
+  )
+}
+
 function isBusinessQuery(ids: string[]) {
   return (entry: UseQueryEntry) => {
     const keyParts = Array.isArray(entry.key) ? entry.key : [entry.key]
@@ -666,7 +682,7 @@ export function useBusinessPlanning(
     demands: computed<BusinessConsoleDemandSourceItem[]>(() =>
       unwrapItems(demandsQuery.data.value as BusinessConsoleDemandSourceListEnvelope | undefined),
     ),
-    demandsError: demandsQuery.error,
+    demandsError: planningReadError(demandsQuery, '读取计划需求失败。'),
     demandsPending: demandsQuery.isLoading,
     filters,
     mpsBuckets: computed<BusinessConsoleMpsBucketItem[]>(() =>
@@ -677,7 +693,7 @@ export function useBusinessPlanning(
     mpsFilters,
     mpsForm,
     mrpRuns,
-    mrpRunsError: runsQuery.error,
+    mrpRunsError: planningReadError(runsQuery, '读取 MRP 运行失败。'),
     mrpRunsPending: runsQuery.isLoading,
     pegging: computed<BusinessConsoleMrpPeggingItem[]>(() =>
       unwrapItems(peggingQuery.data.value as BusinessConsoleMrpPeggingListEnvelope | undefined),
@@ -764,13 +780,7 @@ export function useBusinessPlanning(
     suggestionTypeFilter,
     suggestions,
     downstreamStatuses: computed(() => downstreamStatusesQuery.data.value ?? {}),
-    suggestionsError: computed(() => {
-      const response = suggestionsQuery.data.value
-      return (
-        suggestionsQuery.error.value ??
-        (response?.success === false ? new Error(response.message || '计划建议读取失败。') : null)
-      )
-    }),
+    suggestionsError: planningReadError(suggestionsQuery, '计划建议读取失败。'),
     suggestionsPending: suggestionsQuery.isLoading,
     syncContext,
     updateMpsBucket: (mpsId: string) =>

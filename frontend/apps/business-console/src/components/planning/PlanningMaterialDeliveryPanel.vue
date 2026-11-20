@@ -33,6 +33,7 @@ const emit = defineEmits<{ locateSuggestion: [suggestionId: string, runId: strin
 const {
   selection,
   planPage,
+  canSelectPlan,
   plans,
   plansTotal,
   plansPending,
@@ -85,7 +86,7 @@ const unknownColumns: NvDataTableColumn<BusinessConsoleMaterialDeliveryUnknownRe
   ]
 </script>
 <template>
-  <section class="grid gap-3" aria-label="物料交付">
+  <section class="grid min-w-0 grid-cols-1 gap-3" aria-label="物料交付">
     <div class="flex flex-wrap items-end gap-3">
       <div class="grid gap-1">
         <label class="text-sm font-medium">MRP 运行</label>
@@ -105,10 +106,13 @@ const unknownColumns: NvDataTableColumn<BusinessConsoleMaterialDeliveryUnknownRe
           >
         </NvSelect>
       </div>
-      <div class="grid gap-1">
+      <div v-if="canSelectPlan" class="grid min-w-0 max-w-full gap-1">
         <label class="text-sm font-medium">APS 方案（显式选择）</label>
         <NvSelect v-model="planChoice">
-          <NvSelectTrigger class="w-96" aria-label="物料交付 APS 方案" :disabled="plansPending"
+          <NvSelectTrigger
+            class="w-96 max-w-full"
+            aria-label="物料交付 APS 方案"
+            :disabled="plansPending"
             ><NvSelectValue placeholder="选择 APS 方案"
           /></NvSelectTrigger>
           <NvSelectContent>
@@ -126,7 +130,7 @@ const unknownColumns: NvDataTableColumn<BusinessConsoleMaterialDeliveryUnknownRe
           </NvSelectContent>
         </NvSelect>
       </div>
-      <div v-if="plansTotal > 20" class="flex items-center gap-2">
+      <div v-if="canSelectPlan && plansTotal > 20" class="flex items-center gap-2">
         <NvButton
           size="sm"
           variant="outline"

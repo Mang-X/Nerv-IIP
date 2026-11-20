@@ -224,27 +224,26 @@ function withCreateIdempotency<TBody>(resourceType: string, body: TBody): TBody 
   }
 }
 
-export function useBusinessSkus() {
+export function useBusinessSkus(enabled = () => true) {
   const filters = defaultListFilters()
 
-  const skusQuery = useQuery(() =>
-    withBusinessContextEnabled(
-      listBusinessConsoleSkusQueryOptions({
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-          ...optionalQuery('includeDisabled', filters.includeDisabled),
-          skip: filters.skip,
-          take: filters.take,
-        },
-      }),
-      filters,
-    ),
-  )
+  const skusQuery = useQuery(() => ({
+    ...listBusinessConsoleSkusQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        ...optionalQuery('includeDisabled', filters.includeDisabled),
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+    enabled: hasBusinessContext(filters) && enabled(),
+  }))
 
   return {
     filters,
-    refreshSkus: () => refetchWithBusinessContext(filters, skusQuery),
+    refreshSkus: () =>
+      enabled() ? refetchWithBusinessContext(filters, skusQuery) : Promise.resolve(undefined),
     skus: computed<BusinessConsoleResourceItem[]>(() => resourceItems(skusQuery.data.value)),
     skusError: skusQuery.error,
     skusPending: skusQuery.isLoading,
@@ -465,31 +464,32 @@ export function useReferenceDataCodes() {
 
 export function useBusinessMasterDataResources(
   resourceType: string,
-  options: { codeSet?: string } = {},
+  options: { codeSet?: string; enabled?: () => boolean } = {},
 ) {
   const filters = defaultResourceFilters(resourceType, options.codeSet)
 
-  const resourcesQuery = useQuery(() =>
-    withBusinessContextEnabled(
-      listBusinessConsoleMasterDataResourcesQueryOptions({
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-          resourceType: filters.resourceType,
-          ...optionalQuery('codeSet', filters.codeSet),
-          ...optionalQuery('includeDisabled', filters.includeDisabled),
-          ...optionalQuery('keyword', filters.keyword),
-          skip: filters.skip,
-          take: filters.take,
-        },
-      }),
-      filters,
-    ),
-  )
+  const resourcesQuery = useQuery(() => ({
+    ...listBusinessConsoleMasterDataResourcesQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        resourceType: filters.resourceType,
+        ...optionalQuery('codeSet', filters.codeSet),
+        ...optionalQuery('includeDisabled', filters.includeDisabled),
+        ...optionalQuery('keyword', filters.keyword),
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+    enabled: hasBusinessContext(filters) && (options.enabled?.() ?? true),
+  }))
 
   return {
     filters,
-    refreshResources: () => refetchWithBusinessContext(filters, resourcesQuery),
+    refreshResources: () =>
+      options.enabled?.() === false
+        ? Promise.resolve(undefined)
+        : refetchWithBusinessContext(filters, resourcesQuery),
     resources: computed<BusinessConsoleResourceItem[]>(() =>
       resourceItems(resourcesQuery.data.value),
     ),

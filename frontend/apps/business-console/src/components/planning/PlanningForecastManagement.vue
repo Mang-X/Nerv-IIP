@@ -51,9 +51,15 @@ const canManage = computed(() =>
   (auth.principal?.permissionCodes ?? []).includes(P.planningDemandsManage),
 )
 
-const { skus } = useBusinessSkus()
-const { resources: sites } = useBusinessMasterDataResources('site')
-const { resources: units } = useBusinessMasterDataResources('unit-of-measure')
+const canReadResources = () =>
+  auth.principal?.permissionCodes?.includes(P.masterDataResourcesRead) === true
+const { skus } = useBusinessSkus(
+  () => auth.principal?.permissionCodes?.includes(P.masterDataProductsRead) === true,
+)
+const { resources: sites } = useBusinessMasterDataResources('site', { enabled: canReadResources })
+const { resources: units } = useBusinessMasterDataResources('unit-of-measure', {
+  enabled: canReadResources,
+})
 const skuOptions = computed(() =>
   skus.value
     .filter((item) => item.code)

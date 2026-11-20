@@ -21,6 +21,7 @@ export interface MasterDataDisplayNameOptions {
   /** 班次（shift）。 */
   shifts?: boolean
   /** 员工（worker）：把登录账号 userId 解析成姓名。 */
+  enabled?: () => boolean
   users?: boolean
 }
 
@@ -45,7 +46,7 @@ const CATALOG_TAKE = 500
 export function useMasterDataDisplayNames(options: MasterDataDisplayNameOptions = {}) {
   function source(enabled: boolean | undefined, resourceType: string) {
     if (!enabled) return undefined
-    const catalog = useBusinessMasterDataResources(resourceType)
+    const catalog = useBusinessMasterDataResources(resourceType, { enabled: options.enabled })
     catalog.filters.take = CATALOG_TAKE
     // 历史单据可能引用已停用的主数据，名称照样要解析出来。
     catalog.filters.includeDisabled = true
