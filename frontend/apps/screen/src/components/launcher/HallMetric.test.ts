@@ -49,8 +49,7 @@ it('按当前组织读取活动报警总数，过期保留最后样本，无权�
     expect(page.text()).toContain('读取失败')
     total = 0
     status = 200
-    await page.get('button').trigger('click')
-    await flushPromises()
+    await vi.advanceTimersByTimeAsync(15000)
     expect(page.get('strong').text()).toBe('0')
     expect(page.find('button').exists()).toBe(false)
     total = 8

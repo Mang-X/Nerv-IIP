@@ -26,7 +26,7 @@ watch(
       stop()
       data.value = undefined
       lastUpdated.value = undefined
-    } else if (!failure) start()
+    } else start()
   },
   { flush: 'sync' },
 )
