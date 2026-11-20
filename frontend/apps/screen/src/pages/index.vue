@@ -31,14 +31,22 @@ const session = computed(() => ({
   organizationId: auth?.principal?.organizationId ?? '',
   environmentId: auth?.principal?.environmentId ?? '',
 }))
-const metrics: { key: MetricKey; label: string }[] = [
+type Metric = { key: MetricKey; label: string }
+const metrics: Metric[] = [
   { key: 'alarms', label: '未恢复报警（条）' },
   { key: 'running', label: '运行设备 / 在册设备' },
-  { key: 'picking', label: '拣货积压（项）' },
-  { key: 'wcs', label: 'WCS 失败（条）' },
-  { key: 'ncr', label: '待处置 NCR（单）' },
-  { key: 'inspection', label: '待检任务（项）' },
 ]
+const cardMetrics: Record<string, Metric[]> = {
+  warehouse: [
+    { key: 'outbound', label: '今日出库完成 / 建单' },
+    { key: 'picking', label: '拣货积压（项）' },
+    { key: 'wcs', label: 'WCS 失败（条）' },
+  ],
+  quality: [
+    { key: 'ncr', label: '待处置 NCR（单）' },
+    { key: 'inspection', label: '待检任务（项）' },
+  ],
+}
 const cards = computed(() => SCREENS.filter((s) => scope.canSeeScreen(s.key)))
 // lucide 图标按名取用；显式转 Component 以过 vue-tsc 的 <component :is> 类型校验。
 const iconMap = icons as unknown as Record<string, Component>
@@ -176,6 +184,7 @@ const scopeCounts = computed(() => {
           :label="m.label"
           :session="session"
         />
+        <p>今日产量、计划达成率、综合健康度暂无来源</p>
       </div>
       <div v-else class="hall-kpi">
         <NvKpiBar v-if="kpiItems.length" :items="kpiItems" />
@@ -183,28 +192,38 @@ const scopeCounts = computed(() => {
       </div>
 
       <main class="hall-cards" :class="{ single: cards.length === 1, grid: cards.length > 3 }">
-        <RouterLink v-for="s in cards" :key="s.key" :to="s.route" class="hall-card-link">
+        <div v-for="s in cards" :key="s.key" class="hall-card-link">
           <LauncherCard
             :title="s.title"
             :desc="s.desc"
             :icon="iconOf(s.icon)"
+            :route="s.route"
             :glance="glanceOf(s.key)"
             :empty-label="
               IS_REAL_DATA
-                ? ['equipment', 'warehouse', 'quality'].includes(s.key)
-                  ? '查看当前数据'
+                ? s.key === 'equipment'
+                  ? '设备状态与维修记录'
                   : '当前范围暂无指标来源'
                 : undefined
             "
-          />
-        </RouterLink>
+          >
+            <template v-if="IS_REAL_DATA && cardMetrics[s.key]" #metrics>
+              <div class="card-metrics">
+                <HallMetric
+                  v-for="m in cardMetrics[s.key]"
+                  :key="m.key"
+                  :metric="m.key"
+                  :label="m.label"
+                  :session="session"
+                />
+              </div>
+            </template>
+          </LauncherCard>
+        </div>
         <p v-if="cards.length === 0" class="hall-empty">当前账号无可见大屏，请联系管理员开通</p>
       </main>
 
-      <footer v-if="IS_REAL_DATA" class="hall-foot">
-        今日产量、计划达成率、综合健康度暂无来源
-      </footer>
-      <footer v-else class="hall-foot">
+      <footer v-if="!IS_REAL_DATA" class="hall-foot">
         <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
         <span>当前数据窗口滚动更新</span>
       </footer>
@@ -282,9 +301,20 @@ const scopeCounts = computed(() => {
     font-variant-numeric: tabular-nums;
   }
 
+  .card-metrics {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    margin-top: 28px;
+    gap: 12px;
+  }
+  .real-kpi p {
+    color: var(--nv-scr-muted);
+  }
   .real-kpi {
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: 1fr 1fr 2fr;
+    align-items: center;
     padding: 18px 30px;
     background: var(--nv-scr-panel-a);
   }

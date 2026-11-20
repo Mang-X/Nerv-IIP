@@ -353,7 +353,9 @@ const wcsView = ref<'chart' | 'list'>('chart')
               <span v-if="board.inbound.postFailedDocs > 0" class="wb-postfail">
                 过账失败 {{ board.inbound.postFailedDoc }}
               </span>
-              <span v-else class="wb-postok"><i class="wb-okdot" />过账无异常</span>
+              <span v-else class="wb-postok">{{
+                board.inbound.docsTotal ? '暂无过账失败记录' : '今日暂无收货单'
+              }}</span>
             </div>
             <!-- 小时流量是离散量 —— 柱状比面积曲线更诚实（每小时一根柱） -->
             <div class="wb-flow-spark">
@@ -439,7 +441,8 @@ const wcsView = ref<'chart' | 'list'>('chart')
                 <span class="tg-rule" aria-hidden="true" />
                 <span class="tg-done">{{ g.meta }}</span>
               </header>
-              <div class="tg-cols" :class="{ count: g.isCount }">
+              <p v-if="!g.rows.length" class="tg-empty">暂无{{ g.title }}任务</p>
+              <div v-else class="tg-cols" :class="{ count: g.isCount }">
                 <template v-if="!g.isCount">
                   <span>单号</span><span>物料</span><span class="r">数量</span><span>库位流向</span
                   ><span>来源单</span><span class="r">龄期</span>
@@ -449,7 +452,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
                   ><span>待盘库位</span><span class="r">龄期</span>
                 </template>
               </div>
-              <div class="tg-list">
+              <div v-if="g.rows.length" class="tg-list">
                 <NvScrollBoard :items="g.rows" :row-key="(r: WhTaskRow) => r.id" :speed="g.speed">
                   <template #row="{ item }">
                     <div class="tg-row" :class="{ count: g.isCount, late: item.overdue }">
@@ -1016,6 +1019,10 @@ const wcsView = ref<'chart' | 'list'>('chart')
   }
   .r {
     text-align: right;
+  }
+  .tg-empty {
+    margin: auto;
+    color: var(--nv-scr-muted);
   }
   .tg-list {
     flex: 1;

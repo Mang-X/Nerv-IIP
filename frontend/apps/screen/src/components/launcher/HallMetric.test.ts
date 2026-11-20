@@ -108,6 +108,7 @@ it('运行占比按台账关联，断线设备不计运行，响应顺序不影�
   try {
     await flushPromises()
     expect(page.get('strong').text()).toBe('1/2')
+    expect(page.text()).toContain('b · 断线')
     expect(urls[1].searchParams.get('deviceAssetIds')).toBe('a,b')
     expect(
       urls.every(
@@ -116,6 +117,33 @@ it('运行占比按台账关联，断线设备不计运行，响应顺序不影�
           url.searchParams.get('environmentId') === 'e',
       ),
     ).toBe(true)
+  } finally {
+    page.unmount()
+  }
+})
+
+it('仓储按建单日计算分母，首页已经触及昨日时无需翻历史页', async () => {
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-11-21T10:30:00'))
+  const fetch = vi.fn(async () =>
+    Response.json({
+      success: true,
+      data: {
+        total: 150,
+        items: [
+          { createdAtUtc: new Date('2026-11-21T09:00:00').toISOString(), status: 'Completed' },
+          { createdAtUtc: new Date('2026-11-21T08:00:00').toISOString(), status: 'Open' },
+          { createdAtUtc: new Date('2026-11-20T23:50:00').toISOString(), status: 'Completed' },
+        ],
+      },
+    }),
+  )
+  configureApiClient({ baseUrl: 'http://fixture', fetch })
+  const page = mount(HallMetric, { props: { label: '今日出库', metric: 'outbound', session } })
+  try {
+    await flushPromises()
+    expect(page.get('strong').text()).toBe('1/2')
+    expect(fetch).toHaveBeenCalledTimes(1)
   } finally {
     page.unmount()
   }

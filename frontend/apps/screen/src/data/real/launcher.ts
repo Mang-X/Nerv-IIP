@@ -5,6 +5,7 @@ import {
   listBusinessConsoleQualityNcrs,
   listBusinessConsoleEquipmentAlarms,
   listBusinessConsoleWmsPickingTasks,
+  listBusinessConsoleWmsOutboundOrders,
   listBusinessConsoleWmsWcsTasks,
 } from '@nerv-iip/api-client'
 import type { ScreenSession } from '../session'
@@ -25,12 +26,45 @@ function totalOf(page: { total?: number }): number {
   return page.total
 }
 
-export type HallMetric = 'running' | 'alarms' | 'picking' | 'wcs' | 'ncr' | 'inspection'
+export type HallMetric =
+  | 'running'
+  | 'alarms'
+  | 'picking'
+  | 'wcs'
+  | 'ncr'
+  | 'inspection'
+  | 'outbound'
 
-export async function fetchHallMetric(metric: HallMetric, session: ScreenSession): Promise<string> {
+interface DeviceReading {
+  value: string
+  exceptions: string[]
+}
+export async function fetchHallMetric(
+  metric: HallMetric,
+  session: ScreenSession,
+): Promise<string | DeviceReading> {
   if (!session.organizationId || !session.environmentId)
     throw new HallMetricUnavailable('缺少组织环境')
   const query = { ...session, skip: 0, take: 1 }
+  if (metric === 'outbound') {
+    const page = read(await listBusinessConsoleWmsOutboundOrders({ query: { ...query, take: 50 } }))
+    const total = totalOf(page)
+    const start = new Date()
+    start.setHours(0, 0, 0, 0)
+    const items = page.items
+    if (
+      !items ||
+      items.length > total ||
+      items.some((item) => !item.status || !Number.isFinite(Date.parse(item.createdAtUtc ?? '')))
+    )
+      throw new Error('出库单数据不完整')
+    const today = items.filter((item) => Date.parse(item.createdAtUtc!) >= start.getTime())
+    // Gateway 按创建时间倒序；首页触及昨日或已覆盖全部时，当日分母才完整。
+    if (total > items.length && today.length === items.length)
+      throw new HallMetricUnavailable('当日单据覆盖不全')
+    if (!today.length) return '今日暂无单据'
+    return `${today.filter((item) => item.status === 'Completed').length}/${today.length}`
+  }
   if (metric !== 'running') {
     const endpoints = {
       alarms: () => listBusinessConsoleEquipmentAlarms({ query: { ...query, status: 'active' } }),
@@ -72,5 +106,22 @@ export async function fetchHallMetric(metric: HallMetric, session: ScreenSession
     )
   )
     throw new HallMetricUnavailable('设备状态不全')
-  return `${devices.filter((d) => isRunningDevice(d.currentState, d.isSourceFresh === true, d.activeAlarmCount ?? 0)).length}/${total}`
+  const running = devices.filter((device) =>
+    isRunningDevice(
+      device.currentState,
+      device.isSourceFresh === true,
+      device.activeAlarmCount ?? 0,
+    ),
+  ).length
+  const names = new Map(
+    roster.resources.map((asset) => [
+      asset.deviceAssetId?.trim(),
+      asset.displayName || asset.code || asset.deviceAssetId,
+    ]),
+  )
+  const exceptions = devices.flatMap((device) => {
+    const state = !device.isSourceFresh ? '断线' : device.activeAlarmCount ? '报警' : undefined
+    return state ? [`${names.get(device.deviceAssetId)} · ${state}`] : []
+  })
+  return { value: `${running}/${total}`, exceptions: exceptions.slice(0, 3) }
 }

@@ -25,6 +25,8 @@ watch(
   { flush: 'sync' },
 )
 const now = useNow({ interval: 1000 })
+const value = computed(() => (typeof data.value === 'object' ? data.value.value : data.value))
+const exceptions = computed(() => (typeof data.value === 'object' ? data.value.exceptions : []))
 const status = computed(() => {
   if (unavailable.value) return unavailable.value
   if (error.value && data.value === undefined) return '读取失败'
@@ -39,7 +41,8 @@ const status = computed(() => {
 <template>
   <div class="metric">
     <span>{{ label }}</span>
-    <strong>{{ unavailable || data === undefined ? '—' : data }}</strong>
+    <strong>{{ unavailable || value === undefined ? '—' : value }}</strong>
+    <small v-if="exceptions.length">{{ exceptions.join('　') }}</small>
     <small role="status"
       >{{ status }} <button v-if="error" :disabled="loading" @click="refresh">重试</button></small
     >

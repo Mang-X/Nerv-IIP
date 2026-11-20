@@ -10,7 +10,7 @@ import { useRealAuthStore } from '@/stores/realAuth'
 
 const router = useRouter()
 const route = useRoute()
-const auth = useAuthStore()
+const demoAuth = IS_REAL_DATA ? undefined : useAuthStore()
 const account = ref('')
 const password = ref('')
 const loading = ref(false)
@@ -74,7 +74,7 @@ async function onSubmit() {
     } else {
       // mock：本地登录后进入大屏（演示模式，任意账号密码）。
       await new Promise((resolve) => setTimeout(resolve, 480))
-      auth.login(account.value)
+      demoAuth?.login(account.value)
       await router.push('/')
     }
   } catch (error) {
