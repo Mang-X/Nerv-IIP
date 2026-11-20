@@ -251,8 +251,8 @@ export function useBusinessSkus(enabled = () => true) {
     refreshSkus: () =>
       canRead() ? refetchWithBusinessContext(filters, skusQuery) : Promise.resolve(undefined),
     skus: computed<BusinessConsoleResourceItem[]>(() => resourceItems(visibleData.value)),
-    skusError: skusQuery.error,
-    skusPending: skusQuery.isLoading,
+    skusError: computed(() => (canRead() ? skusQuery.error.value : null)),
+    skusPending: computed(() => canRead() && skusQuery.isLoading.value),
     skusTotal: computed(() => resourceTotal(visibleData.value)),
   }
 }

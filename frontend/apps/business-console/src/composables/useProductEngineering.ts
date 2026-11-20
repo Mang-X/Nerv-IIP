@@ -500,8 +500,8 @@ export function useEngineeringProductionVersions(enabled = () => true) {
     productionVersions: computed<BusinessConsoleProductionVersionItem[]>(() =>
       unwrapItems(visibleList.value),
     ),
-    productionVersionsError: listQuery.error,
-    productionVersionsPending: listQuery.isLoading,
+    productionVersionsError: computed(() => (enabled() ? listQuery.error.value : null)),
+    productionVersionsPending: computed(() => enabled() && listQuery.isLoading.value),
     productionVersionsTotal: computed(() => unwrapTotal(visibleList.value)),
     refresh: () =>
       enabled() ? refetchWithBusinessContext(filters, listQuery) : Promise.resolve(undefined),

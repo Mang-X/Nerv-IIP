@@ -23,6 +23,8 @@ import { RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import FoundationIssues from '@/components/mes/FoundationIssues.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import { inlineErrorMessage, isForbiddenError } from '@/utils/notify'
 
 definePage({
@@ -56,14 +58,18 @@ const {
   productionVersionsPending,
 } = useMesMaterialVersionCatalog()
 
-const skusForbidden = computed(() => isForbiddenError(skusError.value))
-const skuReadMessage = computed(() =>
-  skusError.value
-    ? skusForbidden.value
-      ? '当前角色没有物料读取权限，请联系管理员确认岗位授权。'
-      : inlineErrorMessage(skusError.value, '物料读取失败，请重试读取物料。')
-    : '',
+const auth = useAuthStore()
+const skusForbidden = computed(
+  () =>
+    !auth.principal?.permissionCodes?.includes(P.masterDataProductsRead) ||
+    isForbiddenError(skusError.value),
 )
+const skuReadMessage = computed(() => {
+  if (skusForbidden.value) return '当前角色没有物料读取权限，请联系管理员确认岗位授权。'
+  return skusError.value
+    ? inlineErrorMessage(skusError.value, '物料读取失败，请重试读取物料。')
+    : ''
+})
 
 function scopeModel(
   field: 'siteCode' | 'lineCode' | 'workCenterCode' | 'skuId' | 'productionVersionId',
@@ -245,7 +251,7 @@ const columns: NvDataTableColumn<BusinessConsoleMesReadinessArea>[] = [
             placeholder="全部"
             empty-text="暂无物料，请先在基础数据维护"
             :loading="skusPending"
-            :disabled="!!skusError"
+            :disabled="skusForbidden || !!skusError"
             aria-label="物料"
             clearable
           />

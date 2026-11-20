@@ -71,6 +71,10 @@ test('business console smoke pages render', async ({ page }) => {
   await expectHeading(page, '/mes/plans', '生产计划')
   await expectHeading(page, '/mes/work-orders', '工单与派工')
   await expectHeading(page, '/mes/work-orders/WO-001', '工单 WO-001')
+  const cancel = page.getByRole('button', { name: '取消工单', exact: true })
+  await expect(cancel).toBeDisabled()
+  await cancel.locator('..').focus()
+  await expect(page.getByText('当前角色没有取消工单权限。', { exact: true })).toBeVisible()
   await expectHeading(page, '/mes/materials', '领料与齐套')
   await expectHeading(page, '/mes/dispatch', '派工看板')
   await expectHeading(page, '/mes/operation-tasks', '工序执行')
@@ -297,6 +301,10 @@ test.describe('桌面制造执行入口', () => {
       await expect(page.getByRole('link', { name: 'WO-001', exact: true })).toHaveCount(0)
       await sidebar.getByRole('link', { name: '生产准备检查' }).click()
       await expect(page).toHaveURL(/\/mes\/foundation$/, { timeout: 30_000 })
+      await expect(page.getByRole('button', { name: '物料', exact: true })).toBeDisabled()
+      await expect(
+        page.getByText('当前角色没有物料读取权限，请联系管理员确认岗位授权。'),
+      ).toBeVisible()
       await expandFoundationIssues(page)
       await expect(page.getByText('缺少总装一线的人工费率')).toBeVisible()
       await expect(page.getByText('缺少总装设备的制造费用率')).toBeVisible()

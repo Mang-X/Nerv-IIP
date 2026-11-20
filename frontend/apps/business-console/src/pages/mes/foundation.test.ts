@@ -90,7 +90,12 @@ describe('生产准备检查页', () => {
   })
 
   function mountPage(
-    permissionCodes: string[] = [P.mesFoundationRead, P.erpFinanceRead, P.erpFinanceManage],
+    permissionCodes: string[] = [
+      P.mesFoundationRead,
+      P.masterDataProductsRead,
+      P.erpFinanceRead,
+      P.erpFinanceManage,
+    ],
   ) {
     const pinia = createPinia()
     useAuthStore(pinia).principal = { principalId: 'planner', permissionCodes }
