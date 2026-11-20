@@ -1,3 +1,5 @@
+import { useAuthStore } from '@/stores/auth'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import {
   addBusinessConsoleTeamMemberMutationOptions,
   assignBusinessConsolePersonnelSkillMutationOptions,
@@ -225,6 +227,9 @@ function withCreateIdempotency<TBody>(resourceType: string, body: TBody): TBody 
 }
 
 export function useBusinessSkus(enabled = () => true) {
+  const auth = useAuthStore()
+  const canRead = () =>
+    enabled() && auth.principal?.permissionCodes?.includes(P.masterDataProductsRead) === true
   const filters = defaultListFilters()
 
   const skusQuery = useQuery(() => ({
@@ -237,14 +242,14 @@ export function useBusinessSkus(enabled = () => true) {
         take: filters.take,
       },
     }),
-    enabled: hasBusinessContext(filters) && enabled(),
+    enabled: hasBusinessContext(filters) && canRead(),
   }))
-  const visibleData = computed(() => (enabled() ? skusQuery.data.value : undefined))
+  const visibleData = computed(() => (canRead() ? skusQuery.data.value : undefined))
 
   return {
     filters,
     refreshSkus: () =>
-      enabled() ? refetchWithBusinessContext(filters, skusQuery) : Promise.resolve(undefined),
+      canRead() ? refetchWithBusinessContext(filters, skusQuery) : Promise.resolve(undefined),
     skus: computed<BusinessConsoleResourceItem[]>(() => resourceItems(visibleData.value)),
     skusError: skusQuery.error,
     skusPending: skusQuery.isLoading,

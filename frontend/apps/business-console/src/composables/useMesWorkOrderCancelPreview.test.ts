@@ -4,6 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { afterEach, describe, expect, it } from 'vitest'
 import { defineComponent, shallowRef } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMesWorkOrderDetail, useMesWorkScopeSelection } from './useBusinessMes'
 
@@ -52,6 +53,9 @@ function mountPreview() {
   })
 
   const pinia = createPinia()
+  useAuthStore(pinia).principal = {
+    permissionCodes: ['business.mes.work-orders.read', 'business.mes.work-orders.manage'],
+  }
   useBusinessContextStore(pinia).patchContext({
     organizationId: 'org-001',
     environmentId: 'env-dev',
