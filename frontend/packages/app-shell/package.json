@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./pending-write": "./src/usePendingWriteLeaveGuard.ts"
   },
   "scripts": {
     "test": "vp test run src --environment jsdom",

@@ -44,7 +44,7 @@ import {
   notifySuccess,
 } from '@/utils/notify'
 import { usePagedList } from '@/composables/usePagedList'
-import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
+import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 import {

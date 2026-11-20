@@ -24,7 +24,7 @@ vi.mock('@/composables/lifecycleAction', () => ({
   }),
   recoverLifecycleAction: vi.fn(),
 }))
-vi.mock('@/composables/usePendingWriteLeaveGuard', () => ({
+vi.mock('@nerv-iip/app-shell/pending-write', () => ({
   usePendingWriteLeaveGuard: vi.fn(),
 }))
 vi.mock('@/composables/mes/useMesDisplayNames', () => ({

@@ -6,7 +6,7 @@ import WmsScopeStatusFilter from '@/components/wms/WmsScopeStatusFilter.vue'
 import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
-import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
+import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import { PDA_INBOUND_ORDER_STATUS_OPTIONS } from '@/data/wmsReference'
 import {
   useWmsInbound,

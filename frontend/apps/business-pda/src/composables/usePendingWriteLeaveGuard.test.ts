@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { defineComponent, h, shallowRef } from 'vue'
+import { defineComponent, h, nextTick, shallowRef } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 
 const routerState = vi.hoisted(() => ({
@@ -12,19 +12,19 @@ vi.mock('vue-router', () => ({
   }),
 }))
 
-import { usePendingWriteLeaveGuard } from './usePendingWriteLeaveGuard'
+import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 
 describe('usePendingWriteLeaveGuard', () => {
-  it('blocks route leave and refresh only while a write result is unknown', () => {
+  it('blocks route leave and refresh only while a write result is unknown', async () => {
     const locked = shallowRef(true)
-    mount(
-      defineComponent({
-        setup() {
-          usePendingWriteLeaveGuard(locked)
-          return () => h('div')
-        },
-      }),
-    )
+    const showWriter = shallowRef(true)
+    const Writer = defineComponent({
+      setup() {
+        usePendingWriteLeaveGuard(locked)
+        return () => h('div')
+      },
+    })
+    mount(defineComponent({ setup: () => () => (showWriter.value ? h(Writer) : null) }))
 
     expect(routerState.guard?.()).toBe(false)
     const blockedRefresh = new Event('beforeunload', { cancelable: true })
@@ -36,5 +36,12 @@ describe('usePendingWriteLeaveGuard', () => {
     const allowedRefresh = new Event('beforeunload', { cancelable: true })
     window.dispatchEvent(allowedRefresh)
     expect(allowedRefresh.defaultPrevented).toBe(false)
+
+    locked.value = true
+    showWriter.value = false
+    await nextTick()
+    const afterUnmount = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(afterUnmount)
+    expect(afterUnmount.defaultPrevented).toBe(false)
   })
 })
