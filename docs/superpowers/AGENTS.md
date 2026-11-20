@@ -4,7 +4,7 @@
 - **开工票面：** 持久化 spec 前创建或复用 GitHub Issue，并记录 Scope Gate 级别、交付形态、难度与主要难点。
 - **spec：** 保留 Issue 既有正文，只写入唯一 `<!-- superpowers-spec:start -->` / `<!-- superpowers-spec:end -->` 受管区块；批准状态、修订号和日期保存在区块内。
 - **本地新 spec/plan 文件：** 各自只含一个永久 Markdown 链接。
-- **历史文件：** 既有 `docs/superpowers/specs/` 与 `docs/superpowers/plans/` 文件不迁移、不改写。
+- **历史文件：** 旧 `docs/superpowers/specs/` 与 `docs/superpowers/plans/` 文件已从仓库移除，需要时按 Git 历史追溯；它们不构成当前执行入口或功能范围。
 - **plan：** 使用一个索引评论和逐 Task 独立评论；索引包含目标、全局约束、Task 顺序、完成复选框和各 Task 永久链接。
 - **实施后修订：** 不覆盖历史 Task；新增修订与替代评论，并更新索引。
 - **大范围：** Scope L/XL 按 Scope Gate 拆成子 Issue；一个 Task 不承载多个独立 PR。
