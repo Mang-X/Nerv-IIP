@@ -1,5 +1,3 @@
-using NetCorePal.Extensions.Primitives;
-
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
 public sealed class ErpKnownExceptionMessageArchitectureTests
@@ -102,11 +100,6 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
         Excluded(ErpReturnHandlersPath, "WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn", "HandleValidEventCoreAsync", 5, "async integration-event consumer; no public facade"),
         Excluded(ErpReturnHandlersPath, "QualityInspectionResultIntegrationEventHandlerForSettleSalesReturnCredit", "HandleValidEventAsync", 3, "async integration-event consumer; no public facade"),
 
-        // #3288：幂等键加后缀后越界时就地拒绝。调用方之一是
-        // ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler（同步申请转换 facade），故为 Target。
-        // 它是**防御性**分支——走 HTTP 时命令校验器先按派生上界拒在入口，当前只有绕过校验器的
-        // 调用方能走到；但「类型上沿 facade 可达」成立，所以消息仍按 Target 受中文/安全/长度约束。
-        // 同一句话也写在 ErpCodingIdempotencyKeyPolicy.Compose 的 summary 里，两处必须一致。
         Target(ErpCodingIdempotencyKeyPolicyPath, "ErpCodingIdempotencyKeyPolicy", "Compose", 1, "defensive helper; reaches sync requisition conversion facade behind the command validator"),
     ];
 
@@ -125,12 +118,9 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
     {
         var documents = LoadDocuments();
         var discovered = ErpKnownExceptionUserMessageSourceAnalyzer.Discover(documents);
-        var expectedKeys = ExpectedSites.Select(site => site.Key).ToArray();
-
-        Assert.Equal(SourcePaths.Count, documents.Count);
         Assert.All(documents, document => Assert.False(string.IsNullOrWhiteSpace(document.Text), $"Erp 源文件缺失或为空：{document.Path}"));
-        Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(85, discovered.Sum(site => site.DirectKnownExceptionCount));
+        Assert.Distinct(ExpectedSites.Select(site => site.Key), StringComparer.Ordinal);
+        Assert.Equal(SiteCounts(ExpectedSites), SiteCounts(discovered));
         Assert.Equal(41, ExpectedSites
             .Where(site => site.Kind == ErpKnownExceptionSiteKind.Target)
             .Sum(site => site.DirectKnownExceptionCount));
@@ -138,39 +128,14 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
             .Where(site => site.Kind == ErpKnownExceptionSiteKind.Excluded)
             .Sum(site => site.DirectKnownExceptionCount));
         Assert.Equal(7, DynamicTargetSiteCounts.Values.Sum());
-        Assert.Equal(
-            34,
-            ExpectedSites
-                .Where(site => site.Kind == ErpKnownExceptionSiteKind.Target)
-                .Sum(site => site.DirectKnownExceptionCount) - DynamicTargetSiteCounts.Values.Sum());
         Assert.All(
             DynamicTargetSiteCounts,
             dynamicSite => Assert.Contains(
                 ExpectedSites,
                 site => site.Kind == ErpKnownExceptionSiteKind.Target && site.Key == dynamicSite.Key));
 
-        var duplicateDiscoveredKeys = discovered
-            .GroupBy(site => site.Key, StringComparer.Ordinal)
-            .Where(group => group.Count() != 1)
-            .Select(group => $"{group.Key} ({group.Count()})")
-            .ToArray();
-        Assert.Empty(duplicateDiscoveredKeys);
-
-        var expectedKeySet = expectedKeys.ToHashSet(StringComparer.Ordinal);
-        var unclassified = discovered
-            .Where(site => !expectedKeySet.Contains(site.Key))
-            .Select(site => site.Key)
-            .ToArray();
-        Assert.Empty(unclassified);
-
-        foreach (var expected in ExpectedSites)
-        {
-            var match = Assert.Single(discovered, site => site.Key == expected.Key);
-            Assert.Equal(expected.DirectKnownExceptionCount, match.DirectKnownExceptionCount);
-        }
-
-        var targetSites = ExpectedSites.Where(site => site.Kind == ErpKnownExceptionSiteKind.Excluded).ToArray();
-        var violations = ErpKnownExceptionUserMessageSourceAnalyzer.AnalyzeUserMessages(documents, targetSites);
+        var excludedSites = ExpectedSites.Where(site => site.Kind == ErpKnownExceptionSiteKind.Excluded).ToArray();
+        var violations = ErpKnownExceptionUserMessageSourceAnalyzer.AnalyzeUserMessages(documents, excludedSites);
 
         Assert.True(
             violations.Count == 0,
@@ -178,6 +143,10 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
             + Environment.NewLine
             + string.Join(Environment.NewLine, violations));
     }
+
+    private static IEnumerable<(string Key, int Count)> SiteCounts(IEnumerable<ErpKnownExceptionSite> sites) =>
+        sites.OrderBy(site => site.Key, StringComparer.Ordinal)
+            .Select(site => (site.Key, site.DirectKnownExceptionCount));
 
     [Fact]
     public void English_user_message_mutation_is_rejected()
