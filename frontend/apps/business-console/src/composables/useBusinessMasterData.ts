@@ -239,15 +239,16 @@ export function useBusinessSkus(enabled = () => true) {
     }),
     enabled: hasBusinessContext(filters) && enabled(),
   }))
+  const visibleData = computed(() => (enabled() ? skusQuery.data.value : undefined))
 
   return {
     filters,
     refreshSkus: () =>
       enabled() ? refetchWithBusinessContext(filters, skusQuery) : Promise.resolve(undefined),
-    skus: computed<BusinessConsoleResourceItem[]>(() => resourceItems(skusQuery.data.value)),
+    skus: computed<BusinessConsoleResourceItem[]>(() => resourceItems(visibleData.value)),
     skusError: skusQuery.error,
     skusPending: skusQuery.isLoading,
-    skusTotal: computed(() => resourceTotal(skusQuery.data.value)),
+    skusTotal: computed(() => resourceTotal(visibleData.value)),
   }
 }
 
@@ -467,6 +468,7 @@ export function useBusinessMasterDataResources(
   options: { codeSet?: string; enabled?: () => boolean } = {},
 ) {
   const filters = defaultResourceFilters(resourceType, options.codeSet)
+  const enabled = options.enabled ?? (() => true)
 
   const resourcesQuery = useQuery(() => ({
     ...listBusinessConsoleMasterDataResourcesQueryOptions({
@@ -481,21 +483,18 @@ export function useBusinessMasterDataResources(
         take: filters.take,
       },
     }),
-    enabled: hasBusinessContext(filters) && (options.enabled?.() ?? true),
+    enabled: hasBusinessContext(filters) && enabled(),
   }))
+  const visibleData = computed(() => (enabled() ? resourcesQuery.data.value : undefined))
 
   return {
     filters,
     refreshResources: () =>
-      options.enabled?.() === false
-        ? Promise.resolve(undefined)
-        : refetchWithBusinessContext(filters, resourcesQuery),
-    resources: computed<BusinessConsoleResourceItem[]>(() =>
-      resourceItems(resourcesQuery.data.value),
-    ),
+      enabled() ? refetchWithBusinessContext(filters, resourcesQuery) : Promise.resolve(undefined),
+    resources: computed<BusinessConsoleResourceItem[]>(() => resourceItems(visibleData.value)),
     resourcesError: resourcesQuery.error,
     resourcesPending: resourcesQuery.isLoading,
-    resourcesTotal: computed(() => resourceTotal(resourcesQuery.data.value)),
+    resourcesTotal: computed(() => resourceTotal(visibleData.value)),
   }
 }
 

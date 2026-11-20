@@ -84,7 +84,67 @@ async function session(page: Page, permissionCodes: string[]) {
       await route.fulfill({ json: { success: true, data } })
     },
   )
+  return credentials
 }
+
+test('目录读权收回后，主计划保留单据编码并撤下已缓存的物料名和评审人姓名', async ({ page }) => {
+  const start = new Date('2026-10-01T08:00:00Z')
+  await page.clock.install({ time: start })
+  const credentials = await session(page, [
+    mps,
+    'business.masterdata.products.read',
+    'business.masterdata.resources.read',
+  ])
+  let revoked = false
+  await page.route('**/auth/refresh', (route) =>
+    route.fulfill({
+      json: {
+        success: true,
+        data: revoked
+          ? {
+              ...credentials,
+              principal: { ...credentials.principal, permissionCodes: [mps], permissionVersion: 2 },
+            }
+          : { ...credentials, expiresAtUtc: new Date(start.getTime() + 120_000).toISOString() },
+      },
+    }),
+  )
+  await page.route('**/planning/mps?**', (route) =>
+    route.fulfill({
+      json: {
+        success: true,
+        data: {
+          items: [
+            {
+              mpsId: 'row-october',
+              skuCode: 'RM-41',
+              reviewedBy: 'reviewer-41',
+              status: 'Reviewed',
+            },
+          ],
+        },
+      },
+    }),
+  )
+  await page.route(/\/master-data\/(skus|resources)\?/, (route) => {
+    const url = new URL(route.request().url())
+    const resources = url.pathname.endsWith('/skus')
+      ? [{ code: 'RM-41', displayName: '精密阀体' }]
+      : url.searchParams.get('resourceType') === 'worker'
+        ? [{ code: 'E41', userId: 'reviewer-41', displayName: '周工' }]
+        : []
+    return route.fulfill({ json: { success: true, data: { resources, total: resources.length } } })
+  })
+  await page.goto('/planning')
+  const row = page.getByRole('row').filter({ hasText: 'RM-41' })
+  await expect(row).toContainText('精密阀体')
+  await expect(row).toContainText('评审 周工')
+  revoked = true
+  await Promise.all([page.waitForResponse('**/auth/refresh'), page.clock.fastForward(60_001)])
+  await expect(row).not.toContainText('精密阀体')
+  await expect(row).toContainText('评审 —')
+  await expect(row).toContainText('RM-41')
+})
 
 for (const [permission, label] of [
   [demand, '需求池'],

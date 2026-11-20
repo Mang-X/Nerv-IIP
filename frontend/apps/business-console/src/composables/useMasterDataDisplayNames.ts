@@ -21,8 +21,8 @@ export interface MasterDataDisplayNameOptions {
   /** 班次（shift）。 */
   shifts?: boolean
   /** 员工（worker）：把登录账号 userId 解析成姓名。 */
-  enabled?: () => boolean
   users?: boolean
+  enabled?: () => boolean
 }
 
 /**
