@@ -309,7 +309,7 @@ function formatQuantity(row: BusinessConsoleForecastInputItem) {
       :loading="forecastsPending"
       :searchable="false"
       :column-settings="false"
-      empty-message="当前范围没有预测。计划员可新建预测，保存后会进入后续 MRP 输入准备。"
+      empty-message="当前范围没有预测。"
     >
       <template #cell-skuCode="{ row }">
         <div class="flex flex-col gap-0.5">

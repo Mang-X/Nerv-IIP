@@ -1494,7 +1494,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       value="—"
       tone="neutral"
       :status="{ label: '暂无样本', tone: 'neutral' }"
-      foot-start="本次计划范围还没有需求物料，先录入需求或运行 MRP 后再看覆盖率。"
+      foot-start="当前范围没有参与计算的需求物料。"
     />
     <NvMetricCard
       variant="breakdown"
@@ -1727,7 +1727,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         awaiting-scope-message="请先选择组织与环境。"
         :searchable="false"
         :column-settings="false"
-        empty-message="当前范围还没有主计划行。先按计划周期新建一行，评审发布后即可作为 MRP 输入。"
+        empty-message="当前范围还没有主计划行。"
       >
         <template #cell-bucketDate="{ row }">{{ formatDate(row.bucketDate) }}</template>
         <template #cell-skuCode="{ row }">
