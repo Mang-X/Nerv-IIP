@@ -250,7 +250,9 @@ export function createWalkthroughPageProofs({
     }
 
     for (const selectOption of options.selectOptions ?? []) {
-      const expectedQuery = listQueryFingerprint(queryPath(options.listPath, selectOption.expectedQuery))
+      const expectedQuery = listQueryFingerprint(
+        queryPath(options.listPath, selectOption.expectedQuery),
+      )
       const listResponse = targetPage.waitForResponse(
         (response) => {
           const url = new URL(response.url())

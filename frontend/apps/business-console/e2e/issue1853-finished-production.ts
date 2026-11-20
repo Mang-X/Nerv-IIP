@@ -124,11 +124,18 @@ export async function runFinishedProduction(options: {
               'GET',
               query(`${mes}/material-issue-requests/${issueNo}`, workScope),
             )
+          let receivedIssue: Api.BusinessConsoleMesMaterialIssueRequestRow | undefined
           await expect
-            .poll(async () => (await readIssue()).receivedQuantity, { timeout: 60000 })
+            .poll(
+              async () => {
+                receivedIssue = await readIssue()
+                return receivedIssue.receivedQuantity
+              },
+              { timeout: 60000 },
+            )
             .toBe(order.quantity)
           issues.push({
-            issue: await readIssue(),
+            issue: receivedIssue,
             purchaseReceiptNo: order.purchaseReceiptNo,
             materialLotId,
           })
@@ -176,6 +183,12 @@ export async function runFinishedProduction(options: {
         const reports: Api.BusinessConsoleRecordProductionReportResponse[] = []
         facts.preparation = preparation
         facts.reports = reports
+        const centers = await call<Api.BusinessConsoleResourceListResponse>(
+          'GET',
+          query('/api/business-console/v1/master-data/resources', {
+            resourceType: 'work-center',
+          }),
+        )
         for (const [index, task] of tasks.entries()) {
           // 与 NERV-2115 相同的公开配置路径；隔离演示人工费率，不代表客户工资标准。
           const rates = '/api/business-console/v1/erp/finance/work-center-cost-rates'
@@ -198,12 +211,6 @@ export async function runFinishedProduction(options: {
             currencyCode: 'CNY',
             isCurrentEffectiveRevision: true,
           })
-          const centers = await call<Api.BusinessConsoleResourceListResponse>(
-            'GET',
-            query('/api/business-console/v1/master-data/resources', {
-              resourceType: 'work-center',
-            }),
-          )
           const centersForTask = centers.resources!.filter(
             (item) => item.code === task.workCenterId,
           )
