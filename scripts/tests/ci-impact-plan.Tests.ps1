@@ -1033,6 +1033,19 @@ try {
     Assert-Contract (@($platformShard.unresolved_projects).Count -gt 0) 'The module observation must surface unresolved MSBuild expressions.'
     Assert-Contract ([IO.File]::ReadAllText($barcodeSummaryPath).Contains('- platform: Nerv.IIP.FacadeCoverage.Tests [barcode-label]', [StringComparison]::Ordinal)) 'The Actions Summary must show the real shard ID and its BarcodeLabel consumer.'
 
+    & $entrypointPath -ChangedPaths @(
+        'backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Program.cs',
+        'backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Program.cs'
+    ) -OutputPath $fixtureJson | Out-Null
+    $equipmentPlan = Get-Content -LiteralPath $fixtureJson -Raw | ConvertFrom-Json -Depth 20
+    Assert-ImpactFlag -Plan $equipmentPlan -Name 'backend' -Expected $true
+    foreach ($assembly in @('Nerv.IIP.Business.Maintenance.Domain.Tests', 'Nerv.IIP.Business.Maintenance.Web.Tests', 'Nerv.IIP.Business.IndustrialTelemetry.Web.Tests')) {
+        $owners = @($equipmentPlan.backend_module_shards | Where-Object {
+            Test-OrdinalMember -Values @($_.matching_projects | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_.project) }) -Expected $assembly
+        })
+        Assert-Contract ($owners.Count -eq 1 -and [string]::Equals([string] $owners[0].shard, 'business-core-b', [StringComparison]::Ordinal)) "'$assembly' must run in the equipment runtime and maintenance fast shard (business-core-b)."
+    }
+
     & $entrypointPath -ChangedPaths @('backend/Directory.Packages.props') -OutputPath $fixtureJson | Out-Null
     $sharedPlan = Get-Content -LiteralPath $fixtureJson -Raw | ConvertFrom-Json -Depth 20
     Assert-Contract ($null -eq $sharedPlan.PSObject.Properties['backend_module_shards']) 'Shared build inputs must retain the conservative execution plan.'

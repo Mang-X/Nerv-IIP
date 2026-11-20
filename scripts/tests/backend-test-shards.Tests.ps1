@@ -919,7 +919,7 @@ Assert-Contract ([string]::Equals([string](((Get-NervStringsSorted -Values @($bu
 # heavy lane 的 filter 里，也不留 skipped 记录。选择器**总数不变**（3 条类级换 3 条方法级），
 # 所以上面那条 87 的断言不动——这三条断言钉的是形状，不是数量。
 $classExclusionNarrowedToMethod = @{
-    'business-gateway' = @(
+    'business-core-b' = @(
         @{ Class = 'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests'
            Method = 'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Device_disabled_consumer_durably_blocks_pm_generation_on_postgres' }
     )
