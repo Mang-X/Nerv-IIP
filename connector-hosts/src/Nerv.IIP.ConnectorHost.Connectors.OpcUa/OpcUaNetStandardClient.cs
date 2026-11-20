@@ -14,6 +14,16 @@ public sealed class OpcUaNetStandardClient(
     private Subscription? _subscription;
     private KeepAliveEventHandler? _keepAliveHandler;
     private readonly TimeSpan _connectionDetectionBudget = connectionDetectionBudget ?? TimeSpan.FromSeconds(4);
+    private readonly Func<ApplicationConfiguration, OpcUaConnectionOptions, CancellationToken, Task<Session>>? _openSession;
+
+    internal OpcUaNetStandardClient(
+        IOpcUaCredentialResolver credentialResolver,
+        TimeSpan? connectionDetectionBudget,
+        Func<ApplicationConfiguration, OpcUaConnectionOptions, CancellationToken, Task<Session>> openSession)
+        : this(credentialResolver, connectionDetectionBudget)
+    {
+        _openSession = openSession;
+    }
 
     public Task ConnectAsync(OpcUaConnectionOptions options, CancellationToken cancellationToken)
     {
@@ -43,25 +53,7 @@ public sealed class OpcUaNetStandardClient(
             }
         }
 
-        var endpointDescription = await CoreClientUtils.SelectEndpointAsync(
-            configuration,
-            options.EndpointUrl,
-            options.UsesSecurity,
-            telemetry: null!,
-            cancellationToken);
-        var endpoint = new ConfiguredEndpoint(null, endpointDescription, EndpointConfiguration.Create(configuration));
-        var identity = await CreateIdentityAsync(options, cancellationToken);
-
-        _session = await Session.Create(
-            configuration,
-            endpoint,
-            updateBeforeConnect: true,
-            checkDomain: false,
-            sessionName: "Nerv.IIP Connector Host OPC UA",
-            sessionTimeout: 60_000,
-            identity,
-            preferredLocales: null,
-            cancellationToken);
+        _session = await (_openSession ?? OpenSessionAsync)(configuration, options, cancellationToken);
         _session.KeepAliveInterval = checked((int)Math.Max(500, _connectionDetectionBudget.TotalMilliseconds / 2));
         _keepAliveHandler = (_, args) =>
         {
@@ -186,6 +178,32 @@ public sealed class OpcUaNetStandardClient(
         }
 
         _session?.Dispose();
+    }
+
+    private async Task<Session> OpenSessionAsync(
+        ApplicationConfiguration configuration,
+        OpcUaConnectionOptions options,
+        CancellationToken cancellationToken)
+    {
+        var endpointDescription = await CoreClientUtils.SelectEndpointAsync(
+            configuration,
+            options.EndpointUrl,
+            options.UsesSecurity,
+            telemetry: null!,
+            cancellationToken);
+        var endpoint = new ConfiguredEndpoint(null, endpointDescription, EndpointConfiguration.Create(configuration));
+        var identity = await CreateIdentityAsync(options, cancellationToken);
+
+        return await Session.Create(
+            configuration,
+            endpoint,
+            updateBeforeConnect: true,
+            checkDomain: false,
+            sessionName: "Nerv.IIP Connector Host OPC UA",
+            sessionTimeout: 60_000,
+            identity,
+            preferredLocales: null,
+            cancellationToken);
     }
 
     private Session RequireSession()
