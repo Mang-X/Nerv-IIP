@@ -341,6 +341,12 @@ const taskCount = computed(() => {
   if (operationTasksState.value === 'error') return '任务读取失败'
   return `${operationTasksTotal.value} 个工序任务`
 })
+const emptyTaskMessage = computed(() => {
+  if (operationTasksState.value !== 'ready') return '尚未读取任务，请先确认作业范围。'
+  if (focusedOperationTaskId.value)
+    return '当前作业范围内未找到该工序。请核对作业范围，或查看全部工序。'
+  return '当前没有工序任务。确认工单已释放、排程已生成后，可开工任务会出现在这里。'
+})
 
 function resetFilters() {
   keyword.value = ''
@@ -725,11 +731,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
       :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
-      :empty-message="
-        operationTasksState === 'ready'
-          ? '当前没有工序任务。确认工单已释放、排程已生成后，可开工任务会出现在这里。'
-          : '尚未读取任务，请先确认作业范围。'
-      "
+      :empty-message="emptyTaskMessage"
       @retry="refreshOperationTasks"
     >
       <template #cell-operationTaskId="{ row }">
