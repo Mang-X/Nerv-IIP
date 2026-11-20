@@ -2054,14 +2054,14 @@ export function useMesWorkOrderDetail(workOrderId?: MaybeRefOrGetter<string>) {
       envelopeItems<
         BusinessConsoleMesReceiptRequestRow,
         BusinessConsoleMesReceiptRequestListEnvelope
-      >(receiptQuery.data.value).filter((row) => row.workOrderId === filters.workOrderId),
+      >(receiptQuery.data.value),
     ),
     // 本工单的领料申请（补偿预览的预留释放/退料指引权威来源，PR 已注明降级实现）
     materialIssueRequests: computed<BusinessConsoleMesMaterialIssueRequestRow[]>(() =>
       envelopeItems<
         BusinessConsoleMesMaterialIssueRequestRow,
         BusinessConsoleMesMaterialIssueRequestListEnvelope
-      >(materialIssueQuery.data.value).filter((row) => row.workOrderId === filters.workOrderId),
+      >(materialIssueQuery.data.value),
     ),
     materialReadiness: computed(() =>
       unwrapData<
