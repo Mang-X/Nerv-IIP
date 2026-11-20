@@ -11,11 +11,10 @@ const session = computed(() => {
     ? { organizationId: principal.organizationId, environmentId: principal.environmentId }
     : undefined
 })
-const sessionKey = computed(() => JSON.stringify([auth?.sessionId, auth?.principal]))
 </script>
 
 <template>
-  <AndonBoard v-if="session" :key="sessionKey" :session="session" />
+  <AndonBoard v-if="session" :key="auth?.sessionId" :session="session" />
   <p v-else class="andon-unavailable" role="status">
     {{ IS_REAL_DATA ? '未授权 · 请登录具有真实组织环境的账号' : '当前暂无安灯数据' }}
   </p>

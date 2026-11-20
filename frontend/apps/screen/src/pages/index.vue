@@ -13,7 +13,7 @@ import {
 import { useNow } from '@vueuse/core'
 import { Activity, AlertTriangle, Cpu, PackageCheck } from '@lucide/vue'
 import { type Component, computed, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
 import { IS_REAL_DATA } from '@/data/config'
 import { useRealAuthStore } from '@/stores/realAuth'
@@ -27,6 +27,18 @@ import { SCREENS } from '@/data/screens'
 
 const scope = useAccessScope()
 const auth = IS_REAL_DATA ? useRealAuthStore() : undefined
+const router = useRouter()
+async function signOut() {
+  if (!auth?.isAuthenticated) return
+  const [outcome] = await Promise.all([auth.logoutAndRevoke(), router.replace('/login')])
+  if (
+    (outcome.status === 'failed' || outcome.status === 'timed-out') &&
+    !auth.isAuthenticated &&
+    router.currentRoute.value.path === '/login'
+  ) {
+    await router.replace({ path: '/login', query: { logout: outcome.status } })
+  }
+}
 const session = computed(() => ({
   organizationId: auth?.principal?.organizationId ?? '',
   environmentId: auth?.principal?.environmentId ?? '',
@@ -178,6 +190,14 @@ const scopeCounts = computed(() => {
           <div class="hall-meta">
             <span>{{ dateText }}</span>
             <NvScreenStatusLight v-if="!IS_REAL_DATA" tone="idle" label="演示模式" />
+            <button
+              v-else-if="auth?.isAuthenticated"
+              type="button"
+              class="hall-sub cursor-pointer"
+              @click="signOut"
+            >
+              退出登录
+            </button>
           </div>
         </div>
       </header>

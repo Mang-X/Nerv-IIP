@@ -1,7 +1,7 @@
 // 大屏真实会话上下文与设备台账解析（MAN-466 样板，S3b/S3c 复用）。
 //
 // - 会话上下文（organizationId/environmentId）由 @nerv-iip/auth 的 principal 派生，
-//   main.ts 在登录/会话恢复后调用 setScreenSession 注入；真实 fetcher 取数时读取。
+//   真实 fetcher 取数时读取当前登录范围。
 // - 设备台账（deviceAssetId → 档案）由 business-console 设备主数据（device-asset）解析并短缓存：
 //   真实 overview/可用率端点要求 deviceAssetIds 非空（≤50/批），台账变化很慢，缓存降低轮询请求量（#734 限流友好）。
 import { readRows, readScreenPayload } from './real/response'

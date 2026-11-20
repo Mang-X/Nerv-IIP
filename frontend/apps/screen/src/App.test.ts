@@ -8,11 +8,16 @@ const principal = {
   organizationId: 'o',
   environmentId: 'e',
   permissionVersion: 1,
+  permissionCodes: ['a', 'b'],
 }
 const current = shallowRef(principal)
+const token = ref('initial')
 vi.mock('@/stores/realAuth', () => ({
   useRealAuthStore: () => ({
     sessionId: 'same-session',
+    get accessToken() {
+      return token.value
+    },
     get principal() {
       return current.value
     },
@@ -35,12 +40,26 @@ it('相同主体、组织、环境和会话换权限版本时立即撤掉已挂�
         void pending.then((value) => {
           content.value = value
         })
-      return () => h('div', content.value)
+      return () =>
+        h(
+          'button',
+          {
+            onClick: () => {
+              content.value = '已选择一线'
+            },
+          },
+          content.value,
+        )
     },
   })
   const page = mount(App, { global: { stubs: { RouterView: screen, Toaster: true } } })
   try {
     expect(page.text()).toContain('旧范围拣货单')
+    await page.get('button').trigger('click')
+    token.value = 'renewed'
+    current.value = { ...principal, permissionCodes: ['b', 'a'] }
+    await flushPromises()
+    expect(page.text()).toBe('已选择一线')
     current.value = { ...principal, permissionVersion: 2 }
     resolveOld('上一范围的迟到响应')
     await flushPromises()

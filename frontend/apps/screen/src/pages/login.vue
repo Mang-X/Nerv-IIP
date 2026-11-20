@@ -188,6 +188,15 @@ async function onSubmit() {
       </button>
 
       <p v-if="errorMsg" class="err reveal" role="alert">{{ errorMsg }}</p>
+      <p
+        v-if="
+          IS_REAL_DATA && (route.query.logout === 'failed' || route.query.logout === 'timed-out')
+        "
+        class="err"
+        role="status"
+      >
+        当前设备已退出，服务器会话撤销尚未确认。
+      </p>
       <p class="hint reveal" style="--d: 0.5s">
         {{ IS_REAL_DATA ? '请使用工厂账号登录' : '请输入账号密码进入' }}
       </p>

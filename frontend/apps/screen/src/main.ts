@@ -3,10 +3,9 @@ import './assets/main.css'
 import { configureApiClient } from '@nerv-iip/api-client'
 import { configureAuthenticatedApiClient } from '@nerv-iip/auth'
 import { createPinia } from 'pinia'
-import { createApp, watch } from 'vue'
+import { createApp } from 'vue'
 import App from './App.vue'
 import { IS_REAL_DATA } from './data/config'
-import { resetDeviceRosterCache, setScreenSession } from './data/session'
 import { router } from './router'
 import { useRealAuthStore } from './stores/realAuth'
 
@@ -18,8 +17,6 @@ const app = createApp(App)
 const pinia = createPinia()
 app.use(pinia)
 
-// 真实数据模式：接 @nerv-iip/auth 会话到 business-console facade（token 注入 + 401 跳登录），
-// 并把 principal 的 org/env 注入大屏取数上下文。mock 模式保持原样（不触碰鉴权链路）。
 if (IS_REAL_DATA) {
   const auth = useRealAuthStore()
   configureAuthenticatedApiClient({
@@ -28,17 +25,6 @@ if (IS_REAL_DATA) {
     loginPath: '/login',
     router,
   })
-  watch(
-    () => [auth.principal, auth.sessionId, auth.accessToken] as const,
-    ([principal]) => {
-      resetDeviceRosterCache()
-      setScreenSession({
-        organizationId: principal?.organizationId ?? '',
-        environmentId: principal?.environmentId ?? '',
-      })
-    },
-    { immediate: true, flush: 'sync' },
-  )
 }
 
 app.use(router)
