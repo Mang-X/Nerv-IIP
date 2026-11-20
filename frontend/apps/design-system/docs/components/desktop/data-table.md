@@ -8,6 +8,8 @@ import {
   NvDataTable,
   NvDataTableToolbar,
   NvPagination,
+  NvRowActions,
+  DropdownMenuItem,
   NvButton,
   NvStatusBadge,
   nvMessage,
@@ -33,6 +35,7 @@ const columns = [
       { label: '待处理', value: 'pending' },
     ],
   },
+  { key: 'actions', header: '操作' },
 ]
 
 const PRODUCTS = ['前桥壳体 A2', '转向节 L', '齿轮箱端盖', '液压阀体 V3', '电机定子叠片', '制动卡钳']
@@ -95,6 +98,11 @@ const pageSize = ref(10)
   >
     <template #cell-status="{ value }">
       <NvStatusBadge :value="String(value)" :pulse="value === 'running'" />
+    </template>
+    <template #cell-actions="{ row }">
+      <NvRowActions :label="`工单 ${row.code} 的操作`">
+        <DropdownMenuItem @select="selected = [row.code]">仅选中此工单</DropdownMenuItem>
+      </NvRowActions>
     </template>
     <template #bulk-actions>
       <NvButton variant="outline" size="sm">导出所选</NvButton>

@@ -92,4 +92,4 @@ Props：`disabled?`、`label?`、`align?`、`contentClass?`。哪些动作可进
 
 ## 正例
 
-桌面区块示例见独立设计文档站的[桌面组件](../../../apps/design-system/docs/components/desktop/index.md)。业务页面中的筛选、分页和行操作见[工序任务](../../../apps/business-console/src/pages/mes/operation-tasks.vue)。
+桌面区块示例见[本机设计文档站的桌面组件](http://127.0.0.1:5180/components/desktop/)。工序任务页面的筛选、分页和行操作见 `frontend/apps/business-console/src/pages/mes/operation-tasks.vue`。
