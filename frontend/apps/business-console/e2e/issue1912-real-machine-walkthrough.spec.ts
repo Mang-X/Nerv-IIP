@@ -583,8 +583,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         ui: receiptUi,
       },
       conclusion: 'runtime-confirmed',
-      demoWording:
-        '采购收货公开接口以固定 PR-WALK-001 记账，采购收货页面以 HTTP 200 渲染同一 PO 行和已收数量。',
+      demoWording: `采购收货公开接口返回 ${purchaseReceiptNo}，采购收货页面渲染同一采购订单行和已收数量。`,
       responsibilityIssue: null,
     })
 
@@ -895,6 +894,21 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       },
       (data) => Number(data.availableQuantity ?? data.onHandQuantity ?? 0) >= materialQuantity,
     )
+    const movement = await workerPollRows(
+      '/api/business-console/v1/inventory/movements',
+      { organizationId, environmentId, sourceDocumentId: inboundOrderNo, page: 1, pageSize: 100 },
+      (row) =>
+        row.sourceService === 'wms' &&
+        row.sourceDocumentId === inboundOrderNo &&
+        row.movementType === 'inbound' &&
+        row.skuCode === materialSku &&
+        row.uomCode === materialUom &&
+        row.siteCode === SITE_CODE &&
+        row.locationCode === LINE_SIDE_LOCATION &&
+        row.lotNo === 'LOT-WALK-RM-001' &&
+        Number(row.quantity) === materialQuantity,
+    )
+    expect(textOf(movement.match.movementId)).toMatch(/\S/)
     const inboundQueryFacts = {
       organizationId,
       environmentId,
@@ -937,19 +951,19 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       node: 'receipt-inbound-inventory',
       sourceObject: purchaseReceiptNo,
       downstreamObject: inboundOrderNo,
-      stableKey: `${purchaseReceiptNo} -> ${inboundOrderNo} -> ${textOf(inventory.data.movementId ?? inventory.data.ledgerVersion)}`,
+      stableKey: `${purchaseReceiptNo} -> ${inboundOrderNo} -> ${textOf(movement.match.movementId)}`,
       automationMode: 'mixed',
       request: inbound.summary,
       responseOrLog: {
         inbound: inbound.publicPayload,
         putaway: putaway.publicPayload,
         completion: completedInbound.publicPayload,
+        movement: publicJson(movement.match),
         inventory: publicJson(inventory.data),
         ui: inboundUi,
       },
       conclusion: 'runtime-confirmed',
-      demoWording:
-        '真实 WMS 入库单在授权作业范围内完成，页面渲染 IN-WALK-001，库存公开可用量随后在 SITE-001/loc-line-01 出现。',
+      demoWording: `收货单 ${purchaseReceiptNo} 和入库单 ${inboundOrderNo} 对应采购单 ${PURCHASE_ORDER_NO}。仓储页面显示该入库单，库存流水按入库单号回读，批次 LOT-WALK-RM-001 在 ${SITE_CODE}/${LINE_SIDE_LOCATION} 可用。`,
       responsibilityIssue: null,
     })
 
