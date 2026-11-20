@@ -14,7 +14,7 @@ const catalogs = {
   counts: getBusinessConsoleWmsCountWorkScopes,
 }
 
-export async function warehouseScope(session: ScreenSession, domain: keyof typeof catalogs) {
+export async function warehouseOptions(session: ScreenSession, domain: keyof typeof catalogs) {
   const catalog = readScreenPayload(
     await catalogs[domain]({
       query: session,
@@ -23,18 +23,28 @@ export async function warehouseScope(session: ScreenSession, domain: keyof typeo
     }),
   )
   const items = readRows(catalog.items)
-  for (const scopeKind of ['work-pool', 'site', 'self']) {
-    const scope = items.find((item) => item.scopeKind === scopeKind && item.scopeId?.trim())
-    if (scope?.scopeId)
-      return {
-        query: { ...session, scopeKind, scopeId: scope.scopeId },
-        label: scope.displayName || scope.scopeId,
-      }
-  }
-  throw new NoWorkScope('没有已授权的仓储作业范围')
+  return ['work-pool', 'site', 'self'].flatMap(kind =>
+    items.flatMap(item => item.scopeKind === kind && item.scopeId?.trim()
+      ? [{ kind, id: item.scopeId, label: item.displayName || item.scopeId }] : []))
 }
 
-export async function inspectionScope(session: ScreenSession) {
+export interface ScopeOption {
+  kind: string
+  id: string
+  label: string
+}
+
+export function scopeQuery(session: ScreenSession, scope: ScopeOption) {
+  return { ...session, scopeKind: scope.kind, scopeId: scope.id }
+}
+
+export async function warehouseScope(session: ScreenSession, domain: keyof typeof catalogs) {
+  const [scope] = await warehouseOptions(session, domain)
+  if (!scope) throw new NoWorkScope('没有已授权的仓储作业范围')
+  return { query: scopeQuery(session, scope), label: scope.label }
+}
+
+export async function inspectionOptions(session: ScreenSession) {
   const context = readScreenPayload(
     await getBusinessConsolePrincipalWorkContext({
       signal: AbortSignal.timeout(12000),
@@ -42,12 +52,14 @@ export async function inspectionScope(session: ScreenSession) {
       query: { ...session, permissionCode: 'business.quality.inspection-records.read' },
     }),
   )
-  const scope = readRows(context.authorizedScopes).find(
-    (item) => item.kind && ['organization', 'team', 'self'].includes(item.kind) && item.id,
-  )
-  if (!scope?.kind || !scope.id) throw new NoWorkScope('没有已授权的检验范围')
-  return {
-    query: { ...session, scopeKind: scope.kind, scopeId: scope.id },
-    label: scope.displayName || scope.id,
-  }
+  const scopes = readRows(context.authorizedScopes)
+  return ['organization', 'team', 'self'].flatMap(kind =>
+    scopes.flatMap(item => item.kind === kind && item.id
+      ? [{ kind, id: item.id, label: item.displayName || item.id }] : []))
+}
+
+export async function inspectionScope(session: ScreenSession) {
+  const [scope] = await inspectionOptions(session)
+  if (!scope) throw new NoWorkScope('没有已授权的检验范围')
+  return { query: scopeQuery(session, scope), label: scope.label }
 }

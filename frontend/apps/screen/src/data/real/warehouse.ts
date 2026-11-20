@@ -576,6 +576,24 @@ function fetchOutboundFlow(ctx: Ctx, nowMs: number): Promise<OutboundProgress> {
   ).then((items) => outboundOf(items, nowMs))
 }
 
+export async function readReceipts(ctx: Ctx, nowMs = Date.now()) {
+  const [inbound, putaway] = await Promise.all([
+    fetchInboundFlow(ctx, nowMs),
+    fetchTaskGroup(listBusinessConsoleWmsPutawayTasks, ctx, 'putaway', nowMs),
+  ])
+  return { inbound, putaway }
+}
+
+export async function readShipments(ctx: Ctx, nowMs = Date.now()) {
+  const [outbound, pick] = await Promise.all([
+    fetchOutboundFlow(ctx, nowMs),
+    fetchTaskGroup(listBusinessConsoleWmsPickingTasks, ctx, 'pick', nowMs),
+  ])
+  return { outbound, pick }
+}
+
+export { fetchCountBoard, fetchWcsBoard }
+
 /** 主数据全景：入库/出库进度 + 上架/拣货/盘点 + WCS（10s 轮询，完整闭包聚合）。 */
 export async function fetchRealWarehouseBoard(
   factoryId = getScreenSession().organizationId,
@@ -596,8 +614,15 @@ export async function fetchRealWarehouseBoard(
     fetchCountBoard(counts.query, nowMs),
     readWcsBoard(ctx, nowMs),
   ])
-  const overdueTop = overdueTopOf([pick, putaway], count)
+  return assembleWarehouseBoard(factoryId, receipts, shipments, counts, inbound, outbound, putaway, pick, count, wcs)
+}
 
+type Selection = Awaited<ReturnType<typeof warehouseScope>>
+
+export function assembleWarehouseBoard(factoryId: string, receipts: Selection, shipments: Selection,
+  counts: Selection, inbound: InboundProgress, outbound: OutboundProgress, putaway: WhTaskGroup,
+  pick: WhTaskGroup, count: CycleCountBoard, wcs: WcsBoard): WarehouseBoard {
+  const overdueTop = overdueTopOf([pick, putaway], count)
   const kpis: WarehouseKpis = {
     inboundPct: inbound.pct,
     outboundPct: outbound.pct,
