@@ -47,7 +47,7 @@ test('页面证据绑定选择后的列表响应，页面错误只保留闭合�
       route: routePath,
       listPath,
       stableText: 'FG-QJ-P1-L',
-      selectOptions: [{ label: '物料', option: 'FG-QJ-P1-L' }],
+      selectOptions: [{ label: '物料', option: 'FG-QJ-P1-L', expectedQuery: { skuCode: 'FG-QJ-P1-L' } }],
       emptyText: '没有库存',
       screenshotName: 'selected.png',
     })
