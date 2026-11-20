@@ -52,7 +52,8 @@ $resultDirectory=$args[$resultIndex+1]
 if ([string]::Equals([string]$mode, 'wrong-identity', [StringComparison]::Ordinal)) { $identity='Fixture.Wrong.Test' }
 $separator=$identity.LastIndexOf('.', [StringComparison]::Ordinal)
 $outcome=if ([string]::Equals([string]$mode, 'skip', [StringComparison]::Ordinal)) { 'NotExecuted' } else { 'Passed' }
-$trx="<TestRun><Results><UnitTestResult testId=`"1`" outcome=`"$outcome`" /></Results><TestDefinitions><UnitTest id=`"1`"><TestMethod className=`"$($identity.Substring(0,$separator))`" name=`"$($identity.Substring($separator+1))`" /></UnitTest></TestDefinitions></TestRun>"
+$passed = [int]([string]::Equals($outcome, 'Passed', [StringComparison]::Ordinal))
+$trx="<TestRun><Results><UnitTestResult testId=`"1`" outcome=`"$outcome`" /></Results><TestDefinitions><UnitTest id=`"1`"><TestMethod className=`"$($identity.Substring(0,$separator))`" name=`"$($identity.Substring($separator+1))`" /></UnitTest></TestDefinitions><ResultSummary><Counters total=`"1`" executed=`"$passed`" passed=`"$passed`" failed=`"0`" /></ResultSummary></TestRun>"
 [IO.File]::WriteAllText((Join-Path $resultDirectory 'fixture.trx'),$trx)
 '@
 $saved=@{}
