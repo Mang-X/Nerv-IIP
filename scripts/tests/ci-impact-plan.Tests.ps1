@@ -867,7 +867,7 @@ Assert-ImpactCase -Name 'postgres-infra' -Paths @('infra/postgres/init.sql') -Fl
 }
 
 Assert-ImpactCase -Name 'aspire-topology' -Paths @('infra/aspire/Nerv.IIP.AppHost/Program.cs') -Flags @{
-    infra = $true; postgresql = $true; redis_cap = $true; full_chain = $true
+    backend = $true; infra = $true; postgresql = $true; redis_cap = $true; full_chain = $true
 }
 
 foreach ($fullSelectionPath in @('.github/workflows/ci.yml', 'scripts/lib/CiImpactPlan.ps1', 'scripts/tests/ci-impact-plan.Tests.ps1')) {

@@ -484,7 +484,7 @@ function Get-NervCiImpactPlan {
                 Select-Impact -Name 'full_chain' -Reason $reason
             }
             if ($path.StartsWith('infra/aspire/', [StringComparison]::Ordinal)) {
-                foreach ($flag in @('postgresql', 'redis_cap', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
+                foreach ($flag in @('backend', 'postgresql', 'redis_cap', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
             }
             if ($path.StartsWith('infra/postgres/', [StringComparison]::Ordinal)) { Select-Impact -Name 'postgresql' -Reason $reason }
             if ($path.Contains('redis', [StringComparison]::OrdinalIgnoreCase)) { Select-Impact -Name 'redis_cap' -Reason $reason }
