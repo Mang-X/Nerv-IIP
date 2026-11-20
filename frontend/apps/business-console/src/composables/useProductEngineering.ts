@@ -440,7 +440,7 @@ export function useBomItemCatalog() {
  * 生产版本列表（list + filters）+ 三件套写操作（create/update/archive）。
  * 写成功后失效列表查询，即时刷新。
  */
-export function useEngineeringProductionVersions() {
+export function useEngineeringProductionVersions(enabled = () => true) {
   const context = useBusinessContextStore()
   const queryCache = useQueryCache()
   const filters = bindBusinessContext(
@@ -454,20 +454,24 @@ export function useEngineeringProductionVersions() {
     }),
   )
 
-  const listQuery = useQuery(() =>
-    withBusinessContextEnabled(
-      listBusinessConsoleEngineeringProductionVersionsQueryOptions({
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-          ...optionalQuery('skuCode', filters.skuCode),
-          ...optionalQuery('status', filters.status),
-          skip: filters.skip,
-          take: filters.take,
-        },
-      }),
-      filters,
-    ),
+  const listQuery = useQuery(() => ({
+    ...listBusinessConsoleEngineeringProductionVersionsQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        ...optionalQuery('skuCode', filters.skuCode),
+        ...optionalQuery('status', filters.status),
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+    enabled: hasBusinessContext(filters) && enabled(),
+  }))
+
+  const visibleList = computed(() =>
+    enabled()
+      ? (listQuery.data.value as BusinessConsoleProductionVersionListEnvelope | undefined)
+      : undefined,
   )
 
   function invalidateList() {
@@ -494,14 +498,13 @@ export function useEngineeringProductionVersions() {
   return {
     filters,
     productionVersions: computed<BusinessConsoleProductionVersionItem[]>(() =>
-      unwrapItems(listQuery.data.value as BusinessConsoleProductionVersionListEnvelope | undefined),
+      unwrapItems(visibleList.value),
     ),
     productionVersionsError: listQuery.error,
     productionVersionsPending: listQuery.isLoading,
-    productionVersionsTotal: computed(() =>
-      unwrapTotal(listQuery.data.value as BusinessConsoleProductionVersionListEnvelope | undefined),
-    ),
-    refresh: () => refetchWithBusinessContext(filters, listQuery),
+    productionVersionsTotal: computed(() => unwrapTotal(visibleList.value)),
+    refresh: () =>
+      enabled() ? refetchWithBusinessContext(filters, listQuery) : Promise.resolve(undefined),
 
     createProductionVersion: (body: BusinessConsoleCreateProductionVersionRequest) =>
       createMutation.mutateAsync({ body }),
