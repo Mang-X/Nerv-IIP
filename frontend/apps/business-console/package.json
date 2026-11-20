@@ -7,6 +7,7 @@
     "dev": "vp dev --host 127.0.0.1 --port 5125",
     "build": "vue-tsc --noEmit -p tsconfig.json && vp build .",
     "e2e": "playwright test",
+    "e2e:evidence": "playwright test --config playwright.evidence.config.ts",
     "test": "vp test run src",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
