@@ -428,7 +428,6 @@ function Assert-BackendFastLaneControlInputsRoute {
             'scripts/run-backend-test-shard.ps1',
             'scripts/verify-backend-test-shards.ps1',
             'scripts/verify-backend-real-postgres-tests.ps1',
-            'scripts/verify-business-full-chain-acceptance.ps1',
             'scripts/verify-business-performance-baseline.ps1',
             'scripts/lib/OrdinalString.ps1',
             'scripts/lib/BackendTestShardSelectors.ps1',
