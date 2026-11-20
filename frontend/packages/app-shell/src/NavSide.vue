@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { NavLink, SideNav } from './types'
+import type { RouteLocationRaw } from 'vue-router'
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -16,9 +17,9 @@ const route = useRoute()
 const router = useRouter()
 
 /** Resolved, trailing-slash-free path of a nav link (undefined when it cannot be resolved). */
-function linkPath(link: NavLink): string | undefined {
+function linkPath(to: RouteLocationRaw): string | undefined {
   try {
-    const target = router.resolve(link.to).path
+    const target = router.resolve(to).path
     return target.length > 1 && target.endsWith('/') ? target.slice(0, -1) : target
   } catch {
     return undefined
@@ -35,22 +36,26 @@ function covers(path: string): boolean {
 // Longest match wins: `/erp/sales` must NOT stay highlighted while `/erp/sales/orders`
 // is open, but `/mes/work-orders` must stay highlighted on `/mes/work-orders/WO-1`
 // (a detail route with no nav entry of its own).
-const activePath = computed(() => {
-  let best: string | undefined
+const activeLink = computed(() => {
+  let best: { path: string; link: NavLink; primary: boolean } | undefined
   for (const group of props.groups) {
     for (const link of group.items) {
-      const path = linkPath(link)
-      if (path === undefined || !covers(path)) continue
-      if (best === undefined || path.length > best.length) best = path
+      for (const [index, to] of [link.to, ...(link.activeOn ?? [])].entries()) {
+        const path = linkPath(to)
+        if (path === undefined || !covers(path)) continue
+        const primary = index === 0
+        if (
+          !best ||
+          path.length > best.path.length ||
+          (path === best.path && primary && !best.primary)
+        ) {
+          best = { path, link, primary }
+        }
+      }
     }
   }
-  return best
+  return best?.link
 })
-
-function isActive(link: NavLink): boolean {
-  const path = linkPath(link)
-  return path !== undefined && path === activePath.value
-}
 </script>
 
 <template>
@@ -58,7 +63,7 @@ function isActive(link: NavLink): boolean {
     <SidebarGroupLabel v-if="group.label">{{ group.label }}</SidebarGroupLabel>
     <SidebarMenu>
       <SidebarMenuItem v-for="link in group.items" :key="link.title">
-        <SidebarMenuButton as-child :tooltip="link.title" :is-active="isActive(link)">
+        <SidebarMenuButton as-child :tooltip="link.title" :is-active="activeLink === link">
           <RouterLink :to="link.to">
             <component :is="link.icon" v-if="link.icon" />
             <span>{{ link.title }}</span>

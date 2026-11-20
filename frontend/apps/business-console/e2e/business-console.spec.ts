@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from '@playwright/test'
+import { expect, test as base, type Page, type Route } from '@playwright/test'
 
 const STORAGE_KEY = 'nerv-iip.business-console.auth'
 
@@ -27,6 +27,7 @@ const principal = {
     'business.mes.work-orders.read', // /mes/work-orders(/:id)
     'business.mes.materials.read', // /mes/materials
     'business.mes.dispatch.read', // /mes/dispatch
+    'business.mes.dispatch.manage', // 派工看板改派
     'business.mes.operations.read', // /mes/operation-tasks, /mes/wip
     'business.mes.reporting.read', // /mes/production-reports
     'business.mes.quality.read', // /mes/quality
@@ -49,9 +50,14 @@ const session = {
   principal,
 }
 
-test.beforeEach(async ({ page }) => {
-  await seedStoredSession(page)
-  await page.route('**/api/console/v1/**', routeConsoleApi)
+const test = base.extend<{ permissionCodes: string[] }>({
+  permissionCodes: [principal.permissionCodes, { option: true }],
+})
+
+test.beforeEach(async ({ page, permissionCodes }) => {
+  const currentPrincipal = { ...principal, permissionCodes }
+  await seedStoredSession(page, currentPrincipal)
+  await page.route('**/api/console/v1/**', (route) => routeConsoleApi(route, currentPrincipal))
   await page.route('**/api/business-console/v1/**', routeBusinessConsoleApi)
 })
 
@@ -101,6 +107,211 @@ test('经营管理：销售/财务子页各自渲染，侧栏只高亮当前项'
   }
 })
 
+test.describe('桌面制造执行入口', () => {
+  test.skip(({ isMobile }) => isMobile, '桌面侧栏和宽表格交互')
+
+  test('工单与派工：从侧栏进入工单，通过页内视图按人看负荷并返回原作业范围', async ({
+    page,
+  }, testInfo) => {
+    await page.route('**/api/business-console/v1/me/work-context?*', (route) => {
+      const params = new URL(route.request().url()).searchParams
+      const scopes = [
+        { kind: 'work-center', id: 'WC-TUBE', displayName: '制管工作中心' },
+        { kind: 'work-center', id: 'WC-WELD', displayName: '焊接工作中心' },
+      ]
+      return fulfillJson(
+        route,
+        envelope({
+          organizationId: 'org-001',
+          environmentId: 'env-dev',
+          applicablePermissionCode: params.get('permissionCode'),
+          resolutionStatus: 'resolved',
+          authorizedScopes: scopes,
+          selectedScope: scopes.find(({ id }) => id === params.get('scopeId')),
+        }),
+      )
+    })
+    await page.route('**/api/business-console/v1/master-data/workers?*', (route) =>
+      fulfillJson(
+        route,
+        envelope({
+          items: [{ userId: 'user-zhang', displayName: '张伟', employeeNo: 'EMP-021' }],
+          total: 1,
+        }),
+      ),
+    )
+    await page.route('**/api/business-console/v1/mes/dispatch-tasks?*', (route) => {
+      const params = new URL(route.request().url()).searchParams
+      const rows = [
+        { operationTaskId: 'OP-WELD', operationTaskNo: 'OP-WELD', assignedUserId: 'user-zhang' },
+        { operationTaskId: 'OP-CUT', operationTaskNo: 'OP-CUT', assignedUserId: 'user-li' },
+      ].filter(
+        ({ assignedUserId }) =>
+          !params.has('assignedUserId') || params.get('assignedUserId') === assignedUserId,
+      )
+      return fulfillJson(
+        route,
+        envelope({
+          items: rows.map((row) => ({ ...row, workOrderId: 'WO-001', status: 'Ready' })),
+          total: rows.length,
+        }),
+      )
+    })
+
+    await expectHeading(page, '/mes', '生产驾驶舱')
+    const sidebar = page.locator('[data-sidebar="sidebar"]')
+    await expect(sidebar.getByRole('link', { name: '派工看板' })).toHaveCount(0)
+    await sidebar.getByRole('link', { name: '工单与派工' }).click()
+
+    const scope = page.getByRole('combobox', { name: '作业范围' })
+    await expect(scope).toContainText('制管工作中心', { timeout: 30_000 })
+    await scope.click()
+    const switched = page.waitForRequest((request) => {
+      const { pathname, searchParams } = new URL(request.url())
+      return (
+        pathname === '/api/business-console/v1/mes/work-orders' &&
+        searchParams.get('scopeId') === 'WC-WELD'
+      )
+    })
+    await page.getByRole('option', { name: /焊接工作中心/ }).click()
+    await switched
+
+    const views = page.getByRole('navigation', { name: '页面视图' })
+    await views.getByRole('link', { name: '派工看板' }).click()
+    await expect(page).toHaveURL(/\/mes\/dispatch$/, { timeout: 30_000 })
+    const sidebarEntry = sidebar.getByRole('link', { name: '工单与派工' })
+    await expect(sidebarEntry).toHaveAttribute('data-active', 'true')
+    await expect(sidebarEntry).toHaveAttribute('href', '/mes/work-orders')
+    await expect(views.getByRole('link', { name: '派工看板' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    await page.getByRole('button', { name: '平铺列表' }).click()
+    await expect(page.getByRole('cell', { name: 'OP-CUT', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: '受派工人' }).click()
+    const filteredRead = page.waitForRequest((request) => {
+      const { pathname, searchParams } = new URL(request.url())
+      return (
+        pathname === '/api/business-console/v1/mes/dispatch-tasks' &&
+        searchParams.get('assignedUserId') === 'user-zhang'
+      )
+    })
+    await page.getByRole('option', { name: '张伟 · EMP-021' }).click()
+    await filteredRead
+    await expect(page.getByRole('cell', { name: 'OP-CUT', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('cell', { name: 'OP-WELD', exact: true })).toBeVisible()
+    await expect(
+      page.getByRole('row').filter({ hasText: 'OP-WELD' }).getByRole('link', { name: 'WO-001' }),
+    ).toHaveAttribute('href', '/mes/work-orders/WO-001')
+    await page.screenshot({ path: testInfo.outputPath('dispatch-person-load.png') })
+    await page.getByRole('button', { name: '工序操作 OP-WELD' }).click()
+    await page.getByRole('menuitem', { name: '改派' }).click()
+    const assignment = page.getByRole('dialog', { name: '改派工序' })
+    await expect(assignment.getByRole('button', { name: '确认改派' })).toBeVisible()
+    await assignment.getByRole('button', { name: '取消' }).click()
+
+    await expectHeading(page, '/mes/dispatch/', '派工看板')
+    await expect(sidebarEntry).toHaveAttribute('data-active', 'true')
+    await views.getByRole('link', { name: '工单列表' }).click()
+    await expect(scope).toContainText('焊接工作中心')
+  })
+
+  test('领料与齐套：进入准备检查，原深链接和返回历史恢复检查范围', async ({ page }, testInfo) => {
+    await expectHeading(page, '/mes', '生产驾驶舱')
+    const sidebar = page.locator('[data-sidebar="sidebar"]')
+    await expect(sidebar.getByRole('link', { name: '生产准备检查' })).toHaveCount(0)
+    await sidebar.getByRole('link', { name: '领料与齐套' }).click()
+    const views = page.getByRole('navigation', { name: '页面视图' })
+    await views.getByRole('link', { name: '生产准备检查' }).click()
+    const sidebarEntry = sidebar.getByRole('link', { name: '领料与齐套' })
+    await expect(sidebarEntry).toHaveAttribute('data-active', 'true')
+    await expect(sidebarEntry).toHaveAttribute('href', '/mes/materials')
+    await expect(views.getByRole('link', { name: '生产准备检查' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+
+    const path =
+      '/mes/foundation?siteCode=SITE-001&lineCode=LINE-001&workCenterCode=WC-001&skuId=sku-1&productionVersionId=PV-001'
+    const scopedRead = page.waitForRequest((request) => {
+      const { pathname, searchParams } = new URL(request.url())
+      return (
+        pathname === '/api/business-console/v1/mes/foundation-readiness' &&
+        searchParams.get('siteCode') === 'SITE-001' &&
+        searchParams.get('lineCode') === 'LINE-001' &&
+        searchParams.get('workCenterCode') === 'WC-001' &&
+        searchParams.get('skuId') === 'sku-1' &&
+        searchParams.get('productionVersionId') === 'PV-001'
+      )
+    })
+    await expectHeading(
+      page,
+      '/erp/finance/work-center-cost-rates?fromFoundation=1&foundationSiteCode=SITE-001&foundationLineCode=LINE-001&foundationWorkCenterCode=WC-001&foundationSkuId=sku-1&foundationProductionVersionId=PV-001',
+      '工作中心费率',
+    )
+    await page.getByRole('link', { name: '返回原准备检查' }).click()
+    await scopedRead
+    await expect(views.getByRole('link', { name: '生产准备检查' })).toHaveAttribute('href', path)
+    await page.screenshot({ path: testInfo.outputPath('foundation-deep-link.png') })
+
+    await views.getByRole('link', { name: '领料' }).click()
+    await expect(page).toHaveURL(/\/mes\/materials$/, { timeout: 30_000 })
+    await page.goBack()
+    await expect(views.getByRole('link', { name: '生产准备检查' })).toHaveAttribute('href', path)
+
+    const slashPath = path.replace('/mes/foundation?', '/mes/foundation/?')
+    await expectHeading(page, slashPath, '生产准备检查')
+    await expect(views.getByRole('link', { name: '生产准备检查' })).toHaveAttribute(
+      'href',
+      slashPath,
+    )
+    await expect(sidebarEntry).toHaveAttribute('data-active', 'true')
+    await views.getByRole('link', { name: '领料' }).click()
+    await expect(page).toHaveURL(/\/mes\/materials$/)
+  })
+
+  test.describe('MES 只有独立视图读权限', () => {
+    test.use({ permissionCodes: ['business.mes.dispatch.read', 'business.mes.foundation.read'] })
+
+    test('旧入口可从侧栏进入，直接访问未授权主视图仍受守卫保护', async ({ page }) => {
+      await expectHeading(page, '/mes/dispatch', '派工看板')
+      const sidebar = page.locator('[data-sidebar="sidebar"]')
+      await expect(sidebar.getByRole('link', { name: '工单与派工' })).toHaveCount(0)
+      await expect(sidebar.getByRole('link', { name: '领料与齐套' })).toHaveCount(0)
+      await expect(page.getByRole('navigation', { name: '页面视图' })).toHaveCount(0)
+      await sidebar.getByRole('link', { name: '生产准备检查' }).click()
+      await expect(page).toHaveURL(/\/mes\/foundation$/, { timeout: 30_000 })
+      await sidebar.getByRole('link', { name: '派工看板' }).click()
+      await expect(page).toHaveURL(/\/mes\/dispatch$/, { timeout: 30_000 })
+
+      for (const path of ['/mes/work-orders', '/mes/materials']) {
+        await page.goto(path)
+        await expect(page).toHaveURL(/\/forbidden\?from=/)
+      }
+    })
+  })
+
+  test.describe('MES 只有主视图读权限', () => {
+    test.use({ permissionCodes: ['business.mes.work-orders.read', 'business.mes.materials.read'] })
+
+    test('主入口可用，旧深链接仍要求各自的读权限', async ({ page }) => {
+      await expectHeading(page, '/mes/work-orders', '工单与派工')
+      const sidebar = page.locator('[data-sidebar="sidebar"]')
+      await expect(page.getByRole('navigation', { name: '页面视图' })).toHaveCount(0)
+      await expect(sidebar.getByRole('link', { name: '派工看板' })).toHaveCount(0)
+      await expect(sidebar.getByRole('link', { name: '生产准备检查' })).toHaveCount(0)
+      await sidebar.getByRole('link', { name: '领料与齐套' }).click()
+      await expect(page).toHaveURL(/\/mes\/materials$/, { timeout: 30_000 })
+      await expect(page.getByRole('navigation', { name: '页面视图' })).toHaveCount(0)
+
+      for (const path of ['/mes/dispatch', '/mes/foundation']) {
+        await page.goto(path)
+        await expect(page).toHaveURL(/\/forbidden\?from=/)
+      }
+    })
+  })
+})
+
 test('生产计划：就绪计划行尾「转工单」可点并打开下达工单弹窗', async ({ page }) => {
   // 计划数据来自共享 mock（PLAN-READY 可转 / PLAN-BLOCKED 受阻）。
   await page.goto('/mes/plans', { waitUntil: 'domcontentloaded' })
@@ -132,8 +343,9 @@ test('工单与派工：工单队列渲染、创建急单弹窗可开', async ({
 
   // 创建急单 → 弹窗打开（抓"点不了"）。
   await page.getByRole('button', { name: '创建急单' }).click()
-  await expect(page.getByRole('dialog')).toBeVisible()
-  await expect(page.getByText('急单用于生产插单和临时补单')).toBeVisible()
+  const rushOrder = page.getByRole('dialog', { name: '创建急单' })
+  await expect(rushOrder).toBeVisible()
+  await expect(rushOrder.getByRole('button', { name: '生产版本', exact: true })).toBeVisible()
 })
 
 test('领料与齐套：领料申请渲染收料进度与「查看出库」闭环链接', async ({ page }) => {
@@ -396,7 +608,7 @@ async function expectHeading(page: Page, path: string, heading: string) {
   ).toBeVisible({ timeout: 15_000 })
 }
 
-async function seedStoredSession(page: Page) {
+async function seedStoredSession(page: Page, currentPrincipal: typeof principal) {
   await page.addInitScript(
     ({ key, storedSession }) => {
       localStorage.setItem(key, JSON.stringify(storedSession))
@@ -404,7 +616,7 @@ async function seedStoredSession(page: Page) {
     {
       key: STORAGE_KEY,
       storedSession: {
-        principal,
+        principal: currentPrincipal,
         refreshToken: session.refreshToken,
         sessionId: session.sessionId,
       },
@@ -412,15 +624,15 @@ async function seedStoredSession(page: Page) {
   )
 }
 
-async function routeConsoleApi(route: Route) {
+async function routeConsoleApi(route: Route, currentPrincipal: typeof principal) {
   const url = new URL(route.request().url())
 
   if (url.pathname === '/api/console/v1/auth/refresh') {
-    return fulfillJson(route, envelope(session))
+    return fulfillJson(route, envelope({ ...session, principal: currentPrincipal }))
   }
 
   if (url.pathname === '/api/console/v1/auth/me') {
-    return fulfillJson(route, envelope(principal))
+    return fulfillJson(route, envelope(currentPrincipal))
   }
 
   return route.fallback()

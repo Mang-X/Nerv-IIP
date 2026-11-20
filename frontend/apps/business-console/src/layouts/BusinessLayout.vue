@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MesViewNavigation from '@/components/mes/MesViewNavigation.vue'
 import NotificationInbox from '@/components/notifications/NotificationInbox.vue'
 import { AppShellT } from '@nerv-iip/app-shell'
 import { NvDropdownMenuItem, NvThemePicker, NvThemeToggle } from '@nerv-iip/ui'
@@ -8,7 +9,13 @@ import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { BUSINESS_DOMAINS, DOMAIN_SIDE_NAV, permittedBy, resolveDomainId } from '@/navigation'
+import {
+  BUSINESS_DOMAINS,
+  mesViewsForPath,
+  permittedBy,
+  resolveDomainId,
+  sideNavForDomain,
+} from '@/navigation'
 
 const route = useRoute()
 const router = useRouter()
@@ -27,20 +34,16 @@ const topDomains = computed(() =>
   permittedBy(BUSINESS_DOMAINS, permissionCodes.value).flatMap((domain) => {
     if (domain.id !== 'mes') return [domain]
 
-    const firstPage = permittedBy(
-      DOMAIN_SIDE_NAV.mes.flatMap((group) => group.items),
-      permissionCodes.value,
+    const firstPage = sideNavForDomain('mes', permissionCodes.value).flatMap(
+      (group) => group.items,
     )[0]
     return firstPage ? [{ ...domain, to: firstPage.to }] : []
   }),
 )
 
-// Current domain's side nav, with empty groups dropped after permission filtering.
-const sideNav = computed(() =>
-  (DOMAIN_SIDE_NAV[currentDomainId.value] ?? [])
-    .map((group) => ({ ...group, items: permittedBy(group.items, permissionCodes.value) }))
-    .filter((group) => group.items.length > 0),
-)
+const sideNav = computed(() => sideNavForDomain(currentDomainId.value, permissionCodes.value))
+const currentPagePath = computed(() => route.matched?.at(-1)?.path ?? route.path)
+const mesViews = computed(() => mesViewsForPath(currentPagePath.value, permissionCodes.value))
 
 const shellUser = computed(() => {
   const p = principal.value
@@ -126,6 +129,11 @@ function openSearch() {
         </button>
       </div>
     </section>
+    <MesViewNavigation
+      v-if="mesViews.length > 1"
+      :views="mesViews"
+      :current-page-path="currentPagePath"
+    />
     <slot />
   </AppShellT>
 </template>
