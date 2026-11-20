@@ -64,7 +64,6 @@ const DELIVERY_ORDER_NO = 'DO-WALK-001'
 // 入库单号、上架与拣货任务号、复核单号由 WMS 编码规则生成（#3848），创建后从读面取回。
 const INBOUND_INTENT_KEY = 'IN-WALK-001'
 let inboundOrderNo = ''
-const PRODUCED_LOT_NO = 'LOT-WALK-001'
 const FINISHED_SKU = 'FG-QJ-P1-L'
 const SITE_CODE = 'SITE-001'
 const INBOUND_LOCATION = 'loc-raw-01'
@@ -1190,19 +1189,147 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       responsibilityIssue: null,
     })
 
+    const operatorId = 'user-emp-010'
+    const operatorPage = await browser.newPage({ baseURL })
+    operatorPage.on('response', async (response) => {
+      const path = new URL(response.url()).pathname
+      if (
+        response.ok() &&
+        response.request().method() === 'GET' &&
+        ['work-orders', 'operation-tasks'].some((name) => path.endsWith('/mes/' + name))
+      ) {
+        const url = new URL(response.url())
+        setup.push({
+          actor: operatorId,
+          path,
+          scope: url.searchParams.get('scopeKind'),
+          rows: rowsOf(await response.json()).map((row) => ({
+            workOrderId: row.workOrderId,
+            operationTaskId: row.operationTaskId,
+            assignedUserId: row.assignedUserId,
+          })),
+        })
+      }
+      if (path.startsWith('/api/') && response.status() >= 400)
+        failedRequests.push({ actor: operatorId, path, status: response.status() })
+    })
+    operatorPage.on('pageerror', (error) => pageErrors.push(safeText(error.message)))
+    const loginOperator = async (target: typeof page, loginName: string, expectedId: string) => {
+      await target.goto('/login')
+      await target.getByLabel('登录名').fill(loginName)
+      await target.getByLabel('密码').fill(workerPassword!)
+      const [response] = await Promise.all([
+        target.waitForResponse((r) => new URL(r.url()).pathname === '/api/console/v1/auth/login'),
+        target.getByRole('button', { name: '登录' }).click(),
+      ])
+      expect(response.status()).toBe(200)
+      const principal = asRecord(asRecord(dataOf(await response.json())).principal)
+      expect(principal).toMatchObject({ principalId: expectedId, organizationId, environmentId })
+      return principal.permissionCodes
+    }
+    const createdWorker = await call('POST', '/api/business-console/v1/master-data/workers', {
+      organizationId,
+      environmentId,
+      name: '走查末道操作工',
+      userId: operatorId,
+      employmentStatus: 'active',
+      idempotencyKey: 'issue1912-final-operator',
+    })
+    setup.push({ request: createdWorker.summary, worker: createdWorker.publicPayload })
+    let finalReportNo = ''
     const finishedProduction = await runFinishedProduction({
       browser,
       workOrderId,
-      producedLotNo: PRODUCED_LOT_NO,
+      assignedPrincipalId: operatorId,
+      finishAssignedTask: async (taskId) => {
+        const permissions = await loginOperator(operatorPage, 'emp010', operatorId)
+        const other = await browser.newPage({ baseURL })
+        try {
+          expect(await loginOperator(other, 'emp012', 'user-emp-012')).toEqual(permissions)
+          const [denied] = await Promise.all([
+            other.waitForResponse((r) => {
+              const url = new URL(r.url())
+              return (
+                url.pathname.endsWith('/me/work-context') &&
+                url.searchParams.get('permissionCode') === 'business.mes.operations.read'
+              )
+            }),
+            other.goto('/mes/operation-tasks'),
+          ])
+          expect(denied.status()).toBe(200)
+          expect(asRecord(dataOf(await denied.json())).authorizedScopes).toEqual([])
+          await expect(other.getByText('无可选授权范围')).toBeVisible()
+          setup.push({ actor: 'user-emp-012', workOrderId, taskId, scopeStatus: denied.status() })
+          await expect(other.getByText(taskId, { exact: true })).toHaveCount(0)
+        } finally {
+          await other.close()
+        }
+        await operatorPage.getByRole('link', { name: '制造执行' }).first().click()
+        await expect(
+          operatorPage
+            .getByRole('link')
+            .filter({ has: operatorPage.getByText(workOrderNo, { exact: true }) }),
+        ).toBeVisible()
+        await operatorPage.getByRole('link', { name: '工序执行' }).first().click()
+        const row = operatorPage.getByRole('row').filter({ hasText: workOrderNo })
+        await expect(row).toHaveCount(1)
+        await expect(row.getByTitle(taskId, { exact: true })).toBeVisible()
+        await operatorPage.screenshot({
+          path: join(screenshotDirectory, 'operator-final-task.png'),
+        })
+        await row.getByRole('button', { name: /工序任务操作/ }).click()
+        const [start] = await Promise.all([
+          operatorPage.waitForResponse((r) =>
+            new URL(r.url()).pathname.endsWith(`/${taskId}/start`),
+          ),
+          operatorPage.getByRole('menuitem', { name: '开工' }).click(),
+        ])
+        expect(start.ok()).toBe(true)
+        await row.getByRole('button', { name: '报工', exact: true }).click()
+        const dialog = operatorPage.getByRole('dialog')
+        await dialog.locator('#report-good').fill(String(QUANTITY))
+        if ((await dialog.locator('#report-complete').getAttribute('aria-checked')) !== 'true')
+          await dialog.locator('#report-complete').click()
+        const [posted] = await Promise.all([
+          operatorPage.waitForResponse(
+            (r) =>
+              r.request().method() === 'POST' &&
+              new URL(r.url()).pathname.endsWith('/mes/production-reports'),
+          ),
+          dialog.getByRole('button', { name: '提交报工' }).click(),
+        ])
+        expect(posted.ok()).toBe(true)
+        expect(posted.request().postDataJSON()).toMatchObject({
+          workOrderId,
+          operationTaskId: taskId,
+          completesOperation: true,
+        })
+        const result = asRecord(dataOf(await posted.json()))
+        finalReportNo = textOf(result.reportNo)
+        expect(finalReportNo).not.toBe('')
+        setup.push({
+          actor: operatorId,
+          taskId,
+          workOrderId,
+          reportNo: finalReportNo,
+          httpStatus: posted.status(),
+        })
+        await operatorPage.getByRole('button', { name: '去完工入库' }).click()
+        await expect(operatorPage.getByRole('dialog', { name: '登记完工入库' })).toBeVisible()
+        return result
+      },
       evidencePath: join(evidenceDirectory, 'nerv1853-finished-production.json'),
     })
     const productionReports = await pollRows(
       '/api/business-console/v1/mes/production-reports',
       { organizationId, environmentId, keyword: workOrderNo, skip: 0, take: 100 },
       (row) =>
-        textOf(row.workOrderId) === workOrderId && textOf(row.producedLotNo) === PRODUCED_LOT_NO,
+        row.workOrderId === workOrderId &&
+        row.reportNo === finalReportNo &&
+        Boolean(row.producedLotNo),
       120_000,
     )
+    const producedLotNo = textOf(productionReports.match.producedLotNo)
     const productionUi = await provePageSafely('mes-work-order-production', {
       route: '/mes/production-reports',
       listPath: '/api/business-console/v1/mes/production-reports',
@@ -1216,7 +1343,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       downstreamObject: textOf(
         productionReports.match.reportNo ?? productionReports.match.productionReportId,
       ),
-      stableKey: `${SALES_ORDER_NO} -> ${workOrderNo} -> ${PRODUCED_LOT_NO}`,
+      stableKey: `${SALES_ORDER_NO} -> ${workOrderNo} -> ${producedLotNo}`,
       automationMode: 'mixed',
       request: null,
       responseOrLog: {
@@ -1226,27 +1353,21 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       },
       conclusion: 'runtime-confirmed',
       demoWording:
-        'MES 真实工单的全部工序通过公开 start/report 生命周期完成，最终报工产生固定成品批次；报工页面渲染工单业务号。',
+        'MES 真实工单的全部工序通过公开 start/report 生命周期完成，末道由 emp010 在工序执行页报工，系统生成成品批次；报工页面渲染工单业务号。',
       responsibilityIssue: null,
     })
 
-    await page.goto(`/mes/work-orders?keyword=${encodeURIComponent(workOrderNo)}`)
-    await page
-      .getByRole('link')
-      .filter({ has: page.getByText(workOrderNo, { exact: true }) })
-      .click()
-    await page.getByRole('button', { name: '完工入库', exact: true }).click()
-    const sheet = page.getByRole('dialog', { name: '登记完工入库' })
-    await expect(sheet.getByLabel('选择产出批次')).toContainText(PRODUCED_LOT_NO)
+    const sheet = operatorPage.getByRole('dialog', { name: '登记完工入库' })
+    await expect(sheet.getByLabel('选择产出批次')).toContainText(producedLotNo)
     await sheet.getByLabel('入库数量').fill(String(QUANTITY))
     const unit = sheet.getByLabel('单位', { exact: true })
     if (!(await unit.innerText()).includes('件')) {
       await unit.click()
-      await page.getByRole('option', { name: /件/ }).click()
+      await operatorPage.getByRole('option', { name: /件/ }).click()
     }
     const receiptPath = '/api/business-console/v1/mes/finished-goods-receipt-requests'
     const [submitted] = await Promise.all([
-      page.waitForResponse(
+      operatorPage.waitForResponse(
         (response) =>
           response.request().method() === 'POST' &&
           new URL(response.url()).pathname === receiptPath,
@@ -1260,14 +1381,14 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       environmentId,
       workOrderId,
       skuId: FINISHED_SKU,
-      producedLotNo: PRODUCED_LOT_NO,
+      producedLotNo,
       quantity: QUANTITY,
       uomCode: 'pcs',
     })
     const receiptRequestNo = textOf(asRecord(dataOf(await submitted.json())).requestNo)
     const receiptCommand = {
-      actor: adminRuntime.actor,
-      principalId: adminRuntime.principalId,
+      actor: 'production-operator',
+      principalId: operatorId,
       method: 'POST',
       path: receiptPath,
       status: submitted.status(),
@@ -1279,7 +1400,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       '/api/business-console/v1/mes/finished-goods-receipt-requests',
       { organizationId, environmentId, workOrderId, keyword: receiptRequestNo, skip: 0, take: 100 },
       (row) =>
-        textOf(row.requestNo) === receiptRequestNo && textOf(row.producedLotNo) === PRODUCED_LOT_NO,
+        textOf(row.requestNo) === receiptRequestNo && textOf(row.producedLotNo) === producedLotNo,
       180_000,
     )
     const receiptPageUi = await provePageSafely('production-finished-goods-receipt', {
@@ -1289,6 +1410,10 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       emptyText: '还没有完工入库登记。末道工序报完工后，在此把成品登记入库即会出现对应记录。',
       screenshotName: '14-finished-goods-receipt.png',
     })
+    await operatorPage.goto('/mes/receipts')
+    await expect(operatorPage.getByText(receiptRequestNo, { exact: true }).first()).toBeVisible()
+    await operatorPage.screenshot({ path: join(screenshotDirectory, 'operator-receipt.png') })
+    await operatorPage.close()
     const finishedInventory = await workerPollData(
       '/api/business-console/v1/inventory/availability',
       {
@@ -1298,7 +1423,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         uomCode: 'pcs',
         siteCode: SITE_CODE,
         locationCode: FINISHED_GOODS_LOCATION,
-        lotNo: PRODUCED_LOT_NO,
+        lotNo: producedLotNo,
         ownerType: 'company',
       },
       (data) => Number(data.availableQuantity ?? 0) >= QUANTITY,
@@ -1309,7 +1434,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       { organizationId, environmentId, workOrderId, keyword: receiptRequestNo, skip: 0, take: 100 },
       (row) =>
         row.requestNo === receiptRequestNo &&
-        row.producedLotNo === PRODUCED_LOT_NO &&
+        row.producedLotNo === producedLotNo &&
         row.receiptStatus === 'Posted' &&
         row.postedQuantity === QUANTITY &&
         Boolean(row.postedInventoryMovementId),
@@ -1326,7 +1451,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         row.skuCode === FINISHED_SKU &&
         row.siteCode === SITE_CODE &&
         row.locationCode === FINISHED_GOODS_LOCATION &&
-        row.lotNo === PRODUCED_LOT_NO &&
+        row.lotNo === producedLotNo &&
         row.ownerType === 'company' &&
         row.quantity === QUANTITY,
     )
@@ -1336,7 +1461,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         productionReports.match.reportNo ?? productionReports.match.productionReportId,
       ),
       downstreamObject: receiptRequestNo,
-      stableKey: `${workOrderNo} -> ${receiptRequestNo} -> ${PRODUCED_LOT_NO}`,
+      stableKey: `${workOrderNo} -> ${receiptRequestNo} -> ${producedLotNo}`,
       automationMode: 'manual',
       request: receiptCommand,
       responseOrLog: {
@@ -1352,8 +1477,8 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
     record({
       node: 'finished-goods-inventory',
       sourceObject: receiptRequestNo,
-      downstreamObject: PRODUCED_LOT_NO,
-      stableKey: `${receiptRequestNo} -> ${SITE_CODE}/${FINISHED_GOODS_LOCATION}/${PRODUCED_LOT_NO}`,
+      downstreamObject: producedLotNo,
+      stableKey: `${receiptRequestNo} -> ${SITE_CODE}/${FINISHED_GOODS_LOCATION}/${producedLotNo}`,
       automationMode: 'automatic',
       request: finishedInventory.call.summary,
       responseOrLog: {
@@ -1366,7 +1491,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
             skuCode: FINISHED_SKU,
             siteCode: SITE_CODE,
             locationCode: FINISHED_GOODS_LOCATION,
-            lotNo: PRODUCED_LOT_NO,
+            lotNo: producedLotNo,
           }),
           listPath: '/api/business-console/v1/inventory/availability',
           stableText: FINISHED_SKU,
@@ -1381,7 +1506,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
                 uomCode: 'pcs',
                 siteCode: SITE_CODE,
                 locationCode: FINISHED_GOODS_LOCATION,
-                lotNo: PRODUCED_LOT_NO,
+                lotNo: producedLotNo,
                 ownerType: 'owned',
               },
             },
@@ -1406,7 +1531,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
           salesOrderLineNo: '10',
           quantity: QUANTITY,
           locationCode: FINISHED_GOODS_LOCATION,
-          lotNo: PRODUCED_LOT_NO,
+          lotNo: producedLotNo,
         },
       ],
       idempotencyKey: `issue1912-${DELIVERY_ORDER_NO}`,

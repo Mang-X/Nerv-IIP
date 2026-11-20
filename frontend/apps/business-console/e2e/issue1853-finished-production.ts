@@ -18,10 +18,11 @@ const mes = '/api/business-console/v1/mes'
 export async function runFinishedProduction(options: {
   browser: Browser
   workOrderId: string
-  producedLotNo: string
+  finishAssignedTask: (taskId: string) => Promise<Api.BusinessConsoleRecordProductionReportResponse>
+  assignedPrincipalId: string
   evidencePath: string
 }) {
-  const { browser, workOrderId, producedLotNo, evidencePath } = options
+  const { browser, workOrderId, assignedPrincipalId, finishAssignedTask, evidencePath } = options
   const context = await browser.newContext({ baseURL: process.env.NERV_IIP_PLAYWRIGHT_BASE_URL })
   const page = await context.newPage()
   const facts: Row = {}
@@ -250,6 +251,7 @@ export async function runFinishedProduction(options: {
             query(`${mes}/dispatch-tasks/${task.operationTaskId}/assign`, workScope),
             {
               deviceAssetId: device.deviceAssetId,
+              assignedUserId: index === tasks.length - 1 ? assignedPrincipalId : undefined,
             } satisfies Api.BusinessConsoleMesAssignDispatchTaskRequest,
           )
           const assigned = (await detail()).operationTasks!.find(
@@ -257,6 +259,14 @@ export async function runFinishedProduction(options: {
           )!
           expect(assigned.deviceAssetId).toBe(device.deviceAssetId)
           preparation.push({ rate, device, assigned })
+          if (index === tasks.length - 1) {
+            expect(assigned).toMatchObject({
+              assignedUserId: assignedPrincipalId,
+              workCenterId: task.workCenterId,
+            })
+            reports.push(await finishAssignedTask(task.operationTaskId!))
+            continue
+          }
           await call(
             'POST',
             query(`${mes}/operation-tasks/${task.operationTaskId}/start`, workScope),
@@ -276,7 +286,6 @@ export async function runFinishedProduction(options: {
             reportedAtUtc: new Date().toISOString(),
             idempotencyKey: `n1853-report-${index}`,
             consumedMaterialLots: index === 0 ? consumedMaterialLots : [],
-            producedLotNo: index === tasks.length - 1 ? producedLotNo : undefined,
           } satisfies Api.BusinessConsoleRecordProductionReportRequest
           reports.push(
             await call<Api.BusinessConsoleRecordProductionReportResponse>(
