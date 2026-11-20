@@ -42,6 +42,7 @@ import {
 import { LockOpenIcon, PlusIcon, RefreshCwIcon, RouteIcon, TruckIcon } from '@lucide/vue'
 import { computed, nextTick, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   UNAVAILABLE_TEXT,
@@ -57,6 +58,7 @@ definePage({
   meta: { requiresAuth: true, title: '销售订单', requiredPermissions: ['business.erp.sales.read'] },
 })
 
+const businessContext = useBusinessContextStore()
 const orders = useErpSalesOrders()
 // 履约工厂从工厂主数据里选，手输编码只会在提交时才发现敲错。
 const { siteOptions, sitesPending } = useErpSiteCatalog()
@@ -231,8 +233,8 @@ function openTimeline(row: BusinessConsoleErpSalesOrderItem) {
         keyword: orders.filters.keyword,
         page: page.value,
         pageSize: pageSize.value,
-        org: orders.filters.organizationId,
-        env: orders.filters.environmentId,
+        org: businessContext.organizationId,
+        env: businessContext.environmentId,
       },
     },
     '',
@@ -242,8 +244,8 @@ function openTimeline(row: BusinessConsoleErpSalesOrderItem) {
 const saved = history.state?.fulfillment
 if (
   saved &&
-  saved.org === orders.filters.organizationId &&
-  saved.env === orders.filters.environmentId
+  saved.org === businessContext.organizationId &&
+  saved.env === businessContext.environmentId
 ) {
   orders.filters.keyword = saved.keyword
   pageSize.value = saved.pageSize
@@ -257,8 +259,8 @@ watch(
     const target = history.state?.fulfillment
     if (
       !target ||
-      target.org !== orders.filters.organizationId ||
-      target.env !== orders.filters.environmentId ||
+      target.org !== businessContext.organizationId ||
+      target.env !== businessContext.environmentId ||
       target.page !== page.value
     )
       return
@@ -269,6 +271,14 @@ watch(
     }
   },
   { immediate: true },
+)
+watch(
+  () => [businessContext.organizationId, businessContext.environmentId],
+  () => {
+    timelineOpen.value = false
+    timelineOrder.value = null
+    history.replaceState({ ...history.state, fulfillment: null }, '')
+  },
 )
 watch(timelineOpen, (open) => {
   if (!open) history.replaceState({ ...history.state, fulfillment: null }, '')

@@ -764,7 +764,13 @@ export function useBusinessPlanning(
     suggestionTypeFilter,
     suggestions,
     downstreamStatuses: computed(() => downstreamStatusesQuery.data.value ?? {}),
-    suggestionsError: suggestionsQuery.error,
+    suggestionsError: computed(() => {
+      const response = suggestionsQuery.data.value
+      return (
+        suggestionsQuery.error.value ??
+        (response?.success === false ? new Error(response.message || '计划建议读取失败。') : null)
+      )
+    }),
     suggestionsPending: suggestionsQuery.isLoading,
     syncContext,
     updateMpsBucket: (mpsId: string) =>

@@ -1923,9 +1923,11 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       </div>
       <div v-if="sourceUnresolved" role="status" class="text-sm text-muted-foreground">
         {{
-          suggestionsPending || mrpRunsPending
-            ? '正在定位来源建议…'
-            : '当前可读范围内未定位到来源建议或运行。'
+          suggestionsError || mrpRunsError
+            ? '来源读取失败，请刷新后重试。'
+            : suggestionsPending || mrpRunsPending
+              ? '正在定位来源建议…'
+              : '当前可读范围内未定位到来源建议或运行。'
         }}
         <RouterLink to="/planning">返回需求池</RouterLink>
       </div>
