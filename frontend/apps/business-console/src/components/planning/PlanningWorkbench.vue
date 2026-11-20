@@ -163,7 +163,7 @@ function refreshUrgency() {
 
 /**
  * 需求池筛选（GH#1292 第 5 项）：一屏几百条需求此前没有任何查找手段，计划员要找某张销售订单
- * 或某个物料只能肉眼扫。需求池读面是**整表返回、不带关键字/分页参数**，所以筛选在前端做。
+ * 或某个物料只能肉眼扫。普通入口当前在已载入的需求中筛选。
  */
 const demandKeyword = shallowRef('')
 const demandTypeFilter = shallowRef('all')
@@ -440,7 +440,14 @@ const sourceRunId = computed(() =>
 watch(
   [sourceSuggestionId, sourceRunId],
   ([suggestionId, runId]) => {
-    if (!suggestionId && !runId) return
+    if (!suggestionId && !runId) {
+      suggestionFilters.status = 'all'
+      suggestionTypeFilter.type = 'all'
+      activeTab.value = 'demands'
+      focusedSuggestionId.value = ''
+      manualSuggestionRunId.value = 'latest'
+      return
+    }
     suggestionFilters.status = 'all'
     suggestionTypeFilter.type = 'all'
     focusedSuggestionId.value = ''
@@ -452,13 +459,18 @@ watch(
 watch(
   [sourceSuggestionId, sourceRunId, suggestions, mrpRuns],
   ([suggestionId, runId]) => {
-    if (!suggestionId || focusedSuggestionId.value === suggestionId) return
+    if (!suggestionId) return
     const source = suggestions.value.find((row) => row.suggestionId === suggestionId)
     if (!source?.runId || (runId && source.runId !== runId)) return
     if (!mrpRuns.value.some((run) => run.runId === source.runId)) return
     locatePlanningSuggestion(suggestionId, source.runId)
   },
   { immediate: true },
+)
+const sourceUnresolved = computed(() =>
+  Boolean((sourceSuggestionId.value && !suggestions.value.some(row =>
+    row.suggestionId === sourceSuggestionId.value && row.runId === suggestionRun.value?.runId
+  )) || (sourceRunId.value && sourceRunId.value !== suggestionRun.value?.runId)),
 )
 function focusSuggestion(row: BusinessConsoleMrpPeggingItem) {
   if (!row.suggestionId) return
@@ -898,6 +910,8 @@ function downstreamStatus(status?: string): { label: string; tone: StatusTone } 
     cancelled: '已取消',
     open: '待处理',
     converted: '已转采购单',
+    restricted: '无权查看下游状态',
+    partial: '前 400 条候选未定位到回执',
     unavailable: '状态读取失败',
     unknown: '状态未知',
   }
@@ -1822,7 +1836,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
     </NvTabsContent>
 
     <NvTabsContent value="suggestions" class="grid gap-3">
-      <div class="flex flex-wrap items-center gap-2">
+      <div v-if="!sourceUnresolved" class="flex flex-wrap items-center gap-2">
         <NvSelect v-model="suggestionRunChoice">
           <NvSelectTrigger class="h-9 w-72" aria-label="建议运行"
             ><NvSelectValue placeholder="选择运行"
@@ -1866,7 +1880,12 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
           </NvSelect>
         </div>
       </div>
+      <div v-if="sourceUnresolved" role="status" class="text-sm text-muted-foreground">
+        {{ suggestionsPending || mrpRunsPending ? '正在定位来源建议…' : '当前可读范围内未定位到来源建议或运行。' }}
+        <RouterLink to="/planning">返回需求池</RouterLink>
+      </div>
       <NvDataTable
+        v-else
         :key="focusedSuggestionId"
         :columns="suggestionColumns"
         :rows="visibleSuggestions"

@@ -165,6 +165,7 @@ vi.mock('@pinia/colada', () => ({
 describe('business planning composable', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    useAuthStore().principal = { permissionCodes: ['business.planning.demands.read', 'business.planning.mrp.read', 'business.planning.mps.read', 'business.erp.procurement.read', 'business.mes.work-orders.read'] }
     useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
     vi.clearAllMocks()
     coladaState.invalidateQueries.mockClear()
