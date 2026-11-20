@@ -252,7 +252,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
     ),
     wcsTasksError: shallowRef(undefined),
     wcsTasksPending: shallowRef(false),
-    wcsTasksTotal: computed(() => 1),
+    wcsTasksTotal: computed(() => wms.wcsRows?.length ?? 1),
     refreshWcsTasks: vi.fn(),
     dispatchWcs: wms.dispatchWcs,
     dispatchWcsPending: shallowRef(false),
@@ -1240,6 +1240,16 @@ describe('WMS operate actions', () => {
     await flushPromises()
 
     expect(wrapper.find('button[aria-label="WCS 任务操作 EXT-1"]').exists()).toBe(true)
+  })
+
+  it('offers warehouse work links when the current scope has no device tasks', async () => {
+    wms.wcsRows = []
+    const wrapper = mount(WcsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('当前范围暂无设备任务')
+    expect(wrapper.text()).toContain('上架任务')
+    expect(wrapper.text()).toContain('拣货任务')
   })
 
   describe('WCS 人工处置', () => {
