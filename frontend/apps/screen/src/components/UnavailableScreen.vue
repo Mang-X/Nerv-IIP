@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import InspectionDetail from './InspectionDetail.vue'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 import HallMetric from '@/components/launcher/HallMetric.vue'
 import type { ScreenDef } from '@/data/screens'
@@ -20,12 +21,7 @@ const session = computed(() => ({
     <section class="missing">
       <template v-if="screen.key === 'quality'">
         <HallMetric detail metric="ncr" label="NCR 未处置 / 处置中（单）" :session="session" />
-        <HallMetric
-          detail
-          metric="inspection"
-          label="检验待认领 / 进行中（项）"
-          :session="session"
-        />
+        <InspectionDetail :session="session" />
         <p>每种状态最多展示 5 条。批次合格率与缺陷分布未接入</p>
       </template>
       <h2 v-else>当前范围暂无指标来源</h2>

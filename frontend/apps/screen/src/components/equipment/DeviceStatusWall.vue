@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { NvSparkline } from '@nerv-iip/ui'
 import { useVirtualList } from '@vueuse/core'
-import { type CSSProperties, computed, ref, watch } from 'vue'
+import { type CSSProperties, computed, onScopeDispose, ref, watch } from 'vue'
 import type { DeviceCell, DeviceDetail, StateCounts } from '@/data/contracts/equipment'
+import { IS_REAL_DATA } from '@/data/config'
 import { fetchDeviceDetail } from '@/data/fetchers/equipment'
 import {
   EQUIPMENT_DEVICE_NAME_SIZE_PX,
@@ -21,6 +22,8 @@ import { paramColor } from './paramColors'
  * 迷你趋势 + 维修/保养摘要 + 单机 MTBF/MTTR，减少必须点开弹窗的场景。
  */
 const props = defineProps<{
+  workCenterCode?: string
+  partialCoverage?: boolean
   devices: DeviceCell[]
   counts: StateCounts
   view: 'flat' | 'workshop' | 'line'
@@ -42,7 +45,7 @@ function countItems() {
     ...(changeover ? [{ k: 'changeover', label: '换型', v: changeover }] : []),
     ...(unknown ? [{ k: 'unknown', label: '状态未知', v: unknown }] : []),
     { k: 'down', label: '停机', v: props.counts.down },
-    { k: 'alarm', label: '报警', v: props.counts.alarm },
+    { k: 'alarm', label: props.partialCoverage ? '已覆盖中报警' : '报警', v: props.counts.alarm },
     { k: 'offline', label: '断线', v: props.counts.offline },
   ]
 }
@@ -111,7 +114,7 @@ function showTip(d: DeviceCell, e: MouseEvent) {
     below,
   }
   const cached = detailCache.get(d.id)
-  if (cached && Date.now() - cached.at < 30_000) {
+  if (!IS_REAL_DATA && cached && Date.now() - cached.at < 30_000) {
     tipDetail.value = cached.d
     return
   }
@@ -119,9 +122,14 @@ function showTip(d: DeviceCell, e: MouseEvent) {
   const token = ++hoverToken
   clearTimeout(hoverTimer)
   hoverTimer = setTimeout(async () => {
-    const det = await fetchDeviceDetail(d.id, props.factoryId, props.workshopIds).catch(() => null)
+    const det = await fetchDeviceDetail(
+      d.id,
+      props.factoryId,
+      props.workshopIds,
+      props.workCenterCode,
+    ).catch(() => null)
     if (det) {
-      detailCache.set(d.id, { at: Date.now(), d: det })
+      if (!IS_REAL_DATA) detailCache.set(d.id, { at: Date.now(), d: det })
       if (token === hoverToken && tip.value?.device.id === d.id) tipDetail.value = det
     }
   }, 250)
@@ -132,6 +140,13 @@ function hideTip() {
   clearTimeout(hoverTimer)
   hoverToken++
 }
+onScopeDispose(hideTip)
+watch(
+  () => props.devices,
+  (devices) => {
+    if (tip.value && !devices.some((d) => d.id === tip.value?.device.id)) hideTip()
+  },
+)
 function pick(d: DeviceCell) {
   hideTip()
   emit('select', d)

@@ -576,6 +576,24 @@ function fetchOutboundFlow(ctx: Ctx, nowMs: number): Promise<OutboundProgress> {
   ).then((items) => outboundOf(items, nowMs))
 }
 
+export async function readReceipts(ctx: Ctx, nowMs = Date.now()) {
+  const [inbound, putaway] = await Promise.all([
+    fetchInboundFlow(ctx, nowMs),
+    fetchTaskGroup(listBusinessConsoleWmsPutawayTasks, ctx, 'putaway', nowMs),
+  ])
+  return { inbound, putaway }
+}
+
+export async function readShipments(ctx: Ctx, nowMs = Date.now()) {
+  const [outbound, pick] = await Promise.all([
+    fetchOutboundFlow(ctx, nowMs),
+    fetchTaskGroup(listBusinessConsoleWmsPickingTasks, ctx, 'pick', nowMs),
+  ])
+  return { outbound, pick }
+}
+
+export { fetchCountBoard, fetchWcsBoard }
+
 /** 主数据全景：入库/出库进度 + 上架/拣货/盘点 + WCS（10s 轮询，完整闭包聚合）。 */
 export async function fetchRealWarehouseBoard(
   factoryId = getScreenSession().organizationId,
@@ -588,16 +606,34 @@ export async function fetchRealWarehouseBoard(
     warehouseScope(ctx, 'shipments'),
     warehouseScope(ctx, 'counts'),
   ])
-  const [inbound, outbound, putaway, pick, count, wcs] = await Promise.all([
-    fetchInboundFlow(receipts.query, nowMs),
-    fetchOutboundFlow(shipments.query, nowMs),
-    fetchTaskGroup(listBusinessConsoleWmsPutawayTasks, receipts.query, 'putaway', nowMs),
-    fetchTaskGroup(listBusinessConsoleWmsPickingTasks, shipments.query, 'pick', nowMs),
+  const [receiptData, shipmentData, count, wcs] = await Promise.all([
+    readReceipts(receipts.query, nowMs),
+    readShipments(shipments.query, nowMs),
     fetchCountBoard(counts.query, nowMs),
     readWcsBoard(ctx, nowMs),
   ])
-  const overdueTop = overdueTopOf([pick, putaway], count)
+  return assembleWarehouseBoard(
+    factoryId,
+    { receipts, shipments, counts },
+    { ...receiptData, ...shipmentData, count, wcs },
+  )
+}
 
+type Selection = Awaited<ReturnType<typeof warehouseScope>>
+
+export function assembleWarehouseBoard(
+  factoryId: string,
+  { receipts, shipments, counts }: Record<'receipts' | 'shipments' | 'counts', Selection>,
+  {
+    inbound,
+    outbound,
+    putaway,
+    pick,
+    count,
+    wcs,
+  }: Pick<WarehouseBoard, 'inbound' | 'outbound' | 'putaway' | 'pick' | 'count' | 'wcs'>,
+): WarehouseBoard {
+  const overdueTop = overdueTopOf([pick, putaway], count)
   const kpis: WarehouseKpis = {
     inboundPct: inbound.pct,
     outboundPct: outbound.pct,

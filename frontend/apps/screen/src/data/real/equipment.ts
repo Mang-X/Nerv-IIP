@@ -22,7 +22,7 @@ import {
 } from '@nerv-iip/api-client'
 import { deviceWorkCenter } from './deviceScope'
 import { accessError, NoWorkScope } from './readError'
-import { deviceIdBatches } from './deviceBatches'
+import { coveredDevices, deviceIdBatches } from './deviceBatches'
 import { readRows, readScreenPayload } from './response'
 import type {
   DeviceCell,
@@ -352,25 +352,34 @@ export async function fetchRealEquipmentOverview(
   if (!hasScreenSession()) {
     throw new Error('大屏会话上下文未就绪（organizationId/environmentId 为空）')
   }
-  const nowMs = Date.now()
   const { organizationId, environmentId } = getScreenSession()
   const workCenterCode = await deviceWorkCenter({ organizationId, environmentId })
-  const roster = await resolveDeviceRoster(nowMs, false, workCenterCode)
+  return readEquipmentOverview(factoryId, workCenterCode)
+}
+
+export async function readEquipmentOverview(
+  factoryId: string,
+  workCenterCode?: string,
+): Promise<EquipmentOverview> {
+  const nowMs = Date.now()
+  const { organizationId, environmentId } = getScreenSession()
+  const roster = await resolveDeviceRoster(nowMs, true, workCenterCode)
   const contextQuery = { organizationId, environmentId }
   const listQuery = { organizationId, environmentId, skip: 0, take: 100 }
 
   const failures: Record<string, string> = {}
   const [overviewRes, alarmsRes, woRes, planRes, inspRes] = await Promise.all([
     Promise.all(
-      deviceIdBatches(roster.ids).map(async (deviceAssetIds) =>
-        readScreenPayload(
+      deviceIdBatches(roster.ids).map(async (deviceAssetIds) => {
+        const page = readScreenPayload(
           await getBusinessConsoleEquipmentOverview({
             signal: AbortSignal.timeout(12000),
             throwOnError: true,
             query: { ...contextQuery, deviceAssetIds },
           }),
-        ),
-      ),
+        )
+        return { ...page, devices: coveredDevices(deviceAssetIds, readRows(page.devices)) }
+      }),
     ),
     readList(
       failures,
@@ -431,17 +440,6 @@ export async function fetchRealEquipmentOverview(
     blockByDevice.set(id, REASON_LABELS[b.reasonCode ?? ''] ?? b.reasonCode ?? '受限')
   }
 
-  const expectedIds = new Set(roster.ids)
-  for (const row of summaries) {
-    if (
-      !row.deviceAssetId ||
-      !expectedIds.delete(row.deviceAssetId) ||
-      typeof row.isSourceFresh !== 'boolean' ||
-      typeof row.activeAlarmCount !== 'number'
-    )
-      throw new Error('设备状态范围或字段不完整')
-  }
-  if (expectedIds.size) throw new Error('设备状态覆盖不完整')
   const devices: DeviceCell[] = summaries.map((d) =>
     deviceCellOf(
       roster,
@@ -505,6 +503,7 @@ export async function fetchRealEquipmentOverview(
     factoryId,
     workCenterCode,
     rosterTotal: roster.total,
+    coverageNotes: roster.coverageNotes,
     partialEvents,
     failures,
     counts,
@@ -523,13 +522,16 @@ export async function fetchRealDeviceParamsTick(): Promise<DeviceParamsTick> {
 }
 
 /** 设备详情：单设备状态+新鲜度、单机 MTBF/MTTR（真实 reliability 端点）、该设备维修/PM/点检。 */
-export async function fetchRealDeviceDetail(deviceId: string): Promise<DeviceDetail | null> {
+export async function fetchRealDeviceDetail(
+  deviceId: string,
+  requestedCenter?: string,
+): Promise<DeviceDetail | null> {
   if (!hasScreenSession()) {
     throw new Error('大屏会话上下文未就绪（organizationId/environmentId 为空）')
   }
   const nowMs = Date.now()
   const { organizationId, environmentId } = getScreenSession()
-  const workCenterCode = await deviceWorkCenter({ organizationId, environmentId })
+  const workCenterCode = await deviceWorkCenter({ organizationId, environmentId }, requestedCenter)
   const roster = await resolveDeviceRoster(nowMs, false, workCenterCode)
   if (workCenterCode && !roster.byId.has(deviceId))
     throw new NoWorkScope('设备已移出当前工作中心范围')

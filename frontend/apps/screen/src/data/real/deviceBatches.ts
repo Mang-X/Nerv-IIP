@@ -16,3 +16,29 @@ export function deviceIdBatches(ids: readonly string[]): string[] {
   if (count) batches.push(batch)
   return batches
 }
+
+export function coveredDevices<
+  T extends {
+    deviceAssetId?: string | null
+    isSourceFresh?: boolean | null
+    activeAlarmCount?: number | null
+  },
+>(ids: string, rows: T[]) {
+  const allowed = new Set(ids.split(','))
+  const seen = new Set<string>()
+  const valid = new Map<string, T>()
+  for (const row of rows) {
+    const id = row.deviceAssetId
+    if (!id || !allowed.has(id)) continue
+    if (seen.has(id)) valid.delete(id)
+    else if (
+      typeof row.isSourceFresh === 'boolean' &&
+      typeof row.activeAlarmCount === 'number' &&
+      Number.isSafeInteger(row.activeAlarmCount) &&
+      row.activeAlarmCount >= 0
+    )
+      valid.set(id, row)
+    seen.add(id)
+  }
+  return [...valid.values()]
+}

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import HallMetric from '@/components/launcher/HallMetric.vue'
-import { getScreenSession } from '@/data/session'
+import ScopePicker from '@/components/ScopePicker.vue'
+import { useWarehouseDomains } from '@/composables/useWarehouseDomains'
+
 import { useAuthorizedScreenData } from '@/composables/useAuthorizedScreenData'
 import {
   NvScreenBarChart,
@@ -57,20 +58,26 @@ const scope = useAccessScope()
 const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
 // 两条流各自标记取数时的 scope，切换工厂/persona 时旧 scope 的 tick 不会覆盖新 board。
 const scopeKey = computed(() => `${scope.currentFactoryId}::${scope.personaId}`)
-const {
-  data: boardEnv,
-  lastUpdated,
-  isStale: boardStale,
-  error,
-  loading,
-  refresh,
-} = useAuthorizedScreenData<Scoped<WarehouseBoard>>(
-  async () => ({
-    scopeKey: scopeKey.value,
-    data: await fetchWarehouseBoard(scope.currentFactoryId),
-  }),
-  { intervalMs: 10000 },
-)
+const domains = IS_REAL_DATA ? useWarehouseDomains() : undefined
+const demoBoard = domains
+  ? undefined
+  : useAuthorizedScreenData<Scoped<WarehouseBoard>>(
+      async () => ({
+        scopeKey: scopeKey.value,
+        data: await fetchWarehouseBoard(scope.currentFactoryId),
+      }),
+      { intervalMs: 10000 },
+    )
+const boardEnv = demoBoard?.data ?? ref(undefined)
+const boardStale =
+  demoBoard?.isStale ??
+  computed(() => domains?.controls.some((c) => c.source.error.value && c.source.lastUpdated.value))
+const lastUpdated = demoBoard?.lastUpdated ?? domains!.lastUpdated
+const error = demoBoard?.error
+const loading = demoBoard?.loading
+function refresh() {
+  return demoBoard?.refresh() ?? domains?.wcs.refresh()
+}
 const demoOps = IS_REAL_DATA
   ? undefined
   : useAuthorizedScreenData<Scoped<WarehouseOpsTick>>(
@@ -93,7 +100,7 @@ const {
   lastUpdated: ref(undefined),
   refresh: async () => {},
 }
-const board = computed(() => boardEnv.value?.data)
+const board = computed(() => domains?.board.value ?? boardEnv.value?.data)
 // ops 仅在其 scope 与当前 board 一致时才优先（否则回退 board 完整快照）；页脚分别反映两条数据源。
 const ops = computed(() =>
   opsError.value ? undefined : scopedOverride(opsEnv.value, boardEnv.value),
@@ -209,10 +216,16 @@ const bandCells = computed<BandCell[]>(() => {
 })
 
 // —— 作业任务看板（3s tick 优先，主数据兜底；两者同源必然一致）——
-const pick = computed(() => ops.value?.pick ?? board.value?.pick)
-const putaway = computed(() => ops.value?.putaway ?? board.value?.putaway)
-const count = computed(() => ops.value?.count ?? board.value?.count)
-const wcs = computed(() => ops.value?.wcs ?? board.value?.wcs)
+const inbound = computed(() => domains?.receipts.data.value?.inbound ?? board.value?.inbound)
+const outbound = computed(() => domains?.shipments.data.value?.outbound ?? board.value?.outbound)
+const pick = computed(
+  () => domains?.shipments.data.value?.pick ?? ops.value?.pick ?? board.value?.pick,
+)
+const putaway = computed(
+  () => domains?.receipts.data.value?.putaway ?? ops.value?.putaway ?? board.value?.putaway,
+)
+const count = computed(() => domains?.counts.data.value ?? ops.value?.count ?? board.value?.count)
+const wcs = computed(() => domains?.wcs.data.value ?? ops.value?.wcs ?? board.value?.wcs)
 const overdueTop = computed(() => ops.value?.overdueTop ?? board.value?.overdueTop ?? [])
 
 interface TaskGroupView {
@@ -231,9 +244,9 @@ const taskGroups = computed<TaskGroupView[]>(() => {
   const p = pick.value
   const pa = putaway.value
   const c = count.value
-  if (!p || !pa || !c) return []
-  return [
-    {
+  const groups: TaskGroupView[] = []
+  if (p)
+    groups.push({
       key: 'pick',
       icon: PackageSearch,
       title: '拣货',
@@ -244,8 +257,9 @@ const taskGroups = computed<TaskGroupView[]>(() => {
       meta: `今日完成 ${nf.format(p.doneToday)}`,
       flex: 1.5,
       speed: 24,
-    },
-    {
+    })
+  if (pa)
+    groups.push({
       key: 'putaway',
       icon: Forklift,
       title: '上架',
@@ -256,8 +270,9 @@ const taskGroups = computed<TaskGroupView[]>(() => {
       meta: `今日完成 ${nf.format(pa.doneToday)}`,
       flex: 1.15,
       speed: 20,
-    },
-    {
+    })
+  if (c)
+    groups.push({
       key: 'count',
       icon: ClipboardCheck,
       title: '盘点',
@@ -268,8 +283,8 @@ const taskGroups = computed<TaskGroupView[]>(() => {
       meta: `已盘 ${c.counted}/${c.planned} 位`,
       flex: 0.9,
       speed: 16,
-    },
-  ]
+    })
+  return groups
 })
 const taskSummary = computed(() => {
   const p = pick.value
@@ -299,9 +314,29 @@ const wcsView = ref<'chart' | 'list'>('chart')
     :line="board?.scopeLabel ?? factoryName"
     screen="指挥中心大屏 05"
   >
-    <div v-if="board" class="wb">
+    <div v-if="domains" class="domain-controls">
+      <div v-for="entry in domains.controls" :key="entry.label">
+        <ScopePicker
+          v-if="entry.scoped"
+          :label="entry.label"
+          :options="entry.source.options.value"
+          :selected="entry.source.selected.value"
+          @select="entry.source.select"
+        />
+        <span v-else>WCS · 当前组织</span>
+        <small v-if="!entry.source.error.value && !entry.source.lastUpdated.value">读取中</small>
+        <ReadError
+          v-if="entry.source.error.value"
+          :error="entry.source.error.value"
+          :loading="entry.source.loading.value"
+          :last-updated="entry.source.lastUpdated.value"
+          @retry="entry.source.refresh"
+        />
+      </div>
+    </div>
+    <div v-if="board || domains" class="wb">
       <!-- 顶部 KPI 带：出库进度 hero + 五格，语义色渐隐强调线 -->
-      <NvScreenPanel class="wb-band">
+      <NvScreenPanel v-if="board" class="wb-band">
         <div class="wb-band-in">
           <div v-if="heroKpi" class="wb-hero">
             <div class="wb-hero-v">
@@ -342,94 +377,95 @@ const wcsView = ref<'chart' | 'list'>('chart')
       <div class="wb-main">
         <!-- 左：出入库双进度（大数字 + 发丝进度条 + 12h 流量） -->
         <section class="wb-flows">
-          <NvScreenPanel title="当日入库 · 收货" class="wb-flow">
+          <NvScreenPanel v-if="inbound" title="当日入库 · 收货" class="wb-flow">
             <template #extra>
               <span class="wb-flow-docs"
-                >收货单 {{ board.inbound.docsDone }}/{{ board.inbound.docsTotal }}</span
+                >收货单 {{ inbound.docsDone }}/{{ inbound.docsTotal }}</span
               >
             </template>
             <div class="wb-flow-hero">
               <span class="wb-flow-v">
-                {{ nf.format(board.inbound.linesDone)
-                }}<small>/ {{ nf.format(board.inbound.linesTotal) }} {{ flowUnit }}</small>
+                {{ nf.format(inbound.linesDone)
+                }}<small>/ {{ nf.format(inbound.linesTotal) }} {{ flowUnit }}</small>
               </span>
             </div>
-            <div class="wb-bar"><i :style="{ width: `${board.inbound.pct}%` }" /></div>
+            <div class="wb-bar"><i :style="{ width: `${inbound.pct}%` }" /></div>
             <div class="wb-flow-meta">
               <span>
                 收货完成率
                 <b
                   >{{
-                    board.inbound.docsTotal > 0
-                      ? Math.round((board.inbound.docsDone / board.inbound.docsTotal) * 100)
+                    inbound.docsTotal > 0
+                      ? Math.round((inbound.docsDone / inbound.docsTotal) * 100)
                       : '—'
-                  }}{{ board.inbound.docsTotal ? '%' : '' }}</b
+                  }}{{ inbound.docsTotal ? '%' : '' }}</b
                 >
               </span>
-              <span v-if="board.inbound.postFailedDocs > 0" class="wb-postfail">
-                过账失败 {{ board.inbound.postFailedDoc }}
+              <span v-if="inbound.postFailedDocs > 0" class="wb-postfail">
+                过账失败 {{ inbound.postFailedDoc }}
               </span>
               <span v-else class="wb-postok">{{
-                board.inbound.docsTotal ? '暂无过账失败记录' : '今日暂无收货单'
+                inbound.docsTotal ? '暂无过账失败记录' : '今日暂无收货单'
               }}</span>
             </div>
             <!-- 小时流量是离散量 —— 柱状比面积曲线更诚实（每小时一根柱） -->
             <div class="wb-flow-spark">
               <NvScreenBarChart
                 :series="[
-                  { label: '完成', color: 'var(--nv-scr-cyan)', data: board.inbound.hourly },
-                  { label: '失败', color: 'var(--nv-scr-red)', data: board.inbound.failedHourly },
+                  { label: '完成', color: 'var(--nv-scr-cyan)', data: inbound.hourly },
+                  { label: '失败', color: 'var(--nv-scr-red)', data: inbound.failedHourly },
                 ]"
-                :hover-labels="board.inbound.hourLabels"
+                :hover-labels="inbound.hourLabels"
                 autoplay
               />
             </div>
             <div class="wb-flow-x">
-              <span>{{ board.inbound.hourLabels[0] }}</span>
-              <span>{{ board.inbound.hourLabels[6] }}</span>
+              <span>{{ inbound.hourLabels[0] }}</span>
+              <span>{{ inbound.hourLabels[6] }}</span>
               <span>现在</span>
             </div>
           </NvScreenPanel>
 
-          <NvScreenPanel title="当日出库 · 发货" class="wb-flow out">
+          <NvScreenPanel v-if="outbound" title="当日出库 · 发货" class="wb-flow out">
             <template #extra>
               <span class="wb-flow-docs"
-                >{{ IS_REAL_DATA ? '已过账' : '发运' }} {{ board.outbound.docsDone }}/{{
-                  board.outbound.docsTotal
+                >{{ IS_REAL_DATA ? '已过账' : '发运' }} {{ outbound.docsDone }}/{{
+                  outbound.docsTotal
                 }}
                 单</span
               >
             </template>
             <div class="wb-flow-hero">
               <span class="wb-flow-v">
-                {{ nf.format(board.outbound.linesDone)
-                }}<small>/ {{ nf.format(board.outbound.linesTotal) }} {{ flowUnit }}</small>
+                {{ nf.format(outbound.linesDone)
+                }}<small>/ {{ nf.format(outbound.linesTotal) }} {{ flowUnit }}</small>
               </span>
             </div>
-            <div class="wb-bar"><i :style="{ width: `${board.outbound.pct}%` }" /></div>
+            <div class="wb-bar"><i :style="{ width: `${outbound.pct}%` }" /></div>
             <div class="wb-flow-meta">
-              <span v-if="board.outbound.customers > 0"
-                >客户 <b>{{ board.outbound.customers }}</b> 家</span
+              <span v-if="!outbound.docsTotal">今日暂无发货单</span>
+              <span v-if="outbound.customers > 0"
+                >客户 <b>{{ outbound.customers }}</b> 家</span
               >
-              <span v-if="board.outbound.latestShipment" class="wb-latest"
+              <span v-if="outbound.latestShipment" class="wb-latest"
                 >{{ IS_REAL_DATA ? '当日建单最近过账' : '最近发运' }}
-                {{ board.outbound.latestShipment }}</span
+                {{ outbound.latestShipment }}</span
               >
             </div>
             <div class="wb-flow-spark">
               <NvScreenBarChart
                 :series="[
-                  { label: '完成', color: 'var(--nv-scr-indigo)', data: board.outbound.hourly },
-                  { label: '失败', color: 'var(--nv-scr-red)', data: board.outbound.failedHourly },
+                  { label: '完成', color: 'var(--nv-scr-indigo)', data: outbound.hourly },
+                  { label: '失败', color: 'var(--nv-scr-red)', data: outbound.failedHourly },
                 ]"
-                :hover-labels="board.outbound.hourLabels"
+                :hover-labels="outbound.hourLabels"
                 autoplay
                 :autoplay-ms="2800"
               />
             </div>
             <div class="wb-flow-x">
-              <span>{{ board.outbound.hourLabels[0] }}</span>
-              <span>{{ board.outbound.hourLabels[6] }}</span>
+              <span>{{ outbound.hourLabels[0] }}</span>
+              <span>{{ outbound.hourLabels[6] }}</span>
               <span>现在</span>
             </div>
           </NvScreenPanel>
@@ -439,7 +475,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
         <NvScreenPanel title="作业任务看板" class="wb-tasks">
           <template #extra>
             <span class="wb-tasks-sum">{{
-              board.mixedScopes ? '各作业范围分别统计' : taskSummary
+              !board || board.mixedScopes ? '各作业范围分别统计' : taskSummary
             }}</span>
           </template>
           <div class="wb-tk">
@@ -511,7 +547,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
           >
             <template #extra>
               <span
-                v-if="!wcs?.readFailure"
+                v-if="wcs && !wcs.readFailure"
                 class="wf-count"
                 :class="{ calm: !wcs || wcs.failures.length === 0 }"
               >
@@ -525,6 +561,11 @@ const wcsView = ref<'chart' | 'list'>('chart')
             <p v-if="wcs?.readFailure">
               {{ wcs.readFailure }} <button @click="refresh">重试</button>
             </p>
+            <ReadError
+              v-else-if="!wcs && domains?.wcs.error.value"
+              :error="domains.wcs.error.value"
+              @retry="domains.wcs.refresh"
+            />
             <div v-else-if="wcs" class="wm">
               <!-- ① 失败告警（异常优先置顶；约 3 条完整显示，更多滚动） -->
               <NvScreenScrollArea class="wf-list">
@@ -628,7 +669,11 @@ const wcsView = ref<'chart' | 'list'>('chart')
             </div>
           </NvScreenPanel>
 
-          <NvScreenPanel v-if="!board.mixedScopes" title="任务超时榜 · TOP5" class="wb-overdue">
+          <NvScreenPanel
+            v-if="board && !board.mixedScopes"
+            title="任务超时榜 · TOP5"
+            class="wb-overdue"
+          >
             <template #extra>
               <NvScreenStatusTag tone="amber" label="龄期按创建时刻推算" />
             </template>
@@ -654,7 +699,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
           <span>WMS 作业域当前窗口</span>
         </span>
         <span class="wb-foot-r">
-          <template v-if="!board.mixedScopes"
+          <template v-if="board && !board.mixedScopes"
             >{{ IS_REAL_DATA ? '当日建单已完成' : '当日吞吐' }}
             <b>{{ nf.format(board.kpis.throughputLines) }}</b> {{ flowUnit }} （入
             {{ nf.format(board.inbound.linesDone) }} · 出
@@ -674,28 +719,22 @@ const wcsView = ref<'chart' | 'list'>('chart')
     <div v-else class="wb-loading">
       <ReadError v-if="error" :error="error" :loading="loading" @retry="refresh" />
       <span v-else>正在读取…</span>
-      <template v-if="error && IS_REAL_DATA">
-        <HallMetric
-          metric="inbound"
-          label="今日入库建单中已完成 / 建单"
-          :session="getScreenSession()"
-        />
-        <HallMetric
-          metric="outbound"
-          label="今日建单中已过账 / 建单"
-          :session="getScreenSession()"
-        />
-        <HallMetric metric="putaway" label="上架积压" :session="getScreenSession()" />
-        <HallMetric metric="picking" label="拣货积压" :session="getScreenSession()" />
-        <HallMetric metric="count" label="待盘点" :session="getScreenSession()" />
-        <HallMetric metric="wcs" label="WCS 失败" :session="getScreenSession()" />
-      </template>
       <RouterLink :to="backLink.to">‹ {{ backLink.label }}</RouterLink>
     </div>
   </ScreenLayout>
 </template>
 
 <style scoped>
+.domain-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 4px 8px;
+}
+.domain-controls + .wb {
+  height: calc(100% - 42px);
+}
+
 @layer app {
   .wb {
     height: 100%;

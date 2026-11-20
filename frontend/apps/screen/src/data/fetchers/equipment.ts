@@ -42,8 +42,9 @@ export async function fetchDeviceDetail(
   deviceId: string,
   factoryId = IS_REAL_DATA ? getScreenSession().organizationId : DEFAULT_FACTORY_ID,
   workshopIds: string[] | 'all' = 'all',
+  requestedCenter?: string,
 ): Promise<DeviceDetail | null> {
-  if (IS_REAL_DATA) return fetchRealDeviceDetail(deviceId)
+  if (IS_REAL_DATA) return fetchRealDeviceDetail(deviceId, requestedCenter)
   await delay(220)
   return buildDeviceDetail(deviceId, factoryId, workshopIds)
 }
