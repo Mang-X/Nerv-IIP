@@ -43,4 +43,15 @@
 
 CLR 每秒采样；Redis 采集完成后至少间隔两秒，记录实际采集耗时。工具不允许同名 provider 混用 Metrics 与 EventCounters，因此每个 testhost 有两个会话。附加、IPC、采集进程、Redis INFO 命令均有扰动；附加前和截止后的缺口不外推。服务实际版本见原 summary，image ID/digest 见 `service-images.json`，runtime/架构来自实际 testhost 映射/ELF。
 
+### 历史观测基线复算
+
+在仓库根目录按需验证复算和缺失数据的失败处理。该测试使用临时合成产物，并校验仓库登记的样本，无需连接 Redis。
+
+```powershell
+./scripts/run-script-contract-tests.ps1 -ScriptPath scripts/tests/on-demand/redis-cap-observation-baseline.Tests.ps1
+```
+
+复算已解压的历史观测产物时，使用 `./scripts/measure-redis-cap-observation-baseline.ps1 -ArtifactRoot <解压目录> -OutputPath <输出 JSON 路径>`。
+样本来源和当时的读数见[历史基线报告](../../reports/redis-cap-subscription-stall-baseline-2026-09-11.md)。
+
 采集有自身 1150 秒截止，每个 CSV 由 `prlimit` 限制 8 MiB，JSONL 写入前检查固定 8 MiB 上限。CSV 由工具在会话结束时落盘；`finally` 先向自有采集进程发送 SIGINT 并有界等待落盘，再由既有 helper 精确回收。触及大小上限或强制停止时，CSV 可能缺失或不完整。失败/取消后核对 `remainingCollectors`；状态缺失、提前退出、无样本或 cleanup 失败不能解释为完整观测。`observerCpuSeconds`/`observerFinalWorkingSetBytes` 仅量化 observer 自身，不含工具与目标进程开销，也不是内存峰值。安装或采集无法放入原预算时停止并上报，不加时、不自动重跑或提高 worker。一次全绿仅证明该次取证链可用，不证明历史根因修复，也不自动解锁业务 PR。
