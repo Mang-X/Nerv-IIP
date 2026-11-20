@@ -51,7 +51,7 @@ function New-SelectionFixtureRoot {
 # 1. 扫描口径：一行式 / 多行 run 块 / 仅注释 三种形态的正反对照
 #
 # 这是本文件最承重的一组断言。#3300 的筛查面之所以会数错，正是因为按行 grep `run:.*Tests.ps1`
-# 数不到写在 `run: |` 块里的引用（ci.yml:942 的 redis-cap-observation.Tests.ps1 就是这种）。
+# 数不到写在 `run: |` 块里的引用。
 # 阳性对照：多行 `run: |` 块里的引用必须命中。少了它，一个只认一行式的实现会「看起来」正确，
 # 并把多行选中的文件误判成零选中。
 #
@@ -396,6 +396,10 @@ finally { Remove-Item -LiteralPath $registryRoot -Recurse -Force -ErrorAction Si
 # 4. 真实仓库：分区必须是全覆盖且互不相交，且 runner 真的被 CI 调起来
 # ─────────────────────────────────────────────────────────────────────────────
 $plan = Get-NervScriptTestSelectionPlan -RepositoryRoot $repoRoot
+
+$runnerTests = Get-NervStringSet -Values ([string[]] $plan.RunnerSelected) -Comparer ([StringComparer]::Ordinal)
+Assert-Selection ($runnerTests.Contains('redis-cap-observation.Tests.ps1')) `
+    'Script Governance must discover the Redis/CAP observation fixtures so they run on script-only changes.'
 
 $covered = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 foreach ($name in $plan.WorkflowSelected) {

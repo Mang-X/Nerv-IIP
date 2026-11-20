@@ -41,7 +41,7 @@ nested 条目的父测试确实在 CI 上被选中且其源码确实引用了该
     ⇒ throw。扫描面塌掉时不会伪装成「没有遗漏」。
 
 注意 `WorkflowSelected` 的推导口径必须是**多行的**：ci.yml 里既有一行式 `run: ./scripts/tests/x.Tests.ps1`，
-也有写在 `run: |` 块里的引用（例如 redis-cap-observation.Tests.ps1）。因此这里走 YAML 解析后按
+也有写在 `run: |` 块里的引用。因此这里走 YAML 解析后按
 step 的 `run` 整体文本匹配，而不是按行 grep。scripts/tests/script-test-selection.Tests.ps1 用
 合成工作流对这三种形态（一行式、多行块、仅出现在注释里）做了正反对照。
 #>

@@ -951,7 +951,6 @@ jobs:
           POSTGRES_SERVICE_ID: ${{ job.services.postgres.id }}
         run: |
           . ./scripts/lib/ScriptAutomation.ps1
-          ./scripts/tests/redis-cap-observation.Tests.ps1
           $observationDirectory = 'artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/observation'
           [IO.Directory]::CreateDirectory($observationDirectory) | Out-Null
           $toolsDirectory = Join-Path $env:RUNNER_TEMP 'redis-cap-observation-tools'
