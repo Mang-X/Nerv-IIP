@@ -120,12 +120,17 @@ public sealed class StartApprovalChainCommandHandler(ApplicationDbContext dbCont
             }
 
             dbContext.ChangeTracker.Clear();
-            return await dbContext.ApprovalChains
+            var duplicate = await dbContext.ApprovalChains
                 .AsNoTracking()
                 .Where(x => x.PendingIdentityKey == pendingIdentityKey)
                 .Select(x => x.Id)
-                .SingleOrDefaultAsync(cancellationToken)
-                ?? RethrowDuplicateConflict(exception);
+                .SingleOrDefaultAsync(cancellationToken);
+            if (duplicate is null)
+            {
+                throw;
+            }
+
+            return duplicate;
         }
     }
 
@@ -141,11 +146,5 @@ public sealed class StartApprovalChainCommandHandler(ApplicationDbContext dbCont
             ? null
             : PendingIdentityUniqueIndex;
         return ProcessedIntegrationEventInbox.IsUniqueConflict(exception, dbContext, indexName);
-    }
-
-    private static ApprovalChainId RethrowDuplicateConflict(DbUpdateException exception)
-    {
-        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
-        throw new InvalidOperationException("Unreachable duplicate conflict rethrow path.");
     }
 }

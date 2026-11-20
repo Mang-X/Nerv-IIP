@@ -36,47 +36,20 @@ public sealed class ConnectorReportSignal : IConnectorReportSignal
         }
     }
 
-    public async Task<string?> WaitAsync(TimeSpan timeout, TimeProvider timeProvider, CancellationToken cancellationToken)
-    {
-        if (timeout <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(timeout), "Report wait timeout must be greater than zero.");
-        }
+    public Task<string?> WaitAsync(TimeSpan timeout, TimeProvider timeProvider, CancellationToken cancellationToken)
+        => ConnectorSignalWait.WaitAsync(_wake.Reader, TakePending, timeout, timeProvider, cancellationToken,
+            "Report wait timeout must be greater than zero.");
 
-        ArgumentNullException.ThrowIfNull(timeProvider);
-        cancellationToken.ThrowIfCancellationRequested();
-        if (TryTakePending(out var pending))
-        {
-            return pending;
-        }
-
-        using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var signalTask = _wake.Reader.ReadAsync(waitCancellation.Token).AsTask();
-        var timeoutTask = Task.Delay(timeout, timeProvider, waitCancellation.Token);
-        try
-        {
-            var completedTask = await Task.WhenAny(signalTask, timeoutTask);
-            cancellationToken.ThrowIfCancellationRequested();
-            await completedTask;
-            return TryTakePending(out pending) ? pending : null;
-        }
-        finally
-        {
-            await waitCancellation.CancelAsync();
-        }
-    }
-
-    private bool TryTakePending(out string? connectorId)
+    private string? TakePending()
     {
         lock (_gate)
         {
             if (_pendingOrder.Count == 0)
             {
-                connectorId = null;
-                return false;
+                return null;
             }
 
-            connectorId = _pendingOrder.Dequeue();
+            var connectorId = _pendingOrder.Dequeue();
             _pending.Remove(connectorId);
             _wake.Reader.TryRead(out _);
             if (_pendingOrder.Count > 0)
@@ -84,7 +57,7 @@ public sealed class ConnectorReportSignal : IConnectorReportSignal
                 _wake.Writer.TryWrite(true);
             }
 
-            return true;
+            return connectorId;
         }
     }
 }
@@ -120,38 +93,12 @@ public sealed class ConnectorManifestSignal : IConnectorManifestSignal, IConnect
 
     public void RequestRebirth(string connectorId) => Write(connectorId, forceRebirth: true);
 
-    public async Task<ConnectorManifestSignalEvent?> WaitAsync(
+    public Task<ConnectorManifestSignalEvent?> WaitAsync(
         TimeSpan timeout,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
-    {
-        if (timeout <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(nameof(timeout), "Manifest wait timeout must be greater than zero.");
-        }
-
-        ArgumentNullException.ThrowIfNull(timeProvider);
-        cancellationToken.ThrowIfCancellationRequested();
-        if (TryTakePending(out var pending))
-        {
-            return pending;
-        }
-
-        using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var signalTask = _wake.Reader.ReadAsync(waitCancellation.Token).AsTask();
-        var timeoutTask = Task.Delay(timeout, timeProvider, waitCancellation.Token);
-        try
-        {
-            var completedTask = await Task.WhenAny(signalTask, timeoutTask);
-            cancellationToken.ThrowIfCancellationRequested();
-            await completedTask;
-            return TryTakePending(out pending) ? pending : null;
-        }
-        finally
-        {
-            await waitCancellation.CancelAsync();
-        }
-    }
+        => ConnectorSignalWait.WaitAsync(_wake.Reader, TakePending, timeout, timeProvider, cancellationToken,
+            "Manifest wait timeout must be greater than zero.");
 
     private void Write(string connectorId, bool forceRebirth)
     {
@@ -173,14 +120,13 @@ public sealed class ConnectorManifestSignal : IConnectorManifestSignal, IConnect
         }
     }
 
-    private bool TryTakePending(out ConnectorManifestSignalEvent? signal)
+    private ConnectorManifestSignalEvent? TakePending()
     {
         lock (_gate)
         {
             if (_pendingOrder.Count == 0)
             {
-                signal = null;
-                return false;
+                return null;
             }
 
             var connectorId = _pendingOrder.Dequeue();
@@ -192,8 +138,47 @@ public sealed class ConnectorManifestSignal : IConnectorManifestSignal, IConnect
                 _wake.Writer.TryWrite(true);
             }
 
-            signal = new ConnectorManifestSignalEvent(connectorId, forceRebirth);
-            return true;
+            return new ConnectorManifestSignalEvent(connectorId, forceRebirth);
+        }
+    }
+}
+
+internal static class ConnectorSignalWait
+{
+    internal static async Task<T?> WaitAsync<T>(
+        ChannelReader<bool> wake,
+        Func<T?> takePending,
+        TimeSpan timeout,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken,
+        string timeoutMessage) where T : class
+    {
+        if (timeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeout), timeoutMessage);
+        }
+
+        ArgumentNullException.ThrowIfNull(timeProvider);
+        cancellationToken.ThrowIfCancellationRequested();
+        var pending = takePending();
+        if (pending is not null)
+        {
+            return pending;
+        }
+
+        using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var signalTask = wake.ReadAsync(waitCancellation.Token).AsTask();
+        var timeoutTask = Task.Delay(timeout, timeProvider, waitCancellation.Token);
+        try
+        {
+            var completedTask = await Task.WhenAny(signalTask, timeoutTask);
+            cancellationToken.ThrowIfCancellationRequested();
+            await completedTask;
+            return takePending();
+        }
+        finally
+        {
+            await waitCancellation.CancelAsync();
         }
     }
 }
