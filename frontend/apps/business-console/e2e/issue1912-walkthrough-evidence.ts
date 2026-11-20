@@ -283,8 +283,8 @@ export function createWalkthroughEvidence() {
           identityIsolation: setup.find((item) => item.kind === 'identityIsolation') ?? null,
           expectedBusinessRejections,
           uiEvidence,
-          failedRequests,
-          expectedRequestCancellations,
+          failedRequests: publicJson(failedRequests),
+          expectedRequestCancellations: publicJson(expectedRequestCancellations),
           pageErrors,
           entries,
           summary: Object.fromEntries(
