@@ -43,7 +43,7 @@ import type {
   WcsAdapterKind,
   WhTaskRow,
 } from '@/data/contracts/warehouse'
-import { fetchWarehouseBoard, fetchWarehouseOpsTick } from '@/data/fetchers/warehouse'
+import { fetchDemoWarehouseBoard, fetchDemoWarehouseOpsTick } from '@/data/fetchers/warehouse'
 import { formatScreenFreshness } from '@/data/freshness'
 import { scopedOverride, type Scoped } from '@/data/scope'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
@@ -64,7 +64,7 @@ const demoBoard = domains
   : useAuthorizedScreenData<Scoped<WarehouseBoard>>(
       async () => ({
         scopeKey: scopeKey.value,
-        data: await fetchWarehouseBoard(scope.currentFactoryId),
+        data: await fetchDemoWarehouseBoard(scope.currentFactoryId),
       }),
       { intervalMs: 10000 },
     )
@@ -83,7 +83,7 @@ const demoOps = IS_REAL_DATA
   : useAuthorizedScreenData<Scoped<WarehouseOpsTick>>(
       async () => ({
         scopeKey: scopeKey.value,
-        data: await fetchWarehouseOpsTick(scope.currentFactoryId),
+        data: await fetchDemoWarehouseOpsTick(scope.currentFactoryId),
       }),
       { intervalMs: 15000 },
     )

@@ -19,7 +19,7 @@ vi.mock('@nerv-iip/api-client', () => ({
 
 import * as api from '@nerv-iip/api-client'
 import { resetDeviceRosterCache, setScreenSession } from '@/data/session'
-import { fetchRealDeviceDetail, fetchRealEquipmentOverview } from './equipment'
+import { fetchRealDeviceDetail, readEquipmentOverview } from './equipment'
 
 /** SDK（throwOnError:true）返回 { data: envelope }，envelope = { success, data }。 */
 function ok(data: unknown) {
@@ -63,7 +63,7 @@ beforeEach(() => {
   setScreenSession({ organizationId: 'org-001', environmentId: 'env-dev' })
 })
 
-describe('fetchRealEquipmentOverview', () => {
+describe('readEquipmentOverview', () => {
   beforeEach(() => {
     vi.mocked(api.listBusinessConsoleDeviceAssets).mockResolvedValue(ok(ROSTER))
     vi.mocked(api.getBusinessConsoleEquipmentOverview).mockResolvedValue(
@@ -183,7 +183,7 @@ describe('fetchRealEquipmentOverview', () => {
   })
 
   it('设备状态归一 + 断线防假绿 + roster 名称联动 + 无 historian 参数为空', async () => {
-    const ov = await fetchRealEquipmentOverview('F01')
+    const ov = await readEquipmentOverview('F01')
     expect(ov.factoryId).toBe('F01')
     expect(ov.devices).toHaveLength(3)
 
@@ -210,7 +210,7 @@ describe('fetchRealEquipmentOverview', () => {
   })
 
   it('活动报警：#686 响应状态 + 级别 + 报警↔工单联动', async () => {
-    const ov = await fetchRealEquipmentOverview('F01')
+    const ov = await readEquipmentOverview('F01')
     expect(ov.alarms).toHaveLength(3)
 
     const press = ov.alarms.find((a) => a.name === 'PRESS_HIGH')!
@@ -230,7 +230,7 @@ describe('fetchRealEquipmentOverview', () => {
   })
 
   it('维修工单：Open+技师→维修中，Completed→已关闭；聚合可靠性可用率=运行占比、聚合MTBF为null', async () => {
-    const ov = await fetchRealEquipmentOverview('F01')
+    const ov = await readEquipmentOverview('F01')
     const wo1 = ov.repairs.find((r) => r.wo === 'WO-1')!
     expect(wo1.stage).toBe('维修中')
     expect(wo1.device).toBe('液压站')
@@ -245,7 +245,7 @@ describe('fetchRealEquipmentOverview', () => {
   })
 
   it('PM 计划与点检台账（点检经工单反查设备）', async () => {
-    const ov = await fetchRealEquipmentOverview('F01')
+    const ov = await readEquipmentOverview('F01')
     expect(ov.pmTasks).toHaveLength(1)
     expect(ov.pmTasks[0].device).toBe('加工中心 M01')
     expect(ov.pmTasks[0].state).toBe('due')
@@ -256,9 +256,6 @@ describe('fetchRealEquipmentOverview', () => {
   })
 
   it('在册 61 台时仅用所选工作中心已映射且返回状态的设备计算运行占比', async () => {
-    vi.mocked(api.getBusinessConsolePrincipalWorkContext).mockResolvedValue(
-      ok({ authorizedScopes: [{ kind: 'work-center', id: 'WC-MACH-1' }] }),
-    )
     vi.mocked(api.listBusinessConsoleDeviceAssets).mockResolvedValue(
       ok({
         total: 61,
@@ -271,7 +268,7 @@ describe('fetchRealEquipmentOverview', () => {
         ],
       }),
     )
-    const board = await fetchRealEquipmentOverview('F01')
+    const board = await readEquipmentOverview('F01', 'WC-MACH-1')
     expect(board.rosterTotal).toBe(61)
     expect(board.devices.map((device) => device.id)).toEqual(['DEV-CNC-01'])
     expect(board.reliability.availability).toBe(100)
@@ -283,16 +280,30 @@ describe('fetchRealEquipmentOverview', () => {
     )
   })
 
+  it('工作中心外的首批维修记录排除后仍标记未读后页', async () => {
+    const items = Array.from({ length: 100 }, (_, index) => ({
+      workOrderId: String(index),
+      deviceAssetId: 'DEV-OIL-02',
+      status: 'Open',
+    }))
+    vi.mocked(api.listBusinessConsoleMaintenanceWorkOrders).mockResolvedValue(
+      ok({ items, total: 101 }),
+    )
+    const board = await readEquipmentOverview('F01', 'WC-MACH-1')
+    expect(board.repairs).toEqual([])
+    expect(board.partialEvents).toBe(true)
+  })
+
   it('空设备台账：不请求 overview，返回空设备但不崩', async () => {
     vi.mocked(api.listBusinessConsoleDeviceAssets).mockResolvedValue(ok({ resources: [] }))
-    const ov = await fetchRealEquipmentOverview('F01')
+    const ov = await readEquipmentOverview('F01')
     expect(ov.devices).toHaveLength(0)
     expect(api.getBusinessConsoleEquipmentOverview).not.toHaveBeenCalled()
     expect(ov.reliability.availability).toBe(0)
   })
 })
 
-describe('fetchRealEquipmentOverview code≠deviceAssetId 联动', () => {
+describe('readEquipmentOverview code≠deviceAssetId 联动', () => {
   it('roster 以 deviceAssetId 作 join 键（非 code）；overview/alarm 按 deviceAssetId 命中，code 仅展示', async () => {
     // master-data code=DEV-001 但 telemetry deviceAssetId=018f-cnc-01（网关测试覆盖二者分离）。
     vi.mocked(api.listBusinessConsoleDeviceAssets).mockResolvedValue(
@@ -339,7 +350,7 @@ describe('fetchRealEquipmentOverview code≠deviceAssetId 联动', () => {
     vi.mocked(api.listBusinessConsoleMaintenancePlans).mockResolvedValue(ok({ items: [] }))
     vi.mocked(api.listBusinessConsoleMaintenanceInspections).mockResolvedValue(ok({ items: [] }))
 
-    const ov = await fetchRealEquipmentOverview('F01')
+    const ov = await readEquipmentOverview('F01')
 
     // overview 查询用的是 deviceAssetId，而非 master-data code
     expect(api.getBusinessConsoleEquipmentOverview).toHaveBeenCalledWith(
@@ -358,10 +369,10 @@ describe('fetchRealEquipmentOverview code≠deviceAssetId 联动', () => {
   })
 })
 
-describe('fetchRealEquipmentOverview 会话守卫', () => {
+describe('readEquipmentOverview 会话守卫', () => {
   it('无 org/env 上下文 → 抛错（useScreenData 标 stale、不打后端）', async () => {
     setScreenSession({ organizationId: '', environmentId: '' })
-    await expect(fetchRealEquipmentOverview('F01')).rejects.toThrow()
+    await expect(readEquipmentOverview('F01')).rejects.toThrow()
     expect(api.listBusinessConsoleDeviceAssets).not.toHaveBeenCalled()
   })
 })
@@ -376,6 +387,28 @@ describe('fetchRealDeviceDetail', () => {
           currentState: 'faulted',
           isSourceFresh: true,
           activeAlarms: [{ alarmEventId: 'AL-1' }],
+        },
+        availability: {
+          items: [
+            {
+              deviceAssetId: 'DEV-OIL-02',
+              availabilityStatus: 'available',
+              severity: 'critical',
+              reasonCode: 'ignored',
+            },
+            {
+              deviceAssetId: 'DEV-OIL-02',
+              availabilityStatus: 'unknown',
+              severity: 'warning',
+              reasonCode: 'equipment.sourceStale',
+            },
+            {
+              deviceAssetId: 'DEV-OIL-02',
+              availabilityStatus: 'unavailable',
+              severity: 'blocked',
+              reasonCode: 'equipment.maintenanceWindow',
+            },
+          ],
         },
       }),
     )
@@ -420,6 +453,7 @@ describe('fetchRealDeviceDetail', () => {
     expect(det).not.toBeNull()
     expect(det!.device.name).toBe('液压站')
     expect(det!.device.state).toBe('alarm') // 有 activeAlarms
+    expect(det!.device.block).toBe('维修保养占用')
     expect(det!.mtbfHours).toBe(76)
     expect(det!.mttrMinutes).toBe(42)
     expect(
@@ -471,6 +505,15 @@ describe('fetchRealDeviceDetail', () => {
       }),
     )
     expect(api.getBusinessConsoleEquipmentDevice).not.toHaveBeenCalled()
+  })
+  it('设备移出工作中心后，紧接上次成功读取的详情也应拒绝', async () => {
+    vi.mocked(api.getBusinessConsolePrincipalWorkContext).mockResolvedValue(
+      ok({ authorizedScopes: [{ kind: 'work-center', id: 'WC-ASSY-1' }] }),
+    )
+    await fetchRealDeviceDetail('DEV-OIL-02', 'WC-ASSY-1')
+    vi.mocked(api.listBusinessConsoleDeviceAssets).mockResolvedValue(ok({ resources: [] }))
+    await expect(fetchRealDeviceDetail('DEV-OIL-02', 'WC-ASSY-1')).rejects.toThrow('设备已移出')
+    expect(api.getBusinessConsoleEquipmentDevice).toHaveBeenCalledTimes(1)
   })
   it('facade 返回 success=false → 读取失败', async () => {
     vi.mocked(api.getBusinessConsoleEquipmentDevice).mockResolvedValue({

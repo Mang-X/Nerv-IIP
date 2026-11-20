@@ -1,5 +1,5 @@
 // 真实取数适配勾稽测试（MAN-467，含两轮 review 修正）：打 business-console WMS facade 契约桩，
-// 验证 facade 响应 → 大屏 WarehouseBoard/WarehouseOpsTick 契约的映射，重点覆盖：
+// 验证 facade 响应 → 大屏 分域读面及汇总 契约的映射，重点覆盖：
 //   - 完整覆盖：open 积压跨第二页不漏；当日到货窗口早停排除昨日单。
 //   - review① WCS 当前失败用 `status:'Failed'`（重试后回 Dispatched 且 FailedAtUtc 保留的任务不算失败、
 //     不与在链双计）。
@@ -8,10 +8,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@nerv-iip/api-client', () => ({
-  isForbiddenRequestError: (error: { status?: number }) => error?.status === 403,
   getBusinessConsoleWmsReceiptWorkScopes: vi.fn(),
   getBusinessConsoleWmsShipmentWorkScopes: vi.fn(),
   getBusinessConsoleWmsCountWorkScopes: vi.fn(),
+  isForbiddenRequestError: (error: { status?: number }) => error?.status === 403,
   listBusinessConsoleWmsInboundOrders: vi.fn(),
   listBusinessConsoleWmsOutboundOrders: vi.fn(),
   listBusinessConsoleWmsPutawayTasks: vi.fn(),
@@ -20,9 +20,30 @@ vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleWmsWcsTasks: vi.fn(),
 }))
 
+import { warehouseOptions } from './workScope'
 import * as api from '@nerv-iip/api-client'
-import { setScreenSession } from '@/data/session'
-import { fetchRealWarehouseBoard, fetchRealWarehouseOpsTick } from './warehouse'
+import {
+  readReceipts,
+  readShipments,
+  fetchCountBoard,
+  fetchWcsBoard,
+  assembleWarehouseBoard,
+} from './warehouse'
+
+const session = { organizationId: 'org-001', environmentId: 'env-dev' }
+const query = { ...session, scopeKind: 'site', scopeId: 'SITE-01' }
+const selection = { query, label: '一号站点' }
+async function assembleSiteBoard() {
+  const receipt = await readReceipts(query)
+  const shipment = await readShipments(query)
+  const count = await fetchCountBoard(query, Date.now())
+  const wcs = await fetchWcsBoard(session, Date.now())
+  return assembleWarehouseBoard(
+    'F01',
+    { receipts: selection, shipments: selection, counts: selection },
+    { ...receipt, ...shipment, count, wcs },
+  )
+}
 
 /** SDK（throwOnError:true）返回 { data: envelope }，envelope = { success, data: { items } }。 */
 function ok(items: unknown[]) {
@@ -54,18 +75,8 @@ function makeList<T extends { status?: string }>(rows: T[]) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  for (const list of [
-    api.getBusinessConsoleWmsReceiptWorkScopes,
-    api.getBusinessConsoleWmsShipmentWorkScopes,
-    api.getBusinessConsoleWmsCountWorkScopes,
-  ]) {
-    vi.mocked(list).mockResolvedValue(
-      ok([{ scopeKind: 'site', scopeId: 'SITE-01', displayName: '一号站点' }]),
-    )
-  }
   vi.useFakeTimers()
   vi.setSystemTime(NOW)
-  setScreenSession({ organizationId: 'org-001', environmentId: 'env-dev' })
 })
 afterEach(() => {
   vi.useRealTimers()
@@ -289,11 +300,11 @@ function stubDefaults() {
   )
 }
 
-describe('fetchRealWarehouseBoard', () => {
+describe('仓储分域读面与汇总', () => {
   beforeEach(stubDefaults)
 
   it('入库/出库当日到货 cohort：早停排除昨日、完成/失败按状态、行镜像单据、pct 勾稽', async () => {
-    const b = await fetchRealWarehouseBoard('F01')
+    const b = { ...(await readReceipts(query)), ...(await readShipments(query)) }
     expect(b.inbound.docsTotal).toBe(3) // 昨日单被早停排除
     expect(b.inbound.docsDone).toBe(1)
     expect(b.inbound.postFailedDocs).toBe(1)
@@ -332,7 +343,7 @@ describe('fetchRealWarehouseBoard', () => {
       ]) as never,
     )
 
-    const b = await fetchRealWarehouseBoard('F01')
+    const b = await readReceipts(query)
 
     expect(b.inbound.postFailedDocs).toBe(2)
     expect(b.inbound.failedDocs).toBe(1)
@@ -381,7 +392,7 @@ describe('fetchRealWarehouseBoard', () => {
       ]) as never,
     )
 
-    const b = await fetchRealWarehouseBoard('F01')
+    const b = { ...(await readReceipts(query)), ...(await readShipments(query)) }
 
     expect(b.inbound.docsTotal).toBe(1)
     expect(b.inbound.postFailedDocs).toBe(1)
@@ -393,7 +404,7 @@ describe('fetchRealWarehouseBoard', () => {
   })
 
   it('open 积压跨第二页完整覆盖（120 Open），末页最老超时单不漏、按龄期降序', async () => {
-    const b = await fetchRealWarehouseBoard('F01')
+    const b = await readReceipts(query)
     expect(b.putaway.backlog).toBe(120)
     expect(b.putaway.rows).toHaveLength(120)
     expect(b.putaway.rows[0].sku).toBe('陈年超时料')
@@ -410,7 +421,7 @@ describe('fetchRealWarehouseBoard', () => {
   })
 
   it('review②：今日完成走 status:Completed + completedAtUtc，含昨日创建今日完成；超 7d 回溯窗排除', async () => {
-    const b = await fetchRealWarehouseBoard('F01')
+    const b = { ...(await readReceipts(query)), count: await fetchCountBoard(query, Date.now()) }
     // PT-done(今日创建今日完成) + PT-cross(昨日创建今日完成) 计入；PT-stale(10天前创建) 超窗排除。
     expect(b.putaway.doneToday).toBe(2)
     // 用 status:'Completed' 查询（非 created 窗口早停近似）。
@@ -425,7 +436,7 @@ describe('fetchRealWarehouseBoard', () => {
   })
 
   it('review①：WCS 当前失败用 status:Failed，已重试回 Dispatched 的旧失败不进失败榜、不与在链双计', async () => {
-    const b = await fetchRealWarehouseBoard('F01')
+    const b = { wcs: await fetchWcsBoard(session, Date.now()) }
     expect(b.wcs.failures).toHaveLength(2) // 仅 W-f1 / W-f2，不含 W-retried
     expect(b.wcs.failures.some((f) => f.cmd === 'WCS-88150')).toBe(false)
     expect(b.wcs.failures[0].retries).toBe(3)
@@ -448,9 +459,12 @@ describe('fetchRealWarehouseBoard', () => {
 
   it('只读站点主管可读积压，WCS 管理权限缺失仅影响 WCS', async () => {
     vi.mocked(api.listBusinessConsoleWmsWcsTasks).mockRejectedValue({ status: 403 })
-    const board = await fetchRealWarehouseBoard('F01')
-    expect(board.wcs.readFailure).toBe('无权查看当前范围')
+    await expect(fetchWcsBoard(session, Date.now())).rejects.toMatchObject({ status: 403 })
+    const board = await readReceipts(query)
     expect(board.putaway.rows).toHaveLength(120)
+    expect(api.listBusinessConsoleWmsOutboundOrders).not.toHaveBeenCalled()
+    await readShipments(query)
+    await fetchCountBoard(query, Date.now())
     for (const list of [
       api.listBusinessConsoleWmsPutawayTasks,
       api.listBusinessConsoleWmsPickingTasks,
@@ -463,8 +477,26 @@ describe('fetchRealWarehouseBoard', () => {
       )
   })
 
+  it('组织或环境为空时，三个仓储范围目录和组织级 WCS 都不发起请求', async () => {
+    for (const ctx of [
+      { ...session, organizationId: '' },
+      { ...session, environmentId: '' },
+    ]) {
+      for (const domain of ['receipts', 'shipments', 'counts'] as const)
+        await expect(warehouseOptions(ctx, domain)).rejects.toThrow('缺少组织环境')
+      await expect(fetchWcsBoard(ctx, Date.now())).rejects.toThrow('缺少组织环境')
+    }
+    for (const endpoint of [
+      api.getBusinessConsoleWmsReceiptWorkScopes,
+      api.getBusinessConsoleWmsShipmentWorkScopes,
+      api.getBusinessConsoleWmsCountWorkScopes,
+      api.listBusinessConsoleWmsWcsTasks,
+    ])
+      expect(endpoint).not.toHaveBeenCalled()
+  })
+
   it('KPI 勾稽、超时榜跨类合并按龄期降序', async () => {
-    const b = await fetchRealWarehouseBoard('F01')
+    const b = await assembleSiteBoard()
     expect(b.kpis.pickBacklog).toBe(b.pick.backlog)
     expect(b.kpis.putawayBacklog).toBe(b.putaway.backlog)
     expect(b.kpis.wcsFailed).toBe(b.wcs.failures.length)
@@ -487,7 +519,7 @@ describe('fetchRealWarehouseBoard', () => {
     ]) {
       vi.mocked(fn).mockImplementation(makeList([]) as never)
     }
-    const b = await fetchRealWarehouseBoard('F01')
+    const b = await assembleSiteBoard()
     expect(b.inbound.docsTotal).toBe(0)
     expect(b.putaway.backlog).toBe(0)
     expect(b.putaway.doneToday).toBe(0)
@@ -495,36 +527,5 @@ describe('fetchRealWarehouseBoard', () => {
     expect(b.wcs.adapters).toHaveLength(0)
     expect(b.overdueTop).toHaveLength(0)
     expect(b.kpis.throughputLines).toBe(0)
-  })
-})
-
-describe('fetchRealWarehouseOpsTick', () => {
-  beforeEach(stubDefaults)
-
-  it('tick 子集与主板任务/WCS 口径一致；不请求出入库单', async () => {
-    const b = await fetchRealWarehouseBoard('F01')
-    const tick = await fetchRealWarehouseOpsTick('F01')
-    expect(tick.pick.backlog).toBe(b.pick.backlog)
-    expect(tick.putaway.doneToday).toBe(b.putaway.doneToday)
-    expect(tick.count.rows).toEqual(b.count.rows)
-    expect(tick.wcs.failures.length).toBe(b.wcs.failures.length)
-    expect(tick.overdueTop).toEqual(b.overdueTop)
-  })
-
-  it('高频 tick 只刷作业子集，不打出入库单端点', async () => {
-    await fetchRealWarehouseOpsTick('F01')
-    expect(api.listBusinessConsoleWmsInboundOrders).not.toHaveBeenCalled()
-    expect(api.listBusinessConsoleWmsOutboundOrders).not.toHaveBeenCalled()
-    expect(api.listBusinessConsoleWmsPutawayTasks).toHaveBeenCalled()
-  })
-})
-
-describe('会话守卫', () => {
-  it('无 org/env 上下文 → 抛错（useScreenData 标 stale、不打后端）', async () => {
-    setScreenSession({ organizationId: '', environmentId: '' })
-    await expect(fetchRealWarehouseBoard('F01')).rejects.toThrow()
-    await expect(fetchRealWarehouseOpsTick('F01')).rejects.toThrow()
-    expect(api.listBusinessConsoleWmsInboundOrders).not.toHaveBeenCalled()
-    expect(api.listBusinessConsoleWmsPutawayTasks).not.toHaveBeenCalled()
   })
 })

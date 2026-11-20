@@ -2,25 +2,21 @@
 // 模式由 VITE_SCREEN_DATA_MODE 切换（见 data/config.ts）；契约与页面不随模式变化。
 // 真实取数适配见 data/real/equipment.ts；分批约束/演示数据流见 data/mock/equipment.ts。
 import { getScreenSession } from '@/data/session'
-import { IS_REAL_DATA } from '@/data/config'
+import { IS_REAL_DATA, requireDemoMode } from '@/data/config'
 import type { DeviceDetail, DeviceParamsTick, EquipmentOverview } from '@/data/contracts/equipment'
 import { buildDeviceDetail, buildEquipmentOverview, buildParamsTick } from '@/data/mock/equipment'
 import { DEFAULT_FACTORY_ID } from '@/data/mock/masterdata'
-import {
-  fetchRealDeviceDetail,
-  fetchRealDeviceParamsTick,
-  fetchRealEquipmentOverview,
-} from '@/data/real/equipment'
+import { fetchRealDeviceDetail, fetchRealDeviceParamsTick } from '@/data/real/equipment'
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-export async function fetchEquipmentOverview(
-  factoryId = IS_REAL_DATA ? getScreenSession().organizationId : DEFAULT_FACTORY_ID,
+export async function fetchDemoEquipmentOverview(
+  factoryId = DEFAULT_FACTORY_ID,
   workshopIds: string[] | 'all' = 'all',
 ): Promise<EquipmentOverview> {
-  if (IS_REAL_DATA) return fetchRealEquipmentOverview(factoryId)
+  requireDemoMode()
   await delay(260)
   return buildEquipmentOverview(factoryId, workshopIds)
 }
