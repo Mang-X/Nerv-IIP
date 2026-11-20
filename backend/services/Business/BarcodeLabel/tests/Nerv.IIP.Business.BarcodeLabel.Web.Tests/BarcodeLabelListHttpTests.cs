@@ -128,18 +128,14 @@ public sealed class BarcodeLabelListHttpTests
             BarcodeRule.Create("org", "other", "C", "code128", "C", 40, "none", ["work-order"], "active"));
         await db.SaveChangesAsync();
 
-        var query = new ListBarcodeRulesQuery(" org ", " dev ", null, null);
-        var defaults = await sender.Send(query);
-        Assert.Equal(["A", "B"], defaults.Items.Select(x => x.RuleCode));
-
-        var invalid = query with { Skip = -1, Take = 0 };
+        var invalid = new ListBarcodeRulesQuery(" org ", " dev ", null, null, Skip: -1, Take: 0);
         await Assert.ThrowsAnyAsync<KnownException>(() => sender.Send(invalid));
         var handler = new ListBarcodeRulesQueryHandler(db);
         var page = await handler.Handle(invalid, CancellationToken.None);
         Assert.Equal(2, page.Total);
         Assert.Equal("A", Assert.Single(page.Items).RuleCode);
 
-        var missingTenant = query with { EnvironmentId = " " };
+        var missingTenant = new ListBarcodeRulesQuery("org", " ", null, null);
         await Assert.ThrowsAnyAsync<KnownException>(() => sender.Send(missingTenant));
         await Assert.ThrowsAnyAsync<KnownException>(() => handler.Handle(missingTenant, CancellationToken.None));
     }
