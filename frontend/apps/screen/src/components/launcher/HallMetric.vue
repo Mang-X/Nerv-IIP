@@ -20,13 +20,13 @@ const unavailable = computed(() =>
   error.value instanceof HallMetricUnavailable ? error.value.message : undefined,
 )
 watch(
-  unavailable,
-  (value) => {
-    if (value) {
+  error,
+  (failure) => {
+    if (failure instanceof HallMetricUnavailable) {
       stop()
       data.value = undefined
       lastUpdated.value = undefined
-    } else if (!error.value) start()
+    } else if (!failure) start()
   },
   { flush: 'sync' },
 )

@@ -42,12 +42,14 @@ export async function inspectionScope(session: ScreenSession) {
       query: { ...session, permissionCode: 'business.quality.inspection-records.read' },
     }),
   )
-  const scope = readRows(context.authorizedScopes).find(
-    (item) => item.kind && ['organization', 'team', 'self'].includes(item.kind) && item.id,
-  )
-  if (!scope?.kind || !scope.id) throw new NoWorkScope('没有已授权的检验范围')
-  return {
-    query: { ...session, scopeKind: scope.kind, scopeId: scope.id },
-    label: scope.displayName || scope.id,
+  const scopes = readRows(context.authorizedScopes)
+  for (const kind of ['organization', 'team', 'self']) {
+    const scope = scopes.find((item) => item.kind === kind && item.id)
+    if (scope?.id)
+      return {
+        query: { ...session, scopeKind: kind, scopeId: scope.id },
+        label: scope.displayName || scope.id,
+      }
   }
+  throw new NoWorkScope('没有已授权的检验范围')
 }

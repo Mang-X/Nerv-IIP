@@ -43,12 +43,59 @@ it('按当前组织读取活动报警总数，过期保留最后样本，无权�
     await flushPromises()
     expect(page.text()).toContain('无权查看')
     expect(page.get('strong').text()).toBe('—')
+    status = 503
+    await page.get('button').trigger('click')
+    await flushPromises()
+    expect(page.text()).toContain('读取失败')
     total = 0
     status = 200
     await page.get('button').trigger('click')
     await flushPromises()
     expect(page.get('strong').text()).toBe('0')
     expect(page.find('button').exists()).toBe(false)
+    total = 8
+    await vi.advanceTimersByTimeAsync(15000)
+    expect(page.get('strong').text()).toBe('8')
+  } finally {
+    page.unmount()
+  }
+})
+
+it.each([
+  [['self', 'team'], 'team'],
+  [['self', 'team', 'organization'], 'organization'],
+  [['self'], 'self'],
+] as const)('检验待认领优先取授权组织、班组，再取本人（%j）', async (kinds, expected) => {
+  configureApiClient({
+    baseUrl: 'http://fixture',
+    fetch: async (input) => {
+      const url = new URL(new Request(input).url)
+      if (url.pathname.endsWith('/me/work-context'))
+        return Response.json({
+          success: true,
+          data: {
+            authorizedScopes: kinds.map((kind) => ({
+              kind,
+              id: kind + '-1',
+              displayName: kind + '范围',
+            })),
+          },
+        })
+      const selected =
+        url.searchParams.get('scopeKind') === expected &&
+        url.searchParams.get('scopeId') === expected + '-1'
+      const pending = selected && url.searchParams.get('status') === 'pending'
+      return Response.json({
+        success: true,
+        data: { items: pending ? [{ inspectionTaskId: 'QA-4' }] : [], total: pending ? 4 : 0 },
+      })
+    },
+  })
+  const page = mount(HallMetric, { props: { label: '检验任务', metric: 'inspection', session } })
+  try {
+    await flushPromises()
+    expect(page.get('strong').text()).toBe('4 / 0')
+    expect(page.text()).toContain(expected + '范围')
   } finally {
     page.unmount()
   }
