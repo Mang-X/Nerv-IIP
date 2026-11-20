@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseWorkPoolAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
@@ -17,10 +18,12 @@ public sealed class WmsWorkPoolMembershipSeedService(
 {
     private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
 
-    private const string PoolCode = WorldHistoryWarehouseOpsSpec.ReceivingPoolCode;
+    private const string InboundLineNo = "10";
+    private const string OwnerType = "company";
+    private const string PoolCode = "POOL-WMS-RECEIVING";
     private const string PoolDisplayName = "收货与上架";
-    private const string SiteCode = WorldHistorySpec.SiteCode;
-    private const string PrincipalId = WorldHistoryWarehouseOpsSpec.DemoWarehousePrincipalId;
+    private const string SiteCode = "SITE-001";
+    private const string PrincipalId = "user-emp-049";
     private const string InboundOrderNo = "IB-WMS-SEED-001";
     private const string SeedSourceDocumentType = "wms-walkthrough-seed";
     private const string SeedSourceDocumentId = "WMS-WALKTHROUGH-SEED-001";
@@ -128,15 +131,15 @@ public sealed class WmsWorkPoolMembershipSeedService(
                 SiteCode,
                 [
                     new InboundOrderLineDraft(
-                        WorldHistoryWmsSpec.LineNo,
+                        InboundLineNo,
                         SkuCode,
                         UomCode,
                         ReceivedQuantity: 1m,
                         StagingLocationCode,
                         LotNo,
                         SerialNo: null,
-                        WorldHistoryWmsSpec.Unrestricted,
-                        WorldHistoryWmsSpec.OwnerType,
+                        WmsReceivingQualityStatuses.Unrestricted,
+                        OwnerType,
                         OwnerId: null),
                 ],
                 assignedOperatorUserId: PrincipalId,
@@ -181,18 +184,18 @@ public sealed class WmsWorkPoolMembershipSeedService(
         }
 
         var line = order.Lines.Single();
-        return string.Equals(line.LineNo, WorldHistoryWmsSpec.LineNo, StringComparison.Ordinal)
+        return string.Equals(line.LineNo, InboundLineNo, StringComparison.Ordinal)
             && string.Equals(line.SkuCode, SkuCode, StringComparison.Ordinal)
             && string.Equals(line.UomCode, UomCode, StringComparison.Ordinal)
             && line.ReceivedQuantity == 1m
             && string.Equals(line.StagingLocationCode, StagingLocationCode, StringComparison.Ordinal)
             && string.Equals(line.LotNo, LotNo, StringComparison.Ordinal)
             && line.SerialNo is null
-            && string.Equals(line.QualityStatus, WorldHistoryWmsSpec.Unrestricted, StringComparison.Ordinal)
+            && string.Equals(line.QualityStatus, WmsReceivingQualityStatuses.Unrestricted, StringComparison.Ordinal)
             && string.Equals(line.QualityGateStatus, InboundQualityGateStatuses.NotRequired, StringComparison.Ordinal)
             && line.InspectionRecordId is null
             && line.QualityDispositionReason is null
-            && string.Equals(line.OwnerType, WorldHistoryWmsSpec.OwnerType, StringComparison.Ordinal)
+            && string.Equals(line.OwnerType, OwnerType, StringComparison.Ordinal)
             && line.OwnerId is null
             && line.ProductionDate is null
             && line.ExpiryDate is null;

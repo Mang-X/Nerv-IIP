@@ -13,7 +13,6 @@ using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Scheduling;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Errors;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Historian;
-using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Seed;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Endpoints.Iiot;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.DistributedLocking;
@@ -86,9 +85,6 @@ try
     }
 
     builder.Services.AddIndustrialTelemetryPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
-    builder.Services.AddScoped<LeaderDemoSeedService>();
-    builder.Services.AddScoped<WorldBibleSeedService>();
-    builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddNervIipCommandLocking(
         builder.Configuration,
         builder.Environment,
@@ -152,67 +148,6 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await dbContext.Database.MigrateAsync();
-    }
-
-    var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");
-    if (leaderDemoSeedEnabled && !app.Environment.IsDevelopment())
-    {
-        throw new InvalidOperationException("LeaderDemo:Seed:Enabled=true is only allowed for BusinessIndustrialTelemetry in Development.");
-    }
-
-    if (WorldHistoryConfiguration.IsEnabled(builder.Configuration) && !app.Environment.IsDevelopment())
-    {
-        throw new InvalidOperationException("LeaderDemo:History:Enabled=true is only allowed for BusinessIndustrialTelemetry in Development.");
-    }
-
-    if (leaderDemoSeedEnabled)
-    {
-        using var scope = app.Services.CreateScope();
-        var organizationId = builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001";
-        var environmentId = builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev";
-        await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(organizationId, environmentId);
-        if (builder.Configuration.GetValue("LeaderDemo:World:Enabled", false))
-        {
-            await scope.ServiceProvider.GetRequiredService<WorldBibleSeedService>().SeedAsync(organizationId, environmentId);
-        }
-
-        // 《工厂世界观设定集》L1 设备域历史（三期）。校验器 fail-closed：对不上账就让启动失败。
-        if (WorldHistoryConfiguration.IsEnabled(builder.Configuration))
-        {
-            var historyStopwatch = System.Diagnostics.Stopwatch.StartNew();
-            var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
-                organizationId,
-                environmentId,
-                WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
-                WorldHistoryConfiguration.ResolveScale(builder.Configuration));
-            historyStopwatch.Stop();
-            app.Logger.LogInformation(
-                "World-history device seed completed in {ElapsedSeconds:F1}s: {Rules} alarm rules, {Alarms} alarm events, " +
-                "{Daily} daily rollups, {Hourly} hourly rollups, {Raw} raw samples, {Summaries} summaries, " +
-                "{States} device states, {OeeFacts} OEE facts, {ControlCommands} device control commands; " +
-                "validator checked {AlarmsChecked} alarms / {DailyChecked} daily rollups / {FaultedChecked} faulted states / " +
-                "{OeeChecked} OEE facts / {ControlChecked} control commands (all terminal) ({OpenAlarms} open-tail alarms).",
-                historyStopwatch.Elapsed.TotalSeconds,
-                report.AlarmRulesWritten,
-                report.AlarmEventsWritten,
-                report.DailyRollupsWritten,
-                report.HourlyRollupsWritten,
-                report.RawSamplesWritten,
-                report.SummariesWritten,
-                report.DeviceStateSnapshotsWritten,
-                report.OeeFactsWritten,
-                report.DeviceControlCommandsWritten,
-                report.Validation.AlarmsChecked,
-                report.Validation.DailyRollupsChecked,
-                report.Validation.FaultedStatesChecked,
-                report.Validation.OeeFactsChecked,
-                report.Validation.DeviceControlCommandsChecked,
-                report.Validation.OpenAlarms);
-            foreach (var line in report.Validation.Sample)
-            {
-                app.Logger.LogInformation("World-history device sample: {Chain}", line);
-            }
-        }
     }
 
     app.UseNervIipRequestLocalization();

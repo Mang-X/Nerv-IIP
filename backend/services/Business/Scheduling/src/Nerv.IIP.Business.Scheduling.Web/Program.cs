@@ -14,7 +14,6 @@ using Nerv.IIP.Business.Scheduling.Web.Application.Commands;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Scheduling.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Scheduling.Web.Application.Scheduling;
-using Nerv.IIP.Business.Scheduling.Web.Application.Seed;
 using Nerv.IIP.Business.Scheduling.Web.Application.Urgency;
 using Nerv.IIP.Business.Scheduling.Web.Endpoints.Scheduling;
 using Nerv.IIP.Contracts.Scheduling;
@@ -125,7 +124,6 @@ try
     builder.Services.AddScoped<ScheduleAssignmentCurrentExecutionReader>();
     builder.Services.AddScoped<ISchedulingOperationOverrideOverlay, SchedulingOperationOverrideOverlay>();
     builder.Services.AddScoped<OrderUrgencyService>();
-    builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddSingleton(new OrderUrgencyRetentionWorkerIdentity(
         $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}"));
     builder.Services.AddHttpClient<IOrderUrgencyArchiveStore, HttpOrderUrgencyArchiveStore>(client =>
@@ -214,38 +212,6 @@ try
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         await dbContext.Database.MigrateAsync();
-    }
-
-    // 《工厂世界观设定集》L1 背景历史（排产域侧）。校验器 fail-closed：对账不平就让启动失败。
-    var worldHistoryEnabled = WorldHistoryConfiguration.IsEnabled(builder.Configuration);
-    if (worldHistoryEnabled && !app.Environment.IsDevelopment())
-    {
-        throw new InvalidOperationException(
-            "LeaderDemo:History:Enabled=true is only allowed for BusinessScheduling in Development.");
-    }
-
-    if (worldHistoryEnabled)
-    {
-        using var scope = app.Services.CreateScope();
-        var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
-            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev",
-            WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
-            WorldHistoryConfiguration.ResolveScale(builder.Configuration));
-        app.Logger.LogInformation(
-            "World-history scheduling seed completed: {Problems} problem snapshots, " +
-            "{Urgencies} order urgency snapshots; schedule plans are left to the engine. " +
-            "Validator checked {CheckedProblems} problem snapshots ({Operations} operations) " +
-            "and {CheckedUrgencies} urgency snapshots.",
-            report.ScheduleProblemsWritten,
-            report.OrderUrgencySnapshotsWritten,
-            report.Validation.ProblemsChecked,
-            report.Validation.OperationsChecked,
-            report.Validation.UrgencySnapshotsChecked);
-        foreach (var line in report.Validation.Sample)
-        {
-            app.Logger.LogInformation("World-history scheduling sample: {Sample}", line);
-        }
     }
 
     app.UseNervIipRequestLocalization();

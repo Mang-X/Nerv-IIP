@@ -408,7 +408,7 @@ public sealed class MaterialIssueRequest : Entity<MaterialIssueRequestId>, IAggr
     }
 
     /// <summary>
-    /// 确认收料并立即补齐两条腿的库存回执。**仅用于回填既成事实**（世界观历史种子、测试夹具）：
+    /// 确认收料并立即补齐两条腿的库存回执。**仅用于回填既成事实**（测试夹具）：
     /// 真实链路必须走「确认 → 库存过账 → 回执」，状态不能凭 MES 单方面翻绿。
     /// </summary>
     public void ConfirmAndPostLineSideReceipt(

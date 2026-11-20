@@ -14,64 +14,13 @@ var fullStackEphemeral = string.Equals(
     Environment.GetEnvironmentVariable("NERV_IIP_EPHEMERAL"),
     "true",
     StringComparison.OrdinalIgnoreCase);
-var leaderDemoEnabled = localDevelopmentAppHost &&
-    string.Equals(
-        Environment.GetEnvironmentVariable("NERV_IIP_LEADER_DEMO"),
-        "true",
-        StringComparison.OrdinalIgnoreCase);
-// MAN-519 白名单内的领导演示「规模块」订单数（默认 1000，设为 0 关闭）。
-// 仅在 leader-demo profile 下生效，普通 dev/full-stack 会话保持既有个位数固定案例。
-var leaderDemoScaleOrderCount = 0;
-if (leaderDemoEnabled)
-{
-    leaderDemoScaleOrderCount =
-        int.TryParse(
-            Environment.GetEnvironmentVariable("NERV_IIP_LEADER_DEMO_SCALE_ORDERS"),
-            System.Globalization.NumberStyles.Integer,
-            System.Globalization.CultureInfo.InvariantCulture,
-            out var configuredScaleOrderCount) && configuredScaleOrderCount >= 0
-            ? configuredScaleOrderCount
-            : 1000;
-}
-
-var leaderDemoScaleOrderCountValue = leaderDemoScaleOrderCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
-
-// 《工厂世界观设定集》L0 主数据全量块（3 车间/14 产线/46 设备/84 SKU/58 员工/3 采集连接器）。
-// 只在 leader-demo profile 下生效，NERV_IIP_LEADER_DEMO_WORLD=false 可关闭；普通 dev/full-stack
-// 会话恒为 false，保持既有个位数固定案例与常规种子形状不变。
-var leaderDemoWorldEnabled = leaderDemoEnabled && !string.Equals(
-    Environment.GetEnvironmentVariable("NERV_IIP_LEADER_DEMO_WORLD"),
-    "false",
-    StringComparison.OrdinalIgnoreCase);
-var leaderDemoWorldEnabledValue = leaderDemoWorldEnabled ? "true" : "false";
-
-// 人工走查最小数据默认随本地 AppHost 启用，并可独立关闭；它不依赖待拆除的世界观/历史开关。
+// 人工走查最小数据默认随本地 AppHost 启用，并可独立关闭。
 var walkthroughSeedEnabled = localDevelopmentAppHost &&
     !string.Equals(
         Environment.GetEnvironmentVariable("NERV_IIP_WALKTHROUGH_SEED"),
         "false",
         StringComparison.OrdinalIgnoreCase);
 var walkthroughSeedEnabledValue = walkthroughSeedEnabled ? "true" : "false";
-
-// 《工厂世界观设定集》L1 背景历史引擎（2026-01-05 至今约 29 周的 ERP/MES 单据历史）。
-// 依赖 L0 主数据，因此只在 L0 打开时生效；NERV_IIP_LEADER_DEMO_HISTORY=false 可单独关闭。
-// NERV_IIP_LEADER_DEMO_HISTORY_SCALE=0.1 生成约十分之一的量用于快速验证。
-var leaderDemoHistoryEnabled = leaderDemoWorldEnabled && !string.Equals(
-    Environment.GetEnvironmentVariable("NERV_IIP_LEADER_DEMO_HISTORY"),
-    "false",
-    StringComparison.OrdinalIgnoreCase);
-var leaderDemoHistoryEnabledValue = leaderDemoHistoryEnabled ? "true" : "false";
-var leaderDemoHistoryScaleValue =
-    (double.TryParse(
-        Environment.GetEnvironmentVariable("NERV_IIP_LEADER_DEMO_HISTORY_SCALE"),
-        System.Globalization.NumberStyles.Float,
-        System.Globalization.CultureInfo.InvariantCulture,
-        out var configuredHistoryScale) && configuredHistoryScale is > 0 and <= 10
-        ? configuredHistoryScale
-        : 1.0d).ToString(System.Globalization.CultureInfo.InvariantCulture);
-// ERP 与 MES 必须用同一个历史截止日：两侧若各自取「今天」而恰好跨零点启动，
-// 订单计划表会错开一周，SO-2026-* 与 WO-2026-* 的配对随之断裂。
-var leaderDemoHistoryAsOfDateValue = DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 
 if (fullStackEphemeral &&
     (string.IsNullOrWhiteSpace(fullStackSessionId) ||
@@ -122,7 +71,7 @@ var iamSeedConnectorHostSecret = builder.AddParameter("iam-seed-connector-host-s
 var iamSeedDemoWorkerPassword = builder.Configuration["Parameters:iam-seed-demo-worker-password"] ?? string.Empty;
 // 仅向 WMS 下发非敏感的显式种子开关；工人口令仍只提供给 IAM。
 var wmsWorkPoolSeedEnabled = builder.Configuration.GetValue(
-    "LeaderDemo:Wms:WorkPoolSeed:Enabled",
+    "Wms:WorkPoolSeed:Enabled",
     !string.IsNullOrWhiteSpace(iamSeedDemoWorkerPassword));
 var connectorIngestionTokenSigningKey = builder.AddParameter("connector-ingestion-token-signing-key", secret: true);
 var messagingProvider = builder.Configuration["Messaging:Provider"] ?? "InMemory";
@@ -152,14 +101,7 @@ if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
         : throw new InvalidOperationException("Security:Cors:AllowedOrigins is required outside Development.");
 }
 
-// 本地站点/库位只在 Development 成立，且按 profile 分叉（#3137）：
-// - leader-demo profile（判据 leaderDemoHistoryEnabled）下发 WH-WB-*。只有该 profile 会让 Inventory
-//   跑 WorldHistorySeedService，把 WorldHistoryPhase2Spec.StockLocations 的七个库位真的建成行，
-//   线边收料/领料才查得到可用量。
-// - 普通 Development 维持 loc-*（MasterData inventory-location 码表候选码）。库位主数据属于开箱数据
-//   （#3770 owner 裁决）：Inventory 产品基线种子 InventoryLocationSeedService 在每个 profile 都会补齐
-//   这四个 loc-* 库位行（loc-line-01 为 line-side）；改这里的回落码必须同步改那份种子。
-//   在手量仍须经真实流程建立（#2058），本处不改变它。
+// Development 使用库存产品基线种子的 loc-* 库位；在手量由业务流程建立。
 // 非 Development 下 AppHost 不再无条件下发它们（#2008）：部署方要么用与服务同名的配置键显式
 // 给出真实站点/库位（例如 Inventory__SiteCode、MaterialIssue__SourceLocationCode），要么这些键
 // 根本不下发，由服务侧 fail-closed 自己暴露——WMS 领料进死信 unresolved-location，MES 抛
@@ -267,7 +209,6 @@ var iam = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Project
     .WithEnvironment("Iam__Seed__AdminPassword", iamSeedAdminPassword)
     .WithEnvironment("Iam__Seed__ConnectorHostSecret", iamSeedConnectorHostSecret)
     .WithEnvironment("Iam__Seed__DemoWorkerPassword", iamSeedDemoWorkerPassword)
-    .WithEnvironment("LeaderDemo__World__Enabled", leaderDemoWorldEnabledValue)
     .WithEnvironment("Iam__Jwt__SigningKeys__0__Kid", iamJwtSigningKeyId)
     .WithEnvironment("Iam__Jwt__SigningKeys__0__PrivateKeyPem", iamJwtPrivateKeyPem)
     .WithEnvironment("Iam__Secrets__Pepper", iamSecretsPepper)
@@ -393,9 +334,6 @@ var businessMasterData = WithNervIipTelemetry(WithAppHostEnvironment(builder.Add
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("Walkthrough__Seed__Enabled", walkthroughSeedEnabledValue)
-    .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
-    .WithEnvironment("LeaderDemo__World__Enabled", leaderDemoWorldEnabledValue)
-    .WithEnvironment("LeaderDemo__Scale__OrderCount", leaderDemoScaleOrderCountValue)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessMasterDataDatabase, "PostgreSQL")
     .WithReference(redis)
@@ -414,15 +352,6 @@ var businessProductEngineering = WithNervIipTelemetry(WithAppHostEnvironment(bui
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("Walkthrough__Seed__Enabled", walkthroughSeedEnabledValue)
-    .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
-    .WithEnvironment("LeaderDemo__World__Enabled", leaderDemoWorldEnabledValue)
-    .WithEnvironment("LeaderDemo__Scale__OrderCount", leaderDemoScaleOrderCountValue)
-    // 工程变更 / 工程文档的 L1 背景历史引擎。ProductEngineering 此前只有 L0 主数据 seed
-    // （门控 LeaderDemo__World__Enabled），History 三件套从未注入，engineering_changes 与
-    // engineering_documents 一直是 0 行——二轮走查里「工程变更、工程文档空页」的直接原因。
-    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
-    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
-    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessProductEngineeringDatabase, "PostgreSQL")
@@ -451,10 +380,6 @@ var businessInventory = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddP
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
-    .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
-    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
-    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
-    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     // Inventory 的 SKU 效期策略读取走 MasterData HTTP（HttpInventorySkuExpiryPolicyProvider）；
     // 不注入则回退固定端口 5107，ephemeral 会话上必打错端口。
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
@@ -479,10 +404,6 @@ var businessQuality = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddPro
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
-    .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
-    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
-    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
-    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessQualityDatabase, "PostgreSQL")
     .WithReference(redis)
@@ -501,11 +422,6 @@ var businessMes = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
-    .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
-    .WithEnvironment("LeaderDemo__Scale__OrderCount", leaderDemoScaleOrderCountValue)
-    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
-    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
-    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
@@ -521,12 +437,6 @@ var businessMes = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject
     .WaitFor(businessProductEngineering)
     .WaitFor(businessInventory)
     .WaitFor(businessQuality);
-// 站点/库位必须与库存里真实存在的库位行一致：MES 过去按 warehouse/production + line-side 臆造
-// 位置，库存一律 NEGATIVE_ON_HAND 拒绝（#1322）。Development 回落按 profile 分叉（#3137）：
-// leader-demo 取 Inventory 世界观种子真的建出来的 WH-WB-*（此前该 profile 也发 loc-*，而库存里
-// 没有 loc-* 库位行，线边收料对任何 SKU、任何水位恒报 MATERIAL_SOURCE_LOCATION_UNAVAILABLE）；
-// 普通 Development 维持 loc-*，不推翻 #2058。其他环境只下发部署方显式配置的真实值，
-// 未配置就不下发（#2008）。
 // 单一权威站点键：齐套可用量查询与线边过账都从它回落，避免三份语义重叠的站点配置。
 // 只有真正的多站点部署才需要额外设置 Inventory__SiteCodes__N（跨站点求可用量）。
 businessMes = WithDeploymentEnvironment(
@@ -535,9 +445,7 @@ businessMes = WithDeploymentEnvironment(
     DeploymentWarehouseLocation("Inventory:SiteCode", "SITE-001"));
 var mesSourceLocationCodes = DeploymentWarehouseLocations(
     "Inventory:SourceLocationCodes",
-    leaderDemoHistoryEnabled
-        ? ["WH-WB-RM-01", "WH-WB-SF-01", "WH-WB-FG-01"]
-        : ["loc-raw-01", "loc-semi-01", "loc-fg-01"]);
+    ["loc-raw-01", "loc-semi-01", "loc-fg-01"]);
 for (var sourceLocationIndex = 0; sourceLocationIndex < mesSourceLocationCodes.Count; sourceLocationIndex++)
 {
     businessMes = businessMes.WithEnvironment(
@@ -551,7 +459,7 @@ businessMes = WithDeploymentEnvironment(
     "Inventory__LineSideLocationCode",
     DeploymentWarehouseLocation(
         "Inventory:LineSideLocationCode",
-        leaderDemoHistoryEnabled ? "WH-WB-LINE-01" : "loc-line-01"));
+        "loc-line-01"));
 // 完工入库目标库位（#1331）：成品仓库位同样取种子事实，站点复用上面的权威 Inventory__SiteCode，
 // 不再让 MES 硬编码 finished-goods/receiving 命名空间。
 businessMes = WithDeploymentEnvironment(
@@ -559,7 +467,7 @@ businessMes = WithDeploymentEnvironment(
     "Inventory__FinishedGoodsLocationCode",
     DeploymentWarehouseLocation(
         "Inventory:FinishedGoodsLocationCode",
-        leaderDemoHistoryEnabled ? "WH-WB-FG-01" : "loc-fg-01"));
+        "loc-fg-01"));
 businessMes = WithRedisMessagingTransport(businessMes);
 if (rabbitmq is not null)
 {
@@ -583,9 +491,6 @@ var businessDemandPlanning = WithNervIipTelemetry(WithAppHostEnvironment(builder
     .WithEnvironment("ProductEngineering__BaseUrl", businessProductEngineering.GetEndpoint("http"))
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
     .WithEnvironment("Mes__BaseUrl", businessMes.GetEndpoint("http"))
-    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
-    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
-    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessDemandPlanningDatabase, "PostgreSQL")
     .WithReference(businessMasterData)
@@ -610,9 +515,6 @@ var businessBarcodeLabel = WithNervIipTelemetry(WithAppHostEnvironment(builder.A
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
-    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
-    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
-    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessBarcodeLabelDatabase, "PostgreSQL")
@@ -665,9 +567,6 @@ var businessApproval = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddPr
     .WithEnvironment("Approval__OverdueCheck__Scopes__0__OrganizationId", "org-001")
     .WithEnvironment("Approval__OverdueCheck__Scopes__0__EnvironmentId", "env-dev")
     .WithEnvironment("Approval__OverdueCheck__Interval", "00:05:00")
-    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
-    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
-    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessApprovalDatabase, "PostgreSQL")
     .WaitFor(businessApprovalDatabase);
@@ -701,31 +600,25 @@ var businessWms = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
-    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
-    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
-    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
-    .WithEnvironment("LeaderDemo__Wms__WorkPoolSeed__Enabled", wmsWorkPoolSeedEnabled ? "true" : "false")
+    .WithEnvironment("Wms__WorkPoolSeed__Enabled", wmsWorkPoolSeedEnabled ? "true" : "false")
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessWmsDatabase, "PostgreSQL")
     .WithReference(businessInventory)
     .WaitFor(businessWmsDatabase)
     .WaitFor(businessInventory);
-// MES 领料事件不带库位时的默认库位：Development 按 profile 分叉——leader-demo 取 Inventory 世界观
-// 种子真的建出来的 WH-WB-*，普通 Development 维持主线码表 loc-*（#3137 / #2058）。其他环境只下发
-// 部署方显式配置的真实库位（#2008）。仓库代码里不再内置演示库位兜底，两者都缺就进死信（#1754）。
 businessWms = WithDeploymentEnvironment(
     businessWms,
     "MaterialIssue__SourceLocationCode",
     DeploymentWarehouseLocation(
         "MaterialIssue:SourceLocationCode",
-        leaderDemoHistoryEnabled ? "WH-WB-RM-01" : "loc-raw-01"));
+        "loc-raw-01"));
 businessWms = WithDeploymentEnvironment(
     businessWms,
     "MaterialIssue__LineSideLocationCode",
     DeploymentWarehouseLocation(
         "MaterialIssue:LineSideLocationCode",
-        leaderDemoHistoryEnabled ? "WH-WB-LINE-01" : "loc-line-01"));
+        "loc-line-01"));
 businessWms = WithRedisMessagingTransport(businessWms);
 if (rabbitmq is not null)
 {
@@ -739,11 +632,6 @@ var businessIndustrialTelemetry = WithNervIipTelemetry(WithAppHostEnvironment(bu
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
-    .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
-    .WithEnvironment("LeaderDemo__World__Enabled", leaderDemoWorldEnabledValue)
-    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
-    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
-    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
     .WithReference(businessIndustrialTelemetryDatabase, "PostgreSQL")
@@ -763,10 +651,6 @@ var businessMaintenance = WithNervIipTelemetry(WithAppHostEnvironment(builder.Ad
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
-    .WithEnvironment("LeaderDemo__Seed__Enabled", leaderDemoEnabled ? "true" : "false")
-    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
-    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
-    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithEnvironment("Maintenance__PmGeneration__Enabled", maintenancePmGenerationEnabled ? "true" : "false")
     .WithEnvironment("Maintenance__PmGeneration__OrganizationId", maintenancePmGenerationOrganizationId ?? string.Empty)
     .WithEnvironment("Maintenance__PmGeneration__EnvironmentId", maintenancePmGenerationEnvironmentId ?? string.Empty)
@@ -798,10 +682,6 @@ var businessErp = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject
     .WithEnvironment("Messaging__Provider", messagingProvider)
     .WithEnvironment("Walkthrough__Seed__Enabled", walkthroughSeedEnabledValue)
     .WithEnvironment("Erp__Seed__SalesOrderDemandDemo__Enabled", developmentOnlyEnabledValue)
-    .WithEnvironment("LeaderDemo__Scale__OrderCount", leaderDemoScaleOrderCountValue)
-    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
-    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
-    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("Approval__BaseUrl", businessApproval.GetEndpoint("http"))
     // ERP 出/入库单取消联动 WMS（HttpWmsOutbound/InboundCancellationClient）；
@@ -889,12 +769,6 @@ var businessScheduling = WithNervIipTelemetry(WithAppHostEnvironment(builder.Add
     // 「FileStorage:BaseUrl is required for urgency retention.」。
     .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"))
     .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
-    // 排产工作台的 L1 背景历史引擎（排程方案 / 资源负荷 / 冲突 / 订单紧急度）。
-    // 缺了这三行，Scheduling 侧的 WorldHistorySeedService 永远不激活，schedule_plans 保持 0 行，
-    // 工作台三个 Tab 全空——这正是二轮走查里「排产工作台空」的直接原因。
-    .WithEnvironment("LeaderDemo__History__Enabled", leaderDemoHistoryEnabledValue)
-    .WithEnvironment("LeaderDemo__History__Scale", leaderDemoHistoryScaleValue)
-    .WithEnvironment("LeaderDemo__History__AsOfDate", leaderDemoHistoryAsOfDateValue)
     .WithReference(businessSchedulingDatabase, "PostgreSQL")
     .WithReference(businessMasterData)
     .WithReference(businessProductEngineering)
@@ -1081,18 +955,6 @@ var connectorHost = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProje
     .WaitFor(apphub)
     .WaitFor(ops)
     .WaitFor(iam);
-
-if (leaderDemoWorldEnabled)
-{
-    connectorHost = connectorHost
-        .WithEnvironment("Simulated__Enabled", "true")
-        .WithEnvironment("ConnectorHost__CollectionCycleSeconds", "2")
-        .WithEnvironment("ConnectorHost__OperationPollSeconds", "1")
-        .WithEnvironment("Platform__IndustrialTelemetryBaseUrl", businessIndustrialTelemetry.GetEndpoint("http"))
-        .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
-        .WithReference(businessIndustrialTelemetry)
-        .WaitFor(businessIndustrialTelemetry);
-}
 
 if (connectorHealthAcceptanceEnabled)
 {

@@ -18,7 +18,6 @@ using Nerv.IIP.Business.Mes.Web.Application.Quality;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Behaviors;
-using Nerv.IIP.Business.Mes.Web.Application.Seed;
 using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Business.Mes.Web.Endpoints.Mes;
 using Nerv.IIP.Business.Mes.Web;
@@ -166,13 +165,6 @@ builder.Services.AddScoped<IMesFirstArticleGate, HttpMesFirstArticleGate>();
 builder.Services.AddScoped<MesQualityInspectionPlanClient>();
 builder.Services.AddScoped<IMesQualityInspectionPlanReader>(sp =>
     sp.GetRequiredService<MesQualityInspectionPlanClient>());
-builder.Services.AddScoped<LeaderDemoSeedService>();
-builder.Services.AddScoped<LeaderDemoScaleSeedService>();
-builder.Services.AddScoped<IWorldHistoryProductionVersionResolver, WorldHistoryProductionVersionResolver>();
-builder.Services.AddScoped<WorldHistorySeedService>();
-builder.Services.AddScoped<WorldHistoryFloorEventsSeedService>();
-builder.Services.AddScoped<WorldHistoryGenealogySeedService>();
-builder.Services.AddScoped<WorldHistoryFoundationSeedService>();
 // Register the FluentValidation command validators (CancelWorkOrder/ReturnLineSideMaterial/... — 11 in total)
 // so the MediatR AddKnownExceptionValidationBehavior below can execute them. Without both lines the validators
 // are dead code and command-level validation never runs — matching every other business service.
@@ -262,94 +254,6 @@ app.UseFastEndpoints(c =>
             : ToLowerCamelEndpointName(ctx.EndpointType.Name);
     };
 }).UseSwaggerGen();
-
-var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");
-if (leaderDemoSeedEnabled && !app.Environment.IsDevelopment())
-{
-    throw new InvalidOperationException("LeaderDemo:Seed:Enabled=true is only allowed for BusinessMES in Development.");
-}
-
-// Resolve the released ProductEngineering version through the real HTTP boundary before MES
-// accepts traffic. This keeps the normal ProductEngineering client timeout unchanged and prevents
-// /health from becoming green while the bounded leader-demo prerequisite is still converging.
-if (leaderDemoSeedEnabled)
-{
-    using var scope = app.Services.CreateScope();
-    var leaderDemoOrganizationId = builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001";
-    var leaderDemoEnvironmentId = builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev";
-    await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(
-        leaderDemoOrganizationId,
-        leaderDemoEnvironmentId);
-    await scope.ServiceProvider.GetRequiredService<LeaderDemoScaleSeedService>().SeedAsync(
-        leaderDemoOrganizationId,
-        leaderDemoEnvironmentId,
-        builder.Configuration.GetValue("LeaderDemo:Scale:OrderCount", 0),
-        DateTimeOffset.UtcNow);
-
-    // 《工厂世界观设定集》L1 背景历史（MES 侧）。校验器 fail-closed：数量链不平就让启动失败。
-    if (WorldHistoryConfiguration.IsEnabled(builder.Configuration))
-    {
-        var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
-            leaderDemoOrganizationId,
-            leaderDemoEnvironmentId,
-            WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
-            WorldHistoryConfiguration.ResolveScale(builder.Configuration));
-        app.Logger.LogInformation(
-            "World-history MES seed completed: {OrderWorkOrders} order work orders, {ReworkWorkOrders} rework work orders; " +
-            "validator checked {WorkOrders} work orders / {Tasks} operation tasks / {Reports} production reports / " +
-            "{Receipts} finished-goods receipts.",
-            report.OrderWorkOrdersWritten,
-            report.ReworkWorkOrdersWritten,
-            report.Validation.WorkOrdersChecked,
-            report.Validation.OperationTasksChecked,
-            report.Validation.ProductionReportsChecked,
-            report.Validation.FinishedGoodsReceiptsChecked);
-        foreach (var line in report.Validation.Sample)
-        {
-            app.Logger.LogInformation("World-history sample: {Chain}", line);
-        }
-
-        // L1「异常与协同」块：停机事件 / 班次交接 / 车间不良。必须在工单链之后跑——
-        // 不良只挂在已落库的真实工单与工序任务上。
-        var floorEvents = await scope.ServiceProvider.GetRequiredService<WorldHistoryFloorEventsSeedService>().SeedAsync(
-            leaderDemoOrganizationId,
-            leaderDemoEnvironmentId,
-            WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
-            WorldHistoryConfiguration.ResolveScale(builder.Configuration));
-        app.Logger.LogInformation(
-            "World-history MES floor-event seed completed: {Downtime} downtime events, {Handovers} shift handovers, " +
-            "{Defects} defect records; validator checked {CheckedDowntime}/{CheckedHandovers}/{CheckedDefects}.",
-            floorEvents.DowntimeEventsWritten,
-            floorEvents.ShiftHandoversWritten,
-            floorEvents.DefectRecordsWritten,
-            floorEvents.Validation.DowntimeEventsChecked,
-            floorEvents.Validation.ShiftHandoversChecked,
-            floorEvents.Validation.DefectRecordsChecked);
-
-        // L1「追溯断点」块：产出批次谱系 / 报工物料消耗。同样必须在工单链之后跑——
-        // 两张表都有指向 production_reports / work_orders / operation_tasks 的真实外键。
-        var genealogy = await scope.ServiceProvider.GetRequiredService<WorldHistoryGenealogySeedService>().SeedAsync(
-            leaderDemoOrganizationId,
-            leaderDemoEnvironmentId);
-        app.Logger.LogInformation(
-            "World-history MES genealogy seed completed: {Genealogies} output lot genealogies, " +
-            "{Consumptions} material consumptions; validator checked {CheckedGenealogies}/{CheckedConsumptions}.",
-            genealogy.OutputLotGenealogiesWritten,
-            genealogy.MaterialConsumptionsWritten,
-            genealogy.Validation.OutputLotGenealogiesChecked,
-            genealogy.Validation.MaterialConsumptionsChecked);
-
-        // L1「生产准备底座」块：SKU 停用投影（主数据投影，与工单链无先后依赖）。
-        // 设备 ↔ 工作中心归属由主数据拥有，MES 运行时直接查询，不再写本地映射（#3878）。
-        var foundation = await scope.ServiceProvider.GetRequiredService<WorldHistoryFoundationSeedService>().SeedAsync(
-            leaderDemoOrganizationId,
-            leaderDemoEnvironmentId);
-        app.Logger.LogInformation(
-            "World-history MES foundation seed completed: {DisabledSkus} disabled SKUs; validator checked {CheckedDisabled}.",
-            foundation.DisabledSkusWritten,
-            foundation.Validation.DisabledSkusChecked);
-    }
-}
 
 await app.RunAsync();
 

@@ -11,19 +11,8 @@ using Nerv.IIP.Iam.Web.Application.Auth;
 
 namespace Nerv.IIP.Iam.Web.Application.Seed;
 
-/// <summary>
-/// 领导演示的 PDA 现场账号开通：从设定集 58 人中选取 4 名代表（机加操作工 / 装配操作工 /
-/// 库管 / 检验员），赋统一演示口令并绑定最小权限 PDA 角色。
-///
-/// 安全边界：仅当 <see cref="IamSeedOptions.DemoWorkerPassword"/> 非空（来自当前进程
-/// 环境变量注入）时才执行；口令不落仓库。其余 54 个账号保持不可登录（见
-/// <see cref="WorldBibleWorkerSeedService"/>）。
-///
-/// 幂等：仅为新角色/成员写入基线授权；已存在授权保持不变。旧 seed 基线中仍为空的
-/// scope 由一次性、可识别的 backfill 补齐；口令仅在与演示口令不一致时覆写
-/// （覆写同时清除 PasswordChangeRequired，保证 PDA 直接可登录）。
-/// </summary>
-public sealed class WorldBiblePdaDemoAccountSeedService(
+/// <summary>为本地 PDA 验证补齐受限的现场账号和授权。</summary>
+public sealed class WalkthroughPdaAccountSeedService(
     IServiceProvider serviceProvider,
     IOptions<IamSeedOptions> options,
     IamPasswordService passwordService)
@@ -85,17 +74,12 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
         ]),
     ];
 
-    /// <summary>
-    /// 4 名演示账号（userId 必须落在 <see cref="WorldBibleWorkerSpec.Workers"/> 的 58 人内）：
-    /// EMP-010 机加车间早班组操作工、EMP-012 装配车间早班组操作工、
-    /// EMP-034 检验员、EMP-049 库管。班组归属见 MasterData 侧 WorldBibleSpec（操作工按 6 班组轮转）。
-    /// </summary>
-    public static readonly (string UserId, string RoleId)[] Accounts =
+    private static readonly (string UserId, string LoginName, string EmployeeNo, string Name, string Department, string RoleId)[] Accounts =
     [
-        ("user-emp-010", OperatorRoleId),
-        ("user-emp-012", OperatorRoleId),
-        ("user-emp-034", InspectorRoleId),
-        ("user-emp-049", WarehouseRoleId),
+        ("user-emp-010", "emp010", "EMP-010", "吴桂芳", "生产部", OperatorRoleId),
+        ("user-emp-012", "emp012", "EMP-012", "孙明辉", "生产部", OperatorRoleId),
+        ("user-emp-034", "emp034", "EMP-034", "朱立新", "质量部", InspectorRoleId),
+        ("user-emp-049", "emp049", "EMP-049", "周文斌", "仓储部", WarehouseRoleId),
     ];
 
     public async Task SeedAsync(CancellationToken cancellationToken = default)
@@ -203,24 +187,46 @@ public sealed class WorldBiblePdaDemoAccountSeedService(
                 now));
         }
 
-        foreach (var (userId, roleId) in Accounts)
+        foreach (var (userId, loginName, employeeNo, name, department, roleId) in Accounts)
         {
             var typedUserId = new UserId(userId);
             var user = await dbContext.Users.FirstOrDefaultAsync(x => x.Id == typedUserId, cancellationToken);
             if (user is null)
             {
-                // 58 人名录尚未落库（WorldBibleWorkerSeedService 未启用）时跳过，不凭空造人。
-                continue;
-            }
-
-            if (user.PasswordChangeRequired || !passwordService.Verify(user, seed.DemoWorkerPassword))
-            {
-                user.UpdatePasswordHash(
+                user = new User(
+                    typedUserId,
+                    loginName,
+                    $"{loginName}@ninghu-damper.local",
                     passwordService.Hash(seed.DemoWorkerPassword),
-                    now,
+                    enabled: true,
+                    Guid.NewGuid().ToString("n"),
+                    permissionVersion: 1,
+                    accountExpiresAtUtc: null,
+                    passwordChangedAtUtc: now,
                     passwordExpiresAtUtc: null,
                     passwordChangeRequired: false,
-                    historyLimit: 0);
+                    displayName: name,
+                    employeeNo: employeeNo,
+                    departmentName: department);
+                dbContext.Users.Add(user);
+            }
+
+            else
+            {
+                if (user.EmployeeNo is null && user.DisplayName is null)
+                {
+                    user.SetWorkerProfile(name, employeeNo, department);
+                }
+
+                if (user.PasswordChangeRequired || !passwordService.Verify(user, seed.DemoWorkerPassword))
+                {
+                    user.UpdatePasswordHash(
+                        passwordService.Hash(seed.DemoWorkerPassword),
+                        now,
+                        passwordExpiresAtUtc: null,
+                        passwordChangeRequired: false,
+                        historyLimit: 0);
+                }
             }
 
             var membershipId = new MembershipId($"{userId}:{seed.OrganizationId}:{seed.EnvironmentId}");

@@ -15,13 +15,13 @@ internal sealed class WalkthroughRodSeedService(ApplicationDbContext dbContext)
     public async Task SeedAsync(string organizationId, string environmentId, CancellationToken cancellationToken)
     {
         const string revision = "1";
-        var effectiveDate = WorldBibleSpec.V1EffectiveDate;
-        var ebomCode = WorldBibleSpec.EngineeringBomCode(RodSkuCode);
-        var mbomCode = WorldBibleSpec.ManufacturingBomCode(RodSkuCode);
-        var routingCode = WorldBibleSpec.RoutingCode(RodSkuCode);
-        var ebomVersionId = WorldBibleSpec.VersionId(ebomCode, revision);
-        var mbomVersionId = WorldBibleSpec.VersionId(mbomCode, revision);
-        var routingVersionId = WorldBibleSpec.VersionId(routingCode, revision);
+        var effectiveDate = WalkthroughSeedSpec.V1EffectiveDate;
+        var ebomCode = WalkthroughSeedSpec.EngineeringBomCode(RodSkuCode);
+        var mbomCode = WalkthroughSeedSpec.ManufacturingBomCode(RodSkuCode);
+        var routingCode = WalkthroughSeedSpec.RoutingCode(RodSkuCode);
+        var ebomVersionId = WalkthroughSeedSpec.VersionId(ebomCode, revision);
+        var mbomVersionId = WalkthroughSeedSpec.VersionId(mbomCode, revision);
+        var routingVersionId = WalkthroughSeedSpec.VersionId(routingCode, revision);
 
         var item = await dbContext.EngineeringItems.SingleOrDefaultAsync(x =>
             x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
