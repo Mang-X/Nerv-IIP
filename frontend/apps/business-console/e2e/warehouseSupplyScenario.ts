@@ -24,7 +24,7 @@ export async function runWarehouseSupply(
     storageLocation?: (skuCode: string) => string
   },
 ) {
-  const { browser, scenario, evidencePath, issue } = options
+  const { browser, scenario, evidencePath } = options
   expect(process.env.NERV_IIP_FULLSTACK_WMS_WORKER_PASSWORD).toBeTruthy()
   const workerContext = await browser.newContext({
     baseURL: process.env.NERV_IIP_PLAYWRIGHT_BASE_URL,
@@ -63,6 +63,7 @@ export async function runWarehouseSupply(
     if (!response.ok()) throw new Error(`Worker ${method} ${endpoint} HTTP ${response.status()}`)
     return ((await response.json()) as { data: T }).data
   }
+  let firstCompletedTaskNo = ''
   try {
     await runProcurement({
       ...options,
@@ -211,6 +212,8 @@ export async function runWarehouseSupply(
         expect(putaway.status?.toLowerCase()).toBe('completed')
         expect(putaway.executedQuantity).toBe(quantity)
         expect(putaway.completedAtUtc).toMatch(/\S/)
+        expect(putaway.taskNo).toMatch(/\S/)
+        firstCompletedTaskNo ||= putaway.taskNo!
         const completeRequest = {
           ...workScope,
           expectedVersion: (await inboundRead()).version!,
@@ -307,15 +310,12 @@ export async function runWarehouseSupply(
     )
     await worker.goto('/wms/putaway')
     expect((await responsePromise).status()).toBe(200)
-    await worker
-      .getByPlaceholder('任务号/来源单/物料')
-      .fill(`PT-${issue.replace('NERV-', 'N')}-${scenario}-1`)
-    await expect(
-      worker
-        .getByRole('row')
-        .filter({ hasText: `PT-${issue.replace('NERV-', 'N')}-${scenario}-1` })
-        .first(),
-    ).toBeVisible()
+    expect(firstCompletedTaskNo).toMatch(/\S/)
+    await worker.getByPlaceholder('任务号/来源单/物料').fill(firstCompletedTaskNo)
+    const completedRow = worker.getByRole('row').filter({
+      has: worker.getByRole('cell', { name: firstCompletedTaskNo, exact: true }),
+    })
+    await expect(completedRow.getByText('已完成', { exact: true })).toBeVisible()
     await worker.screenshot({
       path: path.join(path.dirname(evidencePath!), `${scenario}-putaway.png`),
       fullPage: true,
