@@ -1371,8 +1371,20 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
           listPath: '/api/business-console/v1/inventory/availability',
           stableText: FINISHED_SKU,
           selectOptions: [
-            { label: '质量状态', option: '全部状态' },
-            { label: '货主类型', option: '本公司' },
+            {
+              label: '质量状态',
+              option: '全部状态',
+              expectedQuery: {
+                organizationId,
+                environmentId,
+                skuCode: FINISHED_SKU,
+                uomCode: 'pcs',
+                siteCode: SITE_CODE,
+                locationCode: FINISHED_GOODS_LOCATION,
+                lotNo: PRODUCED_LOT_NO,
+                ownerType: 'owned',
+              },
+            },
           ],
           emptyText: '没有查到库存明细。换个物料、工厂或库位再查一次。',
           screenshotName: '15-finished-goods-inventory.png',
