@@ -1,5 +1,6 @@
 // 车间总览取数。#570 就绪后只换本文件：改为真实端点
 // （workshop→line/workCenter 聚合、当班产量、齐套、班组花名册），页面与契约均不动。
+import { requireDemoMode } from '@/data/config'
 import type { WorkshopBoard } from '@/data/contracts/workshop'
 import { DEFAULT_FACTORY_ID } from '@/data/mock/masterdata'
 import { buildWorkshopBoard } from '@/data/mock/workshop'
@@ -9,6 +10,7 @@ export async function fetchWorkshopBoard(
   factoryId = DEFAULT_FACTORY_ID,
   workshopIds: string[] | 'all' = 'all',
 ): Promise<WorkshopBoard | null> {
+  requireDemoMode()
   await new Promise((r) => setTimeout(r, 250))
   return buildWorkshopBoard(workshopId, factoryId, workshopIds)
 }

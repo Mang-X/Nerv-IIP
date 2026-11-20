@@ -20,6 +20,7 @@ import {
   type BusinessConsoleMaintenanceWorkOrderItem,
   type BusinessConsoleTelemetryAlarmEventItem,
 } from '@nerv-iip/api-client'
+import { readRows, readScreenPayload } from './response'
 import type {
   DeviceCell,
   DeviceDetail,
@@ -305,7 +306,7 @@ function deviceCellOf(
     workshopId: entry?.workshopCode ?? '',
     workshopName: entry?.workshopName ?? '—',
     state,
-    stateLabel: STATE_LABELS[state],
+    stateLabel: unknown ? '状态未知' : STATE_LABELS[state],
     block,
     sourceFresh: isSourceFresh,
     // 格上实时参数走 historian（#570/#689），真实模式诚实留空。
@@ -314,7 +315,9 @@ function deviceCellOf(
 }
 
 /** 全景取数：设备清单+状态、活动报警(#686)、维修/PM/点检、聚合可靠性。 */
-export async function fetchRealEquipmentOverview(factoryId = 'F01'): Promise<EquipmentOverview> {
+export async function fetchRealEquipmentOverview(
+  factoryId = getScreenSession().organizationId,
+): Promise<EquipmentOverview> {
   if (!hasScreenSession()) {
     throw new Error('大屏会话上下文未就绪（organizationId/environmentId 为空）')
   }
@@ -337,12 +340,12 @@ export async function fetchRealEquipmentOverview(factoryId = 'F01'): Promise<Equ
     listBusinessConsoleMaintenanceInspections({ throwOnError: true, query: listQuery }),
   ])
 
-  const summaries = overviewRes?.data?.data?.devices ?? []
+  const summaries = overviewRes ? readRows(readScreenPayload(overviewRes).devices) : []
   const activeBlocks = overviewRes?.data?.data?.activeBlocks ?? []
-  const alarmItems = alarmsRes?.data?.data?.items ?? []
-  const woItems = woRes?.data?.data?.items ?? []
-  const planItems = planRes?.data?.data?.items ?? []
-  const inspItems = inspRes?.data?.data?.items ?? []
+  const alarmItems = readRows(readScreenPayload(alarmsRes).items)
+  const woItems = readRows(readScreenPayload(woRes).items)
+  const planItems = readRows(readScreenPayload(planRes).items)
+  const inspItems = readRows(readScreenPayload(inspRes).items)
 
   // 每设备取最高严重度的活动阻塞作 block 文案。
   const blockByDevice = new Map<string, string>()
@@ -406,7 +409,27 @@ export async function fetchRealEquipmentOverview(factoryId = 'F01'): Promise<Equ
     repairs: repairs.filter((r) => r.stage !== '已关闭').length,
   }
 
-  return { factoryId, counts, devices, alarms, repairs, reliability, pmTasks, inspections }
+  const pages = [
+    readScreenPayload(alarmsRes),
+    readScreenPayload(woRes),
+    readScreenPayload(planRes),
+    readScreenPayload(inspRes),
+  ]
+  const partialEvents = pages.some(
+    (page) => page.total !== undefined && page.total > (page.items?.length ?? 0),
+  )
+  return {
+    factoryId,
+    rosterTotal: roster.total,
+    partialEvents,
+    counts,
+    devices,
+    alarms,
+    repairs,
+    reliability,
+    pmTasks,
+    inspections,
+  }
 }
 
 /** 参数快刷：真实模式无 historian（#570/#689），不产出演示参数流。 */
@@ -447,9 +470,7 @@ export async function fetchRealDeviceDetail(deviceId: string): Promise<DeviceDet
     }),
   ])
 
-  const detail = devRes?.data
-  if (!detail?.success) return null
-  const currentState = detail.data?.currentState
+  const currentState = readScreenPayload(devRes).currentState
   const device = deviceCellOf(
     roster,
     deviceId,
@@ -459,14 +480,18 @@ export async function fetchRealDeviceDetail(deviceId: string): Promise<DeviceDet
     new Map(),
   )
 
-  const woItems = (woRes?.data?.data?.items ?? []).filter((w) => w.deviceAssetId === deviceId)
-  const planItems = (planRes?.data?.data?.items ?? []).filter((p) => p.deviceAssetId === deviceId)
+  const woItems = readRows(readScreenPayload(woRes).items).filter(
+    (w) => w.deviceAssetId === deviceId,
+  )
+  const planItems = readRows(readScreenPayload(planRes).items).filter(
+    (p) => p.deviceAssetId === deviceId,
+  )
 
   const deviceByWorkOrder = new Map<string, string>()
   for (const w of woItems) if (w.workOrderId) deviceByWorkOrder.set(w.workOrderId, deviceId)
   const deviceByPlan = new Map<string, string>()
   for (const p of planItems) if (p.planId) deviceByPlan.set(p.planId, deviceId)
-  const inspItems = (inspRes?.data?.data?.items ?? []).filter(
+  const inspItems = readRows(readScreenPayload(inspRes).items).filter(
     (i) =>
       (i.workOrderId && deviceByWorkOrder.has(i.workOrderId)) ||
       (i.planId && deviceByPlan.has(i.planId)),
@@ -495,4 +520,8 @@ export async function fetchRealDeviceDetail(deviceId: string): Promise<DeviceDet
       degradedReasons: oee?.degradedReasons ?? ['oee-facts-unavailable'],
     },
   }
+}
+
+export function isRunningDevice(state: string | null | undefined, fresh: boolean, alarms: number) {
+  return mapState(state, fresh, alarms).state === 'run'
 }
