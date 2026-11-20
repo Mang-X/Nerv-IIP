@@ -8,9 +8,20 @@ import PlanningWorkbench from './PlanningWorkbench.vue'
 import { useAuthStore } from '@/stores/auth'
 
 describe('PlanningWorkbench', () => {
-  // 计划建议行的「对该单排产」按权限码显隐，组件因此要读 auth store（MAN-694 / #1262）。
   beforeEach(() => {
     setActivePinia(createPinia())
+    useAuthStore().$patch({
+      principal: {
+        permissionCodes: [
+          'business.planning.demands.manage',
+          'business.planning.mps.manage',
+          'business.planning.mps.release',
+          'business.planning.mrp.run',
+          'business.planning.suggestions.manage',
+          'business.erp.sales.read',
+        ],
+      },
+    })
     planningSpies.runMrp = vi.fn(async () => undefined)
     planningSpies.acceptSuggestion.mockReset()
     planningSpies.cancelDemand.mockReset()

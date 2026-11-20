@@ -292,6 +292,9 @@ test('需求岗按来源打开需求池，读取和刷新均遵循岗位权限',
     .click()
   await expect(page).toHaveURL(/\/planning\?demandSource=SO-100$/)
   await expect(page.getByRole('row').filter({ hasText: 'SKU-DEMAND' })).toContainText(salesOrderNo)
+  for (const name of ['运行 MRP', '新建 MPS', '新建需求']) {
+    await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0)
+  }
   await expect(page.getByRole('tab', { name: /需求池/ })).toHaveAttribute('aria-selected', 'true')
   await Promise.all([
     page.waitForResponse(
@@ -358,7 +361,13 @@ for (const status of [403, 503]) {
 }
 
 test('缺少目标运行时给出返回需求池的入口', async ({ page }) => {
-  await salesSession(page, ['business.planning.mrp.read', 'business.planning.demands.read'])
+  await salesSession(page, [
+    'business.planning.mrp.read',
+    'business.planning.demands.read',
+    'business.planning.mrp.run',
+    'business.planning.demands.manage',
+    'business.planning.mps.manage',
+  ])
   await page.route('**/planning/mrp-runs?**', (route) =>
     route.fulfill({
       json: { success: true, data: { items: [{ runId: 'recent', status: 'Completed' }] } },
@@ -387,6 +396,9 @@ test('缺少目标运行时给出返回需求池的入口', async ({ page }) => 
     page.getByText('当前可读范围内未定位到来源建议或运行。', { exact: false }),
   ).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: 'OTHER-SKU' })).toHaveCount(0)
+  for (const name of ['运行 MRP', '新建 MPS', '新建需求']) {
+    await expect(page.getByRole('button', { name, exact: true })).toBeVisible()
+  }
   await page.getByRole('link', { name: '返回需求池' }).click()
   await expect(page.getByRole('tab', { name: /需求池/ })).toHaveAttribute('aria-selected', 'true')
 })

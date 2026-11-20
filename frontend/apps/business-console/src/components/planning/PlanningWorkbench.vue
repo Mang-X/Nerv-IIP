@@ -86,7 +86,7 @@ import {
 import { computed, shallowRef, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { BUSINESS_PERMISSION_CODES } from '@/permissions'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 
 const route = useRoute()
 const sourceOrder = computed(() =>
@@ -148,9 +148,9 @@ const {
 )
 const router = useRouter()
 const auth = useAuthStore()
-const canReadWorkOrders = computed(() =>
-  (auth.principal?.permissionCodes ?? []).includes(BUSINESS_PERMISSION_CODES.mesWorkOrdersRead),
-)
+const hasPermission = (permission: string) =>
+  auth.principal?.permissionCodes?.includes(permission) === true
+const canReadWorkOrders = computed(() => hasPermission(P.mesWorkOrdersRead))
 const orderUrgencies = useOrderUrgencies(
   computed(() => demands.value.map((demand) => demand.sourceReference)),
 )
@@ -1147,7 +1147,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         刷新
       </NvButton>
 
-      <NvDialog v-model:open="mrpOpen">
+      <NvDialog v-if="hasPermission('business.planning.mrp.run')" v-model:open="mrpOpen">
         <NvDialogTrigger as-child>
           <NvButton size="sm" type="button" variant="outline">
             <PlayIcon aria-hidden="true" />
@@ -1202,7 +1202,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         </NvDialogContent>
       </NvDialog>
 
-      <NvDialog v-model:open="mpsOpen">
+      <NvDialog v-if="hasPermission(P.planningMpsManage)" v-model:open="mpsOpen">
         <NvDialogTrigger as-child>
           <NvButton size="sm" type="button" variant="outline" @click="newMpsBucket">
             <PlusIcon aria-hidden="true" />
@@ -1290,7 +1290,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         </NvDialogContent>
       </NvDialog>
 
-      <NvDialog v-model:open="demandOpen">
+      <NvDialog v-if="hasPermission(P.planningDemandsManage)" v-model:open="demandOpen">
         <NvDialogTrigger as-child>
           <NvButton size="sm" type="button">
             <PlusIcon aria-hidden="true" />
@@ -1536,7 +1536,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       >
         <template #cell-sourceReference="{ row }">
           <NvButton
-            v-if="row.demandType === 'sales-order'"
+            v-if="row.demandType === 'sales-order' && hasPermission(P.erpSalesRead)"
             type="button"
             size="sm"
             variant="ghost"
@@ -1557,7 +1557,11 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         </template>
         <template #cell-actions="{ row }">
           <NvButton
-            v-if="row.demandType !== 'sales-order' && row.sourceStatus === 'active'"
+            v-if="
+              hasPermission(P.planningDemandsManage) &&
+              row.demandType !== 'sales-order' &&
+              row.sourceStatus === 'active'
+            "
             type="button"
             size="sm"
             variant="ghost"
@@ -1656,7 +1660,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         <template #cell-actions="{ row }">
           <div class="flex justify-end gap-2">
             <NvButton
-              v-if="row.status?.toLowerCase() !== 'released'"
+              v-if="hasPermission(P.planningMpsManage) && row.status?.toLowerCase() !== 'released'"
               size="sm"
               type="button"
               variant="outline"
@@ -1665,7 +1669,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
               >编辑</NvButton
             >
             <NvButton
-              v-if="row.status?.toLowerCase() === 'draft'"
+              v-if="hasPermission(P.planningMpsManage) && row.status?.toLowerCase() === 'draft'"
               size="sm"
               type="button"
               variant="outline"
@@ -1677,7 +1681,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
               评审
             </NvButton>
             <NvButton
-              v-if="row.status?.toLowerCase() === 'reviewed'"
+              v-if="hasPermission(P.planningMpsRelease) && row.status?.toLowerCase() === 'reviewed'"
               size="sm"
               type="button"
               variant="outline"
@@ -2100,7 +2104,10 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
             @click="focusPegging(row)"
             >定位追溯</NvButton
           >
-          <div v-if="isOpen(row.status)" class="flex items-center justify-end gap-2">
+          <div
+            v-if="isOpen(row.status) && hasPermission(P.planningSuggestionsManage)"
+            class="flex items-center justify-end gap-2"
+          >
             <NvButton
               v-if="isAcceptableSuggestion(row.suggestionType)"
               size="sm"
@@ -2127,7 +2134,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
             </NvButton>
           </div>
           <!-- 已承接成 MES 工单的行：可直接对这一张单排产（新建只含该单的方案）。 -->
-          <div v-else class="flex items-center justify-end gap-2">
+          <div v-else-if="!isOpen(row.status)" class="flex items-center justify-end gap-2">
             <NvButton
               v-if="suggestionWorkOrderId(row)"
               size="sm"
@@ -2165,6 +2172,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       />
 
       <NvDialog
+        v-if="hasPermission(P.planningSuggestionsManage)"
         :open="!!rejectTarget"
         @update:open="
           (open) => {
@@ -2206,6 +2214,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         </NvDialogContent>
       </NvDialog>
       <NvDialog
+        v-if="hasPermission(P.planningSuggestionsManage)"
         :open="!!cancelTarget"
         @update:open="
           (open) => {
@@ -2235,6 +2244,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
     </NvTabsContent>
   </NvTabs>
   <NvDialog
+    v-if="hasPermission(P.planningDemandsManage)"
     :open="!!demandCancelTarget"
     @update:open="
       (open) => {
