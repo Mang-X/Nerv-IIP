@@ -32,7 +32,7 @@ public sealed class ListConsoleNotificationMessagesEndpoint(
             HttpContext,
             auth,
             GatewayPermissions.NotificationMessagesRead,
-            GatewayNotificationEndpointContext.WithPrincipalQueryString(HttpContext, "/api/notifications/v1/messages"),
+            "/api/notifications/v1/messages",
             "notification-message",
             null,
             ct);
@@ -71,7 +71,7 @@ public sealed class ListConsoleNotificationTasksEndpoint(
             HttpContext,
             auth,
             GatewayPermissions.NotificationTasksRead,
-            GatewayNotificationEndpointContext.WithPrincipalQueryString(HttpContext, "/api/notifications/v1/tasks"),
+            "/api/notifications/v1/tasks",
             "notification-task",
             null,
             ct);
@@ -572,9 +572,6 @@ internal static class GatewayNotificationEndpointContext
 {
     public static string WithQueryString(HttpContext context, string path) =>
         path + context.Request.QueryString.Value;
-
-    public static string WithPrincipalQueryString(HttpContext context, string path)
-        => path;
 
     public static async Task<GatewayNotificationRequestContext?> AuthorizeAsync(
         HttpContext context,

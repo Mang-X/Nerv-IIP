@@ -27,9 +27,8 @@ token 之上。
   `@lucide/vue@1.0.0`。Table 的数据表 helper 另加 `@tanstack/vue-table@^8.21.3`。
 - **重新拉取（纯原版）**：button、card、table、input、select、dropdown-menu、dialog、
   另包括 sheet、tabs、breadcrumb、sidebar、pagination、tooltip、popover、skeleton、empty。
-- **有意不重新拉取：**`badge` 带有项目定制（`success` / `warning` variant，包括
-  `BusinessStatusBadge` 在内的多处代码正在使用）。它**等待在 FE-2 中由复制重建的
-  StatusBadge 取代**；success/warning 已作为 `--success` / `--warning` token 存在。
+- **有意不重新拉取：**`badge` 带有项目定制（`success` / `warning` variant），对应
+  `--success` / `--warning` token。业务状态展示使用 `NvStatusBadge`。
   其他扩展组件（avatar、chart、file-upload、date-picker、field 等）同样属于定制，
   不在原始重新拉取集合中。
 

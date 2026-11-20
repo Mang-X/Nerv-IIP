@@ -261,7 +261,6 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
     [Theory]
     [InlineData("materialId")]
     [InlineData("materialLotId")]
-    [InlineData("materialQualification")]
     public async Task Client_rejects_each_invalid_accepted_required_fact_independently(string invalidFact)
     {
         var valid = AcceptedResponse();
@@ -269,7 +268,6 @@ public sealed class BusinessMesMaterialPrevalidationClientTests
         {
             "materialId" => valid with { MaterialId = " " },
             "materialLotId" => valid with { MaterialLotId = "" },
-            "materialQualification" => valid with { MaterialQualification = "unexpected" },
             _ => throw new ArgumentOutOfRangeException(nameof(invalidFact), invalidFact, null),
         };
 

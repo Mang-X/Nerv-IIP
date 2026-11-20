@@ -3350,9 +3350,6 @@ public sealed record BusinessConsoleEquipmentDeviceDetailResponse(
     Nerv.IIP.Contracts.EquipmentRuntime.EquipmentRuntimeCurrentStateResponse CurrentState,
     Nerv.IIP.Contracts.EquipmentRuntime.EquipmentRuntimeAvailabilityResponse Availability);
 
-public sealed record BusinessConsoleEquipmentAlarmListResponse(
-    IReadOnlyCollection<Nerv.IIP.Contracts.EquipmentRuntime.EquipmentRuntimeAlarmSummary> Items);
-
 public sealed record BusinessConsoleRecordTelemetrySampleRequest(
     string OrganizationId,
     string EnvironmentId,

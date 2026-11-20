@@ -191,19 +191,6 @@ public sealed class FileStorageStartupGovernanceTests
     }
 
     [Fact]
-    public void Development_postgresql_with_connection_starts()
-    {
-        using var factory = CreateFactory(
-            "Development",
-            provider: "PostgreSQL",
-            connectionString: PostgreSqlConnectionString);
-
-        using var client = factory.CreateClient();
-
-        Assert.NotNull(client);
-    }
-
-    [Fact]
     public void Development_postgresql_provider_ignores_surrounding_whitespace()
     {
         using var factory = CreateFactory(

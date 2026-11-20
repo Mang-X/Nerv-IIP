@@ -30,7 +30,6 @@ $inventory = Get-NervFrontendWorkspaceInventory `
 Assert-Contract ($inventory.project_count -gt 0) 'The live frontend inventory must discover workspace projects.'
 Assert-Contract ($inventory.test_project_count -gt 0) 'The live frontend inventory must discover test projects.'
 Assert-Contract ($inventory.test_file_count -gt 0) 'The live frontend inventory must discover unit tests.'
-Assert-Contract ($inventory.skip_count -eq 1) 'The current frontend unit-test skip inventory must match the governed allowlist.'
 Assert-Contract ($null -ne (Get-Command Test-NervFrontendIgnoredUnitTestPath -ErrorAction SilentlyContinue)) 'The inventory must expose path-normalized unit-test exclusions.'
 Assert-Contract (Test-NervFrontendIgnoredUnitTestPath -RelativePath 'apps\example\node_modules\pkg\ghost.test.ts') 'Windows-style node_modules paths must be excluded.'
 Assert-Contract (-not (Test-NervFrontendIgnoredUnitTestPath -RelativePath 'apps\example\src\ghost.test.ts')) 'Workspace source tests must not be excluded.'

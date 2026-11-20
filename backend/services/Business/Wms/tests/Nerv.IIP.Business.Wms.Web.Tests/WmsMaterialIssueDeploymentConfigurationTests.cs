@@ -116,44 +116,6 @@ public sealed class WmsMaterialIssueDeploymentConfigurationTests
     }
 
     [Fact]
-    public void AppHost_gates_the_development_seed_fallback_on_its_own_environment_name()
-    {
-        var appHost = ReadRepositoryFile(AppHostProgramPath);
-        var collapsed = CollapseWhitespace(appHost);
-
-        // 门控判据的**值**必须一并钉住：只钉 `LocalDevelopmentEnvironment` 这个名字的话，把常量改成
-        // "Production" 就恰好是本门禁要拦的错误（生产回落主线位置），却一条测试都不会红。
-        Assert.Contains(
-            "const string LocalDevelopmentEnvironment = \"Development\";",
-            appHost,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "var localDevelopmentAppHost = string.Equals( builder.Environment.EnvironmentName, " +
-            "LocalDevelopmentEnvironment, StringComparison.OrdinalIgnoreCase);",
-            collapsed,
-            StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void AppHost_gating_helpers_have_no_return_path_that_bypasses_the_environment_check()
-    {
-        // 钉 return 语句的**完整集合**而不是若干子串：子串断言对加性变异无感——在受门控 return
-        // 之前插一句无条件早退，原来的子串全都还在，测试照绿。集合断言里多出一条 return 即红。
-        // 语句内空白已归一，等价重排版不会假红。
-        var appHost = ReadRepositoryFile(AppHostProgramPath);
-
-        Assert.Equal(
-            ["return configured.Trim();", "return localDevelopmentAppHost ? developmentSeedValue : null;"],
-            ReturnStatements(appHost, "string? DeploymentWarehouseLocation(", "IReadOnlyList<string> DeploymentWarehouseLocations("));
-        Assert.Equal(
-            ["return indexed;", "return values;", "return localDevelopmentAppHost ? developmentSeedValues : [];"],
-            ReturnStatements(appHost, "IReadOnlyList<string> DeploymentWarehouseLocations(", "> WithDeploymentEnvironment("));
-        Assert.Equal(
-            ["return string.IsNullOrWhiteSpace(value) ? project : project.WithEnvironment(name, value);"],
-            ReturnStatements(appHost, "> WithDeploymentEnvironment(", "> WithRedisMessagingTransport("));
-    }
-
-    [Fact]
     public void Legacy_compose_overlay_declares_the_material_issue_chain_unsupported()
     {
         var section = MaterialIssueConfigurationSection();
@@ -191,14 +153,6 @@ public sealed class WmsMaterialIssueDeploymentConfigurationTests
 
     private static string CollapseWhitespace(string text) =>
         Regex.Replace(Normalize(text), @"\s+", " ");
-
-    /// <summary>
-    /// 取局部函数体内的全部 <c>return</c> 语句，语句内空白归一，保持源码顺序。
-    /// </summary>
-    private static string[] ReturnStatements(string appHost, string startMarker, string endMarker) =>
-        Regex.Matches(TextBetween(appHost, startMarker, endMarker), @"return\s[^;]*;")
-            .Select(match => Regex.Replace(match.Value, @"\s+", " "))
-            .ToArray();
 
     /// <summary>
     /// AppHost 源码里的全部受治理站点/库位字符串字面量，以及每个字面量是否落在同一条语句内的

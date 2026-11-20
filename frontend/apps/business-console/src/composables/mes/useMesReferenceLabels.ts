@@ -128,8 +128,6 @@ export const mesWorkOrderStatusOptions = statusOptions([
   'merged',
 ])
 
-export const mesProductionPlanStatusOptions = mesWorkOrderStatusOptions
-
 export const mesOperationTaskStatusOptions = statusOptions([
   'Queued',
   'InProgress',
