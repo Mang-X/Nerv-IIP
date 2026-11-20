@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { queryText } from '@/components/erp/costRecovery'
 import type { BusinessConsoleWmsOutboundOrderItem } from '@nerv-iip/api-client'
 import { BusinessOperationPendingError } from '@nerv-iip/api-client'
@@ -100,6 +100,7 @@ const {
   refresh: refreshWorkScopes,
 } = bindWmsWorkScopeFilters(filters, 'shipments')
 const route = useRoute()
+const router = useRouter()
 watch(
   () => route.query.keyword,
   () => {
@@ -108,6 +109,17 @@ watch(
   { immediate: true },
 )
 const operationalCandidates = useWmsOperationalCandidates('shipment', filters)
+const hasListFilters = computed(() =>
+  Boolean(filters.keyword || filters.status || filters.locationCode || filters.lotNo),
+)
+function clearListFilters() {
+  filters.keyword = undefined
+  filters.status = undefined
+  filters.locationCode = undefined
+  filters.lotNo = undefined
+  if (route.query.keyword !== undefined)
+    void router.replace({ query: { ...route.query, keyword: undefined } })
+}
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [
     () => filters.keyword,
@@ -552,9 +564,13 @@ function refreshAll() {
       :awaiting-scope-message="workScopeUnreadyMessage || '请先在顶部选择业务范围，再查看出库单。'"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无出库单。发货作业产生出库单后会出现在这里。"
+      empty-message="当前作业范围暂无出库单。"
       @retry="refreshOutboundOrders"
     >
+      <template v-if="hasListFilters" #empty>
+        <p>当前作业范围内没有匹配筛选条件的出库单。</p>
+        <NvButton size="sm" variant="outline" @click="clearListFilters">清空筛选</NvButton>
+      </template>
       <template #cell-status="{ row }"
         ><NvStatusBadge
           :value="row.status"

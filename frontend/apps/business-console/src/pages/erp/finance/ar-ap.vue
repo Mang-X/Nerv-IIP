@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { queryText } from '@/components/erp/costRecovery'
 import type {
   BusinessConsoleErpPayableItem,
@@ -58,6 +58,7 @@ definePage({
 
 const receivables = useErpReceivables()
 const route = useRoute()
+const router = useRouter()
 watch(
   () => route.query.keyword,
   () => {
@@ -164,6 +165,13 @@ const payableState = computed(() =>
     emptyHint: '还没有应付账款。采购收货或手工登记后会在这里形成应付。',
   }),
 )
+
+function clearReceivableFilters() {
+  receivables.filters.keyword = ''
+  receivables.filters.status = undefined
+  if (route.query.keyword !== undefined)
+    void router.replace({ query: { ...route.query, keyword: undefined } })
+}
 
 /** 页头两路读数各自独立：一路挂了只说这一路取不到，不把另一路也抹掉。 */
 const headerCount = computed(() => {
@@ -401,6 +409,12 @@ async function submitPayable() {
       @update:page="receivablesPaged.page.value = $event"
       @update:page-size="(v) => (receivablesPaged.pageSize.value = String(v))"
     >
+      <template v-if="receivableState.kind === 'filtered'" #empty>
+        <p>{{ receivableState.emptyMessage }}</p>
+        <NvButton size="sm" variant="outline" @click="clearReceivableFilters"
+          >清空应收筛选</NvButton
+        >
+      </template>
       <template #cell-customerCode="{ row }">
         <PartnerNameCell :code="row.customerCode" />
       </template>

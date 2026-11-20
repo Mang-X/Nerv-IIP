@@ -315,6 +315,10 @@ test('后发单尚无应收时仍能核对早先发货的应收', async ({ page 
   await page.getByRole('link', { name: '核对账单 · AR-OLD', exact: true }).click()
   await expect(page.getByRole('textbox', { name: '应收关键字' })).toHaveValue('AR-OLD')
   await expect(page.getByRole('row').filter({ hasText: 'AR-OLD' })).toContainText('DO-OLD')
+  await page.goto('/erp/finance/ar-ap?keyword=AR-MISSING&from=timeline')
+  await page.getByRole('button', { name: '清空应收筛选' }).click()
+  await expect(page).toHaveURL(/\/erp\/finance\/ar-ap\?from=timeline$/)
+  await expect(page.getByRole('row').filter({ hasText: 'AR-NEAR-0' })).toBeVisible()
 })
 
 for (const status of [403, 503]) {
@@ -426,7 +430,7 @@ test('已授权出库范围按 ERP 发货单号回读实际出库行', async ({ 
       params.get('organizationId') === 'org-sales' &&
       params.get('environmentId') === 'env-sales'
     const rows =
-      scoped && params.get('keyword') === 'DO-OLD'
+      scoped && (!params.get('keyword') || params.get('keyword') === 'DO-OLD')
         ? [
             {
               outboundOrderNo: 'DO-OLD',
@@ -441,5 +445,10 @@ test('已授权出库范围按 ERP 发货单号回读实际出库行', async ({ 
   await openTimeline(page)
   await page.getByRole('link', { name: '核对出库 · DO-OLD', exact: true }).click()
   await expect(page.getByRole('textbox', { name: '关键字搜索' })).toHaveValue('DO-OLD')
+  await expect(page.getByRole('row').filter({ hasText: 'DO-OLD' })).toBeVisible()
+  await page.goto('/wms/outbound?keyword=DO-MISSING&from=timeline')
+  await expect(page.getByText('当前作业范围内没有匹配筛选条件的出库单。')).toBeVisible()
+  await page.getByRole('button', { name: '清空筛选' }).click()
+  await expect(page).toHaveURL(/\/wms\/outbound\?from=timeline$/)
   await expect(page.getByRole('row').filter({ hasText: 'DO-OLD' })).toBeVisible()
 })

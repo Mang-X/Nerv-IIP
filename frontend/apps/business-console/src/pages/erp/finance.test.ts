@@ -5,6 +5,7 @@ import { computed, reactive, shallowRef } from 'vue'
 vi.mock('vue-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('vue-router')>()),
   useRoute: () => ({ query: {} }),
+  useRouter: () => ({ replace: vi.fn() }),
 }))
 
 import ArApPage from './finance/ar-ap.vue'
