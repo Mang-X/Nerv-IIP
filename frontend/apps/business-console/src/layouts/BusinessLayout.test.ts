@@ -17,6 +17,10 @@ vi.mock('vue-router', async (importOriginal) => {
     ...actual,
     useRoute: () => ({ path: routeState.path, meta: { title: 'routes.availability' } }),
     useRouter: () => ({ push: vi.fn() }),
+    RouterLink: {
+      props: ['to'],
+      template: '<a :href="to"><slot /></a>',
+    },
   }
 })
 
@@ -27,7 +31,7 @@ interface Domain {
 }
 interface SideGroup {
   label?: string
-  items: { title: string }[]
+  items: { title: string; to: { path: string } }[]
 }
 
 const AppShellTStub = defineComponent({
@@ -214,19 +218,48 @@ describe('BusinessLayout (T-shaped)', () => {
     ])
   })
 
-  it('keeps MES foundation diagnostics in a separate side group under 制造执行', () => {
-    routeState.path = '/mes/foundation'
-    const wrapper = mountLayout()
-    const shell = wrapper.getComponent(AppShellTStub)
+  it.each([
+    {
+      primary: 'work-orders',
+      primaryTitle: '工单与派工',
+      primaryPermission: 'business.mes.work-orders.read',
+      view: 'dispatch',
+      viewTitle: '派工看板',
+      viewPermission: 'business.mes.dispatch.read',
+    },
+    {
+      primary: 'materials',
+      primaryTitle: '领料与齐套',
+      primaryPermission: 'business.mes.materials.read',
+      view: 'foundation',
+      viewTitle: '生产准备检查',
+      viewPermission: 'business.mes.foundation.read',
+    },
+  ])(
+    'consolidates $view under $primary when both views are permitted',
+    ({ primary, primaryTitle, primaryPermission, view, viewTitle, viewPermission }) => {
+      routeState.path = `/mes/${primary}`
+      const pinia = createPinia()
+      useAuthStore(pinia).$patch({
+        principal: {
+          principalType: 'user',
+          organizationId: 'org-001',
+          environmentId: 'env-dev',
+          permissionCodes: [primaryPermission, viewPermission],
+        },
+      })
 
-    expect(shell.props('currentDomainId')).toBe('mes')
-    const sideNav = shell.props('sideNav') as SideGroup[]
-    const diagnostics = sideNav.find((g) => g.label === '追溯与诊断')
-    expect(diagnostics?.items.map((i) => i.title)).toEqual(['追溯查询', '生产准备检查'])
-    // Foundation must not sit in the primary plan/work-order group.
-    const planning = sideNav.find((g) => g.label === '计划与工单')
-    expect(planning?.items.some((i) => i.title === '生产准备检查')).toBe(false)
-  })
+      const wrapper = mountLayout(pinia)
+      const shell = wrapper.getComponent(AppShellTStub)
+      const sideNav = shell.props('sideNav') as SideGroup[]
+      expect(
+        sideNav.flatMap((group) => group.items.map(({ title, to }) => [title, to.path])),
+      ).toEqual([[primaryTitle, `/mes/${primary}`]])
+      const nav = wrapper.get('nav[aria-label="页面视图"]')
+      expect(nav.get(`a[href="/mes/${view}"]`).text()).toBe(viewTitle)
+      wrapper.unmount()
+    },
+  )
 
   it('uses a fallback for the authenticated user display name', () => {
     const pinia = createPinia()

@@ -1,4 +1,4 @@
-import type { NavDomain, SideNav } from '@nerv-iip/app-shell'
+import type { NavDomain, NavLink, SideNav } from '@nerv-iip/app-shell'
 import {
   ActivityIcon,
   ArrowRightLeftIcon,
@@ -163,6 +163,39 @@ export const BUSINESS_DOMAINS: NavDomain[] = [
     to: { path: '/ops/dead-letters' },
     requiredPermissions: [...BUSINESS_DOMAIN_PERMISSIONS.ops],
   },
+]
+
+const mesWorkOrders = {
+  title: '工单与派工',
+  icon: ClipboardListIcon,
+  to: { path: '/mes/work-orders' },
+  requiredPermissions: [P.mesWorkOrdersRead],
+} satisfies NavLink
+
+const mesDispatch = {
+  title: '派工看板',
+  icon: UserCheckIcon,
+  to: { path: '/mes/dispatch' },
+  requiredPermissions: [P.mesDispatchRead],
+} satisfies NavLink
+
+const mesMaterials = {
+  title: '领料与齐套',
+  icon: PackageIcon,
+  to: { path: '/mes/materials' },
+  requiredPermissions: [P.mesMaterialsRead],
+} satisfies NavLink
+
+const mesFoundation = {
+  title: '生产准备检查',
+  icon: CheckCheckIcon,
+  to: { path: '/mes/foundation' },
+  requiredPermissions: [P.mesFoundationRead],
+} satisfies NavLink
+
+const mesViewGroups = [
+  { entry: mesWorkOrders, entryViewLabel: '工单列表', alternate: mesDispatch },
+  { entry: mesMaterials, entryViewLabel: '领料', alternate: mesFoundation },
 ]
 
 /** Domain-local side navigation (the left of the T), per domain id. */
@@ -509,29 +542,14 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           to: { path: '/mes/plans' },
           requiredPermissions: [P.mesPlansRead],
         },
-        {
-          title: '工单与派工',
-          icon: ClipboardListIcon,
-          to: { path: '/mes/work-orders' },
-          requiredPermissions: [P.mesWorkOrdersRead],
-        },
-        {
-          title: '派工看板',
-          icon: UserCheckIcon,
-          to: { path: '/mes/dispatch' },
-          requiredPermissions: [P.mesDispatchRead],
-        },
+        mesWorkOrders,
+        mesDispatch,
       ],
     },
     {
       label: '执行与齐套',
       items: [
-        {
-          title: '领料与齐套',
-          icon: PackageIcon,
-          to: { path: '/mes/materials' },
-          requiredPermissions: [P.mesMaterialsRead],
-        },
+        mesMaterials,
         {
           title: '工序执行',
           icon: PlayIcon,
@@ -613,12 +631,7 @@ export const DOMAIN_SIDE_NAV: Record<string, SideNav> = {
           to: { path: '/mes/traceability' },
           requiredPermissions: [P.mesTraceabilityRead],
         },
-        {
-          title: '生产准备检查',
-          icon: CheckCheckIcon,
-          to: { path: '/mes/foundation' },
-          requiredPermissions: [P.mesFoundationRead],
-        },
+        mesFoundation,
       ],
     },
   ],
@@ -949,5 +962,36 @@ export function permittedBy<T extends { requiredPermissions?: string[] }>(
   const codes = permissionCodes
   return entries.filter(
     (e) => !e.requiredPermissions?.length || e.requiredPermissions.some((p) => codes.includes(p)),
+  )
+}
+
+export function sideNavForDomain(domainId: string, permissionCodes: string[] | undefined): SideNav {
+  // 仅有看板或检查读权限时，保留该视图的侧栏入口和原有排序。
+  const foldedViews =
+    domainId === 'mes'
+      ? mesViewGroups
+          .filter(({ entry }) => permittedBy([entry], permissionCodes).length > 0)
+          .map<NavLink>(({ alternate }) => alternate)
+      : []
+
+  return (DOMAIN_SIDE_NAV[domainId] ?? [])
+    .map((group) => ({
+      ...group,
+      items: permittedBy(group.items, permissionCodes).filter(
+        (item) => !foldedViews.includes(item),
+      ),
+    }))
+    .filter((group) => group.items.length > 0)
+}
+
+export function mesViewsForPath(path: string, permissionCodes: string[] | undefined) {
+  const group = mesViewGroups.find(
+    ({ entry, alternate }) => entry.to.path === path || alternate.to.path === path,
+  )
+  if (!group) return []
+
+  return permittedBy(
+    [{ ...group.entry, title: group.entryViewLabel }, group.alternate],
+    permissionCodes,
   )
 }
