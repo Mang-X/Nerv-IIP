@@ -33,7 +33,7 @@ pnpm -C frontend --filter @nerv-iip/screen dev   # 端口 5128
   fetcher 接口，不直接碰 api-client。
 - 切真实数据**只改 `data/fetchers/*` 与 `data/real/*`**；mock 形状必须对齐
   `@nerv-iip/api-client` 的 `types.gen.ts`，禁止 `as` / 内联标注绕过契约。
-- real 模式由登录 principal 注入 org/env（`main.ts`）；mock 模式不触碰鉴权与
+- real 模式由登录 principal 注入 org/env（`src/App.vue`）；mock 模式不触碰鉴权与
   api-client 配置。
 - **诚实标注，不做假绿**：无真实端点的字段显式占位标注（badge/tooltip），
   数据新鲜度用 `IsSourceFresh` 驱动"失联灰条"（`data/contracts/equipment.ts`），
