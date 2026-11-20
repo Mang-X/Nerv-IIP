@@ -55,6 +55,7 @@ export interface DeviceRoster {
   byId: Map<string, DeviceRosterEntry>
   /** 台账实际总数（用于提示是否被 ≤50 截断）。 */
   total: number
+  coverageNotes: string[]
 }
 
 const ROSTER_TTL_MS = 5 * 60_000
@@ -109,29 +110,13 @@ export async function resolveDeviceRoster(
       workCenterCode,
       includeDisabled: false,
       skip: 0,
-      take: 200,
+      take: ROSTER_MAX,
     },
   })
   const page = readScreenPayload(res)
   const items = readRows(page.resources)
-  const byId = new Map<string, DeviceRosterEntry>()
-  for (const item of items) {
-    const entry = rosterEntryOf(item)
-    if (entry && (!workCenterCode || entry.workCenterCode === workCenterCode))
-      byId.set(entry.deviceAssetId, entry)
-  }
-  const allIds = [...byId.keys()]
-  if (allIds.length > ROSTER_MAX) {
-    // 不静默截断：明确告知看板只覆盖前 50 台（等 #570 批量端点）。
-    console.warn(
-      `[screen] 设备台账 ${allIds.length} 台超过 overview 单批上限 ${ROSTER_MAX}，仅覆盖前 ${ROSTER_MAX} 台（待 #570 批量端点）。`,
-    )
-  }
-  const roster: DeviceRoster = {
-    ids: allIds.slice(0, ROSTER_MAX),
-    byId,
-    total: page.total ?? items.length,
-  }
+  if (page.total === undefined && (page.truncated || items.length >= ROSTER_MAX)) throw new Error('设备台账总数不可用')
+  const roster = deviceRosterFromPage(items, page.total, workCenterCode)
   if (session === requestedSession) rosterCache = { workCenterCode, at: nowMs, roster }
   return roster
 }
@@ -139,4 +124,24 @@ export async function resolveDeviceRoster(
 /** 登录会话或权限变更后重新解析台账。 */
 export function resetDeviceRosterCache(): void {
   rosterCache = null
+}
+
+export function deviceRosterFromPage(items: BusinessConsoleResourceItem[], reportedTotal: number | undefined, workCenterCode?: string): DeviceRoster {
+  if (reportedTotal !== undefined && (!Number.isSafeInteger(reportedTotal) || reportedTotal < items.length))
+    throw new Error('设备台账总数不完整')
+  const byId = new Map<string, DeviceRosterEntry>()
+  const seen = new Set<string>()
+  for (const item of items.slice(0, ROSTER_MAX)) {
+    const entry = rosterEntryOf(item)
+    if (!entry || (workCenterCode && entry.workCenterCode !== workCenterCode)) continue
+    if (seen.has(entry.deviceAssetId)) byId.delete(entry.deviceAssetId)
+    else byId.set(entry.deviceAssetId, entry)
+    seen.add(entry.deviceAssetId)
+  }
+  const notes: string[] = []
+  const total = reportedTotal ?? items.length
+  if (total > ROSTER_MAX) notes.push('仅读取前 50 条台账')
+  if (items.some(item => !item.deviceAssetId?.trim())) notes.push('部分设备缺少遥测映射')
+  if (workCenterCode && items.some(item => item.workCenterCode !== workCenterCode)) notes.push('已排除范围不符的台账')
+  return { ids: [...byId.keys()], byId, total, coverageNotes: notes }
 }

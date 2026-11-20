@@ -89,9 +89,14 @@ it('台账跨页时不能把首批设备当作组织总数', async () => {
   configureApiClient({
     baseUrl: 'http://fixture',
     fetch: async (input) => {
-      const scope = deviceScopeResponse(new URL(new Request(input).url))
+      const url = new URL(new Request(input).url)
+      const scope = deviceScopeResponse(url)
       if (scope) return scope
       requests++
+      if (url.pathname.endsWith('/overview')) {
+        expect(url.searchParams.get('deviceAssetIds')).toBe('a')
+        return Response.json({success:true,data:{devices:[{deviceAssetId:'a',currentState:'running',isSourceFresh:true,activeAlarmCount:0}]}})
+      }
       return Response.json({
         success: true,
         data: { resources: [{ deviceAssetId: 'a' }], total: 51 },
@@ -101,9 +106,9 @@ it('台账跨页时不能把首批设备当作组织总数', async () => {
   const page = mount(HallMetric, { props: { label: '运行设备', metric: 'running', session } })
   try {
     await flushPromises()
-    expect(page.text()).toContain('完整台账不可用')
-    expect(page.text()).not.toContain('实时')
-    expect(requests).toBe(1)
+    expect(page.get('strong').text()).toBe('1/1')
+    expect(page.text()).toContain('在册 51 台 · 已覆盖 1 台 · 未知 50 台')
+    expect(requests).toBe(2)
   } finally {
     page.unmount()
   }

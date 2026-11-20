@@ -12,15 +12,15 @@ import {
   listBusinessConsoleWmsOutboundOrders,
   listBusinessConsoleWmsWcsTasks,
 } from '@nerv-iip/api-client'
-import { inspectionScope, warehouseScope } from './workScope'
+import { inspectionScope, warehouseScope, scopeQuery, type ScopeOption } from './workScope'
 import { readRows } from './response'
-import { accessError } from './readError'
-import type { ScreenSession } from '../session'
-import { deviceIdBatches } from './deviceBatches'
+import { accessError, NoWorkScope } from './readError'
+import { deviceRosterFromPage, type ScreenSession } from '../session'
+import { coveredDevices, deviceIdBatches } from './deviceBatches'
 import { deviceWorkCenter } from './deviceScope'
 import { isRunningDevice, screenDeviceLabel } from './equipment'
 
-export class HallMetricUnavailable extends Error {}
+export class HallMetricUnavailable extends NoWorkScope {}
 
 type Result<T> = { response?: Response; data?: { success?: boolean; data?: T | null } }
 function read<T>(result: Result<T>): T {
@@ -57,6 +57,7 @@ export async function fetchHallMetric(
   metric: HallMetric,
   session: ScreenSession,
   detail = false,
+  inspection?: ScopeOption,
 ): Promise<string | DeviceReading> {
   if (!session.organizationId || !session.environmentId)
     throw new HallMetricUnavailable('缺少组织环境')
@@ -71,7 +72,7 @@ export async function fetchHallMetric(
     try {
       if (['putaway', 'count', 'inbound', 'outbound', 'picking'].includes(metric))
         return await warehouseScope(session, domain)
-      if (metric === 'inspection') return await inspectionScope(session)
+      if (metric === 'inspection') return inspection ? {query:scopeQuery(session, inspection), label:inspection.label} : await inspectionScope(session)
     } catch (error) {
       const message = accessError(error)
       if (message) throw new HallMetricUnavailable(message)
@@ -199,40 +200,14 @@ export async function fetchHallMetric(
     }),
   )
   const total = totalOf(roster)
-  if (!roster.resources || total > 50 || total !== roster.resources.length || roster.truncated)
-    throw new HallMetricUnavailable('完整台账不可用')
-  if (workCenterCode && roster.resources.some((row) => row.workCenterCode !== workCenterCode))
-    throw new HallMetricUnavailable('设备台账范围不符')
-  if (!total)
-    return workCenterCode ? { value: '暂无设备', exceptions: [workCenterCode] } : '暂无设备'
-  const ids = new Set(roster.resources.map((r) => r.deviceAssetId?.trim()))
-  if (ids.has(undefined) || ids.has('') || ids.size !== total)
-    throw new HallMetricUnavailable('设备映射不全')
-  const devices = (
-    await Promise.all(
-      deviceIdBatches([...ids].filter((id): id is string => !!id)).map(async (deviceAssetIds) => {
-        const overview = read(
-          await getBusinessConsoleEquipmentOverview({
-            signal: AbortSignal.timeout(12000),
-            query: { ...session, deviceAssetIds },
-          }),
-        )
-        if (!overview.devices) throw new Error('设备响应不完整')
-        return overview.devices
-      }),
-    )
-  ).flat()
-  if (
-    !devices ||
-    devices.length !== total ||
-    devices.some(
-      (d) =>
-        !ids.delete(d.deviceAssetId) ||
-        typeof d.isSourceFresh !== 'boolean' ||
-        d.activeAlarmCount === undefined,
-    )
-  )
-    throw new HallMetricUnavailable('设备状态不全')
+  const catalog = deviceRosterFromPage(readRows(roster.resources), total, workCenterCode)
+  if (!total) return {value:'暂无设备', exceptions:workCenterCode ? [workCenterCode] : []}
+  const devices = (await Promise.all(deviceIdBatches(catalog.ids).map(async deviceAssetIds => {
+    const page = read(await getBusinessConsoleEquipmentOverview({
+      signal: AbortSignal.timeout(12000), query: { ...session, deviceAssetIds },
+    }))
+    return coveredDevices(deviceAssetIds, readRows(page.devices))
+  }))).flat()
   const running = devices.filter((device) =>
     isRunningDevice(
       device.currentState,
@@ -240,12 +215,6 @@ export async function fetchHallMetric(
       device.activeAlarmCount ?? 0,
     ),
   ).length
-  const names = new Map(
-    roster.resources.map((asset) => [
-      asset.deviceAssetId?.trim(),
-      asset.displayName || asset.code || asset.deviceAssetId,
-    ]),
-  )
   const exceptions = devices.flatMap((device) => {
     const state = screenDeviceLabel(
       device.currentState,
@@ -253,13 +222,15 @@ export async function fetchHallMetric(
       device.activeAlarmCount ?? 0,
     )
     return ['报警', '停机', '状态未知', '断线', '换型'].includes(state)
-      ? [`${names.get(device.deviceAssetId)} · ${state}`]
+      ? [`${catalog.byId.get(device.deviceAssetId!)?.name} · ${state}`]
       : []
   })
   return {
-    value: `${running}/${total}`,
+    value: devices.length ? `${running}/${devices.length}` : '暂无设备状态',
     exceptions: [
       ...(workCenterCode ? ['工作中心 · ' + workCenterCode] : []),
+      `在册 ${total} 台 · 已覆盖 ${devices.length} 台 · 未知 ${total - devices.length} 台`,
+      ...catalog.coverageNotes,
       ...exceptions.slice(0, 3),
     ],
   }

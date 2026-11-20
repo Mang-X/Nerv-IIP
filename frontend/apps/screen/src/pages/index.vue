@@ -34,7 +34,7 @@ const session = computed(() => ({
 type Metric = { key: MetricKey; label: string }
 const metrics: Metric[] = [
   { key: 'alarms', label: '未恢复报警（条）' },
-  { key: 'running', label: '运行设备 / 在册设备' },
+  { key: 'running', label: '运行设备 / 已覆盖设备' },
 ]
 const cardMetrics: Record<string, Metric[]> = {
   warehouse: [

@@ -31,6 +31,7 @@ import { paramColor } from './paramColors'
  * 保养维修档案。Teleport body，ESC / 遮罩关闭；淡入无回弹。
  */
 const props = defineProps<{
+  workCenterCode?: string
   deviceId: string
   factoryId: string
   workshopIds: string[] | 'all'
@@ -46,7 +47,7 @@ const {
   loading,
   refresh,
 } = useAuthorizedScreenData<DeviceDetail | null>(
-  () => fetchDeviceDetail(props.deviceId, props.factoryId, props.workshopIds),
+  () => fetchDeviceDetail(props.deviceId, props.factoryId, props.workshopIds, props.workCenterCode),
   { intervalMs: 3000 },
 )
 
