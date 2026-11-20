@@ -9,7 +9,7 @@ vi.mock('@/data/config', () => ({ IS_REAL_DATA: true }))
 vi.mock('@/data/fetchers/andon', () => ({ fetchAndonQueue: vi.fn(), fetchAndonScopes: vi.fn() }))
 const auth = reactive({
   sessionId: 'session-1',
-  principal: { organizationId: 'org-1', environmentId: 'env-1' },
+  principal: { organizationId: 'org-1', environmentId: 'env-1', permissionCodes: ['a', 'b'] },
 })
 vi.mock('@/stores/realAuth', () => ({ useRealAuthStore: () => auth }))
 const scope = { kind: 'work-center', id: 'wc-1', displayName: '装配一线' }
@@ -123,7 +123,7 @@ it('没有授权范围时显示未配置而不读取队列', async () => {
   expect(fetchAndonQueue).not.toHaveBeenCalled()
 })
 
-it('切换会话后旧队列响应不能重新出现', async () => {
+it('同一授权续期保留所选工作中心，交班后旧队列响应不能重新出现', async () => {
   let resolveOld!: (value: { items: (typeof call)[]; total: number }) => void
   vi.mocked(fetchAndonQueue).mockReturnValue(
     new Promise((resolve) => {
@@ -131,6 +131,9 @@ it('切换会话后旧队列响应不能重新出现', async () => {
     }),
   )
   await open()
+  auth.principal = { ...auth.principal, permissionCodes: ['b', 'a'] }
+  await flushPromises()
+  expect(wrapper.get('[role="combobox"]').text()).toContain('装配一线')
   auth.sessionId = 'session-2'
   await flushPromises()
   resolveOld({ items: [call], total: 1 })
