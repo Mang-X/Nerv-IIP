@@ -103,3 +103,115 @@ test('发货深链接使用现有销售读权限', async ({ page }) => {
   await expect(page).toHaveURL(/\/forbidden\?/)
   await expect(page.getByRole('textbox', { name: '发货关键字' })).toHaveCount(0)
 })
+
+const suggestions = [
+  { suggestionId: 'new-suggestion', runId: 'new-run', quantity: 12, status: 'Open' },
+  { suggestionId: 'accepted-suggestion', runId: 'old-run', quantity: 48, status: 'Accepted' },
+].map((row) => ({
+  ...row,
+  skuCode: 'SKU-MOTOR',
+  uomCode: 'EA',
+  suggestionType: 'planned-work-order',
+}))
+
+test('同一物料跨运行时，从屏上建议进入对应历史运行和建议行', async ({ page }) => {
+  await salesSession(page, ['business.erp.sales.read', 'business.planning.mrp.read'])
+  const reads: URL[] = []
+  let releaseSuggestion!: () => void
+  const acceptedResponse = new Promise<void>((resolve) => {
+    releaseSuggestion = resolve
+  })
+  await page.route('**/v1/planning/**', async (route) => {
+    const url = new URL(route.request().url())
+    reads.push(url)
+    let items: unknown[]
+    if (url.pathname.endsWith('/mrp-runs')) {
+      items = suggestions.map((row) => ({ runId: row.runId, status: 'Completed' }))
+    } else if (url.pathname.endsWith('/pegging')) {
+      const source = suggestions.find((row) => url.pathname.endsWith('/' + row.runId + '/pegging'))!
+      const peg = {
+        suggestionId: source.suggestionId,
+        peggingType: 'demand',
+        demandSourceReference: salesOrderNo,
+        parentSkuCode: source.skuCode,
+        quantity: source.quantity,
+      }
+      items = [{ ...peg, suggestionId: 'unrelated', demandSourceReference: 'SO-1000' }, peg]
+    } else if (url.pathname.endsWith('/suggestions')) {
+      if (url.searchParams.get('status') === 'Accepted') await acceptedResponse
+      items = suggestions.filter(
+        (row) => !url.searchParams.has('status') || row.status === url.searchParams.get('status'),
+      )
+    } else {
+      return route.fallback()
+    }
+    await route.fulfill({ json: { success: true, data: { items, total: items.length } } })
+  })
+  await openTimeline(page)
+  const node = page
+    .locator('.nv-ft-node')
+    .filter({ has: page.getByText('MRP 建议', { exact: true }) })
+  try {
+    await expect(node).toContainText('SKU-MOTOR × 12')
+    await expect(node.getByRole('link')).toHaveAttribute(
+      'href',
+      '/planning?suggestionId=new-suggestion',
+    )
+  } finally {
+    releaseSuggestion()
+  }
+  await expect(node).toContainText('SKU-MOTOR × 48 EA')
+  await node.getByRole('link').click()
+  await expect(page).toHaveURL(/\/planning\?suggestionId=accepted-suggestion$/)
+  await expect(page.getByRole('combobox', { name: '建议运行' })).toContainText('第 1 次')
+  const row = page.getByRole('row').filter({ hasText: 'SKU-MOTOR' })
+  await expect(row).toHaveCount(1)
+  await expect(row).toContainText('48')
+  await expect(row.getByRole('button', { name: '定位追溯' })).toBeVisible()
+  expect(
+    reads.some(
+      (url) =>
+        url.pathname.endsWith('/suggestions') &&
+        !url.searchParams.has('status') &&
+        url.searchParams.get('organizationId') === 'org-sales' &&
+        url.searchParams.get('environmentId') === 'env-sales',
+    ),
+  ).toBe(true)
+  await page.goBack()
+  await expect(page.getByRole('button', { name: '履约追踪' })).toBeVisible()
+})
+
+test('建议节点显示读权限反馈，规划深链接沿用路由权限', async ({ page }) => {
+  await salesSession(page)
+  await page.route('**/v1/planning/mrp-runs?**', (route) =>
+    route.fulfill({ status: 403, json: { success: false } }),
+  )
+  await openTimeline(page)
+  const node = page
+    .locator('.nv-ft-node')
+    .filter({ has: page.getByText('MRP 建议', { exact: true }) })
+  await expect(node).toContainText('权限受限')
+  await expect(node.getByRole('link')).toHaveCount(0)
+  await page.goto('/planning?suggestionId=accepted-suggestion')
+  await expect(page).toHaveURL(/\/forbidden\?/)
+})
+
+test('只有生产需求时，需求节点进入普通工作台，建议节点保留空态', async ({ page }) => {
+  await salesSession(page, ['business.erp.sales.read', 'business.planning.demands.read'])
+  await page.route('**/v1/planning/demands?**', (route) =>
+    route.fulfill({
+      json: { success: true, data: { items: [{ sourceReference: salesOrderNo }], total: 1 } },
+    }),
+  )
+  await openTimeline(page)
+  const node = page.locator('.nv-ft-node')
+  const suggestion = node.filter({ has: page.getByText('MRP 建议', { exact: true }) })
+  await expect(suggestion).toContainText('尚未产生')
+  await expect(suggestion.getByRole('link')).toHaveCount(0)
+  await node
+    .filter({ has: page.getByText('生产需求', { exact: true }) })
+    .getByRole('link')
+    .click()
+  await expect(page).toHaveURL(/\/planning$/)
+  await expect(page.getByRole('tab', { name: /需求池/ })).toHaveAttribute('aria-selected', 'true')
+})

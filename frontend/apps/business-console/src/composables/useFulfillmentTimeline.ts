@@ -764,9 +764,14 @@ export function useFulfillmentTimeline(
     const demand = matchDemandSource(demandQuery.data.value?.items, so)
     const delivery = matchedDeliveries.value[0]
     const receivable = receivableQuery.data.value ?? undefined
-    const pegging = matchedPeggings.value[0]
+    const suggestion = matchedSuggestion.value
+    const pegging = suggestion
+      ? matchedPeggings.value.find(
+          (row) => row.suggestionId?.trim() === suggestion.suggestionId?.trim(),
+        )
+      : matchedPeggings.value[0]
     const mrpSuggestionRecord: MrpSuggestionRecord | undefined = pegging
-      ? { pegging, ...(matchedSuggestion.value ? { suggestion: matchedSuggestion.value } : {}) }
+      ? { pegging, suggestion }
       : undefined
     const mesWorkOrderRecord: MesWorkOrderRecord | undefined = matchedWorkOrder.value
       ? {
@@ -820,7 +825,10 @@ export function useFulfillmentTimeline(
           businessNo: describeMrpSuggestion(record),
           detailStatus: record.suggestion?.status ?? undefined,
           updatedAt: record.suggestion?.requiredDate ?? undefined,
-          drill: { path: '/planning' },
+          drill: {
+            path: '/planning',
+            query: { suggestionId: record.pegging.suggestionId?.trim() || undefined },
+          },
         }),
         // 空态不能绝对化：只扫了最近若干次运行，更早的运行没看过，说「尚未产生」是越界结论。
         pendingNote:
