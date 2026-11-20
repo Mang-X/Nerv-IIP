@@ -30,6 +30,7 @@ import {
   getBusinessConsoleMesWipSummaryQueryOptions,
   getBusinessConsoleMesWipSummary,
   getBusinessConsoleBarcodePrintBatch,
+  getBusinessConsoleMesWorkOrderDetail,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTransformationQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
@@ -47,6 +48,7 @@ import {
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesReportableOperationTasks,
+  listBusinessConsoleMesReceivableProducedLots,
   listBusinessConsoleMesReceivableProducedLotsQueryOptions,
   listBusinessConsoleMesHistoricalProducedLotsQueryOptions,
   listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions,
@@ -147,6 +149,7 @@ import type { AvailableMaterialLotFields } from '@nerv-iip/business-core'
 export { describeMesReadinessReason, describeMesReadinessReasons } from '@nerv-iip/business-core'
 export type { MesReadinessReasonDisplay } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, shallowRef, watch, toValue, type MaybeRefOrGetter } from 'vue'
 import {
@@ -924,6 +927,42 @@ export function useMesProductionReporting() {
     }
   }
 
+  function prepareReceiptHandoff() {
+    const query = { ...context }
+    const principalId = auth.principal?.principalId
+    const isCurrent = () =>
+      auth.principal?.principalId === principalId &&
+      context.organizationId === query.organizationId &&
+      context.environmentId === query.environmentId &&
+      [P.mesReceiptsRead, P.mesReceiptsManage, P.mesWorkOrdersRead].every((permission) =>
+        auth.principal?.permissionCodes?.includes(permission),
+      )
+    const scope = reportScope.selectedScope.value
+    if (!isCurrent() || !scope) return
+
+    return async (workOrderId: string, operationTaskId: string, reportNo: string) => {
+      if (!isCurrent()) return
+      const path = { workOrderId }
+      const lots = await listBusinessConsoleMesReceivableProducedLots({ path, query })
+      if (!isCurrent() || !lots.data?.success) return
+      const hasReceivableLot = lots.data.data?.items?.some(
+        (lot) =>
+          lot.reportNo === reportNo &&
+          lot.operationTaskId === operationTaskId &&
+          (lot.remainingQuantity ?? 0) > 0,
+      )
+      if (!hasReceivableLot) return
+
+      const order = await getBusinessConsoleMesWorkOrderDetail({
+        path,
+        query: { ...query, scopeKind: scope.kind, scopeId: scope.id },
+      })
+      const skuId = order.data?.success ? order.data.data?.skuId?.trim() : undefined
+      if (!skuId || !isCurrent()) return
+      return { workOrderId, skuId, isCurrent }
+    }
+  }
+
   async function recordProductionReportAction(
     body: MesProductionReportInput,
     options: { onCommandAttempt?: () => void } = {},
@@ -1039,6 +1078,7 @@ export function useMesProductionReporting() {
     recordProductionReportError,
     recordProductionReportPending,
     readProductionQuantitySnapshot,
+    prepareReceiptHandoff,
     reportScopeMessage: reportScope.scopeMessage,
     reportScopePending: reportScope.scopePending,
     reportScopeReady: reportScope.scopeReady,
@@ -2086,7 +2126,7 @@ export function useMesWorkOrderDetail(workOrderId?: MaybeRefOrGetter<string>) {
   }
 }
 
-export function useMesOperationTasks() {
+export function useMesOperationTasks(operationTaskId: () => string | undefined = () => undefined) {
   const auth = useAuthStore()
   const filters = defaultFilters()
   const operationListScope = useMesPrincipalWorkScope(filters, MES_OPERATIONS_READ_PERMISSION)
@@ -2107,6 +2147,7 @@ export function useMesOperationTasks() {
       filters.environmentId.trim(),
       selectedScope?.kind ?? '',
       selectedScope?.id ?? '',
+      ...(operationTaskId() ? [operationTaskId()] : []),
     ].join(':')
   })
   const operationTasksQuery = useQuery(() => {
@@ -2114,7 +2155,15 @@ export function useMesOperationTasks() {
     const identity = operationTasksIdentity.value
     const { key, query: executeQuery } = listBusinessConsoleMesOperationTasksQueryOptions({
       query: {
-        ...toListQuery(filters),
+        ...(operationTaskId()
+          ? {
+              organizationId: filters.organizationId,
+              environmentId: filters.environmentId,
+              operationTaskId: operationTaskId(),
+              skip: 0,
+              take: 1,
+            }
+          : toListQuery(filters)),
         ...(selectedScope ? { scopeKind: selectedScope.kind, scopeId: selectedScope.id } : {}),
       },
     })

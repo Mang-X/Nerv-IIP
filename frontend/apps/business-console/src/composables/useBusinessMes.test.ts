@@ -16,6 +16,8 @@ import {
   getBusinessConsoleMesMaterialLotTraceabilityQueryOptions,
   getBusinessConsoleMesOverviewQueryOptions,
   getBusinessConsoleMesProductionReportQueryOptions,
+  getBusinessConsoleMesWipSummary,
+  getBusinessConsoleMesWorkOrderDetail,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
@@ -33,6 +35,7 @@ import {
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesReportableOperationTasks,
+  listBusinessConsoleMesReceivableProducedLots,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   listBusinessConsoleMesHistoricalProducedLotsQueryOptions,
@@ -273,6 +276,9 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'getBusinessConsoleMesWipSummary' }],
     query: vi.fn(),
   })),
+  getBusinessConsoleMesWipSummary: vi.fn(),
+  getBusinessConsoleMesWorkOrderDetail: vi.fn(),
+  listBusinessConsoleMesReceivableProducedLots: vi.fn(),
   getBusinessConsoleMesWorkOrderDetailQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesWorkOrderDetail' }],
     query: workOrderDetailQuery,
@@ -1090,6 +1096,65 @@ describe('business MES composables', () => {
     // 急单 4 键 + 报工 5 键（报工弹窗现在也从工序执行页打开，工序任务列表须一起失效）。
     expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(9)
   })
+
+  it('reads the cumulative quantity for the exact work order and operation', async () => {
+    vi.mocked(getBusinessConsoleMesWipSummary).mockImplementationOnce(
+      async ({ query }) =>
+        ({
+          data: {
+            success: true,
+            data: {
+              items:
+                query?.workOrderId === 'WO-100' && query.operationTaskId === 'OP-TARGET'
+                  ? [{ operationTaskId: 'OP-TARGET', plannedQuantity: 20, goodQuantity: 12 }]
+                  : [{ operationTaskId: 'OP-000', plannedQuantity: 90, goodQuantity: 50 }],
+            },
+          },
+        }) as never,
+    )
+
+    const { readProductionQuantitySnapshot } = useMesProductionReporting()
+    await expect(readProductionQuantitySnapshot(' WO-100 ', ' OP-TARGET ')).resolves.toEqual({
+      plannedQuantity: 20,
+      reportedGoodQuantity: 12,
+    })
+  })
+
+  it.each([
+    { reportNo: 'PR-OTHER', remainingQuantity: 3, canManage: true, opens: false },
+    { reportNo: 'PR-100', remainingQuantity: 0, canManage: true, opens: false },
+    { reportNo: 'PR-100', remainingQuantity: 3, canManage: false, opens: false },
+    { reportNo: 'PR-100', remainingQuantity: 3, canManage: true, opens: true },
+  ])(
+    'offers receipt handoff only for confirmed receivable output with permission ($reportNo/$remainingQuantity/$canManage)',
+    async ({ reportNo, remainingQuantity, canManage, opens }) => {
+      reactiveAuthState.principal!.permissionCodes = [
+        'business.mes.work-orders.read',
+        'business.mes.receipts.read',
+        ...(canManage ? ['business.mes.receipts.manage'] : []),
+      ]
+      vi.mocked(listBusinessConsoleMesReceivableProducedLots).mockResolvedValue({
+        data: {
+          success: true,
+          data: { items: [{ reportNo, operationTaskId: 'OP-20', remainingQuantity }] },
+        },
+      } as never)
+      vi.mocked(getBusinessConsoleMesWorkOrderDetail).mockResolvedValue({
+        data: { success: true, data: { workOrderId: 'WO-100', skuId: 'SKU-001' } },
+      } as never)
+
+      const { prepareReceiptHandoff } = useMesProductionReporting()
+      const readReceiptHandoff = prepareReceiptHandoff()
+      const handoff = await readReceiptHandoff?.('WO-100', 'OP-20', 'PR-100')
+      if (opens) {
+        expect(handoff).toMatchObject({ workOrderId: 'WO-100', skuId: 'SKU-001' })
+        useBusinessContextStore().patchContext({ environmentId: 'env-other' })
+        expect(handoff?.isCurrent()).toBe(false)
+      } else {
+        expect(handoff).toBeUndefined()
+      }
+    },
+  )
 
   it('does not send a production report when the write scope is not selected', async () => {
     coladaState.queryDataById.set(

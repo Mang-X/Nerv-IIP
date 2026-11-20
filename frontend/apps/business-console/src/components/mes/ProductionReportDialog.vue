@@ -17,6 +17,7 @@ import {
 } from '@nerv-iip/ui'
 import { ClipboardCheckIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import ProductionReportResult from './ProductionReportResult.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 
@@ -46,6 +47,7 @@ const emit = defineEmits<{
   reported: []
 }>()
 
+const router = useRouter()
 const openModel = computed({
   get: () => props.open,
   set: (value: boolean) => emit('update:open', value),
@@ -98,6 +100,7 @@ const {
 } = useProductionReportForm(() => props.context, {
   onReported: () => emit('reported'),
   onStateChanged: () => emit('update:open', false),
+  onReceiptReady: (query) => void router.push({ path: '/mes/receipts', query }),
 })
 const editingLocked = computed(
   () => intentLocked.value || recordProductionReportPending.value || quantitySnapshotPending.value,

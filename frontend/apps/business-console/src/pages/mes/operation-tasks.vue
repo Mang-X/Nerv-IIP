@@ -79,7 +79,7 @@ import {
   WrenchIcon,
 } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import { operationTaskLabel } from '@/utils/mesTaskIdentity'
 
@@ -93,6 +93,12 @@ definePage({
 
 type Row = BusinessConsoleMesOperationTaskRow
 type CurrentSop = { fileId?: string | null; fileName?: string | null }
+
+const route = useRoute()
+const focusedOperationTaskId = computed(() => {
+  const id = route.query.operationTaskId
+  return typeof id === 'string' ? id.trim() || undefined : undefined
+})
 
 const {
   completeOperationTask,
@@ -112,7 +118,7 @@ const {
   refreshOperationTasks,
   resumeOperationTask,
   startOperationTask,
-} = useMesOperationTasks()
+} = useMesOperationTasks(() => focusedOperationTaskId.value)
 // 派工在本页行内直接完成：一线看着工序表就能把没人的活派出去，不必先跳派工看板。
 const { assignDispatchTask, assignDispatchTaskPending } = useMesDispatchTasks()
 
@@ -186,6 +192,7 @@ function closeSops() {
 // SOP 属于打开它的任务范围；切换范围后由操作员重新选择任务。
 watch(
   () => [
+    focusedOperationTaskId.value,
     auth.principal?.principalId,
     filters.organizationId,
     filters.environmentId,
@@ -246,7 +253,7 @@ const sortedTasks = computed(() => {
 
 // --- Pagination ---
 const { page, pageSize } = usePagedList(filters, {
-  resetOn: [keyword, statusFilter, workCenterFilter, shiftFilter],
+  resetOn: [keyword, statusFilter, workCenterFilter, shiftFilter, focusedOperationTaskId],
 })
 const pagedTasks = computed(() => sortedTasks.value)
 
@@ -605,14 +612,29 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
       {{ operationListScopeMessage }}
     </p>
 
-    <NvToolbar v-model:search="keyword" search-placeholder="搜索任务、工单、设备">
+    <div v-if="focusedOperationTaskId" class="flex items-center gap-2 text-sm">
+      <span>本次派工的工序</span>
+      <NvButton
+        type="button"
+        size="sm"
+        variant="ghost"
+        @click="router.push({ path: '/mes/operation-tasks' })"
+      >
+        查看全部工序
+      </NvButton>
+    </div>
+    <NvToolbar
+      v-model:search="keyword"
+      search-placeholder="搜索任务、工单、设备"
+      :show-search="!focusedOperationTaskId"
+    >
       <template #filters>
         <MesWorkScopeSelect
           permission-code="business.mes.operations.read"
           :read-failed="!!operationListScopeError"
           :read-pending="operationListScopePending"
         />
-        <NvSelect v-model="statusFilter">
+        <NvSelect v-if="!focusedOperationTaskId" v-model="statusFilter">
           <NvSelectTrigger class="h-9 w-32" aria-label="工序状态"
             ><NvSelectValue
           /></NvSelectTrigger>
@@ -625,7 +647,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
             >
           </NvSelectContent>
         </NvSelect>
-        <NvSelect v-model="workCenterFilter">
+        <NvSelect v-if="!focusedOperationTaskId" v-model="workCenterFilter">
           <NvSelectTrigger class="h-9 w-40" aria-label="工作中心"
             ><NvSelectValue placeholder="全部工作中心"
           /></NvSelectTrigger>
@@ -639,7 +661,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
             >
           </NvSelectContent>
         </NvSelect>
-        <NvSelect v-model="shiftFilter">
+        <NvSelect v-if="!focusedOperationTaskId" v-model="shiftFilter">
           <NvSelectTrigger class="h-9 w-32" aria-label="班次"
             ><NvSelectValue placeholder="全部班次"
           /></NvSelectTrigger>
@@ -654,6 +676,7 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
           </NvSelectContent>
         </NvSelect>
         <NvButton
+          v-if="!focusedOperationTaskId"
           type="button"
           size="sm"
           :variant="invalidatedFilterActive ? 'default' : 'outline'"
@@ -665,7 +688,14 @@ function toResourceOptions(items: BusinessConsoleResourceItem[]) {
         </NvButton>
       </template>
       <template #actions>
-        <NvButton type="button" variant="ghost" size="sm" @click="resetFilters">重置</NvButton>
+        <NvButton
+          v-if="!focusedOperationTaskId"
+          type="button"
+          variant="ghost"
+          size="sm"
+          @click="resetFilters"
+          >重置</NvButton
+        >
       </template>
     </NvToolbar>
 
