@@ -60,9 +60,6 @@ Assert-True ($recordableNetworkIds.Count -eq 1) 'Only the ephemeral DCP network 
 Assert-True ([string]::Equals([string]$recordableNetworkIds[0], 'dcp-session-network', [StringComparison]::Ordinal)) 'The exact DCP session network ID must be recorded.'
 $startFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-start.json'
 $describeFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-describe.json'
-$parallelAcceptanceScript = Join-Path $repoRoot 'scripts/verify-parallel-fullstack-isolation.ps1'
-Assert-True (Test-Path -LiteralPath $parallelAcceptanceScript -PathType Leaf) 'Parallel full-stack acceptance entrypoint is missing.'
-$parallelAcceptanceText = Get-Content -LiteralPath $parallelAcceptanceScript -Raw
 $fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Raw
 $runtimeSourceText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1') -Raw
 $nervEntrypointText = Get-Content -LiteralPath (Join-Path $repoRoot 'nerv.ps1') -Raw
@@ -117,38 +114,6 @@ Assert-True ($fullStackSessionText.Contains("'business-master-data'", [StringCom
 $volumeRegistrationIndex = $fullStackSessionText.IndexOf('.runtime.volumeNames = @(', [StringComparison]::Ordinal)
 $aspireStartIndex = $fullStackSessionText.IndexOf('Invoke-NervAspireStartWithRetry', [StringComparison]::Ordinal)
 Assert-True ($volumeRegistrationIndex -ge 0 -and $volumeRegistrationIndex -lt $aspireStartIndex) 'Deterministic session volume names must be persisted before Aspire can create resources.'
-foreach ($requiredText in @(
-    '# Script-Governance:',
-    '[ValidateRange(2, 3)]',
-    'Get-NervFullStackStateRoot',
-    'fullstack-worktrees',
-    'scripts/setup-worktree.ps1',
-    'Invoke-PwshScript',
-    'Stop-AcceptanceStartProcess',
-    'Remove-AcceptanceWorktree',
-    'Test-NervProcessIdentity',
-    'Primary failure:',
-    'Injected failure was not observed before the primary failure:',
-    'PGPASSWORD="$POSTGRES_PASSWORD"',
-    "-TimeoutSeconds 300 ``",
-    'finally',
-    'git',
-    'worktree',
-    'remove'
-)) {
-    Assert-True ($parallelAcceptanceText.Contains($requiredText)) "Parallel acceptance script is missing '$requiredText'."
-}
-$parseErrors = $null
-[void] [System.Management.Automation.Language.Parser]::ParseFile($parallelAcceptanceScript, [ref] $null, [ref] $parseErrors)
-Assert-True (@($parseErrors).Count -eq 0) 'Parallel acceptance script must parse successfully.'
-$detachedStartIndex = $parallelAcceptanceText.IndexOf('Start-DetachedManagedProcess', [StringComparison]::Ordinal)
-$manifestWaitIndex = $parallelAcceptanceText.IndexOf('Wait-AcceptanceSessions', [StringComparison]::Ordinal)
-$identityCleanupIndex = $parallelAcceptanceText.IndexOf('function Stop-AcceptanceStartProcess', [StringComparison]::Ordinal)
-Assert-True (
-    $detachedStartIndex -ge 0 -and
-    $manifestWaitIndex -ge 0 -and
-    $identityCleanupIndex -ge 0
-) 'Detached wrapper lifecycle structure must include start, manifest wait, and identity cleanup.'
 
 $detachedProbeRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-detached-lifecycle-$([guid]::NewGuid().ToString('N'))"
 $detachedProbe = $null

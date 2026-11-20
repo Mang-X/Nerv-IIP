@@ -19,7 +19,6 @@ $appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.
 $dependenciesText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/compose/nerv-iip.dependencies.yml') -Raw
 $platformText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/compose/nerv-iip.platform.yml') -Raw
 $environmentExampleText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/compose/nerv-iip.production.env.example') -Raw
-$releaseRehearsalText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/verify-production-release-rehearsal.ps1') -Raw
 $environmentArtifactVerifierText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/verify-aspire-apphost-environment-artifacts.ps1') -Raw
 
 function Assert-ContainsOrdinal {
@@ -127,13 +126,8 @@ foreach ($contract in @(
     @($environmentExampleText, 'NERV_IIP_IAM_ENTERPRISE_IDENTITY_MFA_CODE=change-me-non-development-mfa-code', 'production env example must declare the MFA override'),
     @($environmentExampleText, 'NERV_IIP_BARCODE_LABEL_PRINTER_MODE=zpl-tcp', 'production env example must select zpl-tcp explicitly'),
     @($environmentExampleText, 'NERV_IIP_BARCODE_LABEL_PRINTER_HOST=', 'production env example must expose the site printer host without committing a real address'),
-    @($releaseRehearsalText, 'redis-cli -a "$NERV_IIP_REDIS_PASSWORD" --no-auth-warning ping', 'release rehearsal must read the Redis password inside the container')
 )) {
     Assert-ContainsOrdinal -Text $contract[0] -Expected $contract[1] -Message $contract[2]
-}
-
-if ($releaseRehearsalText.Contains('$Environment.NERV_IIP_REDIS_PASSWORD,', [StringComparison]::Ordinal)) {
-    throw 'Release rehearsal must not place the Redis password in logged Docker CLI arguments.'
 }
 
 if ($startText.Contains('throw "-IamSeedAdminPassword is required outside Development."', [StringComparison]::Ordinal)) {

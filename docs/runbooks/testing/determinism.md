@@ -4,8 +4,8 @@
 
 ## 校验入口
 
-- 先运行当前 backend determinism checker；需要验证 baseline/schema/扫描器自身时再运行 verifier 与对应契约测试。
-- 具体参数、扫描范围和退出码以 `scripts/check-backend-test-determinism.ps1`、`scripts/verify-backend-test-determinism.ps1` 和脚本帮助为准。
+- 先运行 `pwsh scripts/check-backend-test-determinism.ps1`。需要验证 baseline、schema 或扫描器时，再运行 `pwsh scripts/tests/check-backend-test-determinism.Tests.ps1`。
+- 使用 `Get-Help ./scripts/check-backend-test-determinism.ps1 -Full` 核对参数。扫描范围和退出码以该脚本为准。
 - 不通过手改 baseline 把新发现变绿；先判断是应消除的真实债务、需要独立 owner 的 expiring debt，还是机制/自测的 permanent 位点。
 
 ## 常见定位顺序
