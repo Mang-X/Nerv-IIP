@@ -1,5 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
+using MediatR;
+using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Business.BarcodeLabel.Web.Application.Queries.BarcodeRules;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -110,6 +113,35 @@ public sealed class BarcodeLabelListHttpTests
         Assert.Equal(JsonValueKind.Array, document.RootElement.GetProperty("errorData").ValueKind);
         Assert.NotEmpty(document.RootElement.GetProperty("errorData").EnumerateArray());
         Assert.False(document.RootElement.TryGetProperty("data", out _), body);
+    }
+
+    [Fact]
+    public async Task Rule_list_mediator_rejects_invalid_paging_while_direct_handler_normalizes_it()
+    {
+        await using var factory = CreateFactory();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        db.BarcodeRules.AddRange(
+            BarcodeRule.Create("org", "dev", "A", "code128", "A", 40, "none", ["work-order"], "active"),
+            BarcodeRule.Create("org", "dev", "B", "code128", "B", 40, "none", ["work-order"], "active"),
+            BarcodeRule.Create("org", "other", "C", "code128", "C", 40, "none", ["work-order"], "active"));
+        await db.SaveChangesAsync();
+
+        var query = new ListBarcodeRulesQuery(" org ", " dev ", null, null);
+        var defaults = await sender.Send(query);
+        Assert.Equal(["A", "B"], defaults.Items.Select(x => x.RuleCode));
+
+        var invalid = query with { Skip = -1, Take = 0 };
+        await Assert.ThrowsAnyAsync<KnownException>(() => sender.Send(invalid));
+        var handler = new ListBarcodeRulesQueryHandler(db);
+        var page = await handler.Handle(invalid, CancellationToken.None);
+        Assert.Equal(2, page.Total);
+        Assert.Equal("A", Assert.Single(page.Items).RuleCode);
+
+        var missingTenant = query with { EnvironmentId = " " };
+        await Assert.ThrowsAnyAsync<KnownException>(() => sender.Send(missingTenant));
+        await Assert.ThrowsAnyAsync<KnownException>(() => handler.Handle(missingTenant, CancellationToken.None));
     }
 
     [Theory]
