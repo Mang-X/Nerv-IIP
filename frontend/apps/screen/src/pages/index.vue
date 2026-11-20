@@ -23,7 +23,7 @@ import LauncherCard from '@/components/launcher/LauncherCard.vue'
 import type { LauncherSummary } from '@/data/contracts/launcher'
 import { fetchLauncherSummary } from '@/data/fetchers/launcher'
 import { formatScreenFreshness } from '@/data/freshness'
-import { SCREENS } from '@/data/screens'
+import { canReadRealScreen, SCREENS } from '@/data/screens'
 
 const scope = useAccessScope()
 const auth = IS_REAL_DATA ? useRealAuthStore() : undefined
@@ -59,29 +59,11 @@ const cardMetrics: Record<string, Metric[]> = {
     { key: 'inspection', label: '检验待认领 / 进行中（项）' },
   ],
 }
-// Permission codes determine which real read surfaces have an entry. Gateway checks the selected scope on every read.
-const entryPermissions: Partial<Record<string, string[]>> = {
-  equipment: [
-    'business.iiot.telemetry.read',
-    'business.iiot.alarms.read',
-    'business.maintenance.work-orders.read',
-  ],
-  warehouse: [
-    'business.wms.receipts.read',
-    'business.wms.shipments.read',
-    'business.wms.counts.read',
-    'business.wms.automation.manage',
-  ],
-  quality: ['business.quality.inspection-records.read', 'business.quality.ncr.read'],
-}
-function hasPermission(code: string) {
-  const codes = auth?.principal?.permissionCodes
-  return !codes || codes.includes(code)
-}
 const cards = computed(() =>
   SCREENS.filter(
     (s) =>
-      scope.canSeeScreen(s.key) && (!IS_REAL_DATA || entryPermissions[s.key]?.some(hasPermission)),
+      scope.canSeeScreen(s.key) &&
+      (!IS_REAL_DATA || canReadRealScreen(s.key, auth?.principal?.permissionCodes)),
   ),
 )
 // lucide 图标按名取用；显式转 Component 以过 vue-tsc 的 <component :is> 类型校验。
@@ -179,7 +161,7 @@ const scopeCounts = computed(() => {
           <h1 class="hall-title">生产指挥中心</h1>
           <p class="hall-sub">NERV-IIP 工业数据大屏</p>
           <RouterLink
-            v-if="!IS_REAL_DATA || hasPermission('business.mes.operations.read')"
+            v-if="!IS_REAL_DATA || canReadRealScreen('andon', auth?.principal?.permissionCodes)"
             to="/andon"
             class="hall-sub"
             >安灯呼叫看板 · 真实作业范围</RouterLink

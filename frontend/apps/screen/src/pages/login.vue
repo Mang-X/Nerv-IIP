@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { sanitizeRedirectPath } from '@nerv-iip/auth'
+import { screenLoginTarget } from '@/router'
 import { ConsoleAuthError } from '@/api/auth'
 import { useNow } from '@vueuse/core'
 import { Lock, User } from '@lucide/vue'
@@ -57,13 +57,6 @@ const particles = [
   { x: 74, y: 8, s: 5, tone: 'amber', dur: 14, d: 7.2, dy: -12 },
 ]
 
-function redirectTarget(): string {
-  return sanitizeRedirectPath(route.query.redirect, {
-    defaultRedirectPath: '/',
-    loginPath: '/login',
-  })
-}
-
 async function onSubmit() {
   if (loading.value) return
   loading.value = true
@@ -71,8 +64,9 @@ async function onSubmit() {
   try {
     if (IS_REAL_DATA) {
       // 真实登录：@nerv-iip/auth 会话，token 由 api-client 拦截器自动注入。
-      await useRealAuthStore().login(account.value, password.value)
-      await router.push(redirectTarget())
+      const auth = useRealAuthStore()
+      await auth.login(account.value, password.value)
+      await router.push(screenLoginTarget(route.query.redirect, auth.principal?.permissionCodes))
     } else {
       // mock：本地登录后进入大屏（演示模式，任意账号密码）。
       await new Promise((resolve) => setTimeout(resolve, 480))

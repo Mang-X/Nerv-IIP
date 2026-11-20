@@ -3,7 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { handleHotUpdate, routes } from 'vue-router/auto-routes'
 import { useAccessScope } from '@/access/useAccessScope'
 import { IS_REAL_DATA } from '@/data/config'
-import { screenForPath } from '@/data/screens'
+import { canReadRealScreen, screenForPath } from '@/data/screens'
 import { useRealAuthStore } from '@/stores/realAuth'
 
 const LOGIN_PATH = '/login'
@@ -12,6 +12,13 @@ export const router = createRouter({
   history: createWebHistory(),
   routes,
 })
+
+export function screenLoginTarget(redirect: unknown, codes: string[] | undefined) {
+  const target = sanitizeRedirectPath(redirect, { defaultRedirectPath: '/', loginPath: LOGIN_PATH })
+  const path = router.resolve(target).matched.at(-1)?.path
+  const key = path === '/andon' ? 'andon' : screenForPath(path ?? '')
+  return key && canReadRealScreen(key, codes) === false ? '/' : target
+}
 
 router.beforeEach(async (to) => {
   // 真实数据模式：先恢复会话，再做鉴权门禁（未登录 → 登录页；已登录访问登录页 → 回跳）。
@@ -25,10 +32,7 @@ router.beforeEach(async (to) => {
       return { path: LOGIN_PATH, query: { redirect: to.fullPath } }
     }
     if (to.path === LOGIN_PATH && auth.isAuthenticated) {
-      return sanitizeRedirectPath(to.query.redirect, {
-        defaultRedirectPath: '/',
-        loginPath: LOGIN_PATH,
-      })
+      return screenLoginTarget(to.query.redirect, auth.principal?.permissionCodes)
     }
   }
 
