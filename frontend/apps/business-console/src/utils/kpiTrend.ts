@@ -151,7 +151,7 @@ export function deltaFrom(
   }
 
   // 阈值取显示精度的一半：显示成 "+0.0%" 的变化读作持平，别配上箭头。
-  const threshold = kind === 'rate' ? 0.05 : 0.05
+  const threshold = 0.05
   const direction = magnitude > threshold ? 'up' : magnitude < -threshold ? 'down' : 'flat'
   if (direction === 'flat') return { value: '持平', direction: 'flat' }
 
