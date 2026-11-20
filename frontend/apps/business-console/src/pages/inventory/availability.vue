@@ -105,19 +105,6 @@ const {
   overviewTotalCount,
   overviewUrgentLines,
 } = useInventorySiteExpiryOverview(() => filters.siteCode)
-// 首屏不该要求先填条件：按物料目录并发扫台账，直接摆出本厂库存表，选物料才是「下钻」。
-const {
-  refreshSiteStock,
-  scanMoreSiteStock,
-  siteStockError,
-  siteStockFailedCount,
-  siteStockHasMore,
-  siteStockRows,
-  siteStockScannedCount,
-  siteStockScanning,
-  siteStockTotalSkuCount,
-} = useInventorySiteStockOverview(() => filters.siteCode)
-
 // 上下文穿透：从 MES 齐套/领料/完工入库带入 SKU/批次/库位/工厂查询库存事实。
 const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
 const contextWorkOrderLabel = computed(() => readFaceText(contextWorkOrderId.value, ''))
@@ -135,6 +122,21 @@ watch(
   },
   { immediate: true },
 )
+const hasSkuSelection = computed(() => filters.skuCode.trim().length > 0)
+const showSiteOverview = computed(() => !nearExpiryOnly.value && !hasSkuSelection.value)
+// 首屏不该要求先填条件：按物料目录并发扫台账，直接摆出本厂库存表，选物料才是「下钻」。
+const {
+  refreshSiteStock,
+  scanMoreSiteStock,
+  siteStockError,
+  siteStockFailedCount,
+  siteStockHasMore,
+  siteStockRows,
+  siteStockScannedCount,
+  siteStockScanning,
+  siteStockTotalSkuCount,
+} = useInventorySiteStockOverview(() => (showSiteOverview.value ? filters.siteCode : ''))
+
 watch(availabilityError, (error) => {
   if (error && !nearExpiryOnly.value) {
     notifyError(error, '库存可用量加载失败，请稍后重试。')
@@ -178,8 +180,6 @@ const tablePending = computed(() =>
   nearExpiryOnly.value ? expiryAlertsPending.value : availabilityPending.value,
 )
 // 选了物料就进入该物料的台账明细，否则停在全厂库存总览——物料选择器本身就是下钻动作。
-const hasSkuSelection = computed(() => filters.skuCode.trim().length > 0)
-const showSiteOverview = computed(() => !nearExpiryOnly.value && !hasSkuSelection.value)
 const urgentOverviewLines = computed(() => overviewUrgentLines.value.slice(0, 3))
 const overviewFacets = computed(() => [
   {
