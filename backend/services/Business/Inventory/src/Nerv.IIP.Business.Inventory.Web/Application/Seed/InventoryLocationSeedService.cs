@@ -8,7 +8,7 @@ namespace Nerv.IIP.Business.Inventory.Web.Application.Seed;
 /// Inventory 产品基线 seed（#3770）：为全新环境补齐主线库位 <c>loc-raw-01 / loc-semi-01 / loc-fg-01 / loc-line-01</c>。
 /// 库位码与 AppHost 在普通 Development 下发给 MES/WMS 的库位一致，也是 MasterData
 /// <c>inventory-location</c> 码表的候选码；线边库位必须是 <c>line-side</c>，否则线边库存读面查不到它。
-/// 本 seed 不依赖 LeaderDemo/WorldHistory；按 org/env + locationCode 幂等只补缺，
+/// 按 org/env + locationCode 幂等只补缺，
 /// 已存在的库位（包括被租户改写类型或停用的）一律保留。
 /// </summary>
 public sealed class InventoryLocationSeedService(ApplicationDbContext dbContext)

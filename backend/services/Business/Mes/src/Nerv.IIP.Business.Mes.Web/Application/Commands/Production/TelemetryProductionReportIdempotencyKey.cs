@@ -19,10 +19,7 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 /// 校验器在命令管道上更早，所以实际失败形态是 <c>KnownException</c> 而不是 22001。</para>
 ///
 /// <para><b>可达性是实测的，不是算式推断</b>（这一点决定了有界派生在这里不是过度防御）：
-/// 本仓自己的命名约定就越界 —— <c>org-001</c> / <c>env-dev</c> / <c>DEV-CNC-01</c>（WorldBibleSpec 设备编码段）
-/// / <c>parts_count</c> / <c>seed-world-history</c>（<c>WorldHistoryDeviceSpec.SourceSystem</c>）
-/// / <c>CONN-OPCUA-01</c>（同类 <c>OpcUaConnectorId</c>）
-/// / <c>WorldHistorySeedService</c> 的 summary 序列形状 ⇒ 派生键 <b>182</b> 字符，被校验器拒。
+/// 已持久化的长遥测序列包含组织、环境、设备、来源和采样窗，曾派生出 182 字符的键并被拒收。
 /// 仓库测试夹具**最短**那一组也已经 114，占掉 76% 预算。
 /// 对照本仓判例（<c>CodeEntityTypeConfigurations</c> 里 <c>payload_fingerprint</c> 那段注释）：
 /// 「重启条件是**真的撞到**，不是『理论上可能』」—— 本处撞到了。</para>
@@ -97,9 +94,7 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Commands.Production;
 /// <list type="number">
 /// <item>不证明 <c>telemetry:</c> 这个前缀没有别的产出方。
 /// 实跑 <c>git grep -n "telemetry:" -- '*.cs' '*.ts' '*.vue'</c> 后，写进报工幂等键的位点只剩
-/// <see cref="Prefix"/> 这一处字面量（另外三类命中与本链路无关：Mes / Maintenance 两份
-/// <c>WorldHistoryDeviceSpec</c> 里 <c>WorldHistoryRandom</c> 的随机种子串、以及一个 C# 命名实参
-/// <c>telemetry:</c>）；同一组扫描对 <c>StartsWith("telemetry</c> 一族**零命中**，
+/// <see cref="Prefix"/> 这一处字面量；同一组扫描对 <c>StartsWith("telemetry</c> 一族**零命中**，
 /// 即今天没有任何下游解析这个前缀。
 /// <b>扫描面是字面量</b>，有人把前缀抽成别处常量再拼就扫不到，别把它读成穷举。</item>
 /// <item>不证明 HTTP 调用方造不出撞车的键。手工报工的 <c>IdempotencyKey</c> 由调用方给，

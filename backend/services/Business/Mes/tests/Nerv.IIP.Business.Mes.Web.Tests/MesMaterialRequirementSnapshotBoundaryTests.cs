@@ -140,9 +140,6 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
             ["Readiness/MaterialRequirementSnapshotReader.cs|Nerv.IIP.Business.Mes.Web.Application.Readiness.MaterialRequirementSnapshotReader|LoadLatestCapturesAsync|DbSetProperty"] = 2,
             ["Commands/Workbench/MesWorkbenchCommands.cs|Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench.MaterialReadinessGuards|EnsureRequirementSnapshotsAsync|DbSetProperty"] = 1,
             ["IntegrationEventHandlers/EngineeringChangeReleasedIntegrationEventHandlerForMesWip.cs|Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers.EngineeringChangeReleasedIntegrationEventHandlerForMesWip|HandleValidEventCoreAsync|DbSetProperty"] = 2,
-            ["Seed/WorldHistorySeedService.cs|Nerv.IIP.Business.Mes.Web.Application.Seed.WorldHistorySeedService|WriteMaterialFacts|DbSetProperty"] = 1,
-            ["Seed/WorldHistoryConsistencyValidator.cs|Nerv.IIP.Business.Mes.Web.Application.Seed.WorldHistoryConsistencyValidator|LoadKittingCountsAsync|DbSetProperty"] = 1,
-            ["Seed/WorldHistoryConsistencyValidator.cs|Nerv.IIP.Business.Mes.Web.Application.Seed.WorldHistoryConsistencyValidator|LoadKittingGapsAsync|DbSetProperty"] = 1,
         };
 
         Assert.Equal(
@@ -835,13 +832,7 @@ public sealed class MesMaterialRequirementSnapshotBoundaryTests
                 && access.Method == "EnsureRequirementSnapshotsAsync")
             || (normalized.EndsWith("/IntegrationEventHandlers/EngineeringChangeReleasedIntegrationEventHandlerForMesWip.cs", StringComparison.Ordinal)
                 && access.ContainingType == "Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers.EngineeringChangeReleasedIntegrationEventHandlerForMesWip"
-                && access.Method == "HandleValidEventCoreAsync")
-            || (normalized.EndsWith("/Seed/WorldHistorySeedService.cs", StringComparison.Ordinal)
-                && access.ContainingType == "Nerv.IIP.Business.Mes.Web.Application.Seed.WorldHistorySeedService"
-                && access.Method == "WriteMaterialFacts")
-            || (normalized.EndsWith("/Seed/WorldHistoryConsistencyValidator.cs", StringComparison.Ordinal)
-                && access.ContainingType == "Nerv.IIP.Business.Mes.Web.Application.Seed.WorldHistoryConsistencyValidator"
-                && access.Method is "LoadKittingCountsAsync" or "LoadKittingGapsAsync");
+                && access.Method == "HandleValidEventCoreAsync");
     }
 
     private static string FindRepositoryRoot()

@@ -906,7 +906,7 @@ describe('APS scheduling workbench page', () => {
     expect(wrapper.text()).toContain('2 项未排')
   })
 
-  it('exposes the complete leader-demo workbench loop from one route', async () => {
+  it('exposes the complete scheduling workbench loop from one route', async () => {
     const wrapper = mount(SchedulingPage, {
       global: { plugins: [createPinia()], stubs: layoutStub },
     })

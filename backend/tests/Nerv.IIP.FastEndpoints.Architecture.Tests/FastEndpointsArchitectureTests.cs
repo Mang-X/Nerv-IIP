@@ -345,7 +345,6 @@ public sealed class FastEndpointsArchitectureTests
             "var developmentOnlyEnabledValue = localDevelopmentAppHost ? \"true\" : \"false\";",
             collapsed,
             StringComparison.Ordinal);
-        Assert.Contains("var leaderDemoEnabled = localDevelopmentAppHost &&", collapsed, StringComparison.Ordinal);
         Assert.Contains("var walkthroughSeedEnabled = localDevelopmentAppHost &&", collapsed, StringComparison.Ordinal);
         Assert.Contains(
             ".WithEnvironment(\"Iam__Seed__Enabled\", developmentOnlyEnabledValue)",

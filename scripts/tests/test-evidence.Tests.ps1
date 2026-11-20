@@ -1528,7 +1528,8 @@ $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # #2140 新增独立 RealRedisCacheFact source（5 条真实 Redis ProviderBehavior 用例，一属性一规则），62 + 1 = 63。
 # #4172 新增真实双 PlatformGateway HTTP/Redis source，3 条用例归属 redis-cap；63 + 1 = 64。
 # #4357 WMS 与 #4355 Maintenance 各新增独立 PostgreSQL source；64 + 1 + 1 = 66。
-Assert-Equal 66 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
+# 移除退役种子拥有的 7 个 skip 来源，余 59 个。
+Assert-Equal 59 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
 $livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)
@@ -1539,7 +1540,7 @@ $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $rep
 Assert-Equal 0 @($liveViolations).Count ("The committed live skip policy must be valid; violations: " + (@($liveViolations | ForEach-Object { "$($_.code)/$($_.id): $($_.message)" }) -join ' | '))
 $industrialTelemetryPostgresRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'industrialtelemetry-postgres', [StringComparison]::Ordinal) })
 Assert-Equal 1 $industrialTelemetryPostgresRules.Count 'The IndustrialTelemetry PostgreSQL proofs must have one evidence policy rule.'
-Assert-Equal 19 @($industrialTelemetryPostgresRules[0].testIdentities).Count 'The IndustrialTelemetry PostgreSQL policy rule must freeze its nineteen governed identities.'
+Assert-Equal 18 @($industrialTelemetryPostgresRules[0].testIdentities).Count 'The IndustrialTelemetry PostgreSQL policy rule must freeze its eighteen governed identities.'
 $industrialTelemetryHistoricalFactIdentity = 'Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeHistoricalFactPostgresTests.Prior_schema_fact_survives_up_down_up_without_fabricated_historical_dimensions_on_postgres'
 Assert-True (@($industrialTelemetryPostgresRules[0].testIdentities | Where-Object { [string]::Equals([string]$_, $industrialTelemetryHistoricalFactIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The IndustrialTelemetry policy rule must own the historical OEE fact migration identity exactly once.'
 Assert-True ($industrialTelemetryHistoricalFactIdentity -cmatch [string]$industrialTelemetryPostgresRules[0].testPattern) 'The IndustrialTelemetry policy pattern must match the historical OEE fact migration identity.'
@@ -1580,7 +1581,7 @@ Assert-Equal 2 @($demandPlanningRedisRules[0].testIdentities).Count 'The Redis/C
 $mesMaterialSubstituteIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests.Substitute_snapshot_migration_and_cross_scope_readback_hold_on_postgres'
 $mesProductionCandidateRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'mes-production-candidate', [StringComparison]::Ordinal) })
 Assert-Equal 1 $mesProductionCandidateRules.Count 'The MES production candidate PostgreSQL proofs must have one evidence policy rule.'
-Assert-Equal 66 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its sixty-six governed PostgreSQL identities.'
+Assert-Equal 65 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its sixty-five governed PostgreSQL identities.'
 # #4484 增加任务路线冻结和未知来源迁移两条 PostgreSQL 回归，R1 再补拆分/合并继承与来源冲突两条，共 66 条。
 # #3720 增加停机开始、停机恢复与工序生命周期事实的 3 条 PostgreSQL 回归；含 #4033 工单急单与优先级持久化证明，共 60 条。
 # #3469 增加一次合法资本化与冲销交错的 PostgreSQL 回归，共 56 条。
@@ -3475,8 +3476,8 @@ Assert-True ([string]::Equals($actualOrdinalSweepIdentity, $expectedOrdinalSweep
 # not reproducible here, the invariant is asserted structurally instead of behaviourally: this
 # library binds nothing to a captured scope.
 # Scoped to these three files on purpose. `$script:` state and closures work in this repository —
-# FullStackSessionState.ps1, BackendTestShardTimings.ps1, ScriptAutomation.ps1 and
-# LeaderDemoTelemetrySimulator.ps1 all depend on them — so this is a ban on the construct in the
+# FullStackSessionState.ps1, BackendTestShardTimings.ps1 and ScriptAutomation.ps1 depend on
+# them, so this is a ban on the construct in the
 # files that were measured failing, not a claim that the construct is broken. The root cause is
 # still unidentified. #1512 therefore closes the ruling as a local convention for these three
 # measured files, not as a repository-wide claim about closures or script scope.

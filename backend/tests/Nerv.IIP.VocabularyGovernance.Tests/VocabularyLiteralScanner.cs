@@ -34,8 +34,7 @@ public static class VocabularyLiteralScanner
     public static VocabularyScanResult Scan(
         IReadOnlyCollection<VocabularyConstant> constants,
         IReadOnlyCollection<SourceDocument> documents,
-        IReadOnlyCollection<VocabularyExemption> exemptions,
-        IReadOnlyCollection<string> replicaFileNames)
+        IReadOnlyCollection<VocabularyExemption> exemptions)
     {
         var constantsByValue = constants
             .GroupBy(constant => constant.Value, StringComparer.Ordinal)
@@ -56,13 +55,6 @@ public static class VocabularyLiteralScanner
         foreach (var document in documents)
         {
             var normalizedPath = Normalize(document.Path);
-            if (replicaFileNames.Contains(GetFileName(normalizedPath), StringComparer.Ordinal))
-            {
-                // 跨服务逐字副本圈：副本一致性由 ReplicaConsistencyChecker 断言守护，
-                // 副本内的字面量不按「禁止重复」处理（票面 #1703 (b) 类裁决）。
-                continue;
-            }
-
             var syntaxTree = CSharpSyntaxTree.ParseText(document.Text, path: normalizedPath);
             var root = syntaxTree.GetRoot();
 
@@ -135,9 +127,4 @@ public static class VocabularyLiteralScanner
 
     private static string Normalize(string path) => path.Replace('\\', '/');
 
-    private static string GetFileName(string normalizedPath)
-    {
-        var separatorIndex = normalizedPath.LastIndexOf('/');
-        return separatorIndex < 0 ? normalizedPath : normalizedPath[(separatorIndex + 1)..];
-    }
 }

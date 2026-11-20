@@ -29,12 +29,6 @@ public sealed class BackorderOrder : Entity<BackorderOrderId>, IAggregateRoot
     /// 补货建议任务号的构造入口（#3228）：种类与上界由
     /// <see cref="WmsOperationalCodeKind.ReplenishmentTask"/> 承载。
     /// </summary>
-    /// <remarks>
-    /// **不要读成「<c>warehouse_tasks.task_no</c> 只有这一个构造入口」**：世界史种子侧的
-    /// <c>WorldHistoryPhase2Spec.WarehouseTaskNo</c> 按 <c>WT-{单号}-{序号}</c> 另拼一路，
-    /// 前缀 <c>WT</c> 不在任何已声明种类里、不走 <c>StableOperationalCode</c>、也没有上界。
-    /// 本类型只约束补货建议这一条路径。
-    /// </remarks>
     public static string ComposeReplenishmentTaskNo(string outboundOrderNo, string outboundOrderLineNo)
     {
         return WmsText.StableOperationalCode(WmsOperationalCodeKind.ReplenishmentTask, outboundOrderNo, outboundOrderLineNo);

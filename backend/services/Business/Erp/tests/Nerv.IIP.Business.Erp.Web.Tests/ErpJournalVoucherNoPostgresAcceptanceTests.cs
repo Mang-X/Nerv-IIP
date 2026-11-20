@@ -233,7 +233,6 @@ public sealed class ErpJournalVoucherNoPostgresAcceptanceTests
 /// 蹭别人的理由等于把一条假理由固化进证据记录（本仓判例：测试把错误固化成契约）。
 /// 本仓 canonical 就是「一个真库测试类配一个自己的 Fact 属性 + 一条自己的策略规则」
 /// （<c>BusinessPartnerPostgresFactAttribute</c> / <c>PurchaseReceiptPostgresFactAttribute</c> /
-/// <c>WorldHistoryPostgresFactAttribute</c> / <c>ErpScaleSeedRealPostgresFactAttribute</c> 逐一对应），
 /// 故本类也自带一个。
 /// </summary>
 [AttributeUsage(AttributeTargets.Method)]

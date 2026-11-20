@@ -411,11 +411,6 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         // 本方法体只保证「按 routingSteps 建出工序行」，**不保证那些 id 此前不存在**，
         // 因为 OperationTaskId 来自调用方给的 `RoutingStepSnapshot`（上面 `OperationTask.Queue`
         // 收的就是 `step.OperationTaskId`）。调用方若拿一组已被报工引用过的 id 进来，空字典就是错的。
-        // 当前三个生产调用方都**当场造新工单**（`NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder`
-        // 与两个演示种子 `LeaderDemoSeedService` / `LeaderDemoScaleSeedService`），
-        // 那些 id 在这一刻才生成、不可能已有报工，故空字典成立。
-        // 这与上面「下界项归属」那段是**同一类**要求、同一个限度：新增调用方若可能面对已有活动的工单，
-        // 必须自己按工序查出既有净良品量再走 MarkReleased 那个重载。
         AddDomainEvent(new WorkOrderReleasedDomainEvent(
             this,
             tasks,
@@ -424,22 +419,7 @@ public sealed class WorkOrder : Entity<WorkOrderId>, IAggregateRoot
         return tasks;
     }
 
-    /// <summary>
-    /// 只翻状态、不携带工序的发布。
-    ///
-    /// <para><b>时刻取值。</b>本重载拿不到任何工序，也就拿不到报工集合，
-    /// 聚合自己知道的唯一下界是 <see cref="CreatedAtUtc"/>——工单不可能早于自己被创建就被发布。
-    /// 这个下界是**读取当刻**的 <see cref="CreatedAtUtc"/>：调用方若要把创建时刻回拨成历史时刻，
-    /// 必须在调用本方法**之前**回拨（唯一生产调用方 <c>WorldHistorySeedService</c> 已按此顺序，
-    /// 并在调用点写明了该顺序要求）。</para>
-    ///
-    /// <para><b>为什么这条不携带工序的发布事实不会伤到 Quality。</b>真实理由是
-    /// <c>WorldHistorySeedService.SaveHistoryFactsAsync</c> 在写盘前按 <c>ChangeTracker</c>
-    /// 统一 <c>ClearDomainEvents()</c>，**本事件从不出域**。
-    /// 不要拿「Quality 对空 operations 一律拒收」当安全性依据——
-    /// <c>PeriodicInspectionReleaseProjection.ValidateReleasedOperations</c> 对空 operations 是
-    /// <c>throw</c>，即**整封进死信**，不是无害跳过；那是「出事了」，不是「没事」。</para>
-    /// </summary>
+    /// <summary>补记不含工序快照的发布事实。</summary>
     public void MarkReleased()
     {
         ThrowIfCannotRelease();

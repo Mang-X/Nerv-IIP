@@ -118,4 +118,4 @@
 - PC 新建维护工单选中设备占用原因时走 v2，请求携带原值`assetUnavailableReasonCode`；明确不登记提交 null。相同创建意图重试保留幂等键，改变原因形成新意图；成功后保留权威回执确认与列表刷新。
 - PDA 报修选中停机原因时，请求走`createBusinessConsoleMaintenanceWorkOrderV2`并携带原值`assetUnavailableReasonCode`；不选原因时该字段为 null；目录不可用时不得回退自由文本或默认码。
 - 门禁:前端 typecheck/test/build + touched fmt;后端 Maintenance + BusinessGateway + FacadeCoverage 全绿。
-- 停机原因产品基线(#3855,`Maintenance:Seed:Enabled` 默认开启、只补缺,目标租户读 `Iam:Seed:*`):按 TPM 六大损失 / 国内 OEE 实践分类——设备故障(机械、电气、刀具/工装)、换型调整、工艺参数异常、质量停机、缺料待工、缺人待岗、停水停电停气计入可用率损失;小停机/空转计入性能损失;计划保养、无生产计划是计划停机,不计入损失。与世界观演示种子同名的 8 个码沿用同一码。
+- 停机原因产品基线(#3855,`Maintenance:Seed:Enabled` 默认开启、只补缺,目标租户读 `Iam:Seed:*`):按 TPM 六大损失 / 国内 OEE 实践分类——设备故障(机械、电气、刀具/工装)、换型调整、工艺参数异常、质量停机、缺料待工、缺人待岗、停水停电停气计入可用率损失;小停机/空转计入性能损失;计划保养、无生产计划是计划停机,不计入损失。

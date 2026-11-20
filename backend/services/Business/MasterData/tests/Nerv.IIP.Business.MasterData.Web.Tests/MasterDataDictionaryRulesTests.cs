@@ -84,10 +84,6 @@ public sealed class MasterDataDictionaryRulesTests
         await new MasterDataSeedService(dbContext).SeedAsync("org-001", "env-dev", CancellationToken.None);
         await AssertSeededCodeSetsAsync(dbContext, ExpectedDictionaryCodes.Where(x => !FactoryCustomCodeSets.Contains(x.Key)));
         await AssertSeededCodeSetsAsync(dbContext, FactoryCustomCodeSets.Select(x => KeyValuePair.Create(x, Array.Empty<string>())));
-
-        // 工厂自定义码集的样例值是演示数据，只随 LeaderDemo 种子写入（#3811）。
-        await new LeaderDemoSeedService(dbContext).SeedAsync("org-001", "env-dev", CancellationToken.None);
-        await AssertSeededCodeSetsAsync(dbContext, ExpectedDictionaryCodes);
     }
 
     private static readonly string[] FactoryCustomCodeSets = ["skill", "operation", "quality-reason"];

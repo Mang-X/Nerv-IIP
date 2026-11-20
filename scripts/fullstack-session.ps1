@@ -17,7 +17,7 @@ param(
     [ValidateSet('run', 'start', 'url', 'status', 'logs', 'stop', 'list', 'gc', 'help')]
     [string] $Action = 'help',
     [Parameter(Position = 1)] [string] $Target,
-    [ValidateSet('smoke', 'man-440', 'man-528', 'leader-demo-main-chain', 'leader-demo-quality-branch', 'leader-demo-equipment-branch', 'issue-1912-real-machine-walkthrough')] [string] $Scenario = 'smoke',
+    [ValidateSet('smoke', 'man-440', 'man-528', 'issue-1912-real-machine-walkthrough')] [string] $Scenario = 'smoke',
     [string] $SessionId,
     [switch] $NoBuild,
     [switch] $EnableWmsDemoWorker,
@@ -44,9 +44,6 @@ Usage:
   .\nerv.ps1 fullstack start -EnableWmsDemoWorker
   .\nerv.ps1 fullstack run -Scenario man-440
   .\nerv.ps1 fullstack run -Scenario man-528
-  .\nerv.ps1 fullstack run -Scenario leader-demo-main-chain [-NoBuild]
-  .\nerv.ps1 fullstack run -Scenario leader-demo-quality-branch [-NoBuild]
-  .\nerv.ps1 fullstack run -Scenario leader-demo-equipment-branch [-NoBuild]
   .\nerv.ps1 fullstack run -Scenario issue-1912-real-machine-walkthrough [-NoBuild]
   .\nerv.ps1 fullstack start [-SessionId nerv-abcd-123456] [-NoBuild]
   .\nerv.ps1 fullstack url <gateway|business-gateway|console|business-console|screen> [-SessionId ...]
@@ -410,13 +407,7 @@ function Start-NervFullStackSession {
         $sessionEnvironment['Maintenance__PmGeneration__Interval'] = '00:00:01'
     }
     elseif ([string]::Equals([string]($Scenario), [string]('issue-1912-real-machine-walkthrough'), [StringComparison]::OrdinalIgnoreCase)) {
-        # GitHub #1912 owns an isolated walkthrough stack: retain only the walkthrough seed and
-        # make the old full-world/history/scale switches explicit before AppHost is started.
         $sessionEnvironment['NERV_IIP_WALKTHROUGH_SEED'] = 'true'
-        $sessionEnvironment['NERV_IIP_LEADER_DEMO'] = 'false'
-        $sessionEnvironment['NERV_IIP_LEADER_DEMO_WORLD'] = 'false'
-        $sessionEnvironment['NERV_IIP_LEADER_DEMO_HISTORY'] = 'false'
-        $sessionEnvironment['NERV_IIP_LEADER_DEMO_SCALE_ORDERS'] = '0'
     }
     $sessionEnvironment['ASPIRE_CLI_START_TIMEOUT'] = '300'
     $sessionEnvironment['MSBUILDDISABLENODEREUSE'] = '1'
@@ -435,7 +426,7 @@ function Start-NervFullStackSession {
         }
         $includeGeneratedWorkerPassword = $EnableWmsDemoWorker -and
             [string]::IsNullOrWhiteSpace($SessionWorkerPassword) -and
-            [string]::IsNullOrWhiteSpace($env:NERV_IIP_LEADER_DEMO_WORKER_PASSWORD)
+            [string]::IsNullOrWhiteSpace($env:NERV_IIP_FULLSTACK_WMS_WORKER_PASSWORD)
         $secretSet = New-NervFullStackSecretEnvironment `
             -SessionId $newSessionId `
             -IncludeDemoWorkerPassword:$includeGeneratedWorkerPassword
@@ -445,13 +436,13 @@ function Start-NervFullStackSession {
         else {
             $env:NERV_IIP_FULLSTACK_ADMIN_PASSWORD
         }
-        $workerEnvironmentKey = 'NERV_IIP_LEADER_DEMO_WORKER_PASSWORD'
+        $workerEnvironmentKey = 'NERV_IIP_FULLSTACK_WMS_WORKER_PASSWORD'
         $workerSeedEnvironmentKey = 'Parameters__iam-seed-demo-worker-password'
         $suppliedWorkerPassword = if (-not [string]::IsNullOrWhiteSpace($SessionWorkerPassword)) {
             $SessionWorkerPassword
         }
-        elseif (-not [string]::IsNullOrWhiteSpace($env:NERV_IIP_LEADER_DEMO_WORKER_PASSWORD)) {
-            $env:NERV_IIP_LEADER_DEMO_WORKER_PASSWORD
+        elseif (-not [string]::IsNullOrWhiteSpace($env:NERV_IIP_FULLSTACK_WMS_WORKER_PASSWORD)) {
+            $env:NERV_IIP_FULLSTACK_WMS_WORKER_PASSWORD
         }
         else {
             $secretSet.WorkerPassword
@@ -721,7 +712,7 @@ elseif ([string]::Equals([string]($Action), [string]('run'), [StringComparison]:
                 New-NervFullStackSecretValue -Bytes 24
             }
             else {
-                $env:NERV_IIP_LEADER_DEMO_WORKER_PASSWORD
+                $env:NERV_IIP_FULLSTACK_WMS_WORKER_PASSWORD
             }
             try {
                 $runResult = Invoke-NervFullStackSessionEnvironment -SessionId $SessionId -ScriptBlock {
@@ -756,26 +747,8 @@ elseif ([string]::Equals([string]($Scenario), [string]('man-528'), [StringCompar
 elseif ([string]::Equals([string]($Scenario), [string]('man-440'), [StringComparison]::OrdinalIgnoreCase)) {
                                 Invoke-NervMan440RuntimeHoursAcceptance -Manifest $InputManifest
                             }
-elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-main-chain'), [StringComparison]::OrdinalIgnoreCase)) {
-                                Invoke-NervLeaderDemoMainChainScenario `
-                                    -Manifest $InputManifest `
-                                    -SessionAdminPassword $sessionAdminPassword `
-                                    -SessionWorkerPassword $sessionWorkerPassword | Out-Null
-                            }
 elseif ([string]::Equals([string]($Scenario), [string]('issue-1912-real-machine-walkthrough'), [StringComparison]::OrdinalIgnoreCase)) {
                                 Invoke-NervIssue1912WalkthroughScenario `
-                                    -Manifest $InputManifest `
-                                    -SessionAdminPassword $sessionAdminPassword `
-                                    -SessionWorkerPassword $sessionWorkerPassword | Out-Null
-                            }
-elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-quality-branch'), [StringComparison]::OrdinalIgnoreCase)) {
-                                Invoke-NervLeaderDemoQualityBranchScenario `
-                                    -Manifest $InputManifest `
-                                    -SessionAdminPassword $sessionAdminPassword `
-                                    -SessionWorkerPassword $sessionWorkerPassword | Out-Null
-                            }
-elseif ([string]::Equals([string]($Scenario), [string]('leader-demo-equipment-branch'), [StringComparison]::OrdinalIgnoreCase)) {
-                                Invoke-NervLeaderDemoEquipmentBranchScenario `
                                     -Manifest $InputManifest `
                                     -SessionAdminPassword $sessionAdminPassword `
                                     -SessionWorkerPassword $sessionWorkerPassword | Out-Null

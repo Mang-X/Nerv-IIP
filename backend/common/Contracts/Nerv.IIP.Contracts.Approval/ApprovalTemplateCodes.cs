@@ -3,10 +3,7 @@ namespace Nerv.IIP.Contracts.Approval;
 /// <summary>
 /// 跨服务共用的审批模板码（<c>templateCode</c>）**唯一事实来源**。
 ///
-/// 本类型只表达产品运行时契约：业务服务发起侧、Approval 产品基线种子与界面侧
-/// 必须逐字共用这些中性码，禁止再依赖《工厂世界观设定集》的 <c>APT-WB-*</c> 号段。
-/// WorldHistory 旧码是已持久化历史链和确定性回链的冻结边界，仅由
-/// <see cref="WorldHistoryNcrDispositionApprovals"/> 和 WorldHistory seed 引用，不得倒流回产品契约。
+/// 业务服务发起侧、Approval 产品基线种子与界面侧共用这些模板码。
 /// 新增或修改模板码时，必须同时在 Approval 产品种子里补齐同码、同单据类型的模板。
 /// </summary>
 public static class ApprovalTemplateCodes
@@ -23,8 +20,7 @@ public static class ApprovalTemplateCodes
     public const string PurchaseOrderChange = "purchase-order-change";
 
     /// <summary>
-    /// NCR 处置评审的产品模板。世界观历史链继续使用冻结旧码，
-    /// 确定性回链的盐串不引用本常量。
+    /// NCR 处置评审模板。
     /// </summary>
     public const string NcrDisposition = "ncr-disposition";
 

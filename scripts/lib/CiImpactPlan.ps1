@@ -164,7 +164,7 @@ function Get-NervCiImpactPlan {
                 $Path.Contains('/Application/IntegrationEventHandlers/', [StringComparison]::Ordinal))
     }
 
-    # 世界观种子引擎是 FullChain lane 赖以运行的数据基础：种子造错数据，
+    # 初始化数据参与 FullChain lane 验证：种子造错数据，
     # 五条场景本身就跑在错数据上。所以改种子必须跑 FullChain；种子不涉及
     # CAP 传输面本身，不牵连 redis_cap。
     function Test-FullChainSeedPath {

@@ -91,9 +91,6 @@ function Assert-EnvironmentArtifact {
         'Iam__Seed__Enabled' = @{ Services = @('iam'); Value = $expectedEnabled }
         'Erp__Seed__SalesOrderDemandDemo__Enabled' = @{ Services = @('business-erp'); Value = $expectedEnabled }
         'Walkthrough__Seed__Enabled' = @{ Services = @('business-master-data', 'business-product-engineering', 'business-erp'); Value = $expectedEnabled }
-        'LeaderDemo__Seed__Enabled' = @{ Services = @('business-master-data', 'business-product-engineering', 'business-inventory', 'business-quality', 'business-mes', 'business-industrial-telemetry', 'business-maintenance'); Value = 'false' }
-        'LeaderDemo__World__Enabled' = @{ Services = @('iam', 'business-master-data', 'business-product-engineering', 'business-industrial-telemetry'); Value = 'false' }
-        'LeaderDemo__History__Enabled' = @{ Services = @('business-product-engineering', 'business-inventory', 'business-quality', 'business-mes', 'business-demand-planning', 'business-barcode-label', 'business-approval', 'business-wms', 'business-industrial-telemetry', 'business-maintenance', 'business-erp', 'business-scheduling'); Value = 'false' }
     }
     foreach ($profile in $expectedProfiles.GetEnumerator()) {
         $matching = @($projectServices | Where-Object { $_.Value.ContainsKey($profile.Key) })

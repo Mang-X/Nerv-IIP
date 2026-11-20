@@ -24,7 +24,7 @@ public static class ApprovalSourceServices
 
     /// <summary>
     /// ERP 业务服务。**三方共用**：ERP 发起侧（采购订单下达 / 变更再审批 / 销售信用解冻）、
-    /// 审批种子侧（<c>WorldHistoryApprovalSpec.PurchaseSourceService</c>）、
+    /// 审批基线模板、
     /// ERP 回写消费侧（<c>ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder</c>）——
     /// 任一侧漂移即回写静默丢事件（#1683：种子写 <c>erp</c>、消费侧认 <c>business-erp</c>，
     /// 采购审批通过后订单永停 pending）。
@@ -59,8 +59,7 @@ public static class ApprovalSourceServices
     public const string Inventory = "inventory";
 
     /// <summary>
-    /// Quality 质量服务。当前**只有种子侧**在用：世界观 NCR 处置审批链落库的
-    /// <c>ApprovalDocumentReference.SourceService</c>（<c>WorldHistoryApprovalSpec.NcrSourceService</c>）。
+    /// Quality 质量服务的 NCR 处置审批来源标识。
     /// 质量域目前没有 <c>ApprovalCompletedIntegrationEvent</c> 消费者，因此本值漂移**不会**立刻表现为回写丢事件；
     /// 但它逐字参与 <c>ApprovalChain.BuildPendingIdentityKey</c> 的 SHA256（该键上有唯一索引），
     /// 改值即改历史链的 pending 唯一键，且未来任何质量回写消费侧都必须认同一份取值——因此同样禁止写字面量。

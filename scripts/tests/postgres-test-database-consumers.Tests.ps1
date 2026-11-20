@@ -17,18 +17,10 @@ $policyPath = Join-Path $repoRoot 'scripts/postgres-test-database-consumers.json
 . (Join-Path $repoRoot 'scripts/lib/OrdinalString.ps1')
 $allowedStrategies = Get-NervStringSet -Values @('best-effort-dispose', 'encapsulated-explicit-drop', 'explicit-drop-finally', 'factory-forwarder', 'helper-self-test') -Comparer ([StringComparer]::Ordinal)
 $requiredOwnerships = @(
-    @{ sourcePath = 'backend/services/Business/BarcodeLabel/tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests/WorldHistoryLabelSeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 4 },
     @{ sourcePath = 'backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs'; strategy = 'encapsulated-explicit-drop'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/MrpInputChangePersistenceTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 2 },
-    @{ sourcePath = 'backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/WorldHistoryDeviceSeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
-    @{ sourcePath = 'backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/WorldHistoryMaintenanceSeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/DeviceAssetReferenceConcurrencyPostgresTests.cs'; strategy = 'best-effort-dispose'; factoryCallCount = 1 },
-    @{ sourcePath = 'backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/MasterDataWorldBibleSeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
-    @{ sourcePath = 'backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/LeaderDemoScaleSeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
-    @{ sourcePath = 'backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/WorldHistorySeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
-    @{ sourcePath = 'backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/WorldBibleSeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
-    @{ sourcePath = 'backend/services/Business/Quality/tests/Nerv.IIP.Business.Quality.Web.Tests/WorldHistoryQualitySeedPostgresTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPostgresProfileTests.cs'; strategy = 'factory-forwarder'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpReturnClosurePostgresAcceptanceTests.cs'; strategy = 'explicit-drop-finally'; factoryCallCount = 1 },
     @{ sourcePath = 'backend/tests/Nerv.IIP.Testing.PostgreSql.Tests/PostgreSqlTestDatabaseTests.cs'; strategy = 'helper-self-test'; factoryCallCount = 6 }

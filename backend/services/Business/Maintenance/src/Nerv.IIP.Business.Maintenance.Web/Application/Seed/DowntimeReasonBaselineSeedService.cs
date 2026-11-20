@@ -11,13 +11,6 @@ namespace Nerv.IIP.Business.Maintenance.Web.Application.Seed;
 /// MES 停机登记都走不通。这里预置一套按 TPM 六大损失 / OEE 损失口径分类的标准原因。
 /// <list type="bullet">
 /// <item>按 organization/environment + reasonCode 幂等只补缺；租户改过描述、分类或删掉重建的原因一律保留。</item>
-/// <item>码与《工厂世界观设定集》演示种子（<see cref="WorldHistoryDeviceSpec.DowntimeReasons"/>）同名的 8 条沿用同一码，
-///   两边都按码补缺，所以不会出现重复码；但同码内容并不完全一致——MECH / ELEC / PROC 的描述、
-///   SETUP / MATERIAL / QUALITY 的分类与演示种子不同。基线先于演示种子运行，同码以基线为准；
-///   两边的损失类别 8 条一致，OEE 口径不受影响。</item>
-/// <item>分类与损失类别引用 <see cref="DowntimeReasonVocabulary"/>。分类依据：设备故障 / 换型调整属可用率损失，小停机空转属性能损失（TPM 六大损失前三类）；
-///   工艺、质量、缺料、缺人、公用工程中断按国内 OEE 实践同样计入可用率损失；
-///   计划保养、无生产计划是计划停机，不计入 OEE 损失。</item>
 /// </list>
 /// </summary>
 public sealed class DowntimeReasonBaselineSeedService(ApplicationDbContext dbContext)

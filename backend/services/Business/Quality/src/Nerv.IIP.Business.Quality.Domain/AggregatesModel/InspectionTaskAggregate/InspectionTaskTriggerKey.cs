@@ -32,23 +32,10 @@ namespace Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionTaskAggrega
 /// <description><see cref="PeriodicInspectionSourceLine.TriggerIdempotencyKey"/>，闭集 kind + Guid + long → 83。</description></item>
 /// </list>
 ///
-/// **⚠️ 世界观历史 seed 是「只进 fits、不进 defines」的写面**
-///
-/// <c>WorldHistorySeedService.cs:245</c> 也写这一列，形状是
-/// <c>seed:world-history:{sourceService}:{sourceDocumentId}:{sourceDocumentLineId}</c>。
-/// 若按「三段都写进本行的有界列」去饱和，会得到 621——但那是**假想饱和**：
-/// **seed 的三段输入全部来自它自己的定长生成器**（<c>WorldHistorySpec.WorkOrderNo(i)</c> 产出
-/// <c>"WO-2026-00001"</c>，13 字符），实际键长约 40 字符，没有任何调用方能把它撑宽。
-///
-/// **所以它不进派生集合。** 让一段**计划拆除**的演示代码去定界一张增长型事实表上带唯一索引的列，
-/// 等于围绕世界观种子建立一条维护契约——owner 已明确裁定停止这么做。种子拆除时，这里
-/// **不需要任何缩窄迁移**：<see cref="MaxLength"/> 由首件那条写面定界，与种子无关。
-/// 种子越界（今天不可达）由 <see cref="EnsureWithinColumn"/> 在 seed 期就地 fail-closed。
-///
 /// **没有摘要回落（#3290 的教训已实读排除）**
 ///
 /// <c>FirstArticleInspection.TriggerIdempotencyKey</c>、
-/// <see cref="PeriodicInspectionSourceLine.TriggerIdempotencyKey"/> 与 seed 侧三处都是纯插值，
+/// <see cref="PeriodicInspectionSourceLine.TriggerIdempotencyKey"/> 都是纯插值，
 /// 四条事件写面是透传或再拼一段，**全链路没有任何 hash / 截断**。所以这一列确实**逐字承载**调用方的键，
 /// 列宽在这里真的构成上界——不同于 PR #3290 里那两个「写入前无条件 SHA256、落库永远 75 定长」的收据列。
 ///

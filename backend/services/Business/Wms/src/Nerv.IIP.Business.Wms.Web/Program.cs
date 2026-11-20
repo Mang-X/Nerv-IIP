@@ -78,8 +78,6 @@ try
     }
 
     builder.Services.AddWmsPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
-    builder.Services.AddScoped<WorldHistorySeedService>();
-    builder.Services.AddScoped<WorldHistoryWarehouseOpsSeedService>();
     builder.Services.AddScoped<WmsWorkPoolMembershipSeedService>();
     builder.Services.AddScoped<WarehouseWorkScopeAuthorizer>();
     builder.Services.AddScoped<WarehouseAssignedResourceExecutionAuthorizer>();
@@ -192,96 +190,14 @@ try
         var report = await scope.ServiceProvider
             .GetRequiredService<WmsWorkPoolMembershipSeedService>()
             .SeedAsync(
-                builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
-                builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");
+                builder.Configuration["Wms:WorkPoolSeed:OrganizationId"] ?? "org-001",
+                builder.Configuration["Wms:WorkPoolSeed:EnvironmentId"] ?? "env-dev");
         app.Logger.LogInformation(
             "WMS demo work-pool seed completed: {Pools} work pools, {Memberships} memberships, " +
             "{Inbound} inbound orders written.",
             report.WorkPoolsWritten,
             report.WorkPoolMembershipsWritten,
             report.InboundOrdersWritten);
-    }
-
-    // 《工厂世界观设定集》L1 背景历史（仓储域侧）。校验器 fail-closed：对账不平就让启动失败。
-    // 最小现场作业池 seed 已由上方独立 gate 控制；这里仍只处理完整 History，并沿用「只在 Development 允许」的口径。
-    if (WorldHistoryConfiguration.IsEnabled(builder.Configuration))
-    {
-        if (!app.Environment.IsDevelopment())
-        {
-            throw new InvalidOperationException(
-                "LeaderDemo:History:Enabled=true is only allowed for BusinessWms in Development.");
-        }
-
-        using var scope = app.Services.CreateScope();
-        var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
-            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev",
-            WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
-            WorldHistoryConfiguration.ResolveScale(builder.Configuration));
-        app.Logger.LogInformation(
-            "World-history WMS seed completed: {Inbound} inbound orders, {Outbound} outbound orders, " +
-            "{Tasks} warehouse tasks, {Requests} Inventory movement requests; validator checked " +
-            "{CheckedInbound} inbound / {CheckedOutbound} outbound / {CheckedTasks} tasks " +
-            "({Putaway} putaway, {Picking} picking) / {CheckedRequests} posted requests.",
-            report.InboundOrdersWritten,
-            report.OutboundOrdersWritten,
-            report.WarehouseTasksWritten,
-            report.InventoryMovementRequestsWritten,
-            report.Validation.InboundOrdersChecked,
-            report.Validation.OutboundOrdersChecked,
-            report.Validation.WarehouseTasksChecked,
-            report.Validation.PutawayTasksChecked,
-            report.Validation.PickingTasksChecked,
-            report.Validation.PostedMovementRequestsChecked);
-        foreach (var line in report.Validation.Sample)
-        {
-            app.Logger.LogInformation("World-history sample: {Document}", line);
-        }
-
-        // 仓储自动化 / 盘点执行 / 来料退货块必须排在单据块之后：
-        // WCS 任务要绑真实落库的仓储作业任务，退货要挂真实落库的收货入库单。
-        var opsReport = await scope.ServiceProvider.GetRequiredService<WorldHistoryWarehouseOpsSeedService>().SeedAsync(
-            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev",
-            WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
-            WorldHistoryConfiguration.ResolveScale(builder.Configuration));
-        app.Logger.LogInformation(
-            "World-history WMS operations seed completed: {Counts} count executions, {Returns} supplier returns, " +
-            "current queue {QueueInbound} inbound / {QueuePutaway} putaway / {QueueOutbound} outbound / " +
-            "{QueuePicking} picking ({QueueReviewReady} review-ready), " +
-            "{Pools} work pools, {Memberships} memberships, {Assignments} controlled assignments, " +
-            "{WcsTasks} WCS tasks, {Circuits} dispatch circuits; validator checked {CheckedCounts} counts " +
-            "({CompletedCounts} completed, {VarianceCounts} with variance) / {CheckedWcs} WCS tasks " +
-            "({CompletedWcs} completed, {FailedWcs} failed) / {CheckedCircuits} circuits / {CheckedReturns} returns / " +
-            "{CheckedPools} pools / {CheckedMemberships} memberships / assignments " +
-            "{CheckedInbound}/{CheckedPutaway}/{CheckedPicking}/{CheckedOutbound}/{CheckedCount}.",
-            opsReport.CountExecutionsWritten,
-            opsReport.SupplierReturnRequestsWritten,
-            opsReport.CurrentQueue.InboundOrdersWritten,
-            opsReport.CurrentQueue.PutawayTasksWritten,
-            opsReport.CurrentQueue.OutboundOrdersWritten,
-            opsReport.CurrentQueue.PickingTasksWritten,
-            opsReport.CurrentQueue.ReviewReadyOrdersWritten,
-            opsReport.WorkPoolsWritten,
-            opsReport.WorkPoolMembershipsWritten,
-            opsReport.Assignments.TotalAssignments,
-            opsReport.WcsTasksWritten,
-            opsReport.WcsDispatchCircuitsWritten,
-            opsReport.Validation.CountExecutionsChecked,
-            opsReport.Validation.CompletedCountExecutionsChecked,
-            opsReport.Validation.VarianceCountExecutionsChecked,
-            opsReport.Validation.WcsTasksChecked,
-            opsReport.Validation.CompletedWcsTasksChecked,
-            opsReport.Validation.FailedWcsTasksChecked,
-            opsReport.Validation.WcsDispatchCircuitsChecked,
-            opsReport.Validation.SupplierReturnRequestsChecked,
-            opsReport.Validation.WorkPoolsChecked,
-            opsReport.Validation.WorkPoolMembershipsChecked,
-            opsReport.Validation.AssignedInboundOrdersChecked,
-            opsReport.Validation.AssignedPutawayTasksChecked,
-            opsReport.Validation.AssignedPickingTasksChecked,
-            opsReport.Validation.AssignedOutboundOrdersChecked,
-            opsReport.Validation.AssignedCountExecutionsChecked);
     }
 
     app.UseNervIipRequestLocalization();

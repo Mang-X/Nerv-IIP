@@ -6,7 +6,6 @@ using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
-using Nerv.IIP.Business.Wms.Web.Application.Seed;
 using Nerv.IIP.Testing.PostgreSql;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
@@ -15,7 +14,6 @@ public sealed class WmsWorkAssignmentMigrationPostgresTests
 {
     private const string PreviousMigration = "20260724015043_AddOutboundOrderConcurrencyToken";
     private const string WorkAssignmentMigration = "20260729205928_CompleteWmsWorkPoolExecutionBoundary";
-    private static readonly DateOnly AsOfDate = new(2026, 7, 26);
     private static readonly Guid ActiveWarehouseTaskId =
         Guid.Parse("01982f4d-3f80-7000-8000-000000000001");
     private static readonly Guid ActiveWcsTaskId =
@@ -133,7 +131,7 @@ public sealed class WmsWorkAssignmentMigrationPostgresTests
     }
 
     [WmsWorkAssignmentPostgresFact]
-    public async Task Migration_upgrades_legacy_rows_to_safe_assignment_boundary_and_keeps_seed_idempotent()
+    public async Task Migration_upgrades_legacy_rows_to_safe_assignment_boundary()
     {
         var adminConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
         await using var database = await PostgreSqlTestDatabase.CreateAsync(
@@ -208,17 +206,7 @@ public sealed class WmsWorkAssignmentMigrationPostgresTests
         Assert.Equal(WarehouseTaskStatus.Completed, activeTask.Status);
 
         db.ChangeTracker.Clear();
-        var seed = new WorldHistorySeedService(db);
-        var first = await seed.SeedAsync("org-seed", "env-seed", AsOfDate, 0.01d);
-        var second = await seed.SeedAsync("org-seed", "env-seed", AsOfDate, 0.01d);
 
-        Assert.True(first.InboundOrdersWritten > 0);
-        Assert.True(first.OutboundOrdersWritten > 0);
-        Assert.True(first.WarehouseTasksWritten > 0);
-        Assert.Equal(0, second.InboundOrdersWritten);
-        Assert.Equal(0, second.OutboundOrdersWritten);
-        Assert.Equal(0, second.WarehouseTasksWritten);
-        Assert.Equal(0, second.InventoryMovementRequestsWritten);
     }
 
     [WmsWorkAssignmentPostgresFact]

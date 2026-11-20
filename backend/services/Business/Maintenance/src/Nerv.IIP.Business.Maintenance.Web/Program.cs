@@ -144,9 +144,6 @@ try
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<MaintenanceCodingService>();
     builder.Services.AddScoped<DowntimeReasonBaselineSeedService>();
-    builder.Services.AddScoped<MaintenanceSeedService>();
-    builder.Services.AddScoped<LeaderDemoSeedService>();
-    builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddContext().AddEnvContext().AddCapContextProcessor();
     builder.Services.AddNetCorePalServiceDiscoveryClient();
     builder.Services.AddMaintenanceCapIntegrationEvents(builder.Configuration, builder.Environment.EnvironmentName, isTesting);
@@ -198,65 +195,6 @@ try
                 builder.Configuration["Iam:Seed:OrganizationId"] ?? "org-001",
                 builder.Configuration["Iam:Seed:EnvironmentId"] ?? "env-dev");
             app.Logger.LogInformation("Maintenance product seed completed: {DowntimeReasons} missing downtime reasons added.", written);
-        }
-    }
-
-    var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");
-    if (leaderDemoSeedEnabled && !app.Environment.IsDevelopment())
-    {
-        throw new InvalidOperationException("LeaderDemo:Seed:Enabled=true is only allowed for BusinessMaintenance in Development.");
-    }
-
-    if (WorldHistoryConfiguration.IsEnabled(builder.Configuration) && !app.Environment.IsDevelopment())
-    {
-        throw new InvalidOperationException("LeaderDemo:History:Enabled=true is only allowed for BusinessMaintenance in Development.");
-    }
-
-    if (leaderDemoSeedEnabled)
-    {
-        using var scope = app.Services.CreateScope();
-        // 点检保养计划绑定设定集设备（DEV-CNC-01 等），属演示数据，只随 LeaderDemo 写入（#3811）。
-        await scope.ServiceProvider.GetRequiredService<MaintenanceSeedService>().SeedAsync(
-            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");
-        await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(
-            builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
-            builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev");
-
-        // 《工厂世界观设定集》L1 设备域历史（三期，Maintenance 侧）。校验器 fail-closed。
-        if (WorldHistoryConfiguration.IsEnabled(builder.Configuration))
-        {
-            var historyStopwatch = System.Diagnostics.Stopwatch.StartNew();
-            var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
-                builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001",
-                builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev",
-                WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
-                WorldHistoryConfiguration.ResolveScale(builder.Configuration));
-            historyStopwatch.Stop();
-            app.Logger.LogInformation(
-                "World-history maintenance seed completed in {ElapsedSeconds:F1}s: {Reasons} downtime reasons, " +
-                "{Plans} maintenance plans, {Inspections} inspections, {WorkOrders} work orders, " +
-                "{SparePartLines} spare part lines, {DeviceStates} device states; validator checked " +
-                "{WorkOrdersChecked} work orders / {InspectionsChecked} inspections / {SparePartLinesChecked} spare " +
-                "part lines / {DeviceStatesChecked} device states, total completed downtime " +
-                "{DowntimeMinutes} min ({OpenWorkOrders} open-tail work orders).",
-                historyStopwatch.Elapsed.TotalSeconds,
-                report.DowntimeReasonsWritten,
-                report.MaintenancePlansWritten,
-                report.InspectionsWritten,
-                report.WorkOrdersWritten,
-                report.SparePartLinesWritten,
-                report.DeviceStatesWritten,
-                report.Validation.WorkOrdersChecked,
-                report.Validation.InspectionsChecked,
-                report.Validation.SparePartLinesChecked,
-                report.Validation.DeviceStatesChecked,
-                report.Validation.CompletedDowntimeMinutes,
-                report.Validation.OpenWorkOrders);
-            foreach (var line in report.Validation.Sample)
-            {
-                app.Logger.LogInformation("World-history maintenance sample: {Chain}", line);
-            }
         }
     }
 

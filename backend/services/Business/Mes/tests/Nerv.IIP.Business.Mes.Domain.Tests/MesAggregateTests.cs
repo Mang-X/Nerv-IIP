@@ -148,8 +148,6 @@ public sealed class MesAggregateTests
 
     /// <summary>
     /// 不携带工序的那条发布：事件时刻取**调用当刻**的 <c>CreatedAtUtc</c>，不取墙钟。
-    /// 唯一生产调用方（<c>WorldHistorySeedService</c>）先把 <c>CreatedAtUtc</c> 回拨到历史创建时刻再调它，
-    /// 顺序反了事件带走的就是播种当下的 <c>UtcNow</c>——既非历史创建时刻，也晚于该工单全部历史报工。
     /// </summary>
     [Fact]
     public void WorkOrder_mark_released_without_operations_dates_the_release_fact_at_the_creation_moment()

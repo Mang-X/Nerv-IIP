@@ -141,9 +141,6 @@ try
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddScoped<QualityCodingService>();
     builder.Services.AddScoped<QualitySeedService>();
-    builder.Services.AddScoped<LeaderDemoSeedService>();
-    builder.Services.AddScoped<WorldHistorySeedService>();
-    builder.Services.AddScoped<WorldHistoryMetrologySeedService>();
     builder.Services.AddSingleton<IInspectionUomConversionClient>(NullInspectionUomConversionClient.Instance);
     builder.Services.AddScoped<IInspectionSourceDocumentVerifier, ErpPurchaseReceiptInspectionSourceDocumentVerifier>();
     builder.Services.AddScoped<IQualityIntegrationEventContextAccessor, HttpQualityIntegrationEventContextAccessor>();
@@ -244,86 +241,6 @@ try
         await seed.SeedAsync(
             builder.Configuration["Iam:Seed:OrganizationId"] ?? "org-001",
             builder.Configuration["Iam:Seed:EnvironmentId"] ?? "env-dev");
-    }
-
-    var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");
-    if (leaderDemoSeedEnabled && !app.Environment.IsDevelopment())
-    {
-        throw new InvalidOperationException("LeaderDemo:Seed:Enabled=true is only allowed for BusinessQuality in Development.");
-    }
-
-    if (leaderDemoSeedEnabled)
-    {
-        using var scope = app.Services.CreateScope();
-        var leaderDemoOrganizationId = builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001";
-        var leaderDemoEnvironmentId = builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev";
-        await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(
-            leaderDemoOrganizationId,
-            leaderDemoEnvironmentId);
-
-        // 《工厂世界观设定集》L1 背景历史（质量域侧）。校验器 fail-closed：对账不平就让启动失败。
-        if (WorldHistoryConfiguration.IsEnabled(builder.Configuration))
-        {
-            var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
-                leaderDemoOrganizationId,
-                leaderDemoEnvironmentId,
-                WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
-                WorldHistoryConfiguration.ResolveScale(builder.Configuration));
-            app.Logger.LogInformation(
-                "World-history quality seed completed: {Plans} inspection plans, {Tasks} inspection tasks, " +
-                "{Records} inspection records ({Reinspections} reinspections), {Ncrs} nonconformance reports; " +
-                "validator checked {CheckedTasks} tasks / {CheckedCompleted} completed inspections / " +
-                "{CheckedRecords} records / {CheckedNcrs} NCRs at a {Rate:P2} nonconforming rate; " +
-                "pending assignment distribution: {PendingPreassigned} preassigned / {PendingUnassigned} unassigned.",
-                report.InspectionPlansWritten,
-                report.InspectionTasksWritten,
-                report.InspectionRecordsWritten,
-                report.ReinspectionRecordsWritten,
-                report.NonconformanceReportsWritten,
-                report.Validation.InspectionTasksChecked,
-                report.Validation.CompletedInspectionsChecked,
-                report.Validation.InspectionRecordsChecked,
-                report.Validation.NonconformanceReportsChecked,
-                report.Validation.NonconformingRate,
-                report.Validation.PendingTasksPreassigned,
-                report.Validation.PendingTasksUnassigned);
-            foreach (var line in report.Validation.Sample)
-            {
-                app.Logger.LogInformation("World-history sample: {Chain}", line);
-            }
-
-            // 三期：计量器具台账 / 校准记录 / SPC 控制限 / CAPA。必须排在二期之后——
-            // CAPA 要挂真实 NCR、效果验证要引用真实合格检验记录，两者都由二期写入。
-            var metrologyReport = await scope.ServiceProvider
-                .GetRequiredService<WorldHistoryMetrologySeedService>()
-                .SeedAsync(
-                    leaderDemoOrganizationId,
-                    leaderDemoEnvironmentId,
-                    WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
-                    WorldHistoryConfiguration.ResolveScale(builder.Configuration));
-            app.Logger.LogInformation(
-                "World-history metrology seed completed: {Devices} measuring devices, {Calibrations} calibration records, " +
-                "{Charts} SPC control charts, {Capas} CAPAs ({Items} action items); validator checked " +
-                "{CheckedDevices} devices (overdue {Overdue} / warning {Warning} / unavailable {Unavailable}), " +
-                "{CheckedCharts} charts, {CheckedCapas} CAPAs ({ClosedCapas} closed, {OverdueCapas} overdue).",
-                metrologyReport.MeasuringDevicesWritten,
-                metrologyReport.CalibrationRecordsWritten,
-                metrologyReport.SpcControlChartsWritten,
-                metrologyReport.CorrectiveActionsWritten,
-                metrologyReport.CorrectiveActionItemsWritten,
-                metrologyReport.Validation.MeasuringDevicesChecked,
-                metrologyReport.Validation.OverdueDevices,
-                metrologyReport.Validation.WarningDevices,
-                metrologyReport.Validation.UnavailableDevices,
-                metrologyReport.Validation.SpcControlChartsChecked,
-                metrologyReport.Validation.CorrectiveActionsChecked,
-                metrologyReport.Validation.ClosedCorrectiveActions,
-                metrologyReport.Validation.OverdueCorrectiveActions);
-            foreach (var line in metrologyReport.Validation.Sample)
-            {
-                app.Logger.LogInformation("World-history metrology sample: {Chain}", line);
-            }
-        }
     }
 
     app.UseNervIipRequestLocalization();

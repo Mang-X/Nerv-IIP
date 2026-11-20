@@ -198,7 +198,7 @@ describe('buildQualityBoard（与产线屏同一个故事：活塞杆一线 DEV-
 })
 
 describe('buildQualityBoard（scope 与回落）', () => {
-  it('未知工厂回落一号工厂画像（单基地世界观）', () => {
+  it('未知工厂回落一号工厂画像（单基地 mock）', () => {
     expect(buildQualityBoard('NOPE').kpis.openNcr).toBe(buildQualityBoard().kpis.openNcr)
   })
 

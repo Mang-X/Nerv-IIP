@@ -151,8 +151,6 @@ describe('buildDeviceDetail', () => {
     const det = buildDeviceDetail(alarm.id)
     expect(det).not.toBeNull()
     expect(det!.device.id).toBe(alarm.id)
-    // DEV-CNC-03 的采集点位就是 3 个（主轴温度/振动/主轴转速）——
-    // 与后端遥测种子 WorldHistoryDeviceSpec 的 DEV-CNC- 类别逐条一致，不多编第 4 个。
     expect(det!.params.map((p) => p.label)).toEqual(['主轴温度', '振动', '主轴转速'])
     for (const p of det!.params) {
       expect(p.spark).toHaveLength(12)

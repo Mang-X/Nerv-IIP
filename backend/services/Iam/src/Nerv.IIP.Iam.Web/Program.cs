@@ -74,9 +74,8 @@ else
     builder.Services.AddScoped<IIamSessionApplicationService, InMemoryIamSessionApplicationService>();
     builder.Services.AddScoped<IIamSecurityAuditApplicationService, InMemoryIamSecurityAuditApplicationService>();
 }
+builder.Services.AddScoped<WalkthroughPdaAccountSeedService>();
 builder.Services.AddScoped<IamSeedService>();
-builder.Services.AddScoped<WorldBibleWorkerSeedService>();
-builder.Services.AddScoped<WorldBiblePdaDemoAccountSeedService>();
 
 var autoMigrate = string.Equals(builder.Configuration["Persistence:AutoMigrate"], "true", StringComparison.OrdinalIgnoreCase);
 
@@ -134,12 +133,10 @@ if (usesPostgreSql && autoMigrate)
     await migrationRunner.MigrateAsync();
     var seed = scope.ServiceProvider.GetRequiredService<IamSeedService>();
     await seed.SeedAsync();
-    if (WorldBibleSeedGate.ShouldRunWorkerSeeds(
-        builder.Configuration.GetValue("LeaderDemo:World:Enabled", false),
-        builder.Configuration["Iam:Seed:DemoWorkerPassword"]))
+    if (app.Environment.IsDevelopment() &&
+        !string.IsNullOrWhiteSpace(builder.Configuration["Iam:Seed:DemoWorkerPassword"]))
     {
-        await scope.ServiceProvider.GetRequiredService<WorldBibleWorkerSeedService>().SeedAsync();
-        await scope.ServiceProvider.GetRequiredService<WorldBiblePdaDemoAccountSeedService>().SeedAsync();
+        await scope.ServiceProvider.GetRequiredService<WalkthroughPdaAccountSeedService>().SeedAsync();
     }
 }
 

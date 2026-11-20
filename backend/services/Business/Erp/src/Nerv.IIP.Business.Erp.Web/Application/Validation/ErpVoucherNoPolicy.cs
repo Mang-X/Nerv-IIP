@@ -28,9 +28,6 @@ namespace Nerv.IIP.Business.Erp.Web.Application.Validation;
 /// <item>它读的是 EF 模型，不是迁移脚本；模型/迁移漂移不由本类负责。</item>
 /// <item>它不保证「所有凭证号都合法」——绕开命令直接 <c>JournalVouchers.Add</c>
 ///   或原生 SQL 写入都够不着校验器；落库那一层的兜底是列宽本身的 <c>22001</c>。</item>
-/// <item>seed（<c>WorldHistorySeedService</c>）的两处凭证按 #3278「显式不做」仍直接写
-///   <c>JV-2026-S{n}</c> / <c>JV-2026-C{n}</c> ⇒ 库里并存<b>三种</b>凭证号格式：
-///   分配器短号、存量派生号、种子号。</item>
 /// </list>
 /// </para>
 /// </remarks>

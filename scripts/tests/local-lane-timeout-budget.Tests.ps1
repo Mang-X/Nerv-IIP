@@ -52,7 +52,6 @@ $governedEntrypoints = @(
     'scripts/run-postgres-test-lane.ps1'
     'scripts/run-redis-cap-test-lane.ps1'
     'scripts/verify-backend-real-postgres-tests.ps1'
-    'scripts/verify-world-history.ps1'
 )
 
 foreach ($relativePath in $governedEntrypoints) {

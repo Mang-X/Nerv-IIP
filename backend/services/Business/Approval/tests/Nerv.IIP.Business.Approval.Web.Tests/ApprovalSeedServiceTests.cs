@@ -20,7 +20,7 @@ public sealed class ApprovalSeedServiceTests
     ];
 
     [Fact]
-    public async Task Product_seed_writes_all_six_templates_without_world_history()
+    public async Task Product_seed_writes_all_six_templates()
     {
         await using var db = CreateDbContext();
 
@@ -81,32 +81,6 @@ public sealed class ApprovalSeedServiceTests
         Assert.Equal("租户自定义复核", preservedStep.StepName);
         Assert.Equal("tenant-approver", preservedStep.ApproverRef);
         Assert.Equal(72, preservedStep.DueInHours);
-    }
-
-    [Fact]
-    public async Task World_history_seed_keeps_the_five_legacy_codes_beside_product_templates()
-    {
-        await using var db = CreateDbContext();
-        await new ApprovalSeedService(db).SeedAsync("org-001", "env-dev", "user-admin");
-        db.ChangeTracker.Clear();
-
-        var report = await new WorldHistoryApprovalSeedService(db).SeedAsync(
-            "org-001",
-            "env-dev",
-            new DateOnly(2026, 7, 26),
-            0.05d);
-
-        var codes = await db.ApprovalTemplates.AsNoTracking().Select(x => x.TemplateCode).ToArrayAsync();
-        Assert.Equal(5, report.TemplatesWritten);
-        Assert.Equal(11, codes.Length);
-        Assert.All(ProductTemplateCodes, code => Assert.Contains(code, codes));
-        Assert.Contains("APT-WB-PO-001", codes);
-        Assert.Contains("APT-WB-PO-002", codes);
-        Assert.Contains("APT-WB-NCR-001", codes);
-        Assert.Contains("APT-WB-CNT-001", codes);
-        Assert.Contains("APT-WB-ECO-001", codes);
-        Assert.Equal("APT-WB-NCR-001", WorldHistoryNcrDispositionApprovals.LegacyNcrDispositionTemplateCode);
-        Assert.NotEqual(ApprovalTemplateCodes.NcrDisposition, WorldHistoryApprovalSpec.NcrTemplateCode);
     }
 
     private static ApplicationDbContext CreateDbContext()

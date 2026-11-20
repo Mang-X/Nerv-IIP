@@ -39,14 +39,12 @@ import { createWalkthroughPageProofs } from './issue1912-walkthrough-pages'
 
 const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
 const adminPassword = process.env.NERV_IIP_FULLSTACK_ADMIN_PASSWORD
-const workerPassword = process.env.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD
+const workerPassword = process.env.NERV_IIP_FULLSTACK_WMS_WORKER_PASSWORD
 const evidencePath = process.env.NERV_IIP_ISSUE_1912_EVIDENCE_PATH
 const runtimeProfileSource = process.env.NERV_IIP_ISSUE_1912_RUNTIME_PROFILE_SOURCE
 const transport = process.env.NERV_IIP_ISSUE_1912_TRANSPORT
 const persistence = process.env.NERV_IIP_ISSUE_1912_PERSISTENCE
-const worldEnabled = process.env.NERV_IIP_ISSUE_1912_WORLD_ENABLED
-const historyEnabled = process.env.NERV_IIP_ISSUE_1912_HISTORY_ENABLED
-const scaleOrderCount = process.env.NERV_IIP_ISSUE_1912_SCALE_ORDER_COUNT
+const walkthroughSeedEnabled = process.env.NERV_IIP_ISSUE_1912_WALKTHROUGH_SEED_ENABLED
 
 const requiresManagedSession = !baseURL || !adminPassword || !workerPassword || !evidencePath
 
@@ -1684,9 +1682,7 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
             runtimeProfileSource: runtimeProfileSource ?? 'not-supplied',
             transport: transport ?? 'not-supplied',
             persistence: persistence ?? 'not-supplied',
-            worldEnabled: worldEnabled ?? 'not-supplied',
-            historyEnabled: historyEnabled ?? 'not-supplied',
-            scaleOrderCount: scaleOrderCount ?? 'not-supplied',
+            walkthroughSeedEnabled: walkthroughSeedEnabled ?? 'not-supplied',
             assertionBoundary:
               'public BusinessGateway HTTP plus rendered browser pages in two isolated ERP/WMS contexts; no database reads as business assertions',
             requestFailurePolicy:

@@ -37,8 +37,7 @@ public static class ApprovalDocumentTypes
     /// <summary>
     /// 销售订单「信用解冻」审批（#1290）。**三方共用**：ERP 发起侧
     /// （<c>ReleaseSalesOrderCreditHoldCommandHandler</c>）、审批种子模板
-    /// （<c>WorldHistoryApprovalSpec.SalesCreditReleaseDocumentType</c>，随
-    /// <see cref="ApprovalTemplateCodes.SalesCreditRelease"/> 一起落库）、
+    /// （与 <see cref="ApprovalTemplateCodes.SalesCreditRelease"/> 配套）、
     /// ERP 回写消费侧（<c>ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder</c>
     /// 里按 <c>(SourceService, DocumentType)</c> 分流出来的信用解冻分支）。
     ///

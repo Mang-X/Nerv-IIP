@@ -1,8 +1,6 @@
-# 工厂设定与人工走查最小数据
+# 人工走查最小数据
 
-本文是工厂设定与人工走查数据的当前权威来源。历史形成过程保留在
-Git 历史 `0d260365a:docs/superpowers/plans/2026-07-26-factory-world-bible.md`，
-该文件是不可改写的 Superpowers 历史快照；后续设定与走查数据调整只修改本文及其代码投影。
+目录、工程版本和采购销售价格由相应服务的 `WalkthroughSeedSpec` 定义。
 
 ## 1. 目标与边界
 
@@ -23,9 +21,6 @@ Git 历史 `0d260365a:docs/superpowers/plans/2026-07-26-factory-world-bible.md`�
 - 结构：3 个车间、14 条产线、17 个工作中心；最小投影保留该结构以承载完整八道工序，
   但不写入全量 46 台设备和 58 名员工。
 - 工作制：早班 08:00–16:00、中班 16:00–24:00；标准日历编码 `STANDARD`。
-- 全量设定仍采用 84 SKU、8 客户、10 供应商以及 L0/L1/L2/L3 分层；它只用于需要整厂背景的
-  专项场景，不再是日常人工走查的前置。
-
 ## 3. 最小目录
 
 ### 3.1 物料（20）
@@ -146,12 +141,9 @@ ProductEngineering 的已合并工程事实计算，本节不另存自制定额�
 `Walkthrough:Seed:Enabled=true`。单次会话可用 `NERV_IIP_WALKTHROUGH_SEED=false` 关闭。
 三个服务只允许在 `Development` 环境执行；重复执行幂等，同号保留事实不兼容时失败且不覆盖。
 
-最小投影与 `LeaderDemo:World:*`、`LeaderDemo:History:*` 独立。验收时必须关闭旧全量世界和历史，
-并用 `*-WALK-*` 业务编号与本节明确的主数据编码取证，避免旧数据造成非空假阳性。
-
 ## 7. 走查与前置核对
 
-1. 在隔离真栈中关闭全量世界、背景历史和规模块，保留最小投影。
+1. 使用隔离全栈会话。通过 `nerv.ps1 fullstack run -Scenario issue-1912-real-machine-walkthrough -EnableWmsDemoWorker` 执行受管走查。
 2. 采购链从 `RFQ-WALK-001` 的供应商报价创建采购订单，经审批下达、收货与入库；采购订单、
    收货页面须能按本次业务编号找到记录。
 3. 销售链从 `QUO-WALK-001` 创建销售订单，经需求、生产/备货、发货与应收；销售报价、订单、
@@ -170,5 +162,4 @@ ProductEngineering 的已合并工程事实计算，本节不另存自制定额�
 ## 8. 变更与签字
 
 最小目录、价格或工时变更必须同时更新本文、对应服务的 `WalkthroughSeedSpec` 与行为测试。
-本文的 owner 签字以关联 PR 的批准审核为准；PR 未获 owner 批准时，只能称为待签字候选，
-不得据此放行删除全量世界观种子的后续层。
+走查签字以真实会话的证据和 owner 审核为准。
