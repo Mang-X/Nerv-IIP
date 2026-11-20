@@ -1459,8 +1459,8 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
 
   <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-  <NvTabs v-model="activeTab">
-    <NvTabsList>
+  <NvTabs v-model="activeTab" class="min-w-0 max-w-full">
+    <NvTabsList class="max-w-full justify-start overflow-x-auto">
       <!-- 筛选生效时页签显「筛出数/总数」，别让人以为需求池整个缩水了。 -->
       <NvTabsTrigger value="demands"
         >需求池 ({{
@@ -1921,7 +1921,11 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
           </NvSelect>
         </div>
       </div>
-      <div v-if="sourceUnresolved" role="status" class="text-sm text-muted-foreground">
+      <div
+        v-if="sourceUnresolved"
+        role="status"
+        class="grid justify-items-start gap-2 text-sm text-muted-foreground"
+      >
         {{
           suggestionsError || mrpRunsError
             ? '来源读取失败，请刷新后重试。'
@@ -1929,7 +1933,9 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
               ? '正在定位来源建议…'
               : '当前可读范围内未定位到来源建议或运行。'
         }}
-        <RouterLink to="/planning">返回需求池</RouterLink>
+        <NvButton as-child size="sm" variant="outline">
+          <RouterLink to="/planning">返回需求池</RouterLink>
+        </NvButton>
       </div>
       <NvDataTable
         v-else
