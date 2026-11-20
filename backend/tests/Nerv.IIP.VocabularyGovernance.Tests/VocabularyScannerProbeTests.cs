@@ -29,14 +29,12 @@ public sealed class VocabularyScannerProbeTests
     private static VocabularyScanResult Scan(
         string consumerSource,
         IReadOnlyCollection<VocabularyExemption>? exemptions = null,
-        IReadOnlyCollection<string>? replicaFileNames = null,
         string consumerPath = "services/Probe/Application/Probe.cs",
         IReadOnlyList<VocabularyConstant>? constants = null) =>
         VocabularyLiteralScanner.Scan(
             constants ?? Constants(),
             [new SourceDocument(consumerPath, consumerSource)],
-            exemptions ?? [],
-            replicaFileNames ?? []);
+            exemptions ?? []);
 
     // ── 词表抽取：从类型系统穷举 ────────────────────────────────────────────────
 
@@ -279,123 +277,4 @@ public sealed class VocabularyScannerProbeTests
 
     // ── (b) 类假阳：跨服务逐字副本 ──────────────────────────────────────────────
 
-    [Fact]
-    public void Literals_inside_registered_replica_files_are_not_reported_by_the_literal_gate()
-    {
-        var result = Scan(
-            """class WorldHistorySpec { public const string Source = "business-erp"; }""",
-            replicaFileNames: ["WorldHistorySpec.cs"],
-            consumerPath: "services/Probe/Application/Seed/WorldHistorySpec.cs");
-
-        Assert.Empty(result.Violations);
-    }
-
-    [Fact]
-    public void Replica_copies_with_identical_shared_members_pass_despite_namespace_and_extra_members()
-    {
-        // 副本圈的合法差异：namespace/using 不同、单侧存在服务专属成员、XML doc 措辞不同。
-        var drifts = ReplicaConsistencyChecker.Check(
-        [
-            new SourceDocument(
-                "services/A/Application/Seed/WorldHistorySpec.cs",
-                """
-                using System;
-
-                namespace A.Seed;
-
-                /// <summary>A 侧文档。</summary>
-                public static class WorldHistorySpec
-                {
-                    public const string UomCode = "EA";
-
-                    /// <summary>A 专属成员。</summary>
-                    public static string OnlyInA() => "a";
-                }
-                """),
-            new SourceDocument(
-                "services/B/Application/Seed/WorldHistorySpec.cs",
-                """
-                namespace B.Seed;
-
-                /// <summary>B 侧文档（措辞不同不算分裂）。</summary>
-                public static class WorldHistorySpec
-                {
-                    public const string UomCode = "EA";
-                }
-                """),
-        ]);
-
-        Assert.Empty(drifts);
-    }
-
-    [Fact]
-    public void Replica_copies_with_diverged_shared_members_are_reported_member_by_member()
-    {
-        // 「一侧改了另一侧没跟上」= Digest 分叉思路（WorldHistoryShortageComponentGoldenVector 先例）。
-        var drifts = ReplicaConsistencyChecker.Check(
-        [
-            new SourceDocument(
-                "services/A/Application/Seed/WorldHistorySpec.cs",
-                """namespace A.Seed; public static class WorldHistorySpec { public const string UomCode = "EA"; }"""),
-            new SourceDocument(
-                "services/B/Application/Seed/WorldHistorySpec.cs",
-                """namespace B.Seed; public static class WorldHistorySpec { public const string UomCode = "PCS"; }"""),
-        ]);
-
-        var drift = Assert.Single(drifts);
-        Assert.Equal("WorldHistorySpec.UomCode", drift.MemberKey);
-        Assert.Contains("逐字相同", drift.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Replica_positional_record_parameter_divergence_is_reported_via_the_type_header()
-    {
-        // 位置记录没有花括号成员，参数表分叉只能通过类型头伪成员被看见（真实先例：
-        // Scheduling 侧 WorldHistoryOperation 缺 Workshop 参数）。
-        var drifts = ReplicaConsistencyChecker.Check(
-        [
-            new SourceDocument(
-                "services/A/Application/Seed/WorldHistoryMesSpec.cs",
-                "namespace A.Seed; public sealed record Operation(int Sequence, string Code);"),
-            new SourceDocument(
-                "services/B/Application/Seed/WorldHistoryMesSpec.cs",
-                "namespace B.Seed; public sealed record Operation(int Sequence, string Code, string Workshop);"),
-        ]);
-
-        var drift = Assert.Single(drifts);
-        Assert.Equal("Operation.<类型头>", drift.MemberKey);
-    }
-
-    [Fact]
-    public void Replica_method_overloads_are_compared_by_name_and_parameter_list()
-    {
-        var drifts = ReplicaConsistencyChecker.Check(
-        [
-            new SourceDocument(
-                "services/A/Application/Seed/WorldHistorySpec.cs",
-                """
-                namespace A.Seed;
-
-                public static class WorldHistorySpec
-                {
-                    public static string No(int index) => $"SO-{index:D4}";
-                    public static string No(string prefix, int index) => $"{prefix}-{index:D4}";
-                }
-                """),
-            new SourceDocument(
-                "services/B/Application/Seed/WorldHistorySpec.cs",
-                """
-                namespace B.Seed;
-
-                public static class WorldHistorySpec
-                {
-                    public static string No(int index) => $"SO-{index:D4}";
-                    public static string No(string prefix, int index) => $"{prefix}-{index:D5}";
-                }
-                """),
-        ]);
-
-        var drift = Assert.Single(drifts);
-        Assert.Equal("WorldHistorySpec.No(string prefix, int index)", drift.MemberKey);
-    }
 }

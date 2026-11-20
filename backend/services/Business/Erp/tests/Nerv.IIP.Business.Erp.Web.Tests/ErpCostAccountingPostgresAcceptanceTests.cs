@@ -114,46 +114,6 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         Assert.Equal(["source_no", "source_type"], await JournalVoucherSourceColumnsAsync(db, quotedSchema));
     }
 
-    /// <summary>
-    /// #3278 / S2：17 个建凭证位点里有 2 处在 <c>WorldHistorySeedService</c>。
-    /// 这一格在真库上跑一次 seed，然后断言 <c>journal_vouchers</c> **整表**没有来源列空值——
-    /// 漏填那 2 处中的任意一处，这里的空值计数就不为 0。
-    ///
-    /// <b>值域边界</b>：本格覆盖的是 seed 的 2 处，不是全部 17 处。
-    /// 「17 处一个不漏」由 <c>JournalVoucher.Post</c> 的不可省略参数在**编译期**保证
-    /// （见 <c>JournalVoucherSourceContractTests</c>），不由本格保证。
-    /// </summary>
-    [ErpCostPostgresFact(Timeout = 180_000)]
-    public async Task PostgreSQL_world_history_seed_leaves_no_voucher_without_a_source_document()
-    {
-        await ErpPostgresLaneDatabase.ResetSchemaAsync();
-        var options = ErpPostgresLaneDatabase.CreateOptions();
-        await using var db = new ApplicationDbContext(options, new NoopMediator());
-        ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
-        await db.Database.MigrateAsync();
-
-        await new WorldHistorySeedService(db).SeedAsync("org-001", "env-dev", new DateOnly(2026, 7, 26), 0.02d);
-
-        await db.Database.OpenConnectionAsync();
-        var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(ErpFacts.Schema);
-        await using var counts = new NpgsqlCommand($"""
-            SELECT count(*) AS total,
-                   count(*) FILTER (WHERE source_type IS NULL OR source_no IS NULL) AS missing,
-                   count(DISTINCT source_type) AS distinct_types
-            FROM {quotedSchema}.journal_vouchers
-            """, (NpgsqlConnection)db.Database.GetDbConnection());
-        await using var reader = await counts.ExecuteReaderAsync();
-        Assert.True(await reader.ReadAsync());
-        var total = reader.GetInt64(0);
-        var missing = reader.GetInt64(1);
-        var distinctTypes = reader.GetInt64(2);
-
-        Assert.True(total > 0, "seed 没有写出任何凭证，这一格就没有量到东西。");
-        Assert.Equal(0L, missing);
-        // 收入凭证与收款凭证必须落成两个不同的来源类型；两处都填成同一个占位串时这里就是 1。
-        Assert.Equal(2L, distinctTypes);
-    }
-
     private static async Task<IReadOnlyList<string>> JournalVoucherSourceColumnsAsync(ApplicationDbContext db, string quotedSchema)
     {
         await using var command = new NpgsqlCommand("""

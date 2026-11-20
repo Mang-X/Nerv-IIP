@@ -44,12 +44,6 @@
       "sourceReasonPattern": "^Skip = \\$\"Set \\{PostgresConnectionStringEnvironmentVariable\\} to run this real PostgreSQL BarcodeLabel profile test\\.\";$"
     },
     {
-      "id": "barcodelabel-world-history",
-      "sourcePath": "backend/services/Business/BarcodeLabel/tests/Nerv.IIP.Business.BarcodeLabel.Web.Tests/WorldHistoryLabelSeedPostgresTests.cs",
-      "sourceOrdinal": 1,
-      "sourceReasonPattern": "^Skip = \\$\"Set \\{PostgresConnectionStringEnvironmentVariable\\} to run this real PostgreSQL BarcodeLabel world-history test\\.\";$"
-    },
-    {
       "id": "demandplanning-postgres",
       "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/ErpSalesOrderDemandConsumerTests.cs",
       "sourceOrdinal": 1,
@@ -122,18 +116,6 @@
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP purchase-receipt route acceptance test\\.\";$"
     },
     {
-      "id": "erp-scale-seed",
-      "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/LeaderDemoScaleSeedPostgresTests.cs",
-      "sourceOrdinal": 1,
-      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL leader-demo scale seed measurement\\.\";$"
-    },
-    {
-      "id": "erp-world-history",
-      "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/WorldHistorySeedPostgresTests.cs",
-      "sourceOrdinal": 1,
-      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL world-history seed timing proof\\.\";$"
-    },
-    {
       "id": "industrialtelemetry-postgres",
       "sourcePath": "backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/IndustrialTelemetryIdempotentConcurrencyTests.cs",
       "sourceOrdinal": 1,
@@ -164,12 +146,6 @@
       "sourceReasonPattern": "^Skip = \\$\"Set \\{PostgresConnectionStringEnvironmentVariable\\} to run the real PostgreSQL Maintenance AssetUnavailable v2 tests\\.\";$"
     },
     {
-      "id": "maintenance-world-history",
-      "sourcePath": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/WorldHistoryMaintenanceSeedPostgresTests.cs",
-      "sourceOrdinal": 1,
-      "sourceReasonPattern": "^Skip = \\$\"Set \\{PostgresConnectionStringEnvironmentVariable\\} to run the real PostgreSQL Maintenance world-history seed test\\.\";$"
-    },
-    {
       "id": "masterdata-postgres",
       "sourcePath": "backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/MasterDataPostgresProfileTests.cs",
       "sourceOrdinal": 1,
@@ -186,18 +162,6 @@
       "sourcePath": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/TelemetryProductionReportCandidatePostgresTests.cs",
       "sourceOrdinal": 1,
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL MES candidate proof\\.\";$"
-    },
-    {
-      "id": "mes-world-history",
-      "sourcePath": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/WorldHistorySeedPostgresTests.cs",
-      "sourceOrdinal": 1,
-      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL world-history seed timing proof\\.\";$"
-    },
-    {
-      "id": "productengineering-world-bible",
-      "sourcePath": "backend/services/Business/ProductEngineering/tests/Nerv.IIP.Business.ProductEngineering.Web.Tests/WorldBibleSeedPostgresTests.cs",
-      "sourceOrdinal": 1,
-      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL world-bible engineering seed timing proof\\.\";$"
     },
     {
       "id": "quality-postgres",
@@ -252,12 +216,6 @@
       "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsWorkAssignmentMigrationPostgresTests.cs",
       "sourceOrdinal": 1,
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run WMS work-assignment PostgreSQL upgrade tests\\.\";$"
-    },
-    {
-      "id": "wms-world-history",
-      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WorldHistoryWmsSeedPostgresTests.cs",
-      "sourceOrdinal": 1,
-      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run WMS PostgreSQL profile tests\\.\";$"
     },
     {
       "id": "filestorage-postgres",
@@ -897,44 +855,6 @@
       "expectedRuntimeTestCount": 2
     },
     {
-      "id": "productengineering-world-bible",
-      "sourceId": "productengineering-world-bible",
-      "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.ProductEngineering\\.Web\\.Tests\\.WorldBibleSeedPostgresTests\\..+$",
-      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL world-bible engineering seed timing proof\\.$",
-      "allowedLanes": [
-        "backend"
-      ],
-      "requiredLane": "postgres",
-      "allowedOperatingSystems": [],
-      "responsibilityIssue": null,
-      "expiresOn": null,
-      "exitCondition": null,
-      "testIdentities": [
-        "Nerv.IIP.Business.ProductEngineering.Web.Tests.WorldBibleSeedPostgresTests.World_bible_seed_publishes_all_engineering_versions_within_the_startup_budget"
-      ],
-      "expectedRuntimeTestCount": 1
-    },
-    {
-      "id": "wms-world-history",
-      "sourceId": "wms-world-history",
-      "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Wms\\.Web\\.Tests\\.WorldHistoryWmsSeedPostgresTests\\..+$",
-      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run WMS PostgreSQL profile tests\\.$",
-      "allowedLanes": [
-        "backend"
-      ],
-      "requiredLane": "postgres",
-      "allowedOperatingSystems": [],
-      "responsibilityIssue": null,
-      "expiresOn": null,
-      "exitCondition": null,
-      "testIdentities": [
-        "Nerv.IIP.Business.Wms.Web.Tests.WorldHistoryWmsSeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean"
-      ],
-      "expectedRuntimeTestCount": 1
-    },
-    {
       "id": "wms-quality-gate",
       "sourceId": "wms-quality-gate",
       "classification": "environment-gated",
@@ -958,7 +878,7 @@
       "id": "inventory-postgres-profile",
       "sourceId": "inventory-postgres-profile",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Inventory\\.Web\\.Tests\\.(?:InventoryDeadLetterReplayPostgresTests|InventoryPostgresProfileTests|WorldHistoryInventorySeedPostgresTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Inventory\\.Web\\.Tests\\.(?:InventoryDeadLetterReplayPostgresTests|InventoryPostgresProfileTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run Inventory PostgreSQL profile tests\\.$",
       "allowedLanes": [
         "backend"
@@ -970,13 +890,12 @@
       "exitCondition": null,
       "testIdentities": [
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryPostgresProfileTests.Postgres_store_persists_inventory_ledger_and_enforces_migrations_history_schema",
-        "Nerv.IIP.Business.Inventory.Web.Tests.WorldHistoryInventorySeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean",
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDeadLetterReplayPostgresTests.Movement_http_replay_reads_persisted_stock_and_rejection_without_duplicate_posting",
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDeadLetterReplayPostgresTests.Reservation_replay_releases_original_scope_and_does_not_hide_missing_ledger",
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDeadLetterReplayPostgresTests.Quality_replay_recovers_two_status_legs_and_preserves_failure_and_scope",
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDeadLetterReplayPostgresTests.Approval_replay_requires_original_adjustment_and_posts_once"
       ],
-      "expectedRuntimeTestCount": 6
+      "expectedRuntimeTestCount": 5
     },
     {
       "id": "inventory-directory-postgres",
@@ -1130,28 +1049,9 @@
       "testIdentities": [
         "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_blocks_ambiguous_multi_adapter_history_before_changing_legacy_schema",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_blocks_completed_wcs_rows_without_authoritative_full_quantity_before_changing_schema",
-        "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_upgrades_legacy_rows_to_safe_assignment_boundary_and_keeps_seed_idempotent"
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_upgrades_legacy_rows_to_safe_assignment_boundary"
       ],
       "expectedRuntimeTestCount": 3
-    },
-    {
-      "id": "barcodelabel-world-history",
-      "sourceId": "barcodelabel-world-history",
-      "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.BarcodeLabel\\.Web\\.Tests\\.WorldHistoryLabelSeedPostgresTests\\..+$",
-      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run this real PostgreSQL BarcodeLabel world-history test\\.$",
-      "allowedLanes": [
-        "backend"
-      ],
-      "requiredLane": "postgres",
-      "allowedOperatingSystems": [],
-      "responsibilityIssue": null,
-      "expiresOn": null,
-      "exitCondition": null,
-      "testIdentities": [
-        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.WorldHistoryLabelSeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean"
-      ],
-      "expectedRuntimeTestCount": 1
     },
     {
       "id": "scheduling-postgres",
@@ -1284,7 +1184,7 @@
       "id": "industrialtelemetry-postgres",
       "sourceId": "industrialtelemetry-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.IndustrialTelemetry\\.Web\\.Tests\\.(?:IndustrialTelemetryDeadLetterReplayPostgresTests|IndustrialTelemetryDeviceControlReadFaceTests|IndustrialTelemetryHistorianTests|IndustrialTelemetryIdempotentConcurrencyTests|IndustrialTelemetryOeeAggregatePostgresTests|IndustrialTelemetryOeeHistoricalFactPostgresTests|IndustrialTelemetryOeePostgresQueryTests|WorldHistoryDeviceSeedPostgresTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.IndustrialTelemetry\\.Web\\.Tests\\.(?:IndustrialTelemetryDeadLetterReplayPostgresTests|IndustrialTelemetryDeviceControlReadFaceTests|IndustrialTelemetryHistorianTests|IndustrialTelemetryIdempotentConcurrencyTests|IndustrialTelemetryOeeAggregatePostgresTests|IndustrialTelemetryOeeHistoricalFactPostgresTests|IndustrialTelemetryOeePostgresQueryTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL IndustrialTelemetry regressions\\.$",
       "allowedLanes": [
         "backend"
@@ -1312,29 +1212,9 @@
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.State_budget_is_combined_and_bounded_in_executed_postgres_sql",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeHistoricalFactPostgresTests.Concurrent_projection_keeps_one_source_report_per_scope_on_postgres",
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeHistoricalFactPostgresTests.Prior_schema_fact_survives_up_down_up_without_fabricated_historical_dimensions_on_postgres",
-        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests.Oee_query_filters_production_facts_by_datetimeoffset_window_on_postgres",
-        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.WorldHistoryDeviceSeedPostgresTests.Full_scale_device_history_seed_stays_within_the_startup_budget_and_reruns_clean"
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeePostgresQueryTests.Oee_query_filters_production_facts_by_datetimeoffset_window_on_postgres"
       ],
-      "expectedRuntimeTestCount": 19
-    },
-    {
-      "id": "maintenance-world-history",
-      "sourceId": "maintenance-world-history",
-      "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Maintenance\\.Web\\.Tests\\.WorldHistoryMaintenanceSeedPostgresTests\\..+$",
-      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL Maintenance world-history seed test\\.$",
-      "allowedLanes": [
-        "backend"
-      ],
-      "requiredLane": "postgres",
-      "allowedOperatingSystems": [],
-      "responsibilityIssue": null,
-      "expiresOn": null,
-      "exitCondition": null,
-      "testIdentities": [
-        "Nerv.IIP.Business.Maintenance.Web.Tests.WorldHistoryMaintenanceSeedPostgresTests.Full_scale_maintenance_history_seed_stays_within_the_startup_budget_and_reruns_clean"
-      ],
-      "expectedRuntimeTestCount": 1
+      "expectedRuntimeTestCount": 18
     },
     {
       "id": "maintenance-device-pause",
@@ -1387,7 +1267,7 @@
       "id": "quality-postgres",
       "sourceId": "quality-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Quality\\.Web\\.Tests\\.(?:InspectionRecordSourceLinePostgresTests|PeriodicInspectionPostgresConcurrencyTests|PeriodicInspectionPostgresContinuationTests|PeriodicInspectionPostgresMigrationTests|QualityCalibrationRecordQueryTests|QualityCapaRedrivePostgresProfileTests|QualityInspectionTaskPostgresProfileTests|QualityNcrDispositionPostgresProfileTests|QualityReasonPostgresProfileTests|QualityReinspectionPostgresProfileTests|QualitySpcAnalysisTests|WorkOrderReleaseFactBacklogPostgresTests|WorkOrderReleaseProjectionBackfillPostgresTests|WorldHistoryQualitySeedPostgresTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Quality\\.Web\\.Tests\\.(?:InspectionRecordSourceLinePostgresTests|PeriodicInspectionPostgresConcurrencyTests|PeriodicInspectionPostgresContinuationTests|PeriodicInspectionPostgresMigrationTests|QualityCalibrationRecordQueryTests|QualityCapaRedrivePostgresProfileTests|QualityInspectionTaskPostgresProfileTests|QualityNcrDispositionPostgresProfileTests|QualityReasonPostgresProfileTests|QualityReinspectionPostgresProfileTests|QualitySpcAnalysisTests|WorkOrderReleaseFactBacklogPostgresTests|WorkOrderReleaseProjectionBackfillPostgresTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run Quality PostgreSQL profile tests\\.$",
       "allowedLanes": [
         "backend"
@@ -1426,16 +1306,15 @@
         "Nerv.IIP.Business.Quality.Web.Tests.QualityReinspectionPostgresProfileTests.Postgres_predecessor_conflict_reloads_the_committed_reinspection",
         "Nerv.IIP.Business.Quality.Web.Tests.QualitySpcAnalysisTests.Postgres_spc_point_projection_materializes_latest_points_without_client_translation",
         "Nerv.IIP.Business.Quality.Web.Tests.WorkOrderReleaseFactBacklogPostgresTests.Backlog_gauges_count_only_stuck_operations_and_return_to_zero_after_the_backfill_on_postgres",
-        "Nerv.IIP.Business.Quality.Web.Tests.WorkOrderReleaseProjectionBackfillPostgresTests.Backfill_commits_the_window_baseline_and_rejects_the_disagreeing_sku_under_real_constraints_on_postgres",
-        "Nerv.IIP.Business.Quality.Web.Tests.WorldHistoryQualitySeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean"
+        "Nerv.IIP.Business.Quality.Web.Tests.WorkOrderReleaseProjectionBackfillPostgresTests.Backfill_commits_the_window_baseline_and_rejects_the_disagreeing_sku_under_real_constraints_on_postgres"
       ],
-      "expectedRuntimeTestCount": 30
+      "expectedRuntimeTestCount": 29
     },
     {
       "id": "masterdata-postgres",
       "sourceId": "masterdata-postgres",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.MasterData\\.Web\\.Tests\\.(?:DeviceAssetReferenceConcurrencyPostgresTests|MasterDataPostgresProfileTests|MasterDataPostgresProfileTestsToolingAudit|MasterDataWorldBibleSeedPostgresTests|WorkerLoginAccountUniquenessPostgresTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.MasterData\\.Web\\.Tests\\.(?:DeviceAssetReferenceConcurrencyPostgresTests|MasterDataPostgresProfileTests|MasterDataPostgresProfileTestsToolingAudit|WorkerLoginAccountUniquenessPostgresTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run PostgreSQL profile tests\\.$",
       "allowedLanes": [
         "backend"
@@ -1468,29 +1347,9 @@
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_concurrent_usage_replay_commits_one_increment_and_one_audit_on_postgres",
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_replays_are_idempotent_and_conflicting_payloads_preserve_first_winner_on_postgres",
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTestsToolingAudit.Tooling_save_failure_rolls_back_business_and_audit_together_on_postgres",
-        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataWorldBibleSeedPostgresTests.World_bible_seed_persists_the_full_l0_master_data_within_the_startup_budget",
         "Nerv.IIP.Business.MasterData.Web.Tests.WorkerLoginAccountUniquenessPostgresTests.Second_worker_with_same_login_account_is_rejected_as_known_exception_on_postgres"
       ],
-      "expectedRuntimeTestCount": 24
-    },
-    {
-      "id": "mes-world-history",
-      "sourceId": "mes-world-history",
-      "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.WorldHistorySeedPostgresTests\\..+$",
-      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL world-history seed timing proof\\.$",
-      "allowedLanes": [
-        "backend"
-      ],
-      "requiredLane": "postgres",
-      "allowedOperatingSystems": [],
-      "responsibilityIssue": null,
-      "expiresOn": null,
-      "exitCondition": null,
-      "testIdentities": [
-        "Nerv.IIP.Business.Mes.Web.Tests.WorldHistorySeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean"
-      ],
-      "expectedRuntimeTestCount": 1
+      "expectedRuntimeTestCount": 23
     },
     {
       "id": "mes-production-report-serial",
@@ -1552,7 +1411,7 @@
       "id": "mes-production-candidate",
       "sourceId": "mes-production-candidate",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.(?:CreatedWorkOrderReleaseBackfillPostgresTests|DowntimeReasonCodeMigrationPostgresTests|LeaderDemoScaleSeedPostgresTests|MesChangeoverRecordPostgresTests|MesCollaborationPostgresTests|MesDowntimeReadFacePostgresTests|MesMaterialOwnershipSnapshotPostgresTests|MesMaterialSubstituteSnapshotPostgresTests|MesOperationTaskSkuSourcePostgresTests|MesTaskRoutingIdentityPostgresTests|MesProductionStatisticsPostgresTests|MesSchedulePlanProvenancePostgresTests|NcrReworkRequestedHandlerPostgresTests|NcrReworkRequestedOutboxPostgresTests|OperationActualTimeSettlementPostgresTests|OperationTaskClaimPostgresTests|ProductionReportOeeDimensionSnapshotPostgresTests|RushWorkOrderHttpPostgresTests|SkuDisabledConsumerTests|TelemetryProductionReportCandidatePostgresTests|WorkOrderCapitalizationConcurrencyPostgresTests|WorkOrderReleaseFactTimePostgresTests|WorkOrderReleaseProjectionBackfillPostgresTests|WorkOrderTransformationApplicationPostgresTests|WorkOrderTransformationPostgresTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Mes\\.Web\\.Tests\\.(?:CreatedWorkOrderReleaseBackfillPostgresTests|DowntimeReasonCodeMigrationPostgresTests|MesChangeoverRecordPostgresTests|MesCollaborationPostgresTests|MesDowntimeReadFacePostgresTests|MesMaterialOwnershipSnapshotPostgresTests|MesMaterialSubstituteSnapshotPostgresTests|MesOperationTaskSkuSourcePostgresTests|MesTaskRoutingIdentityPostgresTests|MesProductionStatisticsPostgresTests|MesSchedulePlanProvenancePostgresTests|NcrReworkRequestedHandlerPostgresTests|NcrReworkRequestedOutboxPostgresTests|OperationActualTimeSettlementPostgresTests|OperationTaskClaimPostgresTests|ProductionReportOeeDimensionSnapshotPostgresTests|RushWorkOrderHttpPostgresTests|SkuDisabledConsumerTests|TelemetryProductionReportCandidatePostgresTests|WorkOrderCapitalizationConcurrencyPostgresTests|WorkOrderReleaseFactTimePostgresTests|WorkOrderReleaseProjectionBackfillPostgresTests|WorkOrderTransformationApplicationPostgresTests|WorkOrderTransformationPostgresTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run real PostgreSQL MES candidate proof\\.$",
       "allowedLanes": [
         "backend"
@@ -1567,7 +1426,6 @@
         "Nerv.IIP.Business.Mes.Web.Tests.CreatedWorkOrderReleaseBackfillPostgresTests.Backfill_publishes_the_release_fact_through_the_real_unit_of_work_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.CreatedWorkOrderReleaseBackfillPostgresTests.Backfilled_release_carries_each_operations_pre_release_good_quantity_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.DowntimeReasonCodeMigrationPostgresTests.Legacy_reasons_migrate_once_across_all_scopes_and_repeat_stably_on_postgres",
-        "Nerv.IIP.Business.Mes.Web.Tests.LeaderDemoScaleSeedPostgresTests.Scale_seed_persists_one_thousand_released_work_orders_within_the_startup_budget",
         "Nerv.IIP.Business.Mes.Web.Tests.MesChangeoverRecordPostgresTests.Start_fields_and_completion_are_persisted_by_the_mes_migration",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCollaborationPostgresTests.Reportable_scope_matches_a_registered_participant_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.MesDowntimeReadFacePostgresTests.Downtime_list_rows_keep_work_center_code_out_of_work_order_field_on_postgres",
@@ -1630,7 +1488,7 @@
         "Nerv.IIP.Business.Mes.Web.Tests.MesTaskRoutingIdentityPostgresTests.Split_and_merge_preserve_saved_or_unknown_task_routes_on_postgres",
         "Nerv.IIP.Business.Mes.Web.Tests.MesTaskRoutingIdentityPostgresTests.Merge_rejects_different_or_unknown_source_route_identity_on_postgres"
       ],
-      "expectedRuntimeTestCount": 66
+      "expectedRuntimeTestCount": 65
     },
     {
       "id": "mes-cap-postgres",
@@ -1668,26 +1526,6 @@
         "Nerv.IIP.Business.Mes.Web.Tests.MaintenanceEventHandlerTests.PostgreSQL_migration_fails_closed_on_ambiguous_event_instance_history"
       ],
       "expectedRuntimeTestCount": 19
-    },
-    {
-      "id": "erp-world-history",
-      "sourceId": "erp-world-history",
-      "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Erp\\.Web\\.Tests\\.WorldHistorySeedPostgresTests\\..+$",
-      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL world-history seed timing proof\\.$",
-      "allowedLanes": [
-        "backend"
-      ],
-      "requiredLane": "postgres",
-      "allowedOperatingSystems": [],
-      "responsibilityIssue": null,
-      "expiresOn": null,
-      "exitCondition": null,
-      "testIdentities": [
-        "Nerv.IIP.Business.Erp.Web.Tests.WorldHistorySeedPostgresTests.Full_scale_history_seed_stays_within_the_startup_budget_and_reruns_clean",
-        "Nerv.IIP.Business.Erp.Web.Tests.WorldHistorySeedPostgresTests.Scaled_down_history_seed_produces_a_tenth_of_the_volume"
-      ],
-      "expectedRuntimeTestCount": 2
     },
     {
       "id": "erp-business-partner",
@@ -1742,7 +1580,6 @@
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_source_document_unique_index_blocks_a_second_row_for_the_same_source",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_source_unique_index_migration_up_and_down_run_for_real",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_work_order_cost_adjustment_key_drops_the_work_order_segment",
-        "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_world_history_seed_leaves_no_voucher_without_a_source_document",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests.PostgreSQL_zero_available_machine_settle_and_void_do_not_poison_later_priced_labor_currency",
         "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests.Concurrent_commands_serialize_revision_allocation_on_postgres",
         "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests.Http_configuration_and_audit_preserve_scope_revision_and_derived_rates_on_postgres",
@@ -1750,7 +1587,7 @@
         "Nerv.IIP.Business.Erp.Web.Tests.ErpDeadLetterReplayPostgresTests.Original_rate_time_recovers_cost_through_single_and_batch_http_without_duplicate_cost",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpDeadLetterReplayPostgresTests.Existing_receipt_business_dedup_replays_without_inbox_and_preserves_rejection_and_scope"
       ],
-      "expectedRuntimeTestCount": 26
+      "expectedRuntimeTestCount": 25
     },
     {
       "id": "erp-journal-voucher-no",
@@ -1809,25 +1646,6 @@
         "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Legacy_receipt_migrates_to_direct_and_old_key_replays_on_postgres"
       ],
       "expectedRuntimeTestCount": 2
-    },
-    {
-      "id": "erp-scale-seed",
-      "sourceId": "erp-scale-seed",
-      "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Erp\\.Web\\.Tests\\.LeaderDemoScaleSeedPostgresTests\\..+$",
-      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL leader-demo scale seed measurement\\.$",
-      "allowedLanes": [
-        "backend"
-      ],
-      "requiredLane": "postgres",
-      "allowedOperatingSystems": [],
-      "responsibilityIssue": null,
-      "expiresOn": null,
-      "exitCondition": null,
-      "testIdentities": [
-        "Nerv.IIP.Business.Erp.Web.Tests.LeaderDemoScaleSeedPostgresTests.Scale_seed_persists_one_thousand_released_sales_orders_within_the_startup_budget"
-      ],
-      "expectedRuntimeTestCount": 1
     },
     {
       "id": "performance-baseline-erp",

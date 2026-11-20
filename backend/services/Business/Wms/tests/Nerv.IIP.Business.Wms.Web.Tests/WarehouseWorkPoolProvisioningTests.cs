@@ -9,7 +9,7 @@ using Nerv.IIP.Business.Wms.Web.Application.Queries;
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
 /// <summary>
-/// 现场作业池写面：让「派工夹具」不再只能由 LeaderDemo 世界观种子提供（#1910 / NERV-1125）。
+/// 现场作业池写面的部署与授权契约（#1910 / NERV-1125）。
 /// 判据不是「有没有写进表」，而是**同一套公开写面造出来的池 + 成员能否让派工授权通过**。
 /// </summary>
 public sealed class WarehouseWorkPoolProvisioningTests

@@ -22,11 +22,8 @@
         "Nerv.IIP.Business.Erp.Web.Tests.BusinessPartnerChangedPostgresAcceptanceTests",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpCostAccountingPostgresAcceptanceTests",
         "Nerv.IIP.Business.Erp.Web.Tests.OperationLaborSettlementRedisCapTransportTests",
-        "Nerv.IIP.Business.Erp.Web.Tests.LeaderDemoScaleSeedPostgresTests",
         "Nerv.IIP.Business.Erp.Web.Tests.WorkCenterMachineOverheadRatePostgresAcceptanceTests",
-        "Nerv.IIP.Business.Erp.Web.Tests.WorldHistorySeedPostgresTests",
         "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataPostgresProfileTests",
-        "Nerv.IIP.Business.MasterData.Web.Tests.MasterDataWorldBibleSeedPostgresTests",
         "Nerv.IIP.Business.Scheduling.Web.Tests.AssetUnavailableInboxPostgresProfileTests",
         "Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingFirstPlanJobPostgresTests",
         "Nerv.IIP.Business.Scheduling.Web.Tests.SchedulingWorkingDraftPostgresTests",
@@ -37,7 +34,6 @@
         "Nerv.IIP.Business.Scheduling.Web.Tests.ScheduleReleaseGovernancePostgresProfileTests",
         "Nerv.IIP.Business.Wms.Web.Tests.WarehouseTaskActionConcurrencyPostgresTests",
         "Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests",
-        "Nerv.IIP.Business.Wms.Web.Tests.WorldHistoryWmsSeedPostgresTests",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterReplayPostgresTests",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests"
       ],
@@ -51,7 +47,7 @@
         "Nerv.IIP.Business.Wms.Web.Tests.WmsShortPickBackorderTests.Short_pick_chain_is_durable_and_idempotent_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_blocks_ambiguous_multi_adapter_history_before_changing_legacy_schema",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_blocks_completed_wcs_rows_without_authoritative_full_quantity_before_changing_schema",
-        "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_upgrades_legacy_rows_to_safe_assignment_boundary_and_keeps_seed_idempotent"
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsWorkAssignmentMigrationPostgresTests.Migration_upgrades_legacy_rows_to_safe_assignment_boundary"
       ]
     },
     {
@@ -140,12 +136,9 @@
         "Nerv.IIP.Business.Acceptance.Tests.QualityFirstArticleMesQualityHoldAcceptanceTests",
         "Nerv.IIP.Business.Acceptance.Tests.RuntimeHoursMaintenancePostgresAcceptanceTests",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests",
-        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.WorldHistoryLabelSeedPostgresTests",
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests",
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryPostgresProfileTests",
-        "Nerv.IIP.Business.Inventory.Web.Tests.WorldHistoryInventorySeedPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.AndonCallPostgresTests",
-        "Nerv.IIP.Business.Mes.Web.Tests.LeaderDemoScaleSeedPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesCapSaveBoundaryPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesChangeoverRecordPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.MesMaterialOwnershipSnapshotPostgresTests",
@@ -160,7 +153,6 @@
         "Nerv.IIP.Business.Mes.Web.Tests.TelemetryProductionReportCandidatePostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderCapitalizationConcurrencyPostgresTests",
         "Nerv.IIP.Business.Mes.Web.Tests.WorkOrderTransformationPostgresTests",
-        "Nerv.IIP.Business.Mes.Web.Tests.WorldHistorySeedPostgresTests",
         "Nerv.IIP.Business.Quality.Web.Tests.InspectionRecordSourceLinePostgresTests",
         "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests",
         "Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresContinuationTests",
@@ -168,8 +160,7 @@
         "Nerv.IIP.Business.Quality.Web.Tests.QualityCapaRedrivePostgresProfileTests",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityInspectionTaskPostgresProfileTests",
         "Nerv.IIP.Business.Quality.Web.Tests.QualityReasonPostgresProfileTests",
-        "Nerv.IIP.Business.Quality.Web.Tests.QualityReinspectionPostgresProfileTests",
-        "Nerv.IIP.Business.Quality.Web.Tests.WorldHistoryQualitySeedPostgresTests"
+        "Nerv.IIP.Business.Quality.Web.Tests.QualityReinspectionPostgresProfileTests"
       ],
       "excludedTests": [
         "Nerv.IIP.Business.Acceptance.Tests.WmsInventoryRpcIdempotencyAcceptanceTests.Postgres_count_execution_timeout_and_concurrent_retry_converges_inventory_and_wms",
@@ -204,10 +195,7 @@
       ],
       "excludedTestClasses": [
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryDeadLetterReplayPostgresTests",
-        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeHistoricalFactPostgresTests",
-        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.WorldHistoryDeviceSeedPostgresTests",
-        "Nerv.IIP.Business.Maintenance.Web.Tests.WorldHistoryMaintenanceSeedPostgresTests",
-        "Nerv.IIP.Business.ProductEngineering.Web.Tests.WorldBibleSeedPostgresTests"
+        "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeHistoricalFactPostgresTests"
       ],
       "excludedTests": [
         "Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeAggregatePostgresTests.Changeover_runtime_is_an_availability_loss_and_is_reported_separately_on_postgres",

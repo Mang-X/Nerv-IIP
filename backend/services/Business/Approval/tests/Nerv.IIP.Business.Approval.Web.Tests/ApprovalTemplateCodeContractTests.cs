@@ -13,7 +13,6 @@ namespace Nerv.IIP.Business.Approval.Web.Tests;
 /// <summary>
 /// #1344 三方漂移契约（审批 / 种子侧）：审批模板码的唯一事实来源是
 /// <see cref="ApprovalTemplateCodes"/>，产品基线种子、业务服务发起侧、界面侧共用。
-/// WorldHistory 的 <c>APT-WB-*</c> 旧码只用于已持久历史事实，不得再作为产品发起契约。
 /// </summary>
 public sealed class ApprovalTemplateCodeContractTests
 {
@@ -27,27 +26,6 @@ public sealed class ApprovalTemplateCodeContractTests
     public void Seed_spec_and_contract_pin_the_same_purchase_source_service()
     {
         Assert.Equal("business-erp", ApprovalSourceServices.BusinessErp);
-        Assert.Equal(ApprovalSourceServices.BusinessErp, WorldHistoryApprovalSpec.PurchaseSourceService);
-    }
-
-    /// <summary>
-    /// #1683：常量对上还不够——真正落库的是 <c>BuildApprovalFacts</c> 产出的事实流。
-    /// 每条采购审批事实的来源服务 / 单据类型都必须逐字等于契约常量（回写消费侧的分流依据）。
-    /// </summary>
-    [Fact]
-    public void Purchase_approval_facts_carry_the_contract_source_service()
-    {
-        var facts = WorldHistoryApprovalSpec.BuildApprovalFacts(new DateOnly(2026, 7, 26), 0.2d);
-        var purchaseFacts = facts
-            .Where(x => string.Equals(x.TemplateCode, WorldHistoryApprovalSpec.PurchaseTemplateCode, StringComparison.Ordinal))
-            .ToArray();
-
-        Assert.NotEmpty(purchaseFacts);
-        Assert.All(purchaseFacts, fact =>
-        {
-            Assert.Equal(ApprovalSourceServices.BusinessErp, fact.SourceService);
-            Assert.Equal(ApprovalDocumentTypes.PurchaseOrder, fact.DocumentType);
-        });
     }
 
     /// <summary>
@@ -60,28 +38,6 @@ public sealed class ApprovalTemplateCodeContractTests
     public void Seed_spec_and_contract_pin_the_same_ncr_source_service()
     {
         Assert.Equal("quality", ApprovalSourceServices.Quality);
-        Assert.Equal(ApprovalSourceServices.Quality, WorldHistoryApprovalSpec.NcrSourceService);
-    }
-
-    /// <summary>
-    /// #1702：常量对上还不够——真正落库的是 <c>BuildApprovalFacts</c> 产出的事实流。
-    /// 每条 NCR 处置审批事实的来源服务 / 单据类型都必须逐字等于契约常量
-    /// （它们一起进 <c>PendingIdentityKey</c>，也是未来质量侧回写消费者的分流依据）。
-    /// </summary>
-    [Fact]
-    public void Ncr_approval_facts_carry_the_contract_source_service()
-    {
-        var facts = WorldHistoryApprovalSpec.BuildApprovalFacts(new DateOnly(2026, 7, 26), 0.2d);
-        var ncrFacts = facts
-            .Where(x => string.Equals(x.TemplateCode, WorldHistoryApprovalSpec.NcrTemplateCode, StringComparison.Ordinal))
-            .ToArray();
-
-        Assert.NotEmpty(ncrFacts);
-        Assert.All(ncrFacts, fact =>
-        {
-            Assert.Equal(ApprovalSourceServices.Quality, fact.SourceService);
-            Assert.Equal(ApprovalDocumentTypes.NcrDisposition, fact.DocumentType);
-        });
     }
 
     /// <summary>
@@ -94,7 +50,6 @@ public sealed class ApprovalTemplateCodeContractTests
     public void Seed_spec_and_contract_pin_the_same_sales_credit_release_document_type()
     {
         Assert.Equal("sales-order-credit-release", ApprovalDocumentTypes.SalesOrderCreditRelease);
-        Assert.Equal(ApprovalDocumentTypes.SalesOrderCreditRelease, WorldHistoryApprovalSpec.SalesCreditReleaseDocumentType);
     }
 
     /// <summary>
@@ -180,49 +135,26 @@ public sealed class ApprovalTemplateCodeContractTests
         Assert.DoesNotContain("Nerv.IIP.Contracts.Inventory", referenced);
     }
 
-    /// <summary>产品码与 WorldHistory 旧码必须分离；旧码仍保持逐字冻结。</summary>
     [Fact]
-    public void Seed_spec_and_contract_pin_the_same_purchase_template_vocabulary()
+    public void Product_approval_contract_pins_template_vocabulary()
     {
         Assert.Equal("purchase-order-release", ApprovalTemplateCodes.PurchaseOrderRelease);
-        Assert.Equal("APT-WB-PO-001", WorldHistoryApprovalSpec.PurchaseTemplateCode);
-        Assert.NotEqual(ApprovalTemplateCodes.PurchaseOrderRelease, WorldHistoryApprovalSpec.PurchaseTemplateCode);
-        Assert.Equal("purchase-order", WorldHistoryApprovalSpec.PurchaseDocumentType);
 
         Assert.Equal("purchase-order-change", ApprovalTemplateCodes.PurchaseOrderChange);
-        Assert.Equal("APT-WB-PO-002", WorldHistoryApprovalSpec.PurchaseChangeTemplateCode);
-        Assert.NotEqual(ApprovalTemplateCodes.PurchaseOrderChange, WorldHistoryApprovalSpec.PurchaseChangeTemplateCode);
         Assert.NotEqual(ApprovalTemplateCodes.PurchaseOrderRelease, ApprovalTemplateCodes.PurchaseOrderChange);
 
-        // 单据类型刻意与下达相同：换新值就必须同步 ERP 回写消费侧 / 委托单据范围 / 界面词表三处。
-        Assert.Equal(ApprovalDocumentTypes.PurchaseOrder, WorldHistoryApprovalSpec.PurchaseChangeDocumentType);
-        Assert.Equal(ApprovalSourceServices.BusinessErp, WorldHistoryApprovalSpec.PurchaseChangeSourceService);
-
-        // 收件箱待办表没有「模板」列，能分辨两类待办的是步骤名，因此两者必须不同。
-        Assert.Equal("总经理审批", WorldHistoryApprovalSpec.PurchaseReleaseStepName);
-        Assert.Equal("采购变更审批", WorldHistoryApprovalSpec.PurchaseChangeStepName);
-        Assert.NotEqual(WorldHistoryApprovalSpec.PurchaseReleaseStepName, WorldHistoryApprovalSpec.PurchaseChangeStepName);
+        Assert.Equal("purchase-order", ApprovalDocumentTypes.PurchaseOrder);
 
         Assert.Equal("ncr-disposition", ApprovalTemplateCodes.NcrDisposition);
-        Assert.Equal("APT-WB-NCR-001", WorldHistoryApprovalSpec.NcrTemplateCode);
-        Assert.NotEqual(ApprovalTemplateCodes.NcrDisposition, WorldHistoryApprovalSpec.NcrTemplateCode);
 
         Assert.Equal("erp-sales-credit-release", ApprovalTemplateCodes.SalesCreditRelease);
-        Assert.Equal(ApprovalTemplateCodes.SalesCreditRelease, WorldHistoryApprovalSpec.SalesCreditReleaseTemplateCode);
 
         // #1344 扩修：盘点差异（Inventory 发起侧默认值 ↔ 种子模板）。
         Assert.Equal("stock-count-variance", ApprovalTemplateCodes.StockCountVariance);
-        Assert.Equal("APT-WB-CNT-001", WorldHistoryApprovalSpec.StockCountVarianceTemplateCode);
-        Assert.NotEqual(ApprovalTemplateCodes.StockCountVariance, WorldHistoryApprovalSpec.StockCountVarianceTemplateCode);
         Assert.Equal("inventory-count-variance", ApprovalDocumentTypes.StockCountVariance);
-        Assert.Equal(ApprovalDocumentTypes.StockCountVariance, WorldHistoryApprovalSpec.StockCountVarianceDocumentType);
 
         Assert.Equal("engineering-change-order", ApprovalTemplateCodes.EngineeringChangeOrder);
-        Assert.Equal("APT-WB-ECO-001", WorldHistoryApprovalSpec.EngineeringChangeTemplateCode);
-        Assert.NotEqual(ApprovalTemplateCodes.EngineeringChangeOrder, WorldHistoryApprovalSpec.EngineeringChangeTemplateCode);
         Assert.Equal("engineering-change-order", ApprovalDocumentTypes.EngineeringChangeOrder);
-        Assert.Equal(ApprovalDocumentTypes.EngineeringChangeOrder, WorldHistoryApprovalSpec.EngineeringChangeDocumentType);
-        Assert.Equal("product-engineering", WorldHistoryApprovalSpec.EngineeringChangeSourceService);
     }
 
     [Fact]
@@ -243,8 +175,8 @@ public sealed class ApprovalTemplateCodeContractTests
                     1,
                     "工程变更评审",
                     null,
-                    WorldHistoryApprovalSpec.ActorTypeUser,
-                    WorldHistoryApprovalSpec.AdminUserId,
+                    "user",
+                    "user-admin",
                     24),
             ]));
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -254,7 +186,7 @@ public sealed class ApprovalTemplateCodeContractTests
                 "org-001",
                 "env-dev",
                 ApprovalTemplateCodes.EngineeringChangeOrder,
-                WorldHistoryApprovalSpec.EngineeringChangeSourceService,
+                ApprovalSourceServices.ProductEngineering,
                 ApprovalDocumentTypes.EngineeringChangeOrder,
                 "ECO-20260801-000001",
                 null,
@@ -264,7 +196,7 @@ public sealed class ApprovalTemplateCodeContractTests
         var chain = await dbContext.ApprovalChains.SingleAsync(x => x.Id == chainId, CancellationToken.None);
         Assert.Equal(ApprovalTemplateCodes.EngineeringChangeOrder, chain.TemplateCode);
         Assert.Equal(ApprovalDocumentTypes.EngineeringChangeOrder, chain.DocumentReference.DocumentType);
-        Assert.Equal(WorldHistoryApprovalSpec.EngineeringChangeSourceService, chain.DocumentReference.SourceService);
+        Assert.Equal(ApprovalSourceServices.ProductEngineering, chain.DocumentReference.SourceService);
     }
 
     /// <summary>
@@ -289,8 +221,8 @@ public sealed class ApprovalTemplateCodeContractTests
                     StepNo: 1,
                     StepName: "盘点差异核准",
                     ParallelGroupKey: null,
-                    ApproverType: WorldHistoryApprovalSpec.ActorTypeUser,
-                    ApproverRef: WorldHistoryApprovalSpec.AdminUserId,
+                    ApproverType: "user",
+                    ApproverRef: "user-admin",
                     DueInHours: 24),
             ]));
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -310,7 +242,7 @@ public sealed class ApprovalTemplateCodeContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var chain = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == chainId);
-        chain.ResolveStep(1, WorldHistoryApprovalSpec.ActorTypeUser, WorldHistoryApprovalSpec.AdminUserId, "approve", "差异核准，允许调整账面");
+        chain.ResolveStep(1, "user", "user-admin", "approve", "差异核准，允许调整账面");
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         Assert.Equal(ApprovalChainStatuses.Approved, chain.Status);
@@ -331,7 +263,7 @@ public sealed class ApprovalTemplateCodeContractTests
             version: 1,
             isActive: true,
             [
-                new ApprovalTemplateStepDefinition(1, "盘点差异核准", null, WorldHistoryApprovalSpec.ActorTypeUser, WorldHistoryApprovalSpec.AdminUserId, 24),
+                new ApprovalTemplateStepDefinition(1, "盘点差异核准", null, "user", "user-admin", 24),
             ]));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -371,8 +303,8 @@ public sealed class ApprovalTemplateCodeContractTests
                 "org-001",
                 "env-dev",
                 ApprovalTemplateCodes.PurchaseOrderRelease,
-                "business-erp",
-                WorldHistoryApprovalSpec.PurchaseDocumentType,
+                ApprovalSourceServices.BusinessErp,
+                ApprovalDocumentTypes.PurchaseOrder,
                 "PO-20260731-000001",
                 null,
                 "system:erp",
@@ -381,7 +313,7 @@ public sealed class ApprovalTemplateCodeContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var chain = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == chainId);
-        chain.ResolveStep(1, WorldHistoryApprovalSpec.ActorTypeUser, WorldHistoryApprovalSpec.AdminUserId, "approve", "同意下达");
+        chain.ResolveStep(1, "user", "user-admin", "approve", "同意下达");
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         Assert.Equal(ApprovalChainStatuses.Approved, chain.Status);
@@ -404,8 +336,8 @@ public sealed class ApprovalTemplateCodeContractTests
                 "org-001",
                 "env-dev",
                 "erp-purchase-order-release",
-                "business-erp",
-                WorldHistoryApprovalSpec.PurchaseDocumentType,
+                ApprovalSourceServices.BusinessErp,
+                ApprovalDocumentTypes.PurchaseOrder,
                 "PO-20260731-000002",
                 null,
                 "system:erp"),
@@ -429,7 +361,7 @@ public sealed class ApprovalTemplateCodeContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await new ApprovalSeedService(dbContext).SeedAsync("org-001", "env-dev", WorldHistoryApprovalSpec.AdminUserId, CancellationToken.None);
+        await new ApprovalSeedService(dbContext).SeedAsync("org-001", "env-dev", "user-admin", CancellationToken.None);
         dbContext.ChangeTracker.Clear();
 
         var seededChangeTemplate = await dbContext.ApprovalTemplates
@@ -458,7 +390,7 @@ public sealed class ApprovalTemplateCodeContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var chain = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == chainId);
-        chain.ResolveStep(1, WorldHistoryApprovalSpec.ActorTypeUser, WorldHistoryApprovalSpec.AdminUserId, "approve", "同意变更");
+        chain.ResolveStep(1, "user", "user-admin", "approve", "同意变更");
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         Assert.Equal(ApprovalChainStatuses.Approved, chain.Status);
@@ -478,7 +410,7 @@ public sealed class ApprovalTemplateCodeContractTests
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await new ApprovalSeedService(dbContext).SeedAsync("org-001", "env-dev", WorldHistoryApprovalSpec.AdminUserId, CancellationToken.None);
+        await new ApprovalSeedService(dbContext).SeedAsync("org-001", "env-dev", "user-admin", CancellationToken.None);
         dbContext.ChangeTracker.Clear();
 
         var handler = new StartApprovalChainCommandHandler(dbContext);
@@ -504,8 +436,6 @@ public sealed class ApprovalTemplateCodeContractTests
         Assert.Equal(releaseChain.DocumentReference.DocumentType, changeChain.DocumentReference.DocumentType);
 
         // 待办列表展示的「当前步骤」必须不同。
-        Assert.Equal(WorldHistoryApprovalSpec.PurchaseReleaseStepName, releaseChain.Steps.Single().StepName);
-        Assert.Equal(WorldHistoryApprovalSpec.PurchaseChangeStepName, changeChain.Steps.Single().StepName);
         Assert.NotEqual(releaseChain.Steps.Single().StepName, changeChain.Steps.Single().StepName);
 
         // 待办唯一键含模板码：共用模板码时两条链的唯一键完全相同（同一张订单只能有一条待办链）。
@@ -519,16 +449,16 @@ public sealed class ApprovalTemplateCodeContractTests
             "org-001",
             "env-dev",
             ApprovalTemplateCodes.PurchaseOrderRelease,
-            WorldHistoryApprovalSpec.PurchaseDocumentType,
+            ApprovalDocumentTypes.PurchaseOrder,
             version: 1,
             isActive: true,
             [
                 new ApprovalTemplateStepDefinition(
                     StepNo: 1,
-                    StepName: WorldHistoryApprovalSpec.PurchaseReleaseStepName,
+                    StepName: "总经理审批",
                     ParallelGroupKey: null,
-                    ApproverType: WorldHistoryApprovalSpec.ActorTypeUser,
-                    ApproverRef: WorldHistoryApprovalSpec.AdminUserId,
+                    ApproverType: "user",
+                    ApproverRef: "user-admin",
                     DueInHours: 24),
             ]);
     }
