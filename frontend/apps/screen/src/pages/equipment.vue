@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import HallMetric from '@/components/launcher/HallMetric.vue'
+import { getScreenSession } from '@/data/session'
+import { useAuthorizedScreenData } from '@/composables/useAuthorizedScreenData'
 import {
   NvRingGauge,
   NvScreenFreshness,
@@ -44,7 +47,7 @@ const {
   refresh,
   isStale,
   lastUpdated,
-} = useScreenData<EquipmentOverview>(
+} = useAuthorizedScreenData<EquipmentOverview>(
   () => fetchEquipmentOverview(scope.currentFactoryId, scope.persona.workshopIds),
   { intervalMs: 10000 },
 )
@@ -169,11 +172,12 @@ const openAlarms = computed(
 )
 const activeRepairs = computed(() => ov.value?.repairs.filter((r) => r.stage !== '已关闭') ?? [])
 const duePm = computed(() => ov.value?.pmTasks.filter((t) => t.state !== 'done') ?? [])
+const missingEvents = computed(() => Object.keys(ov.value?.failures ?? {}).length > 0)
 const evTabs = computed(() => [
-  { label: `全部 ${events.value.length}`, value: 'all' },
-  { label: `报警 ${openAlarms.value.length}`, value: 'alarm' },
-  { label: `维修 ${activeRepairs.value.length}`, value: 'repair' },
-  { label: `保养 ${duePm.value.length}`, value: 'pm' },
+  { label: `全部 ${missingEvents.value ? '· 部分可用' : events.value.length}`, value: 'all' },
+  { label: `报警 ${ov.value?.failures?.报警 ? '—' : openAlarms.value.length}`, value: 'alarm' },
+  { label: `维修 ${ov.value?.failures?.维修 ? '—' : activeRepairs.value.length}`, value: 'repair' },
+  { label: `保养 ${ov.value?.failures?.保养 ? '—' : duePm.value.length}`, value: 'pm' },
 ])
 /** 维修状态机当前阶段序号（步进器用） */
 function stageIdx(r: RepairOrder): number {
@@ -188,7 +192,10 @@ const relCells = computed(() => {
     { label: 'MTBF（小时）', value: r.mtbfHours === null ? '—' : String(r.mtbfHours) },
     { label: 'MTTR（分钟）', value: r.mttrMinutes === null ? '—' : String(r.mttrMinutes) },
     { label: IS_REAL_DATA ? '报警或停机设备（台）' : '故障次数', value: String(r.failures) },
-    { label: IS_REAL_DATA ? '本页进行中维修单' : '修复次数', value: String(r.repairs) },
+    {
+      label: IS_REAL_DATA ? '本页进行中维修单' : '修复次数',
+      value: ov.value?.failures?.维修 ? '—' : String(r.repairs),
+    },
   ]
 })
 
@@ -204,8 +211,12 @@ const paramsFreshness = computed(() =>
 </script>
 
 <template>
-  <ScreenLayout title="Nerv-IIP 设备监控大屏" :line="factoryName" screen="指挥中心大屏 02">
-    <div v-if="ov && !error" class="eq">
+  <ScreenLayout
+    title="Nerv-IIP 设备监控大屏"
+    :line="ov?.workCenterCode ? '工作中心 · ' + ov.workCenterCode : factoryName"
+    screen="指挥中心大屏 02"
+  >
+    <div v-if="ov" class="eq">
       <div class="main">
         <!-- 主体：设备状态全景墙（视图焦点，占绝对主导） -->
         <section class="wall-wrap">
@@ -258,10 +269,16 @@ const paramsFreshness = computed(() =>
 
           <NvScreenPanel title="异常与待办" class="events">
             <template #extra>
-              <span class="ev-count" :class="{ calm: events.length === 0 }">
+              <span v-if="!missingEvents" class="ev-count" :class="{ calm: events.length === 0 }">
                 {{ events.length === 0 ? '暂无待办' : `${events.length} 项` }}
               </span>
             </template>
+            <div v-if="missingEvents" role="status">
+              <span v-for="(reason, source) in ov.failures" :key="source"
+                >{{ source }} · {{ reason }}　</span
+              >
+              <button :disabled="loading" @click="refresh">重试</button>
+            </div>
             <NvScreenTabs v-model="evTab" :items="evTabs" class="ev-tabs" />
             <NvScreenScrollArea class="ev-list">
               <!-- 全部：合并流（严重度排序） -->
@@ -272,7 +289,7 @@ const paramsFreshness = computed(() =>
                   <span class="ev-txt">{{ e.text }}</span>
                   <span class="ev-tag" :class="{ late: e.late }">{{ e.tag }}</span>
                 </div>
-                <div v-if="events.length === 0" class="ev-empty">
+                <div v-if="!missingEvents && events.length === 0" class="ev-empty">
                   <span>{{ ov.partialEvents ? '本页暂无异常与待办' : '暂无异常与待办记录' }}</span>
                   <p v-if="!ov.partialEvents">无未恢复报警 · 无进行中维修 · 无到期保养</p>
                 </div>
@@ -304,7 +321,7 @@ const paramsFreshness = computed(() =>
                     </span>
                   </div>
                 </div>
-                <div v-if="!openAlarms.length" class="ev-empty">
+                <div v-if="!ov.failures?.报警 && !openAlarms.length" class="ev-empty">
                   <NvScreenStatusLight tone="run" label="无未恢复报警" />
                 </div>
               </template>
@@ -341,19 +358,19 @@ const paramsFreshness = computed(() =>
                     }}<template v-if="r.blockedBy"> · {{ r.blockedBy }}</template>
                   </div>
                 </div>
-                <div v-if="!activeRepairs.length" class="ev-empty">
+                <div v-if="!ov.failures?.维修 && !activeRepairs.length" class="ev-empty">
                   <NvScreenStatusLight tone="run" label="无进行中维修" />
                 </div>
               </template>
 
-              <!-- 保养：PM 计划（含已完成）+ 今日点检台账 -->
+              <!-- 保养：PM 计划（含已完成）+ 点检台账 -->
               <template v-else>
                 <div v-for="t in ov.pmTasks" :key="t.device + t.task" class="pm-row">
                   <span class="pm-dev">{{ t.device }}</span>
                   <span class="pm-task">{{ t.task }}</span>
                   <span class="pm-due" :class="t.state">{{ t.due }}</span>
                 </div>
-                <h5 class="insp-h">今日点检台账</h5>
+                <h5 class="insp-h">点检台账</h5>
                 <div v-for="i in ov.inspections" :key="i.time + i.device" class="insp-row">
                   <span class="insp-time">{{ i.time }}</span>
                   <span class="insp-txt">{{ i.device }} · {{ i.item }} · {{ i.by }}</span>
@@ -369,6 +386,7 @@ const paramsFreshness = computed(() =>
       <footer class="scr-foot">
         <RouterLink :to="backLink.to" class="scr-back">‹ {{ backLink.label }}</RouterLink>
         <div class="scr-foot-r">
+          <ReadError v-if="error" :error="error" :loading="loading" @retry="refresh" />
           <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
           <NvScreenFreshness
             v-if="demoParams"
@@ -382,11 +400,21 @@ const paramsFreshness = computed(() =>
     <div v-else class="eq-loading">
       <ReadError v-if="error" :error="error" :loading="loading" @retry="refresh" />
       <span v-else>正在读取…</span>
+      <template v-if="error && IS_REAL_DATA">
+        <HallMetric metric="running" label="运行设备 / 在册设备" :session="getScreenSession()" />
+        <HallMetric
+          detail
+          metric="repairs"
+          label="可读维修工单（单）"
+          :session="getScreenSession()"
+        />
+        <HallMetric metric="alarms" label="未恢复报警" :session="getScreenSession()" />
+      </template>
       <RouterLink :to="backLink.to">‹ {{ backLink.label }}</RouterLink>
     </div>
 
     <DeviceDetailModal
-      v-if="selectedId"
+      v-if="selectedId && ov?.devices.some((device) => device.id === selectedId)"
       :device-id="selectedId"
       :factory-id="scope.currentFactoryId"
       :workshop-ids="scope.persona.workshopIds"

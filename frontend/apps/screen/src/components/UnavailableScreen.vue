@@ -19,14 +19,17 @@ const session = computed(() => ({
   <ScreenLayout :title="screen.title" :line="session.organizationId" screen="">
     <section class="missing">
       <template v-if="screen.key === 'quality'">
-        <HallMetric metric="ncr" label="待处置 NCR（单）" :session="session" />
-        <HallMetric metric="inspection" label="待检任务（项）" :session="session" />
-        <p>批次合格率与缺陷分布暂无来源</p>
+        <HallMetric detail metric="ncr" label="NCR 未处置 / 处置中（单）" :session="session" />
+        <HallMetric
+          detail
+          metric="inspection"
+          label="检验待认领 / 进行中（项）"
+          :session="session"
+        />
+        <p>每种状态最多展示 5 条。批次合格率与缺陷分布未接入</p>
       </template>
       <h2 v-else>当前范围暂无指标来源</h2>
-      <RouterLink v-if="screen.key === 'line'" to="/andon">进入真实安灯队列</RouterLink>
-      <RouterLink v-if="screen.key === 'factory'" to="/workshop">车间总览</RouterLink>
-      <RouterLink v-if="screen.key === 'workshop'" to="/line">产线监控</RouterLink>
+      <RouterLink v-if="screen.key !== 'quality'" to="/andon">进入真实安灯队列</RouterLink>
       <RouterLink :to="back.to">‹ {{ back.label }}</RouterLink>
     </section>
   </ScreenLayout>
