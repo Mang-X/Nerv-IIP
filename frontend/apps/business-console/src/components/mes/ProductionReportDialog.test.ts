@@ -514,10 +514,11 @@ describe('ProductionReportDialog — 带出式录入', () => {
   })
 
   it('确认本次报工的产出可入库后，可继续到同一工单和成品', async () => {
+    let scopeCurrent = true
     spies.readReceiptHandoff.mockResolvedValue({
       workOrderId: 'WO-2026-0007',
       skuId: 'SKU-001',
-      isCurrent: () => true,
+      isCurrent: () => scopeCurrent,
     })
     const wrapper = mountDialog()
     await wrapper.get('#report-good').setValue('6')
@@ -533,6 +534,9 @@ describe('ProductionReportDialog — 带出式录入', () => {
       path: '/mes/receipts',
       query: { workOrderId: 'WO-2026-0007', skuId: 'SKU-001' },
     })
+    scopeCurrent = false
+    action.onClick()
+    expect(spies.routerPush).toHaveBeenCalledTimes(1)
   })
 
   it('重新报工缺少工序实时状态时默认普通报工，并禁用再次完工', async () => {
