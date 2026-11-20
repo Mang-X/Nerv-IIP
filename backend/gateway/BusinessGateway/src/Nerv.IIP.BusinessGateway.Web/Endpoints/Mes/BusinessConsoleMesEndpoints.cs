@@ -1805,16 +1805,16 @@ public sealed class GetBusinessConsoleMesWipSummaryEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesListRequest, BusinessConsoleMesWipSummaryResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesWipSummaryRequest, BusinessConsoleMesWipSummaryResponse>(
         auth,
         BusinessGatewayPermissions.MesOperationsRead)
 {
-    protected override string OrganizationId(BusinessConsoleMesListRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleMesWipSummaryRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleMesListRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleMesWipSummaryRequest request) => request.EnvironmentId;
 
     protected override Task<BusinessConsoleMesWipSummaryResponse> ForwardAsync(
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesWipSummaryRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.GetWipSummaryAsync(tokenProvider.BearerToken, request, cancellationToken);

@@ -5457,6 +5457,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     workCenterName?: string | null;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWipSummaryRequest = NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest & {};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest = {
     [key: string]: never;
 };
@@ -18973,6 +18975,7 @@ export type GetBusinessConsoleMesWipSummaryData = {
     body?: never;
     path?: never;
     query: {
+        operationTaskId?: string | null;
         organizationId: string;
         environmentId: string;
         status?: 'Queued' | 'InProgress' | 'Paused' | 'ScheduleInvalidated' | 'Completed' | 'Cancelled';

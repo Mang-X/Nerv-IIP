@@ -19873,6 +19873,14 @@
         "operationId": "getBusinessConsoleMesWipSummary",
         "parameters": [
           {
+            "name": "operationTaskId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
             "name": "organizationId",
             "in": "query",
             "required": true,
@@ -56294,6 +56302,17 @@
             "nullable": true
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesWipSummaryRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false
+          }
+        ]
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesListRequest": {
         "type": "object",

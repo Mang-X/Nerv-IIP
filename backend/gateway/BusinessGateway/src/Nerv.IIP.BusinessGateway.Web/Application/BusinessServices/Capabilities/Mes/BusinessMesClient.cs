@@ -241,7 +241,7 @@ public interface IBusinessMesClient
 
     Task<BusinessConsoleMesWipSummaryResponse> GetWipSummaryAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesWipSummaryRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleMesProductionReportListResponse> ListProductionReportsAsync(
@@ -914,12 +914,12 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
 
     public Task<BusinessConsoleMesWipSummaryResponse> GetWipSummaryAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesWipSummaryRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleMesWipSummaryResponse>(
             internalBearerToken,
             HttpMethod.Get,
-            "/api/business/v1/mes/wip?" + ListQuery(request),
+            "/api/business/v1/mes/wip?" + ListQuery(request, request.OperationTaskId),
             null,
             cancellationToken);
 
@@ -1408,7 +1408,7 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
     private static string ContextQuery(string organizationId, string environmentId) =>
         Query(("organizationId", organizationId), ("environmentId", environmentId));
 
-    private static string ListQuery(BusinessConsoleMesListRequest request) =>
+    private static string ListQuery(BusinessConsoleMesListRequest request, string? operationTaskId = null) =>
         Query(
             ("organizationId", request.OrganizationId),
             ("environmentId", request.EnvironmentId),
@@ -1419,7 +1419,8 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
             ("deviceAssetId", request.DeviceAssetId),
             ("workOrderId", request.WorkOrderId),
             ("skip", request.Skip),
-            ("take", request.Take));
+            ("take", request.Take),
+            ("operationTaskId", operationTaskId));
 
     private static string DowntimeEventListQuery(BusinessConsoleMesDowntimeEventListRequest request) =>
         Query(

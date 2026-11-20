@@ -1969,7 +1969,9 @@ public sealed record GetWipSummaryQuery(
     string? Keyword = null,
     string? WorkCenterId = null,
     string? ShiftId = null,
-    string? DeviceAssetId = null) : IQuery<MesWipSummaryResponse>;
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null,
+    string? OperationTaskId = null) : IQuery<MesWipSummaryResponse>;
 
 public sealed record MesWipSummaryResponse(
     IReadOnlyCollection<MesWipSummaryRow> Items,
@@ -2002,25 +2004,27 @@ public sealed class GetWipSummaryQueryHandler(ApplicationDbContext dbContext)
                 dbContext,
                 tenant.OrganizationId,
                 tenant.EnvironmentId,
-                null,
+                request.WorkOrderId,
                 request.Status,
                 keyword.Value,
                 request.WorkCenterId,
                 request.ShiftId,
                 request.DeviceAssetId,
+                operationTaskId: request.OperationTaskId,
                 excludeTerminal: string.IsNullOrWhiteSpace(request.Status))
             .CountAsync(cancellationToken);
         var tasks = await GetMesWorkOrderDetailQueryHandler
             .QueryOperationTasks(
                 dbContext,
                 tenant,
-                null,
+                request.WorkOrderId,
                 request.Status,
                 page,
                 keyword,
                 request.WorkCenterId,
                 request.ShiftId,
                 request.DeviceAssetId,
+                operationTaskId: request.OperationTaskId,
                 excludeTerminal: string.IsNullOrWhiteSpace(request.Status))
             .ToArrayAsync(cancellationToken);
         var workOrderIds = tasks.Select(x => x.WorkOrderId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();

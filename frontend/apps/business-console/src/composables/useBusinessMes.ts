@@ -900,8 +900,9 @@ export function useMesProductionReporting() {
         organizationId: context.organizationId,
         environmentId: context.environmentId,
         workOrderId: normalizedWorkOrderId,
+        operationTaskId: normalizedOperationTaskId,
         skip: 0,
-        take: 100,
+        take: 1,
       },
       throwOnError: false,
     })
