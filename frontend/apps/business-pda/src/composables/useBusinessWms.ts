@@ -1458,12 +1458,7 @@ export function useWmsReceivingLines(
   const envelope = computed(
     () => currentResponse.value as BusinessConsoleWmsReceivingQualityGateListEnvelope | undefined,
   )
-  // 服务端已精确按单过滤；客户端再按精确单号防御性过滤（不改变结果，纯保险）。
-  const lines = computed<ReceivingQualityGateLine[]>(() =>
-    listItems<ReceivingQualityGateLine>(envelope.value).filter(
-      (l) => (l.inboundOrderNo ?? '') === orderNo.value,
-    ),
-  )
+  const lines = computed(() => listItems<ReceivingQualityGateLine>(envelope.value))
   const total = computed(() => listTotal(envelope.value))
   // 完整性 fail-closed：入库单按域约束必有 ≥1 行，故要求 total>0 且已取回行数覆盖 total
   // （未被 take 截断）。total=0/空集（精确单号未命中、投影暂不一致、数据异常）判为不完整，
