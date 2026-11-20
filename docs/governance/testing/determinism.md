@@ -1,6 +1,6 @@
 # 测试确定性与隔离治理
 
-本文定义后端与共享测试基建当前必须遵守的时间、等待、超时、网络诊断、可变全局状态和资源生命周期规则。当前扫描面、基线债务与 helper API 以 `backend/test-determinism-baseline.json`、`scripts/check-backend-test-determinism.ps1`、`scripts/verify-backend-test-determinism.ps1`、`backend/common/Nerv.IIP.Testing/**` 及其测试为准；本文不维护已清偿位点或逐批修复历史。
+本文定义后端与共享测试基建当前必须遵守的时间、等待、超时、网络诊断、可变全局状态和资源生命周期规则。当前扫描面、基线债务与 helper API 以 `backend/test-determinism-baseline.json`、`scripts/check-backend-test-determinism.ps1`、`backend/common/Nerv.IIP.Testing/**` 及其测试为准；本文不维护已清偿位点或逐批修复历史。
 
 ## 时间与等待
 

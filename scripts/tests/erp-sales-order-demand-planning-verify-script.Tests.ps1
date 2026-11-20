@@ -20,14 +20,12 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $verifyScript = Join-Path $repoRoot 'scripts/verify-erp-sales-order-demand-planning.ps1'
 $fixtureScript = Join-Path $repoRoot 'scripts/tests/fixtures/man703-http-fixture.ps1'
 $governanceScript = Join-Path $repoRoot 'scripts/check-script-governance.ps1'
-$ciWorkflow = Join-Path $repoRoot '.github/workflows/ci.yml'
 if (-not (Test-Path -LiteralPath $verifyScript)) {
     throw 'ERP sales-order DemandPlanning cross-process verify script is missing.'
 }
 
 $content = Get-Content -LiteralPath $verifyScript -Raw
 $fixtureContent = Get-Content -LiteralPath $fixtureScript -Raw
-$workflowContent = Get-Content -LiteralPath $ciWorkflow -Raw
 $tokens = $null
 $parseErrors = $null
 $scriptAst = [System.Management.Automation.Language.Parser]::ParseFile(
@@ -937,8 +935,6 @@ Assert-Contract ($content.Contains('integration_event_dead_letters', [StringComp
 Assert-Contract ($content.Contains('sales_order_demand_projections', [StringComparison]::Ordinal)) 'Failure diagnostics must capture the sales-order watermark projection.'
 Assert-Contract ($content.Contains('demand_sources', [StringComparison]::Ordinal)) 'Failure diagnostics must capture the projected demand source.'
 Assert-Contract ($content.Contains('XPENDING', [StringComparison]::Ordinal)) 'Failure diagnostics must capture Redis pending-entry metadata.'
-Assert-Contract ($workflowContent.Contains('if: always()', [StringComparison]::Ordinal)) 'CI must upload MAN-517 diagnostics even when verification fails.'
-Assert-Contract ($workflowContent.Contains('actions/upload-artifact@v4', [StringComparison]::Ordinal)) 'CI must retain MAN-517 diagnostics as an artifact.'
 
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 

@@ -71,7 +71,7 @@ pwsh scripts/check-script-governance.ps1
 需要声明 macOS/Linux/Windows 支持时：
 
 1. 先读 `pwsh scripts/check-script-compatibility.ps1 -?` 获取当前参数和层次；
-2. 在目标 OS 上执行 producer 当前要求的 fast/core 验证；
+2. 在目标 OS 上执行兼容检查。默认还核对 Docker Compose CLI 版本，`-FastOnly` 跳过该检查；
 3. 保存 OS、PowerShell/.NET/Docker 等实际版本、命令、退出码和日志；
 4. fast-only 或 Windows smoke 只能按 producer 定义的证明范围报告；
 5. 历史兼容报告不能替代当前 head 的实测。

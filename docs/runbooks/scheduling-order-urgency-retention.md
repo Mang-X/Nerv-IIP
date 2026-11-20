@@ -29,15 +29,18 @@
 
 恢复完成前核验：批次 ID、精确对象版本、哈希/长度、scope 信封、恢复数量、恢复审计，以及应用读取路径确实可见新水合快照。幂等重放也应留下可解释审计。
 
-## 验证脚本
+## 容量与并发验证
 
-代表性 PostgreSQL 容量/并发 profile 使用仓库脚本：
+PostgreSQL lane 的 `scheduling-postgres-profile` 成员包含 `OrderUrgencyRetentionPostgresCapacityTests`。按[真实依赖测试操作](testing/real-dependencies.md#postgresql-入口)准备管理连接，并为每次运行提供唯一数据库后缀、结果目录及摘要路径。
 
 ```powershell
-pwsh scripts/verify-business-scheduling-urgency-retention.ps1
+$run = [Guid]::NewGuid().ToString('N').Substring(0, 12)
+$output = "artifacts/scheduling-postgres/$run"
+pwsh scripts/run-postgres-test-lane.ps1 -MemberId scheduling-postgres-profile -DatabaseSuffix $run -ResultsDirectory "$output/results" -SummaryPath "$output/summary.json"
 ```
 
-以脚本当前帮助和实现为准。证据只写入未提交的 `artifacts/script-logs/business-scheduling-urgency-retention/<run-id>/`；不得把本次运行结果反写成 Architecture 的“已完成”状态。
+该命令执行成员登记的全部 Scheduling PostgreSQL 测试。核对摘要中的用例身份、执行结果与清理状态。
+如需保留容量详情，可在本次调用的进程环境中将 `NERV_IIP_URGENCY_RETENTION_EVIDENCE` 设为独立 JSON 文件路径。
 
 ## 停止条件
 

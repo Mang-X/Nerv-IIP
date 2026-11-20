@@ -110,7 +110,7 @@ try {
             -Name 'signal-exit-with-timeout-probe' `
             -LogDirectory $timeoutLogDirectory
     }
-    # 既有消费者（scripts/verify-backend-test-determinism.ps1 与两处 Tests）用
+    # 既有调用方用
     # `exited with (?<exitCode>\d+)` 解析这条消息，前缀必须原样保留。
     Assert-Contract ($withTimeoutMessage -match 'exited with (?<exitCode>\d+)') 'The timed native failure message must keep the exit-code prefix its parsers depend on.'
     Assert-Contract ([string]::Equals([string]$Matches['exitCode'], '137', [StringComparison]::Ordinal)) 'A SIGKILLed probe must report exit code 137.'
