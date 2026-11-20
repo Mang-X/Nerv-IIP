@@ -104,6 +104,17 @@ test('发货深链接使用现有销售读权限', async ({ page }) => {
   await expect(page.getByRole('textbox', { name: '发货关键字' })).toHaveCount(0)
 })
 
+test('发货单号未命中时可清除来源筛选并恢复列表', async ({ page }) => {
+  await salesSession(page)
+  await page.goto('/erp/sales/deliveries?keyword=DO-MISSING')
+  await expect(page.getByText(/当前筛选条件下没有匹配的发货单/)).toBeVisible()
+  await expect(page.getByRole('link', { name: '去销售订单' })).toHaveCount(0)
+  await page.getByRole('button', { name: '清空筛选' }).click()
+  await expect(page).toHaveURL(/\/erp\/sales\/deliveries$/)
+  await expect(page.getByRole('textbox', { name: '发货关键字' })).toHaveValue('')
+  await expect(page.getByText('DO-OTHER-0', { exact: true })).toBeVisible()
+})
+
 const suggestions = [
   { suggestionId: 'new-suggestion', runId: 'new-run', quantity: 12, status: 'Open' },
   { suggestionId: 'accepted-suggestion', runId: 'old-run', quantity: 48, status: 'Accepted' },

@@ -4,7 +4,6 @@ import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpDeliveryOrders } from '@/composables/useBusinessErp'
 import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
-import { buildKpiTrend, seriesFromDatedItems } from '@/utils/kpiTrend'
 import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -18,7 +17,7 @@ import {
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { erpReadState, firstQueryParam, formatDateTime, readCount } from '../shared'
 
 definePage({
@@ -26,6 +25,7 @@ definePage({
 })
 
 const route = useRoute()
+const router = useRouter()
 const deliveries = useErpDeliveryOrders({ keyword: firstQueryParam(route.query.keyword) })
 // 客户列显名称：读面只回 customerCode，中文名在主数据业务伙伴里，前端按编码 join。
 const { resolvePartner } = useBusinessPartnerNames()
@@ -82,48 +82,31 @@ const readState = computed(() =>
   }),
 )
 
-const deliveryCells = computed<NvMetricStripCell[]>(() => {
-  // 发货单带 releasedAtUtc，已释放发货走真实出货节奏（没释放的行没有时间戳，自然不进桶）；
-  // 涉及客户是去重口径，按天累加会把同一客户重复计进桶里，只能补形状。
-  const released = readState.value.trustworthy
-    ? buildKpiTrend('erp.sales.deliveries', releasedCount.value, {
-        kind: 'count',
-        realSeries: seriesFromDatedItems(deliveries.items.value, {
-          date: (d) => d.releasedAtUtc,
-          value: () => 1,
-          mode: 'cumulative',
-        }),
-      })
-    : undefined
-  const customers = readState.value.trustworthy
-    ? buildKpiTrend('erp.sales.deliveryCustomers', customerCount.value, { kind: 'count' })
-    : undefined
+function clearFilters() {
+  deliveries.filters.keyword = ''
+  deliveries.filters.status = undefined
+  resetPage()
+  if (route.query.keyword !== undefined) {
+    void router.replace({ query: { ...route.query, keyword: undefined } })
+  }
+}
 
-  return [
-    {
-      key: 'released',
-      label: '已释放发货',
-      value: readCount(readState.value, releasedCount.value),
-      unit: readState.value.trustworthy ? '单' : '',
-      meta: readState.value.trustworthy ? undefined : readState.value.emptyMessage,
-      delta: released?.delta,
-      series: released?.series,
-      seriesLabels: released?.seriesLabels,
-      seriesUnit: '单',
-    },
-    {
-      key: 'customers',
-      label: '涉及客户',
-      value: readCount(readState.value, customerCount.value),
-      unit: readState.value.trustworthy ? '家' : '',
-      meta: readState.value.trustworthy ? undefined : readState.value.emptyMessage,
-      delta: customers?.delta,
-      series: customers?.series,
-      seriesLabels: customers?.seriesLabels,
-      seriesUnit: '家',
-    },
-  ]
-})
+const deliveryCells = computed<NvMetricStripCell[]>(() => [
+  {
+    key: 'released',
+    label: '本页已释放发货',
+    value: readCount(readState.value, releasedCount.value),
+    unit: readState.value.trustworthy ? '单' : '',
+    meta: readState.value.trustworthy ? undefined : readState.value.emptyMessage,
+  },
+  {
+    key: 'customers',
+    label: '本页涉及客户',
+    value: readCount(readState.value, customerCount.value),
+    unit: readState.value.trustworthy ? '家' : '',
+    meta: readState.value.trustworthy ? undefined : readState.value.emptyMessage,
+  },
+])
 </script>
 
 <template>
@@ -181,13 +164,21 @@ const deliveryCells = computed<NvMetricStripCell[]>(() => {
       @update:page-size="(v) => (pageSize = String(v))"
     >
       <template #empty>
-        <p class="text-sm font-medium">还没有发货单</p>
-        <p class="max-w-md text-sm text-muted-foreground">
-          发货单从销售订单释放生成，去「销售订单」对已下达的订单点「释放发货」。
-        </p>
-        <NvButton size="sm" type="button" variant="outline" as-child>
-          <RouterLink to="/erp/sales/orders">去销售订单</RouterLink>
-        </NvButton>
+        <template v-if="readState.kind === 'filtered'">
+          <p class="text-sm font-medium">{{ readState.emptyMessage }}</p>
+          <NvButton size="sm" type="button" variant="outline" @click="clearFilters"
+            >清空筛选</NvButton
+          >
+        </template>
+        <template v-else>
+          <p class="text-sm font-medium">还没有发货单</p>
+          <p class="max-w-md text-sm text-muted-foreground">
+            发货单从销售订单释放生成，去「销售订单」对已下达的订单点「释放发货」。
+          </p>
+          <NvButton size="sm" type="button" variant="outline" as-child>
+            <RouterLink to="/erp/sales/orders">去销售订单</RouterLink>
+          </NvButton>
+        </template>
       </template>
       <template #cell-customerCode="{ row }">
         <PartnerNameCell :code="row.customerCode" />
