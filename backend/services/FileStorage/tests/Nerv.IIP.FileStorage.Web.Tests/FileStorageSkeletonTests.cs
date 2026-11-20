@@ -44,27 +44,26 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
     }
 
     [Fact]
-    public async Task File_storage_health_endpoint_remains_anonymous()
+    public async Task File_storage_health_endpoint_returns_healthy_without_authorization()
     {
-        var client = factory.CreateClient();
+        using var client = factory.CreateClient();
 
-        var response = await client.GetAsync("/health");
+        using var response = await client.GetAsync("/health");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Healthy", await response.Content.ReadAsStringAsync());
     }
 
     [Fact]
-    public async Task Service_exposes_health_and_file_storage_boundaries()
+    public async Task Authenticated_client_can_read_file_storage_boundaries()
     {
         var client = factory.CreateClient();
 
-        var health = await client.GetStringAsync("/health");
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer",
             InternalServiceAuthentication.DefaultDevelopmentBearerToken);
         var boundaries = await client.GetFromJsonAsync<FileStorageBoundaries>("/internal/file-storage/v1/boundaries");
 
-        Assert.Equal("Healthy", health);
         Assert.Contains("FileMetadata", boundaries!.DomainFacts);
         Assert.Contains("UploadProvider", boundaries.ProviderBoundaries);
     }

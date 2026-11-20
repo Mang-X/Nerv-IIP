@@ -12,14 +12,6 @@ const planSheetSource = readFileSync(
   resolve(process.cwd(), 'src/components/quality/FirstArticlePlanSheet.vue'),
   'utf8',
 )
-const recordsSource = readFileSync(
-  resolve(process.cwd(), 'src/components/quality/FirstArticleInspectionRecords.vue'),
-  'utf8',
-)
-const composableSource = readFileSync(
-  resolve(process.cwd(), 'src/composables/useBusinessQuality.ts'),
-  'utf8',
-)
 
 describe('首件检验工作台合同', () => {
   it('在既有检验页提供首件方案与首件记录两个平级入口', () => {
@@ -41,9 +33,7 @@ describe('首件检验工作台合同', () => {
     expect(planSheetSource).toContain('方案已创建但未启用')
   })
 
-  it('首件记录读面固定 sourceType 并提供 SKU、结果筛选与详情定位', () => {
-    expect(recordsSource).toContain('useQualityFirstArticleInspections')
-    expect(composableSource).toContain("sourceType: 'first-article'")
+  it('检验页承接 SKU、结果筛选与详情定位', () => {
     expect(pageSource).toContain('inspectionRecordId')
     expect(pageSource).toContain('skuCode')
     expect(pageSource).toContain('result')

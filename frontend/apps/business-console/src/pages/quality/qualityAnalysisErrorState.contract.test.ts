@@ -1,19 +1,68 @@
-import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { configureApiClient } from '@nerv-iip/api-client'
+import { PiniaColada } from '@pinia/colada'
+import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
+import { afterEach, describe, expect, it } from 'vitest'
+import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 
-const source = readFileSync(
-  resolve(dirname(fileURLToPath(import.meta.url)), 'analysis.vue'),
-  'utf8',
-)
+import { useBusinessContextStore } from '@/stores/businessContext'
 
-describe('quality analysis request failure presentation', () => {
-  it('does not present NCR-derived KPI or dimensions as zero/empty when the list request failed', () => {
-    expect(source).toContain('v-if="listErrorMessage"')
-    expect(source).toContain('NCR 数据加载失败')
-    // KPI 卡整组挂在 v-else 上：加载失败时不渲染任何派生指标（不把失败画成 0）。
-    expect(source).toContain('<div v-else class="grid gap-4 lg:grid-cols-3">')
-    expect(source).toContain('v-if="!listErrorMessage"')
+import AnalysisPage from './analysis.vue'
+
+afterEach(() => configureApiClient())
+
+describe('质量分析 NCR 读取失败', () => {
+  it('报告加载失败并隐藏 NCR 汇总，刷新成功后显示真实空结果', async () => {
+    let ncrUnavailable = true
+    configureApiClient({
+      baseUrl: 'http://gateway.test',
+      fetch: async (input) => {
+        const { pathname } = new URL(new Request(input).url)
+        if (pathname === '/api/business-console/v1/quality/ncrs' && ncrUnavailable) {
+          return Response.json({ title: 'Service unavailable' }, { status: 503 })
+        }
+        return Response.json({ success: true, data: { items: [], total: 0 } })
+      },
+    })
+
+    const pinia = createPinia()
+    useBusinessContextStore(pinia).patchContext({
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+    })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/:pathMatch(.*)*', component: AnalysisPage }],
+    })
+    await router.push('/quality/analysis')
+    const wrapper = mount(RouterView, {
+      global: {
+        plugins: [pinia, router, [PiniaColada, { queryOptions: { gcTime: 0 } }]],
+        stubs: { BusinessLayout: { template: '<main><slot /></main>' } },
+      },
+    })
+    await flushPromises()
+
+    const ncrSummary = [
+      '0 条 NCR',
+      '不合格品处置构成',
+      '缺陷数量',
+      '尚未处置',
+      '当前分析时间范围缺陷 Pareto',
+      '当前分析时间范围内没有物料维度',
+      '当前分析时间范围内没有来源维度',
+    ]
+    expect(wrapper.get('[role="alert"]').text()).toContain('NCR 数据加载失败')
+    expect(wrapper.text()).toContain('控制图台账')
+    for (const text of ncrSummary) expect(wrapper.text()).not.toContain(text)
+
+    ncrUnavailable = false
+    const refresh = wrapper.findAll('button').find((button) => button.text() === '刷新')
+    expect(refresh).toBeDefined()
+    await refresh!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    for (const text of ncrSummary) expect(wrapper.text()).toContain(text)
   })
 })
