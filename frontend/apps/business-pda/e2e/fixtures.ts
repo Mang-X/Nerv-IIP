@@ -189,6 +189,7 @@ const inboundOrders = [
     inboundOrderId: 'in-1',
     inboundOrderNo: 'IN-1',
     status: 'open',
+    qualityGateStatus: 'not-required',
     version: 1,
     createdAtUtc: nowUtc,
   },
