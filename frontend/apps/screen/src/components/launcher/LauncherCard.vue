@@ -13,6 +13,8 @@ defineProps<{
   title: string
   desc: string
   icon: Component
+  route: string
+  emptyLabel?: string
   glance?: ScreenGlance
 }>()
 </script>
@@ -33,12 +35,14 @@ defineProps<{
       />
     </header>
 
-    <dl v-if="glance" class="lc-stats">
+    <slot v-if="$slots.metrics" name="metrics" />
+    <dl v-else-if="glance" class="lc-stats">
       <div v-for="s in glance.stats" :key="s.label" class="lc-stat">
         <dt>{{ s.label }}</dt>
         <dd :class="s.tone">{{ s.value }}</dd>
       </div>
     </dl>
+    <p v-else-if="emptyLabel" class="lc-desc">{{ emptyLabel }}</p>
     <div v-else class="lc-stats" aria-hidden="true">
       <div v-for="i in 3" :key="i" class="lc-stat"><span class="lc-skl" /></div>
     </div>
@@ -54,16 +58,17 @@ defineProps<{
       </template>
     </div>
 
-    <footer class="lc-foot">
+    <RouterLink class="lc-foot" :to="route" :aria-label="'进入' + title">
       <span>进入大屏</span>
       <ArrowRight :size="17" class="lc-arrow" aria-hidden="true" />
-    </footer>
+    </RouterLink>
   </article>
 </template>
 
 <style scoped>
 @layer app {
   .lc {
+    position: relative;
     height: 100%;
     box-sizing: border-box;
     display: flex;
@@ -224,6 +229,15 @@ defineProps<{
     background: var(--nv-scr-faint);
   }
 
+  .lc-foot::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+  .lc :deep(button) {
+    position: relative;
+    z-index: 1;
+  }
   .lc-foot {
     display: flex;
     align-items: center;

@@ -121,6 +121,9 @@ export interface InspectionRow {
 }
 
 export interface EquipmentOverview {
+  /** 本次快照覆盖的设备少于实际台账时显示覆盖范围。 */
+  rosterTotal?: number
+  partialEvents?: boolean
   factoryId: string
   counts: StateCounts
   devices: DeviceCell[]

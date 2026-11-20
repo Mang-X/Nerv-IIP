@@ -22,6 +22,7 @@ import {
 import { type Component, computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { DeviceDetail, DeviceParamSeries, ParamKind } from '@/data/contracts/equipment'
 import { fetchDeviceDetail } from '@/data/fetchers/equipment'
+import ReadError from '@/components/ReadError.vue'
 import { paramColor } from './paramColors'
 
 /**
@@ -38,7 +39,12 @@ const props = defineProps<{
 const emit = defineEmits<{ close: [] }>()
 
 // 详情刷新频率：3s（比全景 5s 快，比格上参数 2s 稳）
-const { data: detail } = useScreenData<DeviceDetail | null>(
+const {
+  data: detail,
+  error,
+  loading,
+  refresh,
+} = useScreenData<DeviceDetail | null>(
   () => fetchDeviceDetail(props.deviceId, props.factoryId, props.workshopIds),
   { intervalMs: 3000 },
 )
@@ -51,7 +57,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 const tone = computed(() => {
   const s = detail.value?.device.state
-  return s === 'alarm' ? 'alarm' : s === 'idle' || s === 'down' ? 'idle' : 'run'
+  return s === 'alarm' ? 'alarm' : s === 'idle' || s === 'down' || s === 'offline' ? 'idle' : 'run'
 })
 
 const infoRows = computed(() => {
@@ -113,13 +119,17 @@ function leaveSpark() {
         class="ddm"
         role="dialog"
         aria-modal="true"
-        :aria-label="detail?.device.name ?? '设备详情'"
+        :aria-label="(!error && detail?.device.name) || '设备详情'"
       >
         <header class="ddm-h">
-          <NvScreenStatusLight v-if="detail" :tone="tone" :label="detail.device.stateLabel" />
-          <h3 class="ddm-t">{{ detail?.device.name ?? '设备详情' }}</h3>
-          <span v-if="detail" class="ddm-code">{{ detail.device.code }}</span>
-          <span v-if="detail" class="ddm-path"
+          <NvScreenStatusLight
+            v-if="detail && !error"
+            :tone="tone"
+            :label="detail.device.stateLabel"
+          />
+          <h3 class="ddm-t">{{ (!error && detail?.device.name) || '设备详情' }}</h3>
+          <span v-if="detail && !error" class="ddm-code">{{ detail.device.code }}</span>
+          <span v-if="detail && !error" class="ddm-path"
             >{{ detail.device.workshopName }} · {{ detail.device.lineName }}</span
           >
           <button type="button" class="ddm-x" aria-label="关闭" @click="emit('close')">
@@ -127,7 +137,10 @@ function leaveSpark() {
           </button>
         </header>
 
-        <div v-if="!detail" class="ddm-loading">读取设备档案…</div>
+        <ReadError v-if="error" :error="error" :loading="loading" @retry="refresh" />
+        <div v-else-if="!detail" class="ddm-loading">
+          {{ detail === null ? '暂无设备档案' : '读取设备档案…' }}
+        </div>
 
         <NvScreenScrollArea v-else class="ddm-scroll">
           <div class="ddm-body">

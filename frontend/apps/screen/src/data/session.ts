@@ -4,6 +4,7 @@
 //   main.ts 在登录/会话恢复后调用 setScreenSession 注入；真实 fetcher 取数时读取。
 // - 设备台账（deviceAssetId → 档案）由 business-console 设备主数据（device-asset）解析并短缓存：
 //   真实 overview/可用率端点要求 deviceAssetIds 非空（≤50/批），台账变化很慢，缓存降低轮询请求量（#734 限流友好）。
+import { readRows, readScreenPayload } from './real/response'
 import {
   listBusinessConsoleDeviceAssets,
   type BusinessConsoleResourceItem,
@@ -91,12 +92,14 @@ export async function resolveDeviceRoster(
   if (!force && rosterCache && nowMs - rosterCache.at < ROSTER_TTL_MS) {
     return rosterCache.roster
   }
-  const { organizationId, environmentId } = session
+  const requestedSession = session
+  const { organizationId, environmentId } = requestedSession
   const res = await listBusinessConsoleDeviceAssets({
     throwOnError: true,
     query: { organizationId, environmentId, includeDisabled: false, skip: 0, take: 200 },
   })
-  const items = res.data?.data?.resources ?? []
+  const page = readScreenPayload(res)
+  const items = readRows(page.resources)
   const byId = new Map<string, DeviceRosterEntry>()
   for (const item of items) {
     const entry = rosterEntryOf(item)
@@ -109,12 +112,16 @@ export async function resolveDeviceRoster(
       `[screen] 设备台账 ${allIds.length} 台超过 overview 单批上限 ${ROSTER_MAX}，仅覆盖前 ${ROSTER_MAX} 台（待 #570 批量端点）。`,
     )
   }
-  const roster: DeviceRoster = { ids: allIds.slice(0, ROSTER_MAX), byId, total: allIds.length }
-  rosterCache = { at: nowMs, roster }
+  const roster: DeviceRoster = {
+    ids: allIds.slice(0, ROSTER_MAX),
+    byId,
+    total: page.total ?? items.length,
+  }
+  if (session === requestedSession) rosterCache = { at: nowMs, roster }
   return roster
 }
 
-/** 测试用：清空台账缓存。 */
+/** 登录会话或权限变更后重新解析台账。 */
 export function resetDeviceRosterCache(): void {
   rosterCache = null
 }

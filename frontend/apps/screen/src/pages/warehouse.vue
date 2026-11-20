@@ -29,6 +29,8 @@ import {
 } from '@lucide/vue'
 import { type Component, computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
+import { useNow } from '@vueuse/core'
+import ReadError from '@/components/ReadError.vue'
 import { useAccessScope } from '@/access/useAccessScope'
 import { useBackLink } from '@/composables/useBackLink'
 import { IS_REAL_DATA } from '@/data/config'
@@ -48,6 +50,7 @@ import ScreenLayout from '@/layouts/ScreenLayout.vue'
 // 刷新分层：主数据（KPI/出入库进度）10s · 任务看板/WCS 15s；真实模式由 WMS 分页 list 前端聚合，
 // 轮询降频兼顾 Gateway 限流（#734）。页面隐藏时 useScreenData 统一暂停轮询、断后端保留上次数据标 stale。
 // 库存水位/低库存预警半屏仍缺 Inventory 读面聚合（待 #570），一期不做（诚实定位）。
+const now = useNow({ interval: 1000 })
 const scope = useAccessScope()
 const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
 // 两条流各自标记取数时的 scope，切换工厂/persona 时旧 scope 的 tick 不会覆盖新 board。
@@ -56,6 +59,8 @@ const {
   data: boardEnv,
   lastUpdated,
   isStale: boardStale,
+  error,
+  loading,
   refresh,
 } = useScreenData<Scoped<WarehouseBoard>>(
   async () => ({
@@ -66,6 +71,7 @@ const {
 )
 const {
   data: opsEnv,
+  error: opsError,
   isStale: opsStale,
   lastUpdated: opsLastUpdated,
   refresh: refreshOps,
@@ -78,9 +84,22 @@ const {
 )
 const board = computed(() => boardEnv.value?.data)
 // ops 仅在其 scope 与当前 board 一致时才优先（否则回退 board 完整快照）；页脚分别反映两条数据源。
-const ops = computed(() => scopedOverride(opsEnv.value, boardEnv.value))
-const boardFreshness = computed(() => formatScreenFreshness(boardStale.value, lastUpdated.value))
-const opsFreshness = computed(() => formatScreenFreshness(opsStale.value, opsLastUpdated.value))
+const ops = computed(() =>
+  opsError.value ? undefined : scopedOverride(opsEnv.value, boardEnv.value),
+)
+const boardFreshness = computed(() =>
+  formatScreenFreshness(
+    boardStale.value || (!!lastUpdated.value && now.value.getTime() - lastUpdated.value > 30000),
+    lastUpdated.value,
+  ),
+)
+const opsFreshness = computed(() =>
+  formatScreenFreshness(
+    opsStale.value ||
+      (!!opsLastUpdated.value && now.value.getTime() - opsLastUpdated.value > 45000),
+    opsLastUpdated.value,
+  ),
+)
 watch(
   () => [scope.currentFactoryId, scope.personaId],
   () => {
@@ -90,7 +109,7 @@ watch(
 )
 
 const factoryName = computed(
-  () => scope.factories.find((f) => f.id === scope.currentFactoryId)?.name ?? '全部车间',
+  () => scope.factories.find((f) => f.id === scope.currentFactoryId)?.name ?? '未配置组织',
 )
 const nf = new Intl.NumberFormat('en-US')
 // 真实模式：入库/出库 facade 仅文档级（无行级数量），口径为「单」；mock 演示数据为「行」。
@@ -108,7 +127,7 @@ const heroKpi = computed(() => {
   const b = board.value
   if (!b) return null
   return {
-    value: b.kpis.outboundPct,
+    value: b.outbound.docsTotal ? b.kpis.outboundPct : null,
     sub: IS_REAL_DATA
       ? `发运 ${b.outbound.docsDone}/${b.outbound.docsTotal} 单`
       : `${nf.format(b.outbound.linesDone)}/${nf.format(b.outbound.linesTotal)} 行 · 发运 ${b.outbound.docsDone}/${b.outbound.docsTotal} 单`,
@@ -132,8 +151,8 @@ const bandCells = computed<BandCell[]>(() => {
     {
       icon: ArrowDownToLine,
       label: '当日入库进度',
-      value: String(b.kpis.inboundPct),
-      unit: '%',
+      value: b.inbound.docsTotal ? String(b.kpis.inboundPct) : '—',
+      unit: b.inbound.docsTotal ? '%' : '',
       sub: `${nf.format(b.inbound.linesDone)}/${nf.format(b.inbound.linesTotal)} ${flowUnit}`,
       tone: 'cyan',
     },
@@ -163,7 +182,7 @@ const bandCells = computed<BandCell[]>(() => {
       sub:
         b.kpis.wcsFailed > 0
           ? `累计重试 ${b.wcs.failures.reduce((n, x) => n + x.retries, 0)} 次`
-          : '链路正常',
+          : '暂无失败指令',
       tone: b.kpis.wcsFailed > 0 ? 'bad' : 'ok',
     },
     {
@@ -264,13 +283,15 @@ const wcsView = ref<'chart' | 'list'>('chart')
 
 <template>
   <ScreenLayout title="Nerv-IIP 仓储物流大屏" :line="factoryName" screen="指挥中心大屏 05">
-    <div v-if="board" class="wb">
+    <div v-if="board && !error" class="wb">
       <!-- 顶部 KPI 带：出库进度 hero + 五格，语义色渐隐强调线 -->
       <NvScreenPanel class="wb-band">
         <div class="wb-band-in">
           <div v-if="heroKpi" class="wb-hero">
             <div class="wb-hero-v">
-              <span class="wb-num">{{ heroKpi.value }}<small>%</small></span>
+              <span class="wb-num"
+                >{{ heroKpi.value ?? '—' }}<small v-if="heroKpi.value !== null">%</small></span
+              >
               <i class="wb-kpi-line cyan" aria-hidden="true" />
             </div>
             <div class="wb-hero-l">
@@ -325,14 +346,16 @@ const wcsView = ref<'chart' | 'list'>('chart')
                   >{{
                     board.inbound.docsTotal > 0
                       ? Math.round((board.inbound.docsDone / board.inbound.docsTotal) * 100)
-                      : 0
-                  }}%</b
+                      : '—'
+                  }}{{ board.inbound.docsTotal ? '%' : '' }}</b
                 >
               </span>
               <span v-if="board.inbound.postFailedDocs > 0" class="wb-postfail">
                 过账失败 {{ board.inbound.postFailedDoc }}
               </span>
-              <span v-else class="wb-postok"><i class="wb-okdot" />过账无异常</span>
+              <span v-else class="wb-postok">{{
+                board.inbound.docsTotal ? '暂无过账失败记录' : '今日暂无收货单'
+              }}</span>
             </div>
             <!-- 小时流量是离散量 —— 柱状比面积曲线更诚实（每小时一根柱） -->
             <div class="wb-flow-spark">
@@ -418,7 +441,8 @@ const wcsView = ref<'chart' | 'list'>('chart')
                 <span class="tg-rule" aria-hidden="true" />
                 <span class="tg-done">{{ g.meta }}</span>
               </header>
-              <div class="tg-cols" :class="{ count: g.isCount }">
+              <p v-if="!g.rows.length" class="tg-empty">暂无{{ g.title }}任务</p>
+              <div v-else class="tg-cols" :class="{ count: g.isCount }">
                 <template v-if="!g.isCount">
                   <span>单号</span><span>物料</span><span class="r">数量</span><span>库位流向</span
                   ><span>来源单</span><span class="r">龄期</span>
@@ -428,7 +452,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
                   ><span>待盘库位</span><span class="r">龄期</span>
                 </template>
               </div>
-              <div class="tg-list">
+              <div v-if="g.rows.length" class="tg-list">
                 <NvScrollBoard :items="g.rows" :row-key="(r: WhTaskRow) => r.id" :speed="g.speed">
                   <template #row="{ item }">
                     <div class="tg-row" :class="{ count: g.isCount, late: item.overdue }">
@@ -466,7 +490,9 @@ const wcsView = ref<'chart' | 'list'>('chart')
             <template #extra>
               <span class="wf-count" :class="{ calm: !wcs || wcs.failures.length === 0 }">
                 {{
-                  wcs && wcs.failures.length > 0 ? `${wcs.failures.length} 条未恢复` : '链路正常'
+                  wcs && wcs.failures.length > 0
+                    ? `${wcs.failures.length} 条未恢复`
+                    : '暂无失败指令'
                 }}
               </span>
             </template>
@@ -602,11 +628,20 @@ const wcsView = ref<'chart' | 'list'>('chart')
           当日吞吐 <b>{{ nf.format(board.kpis.throughputLines) }}</b> {{ flowUnit }} （入
           {{ nf.format(board.inbound.linesDone) }} · 出 {{ nf.format(board.outbound.linesDone) }}）
           <NvScreenFreshness :tone="boardFreshness.tone" :label="`主数据 ${boardFreshness.text}`" />
-          <NvScreenFreshness :tone="opsFreshness.tone" :label="`任务/WCS ${opsFreshness.text}`" />
+          <ReadError v-if="opsError" :error="opsError" @retry="refreshOps" />
+          <NvScreenFreshness
+            v-else
+            :tone="opsFreshness.tone"
+            :label="`任务/WCS ${opsFreshness.text}`"
+          />
         </span>
       </footer>
     </div>
-    <div v-else class="wb-loading">连接数据…</div>
+    <div v-else class="wb-loading">
+      <ReadError v-if="error" :error="error" :loading="loading" @retry="refresh" />
+      <span v-else>正在读取…</span>
+      <RouterLink :to="backLink.to">‹ {{ backLink.label }}</RouterLink>
+    </div>
   </ScreenLayout>
 </template>
 
@@ -984,6 +1019,10 @@ const wcsView = ref<'chart' | 'list'>('chart')
   }
   .r {
     text-align: right;
+  }
+  .tg-empty {
+    margin: auto;
+    color: var(--nv-scr-muted);
   }
   .tg-list {
     flex: 1;

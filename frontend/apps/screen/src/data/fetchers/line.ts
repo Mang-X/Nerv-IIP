@@ -1,5 +1,6 @@
 // 产线监控取数。#570 就绪后只换本文件：改为真实端点
 // （lineCode→workCenter/device 聚合、当班产量、节拍），页面与契约均不动。
+import { requireDemoMode } from '@/data/config'
 import type { LineBoard, LineSummaryCard } from '@/data/contracts/line'
 import { buildLineBoard, buildLineCards } from '@/data/mock/line'
 import { DEFAULT_FACTORY_ID } from '@/data/mock/masterdata'
@@ -9,6 +10,7 @@ export async function fetchLineCards(
   workshopIds: string[] | 'all' = 'all',
   visibleIds?: string[],
 ): Promise<LineSummaryCard[]> {
+  requireDemoMode()
   await new Promise((r) => setTimeout(r, 240))
   return buildLineCards(factoryId, workshopIds, visibleIds)
 }
@@ -18,6 +20,7 @@ export async function fetchLineBoard(
   factoryId = DEFAULT_FACTORY_ID,
   workshopIds: string[] | 'all' = 'all',
 ): Promise<LineBoard | null> {
+  requireDemoMode()
   await new Promise((r) => setTimeout(r, 260))
   return buildLineBoard(lineId, factoryId, workshopIds)
 }

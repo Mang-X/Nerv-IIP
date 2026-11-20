@@ -1,6 +1,8 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAccessScope } from './useAccessScope'
+
+vi.mock('@/data/config', () => ({ IS_REAL_DATA: false }))
 
 describe('useAccessScope', () => {
   beforeEach(() => setActivePinia(createPinia()))

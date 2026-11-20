@@ -45,6 +45,7 @@ import type {
   WhTaskKind,
   WhTaskRow,
 } from '@/data/contracts/warehouse'
+import { readRows, readScreenPayload } from './response'
 import { getScreenSession, hasScreenSession } from '@/data/session'
 
 // 超时阈值（分钟）——与契约「龄期 > 45min」及 mock OVERDUE_MIN 同口径。
@@ -130,9 +131,9 @@ function hourlyBy<T>(
 
 // —— 翻页取数（newest-first）：stopBefore 命中即早停（穿过窗口边界）；取尽(<take)或达上限即止 ——
 // SDK throwOnError:true → { data: { success, data: { items } } }。
-type ListEnvelope<T> = { data?: { data?: { items?: T[] | null } | null } | null }
+type ListEnvelope<T> = { data?: { success?: boolean; data?: { items?: T[] | null } | null } | null }
 async function pageOf<T>(res: Promise<ListEnvelope<T>>): Promise<T[]> {
-  return (await res).data?.data?.items ?? []
+  return readRows(readScreenPayload(await res).items)
 }
 async function paginate<T>(
   fetchPage: (skip: number, take: number) => Promise<T[]>,
@@ -148,10 +149,9 @@ async function paginate<T>(
     }
     if (items.length < PAGE_TAKE) return acc
   }
-  console.warn(
+  throw new Error(
     `[screen] WMS ${label} 翻页达安全上限 ${MAX_PAGES * PAGE_TAKE} 条（异常数据量，可能未覆盖全部；正常小厂不触发）。`,
   )
-  return acc
 }
 
 /**
@@ -542,7 +542,9 @@ function fetchOutboundFlow(ctx: Ctx, nowMs: number): Promise<OutboundProgress> {
 }
 
 /** 主数据全景：入库/出库进度 + 上架/拣货/盘点 + WCS（10s 轮询，完整闭包聚合）。 */
-export async function fetchRealWarehouseBoard(factoryId = 'F01'): Promise<WarehouseBoard> {
+export async function fetchRealWarehouseBoard(
+  factoryId = getScreenSession().organizationId,
+): Promise<WarehouseBoard> {
   const ctx = requireSession()
   const nowMs = Date.now()
 
@@ -570,7 +572,9 @@ export async function fetchRealWarehouseBoard(factoryId = 'F01'): Promise<Wareho
 }
 
 /** 任务看板 + WCS 高频 tick（15s 轮询）：只刷作业子集，与主板同源完整闭包口径一致。 */
-export async function fetchRealWarehouseOpsTick(_factoryId = 'F01'): Promise<WarehouseOpsTick> {
+export async function fetchRealWarehouseOpsTick(
+  _factoryId = getScreenSession().organizationId,
+): Promise<WarehouseOpsTick> {
   const ctx = requireSession()
   const nowMs = Date.now()
 

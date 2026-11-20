@@ -6,7 +6,7 @@ import { createPinia } from 'pinia'
 import { createApp, watch } from 'vue'
 import App from './App.vue'
 import { IS_REAL_DATA } from './data/config'
-import { setScreenSession } from './data/session'
+import { resetDeviceRosterCache, setScreenSession } from './data/session'
 import { router } from './router'
 import { useRealAuthStore } from './stores/realAuth'
 
@@ -29,18 +29,17 @@ if (IS_REAL_DATA) {
     router,
   })
   watch(
-    () => auth.principal,
-    (principal) =>
+    () => [auth.principal, auth.sessionId] as const,
+    ([principal]) => {
+      resetDeviceRosterCache()
       setScreenSession({
         organizationId: principal?.organizationId ?? '',
         environmentId: principal?.environmentId ?? '',
-      }),
-    { immediate: true },
+      })
+    },
+    { immediate: true, flush: 'sync' },
   )
 }
 
 app.use(router)
 app.mount('#app')
-
-// mock 模式：数据全部由 data/mock 提供，无需配置 api-client。
-// 切真实数据：设置 VITE_SCREEN_DATA_MODE=real（fetcher 自动改走 data/real/*）。

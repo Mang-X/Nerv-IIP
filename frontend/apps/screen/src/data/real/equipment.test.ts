@@ -243,7 +243,7 @@ describe('fetchRealEquipmentOverview', () => {
   })
 
   it('空设备台账：不请求 overview，返回空设备但不崩', async () => {
-    vi.mocked(api.listBusinessConsoleDeviceAssets).mockResolvedValue(ok({ items: [] }))
+    vi.mocked(api.listBusinessConsoleDeviceAssets).mockResolvedValue(ok({ resources: [] }))
     const ov = await fetchRealEquipmentOverview('F01')
     expect(ov.devices).toHaveLength(0)
     expect(api.getBusinessConsoleEquipmentOverview).not.toHaveBeenCalled()
@@ -392,11 +392,10 @@ describe('fetchRealDeviceDetail', () => {
     expect(det!.params).toEqual([]) // 趋势待 historian
   })
 
-  it('facade 返回 success=false → null（未知设备）', async () => {
+  it('facade 返回 success=false → 读取失败', async () => {
     vi.mocked(api.getBusinessConsoleEquipmentDevice).mockResolvedValue({
       data: { success: false, data: null },
     } as never)
-    const det = await fetchRealDeviceDetail('DEV-UNKNOWN')
-    expect(det).toBeNull()
+    await expect(fetchRealDeviceDetail('DEV-UNKNOWN')).rejects.toThrow()
   })
 })
