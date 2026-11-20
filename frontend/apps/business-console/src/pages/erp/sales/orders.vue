@@ -40,7 +40,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { LockOpenIcon, PlusIcon, RefreshCwIcon, RouteIcon, TruckIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, nextTick, reactive, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
@@ -223,7 +223,56 @@ const timelineOrder = shallowRef<BusinessConsoleErpSalesOrderItem | null>(null)
 function openTimeline(row: BusinessConsoleErpSalesOrderItem) {
   timelineOrder.value = row
   timelineOpen.value = true
+  history.replaceState(
+    {
+      ...history.state,
+      fulfillment: {
+        salesOrderNo: row.salesOrderNo,
+        keyword: orders.filters.keyword,
+        page: page.value,
+        pageSize: pageSize.value,
+        org: orders.filters.organizationId,
+        env: orders.filters.environmentId,
+      },
+    },
+    '',
+  )
 }
+
+const saved = history.state?.fulfillment
+if (
+  saved &&
+  saved.org === orders.filters.organizationId &&
+  saved.env === orders.filters.environmentId
+) {
+  orders.filters.keyword = saved.keyword
+  pageSize.value = saved.pageSize
+  void nextTick(() => {
+    page.value = saved.page
+  })
+}
+watch(
+  [orders.salesOrders, page],
+  ([rows]) => {
+    const target = history.state?.fulfillment
+    if (
+      !target ||
+      target.org !== orders.filters.organizationId ||
+      target.env !== orders.filters.environmentId ||
+      target.page !== page.value
+    )
+      return
+    const row = rows.find((item) => item.salesOrderNo === target.salesOrderNo)
+    if (row) {
+      timelineOrder.value = row
+      timelineOpen.value = true
+    }
+  },
+  { immediate: true },
+)
+watch(timelineOpen, (open) => {
+  if (!open) history.replaceState({ ...history.state, fulfillment: null }, '')
+})
 
 // 信用解冻复核：仅 credit-held 行出现入口；提交后走审批中心，审批通过订单恢复「已下达」。
 const creditHoldOpen = shallowRef(false)

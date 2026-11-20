@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useRoute } from 'vue-router'
+import { queryText } from '@/components/erp/costRecovery'
 import type {
   BusinessConsoleErpPayableItem,
   BusinessConsoleErpReceivableItem,
@@ -46,7 +48,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import { UNAVAILABLE_TEXT, erpReadState, formatAmount, pickerInvalidClass } from '../shared'
 
@@ -55,6 +57,14 @@ definePage({
 })
 
 const receivables = useErpReceivables()
+const route = useRoute()
+watch(
+  () => route.query.keyword,
+  () => {
+    receivables.filters.keyword = queryText(route.query, 'keyword') || undefined
+  },
+  { immediate: true },
+)
 const payables = useErpPayables()
 // 客户/供应商与来源单据都从既有读面里选，不再手输编码。
 const { customerOptions, supplierOptions, partnersPending } = useErpPartnerCatalog()
@@ -354,7 +364,7 @@ async function submitPayable() {
         <NvInput
           v-model="receivables.filters.keyword"
           class="h-9 w-48"
-          placeholder="应收单号 / 客户"
+          placeholder="应收单号 / 来源单据 / 客户"
           aria-label="应收关键字"
         />
         <NvSelect v-model="receivableStatus">

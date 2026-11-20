@@ -2,6 +2,11 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, shallowRef } from 'vue'
 
+vi.mock('vue-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('vue-router')>()),
+  useRoute: () => ({ query: {} }),
+}))
+
 import ArApPage from './finance/ar-ap.vue'
 import CostCandidatesPage from './finance/cost-candidates.vue'
 import VouchersPage from './finance/vouchers.vue'
