@@ -7,6 +7,7 @@ using Nerv.IIP.AppHub.Web.Application.Connectors;
 using Nerv.IIP.AppHub.Web.Application.Commands;
 using Nerv.IIP.Contracts.ConnectorProtocol;
 using NetCorePal.Extensions.Dto;
+using Nerv.IIP.Web;
 
 namespace Nerv.IIP.AppHub.Web.Endpoints.Connectors;
 
