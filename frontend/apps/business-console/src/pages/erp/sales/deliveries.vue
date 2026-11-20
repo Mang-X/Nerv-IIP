@@ -17,20 +17,29 @@ import {
   NvInput,
 } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
-import { computed } from 'vue'
-import { RouterLink } from 'vue-router'
-import { erpReadState, formatDateTime, readCount } from '../shared'
+import { computed, watch } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
+import { erpReadState, firstQueryParam, formatDateTime, readCount } from '../shared'
 
 definePage({
   meta: { requiresAuth: true, title: '销售发货', requiredPermissions: ['business.erp.sales.read'] },
 })
 
-const deliveries = useErpDeliveryOrders()
+const route = useRoute()
+const deliveries = useErpDeliveryOrders({ keyword: firstQueryParam(route.query.keyword) })
 // 客户列显名称：读面只回 customerCode，中文名在主数据业务伙伴里，前端按编码 join。
 const { resolvePartner } = useBusinessPartnerNames()
-const { page, pageSize } = usePagedList(deliveries.filters, {
+const { page, pageSize, resetPage } = usePagedList(deliveries.filters, {
   resetOn: [() => deliveries.filters.keyword],
 })
+
+watch(
+  () => route.query.keyword,
+  (keyword) => {
+    deliveries.filters.keyword = firstQueryParam(keyword)
+    resetPage()
+  },
+)
 
 const columns: NvDataTableColumn<BusinessConsoleErpDeliveryOrderItem>[] = [
   {

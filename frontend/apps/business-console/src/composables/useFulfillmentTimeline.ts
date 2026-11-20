@@ -862,9 +862,10 @@ export function useFulfillmentTimeline(
           businessNo: record.deliveryOrderNo ?? undefined,
           detailStatus: record.status ?? undefined,
           updatedAt: record.shippedAtUtc ?? record.releasedAtUtc ?? undefined,
-          drill: record.salesOrderNo
-            ? { path: '/erp/sales/deliveries', query: { keyword: record.salesOrderNo } }
-            : { path: '/erp/sales/deliveries' },
+          drill: {
+            path: '/erp/sales/deliveries',
+            query: { keyword: record.deliveryOrderNo?.trim() || record.salesOrderNo || undefined },
+          },
         }),
         pendingNote: '销售订单履约时生成发货单，当前尚未产生。',
       }),
