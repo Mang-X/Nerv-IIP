@@ -1,9 +1,5 @@
-import { accessError } from './readError'
-import { warehouseScope } from './workScope'
-// 仓储物流真实取数适配（MAN-467 · 档1样板，照抄 MAN-466 设备屏三段式）：把 business-console
-// WMS 作业域 facade（与 Console WMS 域同源，均走 /api/business-console/v1/wms/**）适配进大屏
-// 既有 WarehouseBoard / WarehouseOpsTick 契约 —— 契约不变、页面零改动（除轮询/诚实标注）。
-//
+import { requireWarehouseSession, type warehouseScope } from './workScope'
+// 仓储屏独立读取收货、发货、盘点及 WCS，使用各域当前选择的范围。
 // **完整聚合口径（两轮 review 修正后）**：后端六个 WMS list 均按 CreatedAtUtc（WCS 按
 // DispatchedAtUtc）降序、无日期过滤，只取第一页会漏数。按「事实语义」选过滤 + 翻页到闭包完整：
 //   - 当前状态（day-independent，翻页取尽）：积压 `status:'Open'`；WCS **当前失败** `status:'Failed'`、
@@ -35,7 +31,6 @@ import type {
   OverdueTaskRow,
   WarehouseBoard,
   WarehouseKpis,
-  WarehouseOpsTick,
   WcsAdapterCell,
   WcsAdapterKind,
   WcsBoard,
@@ -45,7 +40,6 @@ import type {
   WhTaskRow,
 } from '@/data/contracts/warehouse'
 import { readRows, readScreenPayload } from './response'
-import { getScreenSession, hasScreenSession } from '@/data/session'
 
 // 超时阈值（分钟）——与契约「龄期 > 45min」及 mock OVERDUE_MIN 同口径。
 const OVERDUE_MIN = 45
@@ -416,14 +410,6 @@ function overdueTopOf(groups: WhTaskGroup[], count: CycleCountBoard): OverdueTas
     }))
 }
 
-function requireSession(): { organizationId: string; environmentId: string } {
-  if (!hasScreenSession()) {
-    throw new Error('大屏会话上下文未就绪（organizationId/environmentId 为空）')
-  }
-  const { organizationId, environmentId } = getScreenSession()
-  return { organizationId, environmentId }
-}
-
 type Ctx = { organizationId: string; environmentId: string }
 
 // —— 各作业域「取尽 open 积压 + 今日完成」翻页闭包 ——
@@ -493,7 +479,8 @@ function fetchCountBoard(ctx: Ctx, nowMs: number): Promise<CycleCountBoard> {
   ]).then(([open, done]) => countBoardOf(open, done, nowMs))
 }
 
-function fetchWcsBoard(ctx: Ctx, nowMs: number): Promise<WcsBoard> {
+async function fetchWcsBoard(ctx: Ctx, nowMs: number): Promise<WcsBoard> {
+  requireWarehouseSession(ctx)
   return Promise.all([
     paginate(
       (skip, take) =>
@@ -532,14 +519,6 @@ function fetchWcsBoard(ctx: Ctx, nowMs: number): Promise<WcsBoard> {
       'WCS(今日完成)',
     ),
   ]).then(([failed, running, done]) => wcsBoardOf(failed, running, done, nowMs))
-}
-
-async function readWcsBoard(ctx: Ctx, nowMs: number): Promise<WcsBoard> {
-  try {
-    return await fetchWcsBoard(ctx, nowMs)
-  } catch (error) {
-    return { ...wcsBoardOf([], [], [], nowMs), readFailure: accessError(error) ?? '读取失败' }
-  }
 }
 
 function flowScanStart(nowMs: number): number {
@@ -594,31 +573,6 @@ export async function readShipments(ctx: Ctx, nowMs = Date.now()) {
 
 export { fetchCountBoard, fetchWcsBoard }
 
-/** 主数据全景：入库/出库进度 + 上架/拣货/盘点 + WCS（10s 轮询，完整闭包聚合）。 */
-export async function fetchRealWarehouseBoard(
-  factoryId = getScreenSession().organizationId,
-): Promise<WarehouseBoard> {
-  const ctx = requireSession()
-  const nowMs = Date.now()
-
-  const [receipts, shipments, counts] = await Promise.all([
-    warehouseScope(ctx, 'receipts'),
-    warehouseScope(ctx, 'shipments'),
-    warehouseScope(ctx, 'counts'),
-  ])
-  const [receiptData, shipmentData, count, wcs] = await Promise.all([
-    readReceipts(receipts.query, nowMs),
-    readShipments(shipments.query, nowMs),
-    fetchCountBoard(counts.query, nowMs),
-    readWcsBoard(ctx, nowMs),
-  ])
-  return assembleWarehouseBoard(
-    factoryId,
-    { receipts, shipments, counts },
-    { ...receiptData, ...shipmentData, count, wcs },
-  )
-}
-
 type Selection = Awaited<ReturnType<typeof warehouseScope>>
 
 export function assembleWarehouseBoard(
@@ -660,27 +614,4 @@ export function assembleWarehouseBoard(
     wcs,
     overdueTop,
   }
-}
-
-/** 任务看板 + WCS 高频 tick（15s 轮询）：只刷作业子集，与主板同源完整闭包口径一致。 */
-export async function fetchRealWarehouseOpsTick(
-  _factoryId = getScreenSession().organizationId,
-): Promise<WarehouseOpsTick> {
-  const ctx = requireSession()
-  const nowMs = Date.now()
-
-  const [receipts, shipments, counts] = await Promise.all([
-    warehouseScope(ctx, 'receipts'),
-    warehouseScope(ctx, 'shipments'),
-    warehouseScope(ctx, 'counts'),
-  ])
-  const [putaway, pick, count, wcs] = await Promise.all([
-    fetchTaskGroup(listBusinessConsoleWmsPutawayTasks, receipts.query, 'putaway', nowMs),
-    fetchTaskGroup(listBusinessConsoleWmsPickingTasks, shipments.query, 'pick', nowMs),
-    fetchCountBoard(counts.query, nowMs),
-    readWcsBoard(ctx, nowMs),
-  ])
-  const overdueTop = overdueTopOf([pick, putaway], count)
-
-  return { pick, putaway, count, wcs, overdueTop }
 }

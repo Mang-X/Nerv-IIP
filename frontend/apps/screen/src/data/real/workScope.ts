@@ -14,7 +14,12 @@ const catalogs = {
   counts: getBusinessConsoleWmsCountWorkScopes,
 }
 
+export function requireWarehouseSession(session: ScreenSession) {
+  if (!session.organizationId || !session.environmentId) throw new NoWorkScope('缺少组织环境')
+}
+
 export async function warehouseOptions(session: ScreenSession, domain: keyof typeof catalogs) {
+  requireWarehouseSession(session)
   const catalog = readScreenPayload(
     await catalogs[domain]({
       query: session,
