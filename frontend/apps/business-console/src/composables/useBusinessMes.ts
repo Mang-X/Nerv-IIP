@@ -1172,7 +1172,12 @@ export function useMesWorkOrderFacts(orderIds: MaybeRefOrGetter<readonly (string
 export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
   const filters = defaultFilters(options.initialTake)
   const workOrderReadScope = useMesPrincipalWorkScope(filters, MES_WORK_ORDERS_READ_PERMISSION)
-  const workOrderManageScope = useMesPrincipalWorkScope(filters, MES_WORK_ORDERS_MANAGE_PERMISSION)
+  const auth = useAuthStore()
+  const workOrderManageScope = useMesPrincipalWorkScope(
+    filters,
+    MES_WORK_ORDERS_MANAGE_PERMISSION,
+    () => auth.principal?.permissionCodes?.includes(MES_WORK_ORDERS_MANAGE_PERMISSION) === true,
+  )
   const queryCache = useQueryCache()
   const workOrdersScopeReady = computed(
     () => hasBusinessContext(filters) && workOrderReadScope.scopeReady.value,
@@ -1656,7 +1661,12 @@ export function useMesWorkOrderDetail(workOrderId?: MaybeRefOrGetter<string>) {
     )
   }
   const workOrderReadScope = useMesPrincipalWorkScope(filters, MES_WORK_ORDERS_READ_PERMISSION)
-  const workOrderManageScope = useMesPrincipalWorkScope(filters, MES_WORK_ORDERS_MANAGE_PERMISSION)
+  const auth = useAuthStore()
+  const workOrderManageScope = useMesPrincipalWorkScope(
+    filters,
+    MES_WORK_ORDERS_MANAGE_PERMISSION,
+    () => auth.principal?.permissionCodes?.includes(MES_WORK_ORDERS_MANAGE_PERMISSION) === true,
+  )
   const queryCache = useQueryCache()
   const detailEnabled = computed(
     () =>
