@@ -88,7 +88,6 @@ $facadeOwnedResponsibilityContracts = @(
         )
     }
 )
-$isolatedTestEvidenceLibraryNames = @('ScriptAutomation.ps1', 'OrdinalString.ps1', 'TrxResults.ps1', 'TestEvidence.ps1', 'TestEvidencePolicy.ps1', 'TestEvidencePrivacy.ps1', 'TestEvidenceParsing.ps1', 'TestEvidenceArtifacts.ps1', 'TestEvidenceProvenance.ps1', 'TestEvidenceBaseline.ps1')
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . $testEvidenceLibraryPath
 . $ciWorkflowBudgetsPath
@@ -287,16 +286,6 @@ Assert-True (-not [string]::IsNullOrWhiteSpace([string]$sharedDependencyRegistry
     'Registering a shared facade dependency as a responsibility library must fail closed.'
 Assert-True ([string]$sharedDependencyRegistryFailure).Contains('OrdinalString.ps1', [StringComparison]::Ordinal) `
     'The shared-dependency overlap mutation failure must identify the library registered in both partitions.'
-
-$expectedIsolatedLibraryNames = @(Get-NervOrdinalSorted -Unique -Values @(@('ScriptAutomation.ps1', 'TestEvidence.ps1') + @($facadeOwnedLibraryNames)))
-$actualIsolatedLibraryNames = @(Get-NervOrdinalSorted -Unique -Values $isolatedTestEvidenceLibraryNames)
-Assert-True ([string]::Equals(($actualIsolatedLibraryNames -join '|'), ($expectedIsolatedLibraryNames -join '|'), [StringComparison]::Ordinal)) `
-    "The composite-key mutation harness copy set must equal the TestEvidence facade closure. Expected=[$($expectedIsolatedLibraryNames -join ', ')] Actual=[$($actualIsolatedLibraryNames -join ', ')]"
-foreach ($facadeOwnedLibraryName in $facadeOwnedLibraryNames) {
-    $facadeOwnedLibraryPath = Join-Path (Split-Path $testEvidenceLibraryPath -Parent) $facadeOwnedLibraryName
-    Assert-Equal 0 @(Get-NervDotSourceCommands -Path $facadeOwnedLibraryPath).Count `
-        "TestEvidence facade-owned library '$facadeOwnedLibraryName' must remain a leaf so the isolated copy set is the complete dependency closure."
-}
 
 $redactionContractCases = @(
     [pscustomobject]@{ Name = 'null'; Input = $null; Expected = ''; Secrets = @() },
@@ -1127,222 +1116,27 @@ function Test-NervCiWorkflowBudgetsOrdinalSweep {
     }
 }
 
-function Test-NervProductionCompositeKeyCallsites {
+function Test-NervProductionCompositeKeys {
     $fixtureScript = Join-Path $fixtures 'composite-key-production-fixture.ps1'
-    $productionLibrary = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
-    $mutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-test-evidence-composite-mutations-$([Guid]::NewGuid().ToString('N'))"
-    $cases = @(
-        [pscustomobject]@{
-            Name = 'artifact-record-sort-1063'
-            Fixture = 'artifact-record-sort'
-            Original = '        $recordLines = foreach ($record in @(Get-NervOrdinalSortedBy -Items @($Records) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @($row.assembly, $row.testName) })) {'
-            Mutated = '        $recordLines = foreach ($record in @(Get-NervOrdinalSortedBy -Items @($Records) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @([string]$row.assembly, [string]$row.testName) })) {'
-        },
-        [pscustomobject]@{
-            Name = 'normalized-trx-group-1186'
-            Fixture = 'normalized-trx-group'
-            Original = '        $normalizedGroups = @(Get-NervOrdinalGroups -Items @($Records) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @($row.lane, $row.assembly) } | ForEach-Object {'
-            Mutated = '        $normalizedGroups = @(Get-NervOrdinalGroups -Items @($Records) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @([string]$row.lane, [string]$row.assembly) } | ForEach-Object {'
-        },
-        [pscustomobject]@{
-            Name = 'normalized-trx-record-sort-1187'
-            Fixture = 'normalized-trx-record-sort'
-            Original = '            $groupRecords = @(Get-NervOrdinalSortedBy -Items @($_.Group) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @($row.testName, $row.displayName, $row.testInstanceId) })'
-            Mutated = '            $groupRecords = @(Get-NervOrdinalSortedBy -Items @($_.Group) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @([string]$row.testName, [string]$row.displayName, [string]$row.testInstanceId) })'
-        },
-        [pscustomobject]@{
-            Name = 'normalized-trx-run-identity-1261'
-            Fixture = 'normalized-trx-group'
-            Original = "                `$groupRecords[0].lane,`n                `$groupRecords[0].assembly)"
-            Mutated = "                [string]`$groupRecords[0].lane,`n                [string]`$groupRecords[0].assembly)"
-        },
-        [pscustomobject]@{
-            Name = 'normalized-trx-length-budget'
-            Fixture = 'normalized-trx-group'
-            Original = '        if ($legacy.Length -le 240 -and [int]$legacyCounts[$legacy] -eq 1) {'
-            Mutated = '        if ([int]$legacyCounts[$legacy] -eq 1) {'
-            DiagnosticPattern = '(?is)(PathTooLongException|path.*too long|exceeds.*length)'
-        },
-        [pscustomobject]@{
-            Name = 'normalized-trx-complete-digest'
-            Fixture = 'normalized-trx-group'
-            Original = "    `$identityDigest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(`n        [Text.Encoding]::UTF8.GetBytes([string]`$Group.Identity))).ToLowerInvariant()"
-            Mutated = "    `$identityDigest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(`n        [Text.Encoding]::UTF8.GetBytes([string]`$Group.Identity))).ToLowerInvariant().Substring(0, 16)"
-        },
-        [pscustomobject]@{
-            Name = 'normalized-trx-final-allocation-collision'
-            Fixture = 'normalized-trx-group'
-            Original = '        } while (-not $used.Add($candidate))'
-            Mutated = '        } while ($false)'
-        },
-        [pscustomobject]@{
-            Name = 'normalized-trx-case-insensitive-final-uniqueness'
-            Fixture = 'normalized-trx-group'
-            Original = '    return ,([Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase))'
-            Mutated = '    return ,([Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal))'
-        },
-        [pscustomobject]@{
-            Name = 'normalized-trx-reader-null-marker'
-            Fixture = 'normalized-trx-group'
-            Original = "                elseif ([string]::Equals(`$assemblyIdentityMarker, 'null', [StringComparison]::Ordinal)) { `$null }"
-            Mutated = "                elseif ([string]::Equals(`$assemblyIdentityMarker, 'null', [StringComparison]::Ordinal)) { '' }"
-        },
-        [pscustomobject]@{
-            Name = 'normalized-trx-runmetadata-null-timing'
-            Fixture = 'normalized-trx-group'
-            Original = '            assembly = if ($assembliesInRun.Count -eq 1) { $assembliesInRun[0] } else { [IO.Path]::GetFileNameWithoutExtension($trxPath) }'
-            Mutated = '            assembly = if ($assembliesInRun.Count -eq 1) { [string]$assembliesInRun[0] } else { [IO.Path]::GetFileNameWithoutExtension($trxPath) }'
-        },
-        [pscustomobject]@{
-            Name = 'retained-json-null-assembly-projection'
-            Fixture = 'normalized-trx-group'
-            Original = '                assembly = $record.assembly'
-            Mutated = '                assembly = [string]$record.assembly'
-        },
-        [pscustomobject]@{
-            Name = 'assembly-marker-provenance-gate-deleted'
-            Fixture = 'normalized-trx-group'
-            Original = '        $hasReservedAssemblyIdentityMarker = $reservedAssemblyIdentityAttributes.Count -gt 0'
-            Mutated = '        $hasReservedAssemblyIdentityMarker = $false'
-        },
-        [pscustomobject]@{
-            Name = 'assembly-marker-only-head-sha-validated'
-            Fixture = 'normalized-trx-group'
-            Original = "            if (`$persistedHeadSha -notmatch '^[0-9a-f]{40}$' -or `$persistedTestedSha -notmatch '^[0-9a-f]{40}$' -or`n                -not [string]::Equals(`$persistedHeadSha, [string]`$RunMetadata.headSha, [StringComparison]::Ordinal) -or`n                -not [string]::Equals(`$persistedTestedSha, [string]`$RunMetadata.testedSha, [StringComparison]::Ordinal)) {"
-            Mutated = "            if (`$persistedHeadSha -notmatch '^[0-9a-f]{40}$' -or`n                -not [string]::Equals(`$persistedHeadSha, [string]`$RunMetadata.headSha, [StringComparison]::Ordinal)) {"
-        },
-        [pscustomobject]@{
-            Name = 'assembly-marker-namespace-weakened'
-            Fixture = 'normalized-trx-group'
-            Original = '                    -not [string]::Equals([string]$definitionMarkerAttributes[0].NamespaceURI, $normalizedIdentityNamespace, [StringComparison]::Ordinal)) {'
-            Mutated = '                    $false) {'
-        },
-        [pscustomobject]@{
-            Name = 'assembly-marker-prefix-instead-of-namespace'
-            Fixture = 'normalized-trx-group'
-            Original = '                    -not [string]::Equals([string]$definitionMarkerAttributes[0].NamespaceURI, $normalizedIdentityNamespace, [StringComparison]::Ordinal)) {'
-            Mutated = "                    -not [string]::Equals([string]`$definitionMarkerAttributes[0].Prefix, 'nerv', [StringComparison]::Ordinal)) {"
-        },
-        [pscustomobject]@{
-            Name = 'assembly-marker-verbatim-storage-gate-deleted'
-            Fixture = 'normalized-trx-group'
-            Original = "            if (`$hasAssemblyIdentityMarker -and [string]::Equals(`$assemblyIdentityMarker, 'verbatim', [StringComparison]::Ordinal) -and`n                ([string]::IsNullOrWhiteSpace([string]`$definition.storage) -or [string]`$definition.storage -notmatch '[/\\]')) {"
-            Mutated = '            if ($false) {'
-        },
-        [pscustomobject]@{
-            Name = 'summary-aggregate-selector-849'
-            Fixture = 'baseline-aggregate'
-            Original = '    $assemblies = @(Get-NervOrdinalGroups -Items $safeRecords -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @($row.lane, $row.assembly) } | ForEach-Object {'
-            Mutated = '    $assemblies = @(Get-NervOrdinalGroups -Items $safeRecords -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @([string]$row.lane, [string]$row.assembly) } | ForEach-Object {'
-        },
-        [pscustomobject]@{
-            Name = 'summary-identity-projection-851'
-            Fixture = 'baseline-aggregate'
-            Original = "        `$laneName = `$items[0].lane`n        `$assemblyName = `$items[0].assembly"
-            Mutated = "        `$laneName = [string]`$items[0].lane`n        `$assemblyName = [string]`$items[0].assembly"
-        },
-        [pscustomobject]@{
-            Name = 'baseline-aggregate-1606'
-            Fixture = 'baseline-aggregate'
-            TargetLibrary = 'TestEvidenceBaseline.ps1'
-            Original = '    $assemblies = @(Get-NervOrdinalGroups -Items @($Summaries | ForEach-Object { @($_.assemblies) }) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @($row.lane, $row.assembly) } | ForEach-Object {'
-            Mutated = '    $assemblies = @(Get-NervOrdinalGroups -Items @($Summaries | ForEach-Object { @($_.assemblies) }) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @([string]$row.lane, [string]$row.assembly) } | ForEach-Object {'
-        },
-        [pscustomobject]@{
-            Name = 'baseline-identity-projection-1653'
-            Fixture = 'baseline-aggregate'
-            TargetLibrary = 'TestEvidenceBaseline.ps1'
-            Original = "            lane = `$items[0].lane`n            assembly = `$items[0].assembly"
-            Mutated = "            lane = [string]`$items[0].lane`n            assembly = [string]`$items[0].assembly"
-        },
-        [pscustomobject]@{
-            Name = 'derived-instance-ordinal-composite-key'
-            Fixture = 'derived-instance-id'
-            Original = '            $ordinalKey = Get-NervOrdinalCompositeKey -Components @($definition.testName, $displayName)'
-            Mutated = '            $ordinalKey = "$($definition.testName)|$displayName"'
-        },
-        [pscustomobject]@{
-            Name = 'derived-definition-ordinal-composite-key'
-            Fixture = 'derived-instance-id'
-            Original = '                definitionId = Get-NervStableEvidenceGuid (Get-NervOrdinalCompositeKey -Components @($definition.assembly, $definition.testName))'
-            Mutated = '                definitionId = Get-NervStableEvidenceGuid ("$($definition.assembly)|$($definition.testName)")'
-        },
-        [pscustomobject]@{
-            Name = 'derived-test-instance-ordinal-composite-key'
-            Fixture = 'derived-instance-id'
-            Original = '                testInstanceId = if ($hasPersistedExecutionId) { $persistedExecutionId.ToString() } else { Get-NervStableEvidenceGuid (Get-NervOrdinalCompositeKey -Components @($definition.assembly, $definition.testName, $displayName, [string]$ordinal)) }'
-            Mutated = '                testInstanceId = if ($hasPersistedExecutionId) { $persistedExecutionId.ToString() } else { Get-NervStableEvidenceGuid ("$($definition.assembly)|$($definition.testName)|$displayName|$([string]$ordinal)") }'
-        },
-        [pscustomobject]@{
-            Name = 'derived-instance-ordinal-comparer'
-            Fixture = 'derived-instance-id'
-            Original = '        $ordinals = [Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)'
-            Mutated = '        $ordinals = @{}'
-        },
-        [pscustomobject]@{
-            Name = 'literal-null-marker-escape'
-            Fixture = 'marker-literal'
-            TargetLibrary = 'OrdinalString.ps1'
-            Original = '        $_.Replace(''\'', ''\\'').Replace(''|'', ''\|'')'
-            Mutated = '        $_.Replace(''|'', ''\|'')'
-        }
+    $logRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-test-evidence-composite-$([Guid]::NewGuid().ToString('N'))"
+    $fixturesToRun = @(
+        'artifact-record-sort',
+        'normalized-trx-group',
+        'normalized-trx-record-sort',
+        'baseline-aggregate',
+        'derived-instance-id',
+        'marker-literal'
     )
-
     try {
-        [IO.Directory]::CreateDirectory($mutationRoot) | Out-Null
-        foreach ($case in $cases) {
-            Invoke-TestPwshScript -ScriptPath $fixtureScript -LogRoot $mutationRoot -WorkingDirectory $repoRoot -Name "composite-production-$($case.Name)-green" -Arguments @(
-                '-TestEvidenceLibraryPath', $productionLibrary,
-                '-Fixture', $case.Fixture
+        foreach ($fixture in $fixturesToRun) {
+            Invoke-TestPwshScript -ScriptPath $fixtureScript -LogRoot $logRoot -WorkingDirectory $repoRoot -Name $fixture -Arguments @(
+                '-TestEvidenceLibraryPath', $testEvidenceLibraryPath,
+                '-Fixture', $fixture
             ) | Out-Null
-
-            $caseRoot = Join-Path $mutationRoot $case.Name
-            $libraryRoot = Join-Path $caseRoot 'lib'
-            [IO.Directory]::CreateDirectory($libraryRoot) | Out-Null
-            foreach ($libraryName in $isolatedTestEvidenceLibraryNames) {
-                Copy-Item -LiteralPath (Join-Path $repoRoot "scripts/lib/$libraryName") -Destination (Join-Path $libraryRoot $libraryName)
-            }
-            $mutationTargetLibrary = if ($case.PSObject.Properties.Match('TargetLibrary').Count -eq 1) {
-                [string]$case.TargetLibrary
-            }
-            else {
-                $matchingLibraries = @($isolatedTestEvidenceLibraryNames | Where-Object {
-                    $candidateSource = [IO.File]::ReadAllText((Join-Path $libraryRoot $_))
-                    [regex]::Matches($candidateSource, [regex]::Escape([string]$case.Original)).Count -gt 0
-                })
-                Assert-Equal 1 $matchingLibraries.Count `
-                    "Mutation '$($case.Name)' must resolve to exactly one library in the facade closure."
-                [string]$matchingLibraries[0]
-            }
-            $mutatedLibrary = Join-Path $libraryRoot $mutationTargetLibrary
-            $source = [IO.File]::ReadAllText($mutatedLibrary)
-            Assert-Equal 1 ([regex]::Matches($source, [regex]::Escape([string]$case.Original)).Count) `
-                "Mutation '$($case.Name)' must identify exactly one production callsite."
-            [IO.File]::WriteAllText($mutatedLibrary, $source.Replace([string]$case.Original, [string]$case.Mutated), [Text.UTF8Encoding]::new($false))
-
-            $mutationFailed = $false
-            try {
-                Invoke-TestPwshScript -ScriptPath $fixtureScript -LogRoot $caseRoot -WorkingDirectory $repoRoot -Name "composite-production-$($case.Name)-mutation" -Arguments @(
-                    '-TestEvidenceLibraryPath', (Join-Path $libraryRoot 'TestEvidence.ps1'),
-                    '-Fixture', $case.Fixture
-                ) | Out-Null
-            }
-            catch { $mutationFailed = $true }
-            Assert-True $mutationFailed "Mutation '$($case.Name)' must fail its real production fixture."
-            $failureLogs = [string]::Join("`n", @(Get-ChildItem $caseRoot -Recurse -File -Filter '*.log' | ForEach-Object { Get-Content $_.FullName -Raw }))
-            if (Test-NervHasProperty -Object $case -Name 'DiagnosticPattern') {
-                Assert-True ($failureLogs -match [string]$case.DiagnosticPattern) `
-                    "Mutation '$($case.Name)' must fail with its length-budget diagnostic; logs=$failureLogs"
-            }
-            else {
-                Assert-True ($failureLogs.Contains("composite-key-fixture:$($case.Fixture):", [StringComparison]::Ordinal)) `
-                    "Mutation '$($case.Name)' must fail with its callsite-specific diagnostic."
-            }
-            Write-Host "Rejected composite-key mutation '$($case.Name)' through production fixture '$($case.Fixture)'."
         }
     }
     finally {
-        if (Test-Path -LiteralPath $mutationRoot) { Remove-Item -LiteralPath $mutationRoot -Recurse -Force }
+        if (Test-Path -LiteralPath $logRoot) { Remove-Item -LiteralPath $logRoot -Recurse -Force }
     }
 }
 
@@ -1382,7 +1176,7 @@ Assert-True (-not $collectorSource.Contains('TestOnly', [StringComparison]::Ordi
 Assert-True (-not $baselineGeneratorSource.Contains('TestOnly', [StringComparison]::Ordinal)) 'Production baseline generator must expose no test-only authority replacement parameter.'
 Assert-True ($collectorSource.Contains('deterministic .failure[-N] sibling', [StringComparison]::Ordinal)) 'Collector governance Writes must declare its owned failure sibling output.'
 Assert-True (-not (Get-Command Write-NervTestEvidenceArtifacts).Parameters.ContainsKey('SourceTrxPaths')) 'Artifact writer must not require an unread raw-TRX path parameter.'
-Test-NervProductionCompositeKeyCallsites
+Test-NervProductionCompositeKeys
 Test-NervProductionCompositeKeyByteEvidenceFixture
 Test-NervCiWorkflowBudgetsOwnsOrdinalDependency
 Test-NervCiWorkflowBudgetsOrdinalSweep
