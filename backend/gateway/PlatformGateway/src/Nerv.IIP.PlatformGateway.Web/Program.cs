@@ -6,7 +6,6 @@ using Nerv.IIP.Observability;
 using Nerv.IIP.PlatformGateway.Web;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
 using Nerv.IIP.PlatformGateway.Web.Application.FileStorage;
-using Nerv.IIP.PlatformGateway.Web.Application.Http;
 using Nerv.IIP.PlatformGateway.Web.Application.IamAdmin;
 using Nerv.IIP.PlatformGateway.Web.Application.NotificationClient;
 using Nerv.IIP.PlatformGateway.Web.Application.OpsClient;

@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Http;
 
-namespace Nerv.IIP.BusinessGateway.Web.Application.Http;
+namespace Nerv.IIP.Localization;
 
 public sealed class AcceptLanguageForwardingHandler(IHttpContextAccessor httpContextAccessor) : DelegatingHandler
 {
