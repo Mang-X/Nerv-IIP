@@ -371,13 +371,13 @@ function formatDateTime(value?: string | null) {
       awaiting-scope-message="请先在顶部选择业务范围，再查看设备任务。"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无设备任务。"
+      empty-message="当前范围暂无设备任务。"
       @retry="refreshWcsTasks"
     >
       <template #empty>
-        <p class="text-sm font-medium">暂无设备任务</p>
+        <p class="text-sm font-medium">当前范围暂无设备任务</p>
         <p class="max-w-md text-sm text-muted-foreground">
-          设备任务由上架、拣货作业下发给堆垛机、输送线等设备控制系统后产生；本仓库尚未接入设备控制系统。
+          设备任务由上架或拣货作业下发后产生，可回到原作业查看进度。
         </p>
         <div class="flex gap-2">
           <NvButton size="sm" type="button" variant="outline" as-child>
