@@ -58,10 +58,20 @@ async function salesSession(page: Page, permissions = ['business.erp.sales.read'
         ].some((path) => pathname.endsWith(path))
       )
         data = { items: [], total: 0 }
+      if (pathname.endsWith('/erp/finance/receivables/by-source')) {
+        const source = searchParams.get('sourceDocumentNo')
+        if (
+          source !== 'DO-OLD' ||
+          searchParams.get('organizationId') !== 'org-sales' ||
+          searchParams.get('environmentId') !== 'env-sales'
+        )
+          throw new Error('应收复核范围错误')
+        data = { receivableNo: 'AR-OLD', sourceDocumentNo: source, openAmount: 30 }
+      }
       if (pathname.endsWith('/erp/finance/receivables')) {
         const keyword = searchParams.get('keyword') ?? ''
         const rows = [
-          ...Array.from({ length: 101 }, (_, i) => ({
+          ...Array.from({ length: 201 }, (_, i) => ({
             receivableNo: 'AR-NEAR-' + i,
             sourceDocumentNo: 'DO-OLD9',
             openAmount: 99,

@@ -13,6 +13,7 @@ import type {
   BusinessConsolePlanningSuggestionItem,
 } from '@nerv-iip/api-client'
 import {
+  getBusinessConsoleErpReceivableBySourceDocument,
   listBusinessConsoleErpReceivables,
   getBusinessConsolePlanningMrpPegging,
   listBusinessConsoleErpDeliveryOrders,
@@ -810,21 +811,37 @@ export function useFulfillmentTimeline(
         error?: unknown
       }[] = []
       for (const source of sources) {
-        try {
-          const result = await readCandidatePages<BusinessConsoleErpReceivableItem>((skip, take) =>
-            listBusinessConsoleErpReceivables({
-              query: { ...scope, keyword: source, skip, take },
-              throwOnError: false,
-            }),
-          )
-          results.push({
-            source,
-            rows: result.items.filter((row) => row.sourceDocumentNo === source),
-            limited: result.limited,
-          })
-        } catch (error) {
-          results.push({ source, rows: [], limited: false, error })
+        const receipt = {
+          source,
+          rows: [] as BusinessConsoleErpReceivableItem[],
+          limited: false,
+          error: undefined as unknown,
         }
+        try {
+          const candidates = await readCandidatePages<BusinessConsoleErpReceivableItem>(
+            (skip, take) =>
+              listBusinessConsoleErpReceivables({
+                query: { ...scope, keyword: source, skip, take },
+                throwOnError: false,
+              }),
+          )
+          receipt.rows = candidates.items.filter((row) => row.sourceDocumentNo === source)
+          receipt.limited = candidates.limited
+          if (receipt.limited && receipt.rows.length === 0) {
+            const latest = await runNodeSource(async () => {
+              const { data, error, response } =
+                await getBusinessConsoleErpReceivableBySourceDocument({
+                  query: { ...scope, sourceDocumentNo: source },
+                  throwOnError: false,
+                })
+              return { data: data?.data, error: data?.success === false ? data : error, response }
+            })
+            if (latest?.sourceDocumentNo === source) receipt.rows.push(latest)
+          }
+        } catch (error) {
+          receipt.error = error
+        }
+        results.push(receipt)
       }
       return results
     },
@@ -867,7 +884,7 @@ export function useFulfillmentTimeline(
             )
             .join('、') ||
             (error ? (httpStatusOf(error) === 403 ? '权限受限' : '读取失败') : '未查到应收'),
-          limited ? '仅核对前 200 条候选' : '',
+          limited ? '列表仅核对前 200 条候选，未命中时按完整源单号复核最近一张' : '',
         ]
           .filter(Boolean)
           .join(' · '),
