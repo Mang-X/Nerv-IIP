@@ -424,7 +424,13 @@ const suggestionRunChoice = computed({
       ? manualSuggestionRunId.value
       : 'latest',
   set: (runId: string) => {
+    if (sourceSuggestionId.value || sourceRunId.value) {
+      const nextRunId = runId === 'latest' ? latestCompletedRun.value?.runId : runId
+      if (nextRunId) void router.push({ query: { ...route.query, suggestionId: undefined, runId: nextRunId } })
+      return
+    }
     manualSuggestionRunId.value = runId
+    focusedSuggestionId.value = ''
   },
 })
 const suggestionRun = computed(() =>
@@ -436,7 +442,7 @@ const scopedSuggestions = computed(() =>
   suggestions.value.filter((item) => item.runId === suggestionRun.value?.runId),
 )
 function locatePlanningSuggestion(suggestionId: string, runId: string) {
-  suggestionRunChoice.value = runId
+  manualSuggestionRunId.value = runId
   suggestionFilters.status = 'all'
   suggestionTypeFilter.type = 'all'
   focusedSuggestionId.value = suggestionId
@@ -464,7 +470,7 @@ watch(
     suggestionTypeFilter.type = 'all'
     focusedSuggestionId.value = ''
     activeTab.value = 'suggestions'
-    if (runId) suggestionRunChoice.value = runId
+    manualSuggestionRunId.value = runId || 'latest'
   },
   { immediate: true },
 )
@@ -489,9 +495,15 @@ const sourceUnresolved = computed(() =>
     (sourceRunId.value && sourceRunId.value !== suggestionRun.value?.runId),
   ),
 )
+function navigateToSuggestion(suggestionId: string, runId: string) {
+  if (sourceSuggestionId.value || sourceRunId.value) {
+    void router.push({ query: { ...route.query, suggestionId, runId } })
+  }
+  locatePlanningSuggestion(suggestionId, runId)
+}
 function focusSuggestion(row: BusinessConsoleMrpPeggingItem) {
   if (!row.suggestionId) return
-  locatePlanningSuggestion(row.suggestionId, runSelection.runId)
+  navigateToSuggestion(row.suggestionId, runSelection.runId)
 }
 function focusPegging(row: BusinessConsolePlanningSuggestionItem) {
   if (!row.suggestionId || !row.runId) return
@@ -1483,7 +1495,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       <PlanningMaterialDeliveryPanel
         :runs="mrpRuns"
         :sku-label="skuLabel"
-        @locate-suggestion="locatePlanningSuggestion"
+        @locate-suggestion="navigateToSuggestion"
       />
     </NvTabsContent>
 
