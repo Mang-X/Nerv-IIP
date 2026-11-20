@@ -1,7 +1,7 @@
 # 工厂设定与人工走查最小数据
 
 本文是工厂设定与人工走查数据的当前权威来源。历史形成过程保留在
-[`2026-07-26-factory-world-bible.md`](../../superpowers/plans/2026-07-26-factory-world-bible.md)，
+Git 历史 `0d260365a:docs/superpowers/plans/2026-07-26-factory-world-bible.md`，
 该文件是不可改写的 Superpowers 历史快照；后续设定与走查数据调整只修改本文及其代码投影。
 
 ## 1. 目标与边界

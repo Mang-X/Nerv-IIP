@@ -1,6 +1,6 @@
 # Testing Governance 入口
 
-本目录承载测试体系**当前必须遵守的规则**。规则按“语义有效性、确定性、证据、真实依赖、PDA 测试边界”拆分；运行命令进入 `docs/runbooks/testing/`，易漂移的清单与 producer 导航进入 `docs/reference/testing/`，历史修复与时点运行证据进入 `docs/reports/audits/`。
+本目录承载测试体系**当前必须遵守的规则**。规则按“语义有效性、确定性、证据、真实依赖、PDA 测试边界”拆分；运行命令进入 `docs/runbooks/testing/`，易漂移的清单与 producer 导航进入 `docs/reference/testing/`。
 
 | 主题 | 当前权威 |
 | --- | --- |

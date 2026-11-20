@@ -1,6 +1,6 @@
 # 现场作业主体、角色与 scope 当前架构
 
-本文只描述现场作业的**当前身份事实所有权、角色/权限组合、Worker 与作业资源关系以及授权 scope 语义**。M2-L 拆分前含 commit 时点证据、交付缺口、演示账号与验收记录的混合正文冻结于 [`../../reports/m2-l-frontline-principal-role-scope-baseline-pre-split-2026-09-07.md`](../../reports/m2-l-frontline-principal-role-scope-baseline-pre-split-2026-09-07.md)。精确字段和 API 以当前 IAM/MasterData/Gateway 代码与公开契约为准。
+本文只描述现场作业的**当前身份事实所有权、角色/权限组合、Worker 与作业资源关系以及授权 scope 语义**。精确字段和 API 以当前 IAM/MasterData/Gateway 代码与公开契约为准。
 
 ## 权威边界
 

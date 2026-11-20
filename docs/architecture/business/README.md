@@ -1,6 +1,6 @@
 # Business 当前架构路由
 
-本目录只承载业务平台的 Current Architecture。按任务只读取直接相关页面，不要把整个目录作为默认上下文；产品页面/角色/IA 去 `docs/product/`，规则去 `docs/governance/`，操作去 `docs/runbooks/`，矩阵/目录去 `docs/reference/`，历史证据去 `docs/reports/` 或 `docs/status/archive/`。
+本目录只承载业务平台的 Current Architecture。按任务只读取直接相关页面，不要把整个目录作为默认上下文；产品页面/角色/IA 去 `docs/product/`，规则去 `docs/governance/`，操作去 `docs/runbooks/`，矩阵/目录去 `docs/reference/`。
 
 | 任务 | 当前架构 |
 | --- | --- |

@@ -47,9 +47,9 @@ pure rollback 仅限业务从未开放且 fence 完整的 pre-open window。一�
 
 ## 实施说明
 
-- 目标技术规格与 operator 流程由 [FileStorage 离线迁移 runbook](../architecture/file-storage-offline-migration-runbook.md) 承载。
+- 目标技术规格与 operator 流程由 [FileStorage 离线迁移 runbook](../runbooks/file-storage-offline-migration.md) 承载。
 - 规划权威由 [Issue #1644](https://github.com/Mang-X/Nerv-IIP/issues/1644) 与 [Issue #1013](https://github.com/Mang-X/Nerv-IIP/issues/1013) 的 Issue tree 承载。
-- 执行资格与当前交付状态以 GitHub Issue tree 和 [实施状态清单](../architecture/implementation-readiness.md) 为准；二者是状态权威，本 ADR 不承载状态。
+- 执行资格与当前交付状态以 GitHub Issue tree 为准。
 
 ## 已考虑的替代方案
 

@@ -1,6 +1,6 @@
 # PDA / Capacitor 当前架构
 
-本文只描述 `business-pda` 的**当前运行时边界、Web/native 分层、设备桥接、离线同步、安全与配置架构**。产品页面、角色任务和 UX 见 [`../../product/mobile-pda/design.md`](../../product/mobile-pda/design.md)；构建/APK/部署见 [`../../runbooks/mobile-pda-deployment.md`](../../runbooks/mobile-pda-deployment.md)；测试证明边界见 [`../../governance/testing/mobile-pda.md`](../../governance/testing/mobile-pda.md)。M2-L 清理前的混合正文冻结于 [`../../reports/m2-l-mobile-pda-capacitor-architecture-pre-clean-2026-09-07.md`](../../reports/m2-l-mobile-pda-capacitor-architecture-pre-clean-2026-09-07.md)。
+本文只描述 `business-pda` 的**当前运行时边界、Web/native 分层、设备桥接、离线同步、安全与配置架构**。产品页面、角色任务和 UX 见 [`../../product/mobile-pda/design.md`](../../product/mobile-pda/design.md)；构建/APK/部署见 [`../../runbooks/mobile-pda-deployment.md`](../../runbooks/mobile-pda-deployment.md)；测试证明边界见 [`../../governance/testing/mobile-pda.md`](../../governance/testing/mobile-pda.md)。
 
 精确 Capacitor/Android/Node 版本、插件集合和 package scripts 由 `frontend/apps/business-pda/package.json`、lockfile、`capacitor.config.ts` 和 Android producer 决定，Architecture 不复制版本清单。
 

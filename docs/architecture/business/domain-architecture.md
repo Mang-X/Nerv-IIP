@@ -1,6 +1,6 @@
 # 业务平台领域架构
 
-本文只描述 Nerv-IIP 业务平台的**当前领域分层、事实所有权、依赖方向、关键业务链路和平台边界**。实施进度、issue/PR/CI、阶段计划和历史形成过程不属于 Current Architecture；M2-L 清理前的混合正文冻结于 [`../../reports/m2-l-business-platform-domain-architecture-pre-clean-2026-09-07.md`](../../reports/m2-l-business-platform-domain-architecture-pre-clean-2026-09-07.md)。
+本文只描述 Nerv-IIP 业务平台的**当前领域分层、事实所有权、依赖方向、关键业务链路和平台边界**。实施进度、issue/PR/CI、阶段计划和历史形成过程不属于 Current Architecture。
 
 长期取舍由 [ADR 0012](../../adr/0012-business-platform-domain-layering.md)、[ADR 0013](../../adr/0013-business-master-data-governance.md)、[ADR 0014](../../adr/0014-aps-and-iiot-scheduling-boundary.md) 与 [ADR 0017](../../adr/0017-business-process-manager-and-compensation-strategy.md) 约束；精确 endpoint、schema、permission、事件 payload 与运行配置以当前代码、公开契约、迁移和配置 producer 为准。
 

@@ -1,6 +1,6 @@
 # Scheduling 订单紧急度快照保留架构
 
-本文只描述 BusinessScheduling 订单紧急度快照的**当前所有权、归档/恢复边界和安全不变量**。配置、删除授权注入、存储桶准备、迁移、恢复演练和验证命令见 [`../../runbooks/scheduling-order-urgency-retention.md`](../../runbooks/scheduling-order-urgency-retention.md)；M2-L 前的混合正文冻结于 [`../../reports/m2-l-business-scheduling-order-urgency-retention-pre-split-2026-09-07.md`](../../reports/m2-l-business-scheduling-order-urgency-retention-pre-split-2026-09-07.md)。
+本文只描述 BusinessScheduling 订单紧急度快照的**当前所有权、归档/恢复边界和安全不变量**。配置、删除授权注入、存储桶准备、迁移、恢复演练和验证命令见 [`../../runbooks/scheduling-order-urgency-retention.md`](../../runbooks/scheduling-order-urgency-retention.md)。
 
 ## 所有权与生命周期
 

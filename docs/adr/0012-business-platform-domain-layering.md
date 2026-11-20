@@ -84,7 +84,7 @@ GitHub Issue #72 到 #77 给出了第一版业务域输入，覆盖共享基础�
 ## 实施说明
 
 1. 首批业务架构说明见 `docs/architecture/business-platform-domain-architecture.md`。
-2. 完整业务平台规格见 `docs/superpowers/specs/2026-05-20-business-platform-domain-design.md`。
+2. 当时的设计可从 Git 历史追溯 `docs/superpowers/specs/2026-05-20-business-platform-domain-design.md`。
 3. 业务服务首次建表前必须补充 schema catalog 条目、实体配置注释、migration 和 schema convention tests。
 4. 业务服务首次暴露 Gateway 或服务 API 前必须补 OpenAPI 测试，并生成或更新业务前端 api-client。
 5. 业务服务首次发布 IntegrationEvent 前必须补 Contracts DTO、事件常量、序列化测试和消费者幂等测试。

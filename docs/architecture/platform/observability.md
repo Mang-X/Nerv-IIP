@@ -1,6 +1,6 @@
 # Observability 当前架构
 
-本文描述 Nerv-IIP 当前可观测性的数据所有权、采集/查询边界与 Notification 协作方式。M2-K 迁移前的混合基线包含版本、命令、部署参数、计划表族和建表前置清单，已按原 Git blob 冻结到 [`../../reports/observability-baseline-pre-m2-k-2026-09-07.md`](../../reports/observability-baseline-pre-m2-k-2026-09-07.md)。
+本文描述 Nerv-IIP 当前可观测性的数据所有权、采集/查询边界与 Notification 协作方式。
 
 ## 事实所有权
 

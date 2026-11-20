@@ -2,8 +2,6 @@
 
 本文只描述 Nerv-IIP **当前平台控制面的事实所有权与跨服务边界**。聚合、表、事件、字段和阶段完成状态的精确事实以当前代码、Contracts、迁移、OpenAPI 与测试为准；本文不维护第二份实现总账。
 
-M2-K 迁移前的 `core-domain-model-v1.md` 同时包含大量“首批建议 / 首批不做 / 后续规划”，已按原 Git blob 冻结到 [`../../status/archive/core-domain-model-v1-pre-m2-k-2026-09-07.md`](../../status/archive/core-domain-model-v1-pre-m2-k-2026-09-07.md)。该快照只用于历史追溯，不是 Current Architecture。
-
 ## 当前事实所有权
 
 | 上下文 | 当前拥有的事实 | 不拥有的事实 |

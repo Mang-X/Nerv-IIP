@@ -1,6 +1,6 @@
 # 设备状态事件流
 
-本文只描述设备运行事实从 **IndustrialTelemetry → Maintenance → MES → Scheduling** 的当前所有权、事件和投影边界。M2-L 清理前含 issue 阶段状态的原文冻结于 [`../../reports/m2-l-equipment-status-event-flow-pre-clean-2026-09-07.md`](../../reports/m2-l-equipment-status-event-flow-pre-clean-2026-09-07.md)。长期 APS/IIoT 边界见 [ADR 0014](../../adr/0014-aps-and-iiot-scheduling-boundary.md)。
+本文只描述设备运行事实从 **IndustrialTelemetry → Maintenance → MES → Scheduling** 的当前所有权、事件和投影边界。长期 APS/IIoT 边界见 [ADR 0014](../../adr/0014-aps-and-iiot-scheduling-boundary.md)。
 
 ## 总体链路
 

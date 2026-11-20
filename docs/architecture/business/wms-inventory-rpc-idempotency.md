@@ -1,6 +1,6 @@
 # WMS 与 Inventory RPC 幂等边界
 
-本文描述 WMS 到 Inventory 的同步命令在“Inventory 已提交但调用方超时”场景下的当前幂等与恢复架构。长期决策见 [ADR 0019](../../adr/0019-wms-inventory-rpc-idempotency.md) 与部分修订它的 [ADR 0031](../../adr/0031-wms-picking-reservation-key-follows-picking-task.md)；M2-L 清理前含测试实现说明的原文冻结于 [`../../reports/m2-l-wms-inventory-rpc-idempotency-pre-clean-2026-09-07.md`](../../reports/m2-l-wms-inventory-rpc-idempotency-pre-clean-2026-09-07.md)。
+本文描述 WMS 到 Inventory 的同步命令在“Inventory 已提交但调用方超时”场景下的当前幂等与恢复架构。长期决策见 [ADR 0019](../../adr/0019-wms-inventory-rpc-idempotency.md) 与部分修订它的 [ADR 0031](../../adr/0031-wms-picking-reservation-key-follows-picking-task.md)。
 
 ## 适用同步链路
 

@@ -1,6 +1,6 @@
 # File Storage 当前架构
 
-本文描述 Nerv-IIP 主平台 **当前通用文件能力的事实所有权、公开边界与现行字节路径**。迁移前混合基线包含大量按日期追加的实施状态、操作细节和已批准未实现目标，已按原 Git blob 冻结到 [`../../reports/file-storage-baseline-pre-m2-k-2026-09-07.md`](../../reports/file-storage-baseline-pre-m2-k-2026-09-07.md)。
+本文描述 Nerv-IIP 主平台 **当前通用文件能力的事实所有权、公开边界与现行字节路径**。
 
 ## 事实所有权
 

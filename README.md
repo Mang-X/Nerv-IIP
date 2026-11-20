@@ -117,6 +117,3 @@ Nerv-IIP/
 - 当前操作手册：[`docs/runbooks/`](docs/runbooks/) 中由 Runbook 入口路由的现态操作文档。
 - 当前人工查询索引：[`docs/reference/`](docs/reference/)；其中内容必须回到各自 producer 核实。
 - 长期决策及理由：[`docs/adr/`](docs/adr/)。
-- 历史时点记录：[`docs/status/archive/`](docs/status/archive/)；历史快照不构成当前实现或交付裁决。
-
-已退役状态入口的历史从 [`docs/status/archive/README.md`](docs/status/archive/README.md) 与 Git 追溯；当前状态只使用上方现态入口。

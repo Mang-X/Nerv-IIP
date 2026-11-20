@@ -2,8 +2,6 @@
 
 本文描述采购退货和销售 RMA 的当前补偿性会计事实边界。已记录收货、已过账凭证、已完成 WMS 移动、已匹配供应商发票和已形成 AR/AP 都保持不可变；退货通过新的退货/借项/贷项事实与平衡凭证补偿，而不是修改历史。
 
-M2-L 清理前包含 facade/产品交付状态的原文冻结于 [`../../reports/m2-l-erp-return-accounting-rules-pre-clean-2026-09-07.md`](../../reports/m2-l-erp-return-accounting-rules-pre-clean-2026-09-07.md)。
-
 ## 事实所有权与触发
 
 | 事实 | Owner | ERP 结果 |

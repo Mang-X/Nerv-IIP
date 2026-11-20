@@ -2,7 +2,6 @@
 
 > 业务域:排产计划(/scheduling) · 前端落点:`frontend/apps/business-console/src/pages/scheduling` + `@nerv-iip/scheduling`
 > 关联:MAN-523 / #964(APS 方案只读甘特)、MAN-580 / #1049(领导演示闭环)、#206(BusinessScheduling / APS lite)、#207(设备运行事实)、ADR 0014(APS 排程边界)
-> 设计/实施依据:`docs/superpowers/specs/2026-06-10-unified-scheduling-gantt-design.md`、`docs/superpowers/plans/2026-06-10-unified-scheduling-gantt.md`
 
 ## 1. 这页给谁用、解决什么
 

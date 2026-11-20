@@ -2,7 +2,7 @@
 
 本页索引当前公开/跨服务事件和关键业务本地事件的**生产者—消费者关系**。它用于回答“当前代码里谁发布、谁消费、这条关系如何分类”，不维护 Issue 完成状态、历轮扫描时间线或项目缺口总账。
 
-分类与复核规则见 [`../../governance/integration/event-consumption.md`](../../governance/integration/event-consumption.md)。M2 拆分前包含逐轮 provenance 与实现说明的完整审计快照保留在 [`../../reports/audits/integration-event-consumption-matrix-2026-08-28.md`](../../reports/audits/integration-event-consumption-matrix-2026-08-28.md)。
+分类与复核规则见 [`../../governance/integration/event-consumption.md`](../../governance/integration/event-consumption.md)。
 
 ## Producer / consumer 证据
 

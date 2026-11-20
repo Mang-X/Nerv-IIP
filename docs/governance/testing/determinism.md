@@ -46,4 +46,4 @@ Culture/UI culture、环境变量、全局 resolver 等可变进程状态只能�
 - permanent 只用于机制实现/自测等结构上不会通过后续业务重构消失的位点；
 - checker 通过只证明代码与基线闭合，不证明历史债务是否曾存在，也不替代实际测试运行。
 
-操作与排障见 [`../../runbooks/testing/determinism.md`](../../runbooks/testing/determinism.md)，历史清偿与走查见 [`../../reports/audits/test-determinism-governance-evolution-2026-08.md`](../../reports/audits/test-determinism-governance-evolution-2026-08.md)。
+操作与排障见 [`../../runbooks/testing/determinism.md`](../../runbooks/testing/determinism.md)。

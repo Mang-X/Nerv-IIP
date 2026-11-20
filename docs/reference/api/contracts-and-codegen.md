@@ -14,9 +14,6 @@
 | BusinessGateway restore manifest | `docs/reference/api/business-gateway-surface-restore.manifest.json` |
 | Facade coverage 治理 | `docs/governance/api/facade-coverage.md` |
 | Facade coverage 机器事实 | `docs/reference/api/facade-coverage-matrix.json` |
-| API/codegen 历史总账 | `docs/reports/audits/api-contract-and-codegen.md` |
-| BusinessGateway surface 迁移前快照 | `docs/reports/audits/business-gateway-api-surface-canonicalization.md` |
-| Facade coverage 历史渲染/决策记录 | `docs/reports/audits/facade-coverage-matrix.md` |
 
 ## 当前 OpenAPI 与生成路径
 
@@ -45,7 +42,6 @@
 3. `frontend/packages/api-client/src/generated/**` 机械生成结果；
 4. facade 暴露状态则额外以 `facade-coverage-matrix.json` 为机器事实。
 
-迁移前 `docs/reports/audits/api-contract-and-codegen.md` 中的大型 endpoint/operationId 表只用于历史调查，**不是当前清单**。不得从该 audit 复制、恢复或校正当前 endpoint；发现差异时必须回到上述生产者确认。
 
 ## 受控兼容例外
 
@@ -252,7 +248,3 @@ Governance 的一般破坏性变更/主版本规则。
 `NonListStatusQueryPaths` 里的两条（`reportable-operation-tasks` /
 `telemetry-production-report-candidates`）是 `status` **无 enum** 的自由 string，
 属「缺值域」而非「值域被覆盖」，方向与本票相反，独立票处理。
-
-## 历史材料边界
-
-`docs/reports/audits/**` 保存迁移前总账、历史漂移、修复批次、调查和曾经的端点渲染，目的是可追溯，不承担当前规范或机器事实。若 audit 与 Current Architecture / Governance / Runbook / Reference 或代码生产者冲突，以当前权威来源为准，并把 audit 视为当时状态快照。

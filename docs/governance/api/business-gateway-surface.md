@@ -1,6 +1,6 @@
 # BusinessGateway client API surface canonicalization 治理
 
-本文是 BusinessGateway client 公开 API surface canonicalization 的当前唯一人工 Governance 入口。迁移前合同与形成过程冻结在 [`../../reports/audits/business-gateway-api-surface-canonicalization.md`](../../reports/audits/business-gateway-api-surface-canonicalization.md)；它们只用于历史核对，不再与本文构成并列权威。
+本文是 BusinessGateway client 公开 API surface canonicalization 的当前唯一人工 Governance 入口。
 
 固定 SDK/TFM/reference pack/Roslyn package、输入文件 SHA-256 和 ProjectReference lock fixture 集合由 [`../../reference/api/business-gateway-surface-restore.manifest.json`](../../reference/api/business-gateway-surface-restore.manifest.json) 提供机器事实。本文规定语义和 fail-closed 规则，不复制机器 manifest 中易漂移的版本/哈希清单。
 

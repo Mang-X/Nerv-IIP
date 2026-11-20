@@ -51,5 +51,3 @@ consumer app navigation / router / permissions
 ## 当前事实来源
 
 Architecture 不维护固定端口、完整菜单、页面交付状态或 facade 覆盖矩阵。上述动态事实的生产者索引见 [`../../reference/frontend/navigation-map.md`](../../reference/frontend/navigation-map.md)。
-
-迁移前把架构、产品 IA、工程规则、代码清单和阶段状态混在一起的旧正文已冻结为 [`../../reports/audits/frontend-navigation-map-pre-m2-n-2026-09-07.md`](../../reports/audits/frontend-navigation-map-pre-m2-n-2026-09-07.md)，不再是现态架构来源。

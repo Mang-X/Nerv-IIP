@@ -69,4 +69,3 @@ Development 与非 Development 的差异由 AppHost 环境、部署 profile 和�
 - CI job、测试分片、构建参数和历史测量：[`../../governance/delivery/ci-build.md`](../../governance/delivery/ci-build.md) 与冻结审计报告。
 - secret、发布、Compose 和安装行为约束：[`../../governance/delivery/deployment.md`](../../governance/delivery/deployment.md)。
 - bootstrap、Compose 发布、部署、恢复和排障命令：[`../../runbooks/deployment.md`](../../runbooks/deployment.md)。
-- M2-J 迁移前的混合部署基线与时点事实：[`../../reports/audits/deployment-baseline-pre-m2-j-2026-09-07.md`](../../reports/audits/deployment-baseline-pre-m2-j-2026-09-07.md)。

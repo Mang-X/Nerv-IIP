@@ -2,7 +2,7 @@
 
 本文规定 `KnownException` 等稳定业务错误从领域服务到 Gateway/前端时，如何判断“可传输”和“当前 UI 已呈现”。它维护**判定规则**，不维护某次全仓扫描数量、Issue 状态或当前每个服务的逐行证据。
 
-历史审计、整改结果和时点证据从 `docs/reports/` 查询；当前 Gateway/服务行为最终以代码、公开契约、测试与当前 facade Reference 为准。
+当前 Gateway/服务行为最终以代码、公开契约、测试与当前 facade Reference 为准。
 
 ## 两个概念必须分开
 
@@ -134,8 +134,6 @@ pin 保证码不被悄悄改名，不保证前端认得它。#3333 / PR #3359 �
 - PlatformGateway / BusinessGateway 的实际错误代理：对应 Gateway endpoint/client/exception transport 代码与测试；
 - 业务服务错误来源：目标 Domain/Application/Web；
 - facade 是否存在及 ownership：当前 API/facade 文档与机器伴随物；
-- 历史 KnownException 审计：`docs/reports/` 相关报告；
-- 历史报告中的旧相对链接兼容入口：`docs/reports/known-exception-user-visibility.md`。
 
 ## 变更纪律
 

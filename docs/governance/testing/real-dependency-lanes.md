@@ -67,4 +67,4 @@ heavy lane 在 shard manifest 里接管一个测试项目后，该项目即被�
 
 每次绿色结果至少能回答：选中了什么、为什么、测试 SHA、预期/实际身份与执行数、通过/失败/skip、依赖环境以及 cleanup 结果。formal retained evidence 还受 [`evidence.md`](evidence.md) 的 provenance、隐私和 actual-vs-skipped 规则约束。
 
-当前 producer 与清单入口见 [`../../reference/testing/producers.md`](../../reference/testing/producers.md)。历史 lane 接线、PR/run 取证和治理演进见 [`../../reports/audits/real-dependency-test-lane-evolution-2026-08.md`](../../reports/audits/real-dependency-test-lane-evolution-2026-08.md)。
+当前 producer 与清单入口见 [`../../reference/testing/producers.md`](../../reference/testing/producers.md)。

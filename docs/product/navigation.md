@@ -116,4 +116,3 @@ MES 的「执行与齐套」分组提供独立「安灯响应」入口，现场�
 - 当前菜单/route/permission/facade 的可复核位置由 Reference 路由到代码，不在本文手抄。
 - BusinessGateway、RBAC、菜单深度、壳层复用等工程规则由 Governance 管理。
 - AppShell 与 Console / Business Console / PDA 的当前组件边界由 Architecture 管理。
-- 迁移前同时混合产品、现态、状态与历史的旧正文已冻结到 [`../reports/audits/frontend-navigation-map-pre-m2-n-2026-09-07.md`](../reports/audits/frontend-navigation-map-pre-m2-n-2026-09-07.md)，只作为时点证据，不再是现态入口。

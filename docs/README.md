@@ -15,8 +15,6 @@
 | 本地启动、部署、迁移、恢复或排障 | [`runbooks/README.md`](runbooks/README.md) | Runbook 只维护当前可执行操作，精确命令回到脚本/CLI help |
 | 产品、角色、IA 或 UX 设计 | [`product/README.md`](product/README.md) | Product 只维护当前产品语义，不从状态页推断产品事实 |
 | 界面设计、令牌、组件与交互模式 | [独立设计文档站](../frontend/apps/design-system/docs/index.md) | 桌面 PC、移动 PDA、车间一体机和挂墙大屏 |
-| 调查、实验、审计或修复历史 | [`reports/README.md`](reports/README.md) | 报告只证明声明的时点与范围，不构成当前规则 |
-| 历史阶段、计划或规格核对 | `superpowers/`、[`status/archive/`](status/archive/) | 历史记录不自动构成当前执行入口 |
 
 ## 文档类型
 
@@ -28,23 +26,9 @@
 | Runbook | 如何启动、部署、迁移、恢复或排障？ | 随当前操作入口更新 |
 | Reference | 当前有哪些字段、Schema、路由、矩阵、权限导航、码表、术语和资料入口？ | 随真正 producer 更新；人工解释不得覆盖 producer |
 | Status | 当前重点、阻塞和全仓级入口是什么？ | 高频替换，不累积已完成历史 |
-| Report | 某次调查、实验、审计或修复发现了什么？ | 完成后冻结；当前事实回到代码与现态文档 |
 | Product | 给谁使用、解决什么问题、业务与 UX 如何工作？ | 随产品裁决更新 |
 
-## 当前入口与历史
-
-- 当前全仓级状态：[`status/current.md`](status/current.md)。
-- 当前 Architecture 入口：[`architecture/README.md`](architecture/README.md)。
-- 当前 Governance 入口：[`governance/README.md`](governance/README.md)。
-- 当前 Product 入口：[`product/README.md`](product/README.md)。
-- 当前 Runbook 入口：[`runbooks/README.md`](runbooks/README.md)。
-- 当前 Reference 入口：[`reference/README.md`](reference/README.md)。
-- 冻结报告入口：[`reports/README.md`](reports/README.md)。
-- 阶段、状态快照与退役入口追溯：[`status/archive/README.md`](status/archive/README.md)。
-
-## 退役路径追溯
-
-旧版 Architecture 根目录平铺入口已退役。当前入口和历史路径的追溯方式见 [M4 后的目录契约](architecture/README.md#m4-后的目录契约)。
+历史规格、计划、报告和状态快照可用 `git ls-tree -r 0d260365a -- docs` 查找，再用 `git show 0d260365a:<路径>` 读取。
 
 ## 权威来源纪律
 

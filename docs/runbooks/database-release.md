@@ -1,6 +1,6 @@
 # 数据库发布、迁移与恢复 Runbook
 
-本文把 ADR 0009 的迁移/发布决策落实为当前操作者步骤。它不声明 Nerv-IIP 已具备完整客户安装包，也不保存第五/六/七阶段等形成历史；历史形成过程见 [`../reports/audits/database-release-stage-history.md`](../reports/audits/database-release-stage-history.md)。
+本文把 ADR 0009 的迁移/发布决策落实为当前操作者步骤。
 
 命令事实以 `scripts/install/migrate-platform-databases.ps1`、`scripts/install/migrate-business-databases.ps1`、`scripts/install/migrate-file-storage.ps1`、两份 release database manifest、当前 EF migrations 和脚本帮助为准。执行前若本文与脚本参数不一致，**停止并先修正文档**。承载发布动作的脚本还必须满足 `docs/governance/script-automation.md`。
 

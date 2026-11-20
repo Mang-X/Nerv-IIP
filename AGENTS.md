@@ -18,7 +18,7 @@
 - 引入、推翻或复评会在当前任务结束后继续约束实现的长期决策：先读 `docs/adr/README.md`、相关 ADR 和 `docs/governance/decisions/records.md`。
 - 本地启动、Aspire/fullstack 运行或排障：读取 `docs/runbooks/local-development.md`；其它操作型任务从 `docs/runbooks/README.md` 路由。
 - 发布、里程碑规划或跨域能力盘点：读取 `docs/status/current.md`；任务细节、负责人和验收证据回到 GitHub/Linear。
-- 核对历史时点判断：从 `docs/status/archive/` 或 `docs/reports/` 读取对应冻结记录；历史不得覆盖当前代码、配置、契约和测试。
+- 核对历史时点判断：按提交和原路径从 Git 历史读取；历史不得覆盖当前代码、配置、契约和测试。
 - 人工文档或协作文本：读取 `docs/AGENTS.md` 与 `docs/governance/docs/language.md`。新增文档或链接时使用 canonical owner，不新增指向已退役 Architecture 根目录旧文件名的权威入链。
 - 新增、修改或审核测试断言、golden/snapshot/digest、provider/lane 命名、确定性等待、测试 evidence 或测试删除：从 `docs/governance/testing/README.md` 读取直接相关规则；执行与排障从 `docs/runbooks/testing/README.md` 路由。
 - 新建、修订或执行 Superpowers spec/plan：先读取 `docs/superpowers/AGENTS.md`。

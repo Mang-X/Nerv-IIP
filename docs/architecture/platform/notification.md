@@ -1,6 +1,6 @@
 # Notification 当前架构
 
-本文描述 Nerv-IIP 当前通用通知能力的事实所有权、事件输入和投递边界。M2-K 迁移前的混合基线包含 Phase 规划、实现批次和 provider 运维细节，已按原 Git blob 冻结到 [`../../reports/notification-baseline-pre-m2-k-2026-09-07.md`](../../reports/notification-baseline-pre-m2-k-2026-09-07.md)。
+本文描述 Nerv-IIP 当前通用通知能力的事实所有权、事件输入和投递边界。
 
 ## 事实所有权
 

@@ -1,6 +1,6 @@
 # 前端工作区当前架构
 
-本文只描述 `frontend/` 的**当前 app/package 职责、依赖方向、配置分层以及路由/状态/API 组织边界**。命令、Node/pnpm/依赖版本和测试入口以 `frontend/package.json`、各 app/package 的 `package.json`、Vite 配置及相应 Runbook 为准；产品 IA/角色旅程不在本文维护。M2-L 拆分前的混合正文冻结于 [`../../reports/m2-l-frontend-structure-pre-split-2026-09-07.md`](../../reports/m2-l-frontend-structure-pre-split-2026-09-07.md)。
+本文只描述 `frontend/` 的**当前 app/package 职责、依赖方向、配置分层以及路由/状态/API 组织边界**。命令、Node/pnpm/依赖版本和测试入口以 `frontend/package.json`、各 app/package 的 `package.json`、Vite 配置及相应 Runbook 为准；产品 IA/角色旅程不在本文维护。
 
 为何采用 pnpm `apps/*` / `packages/*` 工作区、配置分层与生成代码隔离，见 [ADR 0006](../../adr/0006-frontend-workspace-structure.md)；为何采用 Vue Router 文件路由与页面共置，见 [ADR 0007](../../adr/0007-vue-router-file-routing-colocation.md)。本页不复制替代方案与历史理由，只随当前仓库结构更新现态。
 

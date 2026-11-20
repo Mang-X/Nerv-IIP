@@ -86,8 +86,8 @@ ADR 0012 将 APS 作为后置能力处理，首批 MES 只保留规则排产。�
 4. `BusinessScheduling` 的最终落点建议为 `backend/services/Business/Scheduling`，schema 建议为 `scheduling`。如果首个 PR 先以独立 library 或 MES 外部模块承载，也必须保持公开契约与领域边界可迁移。
 5. BusinessGateway 可以暴露页面级排程 facade，但不得持久化排程事实或实现调度算法。
 6. Business Console 页面必须用中文业务文案表达排程结果、冲突和下一步处理，不展示算法调试、接口契约、组织/环境上下文或样例数据说明。
-7. #206 专用设计规格为 `docs/superpowers/specs/2026-05-31-business-scheduling-aps-lite-design.md`，实施计划为 `docs/superpowers/plans/2026-05-31-business-scheduling-aps-lite.md`。后续 worker 必须先按这两个文档执行，不得只参考 issue body 自行扩大范围。
+7. #206 当时的设计见 Git 历史 `docs/superpowers/specs/2026-05-31-business-scheduling-aps-lite-design.md`，实施计划为 `docs/superpowers/plans/2026-05-31-business-scheduling-aps-lite.md`。
 8. 首个算法 fixture 使用减振器制造场景：前减总成、后减总成、管焊接、活塞杆装配、注油封口、阻尼测试/包装，多工作中心、多设备、一个维护窗口和一个急单插入。验收重点是输出稳定、工序顺序正确、维护窗口被避开、急单影响可解释、甘特 DTO 足够渲染。
 9. P0 不要求 solver、线性规划、遗传算法、仿真或自动重排。若后续引入求解器，必须新增 ADR 或更新本 ADR，明确依赖、授权、部署、可解释性和失败降级策略。
-10. #207 专用设计规格为 `docs/superpowers/specs/2026-06-01-business-iiot-runtime-facts-aps-mes-design.md`。后续 plan 和 worker 分配必须以该规格为准，先落 contracts/reason codes/后端事实链路，再开放 Business Console 页面。
+10. #207 当时的设计见 Git 历史 `docs/superpowers/specs/2026-06-01-business-iiot-runtime-facts-aps-mes-design.md`。
 11. 2026-07-03 起，决策第 8、10、23 条与后果第 6 条中「PLC/DCS/SCADA 仍是外部系统或 Connector 来源」「不下发控制命令」「高频 historian 后置」「现场控制闭环仍是后续专题」不再表示 Nerv-IIP 永久放弃现场采集、控制或 historian 能力。ADR 0025 把这三项转为平台自有的主动交付路线（采集 #683/#684、控制 #687、historian 与报警深化 #689/#685/#686/#690）；APS 高级优化器、仿真与自动重排仍按本 ADR 与 ADR 0022 后置。上述原条款文本保留为 2026-05-27 的当时事实。

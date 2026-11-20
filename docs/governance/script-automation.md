@@ -152,7 +152,7 @@ PowerShell variable binding 的完整 AST 判定、已知静态残余和 mutatio
 2. 失败信息优先保留最内层可验证原因，不得把 signal/timeout/transport failure 泛化成“断言失败”。
 3. token、password、client secret、完整 connection string、authorization header、客户密钥和其它敏感输入不得进入 retained log、manifest、artifact、报告或 committed 文件。
 4. 证据必须明确 commit/run/session/target/profile 等非敏感身份；只能证明实际执行的 lane 和范围。
-5. 运行 artifact 默认不提交仓库；需长期保留的审计结论进入 `docs/reports/`，并与秘密分离。
+5. 运行 artifact 默认不提交仓库；需长期保留的审计结论进入对应 Issue 或 PR，并与秘密分离。
 
 ## 跨平台声明
 
@@ -180,7 +180,6 @@ PowerShell variable binding 的完整 AST 判定、已知静态残余和 mutatio
 
 ## 历史与其它 Owner
 
-- pre-M2-G 的 signal / memory 事故证据见 [`../reports/investigations/script-automation-signal-memory-2026-08.md`](../reports/investigations/script-automation-signal-memory-2026-08.md)。
 - scan boundary、dynamic invocation 与 ordinal scanner 的形成过程见 [`../reports/audits/script-automation-governance-evolution-2026-08.md`](../reports/audits/script-automation-governance-evolution-2026-08.md)。
 - 完整迁移前正文可从 Git `26e88a62e2223ba7da2443c6471b34d971d4ad28:docs/architecture/script-automation-governance.md` 追溯。
 - #2157 拥有脚本/CI 影子框架的删除优先清洗与更广 CI routing 修复；M2-G 不据此新增脚本、checker、fixture 或 CI step。
