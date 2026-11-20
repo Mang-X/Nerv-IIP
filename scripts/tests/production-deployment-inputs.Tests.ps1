@@ -125,7 +125,7 @@ foreach ($contract in @(
     @($environmentExampleText, 'NERV_IIP_IAM_SECRETS_PEPPER=change-me-strong-iam-secrets-pepper', 'production env example must declare the IAM pepper'),
     @($environmentExampleText, 'NERV_IIP_IAM_ENTERPRISE_IDENTITY_MFA_CODE=change-me-non-development-mfa-code', 'production env example must declare the MFA override'),
     @($environmentExampleText, 'NERV_IIP_BARCODE_LABEL_PRINTER_MODE=zpl-tcp', 'production env example must select zpl-tcp explicitly'),
-    @($environmentExampleText, 'NERV_IIP_BARCODE_LABEL_PRINTER_HOST=', 'production env example must expose the site printer host without committing a real address'),
+    @($environmentExampleText, 'NERV_IIP_BARCODE_LABEL_PRINTER_HOST=', 'production env example must expose the site printer host without committing a real address')
 )) {
     Assert-ContainsOrdinal -Text $contract[0] -Expected $contract[1] -Message $contract[2]
 }
