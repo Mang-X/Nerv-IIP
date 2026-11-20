@@ -345,8 +345,7 @@ IndustrialTelemetry 通过 `GET /api/business/v1/iiot/connectors/{collectionConn
 
 `Nerv.IIP.ConnectorHost.Connectors.Simulated` 是 Connector Host 内的一等适配器，不是测试旁路或脚本写入器。它只在
 `Simulated:Enabled=true` 时注册到现有 `IConnector`、`IIndustrialTelemetryCollectionConnector`、
-`IConnectorConnectionMonitor` 和 `IConnectorOperationExecutor` 四个抽象接入点（seam）；默认 Development 配置保持关闭，
-leader-demo AppHost 仅在 `LeaderDemo:World:Enabled=true` 时开启。适配器不引用 backend/frontend 实现项目，
+`IConnectorConnectionMonitor` 和 `IConnectorOperationExecutor` 四个抽象接入点（seam）；默认 Development 配置保持关闭。适配器不引用 backend/frontend 实现项目，
 继续通过 Connector Protocol、Ops SDK 和 IndustrialTelemetry 内部 HTTP 边界工作，未新增或修改公开 DTO、
 HTTP endpoint、facade、OpenAPI 或 generated client（生成客户端）。
 
@@ -367,8 +366,7 @@ IndustrialTelemetry 分别接收 44 / 28 / 24 项替换式清单（replace-style
 默认 45 分钟 profile 包含 normal 15 分钟，以及 degrading/alarm/recovered 各 10 分钟；
 `DEV-CNC-03/vibration`、`DEV-CTG-02/bath-temperature`、`DEV-AUX-04/air-pressure` 使用 phase offset
 错峰，且只有这三个 tag 通过 `AlarmScenarioEnabled=true` 显式参与滚动报警；offset 只作用于被 override 的
-tag，其余 93 个点始终按确定性 normal baseline（正常基线）运行。按 `WorldHistoryDeviceSpec` 实际规则阈值检查一个完整
-period（周期），越限集合严格等于这三个目标，最多同时两个目标处于越限过渡。下游失败时保留完全相同的
+tag，其余 93 个点始终按确定性 normal baseline（正常基线）运行。下游失败时保留完全相同的
 request/source sequence 并执行指数退避；非 caller 触发的 `OperationCanceledException`（例如 HTTP timeout）
 进入相同的重试/终态计数，只有 caller token 已取消时才立即向上传播。`MaxDeliveryAttempts` 上限为 64，
 `RetryBaseMilliseconds` 上限为 1 天，实际 retry delay（重试延迟）饱和到 1 天且不会溢出；
@@ -382,7 +380,7 @@ request/source sequence 并执行指数退避；非 caller 触发的 `OperationC
 语义的适配器实现，不扩展协议 V1。
 设备状态不是每个 tag 的周期属性：启动时每台设备最多上报一次初始状态，之后只在实际 start/stop
 transition（转换）时由该设备的一个确定性 tag 携带。每台设备使用
-`MaxPendingStateTransitionsPerDevice`（Development/leader-demo profile 为 256）的有界 FIFO；
+`MaxPendingStateTransitionsPerDevice`（Development profile 为 256）的有界 FIFO；
 每个采集 cycle 最多绑定队首的一个 transition，观测与 outbox request 绑定，只有投递成功才出队，
 retry（重试）保持原 payload/source sequence，终态丢弃/容量驱逐后才允许同一队首在后续 cycle 重新发出。
 队列已满时，新的 transition 不改变设备状态，命令以 `BadResourceUnavailable` 终态拒绝，绝不覆盖既有
