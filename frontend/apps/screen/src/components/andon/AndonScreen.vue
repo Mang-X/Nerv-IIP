@@ -14,7 +14,7 @@ const session = computed(() => {
 </script>
 
 <template>
-  <AndonBoard v-if="session" :key="auth?.sessionId" :session="session" />
+  <AndonBoard v-if="session" :session="session" />
   <p v-else class="andon-unavailable" role="status">
     {{ IS_REAL_DATA ? '未授权 · 请登录具有真实组织环境的账号' : '当前暂无安灯数据' }}
   </p>

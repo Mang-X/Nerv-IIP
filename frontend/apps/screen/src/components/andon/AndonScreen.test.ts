@@ -131,10 +131,13 @@ it('同一授权续期保留所选工作中心，交班后旧队列响应不能�
     }),
   )
   await open()
+  auth.sessionId = 'rotated-session'
   auth.principal = { ...auth.principal, permissionCodes: ['b', 'a'] }
   await flushPromises()
   expect(wrapper.get('[role="combobox"]').text()).toContain('装配一线')
-  auth.sessionId = 'session-2'
+  auth.principal = { ...auth.principal, organizationId: '' }
+  await flushPromises()
+  auth.principal = { ...auth.principal, organizationId: 'org-2' }
   await flushPromises()
   resolveOld({ items: [call], total: 1 })
   await flushPromises()

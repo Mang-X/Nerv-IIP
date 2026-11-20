@@ -18,7 +18,6 @@ const unavailable = computed(() => {
 const sessionKey = computed(() => {
   const principal = auth?.principal
   return JSON.stringify([
-    auth?.sessionId,
     principal?.principalId,
     principal?.principalType,
     principal?.organizationId,

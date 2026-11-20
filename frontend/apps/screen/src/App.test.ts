@@ -12,9 +12,12 @@ const principal = {
 }
 const current = shallowRef(principal)
 const token = ref('initial')
+const sessionId = ref('initial-session')
 vi.mock('@/stores/realAuth', () => ({
   useRealAuthStore: () => ({
-    sessionId: 'same-session',
+    get sessionId() {
+      return sessionId.value
+    },
     get accessToken() {
       return token.value
     },
@@ -57,6 +60,7 @@ it('相同主体、组织、环境和会话换权限版本时立即撤掉已挂�
     expect(page.text()).toContain('旧范围拣货单')
     await page.get('button').trigger('click')
     token.value = 'renewed'
+    sessionId.value = 'rotated-session'
     current.value = { ...principal, permissionCodes: ['b', 'a'] }
     await flushPromises()
     expect(page.text()).toBe('已选择一线')
