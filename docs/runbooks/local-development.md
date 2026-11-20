@@ -22,6 +22,7 @@
    条件检查、可选工具安装、本地 AppHost 用户机密（user-secrets）初始化、依赖还原和 AppHost 构建。
    只需验证拓扑能编译时，从仓库根目录运行
    `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj`。
+   CI 的 BusinessGateway 分片在证据上传后对选中的 AppHost 与排程编译输入执行独立构建，调度规则以工作流和 CI impact plan 为准。
    在该路径通过且 Docker Desktop 确实运行前，不得排查范围宽泛的请求失败。
 
 4. **本地 HTTPS 证书。** Aspire Dashboard/DCP 和本地 HTTPS endpoint 需要受信任的开发证书。
