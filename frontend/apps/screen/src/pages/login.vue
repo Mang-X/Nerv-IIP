@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { sanitizeRedirectPath } from '@nerv-iip/auth'
+import { ConsoleAuthError } from '@/api/auth'
 import { useNow } from '@vueuse/core'
 import { Lock, User } from '@lucide/vue'
 import { computed, ref } from 'vue'
@@ -56,10 +58,10 @@ const particles = [
 ]
 
 function redirectTarget(): string {
-  const redirect = route.query.redirect
-  return typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
-    ? redirect
-    : '/'
+  return sanitizeRedirectPath(route.query.redirect, {
+    defaultRedirectPath: '/',
+    loginPath: '/login',
+  })
 }
 
 async function onSubmit() {
@@ -78,7 +80,12 @@ async function onSubmit() {
       await router.push('/')
     }
   } catch (error) {
-    errorMsg.value = error instanceof Error ? error.message : '登录失败，请重试'
+    errorMsg.value =
+      error instanceof ConsoleAuthError && error.status === 403 && !error.code
+        ? '账号无权访问大屏，请联系管理员'
+        : error instanceof Error
+          ? error.message
+          : '登录失败，请重试'
   } finally {
     loading.value = false
   }

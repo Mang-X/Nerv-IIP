@@ -34,9 +34,13 @@ const emit = defineEmits<{
 }>()
 
 function countItems() {
+  const unknown = props.devices.filter((d) => d.stateLabel === '状态未知').length
+  const changeover = props.devices.filter((d) => d.stateLabel === '换型').length
   return [
     { k: 'run', label: '运行', v: props.counts.run },
-    { k: 'idle', label: '待机', v: props.counts.idle },
+    { k: 'idle', label: '待机', v: props.counts.idle - unknown - changeover },
+    ...(changeover ? [{ k: 'changeover', label: '换型', v: changeover }] : []),
+    ...(unknown ? [{ k: 'unknown', label: '状态未知', v: unknown }] : []),
     { k: 'down', label: '停机', v: props.counts.down },
     { k: 'alarm', label: '报警', v: props.counts.alarm },
     { k: 'offline', label: '断线', v: props.counts.offline },
@@ -115,7 +119,7 @@ function showTip(d: DeviceCell, e: MouseEvent) {
   const token = ++hoverToken
   clearTimeout(hoverTimer)
   hoverTimer = setTimeout(async () => {
-    const det = await fetchDeviceDetail(d.id, props.factoryId, props.workshopIds)
+    const det = await fetchDeviceDetail(d.id, props.factoryId, props.workshopIds).catch(() => null)
     if (det) {
       detailCache.set(d.id, { at: Date.now(), d: det })
       if (token === hoverToken && tip.value?.device.id === d.id) tipDetail.value = det

@@ -12,7 +12,7 @@ const auth = reactive({
   principal: { organizationId: 'org-1', environmentId: 'env-1' },
 })
 vi.mock('@/stores/realAuth', () => ({ useRealAuthStore: () => auth }))
-const scope = { kind: 'workCenter', id: 'wc-1', displayName: '装配一线' }
+const scope = { kind: 'work-center', id: 'wc-1', displayName: '装配一线' }
 const call = {
   id: 'call-1',
   category: 'quality' as const,
@@ -84,7 +84,7 @@ it.each([new TypeError('Failed to fetch'), new Error('未授权'), new Error('�
 )
 
 it('切换范围立即清除旧行且延迟到达的旧请求不能覆盖新范围', async () => {
-  const next = { kind: 'workCenter', id: 'wc-2', displayName: '装配二线' }
+  const next = { kind: 'work-center', id: 'wc-2', displayName: '装配二线' }
   vi.mocked(fetchAndonScopes).mockResolvedValue([scope, next])
   let resolveOld!: (value: { items: (typeof call)[]; total: number }) => void
   vi.mocked(fetchAndonQueue).mockImplementation((_session, selected) =>

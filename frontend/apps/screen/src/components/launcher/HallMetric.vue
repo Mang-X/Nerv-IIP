@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { useNow } from '@vueuse/core'
+import { useScreenClock } from '@/composables/useScreenClock'
 import { computed, watch } from 'vue'
 import { useScreenData } from '@nerv-iip/ui'
 import { fetchHallMetric, HallMetricUnavailable, type HallMetric } from '@/data/fetchers/launcher'
 import type { ScreenSession } from '@/data/session'
 import { formatScreenFreshness } from '@/data/freshness'
 
-const props = defineProps<{ metric: HallMetric; label: string; session: ScreenSession }>()
-const { data, error, loading, lastUpdated, refresh } = useScreenData(
-  () => fetchHallMetric(props.metric, props.session),
+const props = defineProps<{
+  metric: HallMetric
+  label: string
+  session: ScreenSession
+  detail?: boolean
+}>()
+const { data, error, loading, lastUpdated, refresh, stop, start } = useScreenData(
+  () => fetchHallMetric(props.metric, props.session, props.detail),
   { intervalMs: 15000 },
 )
 const unavailable = computed(() =>
@@ -18,13 +23,14 @@ watch(
   unavailable,
   (value) => {
     if (value) {
+      stop()
       data.value = undefined
       lastUpdated.value = undefined
-    }
+    } else if (!error.value) start()
   },
   { flush: 'sync' },
 )
-const now = useNow({ interval: 1000 })
+const now = useScreenClock()
 const value = computed(() => (typeof data.value === 'object' ? data.value.value : data.value))
 const exceptions = computed(() => (typeof data.value === 'object' ? data.value.exceptions : []))
 const status = computed(() => {
@@ -42,7 +48,7 @@ const status = computed(() => {
   <div class="metric">
     <span>{{ label }}</span>
     <strong>{{ unavailable || value === undefined ? '—' : value }}</strong>
-    <small v-if="exceptions.length">{{ exceptions.join('　') }}</small>
+    <small v-for="line in exceptions" :key="line">{{ line }}</small>
     <small role="status"
       >{{ status }} <button v-if="error" :disabled="loading" @click="refresh">重试</button></small
     >

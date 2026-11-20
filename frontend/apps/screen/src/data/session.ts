@@ -60,13 +60,13 @@ export interface DeviceRoster {
 const ROSTER_TTL_MS = 5 * 60_000
 // overview/可用率端点 deviceAssetIds ≤ 50/批；小厂样板足够，超出等 #570 批量端点。
 const ROSTER_MAX = 50
-let rosterCache: { at: number; roster: DeviceRoster } | null = null
+let rosterCache: { workCenterCode?: string; at: number; roster: DeviceRoster } | null = null
 
 function rosterEntryOf(item: BusinessConsoleResourceItem): DeviceRosterEntry | null {
   // ⚠️ equipment/alarms/maintenance facade 消费 telemetry deviceAssetId；master-data code 仅作展示，
   // 二者可不相等（网关测试覆盖 code=DEV-001 / deviceAssetId=018f…）。join 键必须用 deviceAssetId，
-  // 仅在 facade 未回填 deviceAssetId 时才回退 code，否则真实台账 code≠deviceAssetId 时查不到状态/报警/维修。
-  const deviceAssetId = item.deviceAssetId?.trim() || item.code?.trim()
+  // 缺少关联键的台账条目不能用于状态查询。
+  const deviceAssetId = item.deviceAssetId?.trim()
   if (!deviceAssetId) return null
   const code = item.code?.trim() || deviceAssetId
   const lineCode = item.lineCode?.trim() ?? ''
@@ -88,22 +88,37 @@ function rosterEntryOf(item: BusinessConsoleResourceItem): DeviceRosterEntry | n
 export async function resolveDeviceRoster(
   nowMs: number = Date.now(),
   force = false,
+  workCenterCode?: string,
 ): Promise<DeviceRoster> {
-  if (!force && rosterCache && nowMs - rosterCache.at < ROSTER_TTL_MS) {
+  if (
+    !force &&
+    rosterCache &&
+    rosterCache.workCenterCode === workCenterCode &&
+    nowMs - rosterCache.at < ROSTER_TTL_MS
+  ) {
     return rosterCache.roster
   }
   const requestedSession = session
   const { organizationId, environmentId } = requestedSession
   const res = await listBusinessConsoleDeviceAssets({
     throwOnError: true,
-    query: { organizationId, environmentId, includeDisabled: false, skip: 0, take: 200 },
+    signal: AbortSignal.timeout(12000),
+    query: {
+      organizationId,
+      environmentId,
+      workCenterCode,
+      includeDisabled: false,
+      skip: 0,
+      take: 200,
+    },
   })
   const page = readScreenPayload(res)
   const items = readRows(page.resources)
   const byId = new Map<string, DeviceRosterEntry>()
   for (const item of items) {
     const entry = rosterEntryOf(item)
-    if (entry) byId.set(entry.deviceAssetId, entry)
+    if (entry && (!workCenterCode || entry.workCenterCode === workCenterCode))
+      byId.set(entry.deviceAssetId, entry)
   }
   const allIds = [...byId.keys()]
   if (allIds.length > ROSTER_MAX) {
@@ -117,7 +132,7 @@ export async function resolveDeviceRoster(
     byId,
     total: page.total ?? items.length,
   }
-  if (session === requestedSession) rosterCache = { at: nowMs, roster }
+  if (session === requestedSession) rosterCache = { workCenterCode, at: nowMs, roster }
   return roster
 }
 

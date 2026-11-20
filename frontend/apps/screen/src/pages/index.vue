@@ -38,16 +38,40 @@ const metrics: Metric[] = [
 ]
 const cardMetrics: Record<string, Metric[]> = {
   warehouse: [
-    { key: 'outbound', label: '今日出库完成 / 建单' },
+    { key: 'outbound', label: '今日建单中已过账 / 建单' },
     { key: 'picking', label: '拣货积压（项）' },
     { key: 'wcs', label: 'WCS 失败（条）' },
   ],
   quality: [
-    { key: 'ncr', label: '待处置 NCR（单）' },
-    { key: 'inspection', label: '待检任务（项）' },
+    { key: 'ncr', label: 'NCR 未处置 / 处置中（单）' },
+    { key: 'inspection', label: '检验待认领 / 进行中（项）' },
   ],
 }
-const cards = computed(() => SCREENS.filter((s) => scope.canSeeScreen(s.key)))
+// Permission codes determine which real read surfaces have an entry. Gateway checks the selected scope on every read.
+const entryPermissions: Partial<Record<string, string[]>> = {
+  equipment: [
+    'business.iiot.telemetry.read',
+    'business.iiot.alarms.read',
+    'business.maintenance.work-orders.read',
+  ],
+  warehouse: [
+    'business.wms.receipts.read',
+    'business.wms.shipments.read',
+    'business.wms.counts.read',
+    'business.wms.automation.manage',
+  ],
+  quality: ['business.quality.inspection-records.read', 'business.quality.ncr.read'],
+}
+function hasPermission(code: string) {
+  const codes = auth?.principal?.permissionCodes
+  return !codes || codes.includes(code)
+}
+const cards = computed(() =>
+  SCREENS.filter(
+    (s) =>
+      scope.canSeeScreen(s.key) && (!IS_REAL_DATA || entryPermissions[s.key]?.some(hasPermission)),
+  ),
+)
 // lucide 图标按名取用；显式转 Component 以过 vue-tsc 的 <component :is> 类型校验。
 const iconMap = icons as unknown as Record<string, Component>
 function iconOf(name: string): Component {
@@ -142,7 +166,12 @@ const scopeCounts = computed(() => {
         <div>
           <h1 class="hall-title">生产指挥中心</h1>
           <p class="hall-sub">NERV-IIP 工业数据大屏</p>
-          <RouterLink to="/andon" class="hall-sub">安灯呼叫看板 · 真实作业范围</RouterLink>
+          <RouterLink
+            v-if="!IS_REAL_DATA || hasPermission('business.mes.operations.read')"
+            to="/andon"
+            class="hall-sub"
+            >安灯呼叫看板 · 真实作业范围</RouterLink
+          >
         </div>
         <div class="hall-clock">
           <div class="hall-time">{{ clock }}</div>
@@ -184,7 +213,7 @@ const scopeCounts = computed(() => {
           :label="m.label"
           :session="session"
         />
-        <p>今日产量、计划达成率、综合健康度暂无来源</p>
+        <p>报工按工厂业务日统计。全厂件数、计划达成率与综合健康度口径未接入</p>
       </div>
       <div v-else class="hall-kpi">
         <NvKpiBar v-if="kpiItems.length" :items="kpiItems" />
