@@ -24,7 +24,7 @@ import {
 } from '@/data/wmsReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useWmsCreateIntent } from '@/composables/useWmsCreateIntent'
-import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
+import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import {
   inlineErrorMessage,
   notifyError,

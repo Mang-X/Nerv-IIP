@@ -8,7 +8,7 @@ import {
   isIndeterminateLifecycleWriteError,
   recoverLifecycleAction,
 } from '@/composables/lifecycleAction'
-import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
+import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import WmsAssignWorkPoolDialog from '@/components/wms/WmsAssignWorkPoolDialog.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'

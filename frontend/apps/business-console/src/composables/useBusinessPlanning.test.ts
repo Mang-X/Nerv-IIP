@@ -199,6 +199,11 @@ describe('business planning composable', () => {
       'suggestion-mes': 'Released',
       'suggestion-erp': 'Approved',
     })
+    vi.mocked(getBusinessConsoleMesWorkOrderDetail).mockRejectedValueOnce(new Error('offline'))
+    expect(await query.query()).toEqual({
+      'suggestion-mes': 'unavailable',
+      'suggestion-erp': 'Approved',
+    })
     expect(getBusinessConsoleMesWorkOrderDetail).toHaveBeenCalledWith(
       expect.objectContaining({
         path: { workOrderId: 'WO-1' },

@@ -16,7 +16,7 @@ import {
   isIndeterminateLifecycleWriteError,
   recoverLifecycleAction,
 } from '@/composables/lifecycleAction'
-import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
+import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import { createWmsIdempotencyKey, useWmsCountExecutions } from '@/composables/useBusinessWms'
 import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'

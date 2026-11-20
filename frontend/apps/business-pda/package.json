@@ -22,6 +22,7 @@
     "@capacitor/status-bar": "8.0.2",
     "@lucide/vue": "1.24.0",
     "@nerv-iip/api-client": "workspace:*",
+    "@nerv-iip/app-shell": "workspace:*",
     "@nerv-iip/auth": "workspace:*",
     "@nerv-iip/business-core": "workspace:*",
     "@nerv-iip/ui": "workspace:*",

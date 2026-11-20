@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
 using Nerv.IIP.Iam.Web.Application.Auth;
 using NetCorePal.Extensions.Dto;
+using Nerv.IIP.Web;
 
 namespace Nerv.IIP.Iam.Web.Endpoints.Auth;
 

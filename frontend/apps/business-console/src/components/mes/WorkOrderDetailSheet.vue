@@ -6,7 +6,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import type { DispatchAssignTarget } from '@/components/mes/DispatchAssignDialog.vue'
 import DispatchAssignDialog from '@/components/mes/DispatchAssignDialog.vue'
 import { recoverLifecycleAction, useLifecycleWriteIntent } from '@/composables/lifecycleAction'
-import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
+import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
   describeMaterialShortageStage,

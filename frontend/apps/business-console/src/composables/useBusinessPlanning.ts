@@ -470,11 +470,7 @@ export function useBusinessPlanning() {
       return
     }
 
-    try {
-      await runsQuery.refetch()
-    } catch {
-      // 单次轮询失败不终止跟踪：网络抖动交给下一轮，超时判定兜底。
-    }
+    await runsQuery.refetch()
 
     const run = mrpRuns.value.find((item) => item.runId === activeMrpRun.runId)
     if (applyActiveRunSnapshot(run)) {

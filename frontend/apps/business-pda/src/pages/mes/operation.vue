@@ -19,7 +19,7 @@ import {
   isLifecycleActionUpdated,
   LIFECYCLE_ACTION_UPDATED_MESSAGE,
 } from '@/composables/lifecycleActionRecovery'
-import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
+import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import {
   NvAppShellMobile,
   NvListRow,
