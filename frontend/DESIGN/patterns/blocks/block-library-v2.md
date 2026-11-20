@@ -92,10 +92,4 @@ Props：`disabled?`、`label?`、`align?`、`contentClass?`。哪些动作可进
 
 ## 正例
 
-现网全量在用：`NvPageHeader` 101 个文件、`NvToolbar` 81、`NvSectionCard` 61、
-`NvRowActions` 22（`grep -rl` 于 `frontend/apps`，2026-07）。集中演示页：
-`apps/business-console/src/pages/design-system/blocks.vue`（`/design-system/blocks`，
-全区块同屏渲染供目检）。黄金标准列表页拼装示范：
-`apps/business-console/src/pages/mes/operation-tasks.vue`。
-
-<!-- 反例：本文各"规则"的违规形态（手搓裸表/裸页头等）由 goldStandardPages.contract.test.ts 机器拦截，现网黄金标准页无存量违例可引。 -->
+桌面区块示例见独立设计文档站的[桌面组件](../../../apps/design-system/docs/components/desktop/index.md)。业务页面中的筛选、分页和行操作见[工序任务](../../../apps/business-console/src/pages/mes/operation-tasks.vue)。
