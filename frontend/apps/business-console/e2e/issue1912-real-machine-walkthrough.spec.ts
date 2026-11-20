@@ -1227,15 +1227,20 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
       expect(principal).toMatchObject({ principalId: expectedId, organizationId, environmentId })
       return principal.permissionCodes
     }
-    const createdWorker = await call('POST', '/api/business-console/v1/master-data/workers', {
-      organizationId,
-      environmentId,
-      name: '走查末道操作工',
-      userId: operatorId,
-      employmentStatus: 'active',
-      idempotencyKey: 'issue1912-final-operator',
-    })
-    setup.push({ request: createdWorker.summary, worker: createdWorker.publicPayload })
+    for (const [userId, name, idempotencyKey] of [
+      [operatorId, '走查末道操作工', 'issue1912-final-operator'],
+      ['user-emp-012', '走查未派工操作工', 'issue1912-unassigned-operator'],
+    ] as const) {
+      const worker = await call('POST', '/api/business-console/v1/master-data/workers', {
+        organizationId,
+        environmentId,
+        userId,
+        name,
+        employmentStatus: 'active',
+        idempotencyKey,
+      })
+      setup.push({ request: worker.summary, worker: worker.publicPayload })
+    }
     let finalReportNo = ''
     const finishedProduction = await runFinishedProduction({
       browser,
@@ -1246,21 +1251,42 @@ test('NERV-1127 / GitHub #1912 verifies the isolated walkthrough in real browser
         const other = await browser.newPage({ baseURL })
         try {
           expect(await loginOperator(other, 'emp012', 'user-emp-012')).toEqual(permissions)
-          const [denied] = await Promise.all([
+          const [tasks] = await Promise.all([
             other.waitForResponse((r) => {
               const url = new URL(r.url())
               return (
-                url.pathname.endsWith('/me/work-context') &&
-                url.searchParams.get('permissionCode') === 'business.mes.operations.read'
+                url.pathname.endsWith('/mes/operation-tasks') &&
+                url.searchParams.get('scopeKind') === 'self' &&
+                url.searchParams.get('scopeId') === 'user-emp-012'
               )
             }),
             other.goto('/mes/operation-tasks'),
           ])
-          expect(denied.status()).toBe(200)
-          expect(asRecord(dataOf(await denied.json())).authorizedScopes).toEqual([])
-          await expect(other.getByText('无可选授权范围')).toBeVisible()
-          setup.push({ actor: 'user-emp-012', workOrderId, taskId, scopeStatus: denied.status() })
-          await expect(other.getByText(taskId, { exact: true })).toHaveCount(0)
+          expect(tasks.status()).toBe(200)
+          expect(asRecord(dataOf(await tasks.json()))).toMatchObject({ total: 0, items: [] })
+          await expect(other.getByText('0 个工序任务', { exact: true })).toBeVisible()
+          const [detail] = await Promise.all([
+            other.waitForResponse((r) => {
+              const url = new URL(r.url())
+              return (
+                url.pathname ===
+                  '/api/business-console/v1/mes/work-orders/' + encodeURIComponent(workOrderId) &&
+                url.searchParams.get('scopeKind') === 'self' &&
+                url.searchParams.get('scopeId') === 'user-emp-012'
+              )
+            }),
+            other.goto('/mes/work-orders/' + encodeURIComponent(workOrderId)),
+          ])
+          expect(detail.status()).toBe(403)
+          setup.push({
+            actor: 'user-emp-012',
+            scope: 'self',
+            workOrderId,
+            taskId,
+            listStatus: tasks.status(),
+            taskCount: 0,
+            detailStatus: detail.status(),
+          })
         } finally {
           await other.close()
         }
