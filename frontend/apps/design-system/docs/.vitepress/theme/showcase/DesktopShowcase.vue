@@ -91,20 +91,14 @@ import { computed, onMounted, ref } from 'vue'
 // 页面标题由 VitePress frontmatter 提供（原 definePage 已移除）
 
 const { accent, setAccent, presets } = useThemeAccent()
-const accentEntries = Object.entries(presets) as [string, string][]
+const accentEntries = Object.entries(presets)
 const accentNames: Record<string, string> = {
   blue: '锐蓝',
-  indigo: '靛蓝',
   violet: '品紫',
-  magenta: '洋红',
   rose: '绛红',
-  red: '朱红',
-  orange: '橙',
   amber: '琥珀',
-  lime: '青柠',
   green: '翠绿',
   teal: '青碧',
-  cyan: '湖蓝',
 }
 
 // ---- Foundations data ----
@@ -543,7 +537,7 @@ const woTimeline: TimelineItem[] = [
 
 const stats = [
   { k: '语义令牌', v: '32+' },
-  { k: '动态色板', v: '12 色' },
+  { k: '彩色主题', v: `${accentEntries.length} 色` },
   { k: 'Pro 组件', v: '18' },
   { k: '图表类型', v: '4' },
 ]
@@ -656,7 +650,6 @@ const progress = computed(
             </div>
           </div>
 
-          <!-- 动态品牌色板（12 色） -->
           <div class="mt-6 rounded-xl border border-border bg-card p-5 shadow-xs">
             <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -666,9 +659,9 @@ const progress = computed(
                   <code class="font-mono text-xs">--nv-brand</code> 即时切换并持久化。
                 </p>
               </div>
-              <span class="text-xs text-muted-foreground">12 色 · OKLCH 同明度</span>
+              <span class="text-xs text-muted-foreground">{{ accentEntries.length }} 色</span>
             </div>
-            <div class="mt-4 grid grid-cols-6 gap-3 sm:grid-cols-12">
+            <div class="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-6">
               <button
                 v-for="[name, value] in accentEntries"
                 :key="name"

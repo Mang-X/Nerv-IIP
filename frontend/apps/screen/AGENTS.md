@@ -1,5 +1,7 @@
 # AGENTS.md — screen（大屏 / 挂墙）
 
+界面规范与用法从[独立设计文档站](../../apps/design-system/docs/components/screen/index.md)查阅。
+
 > 根 `AGENTS.md` 仍然适用；本文件只补充大屏子树的差异。
 > screen = 中央控制室 / 车间挂墙大屏：数米外观看、暗光环境、24h 常亮 LED
 > 拼接屏。设计规格：`docs/superpowers/specs/2026-06-26-screen-foundation-design.md`、

@@ -1,5 +1,7 @@
 # AGENTS.md — @nerv-iip/ui（NvUI 组件库 · 库内规则）
 
+界面规范与用法从[独立设计文档站](../../apps/design-system/docs/guide/introduction.md)查阅。
+
 > `frontend/AGENTS.md` 路由 NvUI **消费者侧**规则（app 怎么用）；本文件只补充
 > **库内侧**规则（改库本身）。权威 ADR：
 > `docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md`。

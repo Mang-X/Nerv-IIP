@@ -5,11 +5,11 @@
 > 体例：每个页型 = **判定**（何时用）→ **规则**（标准骨架 + 统一约定 + 关键交互 + 空状态）→ **正例/反例**（有现网证据才写）。§ 编号保持稳定（被 `interaction-patterns.md`、AGENTS 引用）。
 > 关联：
 >
-> - 应用守则：[`apps/business-console/AGENTS.md`](../../../apps/business-console/AGENTS.md)（§1.5 两轮自检、§3 区块、§4 区块与数据约定）
+> - 应用守则：[`apps/business-console/AGENTS.md`](https://github.com/Mang-X/Nerv-IIP/blob/main/frontend/apps/business-console/AGENTS.md)（§1.5 两轮自检、§3 区块、§4 区块与数据约定）
 > - 反馈规范：[`feedback-and-notifications.md`](../feedback-and-notifications.md)（toast 与内联，单一事实源）
 > - 列表基线：[`list-workbench.md`](./list-workbench.md)（FE-2 区块拼装）
 > - 创建/确认流：[`../flows/create-dialog.md`](../flows/create-dialog.md)、[`../flows/confirm-destroy.md`](../flows/confirm-destroy.md)
-> - 产品依据：[`docs/product/master-data/design.md`](../../../../docs/product/master-data/design.md) §6、[`数据字典 Reference`](../../../../docs/reference/master-data/dictionary.md)
+> - 产品依据：[`docs/product/master-data/design.md`](https://github.com/Mang-X/Nerv-IIP/blob/main/docs/product/master-data/design.md) §6、[`数据字典 Reference`](https://github.com/Mang-X/Nerv-IIP/blob/main/docs/reference/master-data/dictionary.md)
 
 ---
 

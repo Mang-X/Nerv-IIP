@@ -1,8 +1,10 @@
 ---
 # Component Coverage & Gaps — 组件覆盖度与缺口
 # 四场景矩阵视图（PC / 移动 / 一体机 / 大屏）+ 对照 Arco Design (PC) 与 TDesign Mobile。
-# 配套规范见 motion-interaction.md；本表回答"哪个表面有、还缺什么、先补什么"。
+# 本表回答"哪个表面有、还缺什么、先补什么"。
 ---
+
+查找当前组件用法和示例，请进入[独立设计文档站](../apps/design-system/docs/components/overview.md)。
 
 ## 四场景覆盖矩阵
 

@@ -4,11 +4,11 @@ layout: home
 hero:
   name: Nerv-IIP 设计系统
   text: 数字工厂控制平面的统一设计语言
-  tagline: 一套语义令牌与组件库，覆盖桌面 PC、移动 PDA、车间一体机、挂墙大屏四个表面。黑主题 · 动态色 · 亮暗自适应。
+  tagline: 一套语义令牌与组件库，覆盖桌面 PC、移动 PDA、车间一体机、挂墙大屏四个表面。按场景查找令牌、交互规范和组件示例。
   actions:
     - theme: brand
-      text: 阅读设计哲学
-      link: /foundations/philosophy
+      text: 开始使用
+      link: /guide/introduction
     - theme: alt
       text: 浏览组件
       link: /components/overview
@@ -33,19 +33,19 @@ import {
     <a class="nv-home-surface" href="/components/desktop/">
       <span class="nv-home-ic"><MonitorIcon /></span>
       <span class="nv-home-name">桌面 PC</span>
-      <span class="nv-home-desc">语义令牌 · 12 色动态板 · Pro 组件 · DataTable · 描述 / 时间线 · 图表。紧凑 36–40px。</span>
+      <span class="nv-home-desc">语义令牌 · Pro 组件 · DataTable · 描述 / 时间线 · 图表。</span>
       <span class="nv-home-go">桌面组件 <ArrowRightIcon /></span>
     </a>
     <a class="nv-home-surface" href="/components/mobile/">
       <span class="nv-home-ic"><SmartphoneIcon /></span>
       <span class="nv-home-name">移动 PDA</span>
-      <span class="nv-home-desc">原生质感控件 · 手势(侧滑 / 下拉刷新 / 抽屉) · 宫格 / 悬浮按钮 · 玻璃覆盖层。40–48px。</span>
+      <span class="nv-home-desc">原生质感控件 · 手势(侧滑 / 下拉刷新 / 抽屉) · 宫格 / 悬浮按钮 · 玻璃覆盖层。</span>
       <span class="nv-home-go">移动控件 <ArrowRightIcon /></span>
     </a>
     <a class="nv-home-surface" href="/components/touch/">
       <span class="nv-home-ic"><TabletIcon /></span>
       <span class="nv-home-name">一体机 / 工位</span>
-      <span class="nv-home-desc">大触控 · 减少操作路径 · 工单大卡 · 报工步进 · 节拍图。56–72px。</span>
+      <span class="nv-home-desc">大触控 · 减少操作路径 · 工单大卡 · 报工步进 · 节拍图。</span>
       <span class="nv-home-go">一体机组件 <ArrowRightIcon /></span>
     </a>
     <a class="nv-home-surface" href="/components/screen/">
@@ -64,7 +64,7 @@ import {
     <div class="nv-home-feat">
       <span class="nv-home-fic"><PaletteIcon /></span>
       <span class="nv-home-fname">动态品牌色</span>
-      <span class="nv-home-fdesc">OKLCH 语义令牌，运行时切换 12 色等亮度品牌色，亮暗自适应。</span>
+      <span class="nv-home-fdesc">通过共享主题切换品牌色与亮暗模式。</span>
     </div>
     <div class="nv-home-feat">
       <span class="nv-home-fic"><GaugeIcon /></span>
@@ -79,7 +79,7 @@ import {
     <div class="nv-home-feat">
       <span class="nv-home-fic"><AccessibilityIcon /></span>
       <span class="nv-home-fname">可读可达</span>
-      <span class="nv-home-fdesc">WCAG AA 对比、reduced-motion 降级、≥44px 触控目标。</span>
+      <span class="nv-home-fdesc">对比度、减少动效和场景触控尺寸。</span>
     </div>
   </div>
 </section>

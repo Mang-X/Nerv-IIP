@@ -13,9 +13,9 @@ const plan = ref([140, 420, 700, 900, 1010, 1080, 1150, 1180, 1220, 1260, 1320, 
 const wsTotal = ref([0, 620, 1280, 1900, 2540, 3120, 3735])
 const wsPlan = ref([0, 730, 1460, 2190, 2920, 3650, 4386])
 const wsSeries = ref([
-  { label: '电芯线', color: '#ef5a63', data: [0, 260, 520, 760, 980, 1150, 1228] },
-  { label: '电芯二线', color: '#f0ad4e', data: [0, 220, 470, 720, 980, 1220, 1353] },
-  { label: 'PACK 线', color: '#4aa6ee', data: [0, 140, 290, 420, 580, 750, 1154] },
+  { label: '电芯线', color: 'var(--nv-scr-red)', data: [0, 260, 520, 760, 980, 1150, 1228] },
+  { label: '电芯二线', color: 'var(--nv-scr-chart-attention)', data: [0, 220, 470, 720, 980, 1220, 1353] },
+  { label: 'PACK 线', color: 'var(--nv-scr-cyan)', data: [0, 140, 290, 420, 580, 750, 1154] },
 ])
 </script>
 
@@ -90,18 +90,24 @@ const plan = [140, 420, 700, 900, 1010, 1080, 1150, 1180, 1220, 1260, 1320, 1380
   :actual="workshopTotal"
   :plan="plan"
   :series="[
-    { label: '电芯线', color: '#ef5a63', data: line1 }, // 报警线红
-    { label: '电芯二线', color: '#f0ad4e', data: line2 }, // 关注线黄
-    { label: 'PACK 线', color: '#4aa6ee', data: line3 },
+    { label: '电芯线', color: 'var(--nv-scr-red)', data: line1 }, // 报警线红
+    { label: '电芯二线', color: 'var(--nv-scr-chart-attention)', data: line2 }, // 关注线黄
+    { label: 'PACK 线', color: 'var(--nv-scr-cyan)', data: line3 },
   ]"
   actual-label="车间累计"
   plan-label="计划"
 />
 ```
 
-::: tip 颜色传字面量
-`series[].color` 建议传字面量色值——CSS 变量可能被调用方**局部重映射**(如质量屏把 `--nv-scr-indigo` 重映射为红线色),细线颜色会被污染。
-:::
+曲线、图例色点与悬停卡使用同一 `series[].color`，可以传入场景令牌。虚线用来展示管控限时，通过 `plan-color` 单独指定颜色，它同时影响悬停卡的对应行。
+
+```vue
+<NvScreenTrendChart
+  :plan="controlLimits"
+  plan-label="管控限"
+  plan-color="var(--nv-scr-red)"
+/>
+```
 
 ## 属性
 
@@ -109,6 +115,7 @@ const plan = [140, 420, 700, 900, 1010, 1080, 1150, 1180, 1220, 1260, 1320, 1380
 | --------------------------- | -------------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------- |
 | `actual`                    | 各 x 刻度的实际产量(青色实线)                | `number[]`                                                   | 内置示例序列                                                      |
 | `plan`                      | 各 x 刻度的计划产量(靛色虚线)                | `number[]`                                                   | 内置示例序列                                                      |
+| `planColor` | 虚线及悬停卡对应行的 CSS 色值 | `string` | `var(--nv-scr-indigo)` |
 | `series`                    | 附加对比序列(细线 + 图例色点 + 悬停逐条读数) | `{ label, color, data }[]`                                   | —                                                                 |
 | `ranges`                    | 真实时间范围切换(经 `v-model:range`)         | `{ label, value }[]`                                         | —                                                                 |
 | `hoverLabels`               | 每个数据点的悬停标签(与 `actual` 等长)       | `string[]`                                                   | 按 24h 均匀推算                                                   |

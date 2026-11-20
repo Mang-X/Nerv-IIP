@@ -8,28 +8,28 @@ import { MonitorIcon, SmartphoneIcon, TabletIcon, PresentationIcon, ArrowRightIc
 
 # 四个表面
 
-同一套令牌与设计语言，四种原生形态。表面决定组件目录、token 命名空间与触控尺寸（详见 [设计令牌](/foundations/tokens) 的四场景矩阵）；一件组件跨两个表面时**拆两件分别实现**，绝不"一件双态"（ADR 0020 §1.2）。
+同一套令牌与设计语言，四种原生形态。表面决定组件目录、token 命名空间与触控尺寸（详见[设计令牌](/foundations/tokens)）；一件组件跨两个表面时**拆两件分别实现**，绝不"一件双态"（ADR 0020 §1.2）。
 
 <div class="nv-surfaces">
   <a class="nv-surface" href="/components/desktop/">
     <span class="nv-surface-icon"><MonitorIcon /></span>
     <span class="nv-surface-name">桌面 PC</span>
-    <span class="nv-surface-desc">控制台主表面：信息密度高、键鼠为主。紧凑 36–40px 触控目标，语义令牌 + 12 色动态板，Pro 组件（NvDataTable、描述列表、时间线、图表）。克制动效，专业感优先。</span>
-    <span class="nv-surface-tag"><code>@nerv-iip/ui</code> · <code>--nv-*</code> · 36–40px</span>
+    <span class="nv-surface-desc">控制台主表面：信息密度高、键鼠为主。使用紧凑控件、共享主题和桌面组件（NvDataTable、描述列表、时间线、图表）。克制动效，专业感优先。</span>
+    <span class="nv-surface-tag"><code>@nerv-iip/ui</code> · <code>--nv-*</code></span>
     <span class="nv-surface-go">桌面组件 <ArrowRightIcon /></span>
   </a>
   <a class="nv-surface" href="/components/mobile/">
     <span class="nv-surface-icon"><SmartphoneIcon /></span>
     <span class="nv-surface-name">移动 PDA</span>
-    <span class="nv-surface-desc">车间手持终端：触控为主、单手操作、强光环境。原生质感控件 + 完整手势（侧滑 / 下拉刷新 / 抽屉），统一橡皮筋阻尼。安全区适配，≥44px 触控目标。</span>
-    <span class="nv-surface-tag"><code>@nerv-iip/ui-mobile</code> · <code>--nv-m-*</code> · 40–48px</span>
+    <span class="nv-surface-desc">车间手持终端：触控为主、单手操作、强光环境。原生质感控件 + 完整手势（侧滑 / 下拉刷新 / 抽屉），统一橡皮筋阻尼。安全区适配，按控件选择触控目标。</span>
+    <span class="nv-surface-tag"><code>@nerv-iip/ui-mobile</code> · <code>--nv-m-*</code></span>
     <span class="nv-surface-go">移动控件 <ArrowRightIcon /></span>
   </a>
   <a class="nv-surface" href="/components/touch/">
     <span class="nv-surface-icon"><TabletIcon /></span>
     <span class="nv-surface-name">一体机 / 工位</span>
-    <span class="nv-surface-desc">工位一体机：近距离大触控、减少路径。56–72px 大触控目标，工单大卡、报工步进、节拍图，为"少点几下完成报工"而设计。大量复用 PC 件（放大字号间距）。</span>
-    <span class="nv-surface-tag"><code>@nerv-iip/ui · touch/</code> · <code>--nv-t-*</code> · 56–72px</span>
+    <span class="nv-surface-desc">工位一体机：近距离大触控、减少路径。工单大卡、报工步进、节拍图，为"少点几下完成报工"而设计。大量复用 PC 件（放大字号间距）。</span>
+    <span class="nv-surface-tag"><code>@nerv-iip/ui · touch/</code> · <code>--nv-t-*</code></span>
     <span class="nv-surface-go">一体机组件 <ArrowRightIcon /></span>
   </a>
   <a class="nv-surface" href="/components/screen/">
