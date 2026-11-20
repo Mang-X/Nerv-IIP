@@ -115,10 +115,13 @@ const VIEW_OPTIONS = [
 // 弹窗打开期间暂停墙体 2s 快刷（被遮挡的更新无意义），关闭即恢复
 const selectedId = ref<string | null>(null)
 watch(
-  () => scoped?.selected.value,
-  () => {
-    selectedId.value = null
+  ov,
+  (overview) => {
+    if (selectedId.value && !overview?.devices.some((device) => device.id === selectedId.value)) {
+      closeDetail()
+    }
   },
+  { flush: 'sync' },
 )
 function openDevice(d: DeviceCell) {
   selectedId.value = d.id
@@ -468,7 +471,7 @@ const paramsFreshness = computed(() =>
     </div>
 
     <DeviceDetailModal
-      v-if="selectedId && ov?.devices.some((device) => device.id === selectedId)"
+      v-if="selectedId && ov"
       :key="selectedId"
       :work-center-code="ov.workCenterCode"
       :device-id="selectedId"
