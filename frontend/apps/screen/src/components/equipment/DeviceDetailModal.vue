@@ -1,10 +1,10 @@
 <script setup lang="ts">
+import { useAuthorizedScreenData } from '@/composables/useAuthorizedScreenData'
 import {
   NvScreenScrollArea,
   NvSparkline,
   NvScreenStatusLight,
   NvScreenStatusTag,
-  useScreenData,
 } from '@nerv-iip/ui'
 import {
   Activity,
@@ -41,10 +41,11 @@ const emit = defineEmits<{ close: [] }>()
 // 详情刷新频率：3s（比全景 5s 快，比格上参数 2s 稳）
 const {
   data: detail,
+  lastUpdated,
   error,
   loading,
   refresh,
-} = useScreenData<DeviceDetail | null>(
+} = useAuthorizedScreenData<DeviceDetail | null>(
   () => fetchDeviceDetail(props.deviceId, props.factoryId, props.workshopIds),
   { intervalMs: 3000 },
 )
@@ -119,17 +120,13 @@ function leaveSpark() {
         class="ddm"
         role="dialog"
         aria-modal="true"
-        :aria-label="(!error && detail?.device.name) || '设备详情'"
+        :aria-label="detail?.device.name || '设备详情'"
       >
         <header class="ddm-h">
-          <NvScreenStatusLight
-            v-if="detail && !error"
-            :tone="tone"
-            :label="detail.device.stateLabel"
-          />
-          <h3 class="ddm-t">{{ (!error && detail?.device.name) || '设备详情' }}</h3>
-          <span v-if="detail && !error" class="ddm-code">{{ detail.device.code }}</span>
-          <span v-if="detail && !error" class="ddm-path"
+          <NvScreenStatusLight v-if="detail" :tone="tone" :label="detail.device.stateLabel" />
+          <h3 class="ddm-t">{{ detail?.device.name || '设备详情' }}</h3>
+          <span v-if="detail" class="ddm-code">{{ detail.device.code }}</span>
+          <span v-if="detail" class="ddm-path"
             >{{ detail.device.workshopName }} · {{ detail.device.lineName }}</span
           >
           <button type="button" class="ddm-x" aria-label="关闭" @click="emit('close')">
@@ -137,12 +134,25 @@ function leaveSpark() {
           </button>
         </header>
 
-        <ReadError v-if="error" :error="error" :loading="loading" @retry="refresh" />
-        <div v-else-if="!detail" class="ddm-loading">
+        <ReadError
+          v-if="error"
+          :error="error"
+          :loading="loading"
+          :last-updated="lastUpdated"
+          @retry="refresh"
+        />
+        <div v-if="!detail && !error" class="ddm-loading">
           {{ detail === null ? '暂无设备档案' : '读取设备档案…' }}
         </div>
 
-        <NvScreenScrollArea v-else class="ddm-scroll">
+        <NvScreenScrollArea v-if="detail" class="ddm-scroll">
+          <div v-if="detail.failures && Object.keys(detail.failures).length" role="status">
+            <span v-for="(reason, source) in detail.failures" :key="source"
+              >{{ source }} · {{ reason }}　</span
+            >
+            <button :disabled="loading" @click="refresh">重试</button>
+          </div>
+          <p v-if="detail.partialRecords">维修、保养与关联点检仅覆盖各列表首批记录</p>
           <div class="ddm-body">
             <!-- 上：基础信息横排 -->
             <section class="ddm-sec">
@@ -224,7 +234,7 @@ function leaveSpark() {
                     <dd>{{ percent(detail.oee.rate) }}</dd>
                   </div>
                 </div>
-                <p v-if="detail.oee.isDegraded" class="ddm-note">
+                <p v-if="!detail.failures?.OEE && detail.oee.isDegraded" class="ddm-note">
                   OEE 数据不完整：{{ detail.oee.degradedReasons.join('、') }}
                 </p>
                 <div v-if="detail.repairs.length" class="ddm-repairs">
@@ -244,7 +254,7 @@ function leaveSpark() {
                     </div>
                   </div>
                 </div>
-                <p v-else class="ddm-empty">暂无进行中的维修单</p>
+                <p v-else-if="!detail.failures?.维修" class="ddm-empty">本页暂无维修单</p>
               </div>
 
               <div>
@@ -260,8 +270,16 @@ function leaveSpark() {
                       i.result
                     }}</span>
                   </div>
-                  <p v-if="!detail.pmTasks.length && !detail.inspections.length" class="ddm-empty">
-                    今日暂无保养 / 点检记录
+                  <p
+                    v-if="
+                      !detail.failures?.保养 &&
+                      !detail.failures?.点检 &&
+                      !detail.pmTasks.length &&
+                      !detail.inspections.length
+                    "
+                    class="ddm-empty"
+                  >
+                    本页暂无保养 / 关联点检记录
                   </p>
                 </div>
               </div>
