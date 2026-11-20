@@ -6,7 +6,7 @@ import { IS_REAL_DATA, requireDemoMode } from '@/data/config'
 import type { DeviceDetail, DeviceParamsTick, EquipmentOverview } from '@/data/contracts/equipment'
 import { buildDeviceDetail, buildEquipmentOverview, buildParamsTick } from '@/data/mock/equipment'
 import { DEFAULT_FACTORY_ID } from '@/data/mock/masterdata'
-import { fetchRealDeviceDetail, fetchRealDeviceParamsTick } from '@/data/real/equipment'
+import { fetchRealDeviceDetail } from '@/data/real/equipment'
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -21,14 +21,12 @@ export async function fetchDemoEquipmentOverview(
   return buildEquipmentOverview(factoryId, workshopIds)
 }
 
-/** 参数快刷（高频轮询，只刷格上参数）；deviceIds = 当前视野内设备集。
- *  真实模式无 historian（#570/#689），返回空集（不产出演示参数）。 */
-export async function fetchDeviceParamsTick(
-  factoryId = IS_REAL_DATA ? getScreenSession().organizationId : DEFAULT_FACTORY_ID,
+export async function fetchDemoDeviceParamsTick(
+  factoryId = DEFAULT_FACTORY_ID,
   workshopIds: string[] | 'all' = 'all',
   deviceIds?: string[],
 ): Promise<DeviceParamsTick> {
-  if (IS_REAL_DATA) return fetchRealDeviceParamsTick()
+  requireDemoMode()
   await delay(120)
   return buildParamsTick(factoryId, workshopIds, deviceIds)
 }

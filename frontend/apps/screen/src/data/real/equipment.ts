@@ -28,7 +28,6 @@ import { readRows, readScreenPayload } from './response'
 import type {
   DeviceCell,
   DeviceDetail,
-  DeviceParamsTick,
   DeviceState,
   EquipmentOverview,
   InspectionRow,
@@ -509,11 +508,6 @@ export async function readEquipmentOverview(
     pmTasks,
     inspections,
   }
-}
-
-/** 参数快刷：真实模式无 historian（#570/#689），不产出演示参数流。 */
-export async function fetchRealDeviceParamsTick(): Promise<DeviceParamsTick> {
-  return {}
 }
 
 /** 设备详情：单设备状态+新鲜度、单机 MTBF/MTTR（真实 reliability 端点）、该设备维修/PM/点检。 */

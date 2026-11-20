@@ -33,13 +33,13 @@ import type {
   RepairOrder,
 } from '@/data/contracts/equipment'
 import { REPAIR_STAGES } from '@/data/contracts/equipment'
-import { fetchDemoEquipmentOverview, fetchDeviceParamsTick } from '@/data/fetchers/equipment'
+import { fetchDemoDeviceParamsTick, fetchDemoEquipmentOverview } from '@/data/fetchers/equipment'
 import { OEE_PLACEHOLDER_BADGE, RELIABILITY_SNAPSHOT_BADGE } from '@/data/copy'
 import { formatScreenFreshness } from '@/data/freshness'
 import ScreenLayout from '@/layouts/ScreenLayout.vue'
 
 // 刷新频率分层（MAN-466 大屏轮询调参，观察 #734 Gateway 限流后再降频）：
-// 全景/计数/流 10s · 格上参数 5s 快刷（仅视野内设备；真实模式无 historian 时为空）·
+// 全景/计数/流 10s · 演示模式的格上参数 5s 快刷 ·
 // 详情弹窗 3s（弹窗内部）；页面隐藏时 useScreenData 统一暂停轮询、失败保活标 stale。
 const now = useNow({ interval: 1000 })
 const scope = useAccessScope()
@@ -69,14 +69,13 @@ const demoParams = IS_REAL_DATA
   ? undefined
   : useScreenData<DeviceParamsTick>(
       () =>
-        fetchDeviceParamsTick(
+        fetchDemoDeviceParamsTick(
           scope.currentFactoryId,
           scope.persona.workshopIds,
           visibleIds.value.length ? visibleIds.value : undefined,
         ),
       { intervalMs: 5000 },
     )
-/** 全景设备 + 高频参数合流：视野内参数以 2s tick 为准，视野外保持上帧（冻结）。 */
 const devicesLive = computed<DeviceCell[]>(() => {
   const list = ov.value?.devices ?? []
   const tick = demoParams?.data.value
@@ -112,7 +111,7 @@ const VIEW_OPTIONS = [
 ]
 
 // —— 设备详情弹窗（点击设备格打开；弹窗内部 3s 轮询取数）——
-// 弹窗打开期间暂停墙体 2s 快刷（被遮挡的更新无意义），关闭即恢复
+// 弹窗遮住设备墙时暂停演示参数刷新。
 const selectedId = ref<string | null>(null)
 watch(
   ov,
