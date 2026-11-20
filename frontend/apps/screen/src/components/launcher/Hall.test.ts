@@ -13,6 +13,7 @@ it('正常门厅首帧保留导航和真实范围，缺源不会显示正常链�
   })
   try {
     expect(page.text()).not.toContain('数据链路正常')
+    expect(page.text()).not.toContain('演示模式')
     expect(page.text()).toContain('org-a')
     expect(page.text()).toContain('综合健康度口径未接入')
     expect(page.findAllComponents(RouterLinkStub).map((link) => link.props('to'))).toContain(
