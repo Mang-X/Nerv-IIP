@@ -47,6 +47,7 @@ export interface ConsoleAuthOperationClient {
   logoutConsoleSession: (options: {
     body: ConsoleLogoutRequest
     headers: { Authorization: string }
+    throwOnError?: true
   }) => Promise<unknown>
   refreshConsoleSession: (options: {
     body: ConsoleRefreshRequest
@@ -115,6 +116,7 @@ export function createConsoleAuthApi(options: CreateConsoleAuthApiOptions): Cons
     async logoutConsole(accessToken, request) {
       await client.logoutConsoleSession({
         body: request,
+        throwOnError: true,
         headers: {
           Authorization: `Bearer ${accessToken}`,
         },
