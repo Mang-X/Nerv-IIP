@@ -16,8 +16,8 @@ function readData<T>(result: {
   data?: { success?: boolean; data?: T | null }
 }): T {
   if (!result.response) throw new TypeError('失联')
-  if (result.response.status === 401 || result.response.status === 403)
-    throw new Error('未授权 · 无权读取当前安灯范围')
+  if (result.response.status === 401) throw new Error('未授权 · 登录已失效')
+  if (result.response.status === 403) throw new Error('未授权 · 无权读取当前安灯范围')
   if (!result.response.ok || result.data?.success !== true || !result.data.data)
     throw new Error('读取失败 · 安灯数据不可用')
   return result.data.data
@@ -25,9 +25,13 @@ function readData<T>(result: {
 
 export async function fetchAndonScopes(session: AndonSession): Promise<AndonScope[]> {
   const context = readData(
-    await getBusinessConsolePrincipalWorkContext({ query: { ...session, permissionCode } }),
+    await getBusinessConsolePrincipalWorkContext({
+      signal: AbortSignal.timeout(12000),
+      query: { ...session, permissionCode },
+    }),
   )
-  return (context.authorizedScopes ?? []).flatMap((scope) =>
+  if (!context.authorizedScopes) throw new Error('读取失败 · 范围列表不完整')
+  return context.authorizedScopes.flatMap((scope) =>
     scope.kind && scope.id
       ? [{ kind: scope.kind, id: scope.id, displayName: scope.displayName || scope.id }]
       : [],
@@ -42,6 +46,7 @@ export async function fetchAndonQueue(
   const selection = { scopeKind: scope.kind, scopeId: scope.id }
   const context = readData(
     await getBusinessConsolePrincipalWorkContext({
+      signal: AbortSignal.timeout(12000),
       query: { ...session, permissionCode, ...selection },
     }),
   )
@@ -49,6 +54,7 @@ export async function fetchAndonQueue(
     throw new Error('未配置真实范围 · 请重新选择已授权范围')
   const queue = readData(
     await listBusinessConsoleMesAndonCalls({
+      signal: AbortSignal.timeout(12000),
       query: {
         ...session,
         ...selection,

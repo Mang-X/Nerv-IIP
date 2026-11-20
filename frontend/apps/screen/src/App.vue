@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Toaster } from '@nerv-iip/ui'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import UnavailableScreen from '@/components/UnavailableScreen.vue'
 import { IS_REAL_DATA } from '@/data/config'
@@ -14,7 +14,14 @@ const unavailable = computed(() => {
   if (!IS_REAL_DATA || !key || key === 'equipment' || key === 'warehouse') return
   return SCREENS.find((screen) => screen.key === key)
 })
-const sessionKey = computed(() => JSON.stringify([auth?.sessionId, auth?.principal]))
+const sessionKey = ref(0)
+watch(
+  () => [auth?.principal, auth?.sessionId, auth?.accessToken],
+  () => {
+    sessionKey.value++
+  },
+  { flush: 'sync' },
+)
 </script>
 
 <template>

@@ -8,7 +8,7 @@ vi.mock('@nerv-iip/api-client', () => ({
   listBusinessConsoleMesAndonCalls: api.queue,
 }))
 const session = { organizationId: 'org-real', environmentId: 'env-real' }
-const scope = { kind: 'workCenter', id: 'wc-real', displayName: '装配一线' }
+const scope = { kind: 'work-center', id: 'wc-real', displayName: '装配一线' }
 const ok = (data: unknown) => ({ response: new Response(), data: { success: true, data } })
 
 beforeEach(() => {
@@ -38,12 +38,12 @@ describe('真实安灯 fetcher', () => {
     expect(api.context.mock.calls[0][0].query).toEqual({
       ...session,
       permissionCode: 'business.mes.operations.read',
-      scopeKind: 'workCenter',
+      scopeKind: 'work-center',
       scopeId: 'wc-real',
     })
     expect(api.queue.mock.calls[0][0].query).toEqual({
       ...session,
-      scopeKind: 'workCenter',
+      scopeKind: 'work-center',
       scopeId: 'wc-real',
       queue: 'unclosed',
       skip: 5,

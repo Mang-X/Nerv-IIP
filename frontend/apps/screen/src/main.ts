@@ -29,7 +29,7 @@ if (IS_REAL_DATA) {
     router,
   })
   watch(
-    () => [auth.principal, auth.sessionId] as const,
+    () => [auth.principal, auth.sessionId, auth.accessToken] as const,
     ([principal]) => {
       resetDeviceRosterCache()
       setScreenSession({
