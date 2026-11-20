@@ -14,6 +14,8 @@
 #   Requires:
 #     - PowerShell 7
 
+. (Join-Path $PSScriptRoot 'TrxResults.ps1')
+
 function Get-NervFullChainProbeOwnerStartIdentity {
     param([Parameter(Mandatory)] [int] $ProcessId)
 
@@ -312,29 +314,7 @@ function Get-NervFullChainTrxResult {
         [switch] $AllowInvalid
     )
 
-    $trxFiles = @(Get-ChildItem -LiteralPath $ResultsDirectory -Filter '*.trx' -File -Recurse)
-    if ($trxFiles.Count -ne 1) { throw "FullChain lane member must produce exactly one TRX file; observed $($trxFiles.Count)." }
-    [xml]$trx = Get-Content -LiteralPath $trxFiles[0].FullName -Raw
-    $results = @($trx.SelectNodes("//*[local-name()='UnitTestResult']"))
-    $definitions = @($trx.SelectNodes("//*[local-name()='UnitTest']"))
-    $definitionById = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
-    foreach ($definition in $definitions) {
-        $method = $definition.SelectSingleNode("./*[local-name()='TestMethod']")
-        if ($null -ne $method) { $definitionById[[string]$definition.id] = "$($method.className).$($method.name)" }
-    }
-    $observed = @($results | ForEach-Object { if ($definitionById.ContainsKey([string]$_.testId)) { $definitionById[[string]$_.testId] } else { [string]$_.testName } })
-    $expected = @($ExpectedTestIdentities)
-    [Array]::Sort($observed, [StringComparer]::Ordinal)
-    [Array]::Sort($expected, [StringComparer]::Ordinal)
-    $identitiesMatch = [string]::Equals(($observed -join "`n"), ($expected -join "`n"), [StringComparison]::Ordinal)
-    $passed = @($results | Where-Object { [string]::Equals([string]$_.outcome, 'Passed', [StringComparison]::Ordinal) }).Count
-    $failed = @($results | Where-Object { [string]::Equals([string]$_.outcome, 'Failed', [StringComparison]::Ordinal) }).Count
-    $skipped = $results.Count - $passed - $failed
-    $valid = $identitiesMatch -and $passed -eq $expected.Count -and $failed -eq 0 -and $skipped -eq 0
-    $result = [pscustomobject]@{ total = $results.Count; passed = $passed; failed = $failed; skipped = $skipped; identities = @($observed); identitiesMatch = $identitiesMatch; valid = $valid }
-    if (-not $AllowInvalid -and -not $identitiesMatch) { throw 'FullChain lane TRX identities do not equal the frozen member identities.' }
-    if (-not $AllowInvalid -and -not $valid) { throw "FullChain lane requires $($expected.Count) passed, 0 failed and 0 skipped; observed $passed passed, $failed failed and $skipped skipped." }
-    return $result
+    return Get-NervTestLaneMemberTrxResult -LaneLabel 'FullChain lane member' -ResultsDirectory $ResultsDirectory -ExpectedTestIdentities $ExpectedTestIdentities -AllowInvalid:$AllowInvalid
 }
 
 function Get-NervFullChainResidualTrxResult {

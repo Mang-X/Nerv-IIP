@@ -38,7 +38,9 @@ function New-RedisCapTrx {
         $definitions.Add("<UnitTest id=`"$id`"><TestMethod className=`"$class`" name=`"$method`" /></UnitTest>")
         $results.Add("<UnitTestResult testId=`"$id`" testName=`"$method`" outcome=`"$Outcome`" />")
     }
-    $trx = "<?xml version=`"1.0`"?><TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results>$($results -join '')</Results><TestDefinitions>$($definitions -join '')</TestDefinitions></TestRun>"
+    $passed = if ($Outcome -ceq 'Passed') { $results.Count } else { 0 }
+    $failed = if ($Outcome -ceq 'Failed') { $results.Count } else { 0 }
+    $trx = "<?xml version=`"1.0`"?><TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results>$($results -join '')</Results><TestDefinitions>$($definitions -join '')</TestDefinitions><ResultSummary><Counters total=`"$($results.Count)`" executed=`"$($passed + $failed)`" passed=`"$passed`" failed=`"$failed`" /></ResultSummary></TestRun>"
     [IO.File]::WriteAllText($Path, $trx, [Text.UTF8Encoding]::new($false))
 }
 
@@ -102,7 +104,7 @@ switch ($commandName) {
             $definitions.Add("<UnitTest id=`"$id`"><TestMethod className=`"$class`" name=`"$method`" /></UnitTest>")
             $results.Add("<UnitTestResult testId=`"$id`" testName=`"$method`" outcome=`"Passed`" />")
         }
-        $trx = "<?xml version=`"1.0`"?><TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results>$($results -join '')</Results><TestDefinitions>$($definitions -join '')</TestDefinitions></TestRun>"
+        $trx = "<?xml version=`"1.0`"?><TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results>$($results -join '')</Results><TestDefinitions>$($definitions -join '')</TestDefinitions><ResultSummary><Counters total=`"$($results.Count)`" executed=`"$($results.Count)`" passed=`"$($results.Count)`" failed=`"0`" /></ResultSummary></TestRun>"
         [IO.File]::WriteAllText((Join-Path $resultsDirectory 'fake.trx'), $trx, [Text.UTF8Encoding]::new($false))
         exit 0
     }

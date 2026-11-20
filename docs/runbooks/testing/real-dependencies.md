@@ -16,6 +16,11 @@
 4. 失败时先采集脱敏的数据库/Redis/CAP/业务状态和 cleanup 证据，再精确回收当前 run 的数据库、namespace 和子进程。
 5. runner 中断后的残留只用当前受治理 cleanup 脚本预览/清理；具体命名、最小年龄和安全条件以脚本帮助为准。
 
+### PostgreSQL 入口
+
+- `scripts/run-postgres-test-lane.ps1` 按活动 member manifest 运行，是托管 CI 的 PostgreSQL Provider Tests 入口。
+- `scripts/verify-backend-real-postgres-tests.ps1` 从 fast shard 排除项推导 selector，通过 solution filter 验证真实 PostgreSQL 用例的发现和运行结果。两套入口的测试集合与资源归属各有定义，按任务目标选择对应入口。
+
 ## 判读
 
 只有实际 job/lane 的 passed/failed 运行时结果能证明该真实依赖执行过；合同测试、planning、stable aggregate 或另一个 provider 的成功都不能替代。

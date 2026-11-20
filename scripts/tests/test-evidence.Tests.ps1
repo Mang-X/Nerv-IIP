@@ -88,7 +88,7 @@ $facadeOwnedResponsibilityContracts = @(
         )
     }
 )
-$isolatedTestEvidenceLibraryNames = @('ScriptAutomation.ps1', 'OrdinalString.ps1', 'TestEvidence.ps1', 'TestEvidencePolicy.ps1', 'TestEvidencePrivacy.ps1', 'TestEvidenceParsing.ps1', 'TestEvidenceArtifacts.ps1', 'TestEvidenceProvenance.ps1', 'TestEvidenceBaseline.ps1')
+$isolatedTestEvidenceLibraryNames = @('ScriptAutomation.ps1', 'OrdinalString.ps1', 'TrxResults.ps1', 'TestEvidence.ps1', 'TestEvidencePolicy.ps1', 'TestEvidencePrivacy.ps1', 'TestEvidenceParsing.ps1', 'TestEvidenceArtifacts.ps1', 'TestEvidenceProvenance.ps1', 'TestEvidenceBaseline.ps1')
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . $testEvidenceLibraryPath
 . $ciWorkflowBudgetsPath
@@ -235,7 +235,7 @@ $facadeOwnedLibraryNames = @($testEvidenceLibraryImports | ForEach-Object {
     Assert-Equal 1 $literalMatches.Count "TestEvidence facade imports must name one literal sibling library: $($_.Extent.Text)"
     [string]$literalMatches[0].Groups[1].Value
 })
-$sharedFacadeDependencyNames = @('OrdinalString.ps1')
+$sharedFacadeDependencyNames = @('OrdinalString.ps1', 'TrxResults.ps1')
 Assert-NervFacadeResponsibilityRegistryClosure -ImportedLibraryNames $facadeOwnedLibraryNames `
     -SharedDependencyNames $sharedFacadeDependencyNames `
     -ResponsibilityContracts $facadeOwnedResponsibilityContracts
@@ -998,21 +998,6 @@ $trxReaderOutcomeMapAssignments = @($trxReaderFunction.Body.FindAll({
         [string]::Equals([string]$node.Left.VariablePath.UserPath, 'outcomeMap', [StringComparison]::Ordinal)
 }, $true))
 Assert-Equal 0 $trxReaderOutcomeMapAssignments.Count 'TRX reading must not retain a private outcome map beside the shared descriptor table.'
-
-$trxReaderCounterThrows = @($trxReaderFunction.Body.FindAll({
-    param($node)
-    $node -is [Management.Automation.Language.ThrowStatementAst] -and
-        $node.Extent.Text.Contains('TRX ResultSummary/Counters do not match Results', [StringComparison]::Ordinal)
-}, $true))
-$trxReaderUnsupportedOutcomeThrows = @($trxReaderFunction.Body.FindAll({
-    param($node)
-    $node -is [Management.Automation.Language.ThrowStatementAst] -and
-        $node.Extent.Text.Contains('Unsupported TRX outcome', [StringComparison]::Ordinal)
-}, $true))
-Assert-Equal 1 $trxReaderCounterThrows.Count 'TRX reading must retain one counter-mismatch throw.'
-Assert-Equal 1 $trxReaderUnsupportedOutcomeThrows.Count 'TRX reading must retain one unsupported-outcome defensive throw.'
-Assert-True ($trxReaderCounterThrows[0].Extent.StartOffset -lt $trxReaderUnsupportedOutcomeThrows[0].Extent.StartOffset) 'Counter validation must remain before the unreachable unsupported-outcome defense.'
-Assert-True ($trxReaderUnsupportedOutcomeThrows[0].Extent.Text.Contains('[IO.InvalidDataException]::new', [StringComparison]::Ordinal)) 'The unsupported-outcome defense must retain InvalidDataException.'
 
 # Exact, not "contains": a fixture that also trips codes nobody asked for means the classification
 # under test is bleeding into its neighbours, and a containment assertion cannot see that.

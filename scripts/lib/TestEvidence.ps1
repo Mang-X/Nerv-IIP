@@ -369,6 +369,7 @@ function Get-NervStableEvidenceGuid {
 
 . (Join-Path $PSScriptRoot 'TestEvidencePolicy.ps1')
 . (Join-Path $PSScriptRoot 'TestEvidencePrivacy.ps1')
+. (Join-Path $PSScriptRoot 'TrxResults.ps1')
 . (Join-Path $PSScriptRoot 'TestEvidenceParsing.ps1')
 . (Join-Path $PSScriptRoot 'TestEvidenceArtifacts.ps1')
 . (Join-Path $PSScriptRoot 'TestEvidenceProvenance.ps1')

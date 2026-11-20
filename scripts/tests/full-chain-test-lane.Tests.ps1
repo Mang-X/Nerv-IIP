@@ -367,7 +367,9 @@ function New-FullChainTrx {
         $definitions.Add("<UnitTest id=`"$id`"><TestMethod className=`"$class`" name=`"$method`" /></UnitTest>")
         $results.Add("<UnitTestResult testId=`"$id`" testName=`"$method`" outcome=`"$Outcome`" />")
     }
-    $trx = "<?xml version=`"1.0`"?><TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results>$($results -join '')</Results><TestDefinitions>$($definitions -join '')</TestDefinitions></TestRun>"
+    $passed = if ($Outcome -ceq 'Passed') { $results.Count } else { 0 }
+    $failed = if ($Outcome -ceq 'Failed') { $results.Count } else { 0 }
+    $trx = "<?xml version=`"1.0`"?><TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results>$($results -join '')</Results><TestDefinitions>$($definitions -join '')</TestDefinitions><ResultSummary><Counters total=`"$($results.Count)`" executed=`"$($passed + $failed)`" passed=`"$passed`" failed=`"$failed`" /></ResultSummary></TestRun>"
     [IO.File]::WriteAllText($Path, $trx, [Text.UTF8Encoding]::new($false))
 }
 
@@ -1061,7 +1063,9 @@ try {
             $definitions.Add("<UnitTest id=`"$id`"><TestMethod className=`"$class`" name=`"$method`" /></UnitTest>")
             $results.Add("<UnitTestResult testId=`"$id`" testName=`"$method`" outcome=`"$([string]$case.Outcome)`" />")
         }
-        $trx = "<?xml version=`"1.0`"?><TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results>$($results -join '')</Results><TestDefinitions>$($definitions -join '')</TestDefinitions></TestRun>"
+        $passed = @($Cases | Where-Object Outcome -CEQ 'Passed').Count
+        $failed = @($Cases | Where-Object Outcome -CEQ 'Failed').Count
+        $trx = "<?xml version=`"1.0`"?><TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results>$($results -join '')</Results><TestDefinitions>$($definitions -join '')</TestDefinitions><ResultSummary><Counters total=`"$($Cases.Count)`" executed=`"$($passed + $failed)`" passed=`"$passed`" failed=`"$failed`" /></ResultSummary></TestRun>"
         [IO.File]::WriteAllText($Path, $trx, [Text.UTF8Encoding]::new($false))
     }
 

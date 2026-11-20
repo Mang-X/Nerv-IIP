@@ -409,11 +409,18 @@ try {
     $separatorIndex = $identity.LastIndexOf('.', [StringComparison]::Ordinal)
     $class = $identity.Substring(0, $separatorIndex)
     $method = $identity.Substring($separatorIndex + 1)
-    $trx = "<?xml version=`"1.0`"?><TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results><UnitTestResult testId=`"1`" testName=`"$method`" outcome=`"Passed`" /></Results><TestDefinitions><UnitTest id=`"1`"><TestMethod className=`"$class`" name=`"$method`" /></UnitTest></TestDefinitions></TestRun>"
+    $trx = "<?xml version=`"1.0`"?><TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results><UnitTestResult testId=`"1`" testName=`"$method`" outcome=`"Passed`" /></Results><TestDefinitions><UnitTest id=`"1`"><TestMethod className=`"$class`" name=`"$method`" /></UnitTest></TestDefinitions><ResultSummary><Counters total=`"1`" executed=`"1`" passed=`"1`" failed=`"0`" /></ResultSummary></TestRun>"
     [IO.File]::WriteAllText((Join-Path $fixtureRoot 'passed.trx'), $trx, [Text.UTF8Encoding]::new($false))
     $result = Get-NervPostgresTrxResult -ResultsDirectory $fixtureRoot -ExpectedTestIdentities @($identity)
     Assert-Contract ($result.passed -eq 1 -and $result.skipped -eq 0) 'A fully passed frozen identity must satisfy the lane contract.'
-    $skipped = $trx.Replace('outcome="Passed"', 'outcome="NotExecuted"')
+    $badCounters = $trx.Replace('total="1"', 'total="2"')
+    [IO.File]::WriteAllText((Join-Path $fixtureRoot 'passed.trx'), $badCounters)
+    $counterMismatchRejected = $false
+    try { Get-NervPostgresTrxResult -ResultsDirectory $fixtureRoot -ExpectedTestIdentities @($identity) -AllowInvalid | Out-Null }
+    catch { $counterMismatchRejected = $_.Exception.Message.Contains('Counters do not match Results', [StringComparison]::Ordinal) }
+    Assert-Contract $counterMismatchRejected 'A PostgreSQL lane must reject contradictory TRX counters even when collecting a failure summary.'
+
+    $skipped = $trx.Replace('outcome="Passed"', 'outcome="NotExecuted"').Replace('executed="1" passed="1"', 'executed="0" passed="0"')
     [IO.File]::WriteAllText((Join-Path $fixtureRoot 'passed.trx'), $skipped, [Text.UTF8Encoding]::new($false))
     $invalidResult = Get-NervPostgresTrxResult -ResultsDirectory $fixtureRoot -ExpectedTestIdentities @($identity) -AllowInvalid
     Assert-Contract (-not $invalidResult.valid -and $invalidResult.skipped -eq 1) 'Failure summaries must retain the actual skipped count.'
