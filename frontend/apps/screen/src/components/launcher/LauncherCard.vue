@@ -13,6 +13,7 @@ defineProps<{
   title: string
   desc: string
   icon: Component
+  emptyLabel?: string
   glance?: ScreenGlance
 }>()
 </script>
@@ -39,6 +40,7 @@ defineProps<{
         <dd :class="s.tone">{{ s.value }}</dd>
       </div>
     </dl>
+    <p v-else-if="emptyLabel" class="lc-desc">{{ emptyLabel }}</p>
     <div v-else class="lc-stats" aria-hidden="true">
       <div v-for="i in 3" :key="i" class="lc-stat"><span class="lc-skl" /></div>
     </div>

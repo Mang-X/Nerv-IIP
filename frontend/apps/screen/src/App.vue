@@ -18,7 +18,7 @@ const sessionKey = computed(() => JSON.stringify([auth?.sessionId, auth?.princip
 </script>
 
 <template>
-  <UnavailableScreen v-if="unavailable" :title="unavailable.title" />
+  <UnavailableScreen v-if="unavailable" :key="sessionKey" :screen="unavailable" />
   <RouterView v-else :key="sessionKey" />
   <Toaster />
 </template>

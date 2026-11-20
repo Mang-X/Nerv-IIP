@@ -131,8 +131,7 @@ async function onSubmit() {
     <!-- 四角 HUD meta -->
     <div class="hud tl">CONTROL PLANE · v0.1</div>
     <div class="hud tr mono">{{ clock }}</div>
-    <div class="hud bl"><i class="live" aria-hidden="true" />系统在线</div>
-    <div class="hud br mono">华东一厂 · EAST-01</div>
+    <div v-if="!IS_REAL_DATA" class="hud bl">演示模式</div>
 
     <!-- 右：登录面板 -->
     <form class="panel" @submit.prevent="onSubmit">

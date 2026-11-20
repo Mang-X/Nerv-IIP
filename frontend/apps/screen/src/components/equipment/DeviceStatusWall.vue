@@ -291,7 +291,7 @@ function pick(d: DeviceCell) {
           </div>
         </template>
 
-        <div class="dsw-tip-hint">点击查看完整档案与实时趋势</div>
+        <div class="dsw-tip-hint">点击查看设备档案</div>
       </div>
     </Teleport>
   </div>

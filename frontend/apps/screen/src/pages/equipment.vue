@@ -12,6 +12,9 @@ import {
 } from '@nerv-iip/ui'
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
+import { IS_REAL_DATA } from '@/data/config'
+import { useNow } from '@vueuse/core'
+import ReadError from '@/components/ReadError.vue'
 import { useAccessScope } from '@/access/useAccessScope'
 import DeviceDetailModal from '@/components/equipment/DeviceDetailModal.vue'
 import { useBackLink } from '@/composables/useBackLink'
@@ -31,10 +34,13 @@ import ScreenLayout from '@/layouts/ScreenLayout.vue'
 // 刷新频率分层（MAN-466 大屏轮询调参，观察 #734 Gateway 限流后再降频）：
 // 全景/计数/流 10s · 格上参数 5s 快刷（仅视野内设备；真实模式无 historian 时为空）·
 // 详情弹窗 3s（弹窗内部）；页面隐藏时 useScreenData 统一暂停轮询、失败保活标 stale。
+const now = useNow({ interval: 1000 })
 const scope = useAccessScope()
 const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
 const {
   data: ov,
+  error,
+  loading,
   refresh,
   isStale,
   lastUpdated,
@@ -44,25 +50,21 @@ const {
 )
 /** 视野内设备集（墙体虚拟滚动上报）——视野外不请求、不产生数据变化。 */
 const visibleIds = ref<string[]>([])
-const {
-  data: paramsTick,
-  isStale: paramsStale,
-  lastUpdated: paramsLastUpdated,
-  start: tickStart,
-  stop: tickStop,
-} = useScreenData<DeviceParamsTick>(
-  () =>
-    fetchDeviceParamsTick(
-      scope.currentFactoryId,
-      scope.persona.workshopIds,
-      visibleIds.value.length ? visibleIds.value : undefined,
-    ),
-  { intervalMs: 5000 },
-)
+const demoParams = IS_REAL_DATA
+  ? undefined
+  : useScreenData<DeviceParamsTick>(
+      () =>
+        fetchDeviceParamsTick(
+          scope.currentFactoryId,
+          scope.persona.workshopIds,
+          visibleIds.value.length ? visibleIds.value : undefined,
+        ),
+      { intervalMs: 5000 },
+    )
 /** 全景设备 + 高频参数合流：视野内参数以 2s tick 为准，视野外保持上帧（冻结）。 */
 const devicesLive = computed<DeviceCell[]>(() => {
   const list = ov.value?.devices ?? []
-  const tick = paramsTick.value
+  const tick = demoParams?.data.value
   if (!tick) return list
   return list.map((d) => (tick[d.id] ? { ...d, params: tick[d.id] } : d))
 })
@@ -76,7 +78,7 @@ watch(
 )
 
 const factoryName = computed(
-  () => scope.factories.find((f) => f.id === scope.currentFactoryId)?.name ?? '全部车间',
+  () => scope.factories.find((f) => f.id === scope.currentFactoryId)?.name ?? '未配置组织',
 )
 
 // —— 墙体排列视图（平铺 / 按车间分组 / 按产线行式）——
@@ -99,11 +101,11 @@ const VIEW_OPTIONS = [
 const selectedId = ref<string | null>(null)
 function openDevice(d: DeviceCell) {
   selectedId.value = d.id
-  tickStop()
+  demoParams?.stop()
 }
 function closeDetail() {
   selectedId.value = null
-  tickStart()
+  demoParams?.start()
 }
 
 // —— 异常与待办：报警(open)/维修(进行中)/PM(到期) 合并事件流，严重度排序。
@@ -185,30 +187,42 @@ const relCells = computed(() => {
   return [
     { label: 'MTBF（小时）', value: r.mtbfHours === null ? '—' : String(r.mtbfHours) },
     { label: 'MTTR（分钟）', value: r.mttrMinutes === null ? '—' : String(r.mttrMinutes) },
-    { label: '故障次数', value: String(r.failures) },
-    { label: '修复次数', value: String(r.repairs) },
+    { label: IS_REAL_DATA ? '报警或停机设备（台）' : '故障次数', value: String(r.failures) },
+    { label: IS_REAL_DATA ? '本页进行中维修单' : '修复次数', value: String(r.repairs) },
   ]
 })
 
-const freshness = computed(() => formatScreenFreshness(isStale.value, lastUpdated.value))
+const freshness = computed(() =>
+  formatScreenFreshness(
+    isStale.value || (!!lastUpdated.value && now.value.getTime() - lastUpdated.value > 30000),
+    lastUpdated.value,
+  ),
+)
 const paramsFreshness = computed(() =>
-  formatScreenFreshness(paramsStale.value, paramsLastUpdated.value),
+  formatScreenFreshness(demoParams?.isStale.value ?? false, demoParams?.lastUpdated.value),
 )
 </script>
 
 <template>
   <ScreenLayout title="Nerv-IIP 设备监控大屏" :line="factoryName" screen="指挥中心大屏 02">
-    <div v-if="ov" class="eq">
+    <div v-if="ov && !error" class="eq">
       <div class="main">
         <!-- 主体：设备状态全景墙（视图焦点，占绝对主导） -->
         <section class="wall-wrap">
           <div class="sec-h">
             <i class="sec-glyph" aria-hidden="true" />
             <span class="sec-t">设备状态全景墙</span>
+            <span v-if="ov.rosterTotal !== undefined && ov.devices.length < ov.rosterTotal"
+              >已覆盖 {{ ov.devices.length }} / {{ ov.rosterTotal }} 台</span
+            >
             <span class="sec-rule" aria-hidden="true" />
             <NvScreenSegmented v-model="viewModel" :options="VIEW_OPTIONS" />
           </div>
+          <p v-if="!devicesLive.length">
+            {{ ov.rosterTotal ? '暂无设备状态' : '当前范围暂无设备' }}
+          </p>
           <DeviceStatusWall
+            v-else
             :devices="devicesLive"
             :counts="ov.counts"
             :view="view"
@@ -227,7 +241,12 @@ const paramsFreshness = computed(() =>
               <NvScreenStatusTag tone="amber" :label="OEE_PLACEHOLDER_BADGE" />
             </template>
             <div class="rel">
-              <NvRingGauge :value="ov.reliability.availability" label="运行设备占比" :size="104" />
+              <NvRingGauge
+                v-if="ov.devices.length"
+                :value="ov.reliability.availability"
+                label="运行设备占比"
+                :size="104"
+              />
               <dl class="rel-grid">
                 <div v-for="c in relCells" :key="c.label">
                   <dt>{{ c.label }}</dt>
@@ -240,7 +259,7 @@ const paramsFreshness = computed(() =>
           <NvScreenPanel title="异常与待办" class="events">
             <template #extra>
               <span class="ev-count" :class="{ calm: events.length === 0 }">
-                {{ events.length === 0 ? '全部正常' : `${events.length} 项` }}
+                {{ events.length === 0 ? '暂无待办' : `${events.length} 项` }}
               </span>
             </template>
             <NvScreenTabs v-model="evTab" :items="evTabs" class="ev-tabs" />
@@ -254,8 +273,8 @@ const paramsFreshness = computed(() =>
                   <span class="ev-tag" :class="{ late: e.late }">{{ e.tag }}</span>
                 </div>
                 <div v-if="events.length === 0" class="ev-empty">
-                  <NvScreenStatusLight tone="run" label="设备运行平稳" />
-                  <p>无未恢复报警 · 无进行中维修 · 无到期保养</p>
+                  <span>{{ ov.partialEvents ? '本页暂无异常与待办' : '暂无异常与待办记录' }}</span>
+                  <p v-if="!ov.partialEvents">无未恢复报警 · 无进行中维修 · 无到期保养</p>
                 </div>
               </template>
 
@@ -342,7 +361,7 @@ const paramsFreshness = computed(() =>
                 </div>
               </template>
             </NvScreenScrollArea>
-            <p class="ev-note">维修历史与参数趋势见设备详情</p>
+            <p class="ev-note">{{ ov.partialEvents ? '仅展示首批记录' : '维修记录见设备详情' }}</p>
           </NvScreenPanel>
         </div>
       </div>
@@ -351,12 +370,20 @@ const paramsFreshness = computed(() =>
         <RouterLink :to="backLink.to" class="scr-back">‹ {{ backLink.label }}</RouterLink>
         <div class="scr-foot-r">
           <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
-          <NvScreenFreshness :tone="paramsFreshness.tone" :label="`参数 ${paramsFreshness.text}`" />
-          <span>参数更新时间与设备接入状态以右上角标识为准</span>
+          <NvScreenFreshness
+            v-if="demoParams"
+            :tone="paramsFreshness.tone"
+            :label="`参数 ${paramsFreshness.text}`"
+          />
+          <span v-else>实时参数暂无来源</span>
         </div>
       </footer>
     </div>
-    <div v-else class="eq-loading">连接数据…</div>
+    <div v-else class="eq-loading">
+      <ReadError v-if="error" :error="error" :loading="loading" @retry="refresh" />
+      <span v-else>正在读取…</span>
+      <RouterLink :to="backLink.to">‹ {{ backLink.label }}</RouterLink>
+    </div>
 
     <DeviceDetailModal
       v-if="selectedId"
