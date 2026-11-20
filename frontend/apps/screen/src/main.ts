@@ -41,6 +41,3 @@ if (IS_REAL_DATA) {
 
 app.use(router)
 app.mount('#app')
-
-// mock 模式：数据全部由 data/mock 提供，无需配置 api-client。
-// 切真实数据：设置 VITE_SCREEN_DATA_MODE=real（fetcher 自动改走 data/real/*）。

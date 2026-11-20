@@ -2,6 +2,7 @@
 import { NvScreenHeader, NvScreenScaler } from '@nerv-iip/ui'
 import { useNow } from '@vueuse/core'
 import { computed } from 'vue'
+import { IS_REAL_DATA } from '@/data/config'
 import { useRoute } from 'vue-router'
 
 // —— 舱底生成算法：种子 = 路由（每页不同、同页刷新稳定，确定性伪随机）——
@@ -177,7 +178,7 @@ const date = computed(() => WEEKDAYS[now.value.getDay()])
         :time="time"
         :date="date"
         :line="line"
-        :screen="screen"
+        :screen="IS_REAL_DATA ? screen : '演示模式 · ' + screen"
       />
       <main class="screen-layout__body">
         <slot />

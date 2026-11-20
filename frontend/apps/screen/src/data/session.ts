@@ -91,7 +91,8 @@ export async function resolveDeviceRoster(
   if (!force && rosterCache && nowMs - rosterCache.at < ROSTER_TTL_MS) {
     return rosterCache.roster
   }
-  const { organizationId, environmentId } = session
+  const requestedSession = session
+  const { organizationId, environmentId } = requestedSession
   const res = await listBusinessConsoleDeviceAssets({
     throwOnError: true,
     query: { organizationId, environmentId, includeDisabled: false, skip: 0, take: 200 },
@@ -110,7 +111,7 @@ export async function resolveDeviceRoster(
     )
   }
   const roster: DeviceRoster = { ids: allIds.slice(0, ROSTER_MAX), byId, total: allIds.length }
-  rosterCache = { at: nowMs, roster }
+  if (session === requestedSession) rosterCache = { at: nowMs, roster }
   return roster
 }
 
