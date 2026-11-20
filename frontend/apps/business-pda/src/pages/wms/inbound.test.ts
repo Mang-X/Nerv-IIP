@@ -590,7 +590,12 @@ describe('WMS 收货入库', () => {
     ])
   })
 
-  it('完成后显示成功 Result，文案为「入库完成，待质检」', async () => {
+  it.each([
+    ['pending', '入库完成，待质检'],
+    ['not-required', '入库完成，免检'],
+    [undefined, '入库完成'],
+  ])('完成后按单据质检状态 %s 显示结果', async (qualityGateStatus, title) => {
+    wmsState.orders[0] = { ...wmsState.orders[0], qualityGateStatus }
     const wrapper = mount(InboundPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
     await flushPromises()
@@ -599,7 +604,8 @@ describe('WMS 收货入库', () => {
     await wrapper.vm.$nextTick()
     const result = wrapper.find('[data-result][data-status="success"]')
     expect(result.exists()).toBe(true)
-    expect(wrapper.text()).toContain('入库完成，待质检')
+    expect(result.text()).toContain(title!)
+    if (qualityGateStatus !== 'pending') expect(result.text()).not.toContain('待质检')
   })
 
   it('错误时显示错误横幅', () => {

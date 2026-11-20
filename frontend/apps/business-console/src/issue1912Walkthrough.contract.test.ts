@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { createWalkthroughEvidence } from '../e2e/issue1912-walkthrough-evidence'
@@ -303,6 +305,27 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     expect(listQueryFingerprint(relativeListPath)).toBe(
       listQueryFingerprint(`https://console.fixture${relativeListPath}`),
     )
+  })
+
+  it('保留取消与失败记录，写出前脱敏模块路径', async () => {
+    const ledger = createWalkthroughEvidence()
+    const cancel = { path: '/src/pages/change-password.vue', failure: 'net::ERR_ABORTED' }
+    ledger.expectedRequestCancellations.push(cancel)
+    ledger.failedRequests.push({ path: '/api/example?token=sensitive-value', status: 500 })
+    const dir = await mkdtemp(join(tmpdir(), 'nerv-1912-ledger-'))
+    try {
+      const file = join(dir, 'evidence.json')
+      await ledger.write(file, {})
+      const evidence = JSON.parse(await readFile(file, 'utf8'))
+      expect(evidence.expectedRequestCancellations).toEqual([
+        { ...cancel, path: '/src/pages/change-<redacted-field>.vue' },
+      ])
+      expect(evidence.failedRequests).toHaveLength(1)
+      expect(evidence.failedRequests[0].status).toBe(500)
+      expect(evidence.failedRequests[0].path).not.toContain('sensitive-value')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 
   it('fails closed when the real stack or evidence destination is not supplied', () => {

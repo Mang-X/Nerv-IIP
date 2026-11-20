@@ -6,6 +6,13 @@ internal sealed class TestWorkOrderCostMutationLock : IWorkOrderCostMutationLock
 {
     public static TestWorkOrderCostMutationLock Instance { get; } = new();
 
+    public Task AcquireReportAsync(
+        string organizationId,
+        string environmentId,
+        string reportNo,
+        CancellationToken cancellationToken)
+        => Task.CompletedTask;
+
     public Task AcquireAsync(
         string organizationId,
         string environmentId,

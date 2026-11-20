@@ -73,7 +73,7 @@ test('收货入库: select order IN-1, confirm in sheet, see success result', as
 
   // Success Result.
   await expect(page.locator('[data-result][data-status="success"]')).toBeVisible()
-  await expect(page.getByText('入库完成，待质检')).toBeVisible()
+  await expect(page.getByText('入库完成，免检')).toBeVisible()
 })
 
 test('盘点: select CN-1, enter counted quantity, confirm, see success result', async ({ page }) => {

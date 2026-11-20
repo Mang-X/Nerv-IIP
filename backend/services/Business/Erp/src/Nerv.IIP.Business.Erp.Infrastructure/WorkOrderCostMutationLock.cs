@@ -11,11 +11,17 @@ namespace Nerv.IIP.Business.Erp.Infrastructure;
 public sealed class PostgreSqlWorkOrderCostMutationLock(ApplicationDbContext dbContext)
     : IWorkOrderCostMutationLock
 {
-    public async Task AcquireAsync(
+    public Task AcquireReportAsync(string organizationId, string environmentId, string reportNo, CancellationToken cancellationToken)
+        => AcquireLockAsync(GetLockKey("work-order-report-cost|", organizationId, environmentId, reportNo), cancellationToken);
+
+    public Task AcquireAsync(
         string organizationId,
         string environmentId,
         string workOrderId,
         CancellationToken cancellationToken)
+        => AcquireLockAsync(GetLockKey(organizationId, environmentId, workOrderId), cancellationToken);
+
+    private async Task AcquireLockAsync(long key, CancellationToken cancellationToken)
     {
         if (!dbContext.Database.IsRelational()) return;
         if (!string.Equals(dbContext.Database.ProviderName, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
@@ -30,17 +36,22 @@ public sealed class PostgreSqlWorkOrderCostMutationLock(ApplicationDbContext dbC
         var parameter = command.CreateParameter();
         parameter.ParameterName = "key";
         parameter.DbType = DbType.Int64;
-        parameter.Value = GetLockKey(organizationId, environmentId, workOrderId);
+        parameter.Value = key;
         command.Parameters.Add(parameter);
         _ = await command.ExecuteScalarAsync(cancellationToken);
     }
 
     internal static long GetLockKey(string organizationId, string environmentId, string workOrderId)
     {
-        var canonicalScope = new StringBuilder("work-order-cost|");
+        return GetLockKey("work-order-cost|", organizationId, environmentId, workOrderId);
+    }
+
+    private static long GetLockKey(string domain, string organizationId, string environmentId, string documentId)
+    {
+        var canonicalScope = new StringBuilder(domain);
         AppendScopePart(canonicalScope, organizationId);
         AppendScopePart(canonicalScope, environmentId);
-        AppendScopePart(canonicalScope, workOrderId);
+        AppendScopePart(canonicalScope, documentId);
         return BinaryPrimitives.ReadInt64BigEndian(SHA256.HashData(Encoding.UTF8.GetBytes(canonicalScope.ToString())));
     }
 

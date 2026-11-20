@@ -114,6 +114,12 @@ const selectedOrderId = computed(() => selectedOrder.value?.inboundOrderId ?? ''
 const selectedOrderNo = computed(() => selectedOrder.value?.inboundOrderNo ?? '')
 const sheetOpen = ref(false)
 const completed = ref(false)
+const completionTitle = computed(() => {
+  const gate = selectedOrder.value?.qualityGateStatus?.toLowerCase()
+  if (gate === RECEIVING_QUALITY_GATE_STATUS.pending) return '入库完成，待质检'
+  if (gate === RECEIVING_QUALITY_GATE_STATUS.notRequired) return '入库完成，免检'
+  return '入库完成'
+})
 
 // 打开某单明细时按单查完整收货行（含免检行）；加载/失败/不完整态显式暴露，未确认前禁止提交。
 const {
@@ -432,7 +438,7 @@ function goPutaway() {
     <NvMobileResult
       v-if="completed"
       status="success"
-      title="入库完成，待质检"
+      :title="completionTitle"
       :description="selectedOrderNo ? `收货单 ${selectedOrderNo}` : undefined"
     >
       <template #actions>
