@@ -437,16 +437,21 @@ internal static class CostVariancePosting
 public sealed class WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(
     ApplicationDbContext dbContext,
     IIntegrationEventDeadLetterStore deadLetterStore,
-    ITransactionUnitOfWork unitOfWork)
+    ITransactionUnitOfWork unitOfWork,
+    IWorkOrderCostMutationLock? mutationLock = null)
     : IIntegrationEventHandler<WorkOrderCompletedIntegrationEvent>, ICapSubscribe
 {
+    private readonly IWorkOrderCostMutationLock costLock = mutationLock ?? new PostgreSqlWorkOrderCostMutationLock(dbContext);
     public const string ConsumerName = "business-erp.work-order-cost-capitalization";
-    public Task HandleAsync(WorkOrderCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken) => HandleValidAsync(integrationEvent, cancellationToken);
+    public Task HandleAsync(WorkOrderCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+        => CostingIntegrationEventUnitOfWork.ExecuteAsync(dbContext, unitOfWork,
+            () => CompleteAsync(integrationEvent, cancellationToken), cancellationToken);
     [CapSubscribe(nameof(WorkOrderCompletedIntegrationEvent), Group = ConsumerName)]
     public Task HandleCapAsync(WorkOrderCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken) => HandleAsync(integrationEvent, cancellationToken);
-    private async Task HandleValidAsync(WorkOrderCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
+    private async Task CompleteAsync(WorkOrderCompletedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         var payload = integrationEvent.Payload;
+        await costLock.AcquireAsync(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, payload.WorkOrderId, cancellationToken);
         var cost = await dbContext.WorkOrderCosts.Include(x => x.Details).SingleOrDefaultAsync(x => x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId && x.WorkOrderId == payload.WorkOrderId, cancellationToken);
         var expectedReportCount = Math.Max(payload.ExpectedCostReportCount, cost?.ReceivedReportCount ?? 0);
         if (expectedReportCount <= 0)
@@ -466,7 +471,6 @@ public sealed class WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(
         }
         cost.AssignSku(payload.SkuCode);
         cost.Complete(payload.GoodQuantity, expectedReportCount, payload.ExpectedMaterialMovementCount, payload.CompletedAtUtc);
-        await CostingIntegrationEventUnitOfWork.SaveEntitiesAsync(dbContext, unitOfWork, cancellationToken);
     }
 }
 

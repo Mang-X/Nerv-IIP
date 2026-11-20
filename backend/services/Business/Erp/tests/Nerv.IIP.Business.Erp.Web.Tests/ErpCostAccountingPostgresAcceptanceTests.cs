@@ -1361,6 +1361,49 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
     }
 
     [ErpCostPostgresFact(Timeout = 30_000)]
+    public async Task PostgreSQL_completion_during_final_material_posting_publishes_capitalization()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var application = $"erp-completion-material-{Guid.CreateVersion7():N}";
+        var connection = new NpgsqlConnectionStringBuilder(ErpPostgresLaneDatabase.ConnectionString)
+            { ApplicationName = application }.ConnectionString;
+        var options = ErpPostgresLaneDatabase.CreateOptions(connection);
+        await using var materialDb = new ApplicationDbContext(options, new NoopMediator());
+        await materialDb.Database.MigrateAsync();
+        var at = new DateTimeOffset(2026, 8, 1, 10, 0, 0, TimeSpan.Zero);
+        var cost = WorkOrderCost.Open("org-001", "env-dev", "WO-001", "FG-001");
+        cost.RecordUncostedReport("RPT-001", false, at);
+        materialDb.WorkOrderCosts.Add(cost);
+        await materialDb.SaveChangesAsync();
+
+        await using var transaction = await materialDb.Database.BeginTransactionAsync();
+        await new PostgreSqlWorkOrderCostMutationLock(materialDb).AcquireAsync(
+            "org-001", "env-dev", "WO-001", CancellationToken.None);
+        // 最后一笔材料持有工单锁，已读取尚未完工的聚合，此时投递完工消息。
+        cost.RecordMaterial("MOVE-001", "RPT-001", "RM-001", 3m, 20m, at);
+        var completed = new WorkOrderCompletedIntegrationEvent(
+            "evt-completed", MesIntegrationEventTypes.WorkOrderCompleted, 1, at,
+            MesIntegrationEventSources.BusinessMes, "WO-001", "WO-001", "org-001", "env-dev", "mes", "completed",
+            new WorkOrderCompletedPayload("WO-001", "FG-001", 1m, 1m, 0m, at, 1, 1));
+        await using var completionDb = new ApplicationDbContext(options, new NoopMediator());
+        var handler = new WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(
+            completionDb, new InMemoryIntegrationEventDeadLetterStore(), completionDb);
+        var completion = handler.HandleAsync(completed, CancellationToken.None);
+        await WaitForAdvisoryLockWaitersAsync(connection, application, expectedCount: 1, completedWrite: completion);
+        await materialDb.SaveChangesAsync();
+        await transaction.CommitAsync();
+        await completion;
+        await handler.HandleAsync(completed, CancellationToken.None);
+
+        await using var readDb = new ApplicationDbContext(options, new NoopMediator());
+        var stored = await readDb.WorkOrderCosts.SingleAsync();
+        Assert.NotNull(stored.CompletedAtUtc);
+        Assert.Equal(1, stored.ReceivedReportCount);
+        Assert.Equal(1, stored.ReceivedMaterialMovementCount);
+        Assert.True(stored.CapitalizationPublished);
+    }
+
+    [ErpCostPostgresFact(Timeout = 30_000)]
     public async Task PostgreSQL_material_posting_during_uncommitted_report_is_costed_once()
     {
         await ErpPostgresLaneDatabase.ResetSchemaAsync();
