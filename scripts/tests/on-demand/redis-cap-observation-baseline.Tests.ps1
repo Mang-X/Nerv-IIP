@@ -14,7 +14,7 @@
 # 每格只破坏一个位点，并断言脚本抛错而不是返回读数。
 
 $ErrorActionPreference = 'Stop'
-$script:measureScript = (Resolve-Path (Join-Path $PSScriptRoot '../measure-redis-cap-observation-baseline.ps1')).Path
+$script:measureScript = (Resolve-Path (Join-Path $PSScriptRoot '../../measure-redis-cap-observation-baseline.ps1')).Path
 
 function Assert-Baseline([bool]$Condition, [string]$Message) {
     if (-not $Condition) { throw $Message }
@@ -223,7 +223,7 @@ try {
     [void](Invoke-BaselineExpectingFailure -Cell 'missing-manifest' -ManifestPath $absentManifest -Root $root -ExpectedCause 'sample manifest')
 
     # 仓库登记的样本 manifest 必须真的两侧都有样本，且只取自然 run。
-    $committed = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../redis-cap-observation-baseline-samples.json') -Raw | ConvertFrom-Json
+    $committed = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../../redis-cap-observation-baseline-samples.json') -Raw | ConvertFrom-Json
     $committedSamples = @($committed.samples)
     Assert-Baseline ($committedSamples.Count -gt 0) 'The committed sample manifest must declare samples.'
     Assert-Baseline (@($committedSamples | Where-Object { [string]::Equals([string]$_.laneOutcome, 'failure', [StringComparison]::Ordinal) }).Count -gt 0) 'The committed sample manifest must keep red samples.'
