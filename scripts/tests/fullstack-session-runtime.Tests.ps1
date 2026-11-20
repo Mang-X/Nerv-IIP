@@ -553,6 +553,7 @@ Assert-True (
         [StringComparison]::Ordinal
     )
 ) 'Issue #1912 must pass the generated WMS worker password to the Playwright child environment.'
+Assert-True ($script:issue1912BrowserEnvironment.NERV_IIP_FULLSTACK_STATE_ROOT -ceq (Get-NervFullStackStateRoot)) 'Issue #1912 must provide the resolved state root to its nested procurement scenario.'
 $script:issue1912BrowserEnvironment = $null
 
 $script:issue1912MissingWorkerBrowserInvoked = $false

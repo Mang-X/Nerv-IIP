@@ -546,7 +546,6 @@ function Assert-NervIssue1912WalkthroughEvidence {
         supplierQuotationNo = 'SQ-WALK-001'
         salesQuotationNo = 'QUO-WALK-001'
         purchaseOrderNo = 'PO-WALK-001'
-        purchaseReceiptNo = 'PR-WALK-001'
         salesOrderNo = 'SO-WALK-001'
         deliveryOrderNo = 'DO-WALK-001'
     }
@@ -596,6 +595,14 @@ function Assert-NervIssue1912WalkthroughEvidence {
         }
     }
 
+    $receipt = $entries | Where-Object node -CEQ 'purchase-order-receipt'
+    $inbound = $entries | Where-Object node -CEQ 'receipt-inbound-inventory'
+    $receiptNo = [string]$receipt.responseOrLog.receipt.data.purchaseReceiptNo
+    if ([string]::IsNullOrWhiteSpace($receiptNo) -or
+        $evidence.purchaseReceiptNo -cne $receiptNo -or
+        $receipt.downstreamObject -cne $receiptNo -or $inbound.sourceObject -cne $receiptNo) {
+        throw 'Issue #1912 must trace the purchase receipt number returned by ERP into the warehouse evidence.'
+    }
     $uiProofs = @($evidence.uiEvidence)
     $uiProofNodeSet = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($proof in $uiProofs) {
@@ -729,6 +736,7 @@ function Invoke-NervIssue1912WalkthroughScenario {
         NERV_IIP_PLAYWRIGHT_BASE_URL = Get-NervFullStackEndpointValue -Manifest $Manifest -ResourceName 'business-console'
         NERV_IIP_FULLSTACK_ADMIN_PASSWORD = $SessionAdminPassword
         NERV_IIP_FULLSTACK_WMS_WORKER_PASSWORD = $SessionWorkerPassword
+        NERV_IIP_FULLSTACK_STATE_ROOT = Get-NervFullStackStateRoot
         NERV_IIP_ISSUE_1912_RUNTIME_PROFILE_SOURCE = 'session-manifest'
         NERV_IIP_ISSUE_1912_TRANSPORT = 'redis-cross-process'
         NERV_IIP_ISSUE_1912_PERSISTENCE = 'postgresql'
