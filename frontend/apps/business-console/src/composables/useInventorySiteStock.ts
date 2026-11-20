@@ -198,11 +198,12 @@ export function useInventorySiteStockOverview(siteCode: () => string) {
     scanning.value = true
     try {
       const settled = await mapWithConcurrency(slice, SCAN_CONCURRENCY, async (option) => {
+        if (token !== scanToken.value) return null
         try {
           return await scanOne(option)
         } catch (error) {
           // 单个物料查失败不该让整张表塌掉，记数后继续。
-          scanError.value ??= error
+          if (token === scanToken.value) scanError.value ??= error
           return null
         }
       })
