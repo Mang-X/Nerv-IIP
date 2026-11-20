@@ -1,3 +1,5 @@
+import { useAuthStore } from '@/stores/auth'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
@@ -120,6 +122,7 @@ describe('business master data composables', () => {
       },
     })
 
+    useAuthStore().principal = { permissionCodes: [P.masterDataProductsRead] }
     const { filters, skus, skusTotal } = useBusinessSkus()
 
     expect(filters).toMatchObject({
@@ -141,6 +144,20 @@ describe('business master data composables', () => {
         displayName: 'Widget',
       },
     ])
+  })
+
+  it('withholds the SKU list and cached rows from roles without product read', async () => {
+    coladaState.queryDataById.set('listBusinessConsoleSkus', {
+      success: true,
+      data: { total: 1, resources: [{ code: 'SKU-001' }] },
+    })
+    useAuthStore().principal = { permissionCodes: [P.masterDataResourcesRead] }
+    const { skus, refreshSkus } = useBusinessSkus()
+    expect(coladaState.queryFactoriesById.get('listBusinessConsoleSkus')?.()).toMatchObject({
+      enabled: false,
+    })
+    expect(skus.value).toEqual([])
+    await expect(refreshSkus()).resolves.toBeUndefined()
   })
 
   it('defaults SKU resources to an empty array for unsuccessful envelopes', () => {
