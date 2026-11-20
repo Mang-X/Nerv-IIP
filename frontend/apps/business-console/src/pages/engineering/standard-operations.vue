@@ -131,7 +131,7 @@ const columns: NvDataTableColumn<BusinessConsoleStandardOperationItem>[] = [
 ]
 
 // 控制键说人话。后端 `StandardOperation.ControlKey` 是自由字符串（无枚举、无 CodeSet），
-// 世界史种子与路线默认值都写 `standard`；不收词就把英文码印到「控制」列上。
+// 工艺路线默认使用 `standard`，控制列显示对应中文。
 const CONTROL_KEY_LABELS: Record<string, string> = {
   standard: '标准工序',
   inhouse: '自制工序',

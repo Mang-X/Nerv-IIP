@@ -114,7 +114,7 @@ describe('NERV-1851 MBOM 与 Inventory 事实基线', () => {
     expect(fact.missingSupplyFacts).toEqual(movementSummary.missingFacts)
   })
 
-  it('用工厂世界观的独立物料集合锁住本次基线范围', () => {
+  it('用走查成品的物料清单锁住本次基线范围', () => {
     expect(NERV1851_BASELINE.organizationId).toBe('org-001')
     expect(NERV1851_BASELINE.environmentId).toBe('env-dev')
     expect(NERV1851_BASELINE.finishedSkuCode).toBe('FG-QJ-P1-L')

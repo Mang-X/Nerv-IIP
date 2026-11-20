@@ -7,7 +7,7 @@ export const NERV1851_BASELINE = {
   revision: '2',
   siteCode: 'SITE-001',
   productionQuantity: 1,
-  // 独立于本次 HTTP 响应的工厂世界观物料集合（factory-world-bible §3/§4）。
+  // FG-QJ-P1-L 修订 2 的走查物料清单，用于独立核对 HTTP 响应。
   expectedMaterialSkuCodes: [
     'SF-ROD-01',
     'SF-TUB-01',

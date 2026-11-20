@@ -25,14 +25,14 @@ export async function runWarehouseSupply(
   },
 ) {
   const { browser, scenario, evidencePath, issue } = options
-  expect(process.env.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD).toBeTruthy()
+  expect(process.env.NERV_IIP_FULLSTACK_WMS_WORKER_PASSWORD).toBeTruthy()
   const workerContext = await browser.newContext({
     baseURL: process.env.NERV_IIP_PLAYWRIGHT_BASE_URL,
   })
   const worker = await workerContext.newPage()
   await worker.goto('/login')
   await worker.getByLabel('登录名').fill('emp049')
-  await worker.getByLabel('密码').fill(process.env.NERV_IIP_LEADER_DEMO_WORKER_PASSWORD!)
+  await worker.getByLabel('密码').fill(process.env.NERV_IIP_FULLSTACK_WMS_WORKER_PASSWORD!)
   const loginPromise = worker.waitForResponse(
     (response) => new URL(response.url()).pathname === '/api/console/v1/auth/login',
   )

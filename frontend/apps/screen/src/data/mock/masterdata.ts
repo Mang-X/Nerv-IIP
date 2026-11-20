@@ -1,12 +1,4 @@
-// 工厂→车间→产线→工作中心→设备 映射字典（mock）。
-// 真实平台无 workshop/line 聚合维度，最细到 WorkCenter/Device；此处提供前端聚合所需映射真相源。
-// 见 spec §1.1「数据现实」。
-//
-// ⚠️ 本文件是《工厂设定与人工走查最小数据》（docs/reference/demo/factory-world-bible.md）
-// L0 主数据在大屏侧的镜像：编码与中文名**逐字**取自后端权威种子
-// `backend/services/Business/MasterData/.../Application/Seed/WorldBibleSpec.cs`
-// （SITE-001 一号工厂 / 3 车间 / 14 产线 / 17 工作中心 / 46 台设备）。
-// 领导会在 PC 控制台与大屏之间来回看，两边必须是同一家工厂 —— 改这里前先改设定集。
+// 大屏 mock 的工厂、车间、产线、工作中心和设备目录。
 
 import type {
   DeviceCategory,
@@ -17,7 +9,7 @@ import type {
   WorkshopRef,
 } from '@/data/contracts/masterdata'
 
-// 设定集 §1：宁沪减振科技只有一个基地 SITE-001「一号工厂」——
+// 宁沪减振科技只有一个基地 SITE-001「一号工厂」——
 // 门厅的工厂切换器在只有一个工厂时自动隐藏（index.vue `factories.length > 1`）。
 export const FACTORIES: FactoryRef[] = [{ id: 'SITE-001', name: '宁沪减振 · 一号工厂' }]
 
@@ -51,8 +43,8 @@ export const WORKSHOPS: WorkshopRef[] = [
   },
 ]
 
-// 设定集 §2：机加 5 + 装配 6 + 表面与包装 3 = 14 条产线。
-// ⚠️ 顺序即 L0 声明序，工单号推导（line/quality 两处 woOf 同式）依赖下标 ——
+// 机加 5 + 装配 6 + 表面与包装 3 = 14 条产线。
+// ⚠️ 目录顺序固定，工单号推导（line/quality 两处 woOf 同式）依赖下标 ——
 // 新增产线一律追加尾部，中间插入会让跨屏工单号整体漂移。
 export const LINES: LineRef[] = [
   { id: 'LINE-WB-ROD-01', code: 'LINE-WB-ROD-01', name: '活塞杆一线', workshopId: 'WS-01' },
@@ -71,8 +63,8 @@ export const LINES: LineRef[] = [
   { id: 'LINE-WB-PK-01', code: 'LINE-WB-PK-01', name: '包装线', workshopId: 'WS-03' },
 ]
 
-// 设定集 §2：14 个产线工作中心 + 3 个车间级辅助动力工作中心（承载空压机/冷干机）。
-// 辅助工作中心的产线归属取该车间末道线 —— 与 L0 逐字一致（平台没有「公用工程」层）。
+// 14 个产线工作中心 + 3 个车间级辅助动力工作中心（承载空压机/冷干机）。
+// 辅助工作中心的产线归属取该车间末道线。
 const WORK_CENTER_DEFS: { code: string; name: string; lineId: string }[] = [
   { code: 'WC-ROD-01', name: '活塞杆加工中心一线', lineId: 'LINE-WB-ROD-01' },
   { code: 'WC-ROD-02', name: '活塞杆加工中心二线', lineId: 'LINE-WB-ROD-02' },
@@ -103,7 +95,7 @@ export const WORK_CENTERS: WorkCenterRef[] = WORK_CENTER_DEFS.map((wc) => ({
   workshopId: workshopOfLine.get(wc.lineId)!,
 }))
 
-// 设定集 §3 设备台账（46 台）：编码段 / 型号 / 工作中心归属与 L0 逐字一致。
+// 设备台账（46 台）。
 // CNC 10 + 磨床 4 + 装配台 12 + 焊接机器人 3 + 电泳 3 + 试验台 4 + 包装 2 + 辅助 8 = 46。
 const DEVICE_DEFS: { code: string; name: string; category: DeviceCategory; wc: string }[] = [
   { code: 'DEV-CNC-01', name: '数控车床 CK6150', category: 'cnc', wc: 'WC-ROD-01' },
