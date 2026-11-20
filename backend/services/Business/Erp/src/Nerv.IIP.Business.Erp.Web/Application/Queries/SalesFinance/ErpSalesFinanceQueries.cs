@@ -258,6 +258,7 @@ public sealed class ListDeliveryOrdersQueryHandler(ApplicationDbContext dbContex
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderByDescending(x => x.ReleasedAtUtc)
+            .ThenBy(x => x.DeliveryOrderNo)
             .Skip(page.Skip)
             .Take(page.Take)
             .Select(x => new DeliveryOrderListItem(
@@ -497,6 +498,7 @@ public sealed class ListAccountReceivablesQueryHandler(ApplicationDbContext dbCo
         var asOfDate = request.AsOfDate ?? DateOnly.FromDateTime(DateTime.UtcNow);
         var rows = await query
             .OrderByDescending(x => x.CreatedAtUtc)
+            .ThenBy(x => x.ReceivableNo)
             .Skip(page.Skip)
             .Take(page.Take)
             .ToArrayAsync(cancellationToken);

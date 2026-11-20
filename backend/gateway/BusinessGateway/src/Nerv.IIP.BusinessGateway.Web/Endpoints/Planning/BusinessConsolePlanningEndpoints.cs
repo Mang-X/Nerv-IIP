@@ -340,7 +340,7 @@ public sealed class GetBusinessConsolePlanningMrpPeggingEndpoint(
         BusinessConsoleMrpPeggingRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        planning.ListMrpPeggingAsync(tokenProvider.BearerToken, Route<string>("runId") ?? request.RunId, cancellationToken);
+        planning.ListMrpPeggingAsync(tokenProvider.BearerToken, Route<string>("runId") ?? request.RunId, request.OrganizationId, request.EnvironmentId, cancellationToken);
 }
 
 [Tags("Business Console Planning")]

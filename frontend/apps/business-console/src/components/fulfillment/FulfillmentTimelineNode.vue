@@ -59,13 +59,13 @@ const detailStatusLabel = computed(
 
     <!-- 尚未产生 -->
     <template v-else-if="node.status === 'pending'">
-      <p class="nv-ft-node-muted">尚未产生</p>
+      <p class="nv-ft-node-muted">当前未查到</p>
       <p v-if="node.ruleNote" class="nv-ft-node-rule">{{ node.ruleNote }}</p>
     </template>
 
     <!-- 尚未建立关联 -->
     <template v-else-if="node.status === 'unlinked'">
-      <p class="nv-ft-node-muted">尚未建立关联</p>
+      <p class="nv-ft-node-muted">{{ node.links?.length ? '按来源核对' : '尚未建立关联' }}</p>
       <p v-if="node.ruleNote" class="nv-ft-node-rule">{{ node.ruleNote }}</p>
     </template>
 
@@ -83,11 +83,20 @@ const detailStatusLabel = computed(
         <AlertTriangleIcon class="size-3.5" aria-hidden="true" />
         {{ failureText }}
       </p>
-      <NvButton size="sm" variant="outline" type="button" @click="emit('retry')">
-        <RefreshCwIcon aria-hidden="true" />
-        重试
-      </NvButton>
     </template>
+    <NvButton
+      v-if="node.status === 'failed' || node.retryable"
+      size="sm"
+      variant="outline"
+      type="button"
+      @click="emit('retry')"
+    >
+      <RefreshCwIcon aria-hidden="true" />
+      重试
+    </NvButton>
+    <RouterLink v-for="link in node.links" :key="link.label" :to="link.to" class="nv-ft-drill">{{
+      link.label
+    }}</RouterLink>
   </div>
 </template>
 

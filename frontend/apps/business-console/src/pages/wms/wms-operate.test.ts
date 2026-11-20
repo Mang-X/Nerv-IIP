@@ -98,6 +98,7 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 }))
 
 vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: {} }),
   onBeforeRouteLeave: vi.fn((guard: () => boolean) => {
     routeGuardState.guard = guard
   }),

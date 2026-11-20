@@ -7685,6 +7685,7 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", planning.LastInternalToken);
+        Assert.Equal(("org-001", "env-dev"), planning.PeggingScope);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var item = document.RootElement.GetProperty("data").GetProperty("items")[0];
         Assert.Equal("sales", item.GetProperty("sourceType").GetString());
@@ -20014,11 +20015,16 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
         ]));
     }
 
+    public (string OrganizationId, string EnvironmentId) PeggingScope { get; private set; }
+
     public Task<BusinessConsoleMrpPeggingListResponse> ListMrpPeggingAsync(
         string internalBearerToken,
         string runId,
+        string organizationId,
+        string environmentId,
         CancellationToken cancellationToken)
     {
+        PeggingScope = (organizationId, environmentId);
         LastInternalToken = internalBearerToken;
         return Task.FromResult(PeggingResponse);
     }

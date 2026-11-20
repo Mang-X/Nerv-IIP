@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useRoute } from 'vue-router'
+import { queryText } from '@/components/erp/costRecovery'
 import type { BusinessConsoleWmsOutboundOrderItem } from '@nerv-iip/api-client'
 import { BusinessOperationPendingError } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
@@ -97,6 +99,14 @@ const {
   pending: workScopePending,
   refresh: refreshWorkScopes,
 } = bindWmsWorkScopeFilters(filters, 'shipments')
+const route = useRoute()
+watch(
+  () => route.query.keyword,
+  () => {
+    filters.keyword = queryText(route.query, 'keyword') || undefined
+  },
+  { immediate: true },
+)
 const operationalCandidates = useWmsOperationalCandidates('shipment', filters)
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [
@@ -488,7 +498,7 @@ function refreshAll() {
         <NvInput
           v-model="filters.keyword"
           class="w-56"
-          placeholder="搜索出库单号、来源单据或物料"
+          placeholder="搜索出库单号"
           aria-label="关键字搜索"
         />
         <NvSearchSelect

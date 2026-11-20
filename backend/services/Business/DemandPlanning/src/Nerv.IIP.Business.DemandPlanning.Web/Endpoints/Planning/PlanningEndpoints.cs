@@ -139,7 +139,7 @@ public sealed record RunMrpResponse(MrpRunId RunId, MrpRunStatus Status);
 
 public sealed record ListMrpRunsRequest(string OrganizationId, string EnvironmentId);
 
-public sealed record ListMrpPeggingRequest(MrpRunId RunId);
+public sealed record ListMrpPeggingRequest(MrpRunId RunId, string OrganizationId, string EnvironmentId);
 
 public sealed record ListPlanningSuggestionsRequest(string OrganizationId, string EnvironmentId, string? Status);
 
@@ -428,7 +428,7 @@ public sealed class ListMrpPeggingEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListMrpPeggingRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListMrpPeggingQuery(req.RunId), ct);
+        var response = await sender.Send(new ListMrpPeggingQuery(req.RunId, req.OrganizationId, req.EnvironmentId), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }

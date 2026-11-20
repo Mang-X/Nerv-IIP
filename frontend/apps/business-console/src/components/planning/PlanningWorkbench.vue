@@ -83,11 +83,16 @@ import {
   RefreshCwIcon,
   XIcon,
 } from '@lucide/vue'
-import { computed, shallowRef, watch } from 'vue'
+import { computed, shallowRef, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { BUSINESS_PERMISSION_CODES } from '@/permissions'
 
+const route = useRoute()
+const sourceOrder = computed(() =>
+  typeof route.query.demandSource === 'string' ? route.query.demandSource.trim() : '',
+)
+const downstreamPage = shallowRef<readonly BusinessConsolePlanningSuggestionItem[]>([])
 const {
   acceptSuggestion,
   activeMrpRun,
@@ -137,9 +142,11 @@ const {
   suggestionsError,
   suggestionsPending,
   downstreamStatuses,
-} = useBusinessPlanning()
+} = useBusinessPlanning(
+  () => sourceOrder.value,
+  () => downstreamPage.value,
+)
 const router = useRouter()
-const route = useRoute()
 const auth = useAuthStore()
 const canReadWorkOrders = computed(() =>
   (auth.principal?.permissionCodes ?? []).includes(BUSINESS_PERMISSION_CODES.mesWorkOrdersRead),
@@ -163,7 +170,7 @@ function refreshUrgency() {
 
 /**
  * 需求池筛选（GH#1292 第 5 项）：一屏几百条需求此前没有任何查找手段，计划员要找某张销售订单
- * 或某个物料只能肉眼扫。需求池读面是**整表返回、不带关键字/分页参数**，所以筛选在前端做。
+ * 或某个物料只能肉眼扫。普通入口当前在已载入的需求中筛选。
  */
 const demandKeyword = shallowRef('')
 const demandTypeFilter = shallowRef('all')
@@ -179,6 +186,11 @@ const filteredDemands = computed(() => {
   const keyword = demandKeyword.value.trim().toLowerCase()
   const type = demandTypeFilter.value
   return orderedDemands.value.filter((demand) => {
+    if (
+      sourceOrder.value &&
+      (demand.sourceReference !== sourceOrder.value || demand.demandType !== 'sales-order')
+    )
+      return false
     if (type !== 'all' && demand.demandType !== type) return false
     if (!keyword) return true
     // 搜来源单号 / 物料 / 客户 / 工厂：计划员手里通常就是这四个之一。
@@ -440,7 +452,14 @@ const sourceRunId = computed(() =>
 watch(
   [sourceSuggestionId, sourceRunId],
   ([suggestionId, runId]) => {
-    if (!suggestionId && !runId) return
+    if (!suggestionId && !runId) {
+      suggestionFilters.status = 'all'
+      suggestionTypeFilter.type = 'all'
+      activeTab.value = 'demands'
+      focusedSuggestionId.value = ''
+      manualSuggestionRunId.value = 'latest'
+      return
+    }
     suggestionFilters.status = 'all'
     suggestionTypeFilter.type = 'all'
     focusedSuggestionId.value = ''
@@ -452,13 +471,23 @@ watch(
 watch(
   [sourceSuggestionId, sourceRunId, suggestions, mrpRuns],
   ([suggestionId, runId]) => {
-    if (!suggestionId || focusedSuggestionId.value === suggestionId) return
+    if (!suggestionId) return
     const source = suggestions.value.find((row) => row.suggestionId === suggestionId)
     if (!source?.runId || (runId && source.runId !== runId)) return
     if (!mrpRuns.value.some((run) => run.runId === source.runId)) return
     locatePlanningSuggestion(suggestionId, source.runId)
   },
   { immediate: true },
+)
+const sourceUnresolved = computed(() =>
+  Boolean(
+    (sourceSuggestionId.value &&
+      !suggestions.value.some(
+        (row) =>
+          row.suggestionId === sourceSuggestionId.value && row.runId === suggestionRun.value?.runId,
+      )) ||
+    (sourceRunId.value && sourceRunId.value !== suggestionRun.value?.runId),
+  ),
 )
 function focusSuggestion(row: BusinessConsoleMrpPeggingItem) {
   if (!row.suggestionId) return
@@ -569,6 +598,19 @@ const visibleSuggestions = computed(() => {
   // 表格默认分页；将定位行放到首屏，不改变其它建议的相对次序。
   const focused = rows.find((row) => row.suggestionId === focusedSuggestionId.value)
   return focused ? [focused, ...rows.filter((row) => row !== focused)] : rows
+})
+const suggestionPage = shallowRef(1)
+const suggestionPageSize = shallowRef(10)
+watch([visibleSuggestions, suggestionPageSize], () => {
+  suggestionPage.value = 1
+})
+const suggestionPageRows = computed(() => {
+  const start = (suggestionPage.value - 1) * suggestionPageSize.value
+  return visibleSuggestions.value.slice(start, start + suggestionPageSize.value)
+})
+watchEffect(() => {
+  downstreamPage.value =
+    activeTab.value === 'suggestions' && !sourceUnresolved.value ? suggestionPageRows.value : []
 })
 const suggestionTypeFilterOptions = [
   { label: '全部类型', value: 'all' },
@@ -898,6 +940,9 @@ function downstreamStatus(status?: string): { label: string; tone: StatusTone } 
     cancelled: '已取消',
     open: '待处理',
     converted: '已转采购单',
+    loading: '正在核对作业范围',
+    restricted: '无权查看下游状态',
+    partial: '前 400 条候选未定位到回执',
     unavailable: '状态读取失败',
     unknown: '状态未知',
   }
@@ -1419,7 +1464,11 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       <!-- 筛选生效时页签显「筛出数/总数」，别让人以为需求池整个缩水了。 -->
       <NvTabsTrigger value="demands"
         >需求池 ({{
-          demandFilterActive ? `${filteredDemands.length}/${demands.length}` : demands.length
+          sourceOrder
+            ? filteredDemands.length
+            : demandFilterActive
+              ? `${filteredDemands.length}/${demands.length}`
+              : demands.length
         }})</NvTabsTrigger
       >
       <NvTabsTrigger value="forecasts">预测管理</NvTabsTrigger>
@@ -1439,6 +1488,10 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
     </NvTabsContent>
 
     <NvTabsContent value="demands" class="grid gap-3">
+      <p v-if="sourceOrder" class="text-sm text-muted-foreground">
+        来源销售订单 {{ sourceOrder }} · 核对前 200 条搜索结果
+        <RouterLink to="/planning">查看普通需求池</RouterLink>
+      </p>
       <NvToolbar
         v-model:search="demandKeyword"
         search-placeholder="搜来源单号 / 物料 / 客户 / 工厂"
@@ -1474,9 +1527,11 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         :searchable="false"
         :column-settings="false"
         :empty-message="
-          demandFilterActive
-            ? '没有符合当前筛选条件的需求，换个关键字或类型试试。'
-            : '当前范围没有计划需求。'
+          sourceOrder
+            ? '当前搜索范围内未找到符合条件的销售需求。'
+            : demandFilterActive
+              ? '没有符合当前筛选条件的需求，换个关键字或类型试试。'
+              : '当前范围没有计划需求。'
         "
       >
         <template #cell-sourceReference="{ row }">
@@ -1822,7 +1877,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
     </NvTabsContent>
 
     <NvTabsContent value="suggestions" class="grid gap-3">
-      <div class="flex flex-wrap items-center gap-2">
+      <div v-if="!sourceUnresolved" class="flex flex-wrap items-center gap-2">
         <NvSelect v-model="suggestionRunChoice">
           <NvSelectTrigger class="h-9 w-72" aria-label="建议运行"
             ><NvSelectValue placeholder="选择运行"
@@ -1866,10 +1921,26 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
           </NvSelect>
         </div>
       </div>
+      <div v-if="sourceUnresolved" role="status" class="text-sm text-muted-foreground">
+        {{
+          suggestionsError || mrpRunsError
+            ? '来源读取失败，请刷新后重试。'
+            : suggestionsPending || mrpRunsPending
+              ? '正在定位来源建议…'
+              : '当前可读范围内未定位到来源建议或运行。'
+        }}
+        <RouterLink to="/planning">返回需求池</RouterLink>
+      </div>
       <NvDataTable
+        v-else
         :key="focusedSuggestionId"
         :columns="suggestionColumns"
-        :rows="visibleSuggestions"
+        :rows="suggestionPageRows"
+        manual
+        v-model:page="suggestionPage"
+        :page-size="suggestionPageSize"
+        @update:page-size="suggestionPageSize = Number($event)"
+        :total-items="visibleSuggestions.length"
         :row-class="
           (row: BusinessConsolePlanningSuggestionItem) =>
             row.suggestionId === focusedSuggestionId ? 'bg-primary/10' : ''

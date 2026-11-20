@@ -162,9 +162,26 @@ vi.mock('@pinia/colada', () => ({
   })),
 }))
 
+vi.mock('./useBusinessMes', () => ({
+  useMesPrincipalWorkScope: () => ({
+    selectedScope: shallowRef({ kind: 'team', id: 'team-1' }),
+    scopePending: shallowRef(false),
+    scopeError: shallowRef(null),
+  }),
+}))
+
 describe('business planning composable', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    useAuthStore().principal = {
+      permissionCodes: [
+        'business.planning.demands.read',
+        'business.planning.mrp.read',
+        'business.planning.mps.read',
+        'business.erp.procurement.read',
+        'business.mes.work-orders.read',
+      ],
+    }
     useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
     vi.clearAllMocks()
     coladaState.invalidateQueries.mockClear()
@@ -207,6 +224,7 @@ describe('business planning composable', () => {
     expect(getBusinessConsoleMesWorkOrderDetail).toHaveBeenCalledWith(
       expect.objectContaining({
         path: { workOrderId: 'WO-1' },
+        query: expect.objectContaining({ scopeKind: 'team', scopeId: 'team-1' }),
       }),
     )
     expect(listBusinessConsoleErpPurchaseRequisitions).toHaveBeenCalledWith(

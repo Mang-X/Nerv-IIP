@@ -1,3 +1,5 @@
+import { useMesPrincipalWorkScope } from './useBusinessMes'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import {
   acceptBusinessConsolePlanningSuggestionMutationOptions,
   cancelBusinessConsolePlanningDemandMutationOptions,
@@ -31,11 +33,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, getCurrentScope, onScopeDispose, reactive } from 'vue'
-import {
-  bindBusinessContext,
-  hasBusinessContext,
-  withBusinessContextEnabled,
-} from './businessContextBinding'
+import { bindBusinessContext, hasBusinessContext } from './businessContextBinding'
 import { assertEnvelopeSuccess } from './serviceEnvelope'
 
 export interface PlanningContextFilters {
@@ -243,8 +241,13 @@ function isBusinessQuery(ids: string[]) {
 
 function ignoreBackgroundError(_error: unknown) {}
 
-export function useBusinessPlanning() {
+export function useBusinessPlanning(
+  sourceOrder: () => string = () => '',
+  downstreamPage?: () => readonly BusinessConsolePlanningSuggestionItem[],
+) {
   const auth = useAuthStore()
+  const canRead = (permission: string) =>
+    auth.principal?.permissionCodes?.includes(permission) === true
   const businessContext = useBusinessContextStore()
   const filters = defaultContextFilters(
     businessContext.organizationId,
@@ -272,42 +275,37 @@ export function useBusinessPlanning() {
   const suggestionTypeFilter = reactive<PlanningSuggestionTypeFilter>({ type: '' })
   const queryCache = useQueryCache()
 
-  const demandsQuery = useQuery(() =>
-    withBusinessContextEnabled(
-      listBusinessConsolePlanningDemandsQueryOptions({
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-        },
-      }),
-      filters,
-    ),
-  )
-  const runsQuery = useQuery(() =>
-    withBusinessContextEnabled(
-      listBusinessConsolePlanningMrpRunsQueryOptions({
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-        },
-      }),
-      filters,
-    ),
-  )
-  const mpsBucketsQuery = useQuery(() =>
-    withBusinessContextEnabled(
-      listBusinessConsolePlanningMpsBucketsQueryOptions({
-        query: {
-          organizationId: mpsFilters.organizationId,
-          environmentId: mpsFilters.environmentId,
-          skuCode: mpsFilters.skuCode?.trim() || undefined,
-          siteCode: mpsFilters.siteCode?.trim() || undefined,
-          status: mpsFilters.status?.trim() || undefined,
-        },
-      }),
-      mpsFilters,
-    ),
-  )
+  const demandsQuery = useQuery(() => ({
+    ...listBusinessConsolePlanningDemandsQueryOptions({
+      query: {
+        ...(sourceOrder() ? { keyword: sourceOrder(), take: 200 } : {}),
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+      },
+    }),
+    enabled: hasBusinessContext(filters) && canRead(P.planningDemandsRead),
+  }))
+  const runsQuery = useQuery(() => ({
+    ...listBusinessConsolePlanningMrpRunsQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+      },
+    }),
+    enabled: hasBusinessContext(filters) && canRead(P.planningMrpRead),
+  }))
+  const mpsBucketsQuery = useQuery(() => ({
+    ...listBusinessConsolePlanningMpsBucketsQueryOptions({
+      query: {
+        organizationId: mpsFilters.organizationId,
+        environmentId: mpsFilters.environmentId,
+        skuCode: mpsFilters.skuCode?.trim() || undefined,
+        siteCode: mpsFilters.siteCode?.trim() || undefined,
+        status: mpsFilters.status?.trim() || undefined,
+      },
+    }),
+    enabled: hasBusinessContext(mpsFilters) && canRead(P.planningMpsRead),
+  }))
   const peggingQuery = useQuery(() => ({
     ...getBusinessConsolePlanningMrpPeggingQueryOptions({
       path: {
@@ -318,20 +316,21 @@ export function useBusinessPlanning() {
         environmentId: filters.environmentId,
       },
     }),
-    enabled: hasBusinessContext(filters) && runSelection.runId.trim().length > 0,
+    enabled:
+      canRead(P.planningMrpRead) &&
+      hasBusinessContext(filters) &&
+      runSelection.runId.trim().length > 0,
   }))
-  const suggestionsQuery = useQuery(() =>
-    withBusinessContextEnabled(
-      listBusinessConsolePlanningSuggestionsQueryOptions({
-        query: {
-          organizationId: suggestionFilters.organizationId,
-          environmentId: suggestionFilters.environmentId,
-          status: suggestionFilters.status === 'all' ? undefined : suggestionFilters.status,
-        },
-      }),
-      suggestionFilters,
-    ),
-  )
+  const suggestionsQuery = useQuery(() => ({
+    ...listBusinessConsolePlanningSuggestionsQueryOptions({
+      query: {
+        organizationId: suggestionFilters.organizationId,
+        environmentId: suggestionFilters.environmentId,
+        status: suggestionFilters.status === 'all' ? undefined : suggestionFilters.status,
+      },
+    }),
+    enabled: hasBusinessContext(suggestionFilters) && canRead(P.planningMrpRead),
+  }))
 
   const suggestions = computed<BusinessConsolePlanningSuggestionItem[]>(() =>
     unwrapItems(
@@ -339,7 +338,7 @@ export function useBusinessPlanning() {
     ),
   )
   const downstreamSuggestions = computed(() =>
-    suggestions.value.filter(
+    (downstreamPage?.() ?? suggestions.value.slice(0, 10)).filter(
       (item) =>
         item.suggestionId &&
         item.downstreamDocumentId &&
@@ -347,54 +346,97 @@ export function useBusinessPlanning() {
           item.suggestionType === 'planned-purchase'),
     ),
   )
+  const workOrderScope = useMesPrincipalWorkScope(
+    filters,
+    P.mesWorkOrdersRead,
+    () =>
+      canRead(P.mesWorkOrdersRead) &&
+      downstreamSuggestions.value.some((item) => item.suggestionType === 'planned-work-order'),
+  )
   const downstreamStatusesQuery = useQuery(() => ({
     key: [
       'planning',
       'downstream-statuses',
+      auth.principal?.principalId ?? '',
+      canRead(P.erpProcurementRead),
+      canRead(P.mesWorkOrdersRead),
+      workOrderScope.selectedScope.value?.kind ?? '',
+      workOrderScope.selectedScope.value?.id ?? '',
+      workOrderScope.scopePending.value,
       suggestionFilters.organizationId,
       suggestionFilters.environmentId,
       downstreamSuggestions.value
         .map((item) => `${item.suggestionId}:${item.downstreamDocumentId}`)
         .join('|'),
     ],
-    enabled: hasBusinessContext(suggestionFilters) && downstreamSuggestions.value.length > 0,
+    enabled:
+      canRead(P.planningMrpRead) &&
+      hasBusinessContext(suggestionFilters) &&
+      downstreamSuggestions.value.length > 0,
     query: async () => {
+      const scope = {
+        organizationId: suggestionFilters.organizationId,
+        environmentId: suggestionFilters.environmentId,
+      }
       const statuses: Record<string, string> = {}
       await Promise.all(
         downstreamSuggestions.value.map(async (item) => {
           try {
+            const permission =
+              item.suggestionType === 'planned-work-order'
+                ? P.mesWorkOrdersRead
+                : P.erpProcurementRead
+            if (!canRead(permission)) {
+              statuses[item.suggestionId!] = 'restricted'
+              return
+            }
             if (item.suggestionType === 'planned-work-order') {
+              const selected = workOrderScope.selectedScope.value
+              if (!selected) {
+                statuses[item.suggestionId!] = workOrderScope.scopePending.value
+                  ? 'loading'
+                  : 'restricted'
+                return
+              }
               const { data } = await getBusinessConsoleMesWorkOrderDetail({
                 path: { workOrderId: item.downstreamDocumentId! },
                 query: {
                   organizationId: suggestionFilters.organizationId,
                   environmentId: suggestionFilters.environmentId,
+                  scopeKind: selected.kind,
+                  scopeId: selected.id,
                 },
                 throwOnError: true,
               })
               statuses[item.suggestionId!] =
                 assertEnvelopeSuccess(data!, '读取工单状态失败。').data?.status ?? 'unknown'
             } else {
-              const { data } = await listBusinessConsoleErpPurchaseRequisitions({
-                query: {
-                  organizationId: suggestionFilters.organizationId,
-                  environmentId: suggestionFilters.environmentId,
-                  keyword: item.suggestionId!,
-                  take: 100,
-                },
-                throwOnError: true,
-              })
-              const requisitions =
-                assertEnvelopeSuccess(data!, '读取采购申请状态失败。').data?.items ?? []
-              statuses[item.suggestionId!] =
-                requisitions.find(
+              // 采购侧关键字同时命中建议、单号、工厂和 SKU；回执同时校验来源和下游标识。
+              let status = 'unknown'
+              for (let skip = 0; skip < 400; skip += 100) {
+                const { data } = await listBusinessConsoleErpPurchaseRequisitions({
+                  query: { ...scope, keyword: item.suggestionId!, skip, take: 100 },
+                  throwOnError: true,
+                })
+                const page = assertEnvelopeSuccess(data!, '读取采购申请状态失败。').data
+                const rows = page?.items ?? []
+                const match = rows.find(
                   (row) =>
-                    row.requisitionNo === item.downstreamDocumentId ||
-                    row.purchaseRequisitionId === item.downstreamDocumentId,
-                )?.status ?? 'unknown'
+                    row.suggestionId === item.suggestionId &&
+                    (row.requisitionNo === item.downstreamDocumentId ||
+                      row.purchaseRequisitionId === item.downstreamDocumentId),
+                )
+                if (match || rows.length < 100 || skip + rows.length >= (page?.total ?? Infinity)) {
+                  status = match?.status ?? 'unknown'
+                  break
+                }
+                status = 'partial'
+              }
+              statuses[item.suggestionId!] = status
             }
-          } catch {
-            statuses[item.suggestionId!] = 'unavailable'
+          } catch (error) {
+            statuses[item.suggestionId!] =
+              (error as { status?: number } | null)?.status === 403 ? 'restricted' : 'unavailable'
           }
         }),
       )
@@ -647,20 +689,18 @@ export function useBusinessPlanning() {
         return
       }
 
-      const queries: Array<Promise<unknown>> = [
-        demandsQuery.refetch(),
-        mpsBucketsQuery.refetch(),
-        runsQuery.refetch(),
-        suggestionsQuery.refetch(),
-      ]
-
-      if (runSelection.runId.trim().length > 0) {
-        queries.push(peggingQuery.refetch())
+      const queries: Array<Promise<unknown>> = []
+      if (canRead(P.planningDemandsRead)) queries.push(demandsQuery.refetch())
+      if (canRead(P.planningMpsRead)) queries.push(mpsBucketsQuery.refetch())
+      if (canRead(P.planningMrpRead)) {
+        queries.push(runsQuery.refetch(), suggestionsQuery.refetch())
+        if (runSelection.runId) queries.push(peggingQuery.refetch())
+        if (downstreamSuggestions.value.length) {
+          if (workOrderScope.scopeError.value && canRead(P.mesWorkOrdersRead))
+            queries.push(workOrderScope.refreshScope())
+          queries.push(downstreamStatusesQuery.refetch())
+        }
       }
-      if (downstreamSuggestions.value.length > 0) {
-        queries.push(downstreamStatusesQuery.refetch())
-      }
-
       await Promise.all(queries)
     },
     rejectSuggestion: async (input: PlanningSuggestionRejectInput) => {
@@ -724,7 +764,13 @@ export function useBusinessPlanning() {
     suggestionTypeFilter,
     suggestions,
     downstreamStatuses: computed(() => downstreamStatusesQuery.data.value ?? {}),
-    suggestionsError: suggestionsQuery.error,
+    suggestionsError: computed(() => {
+      const response = suggestionsQuery.data.value
+      return (
+        suggestionsQuery.error.value ??
+        (response?.success === false ? new Error(response.message || '计划建议读取失败。') : null)
+      )
+    }),
     suggestionsPending: suggestionsQuery.isLoading,
     syncContext,
     updateMpsBucket: (mpsId: string) =>
