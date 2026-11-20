@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { RouterLink, useRoute } from 'vue-router'
 
-defineProps<{ views: { title: string; to: { path: string } }[] }>()
+defineProps<{
+  views: { title: string; to: { path: string } }[]
+  currentPagePath: string
+}>()
 
 const route = useRoute()
 </script>
@@ -14,7 +17,7 @@ const route = useRoute()
     <RouterLink
       v-for="{ title, to } in views"
       :key="to.path"
-      :to="route.path === to.path ? route.fullPath || to.path : to.path"
+      :to="currentPagePath === to.path ? route.fullPath || to.path : to.path"
       class="inline-flex min-h-8 items-center rounded-md px-3 text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring aria-[current=page]:bg-background aria-[current=page]:text-foreground aria-[current=page]:shadow-sm"
     >
       {{ title }}

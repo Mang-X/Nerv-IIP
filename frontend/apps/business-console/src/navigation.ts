@@ -165,13 +165,6 @@ export const BUSINESS_DOMAINS: NavDomain[] = [
   },
 ]
 
-const mesWorkOrders = {
-  title: '工单与派工',
-  icon: ClipboardListIcon,
-  to: { path: '/mes/work-orders' },
-  requiredPermissions: [P.mesWorkOrdersRead],
-} satisfies NavLink
-
 const mesDispatch = {
   title: '派工看板',
   icon: UserCheckIcon,
@@ -179,11 +172,12 @@ const mesDispatch = {
   requiredPermissions: [P.mesDispatchRead],
 } satisfies NavLink
 
-const mesMaterials = {
-  title: '领料与齐套',
-  icon: PackageIcon,
-  to: { path: '/mes/materials' },
-  requiredPermissions: [P.mesMaterialsRead],
+const mesWorkOrders = {
+  title: '工单与派工',
+  icon: ClipboardListIcon,
+  to: { path: '/mes/work-orders' },
+  activeOn: [mesDispatch.to],
+  requiredPermissions: [P.mesWorkOrdersRead],
 } satisfies NavLink
 
 const mesFoundation = {
@@ -191,6 +185,14 @@ const mesFoundation = {
   icon: CheckCheckIcon,
   to: { path: '/mes/foundation' },
   requiredPermissions: [P.mesFoundationRead],
+} satisfies NavLink
+
+const mesMaterials = {
+  title: '领料与齐套',
+  icon: PackageIcon,
+  to: { path: '/mes/materials' },
+  activeOn: [mesFoundation.to],
+  requiredPermissions: [P.mesMaterialsRead],
 } satisfies NavLink
 
 const mesViewGroups = [

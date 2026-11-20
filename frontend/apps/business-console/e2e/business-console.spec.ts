@@ -179,12 +179,15 @@ test.describe('桌面制造执行入口', () => {
     const views = page.getByRole('navigation', { name: '页面视图' })
     await views.getByRole('link', { name: '派工看板' }).click()
     await expect(page).toHaveURL(/\/mes\/dispatch$/, { timeout: 30_000 })
+    const sidebarEntry = sidebar.getByRole('link', { name: '工单与派工' })
+    await expect(sidebarEntry).toHaveAttribute('data-active', 'true')
+    await expect(sidebarEntry).toHaveAttribute('href', '/mes/work-orders')
     await expect(views.getByRole('link', { name: '派工看板' })).toHaveAttribute(
       'aria-current',
       'page',
     )
     await page.getByRole('button', { name: '平铺列表' }).click()
-    await expect(page.getByRole('cell', { name: 'OP-CUT' })).toBeVisible()
+    await expect(page.getByRole('cell', { name: 'OP-CUT', exact: true })).toBeVisible()
     await page.getByRole('button', { name: '受派工人' }).click()
     const filteredRead = page.waitForRequest((request) => {
       const { pathname, searchParams } = new URL(request.url())
@@ -195,8 +198,8 @@ test.describe('桌面制造执行入口', () => {
     })
     await page.getByRole('option', { name: '张伟 · EMP-021' }).click()
     await filteredRead
-    await expect(page.getByRole('cell', { name: 'OP-CUT' })).toHaveCount(0)
-    await expect(page.getByRole('cell', { name: 'OP-WELD' })).toBeVisible()
+    await expect(page.getByRole('cell', { name: 'OP-CUT', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('cell', { name: 'OP-WELD', exact: true })).toBeVisible()
     await expect(
       page.getByRole('row').filter({ hasText: 'OP-WELD' }).getByRole('link', { name: 'WO-001' }),
     ).toHaveAttribute('href', '/mes/work-orders/WO-001')
@@ -207,6 +210,8 @@ test.describe('桌面制造执行入口', () => {
     await expect(assignment.getByRole('button', { name: '确认改派' })).toBeVisible()
     await assignment.getByRole('button', { name: '取消' }).click()
 
+    await expectHeading(page, '/mes/dispatch/', '派工看板')
+    await expect(sidebarEntry).toHaveAttribute('data-active', 'true')
     await views.getByRole('link', { name: '工单列表' }).click()
     await expect(scope).toContainText('焊接工作中心')
   })
@@ -218,6 +223,9 @@ test.describe('桌面制造执行入口', () => {
     await sidebar.getByRole('link', { name: '领料与齐套' }).click()
     const views = page.getByRole('navigation', { name: '页面视图' })
     await views.getByRole('link', { name: '生产准备检查' }).click()
+    const sidebarEntry = sidebar.getByRole('link', { name: '领料与齐套' })
+    await expect(sidebarEntry).toHaveAttribute('data-active', 'true')
+    await expect(sidebarEntry).toHaveAttribute('href', '/mes/materials')
     await expect(views.getByRole('link', { name: '生产准备检查' })).toHaveAttribute(
       'aria-current',
       'page',
@@ -250,6 +258,16 @@ test.describe('桌面制造执行入口', () => {
     await expect(page).toHaveURL(/\/mes\/materials$/, { timeout: 30_000 })
     await page.goBack()
     await expect(views.getByRole('link', { name: '生产准备检查' })).toHaveAttribute('href', path)
+
+    const slashPath = path.replace('/mes/foundation?', '/mes/foundation/?')
+    await expectHeading(page, slashPath, '生产准备检查')
+    await expect(views.getByRole('link', { name: '生产准备检查' })).toHaveAttribute(
+      'href',
+      slashPath,
+    )
+    await expect(sidebarEntry).toHaveAttribute('data-active', 'true')
+    await views.getByRole('link', { name: '领料' }).click()
+    await expect(page).toHaveURL(/\/mes\/materials$/)
   })
 
   test.describe('MES 只有独立视图读权限', () => {
@@ -325,8 +343,9 @@ test('工单与派工：工单队列渲染、创建急单弹窗可开', async ({
 
   // 创建急单 → 弹窗打开（抓"点不了"）。
   await page.getByRole('button', { name: '创建急单' }).click()
-  await expect(page.getByRole('dialog')).toBeVisible()
-  await expect(page.getByText('急单用于生产插单和临时补单')).toBeVisible()
+  const rushOrder = page.getByRole('dialog', { name: '创建急单' })
+  await expect(rushOrder).toBeVisible()
+  await expect(rushOrder.getByRole('button', { name: '生产版本', exact: true })).toBeVisible()
 })
 
 test('领料与齐套：领料申请渲染收料进度与「查看出库」闭环链接', async ({ page }) => {

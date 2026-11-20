@@ -25,6 +25,8 @@ export interface NavDomain {
 export interface NavLink {
   title: string
   to: RouteLocationRaw
+  /** Additional routes that highlight this entry while its link still points to `to`. */
+  activeOn?: RouteLocationRaw[]
   icon?: Component
   requiredPermissions?: string[]
 }

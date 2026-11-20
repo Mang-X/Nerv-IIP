@@ -28,6 +28,8 @@
 - Product：角色入口与 IA；
 - Governance：哪些规则必须长期遵守。
 
+应用可以为侧栏入口声明需要高亮同一项的附属视图路由。壳层使用最长路径确定高亮，同路径下优先高亮直接入口，点击仍进入应用配置的主目标。
+
 AppShell 不因为收到 `requiredPermissions` 就成为授权服务；消费方隐藏菜单也不能替代 Gateway enforcement。
 
 ## 依赖方向

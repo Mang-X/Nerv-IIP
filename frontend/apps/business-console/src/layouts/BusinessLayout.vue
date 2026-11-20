@@ -42,7 +42,8 @@ const topDomains = computed(() =>
 )
 
 const sideNav = computed(() => sideNavForDomain(currentDomainId.value, permissionCodes.value))
-const mesViews = computed(() => mesViewsForPath(route.path, permissionCodes.value))
+const currentPagePath = computed(() => route.matched?.at(-1)?.path ?? route.path)
+const mesViews = computed(() => mesViewsForPath(currentPagePath.value, permissionCodes.value))
 
 const shellUser = computed(() => {
   const p = principal.value
@@ -128,7 +129,11 @@ function openSearch() {
         </button>
       </div>
     </section>
-    <MesViewNavigation v-if="mesViews.length > 1" :views="mesViews" />
+    <MesViewNavigation
+      v-if="mesViews.length > 1"
+      :views="mesViews"
+      :current-page-path="currentPagePath"
+    />
     <slot />
   </AppShellT>
 </template>
