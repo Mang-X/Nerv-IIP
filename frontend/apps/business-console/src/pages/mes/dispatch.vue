@@ -21,6 +21,8 @@ import {
 } from '@/composables/mes/useMesTaskSemantics'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import {
   NvButton,
   NvDataTable,
@@ -52,6 +54,11 @@ definePage({
     requiredPermissions: ['business.mes.dispatch.read'],
   },
 })
+
+const auth = useAuthStore()
+const canReadWorkOrders = computed(() =>
+  auth.principal?.permissionCodes?.includes(P.mesWorkOrdersRead),
+)
 
 const {
   assignDispatchTask,
@@ -390,7 +397,7 @@ function formatDateTime(value?: string | null) {
         >
           <template #meta>
             <RouterLink
-              v-if="group.workOrderId"
+              v-if="group.workOrderId && canReadWorkOrders"
               :to="`/mes/work-orders/${encodeURIComponent(group.workOrderId)}`"
               class="text-xs text-brand underline-offset-4 hover:underline"
               @click.stop
@@ -525,13 +532,13 @@ function formatDateTime(value?: string | null) {
     >
       <template #cell-workOrderNo="{ row }">
         <RouterLink
-          v-if="row.workOrderId"
+          v-if="row.workOrderId && canReadWorkOrders"
           :to="`/mes/work-orders/${encodeURIComponent(row.workOrderId)}`"
           class="text-brand underline-offset-4 hover:underline"
         >
           {{ row.workOrderNo ?? row.workOrderId }}
         </RouterLink>
-        <span v-else>无</span>
+        <span v-else>{{ row.workOrderNo ?? row.workOrderId ?? '无' }}</span>
       </template>
       <template #cell-status="{ row }">
         <NvStatusBadge
