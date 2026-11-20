@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesReadinessIssue } from '@nerv-iip/api-client'
 import type { MesFoundationReadinessFilters } from '@/composables/useBusinessMes'
+import { hasRoutePermission } from '@/router/guards/auth'
+import { useAuthStore } from '@/stores/auth'
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
+
 const props = defineProps<{
   issues: BusinessConsoleMesReadinessIssue[]
   filters: MesFoundationReadinessFilters
 }>()
+const auth = useAuthStore()
+const router = useRouter()
 const groups = computed(() => {
   const result = new Map<string, BusinessConsoleMesReadinessIssue[]>()
   for (const issue of props.issues) {
@@ -14,7 +20,11 @@ const groups = computed(() => {
     group.push(issue)
     result.set(key, group)
   }
-  return [...result.entries()].map(([key, issues]) => ({ key, issues, first: issues[0]! }))
+  return [...result.entries()].map(([key, issues]) => ({
+    key,
+    issues: issues.map((issue) => ({ issue, href: maintenanceUrl(issue) })),
+    first: issues[0]!,
+  }))
 })
 const labels: Record<string, string> = {
   WORK_CENTER_COST_RATE_MISSING: '缺工作中心人工费率',
@@ -28,7 +38,11 @@ function maintenanceUrl(issue: BusinessConsoleMesReadinessIssue) {
     ACCOUNTING_PERIOD_MISSING: '/erp/finance/accounting-period-open',
   }
   const path = paths[issue.code ?? '']
-  if (!path) return undefined
+  if (
+    !path ||
+    !hasRoutePermission(router.resolve(path).meta, auth.principal?.permissionCodes ?? [])
+  )
+    return undefined
   const query = new URLSearchParams({ fromFoundation: '1' })
   for (const [key, value] of Object.entries(props.filters)) {
     if (value) query.set(`foundation${key[0]!.toUpperCase()}${key.slice(1)}`, value)
@@ -52,13 +66,9 @@ function maintenanceUrl(issue: BusinessConsoleMesReadinessIssue) {
           查看 {{ group.issues.length }} 个对象明细
         </summary>
         <ul class="mt-2 grid gap-2">
-          <li v-for="(issue, index) in group.issues" :key="index">
+          <li v-for="({ issue, href }, index) in group.issues" :key="index">
             <p>{{ issue.message }}</p>
-            <a
-              v-if="maintenanceUrl(issue)"
-              :href="maintenanceUrl(issue)"
-              class="text-brand hover:underline"
-            >
+            <a v-if="href" :href="href" class="text-brand hover:underline">
               去维护{{ issue.referenceDisplayName ? `：${issue.referenceDisplayName}` : '' }}
             </a>
           </li>

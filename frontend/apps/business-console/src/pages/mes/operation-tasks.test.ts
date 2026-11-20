@@ -552,6 +552,17 @@ describe('工序执行的授权质检与工单来源接力', () => {
     wrapper.unmount()
   })
 
+  it('本次派工的工序在当前范围不可见时提示核对范围', async () => {
+    routeQuery.operationTaskId = 'OP-20'
+    state.operationRows = []
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.text()).toContain('当前作业范围内未找到该工序')
+    expect(wrapper.text()).not.toContain('确认工单已释放、排程已生成')
+    expect(wrapper.text()).toContain('查看全部工序')
+    wrapper.unmount()
+  })
+
   it.each([true, false])('派工成功后按工序读取权限决定是否提供交接（%s）', async (canRead) => {
     state.permissionCodes = canRead ? ['business.mes.operations.read'] : []
     workerRows.value = [{ userId: 'operator-1', displayName: '操作员一' }]

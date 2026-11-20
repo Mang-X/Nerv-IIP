@@ -145,7 +145,7 @@ function Assert-ConditionalRoutingWorkflow {
     }
 
     $impactPlan = $parsedWorkflow.jobs.PSObject.Properties['impact-plan'].Value
-    foreach ($outputName in @('scripts', 'backend', 'connector_hosts', 'openapi_codegen', 'postgresql', 'redis_cap', 'full_chain', 'infra', 'docs')) {
+    foreach ($outputName in @('scripts', 'backend', 'apphost_compile', 'connector_hosts', 'openapi_codegen', 'postgresql', 'redis_cap', 'full_chain', 'infra', 'docs')) {
         $outputProperty = $impactPlan.outputs.PSObject.Properties[$outputName]
         Assert-Contract ($null -ne $outputProperty) "Impact plan must declare routed output '$outputName'."
         $expectedOutput = '${{ steps.plan.outputs.' + $outputName + ' }}'
@@ -195,6 +195,29 @@ function Assert-ConditionalRoutingWorkflow {
             Assert-Contract (-not $condition.Contains('impact-plan', [StringComparison]::Ordinal)) "Unrouted job '$($jobProperty.Name)' must not consume impact-plan outputs."
         }
     }
+}
+
+function Assert-AppHostCompileWorkflowContract {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
+    $steps = @($parsedWorkflow.jobs.'backend-tests-business-gateway'.steps)
+    $compileSteps = @($steps | Where-Object {
+        $id = $_.PSObject.Properties['id']
+        $null -ne $id -and [string]::Equals([string]$id.Value, 'apphost-compile', [StringComparison]::Ordinal)
+    })
+    Assert-Contract ($compileSteps.Count -eq 1) 'The BusinessGateway shard must run the standalone AppHost build exactly once when selected.'
+    $compile = $compileSteps[0]
+    $expectedCondition = '${{ !cancelled() && (github.event_name != ''pull_request'' || needs.impact-plan.result != ''success'' || needs.impact-plan.outputs.apphost_compile != ''false'') }}'
+    $expectedCommand = 'dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --configuration Release --nologo'
+    Assert-Contract ([string]::Equals([string]$compile.if, $expectedCondition, [StringComparison]::Ordinal)) 'AppHost build must fail open on main, plan failure or a missing flag.'
+    Assert-Contract ([string]::Equals(([string]$compile.run).Trim(), $expectedCommand, [StringComparison]::Ordinal)) 'AppHost build must compile the standalone project and restore its own graph.'
+    Assert-Contract ($null -eq $compile.PSObject.Properties['continue-on-error']) 'The native AppHost build failure must propagate to Backend Tests.'
+    $upload = @($steps | Where-Object {
+        $uses = $_.PSObject.Properties['uses']
+        $null -ne $uses -and ([string]$uses.Value).StartsWith('actions/upload-artifact@', [StringComparison]::Ordinal)
+    })
+    Assert-Contract ($upload.Count -eq 1 -and [Array]::IndexOf($steps, $upload[0]) -lt [Array]::IndexOf($steps, $compile)) 'The AppHost build must run after shard evidence upload.'
 }
 
 function Assert-RedisCapActiveSelectionWorkflowContract {
@@ -866,8 +889,16 @@ Assert-ImpactCase -Name 'postgres-infra' -Paths @('infra/postgres/init.sql') -Fl
 }
 
 Assert-ImpactCase -Name 'aspire-topology' -Paths @('infra/aspire/Nerv.IIP.AppHost/Program.cs') -Flags @{
-    backend = $true; infra = $true; postgresql = $true; redis_cap = $true; full_chain = $true
+    backend = $true; infra = $true; postgresql = $true; redis_cap = $true; full_chain = $true; apphost_compile = $true
 }
+
+Assert-ImpactCase -Name 'scheduling-source-apphost-compile' -Paths @('backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Program.cs') -Flags @{
+    backend = $true; apphost_compile = $true; full_chain = $false
+} -Services @('scheduling')
+
+Assert-ImpactCase -Name 'scheduling-tests-only-no-apphost-compile' -Paths @('backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/SchedulingSchemaConventionTests.cs') -Flags @{
+    backend = $true; apphost_compile = $false; full_chain = $false
+} -Services @('scheduling')
 
 foreach ($fullSelectionPath in @('.github/workflows/ci.yml', 'scripts/lib/CiImpactPlan.ps1', 'scripts/tests/ci-impact-plan.Tests.ps1')) {
     $plan = Get-NervCiImpactPlan -ChangedPaths @($fullSelectionPath)
@@ -875,7 +906,7 @@ foreach ($fullSelectionPath in @('.github/workflows/ci.yml', 'scripts/lib/CiImpa
             'backend', 'frontend', 'scripts', 'docs', 'connector_hosts', 'workflows', 'infra',
             'backend_contracts', 'backend_testing', 'backend_persistence', 'backend_messaging',
             'business_gateway', 'openapi_codegen', 'frontend_apps', 'frontend_packages',
-            'frontend_design_system', 'frontend_docs', 'postgresql', 'redis_cap', 'full_chain'
+            'frontend_design_system', 'frontend_docs', 'postgresql', 'redis_cap', 'full_chain', 'apphost_compile'
         )) {
         Assert-ImpactFlag -Plan $plan -Name $requiredFlag -Expected $true
     }
@@ -1126,6 +1157,7 @@ finally {
 }
 
 Assert-ConditionalRoutingWorkflow -Path $workflowPath
+Assert-AppHostCompileWorkflowContract -Path $workflowPath
 Assert-BusinessConsoleBrowserValidationWorkflowContract -Path $workflowPath
 Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowPath
 

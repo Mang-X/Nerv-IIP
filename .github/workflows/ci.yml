@@ -77,12 +77,12 @@ jobs:
   #
   #     checkout 3 + setup-dotnet 5 + cache 8 + resolve-evidence 3
   #       + test 10 + collect 5 + upload 5  =  39m step sum  <  45m job budget  (6m margin)
+  # BusinessGateway 在上传证据后按需编译独立 AppHost，增加 10m：49m < 55m，仍留 6m。
   #
   # 该算术是上述层级 A 的义务；变更任何一个数字都需要重新检查这项算术。
   #
-  # 注意共享预算*不*允许你做什么。这对全部四个分片同样成立——
-  # 它们的 step 向量均为 3 / 5 / 8 / 3 / 10 / 5 / 5——所以只在此处声明，而
-  # 不在任一 job 中声明：六个非 test step 已带有强制的 29m shared-convention
+  # 四个分片共用的测试与证据 step 向量为 3 / 5 / 8 / 3 / 10 / 5 / 5，只在此处推导。
+  # 六个非 test step 已带有强制的 29m shared-convention
   # 预算，因此层级 A 的严格 job > step-sum 要求使 45m 成为
   # 该不变量留下的结构下限，而非对任一分片运行时的声明。实际会触发的预算
   # 在挂起的 run 上是 10m test step。若它接近 10m，应同时提高两项预算，而不是
@@ -160,6 +160,7 @@ jobs:
       postgresql: ${{ steps.plan.outputs.postgresql }}
       redis_cap: ${{ steps.plan.outputs.redis_cap }}
       full_chain: ${{ steps.plan.outputs.full_chain }}
+      apphost_compile: ${{ steps.plan.outputs.apphost_compile }}
       business_services: ${{ steps.plan.outputs.business_services }}
       plan_path: ${{ steps.plan.outputs.plan_path }}
       frontend_selected: ${{ steps.frontend-plan.outputs.frontend_selected }}
@@ -297,11 +298,10 @@ jobs:
 
   backend-tests-business-gateway:
     name: Backend Tests - BusinessGateway
-    # 层级 A；共享分片预算为 39m < 45m，仅在超时策略中推导一次，该策略位于
-    # `jobs:` 顶部。job 名称已冻结，因为 MAN-661 将证据 lane backend-shard-1 映射到它，映射定义在
+    # 层级 A；计入编译预算后仍保留 6m 余量。job 名称已冻结，MAN-661 将证据 lane backend-shard-1 映射到它，映射定义在
     # scripts/lib/TestEvidence.ps1 中——该名称标识 lane，而非分片内容；这些内容
     # 仅存在于 scripts/backend-test-shards.json 中。
-    timeout-minutes: 45
+    timeout-minutes: 55
     runs-on: ubuntu-latest
     needs: impact-plan
     if: >-
@@ -324,7 +324,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props', 'infra/aspire/**/*.csproj', 'infra/aspire/**/*.props') }}
           restore-keys: |
             ${{ runner.os }}-nuget-
 
@@ -389,6 +389,14 @@ jobs:
           path: ${{ steps.collect-shard-evidence.outputs.evidence-path }}
           if-no-files-found: error
           retention-days: 14
+
+      - name: Build standalone Aspire AppHost
+        id: apphost-compile
+        timeout-minutes: 10
+        if: >-
+          ${{ !cancelled() && (github.event_name != 'pull_request' || needs.impact-plan.result != 'success' || needs.impact-plan.outputs.apphost_compile != 'false') }}
+        shell: bash
+        run: dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --configuration Release --nologo
 
   backend-tests-platform:
     name: Backend Tests - Platform

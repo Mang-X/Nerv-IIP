@@ -337,7 +337,11 @@ function writeRememberedMesWorkScope(selectionKey: string, value: string) {
   }
 }
 
-export function useMesPrincipalWorkScope(context: BusinessContextFields, permissionCode: string) {
+export function useMesPrincipalWorkScope(
+  context: BusinessContextFields,
+  permissionCode: string,
+  canResolve = () => true,
+) {
   const auth = useAuthStore()
   const principalIdentity = computed(
     () => auth.principal?.principalId?.trim() || auth.sessionId?.trim() || 'unrestored-session',
@@ -384,9 +388,16 @@ export function useMesPrincipalWorkScope(context: BusinessContextFields, permiss
       }),
       context,
     )
+    const authorized = canResolve()
     return {
       ...options,
-      key: [...options.key, `principal:${principalIdentity.value}`],
+      enabled: options.enabled && authorized,
+      // 未启用的接力查询不能覆盖其他入口同权限查询的缓存配置。
+      key: [
+        ...options.key,
+        `principal:${principalIdentity.value}`,
+        ...(authorized ? [] : ['disabled']),
+      ],
     }
   })
 
@@ -852,6 +863,15 @@ export function useMesProductionReporting() {
   const auth = useAuthStore()
   const context = defaultContext()
   const reportScope = useMesPrincipalWorkScope(context, MES_REPORTING_WRITE_PERMISSION)
+  const canReadReceiptHandoff = () =>
+    [P.mesReceiptsRead, P.mesReceiptsManage, P.mesWorkOrdersRead].every((permission) =>
+      auth.principal?.permissionCodes?.includes(permission),
+    )
+  const workOrderReadScope = useMesPrincipalWorkScope(
+    context,
+    MES_WORK_ORDERS_READ_PERMISSION,
+    canReadReceiptHandoff,
+  )
   const queryCache = useQueryCache()
   const issuedReportCompleteIntents = new Set<string>()
   const recordProductionReportPending = shallowRef(false)
@@ -930,15 +950,20 @@ export function useMesProductionReporting() {
   function prepareReceiptHandoff() {
     const query = { ...context }
     const principalId = auth.principal?.principalId
+    const scope = workOrderReadScope.selectedScope.value
+    if (!scope) return
+
+    const selection = workOrderReadScope.scopeSelectionValue.value
     const isCurrent = () =>
       auth.principal?.principalId === principalId &&
       context.organizationId === query.organizationId &&
       context.environmentId === query.environmentId &&
-      [P.mesReceiptsRead, P.mesReceiptsManage, P.mesWorkOrdersRead].every((permission) =>
-        auth.principal?.permissionCodes?.includes(permission),
-      )
-    const scope = reportScope.selectedScope.value
-    if (!isCurrent() || !scope) return
+      canReadReceiptHandoff() &&
+      !workOrderReadScope.scopeError.value &&
+      workOrderReadScope.scopeSelectionValue.value === selection &&
+      workOrderReadScope.selectedScope.value?.kind === scope.kind &&
+      workOrderReadScope.selectedScope.value?.id === scope.id
+    if (!isCurrent()) return
 
     return async (workOrderId: string, operationTaskId: string, reportNo: string) => {
       if (!isCurrent()) return

@@ -186,6 +186,10 @@ test.describe('桌面制造执行入口', () => {
       'aria-current',
       'page',
     )
+    await expect(page.getByRole('link', { name: '打开工单' })).toHaveAttribute(
+      'href',
+      '/mes/work-orders/WO-001',
+    )
     await page.getByRole('button', { name: '平铺列表' }).click()
     await expect(page.getByRole('cell', { name: 'OP-CUT', exact: true })).toBeVisible()
     await page.getByRole('button', { name: '受派工人' }).click()
@@ -233,6 +237,18 @@ test.describe('桌面制造执行入口', () => {
 
     const path =
       '/mes/foundation?siteCode=SITE-001&lineCode=LINE-001&workCenterCode=WC-001&skuId=sku-1&productionVersionId=PV-001'
+    await expectHeading(page, path, '生产准备检查')
+    await expandFoundationIssues(page)
+    const rateLink = page.getByRole('link', { name: '去维护：总装一线', exact: true })
+    await expect(rateLink).toHaveAttribute(
+      'href',
+      '/erp/finance/work-center-cost-rates?fromFoundation=1&foundationOrganizationId=org-001&foundationEnvironmentId=env-dev&foundationSiteCode=SITE-001&foundationLineCode=LINE-001&foundationWorkCenterCode=WC-001&foundationSkuId=sku-1&foundationProductionVersionId=PV-001',
+    )
+    await expect(page.getByRole('link', { name: '去维护：总装设备', exact: true })).toBeVisible()
+    await expect(page.getByText('缺少 11 月会计期间')).toBeVisible()
+    await expect(page.getByRole('link', { name: '去维护：11 月', exact: true })).toHaveCount(0)
+    await rateLink.click()
+    await expect(page).toHaveURL(/\/erp\/finance\/work-center-cost-rates\?/)
     const scopedRead = page.waitForRequest((request) => {
       const { pathname, searchParams } = new URL(request.url())
       return (
@@ -244,11 +260,6 @@ test.describe('桌面制造执行入口', () => {
         searchParams.get('productionVersionId') === 'PV-001'
       )
     })
-    await expectHeading(
-      page,
-      '/erp/finance/work-center-cost-rates?fromFoundation=1&foundationSiteCode=SITE-001&foundationLineCode=LINE-001&foundationWorkCenterCode=WC-001&foundationSkuId=sku-1&foundationProductionVersionId=PV-001',
-      '工作中心费率',
-    )
     await page.getByRole('link', { name: '返回原准备检查' }).click()
     await scopedRead
     await expect(views.getByRole('link', { name: '生产准备检查' })).toHaveAttribute('href', path)
@@ -279,15 +290,44 @@ test.describe('桌面制造执行入口', () => {
       await expect(sidebar.getByRole('link', { name: '工单与派工' })).toHaveCount(0)
       await expect(sidebar.getByRole('link', { name: '领料与齐套' })).toHaveCount(0)
       await expect(page.getByRole('navigation', { name: '页面视图' })).toHaveCount(0)
+      await expect(page.getByText('WO-001', { exact: true })).toBeVisible()
+      await expect(page.getByRole('link', { name: '打开工单' })).toHaveCount(0)
+      await page.getByRole('button', { name: '平铺列表' }).click()
+      await expect(page.getByRole('cell', { name: 'WO-001', exact: true })).toBeVisible()
+      await expect(page.getByRole('link', { name: 'WO-001', exact: true })).toHaveCount(0)
       await sidebar.getByRole('link', { name: '生产准备检查' }).click()
       await expect(page).toHaveURL(/\/mes\/foundation$/, { timeout: 30_000 })
+      await expandFoundationIssues(page)
+      await expect(page.getByText('缺少总装一线的人工费率')).toBeVisible()
+      await expect(page.getByText('缺少总装设备的制造费用率')).toBeVisible()
+      await expect(page.getByText('缺少 11 月会计期间')).toBeVisible()
+      await expect(page.getByRole('link', { name: /^去维护/ })).toHaveCount(0)
       await sidebar.getByRole('link', { name: '派工看板' }).click()
       await expect(page).toHaveURL(/\/mes\/dispatch$/, { timeout: 30_000 })
 
-      for (const path of ['/mes/work-orders', '/mes/materials']) {
+      for (const path of ['/mes/work-orders', '/mes/work-orders/WO-001', '/mes/materials']) {
         await page.goto(path)
         await expect(page).toHaveURL(/\/forbidden\?from=/)
       }
+    })
+  })
+
+  test.describe('准备检查的会计期间维护', () => {
+    test.use({ permissionCodes: ['business.mes.foundation.read', 'business.erp.finance.manage'] })
+
+    test('财务管理权限可从缺项打开会计期间并返回原检查', async ({ page }) => {
+      const path = '/mes/foundation?siteCode=SITE-001'
+      await expectHeading(page, path, '生产准备检查')
+      await expandFoundationIssues(page)
+      const link = page.getByRole('link', { name: '去维护：11 月', exact: true })
+      await expect(link).toHaveAttribute(
+        'href',
+        '/erp/finance/accounting-period-open?fromFoundation=1&foundationOrganizationId=org-001&foundationEnvironmentId=env-dev&foundationSiteCode=SITE-001&date=2026-11-20',
+      )
+      await link.click()
+      await expect(page).toHaveURL(/\/erp\/finance\/accounting-period-open\?/)
+      await page.getByRole('link', { name: '返回原准备检查' }).click()
+      await expect(page).toHaveURL(/\/mes\/foundation\?siteCode=SITE-001$/)
     })
   })
 
@@ -608,6 +648,12 @@ async function expectHeading(page: Page, path: string, heading: string) {
   ).toBeVisible({ timeout: 15_000 })
 }
 
+async function expandFoundationIssues(page: Page) {
+  const issueDetails = page.getByText('查看 1 个对象明细', { exact: true })
+  await expect(issueDetails).toHaveCount(3)
+  for (const summary of await issueDetails.all()) await summary.click()
+}
+
 async function seedStoredSession(page: Page, currentPrincipal: typeof principal) {
   await page.addInitScript(
     ({ key, storedSession }) => {
@@ -777,12 +823,31 @@ async function routeBusinessConsoleApi(route: Route) {
   }
 
   if (pathname === '/api/business-console/v1/mes/foundation-readiness') {
+    const issues = [
+      {
+        code: 'WORK_CENTER_COST_RATE_MISSING',
+        message: '缺少总装一线的人工费率',
+        referenceDisplayName: '总装一线',
+      },
+      {
+        code: 'WORK_CENTER_MACHINE_OVERHEAD_RATE_MISSING',
+        message: '缺少总装设备的制造费用率',
+        referenceDisplayName: '总装设备',
+      },
+      {
+        code: 'ACCOUNTING_PERIOD_MISSING',
+        message: '缺少 11 月会计期间',
+        referenceDisplayName: '11 月',
+        referenceType: 'AccountingPeriod',
+        referenceId: '2026-11-20',
+      },
+    ]
     return fulfillJson(
       route,
       envelope({
-        status: 'Ready',
-        areas: [{ areaCode: 'master-data', status: 'Ready', issues: [] }],
-        blockingIssues: [],
+        status: 'Blocked',
+        areas: [{ areaCode: 'master-data', status: 'Blocked', issues }],
+        blockingIssues: issues,
         warningIssues: [],
       }),
     )
@@ -991,7 +1056,13 @@ async function routeBusinessConsoleApi(route: Route) {
   }
 
   if (pathname === '/api/business-console/v1/mes/dispatch-tasks') {
-    return fulfillJson(route, envelope({ items: [] }))
+    return fulfillJson(
+      route,
+      envelope({
+        items: [{ operationTaskId: 'OP-001', workOrderId: 'WO-001', status: 'Ready' }],
+        total: 1,
+      }),
+    )
   }
 
   if (pathname === '/api/business-console/v1/mes/related-quality-items') {

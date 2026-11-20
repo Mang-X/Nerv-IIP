@@ -81,6 +81,7 @@ function Get-NervCiImpactPlan {
     $knownBusinessServices = @($knownBusinessServiceNames | ForEach-Object { ConvertTo-NervCiImpactServiceId -Name $_ })
     $flags = [ordered]@{
         backend = $false
+        apphost_compile = $false
         frontend = $false
         scripts = $false
         docs = $false
@@ -290,7 +291,7 @@ function Get-NervCiImpactPlan {
 
         if ([string]::Equals($path, 'backend/Directory.Build.props', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'backend/Directory.Packages.props', [StringComparison]::Ordinal)) {
-            foreach ($flag in @('backend', 'openapi_codegen', 'connector_hosts', 'postgresql', 'redis_cap', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
+            foreach ($flag in @('backend', 'apphost_compile', 'openapi_codegen', 'connector_hosts', 'postgresql', 'redis_cap', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
             continue
         }
 
@@ -337,6 +338,9 @@ function Get-NervCiImpactPlan {
 
         if ($path.StartsWith('backend/common/Contracts/', [StringComparison]::Ordinal)) {
             Select-BusinessServices -Services $knownBusinessServices -Reason $reason
+            if ($path.StartsWith('backend/common/Contracts/Nerv.IIP.Contracts.Scheduling/', [StringComparison]::Ordinal)) {
+                Select-Impact -Name 'apphost_compile' -Reason $reason
+            }
             foreach ($flag in @('backend_contracts', 'redis_cap', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
             continue
         }
@@ -370,6 +374,9 @@ function Get-NervCiImpactPlan {
                 continue
             }
             Select-BusinessServices -Services @((ConvertTo-NervCiImpactServiceId -Name $serviceName)) -Reason $reason
+            if ($path.StartsWith('backend/services/Business/Scheduling/src/', [StringComparison]::Ordinal)) {
+                Select-Impact -Name 'apphost_compile' -Reason $reason
+            }
             if ($salesOrderDemandBusinessServiceNameSet.Contains($serviceName) -or
                 $fullChainReferencedBusinessServiceNameSet.Contains($serviceName)) {
                 Select-Impact -Name 'full_chain' -Reason $reason
@@ -483,7 +490,7 @@ function Get-NervCiImpactPlan {
                 Select-Impact -Name 'full_chain' -Reason $reason
             }
             if ($path.StartsWith('infra/aspire/', [StringComparison]::Ordinal)) {
-                foreach ($flag in @('backend', 'postgresql', 'redis_cap', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
+                foreach ($flag in @('backend', 'apphost_compile', 'postgresql', 'redis_cap', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
             }
             if ($path.StartsWith('infra/postgres/', [StringComparison]::Ordinal)) { Select-Impact -Name 'postgresql' -Reason $reason }
             if ($path.Contains('redis', [StringComparison]::OrdinalIgnoreCase)) { Select-Impact -Name 'redis_cap' -Reason $reason }
