@@ -26,7 +26,7 @@ $dockerScript = @'
 #!/bin/sh
 set -eu
 marker="${NERV_FULLSTACK_WORKER_PROBE_MARKER:?}"
-if printenv 'NERV_IIP_LEADER_DEMO_WORKER_PASSWORD' >/dev/null 2>&1 || printenv 'Parameters__iam-seed-demo-worker-password' >/dev/null 2>&1; then
+if printenv 'NERV_IIP_FULLSTACK_WMS_WORKER_PASSWORD' >/dev/null 2>&1 || printenv 'Parameters__iam-seed-demo-worker-password' >/dev/null 2>&1; then
   printf '%s\n' 'worker-inherited' >> "$marker"
   exit 19
 fi
@@ -63,7 +63,7 @@ exit 0
 '@
 
 $workerProbeToken = [string]::Concat('worker', '-probe', '-sentinel')
-$workerEnvironmentNames = @('NERV_IIP_LEADER_DEMO_WORKER_PASSWORD', 'Parameters__iam-seed-demo-worker-password')
+$workerEnvironmentNames = @('NERV_IIP_FULLSTACK_WMS_WORKER_PASSWORD', 'Parameters__iam-seed-demo-worker-password')
 $originalPath = [Environment]::GetEnvironmentVariable('PATH', 'Process')
 $originalMarker = [Environment]::GetEnvironmentVariable('NERV_FULLSTACK_WORKER_PROBE_MARKER', 'Process')
 $originalManMode = [Environment]::GetEnvironmentVariable('NERV_FULLSTACK_WORKER_PROBE_MAN', 'Process')

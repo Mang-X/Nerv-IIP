@@ -544,7 +544,6 @@ function New-WmsWorkPoolFixture {
         [string]$AssignerPrincipalId,
         [string]$OperatorPrincipalId)
     # 作业池与成员资格是派工的前置资格边界。此处一律走公开写面现造，
-    # 不依赖 LeaderDemo 世界观种子：种子被拆除后本场景仍必须自洽。
     $pool = Invoke-JsonPost -Uri "$WmsUrl/api/business/v1/wms/work-pools" -Headers $Headers -Body @{
         organizationId = 'org-001'
         environmentId = 'env-dev'
@@ -995,7 +994,6 @@ try {
                 operatorPrincipalId = $workPoolFixture.operatorPrincipalId
                 effectiveFromUtc = $workPoolFixture.effectiveFromUtc
                 establishedThrough = 'public WMS work-pool and membership endpoints'
-                leaderDemoSeed = 'not enabled for this scenario'
             }
             firstAssignment = [ordered]@{
                 preAssignmentReadback = 'exact run-scoped row had no assigned pool or operator'

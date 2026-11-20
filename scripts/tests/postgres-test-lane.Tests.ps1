@@ -66,7 +66,7 @@ function Assert-LaneResetDropsCascade([string]$SourcePath) {
 # 有人顺手改用共享库里现成的另一个工厂就不会被拒（#1510 的教训——漏拼写要从类型集穷举）。
 # 内层库工厂清单从**行为**穷举，而不是手维护点名：扫测试树里所有含 `CREATE DATABASE` 的源文件，
 # 取其中声明的数据库工厂类型名。手维护清单每接一个服务就要靠人记得补一次，实测漏掉了
-# DisposablePostgresDatabase / WorldHistoryTemporaryDatabase / IndustrialTelemetryPostgresTestDatabase 三项
+# DisposablePostgresDatabase 和 IndustrialTelemetryPostgresTestDatabase
 # （#1510 的教训：漏拼写要从类型集穷举，不从审核点名补特例）。
 function Get-NervInnerDatabaseFactories([string]$RepositoryRoot) {
     $discovered = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -320,7 +320,7 @@ try {
     $missingCapRejected = $false
     try { Assert-MasterDataDiagnosticSchemas -Member $missingCapMember } catch { $missingCapRejected = $_.Exception.Message.Contains('CAP outbox diagnostics', [StringComparison]::Ordinal) }
     Assert-Contract $missingCapRejected 'Removing CAP from the MasterData diagnostic schemas must fail the contract.'
-    Assert-Contract ([string]::Equals((@($masterDataMember.expectedTestIdentities) -join "`n"), ($masterDataIdentities -join "`n"), [StringComparison]::Ordinal)) 'The MasterData member must freeze exactly the fourteen governed profile identities and exclude the world-bible seed test.'
+    Assert-Contract ([string]::Equals((@($masterDataMember.expectedTestIdentities) -join "`n"), ($masterDataIdentities -join "`n"), [StringComparison]::Ordinal)) 'The MasterData member must freeze exactly the fourteen governed profile identities.'
 
     $schedulingMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'scheduling-postgres-profile' -RepositoryRoot $repoRoot
     $schedulingIdentities = @(
@@ -769,7 +769,7 @@ try {
     # 生产侧已无任何派生凭证号，两条一并删除；voucher_no 那条唯一索引改由
     # ErpJournalVoucherNoPostgresAcceptanceTests 与 PostgreSQL_dedup_sites_key_on_the_source_document_*
     # 在来源键那一面承担。⛔ 这是「要证的事没了」，不是「测试碍事」。
-    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 31) 'The ERP member must freeze exactly its thirty-one PostgreSQL identities.'
+    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 30) 'The ERP member must freeze exactly its thirty PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 16) '跨服务验收成员必须冻结十六条 PostgreSQL 测试身份。'

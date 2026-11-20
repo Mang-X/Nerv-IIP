@@ -830,13 +830,12 @@ Assert-ImpactCase -Name 'integration-event-handler-platform-service' -Paths @('b
     backend = $true; redis_cap = $true; full_chain = $true
 }
 
-# NERV-1711 正例：世界观种子是 FullChain lane 的数据基础，必须选中 full_chain；
-# 种子本身不改 CAP 传输面，不得连带选中 redis_cap。
-Assert-ImpactCase -Name 'world-history-seed-business' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Seed/WorldHistorySeedService.cs') -Flags @{
+# NERV-1711 正例：初始化种子改动需要 FullChain 验证，CAP 传输验证由消息处理改动触发。
+Assert-ImpactCase -Name 'walkthrough-seed-business' -Paths @('backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Seed/WalkthroughSeedService.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $true
-} -Services @('mes')
+} -Services @('master-data')
 
-Assert-ImpactCase -Name 'world-history-seed-platform-service' -Paths @('backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs') -Flags @{
+Assert-ImpactCase -Name 'bootstrap-seed-platform-service' -Paths @('backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs') -Flags @{
     backend = $true; redis_cap = $false; full_chain = $true
 }
 

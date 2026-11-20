@@ -68,11 +68,6 @@ foreach ($expected in @(
     '.\nerv.ps1 fullstack run -Scenario smoke',
     '.\nerv.ps1 fullstack run -Scenario smoke -EnableWmsDemoWorker',
     '.\nerv.ps1 fullstack start -EnableWmsDemoWorker',
-    '.\nerv.ps1 demo start',
-    '.\nerv.ps1 demo reset',
-    '.\nerv.ps1 demo seed',
-    '.\nerv.ps1 demo health-check',
-    '.\nerv.ps1 demo stop',
     '.\nerv.ps1 publish-compose',
     '.\nerv.ps1 ports',
     '.\nerv.ps1 help'
@@ -102,7 +97,7 @@ foreach ($expected in @(
     '[string]::Equals([string]("$($latest.state)"), [string](''Running''), [StringComparison]::OrdinalIgnoreCase)',
     '[string]::Equals([string]($GuardianMode), [string](''Automated''), [StringComparison]::OrdinalIgnoreCase)',
     '[string]::Equals([string]("$($latest.state)"), [string](''Failed''), [StringComparison]::OrdinalIgnoreCase)',
-    'elseif ([string]::Equals([string]($Scenario), [string](''leader-demo-equipment-branch''), [StringComparison]::OrdinalIgnoreCase))'
+    'elseif ([string]::Equals([string]($Scenario), [string](''issue-1912-real-machine-walkthrough''), [StringComparison]::OrdinalIgnoreCase))'
 )) {
     if (-not $fullStackSessionText.Contains($expected, [StringComparison]::Ordinal)) {
         throw "Full-stack session must retain the explicit ordinal identity contract '$expected'."
@@ -173,10 +168,6 @@ param(
 [pscustomobject]@{ action=$Action; target=$Target; scenario=$Scenario; sessionId=$SessionId; noBuild=[bool]$NoBuild; enableWmsDemoWorker=[bool]$EnableWmsDemoWorker; tail=$Tail; follow=[bool]$Follow } | ConvertTo-Json -Compress
 '@
     [IO.File]::WriteAllText((Join-Path $dispatchRoot 'scripts/fullstack-session.ps1'), $captureScript, [Text.UTF8Encoding]::new($false))
-    [IO.File]::WriteAllText(
-        (Join-Path $dispatchRoot 'scripts/leader-demo.ps1'),
-        '[CmdletBinding()] param([Parameter(Position=0)][string]$Action) [pscustomobject]@{ action=$Action } | ConvertTo-Json -Compress',
-        [Text.UTF8Encoding]::new($false))
 
     $fullStackRun = Invoke-Nerv -ScriptPath $dispatchNerv -Arguments @('fullstack', 'run', '-Scenario', 'smoke', '-NoBuild')
     $runCapture = $fullStackRun.Output | ConvertFrom-Json
@@ -209,13 +200,6 @@ param(
         throw "Positional full-stack URL target was not forwarded. Output: $($fullStackUrl.Output)"
     }
 
-    foreach ($demoAction in @('start', 'reset', 'seed', 'health-check', 'stop')) {
-        $demoResult = Invoke-Nerv -ScriptPath $dispatchNerv -Arguments @('demo', $demoAction)
-        $demoCapture = $demoResult.Output | ConvertFrom-Json
-        if ($demoResult.ExitCode -ne 0 -or $demoCapture.action -ne $demoAction) {
-            throw "Demo action '$demoAction' was not forwarded. Output: $($demoResult.Output)"
-        }
-    }
 }
 finally {
     Remove-Item -LiteralPath $dispatchRoot -Recurse -Force -ErrorAction SilentlyContinue

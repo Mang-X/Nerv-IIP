@@ -42,7 +42,7 @@
 # resolved from the captured scope while the identical file ran green locally under both invocation
 # forms. The root cause was never reproduced here, so this is deliberately not stated as a general
 # rule about dot-sourced libraries: FullStackSessionState.ps1, BackendTestShardTimings.ps1,
-# ScriptAutomation.ps1 and LeaderDemoTelemetrySimulator.ps1 all use `$script:` state or closures in
+# ScriptAutomation.ps1 uses `$script:` state or closures in
 # this repository and work. The narrow claim is what is defended: a plain function call resolves the
 # same way from every caller, which removes the variable this file was bitten by without asserting
 # anything about the others.
