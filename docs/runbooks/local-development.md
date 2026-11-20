@@ -20,6 +20,8 @@
 3. **空白机器必须先完成 bootstrap。** 对新接入网络的 Windows 机器，先运行
    `.\nerv.ps1 bootstrap -InstallMissing`，再运行 `.\nerv.ps1 dev`。bootstrap 入口负责前置
    条件检查、可选工具安装、本地 AppHost 用户机密（user-secrets）初始化、依赖还原和 AppHost 构建。
+   只需验证拓扑能编译时，从仓库根目录运行
+   `dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj`。
    在该路径通过且 Docker Desktop 确实运行前，不得排查范围宽泛的请求失败。
 
 4. **本地 HTTPS 证书。** Aspire Dashboard/DCP 和本地 HTTPS endpoint 需要受信任的开发证书。
