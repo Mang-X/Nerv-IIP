@@ -357,7 +357,10 @@ export async function fetchRealEquipmentOverview(
   return readEquipmentOverview(factoryId, workCenterCode)
 }
 
-export async function readEquipmentOverview(factoryId: string, workCenterCode?: string): Promise<EquipmentOverview> {
+export async function readEquipmentOverview(
+  factoryId: string,
+  workCenterCode?: string,
+): Promise<EquipmentOverview> {
   const nowMs = Date.now()
   const { organizationId, environmentId } = getScreenSession()
   const roster = await resolveDeviceRoster(nowMs, true, workCenterCode)
@@ -375,7 +378,7 @@ export async function readEquipmentOverview(factoryId: string, workCenterCode?: 
             query: { ...contextQuery, deviceAssetIds },
           }),
         )
-        return {...page, devices: coveredDevices(deviceAssetIds,readRows(page.devices))}
+        return { ...page, devices: coveredDevices(deviceAssetIds, readRows(page.devices)) }
       }),
     ),
     readList(
@@ -519,7 +522,10 @@ export async function fetchRealDeviceParamsTick(): Promise<DeviceParamsTick> {
 }
 
 /** 设备详情：单设备状态+新鲜度、单机 MTBF/MTTR（真实 reliability 端点）、该设备维修/PM/点检。 */
-export async function fetchRealDeviceDetail(deviceId: string, requestedCenter?: string): Promise<DeviceDetail | null> {
+export async function fetchRealDeviceDetail(
+  deviceId: string,
+  requestedCenter?: string,
+): Promise<DeviceDetail | null> {
   if (!hasScreenSession()) {
     throw new Error('大屏会话上下文未就绪（organizationId/environmentId 为空）')
   }

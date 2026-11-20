@@ -606,22 +606,33 @@ export async function fetchRealWarehouseBoard(
     warehouseScope(ctx, 'shipments'),
     warehouseScope(ctx, 'counts'),
   ])
-  const [inbound, outbound, putaway, pick, count, wcs] = await Promise.all([
-    fetchInboundFlow(receipts.query, nowMs),
-    fetchOutboundFlow(shipments.query, nowMs),
-    fetchTaskGroup(listBusinessConsoleWmsPutawayTasks, receipts.query, 'putaway', nowMs),
-    fetchTaskGroup(listBusinessConsoleWmsPickingTasks, shipments.query, 'pick', nowMs),
+  const [receiptData, shipmentData, count, wcs] = await Promise.all([
+    readReceipts(receipts.query, nowMs),
+    readShipments(shipments.query, nowMs),
     fetchCountBoard(counts.query, nowMs),
     readWcsBoard(ctx, nowMs),
   ])
-  return assembleWarehouseBoard(factoryId, receipts, shipments, counts, inbound, outbound, putaway, pick, count, wcs)
+  return assembleWarehouseBoard(
+    factoryId,
+    { receipts, shipments, counts },
+    { ...receiptData, ...shipmentData, count, wcs },
+  )
 }
 
 type Selection = Awaited<ReturnType<typeof warehouseScope>>
 
-export function assembleWarehouseBoard(factoryId: string, receipts: Selection, shipments: Selection,
-  counts: Selection, inbound: InboundProgress, outbound: OutboundProgress, putaway: WhTaskGroup,
-  pick: WhTaskGroup, count: CycleCountBoard, wcs: WcsBoard): WarehouseBoard {
+export function assembleWarehouseBoard(
+  factoryId: string,
+  { receipts, shipments, counts }: Record<'receipts' | 'shipments' | 'counts', Selection>,
+  {
+    inbound,
+    outbound,
+    putaway,
+    pick,
+    count,
+    wcs,
+  }: Pick<WarehouseBoard, 'inbound' | 'outbound' | 'putaway' | 'pick' | 'count' | 'wcs'>,
+): WarehouseBoard {
   const overdueTop = overdueTopOf([pick, putaway], count)
   const kpis: WarehouseKpis = {
     inboundPct: inbound.pct,

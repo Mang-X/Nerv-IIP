@@ -255,6 +255,34 @@ describe('fetchRealEquipmentOverview', () => {
     expect(ov.inspections[0].result).toBe('合格') // pass → 合格
   })
 
+  it('在册 61 台时仅用所选工作中心已映射且返回状态的设备计算运行占比', async () => {
+    vi.mocked(api.getBusinessConsolePrincipalWorkContext).mockResolvedValue(
+      ok({ authorizedScopes: [{ kind: 'work-center', id: 'WC-MACH-1' }] }),
+    )
+    vi.mocked(api.listBusinessConsoleDeviceAssets).mockResolvedValue(
+      ok({
+        total: 61,
+        truncated: true,
+        resources: [
+          ROSTER.resources[0],
+          ROSTER.resources[1],
+          { workCenterCode: 'WC-MACH-1', code: 'unmapped' },
+          { workCenterCode: 'WC-MACH-1', deviceAssetId: 'missing-state' },
+        ],
+      }),
+    )
+    const board = await fetchRealEquipmentOverview('F01')
+    expect(board.rosterTotal).toBe(61)
+    expect(board.devices.map((device) => device.id)).toEqual(['DEV-CNC-01'])
+    expect(board.reliability.availability).toBe(100)
+    expect(api.getBusinessConsoleEquipmentOverview).toHaveBeenCalledTimes(1)
+    expect(api.getBusinessConsoleEquipmentOverview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({ deviceAssetIds: 'DEV-CNC-01,missing-state' }),
+      }),
+    )
+  })
+
   it('空设备台账：不请求 overview，返回空设备但不崩', async () => {
     vi.mocked(api.listBusinessConsoleDeviceAssets).mockResolvedValue(ok({ resources: [] }))
     const ov = await fetchRealEquipmentOverview('F01')

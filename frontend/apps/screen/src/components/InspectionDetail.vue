@@ -7,9 +7,9 @@ import { fetchHallMetric } from '@/data/fetchers/launcher'
 import type { ScreenSession } from '@/data/session'
 import { formatScreenFreshness } from '@/data/freshness'
 const props = defineProps<{ session: ScreenSession }>()
-const {options,selected,select,data,error,loading,lastUpdated,refresh} = useScopedReading(
+const { options, selected, select, data, error, loading, lastUpdated, refresh } = useScopedReading(
   () => inspectionOptions(props.session),
-  scope => fetchHallMetric('inspection',props.session,true,scope),
+  (scope) => fetchHallMetric('inspection', props.session, true, scope),
   15000,
 )
 </script>
@@ -22,7 +22,15 @@ const {options,selected,select,data,error,loading,lastUpdated,refresh} = useScop
       <p v-for="line in data.exceptions.slice(1)" :key="line">{{ line }}</p>
       <p v-if="data.value === '0 / 0'">当前范围暂无检验任务</p>
     </template>
-    <ReadError v-if="error" :error="error" :loading="loading" :last-updated="lastUpdated" @retry="refresh" />
-    <small v-else>{{ lastUpdated ? formatScreenFreshness(false,lastUpdated).text : '读取中' }}</small>
+    <ReadError
+      v-if="error"
+      :error="error"
+      :loading="loading"
+      :last-updated="lastUpdated"
+      @retry="refresh"
+    />
+    <small v-else>{{
+      lastUpdated ? formatScreenFreshness(false, lastUpdated).text : '读取中'
+    }}</small>
   </section>
 </template>

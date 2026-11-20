@@ -95,7 +95,19 @@ it('台账跨页时不能把首批设备当作组织总数', async () => {
       requests++
       if (url.pathname.endsWith('/overview')) {
         expect(url.searchParams.get('deviceAssetIds')).toBe('a')
-        return Response.json({success:true,data:{devices:[{deviceAssetId:'a',currentState:'running',isSourceFresh:true,activeAlarmCount:0}]}})
+        return Response.json({
+          success: true,
+          data: {
+            devices: [
+              {
+                deviceAssetId: 'a',
+                currentState: 'running',
+                isSourceFresh: true,
+                activeAlarmCount: 0,
+              },
+            ],
+          },
+        })
       }
       return Response.json({
         success: true,

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import ScopePicker from '@/components/ScopePicker.vue'
-import { useWarehouseDomains } from '@/composables/useWarehouseDomains' 
+import { useWarehouseDomains } from '@/composables/useWarehouseDomains'
 
 import { useAuthorizedScreenData } from '@/composables/useAuthorizedScreenData'
 import {
@@ -59,16 +59,25 @@ const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
 // 两条流各自标记取数时的 scope，切换工厂/persona 时旧 scope 的 tick 不会覆盖新 board。
 const scopeKey = computed(() => `${scope.currentFactoryId}::${scope.personaId}`)
 const domains = IS_REAL_DATA ? useWarehouseDomains() : undefined
-const demoBoard = domains ? undefined : useAuthorizedScreenData<Scoped<WarehouseBoard>>(
-  async () => ({ scopeKey: scopeKey.value, data: await fetchWarehouseBoard(scope.currentFactoryId) }),
-  { intervalMs: 10000 },
-)
+const demoBoard = domains
+  ? undefined
+  : useAuthorizedScreenData<Scoped<WarehouseBoard>>(
+      async () => ({
+        scopeKey: scopeKey.value,
+        data: await fetchWarehouseBoard(scope.currentFactoryId),
+      }),
+      { intervalMs: 10000 },
+    )
 const boardEnv = demoBoard?.data ?? ref(undefined)
-const boardStale = demoBoard?.isStale ?? ref(false)
+const boardStale =
+  demoBoard?.isStale ??
+  computed(() => domains?.controls.some((c) => c.source.error.value && c.source.lastUpdated.value))
 const lastUpdated = demoBoard?.lastUpdated ?? domains!.lastUpdated
 const error = demoBoard?.error
 const loading = demoBoard?.loading
-function refresh() { return demoBoard?.refresh() ?? domains?.wcs.refresh() }
+function refresh() {
+  return demoBoard?.refresh() ?? domains?.wcs.refresh()
+}
 const demoOps = IS_REAL_DATA
   ? undefined
   : useAuthorizedScreenData<Scoped<WarehouseOpsTick>>(
@@ -209,8 +218,12 @@ const bandCells = computed<BandCell[]>(() => {
 // —— 作业任务看板（3s tick 优先，主数据兜底；两者同源必然一致）——
 const inbound = computed(() => domains?.receipts.data.value?.inbound ?? board.value?.inbound)
 const outbound = computed(() => domains?.shipments.data.value?.outbound ?? board.value?.outbound)
-const pick = computed(() => domains?.shipments.data.value?.pick ?? ops.value?.pick ?? board.value?.pick)
-const putaway = computed(() => domains?.receipts.data.value?.putaway ?? ops.value?.putaway ?? board.value?.putaway)
+const pick = computed(
+  () => domains?.shipments.data.value?.pick ?? ops.value?.pick ?? board.value?.pick,
+)
+const putaway = computed(
+  () => domains?.receipts.data.value?.putaway ?? ops.value?.putaway ?? board.value?.putaway,
+)
 const count = computed(() => domains?.counts.data.value ?? ops.value?.count ?? board.value?.count)
 const wcs = computed(() => domains?.wcs.data.value ?? ops.value?.wcs ?? board.value?.wcs)
 const overdueTop = computed(() => ops.value?.overdueTop ?? board.value?.overdueTop ?? [])
@@ -232,7 +245,8 @@ const taskGroups = computed<TaskGroupView[]>(() => {
   const pa = putaway.value
   const c = count.value
   const groups: TaskGroupView[] = []
-  if (p) groups.push({
+  if (p)
+    groups.push({
       key: 'pick',
       icon: PackageSearch,
       title: '拣货',
@@ -244,7 +258,8 @@ const taskGroups = computed<TaskGroupView[]>(() => {
       flex: 1.5,
       speed: 24,
     })
-  if (pa) groups.push({
+  if (pa)
+    groups.push({
       key: 'putaway',
       icon: Forklift,
       title: '上架',
@@ -256,7 +271,8 @@ const taskGroups = computed<TaskGroupView[]>(() => {
       flex: 1.15,
       speed: 20,
     })
-  if (c) groups.push({
+  if (c)
+    groups.push({
       key: 'count',
       icon: ClipboardCheck,
       title: '盘点',
@@ -300,9 +316,22 @@ const wcsView = ref<'chart' | 'list'>('chart')
   >
     <div v-if="domains" class="domain-controls">
       <div v-for="entry in domains.controls" :key="entry.label">
-        <ScopePicker v-if="entry.scoped" :label="entry.label" :options="entry.source.options.value" :selected="entry.source.selected.value" @select="entry.source.select" />
+        <ScopePicker
+          v-if="entry.scoped"
+          :label="entry.label"
+          :options="entry.source.options.value"
+          :selected="entry.source.selected.value"
+          @select="entry.source.select"
+        />
         <span v-else>WCS · 当前组织</span>
-        <ReadError v-if="entry.source.error.value" :error="entry.source.error.value" :loading="entry.source.loading.value" :last-updated="entry.source.lastUpdated.value" @retry="entry.source.refresh" />
+        <small v-if="!entry.source.error.value && !entry.source.lastUpdated.value">读取中</small>
+        <ReadError
+          v-if="entry.source.error.value"
+          :error="entry.source.error.value"
+          :loading="entry.source.loading.value"
+          :last-updated="entry.source.lastUpdated.value"
+          @retry="entry.source.refresh"
+        />
       </div>
     </div>
     <div v-if="board || domains" class="wb">
@@ -532,6 +561,11 @@ const wcsView = ref<'chart' | 'list'>('chart')
             <p v-if="wcs?.readFailure">
               {{ wcs.readFailure }} <button @click="refresh">重试</button>
             </p>
+            <ReadError
+              v-else-if="!wcs && domains?.wcs.error.value"
+              :error="domains.wcs.error.value"
+              @retry="domains.wcs.refresh"
+            />
             <div v-else-if="wcs" class="wm">
               <!-- ① 失败告警（异常优先置顶；约 3 条完整显示，更多滚动） -->
               <NvScreenScrollArea class="wf-list">
@@ -635,7 +669,11 @@ const wcsView = ref<'chart' | 'list'>('chart')
             </div>
           </NvScreenPanel>
 
-          <NvScreenPanel v-if="board && !board.mixedScopes" title="任务超时榜 · TOP5" class="wb-overdue">
+          <NvScreenPanel
+            v-if="board && !board.mixedScopes"
+            title="任务超时榜 · TOP5"
+            class="wb-overdue"
+          >
             <template #extra>
               <NvScreenStatusTag tone="amber" label="龄期按创建时刻推算" />
             </template>
@@ -687,8 +725,15 @@ const wcsView = ref<'chart' | 'list'>('chart')
 </template>
 
 <style scoped>
-.domain-controls { display:flex; gap:12px; flex-wrap:wrap; padding:4px 8px; }
-.domain-controls + .wb { height:calc(100% - 42px); }
+.domain-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 4px 8px;
+}
+.domain-controls + .wb {
+  height: calc(100% - 42px);
+}
 
 @layer app {
   .wb {

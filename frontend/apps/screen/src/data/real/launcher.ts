@@ -72,7 +72,10 @@ export async function fetchHallMetric(
     try {
       if (['putaway', 'count', 'inbound', 'outbound', 'picking'].includes(metric))
         return await warehouseScope(session, domain)
-      if (metric === 'inspection') return inspection ? {query:scopeQuery(session, inspection), label:inspection.label} : await inspectionScope(session)
+      if (metric === 'inspection')
+        return inspection
+          ? { query: scopeQuery(session, inspection), label: inspection.label }
+          : await inspectionScope(session)
     } catch (error) {
       const message = accessError(error)
       if (message) throw new HallMetricUnavailable(message)
@@ -201,13 +204,20 @@ export async function fetchHallMetric(
   )
   const total = totalOf(roster)
   const catalog = deviceRosterFromPage(readRows(roster.resources), total, workCenterCode)
-  if (!total) return {value:'暂无设备', exceptions:workCenterCode ? [workCenterCode] : []}
-  const devices = (await Promise.all(deviceIdBatches(catalog.ids).map(async deviceAssetIds => {
-    const page = read(await getBusinessConsoleEquipmentOverview({
-      signal: AbortSignal.timeout(12000), query: { ...session, deviceAssetIds },
-    }))
-    return coveredDevices(deviceAssetIds, readRows(page.devices))
-  }))).flat()
+  if (!total) return { value: '暂无设备', exceptions: workCenterCode ? [workCenterCode] : [] }
+  const devices = (
+    await Promise.all(
+      deviceIdBatches(catalog.ids).map(async (deviceAssetIds) => {
+        const page = read(
+          await getBusinessConsoleEquipmentOverview({
+            signal: AbortSignal.timeout(12000),
+            query: { ...session, deviceAssetIds },
+          }),
+        )
+        return coveredDevices(deviceAssetIds, readRows(page.devices))
+      }),
+    )
+  ).flat()
   const running = devices.filter((device) =>
     isRunningDevice(
       device.currentState,

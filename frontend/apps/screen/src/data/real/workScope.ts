@@ -23,9 +23,13 @@ export async function warehouseOptions(session: ScreenSession, domain: keyof typ
     }),
   )
   const items = readRows(catalog.items)
-  return ['work-pool', 'site', 'self'].flatMap(kind =>
-    items.flatMap(item => item.scopeKind === kind && item.scopeId?.trim()
-      ? [{ kind, id: item.scopeId, label: item.displayName || item.scopeId }] : []))
+  return ['work-pool', 'site', 'self'].flatMap((kind) =>
+    items.flatMap((item) =>
+      item.scopeKind === kind && item.scopeId?.trim()
+        ? [{ kind, id: item.scopeId, label: item.displayName || item.scopeId }]
+        : [],
+    ),
+  )
 }
 
 export interface ScopeOption {
@@ -53,9 +57,13 @@ export async function inspectionOptions(session: ScreenSession) {
     }),
   )
   const scopes = readRows(context.authorizedScopes)
-  return ['organization', 'team', 'self'].flatMap(kind =>
-    scopes.flatMap(item => item.kind === kind && item.id
-      ? [{ kind, id: item.id, label: item.displayName || item.id }] : []))
+  return ['organization', 'team', 'self'].flatMap((kind) =>
+    scopes.flatMap((item) =>
+      item.kind === kind && item.id
+        ? [{ kind, id: item.id, label: item.displayName || item.id }]
+        : [],
+    ),
+  )
 }
 
 export async function inspectionScope(session: ScreenSession) {

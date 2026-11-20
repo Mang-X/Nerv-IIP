@@ -115,7 +115,8 @@ export async function resolveDeviceRoster(
   })
   const page = readScreenPayload(res)
   const items = readRows(page.resources)
-  if (page.total === undefined && (page.truncated || items.length >= ROSTER_MAX)) throw new Error('设备台账总数不可用')
+  if (page.total === undefined && (page.truncated || items.length >= ROSTER_MAX))
+    throw new Error('设备台账总数不可用')
   const roster = deviceRosterFromPage(items, page.total, workCenterCode)
   if (session === requestedSession) rosterCache = { workCenterCode, at: nowMs, roster }
   return roster
@@ -126,8 +127,15 @@ export function resetDeviceRosterCache(): void {
   rosterCache = null
 }
 
-export function deviceRosterFromPage(items: BusinessConsoleResourceItem[], reportedTotal: number | undefined, workCenterCode?: string): DeviceRoster {
-  if (reportedTotal !== undefined && (!Number.isSafeInteger(reportedTotal) || reportedTotal < items.length))
+export function deviceRosterFromPage(
+  items: BusinessConsoleResourceItem[],
+  reportedTotal: number | undefined,
+  workCenterCode?: string,
+): DeviceRoster {
+  if (
+    reportedTotal !== undefined &&
+    (!Number.isSafeInteger(reportedTotal) || reportedTotal < items.length)
+  )
     throw new Error('设备台账总数不完整')
   const byId = new Map<string, DeviceRosterEntry>()
   const seen = new Set<string>()
@@ -141,7 +149,8 @@ export function deviceRosterFromPage(items: BusinessConsoleResourceItem[], repor
   const notes: string[] = []
   const total = reportedTotal ?? items.length
   if (total > ROSTER_MAX) notes.push('仅读取前 50 条台账')
-  if (items.some(item => !item.deviceAssetId?.trim())) notes.push('部分设备缺少遥测映射')
-  if (workCenterCode && items.some(item => item.workCenterCode !== workCenterCode)) notes.push('已排除范围不符的台账')
+  if (items.some((item) => !item.deviceAssetId?.trim())) notes.push('部分设备缺少遥测映射')
+  if (workCenterCode && items.some((item) => item.workCenterCode !== workCenterCode))
+    notes.push('已排除范围不符的台账')
   return { ids: [...byId.keys()], byId, total, coverageNotes: notes }
 }

@@ -33,7 +33,9 @@ export function useScopedReading<T>(
       if (current !== generation) return
       catalogRead = true
       options.value = scopes
-      const scope = selected.value ? scopes.find(s => scopeKeyOf(s) === selected.value) : scopes[0]
+      const scope = selected.value
+        ? scopes.find((s) => scopeKeyOf(s) === selected.value)
+        : scopes[0]
       if (!scope) throw new NoWorkScope('当前范围未获授权')
       selected.value = scopeKeyOf(scope)
       const result = await read(scope)
@@ -54,7 +56,7 @@ export function useScopedReading<T>(
   }
 
   function select(key: string) {
-    if (!options.value.some(s => scopeKeyOf(s) === key)) return
+    if (!options.value.some((s) => scopeKeyOf(s) === key)) return
     generation++
     clearSample()
     selected.value = key
@@ -65,6 +67,15 @@ export function useScopedReading<T>(
 
   useScreenData(refresh, { intervalMs })
   onScopeDispose(() => generation++)
-  return { data, error, loading, options, selected, lastUpdated, select, refresh,
-    scope: computed(() => options.value.find(s => scopeKeyOf(s) === selected.value)) }
+  return {
+    data,
+    error,
+    loading,
+    options,
+    selected,
+    lastUpdated,
+    select,
+    refresh,
+    scope: computed(() => options.value.find((s) => scopeKeyOf(s) === selected.value)),
+  }
 }

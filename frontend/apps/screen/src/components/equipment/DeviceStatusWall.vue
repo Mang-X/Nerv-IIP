@@ -122,7 +122,12 @@ function showTip(d: DeviceCell, e: MouseEvent) {
   const token = ++hoverToken
   clearTimeout(hoverTimer)
   hoverTimer = setTimeout(async () => {
-    const det = await fetchDeviceDetail(d.id, props.factoryId, props.workshopIds, props.workCenterCode).catch(() => null)
+    const det = await fetchDeviceDetail(
+      d.id,
+      props.factoryId,
+      props.workshopIds,
+      props.workCenterCode,
+    ).catch(() => null)
     if (det) {
       if (!IS_REAL_DATA) detailCache.set(d.id, { at: Date.now(), d: det })
       if (token === hoverToken && tip.value?.device.id === d.id) tipDetail.value = det
@@ -136,9 +141,12 @@ function hideTip() {
   hoverToken++
 }
 onScopeDispose(hideTip)
-watch(() => props.devices, devices => {
-  if (tip.value && !devices.some(d => d.id === tip.value?.device.id)) hideTip()
-})
+watch(
+  () => props.devices,
+  (devices) => {
+    if (tip.value && !devices.some((d) => d.id === tip.value?.device.id)) hideTip()
+  },
+)
 function pick(d: DeviceCell) {
   hideTip()
   emit('select', d)
