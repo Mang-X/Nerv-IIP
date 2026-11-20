@@ -270,6 +270,28 @@ describe('configureApiClient', () => {
     expect(onUnauthorized).toHaveBeenCalledTimes(1)
   })
 
+  it('a late 401 from the previous shift leaves the new session active', async () => {
+    let token = 'outgoing-shift'
+    const onUnauthorized = vi.fn()
+    const sent = Promise.withResolvers<void>()
+    const pending = Promise.withResolvers<Response>()
+    configureApiClient({
+      baseUrl: 'https://gateway.example.test',
+      accessTokenProvider: () => token,
+      fetch: async () => {
+        sent.resolve()
+        return pending.promise
+      },
+      onUnauthorized,
+    })
+    const oldRequest = client.get({ url: '/secure' })
+    await sent.promise
+    token = 'incoming-shift'
+    pending.resolve(new Response(null, { status: 401 }))
+    expect((await oldRequest).response?.status).toBe(401)
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
+
   it('configures the Business Console generated client with auth, locale, and unauthorized handling', async () => {
     const requests: Request[] = []
     const onUnauthorized = vi.fn()
