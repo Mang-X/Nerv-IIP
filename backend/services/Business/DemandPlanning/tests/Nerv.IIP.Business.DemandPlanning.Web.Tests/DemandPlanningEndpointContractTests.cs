@@ -384,7 +384,10 @@ public sealed class DemandPlanningEndpointContractTests
         var suggestions = await new ListPlanningSuggestionsQueryHandler(dbContext).Handle(new ListPlanningSuggestionsQuery("org-001", "env-dev", null), CancellationToken.None);
         Assert.Contains(suggestions, x => x.SuggestionType == "planned-work-order" && x.SkuCode == "SKU-FG-1000" && x.Quantity == 8m);
         Assert.Contains(suggestions, x => x.SuggestionType == "planned-purchase" && x.SkuCode == "SKU-RM-1000" && x.Quantity == 19m);
-        var pegging = await new ListMrpPeggingQueryHandler(dbContext).Handle(new ListMrpPeggingQuery(result.RunId), CancellationToken.None);
+        var pegging = await new ListMrpPeggingQueryHandler(dbContext).Handle(new ListMrpPeggingQuery(result.RunId, "org-001", "env-dev"), CancellationToken.None);
+        var reader = new ListMrpPeggingQueryHandler(dbContext);
+        Assert.Empty(await reader.Handle(new ListMrpPeggingQuery(result.RunId, "org-002", "env-dev"), CancellationToken.None));
+        Assert.Empty(await reader.Handle(new ListMrpPeggingQuery(result.RunId, "org-001", "env-other"), CancellationToken.None));
         Assert.Contains(pegging, x => x.DemandSourceReference == "DEMAND-001" && x.ProductionVersionReference == "PV-001" && x.ManufacturingBomReference == "MBOM-001");
     }
 
@@ -414,7 +417,7 @@ public sealed class DemandPlanningEndpointContractTests
         Assert.Equal(8m, explanation.GetProperty("netRequirementQuantity").GetDecimal());
         Assert.Equal("sales", explanation.GetProperty("primarySourceType").GetString());
 
-        var pegging = await new ListMrpPeggingQueryHandler(dbContext).Handle(new ListMrpPeggingQuery(result.RunId), CancellationToken.None);
+        var pegging = await new ListMrpPeggingQueryHandler(dbContext).Handle(new ListMrpPeggingQuery(result.RunId, "org-001", "env-dev"), CancellationToken.None);
         var demandPegging = Assert.Single(pegging, x => x.SuggestionId == workOrder.SuggestionId && x.DemandSourceReference == "SO-1001");
         using var peggingDocument = JsonDocument.Parse(JsonSerializer.Serialize(demandPegging, JsonOptions));
         Assert.Equal("sales", peggingDocument.RootElement.GetProperty("sourceType").GetString());
