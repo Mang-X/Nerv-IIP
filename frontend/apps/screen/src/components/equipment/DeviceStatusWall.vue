@@ -158,9 +158,9 @@ function pick(d: DeviceCell) {
     <!-- 顶部五态计数（与墙体逐台归并一致，单测对账） -->
     <div class="dsw-counts">
       <span v-for="c in countItems()" :key="c.k" class="count" :class="c.k">
-        <i />{{ c.label }} <b>{{ c.v }}</b>
+        <i />{{ c.label }} <b>{{ c.v }}</b> 台
       </span>
-      <span class="dsw-total">共 {{ devices.length }} 台</span>
+      <span class="dsw-total">{{ partialCoverage ? '已覆盖' : '共' }} {{ devices.length }} 台</span>
     </div>
 
     <!-- 平铺：行虚拟滚动的大格参数墙 -->

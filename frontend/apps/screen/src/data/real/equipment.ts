@@ -15,6 +15,7 @@ import {
   listBusinessConsoleMaintenanceWorkOrders,
   queryBusinessConsoleMaintenanceAssetReliability,
   queryBusinessConsoleTelemetryOee,
+  type EquipmentRuntimeAvailabilityWindow,
   type BusinessConsoleMaintenanceInspectionItem,
   type BusinessConsoleMaintenancePlanItem,
   type BusinessConsoleMaintenanceWorkOrderItem,
@@ -287,6 +288,20 @@ function inspectionRow(
   }
 }
 
+function blockReasons(activeBlocks: readonly EquipmentRuntimeAvailabilityWindow[]) {
+  const blockByDevice = new Map<string, string>()
+  for (const b of [...activeBlocks].sort(
+    (x, y) =>
+      (BLOCK_SEVERITY_RANK[x.severity ?? 'info'] ?? 9) -
+      (BLOCK_SEVERITY_RANK[y.severity ?? 'info'] ?? 9),
+  )) {
+    const id = b.deviceAssetId
+    if (!id || blockByDevice.has(id)) continue
+    blockByDevice.set(id, REASON_LABELS[b.reasonCode ?? ''] ?? b.reasonCode ?? '受限')
+  }
+  return blockByDevice
+}
+
 function deviceCellOf(
   roster: DeviceRoster,
   deviceAssetId: string,
@@ -345,22 +360,13 @@ async function readList<T>(
   }
 }
 
-/** 全景取数：设备清单+状态、活动报警(#686)、维修/PM/点检、聚合可靠性。 */
-export async function fetchRealEquipmentOverview(
-  factoryId = getScreenSession().organizationId,
-): Promise<EquipmentOverview> {
-  if (!hasScreenSession()) {
-    throw new Error('大屏会话上下文未就绪（organizationId/environmentId 为空）')
-  }
-  const { organizationId, environmentId } = getScreenSession()
-  const workCenterCode = await deviceWorkCenter({ organizationId, environmentId })
-  return readEquipmentOverview(factoryId, workCenterCode)
-}
-
 export async function readEquipmentOverview(
   factoryId: string,
   workCenterCode?: string,
 ): Promise<EquipmentOverview> {
+  if (!hasScreenSession()) {
+    throw new Error('大屏会话上下文未就绪（organizationId/environmentId 为空）')
+  }
   const nowMs = Date.now()
   const { organizationId, environmentId } = getScreenSession()
   const roster = await resolveDeviceRoster(nowMs, true, workCenterCode)
@@ -428,18 +434,7 @@ export async function readEquipmentOverview(
   const planItems = planRes.items.filter((item) => inScope(item.deviceAssetId))
   const inspItems = inspRes.items
 
-  // 每设备取最高严重度的活动阻塞作 block 文案。
-  const blockByDevice = new Map<string, string>()
-  for (const b of [...activeBlocks].sort(
-    (x, y) =>
-      (BLOCK_SEVERITY_RANK[x.severity ?? 'info'] ?? 9) -
-      (BLOCK_SEVERITY_RANK[y.severity ?? 'info'] ?? 9),
-  )) {
-    const id = b.deviceAssetId
-    if (!id || blockByDevice.has(id)) continue
-    blockByDevice.set(id, REASON_LABELS[b.reasonCode ?? ''] ?? b.reasonCode ?? '受限')
-  }
-
+  const blockByDevice = blockReasons(activeBlocks)
   const devices: DeviceCell[] = summaries.map((d) =>
     deviceCellOf(
       roster,
@@ -532,7 +527,7 @@ export async function fetchRealDeviceDetail(
   const nowMs = Date.now()
   const { organizationId, environmentId } = getScreenSession()
   const workCenterCode = await deviceWorkCenter({ organizationId, environmentId }, requestedCenter)
-  const roster = await resolveDeviceRoster(nowMs, false, workCenterCode)
+  const roster = await resolveDeviceRoster(nowMs, !!workCenterCode, workCenterCode)
   if (workCenterCode && !roster.byId.has(deviceId))
     throw new NoWorkScope('设备已移出当前工作中心范围')
   const contextQuery = { organizationId, environmentId }
@@ -596,7 +591,7 @@ export async function fetchRealDeviceDetail(
     ),
   ])
 
-  const currentState = readScreenPayload(devRes).currentState
+  const { currentState, availability } = readScreenPayload(devRes)
   if (!currentState || currentState.deviceAssetId !== deviceId)
     throw new Error('设备状态响应不完整')
   const device = deviceCellOf(
@@ -605,7 +600,9 @@ export async function fetchRealDeviceDetail(
     currentState?.currentState,
     currentState?.isSourceFresh ?? false,
     currentState?.activeAlarms?.length ?? 0,
-    new Map(),
+    blockReasons(
+      (availability?.items ?? []).filter((item) => item.availabilityStatus !== 'available'),
+    ),
   )
 
   const woItems = woRes.items.filter((w) => w.deviceAssetId === deviceId)
