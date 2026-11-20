@@ -8,6 +8,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@nerv-iip/api-client', () => ({
+  isForbiddenRequestError: (error: { status?: number }) => error?.status === 403,
+  getBusinessConsoleWmsReceiptWorkScopes: vi.fn(),
+  getBusinessConsoleWmsShipmentWorkScopes: vi.fn(),
+  getBusinessConsoleWmsCountWorkScopes: vi.fn(),
   listBusinessConsoleWmsInboundOrders: vi.fn(),
   listBusinessConsoleWmsOutboundOrders: vi.fn(),
   listBusinessConsoleWmsPutawayTasks: vi.fn(),
@@ -50,6 +54,15 @@ function makeList<T extends { status?: string }>(rows: T[]) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  for (const list of [
+    api.getBusinessConsoleWmsReceiptWorkScopes,
+    api.getBusinessConsoleWmsShipmentWorkScopes,
+    api.getBusinessConsoleWmsCountWorkScopes,
+  ]) {
+    vi.mocked(list).mockResolvedValue(
+      ok([{ scopeKind: 'site', scopeId: 'SITE-01', displayName: '一号站点' }]),
+    )
+  }
   vi.useFakeTimers()
   vi.setSystemTime(NOW)
   setScreenSession({ organizationId: 'org-001', environmentId: 'env-dev' })
@@ -99,6 +112,7 @@ function stubDefaults() {
       {
         outboundOrderId: 'OUT-1',
         outboundOrderNo: 'SO-9801',
+        completedAtUtc: iso(22),
         status: 'Completed',
         createdAtUtc: iso(90),
       },
@@ -291,7 +305,7 @@ describe('fetchRealWarehouseBoard', () => {
     expect(b.outbound.failedDocs).toBe(0)
     expect(b.outbound.failedHourly.reduce((n, v) => n + v, 0)).toBe(0)
     expect(b.outbound.customers).toBe(0)
-    expect(b.outbound.latestShipment).toBe('发运单 SO-9801')
+    expect(b.outbound.latestShipment).toBe('SO-9801')
   })
 
   it('近 12h 失败柱只统计窗口内单据，同时保留当日过账失败总数', async () => {
@@ -430,6 +444,23 @@ describe('fetchRealWarehouseBoard', () => {
     expect(
       calls.every((c) => (c[0] as { query: { failed?: boolean } }).query.failed !== true),
     ).toBe(true)
+  })
+
+  it('只读站点主管可读积压，WCS 管理权限缺失仅影响 WCS', async () => {
+    vi.mocked(api.listBusinessConsoleWmsWcsTasks).mockRejectedValue({ status: 403 })
+    const board = await fetchRealWarehouseBoard('F01')
+    expect(board.wcs.readFailure).toBe('无权查看当前范围')
+    expect(board.putaway.rows).toHaveLength(120)
+    for (const list of [
+      api.listBusinessConsoleWmsPutawayTasks,
+      api.listBusinessConsoleWmsPickingTasks,
+      api.listBusinessConsoleWmsCountExecutions,
+    ])
+      expect(list).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query: expect.objectContaining({ scopeKind: 'site', scopeId: 'SITE-01' }),
+        }),
+      )
   })
 
   it('KPI 勾稽、超时榜跨类合并按龄期降序', async () => {

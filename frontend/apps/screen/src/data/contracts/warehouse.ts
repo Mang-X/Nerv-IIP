@@ -124,6 +124,7 @@ export interface WcsFailureRow {
 }
 
 export interface WcsBoard {
+  readFailure?: string
   adapters: WcsAdapterCell[]
   /** 状态分布 ✅（跨适配器合计，与 adapters 逐格勾稽） */
   counts: { queued: number; running: number; completed: number; failed: number }
@@ -160,6 +161,8 @@ export interface WarehouseKpis {
 
 /** /warehouse 仓储物流大屏 */
 export interface WarehouseBoard {
+  mixedScopes?: boolean
+  scopeLabel?: string
   factoryId: string
   kpis: WarehouseKpis
   inbound: InboundProgress

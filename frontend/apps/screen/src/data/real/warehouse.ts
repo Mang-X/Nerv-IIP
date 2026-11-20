@@ -1,3 +1,5 @@
+import { accessError } from './readError'
+import { warehouseScope } from './workScope'
 // 仓储物流真实取数适配（MAN-467 · 档1样板，照抄 MAN-466 设备屏三段式）：把 business-console
 // WMS 作业域 facade（与 Console WMS 域同源，均走 /api/business-console/v1/wms/**）适配进大屏
 // 既有 WarehouseBoard / WarehouseOpsTick 契约 —— 契约不变、页面零改动（除轮询/诚实标注）。
@@ -11,11 +13,8 @@
 //     `status:'Completed'` 按 completedAtUtc 落今日过滤;为界定扫描量,按排序键(createdAtUtc / WCS
 //     dispatchedAtUtc)回溯 lookback 天早停(覆盖真实完工时延,含昨日创建今日完成;>lookback 天前创建
 //     今日才完工=异常长尾,穷尽吞吐待 #570 后端汇总/完工日期端点)。
-//   - 入/出库单 facade **无 completedAtUtc**（仅 createdAtUtc）→ 只能按**当日到货 cohort**（当日创建
-//     单据中已完成的）呈现进度,无法做完工日期维度吞吐(待 #570)。
-// 诚实占位（不臆造）：入/出库仅文档级(无行级数量)→ linesDone/linesTotal 镜像单据数、页面 real 标注
-//   「单」;出库无客户维度→customers 0;WCS 无排队态→queued 0;库存水位/低库存半屏待 #570 不接入。
-//   会话空/请求失败即 throw → stale。
+// 入/出库进度均以本地当日建单为分母。出库 completedAtUtc 表示库存过账完成。
+// 出库有行明细，但两端进度均以单据为单位。
 import {
   listBusinessConsoleWmsCountExecutions,
   listBusinessConsoleWmsInboundOrders,
@@ -337,7 +336,7 @@ function wcsBoardOf(
   return { adapters, counts, failures }
 }
 
-// —— 入库 / 出库（文档级，无 completedAtUtc）：扫描窗口覆盖「今天 ∪ 近 12h」，
+// —— 入库 / 出库（按建单窗口）：扫描窗口覆盖「今天 ∪ 近 12h」，
 // 当日进度只看 today cohort；完成/失败柱按完整近 12h 窗口落桶。——
 function inboundOf(
   scannedItems: BusinessConsoleWmsInboundOrderItem[],
@@ -382,8 +381,11 @@ function outboundOf(
   const { hourly, hourLabels } = hourlyBy(completedInWindow, nowMs, (o) => o.createdAtUtc)
   const { hourly: failedHourly } = hourlyBy(failedInWindow, nowMs, (o) => o.createdAtUtc)
   const failedDocs = failedHourly.reduce((sum, count) => sum + count, 0)
-  // 最近一票发运 = 最新已完成（发运）出库单（newest-first，取首个 Completed）。
-  const latest = completedToday[0]?.outboundOrderNo?.trim()
+  // 当前建单窗口内最近完成库存过账的出库单。
+  const latest = completedToday
+    .filter((o) => Number.isFinite(Date.parse(o.completedAtUtc ?? '')))
+    .sort((a, b) => Date.parse(b.completedAtUtc!) - Date.parse(a.completedAtUtc!))[0]
+    ?.outboundOrderNo?.trim()
   return {
     docsDone,
     docsTotal,
@@ -396,7 +398,7 @@ function outboundOf(
     hourLabels,
     // 出库 facade 无客户维度 → 0（页面 real 模式隐藏「客户 N 家」）。
     customers: 0,
-    latestShipment: latest ? `发运单 ${latest}` : undefined,
+    latestShipment: latest ? `${latest}` : undefined,
   }
 }
 
@@ -435,12 +437,24 @@ function fetchTaskGroup(
   return Promise.all([
     paginate(
       (skip, take) =>
-        pageOf(list({ throwOnError: true, query: { ...ctx, status: 'Open', skip, take } })),
+        pageOf(
+          list({
+            signal: AbortSignal.timeout(12000),
+            throwOnError: true,
+            query: { ...ctx, status: 'Open', skip, take },
+          }),
+        ),
       `${label}(Open)`,
     ),
     fetchCompletedToday(
       (skip, take) =>
-        pageOf(list({ throwOnError: true, query: { ...ctx, status: 'Completed', skip, take } })),
+        pageOf(
+          list({
+            signal: AbortSignal.timeout(12000),
+            throwOnError: true,
+            query: { ...ctx, status: 'Completed', skip, take },
+          }),
+        ),
       (t) => t.createdAtUtc,
       LOOKBACK_TASK_MS,
       nowMs,
@@ -455,6 +469,7 @@ function fetchCountBoard(ctx: Ctx, nowMs: number): Promise<CycleCountBoard> {
       (skip, take) =>
         pageOf(
           listBusinessConsoleWmsCountExecutions({
+            signal: AbortSignal.timeout(12000),
             throwOnError: true,
             query: { ...ctx, status: 'Open', skip, take },
           }),
@@ -465,6 +480,7 @@ function fetchCountBoard(ctx: Ctx, nowMs: number): Promise<CycleCountBoard> {
       (skip, take) =>
         pageOf(
           listBusinessConsoleWmsCountExecutions({
+            signal: AbortSignal.timeout(12000),
             throwOnError: true,
             query: { ...ctx, status: 'Completed', skip, take },
           }),
@@ -483,6 +499,7 @@ function fetchWcsBoard(ctx: Ctx, nowMs: number): Promise<WcsBoard> {
       (skip, take) =>
         pageOf(
           listBusinessConsoleWmsWcsTasks({
+            signal: AbortSignal.timeout(12000),
             throwOnError: true,
             query: { ...ctx, status: 'Failed', skip, take },
           }),
@@ -493,6 +510,7 @@ function fetchWcsBoard(ctx: Ctx, nowMs: number): Promise<WcsBoard> {
       (skip, take) =>
         pageOf(
           listBusinessConsoleWmsWcsTasks({
+            signal: AbortSignal.timeout(12000),
             throwOnError: true,
             query: { ...ctx, status: 'Dispatched', skip, take },
           }),
@@ -503,6 +521,7 @@ function fetchWcsBoard(ctx: Ctx, nowMs: number): Promise<WcsBoard> {
       (skip, take) =>
         pageOf(
           listBusinessConsoleWmsWcsTasks({
+            signal: AbortSignal.timeout(12000),
             throwOnError: true,
             query: { ...ctx, status: 'Completed', skip, take },
           }),
@@ -515,6 +534,14 @@ function fetchWcsBoard(ctx: Ctx, nowMs: number): Promise<WcsBoard> {
   ]).then(([failed, running, done]) => wcsBoardOf(failed, running, done, nowMs))
 }
 
+async function readWcsBoard(ctx: Ctx, nowMs: number): Promise<WcsBoard> {
+  try {
+    return await fetchWcsBoard(ctx, nowMs)
+  } catch (error) {
+    return { ...wcsBoardOf([], [], [], nowMs), readFailure: accessError(error) ?? '读取失败' }
+  }
+}
+
 function flowScanStart(nowMs: number): number {
   return Math.min(startOfLocalDay(nowMs), nowMs - 12 * 3_600_000)
 }
@@ -523,7 +550,11 @@ function fetchInboundFlow(ctx: Ctx, nowMs: number): Promise<InboundProgress> {
   return paginate(
     (skip, take) =>
       pageOf(
-        listBusinessConsoleWmsInboundOrders({ throwOnError: true, query: { ...ctx, skip, take } }),
+        listBusinessConsoleWmsInboundOrders({
+          signal: AbortSignal.timeout(12000),
+          throwOnError: true,
+          query: { ...ctx, skip, take },
+        }),
       ),
     '入库单(当日+近12h)',
     (o) => tsBefore(o.createdAtUtc, flowScanStart(nowMs)),
@@ -534,7 +565,11 @@ function fetchOutboundFlow(ctx: Ctx, nowMs: number): Promise<OutboundProgress> {
   return paginate(
     (skip, take) =>
       pageOf(
-        listBusinessConsoleWmsOutboundOrders({ throwOnError: true, query: { ...ctx, skip, take } }),
+        listBusinessConsoleWmsOutboundOrders({
+          signal: AbortSignal.timeout(12000),
+          throwOnError: true,
+          query: { ...ctx, skip, take },
+        }),
       ),
     '出库单(当日+近12h)',
     (o) => tsBefore(o.createdAtUtc, flowScanStart(nowMs)),
@@ -548,13 +583,18 @@ export async function fetchRealWarehouseBoard(
   const ctx = requireSession()
   const nowMs = Date.now()
 
+  const [receipts, shipments, counts] = await Promise.all([
+    warehouseScope(ctx, 'receipts'),
+    warehouseScope(ctx, 'shipments'),
+    warehouseScope(ctx, 'counts'),
+  ])
   const [inbound, outbound, putaway, pick, count, wcs] = await Promise.all([
-    fetchInboundFlow(ctx, nowMs),
-    fetchOutboundFlow(ctx, nowMs),
-    fetchTaskGroup(listBusinessConsoleWmsPutawayTasks, ctx, 'putaway', nowMs),
-    fetchTaskGroup(listBusinessConsoleWmsPickingTasks, ctx, 'pick', nowMs),
-    fetchCountBoard(ctx, nowMs),
-    fetchWcsBoard(ctx, nowMs),
+    fetchInboundFlow(receipts.query, nowMs),
+    fetchOutboundFlow(shipments.query, nowMs),
+    fetchTaskGroup(listBusinessConsoleWmsPutawayTasks, receipts.query, 'putaway', nowMs),
+    fetchTaskGroup(listBusinessConsoleWmsPickingTasks, shipments.query, 'pick', nowMs),
+    fetchCountBoard(counts.query, nowMs),
+    readWcsBoard(ctx, nowMs),
   ])
   const overdueTop = overdueTopOf([pick, putaway], count)
 
@@ -568,7 +608,22 @@ export async function fetchRealWarehouseBoard(
     throughputLines: inbound.linesDone + outbound.linesDone,
   }
 
-  return { factoryId, kpis, inbound, outbound, pick, putaway, count, wcs, overdueTop }
+  return {
+    factoryId,
+    mixedScopes: [shipments, counts].some(
+      ({ query }) =>
+        query.scopeKind !== receipts.query.scopeKind || query.scopeId !== receipts.query.scopeId,
+    ),
+    scopeLabel: `收货 ${receipts.label} · 发货 ${shipments.label} · 盘点 ${counts.label}`,
+    kpis,
+    inbound,
+    outbound,
+    pick,
+    putaway,
+    count,
+    wcs,
+    overdueTop,
+  }
 }
 
 /** 任务看板 + WCS 高频 tick（15s 轮询）：只刷作业子集，与主板同源完整闭包口径一致。 */
@@ -578,11 +633,16 @@ export async function fetchRealWarehouseOpsTick(
   const ctx = requireSession()
   const nowMs = Date.now()
 
+  const [receipts, shipments, counts] = await Promise.all([
+    warehouseScope(ctx, 'receipts'),
+    warehouseScope(ctx, 'shipments'),
+    warehouseScope(ctx, 'counts'),
+  ])
   const [putaway, pick, count, wcs] = await Promise.all([
-    fetchTaskGroup(listBusinessConsoleWmsPutawayTasks, ctx, 'putaway', nowMs),
-    fetchTaskGroup(listBusinessConsoleWmsPickingTasks, ctx, 'pick', nowMs),
-    fetchCountBoard(ctx, nowMs),
-    fetchWcsBoard(ctx, nowMs),
+    fetchTaskGroup(listBusinessConsoleWmsPutawayTasks, receipts.query, 'putaway', nowMs),
+    fetchTaskGroup(listBusinessConsoleWmsPickingTasks, shipments.query, 'pick', nowMs),
+    fetchCountBoard(counts.query, nowMs),
+    readWcsBoard(ctx, nowMs),
   ])
   const overdueTop = overdueTopOf([pick, putaway], count)
 
