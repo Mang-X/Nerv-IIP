@@ -623,8 +623,16 @@ Assert-ImpactCase -Name 'business-gateway' -Paths @('backend/gateway/BusinessGat
 
 foreach ($backendBuildInput in @('backend/Directory.Build.props', 'backend/Directory.Packages.props')) {
     Assert-ImpactCase -Name "openapi-backend-build-input-$([IO.Path]::GetFileName($backendBuildInput))" -Paths @($backendBuildInput) -Flags @{
-        backend = $true; openapi_codegen = $true; connector_hosts = $true; full_chain = $true
+        backend = $true; openapi_codegen = $true; connector_hosts = $true; postgresql = $true; redis_cap = $true; full_chain = $true
     }
+}
+
+Assert-ImpactCase -Name 'platform-gateway-redis-runtime' -Paths @('backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs') -Flags @{
+    backend = $true; redis_cap = $true; postgresql = $false
+}
+
+Assert-ImpactCase -Name 'shared-trx-reader' -Paths @('scripts/lib/TrxResults.ps1') -Flags @{
+    scripts = $true; backend = $true; postgresql = $true; redis_cap = $true; full_chain = $true
 }
 
 foreach ($salesOrderDemandFullChainInput in @(
@@ -1011,6 +1019,23 @@ try {
     Assert-Contract (-not $writtenSummary.Contains('erp_sales_order_demand', [StringComparison]::Ordinal) -and -not $writtenSummary.Contains('ERP Sales Order Demand Acceptance', [StringComparison]::Ordinal)) 'Actions Summary must omit the retired ERP job and signal.'
     Assert-Contract ($writtenSummary.Contains('NERV-685 derives governed frontend workspace shards', [StringComparison]::Ordinal)) 'Actions Summary must identify the frontend workspace routing.'
     Assert-Contract ($writtenSummary.Contains('changed:backend/services/Business/Erp/src/Orders.cs', [StringComparison]::Ordinal)) 'Actions Summary must retain the selected signal reason.'
+
+    $barcodeSummaryPath = Join-Path $fixtureRoot 'barcode-summary.md'
+    & $entrypointPath -ChangedPaths @('backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Infrastructure/Printing/ZplTcpLabelPrinter.cs') -OutputPath $fixtureJson -StepSummaryPath $barcodeSummaryPath | Out-Null
+    $barcodePlan = Get-Content -LiteralPath $fixtureJson -Raw | ConvertFrom-Json -Depth 20
+    Assert-ImpactFlag -Plan $barcodePlan -Name 'backend' -Expected $true
+    $barcodeProjects = @($barcodePlan.backend_module_shards | ForEach-Object { $_.matching_projects } |
+        ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_.project) })
+    foreach ($project in @('Nerv.IIP.Business.BarcodeLabel.Web.Tests', 'Nerv.IIP.FacadeCoverage.Tests', 'Nerv.IIP.Business.Acceptance.Tests')) {
+        Assert-Contract (Test-OrdinalMember -Values $barcodeProjects -Expected $project) "BarcodeLabel module evidence must include '$project'."
+    }
+    $platformShard = $barcodePlan.backend_module_shards | Where-Object shard -CEQ 'platform'
+    Assert-Contract (@($platformShard.unresolved_projects).Count -gt 0) 'The module observation must surface unresolved MSBuild expressions.'
+    Assert-Contract ([IO.File]::ReadAllText($barcodeSummaryPath).Contains('- platform: Nerv.IIP.FacadeCoverage.Tests [barcode-label]', [StringComparison]::Ordinal)) 'The Actions Summary must show the real shard ID and its BarcodeLabel consumer.'
+
+    & $entrypointPath -ChangedPaths @('backend/Directory.Packages.props') -OutputPath $fixtureJson | Out-Null
+    $sharedPlan = Get-Content -LiteralPath $fixtureJson -Raw | ConvertFrom-Json -Depth 20
+    Assert-Contract ($null -eq $sharedPlan.PSObject.Properties['backend_module_shards']) 'Shared build inputs must retain the conservative execution plan.'
 }
 finally {
     if (Test-Path -LiteralPath $fixtureRoot) { Remove-Item -LiteralPath $fixtureRoot -Recurse -Force }

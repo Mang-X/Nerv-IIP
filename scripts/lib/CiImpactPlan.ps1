@@ -194,6 +194,7 @@ function Get-NervCiImpactPlan {
         $isRuleSelfChange = [string]::Equals($path, '.github/workflows/ci.yml', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'scripts/lib/CiImpactPlan.ps1', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'scripts/get-ci-impact-plan.ps1', [StringComparison]::Ordinal) -or
+            [string]::Equals($path, 'scripts/lib/BackendShardModulePlan.ps1', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'scripts/tests/ci-impact-plan.Tests.ps1', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'scripts/lib/FrontendWorkspacePlan.ps1', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'scripts/get-frontend-workspace-plan.ps1', [StringComparison]::Ordinal) -or
@@ -290,7 +291,7 @@ function Get-NervCiImpactPlan {
 
         if ([string]::Equals($path, 'backend/Directory.Build.props', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'backend/Directory.Packages.props', [StringComparison]::Ordinal)) {
-            foreach ($flag in @('backend', 'openapi_codegen', 'connector_hosts', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
+            foreach ($flag in @('backend', 'openapi_codegen', 'connector_hosts', 'postgresql', 'redis_cap', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
             continue
         }
 
@@ -390,7 +391,7 @@ function Get-NervCiImpactPlan {
             continue
         }
         if ($path.StartsWith('backend/gateway/PlatformGateway/', [StringComparison]::Ordinal)) {
-            foreach ($flag in @('backend', 'openapi_codegen', 'frontend', 'frontend_packages')) { Select-Impact -Name $flag -Reason $reason }
+            foreach ($flag in @('backend', 'openapi_codegen', 'frontend', 'frontend_packages', 'redis_cap')) { Select-Impact -Name $flag -Reason $reason }
             continue
         }
         if ($path.StartsWith('backend/tests/Nerv.IIP.Business.FullChain.Tests/', [StringComparison]::Ordinal)) {
@@ -436,6 +437,11 @@ function Get-NervCiImpactPlan {
         }
         if ($path.StartsWith('scripts/', [StringComparison]::Ordinal)) {
             Select-Impact -Name 'scripts' -Reason $reason
+            if ([string]::Equals($path, 'scripts/lib/TrxResults.ps1', [StringComparison]::Ordinal) -or
+                [string]::Equals($path, 'scripts/lib/TestEvidenceParsing.ps1', [StringComparison]::Ordinal)) {
+                foreach ($flag in @('backend', 'postgresql', 'redis_cap', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
+                continue
+            }
             if ($acceptanceScenarioMatrixOwningPathSet.Contains($path)) {
                 foreach ($flag in @('backend', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
                 continue

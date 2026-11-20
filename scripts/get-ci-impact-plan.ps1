@@ -27,6 +27,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/CiImpactPlan.ps1')
+. (Join-Path $repoRoot 'scripts/lib/BackendShardModulePlan.ps1')
 
 if ([string]::Equals($PSCmdlet.ParameterSetName, 'Diff', [StringComparison]::Ordinal)) {
     $range = if ([string]::Equals($DiffMode, 'MergeBase', [StringComparison]::Ordinal)) { "$BaseSha...$HeadSha" } else { "$BaseSha..$HeadSha" }
@@ -39,6 +40,13 @@ if ([string]::Equals($PSCmdlet.ParameterSetName, 'Diff', [StringComparison]::Ord
 }
 
 $plan = Get-NervCiImpactPlan -ChangedPaths $ChangedPaths
+if (@($plan.business_services).Count -gt 0 -and
+    @($ChangedPaths | Where-Object { $_.Replace('\', '/') -cnotmatch '^backend/services/Business/[^/]+/' }).Count -eq 0) {
+    # 此清单只描述项目引用。运行时消费者仍由完整 CI 覆盖。
+    $plan | Add-Member -NotePropertyName backend_module_shards -NotePropertyValue @(
+        Get-NervBackendShardModulePlan -RepositoryRoot $repoRoot -BusinessServices @($plan.business_services)
+    )
+}
 $resolvedOutputPath = if ([IO.Path]::IsPathRooted($OutputPath)) { $OutputPath } else { Join-Path $repoRoot $OutputPath }
 $outputDirectory = Split-Path -Parent $resolvedOutputPath
 [IO.Directory]::CreateDirectory($outputDirectory) | Out-Null
@@ -69,6 +77,17 @@ if (-not [string]::IsNullOrWhiteSpace($StepSummaryPath)) {
     }
     [void]$summary.AppendLine()
     [void]$summary.AppendLine("Business services: ``$(@($plan.business_services) -join ', ')``")
+    if ($plan.PSObject.Properties['backend_module_shards']) {
+        [void]$summary.AppendLine()
+        [void]$summary.AppendLine('Fast shard project references (observation only, CI still runs all selected backend shards):')
+        foreach ($shard in $plan.backend_module_shards) {
+            $projects = @($shard.matching_projects | ForEach-Object {
+                "$([IO.Path]::GetFileNameWithoutExtension($_.project)) [$($_.modules -join ', ')]"
+            }) -join ', '
+            $unresolved = @($shard.unresolved_projects | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_) }) -join ', '
+            [void]$summary.AppendLine("- $($shard.shard): $projects; unresolved references: $unresolved")
+        }
+    }
     [IO.File]::AppendAllText($StepSummaryPath, $summary.ToString(), [Text.UTF8Encoding]::new($false))
 }
 

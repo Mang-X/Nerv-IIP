@@ -21,6 +21,8 @@
 4. 分片边界、solution configuration membership、excluded test/lane 与 evidence lane 的变更必须同时更新现有机器契约；不新增第二套手工 shard 表。
 5. CI 注释和测试注释只能保留稳定结论并指向本规则或冻结报告，不复制时点耗时、run ID、artifact 大小等审计数据。
 
+仅修改业务服务时，CI impact plan 会附上「业务模块 → 测试项目 → fast shard」的观察清单。清单来自现有分片 manifest 与传递项目引用，列出无法静态解析的 MSBuild 引用。当前四片继续由同一个后端开关控制。启用按模块裁剪前，需要用托管 CI 验证测试发现，并补齐运行时和跨服务消费者的证据。
+
 ## 变更纪律
 
 - 改 CI 行为时先改/核对真正 workflow、runner、manifest 与契约测试，再更新本页。
