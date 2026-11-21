@@ -9,7 +9,7 @@ import { computed, reactive, shallowRef, watch } from 'vue'
 import { bindBusinessContext } from '@/composables/businessContextBinding'
 import { useMesPrincipalWorkScope } from '@/composables/useBusinessMes'
 import { notifyError } from '@/utils/notify'
-import type { ProductionReportContext } from './useProductionReportForm'
+import type { ProductionReportContext } from './productionReportContext'
 
 /**
  * 只消费权威 SKU 策略与启用模板目录，不把策略或规则传入报工。
