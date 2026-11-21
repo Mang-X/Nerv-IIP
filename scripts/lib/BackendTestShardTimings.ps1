@@ -5,7 +5,7 @@
 #     - Expands downloaded artifact archives under a caller-supplied working directory
 #   Writes:
 #     - The -OutputPath that Update-NervShardTimingCache is given (callers use the gitignored
-#       artifacts/ tree); no repository-tracked file
+#       .ryugi/artifacts/ tree); no repository-tracked file
 #   Cleanup:
 #     - Owns no long-lived process; temporary extraction directories are removed by the caller
 #   Requires:
@@ -14,7 +14,7 @@
 #
 # 本库按 library scope 接受 Script Governance 扫描，不能借 scripts/lib 路径豁免治理。
 # 分类、副作用与 helper 约束见 docs/governance/script-automation.md；精确扫描行为以
-# scripts/check-script-governance.ps1 及对应测试为准。调用方先加载 ScriptAutomation.ps1，
+# scripts/checks/check-script-governance.ps1 及对应测试为准。调用方先加载 ScriptAutomation.ps1，
 # 本库只通过既有 helper 执行原生命令，不单独拥有长期进程。
 #
 # Backend test shard timing cache (#1507).
@@ -42,7 +42,7 @@
 # So, in this repository:
 #
 #   * Timing is a **cache**: aggregated automatically from recent successful `main` runs, stored
-#     under the gitignored `artifacts/` tree, never committed, never hashed, never a gate. Missing
+#     under the gitignored `.ryugi/artifacts/` tree, never committed, never hashed, never a gate. Missing
 #     data degrades to a report-only warning plus a fallback estimate.
 #   * Timing keys on **assembly only**. Lane is recorded for display and provenance and never
 #     participates in a lookup, so a shard rearrangement can no longer lose a key.
@@ -51,8 +51,8 @@
 #
 # 当前 timing/policy 边界见 docs/governance/testing/evidence.md；形成过程见
 # docs/reports/audits/test-evidence-governance-evolution-2026-08.md。
-# Entry points: scripts/update-backend-test-shard-timings.ps1 (refresh the cache) and
-# scripts/report-backend-test-shard-balance.ps1 (report-only balance).
+# Entry points: scripts/ci/update-backend-test-shard-timings.ps1 (refresh the cache) and
+# scripts/ci/report-backend-test-shard-balance.ps1 (report-only balance).
 
 . (Join-Path $PSScriptRoot 'OrdinalString.ps1')
 
@@ -427,7 +427,7 @@ function Get-NervShardBalanceReport {
             code = 'timing-source-unavailable'
             assembly = ''
             shard = ''
-            message = 'No shard timing observations are available; every shard total below is an estimate. Run scripts/update-backend-test-shard-timings.ps1 with GitHub access to refresh the cache.'
+            message = 'No shard timing observations are available; every shard total below is an estimate. Run scripts/ci/update-backend-test-shard-timings.ps1 with GitHub access to refresh the cache.'
         })
     }
 
@@ -615,7 +615,7 @@ function Update-NervShardTimingCache {
     # One catch over the whole collect-and-write block, not only over the per-run download. Directory
     # enumeration, unpacking a bundle and writing the cache file are all IO, and IO on a runner
     # fails for reasons that have nothing to do with this repository — a read-only or full
-    # `artifacts/` tree, a partially extracted archive, a permission change. Before this catch
+    # `.ryugi/artifacts/` tree, a partially extracted archive, a permission change. Before this catch
     # existed those escaped into the caller, whose `$ErrorActionPreference = 'Stop'` turned a failed
     # *cache refresh* into a nonzero exit: exactly the ceremony #1507 removed, rebuilt by accident.
     try {

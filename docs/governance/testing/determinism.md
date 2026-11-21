@@ -1,6 +1,6 @@
 # 测试确定性与隔离治理
 
-本文定义后端与共享测试基建当前必须遵守的时间、等待、超时、网络诊断、可变全局状态和资源生命周期规则。当前扫描面、基线债务与 helper API 以 `backend/test-determinism-baseline.json`、`scripts/check-backend-test-determinism.ps1`、`scripts/verify-backend-test-determinism.ps1`、`backend/common/Nerv.IIP.Testing/**` 及其测试为准；本文不维护已清偿位点或逐批修复历史。
+本文定义后端与共享测试基建当前必须遵守的时间、等待、超时、网络诊断、可变全局状态和资源生命周期规则。当前扫描面、基线债务与 helper API 以 `backend/test-determinism-baseline.json`、`scripts/checks/check-backend-test-determinism.ps1`、`backend/common/Nerv.IIP.Testing/**` 及其测试为准；本文不维护已清偿位点或逐批修复历史。
 
 ## 时间与等待
 
@@ -46,4 +46,4 @@ Culture/UI culture、环境变量、全局 resolver 等可变进程状态只能�
 - permanent 只用于机制实现/自测等结构上不会通过后续业务重构消失的位点；
 - checker 通过只证明代码与基线闭合，不证明历史债务是否曾存在，也不替代实际测试运行。
 
-操作与排障见 [`../../runbooks/testing/determinism.md`](../../runbooks/testing/determinism.md)，历史清偿与走查见 [`../../reports/audits/test-determinism-governance-evolution-2026-08.md`](../../reports/audits/test-determinism-governance-evolution-2026-08.md)。
+操作与排障见 [`../../runbooks/testing/determinism.md`](../../runbooks/testing/determinism.md)。

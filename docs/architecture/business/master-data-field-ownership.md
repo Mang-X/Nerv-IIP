@@ -1,6 +1,6 @@
 # BusinessMasterData 当前字段与事实所有权
 
-本文只描述 BusinessMasterData **当前拥有的稳定业务事实、下游消费关系与跨域边界**。审批、变更审计等规则见 [`../../governance/data/master-data-ownership.md`](../../governance/data/master-data-ownership.md)；M2-L 拆分前的混合正文冻结于 [`../../reports/m2-l-business-master-data-field-matrix-pre-split-2026-09-07.md`](../../reports/m2-l-business-master-data-field-matrix-pre-split-2026-09-07.md)。字段、接口和持久化的精确实现最终以当前代码、公开契约、迁移和测试为准。
+本文只描述 BusinessMasterData **当前拥有的稳定业务事实、下游消费关系与跨域边界**。审批、变更审计等规则见 [`../../governance/data/master-data-ownership.md`](../../governance/data/master-data-ownership.md)。字段、接口和持久化的精确实现最终以当前代码、公开契约、迁移和测试为准。
 
 ## 事实分类
 

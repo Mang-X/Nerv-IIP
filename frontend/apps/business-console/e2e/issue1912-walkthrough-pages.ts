@@ -58,7 +58,7 @@ export function createWalkthroughPageProofs({
     // Reuse a settled route when a tab proof only needs refreshed data; a full reload can supersede API work.
     reuseCurrentRoute?: boolean
     refreshListBeforeProof?: boolean
-    selectOptions?: Array<{ label: string; option: string }>
+    selectOptions?: Array<{ label: string; option: string; expectedQuery: JsonRecord }>
     emptyText: string
     screenshotName: string
   }
@@ -250,12 +250,16 @@ export function createWalkthroughPageProofs({
     }
 
     for (const selectOption of options.selectOptions ?? []) {
+      const expectedQuery = listQueryFingerprint(
+        queryPath(options.listPath, selectOption.expectedQuery),
+      )
       const listResponse = targetPage.waitForResponse(
         (response) => {
           const url = new URL(response.url())
           return (
             response.request().method() === 'GET' &&
             url.pathname === options.listPath &&
+            listQueryFingerprint(response.url()) === expectedQuery &&
             response.status() === 200
           )
         },

@@ -20,7 +20,7 @@ try {
         -SessionId $discoverySessionId `
         -WorktreeRoot $repoRoot `
         -AppHostProject (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj') `
-        -ArtifactPath (Join-Path $repoRoot "artifacts/fullstack/$discoverySessionId") `
+        -ArtifactPath (Join-Path $repoRoot ".ryugi/artifacts/fullstack/$discoverySessionId") `
         -StateRoot $discoveryRoot
     Write-NervFullStackManifest -Manifest $discoveryManifest -StateRoot $discoveryRoot
 
@@ -77,7 +77,7 @@ try {
         -SessionId $uppercaseSessionId `
         -WorktreeRoot $repoRoot `
         -AppHostProject (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj') `
-        -ArtifactPath (Join-Path $repoRoot "artifacts/fullstack/$uppercaseSessionId") `
+        -ArtifactPath (Join-Path $repoRoot ".ryugi/artifacts/fullstack/$uppercaseSessionId") `
         -StateRoot $uppercaseRoot
     Write-NervFullStackManifest -Manifest $uppercaseManifest -StateRoot $uppercaseRoot
     $uppercaseReloaded = Read-NervFullStackManifest -SessionId $uppercaseSessionId -StateRoot $uppercaseRoot
@@ -106,7 +106,7 @@ try {
         -SessionId $sessionId `
         -WorktreeRoot $repoRoot `
         -AppHostProject (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj') `
-        -ArtifactPath (Join-Path $repoRoot "artifacts/fullstack/$sessionId") `
+        -ArtifactPath (Join-Path $repoRoot ".ryugi/artifacts/fullstack/$sessionId") `
         -StateRoot $testRoot `
         -LeaseMinutes 90
 

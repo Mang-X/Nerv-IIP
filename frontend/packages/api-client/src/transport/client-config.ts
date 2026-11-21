@@ -19,7 +19,7 @@ interface GeneratedApiClient {
     }
     response: {
       eject: (id: number) => void
-      use: (handler: (response: Response) => Response) => number
+      use: (handler: (response: Response, request: Request) => Response) => number
     }
     error: {
       eject: (id: number) => void
@@ -116,9 +116,16 @@ export function configureApiClient(options: ConfigureApiClientOptions = {}): voi
   })
 
   responseInterceptorIds = clients.map((client) =>
-    client.interceptors.response.use((response) => {
+    client.interceptors.response.use((response, request) => {
       if (response.status === 401) {
-        options.onUnauthorized?.()
+        const token = options.accessTokenProvider?.()
+        const currentAuthorization = token ? `Bearer ${token}` : null
+        if (
+          !options.accessTokenProvider ||
+          request.headers.get('Authorization') === currentAuthorization
+        ) {
+          options.onUnauthorized?.()
+        }
       }
 
       return response

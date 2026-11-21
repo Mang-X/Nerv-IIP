@@ -117,13 +117,18 @@ function Start-Container {
 function Wait-ForContainer {
     param(
         [string]$ContainerName,
-        [int]$MaxAttempts = 30
+        [int]$MaxAttempts = 30,
+        [switch]$PostgresReadiness
     )
 
     Write-Info "Waiting for $ContainerName to be healthy..."
 
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
         $running = docker ps --filter "name=$ContainerName" --filter "status=running" | Select-String $ContainerName
+        if ($running -and $PostgresReadiness) {
+            docker exec $ContainerName pg_isready -q -h 127.0.0.1 -U postgres 2>$null
+            $running = $LASTEXITCODE -eq 0
+        }
         if ($running) {
             Write-Success "$ContainerName is running"
             return $true
@@ -146,6 +151,21 @@ function Start-Infrastructure {
     # Check prerequisites
     Test-Docker
 
+    if ($Postgres) {
+        $existing = docker ps -aq --filter 'name=^/netcorepal-postgres$'
+        if ($LASTEXITCODE -ne 0) { throw "Could not inspect existing PostgreSQL containers." }
+        if ($existing) {
+            $mountJson = docker inspect --format '{{json .Mounts}}' $existing
+            if ($LASTEXITCODE -ne 0) { throw "Could not inspect the existing PostgreSQL data volume." }
+            $dataMount = @($mountJson | ConvertFrom-Json | Where-Object {
+                $_.Destination -in '/var/lib/postgresql', '/var/lib/postgresql/data'
+            })
+            if ($dataMount.Count -ne 1 -or $dataMount[0].Name -ne 'netcorepal_postgres_data') {
+                throw "Existing netcorepal-postgres uses a different data mount. Use its original deployment and follow docs/runbooks/database-release.md#postgresql-19."
+            }
+        }
+    }
+
     # Start Redis
     $success = Start-Container -Name "netcorepal-redis" -Image "redis:7.2-alpine" `
         -Ports "-p 6379:6379" `
@@ -159,13 +179,13 @@ function Start-Infrastructure {
     # Start Database
     if ($Postgres) {
         Write-Info "Setting up PostgreSQL database..."
-        $success = Start-Container -Name "netcorepal-postgres" -Image "postgres:15-alpine" `
+        $success = Start-Container -Name "netcorepal-postgres" -Image "postgres:19-alpine" `
             -Ports "-p 5432:5432" `
             -Environment "-e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=123456 -e POSTGRES_DB=postgres -e TZ=Asia/Shanghai" `
-            -Volumes "-v netcorepal_postgres_data:/var/lib/postgresql/data"
+            -Volumes "-v netcorepal_postgres_data:/var/lib/postgresql"
 
-        if ($success) {
-            Wait-ForContainer -ContainerName "netcorepal-postgres" -MaxAttempts 30
+        if (-not $success -or -not (Wait-ForContainer -ContainerName "netcorepal-postgres" -PostgresReadiness -MaxAttempts 30)) {
+            throw "PostgreSQL 19 did not become ready. Check docker logs netcorepal-postgres and the upgrade steps in docs/runbooks/database-release.md#postgresql-19."
         }
     }
     elseif ($SqlServer) {

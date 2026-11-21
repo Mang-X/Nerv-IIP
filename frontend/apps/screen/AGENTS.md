@@ -1,9 +1,10 @@
 # AGENTS.md — screen（大屏 / 挂墙）
 
+界面规范与用法从[独立设计文档站](../../apps/design-system/docs/components/screen/index.md)查阅。
+
 > 根 `AGENTS.md` 仍然适用；本文件只补充大屏子树的差异。
 > screen = 中央控制室 / 车间挂墙大屏：数米外观看、暗光环境、24h 常亮 LED
-> 拼接屏。设计规格：`docs/superpowers/specs/2026-06-26-screen-foundation-design.md`、
-> `2026-07-06-screen-m1-core-dashboards-design.md`。
+> 拼接屏。
 
 ## 命令
 
@@ -32,10 +33,10 @@ pnpm -C frontend --filter @nerv-iip/screen dev   # 端口 5128
   fetcher 接口，不直接碰 api-client。
 - 切真实数据**只改 `data/fetchers/*` 与 `data/real/*`**；mock 形状必须对齐
   `@nerv-iip/api-client` 的 `types.gen.ts`，禁止 `as` / 内联标注绕过契约。
-- real 模式由登录 principal 注入 org/env（`main.ts`）；mock 模式不触碰鉴权与
+- real 模式由登录 principal 注入 org/env（`src/App.vue`）；mock 模式不触碰鉴权与
   api-client 配置。
 - **诚实标注，不做假绿**：无真实端点的字段显式占位标注（badge/tooltip），
-  数据新鲜度用 `IsSourceFresh` 驱动"失联灰条"（`data/contracts/equipment.ts`），
+  数据新鲜度用 `IsSourceFresh` 驱动"失联灰条"（`src/data/contracts/equipment.ts`），
   断线绝不能看起来像"运行正常"。
 
 ## 设计取向
@@ -48,8 +49,7 @@ pnpm -C frontend --filter @nerv-iip/screen dev   # 端口 5128
 
 ## 硬性规则
 
-1. 真实感数据看效果：产线名、`WO-` 工单号、OEE/节拍/达成率 —— 不用占位
-   假文案（product.md 中的“应做/不应做（Do/Don't）”）。
+1. 正常模式展示当前岗位有权读取的真实指标。成功返回的零值显示为零；空集、缺少数据源、无权和读取失败分别说明。仅显式设置 `VITE_SCREEN_DATA_MODE=mock` 或 `demo` 时展示演示数据并标明模式。
 2. 不堆叠 `backdrop-filter` / 大面积高斯模糊 —— 大屏渲染环境吃不消；用
    半透明渐变 + 发丝边模拟材质。
 3. 浮层（下拉/弹层）必须 Teleport 到 `<body>` 并 `position:fixed` 锚定，

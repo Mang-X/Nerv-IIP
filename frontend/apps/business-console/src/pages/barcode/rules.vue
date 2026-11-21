@@ -46,10 +46,7 @@ definePage({
 /**
  * 适用场景（`BarcodeRule.AllowedSourceDocumentTypes`）。
  *
- * 后端存自由字符串、没有枚举，实际落库的是**源单据类型**——权威清单是
- * `WorldHistoryLabelSpec` 的六个常量（purchase-receipt / material-issue /
- * finished-goods-receipt / work-order / work-center / delivery-order）。
- * 下面前四条 `xxx.yyy` 形态是早期前端自定的扫码动作口径，存量规则里仍在用，一并保留。
+ * 后端保存源单据类型字符串。列表后四条 `xxx.yyy` 形态是早期前端自定的扫码动作口径，存量规则里仍在用，一并保留。
  */
 const SOURCE_DOCUMENT_OPTIONS = [
   { value: 'purchase-receipt', label: '采购收货' },

@@ -363,33 +363,9 @@ const businessStubs = {
   // 派工弹窗内部用 reka 的 DialogRoot/DialogTrigger（实体选择器），
   // 与本文件的 UI passthrough stub 不兼容；本用例只看工序行的文案，整体桩掉。
   DispatchAssignDialog: true,
-  BusinessActionSheet: {
-    props: ['open', 'title', 'description'],
-    template: '<section><h2>{{ title }}</h2><p>{{ description }}</p><slot /></section>',
-  },
-  BusinessContextBar: {
-    template: '<section><slot /></section>',
-  },
-  BusinessEmptyState: {
-    props: ['title', 'description', 'action'],
-    template: '<div>{{ title }} {{ description }} {{ action }}</div>',
-  },
-  BusinessFormStatus: true,
   BusinessLayout: {
     template: '<main><slot /></main>',
   },
-  BusinessPageHeader: {
-    props: ['domain', 'title', 'kicker', 'summary'],
-    template: '<header><h1>{{ title }}</h1><p>{{ summary }}</p><slot name="actions" /></header>',
-  },
-  BusinessRowActions: {
-    template: '<div><slot /></div>',
-  },
-  BusinessStatusBadge: {
-    props: ['value'],
-    template: '<span>{{ value }}</span>',
-  },
-  BusinessTablePagination: true,
 }
 
 const uiStubs = {

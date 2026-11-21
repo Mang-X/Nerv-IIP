@@ -28,14 +28,11 @@ internal static class VocabularyDriftExemptions
         // 检验方案/SPC 控制图状态、雇佣状态、IAM 组织/环境状态——各域自己的生命周期词，不可互相引用。
         ..Group("active", "同值不同义：各域生命周期/激活状态，非 PE 生产版本契约状态。",
             $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Queries/LabelTemplates/ListLabelTemplatesQuery.cs",
-            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Seed/WorldHistoryConsistencyValidator.cs",
-            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Seed/WorldHistorySeedService.cs",
             $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/PlanningInputAdapters.cs",
             $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Commands/IndustrialTelemetryCommands.cs",
             $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Queries/IndustrialTelemetryQueries.cs",
             $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Queries/ListInventoryDirectoryQuery.cs",
             $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Seed/InventoryLocationSeedService.cs",
-            $"{Svc}/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Seed/WorldHistorySeedService.cs",
             $"{Svc}/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/IntegrationEventHandlers/PauseMaintenancePlansWhenDeviceDisabledHandler.cs",
             $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkerSkillQualificationGate.cs",
             $"{Svc}/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Commands/MasterData/CreateMasterDataCommands.cs",
@@ -47,7 +44,6 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/IntegrationEventHandlers/PeriodicInspectionIntegrationEventHandlers.cs",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Queries/InspectionTasks/ListDuePeriodicInspectionTimeContextsQuery.cs",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Queries/Spc/SpcAnalysisQueries.cs",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Seed/LeaderDemoSeedService.cs",
             "services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs"),
 
         // ── "archived" ──────────────────────────────────────────────────────────────
@@ -86,10 +82,6 @@ internal static class VocabularyDriftExemptions
         // PE 发布校验与 Quality 放行判定都改引 ApprovalChainStatuses.Approved
         //（而不是借用同值不同义的 ApprovalResults.Approved），对应豁免已删除。
         // 同值不同义：设备控制命令的审批态 / MRB 评审决定，都是各自域内状态机，非审批链词表。
-        ..Group("approved", "同值不同义：设备控制命令审批态（DeviceControlCommand），非审批链结果词表。",
-            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Seed/WorldHistoryControlCommandSpec.cs"),
-        ..Group("approved", "同值不同义：MRB 评审决定（质量域内状态），非审批链结果词表。",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Seed/WorldHistoryConsistencyValidator.cs"),
 
         // ── 审批链状态 / 审批动作族（#1857 下沉后新进守护面的取值） ─────────────────
         // ApprovalChainStatuses 与 ApprovalDecisions 下沉进契约后，pending / withdrawn /
@@ -98,18 +90,11 @@ internal static class VocabularyDriftExemptions
         // 下列全部是同值不同义的各域内状态机/动作词，永久豁免。
         // #2779 起 "pending" 另有 QualityFirstArticleConfirmationStatuses.Pending（首件确认进度）同值，
         // 下列各条的「非审批链状态」裁决同样覆盖它：各域内状态机词与首件确认进度互不相同义。
-        ..Group("pending", "同值不同义：标签打印批次状态（pending/sent-to-printer），非审批链状态。",
-            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Seed/WorldHistoryConsistencyValidator.cs"),
         ..Group("pending", "同值不同义：出库单的库存过账状态（pending/posted/failed/not-started），非审批链状态。",
             $"{Svc}/Wms/src/Nerv.IIP.Business.Wms.Web/Application/Queries/WmsQueries.cs"),
         ..Group("pending", "同值不同义：质检任务状态（pending/in-progress/completed），非审批链状态。",
-            $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Seed/WorldHistoryConsistencyValidator.cs",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Queries/InspectionTasks/ListInspectionTasksQuery.cs"),
-        ..Group("pending", "同值不同义：设备控制命令下发审批态（Ops 域内状态机），非审批链状态；与同文件 approved/rejected 同一裁决。",
-            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Seed/WorldHistoryControlCommandSpec.cs",
-            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Seed/WorldHistoryConsistencyValidator.cs"),
         ..Group("pending", "同值不同义：采集点激活状态（pending/active/error/disabled），非审批链状态；与同文件 active 同一裁决。",
-            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Seed/WorldBibleSpec.cs",
             $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Commands/IndustrialTelemetryCommands.cs"),
         ..Group("pending", "同值不同义：成本候选清单的列表状态（该聚合尚无持久化生命周期，pending 是唯一列表态），非审批链状态。",
             $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Queries/SalesFinance/ErpSalesFinanceQueries.cs"),
@@ -153,12 +138,9 @@ internal static class VocabularyDriftExemptions
         // 同值不同义：条码扫描结果（accepted/rejected）与设备控制命令状态（completed/failed/rejected）
         // 是各自域内状态机，非审批结果、非检验处置。
         ..Group("rejected", "同值不同义：条码扫描结果域（accepted/rejected），非审批/检验词表。",
-            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/Scans/RecordScanCommand.cs",
-            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Seed/WorldHistoryConsistencyValidator.cs",
-            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Seed/WorldHistoryLabelSpec.cs"),
+            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Commands/Scans/RecordScanCommand.cs"),
         ..Group("rejected", "同值不同义：设备控制命令状态/审批态（Ops 域内状态机），非审批链词表。",
-            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/IntegrationEventHandlers/DeviceControlCommandOpsOutcomeHandlers.cs",
-            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Seed/WorldHistoryControlCommandSpec.cs"),
+            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/IntegrationEventHandlers/DeviceControlCommandOpsOutcomeHandlers.cs"),
 
         // ── 严重度类（NotificationContractConstants.Severity*） ─────────────────────
         // 同值不同义：critical/warning/info 在下列文件里分别是 IT 报警严重度、CAPA 严重度、
@@ -167,10 +149,6 @@ internal static class VocabularyDriftExemptions
         ..Group("critical", "同值不同义：各域严重度/优先级词（IT 报警、CAPA、维修、排产、缺陷），非通知严重度。",
             $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Queries/EquipmentHealthQueries.cs",
             $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Queries/IndustrialTelemetryQueries.cs",
-            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Seed/LeaderDemoSeedService.cs",
-            $"{Svc}/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Application/Seed/WorldHistoryControlCommandSpec.cs",
-            $"{Svc}/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Seed/LeaderDemoSeedService.cs",
-            $"{Svc}/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Seed/WorldHistorySeedService.cs",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Commands/CorrectiveActions/CapaAutomationService.cs",
             $"{Svc}/Quality/src/Nerv.IIP.Business.Quality.Web/Application/Seed/QualitySeedService.cs",
             $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Urgency/OrderUrgencyApplication.cs",
@@ -216,16 +194,12 @@ internal static class VocabularyDriftExemptions
         // （纯加法；Inventory 消费端对 payload.SourceService 只透传、无白名单校验，无消费端联动）并改常量引用；
         // 余下两处（第 9 位 SiteCode 占位 "maintenance"、第 13 位 OwnerType "maintenance"）已于 #3902 消失：
         // 站点与库位改取备件行上的领用值，归属类型改为企业自有 company，原豁免条目随之删除。
-        ..Group("maintenance", "同值不同义：保养计划 owner 标识，非事件信封来源。",
-            $"{Svc}/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Application/Seed/MaintenanceSeedService.cs"),
         ..Group("maintenance", "同值不同义：MasterData device-status 字典码（保养），非事件信封来源。",
             $"{Svc}/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Seed/MasterDataDictionaryRules.cs"),
         ..Group("maintenance", "同值不同义：就绪原因文本的子串启发式匹配，非事件信封来源。",
             $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Readiness/MesReadinessReasonCodes.cs"),
         ..Group("maintenance", "同值不同义：日历原因码子串启发式，非事件信封来源。",
             $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Scheduling/SchedulePlanCalendarProjector.cs"),
-        ..Group("maintenance", "同值不同义：维护窗口原因码（排产夹具数据），非事件信封来源。",
-            $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Scheduling/ShockAbsorberSchedulingFixture.cs"),
         // #1370 ③ 批次 D 已销账：维修工单种子的 openedBy 改引
         // IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry——运行路径
         // （OpenWorkOrderWhenAlarmRaisedHandler）本就把该常量直接作为 openedBy 传入建单命令，
@@ -246,8 +220,6 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/DemandPlanning/src/Nerv.IIP.Business.DemandPlanning.Web/Application/Planning/PlanningInputAdapters.cs"),
         ..Group("purchase-receipt", "同值不同义：Coding 编码规则文档类型键，非 WMS 源单据类型。",
             $"{Svc}/Erp/src/Nerv.IIP.Business.Erp.Web/Application/Commands/Procurement/ErpProcurementCommands.cs"),
-        ..Group("purchase-receipt", "同值不同义：条码规则源单据类型（BarcodeRule.AllowedSourceDocumentTypes 自成一族，票面 (a) 类）。",
-            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Seed/WorldHistoryLabelSpec.cs"),
 
         // ── 检验来源族（QualityInspectionSourceTypes：wms / receiving / operation /
         //    final / first-article / maintenance / customer-return；后五值 #2976 补齐导出） ─────
@@ -274,17 +246,11 @@ internal static class VocabularyDriftExemptions
         // #3191 已销账：库存预留来源服务是 Inventory 自己的轴，此前该轴没有 Mes 常量，三处调用点只能写
         // 裸字面量。已给 InventoryMovementSourceServices 补 Mes = "mes"（纯加法）并改常量引用，
         // 对应豁免已删除——它本来就属「待销账延期」而非「永久裁决」，登记成后者会让这三处永远不再被追。
-        ..Group(
-            "mes",
-            "同值不同义：世界史种子里补产工单的来源计划参考 sourceSystem（与 sourceDocumentType 配套），非检验来源服务。",
-            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Seed/WorldHistorySeedService.cs"),
 
         // ── "none"（MasterDataSerialTrackingPolicies.None，#3747 新建导出） ──────────
         // 该常量守护的是 SKU 序列号追踪策略码集（none / on-receipt / on-production / on-shipment）。
         // 同码集的真违例已全部改常量引用：字典种子的 serial-tracking-policy 四行、MES 领域校验、
         // 业务网关报工判定。下列三处只是恰好同值，各有独立权威与演化路径，不可互相引用。
-        ..Group("none", "同值不同义：条码规则的校验位规则（无校验位），非 SKU 序列号追踪策略。",
-            $"{Svc}/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Web/Application/Seed/WorldHistoryLabelSpec.cs"),
         ..Group(
             "none",
             "同值不同义：同文件 batch-tracking-policy 的「不管理」与 shelf-life-policy 的「无保质期」两个码集，"

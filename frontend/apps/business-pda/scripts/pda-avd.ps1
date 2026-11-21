@@ -18,7 +18,7 @@
 #       offline and exits non-zero on kill failure or shutdown timeout
 #     - status: read-only (adb devices / avdmanager list avd / accel probe)
 #   Writes:
-#     - artifacts/script-logs/** (command logs + detached emulator stdout/stderr)
+#     - .ryugi/artifacts/script-logs/** (command logs + detached emulator stdout/stderr)
 #     - The user AVD home <AvdName>.avd/** (AVD disk images, created by create /
 #       mutated by the running emulator)
 #   Cleanup:

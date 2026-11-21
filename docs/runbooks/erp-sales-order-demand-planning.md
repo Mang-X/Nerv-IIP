@@ -13,7 +13,7 @@
 仓库受治理入口：
 
 ```powershell
-pwsh scripts/verify-erp-sales-order-demand-planning.ps1
+pwsh scripts/integration/verify-erp-sales-order-demand-planning.ps1
 ```
 
 脚本当前帮助和源码是参数、超时预算、基础设施 profile、进程管理与 evidence 路径的权威来源。验收必须使用真实受支持 transport 与一次性数据库，不得用 InMemory transport 冒充跨进程消息证明。
@@ -35,5 +35,3 @@ pwsh scripts/verify-erp-sales-order-demand-planning.ps1
 - 收敛通过后续查询/消息证据证明；transport/数据库瞬态错误与业务拒绝需要保持不同分类。
 - 失败时保留受治理的脱敏 HTTP 观测、inbox/DLQ/watermark/DemandSource、transport 与服务日志证据；秘密、token、连接串不得进入 artifact。
 - finally 必须核对脚本启动的进程、一次性数据库和基础设施资源均完成清理；清理失败就是验证失败。
-
-M2-L 前包含历史故障成因、特定 CI 首轮事件和旧动态参数的原文冻结于 [`../reports/m2-l-sales-order-to-demand-planning-pre-clean-2026-09-07.md`](../reports/m2-l-sales-order-to-demand-planning-pre-clean-2026-09-07.md)，不作为当前操作说明。

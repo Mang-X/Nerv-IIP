@@ -793,23 +793,13 @@ public sealed class ForceReleaseBusinessConsoleMesQualityHoldEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        // Bind the force-release audit actor to the authenticated principal so a caller holding
-        // MesQualityWrite cannot forge the releaser identity via a request-body field.
-        var actorRef = RequireAuthorizedPrincipalActorReference();
-        if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
-        {
-            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.BadRequest, "idempotency-key-required");
-        }
-        var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
-        correlationId = string.IsNullOrWhiteSpace(correlationId)
-            ? Guid.CreateVersion7().ToString("N")
-            : correlationId.Trim();
+        var audit = RequireIdempotentAuditContext(request);
         return mes.ForceReleaseQualityHoldAsync(
             tokenProvider.BearerToken,
             request.SourceDocumentId,
             request,
-            actorRef,
-            correlationId,
+            audit.Actor,
+            audit.CorrelationId,
             cancellationToken);
     }
 }
@@ -1433,7 +1423,7 @@ public sealed class ClaimBusinessConsoleMesOperationTaskEndpoint(
             string.Equals(x.OperationTaskId, request.OperationTaskId, StringComparison.Ordinal));
         if (task is null)
         {
-            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.Forbidden, "operation-task-outside-work-center");
+            throw BusinessServiceProxyException.FromLocalRejection(System.Net.HttpStatusCode.Forbidden, BusinessGatewayLocalRejectionStableWireCodes.OperationTaskOutsideWorkCenter);
         }
 
         var principalId = RequireAuthorizedPrincipalId();
@@ -1451,7 +1441,7 @@ public sealed class ClaimBusinessConsoleMesOperationTaskEndpoint(
         var worker = directory.Items.SingleOrDefault();
         if (worker is null || !worker.Active)
         {
-            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.Forbidden, "worker-not-on-duty-at-work-center");
+            throw BusinessServiceProxyException.FromLocalRejection(System.Net.HttpStatusCode.Forbidden, BusinessGatewayLocalRejectionStableWireCodes.WorkerNotOnDutyAtWorkCenter);
         }
 
         var team = worker.Teams.FirstOrDefault(x => x.IsLeader) ?? worker.Teams.FirstOrDefault();
@@ -1805,16 +1795,16 @@ public sealed class GetBusinessConsoleMesWipSummaryEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesListRequest, BusinessConsoleMesWipSummaryResponse>(
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesWipSummaryRequest, BusinessConsoleMesWipSummaryResponse>(
         auth,
         BusinessGatewayPermissions.MesOperationsRead)
 {
-    protected override string OrganizationId(BusinessConsoleMesListRequest request) => request.OrganizationId;
+    protected override string OrganizationId(BusinessConsoleMesWipSummaryRequest request) => request.OrganizationId;
 
-    protected override string EnvironmentId(BusinessConsoleMesListRequest request) => request.EnvironmentId;
+    protected override string EnvironmentId(BusinessConsoleMesWipSummaryRequest request) => request.EnvironmentId;
 
     protected override Task<BusinessConsoleMesWipSummaryResponse> ForwardAsync(
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesWipSummaryRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
         mes.GetWipSummaryAsync(tokenProvider.BearerToken, request, cancellationToken);
@@ -2316,9 +2306,9 @@ public sealed class GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkEndpoi
             cancellationToken);
         if (!inventoryAuthorization.IsAllowed)
         {
-            throw new BusinessServiceProxyException(
+            throw BusinessServiceProxyException.FromLocalRejection(
                 System.Net.HttpStatusCode.Forbidden,
-                inventoryAuthorization.DenialReason ?? "forbidden");
+                BusinessGatewayLocalRejectionStableWireCodes.Forbidden);
         }
 
         var receipts = await mes.ListFinishedGoodsReceiptRequestsAsync(
@@ -2336,7 +2326,7 @@ public sealed class GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkEndpoi
                 || string.Equals(item.WorkOrderId, request.WorkOrderId, StringComparison.Ordinal)));
         if (receipt is null)
         {
-            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.NotFound, "finished-goods-receipt-not-found");
+            throw BusinessServiceProxyException.FromLocalRejection(System.Net.HttpStatusCode.NotFound, BusinessGatewayLocalRejectionStableWireCodes.FinishedGoodsReceiptNotFound);
         }
 
         var stock = await inventory.GetStockBySourceAsync(
@@ -2576,9 +2566,9 @@ public sealed class RecordBusinessConsoleMesDowntimeEventEndpoint(
         BusinessConsoleMesRecordDowntimeEventRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+        throw BusinessServiceProxyException.FromLocalRejection(
             System.Net.HttpStatusCode.BadRequest,
-            "work-center-required-use-v2");
+            BusinessGatewayLocalRejectionStableWireCodes.WorkCenterRequiredUseV2);
 }
 
 /// <summary>

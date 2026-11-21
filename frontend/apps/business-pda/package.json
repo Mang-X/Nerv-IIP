@@ -14,29 +14,30 @@
     "cap:open": "cap open android"
   },
   "dependencies": {
-    "@capacitor/android": "8.4.2",
-    "@capacitor/app": "8.1.0",
-    "@capacitor/cli": "8.4.2",
-    "@capacitor/core": "8.4.2",
-    "@capacitor/keyboard": "8.0.5",
-    "@capacitor/status-bar": "8.0.2",
-    "@lucide/vue": "1.24.0",
+    "@capacitor/android": "8.6.2",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/cli": "8.6.2",
+    "@capacitor/core": "8.6.2",
+    "@capacitor/keyboard": "8.0.6",
+    "@capacitor/status-bar": "8.0.4",
+    "@lucide/vue": "1.77.0",
     "@nerv-iip/api-client": "workspace:*",
+    "@nerv-iip/app-shell": "workspace:*",
     "@nerv-iip/auth": "workspace:*",
     "@nerv-iip/business-core": "workspace:*",
     "@nerv-iip/ui": "workspace:*",
     "@nerv-iip/ui-mobile": "workspace:*",
-    "@pinia/colada": "1.4.2",
-    "@vueuse/core": "14.3.0",
-    "pinia": "4.0.2",
-    "vue": "3.5.39",
-    "vue-router": "5.2.0"
+    "@pinia/colada": "1.4.9",
+    "@vueuse/core": "15.0.0",
+    "pinia": "4.1.0",
+    "vue": "3.5.45",
+    "vue-router": "5.5.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.61.1",
-    "@vitejs/plugin-vue": "6.0.8",
-    "@vue/test-utils": "2.4.11",
-    "jsdom": "29.1.1",
-    "vitest": "4.1.10"
+    "@playwright/test": "^1.65.1",
+    "@vitejs/plugin-vue": "6.0.11",
+    "@vue/test-utils": "2.6.0",
+    "jsdom": "31.0.1",
+    "vitest": "5.1.0"
   }
 }

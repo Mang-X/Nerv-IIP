@@ -12,7 +12,7 @@ type TeamMembers = ReturnType<typeof useTeamMembers>
 
 declare const removeMember: TeamMembers['removeMember']
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 ;() => {
   void removeMember('usr-1', '调入维修班组')
 

@@ -59,7 +59,7 @@ Nerv-IIP 是面向数字工厂的工业应用平台。仓库以通用平台控�
 .\nerv.ps1 fullstack stop
 ```
 
-`fullstack run` 在独立 Aspire 拓扑中执行场景并回收进程、容器和专属卷；`fullstack start` 仅用于交互诊断，结束后必须执行 `fullstack stop`。诊断产物位于 `artifacts/fullstack/<sessionId>/`。
+`fullstack run` 在独立 Aspire 拓扑中执行场景并回收进程、容器和专属卷；`fullstack start` 仅用于交互诊断，结束后必须执行 `fullstack stop`。诊断产物位于 `.ryugi/artifacts/fullstack/<sessionId>/`。
 
 只启动本地依赖或查看端口时使用：
 
@@ -92,10 +92,12 @@ Nerv-IIP/
   infra/            Aspire、部署与环境适配
   scripts/          受治理的开发、验证、发布与维护入口
   docs/             ADR、架构、产品、治理、运行手册、参考资料、状态与历史记录
-  artifacts/        可复现的本地或 CI 诊断产物
+  .ryugi/artifacts/ 本地工作产物与诊断输出（Git 忽略）
 ```
 
 具体放置规则与依赖边界见 [仓库布局](docs/architecture/overview/repo-layout.md)。
+
+本机使用 `ryugi-artifacts` 时，将项目目录指向仓库根目录。本项目关闭 Ryugi Cloud 自动发布，工作产物仅在本机查看。脚本直接把诊断文件写入 `.ryugi/artifacts/`，无需安装 Ryugi。GitHub Actions 按工作流中指定的路径收集 CI 证据。
 
 ## 文档入口
 
@@ -105,7 +107,7 @@ Nerv-IIP/
 - [当前 Runbook 入口](docs/runbooks/README.md)：启动、部署、迁移、恢复与排障操作。
 - [当前 Reference 入口](docs/reference/README.md)：Schema、码表、矩阵、术语与技术资料的人工查询索引。
 - [ADR 导航](docs/adr/README.md)：长期决策、选择理由及其后继关系。
-- [产品定位](PRODUCT.md) 与 [设计原则](DESIGN.md)。
+- [产品定位](PRODUCT.md) 与 [设计系统文档站](frontend/apps/design-system/docs/index.md)。
 - [上下文地图](docs/architecture/overview/context-map.md)、[仓库布局](docs/architecture/overview/repo-layout.md) 与 [API 契约及代码生成](docs/architecture/integration/api-contracts.md)。
 
 ## 权威来源
@@ -117,6 +119,3 @@ Nerv-IIP/
 - 当前操作手册：[`docs/runbooks/`](docs/runbooks/) 中由 Runbook 入口路由的现态操作文档。
 - 当前人工查询索引：[`docs/reference/`](docs/reference/)；其中内容必须回到各自 producer 核实。
 - 长期决策及理由：[`docs/adr/`](docs/adr/)。
-- 历史时点记录：[`docs/status/archive/`](docs/status/archive/)；历史快照不构成当前实现或交付裁决。
-
-已退役状态入口的历史从 [`docs/status/archive/README.md`](docs/status/archive/README.md) 与 Git 追溯；当前状态只使用上方现态入口。

@@ -12,7 +12,7 @@
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@pinia/colada": "1.4.2"
+    "@pinia/colada": "1.4.9"
   },
   "devDependencies": {
     "@hey-api/openapi-ts": "0.99.0"

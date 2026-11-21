@@ -3350,9 +3350,6 @@ public sealed record BusinessConsoleEquipmentDeviceDetailResponse(
     Nerv.IIP.Contracts.EquipmentRuntime.EquipmentRuntimeCurrentStateResponse CurrentState,
     Nerv.IIP.Contracts.EquipmentRuntime.EquipmentRuntimeAvailabilityResponse Availability);
 
-public sealed record BusinessConsoleEquipmentAlarmListResponse(
-    IReadOnlyCollection<Nerv.IIP.Contracts.EquipmentRuntime.EquipmentRuntimeAlarmSummary> Items);
-
 public sealed record BusinessConsoleRecordTelemetrySampleRequest(
     string OrganizationId,
     string EnvironmentId,
@@ -4701,7 +4698,7 @@ public sealed record BusinessConsoleBarcodeScanRecordItem(
     string DownstreamProcessingStatus,
     DateTimeOffset ScannedAtUtc);
 
-public sealed record BusinessConsoleMesListRequest(
+public record BusinessConsoleMesListRequest(
     string OrganizationId,
     string EnvironmentId,
     string? Status = null,
@@ -4712,6 +4709,21 @@ public sealed record BusinessConsoleMesListRequest(
     string? WorkOrderId = null,
     int Skip = 0,
     int Take = 100);
+
+public sealed record BusinessConsoleMesWipSummaryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status = null,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null,
+    int Skip = 0,
+    int Take = 100,
+    string? OperationTaskId = null)
+    : BusinessConsoleMesListRequest(OrganizationId, EnvironmentId, Status, Keyword,
+        WorkCenterId, ShiftId, DeviceAssetId, WorkOrderId, Skip, Take);
 
 /// <summary>停机事件列表请求：在通用 MES 列表过滤之上增加按停机原因码过滤（#1947）。</summary>
 public sealed record BusinessConsoleMesDowntimeEventListRequest(

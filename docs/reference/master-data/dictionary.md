@@ -109,4 +109,4 @@ UoM 换算是有向规则；正向与反向可分别维护。当前校验至少�
 - `inventory-location` 不进入当前物料表单的通用兜底集合；它服务于部署配置与跨域位置约定。
 - 精确当前行为应回到 seed、API、校验器和调用代码核实；本页不以“最后更新时间”或阶段完成清单证明实现状态。
 
-相关产品语义：[`../../product/master-data/design.md`](../../product/master-data/design.md)。长期治理决策：[`../../adr/0013-business-master-data-governance.md`](../../adr/0013-business-master-data-governance.md)。
+相关产品语义：[`../../product/master-data/design.md`](../../product/master-data/design.md)。长期治理决策：[`../../adr/2026-05-21-0013-business-master-data-governance.md`](../../adr/2026-05-21-0013-business-master-data-governance.md)。

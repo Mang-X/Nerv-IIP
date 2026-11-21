@@ -2,9 +2,7 @@
 
 ## 所有权
 
-`@nerv-iip/ui` package（`frontend/packages/ui`）是所有 UI 基础原语（primitive）**以及**设计 token
-（`packages/ui/src/styles/theme.css`）的单一事实来源。`frontend/apps/*` 中的应用代码
-绝不拥有 primitive 组件逻辑，也绝不定义 token 值。
+从[独立设计文档站](../apps/design-system/docs/guide/introduction.md)查阅视觉规范与组件用法。本页维护 NvUI 的工程约束。`@nerv-iip/ui` 提供 UI 基础原语与共享令牌，场景令牌由[相应样式源码](../apps/design-system/docs/foundations/tokens.md)提供。应用代码不得并行维护基础原语或共享令牌。
 
 ## 原版零改动（硬性规则）
 
@@ -27,16 +25,15 @@ token 之上。
   `@lucide/vue@1.0.0`。Table 的数据表 helper 另加 `@tanstack/vue-table@^8.21.3`。
 - **重新拉取（纯原版）**：button、card、table、input、select、dropdown-menu、dialog、
   另包括 sheet、tabs、breadcrumb、sidebar、pagination、tooltip、popover、skeleton、empty。
-- **有意不重新拉取：**`badge` 带有项目定制（`success` / `warning` variant，包括
-  `BusinessStatusBadge` 在内的多处代码正在使用）。它**等待在 FE-2 中由复制重建的
-  StatusBadge 取代**；success/warning 已作为 `--success` / `--warning` token 存在。
+- **有意不重新拉取：**`badge` 带有项目定制（`success` / `warning` variant），对应
+  `--success` / `--warning` token。业务状态展示使用 `NvStatusBadge`。
   其他扩展组件（avatar、chart、file-upload、date-picker、field 等）同样属于定制，
   不在原始重新拉取集合中。
 
 ## NvUI 命名与场景命名空间（ADR 0020）
 
 组件库品牌名 **NvUI**，品牌前缀 `Nv`。完整规则与判定流程冻结在
-[ADR 0020](../../docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md)，
+[ADR 0020](../../docs/adr/2026-07-07-0020-nvui-naming-token-namespaces-and-style-isolation.md)，
 全量旧名→新名映射表（原附录 A/B/C）在 [`nvui-naming-map.md`](./nvui-naming-map.md)，
 执行批次为 MAN-433（库侧）/ MAN-435（分 app codemod）/ MAN-436（守护收口）。要点：
 
@@ -119,7 +116,7 @@ ADR 0020 的 NvUI 命名约束。
 
 ## 选件阶梯（写页面时按序判断）
 
-1. **用现有 `Nv*` 件**（速查表 `DESIGN/index.md`；真实 props 以设计系统文档站
+1. **用现有 `Nv*` 件**（按设计系统文档站选择场景、组件与变体；真实 props 以文档站
    - 源码为准）。
 2. **组合现有件**（区块 / 交互模式级拼装，见 `patterns/`）。
 3. **新建品牌组件** —— 满足任一触发条件就新建，不要削足适履：
@@ -163,75 +160,15 @@ ADR 0020 的 NvUI 命名约束。
 
 ## 新增设计 token
 
-token 只能位于 `packages/ui/src/styles/theme.css`（PC/共享）或对应场景 token 表
-（screen: `components/screen/tokens.css`；mobile/touch 表在首个场景 token 出现时建立）。
-绝不得向 app `main.css` 添加 token 值。
-
-1. 先定命名空间（ADR 0020 §3）：shadcn 契约名冻结不动；PC/共享自有语义用 `--nv-*`；
-   场景专属用 `--nv-scr-*` / `--nv-m-*` / `--nv-t-*`。跨场景同值必须用 var 引用链
-   （`--nv-scr-green: var(--nv-success)`），禁止复制字面量；场景组件只允许引用本场景
-   前缀 + 契约层 token。
-2. 把 CSS 自定义属性添加到所属 token 表的 `:root {}`。
-3. 把暗色覆盖添加到 `.dark {}`（场景表如无亮色态则不适用）。
-4. 在 `@theme inline {}` 中添加 Tailwind 映射（桥接名保持 utility 契约，右值指向
-   `--nv-*` 新名）。
-5. 更新 `DESIGN/tokens.md` 和 `DESIGN/foundation.md`。
-6. 如果 token 属于品牌约束（`--primary`、`--nv-brand`、`--nv-success`/
-   `--nv-warning`、高程），就在 `packages/ui/src/design-system.contract.test.ts`
-   中添加断言。
+按文档站的[新增令牌规则](../apps/design-system/docs/foundations/tokens.md#新增令牌)维护所属样式源码、Tailwind 映射与已有契约。
 
 ## 字体
 
-两套 UI 字体均为**自行托管**（由 Vite 打包；绝不使用 `fonts.googleapis.com` 或运行时
-CDN），并在 `packages/ui/src/styles/theme.css` 顶部统一导入一次：
-
-| 角色            | 字体族           | 包                           | 许可证                 |
-| --------------- | ---------------- | ---------------------------- | ---------------------- |
-| 拉丁字母 / 数字 | `Inter Variable` | `@fontsource-variable/inter` | OFL                    |
-| 简体中文        | `MiSans`         | `misans`（Xiaomi）           | Apache-2.0，可免费商用 |
-
-`--font-sans` 为 `'Inter Variable', 'MiSans', …`，因此拉丁字母由 Inter 渲染，中文回退到
-MiSans。**不得**添加 `misans-webfont`（标记为仅限学习交流 / 非商用）。
-
-### 重新生成 `styles/misans.css`
-
-`misans` package 随附的 MiSans 使用非标准光学字重（Regular=330、Medium=380、
-Semibold=520、Bold=630）。`styles/misans.css` 是**生成文件**，用于把这些值重新映射为
-标准 CSS 字重，使 Tailwind `font-normal/medium/semibold/bold` 正确对应；按
-`unicode-range` 切分的 woff2 分块保留在 `node_modules` 中（使用相对引用，不提交）。
-升级 `misans` 后，从 `frontend/` 重新生成：
-
-```bash
-python - <<'PY'
-import os
-src="packages/ui/node_modules/misans/lib/Normal"
-weights=[("MiSans-Regular",330,400),("MiSans-Medium",380,500),("MiSans-Semibold",520,600),("MiSans-Bold",630,700)]
-prefix="../../node_modules/misans/lib/Normal/"
-out=["/* generated from `misans` (Apache-2.0); weights remapped to standard CSS values */",""]
-for name,old,new in weights:
-    css=open(os.path.join(src,name+".min.css"),encoding="utf-8").read()
-    css=css.replace(f"font-weight:{old}",f"font-weight:{new}").replace("url('","url('"+prefix)
-    out += [f"/* {name} -> {new} */", css, ""]
-open("packages/ui/src/styles/misans.css","w",encoding="utf-8",newline="\n").write("\n".join(out))
-PY
-```
+字体栈与使用规则见文档站的[桌面排版与布局](../apps/design-system/docs/foundations/desktop-layout.md#字体排版)。
 
 ## 组件契约测试
 
-`packages/ui/src/design-system.contract.test.ts` 读取
-`packages/ui/src/styles/theme.css`，并守护设计系统 v2 的关键 token：
-
-- `--primary: oklch(0.205 0 0)`——近黑主色（不得出现已停用的蓝色）
-- `--brand: oklch(0.55 0.18 255)` + `--color-brand` + `--chart-1: var(--brand)`——动态强调色
-- `--success` / `--warning`（+ `--color-success` / `--color-warning`）——状态语义
-- `--background: oklch(0.985 0 0)` ≠ `--card: oklch(1 0 0)` + `--shadow-{sm,md,lg}`——高程
-- `.dark { … }` 覆盖，其中含 `--primary: oklch(0.922 0 0)` 和 `color-scheme: dark`
-
-使用 `pnpm -C frontend --filter @nerv-iip/ui test` 运行。任何 token 变更合并前，
-此测试必须通过。如果需要更新受守护的值，必须有意更新测试，并在此记录决策。
-
-当前守护以 `packages/ui/src/design-system.contract.test.ts` 为准：screen token 使用
-`--nv-scr-*`，并断言 S4 收口后不存在 `--sb-*` 过渡别名。
+`packages/ui/src/design-system.contract.test.ts` 守护共享主题、场景命名空间和应用与文档站的样式隔离。令牌变更要跑受影响的契约测试，涉及公共契约的有意变更应同步更新设计说明和对应断言。
 
 ## 迁移待办
 

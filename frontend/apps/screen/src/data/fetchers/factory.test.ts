@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_FACTORY_ID } from '@/data/mock/masterdata'
-import { fetchFactoryOverview } from './factory'
+vi.stubEnv('VITE_SCREEN_DATA_MODE', 'mock')
+const { fetchFactoryOverview } = await import('./factory')
 
 describe('fetchFactoryOverview', () => {
   it('返回工厂总览形状（kpis/workshops/oee/双流 完整）', async () => {

@@ -4,7 +4,7 @@
 #     - Runs a disposable testhost and the dedicated observer on Linux
 #   Writes:
 #     - Owned temporary test project, manifest, TRX and observation files
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Stops owned observer and test processes and removes owned temporary files in finally
 #   Requires:
@@ -43,7 +43,7 @@ dd if=/dev/zero of="$output" bs=1024 count=2 2>/dev/null
         $tool = if ([string]::Equals($scenario, 'early-exit', [StringComparison]::Ordinal)) { '/usr/bin/false' } elseif ([string]::Equals($scenario, 'size-limit', [StringComparison]::Ordinal)) { $noisyTool } elseif ([string]::Equals($scenario, 'missing-tool', [StringComparison]::Ordinal)) { Join-Path $fixtureRoot 'missing-counters' } else { $CountersPath }
         $limit = if ([string]::Equals($scenario, 'size-limit', [StringComparison]::Ordinal)) { 1024 } else { 8388608 }
         $duration = if ([string]::Equals($scenario, 'deadline', [StringComparison]::Ordinal)) { '3' } else { '30' }
-        $observerArguments = @('-NoProfile', '-File', (Join-Path $repoRoot 'scripts/observe-redis-cap-lane.ps1'), '-LaneProcessId', [string]$PID, '-ResultsDirectory', $results, '-OutputDirectory', $output, '-CountersPath', $tool, '-ManifestPath', $manifest, '-DurationSeconds', $duration, '-MaxFileBytes', [string]$limit)
+        $observerArguments = @('-NoProfile', '-File', (Join-Path $repoRoot 'scripts/ci/observe-redis-cap-lane.ps1'), '-LaneProcessId', [string]$PID, '-ResultsDirectory', $results, '-OutputDirectory', $output, '-CountersPath', $tool, '-ManifestPath', $manifest, '-DurationSeconds', $duration, '-MaxFileBytes', [string]$limit)
         if ([string]::Equals($scenario, 'disabled', [StringComparison]::Ordinal)) { $observerArguments += '-Disabled' }
         $observer = Start-ManagedBackgroundProcess -Command 'pwsh' -Arguments $observerArguments -WorkingDirectory $repoRoot -Name "observation-$scenario"
         $test = Start-ManagedBackgroundProcess -Command 'dotnet' -Arguments @('test', $project, '--configuration', 'Release', '--no-build', '--filter', 'FullyQualifiedName=Probe.Observed', '--results-directory', (Join-Path $results 'probe'), '--logger', 'trx') -WorkingDirectory $fixtureRoot -Name "observation-test-$scenario"

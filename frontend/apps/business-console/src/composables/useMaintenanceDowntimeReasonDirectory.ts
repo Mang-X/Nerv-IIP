@@ -6,7 +6,7 @@ import { useQuery } from '@pinia/colada'
 import { computed, ref } from 'vue'
 import { inlineErrorMessage, isForbiddenError } from '@/utils/notify'
 import { hasBusinessContext, type BusinessContextFields } from './businessContextBinding'
-import { useScopeBoundListResponse } from './useScopeBoundListResponse'
+import { useScopeBoundListResponse } from '@nerv-iip/business-core'
 
 export interface MaintenanceDowntimeReasonRow {
   reasonCode: string

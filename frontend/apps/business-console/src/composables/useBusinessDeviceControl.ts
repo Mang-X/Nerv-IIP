@@ -194,9 +194,6 @@ export function useBusinessDeviceControlCommands(deviceAssetId: Ref<string>) {
     return envelope?.success ? (envelope.data?.operationTaskId ?? undefined) : undefined
   }
 
-  // --- 命令结果轮询（提交后跟踪单命令状态直至终态） ---
-  // 用官方 @pinia/colada-plugin-auto-refetch 表达轮询：非终态每 POLL_INTERVAL_MS 自动重取，命中终态返回
-  // false 停止。缓存、取消、错误状态与其余读面统一，不在组件里手写 setInterval（见 api-contract-and-codegen.md）。
   const trackedCommandId = ref<string | null>(null)
   const resultQuery = useQuery(() => ({
     ...getBusinessConsoleTelemetryDeviceControlCommandQueryOptions({

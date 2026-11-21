@@ -3,38 +3,33 @@ import {
   getBusinessConsoleWmsReceiptWorkScopesQueryOptions,
   getBusinessConsoleWmsShipmentWorkScopesQueryOptions,
   type BusinessConsoleWmsWorkScopeCatalogEnvelope,
-  type BusinessConsoleWmsWorkScopeCatalogItem,
 } from '@nerv-iip/api-client'
-import { formatWorkScopeKey, parseWorkScopeKey } from '@nerv-iip/business-core'
+import {
+  parseWorkScopeKey,
+  toWmsWorkScopeOptions,
+  type WmsWorkScopeCatalogKind,
+} from '@nerv-iip/business-core'
 import { useQuery } from '@pinia/colada'
-import { computed, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
+import { computed, shallowReactive, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
 import { useAuthStore } from '@/stores/auth'
 
-const SUPPORTED_SCOPE_KINDS = new Set(['self', 'work-pool', 'site'])
+export type { WmsWorkScopeCatalogKind, WmsWorkScopeOption } from '@nerv-iip/business-core'
 
-export type WmsWorkScopeCatalogKind = 'receipts' | 'shipments' | 'counts'
+const selections = shallowReactive<
+  Partial<Record<WmsWorkScopeCatalogKind, { sessionKey: string; scopeKey: string | undefined }>>
+>({})
 
-export interface WmsWorkScopeOption {
-  label: string
-  value: string
-}
-
-const selectedScopeKeys: Record<WmsWorkScopeCatalogKind, ReturnType<typeof shallowRef<string>>> = {
-  receipts: shallowRef<string>(),
-  shipments: shallowRef<string>(),
-  counts: shallowRef<string>(),
-}
-
-function normalizeScope(
-  item: BusinessConsoleWmsWorkScopeCatalogItem,
-): Required<Pick<BusinessConsoleWmsWorkScopeCatalogItem, 'scopeKind' | 'scopeId'>> &
-  BusinessConsoleWmsWorkScopeCatalogItem {
-  return {
-    ...item,
-    scopeKind: item.scopeKind?.trim() ?? '',
-    scopeId: item.scopeId?.trim() ?? '',
-  }
+export function useWmsSessionKey() {
+  const auth = useAuthStore()
+  return computed(() =>
+    JSON.stringify([
+      auth.sessionId ?? '',
+      auth.principal?.principalId ?? '',
+      auth.principal?.organizationId ?? '',
+      auth.principal?.environmentId ?? '',
+    ]),
+  )
 }
 
 export function useWmsWorkScope(
@@ -45,7 +40,16 @@ export function useWmsWorkScope(
   const organizationId = computed(() => auth.principal?.organizationId ?? '')
   const environmentId = computed(() => auth.principal?.environmentId ?? '')
   const hasTenant = computed(() => Boolean(organizationId.value && environmentId.value))
-  const selectedScopeKey = selectedScopeKeys[catalog]
+  const sessionKey = useWmsSessionKey()
+  const selectedScopeKey = computed<string | undefined>({
+    get: () => {
+      const selection = selections[catalog]
+      return selection?.sessionKey === sessionKey.value ? selection.scopeKey : undefined
+    },
+    set: (scopeKey) => {
+      selections[catalog] = { sessionKey: sessionKey.value, scopeKey }
+    },
+  })
 
   const catalogQuery = useQuery(() => {
     const options = {
@@ -63,6 +67,7 @@ export function useWmsWorkScope(
 
     return {
       ...queryOptions,
+      key: [...queryOptions.key, sessionKey.value],
       enabled: hasTenant.value && toValue(consumerEnabled),
     }
   })
@@ -78,20 +83,7 @@ export function useWmsWorkScope(
       auth.sessionId ??
       'unrestored-session',
   )
-  const authorizedScopes = computed(() =>
-    (catalogData.value?.items ?? [])
-      .map(normalizeScope)
-      .filter(
-        (scope) =>
-          Boolean(scope.scopeKind && scope.scopeId) && SUPPORTED_SCOPE_KINDS.has(scope.scopeKind),
-      ),
-  )
-  const scopeOptions = computed<WmsWorkScopeOption[]>(() =>
-    authorizedScopes.value.map((scope) => ({
-      label: scope.scopeKind === 'self' ? '我的任务' : (scope.displayName?.trim() ?? scope.scopeId),
-      value: formatWorkScopeKey(scope.scopeKind, scope.scopeId),
-    })),
-  )
+  const scopeOptions = computed(() => toWmsWorkScopeOptions(catalogData.value?.items ?? []))
 
   watch(
     scopeOptions,
@@ -115,6 +107,7 @@ export function useWmsWorkScope(
     organizationId,
     environmentId,
     principalId,
+    sessionKey,
     hasTenant,
     hasSelection,
     scopeKey: selectedScopeKey,

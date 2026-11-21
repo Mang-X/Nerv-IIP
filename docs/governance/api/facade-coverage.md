@@ -45,5 +45,3 @@
 | **Total** | **546** | **467** | **40** | **39** |
 
 <!-- FACADE-COVERAGE-SUMMARY:END -->
-
-历史逐项说明和曾经的渲染表保存在 [`../../reports/audits/facade-coverage-matrix.md`](../../reports/audits/facade-coverage-matrix.md)，不再作为当前机器或治理事实。

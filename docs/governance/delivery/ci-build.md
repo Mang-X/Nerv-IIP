@@ -5,21 +5,23 @@
 ## 权威 producer
 
 - Workflow 与 job/step：`.github/workflows/ci.yml`。
-- 后端 fast shard 分类：`scripts/backend-test-shards.json`。
-- 分片执行器：`scripts/run-backend-test-shard.ps1`。
-- 分片契约校验：`scripts/verify-backend-test-shards.ps1` 与 `scripts/tests/backend-test-shards.Tests.ps1`。
-- solution configuration 契约：`scripts/verify-solution-configuration-membership.ps1` 与对应测试。
+- 后端 fast shard 分类：`scripts/config/backend-test-shards.json`。
+- 分片执行器：`scripts/ci/run-backend-test-shard.ps1`。
+- 分片契约校验：`scripts/checks/verify-backend-test-shards.ps1` 与 `scripts/tests/backend-test-shards.Tests.ps1`。
+- solution configuration 契约：`scripts/checks/verify-solution-configuration-membership.ps1` 与对应测试。
 - CI impact/required-check 关系：现有 workflow 与其契约测试/脚本。
 
 需要知道“现在到底有几个 job、每片有哪些项目、用什么参数”时必须直接读取这些 producer，不在 Governance 维护副本。
 
 ## 后端构建规则
 
-1. Fast backend tests 继续按 `scripts/backend-test-shards.json` 的分片定义，各分片通过受治理执行器对自己的 solution filter 执行 restore/build/test 生命周期。
+1. Fast backend tests 继续按 `scripts/config/backend-test-shards.json` 的分片定义，各分片通过受治理执行器对自己的 solution filter 执行 restore/build/test 生命周期。
 2. 不把整个 `backend/Nerv.IIP.sln` 的一次全量构建提升为所有 fast shard 的共享前置产物，也不为此引入跨 job 的 build artifact 分发。若要推翻该规则，必须基于新的、可复现的托管 CI 测量重新裁决。
 3. connector-hosts、OpenAPI drift、ERP 等专项 lane 的构建范围和命令由它们当前 workflow/runner producer 决定；不得仅凭历史耗时报告统一改成全解决方案构建或共享产物模式。
 4. 分片边界、solution configuration membership、excluded test/lane 与 evidence lane 的变更必须同时更新现有机器契约；不新增第二套手工 shard 表。
 5. CI 注释和测试注释只能保留稳定结论并指向本规则或冻结报告，不复制时点耗时、run ID、artifact 大小等审计数据。
+
+仅修改业务服务时，CI impact plan 会附上「业务模块 → 测试项目 → fast shard」的观察清单。清单来自现有分片 manifest 与传递项目引用，列出无法静态解析的 MSBuild 引用。当前四片继续由同一个后端开关控制。启用按模块裁剪前，需要用托管 CI 验证测试发现，并补齐运行时和跨服务消费者的证据。
 
 ## 变更纪律
 

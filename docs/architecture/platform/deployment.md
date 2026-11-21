@@ -12,7 +12,7 @@
 - legacy Compose 迁移资产：`infra/compose/`。
 - 安装、迁移与打包入口：`scripts/install/`、`scripts/package/`。
 - 观测边界：[`observability.md`](observability.md)。
-- 长期部署决策：[`../../adr/0008-multi-target-deployment-and-aspire-apphost.md`](../../adr/0008-multi-target-deployment-and-aspire-apphost.md)。
+- 长期部署决策：[`../../adr/2026-05-16-0008-multi-target-deployment-and-aspire-apphost.md`](../../adr/2026-05-16-0008-multi-target-deployment-and-aspire-apphost.md)。
 
 当文档与上述 producer 冲突时，以 producer 为准并修正文档。
 
@@ -29,7 +29,7 @@
 | 目标 | 当前定位 | 拓扑来源 |
 | --- | --- | --- |
 | Aspire | 本地开发、联调、资源诊断与部署模型 | 平台级 AppHost |
-| 联网 bootstrap | 新开发机、联网实施机、PoC 的工具链与本地开发准备 | `nerv.ps1` → `scripts/bootstrap-online.ps1` |
+| 联网 bootstrap | 新开发机、联网实施机、PoC 的工具链与本地开发准备 | `nerv.ps1` → `scripts/dev/bootstrap-online-environment.ps1` |
 | Docker Compose | PoC、容器化私有化、发布演练 | Aspire deployment target 生成产物 |
 | legacy Compose | 依赖兜底、迁移期验证和既有发布演练 | `infra/compose/`；不是完整平台服务图 |
 | 安装/交付制品 | 无容器或传统运维环境的交付单元 | `scripts/package/`、`scripts/install/` 与服务发布产物 |
@@ -69,4 +69,3 @@ Development 与非 Development 的差异由 AppHost 环境、部署 profile 和�
 - CI job、测试分片、构建参数和历史测量：[`../../governance/delivery/ci-build.md`](../../governance/delivery/ci-build.md) 与冻结审计报告。
 - secret、发布、Compose 和安装行为约束：[`../../governance/delivery/deployment.md`](../../governance/delivery/deployment.md)。
 - bootstrap、Compose 发布、部署、恢复和排障命令：[`../../runbooks/deployment.md`](../../runbooks/deployment.md)。
-- M2-J 迁移前的混合部署基线与时点事实：[`../../reports/audits/deployment-baseline-pre-m2-j-2026-09-07.md`](../../reports/audits/deployment-baseline-pre-m2-j-2026-09-07.md)。

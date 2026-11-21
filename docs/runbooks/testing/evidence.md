@@ -17,4 +17,4 @@
 
 ## 基线与 timing
 
-TestEvidence baseline 的生成命令与参数以 `scripts/generate-test-evidence-baseline.ps1 -?`/源码为准；只有治理语义变化才有意更新受治理 baseline。backend shard timing 由现有 timing producer 自动刷新或降级估值，它是 report-only 缓存，不要求人工提交刷新。
+TestEvidence baseline 的生成命令与参数以 `scripts/ci/generate-test-evidence-baseline.ps1 -?`/源码为准；只有治理语义变化才有意更新受治理 baseline。backend shard timing 由现有 timing producer 自动刷新或降级估值，它是 report-only 缓存，不要求人工提交刷新。

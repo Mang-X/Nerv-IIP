@@ -1,3 +1,4 @@
+using Nerv.IIP.Web;
 using System.Security.Claims;
 using FastEndpoints;
 using FluentValidation;
@@ -6,7 +7,6 @@ using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
-using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Dto;
@@ -25,7 +25,7 @@ public sealed class GetBusinessConsoleWorkbenchSummaryEndpoint(
     IBusinessIndustrialTelemetryClient industrialTelemetry,
     IBusinessMesClient mes,
     IInternalServiceTokenProvider tokenProvider,
-    BusinessGatewayDownstreamHealthState healthState)
+    DownstreamHealthState healthState)
     : Endpoint<BusinessConsoleWorkbenchSummaryRequest, ResponseData<BusinessConsoleWorkbenchSummaryResponse>>
 {
     private const int DefaultTake = 20;

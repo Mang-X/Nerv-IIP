@@ -1,6 +1,6 @@
 # BusinessGateway client API surface canonicalization 治理
 
-本文是 BusinessGateway client 公开 API surface canonicalization 的当前唯一人工 Governance 入口。迁移前合同与形成过程冻结在 [`../../reports/audits/business-gateway-api-surface-canonicalization.md`](../../reports/audits/business-gateway-api-surface-canonicalization.md)；它们只用于历史核对，不再与本文构成并列权威。
+本文是 BusinessGateway client 公开 API surface canonicalization 的当前唯一人工 Governance 入口。
 
 固定 SDK/TFM/reference pack/Roslyn package、输入文件 SHA-256 和 ProjectReference lock fixture 集合由 [`../../reference/api/business-gateway-surface-restore.manifest.json`](../../reference/api/business-gateway-surface-restore.manifest.json) 提供机器事实。本文规定语义和 fail-closed 规则，不复制机器 manifest 中易漂移的版本/哈希清单。
 
@@ -40,17 +40,17 @@ restore/reference closure 必须由 Reference manifest 与其登记的 per-proje
 
 上面这些要求在 #3145 之前没有任何程序执行：本节声明的 canonicalization 工具没有落地，manifest 与 16 个 `packages.lock.json` 因此长期是无门禁的裸合同。代价已经付过一次——BusinessGateway 的 lock 把 MediatR 分叉（`"requested": "[14.0.0, )", "resolved": "12.5.0"`）如实记录了很久而无人读（#3136）。
 
-现在由 `scripts/verify-restore-lock-contract.ps1` 在 CI 的 `Script Governance` job 执行，校验四类：lock 内部 `resolved` 低于自身 `requested` 下界、lock 被篡改、闭包内项目缺 lock、manifest `inputs` hash 与实际文件不符。它是纯静态比对：`dotnet restore --locked-mode` 对第一类实测零鉴别力（它只比对 lock 记录的 Direct `requested` 集合与项目当前声明的 `PackageReference` 集合，从不校验 `resolved` 是不是真实解析结果），因此不能作为该类的承担方。
+现在由 `scripts/checks/verify-restore-lock-contract.ps1` 在 CI 的 `Script Governance` job 执行，校验四类：lock 内部 `resolved` 低于自身 `requested` 下界、lock 被篡改、闭包内项目缺 lock、manifest `inputs` hash 与实际文件不符。它是纯静态比对：`dotnet restore --locked-mode` 对第一类实测零鉴别力（它只比对 lock 记录的 Direct `requested` 集合与项目当前声明的 `PackageReference` 集合，从不校验 `resolved` 是不是真实解析结果），因此不能作为该类的承担方。
 
 manifest 的 `inputs` 语义在 #3145 中有意扩面：由「seed 项目的 restore 输入」扩为「整个 ProjectReference 闭包的合同快照」——闭包内每个项目的 `.csproj` 都进入 `inputs`。原范围下，某个共享库改了自己的 `PackageReference` 而不更新 lock 是无人可见的。
 
-已知无法覆盖、且不假装覆盖的：lock 中 `contentHash` 是否为包的真实哈希（需要下载每个包），以及只有 `resolved` 而无 `requested` 的 `Transitive` 条目（没有声明的范围可比）。`main` 上先于本门禁存在的分叉登记在 `scripts/restore-lock-drift-exemptions.json`，按四元组全等匹配，且登记后不再命中即判红。
+已知无法覆盖、且不假装覆盖的：lock 中 `contentHash` 是否为包的真实哈希（需要下载每个包），以及只有 `resolved` 而无 `requested` 的 `Transitive` 条目（没有声明的范围可比）。`main` 上先于本门禁存在的分叉登记在 `scripts/config/restore-lock-drift-exemptions.json`，按四元组全等匹配，且登记后不再命中即判红。
 
 ### 合同覆盖面：多份 manifest，由模式推导（#3157）
 
 #3145 落地时全仓只有 BusinessGateway 一份 manifest，检查器的 manifest 路径和 CI 的路由规则都写死了那一个路径。#3157 起覆盖面不再是单份：
 
-- **受合同约束的 manifest 集合 = `docs/reference/api/*-restore.manifest.json` 的全部匹配项**，由 `scripts/verify-restore-lock-contract.ps1` 在运行时发现，不在脚本里枚举；发现结果为空判红，不得在空集上通过。
+- **受合同约束的 manifest 集合 = `docs/reference/api/*-restore.manifest.json` 的全部匹配项**，由 `scripts/checks/verify-restore-lock-contract.ps1` 在运行时发现，不在脚本里枚举；发现结果为空判红，不得在空集上通过。
 - `scripts/lib/CiImpactPlan.ps1` 把**同一模式**路由到 `scripts` 标志（因而调度 `Script Governance` job）。两处用同一模式而不是各自维护一份名单，是为了让「检查器读到的集合」与「CI 调度到的集合」不能分叉——否则新增一份 manifest 会得到一个「声明了合同但没有任何东西读」的文件，正是本门禁存在的理由本身（#3003 / #3135 / #3140 同形）。
 - 每份 manifest 独立声明自己的 seed 项目与闭包；共享库同时落在多个闭包里是允许的，其 lock 会被各份 manifest 分别校验。
 

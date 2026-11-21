@@ -11,7 +11,7 @@ namespace Nerv.IIP.Business.Inventory.Web.Tests;
 //
 //   * 若把右侧换成常量引用，断言两侧就走同一个符号，成为同义反复。此时把某个端点的权限码
 //     换成同族但不同值的另一个常量（例如 MesFoundationRead → MesOverviewRead），断言照样通过。
-//   * containment 类门禁（scripts/verify-permission-code-producer-consistency.ps1 的
+//   * containment 类门禁（scripts/checks/verify-permission-code-producer-consistency.ps1 的
 //     `Gateway ⊆ IAM`）也抓不到这种变异：同族两个值通常**都**在 IAM 种子里，
 //     变异前后 containment 同样成立。#3094 把值改成常量引用之后，「值写错」在编译期已不可能，
 //     剩下的唯一错误形态就是**选错常量**，而选错的那个通常也合法。

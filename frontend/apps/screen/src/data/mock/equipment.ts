@@ -1,10 +1,6 @@
 // 设备监控 mock 聚合（MAN-317）：设备清单从 masterdata 真实汇总，状态画像稳定
 // （不随轮询跳变），数量/进度类微抖。🟠 计数/时长等待 #570 真实聚合端点。
-//
-// ⚠️ 参数模板、报警阈值、点位中文名**逐条取自后端遥测种子**
-// `backend/services/Business/IndustrialTelemetry/.../Seed/WorldHistoryDeviceSpec.cs`
-// （8 个设备类别的 base/swing/阈值）与 `WorldHistoryControlCommandSpec.TagDisplayName`。
-// 大屏上跳出来的「主轴温度 78℃ 超限」必须和 PC 控制台看到的是同一个阈值。
+
 import type {
   DeviceCell,
   DeviceDetail,
@@ -74,7 +70,7 @@ const STATE_LABELS: Record<DeviceState, string> = {
   offline: '断线',
 }
 
-// —— 采集点位模板（按设备类别；base/swing/阈值与后端遥测种子逐条一致）——
+// —— 采集点位模板（按设备类别；base/swing/阈值由大屏 mock 定义）——
 interface ParamSpec {
   label: string
   base: number
@@ -391,7 +387,7 @@ export function buildEquipmentOverview(
   const visibleDeviceNames = new Set(devices.map((d) => d.name))
 
   // —— 未恢复报警表（级别·未恢复时长·已触发维修工单 ✅ 闭环）——
-  // 维修工单走设定集 §9 的 `MWO-2026-####` 段（29 周共 120 张，当前号在 011x）。
+  // 维修工单使用 `MWO-2026-####` 段（29 周共 120 张，当前号在 011x）。
   const hasAlarm = counts.alarm > 0
   const ALARM_POOL: {
     line: string
@@ -481,7 +477,7 @@ export function buildEquipmentOverview(
   ]
 
   // —— 维修工单（状态机阶段 + 报修时刻/已历时/SLA + 责任人；按可见设备过滤）——
-  // 责任人取 L0 §5 设备部：维修技师 EMP-043..046、设备主管 EMP-042、点检员 EMP-047。
+  // 责任人使用设备部的 mock 人员：维修技师 EMP-043..046、设备主管 EMP-042、点检员 EMP-047。
   const REPAIR_POOL: RepairOrder[] = [
     {
       wo: 'MWO-2026-0118',
@@ -548,7 +544,7 @@ export function buildEquipmentOverview(
   const repairs = REPAIR_POOL.filter((r) => visibleDeviceNames.has(r.device))
 
   // —— 可靠性 ——
-  // MTBF 推导（设定集 §7）：46 台 × 174 工作日 × 16h 双班 ≈ 128,000 设备运行小时，
+  // MTBF 推导：46 台 × 174 工作日 × 16h 双班 ≈ 128,000 设备运行小时，
   // 29 周共 120 张维修工单 → ≈1,067 h/次。MTTR 取维修工单平均历时 ≈95 min。
   // 当日故障/完修数按 400 报警 / 120 维修摊到 174 个工作日（≈2.3 / ≈0.7 每日）。
   // availability 直接用「在运设备占比」（真实计数推导，不是拍的）。

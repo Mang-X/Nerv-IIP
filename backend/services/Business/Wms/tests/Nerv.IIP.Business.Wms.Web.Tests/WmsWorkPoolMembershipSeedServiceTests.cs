@@ -18,34 +18,16 @@ public sealed class WmsWorkPoolMembershipSeedServiceTests
     [Fact]
     public void Seed_gate_requires_explicit_wms_opt_in_and_development_environment()
     {
-        var noOptIn = Configuration(
-            ("LeaderDemo:World:Enabled", "false"),
-            ("LeaderDemo:History:Enabled", "false"),
-            ("LeaderDemo:History:Scale", "0"));
+        var noOptIn = Configuration();
 
         Assert.False(WmsWorkPoolMembershipSeedGate.ShouldSeed(noOptIn, isDevelopment: true));
 
         var optIn = Configuration(
-            (WmsWorkPoolMembershipSeedGate.EnabledKey, "true"),
-            ("LeaderDemo:World:Enabled", "false"),
-            ("LeaderDemo:History:Enabled", "false"),
-            ("LeaderDemo:History:Scale", "0"));
+            (WmsWorkPoolMembershipSeedGate.EnabledKey, "true"));
 
         Assert.True(WmsWorkPoolMembershipSeedGate.ShouldSeed(optIn, isDevelopment: true));
         Assert.Throws<InvalidOperationException>(() =>
             WmsWorkPoolMembershipSeedGate.ShouldSeed(optIn, isDevelopment: false));
-    }
-
-    [Fact]
-    public void Seed_gate_stays_off_when_world_history_owns_wms_facts()
-    {
-        var configuration = Configuration(
-            (WmsWorkPoolMembershipSeedGate.EnabledKey, "true"),
-            ("LeaderDemo:World:Enabled", "false"),
-            ("LeaderDemo:History:Enabled", "true"),
-            ("LeaderDemo:History:Scale", "1"));
-
-        Assert.False(WmsWorkPoolMembershipSeedGate.ShouldSeed(configuration, isDevelopment: true));
     }
 
     [Fact]
@@ -93,7 +75,7 @@ public sealed class WmsWorkPoolMembershipSeedServiceTests
         Assert.Equal("RM-TUB-01", line.SkuCode);
         Assert.Equal("unrestricted", line.QualityStatus);
 
-        // The opt-in is deliberately not the full world-history switch: no derived history facts are written.
+        // The opt-in only creates the minimum inbound facts.
         Assert.Empty(await dbContext.BackorderOrders.AsNoTracking().ToArrayAsync());
         Assert.Empty(await dbContext.OutboundOrders.AsNoTracking().ToArrayAsync());
         Assert.Empty(await dbContext.WarehouseTasks.AsNoTracking().ToArrayAsync());

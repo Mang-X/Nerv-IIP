@@ -894,7 +894,7 @@ internal static class MaintenanceWorkScopeAccess
         return (string.Join(',', intersection), intersection.Length == 0);
     }
 
-    private static BusinessServiceProxyException Forbidden() => new(HttpStatusCode.Forbidden, "work-scope-not-authorized");
+    private static BusinessServiceProxyException Forbidden() => BusinessServiceProxyException.FromLocalRejection(HttpStatusCode.Forbidden, PrincipalWorkScopeStableWireCodes.NotAuthorized);
 }
 
 internal static class MaintenanceActionOwnership
@@ -941,7 +941,7 @@ internal static class MaintenanceActionOwnership
             return;
         }
 
-        throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "maintenance-action-owner-required");
+        throw BusinessServiceProxyException.FromLocalRejection(HttpStatusCode.Forbidden, BusinessGatewayLocalRejectionStableWireCodes.MaintenanceActionOwnerRequired);
     }
 }
 

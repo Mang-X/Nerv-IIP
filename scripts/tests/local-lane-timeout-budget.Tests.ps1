@@ -17,27 +17,8 @@
 形状。这里直接问 PowerShell 自己的解析器，写法再怎么折行都判得一样。
 
 **覆盖边界（不自称完备）**：本文件只管下面点名的四个入口。它**不**会发现将来新增的第五个同族
-入口——那种「护栏自称完备」的说法比有洞更坏，所以这里明写出来。下面三段同样是边界而不是免责：
-
-一、**其余跑 `dotnet test` 的 verify 脚本为什么不在判定面内**（按 AST 实读，不是按印象）：
-`scripts/verify-business-*.ps1` 共 **9 个**，它们在 `dotnet test` 调用点上**一个都没有**绑定
-`-TimeoutSeconds`，吃的是 `Invoke-DotNet` 的**隐式默认 600 秒**（`scripts/lib/ScriptAutomation.ps1:1004`）。
-它们身上那些 180/240/300 是 `Invoke-DockerCompose` 与 `restore` 的预算，**不是 test 的**。
-真正在 `dotnet test` 调用点写死字面量的是另外三个脚本：`verify-coding-rule-engine.ps1:30`=300、
-`verify-erp-sales-order-demand-planning.ps1:2419`=180、`verify-erp-wms-delivery-completion.ps1:931`=180。
-
-二、**已知同族但本轮未收**：`scripts/verify-iam-persistent-auth-foundation.ps1:71`=600 与
-`:74`=900。它逐条满足本族身份（本机可跑、`:63` 用 Invoke-DockerCompose 起真 PostgreSQL、对真库跑
-`dotnet test`、预算是字面量、零 CI 调用方、调用方无法抬高），只因数字不是 1800 而落在本轮交集之外。
-⚠️ 不要把它读成「单项目所以不属本族」：`:74` 是 `dotnet test backend/Nerv.IIP.sln`，**跑整个解决方案**，
-在「多工作树争 CPU」这个致因下，900 秒跑整解决方案比 1800 秒跑单成员**更容易**撑穿。
-后续处置回到 #3295。
-
-三、**本文件抓不到的两种「预算被二次收窄」形态**（已实测会绿，不靠再枚举拼法去堵）：
-换一个属性名重钉上界（如 `[ValidateScript({ $_ -le 1800 })]`）、以及在函数体内把传进来的值钳回
-（如 `if ($TimeoutSeconds -gt 1800) { $TimeoutSeconds = 1800 }`）。后者尤其危险：参数在、绑定在、
-默认值在，下面三条断言全过，而 #3295 的缺陷原样复活——调用方传 3600 被无声吃掉。
-要结构性闭合得换判据（判「预算在本脚本内是否被重新赋值/再校验」），那超出本轮射程。
+入口。此检查验证参数的声明和调用点绑定。
+它无法发现脚本在绑定后重新钳制预算，也不覆盖未列出的入口。
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -49,10 +30,9 @@ function Assert-Contract([bool]$Condition, [string]$Message) { if (-not $Conditi
 # 该族的成员身份：本机可跑、对真 PostgreSQL/Redis 跑 `dotnet test`、此前把 1800 写死成字面量。
 # CI 传不传这个参数无所谓——默认值就是原来的字面量，所以 CI 行为按构造不变。
 $governedEntrypoints = @(
-    'scripts/run-postgres-test-lane.ps1'
-    'scripts/run-redis-cap-test-lane.ps1'
-    'scripts/verify-backend-real-postgres-tests.ps1'
-    'scripts/verify-world-history.ps1'
+    'scripts/ci/run-postgres-test-lane.ps1'
+    'scripts/ci/run-redis-cap-test-lane.ps1'
+    'scripts/ci/verify-backend-real-postgres-tests.ps1'
 )
 
 foreach ($relativePath in $governedEntrypoints) {

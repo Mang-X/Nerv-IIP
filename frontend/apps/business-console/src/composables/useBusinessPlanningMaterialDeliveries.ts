@@ -7,9 +7,42 @@ import { computed, reactive, shallowRef, watch } from 'vue'
 import { bindBusinessContext, hasBusinessContext } from './businessContextBinding'
 import { assertEnvelopeSuccess } from './serviceEnvelope'
 
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
+
+export function useCanReadMaterialDeliveries() {
+  const auth = useAuthStore()
+  return computed(() =>
+    [P.planningMrpRead, P.planningDemandsRead, P.erpProcurementRead].every((permission) =>
+      auth.principal?.permissionCodes?.includes(permission),
+    ),
+  )
+}
+
 export function useBusinessPlanningMaterialDeliveries() {
   const selection = bindBusinessContext(
     reactive({ organizationId: '', environmentId: '', runId: '', planId: '' }),
+  )
+  const auth = useAuthStore()
+  const canReadDeliveries = useCanReadMaterialDeliveries()
+  const canSelectPlan = computed(
+    () =>
+      canReadDeliveries.value &&
+      [
+        P.schedulingPlansRead,
+        P.mesWorkOrdersRead,
+        P.mesReportingRead,
+        P.engineeringProductionVersionsRead,
+        P.engineeringRoutingsRead,
+        P.masterDataResourcesRead,
+      ].every((permission) => auth.principal?.permissionCodes?.includes(permission)),
+  )
+  watch(
+    canSelectPlan,
+    (allowed) => {
+      if (!allowed) selection.planId = ''
+    },
+    { flush: 'sync' },
   )
   const planPage = shallowRef(1)
   watch(
@@ -30,7 +63,7 @@ export function useBusinessPlanningMaterialDeliveries() {
     })
     return {
       ...options,
-      enabled: hasBusinessContext(selection),
+      enabled: hasBusinessContext(selection) && canSelectPlan.value,
       query: async (context) =>
         assertEnvelopeSuccess(await options.query(context), '读取 APS 方案失败。'),
     }
@@ -46,7 +79,7 @@ export function useBusinessPlanningMaterialDeliveries() {
     })
     return {
       ...options,
-      enabled: hasBusinessContext(selection) && !!selection.runId,
+      enabled: hasBusinessContext(selection) && canReadDeliveries.value && !!selection.runId,
       query: async (context) =>
         assertEnvelopeSuccess(await options.query(context), '读取物料交付失败。'),
     }
@@ -54,6 +87,7 @@ export function useBusinessPlanningMaterialDeliveries() {
   return {
     selection,
     planPage,
+    canSelectPlan,
     plans: computed(() => plansQuery.data.value?.data?.items ?? []),
     plansTotal: computed(() => plansQuery.data.value?.data?.total ?? 0),
     plansPending: plansQuery.isLoading,
@@ -63,8 +97,10 @@ export function useBusinessPlanningMaterialDeliveries() {
     deliveriesError: deliveriesQuery.error,
     refresh: () =>
       Promise.all([
-        hasBusinessContext(selection) ? plansQuery.refetch() : undefined,
-        hasBusinessContext(selection) && selection.runId ? deliveriesQuery.refetch() : undefined,
+        hasBusinessContext(selection) && canSelectPlan.value ? plansQuery.refetch() : undefined,
+        hasBusinessContext(selection) && canReadDeliveries.value && selection.runId
+          ? deliveriesQuery.refetch()
+          : undefined,
       ]),
   }
 }

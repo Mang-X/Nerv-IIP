@@ -1,3 +1,5 @@
+import { useAuthStore } from '@/stores/auth'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import {
   addBusinessConsoleTeamMemberMutationOptions,
   assignBusinessConsolePersonnelSkillMutationOptions,
@@ -224,31 +226,34 @@ function withCreateIdempotency<TBody>(resourceType: string, body: TBody): TBody 
   }
 }
 
-export function useBusinessSkus() {
+export function useBusinessSkus(enabled = () => true) {
+  const auth = useAuthStore()
+  const canRead = () =>
+    enabled() && auth.principal?.permissionCodes?.includes(P.masterDataProductsRead) === true
   const filters = defaultListFilters()
 
-  const skusQuery = useQuery(() =>
-    withBusinessContextEnabled(
-      listBusinessConsoleSkusQueryOptions({
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-          ...optionalQuery('includeDisabled', filters.includeDisabled),
-          skip: filters.skip,
-          take: filters.take,
-        },
-      }),
-      filters,
-    ),
-  )
+  const skusQuery = useQuery(() => ({
+    ...listBusinessConsoleSkusQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        ...optionalQuery('includeDisabled', filters.includeDisabled),
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+    enabled: hasBusinessContext(filters) && canRead(),
+  }))
+  const visibleData = computed(() => (canRead() ? skusQuery.data.value : undefined))
 
   return {
     filters,
-    refreshSkus: () => refetchWithBusinessContext(filters, skusQuery),
-    skus: computed<BusinessConsoleResourceItem[]>(() => resourceItems(skusQuery.data.value)),
-    skusError: skusQuery.error,
-    skusPending: skusQuery.isLoading,
-    skusTotal: computed(() => resourceTotal(skusQuery.data.value)),
+    refreshSkus: () =>
+      canRead() ? refetchWithBusinessContext(filters, skusQuery) : Promise.resolve(undefined),
+    skus: computed<BusinessConsoleResourceItem[]>(() => resourceItems(visibleData.value)),
+    skusError: computed(() => (canRead() ? skusQuery.error.value : null)),
+    skusPending: computed(() => canRead() && skusQuery.isLoading.value),
+    skusTotal: computed(() => resourceTotal(visibleData.value)),
   }
 }
 
@@ -465,37 +470,36 @@ export function useReferenceDataCodes() {
 
 export function useBusinessMasterDataResources(
   resourceType: string,
-  options: { codeSet?: string } = {},
+  options: { codeSet?: string; enabled?: () => boolean } = {},
 ) {
   const filters = defaultResourceFilters(resourceType, options.codeSet)
+  const enabled = options.enabled ?? (() => true)
 
-  const resourcesQuery = useQuery(() =>
-    withBusinessContextEnabled(
-      listBusinessConsoleMasterDataResourcesQueryOptions({
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-          resourceType: filters.resourceType,
-          ...optionalQuery('codeSet', filters.codeSet),
-          ...optionalQuery('includeDisabled', filters.includeDisabled),
-          ...optionalQuery('keyword', filters.keyword),
-          skip: filters.skip,
-          take: filters.take,
-        },
-      }),
-      filters,
-    ),
-  )
+  const resourcesQuery = useQuery(() => ({
+    ...listBusinessConsoleMasterDataResourcesQueryOptions({
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+        resourceType: filters.resourceType,
+        ...optionalQuery('codeSet', filters.codeSet),
+        ...optionalQuery('includeDisabled', filters.includeDisabled),
+        ...optionalQuery('keyword', filters.keyword),
+        skip: filters.skip,
+        take: filters.take,
+      },
+    }),
+    enabled: hasBusinessContext(filters) && enabled(),
+  }))
+  const visibleData = computed(() => (enabled() ? resourcesQuery.data.value : undefined))
 
   return {
     filters,
-    refreshResources: () => refetchWithBusinessContext(filters, resourcesQuery),
-    resources: computed<BusinessConsoleResourceItem[]>(() =>
-      resourceItems(resourcesQuery.data.value),
-    ),
+    refreshResources: () =>
+      enabled() ? refetchWithBusinessContext(filters, resourcesQuery) : Promise.resolve(undefined),
+    resources: computed<BusinessConsoleResourceItem[]>(() => resourceItems(visibleData.value)),
     resourcesError: resourcesQuery.error,
     resourcesPending: resourcesQuery.isLoading,
-    resourcesTotal: computed(() => resourceTotal(resourcesQuery.data.value)),
+    resourcesTotal: computed(() => resourceTotal(visibleData.value)),
   }
 }
 

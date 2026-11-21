@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { NvSparkline } from '@nerv-iip/ui'
 import { useVirtualList } from '@vueuse/core'
-import { type CSSProperties, computed, ref, watch } from 'vue'
+import { type CSSProperties, computed, onScopeDispose, ref, watch } from 'vue'
 import type { DeviceCell, DeviceDetail, StateCounts } from '@/data/contracts/equipment'
+import { IS_REAL_DATA } from '@/data/config'
 import { fetchDeviceDetail } from '@/data/fetchers/equipment'
 import {
   EQUIPMENT_DEVICE_NAME_SIZE_PX,
@@ -21,6 +22,8 @@ import { paramColor } from './paramColors'
  * 迷你趋势 + 维修/保养摘要 + 单机 MTBF/MTTR，减少必须点开弹窗的场景。
  */
 const props = defineProps<{
+  workCenterCode?: string
+  partialCoverage?: boolean
   devices: DeviceCell[]
   counts: StateCounts
   view: 'flat' | 'workshop' | 'line'
@@ -34,11 +37,15 @@ const emit = defineEmits<{
 }>()
 
 function countItems() {
+  const unknown = props.devices.filter((d) => d.stateLabel === '状态未知').length
+  const changeover = props.devices.filter((d) => d.stateLabel === '换型').length
   return [
     { k: 'run', label: '运行', v: props.counts.run },
-    { k: 'idle', label: '待机', v: props.counts.idle },
+    { k: 'idle', label: '待机', v: props.counts.idle - unknown - changeover },
+    ...(changeover ? [{ k: 'changeover', label: '换型', v: changeover }] : []),
+    ...(unknown ? [{ k: 'unknown', label: '状态未知', v: unknown }] : []),
     { k: 'down', label: '停机', v: props.counts.down },
-    { k: 'alarm', label: '报警', v: props.counts.alarm },
+    { k: 'alarm', label: props.partialCoverage ? '已覆盖中报警' : '报警', v: props.counts.alarm },
     { k: 'offline', label: '断线', v: props.counts.offline },
   ]
 }
@@ -107,7 +114,7 @@ function showTip(d: DeviceCell, e: MouseEvent) {
     below,
   }
   const cached = detailCache.get(d.id)
-  if (cached && Date.now() - cached.at < 30_000) {
+  if (!IS_REAL_DATA && cached && Date.now() - cached.at < 30_000) {
     tipDetail.value = cached.d
     return
   }
@@ -115,9 +122,14 @@ function showTip(d: DeviceCell, e: MouseEvent) {
   const token = ++hoverToken
   clearTimeout(hoverTimer)
   hoverTimer = setTimeout(async () => {
-    const det = await fetchDeviceDetail(d.id, props.factoryId, props.workshopIds)
+    const det = await fetchDeviceDetail(
+      d.id,
+      props.factoryId,
+      props.workshopIds,
+      props.workCenterCode,
+    ).catch(() => null)
     if (det) {
-      detailCache.set(d.id, { at: Date.now(), d: det })
+      if (!IS_REAL_DATA) detailCache.set(d.id, { at: Date.now(), d: det })
       if (token === hoverToken && tip.value?.device.id === d.id) tipDetail.value = det
     }
   }, 250)
@@ -128,6 +140,13 @@ function hideTip() {
   clearTimeout(hoverTimer)
   hoverToken++
 }
+onScopeDispose(hideTip)
+watch(
+  () => props.devices,
+  (devices) => {
+    if (tip.value && !devices.some((d) => d.id === tip.value?.device.id)) hideTip()
+  },
+)
 function pick(d: DeviceCell) {
   hideTip()
   emit('select', d)
@@ -139,9 +158,9 @@ function pick(d: DeviceCell) {
     <!-- 顶部五态计数（与墙体逐台归并一致，单测对账） -->
     <div class="dsw-counts">
       <span v-for="c in countItems()" :key="c.k" class="count" :class="c.k">
-        <i />{{ c.label }} <b>{{ c.v }}</b>
+        <i />{{ c.label }} <b>{{ c.v }}</b> 台
       </span>
-      <span class="dsw-total">共 {{ devices.length }} 台</span>
+      <span class="dsw-total">{{ partialCoverage ? '已覆盖' : '共' }} {{ devices.length }} 台</span>
     </div>
 
     <!-- 平铺：行虚拟滚动的大格参数墙 -->
@@ -183,9 +202,7 @@ function pick(d: DeviceCell) {
     <!-- 按车间：分组紧凑格，滚动 -->
     <div v-else-if="view === 'workshop'" class="dsw dsw--groups nv-scr-scroll" @scroll="hideTip">
       <section v-for="[name, list] in groupBy((d) => d.workshopName)" :key="name" class="dsw-group">
-        <h6 class="dsw-group-t">
-          {{ name }} <small>{{ list.length }} 台</small>
-        </h6>
+        <h6 class="dsw-group-t">{{ name }} <small>{{ list.length }} 台</small></h6>
         <div class="dsw-group-grid">
           <button
             v-for="d in list"
@@ -209,9 +226,7 @@ function pick(d: DeviceCell) {
     <!-- 按产线：每线一组，chip 流式换行 -->
     <div v-else class="dsw dsw--lines nv-scr-scroll" @scroll="hideTip">
       <section v-for="[name, list] in groupBy((d) => d.lineName)" :key="name" class="dsw-linegroup">
-        <h6 class="dsw-group-t">
-          {{ name }} <small>{{ list.length }} 台</small>
-        </h6>
+        <h6 class="dsw-group-t">{{ name }} <small>{{ list.length }} 台</small></h6>
         <div class="dsw-chips">
           <button
             v-for="d in list"
@@ -291,7 +306,7 @@ function pick(d: DeviceCell) {
           </div>
         </template>
 
-        <div class="dsw-tip-hint">点击查看完整档案与实时趋势</div>
+        <div class="dsw-tip-hint">点击查看设备档案</div>
       </div>
     </Teleport>
   </div>

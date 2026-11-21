@@ -7,7 +7,7 @@ namespace Nerv.IIP.Business.Maintenance.Web.Application.Errors;
 ///
 /// 这三条码的异常消息**就是码本身**、不含任何中文，经网关原样进 <c>message</c> 位，
 /// 前端 <c>STABLE_ERROR_MESSAGES</c> 认不出就裸码上屏。收进本类是为了让它们落在
-/// <c>scripts/verify-stable-code-frontend-vocabulary.ps1</c> 的扫描面内：
+/// <c>scripts/checks/verify-stable-code-frontend-vocabulary.ps1</c> 的扫描面内：
 /// 检查器按 <c>*StableWireCodes</c> 类名后缀在 <c>backend/**/src/**</c> 全树发现注册表。
 /// </summary>
 public static class MaintenanceStableWireCodes

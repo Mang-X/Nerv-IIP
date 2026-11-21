@@ -48,7 +48,6 @@
     <PackageReference Include="DotNetCore.CAP.RedisStreams" />
     <PackageReference Include="FastEndpoints" />
     <PackageReference Include="FastEndpoints.Swagger" />
-    <PackageReference Include="FastEndpoints.Swagger.Swashbuckle" />
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="FluentValidation.AspNetCore" />
     <PackageReference Include="Hangfire.AspNetCore" />
@@ -92,7 +91,6 @@
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
     <PackageReference Include="StackExchange.Redis" />
-    <PackageReference Include="Swashbuckle.AspNetCore" />
     <PackageReference Include="prometheus-net.AspNetCore" />
     <PackageReference Include="prometheus-net.AspNetCore.HealthChecks" />
     <PackageReference Include="xunit.assert" />

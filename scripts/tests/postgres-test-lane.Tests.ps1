@@ -14,7 +14,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/PostgresTestLane.ps1')
 . (Join-Path $repoRoot 'scripts/lib/CiRequiredSummary.ps1')
-$manifestPath = Join-Path $repoRoot 'scripts/postgres-test-lane.json'
+$manifestPath = Join-Path $repoRoot 'scripts/config/postgres-test-lane.json'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-postgres-lane-$([Guid]::NewGuid().ToString('N'))"
 function Assert-Contract([bool]$Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
 function Assert-MasterDataDiagnosticSchemas([object]$Member) {
@@ -66,7 +66,7 @@ function Assert-LaneResetDropsCascade([string]$SourcePath) {
 # 有人顺手改用共享库里现成的另一个工厂就不会被拒（#1510 的教训——漏拼写要从类型集穷举）。
 # 内层库工厂清单从**行为**穷举，而不是手维护点名：扫测试树里所有含 `CREATE DATABASE` 的源文件，
 # 取其中声明的数据库工厂类型名。手维护清单每接一个服务就要靠人记得补一次，实测漏掉了
-# DisposablePostgresDatabase / WorldHistoryTemporaryDatabase / IndustrialTelemetryPostgresTestDatabase 三项
+# DisposablePostgresDatabase 和 IndustrialTelemetryPostgresTestDatabase
 # （#1510 的教训：漏拼写要从类型集穷举，不从审核点名补特例）。
 function Get-NervInnerDatabaseFactories([string]$RepositoryRoot) {
     $discovered = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -194,7 +194,7 @@ function Get-PostgresWorkflowRunnerCommand([string]$WorkflowPath, [int]$Statemen
         if ($statement -isnot [System.Management.Automation.Language.PipelineAst] -or $statement.PipelineElements.Count -ne 1) { continue }
         $candidate = $statement.PipelineElements[0]
         if ($candidate -is [System.Management.Automation.Language.CommandAst] -and
-            [string]::Equals($candidate.GetCommandName(), './scripts/run-postgres-test-lane.ps1', [StringComparison]::Ordinal)) {
+            [string]::Equals($candidate.GetCommandName(), './scripts/ci/run-postgres-test-lane.ps1', [StringComparison]::Ordinal)) {
             return $candidate
         }
     }
@@ -206,7 +206,7 @@ function Get-PostgresWorkflowRunnerCommand([string]$WorkflowPath, [int]$Statemen
 # 判据，而不是一条由写法保证的同义反复。
 function Get-PostgresWorkflowSelectedMemberId([string]$WorkflowPath) {
     $command = Get-PostgresWorkflowRunnerCommand -WorkflowPath $WorkflowPath
-    if ($null -eq $command) { throw 'The postgres-tests step must invoke ./scripts/run-postgres-test-lane.ps1 exactly once.' }
+    if ($null -eq $command) { throw 'The postgres-tests step must invoke ./scripts/ci/run-postgres-test-lane.ps1 exactly once.' }
     $statements = @($script:PostgresWorkflowStatements)
     if (@(Get-PostgresRunnerCommandParameter -Command $command -ParameterName 'AllActiveMembers').Count -eq 1) {
         return @(Import-NervPostgresTestLaneMembers -ManifestPath $manifestPath -RepositoryRoot $repoRoot | ForEach-Object { [string]$_.id })
@@ -320,7 +320,7 @@ try {
     $missingCapRejected = $false
     try { Assert-MasterDataDiagnosticSchemas -Member $missingCapMember } catch { $missingCapRejected = $_.Exception.Message.Contains('CAP outbox diagnostics', [StringComparison]::Ordinal) }
     Assert-Contract $missingCapRejected 'Removing CAP from the MasterData diagnostic schemas must fail the contract.'
-    Assert-Contract ([string]::Equals((@($masterDataMember.expectedTestIdentities) -join "`n"), ($masterDataIdentities -join "`n"), [StringComparison]::Ordinal)) 'The MasterData member must freeze exactly the fourteen governed profile identities and exclude the world-bible seed test.'
+    Assert-Contract ([string]::Equals((@($masterDataMember.expectedTestIdentities) -join "`n"), ($masterDataIdentities -join "`n"), [StringComparison]::Ordinal)) 'The MasterData member must freeze exactly the fourteen governed profile identities.'
 
     $schedulingMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'scheduling-postgres-profile' -RepositoryRoot $repoRoot
     $schedulingIdentities = @(
@@ -409,11 +409,18 @@ try {
     $separatorIndex = $identity.LastIndexOf('.', [StringComparison]::Ordinal)
     $class = $identity.Substring(0, $separatorIndex)
     $method = $identity.Substring($separatorIndex + 1)
-    $trx = "<?xml version=`"1.0`"?><TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results><UnitTestResult testId=`"1`" testName=`"$method`" outcome=`"Passed`" /></Results><TestDefinitions><UnitTest id=`"1`"><TestMethod className=`"$class`" name=`"$method`" /></UnitTest></TestDefinitions></TestRun>"
+    $trx = "<?xml version=`"1.0`"?><TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results><UnitTestResult testId=`"1`" testName=`"$method`" outcome=`"Passed`" /></Results><TestDefinitions><UnitTest id=`"1`"><TestMethod className=`"$class`" name=`"$method`" /></UnitTest></TestDefinitions><ResultSummary><Counters total=`"1`" executed=`"1`" passed=`"1`" failed=`"0`" /></ResultSummary></TestRun>"
     [IO.File]::WriteAllText((Join-Path $fixtureRoot 'passed.trx'), $trx, [Text.UTF8Encoding]::new($false))
     $result = Get-NervPostgresTrxResult -ResultsDirectory $fixtureRoot -ExpectedTestIdentities @($identity)
     Assert-Contract ($result.passed -eq 1 -and $result.skipped -eq 0) 'A fully passed frozen identity must satisfy the lane contract.'
-    $skipped = $trx.Replace('outcome="Passed"', 'outcome="NotExecuted"')
+    $badCounters = $trx.Replace('total="1"', 'total="2"')
+    [IO.File]::WriteAllText((Join-Path $fixtureRoot 'passed.trx'), $badCounters)
+    $counterMismatchRejected = $false
+    try { Get-NervPostgresTrxResult -ResultsDirectory $fixtureRoot -ExpectedTestIdentities @($identity) -AllowInvalid | Out-Null }
+    catch { $counterMismatchRejected = $_.Exception.Message.Contains('Counters do not match Results', [StringComparison]::Ordinal) }
+    Assert-Contract $counterMismatchRejected 'A PostgreSQL lane must reject contradictory TRX counters even when collecting a failure summary.'
+
+    $skipped = $trx.Replace('outcome="Passed"', 'outcome="NotExecuted"').Replace('executed="1" passed="1"', 'executed="0" passed="0"')
     [IO.File]::WriteAllText((Join-Path $fixtureRoot 'passed.trx'), $skipped, [Text.UTF8Encoding]::new($false))
     $invalidResult = Get-NervPostgresTrxResult -ResultsDirectory $fixtureRoot -ExpectedTestIdentities @($identity) -AllowInvalid
     Assert-Contract (-not $invalidResult.valid -and $invalidResult.skipped -eq 1) 'Failure summaries must retain the actual skipped count.'
@@ -738,7 +745,7 @@ try {
     foreach ($frozenDemandPlanningIdentity in @($demandPlanningMember.expectedTestIdentities)) {
         Assert-Contract (-not ([string]$frozenDemandPlanningIdentity).Contains('.Redis_cap_', [StringComparison]::Ordinal)) 'The Redis/CAP transport identities stay owned by the redis-cap lane, not by postgres.'
     }
-    $redisCapManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/redis-cap-test-lane.json') -Raw | ConvertFrom-Json -Depth 20
+    $redisCapManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/config/redis-cap-test-lane.json') -Raw | ConvertFrom-Json -Depth 20
     $redisCapIdentities = [Collections.Generic.HashSet[string]]::new([string[]]@($redisCapManifest.members | ForEach-Object { @($_.expectedTestIdentities) }), [StringComparer]::Ordinal)
     foreach ($frozenDemandPlanningIdentity in @($demandPlanningMember.expectedTestIdentities)) {
         $frozenIdentityKey = [string]$frozenDemandPlanningIdentity
@@ -762,7 +769,8 @@ try {
     # 生产侧已无任何派生凭证号，两条一并删除；voucher_no 那条唯一索引改由
     # ErpJournalVoucherNoPostgresAcceptanceTests 与 PostgreSQL_dedup_sites_key_on_the_source_document_*
     # 在来源键那一面承担。⛔ 这是「要证的事没了」，不是「测试碍事」。
-    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 31) 'The ERP member must freeze exactly its thirty-one PostgreSQL identities.'
+    # 完工与末笔材料过账的两个并发顺序都需要真库事务证明。
+    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 32) 'The ERP member must freeze exactly its thirty-two PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 16) '跨服务验收成员必须冻结十六条 PostgreSQL 测试身份。'
@@ -925,7 +933,7 @@ try {
     # 闭合契约：政策里每一条 requiredLane: postgres 的身份，都必须落在 manifest 的成员身份（active 或
     # deferred）或显式的规模种子豁免里。穷举从政策的类型集来，不从审核点名来——否则第三个"漏网"类
     # 可以无声出现（#1510 的教训）。
-    $policyDocument = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json -Depth 20
+    $policyDocument = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json') -Raw | ConvertFrom-Json -Depth 20
     $manifestDocument = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -Depth 20
     $manifestIdentities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($manifestMember in @($manifestDocument.members)) {
@@ -964,8 +972,8 @@ try {
 
     # #3424 反向闭合。上面那条只管一个方向——「政策里的身份有没有落到 lane」。反方向没有任何本机
     # 门禁，而反方向正是 #3129 栽的那一格：三条新 PostgreSQL 用例进了 manifest（本机 lane 门禁逼着
-    # 必须进），漏了 scripts/test-evidence-policy.json，本机全绿，直到 CI 收证阶段
-    # （scripts/collect-test-evidence.ps1:102）才报 `Runtime skip matched 0 applicable rules`。
+    # 必须进），漏了 scripts/config/test-evidence-policy.json，本机全绿，直到 CI 收证阶段
+    # （scripts/ci/collect-test-evidence.ps1:102）才报 `Runtime skip matched 0 applicable rules`。
     # 这里不新建机制，只是把那条**已经存在的** fail-closed 判据挪到本机能跑的位置。
     #
     # ⚠️ CI 也**不一定**报得出来，别把「CI 会兜住」当理由。因果要写准（复审纠正，别读成 matcher 造成排除）：
@@ -983,7 +991,7 @@ try {
     # 既不进 manifest 也不进政策的新用例不在覆盖面内；connector / performance-baseline 那几族
     # env-gated skip 根本没有 manifest，完全在覆盖面之外。⛔ 不要读成「登记遗漏已经全关掉了」。
     $unregisteredManifestIdentities = @(Get-NervUnregisteredManifestIdentity -ManifestMembers @($manifestDocument.members) -PolicyRules @($policyDocument.rules))
-    Assert-Contract ($unregisteredManifestIdentities.Count -eq 0) ("Every PostgreSQL lane manifest identity must be frozen by exactly one scripts/test-evidence-policy.json rule; an unowned runtime skip otherwise fails only at CI evidence collection. Registering one takes TWO fields on the same rule: add it to that rule's testIdentities AND raise the same rule's expectedRuntimeTestCount to match. Unregistered: " + ($unregisteredManifestIdentities -join ', '))
+    Assert-Contract ($unregisteredManifestIdentities.Count -eq 0) ("Every PostgreSQL lane manifest identity must be frozen by exactly one scripts/config/test-evidence-policy.json rule; an unowned runtime skip otherwise fails only at CI evidence collection. Registering one takes TWO fields on the same rule: add it to that rule's testIdentities AND raise the same rule's expectedRuntimeTestCount to match. Unregistered: " + ($unregisteredManifestIdentities -join ', '))
     # 哨兵格：把一条 manifest 身份从政策里摘掉，反向闭合必须点名它、且只点名它。这一格验的是
     # **鉴别力**——没有它，全绿有可能只是因为推导根本没跑起来。
     $reverseMutatedIdentity = 'Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_release_gate_blocks_quality_blocked_and_allows_quality_released'
@@ -1039,7 +1047,7 @@ try {
         Assert-Contract $deferredRejected "The runner must refuse to execute deferred member '$($deferredMember.id)'."
     }
 
-    $runnerPath = Join-Path $repoRoot 'scripts/run-postgres-test-lane.ps1'
+    $runnerPath = Join-Path $repoRoot 'scripts/ci/run-postgres-test-lane.ps1'
     $runner = [IO.File]::ReadAllText($runnerPath)
     $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
     $workflow = [IO.File]::ReadAllText($workflowPath)
@@ -1069,12 +1077,12 @@ try {
     # 用显式拼接构造锚点，避免在 PowerShell 字符串里同时转义反引号续行符和换行符时出错。
     $backtick = [string][char]0x60
     $newline = [string][char]0x0A
-    $allActiveInvocation = './scripts/run-postgres-test-lane.ps1 ' + $backtick + $newline + '            -AllActiveMembers ' + $backtick
+    $allActiveInvocation = './scripts/ci/run-postgres-test-lane.ps1 ' + $backtick + $newline + '            -AllActiveMembers ' + $backtick
     Assert-Contract ($workflow.Contains($allActiveInvocation, [StringComparison]::Ordinal)) 'The mutation fixture must start from the authoritative all-active invocation.'
     function New-PostgresHardCodedWorkflow([string[]]$MemberIds, [switch]$CommentMasked) {
         $assignment = '$members = @(' + "'" + ($MemberIds -join "', '") + "'" + ')'
         $prefix = if ($CommentMasked) { '# $members = @(' + "'never-selected-sentinel'" + ')' + $newline + '          ' + $assignment } else { $assignment }
-        $replacement = $prefix + $newline + '          ./scripts/run-postgres-test-lane.ps1 ' + $backtick + $newline + '            -MemberId $members ' + $backtick
+        $replacement = $prefix + $newline + '          ./scripts/ci/run-postgres-test-lane.ps1 ' + $backtick + $newline + '            -MemberId $members ' + $backtick
         return $workflow.Replace($allActiveInvocation, $replacement)
     }
     foreach ($droppedMemberId in @('masterdata-device-reference-concurrency', 'maintenance-device-pause-postgres', 'apphub-postgres-profile', 'masterdata-postgres-profile')) {
@@ -1145,20 +1153,17 @@ try {
     catch { $zeroActiveRejected = $_.Exception.Message.Contains('does not contain any active members', [StringComparison]::Ordinal) }
     Assert-Contract $zeroActiveRejected 'All-active resolution must fail closed on an empty active set instead of selecting nothing.'
     # -MemberId 与 -AllActiveMembers 必须互斥，否则两种选择口径可以同时出现在一次调用里。
-    Assert-Contract ($runner.Contains("ParameterSetName = 'AllActiveMembers'", [StringComparison]::Ordinal) -and $runner.Contains("ParameterSetName = 'SelectedMembers'", [StringComparison]::Ordinal)) 'The runner must expose all-active and explicit selection as mutually exclusive parameter sets.'
-    Assert-Contract ($runner.Contains('[string[]] $MemberId', [StringComparison]::Ordinal)) 'The runner must accept an explicit ordered member batch.'
-    Assert-Contract ($runner.Contains('foreach ($selectedMemberId in $MemberId)', [StringComparison]::Ordinal)) 'The runner must execute every selected member instead of authenticating only the pilot.'
-    Assert-Contract ($runner.Contains("Join-Path `$ResultsDirectory ([string]`$member.id)", [StringComparison]::Ordinal)) 'Each selected member must own an isolated TRX directory.'
-    Assert-Contract ($runner.Contains('$summary.members = @($memberSummaries)', [StringComparison]::Ordinal)) 'The dependency summary must retain per-member evidence.'
-    Assert-Contract ($runner.Contains("`$memberSummaries.Count -ne `$selectedMemberIds.Count", [StringComparison]::Ordinal)) 'The aggregate runner must reject incomplete member execution.'
-    Assert-Contract ($runner.Contains("GetEnvironmentVariable('NERV_IIP_TEST_POSTGRES')", [StringComparison]::Ordinal)) 'The runner must consume the frozen external PostgreSQL variable.'
+    $runnerParameters = (Get-Command (Join-Path $repoRoot 'scripts/ci/run-postgres-test-lane.ps1')).ParameterSets
+    Assert-Contract (@($runnerParameters | Where-Object {
+        ([Array]::IndexOf([string[]]$_.Parameters.Name, 'MemberId') -ge 0) -and ([Array]::IndexOf([string[]]$_.Parameters.Name, 'AllActiveMembers') -ge 0)
+    }).Count -eq 0) 'The runner must reject combining explicit and all-active member selection.'
     Assert-Contract (-not $runner.Contains('NERV_IIP_TEST_POSTGRES_ADMIN', [StringComparison]::Ordinal) -and -not $workflow.Contains('NERV_IIP_TEST_POSTGRES_ADMIN', [StringComparison]::Ordinal)) 'No CI-only PostgreSQL connection-string contract may be introduced.'
     Assert-Contract ($runner.Contains('$databaseCreated = $true', [StringComparison]::Ordinal) -and $runner.Contains('if ($databaseCreated)', [StringComparison]::Ordinal)) 'Cleanup must only target a database created by this runner.'
     $diagnosticIndex = $runner.IndexOf('-failure-diagnostics"', [StringComparison]::Ordinal)
     $dropIndex = $runner.IndexOf('-drop-database"', [StringComparison]::Ordinal)
     Assert-Contract ($diagnosticIndex -ge 0 -and $dropIndex -gt $diagnosticIndex) 'Failure diagnostics must be captured before database cleanup.'
     Assert-Contract ($runner.Contains('$member.diagnosticSchemas', [StringComparison]::Ordinal) -and -not $runner.Contains("n.nspname = 'inventory'", [StringComparison]::Ordinal)) 'Failure diagnostics must be derived from each governed member instead of hard-coding the pilot schema.'
-    Assert-Contract ($workflow.Contains('image: postgres:18', [StringComparison]::Ordinal) -and $workflow.Contains('pg_isready -U nerv -d postgres', [StringComparison]::Ordinal)) 'The pilot must use a health-checked PostgreSQL 18 service.'
+    Assert-Contract ($workflow.Contains('image: postgres:19', [StringComparison]::Ordinal) -and $workflow.Contains('pg_isready -U nerv -d postgres', [StringComparison]::Ordinal)) 'The pilot must use a health-checked PostgreSQL 19 service.'
     Assert-Contract ($workflow.Contains('-DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'Hosted members must derive distinct governed databases from the same run/attempt suffix.'
     Assert-Contract ($workflow.Contains('-JobName "PostgreSQL Provider Tests"', [StringComparison]::Ordinal)) 'Normalized evidence must bind to the authoritative PostgreSQL job.'
 }

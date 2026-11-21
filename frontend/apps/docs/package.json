@@ -11,11 +11,11 @@
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "vue": "3.5.39"
+    "vue": "3.5.45"
   },
   "devDependencies": {
-    "esbuild": "^0.28.1",
+    "esbuild": "^0.28.2",
     "vitepress": "1.6.4",
-    "vitepress-plugin-llms": "1.13.5"
+    "vitepress-plugin-llms": "1.15.0"
   }
 }

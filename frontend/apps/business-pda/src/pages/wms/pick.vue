@@ -2,7 +2,7 @@
 import WarehouseTaskExecutionView, {
   type WarehouseTaskExecutionIntent,
 } from '@/components/wms/WarehouseTaskExecutionView.vue'
-import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
+import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import { useWmsPicking } from '@/composables/useBusinessWms'
 import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
 import { NvAppShellMobile } from '@nerv-iip/ui-mobile'

@@ -231,7 +231,7 @@
   margin-inline: -8px;
   padding-inline: 8px;
   border-radius: 8px;
-  transition: background-color 0.15s var(--nv-ease-out-quart, ease-out);
+  transition: background-color var(--nv-duration-fast) var(--nv-ease-out-quart);
 }
 .VPSidebar .VPSidebarItem.is-link > .item:hover {
   background-color: color-mix(in oklch, var(--foreground) 6%, transparent);

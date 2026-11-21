@@ -20,12 +20,6 @@ public sealed class SalesOrderDemandDemoSeedService(
     public const string SiteCode = "SITE-001";
     public const string SkuCode = "SKU-DEMO-001";
 
-    /// <summary>
-    /// The demo SKU's base unit of measure as maintained in master data (LeaderDemoSeedService seeds
-    /// SKU-DEMO-001 with "pcs"). The seed must not invent a unit of its own: a unit that does not exist
-    /// in the unit-of-measure master data has no conversion, so every downstream MRP run on the seeded
-    /// demand chain fails.
-    /// </summary>
     public const string UomCode = "pcs";
 
     public async Task SeedAsync(string organizationId, string environmentId, CancellationToken cancellationToken = default)

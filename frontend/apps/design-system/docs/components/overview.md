@@ -29,7 +29,7 @@ import { NvButton, NvBadge } from '@nerv-iip/ui'
 `Nv*` 即「可直接使用的 Nerv-IIP 品牌件」。**没有** `Nv` 前缀的名字要么是 shadcn 原版底座（仅组件库内部
 使用），要么是过渡期保留的旧名。旧名（`*Pro` / `Screen*` / `Mobile*` / 裸名）已标 `@deprecated`，仍可
 编译但请改用对应 `Nv*`；组件迁移到位后（#789）移除。命名规则见 ADR 0020
-（`docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md`），逐件映射见
+（`docs/adr/2026-07-07-0020-nvui-naming-token-namespaces-and-style-isolation.md`），逐件映射见
 `frontend/DESIGN/nvui-naming-map.md` 附录 A。
 
 ::: tip 完整画廊

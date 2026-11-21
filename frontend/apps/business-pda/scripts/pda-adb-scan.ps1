@@ -7,7 +7,7 @@
 #     - With -Screencap: captures the device framebuffer to a temp file on the device
 #       (/data/local/tmp/) and pulls it to the given host path, then deletes the device temp file
 #   Writes:
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #     - The -Screencap host path (PNG), when requested
 #   Cleanup:
 #     - Deletes the on-device screencap temp file after pulling it

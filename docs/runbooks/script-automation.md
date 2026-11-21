@@ -15,7 +15,7 @@
 至少执行：
 
 ```powershell
-pwsh scripts/check-script-governance.ps1
+pwsh scripts/checks/check-script-governance.ps1
 ```
 
 随后运行目标脚本对应的**已有**契约测试。若改动触及 checker、library scan boundary、dynamic invocation/binding、ordinal comparison、CI impact plan、test evidence 或其它共享 producer，必须运行其现有 tests；不要为普通文档/脚本修改新造自然语言 checker 或一次性 fixture。
@@ -41,8 +41,6 @@ pwsh scripts/check-script-governance.ps1
 2. 继续查看当前 invocation 的子进程日志与资源证据；
 3. signal 只证明进程如何终止，不自动证明 OOM、测试失败、业务断言失败或基础设施抖动的根因；
 4. timeout 同样先确认被停止的是本次 invocation 的进程树，再从 stdout/stderr/资源证据定位原因。
-
-历史 signal/memory 事故见 [`../reports/investigations/script-automation-signal-memory-2026-08.md`](../reports/investigations/script-automation-signal-memory-2026-08.md)，不要直接执行其中旧命令。
 
 ## 5. Governance 失败的常见排查
 
@@ -72,8 +70,8 @@ pwsh scripts/check-script-governance.ps1
 
 需要声明 macOS/Linux/Windows 支持时：
 
-1. 先读 `pwsh scripts/check-script-compatibility.ps1 -?` 获取当前参数和层次；
-2. 在目标 OS 上执行 producer 当前要求的 fast/core 验证；
+1. 先读 `pwsh scripts/checks/check-script-compatibility.ps1 -?` 获取当前参数和层次；
+2. 在目标 OS 上执行兼容检查。默认还核对 Docker Compose CLI 版本，`-FastOnly` 跳过该检查；
 3. 保存 OS、PowerShell/.NET/Docker 等实际版本、命令、退出码和日志；
 4. fast-only 或 Windows smoke 只能按 producer 定义的证明范围报告；
 5. 历史兼容报告不能替代当前 head 的实测。
@@ -97,4 +95,4 @@ pwsh scripts/check-script-governance.ps1
 - 需要改变 checker、CI routing 或共享 helper 语义，但当前 Issue 不拥有该规则；
 - 失败原因被上层包装吞掉，现有日志不足以区分 signal/timeout/transport/assertion。
 
-需要长期保留的事故/审计结论写入 `docs/reports/`；运行 artifact 本身不提交仓库。
+需要长期保留的事故/审计结论写入对应 Issue 或 PR；运行 artifact 本身不提交仓库。

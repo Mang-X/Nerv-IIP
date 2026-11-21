@@ -11,6 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../../../../common/Web/Nerv.IIP.Web/Nerv.IIP.Web.csproj" />
     <InternalsVisibleTo Include="Nerv.IIP.Business.Erp.Web.Tests" />
   </ItemGroup>
 
@@ -20,7 +21,6 @@
     <PackageReference Include="DotNetCore.CAP.RabbitMQ" />
     <PackageReference Include="FastEndpoints" />
     <PackageReference Include="FastEndpoints.Swagger" />
-    <PackageReference Include="FastEndpoints.Swagger.Swashbuckle" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
       <PrivateAssets>all</PrivateAssets>
@@ -36,7 +36,6 @@
     <PackageReference Include="NetCorePal.Extensions.Primitives" />
     <PackageReference Include="prometheus-net.AspNetCore" />
     <PackageReference Include="prometheus-net.AspNetCore.HealthChecks" />
-    <PackageReference Include="Swashbuckle.AspNetCore" />
   </ItemGroup>
 
   <ItemGroup>

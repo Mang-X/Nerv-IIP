@@ -170,6 +170,8 @@ export type { ReceivingQualityGateStatus } from './wms/receivingQualityGate'
 export { parseGs1 } from './barcode/gs1'
 export type { Gs1Fields } from './barcode/gs1'
 export { sanitizeRedirectPath } from './routing/sanitizeRedirectPath'
+export { toWmsWorkScopeOptions } from './wms/workScopeCatalog'
+export type { WmsWorkScopeCatalogKind, WmsWorkScopeOption } from './wms/workScopeCatalog'
 export { formatWorkScopeKey, parseWorkScopeKey } from './scope/workScopeKey'
 export type { WorkScopeKeyParts } from './scope/workScopeKey'
 export { PDA_TASK_KINDS, getPdaTaskKind } from './tasks/pdaTaskKinds'
@@ -208,3 +210,5 @@ export {
   type PendingBusinessIntent,
   type PendingBusinessIntentScope,
 } from './actions/pendingBusinessIntent'
+
+export { useListResponseState, useScopeBoundListResponse } from './scope/useScopeBoundListResponse'

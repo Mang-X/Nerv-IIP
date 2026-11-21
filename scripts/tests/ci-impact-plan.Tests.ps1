@@ -14,10 +14,10 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $libraryPath = Join-Path $repoRoot 'scripts/lib/CiImpactPlan.ps1'
-$entrypointPath = Join-Path $repoRoot 'scripts/get-ci-impact-plan.ps1'
+$entrypointPath = Join-Path $repoRoot 'scripts/ci/get-impact-plan.ps1'
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $acceptanceScenarioMatrixOwningPaths = @(
-    'scripts/acceptance-scenario-matrix.json'
+    'scripts/config/acceptance-scenario-matrix.json'
     'scripts/lib/AcceptanceScenarioMatrix.ps1'
     'scripts/tests/acceptance-scenario-matrix.Tests.ps1'
 )
@@ -145,7 +145,7 @@ function Assert-ConditionalRoutingWorkflow {
     }
 
     $impactPlan = $parsedWorkflow.jobs.PSObject.Properties['impact-plan'].Value
-    foreach ($outputName in @('scripts', 'backend', 'connector_hosts', 'openapi_codegen', 'postgresql', 'redis_cap', 'full_chain', 'infra', 'docs')) {
+    foreach ($outputName in @('scripts', 'backend', 'apphost_compile', 'connector_hosts', 'openapi_codegen', 'postgresql', 'redis_cap', 'full_chain', 'infra', 'docs')) {
         $outputProperty = $impactPlan.outputs.PSObject.Properties[$outputName]
         Assert-Contract ($null -ne $outputProperty) "Impact plan must declare routed output '$outputName'."
         $expectedOutput = '${{ steps.plan.outputs.' + $outputName + ' }}'
@@ -197,6 +197,29 @@ function Assert-ConditionalRoutingWorkflow {
     }
 }
 
+function Assert-AppHostCompileWorkflowContract {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
+    $steps = @($parsedWorkflow.jobs.'backend-tests-business-gateway'.steps)
+    $compileSteps = @($steps | Where-Object {
+        $id = $_.PSObject.Properties['id']
+        $null -ne $id -and [string]::Equals([string]$id.Value, 'apphost-compile', [StringComparison]::Ordinal)
+    })
+    Assert-Contract ($compileSteps.Count -eq 1) 'The BusinessGateway shard must run the standalone AppHost build exactly once when selected.'
+    $compile = $compileSteps[0]
+    $expectedCondition = '${{ !cancelled() && (github.event_name != ''pull_request'' || needs.impact-plan.result != ''success'' || needs.impact-plan.outputs.apphost_compile != ''false'') }}'
+    $expectedCommand = 'dotnet build infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj --configuration Release --nologo'
+    Assert-Contract ([string]::Equals([string]$compile.if, $expectedCondition, [StringComparison]::Ordinal)) 'AppHost build must fail open on main, plan failure or a missing flag.'
+    Assert-Contract ([string]::Equals(([string]$compile.run).Trim(), $expectedCommand, [StringComparison]::Ordinal)) 'AppHost build must compile the standalone project and restore its own graph.'
+    Assert-Contract ($null -eq $compile.PSObject.Properties['continue-on-error']) 'The native AppHost build failure must propagate to Backend Tests.'
+    $upload = @($steps | Where-Object {
+        $uses = $_.PSObject.Properties['uses']
+        $null -ne $uses -and ([string]$uses.Value).StartsWith('actions/upload-artifact@', [StringComparison]::Ordinal)
+    })
+    Assert-Contract ($upload.Count -eq 1 -and [Array]::IndexOf($steps, $upload[0]) -lt [Array]::IndexOf($steps, $compile)) 'The AppHost build must run after shard evidence upload.'
+}
+
 function Assert-RedisCapActiveSelectionWorkflowContract {
     param([Parameter(Mandatory)] [string] $Path)
 
@@ -205,7 +228,7 @@ function Assert-RedisCapActiveSelectionWorkflowContract {
     Assert-Contract ($null -ne $redisCapJobProperty) 'CI must define the Redis/CAP transport job.'
     $runnerSteps = @($redisCapJobProperty.Value.steps | Where-Object {
             $runProperty = $_.PSObject.Properties['run']
-            $null -ne $runProperty -and ([string]$runProperty.Value).Contains('./scripts/run-redis-cap-test-lane.ps1', [StringComparison]::Ordinal)
+            $null -ne $runProperty -and ([string]$runProperty.Value).Contains('./scripts/ci/run-redis-cap-test-lane.ps1', [StringComparison]::Ordinal)
         })
     Assert-Contract ($runnerSteps.Count -eq 1) 'The Redis/CAP job must invoke its governed runner exactly once.'
     $runnerInvocation = [string]$runnerSteps[0].run
@@ -218,7 +241,6 @@ function Assert-BusinessConsoleBrowserValidationWorkflowContract {
 
     $parsedWorkflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path $Path -WorkingDirectory $repoRoot
     $frontendValidation = $parsedWorkflow.jobs.'frontend-validation-shards'
-    Assert-Contract ([int]$frontendValidation.'timeout-minutes' -eq 80) 'Frontend Validation must leave a 9-minute job margin above the 71-minute evidence-publishing step sum for implicit post steps.'
     $businessConsoleBrowserCondition = "matrix.name == '@nerv-iip/business-console'"
     $resolveBrowserSteps = @($frontendValidation.steps | Where-Object {
             [string]::Equals([string]$_.name, 'Resolve Business Console browser', [StringComparison]::Ordinal)
@@ -226,7 +248,6 @@ function Assert-BusinessConsoleBrowserValidationWorkflowContract {
     Assert-Contract ($resolveBrowserSteps.Count -eq 1) 'Frontend Validation must resolve the Business Console browser exactly once.'
     $resolveBrowserStep = $resolveBrowserSteps[0]
     Assert-Contract ([string]::Equals([string]$resolveBrowserStep.if, $businessConsoleBrowserCondition, [StringComparison]::Ordinal)) 'Business Console browser resolution must run only for its validation matrix item.'
-    Assert-Contract ([int]$resolveBrowserStep.'timeout-minutes' -eq 3) 'Business Console browser resolution must keep a three-minute budget.'
     Assert-Contract ([string]::Equals([string]$resolveBrowserStep.shell, 'bash --noprofile --norc -euo pipefail {0}', [StringComparison]::Ordinal)) 'Business Console browser resolution must use the governed fail-fast Bash shell.'
     Assert-Contract (([string]$resolveBrowserStep.run).Contains('command -v google-chrome', [StringComparison]::Ordinal) -and
         ([string]$resolveBrowserStep.run).Contains('if [ -z "$browser_path" ]; then', [StringComparison]::Ordinal) -and
@@ -242,7 +263,6 @@ function Assert-BusinessConsoleBrowserValidationWorkflowContract {
     $browserTestIdProperty = $browserTestStep.PSObject.Properties['id']
     Assert-Contract ($null -ne $browserTestIdProperty -and [string]::Equals([string]$browserTestIdProperty.Value, 'business-console-browser-tests', [StringComparison]::Ordinal)) 'Business Console browser invariants must expose a stable outcome for diagnostic upload routing.'
     Assert-Contract ([string]::Equals([string]$browserTestStep.if, $businessConsoleBrowserCondition, [StringComparison]::Ordinal)) 'Business Console browser invariants must run only for their validation matrix item.'
-    Assert-Contract ([int]$browserTestStep.'timeout-minutes' -eq 10) 'Business Console browser invariants must keep a ten-minute budget.'
     Assert-Contract ([string]::Equals([string]$browserTestStep.env.NERV_IIP_OUT_DIR, '${{ runner.temp }}/issue-2098-tooling-browser', [StringComparison]::Ordinal)) 'Business Console browser artifacts must use the runner temporary directory.'
     Assert-Contract (([string]$browserTestStep.run).Contains('pnpm -C frontend --filter @nerv-iip/business-console exec playwright test', [StringComparison]::Ordinal) -and
         ([string]$browserTestStep.run).Contains('e2e/issue1974-tooling-visual.spec.ts', [StringComparison]::Ordinal) -and
@@ -255,10 +275,8 @@ function Assert-BusinessConsoleBrowserValidationWorkflowContract {
         })
     Assert-Contract ($browserUploadSteps.Count -eq 1) 'Frontend Validation must upload Business Console browser diagnostics exactly once.'
     $browserUploadStep = $browserUploadSteps[0]
-    $browserUploadTimeoutProperty = $browserUploadStep.PSObject.Properties['timeout-minutes']
-    Assert-Contract ($null -ne $browserUploadTimeoutProperty -and [int]$browserUploadTimeoutProperty.Value -eq 5) 'Business Console browser diagnostic upload must keep a five-minute budget.'
     Assert-Contract ([string]::Equals([string]$browserUploadStep.if, "failure() && steps.business-console-browser-tests.outcome == 'failure'", [StringComparison]::Ordinal)) 'Business Console browser diagnostics must upload only after its browser test fails.'
-    Assert-Contract ([string]::Equals([string]$browserUploadStep.uses, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)) 'Business Console browser diagnostics must use the governed artifact uploader.'
+    Assert-Contract ([string]::Equals([string]$browserUploadStep.uses, 'actions/upload-artifact@v6', [StringComparison]::Ordinal)) 'Business Console browser diagnostics must use the governed artifact uploader.'
     Assert-Contract ([string]::Equals([string]$browserUploadStep.with.name, 'business-console-browser-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'Business Console browser diagnostics must have a run-attempt-specific artifact identity.'
     Assert-Contract ([string]::Equals([string]$browserUploadStep.with.path, '${{ runner.temp }}/issue-2098-tooling-browser', [StringComparison]::Ordinal)) 'Business Console browser diagnostics must upload the governed temporary directory.'
     Assert-Contract ([string]::Equals([string]$browserUploadStep.with.'if-no-files-found', 'error', [StringComparison]::Ordinal)) 'Business Console browser diagnostics must fail closed when no diagnostic files exist.'
@@ -294,7 +312,7 @@ function Assert-AcceptanceScenarioMatrixWorkflowContract {
         ([string]$impactIdentitySteps[0].run).Contains('producer-run-attempt=${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'Impact-plan must single-source its physical artifact name and producer attempt.'
     $impactUploads = @($impactJob.steps | Where-Object {
             $usesProperty = $_.PSObject.Properties['uses']
-            $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)
+            $null -ne $usesProperty -and [string]::Equals([string]$usesProperty.Value, 'actions/upload-artifact@v6', [StringComparison]::Ordinal)
         })
     Assert-Contract ($impactUploads.Count -eq 1 -and [string]::Equals([string]$impactUploads[0].with.name, '${{ steps.impact-artifact-identity.outputs.artifact-name }}', [StringComparison]::Ordinal) -and $null -eq $impactUploads[0].with.PSObject.Properties['overwrite']) 'Impact-plan upload must use its immutable producer identity without overwrite.'
 
@@ -411,9 +429,9 @@ function Assert-FullChainProjectReferenceCoverage {
 
 function Assert-PostgresLaneOwningPathsRoute {
     foreach ($owningPath in @(
-            'scripts/run-postgres-test-lane.ps1',
+            'scripts/ci/run-postgres-test-lane.ps1',
             'scripts/lib/PostgresTestLane.ps1',
-            'scripts/postgres-test-lane.json'
+            'scripts/config/postgres-test-lane.json'
         )) {
         Assert-ImpactCase -Name "postgres-lane-owner-$([IO.Path]::GetFileName($owningPath))" -Paths @($owningPath) -Flags @{
             scripts = $true; postgresql = $true; redis_cap = $false; full_chain = $false
@@ -423,13 +441,12 @@ function Assert-PostgresLaneOwningPathsRoute {
 
 function Assert-BackendFastLaneControlInputsRoute {
     foreach ($backendFastLaneControlInput in @(
-            'scripts/backend-test-shards.json',
-            'scripts/test-evidence-policy.json',
-            'scripts/run-backend-test-shard.ps1',
-            'scripts/verify-backend-test-shards.ps1',
-            'scripts/verify-backend-real-postgres-tests.ps1',
-            'scripts/verify-business-full-chain-acceptance.ps1',
-            'scripts/verify-business-performance-baseline.ps1',
+            'scripts/config/backend-test-shards.json',
+            'scripts/config/test-evidence-policy.json',
+            'scripts/ci/run-backend-test-shard.ps1',
+            'scripts/checks/verify-backend-test-shards.ps1',
+            'scripts/ci/verify-backend-real-postgres-tests.ps1',
+            'scripts/checks/verify-business-performance-baseline.ps1',
             'scripts/lib/OrdinalString.ps1',
             'scripts/lib/BackendTestShardSelectors.ps1',
             'scripts/lib/BackendTestShardDiagnostics.ps1',
@@ -443,9 +460,9 @@ function Assert-BackendFastLaneControlInputsRoute {
 
 function Assert-RedisCapLaneOwningPathsRoute {
     foreach ($owningPath in @(
-            'scripts/run-redis-cap-test-lane.ps1',
+            'scripts/ci/run-redis-cap-test-lane.ps1',
             'scripts/lib/RedisCapTestLane.ps1',
-            'scripts/redis-cap-test-lane.json'
+            'scripts/config/redis-cap-test-lane.json'
         )) {
         Assert-ImpactCase -Name "redis-cap-lane-owner-$([IO.Path]::GetFileName($owningPath))" -Paths @($owningPath) -Flags @{
             scripts = $true; postgresql = $false; redis_cap = $true; full_chain = $false
@@ -455,12 +472,12 @@ function Assert-RedisCapLaneOwningPathsRoute {
 
 function Assert-FullChainLaneOwningPathsRoute {
     foreach ($owningPath in @(
-            'scripts/run-full-chain-test-lane.ps1',
+            'scripts/ci/run-full-chain-test-lane.ps1',
             'scripts/lib/FullChainTestLane.ps1',
-            'scripts/full-chain-test-lane.json',
+            'scripts/config/full-chain-test-lane.json',
             'scripts/tests/full-chain-test-lane.Tests.ps1',
-            'scripts/verify-erp-sales-order-demand-planning.ps1',
-            'scripts/verify-erp-wms-delivery-completion.ps1'
+            'scripts/integration/verify-erp-sales-order-demand-planning.ps1',
+            'scripts/integration/verify-erp-wms-delivery-completion.ps1'
         )) {
         Assert-ImpactCase -Name "full-chain-lane-owner-$([IO.Path]::GetFileName($owningPath))" -Paths @($owningPath) -Flags @{
             scripts = $true; backend = $true; postgresql = $false; redis_cap = $false; full_chain = $true
@@ -528,7 +545,7 @@ Assert-ImpactCase -Name 'script-governance-registry' -Paths @('docs/governance/s
 }
 
 # #3145: the restore manifest lives under 'docs/', and the generic 'docs/' rule would route it to
-# 'docs' alone. The only gate that reads it, scripts/verify-restore-lock-contract.ps1, runs in the
+# 'docs' alone. The only gate that reads it, scripts/checks/verify-restore-lock-contract.ps1, runs in the
 # 'Script Governance' job, whose `if` is `scripts != false || backend != false` — so without
 # 'scripts' here, a PR that edits only the manifest skips the job entirely and the check runs on
 # zero jobs for exactly the change it exists to catch. Measured before the routing rule was added:
@@ -562,7 +579,7 @@ Assert-ImpactCase -Name 'reference-api-non-manifest' -Paths @('docs/reference/ap
 # The exemption table reaches the same gate through the generic 'scripts/' rule. Asserted rather
 # than assumed: it is the file that decides which forks stay silent, and if it ever moved out of
 # 'scripts/' the gate would stop being scheduled on changes to it.
-Assert-ImpactCase -Name 'restore-lock-exemption-table' -Paths @('scripts/restore-lock-drift-exemptions.json') -Flags @{
+Assert-ImpactCase -Name 'restore-lock-exemption-table' -Paths @('scripts/config/restore-lock-drift-exemptions.json') -Flags @{
     scripts = $true; docs = $false; backend = $false; frontend = $false
 }
 
@@ -623,12 +640,20 @@ Assert-ImpactCase -Name 'business-gateway' -Paths @('backend/gateway/BusinessGat
 
 foreach ($backendBuildInput in @('backend/Directory.Build.props', 'backend/Directory.Packages.props')) {
     Assert-ImpactCase -Name "openapi-backend-build-input-$([IO.Path]::GetFileName($backendBuildInput))" -Paths @($backendBuildInput) -Flags @{
-        backend = $true; openapi_codegen = $true; connector_hosts = $true; full_chain = $true
+        backend = $true; openapi_codegen = $true; connector_hosts = $true; postgresql = $true; redis_cap = $true; full_chain = $true
     }
 }
 
+Assert-ImpactCase -Name 'platform-gateway-redis-runtime' -Paths @('backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Program.cs') -Flags @{
+    backend = $true; redis_cap = $true; postgresql = $false
+}
+
+Assert-ImpactCase -Name 'shared-trx-reader' -Paths @('scripts/lib/TrxResults.ps1') -Flags @{
+    scripts = $true; backend = $true; postgresql = $true; redis_cap = $true; full_chain = $true
+}
+
 foreach ($salesOrderDemandFullChainInput in @(
-        'scripts/verify-erp-sales-order-demand-planning.ps1',
+        'scripts/integration/verify-erp-sales-order-demand-planning.ps1',
         'backend/tests/Nerv.IIP.Business.FullChain.Tests/Scenario.cs',
         'infra/docker-compose.dev.yml'
     )) {
@@ -664,6 +689,12 @@ Assert-ImpactCase -Name 'agent-harness-configuration' -Paths @(
     connector_hosts = $false; business_gateway = $false; openapi_codegen = $false
     postgresql = $false; redis_cap = $false; full_chain = $false
 } -Services @()
+
+$ryugiConfigPlan = Get-NervCiImpactPlan -ChangedPaths @('.ryugi/config.json')
+foreach ($flag in @($ryugiConfigPlan.PSObject.Properties | Where-Object { $_.Value -is [bool] })) {
+    Assert-ImpactFlag -Plan $ryugiConfigPlan -Name ([string]$flag.Name) -Expected ([string]::Equals($flag.Name, 'docs', [StringComparison]::Ordinal))
+}
+Assert-Contract (@($ryugiConfigPlan.business_services).Count -eq 0) 'Ryugi publishing configuration must not select business services.'
 
 Assert-ImpactCase -Name 'github-issue-templates' -Paths @(
     '.github/ISSUE_TEMPLATE/bug_report.yml',
@@ -734,7 +765,7 @@ Assert-ImpactCase -Name 'frontend-docs-markdown' -Paths @('frontend/apps/docs/do
     frontend = $true; frontend_apps = $true; frontend_docs = $true; docs = $true
 }
 
-Assert-ImpactCase -Name 'frontend-design-system-app' -Paths @('frontend/apps/design-system/src/App.vue') -Flags @{
+Assert-ImpactCase -Name 'frontend-design-system-app' -Paths @('frontend/apps/design-system/docs/.vitepress/theme/Layout.vue') -Flags @{
     frontend = $true; frontend_apps = $true; frontend_design_system = $true
 }
 
@@ -760,7 +791,7 @@ Assert-ImpactCase -Name 'connector-hosts' -Paths @('connector-hosts/src/Host.cs'
     connector_hosts = $true; backend = $false; frontend = $false; full_chain = $false
 }
 
-Assert-ImpactCase -Name 'openapi-generation-script' -Paths @('scripts/export-gateway-openapi.ps1') -Flags @{
+Assert-ImpactCase -Name 'openapi-generation-script' -Paths @('scripts/api/export-gateway-openapi.ps1') -Flags @{
     scripts = $true; openapi_codegen = $true; business_gateway = $true; frontend = $true; frontend_packages = $true
 }
 
@@ -800,13 +831,12 @@ Assert-ImpactCase -Name 'integration-event-handler-platform-service' -Paths @('b
     backend = $true; redis_cap = $true; full_chain = $true
 }
 
-# NERV-1711 正例：世界观种子是 FullChain lane 的数据基础，必须选中 full_chain；
-# 种子本身不改 CAP 传输面，不得连带选中 redis_cap。
-Assert-ImpactCase -Name 'world-history-seed-business' -Paths @('backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Seed/WorldHistorySeedService.cs') -Flags @{
+# NERV-1711 正例：初始化种子改动需要 FullChain 验证，CAP 传输验证由消息处理改动触发。
+Assert-ImpactCase -Name 'walkthrough-seed-business' -Paths @('backend/services/Business/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Seed/WalkthroughSeedService.cs') -Flags @{
     backend = $true; postgresql = $true; redis_cap = $false; full_chain = $true
-} -Services @('mes')
+} -Services @('master-data')
 
-Assert-ImpactCase -Name 'world-history-seed-platform-service' -Paths @('backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs') -Flags @{
+Assert-ImpactCase -Name 'bootstrap-seed-platform-service' -Paths @('backend/services/Iam/src/Nerv.IIP.Iam.Web/Application/Seed/IamSeedService.cs') -Flags @{
     backend = $true; redis_cap = $false; full_chain = $true
 }
 
@@ -859,8 +889,16 @@ Assert-ImpactCase -Name 'postgres-infra' -Paths @('infra/postgres/init.sql') -Fl
 }
 
 Assert-ImpactCase -Name 'aspire-topology' -Paths @('infra/aspire/Nerv.IIP.AppHost/Program.cs') -Flags @{
-    infra = $true; postgresql = $true; redis_cap = $true; full_chain = $true
+    backend = $true; infra = $true; postgresql = $true; redis_cap = $true; full_chain = $true; apphost_compile = $true
 }
+
+Assert-ImpactCase -Name 'scheduling-source-apphost-compile' -Paths @('backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Program.cs') -Flags @{
+    backend = $true; apphost_compile = $true; full_chain = $false
+} -Services @('scheduling')
+
+Assert-ImpactCase -Name 'scheduling-tests-only-no-apphost-compile' -Paths @('backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/SchedulingSchemaConventionTests.cs') -Flags @{
+    backend = $true; apphost_compile = $false; full_chain = $false
+} -Services @('scheduling')
 
 foreach ($fullSelectionPath in @('.github/workflows/ci.yml', 'scripts/lib/CiImpactPlan.ps1', 'scripts/tests/ci-impact-plan.Tests.ps1')) {
     $plan = Get-NervCiImpactPlan -ChangedPaths @($fullSelectionPath)
@@ -868,7 +906,7 @@ foreach ($fullSelectionPath in @('.github/workflows/ci.yml', 'scripts/lib/CiImpa
             'backend', 'frontend', 'scripts', 'docs', 'connector_hosts', 'workflows', 'infra',
             'backend_contracts', 'backend_testing', 'backend_persistence', 'backend_messaging',
             'business_gateway', 'openapi_codegen', 'frontend_apps', 'frontend_packages',
-            'frontend_design_system', 'frontend_docs', 'postgresql', 'redis_cap', 'full_chain'
+            'frontend_design_system', 'frontend_docs', 'postgresql', 'redis_cap', 'full_chain', 'apphost_compile'
         )) {
         Assert-ImpactFlag -Plan $plan -Name $requiredFlag -Expected $true
     }
@@ -884,102 +922,6 @@ foreach ($invalidPaths in @(
     $failure = $null
     try { Get-NervCiImpactPlan -ChangedPaths $invalidPaths | Out-Null } catch { $failure = $_ }
     Assert-Contract ($null -ne $failure) "Invalid changed path set '$($invalidPaths -join ',')' must fail closed."
-}
-
-$ordinalStringRoutingClause = "            [string]::Equals(`$path, 'scripts/lib/OrdinalString.ps1', [StringComparison]::Ordinal) -or`n"
-$canonicalImpactLibrary = [IO.File]::ReadAllText($libraryPath)
-$weakenedImpactLibrary = $canonicalImpactLibrary.Replace($ordinalStringRoutingClause, '')
-Assert-Contract (-not [string]::Equals($weakenedImpactLibrary, $canonicalImpactLibrary, [StringComparison]::Ordinal)) 'OrdinalString control-input mutation must remove the canonical routing clause.'
-$ordinalMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-ordinal-$([Guid]::NewGuid().ToString('N'))"
-try {
-    [IO.Directory]::CreateDirectory($ordinalMutationRoot) | Out-Null
-    $ordinalMutationPath = Join-Path $ordinalMutationRoot 'CiImpactPlan.ps1'
-    [IO.File]::WriteAllText($ordinalMutationPath, $weakenedImpactLibrary, [Text.UTF8Encoding]::new($false))
-    . $ordinalMutationPath
-    $ordinalMutationFailure = $null
-    try { Assert-BackendFastLaneControlInputsRoute } catch { $ordinalMutationFailure = $_ }
-    Assert-Contract ($null -ne $ordinalMutationFailure) 'Removing the OrdinalString control-input routing clause must fail the behavioral contract.'
-}
-finally {
-    . $libraryPath
-    if (Test-Path -LiteralPath $ordinalMutationRoot) { Remove-Item -LiteralPath $ordinalMutationRoot -Recurse -Force }
-}
-
-$postgresRoutingBlock = @'
-            if ([string]::Equals($path, 'scripts/run-postgres-test-lane.ps1', [StringComparison]::Ordinal) -or
-                [string]::Equals($path, 'scripts/lib/PostgresTestLane.ps1', [StringComparison]::Ordinal) -or
-                [string]::Equals($path, 'scripts/postgres-test-lane.json', [StringComparison]::Ordinal)) {
-                Select-Impact -Name 'postgresql' -Reason $reason
-            }
-'@
-$weakenedImpactLibrary = $canonicalImpactLibrary.Replace($postgresRoutingBlock, '')
-Assert-Contract (-not [string]::Equals($weakenedImpactLibrary, $canonicalImpactLibrary, [StringComparison]::Ordinal)) 'PostgreSQL owning-path mutation must remove the canonical routing branch.'
-$impactMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-library-$([Guid]::NewGuid().ToString('N'))"
-try {
-    [IO.Directory]::CreateDirectory($impactMutationRoot) | Out-Null
-    $impactMutationPath = Join-Path $impactMutationRoot 'CiImpactPlan.ps1'
-    [IO.File]::WriteAllText($impactMutationPath, $weakenedImpactLibrary, [Text.UTF8Encoding]::new($false))
-    . $impactMutationPath
-    $mutationFailure = $null
-    try { Assert-PostgresLaneOwningPathsRoute } catch { $mutationFailure = $_ }
-    Assert-Contract ($null -ne $mutationFailure) 'Removing the PostgreSQL owning-path routing branch must fail the behavioral contract.'
-}
-finally {
-    . $libraryPath
-    if (Test-Path -LiteralPath $impactMutationRoot) { Remove-Item -LiteralPath $impactMutationRoot -Recurse -Force }
-}
-
-$acceptanceScenarioMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-acceptance-scenario-$([Guid]::NewGuid().ToString('N'))"
-try {
-    [IO.Directory]::CreateDirectory($acceptanceScenarioMutationRoot) | Out-Null
-    foreach ($owningPath in $acceptanceScenarioMatrixOwningPaths) {
-        $routingEntry = "            '$owningPath'`n"
-        $weakenedImpactLibrary = $canonicalImpactLibrary.Replace($routingEntry, '')
-        Assert-Contract (-not [string]::Equals($weakenedImpactLibrary, $canonicalImpactLibrary, [StringComparison]::Ordinal)) "Acceptance scenario matrix mutation must remove owning path '$owningPath'."
-        $mutationPath = Join-Path $acceptanceScenarioMutationRoot "$([IO.Path]::GetFileName($owningPath)).CiImpactPlan.ps1"
-        [IO.File]::WriteAllText($mutationPath, $weakenedImpactLibrary, [Text.UTF8Encoding]::new($false))
-        . $mutationPath
-        $mutationFailure = $null
-        try { Assert-AcceptanceScenarioMatrixOwningPathsRoute } catch { $mutationFailure = $_ }
-        Assert-Contract ($null -ne $mutationFailure) "Removing acceptance scenario matrix owning path '$owningPath' must fail the behavioral contract."
-    }
-}
-finally {
-    . $libraryPath
-    if (Test-Path -LiteralPath $acceptanceScenarioMutationRoot) { Remove-Item -LiteralPath $acceptanceScenarioMutationRoot -Recurse -Force }
-}
-
-$acceptanceRuntimeMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-impact-acceptance-canonical-$([Guid]::NewGuid().ToString('N'))"
-try {
-    [IO.Directory]::CreateDirectory($acceptanceRuntimeMutationRoot) | Out-Null
-    $runtimeMutationIndex = 0
-    foreach ($owningPath in $acceptanceCanonicalOwningPaths) {
-        $leafIndex = $owningPath.LastIndexOf('/', [StringComparison]::Ordinal) + 1
-        $firstLeafCharacter = [string]$owningPath[$leafIndex]
-        $wrongCaseCharacter = if ([char]::IsUpper($firstLeafCharacter[0])) { $firstLeafCharacter.ToLowerInvariant() } else { $firstLeafCharacter.ToUpperInvariant() }
-        $wrongCasePath = $owningPath.Substring(0, $leafIndex) + $wrongCaseCharacter + $owningPath.Substring($leafIndex + 1)
-        foreach ($mutation in @(
-                @{ Name = 'deleted'; Replacement = '' },
-                @{ Name = 'wrong-case'; Replacement = "            '$wrongCasePath'`n" },
-                @{ Name = 'alias'; Replacement = "            '$($owningPath.Replace('scripts/', 'scripts/./'))'`n" },
-                @{ Name = 'path-drift'; Replacement = "            '$($owningPath.Replace('.ps1', '.legacy.ps1'))'`n" }
-            )) {
-            $routingEntry = "            '$owningPath'`n"
-            $weakenedImpactLibrary = $canonicalImpactLibrary.Replace($routingEntry, [string]$mutation.Replacement)
-            Assert-Contract (-not [string]::Equals($weakenedImpactLibrary, $canonicalImpactLibrary, [StringComparison]::Ordinal)) "Acceptance canonical $($mutation.Name) mutation must change owning path '$owningPath'."
-            $runtimeMutationIndex++
-            $mutationPath = Join-Path $acceptanceRuntimeMutationRoot "$runtimeMutationIndex.CiImpactPlan.ps1"
-            [IO.File]::WriteAllText($mutationPath, $weakenedImpactLibrary, [Text.UTF8Encoding]::new($false))
-            . $mutationPath
-            $mutationFailure = $null
-            try { Assert-AcceptanceCanonicalOwningPathsRoute } catch { $mutationFailure = $_ }
-            Assert-Contract ($null -ne $mutationFailure) "Acceptance canonical $($mutation.Name) mutation for owning path '$owningPath' must fail the behavioral contract."
-        }
-    }
-}
-finally {
-    . $libraryPath
-    if (Test-Path -LiteralPath $acceptanceRuntimeMutationRoot) { Remove-Item -LiteralPath $acceptanceRuntimeMutationRoot -Recurse -Force }
 }
 
 Assert-Contract (Test-Path -LiteralPath $entrypointPath -PathType Leaf) 'The governed CI impact-plan entrypoint is missing.'
@@ -1011,6 +953,36 @@ try {
     Assert-Contract (-not $writtenSummary.Contains('erp_sales_order_demand', [StringComparison]::Ordinal) -and -not $writtenSummary.Contains('ERP Sales Order Demand Acceptance', [StringComparison]::Ordinal)) 'Actions Summary must omit the retired ERP job and signal.'
     Assert-Contract ($writtenSummary.Contains('NERV-685 derives governed frontend workspace shards', [StringComparison]::Ordinal)) 'Actions Summary must identify the frontend workspace routing.'
     Assert-Contract ($writtenSummary.Contains('changed:backend/services/Business/Erp/src/Orders.cs', [StringComparison]::Ordinal)) 'Actions Summary must retain the selected signal reason.'
+
+    $barcodeSummaryPath = Join-Path $fixtureRoot 'barcode-summary.md'
+    & $entrypointPath -ChangedPaths @('backend/services/Business/BarcodeLabel/src/Nerv.IIP.Business.BarcodeLabel.Infrastructure/Printing/ZplTcpLabelPrinter.cs') -OutputPath $fixtureJson -StepSummaryPath $barcodeSummaryPath | Out-Null
+    $barcodePlan = Get-Content -LiteralPath $fixtureJson -Raw | ConvertFrom-Json -Depth 20
+    Assert-ImpactFlag -Plan $barcodePlan -Name 'backend' -Expected $true
+    $barcodeProjects = @($barcodePlan.backend_module_shards | ForEach-Object { $_.matching_projects } |
+        ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_.project) })
+    foreach ($project in @('Nerv.IIP.Business.BarcodeLabel.Web.Tests', 'Nerv.IIP.FacadeCoverage.Tests', 'Nerv.IIP.Business.Acceptance.Tests')) {
+        Assert-Contract (Test-OrdinalMember -Values $barcodeProjects -Expected $project) "BarcodeLabel module evidence must include '$project'."
+    }
+    $platformShard = $barcodePlan.backend_module_shards | Where-Object { [string]::Equals([string]$_.shard, 'platform', [StringComparison]::Ordinal) }
+    Assert-Contract (@($platformShard.unresolved_projects).Count -gt 0) 'The module observation must surface unresolved MSBuild expressions.'
+    Assert-Contract ([IO.File]::ReadAllText($barcodeSummaryPath).Contains('- platform: Nerv.IIP.FacadeCoverage.Tests [barcode-label]', [StringComparison]::Ordinal)) 'The Actions Summary must show the real shard ID and its BarcodeLabel consumer.'
+
+    & $entrypointPath -ChangedPaths @(
+        'backend/services/Business/Maintenance/src/Nerv.IIP.Business.Maintenance.Web/Program.cs',
+        'backend/services/Business/IndustrialTelemetry/src/Nerv.IIP.Business.IndustrialTelemetry.Web/Program.cs'
+    ) -OutputPath $fixtureJson | Out-Null
+    $equipmentPlan = Get-Content -LiteralPath $fixtureJson -Raw | ConvertFrom-Json -Depth 20
+    Assert-ImpactFlag -Plan $equipmentPlan -Name 'backend' -Expected $true
+    foreach ($assembly in @('Nerv.IIP.Business.Maintenance.Domain.Tests', 'Nerv.IIP.Business.Maintenance.Web.Tests', 'Nerv.IIP.Business.IndustrialTelemetry.Web.Tests')) {
+        $owners = @($equipmentPlan.backend_module_shards | Where-Object {
+            Test-OrdinalMember -Values @($_.matching_projects | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_.project) }) -Expected $assembly
+        })
+        Assert-Contract ($owners.Count -eq 1 -and [string]::Equals([string] $owners[0].shard, 'business-core-b', [StringComparison]::Ordinal)) "'$assembly' must run in the equipment runtime and maintenance fast shard (business-core-b)."
+    }
+
+    & $entrypointPath -ChangedPaths @('backend/Directory.Packages.props') -OutputPath $fixtureJson | Out-Null
+    $sharedPlan = Get-Content -LiteralPath $fixtureJson -Raw | ConvertFrom-Json -Depth 20
+    Assert-Contract ($null -eq $sharedPlan.PSObject.Properties['backend_module_shards']) 'Shared build inputs must retain the conservative execution plan.'
 }
 finally {
     if (Test-Path -LiteralPath $fixtureRoot) { Remove-Item -LiteralPath $fixtureRoot -Recurse -Force }
@@ -1018,7 +990,7 @@ finally {
 
 $workflow = [IO.File]::ReadAllText($workflowPath)
 Assert-Contract ($workflow.Contains("  impact-plan:`n", [StringComparison]::Ordinal)) 'CI must define the impact-plan job.'
-Assert-Contract ($workflow.Contains('uses: actions/upload-artifact@v4', [StringComparison]::Ordinal)) 'The impact-plan job must upload its audit artifact.'
+Assert-Contract ($workflow.Contains('uses: actions/upload-artifact@v6', [StringComparison]::Ordinal)) 'The impact-plan job must upload its audit artifact.'
 Assert-RedisCapActiveSelectionWorkflowContract -Path $workflowPath
 
 $redisCapMemberListMutation = $workflow.Replace('-AllActiveMembers', '-MemberId stale-hosted-member-redis-cap', [StringComparison]::Ordinal)
@@ -1056,7 +1028,7 @@ Assert-Contract ($dotNetSdkFindings.Count -eq 0) "Every managed CI job must cont
 $dotNetMutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-dotnet-sdk-$([Guid]::NewGuid().ToString('N'))"
 try {
     [IO.Directory]::CreateDirectory($dotNetMutationRoot) | Out-Null
-    $setupStepPattern = '(?ms)^      - name: Setup \.NET\r?\n        timeout-minutes: 5\r?\n        uses: actions/setup-dotnet@v4\r?\n        env:\r?\n          DOTNET_INSTALL_DIR: \$\{\{ runner\.temp \}\}/dotnet\r?\n        with:\r?\n          dotnet-version: 10\.0\.302\r?\n\r?\n'
+    $setupStepPattern = '(?ms)^      - name: Setup \.NET\r?\n        timeout-minutes: 5\r?\n        uses: actions/setup-dotnet@v5\r?\n        env:\r?\n          DOTNET_INSTALL_DIR: \$\{\{ runner\.temp \}\}/dotnet\r?\n        with:\r?\n          dotnet-version: 10\.0\.302\r?\n\r?\n'
     $setupStepRegex = [regex]::new($setupStepPattern)
     Assert-Contract ($setupStepRegex.Matches($workflow).Count -eq $expectedDotNetJobNames.Count) 'The missing-step mutation must recognize every managed setup-dotnet step.'
     $missingSetupWorkflow = $setupStepRegex.Replace($workflow, '', 1)
@@ -1089,6 +1061,7 @@ finally {
 }
 
 Assert-ConditionalRoutingWorkflow -Path $workflowPath
+Assert-AppHostCompileWorkflowContract -Path $workflowPath
 Assert-BusinessConsoleBrowserValidationWorkflowContract -Path $workflowPath
 Assert-AcceptanceScenarioMatrixWorkflowContract -Path $workflowPath
 

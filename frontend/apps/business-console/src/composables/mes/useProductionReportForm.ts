@@ -50,13 +50,18 @@ function toOptionalNumber(value: string) {
  */
 export function useProductionReportForm(
   context: () => ProductionReportContext | null,
-  options: { onReported?: () => void; onStateChanged?: () => void } = {},
+  options: {
+    onReported?: () => void
+    onStateChanged?: () => void
+    onReceiptReady?: (query: { workOrderId: string; skuId: string }) => void
+  } = {},
 ) {
   const {
     recordProductionReport,
     recordProductionReportError,
     recordProductionReportPending,
     readProductionQuantitySnapshot,
+    prepareReceiptHandoff,
     reportScopeMessage,
     reportScopePending,
     reportScopeReady,
@@ -449,6 +454,9 @@ export function useProductionReportForm(
 
   async function sendReport(body: MesProductionReportInput, ctx: ProductionReportContext) {
     try {
+      const openReceipt = options.onReceiptReady
+      const readReceiptHandoff =
+        openReceipt && body.completesOperation ? prepareReceiptHandoff() : undefined
       const response = await recordProductionReport(body, {
         onCommandAttempt: () => {
           intentAttempted.value = true
@@ -465,6 +473,22 @@ export function useProductionReportForm(
       notifySuccess(
         `已报工${reportNo ? ` ${reportNo}` : ''} · ${ctx.operationTaskNo ?? ctx.operationTaskId}`,
       )
+      const receiptReportNo = reportResult.value?.reportNo
+      if (openReceipt && readReceiptHandoff && receiptReportNo) {
+        void readReceiptHandoff(ctx.workOrderId, ctx.operationTaskId, receiptReportNo)
+          .then((handoff) => {
+            if (!handoff) return
+            notifySuccess('该报工已生成可入库产出。', {
+              label: '去完工入库',
+              onClick: () => {
+                if (handoff.isCurrent())
+                  openReceipt({ workOrderId: handoff.workOrderId, skuId: handoff.skuId })
+              },
+            })
+          })
+          // 入库读面的网络错误不影响已确认的报工。
+          .catch(() => undefined)
+      }
       if (reportResult.value?.printStatus === 'failed') {
         notifyError('报工已接受，标签发送失败。请联系打印管理员检查原批次，不要重新报工。')
       }

@@ -10,7 +10,7 @@ namespace Nerv.IIP.BusinessGateway.Web.Application.Auth;
 /// 契约：本类的每个 <c>public const string</c> 都必须在前端
 /// <c>frontend/packages/business-core/src/labels/stableErrorMessages.ts</c> 的
 /// <c>STABLE_ERROR_MESSAGES</c> 里登记，由
-/// <c>scripts/verify-stable-code-frontend-vocabulary.ps1</c> 在 CI 强制。
+/// <c>scripts/checks/verify-stable-code-frontend-vocabulary.ps1</c> 在 CI 强制。
 /// 这三条码的信封 <c>message</c> 位就是码本身、不带任何中文，前端认不出就直接裸码上屏
 /// （PDA 的 400 回落链是 actionableMessage ?? serverMessage ?? fallback）。
 ///

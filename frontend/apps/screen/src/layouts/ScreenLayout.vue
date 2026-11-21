@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { NvScreenHeader, NvScreenScaler } from '@nerv-iip/ui'
-import { useNow } from '@vueuse/core'
+import { useScreenClock } from '../composables/useScreenClock'
 import { computed } from 'vue'
+import { IS_REAL_DATA } from '@/data/config'
 import { useRoute } from 'vue-router'
 
 // —— 舱底生成算法：种子 = 路由（每页不同、同页刷新稳定，确定性伪随机）——
@@ -103,7 +104,7 @@ withDefaults(
 
 const WEEKDAYS = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
 // 秒级展示：固定 1s 间隔，避免默认 rAF 每帧触发布局重算（大屏常驻页）
-const now = useNow({ interval: 1000 })
+const now = useScreenClock()
 
 function pad(n: number): string {
   return String(n).padStart(2, '0')
@@ -177,7 +178,7 @@ const date = computed(() => WEEKDAYS[now.value.getDay()])
         :time="time"
         :date="date"
         :line="line"
-        :screen="screen"
+        :screen="IS_REAL_DATA ? screen : '演示模式 · ' + screen"
       />
       <main class="screen-layout__body">
         <slot />

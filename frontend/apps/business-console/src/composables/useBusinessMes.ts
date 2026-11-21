@@ -30,6 +30,7 @@ import {
   getBusinessConsoleMesWipSummaryQueryOptions,
   getBusinessConsoleMesWipSummary,
   getBusinessConsoleBarcodePrintBatch,
+  getBusinessConsoleMesWorkOrderDetail,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTransformationQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
@@ -47,6 +48,7 @@ import {
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesReportableOperationTasks,
+  listBusinessConsoleMesReceivableProducedLots,
   listBusinessConsoleMesReceivableProducedLotsQueryOptions,
   listBusinessConsoleMesHistoricalProducedLotsQueryOptions,
   listBusinessConsoleMesTelemetryProductionReportCandidatesQueryOptions,
@@ -142,11 +144,13 @@ import {
   peekPendingBusinessIntent,
   reduceServerPagination,
   serverPaginationIdentity,
+  useScopeBoundListResponse,
 } from '@nerv-iip/business-core'
 import type { AvailableMaterialLotFields } from '@nerv-iip/business-core'
 export { describeMesReadinessReason, describeMesReadinessReasons } from '@nerv-iip/business-core'
 export type { MesReadinessReasonDisplay } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, shallowRef, watch, toValue, type MaybeRefOrGetter } from 'vue'
 import {
@@ -159,7 +163,6 @@ import {
 import { businessReadState } from './businessReadState'
 import { executeLifecycleAction } from './lifecycleAction'
 import { mesWorkOrderReleaseBlocker } from './mes/workOrderRelease'
-import { useScopeBoundListResponse } from './useScopeBoundListResponse'
 
 const DEFAULT_TAKE = 100
 const MES_OPERATIONS_READ_PERMISSION = 'business.mes.operations.read'
@@ -334,7 +337,11 @@ function writeRememberedMesWorkScope(selectionKey: string, value: string) {
   }
 }
 
-export function useMesPrincipalWorkScope(context: BusinessContextFields, permissionCode: string) {
+export function useMesPrincipalWorkScope(
+  context: BusinessContextFields,
+  permissionCode: string,
+  canResolve = () => true,
+) {
   const auth = useAuthStore()
   const principalIdentity = computed(
     () => auth.principal?.principalId?.trim() || auth.sessionId?.trim() || 'unrestored-session',
@@ -381,9 +388,16 @@ export function useMesPrincipalWorkScope(context: BusinessContextFields, permiss
       }),
       context,
     )
+    const authorized = canResolve()
     return {
       ...options,
-      key: [...options.key, `principal:${principalIdentity.value}`],
+      enabled: options.enabled && authorized,
+      // 未启用的接力查询不能覆盖其他入口同权限查询的缓存配置。
+      key: [
+        ...options.key,
+        `principal:${principalIdentity.value}`,
+        ...(authorized ? [] : ['disabled']),
+      ],
     }
   })
 
@@ -849,6 +863,15 @@ export function useMesProductionReporting() {
   const auth = useAuthStore()
   const context = defaultContext()
   const reportScope = useMesPrincipalWorkScope(context, MES_REPORTING_WRITE_PERMISSION)
+  const canReadReceiptHandoff = () =>
+    [P.mesReceiptsRead, P.mesReceiptsManage, P.mesWorkOrdersRead].every((permission) =>
+      auth.principal?.permissionCodes?.includes(permission),
+    )
+  const workOrderReadScope = useMesPrincipalWorkScope(
+    context,
+    MES_WORK_ORDERS_READ_PERMISSION,
+    canReadReceiptHandoff,
+  )
   const queryCache = useQueryCache()
   const issuedReportCompleteIntents = new Set<string>()
   const recordProductionReportPending = shallowRef(false)
@@ -900,8 +923,9 @@ export function useMesProductionReporting() {
         organizationId: context.organizationId,
         environmentId: context.environmentId,
         workOrderId: normalizedWorkOrderId,
+        operationTaskId: normalizedOperationTaskId,
         skip: 0,
-        take: 100,
+        take: 1,
       },
       throwOnError: false,
     })
@@ -920,6 +944,47 @@ export function useMesProductionReporting() {
     return {
       plannedQuantity: row.plannedQuantity ?? 0,
       reportedGoodQuantity: row.goodQuantity ?? 0,
+    }
+  }
+
+  function prepareReceiptHandoff() {
+    const query = { ...context }
+    const principalId = auth.principal?.principalId
+    const scope = workOrderReadScope.selectedScope.value
+    if (!scope) return
+
+    const selection = workOrderReadScope.scopeSelectionValue.value
+    const isCurrent = () =>
+      auth.principal?.principalId === principalId &&
+      context.organizationId === query.organizationId &&
+      context.environmentId === query.environmentId &&
+      canReadReceiptHandoff() &&
+      !workOrderReadScope.scopeError.value &&
+      workOrderReadScope.scopeSelectionValue.value === selection &&
+      workOrderReadScope.selectedScope.value?.kind === scope.kind &&
+      workOrderReadScope.selectedScope.value?.id === scope.id
+    if (!isCurrent()) return
+
+    return async (workOrderId: string, operationTaskId: string, reportNo: string) => {
+      if (!isCurrent()) return
+      const path = { workOrderId }
+      const lots = await listBusinessConsoleMesReceivableProducedLots({ path, query })
+      if (!isCurrent() || !lots.data?.success) return
+      const hasReceivableLot = lots.data.data?.items?.some(
+        (lot) =>
+          lot.reportNo === reportNo &&
+          lot.operationTaskId === operationTaskId &&
+          (lot.remainingQuantity ?? 0) > 0,
+      )
+      if (!hasReceivableLot) return
+
+      const order = await getBusinessConsoleMesWorkOrderDetail({
+        path,
+        query: { ...query, scopeKind: scope.kind, scopeId: scope.id },
+      })
+      const skuId = order.data?.success ? order.data.data?.skuId?.trim() : undefined
+      if (!skuId || !isCurrent()) return
+      return { workOrderId, skuId, isCurrent }
     }
   }
 
@@ -1038,6 +1103,7 @@ export function useMesProductionReporting() {
     recordProductionReportError,
     recordProductionReportPending,
     readProductionQuantitySnapshot,
+    prepareReceiptHandoff,
     reportScopeMessage: reportScope.scopeMessage,
     reportScopePending: reportScope.scopePending,
     reportScopeReady: reportScope.scopeReady,
@@ -1106,7 +1172,12 @@ export function useMesWorkOrderFacts(orderIds: MaybeRefOrGetter<readonly (string
 export function useMesWorkOrders(options: UseMesWorkOrdersOptions = {}) {
   const filters = defaultFilters(options.initialTake)
   const workOrderReadScope = useMesPrincipalWorkScope(filters, MES_WORK_ORDERS_READ_PERMISSION)
-  const workOrderManageScope = useMesPrincipalWorkScope(filters, MES_WORK_ORDERS_MANAGE_PERMISSION)
+  const auth = useAuthStore()
+  const workOrderManageScope = useMesPrincipalWorkScope(
+    filters,
+    MES_WORK_ORDERS_MANAGE_PERMISSION,
+    () => auth.principal?.permissionCodes?.includes(MES_WORK_ORDERS_MANAGE_PERMISSION) === true,
+  )
   const queryCache = useQueryCache()
   const workOrdersScopeReady = computed(
     () => hasBusinessContext(filters) && workOrderReadScope.scopeReady.value,
@@ -1590,7 +1661,12 @@ export function useMesWorkOrderDetail(workOrderId?: MaybeRefOrGetter<string>) {
     )
   }
   const workOrderReadScope = useMesPrincipalWorkScope(filters, MES_WORK_ORDERS_READ_PERMISSION)
-  const workOrderManageScope = useMesPrincipalWorkScope(filters, MES_WORK_ORDERS_MANAGE_PERMISSION)
+  const auth = useAuthStore()
+  const workOrderManageScope = useMesPrincipalWorkScope(
+    filters,
+    MES_WORK_ORDERS_MANAGE_PERMISSION,
+    () => auth.principal?.permissionCodes?.includes(MES_WORK_ORDERS_MANAGE_PERMISSION) === true,
+  )
   const queryCache = useQueryCache()
   const detailEnabled = computed(
     () =>
@@ -2013,14 +2089,14 @@ export function useMesWorkOrderDetail(workOrderId?: MaybeRefOrGetter<string>) {
       envelopeItems<
         BusinessConsoleMesReceiptRequestRow,
         BusinessConsoleMesReceiptRequestListEnvelope
-      >(receiptQuery.data.value).filter((row) => row.workOrderId === filters.workOrderId),
+      >(receiptQuery.data.value),
     ),
     // 本工单的领料申请（补偿预览的预留释放/退料指引权威来源，PR 已注明降级实现）
     materialIssueRequests: computed<BusinessConsoleMesMaterialIssueRequestRow[]>(() =>
       envelopeItems<
         BusinessConsoleMesMaterialIssueRequestRow,
         BusinessConsoleMesMaterialIssueRequestListEnvelope
-      >(materialIssueQuery.data.value).filter((row) => row.workOrderId === filters.workOrderId),
+      >(materialIssueQuery.data.value),
     ),
     materialReadiness: computed(() =>
       unwrapData<
@@ -2085,7 +2161,7 @@ export function useMesWorkOrderDetail(workOrderId?: MaybeRefOrGetter<string>) {
   }
 }
 
-export function useMesOperationTasks() {
+export function useMesOperationTasks(operationTaskId: () => string | undefined = () => undefined) {
   const auth = useAuthStore()
   const filters = defaultFilters()
   const operationListScope = useMesPrincipalWorkScope(filters, MES_OPERATIONS_READ_PERMISSION)
@@ -2106,6 +2182,7 @@ export function useMesOperationTasks() {
       filters.environmentId.trim(),
       selectedScope?.kind ?? '',
       selectedScope?.id ?? '',
+      ...(operationTaskId() ? [operationTaskId()] : []),
     ].join(':')
   })
   const operationTasksQuery = useQuery(() => {
@@ -2113,7 +2190,15 @@ export function useMesOperationTasks() {
     const identity = operationTasksIdentity.value
     const { key, query: executeQuery } = listBusinessConsoleMesOperationTasksQueryOptions({
       query: {
-        ...toListQuery(filters),
+        ...(operationTaskId()
+          ? {
+              organizationId: filters.organizationId,
+              environmentId: filters.environmentId,
+              operationTaskId: operationTaskId(),
+              skip: 0,
+              take: 1,
+            }
+          : toListQuery(filters)),
         ...(selectedScope ? { scopeKind: selectedScope.kind, scopeId: selectedScope.id } : {}),
       },
     })

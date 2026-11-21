@@ -12,7 +12,7 @@
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $canonicalLibraryPath = Join-Path $repoRoot 'scripts/lib/AcceptanceCanonicalResult.ps1'
-$wmsVerifierPath = Join-Path $repoRoot 'scripts/verify-erp-wms-delivery-completion.ps1'
+$wmsVerifierPath = Join-Path $repoRoot 'scripts/integration/verify-erp-wms-delivery-completion.ps1'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-acceptance-canonical-$([Guid]::NewGuid().ToString('N'))"
 
 if (-not (Test-Path -LiteralPath $canonicalLibraryPath -PathType Leaf)) {

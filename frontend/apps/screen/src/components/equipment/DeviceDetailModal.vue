@@ -1,10 +1,10 @@
 <script setup lang="ts">
+import { useAuthorizedScreenData } from '@/composables/useAuthorizedScreenData'
 import {
   NvScreenScrollArea,
   NvSparkline,
   NvScreenStatusLight,
   NvScreenStatusTag,
-  useScreenData,
 } from '@nerv-iip/ui'
 import {
   Activity,
@@ -22,6 +22,7 @@ import {
 import { type Component, computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { DeviceDetail, DeviceParamSeries, ParamKind } from '@/data/contracts/equipment'
 import { fetchDeviceDetail } from '@/data/fetchers/equipment'
+import ReadError from '@/components/ReadError.vue'
 import { paramColor } from './paramColors'
 
 /**
@@ -30,6 +31,7 @@ import { paramColor } from './paramColors'
  * 保养维修档案。Teleport body，ESC / 遮罩关闭；淡入无回弹。
  */
 const props = defineProps<{
+  workCenterCode?: string
   deviceId: string
   factoryId: string
   workshopIds: string[] | 'all'
@@ -38,8 +40,14 @@ const props = defineProps<{
 const emit = defineEmits<{ close: [] }>()
 
 // 详情刷新频率：3s（比全景 5s 快，比格上参数 2s 稳）
-const { data: detail } = useScreenData<DeviceDetail | null>(
-  () => fetchDeviceDetail(props.deviceId, props.factoryId, props.workshopIds),
+const {
+  data: detail,
+  lastUpdated,
+  error,
+  loading,
+  refresh,
+} = useAuthorizedScreenData<DeviceDetail | null>(
+  () => fetchDeviceDetail(props.deviceId, props.factoryId, props.workshopIds, props.workCenterCode),
   { intervalMs: 3000 },
 )
 
@@ -51,7 +59,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 const tone = computed(() => {
   const s = detail.value?.device.state
-  return s === 'alarm' ? 'alarm' : s === 'idle' || s === 'down' ? 'idle' : 'run'
+  return s === 'alarm' ? 'alarm' : s === 'idle' || s === 'down' || s === 'offline' ? 'idle' : 'run'
 })
 
 const infoRows = computed(() => {
@@ -113,11 +121,11 @@ function leaveSpark() {
         class="ddm"
         role="dialog"
         aria-modal="true"
-        :aria-label="detail?.device.name ?? '设备详情'"
+        :aria-label="detail?.device.name || '设备详情'"
       >
         <header class="ddm-h">
           <NvScreenStatusLight v-if="detail" :tone="tone" :label="detail.device.stateLabel" />
-          <h3 class="ddm-t">{{ detail?.device.name ?? '设备详情' }}</h3>
+          <h3 class="ddm-t">{{ detail?.device.name || '设备详情' }}</h3>
           <span v-if="detail" class="ddm-code">{{ detail.device.code }}</span>
           <span v-if="detail" class="ddm-path"
             >{{ detail.device.workshopName }} · {{ detail.device.lineName }}</span
@@ -127,9 +135,25 @@ function leaveSpark() {
           </button>
         </header>
 
-        <div v-if="!detail" class="ddm-loading">读取设备档案…</div>
+        <ReadError
+          v-if="error"
+          :error="error"
+          :loading="loading"
+          :last-updated="lastUpdated"
+          @retry="refresh"
+        />
+        <div v-if="!detail && !error" class="ddm-loading">
+          {{ detail === null ? '暂无设备档案' : '读取设备档案…' }}
+        </div>
 
-        <NvScreenScrollArea v-else class="ddm-scroll">
+        <NvScreenScrollArea v-if="detail" class="ddm-scroll">
+          <div v-if="detail.failures && Object.keys(detail.failures).length" role="status">
+            <span v-for="(reason, source) in detail.failures" :key="source"
+              >{{ source }} · {{ reason }}　</span
+            >
+            <button :disabled="loading" @click="refresh">重试</button>
+          </div>
+          <p v-if="detail.partialRecords">维修、保养与关联点检仅覆盖各列表首批记录</p>
           <div class="ddm-body">
             <!-- 上：基础信息横排 -->
             <section class="ddm-sec">
@@ -211,7 +235,7 @@ function leaveSpark() {
                     <dd>{{ percent(detail.oee.rate) }}</dd>
                   </div>
                 </div>
-                <p v-if="detail.oee.isDegraded" class="ddm-note">
+                <p v-if="!detail.failures?.OEE && detail.oee.isDegraded" class="ddm-note">
                   OEE 数据不完整：{{ detail.oee.degradedReasons.join('、') }}
                 </p>
                 <div v-if="detail.repairs.length" class="ddm-repairs">
@@ -231,7 +255,7 @@ function leaveSpark() {
                     </div>
                   </div>
                 </div>
-                <p v-else class="ddm-empty">暂无进行中的维修单</p>
+                <p v-else-if="!detail.failures?.维修" class="ddm-empty">本页暂无维修单</p>
               </div>
 
               <div>
@@ -247,8 +271,16 @@ function leaveSpark() {
                       i.result
                     }}</span>
                   </div>
-                  <p v-if="!detail.pmTasks.length && !detail.inspections.length" class="ddm-empty">
-                    今日暂无保养 / 点检记录
+                  <p
+                    v-if="
+                      !detail.failures?.保养 &&
+                      !detail.failures?.点检 &&
+                      !detail.pmTasks.length &&
+                      !detail.inspections.length
+                    "
+                    class="ddm-empty"
+                  >
+                    本页暂无保养 / 关联点检记录
                   </p>
                 </div>
               </div>

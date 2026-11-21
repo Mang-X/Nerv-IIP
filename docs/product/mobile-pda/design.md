@@ -1,6 +1,6 @@
 # 移动端（PDA）模块产品业务文档
 
-> 历史设计背景：[`../../superpowers/specs/2026-06-09-mobile-pda-design.md`](../../superpowers/specs/2026-06-09-mobile-pda-design.md)。当前产品语义以本页为准；后端能力以 `backend/gateway/BusinessGateway` 公开契约、代码和测试为准。
+> 当前产品语义以本页为准；后端能力以 `backend/gateway/BusinessGateway` 公开契约、代码和测试为准。
 > 关联文档：[导航范式与角色入口](../navigation.md)、[前端工作区边界](../../architecture/frontend/workspace-structure.md)、[当前状态摘要](../../status/current.md)、[本地开发与运行地址查询](../../runbooks/local-development.md)。端口和实例地址以当前配置、AppHost 与命令帮助为准，不从状态页推断。
 > 定位：PDA 域的产品/信息架构/角色权限/分期/验收口径文档，遵循 `frontend/apps/business-console/AGENTS.md`「新域开工先立此文档」与「先文档后代码」铁律。
 

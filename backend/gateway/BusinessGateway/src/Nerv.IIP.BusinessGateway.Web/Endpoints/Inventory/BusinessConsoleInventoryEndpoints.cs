@@ -196,7 +196,7 @@ public sealed class PostBusinessConsoleInventoryMovementEndpoint(
                 cancellationToken);
             if (!overrideAuthorization.IsAllowed)
             {
-                throw new BusinessServiceProxyException(System.Net.HttpStatusCode.Forbidden, "Forbidden.");
+                throw BusinessServiceProxyException.FromLocalRejection(System.Net.HttpStatusCode.Forbidden, BusinessGatewayLocalRejectionStableWireCodes.Forbidden);
             }
 
             forwardedPermissions.Add(BusinessGatewayPermissions.InventoryExpiredStockOverride);

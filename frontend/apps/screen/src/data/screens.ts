@@ -52,3 +52,23 @@ export function screenForPath(path: string): ScreenKey | undefined {
   const hit = SCREENS.find((s) => path === s.route || path.startsWith(`${s.route}/`))
   return hit?.key
 }
+
+const entryPermissions: Partial<Record<ScreenKey | 'andon', string[]>> = {
+  andon: ['business.mes.operations.read'],
+  equipment: [
+    'business.iiot.telemetry.read',
+    'business.iiot.alarms.read',
+    'business.maintenance.work-orders.read',
+  ],
+  warehouse: [
+    'business.wms.receipts.read',
+    'business.wms.shipments.read',
+    'business.wms.counts.read',
+    'business.wms.automation.manage',
+  ],
+  quality: ['business.quality.inspection-records.read', 'business.quality.ncr.read'],
+}
+
+export function canReadRealScreen(key: ScreenKey | 'andon', codes: string[] | undefined) {
+  return entryPermissions[key]?.some((permission) => !codes || codes.includes(permission))
+}

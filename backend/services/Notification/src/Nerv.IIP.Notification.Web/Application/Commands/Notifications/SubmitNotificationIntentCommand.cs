@@ -143,8 +143,12 @@ public sealed class SubmitNotificationIntentCommandHandler(
                 request.SourceService,
                 request.SourceEventType,
                 request.DedupeKey,
-                cancellationToken)
-                ?? RethrowDuplicateConflict(exception);
+                cancellationToken);
+            if (duplicate is null)
+            {
+                throw;
+            }
+
             return duplicate.ToResponse(duplicate: true);
         }
 
@@ -155,11 +159,5 @@ public sealed class SubmitNotificationIntentCommandHandler(
     {
         return dbContext.ChangeTracker.Entries<NotificationIntent>().Any(x => x.State == EntityState.Added)
             && ProcessedIntegrationEventInbox.IsUniqueConflict(exception, dbContext, constraintOrIndexName: null);
-    }
-
-    private static NotificationIntent RethrowDuplicateConflict(DbUpdateException exception)
-    {
-        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
-        throw new InvalidOperationException("Unreachable duplicate conflict rethrow path.");
     }
 }

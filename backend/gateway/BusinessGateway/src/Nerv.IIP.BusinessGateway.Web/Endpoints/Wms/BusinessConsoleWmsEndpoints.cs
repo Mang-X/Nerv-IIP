@@ -344,9 +344,9 @@ public abstract class BusinessConsoleWmsAssignmentEndpoint
         var resourceId = Route<string>(_routeParameterName);
         if (string.IsNullOrWhiteSpace(resourceId))
         {
-            throw new BusinessServiceProxyException(
+            throw BusinessServiceProxyException.FromLocalRejection(
                 System.Net.HttpStatusCode.UnprocessableEntity,
-                "resource-id-required");
+                BusinessGatewayLocalRejectionStableWireCodes.ResourceIdRequired);
         }
 
         var trusted = await ResolveTrustedContextAsync(request, cancellationToken);

@@ -70,7 +70,8 @@ vi.mock('./makeIdempotencyKey', () => ({
   makeIdempotencyKey: vi.fn(() => 'TASK-KEY'),
 }))
 
-vi.mock('./useWmsWorkScope', () => ({
+vi.mock('./useWmsWorkScope', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./useWmsWorkScope')>()),
   useWmsWorkScope: vi.fn(() => {
     const scopeKey = shallowRef<string | undefined>('self:emp049')
     const parsedScope = computed(() => {
@@ -86,6 +87,13 @@ vi.mock('./useWmsWorkScope', () => ({
       organizationId: computed(() => reactiveAuthState.principal?.organizationId ?? ''),
       environmentId: computed(() => reactiveAuthState.principal?.environmentId ?? ''),
       principalId: computed(() => reactiveAuthState.principal?.principalId ?? 'emp049'),
+      sessionKey: computed(() =>
+        JSON.stringify([
+          reactiveAuthState.principal?.principalId,
+          reactiveAuthState.principal?.organizationId,
+          reactiveAuthState.principal?.environmentId,
+        ]),
+      ),
       hasTenant,
       hasSelection: computed(
         () =>

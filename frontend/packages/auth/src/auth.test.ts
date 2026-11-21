@@ -1,3 +1,4 @@
+import { logoutConsoleSession } from '@nerv-iip/api-client'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -162,6 +163,7 @@ describe('console auth api factory', () => {
       headers: { Authorization: 'Bearer access-token' },
     })
     expect(client.logoutConsoleSession).toHaveBeenCalledWith({
+      throwOnError: true,
       body: { sessionId: 'session-001' },
       headers: { Authorization: 'Bearer access-token' },
     })
@@ -307,6 +309,7 @@ describe('auth store factory', () => {
     await auth.logout()
 
     expect(client.logoutConsoleSession).toHaveBeenCalledWith({
+      throwOnError: true,
       body: { sessionId: 'session-001' },
       headers: { Authorization: 'Bearer access-token' },
     })
@@ -422,7 +425,13 @@ describe('auth store factory', () => {
     await expect(auth.logoutAndRevoke({ timeoutMs: 20 })).resolves.toEqual({ status: 'revoked' })
     expect(auth.isAuthenticated).toBe(false)
 
-    client.logoutConsoleSession.mockRejectedValueOnce(new TypeError('offline'))
+    client.logoutConsoleSession.mockImplementationOnce((options) =>
+      logoutConsoleSession({
+        ...options,
+        baseUrl: 'https://gateway.test',
+        fetch: async () => new Response(null, { status: 503 }),
+      }),
+    )
     await auth.login('admin', 'secret')
     await expect(auth.logoutAndRevoke({ timeoutMs: 20 })).resolves.toEqual({ status: 'failed' })
     expect(auth.isAuthenticated).toBe(false)

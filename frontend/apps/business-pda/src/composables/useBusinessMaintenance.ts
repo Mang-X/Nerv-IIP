@@ -14,13 +14,11 @@ import {
 import {
   acquirePendingBusinessIntent,
   completePendingBusinessIntent,
+  useListResponseState,
+  useScopeBoundListResponse,
 } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import { canAccessMaintenanceWorkOrderReadModel } from '@/permissions/maintenanceReadModelAccess'
-import {
-  useListResponseState,
-  useScopeBoundListResponse,
-} from '@/composables/useScopeBoundListResponse'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 import { confirmedMaintenanceCreateWorkOrderId } from './maintenanceCreateReceipt'

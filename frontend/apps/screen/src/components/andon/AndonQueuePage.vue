@@ -1,18 +1,18 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
-import { useNow } from '@vueuse/core'
-import { NvScreenFreshness, NvScreenPanel, useScreenData } from '@nerv-iip/ui'
+import { useScreenClock } from '../../composables/useScreenClock'
+import { NvScreenButton, NvScreenFreshness, NvScreenPanel, useScreenData } from '@nerv-iip/ui'
 import { andonErrorMessage, type AndonScope, type AndonSession } from '@/data/contracts/andon'
 import { fetchAndonQueue } from '@/data/fetchers/andon'
 import { formatScreenFreshness } from '@/data/freshness'
 
 const props = defineProps<{ session: AndonSession; scope: AndonScope; page: number }>()
 const emit = defineEmits<{ total: [value: number | undefined] }>()
-const { data, error, lastUpdated } = useScreenData(
+const { data, error, lastUpdated, loading, refresh } = useScreenData(
   () => fetchAndonQueue(props.session, props.scope, props.page),
   { intervalMs: 4000 },
 )
-const now = useNow({ interval: 1000 })
+const now = useScreenClock()
 // 三个轮询周期未成功更新即撤下旧行，挂起请求也不能让旧空队列保持正常。
 const expired = computed(
   () => lastUpdated.value !== undefined && now.value.getTime() - lastUpdated.value > 12_000,
@@ -33,6 +33,7 @@ function time(value: string | null | undefined): string {
     <template #extra><NvScreenFreshness :tone="freshness.tone" :label="freshness.text" /></template>
     <p v-if="unavailable" class="andon-state" role="alert">
       {{ error ? andonErrorMessage(error) : '失联 · 安灯数据超过 12 秒未更新' }}
+      <NvScreenButton variant="ghost" :disabled="loading" @click="refresh">重试</NvScreenButton>
     </p>
     <p v-else-if="!data" class="andon-state" role="status">正在读取活动呼叫…</p>
     <p v-else-if="data.total === 0" class="andon-state" role="status">当前范围无活动呼叫</p>

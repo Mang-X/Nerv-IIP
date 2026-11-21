@@ -532,6 +532,7 @@ export {
   getBusinessConsoleMesSupplyReadiness,
   getBusinessConsoleMesWipSummary,
   getBusinessConsoleMesWorkOrderDetail,
+  listBusinessConsoleMesReceivableProducedLots,
   listBusinessConsoleErpPurchaseRequisitions,
   getBusinessConsoleMesWorkOrderTraceability,
   getBusinessConsoleMesFinishedGoodsReceiptInventoryLink,

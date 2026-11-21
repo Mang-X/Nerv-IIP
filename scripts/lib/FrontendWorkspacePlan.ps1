@@ -313,7 +313,7 @@ function Get-NervFrontendWorkspacePlan {
                 $path.StartsWith('frontend/packages/', [StringComparison]::Ordinal) -or
                 $path.StartsWith('frontend/', [StringComparison]::Ordinal) -or
                 $path.StartsWith('.github/workflows/', [StringComparison]::Ordinal) -or
-                $path.StartsWith('scripts/get-frontend-workspace-plan.ps1', [StringComparison]::Ordinal) -or
+                $path.StartsWith('scripts/ci/get-frontend-workspace-plan.ps1', [StringComparison]::Ordinal) -or
                 $path.StartsWith('scripts/lib/FrontendWorkspacePlan.ps1', [StringComparison]::Ordinal) -or
                 $path.StartsWith('scripts/tests/frontend-workspace-plan.Tests.ps1', [StringComparison]::Ordinal)) {
                 $requiresFull = $true

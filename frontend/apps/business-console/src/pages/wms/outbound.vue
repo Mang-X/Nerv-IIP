@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useRoute, useRouter } from 'vue-router'
+import { queryText } from '@/components/erp/costRecovery'
 import type { BusinessConsoleWmsOutboundOrderItem } from '@nerv-iip/api-client'
 import { BusinessOperationPendingError } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
@@ -8,7 +10,7 @@ import {
   isIndeterminateLifecycleWriteError,
   recoverLifecycleAction,
 } from '@/composables/lifecycleAction'
-import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
+import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import WmsAssignWorkPoolDialog from '@/components/wms/WmsAssignWorkPoolDialog.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
@@ -97,7 +99,27 @@ const {
   pending: workScopePending,
   refresh: refreshWorkScopes,
 } = bindWmsWorkScopeFilters(filters, 'shipments')
+const route = useRoute()
+const router = useRouter()
+watch(
+  () => route.query.keyword,
+  () => {
+    filters.keyword = queryText(route.query, 'keyword') || undefined
+  },
+  { immediate: true },
+)
 const operationalCandidates = useWmsOperationalCandidates('shipment', filters)
+const hasListFilters = computed(() =>
+  Boolean(filters.keyword || filters.status || filters.locationCode || filters.lotNo),
+)
+function clearListFilters() {
+  filters.keyword = undefined
+  filters.status = undefined
+  filters.locationCode = undefined
+  filters.lotNo = undefined
+  if (route.query.keyword !== undefined)
+    void router.replace({ query: { ...route.query, keyword: undefined } })
+}
 const { page, pageSize } = usePagedList(filters, {
   resetOn: [
     () => filters.keyword,
@@ -488,7 +510,7 @@ function refreshAll() {
         <NvInput
           v-model="filters.keyword"
           class="w-56"
-          placeholder="搜索出库单号、来源单据或物料"
+          placeholder="搜索出库单号"
           aria-label="关键字搜索"
         />
         <NvSearchSelect
@@ -542,9 +564,13 @@ function refreshAll() {
       :awaiting-scope-message="workScopeUnreadyMessage || '请先在顶部选择业务范围，再查看出库单。'"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无出库单。发货作业产生出库单后会出现在这里。"
+      empty-message="当前作业范围暂无出库单。"
       @retry="refreshOutboundOrders"
     >
+      <template v-if="hasListFilters" #empty>
+        <p>当前作业范围内没有匹配筛选条件的出库单。</p>
+        <NvButton size="sm" variant="outline" @click="clearListFilters">清空筛选</NvButton>
+      </template>
       <template #cell-status="{ row }"
         ><NvStatusBadge
           :value="row.status"

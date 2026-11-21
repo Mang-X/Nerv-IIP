@@ -15,15 +15,13 @@ import path from 'node:path'
  *
  *   NERV_IIP_PLAYWRIGHT_BASE_URL=http://localhost:5125 \
  *   NERV_IIP_FULLSTACK_ADMIN_PASSWORD=<admin 口令> \
- *   NERV_IIP_OUT_DIR=artifacts/issue1613-walkthrough \
+ *   NERV_IIP_OUT_DIR="$(git rev-parse --show-toplevel)/.ryugi/artifacts/issue1613-walkthrough" \
  *   pnpm exec playwright test e2e/issue1613 --project=desktop --workers=1
  */
 const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
 const adminPassword = process.env.NERV_IIP_FULLSTACK_ADMIN_PASSWORD
 const outDir = process.env.NERV_IIP_OUT_DIR
 
-// 需要一套跑起来的本地栈；缺环境变量就跳过（沿用 r5-walkthrough.spec.ts 的守卫写法），
-// 免得在没有后端的环境里被当成回归门禁跑挂。产物落 artifacts/（.gitignore 内，不入库）。
 test.skip(
   !baseURL || !adminPassword || !outDir,
   '需要本地栈：NERV_IIP_PLAYWRIGHT_BASE_URL / NERV_IIP_FULLSTACK_ADMIN_PASSWORD / NERV_IIP_OUT_DIR',

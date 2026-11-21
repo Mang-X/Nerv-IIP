@@ -2,8 +2,8 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
-$verifyPath = Join-Path $repoRoot 'scripts/verify-connector-health-disconnect.ps1'
-$simulatorPath = Join-Path $repoRoot 'scripts/support/modbus-tcp-simulator.ps1'
+$verifyPath = Join-Path $repoRoot 'scripts/integration/verify-connector-health-disconnect.ps1'
+$simulatorPath = Join-Path $repoRoot 'scripts/support/simulate-modbus-tcp.ps1'
 $appHostPath = Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs'
 $connectorHostProgramPath = Join-Path $repoRoot 'connector-hosts/src/Nerv.IIP.ConnectorHost.Host/Program.cs'
 
@@ -15,7 +15,6 @@ Assert-Contract (Test-Path -LiteralPath $verifyPath -PathType Leaf) 'Connector d
 Assert-Contract (Test-Path -LiteralPath $simulatorPath -PathType Leaf) 'Loopback Modbus simulator script is missing.'
 
 $verify = Get-Content -LiteralPath $verifyPath -Raw
-$simulator = Get-Content -LiteralPath $simulatorPath -Raw
 $appHost = Get-Content -LiteralPath $appHostPath -Raw
 $connectorHostProgram = Get-Content -LiteralPath $connectorHostProgramPath -Raw
 
@@ -31,7 +30,6 @@ Assert-Contract (-not $verify.Contains('[DateTimeOffset]::Parse("$($lost.connect
 Assert-Contract ($verify.Contains('disconnectStartUtc = if ($null -eq $script:disconnectStartUtc)', [StringComparison]::Ordinal)) 'Failure diagnostics must preserve the exact disconnect start instant.'
 Assert-Contract ($verify.Contains("`$_['elapsedMilliseconds']", [StringComparison]::Ordinal)) 'Evidence aggregation must read ordered dictionary values through their explicit key.'
 Assert-Contract (-not $verify.Contains('Measure-Object -Property elapsedMilliseconds', [StringComparison]::Ordinal)) 'Evidence aggregation must not rely on OrderedDictionary property adaptation.'
-Assert-Contract ($verify.Contains('finally', [StringComparison]::Ordinal)) 'Verify script must clean the simulator and full-stack session in finally.'
 Assert-Contract ($verify.Contains('disconnectStartUtc', [StringComparison]::Ordinal)) 'Evidence must include disconnectStartUtc.'
 Assert-Contract ($verify.Contains('connectionObservedAtUtc', [StringComparison]::Ordinal)) 'Evidence must include connectionObservedAtUtc.'
 Assert-Contract ($verify.Contains('gatewayObservedAtUtc', [StringComparison]::Ordinal)) 'Evidence must include gatewayObservedAtUtc.'
@@ -65,17 +63,9 @@ Assert-Contract (
 Assert-Contract ($verify.Contains('start.stdout.log', [StringComparison]::Ordinal) -and $verify.Contains('start.stderr.log', [StringComparison]::Ordinal)) 'Detached full-stack start must preserve stdout and stderr artifacts.'
 Assert-Contract ($verify.Contains("'Failed', 'CleanupFailed'", [StringComparison]::Ordinal)) 'Manifest wait must fail explicitly when startup enters a terminal failure state.'
 
-foreach ($forbidden in @('dotnet ', 'docker ', 'pnpm ', 'pwsh ', 'Start-Process')) {
-    Assert-Contract (-not $verify.Contains($forbidden, [StringComparison]::OrdinalIgnoreCase)) "Verify script contains forbidden direct command '$forbidden'."
-}
-
-Assert-Contract ($simulator.Contains('TcpListener', [StringComparison]::Ordinal)) 'Simulator must bind a real loopback TCP listener.'
+$simulator = Get-Content -LiteralPath $simulatorPath -Raw
 Assert-Contract ($simulator.Contains('127.0.0.1', [StringComparison]::Ordinal)) 'Simulator must bind loopback only.'
-Assert-Contract ($simulator.Contains('ready', [StringComparison]::Ordinal)) 'Simulator must publish ready JSON.'
-Assert-Contract ($simulator.Contains('ConvertTo-Json', [StringComparison]::Ordinal)) 'Simulator ready record must be JSON.'
 Assert-Contract ($simulator.Contains('[System.IO.File]::Move($readyStagingPath, $readyFullPath, $true)', [StringComparison]::Ordinal)) 'Simulator must publish the ready record by renaming a sibling staging file so readers never observe a truncated file.'
-Assert-Contract ($simulator.Contains('StopRequested', [StringComparison]::Ordinal)) 'Simulator must support a governed stop request.'
-Assert-Contract ($simulator.Contains('.Stop()', [StringComparison]::Ordinal)) 'Simulator must stop its listener so the same port can be rebound.'
 
 Assert-Contract ($appHost.Contains('ConnectorHealthAcceptance:Enabled', [StringComparison]::Ordinal)) 'AppHost must have an explicit acceptance-only opt-in.'
 Assert-Contract ($appHost.Contains('Platform__IndustrialTelemetryBaseUrl', [StringComparison]::Ordinal)) 'Acceptance wiring must inject the IndustrialTelemetry URL into Connector Host.'

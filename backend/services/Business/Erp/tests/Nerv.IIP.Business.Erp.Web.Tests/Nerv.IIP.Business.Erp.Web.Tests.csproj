@@ -8,6 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="../../../../../common/Testing/KnownExceptionUserMessageSourceAnalyzer.cs" Link="Support/KnownExceptionUserMessageSourceAnalyzer.cs" />
+    <Compile Include="../../../../../common/Testing/UserMessageText.cs" Link="Support/UserMessageText.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />

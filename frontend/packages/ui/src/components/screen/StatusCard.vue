@@ -21,9 +21,7 @@ const props = defineProps<{
   downtime: string
 }>()
 
-const accent = computed(
-  () => (({ run: 'green', idle: 'amber', alarm: 'red' }) as const)[props.tone],
-)
+const accent = computed(() => ({ run: 'green', idle: 'amber', alarm: 'red' } as const)[props.tone])
 </script>
 
 <template>
@@ -35,19 +33,11 @@ const accent = computed(
     <div class="nv-scr-lc-state">当前状态</div>
     <div class="nv-scr-lc-big" :class="tone">{{ label }}</div>
     <div class="nv-scr-lc-stats">
-      <div>
-        <i>计划产量</i><b>{{ plan }} 件</b>
-      </div>
-      <div>
-        <i>实际产量</i><b>{{ actual }} 件</b>
-      </div>
-      <div>
-        <i>达成率</i><b>{{ rate }}</b>
-      </div>
+      <div><i>计划产量</i><b>{{ plan }} 件</b></div>
+      <div><i>实际产量</i><b>{{ actual }} 件</b></div>
+      <div><i>达成率</i><b>{{ rate }}</b></div>
     </div>
-    <div class="nv-scr-lc-foot">
-      <span>停机时长</span><b>{{ downtime }}</b>
-    </div>
+    <div class="nv-scr-lc-foot"><span>停机时长</span><b>{{ downtime }}</b></div>
   </ScreenPanel>
 </template>
 

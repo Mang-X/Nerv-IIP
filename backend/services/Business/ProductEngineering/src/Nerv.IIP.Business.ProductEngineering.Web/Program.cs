@@ -89,16 +89,13 @@ try
     }
 
     builder.Services.AddProductEngineeringPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
-    builder.Services.AddScoped<LeaderDemoSeedService>();
-    builder.Services.AddScoped<LeaderDemoScaleSeedService>();
-    builder.Services.AddScoped<WorldBibleSeedService>();
-    builder.Services.AddScoped<WorldHistorySeedService>();
     builder.Services.AddScoped<ProductEngineeringCodingService>();
     builder.Services.AddSingleton(TimeProvider.System);
     builder.Services.AddSingleton<IProductEngineeringBusinessDateProvider, ConfigurationProductEngineeringBusinessDateProvider>();
     builder.Services.AddScoped<EngineeringChangeScheduledReleaseService>();
     builder.Services.AddHostedService<EngineeringChangeScheduledReleaseScheduler>();
     builder.Services.AddScoped<ICommandLock<PromoteScheduledEngineeringChangeCommand>, PromoteScheduledEngineeringChangeCommandLock>();
+    builder.Services.AddScoped<WalkthroughSeedService>();
     builder.Services.AddInMemoryDistributedLock();
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddHttpContextAccessor();
@@ -162,58 +159,9 @@ try
     if (walkthroughSeedEnabled)
     {
         using var scope = app.Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<WorldBibleSeedService>().SeedWalkthroughAsync(
+        await scope.ServiceProvider.GetRequiredService<WalkthroughSeedService>().SeedAsync(
             builder.Configuration["Walkthrough:Seed:OrganizationId"] ?? "org-001",
             builder.Configuration["Walkthrough:Seed:EnvironmentId"] ?? "env-dev");
-    }
-
-    var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");
-    if (leaderDemoSeedEnabled && !app.Environment.IsDevelopment())
-    {
-        throw new InvalidOperationException("LeaderDemo:Seed:Enabled=true is only allowed for BusinessProductEngineering in Development.");
-    }
-
-    if (leaderDemoSeedEnabled)
-    {
-        using var scope = app.Services.CreateScope();
-        var organizationId = builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001";
-        var environmentId = builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev";
-        await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(organizationId, environmentId);
-        await scope.ServiceProvider.GetRequiredService<LeaderDemoScaleSeedService>().SeedAsync(
-            organizationId,
-            environmentId,
-            builder.Configuration.GetValue("LeaderDemo:Scale:OrderCount", 0));
-        if (builder.Configuration.GetValue("LeaderDemo:World:Enabled", false))
-        {
-            await scope.ServiceProvider.GetRequiredService<WorldBibleSeedService>().SeedAsync(organizationId, environmentId);
-        }
-
-        // 《工厂世界观设定集》L1 背景历史（工程域侧）：ECO-2026-#### 工程变更 + DOC-2026-#### 工程文档。
-        // 校验器 fail-closed：号段、状态分布、受影响版本引用对不上就让启动失败。
-        if (WorldHistoryConfiguration.IsEnabled(builder.Configuration))
-        {
-            var report = await scope.ServiceProvider.GetRequiredService<WorldHistorySeedService>().SeedAsync(
-                organizationId,
-                environmentId,
-                WorldHistoryConfiguration.ResolveAsOfDate(builder.Configuration),
-                WorldHistoryConfiguration.ResolveScale(builder.Configuration));
-            app.Logger.LogInformation(
-                "World-history ProductEngineering seed completed: {Changes} engineering changes ({AffectedVersions} affected versions), " +
-                "{Documents} engineering documents; validator checked {CheckedChanges} changes " +
-                "(published {Published} / scheduled {Scheduled} / draft {Draft} / cancelled {Cancelled}) and " +
-                "{CheckedDocuments} documents ({Sop} SOP, {Archived} archived).",
-                report.EngineeringChangesWritten,
-                report.AffectedVersionsWritten,
-                report.EngineeringDocumentsWritten,
-                report.Validation.EngineeringChangesChecked,
-                report.Validation.PublishedChanges,
-                report.Validation.ScheduledChanges,
-                report.Validation.DraftChanges,
-                report.Validation.CancelledChanges,
-                report.Validation.EngineeringDocumentsChecked,
-                report.Validation.SopDocumentsChecked,
-                report.Validation.ArchivedDocumentsChecked);
-        }
     }
 
     app.UseNervIipRequestLocalization();

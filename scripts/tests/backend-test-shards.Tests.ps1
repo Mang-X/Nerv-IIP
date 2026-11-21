@@ -6,11 +6,11 @@
 #   Writes:
 #     - OS temporary directory: backend inventory, workflow, manifest, policy, shard TRX, aggregated selector TRX, class-exclusion coverage and timing-cache fixtures (temporarily)
 #     - OS temporary directory: a PATH dotnet shim, its launcher, manifest and TRX fixtures for the real-PostgreSQL verifier (temporarily)
-#     - artifacts/real-postgres-tests/Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests/** shim TRX evidence (temporarily)
+#     - .ryugi/artifacts/real-postgres-tests/Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests/** shim TRX evidence (temporarily)
 #     - backend/tests/Nerv.IIP.Testing.Tests/TemporaryDockerLookalikes-*.cs (temporarily)
-#     - artifacts/backend-test-shards-collision-*.cs selector-collision fixture (temporarily)
-#     - artifacts/shard-fixture-*.slnf rearranged solution filters (temporarily)
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/backend-test-shards-collision-*.cs selector-collision fixture (temporarily)
+#     - .ryugi/artifacts/shard-fixture-*.slnf rearranged solution filters (temporarily)
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Removes every temporary project, Docker-lookalike source, workflow, manifest, policy, TRX, timing-cache, solution filter and collision fixture in finally
 #   Requires:
@@ -22,9 +22,9 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 
-$manifestPath = Join-Path $repoRoot 'scripts/backend-test-shards.json'
-$validatorPath = Join-Path $repoRoot 'scripts/verify-backend-test-shards.ps1'
-$policyPath = Join-Path $repoRoot 'scripts/test-evidence-policy.json'
+$manifestPath = Join-Path $repoRoot 'scripts/config/backend-test-shards.json'
+$validatorPath = Join-Path $repoRoot 'scripts/checks/verify-backend-test-shards.ps1'
+$policyPath = Join-Path $repoRoot 'scripts/config/test-evidence-policy.json'
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $temporaryBackendInventory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-inventory-{0}" -f [Guid]::NewGuid().ToString('N'))
 $temporaryEmptyBackendInventory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-empty-backend-inventory-{0}" -f [Guid]::NewGuid().ToString('N'))
@@ -43,10 +43,10 @@ $shimRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-
 $temporaryPolicyPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-policy-{0}.json" -f [Guid]::NewGuid().ToString('N'))
 $temporaryManifestPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-manifest-{0}.json" -f [Guid]::NewGuid().ToString('N'))
 # The validator resolves policy sourcePath against the repository root, so the collision fixture
-# must live inside the repo. artifacts/ is gitignored.
-$temporaryCollisionRelativePath = "artifacts/backend-test-shards-collision-{0}.cs" -f [Guid]::NewGuid().ToString('N')
+# must live inside the repo. .ryugi/artifacts/ is gitignored.
+$temporaryCollisionRelativePath = ".ryugi/artifacts/backend-test-shards-collision-{0}.cs" -f [Guid]::NewGuid().ToString('N')
 $temporaryCollisionSourcePath = Join-Path $repoRoot $temporaryCollisionRelativePath
-$runnerPath = Join-Path $repoRoot 'scripts/run-backend-test-shard.ps1'
+$runnerPath = Join-Path $repoRoot 'scripts/ci/run-backend-test-shard.ps1'
 $diagnosticsPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardDiagnostics.ps1'
 $selectorAssertionsPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardSelectors.ps1'
 $timingAssertionsPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardTimings.ps1'
@@ -879,7 +879,8 @@ $excludedSelectors = @(
 # #4172 GatewayRedisCacheInvalidationTests 的 3 条真实双 Gateway HTTP/Redis 用例增加 1 个类 selector；96 + 1 = 97。
 # #4289 MRP 完整输入来源的新库证明新增 1 个方法 selector；97 + 1 = 98。
 # #4357 WMS 两类、#4353 IIoT 一类与 #4352 DemandPlanning 一方法 selector 合流；98 + 2 + 1 + 1 = 102。
-Assert-Contract ($excludedSelectors.Count -eq 102) '所有已排除的真实依赖测试选择器必须显式分类。'
+# 移除退役播种服务的 12 个真实依赖排除选择器，余 90 个。
+Assert-Contract ($excludedSelectors.Count -eq 90) '所有已排除的真实依赖测试选择器必须显式分类。'
 Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]('Nerv.IIP.Business.Erp.Web.Tests.OperationLaborSettlementRedisCapTransportTests'))) 'The ERP operation-labor Redis/CAP class must be excluded from the fast shard and owned by the Redis/CAP lane.'
 foreach ($selector in @('Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresConcurrencyTests', 'Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresContinuationTests', 'Nerv.IIP.Business.Quality.Web.Tests.PeriodicInspectionPostgresMigrationTests')) {
     Assert-Contract ([Collections.Generic.HashSet[string]]::new([string[]]@($excludedSelectors), [StringComparer]::Ordinal).Contains([string]$selector)) "The Quality periodic-inspection PostgreSQL class '$selector' must be excluded from the fast shard and owned by the real PostgreSQL lane."
@@ -919,7 +920,7 @@ Assert-Contract ([string]::Equals([string](((Get-NervStringsSorted -Values @($bu
 # heavy lane 的 filter 里，也不留 skipped 记录。选择器**总数不变**（3 条类级换 3 条方法级），
 # 所以上面那条 87 的断言不动——这三条断言钉的是形状，不是数量。
 $classExclusionNarrowedToMethod = @{
-    'business-gateway' = @(
+    'business-core-b' = @(
         @{ Class = 'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests'
            Method = 'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Device_disabled_consumer_durably_blocks_pm_generation_on_postgres' }
     )
@@ -1260,7 +1261,7 @@ Assert-Contract ($aggregateMissingDirectoryText.Contains("found no executed test
 Assert-Contract (-not $aggregateMissingDirectoryText.Contains('Cannot find path', [StringComparison]::Ordinal)) "The missing-directory failure must not be a bare Get-ChildItem ItemNotFoundException; observed: $aggregateMissingDirectoryText"
 
 # --- #3283 B1 / B3：生产调用点的**行为**覆盖 -----------------------------------------------------
-# 上面全部是库函数的单元对照。它们一条也不约束 `scripts/verify-backend-real-postgres-tests.ps1`
+# 上面全部是库函数的单元对照。它们一条也不约束 `scripts/ci/verify-backend-real-postgres-tests.ps1`
 # 那一行怎么读证据——#3283 复审 B1 实测：把调用点整段改回 pre-PR 写法，全套契约测试 EXIT=0 全绿，
 # 唯一的绑定是一条 `$source.Contains('Get-BackendTestShardSelectorTrxResults')` 子串断言，而**同文件的
 # 一句中文注释自己就满足它**（配对变异：改回调用点 + 保留注释 ⇒ 绿；改回调用点 + 抹掉注释 ⇒ 红）。
@@ -1288,11 +1289,11 @@ Assert-Contract (-not $aggregateMissingDirectoryText.Contains('Cannot find path'
 #   3. 真 TRX 带 `<TestDefinitions>` / `<UnitTest id>` / `testId`，shim 的**不带**。当前读法只用
 #      `testName` + `outcome`，所以覆盖是完整的；但同仓 FullChainTestLane.ps1 / PostgresTestLane.ps1
 #      走的是 `testId → TestMethod` 映射，**若将来本函数改成那种读法，这套夹具会太薄而假绿**。
-$realPostgresVerifyPath = Join-Path $repoRoot 'scripts/verify-backend-real-postgres-tests.ps1'
+$realPostgresVerifyPath = Join-Path $repoRoot 'scripts/ci/verify-backend-real-postgres-tests.ps1'
 $shimSelector = 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests'
 $shimIdentityOne = "$shimSelector.Initializer_failure_drops_database_and_redacts_diagnostics"
 $shimIdentityTwo = "$shimSelector.Parallel_databases_are_isolated_initialized_and_removed"
-$shimSelectorResultsDirectory = Join-Path $repoRoot (Join-Path 'artifacts/real-postgres-tests' $shimSelector)
+$shimSelectorResultsDirectory = Join-Path $repoRoot (Join-Path '.ryugi/artifacts/real-postgres-tests' $shimSelector)
 $shimBinDirectory = Join-Path $shimRoot 'bin'
 $shimLogicPath = Join-Path $shimRoot 'dotnet-shim.ps1'
 $shimLauncherPath = Join-Path $shimRoot 'launch-real-postgres-verify.ps1'
@@ -1435,7 +1436,7 @@ Set-Content -LiteralPath $shimManifestPath -NoNewline -Value @"
       "id": "real-postgres",
       "policyLane": "postgres",
       "owner": "opt-in real PostgreSQL verification",
-      "ownerScript": "scripts/verify-backend-real-postgres-tests.ps1",
+      "ownerScript": "scripts/ci/verify-backend-real-postgres-tests.ps1",
       "projects": []
     }
   ]
@@ -1752,11 +1753,11 @@ finally {
 $selectorSweep = Get-NervOrdinalComparisonFindings -ScriptPath $selectorAssertionsPath -DisplayName 'BackendTestShardSelectors.ps1'
 Assert-Contract ($selectorSweep.Findings.Count -eq 0) "scripts/lib/BackendTestShardSelectors.ps1 must compare identifiers ordinally (#1509):`n  $(@($selectorSweep.Findings) -join "`n  ")"
 $runnerSweep = Get-NervOrdinalComparisonFindings -ScriptPath $runnerPath -DisplayName 'run-backend-test-shard.ps1'
-Assert-Contract ($runnerSweep.Findings.Count -eq 0) "scripts/run-backend-test-shard.ps1 must compare shard identity ordinally (#1512):`n  $(@($runnerSweep.Findings) -join "`n  ")"
+Assert-Contract ($runnerSweep.Findings.Count -eq 0) "scripts/ci/run-backend-test-shard.ps1 must compare shard identity ordinally (#1512):`n  $(@($runnerSweep.Findings) -join "`n  ")"
 $timingSweep = Get-NervOrdinalComparisonFindings -ScriptPath $timingAssertionsPath -DisplayName 'BackendTestShardTimings.ps1'
 Assert-Contract ($timingSweep.Findings.Count -eq 0) "scripts/lib/BackendTestShardTimings.ps1 must compare timing identities ordinally (#1512):`n  $(@($timingSweep.Findings) -join "`n  ")"
 $validatorSweep = Get-NervOrdinalComparisonFindings -ScriptPath $validatorPath -DisplayName 'verify-backend-test-shards.ps1'
-Assert-Contract ($validatorSweep.Findings.Count -eq 0) "scripts/verify-backend-test-shards.ps1 must compare shard-governance identifiers ordinally (#1512):`n  $(@($validatorSweep.Findings) -join "`n  ")"
+Assert-Contract ($validatorSweep.Findings.Count -eq 0) "scripts/checks/verify-backend-test-shards.ps1 must compare shard-governance identifiers ordinally (#1512):`n  $(@($validatorSweep.Findings) -join "`n  ")"
 $aggregateAssertionEquality = '-not [string]::Equals($aggregateRun.Replace("`r`n", "`n").TrimEnd(), $expectedAggregateRun.Replace("`r`n", "`n").TrimEnd(), [StringComparison]::Ordinal)'
 $validatorSource = [IO.File]::ReadAllText($validatorPath)
 Assert-Contract ([regex]::Matches($validatorSource, [regex]::Escape($aggregateAssertionEquality)).Count -eq 1) 'The aggregate selected/skipped contract must use explicit ordinal equality after line-ending normalization.'
@@ -1809,7 +1810,8 @@ try {
     foreach ($libraryName in @('ScriptAutomation.ps1', 'BackendTestShardSelectors.ps1')) {
         Copy-Item -LiteralPath (Join-Path $repoRoot "scripts/lib/$libraryName") -Destination (Join-Path $mutatedScripts "lib/$libraryName")
     }
-    $mutatedRunner = Join-Path $mutatedScripts 'run-backend-test-shard.ps1'
+    [IO.Directory]::CreateDirectory((Join-Path $mutatedScripts 'ci')) | Out-Null
+    $mutatedRunner = Join-Path $mutatedScripts 'ci/run-backend-test-shard.ps1'
     $runnerSource = [IO.File]::ReadAllText($runnerPath)
     $ordinalLookup = '[string]::Equals([string]$_.id, $ShardId, [StringComparison]::Ordinal)'
     Assert-Contract ([regex]::Matches($runnerSource, [regex]::Escape($ordinalLookup)).Count -eq 1) 'Runner lookup mutation must target exactly one production call site.'
@@ -2035,7 +2037,7 @@ try {
             @{
                 Name = 'raw-artifact-upload'
                 Pattern = '(?m)^(\s+)path: \$\{\{ steps\.collect-shard-evidence\.outputs\.evidence-path \}\}'
-                Replacement = '$1path: artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1'
+                Replacement = '$1path: .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1'
                 Expected = 'must upload only the collector-published redacted evidence path'
             },
             @{
@@ -2063,7 +2065,7 @@ try {
         Assert-Contract ($evidenceValidation.Message.Contains($evidenceMutation.Expected)) "Structured workflow validation must reject the '$($evidenceMutation.Name)' evidence mutation."
     }
 
-    $policy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
+    $policy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json') -Raw | ConvertFrom-Json
     foreach ($rule in @($policy.rules)) {
         if ([string]::Equals([string]([string] $rule.requiredLane), [string]('postgres'), [StringComparison]::Ordinal)) {
             $rule.testIdentities = @()
@@ -2101,7 +2103,7 @@ try {
     Assert-Contract (-not $wrongShardDirectorySelector.Passed) 'Relocating the Inventory directory PostgreSQL selector to a non-owning fast shard must fail shard governance.'
     Assert-Contract ($wrongShardDirectorySelector.Message.Contains($directoryFinding, [StringComparison]::Ordinal)) 'Relocating the Inventory directory PostgreSQL selector must report the complete direct Docker finding for its owning shard.'
 
-    $directoryPolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
+    $directoryPolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json') -Raw | ConvertFrom-Json
     # #1561 之后目录类的身份拆为 Docker 夹具 / directory external，#2228 再拆出 line-side external。
     # 只删其中一条，类选择器仍能经其余规则解析成功，变异就失去鉴别力；因此把覆盖该类的三条规则
     # 一并删掉，验证"选择器无处解析"这条不变量。
@@ -2189,7 +2191,7 @@ try {
     $collisionMethod = $collisionSelector.Substring($collisionSelector.LastIndexOf('.', [StringComparison]::Ordinal) + 1)
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $temporaryCollisionSourcePath) | Out-Null
     Set-Content -LiteralPath $temporaryCollisionSourcePath -NoNewline -Value "public sealed class Fixture { public void $collisionMethod() { } public void ${collisionMethod}Extra() { } }"
-    $collisionPolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
+    $collisionPolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json') -Raw | ConvertFrom-Json
     $collisionSourceIds = @($collisionPolicy.rules | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@(@($_.testIdentities)), [StringComparer]::Ordinal).Contains([string]($collisionSelector)) } | ForEach-Object { [string] $_.sourceId })
     foreach ($collisionSource in @($collisionPolicy.sources)) {
         if ([Collections.Generic.HashSet[string]]::new([string[]]@($collisionSourceIds), [StringComparer]::OrdinalIgnoreCase).Contains([string]([string] $collisionSource.id))) {
@@ -2224,7 +2226,7 @@ finally {
     Remove-Item -LiteralPath $executionTrxDirectory -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $aggregateTrxDirectory -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $shimRoot -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath (Join-Path $repoRoot 'artifacts/real-postgres-tests/Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests') -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $repoRoot '.ryugi/artifacts/real-postgres-tests/Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests') -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryPolicyPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryManifestPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryCollisionSourcePath -Force -ErrorAction SilentlyContinue
@@ -2241,8 +2243,8 @@ finally {
 # ---------------------------------------------------------------------------------------------
 . (Join-Path $repoRoot 'scripts/lib/BackendTestShardTimings.ps1')
 
-$balanceScript = Join-Path $repoRoot 'scripts/report-backend-test-shard-balance.ps1'
-$timingUpdateScript = Join-Path $repoRoot 'scripts/update-backend-test-shard-timings.ps1'
+$balanceScript = Join-Path $repoRoot 'scripts/ci/report-backend-test-shard-balance.ps1'
+$timingUpdateScript = Join-Path $repoRoot 'scripts/ci/update-backend-test-shard-timings.ps1'
 Assert-Contract (Test-Path -LiteralPath $balanceScript -PathType Leaf) 'The report-only shard balance entry point is missing.'
 Assert-Contract (Test-Path -LiteralPath $timingUpdateScript -PathType Leaf) 'The shard timing cache refresher is missing.'
 
@@ -2317,7 +2319,7 @@ $timingFixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-shar
 try {
     New-Item -ItemType Directory -Path $timingFixtureRoot -Force | Out-Null
     $absentFallback = Join-Path $timingFixtureRoot 'no-such-snapshot.json'
-    $snapshot = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-baseline.json') -Raw | ConvertFrom-Json
+    $snapshot = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/config/test-evidence-baseline.json') -Raw | ConvertFrom-Json
     $allObservations = @(
         foreach ($row in @(Get-NervShardTimingRowsFromEvidenceSummary -Summary $snapshot)) {
             [pscustomobject]@{ runId = 'fixture-run-1'; assembly = [string] $row.assembly; lane = [string] $row.lane; elapsedMilliseconds = [double] $row.elapsedMilliseconds }
@@ -2372,7 +2374,7 @@ try {
     # coverage drift that is worth knowing about and worthless as a gate.
     $fallbackBalance = Invoke-GovernedScript -ScriptPath $balanceScript -Name 'shard-balance-committed-fallback' -Arguments @(
         '-TimingCachePath', (Join-Path $timingFixtureRoot 'no-such-cache.json'),
-        '-FallbackEvidencePath', (Join-Path $repoRoot 'scripts/test-evidence-baseline.json'),
+        '-FallbackEvidencePath', (Join-Path $repoRoot 'scripts/config/test-evidence-baseline.json'),
         '-NoRefresh'
     )
     Assert-Contract ($fallbackBalance.Passed) 'The balance report must fall back to the committed snapshot without failing.'
@@ -2399,7 +2401,7 @@ try {
     $newProjectBalance = Invoke-GovernedScript -ScriptPath $balanceScript -Name 'shard-balance-new-test-project' -Arguments @(
         '-ManifestPath', $newProjectManifestPath,
         '-TimingCachePath', (Join-Path $timingFixtureRoot 'no-such-cache.json'),
-        '-FallbackEvidencePath', (Join-Path $repoRoot 'scripts/test-evidence-baseline.json'),
+        '-FallbackEvidencePath', (Join-Path $repoRoot 'scripts/config/test-evidence-baseline.json'),
         '-NoRefresh'
     )
     Assert-Contract ($newProjectBalance.Passed) 'Adding a backend test project must not turn the shard balance report red; a coverage gap is report-only by construction.'
@@ -2463,7 +2465,7 @@ try {
     # test. Which project that is stays *derived* rather than pinned: pinning it to a shard id is
     # how the neighbouring lane-attribution fixture once went silently vacuous when MAN-669 PR-A
     # moved an exclusion to another shard.
-    $evidencePolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
+    $evidencePolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json') -Raw | ConvertFrom-Json
     $policyLaneToHeavyLane = @{}
     foreach ($heavyLane in @($manifest.heavyLanes)) { $policyLaneToHeavyLane[[string] $heavyLane.policyLane] = [string] $heavyLane.id }
 
@@ -2562,7 +2564,7 @@ try {
     Assert-Contract (@($receiver.projects) -contains $movedProject -and -not (@($donor.projects) -contains $movedProject)) 'The rearrangement fixture must actually move a project between shards.'
     Assert-Contract ((@($receiver.excludedTestLanes) -contains $donorExtraLane) -and -not (@($donor.excludedTestLanes) -contains $donorExtraLane)) "The rearrangement fixture must move heavy lane '$donorExtraLane' with the project that requires it, otherwise it never reaches the excludedTestLanes coupling point."
 
-    $fullTimings = Get-NervShardTimingLookup -CachePath (Join-Path $timingFixtureRoot 'no-such-cache.json') -FallbackEvidencePath (Join-Path $repoRoot 'scripts/test-evidence-baseline.json')
+    $fullTimings = Get-NervShardTimingLookup -CachePath (Join-Path $timingFixtureRoot 'no-such-cache.json') -FallbackEvidencePath (Join-Path $repoRoot 'scripts/config/test-evidence-baseline.json')
 
     # What a rearrangement must not do is **lose a key**: an assembly must resolve to the same timing
     # key, and that key to the same measurement, whichever shard happens to hold it.
@@ -2884,17 +2886,17 @@ try {
         $fileName = "shard-fixture-{0}-{1}.slnf" -f ([string] $Shard.id), ([Guid]::NewGuid().ToString('N'))
         $filterPath = Join-Path $Directory $fileName
         Set-Content -LiteralPath $filterPath -NoNewline -Value ([pscustomobject]@{
-            solution = [pscustomobject]@{ path = '../backend/Nerv.IIP.sln'; projects = $projects }
+            solution = [pscustomobject]@{ path = '../../backend/Nerv.IIP.sln'; projects = $projects }
         } | ConvertTo-Json -Depth 10)
         return "$RepositoryRelativeDirectory/$fileName"
     }
 
-    $fixtureFilterDirectory = Join-Path $repoRoot 'artifacts'
+    $fixtureFilterDirectory = Join-Path $repoRoot '.ryugi/artifacts'
     New-Item -ItemType Directory -Path $fixtureFilterDirectory -Force | Out-Null
     $fixtureFilterPaths = [System.Collections.Generic.List[string]]::new()
     try {
         foreach ($shard in @($donor, $receiver)) {
-            $relativeFilter = New-ShardFixtureSolutionFilter -Shard $shard -Directory $fixtureFilterDirectory -RepositoryRelativeDirectory 'artifacts'
+            $relativeFilter = New-ShardFixtureSolutionFilter -Shard $shard -Directory $fixtureFilterDirectory -RepositoryRelativeDirectory '.ryugi/artifacts'
             [void] $fixtureFilterPaths.Add((Join-Path $repoRoot $relativeFilter))
             $shard.solutionFilter = $relativeFilter
         }
@@ -3019,7 +3021,7 @@ try {
             [Parameter(Mandatory)] [string] $Lane
         )
 
-        $probePolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
+        $probePolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json') -Raw | ConvertFrom-Json
         $probePolicy.rules = @(@($probePolicy.rules) + @($QuarantineRule))
         return @(
             Get-NervStringsSorted -Values @(Get-NervTestEvidenceViolations -Records @() -Policy $probePolicy -SelectedLanes @($Lane) -RunnerOs 'Linux' |

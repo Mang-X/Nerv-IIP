@@ -1,6 +1,6 @@
 # ERP 销售订单到 DemandPlanning 需求桥
 
-本文只描述 ERP SalesOrder 生命周期到 DemandPlanning `DemandSource` 的**当前事实所有权、事件契约语义、版本收敛和预测冲减边界**。演示 seed、真实跨进程验证、脚本预算和诊断操作见 [`../../runbooks/erp-sales-order-demand-planning.md`](../../runbooks/erp-sales-order-demand-planning.md)；M2-L 清理前的混合正文冻结于 [`../../reports/m2-l-sales-order-to-demand-planning-pre-clean-2026-09-07.md`](../../reports/m2-l-sales-order-to-demand-planning-pre-clean-2026-09-07.md)。
+本文只描述 ERP SalesOrder 生命周期到 DemandPlanning `DemandSource` 的**当前事实所有权、事件契约语义、版本收敛和预测冲减边界**。演示 seed、真实跨进程验证、脚本预算和诊断操作见 [`../../runbooks/erp-sales-order-demand-planning.md`](../../runbooks/erp-sales-order-demand-planning.md)。
 
 ## 事实所有权
 

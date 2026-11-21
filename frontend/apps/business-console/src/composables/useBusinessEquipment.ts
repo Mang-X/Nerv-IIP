@@ -24,13 +24,13 @@ import {
   acquirePendingBusinessIntent,
   completePendingBusinessIntent,
   peekPendingBusinessIntent,
+  useScopeBoundListResponse,
 } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery } from '@pinia/colada'
 import { refDebounced } from '@vueuse/core'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
-import { useScopeBoundListResponse } from './useScopeBoundListResponse'
 import { useBusinessMasterDataResources } from './useBusinessMasterData'
 import { hasBusinessContext, refetchWithBusinessContext } from './businessContextBinding'
 import { executeLifecycleAction } from './lifecycleAction'

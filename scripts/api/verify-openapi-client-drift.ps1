@@ -1,0 +1,171 @@
+# Script-Governance:
+#   Category: verify, generate
+#   SideEffects:
+#     - Exports PlatformGateway and BusinessGateway OpenAPI snapshots
+#     - Regenerates the frontend api-client package
+#     - Checks tracked and untracked OpenAPI/api-client drift with git
+#   Writes:
+#     - .ryugi/artifacts/script-logs/**
+#     - .ryugi/artifacts/openapi-export/**
+#     - frontend/node_modules/**
+#     - frontend/packages/api-client/openapi/*.v1.json
+#     - frontend/packages/api-client/src/generated/**
+#   Cleanup:
+#     - Stops managed nested script or pnpm process trees when they time out through ScriptAutomation.ps1
+#   Requires:
+#     - PowerShell 7
+#     - .NET SDK 10
+#     - Node.js 26.13.1
+#     - pnpm 12.21.0
+
+# M2-I split authorities for this verifier:
+# - Current architecture: docs/architecture/integration/api-contracts.md
+# - Governance: docs/governance/api/contracts-and-codegen.md
+# - Operational runbook: docs/runbooks/api-codegen.md
+
+[CmdletBinding()]
+param(
+    [switch] $SkipRegenerate,
+
+    [switch] $SkipFrontendInstall
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$root = Resolve-Path (Join-Path $PSScriptRoot '../..')
+Set-Location $root
+. (Join-Path $root 'scripts/lib/ScriptAutomation.ps1')
+
+$diffPathspecs = @(
+    'frontend/packages/api-client/openapi/*.v1.json',
+    'frontend/packages/api-client/src/generated'
+)
+
+$statusPathspecs = @(
+    'frontend/packages/api-client/openapi',
+    'frontend/packages/api-client/src/generated'
+)
+
+function Get-GitOutputText {
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $Arguments,
+
+        [Parameter(Mandatory)]
+        [string] $Name
+    )
+
+    $result = Invoke-NativeCommandOutput `
+        -Command 'git' `
+        -Arguments $Arguments `
+        -WorkingDirectory $root `
+        -TimeoutSeconds 120 `
+        -Name $Name
+
+    return $result.Stdout
+}
+
+if (-not $SkipRegenerate) {
+    Invoke-PwshScript `
+        -ScriptPath (Join-Path $root 'scripts/api/export-gateway-openapi.ps1') `
+        -WorkingDirectory $root `
+        -TimeoutSeconds 900 `
+        -Name 'openapi-drift-export-gateway-openapi' | Out-Null
+
+    # pnpm 以 frontend/ 为工作目录调用（corepack 按“进程 cwd 就近 package.json 的
+    # packageManager 字段”解析 pnpm 版本；Invoke-Pnpm 的 Resolve-PnpmInvocation 已在
+    # helper 层统一兜底，这里显式传入保持自文档化）。
+    $frontendDirectory = Join-Path $root 'frontend'
+
+    if (-not $SkipFrontendInstall) {
+        Invoke-Pnpm `
+            -Arguments @('install', '--frozen-lockfile', '--config.confirmModulesPurge=false') `
+            -WorkingDirectory $frontendDirectory `
+            -TimeoutSeconds 900 `
+            -Name 'openapi-drift-frontend-install' | Out-Null
+    }
+
+    Invoke-Pnpm `
+        -Arguments @('generate:api') `
+        -WorkingDirectory $frontendDirectory `
+        -TimeoutSeconds 600 `
+        -Name 'openapi-drift-frontend-generate-api' | Out-Null
+}
+else {
+    Write-Diagnostic 'Skipping OpenAPI export and api-client generation; checking current working tree only.'
+}
+
+$status = Get-GitOutputText `
+    -Arguments (@('status', '--short', '--untracked-files=all', '--') + $statusPathspecs) `
+    -Name 'openapi-drift-git-status'
+
+if ([string]::IsNullOrWhiteSpace($status)) {
+    Invoke-NativeCommandWithTimeout `
+        -Command 'git' `
+        -Arguments (@('diff', '--exit-code', '--') + $diffPathspecs) `
+        -WorkingDirectory $root `
+        -TimeoutSeconds 120 `
+        -Name 'openapi-drift-git-diff-exit-code' | Out-Null
+
+    Invoke-NativeCommandWithTimeout `
+        -Command 'git' `
+        -Arguments (@('diff', '--cached', '--exit-code', '--') + $diffPathspecs) `
+        -WorkingDirectory $root `
+        -TimeoutSeconds 120 `
+        -Name 'openapi-drift-git-diff-cached-exit-code' | Out-Null
+
+    Write-Host 'OpenAPI/api-client drift check passed.'
+    exit 0
+}
+
+Write-Host 'OpenAPI/api-client drift detected.'
+Write-Host ''
+Write-Host 'Changed files:'
+Write-Host $status.TrimEnd()
+
+$unstagedDiff = Get-GitOutputText `
+    -Arguments (@('diff', '--') + $diffPathspecs) `
+    -Name 'openapi-drift-git-diff'
+
+if (-not [string]::IsNullOrWhiteSpace($unstagedDiff)) {
+    Write-Host ''
+    Write-Host 'Unstaged diff:'
+    Write-Host $unstagedDiff.TrimEnd()
+}
+
+$stagedDiff = Get-GitOutputText `
+    -Arguments (@('diff', '--cached', '--') + $diffPathspecs) `
+    -Name 'openapi-drift-git-diff-cached'
+
+if (-not [string]::IsNullOrWhiteSpace($stagedDiff)) {
+    Write-Host ''
+    Write-Host 'Staged diff:'
+    Write-Host $stagedDiff.TrimEnd()
+}
+
+try {
+    Invoke-NativeCommandWithTimeout `
+        -Command 'git' `
+        -Arguments (@('diff', '--exit-code', '--') + $diffPathspecs) `
+        -WorkingDirectory $root `
+        -TimeoutSeconds 120 `
+        -Name 'openapi-drift-git-diff-exit-code' | Out-Null
+}
+catch {
+    Write-Diagnostic -Level 'WARN' -Message $_.Exception.Message
+}
+
+try {
+    Invoke-NativeCommandWithTimeout `
+        -Command 'git' `
+        -Arguments (@('diff', '--cached', '--exit-code', '--') + $diffPathspecs) `
+        -WorkingDirectory $root `
+        -TimeoutSeconds 120 `
+        -Name 'openapi-drift-git-diff-cached-exit-code' | Out-Null
+}
+catch {
+    Write-Diagnostic -Level 'WARN' -Message $_.Exception.Message
+}
+
+throw 'OpenAPI/api-client drift check failed. Run scripts/api/export-gateway-openapi.ps1 and pnpm -C frontend generate:api, then commit the resulting snapshot and generated client changes.'

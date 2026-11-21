@@ -6,7 +6,11 @@ test.describe('采购与盘点长标识可读性（#3940）', () => {
     test(`${width}：完整文本留在所属列，横向滚动后盘点操作可达`, async ({ page }, testInfo) => {
       const operator = {
         ...principal,
-        permissionCodes: ['business.erp.procurement.read', 'business.inventory.counts.manage'],
+        permissionCodes: [
+          'business.erp.procurement.read',
+          'business.inventory.counts.manage',
+          'business.masterdata.products.read',
+        ],
       }
       await page.setViewportSize({ width, height: 900 })
       await page.addInitScript(
@@ -570,6 +574,10 @@ test.describe('MPS 物料与工厂可读性（#4471）', () => {
     permissionCodes: [
       'business.planning.demands.read',
       'business.planning.mps.read',
+      'business.planning.mps.manage',
+      'business.planning.mps.release',
+      'business.masterdata.products.read',
+      'business.masterdata.resources.read',
       'business.planning.mrp.read',
       'business.planning.suggestions.manage',
     ],

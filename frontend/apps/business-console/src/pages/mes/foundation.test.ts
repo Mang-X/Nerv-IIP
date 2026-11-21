@@ -1,13 +1,16 @@
 import { mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { routes } from 'vue-router/auto-routes'
 
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import FoundationPage from './foundation.vue'
 
 const skuRead = reactive({ error: null as unknown })
 const refreshSkus = vi.fn()
-const query = reactive({ workCenterCode: 'WC-TUB-01' })
-vi.mock('vue-router', () => ({ useRoute: () => ({ query }) }))
 
 // 生产准备检查只要能说清「缺什么、去哪补」（#3771）：后端给出的 fixHint 必须出现在页面上，
 // 否则用户只看到「缺费率」却不知道去哪个菜单维护。
@@ -77,17 +80,38 @@ vi.mock('@/composables/useMesPickerCatalog', () => ({
 }))
 
 describe('生产准备检查页', () => {
-  beforeEach(() => {
+  let router: ReturnType<typeof createRouter>
+
+  beforeEach(async () => {
     skuRead.error = null
     refreshSkus.mockReset()
+    router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/mes/foundation?workCenterCode=WC-TUB-01')
   })
 
-  it('物料无权限时解释边界，离开再进入仍不冒充暂无物料', () => {
+  function mountPage(
+    permissionCodes: string[] = [
+      P.mesFoundationRead,
+      P.masterDataProductsRead,
+      P.erpFinanceRead,
+      P.erpFinanceManage,
+    ],
+  ) {
+    const pinia = createPinia()
+    useAuthStore(pinia).principal = { principalId: 'planner', permissionCodes }
+    return mount(FoundationPage, {
+      global: {
+        plugins: [pinia, router],
+        stubs: { BusinessLayout: { template: '<div><slot /></div>' } },
+      },
+    })
+  }
+
+  it('物料无权限时解释边界，离开再进入仍不冒充暂无物料', async () => {
     skuRead.error = { response: { status: 403 } }
     for (let visit = 0; visit < 2; visit++) {
-      const wrapper = mount(FoundationPage, {
-        global: { stubs: { BusinessLayout: { template: '<div><slot /></div>' } } },
-      })
+      await router.push('/mes/foundation?workCenterCode=WC-TUB-01')
+      const wrapper = mountPage()
       expect(wrapper.text()).toContain('当前角色没有物料读取权限，请联系管理员确认岗位授权。')
       expect(wrapper.get('#foundation-sku').attributes('disabled')).toBeDefined()
       expect(wrapper.text()).not.toContain('重试读取物料')
@@ -98,9 +122,7 @@ describe('生产准备检查页', () => {
 
   it('物料网络失败可重试，恢复合法空数据后显示真实空目录', async () => {
     skuRead.error = new TypeError('Failed to fetch')
-    const wrapper = mount(FoundationPage, {
-      global: { stubs: { BusinessLayout: { template: '<div><slot /></div>' } } },
-    })
+    const wrapper = mountPage()
     expect(wrapper.text()).toContain('网络异常')
     const retry = wrapper.findAll('button').find((button) => button.text() === '重试读取物料')!
     await retry.trigger('click')
@@ -121,9 +143,7 @@ describe('生产准备检查页', () => {
   it.each(['detail', 'message'])('物料读取失败保留服务端中文 %s 原因', (field) => {
     const reason = '物料目录暂不可用，请确认数据同步状态。'
     skuRead.error = { status: 422, [field]: reason }
-    const wrapper = mount(FoundationPage, {
-      global: { stubs: { BusinessLayout: { template: '<div><slot /></div>' } } },
-    })
+    const wrapper = mountPage()
     expect(wrapper.text()).toContain(reason)
     expect(wrapper.text()).not.toContain('物料读取失败，请重试读取物料。')
     expect(wrapper.findAll('button').some((button) => button.text() === '重试读取物料')).toBe(true)
@@ -131,9 +151,7 @@ describe('生产准备检查页', () => {
   })
 
   it('每条问题都带出去哪里补的提示', () => {
-    const wrapper = mount(FoundationPage, {
-      global: { stubs: { BusinessLayout: { template: '<div><slot /></div>' } } },
-    })
+    const wrapper = mountPage()
 
     const alert = wrapper.text()
     expect(alert).toContain('当前没有生效的成本费率')
@@ -147,9 +165,7 @@ describe('生产准备检查页', () => {
     expect(text).toContain('在「制造执行 ▸ 计划与工单 ▸ 派工看板」给这些工序派工时选择设备')
   })
   it('同类阻塞聚合、保留数量明细并带原检查范围进入维护', () => {
-    const wrapper = mount(FoundationPage, {
-      global: { stubs: { BusinessLayout: { template: '<div><slot /></div>' } } },
-    })
+    const wrapper = mountPage([P.mesFoundationRead, P.erpFinanceRead])
     expect(wrapper.findAll('[role="alert"] li')).toHaveLength(0)
     expect(wrapper.text()).toContain('查看 1 个对象明细')
     const link = wrapper.get('a[href^="/erp/finance/work-center-cost-rates?"]')
@@ -158,6 +174,12 @@ describe('生产准备检查页', () => {
     expect(url.searchParams.get('foundationWorkCenterCode')).toBe('WC-TUB-01')
     expect(wrapper.text()).toContain('员工与技能')
     expect(wrapper.text()).not.toContain('可以开工')
+  })
+  it('仅有准备检查读取权限时保留缺项和处理提示', () => {
+    const wrapper = mountPage([P.mesFoundationRead])
+    expect(wrapper.text()).toContain('当前没有生效的成本费率')
+    expect(wrapper.text()).toContain('为该工作中心新增费率修订')
+    expect(wrapper.find('a[href^="/erp/finance/"]').exists()).toBe(false)
   })
   it('多个工作中心只展示一类摘要，保留全部对象与各自入口', () => {
     const issue = readiness.areas[0]!.issues[0]! as {
@@ -173,9 +195,7 @@ describe('生产准备检查页', () => {
       referenceId: 'WC-TUB-02',
       message: '第二工作中心缺费率',
     })
-    const wrapper = mount(FoundationPage, {
-      global: { stubs: { BusinessLayout: { template: '<div><slot /></div>' } } },
-    })
+    const wrapper = mountPage()
     expect(wrapper.text()).toContain('查看 2 个对象明细')
     expect(wrapper.findAll('summary')).toHaveLength(2)
     expect(wrapper.text()).toContain('第二工作中心缺费率')
@@ -195,9 +215,7 @@ describe('生产准备检查页', () => {
       blockingIssues: [],
       warningIssues: [],
     })
-    const wrapper = mount(FoundationPage, {
-      global: { stubs: { BusinessLayout: { template: '<div><slot /></div>' } } },
-    })
+    const wrapper = mountPage()
     expect(wrapper.text()).toContain('基础准备就绪')
     expect(wrapper.text()).toContain('工序能否开工仍以工序开工检查为准')
     expect(wrapper.text()).not.toContain('可以开工')
@@ -213,9 +231,7 @@ describe('生产准备检查页', () => {
       fixHint: '请财务开立覆盖今天的会计期间',
     }
     readiness.areas[0]!.issues.push(issue)
-    const wrapper = mount(FoundationPage, {
-      global: { stubs: { BusinessLayout: { template: '<div><slot /></div>' } } },
-    })
+    const wrapper = mountPage([P.mesFoundationRead, P.erpFinanceManage])
     const url = new URL(
       wrapper.get('a[href^="/erp/finance/accounting-period-open?"]').attributes('href')!,
       'http://localhost',

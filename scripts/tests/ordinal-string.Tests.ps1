@@ -14,20 +14,31 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 . (Join-Path $repoRoot 'scripts/lib/OrdinalString.ps1')
 
-# 复合键必须保留组件边界，且不能让保留标记与内容碰撞。
-$pipeOnLeft = Get-NervStringCompositeKey -Components @('a|b', 'c')
-$pipeOnRight = Get-NervStringCompositeKey -Components @('a', 'b|c')
-if ([string]::Equals($pipeOnLeft, $pipeOnRight, [StringComparison]::Ordinal)) {
-    throw 'Get-NervStringCompositeKey must distinguish component boundaries.'
+$softHyphen = [char]0x00AD
+$ordinalPair = @(Get-NervStringsSorted -Values @('Passed', "Passed$softHyphen") -Comparer ([StringComparer]::Ordinal) -Unique)
+$ignoreCasePair = @(Get-NervStringsSorted -Values @('Passed', 'passed', "Passed$softHyphen") -Comparer ([StringComparer]::OrdinalIgnoreCase) -Unique)
+if ($ordinalPair.Count -ne 2 -or $ignoreCasePair.Count -ne 2) {
+    throw 'Ordinal sorting must retain identifiers separated by U+00AD, including when folding case.'
 }
 
-$zeroComponents = Get-NervStringCompositeKey -Components @()
-$nullComponent = Get-NervStringCompositeKey -Components @($null)
-$emptyComponent = Get-NervStringCompositeKey -Components @('')
-if ([string]::Equals($zeroComponents, $nullComponent, [StringComparison]::Ordinal) -or
-    [string]::Equals($zeroComponents, $emptyComponent, [StringComparison]::Ordinal) -or
-    [string]::Equals($nullComponent, $emptyComponent, [StringComparison]::Ordinal)) {
-    throw 'Get-NervStringCompositeKey must distinguish zero, null, and empty-string components.'
+$compositeCases = @(
+    [pscustomobject]@{ Name = 'empty-sequence'; Components = [object[]]@() },
+    [pscustomobject]@{ Name = 'single-empty'; Components = [object[]]@('') },
+    [pscustomobject]@{ Name = 'single-null'; Components = [object[]]@($null) },
+    [pscustomobject]@{ Name = 'pipe-on-left'; Components = [object[]]@('a|b', 'c') },
+    [pscustomobject]@{ Name = 'pipe-on-right'; Components = [object[]]@('a', 'b|c') },
+    [pscustomobject]@{ Name = 'plain'; Components = [object[]]@('alpha') },
+    [pscustomobject]@{ Name = 'trailing-empty'; Components = [object[]]@('alpha', '') },
+    [pscustomobject]@{ Name = 'reserved-combination-a'; Components = [object[]]@('alpha\|beta', 'gamma') },
+    [pscustomobject]@{ Name = 'reserved-combination-b'; Components = [object[]]@('alpha\', '|beta', 'gamma') }
+)
+$compositeKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+foreach ($case in $compositeCases) {
+    $key = Get-NervStringCompositeKey -Components $case.Components
+    if (-not $compositeKeys.Add($key)) { throw "Composite key case '$($case.Name)' collided with an earlier string sequence." }
+}
+if (-not [string]::Equals((Get-NervStringCompositeKey -Components @('lane', 'assembly', 'test')), 'lane|assembly|test', [StringComparison]::Ordinal)) {
+    throw 'Ordinary composite keys must retain their historical bytes.'
 }
 
 $nonStringRejected = $false

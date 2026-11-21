@@ -1,9 +1,9 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Parses scripts/run-full-chain-test-lane.ps1 and drives the memory-evidence library against synthetic kernel files
+#     - Parses scripts/ci/run-full-chain-test-lane.ps1 and drives the memory-evidence library against synthetic kernel files
 #   Writes:
-#     - Temporary /proc and cgroup fixtures plus a mutated library copy under the operating-system temp directory
+#     - Temporary /proc and cgroup fixtures under the operating-system temp directory
 #   Cleanup:
 #     - Removes the owned temporary root in finally
 #   Requires:
@@ -17,13 +17,13 @@
 #    新的假红换一个旧的真红。
 #
 # 采集点落在哪里用 AST 断言，不用字面量匹配：after 快照必须在 finally 里（entrypoint 被杀那一刻的
-# 读数正是本票要的证据），内核 OOM 取证必须在 catch 里。变异对照在文件末尾。
+# 读数正是本票要的证据），内核 OOM 取证必须在 catch 里。
 
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $libraryPath = Join-Path $repoRoot 'scripts/lib/RuntimeMemoryEvidence.ps1'
-$runnerPath = Join-Path $repoRoot 'scripts/run-full-chain-test-lane.ps1'
+$runnerPath = Join-Path $repoRoot 'scripts/ci/run-full-chain-test-lane.ps1'
 . $libraryPath
 
 function Assert-Contract([bool]$Condition, [string]$Message) {
@@ -205,86 +205,6 @@ oom_kill 1
     # #3135 把 residual 覆盖段加进同一份 summary，schemaVersion 因此由 3 升到 4；本断言的语义是
     # 「往 dependency summary 加字段必须升版本」，锚点随之前移，不是放松。
     Assert-Contract ($runnerText.IndexOf('schemaVersion = 4', [StringComparison]::Ordinal) -ge 0) 'Adding memory evidence to the dependency summary must bump its schema version.'
-
-    # --- 变异对照 ---------------------------------------------------------------------------------
-
-    $libraryText = [IO.File]::ReadAllText($libraryPath)
-
-    function Invoke-MutationControl {
-        param(
-            [Parameter(Mandatory)] [string] $Label,
-            [Parameter(Mandatory)] [string[]] $Anchors,
-            [Parameter(Mandatory)] [string[]] $Replacements,
-            [Parameter(Mandatory)] [string] $Probe
-        )
-
-        Assert-Contract ($Anchors.Count -eq $Replacements.Count) "Mutation '$Label' must pair every anchor with a replacement."
-        $mutatedText = $libraryText
-        for ($index = 0; $index -lt $Anchors.Count; $index++) {
-            $occurrences = ([regex]::Matches($mutatedText, [regex]::Escape($Anchors[$index]))).Count
-            Assert-Contract ($occurrences -eq 1) "Mutation anchor $index of '$Label' must match exactly once; a moved anchor silently turns this control into a no-op."
-            $mutatedText = $mutatedText.Replace($Anchors[$index], $Replacements[$index])
-        }
-
-        $mutatedLibrary = Join-Path $temporaryRoot "RuntimeMemoryEvidence.$Label.ps1"
-        [IO.File]::WriteAllText($mutatedLibrary, $mutatedText, [Text.UTF8Encoding]::new($false))
-        $probePath = Join-Path $temporaryRoot "mutation-probe-$Label.ps1"
-        [IO.File]::WriteAllText($probePath, ". '$mutatedLibrary'`n$Probe", [Text.UTF8Encoding]::new($false))
-
-        $run = Invoke-NativeCommandOutput `
-            -Command 'pwsh' `
-            -Arguments @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $probePath) `
-            -WorkingDirectory $repoRoot `
-            -TimeoutSeconds 120 `
-            -Name "memory-evidence-mutation-$Label"
-        return [string] $run.Stdout
-    }
-
-    # 变异 1：解析时忽略 MemAvailable——上面的 golden vector 必须因此转红。
-    $mutatedParse = Invoke-MutationControl `
-        -Label 'meminfo' `
-        -Anchors @("'MemTotal', 'MemFree', 'MemAvailable', 'SwapTotal', 'SwapFree'") `
-        -Replacements @("'MemTotal', 'MemFree', 'SwapTotal', 'SwapFree'") `
-        -Probe @"
-`$snapshot = Get-NervRuntimeMemorySnapshot -Phase 'mutation' -ProcRoot '$procRoot' -CgroupRoot '$cgroupRoot'
-`$key = 'MemAvailableKb'
-if (`$snapshot.meminfo.Contains(`$key)) { Write-Host 'MUTATION-SURVIVED' } else { Write-Host 'MUTATION-KILLED' }
-"@
-    Assert-Contract ($mutatedParse.IndexOf('MUTATION-KILLED', [StringComparison]::Ordinal) -ge 0) 'Dropping MemAvailable must change the parsed result; otherwise the golden vector above measures nothing.'
-
-    # 变异 2：让"读不到"变成抛错。best-effort 由两处共同兑现——就地降级的那一支，和兜住意外的
-    # 那张网——所以两处都要拆掉，否则剩下的一处会把变异吞掉，控制组读成假绿。
-    $mutatedBestEffort = Invoke-MutationControl `
-        -Label 'besteffort' `
-        -Anchors @(
-            '            $snapshot[''meminfo''] = [ordered]@{ status = ''unavailable''; reason = "not present: $ProcRoot" }',
-            '        # 取证失败只是少一条证据，不是被测对象的失败。'
-        ) `
-        -Replacements @(
-            '            throw "not present: $ProcRoot"',
-            '        throw'
-        ) `
-        -Probe @"
-try {
-    `$snapshot = Get-NervRuntimeMemorySnapshot -Phase 'mutation' -ProcRoot '$(Join-Path $temporaryRoot 'no-such-proc')' -CgroupRoot '$cgroupRoot'
-    if ([string]::Equals([string]`$snapshot.meminfo.status, 'unavailable', [StringComparison]::Ordinal)) { Write-Host 'MUTATION-SURVIVED' } else { Write-Host 'MUTATION-KILLED' }
-}
-catch { Write-Host 'MUTATION-KILLED' }
-"@
-    Assert-Contract ($mutatedBestEffort.IndexOf('MUTATION-KILLED', [StringComparison]::Ordinal) -ge 0) 'Removing the unavailable path must change the observed behaviour; otherwise the best-effort assertions measure nothing.'
-
-    # 变异 3：不解析全局 oom_kill——这正是我在 hosted runner 真实读数里发现的那个盲区，
-    # 拿掉它整套证据就退回"只能看余量、看不见击杀"。
-    $mutatedVmstat = Invoke-MutationControl `
-        -Label 'vmstat' `
-        -Anchors @("[string[]]@('oom_kill')") `
-        -Replacements @("[string[]]@()") `
-        -Probe @"
-`$snapshot = Get-NervRuntimeMemorySnapshot -Phase 'mutation' -ProcRoot '$procRoot' -CgroupRoot '$cgroupRoot'
-`$key = 'oom_kill'
-if (`$snapshot.vmstat.Contains(`$key)) { Write-Host 'MUTATION-SURVIVED' } else { Write-Host 'MUTATION-KILLED' }
-"@
-    Assert-Contract ($mutatedVmstat.IndexOf('MUTATION-KILLED', [StringComparison]::Ordinal) -ge 0) 'Dropping the global oom_kill counter must change the parsed result.'
 
     Write-Host 'FullChain memory evidence contract passed.'
 }

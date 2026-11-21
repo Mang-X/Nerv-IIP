@@ -49,8 +49,10 @@ import {
   completePendingBusinessIntent,
   peekPendingBusinessIntent,
   type PendingBusinessIntentScope,
+  useListResponseState,
+  useScopeBoundListResponse,
 } from '@nerv-iip/business-core'
-import { useMutation, useQuery } from '@pinia/colada'
+import { useMutation, useQuery, type EntryKey } from '@pinia/colada'
 import { computed, reactive, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
 import {
@@ -60,10 +62,10 @@ import {
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useAuthStore } from '@/stores/auth'
 import {
-  useListResponseState,
-  useScopeBoundListResponse,
-} from '@/composables/useScopeBoundListResponse'
-import { useWmsWorkScope, type WmsWorkScopeCatalogKind } from '@/composables/useWmsWorkScope'
+  useWmsSessionKey,
+  useWmsWorkScope,
+  type WmsWorkScopeCatalogKind,
+} from '@/composables/useWmsWorkScope'
 
 const DEFAULT_TAKE = 100
 const TASK_PAGE_SIZE = 20
@@ -274,10 +276,14 @@ function useWmsTenantScope() {
 
 function useAuthorizedWmsScope(catalog: WmsWorkScopeCatalogKind) {
   const scope = useWmsWorkScope(catalog)
-  const responseScopeKey = computed(
-    () =>
-      `${scope.organizationId.value.trim()}:${scope.environmentId.value.trim()}:${scope.scopeKey.value ?? ''}`,
+  const responseScopeKey = computed(() =>
+    JSON.stringify([scope.sessionKey.value, scope.scopeKey.value]),
   )
+  const bindQuery = <T extends { key: EntryKey }>(options: T) => ({
+    ...options,
+    key: [...options.key, scope.sessionKey.value],
+    enabled: scope.hasSelection.value,
+  })
   const tenantQuery = () => ({
     organizationId: scope.organizationId.value,
     environmentId: scope.environmentId.value,
@@ -300,6 +306,7 @@ function useAuthorizedWmsScope(catalog: WmsWorkScopeCatalogKind) {
     hasScope: scope.hasSelection,
     selectedScopeKey: scope.scopeKey,
     responseScopeKey,
+    bindQuery,
     tenantQuery,
     scopeQuery,
     scopeQueryWithPaging,
@@ -316,16 +323,17 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
   const loadingMore = shallowRef(false)
   let activeLoadMoreToken: symbol | undefined
 
-  const ordersQuery = useQuery(() => ({
-    ...listBusinessConsoleWmsInboundOrdersQueryOptions({
-      query: {
-        ...scope.scopeQueryWithPaging(filters),
-        ...optionalQuery('locationCode', filters.locationCode),
-        ...optionalQuery('lotNo', filters.lotNo),
-      },
-    }),
-    enabled: scope.hasScope.value,
-  }))
+  const ordersQuery = useQuery(() =>
+    scope.bindQuery(
+      listBusinessConsoleWmsInboundOrdersQueryOptions({
+        query: {
+          ...scope.scopeQueryWithPaging(filters),
+          ...optionalQuery('locationCode', filters.locationCode),
+          ...optionalQuery('lotNo', filters.lotNo),
+        },
+      }),
+    ),
+  )
   const currentResponse = useScopeBoundListResponse(
     () => ordersQuery.data.value,
     scope.responseScopeKey,
@@ -460,6 +468,7 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
     scopeKind: scope.scopeKind,
     scopeId: scope.scopeId,
     scopeKey: scope.selectedScopeKey,
+    sessionKey: scope.sessionKey,
     scopeOptions: scope.scopeOptions,
     selectedScopeLabel: scope.selectedScopeLabel,
     scopeReady: scope.hasScope,
@@ -576,16 +585,17 @@ export function useWmsOutbound(initialFilters: Partial<WmsTaskFilters> = {}) {
   const loadingMore = shallowRef(false)
   let activeLoadMoreToken: symbol | undefined
 
-  const ordersQuery = useQuery(() => ({
-    ...listBusinessConsoleWmsOutboundOrdersQueryOptions({
-      query: {
-        ...scope.scopeQueryWithPaging(filters),
-        ...optionalQuery('locationCode', filters.locationCode),
-        ...optionalQuery('lotNo', filters.lotNo),
-      },
-    }),
-    enabled: scope.hasScope.value,
-  }))
+  const ordersQuery = useQuery(() =>
+    scope.bindQuery(
+      listBusinessConsoleWmsOutboundOrdersQueryOptions({
+        query: {
+          ...scope.scopeQueryWithPaging(filters),
+          ...optionalQuery('locationCode', filters.locationCode),
+          ...optionalQuery('lotNo', filters.lotNo),
+        },
+      }),
+    ),
+  )
   const currentResponse = useScopeBoundListResponse(
     () => ordersQuery.data.value,
     scope.responseScopeKey,
@@ -1013,16 +1023,17 @@ function useWmsWarehouseTasks(
   const actionUnconfirmed = computed(() => unconfirmedTaskAction.value !== undefined)
   const pendingTaskIntentScopes = new Map<string, PendingBusinessIntentScope>()
 
-  const tasksQuery = useQuery(() => ({
-    ...queryOptionsFactory({
-      query: {
-        ...scope.scopeQueryWithPaging(filters),
-        ...optionalQuery('locationCode', filters.locationCode),
-        ...optionalQuery('lotNo', filters.lotNo),
-      },
-    }),
-    enabled: scope.hasScope.value,
-  }))
+  const tasksQuery = useQuery(() =>
+    scope.bindQuery(
+      queryOptionsFactory({
+        query: {
+          ...scope.scopeQueryWithPaging(filters),
+          ...optionalQuery('locationCode', filters.locationCode),
+          ...optionalQuery('lotNo', filters.lotNo),
+        },
+      }),
+    ),
+  )
   const currentResponse = useScopeBoundListResponse(
     () => tasksQuery.data.value,
     scope.responseScopeKey,
@@ -1416,6 +1427,7 @@ export function useWmsReceivingLines(
   selectedScope: WmsReceivingLinesScope,
 ) {
   const scope = useWmsTenantScope()
+  const sessionKey = useWmsSessionKey()
   const orderNo = computed(() => toValue(inboundOrderNo).trim())
   const scopeKind = computed(() => toValue(selectedScope.scopeKind)?.trim() ?? '')
   const scopeId = computed(() => toValue(selectedScope.scopeId)?.trim() ?? '')
@@ -1426,12 +1438,12 @@ export function useWmsReceivingLines(
       scopeId.value.length > 0 &&
       orderNo.value.length > 0,
   )
-  const responseScopeKey = computed(
-    () => `${scope.scopeKey.value}:${scopeKind.value}:${scopeId.value}:${orderNo.value}`,
+  const responseScopeKey = computed(() =>
+    JSON.stringify([sessionKey.value, scopeKind.value, scopeId.value, orderNo.value]),
   )
 
-  const linesQuery = useQuery(() => ({
-    ...listBusinessConsoleWmsReceivingQualityGatesQueryOptions({
+  const linesQuery = useQuery(() => {
+    const options = listBusinessConsoleWmsReceivingQualityGatesQueryOptions({
       query: {
         ...scope.scopeQuery(),
         scopeKind: scopeKind.value,
@@ -1441,9 +1453,9 @@ export function useWmsReceivingLines(
         inboundOrderNo: orderNo.value,
         includeNotRequired: true,
       },
-    }),
-    enabled: enabled.value,
-  }))
+    })
+    return { ...options, key: [...options.key, sessionKey.value], enabled: enabled.value }
+  })
 
   const currentResponse = useScopeBoundListResponse(
     () => linesQuery.data.value,
@@ -1458,12 +1470,7 @@ export function useWmsReceivingLines(
   const envelope = computed(
     () => currentResponse.value as BusinessConsoleWmsReceivingQualityGateListEnvelope | undefined,
   )
-  // 服务端已精确按单过滤；客户端再按精确单号防御性过滤（不改变结果，纯保险）。
-  const lines = computed<ReceivingQualityGateLine[]>(() =>
-    listItems<ReceivingQualityGateLine>(envelope.value).filter(
-      (l) => (l.inboundOrderNo ?? '') === orderNo.value,
-    ),
-  )
+  const lines = computed(() => listItems<ReceivingQualityGateLine>(envelope.value))
   const total = computed(() => listTotal(envelope.value))
   // 完整性 fail-closed：入库单按域约束必有 ≥1 行，故要求 total>0 且已取回行数覆盖 total
   // （未被 take 截断）。total=0/空集（精确单号未命中、投影暂不一致、数据异常）判为不完整，
@@ -1500,15 +1507,16 @@ export function useWmsCount(initialFilters: Partial<WmsTaskFilters> = {}) {
   const loadingMore = shallowRef(false)
   let activeLoadMoreToken: symbol | undefined
 
-  const executionsQuery = useQuery(() => ({
-    ...listBusinessConsoleWmsCountExecutionsQueryOptions({
-      query: {
-        ...scope.scopeQueryWithPaging(filters),
-        ...optionalQuery('locationCode', filters.locationCode),
-      },
-    }),
-    enabled: scope.hasScope.value,
-  }))
+  const executionsQuery = useQuery(() =>
+    scope.bindQuery(
+      listBusinessConsoleWmsCountExecutionsQueryOptions({
+        query: {
+          ...scope.scopeQueryWithPaging(filters),
+          ...optionalQuery('locationCode', filters.locationCode),
+        },
+      }),
+    ),
+  )
   const currentResponse = useScopeBoundListResponse(
     () => executionsQuery.data.value,
     scope.responseScopeKey,

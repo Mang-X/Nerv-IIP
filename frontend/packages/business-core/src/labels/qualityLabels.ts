@@ -128,8 +128,7 @@ export function inspectionRecordResultLabel(value: string | null | undefined): s
  *
  * 特性没有全域目录读面（只能挂在检验方案下按 `inspectionPlanId` 取），所以 SPC 结果这类
  * **只带 `characteristicCode`、不带 name** 的读面在页面上会直接印出 `damping-force` 这样的
- * 英文码。这张表镜像 Quality 种子 `WorldHistoryQualitySpec.InspectionPlans` 的特性清单，
- * 让「特性」列在没有方案上下文时也能说人话。
+ * 英文码。以下常见特性的显示别名适用于缺少方案上下文的读面。
  *
  * 注意：`UCL` / `LCL` / `Cpk` / `X-bar` / `Pareto` 是 SPC 通用术语，**保留英文不译**，不进本表。
  */

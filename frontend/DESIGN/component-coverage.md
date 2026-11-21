@@ -1,8 +1,10 @@
 ---
 # Component Coverage & Gaps — 组件覆盖度与缺口
 # 四场景矩阵视图（PC / 移动 / 一体机 / 大屏）+ 对照 Arco Design (PC) 与 TDesign Mobile。
-# 配套规范见 motion-interaction.md；本表回答"哪个表面有、还缺什么、先补什么"。
+# 本表回答"哪个表面有、还缺什么、先补什么"。
 ---
+
+查找当前组件用法和示例，请进入[独立设计文档站](../apps/design-system/docs/components/overview.md)。
 
 ## 四场景覆盖矩阵
 
@@ -89,7 +91,7 @@
 | 快捷    | `NvMobileGrid`（宫格） · `NvFab`（悬浮按钮） · `NvScanBar`（扫码） · `NvNumberKeyboard`（数字键盘） |
 
 > 缺口不是遗漏，是**尚无该场景需求**：例如一体机大量复用 PC 件而不重复造轮子；大屏几乎不做表单，
-> 故无 Checkbox/Slider/DatePicker 的大屏版。补任何新件先走 [ADR 0020 §1.2 命名判定](https://github.com/Mang-X/Nerv-IIP/blob/main/docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md) 定场景归属与名字。
+> 故无 Checkbox/Slider/DatePicker 的大屏版。补任何新件先走 [ADR 0020 §1.2 命名判定](https://github.com/Mang-X/Nerv-IIP/blob/main/docs/adr/2026-07-07-0020-nvui-naming-token-namespaces-and-style-isolation.md) 定场景归属与名字。
 
 ## 经验总结（这轮重构沉淀）
 

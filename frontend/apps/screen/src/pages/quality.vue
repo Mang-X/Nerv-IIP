@@ -76,15 +76,17 @@ const hotBacklogKey = computed(() => {
   return ls.length ? ls.reduce((a, b) => (b.backlog > a.backlog ? b : a)).key : ''
 })
 
-// —— 不良率趋势（今日 12h / 近 30 天）：红色虚线为红线阈值（经 --nv-scr-indigo 局部
-//    重映射复用 TrendChart 的 plan 线，组件零改动）——
+// 不良率趋势的虚线表示过程检管控限。
 const trendRange = ref<string | number>('12h')
 const TREND_RANGES = [
   { label: '今日 12h', value: '12h' },
   { label: '近 30 天', value: '30d' },
 ]
-// 分层曲线用字面量色 —— --nv-scr-indigo 在本页被局部重映射成红线色，变量会被污染
-const LAYER_COLORS: Record<string, string> = { iqc: '#5fbf7a', fqc: '#8b9be6' }
+const LAYER_COLORS: Record<string, string> = {
+  iqc: 'var(--nv-scr-quality-iqc)',
+  fqc: 'var(--nv-scr-indigo)',
+}
+const FACTORY_RATE_COLOR = 'var(--nv-scr-quality-factory-rate)'
 const trendData = computed(() => {
   const b = board.value
   const focus = ipqc.value
@@ -100,12 +102,12 @@ const trendData = computed(() => {
       xLabels: b.trend30.labels.filter((_, i) => i % 5 === 0),
       // 对比序列：全厂汇总（参考）+ 来料/成品层
       series: [
-        { label: '全厂', color: 'rgba(200, 214, 235, 0.65)', data: b.trend30.ratePct },
+        { label: '全厂', color: FACTORY_RATE_COLOR, data: b.trend30.ratePct },
         ...b.layers
           .filter((l) => l.key !== 'ipqc')
           .map((l) => ({
             label: l.code,
-            color: LAYER_COLORS[l.key] ?? '#8b9be6',
+            color: LAYER_COLORS[l.key] ?? LAYER_COLORS.fqc,
             data: l.trend30,
           })),
       ],
@@ -118,7 +120,7 @@ const trendData = computed(() => {
     xLabels: b.trend12h.labels.filter((_, i) => i % 2 === 0),
     // 与 30 天视图同构：全厂（参考）+ 来料/成品 —— 两个 tab 一致的分层读法
     series: [
-      { label: '全厂', color: 'rgba(200, 214, 235, 0.65)', data: b.trend12h.factory },
+      { label: '全厂', color: FACTORY_RATE_COLOR, data: b.trend12h.factory },
       { label: 'IQC', color: LAYER_COLORS.iqc, data: b.trend12h.iqc },
       { label: 'FQC', color: LAYER_COLORS.fqc, data: b.trend12h.fqc },
     ],
@@ -255,15 +257,9 @@ const trendPin = computed(() => {
             </div>
           </NvScreenScrollArea>
           <div class="qn-summary">
-            <span
-              >待评审 <b class="amber">{{ statusCount.review }}</b></span
-            >
-            <span
-              >处置中 <b class="cyan">{{ statusCount.disposing }}</b></span
-            >
-            <span
-              >待验证 <b class="green">{{ statusCount.verify }}</b></span
-            >
+            <span>待评审 <b class="amber">{{ statusCount.review }}</b></span>
+            <span>处置中 <b class="cyan">{{ statusCount.disposing }}</b></span>
+            <span>待验证 <b class="green">{{ statusCount.verify }}</b></span>
             <span class="qn-flex" />
             <span :class="{ 'qn-sla-bad': board.kpis.overdueNcr > 0 }">
               超期 &gt;{{ NCR_SLA_HOURS }}h · {{ board.kpis.overdueNcr }} 条
@@ -287,6 +283,7 @@ const trendPin = computed(() => {
             :series="trendData.series"
             actual-label="过程检"
             plan-label="管控限"
+            plan-color="var(--nv-scr-quality-limit)"
             :ranges="TREND_RANGES"
           />
 
@@ -296,16 +293,12 @@ const trendPin = computed(() => {
             </template>
             <div class="qb-tri-in">
               <div v-for="l in board.layers" :key="l.key" class="qt-cell">
-                <dt class="qt-t">
-                  {{ l.label }} <small>{{ l.code }}</small>
-                </dt>
+                <dt class="qt-t">{{ l.label }} <small>{{ l.code }}</small></dt>
                 <div class="qt-v" :class="worstLayerKey === l.key ? 'warn' : 'ok'">
                   <span class="qb-num">{{ l.passRate }}<small>%</small></span>
                   <i class="qb-score-line" aria-hidden="true" />
                 </div>
-                <p class="qt-sub">
-                  合格 <b>{{ l.lotsPassed }}</b> / {{ l.lotsDone }} 批
-                </p>
+                <p class="qt-sub">合格 <b>{{ l.lotsPassed }}</b> / {{ l.lotsDone }} 批</p>
                 <p class="qt-sub2">
                   件不良
                   <b class="qt-def" :class="{ bad: l.pieceDefectPct > l.limitPct }">
@@ -357,9 +350,7 @@ const trendPin = computed(() => {
             <div class="qb-ib">
               <div v-for="l in board.layers" :key="l.key" class="ib-group">
                 <div class="ib-top">
-                  <span class="ib-label"
-                    >{{ l.label }} <small>{{ l.code }}</small></span
-                  >
+                  <span class="ib-label">{{ l.label }} <small>{{ l.code }}</small></span>
                   <b class="ib-n" :class="{ warn: hotBacklogKey === l.key && l.backlog > 0 }">
                     {{ l.backlog }}<small> 项</small>
                   </b>
@@ -592,12 +583,12 @@ const trendPin = computed(() => {
     grid-template-rows: auto 1fr;
   }
   .qb-trend {
+    --nv-scr-quality-limit: rgba(239, 90, 99, 0.9);
+    --nv-scr-quality-iqc: #5fbf7a;
+    --nv-scr-quality-factory-rate: rgba(200, 214, 235, 0.65);
+
     min-height: 0;
     min-width: 0;
-  }
-  /* 红线阈值线：把 TrendChart 的 plan（indigo）在本面板内重映射为红（组件零改动） */
-  .qb-trend {
-    --nv-scr-indigo: rgba(239, 90, 99, 0.9);
   }
 
   /* —— NCR 看板 —— */

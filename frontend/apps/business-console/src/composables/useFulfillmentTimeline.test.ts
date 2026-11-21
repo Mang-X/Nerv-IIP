@@ -76,7 +76,13 @@ describe('normalizeScope', () => {
 describe('matchDemandSource', () => {
   const items: BusinessConsoleDemandSourceItem[] = [
     { demandSourceId: 'd1', sourceReference: 'SO-OTHER', sourceStatus: 'active' },
-    { demandSourceId: 'd2', sourceReference: 'SO-1', sourceStatus: 'released' },
+    { demandSourceId: 'forecast', sourceReference: 'SO-1', demandType: 'forecast' },
+    {
+      demandSourceId: 'd2',
+      sourceReference: 'SO-1',
+      sourceStatus: 'released',
+      demandType: 'sales-order',
+    },
   ]
 
   it('matches by sourceReference === salesOrderNo', () => {

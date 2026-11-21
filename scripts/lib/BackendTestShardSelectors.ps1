@@ -131,7 +131,7 @@ function Get-BackendTestShardPolicyIdentityMatches {
         the evidence key. The padding is rejected at the boundary instead, by
         Test-NervTestEvidencePolicy in scripts/lib/TestEvidence.ps1, so a padded identity is a
         policy-schema failure rather than a silently mismatching one, and this function never has to
-        guess which spelling was meant. scripts/test-evidence-policy.json has zero padded identities
+        guess which spelling was meant. scripts/config/test-evidence-policy.json has zero padded identities
         today, so the ruling changes no existing row.
 
         Each clause above has an executable counterpart in scripts/tests/backend-test-shards.Tests.ps1
@@ -350,7 +350,7 @@ function Get-BackendTestShardSelectorTrxResults {
           * **期望集本身对不对** —— 下游拿来对账的 `DiscoveredTests` 是**同一次运行自己产出的**自洽
             基线（`--list-tests` 的结果），不是外部冻结基线。因此这条链路证得到「每个被发现的用例都跑
             过了」，证**不到**「该跑的用例一个没少」：discovery 少发现一条，执行侧也会跟着少一条，两边
-            一致地错。真正的冻结基线在 scripts/test-evidence-policy.json 的 `testIdentities` /
+            一致地错。真正的冻结基线在 scripts/config/test-evidence-policy.json 的 `testIdentities` /
             `expectedRuntimeTestCount` 上，由 shard 治理门禁与各服务的 *PostgresProfileIdentityTests
             承担，不在本函数的覆盖面内。
 

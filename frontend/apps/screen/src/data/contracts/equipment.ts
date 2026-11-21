@@ -121,6 +121,12 @@ export interface InspectionRow {
 }
 
 export interface EquipmentOverview {
+  /** 本次快照覆盖的设备少于实际台账时显示覆盖范围。 */
+  workCenterCode?: string
+  coverageNotes?: string[]
+  rosterTotal?: number
+  failures?: Record<string, string>
+  partialEvents?: boolean
   factoryId: string
   counts: StateCounts
   devices: DeviceCell[]
@@ -150,6 +156,8 @@ export interface DeviceParamSeries {
 export type DeviceParamsTick = Record<string, DeviceParamBrief[]>
 
 export interface DeviceDetail {
+  failures?: Record<string, string>
+  partialRecords?: boolean
   device: DeviceCell
   workCenterName: string
   managerName: string

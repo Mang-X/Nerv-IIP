@@ -37,34 +37,13 @@ public sealed class ErpDemoSeedStartupGovernanceTests
     }
 
     [Theory]
-    [InlineData("Production")]
-    [InlineData("Staging")]
-    public void World_history_seed_is_rejected_outside_development(string environmentName)
-    {
-        var configuration = BuildConfiguration(new Dictionary<string, string?>
-        {
-            [WorldHistoryConfiguration.EnabledKey] = "true"
-        });
-
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            ErpDemoSeedStartupGovernance.EnsureDevelopmentOnly(
-                configuration,
-                new TestHostEnvironment(environmentName)));
-
-        Assert.Equal(
-            "LeaderDemo:History:Enabled=true is only allowed for BusinessERP in Development.",
-            exception.Message);
-    }
-
-    [Theory]
     [InlineData("Development")]
     [InlineData("development")]
-    public void Development_keeps_both_demo_seed_switches_usable(string environmentName)
+    public void Development_allows_the_sales_demand_demo_seed(string environmentName)
     {
         var configuration = BuildConfiguration(new Dictionary<string, string?>
         {
             [ErpDemoSeedStartupGovernance.SalesOrderDemandDemoEnabledKey] = "true",
-            [WorldHistoryConfiguration.EnabledKey] = "true"
         });
 
         ErpDemoSeedStartupGovernance.EnsureDevelopmentOnly(configuration, new TestHostEnvironment(environmentName));
@@ -80,7 +59,6 @@ public sealed class ErpDemoSeedStartupGovernanceTests
         var configuration = BuildConfiguration(new Dictionary<string, string?>
         {
             [ErpDemoSeedStartupGovernance.SalesOrderDemandDemoEnabledKey] = configuredValue,
-            [WorldHistoryConfiguration.EnabledKey] = configuredValue
         });
 
         ErpDemoSeedStartupGovernance.EnsureDevelopmentOnly(configuration, new TestHostEnvironment("Production"));
@@ -104,7 +82,6 @@ public sealed class ErpDemoSeedStartupGovernanceTests
     /// </summary>
     [Theory]
     [InlineData("Erp:Seed:SalesOrderDemandDemo:Enabled", "Erp:Seed:SalesOrderDemandDemo:Enabled=true")]
-    [InlineData("LeaderDemo:History:Enabled", "LeaderDemo:History:Enabled=true")]
     public async Task Host_refuses_to_start_outside_development_when_a_demo_seed_switch_is_on(
         string switchKey,
         string expectedMessageFragment)

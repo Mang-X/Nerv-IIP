@@ -16,9 +16,9 @@ public sealed class WalkthroughSeedServiceTests
         Assert.Equal(WalkthroughSeedSpec.SkuCodes.Count, WalkthroughSeedSpec.SkuCodes.Distinct(StringComparer.Ordinal).Count());
 
         await using var db = CreateDbContext();
-        var seed = new WorldBibleSeedService(db);
-        await seed.SeedWalkthroughAsync("org-001", "env-dev");
-        await seed.SeedWalkthroughAsync("org-001", "env-dev");
+        var seed = new WalkthroughSeedService(db);
+        await seed.SeedAsync("org-001", "env-dev");
+        await seed.SeedAsync("org-001", "env-dev");
 
         Assert.Equal(20, await db.Skus.CountAsync());
         Assert.Equal(10, await db.BusinessPartners.CountAsync());

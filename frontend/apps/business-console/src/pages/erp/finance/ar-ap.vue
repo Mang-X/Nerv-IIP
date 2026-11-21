@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useRoute, useRouter } from 'vue-router'
+import { queryText } from '@/components/erp/costRecovery'
 import type {
   BusinessConsoleErpPayableItem,
   BusinessConsoleErpReceivableItem,
@@ -46,7 +48,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import { UNAVAILABLE_TEXT, erpReadState, formatAmount, pickerInvalidClass } from '../shared'
 
@@ -55,6 +57,15 @@ definePage({
 })
 
 const receivables = useErpReceivables()
+const route = useRoute()
+const router = useRouter()
+watch(
+  () => route.query.keyword,
+  () => {
+    receivables.filters.keyword = queryText(route.query, 'keyword') || undefined
+  },
+  { immediate: true },
+)
 const payables = useErpPayables()
 // 客户/供应商与来源单据都从既有读面里选，不再手输编码。
 const { customerOptions, supplierOptions, partnersPending } = useErpPartnerCatalog()
@@ -154,6 +165,13 @@ const payableState = computed(() =>
     emptyHint: '还没有应付账款。采购收货或手工登记后会在这里形成应付。',
   }),
 )
+
+function clearReceivableFilters() {
+  receivables.filters.keyword = ''
+  receivables.filters.status = undefined
+  if (route.query.keyword !== undefined)
+    void router.replace({ query: { ...route.query, keyword: undefined } })
+}
 
 /** 页头两路读数各自独立：一路挂了只说这一路取不到，不把另一路也抹掉。 */
 const headerCount = computed(() => {
@@ -354,7 +372,7 @@ async function submitPayable() {
         <NvInput
           v-model="receivables.filters.keyword"
           class="h-9 w-48"
-          placeholder="应收单号 / 客户"
+          placeholder="应收单号 / 来源单据 / 客户"
           aria-label="应收关键字"
         />
         <NvSelect v-model="receivableStatus">
@@ -391,6 +409,12 @@ async function submitPayable() {
       @update:page="receivablesPaged.page.value = $event"
       @update:page-size="(v) => (receivablesPaged.pageSize.value = String(v))"
     >
+      <template v-if="receivableState.kind === 'filtered'" #empty>
+        <p>{{ receivableState.emptyMessage }}</p>
+        <NvButton size="sm" variant="outline" @click="clearReceivableFilters"
+          >清空应收筛选</NvButton
+        >
+      </template>
       <template #cell-customerCode="{ row }">
         <PartnerNameCell :code="row.customerCode" />
       </template>

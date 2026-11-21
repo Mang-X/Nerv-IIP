@@ -1,6 +1,7 @@
+import { installDocumentTitleSync } from '@nerv-iip/app-shell'
+import { translate } from '@/i18n'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { installDocumentTitleSync } from './document-title'
 
 describe('document title sync', () => {
   beforeEach(() => {
@@ -15,7 +16,7 @@ describe('document title sync', () => {
         { path: '/untitled', component: { template: '<div />' } },
       ],
     })
-    installDocumentTitleSync(router)
+    installDocumentTitleSync(router, translate)
     return router
   }
 

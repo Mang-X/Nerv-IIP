@@ -575,11 +575,8 @@ describe('MES receipts — failed inventory posting retry', () => {
     expect(wrapper.findAll('button').some((b) => b.text().includes('重试'))).toBe(true)
   })
 
-  it('keeps success feedback when the post-create list refresh fails (no contradictory error toast)', async () => {
+  it('登记成功只使用创建操作触发的列表刷新，保持成功回执', async () => {
     reactiveRoute.query = { workOrderId: 'WO-1', skuId: 'FG-1' }
-    receiptState.refreshReceiptRequests = vi.fn(async () => {
-      throw new Error('refresh 500')
-    })
     const wrapper = mountPage()
     await flushPromises()
 
@@ -587,7 +584,7 @@ describe('MES receipts — failed inventory posting retry', () => {
 
     expect(receiptState.createReceiptRequest).toHaveBeenCalledTimes(1)
     expect(notifySpies.success).toHaveBeenCalledTimes(1)
-    // 登记已成功：刷新失败不得再提示「登记失败」，避免矛盾反馈诱导重复提交。
+    expect(receiptState.refreshReceiptRequests).not.toHaveBeenCalled()
     expect(notifySpies.operationFailure).not.toHaveBeenCalled()
   })
 

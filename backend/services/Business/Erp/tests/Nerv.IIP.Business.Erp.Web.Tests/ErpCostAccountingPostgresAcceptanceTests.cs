@@ -114,46 +114,6 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         Assert.Equal(["source_no", "source_type"], await JournalVoucherSourceColumnsAsync(db, quotedSchema));
     }
 
-    /// <summary>
-    /// #3278 / S2：17 个建凭证位点里有 2 处在 <c>WorldHistorySeedService</c>。
-    /// 这一格在真库上跑一次 seed，然后断言 <c>journal_vouchers</c> **整表**没有来源列空值——
-    /// 漏填那 2 处中的任意一处，这里的空值计数就不为 0。
-    ///
-    /// <b>值域边界</b>：本格覆盖的是 seed 的 2 处，不是全部 17 处。
-    /// 「17 处一个不漏」由 <c>JournalVoucher.Post</c> 的不可省略参数在**编译期**保证
-    /// （见 <c>JournalVoucherSourceContractTests</c>），不由本格保证。
-    /// </summary>
-    [ErpCostPostgresFact(Timeout = 180_000)]
-    public async Task PostgreSQL_world_history_seed_leaves_no_voucher_without_a_source_document()
-    {
-        await ErpPostgresLaneDatabase.ResetSchemaAsync();
-        var options = ErpPostgresLaneDatabase.CreateOptions();
-        await using var db = new ApplicationDbContext(options, new NoopMediator());
-        ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
-        await db.Database.MigrateAsync();
-
-        await new WorldHistorySeedService(db).SeedAsync("org-001", "env-dev", new DateOnly(2026, 7, 26), 0.02d);
-
-        await db.Database.OpenConnectionAsync();
-        var quotedSchema = new NpgsqlCommandBuilder().QuoteIdentifier(ErpFacts.Schema);
-        await using var counts = new NpgsqlCommand($"""
-            SELECT count(*) AS total,
-                   count(*) FILTER (WHERE source_type IS NULL OR source_no IS NULL) AS missing,
-                   count(DISTINCT source_type) AS distinct_types
-            FROM {quotedSchema}.journal_vouchers
-            """, (NpgsqlConnection)db.Database.GetDbConnection());
-        await using var reader = await counts.ExecuteReaderAsync();
-        Assert.True(await reader.ReadAsync());
-        var total = reader.GetInt64(0);
-        var missing = reader.GetInt64(1);
-        var distinctTypes = reader.GetInt64(2);
-
-        Assert.True(total > 0, "seed 没有写出任何凭证，这一格就没有量到东西。");
-        Assert.Equal(0L, missing);
-        // 收入凭证与收款凭证必须落成两个不同的来源类型；两处都填成同一个占位串时这里就是 1。
-        Assert.Equal(2L, distinctTypes);
-    }
-
     private static async Task<IReadOnlyList<string>> JournalVoucherSourceColumnsAsync(ApplicationDbContext db, string quotedSchema)
     {
         await using var command = new NpgsqlCommand("""
@@ -530,7 +490,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
     /// <b>失效方向</b>：判据从 <c>Contains</c> 换成**全等**之后，「PG 怎么 deparse」就从无所谓变成了承重的。
     /// 日后 PostgreSQL 大版本若改括号 / 空格 / 转换的写法，这条全等会变成**环境相关的假红**。
     /// ⭐ 但这个方向是 <b>fail-closed</b>——它会在跑的时候大声炸，⛔ 不会静默放过一条被加了豁免的索引；
-    /// 且 lane 已把镜像钉死在 <c>postgres:18</c>。⇒ **接受这个方向**，⛔ 不加容错、⛔ 不做归一化后比较
+    /// 且 lane 已把镜像钉死在 <c>postgres:19</c>。⇒ **接受这个方向**，⛔ 不加容错、⛔ 不做归一化后比较
     /// （做了就等于把「谓词没别的东西」这条判据又还回给模糊匹配）。
     /// </summary>
     private const string ExpectedSourceIndexPredicate = "((source_type IS NOT NULL) AND (source_no IS NOT NULL))";
@@ -1398,6 +1358,95 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             MesOperationActualTimeSettledV2IntegrationEventHandlerForAccumulateMachineOverhead.ConsumerName,
             IntegrationEventDeadLetterStatus.Pending,
             CancellationToken.None)).FailureCode);
+    }
+
+    [ErpCostPostgresFact(Timeout = 30_000)]
+    public async Task PostgreSQL_completion_during_final_material_posting_publishes_capitalization()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var application = $"erp-completion-material-{Guid.CreateVersion7():N}";
+        var connection = new NpgsqlConnectionStringBuilder(ErpPostgresLaneDatabase.ConnectionString)
+            { ApplicationName = application }.ConnectionString;
+        var options = ErpPostgresLaneDatabase.CreateOptions(connection);
+        await using var materialDb = new ApplicationDbContext(options, new NoopMediator());
+        await materialDb.Database.MigrateAsync();
+        var at = new DateTimeOffset(2026, 8, 1, 10, 0, 0, TimeSpan.Zero);
+        var cost = WorkOrderCost.Open("org-001", "env-dev", "WO-001", "FG-001");
+        cost.RecordUncostedReport("RPT-001", false, at);
+        materialDb.WorkOrderCosts.Add(cost);
+        await materialDb.SaveChangesAsync();
+
+        await using var transaction = await materialDb.Database.BeginTransactionAsync();
+        await new PostgreSqlWorkOrderCostMutationLock(materialDb).AcquireAsync(
+            "org-001", "env-dev", "WO-001", CancellationToken.None);
+        // 最后一笔材料持有工单锁，已读取尚未完工的聚合，此时投递完工消息。
+        cost.RecordMaterial("MOVE-001", "RPT-001", "RM-001", 3m, 20m, at);
+        var completed = new WorkOrderCompletedIntegrationEvent(
+            "evt-completed", MesIntegrationEventTypes.WorkOrderCompleted, 1, at,
+            MesIntegrationEventSources.BusinessMes, "WO-001", "WO-001", "org-001", "env-dev", "mes", "completed",
+            new WorkOrderCompletedPayload("WO-001", "FG-001", 1m, 1m, 0m, at, 1, 1));
+        await using var completionDb = new ApplicationDbContext(options, new NoopMediator());
+        var handler = new WorkOrderCompletedIntegrationEventHandlerForCapitalizeCost(
+            completionDb, new InMemoryIntegrationEventDeadLetterStore(), completionDb);
+        var completion = handler.HandleAsync(completed, CancellationToken.None);
+        await WaitForAdvisoryLockWaitersAsync(connection, application, expectedCount: 1, completedWrite: completion);
+        await materialDb.SaveChangesAsync();
+        await transaction.CommitAsync();
+        await completion;
+        await handler.HandleAsync(completed, CancellationToken.None);
+
+        await using var readDb = new ApplicationDbContext(options, new NoopMediator());
+        var stored = await readDb.WorkOrderCosts.SingleAsync();
+        Assert.NotNull(stored.CompletedAtUtc);
+        Assert.Equal(1, stored.ReceivedReportCount);
+        Assert.Equal(1, stored.ReceivedMaterialMovementCount);
+        Assert.True(stored.CapitalizationPublished);
+    }
+
+    [ErpCostPostgresFact(Timeout = 30_000)]
+    public async Task PostgreSQL_material_posting_during_uncommitted_report_is_costed_once()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        var application = $"erp-material-report-{Guid.CreateVersion7():N}";
+        var connection = new NpgsqlConnectionStringBuilder(ErpPostgresLaneDatabase.ConnectionString)
+            { ApplicationName = application }.ConnectionString;
+        var options = ErpPostgresLaneDatabase.CreateOptions(connection);
+        await using var reportDb = new ApplicationDbContext(options, new NoopMediator());
+        await reportDb.Database.MigrateAsync();
+        await using var transaction = await reportDb.Database.BeginTransactionAsync();
+        ((ITransactionUnitOfWork)reportDb).CurrentTransaction = transaction;
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var at = new DateTimeOffset(2026, 8, 1, 10, 0, 0, TimeSpan.Zero);
+        var report = new ProductionReportRecordedIntegrationEvent(
+            "evt-report", MesIntegrationEventTypes.ProductionReportRecorded, 1, at,
+            MesIntegrationEventSources.BusinessMes, "RPT-001", "WO-001", "org-001", "env-dev", "operator", "report-001",
+            new ProductionReportRecordedPayload("RPT-001", "WO-001", "OP-001", "WC-01",
+                null, 1m, 0m, 0m, "pcs", null, at, false, MaterialMovementCount: 1));
+        await new ProductionReportRecordedIntegrationEventHandlerForAccumulateLaborCost(
+            reportDb, deadLetters, reportDb, new PostgreSqlWorkOrderCostMutationLock(reportDb), ErpTestCoding.For(reportDb))
+            .HandleAsync(report, CancellationToken.None);
+
+        await using var stockDb = new ApplicationDbContext(options, new NoopMediator());
+        var movement = new StockMovementPostedIntegrationEvent(
+            "evt-material", InventoryIntegrationEventTypes.StockMovementPosted, 1, at,
+            InventoryIntegrationEventSources.BusinessInventory, "RPT-001", "RPT-001", "org-001", "env-dev", "inventory", "move-001",
+            new StockMovementPostedPayload("MOVE-001", "outbound", InventoryIntegrationEventSources.BusinessMes,
+                "RPT-001", "MIR-001", "mes:production-consumption:001", "RM-001", "kg",
+                "SITE-001", "line-side", "LOT-001", null, "unrestricted", "company", null, -3m, at, 20m, -60m));
+        var consumer = new StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost(
+            stockDb, deadLetters, stockDb, ErpTestCoding.For(stockDb));
+        var posting = consumer.HandleAsync(movement, CancellationToken.None);
+        // 旧实现会直接提交为待匹配；协调后的实现会等待报工提交。两种情况都可观察，无须定时休眠。
+        await WaitForAdvisoryLockWaitersAsync(connection, application, expectedCount: 1, completedWrite: posting);
+        await transaction.CommitAsync();
+        await posting;
+        await consumer.HandleAsync(movement, CancellationToken.None);
+
+        await using var readDb = new ApplicationDbContext(options, new NoopMediator());
+        Assert.Empty(await readDb.PendingMaterialCosts.ToListAsync());
+        var cost = await readDb.WorkOrderCosts.Include(x => x.Details).SingleAsync();
+        Assert.Equal(1, cost.ReceivedMaterialMovementCount);
+        Assert.Equal(60m, cost.MaterialCost);
     }
 
     [ErpCostPostgresFact(Timeout = 30_000)]
@@ -2338,7 +2387,8 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         string connectionString,
         string applicationName,
         int expectedCount,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Task? completedWrite = null)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         // Opening the probe connection is a single operation that can hang, so it keeps its own explicit
@@ -2363,7 +2413,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
         await Eventually.WaitAsync(
             condition: $"{expectedCount} PostgreSQL advisory-lock waiters for {applicationName}",
             observe: async token => Convert.ToInt32(await command.ExecuteScalarAsync(token)),
-            isSatisfied: waitingCount => waitingCount >= expectedCount,
+            isSatisfied: waitingCount => waitingCount >= expectedCount || completedWrite?.IsCompleted == true,
             describe: waitingCount => $"waiters={waitingCount}; expected>={expectedCount}",
             options: new EventuallyOptions(
                 Timeout: TimeSpan.FromSeconds(10),

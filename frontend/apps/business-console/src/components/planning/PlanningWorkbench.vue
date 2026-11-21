@@ -38,6 +38,7 @@ import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSche
 import { useCanScheduleSingleOrder } from '@/composables/useSingleOrderScheduling'
 import {
   inlineErrorMessage,
+  isForbiddenError,
   notifyOperationFailure,
   notifySuccess,
   notifyWarning,
@@ -83,11 +84,18 @@ import {
   RefreshCwIcon,
   XIcon,
 } from '@lucide/vue'
-import { computed, shallowRef, watch } from 'vue'
+import { computed, shallowRef, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useCanReadMaterialDeliveries } from '@/composables/useBusinessPlanningMaterialDeliveries'
+import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { useAuthStore } from '@/stores/auth'
-import { BUSINESS_PERMISSION_CODES } from '@/permissions'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 
+const route = useRoute()
+const sourceOrder = computed(() =>
+  typeof route.query.demandSource === 'string' ? route.query.demandSource.trim() : '',
+)
+const downstreamPage = shallowRef<readonly BusinessConsolePlanningSuggestionItem[]>([])
 const {
   acceptSuggestion,
   activeMrpRun,
@@ -137,13 +145,38 @@ const {
   suggestionsError,
   suggestionsPending,
   downstreamStatuses,
-} = useBusinessPlanning()
-const router = useRouter()
-const route = useRoute()
-const auth = useAuthStore()
-const canReadWorkOrders = computed(() =>
-  (auth.principal?.permissionCodes ?? []).includes(BUSINESS_PERMISSION_CODES.mesWorkOrdersRead),
+} = useBusinessPlanning(
+  () => sourceOrder.value,
+  () => downstreamPage.value,
 )
+const router = useRouter()
+const auth = useAuthStore()
+const hasPermission = (permission: string) =>
+  auth.principal?.permissionCodes?.includes(permission) === true
+const canReadDemands = computed(() => hasPermission(P.planningDemandsRead))
+const canReadMps = computed(() => hasPermission(P.planningMpsRead))
+const canReadMrp = computed(() => hasPermission(P.planningMrpRead))
+const canReadDeliveries = useCanReadMaterialDeliveries()
+const defaultTab = computed(() => {
+  if (canReadDemands.value) return 'demands'
+  if (canReadMps.value) return 'mps'
+  if (canReadMrp.value) return hasPermission(P.planningSuggestionsManage) ? 'suggestions' : 'runs'
+  return ''
+})
+const hasScope = computed(() => hasBusinessContext(runRequest))
+const demandsReady = computed(
+  () => hasScope.value && canReadDemands.value && !demandsPending.value && !demandsError.value,
+)
+const mpsReady = computed(
+  () => hasScope.value && canReadMps.value && !mpsBucketsPending.value && !mpsBucketsError.value,
+)
+const runsReady = computed(
+  () => hasScope.value && canReadMrp.value && !mrpRunsPending.value && !mrpRunsError.value,
+)
+const suggestionsReady = computed(
+  () => runsReady.value && !suggestionsPending.value && !suggestionsError.value,
+)
+const canReadWorkOrders = computed(() => hasPermission(P.mesWorkOrdersRead))
 const orderUrgencies = useOrderUrgencies(
   computed(() => demands.value.map((demand) => demand.sourceReference)),
 )
@@ -163,7 +196,7 @@ function refreshUrgency() {
 
 /**
  * 需求池筛选（GH#1292 第 5 项）：一屏几百条需求此前没有任何查找手段，计划员要找某张销售订单
- * 或某个物料只能肉眼扫。需求池读面是**整表返回、不带关键字/分页参数**，所以筛选在前端做。
+ * 或某个物料只能肉眼扫。普通入口当前在已载入的需求中筛选。
  */
 const demandKeyword = shallowRef('')
 const demandTypeFilter = shallowRef('all')
@@ -179,6 +212,11 @@ const filteredDemands = computed(() => {
   const keyword = demandKeyword.value.trim().toLowerCase()
   const type = demandTypeFilter.value
   return orderedDemands.value.filter((demand) => {
+    if (
+      sourceOrder.value &&
+      (demand.sourceReference !== sourceOrder.value || demand.demandType !== 'sales-order')
+    )
+      return false
     if (type !== 'all' && demand.demandType !== type) return false
     if (!keyword) return true
     // 搜来源单号 / 物料 / 客户 / 工厂：计划员手里通常就是这四个之一。
@@ -209,11 +247,17 @@ watch([demandTypeFilter, demandKeyword], () => {
 })
 
 // 主数据：SKU / 工厂 / 计量单位（Select 显名称、绑定编码，码→名解析复用）。
-const { skus } = useBusinessSkus()
-const { resources: sites } = useBusinessMasterDataResources('site')
-const { resources: units } = useBusinessMasterDataResources('unit-of-measure')
+const canReadResources = () =>
+  auth.principal?.permissionCodes?.includes(P.masterDataResourcesRead) === true
+const { skus } = useBusinessSkus(
+  () => auth.principal?.permissionCodes?.includes(P.masterDataProductsRead) === true,
+)
+const { resources: sites } = useBusinessMasterDataResources('site', { enabled: canReadResources })
+const { resources: units } = useBusinessMasterDataResources('unit-of-measure', {
+  enabled: canReadResources,
+})
 // MPS 的评审人 / 发布人记的是登录账号 ID，按员工名录换成姓名；名录里没有（如系统管理员）就显示「—」。
-const { resolveUser } = useMasterDataDisplayNames({ users: true })
+const { resolveUser } = useMasterDataDisplayNames({ users: true, enabled: canReadResources })
 function actorName(userId: string) {
   return resolveUser(userId) ?? '—'
 }
@@ -412,7 +456,14 @@ const suggestionRunChoice = computed({
       ? manualSuggestionRunId.value
       : 'latest',
   set: (runId: string) => {
+    if (sourceSuggestionId.value || sourceRunId.value) {
+      const nextRunId = runId === 'latest' ? latestCompletedRun.value?.runId : runId
+      if (nextRunId)
+        void router.push({ query: { ...route.query, suggestionId: undefined, runId: nextRunId } })
+      return
+    }
     manualSuggestionRunId.value = runId
+    focusedSuggestionId.value = ''
   },
 })
 const suggestionRun = computed(() =>
@@ -424,7 +475,7 @@ const scopedSuggestions = computed(() =>
   suggestions.value.filter((item) => item.runId === suggestionRun.value?.runId),
 )
 function locatePlanningSuggestion(suggestionId: string, runId: string) {
-  suggestionRunChoice.value = runId
+  manualSuggestionRunId.value = runId
   suggestionFilters.status = 'all'
   suggestionTypeFilter.type = 'all'
   focusedSuggestionId.value = suggestionId
@@ -438,21 +489,37 @@ const sourceRunId = computed(() =>
   typeof route.query.runId === 'string' ? route.query.runId.trim() : '',
 )
 watch(
-  [sourceSuggestionId, sourceRunId],
+  [
+    sourceSuggestionId,
+    sourceRunId,
+    sourceOrder,
+    defaultTab,
+    canReadMrp,
+    canReadMps,
+    canReadDeliveries,
+  ],
   ([suggestionId, runId]) => {
-    if (!suggestionId && !runId) return
     suggestionFilters.status = 'all'
     suggestionTypeFilter.type = 'all'
     focusedSuggestionId.value = ''
-    activeTab.value = 'suggestions'
-    if (runId) suggestionRunChoice.value = runId
+    activeTab.value = (suggestionId || runId) && canReadMrp.value ? 'suggestions' : defaultTab.value
+    manualSuggestionRunId.value = runId || 'latest'
   },
   { immediate: true },
 )
 watch(
-  [sourceSuggestionId, sourceRunId, suggestions, mrpRuns],
+  [
+    sourceSuggestionId,
+    sourceRunId,
+    suggestions,
+    mrpRuns,
+    defaultTab,
+    canReadMrp,
+    canReadMps,
+    canReadDeliveries,
+  ],
   ([suggestionId, runId]) => {
-    if (!suggestionId || focusedSuggestionId.value === suggestionId) return
+    if (!canReadMrp.value || !suggestionId || focusedSuggestionId.value === suggestionId) return
     const source = suggestions.value.find((row) => row.suggestionId === suggestionId)
     if (!source?.runId || (runId && source.runId !== runId)) return
     if (!mrpRuns.value.some((run) => run.runId === source.runId)) return
@@ -460,9 +527,42 @@ watch(
   },
   { immediate: true },
 )
+const deniedSource = computed(() => {
+  if (
+    (sourceSuggestionId.value || sourceRunId.value) &&
+    (!canReadMrp.value ||
+      isForbiddenError(mrpRunsError.value) ||
+      isForbiddenError(suggestionsError.value))
+  )
+    return '当前岗位没有来源建议或运行的读取权限。'
+  if (sourceOrder.value && (!canReadDemands.value || isForbiddenError(demandsError.value)))
+    return '当前岗位没有来源需求的读取权限。'
+  return ''
+})
+const returnLabel = computed(() => (defaultTab.value === 'demands' ? '返回需求池' : '返回岗位入口'))
+const sourceUnresolved = computed(() =>
+  Boolean(
+    ((sourceSuggestionId.value || sourceRunId.value) &&
+      (mrpRunsError.value || suggestionsError.value || !hasBusinessContext(runRequest))) ||
+    (sourceSuggestionId.value &&
+      (suggestionFilters.status === 'all' ||
+        focusedSuggestionId.value !== sourceSuggestionId.value) &&
+      !suggestions.value.some(
+        (row) =>
+          row.suggestionId === sourceSuggestionId.value && row.runId === suggestionRun.value?.runId,
+      )) ||
+    (sourceRunId.value && sourceRunId.value !== suggestionRun.value?.runId),
+  ),
+)
+function navigateToSuggestion(suggestionId: string, runId: string) {
+  if (sourceSuggestionId.value || sourceRunId.value) {
+    void router.push({ query: { ...route.query, suggestionId, runId } })
+  }
+  locatePlanningSuggestion(suggestionId, runId)
+}
 function focusSuggestion(row: BusinessConsoleMrpPeggingItem) {
   if (!row.suggestionId) return
-  locatePlanningSuggestion(row.suggestionId, runSelection.runId)
+  navigateToSuggestion(row.suggestionId, runSelection.runId)
 }
 function focusPegging(row: BusinessConsolePlanningSuggestionItem) {
   if (!row.suggestionId || !row.runId) return
@@ -569,6 +669,19 @@ const visibleSuggestions = computed(() => {
   // 表格默认分页；将定位行放到首屏，不改变其它建议的相对次序。
   const focused = rows.find((row) => row.suggestionId === focusedSuggestionId.value)
   return focused ? [focused, ...rows.filter((row) => row !== focused)] : rows
+})
+const suggestionPage = shallowRef(1)
+const suggestionPageSize = shallowRef(10)
+watch([visibleSuggestions, suggestionPageSize], () => {
+  suggestionPage.value = 1
+})
+const suggestionPageRows = computed(() => {
+  const start = (suggestionPage.value - 1) * suggestionPageSize.value
+  return visibleSuggestions.value.slice(start, start + suggestionPageSize.value)
+})
+watchEffect(() => {
+  downstreamPage.value =
+    activeTab.value === 'suggestions' && !sourceUnresolved.value ? suggestionPageRows.value : []
 })
 const suggestionTypeFilterOptions = [
   { label: '全部类型', value: 'all' },
@@ -898,6 +1011,9 @@ function downstreamStatus(status?: string): { label: string; tone: StatusTone } 
     cancelled: '已取消',
     open: '待处理',
     converted: '已转采购单',
+    loading: '正在核对作业范围',
+    restricted: '无权查看下游状态',
+    partial: '前 400 条候选未定位到回执',
     unavailable: '状态读取失败',
     unknown: '状态未知',
   }
@@ -1102,7 +1218,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         刷新
       </NvButton>
 
-      <NvDialog v-model:open="mrpOpen">
+      <NvDialog v-if="hasPermission('business.planning.mrp.run')" v-model:open="mrpOpen">
         <NvDialogTrigger as-child>
           <NvButton size="sm" type="button" variant="outline">
             <PlayIcon aria-hidden="true" />
@@ -1157,7 +1273,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         </NvDialogContent>
       </NvDialog>
 
-      <NvDialog v-model:open="mpsOpen">
+      <NvDialog v-if="hasPermission(P.planningMpsManage)" v-model:open="mpsOpen">
         <NvDialogTrigger as-child>
           <NvButton size="sm" type="button" variant="outline" @click="newMpsBucket">
             <PlusIcon aria-hidden="true" />
@@ -1245,7 +1361,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         </NvDialogContent>
       </NvDialog>
 
-      <NvDialog v-model:open="demandOpen">
+      <NvDialog v-if="hasPermission(P.planningDemandsManage)" v-model:open="demandOpen">
         <NvDialogTrigger as-child>
           <NvButton size="sm" type="button">
             <PlusIcon aria-hidden="true" />
@@ -1356,7 +1472,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
 
   <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
     <NvMetricCard
-      v-if="demandCoverageRate !== null"
+      v-if="demandsReady && suggestionsReady && demandCoverageRate !== null"
       variant="target"
       label="需求覆盖率"
       :value="demandCoverageRate"
@@ -1372,16 +1488,17 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       :foot-end="`需求物料 ${demandSkuCodes.size} 个`"
     />
     <NvMetricCard
-      v-else
+      v-else-if="demandsReady && suggestionsReady"
       variant="alert"
       label="需求覆盖率"
       value="—"
       tone="neutral"
       :status="{ label: '暂无样本', tone: 'neutral' }"
-      foot-start="本次计划范围还没有需求物料，先录入需求或运行 MRP 后再看覆盖率。"
+      foot-start="当前范围没有参与计算的需求物料。"
     />
     <NvMetricCard
       variant="breakdown"
+      v-if="mpsReady"
       label="主计划行"
       :value="mpsBuckets.length"
       unit="行"
@@ -1389,6 +1506,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
     />
     <NvMetricCard
       variant="sparkline"
+      v-if="runsReady"
       label="最近一次 MRP"
       :value="latestRunKpiValue"
       :series="mrpSuggestionSeries"
@@ -1399,6 +1517,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
     />
     <NvMetricCard
       variant="alert"
+      v-if="suggestionsReady"
       label="待评审建议"
       :value="openSuggestionCount"
       unit="条"
@@ -1414,31 +1533,60 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
 
   <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
-  <NvTabs v-model="activeTab">
-    <NvTabsList>
+  <div v-if="deniedSource" role="status" class="flex flex-wrap items-center gap-2">
+    {{ deniedSource }}
+    <RouterLink to="/planning">{{ returnLabel }}</RouterLink>
+  </div>
+  <p v-else-if="!defaultTab" role="status">当前岗位没有计划数据读取权限。</p>
+  <NvTabs v-if="defaultTab && !deniedSource" v-model="activeTab" class="min-w-0 max-w-full">
+    <NvTabsList class="max-w-full justify-start overflow-x-auto">
       <!-- 筛选生效时页签显「筛出数/总数」，别让人以为需求池整个缩水了。 -->
-      <NvTabsTrigger value="demands"
-        >需求池 ({{
-          demandFilterActive ? `${filteredDemands.length}/${demands.length}` : demands.length
-        }})</NvTabsTrigger
+      <NvTabsTrigger v-if="canReadDemands" value="demands"
+        >需求池
+        <span v-if="demandsReady"
+          >({{
+            sourceOrder
+              ? filteredDemands.length
+              : demandFilterActive
+                ? `${filteredDemands.length}/${demands.length}`
+                : demands.length
+          }})</span
+        ></NvTabsTrigger
       >
-      <NvTabsTrigger value="forecasts">预测管理</NvTabsTrigger>
-      <NvTabsTrigger value="mps">MPS 主计划 ({{ mpsBuckets.length }})</NvTabsTrigger>
-      <NvTabsTrigger value="material-delivery">物料交付</NvTabsTrigger>
-      <NvTabsTrigger value="phasing">时段视图</NvTabsTrigger>
-      <NvTabsTrigger value="runs">MRP 运行 ({{ mrpRuns.length }})</NvTabsTrigger>
-      <NvTabsTrigger value="suggestions">计划建议 ({{ scopedSuggestions.length }})</NvTabsTrigger>
+      <NvTabsTrigger v-if="canReadDemands" value="forecasts">预测管理</NvTabsTrigger>
+      <NvTabsTrigger v-if="canReadMps" value="mps"
+        >MPS 主计划 <span v-if="mpsReady">({{ mpsBuckets.length }})</span></NvTabsTrigger
+      >
+      <NvTabsTrigger v-if="canReadDeliveries" value="material-delivery">物料交付</NvTabsTrigger>
+      <NvTabsTrigger v-if="canReadDemands && canReadMps && canReadMrp" value="phasing"
+        >时段视图</NvTabsTrigger
+      >
+      <NvTabsTrigger v-if="canReadMrp" value="runs"
+        >MRP 运行 <span v-if="runsReady">({{ mrpRuns.length }})</span></NvTabsTrigger
+      >
+      <NvTabsTrigger v-if="canReadMrp" value="suggestions"
+        >计划建议
+        <span v-if="suggestionsReady">({{ scopedSuggestions.length }})</span></NvTabsTrigger
+      >
     </NvTabsList>
 
-    <NvTabsContent value="material-delivery" class="grid gap-3">
+    <NvTabsContent
+      v-if="canReadDeliveries"
+      value="material-delivery"
+      class="grid min-w-0 grid-cols-1 gap-3"
+    >
       <PlanningMaterialDeliveryPanel
         :runs="mrpRuns"
         :sku-label="skuLabel"
-        @locate-suggestion="locatePlanningSuggestion"
+        @locate-suggestion="navigateToSuggestion"
       />
     </NvTabsContent>
 
-    <NvTabsContent value="demands" class="grid gap-3">
+    <NvTabsContent v-if="canReadDemands" value="demands" class="grid min-w-0 grid-cols-1 gap-3">
+      <p v-if="sourceOrder" class="text-sm text-muted-foreground">
+        来源销售订单 {{ sourceOrder }} · 核对前 200 条搜索结果
+        <RouterLink to="/planning">查看普通需求池</RouterLink>
+      </p>
       <NvToolbar
         v-model:search="demandKeyword"
         search-placeholder="搜来源单号 / 物料 / 客户 / 工厂"
@@ -1467,21 +1615,29 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         {{ demandTypeResetNotice }}
       </p>
       <NvDataTable
-        :columns="demandColumns"
+        :columns="
+          canReadMrp ? demandColumns : demandColumns.filter((column) => column.key !== 'coverage')
+        "
         :rows="filteredDemands"
         row-key="demandSourceId"
         :loading="demandsPending"
+        :awaiting-scope="!hasBusinessContext(runRequest)"
+        awaiting-scope-message="请先选择组织与环境。"
+        :error="demandsError"
+        :error-message="inlineErrorMessage(demandsError, '读取需求失败。')"
         :searchable="false"
         :column-settings="false"
         :empty-message="
-          demandFilterActive
-            ? '没有符合当前筛选条件的需求，换个关键字或类型试试。'
-            : '当前范围没有计划需求。'
+          sourceOrder
+            ? '当前搜索范围内未找到符合条件的销售需求。'
+            : demandFilterActive
+              ? '没有符合当前筛选条件的需求，换个关键字或类型试试。'
+              : '当前范围没有计划需求。'
         "
       >
         <template #cell-sourceReference="{ row }">
           <NvButton
-            v-if="row.demandType === 'sales-order'"
+            v-if="row.demandType === 'sales-order' && hasPermission(P.erpSalesRead)"
             type="button"
             size="sm"
             variant="ghost"
@@ -1502,7 +1658,11 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         </template>
         <template #cell-actions="{ row }">
           <NvButton
-            v-if="row.demandType !== 'sales-order' && row.sourceStatus === 'active'"
+            v-if="
+              hasPermission(P.planningDemandsManage) &&
+              row.demandType !== 'sales-order' &&
+              row.sourceStatus === 'active'
+            "
             type="button"
             size="sm"
             variant="ghost"
@@ -1551,19 +1711,23 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       </NvDataTable>
     </NvTabsContent>
 
-    <NvTabsContent value="forecasts">
+    <NvTabsContent v-if="canReadDemands" value="forecasts">
       <PlanningForecastManagement />
     </NvTabsContent>
 
-    <NvTabsContent value="mps">
+    <NvTabsContent v-if="canReadMps" value="mps">
       <NvDataTable
         :columns="mpsColumns"
         :rows="mpsBuckets"
         row-key="mpsId"
         :loading="mpsBucketsPending"
+        :error="mpsBucketsError"
+        :error-message="inlineErrorMessage(mpsBucketsError, '读取主计划失败。')"
+        :awaiting-scope="!hasScope"
+        awaiting-scope-message="请先选择组织与环境。"
         :searchable="false"
         :column-settings="false"
-        empty-message="当前范围还没有主计划行。先按计划周期新建一行，评审发布后即可作为 MRP 输入。"
+        empty-message="当前范围还没有主计划行。"
       >
         <template #cell-bucketDate="{ row }">{{ formatDate(row.bucketDate) }}</template>
         <template #cell-skuCode="{ row }">
@@ -1601,7 +1765,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         <template #cell-actions="{ row }">
           <div class="flex justify-end gap-2">
             <NvButton
-              v-if="row.status?.toLowerCase() !== 'released'"
+              v-if="hasPermission(P.planningMpsManage) && row.status?.toLowerCase() !== 'released'"
               size="sm"
               type="button"
               variant="outline"
@@ -1610,7 +1774,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
               >编辑</NvButton
             >
             <NvButton
-              v-if="row.status?.toLowerCase() === 'draft'"
+              v-if="hasPermission(P.planningMpsManage) && row.status?.toLowerCase() === 'draft'"
               size="sm"
               type="button"
               variant="outline"
@@ -1622,7 +1786,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
               评审
             </NvButton>
             <NvButton
-              v-if="row.status?.toLowerCase() === 'reviewed'"
+              v-if="hasPermission(P.planningMpsRelease) && row.status?.toLowerCase() === 'reviewed'"
               size="sm"
               type="button"
               variant="outline"
@@ -1638,7 +1802,11 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       </NvDataTable>
     </NvTabsContent>
 
-    <NvTabsContent value="phasing" class="grid gap-3">
+    <NvTabsContent
+      v-if="canReadDemands && canReadMps && canReadMrp"
+      value="phasing"
+      class="grid min-w-0 grid-cols-1 gap-3"
+    >
       <PlanningTimePhasedPanel
         :demands="demands"
         :mps-buckets="mpsBuckets"
@@ -1651,12 +1819,16 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       />
     </NvTabsContent>
 
-    <NvTabsContent value="runs" class="grid gap-4">
+    <NvTabsContent v-if="canReadMrp" value="runs" class="grid min-w-0 grid-cols-1 gap-4">
       <NvDataTable
         :columns="runColumns"
         :rows="mrpRuns"
         row-key="runId"
         :loading="mrpRunsPending"
+        :error="mrpRunsError"
+        :error-message="inlineErrorMessage(mrpRunsError, '读取 MRP 运行失败。')"
+        :awaiting-scope="!hasScope"
+        awaiting-scope-message="请先选择组织与环境。"
         :searchable="false"
         :column-settings="false"
         empty-message="尚未运行 MRP。"
@@ -1710,7 +1882,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         </template>
       </NvDataTable>
 
-      <div class="grid gap-2">
+      <div class="grid min-w-0 grid-cols-1 gap-2">
         <div class="flex items-center gap-2">
           <span class="text-sm font-medium text-foreground">需求追溯</span>
           <span class="text-sm text-muted-foreground">{{ runHorizonLabel(selectedRun) }}</span>
@@ -1821,8 +1993,8 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       </div>
     </NvTabsContent>
 
-    <NvTabsContent value="suggestions" class="grid gap-3">
-      <div class="flex flex-wrap items-center gap-2">
+    <NvTabsContent v-if="canReadMrp" value="suggestions" class="grid min-w-0 grid-cols-1 gap-3">
+      <div v-if="!sourceUnresolved" class="flex flex-wrap items-center gap-2">
         <NvSelect v-model="suggestionRunChoice">
           <NvSelectTrigger class="h-9 w-72" aria-label="建议运行"
             ><NvSelectValue placeholder="选择运行"
@@ -1866,16 +2038,44 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
           </NvSelect>
         </div>
       </div>
+      <div
+        v-if="sourceUnresolved"
+        role="status"
+        class="grid justify-items-start gap-2 text-sm text-muted-foreground"
+      >
+        {{
+          suggestionsError || mrpRunsError
+            ? '来源读取失败，请刷新后重试。'
+            : suggestionsPending || mrpRunsPending
+              ? '正在定位来源建议…'
+              : !hasBusinessContext(runRequest)
+                ? '请先选择组织与环境。'
+                : '当前可读范围内未定位到来源建议或运行。'
+        }}
+        <NvButton as-child size="sm" variant="outline">
+          <RouterLink to="/planning">{{ returnLabel }}</RouterLink>
+        </NvButton>
+      </div>
       <NvDataTable
+        v-else
         :key="focusedSuggestionId"
         :columns="suggestionColumns"
-        :rows="visibleSuggestions"
+        :rows="suggestionPageRows"
+        manual
+        v-model:page="suggestionPage"
+        :page-size="suggestionPageSize"
+        @update:page-size="suggestionPageSize = Number($event)"
+        :total-items="visibleSuggestions.length"
         :row-class="
           (row: BusinessConsolePlanningSuggestionItem) =>
             row.suggestionId === focusedSuggestionId ? 'bg-primary/10' : ''
         "
         row-key="suggestionId"
         :loading="suggestionsPending"
+        :error="suggestionsError"
+        :error-message="inlineErrorMessage(suggestionsError, '读取建议失败。')"
+        :awaiting-scope="!hasScope"
+        awaiting-scope-message="请先选择组织与环境。"
         :searchable="false"
         :column-settings="false"
         :empty-message="
@@ -2023,7 +2223,10 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
             @click="focusPegging(row)"
             >定位追溯</NvButton
           >
-          <div v-if="isOpen(row.status)" class="flex items-center justify-end gap-2">
+          <div
+            v-if="isOpen(row.status) && hasPermission(P.planningSuggestionsManage)"
+            class="flex items-center justify-end gap-2"
+          >
             <NvButton
               v-if="isAcceptableSuggestion(row.suggestionType)"
               size="sm"
@@ -2050,7 +2253,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
             </NvButton>
           </div>
           <!-- 已承接成 MES 工单的行：可直接对这一张单排产（新建只含该单的方案）。 -->
-          <div v-else class="flex items-center justify-end gap-2">
+          <div v-else-if="!isOpen(row.status)" class="flex items-center justify-end gap-2">
             <NvButton
               v-if="suggestionWorkOrderId(row)"
               size="sm"
@@ -2088,6 +2291,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       />
 
       <NvDialog
+        v-if="hasPermission(P.planningSuggestionsManage)"
         :open="!!rejectTarget"
         @update:open="
           (open) => {
@@ -2129,6 +2333,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         </NvDialogContent>
       </NvDialog>
       <NvDialog
+        v-if="hasPermission(P.planningSuggestionsManage)"
         :open="!!cancelTarget"
         @update:open="
           (open) => {
@@ -2158,6 +2363,7 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
     </NvTabsContent>
   </NvTabs>
   <NvDialog
+    v-if="hasPermission(P.planningDemandsManage)"
     :open="!!demandCancelTarget"
     @update:open="
       (open) => {

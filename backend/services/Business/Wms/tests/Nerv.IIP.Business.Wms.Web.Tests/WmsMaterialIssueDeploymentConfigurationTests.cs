@@ -6,11 +6,6 @@ namespace Nerv.IIP.Business.Wms.Web.Tests;
 /// <summary>
 /// 领料默认库位的部署面契约（#2008）。服务读的配置键与 AppHost 下发的环境变量键过去只靠人眼对齐，
 /// 任一侧改名的唯一表现是「领料消息全部进死信」，没有任何测试转红；这里把两侧的键集合对起来。
-/// 同时钉住环境门控与 profile 分叉：站点/库位只允许在 Development 回落；Development 内部
-/// leader-demo 回落 <c>WH-WB-*</c>、普通 Development 回落 <c>loc-*</c>（#3137 / #2058）。
-/// 「回落码必须是 Inventory 种子真的建出来的库位行」由 MES 侧
-/// <c>AppHost_leader_demo_location_fallbacks_are_all_seeded_as_inventory_stock_locations</c> 承担
-/// （它扫整个 AppHost 文件，含本区）。
 /// </summary>
 public sealed class WmsMaterialIssueDeploymentConfigurationTests
 {
@@ -75,84 +70,6 @@ public sealed class WmsMaterialIssueDeploymentConfigurationTests
         }
     }
 
-    /// <summary>
-    /// 收窄后的「世界观演示库位不得泄漏」禁令（原 <c>AppHost_does_not_reintroduce_world_bible_location_literals</c>）。
-    ///
-    /// 真不变量仍在：<c>WH-WB-*</c> 不得进入普通 Development / 生产回落面。失效的只是原实现方式——
-    /// 它禁的是整份文件，把「只在 leader-demo 分支下发」也一并禁掉，而 leader-demo 恰恰是唯一会把
-    /// 这七个库位建成行的 profile。于是收窄为：<c>WH-WB-*</c> 只允许出现在 <c>leaderDemoHistoryEnabled</c>
-    /// 门控的那一支里。
-    ///
-    /// ⚠️ 本条是**弱复核**，不是与 MES 侧等强度的交叉验证：它只保证 <c>WH-WB-*</c> 没被挪出带门控的
-    /// 语句、且门控推导式未被改。**臂级归属**（字面量到底落在 <c>?</c> 的哪一臂）由 MES 侧
-    /// <c>AppHost_confines_world_bible_location_literals_to_the_leader_demo_branch</c> 承担——
-    /// 实测「两臂交换」「嵌套三元」「verbatim 字面量」「普通臂换码表外的码」四类改写都是 MES 红、
-    /// 本条绿。判红时以 MES 侧为准，不要把本条的绿读成臂级归属没问题。
-    /// </summary>
-    [Fact]
-    public void AppHost_confines_world_bible_location_literals_to_the_leader_demo_branch()
-    {
-        var appHost = ReadRepositoryFile(AppHostProgramPath);
-        var literals = Regex.Matches(appHost, @"""WH-WB-[^""]*""");
-
-        // fail-closed：leader-demo 分支被整支删掉时这里抽空，不能静默放行。
-        Assert.NotEmpty(literals);
-        foreach (Match literal in literals)
-        {
-            var statementStart = appHost[..literal.Index].LastIndexOfAny([';', '{', '}']) + 1;
-            Assert.Contains(
-                "leaderDemoHistoryEnabled",
-                appHost[statementStart..literal.Index],
-                StringComparison.Ordinal);
-        }
-
-        // 门控判据的推导式一并钉住：改成 true 就恰好是本门禁要拦的错误，却一条测试都不会红。
-        Assert.Contains(
-            "var leaderDemoHistoryEnabled = leaderDemoWorldEnabled && !string.Equals( " +
-            "Environment.GetEnvironmentVariable(\"NERV_IIP_LEADER_DEMO_HISTORY\"), \"false\", " +
-            "StringComparison.OrdinalIgnoreCase);",
-            CollapseWhitespace(appHost),
-            StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void AppHost_gates_the_development_seed_fallback_on_its_own_environment_name()
-    {
-        var appHost = ReadRepositoryFile(AppHostProgramPath);
-        var collapsed = CollapseWhitespace(appHost);
-
-        // 门控判据的**值**必须一并钉住：只钉 `LocalDevelopmentEnvironment` 这个名字的话，把常量改成
-        // "Production" 就恰好是本门禁要拦的错误（生产回落主线位置），却一条测试都不会红。
-        Assert.Contains(
-            "const string LocalDevelopmentEnvironment = \"Development\";",
-            appHost,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "var localDevelopmentAppHost = string.Equals( builder.Environment.EnvironmentName, " +
-            "LocalDevelopmentEnvironment, StringComparison.OrdinalIgnoreCase);",
-            collapsed,
-            StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void AppHost_gating_helpers_have_no_return_path_that_bypasses_the_environment_check()
-    {
-        // 钉 return 语句的**完整集合**而不是若干子串：子串断言对加性变异无感——在受门控 return
-        // 之前插一句无条件早退，原来的子串全都还在，测试照绿。集合断言里多出一条 return 即红。
-        // 语句内空白已归一，等价重排版不会假红。
-        var appHost = ReadRepositoryFile(AppHostProgramPath);
-
-        Assert.Equal(
-            ["return configured.Trim();", "return localDevelopmentAppHost ? developmentSeedValue : null;"],
-            ReturnStatements(appHost, "string? DeploymentWarehouseLocation(", "IReadOnlyList<string> DeploymentWarehouseLocations("));
-        Assert.Equal(
-            ["return indexed;", "return values;", "return localDevelopmentAppHost ? developmentSeedValues : [];"],
-            ReturnStatements(appHost, "IReadOnlyList<string> DeploymentWarehouseLocations(", "> WithDeploymentEnvironment("));
-        Assert.Equal(
-            ["return string.IsNullOrWhiteSpace(value) ? project : project.WithEnvironment(name, value);"],
-            ReturnStatements(appHost, "> WithDeploymentEnvironment(", "> WithRedisMessagingTransport("));
-    }
-
     [Fact]
     public void Legacy_compose_overlay_declares_the_material_issue_chain_unsupported()
     {
@@ -191,14 +108,6 @@ public sealed class WmsMaterialIssueDeploymentConfigurationTests
 
     private static string CollapseWhitespace(string text) =>
         Regex.Replace(Normalize(text), @"\s+", " ");
-
-    /// <summary>
-    /// 取局部函数体内的全部 <c>return</c> 语句，语句内空白归一，保持源码顺序。
-    /// </summary>
-    private static string[] ReturnStatements(string appHost, string startMarker, string endMarker) =>
-        Regex.Matches(TextBetween(appHost, startMarker, endMarker), @"return\s[^;]*;")
-            .Select(match => Regex.Replace(match.Value, @"\s+", " "))
-            .ToArray();
 
     /// <summary>
     /// AppHost 源码里的全部受治理站点/库位字符串字面量，以及每个字面量是否落在同一条语句内的

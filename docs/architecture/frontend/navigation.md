@@ -28,6 +28,8 @@
 - Product：角色入口与 IA；
 - Governance：哪些规则必须长期遵守。
 
+应用可以为侧栏入口声明需要高亮同一项的附属视图路由。壳层使用最长路径确定高亮，同路径下优先高亮直接入口，点击仍进入应用配置的主目标。
+
 AppShell 不因为收到 `requiredPermissions` 就成为授权服务；消费方隐藏菜单也不能替代 Gateway enforcement。
 
 ## 依赖方向
@@ -49,5 +51,3 @@ consumer app navigation / router / permissions
 ## 当前事实来源
 
 Architecture 不维护固定端口、完整菜单、页面交付状态或 facade 覆盖矩阵。上述动态事实的生产者索引见 [`../../reference/frontend/navigation-map.md`](../../reference/frontend/navigation-map.md)。
-
-迁移前把架构、产品 IA、工程规则、代码清单和阶段状态混在一起的旧正文已冻结为 [`../../reports/audits/frontend-navigation-map-pre-m2-n-2026-09-07.md`](../../reports/audits/frontend-navigation-map-pre-m2-n-2026-09-07.md)，不再是现态架构来源。

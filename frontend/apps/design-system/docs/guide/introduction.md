@@ -1,25 +1,25 @@
-# 介绍
+# 使用指南
 
-**Nerv-IIP 设计系统**是数字工厂控制平面的统一设计语言与组件库。它把"为什么这样设计"（[设计哲学](/foundations/philosophy)）、"用什么设计"（[设计令牌](/foundations/tokens)）和"有哪些组件"（[组件](/components/overview)）收敛到一处。
+NvUI 是 Nerv-IIP 的设计系统。这里统一查阅视觉规范、令牌、交互模式和可运行的组件示例。
 
-## 技术栈
+## 从场景开始
 
-- **Vue 3.5** `<script setup>` + TypeScript
-- **Tailwind CSS v4**（`@theme inline`、OKLCH 令牌）
-- 上游原语仅作为内部基座，应用与文档示例统一使用 `@nerv-iip/ui`（Pro）与 `@nerv-iip/ui-mobile`
-- 本文档站基于 **VitePress**，外壳已用本设计系统的令牌整体重塑
+| 场景       | 设计与组件                                                                                                             |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 桌面 PC    | [排版与布局](/foundations/desktop-layout) · [桌面组件](/components/desktop/) · [完整示例](/components/desktop/gallery) |
+| 移动 PDA   | [移动组件](/components/mobile/) · [完整示例](/components/mobile/gallery)                                               |
+| 车间一体机 | [工位组件](/components/touch/) · [工位看板](/components/board)                                                         |
+| 挂墙大屏   | [大屏组件](/components/screen/) · [完整示例](/components/screen/gallery)                                               |
 
-## 两个包
+## 设计与实现
 
-| 包                    | 用途                                                               |
-| --------------------- | ------------------------------------------------------------------ |
-| `@nerv-iip/ui`        | 桌面 / 一体机的 Pro 组件、图表、设计令牌（`theme.css` 是唯一真源） |
-| `@nerv-iip/ui-mobile` | 移动 PDA 原生质感控件、手势、安全区基线                            |
+1. 阅读[设计哲学](/foundations/philosophy)和[界面文案](/guide/writing)，确认页面要支持的任务。
+2. 按场景选择[设计令牌](/foundations/tokens)，再用[色彩](/foundations/color)和[动效](/foundations/motion)检查各状态。
+3. 从[交互模式](/patterns/interaction-patterns)选择表单、列表、反馈或确认流程。更多页型和区块见[模式索引](/patterns/overview)。
+4. 在相应组件页查看真实示例和属性。优先组合现有组件，跨包使用公共导出。命名、导入、冻结源码和新增组件要求见下方工程约束。
 
-> **使用边界**：永远从包的稳定导出引用组件，不要从上游原始包或组件深层路径导入。详见[设计哲学 §3](/foundations/philosophy#_3-原版零改动-定制靠复制重建)。
+## 工程约束
 
-## 如何阅读
-
-1. 先读 [设计哲学](/foundations/philosophy) —— 理解取舍的优先级。
-2. 再看 [设计令牌](/foundations/tokens) 与 [色彩](/foundations/color) —— 视觉的原子。
-3. 然后按表面浏览 [组件](/components/overview)。
+- [NvUI 工程治理](https://github.com/Mang-X/Nerv-IIP/blob/main/frontend/DESIGN/governance.md)
+- [前端设计系统治理](https://github.com/Mang-X/Nerv-IIP/blob/main/docs/governance/frontend/design-system.md)
+- [ADR 0020 · 命名、令牌命名空间与样式隔离](https://github.com/Mang-X/Nerv-IIP/blob/main/docs/adr/2026-07-07-0020-nvui-naming-token-namespaces-and-style-isolation.md)

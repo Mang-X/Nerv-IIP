@@ -1,5 +1,7 @@
 # AGENTS.md — business-console（业务前端）
 
+界面规范与用法从[独立设计文档站](../../apps/design-system/docs/components/desktop/index.md)查阅。
+
 > 本文件是仓库根 `AGENTS.md` 在 business-console 应用的**子目录补充/覆盖**，根目录规则仍然适用。
 > **business-console** = 工厂业务操作台（基础数据 / MES / WMS / 库存 / 质量 / 设备 / 经营管理 等业务域的统一前端）。
 > 对照：`frontend/apps/console` 是**平台管理台**（IAM/运维/通知/文件），只承载通用控制面，**不放业务 CRUD**。
@@ -47,12 +49,12 @@
 
 1. **把页面拉起来看再说"完成"**：截图 / 真机刷新。**本 app 的浏览器预览不可靠（会卡、可能连到陈旧实例，给假读数）→ 验证以 `build` + 查编译产物 + 真机刷新为准**，别拿预览读数下结论。
 2. **视觉层次**：分段标题 ≠ 字段标题（曾踩坑：都 `text-sm font-medium`，整片无引导）→ 多分段表单用 `components/masterData/FormSectionTitle.vue`；长表单要分组，不平铺一片。
-3. **反馈闭环**：操作结果（成功/失败/网络/5xx）一律 **toast**（`@/utils/notify`，错误映射人话）；字段校验用内联红框+汇总；**不留常驻错误条**。详见 `frontend/DESIGN/patterns/feedback-and-notifications.md`。
+3. **反馈闭环**：操作结果（成功/失败/网络/5xx）一律 **toast**（`@/utils/notify`，错误映射人话）；字段校验用内联红框+汇总；**不留常驻错误条**。详见 [设计文档站](../design-system/docs/patterns/feedback-and-notifications.md)。
 4. **校验时机**：**点提交才标红**（不是一打开就红）；必填空着点提交 → 要有提示**且不发请求**。
 5. **主题 / 设计 token**：颜色用 token（`--primary` 等）**跟随主题切换**（中性也是一种主题）；**不写死颜色**；**不堆"AI 味"装饰**（无意义的竖条/光晕/渐变/标记——曾踩坑：菜单左竖条被指"AI 标志"）。
 6. **说人话**：UI 不暴露工程语言（operationId / code / resourceType / `#`号）；码值显示中文（英文种子用常量**兜底覆盖**，见 `masterDataReference.ts` 的 `mergeReferenceOptions`）。
 7. **数据真相**：系统编号与人工编码如实呈现（编辑态显示真实编号，不写"保存后分配"）；不做假分页 / 假数据。
-8. **KPI / SectionCards 非默认**：不要每页机械套概览卡。**按页判断**这页是否真需要少量能驱动决策 / 暴露问题的业务指标（维护台一般不需要——总量已在 PageHeader count）；要放就**说人话、用总量**（不是本分页页内数），**不堆机械元数据**（曾踩坑：'后端分页总数' / '树的根' / '本页启用·停用' / '当前分组条目'）。判定见 `frontend/DESIGN/patterns/pages/master-data-templates.md` §0「SectionCards 判定」。
+8. **KPI / SectionCards 非默认**：不要每页机械套概览卡。**按页判断**这页是否真需要少量能驱动决策 / 暴露问题的业务指标（维护台一般不需要——总量已在 PageHeader count）；要放就**说人话、用总量**（不是本分页页内数），**不堆机械元数据**（曾踩坑：'后端分页总数' / '树的根' / '本页启用·停用' / '当前分组条目'）。判定见 [设计文档站](../design-system/docs/patterns/pages/master-data-templates.md) §0「SectionCards 判定」。
 
 ## 2. 文档及时性（不是事后补，是改动的一部分）
 
@@ -86,7 +88,7 @@ src/components/                  应用级组件（非 @nerv-iip/ui 原版）
 - 复用 `@nerv-iip/ui` 区块组件（PageHeader/DataTable/Toolbar… 定义见 §3）；**禁止改 shadcn 原版组件**（要定制就复制重建为应用级组件）。
 - **区块是标准页的基线、不是上限**：常规列表/工作台用区块拼（快、一致）；当产品 / UX 需要区块给不了的呈现或交互时，按 §1 优先级**大胆新建组件 / 交互**（复制重建，绝不改原版），别为迁就现有件牺牲产品感。
 - 列表骨架 `PageHeader + Toolbar + DataTable + DataTablePagination`（**SectionCards 可选、非默认**，见 §1.5-B 第 8 条）；分页用 `usePagedList`。页内 Tabs 属布局、**不进菜单树**。
-- **页面靠 UI/UX 引导、不堆说明书**：删"用途说明"段落与冗余"本页 N"计数；**展示门面返回的真实人读编码**（`WO-…/WC-…/SKU-…`），ID 本身即点开详情，别用"查看X"按钮或"待接入/名称待接入"占位遮蔽真值。硬约束见 `frontend/DESIGN/patterns/pages/list-workbench.md` 与 `blocks/app-shell.md`（含**每个导航项必须带图标**）。
+- **页面靠 UI/UX 引导、不堆说明书**：删"用途说明"段落与冗余"本页 N"计数；**展示门面返回的真实人读编码**（`WO-…/WC-…/SKU-…`），ID 本身即点开详情，别用"查看X"按钮或"待接入/名称待接入"占位遮蔽真值。硬约束见 [设计文档站](../design-system/docs/patterns/pages/list-workbench.md) 与 [应用外壳](../design-system/docs/patterns/blocks/app-shell.md)（含**每个导航项必须带图标**）。
 - **不做假分页、不在 UI 伪造能力 / 不假装闭环**：后端无分页/无端点就如实处理（整列表渲染 或 入口禁用+说明）；别编 `WO-PLAN-xxx` 之类冒充下游单据假装跨域闭环（曾踩坑：planning"接受建议"后端并不建 MES 工单）；发 Issue，不糊弄。
 - **但要 seed / mock 真实感数据看效果**：页面做完必须拉起来看真实数据——后端有接口就脚本 seed（如 `tmp_seed_*.py`），缺接口就前端 mock（E2E `page.route` / 本地桩）跑通视觉；"看不到实际效果就不算完"。**seed/mock 的数据要像真实业务**（真实物料 / 工序 / 单号口径），**绝不写"测试 / test / 样例 / demo / foo / bar"或一眼假的文字**——"不做假数据"指不在 UI 伪造能力，不是不准为验证而造真实感数据。
 - **UI 不暴露工程语言**：operationId / sourceSystem / code / policy / resourceType / demo / seed / mock / GitHub Issue 号等不进业务界面（`goldStandardPages.contract.test.ts` 会拦 demo/seed/mock/样例等词并校验必备区块）。

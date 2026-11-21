@@ -10,8 +10,8 @@ public sealed class MesEfSourceRootApiSurfaceTests
     [Fact]
     public void EF_Core_public_source_surface_has_one_complete_exact_partition()
     {
-        Assert.Equal(new Version(10, 0, 8, 0), typeof(DbContext).Assembly.GetName().Version);
-        Assert.Equal(new Version(10, 0, 8, 0), typeof(RelationalDatabaseFacadeExtensions).Assembly.GetName().Version);
+        Assert.Equal(new Version(10, 0, 15, 0), typeof(DbContext).Assembly.GetName().Version);
+        Assert.Equal(new Version(10, 0, 15, 0), typeof(RelationalDatabaseFacadeExtensions).Assembly.GetName().Version);
 
         var observedMethods = SelectedOwners
             .SelectMany(type => type

@@ -3,7 +3,7 @@
 #   SideEffects:
 #     - Provides shared script automation helpers
 #   Writes:
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Stops managed child process trees when requested
 #   Requires:
@@ -309,7 +309,7 @@ function New-ScriptAutomationLogDirectory {
         }
 
         $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
-        $LogDirectory = Join-Path (Get-ScriptAutomationRepoRoot) "artifacts/script-logs/$safeName/$timestamp"
+        $LogDirectory = Join-Path (Get-ScriptAutomationRepoRoot) ".ryugi/artifacts/script-logs/$safeName/$timestamp"
     }
 
     New-Item -ItemType Directory -Force -Path $LogDirectory | Out-Null
@@ -1294,19 +1294,6 @@ function Invoke-NativeCommandInteractive {
     }
 }
 
-function Invoke-DotNetInteractive {
-    param(
-        [Parameter(Mandatory)]
-        [string[]] $Arguments,
-
-        [string] $WorkingDirectory = (Get-Location).Path,
-
-        [string] $Name = 'dotnet'
-    )
-
-    Invoke-NativeCommandInteractive -Command 'dotnet' -Arguments $Arguments -WorkingDirectory $WorkingDirectory -Name $Name
-}
-
 function Get-AspireCliCommand {
     $command = Get-Command 'aspire' -ErrorAction SilentlyContinue
     if ($command) {
@@ -1850,110 +1837,4 @@ function Invoke-WithScopedEnvironment {
             }
         }
     }
-}
-
-function New-ExclusiveInvocationClaim {
-    <#
-    .SYNOPSIS
-        Atomically claims a single-owner invocation ID.
-    .DESCRIPTION
-        Uses FileMode.CreateNew so that exactly one caller can own a claim path. Concurrent callers
-        racing on the same ID lose deterministically at the file system level rather than through a
-        check-then-write window, so existing evidence can never be replaced by a rerun.
-    #>
-    param(
-        [Parameter(Mandatory)]
-        [string] $ClaimPath,
-
-        [Parameter(Mandatory)]
-        [string] $InvocationId
-    )
-
-    $claimStream = $null
-    try {
-        $claimStream = [System.IO.FileStream]::new(
-            $ClaimPath,
-            [System.IO.FileMode]::CreateNew,
-            [System.IO.FileAccess]::Write,
-            [System.IO.FileShare]::Read)
-        $claimBytes = [System.Text.UTF8Encoding]::new($false).GetBytes("$InvocationId$([Environment]::NewLine)")
-        $claimStream.Write($claimBytes, 0, $claimBytes.Length)
-        $claimStream.Flush($true)
-    }
-    catch [System.IO.IOException] {
-        if (Test-Path -LiteralPath $ClaimPath -PathType Leaf) {
-            throw "Evidence invocation '$InvocationId' is already claimed at $ClaimPath. Use a new invocation ID; reruns never replace prior evidence."
-        }
-        throw
-    }
-    finally {
-        if ($null -ne $claimStream) {
-            $claimStream.Dispose()
-        }
-    }
-
-    return $ClaimPath
-}
-
-function Assert-FacadeTypesGenExport {
-    <#
-    .SYNOPSIS
-        Facade-coverage (MAN-475 / #841) assertion for an `exposed` endpoint: the
-        generated request/response type is queryable in the api-client `types.gen.ts`
-        AND the operation is re-exported from the stable barrel. Use this in the
-        focused verify script of any issue that declares an endpoint `exposed`, so a
-        silently-dropped facade type or barrel export fails the focused gate — not
-        only the full contract test. See docs/governance/api/facade-coverage.md.
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string[]] $TypeName,
-
-        [Parameter(Mandatory)]
-        [string[]] $ExportName,
-
-        [ValidateSet('business-console', 'console')]
-        [string] $Surface = 'business-console',
-
-        [string] $RepoRoot
-    )
-
-    if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
-        $RepoRoot = Get-ScriptAutomationRepoRoot
-    }
-
-    $apiClientSrc = Join-Path $RepoRoot 'frontend/packages/api-client/src'
-    $typesPath = Join-Path $apiClientSrc "generated/$Surface/types.gen.ts"
-    $barrelPath = Join-Path $apiClientSrc "$Surface.ts"
-
-    foreach ($path in @($typesPath, $barrelPath)) {
-        if (-not (Test-Path -LiteralPath $path)) {
-            throw "Assert-FacadeTypesGenExport: expected api-client file not found: $path"
-        }
-    }
-
-    $typesContent = Get-Content -LiteralPath $typesPath -Raw
-    $barrelContent = Get-Content -LiteralPath $barrelPath -Raw
-
-    $missing = New-Object System.Collections.Generic.List[string]
-
-    foreach ($type in $TypeName) {
-        # Word-boundary match so a substring of a longer identifier does not pass.
-        if ($typesContent -notmatch "\b$([regex]::Escape($type))\b") {
-            $missing.Add("type '$type' not found in generated/$Surface/types.gen.ts")
-        }
-    }
-
-    foreach ($export in $ExportName) {
-        if ($barrelContent -notmatch "\b$([regex]::Escape($export))\b") {
-            $missing.Add("export '$export' not re-exported from stable barrel $Surface.ts")
-        }
-    }
-
-    if ($missing.Count -gt 0) {
-        throw ("Facade-coverage export assertion failed (docs/governance/api/facade-coverage.md):`n  - " + ($missing -join "`n  - "))
-    }
-
-    Write-Diagnostic "Facade-coverage export assertion passed: $($TypeName.Count) type(s) in $Surface types.gen.ts, $($ExportName.Count) export(s) in $Surface.ts."
 }

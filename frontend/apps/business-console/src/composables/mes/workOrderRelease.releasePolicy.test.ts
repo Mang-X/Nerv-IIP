@@ -19,7 +19,7 @@ import { RELEASE_IGNORED_TASK_BLOCKERS, mesWorkOrderReleaseBlocker } from './wor
  * **不是**「后端产出的所有阻断码」——本文件读不到后端。
  *
  * 那一段由 #3155 补上，接法是**串联**而不是取代：
- * `scripts/verify-stable-code-frontend-vocabulary.ps1` 钉「后端 `MesReadinessReasonCodes`
+ * `scripts/checks/verify-stable-code-frontend-vocabulary.ps1` 钉「后端 `MesReadinessReasonCodes`
  * 的每个 public const ⊆ 本词表」，本文件的 ② 钉「本词表的每个码 ⊆ 已归类」，
  * 两条合起来才得到「后端新增阻断码必须被显式归类」。**删掉任一条，这个结论就不再成立**，
  * 而另一条仍然全绿——所以两边都不是冗余，别按「看着像重复」合并。

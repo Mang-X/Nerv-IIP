@@ -20,9 +20,7 @@ const open = defineModel<boolean>('open', { default: false })
       class="nv-m-collapse-head flex min-h-touch w-full items-center gap-3 px-4 py-3 text-left text-[15px] active:bg-accent"
       @click="open = !open"
     >
-      <span class="min-w-0 flex-1"
-        ><slot name="title">{{ title }}</slot></span
-      >
+      <span class="min-w-0 flex-1"><slot name="title">{{ title }}</slot></span>
       <ChevronDown
         class="nv-m-collapse-chevron size-5 shrink-0 text-muted-foreground"
         :class="open && 'rotate-180'"

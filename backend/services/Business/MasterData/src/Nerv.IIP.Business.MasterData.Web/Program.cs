@@ -132,10 +132,8 @@ try
         builder.Environment.IsDevelopment());
     builder.Services.AddScoped<MasterDataCodingService>();
     builder.Services.AddScoped<CodeRuleVersionActivationService>();
+    builder.Services.AddScoped<WalkthroughSeedService>();
     builder.Services.AddScoped<MasterDataSeedService>();
-    builder.Services.AddScoped<LeaderDemoSeedService>();
-    builder.Services.AddScoped<LeaderDemoScaleSeedService>();
-    builder.Services.AddScoped<WorldBibleSeedService>();
     var productEngineeringBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
         builder.Configuration,
         builder.Environment,
@@ -217,7 +215,7 @@ try
     }
 
     // 产品基线种子（编码规则/字典/计量单位/班次/日历/部门）：基础功能必需，默认开启、只补缺，
-    // 显式 false 才关闭（#3811）。演示数据在下方 LeaderDemo 开关里。
+    // 显式 false 才关闭（#3811）。
     // 目标租户读 IAM 引导种子的同一组键（#3812），不再单独配置。
     var seedEnabled = builder.Configuration.GetValue("MasterData:Seed:Enabled", true);
     if (seedEnabled)
@@ -238,31 +236,9 @@ try
     if (walkthroughSeedEnabled)
     {
         using var scope = app.Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<WorldBibleSeedService>().SeedWalkthroughAsync(
+        await scope.ServiceProvider.GetRequiredService<WalkthroughSeedService>().SeedAsync(
             builder.Configuration["Walkthrough:Seed:OrganizationId"] ?? "org-001",
             builder.Configuration["Walkthrough:Seed:EnvironmentId"] ?? "env-dev");
-    }
-
-    var leaderDemoSeedEnabled = builder.Configuration.GetValue<bool>("LeaderDemo:Seed:Enabled");
-    if (leaderDemoSeedEnabled && !app.Environment.IsDevelopment())
-    {
-        throw new InvalidOperationException("LeaderDemo:Seed:Enabled=true is only allowed for BusinessMasterData in Development.");
-    }
-
-    if (leaderDemoSeedEnabled)
-    {
-        using var scope = app.Services.CreateScope();
-        var organizationId = builder.Configuration["LeaderDemo:Seed:OrganizationId"] ?? "org-001";
-        var environmentId = builder.Configuration["LeaderDemo:Seed:EnvironmentId"] ?? "env-dev";
-        await scope.ServiceProvider.GetRequiredService<LeaderDemoSeedService>().SeedAsync(organizationId, environmentId);
-        await scope.ServiceProvider.GetRequiredService<LeaderDemoScaleSeedService>().SeedAsync(
-            organizationId,
-            environmentId,
-            builder.Configuration.GetValue("LeaderDemo:Scale:OrderCount", 0));
-        if (builder.Configuration.GetValue("LeaderDemo:World:Enabled", false))
-        {
-            await scope.ServiceProvider.GetRequiredService<WorldBibleSeedService>().SeedAsync(organizationId, environmentId);
-        }
     }
 
     app.UseNervIipRequestLocalization();

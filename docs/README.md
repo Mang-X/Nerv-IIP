@@ -14,8 +14,7 @@
 | 引入、推翻或复评长期决策 | [`adr/README.md`](adr/README.md) | ADR 解释为什么选择；当前实现回到 Architecture / Governance / Runbook |
 | 本地启动、部署、迁移、恢复或排障 | [`runbooks/README.md`](runbooks/README.md) | Runbook 只维护当前可执行操作，精确命令回到脚本/CLI help |
 | 产品、角色、IA 或 UX 设计 | [`product/README.md`](product/README.md) | Product 只维护当前产品语义，不从状态页推断产品事实 |
-| 调查、实验、审计或修复历史 | [`reports/README.md`](reports/README.md) | 报告只证明声明的时点与范围，不构成当前规则 |
-| 历史阶段、计划或规格核对 | `superpowers/`、[`status/archive/`](status/archive/) | 历史记录不自动构成当前执行入口 |
+| 界面设计、令牌、组件与交互模式 | [独立设计文档站](../frontend/apps/design-system/docs/index.md) | 桌面 PC、移动 PDA、车间一体机和挂墙大屏 |
 
 ## 文档类型
 
@@ -27,28 +26,9 @@
 | Runbook | 如何启动、部署、迁移、恢复或排障？ | 随当前操作入口更新 |
 | Reference | 当前有哪些字段、Schema、路由、矩阵、权限导航、码表、术语和资料入口？ | 随真正 producer 更新；人工解释不得覆盖 producer |
 | Status | 当前重点、阻塞和全仓级入口是什么？ | 高频替换，不累积已完成历史 |
-| Report | 某次调查、实验、审计或修复发现了什么？ | 完成后冻结；当前事实回到代码与现态文档 |
 | Product | 给谁使用、解决什么问题、业务与 UX 如何工作？ | 随产品裁决更新 |
 
-## 当前入口与历史
-
-- 当前全仓级状态：[`status/current.md`](status/current.md)。
-- 当前 Architecture 入口：[`architecture/README.md`](architecture/README.md)。
-- 当前 Governance 入口：[`governance/README.md`](governance/README.md)。
-- 当前 Product 入口：[`product/README.md`](product/README.md)。
-- 当前 Runbook 入口：[`runbooks/README.md`](runbooks/README.md)。
-- 当前 Reference 入口：[`reference/README.md`](reference/README.md)。
-- 冻结报告入口：[`reports/README.md`](reports/README.md)。
-- 阶段、状态快照与退役入口追溯：[`status/archive/README.md`](status/archive/README.md)。
-
-## 迁移兼容路径
-
-M2 后，`architecture/` 根目录仍存在的旧平铺文件名只承担显式兼容导航；Current Architecture 从 [`architecture/README.md`](architecture/README.md) 的主题目录进入。使用旧 URL 时遵循以下规则：
-
-1. 先跟随 shim 到最终 canonical owner，再引用 Product / Architecture / Governance / Reference / Runbook / Status / Report 的当前路径；新文档和新 Agent 指令不得把 shim 当权威来源。
-2. shim 只做兼容，不追加新正文、项目状态、运行命令、机器事实或实现总账。
-3. 冻结 ADR、Report、Status archive 与 `superpowers/` 允许保留历史 URL；不为“清零字符串”批量改写历史正文。已退役入口通过归档索引与记录时点的 Git 树追溯，不重新建立当前状态页。
-4. 物理删除旧路径前，必须先清理活跃消费者和机器依赖，再通过 Docs/链接及实际受影响门禁；该删除属于兼容清理，不在普通文档修改中顺手执行。
+历史规格、计划、报告和状态快照可用 `git ls-tree -r 0d260365a -- docs` 查找，再用 `git show 0d260365a:<路径>` 读取。
 
 ## 权威来源纪律
 

@@ -12,8 +12,8 @@
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $libraryPath = Join-Path $repoRoot 'scripts/lib/AcceptanceScenarioMatrix.ps1'
-$manifestPath = Join-Path $repoRoot 'scripts/acceptance-scenario-matrix.json'
-$v1ManifestPath = Join-Path $repoRoot 'scripts/full-chain-test-lane.json'
+$manifestPath = Join-Path $repoRoot 'scripts/config/acceptance-scenario-matrix.json'
+$v1ManifestPath = Join-Path $repoRoot 'scripts/config/full-chain-test-lane.json'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-acceptance-scenario-matrix-$([Guid]::NewGuid().ToString('N'))"
 
 if (-not (Test-Path -LiteralPath $libraryPath -PathType Leaf)) {

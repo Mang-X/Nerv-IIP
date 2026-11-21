@@ -21,7 +21,7 @@ jobs:
       MANUAL_MAX_ELAPSED_MILLISECONDS: ${{ github.event.inputs.max_elapsed_milliseconds || '0' }}
     services:
       postgres:
-        image: postgres:18
+        image: postgres:19
         env:
           POSTGRES_USER: nerv
           POSTGRES_PASSWORD: nerv
@@ -31,13 +31,13 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U nerv -d nerv_iip_performance"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         timeout-minutes: 3
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         timeout-minutes: 5
         with:
           dotnet-version: 10.0.x
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         timeout-minutes: 8
         with:
           path: ~/.nuget/packages
@@ -52,8 +52,8 @@ jobs:
               Scenario = 'all'
               Profile = 'nightly'
               Rows = 25
-              MetricsOutputPath = 'artifacts/business-performance/nightly/metrics.jsonl'
-              SummaryOutputPath = 'artifacts/business-performance/nightly/summary.json'
+              MetricsOutputPath = '.ryugi/artifacts/business-performance/nightly/metrics.jsonl'
+              SummaryOutputPath = '.ryugi/artifacts/business-performance/nightly/summary.json'
           }
           $manualMaxElapsedMilliseconds = 0
           $manualInputParsed = [int]::TryParse(
@@ -77,14 +77,15 @@ jobs:
                   ErpMaxElapsedMilliseconds = 30000
               }
           }
-          & ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
-      - uses: actions/upload-artifact@v4
+          & ./scripts/checks/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
+      - uses: actions/upload-artifact@v6
         timeout-minutes: 5
         if: always()
         with:
           name: business-performance-${{ github.run_id }}-${{ github.run_attempt }}
+          include-hidden-files: true
           path: |
-            artifacts/business-performance/nightly/metrics.jsonl
-            artifacts/business-performance/nightly/summary.json
+            .ryugi/artifacts/business-performance/nightly/metrics.jsonl
+            .ryugi/artifacts/business-performance/nightly/summary.json
           if-no-files-found: error
           retention-days: 30

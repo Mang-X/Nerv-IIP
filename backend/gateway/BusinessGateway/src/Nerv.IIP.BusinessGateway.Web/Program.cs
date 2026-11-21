@@ -1,3 +1,4 @@
+using Nerv.IIP.Web;
 using System.Net;
 using System.Reflection;
 using System.Text.Json;
@@ -11,9 +12,7 @@ using Microsoft.Extensions.Http.Resilience;
 using Nerv.IIP.BusinessGateway.Web;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
-using Nerv.IIP.BusinessGateway.Web.Application.Http;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
-using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Localization;
@@ -44,6 +43,7 @@ builder.Services
             // 读取依赖包 XML 文档（如 FastEndpoints.xml）。本机缓存是否解出过 XML
             // （NUGET_XMLDOC_MODE）会导致导出快照与 CI 重生成结果漂移。
             s.SchemaSettings.ResolveExternalXmlDocumentation = false;
+            s.SchemaSettings.SchemaProcessors.Add(new CodeRuleSegmentOpenApiSchemaProcessor());
             s.DocumentProcessors.Add(new SchedulingEnumOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new MesListDisplayOpenApiDocumentProcessor());
             s.DocumentProcessors.Add(new MachineOverheadOpenApiDocumentProcessor());
@@ -69,7 +69,7 @@ builder.Services.Configure<BusinessGatewayTemplateAssetRetirementProofOptions>(
 builder.Services.AddSingleton<TemplateAssetRetirementProofSigner>();
 builder.Services.Configure<BusinessGatewayAuthorizationOptions>(builder.Configuration.GetSection("Gateway"));
 builder.Services.Configure<BusinessGatewayInventoryForwardedPermissionOptions>(builder.Configuration.GetSection("Inventory:ForwardedPermissions"));
-builder.Services.AddSingleton<BusinessGatewayDownstreamHealthState>();
+builder.Services.AddSingleton<DownstreamHealthState>();
 builder.Services.AddScoped<PrincipalWorkScopeResolver>();
 builder.Services.AddScoped<MesPrincipalWorkScopeAuthorizer>();
 builder.Services.AddScoped<BusinessMesCommercialSourceReader>();

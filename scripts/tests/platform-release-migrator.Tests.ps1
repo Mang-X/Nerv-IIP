@@ -3,7 +3,7 @@
 #   SideEffects:
 #     - Executes only ValidateOnly release migration paths in child PowerShell processes
 #   Writes:
-#     - artifacts/script-logs/** validation summaries
+#     - .ryugi/artifacts/script-logs/** validation summaries
 #   Cleanup:
 #     - Restores process environment variables after each probe
 #   Requires:

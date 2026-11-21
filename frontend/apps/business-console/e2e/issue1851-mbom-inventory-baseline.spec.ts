@@ -10,7 +10,7 @@ import {
   type InventoryAvailabilityFact,
   type InventoryMovementFact,
   type MbomMaterialLineFact,
-} from '../src/issue1851MbomInventoryBaseline'
+} from './issue1851MbomInventoryBaseline'
 
 const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL
 const adminPassword = process.env.NERV_IIP_FULLSTACK_ADMIN_PASSWORD

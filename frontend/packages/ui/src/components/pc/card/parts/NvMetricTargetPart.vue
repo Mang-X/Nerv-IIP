@@ -61,8 +61,7 @@ function showTip(e: MouseEvent) {
     v-if="footStart || footEnd"
     class="mt-2.5 flex justify-between text-xs text-muted-foreground tabular-nums"
   >
-    <span>{{ footStart }}</span
-    ><span>{{ footEnd }}</span>
+    <span>{{ footStart }}</span><span>{{ footEnd }}</span>
   </div>
   <NvMetricTipPart :tip="tip" />
 </template>

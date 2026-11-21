@@ -59,7 +59,7 @@ public sealed class GetBusinessConsolePlanningMaterialDeliveriesEndpoint(
         var authorizations = await Task.WhenAll(permissions.Select(permission => AuthorizationClient.CheckAsync(
             bearerToken, new(permission, req.OrganizationId, req.EnvironmentId, null, null), AuthorizationContinuityMode, ct)));
         if (authorizations.Any(authorization => !authorization.IsAllowed))
-            throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "permission-denied");
+            throw BusinessServiceProxyException.FromLocalRejection(HttpStatusCode.Forbidden, BusinessGatewayLocalRejectionStableWireCodes.PermissionDenied);
         return await planning.GetMaterialDeliveriesAsync(tokenProvider.BearerToken, req.RunId,
             req.OrganizationId, req.EnvironmentId, req.PlanId, ct);
     }

@@ -6,7 +6,7 @@
 #   Writes:
 #     - Selected business service migration history and schema objects
 #     - bin/ and obj/ build outputs for selected Infrastructure projects
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Does not delete, recreate, seed, or roll back databases
 #     - Leaves successfully applied migrations intact when a later service fails

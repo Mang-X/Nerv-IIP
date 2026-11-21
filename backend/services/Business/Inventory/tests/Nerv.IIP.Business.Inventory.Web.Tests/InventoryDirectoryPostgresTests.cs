@@ -251,7 +251,7 @@ public sealed class InventoryDirectoryPostgresTests
                     "-e", "POSTGRES_DB=man632_inventory",
                     "-p", "127.0.0.1:0:5432",
                     "--mount", $"source={volume},target=/var/lib/postgresql",
-                    "postgres:18"]);
+                    "postgres:19"]);
                 var portOutput = await RunDockerAsync(["port", container, "5432/tcp"]);
                 var portText = portOutput.Trim().Split(':').Last();
                 if (!int.TryParse(portText, out var port))

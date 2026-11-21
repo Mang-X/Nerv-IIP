@@ -7,7 +7,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Client" Version="1.5.378.152" />
+    <InternalsVisibleTo Include="Nerv.IIP.ConnectorHost.Connectors.OpcUa.Tests" />
+    <PackageReference Include="OPCFoundation.NetStandard.Opc.Ua.Client" Version="1.5.378.196" />
     <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Application\Nerv.IIP.ConnectorHost.Application.csproj" />
     <ProjectReference Include="..\Nerv.IIP.ConnectorHost.Connectors.Abstractions\Nerv.IIP.ConnectorHost.Connectors.Abstractions.csproj" />
   </ItemGroup>

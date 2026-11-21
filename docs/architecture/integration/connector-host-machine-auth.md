@@ -1,6 +1,6 @@
 # Connector Host 机器身份认证终态
 
-本文档冻结 Connector Host 调用平台 API 的机器身份认证终态和迁移路径。它承接 [ADR 0002](../../adr/0002-connector-host-and-app-integration-contract.md) 中“Connector Host 是外部接入客户端”的决策，并补齐 [IAM 认证与授权基线](../platform/iam-authentication.md) 与 [Connector Host 与平台协议 V1](connector-protocol-v1.md) 中刻意留给 IAM 边界的认证细节。
+本文档冻结 Connector Host 调用平台 API 的机器身份认证终态和迁移路径。它承接 [ADR 0002](../../adr/2026-05-13-0002-connector-host-and-app-integration-contract.md) 中“Connector Host 是外部接入客户端”的决策，并补齐 [IAM 认证与授权基线](../platform/iam-authentication.md) 与 [Connector Host 与平台协议 V1](connector-protocol-v1.md) 中刻意留给 IAM 边界的认证细节。
 
 ## 终态决策
 

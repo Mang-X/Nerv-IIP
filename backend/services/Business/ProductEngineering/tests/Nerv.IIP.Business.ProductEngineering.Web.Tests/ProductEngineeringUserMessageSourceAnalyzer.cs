@@ -2,6 +2,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.ProductEngineering.Web.Tests;
 
@@ -12,7 +13,6 @@ public sealed record ProductEngineeringExcludedQuerySite(string Path, string Typ
 public static class ProductEngineeringUserMessageSourceAnalyzer
 {
     private const string KnownExceptionTypeName = "NetCorePal.Extensions.Primitives.KnownException";
-    private const int InterpolationEstimatedLength = 12;
     private const int GuidInterpolationEstimatedLength = 36;
     private const int MaximumMessageLength = 60;
 
@@ -107,7 +107,7 @@ public static class ProductEngineeringUserMessageSourceAnalyzer
             return;
         }
 
-        if (!ContainsChinese(message))
+        if (!UserMessageText.ContainsChinese(message))
         {
             violations.Add(new Violation(
                 path,
@@ -126,40 +126,8 @@ public static class ProductEngineeringUserMessageSourceAnalyzer
         }
     }
 
-    public static bool TryExtractMessage(
-        ExpressionSyntax expression,
-        out string message,
-        out int estimatedLength)
-    {
-        if (expression is LiteralExpressionSyntax literal
-            && literal.IsKind(SyntaxKind.StringLiteralExpression))
-        {
-            message = literal.Token.ValueText;
-            estimatedLength = message.Length;
-            return true;
-        }
-
-        if (expression is InterpolatedStringExpressionSyntax interpolated)
-        {
-            var fixedText = interpolated.Contents
-                .OfType<InterpolatedStringTextSyntax>()
-                .Select(content => content.TextToken.ValueText)
-                .ToArray();
-            message = string.Concat(fixedText);
-            estimatedLength = fixedText.Sum(text => text.Length)
-                + interpolated.Contents
-                    .OfType<InterpolationSyntax>()
-                    .Sum(EstimateInterpolationLength);
-            return true;
-        }
-
-        message = string.Empty;
-        estimatedLength = 0;
-        return false;
-    }
-
-    private static bool ContainsChinese(string message) =>
-        message.Any(character => character is >= '\u3400' and <= '\u9fff');
+    public static bool TryExtractMessage(ExpressionSyntax expression, out string message, out int estimatedLength) =>
+        UserMessageText.TryExtractMessage(expression, out message, out estimatedLength, EstimateInterpolationLength);
 
     private static int EstimateInterpolationLength(InterpolationSyntax interpolation)
     {
@@ -168,7 +136,7 @@ public static class ProductEngineeringUserMessageSourceAnalyzer
         return string.Equals(format, "D", StringComparison.OrdinalIgnoreCase)
             || expression.Contains("Guid", StringComparison.Ordinal)
             ? GuidInterpolationEstimatedLength
-            : InterpolationEstimatedLength;
+            : UserMessageText.InterpolationEstimatedLength;
     }
 
     private static IReadOnlyCollection<MetadataReference> CreateMetadataReferences()

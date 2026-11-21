@@ -27,7 +27,7 @@ import WorkbenchDomainTiles from '@/components/workbench/WorkbenchDomainTiles.vu
 import type { WorkbenchDomainTile } from '@/components/workbench/WorkbenchDomainTiles.vue'
 import WorkbenchFocusCard from '@/components/workbench/WorkbenchFocusCard.vue'
 import type { WorkbenchFocusItem } from '@/components/workbench/WorkbenchFocusCard.vue'
-import { BUSINESS_DOMAINS, DOMAIN_SIDE_NAV, WORKBENCH_DOMAIN_ID, permittedBy } from '@/navigation'
+import { BUSINESS_DOMAINS, WORKBENCH_DOMAIN_ID, sideNavForDomain } from '@/navigation'
 import { BUSINESS_DOMAIN_PERMISSIONS } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useBusinessWorkbenchSummary } from '@/composables/useBusinessWorkbench'
@@ -315,8 +315,8 @@ const alertFocusItems = computed<WorkbenchFocusItem[]>(() =>
 const domainTiles = computed<WorkbenchDomainTile[]>(() =>
   BUSINESS_DOMAINS.filter((domain) => domain.id !== WORKBENCH_DOMAIN_ID)
     .map((domain) => {
-      const items = (DOMAIN_SIDE_NAV[domain.id] ?? []).flatMap((group) =>
-        permittedBy(group.items, permissionCodes.value),
+      const items = sideNavForDomain(domain.id, permissionCodes.value).flatMap(
+        (group) => group.items,
       )
       const first = items[0]
       const to = first ? (typeof first.to === 'string' ? first.to : (first.to.path ?? '')) : ''

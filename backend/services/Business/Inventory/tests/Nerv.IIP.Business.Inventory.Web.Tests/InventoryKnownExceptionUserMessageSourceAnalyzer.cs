@@ -3,36 +3,13 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Inventory.Web.Tests;
 
 internal sealed record InventoryKnownExceptionSourceDocument(string Path, string Text);
 
-internal sealed record InventoryKnownExceptionSite(
-    string Path,
-    string TypeName,
-    string MethodName,
-    int DirectKnownExceptionCount,
-    InventoryKnownExceptionSiteKind Kind,
-    string Reason)
-{
-    public string Key => $"{Path}|{TypeName}|{MethodName}";
-}
-
-internal enum InventoryKnownExceptionSiteKind
-{
-    Target,
-    Excluded,
-}
-
-internal sealed record InventoryPostingRejectedSite(
-    string Path,
-    string TypeName,
-    string MethodName,
-    int DirectConstructionCount,
-    int FromDomainCallCount,
-    InventoryKnownExceptionSiteKind Kind,
-    string Reason)
+internal sealed record InventoryExcludedMessageSite(string Path, string TypeName, string MethodName, string Reason)
 {
     public string Key => $"{Path}|{TypeName}|{MethodName}";
 }
@@ -42,133 +19,11 @@ internal static class InventoryKnownExceptionUserMessageSourceAnalyzer
     private const string KnownExceptionTypeName = "NetCorePal.Extensions.Primitives.KnownException";
     private const string InventoryPostingRejectedExceptionTypeName =
         "Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements.InventoryPostingRejectedException";
-    private const int InterpolationEstimatedLength = 12;
     private const int MaximumMessageLength = 60;
-
-    public static IReadOnlyList<InventoryKnownExceptionSite> DiscoverKnownExceptions(
-        IReadOnlyCollection<InventoryKnownExceptionSourceDocument> documents)
-    {
-        if (documents.Count == 0)
-        {
-            throw new InvalidOperationException("Inventory KnownException 源集合不能为空。");
-        }
-
-        var sourceTrees = ParseTrees(documents);
-        var compilation = CreateCompilation(sourceTrees, "InventoryKnownExceptionDiscovery");
-        var discovered = new List<InventoryKnownExceptionSite>();
-
-        foreach (var syntaxTree in sourceTrees)
-        {
-            var semanticModel = compilation.GetSemanticModel(syntaxTree);
-            foreach (var method in syntaxTree.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>())
-            {
-                var typeName = GetContainingTypeName(method);
-                if (typeName is null)
-                {
-                    continue;
-                }
-
-                var directKnownExceptionCount = method.DescendantNodes()
-                    .OfType<BaseObjectCreationExpressionSyntax>()
-                    .Count(creation =>
-                        creation.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault() == method
-                        && IsTransportVisibleKnownExceptionType(semanticModel, creation));
-                if (directKnownExceptionCount == 0)
-                {
-                    continue;
-                }
-
-                discovered.Add(new InventoryKnownExceptionSite(
-                    NormalizePath(syntaxTree.FilePath),
-                    typeName,
-                    MethodName(method),
-                    directKnownExceptionCount,
-                    InventoryKnownExceptionSiteKind.Excluded,
-                    "discovered Inventory KnownException site"));
-            }
-        }
-
-        return discovered;
-    }
-
-    public static IReadOnlyList<InventoryPostingRejectedSite> DiscoverPostingRejectedCalls(
-        IReadOnlyCollection<InventoryKnownExceptionSourceDocument> documents)
-    {
-        if (documents.Count == 0)
-        {
-            throw new InvalidOperationException("InventoryPostingRejectedException 源集合不能为空。");
-        }
-
-        var sourceTrees = ParseTrees(documents);
-        var compilation = CreateCompilation(sourceTrees, "InventoryPostingRejectedDiscovery");
-        var discovered = new Dictionary<string, InventoryPostingRejectedSiteBuilder>(StringComparer.Ordinal);
-
-        foreach (var syntaxTree in sourceTrees)
-        {
-            var semanticModel = compilation.GetSemanticModel(syntaxTree);
-            var root = syntaxTree.GetRoot();
-            foreach (var creation in root.DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>())
-            {
-                if (!IsType(semanticModel, creation, InventoryPostingRejectedExceptionTypeName))
-                {
-                    continue;
-                }
-
-                var key = GetSiteKey(syntaxTree, creation);
-                if (key is null)
-                {
-                    continue;
-                }
-
-                if (!discovered.TryGetValue(key.Key, out var builder))
-                {
-                    builder = new InventoryPostingRejectedSiteBuilder(key.Path, key.TypeName, key.MethodName);
-                    discovered.Add(key.Key, builder);
-                }
-                builder.DirectConstructionCount++;
-            }
-
-            foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
-            {
-                var symbol = semanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
-                if (symbol is null
-                    || symbol.Name != "FromDomain"
-                    || symbol.ContainingType.ToDisplayString() != InventoryPostingRejectedExceptionTypeName)
-                {
-                    continue;
-                }
-
-                var key = GetSiteKey(syntaxTree, invocation);
-                if (key is null)
-                {
-                    continue;
-                }
-
-                if (!discovered.TryGetValue(key.Key, out var builder))
-                {
-                    builder = new InventoryPostingRejectedSiteBuilder(key.Path, key.TypeName, key.MethodName);
-                    discovered.Add(key.Key, builder);
-                }
-                builder.FromDomainCallCount++;
-            }
-        }
-
-        return discovered.Values
-            .Select(builder => new InventoryPostingRejectedSite(
-                builder.Path,
-                builder.TypeName,
-                builder.MethodName,
-                builder.DirectConstructionCount,
-                builder.FromDomainCallCount,
-                InventoryKnownExceptionSiteKind.Excluded,
-                "discovered InventoryPostingRejectedException call site"))
-            .OrderBy(site => site.Key, StringComparer.Ordinal)
-            .ToArray();
-    }
 
     public static IReadOnlyList<string> AnalyzeKnownExceptionMessages(
         IReadOnlyCollection<InventoryKnownExceptionSourceDocument> documents,
-        IReadOnlyCollection<InventoryKnownExceptionSite> excludedSites)
+        IReadOnlyCollection<InventoryExcludedMessageSite> excludedSites)
     {
         if (documents.Count == 0)
         {
@@ -218,7 +73,7 @@ internal static class InventoryKnownExceptionUserMessageSourceAnalyzer
 
     public static IReadOnlyList<string> AnalyzePostingRejectedMessages(
         IReadOnlyCollection<InventoryKnownExceptionSourceDocument> documents,
-        IReadOnlyCollection<InventoryPostingRejectedSite> excludedSites)
+        IReadOnlyCollection<InventoryExcludedMessageSite> excludedSites)
     {
         if (documents.Count == 0)
         {
@@ -274,7 +129,7 @@ internal static class InventoryKnownExceptionUserMessageSourceAnalyzer
         var line = syntaxTree.GetLineSpan(messageExpression.Span).StartLinePosition.Line + 1;
         var path = NormalizePath(syntaxTree.FilePath);
 
-        if (!TryExtractMessage(messageExpression, out var message, out var estimatedLength))
+        if (!UserMessageText.TryExtractMessage(messageExpression, out var message, out var estimatedLength))
         {
             violations.Add(new Violation(
                 path,
@@ -284,7 +139,7 @@ internal static class InventoryKnownExceptionUserMessageSourceAnalyzer
             return;
         }
 
-        if (!ContainsChinese(message))
+        if (!UserMessageText.ContainsChinese(message))
         {
             violations.Add(new Violation(path, line, messageExpression.SpanStart, "用户消息必须包含中文。"));
         }
@@ -298,36 +153,6 @@ internal static class InventoryKnownExceptionUserMessageSourceAnalyzer
         {
             violations.Add(new Violation(path, line, messageExpression.SpanStart, "用户消息不能包含控制字符或不安全分隔符。"));
         }
-    }
-
-    private static bool TryExtractMessage(
-        ExpressionSyntax expression,
-        out string message,
-        out int estimatedLength)
-    {
-        if (expression is LiteralExpressionSyntax literal
-            && literal.IsKind(SyntaxKind.StringLiteralExpression))
-        {
-            message = literal.Token.ValueText;
-            estimatedLength = message.Length;
-            return true;
-        }
-
-        if (expression is InterpolatedStringExpressionSyntax interpolated)
-        {
-            var fixedText = interpolated.Contents
-                .OfType<InterpolatedStringTextSyntax>()
-                .Select(content => content.TextToken.ValueText)
-                .ToArray();
-            message = string.Concat(fixedText);
-            estimatedLength = fixedText.Sum(text => text.Length)
-                + (interpolated.Contents.OfType<InterpolationSyntax>().Count() * InterpolationEstimatedLength);
-            return true;
-        }
-
-        message = string.Empty;
-        estimatedLength = 0;
-        return false;
     }
 
     private static SyntaxTree[] ParseTrees(IReadOnlyCollection<InventoryKnownExceptionSourceDocument> documents) =>
@@ -396,9 +221,6 @@ internal static class InventoryKnownExceptionUserMessageSourceAnalyzer
     private static string MethodName(MethodDeclarationSyntax method) =>
         method.Identifier.ValueText + (method.TypeParameterList is null ? string.Empty : method.TypeParameterList.ToString());
 
-    private static bool ContainsChinese(string message) =>
-        message.Any(character => character is >= '\u3400' and <= '\u9fff');
-
     private static IReadOnlyCollection<MetadataReference> CreateMetadataReferences()
     {
         var trustedPlatformAssemblies = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES");
@@ -432,15 +254,6 @@ internal static class InventoryKnownExceptionUserMessageSourceAnalyzer
     private sealed record SiteKey(string Path, string TypeName, string MethodName)
     {
         public string Key => $"{Path}|{TypeName}|{MethodName}";
-    }
-
-    private sealed class InventoryPostingRejectedSiteBuilder(string path, string typeName, string methodName)
-    {
-        public string Path { get; } = path;
-        public string TypeName { get; } = typeName;
-        public string MethodName { get; } = methodName;
-        public int DirectConstructionCount { get; set; }
-        public int FromDomainCallCount { get; set; }
     }
 
     private sealed record Violation(string Path, int Line, int Position, string Reason);

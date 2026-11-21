@@ -4,126 +4,82 @@ public sealed class MesKnownExceptionMessageArchitectureTests
 {
     private const string MesSourceRoot = "backend/services/Business/Mes/src";
 
-    private static readonly IReadOnlyList<MesKnownExceptionSite> ExpectedLedger =
+    private static readonly IReadOnlyList<MesExcludedMessageSite> ExcludedSites =
     [
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "Raise", 1, "安灯服务 API 的中文领域拒绝，Gateway facade deferred #3653"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "Claim", 2, "安灯认领与首次时间的中文拒绝，Gateway facade deferred #3653"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "Close", 3, "安灯关闭所有权与生命周期的中文拒绝，Gateway facade deferred #3653"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "TryEscalate", 1, "安灯升级时限的中文领域拒绝，尚无 HTTP 公开面"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Andon/AndonCallCommands.cs", "RaiseAndonCallCommandHandler", "Handle", 1, "安灯重放授权范围的中文拒绝，Gateway facade deferred #3653"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Andon/AndonCallCommands.cs", "ClaimAndonCallCommandHandler", "Handle", 1, "安灯认领授权范围的中文拒绝，Gateway facade deferred #3653"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Andon/AndonCallCommands.cs", "CloseAndonCallCommandHandler", "Handle", 1, "安灯关闭授权范围的中文拒绝，Gateway facade deferred #3653"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Andon/AndonCallQueries.cs", "GetAndonCallQueryHandler", "Handle", 1, "安灯详情授权范围的中文拒绝，Gateway facade deferred #3653"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Andon/AndonCallQueries.cs", "ListAndonCallsQueryHandler", "Handle", 1, "安灯队列参数的中文拒绝，Gateway facade deferred #3653"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Andon/AndonCallQueries.cs", "AndonCallAccess", "EnsureSourceAsync", 1, "安灯来源与授权范围的中文拒绝，Gateway facade deferred #3653"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/OperationTaskAggregate/OperationTask.cs", "OperationTask", "Assign", 1, "同步公开手工派工拒绝"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/OperationTaskAggregate/OperationTask.cs", "OperationTask", "Claim", 2, "PDA 自领任务的中文业务拒绝"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/ChangeoverRecordAggregate/ChangeoverRecord.cs", "ChangeoverRecord", "Complete", 2, "换型完成时间与重复完成的中文业务拒绝"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/OperationTaskAggregate/OperationTask.cs", "OperationTask", "ApplyScheduleAssignment", 1, "OperationTask 调度事件排除"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/QualityAggregate/QualityHoldContext.cs", "QualityHoldContext", "ForceRelease", 1, "同步公开质量保留强制释放拒绝"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/ScheduleAggregate/WorkCenterUnavailability.cs", "WorkCenterUnavailability", "Close", 2, "同步公开停机重复恢复与恢复时刻早于开始时刻拒绝"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/ApplicationDbContext.cs", "ApplicationDbContext", "DuplicateProductionReportReversal", 1, "已有中文静态消息，非本层英文候选"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/ApplicationDbContext.cs", "ApplicationDbContext", "RecoverQualityHoldTransitionReplayAsync", 1, "同步公开质量保留幂等冲突"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/MesDomainRuleGuard.cs", "MesDomainRuleGuard", "Enforce", 2, "dynamic exception.Message 透传"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/WorkOrders/CreateRushWorkOrderCommand.cs", "CreateRushWorkOrderCommandHandler", "Handle", 1, "同步公开急单缺生产版本拒绝（#3858）"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/WorkOrders/CreateRushWorkOrderCommand.cs", "CreateRushWorkOrderCommandHandler", "CreateWorkOrderAsync", 1, "同步公开急单齐套需求无法冻结拒绝（#3858）"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/WorkOrders/CreateRushWorkOrderCommand.cs", "CreateRushWorkOrderCommandHandler", "CaptureRoutingAsync", 1, "同步公开急单覆盖序号不属于冻结路线拒绝（#4274）"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/WorkOrders/TransformWorkOrdersCommands.cs", "MergeWorkOrdersCommandHandler", "Handle", 3, "同步公开工单合并输入与冻结路线一致性校验"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/WorkOrders/TransformWorkOrdersCommands.cs", "WorkOrderTransformationCommandSupport", "LoadOperationsAsync", 1, "同步公开工单拆合缺少工艺路线快照拒绝"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/WorkOrders/TransformWorkOrdersCommands.cs", "WorkOrderTransformationCommandSupport", "GetWorkOrderAsync", 1, "同步公开工单转换源工单不存在拒绝"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/WorkOrders/TransformWorkOrdersCommands.cs", "WorkOrderTransformationCommandSupport", "EnsureTargetsAreNewAsync", 1, "同步公开工单转换目标冲突校验"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Production/MesProductionCommands.cs", "CreateFinishedGoodsReceiptRequestCommandHandler", "Handle", 7, "已有中文静态消息，非本层英文候选"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Production/MesProductionCommands.cs", "RecordProductionReportCommandHandler", "Handle", 11, "已有中文静态消息，非本层英文候选"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Production/MesProductionCommands.cs", "RetryFinishedGoodsReceiptInventoryPostingCommandHandler", "Handle", 2, "含 dynamic exception.Message 透传"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Production/MesProductionCommands.cs", "ReverseProductionReportCommandHandler", "Handle", 7, "已有中文静态消息，非本层英文候选"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Production/TelemetryProductionReportCandidateCommands.cs", "DismissTelemetryProductionReportCandidateCommandHandler", "Handle", 1, "同步公开遥测报工候选操作"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Production/TelemetryProductionReportCandidateCommands.cs", "PromoteTelemetryProductionReportCandidateCommandHandler", "Handle", 1, "同步公开遥测报工候选操作"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialRequirementSnapshotProvider.cs", "HttpMesProductEngineeringMaterialRequirementSnapshotProvider", "GetSnapshotAsync", 1, "availability reader 稳定错误码与 provider 失败透传"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialRequirementSnapshotProvider.cs", "HttpMesProductEngineeringMaterialRequirementSnapshotProvider", "SendAsync", 2, "稳定错误码与 provider 失败透传"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialRequirementSnapshotProvider.cs", "HttpMesProductEngineeringMaterialRequirementSnapshotProvider", "SendOptionalAsync", 1, "稳定错误码与 provider 失败透传"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialRequirementSnapshotProvider.cs", "HttpMesProductEngineeringMaterialRequirementSnapshotProvider", "SendRequestAsync", 2, "稳定错误码与 provider 失败透传"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Readiness/MesFoundationSourceReader.cs", "HttpMesFoundationSourceReader", "Unavailable", 1, "稳定错误码 FOUNDATION_SOURCE_UNAVAILABLE 与 MasterData/ERP/Inventory 来源失败透传"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Readiness/MesMaterialAvailabilityReader.cs", "HttpMesMaterialAvailabilityReader", "GetUomConversionsAsync", 1, "稳定错误码 MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Readiness/MesMaterialAvailabilityReader.cs", "HttpMesMaterialAvailabilityReader", "SendAsync", 4, "稳定错误码与 Inventory 或 MasterData provider 失败透传"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialSupplyLocationResolver.cs", "InventoryMesMaterialSupplyLocationResolver", "GetAvailabilityAsync", 3, "稳定错误码与 Inventory provider 失败透传"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialSupplyLocationResolver.cs", "InventoryMesMaterialSupplyLocationResolver", "ResolveAsync", 1, "稳定错误码 MATERIAL_SUPPLY_LOCATION_UNCONFIGURED"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialSupplyLocationResolver.cs", "InventoryMesMaterialSupplyLocationResolver", "SelectSourceAllocationsAsync", 1, "稳定错误码 MATERIAL_SOURCE_LOCATION_UNAVAILABLE"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkerSkillQualificationGate.cs", "HttpMesWorkerSkillQualificationGate", "EnsureQualifiedAsync", 15, "中文业务拒绝与稳定错误码 WORKER_SKILL_SOURCE_UNAVAILABLE"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkerSkillQualificationGate.cs", "HttpMesWorkerSkillQualificationGate", "Unqualified", 1, "中文人员技能资格拒绝"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkerSkillQualificationGate.cs", "UnconfiguredMesWorkerSkillQualificationGate", "EnsureQualifiedAsync", 1, "稳定错误码 WORKER_SKILL_SOURCE_UNAVAILABLE"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesRoutingSnapshotProvider.cs", "HttpMesProductEngineeringRoutingSnapshotProvider", "SendOptionalAsync", 3, "稳定错误码与 ProductEngineering provider 失败透传"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesRoutingSnapshotProvider.cs", "MesRoutingSnapshotMissingException", ".ctor", 1, "稳定错误码 ROUTING_SNAPSHOT_MISSING"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesFirstArticleGate.cs", "HttpMesFirstArticleGate", "EnsureBatchReportAllowedAsync", 5, "稳定错误码 FIRST_ARTICLE_SOURCE_UNAVAILABLE 与 Quality 来源失败透传"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesFirstArticleGate.cs", "HttpMesFirstArticleGate", "EnsureAllows", 3, "中文首件门禁业务拒绝与稳定错误码"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesFirstArticleGate.cs", "HttpMesFirstArticleGate", "EnsureDecisionAllows", 3, "中文首件门禁业务拒绝与稳定错误码"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesQualityInspectionPlanClient.cs", "MesQualityInspectionPlanClient", "HasActiveOperationPlanAsync", 4, "稳定错误码 QUALITY_PLAN_SOURCE_UNAVAILABLE 与 Quality provider 失败透传"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "AcceptShiftHandoverCommandHandler", "Handle", 1, "同步公开班次交接读回不存在拒绝"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "AssignDispatchTaskCommandHandler", "Handle", 3, "已有中文静态消息，非本层英文候选"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ClaimDispatchTaskCommandHandler", "Handle", 3, "PDA 自领任务的中文静态业务拒绝"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ChangeOperationTaskStateCommandHandler", "EnsurePreviousOperationsCompletedAsync", 1, "已有中文静态消息，非本层英文候选"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ChangeOperationTaskStateCommandHandler", "Handle", 4, "已有中文静态消息，非本层英文候选"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "AuthorizeAndStartOperationTaskCommandHandler", "EnsureRequired", 4, "授权跳站内部命令的中文字段校验消息"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "AuthorizeAndStartOperationTaskCommandHandler", "Handle", 5, "授权跳站内部命令的中文业务阻塞消息"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ChangeOperationTaskStateCommandHandler", "TryGetReplayAsync", 1, "同步公开工序动作幂等回执拒绝"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ConfirmDowntimeRecoveryCommandHandler", "Handle", 1, "已有中文静态消息，非本层英文候选"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "CompleteChangeoverCommandHandler", "Handle", 1, "换型记录不存在的中文业务拒绝"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ConfirmLineSideMaterialReceiptCommandHandler", "Handle", 1, "已有中文静态消息，非本层英文候选"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ConvertPlanToWorkOrderCommandHandler", "CreateWorkOrderAsync", 2, "已有中文静态消息，非本层英文候选"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "CreateMaterialIssueRequestCommandHandler", "Handle", 9, "已有中文静态消息，非本层英文候选"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "CreateMaterialIssueRequestCommandHandler", "ResolveFrozenMaterialSelectionAsync", 2, "冻结物料候选不存在或审计归属歧义的中文业务拒绝"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ForceReleaseQualityHoldCommandHandler", "Handle", 2, "同步公开质量保留强制释放拒绝"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ShiftHandoverVocabulary", "ParseCategory", 1, "同步公开交接班遗留问题类别词表拒绝"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ShiftHandoverVocabulary", "ParseSeverity", 1, "同步公开交接班遗留问题严重度词表拒绝"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "RecordDefectCommandHandler", "Handle", 2, "已有中文静态消息，非本层英文候选"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ReleaseWorkOrderCommandHandler", "Handle", 6, "稳定错误码与 readiness code 排除"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ReturnLineSideMaterialCommandLock", "GetLockKeysAsync", 1, "退料分布式锁归一化查询的稳定异常不属于用户消息目标"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ReturnLineSideMaterialCommandHandler", "Handle", 3, "line-side returns deferred 排除"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "WorkOrderCancellationOrchestrator", "CancelAsync", 2, "dynamic exception.Message 透传，属于动态消息盲区，非本层静态目标"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "WorkOrderLifecycleCommandGuards", "GetWorkOrderAsync", 1, "已有中文静态消息，非本层英文候选"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventHandlers/NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder.cs", "NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder", "HandleScopedAsync", 1, "稳定错误码 MATERIAL_REQUIREMENT_SNAPSHOT_MISSING"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventConverters/MesFinishedGoodsReceiptLocationResolver.cs", "ConfiguredMesFinishedGoodsReceiptLocationResolver", "Resolve", 1, "稳定错误码 FINISHED_GOODS_LOCATION_UNCONFIGURED"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/MasterData/MesSkuAvailabilityGate.cs", "DisabledMesSkuException", ".ctor", 1, "同步公开新建 MES 工单闸门"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/ProductEngineering/MesEngineeringChangeCommands.cs", "MesArchivedProductionVersionGuard", "ThrowIfArchivedAsync", 1, "Engineering Change deferred 排除"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/ProductEngineering/MesEngineeringChangeCommands.cs", "RecordEngineeringChangeDecisionCommandHandler", "Handle", 3, "Engineering Change deferred 与 dynamic 透传排除"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Production/MesProductionQueries.cs", "GetProductionReportQueryHandler", "Handle", 1, "同步公开报工详情查询"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Production/MesProductionQueries.cs", "GetProductionReportByIdempotencyKeyQueryHandler", "Handle", 2, "内部恢复读面统一隐藏跨 scope 与半成品缺失"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Production/TelemetryProductionReportCandidateQueries.cs", "GetTelemetryProductionReportCandidateQueryHandler", "Handle", 1, "同步公开遥测报工候选查询"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/ListQueryCriteria.cs", "TenantScope", "From", 2, "同步公开列表查询租户校验"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/WorkOrders/GetWorkOrderTransformationQuery.cs", "GetWorkOrderTransformationQueryHandler", "Handle", 1, "同步公开工单转换读回不存在拒绝"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetMaterialReadinessQueryHandler", "Handle", 1, "dynamic readiness message 透传"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/GetBatchMaterialReadinessQuery.cs", "GetBatchMaterialReadinessQueryHandler", "Handle", 1, "同现有单工单读面的中文工单不存在拒绝"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetMaterialIssueRequestQueryHandler", "Handle", 1, "领料详情在当前组织与环境 scope 内不存在的统一中文拒绝"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetShiftHandoverQueryHandler", "Handle", 1, "同步公开交接班详情读回不存在拒绝"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetMesWorkOrderDetailQueryHandler", "Handle", 1, "已有中文静态消息，非本层英文候选"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/PrevalidateMaterialScanQuery.cs", "MaterialScanPrevalidationErrors", "SourceUnavailable", 1, "固定中文外层消息；provider、异常与 HTTP reason 仅进入受控日志"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs", "MesAuthenticatedActor", "Resolve", 3, "MesEndpoints internal/header 分支排除"),
-        Excluded("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs", "MesQualityHoldRequestContext", "Resolve", 1, "MesEndpoints internal/header 分支排除"),
-        Target("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/WorkOrderTransformationEndpoints.cs", "GetWorkOrderTransformationEndpoint", "HandleAsync", 1, "同步公开工单转换读回路由参数校验"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "Raise", "安灯服务 API 的中文领域拒绝，Gateway facade deferred #3653"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "Claim", "安灯认领与首次时间的中文拒绝，Gateway facade deferred #3653"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "Close", "安灯关闭所有权与生命周期的中文拒绝，Gateway facade deferred #3653"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/AndonCallAggregate/AndonCall.cs", "AndonCall", "TryEscalate", "安灯升级时限的中文领域拒绝，尚无 HTTP 公开面"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Andon/AndonCallCommands.cs", "RaiseAndonCallCommandHandler", "Handle", "安灯重放授权范围的中文拒绝，Gateway facade deferred #3653"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Andon/AndonCallCommands.cs", "ClaimAndonCallCommandHandler", "Handle", "安灯认领授权范围的中文拒绝，Gateway facade deferred #3653"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Andon/AndonCallCommands.cs", "CloseAndonCallCommandHandler", "Handle", "安灯关闭授权范围的中文拒绝，Gateway facade deferred #3653"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Andon/AndonCallQueries.cs", "GetAndonCallQueryHandler", "Handle", "安灯详情授权范围的中文拒绝，Gateway facade deferred #3653"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Andon/AndonCallQueries.cs", "ListAndonCallsQueryHandler", "Handle", "安灯队列参数的中文拒绝，Gateway facade deferred #3653"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Andon/AndonCallQueries.cs", "AndonCallAccess", "EnsureSourceAsync", "安灯来源与授权范围的中文拒绝，Gateway facade deferred #3653"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/OperationTaskAggregate/OperationTask.cs", "OperationTask", "Claim", "PDA 自领任务的中文业务拒绝"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/ChangeoverRecordAggregate/ChangeoverRecord.cs", "ChangeoverRecord", "Complete", "换型完成时间与重复完成的中文业务拒绝"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Domain/AggregatesModel/OperationTaskAggregate/OperationTask.cs", "OperationTask", "ApplyScheduleAssignment", "OperationTask 调度事件排除"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Infrastructure/ApplicationDbContext.cs", "ApplicationDbContext", "DuplicateProductionReportReversal", "已有中文静态消息，非本层英文候选"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/MesDomainRuleGuard.cs", "MesDomainRuleGuard", "Enforce", "dynamic exception.Message 透传"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Production/MesProductionCommands.cs", "CreateFinishedGoodsReceiptRequestCommandHandler", "Handle", "已有中文静态消息，非本层英文候选"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Production/MesProductionCommands.cs", "RecordProductionReportCommandHandler", "Handle", "已有中文静态消息，非本层英文候选"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Production/MesProductionCommands.cs", "RetryFinishedGoodsReceiptInventoryPostingCommandHandler", "Handle", "含 dynamic exception.Message 透传"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Production/MesProductionCommands.cs", "ReverseProductionReportCommandHandler", "Handle", "已有中文静态消息，非本层英文候选"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialRequirementSnapshotProvider.cs", "HttpMesProductEngineeringMaterialRequirementSnapshotProvider", "GetSnapshotAsync", "availability reader 稳定错误码与 provider 失败透传"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialRequirementSnapshotProvider.cs", "HttpMesProductEngineeringMaterialRequirementSnapshotProvider", "SendAsync", "稳定错误码与 provider 失败透传"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialRequirementSnapshotProvider.cs", "HttpMesProductEngineeringMaterialRequirementSnapshotProvider", "SendOptionalAsync", "稳定错误码与 provider 失败透传"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialRequirementSnapshotProvider.cs", "HttpMesProductEngineeringMaterialRequirementSnapshotProvider", "SendRequestAsync", "稳定错误码与 provider 失败透传"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Readiness/MesFoundationSourceReader.cs", "HttpMesFoundationSourceReader", "Unavailable", "稳定错误码 FOUNDATION_SOURCE_UNAVAILABLE 与 MasterData/ERP/Inventory 来源失败透传"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Readiness/MesMaterialAvailabilityReader.cs", "HttpMesMaterialAvailabilityReader", "GetUomConversionsAsync", "稳定错误码 MATERIAL_REQUIREMENT_SOURCE_UNAVAILABLE"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Readiness/MesMaterialAvailabilityReader.cs", "HttpMesMaterialAvailabilityReader", "SendAsync", "稳定错误码与 Inventory 或 MasterData provider 失败透传"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialSupplyLocationResolver.cs", "InventoryMesMaterialSupplyLocationResolver", "GetAvailabilityAsync", "稳定错误码与 Inventory provider 失败透传"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialSupplyLocationResolver.cs", "InventoryMesMaterialSupplyLocationResolver", "ResolveAsync", "稳定错误码 MATERIAL_SUPPLY_LOCATION_UNCONFIGURED"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesMaterialSupplyLocationResolver.cs", "InventoryMesMaterialSupplyLocationResolver", "SelectSourceAllocationsAsync", "稳定错误码 MATERIAL_SOURCE_LOCATION_UNAVAILABLE"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkerSkillQualificationGate.cs", "HttpMesWorkerSkillQualificationGate", "EnsureQualifiedAsync", "中文业务拒绝与稳定错误码 WORKER_SKILL_SOURCE_UNAVAILABLE"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkerSkillQualificationGate.cs", "HttpMesWorkerSkillQualificationGate", "Unqualified", "中文人员技能资格拒绝"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkerSkillQualificationGate.cs", "UnconfiguredMesWorkerSkillQualificationGate", "EnsureQualifiedAsync", "稳定错误码 WORKER_SKILL_SOURCE_UNAVAILABLE"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesRoutingSnapshotProvider.cs", "HttpMesProductEngineeringRoutingSnapshotProvider", "SendOptionalAsync", "稳定错误码与 ProductEngineering provider 失败透传"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesRoutingSnapshotProvider.cs", "MesRoutingSnapshotMissingException", ".ctor", "稳定错误码 ROUTING_SNAPSHOT_MISSING"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesFirstArticleGate.cs", "HttpMesFirstArticleGate", "EnsureBatchReportAllowedAsync", "稳定错误码 FIRST_ARTICLE_SOURCE_UNAVAILABLE 与 Quality 来源失败透传"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesFirstArticleGate.cs", "HttpMesFirstArticleGate", "EnsureAllows", "中文首件门禁业务拒绝与稳定错误码"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesFirstArticleGate.cs", "HttpMesFirstArticleGate", "EnsureDecisionAllows", "中文首件门禁业务拒绝与稳定错误码"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Quality/MesQualityInspectionPlanClient.cs", "MesQualityInspectionPlanClient", "HasActiveOperationPlanAsync", "稳定错误码 QUALITY_PLAN_SOURCE_UNAVAILABLE 与 Quality provider 失败透传"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "AssignDispatchTaskCommandHandler", "Handle", "已有中文静态消息，非本层英文候选"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ClaimDispatchTaskCommandHandler", "Handle", "PDA 自领任务的中文静态业务拒绝"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ChangeOperationTaskStateCommandHandler", "EnsurePreviousOperationsCompletedAsync", "已有中文静态消息，非本层英文候选"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ChangeOperationTaskStateCommandHandler", "Handle", "已有中文静态消息，非本层英文候选"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "AuthorizeAndStartOperationTaskCommandHandler", "EnsureRequired", "授权跳站内部命令的中文字段校验消息"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "AuthorizeAndStartOperationTaskCommandHandler", "Handle", "授权跳站内部命令的中文业务阻塞消息"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ConfirmDowntimeRecoveryCommandHandler", "Handle", "已有中文静态消息，非本层英文候选"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "CompleteChangeoverCommandHandler", "Handle", "换型记录不存在的中文业务拒绝"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ConfirmLineSideMaterialReceiptCommandHandler", "Handle", "已有中文静态消息，非本层英文候选"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ConvertPlanToWorkOrderCommandHandler", "CreateWorkOrderAsync", "已有中文静态消息，非本层英文候选"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "CreateMaterialIssueRequestCommandHandler", "Handle", "已有中文静态消息，非本层英文候选"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "CreateMaterialIssueRequestCommandHandler", "ResolveFrozenMaterialSelectionAsync", "冻结物料候选不存在或审计归属歧义的中文业务拒绝"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "RecordDefectCommandHandler", "Handle", "已有中文静态消息，非本层英文候选"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ReleaseWorkOrderCommandHandler", "Handle", "稳定错误码与 readiness code 排除"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ReturnLineSideMaterialCommandLock", "GetLockKeysAsync", "退料分布式锁归一化查询的稳定异常不属于用户消息目标"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "ReturnLineSideMaterialCommandHandler", "Handle", "line-side returns deferred 排除"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "WorkOrderCancellationOrchestrator", "CancelAsync", "dynamic exception.Message 透传，属于动态消息盲区，非本层静态目标"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Commands/Workbench/MesWorkbenchCommands.cs", "WorkOrderLifecycleCommandGuards", "GetWorkOrderAsync", "已有中文静态消息，非本层英文候选"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventHandlers/NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder.cs", "NcrReworkRequestedIntegrationEventHandlerForCreateMesWorkOrder", "HandleScopedAsync", "稳定错误码 MATERIAL_REQUIREMENT_SNAPSHOT_MISSING"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/IntegrationEventConverters/MesFinishedGoodsReceiptLocationResolver.cs", "ConfiguredMesFinishedGoodsReceiptLocationResolver", "Resolve", "稳定错误码 FINISHED_GOODS_LOCATION_UNCONFIGURED"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/ProductEngineering/MesEngineeringChangeCommands.cs", "MesArchivedProductionVersionGuard", "ThrowIfArchivedAsync", "Engineering Change deferred 排除"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/ProductEngineering/MesEngineeringChangeCommands.cs", "RecordEngineeringChangeDecisionCommandHandler", "Handle", "Engineering Change deferred 与 dynamic 透传排除"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetMaterialReadinessQueryHandler", "Handle", "dynamic readiness message 透传"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/GetBatchMaterialReadinessQuery.cs", "GetBatchMaterialReadinessQueryHandler", "Handle", "同现有单工单读面的中文工单不存在拒绝"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetMaterialIssueRequestQueryHandler", "Handle", "领料详情在当前组织与环境 scope 内不存在的统一中文拒绝"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/MesWorkbenchQueries.cs", "GetMesWorkOrderDetailQueryHandler", "Handle", "已有中文静态消息，非本层英文候选"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Queries/Workbench/PrevalidateMaterialScanQuery.cs", "MaterialScanPrevalidationErrors", "SourceUnavailable", "固定中文外层消息；provider、异常与 HTTP reason 仅进入受控日志"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs", "MesAuthenticatedActor", "Resolve", "MesEndpoints internal/header 分支排除"),
+        new("backend/services/Business/Mes/src/Nerv.IIP.Business.Mes.Web/Endpoints/Mes/MesEndpoints.cs", "MesQualityHoldRequestContext", "Resolve", "MesEndpoints internal/header 分支排除"),
     ];
 
     [Fact]
-    public void Static_target_and_exclusion_ledger_matches_the_current_MES_source()
+    public void Mes_transport_visible_known_exceptions_use_safe_user_messages()
     {
-        var documents = ReadMesSourceDocuments();
-        var discovered = MesKnownExceptionUserMessageSourceAnalyzer.Discover(documents);
-
-        Assert.Equal(93, discovered.Count);
-        Assert.Equal(199, discovered.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(194, documents.Sum(document => CountOccurrences(document.Text, "new KnownException")));
-        Assert.Equal(ExpectedLedger.Count, discovered.Count);
-
-        var expectedByKey = ExpectedLedger.ToDictionary(site => site.Key, StringComparer.Ordinal);
-        var discoveredByKey = discovered.ToDictionary(site => site.Key, StringComparer.Ordinal);
-        Assert.Equal(expectedByKey.Keys.OrderBy(key => key, StringComparer.Ordinal), discoveredByKey.Keys.OrderBy(key => key, StringComparer.Ordinal));
-        foreach (var expected in ExpectedLedger)
-        {
-            Assert.Equal(expected.DirectKnownExceptionCount, discoveredByKey[expected.Key].DirectKnownExceptionCount);
-        }
-
-        var excluded = ExpectedLedger.Where(site => site.Kind == MesKnownExceptionSiteKind.Excluded).ToArray();
-        var violations = MesKnownExceptionUserMessageSourceAnalyzer.Analyze(documents, excluded);
+        var violations = MesKnownExceptionUserMessageSourceAnalyzer.Analyze(ReadMesSourceDocuments(), ExcludedSites);
         Assert.Empty(violations);
-        Assert.Equal(32, ExpectedLedger.Where(site => site.Kind == MesKnownExceptionSiteKind.Target).Sum(site => site.DirectKnownExceptionCount));
     }
 
     [Fact]
@@ -144,12 +100,6 @@ public sealed class MesKnownExceptionMessageArchitectureTests
             """;
         var documents = new[] { new MesSourceDocument("synthetic/MesMessages.cs", source) };
 
-        var discovered = MesKnownExceptionUserMessageSourceAnalyzer.Discover(documents);
-        Assert.Equal(3, discovered.Count);
-        Assert.Contains(discovered, site => site.TypeName == "Primary" && site.MemberName == ".ctor");
-        Assert.Contains(discovered, site => site.TypeName == "Sample" && site.MemberName == "Explicit");
-        Assert.Contains(discovered, site => site.TypeName == "Sample" && site.MemberName == "TargetTyped");
-
         var violations = MesKnownExceptionUserMessageSourceAnalyzer.Analyze(documents, []);
         Assert.Equal(3, violations.Count);
         Assert.Equal(2, violations.Count(violation => violation.Contains("中文", StringComparison.Ordinal)));
@@ -169,8 +119,8 @@ public sealed class MesKnownExceptionMessageArchitectureTests
             }
             """;
         var documents = new[] { new MesSourceDocument("synthetic/MesDynamic.cs", source) };
-        var discovered = MesKnownExceptionUserMessageSourceAnalyzer.Discover(documents);
-        var dynamicSite = Assert.Single(discovered, site => site.MemberName == "Dynamic");
+        var dynamicSite = new MesExcludedMessageSite(
+            "synthetic/MesDynamic.cs", "Sample", "Dynamic", "仅用于测试精确豁免");
 
         var violations = MesKnownExceptionUserMessageSourceAnalyzer.Analyze(documents, []);
         Assert.Contains(violations, violation => violation.Contains("静态分析", StringComparison.Ordinal));
@@ -190,35 +140,6 @@ public sealed class MesKnownExceptionMessageArchitectureTests
                 File.ReadAllText(file)))
             .ToArray();
     }
-
-    private static int CountOccurrences(string text, string value)
-    {
-        var count = 0;
-        var index = 0;
-        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
-        {
-            count++;
-            index += value.Length;
-        }
-
-        return count;
-    }
-
-    private static MesKnownExceptionSite Target(
-        string path,
-        string typeName,
-        string memberName,
-        int count,
-        string reason) =>
-        new(path, typeName, memberName, count, MesKnownExceptionSiteKind.Target, reason);
-
-    private static MesKnownExceptionSite Excluded(
-        string path,
-        string typeName,
-        string memberName,
-        int count,
-        string reason) =>
-        new(path, typeName, memberName, count, MesKnownExceptionSiteKind.Excluded, reason);
 
     private static string FindRepositoryRoot()
     {

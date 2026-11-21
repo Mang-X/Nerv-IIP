@@ -141,8 +141,12 @@ public sealed class EfOperationTaskApplicationService(
             }
 
             dbContext.ChangeTracker.Clear();
-            var duplicate = await repository.GetByIdempotencyScopeAsync(idempotencyScope, cancellationToken)
-                ?? RethrowDuplicateConflict(exception);
+            var duplicate = await repository.GetByIdempotencyScopeAsync(idempotencyScope, cancellationToken);
+            if (duplicate is null)
+            {
+                throw;
+            }
+
             return duplicate.ToDetailFact().ToContract();
         }
 
@@ -174,7 +178,7 @@ public sealed class EfOperationTaskApplicationService(
             task.AbandonExpiredLease(timeoutAuditId, now);
             if (task.AuditRecords.Count > auditCountBeforeTimeout)
             {
-                chainHead = AssignAuditChain(task, [timeoutAuditId], chainHead);
+                chainHead = OperationTaskAuditChain.AssignStamps(task, [timeoutAuditId], chainHead);
             }
 
             if (!string.Equals(task.Status, "queued", StringComparison.Ordinal))
@@ -191,7 +195,7 @@ public sealed class EfOperationTaskApplicationService(
                 now,
                 TimeSpan.FromSeconds(Math.Clamp(task.DefaultLeaseDurationSeconds, 30, 3600)),
                 Math.Clamp(task.DefaultMaxAttempts, 1, 10)));
-            chainHead = AssignAuditChain(task, [claimAuditId], chainHead);
+            chainHead = OperationTaskAuditChain.AssignStamps(task, [claimAuditId], chainHead);
         }
 
         return new PendingOperationTasksResult(items).ToContract();
@@ -295,35 +299,7 @@ public sealed class EfOperationTaskApplicationService(
 
         await repository.LockAuditChainAsync(task.OrganizationId, task.EnvironmentId, cancellationToken);
         var head = await repository.GetAuditChainHeadAsync(task.OrganizationId, task.EnvironmentId, cancellationToken);
-        var sequenceNo = head?.SequenceNo ?? 0;
-        var previousHash = head?.IntegrityHash ?? string.Empty;
-
-        foreach (var auditRecordId in auditRecordIds)
-        {
-            sequenceNo++;
-            task.AssignAuditChainStamp(auditRecordId, sequenceNo, previousHash);
-            previousHash = task.AuditRecords.Single(x => x.Id == auditRecordId).IntegrityHash;
-        }
-    }
-
-    private static AuditChainHead? AssignAuditChain(OperationTask task, IReadOnlyCollection<AuditRecordId> auditRecordIds, AuditChainHead? head)
-    {
-        if (auditRecordIds.Count == 0)
-        {
-            return head;
-        }
-
-        var sequenceNo = head?.SequenceNo ?? 0;
-        var previousHash = head?.IntegrityHash ?? string.Empty;
-
-        foreach (var auditRecordId in auditRecordIds)
-        {
-            sequenceNo++;
-            task.AssignAuditChainStamp(auditRecordId, sequenceNo, previousHash);
-            previousHash = task.AuditRecords.Single(x => x.Id == auditRecordId).IntegrityHash;
-        }
-
-        return new AuditChainHead(sequenceNo, previousHash);
+        OperationTaskAuditChain.AssignStamps(task, auditRecordIds, head);
     }
 
     private async Task<OperationTemplateSnapshot> ResolveTemplateAsync(string operationCode, CancellationToken cancellationToken)
@@ -347,12 +323,6 @@ public sealed class EfOperationTaskApplicationService(
     {
         return dbContext.ChangeTracker.Entries<OperationTask>().Any(x => x.State == EntityState.Added)
             && ProcessedIntegrationEventInbox.IsUniqueConflict(exception, dbContext, constraintOrIndexName: null);
-    }
-
-    private static OperationTask RethrowDuplicateConflict(DbUpdateException exception)
-    {
-        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
-        throw new InvalidOperationException("Unreachable duplicate conflict rethrow path.");
     }
 }
 
@@ -393,7 +363,7 @@ public sealed class EfOperationLeaseReaper(
                 continue;
             }
 
-            chainHead = AssignAuditChainStamp(task, [auditId], chainHead);
+            chainHead = OperationTaskAuditChain.AssignStamps(task, [auditId], chainHead);
             if (string.Equals(task.Status, "queued", StringComparison.Ordinal))
             {
                 requeued++;
@@ -409,8 +379,11 @@ public sealed class EfOperationLeaseReaper(
         await dbContext.SaveChangesAsync(cancellationToken);
         return new OperationLeaseReaperResult(requeued, failed);
     }
+}
 
-    private static AuditChainHead? AssignAuditChainStamp(OperationTask task, IReadOnlyCollection<AuditRecordId> auditRecordIds, AuditChainHead? head)
+file static class OperationTaskAuditChain
+{
+    public static AuditChainHead? AssignStamps(OperationTask task, IReadOnlyCollection<AuditRecordId> auditRecordIds, AuditChainHead? head)
     {
         if (auditRecordIds.Count == 0)
         {

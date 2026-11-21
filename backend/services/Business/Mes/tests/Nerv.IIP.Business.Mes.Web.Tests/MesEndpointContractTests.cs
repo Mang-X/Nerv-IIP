@@ -2718,6 +2718,61 @@ public sealed class MesEndpointContractTests
 
     // Regression: #3885. The default WIP count and page must exclude completed tasks together.
     [Fact]
+    public async Task Wip_http_filters_the_exact_work_order_and_operation_before_paging()
+    {
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Testing");
+            builder.UseSetting("InternalService:BearerToken", "test-internal-service-token");
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IHostedService>();
+                var databaseName = $"mes-wip-filter-{Guid.NewGuid():N}";
+                services.RemoveAll<DbContextOptions<Infrastructure.ApplicationDbContext>>();
+                services.RemoveAll<Microsoft.EntityFrameworkCore.Infrastructure.IDbContextOptionsConfiguration<Infrastructure.ApplicationDbContext>>();
+                services.AddDbContext<Infrastructure.ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
+            });
+        });
+        using var client = factory.CreateClient();
+        const string route = "/api/business/v1/mes/wip?organizationId=org-wip&environmentId=env-dev&take=1";
+        const string target = route + "&workOrderId=WO-100&operationTaskId=OP-TARGET";
+        using var denied = await client.GetAsync(target);
+        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-internal-service-token");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+            var start = DateTimeOffset.Parse("2026-09-22T08:00:00Z");
+            for (var index = 0; index <= 100; index++)
+            {
+                var orderId = $"WO-{index:D3}";
+                db.WorkOrders.Add(WorkOrder.Create("org-wip", "env-dev", orderId, "SKU", null, 5m, 1, start.AddDays(1)));
+                db.OperationTasks.Add(OperationTask.Queue("org-wip", "env-dev", orderId, $"OP-{index:D3}",
+                    10, "WC", [], start.AddMinutes(index), TimeSpan.FromMinutes(15), "SKU"));
+            }
+            db.OperationTasks.Add(OperationTask.Queue("org-wip", "env-dev", "WO-100", "OP-TARGET",
+                20, "WC", [], start.AddHours(2), TimeSpan.FromMinutes(15), "SKU"));
+            await db.SaveChangesAsync();
+        }
+
+        var all = await client.GetFromJsonAsync<MesWipSummaryResponse>(route);
+        Assert.Equal(102, all!.Total);
+        Assert.Equal("OP-000", Assert.Single(all.Items).OperationTaskId);
+
+        var exact = await client.GetFromJsonAsync<MesWipSummaryResponse>(target);
+        Assert.Equal(1, exact!.Total);
+        var row = Assert.Single(exact.Items);
+        Assert.Equal("WO-100", row.WorkOrderId);
+        Assert.Equal("OP-TARGET", row.OperationTaskId);
+        Assert.Equal(5m, row.PlannedQuantity);
+
+        var mismatch = await client.GetFromJsonAsync<MesWipSummaryResponse>(
+            route + "&workOrderId=WO-099&operationTaskId=OP-TARGET");
+        Assert.Equal(0, mismatch!.Total);
+        Assert.Empty(mismatch.Items);
+    }
+
+    [Fact]
     public async Task Wip_summary_excludes_completed_tasks_from_default_total_and_page()
     {
         await using var provider = MesTestProvider.CreateInMemoryProvider();

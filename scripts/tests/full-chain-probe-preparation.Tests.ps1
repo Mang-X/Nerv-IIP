@@ -60,8 +60,8 @@ Invoke-NervFullChainProbePreparation -Project $Project -WorkingDirectory (Split-
     $child = Invoke-NativeCommandOutput -Command 'pwsh' -Arguments @('-NoProfile', '-File', $childScript, (Join-Path $repoRoot 'scripts/lib/FullChainTestLane.ps1'), $probeProject, $receiptPath) -WorkingDirectory $fixture -Name 'full-chain-prepared-probe-child'
     Assert-Contract ([string]::Equals($child.Stdout.Trim(), 'Release', [StringComparison]::Ordinal)) 'A child adapter must recognize the live preparation owner without clock conversion drift.'
     foreach ($adapter in @(
-        @{ Path = 'scripts/verify-erp-sales-order-demand-planning.ps1'; Services = @('MasterData.csproj', 'Erp.csproj', 'DemandPlanning.csproj'); Probe = 'man517-out-of-order-probe'; Counter = 'Get-Man517TrxCounter'; Identity = 'Nerv.IIP.Business.FullChain.Tests.SalesOrderDemandPlanningPostgresRedisAcceptanceTests.External_process_injects_duplicate_and_out_of_order_sales_order_events' },
-        @{ Path = 'scripts/verify-erp-wms-delivery-completion.ps1'; Services = @('Erp.csproj', 'Wms.csproj', 'Inventory.csproj'); Probe = 'man527-replay-probe'; Counter = 'Get-Man527TrxCounter'; Identity = 'Nerv.IIP.Business.FullChain.Tests.ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts' }
+        @{ Path = 'scripts/integration/verify-erp-sales-order-demand-planning.ps1'; Services = @('MasterData.csproj', 'Erp.csproj', 'DemandPlanning.csproj'); Probe = 'man517-out-of-order-probe'; Counter = 'Get-Man517TrxCounter'; Identity = 'Nerv.IIP.Business.FullChain.Tests.SalesOrderDemandPlanningPostgresRedisAcceptanceTests.External_process_injects_duplicate_and_out_of_order_sales_order_events' },
+        @{ Path = 'scripts/integration/verify-erp-wms-delivery-completion.ps1'; Services = @('Erp.csproj', 'Wms.csproj', 'Inventory.csproj'); Probe = 'man527-replay-probe'; Counter = 'Get-Man527TrxCounter'; Identity = 'Nerv.IIP.Business.FullChain.Tests.ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts' }
     )) {
         $calls.Clear(); $script:probeFailure = $false
         [IO.File]::WriteAllText($receiptPath, $originalReceipt)
@@ -136,7 +136,7 @@ Invoke-NervFullChainProbePreparation -Project $Project -WorkingDirectory (Split-
     }
     # Build-bearing discovery failure cannot produce a receipt or admit an adapter.
     Remove-Item $receiptPath
-    $runnerSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/run-full-chain-test-lane.ps1'))
+    $runnerSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/ci/run-full-chain-test-lane.ps1'))
     $runnerAst = [Management.Automation.Language.Parser]::ParseInput($runnerSource, [ref]$null, [ref]$null)
     $discoveryStatement = $runnerAst.Find({ param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and [string]::Equals($n.Left.Extent.Text, '$discovery', [StringComparison]::Ordinal) }, $true)
     $receiptStatement = $runnerAst.Find({ param($n) $n -is [Management.Automation.Language.IfStatementAst] -and $n.Extent.Text.Contains('New-NervFullChainProbePreparation', [StringComparison]::Ordinal) }, $true)

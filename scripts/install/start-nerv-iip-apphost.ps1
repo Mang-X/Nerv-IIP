@@ -5,7 +5,7 @@
 #     - Sets scoped process environment variables for the AppHost run
 #   Writes:
 #     - bin/ and obj/ build outputs under projects built by Aspire
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Restores scoped environment variables after AppHost exits
 #   Requires:
@@ -286,8 +286,7 @@ if (-not [string]::IsNullOrWhiteSpace($CorsAllowedOrigins)) {
     $environment["Security__Cors__AllowedOrigins"] = $CorsAllowedOrigins
 }
 
-# 仓储站点/库位：AppHost 只在 Development 回落（leader-demo profile 回落 SITE-001 + WH-WB-*，
-# 普通 Development 回落 SITE-001 + loc-*，#3137），非 Development
+# 仓储站点/库位：AppHost 只在 Development 回落到 SITE-001 + loc-*，非 Development
 # 必须由这里显式给出真实值，否则相关键根本不下发，MES 线边收料与 WMS 领料按各自 fail-closed
 # 路径显式失败（#2008）。键名与服务读取的配置节同名。
 if (-not [string]::IsNullOrWhiteSpace($InventorySiteCode)) {

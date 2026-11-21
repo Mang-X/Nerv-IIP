@@ -8,6 +8,8 @@
  * 工厂 ▸ 产线 ▸ 工作中心是**父子层级**（后端建模：产线挂 SiteCode，工作中心挂 LineCode），
  * 所以下级候选按上级过滤，页面在上级变更时清空下游已选值。
  */
+import { useAuthStore } from '@/stores/auth'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { EntityPickerOption } from '@nerv-iip/ui'
 import { computed } from 'vue'
 import { useBusinessMasterDataResources, useBusinessSkus } from './useBusinessMasterData'
@@ -106,7 +108,10 @@ export function useProductionScopeCatalog() {
  */
 export function useMesMaterialVersionCatalog() {
   const skuCatalog = useBusinessSkus()
-  const versionCatalog = useEngineeringProductionVersions()
+  const auth = useAuthStore()
+  const versionCatalog = useEngineeringProductionVersions(
+    () => auth.principal?.permissionCodes?.includes(P.engineeringProductionVersionsRead) === true,
+  )
   skuCatalog.filters.take = CATALOG_TAKE
   versionCatalog.filters.take = CATALOG_TAKE
 

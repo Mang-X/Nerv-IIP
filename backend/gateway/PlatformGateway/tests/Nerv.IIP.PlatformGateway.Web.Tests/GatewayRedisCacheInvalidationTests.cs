@@ -1,3 +1,4 @@
+using Nerv.IIP.Web;
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
@@ -11,7 +12,6 @@ using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.AppHubQueries;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
-using Nerv.IIP.PlatformGateway.Web.Application.Resilience;
 using Nerv.IIP.ServiceAuth;
 using Nerv.IIP.Testing;
 using StackExchange.Redis;
@@ -463,7 +463,7 @@ public sealed class GatewayRedisCacheInvalidationTests
                 services.AddTransient<IGatewayAuthorizationClient>(sp => new HttpGatewayAuthorizationClient(
                     new HttpClient(new IamAuthorityHandler(source)) { BaseAddress = new Uri("http://iam.test") },
                     sp.GetRequiredService<IAppCache>(), sp.GetRequiredService<IOptions<GatewayAuthorizationOptions>>(),
-                    sp.GetRequiredService<GatewayDownstreamHealthState>()));
+                    sp.GetRequiredService<DownstreamHealthState>()));
                 if (logs is not null) services.AddLogging(logging => logging.AddProvider(logs));
             });
         }

@@ -3,7 +3,7 @@ import { useQuery } from '@pinia/colada'
 import { computed } from 'vue'
 import { hasBusinessContext, type BusinessContextFields } from './businessContextBinding'
 import { useMesPrincipalWorkScope } from './useBusinessMes'
-import { useScopeBoundListResponse } from './useScopeBoundListResponse'
+import { useScopeBoundListResponse } from '@nerv-iip/business-core'
 import { inlineErrorMessage } from '@/utils/notify'
 
 // 工序检验的产品来自工单公开读面，沿用 MES 的主体与作业范围选择。

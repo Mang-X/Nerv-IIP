@@ -39,7 +39,7 @@ param(
 
     [switch] $All,
 
-    [ValidateSet('smoke', 'man-440', 'man-528', 'leader-demo-main-chain', 'leader-demo-quality-branch', 'leader-demo-equipment-branch', 'issue-1912-real-machine-walkthrough')]
+    [ValidateSet('smoke', 'man-440', 'man-528', 'issue-1912-real-machine-walkthrough')]
     [string] $Scenario,
 
     [string] $SessionId,
@@ -76,16 +76,8 @@ Usage:
   .\nerv.ps1 fullstack run -Scenario smoke
   .\nerv.ps1 fullstack run -Scenario smoke -EnableWmsDemoWorker
   .\nerv.ps1 fullstack start -EnableWmsDemoWorker
-  .\nerv.ps1 demo start
-  .\nerv.ps1 demo reset
-  .\nerv.ps1 demo seed
-  .\nerv.ps1 demo health-check
-  .\nerv.ps1 demo stop
-  .\nerv.ps1 fullstack run -Scenario leader-demo-main-chain
-  .\nerv.ps1 fullstack run -Scenario leader-demo-quality-branch
-  .\nerv.ps1 fullstack run -Scenario leader-demo-equipment-branch
   .\nerv.ps1 fullstack run -Scenario issue-1912-real-machine-walkthrough
-  .\nerv.ps1 publish-compose [-EnvironmentName Production] [-OutputPath artifacts/aspire-output/compose]
+  .\nerv.ps1 publish-compose [-EnvironmentName Production] [-OutputPath .ryugi/artifacts/aspire-output/compose]
   .\nerv.ps1 prepare-compose [-EnvironmentName Production]
   .\nerv.ps1 deploy-compose [-EnvironmentName Production]
   .\nerv.ps1 ports
@@ -100,7 +92,6 @@ Commands:
   logs             Show Aspire resource logs.
   describe         Describe Aspire resources.
   fullstack        Manage isolated full-stack test sessions.
-  demo             Manage the isolated Redis-backed leader-demo environment.
   publish-compose  Generate Aspire Docker Compose artifacts.
   prepare-compose  Generate env-specific Compose artifacts and images through Aspire.
   deploy-compose   Deploy the Aspire Docker Compose target through Aspire.
@@ -151,15 +142,8 @@ Infrastructure services:
 }
 
 switch ($Command.ToLowerInvariant()) {
-    'demo' {
-        $demoScript = Join-Path $repoRoot 'scripts/leader-demo.ps1'
-        $demoParameters = @{}
-        if ($NoBuild) { $demoParameters['NoBuild'] = $true }
-        & $demoScript @demoParameters @forwardArguments
-        exit $LASTEXITCODE
-    }
     'fullstack' {
-        $fullStackScript = Join-Path $repoRoot 'scripts/fullstack-session.ps1'
+        $fullStackScript = Join-Path $repoRoot 'scripts/fullstack/manage-fullstack-session.ps1'
         $fullStackArguments = [System.Collections.Generic.List[string]]::new()
         foreach ($argument in $forwardArguments) { $fullStackArguments.Add($argument) }
         $fullStackParameters = @{}
@@ -173,7 +157,7 @@ switch ($Command.ToLowerInvariant()) {
         exit $LASTEXITCODE
     }
     'bootstrap' {
-        $bootstrapScript = Join-Path $repoRoot 'scripts/bootstrap-online.ps1'
+        $bootstrapScript = Join-Path $repoRoot 'scripts/dev/bootstrap-online-environment.ps1'
         if (-not (Test-Path -LiteralPath $bootstrapScript -PathType Leaf)) {
             Write-Host "Bootstrap script not found: $bootstrapScript"
             exit 1
@@ -206,7 +190,7 @@ switch ($Command.ToLowerInvariant()) {
         exit $LASTEXITCODE
     }
     'dev' {
-        $devScript = Join-Path $repoRoot 'scripts/dev.ps1'
+        $devScript = Join-Path $repoRoot 'scripts/dev/start-platform.ps1'
         if (-not (Test-Path -LiteralPath $devScript -PathType Leaf)) {
             Write-Host "Development script not found: $devScript"
             exit 1
@@ -230,7 +214,7 @@ switch ($Command.ToLowerInvariant()) {
         exit $LASTEXITCODE
     }
     'stop' {
-        $controlScript = Join-Path $repoRoot 'scripts/aspire-control.ps1'
+        $controlScript = Join-Path $repoRoot 'scripts/dev/control-aspire-apphost.ps1'
         $controlParameters = @{ Action = 'stop' }
         if ($All) {
             $controlParameters['All'] = $true
@@ -240,17 +224,17 @@ switch ($Command.ToLowerInvariant()) {
         exit $LASTEXITCODE
     }
     'status' {
-        $controlScript = Join-Path $repoRoot 'scripts/aspire-control.ps1'
+        $controlScript = Join-Path $repoRoot 'scripts/dev/control-aspire-apphost.ps1'
         & $controlScript -Action status @forwardArguments
         exit $LASTEXITCODE
     }
     'wait' {
-        $controlScript = Join-Path $repoRoot 'scripts/aspire-control.ps1'
+        $controlScript = Join-Path $repoRoot 'scripts/dev/control-aspire-apphost.ps1'
         & $controlScript -Action wait -Status $Status -TimeoutSeconds $TimeoutSeconds @forwardArguments
         exit $LASTEXITCODE
     }
     'logs' {
-        $controlScript = Join-Path $repoRoot 'scripts/aspire-control.ps1'
+        $controlScript = Join-Path $repoRoot 'scripts/dev/control-aspire-apphost.ps1'
         $controlParameters = @{
             Action = 'logs'
             Tail = $Tail
@@ -266,7 +250,7 @@ switch ($Command.ToLowerInvariant()) {
         exit $LASTEXITCODE
     }
     'describe' {
-        $controlScript = Join-Path $repoRoot 'scripts/aspire-control.ps1'
+        $controlScript = Join-Path $repoRoot 'scripts/dev/control-aspire-apphost.ps1'
         $controlParameters = @{ Action = 'describe' }
         if ($IncludeHidden) {
             $controlParameters['IncludeHidden'] = $true
@@ -276,7 +260,7 @@ switch ($Command.ToLowerInvariant()) {
         exit $LASTEXITCODE
     }
     'publish-compose' {
-        $composeScript = Join-Path $repoRoot 'scripts/aspire-compose.ps1'
+        $composeScript = Join-Path $repoRoot 'scripts/dev/invoke-aspire-compose.ps1'
         $composeParameters = @{
             Mode = 'Publish'
             EnvironmentName = $EnvironmentName
@@ -292,7 +276,7 @@ switch ($Command.ToLowerInvariant()) {
         exit $LASTEXITCODE
     }
     'prepare-compose' {
-        $composeScript = Join-Path $repoRoot 'scripts/aspire-compose.ps1'
+        $composeScript = Join-Path $repoRoot 'scripts/dev/invoke-aspire-compose.ps1'
         $composeParameters = @{
             Mode = 'Prepare'
             EnvironmentName = $EnvironmentName
@@ -308,7 +292,7 @@ switch ($Command.ToLowerInvariant()) {
         exit $LASTEXITCODE
     }
     'deploy-compose' {
-        $composeScript = Join-Path $repoRoot 'scripts/aspire-compose.ps1'
+        $composeScript = Join-Path $repoRoot 'scripts/dev/invoke-aspire-compose.ps1'
         $composeParameters = @{
             Mode = 'Deploy'
             EnvironmentName = $EnvironmentName

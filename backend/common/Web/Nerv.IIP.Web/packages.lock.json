@@ -4,19 +4,19 @@
     "net10.0": {
       "NetCorePal.Extensions.AspNetCore": {
         "type": "Direct",
-        "requested": "[3.3.0, )",
-        "resolved": "3.3.0",
-        "contentHash": "grQo7/xTNr6qPhQzJhHIAx8EBwOhuDy0VN2Hsycl4kJQP3eZe/T7BqLdfUrg5obxbrm5JbeU3rGrbYCnTpscKg==",
+        "requested": "[3.4.0, )",
+        "resolved": "3.4.0",
+        "contentHash": "StfHkP894ncVXFfdwJ04FykLhpcQoPgw1UBYP8jQcF8yi9Bcr202m8peXUBCFZopBwEwQQAk2zJkwwjfP/SKqg==",
         "dependencies": {
           "FluentValidation.AspNetCore": "11.3.0",
           "MediatR": "12.5.0",
           "Microsoft.AspNetCore.Mvc.NewtonsoftJson": "10.0.0",
-          "Microsoft.EntityFrameworkCore": "9.0.0",
-          "NetCorePal.Extensions.DistributedLocks.Abstractions": "3.3.0",
-          "NetCorePal.Extensions.Domain.Abstractions": "3.3.0",
-          "NetCorePal.Extensions.Dto": "3.3.0",
-          "NetCorePal.Extensions.NewtonsoftJson": "3.3.0",
-          "NetCorePal.Extensions.Primitives": "3.3.0"
+          "Microsoft.EntityFrameworkCore": "10.0.10",
+          "NetCorePal.Extensions.DistributedLocks.Abstractions": "3.4.0",
+          "NetCorePal.Extensions.Domain.Abstractions": "3.4.0",
+          "NetCorePal.Extensions.Dto": "3.4.0",
+          "NetCorePal.Extensions.NewtonsoftJson": "3.4.0",
+          "NetCorePal.Extensions.Primitives": "3.4.0"
         }
       },
       "AsyncKeyedLock": {
@@ -57,18 +57,18 @@
       },
       "Microsoft.EntityFrameworkCore.Abstractions": {
         "type": "Transitive",
-        "resolved": "10.0.8",
-        "contentHash": "jbKDXWPZQhuPHygMnwzNOqxBADVcpRVytcKYZsA++QqhPkpF93Ta8o5mbJQGrARSjlkr9WtOaADV97EDMOZ7DA=="
+        "resolved": "10.0.15",
+        "contentHash": "aLHlTnngp1CcWF5gWbqNwcfROjINCaQVKoySCFpl8O/EQaCdvtW+miv9KoSpKDtWIN+W7lZ8yr4KnbK3hp9oYQ=="
       },
       "Microsoft.EntityFrameworkCore.Analyzers": {
         "type": "Transitive",
-        "resolved": "10.0.8",
-        "contentHash": "M3BZ8JH8rB6BE7dO2g9iVbrHLnEz9wMXT6q+tDR6Nq3gyP3KmBj5OTiZGxyF3vesjOQNKanYoPGSNBR4kR2llg=="
+        "resolved": "10.0.15",
+        "contentHash": "13C007jEmO1JVsoJ+Vvn0AzOaR5bpGsDsaOB9nQt6denQR8hmv1eWmQ0qGarvz+1Zu5b511uF74A90BQigdYHA=="
       },
       "NetCorePal.Extensions.Dto": {
         "type": "Transitive",
-        "resolved": "3.3.0",
-        "contentHash": "IX7icxUbR9hCYKea89Md51me1BYExQ1/JjoRpKA/B7lEiyCSMONwnJF3FtT+8QUZEdLltEsUnWIOAEgKWBlrlQ=="
+        "resolved": "3.4.0",
+        "contentHash": "Nmge7fBZHo/sX7lGVPFPIwwd5lZfDQ9a517BDyMFWsAY9VGisJ9B6hc7ufyFN5Zb0bFv0mZmAX06dbdkxKAGfA=="
       },
       "Newtonsoft.Json": {
         "type": "Transitive",
@@ -85,9 +85,9 @@
       },
       "FluentValidation": {
         "type": "CentralTransitive",
-        "requested": "[12.1.1, )",
-        "resolved": "12.1.1",
-        "contentHash": "EPpkIe1yh1a0OXyC100oOA8WMbZvqUu5plwhvYcb7oSELfyUZzfxV48BLhvs3kKo4NwG7MGLNgy1RJiYtT8Dpw=="
+        "requested": "[12.2.0, )",
+        "resolved": "12.2.0",
+        "contentHash": "DR3lFbdnKucaaj1/8zMNOACMz/64igzox1yVZSFVsLxYB5mxAB+wFP1WZ8fjwrZnbU1KA1DoMzHKYKxUfuZ4wQ=="
       },
       "FluentValidation.AspNetCore": {
         "type": "CentralTransitive",
@@ -110,47 +110,47 @@
       },
       "Microsoft.EntityFrameworkCore": {
         "type": "CentralTransitive",
-        "requested": "[10.0.8, )",
-        "resolved": "10.0.8",
-        "contentHash": "EJx+fIBMgBlgD+ublKCn+GTOJkw3UqV7xOjYWBRVdUYyIm8UfvAsmSOPFiIInsWTHyMEYUJ9gCJY1jwX+6UB7w==",
+        "requested": "[10.0.15, )",
+        "resolved": "10.0.15",
+        "contentHash": "cp0ocqFrk6SXPy5xAI4gf2RlTk7jO4LcybDGWKp5F5zjPKyn2fEulElXIrCWreQFe8/4u01xoVhscrabhOOnhw==",
         "dependencies": {
-          "Microsoft.EntityFrameworkCore.Abstractions": "10.0.8",
-          "Microsoft.EntityFrameworkCore.Analyzers": "10.0.8"
+          "Microsoft.EntityFrameworkCore.Abstractions": "10.0.15",
+          "Microsoft.EntityFrameworkCore.Analyzers": "10.0.15"
         }
       },
       "NetCorePal.Extensions.DistributedLocks.Abstractions": {
         "type": "CentralTransitive",
-        "requested": "[3.3.0, )",
-        "resolved": "3.3.0",
-        "contentHash": "XuvmaMjfNWnRWd73WTyniu6hekzZE8umbEUL1fCuRKe3rPT/XQIsvBTTRE0bi/fLm6buXaIo+pisZCLMCeCsrg==",
+        "requested": "[3.4.0, )",
+        "resolved": "3.4.0",
+        "contentHash": "6d/jg0EcGXG4xPnMujQ7ztsklomABsTtq+hv7TgMIFz2h5103/OHMmVRU/eQ0R0d5PvLnqxQqyYQIYKE/z4OsA==",
         "dependencies": {
           "AsyncKeyedLock": "8.0.2"
         }
       },
       "NetCorePal.Extensions.Domain.Abstractions": {
         "type": "CentralTransitive",
-        "requested": "[3.3.0, )",
-        "resolved": "3.3.0",
-        "contentHash": "8wDqLjymqBvPpACS3P7tAQDF4m/wHy33vAiiXElcky9U4idI/SBw+yzMLTam5kVAhwVG2p5SSPiF5QrzFNkdgg==",
+        "requested": "[3.4.0, )",
+        "resolved": "3.4.0",
+        "contentHash": "G1EiozW955EuXy8CJajV78/6z8sdHi1wgzSqgeC8pzo3UY1vZ2Nx7zTqkW+7mrIbQew7ErAViMyGERjEBUyTVQ==",
         "dependencies": {
           "MediatR": "12.5.0"
         }
       },
       "NetCorePal.Extensions.NewtonsoftJson": {
         "type": "CentralTransitive",
-        "requested": "[3.3.0, )",
-        "resolved": "3.3.0",
-        "contentHash": "uX5F0LqJqxFiP8pyyIlmSCLO59b83qWWJe5Ywt5uyxBzFrCrcxN9AVNZ4hNt9H5uTLM/drYU8etRPgBnPRRBUw==",
+        "requested": "[3.4.0, )",
+        "resolved": "3.4.0",
+        "contentHash": "tpf1WDJZV61LllPb8ago9G0tXlOmnejrtV896oj6biM0tw2Q4L8rRgPgh8Yu2ncPs0HKNcEZKZ2nztZpVzOssA==",
         "dependencies": {
-          "NetCorePal.Extensions.Domain.Abstractions": "3.3.0",
+          "NetCorePal.Extensions.Domain.Abstractions": "3.4.0",
           "Newtonsoft.Json": "13.0.1"
         }
       },
       "NetCorePal.Extensions.Primitives": {
         "type": "CentralTransitive",
-        "requested": "[3.3.0, )",
-        "resolved": "3.3.0",
-        "contentHash": "CqzxBPimvoUXKD52jO+6fhUol35msoEmER1+ckbgAF9xt7TSI9FNt+1nlTnq4YB3AmrgoO6gAV+1HTcFHi5Qwg==",
+        "requested": "[3.4.0, )",
+        "resolved": "3.4.0",
+        "contentHash": "WCKFPQ9AmiAXsnl3AgFiMzCJmyswahy7hU0imb1uDtoIMNcq8/B75oVq/N10NsD3TVjZCg1fZEy6ZZ+/JlaZCw==",
         "dependencies": {
           "MediatR": "12.5.0"
         }

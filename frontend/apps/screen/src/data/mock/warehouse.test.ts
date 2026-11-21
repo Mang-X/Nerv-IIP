@@ -147,7 +147,7 @@ describe('作业任务（规模 + 守恒 + 超时是例外）', () => {
     expect(b.pick.rows.some((r) => r.ref?.startsWith('WO-2026-'))).toBe(true)
     for (const r of b.putaway.rows) {
       expect(r.id).toMatch(/^PT-\d{4}$/)
-      // 入库单 = `IB-{采购订单}`（与 WMS WorldHistoryPhase2Spec.InboundOrderNo 同式）
+      // 入库单 = `IB-{采购订单}`
       expect(r.ref).toMatch(/^IB-PO-2026-\d{4}$/)
       expect(r.from).toMatch(/^RCV-\d{2}$/)
       expect(r.to).toBeTruthy()

@@ -22,12 +22,6 @@ namespace Nerv.IIP.Business.Quality.Web.Tests;
 /// 本类看守 Quality 自己拼的两条受治理写面（首件、周期检）：它们每一段变量都同时写进**同一行**的
 /// 另一个有界列，因此上界可以完全在本服务的 EF 模型里闭合。
 ///
-/// 世界观历史 seed 也写这一列，但它的三段输入**全部来自它自己的定长生成器**
-/// （<c>WorldHistorySpec.WorkOrderNo(i)</c> 产出 <c>"WO-2026-00001"</c>），实际键长约 40 字符，
-/// 没有任何调用方能把它撑宽。所以它**只进 fits、不进 defines**——见
-/// <see cref="The_world_history_seed_keys_fit_the_column_without_defining_it"/>，
-/// 那条用例用**实跑真实 seed 事实流**测长度，而不是对着本行列宽做假想饱和。
-///
 /// **本类钉住的五件事**
 /// <list type="bullet">
 /// <item><see cref="Trigger_idempotency_key_column_width_matches_the_policy_constant"/>：列宽从
@@ -157,37 +151,6 @@ public sealed class InspectionTaskTriggerIdempotencyKeyLengthContractTests
     }
 
     /// <summary>
-    /// 世界观历史 seed **只进 fits、不进 defines**。
-    ///
-    /// 长度用**实跑真实事实流**（<c>WorldHistoryQualitySpec.BuildInspectionFacts</c>）量，
-    /// 不是对着本行的 <c>source_document_id</c>(250) / <c>source_document_line_id</c>(250) 做假想饱和
-    /// ——那样算会得到 621，比真实值宽约 580 字符，并把列宽的定界权交给一段计划拆除的演示代码。
-    ///
-    /// 第二条断言把「seed **不是**最宽写面」写死：谁再把 seed 抬成定界者都会红。
-    ///
-    /// **种子拆除时直接删掉本用例即可**，不牵动 schema、不需要缩窄迁移。
-    /// </summary>
-    [Fact]
-    public void The_world_history_seed_keys_fit_the_column_without_defining_it()
-    {
-        using var fixture = CreateFixture();
-        var columnWidth = ColumnWidth(fixture.Model);
-        var governedWorstCase = GovernedWriteFaceWorstCases(fixture.Model).Values.Max();
-
-        var seedFacts = WorldHistoryQualitySpec.BuildInspectionFacts(new DateOnly(2026, 7, 26), 1.0d);
-        Assert.NotEmpty(seedFacts);
-        var widestSeedKey = seedFacts.Max(fact => fact.TriggerIdempotencyKey.Length);
-
-        Assert.True(
-            widestSeedKey <= columnWidth,
-            $"世界观历史 seed 的最长触发键 {widestSeedKey} 超出列宽 {columnWidth}。");
-        Assert.True(
-            widestSeedKey < governedWorstCase,
-            $"世界观历史 seed 的最长触发键 {widestSeedKey} 不低于最宽受治理写面 {governedWorstCase}，"
-            + "说明它反过来定界了列宽——本票明确不接受这个形状。");
-    }
-
-    /// <summary>
     /// 守卫住在聚合构造函数里：上界那一位放行、+1 位拒绝，且**绝不截断**
     /// （截断会把仅末几位不同的两个键折叠成同一个，那会让两个不同的上游事实撞成一张任务）。
     /// </summary>
@@ -254,12 +217,6 @@ public sealed class InspectionTaskTriggerIdempotencyKeyLengthContractTests
                 PeriodicInspectionSourceLine.QuantityKind,
                 Guid.Parse("0198f000-0000-7000-8000-000000000001"),
                 7));
-        Assert.Equal(
-            "seed:world-history:mes:WO-001:70",
-            WorldHistoryQualitySpec.TriggerIdempotencyKey("mes", "WO-001", "70"));
-        Assert.Equal(
-            "seed:world-history:mes:WO-001:-",
-            WorldHistoryQualitySpec.TriggerIdempotencyKey("mes", "WO-001", null));
     }
 
     public static TheoryData<string, int> GovernedWriteFaces()
@@ -279,8 +236,6 @@ public sealed class InspectionTaskTriggerIdempotencyKeyLengthContractTests
     /// 没有任何手抄的长度数字，也没有手抄的前缀字面量（前缀开销靠「用空串跑一次真函数」测出来）。
     ///
     /// 「受治理」= 该写面至少有一段的取值由调用方控制且没有声明上界，因此需要用列宽兜住。
-    /// 世界观历史 seed **不在**本集合里：它的三段输入全部来自它自己的定长生成器，
-    /// 由 <see cref="The_world_history_seed_keys_fit_the_column_without_defining_it"/> 单独按实测长度看守。
     /// </summary>
     private static IReadOnlyDictionary<string, int> GovernedWriteFaceWorstCases(IModel model)
     {

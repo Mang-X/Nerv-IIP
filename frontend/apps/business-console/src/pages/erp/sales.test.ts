@@ -91,6 +91,7 @@ vi.mock('@nerv-iip/ui', async (importOriginal) => ({
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: { keyword: 'SO-DEMO-001' } }),
+  useRouter: () => ({ replace: vi.fn() }),
   RouterLink: { props: ['to'], template: '<a :href="String(to)"><slot /></a>' },
 }))
 

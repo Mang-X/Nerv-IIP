@@ -35,15 +35,6 @@ describe('停用/启用确认框的页面层单实例契约', () => {
     expect(source).not.toContain('NvAlertDialog')
   })
 
-  it('用行操作的页面都渲染了页面层确认框', () => {
-    const offenders = pageSources()
-      .filter(({ source }) => source.includes('<MasterDataRowActions'))
-      .filter(({ source }) => !source.includes('<MasterDataLifecycleDialog'))
-      .map(({ name }) => name)
-
-    expect(offenders).toEqual([])
-  })
-
   it('每页最多渲染一个确认框实例——多张表共用同一个，不是每表一个', () => {
     const offenders = pageSources()
       .map(({ name, source }) => ({

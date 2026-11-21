@@ -8,7 +8,7 @@ import {
   calculateRequiredQuantity,
   selectConcreteMaterialLines,
   type MbomMaterialLineFact,
-} from '../src/issue1851MbomInventoryBaseline'
+} from './issue1851MbomInventoryBaseline'
 
 const scope = { organizationId: 'org-001', environmentId: 'env-dev' }
 const workScope = { scopeKind: 'organization', scopeId: 'org-001' }
@@ -18,10 +18,11 @@ const mes = '/api/business-console/v1/mes'
 export async function runFinishedProduction(options: {
   browser: Browser
   workOrderId: string
-  producedLotNo: string
+  finishAssignedTask: (taskId: string) => Promise<Api.BusinessConsoleRecordProductionReportResponse>
+  assignedPrincipalId: string
   evidencePath: string
 }) {
-  const { browser, workOrderId, producedLotNo, evidencePath } = options
+  const { browser, workOrderId, assignedPrincipalId, finishAssignedTask, evidencePath } = options
   const context = await browser.newContext({ baseURL: process.env.NERV_IIP_PLAYWRIGHT_BASE_URL })
   const page = await context.newPage()
   const facts: Row = {}
@@ -124,11 +125,18 @@ export async function runFinishedProduction(options: {
               'GET',
               query(`${mes}/material-issue-requests/${issueNo}`, workScope),
             )
+          let receivedIssue: Api.BusinessConsoleMesMaterialIssueRequestRow | undefined
           await expect
-            .poll(async () => (await readIssue()).receivedQuantity, { timeout: 60000 })
+            .poll(
+              async () => {
+                receivedIssue = await readIssue()
+                return receivedIssue.receivedQuantity
+              },
+              { timeout: 60000 },
+            )
             .toBe(order.quantity)
           issues.push({
-            issue: await readIssue(),
+            issue: receivedIssue,
             purchaseReceiptNo: order.purchaseReceiptNo,
             materialLotId,
           })
@@ -176,6 +184,12 @@ export async function runFinishedProduction(options: {
         const reports: Api.BusinessConsoleRecordProductionReportResponse[] = []
         facts.preparation = preparation
         facts.reports = reports
+        const centers = await call<Api.BusinessConsoleResourceListResponse>(
+          'GET',
+          query('/api/business-console/v1/master-data/resources', {
+            resourceType: 'work-center',
+          }),
+        )
         for (const [index, task] of tasks.entries()) {
           // 与 NERV-2115 相同的公开配置路径；隔离演示人工费率，不代表客户工资标准。
           const rates = '/api/business-console/v1/erp/finance/work-center-cost-rates'
@@ -198,12 +212,6 @@ export async function runFinishedProduction(options: {
             currencyCode: 'CNY',
             isCurrentEffectiveRevision: true,
           })
-          const centers = await call<Api.BusinessConsoleResourceListResponse>(
-            'GET',
-            query('/api/business-console/v1/master-data/resources', {
-              resourceType: 'work-center',
-            }),
-          )
           const centersForTask = centers.resources!.filter(
             (item) => item.code === task.workCenterId,
           )
@@ -243,6 +251,7 @@ export async function runFinishedProduction(options: {
             query(`${mes}/dispatch-tasks/${task.operationTaskId}/assign`, workScope),
             {
               deviceAssetId: device.deviceAssetId,
+              assignedUserId: index === tasks.length - 1 ? assignedPrincipalId : undefined,
             } satisfies Api.BusinessConsoleMesAssignDispatchTaskRequest,
           )
           const assigned = (await detail()).operationTasks!.find(
@@ -250,6 +259,14 @@ export async function runFinishedProduction(options: {
           )!
           expect(assigned.deviceAssetId).toBe(device.deviceAssetId)
           preparation.push({ rate, device, assigned })
+          if (index === tasks.length - 1) {
+            expect(assigned).toMatchObject({
+              assignedUserId: assignedPrincipalId,
+              workCenterId: task.workCenterId,
+            })
+            reports.push(await finishAssignedTask(task.operationTaskId!))
+            continue
+          }
           await call(
             'POST',
             query(`${mes}/operation-tasks/${task.operationTaskId}/start`, workScope),
@@ -269,7 +286,6 @@ export async function runFinishedProduction(options: {
             reportedAtUtc: new Date().toISOString(),
             idempotencyKey: `n1853-report-${index}`,
             consumedMaterialLots: index === 0 ? consumedMaterialLots : [],
-            producedLotNo: index === tasks.length - 1 ? producedLotNo : undefined,
           } satisfies Api.BusinessConsoleRecordProductionReportRequest
           reports.push(
             await call<Api.BusinessConsoleRecordProductionReportResponse>(

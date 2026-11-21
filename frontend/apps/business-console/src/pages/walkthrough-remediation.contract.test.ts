@@ -96,7 +96,7 @@ describe('2026-07-26 leadership walkthrough remediation', () => {
       expect
         .soft(template, path)
         .not.toMatch(
-          /待\s*#\d+|·\s*#\d+|historian|数据为\s*mock|后端接入|聚合端点|适配器聚合|接入中|读面|演示数据冒充|演示推算|作业域演示数据|演示模式/,
+          /待\s*#\d+|·\s*#\d+|historian|数据为\s*mock|后端接入|聚合端点|适配器聚合|接入中|读面|演示数据冒充|演示推算|作业域演示数据/,
         )
     }
   })

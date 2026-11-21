@@ -12,7 +12,7 @@ using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
-using Nerv.IIP.BusinessGateway.Web.Application.Http;
+using Nerv.IIP.Localization;
 using Nerv.IIP.BusinessGateway.Web.Endpoints.Erp;
 using Nerv.IIP.BusinessGateway.Web.Endpoints.Scheduling;
 using Nerv.IIP.Contracts.EquipmentRuntime;
@@ -727,7 +727,6 @@ public sealed class BusinessGatewayProxyTests
         });
         var disable = await client.SendAsync(disableMessage);
         using var enableMessage = new HttpRequestMessage(HttpMethod.Post, "/api/business-console/v1/master-data/resources/sku/SKU-001/enable");
-        enableMessage.Headers.Add("X-Correlation-Id", "corr-master-enable");
         enableMessage.Content = JsonContent.Create(new
         {
             organizationId = "org-001",
@@ -753,7 +752,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Contains(masterData.SetResourceEnabledRequests, request => request.Reason == "duplicate");
         Assert.Contains(true, masterData.SetResourceEnabledCalls);
         Assert.All(masterData.SetResourceEnabledActors, actor => Assert.Equal("user:user-admin", actor));
-        Assert.Equal(["corr-master-disable", "corr-master-enable"], masterData.SetResourceEnabledCorrelationIds);
+        Assert.Equal(["corr-master-disable", enable.Headers.GetValues("X-Correlation-Id").Single()], masterData.SetResourceEnabledCorrelationIds);
         Assert.Equal(["idem-master-disable", "idem-master-enable"], masterData.SetResourceEnabledIdempotencyKeys);
     }
 
@@ -1243,7 +1242,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(
-            BusinessServiceProxyException.DownstreamRequestFailedMessage,
+            "approval-principal-unresolved",
             document.RootElement.GetProperty("message").GetString());
         Assert.Equal(0, masterData.ToolingCallCount);
     }
@@ -2233,9 +2232,8 @@ public sealed class BusinessGatewayProxyTests
             ]);
         var quality = new RecordingQualityClient
         {
-            GetInspectionTaskFailure = new BusinessServiceProxyException(
-                HttpStatusCode.Forbidden,
-                "task-outside-selected-work-scope"),
+            GetInspectionTaskFailure = BusinessServiceProxyException.FromOpaqueDownstreamFailure(
+                HttpStatusCode.Forbidden),
         };
         var masterData = new RecordingMasterDataClient
         {
@@ -4343,7 +4341,10 @@ public sealed class BusinessGatewayProxyTests
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("work-center-required-use-v2", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        using var rejection = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.False(rejection.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(400, rejection.RootElement.GetProperty("code").GetInt32());
+        Assert.Equal("work-center-required-use-v2", rejection.RootElement.GetProperty("message").GetString());
         Assert.Equal(0, mes.RecordDowntimeCallCount);
     }
 
@@ -6234,9 +6235,8 @@ public sealed class BusinessGatewayProxyTests
     {
         var mes = new RecordingMesClient
         {
-            ReleaseFailure = new BusinessServiceProxyException(
-                HttpStatusCode.Conflict,
-                "<html>secret lifecycle stack trace</html>"),
+            ReleaseFailure = BusinessServiceProxyException.FromOpaqueDownstreamFailure(
+                HttpStatusCode.Conflict),
         };
         await using var lease = LeaseHost(
             AllowedOrganizationScope(BusinessGatewayPermissions.MesWorkOrdersManage),
@@ -6518,8 +6518,10 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("internal-test-token", mes.LastInternalToken);
     }
 
-    [Fact]
-    public async Task Mes_quality_hold_force_release_injects_principal_actor_and_uses_internal_service_token()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Mes_quality_hold_force_release_injects_principal_actor_and_uses_internal_service_token(bool hasCorrelationHeader)
     {
         var mes = new RecordingMesClient();
         await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
@@ -6534,7 +6536,10 @@ public sealed class BusinessGatewayProxyTests
 
         using var forceRequest = new HttpRequestMessage(HttpMethod.Post,
             "/api/business-console/v1/mes/quality-holds/QH-001/force-release?organizationId=org-001&environmentId=env-dev");
-        forceRequest.Headers.TryAddWithoutValidation("X-Correlation-Id", "corr-gateway-1");
+        if (hasCorrelationHeader)
+        {
+            forceRequest.Headers.TryAddWithoutValidation("X-Correlation-Id", "corr-gateway-1");
+        }
         forceRequest.Content = JsonContent.Create(
             // A caller-supplied actor must never be trusted; the gateway overrides it with the principal.
             new { reason = "quality-override", actor = "supervisor-1", sourceService = "BusinessMes", releasedAtUtc = (DateTimeOffset?)null, idempotencyKey = "idem-force-1" });
@@ -6550,7 +6555,12 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("env-dev", mes.LastForceReleaseQualityHoldRequest.EnvironmentId);
         Assert.Equal("quality-override", mes.LastForceReleaseQualityHoldRequest.Reason);
         Assert.Equal("idem-force-1", mes.LastForceReleaseQualityHoldRequest.IdempotencyKey);
-        Assert.Equal("corr-gateway-1", mes.LastForceReleaseQualityHoldCorrelationId);
+        var responseCorrelationId = response.Headers.GetValues("X-Correlation-Id").Single();
+        Assert.Equal(responseCorrelationId, mes.LastForceReleaseQualityHoldCorrelationId);
+        if (hasCorrelationHeader)
+        {
+            Assert.Equal("corr-gateway-1", responseCorrelationId);
+        }
         // The releaser identity is bound to the authenticated principal; the request-body actor is ignored.
         Assert.Equal("user:user-admin", mes.LastForceReleaseQualityHoldActor);
         Assert.NotEqual("supervisor-1", mes.LastForceReleaseQualityHoldActor);
@@ -7685,6 +7695,7 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", planning.LastInternalToken);
+        Assert.Equal(("org-001", "env-dev"), planning.PeggingScope);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var item = document.RootElement.GetProperty("data").GetProperty("items")[0];
         Assert.Equal("sales", item.GetProperty("sourceType").GetString());
@@ -9174,7 +9185,10 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal("TEAM-A", mes.LastOperationTaskListRequest!.TeamIds);
-        Assert.DoesNotContain("operationTaskId", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        var body = await response.Content.ReadAsStringAsync();
+        using var rejection = JsonDocument.Parse(body);
+        Assert.Equal("work-scope-not-authorized", rejection.RootElement.GetProperty("message").GetString());
+        Assert.DoesNotContain("operationTaskId", body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -11753,7 +11767,7 @@ public sealed class BusinessGatewayProxyTests
     {
         var masterData = new RecordingMasterDataClient
         {
-            Failure = new BusinessServiceProxyException(HttpStatusCode.BadGateway, "<html>secret stack trace</html>"),
+            Failure = BusinessServiceProxyException.FromOpaqueDownstreamFailure(HttpStatusCode.BadGateway),
         };
         await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
@@ -15073,6 +15087,7 @@ public sealed class BusinessGatewayProxyTests
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://mes.local") };
         var client = new HttpBusinessMesClient(httpClient);
         var request = new BusinessConsoleMesListRequest("org-001", "env-dev", Keyword: "filter", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER", Skip: 4, Take: 12);
+        var wipRequest = new BusinessConsoleMesWipSummaryRequest("org-001", "env-dev", WorkOrderId: "WO/100", OperationTaskId: "OP+20", Take: 1);
         var materialRequest = new BusinessConsoleMesMaterialIssueRequestListRequest("org-001", "env-dev", Keyword: "filter", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER", Skip: 4, Take: 12);
         var requestWithoutStatus = new BusinessConsoleMesListWithoutStatusRequest("org-001", "env-dev", Keyword: "filter", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER", Skip: 4, Take: 12);
         var dispatchRequest = new BusinessConsoleMesDispatchTaskListRequest("org-001", "env-dev", Keyword: "filter", WorkCenterId: "WC-FILTER", ShiftId: "SHIFT-FILTER", DeviceAssetId: "DEV-FILTER", AssignedUserId: "user-emp-010", Skip: 4, Take: 12);
@@ -15094,7 +15109,8 @@ public sealed class BusinessGatewayProxyTests
 
         var cases = new (string Path, Func<Task<int>> Invoke)[]
         {
-            ("/api/business/v1/mes/wip" + expectedQuery, async () => (await client.GetWipSummaryAsync("internal-token-001", request, CancellationToken.None)).Total),
+            ("/api/business/v1/mes/wip?organizationId=org-001&environmentId=env-dev&workOrderId=WO%2F100&skip=0&take=1&operationTaskId=OP%2B20",
+                async () => (await client.GetWipSummaryAsync("internal-token-001", wipRequest, CancellationToken.None)).Total),
             ("/api/business/v1/mes/capacity-impacts" + expectedQuery, async () => (await client.ListCapacityImpactsAsync("internal-token-001", request, CancellationToken.None)).Total),
             ("/api/business/v1/mes/dispatch-tasks" + expectedDispatchQuery, async () => (await client.ListDispatchTasksAsync("internal-token-001", dispatchRequest, CancellationToken.None)).Total),
             ("/api/business/v1/mes/finished-goods-receipt-requests" + expectedQuery, async () => (await client.ListFinishedGoodsReceiptRequestsAsync("internal-token-001", request, CancellationToken.None)).Total),
@@ -15512,6 +15528,26 @@ public sealed class BusinessGatewayProxyTests
         Assert.DoesNotContain("top-secret", errorData.GetRawText(), StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task AppHub_http_client_never_promotes_downstream_message_to_a_local_rejection()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(
+            HttpStatusCode.Forbidden,
+            """{"success":false,"message":"work-scope-not-authorized","code":403,"data":null}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://apphub.local") };
+        var client = new HttpBusinessAppHubClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.GetCollectionHealthListAsync(
+                "internal-token",
+                new BusinessConsoleConnectorCollectionHealthListRequest("org-001", "env-dev"),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Forbidden, exception.StatusCode);
+        Assert.Equal(BusinessServiceProxyException.DownstreamRequestFailedMessage, exception.Message);
+        Assert.Null(exception.SemanticCode);
+    }
+
     [Theory]
     [InlineData("Forbidden", false)]
     [InlineData("top-secret", true)]
@@ -15687,6 +15723,7 @@ public sealed class BusinessGatewayProxyTests
 
     [Theory]
     [InlineData(HttpStatusCode.BadRequest, "not-json")]
+    [InlineData(HttpStatusCode.BadRequest, """{"success":true,"message":"private-diagnostic","code":400}""")]
     [InlineData(HttpStatusCode.Forbidden, "{\"success\":false,\"message\":\"Authorization: Bearer top-secret\",\"code\":403}")]
     [InlineData(HttpStatusCode.Forbidden, "{\"success\":false,\"message\":\"Forbidden\",\"code\":\"Forbidden\"}")]
     [InlineData(HttpStatusCode.Forbidden, "{\"success\":false,\"message\":\"top-secret\",\"code\":\"top-secret\"}")]
@@ -15865,6 +15902,29 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.InternalServerError, ex.StatusCode);
         Assert.Equal("downstream-request-failed", ex.Message);
         Assert.DoesNotContain("schema.sql", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_preserves_whitelisted_fields_from_a_structured_http_400()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(
+            HttpStatusCode.BadRequest,
+            """{"success":false,"message":"请选择可用作业池。","code":"assignment-target-invalid","errorData":[{"field":"poolCode","reason":"assignment-required","token":"private-diagnostic"}]}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var error = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListResourcesAsync(
+            "internal-token",
+            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, Take: 100),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
+        Assert.Equal("assignment-target-invalid", error.SemanticCode);
+        Assert.Equal("请选择可用作业池。", error.Message);
+        var item = Assert.Single(error.ErrorData);
+        Assert.Equal("poolCode", item.GetProperty("field").GetString());
+        Assert.Equal("assignment-required", item.GetProperty("reason").GetString());
+        Assert.False(item.TryGetProperty("token", out _));
     }
 
     [Fact]
@@ -20012,11 +20072,16 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
         ]));
     }
 
+    public (string OrganizationId, string EnvironmentId) PeggingScope { get; private set; }
+
     public Task<BusinessConsoleMrpPeggingListResponse> ListMrpPeggingAsync(
         string internalBearerToken,
         string runId,
+        string organizationId,
+        string environmentId,
         CancellationToken cancellationToken)
     {
+        PeggingScope = (organizationId, environmentId);
         LastInternalToken = internalBearerToken;
         return Task.FromResult(PeggingResponse);
     }
@@ -20242,7 +20307,7 @@ internal sealed class RecordingErpClient : IBusinessErpClient, IBusinessErpCosti
         WorkOrderCostProgressRequests.Add(request);
         if (WorkOrderCostProgressFailures.Contains(request.WorkOrderId))
         {
-            throw new BusinessServiceProxyException(HttpStatusCode.BadGateway, "downstream-unavailable");
+            throw BusinessServiceProxyException.FromOpaqueDownstreamFailure(HttpStatusCode.BadGateway);
         }
         return Task.FromResult(WorkOrderCostProgress.GetValueOrDefault(request.WorkOrderId));
     }
@@ -22879,7 +22944,7 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public Task<BusinessConsoleMesWipSummaryResponse> GetWipSummaryAsync(
         string internalBearerToken,
-        BusinessConsoleMesListRequest request,
+        BusinessConsoleMesWipSummaryRequest request,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;

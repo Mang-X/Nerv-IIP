@@ -215,7 +215,7 @@ function taskRows(kind: WhTaskKind, n: number, s: number, now: Date): WhTaskRow[
       id = seq('PT', 420 + (s % 30) + i)
       from = RCV_LOCS[(s + i) % RCV_LOCS.length]
       to = STORAGE_LOCS[(s + i * 3) % STORAGE_LOCS.length]
-      // 收货上架挂入库单 `IB-{采购订单}`（WMS WorldHistoryPhase2Spec.InboundOrderNo 同式）
+      // 收货上架挂入库单 `IB-{采购订单}`
       ref = `IB-${seq('PO-2026', 430 + (s % 40) + i, 4)}`
       qty = sku.lo + ((s * 17 + i * 31) % (sku.hi - sku.lo + 1))
     } else {

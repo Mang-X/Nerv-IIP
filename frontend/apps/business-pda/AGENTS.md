@@ -1,5 +1,7 @@
 # AGENTS.md — business-pda（PDA 移动端）
 
+界面规范与用法从[独立设计文档站](../../apps/design-system/docs/components/mobile/index.md)查阅。
+
 > 根 `AGENTS.md` 仍然适用；本文件只补充 PDA 子树的差异。
 > business-pda = 车间手持 PDA（Android WebView / Capacitor 8），扫码优先的
 > WMS / MES / 质量 / 设备作业端。交互范式与页面矩阵：

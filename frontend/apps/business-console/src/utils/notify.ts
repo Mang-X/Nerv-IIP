@@ -288,8 +288,12 @@ export function inlineErrorMessage(
 }
 
 /** 成功反馈。 */
-export function notifySuccess(message: string): void {
-  toast.success(message)
+export function notifySuccess(
+  message: string,
+  action?: { label: string; onClick: () => void },
+): void {
+  if (action) toast.success(message, { action })
+  else toast.success(message)
 }
 
 /**

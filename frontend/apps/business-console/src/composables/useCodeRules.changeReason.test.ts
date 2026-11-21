@@ -83,7 +83,7 @@ describe('编码规则版本 composable 的变更原因契约', () => {
 type CodeRules = ReturnType<typeof useCodeRules>
 declare const createRuleVersion: CodeRules['createRuleVersion']
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 ;() => {
   void createRuleVersion('sku', {
     organizationId: 'org-001',

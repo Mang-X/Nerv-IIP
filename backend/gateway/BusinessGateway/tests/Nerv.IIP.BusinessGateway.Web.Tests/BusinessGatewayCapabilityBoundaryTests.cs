@@ -92,11 +92,9 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
     }
 
     [Fact]
-    public void Capability_client_declarations_match_the_registered_legacy_and_directory_contract()
+    public void Capability_client_declarations_match_the_registered_directory_contract()
     {
-        var violations = AnalyzeCapabilityBoundary(
-            LoadProductionDocuments(),
-            ProductionContract);
+        var violations = AnalyzeCapabilityBoundary(LoadProductionDocuments(), ProductionContract);
 
         Assert.Empty(violations);
     }
@@ -283,7 +281,7 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         var baseDocuments = new[]
         {
             new SourceDocument(
-                "BusinessServiceClients.cs",
+                "Capabilities/Inventory/InventoryClientContract.cs",
                 $"namespace {BusinessServicesNamespace}; " +
                 "public partial interface IBusinessInventoryClient {}"),
             new SourceDocument(
@@ -305,17 +303,14 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 "public sealed class InventoryOptions {} " +
                 "public sealed class NestedHolder { public sealed class NestedDto {} }"),
         };
-        var contract = CreateFixtureContract(
-            legacy: new Dictionary<string, LegacyDeclarationContract>
-            {
-                [Identity("Interface", "IBusinessInventoryClient")] =
-                    new("Inventory", ["BusinessServiceClients.cs"]),
-            });
+        var contract = CreateFixtureContract();
 
         Assert.Empty(AnalyzeCapabilityBoundary(baseDocuments, contract));
 
         var mutations = new[]
         {
+            new SourceDocument("BusinessServiceClients.cs", "// Retired file restored."),
+            new SourceDocument("BusinessConsoleWmsClient.cs", "// Retired file restored."),
             new SourceDocument(
                 "BusinessServiceClients.cs.new-client.cs",
                 $"namespace {BusinessServicesNamespace}; " +
@@ -399,7 +394,7 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         var crossCapabilityDocuments = baseDocuments
             .Append(
                 new SourceDocument(
-                    "BusinessServiceClients.cs.quality.cs",
+                    "Capabilities/Quality/QualityClientContract.cs",
                     $"namespace {BusinessServicesNamespace}; " +
                     "public interface IBusinessQualityClient {}"))
             .Append(
@@ -409,13 +404,6 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                     "public sealed class CrossCapabilityClient : " +
                     "IBusinessInventoryClient, IBusinessQualityClient {}"));
         var crossCapabilityContract = CreateFixtureContract(
-            legacy: new Dictionary<string, LegacyDeclarationContract>
-            {
-                [Identity("Interface", "IBusinessInventoryClient")] =
-                    new("Inventory", ["BusinessServiceClients.cs"]),
-                [Identity("Interface", "IBusinessQualityClient")] =
-                    new("Quality", ["BusinessServiceClients.cs.quality.cs"]),
-            },
             managedSeedCapabilities: new Dictionary<string, string>
             {
                 [Identity("Interface", "IBusinessInventoryClient")] = "Inventory",
@@ -464,7 +452,6 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 "public sealed class NestedDto {} }"),
         };
         var contract = CreateFixtureContract(
-            legacy: new Dictionary<string, LegacyDeclarationContract>(),
             managedSeedCapabilities: new Dictionary<string, string>
             {
                 [Identity("Interface", "IBusinessIndustrialTelemetryClient")] =
@@ -580,31 +567,6 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             Assert.Contains(mutation.Document.RelativePath, report, StringComparison.Ordinal);
             Assert.Contains(mutation.ExpectedViolation, report, StringComparison.Ordinal);
         }
-
-        var legacyRollbackContract = CreateFixtureContract(
-            legacy: new Dictionary<string, LegacyDeclarationContract>
-            {
-                [Identity("Interface", "IBusinessIndustrialTelemetryClient")] =
-                    new("IndustrialTelemetry", ["BusinessServiceClients.cs"]),
-                [Identity("Class", "HttpBusinessIndustrialTelemetryClient")] =
-                    new("IndustrialTelemetry", ["BusinessServiceClients.cs"]),
-            },
-            managedSeedCapabilities: contract.ManagedSeedCapabilities,
-            capabilityDirectories: contract.CapabilityDirectories);
-        var legacyRollbackReport = string.Join(
-            Environment.NewLine,
-            AnalyzeCapabilityBoundary(baseDocuments, legacyRollbackContract));
-
-        Assert.Contains(
-            "Legacy symbol " + Identity("Interface", "IBusinessIndustrialTelemetryClient") +
-            " declaration locations changed",
-            legacyRollbackReport,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Legacy symbol " + Identity("Class", "HttpBusinessIndustrialTelemetryClient") +
-            " declaration locations changed",
-            legacyRollbackReport,
-            StringComparison.Ordinal);
 
         var falsePositiveViolations = AnalyzeCapabilityBoundary(
             baseDocuments.Append(
@@ -732,7 +694,6 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 "public sealed class NestedDto {} }"),
         };
         var contract = CreateFixtureContract(
-            legacy: new Dictionary<string, LegacyDeclarationContract>(),
             managedSeedCapabilities: new Dictionary<string, string>
             {
                 [Identity("Interface", "IBusinessMaintenanceClient")] =
@@ -849,31 +810,6 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             Assert.Contains(mutation.ExpectedViolation, report, StringComparison.Ordinal);
         }
 
-        var legacyRollbackContract = CreateFixtureContract(
-            legacy: new Dictionary<string, LegacyDeclarationContract>
-            {
-                [Identity("Interface", "IBusinessMaintenanceClient")] =
-                    new("Maintenance", ["BusinessServiceClients.cs"]),
-                [Identity("Class", "HttpBusinessMaintenanceClient")] =
-                    new("Maintenance", ["BusinessServiceClients.cs"]),
-            },
-            managedSeedCapabilities: contract.ManagedSeedCapabilities,
-            capabilityDirectories: contract.CapabilityDirectories);
-        var legacyRollbackReport = string.Join(
-            Environment.NewLine,
-            AnalyzeCapabilityBoundary(baseDocuments, legacyRollbackContract));
-
-        Assert.Contains(
-            "Legacy symbol " + Identity("Interface", "IBusinessMaintenanceClient") +
-            " declaration locations changed",
-            legacyRollbackReport,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Legacy symbol " + Identity("Class", "HttpBusinessMaintenanceClient") +
-            " declaration locations changed",
-            legacyRollbackReport,
-            StringComparison.Ordinal);
-
         var falsePositiveViolations = AnalyzeCapabilityBoundary(
             baseDocuments.Append(
                 new SourceDocument(
@@ -956,7 +892,6 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                 "public sealed class NestedDto {} }"),
         };
         var contract = CreateFixtureContract(
-            legacy: new Dictionary<string, LegacyDeclarationContract>(),
             managedSeedCapabilities: new Dictionary<string, string>
             {
                 [Identity("Interface", "IBusinessMesClient")] =
@@ -1073,31 +1008,6 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             Assert.Contains(mutation.ExpectedViolation, report, StringComparison.Ordinal);
         }
 
-        var legacyRollbackContract = CreateFixtureContract(
-            legacy: new Dictionary<string, LegacyDeclarationContract>
-            {
-                [Identity("Interface", "IBusinessMesClient")] =
-                    new("Mes", ["BusinessServiceClients.cs"]),
-                [Identity("Class", "HttpBusinessMesClient")] =
-                    new("Mes", ["BusinessServiceClients.cs"]),
-            },
-            managedSeedCapabilities: contract.ManagedSeedCapabilities,
-            capabilityDirectories: contract.CapabilityDirectories);
-        var legacyRollbackReport = string.Join(
-            Environment.NewLine,
-            AnalyzeCapabilityBoundary(baseDocuments, legacyRollbackContract));
-
-        Assert.Contains(
-            "Legacy symbol " + Identity("Interface", "IBusinessMesClient") +
-            " declaration locations changed",
-            legacyRollbackReport,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Legacy symbol " + Identity("Class", "HttpBusinessMesClient") +
-            " declaration locations changed",
-            legacyRollbackReport,
-            StringComparison.Ordinal);
-
         var falsePositiveViolations = AnalyzeCapabilityBoundary(
             baseDocuments.Append(
                 new SourceDocument(
@@ -1157,7 +1067,8 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         IEnumerable<SourceDocument> documents,
         CapabilityBoundaryContract contract)
     {
-        var snapshot = BuildSnapshot(documents);
+        var sourceDocuments = documents.ToArray();
+        var snapshot = BuildSnapshot(sourceDocuments);
         var sourceIdentities = snapshot.Declarations
             .Select(declaration => declaration.Identity)
             .ToHashSet(StringComparer.Ordinal);
@@ -1181,7 +1092,11 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             }
         }
 
-        var violations = new List<string>();
+        var violations = sourceDocuments
+            .Where(document => Path.GetFileName(document.RelativePath) is
+                "BusinessServiceClients.cs" or "BusinessConsoleWmsClient.cs")
+            .Select(document => $"Retired capability client file: {document.RelativePath}.")
+            .ToList();
         var capabilitiesByIdentity = new Dictionary<string, HashSet<string>>(
             StringComparer.Ordinal);
 
@@ -1244,32 +1159,6 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             }
 
             var capability = capabilities.Single();
-            if (contract.LegacyDeclarations.TryGetValue(identity, out var legacy))
-            {
-                if (!string.Equals(legacy.Capability, capability, StringComparison.Ordinal))
-                {
-                    violations.Add(
-                        $"Legacy symbol {identity} is registered for {legacy.Capability} but resolves to " +
-                        $"{capability}; declarations: {FormatPaths(declarations)}");
-                }
-
-                var actualPaths = declarations
-                    .Select(declaration => declaration.RelativePath)
-                    .OrderBy(path => path, StringComparer.Ordinal)
-                    .ToArray();
-                var expectedPaths = legacy.ExpectedPaths
-                    .OrderBy(path => path, StringComparer.Ordinal)
-                    .ToArray();
-                if (!actualPaths.SequenceEqual(expectedPaths, StringComparer.Ordinal))
-                {
-                    violations.Add(
-                        $"Legacy symbol {identity} declaration locations changed; expected " +
-                        $"[{string.Join(", ", expectedPaths)}], found [{string.Join(", ", actualPaths)}].");
-                }
-
-                continue;
-            }
-
             if (!contract.CapabilityDirectories.TryGetValue(capability, out var expectedDirectory))
             {
                 violations.Add($"Capability {capability} has no registered directory for {identity}.");
@@ -1285,24 +1174,6 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
                         $"Client symbol {identity} for {capability} must be under {expectedDirectory}; " +
                         $"found {declaration.RelativePath}.");
                 }
-            }
-        }
-
-        foreach (var (identity, legacy) in contract.LegacyDeclarations)
-        {
-            var declarations = snapshot.Declarations
-                .Where(declaration => declaration.Identity == identity)
-                .Select(declaration => declaration.RelativePath)
-                .OrderBy(path => path, StringComparer.Ordinal)
-                .ToArray();
-            var expectedPaths = legacy.ExpectedPaths
-                .OrderBy(path => path, StringComparer.Ordinal)
-                .ToArray();
-            if (!declarations.SequenceEqual(expectedPaths, StringComparer.Ordinal))
-            {
-                violations.Add(
-                    $"Registered legacy symbol {identity} has an incomplete declaration inventory; expected " +
-                    $"[{string.Join(", ", expectedPaths)}], found [{string.Join(", ", declarations)}].");
             }
         }
 
@@ -1437,56 +1308,10 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         };
         var seedCapabilities = new Dictionary<string, string>(StringComparer.Ordinal);
         seedCapabilities[Identity("Class", "SchedulingTimeContextClient")] = "MasterData";
-        var legacyDeclarations = new Dictionary<string, LegacyDeclarationContract>(StringComparer.Ordinal);
         foreach (var (clientName, capability) in capabilities)
         {
-            var sourcePath = capability == "Wms"
-                ? "BusinessConsoleWmsClient.cs"
-                : "BusinessServiceClients.cs";
-            AddManagedType(
-                seedCapabilities,
-                legacyDeclarations,
-                "Interface",
-                $"IBusiness{clientName}Client",
-                capability,
-                sourcePath,
-                includeInLegacy: capability != "ProductEngineering" &&
-                    capability != "Planning" &&
-                    capability != "Scheduling" &&
-                    capability != "FileStorage" &&
-                    capability != "Erp" &&
-                    capability != "MasterData" &&
-                    capability != "Inventory" &&
-                    capability != "Quality" &&
-                    capability != "Approval" &&
-                    capability != "Notification" &&
-                    capability != "BarcodeLabel" &&
-                    capability != "IndustrialTelemetry" &&
-                    capability != "Maintenance" &&
-                    capability != "Mes" &&
-                    capability != "Wms");
-            AddManagedType(
-                seedCapabilities,
-                legacyDeclarations,
-                "Class",
-                $"HttpBusiness{clientName}Client",
-                capability,
-                sourcePath,
-                includeInLegacy: capability != "ProductEngineering" &&
-                    capability != "Planning" &&
-                    capability != "Scheduling" &&
-                    capability != "FileStorage" &&
-                    capability != "Erp" &&
-                    capability != "MasterData" &&
-                    capability != "Inventory" &&
-                    capability != "Quality" &&
-                    capability != "Approval" &&
-                    capability != "Notification" &&
-                    capability != "BarcodeLabel" &&
-                    capability != "IndustrialTelemetry" &&
-                    capability != "Maintenance" &&
-                    capability != "Mes" &&
-                    capability != "Wms");
+            seedCapabilities.Add(Identity("Interface", $"IBusiness{clientName}Client"), capability);
+            seedCapabilities.Add(Identity("Class", $"HttpBusiness{clientName}Client"), capability);
         }
 
         seedCapabilities.Add(
@@ -1497,40 +1322,12 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             "Quality");
         // 字节面与 JSON 面同属 FileStorage 能力，但必须是两个 typed client：
         // 它们的弹性契约不同（ADR 0015），DI 注册也因此分开。
-        AddManagedType(
-            seedCapabilities,
-            legacyDeclarations,
-            "Interface",
-            "IBusinessFileTransferClient",
-            "FileStorage",
-            "Capabilities/FileStorage/BusinessFileTransferClient.cs",
-            includeInLegacy: false);
-        AddManagedType(
-            seedCapabilities,
-            legacyDeclarations,
-            "Class",
-            "HttpBusinessFileTransferClient",
-            "FileStorage",
-            "Capabilities/FileStorage/BusinessFileTransferClient.cs",
-            includeInLegacy: false);
+        seedCapabilities.Add(Identity("Interface", "IBusinessFileTransferClient"), "FileStorage");
+        seedCapabilities.Add(Identity("Class", "HttpBusinessFileTransferClient"), "FileStorage");
         seedCapabilities[Identity("Interface", "IBusinessBarcodeResolverClient")] = "BarcodeLabel";
         seedCapabilities[Identity("Class", "HttpBusinessBarcodeResolverClient")] = "BarcodeLabel";
-        AddManagedType(
-            seedCapabilities,
-            legacyDeclarations,
-            "Interface",
-            "IBusinessMesWorkOrderTransformationClient",
-            "Mes",
-            "Capabilities/Mes/BusinessMesWorkOrderTransformationClient.cs",
-            includeInLegacy: false);
-        AddManagedType(
-            seedCapabilities,
-            legacyDeclarations,
-            "Class",
-            "HttpBusinessMesWorkOrderTransformationClient",
-            "Mes",
-            "Capabilities/Mes/BusinessMesWorkOrderTransformationClient.cs",
-            includeInLegacy: false);
+        seedCapabilities.Add(Identity("Interface", "IBusinessMesWorkOrderTransformationClient"), "Mes");
+        seedCapabilities.Add(Identity("Class", "HttpBusinessMesWorkOrderTransformationClient"), "Mes");
         seedCapabilities[Identity("Interface", "IBusinessMesMaterialPrevalidationClient")] = "Mes";
         seedCapabilities[Identity("Class", "HttpBusinessMesMaterialPrevalidationClient")] = "Mes";
         seedCapabilities[Identity("Interface", "IBusinessMesContextPrevalidationClient")] = "Mes";
@@ -1540,52 +1337,17 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         seedCapabilities[Identity("Interface", "IBusinessErpCostingClient")] = "Erp";
         seedCapabilities[Identity("Class", "HttpBusinessErpCostingClient")] = "Erp";
 
-        AddManagedType(
-            seedCapabilities,
-            legacyDeclarations,
-            "Class",
-            "BusinessGatewayInventoryForwardedPermissionOptions",
-            "Inventory",
-            "BusinessServiceClients.cs",
-            includeInLegacy: false);
+        seedCapabilities.Add(Identity("Class", "BusinessGatewayInventoryForwardedPermissionOptions"), "Inventory");
 
         // #3739：死信运维面是跨服务能力（同一份契约挂在 10 个服务上），只有一个不设 BaseAddress 的
         // client，基址随来源表逐次传入。它仍然是受管 capability client，因此按目录合同登记。
-        AddManagedType(
-            seedCapabilities,
-            legacyDeclarations,
-            "Interface",
-            "IBusinessDeadLetterClient",
-            "DeadLetters",
-            "Capabilities/DeadLetters/BusinessDeadLetterClient.cs",
-            includeInLegacy: false);
-        AddManagedType(
-            seedCapabilities,
-            legacyDeclarations,
-            "Class",
-            "HttpBusinessDeadLetterClient",
-            "DeadLetters",
-            "Capabilities/DeadLetters/BusinessDeadLetterClient.cs",
-            includeInLegacy: false);
+        seedCapabilities.Add(Identity("Interface", "IBusinessDeadLetterClient"), "DeadLetters");
+        seedCapabilities.Add(Identity("Class", "HttpBusinessDeadLetterClient"), "DeadLetters");
 
         // #3924：员工「关联登录账号」的候选与核验只读 IAM 成员账号目录；与鉴权 client 分开，
         // 属于受管 capability client，按目录合同登记。
-        AddManagedType(
-            seedCapabilities,
-            legacyDeclarations,
-            "Interface",
-            "IBusinessIamAccountDirectoryClient",
-            "Iam",
-            "Capabilities/Iam/BusinessIamAccountDirectoryClient.cs",
-            includeInLegacy: false);
-        AddManagedType(
-            seedCapabilities,
-            legacyDeclarations,
-            "Class",
-            "HttpBusinessIamAccountDirectoryClient",
-            "Iam",
-            "Capabilities/Iam/BusinessIamAccountDirectoryClient.cs",
-            includeInLegacy: false);
+        seedCapabilities.Add(Identity("Interface", "IBusinessIamAccountDirectoryClient"), "Iam");
+        seedCapabilities.Add(Identity("Class", "HttpBusinessIamAccountDirectoryClient"), "Iam");
 
         var capabilityDirectories = capabilities.Values
             .Append("DeadLetters")
@@ -1610,13 +1372,11 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
         return new CapabilityBoundaryContract(
             capabilityDirectories,
             seedCapabilities,
-            legacyDeclarations,
             ignoredSharedIdentities,
             sharedClientBaseIdentities);
     }
 
     private static CapabilityBoundaryContract CreateFixtureContract(
-        IReadOnlyDictionary<string, LegacyDeclarationContract> legacy,
         IReadOnlyDictionary<string, string>? managedSeedCapabilities = null,
         IReadOnlyDictionary<string, string>? capabilityDirectories = null)
     {
@@ -1631,7 +1391,6 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             {
                 [Identity("Interface", "IBusinessInventoryClient")] = "Inventory",
             },
-            legacy,
             new HashSet<string>(StringComparer.Ordinal)
             {
                 Identity("Class", "BusinessServiceHttpClient"),
@@ -1640,25 +1399,6 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
             {
                 Identity("Class", "BusinessServiceHttpClient"),
             });
-    }
-
-    private static void AddManagedType(
-        IDictionary<string, string> seedCapabilities,
-        IDictionary<string, LegacyDeclarationContract> legacyDeclarations,
-        string kind,
-        string name,
-        string capability,
-        string sourcePath,
-        bool includeInLegacy = true)
-    {
-        var identity = Identity(kind, name);
-        seedCapabilities.Add(identity, capability);
-        if (includeInLegacy)
-        {
-            legacyDeclarations.Add(
-                identity,
-                new LegacyDeclarationContract(capability, [sourcePath]));
-        }
     }
 
     private static string Identity(string kind, string name) =>
@@ -1724,14 +1464,9 @@ public sealed class BusinessGatewayCapabilityBoundaryTests
 
     private sealed record CompilationSnapshot(IReadOnlyList<TypeDeclaration> Declarations);
 
-    private sealed record LegacyDeclarationContract(
-        string Capability,
-        IReadOnlyList<string> ExpectedPaths);
-
     private sealed record CapabilityBoundaryContract(
         IReadOnlyDictionary<string, string> CapabilityDirectories,
         IReadOnlyDictionary<string, string> ManagedSeedCapabilities,
-        IReadOnlyDictionary<string, LegacyDeclarationContract> LegacyDeclarations,
         IReadOnlySet<string> IgnoredSharedIdentities,
         IReadOnlySet<string> SharedClientBaseIdentities);
 }

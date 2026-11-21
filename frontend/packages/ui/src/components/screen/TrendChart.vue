@@ -30,12 +30,14 @@ const props = withDefaults(
     /** 两条序列的图例/悬停名（默认 实际产量/计划产量） */
     actualLabel?: string
     planLabel?: string
+    /** CSS color for the dashed line and its tooltip value. Defaults to screen indigo. */
+    planColor?: string
     /** 右上时间范围假 tabs 为演示装饰 —— 生产使用传 false 隐藏 */
     tabs?: boolean
     /** 真实时间范围切换（提供即渲染可点 tabs，经 v-model:range 切换；覆盖 tabs 装饰） */
     ranges?: { label: string; value: string | number }[]
     /** 附加对比序列（如质量分层 IQC/IPQC/FQC）：细线 + 图例色点 + 悬停逐条读数。
-     *  与 actual 等长；color 建议传字面量色（CSS 变量可能被调用方局部重映射） */
+     *  与 actual 等长；color 接受 CSS 色值或语义令牌。 */
     series?: { label: string; color: string; data: number[] }[]
   }>(),
   {
@@ -169,7 +171,7 @@ const uid = Math.random().toString(36).slice(2, 8)
 </script>
 
 <template>
-  <ScreenPanel :title="title" class="nv-scr-tc">
+  <ScreenPanel :title="title" class="nv-scr-tc" :style="{ '--nv-scr-trend-plan-color': planColor }">
     <!-- 图例 + 范围切换独立一行（标题下方）：标题行不再挤，tabs 永远完整可见 -->
     <div v-if="(series?.length ?? 0) > 0 || ranges?.length || tabs" class="nv-scr-tc-bar">
       <em class="nv-scr-tc-key">
@@ -289,12 +291,8 @@ const uid = Math.random().toString(36).slice(2, 8)
           }"
         >
           <span class="nv-scr-tc-c-t">{{ cross.label }}</span>
-          <span class="nv-scr-tc-c-a"
-            >● {{ actualLabel }}<b>{{ cross.aVal }}</b></span
-          >
-          <span class="nv-scr-tc-c-p"
-            >┄ {{ planLabel }}<b>{{ cross.pVal }}</b></span
-          >
+          <span class="nv-scr-tc-c-a">● {{ actualLabel }}<b>{{ cross.aVal }}</b></span>
+          <span class="nv-scr-tc-c-p">┄ {{ planLabel }}<b>{{ cross.pVal }}</b></span>
           <span v-for="sv in cross.sVals" :key="sv.label" class="nv-scr-tc-c-s">
             <i :style="{ background: sv.color }" aria-hidden="true" />{{ sv.label
             }}<b>{{ sv.val }}</b>
@@ -411,7 +409,7 @@ const uid = Math.random().toString(36).slice(2, 8)
     stroke: rgba(255, 255, 255, 0.045);
   }
   .nv-scr-tc-plan {
-    stroke: var(--nv-scr-indigo);
+    stroke: var(--nv-scr-trend-plan-color, var(--nv-scr-indigo));
     opacity: 0.85;
   }
   .nv-scr-tc-act {
@@ -483,7 +481,7 @@ const uid = Math.random().toString(36).slice(2, 8)
   }
   .nv-scr-tc-c-p {
     font-size: 13px;
-    color: var(--nv-scr-indigo);
+    color: var(--nv-scr-trend-plan-color, var(--nv-scr-indigo));
   }
   .nv-scr-tc-c-a b,
   .nv-scr-tc-c-p b {

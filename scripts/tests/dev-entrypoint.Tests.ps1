@@ -68,11 +68,6 @@ foreach ($expected in @(
     '.\nerv.ps1 fullstack run -Scenario smoke',
     '.\nerv.ps1 fullstack run -Scenario smoke -EnableWmsDemoWorker',
     '.\nerv.ps1 fullstack start -EnableWmsDemoWorker',
-    '.\nerv.ps1 demo start',
-    '.\nerv.ps1 demo reset',
-    '.\nerv.ps1 demo seed',
-    '.\nerv.ps1 demo health-check',
-    '.\nerv.ps1 demo stop',
     '.\nerv.ps1 publish-compose',
     '.\nerv.ps1 ports',
     '.\nerv.ps1 help'
@@ -96,18 +91,7 @@ if ($fullStackHelp.ExitCode -ne 0) {
     throw "Expected fullstack help to exit 0, got $($fullStackHelp.ExitCode). Output: $($fullStackHelp.Output)"
 }
 
-$fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Raw
-foreach ($expected in @(
-    '[string]::Equals([string]($Mode), [string](''Automated''), [StringComparison]::OrdinalIgnoreCase)',
-    '[string]::Equals([string]("$($latest.state)"), [string](''Running''), [StringComparison]::OrdinalIgnoreCase)',
-    '[string]::Equals([string]($GuardianMode), [string](''Automated''), [StringComparison]::OrdinalIgnoreCase)',
-    '[string]::Equals([string]("$($latest.state)"), [string](''Failed''), [StringComparison]::OrdinalIgnoreCase)',
-    'elseif ([string]::Equals([string]($Scenario), [string](''leader-demo-equipment-branch''), [StringComparison]::OrdinalIgnoreCase))'
-)) {
-    if (-not $fullStackSessionText.Contains($expected, [StringComparison]::Ordinal)) {
-        throw "Full-stack session must retain the explicit ordinal identity contract '$expected'."
-    }
-}
+$fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack/manage-fullstack-session.ps1') -Raw
 $tokens = $null
 $parseErrors = $null
 $fullStackSessionAst = [System.Management.Automation.Language.Parser]::ParseInput($fullStackSessionText, [ref] $tokens, [ref] $parseErrors)
@@ -136,10 +120,6 @@ foreach ($workerOptIn in @($true, $false)) {
         throw "Full-stack start bound EnableWmsDemoWorker=$script:capturedWmsDemoWorker; expected $workerOptIn."
     }
 }
-if ([string]::Equals('Automated', "Automated`u{00AD}", [StringComparison]::OrdinalIgnoreCase) -or
-    -not [string]::Equals('Automated', 'automated', [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'Full-stack mode comparer probe must reject U+00AD while accepting intended casing.'
-}
 foreach ($expected in @('run', 'start', 'url', 'status', 'logs', 'stop', 'list', 'gc', '-EnableWmsDemoWorker')) {
     if (-not $fullStackHelp.Output.Contains($expected)) {
         throw "Full-stack help did not contain '$expected'. Output: $($fullStackHelp.Output)"
@@ -156,7 +136,7 @@ foreach ($expected in @(
 
 $dispatchRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-entrypoint-dispatch-$([guid]::NewGuid().ToString('N'))"
 try {
-    [IO.Directory]::CreateDirectory((Join-Path $dispatchRoot 'scripts')) | Out-Null
+    [IO.Directory]::CreateDirectory((Join-Path $dispatchRoot 'scripts/fullstack')) | Out-Null
     $dispatchNerv = Join-Path $dispatchRoot 'nerv.ps1'
     Copy-Item -LiteralPath $nerv -Destination $dispatchNerv
     $captureScript = @'
@@ -172,11 +152,29 @@ param(
 )
 [pscustomobject]@{ action=$Action; target=$Target; scenario=$Scenario; sessionId=$SessionId; noBuild=[bool]$NoBuild; enableWmsDemoWorker=[bool]$EnableWmsDemoWorker; tail=$Tail; follow=[bool]$Follow } | ConvertTo-Json -Compress
 '@
-    [IO.File]::WriteAllText((Join-Path $dispatchRoot 'scripts/fullstack-session.ps1'), $captureScript, [Text.UTF8Encoding]::new($false))
-    [IO.File]::WriteAllText(
-        (Join-Path $dispatchRoot 'scripts/leader-demo.ps1'),
-        '[CmdletBinding()] param([Parameter(Position=0)][string]$Action) [pscustomobject]@{ action=$Action } | ConvertTo-Json -Compress',
-        [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $dispatchRoot 'scripts/fullstack/manage-fullstack-session.ps1'), $captureScript, [Text.UTF8Encoding]::new($false))
+
+    # 已加载旧版代码的进程按固定路径启动 guardian 或按精确 SessionId 请求回收。
+    $legacyStop = 'scripts/fullstack/fullstack-session.ps1'
+    Copy-Item -LiteralPath (Join-Path $repoRoot $legacyStop) -Destination (Join-Path $dispatchRoot $legacyStop)
+    [IO.Directory]::CreateDirectory((Join-Path $dispatchRoot 'scripts/lib')) | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1') -Destination (Join-Path $dispatchRoot 'scripts/lib')
+    $legacySessionId = 'nerv-abcd-123456'
+    $stop = Invoke-Nerv -ScriptPath (Join-Path $dispatchRoot $legacyStop) -Arguments @('stop', '-SessionId', $legacySessionId)
+    $stopped = $stop.Output | ConvertFrom-Json
+    if ($stop.ExitCode -ne 0 -or -not [string]::Equals($stopped.action, 'stop', [StringComparison]::Ordinal) -or -not [string]::Equals($stopped.sessionId, $legacySessionId, [StringComparison]::Ordinal)) {
+        throw "Legacy guardian cleanup lost its action or session identity: $($stop.Output)"
+    }
+
+    $stateDirectory = [IO.Directory]::CreateDirectory((Join-Path $dispatchRoot 'fullstack-sessions'))
+    [IO.File]::WriteAllText((Join-Path $stateDirectory.FullName "$legacySessionId.json"), '{"state":"Stopped"}')
+    $guardian = Invoke-Nerv -ScriptPath (Join-Path $repoRoot 'scripts/fullstack/fullstack-guardian.ps1') -Arguments @(
+        '-SessionId', $legacySessionId, '-Mode', 'Automated', '-StateRoot', $dispatchRoot,
+        '-IntervalSeconds', '1', '-CoordinatorPid', "$PID", '-CoordinatorStartTimeUtc', ([DateTime]::UtcNow.ToString('O'))
+    )
+    if ($guardian.ExitCode -ne 0 -or -not $guardian.Output.Contains("Guardian started for '$legacySessionId' in Automated mode.", [StringComparison]::Ordinal)) {
+        throw "Legacy coordinator failed to start the guardian for its session: $($guardian.Output)"
+    }
 
     $fullStackRun = Invoke-Nerv -ScriptPath $dispatchNerv -Arguments @('fullstack', 'run', '-Scenario', 'smoke', '-NoBuild')
     $runCapture = $fullStackRun.Output | ConvertFrom-Json
@@ -209,13 +207,6 @@ param(
         throw "Positional full-stack URL target was not forwarded. Output: $($fullStackUrl.Output)"
     }
 
-    foreach ($demoAction in @('start', 'reset', 'seed', 'health-check', 'stop')) {
-        $demoResult = Invoke-Nerv -ScriptPath $dispatchNerv -Arguments @('demo', $demoAction)
-        $demoCapture = $demoResult.Output | ConvertFrom-Json
-        if ($demoResult.ExitCode -ne 0 -or $demoCapture.action -ne $demoAction) {
-            throw "Demo action '$demoAction' was not forwarded. Output: $($demoResult.Output)"
-        }
-    }
 }
 finally {
     Remove-Item -LiteralPath $dispatchRoot -Recurse -Force -ErrorAction SilentlyContinue

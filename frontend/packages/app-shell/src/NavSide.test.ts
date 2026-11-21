@@ -21,7 +21,7 @@ const groups: SideNav = [
   },
 ]
 
-async function mountAt(path: string) {
+async function mountAt(path: string, navGroups = groups) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/:pathMatch(.*)*', name: 'catch-all', component: { template: '<div />' } }],
@@ -31,7 +31,7 @@ async function mountAt(path: string) {
 
   // SidebarMenuButton injects the sidebar context, so NavSide must mount inside a provider.
   const Host = {
-    render: () => h(SidebarProvider, null, { default: () => h(NavSide, { groups }) }),
+    render: () => h(SidebarProvider, null, { default: () => h(NavSide, { groups: navGroups }) }),
   }
 
   return mount(Host, { global: { plugins: [router] } })
@@ -62,6 +62,28 @@ describe('NavSide active matching', () => {
     const wrapper = await mountAt('/mes/work-orders/WO-2026-0001')
 
     expect(activeTitles(wrapper)).toEqual(['生产工单'])
+  })
+
+  it('highlights the owning entry while its adjacent view is open', async () => {
+    const wrapper = await mountAt('/mes/dispatch/', [
+      { items: [{ title: '生产工单', to: '/mes/work-orders', activeOn: ['/mes/dispatch'] }] },
+    ])
+
+    expect(activeTitles(wrapper)).toEqual(['生产工单'])
+    expect(wrapper.get('a').attributes('href')).toBe('/mes/work-orders')
+  })
+
+  it('still chooses the longest match and favors a direct entry on a tie', async () => {
+    const wrapper = await mountAt('/erp/sales/orders', [
+      {
+        items: [
+          { title: '工作台', to: '/erp/workbench', activeOn: ['/erp/sales', '/erp/sales/orders'] },
+          { title: '销售订单', to: '/erp/sales/orders' },
+        ],
+      },
+    ])
+
+    expect(activeTitles(wrapper)).toEqual(['销售订单'])
   })
 
   it('highlights nothing when no entry covers the route', async () => {

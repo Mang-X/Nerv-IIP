@@ -10,6 +10,9 @@ import { useSkillCatalog } from '@/composables/usePromotedCatalogs'
 import { labelFor, SKILL_LEVEL_LABELS } from '@/data/businessLabels'
 import { resolveDispatchAffordance } from '@/composables/mes/useMesTaskSemantics'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   NvBadge,
   NvButton,
@@ -32,6 +35,7 @@ import {
 } from '@nerv-iip/ui'
 import { UserCheckIcon } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
 /**
  * 派工弹窗：给一道工序挑人、挑设备、挑班次。
@@ -81,6 +85,8 @@ const props = defineProps<{
 const emit = defineEmits<{ assigned: [] }>()
 
 const open = defineModel<boolean>('open', { required: true })
+const auth = useAuthStore()
+const router = useRouter()
 
 const assignedUserId = ref('')
 const deviceAssetId = ref('')
@@ -206,6 +212,14 @@ async function submit() {
   showErrors.value = true
   const operationTaskId = props.target?.operationTaskId
   if (!operationTaskId || !assignedUserId.value) return
+  const businessContext = useBusinessContextStore()
+  const { organizationId, environmentId } = businessContext
+  const principalId = auth.principal?.principalId
+  const canOpenOperation = () =>
+    auth.principal?.principalId === principalId &&
+    auth.principal?.permissionCodes?.includes(P.mesOperationsRead) &&
+    businessContext.organizationId === organizationId &&
+    businessContext.environmentId === environmentId
   try {
     await props.assign(operationTaskId, {
       assignedUserId: assignedUserId.value,
@@ -216,6 +230,15 @@ async function submit() {
       selectedWorker.value?.displayName
         ? `已派工：${selectedWorker.value.displayName} 负责该工序。`
         : '已派工。',
+      canOpenOperation()
+        ? {
+            label: '查看该工序执行',
+            onClick: () => {
+              if (canOpenOperation())
+                void router.push({ path: '/mes/operation-tasks', query: { operationTaskId } })
+            },
+          }
+        : undefined,
     )
     open.value = false
     emit('assigned')

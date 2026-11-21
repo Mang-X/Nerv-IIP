@@ -55,7 +55,7 @@ public sealed class ResolveBusinessConsoleBarcodeEndpoint(
     {
         if (!TryCalculatePageOffset(request.PageIndex, request.PageSize, out var pageOffset))
         {
-            throw new BusinessServiceProxyException(HttpStatusCode.BadRequest, "barcode-resolve-page-invalid");
+            throw BusinessServiceProxyException.FromLocalRejection(HttpStatusCode.BadRequest, BusinessGatewayLocalRejectionStableWireCodes.BarcodeResolvePageInvalid);
         }
 
         var downstream = await barcode.ResolveAsync(
@@ -92,7 +92,7 @@ public sealed class ResolveBusinessConsoleBarcodeEndpoint(
                 cancellationToken);
             if (!operationAuthorization.IsAllowed)
             {
-                throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "mes-operation-read-forbidden");
+                throw BusinessServiceProxyException.FromLocalRejection(HttpStatusCode.Forbidden, BusinessGatewayLocalRejectionStableWireCodes.MesOperationReadForbidden);
             }
 
             operationScope = await workScopeResolver.ResolveAsync(
@@ -147,7 +147,7 @@ public sealed class ResolveBusinessConsoleBarcodeEndpoint(
             "operation-task" => await ResolveOperationIdsAsync(
                 request,
                 candidate.SourceDocumentId,
-                operationScope ?? throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "work-scope-not-authorized"),
+                operationScope ?? throw BusinessServiceProxyException.FromLocalRejection(HttpStatusCode.Forbidden, PrincipalWorkScopeStableWireCodes.NotAuthorized),
                 operationLookupGate,
                 cancellationToken),
             _ => null,
@@ -199,7 +199,7 @@ public sealed class ResolveBusinessConsoleBarcodeEndpoint(
             .ToArray();
         if (exact.Length != 1)
         {
-            throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "work-scope-not-authorized");
+            throw BusinessServiceProxyException.FromLocalRejection(HttpStatusCode.Forbidden, PrincipalWorkScopeStableWireCodes.NotAuthorized);
         }
 
         return new Dictionary<string, string>(StringComparer.Ordinal)

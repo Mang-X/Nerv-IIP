@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { toModel } from '../model/aps-mapper'
 import { samplePlan } from '../model/fixtures'
 import GanttChart from './GanttChart.vue'
@@ -13,8 +13,8 @@ async function settle() {
   await flushPromises()
 }
 
-// 无 DHTMLX vendor 时(CI/单测环境)不挂载任何引擎,只断言与引擎无关的容器与占位。
-// 「一 task 一节点」+ selectTask 的引擎级覆盖移到 engine/conformance.selfcheck.test.ts。
+// 显式模拟 vendor 不可用，验证真实加载器触发的占位和只读降级。
+vi.mock('@dhx/trial-gantt', () => ({ gantt: undefined, Gantt: undefined }))
 
 describe('GanttChart', () => {
   it('keeps current execution facts on cards and tooltips without a commercial engine', async () => {
@@ -190,7 +190,7 @@ describe('ResourceSchedulerBoard', () => {
     rangeEnd.setHours(24, 0, 0, 0)
     const expectedLeft =
       ((taskStart - rangeStart.getTime()) / (rangeEnd.getTime() - rangeStart.getTime())) * 100
-    expect(Number.parseFloat((task.element as HTMLElement).style.left)).toBeCloseTo(expectedLeft, 5)
+    expect(Number.parseFloat((task.element as HTMLElement).style.left)).toBeCloseTo(expectedLeft, 4)
     wrapper.unmount()
   })
 

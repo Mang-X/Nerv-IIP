@@ -1,14 +1,14 @@
 # Script-Governance:
 #   Category: test
 #   SideEffects:
-#     - Runs scripts/verify-restore-lock-contract.ps1 against throwaway fixture repositories and
+#     - Runs scripts/checks/verify-restore-lock-contract.ps1 against throwaway fixture repositories and
 #       against the repository's real restore manifest
 #   Writes:
 #     - OS temporary directory: fixture manifests, .csproj and packages.lock.json files (temporarily)
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Removes the fixture directory in finally
-#     - Leaves artifacts/script-logs/** to the repository's existing artifact hygiene
+#     - Leaves .ryugi/artifacts/script-logs/** to the repository's existing artifact hygiene
 #   Requires:
 #     - PowerShell 7
 
@@ -28,7 +28,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 
-$verifierPath = Join-Path $repoRoot 'scripts/verify-restore-lock-contract.ps1'
+$verifierPath = Join-Path $repoRoot 'scripts/checks/verify-restore-lock-contract.ps1'
 $fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-restore-lock-{0}" -f [Guid]::NewGuid().ToString('N'))
 
 # Assertions are collected rather than thrown at the first failure. A fail-fast run answers "is it

@@ -295,10 +295,7 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
           status: 'Accepted',
           reasonCode: 'net-requirement',
           netRequirementExplanation: null,
-          // 故意用**种子实际写入**的 kebab 口径（WorldHistorySeedService：`business-mes`），
-          // 不用前端接受建议时写的 `BusinessMes`。夹具原来用后者，于是这条用例一直绿，
-          // 而真机上「对该单排产」一个按钮都不渲染（第五轮走查实测）。
-          // 两个生产者写法不一，读侧必须都认——夹具就该盯着更容易漏的那一边。
+          // 保留已有记录中使用的小写服务标识。
           downstreamService: 'business-mes',
           downstreamDocumentType: 'work-order',
           downstreamDocumentId: 'WO-2026-0007',

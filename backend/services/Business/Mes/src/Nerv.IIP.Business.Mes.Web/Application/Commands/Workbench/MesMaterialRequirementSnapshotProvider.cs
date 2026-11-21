@@ -62,16 +62,6 @@ public interface IMesMaterialRequirementSnapshotProvider
         CancellationToken cancellationToken);
 }
 
-public sealed class NullMesMaterialRequirementSnapshotProvider : IMesMaterialRequirementSnapshotProvider
-{
-    public Task<MesMaterialRequirementSnapshotResult> GetSnapshotAsync(
-        MesMaterialRequirementSnapshotRequest request,
-        CancellationToken cancellationToken)
-    {
-        return Task.FromResult(MesMaterialRequirementSnapshotResult.Missing("product-engineering:not-configured"));
-    }
-}
-
 public sealed class MesProductEngineeringHttpClient(HttpClient httpClient)
 {
     public HttpClient HttpClient { get; } = httpClient;

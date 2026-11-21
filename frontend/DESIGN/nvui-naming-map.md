@@ -1,6 +1,6 @@
 # NvUI 命名与 token 映射表
 
-本页是 [ADR 0020：NvUI 组件命名、token 场景命名空间与样式隔离](../../docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md)
+本页是 [ADR 0020：NvUI 组件命名、token 场景命名空间与样式隔离](../../docs/adr/2026-07-07-0020-nvui-naming-token-namespaces-and-style-isolation.md)
 的**参考数据**。命名规则本身仍在那篇 ADR：`Nv` 前缀边界、PC 素名规则、R1–R5 判定流程、
 1.3 废弃处置、token 场景命名空间的划分依据、契约层永久冻结名单。本页只承载按那套规则
 逐件算出的**映射结果**——组件旧名 → 新名全表、`--sb-*` → `--nv-scr-*` 30 项、PC 自有

@@ -36,7 +36,7 @@ public sealed record CreateRushWorkOrderRequest(
     int DurationMinutes,
     string? IdempotencyKey = null);
 
-public sealed record ListMesWorkOrdersRequest(
+public record ListMesWorkOrdersRequest(
     string OrganizationId,
     string EnvironmentId,
     string? Status,
@@ -55,6 +55,21 @@ public sealed record ListMesWorkOrdersRequest(
     string? AuthorizedAssignedUserIds = null,
     string? AuthorizedTeamIds = null,
     string? AuthorizedWorkCenterIds = null);
+
+public sealed record GetWipSummaryRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string? Status,
+    int Skip = 0,
+    int Take = OffsetPage.DefaultTake,
+    string? Keyword = null,
+    string? WorkCenterId = null,
+    string? ShiftId = null,
+    string? DeviceAssetId = null,
+    string? WorkOrderId = null,
+    string? OperationTaskId = null)
+    : ListMesWorkOrdersRequest(OrganizationId, EnvironmentId, Status, Skip, Take, Keyword,
+        WorkCenterId, ShiftId, DeviceAssetId, WorkOrderId: WorkOrderId);
 
 public sealed record ListOperationTasksRequest(
     string OrganizationId,
@@ -1535,11 +1550,11 @@ public sealed class CompleteOperationTaskEndpoint(ISender sender, TimeProvider t
 }
 
 public sealed class GetWipSummaryEndpoint(ISender sender)
-    : MesEndpoint<ListMesWorkOrdersRequest, MesWipSummaryResponse>
+    : MesEndpoint<GetWipSummaryRequest, MesWipSummaryResponse>
 {
     public override void Configure() => ConfigureMesContract(MesEndpointContracts.Get<GetWipSummaryEndpoint>());
 
-    public override async Task HandleAsync(ListMesWorkOrdersRequest req, CancellationToken ct)
+    public override async Task HandleAsync(GetWipSummaryRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new GetWipSummaryQuery(
             req.OrganizationId,
@@ -1550,7 +1565,9 @@ public sealed class GetWipSummaryEndpoint(ISender sender)
             req.Keyword,
             req.WorkCenterId,
             req.ShiftId,
-            req.DeviceAssetId), ct);
+            req.DeviceAssetId,
+            req.WorkOrderId,
+            req.OperationTaskId), ct);
         await Send.OkAsync(response, ct);
     }
 }

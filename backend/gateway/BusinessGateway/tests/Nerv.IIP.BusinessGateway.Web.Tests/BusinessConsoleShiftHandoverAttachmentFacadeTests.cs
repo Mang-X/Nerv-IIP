@@ -145,6 +145,27 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         Assert.Equal("上传内容与声明的文件类型不匹配。", exception.Message);
     }
 
+    [Theory]
+    [InlineData("""{"success":true,"code":"file-storage-bad-request","message":"伪成功携带的私有诊断。"}""")]
+    [InlineData("""{"code":"file-storage-bad-request","message":"Authorization: Bearer top-secret"}""")]
+    public async Task Complete_hides_diagnostics_from_unusable_file_storage_bad_requests(string body)
+    {
+        var client = CreateClient(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent(body),
+        }));
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.CompleteShiftHandoverAttachmentUploadAsync(
+                "internal-test-token",
+                "ups-handover-1",
+                new BusinessConsoleCompleteShiftHandoverAttachmentUploadRequest("org-001", "env-dev", null, 2048),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, exception.StatusCode);
+        Assert.Equal("downstream-request-failed", exception.Message);
+    }
+
     // #3085 的下载口径：FileStorage 的 download-grant 不看用途，门面不看就等于把交接班读权限
     // 变成通用文件读权限。
     [Fact]

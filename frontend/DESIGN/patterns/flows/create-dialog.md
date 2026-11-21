@@ -11,7 +11,7 @@ Dialog 与 Sheet 同样适用。
 ## 规则
 
 1. **开关**：`v-model:open` 控制；触发按钮在工具条/页头 `#actions`（`NvDialogTrigger
-as-child` 或显式 `open = true`）。
+   as-child` 或显式 `open = true`）。
 2. **表单在 `NvDialogContent` 内**：`<form @submit.prevent>` 包住字段 + footer；确认按钮
    `type="submit"`，取消 `type="button"`；`pending` 时两个按钮都 disabled。
 3. **校验时机（对齐 `../feedback-and-notifications.md`）**：点提交才标红——`showErrors`

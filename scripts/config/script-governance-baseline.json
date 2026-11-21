@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "exemptions": [
+    {
+      "path": "scripts/api/export-gateway-openapi.ps1",
+      "rules": [
+        "MissingHelper",
+        "ForbiddenCommand",
+        "DynamicInvocation",
+        "ForbiddenProcessStart"
+      ]
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 using Nerv.IIP.Iam.Web.Application.Auth;
+using Nerv.IIP.Web;
 
 namespace Nerv.IIP.Iam.Web.Endpoints;
 

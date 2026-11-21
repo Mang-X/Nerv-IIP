@@ -9,10 +9,10 @@ vi.mock('@/data/config', () => ({ IS_REAL_DATA: true }))
 vi.mock('@/data/fetchers/andon', () => ({ fetchAndonQueue: vi.fn(), fetchAndonScopes: vi.fn() }))
 const auth = reactive({
   sessionId: 'session-1',
-  principal: { organizationId: 'org-1', environmentId: 'env-1' },
+  principal: { organizationId: 'org-1', environmentId: 'env-1', permissionCodes: ['a', 'b'] },
 })
 vi.mock('@/stores/realAuth', () => ({ useRealAuthStore: () => auth }))
-const scope = { kind: 'workCenter', id: 'wc-1', displayName: '装配一线' }
+const scope = { kind: 'work-center', id: 'wc-1', displayName: '装配一线' }
 const call = {
   id: 'call-1',
   category: 'quality' as const,
@@ -84,7 +84,7 @@ it.each([new TypeError('Failed to fetch'), new Error('未授权'), new Error('�
 )
 
 it('切换范围立即清除旧行且延迟到达的旧请求不能覆盖新范围', async () => {
-  const next = { kind: 'workCenter', id: 'wc-2', displayName: '装配二线' }
+  const next = { kind: 'work-center', id: 'wc-2', displayName: '装配二线' }
   vi.mocked(fetchAndonScopes).mockResolvedValue([scope, next])
   let resolveOld!: (value: { items: (typeof call)[]; total: number }) => void
   vi.mocked(fetchAndonQueue).mockImplementation((_session, selected) =>
@@ -123,7 +123,7 @@ it('没有授权范围时显示未配置而不读取队列', async () => {
   expect(fetchAndonQueue).not.toHaveBeenCalled()
 })
 
-it('切换会话后旧队列响应不能重新出现', async () => {
+it('同一授权续期保留所选工作中心，交班后旧队列响应不能重新出现', async () => {
   let resolveOld!: (value: { items: (typeof call)[]; total: number }) => void
   vi.mocked(fetchAndonQueue).mockReturnValue(
     new Promise((resolve) => {
@@ -131,7 +131,13 @@ it('切换会话后旧队列响应不能重新出现', async () => {
     }),
   )
   await open()
-  auth.sessionId = 'session-2'
+  auth.sessionId = 'rotated-session'
+  auth.principal = { ...auth.principal, permissionCodes: ['b', 'a'] }
+  await flushPromises()
+  expect(wrapper.get('[role="combobox"]').text()).toContain('装配一线')
+  auth.principal = { ...auth.principal, organizationId: '' }
+  await flushPromises()
+  auth.principal = { ...auth.principal, organizationId: 'org-2' }
   await flushPromises()
   resolveOld({ items: [call], total: 1 })
   await flushPromises()

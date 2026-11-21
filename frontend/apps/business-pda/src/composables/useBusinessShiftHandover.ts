@@ -51,11 +51,9 @@ import {
   toDirectoryOptions,
   type DirectoryOption,
   type ShiftHandoverPartyState,
-} from '@nerv-iip/business-core'
-import {
   useListResponseState,
   useScopeBoundListResponse,
-} from '@/composables/useScopeBoundListResponse'
+} from '@nerv-iip/business-core'
 import { usePdaIdentity } from '@/composables/useWorkbenchHome'
 import { useAuthStore } from '@/stores/auth'
 

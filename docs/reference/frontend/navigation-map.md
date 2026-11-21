@@ -35,5 +35,3 @@ route、页面、facade 与 permission 是否存在可以直接从代码/OpenAPI
 3. 要确认某页面能否调用后端：查 BusinessGateway facade/OpenAPI，再看 generated client 与页面消费。
 4. 要确认权限：同时核实 permission catalog、客户端导航裁剪和 Gateway endpoint enforcement；三者不能互相代替。
 5. 要讨论“用户应该怎样找能力”：回到 Product，而不是把当前代码形状当产品裁决。
-
-迁移前的混合正文已冻结在 [`../../reports/audits/frontend-navigation-map-pre-m2-n-2026-09-07.md`](../../reports/audits/frontend-navigation-map-pre-m2-n-2026-09-07.md)，仅用于追溯当时的状态与形成过程。

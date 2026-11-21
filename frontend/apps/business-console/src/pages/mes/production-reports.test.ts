@@ -142,7 +142,7 @@ vi.mock('@/composables/useMasterDataDisplayNames', () => ({
   useMasterDataDisplayNames: () => ({
     resolveDevice: () => (mesState.catalogResolved ? '五轴加工中心' : undefined),
     resolveUser: (id?: string | null) =>
-      (({ 'user-operator': '王建国', 'user-detail-operator': '李俊华' }) as Record<string, string>)[
+      ({ 'user-operator': '王建国', 'user-detail-operator': '李俊华' } as Record<string, string>)[
         id ?? ''
       ],
   }),

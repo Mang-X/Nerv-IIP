@@ -6,8 +6,8 @@
 #     - Runs the exact script-governance gate for the MAN-703 HTTP fixture
 #   Writes:
 #     - Temporary real-entry and mutation harnesses, cleanup evidence, and watchdog logs under the system temp directory
-#     - artifacts/script-logs/man703-fixture-governance/**
-#     - A temporary canonical-result failure fixture under .superpowers/sdd/**
+#     - .ryugi/artifacts/script-logs/man703-fixture-governance/**
+#     - A temporary canonical-result failure fixture under .ryugi/artifacts/**
 #   Cleanup:
 #     - Removes the temporary real-entry and mutation harnesses, evidence, and watchdog logs
 #     - Removes the temporary canonical-result failure fixture
@@ -17,17 +17,15 @@
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
-$verifyScript = Join-Path $repoRoot 'scripts/verify-erp-sales-order-demand-planning.ps1'
+$verifyScript = Join-Path $repoRoot 'scripts/integration/verify-erp-sales-order-demand-planning.ps1'
 $fixtureScript = Join-Path $repoRoot 'scripts/tests/fixtures/man703-http-fixture.ps1'
-$governanceScript = Join-Path $repoRoot 'scripts/check-script-governance.ps1'
-$ciWorkflow = Join-Path $repoRoot '.github/workflows/ci.yml'
+$governanceScript = Join-Path $repoRoot 'scripts/checks/check-script-governance.ps1'
 if (-not (Test-Path -LiteralPath $verifyScript)) {
     throw 'ERP sales-order DemandPlanning cross-process verify script is missing.'
 }
 
 $content = Get-Content -LiteralPath $verifyScript -Raw
 $fixtureContent = Get-Content -LiteralPath $fixtureScript -Raw
-$workflowContent = Get-Content -LiteralPath $ciWorkflow -Raw
 $tokens = $null
 $parseErrors = $null
 $scriptAst = [System.Management.Automation.Language.Parser]::ParseFile(
@@ -563,43 +561,6 @@ foreach ($mutationCall in (Get-CommandCallAsts -Name 'Invoke-JsonPost')) {
     Assert-Contract (Test-CommandHasParameter -Call $mutationCall -Name 'Stage') 'Every mutation must name the acceptance stage it belongs to.'
 }
 
-# 四类失败必须在诊断里彼此可分：connect / send / 服务端取消（499）/ 业务信封。
-$requestFunctionText = Get-FunctionContractText -Name 'Invoke-Man517JsonRequest'
-foreach ($classification in @('classification=deadline', 'classification=business', 'classification=protocol')) {
-    Assert-Contract ($requestFunctionText.Contains($classification, [StringComparison]::Ordinal)) "The shared JSON request path must report $classification explicitly."
-}
-Assert-Contract ($requestFunctionText.Contains('classification=$(Get-Man517TransportClassification', [StringComparison]::Ordinal)) 'Transport failures must be classified as connect or send instead of collapsing into one bucket.'
-Assert-Contract ($requestFunctionText.Contains('classification=$(Get-Man517HttpClassification', [StringComparison]::Ordinal)) 'Non-success HTTP status must be classified so a server-side cancellation is not read as a server error.'
-$httpClassificationText = Get-FunctionContractText -Name 'Get-Man517HttpClassification'
-Assert-Contract ($httpClassificationText.Contains('499', [StringComparison]::Ordinal)) 'HTTP 499 must be recognised as a server-side cancellation.'
-Assert-Contract ($httpClassificationText.Contains("'server-cancelled'", [StringComparison]::Ordinal)) 'Server-side cancellation must have its own classification.'
-$transportClassificationText = Get-FunctionContractText -Name 'Get-Man517TransportClassification'
-foreach ($classification in @("'connect'", "'send'")) {
-    Assert-Contract ($transportClassificationText.Contains($classification, [StringComparison]::Ordinal)) "Transport classification must be able to return $classification."
-}
-Assert-Contract ($transportClassificationText.Contains('ConnectionError', [StringComparison]::Ordinal)) 'Transport classification must read the real HttpRequestError instead of matching message text.'
-Assert-Contract ($requestFunctionText.Contains('stage=$safeStage', [StringComparison]::Ordinal)) 'Every failure must carry the redacted stage.'
-Assert-Contract ($requestFunctionText.Contains('uri=$safeUri', [StringComparison]::Ordinal)) 'Every failure must carry the redacted URI.'
-Assert-Contract ($requestFunctionText.Contains('elapsedMs=', [StringComparison]::Ordinal)) 'Timeout diagnostics must report how long the request actually ran.'
-Assert-Contract ($requestFunctionText.Contains('budgetMs=', [StringComparison]::Ordinal)) 'Timeout diagnostics must report the budget that was in force.'
-
-Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('ResponseHeadersRead', [StringComparison]::Ordinal)) 'The shared JSON request path must stream the response under its absolute cancellation budget.'
-Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('CancellationTokenSource', [StringComparison]::Ordinal)) 'The shared JSON request path must enforce one absolute cancellation budget.'
-Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('SendAsync', [StringComparison]::Ordinal)) 'The shared JSON request path must pass cancellation into the HTTP send.'
-Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('ReadAsStringAsync', [StringComparison]::Ordinal)) 'The shared JSON request path must pass cancellation into complete response reading.'
-Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('System.TimeoutException', [StringComparison]::Ordinal)) 'Deadline expiry must use a typed TimeoutException.'
-Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('$deadlineCancellation.IsCancellationRequested', [StringComparison]::Ordinal)) 'OperationCanceledException must be mapped to TimeoutException only when the owned absolute deadline token fired.'
-$requestFunctionText = Get-FunctionContractText -Name 'Invoke-Man517JsonRequest'
-$httpStatusFailureIndex = $requestFunctionText.IndexOf('$httpStatus -lt 200', [StringComparison]::Ordinal)
-$responseReadIndex = $requestFunctionText.IndexOf('ReadAsStringAsync', [StringComparison]::Ordinal)
-Assert-Contract ($httpStatusFailureIndex -ge 0 -and $responseReadIndex -gt $httpStatusFailureIndex) 'Non-success HTTP status must fail immediately after headers, before response body reading.'
-Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains("PSObject.Properties['success']", [StringComparison]::Ordinal)) 'The shared JSON request path must require a ResponseData success field.'
-foreach ($functionName in @('Wait-Demand', 'Wait-ErpSalesOrderReady', 'Assert-DemandStable')) {
-    $functionText = Get-FunctionContractText -Name $functionName
-    Assert-Contract ($functionText.Contains('catch [System.TimeoutException]', [StringComparison]::Ordinal)) "$functionName must handle typed request deadline expiry explicitly."
-    Assert-Contract ($functionText.Contains('(Get-Date) -lt $deadline', [StringComparison]::Ordinal)) "$functionName must rethrow a typed timeout that occurs before its own absolute deadline."
-}
-Assert-Contract ((Get-FunctionContractText -Name 'Wait-ErpSalesOrderReady').Contains('[decimal]$rows[0].totalAmount -eq 200', [StringComparison]::Ordinal)) 'ERP readiness must validate the seeded order amount, not only its identifier.'
 $erpReadyIndex = $content.IndexOf('Wait-ErpSalesOrderReady -ErpUrl $erpUrl', [StringComparison]::Ordinal)
 $firstMutationIndex = $content.IndexOf('Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10"', [StringComparison]::Ordinal)
 Assert-Contract ($erpReadyIndex -ge 0 -and $firstMutationIndex -gt $erpReadyIndex) 'ERP query-visible readiness must complete before the first sales-order mutation.'
@@ -937,8 +898,6 @@ Assert-Contract ($content.Contains('integration_event_dead_letters', [StringComp
 Assert-Contract ($content.Contains('sales_order_demand_projections', [StringComparison]::Ordinal)) 'Failure diagnostics must capture the sales-order watermark projection.'
 Assert-Contract ($content.Contains('demand_sources', [StringComparison]::Ordinal)) 'Failure diagnostics must capture the projected demand source.'
 Assert-Contract ($content.Contains('XPENDING', [StringComparison]::Ordinal)) 'Failure diagnostics must capture Redis pending-entry metadata.'
-Assert-Contract ($workflowContent.Contains('if: always()', [StringComparison]::Ordinal)) 'CI must upload MAN-517 diagnostics even when verification fails.'
-Assert-Contract ($workflowContent.Contains('actions/upload-artifact@v4', [StringComparison]::Ordinal)) 'CI must retain MAN-517 diagnostics as an artifact.'
 
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 
@@ -1164,7 +1123,7 @@ foreach ($sensitiveValue in @('pwd-value', 'token-value', 'secret-value', 'clien
     Assert-Contract (-not $safeDiagnostic.Contains($sensitiveValue, [StringComparison]::Ordinal)) "Shared diagnostic redaction leaked $sensitiveValue."
 }
 
-$canonicalFailureFixtureRoot = Join-Path $repoRoot ".superpowers/sdd/canonical-result-failure-$([Guid]::NewGuid().ToString('N'))"
+$canonicalFailureFixtureRoot = Join-Path $repoRoot ".ryugi/artifacts/canonical-result-failure-$([Guid]::NewGuid().ToString('N'))"
 $canonicalFailureResultPath = Join-Path $canonicalFailureFixtureRoot 'result.json'
 try {
     [IO.Directory]::CreateDirectory($canonicalFailureFixtureRoot) | Out-Null

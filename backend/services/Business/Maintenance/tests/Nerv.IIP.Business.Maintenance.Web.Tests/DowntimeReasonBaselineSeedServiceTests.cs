@@ -80,11 +80,4 @@ public sealed class DowntimeReasonBaselineSeedServiceTests
         Assert.False(await db.DowntimeReasons.AnyAsync(x => x.OrganizationId != "org-001" || x.EnvironmentId != "env-dev"));
     }
 
-    [Fact]
-    public void World_history_demo_codes_are_a_subset_of_the_baseline()
-    {
-        // 演示种子与产品基线都按码补缺；同名码必须同义，演示种子不能引入基线之外的另一套原因体系。
-        var demoCodes = WorldHistoryDeviceSpec.DowntimeReasons.Select(x => x.Code);
-        Assert.Empty(demoCodes.Except(DowntimeReasonBaselineSeedService.Reasons.Select(x => x.Code)));
-    }
 }

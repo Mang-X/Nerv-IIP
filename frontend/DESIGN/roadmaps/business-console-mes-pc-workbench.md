@@ -1,6 +1,6 @@
 # Business Console MES PC 工作台
 
-本路线图是 Business Console PC 交互模型的设计来源。它通过描述页面应当如何服务于生产计划员、班组长、检验员和库存操作员，补充 `docs/superpowers/plans/2026-05-26-business-console-mes-pc-completion.md`。
+生产计划员、班组长、检验员和库存操作员的工作流程见 [MES 产品设计](../../../docs/product/mes/design.md)，桌面组件与交互规范见[独立设计文档站](../../apps/design-system/docs/components/desktop/index.md)。
 
 ## 设计结论
 

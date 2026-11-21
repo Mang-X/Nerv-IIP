@@ -4,10 +4,10 @@
 #     - Starts short-lived probe processes that terminate themselves with a signal
 #   Writes:
 #     - Temporary probe scripts, mutated library copies and command logs under the operating-system temp directory
-#     - Shared script-automation command logs under artifacts/script-logs/** for probes whose entry point takes no log directory
+#     - Shared script-automation command logs under .ryugi/artifacts/script-logs/** for probes whose entry point takes no log directory
 #   Cleanup:
 #     - Removes the owned temporary root in finally
-#     - Leaves artifacts/script-logs/** to the repository's existing artifact hygiene
+#     - Leaves .ryugi/artifacts/script-logs/** to the repository's existing artifact hygiene
 #   Requires:
 #     - PowerShell 7
 
@@ -110,7 +110,7 @@ try {
             -Name 'signal-exit-with-timeout-probe' `
             -LogDirectory $timeoutLogDirectory
     }
-    # 既有消费者（scripts/verify-backend-test-determinism.ps1 与两处 Tests）用
+    # 既有调用方用
     # `exited with (?<exitCode>\d+)` 解析这条消息，前缀必须原样保留。
     Assert-Contract ($withTimeoutMessage -match 'exited with (?<exitCode>\d+)') 'The timed native failure message must keep the exit-code prefix its parsers depend on.'
     Assert-Contract ([string]::Equals([string]$Matches['exitCode'], '137', [StringComparison]::Ordinal)) 'A SIGKILLed probe must report exit code 137.'

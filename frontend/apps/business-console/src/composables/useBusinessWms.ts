@@ -53,6 +53,7 @@ import {
   acquirePendingBusinessIntent,
   completePendingBusinessIntent,
   peekPendingBusinessIntent,
+  useScopeBoundListResponse,
 } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery } from '@pinia/colada'
@@ -63,7 +64,6 @@ import {
   withBusinessContextEnabled,
 } from './businessContextBinding'
 import { executeLifecycleAction, LifecycleStateChangedError } from './lifecycleAction'
-import { useScopeBoundListResponse } from './useScopeBoundListResponse'
 
 const DEFAULT_TAKE = 100
 const RECEIVING_QUALITY_POLL_INTERVAL_MS = 10_000

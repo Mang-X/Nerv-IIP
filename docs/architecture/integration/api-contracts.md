@@ -56,6 +56,5 @@ Platform SDK 是平台向应用、Connector Host 和扩展提供的稳定能力�
 - 规范性规则：[`../../governance/api/contracts-and-codegen.md`](../../governance/api/contracts-and-codegen.md)
 - 执行与排障：[`../../runbooks/api-codegen.md`](../../runbooks/api-codegen.md)
 - 稳定路径、机器事实与受控例外：[`../../reference/api/contracts-and-codegen.md`](../../reference/api/contracts-and-codegen.md)
-- 历史总账与端点表快照：[`../../reports/audits/api-contract-and-codegen.md`](../../reports/audits/api-contract-and-codegen.md)
 
 精确 endpoint、operationId、DTO 和生成类型始终以当前后端/OpenAPI/生成代码为准，禁止从历史报告反向恢复当前契约。

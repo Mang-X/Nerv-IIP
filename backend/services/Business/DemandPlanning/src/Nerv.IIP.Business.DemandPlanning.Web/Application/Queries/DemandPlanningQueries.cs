@@ -402,7 +402,7 @@ public sealed class ListPlanningSuggestionsQueryHandler(ApplicationDbContext dbC
     }
 }
 
-public sealed record ListMrpPeggingQuery(MrpRunId RunId) : IQuery<IReadOnlyCollection<PeggingLinkResponse>>;
+public sealed record ListMrpPeggingQuery(MrpRunId RunId, string OrganizationId, string EnvironmentId) : IQuery<IReadOnlyCollection<PeggingLinkResponse>>;
 
 public sealed record PeggingLinkResponse(
     PlanningSuggestionId SuggestionId,
@@ -424,7 +424,7 @@ public sealed class ListMrpPeggingQueryHandler(ApplicationDbContext dbContext)
     {
         var suggestions = await dbContext.PlanningSuggestions.AsNoTracking()
             .Include(x => x.PeggingLinks)
-            .Where(x => x.MrpRunId == request.RunId)
+            .Where(x => x.MrpRunId == request.RunId && x.OrganizationId == request.OrganizationId && x.EnvironmentId == request.EnvironmentId)
             .ToListAsync(cancellationToken);
 
         return suggestions

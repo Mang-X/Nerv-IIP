@@ -31,15 +31,8 @@
     background: var(--nv-scr-bg);
     color: var(--nv-scr-text);
     font-family:
-      system-ui,
-      -apple-system,
-      'Segoe UI',
-      Roboto,
-      'Helvetica Neue',
-      Arial,
-      'PingFang SC',
-      'Microsoft YaHei',
-      sans-serif;
+      system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC',
+      'Microsoft YaHei', sans-serif;
   }
 
   /* 原生滚动容器的大屏细滚条（虚拟滚动容器无法换 NvScreenScrollArea —— 它们必须

@@ -20,7 +20,7 @@ public sealed class BarcodeLabelPostgresProfileIdentityTests
 
         var repositoryRoot = FindRepositoryRoot();
         using var manifest = JsonDocument.Parse(File.ReadAllText(
-            Path.Combine(repositoryRoot, "scripts", "postgres-test-lane.json")));
+            Path.Combine(repositoryRoot, "scripts", "config", "postgres-test-lane.json")));
         var manifestMember = Assert.Single(
             manifest.RootElement.GetProperty("members").EnumerateArray(),
             candidate => string.Equals(
@@ -30,7 +30,7 @@ public sealed class BarcodeLabelPostgresProfileIdentityTests
         var manifestIdentities = ReadSortedIdentities(manifestMember, "expectedTestIdentities");
 
         using var policy = JsonDocument.Parse(File.ReadAllText(
-            Path.Combine(repositoryRoot, "scripts", "test-evidence-policy.json")));
+            Path.Combine(repositoryRoot, "scripts", "config", "test-evidence-policy.json")));
         var policyRule = Assert.Single(
             policy.RootElement.GetProperty("rules").EnumerateArray(),
             candidate => string.Equals(
@@ -57,7 +57,7 @@ public sealed class BarcodeLabelPostgresProfileIdentityTests
              directory is not null;
              directory = directory.Parent)
         {
-            if (File.Exists(Path.Combine(directory.FullName, "scripts", "postgres-test-lane.json")))
+            if (File.Exists(Path.Combine(directory.FullName, "scripts", "config", "postgres-test-lane.json")))
             {
                 return directory.FullName;
             }

@@ -7,19 +7,19 @@
 仓库根目录执行：
 
 ```powershell
-pwsh -NoProfile -File ./scripts/verify-openapi-client-drift.ps1
+pwsh -NoProfile -File ./scripts/api/verify-openapi-client-drift.ps1
 ```
 
 该脚本是当前契约漂移闭环：默认会启动并导出 PlatformGateway 与 BusinessGateway OpenAPI、按 `frontend/package.json` 安装/调用当前 pnpm、执行 `generate:api`，最后检查受管 snapshot 与 generated 目录的 tracked/untracked drift。不要用一串自定义 shell 命令替代它后再声称通过同一门禁。
 
-脚本当前要求 PowerShell 7、.NET SDK 10、Node.js 22.22.3 与 pnpm 11.22.0；精确要求以脚本头和仓库 package/build 配置为准。`-SkipRegenerate` / `-SkipFrontendInstall` 只能在调用方明确已经满足对应前置条件时使用，不能用来跳过本应验证的生成事实。
+脚本当前要求 PowerShell 7、.NET SDK 10、Node.js 26.13.1 与 pnpm 12.21.0；精确要求以脚本头和仓库 package/build 配置为准。`-SkipRegenerate` / `-SkipFrontendInstall` 只能在调用方明确已经满足对应前置条件时使用，不能用来跳过本应验证的生成事实。
 
 ## 仅导出 Gateway OpenAPI
 
 需要单独刷新受控 snapshot 时，在仓库根目录执行：
 
 ```powershell
-pwsh -NoProfile -File ./scripts/export-gateway-openapi.ps1
+pwsh -NoProfile -File ./scripts/api/export-gateway-openapi.ps1
 ```
 
 该脚本会构建并启动本地 PlatformGateway 与 BusinessGateway，从 `/swagger/v1/swagger.json` 获取文档，并写入：
@@ -27,7 +27,7 @@ pwsh -NoProfile -File ./scripts/export-gateway-openapi.ps1
 - `frontend/packages/api-client/openapi/platform-gateway.v1.json`
 - `frontend/packages/api-client/openapi/business-gateway-console.v1.json`
 
-同时会写入 `artifacts/openapi-export/**` 与脚本日志，并负责停止其管理的 Gateway 进程。snapshot 只能来自此类后端导出流程，不手工编辑。
+同时会写入 `.ryugi/artifacts/openapi-export/**` 与脚本日志，并负责停止其管理的 Gateway 进程。snapshot 只能来自此类后端导出流程，不手工编辑。
 
 ## 仅重新生成前端 API client
 
@@ -52,7 +52,7 @@ pnpm -C frontend build
 
 1. 修改后端 endpoint/DTO/授权和对应测试，并确认稳定 `operationId`。
 2. 若是业务服务 endpoint，按 [`../governance/api/facade-coverage.md`](../governance/api/facade-coverage.md) 同步分类机器事实。
-3. 运行 `scripts/export-gateway-openapi.ps1` 或直接运行首选的 `scripts/verify-openapi-client-drift.ps1` 获取受控 snapshot。
+3. 运行 `scripts/api/export-gateway-openapi.ps1` 或直接运行首选的 `scripts/api/verify-openapi-client-drift.ps1` 获取受控 snapshot。
 4. 运行 `pnpm -C frontend generate:api`（若首选 drift 脚本已完成该步则无需重复）。
 5. 只从 `@nerv-iip/api-client` 稳定入口接线消费方，不从 `src/generated/**` 深层导入。
 6. 运行受影响的前端/后端测试与当前 CI；确认 OpenAPI/api-client Drift、Script Governance 和其它被 impact plan 选中的 lane 真实通过。

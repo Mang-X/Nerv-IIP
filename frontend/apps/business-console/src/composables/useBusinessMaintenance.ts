@@ -46,11 +46,11 @@ import {
   acquirePendingBusinessIntent,
   completePendingBusinessIntent,
   peekPendingBusinessIntent,
+  useScopeBoundListResponse,
 } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive, shallowRef } from 'vue'
-import { useScopeBoundListResponse } from './useScopeBoundListResponse'
 import {
   bindBusinessContext,
   hasBusinessContext,

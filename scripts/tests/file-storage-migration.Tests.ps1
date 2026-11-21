@@ -3,7 +3,7 @@
 #   SideEffects:
 #     - Runs FileStorage migration entry validation without connecting to a database
 #   Writes:
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Restores the scoped migration connection environment variable
 #   Requires:

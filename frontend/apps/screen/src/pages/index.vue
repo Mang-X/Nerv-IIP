@@ -10,19 +10,62 @@ import {
   NvScreenStatusTag,
   useScreenData,
 } from '@nerv-iip/ui'
-import { useNow } from '@vueuse/core'
+import { useScreenClock } from '../composables/useScreenClock'
 import { Activity, AlertTriangle, Cpu, PackageCheck } from '@lucide/vue'
 import { type Component, computed, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { useAccessScope } from '@/access/useAccessScope'
+import { IS_REAL_DATA } from '@/data/config'
+import { useRealAuthStore } from '@/stores/realAuth'
+import HallMetric from '@/components/launcher/HallMetric.vue'
+import type { HallMetric as MetricKey } from '@/data/fetchers/launcher'
 import LauncherCard from '@/components/launcher/LauncherCard.vue'
 import type { LauncherSummary } from '@/data/contracts/launcher'
 import { fetchLauncherSummary } from '@/data/fetchers/launcher'
 import { formatScreenFreshness } from '@/data/freshness'
-import { SCREENS } from '@/data/screens'
+import { canReadRealScreen, SCREENS } from '@/data/screens'
 
 const scope = useAccessScope()
-const cards = computed(() => SCREENS.filter((s) => scope.canSeeScreen(s.key)))
+const auth = IS_REAL_DATA ? useRealAuthStore() : undefined
+const router = useRouter()
+async function signOut() {
+  if (!auth?.isAuthenticated) return
+  const [outcome] = await Promise.all([auth.logoutAndRevoke(), router.replace('/login')])
+  if (
+    (outcome.status === 'failed' || outcome.status === 'timed-out') &&
+    !auth.isAuthenticated &&
+    router.currentRoute.value.path === '/login'
+  ) {
+    await router.replace({ path: '/login', query: { logout: outcome.status } })
+  }
+}
+const session = computed(() => ({
+  organizationId: auth?.principal?.organizationId ?? '',
+  environmentId: auth?.principal?.environmentId ?? '',
+}))
+type Metric = { key: MetricKey; label: string }
+const metrics: Metric[] = [
+  { key: 'alarms', label: '未恢复报警（条）' },
+  { key: 'running', label: '运行设备 / 已覆盖设备' },
+]
+const cardMetrics: Record<string, Metric[]> = {
+  warehouse: [
+    { key: 'outbound', label: '今日建单中已过账 / 建单' },
+    { key: 'picking', label: '拣货积压（项）' },
+    { key: 'wcs', label: 'WCS 失败（条）' },
+  ],
+  quality: [
+    { key: 'ncr', label: 'NCR 未处置 / 处置中（单）' },
+    { key: 'inspection', label: '检验待认领 / 进行中（项）' },
+  ],
+}
+const cards = computed(() =>
+  SCREENS.filter(
+    (s) =>
+      scope.canSeeScreen(s.key) &&
+      (!IS_REAL_DATA || canReadRealScreen(s.key, auth?.principal?.permissionCodes)),
+  ),
+)
 // lucide 图标按名取用；显式转 Component 以过 vue-tsc 的 <component :is> 类型校验。
 const iconMap = icons as unknown as Record<string, Component>
 function iconOf(name: string): Component {
@@ -30,23 +73,18 @@ function iconOf(name: string): Component {
 }
 
 // —— 门厅实时摘要（mock seam，#570 就绪只换 fetcher）——
-const {
-  data: summary,
-  lastUpdated,
-  isStale,
-  refresh,
-} = useScreenData<LauncherSummary>(
-  () => fetchLauncherSummary(scope.currentFactoryId, scope.persona.workshopIds),
-  { intervalMs: 5000 },
-)
-watch(
-  () => [scope.currentFactoryId, scope.personaId],
-  async () => {
-    await refresh()
-    // 撞上在途轮询（inFlight 跳过）时补一拍，避免短暂显示旧工厂数据
-    if (summary.value && summary.value.factoryId !== scope.currentFactoryId) await refresh()
-  },
-)
+const demo = IS_REAL_DATA
+  ? undefined
+  : useScreenData<LauncherSummary>(
+      () => fetchLauncherSummary(scope.currentFactoryId, scope.persona.workshopIds),
+      { intervalMs: 5000 },
+    )
+const summary = computed(() => demo?.data.value)
+if (demo)
+  watch(
+    () => [scope.currentFactoryId, scope.personaId],
+    () => demo.refresh(),
+  )
 
 function glanceOf(key: string) {
   return summary.value?.glances.find((g) => g.key === key)
@@ -64,7 +102,7 @@ const currentFactoryName = computed(
 )
 
 // —— 时钟 / 更新时间 ——
-const now = useNow({ interval: 1000 })
+const now = useScreenClock()
 const pad = (n: number) => String(n).padStart(2, '0')
 const clock = computed(
   () =>
@@ -75,7 +113,9 @@ const dateText = computed(() => {
   const d = now.value
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${WEEKDAYS[d.getDay()]}`
 })
-const freshness = computed(() => formatScreenFreshness(isStale.value, lastUpdated.value))
+const freshness = computed(() =>
+  formatScreenFreshness(demo?.isStale.value ?? false, demo?.lastUpdated.value),
+)
 
 // —— 全厂脉搏 KPI 带 ——
 interface KpiCell {
@@ -120,16 +160,26 @@ const scopeCounts = computed(() => {
         <div>
           <h1 class="hall-title">生产指挥中心</h1>
           <p class="hall-sub">NERV-IIP 工业数据大屏</p>
-          <RouterLink to="/andon" class="hall-sub">安灯呼叫看板 · 真实作业范围</RouterLink>
+          <RouterLink
+            v-if="!IS_REAL_DATA || canReadRealScreen('andon', auth?.principal?.permissionCodes)"
+            to="/andon"
+            class="hall-sub"
+            >安灯呼叫看板 · 真实作业范围</RouterLink
+          >
         </div>
         <div class="hall-clock">
           <div class="hall-time">{{ clock }}</div>
           <div class="hall-meta">
             <span>{{ dateText }}</span>
-            <NvScreenStatusLight
-              :tone="isStale ? 'idle' : 'run'"
-              :label="isStale ? '数据链路波动' : '数据链路正常'"
-            />
+            <NvScreenStatusLight v-if="!IS_REAL_DATA" tone="idle" label="演示模式" />
+            <button
+              v-else-if="auth?.isAuthenticated"
+              type="button"
+              class="hall-sub cursor-pointer"
+              @click="signOut"
+            >
+              退出登录
+            </button>
           </div>
         </div>
       </header>
@@ -147,31 +197,64 @@ const scopeCounts = computed(() => {
           <NvScreenStatusTag
             v-else-if="currentFactoryName"
             tone="cyan"
-            :label="currentFactoryName"
+            :label="IS_REAL_DATA ? '组织 · ' + currentFactoryName : currentFactoryName"
           />
-          <NvScreenStatusTag tone="cyan" :label="scope.persona.label" />
+          <NvScreenStatusTag
+            tone="cyan"
+            :label="IS_REAL_DATA ? '环境 · ' + session.environmentId : scope.persona.label"
+          />
         </div>
-        <span class="hall-counts">{{ scopeCounts }}</span>
+        <span v-if="!IS_REAL_DATA" class="hall-counts">{{ scopeCounts }}</span>
       </div>
 
-      <div class="hall-kpi">
+      <div v-if="IS_REAL_DATA" class="real-kpi">
+        <HallMetric
+          v-for="m in metrics"
+          :key="m.key"
+          :metric="m.key"
+          :label="m.label"
+          :session="session"
+        />
+        <p>报工按工厂业务日统计。全厂件数、计划达成率与综合健康度口径未接入</p>
+      </div>
+      <div v-else class="hall-kpi">
         <NvKpiBar v-if="kpiItems.length" :items="kpiItems" />
         <div v-else class="hall-kpi-skl" aria-hidden="true" />
       </div>
 
       <main class="hall-cards" :class="{ single: cards.length === 1, grid: cards.length > 3 }">
-        <RouterLink v-for="s in cards" :key="s.key" :to="s.route" class="hall-card-link">
+        <div v-for="s in cards" :key="s.key" class="hall-card-link">
           <LauncherCard
             :title="s.title"
             :desc="s.desc"
             :icon="iconOf(s.icon)"
+            :route="s.route"
             :glance="glanceOf(s.key)"
-          />
-        </RouterLink>
+            :empty-label="
+              IS_REAL_DATA
+                ? s.key === 'equipment'
+                  ? '设备状态与维修记录'
+                  : '当前范围暂无指标来源'
+                : undefined
+            "
+          >
+            <template v-if="IS_REAL_DATA && cardMetrics[s.key]" #metrics>
+              <div class="card-metrics">
+                <HallMetric
+                  v-for="m in cardMetrics[s.key]"
+                  :key="m.key"
+                  :metric="m.key"
+                  :label="m.label"
+                  :session="session"
+                />
+              </div>
+            </template>
+          </LauncherCard>
+        </div>
         <p v-if="cards.length === 0" class="hall-empty">当前账号无可见大屏，请联系管理员开通</p>
       </main>
 
-      <footer class="hall-foot">
+      <footer v-if="!IS_REAL_DATA" class="hall-foot">
         <NvScreenFreshness :tone="freshness.tone" :label="freshness.text" />
         <span>当前数据窗口滚动更新</span>
       </footer>
@@ -249,6 +332,23 @@ const scopeCounts = computed(() => {
     font-variant-numeric: tabular-nums;
   }
 
+  .card-metrics {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    margin-top: 28px;
+    gap: 12px;
+  }
+  .real-kpi p {
+    color: var(--nv-scr-muted);
+  }
+  .real-kpi {
+    display: grid;
+    grid-template-columns: 1fr 1fr 2fr;
+    align-items: center;
+    padding: 18px 30px;
+    background: var(--nv-scr-panel-a);
+  }
   .hall-kpi {
     min-height: 74px;
   }

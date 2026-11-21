@@ -849,6 +849,7 @@ const canCancel = computed(
     }).executable,
 )
 const cancelDisabledReason = computed(() => {
+  if (!permissionCodes.value.includes(P.mesWorkOrdersManage)) return '当前角色没有取消工单权限。'
   if (!detail.value) return '工单信息加载中，请稍候。'
   if (!workOrderManageScopeReady.value) {
     return workOrderManageScopeMessage.value || '尚未取得当前主体的工单管理范围。'

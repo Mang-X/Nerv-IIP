@@ -1,6 +1,6 @@
 # IAM 认证与授权当前架构
 
-本文描述 Nerv-IIP 当前 IAM 的身份事实、认证/授权边界与 Gateway 协作方式。M2-K 迁移前的混合基线包含阶段完成状态、密钥轮换操作、配置细节和后续能力规划，已按原 Git blob 冻结到 [`../../reports/iam-authentication-baseline-pre-m2-k-2026-09-07.md`](../../reports/iam-authentication-baseline-pre-m2-k-2026-09-07.md)。
+本文描述 Nerv-IIP 当前 IAM 的身份事实、认证/授权边界与 Gateway 协作方式。
 
 ## 事实所有权
 

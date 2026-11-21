@@ -1,3 +1,9 @@
+import {
+  useWmsInboundOrders,
+  useWmsOutboundOrders,
+  useWmsCountExecutions,
+} from '@/composables/useBusinessWms'
+import { assertScopePageBehavior, scopePageStubs } from '@/test/wmsWorkScopePage'
 import { WMS_RECEIVING_QUALITY_OPTIONS } from '@/data/inventoryReference'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -98,6 +104,8 @@ vi.mock('@nerv-iip/ui', async (orig) => ({
 }))
 
 vi.mock('vue-router', () => ({
+  useRouter: () => ({ replace: vi.fn() }),
+  useRoute: () => ({ query: {} }),
   onBeforeRouteLeave: vi.fn((guard: () => boolean) => {
     routeGuardState.guard = guard
   }),
@@ -129,26 +137,11 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: wms.permissionCodes } }),
 }))
 
-vi.mock('@/composables/useWmsWorkScope', () => ({
-  bindWmsWorkScopeFilters: (filters: { scopeKind?: string; scopeId?: string; skip: number }) => {
-    filters.scopeKind = 'self'
-    filters.scopeId = 'emp049'
-    filters.skip = 0
-    return {
-      scopeKey: shallowRef('self:emp049'),
-      scopeOptions: computed(() => [{ label: '我的任务', value: 'self:emp049' }]),
-      selectedScopeLabel: computed(() => '我的任务'),
-      hasSelection: computed(() => true),
-      pending: shallowRef(false),
-      error: shallowRef(undefined),
-      refresh: vi.fn(async () => undefined),
-    }
-  },
-}))
+vi.mock('@/composables/useWmsWorkScope', () => import('@/test/wmsWorkScopePage'))
 
 vi.mock('@/composables/useBusinessWms', () => ({
   createWmsIdempotencyKey: wms.createIdempotencyKey,
-  useWmsInboundOrders: () => ({
+  useWmsInboundOrders: vi.fn(() => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
     inboundOrders: computed(() => [
       {
@@ -179,8 +172,8 @@ vi.mock('@/composables/useBusinessWms', () => ({
     supplierReturnsPending: shallowRef(false),
     supplierReturnsError: shallowRef(undefined),
     refreshReceivingQuality: wms.refreshReceivingQuality,
-  }),
-  useWmsOutboundOrders: () => ({
+  })),
+  useWmsOutboundOrders: vi.fn(() => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
     outboundOrders: computed(() => [
       {
@@ -200,8 +193,8 @@ vi.mock('@/composables/useBusinessWms', () => ({
     createOutbound: wms.createOutbound,
     createOutboundPending: shallowRef(false),
     createOutboundError: shallowRef(undefined),
-  }),
-  useWmsCountExecutions: () => ({
+  })),
+  useWmsCountExecutions: vi.fn(() => ({
     filters: reactive({
       organizationId: 'org-001',
       environmentId: 'env-dev',
@@ -231,7 +224,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
     createCountExecutionPending: shallowRef(false),
     completeCountExecution: wms.completeCountExecution,
     completeCountExecutionPending: shallowRef(false),
-  }),
+  })),
   useWmsWcsTasks: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
     wcsTasks: computed(
@@ -252,7 +245,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
     ),
     wcsTasksError: shallowRef(undefined),
     wcsTasksPending: shallowRef(false),
-    wcsTasksTotal: computed(() => 1),
+    wcsTasksTotal: computed(() => wms.wcsRows?.length ?? 1),
     refreshWcsTasks: vi.fn(),
     dispatchWcs: wms.dispatchWcs,
     dispatchWcsPending: shallowRef(false),
@@ -287,6 +280,19 @@ const layoutStub = {
 }
 
 describe('WMS operate actions', () => {
+  it.each([
+    ['入库', InboundPage, 'receipts', useWmsInboundOrders],
+    ['出库', OutboundPage, 'shipments', useWmsOutboundOrders],
+    ['盘点', CountsPage, 'counts', useWmsCountExecutions],
+  ] as const)(
+    '%s 显示授权目录和真实未就绪原因，换范围时回到第一页',
+    async (_, page, catalog, query) => {
+      const wrapper = mount(page, { global: { stubs: scopePageStubs } })
+      expect(query).toHaveBeenCalledWith({ workScopeRequired: true })
+      await assertScopePageBehavior(wrapper, catalog)
+    },
+  )
+
   beforeEach(() => {
     vi.clearAllMocks()
     document.body.innerHTML = ''
@@ -1240,6 +1246,16 @@ describe('WMS operate actions', () => {
     await flushPromises()
 
     expect(wrapper.find('button[aria-label="WCS 任务操作 EXT-1"]').exists()).toBe(true)
+  })
+
+  it('offers warehouse work links when the current scope has no device tasks', async () => {
+    wms.wcsRows = []
+    const wrapper = mount(WcsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('当前范围暂无设备任务')
+    expect(wrapper.text()).toContain('上架任务')
+    expect(wrapper.text()).toContain('拣货任务')
   })
 
   describe('WCS 人工处置', () => {

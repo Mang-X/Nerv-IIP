@@ -15,7 +15,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $PSNativeCommandUseErrorActionPreference = $false
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
-$gatePath = Join-Path $repoRoot 'scripts/verify-adr-format.ps1'
+$gatePath = Join-Path $repoRoot 'scripts/checks/verify-adr-format.ps1'
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-adr-structure-$([Guid]::NewGuid().ToString('N'))"
 $checked = 0
 
@@ -39,9 +39,9 @@ function New-FixtureRoot {
     $root = Join-Path $temporaryRoot $Name
     [IO.Directory]::CreateDirectory($root) | Out-Null
     # 编号、文件名和索引显示键分别给定；变异只改其中一个输入轴。
-    Write-Fixture $root '0001-one.md' "# ADR 0001：第一条`n`n正文无需固定章节、状态或日期。"
-    Write-Fixture $root '0002-two.md' "# ADR 0002: 第二条`n`n## Plan`n`n## 影响`n`n## 2026-09-11 修订`n"
-    Write-Fixture $root '0003-three.md' @'
+    Write-Fixture $root '2026-09-11-0001-one.md' "# ADR 0001：第一条`n`n正文无需固定章节、状态或日期。"
+    Write-Fixture $root '2026-09-11-0002-two.md' "# ADR 0002: 第二条`n`n## Plan`n`n## 影响`n`n## 2026-09-11 修订`n"
+    Write-Fixture $root '2026-09-11-0003-three.md' @'
 ```markdown
 # ADR 9999：代码示例不是记录身份
 ```
@@ -55,9 +55,9 @@ function New-FixtureRoot {
 
 | 记录 | 说明 |
 | --- | --- |
-| [0003 任意显示标题](./0003-three.md#任意锚点) | 其它列不限 |
-| [ADR 0001 任意显示标题](0001-one.md) | 关系：[ADR 0002](0002-two.md) |
-| [0002 任意显示标题](0002-two.md) | 普通说明 |
+| [0003 任意显示标题](./2026-09-11-0003-three.md#任意锚点) | 其它列不限 |
+| [ADR 0001 任意显示标题](2026-09-11-0001-one.md) | 关系：[ADR 0002](2026-09-11-0002-two.md) |
+| [0002 任意显示标题](2026-09-11-0002-two.md) | 普通说明 |
 
 [本地参考](guide%20(draft).txt#片段)
 [外部参考](https://example.invalid/not-checked)
@@ -102,15 +102,21 @@ try {
     Assert-Gate '正文、标题和索引顺序可调整；示例不作为导航' $baseline 0
 
     $identity = New-FixtureRoot 'identity'
-    Write-Fixture $identity '0001-one.md' '# ADR 9999：只改变 H1 编号'
-    Write-Fixture $identity '0002-two.md' '缺少记录身份。'
-    Write-Fixture $identity '0003-duplicate.md' '# ADR 0003：撞号记录'
+    Write-Fixture $identity '2026-09-11-0001-one.md' '# ADR 9999：只改变 H1 编号'
+    Write-Fixture $identity '2026-09-11-0002-two.md' '缺少记录身份。'
+    Write-Fixture $identity '2026-09-11-0003-duplicate.md' '# ADR 0003：撞号记录'
     Write-Fixture $identity 'not-an-adr.md' '# ADR 0004：错误文件名仍须进入检查'
+    Write-Fixture $identity '2026-02-30-0006-date.md' '# ADR 0006：无效日期'
+    Write-Fixture $identity '2026-02-28-0007-mismatch.md' "# ADR 0007：正文日期不同`n- 日期：2026-02-27"
+    Write-Fixture $identity '0008-old.md' '# ADR 0008：旧命名'
     Assert-Gate '身份错误不能被其它结构错误掩盖' $identity 1 @(
-        '[ADR_NUMBER_MISMATCH] 0001-one.md',
-        '[ADR_H1] 0002-two.md',
+        '[ADR_NUMBER_MISMATCH] 2026-09-11-0001-one.md',
+        '[ADR_H1] 2026-09-11-0002-two.md',
         '[ADR_DUPLICATE_NUMBER]',
-        '[ADR_FILENAME] not-an-adr.md'
+        '[ADR_FILENAME] not-an-adr.md',
+        '[ADR_FILENAME] 0008-old.md',
+        '[ADR_DATE] 2026-02-30-0006-date.md',
+        '[ADR_DATE_MISMATCH] 2026-02-28-0007-mismatch.md'
     )
 
     $index = New-FixtureRoot 'index'
@@ -119,19 +125,19 @@ try {
 
 | 记录 | 修订关系 |
 | --- | --- |
-| [0002 第二条](0002-two.md) | 普通引用不能补齐首列：[ADR 0001](0001-one.md) |
-| [0002 重复别名](./0002-two.md#其它标题) | |
-| [9999 只改显示编号](0003-three.md) | |
-| [0004 不存在的文件](0004-missing.md) | |
+| [0002 第二条](2026-09-11-0002-two.md) | 普通引用不能补齐首列：[ADR 0001](2026-09-11-0001-one.md) |
+| [0002 重复别名](./2026-09-11-0002-two.md#其它标题) | |
+| [9999 只改显示编号](2026-09-11-0003-three.md) | |
+| [0004 不存在的文件](2026-09-11-0004-missing.md) | |
 | [0005 远程不是本地记录](https://example.invalid/0005.md) | |
 
 [当前导航断链](missing-guide.md)
 '@
     Assert-Gate '索引覆盖、去重、独立显示键和本地目标' $index 1 @(
-        '[ADR_INDEX_MISSING] 0001-one.md',
-        '[ADR_INDEX_DUPLICATE] 0002-two.md',
-        '[ADR_INDEX_NUMBER_MISMATCH] 0003-three.md',
-        '[ADR_INDEX_TARGET] 0004-missing.md',
+        '[ADR_INDEX_MISSING] 2026-09-11-0001-one.md',
+        '[ADR_INDEX_DUPLICATE] 2026-09-11-0002-two.md',
+        '[ADR_INDEX_NUMBER_MISMATCH] 2026-09-11-0003-three.md',
+        '[ADR_INDEX_TARGET] 2026-09-11-0004-missing.md',
         '[ADR_INDEX_TARGET] https://example.invalid/0005.md',
         '[ADR_INDEX_LINK] missing-guide.md'
     )
@@ -167,23 +173,23 @@ try {
 ```
 '@
     Write-Fixture $markdown 'docs/reports/audit.md' '[冻结历史](retired.md)'
-    Write-Fixture $markdown 'docs/superpowers/plans/history.md' '[冻结计划](retired.md)'
     Write-Fixture $markdown 'docs/status/archive/history.md' '[冻结快照](retired.md)'
     Write-Fixture $markdown 'tests/fixtures/input.md' '[机器夹具](fixture-only.md)'
     Write-Fixture $markdown 'node_modules/dependency/README.md' '[第三方文档](dependency-only.md)'
+    Write-Fixture $markdown '.ryugi/artifacts/diagnostic/README.md' '[本机诊断](local-only.md)'
     Write-Fixture $markdown 'frontend/apps/docs/guide.md' '[站点语义](extensionless-route)'
     Write-Fixture $markdown 'frontend/apps/design-system/docs/component.md' '[站点语义](another-extensionless-route)'
     Write-Fixture $markdown '.claude/README.md' '[当前入口](../docs/README.md)'
     Assert-Gate '解析真实导航而非代码示例；冻结正文与站点消费者边界' $baseline 0 -MarkdownRoot $markdown
 
     Write-Fixture $markdown 'README.md' "[引用式][lost]`n`n[lost]: reference-lost.md`n`n![图](picture-lost.svg)"
-    Write-Fixture $markdown 'docs/superpowers/AGENTS.md' '[当前指令](current-guide-lost.md)'
+    Write-Fixture $markdown 'docs/reports/AGENTS.md' '[当前指令](current-guide-lost.md)'
     Write-Fixture $markdown '.claude/README.md' '[当前入口](hidden-guide-lost.md)'
     Remove-Item -LiteralPath (Join-Path $markdown 'docs/architecture/README.md')
     Assert-Gate '引用式链接、图片、活跃指令、隐藏目录和入口缺失均失败关闭' $baseline 1 @(
         '[DOC_LINK] README.md -> reference-lost.md',
         '[DOC_LINK] README.md -> picture-lost.svg',
-        '[DOC_LINK] docs/superpowers/AGENTS.md -> current-guide-lost.md',
+        '[DOC_LINK] docs/reports/AGENTS.md -> current-guide-lost.md',
         '[DOC_LINK] .claude/README.md -> hidden-guide-lost.md',
         '[DOC_ENTRY] 当前入口不存在：docs/architecture/README.md'
     ) -MarkdownRoot $markdown

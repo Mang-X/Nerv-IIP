@@ -23,7 +23,7 @@ public sealed class InventoryPostgresEvidenceIdentityTests
         var identity = $"{method.DeclaringType!.FullName}.{method.Name}";
         var repoRoot = FindRepoRoot();
         using var policy = JsonDocument.Parse(File.ReadAllText(
-            Path.Combine(repoRoot, "scripts", "test-evidence-policy.json")));
+            Path.Combine(repoRoot, "scripts", "config", "test-evidence-policy.json")));
         var rule = Assert.Single(
             policy.RootElement.GetProperty("rules").EnumerateArray(),
             candidate => string.Equals(
@@ -46,7 +46,7 @@ public sealed class InventoryPostgresEvidenceIdentityTests
             "Host=localhost;Database=inventory"));
 
         using var manifest = JsonDocument.Parse(File.ReadAllText(
-            Path.Combine(repoRoot, "scripts", "postgres-test-lane.json")));
+            Path.Combine(repoRoot, "scripts", "config", "postgres-test-lane.json")));
         var member = Assert.Single(
             manifest.RootElement.GetProperty("members").EnumerateArray(),
             candidate => string.Equals(
@@ -65,7 +65,7 @@ public sealed class InventoryPostgresEvidenceIdentityTests
              directory is not null;
              directory = directory.Parent)
         {
-            if (File.Exists(Path.Combine(directory.FullName, "scripts", "test-evidence-policy.json")))
+            if (File.Exists(Path.Combine(directory.FullName, "scripts", "config", "test-evidence-policy.json")))
             {
                 return directory.FullName;
             }

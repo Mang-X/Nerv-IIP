@@ -63,12 +63,8 @@ export function useReceiptCreateForm(
   context: () => ReceiptCreateContext,
   options: { onCreated?: () => void } = {},
 ) {
-  const {
-    createReceiptRequest,
-    createReceiptRequestError,
-    createReceiptRequestPending,
-    refreshReceiptRequests,
-  } = useMesFinishedGoodsReceipts()
+  const { createReceiptRequest, createReceiptRequestError, createReceiptRequestPending } =
+    useMesFinishedGoodsReceipts()
   const { producedLots, producedLotsPending, producedLotsError, refreshProducedLots } =
     useMesWorkOrderProducedLots(() => context().workOrderId)
   // 入库单位取工单成品的物料主档基本单位（MES 读面的 skuId 就是人读物料编码）。
@@ -230,7 +226,6 @@ export function useReceiptCreateForm(
     }
     submitted.value = true
     notifySuccess(`已登记完工入库 ${result?.data?.requestNo ?? ''}，成本及入库进度请查看列表。`)
-    void Promise.resolve(refreshReceiptRequests()).catch(() => {})
     options.onCreated?.()
     return true
   }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, shallowRef } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 import { NvScreenButton, NvScreenSelect, useScreenData } from '@nerv-iip/ui'
 import { andonErrorMessage, type AndonSession } from '@/data/contracts/andon'
 import { fetchAndonScopes } from '@/data/fetchers/andon'
@@ -13,6 +13,16 @@ const {
   refresh,
 } = useScreenData(() => fetchAndonScopes(props.session))
 const selectedKey = shallowRef<string | number>('')
+watch(
+  error,
+  (failure) => {
+    if (failure && andonErrorMessage(failure).includes('未授权')) {
+      selectedKey.value = ''
+      scopes.value = undefined
+    }
+  },
+  { flush: 'sync' },
+)
 const options = computed(() =>
   (scopes.value ?? []).map((scope) => ({
     label: scope.displayName,
@@ -39,9 +49,9 @@ const selected = computed(() =>
       />
       <NvScreenButton variant="ghost" :disabled="loading" @click="refresh">刷新范围</NvScreenButton>
     </header>
-    <p v-if="error" class="andon-message" role="alert">{{ andonErrorMessage(error) }}</p>
-    <p v-else-if="!scopes" class="andon-message" role="status">正在核验真实作业范围…</p>
-    <p v-else-if="!scopes.length" class="andon-message" role="status">
+    <p v-if="error" class="andon-source" role="alert">{{ andonErrorMessage(error) }}</p>
+    <p v-if="!scopes && !error" class="andon-message" role="status">正在核验真实作业范围…</p>
+    <p v-else-if="scopes?.length === 0 && !error" class="andon-message" role="status">
       未配置真实范围 · 当前账号没有可读取的安灯作业范围
     </p>
     <AndonQueue
@@ -50,7 +60,7 @@ const selected = computed(() =>
       :session="session"
       :scope="selected"
     />
-    <p v-else class="andon-message" role="status">
+    <p v-else-if="!error" class="andon-message" role="status">
       请选择真实作业范围；演示产线与历史选择不会作为授权依据。
     </p>
     <footer class="andon-boundary">

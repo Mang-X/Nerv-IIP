@@ -16,6 +16,8 @@ import {
   getBusinessConsoleMesMaterialLotTraceabilityQueryOptions,
   getBusinessConsoleMesOverviewQueryOptions,
   getBusinessConsoleMesProductionReportQueryOptions,
+  getBusinessConsoleMesWipSummary,
+  getBusinessConsoleMesWorkOrderDetail,
   getBusinessConsoleMesWorkOrderDetailQueryOptions,
   getBusinessConsoleMesWorkOrderTraceabilityQueryOptions,
   getBusinessConsoleMesWipSummaryQueryOptions,
@@ -23,16 +25,15 @@ import {
   listBusinessConsoleMesCapacityImpactsQueryOptions,
   listBusinessConsoleMesDispatchTasksQueryOptions,
   listBusinessConsoleMesDowntimeEventsQueryOptions,
-  listBusinessConsoleMesFinishedGoodsReceiptRequests,
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
   listBusinessConsoleMesLineSideInventoryBalancesQueryOptions,
-  listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
   listBusinessConsoleMesOperationTasksQueryOptions,
   listBusinessConsoleMesOperationTasks,
   listBusinessConsoleMesProductionPlansQueryOptions,
   listBusinessConsoleMesProductionReportsQueryOptions,
   listBusinessConsoleMesReportableOperationTasks,
+  listBusinessConsoleMesReceivableProducedLots,
   listBusinessConsoleMesShiftHandoversQueryOptions,
   listBusinessConsoleMesWorkOrdersQueryOptions,
   listBusinessConsoleMesHistoricalProducedLotsQueryOptions,
@@ -273,6 +274,9 @@ vi.mock('@nerv-iip/api-client', () => ({
     key: [{ _id: 'getBusinessConsoleMesWipSummary' }],
     query: vi.fn(),
   })),
+  getBusinessConsoleMesWipSummary: vi.fn(),
+  getBusinessConsoleMesWorkOrderDetail: vi.fn(),
+  listBusinessConsoleMesReceivableProducedLots: vi.fn(),
   getBusinessConsoleMesWorkOrderDetailQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleMesWorkOrderDetail' }],
     query: workOrderDetailQuery,
@@ -1090,6 +1094,65 @@ describe('business MES composables', () => {
     // 急单 4 键 + 报工 5 键（报工弹窗现在也从工序执行页打开，工序任务列表须一起失效）。
     expect(coladaState.invalidateQueries).toHaveBeenCalledTimes(9)
   })
+
+  it('reads the cumulative quantity for the exact work order and operation', async () => {
+    vi.mocked(getBusinessConsoleMesWipSummary).mockImplementationOnce(
+      async ({ query }) =>
+        ({
+          data: {
+            success: true,
+            data: {
+              items:
+                query?.workOrderId === 'WO-100' && query.operationTaskId === 'OP-TARGET'
+                  ? [{ operationTaskId: 'OP-TARGET', plannedQuantity: 20, goodQuantity: 12 }]
+                  : [{ operationTaskId: 'OP-000', plannedQuantity: 90, goodQuantity: 50 }],
+            },
+          },
+        }) as never,
+    )
+
+    const { readProductionQuantitySnapshot } = useMesProductionReporting()
+    await expect(readProductionQuantitySnapshot(' WO-100 ', ' OP-TARGET ')).resolves.toEqual({
+      plannedQuantity: 20,
+      reportedGoodQuantity: 12,
+    })
+  })
+
+  it.each([
+    { reportNo: 'PR-OTHER', remainingQuantity: 3, canManage: true, opens: false },
+    { reportNo: 'PR-100', remainingQuantity: 0, canManage: true, opens: false },
+    { reportNo: 'PR-100', remainingQuantity: 3, canManage: false, opens: false },
+    { reportNo: 'PR-100', remainingQuantity: 3, canManage: true, opens: true },
+  ])(
+    'offers receipt handoff only for confirmed receivable output with permission ($reportNo/$remainingQuantity/$canManage)',
+    async ({ reportNo, remainingQuantity, canManage, opens }) => {
+      reactiveAuthState.principal!.permissionCodes = [
+        'business.mes.work-orders.read',
+        'business.mes.receipts.read',
+        ...(canManage ? ['business.mes.receipts.manage'] : []),
+      ]
+      vi.mocked(listBusinessConsoleMesReceivableProducedLots).mockResolvedValue({
+        data: {
+          success: true,
+          data: { items: [{ reportNo, operationTaskId: 'OP-20', remainingQuantity }] },
+        },
+      } as never)
+      vi.mocked(getBusinessConsoleMesWorkOrderDetail).mockResolvedValue({
+        data: { success: true, data: { workOrderId: 'WO-100', skuId: 'SKU-001' } },
+      } as never)
+
+      const { prepareReceiptHandoff } = useMesProductionReporting()
+      const readReceiptHandoff = prepareReceiptHandoff()
+      const handoff = await readReceiptHandoff?.('WO-100', 'OP-20', 'PR-100')
+      if (opens) {
+        expect(handoff).toMatchObject({ workOrderId: 'WO-100', skuId: 'SKU-001' })
+        useBusinessContextStore().patchContext({ environmentId: 'env-other' })
+        expect(handoff?.isCurrent()).toBe(false)
+      } else {
+        expect(handoff).toBeUndefined()
+      }
+    },
+  )
 
   it('does not send a production report when the write scope is not selected', async () => {
     coladaState.queryDataById.set(
@@ -2451,156 +2514,6 @@ describe('business MES composables', () => {
         },
       }),
     )
-  })
-
-  it('scopes the cancel compensation preview receipts to the current work order', () => {
-    coladaState.queryDataById.set('listBusinessConsoleMesFinishedGoodsReceiptRequests', {
-      success: true,
-      data: {
-        total: 2,
-        items: [
-          { receiptRequestId: 'fg-1', workOrderId: 'WO-CANCEL', receiptStatus: 'created' },
-          { receiptRequestId: 'fg-2', workOrderId: 'WO-OTHER', receiptStatus: 'created' },
-        ],
-      },
-    })
-
-    const detail = useMesWorkOrderDetail()
-    detail.filters.workOrderId = 'WO-CANCEL'
-    detail.activateCancelPreview()
-
-    expect(detail.finishedGoodsReceiptRequests.value).toEqual([
-      { receiptRequestId: 'fg-1', workOrderId: 'WO-CANCEL', receiptStatus: 'created' },
-    ])
-  })
-
-  it('scopes the cancel compensation material issue requests to the current work order', () => {
-    coladaState.queryDataById.set('listBusinessConsoleMesMaterialIssueRequests', {
-      success: true,
-      data: {
-        total: 3,
-        items: [
-          {
-            requestId: 'MIR-1',
-            workOrderId: 'WO-CANCEL',
-            receivedQuantity: 30,
-            status: 'Received',
-          },
-          {
-            requestId: 'MIR-2',
-            workOrderId: 'WO-CANCEL',
-            receivedQuantity: 0,
-            status: 'Requested',
-          },
-          { requestId: 'MIR-9', workOrderId: 'WO-OTHER', receivedQuantity: 5, status: 'Received' },
-        ],
-      },
-    })
-
-    const detail = useMesWorkOrderDetail()
-    detail.filters.workOrderId = 'WO-CANCEL'
-    detail.activateCancelPreview()
-
-    // 领料申请是补偿预览的权威来源，且必须按当前工单过滤（不掺入 WO-OTHER）
-    expect(detail.materialIssueRequests.value).toEqual([
-      { requestId: 'MIR-1', workOrderId: 'WO-CANCEL', receivedQuantity: 30, status: 'Received' },
-      { requestId: 'MIR-2', workOrderId: 'WO-CANCEL', receivedQuantity: 0, status: 'Requested' },
-    ])
-  })
-
-  it('filters both cancel compensation lists server-side by the current work order', () => {
-    const detail = useMesWorkOrderDetail()
-    detail.filters.workOrderId = 'WO-CANCEL'
-    detail.activateCancelPreview()
-
-    // 重新求值 query 工厂，拿到当前 workOrderId 下发送给 facade 的查询参数（服务端过滤，避免组织级前 100 条截断漏报）
-    coladaState.queryFactoriesById.get('listBusinessConsoleMesMaterialIssueRequests')?.()
-    coladaState.queryFactoriesById.get('listBusinessConsoleMesFinishedGoodsReceiptRequests')?.()
-
-    expect(listBusinessConsoleMesMaterialIssueRequestsQueryOptions).toHaveBeenCalledWith(
-      expect.objectContaining({ query: expect.objectContaining({ workOrderId: 'WO-CANCEL' }) }),
-    )
-    expect(listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions).toHaveBeenCalledWith(
-      expect.objectContaining({ query: expect.objectContaining({ workOrderId: 'WO-CANCEL' }) }),
-    )
-  })
-
-  it('paginates the compensation lists to fetch every related document, not just one page', async () => {
-    // 第一页满页（200）→ 继续；第二页不足一页（50）→ 结束。应累计取全 250 条，而非只取第一页。
-    const page1 = Array.from({ length: 200 }, (_, i) => ({
-      requestId: `MIR-${i}`,
-      workOrderId: 'WO-CANCEL',
-      receivedQuantity: 0,
-      status: 'Requested',
-    }))
-    const page2 = Array.from({ length: 50 }, (_, i) => ({
-      requestId: `MIR-${200 + i}`,
-      workOrderId: 'WO-CANCEL',
-      receivedQuantity: 0,
-      status: 'Requested',
-    }))
-    vi.mocked(listBusinessConsoleMesMaterialIssueRequests).mockImplementation(((options?: {
-      query?: { skip?: number }
-    }) =>
-      Promise.resolve({
-        data: {
-          success: true,
-          data: { items: (options?.query?.skip ?? 0) === 0 ? page1 : page2, total: 250 },
-        },
-      })) as unknown as typeof listBusinessConsoleMesMaterialIssueRequests)
-
-    const detail = useMesWorkOrderDetail()
-    detail.filters.workOrderId = 'WO-CANCEL'
-    detail.activateCancelPreview()
-
-    // mock 的 useQuery 不会自动执行 query，直接跑分页 query fn 验证累计取全
-    const factory = coladaState.queryFactoriesById.get(
-      'listBusinessConsoleMesMaterialIssueRequests',
-    )
-    const options = factory?.() as { query: () => Promise<{ data?: { items?: unknown[] } }> }
-    const result = await options.query()
-    expect(result.data?.items).toHaveLength(250)
-  })
-
-  it('rejects the compensation pagination on a success:false envelope so confirm stays gated', async () => {
-    // 服务以 HTTP 200 返回 success:false 时，分页回调必须抛错（而非合成空 success:true），
-    // 让 useQuery.error → cancelPreviewError 生效、cancelPreviewReady 保持 false、禁用破坏性确认。
-    vi.mocked(listBusinessConsoleMesMaterialIssueRequests).mockImplementation((() =>
-      Promise.resolve({
-        data: { success: false, message: '业务失败', data: null },
-      })) as unknown as typeof listBusinessConsoleMesMaterialIssueRequests)
-
-    const detail = useMesWorkOrderDetail()
-    detail.filters.workOrderId = 'WO-CANCEL'
-    detail.activateCancelPreview()
-
-    const factory = coladaState.queryFactoriesById.get(
-      'listBusinessConsoleMesMaterialIssueRequests',
-    )
-    const options = factory?.() as { query: () => Promise<unknown> }
-    await expect(options.query()).rejects.toThrow()
-  })
-
-  it('marks cancel preview ready only after both compensation lists return data', () => {
-    const pending = useMesWorkOrderDetail()
-    pending.filters.workOrderId = 'WO-CANCEL'
-    pending.activateCancelPreview()
-    // 两项列表都未返回数据 → 未就绪，破坏性确认按钮应被禁用（慢网/失败不允许在空数据上确认）
-    expect(pending.cancelPreviewReady.value).toBe(false)
-
-    coladaState.queryDataById.set('listBusinessConsoleMesFinishedGoodsReceiptRequests', {
-      success: true,
-      data: { total: 0, items: [] },
-    })
-    coladaState.queryDataById.set('listBusinessConsoleMesMaterialIssueRequests', {
-      success: true,
-      data: { total: 0, items: [] },
-    })
-
-    const ready = useMesWorkOrderDetail()
-    ready.filters.workOrderId = 'WO-CANCEL'
-    ready.activateCancelPreview()
-    expect(ready.cancelPreviewReady.value).toBe(true)
   })
 
   // 状态字面量取运行时真实值（MES 域 MaterialIssueRequest 常量，#3912）；camelCase 变体运行时不可达。

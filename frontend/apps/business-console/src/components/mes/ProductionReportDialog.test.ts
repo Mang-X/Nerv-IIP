@@ -15,11 +15,17 @@ const spies = vi.hoisted(() => ({
   ),
   makeIdempotencyKey: vi.fn(),
   readProductionQuantitySnapshot: vi.fn(),
+  readReceiptHandoff: vi.fn(),
+  routerPush: vi.fn(),
   readProductionPrintStatus: vi.fn(),
   refreshSerialOptions: vi.fn(),
   notifySuccess: vi.fn(),
   notifyError: vi.fn(),
   notifyOperationFailure: vi.fn(),
+}))
+vi.mock('vue-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('vue-router')>()),
+  useRouter: () => ({ push: spies.routerPush }),
 }))
 const scopeState = vi.hoisted(() => ({
   message: '',
@@ -76,6 +82,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     reportScopePending: ref(scopeState.pending),
     reportScopeReady: ref(scopeState.ready),
     readProductionQuantitySnapshot: spies.readProductionQuantitySnapshot,
+    prepareReceiptHandoff: () => spies.readReceiptHandoff,
     readProductionPrintStatus: spies.readProductionPrintStatus,
     refreshProductionReportState: vi.fn(async () => undefined),
     restoreProductionReport: vi.fn(),
@@ -182,6 +189,8 @@ describe('ProductionReportDialog — 带出式录入', () => {
       plannedQuantity: 200,
       reportedGoodQuantity: 0,
     })
+    spies.readReceiptHandoff.mockReset().mockResolvedValue(undefined)
+    spies.routerPush.mockClear()
     spies.notifySuccess.mockClear()
     spies.notifyError.mockClear()
     scopeState.message = ''
@@ -502,6 +511,32 @@ describe('ProductionReportDialog — 带出式录入', () => {
     await flushPromises()
     expect(wrapper.emitted('update:open')?.at(-1)).toEqual([false])
     expect(wrapper.emitted('reported')).toHaveLength(1)
+  })
+
+  it('确认本次报工的产出可入库后，可继续到同一工单和成品', async () => {
+    let scopeCurrent = true
+    spies.readReceiptHandoff.mockResolvedValue({
+      workOrderId: 'WO-2026-0007',
+      skuId: 'SKU-001',
+      isCurrent: () => scopeCurrent,
+    })
+    const wrapper = mountDialog()
+    await wrapper.get('#report-good').setValue('6')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    const action = spies.notifySuccess.mock.calls.find(
+      ([, option]) => option?.label === '去完工入库',
+    )?.[1]
+    expect(action).toBeDefined()
+    action.onClick()
+    expect(spies.routerPush).toHaveBeenCalledWith({
+      path: '/mes/receipts',
+      query: { workOrderId: 'WO-2026-0007', skuId: 'SKU-001' },
+    })
+    scopeCurrent = false
+    action.onClick()
+    expect(spies.routerPush).toHaveBeenCalledTimes(1)
   })
 
   it('重新报工缺少工序实时状态时默认普通报工，并禁用再次完工', async () => {

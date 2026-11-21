@@ -1,3 +1,4 @@
+using Nerv.IIP.Web;
 using System.Net;
 using System.Net.Http.Json;
 using System.Reflection;
@@ -5,7 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
-using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 using Nerv.IIP.ServiceAuth;
 using Xunit;
 
@@ -189,8 +189,8 @@ public sealed class BusinessGatewaySharedHostIsolationTests
         using var firstScope = lease.Services.CreateScope();
         using var secondScope = lease.Services.CreateScope();
         Assert.NotSame(
-            firstScope.ServiceProvider.GetRequiredService<BusinessGatewayDownstreamHealthState>(),
-            secondScope.ServiceProvider.GetRequiredService<BusinessGatewayDownstreamHealthState>());
+            firstScope.ServiceProvider.GetRequiredService<DownstreamHealthState>(),
+            secondScope.ServiceProvider.GetRequiredService<DownstreamHealthState>());
     }
 
     [Fact]

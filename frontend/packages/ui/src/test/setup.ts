@@ -1,4 +1,4 @@
-import { disableUnovisTooltipThrottle } from '../test-support'
+import { disableUnovisTooltipThrottle, installElementScrollTo } from '../test-support'
 
 /**
  * `@nerv-iip/ui` 自己的组件测试也挂真实图表（`Metric.test.ts` → `NvMetricStrip`
@@ -26,3 +26,4 @@ if (!globalThis.ResizeObserver) {
  * `../test-support/unovisTooltipTimers.ts` 的注释（收口函数内部因此用动态 import）。
  */
 await disableUnovisTooltipThrottle()
+installElementScrollTo()

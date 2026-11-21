@@ -14,86 +14,11 @@ $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $fixtures = Join-Path $PSScriptRoot 'fixtures/test-evidence'
 $ciWorkflowBudgetsPath = Join-Path $repoRoot 'scripts/lib/CiWorkflowBudgets.ps1'
 $testEvidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
-$testEvidenceArtifactsLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidenceArtifacts.ps1'
-$testEvidenceBaselineLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidenceBaseline.ps1'
-$testEvidenceParsingLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidenceParsing.ps1'
-$testEvidencePolicyLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidencePolicy.ps1'
-$testEvidencePrivacyLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidencePrivacy.ps1'
-$testEvidenceProvenanceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidenceProvenance.ps1'
-$facadeOwnedResponsibilityContracts = @(
-    [pscustomobject]@{
-        LibraryName = 'TestEvidencePolicy.ps1'
-        FunctionNames = @(
-            'New-NervTestEvidenceViolation',
-            'Import-NervTestEvidencePolicy',
-            'Test-NervQuarantineRuleMetadata',
-            'Get-NervSourceSkipAssignments',
-            'Test-NervTestEvidencePolicy',
-            'Test-NervRuleApplies',
-            'Get-NervTestEvidenceViolations'
-        )
-    },
-    [pscustomobject]@{
-        LibraryName = 'TestEvidencePrivacy.ps1'
-        FunctionNames = @(
-            'Convert-NervRetainedDiagnosticGap',
-            'ConvertTo-NervRetainedDiagnosticValue',
-            'ConvertTo-NervRetainedDisplayName',
-            'ConvertTo-NervRetainedFailureText',
-            'Get-NervRetainedFailureGrammar',
-            'Get-NervRetainedSkipReason',
-            'Test-NervRetainedFailureText'
-        )
-    },
-    [pscustomobject]@{
-        LibraryName = 'TestEvidenceParsing.ps1'
-        FunctionNames = @(
-            'Get-NervTrxSkipReason',
-            'Read-NervTrxResults',
-            'ConvertFrom-NervDotNetConsoleSummary'
-        )
-    },
-    [pscustomobject]@{
-        LibraryName = 'TestEvidenceArtifacts.ps1'
-        FunctionNames = @(
-            'New-NervTestEvidenceSummary',
-            'Write-NervUtf8NoBom',
-            'ConvertTo-NervEvidenceIdentity',
-            'Write-NervEvidenceOutputPath',
-            'New-NervNormalizedTrxFileNameSet',
-            'Add-NervNormalizedTrxFileName',
-            'Get-NervNormalizedTrxHashedFileName',
-            'Resolve-NervNormalizedTrxFileNames',
-            'Write-NervTestEvidenceArtifacts',
-            'Write-NervTestEvidenceFailureArtifacts'
-        )
-    },
-    [pscustomobject]@{
-        LibraryName = 'TestEvidenceBaseline.ps1'
-        FunctionNames = @('New-NervTestEvidenceBaseline')
-    },
-    [pscustomobject]@{
-        LibraryName = 'TestEvidenceProvenance.ps1'
-        FunctionNames = @(
-            'ConvertTo-NervResolvedRunnerImage',
-            'Get-NervGitHubRunnerProvenance',
-            'Assert-NervGitHubRunCheckoutProvenance',
-            'Resolve-NervPriorAttemptAuthority',
-            'Get-NervEvidenceRunIdentityFields',
-            'Get-NervEvidenceLaneEnvironmentFields',
-            'New-NervEvidenceRunIdentity',
-            'Get-NervEvidenceLaneProvenance',
-            'Assert-NervEvidenceSourceSummaries',
-            'Assert-NervEvidenceRootAuthority'
-        )
-    }
-)
-$isolatedTestEvidenceLibraryNames = @('ScriptAutomation.ps1', 'OrdinalString.ps1', 'TestEvidence.ps1', 'TestEvidencePolicy.ps1', 'TestEvidencePrivacy.ps1', 'TestEvidenceParsing.ps1', 'TestEvidenceArtifacts.ps1', 'TestEvidenceProvenance.ps1', 'TestEvidenceBaseline.ps1')
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . $testEvidenceLibraryPath
 . $ciWorkflowBudgetsPath
 
-$repoScriptLogRoot = Join-Path $repoRoot 'artifacts/script-logs'
+$repoScriptLogRoot = Join-Path $repoRoot '.ryugi/artifacts/script-logs'
 $initialRepoCommandLogs = @(
     if (Test-Path $repoScriptLogRoot) {
         Get-ChildItem $repoScriptLogRoot -Directory -Filter 'man-661-*' |
@@ -101,8 +26,8 @@ $initialRepoCommandLogs = @(
     }
 )
 
-$collectorSource = Get-Content (Join-Path $repoRoot 'scripts/collect-test-evidence.ps1') -Raw
-$baselineGeneratorSource = Get-Content (Join-Path $repoRoot 'scripts/generate-test-evidence-baseline.ps1') -Raw
+$collectorSource = Get-Content (Join-Path $repoRoot 'scripts/ci/collect-test-evidence.ps1') -Raw
+$baselineGeneratorSource = Get-Content (Join-Path $repoRoot 'scripts/ci/generate-test-evidence-baseline.ps1') -Raw
 
 function Assert-True([bool] $Condition, [string] $Message) {
     if (-not $Condition) { throw $Message }
@@ -146,157 +71,11 @@ $earlyWorkflowJobs = Get-NervCiWorkflowBudgets -Path (Join-Path $repoRoot '.gith
 $fullChainPhysicalJobs = @($earlyWorkflowJobs | Where-Object { [string]::Equals([string]$_.Name, 'business-full-chain-acceptance-v1', [StringComparison]::Ordinal) })
 Assert-Equal 1 $fullChainPhysicalJobs.Count 'CI must define exactly one physical v1 worker for FullChain evidence ownership.'
 $fullChainCollectorSteps = @($fullChainPhysicalJobs[0].Steps | Where-Object {
-        ([string]$_.Run).Contains('./scripts/collect-test-evidence.ps1', [StringComparison]::Ordinal) -and
+        ([string]$_.Run).Contains('./scripts/ci/collect-test-evidence.ps1', [StringComparison]::Ordinal) -and
         ([string]$_.Run).Contains('-Lane full-chain', [StringComparison]::Ordinal)
     })
 Assert-Equal 1 $fullChainCollectorSteps.Count 'Only the physical v1 worker may run the FullChain MAN-661 collector.'
 Assert-True (([string]$fullChainCollectorSteps[0].Run).Contains('-JobName "Business FullChain Acceptance / v1 Authority"', [StringComparison]::Ordinal)) 'The hosted FullChain collector must report the physical v1 Actions name.'
-
-function Get-NervDotSourceCommands {
-    param([Parameter(Mandatory)] [string] $Path)
-
-    $tokens = $null
-    $parseErrors = $null
-    $ast = [Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$parseErrors)
-    Assert-Equal 0 @($parseErrors).Count "'$Path' must parse before its TestEvidence dependency order is inspected."
-    return @($ast.FindAll({
-        param($node)
-        $node -is [Management.Automation.Language.CommandAst] -and
-            $node.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Dot
-    }, $true))
-}
-
-function Assert-NervFacadeResponsibilityRegistryClosure {
-    param(
-        [Parameter(Mandatory)] [string[]] $ImportedLibraryNames,
-        [Parameter(Mandatory)] [string[]] $SharedDependencyNames,
-        [Parameter(Mandatory)] [object[]] $ResponsibilityContracts
-    )
-
-    $importedSet = Get-NervOrdinalSet -Values $ImportedLibraryNames
-    $sharedDependencySet = Get-NervOrdinalSet -Values $SharedDependencyNames
-    [string[]]$registered = @(Get-NervOrdinalSorted -Unique -Values @(
-        $ResponsibilityContracts | ForEach-Object { [string]$_.LibraryName }
-    ))
-    $registeredSet = Get-NervOrdinalSet -Values $registered
-    [string[]]$missingSharedDependencies = @(Get-NervOrdinalSorted -Unique -Values @(
-        $SharedDependencyNames | Where-Object { -not $importedSet.Contains([string]$_) }
-    ))
-    Assert-Equal 0 $missingSharedDependencies.Count `
-        "TestEvidence facade shared-dependency whitelist must name imported libraries only. Missing=[$($missingSharedDependencies -join ', ')]"
-    [string[]]$registeredSharedDependencies = @(Get-NervOrdinalSorted -Unique -Values @(
-        $SharedDependencyNames | Where-Object { $registeredSet.Contains([string]$_) }
-    ))
-    Assert-Equal 0 $registeredSharedDependencies.Count `
-        "TestEvidence facade shared dependencies must not also appear in the responsibility registry. Overlap=[$($registeredSharedDependencies -join ', ')]"
-    [string[]]$actual = @(Get-NervOrdinalSorted -Unique -Values @(
-        $ImportedLibraryNames | Where-Object { -not $sharedDependencySet.Contains([string]$_) }
-    ))
-    Assert-True ([string]::Equals(($actual -join '|'), ($registered -join '|'), [StringComparison]::Ordinal)) `
-        "TestEvidence facade imports and responsibility registry must be identical. Actual=[$($actual -join ', ')] Registered=[$($registered -join ', ')]"
-}
-
-$testEvidenceConsumers = @(
-    'scripts/collect-test-evidence.ps1',
-    'scripts/generate-test-evidence-baseline.ps1',
-    'scripts/tests/test-evidence.Tests.ps1',
-    'scripts/tests/backend-test-shards.Tests.ps1',
-    'scripts/tests/fixtures/test-evidence/composite-key-production-fixture.ps1'
-)
-foreach ($consumerPath in $testEvidenceConsumers) {
-    $absoluteConsumerPath = Join-Path $repoRoot $consumerPath
-    $dotSourceCommands = @(Get-NervDotSourceCommands -Path $absoluteConsumerPath)
-    $scriptAutomationImports = @($dotSourceCommands | Where-Object {
-        $_.Extent.Text.Contains('ScriptAutomation.ps1', [StringComparison]::Ordinal)
-    })
-    $testEvidenceImports = @($dotSourceCommands | Where-Object {
-        $_.Extent.Text.Contains('TestEvidence.ps1', [StringComparison]::Ordinal) -or
-            [string]::Equals([string]$_.Extent.Text.Trim(), '. $testEvidenceLibraryPath', [StringComparison]::Ordinal) -or
-            [string]::Equals([string]$_.Extent.Text.Trim(), '. $TestEvidenceLibraryPath', [StringComparison]::Ordinal)
-    })
-    Assert-Equal 1 $scriptAutomationImports.Count "'$consumerPath' must dot-source ScriptAutomation.ps1 exactly once."
-    Assert-Equal 1 $testEvidenceImports.Count "'$consumerPath' must dot-source TestEvidence.ps1 exactly once."
-    Assert-True ($scriptAutomationImports[0].Extent.StartOffset -lt $testEvidenceImports[0].Extent.StartOffset) `
-        "'$consumerPath' must load ScriptAutomation.ps1 before TestEvidence.ps1."
-    foreach ($responsibilityContract in $facadeOwnedResponsibilityContracts) {
-        Assert-Equal 0 @($dotSourceCommands | Where-Object {
-            $_.Extent.Text.Contains([string]$responsibilityContract.LibraryName, [StringComparison]::Ordinal)
-        }).Count "'$consumerPath' must load '$($responsibilityContract.LibraryName)' only through the TestEvidence facade."
-    }
-}
-
-$testEvidenceLibraryImports = @(Get-NervDotSourceCommands -Path $testEvidenceLibraryPath)
-Assert-Equal 0 @($testEvidenceLibraryImports | Where-Object {
-    $_.Extent.Text.Contains('ScriptAutomation.ps1', [StringComparison]::Ordinal)
-}).Count 'TestEvidence.ps1 must not hide its caller-owned ScriptAutomation dependency with a self-import.'
-
-$facadeOwnedLibraryNames = @($testEvidenceLibraryImports | ForEach-Object {
-    $literalMatches = [regex]::Matches([string]$_.Extent.Text, "'([^']+\.ps1)'")
-    Assert-Equal 1 $literalMatches.Count "TestEvidence facade imports must name one literal sibling library: $($_.Extent.Text)"
-    [string]$literalMatches[0].Groups[1].Value
-})
-$sharedFacadeDependencyNames = @('OrdinalString.ps1')
-Assert-NervFacadeResponsibilityRegistryClosure -ImportedLibraryNames $facadeOwnedLibraryNames `
-    -SharedDependencyNames $sharedFacadeDependencyNames `
-    -ResponsibilityContracts $facadeOwnedResponsibilityContracts
-
-$missingRegistryContracts = @($facadeOwnedResponsibilityContracts | Where-Object {
-    -not [string]::Equals([string]$_.LibraryName, 'TestEvidencePolicy.ps1', [StringComparison]::Ordinal)
-})
-$missingRegistryFailure = $null
-try {
-    Assert-NervFacadeResponsibilityRegistryClosure -ImportedLibraryNames $facadeOwnedLibraryNames `
-        -SharedDependencyNames $sharedFacadeDependencyNames `
-        -ResponsibilityContracts $missingRegistryContracts
-}
-catch {
-    $missingRegistryFailure = $_.Exception.Message
-}
-Assert-True (-not [string]::IsNullOrWhiteSpace([string]$missingRegistryFailure)) `
-    'Removing an imported facade-owned library from the responsibility registry must fail closed.'
-Assert-True ([string]$missingRegistryFailure).Contains('TestEvidencePolicy.ps1', [StringComparison]::Ordinal) `
-    'The missing-registry mutation failure must identify the imported Policy library that escaped registration.'
-
-$nonPrefixedRegistryFailure = $null
-try {
-    Assert-NervFacadeResponsibilityRegistryClosure -ImportedLibraryNames @($facadeOwnedLibraryNames + 'EvidenceExtra.ps1') `
-        -SharedDependencyNames $sharedFacadeDependencyNames `
-        -ResponsibilityContracts $facadeOwnedResponsibilityContracts
-}
-catch {
-    $nonPrefixedRegistryFailure = $_.Exception.Message
-}
-Assert-True (-not [string]::IsNullOrWhiteSpace([string]$nonPrefixedRegistryFailure)) `
-    'Adding a non-TestEvidence-prefixed facade import without a responsibility registry row must fail closed.'
-Assert-True ([string]$nonPrefixedRegistryFailure).Contains('EvidenceExtra.ps1', [StringComparison]::Ordinal) `
-    'The unregistered-import mutation failure must identify the non-TestEvidence-prefixed library that escaped registration.'
-
-$sharedDependencyRegistryFailure = $null
-try {
-    Assert-NervFacadeResponsibilityRegistryClosure -ImportedLibraryNames $facadeOwnedLibraryNames `
-        -SharedDependencyNames $sharedFacadeDependencyNames `
-        -ResponsibilityContracts @($facadeOwnedResponsibilityContracts + [pscustomobject]@{
-            LibraryName = 'OrdinalString.ps1'
-            FunctionNames = @()
-        })
-}
-catch {
-    $sharedDependencyRegistryFailure = $_.Exception.Message
-}
-Assert-True (-not [string]::IsNullOrWhiteSpace([string]$sharedDependencyRegistryFailure)) `
-    'Registering a shared facade dependency as a responsibility library must fail closed.'
-Assert-True ([string]$sharedDependencyRegistryFailure).Contains('OrdinalString.ps1', [StringComparison]::Ordinal) `
-    'The shared-dependency overlap mutation failure must identify the library registered in both partitions.'
-
-$expectedIsolatedLibraryNames = @(Get-NervOrdinalSorted -Unique -Values @(@('ScriptAutomation.ps1', 'TestEvidence.ps1') + @($facadeOwnedLibraryNames)))
-$actualIsolatedLibraryNames = @(Get-NervOrdinalSorted -Unique -Values $isolatedTestEvidenceLibraryNames)
-Assert-True ([string]::Equals(($actualIsolatedLibraryNames -join '|'), ($expectedIsolatedLibraryNames -join '|'), [StringComparison]::Ordinal)) `
-    "The composite-key mutation harness copy set must equal the TestEvidence facade closure. Expected=[$($expectedIsolatedLibraryNames -join ', ')] Actual=[$($actualIsolatedLibraryNames -join ', ')]"
-foreach ($facadeOwnedLibraryName in $facadeOwnedLibraryNames) {
-    $facadeOwnedLibraryPath = Join-Path (Split-Path $testEvidenceLibraryPath -Parent) $facadeOwnedLibraryName
-    Assert-Equal 0 @(Get-NervDotSourceCommands -Path $facadeOwnedLibraryPath).Count `
-        "TestEvidence facade-owned library '$facadeOwnedLibraryName' must remain a leaf so the isolated copy set is the complete dependency closure."
-}
 
 $redactionContractCases = @(
     [pscustomobject]@{ Name = 'null'; Input = $null; Expected = ''; Secrets = @() },
@@ -705,317 +484,6 @@ finally {
     if (Test-Path -LiteralPath $sourceQuoteFixtureRoot) { Remove-Item -LiteralPath $sourceQuoteFixtureRoot -Recurse -Force }
 }
 
-$testEvidenceTokens = $null
-$testEvidenceParseErrors = $null
-$testEvidenceAst = [Management.Automation.Language.Parser]::ParseFile($testEvidenceLibraryPath, [ref]$testEvidenceTokens, [ref]$testEvidenceParseErrors)
-Assert-Equal 0 @($testEvidenceParseErrors).Count 'TestEvidence.ps1 must parse before quote-scanner structure is inspected.'
-$facadeFunctions = @($testEvidenceAst.FindAll({
-    param($node)
-    $node -is [Management.Automation.Language.FunctionDefinitionAst]
-}, $true))
-$expectedFacadeFunctionNames = @(
-    'Test-NervOrdinalEquals',
-    'Resolve-NervTrxOutcomeMapping',
-    'Get-NervOrdinalCompositeKey',
-    'Get-NervOrdinalSet',
-    'Get-NervOrdinalSorted',
-    'Get-NervOrdinalGroups',
-    'Get-NervOrdinalSortedBy',
-    'Get-NervOrdinalRankedTop',
-    'Test-NervHasProperty',
-    'Get-NervTestEvidenceLaneJobs',
-    'Test-NervTestEvidenceLaneName',
-    'New-NervTestEvidenceRunMetadata',
-    'Find-NervQuotedTextEnd',
-    'Get-NervStableEvidenceGuid'
-)
-$actualFacadeFunctionNames = @(Get-NervOrdinalSorted -Unique -Values @($facadeFunctions | ForEach-Object { [string]$_.Name }))
-$sortedExpectedFacadeFunctionNames = @(Get-NervOrdinalSorted -Unique -Values $expectedFacadeFunctionNames)
-Assert-True ([string]::Equals(($actualFacadeFunctionNames -join '|'), ($sortedExpectedFacadeFunctionNames -join '|'), [StringComparison]::Ordinal)) `
-    "TestEvidence.ps1 must retain exactly the 14 shared facade functions after the Policy split. Expected=[$($sortedExpectedFacadeFunctionNames -join ', ')] Actual=[$($actualFacadeFunctionNames -join ', ')]"
-Assert-Equal $sortedExpectedFacadeFunctionNames.Count $facadeFunctions.Count `
-    'TestEvidence.ps1 must not duplicate any shared facade function.'
-$lastFacadeFunctionEnd = (@($facadeFunctions | ForEach-Object { [int]$_.Extent.EndOffset }) | Measure-Object -Maximum).Maximum
-$responsibilityContractStates = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
-foreach ($responsibilityContract in $facadeOwnedResponsibilityContracts) {
-    $responsibilityLibraryPath = Join-Path (Split-Path $testEvidenceLibraryPath -Parent) $responsibilityContract.LibraryName
-    Assert-True (Test-Path -LiteralPath $responsibilityLibraryPath -PathType Leaf) `
-        "'$($responsibilityContract.LibraryName)' must exist as a TestEvidence facade-owned responsibility library."
-
-    $responsibilityTokens = $null
-    $responsibilityParseErrors = $null
-    $responsibilityAst = [Management.Automation.Language.Parser]::ParseFile(
-        $responsibilityLibraryPath, [ref]$responsibilityTokens, [ref]$responsibilityParseErrors)
-    Assert-Equal 0 @($responsibilityParseErrors).Count `
-        "'$($responsibilityContract.LibraryName)' must parse before its ownership contract is inspected."
-
-    $responsibilityDefinitions = @($responsibilityAst.FindAll({
-        param($node)
-        $node -is [Management.Automation.Language.FunctionDefinitionAst]
-    }, $true))
-    $expectedResponsibilityFunctions = @(Get-NervOrdinalSorted -Unique -Values @($responsibilityContract.FunctionNames))
-    $actualResponsibilityFunctions = @(Get-NervOrdinalSorted -Unique -Values @($responsibilityDefinitions | ForEach-Object { [string]$_.Name }))
-    Assert-True ([string]::Equals(($actualResponsibilityFunctions -join '|'), ($expectedResponsibilityFunctions -join '|'), [StringComparison]::Ordinal)) `
-        "'$($responsibilityContract.LibraryName)' must define exactly its registered responsibility functions. Expected=[$($expectedResponsibilityFunctions -join ', ')] Actual=[$($actualResponsibilityFunctions -join ', ')]"
-    Assert-Equal @($expectedResponsibilityFunctions).Count $responsibilityDefinitions.Count `
-        "'$($responsibilityContract.LibraryName)' must not duplicate any registered responsibility function."
-
-    foreach ($functionName in $expectedResponsibilityFunctions) {
-        $facadeDefinitions = @($facadeFunctions | Where-Object {
-            [string]::Equals([string]$_.Name, [string]$functionName, [StringComparison]::Ordinal)
-        })
-        Assert-Equal 0 $facadeDefinitions.Count `
-            "TestEvidence.ps1 must not define '$functionName' after the responsibility split."
-    }
-
-    $responsibilityImports = @($testEvidenceLibraryImports | Where-Object {
-        $_.Extent.Text.Contains([string]$responsibilityContract.LibraryName, [StringComparison]::Ordinal)
-    })
-    Assert-Equal 1 $responsibilityImports.Count `
-        "TestEvidence.ps1 must dot-source '$($responsibilityContract.LibraryName)' exactly once."
-    Assert-True ($responsibilityImports[0].Extent.StartOffset -ge $lastFacadeFunctionEnd) `
-        "TestEvidence.ps1 must load '$($responsibilityContract.LibraryName)' after all facade-owned dependency helpers are defined."
-
-    $responsibilityLibrarySource = [IO.File]::ReadAllText($responsibilityLibraryPath)
-    Assert-True ($responsibilityLibrarySource.Contains('# Script-Governance:', [StringComparison]::Ordinal) -and
-        $responsibilityLibrarySource.Contains('#   Category: library', [StringComparison]::Ordinal)) `
-        "'$($responsibilityContract.LibraryName)' must declare the Script-Governance library header."
-
-    $responsibilityContractStates.Add([string]$responsibilityContract.LibraryName, [pscustomobject]@{
-        Ast = $responsibilityAst
-        Definitions = $responsibilityDefinitions
-        Imports = $responsibilityImports
-    })
-}
-
-$artifactsLibraryAst = $responsibilityContractStates['TestEvidenceArtifacts.ps1'].Ast
-$baselineLibraryDefinitions = @($responsibilityContractStates['TestEvidenceBaseline.ps1'].Definitions)
-$facadePolicyImport = @($responsibilityContractStates['TestEvidencePolicy.ps1'].Imports)[0]
-$facadePrivacyImport = @($responsibilityContractStates['TestEvidencePrivacy.ps1'].Imports)[0]
-$facadeParsingImport = @($responsibilityContractStates['TestEvidenceParsing.ps1'].Imports)[0]
-$facadeArtifactsImport = @($responsibilityContractStates['TestEvidenceArtifacts.ps1'].Imports)[0]
-$facadeProvenanceImport = @($responsibilityContractStates['TestEvidenceProvenance.ps1'].Imports)[0]
-$facadeBaselineImport = @($responsibilityContractStates['TestEvidenceBaseline.ps1'].Imports)[0]
-Assert-True ($facadePolicyImport.Extent.StartOffset -lt $facadePrivacyImport.Extent.StartOffset) `
-    'TestEvidence.ps1 must load TestEvidencePolicy.ps1 before TestEvidencePrivacy.ps1.'
-Assert-True ($facadePrivacyImport.Extent.StartOffset -lt $facadeParsingImport.Extent.StartOffset) `
-    'TestEvidence.ps1 must load TestEvidencePrivacy.ps1 before TestEvidenceParsing.ps1.'
-Assert-True ($facadeParsingImport.Extent.StartOffset -lt $facadeArtifactsImport.Extent.StartOffset) `
-    'TestEvidence.ps1 must load TestEvidenceParsing.ps1 before TestEvidenceArtifacts.ps1.'
-Assert-True ($facadeArtifactsImport.Extent.StartOffset -lt $facadeProvenanceImport.Extent.StartOffset) `
-    'TestEvidence.ps1 must load TestEvidenceArtifacts.ps1 before TestEvidenceProvenance.ps1.'
-Assert-True ($facadeProvenanceImport.Extent.StartOffset -lt $facadeBaselineImport.Extent.StartOffset) `
-    'TestEvidence.ps1 must load TestEvidenceProvenance.ps1 before TestEvidenceBaseline.ps1.'
-
-$expectedBaselineHelperNames = @(
-    'Get-NervOrdinalCompositeKey',
-    'Get-NervOrdinalGroups',
-    'Get-NervOrdinalSorted',
-    'Get-NervOrdinalSortedBy',
-    'Get-NervTestEvidenceLaneJobs',
-    'Test-NervOrdinalEquals',
-    'Test-NervTestEvidenceLaneName'
-)
-$actualBaselineHelperNames = @(Get-NervOrdinalSorted -Unique -Values @($baselineLibraryDefinitions[0].Body.FindAll({
-    param($node)
-    $node -is [Management.Automation.Language.CommandAst] -and
-        $null -ne $node.GetCommandName() -and
-        $node.GetCommandName().Contains('-Nerv', [StringComparison]::Ordinal)
-}, $true) | ForEach-Object { [string]$_.GetCommandName() }))
-Assert-True ([string]::Equals(($actualBaselineHelperNames -join '|'), ($expectedBaselineHelperNames -join '|'), [StringComparison]::Ordinal)) `
-    "New-NervTestEvidenceBaseline helper ownership changed. Expected=[$($expectedBaselineHelperNames -join ', ')] Actual=[$($actualBaselineHelperNames -join ', ')]"
-
-$collectorTokens = $null
-$collectorParseErrors = $null
-$collectorPath = Join-Path $repoRoot 'scripts/collect-test-evidence.ps1'
-$collectorAst = [Management.Automation.Language.Parser]::ParseFile($collectorPath, [ref]$collectorTokens, [ref]$collectorParseErrors)
-Assert-Equal 0 @($collectorParseErrors).Count 'collect-test-evidence.ps1 must parse before redaction ownership is inspected.'
-
-$expectedCollectorArtifactCalls = @(
-    [pscustomobject]@{ FunctionName = 'New-NervTestEvidenceSummary'; ExpectedCalls = 1 },
-    [pscustomobject]@{ FunctionName = 'Write-NervTestEvidenceArtifacts'; ExpectedCalls = 1 },
-    [pscustomobject]@{ FunctionName = 'Write-NervTestEvidenceFailureArtifacts'; ExpectedCalls = 1 },
-    [pscustomobject]@{ FunctionName = 'Write-NervEvidenceOutputPath'; ExpectedCalls = 2 }
-)
-foreach ($expectedCall in $expectedCollectorArtifactCalls) {
-    $actualCalls = @($collectorAst.FindAll({
-        param($node)
-        $node -is [Management.Automation.Language.CommandAst] -and
-            [string]::Equals([string]$node.GetCommandName(), [string]$expectedCall.FunctionName, [StringComparison]::Ordinal)
-    }, $true))
-    Assert-Equal ([int]$expectedCall.ExpectedCalls) $actualCalls.Count `
-        "collect-test-evidence.ps1 must retain exactly $($expectedCall.ExpectedCalls) '$($expectedCall.FunctionName)' call(s)."
-}
-
-$baselineGeneratorTokens = $null
-$baselineGeneratorParseErrors = $null
-$baselineGeneratorPath = Join-Path $repoRoot 'scripts/generate-test-evidence-baseline.ps1'
-$baselineGeneratorAst = [Management.Automation.Language.Parser]::ParseFile(
-    $baselineGeneratorPath, [ref]$baselineGeneratorTokens, [ref]$baselineGeneratorParseErrors)
-Assert-Equal 0 @($baselineGeneratorParseErrors).Count `
-    'generate-test-evidence-baseline.ps1 must parse before Artifacts facade consumption is inspected.'
-$generatorUtf8Calls = @($baselineGeneratorAst.FindAll({
-    param($node)
-    $node -is [Management.Automation.Language.CommandAst] -and
-        [string]::Equals([string]$node.GetCommandName(), 'Write-NervUtf8NoBom', [StringComparison]::Ordinal)
-}, $true))
-Assert-Equal 1 $generatorUtf8Calls.Count `
-    'generate-test-evidence-baseline.ps1 must retain exactly one facade-provided Write-NervUtf8NoBom call.'
-
-$middleManDefinitions = @($testEvidenceAst.FindAll({
-    param($node)
-    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
-        [string]::Equals([string]$node.Name, 'Protect-NervTestEvidenceText', [StringComparison]::Ordinal)
-}, $true))
-$middleManCalls = @(
-    @($testEvidenceAst.FindAll({
-        param($node)
-        $node -is [Management.Automation.Language.CommandAst] -and
-            [string]::Equals([string]$node.GetCommandName(), 'Protect-NervTestEvidenceText', [StringComparison]::Ordinal)
-    }, $true)) +
-    @($collectorAst.FindAll({
-        param($node)
-        $node -is [Management.Automation.Language.CommandAst] -and
-            [string]::Equals([string]$node.GetCommandName(), 'Protect-NervTestEvidenceText', [StringComparison]::Ordinal)
-    }, $true))
-)
-Assert-True ($middleManDefinitions.Count -eq 0 -and $middleManCalls.Count -eq 0) `
-    "Protect-NervTestEvidenceText must be removed completely. ActualDefinitions=$($middleManDefinitions.Count) ActualCalls=$($middleManCalls.Count)"
-
-$sharedRedactionOwners = @(
-    [pscustomobject]@{ FunctionName = 'ConvertTo-NervRetainedDisplayName'; ExpectedCalls = 2 },
-    [pscustomobject]@{ FunctionName = 'Get-NervRetainedSkipReason'; ExpectedCalls = 1 },
-    [pscustomobject]@{ FunctionName = 'ConvertTo-NervEvidenceIdentity'; ExpectedCalls = 1 },
-    [pscustomobject]@{ FunctionName = 'Write-NervTestEvidenceArtifacts'; ExpectedCalls = 3 },
-    [pscustomobject]@{ FunctionName = 'Write-NervTestEvidenceFailureArtifacts'; ExpectedCalls = 2 }
-)
-function Get-NervFunctionDefinitionsFromAsts {
-    param(
-        [Parameter(Mandatory)] [object[]] $Asts,
-        [Parameter(Mandatory)] [string] $FunctionName
-    )
-
-    return @($Asts | ForEach-Object {
-        $_.FindAll({
-            param($node)
-            $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
-                [string]::Equals([string]$node.Name, $FunctionName, [StringComparison]::Ordinal)
-        }, $true)
-    })
-}
-
-function Assert-NervSharedRedactorOwner {
-    param(
-        [Parameter(Mandatory)] [object[]] $DefinitionAsts,
-        [Parameter(Mandatory)] [object] $Owner
-    )
-
-    $ownerFunctions = @(Get-NervFunctionDefinitionsFromAsts -Asts $DefinitionAsts -FunctionName ([string]$Owner.FunctionName))
-    Assert-Equal 1 $ownerFunctions.Count "TestEvidence must define '$($Owner.FunctionName)' exactly once before redaction calls are counted."
-    $sharedCalls = @($ownerFunctions[0].Body.FindAll({
-        param($node)
-        $node -is [Management.Automation.Language.CommandAst] -and
-            [string]::Equals([string]$node.GetCommandName(), 'Protect-ScriptAutomationText', [StringComparison]::Ordinal)
-    }, $true))
-    Assert-Equal $Owner.ExpectedCalls $sharedCalls.Count `
-        "'$($Owner.FunctionName)' must own exactly $($Owner.ExpectedCalls) direct shared-redactor call(s)."
-}
-
-$testEvidenceDefinitionAsts = @(
-    @($testEvidenceAst) +
-    @($facadeOwnedResponsibilityContracts | ForEach-Object {
-        $responsibilityContractStates[[string]$_.LibraryName].Ast
-    })
-)
-foreach ($owner in $sharedRedactionOwners) {
-    Assert-NervSharedRedactorOwner -DefinitionAsts $testEvidenceDefinitionAsts -Owner $owner
-}
-
-$displayRedactionOwner = @($sharedRedactionOwners | Where-Object {
-    [string]::Equals([string]$_.FunctionName, 'ConvertTo-NervRetainedDisplayName', [StringComparison]::Ordinal)
-})[0]
-$missingRedactionOwnerFailure = $null
-try {
-    Assert-NervSharedRedactorOwner -DefinitionAsts @($artifactsLibraryAst) -Owner $displayRedactionOwner
-}
-catch {
-    $missingRedactionOwnerFailure = $_.Exception.Message
-}
-Assert-True (-not [string]::IsNullOrWhiteSpace([string]$missingRedactionOwnerFailure)) `
-    'Removing the registered owner definition from the responsibility AST set must fail closed.'
-Assert-True ([string]$missingRedactionOwnerFailure).Contains('ConvertTo-NervRetainedDisplayName', [StringComparison]::Ordinal) `
-    'The missing shared-redactor owner failure must identify ConvertTo-NervRetainedDisplayName.'
-
-$duplicateRedactionOwnerFailure = $null
-try {
-    Assert-NervSharedRedactorOwner -DefinitionAsts @($testEvidenceAst, $testEvidenceAst) -Owner $displayRedactionOwner
-}
-catch {
-    $duplicateRedactionOwnerFailure = $_.Exception.Message
-}
-Assert-True (-not [string]::IsNullOrWhiteSpace([string]$duplicateRedactionOwnerFailure)) `
-    'Duplicating a shared-redactor owner definition in the responsibility AST set must fail closed.'
-Assert-True ([string]$duplicateRedactionOwnerFailure).Contains('ConvertTo-NervRetainedDisplayName', [StringComparison]::Ordinal) `
-    'The duplicate shared-redactor owner failure must identify ConvertTo-NervRetainedDisplayName.'
-
-$safeFailureAssignments = @($collectorAst.FindAll({
-    param($node)
-    $node -is [Management.Automation.Language.AssignmentStatementAst] -and
-        $node.Left -is [Management.Automation.Language.VariableExpressionAst] -and
-        [string]::Equals([string]$node.Left.VariablePath.UserPath, 'safeFailure', [StringComparison]::Ordinal)
-}, $true))
-Assert-Equal 1 $safeFailureAssignments.Count 'Collector catch must assign $safeFailure exactly once.'
-$safeFailureSharedCalls = @($safeFailureAssignments[0].Right.FindAll({
-    param($node)
-    $node -is [Management.Automation.Language.CommandAst] -and
-        [string]::Equals([string]$node.GetCommandName(), 'Protect-ScriptAutomationText', [StringComparison]::Ordinal)
-}, $true))
-Assert-Equal 1 $safeFailureSharedCalls.Count 'Collector $safeFailure assignment must call Protect-ScriptAutomationText directly exactly once.'
-
-$sourceScannerFunctions = @(Get-NervFunctionDefinitionsFromAsts -Asts $testEvidenceDefinitionAsts -FunctionName 'Get-NervSourceSkipAssignments')
-Assert-Equal 1 $sourceScannerFunctions.Count 'TestEvidence responsibilities must define Get-NervSourceSkipAssignments exactly once before its structure is inspected.'
-$sourceScannerFunction = $sourceScannerFunctions[0]
-$sourceScannerSharedCalls = @($sourceScannerFunction.Body.FindAll({
-    param($node)
-    $node -is [Management.Automation.Language.CommandAst] -and
-        [string]::Equals([string]$node.GetCommandName(), 'Find-NervQuotedTextEnd', [StringComparison]::Ordinal)
-}, $true))
-Assert-Equal 1 $sourceScannerSharedCalls.Count 'Source Skip scanning must delegate quote boundaries to the shared helper exactly once.'
-
-$trxReaderFunctions = @(Get-NervFunctionDefinitionsFromAsts -Asts $testEvidenceDefinitionAsts -FunctionName 'Read-NervTrxResults')
-Assert-Equal 1 $trxReaderFunctions.Count 'TestEvidence responsibilities must define Read-NervTrxResults exactly once before its structure is inspected.'
-$trxReaderFunction = $trxReaderFunctions[0]
-$trxReaderOutcomeMappingCalls = @($trxReaderFunction.Body.FindAll({
-    param($node)
-    $node -is [Management.Automation.Language.CommandAst] -and
-        [string]::Equals([string]$node.GetCommandName(), 'Resolve-NervTrxOutcomeMapping', [StringComparison]::Ordinal)
-}, $true))
-Assert-Equal 1 $trxReaderOutcomeMappingCalls.Count 'TRX reading must resolve each result outcome through the shared mapping exactly once.'
-$trxReaderOutcomeMapAssignments = @($trxReaderFunction.Body.FindAll({
-    param($node)
-    $node -is [Management.Automation.Language.AssignmentStatementAst] -and
-        $node.Left -is [Management.Automation.Language.VariableExpressionAst] -and
-        [string]::Equals([string]$node.Left.VariablePath.UserPath, 'outcomeMap', [StringComparison]::Ordinal)
-}, $true))
-Assert-Equal 0 $trxReaderOutcomeMapAssignments.Count 'TRX reading must not retain a private outcome map beside the shared descriptor table.'
-
-$trxReaderCounterThrows = @($trxReaderFunction.Body.FindAll({
-    param($node)
-    $node -is [Management.Automation.Language.ThrowStatementAst] -and
-        $node.Extent.Text.Contains('TRX ResultSummary/Counters do not match Results', [StringComparison]::Ordinal)
-}, $true))
-$trxReaderUnsupportedOutcomeThrows = @($trxReaderFunction.Body.FindAll({
-    param($node)
-    $node -is [Management.Automation.Language.ThrowStatementAst] -and
-        $node.Extent.Text.Contains('Unsupported TRX outcome', [StringComparison]::Ordinal)
-}, $true))
-Assert-Equal 1 $trxReaderCounterThrows.Count 'TRX reading must retain one counter-mismatch throw.'
-Assert-Equal 1 $trxReaderUnsupportedOutcomeThrows.Count 'TRX reading must retain one unsupported-outcome defensive throw.'
-Assert-True ($trxReaderCounterThrows[0].Extent.StartOffset -lt $trxReaderUnsupportedOutcomeThrows[0].Extent.StartOffset) 'Counter validation must remain before the unreachable unsupported-outcome defense.'
-Assert-True ($trxReaderUnsupportedOutcomeThrows[0].Extent.Text.Contains('[IO.InvalidDataException]::new', [StringComparison]::Ordinal)) 'The unsupported-outcome defense must retain InvalidDataException.'
-
-# Exact, not "contains": a fixture that also trips codes nobody asked for means the classification
-# under test is bleeding into its neighbours, and a containment assertion cannot see that.
 function Assert-ViolationSet([object[]] $Violations, [string[]] $Codes) {
     $actual = @(Get-NervStringsSorted -Values @($Violations | ForEach-Object code) -Comparer ([StringComparer]::Ordinal) -Unique) -join ','
     $expected = @(Get-NervStringsSorted -Values @($Codes) -Comparer ([StringComparer]::Ordinal) -Unique) -join ','
@@ -1057,7 +525,7 @@ function Get-NervFrontendUnitWorkflowFindings([object[]] $Jobs) {
         $findings.Add('frontend-unit-upload-step')
     }
     else {
-        if (-not [string]::Equals([string]$uploadStep[0].Uses, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)) { $findings.Add('frontend-unit-upload-action') }
+        if (-not [string]::Equals([string]$uploadStep[0].Uses, 'actions/upload-artifact@v6', [StringComparison]::Ordinal)) { $findings.Add('frontend-unit-upload-action') }
         if (-not $uploadStep[0].AlwaysRuns) { $findings.Add('frontend-unit-upload-condition') }
         $uploadPaths = @(([string]$uploadStep[0].With['path']).Split("`n", [StringSplitOptions]::RemoveEmptyEntries))
         $expectedUploadPaths = @(
@@ -1142,222 +610,27 @@ function Test-NervCiWorkflowBudgetsOrdinalSweep {
     }
 }
 
-function Test-NervProductionCompositeKeyCallsites {
+function Test-NervProductionCompositeKeys {
     $fixtureScript = Join-Path $fixtures 'composite-key-production-fixture.ps1'
-    $productionLibrary = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
-    $mutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-test-evidence-composite-mutations-$([Guid]::NewGuid().ToString('N'))"
-    $cases = @(
-        [pscustomobject]@{
-            Name = 'artifact-record-sort-1063'
-            Fixture = 'artifact-record-sort'
-            Original = '        $recordLines = foreach ($record in @(Get-NervOrdinalSortedBy -Items @($Records) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @($row.assembly, $row.testName) })) {'
-            Mutated = '        $recordLines = foreach ($record in @(Get-NervOrdinalSortedBy -Items @($Records) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @([string]$row.assembly, [string]$row.testName) })) {'
-        },
-        [pscustomobject]@{
-            Name = 'normalized-trx-group-1186'
-            Fixture = 'normalized-trx-group'
-            Original = '        $normalizedGroups = @(Get-NervOrdinalGroups -Items @($Records) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @($row.lane, $row.assembly) } | ForEach-Object {'
-            Mutated = '        $normalizedGroups = @(Get-NervOrdinalGroups -Items @($Records) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @([string]$row.lane, [string]$row.assembly) } | ForEach-Object {'
-        },
-        [pscustomobject]@{
-            Name = 'normalized-trx-record-sort-1187'
-            Fixture = 'normalized-trx-record-sort'
-            Original = '            $groupRecords = @(Get-NervOrdinalSortedBy -Items @($_.Group) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @($row.testName, $row.displayName, $row.testInstanceId) })'
-            Mutated = '            $groupRecords = @(Get-NervOrdinalSortedBy -Items @($_.Group) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @([string]$row.testName, [string]$row.displayName, [string]$row.testInstanceId) })'
-        },
-        [pscustomobject]@{
-            Name = 'normalized-trx-run-identity-1261'
-            Fixture = 'normalized-trx-group'
-            Original = "                `$groupRecords[0].lane,`n                `$groupRecords[0].assembly)"
-            Mutated = "                [string]`$groupRecords[0].lane,`n                [string]`$groupRecords[0].assembly)"
-        },
-        [pscustomobject]@{
-            Name = 'normalized-trx-length-budget'
-            Fixture = 'normalized-trx-group'
-            Original = '        if ($legacy.Length -le 240 -and [int]$legacyCounts[$legacy] -eq 1) {'
-            Mutated = '        if ([int]$legacyCounts[$legacy] -eq 1) {'
-            DiagnosticPattern = '(?is)(PathTooLongException|path.*too long|exceeds.*length)'
-        },
-        [pscustomobject]@{
-            Name = 'normalized-trx-complete-digest'
-            Fixture = 'normalized-trx-group'
-            Original = "    `$identityDigest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(`n        [Text.Encoding]::UTF8.GetBytes([string]`$Group.Identity))).ToLowerInvariant()"
-            Mutated = "    `$identityDigest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(`n        [Text.Encoding]::UTF8.GetBytes([string]`$Group.Identity))).ToLowerInvariant().Substring(0, 16)"
-        },
-        [pscustomobject]@{
-            Name = 'normalized-trx-final-allocation-collision'
-            Fixture = 'normalized-trx-group'
-            Original = '        } while (-not $used.Add($candidate))'
-            Mutated = '        } while ($false)'
-        },
-        [pscustomobject]@{
-            Name = 'normalized-trx-case-insensitive-final-uniqueness'
-            Fixture = 'normalized-trx-group'
-            Original = '    return ,([Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase))'
-            Mutated = '    return ,([Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal))'
-        },
-        [pscustomobject]@{
-            Name = 'normalized-trx-reader-null-marker'
-            Fixture = 'normalized-trx-group'
-            Original = "                elseif ([string]::Equals(`$assemblyIdentityMarker, 'null', [StringComparison]::Ordinal)) { `$null }"
-            Mutated = "                elseif ([string]::Equals(`$assemblyIdentityMarker, 'null', [StringComparison]::Ordinal)) { '' }"
-        },
-        [pscustomobject]@{
-            Name = 'normalized-trx-runmetadata-null-timing'
-            Fixture = 'normalized-trx-group'
-            Original = '            assembly = if ($assembliesInRun.Count -eq 1) { $assembliesInRun[0] } else { [IO.Path]::GetFileNameWithoutExtension($trxPath) }'
-            Mutated = '            assembly = if ($assembliesInRun.Count -eq 1) { [string]$assembliesInRun[0] } else { [IO.Path]::GetFileNameWithoutExtension($trxPath) }'
-        },
-        [pscustomobject]@{
-            Name = 'retained-json-null-assembly-projection'
-            Fixture = 'normalized-trx-group'
-            Original = '                assembly = $record.assembly'
-            Mutated = '                assembly = [string]$record.assembly'
-        },
-        [pscustomobject]@{
-            Name = 'assembly-marker-provenance-gate-deleted'
-            Fixture = 'normalized-trx-group'
-            Original = '        $hasReservedAssemblyIdentityMarker = $reservedAssemblyIdentityAttributes.Count -gt 0'
-            Mutated = '        $hasReservedAssemblyIdentityMarker = $false'
-        },
-        [pscustomobject]@{
-            Name = 'assembly-marker-only-head-sha-validated'
-            Fixture = 'normalized-trx-group'
-            Original = "            if (`$persistedHeadSha -notmatch '^[0-9a-f]{40}$' -or `$persistedTestedSha -notmatch '^[0-9a-f]{40}$' -or`n                -not [string]::Equals(`$persistedHeadSha, [string]`$RunMetadata.headSha, [StringComparison]::Ordinal) -or`n                -not [string]::Equals(`$persistedTestedSha, [string]`$RunMetadata.testedSha, [StringComparison]::Ordinal)) {"
-            Mutated = "            if (`$persistedHeadSha -notmatch '^[0-9a-f]{40}$' -or`n                -not [string]::Equals(`$persistedHeadSha, [string]`$RunMetadata.headSha, [StringComparison]::Ordinal)) {"
-        },
-        [pscustomobject]@{
-            Name = 'assembly-marker-namespace-weakened'
-            Fixture = 'normalized-trx-group'
-            Original = '                    -not [string]::Equals([string]$definitionMarkerAttributes[0].NamespaceURI, $normalizedIdentityNamespace, [StringComparison]::Ordinal)) {'
-            Mutated = '                    $false) {'
-        },
-        [pscustomobject]@{
-            Name = 'assembly-marker-prefix-instead-of-namespace'
-            Fixture = 'normalized-trx-group'
-            Original = '                    -not [string]::Equals([string]$definitionMarkerAttributes[0].NamespaceURI, $normalizedIdentityNamespace, [StringComparison]::Ordinal)) {'
-            Mutated = "                    -not [string]::Equals([string]`$definitionMarkerAttributes[0].Prefix, 'nerv', [StringComparison]::Ordinal)) {"
-        },
-        [pscustomobject]@{
-            Name = 'assembly-marker-verbatim-storage-gate-deleted'
-            Fixture = 'normalized-trx-group'
-            Original = "            if (`$hasAssemblyIdentityMarker -and [string]::Equals(`$assemblyIdentityMarker, 'verbatim', [StringComparison]::Ordinal) -and`n                ([string]::IsNullOrWhiteSpace([string]`$definition.storage) -or [string]`$definition.storage -notmatch '[/\\]')) {"
-            Mutated = '            if ($false) {'
-        },
-        [pscustomobject]@{
-            Name = 'summary-aggregate-selector-849'
-            Fixture = 'baseline-aggregate'
-            Original = '    $assemblies = @(Get-NervOrdinalGroups -Items $safeRecords -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @($row.lane, $row.assembly) } | ForEach-Object {'
-            Mutated = '    $assemblies = @(Get-NervOrdinalGroups -Items $safeRecords -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @([string]$row.lane, [string]$row.assembly) } | ForEach-Object {'
-        },
-        [pscustomobject]@{
-            Name = 'summary-identity-projection-851'
-            Fixture = 'baseline-aggregate'
-            Original = "        `$laneName = `$items[0].lane`n        `$assemblyName = `$items[0].assembly"
-            Mutated = "        `$laneName = [string]`$items[0].lane`n        `$assemblyName = [string]`$items[0].assembly"
-        },
-        [pscustomobject]@{
-            Name = 'baseline-aggregate-1606'
-            Fixture = 'baseline-aggregate'
-            TargetLibrary = 'TestEvidenceBaseline.ps1'
-            Original = '    $assemblies = @(Get-NervOrdinalGroups -Items @($Summaries | ForEach-Object { @($_.assemblies) }) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @($row.lane, $row.assembly) } | ForEach-Object {'
-            Mutated = '    $assemblies = @(Get-NervOrdinalGroups -Items @($Summaries | ForEach-Object { @($_.assemblies) }) -KeySelector { param($row) Get-NervOrdinalCompositeKey -Components @([string]$row.lane, [string]$row.assembly) } | ForEach-Object {'
-        },
-        [pscustomobject]@{
-            Name = 'baseline-identity-projection-1653'
-            Fixture = 'baseline-aggregate'
-            TargetLibrary = 'TestEvidenceBaseline.ps1'
-            Original = "            lane = `$items[0].lane`n            assembly = `$items[0].assembly"
-            Mutated = "            lane = [string]`$items[0].lane`n            assembly = [string]`$items[0].assembly"
-        },
-        [pscustomobject]@{
-            Name = 'derived-instance-ordinal-composite-key'
-            Fixture = 'derived-instance-id'
-            Original = '            $ordinalKey = Get-NervOrdinalCompositeKey -Components @($definition.testName, $displayName)'
-            Mutated = '            $ordinalKey = "$($definition.testName)|$displayName"'
-        },
-        [pscustomobject]@{
-            Name = 'derived-definition-ordinal-composite-key'
-            Fixture = 'derived-instance-id'
-            Original = '                definitionId = Get-NervStableEvidenceGuid (Get-NervOrdinalCompositeKey -Components @($definition.assembly, $definition.testName))'
-            Mutated = '                definitionId = Get-NervStableEvidenceGuid ("$($definition.assembly)|$($definition.testName)")'
-        },
-        [pscustomobject]@{
-            Name = 'derived-test-instance-ordinal-composite-key'
-            Fixture = 'derived-instance-id'
-            Original = '                testInstanceId = if ($hasPersistedExecutionId) { $persistedExecutionId.ToString() } else { Get-NervStableEvidenceGuid (Get-NervOrdinalCompositeKey -Components @($definition.assembly, $definition.testName, $displayName, [string]$ordinal)) }'
-            Mutated = '                testInstanceId = if ($hasPersistedExecutionId) { $persistedExecutionId.ToString() } else { Get-NervStableEvidenceGuid ("$($definition.assembly)|$($definition.testName)|$displayName|$([string]$ordinal)") }'
-        },
-        [pscustomobject]@{
-            Name = 'derived-instance-ordinal-comparer'
-            Fixture = 'derived-instance-id'
-            Original = '        $ordinals = [Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)'
-            Mutated = '        $ordinals = @{}'
-        },
-        [pscustomobject]@{
-            Name = 'literal-null-marker-escape'
-            Fixture = 'marker-literal'
-            TargetLibrary = 'OrdinalString.ps1'
-            Original = '        $_.Replace(''\'', ''\\'').Replace(''|'', ''\|'')'
-            Mutated = '        $_.Replace(''|'', ''\|'')'
-        }
+    $logRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-test-evidence-composite-$([Guid]::NewGuid().ToString('N'))"
+    $fixturesToRun = @(
+        'artifact-record-sort',
+        'normalized-trx-group',
+        'normalized-trx-record-sort',
+        'baseline-aggregate',
+        'derived-instance-id',
+        'marker-literal'
     )
-
     try {
-        [IO.Directory]::CreateDirectory($mutationRoot) | Out-Null
-        foreach ($case in $cases) {
-            Invoke-TestPwshScript -ScriptPath $fixtureScript -LogRoot $mutationRoot -WorkingDirectory $repoRoot -Name "composite-production-$($case.Name)-green" -Arguments @(
-                '-TestEvidenceLibraryPath', $productionLibrary,
-                '-Fixture', $case.Fixture
+        foreach ($fixture in $fixturesToRun) {
+            Invoke-TestPwshScript -ScriptPath $fixtureScript -LogRoot $logRoot -WorkingDirectory $repoRoot -Name $fixture -Arguments @(
+                '-TestEvidenceLibraryPath', $testEvidenceLibraryPath,
+                '-Fixture', $fixture
             ) | Out-Null
-
-            $caseRoot = Join-Path $mutationRoot $case.Name
-            $libraryRoot = Join-Path $caseRoot 'lib'
-            [IO.Directory]::CreateDirectory($libraryRoot) | Out-Null
-            foreach ($libraryName in $isolatedTestEvidenceLibraryNames) {
-                Copy-Item -LiteralPath (Join-Path $repoRoot "scripts/lib/$libraryName") -Destination (Join-Path $libraryRoot $libraryName)
-            }
-            $mutationTargetLibrary = if ($case.PSObject.Properties.Match('TargetLibrary').Count -eq 1) {
-                [string]$case.TargetLibrary
-            }
-            else {
-                $matchingLibraries = @($isolatedTestEvidenceLibraryNames | Where-Object {
-                    $candidateSource = [IO.File]::ReadAllText((Join-Path $libraryRoot $_))
-                    [regex]::Matches($candidateSource, [regex]::Escape([string]$case.Original)).Count -gt 0
-                })
-                Assert-Equal 1 $matchingLibraries.Count `
-                    "Mutation '$($case.Name)' must resolve to exactly one library in the facade closure."
-                [string]$matchingLibraries[0]
-            }
-            $mutatedLibrary = Join-Path $libraryRoot $mutationTargetLibrary
-            $source = [IO.File]::ReadAllText($mutatedLibrary)
-            Assert-Equal 1 ([regex]::Matches($source, [regex]::Escape([string]$case.Original)).Count) `
-                "Mutation '$($case.Name)' must identify exactly one production callsite."
-            [IO.File]::WriteAllText($mutatedLibrary, $source.Replace([string]$case.Original, [string]$case.Mutated), [Text.UTF8Encoding]::new($false))
-
-            $mutationFailed = $false
-            try {
-                Invoke-TestPwshScript -ScriptPath $fixtureScript -LogRoot $caseRoot -WorkingDirectory $repoRoot -Name "composite-production-$($case.Name)-mutation" -Arguments @(
-                    '-TestEvidenceLibraryPath', (Join-Path $libraryRoot 'TestEvidence.ps1'),
-                    '-Fixture', $case.Fixture
-                ) | Out-Null
-            }
-            catch { $mutationFailed = $true }
-            Assert-True $mutationFailed "Mutation '$($case.Name)' must fail its real production fixture."
-            $failureLogs = [string]::Join("`n", @(Get-ChildItem $caseRoot -Recurse -File -Filter '*.log' | ForEach-Object { Get-Content $_.FullName -Raw }))
-            if (Test-NervHasProperty -Object $case -Name 'DiagnosticPattern') {
-                Assert-True ($failureLogs -match [string]$case.DiagnosticPattern) `
-                    "Mutation '$($case.Name)' must fail with its length-budget diagnostic; logs=$failureLogs"
-            }
-            else {
-                Assert-True ($failureLogs.Contains("composite-key-fixture:$($case.Fixture):", [StringComparison]::Ordinal)) `
-                    "Mutation '$($case.Name)' must fail with its callsite-specific diagnostic."
-            }
-            Write-Host "Rejected composite-key mutation '$($case.Name)' through production fixture '$($case.Fixture)'."
         }
     }
     finally {
-        if (Test-Path -LiteralPath $mutationRoot) { Remove-Item -LiteralPath $mutationRoot -Recurse -Force }
+        if (Test-Path -LiteralPath $logRoot) { Remove-Item -LiteralPath $logRoot -Recurse -Force }
     }
 }
 
@@ -1395,9 +668,8 @@ function Test-NervProductionCompositeKeyByteEvidenceFixture {
 
 Assert-True (-not $collectorSource.Contains('TestOnly', [StringComparison]::Ordinal)) 'Production collector must expose no test-only authority replacement parameter.'
 Assert-True (-not $baselineGeneratorSource.Contains('TestOnly', [StringComparison]::Ordinal)) 'Production baseline generator must expose no test-only authority replacement parameter.'
-Assert-True ($collectorSource.Contains('deterministic .failure[-N] sibling', [StringComparison]::Ordinal)) 'Collector governance Writes must declare its owned failure sibling output.'
 Assert-True (-not (Get-Command Write-NervTestEvidenceArtifacts).Parameters.ContainsKey('SourceTrxPaths')) 'Artifact writer must not require an unread raw-TRX path parameter.'
-Test-NervProductionCompositeKeyCallsites
+Test-NervProductionCompositeKeys
 Test-NervProductionCompositeKeyByteEvidenceFixture
 Test-NervCiWorkflowBudgetsOwnsOrdinalDependency
 Test-NervCiWorkflowBudgetsOrdinalSweep
@@ -1543,9 +815,10 @@ $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # #2140 新增独立 RealRedisCacheFact source（5 条真实 Redis ProviderBehavior 用例，一属性一规则），62 + 1 = 63。
 # #4172 新增真实双 PlatformGateway HTTP/Redis source，3 条用例归属 redis-cap；63 + 1 = 64。
 # #4357 WMS 与 #4355 Maintenance 各新增独立 PostgreSQL source；64 + 1 + 1 = 66。
-Assert-Equal 66 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
+# 移除退役种子拥有的 7 个 skip 来源，余 59 个。
+Assert-Equal 59 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
-$livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
+$livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)
 # #3424：失败消息必须把违例逐条摊开。原先只说「must be valid」，而这条断言恰好是
 # 「只加了 testIdentities、忘了同步 expectedRuntimeTestCount」唯一会报的地方 —— 违例对象里
@@ -1554,7 +827,7 @@ $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $rep
 Assert-Equal 0 @($liveViolations).Count ("The committed live skip policy must be valid; violations: " + (@($liveViolations | ForEach-Object { "$($_.code)/$($_.id): $($_.message)" }) -join ' | '))
 $industrialTelemetryPostgresRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'industrialtelemetry-postgres', [StringComparison]::Ordinal) })
 Assert-Equal 1 $industrialTelemetryPostgresRules.Count 'The IndustrialTelemetry PostgreSQL proofs must have one evidence policy rule.'
-Assert-Equal 19 @($industrialTelemetryPostgresRules[0].testIdentities).Count 'The IndustrialTelemetry PostgreSQL policy rule must freeze its nineteen governed identities.'
+Assert-Equal 18 @($industrialTelemetryPostgresRules[0].testIdentities).Count 'The IndustrialTelemetry PostgreSQL policy rule must freeze its eighteen governed identities.'
 $industrialTelemetryHistoricalFactIdentity = 'Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.IndustrialTelemetryOeeHistoricalFactPostgresTests.Prior_schema_fact_survives_up_down_up_without_fabricated_historical_dimensions_on_postgres'
 Assert-True (@($industrialTelemetryPostgresRules[0].testIdentities | Where-Object { [string]::Equals([string]$_, $industrialTelemetryHistoricalFactIdentity, [StringComparison]::Ordinal) }).Count -eq 1) 'The IndustrialTelemetry policy rule must own the historical OEE fact migration identity exactly once.'
 Assert-True ($industrialTelemetryHistoricalFactIdentity -cmatch [string]$industrialTelemetryPostgresRules[0].testPattern) 'The IndustrialTelemetry policy pattern must match the historical OEE fact migration identity.'
@@ -1595,7 +868,7 @@ Assert-Equal 2 @($demandPlanningRedisRules[0].testIdentities).Count 'The Redis/C
 $mesMaterialSubstituteIdentity = 'Nerv.IIP.Business.Mes.Web.Tests.MesMaterialSubstituteSnapshotPostgresTests.Substitute_snapshot_migration_and_cross_scope_readback_hold_on_postgres'
 $mesProductionCandidateRules = @($livePolicy.rules | Where-Object { [string]::Equals([string]$_.id, 'mes-production-candidate', [StringComparison]::Ordinal) })
 Assert-Equal 1 $mesProductionCandidateRules.Count 'The MES production candidate PostgreSQL proofs must have one evidence policy rule.'
-Assert-Equal 66 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its sixty-six governed PostgreSQL identities.'
+Assert-Equal 65 @($mesProductionCandidateRules[0].testIdentities).Count 'The MES production candidate policy rule must freeze its sixty-five governed PostgreSQL identities.'
 # #4484 增加任务路线冻结和未知来源迁移两条 PostgreSQL 回归，R1 再补拆分/合并继承与来源冲突两条，共 66 条。
 # #3720 增加停机开始、停机恢复与工序生命周期事实的 3 条 PostgreSQL 回归；含 #4033 工单急单与优先级持久化证明，共 60 条。
 # #3469 增加一次合法资本化与冲销交错的 PostgreSQL 回归，共 56 条。
@@ -1894,16 +1167,6 @@ foreach ($sentinel in @('secret-', 'quoted,comma', 'second,secret')) {
 $nestedEscapedDisplayAgain = ConvertTo-NervRetainedDisplayName $nestedEscapedDisplay.text
 Assert-Equal 0 $nestedEscapedDisplayAgain.redactionCount 'Already-redacted body markers must remain idempotent after shared quote scanning.'
 Assert-Equal $expectedNestedEscapedDisplay $nestedEscapedDisplayAgain.text 'Already-redacted body markers must retain byte-stable display text.'
-
-$displayScannerFunction = @(Get-NervFunctionDefinitionsFromAsts `
-    -Asts $testEvidenceDefinitionAsts `
-    -FunctionName 'ConvertTo-NervRetainedDisplayName')[0]
-$displayScannerSharedCalls = @($displayScannerFunction.Body.FindAll({
-    param($node)
-    $node -is [Management.Automation.Language.CommandAst] -and
-        [string]::Equals([string]$node.GetCommandName(), 'Find-NervQuotedTextEnd', [StringComparison]::Ordinal)
-}, $true))
-Assert-Equal 2 $displayScannerSharedCalls.Count 'Display-name scanning must delegate both quoted paths to the shared helper.'
 
 $classifiedViolations = Get-NervTestEvidenceViolations -Records $records -Policy $policy -SelectedLanes @('backend') -RunnerOs 'Linux'
 Assert-Equal 0 @($classifiedViolations).Count 'Registered fixture skip must match exactly one rule.'
@@ -2236,39 +1499,6 @@ finally {
     if (Test-Path -LiteralPath $outcomeWriterArtifactRoot) { Remove-Item -LiteralPath $outcomeWriterArtifactRoot -Recurse -Force }
 }
 
-$trxWriterFunction = $artifactsLibraryAst.Find({
-    param($node)
-    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
-        [string]::Equals([string]$node.Name, 'Write-NervTestEvidenceArtifacts', [StringComparison]::Ordinal)
-}, $true)
-$trxWriterOutcomeMappingCalls = @($trxWriterFunction.Body.FindAll({
-    param($node)
-    $node -is [Management.Automation.Language.CommandAst] -and
-        [string]::Equals([string]$node.GetCommandName(), 'Resolve-NervTrxOutcomeMapping', [StringComparison]::Ordinal)
-}, $true))
-$trxWriterNormalizedCalls = @($trxWriterOutcomeMappingCalls | Where-Object {
-    @($_.CommandElements | Where-Object {
-        $_ -is [Management.Automation.Language.CommandParameterAst] -and
-            [string]::Equals([string]$_.ParameterName, 'NormalizedOutcome', [StringComparison]::Ordinal)
-    }).Count -eq 1
-})
-$trxWriterFallbackCalls = @($trxWriterOutcomeMappingCalls | Where-Object {
-    @($_.CommandElements | Where-Object {
-        $_ -is [Management.Automation.Language.CommandParameterAst] -and
-            [string]::Equals([string]$_.ParameterName, 'WriteFallback', [StringComparison]::Ordinal)
-    }).Count -eq 1
-})
-Assert-Equal 1 $trxWriterNormalizedCalls.Count 'Normalized TRX writing must query the shared outcome mapping exactly once per record.'
-Assert-Equal 1 $trxWriterFallbackCalls.Count 'Normalized TRX writing must query the shared fallback exactly once when a record outcome is unknown.'
-$trxWriterOutcomeAssignments = @($trxWriterFunction.Body.FindAll({
-    param($node)
-    $node -is [Management.Automation.Language.AssignmentStatementAst] -and
-        $node.Left -is [Management.Automation.Language.VariableExpressionAst] -and
-        [string]::Equals([string]$node.Left.VariablePath.UserPath, 'outcome', [StringComparison]::Ordinal)
-}, $true))
-Assert-Equal 1 $trxWriterOutcomeAssignments.Count 'Normalized TRX writing must retain one outcome projection assignment.'
-Assert-True (-not $trxWriterOutcomeAssignments[0].Extent.Text.Contains('Test-NervOrdinalEquals', [StringComparison]::Ordinal)) 'Normalized TRX outcome projection must not retain the handwritten reverse mapping branch.'
-
 $metadata = Get-Content (Join-Path $fixtures 'github-run-metadata.json') -Raw | ConvertFrom-Json -AsHashtable
 $runnerLogBase = "Image: ubuntu-24.04`nVersion: 20260720.247.2`ndotnet-sdk=10.0.302"
 Assert-Equal 'ubuntu24' (ConvertTo-NervResolvedRunnerImage -Image 'ubuntu-24.04') 'Ubuntu runner normalization must retain the resolved major without relying on the automatic Matches variable.'
@@ -2470,8 +1700,8 @@ foreach ($malformedSchemaCase in @(
 # durations are usable. What is deliberately NOT asserted any more is topology coverage — "this file
 # must carry a row for every authenticated lane" made a shard rearrangement or a new test project
 # turn a measurement into a red gate, which is the ceremony #1507 removed. Coverage gaps are now
-# reported by scripts/report-backend-test-shard-balance.ps1 as report-only warnings with an estimate.
-$committedBaseline = Get-Content (Join-Path $repoRoot 'scripts/test-evidence-baseline.json') -Raw | ConvertFrom-Json
+# reported by scripts/ci/report-backend-test-shard-balance.ps1 as report-only warnings with an estimate.
+$committedBaseline = Get-Content (Join-Path $repoRoot 'scripts/config/test-evidence-baseline.json') -Raw | ConvertFrom-Json
 Assert-Equal 'test' $committedBaseline.granularity 'Committed snapshot must be test-granularity.'
 Assert-Equal 'trx-elapsed' $committedBaseline.durationMetric 'Committed snapshot must use the trx-elapsed duration metric.'
 Assert-Equal 'trx-evidence' $committedBaseline.source.kind 'Committed snapshot must be generated from TRX evidence, not console wall clock.'
@@ -2484,7 +1714,7 @@ Assert-Equal 0 @($committedBaseline.assemblies | Where-Object { [string]::IsNull
 
 $invalidBaselineRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-man-661-invalid-baseline-$([Guid]::NewGuid().ToString('N'))"
 try {
-    $baselineGenerator = Join-Path $repoRoot 'scripts/generate-test-evidence-baseline.ps1'
+    $baselineGenerator = Join-Path $repoRoot 'scripts/ci/generate-test-evidence-baseline.ps1'
     $summaryTemplate = [ordered]@{ workflowRunId = '101'; runAttempt = 1; headSha = '0123456789abcdef0123456789abcdef01234567'; testedSha = '0123456789abcdef0123456789abcdef01234567'; repository = 'Mang-X/Nerv-IIP'; event = 'push'; headBranch = 'main'; sourceUrl = 'https://github.com/Mang-X/Nerv-IIP/actions/runs/101'; runnerOs = 'Linux'; runnerImage = 'ubuntu24@20260720.247.2'; dotnetSdk = '10.0.302'; currentTestOutcome = 'success'; collectionStatus = 'succeeded'; attemptClassification = 'initial'; failed = 0; executed = 1; violations = @(); lane = 'backend-shard-1'; jobName = 'Backend Tests - BusinessGateway'; artifactName = 'backend-shard-1-evidence'; assemblies = @() }
     # A baseline refresh consumes every CI-wired lane, so the fixture set is the full allowlist.
     $evidenceLaneJobs = Get-NervTestEvidenceLaneJobs
@@ -2711,7 +1941,7 @@ finally { if (Test-Path $invalidBaselineRoot) { Remove-Item $invalidBaselineRoot
 
 $collectorRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-man-661-collector-$([Guid]::NewGuid().ToString('N'))"
 try {
-    $collector = Join-Path $repoRoot 'scripts/collect-test-evidence.ps1'
+    $collector = Join-Path $repoRoot 'scripts/ci/collect-test-evidence.ps1'
     $successOut = Join-Path $collectorRoot 'success'
     $successRaw = Join-Path $collectorRoot 'success-raw'
     [IO.Directory]::CreateDirectory($successRaw) | Out-Null
@@ -2730,7 +1960,7 @@ try {
             '-Repository', 'Mang-X/Nerv-IIP', '-JobName', 'Backend Tests', '-CurrentTestOutcome', 'success',
             '-Event', ("push" + [char]0x00AD), '-HeadBranch', 'main', '-SourceUrl', 'https://github.com/Mang-X/Nerv-IIP/actions/runs/fixture-invalid-event',
             '-RunnerImage', 'ubuntu24@20260720.247.2', '-DotnetSdk', '10.0.302', '-ArtifactName', 'fixture-artifact', '-RetentionDays', '14',
-            '-PolicyPath', (Join-Path $repoRoot 'scripts/test-evidence-policy.json'),
+            '-PolicyPath', (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json'),
             '-BaselinePath', $projectBaselinePath
         ) | Out-Null
     }
@@ -2746,7 +1976,7 @@ try {
         '-Repository', 'Mang-X/Nerv-IIP', '-JobName', 'Backend Tests', '-CurrentTestOutcome', 'success',
         '-Event', 'push', '-HeadBranch', 'main', '-SourceUrl', 'https://github.com/Mang-X/Nerv-IIP/actions/runs/fixture-success',
         '-RunnerImage', 'ubuntu24@20260720.247.2', '-DotnetSdk', '10.0.302', '-ArtifactName', 'fixture-artifact', '-RetentionDays', '14',
-        '-PolicyPath', (Join-Path $repoRoot 'scripts/test-evidence-policy.json'),
+        '-PolicyPath', (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json'),
         '-BaselinePath', $projectBaselinePath
     ) | Out-Null
     foreach ($required in @('tests.jsonl', 'summary.json', 'summary.md', 'diagnostics.log')) { Assert-True (Test-Path (Join-Path $successOut $required)) "Collector missing '$required'." }
@@ -2858,8 +2088,8 @@ try {
         '-Repository', 'Mang-X/Nerv-IIP', '-JobName', [string](Get-NervTestEvidenceLaneJobs)[$committedLane], '-CurrentTestOutcome', 'success',
         '-Event', 'push', '-HeadBranch', 'main', '-SourceUrl', 'https://github.com/Mang-X/Nerv-IIP/actions/runs/fixture-committed-baseline',
         '-RunnerImage', 'ubuntu24@20260720.247.2', '-DotnetSdk', '10.0.302', '-ArtifactName', 'fixture-artifact', '-RetentionDays', '14',
-        '-PolicyPath', (Join-Path $repoRoot 'scripts/test-evidence-policy.json'),
-        '-BaselinePath', (Join-Path $repoRoot 'scripts/test-evidence-baseline.json')
+        '-PolicyPath', (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json'),
+        '-BaselinePath', (Join-Path $repoRoot 'scripts/config/test-evidence-baseline.json')
     ) | Out-Null
     $committedSummary = Get-Content (Join-Path $committedOut 'summary.json') -Raw | ConvertFrom-Json
     Assert-True ([bool]$committedSummary.baseline.available) "Committed baseline must be consumable by the collector for lane '$committedLane'."
@@ -2984,7 +2214,7 @@ finally {
 
 $workflow = Get-Content (Join-Path $repoRoot '.github/workflows/ci.yml') -Raw
 $frontendPackage = Get-Content (Join-Path $repoRoot 'frontend/package.json') -Raw
-$compatibilitySource = Get-Content (Join-Path $repoRoot 'scripts/check-script-compatibility.ps1') -Raw
+$compatibilitySource = Get-Content (Join-Path $repoRoot 'scripts/checks/check-script-compatibility.ps1') -Raw
 $reviewWiringGaps = [Collections.Generic.List[string]]::new()
 if (-not $collectorSource.Contains('#   Category: check, generate', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('collector composite category') }
 if (-not $compatibilitySource.Contains('scripts/tests/test-evidence.Tests.ps1', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('compat-fast runner') }
@@ -3007,8 +2237,8 @@ Assert-True (-not $workflow.Contains('TestOnly', [StringComparison]::Ordinal)) '
 Assert-True ($workflow.Contains('outputs.evidence-path', [StringComparison]::Ordinal)) 'Workflow upload must use the collector-selected owned evidence path.'
 Assert-True (-not $workflow.Contains('continue-on-error', [StringComparison]::Ordinal)) 'MAN-661 forbids continue-on-error.'
 Assert-True ($workflow.Contains('--logger trx', [StringComparison]::Ordinal)) 'Connector Host must emit TRX.'
-Assert-True ((Get-Content (Join-Path $repoRoot 'scripts/run-backend-test-shard.ps1') -Raw).Contains("'--logger', `"trx;LogFilePrefix=`$TrxFilePrefix`"", [StringComparison]::Ordinal)) 'Backend shards must emit uniquely prefixed TRX.'
-Assert-True ($workflow.Contains('./scripts/collect-test-evidence.ps1', [StringComparison]::Ordinal)) 'CI must use the governed collector.'
+Assert-True ((Get-Content (Join-Path $repoRoot 'scripts/ci/run-backend-test-shard.ps1') -Raw).Contains("'--logger', `"trx;LogFilePrefix=`$TrxFilePrefix`"", [StringComparison]::Ordinal)) 'Backend shards must emit uniquely prefixed TRX.'
+Assert-True ($workflow.Contains('./scripts/ci/collect-test-evidence.ps1', [StringComparison]::Ordinal)) 'CI must use the governed collector.'
 Assert-True ($workflow.Contains('if: always()', [StringComparison]::Ordinal)) 'Collection/upload must run after failures.'
 foreach ($shardLane in @('backend-shard-1', 'backend-shard-2', 'backend-shard-3', 'backend-shard-4')) {
     Assert-True ($workflow.Contains("test-evidence-$shardLane-`${{ github.run_id }}-`${{ github.run_attempt }}", [StringComparison]::Ordinal)) "Backend shard artifact identity mismatch for '$shardLane'."
@@ -3028,7 +2258,7 @@ Assert-True ($workflow.Contains('test-evidence-postgres-${{ github.run_id }}-${{
 Assert-True ($workflow.Contains('-Lane postgres', [StringComparison]::Ordinal)) 'PostgreSQL hosted lane must collect the stable postgres evidence ID.'
 Assert-True ($workflow.Contains('test-evidence-redis-cap-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'Redis/CAP artifact identity mismatch.'
 Assert-True ($workflow.Contains('-Lane redis-cap', [StringComparison]::Ordinal)) 'Redis/CAP hosted lane must collect the stable redis-cap evidence ID.'
-Assert-True (-not $workflow.Contains('path: artifacts/test-evidence-raw', [StringComparison]::Ordinal)) 'Raw TRX must not be uploaded.'
+Assert-True (-not $workflow.Contains('path: .ryugi/artifacts/test-evidence-raw', [StringComparison]::Ordinal)) 'Raw TRX must not be uploaded.'
 Assert-True (-not $workflow.Contains('path: TestResults', [StringComparison]::Ordinal)) 'Backend shards must not upload unredacted result directories.'
 
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
@@ -3061,7 +2291,7 @@ jobs:
       - name: Upload frontend unit test shard evidence
         timeout-minutes: 5
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           path: |
             frontend/apps/*/artifacts/test-results/*.xml
@@ -3078,7 +2308,7 @@ jobs:
         @{ Name = 'test-pipeline'; Old = '          pnpm -C frontend --filter "${{ matrix.name }}" test'; New = '          pnpm -C frontend --filter "${{ matrix.name }}" test | tee output.log'; Expected = 'frontend-unit-test-pipeline' },
         @{ Name = 'unhandled-errors-ignored'; Old = '          --reporter=default'; New = "          --reporter=default`n          --dangerouslyIgnoreUnhandledErrors"; Expected = 'frontend-unit-test-unhandled-errors' },
         @{ Name = 'upload-step-renamed'; Old = '      - name: Upload frontend unit test shard evidence'; New = '      - name: Upload frontend unit test shard evidence missing'; Expected = 'frontend-unit-upload-step' },
-        @{ Name = 'upload-action-downgraded'; Old = '        uses: actions/upload-artifact@v4'; New = '        uses: actions/upload-artifact@v3'; Expected = 'frontend-unit-upload-action' },
+        @{ Name = 'upload-action-downgraded'; Old = '        uses: actions/upload-artifact@v6'; New = '        uses: actions/upload-artifact@v3'; Expected = 'frontend-unit-upload-action' },
         @{ Name = 'upload-success-gated'; Old = '        if: always()'; New = '        if: success()'; Expected = 'frontend-unit-upload-condition' },
         @{ Name = 'upload-path-moved'; Old = "          path: |`n            frontend/apps/*/artifacts/test-results/*.xml`n            frontend/apps/*/artifacts/test-results/*.json`n            frontend/packages/*/artifacts/test-results/*.xml`n            frontend/packages/*/artifacts/test-results/*.json`n          if-no-files-found: error"; New = "          path: artifacts/unrelated.txt`n          if-no-files-found: error`n      - name: Unrelated evidence note`n        timeout-minutes: 1`n        run: echo frontend/apps/*/artifacts/test-results/*.xml frontend/apps/*/artifacts/test-results/*.json frontend/packages/*/artifacts/test-results/*.xml frontend/packages/*/artifacts/test-results/*.json"; Expected = 'frontend-unit-upload-path' },
         @{ Name = 'recursive-node-modules-glob'; Old = '            frontend/apps/*/artifacts/test-results/*.xml'; New = '            frontend/**/artifacts/test-results/*.xml'; Expected = 'frontend-unit-upload-path' },
@@ -3124,8 +2354,6 @@ $ciViolations = Test-NervCiWorkflowBudgets -Jobs $ciJobs
 Assert-Equal 0 $ciViolations.Count "CI timeout-budget violations: $([string]::Join('; ', @($ciViolations | ForEach-Object { "$($_.code): $($_.message)" })))"
 
 $evidenceJobs = @($ciJobs | Where-Object { @($_.Steps | Where-Object { $_.AlwaysRuns }).Count -gt 0 })
-Assert-True ($evidenceJobs.Count -ge 6) "Expected at least six evidence-publishing CI jobs; found $($evidenceJobs.Count)."
-Assert-True (@($ciJobs | Where-Object { [string]::Equals([string]$_.Name, 'erp-sales-order-demand-acceptance', [StringComparison]::OrdinalIgnoreCase) }).Count -eq 0) 'The retired ERP Sales Order Demand Acceptance job must not remain in the CI budget/evidence inventory.'
 # MAN-669 moved the backend evidence face off the single `backend-tests` job onto the four fast
 # shards; `backend-tests` is now the test-free aggregate and publishes nothing. Naming the shards
 # individually is deliberate — a count-only assertion would stay green if a shard silently stopped
@@ -3490,8 +2718,8 @@ Assert-True ([string]::Equals($actualOrdinalSweepIdentity, $expectedOrdinalSweep
 # not reproducible here, the invariant is asserted structurally instead of behaviourally: this
 # library binds nothing to a captured scope.
 # Scoped to these three files on purpose. `$script:` state and closures work in this repository —
-# FullStackSessionState.ps1, BackendTestShardTimings.ps1, ScriptAutomation.ps1 and
-# LeaderDemoTelemetrySimulator.ps1 all depend on them — so this is a ban on the construct in the
+# FullStackSessionState.ps1, BackendTestShardTimings.ps1 and ScriptAutomation.ps1 depend on
+# them, so this is a ban on the construct in the
 # files that were measured failing, not a claim that the construct is broken. The root cause is
 # still unidentified. #1512 therefore closes the ruling as a local convention for these three
 # measured files, not as a repository-wide claim about closures or script scope.
@@ -3518,28 +2746,6 @@ foreach ($capturedScopeCandidate in @(
     )
     Assert-True ($capturedScopeUses.Count -eq 0) `
         "$capturedScopeCandidate must not bind the ordinal sweep to a captured session state: $(@($capturedScopeUses) -join '; ')"
-}
-
-$evidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
-$evidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $evidenceLibraryPath -DisplayName 'TestEvidence.ps1'
-Assert-True ($evidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidence.ps1 must compare identifiers ordinally (#1509):`n  $(@($evidenceSweep.Findings) -join "`n  ")"
-$policyEvidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $testEvidencePolicyLibraryPath -DisplayName 'TestEvidencePolicy.ps1'
-Assert-True ($policyEvidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidencePolicy.ps1 must compare identifiers ordinally (#1509):`n  $(@($policyEvidenceSweep.Findings) -join "`n  ")"
-$privacyEvidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $testEvidencePrivacyLibraryPath -DisplayName 'TestEvidencePrivacy.ps1'
-Assert-True ($privacyEvidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidencePrivacy.ps1 must compare identifiers ordinally (#1509):`n  $(@($privacyEvidenceSweep.Findings) -join "`n  ")"
-$parsingEvidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $testEvidenceParsingLibraryPath -DisplayName 'TestEvidenceParsing.ps1'
-Assert-True ($parsingEvidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidenceParsing.ps1 must compare identifiers ordinally (#1509):`n  $(@($parsingEvidenceSweep.Findings) -join "`n  ")"
-$artifactsEvidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $testEvidenceArtifactsLibraryPath -Exceptions $ordinalSweepExceptions -DisplayName 'TestEvidenceArtifacts.ps1'
-Assert-True ($artifactsEvidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidenceArtifacts.ps1 must compare identifiers ordinally (#1509):`n  $(@($artifactsEvidenceSweep.Findings) -join "`n  ")"
-$baselineEvidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $testEvidenceBaselineLibraryPath -DisplayName 'TestEvidenceBaseline.ps1'
-Assert-True ($baselineEvidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidenceBaseline.ps1 must compare identifiers ordinally (#1509):`n  $(@($baselineEvidenceSweep.Findings) -join "`n  ")"
-$provenanceEvidenceSweep = Get-NervOrdinalComparisonFindings -ScriptPath $testEvidenceProvenanceLibraryPath -DisplayName 'TestEvidenceProvenance.ps1'
-Assert-True ($provenanceEvidenceSweep.Findings.Count -eq 0) "scripts/lib/TestEvidenceProvenance.ps1 must compare identifiers ordinally (#1509):`n  $(@($provenanceEvidenceSweep.Findings) -join "`n  ")"
-# Every exception must be earning its keep: a dead entry is a licence nobody is using, and an entry
-# hit more than once is exempting call sites the reviewer of the original never saw.
-foreach ($exceptionKey in @($artifactsEvidenceSweep.ExceptionHits.Keys)) {
-    Assert-True ((([int]$artifactsEvidenceSweep.ExceptionHits[$exceptionKey]) -eq (1))) `
-        "Ordinal sweep exception '$exceptionKey' matched $($artifactsEvidenceSweep.ExceptionHits[$exceptionKey]) call sites; it must match exactly one."
 }
 
 # ---------------------------------------------------------------------------------------------

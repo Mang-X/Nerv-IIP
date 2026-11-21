@@ -15,8 +15,7 @@ namespace Nerv.IIP.Business.MasterData.Web.Application.Seed;
 /// <summary>
 /// MasterData 产品基线种子：编码规则、受控字典、计量单位与换算、班次、工作日历、部门这些
 /// 基础功能必需的开箱数据（#3811）。默认随 Web 启动执行，只补缺：已存在的行（含租户改过、
-/// 停用过的）一律不改、不停用。演示用的员工、班组、技能、产品分类与工厂自定义字典样例归
-/// <see cref="LeaderDemoSeedService"/>。
+/// 停用过的）一律不改、不停用。员工、班组、技能、产品分类与工厂自定义字典由租户维护。
 /// </summary>
 public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
 {
@@ -113,7 +112,7 @@ public sealed class MasterDataSeedService(ApplicationDbContext dbContext)
                 DateTimeOffset.UtcNow));
         }
 
-        // 工厂自定义码集（skill/operation/quality-reason）的具体值是演示样例，归 LeaderDemo 种子。
+        // 工厂自定义码集（skill/operation/quality-reason）的具体值由租户维护。
         foreach (var item in MasterDataDictionaryRules.StandardReferenceData
             .Where(x => x.Kind != ReferenceDataCodeSetKind.FactoryCustom))
         {

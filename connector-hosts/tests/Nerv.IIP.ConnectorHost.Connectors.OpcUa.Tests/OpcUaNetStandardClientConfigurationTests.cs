@@ -1,24 +1,29 @@
-using System.Reflection;
 using Opc.Ua;
+using Opc.Ua.Client;
 
 namespace Nerv.IIP.ConnectorHost.Connectors.OpcUa.Tests;
 
 public sealed class OpcUaNetStandardClientConfigurationTests
 {
-    [Fact]
-    public void Service_operation_timeout_uses_the_full_detection_budget()
+    [Theory]
+    [InlineData(null, 4_000)]
+    [InlineData(2, 2_000)]
+    public async Task Connect_passes_the_detection_budget_to_the_sdk_session(int? budgetSeconds, int expectedMilliseconds)
     {
+        var sessionNotOpened = new InvalidOperationException("Test stopped at the SDK session boundary.");
+        var options = new OpcUaConnectionOptions("opc.tcp://localhost:4840", "None", "None", null, false);
         using var client = new OpcUaNetStandardClient(
             new EnvironmentOpcUaCredentialResolver(),
-            TimeSpan.FromSeconds(4));
-        var method = typeof(OpcUaNetStandardClient).GetMethod(
-            "CreateApplicationConfiguration",
-            BindingFlags.Instance | BindingFlags.NonPublic);
+            budgetSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
+            (configuration, _, _) =>
+            {
+                Assert.Equal(expectedMilliseconds, EndpointConfiguration.Create(configuration).OperationTimeout);
+                return Task.FromException<Session>(sessionNotOpened);
+            });
 
-        var configuration = Assert.IsType<ApplicationConfiguration>(method!.Invoke(
-            client,
-            [new OpcUaConnectionOptions("opc.tcp://localhost:4840", "None", "None", null, false)]));
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            client.ConnectAsync(options, CancellationToken.None));
 
-        Assert.Equal(4_000, configuration.TransportQuotas.OperationTimeout);
+        Assert.Same(sessionNotOpened, failure);
     }
 }

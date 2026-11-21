@@ -31,11 +31,11 @@ it('downloads the complete owner CSV bytes for the selected plan and current bus
     },
   )
   let filename = ''
-  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(
-    function (this: HTMLAnchorElement) {
-      filename = this.download
-    },
-  )
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    filename = this.download
+  })
   const csv = useSchedulingPlanCsv()
   await csv.download({ planId: 'PLAN-01', organizationId: 'org-a', environmentId: 'production' })
   expect(request?.url).toBe(

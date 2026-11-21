@@ -15,15 +15,19 @@ import {
   listBusinessConsoleMaintenanceWorkOrders,
   queryBusinessConsoleMaintenanceAssetReliability,
   queryBusinessConsoleTelemetryOee,
+  type EquipmentRuntimeAvailabilityWindow,
   type BusinessConsoleMaintenanceInspectionItem,
   type BusinessConsoleMaintenancePlanItem,
   type BusinessConsoleMaintenanceWorkOrderItem,
   type BusinessConsoleTelemetryAlarmEventItem,
 } from '@nerv-iip/api-client'
+import { deviceWorkCenter } from './deviceScope'
+import { accessError, NoWorkScope } from './readError'
+import { coveredDevices, deviceIdBatches } from './deviceBatches'
+import { readRows, readScreenPayload } from './response'
 import type {
   DeviceCell,
   DeviceDetail,
-  DeviceParamsTick,
   DeviceState,
   EquipmentOverview,
   InspectionRow,
@@ -63,6 +67,7 @@ const PRODUCTIVE = new Set([
   '加工',
   '生产中',
 ])
+const CHANGEOVER = new Set(['changeover', 'setup', '换型', '换模'])
 const LOADING = new Set([
   'available',
   'idle',
@@ -131,8 +136,8 @@ function mapState(
   if (activeAlarmCount > 0) return { state: 'alarm', planned: false, unknown: false }
   const n = normalizeState(currentState)
   if (PRODUCTIVE.has(n)) return { state: 'run', planned: false, unknown: false }
-  if (LOADING.has(n)) return { state: 'idle', planned: false, unknown: false }
-  if (PLANNED_DOWN.has(n)) return { state: 'idle', planned: true, unknown: false }
+  if (LOADING.has(n) || CHANGEOVER.has(n)) return { state: 'idle', planned: false, unknown: false }
+  if (PLANNED_DOWN.has(n)) return { state: 'down', planned: true, unknown: false }
   if (UNAVAILABLE.has(n)) return { state: 'down', planned: false, unknown: false }
   return { state: 'idle', planned: false, unknown: true }
 }
@@ -282,6 +287,20 @@ function inspectionRow(
   }
 }
 
+function blockReasons(activeBlocks: readonly EquipmentRuntimeAvailabilityWindow[]) {
+  const blockByDevice = new Map<string, string>()
+  for (const b of [...activeBlocks].sort(
+    (x, y) =>
+      (BLOCK_SEVERITY_RANK[x.severity ?? 'info'] ?? 9) -
+      (BLOCK_SEVERITY_RANK[y.severity ?? 'info'] ?? 9),
+  )) {
+    const id = b.deviceAssetId
+    if (!id || blockByDevice.has(id)) continue
+    blockByDevice.set(id, REASON_LABELS[b.reasonCode ?? ''] ?? b.reasonCode ?? '受限')
+  }
+  return blockByDevice
+}
+
 function deviceCellOf(
   roster: DeviceRoster,
   deviceAssetId: string,
@@ -305,7 +324,7 @@ function deviceCellOf(
     workshopId: entry?.workshopCode ?? '',
     workshopName: entry?.workshopName ?? '—',
     state,
-    stateLabel: STATE_LABELS[state],
+    stateLabel: screenDeviceLabel(currentState, isSourceFresh, activeAlarmCount),
     block,
     sourceFresh: isSourceFresh,
     // 格上实时参数走 historian（#570/#689），真实模式诚实留空。
@@ -313,49 +332,108 @@ function deviceCellOf(
   }
 }
 
-/** 全景取数：设备清单+状态、活动报警(#686)、维修/PM/点检、聚合可靠性。 */
-export async function fetchRealEquipmentOverview(factoryId = 'F01'): Promise<EquipmentOverview> {
+async function optional<T>(
+  failures: Record<string, string>,
+  label: string,
+  request: Promise<{ data?: { success?: boolean; data?: T | null } | null }>,
+) {
+  try {
+    return readScreenPayload(await request)
+  } catch (error) {
+    failures[label] = accessError(error) ?? '读取失败'
+  }
+}
+async function readList<T>(
+  failures: Record<string, string>,
+  label: string,
+  request: Promise<{
+    data?: { success?: boolean; data?: { items?: T[]; total?: number } | null } | null
+  }>,
+) {
+  try {
+    const page = readScreenPayload(await request)
+    return { items: readRows(page.items), total: page.total }
+  } catch (error) {
+    failures[label] = accessError(error) ?? '读取失败'
+    return { items: [], total: undefined }
+  }
+}
+
+export async function readEquipmentOverview(
+  factoryId: string,
+  workCenterCode?: string,
+): Promise<EquipmentOverview> {
   if (!hasScreenSession()) {
     throw new Error('大屏会话上下文未就绪（organizationId/environmentId 为空）')
   }
   const nowMs = Date.now()
   const { organizationId, environmentId } = getScreenSession()
-  const roster = await resolveDeviceRoster(nowMs)
+  const roster = await resolveDeviceRoster(nowMs, true, workCenterCode)
   const contextQuery = { organizationId, environmentId }
   const listQuery = { organizationId, environmentId, skip: 0, take: 100 }
 
+  const failures: Record<string, string> = {}
   const [overviewRes, alarmsRes, woRes, planRes, inspRes] = await Promise.all([
-    roster.ids.length > 0
-      ? getBusinessConsoleEquipmentOverview({
-          throwOnError: true,
-          query: { ...contextQuery, deviceAssetIds: roster.ids.join(',') },
-        })
-      : Promise.resolve(null),
-    listBusinessConsoleEquipmentAlarms({ throwOnError: true, query: contextQuery }),
-    listBusinessConsoleMaintenanceWorkOrders({ throwOnError: true, query: listQuery }),
-    listBusinessConsoleMaintenancePlans({ throwOnError: true, query: listQuery }),
-    listBusinessConsoleMaintenanceInspections({ throwOnError: true, query: listQuery }),
+    Promise.all(
+      deviceIdBatches(roster.ids).map(async (deviceAssetIds) => {
+        const page = readScreenPayload(
+          await getBusinessConsoleEquipmentOverview({
+            signal: AbortSignal.timeout(12000),
+            throwOnError: true,
+            query: { ...contextQuery, deviceAssetIds },
+          }),
+        )
+        return { ...page, devices: coveredDevices(deviceAssetIds, readRows(page.devices)) }
+      }),
+    ),
+    readList(
+      failures,
+      '报警',
+      listBusinessConsoleEquipmentAlarms({
+        signal: AbortSignal.timeout(12000),
+        throwOnError: true,
+        query: contextQuery,
+      }),
+    ),
+    readList(
+      failures,
+      '维修',
+      listBusinessConsoleMaintenanceWorkOrders({
+        signal: AbortSignal.timeout(12000),
+        throwOnError: true,
+        query: listQuery,
+      }),
+    ),
+    readList(
+      failures,
+      '保养',
+      listBusinessConsoleMaintenancePlans({
+        signal: AbortSignal.timeout(12000),
+        throwOnError: true,
+        query: listQuery,
+      }),
+    ),
+    readList(
+      failures,
+      '点检',
+      listBusinessConsoleMaintenanceInspections({
+        signal: AbortSignal.timeout(12000),
+        throwOnError: true,
+        query: listQuery,
+      }),
+    ),
   ])
 
-  const summaries = overviewRes?.data?.data?.devices ?? []
-  const activeBlocks = overviewRes?.data?.data?.activeBlocks ?? []
-  const alarmItems = alarmsRes?.data?.data?.items ?? []
-  const woItems = woRes?.data?.data?.items ?? []
-  const planItems = planRes?.data?.data?.items ?? []
-  const inspItems = inspRes?.data?.data?.items ?? []
+  const summaries = overviewRes.flatMap((page) => readRows(page.devices))
+  const activeBlocks = overviewRes.flatMap((page) => page.activeBlocks ?? [])
+  const inScope = (id: string | null | undefined) =>
+    !workCenterCode || (!!id && roster.byId.has(id))
+  const alarmItems = alarmsRes.items.filter((item) => inScope(item.deviceAssetId))
+  const woItems = woRes.items.filter((item) => inScope(item.deviceAssetId))
+  const planItems = planRes.items.filter((item) => inScope(item.deviceAssetId))
+  const inspItems = inspRes.items
 
-  // 每设备取最高严重度的活动阻塞作 block 文案。
-  const blockByDevice = new Map<string, string>()
-  for (const b of [...activeBlocks].sort(
-    (x, y) =>
-      (BLOCK_SEVERITY_RANK[x.severity ?? 'info'] ?? 9) -
-      (BLOCK_SEVERITY_RANK[y.severity ?? 'info'] ?? 9),
-  )) {
-    const id = b.deviceAssetId
-    if (!id || blockByDevice.has(id)) continue
-    blockByDevice.set(id, REASON_LABELS[b.reasonCode ?? ''] ?? b.reasonCode ?? '受限')
-  }
-
+  const blockByDevice = blockReasons(activeBlocks)
   const devices: DeviceCell[] = summaries.map((d) =>
     deviceCellOf(
       roster,
@@ -391,9 +469,14 @@ export async function fetchRealEquipmentOverview(factoryId = 'F01'): Promise<Equ
     if (p.planId && p.deviceAssetId) deviceByPlan.set(p.planId, p.deviceAssetId)
 
   const pmTasks: PmTask[] = planItems.map((p) => pmRow(p, roster))
-  const inspections: InspectionRow[] = inspItems.map((i) =>
-    inspectionRow(i, roster, deviceByWorkOrder, deviceByPlan),
-  )
+  const inspections: InspectionRow[] = inspItems
+    .filter(
+      (item) =>
+        !workCenterCode ||
+        (!!item.workOrderId && deviceByWorkOrder.has(item.workOrderId)) ||
+        (!!item.planId && deviceByPlan.has(item.planId)),
+    )
+    .map((i) => inspectionRow(i, roster, deviceByWorkOrder, deviceByPlan))
 
   // 聚合可靠性：运行设备占比仅作瞬时运行画像，不冒充 OEE 可用率；
   // 聚合 MTBF/MTTR 无单一端点 → null（单机值见设备详情）；故障=报警+停机台数，修复=进行中维修单数。
@@ -406,77 +489,137 @@ export async function fetchRealEquipmentOverview(factoryId = 'F01'): Promise<Equ
     repairs: repairs.filter((r) => r.stage !== '已关闭').length,
   }
 
-  return { factoryId, counts, devices, alarms, repairs, reliability, pmTasks, inspections }
-}
-
-/** 参数快刷：真实模式无 historian（#570/#689），不产出演示参数流。 */
-export async function fetchRealDeviceParamsTick(): Promise<DeviceParamsTick> {
-  return {}
+  const pages = [alarmsRes, woRes, planRes, inspRes]
+  const partialEvents = pages.some(
+    (page) => page.total !== undefined && page.total > (page.items?.length ?? 0),
+  )
+  return {
+    factoryId,
+    workCenterCode,
+    rosterTotal: roster.total,
+    coverageNotes: roster.coverageNotes,
+    partialEvents,
+    failures,
+    counts,
+    devices,
+    alarms,
+    repairs,
+    reliability,
+    pmTasks,
+    inspections,
+  }
 }
 
 /** 设备详情：单设备状态+新鲜度、单机 MTBF/MTTR（真实 reliability 端点）、该设备维修/PM/点检。 */
-export async function fetchRealDeviceDetail(deviceId: string): Promise<DeviceDetail | null> {
+export async function fetchRealDeviceDetail(
+  deviceId: string,
+  requestedCenter?: string,
+): Promise<DeviceDetail | null> {
   if (!hasScreenSession()) {
     throw new Error('大屏会话上下文未就绪（organizationId/environmentId 为空）')
   }
   const nowMs = Date.now()
   const { organizationId, environmentId } = getScreenSession()
-  const roster = await resolveDeviceRoster(nowMs)
+  const workCenterCode = await deviceWorkCenter({ organizationId, environmentId }, requestedCenter)
+  const roster = await resolveDeviceRoster(nowMs, !!workCenterCode, workCenterCode)
+  if (workCenterCode && !roster.byId.has(deviceId))
+    throw new NoWorkScope('设备已移出当前工作中心范围')
   const contextQuery = { organizationId, environmentId }
   const listQuery = { organizationId, environmentId, skip: 0, take: 100 }
   const windowEndUtc = new Date(nowMs).toISOString()
   const windowStartUtc = new Date(nowMs - 30 * 24 * 60 * 60_000).toISOString()
 
-  const [devRes, relRes, woRes, planRes, inspRes, oeeRes] = await Promise.all([
+  const failures: Record<string, string> = {}
+  const [devRes, reliability, woRes, planRes, inspRes, oee] = await Promise.all([
     getBusinessConsoleEquipmentDevice({
+      signal: AbortSignal.timeout(12000),
       throwOnError: true,
       path: { deviceAssetId: deviceId },
       query: contextQuery,
     }),
-    queryBusinessConsoleMaintenanceAssetReliability({
-      throwOnError: true,
-      path: { deviceAssetId: deviceId },
-      query: { ...contextQuery, windowStartUtc, windowEndUtc },
-    }),
-    listBusinessConsoleMaintenanceWorkOrders({ throwOnError: true, query: listQuery }),
-    listBusinessConsoleMaintenancePlans({ throwOnError: true, query: listQuery }),
-    listBusinessConsoleMaintenanceInspections({ throwOnError: true, query: listQuery }),
-    queryBusinessConsoleTelemetryOee({
-      throwOnError: true,
-      query: { ...contextQuery, deviceAssetId: deviceId, windowStartUtc, windowEndUtc },
-    }),
+    optional(
+      failures,
+      '可靠性',
+      queryBusinessConsoleMaintenanceAssetReliability({
+        signal: AbortSignal.timeout(12000),
+        throwOnError: true,
+        path: { deviceAssetId: deviceId },
+        query: { ...contextQuery, windowStartUtc, windowEndUtc },
+      }),
+    ),
+    readList(
+      failures,
+      '维修',
+      listBusinessConsoleMaintenanceWorkOrders({
+        signal: AbortSignal.timeout(12000),
+        throwOnError: true,
+        query: { ...listQuery, deviceAssetId: deviceId },
+      }),
+    ),
+    readList(
+      failures,
+      '保养',
+      listBusinessConsoleMaintenancePlans({
+        signal: AbortSignal.timeout(12000),
+        throwOnError: true,
+        query: { ...listQuery, deviceAssetId: deviceId },
+      }),
+    ),
+    readList(
+      failures,
+      '点检',
+      listBusinessConsoleMaintenanceInspections({
+        signal: AbortSignal.timeout(12000),
+        throwOnError: true,
+        query: listQuery,
+      }),
+    ),
+    optional(
+      failures,
+      'OEE',
+      queryBusinessConsoleTelemetryOee({
+        signal: AbortSignal.timeout(12000),
+        throwOnError: true,
+        query: { ...contextQuery, deviceAssetId: deviceId, windowStartUtc, windowEndUtc },
+      }),
+    ),
   ])
 
-  const detail = devRes?.data
-  if (!detail?.success) return null
-  const currentState = detail.data?.currentState
+  const { currentState, availability } = readScreenPayload(devRes)
+  if (!currentState || currentState.deviceAssetId !== deviceId)
+    throw new Error('设备状态响应不完整')
   const device = deviceCellOf(
     roster,
     deviceId,
     currentState?.currentState,
     currentState?.isSourceFresh ?? false,
     currentState?.activeAlarms?.length ?? 0,
-    new Map(),
+    blockReasons(
+      (availability?.items ?? []).filter((item) => item.availabilityStatus !== 'available'),
+    ),
   )
 
-  const woItems = (woRes?.data?.data?.items ?? []).filter((w) => w.deviceAssetId === deviceId)
-  const planItems = (planRes?.data?.data?.items ?? []).filter((p) => p.deviceAssetId === deviceId)
+  const woItems = woRes.items.filter((w) => w.deviceAssetId === deviceId)
+  const planItems = planRes.items.filter((p) => p.deviceAssetId === deviceId)
 
   const deviceByWorkOrder = new Map<string, string>()
   for (const w of woItems) if (w.workOrderId) deviceByWorkOrder.set(w.workOrderId, deviceId)
   const deviceByPlan = new Map<string, string>()
   for (const p of planItems) if (p.planId) deviceByPlan.set(p.planId, deviceId)
-  const inspItems = (inspRes?.data?.data?.items ?? []).filter(
+  const inspItems = inspRes.items.filter(
     (i) =>
       (i.workOrderId && deviceByWorkOrder.has(i.workOrderId)) ||
       (i.planId && deviceByPlan.has(i.planId)),
   )
 
-  const reliability = relRes?.data?.data
-  const oee = oeeRes?.data?.data
+  const partialRecords = [woRes, planRes, inspRes].some(
+    (page) => page.total !== undefined && page.total > (page.items?.length ?? 0),
+  )
   const entry = roster.byId.get(deviceId)
   return {
     device,
+    failures,
+    partialRecords,
     workCenterName: entry?.workCenterCode || '—',
     // facade 不返回设备负责人 → 诚实「—」。
     managerName: '—',
@@ -495,4 +638,19 @@ export async function fetchRealDeviceDetail(deviceId: string): Promise<DeviceDet
       degradedReasons: oee?.degradedReasons ?? ['oee-facts-unavailable'],
     },
   }
+}
+
+export function screenDeviceLabel(
+  state: string | null | undefined,
+  fresh: boolean,
+  alarms: number,
+) {
+  const mapped = mapState(state, fresh, alarms)
+  if (mapped.unknown) return '状态未知'
+  if (mapped.state === 'idle' && CHANGEOVER.has(normalizeState(state))) return '换型'
+  return STATE_LABELS[mapped.state]
+}
+
+export function isRunningDevice(state: string | null | undefined, fresh: boolean, alarms: number) {
+  return mapState(state, fresh, alarms).state === 'run'
 }

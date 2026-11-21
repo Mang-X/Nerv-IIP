@@ -60,7 +60,7 @@
 
 OpenAPI 导出必须尽量与开发机 NuGet 缓存无关。Gateway 的 Swagger/NJsonSchema 配置保持 `ResolveExternalXmlDocumentation = false`，禁止从 NuGet 全局缓存或 SDK 目录探测外部 XML 文档并把机器差异写入 schema description；仓库项目随构建输出的 XML 文档不受此规则禁止。
 
-`scripts/export-gateway-openapi.ps1` 在构建/导出路径固定 `NUGET_XMLDOC_MODE=skip`，与 CI 还原行为对齐，避免导出流程继续污染或依赖本机 NuGet XML 缓存。该环境变量是辅助一致性措施，不能替代上面的 Swagger 配置；发现 snapshot 漂移时不得通过删除本机单个 XML 文件、改变 `NUGET_PACKAGES` 或手工改 snapshot 规避。
+`scripts/api/export-gateway-openapi.ps1` 在构建/导出路径固定 `NUGET_XMLDOC_MODE=skip`，与 CI 还原行为对齐，避免导出流程继续污染或依赖本机 NuGet XML 缓存。该环境变量是辅助一致性措施，不能替代上面的 Swagger 配置；发现 snapshot 漂移时不得通过删除本机单个 XML 文件、改变 `NUGET_PACKAGES` 或手工改 snapshot 规避。
 
 ## 变更完成定义
 

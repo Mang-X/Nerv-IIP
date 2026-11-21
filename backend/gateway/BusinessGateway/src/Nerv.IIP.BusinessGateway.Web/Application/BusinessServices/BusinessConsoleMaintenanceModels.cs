@@ -1,3 +1,6 @@
+using System.Text.Json.Serialization;
+using Nerv.IIP.Messaging.CAP;
+
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
 public sealed record BusinessConsoleMaintenanceContextRequest(
@@ -35,6 +38,7 @@ public sealed record BusinessConsoleMaintenanceWorkOrderListRequest(
     string? WorkOrderId = null,
     string[]? DeviceAssetReferences = null);
 
+[JsonConverter(typeof(CamelCaseJsonStringEnumConverter<BusinessConsoleMaintenanceWorkOrderAction>))]
 public enum BusinessConsoleMaintenanceWorkOrderAction
 {
     Accept = 0,

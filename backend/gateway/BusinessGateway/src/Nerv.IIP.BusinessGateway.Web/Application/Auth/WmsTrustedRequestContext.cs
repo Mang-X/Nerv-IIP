@@ -69,7 +69,7 @@ public sealed record WmsTrustedRequestContext(
     }
 
     private static BusinessServiceProxyException Forbidden() =>
-        new(HttpStatusCode.Forbidden, "work-scope-not-authorized");
+        BusinessServiceProxyException.FromLocalRejection(HttpStatusCode.Forbidden, PrincipalWorkScopeStableWireCodes.NotAuthorized);
 }
 
 public sealed class WmsTrustedRequestContextResolver(

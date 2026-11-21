@@ -104,7 +104,13 @@ const WS_TREND_RANGES = [
   { label: '近 30 天', value: '30d' },
 ]
 // 分线曲线色：报警红 / 关注黄（语义直读），正常线冷色轮换
-const LINE_TREND_COLORS = ['#4aa6ee', '#45d089', '#8b9be6', '#5fb8c9', '#b48be6']
+const LINE_TREND_COLORS = [
+  'var(--nv-scr-cyan)',
+  'var(--nv-scr-green)',
+  'var(--nv-scr-indigo)',
+  'var(--nv-scr-workshop-series-teal)',
+  'var(--nv-scr-workshop-series-violet)',
+]
 const trendData = computed(() => {
   const b = board.value
   if (!b) return null
@@ -132,9 +138,9 @@ const trendData = computed(() => {
       label: l.name,
       color:
         l.state === 'alarm'
-          ? '#ef5a63'
+          ? 'var(--nv-scr-red)'
           : l.state === 'attention'
-            ? '#f0ad4e'
+            ? 'var(--nv-scr-chart-attention)'
             : LINE_TREND_COLORS[i % LINE_TREND_COLORS.length],
       data: l.data,
     })),
@@ -218,9 +224,7 @@ const devSummary = computed(() => {
             </div>
             <div class="wb-cell">
               <dt><Recycle :size="17" class="wb-cell-ic" />报废 / 返修</dt>
-              <dd>
-                {{ board.quality.scrap }}<small>/ {{ board.quality.rework }} 件</small>
-              </dd>
+              <dd>{{ board.quality.scrap }}<small>/ {{ board.quality.rework }} 件</small></dd>
             </div>
             <div class="wb-cell">
               <dt><OctagonAlert :size="17" class="wb-cell-ic" />当班停机</dt>
@@ -793,6 +797,9 @@ const devSummary = computed(() => {
     min-width: 0;
   }
   .wb-trend {
+    --nv-scr-workshop-series-teal: #5fb8c9;
+    --nv-scr-workshop-series-violet: #b48be6;
+
     min-height: 0;
   }
 

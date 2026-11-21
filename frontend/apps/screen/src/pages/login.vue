@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { useNow } from '@vueuse/core'
+import { screenLoginTarget } from '@/router'
+import { ConsoleAuthError } from '@/api/auth'
+import { useScreenClock } from '../composables/useScreenClock'
 import { Lock, User } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -10,14 +12,14 @@ import { useRealAuthStore } from '@/stores/realAuth'
 
 const router = useRouter()
 const route = useRoute()
-const auth = useAuthStore()
+const demoAuth = IS_REAL_DATA ? undefined : useAuthStore()
 const account = ref('')
 const password = ref('')
 const loading = ref(false)
 const errorMsg = ref('')
 
 // 秒级展示：固定 1s 间隔，避免默认 rAF 每帧触发重算
-const now = useNow({ interval: 1000 })
+const now = useScreenClock()
 function pad(n: number) {
   return String(n).padStart(2, '0')
 }
@@ -55,13 +57,6 @@ const particles = [
   { x: 74, y: 8, s: 5, tone: 'amber', dur: 14, d: 7.2, dy: -12 },
 ]
 
-function redirectTarget(): string {
-  const redirect = route.query.redirect
-  return typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')
-    ? redirect
-    : '/'
-}
-
 async function onSubmit() {
   if (loading.value) return
   loading.value = true
@@ -69,16 +64,22 @@ async function onSubmit() {
   try {
     if (IS_REAL_DATA) {
       // 真实登录：@nerv-iip/auth 会话，token 由 api-client 拦截器自动注入。
-      await useRealAuthStore().login(account.value, password.value)
-      await router.push(redirectTarget())
+      const auth = useRealAuthStore()
+      await auth.login(account.value, password.value)
+      await router.push(screenLoginTarget(route.query.redirect, auth.principal?.permissionCodes))
     } else {
       // mock：本地登录后进入大屏（演示模式，任意账号密码）。
       await new Promise((resolve) => setTimeout(resolve, 480))
-      auth.login(account.value)
+      demoAuth?.login(account.value)
       await router.push('/')
     }
   } catch (error) {
-    errorMsg.value = error instanceof Error ? error.message : '登录失败，请重试'
+    errorMsg.value =
+      error instanceof ConsoleAuthError && error.status === 403 && !error.code
+        ? '账号无权访问大屏，请联系管理员'
+        : error instanceof Error
+          ? error.message
+          : '登录失败，请重试'
   } finally {
     loading.value = false
   }
@@ -131,8 +132,7 @@ async function onSubmit() {
     <!-- 四角 HUD meta -->
     <div class="hud tl">CONTROL PLANE · v0.1</div>
     <div class="hud tr mono">{{ clock }}</div>
-    <div class="hud bl"><i class="live" aria-hidden="true" />系统在线</div>
-    <div class="hud br mono">华东一厂 · EAST-01</div>
+    <div v-if="!IS_REAL_DATA" class="hud bl">演示模式</div>
 
     <!-- 右：登录面板 -->
     <form class="panel" @submit.prevent="onSubmit">
@@ -182,6 +182,15 @@ async function onSubmit() {
       </button>
 
       <p v-if="errorMsg" class="err reveal" role="alert">{{ errorMsg }}</p>
+      <p
+        v-if="
+          IS_REAL_DATA && (route.query.logout === 'failed' || route.query.logout === 'timed-out')
+        "
+        class="err"
+        role="status"
+      >
+        当前设备已退出，服务器会话撤销尚未确认。
+      </p>
       <p class="hint reveal" style="--d: 0.5s">
         {{ IS_REAL_DATA ? '请使用工厂账号登录' : '请输入账号密码进入' }}
       </p>
@@ -192,12 +201,16 @@ async function onSubmit() {
 <style scoped>
 @layer app {
   .login {
+    --nv-scr-login-canvas: #050a15;
+    --nv-scr-login-action-ink: #04101f;
+    --nv-scr-login-heading: #fff;
+
     position: fixed;
     inset: 0;
     display: flex;
     align-items: center;
     /* 与插画底色一致，插画右缘渐隐后无缝延展 */
-    background: #050a15;
+    background: var(--nv-scr-login-canvas);
     color: var(--nv-scr-text);
     overflow: hidden;
     font-variant-numeric: tabular-nums;
@@ -232,7 +245,7 @@ async function onSubmit() {
     content: '';
     position: absolute;
     inset: 0;
-    background: rgba(5, 10, 21, 0.24);
+    background: color-mix(in srgb, var(--nv-scr-login-canvas) 24%, transparent);
   }
   /* 模块呼吸微光（叠在插画各模块上，克制） */
   .glow {
@@ -243,10 +256,10 @@ async function onSubmit() {
     animation: glow-breathe 5.6s ease-in-out infinite;
   }
   .glow.cyan {
-    background: rgba(74, 166, 238, 0.12);
+    background: color-mix(in srgb, var(--nv-scr-cyan) 12%, transparent);
   }
   .glow.amber {
-    background: rgba(242, 193, 78, 0.1);
+    background: color-mix(in srgb, var(--nv-scr-amber) 10%, transparent);
   }
 
   /* ── 全屏氛围层：漂浮粒子 + 极淡流光 ── */
@@ -271,10 +284,10 @@ async function onSubmit() {
     background: rgba(120, 190, 245, 0.45);
   }
   .p.indigo {
-    background: rgba(139, 155, 230, 0.4);
+    background: color-mix(in srgb, var(--nv-scr-indigo) 40%, transparent);
   }
   .p.amber {
-    background: rgba(242, 193, 78, 0.32);
+    background: color-mix(in srgb, var(--nv-scr-amber) 32%, transparent);
   }
   @keyframes p-float {
     from {
@@ -291,7 +304,7 @@ async function onSubmit() {
     width: 150px;
     height: 1px;
     left: -160px;
-    background: rgba(74, 166, 238, 0.3);
+    background: color-mix(in srgb, var(--nv-scr-cyan) 30%, transparent);
     opacity: 0;
     animation: streak-move linear infinite;
   }
@@ -399,7 +412,7 @@ async function onSubmit() {
     font-size: 17px;
     font-weight: 600;
     letter-spacing: 0.17em;
-    color: #fff;
+    color: var(--nv-scr-login-heading);
   }
   .sep {
     color: var(--nv-scr-cyan);
@@ -414,7 +427,7 @@ async function onSubmit() {
     font-size: 29px;
     font-weight: 600;
     letter-spacing: -0.01em;
-    color: #fff;
+    color: var(--nv-scr-login-heading);
     text-wrap: balance;
   }
   .head p {
@@ -469,8 +482,8 @@ async function onSubmit() {
   }
   .inp input:focus {
     border-color: var(--nv-scr-accent-edge);
-    background: rgba(74, 166, 238, 0.06);
-    box-shadow: 0 0 0 3px rgba(74, 166, 238, 0.12);
+    background: color-mix(in srgb, var(--nv-scr-cyan) 6%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--nv-scr-cyan) 12%, transparent);
   }
 
   .submit {
@@ -487,7 +500,7 @@ async function onSubmit() {
     font-size: 15px;
     font-weight: 600;
     letter-spacing: 0.05em;
-    color: #04101f;
+    color: var(--nv-scr-login-action-ink);
     background: var(--nv-scr-accent-fill);
     box-shadow: inset 0 1px 0 var(--nv-scr-highlight);
     transition:
@@ -515,8 +528,8 @@ async function onSubmit() {
   .spinner {
     width: 15px;
     height: 15px;
-    border: 2px solid rgba(4, 16, 31, 0.35);
-    border-top-color: #04101f;
+    border: 2px solid color-mix(in srgb, var(--nv-scr-login-action-ink) 35%, transparent);
+    border-top-color: var(--nv-scr-login-action-ink);
     border-radius: 50%;
     animation: spin-fast 0.7s linear infinite;
   }
@@ -524,8 +537,8 @@ async function onSubmit() {
     margin: 18px 0 0;
     padding: 9px 12px;
     border-radius: 8px;
-    border: 1px solid rgba(239, 90, 99, 0.4);
-    background: rgba(239, 90, 99, 0.1);
+    border: 1px solid color-mix(in srgb, var(--nv-scr-red) 40%, transparent);
+    background: color-mix(in srgb, var(--nv-scr-red) 10%, transparent);
     text-align: center;
     font-size: 12.5px;
     color: var(--nv-scr-red);

@@ -20,7 +20,7 @@
 .\nerv.ps1 dev
 ```
 
-`bootstrap` 的真实实现是 `scripts/bootstrap-online.ps1`；它负责联网工具链检查/可选安装、本地 Development secrets、restore 与 AppHost build。它不负责离线包制作、生产 secret 生成、Windows Service/systemd 注册或备份恢复。
+`bootstrap` 的真实实现是 `scripts/dev/bootstrap-online-environment.ps1`；它负责联网工具链检查/可选安装、本地 Development secrets、restore 与 AppHost build。它不负责离线包制作、生产 secret 生成、Windows Service/systemd 注册或备份恢复。
 
 启动后使用受支持的生命周期入口诊断：
 
@@ -56,7 +56,7 @@
 FileStorage 的 tus 目录同时承载已 complete 文件的字节，因此部署必须给它一个显式、绝对、持久的位置：
 
 1. `FileStorage__UploadProvider=tus` 与 `FileStorage__Tus__RootPath` 由 AppHost 一起下发；生成的 Compose 产物把该路径放在 `nerv-iip-file-storage` 命名卷的挂载点内，legacy overlay 有对应的同名卷。
-2. 只设 provider 不设 root path、或 root path 不是绝对路径时，服务在启动阶段拒绝并给出脱敏诊断（诊断只输出 `<missing>` / `<relative>`，不回显路径值）。[ADR 0024](../adr/0024-filestorage-storage-provider-and-local-production-semantics.md) §5 还要求该位置**持久**——系统临时目录与容器可写层不合规，但持久性当前不由启动校验判定（归 #1012），配错仍能启动，需要部署方自己保证。
+2. 只设 provider 不设 root path、或 root path 不是绝对路径时，服务在启动阶段拒绝并给出脱敏诊断（诊断只输出 `<missing>` / `<relative>`，不回显路径值）。[ADR 0024](../adr/2026-08-17-0024-filestorage-storage-provider-and-local-production-semantics.md) §5 还要求该位置**持久**——系统临时目录与容器可写层不合规，但持久性当前不由启动校验判定（归 #1012），配错仍能启动，需要部署方自己保证。
 3. 更换该卷或该路径等同于更换文件存储后端：已 complete 的文件元数据仍在数据库，但字节会读不到。迁移按 [`file-storage-offline-migration.md`](file-storage-offline-migration.md) 执行，不要靠重挂空卷绕过。
 
 ### MES 安灯超时升级

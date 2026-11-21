@@ -5,7 +5,7 @@
 #     - Runs the dot-sourced production contract against temporary workflow mutations
 #   Writes:
 #     - Temporary workflow fixtures under the operating-system temp directory
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Removes owned temporary fixtures in finally
 #   Requires:
@@ -18,7 +18,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/CiRequiredSummary.ps1')
 
-$verifierPath = Join-Path $repoRoot 'scripts/verify-ci-required-summary.ps1'
+$verifierPath = Join-Path $repoRoot 'scripts/ci/verify-required-summary.ps1'
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $libraryPath = Join-Path $repoRoot 'scripts/lib/CiRequiredSummary.ps1'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-required-summary-$([Guid]::NewGuid().ToString('N'))"
@@ -186,7 +186,7 @@ try {
         -Original '-Lane full-chain' -Replacement '-Lane "full-chain"'
 
     Assert-AcceptedMutation -Name 'full-chain-v1-evidence-upload-v5' -Workflow $workflow `
-        -Original "      - name: Upload FullChain normalized evidence$([Environment]::NewLine)        timeout-minutes: 5$([Environment]::NewLine)        if: always()$([Environment]::NewLine)        uses: actions/upload-artifact@v4" `
+        -Original "      - name: Upload FullChain normalized evidence$([Environment]::NewLine)        timeout-minutes: 5$([Environment]::NewLine)        if: always()$([Environment]::NewLine)        uses: actions/upload-artifact@v6" `
         -Replacement "      - name: Upload FullChain normalized evidence$([Environment]::NewLine)        timeout-minutes: 5$([Environment]::NewLine)        if: always()$([Environment]::NewLine)        uses: actions/upload-artifact@v5"
 
     foreach ($aggregateMutation in @(
@@ -232,7 +232,7 @@ try {
 
     Invoke-Mutation -Name 'full-chain-stable-aggregate-collects-formal-evidence' -Workflow $workflow `
         -Original "          v1_result=`"`${{ needs.business-full-chain-acceptance-v1.result }}`"$([Environment]::NewLine)" `
-        -Replacement "          v1_result=`"`${{ needs.business-full-chain-acceptance-v1.result }}`"$([Environment]::NewLine)          ./scripts/collect-test-evidence.ps1 -Lane full-chain$([Environment]::NewLine)" `
+        -Replacement "          v1_result=`"`${{ needs.business-full-chain-acceptance-v1.result }}`"$([Environment]::NewLine)          ./scripts/ci/collect-test-evidence.ps1 -Lane full-chain$([Environment]::NewLine)" `
         -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
 
     $stableAggregateStepHeader = "    steps:$([Environment]::NewLine)      - name: Require FullChain authority"
@@ -240,7 +240,7 @@ try {
     steps:
       - name: Publish forbidden formal evidence
         timeout-minutes: 1
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-evidence-full-chain-`${{ github.run_id }}-`${{ github.run_attempt }}
           path: artifacts/forbidden
@@ -251,7 +251,7 @@ try {
         -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
 
     Invoke-Mutation -Name 'full-chain-v1-drops-formal-evidence-collector' -Workflow $workflow `
-        -Original ('          ./scripts/collect-test-evidence.ps1' + [Environment]::NewLine) -Replacement '' `
+        -Original ('          ./scripts/ci/collect-test-evidence.ps1' + [Environment]::NewLine) -Replacement '' `
         -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
 
     Invoke-Mutation -Name 'full-chain-v1-drops-formal-evidence-artifact' -Workflow $workflow `

@@ -18,5 +18,3 @@
 | 资源层级 | 生产/维护负责人 | 工厂/产线/工作中心/设备重新归属 | 原/新父级、生效日期、操作者 |
 | 设备资产 | 维护负责人 | 资产类别、关键性、可维护性或遥测启用变化 | 变更前后值、操作者 |
 | ReferenceData | CodeSet 的领域责任人 | 删除代码或改变稳定语义 | CodeSet、code、原/新含义、操作者 |
-
-M2-L 拆分前同时包含架构、规则和开放问题的原文冻结在 [`../../reports/m2-l-business-master-data-field-matrix-pre-split-2026-09-07.md`](../../reports/m2-l-business-master-data-field-matrix-pre-split-2026-09-07.md)，仅用于追溯。

@@ -1,7 +1,10 @@
+import { useMesPrincipalWorkScope } from './useBusinessMes'
+import { useAuthStore } from '@/stores/auth'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type {
   BusinessConsoleDemandSourceItem,
   BusinessConsoleErpDeliveryOrderItem,
-  BusinessConsoleErpReceivableSourceDocumentResponse,
+  BusinessConsoleErpReceivableItem,
   BusinessConsoleErpSalesOrderItem,
   BusinessConsoleMesProductionPlanRow,
   BusinessConsoleMrpPeggingItem,
@@ -11,9 +14,10 @@ import type {
 } from '@nerv-iip/api-client'
 import {
   getBusinessConsoleErpReceivableBySourceDocument,
+  listBusinessConsoleErpReceivables,
   getBusinessConsolePlanningMrpPegging,
   listBusinessConsoleErpDeliveryOrders,
-  listBusinessConsoleMesProductionPlans,
+  getBusinessConsoleMesWorkOrderDetail,
   listBusinessConsoleOrderUrgencies,
   listBusinessConsolePlanningDemands,
   listBusinessConsolePlanningMrpRuns,
@@ -41,9 +45,9 @@ import { urgencyLevelPresentation } from './useUrgencyDisplayMode'
 //   5. mes-work-order       MES 工单              key: PlanningSuggestionItem.downstreamDocumentId
 //                            （suggestionId 来自第 3 跳；合批工单对每张订单都有 pegging 行，
 //                              两张订单都能各自走通到同一张工单）
-//                            辅证: MesProductionPlanRow.sourceDocumentId === suggestionId
+//                            辅证: 详情的工单号与来源建议 ID
 //   6. delivery-order       发货单                key: DeliveryOrder.salesOrderNo === salesOrderNo
-//   7. receivable           应收(by-source)       key: Receivable.sourceDocumentNo === deliveryOrderNo
+//   7. receivable           应收                   key: 应收来源精确匹配销售单号或发货单号
 //                            （后端 WmsOutboundOrderCompleted→CreateAccountReceivable 以发货单号为源单号）
 //
 // 尚未建立关联（generated 契约里没有到销售订单的持久关联字段，静态显示规则说明）：
@@ -119,6 +123,8 @@ export interface FulfillmentNode {
   note?: string
   /** established：下钻到真实页面。 */
   drill?: RouteLocationRaw
+  retryable?: boolean
+  links?: { label: string; to: RouteLocationRaw }[]
   /** pending / unlinked：规则说明（该节点由什么产生 / 为何尚无稳定关联）。 */
   ruleNote?: string
   /** failed：失败子类，用于区分 409 / 超时 / 其它。 */
@@ -206,7 +212,9 @@ export function matchDemandSource(
   salesOrderNo: string | undefined,
 ): BusinessConsoleDemandSourceItem | undefined {
   if (!salesOrderNo) return undefined
-  return items?.find((item) => item.sourceReference === salesOrderNo)
+  return items?.find(
+    (item) => item.sourceReference === salesOrderNo && item.demandType === 'sales-order',
+  )
 }
 
 /**
@@ -372,6 +380,7 @@ export function matchDeliveryOrders(
 }
 
 interface RecordNodeInput<T> {
+  links?: FulfillmentNode['links']
   key: FulfillmentNodeKey
   title: string
   /** 是否具备发请求的 scope；false → 尚未产生（空 scope 不发请求）。 */
@@ -392,9 +401,37 @@ interface RecordNodeInput<T> {
   pendingNote: string
 }
 
+// 列表按包含关系搜索。逐页核对完整来源键，并给单次打开的时间线设定读取上限。
+const pageSize = 50
+const maxPages = 4
+const receiptSourceLimit = 5
+
+async function readCandidatePages<T>(
+  read: (
+    skip: number,
+    take: number,
+  ) => Promise<
+    SdkCallResult<{ success?: boolean; data?: { items?: T[] | null; total?: number } | null }>
+  >,
+) {
+  const items: T[] = []
+  for (let page = 0; page < maxPages; page++) {
+    const result = await runNodeSource(async () => {
+      const { data, error, response } = await read(page * pageSize, pageSize)
+      return { data: data?.data, error: data?.success === false ? data : error, response }
+    })
+    const rows = result?.items ?? []
+    items.push(...rows)
+    if (rows.length < pageSize || (result?.total != null && items.length >= result.total))
+      return { items, limited: false }
+  }
+  return { items, limited: true }
+}
+
 /** 已接入节点的状态机核心：把一次查询快照解析为节点视图。 */
 export function resolveRecordNode<T>(input: RecordNodeInput<T>): FulfillmentNode {
   const base: FulfillmentNode = {
+    ...(input.links ? { links: input.links } : {}),
     key: input.key,
     title: input.title,
     status: 'pending',
@@ -442,7 +479,7 @@ const UNLINKED_NODES: Readonly<Partial<Record<FulfillmentNodeKey, UnlinkedNodeSp
   },
   'wms-outbound': {
     title: 'WMS 出库',
-    ruleNote: '出库单目前无法对应到发货单或销售订单，暂不直接关联。',
+    ruleNote: '按发货单号在仓储作业范围内核对。',
   },
   voucher: {
     title: '凭证',
@@ -478,6 +515,9 @@ function unlinkedNode(key: FulfillmentNodeKey): FulfillmentNode {
 export function useFulfillmentTimeline(
   salesOrder: MaybeRefOrGetter<BusinessConsoleErpSalesOrderItem | null | undefined>,
 ) {
+  const auth = useAuthStore()
+  const canRead = (permission: string) =>
+    auth.principal?.permissionCodes?.includes(permission) === true
   const context = useBusinessContextStore()
   const ctx = bindBusinessContext(
     reactive({
@@ -493,19 +533,20 @@ export function useFulfillmentTimeline(
   // —— 2. 生产需求（DemandSource.sourceReference === salesOrderNo）——
   const demandQuery = useQuery(() => ({
     key: ['fulfillment', 'demand', ctx.organizationId, ctx.environmentId, salesOrderNo.value ?? ''],
-    query: () =>
-      runNodeSource<{ items?: BusinessConsoleDemandSourceItem[] } | null>(async () => {
-        const { data, error, response } = await listBusinessConsolePlanningDemands({
-          query: { organizationId: ctx.organizationId, environmentId: ctx.environmentId },
+    query: () => {
+      const scope = {
+        organizationId: ctx.organizationId,
+        environmentId: ctx.environmentId,
+        keyword: salesOrderNo.value,
+      }
+      return readCandidatePages<BusinessConsoleDemandSourceItem>((skip, take) =>
+        listBusinessConsolePlanningDemands({
+          query: { ...scope, skip, take },
           throwOnError: false,
-        })
-        return {
-          data: data?.success ? (data.data ?? null) : null,
-          error: data?.success === false ? data : error,
-          response,
-        }
-      }),
-    enabled: hasScope.value,
+        }),
+      )
+    },
+    enabled: hasScope.value && canRead(P.planningDemandsRead),
   }))
 
   // —— 3. MRP 建议（MrpPeggingItem.demandSourceReference === salesOrderNo）——
@@ -524,7 +565,7 @@ export function useFulfillmentTimeline(
           response,
         }
       }),
-    enabled: hasScope.value,
+    enabled: canRead(P.planningMrpRead) && hasScope.value,
   }))
 
   const scanRunIds = computed(() =>
@@ -547,13 +588,15 @@ export function useFulfillmentTimeline(
     // 尚未被接受的新建议，而工单挂在旧建议上——只看最新一次运行就会把工单节点误判成空态。
     // 结果按「新运行在前」排列，展示取最新、找工单则沿列表往回找。
     query: async () => {
+      const scope = { organizationId: ctx.organizationId, environmentId: ctx.environmentId }
+      const source = salesOrderNo.value
       const collected: BusinessConsoleMrpPeggingItem[] = []
       for (const runId of scanRunIds.value) {
         const data = await runNodeSource<{ items?: BusinessConsoleMrpPeggingItem[] } | null>(
           async () => {
             const { data, error, response } = await getBusinessConsolePlanningMrpPegging({
               path: { runId },
-              query: { organizationId: ctx.organizationId, environmentId: ctx.environmentId },
+              query: scope,
               throwOnError: false,
             })
             return {
@@ -563,11 +606,11 @@ export function useFulfillmentTimeline(
             }
           },
         )
-        collected.push(...matchDemandPeggings(data?.items, salesOrderNo.value))
+        collected.push(...matchDemandPeggings(data?.items, source))
       }
       return collected
     },
-    enabled: hasScope.value && scanRunIds.value.length > 0,
+    enabled: canRead(P.planningMrpRead) && hasScope.value && scanRunIds.value.length > 0,
   }))
 
   const matchedPeggings = computed(() => peggingQuery.data.value ?? [])
@@ -608,7 +651,7 @@ export function useFulfillmentTimeline(
           response,
         }
       }),
-    enabled: hasScope.value && suggestionIds.value.length > 0,
+    enabled: canRead(P.planningMrpRead) && hasScope.value && suggestionIds.value.length > 0,
   }))
 
   const matchedSuggestion = computed(() =>
@@ -646,52 +689,68 @@ export function useFulfillmentTimeline(
     enabled: hasScope.value,
   }))
 
-  // —— 5. MES 工单：来源引用行（生产计划读面即「带来源引用的工单」）补齐工单当前状态 ——
-  // keyword 必须用**解析出工单号的那条建议**的 id：用最新建议或销售单号去搜，回来的可能是
-  // 另一张工单的行，状态就贴错人了。没解析出工单时这一跳直接不发请求。
-  const planKeyword = computed(() => matchedWorkOrder.value?.suggestionId)
-  const productionPlanQuery = useQuery(() => ({
+  // 按已接受建议携带的工单号读取详情，并核对来源建议后再补状态。
+  const workOrderSuggestionId = computed(() => matchedWorkOrder.value?.suggestionId)
+  const mesScope = useMesPrincipalWorkScope(
+    ctx,
+    P.mesWorkOrdersRead,
+    () => canRead(P.mesWorkOrdersRead) && Boolean(matchedWorkOrder.value),
+  )
+  const workOrderDetailQuery = useQuery(() => ({
     key: [
       'fulfillment',
-      'mes-production-plan',
+      'work-order-detail',
+      mesScope.principalIdentity.value,
+      mesScope.selectedScope.value?.kind ?? '',
+      mesScope.selectedScope.value?.id ?? '',
       ctx.organizationId,
       ctx.environmentId,
-      planKeyword.value ?? '',
+      matchedWorkOrder.value?.workOrderNo ?? '',
     ],
+    enabled:
+      mesScope.scopeReady.value &&
+      canRead(P.mesWorkOrdersRead) &&
+      hasBusinessContext(ctx) &&
+      Boolean(matchedWorkOrder.value),
     query: () =>
-      runNodeSource<{ items?: BusinessConsoleMesProductionPlanRow[] } | null>(async () => {
-        const { data, error, response } = await listBusinessConsoleMesProductionPlans({
+      runNodeSource(async () => {
+        const { data, error, response } = await getBusinessConsoleMesWorkOrderDetail({
+          path: { workOrderId: matchedWorkOrder.value!.workOrderNo },
           query: {
             organizationId: ctx.organizationId,
             environmentId: ctx.environmentId,
-            keyword: planKeyword.value,
-            take: 50,
+            scopeKind: mesScope.selectedScope.value?.kind,
+            scopeId: mesScope.selectedScope.value?.id,
           },
           throwOnError: false,
         })
-        return {
-          data: data?.success ? (data.data ?? null) : null,
-          error: data?.success === false ? data : error,
-          response,
-        }
+        return { data: data?.data, error: data?.success === false ? data : error, response }
       }),
-    enabled: hasBusinessContext(ctx) && Boolean(planKeyword.value),
   }))
+  const matchedPlanRow = computed(() => {
+    const detail = workOrderDetailQuery.data.value
+    const source = detail?.sourcePlanReference
+    if (
+      !canRead(P.mesWorkOrdersRead) ||
+      !mesScope.scopeReady.value ||
+      !detail ||
+      detail.workOrderId !== matchedWorkOrder.value?.workOrderNo ||
+      !source ||
+      source.sourceDocumentId !== workOrderSuggestionId.value
+    )
+      return undefined
+    return {
+      status: detail.status,
+      sourceDocumentId: source.sourceDocumentId,
+      sourceDemandReference: source.sourceDemandReference,
+    }
+  })
 
-  const matchedPlanRow = computed(() =>
-    matchProductionPlanRow(
-      productionPlanQuery.data.value?.items,
-      matchedWorkOrder.value?.suggestionId,
-    ),
-  )
-
-  // 工单这一跳串了 pegging → 建议 → 生产计划行三段，任一段失败都属该节点失败域。
-  const workOrderError = computed(
-    () => mrpError.value ?? suggestionQuery.error.value ?? productionPlanQuery.error.value,
-  )
+  // 建议确认工单号，详情只补当前状态；详情失败仍保留已知工单号。
+  const workOrderError = computed(() => mrpError.value ?? suggestionQuery.error.value)
   const workOrderLoading = computed(
     () =>
-      mrpLoading.value || suggestionQuery.isLoading.value || productionPlanQuery.isLoading.value,
+      mrpLoading.value || suggestionQuery.isLoading.value || workOrderDetailQuery.isLoading.value,
   )
 
   // —— 6. 发货单（DeliveryOrder.salesOrderNo === salesOrderNo）——
@@ -703,23 +762,19 @@ export function useFulfillmentTimeline(
       ctx.environmentId,
       salesOrderNo.value ?? '',
     ],
-    query: () =>
-      runNodeSource<{ items?: BusinessConsoleErpDeliveryOrderItem[] } | null>(async () => {
-        const { data, error, response } = await listBusinessConsoleErpDeliveryOrders({
-          query: {
-            organizationId: ctx.organizationId,
-            environmentId: ctx.environmentId,
-            keyword: salesOrderNo.value,
-            take: 50,
-          },
+    query: () => {
+      const scope = {
+        organizationId: ctx.organizationId,
+        environmentId: ctx.environmentId,
+        keyword: salesOrderNo.value,
+      }
+      return readCandidatePages<BusinessConsoleErpDeliveryOrderItem>((skip, take) =>
+        listBusinessConsoleErpDeliveryOrders({
+          query: { ...scope, skip, take },
           throwOnError: false,
-        })
-        return {
-          data: data?.success ? (data.data ?? null) : null,
-          error: data?.success === false ? data : error,
-          response,
-        }
-      }),
+        }),
+      )
+    },
     enabled: hasScope.value,
   }))
 
@@ -727,47 +782,155 @@ export function useFulfillmentTimeline(
     matchDeliveryOrders(deliveryQuery.data.value?.items, salesOrderNo.value),
   )
   // 应收源单号 = 本销售订单已确认发货单的单号（后端以发货单号作应收源单号）。
-  const receivableSourceNo = computed(
-    () => matchedDeliveries.value[0]?.deliveryOrderNo ?? undefined,
+  const deliveryNumbers = computed(() => [
+    ...new Set(
+      matchedDeliveries.value.flatMap((row) => (row.deliveryOrderNo ? [row.deliveryOrderNo] : [])),
+    ),
+  ])
+  const checkedSources = computed(() =>
+    salesOrderNo.value
+      ? [salesOrderNo.value, ...deliveryNumbers.value.slice(0, receiptSourceLimit)]
+      : [],
   )
-
-  // —— 7. 应收（Receivable.sourceDocumentNo === deliveryOrderNo）——
   const receivableQuery = useQuery(() => ({
     key: [
       'fulfillment',
-      'receivable',
+      'receivables',
       ctx.organizationId,
       ctx.environmentId,
-      receivableSourceNo.value ?? '',
+      ...checkedSources.value,
     ],
-    query: () =>
-      runNodeSource<BusinessConsoleErpReceivableSourceDocumentResponse | null>(async () => {
-        const { data, error, response } = await getBusinessConsoleErpReceivableBySourceDocument({
-          query: {
-            organizationId: ctx.organizationId,
-            environmentId: ctx.environmentId,
-            sourceDocumentNo: receivableSourceNo.value ?? '',
-          },
-          throwOnError: false,
-        })
-        return {
-          data: data?.success ? (data.data ?? null) : null,
-          error: data?.success === false ? data : error,
-          response,
+    enabled: canRead(P.erpFinanceRead) && checkedSources.value.length > 0,
+    query: async () => {
+      const scope = { organizationId: ctx.organizationId, environmentId: ctx.environmentId }
+      const sources = [...checkedSources.value]
+      const results: {
+        source: string
+        rows: BusinessConsoleErpReceivableItem[]
+        limited: boolean
+        error?: unknown
+      }[] = []
+      for (const source of sources) {
+        const receipt = {
+          source,
+          rows: [] as BusinessConsoleErpReceivableItem[],
+          limited: false,
+          error: undefined as unknown,
         }
-      }),
-    enabled: hasBusinessContext(ctx) && Boolean(receivableSourceNo.value),
+        try {
+          const candidates = await readCandidatePages<BusinessConsoleErpReceivableItem>(
+            (skip, take) =>
+              listBusinessConsoleErpReceivables({
+                query: { ...scope, keyword: source, skip, take },
+                throwOnError: false,
+              }),
+          )
+          receipt.rows = candidates.items.filter((row) => row.sourceDocumentNo === source)
+          receipt.limited = candidates.limited
+          if (receipt.limited && receipt.rows.length === 0) {
+            const latest = await runNodeSource(async () => {
+              const { data, error, response } =
+                await getBusinessConsoleErpReceivableBySourceDocument({
+                  query: { ...scope, sourceDocumentNo: source },
+                  throwOnError: false,
+                })
+              // ERP 的按来源接口用业务 400 表示无记录，同一状态也用于参数校验。
+              if (
+                response?.status === 400 &&
+                error &&
+                typeof error === 'object' &&
+                'success' in error &&
+                error.success === false &&
+                'message' in error &&
+                error.message === `来源单据『${source}』的应收单不存在。`
+              )
+                return { data: undefined }
+              return { data: data?.data, error: data?.success === false ? data : error, response }
+            })
+            if (latest?.sourceDocumentNo === source) receipt.rows.push(latest)
+          }
+        } catch (error) {
+          receipt.error = error
+        }
+        results.push(receipt)
+      }
+      return results
+    },
   }))
 
   const nodes = computed<FulfillmentNode[]>(() => {
     const so = salesOrderNo.value
     const demand = matchDemandSource(demandQuery.data.value?.items, so)
     const delivery = matchedDeliveries.value[0]
-    const receivable = receivableQuery.data.value ?? undefined
-    const pegging = matchedPeggings.value[0]
-    const mrpSuggestionRecord: MrpSuggestionRecord | undefined = pegging
-      ? { pegging, ...(matchedSuggestion.value ? { suggestion: matchedSuggestion.value } : {}) }
-      : undefined
+    const receipts = receivableQuery.data.value ?? []
+    const receivable = receipts.flatMap((result) => result.rows)[0]
+    const moreDeliveries = deliveryQuery.data.value?.limited
+      ? [
+          {
+            label: '继续按销售订单查找发货单',
+            to: { path: '/erp/sales/deliveries', query: { keyword: so } },
+          },
+        ]
+      : []
+    const financeLinks = [so, ...deliveryNumbers.value]
+      .filter(
+        (source): source is string =>
+          Boolean(source) &&
+          !receipts.some(
+            (result) => result.source === source && httpStatusOf(result.error) === 403,
+          ),
+      )
+      .map((source) => ({
+        label: '按来源核对应收 · ' + source,
+        to: { path: '/erp/finance/ar-ap', query: { keyword: source } },
+      }))
+    const retryableReceipt = receipts.find(
+      (result) => result.error && httpStatusOf(result.error) !== 403,
+    )
+    const receiptFailure = retryableReceipt?.error ?? receipts.find((result) => result.error)?.error
+    const receivableError = !canRead(P.erpFinanceRead)
+      ? new FulfillmentNodeError(403)
+      : (receivableQuery.error.value ??
+        (!receivable ? (deliveryQuery.error.value ?? receiptFailure) : null))
+    const receiptNote = receipts
+      .map(({ source, rows, limited, error }) =>
+        [
+          source,
+          rows
+            .map((row) =>
+              [
+                row.receivableNo,
+                row.openAmount != null ? '未结 ' + row.openAmount : '',
+                row.currencyCode,
+              ]
+                .filter(Boolean)
+                .join(' '),
+            )
+            .join('、') ||
+            (error ? (httpStatusOf(error) === 403 ? '权限受限' : '读取失败') : '未查到应收'),
+          limited ? '列表仅核对前 200 条候选，未命中时按完整源单号复核最近一张' : '',
+        ]
+          .filter(Boolean)
+          .join(' · '),
+      )
+      .join('；')
+    const rangeNote = [
+      deliveryQuery.error.value ? '发货来源读取失败，可在发货节点重试。' : '',
+      deliveryQuery.data.value?.limited ? '发货候选仅核对前 200 条' : '',
+      deliveryNumbers.value.length > receiptSourceLimit
+        ? '自动核对前 5 张发货单的应收，可按来源继续查询'
+        : '',
+    ]
+      .filter(Boolean)
+      .join('；')
+    const suggestion = matchedSuggestion.value
+    const pegging = suggestion
+      ? matchedPeggings.value.find(
+          (row) => row.suggestionId?.trim() === suggestion.suggestionId?.trim(),
+        )
+      : matchedPeggings.value[0]
+    const mrpSuggestionRecord: MrpSuggestionRecord | undefined =
+      pegging && !suggestionQuery.isLoading.value ? { pegging, suggestion } : undefined
     const mesWorkOrderRecord: MesWorkOrderRecord | undefined = matchedWorkOrder.value
       ? {
           workOrderNo: matchedWorkOrder.value.workOrderNo,
@@ -800,27 +963,37 @@ export function useFulfillmentTimeline(
         title: '生产需求',
         enabled: hasScope.value,
         loading: demandQuery.isLoading.value,
-        error: demandQuery.error.value,
+        error: !canRead(P.planningDemandsRead)
+          ? new FulfillmentNodeError(403)
+          : demandQuery.error.value,
         record: demand,
         present: (record) => ({
           businessNo: record.sourceReference ?? record.demandType ?? undefined,
           detailStatus: record.sourceStatus ?? undefined,
-          drill: { path: '/planning' },
+          drill: { path: '/planning', query: { demandSource: so } },
         }),
-        pendingNote: '销售订单确认后会生成生产需求，当前尚未产生。',
+        pendingNote: demandQuery.data.value?.limited
+          ? '前 200 条候选中未找到本单需求。'
+          : '销售订单确认后会生成生产需求，当前查询未找到本单需求。',
       }),
       resolveRecordNode<MrpSuggestionRecord>({
         key: 'mrp-suggestion',
         title: 'MRP 建议',
         enabled: hasScope.value,
-        loading: mrpLoading.value,
-        error: mrpError.value,
+        loading: mrpLoading.value || suggestionQuery.isLoading.value,
+        error: !canRead(P.planningMrpRead)
+          ? new FulfillmentNodeError(403)
+          : (mrpError.value ?? suggestionQuery.error.value),
         record: mrpSuggestionRecord,
         present: (record) => ({
           businessNo: describeMrpSuggestion(record),
+          note: `已核对最近 ${scanRunIds.value.length} 次运行。`,
           detailStatus: record.suggestion?.status ?? undefined,
           updatedAt: record.suggestion?.requiredDate ?? undefined,
-          drill: { path: '/planning' },
+          drill: {
+            path: '/planning',
+            query: { suggestionId: record.pegging.suggestionId?.trim() || undefined },
+          },
         }),
         // 空态不能绝对化：只扫了最近若干次运行，更早的运行没看过，说「尚未产生」是越界结论。
         pendingNote:
@@ -833,19 +1006,27 @@ export function useFulfillmentTimeline(
         title: 'MES 工单',
         enabled: hasScope.value,
         loading: workOrderLoading.value,
-        error: workOrderError.value,
+        error: !canRead(P.planningMrpRead) ? new FulfillmentNodeError(403) : workOrderError.value,
         record: mesWorkOrderRecord,
         present: (record) => ({
           businessNo: record.workOrderNo,
           detailStatus: record.planRow?.status ?? undefined,
-          updatedAt: record.planRow?.plannedStartUtc ?? undefined,
-          note: describeMergedWorkOrder(record, so),
-          drill: { path: `/mes/work-orders/${encodeURIComponent(record.workOrderNo)}` },
+          note: [
+            describeMergedWorkOrder(record, so),
+            workOrderDetailQuery.error.value || mesScope.scopeError.value
+              ? '工单编号已确认，当前作业范围未能读取状态。'
+              : '',
+          ]
+            .filter(Boolean)
+            .join('；'),
+          drill: canRead(P.mesWorkOrdersRead)
+            ? { path: `/mes/work-orders/${encodeURIComponent(record.workOrderNo)}` }
+            : undefined,
         }),
         pendingNote:
           suggestionIds.value.length > 0
-            ? '本单已有 MRP 建议，但建议尚未被接受为 MES 工单，当前尚未开单。'
-            : '计划员在需求与计划工作台接受 MRP 建议后才会开出 MES 工单，当前尚未开单。',
+            ? '最近核对的运行中未找到已承接的 MES 工单。'
+            : '最近核对的运行中未找到本单的工单来源建议。',
       }),
       unlinkedNode('production-report'),
       unlinkedNode('quality-result'),
@@ -854,40 +1035,103 @@ export function useFulfillmentTimeline(
       resolveRecordNode<BusinessConsoleErpDeliveryOrderItem>({
         key: 'delivery-order',
         title: '发货单',
+        links: moreDeliveries,
         enabled: hasScope.value,
         loading: deliveryQuery.isLoading.value,
         error: deliveryQuery.error.value,
         record: delivery,
         present: (record) => ({
           businessNo: record.deliveryOrderNo ?? undefined,
+          links: [
+            ...moreDeliveries,
+            ...deliveryNumbers.value.map((source) => ({
+              label: '查看发货单 · ' + source,
+              to: { path: '/erp/sales/deliveries', query: { keyword: source } },
+            })),
+          ],
+          note: [
+            matchedDeliveries.value
+              .map((row) =>
+                [
+                  row.deliveryOrderNo,
+                  ...(row.lines ?? []).map(
+                    (line) =>
+                      line.skuCode +
+                      ' 已发 ' +
+                      (line.shippedQuantity ?? '—') +
+                      ' / ' +
+                      (line.quantity ?? '—') +
+                      ' ' +
+                      (line.uomCode ?? ''),
+                  ),
+                ].join(' · '),
+              )
+              .join('；'),
+            rangeNote,
+          ]
+            .filter(Boolean)
+            .join('；'),
           detailStatus: record.status ?? undefined,
           updatedAt: record.shippedAtUtc ?? record.releasedAtUtc ?? undefined,
-          drill: record.salesOrderNo
-            ? { path: '/erp/sales/deliveries', query: { keyword: record.salesOrderNo } }
-            : { path: '/erp/sales/deliveries' },
         }),
-        pendingNote: '销售订单履约时生成发货单，当前尚未产生。',
+        pendingNote: deliveryQuery.data.value?.limited
+          ? '前 200 条候选中未找到本单发货单，可在发货列表继续按订单号核对。'
+          : '当前查询未找到本单发货单。',
       }),
-      unlinkedNode('wms-outbound'),
-      resolveRecordNode<BusinessConsoleErpReceivableSourceDocumentResponse>({
-        key: 'receivable',
-        title: '应收',
-        enabled: hasBusinessContext(ctx) && Boolean(receivableSourceNo.value),
-        loading: receivableQuery.isLoading.value,
-        error: receivableQuery.error.value,
-        record: receivable,
-        present: (record) => ({
-          businessNo: record.receivableNo ?? undefined,
-          // 「未结 1234」是现成文案不是码值，走 detailStatusLabel；塞给 detailStatus
-          // 会被节点组件拿去过状态词表，白报一条漏词。
-          detailStatusLabel: record.openAmount != null ? `未结 ${record.openAmount}` : undefined,
-          updatedAt: record.createdAtUtc ?? undefined,
-          drill: { path: '/erp/finance/ar-ap' },
+      {
+        ...unlinkedNode('wms-outbound'),
+        status: canRead(P.wmsShipmentsRead) ? 'unlinked' : 'restricted',
+        ruleNote: 'ERP 发货请求使用发货单号创建出库单，可在作业范围内按单号核对出库状态。',
+        links: canRead(P.wmsShipmentsRead)
+          ? deliveryNumbers.value.map((source) => ({
+              label: '核对出库 · ' + source,
+              to: { path: '/wms/outbound', query: { keyword: source } },
+            }))
+          : [],
+      },
+      {
+        ...resolveRecordNode<BusinessConsoleErpReceivableItem>({
+          key: 'receivable',
+          title: '应收',
+          enabled: hasScope.value,
+          loading: deliveryQuery.isLoading.value || receivableQuery.isLoading.value,
+          error: receivableError,
+          record: receivable,
+          present: (record) => ({
+            businessNo: record.receivableNo ?? undefined,
+            detailStatusLabel:
+              record.openAmount != null
+                ? `未结 ${record.openAmount} ${record.currencyCode ?? ''}`.trim()
+                : undefined,
+            note: [receiptNote, rangeNote].filter(Boolean).join('；'),
+          }),
+          pendingNote: [receiptNote || '尚无可核对的发货来源。', rangeNote]
+            .filter(Boolean)
+            .join('；'),
         }),
-        pendingNote: receivableSourceNo.value
-          ? 'WMS 出库完成后按发货单号生成应收，当前尚未生成。'
-          : '需先生成发货单，才能按发货单号回溯应收（尚无可用源单号）。',
-      }),
+        retryable: Boolean(receivable && retryableReceipt),
+        links:
+          httpStatusOf(receivableError) !== 403
+            ? [
+                ...receipts.flatMap((result) =>
+                  result.rows.flatMap((row) =>
+                    row.receivableNo
+                      ? [
+                          {
+                            label: '核对账单 · ' + row.receivableNo,
+                            to: {
+                              path: '/erp/finance/ar-ap',
+                              query: { keyword: row.receivableNo },
+                            },
+                          },
+                        ]
+                      : [],
+                  ),
+                ),
+                ...financeLinks,
+              ]
+            : [],
+      },
       unlinkedNode('voucher'),
     ]
   })
@@ -930,27 +1174,31 @@ export function useFulfillmentTimeline(
       mrpLoading.value ||
       urgencyQuery.isLoading.value ||
       suggestionQuery.isLoading.value ||
-      productionPlanQuery.isLoading.value ||
+      workOrderDetailQuery.isLoading.value ||
       deliveryQuery.isLoading.value ||
       receivableQuery.isLoading.value,
   )
 
   // MRP / 工单两跳各自串了多个请求，重试要把整跳重来，否则前一段的失败会一直卡住。
   function retryMrp() {
+    if (!canRead(P.planningMrpRead) || !hasScope.value) return
     void mrpRunsQuery.refetch()
-    void peggingQuery.refetch()
+    if (scanRunIds.value.length) void peggingQuery.refetch()
+    if (suggestionIds.value.length) void suggestionQuery.refetch()
   }
 
   function retryWorkOrder() {
     retryMrp()
-    void suggestionQuery.refetch()
-    void productionPlanQuery.refetch()
+    if (workOrderSuggestionId.value && canRead(P.mesWorkOrdersRead) && mesScope.scopeError.value)
+      void mesScope.refreshScope()
+    if (workOrderSuggestionId.value && canRead(P.mesWorkOrdersRead) && mesScope.scopeReady.value)
+      void workOrderDetailQuery.refetch()
   }
 
   function retry(key: FulfillmentNodeKey) {
     switch (key) {
       case 'production-demand':
-        void demandQuery.refetch()
+        if (canRead(P.planningDemandsRead)) void demandQuery.refetch()
         break
       case 'mrp-suggestion':
         retryMrp()
@@ -965,7 +1213,8 @@ export function useFulfillmentTimeline(
         void deliveryQuery.refetch()
         break
       case 'receivable':
-        void receivableQuery.refetch()
+        if (deliveryQuery.error.value) void deliveryQuery.refetch()
+        if (checkedSources.value.length && canRead(P.erpFinanceRead)) void receivableQuery.refetch()
         break
       default:
         break
@@ -973,11 +1222,11 @@ export function useFulfillmentTimeline(
   }
 
   function refreshAll() {
-    void demandQuery.refetch()
+    if (canRead(P.planningDemandsRead)) void demandQuery.refetch()
     retryWorkOrder()
     void urgencyQuery.refetch()
     void deliveryQuery.refetch()
-    void receivableQuery.refetch()
+    if (checkedSources.value.length && canRead(P.erpFinanceRead)) void receivableQuery.refetch()
   }
 
   return { nodes, referenceNodes, pending, hasScope, salesOrderNo, retry, refreshAll }

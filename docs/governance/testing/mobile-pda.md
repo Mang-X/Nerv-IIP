@@ -22,4 +22,4 @@ mock 浏览器即使 UI 完整也不能称为 FullChain；live HTTP 流程若没
 - 扫码预校验失败不得产生业务写；成功写入仍以服务端当前授权和业务合同为准。
 - UI mock 测试的 fixture 只能表示公开契约，不得把当前页面实现输出反向当成合同来源。
 
-当前测试文件与 producer 导航见 [`../../reference/testing/mobile-pda-inventory.md`](../../reference/testing/mobile-pda-inventory.md)。操作 smoke 见 [`../../runbooks/testing/mobile-pda.md`](../../runbooks/testing/mobile-pda.md)，历史 live/emulator/真机形成过程见 [`../../reports/audits/mobile-pda-testing-evolution-2026-08.md`](../../reports/audits/mobile-pda-testing-evolution-2026-08.md)。
+当前测试文件与 producer 导航见 [`../../reference/testing/mobile-pda-inventory.md`](../../reference/testing/mobile-pda-inventory.md)。 操作 smoke 见 [PDA 测试手册](../../runbooks/testing/mobile-pda.md)。

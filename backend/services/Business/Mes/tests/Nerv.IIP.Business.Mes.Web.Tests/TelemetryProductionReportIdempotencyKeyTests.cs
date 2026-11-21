@@ -24,11 +24,7 @@ public sealed class TelemetryProductionReportIdempotencyKeyTests
 {
     // 本仓自己的命名约定，逐段都有 producer，不是极端输入：
     // - org / env：本仓夹具与 seed 的默认租户作用域；
-    // - DEV-CNC-01：WorldBibleSpec 的设备编码段（`DEV-CNC-01..10`）；
-    // - parts_count：本目录 TelemetryProductionReportAutomationTests 夹具用的产量 tag；
-    // - seed-world-history / CONN-OPCUA-01：WorldHistoryDeviceSpec.SourceSystem / OpcUaConnectorId；
-    // - sourceSequence 形状：WorldHistorySeedService 的 summary 序列
-    //   `$"{SequencePrefix}:summary:{DeviceAssetId}:{TagKey}:{bucketStart.ToUnixTimeMilliseconds()}"`。
+    // 保留历史遥测输入字面量，验证长序列和幂等键兼容性。
     private const string Organization = "org-001";
     private const string Environment = "env-dev";
     private const string DeviceAssetId = "DEV-CNC-01";

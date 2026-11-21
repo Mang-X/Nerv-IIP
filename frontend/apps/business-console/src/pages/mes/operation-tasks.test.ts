@@ -1,8 +1,11 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
 import { computed, reactive, ref, shallowRef } from 'vue'
+import { createPinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import DispatchAssignDialog from '@/components/mes/DispatchAssignDialog.vue'
+import { notifySuccess } from '@/utils/notify'
 import OperationTasksPage from './operation-tasks.vue'
 
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
@@ -81,10 +84,16 @@ vi.mock('@/stores/auth', () => ({
     },
   }),
 }))
+vi.mock('@/utils/notify', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/notify')>()),
+  notifySuccess: vi.fn(),
+}))
 
 const routerPush = vi.fn()
+const routeQuery = reactive<{ operationTaskId?: string }>({})
 vi.mock('vue-router', () => ({
   onBeforeRouteLeave: vi.fn(),
+  useRoute: () => ({ query: routeQuery }),
   useRouter: () => ({ push: routerPush }),
 }))
 vi.mock('@nerv-iip/business-core', async (importOriginal) => ({
@@ -101,6 +110,7 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
     resolveSkuLabel: (v?: string | null) => v ?? '无',
   }),
 }))
+const workerRows = ref<{ userId: string; displayName: string }[]>([])
 vi.mock('@/composables/useBusinessMasterData', () => ({
   useBusinessMasterDataResources: () => ({
     resources: computed(() => []),
@@ -108,7 +118,7 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
   }),
   useBusinessSkus: () => ({ skus: computed(() => []) }),
   useBusinessWorkers: () => ({
-    workers: computed(() => []),
+    workers: workerRows,
     workersPending: shallowRef(false),
     filters: reactive({}),
   }),
@@ -523,11 +533,83 @@ describe('工序范围读取状态', () => {
 describe('工序执行的授权质检与工单来源接力', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    routeQuery.operationTaskId = undefined
+    workerRows.value = []
     state.permissionCodes = []
     state.scopeError = undefined
     state.scopePending = false
     state.tasksState = 'ready'
     state.operationRows = [{ operationTaskId: 'OP-20', workOrderId: 'WO-A', workCenterId: 'WC-A' }]
+  })
+
+  it('派工后的工序入口可返回全部工序', async () => {
+    routeQuery.operationTaskId = 'OP-20'
+    const wrapper = mountPage()
+    expect(wrapper.text()).toContain('本次派工的工序')
+    const showAll = wrapper.findAll('button').find((button) => button.text() === '查看全部工序')
+    await showAll!.trigger('click')
+    expect(routerPush).toHaveBeenCalledWith({ path: '/mes/operation-tasks' })
+    wrapper.unmount()
+  })
+
+  it('本次派工的工序在当前范围不可见时提示核对范围', async () => {
+    routeQuery.operationTaskId = 'OP-20'
+    state.operationRows = []
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.text()).toContain('当前作业范围内未找到该工序')
+    expect(wrapper.text()).not.toContain('确认工单已释放、排程已生成')
+    expect(wrapper.text()).toContain('查看全部工序')
+    wrapper.unmount()
+  })
+
+  it.each([true, false])('派工成功后按工序读取权限决定是否提供交接（%s）', async (canRead) => {
+    state.permissionCodes = canRead ? ['business.mes.operations.read'] : []
+    workerRows.value = [{ userId: 'operator-1', displayName: '操作员一' }]
+    const assign = vi.fn(async () => undefined)
+    const wrapper = mount(DispatchAssignDialog, {
+      props: {
+        open: true,
+        target: { operationTaskId: 'OP-20', workOrderId: 'WO-A', status: 'Queued' },
+        assign,
+      },
+      global: {
+        plugins: [createPinia()],
+        stubs: {
+          NvDialog: passthrough,
+          NvDialogContent: passthrough,
+          NvDialogTitle: passthrough,
+          NvDialogDescription: passthrough,
+          NvSelect: true,
+          NvSearchSelect: {
+            emits: ['update:modelValue'],
+            template:
+              '<button type="button" @click="$emit(\'update:modelValue\', \'operator-1\')" />',
+          },
+          DirectoryPicker: true,
+        },
+      },
+    })
+    await wrapper.get('#assign-operator').trigger('click')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(assign).toHaveBeenCalledWith(
+      'OP-20',
+      expect.objectContaining({ assignedUserId: 'operator-1' }),
+    )
+    expect(wrapper.emitted('assigned')).toHaveLength(1)
+    const action = vi.mocked(notifySuccess).mock.lastCall?.[1]
+    if (canRead) {
+      expect(action?.label).toBe('查看该工序执行')
+      action?.onClick()
+      expect(routerPush).toHaveBeenCalledWith({
+        path: '/mes/operation-tasks',
+        query: { operationTaskId: 'OP-20' },
+      })
+    } else {
+      expect(action).toBeUndefined()
+    }
   })
 
   async function openMenu(wrapper: ReturnType<typeof mountPage>) {

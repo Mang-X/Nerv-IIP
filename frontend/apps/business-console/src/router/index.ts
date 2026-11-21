@@ -1,6 +1,7 @@
+import { installDocumentTitleSync } from '@nerv-iip/app-shell'
+import { translate } from '@/i18n'
 import { createRouter, createWebHistory } from 'vue-router'
 import { handleHotUpdate, routes } from 'vue-router/auto-routes'
-import { installDocumentTitleSync } from './document-title'
 import { installAuthGuard } from './guards/auth'
 
 export const router = createRouter({
@@ -9,7 +10,7 @@ export const router = createRouter({
 })
 
 installAuthGuard(router)
-installDocumentTitleSync(router)
+installDocumentTitleSync(router, translate)
 
 if (import.meta.hot) {
   handleHotUpdate(router)

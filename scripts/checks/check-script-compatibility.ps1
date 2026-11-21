@@ -1,0 +1,158 @@
+# Script-Governance:
+#   Category: verify
+#   SideEffects:
+#     - Runs script governance and compatibility verification commands
+#   Writes:
+#     - .ryugi/artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/script-compatibility/**/evidence.json
+#   Cleanup:
+#     - Stops managed child process trees through ScriptAutomation.ps1 when commands time out
+#   Requires:
+#     - PowerShell 7
+#     - .NET SDK 10
+#     - Docker Compose v2 when running without -FastOnly
+
+[CmdletBinding()]
+param(
+  [switch]$FastOnly,
+  [switch]$AllowWindows,
+  [string]$EvidencePath
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$root = Resolve-Path (Join-Path $PSScriptRoot "../..")
+Set-Location $root
+. (Join-Path $root "scripts/lib/ScriptAutomation.ps1")
+. (Join-Path $root "scripts/lib/ScriptCompatibility.ps1")
+
+if ($IsWindows -and -not $AllowWindows) {
+  throw "Script compatibility gate must run on macOS or Linux. Use -AllowWindows only for a local smoke run."
+}
+
+if ([string]::IsNullOrWhiteSpace($EvidencePath)) {
+  $evidenceDirectory = New-ScriptAutomationLogDirectory -Name "script-compatibility"
+  $EvidencePath = Join-Path $evidenceDirectory "evidence.json"
+}
+else {
+  $evidenceDirectory = Split-Path -Parent $EvidencePath
+  if (-not [string]::IsNullOrWhiteSpace($evidenceDirectory)) {
+    New-Item -ItemType Directory -Force -Path $evidenceDirectory | Out-Null
+  }
+}
+
+$commandRecords = New-Object System.Collections.Generic.List[object]
+
+function Invoke-RecordedNativeCommand {
+  param(
+    [Parameter(Mandatory)]
+    [string]$Command,
+
+    [string[]]$Arguments = @(),
+
+    [Parameter(Mandatory)]
+    [string]$Name,
+
+    [int]$TimeoutSeconds = 120
+  )
+
+  $startedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
+  try {
+    $result = Invoke-NativeCommandWithTimeout -Command $Command -Arguments $Arguments -WorkingDirectory $root -TimeoutSeconds $TimeoutSeconds -Name $Name
+    $stdout = ""
+    if (Test-Path $result.StdoutPath) {
+      $stdoutContent = Get-Content $result.StdoutPath -Raw
+      if ($null -ne $stdoutContent) {
+        $stdout = $stdoutContent.Trim()
+      }
+    }
+    $commandRecords.Add([pscustomobject]@{
+      name = $Name
+      command = $Command
+      arguments = $Arguments
+      exitCode = $result.ExitCode
+      startedAtUtc = $startedAtUtc
+      durationMs = $result.Duration.TotalMilliseconds
+      stdout = $stdout
+      logDirectory = $result.LogDirectory
+    })
+    return $result
+  }
+  catch {
+    $commandRecords.Add([pscustomobject]@{
+      name = $Name
+      command = $Command
+      arguments = $Arguments
+      exitCode = -1
+      startedAtUtc = $startedAtUtc
+      durationMs = 0
+      stdout = ""
+      logDirectory = ""
+      error = $_.Exception.Message
+    })
+    throw
+  }
+}
+
+function Invoke-RecordedPwshScript {
+  param(
+    [Parameter(Mandatory)]
+    [string]$ScriptPath,
+
+    [System.Collections.IDictionary]$NamedArguments = @{},
+
+    [object[]]$PositionalArguments = @(),
+
+    [Parameter(Mandatory)]
+    [string]$Name,
+
+    [int]$TimeoutSeconds = 300
+  )
+
+  $pwshArguments = New-NervScriptCompatibilityPwshArguments -ScriptPath $ScriptPath -NamedArguments $NamedArguments -PositionalArguments $PositionalArguments
+  Invoke-RecordedNativeCommand -Command "pwsh" -Arguments $pwshArguments -Name $Name -TimeoutSeconds $TimeoutSeconds | Out-Null
+}
+
+try {
+  Invoke-RecordedNativeCommand -Command "dotnet" -Arguments @("--version") -Name "compat-dotnet-version" -TimeoutSeconds 60 | Out-Null
+  Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/checks/check-script-governance.ps1") -Name "compat-script-governance" -TimeoutSeconds 120
+  Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/ordinal-string.Tests.ps1") -Name "compat-ordinal-string-tests" -TimeoutSeconds 60
+  Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/check-script-governance.Tests.ps1") -Name "compat-script-governance-tests" -TimeoutSeconds 180
+  Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/pda-android-tool-resolution.Tests.ps1") -Name "compat-pda-android-tool-resolution" -TimeoutSeconds 180
+  # The scan boundary lives in its own file (#1509) and is a compat-fast subject for the same reason
+  # the checker itself is: it spawns the checker as a real process and builds a mirrored scripts tree
+  # under the platform temp directory, so path separators and temp-dir semantics are exactly what a
+  # macOS/Linux claim has to be backed by.
+  Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/script-governance-scan-boundary.Tests.ps1") -Name "compat-script-governance-scan-boundary" -TimeoutSeconds 180
+  Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/ordinal-comparison-layers.Tests.ps1") -Name "compat-ordinal-comparison-layers" -TimeoutSeconds 180
+  Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/test-evidence.Tests.ps1") -Name "compat-test-evidence-contracts" -TimeoutSeconds 300
+  Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/acceptance-scenario-matrix.Tests.ps1") -Name "compat-acceptance-scenario-matrix-contracts" -TimeoutSeconds 300
+  Invoke-RecordedPwshScript -ScriptPath (Join-Path $root "scripts/tests/acceptance-canonical-result.Tests.ps1") -Name "compat-acceptance-canonical-result-contracts" -TimeoutSeconds 300
+  Invoke-RecordedNativeCommand -Command "git" -Arguments @("diff", "--check") -Name "compat-git-diff-check" -TimeoutSeconds 120 | Out-Null
+
+  if (-not $FastOnly) {
+    Invoke-RecordedNativeCommand -Command "docker" -Arguments @("compose", "version", "--short") -Name "compat-docker-compose-version" -TimeoutSeconds 60 | Out-Null
+  }
+}
+finally {
+  $evidence = [ordered]@{
+    schema = 1
+    generatedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
+    osDescription = [System.Runtime.InteropServices.RuntimeInformation]::OSDescription
+    osArchitecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+    processArchitecture = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
+    isWindows = $IsWindows
+    isLinux = $IsLinux
+    isMacOS = $IsMacOS
+    powerShellVersion = $PSVersionTable.PSVersion.ToString()
+    fastOnly = $FastOnly.IsPresent
+    commands = $commandRecords.ToArray()
+  }
+
+  $json = ($evidence | ConvertTo-Json -Depth 20) + [Environment]::NewLine
+  [System.IO.File]::WriteAllText($EvidencePath, $json, [System.Text.UTF8Encoding]::new($false))
+  Write-Host "Script compatibility evidence written to $EvidencePath"
+}
+
+Write-Host "Script compatibility gate verified."

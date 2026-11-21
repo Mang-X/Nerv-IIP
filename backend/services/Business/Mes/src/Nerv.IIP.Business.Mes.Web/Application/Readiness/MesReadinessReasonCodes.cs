@@ -8,7 +8,7 @@ namespace Nerv.IIP.Business.Mes.Web.Application.Readiness;
 /// 契约：本类的每个 <c>public const string</c> 都必须在前端
 /// <c>frontend/packages/business-core/src/labels/mesReadinessReasons.ts</c> 的
 /// <c>MES_READINESS_REASON_DISPLAYS</c> 里登记，由
-/// <c>scripts/verify-stable-code-frontend-vocabulary.ps1</c> 在 CI 强制。方向是单向包含
+/// <c>scripts/checks/verify-stable-code-frontend-vocabulary.ps1</c> 在 CI 强制。方向是单向包含
 /// （后端 ⊆ 前端）：前端为已下线的历史码保留展示是合法的，反向要求会误报。
 ///
 /// ⚠️ 因此本类只装**码**，不装完整原因串——注册表里混进 <c>CODE: 中文</c> 形态的常量会让

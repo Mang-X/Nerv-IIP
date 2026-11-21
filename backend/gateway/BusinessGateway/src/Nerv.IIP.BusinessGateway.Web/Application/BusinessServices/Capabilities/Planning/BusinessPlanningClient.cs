@@ -79,6 +79,8 @@ public interface IBusinessPlanningClient
     Task<BusinessConsoleMrpPeggingListResponse> ListMrpPeggingAsync(
         string internalBearerToken,
         string runId,
+        string organizationId,
+        string environmentId,
         CancellationToken cancellationToken);
 
     Task<BusinessConsolePlanningSuggestionListResponse> ListSuggestionsAsync(
@@ -369,21 +371,17 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             x.DemandChangeCount)).ToArray());
     }
 
-    public Task<BusinessConsoleMrpPeggingListResponse> ListMrpPeggingAsync(
+    public async Task<BusinessConsoleMrpPeggingListResponse> ListMrpPeggingAsync(
         string internalBearerToken,
         string runId,
-        CancellationToken cancellationToken) =>
-        ListMrpPeggingCoreAsync(internalBearerToken, runId, cancellationToken);
-
-    private async Task<BusinessConsoleMrpPeggingListResponse> ListMrpPeggingCoreAsync(
-        string internalBearerToken,
-        string runId,
+        string organizationId,
+        string environmentId,
         CancellationToken cancellationToken)
     {
         var items = await SendAsync<IReadOnlyCollection<BusinessConsoleMrpPeggingItem>>(
             internalBearerToken,
             HttpMethod.Get,
-            $"/api/business/v1/planning/mrp-runs/{Uri.EscapeDataString(runId)}/pegging",
+            $"/api/business/v1/planning/mrp-runs/{Uri.EscapeDataString(runId)}/pegging?" + PlanningContextQuery(organizationId, environmentId),
             null,
             cancellationToken);
         return new BusinessConsoleMrpPeggingListResponse(items);

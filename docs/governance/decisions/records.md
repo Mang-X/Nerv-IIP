@@ -2,9 +2,9 @@
 
 本文规定什么内容属于 ADR/决策记录、什么内容必须回到 Architecture / Governance / Reference / Status / Report / Product，以及 ADR 生命周期的评审边界。
 
-`docs/AGENTS.md` 是人工文档触发入口；本页是决策记录分层与生命周期规则的当前权威来源。`scripts/verify-adr-format.ps1` 只保护身份、索引和导航目标，不把写作建议或内容判断变成机器合同。
+`docs/AGENTS.md` 是人工文档触发入口；本页是决策记录分层与生命周期规则的当前权威来源。`scripts/checks/verify-adr-format.ps1` 只保护身份、索引和导航目标，不把写作建议或内容判断变成机器合同。
 
-产品文档信息架构由 `docs/adr/0021-product-docs-information-architecture.md` 治理，不在本页重复。
+产品文档信息架构由 `docs/adr/2026-07-07-0021-product-docs-information-architecture.md` 治理，不在本页重复。
 
 ## 唯一判据：这段内容什么时候会变
 
@@ -17,7 +17,7 @@
 | 当前系统组件、边界、所有权和交互 | 实现/架构变化时 | `docs/architecture/` |
 | Schema、码表、矩阵、术语、资料等人工查询索引 | producer 变化时 | `docs/reference/` |
 | 实施进度、责任票、阻塞和验收状态 | 每次推进都可能变化 | GitHub / Linear；全仓摘要仅 `docs/status/current.md` |
-| 调查、事故、审计、修复证据与时点结论 | 对应事件完成后冻结 | `docs/reports/` |
+| 调查、事故、审计、修复证据与时点结论 | 对应事件完成后冻结 | 对应 Issue 或 PR |
 | 用户、角色、业务流程、IA/UX | 产品裁决变化时 | `docs/product/` |
 
 判断一段内容是否应该留在 ADR，只问：**下一次实现推进会不会让这段话变成过期描述？** 会，就不是决策记录。
@@ -68,19 +68,19 @@
 
 ## 轻量门禁
 
-`scripts/verify-adr-format.ps1` 只校验：
+`scripts/checks/verify-adr-format.ps1` 只校验：
 
-- 非 `README.md` 的 ADR 文件使用 `NNNN-kebab-case.md`，编号唯一；
+- 非 `README.md` 的 ADR 文件使用 `YYYY-MM-DD-NNNN-kebab-case.md`，日期使用正文的决策日期，四位编号全目录唯一；
 - 首个正文 H1 中的 `ADR NNNN` 与文件名编号一致，不限定标题措辞、冒号宽度或文件首行；
 - `docs/adr/README.md` 索引表首列逐一覆盖同目录 ADR，无漏项、重复项或显示编号与目标编号错配；其它列的修订关系链接不计作索引项；
 - 索引中 inline Markdown 链接的本地文件或目录目标存在。代码示例和注释不作为导航，不访问外网或锁定标题锚点。
 
-门禁不读取自然语言标题表，不锁定章节、状态文案、日期、ADR 总数、行顺序、审计统计或临时项目状态。正文和取代关系的正确性由评审、代码事实与对应 Issue 验收承担；结构检查通过不等于实现、provider 或 fullchain 已验证。
+门禁不读取自然语言标题表，不锁定章节、状态文案、特定日期、ADR 总数、行顺序、审计统计或临时项目状态。正文和取代关系的正确性由评审、代码事实与对应 Issue 验收承担；结构检查通过不等于实现、provider 或 fullchain 已验证。
 
 回归沿用 `scripts/tests/verify-adr-format-lifecycle.Tests.ps1` 的现有 CI 调用入口，以结构正反例验证实际退出码和诊断，不读取 checker AST 或复制 Governance 表格。不新增逐规则脚本、永久 registry 或独立 CI step。
 
 ```powershell
-pwsh -NoProfile -File scripts/verify-adr-format.ps1
+pwsh -NoProfile -File scripts/checks/verify-adr-format.ps1
 pwsh -NoProfile -File scripts/tests/verify-adr-format-lifecycle.Tests.ps1
 ```
 

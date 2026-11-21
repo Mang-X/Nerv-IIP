@@ -1,7 +1,7 @@
 # @nerv-iip/scheduling
 
 统一接口的两个排程可视化组件：**工单甘特图**（`GanttChart`）与**资源甘特图**（`ResourceSchedulerBoard`）。
-通过一层「引擎无关」适配，使用 DHTMLX Gantt Professional Evaluation 试用版渲染。本仓库无商业部署、不涉及商业行为，永久保留现有试用版，不更换、不移除，也不承诺后续采购或自研；裁决见 [ADR 0036](../../../docs/adr/0036-dhtmlx-evaluation-permanent-retention.md)。
+通过一层「引擎无关」适配，使用 DHTMLX Gantt Professional Evaluation 试用版渲染。本仓库无商业部署、不涉及商业行为，永久保留现有试用版，不更换、不移除，也不承诺后续采购或自研；裁决见 [ADR 0036](../../../docs/adr/2026-10-23-0036-dhtmlx-evaluation-permanent-retention.md)。
 
 ## 三层架构
 
@@ -15,7 +15,7 @@ SchedulingEngine 适配器接口   mount/setData/applyCommand/on/destroy(engine/
 
 DHTMLX 供应商包缺失时，`readOnly=true` 的 `SchedulingCanvas` 使用本包的只读 DOM 时间轴，仍展示真实任务、资源泳道、班次/日刻度、冲突与锁定状态；编辑态继续显示「排程引擎未加载」。该适配层不提供拖拽/改派，也没有引入第二套第三方甘特库。
 
-**可替换性由 `engine/conformance.ts` 保证**：任何 `SchedulingEngine` 实现传入 `runEngineConformance(makeEngine)` 后，必须通过同一套契约测试。单元测试使用内联 `FakeEngine` 测试替身（仅存在于 `engine/conformance.selfcheck.test.ts`，不进入产品源码目录，也不导出）自校验；试用包存在时也会测试 `DhtmlxEngine`（见下）。
+**可替换性由 `engine/conformance.ts` 保证**：任何 `SchedulingEngine` 实现传入 `runEngineConformance(makeEngine)` 后，必须通过同一套契约测试。单元测试使用内联 `FakeEngine` 测试替身（仅存在于 `engine/conformance.selfcheck.test.ts`，不进入产品源码目录，也不导出）自校验；同一套测试也使用仓库内的 Evaluation 文件验证真实 `DhtmlxEngine`，加载失败会使测试失败。
 
 ## DHTMLX Evaluation 供应商包
 
@@ -53,6 +53,6 @@ business-console 的 `vite.config.ts` 检测到供应商包后，会自动将 `@
 ## 命令
 
 ```bash
-pnpm -C frontend/packages/scheduling test       # vitest(内联 FakeEngine 跑契约,DHTMLX skip 除非装了试用包)
+pnpm -C frontend/packages/scheduling test       # Vitest 验证 FakeEngine、真实 DHTMLX 及组件降级
 pnpm -C frontend/packages/scheduling typecheck   # vue-tsc
 ```

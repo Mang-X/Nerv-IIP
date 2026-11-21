@@ -13,7 +13,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/RedisCapTestLane.ps1')
 
-$manifestPath = Join-Path $repoRoot 'scripts/redis-cap-test-lane.json'
+$manifestPath = Join-Path $repoRoot 'scripts/config/redis-cap-test-lane.json'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-redis-cap-lane-$([Guid]::NewGuid().ToString('N'))"
 
 function Assert-Contract([bool]$Condition, [string]$Message) {
@@ -38,7 +38,9 @@ function New-RedisCapTrx {
         $definitions.Add("<UnitTest id=`"$id`"><TestMethod className=`"$class`" name=`"$method`" /></UnitTest>")
         $results.Add("<UnitTestResult testId=`"$id`" testName=`"$method`" outcome=`"$Outcome`" />")
     }
-    $trx = "<?xml version=`"1.0`"?><TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results>$($results -join '')</Results><TestDefinitions>$($definitions -join '')</TestDefinitions></TestRun>"
+    $passed = if ([string]::Equals($Outcome, 'Passed', [StringComparison]::Ordinal)) { $results.Count } else { 0 }
+    $failed = if ([string]::Equals($Outcome, 'Failed', [StringComparison]::Ordinal)) { $results.Count } else { 0 }
+    $trx = "<?xml version=`"1.0`"?><TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results>$($results -join '')</Results><TestDefinitions>$($definitions -join '')</TestDefinitions><ResultSummary><Counters total=`"$($results.Count)`" executed=`"$($passed + $failed)`" passed=`"$passed`" failed=`"$failed`" /></ResultSummary></TestRun>"
     [IO.File]::WriteAllText($Path, $trx, [Text.UTF8Encoding]::new($false))
 }
 
@@ -57,7 +59,7 @@ else {
 switch ($commandName) {
     'psql' {
         if (@($args | Where-Object { $_.Contains('server_version', [StringComparison]::Ordinal) }).Count -gt 0) {
-            Write-Output '18.6'
+            Write-Output '19.0'
         }
         exit 0
     }
@@ -102,7 +104,7 @@ switch ($commandName) {
             $definitions.Add("<UnitTest id=`"$id`"><TestMethod className=`"$class`" name=`"$method`" /></UnitTest>")
             $results.Add("<UnitTestResult testId=`"$id`" testName=`"$method`" outcome=`"Passed`" />")
         }
-        $trx = "<?xml version=`"1.0`"?><TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results>$($results -join '')</Results><TestDefinitions>$($definitions -join '')</TestDefinitions></TestRun>"
+        $trx = "<?xml version=`"1.0`"?><TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results>$($results -join '')</Results><TestDefinitions>$($definitions -join '')</TestDefinitions><ResultSummary><Counters total=`"$($results.Count)`" executed=`"$($results.Count)`" passed=`"$($results.Count)`" failed=`"0`" /></ResultSummary></TestRun>"
         [IO.File]::WriteAllText((Join-Path $resultsDirectory 'fake.trx'), $trx, [Text.UTF8Encoding]::new($false))
         exit 0
     }
@@ -176,7 +178,7 @@ try {
     $zeroActiveSummaryPath = Join-Path $fixtureRoot 'zero-active-summary.json'
     $zeroActiveRejected = $false
     try {
-        & (Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1') `
+        & (Join-Path $repoRoot 'scripts/ci/run-redis-cap-test-lane.ps1') `
             -AllActiveMembers `
             -ManifestPath $zeroActiveManifestPath `
             -DatabaseSuffix '3031_1' `
@@ -195,7 +197,7 @@ try {
         [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_REDIS', $null)
         $focusedMemberReachedReadiness = $false
         try {
-            & (Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1') `
+            & (Join-Path $repoRoot 'scripts/ci/run-redis-cap-test-lane.ps1') `
                 -MemberId ([string]$focusMember.id) `
                 -DatabaseSuffix '3031_1' `
                 -ResultsDirectory (Join-Path $fixtureRoot 'focused-results') `
@@ -211,7 +213,7 @@ try {
 
     $mixedSelectionRejected = $false
     try {
-        & (Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1') `
+        & (Join-Path $repoRoot 'scripts/ci/run-redis-cap-test-lane.ps1') `
             -MemberId ([string]$focusMember.id) `
             -AllActiveMembers `
             -DatabaseSuffix '3031_1' `
@@ -234,7 +236,7 @@ try {
         [Environment]::SetEnvironmentVariable('PATH', "$fakeCommandDirectory$([IO.Path]::PathSeparator)$savedPath")
         [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', 'Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=fake')
         [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_REDIS', 'localhost:6379')
-        & (Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1') `
+        & (Join-Path $repoRoot 'scripts/ci/run-redis-cap-test-lane.ps1') `
             -AllActiveMembers `
             -ManifestPath $activeManifestPath `
             -DatabaseSuffix '3031_1' `
@@ -261,7 +263,7 @@ try {
     }
     Remove-Item -LiteralPath $runnerResultsDirectory -Recurse -Force
 
-    $runnerContent = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1'))
+    $runnerContent = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/ci/run-redis-cap-test-lane.ps1'))
     Assert-Contract (-not $runnerContent.Contains('}.GetNewClosure()', [StringComparison]::Ordinal)) 'Runner callbacks must retain the runner script session state so hosted PowerShell can resolve Get-RedisKeys and Invoke-RedisCli.'
 
     $attempt1Identity = New-NervRedisCapMemberIdentity `

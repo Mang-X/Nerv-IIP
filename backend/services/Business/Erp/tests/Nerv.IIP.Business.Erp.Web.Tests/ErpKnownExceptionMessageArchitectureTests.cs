@@ -1,4 +1,4 @@
-using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
@@ -55,122 +55,33 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
         ErpCodingIdempotencyKeyPolicyPath,
     ];
 
-    private static readonly IReadOnlyCollection<ErpKnownExceptionSite> ExpectedSites =
+    private static readonly IReadOnlyCollection<ExcludedUserMessageSite> ExcludedSites =
     [
-        Target(PurchaseOrderApprovalClientPath, "HttpPurchaseOrderApprovalClient", "StartApprovalAsync", 1, "sync approval facade"),
-        Target(CustomerCreditProfileReaderPath, "HttpCustomerCreditProfileReader", "GetAsync", 2, "sync sales-order facade"),
-        Target(BusinessPartnerAvailabilityGatePath, "BusinessPartnerAvailabilityGate", "EnsureActiveAsync", 1, "sync sales-order facade"),
-        Excluded(WmsOutboundCancellationClientPath, "HttpWmsOutboundCancellationClient", "FindOutboundOrderAsync", 1, "deferred sales-order cancellation; no public facade"),
-        Target(AccountPayableSourceDocumentGuardPath, "AccountPayableSourceDocumentGuard", "EnsureSourceDocumentAndSupplierAsync", 2, "sync payable commands"),
-        Target(AccountReceivableSourceDocumentGuardPath, "AccountReceivableSourceDocumentGuard", "EnsureSourceDocumentAndCustomerAsync", 2, "sync receivable commands"),
-        Target(WorkCenterRateRevisionAllocatorPath, "WorkCenterRateRevisionAllocator", "EnsureCurrencyIsFixed", 1, "shared helper reaches sync work-center rate facades"),
-
-        Target(ErpFinanceCommandsPath, "AccountingPeriodPostingGuard", "FindPeriodAsync", 1, "shared helper reaches sync finance facades"),
-        Target(ErpFinanceCommandsPath, "AccountingPeriodPostingGuard", "EnsureOpenAsync", 1, "shared helper reaches sync finance facades"),
-        Target(ErpFinanceCommandsPath, "ExecutePaymentExecutionCommandHandler", "Handle", 2, "sync payment-execution facade"),
-        Excluded(ErpFinanceCommandsPath, "RegisterAccountReceivableCollectionCommandHandler", "Handle", 1, "deferred receivable collection; no public facade"),
-        Target(ErpFinanceCommandsPath, "RegisterCashReceiptCommandHandler", "Handle", 1, "sync cash-receipt facade"),
-        Target(ErpFinanceCommandsPath, "MatchCashReceiptCommandHandler", "Handle", 3, "sync cash-receipt facade"),
-        Target(ErpFinanceCommandsPath, "PaymentExecutionCommandFacts", "LoadPayableVoucherAllocationsAsync", 2, "sync payment-execution facade"),
-        Target(ErpFinanceCommandsPath, "PaymentExecutionCommandFacts", "ResolveSingleSupplierCode", 1, "sync payment-execution facade"),
-
-        Target(ErpProcurementCommandsPath, "ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler", "Handle", 5, "sync requisition conversion facade"),
-        Target(ErpProcurementCommandsPath, "RecordPurchaseReceiptCommandHandler", "Handle", 2, "sync purchase-receipt facade"),
-        Excluded(ErpProcurementCommandsPath, "RecordSupplierInvoiceCommandHandler", "Handle", 2, "deferred supplier-invoice creation; no public facade"),
-        Excluded(ErpProcurementCommandsPath, "ReleaseSupplierInvoicePaymentHoldCommandHandler", "Handle", 3, "deferred supplier-invoice payment hold; no public facade"),
-        Excluded(ErpProcurementCommandsPath, "VoidSupplierInvoicePaymentHoldCommandHandler", "Handle", 2, "deferred supplier-invoice payment hold; no public facade"),
-        Excluded(ErpProcurementCommandsPath, "RequestPurchaseOrderChangeCommandHandler", "Handle", 2, "deferred purchase-order change; no public facade"),
-        Excluded(ErpProcurementCommandsPath, "ReschedulePurchaseOrderLineCommandHandler", "Handle", 2, "internal purchase-order line reschedule; no public facade"),
-        Excluded(ErpProcurementCommandsPath, "CancelPurchaseOrderLineCommandHandler", "Handle", 2, "internal purchase-order line cancellation; no public facade"),
-        Excluded(ErpProcurementCommandsPath, "ClosePurchaseOrderLineCommandHandler", "Handle", 2, "deferred purchase-order close; no public facade"),
-        Excluded(ErpProcurementCommandsPath, "CancelPurchaseOrderCommandHandler", "Handle", 5, "deferred purchase-order cancellation; no public facade"),
-
-        Target(ErpSalesCommandsPath, "ApproveQuotationCommandHandler", "Handle", 1, "sync quotation facade"),
-        Target(ErpSalesCommandsPath, "CreateSalesOrderCommandHandler", "Handle", 3, "sync sales-order facade"),
-        Target(ErpSalesCommandsPath, "CreateSalesOrderCommandHandler", "ReuseExistingOrderAsync", 1, "sync sales-order facade"),
-        Target(ErpSalesCommandsPath, "ReleaseSalesOrderCreditHoldCommandHandler", "Handle", 2, "sync credit-hold facade"),
-        Target(ErpSalesCommandsPath, "ReleaseDeliveryOrderCommandHandler", "Handle", 3, "sync delivery facade"),
-        Excluded(ErpSalesCommandsPath, "ChangeSalesOrderLineCommandHandler", "Handle", 2, "deferred sales-order change; no public facade"),
-        Excluded(ErpSalesCommandsPath, "CancelSalesOrderCommandHandler", "Handle", 4, "deferred sales-order cancellation; no public facade"),
-        Excluded(ErpSalesCommandsPath, "CreateSalesReturnAuthorizationCommandHandler", "Handle", 6, "deferred sales-return authorization; no public facade"),
-
-        Target(ErpSalesFinanceQueriesPath, "GetAccountPayableBySourceDocumentQueryHandler", "Handle", 1, "sync payable query facade"),
-        Target(ErpSalesFinanceQueriesPath, "GetAccountReceivableBySourceDocumentQueryHandler", "Handle", 1, "sync receivable query facade"),
-        Target(ErpSalesFinanceQueriesPath, "GetCostCandidateBySourceDocumentQueryHandler", "Handle", 1, "sync cost-candidate query facade"),
-
-        Excluded(ApprovalCompletedHandlerPath, "ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder", "HandleValidEventAsync", 2, "async integration-event consumer; no public facade"),
-        Excluded(ErpReturnHandlersPath, "WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn", "HandleValidEventCoreAsync", 5, "async integration-event consumer; no public facade"),
-        Excluded(ErpReturnHandlersPath, "QualityInspectionResultIntegrationEventHandlerForSettleSalesReturnCredit", "HandleValidEventAsync", 3, "async integration-event consumer; no public facade"),
-
-        // #3288：幂等键加后缀后越界时就地拒绝。调用方之一是
-        // ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler（同步申请转换 facade），故为 Target。
-        // 它是**防御性**分支——走 HTTP 时命令校验器先按派生上界拒在入口，当前只有绕过校验器的
-        // 调用方能走到；但「类型上沿 facade 可达」成立，所以消息仍按 Target 受中文/安全/长度约束。
-        // 同一句话也写在 ErpCodingIdempotencyKeyPolicy.Compose 的 summary 里，两处必须一致。
-        Target(ErpCodingIdempotencyKeyPolicyPath, "ErpCodingIdempotencyKeyPolicy", "Compose", 1, "defensive helper; reaches sync requisition conversion facade behind the command validator"),
+        new(WmsOutboundCancellationClientPath, "HttpWmsOutboundCancellationClient", "FindOutboundOrderAsync", "deferred sales-order cancellation; no public facade"),
+        new(ErpFinanceCommandsPath, "RegisterAccountReceivableCollectionCommandHandler", "Handle", "deferred receivable collection; no public facade"),
+        new(ErpProcurementCommandsPath, "RecordSupplierInvoiceCommandHandler", "Handle", "deferred supplier-invoice creation; no public facade"),
+        new(ErpProcurementCommandsPath, "ReleaseSupplierInvoicePaymentHoldCommandHandler", "Handle", "deferred supplier-invoice payment hold; no public facade"),
+        new(ErpProcurementCommandsPath, "VoidSupplierInvoicePaymentHoldCommandHandler", "Handle", "deferred supplier-invoice payment hold; no public facade"),
+        new(ErpProcurementCommandsPath, "RequestPurchaseOrderChangeCommandHandler", "Handle", "deferred purchase-order change; no public facade"),
+        new(ErpProcurementCommandsPath, "ReschedulePurchaseOrderLineCommandHandler", "Handle", "internal purchase-order line reschedule; no public facade"),
+        new(ErpProcurementCommandsPath, "CancelPurchaseOrderLineCommandHandler", "Handle", "internal purchase-order line cancellation; no public facade"),
+        new(ErpProcurementCommandsPath, "ClosePurchaseOrderLineCommandHandler", "Handle", "deferred purchase-order close; no public facade"),
+        new(ErpProcurementCommandsPath, "CancelPurchaseOrderCommandHandler", "Handle", "deferred purchase-order cancellation; no public facade"),
+        new(ErpSalesCommandsPath, "ChangeSalesOrderLineCommandHandler", "Handle", "deferred sales-order change; no public facade"),
+        new(ErpSalesCommandsPath, "CancelSalesOrderCommandHandler", "Handle", "deferred sales-order cancellation; no public facade"),
+        new(ErpSalesCommandsPath, "CreateSalesReturnAuthorizationCommandHandler", "Handle", "deferred sales-return authorization; no public facade"),
+        new(ApprovalCompletedHandlerPath, "ApprovalCompletedIntegrationEventHandlerForReleasePurchaseOrder", "HandleValidEventAsync", "async integration-event consumer; no public facade"),
+        new(ErpReturnHandlersPath, "WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn", "HandleValidEventCoreAsync", "async integration-event consumer; no public facade"),
+        new(ErpReturnHandlersPath, "QualityInspectionResultIntegrationEventHandlerForSettleSalesReturnCredit", "HandleValidEventAsync", "async integration-event consumer; no public facade"),
     ];
 
-    private static readonly IReadOnlyDictionary<string, int> DynamicTargetSiteCounts = new Dictionary<string, int>(StringComparer.Ordinal)
-    {
-        [$"{PurchaseOrderApprovalClientPath}|HttpPurchaseOrderApprovalClient|StartApprovalAsync"] = 1,
-        [$"{CustomerCreditProfileReaderPath}|HttpCustomerCreditProfileReader|GetAsync"] = 2,
-        [$"{ErpProcurementCommandsPath}|RecordPurchaseReceiptCommandHandler|Handle"] = 1,
-        [$"{ErpSalesCommandsPath}|CreateSalesOrderCommandHandler|Handle"] = 1,
-        [$"{ErpSalesCommandsPath}|ReleaseSalesOrderCreditHoldCommandHandler|Handle"] = 1,
-        [$"{ErpSalesCommandsPath}|ReleaseDeliveryOrderCommandHandler|Handle"] = 1,
-    };
-
     [Fact]
-    public void Erp_sync_known_exception_sites_have_a_closed_target_and_exclusion_ledger()
+    public void Erp_sync_known_exception_messages_are_safe_for_transport()
     {
         var documents = LoadDocuments();
-        var discovered = ErpKnownExceptionUserMessageSourceAnalyzer.Discover(documents);
-        var expectedKeys = ExpectedSites.Select(site => site.Key).ToArray();
-
-        Assert.Equal(SourcePaths.Count, documents.Count);
         Assert.All(documents, document => Assert.False(string.IsNullOrWhiteSpace(document.Text), $"Erp 源文件缺失或为空：{document.Path}"));
-        Assert.Equal(expectedKeys.Length, expectedKeys.Distinct(StringComparer.Ordinal).Count());
-        Assert.Equal(85, discovered.Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(41, ExpectedSites
-            .Where(site => site.Kind == ErpKnownExceptionSiteKind.Target)
-            .Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(44, ExpectedSites
-            .Where(site => site.Kind == ErpKnownExceptionSiteKind.Excluded)
-            .Sum(site => site.DirectKnownExceptionCount));
-        Assert.Equal(7, DynamicTargetSiteCounts.Values.Sum());
-        Assert.Equal(
-            34,
-            ExpectedSites
-                .Where(site => site.Kind == ErpKnownExceptionSiteKind.Target)
-                .Sum(site => site.DirectKnownExceptionCount) - DynamicTargetSiteCounts.Values.Sum());
-        Assert.All(
-            DynamicTargetSiteCounts,
-            dynamicSite => Assert.Contains(
-                ExpectedSites,
-                site => site.Kind == ErpKnownExceptionSiteKind.Target && site.Key == dynamicSite.Key));
-
-        var duplicateDiscoveredKeys = discovered
-            .GroupBy(site => site.Key, StringComparer.Ordinal)
-            .Where(group => group.Count() != 1)
-            .Select(group => $"{group.Key} ({group.Count()})")
-            .ToArray();
-        Assert.Empty(duplicateDiscoveredKeys);
-
-        var expectedKeySet = expectedKeys.ToHashSet(StringComparer.Ordinal);
-        var unclassified = discovered
-            .Where(site => !expectedKeySet.Contains(site.Key))
-            .Select(site => site.Key)
-            .ToArray();
-        Assert.Empty(unclassified);
-
-        foreach (var expected in ExpectedSites)
-        {
-            var match = Assert.Single(discovered, site => site.Key == expected.Key);
-            Assert.Equal(expected.DirectKnownExceptionCount, match.DirectKnownExceptionCount);
-        }
-
-        var targetSites = ExpectedSites.Where(site => site.Kind == ErpKnownExceptionSiteKind.Excluded).ToArray();
-        var violations = ErpKnownExceptionUserMessageSourceAnalyzer.AnalyzeUserMessages(documents, targetSites);
+        var violations = KnownExceptionUserMessageSourceAnalyzer.Analyze(
+            documents, ExcludedSites, UserMessagePolicy.RequiredSafeText);
 
         Assert.True(
             violations.Count == 0,
@@ -185,8 +96,8 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
         const string source =
             "using NetCorePal.Extensions.Primitives; class Probe { void Handle() { throw new KnownException(\"Unable to save\"); } }";
 
-        var violations = ErpKnownExceptionUserMessageSourceAnalyzer.AnalyzeUserMessages(
-            [new ErpKnownExceptionSourceDocument("Probe.cs", source)],
+        var violations = KnownExceptionUserMessageSourceAnalyzer.Analyze(
+            [new UserMessageSourceDocument("Probe.cs", source)],
             []);
 
         Assert.Equal(["Probe.cs:1: 用户消息必须包含中文。"], violations);
@@ -198,35 +109,19 @@ public sealed class ErpKnownExceptionMessageArchitectureTests
         const string source =
             "using NetCorePal.Extensions.Primitives; class Probe { void Handle(System.Exception exception) { throw new KnownException(exception.Message, exception); } }";
 
-        var violations = ErpKnownExceptionUserMessageSourceAnalyzer.AnalyzeUserMessages(
-            [new ErpKnownExceptionSourceDocument("Probe.cs", source)],
+        var violations = KnownExceptionUserMessageSourceAnalyzer.Analyze(
+            [new UserMessageSourceDocument("Probe.cs", source)],
             []);
 
         Assert.Equal(["Probe.cs:1: 用户消息必须是可静态分析的字符串字面量或插值字符串。"], violations);
     }
 
-    private static ErpKnownExceptionSite Target(
-        string path,
-        string typeName,
-        string methodName,
-        int directKnownExceptionCount,
-        string reason) =>
-        new(path, typeName, methodName, directKnownExceptionCount, ErpKnownExceptionSiteKind.Target, reason);
-
-    private static ErpKnownExceptionSite Excluded(
-        string path,
-        string typeName,
-        string methodName,
-        int directKnownExceptionCount,
-        string reason) =>
-        new(path, typeName, methodName, directKnownExceptionCount, ErpKnownExceptionSiteKind.Excluded, reason);
-
-    private static IReadOnlyCollection<ErpKnownExceptionSourceDocument> LoadDocuments()
+    private static IReadOnlyCollection<UserMessageSourceDocument> LoadDocuments()
     {
         var repositoryRoot = FindRepositoryRoot();
         return SourcePaths
             .Select(path => Path.Combine(repositoryRoot, path.Replace('/', Path.DirectorySeparatorChar)))
-            .Select(file => new ErpKnownExceptionSourceDocument(
+            .Select(file => new UserMessageSourceDocument(
                 Path.GetRelativePath(repositoryRoot, file).Replace(Path.DirectorySeparatorChar, '/'),
                 File.Exists(file) ? File.ReadAllText(file) : string.Empty))
             .ToArray();

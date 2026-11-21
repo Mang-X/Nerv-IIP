@@ -37,21 +37,12 @@ function Read-NervTrxResults {
     $trxElapsedMilliseconds = 0.0
     $trxRuns = [Collections.Generic.List[object]]::new()
     foreach ($trxPath in @(Get-NervOrdinalSorted -Values @($Path | ForEach-Object { [string]$_ }))) {
-        try {
-            $document = [Xml.XmlDocument]::new()
-            $document.PreserveWhitespace = $false
-            $document.Load($trxPath)
-        }
-        catch {
-            $safePath = [IO.Path]::GetFullPath($trxPath)
-            throw [IO.InvalidDataException]::new("Failed to parse TRX '$safePath'.")
-        }
-
-        $root = $document.DocumentElement
+        $trx = Read-NervTrxDocument -Path $trxPath
+        $root = $trx.Root
         $persistedHeadSha = $root.GetAttribute('headSha')
         $persistedTestedSha = $root.GetAttribute('testedSha')
         $normalizedIdentityNamespace = 'urn:nerv-iip:test-evidence:assembly-identity:v1'
-        $definitionNodes = @($document.SelectNodes("//*[local-name()='TestDefinitions']/*[local-name()='UnitTest']"))
+        $definitionNodes = $trx.Definitions
         $reservedAssemblyIdentityAttributes = [Collections.Generic.List[object]]::new()
         foreach ($definitionNode in $definitionNodes) {
             foreach ($attribute in @($definitionNode.Attributes)) {
@@ -90,7 +81,7 @@ function Read-NervTrxResults {
             }
         }
 
-        $times = $document.SelectSingleNode("//*[local-name()='Times']")
+        $times = $root.SelectSingleNode("./*[local-name()='Times']")
         if ($null -eq $times -or [string]::IsNullOrWhiteSpace([string]$times.start) -or [string]::IsNullOrWhiteSpace([string]$times.finish)) {
             throw [IO.InvalidDataException]::new("TRX is missing valid Times metadata in '$([IO.Path]::GetFullPath($trxPath))'.")
         }
@@ -134,21 +125,6 @@ function Read-NervTrxResults {
             }
         }
 
-        $results = @($document.SelectNodes("//*[local-name()='Results']/*[local-name()='UnitTestResult']"))
-        $counters = $document.SelectSingleNode("//*[local-name()='ResultSummary']/*[local-name()='Counters']")
-        if ($null -eq $counters) { throw [IO.InvalidDataException]::new("TRX is missing ResultSummary/Counters in '$([IO.Path]::GetFullPath($trxPath))'.") }
-        $counterTotal = [int]$counters.total
-        $counterExecuted = [int]$counters.executed
-        $counterPassed = [int]$counters.passed
-        $counterFailed = [int]$counters.failed
-        $counterSkipped = $counterTotal - $counterExecuted
-        $actualPassed = @($results | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'Passed' }).Count
-        $actualFailed = @($results | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'Failed' }).Count
-        $actualSkipped = @($results | Where-Object { Test-NervOrdinalEquals ([string]$_.outcome) 'NotExecuted' }).Count
-        if ($counterTotal -ne $results.Count -or $counterExecuted -ne ($counterPassed + $counterFailed) -or
-            $counterPassed -ne $actualPassed -or $counterFailed -ne $actualFailed -or $counterSkipped -ne $actualSkipped) {
-            throw [IO.InvalidDataException]::new("TRX ResultSummary/Counters do not match Results in '$([IO.Path]::GetFullPath($trxPath))'.")
-        }
         # Assembly is an identity-bearing nullable value in normalized TRX. Do not route it through
         # Get-NervOrdinalSorted: that wrapper intentionally accepts ordinary non-empty identifiers,
         # and a [string] projection would collapse null and empty before it could validate them.
@@ -163,20 +139,17 @@ function Read-NervTrxResults {
             # had already restored it correctly.
             assembly = if ($assembliesInRun.Count -eq 1) { $assembliesInRun[0] } else { [IO.Path]::GetFileNameWithoutExtension($trxPath) }
             elapsedMilliseconds = $elapsed
-            total = $counterTotal
-            executed = $counterExecuted
-            passed = $counterPassed
-            failed = $counterFailed
-            skipped = $counterSkipped
+            total = $trx.Total
+            executed = $trx.Executed
+            passed = $trx.Passed
+            failed = $trx.Failed
+            skipped = $trx.Skipped
         })
 
         $ordinals = [Collections.Generic.Dictionary[string, int]]::new([StringComparer]::Ordinal)
-        foreach ($result in $results) {
+        foreach ($result in $trx.Results) {
             $rawOutcome = [string]$result.outcome
             $outcomeMapping = Resolve-NervTrxOutcomeMapping -TrxOutcome $rawOutcome
-            if ($null -eq $outcomeMapping) {
-                throw [IO.InvalidDataException]::new("Unsupported TRX outcome '$rawOutcome' in '$([IO.Path]::GetFullPath($trxPath))'.")
-            }
             $definition = $definitions[[string]$result.testId]
             if ($null -eq $definition) {
                 throw [IO.InvalidDataException]::new("TRX result references an unknown test definition in '$([IO.Path]::GetFullPath($trxPath))'.")

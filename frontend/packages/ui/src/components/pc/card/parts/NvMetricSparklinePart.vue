@@ -44,7 +44,6 @@ const ariaLabel = computed(() => {
     v-if="footStart || footEnd"
     class="mt-2 flex justify-between text-xs text-muted-foreground tabular-nums"
   >
-    <span>{{ footStart }}</span
-    ><span>{{ footEnd }}</span>
+    <span>{{ footStart }}</span><span>{{ footEnd }}</span>
   </div>
 </template>

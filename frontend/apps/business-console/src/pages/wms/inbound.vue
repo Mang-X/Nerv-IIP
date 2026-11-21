@@ -13,7 +13,7 @@ import {
   isIndeterminateLifecycleWriteError,
   recoverLifecycleAction,
 } from '@/composables/lifecycleAction'
-import { usePendingWriteLeaveGuard } from '@/composables/usePendingWriteLeaveGuard'
+import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import { createWmsIdempotencyKey, useWmsInboundOrders } from '@/composables/useBusinessWms'
 import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'

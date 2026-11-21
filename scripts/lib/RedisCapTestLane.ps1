@@ -9,6 +9,8 @@
 #   Requires:
 #     - PowerShell 7
 
+. (Join-Path $PSScriptRoot 'TrxResults.ps1')
+
 function New-NervRedisCapMemberIdentity {
     param(
         [Parameter(Mandatory)] [string] $MemberId,
@@ -155,31 +157,7 @@ function Get-NervRedisCapTrxResult {
         [switch] $AllowInvalid
     )
 
-    $trxFiles = @(Get-ChildItem -LiteralPath $ResultsDirectory -Filter '*.trx' -File -Recurse)
-    if ($trxFiles.Count -ne 1) { throw "Redis/CAP lane must produce exactly one TRX file; observed $($trxFiles.Count)." }
-    [xml]$trx = Get-Content -LiteralPath $trxFiles[0].FullName -Raw
-    $results = @($trx.SelectNodes("//*[local-name()='UnitTestResult']"))
-    $definitions = @($trx.SelectNodes("//*[local-name()='UnitTest']"))
-    $definitionById = [Collections.Generic.Dictionary[string, string]]::new([StringComparer]::Ordinal)
-    foreach ($definition in $definitions) {
-        $method = $definition.SelectSingleNode("./*[local-name()='TestMethod']")
-        if ($null -ne $method) { $definitionById[[string]$definition.id] = "$($method.className).$($method.name)" }
-    }
-    $observed = @($results | ForEach-Object { if ($definitionById.ContainsKey([string]$_.testId)) { $definitionById[[string]$_.testId] } else { [string]$_.testName } })
-    $expected = @($ExpectedTestIdentities)
-    [Array]::Sort($observed, [StringComparer]::Ordinal)
-    [Array]::Sort($expected, [StringComparer]::Ordinal)
-    $observedSorted = @($observed)
-    $expectedSorted = @($expected)
-    $identitiesMatch = [string]::Equals(($observedSorted -join "`n"), ($expectedSorted -join "`n"), [StringComparison]::Ordinal)
-    $passed = @($results | Where-Object { [string]::Equals([string]$_.outcome, 'Passed', [StringComparison]::Ordinal) }).Count
-    $failed = @($results | Where-Object { [string]::Equals([string]$_.outcome, 'Failed', [StringComparison]::Ordinal) }).Count
-    $skipped = $results.Count - $passed - $failed
-    $valid = $identitiesMatch -and $passed -eq $expected.Count -and $failed -eq 0 -and $skipped -eq 0
-    $result = [pscustomobject]@{ total = $results.Count; passed = $passed; failed = $failed; skipped = $skipped; identities = $observedSorted; identitiesMatch = $identitiesMatch; valid = $valid }
-    if (-not $AllowInvalid -and -not $identitiesMatch) { throw 'Redis/CAP lane TRX identities do not equal the frozen member identities.' }
-    if (-not $AllowInvalid -and -not $valid) { throw "Redis/CAP lane requires $($expected.Count) passed, 0 failed and 0 skipped; observed $passed passed, $failed failed and $skipped skipped." }
-    return $result
+    return Get-NervTestLaneMemberTrxResult -LaneLabel 'Redis/CAP lane' -ResultsDirectory $ResultsDirectory -ExpectedTestIdentities $ExpectedTestIdentities -AllowInvalid:$AllowInvalid
 }
 
 function Assert-NervRedisCapTestLaneSummary {

@@ -124,7 +124,7 @@ test "$v1_result" = "success"
 
         $formalEvidenceCollectors = [Collections.Generic.List[string]]::new()
         $formalEvidenceArtifacts = [Collections.Generic.List[string]]::new()
-        $directFullChainCollectorPattern = '(?s)(?:^|\r?\n)\s*\./scripts/collect-test-evidence\.ps1(?:\s|$).*?-Lane\s+(?:full-chain|''full-chain''|"full-chain")(?:\s|$)'
+        $directFullChainCollectorPattern = '(?s)(?:^|\r?\n)\s*\./scripts/ci/collect-test-evidence\.ps1(?:\s|$).*?-Lane\s+(?:full-chain|''full-chain''|"full-chain")(?:\s|$)'
         foreach ($jobProperty in $jobs.PSObject.Properties) {
             $jobName = [string] $jobProperty.Name
             foreach ($jobStep in @($jobProperty.Value.steps)) {
@@ -139,7 +139,7 @@ test "$v1_result" = "success"
                     Get-NervCiRequiredSummaryStringValue -Object $stepWith.Value -PropertyName 'name'
                 }
                 else { '' }
-                if ($stepUses -cmatch '^actions/upload-artifact@v(?:4|5)$' -and
+                if ($stepUses -cmatch '^actions/upload-artifact@v(?:4|5|6)$' -and
                     $artifactName.Contains('test-evidence-full-chain-', [StringComparison]::Ordinal)) {
                     $formalEvidenceArtifacts.Add($jobName)
                 }

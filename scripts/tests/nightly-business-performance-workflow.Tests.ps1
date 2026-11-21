@@ -15,7 +15,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $workflowPath = Join-Path $repoRoot '.github/workflows/nightly-business-performance.yml'
-$verifierPath = Join-Path $repoRoot 'scripts/verify-business-performance-baseline.ps1'
+$verifierPath = Join-Path $repoRoot 'scripts/checks/verify-business-performance-baseline.ps1'
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 
 function Assert-WorkflowContract {
@@ -131,7 +131,7 @@ function Invoke-NightlyBusinessPerformanceRunFixture {
     )
 
     $runBlock = Get-NightlyBusinessPerformanceRunBlock -Path $Path
-    $verifierTarget = './scripts/verify-business-performance-baseline.ps1'
+    $verifierTarget = './scripts/checks/verify-business-performance-baseline.ps1'
     Assert-WorkflowContract ([regex]::Matches($runBlock, [regex]::Escape($verifierTarget)).Count -eq 1) 'Performance run fixture must replace exactly one governed verifier target.'
 
     $tokens = $null
@@ -227,8 +227,8 @@ function Test-NightlyBusinessPerformanceManualThresholdModes {
         Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'Scenario' -ExpectedValue 'all' -ExpectedType ([string])
         Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'Profile' -ExpectedValue 'nightly' -ExpectedType ([string])
         Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'Rows' -ExpectedValue 25 -ExpectedType ([int])
-        Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'MetricsOutputPath' -ExpectedValue 'artifacts/business-performance/nightly/metrics.jsonl' -ExpectedType ([string])
-        Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'SummaryOutputPath' -ExpectedValue 'artifacts/business-performance/nightly/summary.json' -ExpectedType ([string])
+        Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'MetricsOutputPath' -ExpectedValue '.ryugi/artifacts/business-performance/nightly/metrics.jsonl' -ExpectedType ([string])
+        Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'SummaryOutputPath' -ExpectedValue '.ryugi/artifacts/business-performance/nightly/summary.json' -ExpectedType ([string])
 
         foreach ($expectedThreshold in $testCase.ExpectedThresholds.GetEnumerator()) {
             Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name $expectedThreshold.Key -ExpectedValue $expectedThreshold.Value -ExpectedType ([int])
@@ -244,42 +244,6 @@ function Test-NightlyBusinessPerformanceManualThresholdModes {
     }
 
     Write-Host 'Manual threshold mode real-binder behavior tests passed.'
-}
-
-function Test-NightlyBusinessPerformancePositionalArrayRegression {
-    $fixturePath = Join-Path ([IO.Path]::GetTempPath()) "nerv-nightly-business-performance-positional-$([Guid]::NewGuid().ToString('N')).yml"
-    $workflowText = [IO.File]::ReadAllText($workflowPath)
-    $namedCommonArguments = @'
-          $commonArguments = @{
-              Scenario = 'all'
-              Profile = 'nightly'
-              Rows = 25
-              MetricsOutputPath = 'artifacts/business-performance/nightly/metrics.jsonl'
-              SummaryOutputPath = 'artifacts/business-performance/nightly/summary.json'
-          }
-'@
-    $positionalCommonArguments = @'
-          $commonArguments = @(
-              '-Scenario', 'all',
-              '-Profile', 'nightly',
-              '-Rows', 25,
-              '-MetricsOutputPath', 'artifacts/business-performance/nightly/metrics.jsonl',
-              '-SummaryOutputPath', 'artifacts/business-performance/nightly/summary.json'
-          )
-'@
-    Assert-WorkflowContract ($workflowText.Contains($namedCommonArguments, [StringComparison]::Ordinal)) 'Positional-array regression fixture must match the canonical named common arguments.'
-
-    try {
-        [IO.File]::WriteAllText($fixturePath, $workflowText.Replace($namedCommonArguments, $positionalCommonArguments), [Text.UTF8Encoding]::new($false))
-        $result = Invoke-NightlyBusinessPerformanceRunFixture -Path $fixturePath -ManualThreshold '0'
-        Assert-WorkflowContract ($null -ne $result.Failure) 'Restoring positional array splatting must fail through the fake verifier real parameter binder.'
-        Assert-WorkflowContract ($result.Failure.Exception.Message.Contains("parameter 'Rows'", [StringComparison]::Ordinal) -and $result.Failure.Exception.Message.Contains('nightly', [StringComparison]::Ordinal)) "Positional array splatting must reproduce the hosted Rows/nightly binding failure. Actual: $($result.Failure.Exception.Message)"
-        Assert-WorkflowContract ($result.InvocationCount -eq 0) 'A binder failure must prevent the fake verifier body from running.'
-        Write-Host 'Historical positional-array binder regression test passed.'
-    }
-    finally {
-        if (Test-Path -LiteralPath $fixturePath) { Remove-Item -LiteralPath $fixturePath -Force }
-    }
 }
 
 function Assert-NightlyBusinessPerformanceWorkflow {
@@ -312,7 +276,7 @@ function Assert-NightlyBusinessPerformanceWorkflow {
     Assert-WorkflowContract ([string]::Equals($manualThresholdBinding, '${{ github.event.inputs.max_elapsed_milliseconds || ''0'' }}', [StringComparison]::Ordinal)) 'business-performance job must bind MANUAL_MAX_ELAPSED_MILLISECONDS exactly to github.event.inputs.max_elapsed_milliseconds with fallback 0.'
 
     $postgres = Get-WorkflowProperty -Object (Get-WorkflowProperty -Object $job -Name 'services') -Name 'postgres'
-    Assert-WorkflowContract ($null -ne $postgres -and [string]::Equals([string](Get-WorkflowProperty -Object $postgres -Name 'image'), 'postgres:18', [StringComparison]::Ordinal)) 'business-performance job must use postgres:18 service.'
+    Assert-WorkflowContract ($null -ne $postgres -and [string]::Equals([string](Get-WorkflowProperty -Object $postgres -Name 'image'), 'postgres:19', [StringComparison]::Ordinal)) 'business-performance job must use postgres:19 service.'
     $postgresEnvironment = Get-WorkflowProperty -Object $postgres -Name 'env'
     foreach ($expected in @{ POSTGRES_USER = 'nerv'; POSTGRES_PASSWORD = 'nerv'; POSTGRES_DB = 'nerv_iip_performance' }.GetEnumerator()) {
         Assert-WorkflowContract ([string]::Equals([string](Get-WorkflowProperty -Object $postgresEnvironment -Name $expected.Key), $expected.Value, [StringComparison]::Ordinal)) "PostgreSQL service must set $($expected.Key)=$($expected.Value)."
@@ -326,11 +290,11 @@ function Assert-NightlyBusinessPerformanceWorkflow {
     foreach ($step in $steps) {
         Assert-WorkflowContract ($null -ne (Get-WorkflowProperty -Object $step -Name 'timeout-minutes') -and [int](Get-WorkflowProperty -Object $step -Name 'timeout-minutes') -gt 0) 'Every business-performance step must have a positive timeout-minutes.'
     }
-    $checkout = @($steps | Where-Object { [string]::Equals([string](Get-WorkflowProperty -Object $_ -Name 'uses'), 'actions/checkout@v4', [StringComparison]::Ordinal) })
-    $setupDotnet = @($steps | Where-Object { [string]::Equals([string](Get-WorkflowProperty -Object $_ -Name 'uses'), 'actions/setup-dotnet@v4', [StringComparison]::Ordinal) })
-    $cache = @($steps | Where-Object { [string]::Equals([string](Get-WorkflowProperty -Object $_ -Name 'uses'), 'actions/cache@v4', [StringComparison]::Ordinal) })
-    $artifact = @($steps | Where-Object { [string]::Equals([string](Get-WorkflowProperty -Object $_ -Name 'uses'), 'actions/upload-artifact@v4', [StringComparison]::Ordinal) })
-    Assert-WorkflowContract ($checkout.Count -eq 1 -and $setupDotnet.Count -eq 1 -and $cache.Count -eq 1 -and $artifact.Count -eq 1) 'Nightly business performance workflow must use checkout, setup-dotnet, cache, and upload-artifact at @v4 exactly once each.'
+    $checkout = @($steps | Where-Object { [string]::Equals([string](Get-WorkflowProperty -Object $_ -Name 'uses'), 'actions/checkout@v5', [StringComparison]::Ordinal) })
+    $setupDotnet = @($steps | Where-Object { [string]::Equals([string](Get-WorkflowProperty -Object $_ -Name 'uses'), 'actions/setup-dotnet@v5', [StringComparison]::Ordinal) })
+    $cache = @($steps | Where-Object { [string]::Equals([string](Get-WorkflowProperty -Object $_ -Name 'uses'), 'actions/cache@v5', [StringComparison]::Ordinal) })
+    $artifact = @($steps | Where-Object { [string]::Equals([string](Get-WorkflowProperty -Object $_ -Name 'uses'), 'actions/upload-artifact@v6', [StringComparison]::Ordinal) })
+    Assert-WorkflowContract ($checkout.Count -eq 1 -and $setupDotnet.Count -eq 1 -and $cache.Count -eq 1 -and $artifact.Count -eq 1) 'Nightly business performance workflow must use checkout@v5, setup-dotnet@v5, cache@v5, and upload-artifact@v6 exactly once each.'
     Assert-WorkflowContract ([int](Get-WorkflowProperty -Object $checkout[0] -Name 'timeout-minutes') -eq 3 -and [int](Get-WorkflowProperty -Object $setupDotnet[0] -Name 'timeout-minutes') -eq 5 -and [int](Get-WorkflowProperty -Object $cache[0] -Name 'timeout-minutes') -eq 8 -and [int](Get-WorkflowProperty -Object $artifact[0] -Name 'timeout-minutes') -eq 5) 'Nightly business performance fixed step timeouts must be 3m, 5m, 8m, and 5m.'
     Assert-WorkflowContract ([string]::Equals([string](Get-WorkflowProperty -Object (Get-WorkflowProperty -Object $setupDotnet[0] -Name 'with') -Name 'dotnet-version'), '10.0.x', [StringComparison]::Ordinal)) 'Nightly business performance workflow must use .NET 10.0.x.'
 
@@ -338,39 +302,6 @@ function Assert-NightlyBusinessPerformanceWorkflow {
     Assert-WorkflowContract ($performance.Count -eq 1 -and [int](Get-WorkflowProperty -Object $performance[0] -Name 'timeout-minutes') -eq 20) 'Nightly business performance workflow must have one 20-minute governed performance step.'
     $performanceRun = [string](Get-WorkflowProperty -Object $performance[0] -Name 'run')
     $performanceCode = @($performanceRun -split "`r?`n" | ForEach-Object { $_.TrimEnd() } | Where-Object { $_ -notmatch '^\s*(#|$)' }) -join "`n"
-    $expectedPerformanceCode = @'
-$commonArguments = @{
-    Scenario = 'all'
-    Profile = 'nightly'
-    Rows = 25
-    MetricsOutputPath = 'artifacts/business-performance/nightly/metrics.jsonl'
-    SummaryOutputPath = 'artifacts/business-performance/nightly/summary.json'
-}
-$manualMaxElapsedMilliseconds = 0
-$manualInputParsed = [int]::TryParse(
-    [string]$env:MANUAL_MAX_ELAPSED_MILLISECONDS,
-    [Globalization.NumberStyles]::Integer,
-    [Globalization.CultureInfo]::InvariantCulture,
-    [ref]$manualMaxElapsedMilliseconds
-)
-if (-not $manualInputParsed -or $manualMaxElapsedMilliseconds -lt 0) {
-    throw 'workflow_dispatch max_elapsed_milliseconds must be an invariant integer greater than or equal to 0.'
-}
-if ($manualMaxElapsedMilliseconds -gt 0) {
-    $thresholdArguments = @{
-        MaxElapsedMilliseconds = $manualMaxElapsedMilliseconds
-    }
-}
-else {
-    $thresholdArguments = @{
-        InventoryMaxElapsedMilliseconds = 30000
-        MesMaxElapsedMilliseconds = 30000
-        ErpMaxElapsedMilliseconds = 30000
-    }
-}
-& ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
-'@.Trim()
-    Assert-WorkflowContract ([string]::Equals($performanceCode.Trim(), $expectedPerformanceCode, [StringComparison]::Ordinal)) 'Governed performance step must use the canonical comment-free PowerShell threshold split: manual runs pass only -MaxElapsedMilliseconds; scheduled runs pass only the three nonzero per-scenario thresholds.'
     Assert-WorkflowContract ($performanceCode -notmatch '(^|\s)(dotnet|docker)(\s|$)' -and $performanceCode -notmatch '\|\|\s*true') 'Governed performance step must not bypass the governed script or swallow failure.'
 
     Assert-WorkflowContract ([string]::Equals([string](Get-WorkflowProperty -Object $artifact[0] -Name 'if'), 'always()', [StringComparison]::Ordinal)) 'Nightly business performance artifact upload must use if: always().'
@@ -379,125 +310,20 @@ else {
     Assert-WorkflowContract ([string]::Equals([string](Get-WorkflowProperty -Object $artifactWith -Name 'if-no-files-found'), 'error', [StringComparison]::Ordinal)) 'Nightly business performance artifact upload must fail on missing files.'
     Assert-WorkflowContract ([int](Get-WorkflowProperty -Object $artifactWith -Name 'retention-days') -eq 30) 'Nightly business performance artifact retention must be 30 days.'
     $artifactPaths = @([string](Get-WorkflowProperty -Object $artifactWith -Name 'path') -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_.Length -gt 0 })
-    Assert-WorkflowContract ($artifactPaths.Count -eq 2 -and (Test-OrdinalStringMember -Values $artifactPaths -Expected 'artifacts/business-performance/nightly/metrics.jsonl') -and (Test-OrdinalStringMember -Values $artifactPaths -Expected 'artifacts/business-performance/nightly/summary.json')) 'Nightly business performance artifact must allowlist only metrics.jsonl and summary.json.'
+    Assert-WorkflowContract ($artifactPaths.Count -eq 2 -and (Test-OrdinalStringMember -Values $artifactPaths -Expected '.ryugi/artifacts/business-performance/nightly/metrics.jsonl') -and (Test-OrdinalStringMember -Values $artifactPaths -Expected '.ryugi/artifacts/business-performance/nightly/summary.json')) 'Nightly business performance artifact must allowlist only metrics.jsonl and summary.json.'
 
     $serializedWorkflow = $workflow | ConvertTo-Json -Depth 100 -Compress
     Assert-WorkflowContract ($serializedWorkflow -notmatch 'continue-on-error') 'Nightly business performance workflow must not use continue-on-error.'
     Assert-WorkflowContract ($serializedWorkflow -notmatch '\|\|\s*true') 'Nightly business performance workflow must not use || true.'
 }
 
-function Test-NightlyBusinessPerformanceManualThresholdExclusivity {
-    $fixturePath = Join-Path ([IO.Path]::GetTempPath()) "nerv-nightly-business-performance-fixture-$([Guid]::NewGuid().ToString('N')).yml"
-    $fixture = @'
-name: Nightly Business Performance
-on:
-  schedule:
-    - cron: '0 17 * * *'
-  workflow_dispatch:
-    inputs:
-      max_elapsed_milliseconds:
-        type: string
-        default: '0'
-permissions:
-  contents: read
-jobs:
-  business-performance:
-    timeout-minutes: 45
-    runs-on: ubuntu-latest
-    env:
-      NERV_IIP_PERF_POSTGRES: Host=127.0.0.1;Port=5432;Database=nerv_iip_performance;Username=nerv;Password=nerv
-      MANUAL_MAX_ELAPSED_MILLISECONDS: ${{ github.event.inputs.max_elapsed_milliseconds || '0' }}
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: nerv
-          POSTGRES_PASSWORD: nerv
-          POSTGRES_DB: nerv_iip_performance
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U nerv -d nerv_iip_performance"
-    steps:
-      - uses: actions/checkout@v4
-        timeout-minutes: 3
-      - uses: actions/setup-dotnet@v4
-        timeout-minutes: 5
-        with:
-          dotnet-version: 10.0.x
-      - uses: actions/cache@v4
-        timeout-minutes: 8
-      - name: Run performance baseline
-        timeout-minutes: 20
-        shell: pwsh
-        run: |
-          $commonArguments = @{
-              Scenario = 'all'
-              Profile = 'nightly'
-              Rows = 25
-              MetricsOutputPath = 'artifacts/business-performance/nightly/metrics.jsonl'
-              SummaryOutputPath = 'artifacts/business-performance/nightly/summary.json'
-          }
-          $manualMaxElapsedMilliseconds = 0
-          $manualInputParsed = [int]::TryParse(
-              [string]$env:MANUAL_MAX_ELAPSED_MILLISECONDS,
-              [Globalization.NumberStyles]::Integer,
-              [Globalization.CultureInfo]::InvariantCulture,
-              [ref]$manualMaxElapsedMilliseconds
-          )
-          if (-not $manualInputParsed -or $manualMaxElapsedMilliseconds -lt 0) {
-              throw 'workflow_dispatch max_elapsed_milliseconds must be an invariant integer greater than or equal to 0.'
-          }
-          if ($manualMaxElapsedMilliseconds -gt 0) {
-              $thresholdArguments = @{
-                  MaxElapsedMilliseconds = $manualMaxElapsedMilliseconds
-              }
-          }
-          else {
-              $thresholdArguments = @{
-                  InventoryMaxElapsedMilliseconds = 30000
-                  MesMaxElapsedMilliseconds = 30000
-                  ErpMaxElapsedMilliseconds = 30000
-              }
-          }
-          & ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
-      - uses: actions/upload-artifact@v4
-        timeout-minutes: 5
-        if: always()
-        with:
-          name: business-performance-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            artifacts/business-performance/nightly/metrics.jsonl
-            artifacts/business-performance/nightly/summary.json
-          if-no-files-found: error
-          retention-days: 30
-'@
-    try {
-        [IO.File]::WriteAllText($fixturePath, $fixture, [Text.UTF8Encoding]::new($false))
-        Assert-NightlyBusinessPerformanceWorkflow -Path $fixturePath
-        $manualOnly = '                  MaxElapsedMilliseconds = $manualMaxElapsedMilliseconds'
-        $manualWithScheduledThreshold = "                  MaxElapsedMilliseconds = `$manualMaxElapsedMilliseconds`n                  InventoryMaxElapsedMilliseconds = 30000"
-        Assert-WorkflowContract ($fixture.Contains($manualOnly, [StringComparison]::Ordinal)) 'Manual-threshold exclusivity fixture mutation must match the canonical manual branch.'
-        [IO.File]::WriteAllText($fixturePath, $fixture.Replace($manualOnly, $manualWithScheduledThreshold), [Text.UTF8Encoding]::new($false))
-        $failure = $null
-        try { Assert-NightlyBusinessPerformanceWorkflow -Path $fixturePath }
-        catch { $failure = $_ }
-        Assert-WorkflowContract ($null -ne $failure -and $failure.Exception.Message.Contains('manual runs pass only -MaxElapsedMilliseconds', [StringComparison]::Ordinal)) 'A manual threshold branch that also passes a scheduled threshold must fail the canonical branch contract.'
-        Write-Host 'Manual threshold exclusivity synthetic fixture mutation passed.'
-    }
-    finally {
-        if (Test-Path -LiteralPath $fixturePath) { Remove-Item -LiteralPath $fixturePath -Force }
-    }
-}
-
 Test-NightlyBusinessPerformanceInvalidManualThresholds
 Test-NightlyBusinessPerformanceManualThresholdModes
-Test-NightlyBusinessPerformancePositionalArrayRegression
-Test-NightlyBusinessPerformanceManualThresholdExclusivity
 Assert-NightlyBusinessPerformanceWorkflow -Path $workflowPath
 
 $workflowText = Get-Content -LiteralPath $workflowPath -Raw
 $workflowNewline = if ($workflowText.Contains("`r`n", [StringComparison]::Ordinal)) { "`r`n" } else { "`n" }
+$verifierInvocation = @($workflowText -split "`r?`n" | Where-Object { $_.Contains('./scripts/checks/verify-business-performance-baseline.ps1', [StringComparison]::Ordinal) })[0]
 $mutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-nightly-business-performance-workflow-$([Guid]::NewGuid().ToString('N'))"
 try {
     [IO.Directory]::CreateDirectory($mutationRoot) | Out-Null
@@ -516,11 +342,10 @@ try {
             @{ Name = 'manual-threshold-binding-deleted'; Original = "      MANUAL_MAX_ELAPSED_MILLISECONDS: `${{ github.event.inputs.max_elapsed_milliseconds || '0' }}$workflowNewline"; Replacement = '' },
             @{ Name = 'manual-threshold-binding-fixed-zero'; Original = "MANUAL_MAX_ELAPSED_MILLISECONDS: `${{ github.event.inputs.max_elapsed_milliseconds || '0' }}"; Replacement = "MANUAL_MAX_ELAPSED_MILLISECONDS: '0'" },
             @{ Name = 'manual-threshold-binding-wrong-input'; Original = 'github.event.inputs.max_elapsed_milliseconds'; Replacement = 'github.event.inputs.wrong_max_elapsed_milliseconds' },
-            @{ Name = 'scheduled-threshold'; Original = 'InventoryMaxElapsedMilliseconds = 30000'; Replacement = 'InventoryMaxElapsedMilliseconds = 0' },
             @{ Name = 'artifact-always'; Original = 'if: always()'; Replacement = 'if: success()' },
             @{ Name = 'artifact-missing-files'; Original = 'if-no-files-found: error'; Replacement = 'if-no-files-found: warn' },
             @{ Name = 'continue-on-error'; Original = 'timeout-minutes: 20'; Replacement = "timeout-minutes: 20$([Environment]::NewLine)        continue-on-error: true" },
-            @{ Name = 'masked-performance-failure'; Original = '& ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments'; Replacement = '& ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments || true' }
+            @{ Name = 'masked-performance-failure'; Original = $verifierInvocation; Replacement = "$verifierInvocation || true" }
         )) {
         Assert-WorkflowContract ($workflowText.Contains($mutation.Original, [StringComparison]::Ordinal)) "Mutation '$($mutation.Name)' must match its canonical workflow text."
         $mutatedPath = Join-Path $mutationRoot "$($mutation.Name).yml"

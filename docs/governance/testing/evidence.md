@@ -1,6 +1,6 @@
 # 测试证据治理
 
-本文定义 Nerv-IIP 当前测试证据的失败关闭、来源证明、隐私与证明范围规则。实现事实以 `.github/workflows/ci.yml`、`scripts/test-evidence-policy.json`、`scripts/test-evidence-baseline.json`、`scripts/lib/TestEvidence*.ps1`、采集/验证脚本和对应契约测试为准；本文不维护易漂移的 lane 成员数或某次运行结果。
+本文定义 Nerv-IIP 当前测试证据的失败关闭、来源证明、隐私与证明范围规则。实现事实以 `.github/workflows/ci.yml`、`scripts/config/test-evidence-policy.json`、`scripts/config/test-evidence-baseline.json`、`scripts/lib/TestEvidence*.ps1`、采集/验证脚本和对应契约测试为准；本文不维护易漂移的 lane 成员数或某次运行结果。
 
 ## 1. 原生测试结果与证据采集
 
@@ -69,5 +69,3 @@ Evidence job 的预算必须保证：某个测试/步骤失败后，负责收集
 - timing 以近期成功证据自动刷新或降级估值；
 - `report-only` 指标不得反向成为测试正确性或 lane 合法性的来源；
 - 不建立必须人工刷新 timing snapshot 的 gate 或 hash registry。
-
-历史形成过程见 [`../../reports/audits/test-evidence-governance-evolution-2026-08.md`](../../reports/audits/test-evidence-governance-evolution-2026-08.md)。

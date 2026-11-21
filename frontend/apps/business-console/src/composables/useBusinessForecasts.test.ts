@@ -5,6 +5,7 @@ import {
   createOrUpdateBusinessConsolePlanningForecastMutationOptions,
   listBusinessConsolePlanningForecastsQueryOptions,
 } from '@nerv-iip/api-client'
+import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useBusinessForecasts } from './useBusinessForecasts'
 
@@ -47,6 +48,7 @@ vi.mock('@pinia/colada', () => ({
 describe('business forecast composable', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    useAuthStore().principal = { permissionCodes: ['business.planning.demands.read'] }
     useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
     state.data = {
       success: true,
@@ -95,6 +97,15 @@ describe('business forecast composable', () => {
         toDate: undefined,
       },
     })
+  })
+
+  it('撤回需求读权后停用预测查询与手动刷新', async () => {
+    const { refreshForecasts } = useBusinessForecasts()
+    expect(state.queryFactory?.()).toMatchObject({ enabled: true })
+    useAuthStore().principal = { permissionCodes: ['business.planning.mps.read'] }
+    expect(state.queryFactory?.()).toMatchObject({ enabled: false })
+    await refreshForecasts()
+    expect(state.refetch).not.toHaveBeenCalled()
   })
 
   it('保存完整 ForecastInput 契约并在成功后刷新列表', async () => {

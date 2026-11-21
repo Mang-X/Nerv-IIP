@@ -1,7 +1,7 @@
 import { getBusinessConsoleSchedulingDowntimeImpactQueryOptions } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
-import { useNow } from '@vueuse/core'
+import { useIntervalFn, useNow } from '@vueuse/core'
 import { hasBusinessContext, type BusinessContextFields } from './businessContextBinding'
 import { assertEnvelopeSuccess } from './serviceEnvelope'
 
@@ -9,7 +9,7 @@ export function useSchedulingDowntime(
   planId: MaybeRefOrGetter<string | undefined>,
   context: () => BusinessContextFields,
 ) {
-  const now = useNow({ interval: 1000 })
+  const now = useNow({ scheduler: (tick) => useIntervalFn(tick, 1000) })
   const query = useQuery(() => {
     const id = toValue(planId) ?? ''
     const scope = context()

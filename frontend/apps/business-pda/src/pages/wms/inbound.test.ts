@@ -113,6 +113,7 @@ const wmsState = vi.hoisted(() => ({
   linesRefresh: vi.fn(() => Promise.resolve()),
 }))
 const scopeKey = ref<string | undefined>('self:emp049')
+const sessionKey = ref('shift-a')
 const scopeKind = computed(() => scopeKey.value?.split(':', 2)[0])
 const scopeId = computed(() => scopeKey.value?.split(':', 2)[1])
 
@@ -120,6 +121,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
   useWmsInbound: () => ({
     filters: wmsState.filters,
     scopeKey,
+    sessionKey,
     scopeKind,
     scopeId,
     scopeOptions: computed(() => [
@@ -182,6 +184,7 @@ function resetState() {
   wmsState.filters.keyword = undefined
   wmsState.filters.status = undefined
   scopeKey.value = 'self:emp049'
+  sessionKey.value = 'shift-a'
   wmsState.orders = [
     {
       inboundOrderId: '11111111-1111-1111-1111-111111111111',
@@ -300,6 +303,22 @@ describe('WMS 收货入库', () => {
     // 批号手输框预填后端既有批号
     const batch = document.querySelector<HTMLInputElement>('[data-batch-input]')!
     expect(batch.value).toBe('LOT-A')
+  })
+
+  it('同池换岗时撤回打开的收货详情，重新点单才能打开', async () => {
+    scopeKey.value = 'work-pool:WMS-SITE-001-RECEIVING'
+    const wrapper = mount(InboundPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    expect(document.querySelector('[data-line]')?.textContent).toContain('SKU-A')
+
+    sessionKey.value = 'shift-b'
+    await flushPromises()
+    expect(document.querySelector('[data-line]')).toBeNull()
+
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    expect(document.querySelector('[data-line]')?.textContent).toContain('SKU-A')
   })
 
   it('待检单据不出现「去上架」，显示待质检门禁提示', async () => {
@@ -590,7 +609,12 @@ describe('WMS 收货入库', () => {
     ])
   })
 
-  it('完成后显示成功 Result，文案为「入库完成，待质检」', async () => {
+  it.each([
+    ['pending', '入库完成，待质检'],
+    ['not-required', '入库完成，免检'],
+    [undefined, '入库完成'],
+  ])('完成后按单据质检状态 %s 显示结果', async (qualityGateStatus, title) => {
+    wmsState.orders[0] = { ...wmsState.orders[0], qualityGateStatus }
     const wrapper = mount(InboundPage, { attachTo: document.body })
     await wrapper.findAll('[data-row]')[0].trigger('click')
     await flushPromises()
@@ -599,7 +623,8 @@ describe('WMS 收货入库', () => {
     await wrapper.vm.$nextTick()
     const result = wrapper.find('[data-result][data-status="success"]')
     expect(result.exists()).toBe(true)
-    expect(wrapper.text()).toContain('入库完成，待质检')
+    expect(result.text()).toContain(title!)
+    if (qualityGateStatus !== 'pending') expect(result.text()).not.toContain('待质检')
   })
 
   it('错误时显示错误横幅', () => {

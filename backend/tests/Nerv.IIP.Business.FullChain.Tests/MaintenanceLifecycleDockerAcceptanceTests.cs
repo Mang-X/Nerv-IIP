@@ -656,7 +656,7 @@ internal sealed class MaintenanceLifecycleDockerDependencies : IAsyncDisposable
                     "-e", $"POSTGRES_PASSWORD={password}",
                     "-e", $"POSTGRES_DB={identity.DatabaseName}",
                     "-p", "127.0.0.1::5432",
-                    "postgres:18",
+                    "postgres:19",
                 ],
                 "start PostgreSQL test container",
                 TimeSpan.FromMinutes(5));

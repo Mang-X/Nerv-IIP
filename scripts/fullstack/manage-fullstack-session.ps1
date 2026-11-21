@@ -1,0 +1,836 @@
+# Script-Governance:
+#   Category: verify
+#   SideEffects:
+#     - Starts and inspects session-owned Aspire and Docker resources
+#   Writes:
+#     - Local full-stack session manifests and artifacts
+#   Cleanup:
+#     - Stop and GC are installed by the lifecycle task
+#   Requires:
+#     - PowerShell 7
+#     - Aspire CLI 13.4.x
+#     - Docker
+
+[CmdletBinding()]
+param(
+    [Parameter(Position = 0)]
+    [ValidateSet('run', 'start', 'url', 'status', 'logs', 'stop', 'list', 'gc', 'help')]
+    [string] $Action = 'help',
+    [Parameter(Position = 1)] [string] $Target,
+    [ValidateSet('smoke', 'man-440', 'man-528', 'issue-1912-real-machine-walkthrough')] [string] $Scenario = 'smoke',
+    [string] $SessionId,
+    [switch] $NoBuild,
+    [switch] $EnableWmsDemoWorker,
+    [int] $Tail = 120,
+    [switch] $Follow
+)
+
+$ErrorActionPreference = 'Stop'
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+. (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
+. (Join-Path $repoRoot 'scripts/lib/FullStackSessionState.ps1')
+. (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1')
+
+function Write-NervFullStackHelp {
+    Write-Host @'
+Nerv-IIP isolated full-stack sessions
+
+fullstack run is one-shot and automatically stops and cleans up its session when complete.
+Use fullstack start for interactive diagnostic walkthroughs; run fullstack stop before handoff or ending the task.
+
+Usage:
+  .\nerv.ps1 fullstack run -Scenario smoke [-NoBuild]
+  .\nerv.ps1 fullstack run -Scenario smoke -EnableWmsDemoWorker [-NoBuild]
+  .\nerv.ps1 fullstack start -EnableWmsDemoWorker
+  .\nerv.ps1 fullstack run -Scenario man-440
+  .\nerv.ps1 fullstack run -Scenario man-528
+  .\nerv.ps1 fullstack run -Scenario issue-1912-real-machine-walkthrough [-NoBuild]
+  .\nerv.ps1 fullstack start [-SessionId nerv-abcd-123456] [-NoBuild]
+  .\nerv.ps1 fullstack url <gateway|business-gateway|console|business-console|screen> [-SessionId ...]
+  .\nerv.ps1 fullstack status [-SessionId ...]
+  .\nerv.ps1 fullstack logs [resource] [-SessionId ...] [-Tail 120] [-Follow]
+  .\nerv.ps1 fullstack stop [-SessionId ...]
+  .\nerv.ps1 fullstack list
+  .\nerv.ps1 fullstack gc
+'@
+}
+
+function Resolve-NervFullStackSessionId {
+    param([string] $RequestedSessionId)
+
+    if (-not [string]::IsNullOrWhiteSpace($RequestedSessionId)) {
+        [void] (Get-NervFullStackManifestPath -SessionId $RequestedSessionId)
+        return $RequestedSessionId
+    }
+
+    $comparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+    $matches = @(Get-NervFullStackManifests | Where-Object {
+        (-not [string]::Equals([string]("$($_.state)"), [string]('Stopped'), [StringComparison]::OrdinalIgnoreCase)) -and
+        [string]::Equals([System.IO.Path]::GetFullPath("$($_.worktreeRoot)"), $repoRoot, $comparison)
+    })
+    if ($matches.Count -ne 1) {
+        throw "Expected exactly one active full-stack session for '$repoRoot', found $($matches.Count); specify -SessionId."
+    }
+    return "$($matches[0].sessionId)"
+}
+
+function Get-NervFullStackGuardianIntervalSeconds {
+    if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULLSTACK_GUARDIAN_INTERVAL_SECONDS)) { return 60 }
+    $seconds = 0
+    if (-not [int]::TryParse($env:NERV_IIP_FULLSTACK_GUARDIAN_INTERVAL_SECONDS, [ref] $seconds) -or $seconds -lt 1 -or $seconds -gt 3600) {
+        throw 'NERV_IIP_FULLSTACK_GUARDIAN_INTERVAL_SECONDS must be an integer from 1 through 3600.'
+    }
+    return $seconds
+}
+
+function Invoke-NervMan528MesInventoryAcceptance {
+    param([Parameter(Mandatory)] [object] $Manifest)
+
+    if (-not [string]::Equals($env:Messaging__Provider, 'Redis', [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'The man-528 full-stack scenario requires Messaging__Provider=Redis.'
+    }
+
+    foreach ($resourceName in @('business-mes', 'business-inventory')) {
+        Wait-NervAspireResource `
+            -AppHostProject "$($Manifest.appHostProject)" `
+            -ResourceName $resourceName `
+            -WorkingDirectory "$($Manifest.worktreeRoot)"
+    }
+
+    $containerIds = @($Manifest.runtime.containerIds | ForEach-Object { "$_" })
+    if ($containerIds.Count -eq 0) {
+        throw "Session '$($Manifest.sessionId)' has no recorded containers for MAN-528 acceptance."
+    }
+
+    $inspectResult = Invoke-NativeCommandOutput `
+        -Command 'docker' `
+        -Arguments (@('container', 'inspect') + $containerIds) `
+        -WorkingDirectory "$($Manifest.worktreeRoot)" `
+        -TimeoutSeconds 30 `
+        -Name "fullstack-$($Manifest.sessionId)-man-528-container-inspect" `
+        -Environment (Get-NervFullStackNonSeedEnvironment)
+    $containers = @($inspectResult.Stdout | ConvertFrom-Json -Depth 100)
+    $postgres = @($containers | Where-Object { "$($_.Config.Image)" -match '(^|/)postgres:' })
+    $redis = @($containers | Where-Object { "$($_.Config.Image)" -match '(^|/)redis:' })
+    if ($postgres.Count -ne 1 -or $redis.Count -ne 1) {
+        throw "MAN-528 acceptance expected exactly one PostgreSQL and one Redis container; postgres=$($postgres.Count), redis=$($redis.Count)."
+    }
+
+    $postgresEnvironment = @($postgres[0].Config.Env)
+    $postgresUserEntry = $postgresEnvironment | Where-Object { $_.StartsWith('POSTGRES_USER=', [StringComparison]::Ordinal) } | Select-Object -First 1
+    $postgresPasswordEntry = $postgresEnvironment | Where-Object { $_.StartsWith('POSTGRES_PASSWORD=', [StringComparison]::Ordinal) } | Select-Object -First 1
+    $postgresUser = if ($postgresUserEntry) { $postgresUserEntry.Substring('POSTGRES_USER='.Length) } else { 'postgres' }
+    if (-not $postgresPasswordEntry) { throw 'MAN-528 acceptance could not resolve the session PostgreSQL password.' }
+    $postgresPassword = $postgresPasswordEntry.Substring('POSTGRES_PASSWORD='.Length)
+    $postgresPort = "$($postgres[0].NetworkSettings.Ports.'5432/tcp'[0].HostPort)"
+    if ([string]::IsNullOrWhiteSpace($postgresPort)) { throw 'MAN-528 acceptance could not resolve the session PostgreSQL host port.' }
+
+    $redisArguments = @($redis[0].Path) + @($redis[0].Args) + @($redis[0].Config.Entrypoint) + @($redis[0].Config.Cmd)
+    $redisEnvironment = @($redis[0].Config.Env)
+    $redisPasswordEntry = $redisEnvironment | Where-Object { $_.StartsWith('REDIS_PASSWORD=', [StringComparison]::Ordinal) } | Select-Object -First 1
+    $redisPassword = if ($redisPasswordEntry) { $redisPasswordEntry.Substring('REDIS_PASSWORD='.Length) } else { $null }
+    for ($index = 0; [string]::IsNullOrWhiteSpace($redisPassword) -and $index -lt $redisArguments.Count; $index++) {
+        $argument = "$($redisArguments[$index])"
+        if ([string]::Equals([string]($argument), [string]('--requirepass'), [StringComparison]::OrdinalIgnoreCase) -and $index + 1 -lt $redisArguments.Count) {
+            $redisPassword = "$($redisArguments[$index + 1])"
+        }
+        elseif ($argument.StartsWith('--requirepass=', [StringComparison]::Ordinal)) {
+            $redisPassword = $argument.Substring('--requirepass='.Length)
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($redisPassword)) {
+        throw 'MAN-528 acceptance could not resolve the session Redis password.'
+    }
+    $redisPort = "$($redis[0].NetworkSettings.Ports.'6379/tcp'[0].HostPort)"
+    if ([string]::IsNullOrWhiteSpace($redisPort)) { throw 'MAN-528 acceptance could not resolve the session Redis host port.' }
+
+    Wait-NervFullStackPostgresRelations `
+        -ContainerId "$($postgres[0].Id)" `
+        -Database 'nerv_iip_mes' `
+        -Relations @('mes.work_orders', 'mes.finished_goods_receipt_requests', 'mes.cap_published_messages') | Out-Null
+    Wait-NervFullStackPostgresRelations `
+        -ContainerId "$($postgres[0].Id)" `
+        -Database 'nerv_iip_inventory' `
+        -Relations @('inventory.stock_movements', 'inventory.cap_received_messages', 'inventory.integration_event_dead_letters') | Out-Null
+
+    $connectionPrefix = "Host=127.0.0.1;Port=$postgresPort;Username=$postgresUser;Password=$postgresPassword;Include Error Detail=false;"
+    $probeEnvironment = @{
+        NERV_IIP_TEST_MES_POSTGRES = $connectionPrefix + 'Database=nerv_iip_mes'
+        NERV_IIP_TEST_INVENTORY_POSTGRES = $connectionPrefix + 'Database=nerv_iip_inventory'
+        NERV_IIP_TEST_REDIS = "localhost:$redisPort,password=$redisPassword,ssl=true,abortConnect=false"
+        NERV_IIP_TEST_CAP_VERSION = 'v1'
+        NERV_IIP_TEST_PROBE_RUN_ID = "$($Manifest.sessionId)-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+    }
+    try {
+        Invoke-WithScopedEnvironment -Variables $probeEnvironment -ScriptBlock {
+            $testArguments = @(
+                    'test',
+                    'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj'
+                )
+            if ([string]::Equals($env:NERV_IIP_FULL_CHAIN_CONFIGURATION, 'Release', [StringComparison]::Ordinal)) {
+                $testArguments += @('--configuration', 'Release')
+            }
+            $testArguments += @(
+                    '--no-restore',
+                    '--no-build',
+                    '--filter', 'FullyQualifiedName~MesInventoryProducedLotPostgresRedisAcceptanceTests',
+                    '--nologo'
+                )
+            if (-not [string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY) -and -not [string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULT_FILE)) {
+                [IO.Directory]::CreateDirectory($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY) | Out-Null
+                $testArguments += @('--results-directory', $env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY, '--logger', "trx;LogFileName=$env:NERV_IIP_FULL_CHAIN_RESULT_FILE")
+            }
+            Invoke-WithScopedEnvironment -Variables (Get-NervFullStackNonSeedEnvironment) -ScriptBlock {
+                Invoke-DotNet `
+                    -Arguments $testArguments `
+                    -WorkingDirectory "$($Manifest.worktreeRoot)" `
+                    -TimeoutSeconds 600 `
+                    -Name "fullstack-$($Manifest.sessionId)-man-528-postgres-redis" | Out-Null
+            }
+        }
+    }
+    finally {
+        $probeEnvironment.Clear()
+        $postgresPassword = $null
+        $redisPassword = $null
+        $connectionPrefix = $null
+    }
+}
+
+function Invoke-NervMan440RuntimeHoursAcceptance {
+    param([Parameter(Mandatory)] [object] $Manifest)
+
+    if (-not [string]::Equals("$($Manifest.runtime.messagingProvider)", 'Redis', [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'The man-440 full-stack scenario requires Messaging__Provider=Redis.'
+    }
+
+    foreach ($resourceName in @('business-industrial-telemetry', 'business-maintenance')) {
+        Wait-NervAspireResource `
+            -AppHostProject "$($Manifest.appHostProject)" `
+            -ResourceName $resourceName `
+            -WorkingDirectory "$($Manifest.worktreeRoot)"
+    }
+
+    $containerIds = @($Manifest.runtime.containerIds | ForEach-Object { "$_" })
+    if ($containerIds.Count -eq 0) {
+        throw "Session '$($Manifest.sessionId)' has no recorded containers for MAN-440 acceptance."
+    }
+
+    $inspectResult = Invoke-NativeCommandOutput `
+        -Command 'docker' `
+        -Arguments (@('container', 'inspect') + $containerIds) `
+        -WorkingDirectory "$($Manifest.worktreeRoot)" `
+        -TimeoutSeconds 30 `
+        -Name "fullstack-$($Manifest.sessionId)-man-440-container-inspect" `
+        -Environment (Get-NervFullStackNonSeedEnvironment)
+    $containers = @($inspectResult.Stdout | ConvertFrom-Json -Depth 100)
+    $postgres = @($containers | Where-Object { "$($_.Config.Image)" -match '(^|/)postgres:' })
+    $redis = @($containers | Where-Object { "$($_.Config.Image)" -match '(^|/)redis:' })
+    if ($postgres.Count -ne 1 -or $redis.Count -ne 1) {
+        throw "MAN-440 acceptance expected exactly one PostgreSQL and one Redis container; postgres=$($postgres.Count), redis=$($redis.Count)."
+    }
+
+    $postgresEnvironment = @($postgres[0].Config.Env)
+    $postgresUserEntry = $postgresEnvironment | Where-Object { $_.StartsWith('POSTGRES_USER=', [StringComparison]::Ordinal) } | Select-Object -First 1
+    $postgresPasswordEntry = $postgresEnvironment | Where-Object { $_.StartsWith('POSTGRES_PASSWORD=', [StringComparison]::Ordinal) } | Select-Object -First 1
+    $postgresUser = if ($postgresUserEntry) { $postgresUserEntry.Substring('POSTGRES_USER='.Length) } else { 'postgres' }
+    if (-not $postgresPasswordEntry) { throw 'MAN-440 acceptance could not resolve the session PostgreSQL password.' }
+    $postgresPassword = $postgresPasswordEntry.Substring('POSTGRES_PASSWORD='.Length)
+    $postgresPortBindings = @($postgres[0].NetworkSettings.Ports.'5432/tcp')
+    if ($postgresPortBindings.Count -eq 0) { throw 'MAN-440 acceptance found no session PostgreSQL host-port binding.' }
+    $postgresPort = "$($postgresPortBindings[0].HostPort)"
+    if ([string]::IsNullOrWhiteSpace($postgresPort)) { throw 'MAN-440 acceptance could not resolve the session PostgreSQL host port.' }
+
+    $redisArguments = @($redis[0].Path) + @($redis[0].Args) + @($redis[0].Config.Entrypoint) + @($redis[0].Config.Cmd)
+    $redisEnvironment = @($redis[0].Config.Env)
+    $redisPasswordEntry = $redisEnvironment | Where-Object { $_.StartsWith('REDIS_PASSWORD=', [StringComparison]::Ordinal) } | Select-Object -First 1
+    $redisPassword = if ($redisPasswordEntry) { $redisPasswordEntry.Substring('REDIS_PASSWORD='.Length) } else { $null }
+    for ($index = 0; [string]::IsNullOrWhiteSpace($redisPassword) -and $index -lt $redisArguments.Count; $index++) {
+        $argument = "$($redisArguments[$index])"
+        if ([string]::Equals([string]($argument), [string]('--requirepass'), [StringComparison]::OrdinalIgnoreCase) -and $index + 1 -lt $redisArguments.Count) {
+            $redisPassword = "$($redisArguments[$index + 1])"
+        }
+        elseif ($argument.StartsWith('--requirepass=', [StringComparison]::Ordinal)) {
+            $redisPassword = $argument.Substring('--requirepass='.Length)
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($redisPassword)) {
+        throw 'MAN-440 acceptance could not resolve the session Redis password.'
+    }
+    $redisPortBindings = @($redis[0].NetworkSettings.Ports.'6379/tcp')
+    if ($redisPortBindings.Count -eq 0) { throw 'MAN-440 acceptance found no session Redis host-port binding.' }
+    $redisPort = "$($redisPortBindings[0].HostPort)"
+    if ([string]::IsNullOrWhiteSpace($redisPort)) { throw 'MAN-440 acceptance could not resolve the session Redis host port.' }
+
+    Wait-NervFullStackPostgresRelations `
+        -ContainerId "$($postgres[0].Id)" `
+        -Database 'nerv_iip_maintenance' `
+        -Relations @('maintenance.maintenance_plans', 'maintenance.maintenance_work_orders') | Out-Null
+    Wait-NervFullStackPostgresRelations `
+        -ContainerId "$($postgres[0].Id)" `
+        -Database 'nerv_iip_industrial_telemetry' `
+        -Relations @('industrial_telemetry.device_state_snapshots') | Out-Null
+
+    $connectionPrefix = "Host=127.0.0.1;Port=$postgresPort;Username=$postgresUser;Password=$postgresPassword;Include Error Detail=false;"
+    $probeEnvironment = @{
+        NERV_IIP_TEST_MAINTENANCE_POSTGRES = $connectionPrefix + 'Database=nerv_iip_maintenance'
+        NERV_IIP_TEST_INDUSTRIAL_TELEMETRY_POSTGRES = $connectionPrefix + 'Database=nerv_iip_industrial_telemetry'
+        NERV_IIP_TEST_REDIS = "localhost:$redisPort,password=$redisPassword,ssl=true,abortConnect=false"
+        NERV_IIP_TEST_CAP_VERSION = 'v1'
+        NERV_IIP_TEST_PROBE_RUN_ID = "$($Manifest.sessionId)-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+    }
+    try {
+        Invoke-WithScopedEnvironment -Variables $probeEnvironment -ScriptBlock {
+            $testArguments = @(
+                    'test',
+                    'backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj'
+                )
+            if ([string]::Equals($env:NERV_IIP_FULL_CHAIN_CONFIGURATION, 'Release', [StringComparison]::Ordinal)) {
+                $testArguments += @('--configuration', 'Release')
+            }
+            $testArguments += @(
+                    '--no-restore',
+                    '--no-build',
+                    '--filter', 'FullyQualifiedName~MaintenanceRuntimeHoursPostgresRedisAcceptanceTests',
+                    '--nologo'
+                )
+            if (-not [string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY) -and -not [string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULT_FILE)) {
+                [IO.Directory]::CreateDirectory($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY) | Out-Null
+                $testArguments += @('--results-directory', $env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY, '--logger', "trx;LogFileName=$env:NERV_IIP_FULL_CHAIN_RESULT_FILE")
+            }
+            Invoke-WithScopedEnvironment -Variables (Get-NervFullStackNonSeedEnvironment) -ScriptBlock {
+                Invoke-DotNet `
+                    -Arguments $testArguments `
+                    -WorkingDirectory "$($Manifest.worktreeRoot)" `
+                    -TimeoutSeconds 600 `
+                    -Name "fullstack-$($Manifest.sessionId)-man-440-postgres-redis" | Out-Null
+            }
+        }
+    }
+    finally {
+        $probeEnvironment.Clear()
+    }
+}
+
+function Start-NervFullStackGuardian {
+    param(
+        [Parameter(Mandatory)] [object] $Manifest,
+        [Parameter(Mandatory)] [ValidateSet('Automated', 'Interactive')] [string] $Mode,
+        [int] $CoordinatorPid,
+        [string] $CoordinatorStartTimeUtc
+    )
+
+    $guardianScript = Join-Path $repoRoot 'scripts/fullstack/watch-fullstack-session.ps1'
+    $arguments = @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $guardianScript,
+        '-SessionId', "$($Manifest.sessionId)",
+        '-Mode', $Mode,
+        '-IntervalSeconds', "$(Get-NervFullStackGuardianIntervalSeconds)",
+        '-StateRoot', (Get-NervFullStackStateRoot)
+    )
+    if ([string]::Equals([string]($Mode), [string]('Automated'), [StringComparison]::OrdinalIgnoreCase)) {
+        $arguments += @('-CoordinatorPid', "$CoordinatorPid", '-CoordinatorStartTimeUtc', $CoordinatorStartTimeUtc)
+    }
+    $nonSeedEnvironment = Get-NervFullStackNonSeedEnvironment
+    return (Start-DetachedManagedProcess `
+        -Command (Get-Process -Id $PID).Path `
+        -Arguments $arguments `
+        -WorkingDirectory $repoRoot `
+        -StdoutPath (Join-Path "$($Manifest.artifactPath)" 'guardian.stdout.log') `
+        -StderrPath (Join-Path "$($Manifest.artifactPath)" 'guardian.stderr.log') `
+        -Environment $nonSeedEnvironment)
+}
+
+function Start-NervFullStackSession {
+    param(
+        [ValidateSet('Automated', 'Interactive')] [string] $GuardianMode = 'Interactive',
+        [int] $CoordinatorPid,
+        [string] $CoordinatorStartTimeUtc,
+        [string] $SessionAdminPassword,
+        [string] $SessionWorkerPassword,
+        [object] $SessionCreationState,
+        [switch] $EnableWmsDemoWorker,
+        [switch] $PassThru
+    )
+
+    $staleSessionIds = @(Claim-NervStaleFullStackSessions -TimeoutSeconds 300)
+    foreach ($staleSessionId in $staleSessionIds) {
+        [void] (Stop-NervFullStackSession -SessionId $staleSessionId -Environment (Get-NervFullStackNonSeedEnvironment))
+    }
+
+    $createdManifest = Invoke-WithNervFullStackSessionLock -TimeoutSeconds 300 -ScriptBlock {
+        $admission = Test-NervFullStackAdmission -WorktreeRoot $repoRoot
+        if (-not $admission.Allowed) {
+            throw "Full-stack session admission denied: $($admission.Reason) ($($admission.ActiveCount)/$($admission.MaximumSessions))."
+        }
+
+        $newSessionId = if ([string]::IsNullOrWhiteSpace($SessionId)) {
+            do {
+                $candidateSessionId = New-NervFullStackSessionId -WorktreeRoot $repoRoot
+            } while (-not (Test-NervFullStackSessionIdAvailable -SessionId $candidateSessionId))
+            $candidateSessionId
+        }
+        else {
+            [void] (Get-NervFullStackManifestPath -SessionId $SessionId)
+            if (-not (Test-NervFullStackSessionIdAvailable -SessionId $SessionId)) {
+                throw "Full-stack session ID '$SessionId' already exists and cannot be overwritten."
+            }
+            $SessionId
+        }
+        $appHostProject = Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
+        $artifactPath = Join-Path $repoRoot ".ryugi/artifacts/fullstack/$newSessionId"
+        [System.IO.Directory]::CreateDirectory($artifactPath) | Out-Null
+        $sessionProfile = Get-NervFullStackEnvironment -SessionId $newSessionId
+        $manifest = New-NervFullStackManifest `
+            -SessionId $newSessionId `
+            -WorktreeRoot $repoRoot `
+            -AppHostProject $appHostProject `
+            -ArtifactPath $artifactPath `
+            -MessagingProvider $sessionProfile.Messaging__Provider `
+            -LeaseMinutes (Get-NervFullStackLeaseMinutes)
+        Write-NervFullStackManifest -Manifest $manifest
+
+        return $manifest
+    }
+
+    if ($null -ne $SessionCreationState) { $SessionCreationState.SessionCreated = $true }
+
+    $manifest = $createdManifest
+    $newSessionId = "$($manifest.sessionId)"
+    $appHostProject = "$($manifest.appHostProject)"
+
+    $sessionEnvironment = Get-NervFullStackEnvironment -SessionId $newSessionId
+    if ([string]::Equals([string]($Scenario), [string]('man-440'), [StringComparison]::OrdinalIgnoreCase)) {
+        $sessionEnvironment['Maintenance__PmGeneration__Enabled'] = 'true'
+        $sessionEnvironment['Maintenance__PmGeneration__OrganizationId'] = 'org-man440'
+        $sessionEnvironment['Maintenance__PmGeneration__EnvironmentId'] = 'env-man440'
+        $sessionEnvironment['Maintenance__PmGeneration__Interval'] = '00:00:01'
+    }
+    elseif ([string]::Equals([string]($Scenario), [string]('issue-1912-real-machine-walkthrough'), [StringComparison]::OrdinalIgnoreCase)) {
+        $sessionEnvironment['NERV_IIP_WALKTHROUGH_SEED'] = 'true'
+    }
+    $sessionEnvironment['ASPIRE_CLI_START_TIMEOUT'] = '300'
+    $sessionEnvironment['MSBUILDDISABLENODEREUSE'] = '1'
+    $sessionEnvironment['DOTNET_CLI_USE_MSBUILD_SERVER'] = '0'
+        $manifest = Update-NervFullStackManifest -SessionId $newSessionId -AllowedStates @('Creating') -UpdateAction {
+            param($latest)
+            $latest.runtime.volumeNames = @(
+                $sessionEnvironment.NERV_IIP_POSTGRES_VOLUME,
+                $sessionEnvironment.NERV_IIP_REDIS_VOLUME,
+                $sessionEnvironment.NERV_IIP_MINIO_VOLUME,
+                $sessionEnvironment.NERV_IIP_VICTORIA_LOGS_VOLUME
+            )
+            $latest.runtime.messagingProvider = $sessionEnvironment.Messaging__Provider
+            $latest.runtime.persistenceProvider = $sessionEnvironment.Persistence__Provider
+            return $latest
+        }
+        $includeGeneratedWorkerPassword = $EnableWmsDemoWorker -and
+            [string]::IsNullOrWhiteSpace($SessionWorkerPassword) -and
+            [string]::IsNullOrWhiteSpace($env:NERV_IIP_FULLSTACK_WMS_WORKER_PASSWORD)
+        $secretSet = New-NervFullStackSecretEnvironment `
+            -SessionId $newSessionId `
+            -IncludeDemoWorkerPassword:$includeGeneratedWorkerPassword
+        $suppliedAdminPassword = if (-not [string]::IsNullOrWhiteSpace($SessionAdminPassword)) {
+            $SessionAdminPassword
+        }
+        else {
+            $env:NERV_IIP_FULLSTACK_ADMIN_PASSWORD
+        }
+        $workerEnvironmentKey = 'NERV_IIP_FULLSTACK_WMS_WORKER_PASSWORD'
+        $workerSeedEnvironmentKey = 'Parameters__iam-seed-demo-worker-password'
+        $suppliedWorkerPassword = if (-not [string]::IsNullOrWhiteSpace($SessionWorkerPassword)) {
+            $SessionWorkerPassword
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace($env:NERV_IIP_FULLSTACK_WMS_WORKER_PASSWORD)) {
+            $env:NERV_IIP_FULLSTACK_WMS_WORKER_PASSWORD
+        }
+        else {
+            $secretSet.WorkerPassword
+        }
+        $childEnvironmentKeys = @(
+            Get-NervStringsSorted -Values @(
+                @($sessionEnvironment.Keys) +
+                @($secretSet.Environment.Keys) +
+                @('NERV_IIP_FULLSTACK_ADMIN_PASSWORD', $workerEnvironmentKey, $workerSeedEnvironmentKey)
+            ) -Comparer ([StringComparer]::Ordinal) -Unique
+        )
+        $originalEnvironment = @{}
+        foreach ($key in $childEnvironmentKeys) {
+            $originalEnvironment[$key] = [pscustomobject]@{
+                HadValue = Test-Path -LiteralPath "Env:$key"
+                Value = [Environment]::GetEnvironmentVariable($key, 'Process')
+            }
+        }
+        try {
+            Remove-Item -LiteralPath 'Env:NERV_IIP_FULLSTACK_ADMIN_PASSWORD' -ErrorAction SilentlyContinue
+            if (-not [string]::IsNullOrWhiteSpace($suppliedAdminPassword)) {
+                $secretSet.Environment['Parameters__iam-seed-admin-password'] = $suppliedAdminPassword
+            }
+            # Never leave either worker secret name in the coordinator environment:
+            # wait/describe/guardian/cleanup children must not inherit the seed.
+            Remove-Item -LiteralPath "Env:$workerEnvironmentKey" -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath "Env:$workerSeedEnvironmentKey" -ErrorAction SilentlyContinue
+            # 仅在显式 WMS worker opt-in 或调用方已在当前进程提供 seed 时开通工人账号。
+            # 该值只进入本次 Aspire 子进程环境，不写入 manifest/artifact。
+            if (-not [string]::IsNullOrWhiteSpace($suppliedWorkerPassword)) {
+                $secretSet.Environment[$workerSeedEnvironmentKey] = $suppliedWorkerPassword
+            }
+            foreach ($entry in $sessionEnvironment.GetEnumerator()) { Set-Item -LiteralPath "Env:$($entry.Key)" -Value $entry.Value }
+            foreach ($entry in $secretSet.Environment.GetEnumerator()) {
+                if ([string]::Equals("$($entry.Key)", $workerSeedEnvironmentKey, [StringComparison]::Ordinal)) { continue }
+                Set-Item -LiteralPath "Env:$($entry.Key)" -Value $entry.Value
+            }
+            $aspireEnvironment = @{}
+            foreach ($entry in $sessionEnvironment.GetEnumerator()) { $aspireEnvironment["$($entry.Key)"] = $entry.Value }
+            foreach ($entry in $secretSet.Environment.GetEnumerator()) { $aspireEnvironment["$($entry.Key)"] = $entry.Value }
+            $aspireEnvironment[$workerEnvironmentKey] = $null
+            $aspireEnvironment[$workerSeedEnvironmentKey] = if ([string]::IsNullOrWhiteSpace($suppliedWorkerPassword)) {
+                $null
+            }
+            else {
+                $suppliedWorkerPassword
+            }
+            $arguments = @('start', '--isolated', '--format', 'Json', '--apphost', $appHostProject, '--non-interactive', '--nologo')
+            if ($NoBuild) { $arguments += '--no-build' }
+            $startResult = Invoke-NervAspireStartWithRetry `
+                -StartAction {
+                    Invoke-AspireOutput `
+                        -Arguments $arguments `
+                        -WorkingDirectory $repoRoot `
+                        -TimeoutSeconds 660 `
+                        -Name "fullstack-$newSessionId-aspire-start" `
+                        -Environment $aspireEnvironment `
+                        -SensitiveValues (@($suppliedAdminPassword, $suppliedWorkerPassword) + @($secretSet.Environment.Values))
+                } `
+                -CleanupAction {
+                    try {
+                        Invoke-AspireOutput `
+                            -Arguments @('stop', '--apphost', $appHostProject, '--non-interactive', '--nologo') `
+                            -WorkingDirectory $repoRoot `
+                            -TimeoutSeconds 150 `
+                            -Name "fullstack-$newSessionId-transient-start-stop" `
+                            -AllowPartialOutput `
+                            -Environment (Get-NervFullStackNonSeedEnvironment) | Out-Null
+                    }
+                    catch { }
+                }
+            $startObject = Read-NervAspireJson -Text "$($startResult.Stdout)"
+            $identity = Get-NervAspireStartIdentity -StartObject $startObject
+
+            $appHostProcess = Get-Process -Id $identity.AppHostPid -ErrorAction Stop
+            $cliProcess = Get-Process -Id $identity.CliPid -ErrorAction Stop
+            $appHostStartedAt = $appHostProcess.StartTime.ToUniversalTime().ToString('O')
+            $cliStartedAt = $cliProcess.StartTime.ToUniversalTime().ToString('O')
+            $manifest = Update-NervFullStackManifest -SessionId $newSessionId -AllowedStates @('Creating') -UpdateAction {
+                param($latest)
+                $latest.aspire.appHostId = $identity.AppHostId
+                $latest.aspire.dcpId = $null
+                $latest.aspire.appHostPath = $identity.AppHostPath
+                $latest.aspire.appHostPid = $identity.AppHostPid
+                $latest.aspire.appHostProcessStartTimeUtc = $appHostStartedAt
+                $latest.aspire.cliPid = $identity.CliPid
+                $latest.aspire.cliProcessStartTimeUtc = $cliStartedAt
+                $latest.aspire.logFile = $identity.LogFile
+                $latest.coordinator.pid = $identity.AppHostPid
+                $latest.coordinator.processStartTimeUtc = $appHostStartedAt
+                $latest.runtime.processIds = @($identity.AppHostPid, $identity.CliPid)
+                return $latest
+            }
+
+            $startupResources = if ([string]::Equals([string]($Scenario), [string]('man-440'), [StringComparison]::OrdinalIgnoreCase)) {
+                @('business-industrial-telemetry', 'business-maintenance')
+            }
+            else {
+                @('iam', 'business-master-data', 'gateway', 'business-gateway', 'console', 'business-console', 'screen')
+            }
+            foreach ($resourceName in $startupResources) {
+                Wait-NervAspireResource `
+                    -AppHostProject $appHostProject `
+                    -ResourceName $resourceName `
+                    -WorkingDirectory $repoRoot
+            }
+            $containerRecords = @(Get-NervFullStackContainerRecords -OwnedSessionId $newSessionId -Environment (Get-NervFullStackNonSeedEnvironment))
+            $networkIds = @(Get-NervFullStackDcpNetworkIds `
+                -SessionId $newSessionId `
+                -ContainerRecords $containerRecords `
+                -WorkingDirectory $repoRoot `
+                -Environment (Get-NervFullStackNonSeedEnvironment))
+            $describe = if ([string]::Equals([string]($Scenario), [string]('man-440'), [StringComparison]::OrdinalIgnoreCase)) {
+                $null
+            }
+            else {
+                Get-NervAspireDescribeObjectWithEndpoints -AppHostProject $appHostProject -WorkingDirectory $repoRoot
+            }
+            $manifest = Update-NervFullStackManifest -SessionId $newSessionId -AllowedStates @('Creating') -UpdateAction {
+                param($latest)
+                $latest.runtime.containers = @($containerRecords)
+                $latest.runtime.containerIds = @($containerRecords | ForEach-Object { "$($_.id)" })
+                $latest.runtime.networkIds = @($networkIds)
+                if ($null -ne $describe) {
+                    $latest = Save-NervFullStackEndpoints -Manifest $latest -DescribeObject $describe
+                }
+                $latest = Move-NervFullStackSessionState -Manifest $latest -State Running
+                $latest = Renew-NervFullStackLease -Manifest $latest -LeaseMinutes (Get-NervFullStackLeaseMinutes)
+                return $latest
+            }
+            $manifest = Invoke-WithNervFullStackSessionLock -ScriptBlock {
+                $latest = Read-NervFullStackManifest -SessionId $newSessionId
+                if ((-not [string]::Equals([string]("$($latest.state)"), [string]('Running'), [StringComparison]::OrdinalIgnoreCase))) {
+                    throw "Session '$newSessionId' is '$($latest.state)'; guardian registration requires Running."
+                }
+                $guardianIdentity = Start-NervFullStackGuardian `
+                    -Manifest $latest `
+                    -Mode $GuardianMode `
+                    -CoordinatorPid $CoordinatorPid `
+                    -CoordinatorStartTimeUtc $CoordinatorStartTimeUtc
+                try {
+                    $latest.guardian = [ordered]@{
+                        pid = $guardianIdentity.Pid
+                        processStartTimeUtc = $guardianIdentity.ProcessStartTimeUtc
+                        mode = $GuardianMode
+                    }
+                    $latest.coordinator = if ([string]::Equals([string]($GuardianMode), [string]('Automated'), [StringComparison]::OrdinalIgnoreCase)) {
+                        [ordered]@{ pid = $CoordinatorPid; processStartTimeUtc = $CoordinatorStartTimeUtc }
+                    }
+                    else {
+                        [ordered]@{ pid = $guardianIdentity.Pid; processStartTimeUtc = $guardianIdentity.ProcessStartTimeUtc }
+                    }
+                    Write-NervFullStackManifest -Manifest $latest
+                    return $latest
+                }
+                catch {
+                    Stop-ProcessTree -ProcessId $guardianIdentity.Pid -Reason "Failed guardian registration cleanup for $newSessionId" | Out-Null
+                    if (Test-NervProcessIdentity -ProcessId $guardianIdentity.Pid -ProcessStartTimeUtc $guardianIdentity.ProcessStartTimeUtc) {
+                        throw "Guardian registration failed and guardian process $($guardianIdentity.Pid) could not be stopped."
+                    }
+                    throw
+                }
+            }
+        }
+        catch {
+            $safeError = Protect-NervFullStackDiagnosticText `
+                -Text "$($_.Exception.Message)" `
+                -SensitiveValues (@($suppliedAdminPassword, $suppliedWorkerPassword) + @($secretSet.Environment.Values))
+            $manifest = Update-NervFullStackManifest `
+                -SessionId $newSessionId `
+                -AllowedStates @('Creating', 'Running', 'Collecting', 'Failed') `
+                -ReturnUnchangedOnStateMismatch `
+                -UpdateAction {
+                    param($latest)
+                    if ((-not [string]::Equals([string]("$($latest.state)"), [string]('Failed'), [StringComparison]::OrdinalIgnoreCase))) {
+                        $latest = Move-NervFullStackSessionState -Manifest $latest -State Failed
+                    }
+                    $latest.failure = [ordered]@{ atUtc = [DateTimeOffset]::UtcNow.ToString('O'); message = $safeError }
+                    return $latest
+                }
+            try {
+                $cleanupResult = Stop-NervFullStackSession -SessionId $newSessionId -Environment (Get-NervFullStackNonSeedEnvironment)
+                if (-not $cleanupResult.Complete) {
+                    throw "Startup cleanup remains incomplete: $($cleanupResult.Remaining -join ', ')."
+                }
+            }
+            catch {
+                $cleanupError = Protect-ScriptAutomationText -Text "$($_.Exception.Message)"
+                throw "$safeError Startup cleanup failed: $cleanupError"
+            }
+            throw $safeError
+        }
+        finally {
+            foreach ($key in $childEnvironmentKeys) {
+                if ($originalEnvironment[$key].HadValue) {
+                    Set-Item -LiteralPath "Env:$key" -Value $originalEnvironment[$key].Value
+                }
+                else {
+                    Remove-Item -LiteralPath "Env:$key" -ErrorAction SilentlyContinue
+                }
+            }
+            if ($null -ne $aspireEnvironment) { $aspireEnvironment.Clear() }
+            $secretSet.Environment.Clear()
+            $suppliedAdminPassword = $null
+            $suppliedWorkerPassword = $null
+            $secretSet = $null
+        }
+    $createdManifest = $manifest
+
+    if ($PassThru) { return $createdManifest }
+
+    Write-Output "$($createdManifest.sessionId)"
+    $endpointEntries = if ($createdManifest.endpoints -is [System.Collections.IDictionary]) {
+        @($createdManifest.endpoints.GetEnumerator() | ForEach-Object {
+            [pscustomobject]@{ Name = "$($_.Key)"; Value = "$($_.Value)" }
+        })
+    }
+    else {
+        @($createdManifest.endpoints.PSObject.Properties)
+    }
+    foreach ($entry in $endpointEntries) {
+        Write-Output "$($entry.Name)=$($entry.Value)"
+    }
+}
+
+try {
+    if ([string]::Equals([string]($Action), [string]('help'), [StringComparison]::OrdinalIgnoreCase)) { Write-NervFullStackHelp }
+elseif ([string]::Equals([string]($Action), [string]('start'), [StringComparison]::OrdinalIgnoreCase)) { Start-NervFullStackSession -EnableWmsDemoWorker:$EnableWmsDemoWorker }
+elseif ([string]::Equals([string]($Action), [string]('list'), [StringComparison]::OrdinalIgnoreCase)) {
+            foreach ($manifest in Get-NervFullStackManifests) {
+                Write-Output "$($manifest.sessionId) state=$($manifest.state) worktree=$($manifest.worktreeRoot) lease=$($manifest.leaseExpiresAtUtc)"
+            }
+        }
+elseif ([string]::Equals([string]($Action), [string]('status'), [StringComparison]::OrdinalIgnoreCase)) {
+            $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId
+            $manifest = Renew-NervFullStackSessionLease -SessionId $resolvedSessionId -LeaseMinutes (Get-NervFullStackLeaseMinutes)
+            $statusSummary = Get-NervFullStackStatusSummary -Manifest $manifest -Environment (Get-NervFullStackNonSeedEnvironment)
+            Write-Output "$resolvedSessionId state=$($manifest.state) containers=$($statusSummary.ContainerCount) recordedContainers=$($statusSummary.RecordedContainerCount) unresolved=$($statusSummary.UnresolvedCount)"
+        }
+elseif ([string]::Equals([string]($Action), [string]('url'), [StringComparison]::OrdinalIgnoreCase)) {
+            if ([string]::IsNullOrWhiteSpace($Target)) { throw 'fullstack url requires a resource target.' }
+            try { $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId }
+            catch { throw "Cannot resolve URL target '$Target': $($_.Exception.Message)" }
+            $manifest = Renew-NervFullStackSessionLease -SessionId $resolvedSessionId -LeaseMinutes (Get-NervFullStackLeaseMinutes)
+            $endpoint = $manifest.endpoints.PSObject.Properties[$Target]
+            if ($null -eq $endpoint) { throw "Session '$resolvedSessionId' has no endpoint named '$Target'." }
+            Write-Output "$($endpoint.Value)"
+        }
+elseif ([string]::Equals([string]($Action), [string]('logs'), [StringComparison]::OrdinalIgnoreCase)) {
+            $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId
+            $manifest = Renew-NervFullStackSessionLease -SessionId $resolvedSessionId -LeaseMinutes (Get-NervFullStackLeaseMinutes)
+            $arguments = @('logs')
+            if (-not [string]::IsNullOrWhiteSpace($Target)) { $arguments += $Target }
+            $arguments += @('--tail', "$Tail", '--apphost', "$($manifest.appHostProject)", '--non-interactive', '--nologo')
+            if ($Follow) { $arguments += '--follow' }
+            Invoke-AspireInteractive `
+                -Arguments $arguments `
+                -WorkingDirectory "$($manifest.worktreeRoot)" `
+                -Name "fullstack-$resolvedSessionId-logs" `
+                -Environment (Get-NervFullStackNonSeedEnvironment)
+        }
+elseif ([string]::Equals([string]($Action), [string]('run'), [StringComparison]::OrdinalIgnoreCase)) {
+            if ([string]::IsNullOrWhiteSpace($SessionId)) { $SessionId = New-NervFullStackSessionId -WorktreeRoot $repoRoot }
+            $runProcess = Get-Process -Id $PID
+            $sessionAdminPassword = New-NervFullStackSecretValue -Bytes 24
+            $sessionWorkerPassword = if ($EnableWmsDemoWorker) {
+                New-NervFullStackSecretValue -Bytes 24
+            }
+            else {
+                $env:NERV_IIP_FULLSTACK_WMS_WORKER_PASSWORD
+            }
+            try {
+                $runResult = Invoke-NervFullStackSessionEnvironment -SessionId $SessionId -ScriptBlock {
+                    Invoke-NervManagedFullStackRun `
+                    -StartAction {
+                        param($SessionCreationState)
+                        Start-NervFullStackSession `
+                            -GuardianMode Automated `
+                            -CoordinatorPid $PID `
+                            -CoordinatorStartTimeUtc $runProcess.StartTime.ToUniversalTime().ToString('O') `
+                            -SessionAdminPassword $sessionAdminPassword `
+                            -SessionWorkerPassword $sessionWorkerPassword `
+                            -SessionCreationState $SessionCreationState `
+                            -EnableWmsDemoWorker:$EnableWmsDemoWorker `
+                            -PassThru
+                    } `
+                    -ScenarioAction {
+                        param($InputManifest)
+                        if ([string]::Equals([string]($Scenario), [string]('smoke'), [StringComparison]::OrdinalIgnoreCase)) {
+                                Invoke-NervFullStackSmokeScenario `
+                                    -Manifest $InputManifest `
+                                    -SessionAdminPassword $sessionAdminPassword `
+                                    -SessionWorkerPassword $sessionWorkerPassword | Out-Null
+                            }
+elseif ([string]::Equals([string]($Scenario), [string]('man-528'), [StringComparison]::OrdinalIgnoreCase)) {
+                                Invoke-NervFullStackSmokeScenario `
+                                    -Manifest $InputManifest `
+                                    -SessionAdminPassword $sessionAdminPassword `
+                                    -SessionWorkerPassword $sessionWorkerPassword | Out-Null
+                                Invoke-NervMan528MesInventoryAcceptance -Manifest $InputManifest
+                            }
+elseif ([string]::Equals([string]($Scenario), [string]('man-440'), [StringComparison]::OrdinalIgnoreCase)) {
+                                Invoke-NervMan440RuntimeHoursAcceptance -Manifest $InputManifest
+                            }
+elseif ([string]::Equals([string]($Scenario), [string]('issue-1912-real-machine-walkthrough'), [StringComparison]::OrdinalIgnoreCase)) {
+                                Invoke-NervIssue1912WalkthroughScenario `
+                                    -Manifest $InputManifest `
+                                    -SessionAdminPassword $sessionAdminPassword `
+                                    -SessionWorkerPassword $sessionWorkerPassword | Out-Null
+                            }
+                    } `
+                    -ResolveFailedManifestAction {
+                        Read-NervFullStackManifest -SessionId $SessionId
+                    } `
+                    -FailureAction {
+                        param($InputManifest, $FailureRecord)
+                        $failureMessage = Protect-NervFullStackDiagnosticText `
+                            -Text "$($FailureRecord.Exception.Message)" `
+                            -SensitiveValues @($sessionAdminPassword, $sessionWorkerPassword)
+                        Update-NervFullStackManifest `
+                            -SessionId "$($InputManifest.sessionId)" `
+                            -AllowedStates @('Creating', 'Running', 'Collecting', 'Failed') `
+                            -ReturnUnchangedOnStateMismatch `
+                            -UpdateAction {
+                                param($latest)
+                                $latest.failure = [ordered]@{
+                                    atUtc = [DateTimeOffset]::UtcNow.ToString('O')
+                                    category = 'ScenarioOrStartup'
+                                    message = $failureMessage
+                                }
+                                return $latest
+                            } | Out-Null
+                    } `
+                    -CollectAction {
+                        param($InputManifest)
+                        Invoke-NervFullStackDiagnosticCollection `
+                            -Manifest $InputManifest `
+                            -SensitiveValues @($sessionAdminPassword, $sessionWorkerPassword) | Out-Null
+                    } `
+                    -CollectionFailureAction {
+                        param($InputManifest, $FailureRecord)
+                        $safeError = Protect-NervFullStackDiagnosticText `
+                            -Text "$($FailureRecord.Exception.Message)" `
+                            -SensitiveValues @($sessionAdminPassword, $sessionWorkerPassword)
+                        Update-NervFullStackManifest `
+                            -SessionId "$($InputManifest.sessionId)" `
+                            -AllowedStates @('Collecting', 'Failed') `
+                            -ReturnUnchangedOnStateMismatch `
+                            -UpdateAction {
+                                param($latest)
+                                $latest.cleanup.errors = @($latest.cleanup.errors) + @($safeError)
+                                return $latest
+                            } | Out-Null
+                    } `
+                    -StopAction {
+                        param($InputManifest)
+                        Stop-NervFullStackSession -SessionId "$($InputManifest.sessionId)" -Environment (Get-NervFullStackNonSeedEnvironment)
+                    }
+                }
+                $manifest = $runResult.Manifest
+            }
+            finally {
+                $sessionAdminPassword = $null
+                $sessionWorkerPassword = $null
+            }
+            Write-Output "$($manifest.sessionId) state=$($manifest.state) artifacts=$($manifest.artifactPath)"
+        }
+elseif ([string]::Equals([string]($Action), [string]('stop'), [StringComparison]::OrdinalIgnoreCase)) {
+            $resolvedSessionId = Resolve-NervFullStackSessionId -RequestedSessionId $SessionId
+            $result = Stop-NervFullStackSession -SessionId $resolvedSessionId -Environment (Get-NervFullStackNonSeedEnvironment)
+            Write-Output "$resolvedSessionId state=$($result.Manifest.state) remaining=$($result.Remaining.Count)"
+            if (-not $result.Complete) { throw "Session '$resolvedSessionId' cleanup remains incomplete: $($result.Remaining -join ', ')." }
+        }
+elseif ([string]::Equals([string]($Action), [string]('gc'), [StringComparison]::OrdinalIgnoreCase)) {
+            $staleSessionIds = @(Claim-NervStaleFullStackSessions)
+            $failures = [System.Collections.Generic.List[string]]::new()
+            foreach ($staleSessionId in $staleSessionIds) {
+                try {
+                    $result = Stop-NervFullStackSession -SessionId $staleSessionId -Environment (Get-NervFullStackNonSeedEnvironment)
+                    Write-Output "$staleSessionId state=$($result.Manifest.state) remaining=$($result.Remaining.Count)"
+                    if (-not $result.Complete) { $failures.Add($staleSessionId) }
+                }
+                catch { $failures.Add($staleSessionId) }
+            }
+            if ($failures.Count -gt 0) { throw "GC could not fully clean sessions: $($failures -join ', ')." }
+        }
+}
+catch {
+    Write-Error (Protect-ScriptAutomationText -Text "$($_.Exception.Message)")
+    exit 1
+}
