@@ -1,6 +1,6 @@
 import { enableAutoUnmount } from '@vue/test-utils'
 import { afterEach } from 'vitest'
-import { disableUnovisTooltipThrottle } from '@nerv-iip/ui/test-support'
+import { disableUnovisTooltipThrottle, installElementScrollTo } from '@nerv-iip/ui/test-support'
 
 enableAutoUnmount(afterEach)
 
@@ -44,3 +44,4 @@ if (!globalThis.localStorage) {
  * `@nerv-iip/ui/test-support` 里 `unovisTooltipTimers.ts` 的注释。
  */
 await disableUnovisTooltipThrottle()
+installElementScrollTo()

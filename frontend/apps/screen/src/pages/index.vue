@@ -10,7 +10,7 @@ import {
   NvScreenStatusTag,
   useScreenData,
 } from '@nerv-iip/ui'
-import { useNow } from '@vueuse/core'
+import { useScreenClock } from '../composables/useScreenClock'
 import { Activity, AlertTriangle, Cpu, PackageCheck } from '@lucide/vue'
 import { type Component, computed, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
@@ -102,7 +102,7 @@ const currentFactoryName = computed(
 )
 
 // —— 时钟 / 更新时间 ——
-const now = useNow({ interval: 1000 })
+const now = useScreenClock()
 const pad = (n: number) => String(n).padStart(2, '0')
 const clock = computed(
   () =>

@@ -32,7 +32,7 @@ import {
 } from '@lucide/vue'
 import { type Component, computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { useNow } from '@vueuse/core'
+import { useScreenClock } from '../composables/useScreenClock'
 import ReadError from '@/components/ReadError.vue'
 import { useAccessScope } from '@/access/useAccessScope'
 import { useBackLink } from '@/composables/useBackLink'
@@ -53,7 +53,7 @@ import ScreenLayout from '@/layouts/ScreenLayout.vue'
 // 刷新分层：主数据（KPI/出入库进度）10s · 任务看板/WCS 15s；真实模式由 WMS 分页 list 前端聚合，
 // 轮询降频兼顾 Gateway 限流（#734）。页面隐藏时 useScreenData 统一暂停轮询、断后端保留上次数据标 stale。
 // 库存水位/低库存预警半屏仍缺 Inventory 读面聚合（待 #570），一期不做（诚实定位）。
-const now = useNow({ interval: 1000 })
+const now = useScreenClock()
 const scope = useAccessScope()
 const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
 // 两条流各自标记取数时的 scope，切换工厂/persona 时旧 scope 的 tick 不会覆盖新 board。
@@ -357,9 +357,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
               }}
             </dt>
             <dd class="wb-kpi-v" :class="c.tone">
-              <span class="wb-num"
-                >{{ c.value }}<small>{{ c.unit }}</small></span
-              >
+              <span class="wb-num">{{ c.value }}<small>{{ c.unit }}</small></span>
               <i class="wb-kpi-line" :class="c.tone" aria-hidden="true" />
             </dd>
             <span
@@ -444,9 +442,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
             <div class="wb-bar"><i :style="{ width: `${outbound.pct}%` }" /></div>
             <div class="wb-flow-meta">
               <span v-if="!outbound.docsTotal">今日暂无发货单</span>
-              <span v-if="outbound.customers > 0"
-                >客户 <b>{{ outbound.customers }}</b> 家</span
-              >
+              <span v-if="outbound.customers > 0">客户 <b>{{ outbound.customers }}</b> 家</span>
               <span v-if="outbound.latestShipment" class="wb-latest"
                 >{{ IS_REAL_DATA ? '当日建单最近过账' : '最近发运' }}
                 {{ outbound.latestShipment }}</span
@@ -489,9 +485,7 @@ const wcsView = ref<'chart' | 'list'>('chart')
               <header class="tg-h">
                 <component :is="g.icon" :size="14" :stroke-width="1.8" class="tg-ic" />
                 <b class="tg-name">{{ g.title }}</b>
-                <span class="tg-cnt"
-                  >{{ g.isCount ? '待盘' : '积压' }} <b>{{ g.backlog }}</b></span
-                >
+                <span class="tg-cnt">{{ g.isCount ? '待盘' : '积压' }} <b>{{ g.backlog }}</b></span>
                 <em v-if="g.overdue > 0" class="tg-late">超时 {{ g.overdue }}</em>
                 <span v-if="g.isCount && count" class="tg-var" :class="{ on: count.variance > 0 }">
                   差异 {{ count.variance }} 位

@@ -20,7 +20,7 @@ import {
 import { computed, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { IS_REAL_DATA } from '@/data/config'
-import { useNow } from '@vueuse/core'
+import { useScreenClock } from '../composables/useScreenClock'
 import ReadError from '@/components/ReadError.vue'
 import { useAccessScope } from '@/access/useAccessScope'
 import DeviceDetailModal from '@/components/equipment/DeviceDetailModal.vue'
@@ -41,7 +41,7 @@ import ScreenLayout from '@/layouts/ScreenLayout.vue'
 // 刷新频率分层（MAN-466 大屏轮询调参，观察 #734 Gateway 限流后再降频）：
 // 全景/计数/流 10s · 演示模式的格上参数 5s 快刷 ·
 // 详情弹窗 3s（弹窗内部）；页面隐藏时 useScreenData 统一暂停轮询、失败保活标 stale。
-const now = useNow({ interval: 1000 })
+const now = useScreenClock()
 const scope = useAccessScope()
 const backLink = useBackLink(() => ({ to: '/', label: '返回大屏门厅' }))
 const scoped = IS_REAL_DATA

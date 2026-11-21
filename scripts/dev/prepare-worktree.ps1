@@ -18,7 +18,7 @@
 #   Requires:
 #     - PowerShell 7
 #     - Node.js 22.22.3
-#     - pnpm 11.22.0
+#     - pnpm 12.21.0
 #     - .NET SDK 10 (only when NERV_SETUP_BACKEND=1)
 #
 # Worktree environment setup — the Claude Code equivalent of

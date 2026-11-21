@@ -16,7 +16,7 @@
 #     - PowerShell 7
 #     - .NET SDK 10
 #     - Node.js 22.22.3
-#     - pnpm 11.22.0
+#     - pnpm 12.21.0
 
 # M2-I split authorities for this verifier:
 # - Current architecture: docs/architecture/integration/api-contracts.md

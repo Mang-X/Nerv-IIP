@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
-import { useNow } from '@vueuse/core'
+import { useScreenClock } from '../../composables/useScreenClock'
 import { NvScreenButton, NvScreenFreshness, NvScreenPanel, useScreenData } from '@nerv-iip/ui'
 import { andonErrorMessage, type AndonScope, type AndonSession } from '@/data/contracts/andon'
 import { fetchAndonQueue } from '@/data/fetchers/andon'
@@ -12,7 +12,7 @@ const { data, error, lastUpdated, loading, refresh } = useScreenData(
   () => fetchAndonQueue(props.session, props.scope, props.page),
   { intervalMs: 4000 },
 )
-const now = useNow({ interval: 1000 })
+const now = useScreenClock()
 // 三个轮询周期未成功更新即撤下旧行，挂起请求也不能让旧空队列保持正常。
 const expired = computed(
   () => lastUpdated.value !== undefined && now.value.getTime() - lastUpdated.value > 12_000,

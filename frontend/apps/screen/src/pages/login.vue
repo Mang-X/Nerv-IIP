@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { screenLoginTarget } from '@/router'
 import { ConsoleAuthError } from '@/api/auth'
-import { useNow } from '@vueuse/core'
+import { useScreenClock } from '../composables/useScreenClock'
 import { Lock, User } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -19,7 +19,7 @@ const loading = ref(false)
 const errorMsg = ref('')
 
 // 秒级展示：固定 1s 间隔，避免默认 rAF 每帧触发重算
-const now = useNow({ interval: 1000 })
+const now = useScreenClock()
 function pad(n: number) {
   return String(n).padStart(2, '0')
 }

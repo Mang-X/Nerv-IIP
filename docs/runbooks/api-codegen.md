@@ -12,7 +12,7 @@ pwsh -NoProfile -File ./scripts/api/verify-openapi-client-drift.ps1
 
 该脚本是当前契约漂移闭环：默认会启动并导出 PlatformGateway 与 BusinessGateway OpenAPI、按 `frontend/package.json` 安装/调用当前 pnpm、执行 `generate:api`，最后检查受管 snapshot 与 generated 目录的 tracked/untracked drift。不要用一串自定义 shell 命令替代它后再声称通过同一门禁。
 
-脚本当前要求 PowerShell 7、.NET SDK 10、Node.js 22.22.3 与 pnpm 11.22.0；精确要求以脚本头和仓库 package/build 配置为准。`-SkipRegenerate` / `-SkipFrontendInstall` 只能在调用方明确已经满足对应前置条件时使用，不能用来跳过本应验证的生成事实。
+脚本当前要求 PowerShell 7、.NET SDK 10、Node.js 22.22.3 与 pnpm 12.21.0；精确要求以脚本头和仓库 package/build 配置为准。`-SkipRegenerate` / `-SkipFrontendInstall` 只能在调用方明确已经满足对应前置条件时使用，不能用来跳过本应验证的生成事实。
 
 ## 仅导出 Gateway OpenAPI
 
