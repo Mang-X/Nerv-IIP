@@ -255,6 +255,7 @@ function Get-NervCiImpactPlan {
         # 'nerv.ps1') are deliberately absent here so they keep failing open.
         if ([string]::Equals($path, 'skills-lock.json', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 't3.json', [StringComparison]::Ordinal) -or
+            [string]::Equals($path, '.ryugi/config.json', [StringComparison]::Ordinal) -or
             $path.StartsWith('skills/', [StringComparison]::Ordinal) -or
             $path.StartsWith('.claude/', [StringComparison]::Ordinal) -or
             $path.StartsWith('.codex/', [StringComparison]::Ordinal)) {
