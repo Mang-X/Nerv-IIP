@@ -4,6 +4,10 @@ import { describe, expect, it } from 'vitest'
 import { inspectionPlanCategoryLabel } from '@nerv-iip/business-core'
 
 const pageSource = readFileSync(resolve(process.cwd(), 'src/pages/quality/inspections.vue'), 'utf8')
+const pageSetupSource = readFileSync(
+  resolve(process.cwd(), 'src/pages/quality/useInspectionPage.ts'),
+  'utf8',
+)
 const detailSource = readFileSync(
   resolve(process.cwd(), 'src/components/quality/InspectionRecordDetailSheet.vue'),
   'utf8',
@@ -34,9 +38,9 @@ describe('首件检验工作台合同', () => {
   })
 
   it('检验页承接 SKU、结果筛选与详情定位', () => {
-    expect(pageSource).toContain('inspectionRecordId')
-    expect(pageSource).toContain('skuCode')
-    expect(pageSource).toContain('result')
+    expect(pageSetupSource).toContain('inspectionRecordId')
+    expect(pageSetupSource).toContain('skuCode')
+    expect(pageSetupSource).toContain('result')
   })
 
   it('记录详情提供浏览器打印动作及仅打印详情内容的样式', () => {
