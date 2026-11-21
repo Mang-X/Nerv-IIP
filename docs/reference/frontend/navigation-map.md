@@ -8,7 +8,7 @@
 
 | 事实 | 权威生产者 | 如何核实 |
 | --- | --- | --- |
-| Business Console 顶部能力域、域内导航、route→域映射 | `frontend/apps/business-console/src/navigation.ts` | 直接读取 `BUSINESS_DOMAINS`、`DOMAIN_SIDE_NAV` 与 route 解析逻辑；不要从文档手抄菜单清单 |
+| Business Console 顶部能力域、域内导航、route→域映射 | `frontend/apps/business-console/src/navigation.ts` | `navigation.ts` 提供导航入口与 route 解析；顶部能力域配置在 `src/navigation/domains.ts`，侧栏配置按域维护在 `src/navigation/` |
 | Business Console 页面与 route | `frontend/apps/business-console/src/pages/**` + 当前 file-based router 配置 | 以页面文件、route 元数据和实际 router 产物为准 |
 | Business Console 导航权限 | `frontend/apps/business-console/src/permissions.ts`、`src/navigation.ts` | 以当前 permission code 与 `requiredPermissions` 绑定为准；服务端授权仍由 Gateway 强制 |
 | Platform Console 导航与 route→域 | `frontend/apps/console/src/layouts/DefaultLayout.vue`、`frontend/apps/console/src/pages/**`、`frontend/apps/console/src/router/index.ts` | 以当前 layout/router/page 代码为准 |
