@@ -1589,7 +1589,7 @@
         "Nerv.IIP.Business.Erp.Web.Tests.ErpDeadLetterReplayPostgresTests.Original_rate_time_recovers_cost_through_single_and_batch_http_without_duplicate_cost",
         "Nerv.IIP.Business.Erp.Web.Tests.ErpDeadLetterReplayPostgresTests.Existing_receipt_business_dedup_replays_without_inbox_and_preserves_rejection_and_scope"
       ],
-      "expectedRuntimeTestCount": 25
+      "expectedRuntimeTestCount": 27
     },
     {
       "id": "erp-journal-voucher-no",
