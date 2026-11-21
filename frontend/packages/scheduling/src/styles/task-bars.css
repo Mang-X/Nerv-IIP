@@ -1,0 +1,265 @@
+@layer nv-components {
+  /* 淡彩轻盈:淡色填充 + 饱和同色描边;进度用较实的同色;工序名深色在右(亮暗皆通透)。
+   底色由 --bar 变量驱动(分类/冲突只改 --bar,互不打架)。 */
+  .nerv-gantt-dhx .gantt_task_line {
+    --bar: var(--nv-brand);
+    background-color: color-mix(in oklch, var(--bar), transparent 84%) !important;
+    background-image: none !important;
+    border: 1.5px solid var(--bar) !important;
+    border-radius: 7px !important;
+    box-shadow: none;
+    /* 选中/hover 抬升只走 box-shadow + border-color 过渡,不位移 */
+    transition:
+      box-shadow var(--nv-duration-base) var(--nv-ease-out-expo),
+      border-color var(--nv-duration-base) var(--nv-ease-out-expo);
+  }
+  .nerv-gantt-dhx .gantt_task_progress {
+    background-color: color-mix(in oklch, var(--bar), transparent 56%) !important;
+    border-radius: 5px 0 0 5px;
+  }
+
+  /* 分类色板:按车间/工序着色,提亮做轻盈。定义为全局变量,图例与条形共用同一套色。
+     ★ 硬约束:8 个色槽的色相必须两两拉开(实测下限 ~35°)。此前 assy 抄了 cut、insp 抄了
+     bend——槽补了颜色照抄,实机图例上「装配」与「包装」并排肉眼分不出(#1399 M1),调度员
+     会读错工序族。色相按 25/75/115/155/200/250/305/342 近似均布,最小间距 37°。
+     改任何一个都要跑 scheduling-palette.test.ts(它按 oklch 色相差断言去重)。 */
+  :root {
+    /* 焊接 红 */
+    --nv-scheduling-category-weld: oklch(0.57 0.17 25);
+    /* 折弯 琥珀 */
+    --nv-scheduling-category-bend: oklch(0.72 0.13 75);
+    /* 检测 黄绿——原为 oklch(0.72 0.13 75),与 bend 完全同色 */
+    --nv-scheduling-category-insp: oklch(0.68 0.14 115);
+    /* 冲压/钣金 绿 */
+    --nv-scheduling-category-cut: oklch(0.62 0.13 155);
+    /* 包装 青——原为 oklch(0.6 0.12 165),与 cut/assy 只差 10 色相 0.02 明度 */
+    --nv-scheduling-category-pack: oklch(0.66 0.11 200);
+    /* 机加 蓝 */
+    --nv-scheduling-category-mach: oklch(0.58 0.13 250);
+    /* 表面处理 紫——原为 oklch(0.56 0.13 250),与 mach 同色相仅差 0.02 明度,肉眼不可分 */
+    --nv-scheduling-category-paint: oklch(0.58 0.13 305);
+    /* 装配 玫红——原为 oklch(0.62 0.13 155),与 cut 完全同色 */
+    --nv-scheduling-category-assy: oklch(0.62 0.15 342);
+  }
+  .nerv-gantt-dhx .gantt_task_line.nerv-cat-cut {
+    --bar: var(--nv-scheduling-category-cut);
+  }
+  .nerv-gantt-dhx .gantt_task_line.nerv-cat-bend {
+    --bar: var(--nv-scheduling-category-bend);
+  }
+  .nerv-gantt-dhx .gantt_task_line.nerv-cat-weld {
+    --bar: var(--nv-scheduling-category-weld);
+  }
+  .nerv-gantt-dhx .gantt_task_line.nerv-cat-mach {
+    --bar: var(--nv-scheduling-category-mach);
+  }
+  .nerv-gantt-dhx .gantt_task_line.nerv-cat-paint {
+    --bar: var(--nv-scheduling-category-paint);
+  }
+  .nerv-gantt-dhx .gantt_task_line.nerv-cat-pack {
+    --bar: var(--nv-scheduling-category-pack);
+  }
+  .nerv-gantt-dhx .gantt_task_line.nerv-cat-assy {
+    --bar: var(--nv-scheduling-category-assy);
+  }
+  .nerv-gantt-dhx .gantt_task_line.nerv-cat-insp {
+    --bar: var(--nv-scheduling-category-insp);
+  }
+
+  /* 计划基线:半透明浅条,表示"计划";实际实色条叠在其上,偏移即见计划/实际差 */
+  .nerv-gantt-dhx .nerv-baseline {
+    position: absolute;
+    box-sizing: border-box;
+    border-radius: 7px;
+    background: color-mix(in oklch, var(--bl, var(--nv-brand)), transparent 92%);
+    border: 1.5px dashed color-mix(in oklch, var(--bl, var(--nv-brand)), transparent 35%);
+  }
+
+  /* 条形右侧标签 + 锁图标(干净 SVG,非 emoji) */
+  .nerv-gantt-dhx .nerv-bar-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .nerv-gantt-dhx .nerv-ic {
+    display: inline-block;
+    vertical-align: -1px;
+  }
+  .nerv-gantt-dhx .nerv-card-lock {
+    display: inline-flex;
+    align-items: center;
+    color: var(--muted-foreground);
+  }
+
+  /* 时间线底纹:周末稍重、夜班/非工作更淡。用 foreground 中性灰(srgb,亮暗都清晰可见,与图例一致) */
+  .nerv-gantt-dhx .gantt_task_cell.nerv-weekend {
+    background-color: color-mix(in srgb, var(--foreground) 5%, transparent) !important;
+  }
+  .nerv-gantt-dhx .gantt_task_cell.nerv-offwork {
+    background-color: color-mix(in srgb, var(--foreground) 3%, transparent) !important;
+  }
+  /* 班次边界:交班时刻起的第一格左侧一条竖线,让"这一格属于哪个班"一眼可辨。
+     只在后端带出工作日历时出现(见 DhtmlxEngine.shiftStarts)。 */
+  .nerv-gantt-dhx .gantt_task_cell.nerv-shift-start {
+    border-left: 1px dashed color-mix(in srgb, var(--foreground) 55%, transparent) !important;
+  }
+  .nerv-gantt-dhx .gantt_task_content {
+    color: var(--foreground) !important;
+    font-weight: 500;
+  }
+  /* 条形右侧工序名:轻盈、可读 */
+  .nerv-gantt-dhx .gantt_side_content {
+    color: var(--foreground) !important;
+    font-size: 0.74rem;
+    font-weight: 500;
+    padding: 0 8px;
+    opacity: 0.9;
+  }
+
+  /* 工单/资源分组条:纤细中性,做"汇总"而非主体 */
+  .nerv-gantt-dhx .gantt_task_line.gantt_project,
+  .nerv-gantt-dhx .gantt_task_line.nerv-order {
+    background-color: color-mix(in oklch, var(--muted-foreground), transparent 62%) !important;
+    border: none !important;
+    border-radius: 3px !important;
+    box-shadow: none;
+    opacity: 0.85;
+    height: 6px !important;
+    margin-top: 9px;
+  }
+
+  /* 选中:品牌环 + 柔辉光 */
+  .nerv-gantt-dhx .gantt_task_line.nerv-selected,
+  .nerv-gantt-dhx .gantt_task_line.gantt_selected {
+    box-shadow:
+      0 0 0 2px var(--nv-brand),
+      0 4px 14px color-mix(in oklch, var(--nv-brand), transparent 40%) !important;
+    z-index: 2;
+  }
+  /* 搜索命中 / 未命中(#1399 M5)。
+     ★ 这两条规则里的每一个声明都必须带 !important:scheduling.css 整体在 @layer nv-components
+     里,而 DHTMLX vendor CSS 无 layer——有 layer 的样式永远输给无 layer 的,与选择器特异性
+     无关。忘了 !important 会静默不生效(实测:同一条规则里 background-color !important 赢、
+     旁边没加的 color 输成 vendor 硬编码 #23272A)。 */
+  .nerv-gantt-dhx .gantt_task_line.nerv-search-hit {
+    border-color: var(--nv-warning) !important;
+    box-shadow:
+      0 0 0 2px var(--nv-warning),
+      0 4px 14px color-mix(in oklch, var(--nv-warning), transparent 45%) !important;
+    z-index: 3 !important;
+  }
+  /* 未命中压暗而不是隐藏:调度员要的是"这条在整张图的哪儿、旁边挤着谁",
+     把其余条抽走等于把上下文也抽走。 */
+  .nerv-gantt-dhx .gantt_task_line.nerv-search-miss {
+    opacity: 0.22 !important;
+  }
+  /* 冲突(仅工单甘特条):危险色描边 + 内环。资源排产板冲突改用内联 ⚠ 角标,卡片本身不加环,
+   故此规则用 :not(:has(.nerv-card)) 排除资源卡,避免压住选中环(选中无效的根因)。 */
+  .nerv-gantt-dhx .gantt_task_line.nerv-conflict:not(.nerv-segmented):not(:has(.nerv-card)) {
+    border-color: var(--destructive) !important;
+    box-shadow: inset 0 0 0 1px var(--destructive) !important;
+  }
+  .nerv-gantt-dhx .nerv-card-alert {
+    display: inline-flex;
+    align-items: center;
+    color: var(--destructive);
+  }
+  /* 卡片底部进度条:同工序色,薄条贴底 */
+  .nerv-gantt-dhx .nerv-card-prog {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 3px;
+    background: color-mix(in oklch, var(--bar), transparent 82%);
+    border-radius: 0 0 7px 7px;
+    overflow: hidden;
+  }
+  .nerv-gantt-dhx .nerv-card-prog > span {
+    display: block;
+    height: 100%;
+    background: var(--bar);
+  }
+
+  /* 里程碑:实色菱形(在淡彩条中保持醒目) */
+  .nerv-gantt-dhx .gantt_task_line.gantt_milestone {
+    background-color: var(--bar) !important;
+    border-color: color-mix(in oklch, var(--bar), black 18%) !important;
+    border-radius: 3px !important;
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* ---- 左侧网格单元格内容:优先级 / 状态 / 进度条 ---- */
+  .nerv-gantt-dhx .nerv-prio {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-weight: 600;
+    font-size: 0.72rem;
+  }
+  .nerv-gantt-dhx .nerv-prio-high {
+    color: var(--destructive-strong);
+  }
+  .nerv-gantt-dhx .nerv-prio-mid {
+    color: var(--nv-warning-strong);
+  }
+  .nerv-gantt-dhx .nerv-prio-low {
+    color: var(--muted-foreground);
+  }
+  .nerv-gantt-dhx .nerv-st {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.72rem;
+    color: var(--foreground);
+  }
+  .nerv-gantt-dhx .nerv-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    flex: none;
+  }
+  .nerv-gantt-dhx .nerv-dot-success {
+    background: var(--nv-success);
+  }
+  .nerv-gantt-dhx .nerv-dot-info {
+    background: var(--nv-brand);
+  }
+  .nerv-gantt-dhx .nerv-dot-warning {
+    background: var(--nv-warning);
+  }
+  .nerv-gantt-dhx .nerv-dot-danger {
+    background: var(--destructive);
+  }
+  .nerv-gantt-dhx .nerv-dot-neutral {
+    background: var(--muted-foreground);
+  }
+  .nerv-gantt-dhx .nerv-pcell {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 0 4px;
+  }
+  .nerv-gantt-dhx .nerv-pbar {
+    position: relative;
+    flex: 1;
+    height: 5px;
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--muted-foreground), transparent 70%);
+    overflow: hidden;
+  }
+  .nerv-gantt-dhx .nerv-pbar > span {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: 999px;
+    background: var(--nv-brand);
+  }
+  .nerv-gantt-dhx .nerv-ptext {
+    font-variant-numeric: tabular-nums;
+    font-size: 0.7rem;
+    color: var(--muted-foreground);
+    min-width: 30px;
+    text-align: right;
+  }
+}

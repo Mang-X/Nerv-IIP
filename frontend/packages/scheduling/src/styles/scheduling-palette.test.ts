@@ -5,13 +5,13 @@ import { describe, expect, it } from 'vitest'
 
 /**
  * 取样式源文的两个坑(踩过,别改回去):
- * 1. `import CSS from './scheduling.css?raw'` 在本仓的 vite-plus 里返回**空串**——CSS 插件
+ * 1. `import CSS from './task-bars.css?raw'` 在本仓的 vite-plus 里返回**空串**——CSS 插件
  *    先接管了该请求,`?raw` 不生效,测试会假绿(色板解析出 0 项,去重断言全部空过)。
- * 2. `new URL('./scheduling.css', import.meta.url)` 会被 Vite 的资源处理**重写成资源 URL**,
+ * 2. `new URL('./task-bars.css', import.meta.url)` 会被 Vite 的资源处理**重写成资源 URL**,
  *    再 `fileURLToPath` 就抛 "The URL must be of scheme file"。
  * 所以先把本文件自身的 URL 转成路径再 join,不出现那个会被重写的字面量模式。
  */
-const CSS = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'scheduling.css'), 'utf8')
+const CSS = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'task-bars.css'), 'utf8')
 
 /**
  * 工序分色色板去重门禁(#1399 M1)。

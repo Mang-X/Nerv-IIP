@@ -1,7 +1,5 @@
-import { factoryTimeInput, scheduleTime } from '../../model/factory-time'
-import { factoryUnit } from './factory-scale'
+import { scheduleTime } from '../../model/factory-time'
 import { freezeWindow, projectFreezeWindow } from '../../model/freeze-window'
-import { taskFactRows } from '../../model/task-facts'
 import type { ScheduleModel, ScheduleTask, TimeScale } from '../../model/types'
 import {
   SCALE_ORDER,
@@ -10,458 +8,21 @@ import {
   type EngineEvents,
   type SchedulingEngine,
   type SchedulingEngineOptions,
-  type ThemeBinding,
   type Unsubscribe,
 } from '../engine'
-import { conflictReasonLabel } from '../../model/labels'
-import { materialReadyLabel } from '../../model/material-risk'
 import { resolveTimeScale } from '../../model/scale'
 import { createGanttInstanceSync } from './loader'
 import { applySkin } from './skin'
-
-// DHTMLX gantt 实例的最小子集(只声明适配器用到的成员)。
-interface DhxGantt {
-  config: Record<string, unknown>
-  templates: Record<string, unknown>
-  ext?: { zoom?: { setLevel?: (l: string) => void } }
-  plugins?: (plugins: Record<string, boolean>) => void
-  attachEvent: (name: string, handler: (...args: unknown[]) => unknown) => string
-  detachEvent?: (id: string) => void
-  init: (container: HTMLElement) => void
-  parse: (data: { data: unknown[]; links: unknown[] }) => void
-  clearAll: () => void
-  getTask: (id: string | number) => DhxTask | undefined
-  isTaskExists?: (id: string | number) => boolean
-  selectTask?: (id: string | number) => void
-  getTaskByIndex?: (index: number) => DhxTask | undefined
-  updateTask?: (id: string | number) => void
-  getScrollState?: () => { x: number; y: number }
-  dateFromPos?: (x: number) => Date
-  render: () => void
-  setSizes?: () => void
-  destructor?: () => void
-  showDate?: (date: Date) => void
-  /** 把某条任务滚进可视区(纵向到它那行、横向到它的时间)。搜索定位用。 */
-  showTask?: (id: string | number) => void
-  addMarker?: (marker: Record<string, unknown>) => string
-  deleteMarker?: (id: string) => void
-  addLink?: (link: Record<string, unknown>) => string
-  deleteLink?: (id: string | number) => void
-  isLinkExists?: (id: string | number) => boolean
-  addTaskLayer?: (renderer: (task: DhxTask) => HTMLElement | boolean) => string
-  getTaskPosition?: (
-    task: DhxTask,
-    start?: Date,
-    end?: Date,
-  ) => { left: number; top: number; width: number; height: number }
-  date?: { add: (d: Date, n: number, unit: string) => Date }
-}
-interface DhxTask {
-  id: string
-  text?: string
-  start_date?: Date
-  end_date?: Date
-  planned_start?: Date
-  planned_end?: Date
-  parent?: string | number
-  $resource?: string
-  nerv?: ScheduleTask
-}
-
-interface GridTask {
-  text?: string
-  type?: string
-  start_date?: Date
-  end_date?: Date
-  nerv?: ScheduleTask
-}
-
-const PRIORITY_CELL: Record<string, [string, string, string]> = {
-  high: ['nerv-prio-high', '↑', '高'],
-  medium: ['nerv-prio-mid', '—', '中'],
-  low: ['nerv-prio-low', '↓', '低'],
-}
-
-interface LaneTask extends GridTask {
-  kpi?: { utilization?: number; oee?: number; changeoverCount?: number; materialRisk?: number }
-}
-
-// 左侧列1:资源名(+瓶颈标)。列头随所选维度变(工作中心/设备/班组/产线)。
-function laneNameCell(t: LaneTask): string {
-  const name = t.nerv?.text ?? ''
-  const over = (t.kpi?.utilization ?? 0) > 1
-  return `<div class="nerv-lane-id"><span class="nerv-lane-name">${name}</span>${over ? '<span class="nerv-lane-tag">瓶颈</span>' : ''}</div>`
-}
-export type LaneKpiKey = 'utilization' | 'oee' | 'changeoverCount' | 'materialRisk'
-export type LaneKpiVisibility = Record<LaneKpiKey, boolean>
-
-/**
- * 某个指标是否值得上屏:**全部泳道都取不到值、或全部泳道都是 0** 就不上屏(#1399 M8)。
- *
- * 「OEE 0%」比没有这一列更伤——领导看见 0% 会问"设备是不是停了",而真相只是读面没透传
- * 这个字段(根因 C)。一个恒 0 的指标不是"当前表现差",是"我们没这个数",屏幕不该混淆二者。
- *
- * 注意判定的是**跨全部泳道**而不是逐泳道:某条产线今天切换次数确实是 0 是有意义的读数,
- * 只有当整列都没有非零值时才说明这个字段根本没有数据供给。
- */
-export function resolveLaneKpiVisibility(lanes: ReadonlyArray<LaneTask['kpi']>): LaneKpiVisibility {
-  const anyNonZero = (key: LaneKpiKey) =>
-    lanes.some((k) => {
-      const v = k?.[key]
-      return typeof v === 'number' && Number.isFinite(v) && v !== 0
-    })
-  return {
-    utilization: anyNonZero('utilization'),
-    oee: anyNonZero('oee'),
-    changeoverCount: anyNonZero('changeoverCount'),
-    materialRisk: anyNonZero('materialRisk'),
-  }
-}
-
-/** 四个指标全无数据 → 整列「产能指标」都不该出现,把宽度还给泳道名。 */
-export function hasAnyLaneKpi(visibility: LaneKpiVisibility): boolean {
-  return Object.values(visibility).some(Boolean)
-}
-
-// 左侧列2:产能指标(利用率 / OEE / 切换 / 待料)。恒 0 / 无数据的指标整项不渲染。
-function makeLaneKpiCell(getVisibility: () => LaneKpiVisibility) {
-  return (t: LaneTask): string => {
-    const k = t.kpi
-    if (!k) return ''
-    const show = getVisibility()
-    const cells: string[] = []
-    if (show.utilization) {
-      const util = Math.round((k.utilization ?? 0) * 100)
-      cells.push(
-        `<span class="nerv-lane-kpi"><i>利用率</i><b class="${util > 100 ? 'nerv-over' : ''}">${util}%</b></span>`,
-      )
-    }
-    if (show.oee) {
-      cells.push(
-        `<span class="nerv-lane-kpi"><i>OEE</i><b>${Math.round((k.oee ?? 0) * 100)}%</b></span>`,
-      )
-    }
-    if (show.changeoverCount) {
-      cells.push(`<span class="nerv-lane-kpi"><i>切换</i><b>${k.changeoverCount ?? 0}</b></span>`)
-    }
-    if (show.materialRisk) {
-      const risk = k.materialRisk ?? 0
-      cells.push(
-        `<span class="nerv-lane-kpi"><i>待料</i><b class="${risk ? 'nerv-warn' : ''}">${risk}</b></span>`,
-      )
-    }
-    return cells.length ? `<div class="nerv-lane-kpis">${cells.join('')}</div>` : ''
-  }
-}
-
-const GRID_COLUMNS = (
-  view: 'order' | 'resource',
-  dimLabel = '工作中心',
-  getKpiVisibility: () => LaneKpiVisibility = () => ({
-    utilization: true,
-    oee: true,
-    changeoverCount: true,
-    materialRisk: true,
-  }),
-) => {
-  if (view === 'resource') {
-    const showKpiColumn = hasAnyLaneKpi(getKpiVisibility())
-    return [
-      {
-        name: 'text',
-        label: dimLabel,
-        tree: true,
-        // 没有产能指标列时泳道名独占宽度:留一条空列比不要这列更显"没做完"。
-        width: showKpiColumn ? 128 : 252,
-        resize: true,
-        template: laneNameCell,
-      },
-      ...(showKpiColumn
-        ? [
-            {
-              name: 'kpi',
-              label: '产能指标',
-              width: 124,
-              resize: true,
-              template: makeLaneKpiCell(getKpiVisibility),
-            },
-          ]
-        : []),
-    ]
-  }
-  const name = {
-    name: 'text',
-    label: '任务名称',
-    tree: true,
-    width: 196,
-    resize: true,
-    template: orderNameCell,
-  }
-  return [
-    name,
-    { name: 'owner', label: '负责人', align: 'center', width: 72, template: ownerCell },
-    { name: 'priority', label: '优先级', align: 'center', width: 66, template: priorityCell },
-    { name: 'status', label: '状态', align: 'center', width: 80, template: statusCell },
-    { name: 'duration', label: '工时', align: 'center', width: 52, template: durationLabel },
-    { name: 'progress', label: '工单进度', align: 'center', width: 98, template: progressCell },
-  ]
-}
-
-function orderNameCell(t: GridTask): string {
-  const task = t.nerv
-  const fullName = t.text ?? task?.text ?? ''
-  // 工单已由父节点标明，子行优先展示真实工序序号，避免长编码挤掉区分尾号。
-  const label =
-    task?.type === 'operation' && task.operationSequence > 0
-      ? `工序 ${task.operationSequence}`
-      : fullName
-  const title =
-    task?.operationId && task.operationId !== fullName
-      ? `${fullName} · ${task.operationId}`
-      : fullName
-  return `<span title="${escapeHtml(title)}">${escapeHtml(label)}</span>`
-}
-
-function durationLabel(t: GridTask): string {
-  if (t.type === 'project' || !t.start_date || !t.end_date) return ''
-  const milliseconds = t.nerv?.segments?.length
-    ? t.nerv.segments.reduce(
-        (sum, segment) => sum + Date.parse(segment.endUtc) - Date.parse(segment.startUtc),
-        0,
-      )
-    : t.end_date.getTime() - t.start_date.getTime()
-  const h = Math.round(milliseconds / 3_600_000)
-  return h >= 1 ? `${h}h` : '<1h'
-}
-function ownerCell(t: GridTask): string {
-  return t.type === 'project' ? '' : (t.nerv?.owner ?? '—')
-}
-function priorityCell(t: GridTask): string {
-  const p = t.nerv?.priority
-  if (t.type === 'project' || !p) return ''
-  const [cls, arrow, label] = PRIORITY_CELL[p]
-  return `<span class="nerv-prio ${cls}">${arrow} ${label}</span>`
-}
-function statusCell(t: GridTask): string {
-  const s = t.nerv?.status
-  if (t.type === 'project' || !s) return ''
-  return `<span class="nerv-st"><i class="nerv-dot nerv-dot-${s.tone}"></i>${s.label}</span>`
-}
-function progressCell(t: GridTask): string {
-  if (t.type === 'project' || t.nerv?.type !== 'operation') return ''
-  const progress = taskFactRows(t.nerv).find(([label]) => label === '工单进度')
-  return progress ? `<span class="nerv-ptext">${escapeHtml(progress[1])}</span>` : '—'
-}
-
-// 统一用 lucide 图标(与项目图标包一致):lock / zap(插单)/ triangle-alert(冲突)。
-const lucide = (paths: string, size = 11) =>
-  `<svg class="nerv-ic" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`
-const LOCK_SVG = lucide(
-  '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
-)
-const RUSH_ICON = lucide(
-  '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
-)
-const ALERT_ICON = lucide(
-  '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
-  12,
-)
-const fmtMd = (iso: string, timezone?: string) => {
-  if (timezone !== undefined)
-    return scheduleTime(iso, timezone, { month: '2-digit', day: '2-digit' })
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime())
-    ? ''
-    : `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-const BLOCK_LABEL: Record<NonNullable<ScheduleTask['blockKind']>, string> = {
-  maintenance: '设备维护',
-  downtime: '计划停机',
-  lineChange: '换线窗口',
-  changeover: '换型窗口',
-}
-/** 资源时间块(维护/停机/换线/换型)背景带的低调内标签(与格子融合,非卡片)。 */
-function blockLabelHtml(t: ScheduleTask): string {
-  const fmtHm = (iso: string) => {
-    if (t.timezone !== undefined)
-      return scheduleTime(iso, t.timezone, { hour: '2-digit', minute: '2-digit' })
-    const d = new Date(iso)
-    return Number.isNaN(d.getTime())
-      ? ''
-      : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  }
-  const span = t.startUtc && t.endUtc ? `${fmtHm(t.startUtc)}-${fmtHm(t.endUtc)}` : ''
-  return `<span class="nerv-block-bg-label">${BLOCK_LABEL[t.blockKind!]}${span ? ` · ${span}` : ''}</span>`
-}
-
-/** 资源排产板工单卡片(条内 HTML)。布局对齐参考图:WO+优先级+插单+锁 / 产品·工序 / 数量·交期 / 换型·占用 / 齐套。 */
-function escapeHtml(value: string): string {
-  return value.replace(
-    /[&<>"']/g,
-    (character) =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!,
-  )
-}
-
-export function cardHtml(t: ScheduleTask): string {
-  const prio = t.priority
-    ? `<span class="nerv-card-prio nerv-prio-${t.priority}">${PRIORITY_CELL[t.priority][2]}</span>`
-    : ''
-  const rush = t.isRush ? `<span class="nerv-card-rush" title="插单">${RUSH_ICON}</span>` : ''
-  const lock = t.locked ? `<span class="nerv-card-lock" title="已锁定">${LOCK_SVG}</span>` : ''
-  const due = t.dueUtc ? fmtMd(t.dueUtc, t.timezone) : ''
-  const time = (iso: string) =>
-    scheduleTime(iso, t.timezone, { hour: '2-digit', minute: '2-digit' })
-  const kit = t.kitting != null ? Math.round(t.kitting * 100) : null
-  const kitCls = kit == null ? '' : kit >= 100 ? 'ok' : kit >= 80 ? 'warn' : 'bad'
-  const co = t.changeoverMin ? `换型 ${t.changeoverMin}m` : ''
-  const load = t.load != null ? `占用 ${Math.round(t.load * 100)}%` : ''
-  const meta3 = [co, load].filter(Boolean).join('　')
-  // 冲突徽标:与优先级/插单/锁并排在首行(不再悬浮角标)。
-  const alert = t.hasConflict
-    ? `<span class="nerv-card-alert" title="冲突">${ALERT_ICON}</span>`
-    : ''
-  // 物料风险(软约束):已排但缺料 —— 提示「开工前备料」,不是排不进去。
-  const matRiskLabel = materialReadyLabel(t.materialRisk)
-  const matRisk = t.materialRisk
-    ? `<span class="nv-sched-material-risk-chip" title="${matRiskLabel ?? '需在开工前完成备料'}">${matRiskLabel ?? '缺料待备'}</span>`
-    : ''
-  // 设备数据风险(软约束):排在状态未知的设备上 —— 提示「开工前确认设备」,不是排不进去。
-  const equipRisk = t.equipmentRisk
-    ? `<span class="nv-sched-equipment-risk-chip" title="开工前请人工确认设备可用">设备状态未知</span>`
-    : ''
-  const prog =
-    t.progress != null
-      ? `<span class="nerv-card-prog"><span style="width:${Math.round(t.progress * 100)}%"></span></span>`
-      : ''
-  return `<div class="nerv-card">
-    <div class="nerv-card-r1"><span class="nerv-card-wo">${t.orderId}</span><span class="nerv-card-meta">${prio}${rush}${alert}${lock}</span></div>
-    <div class="nerv-card-r2" title="${escapeHtml(t.text)}">${escapeHtml(t.text)}</div>
-    <div class="nerv-card-r3 nerv-card-time">${time(t.startUtc)}–${time(t.endUtc)}${t.status ? ` · ${escapeHtml(t.status.label)}` : ''}</div>
-    ${t.product ? `<div class="nerv-card-r3">${escapeHtml(t.product)}</div>` : ''}
-    <div class="nerv-card-r3">${t.quantity != null ? `数量 ${t.quantity}` : ''}${due ? `　交期 ${due}` : ''}</div>
-    ${taskFactRows(t)
-      .map(
-        ([label, value]) =>
-          `<div class="nerv-card-r3">${escapeHtml(label)} ${escapeHtml(value)}</div>`,
-      )
-      .join('')}
-    <div class="nerv-card-r3">${meta3}</div>
-    <div class="nerv-card-tags">${t.downtimeRisk ? `<span style="color:var(--destructive)">停机风险</span>` : ''}${kit != null ? `<span class="nerv-kit nerv-kit-${kitCls}">齐套 ${kit}%</span>` : ''}${matRisk}${equipRisk}</div>
-    ${prog}
-  </div>`
-}
-
-const WEEKDAY = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-const fmtDayLong = (d: Date) => `${d.getMonth() + 1}月${d.getDate()}日 ${WEEKDAY[d.getDay()]}`
-const fmtHour = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:00`
-// 班次带(资源排产板):8h 三班制 — 夜班 00-08 / 早班 08-16 / 中班 16-24。
-const shiftLabel = (d: Date) => {
-  const h = d.getHours()
-  return h < 8 ? '夜班 00–08' : h < 16 ? '早班 08–16' : '中班 16–24'
-}
-const shiftCss = (d: Date) =>
-  d.getHours() < 8 || d.getHours() >= 16 ? 'nerv-shift nerv-shift-dim' : 'nerv-shift'
-const fmtDayShort = (d: Date) => `${d.getDate()} ${WEEKDAY[d.getDay()].slice(1)}`
-const fmtMonth = (d: Date) => `${d.getFullYear()}年${d.getMonth() + 1}月`
-
-const SCALE_CONFIG: Record<Exclude<TimeScale, 'auto'>, Array<Record<string, unknown>>> = {
-  hour: [
-    { unit: 'day', step: 1, format: fmtDayLong },
-    { unit: 'hour', step: 2, format: fmtHour },
-  ],
-  day: [
-    { unit: 'month', step: 1, format: fmtMonth },
-    { unit: 'day', step: 1, format: fmtDayShort },
-  ],
-  week: [
-    { unit: 'month', step: 1, format: fmtMonth },
-    { unit: 'day', step: 7, format: fmtDayShort },
-  ],
-  month: [
-    { unit: 'year', step: 1, format: (d: Date) => `${d.getFullYear()}年` },
-    { unit: 'month', step: 1, format: (d: Date) => `${d.getMonth() + 1}月` },
-  ],
-}
-
-/**
- * 任务块 tooltip 的 HTML(DHTMLX 插件与资源板自绘 tip 共用同一内容)。
- * 导出仅为可测:这段是拼字符串直接进 innerHTML,裸色值混进来在浏览器里很难被发现
- * (得 hover 到恰好是插单的那一条),交给单测按 token 断言。
- */
-export function tooltipHtml(t: ScheduleTask): string {
-  const prio = t.priority ? { high: '高', medium: '中', low: '低' }[t.priority] : ''
-  const pct = (v?: number) => (v == null ? '' : `${Math.round(v * 100)}%`)
-  const chip = (txt: string, tone: string) =>
-    `<span style="font-size:11px;font-weight:600;padding:0 6px;border-radius:4px;color:${tone};background:color-mix(in oklch,${tone},transparent 86%)">${txt}</span>`
-  const badges = [
-    prio ? chip(`${prio}优先`, 'var(--destructive)') : '',
-    // 插单走 --nv-scheduling-rush,与图例(SchedulingLegend)、工序详情(TaskDetailPanel)同一个
-    // 事实源。此前硬编码 oklch(0.7 0.17 60),与 token 的 oklch(0.68 0.18 45) 不是同一个颜色
-    // ——同语义两色,且裸值进 innerHTML 后暗色主题不跟随(#1399 M6)。
-    t.isRush ? chip('插单', 'var(--nv-scheduling-rush)') : '',
-    t.locked ? chip('已锁定', 'var(--nv-brand)') : '',
-    t.hasConflict ? chip('冲突', 'var(--destructive)') : '',
-    t.downtimeRisk ? chip('停机风险', 'var(--destructive)') : '',
-    t.materialRisk
-      ? chip(materialReadyLabel(t.materialRisk) ?? '缺料待备', 'var(--nv-scheduling-kit-warn)')
-      : '',
-    t.equipmentRisk ? chip('设备状态未知', 'var(--nv-scheduling-equip-unknown)') : '',
-  ]
-    .filter(Boolean)
-    .join('')
-  const head = `<div style="font-weight:700;font-size:13px;letter-spacing:.01em;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid color-mix(in oklch,var(--foreground),transparent 88%);display:flex;align-items:center;gap:6px;flex-wrap:wrap"><span>${escapeHtml(t.orderId)}</span>${badges}</div>`
-  const rows: Array<[string, string]> = [
-    ['工序', t.text || '—'],
-    ...taskFactRows(t),
-    ...(t.product ? ([['产品', t.product]] as Array<[string, string]>) : []),
-    ...(t.resourceId ? ([['资源', t.resourceId]] as Array<[string, string]>) : []),
-    ...(t.owner ? ([['负责人', t.owner]] as Array<[string, string]>) : []),
-    ...(t.factoryTimeLabel ? [['工厂时区', t.factoryTimeLabel] as [string, string]] : []),
-    ['起止', `${fmt(t.startUtc, t.timezone)} → ${fmt(t.endUtc, t.timezone)}`],
-    ...(t.quantity != null ? ([['数量', String(t.quantity)]] as Array<[string, string]>) : []),
-    ...(t.dueUtc ? ([['交期', fmt(t.dueUtc, t.timezone)]] as Array<[string, string]>) : []),
-    ...(t.kitting != null ? ([['齐套', pct(t.kitting)]] as Array<[string, string]>) : []),
-    ...(t.changeoverMin ? ([['换型', `${t.changeoverMin} 分钟`]] as Array<[string, string]>) : []),
-    ...(t.load != null ? ([['占用', pct(t.load)]] as Array<[string, string]>) : []),
-    ...(t.status ? ([['状态', t.status.label]] as Array<[string, string]>) : []),
-    ...(t.hasConflict && t.conflictReason
-      ? ([['冲突', conflictReasonLabel[t.conflictReason]]] as Array<[string, string]>)
-      : []),
-    ...(t.materialRisk ? ([['物料', t.materialRisk.message]] as Array<[string, string]>) : []),
-    ...(t.equipmentRisk ? ([['设备', t.equipmentRisk.message]] as Array<[string, string]>) : []),
-    ...(t.downtimeRisk ? ([['停机风险', t.downtimeRisk]] as Array<[string, string]>) : []),
-  ]
-  const body = rows
-    .map(
-      ([k, v]) =>
-        `<div class="nerv-tip-row"><span class="nerv-tip-key">${escapeHtml(k)}</span><span class="nerv-tip-value">${escapeHtml(v)}</span></div>`,
-    )
-    .join('')
-  return head + body
-}
-
-/** 用户是否偏好减少动效(所有 JS 动效在此守卫下降级为直接生效、无过渡)。 */
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  )
-}
-
-/** 一次性动画类:加类前强制回流以重启动画,animationend 后自动移除(可重复触发)。 */
-function playOnceClass(el: HTMLElement, cls: string): void {
-  el.classList.remove(cls)
-  void el.offsetWidth // 强制回流,确保下次加类能重新触发关键帧
-  el.classList.add(cls)
-  const done = () => {
-    el.classList.remove(cls)
-    el.removeEventListener('animationend', done)
-  }
-  el.addEventListener('animationend', done)
-}
+import type { DhxGantt, DhxTask } from './dhtmlx-types'
+import { GanttProjection } from './gantt-projection'
+import { GRID_COLUMNS } from './grid-columns'
+import { playOnceClass, prefersReducedMotion } from './motion'
+import { ResourceTooltip } from './resource-tooltip'
+import { scalesFor } from './scales'
+import { cardHtml, escapeHtml, fmt, LOCK_SVG, tooltipHtml } from './task-templates'
+export { hasAnyLaneKpi, resolveLaneKpiVisibility } from './grid-columns'
+export type { LaneKpiKey, LaneKpiVisibility } from './grid-columns'
+export { cardHtml, tooltipHtml } from './task-templates'
 
 export interface DhtmlxEngineDeps {
   /** 注入实例工厂(测试用);默认从已预加载的试用版模块同步创建。 */
@@ -481,16 +42,7 @@ export class DhtmlxEngine implements SchedulingEngine {
    * 用 Set 而不是每次遍历数组:资源板实测 400+ 条,task_class 每次重绘对每条都要问一次。
    */
   private searchHits?: Set<string>
-  /**
-   * 泳道产能指标的上屏白名单。mount 时列定义闭包引用它,setData 时按真实数据重算——
-   * 所以初值必须是"全不显示":列先建好、数据还没到,这一瞬间若默认全显示就会闪一排 0%。
-   */
-  private kpiVisibility: LaneKpiVisibility = {
-    utilization: false,
-    oee: false,
-    changeoverCount: false,
-    materialRisk: false,
-  }
+  private readonly projection = new GanttProjection()
   private markerId?: string
   private lastPointerY = 0
   private lastPointerX = 0
@@ -498,11 +50,7 @@ export class DhtmlxEngine implements SchedulingEngine {
   private pointerDown?: (e: MouseEvent) => void
   private pointerUp?: (e: MouseEvent) => void
   private keyDown?: (e: KeyboardEvent) => void
-  private tipEl?: HTMLElement
-  private tipTaskId?: string
-  private tipRaf = 0
-  private tipPendingX = 0
-  private tipPendingY = 0
+  private readonly resourceTooltip = new ResourceTooltip()
   private settleRaf = 0
   private dropHint?: HTMLElement
   private dragging = false
@@ -517,17 +65,6 @@ export class DhtmlxEngine implements SchedulingEngine {
   private shownLinkIds: string[] = []
   private resizeObserver?: ResizeObserver
   private resizeRaf = 0
-  /** 资源时间块:泳道 id → 时段窗口列表,供 timeline_cell_class 给单元格上底纹(块不作任务条)。 */
-  private blockCells = new Map<string, { start: number; end: number; kind: string }[]>()
-  /** 工序 id → 该工序所属资源/工作中心(工单甘特里按行找它对应的时间块)。 */
-  private taskLane = new Map<string, string[]>()
-  /**
-   * 工作日历:资源/工作中心 id → 工作窗口(排序后)。`__all__` 是全局并集,
-   * 用于「日历没覆盖到这条泳道」时的回退。为空表示后端没带日历,引擎退回通用作息假设。
-   */
-  private workingWindows = new Map<string, { start: number; end: number }[]>()
-  /** 班次起点(毫秒),用于在单元格左侧画班次边界线。 */
-  private shiftStarts = new Set<number>()
   private readonly listeners = new Map<EngineEventName, Set<(p: unknown) => void>>()
   private readonly eventIds: string[] = []
   private readonly createInstance: () => unknown | null
@@ -591,19 +128,7 @@ export class DhtmlxEngine implements SchedulingEngine {
 
       // 自绘轻量 tooltip:跟指针平滑移动(DHTMLX 插件跟单元格、内容重、在超大卡片上滞后)。
       // 内容一次构建、移动时只改 transform,拖拽进行时隐藏。
-      const tip = document.createElement('div')
-      tip.className = 'nerv-tip'
-      tip.style.position = 'fixed'
-      tip.style.left = '0'
-      tip.style.top = '0'
-      tip.style.zIndex = '60'
-      tip.style.pointerEvents = 'none'
-      tip.style.opacity = '0'
-      tip.style.display = 'none'
-      if (!prefersReducedMotion())
-        tip.style.transition = 'opacity 120ms var(--nv-ease-out-expo, ease)'
-      document.body.appendChild(tip)
-      this.tipEl = tip
+      this.resourceTooltip.mount()
 
       // 自定义拖拽:DHTMLX 原生 move 已关(见 configure)。原块静止,虚影随指针(横向=改时间、
       // 纵向=改泳道),松手于泳道提交、松手于取消区撤销。彻底解决"原块漂"与"横向失效"。
@@ -637,13 +162,13 @@ export class DhtmlxEngine implements SchedulingEngine {
         this.lastPointerY = e.clientY
         this.lastPointerX = e.clientX
         // 自绘 tooltip 跟指针(拖拽进行中不显,交给落点虚影)。
-        this.updateTip(inst, e)
+        this.resourceTooltip.update(inst, e, this.container, this.dragging)
         if (!this.dragTaskId) return
         if (!this.dragging) {
           if (Math.abs(e.clientX - downX) < 5 && Math.abs(e.clientY - downY) < 5) return
           this.dragging = true
           this.suppressNextClick = true // 拖拽一旦开始,抑制随后的点击(避免弹详情)
-          this.hideTip() // 拖拽进行中不显 tooltip(落点虚影已给足反馈)
+          this.resourceTooltip.hide() // 拖拽进行中不显 tooltip(落点虚影已给足反馈)
           if (this.cancelZone) this.cancelZone.style.display = 'flex'
           this.barEl(this.dragTaskId)?.classList.add('nerv-drag-source')
         }
@@ -695,13 +220,13 @@ export class DhtmlxEngine implements SchedulingEngine {
     g.config.scales = this.scalesFor()
     g.clearAll()
     this.shownLinkIds = [] // clearAll 已清掉连线
-    // toGanttData 顺带算出本批数据里哪些泳道指标真有值(见 kpiVisibility)。列定义要在 parse
+    // project 顺带算出本批数据里哪些泳道指标真有值(见 kpiVisibility)。列定义要在 parse
     // 之前按结果重建:整列被去掉时泳道名列要变宽,晚于 parse 改会先闪一帧旧布局。
-    const data = this.toGanttData(model)
+    const data = this.projection.project(model, this.options)
     g.config.columns = GRID_COLUMNS(
       this.options.view,
       this.resolveDimLabel(),
-      () => this.kpiVisibility,
+      () => this.projection.kpiVisibility,
     )
     g.parse(data)
     this.refreshMarker()
@@ -815,12 +340,8 @@ export class DhtmlxEngine implements SchedulingEngine {
     this.dropHint = undefined
     this.cancelZone?.remove()
     this.cancelZone = undefined
-    this.tipEl?.remove()
-    this.tipEl = undefined
-    this.tipTaskId = undefined
+    this.resourceTooltip.destroy()
     this.dragging = false
-    cancelAnimationFrame(this.tipRaf)
-    this.tipRaf = 0
     cancelAnimationFrame(this.settleRaf)
     cancelAnimationFrame(this.resizeRaf)
     this.resizeObserver?.disconnect()
@@ -855,49 +376,9 @@ export class DhtmlxEngine implements SchedulingEngine {
   private resolveScale(): Exclude<TimeScale, 'auto'> {
     return resolveTimeScale(this.scale, this.model?.horizon)
   }
-
-  /** 当前刻度配置。资源排产板在小时刻度下插入「班次带」(日期 / 班次 / 小时)。 */
   private scalesFor(): Array<Record<string, unknown>> {
-    const scale = this.resolveScale()
-    const base = SCALE_CONFIG[scale]
-    if (this.model?.timezones?.length && this.gantt?.date) {
-      const dates = this.gantt.date as unknown as Record<string, unknown>
-      const factoryRows =
-        this.options.view === 'resource' && scale === 'hour'
-          ? [base[0], { unit: 'hour', step: 8, shift: true }, base[1]]
-          : base
-      const rows = this.model.timezones.flatMap((timezone, index) =>
-        factoryRows.map((row) => {
-          const unit = String(row.unit)
-          const key = `factory_${index}_${unit}`
-          const calendar = factoryUnit(timezone, unit)
-          dates[`${key}_start`] = calendar.start
-          dates[`add_${key}`] = calendar.add
-          return {
-            ...row,
-            unit: key,
-            format:
-              'shift' in row
-                ? (date: Date) => {
-                    const hour = Number(
-                      factoryTimeInput(date.toISOString(), timezone).slice(11, 13),
-                    )
-                    return `${timezone} · ${hour < 8 ? '夜班 00–08' : hour < 16 ? '早班 08–16' : '中班 16–24'}`
-                  }
-                : calendar.format,
-          }
-        }),
-      )
-      this.gantt.config.scale_height = rows.length * 25
-      this.gantt.config.min_column_width = 140
-      return rows
-    }
-    if (this.options.view === 'resource' && scale === 'hour') {
-      return [base[0], { unit: 'hour', step: 8, format: shiftLabel, css: shiftCss }, base[1]]
-    }
-    return base
+    return scalesFor(this.resolveScale(), this.options.view, this.model, this.gantt)
   }
-
   /** 当前分组维度的显示名(左侧列1表头)。 */
   private resolveDimLabel(): string {
     const key = this.options.groupBy || 'workCenter'
@@ -955,7 +436,11 @@ export class DhtmlxEngine implements SchedulingEngine {
     // 默认不画连线;资源板仅在「选中某工序」时动态显示该工单的工序连线(showOrderLinks)。
     c.show_links = true
     c.highlight_critical_path = options.view === 'order'
-    c.columns = GRID_COLUMNS(options.view, this.resolveDimLabel(), () => this.kpiVisibility)
+    c.columns = GRID_COLUMNS(
+      options.view,
+      this.resolveDimLabel(),
+      () => this.projection.kpiVisibility,
+    )
     c.scales = this.scalesFor()
     // 资源排产板小时刻度有 3 行(日期/班次/小时),抬高刻度区。
     c.scale_height = options.view === 'resource' && this.resolveScale() === 'hour' ? 70 : 50
@@ -981,7 +466,7 @@ export class DhtmlxEngine implements SchedulingEngine {
     inst.templates.task_class = (_s: unknown, _e: unknown, task: { nerv?: ScheduleTask }) => {
       const t = task.nerv
       const cls: string[] = []
-      // 资源时间块不作任务条(见 toGanttData 已排除),改由 timeline_cell_class 给单元格上底纹。
+      // 资源时间块不作任务条(由 GanttProjection 排除),改由 timeline_cell_class 给单元格上底纹。
       if (t?.type === 'order') cls.push('nerv-order')
       if (t?.colorKey && !t?.blockKind) cls.push(`nerv-cat-${t.colorKey}`)
       if (t?.hasConflict) cls.push('nerv-conflict')
@@ -1066,21 +551,21 @@ export class DhtmlxEngine implements SchedulingEngine {
     inst.templates.timeline_cell_class = (task: { id?: string | number }, date: Date) => {
       const classes: string[] = []
       const ts = date.getTime()
-      const lanes = this.lanesOf(task?.id)
-      if (this.workingWindows.size) {
-        if (!this.isWorkingAt(lanes, ts)) {
+      const lanes = this.projection.lanesOf(this.options.view, task?.id)
+      if (this.projection.workingWindows.size) {
+        if (!this.projection.isWorkingAt(lanes, ts)) {
           const day = date.getDay()
           classes.push(day === 0 || day === 6 ? 'nerv-weekend' : 'nerv-offwork')
         }
-        if (this.shiftStarts.has(ts)) classes.push('nerv-shift-start')
+        if (this.projection.shiftStarts.has(ts)) classes.push('nerv-shift-start')
       } else {
         const day = date.getDay()
         const h = date.getHours()
         if (day === 0 || day === 6 || h < 8 || h >= 20) classes.push('nerv-offwork')
       }
-      if (this.blockCells.size) {
+      if (this.projection.blockCells.size) {
         for (const lane of lanes) {
-          const wins = this.blockCells.get(lane)
+          const wins = this.projection.blockCells.get(lane)
           if (!wins) continue
           const hit = wins.find((w) => ts >= w.start && ts < w.end)
           if (hit) {
@@ -1129,7 +614,7 @@ export class DhtmlxEngine implements SchedulingEngine {
             if (bar) this.signalLockedDrag(taskId, bar)
             return false
           }
-          this.hideTip()
+          this.resourceTooltip.hide()
           this.suppressNextClick = true
         }
         return true
@@ -1331,89 +816,6 @@ export class DhtmlxEngine implements SchedulingEngine {
     this.hideDropHint()
   }
 
-  /** 自绘 tooltip:悬停任务块时跟指针平滑移动;不在块上或拖拽中则隐藏。 */
-  private updateTip(inst: DhxGantt, e: MouseEvent): void {
-    const tip = this.tipEl
-    if (!tip) return
-    if (this.dragging) {
-      this.hideTip()
-      return
-    }
-    const bar = (e.target as HTMLElement)?.closest?.('.gantt_task_line') as HTMLElement | null
-    // 只处理本实例容器内的条:页面可能有多个实例,document 级 mousemove 会让每个实例都触发;
-    // 用别的实例的 task_id 调本实例 getTask 会抛 "Task not found"(DHTMLX getTask 对缺失 id 抛错),
-    // 每帧抛异常还会拖垮性能(tooltip/拖拽卡顿的元凶)。先按容器归属过滤,再按存在性取 task。
-    if (!bar || !this.container?.contains(bar)) {
-      this.hideTip()
-      return
-    }
-    const id = bar.getAttribute('task_id') ?? undefined
-    const t = id && inst.isTaskExists?.(id) ? inst.getTask(id) : undefined
-    if (!id || !t?.nerv || t.nerv.type !== 'operation' || t.nerv.blockKind) {
-      this.hideTip()
-      return
-    }
-    // 内容一次构建(切换任务时才重建),移动时只改 transform,避免重排。
-    if (this.tipTaskId !== id) {
-      tip.innerHTML = tooltipHtml(t.nerv)
-      this.tipTaskId = id
-    }
-    tip.style.display = 'block'
-    // pointermove 高频:把位置写入合并到每帧一次 rAF(避免每个事件都触发合成),用 translate 定位(GPU 层,不触发 layout)。
-    // 这里存的是**指针原始坐标**,偏移与边界翻转都留到 rAF 里算 —— 那时 tip 已完成布局,
-    // 才量得到真实尺寸。
-    this.tipPendingX = e.clientX
-    this.tipPendingY = e.clientY
-    if (!this.tipRaf) {
-      this.tipRaf = requestAnimationFrame(() => {
-        this.tipRaf = 0
-        const el = this.tipEl
-        if (!el || el.style.display === 'none') return
-        el.style.transform = this.tipTransform(el)
-        // 首帧就位后再淡入(display:none → block 时 transition 不生效,需分帧)。
-        if (el.style.opacity !== '1') el.style.opacity = '1'
-      })
-    }
-  }
-
-  /**
-   * tooltip 的落位。默认摆在指针右下方,但**贴近视口右/下边缘时翻到另一侧**——
-   * 此前无条件 `指针 + (14, 18)`,鼠标停在甘特底部一行时 tooltip 直接被视口下边切掉,
-   * 正好是信息最密的那几行(#1418)。
-   *
-   * 翻转而不是简单夹取:夹到边上会让 tooltip 盖住指针下的任务条,反而挡住要看的东西。
-   * 翻转后若仍装不下(tooltip 比视口还高)再夹进边距,保证至少从顶部开始可读。
-   */
-  private tipTransform(el: HTMLElement): string {
-    const GAP_X = 14
-    const GAP_Y = 18
-    const MARGIN = 8
-    const w = el.offsetWidth
-    const h = el.offsetHeight
-    const vw = window.innerWidth
-    const vh = window.innerHeight
-
-    let x = this.tipPendingX + GAP_X
-    if (x + w > vw - MARGIN) x = this.tipPendingX - GAP_X - w
-    x = Math.max(MARGIN, Math.min(x, vw - MARGIN - w))
-
-    let y = this.tipPendingY + GAP_Y
-    if (y + h > vh - MARGIN) y = this.tipPendingY - GAP_Y - h
-    y = Math.max(MARGIN, Math.min(y, vh - MARGIN - h))
-
-    return `translate(${Math.round(x)}px, ${Math.round(y)}px)`
-  }
-
-  private hideTip(): void {
-    cancelAnimationFrame(this.tipRaf)
-    this.tipRaf = 0
-    const tip = this.tipEl
-    if (!tip || tip.style.display === 'none') return
-    tip.style.opacity = '0'
-    tip.style.display = 'none'
-    this.tipTaskId = undefined
-  }
-
   private hideDropHint(): void {
     this.dragging = false
     this.dragTaskId = undefined
@@ -1522,305 +924,4 @@ export class DhtmlxEngine implements SchedulingEngine {
       return el
     })
   }
-
-  /** 一行(泳道或工序行)对应的资源 / 工作中心键;工单甘特按工序自身的资源找块。 */
-  private lanesOf(rowId?: string | number): string[] {
-    if (typeof rowId !== 'string' && typeof rowId !== 'number') return []
-    const id = String(rowId)
-    if (this.options.view === 'resource') return [id.replace(/^lane:/, '')]
-    return this.taskLane.get(id) ?? []
-  }
-
-  private isWorkingAt(lanes: string[], ts: number): boolean {
-    for (const lane of lanes) {
-      const wins = this.workingWindows.get(lane)
-      if (wins) return wins.some((w) => ts >= w.start && ts < w.end)
-    }
-    // 该行不在任何一份日历的适用范围内(或行本身没有资源归属):用全局并集判定,
-    // 这样至少休息日/夜间仍然是灰的,而不是整片当成工作时间。
-    const all = this.workingWindows.get('__all__')
-    return all ? all.some((w) => ts >= w.start && ts < w.end) : true
-  }
-
-  /** 从模型的工作日历建索引:每个资源/工作中心一份工作窗口表 + 全局并集 + 班次起点集合。 */
-  private buildCalendarIndex(model: ScheduleModel): void {
-    this.workingWindows = new Map()
-    this.shiftStarts = new Set()
-    const calendars = model.calendars ?? []
-    if (!calendars.length) return
-
-    const all: { start: number; end: number }[] = []
-    for (const calendar of calendars) {
-      const windows = calendar.shiftWindows
-        .map((w) => ({ start: Date.parse(w.startUtc), end: Date.parse(w.endUtc) }))
-        .filter((w) => Number.isFinite(w.start) && Number.isFinite(w.end) && w.end > w.start)
-        .sort((a, b) => a.start - b.start)
-      if (!windows.length) continue
-      for (const w of windows) {
-        all.push(w)
-        this.shiftStarts.add(w.start)
-      }
-      for (const key of [...calendar.resourceIds, ...calendar.workCenterIds]) {
-        if (!key) continue
-        const existing = this.workingWindows.get(key)
-        this.workingWindows.set(
-          key,
-          existing ? [...existing, ...windows].sort((a, b) => a.start - b.start) : windows,
-        )
-      }
-    }
-    if (all.length)
-      this.workingWindows.set(
-        '__all__',
-        all.sort((a, b) => a.start - b.start),
-      )
-  }
-
-  /** 时间块索引:泳道键(资源 + 工作中心都登记)→ 时段窗口,供单元格底纹查表。 */
-  private buildBlockIndex(blocks: ScheduleTask[], laneOf: (t: ScheduleTask) => string): void {
-    this.blockCells = new Map()
-    for (const b of blocks) {
-      const start = Date.parse(b.startUtc)
-      const end = Date.parse(b.endUtc)
-      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue
-      const keys = new Set([laneOf(b), b.resourceId ?? '', b.workCenterId ?? ''])
-      for (const key of keys) {
-        if (!key) continue
-        const arr = this.blockCells.get(key) ?? []
-        arr.push({ start, end, kind: b.blockKind! })
-        this.blockCells.set(key, arr)
-      }
-    }
-  }
-
-  private toGanttData(model: ScheduleModel): { data: unknown[]; links: unknown[] } {
-    const toDate = (isoVal: string) => (isoVal ? new Date(isoVal) : undefined)
-    const data: unknown[] = []
-    this.buildCalendarIndex(model)
-    // 工序行 → 资源/工作中心(工单甘特用:某道工序所在设备在此时段维护/停机,那一行就该有底纹)。
-    this.taskLane = new Map(
-      model.tasks
-        .filter((t) => !t.blockKind)
-        .map((t) => [
-          t.id,
-          [t.resourceId, t.workCenterId, t.dimensions?.workCenter?.id].filter(Boolean) as string[],
-        ]),
-    )
-
-    if (this.options.view === 'resource') {
-      // 一资源(所选维度)一泳道:分组行用 split task,同组工序铺在它那一行。里程碑不入资源板。
-      const dim = this.options.groupBy || 'workCenter'
-      const ops = model.tasks.filter(
-        (t) => t.type === 'operation' && !t.isMilestone && !t.blockKind,
-      )
-      // 资源时间块不作任务条:改为按泳道+时段给时间线「单元格」上底纹(与非工作日历同一实现),
-      // 真正与格子融为一体、恒在卡片之下、绝不覆盖。见 timeline_cell_class + this.blockCells。
-      const blocks = model.tasks.filter((t) => !!t.blockKind)
-      const resById = new Map(model.resources.map((r) => [r.id, r]))
-      const loadByResource = new Map<
-        string,
-        { assigned: number; available: number; utilization: number }
-      >()
-      for (const load of model.loads) {
-        const total = loadByResource.get(load.resourceId) ?? {
-          assigned: 0,
-          available: 0,
-          utilization: 0,
-        }
-        total.assigned += load.assignedMinutes
-        total.available += load.availableMinutes
-        total.utilization = Math.max(total.utilization, load.utilization)
-        loadByResource.set(load.resourceId, total)
-      }
-      const groups = new Map<string, string>()
-      const laneOf = (t: ScheduleTask) => t.dimensions?.[dim]?.id ?? t.resourceId ?? '__none__'
-      const resourcesByLane = new Map<string, Set<string>>()
-      const configuredLanes = model.groupValues?.[dim] ?? []
-      for (const lane of configuredLanes) groups.set(lane.id, lane.label)
-      // 用资源播种泳道,保证空泳道常驻——拖走最后一个工序时该行不消失。但仅当资源本身就是
-      // 该维度的成员时才播种:若工序携带的维度 id(如 WC-*)与资源 id(如设备 DEV-*)分属两个
-      // 空间,播种全部资源会生出一批永远为空的设备泳道垫在最上方,把真正有工序的泳道挤出首屏。
-      if (dim === 'workCenter') {
-        const dimIds = new Set<string>()
-        for (const t of ops) {
-          const id = t.dimensions?.[dim]?.id
-          if (id) dimIds.add(id)
-        }
-        for (const r of model.resources) {
-          if (dimIds.size > 0 && !dimIds.has(r.id)) continue
-          if (!groups.has(r.id)) groups.set(r.id, r.text)
-        }
-      }
-      for (const t of ops) {
-        const id = laneOf(t)
-        // 工序携带的维度标签(如「切割中心」)优先于资源原始名(如「激光切割-01」)。
-        groups.set(id, t.dimensions?.[dim]?.label ?? t.resourceId ?? groups.get(id) ?? '未分配')
-        if (t.resourceId) {
-          const resources = resourcesByLane.get(id) ?? new Set<string>()
-          resources.add(t.resourceId)
-          resourcesByLane.set(id, resources)
-        }
-      }
-      // 时间块:按当前维度算出所属泳道 + 时段窗口,供 timeline_cell_class 给单元格上底纹;
-      // 同时播种泳道(块所在资源即使没工序,泳道也要在)。
-      this.buildBlockIndex(blocks, laneOf)
-      for (const b of blocks) {
-        const id = laneOf(b)
-        if (!groups.has(id)) groups.set(id, b.dimensions?.[dim]?.label ?? b.resourceId ?? '未分配')
-      }
-      // 泳道按资源固定顺序排(改派后不重排整板);非资源维度保持出现顺序(稳定排序)。
-      const resOrder = new Map(model.resources.map((r, i) => [r.id, i]))
-      const groupOrder = new Map(configuredLanes.map((lane, index) => [lane.id, index]))
-      // 每条泳道上有多少工序——排序与「仅有排程」共用，只数一遍。
-      const opCountByLane = new Map<string, number>()
-      for (const t of ops) {
-        const id = laneOf(t)
-        opCountByLane.set(id, (opCountByLane.get(id) ?? 0) + 1)
-      }
-      const laneOrder = this.options.laneOrder ?? 'busiest'
-      const laneEntries =
-        laneOrder === 'onlyScheduled'
-          ? [...groups.entries()].filter(([id]) => (opCountByLane.get(id) ?? 0) > 0)
-          : [...groups.entries()]
-      const sortedGroups = laneEntries.sort((a, b) => {
-        if (laneOrder === 'name') return a[1].localeCompare(b[1], 'zh-Hans-CN')
-        if (laneOrder === 'busiest') {
-          // 忙的排上面：按车间/产线分组时名录里的空泳道会挤在首屏，演示第一眼像坏了
-          // （第五轮走查实测：首屏两条空产线，滚下去才见到有活的那条）。
-          const diff = (opCountByLane.get(b[0]) ?? 0) - (opCountByLane.get(a[0]) ?? 0)
-          if (diff !== 0) return diff
-          // 同样忙（含都为空）时回落名录顺序，避免每次渲染抖动。
-        }
-        return (
-          (groupOrder.get(a[0]) ?? resOrder.get(a[0]) ?? Number.MAX_SAFE_INTEGER) -
-          (groupOrder.get(b[0]) ?? resOrder.get(b[0]) ?? Number.MAX_SAFE_INTEGER)
-        )
-      })
-      // 本批泳道指标先攒起来,循环末尾一次性判定哪些指标真有数据(#1399 M8)。
-      const laneKpis: Array<LaneTask['kpi']> = []
-      for (const [id, label] of sortedGroups) {
-        const res = resById.get(id)
-        const resourceIds = resourcesByLane.get(id) ?? new Set([id])
-        const load = [...resourceIds].reduce<
-          { assigned: number; available: number; utilization: number } | undefined
-        >((total, resourceId) => {
-          const next = loadByResource.get(resourceId)
-          if (!next) return total
-          return {
-            assigned: (total?.assigned ?? 0) + next.assigned,
-            available: (total?.available ?? 0) + next.available,
-            utilization: Math.max(total?.utilization ?? 0, next.utilization),
-          }
-        }, undefined)
-        const utilization = load
-          ? load.available > 0
-            ? load.assigned / load.available
-            : load.utilization
-          : undefined
-        const kpi =
-          res || utilization != null
-            ? {
-                utilization: res?.utilization ?? utilization,
-                oee: res?.oee,
-                changeoverCount: res?.changeoverCount,
-                materialRisk: res?.materialRisk,
-              }
-            : undefined
-        laneKpis.push(kpi)
-        data.push({
-          id: `lane:${id}`,
-          text: label,
-          type: 'project',
-          render: 'split',
-          open: true,
-          kpi,
-          nerv: {
-            type: 'order',
-            orderId: id,
-            operationId: '',
-            operationSequence: 0,
-            text: label,
-            startUtc: '',
-            endUtc: '',
-            locked: false,
-            hasConflict: false,
-          },
-        })
-      }
-      this.kpiVisibility = resolveLaneKpiVisibility(laneKpis)
-      for (const t of ops) data.push(this.toGanttTask(t, `lane:${laneOf(t)}`, toDate))
-      // 工单内线仍按选中展示；装配跨工单前置常显。
-      const taskById = new Map(ops.map((task) => [task.id, task]))
-      const links = model.links
-        .filter((link) => {
-          const source = taskById.get(link.source)
-          const target = taskById.get(link.target)
-          return source && target && source.orderId !== target.orderId
-        })
-        .map((link) => ({ id: link.id, source: link.source, target: link.target, type: '0' }))
-      return { data, links }
-    }
-
-    // 工单甘特里块同样不作任务条,但要能看见:按「这道工序所在设备/工作中心在此时段不可用」
-    // 给该工序行的单元格上底纹(见 timeline_cell_class + taskLane)。
-    this.buildBlockIndex(
-      model.tasks.filter((t) => !!t.blockKind),
-      (t) => t.workCenterId ?? t.resourceId ?? '__none__',
-    )
-    for (const t of model.tasks) {
-      if (t.blockKind) continue // 资源时间块不作任务条
-      const parent = t.type === 'operation' ? (t.parentId ?? 0) : 0
-      data.push(this.toGanttTask(t, parent, toDate))
-    }
-    const links = model.links.map((l) => ({
-      id: l.id,
-      source: l.source,
-      target: l.target,
-      type: '0',
-    }))
-    return { data, links }
-  }
-
-  private toGanttTask(
-    t: ScheduleTask,
-    parent: string | number,
-    toDate: (iso: string) => Date | undefined,
-  ) {
-    return {
-      id: t.id,
-      text: t.text || t.operationId || t.orderId,
-      start_date: toDate(t.startUtc),
-      end_date: toDate(t.endUtc),
-      planned_start: t.plannedStartUtc ? toDate(t.plannedStartUtc) : undefined,
-      planned_end: t.plannedEndUtc ? toDate(t.plannedEndUtc) : undefined,
-      parent,
-      type: t.isMilestone ? 'milestone' : t.type === 'order' ? 'project' : 'task',
-      progress: t.progress ?? 0,
-      readonly: t.type === 'order',
-      open: true,
-      $resource: t.resourceId,
-      nerv: t,
-    }
-  }
-}
-
-function fmt(isoVal?: string, timezone?: string): string {
-  if (isoVal && timezone !== undefined)
-    return scheduleTime(isoVal, timezone, {
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  if (!isoVal) return '—'
-  const d = new Date(isoVal)
-  return Number.isNaN(d.getTime())
-    ? isoVal
-    : d.toLocaleString('zh-CN', {
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      })
 }

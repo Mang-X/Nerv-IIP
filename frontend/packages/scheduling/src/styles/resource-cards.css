@@ -1,0 +1,208 @@
+@layer nv-components {
+  /* ---- 资源排产板:工单卡片(条内) ---- */
+  /* 卡片底色混向 --card(近白浅染),全圈细边(不做左侧色条);工序识别靠底色 + WO 号 + 图例 */
+  .nerv-gantt-dhx .gantt_task_line:has(.nerv-card) {
+    /* 关键:向 transparent 混合(保留工序色相);严禁向 --card 混合——暗色下 --card 带红色相会把所有卡片染成暗红。 */
+    background-color: color-mix(in oklch, var(--bar), transparent 78%) !important;
+    border: 1.5px solid color-mix(in oklch, var(--bar), var(--foreground) 35%) !important;
+    /* 按卡片自身宽度做信息降级(纯 CSS container query) */
+    container-type: inline-size;
+  }
+  /* 卡片 hover 抬升:边框加亮 + 极轻阴影,不位移 */
+  .nerv-gantt-dhx .gantt_task_line:has(.nerv-card):hover {
+    border-color: color-mix(in oklch, var(--bar), transparent 25%) !important;
+    box-shadow: var(--shadow-sm);
+  }
+  /* 窄任务块信息降级:被隐藏的信息都在 tooltip 里,不丢信息 */
+  @container (max-width: 150px) {
+    .nerv-gantt-dhx .nerv-card-r3 {
+      display: none;
+    }
+  }
+  @container (max-width: 96px) {
+    .nerv-gantt-dhx .nerv-card-r2 {
+      display: none;
+    }
+    .nerv-gantt-dhx .nerv-card-tags {
+      display: none;
+    }
+  }
+  @container (max-width: 60px) {
+    .nerv-gantt-dhx .nerv-card-prio,
+    .nerv-gantt-dhx .nerv-card-rush {
+      display: none;
+    }
+    /* 窄块 r1 靠左排,meta 推到右侧,避免 WO 号被顶死 */
+    .nerv-gantt-dhx .nerv-card-r1 {
+      justify-content: flex-start;
+    }
+    .nerv-gantt-dhx .nerv-card-meta {
+      margin-left: auto;
+    }
+  }
+  /* 资源卡片不显示进度填充(进度信息不在排产板呈现):去掉透出的深色块,避免与文字交杂成横线 */
+  .nerv-gantt-dhx .gantt_task_line:has(.nerv-card) .gantt_task_progress,
+  .nerv-gantt-dhx .gantt_task_line:has(.nerv-card) .gantt_task_progress_wrapper {
+    display: none !important;
+  }
+  /* split 模式泳道汇总条(贯穿整行的灰/蓝横线):排产板按泳道铺卡片,不需要汇总条,隐藏 */
+  .nerv-gantt-dhx .gantt_task_line.gantt_split_parent {
+    display: none !important;
+  }
+  /* 自定义拖拽:被拖卡片(原块)淡化,焦点给随指针的虚影 */
+  .nerv-gantt-dhx .gantt_task_line.nerv-drag-source {
+    opacity: 0.35;
+    transition: opacity var(--nv-duration-fast) var(--nv-ease-out-expo);
+  }
+
+  /* 资源时间块(维护/停机/换线/换型):走时间线「单元格」底纹(与非工作日历同一实现),
+   恒在卡片之下、与格子融为一体、绝不覆盖卡片。见 DhtmlxEngine timeline_cell_class + blockCells。
+   斜纹按块类型着色;若同格也是非工作(nerv-offwork),两者叠加不冲突。 */
+  .nerv-gantt-dhx .gantt_task_cell.nerv-cell-block {
+    --blk: var(--muted-foreground);
+    background-image: repeating-linear-gradient(
+      -45deg,
+      transparent 0,
+      transparent 5px,
+      color-mix(in srgb, var(--blk) 15%, transparent) 5px,
+      color-mix(in srgb, var(--blk) 15%, transparent) 6px
+    ) !important;
+  }
+  .nerv-gantt-dhx .gantt_task_cell.nerv-cell-block-maintenance {
+    --blk: var(--nv-scheduling-block-maintenance);
+  }
+  .nerv-gantt-dhx .gantt_task_cell.nerv-cell-block-downtime {
+    --blk: var(--nv-scheduling-block-downtime);
+  }
+  .nerv-gantt-dhx .gantt_task_cell.nerv-cell-block-lineChange {
+    --blk: var(--nv-scheduling-block-linechange);
+  }
+  .nerv-gantt-dhx .gantt_task_cell.nerv-cell-block-changeover {
+    --blk: var(--nv-scheduling-block-changeover);
+  }
+  .nerv-gantt-dhx .nerv-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px 11px 10px;
+    height: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    text-align: left;
+    color: var(--foreground);
+    font-size: 0.73rem;
+    line-height: 1.5;
+  }
+  .nerv-gantt-dhx .nerv-card-r1 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .nerv-gantt-dhx .nerv-card-wo {
+    font-weight: 700;
+    font-size: 0.76rem;
+    letter-spacing: 0.01em;
+    color: var(--foreground);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .nerv-gantt-dhx .nerv-card-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+  }
+  .nerv-gantt-dhx .nerv-card-prio {
+    font-weight: 700;
+    font-size: 0.64rem;
+    padding: 0 4px;
+    border-radius: 4px;
+  }
+  .nerv-gantt-dhx .nerv-card-rush {
+    display: inline-flex;
+    align-items: center;
+    color: var(--nv-scheduling-rush);
+  }
+  .nerv-gantt-dhx .nerv-card-prio.nerv-prio-high {
+    color: var(--destructive-strong);
+    background: color-mix(in oklch, var(--destructive), transparent 86%);
+  }
+  .nerv-gantt-dhx .nerv-card-prio.nerv-prio-mid {
+    color: var(--nv-warning-strong);
+    background: color-mix(in oklch, var(--nv-warning), transparent 86%);
+  }
+  .nerv-gantt-dhx .nerv-card-prio.nerv-prio-low {
+    color: var(--muted-foreground);
+    background: color-mix(in oklch, var(--muted-foreground), transparent 86%);
+  }
+  .nerv-gantt-dhx .nerv-card-r2 {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .nerv-gantt-dhx .nerv-card-op {
+    color: var(--muted-foreground);
+  }
+  .nerv-gantt-dhx .nerv-card-r3 {
+    color: var(--muted-foreground);
+    font-size: 0.68rem;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .nerv-gantt-dhx .nerv-card-tags {
+    overflow: hidden;
+    flex-wrap: wrap;
+    display: flex;
+    gap: 5px;
+    margin-top: auto;
+  }
+  /* 齐套 chip:浅底 + 同色描边 + 彩字(无前置圆点)。卡片近白,浅 chip 也清晰且不显眼喧宾夺主。 */
+  .nerv-gantt-dhx .nerv-kit {
+    font-size: 0.64rem;
+    font-weight: 700;
+    padding: 0 6px;
+    border-radius: 5px;
+    white-space: nowrap;
+    letter-spacing: 0.01em;
+    border: 1px solid currentColor;
+  }
+  /* chip 文字用 -strong 变体保 AA(近白卡片上);fill 用原语义色 */
+  .nerv-gantt-dhx .nerv-kit-ok {
+    color: var(--nv-success-strong);
+    background: color-mix(in oklch, var(--nv-scheduling-kit-ok), transparent 84%);
+  }
+  .nerv-gantt-dhx .nerv-kit-warn {
+    color: var(--nv-scheduling-kit-warn);
+    background: color-mix(in oklch, var(--nv-scheduling-kit-warn), transparent 82%);
+  }
+  .nerv-gantt-dhx .nerv-kit-bad {
+    color: var(--destructive-strong);
+    background: color-mix(in oklch, var(--nv-scheduling-kit-bad), transparent 84%);
+  }
+  .nerv-gantt-dhx .nerv-co {
+    font-size: 0.62rem;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    white-space: nowrap;
+  }
+
+  /* 网格首列(任务名/泳道名):用 flex 居中替代 DHTMLX 的 line-height:96px 单行居中,支持泳道头多行 KPI */
+  .nerv-gantt-dhx .gantt_grid_data .gantt_tree_content {
+    display: flex !important;
+    align-items: center !important;
+    height: 100% !important;
+    line-height: 1.35 !important;
+    white-space: normal !important;
+  }
+
+  .nerv-gantt-dhx[data-view='order'] .gantt_tree_content {
+    white-space: nowrap !important;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

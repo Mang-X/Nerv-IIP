@@ -1,0 +1,208 @@
+@layer nv-components {
+  /* ---- 资源排产板:左侧两列(列1 资源名 / 列2 产能指标) ---- */
+  .nerv-gantt-dhx .nerv-lane-id {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+  }
+  .nerv-gantt-dhx .nerv-lane-name {
+    font-weight: 600;
+    font-size: 0.84rem;
+    color: var(--foreground);
+  }
+  .nerv-gantt-dhx .nerv-lane-tag {
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: var(--destructive);
+    background: color-mix(in oklch, var(--destructive), transparent 84%);
+    padding: 0 5px;
+    border-radius: 4px;
+  }
+  .nerv-gantt-dhx .nerv-lane-kpis {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px 10px;
+    width: 100%;
+  }
+  .nerv-gantt-dhx .nerv-lane-kpi {
+    display: inline-flex;
+    flex-direction: column;
+    line-height: 1.15;
+  }
+  .nerv-gantt-dhx .nerv-lane-kpi i {
+    font-style: normal;
+    font-size: 0.6rem;
+    color: var(--muted-foreground);
+  }
+  .nerv-gantt-dhx .nerv-lane-kpi b {
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--foreground);
+  }
+  .nerv-gantt-dhx .nerv-lane-kpi b.nerv-over {
+    color: var(--destructive);
+  }
+  .nerv-gantt-dhx .nerv-lane-kpi b.nerv-warn {
+    color: var(--nv-warning);
+  }
+  /* 锁定:同色虚线描边(语义"固定",非装饰侧条) */
+  .nerv-gantt-dhx .gantt_task_line.nerv-locked {
+    border-style: dashed !important;
+    border-color: var(--bar) !important;
+    cursor: not-allowed;
+  }
+  /* 锁定拒绝:极小位移抖动(无 overshoot),JS 短暂 toggle .nerv-lock-deny */
+  @keyframes nerv-lock-deny {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    25% {
+      transform: translateX(-3px);
+    }
+    75% {
+      transform: translateX(3px);
+    }
+  }
+  .nerv-gantt-dhx .gantt_task_line.nerv-lock-deny {
+    animation: nerv-lock-deny var(--nv-duration-fast) var(--nv-ease-out-expo);
+  }
+  /* 抖动时锁图标短暂点亮品牌色(JS 与 .nerv-lock-deny 同步 toggle) */
+  .nerv-gantt-dhx .gantt_task_line.nerv-lock-deny .nerv-card-lock {
+    color: var(--nv-brand);
+  }
+  /* 落定入场:scale .96→1 + opacity,无 overshoot */
+  @keyframes nerv-card-settle {
+    from {
+      transform: scale(0.96);
+      opacity: 0;
+    }
+    to {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  .nerv-gantt-dhx .gantt_task_line.nerv-card-settle {
+    animation: nerv-card-settle var(--nv-duration-base) var(--nv-ease-out-expo);
+  }
+
+  /* 依赖连线:整条(含拐角)统一中性细线,不再出现不一致的灰拐角。关键路径连线用 warning。
+   向 foreground 混合提高亮暗主题中的辨识度。整条连线淡入。 */
+  .nerv-gantt-dhx .gantt_task_link {
+    animation: nerv-link-in var(--nv-duration-slow) var(--nv-ease-out-expo) both;
+  }
+  @keyframes nerv-link-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  .nerv-gantt-dhx .gantt_task_link .gantt_line_wrapper div {
+    background-color: color-mix(
+      in oklch,
+      var(--muted-foreground),
+      var(--foreground) 55%
+    ) !important;
+  }
+  .nerv-gantt-dhx .gantt_link_arrow_right {
+    border-left-color: color-mix(
+      in oklch,
+      var(--muted-foreground),
+      var(--foreground) 55%
+    ) !important;
+  }
+  .nerv-gantt-dhx .gantt_link_arrow_left {
+    border-right-color: color-mix(
+      in oklch,
+      var(--muted-foreground),
+      var(--foreground) 55%
+    ) !important;
+  }
+  .nerv-gantt-dhx .gantt_critical_link .gantt_line_wrapper div {
+    background-color: var(--nv-warning) !important;
+  }
+  .nerv-gantt-dhx .gantt_critical_link .gantt_link_arrow_right {
+    border-left-color: var(--nv-warning) !important;
+  }
+  /* 拐角用 border 画的,要单独改 border-color,否则保持默认灰 */
+  .nerv-gantt-dhx .gantt_task_link .gantt_link_corner {
+    border-color: color-mix(in oklch, var(--muted-foreground), var(--foreground) 55%) !important;
+  }
+  .nerv-gantt-dhx .gantt_critical_link .gantt_link_corner {
+    border-color: var(--nv-warning) !important;
+  }
+
+  /* 时间线顶层(日期)更醒目,底层(小时)弱化 */
+  .nerv-gantt-dhx .gantt_scale_line:first-child .gantt_scale_cell {
+    font-weight: 600;
+    color: var(--foreground);
+  }
+
+  /* 今天线:细品牌线 + 胶囊标签。淡化只作用在竖线本身(color-mix),不给整条 marker 加 opacity,
+   否则标签会一起变淡、对比不足。标签保持实色品牌胶囊。 */
+  .nerv-gantt-dhx .gantt_marker.nerv-today-marker {
+    background-color: color-mix(in oklch, var(--nv-brand), transparent 15%) !important;
+    width: 2px;
+  }
+  .nerv-gantt-dhx .gantt_marker.nerv-today-marker .gantt_marker_content {
+    background-color: var(--nv-brand) !important;
+    color: var(--nv-brand-foreground);
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 1px 8px;
+    opacity: 1;
+  }
+
+  .nerv-tip-row {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 10px;
+  }
+  .nerv-tip-key {
+    color: var(--muted-foreground);
+  }
+  .nerv-tip-value {
+    overflow-wrap: anywhere;
+    text-align: right;
+  }
+  .gantt_tooltip {
+    max-width: min(360px, calc(100vw - 24px));
+    white-space: normal !important;
+  }
+
+  /* tooltip:玻璃浮层(有目的的 glass) */
+  .gantt_tooltip {
+    background-color: color-mix(in oklch, var(--card), transparent 8%) !important;
+    -webkit-backdrop-filter: blur(12px) saturate(1.4);
+    backdrop-filter: blur(12px) saturate(1.4);
+    color: var(--foreground) !important;
+    border: 1px solid var(--nv-scheduling-hairline) !important;
+    border-radius: 10px !important;
+    box-shadow: var(--shadow-lg) !important;
+    font-family: var(--font-sans) !important;
+    font-size: 0.78rem !important;
+    line-height: 1.5 !important;
+    padding: 10px 12px !important;
+  }
+
+  /* 资源板自绘 tooltip(.nerv-tip):跟指针高频移动的浮层,不用玻璃(backdrop-filter 每帧重采样背景
+   → 顿挫)。改近实心背景 + 发丝边框 + 阴影,只靠 transform 定位(GPU 合成,不触发 layout)。 */
+  .nerv-tip {
+    max-width: min(360px, calc(100vw - 24px));
+    color: var(--foreground);
+    background: color-mix(in oklch, var(--popover), transparent 4%);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: var(--shadow-lg);
+    font-family: var(--font-sans);
+    font-size: 0.78rem;
+    line-height: 1.5;
+    padding: 10px 12px;
+    will-change: transform;
+  }
+}
