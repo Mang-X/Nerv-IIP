@@ -3,7 +3,6 @@
   "consumers": [
     {
       "sourcePath": "backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubDeadLetterReplayPostgresTests.cs",
-      "sourceSha256": "d67ab386de1e6f5f4e87a59f71cab9d50073f84de9d0260fb8002200fd9d3876",
       "factoryCallCount": 2,
       "ownerships": [
         {
@@ -16,7 +15,6 @@
     },
     {
       "sourcePath": "backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubPostgresProfileTests.cs",
-      "sourceSha256": "fd64f2b4938147018441ab046efd6d09525f9b31cf100028c8ceb3dea8783276",
       "factoryCallCount": 3,
       "ownerships": [
         {
@@ -28,7 +26,6 @@
     },
     {
       "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/DemandPlanningDeadLetterReplayPostgresTests.cs",
-      "sourceSha256": "9d2f897a076b2da70ccfb0c9747113a7d8596a6d11ebc3e577c3f23fe1e5f0e5",
       "factoryCallCount": 1,
       "ownerships": [
         {
@@ -61,7 +58,6 @@
     },
     {
       "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/MrpInputChangePersistenceTests.cs",
-      "sourceSha256": "1726ebabf7ac71c09943329a3c6fdd21a20e10ad3a82b0a2040d752c5d407b1a",
       "factoryCallCount": 2,
       "ownerships": [
         {
@@ -74,7 +70,6 @@
     },
     {
       "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/MrpInputSourcePersistenceTests.cs",
-      "sourceSha256": "f4a0e890f2c3174d2dccf6f7b3891360e7ac0a508246e9e70061fff20db0953c",
       "factoryCallCount": 1,
       "ownerships": [
         {
@@ -87,7 +82,6 @@
     },
     {
       "sourcePath": "backend/services/Business/DemandPlanning/tests/Nerv.IIP.Business.DemandPlanning.Web.Tests/NetRequirementIdentityPersistenceTests.cs",
-      "sourceSha256": "5e18b5d2fad36dd8feaeae1be8ca625defb59821313b7933b4debe3e2a3be010",
       "factoryCallCount": 2,
       "ownerships": [
         {
@@ -100,7 +94,6 @@
     },
     {
       "sourcePath": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceDeadLetterFilterPostgresTests.cs",
-      "sourceSha256": "f3ffdfea2a1328d7bbc4d86d01534353d2dc2abfa70d2de6b5fbce302a39ec12",
       "factoryCallCount": 1,
       "ownerships": [
         {
@@ -112,7 +105,6 @@
     },
     {
       "sourcePath": "backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceDeadLetterReplayPostgresTests.cs",
-      "sourceSha256": "7caaf101e41740fb031b69528f19f979a6bbd6716a7b8c42a500441bb03651c9",
       "factoryCallCount": 2,
       "ownerships": [
         {
@@ -137,7 +129,6 @@
     },
     {
       "sourcePath": "backend/services/Business/MasterData/tests/Nerv.IIP.Business.MasterData.Web.Tests/WorkerLoginAccountUniquenessPostgresTests.cs",
-      "sourceSha256": "0a598216b3fa94a1a301073e5dd58fa7347692ffddb2065e3bb1a398c2c775e6",
       "factoryCallCount": 1,
       "ownerships": [
         {
@@ -149,7 +140,6 @@
     },
     {
       "sourcePath": "backend/services/Business/Scheduling/tests/Nerv.IIP.Business.Scheduling.Web.Tests/SchedulingListPlansPostgresProfileTests.cs",
-      "sourceSha256": "e1201ff42dae3cdfcb22522d2d1f37e4cc838b43653c2b20fd79c00e8154061d",
       "factoryCallCount": 2,
       "ownerships": [
         {
@@ -161,7 +151,6 @@
     },
     {
       "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WarehouseTaskActionConcurrencyPostgresTests.cs",
-      "sourceSha256": "828cfac25a1b62a76e3a9a62ed46efcc5365f765ca164b1e871c9418c3053ec6",
       "factoryCallCount": 2,
       "ownerships": [
         {
@@ -173,7 +162,6 @@
     },
     {
       "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WcsDispatchConcurrencyPostgresTests.cs",
-      "sourceSha256": "f60631c878ca30816c1a0fc7a452573ec2acdf1934f61370b6dc37b2c7eb330c",
       "factoryCallCount": 2,
       "ownerships": [
         {
@@ -185,7 +173,6 @@
     },
     {
       "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WcsTaskCallbackValidatorTests.cs",
-      "sourceSha256": "9e34c4b0c1f9c9533c5a1bebcf837bca61299bf5db4815a9866d5b0964abbb77",
       "factoryCallCount": 1,
       "ownerships": [
         {
@@ -209,7 +196,6 @@
     },
     {
       "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsQualityInspectionGateConsumerTests.cs",
-      "sourceSha256": "a77bd344983ce941277dcd447fedf26ff4f3bc010b3e7bb0439d7dc2ec9d6703",
       "factoryCallCount": 2,
       "ownerships": [
         {
@@ -221,7 +207,6 @@
     },
     {
       "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsShortPickBackorderTests.cs",
-      "sourceSha256": "93848c9c6e2511564a354caf59f744ac571eb199c08ea2dd0d3e6fa1e632b4cc",
       "factoryCallCount": 1,
       "ownerships": [
         {
@@ -233,7 +218,6 @@
     },
     {
       "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsWorkAssignmentMigrationPostgresTests.cs",
-      "sourceSha256": "f28b4fa43199ce7c6533bd8b3656c72fc003f7a2e26bd8a6f5471d8501c97970",
       "factoryCallCount": 3,
       "ownerships": [
         {
@@ -245,7 +229,6 @@
     },
     {
       "sourcePath": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamMemberAccountDirectoryPostgresTests.cs",
-      "sourceSha256": "573532afeb60560ca08ed0cbb19980928b8b60b09469abe259752540223ae944",
       "factoryCallCount": 2,
       "ownerships": [
         {
@@ -257,7 +240,6 @@
     },
     {
       "sourcePath": "backend/services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamPlatformAdministratorTests.cs",
-      "sourceSha256": "c6a515ca96d989e7ac2fcfa58d24bdbf86021973bb60b683af20ff1dbb4f8226",
       "factoryCallCount": 1,
       "ownerships": [
         {
@@ -282,7 +264,6 @@
     },
     {
       "sourcePath": "backend/services/Notification/tests/Nerv.IIP.Notification.Web.Tests/NotificationCapOutboxAcceptanceTests.cs",
-      "sourceSha256": "51a7b44c42ead1ed3d3c0250a6b7539fb1e60b70ea37df89878e7a298902a69c",
       "factoryCallCount": 4,
       "ownerships": [
         {
@@ -294,7 +275,6 @@
     },
     {
       "sourcePath": "backend/services/Notification/tests/Nerv.IIP.Notification.Web.Tests/NotificationEnvelopeFieldBudgetPostgresTests.cs",
-      "sourceSha256": "8b17b79ea564f8b006f25312b2774ebf31bbaec7013f0116593e9c2355574913",
       "factoryCallCount": 2,
       "ownerships": [
         {
@@ -306,7 +286,6 @@
     },
     {
       "sourcePath": "backend/services/Notification/tests/Nerv.IIP.Notification.Web.Tests/NotificationPostgresProfileTests.cs",
-      "sourceSha256": "d0d0142ed59bb7972de977fc21daf70580a41666b13d87280e335b14b7a9d6de",
       "factoryCallCount": 1,
       "ownerships": [
         {
@@ -318,7 +297,6 @@
     },
     {
       "sourcePath": "backend/services/Ops/tests/Nerv.IIP.Ops.Web.Tests/OpsPostgresProfileTests.cs",
-      "sourceSha256": "eb7773c889021afc98aa12bfc5b3c33fb2beaff3a0cb561cd77676f5dd505753",
       "factoryCallCount": 1,
       "ownerships": [
         {
@@ -330,19 +308,18 @@
     },
     {
       "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpReturnClosurePostgresAcceptanceTests.cs",
-      "sourceSha256": "817348b47f0379318620c544d3a37e7deac58755fba99aa308fad3b59445be49",
       "factoryCallCount": 1,
       "ownerships": [
         {
           "strategy": "explicit-drop-finally",
           "factoryCallCount": 1,
-          "reason": "The FullChain ERP return acceptance proof preserves DROP-failure evidence by explicitly cleaning up after both DbContexts are disposed."
+          "reason": "The FullChain ERP return acceptance proof preserves DROP-failure evidence by explicitly cleaning up after both DbContexts are disposed.",
+          "ownerVariable": "database"
         }
       ]
     },
     {
       "sourcePath": "backend/tests/Nerv.IIP.Messaging.CAP.Tests/IntegrationEventDeadLetterPostgresFilterTests.cs",
-      "sourceSha256": "b1a6ced53c41e16694ecea92d6e06217dcfec1d9bf3560b0cfaf84dea01bf67f",
       "factoryCallCount": 1,
       "ownerships": [
         {

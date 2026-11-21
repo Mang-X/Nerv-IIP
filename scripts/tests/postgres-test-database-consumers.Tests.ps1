@@ -62,12 +62,20 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 public sealed class PostgreSqlFactoryAnalysis
 {
-    public PostgreSqlFactoryAnalysis(int factoryCallCount, string[] unsupportedForms)
+    public PostgreSqlFactoryAnalysis(
+        int factoryCallCount,
+        int bestEffortUsingCount,
+        string[] explicitDropOwners,
+        string[] unsupportedForms)
     {
         FactoryCallCount = factoryCallCount;
+        BestEffortUsingCount = bestEffortUsingCount;
+        ExplicitDropOwners = explicitDropOwners;
         UnsupportedForms = unsupportedForms;
     }
     public int FactoryCallCount { get; }
+    public int BestEffortUsingCount { get; }
+    public string[] ExplicitDropOwners { get; }
     public string[] UnsupportedForms { get; }
 }
 public static class PostgreSqlFactorySyntaxAnalyzer
@@ -90,11 +98,56 @@ public static class PostgreSqlFactorySyntaxAnalyzer
         var unsupported = unsupportedUsingForms
             .Concat(factoryMembers.Where(member => member.Parent is not InvocationExpressionSyntax invocation || !ReferenceEquals(invocation.Expression, member)).Select(_ => "method-group"))
             .Distinct(StringComparer.Ordinal).OrderBy(x => x, StringComparer.Ordinal).ToArray();
-        var calls = root.DescendantNodes().OfType<InvocationExpressionSyntax>().Count(invocation =>
-            invocation.Expression is MemberAccessExpressionSyntax member
-            && member.Name.Identifier.ValueText == "CreateAsync"
-            && member.Expression.DescendantNodesAndSelf().OfType<SimpleNameSyntax>().LastOrDefault()?.Identifier.ValueText == "PostgreSqlTestDatabase");
-        return new PostgreSqlFactoryAnalysis(calls, unsupported);
+        var calls = factoryMembers
+            .Where(member => member.Parent is InvocationExpressionSyntax invocation && ReferenceEquals(invocation.Expression, member))
+            .Select(member => (InvocationExpressionSyntax)member.Parent)
+            .ToArray();
+        var localOwners = calls.Select(FindUsingDeclaration).Where(owner => owner != null).ToArray();
+        var explicitDropOwners = localOwners.Select(FindUnconditionalDrop).Where(owner => owner != null).ToArray();
+        return new PostgreSqlFactoryAnalysis(
+            calls.Length, localOwners.Length - explicitDropOwners.Length, explicitDropOwners, unsupported);
+    }
+
+    private static LocalDeclarationStatementSyntax FindUsingDeclaration(InvocationExpressionSyntax factory)
+    {
+        if (factory.Parent is AwaitExpressionSyntax awaited
+            && awaited.Parent is EqualsValueClauseSyntax initializer
+            && initializer.Parent is VariableDeclaratorSyntax variable
+            && variable.Parent is VariableDeclarationSyntax declaration
+            && declaration.Variables.Count == 1
+            && declaration.Parent is LocalDeclarationStatementSyntax statement
+            && statement.UsingKeyword.IsKind(SyntaxKind.UsingKeyword)
+            && statement.AwaitKeyword.IsKind(SyntaxKind.AwaitKeyword))
+        {
+            return statement;
+        }
+
+        return null;
+    }
+
+    private static string FindUnconditionalDrop(LocalDeclarationStatementSyntax owner)
+    {
+        if (owner.Parent is not BlockSyntax block)
+        {
+            return null;
+        }
+
+        var next = block.Statements.FirstOrDefault(statement => statement.SpanStart >= owner.Span.End);
+        var ownerName = owner.Declaration.Variables[0].Identifier.ValueText;
+        if (next is TryStatementSyntax attempt
+            && attempt.Finally?.Block.Statements.FirstOrDefault() is ExpressionStatementSyntax cleanup
+            && cleanup.Expression is AwaitExpressionSyntax awaited
+            && awaited.Expression is InvocationExpressionSyntax drop
+            && drop.ArgumentList.Arguments.Count == 0
+            && drop.Expression is MemberAccessExpressionSyntax member
+            && member.Expression is IdentifierNameSyntax receiver
+            && receiver.Identifier.ValueText == ownerName
+            && member.Name.Identifier.ValueText == "DropAsync")
+        {
+            return ownerName;
+        }
+
+        return null;
     }
 }
 '@
@@ -103,7 +156,14 @@ Initialize-CSharpFactoryAnalyzer
 
 function New-SourceSnapshot([string]$Source) {
     $analysis = [PostgreSqlFactorySyntaxAnalyzer]::Analyze($Source)
-    return [pscustomobject]@{ Source = $Source; SourceSha256 = Get-NormalizedSha256 $Source; FactoryCallCount = $analysis.FactoryCallCount; UnsupportedForms = [string[]] @($analysis.UnsupportedForms) }
+    return [pscustomobject]@{
+        Source = $Source
+        SourceSha256 = Get-NormalizedSha256 $Source
+        FactoryCallCount = $analysis.FactoryCallCount
+        BestEffortUsingCount = $analysis.BestEffortUsingCount
+        ExplicitDropOwners = [string[]] @($analysis.ExplicitDropOwners)
+        UnsupportedForms = [string[]] @($analysis.UnsupportedForms)
+    }
 }
 function Get-ConsumerSources {
     $sources = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)
@@ -125,11 +185,19 @@ function Assert-ConsumerPolicy([object]$Policy, [Collections.Generic.Dictionary[
     Assert-Contract ((Get-NervStringsSorted -Values $registeredPaths -Comparer ([StringComparer]::Ordinal) -Unique).Count -eq $registeredPaths.Count) 'Consumer source paths must be unique.'
     Assert-Contract (Test-OrdinalSequenceEqual $registeredPaths (Get-SortedOrdinal $registeredPaths)) 'Consumer source paths must use stable ordinal ordering.'
     Assert-Contract (Test-OrdinalSequenceEqual $registeredPaths (Get-SortedOrdinal ([string[]] @($Sources.Keys)))) 'Every shared-factory source must appear exactly once in the ownership ledger.'
+    foreach ($required in $requiredOwnerships) {
+        $consumer = @($consumers | Where-Object { [string]::Equals([string] $_.sourcePath, [string] $required.sourcePath, [StringComparison]::Ordinal) })
+        $ownership = @($consumer.ownerships | Where-Object { [string]::Equals([string] $_.strategy, [string] $required.strategy, [StringComparison]::Ordinal) -and $_.factoryCallCount -eq $required.factoryCallCount })
+        Assert-Contract ($consumer.Count -eq 1 -and $ownership.Count -eq 1) "Consumer '$($required.sourcePath)' must retain required ownership '$($required.strategy)' for $($required.factoryCallCount) call(s)."
+    }
     foreach ($consumer in $consumers) {
         $path = [string] $consumer.sourcePath
         Assert-Contract ($Sources.ContainsKey($path)) "Registered consumer '$path' is missing."
         $snapshot = $Sources[$path]
-        Assert-Contract ([string]::Equals([string] $consumer.sourceSha256, [string] $snapshot.SourceSha256, [StringComparison]::Ordinal)) "Consumer '$path' source hash drifted; review ownership and refresh the ledger intentionally."
+        $sourceHash = $consumer.PSObject.Properties['sourceSha256']
+        if ($null -ne $sourceHash) {
+            Assert-Contract ([string]::Equals([string] $sourceHash.Value, [string] $snapshot.SourceSha256, [StringComparison]::Ordinal)) "Consumer '$path' source hash drifted; review indirect ownership and refresh the ledger intentionally."
+        }
         Assert-Contract ($consumer.factoryCallCount -eq $snapshot.FactoryCallCount) "Consumer '$path' factory count drifted: expected=$($consumer.factoryCallCount); actual=$($snapshot.FactoryCallCount)."
         $classified = 0
         foreach ($ownership in @($consumer.ownerships)) {
@@ -139,11 +207,29 @@ function Assert-ConsumerPolicy([object]$Policy, [Collections.Generic.Dictionary[
             $classified += $ownership.factoryCallCount
         }
         Assert-Contract ($classified -eq $consumer.factoryCallCount) "Consumer '$path' classified count does not match its source total."
-    }
-    foreach ($required in $requiredOwnerships) {
-        $consumer = @($consumers | Where-Object { [string]::Equals([string] $_.sourcePath, [string] $required.sourcePath, [StringComparison]::Ordinal) })
-        $ownership = @($consumer.ownerships | Where-Object { [string]::Equals([string] $_.strategy, [string] $required.strategy, [StringComparison]::Ordinal) -and $_.factoryCallCount -eq $required.factoryCallCount })
-        Assert-Contract ($consumer.Count -eq 1 -and $ownership.Count -eq 1) "Consumer '$($required.sourcePath)' must retain required ownership '$($required.strategy)' for $($required.factoryCallCount) call(s)."
+        if ($null -eq $sourceHash) {
+            $expectedUsing = 0
+            $expectedDropOwners = [Collections.Generic.List[string]]::new()
+            foreach ($ownership in @($consumer.ownerships)) {
+                if ([string]::Equals([string] $ownership.strategy, 'best-effort-dispose', [StringComparison]::Ordinal)) {
+                    $expectedUsing += $ownership.factoryCallCount
+                }
+                elseif ([string]::Equals([string] $ownership.strategy, 'explicit-drop-finally', [StringComparison]::Ordinal)) {
+                    Assert-Contract (-not [string]::IsNullOrWhiteSpace([string] $ownership.ownerVariable)) "Consumer '$path' must name the owner that is dropped."
+                    for ($i = 0; $i -lt $ownership.factoryCallCount; $i++) { $expectedDropOwners.Add([string] $ownership.ownerVariable) }
+                }
+                else {
+                    throw "Consumer '$path' needs a reviewed source hash for indirect ownership '$($ownership.strategy)'."
+                }
+            }
+
+            $expectedOwners = @(Get-SortedOrdinal ([string[]] $expectedDropOwners.ToArray()))
+            $actualOwners = @(Get-SortedOrdinal $snapshot.ExplicitDropOwners)
+            Assert-Contract (
+                $expectedUsing -eq $snapshot.BestEffortUsingCount -and
+                (Test-OrdinalSequenceEqual $expectedOwners $actualOwners)
+            ) "Consumer '$path' direct cleanup ownership does not match its await using and unconditional finally DropAsync contract."
+        }
     }
 }
 function Copy-SourcesWithMutation([Collections.Generic.Dictionary[string, object]]$Sources, [string]$Path, [string]$Source) {
@@ -164,7 +250,12 @@ $downgraded = $policy | ConvertTo-Json -Depth 100 | ConvertFrom-Json -Depth 100;
 $rejected = $false; try { Assert-ConsumerPolicy $downgraded $sources } catch { $rejected = $_.Exception.Message.Contains('required ownership', [StringComparison]::Ordinal) }; Assert-Contract $rejected 'Downgrading required explicit ownership must fail closed.'
 $targetPath = 'backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpReturnClosurePostgresAcceptanceTests.cs'
 $mutatedSource = ([string] $sources[$targetPath].Source).Replace('await database.DropAsync();', 'if (DateTime.UtcNow.Ticks < 0) await database.DropAsync();', [StringComparison]::Ordinal)
-$rejected = $false; try { Assert-ConsumerPolicy $policy (Copy-SourcesWithMutation $sources $targetPath $mutatedSource) } catch { $rejected = $_.Exception.Message.Contains('source hash drifted', [StringComparison]::Ordinal) }; Assert-Contract $rejected 'Any governed source mutation must fail closed before syntax tricks can preserve a stale classification.'
+$rejected = $false; try { Assert-ConsumerPolicy $policy (Copy-SourcesWithMutation $sources $targetPath $mutatedSource) } catch { $rejected = $_.Exception.Message.Contains('direct cleanup ownership', [StringComparison]::Ordinal) }; Assert-Contract $rejected 'A conditional DropAsync must not count as guaranteed cleanup.'
+$commented = "// Retain the cleanup owner while editing this comment.`n" + [string] $sources[$targetPath].Source
+Assert-ConsumerPolicy $policy (Copy-SourcesWithMutation $sources $targetPath $commented)
+$usingPath = 'backend/services/AppHub/tests/Nerv.IIP.AppHub.Web.Tests/AppHubPostgresProfileTests.cs'
+$withoutUsing = ([string] $sources[$usingPath].Source).Replace('await using var database', 'var database', [StringComparison]::Ordinal)
+$rejected = $false; try { Assert-ConsumerPolicy $policy (Copy-SourcesWithMutation $sources $usingPath $withoutUsing) } catch { $rejected = $_.Exception.Message.Contains('direct cleanup ownership', [StringComparison]::Ordinal) }; Assert-Contract $rejected 'A factory call without await using must fail direct ownership.'
 $aliasProbe = 'using Pg = Nerv.IIP.Testing.PostgreSql.PostgreSqlTestDatabase; class Probe { Task Run(string value) => Pg.CreateAsync(value, "probe"); }'
 Assert-Contract (Test-OrdinalMember -Values ([string[]] @([PostgreSqlFactorySyntaxAnalyzer]::Analyze($aliasProbe).UnsupportedForms)) -Expected 'alias') 'Alias-based factory spelling must be rejected as ambiguous governance input.'
 $methodGroupProbe = 'class Probe { async Task Run(string value) { var create = PostgreSqlTestDatabase.CreateAsync; await create(value, "probe"); } }'
