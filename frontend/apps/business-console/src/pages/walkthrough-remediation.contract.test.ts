@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { parse } from 'vue/compiler-sfc'
 
@@ -166,8 +169,20 @@ describe('2026-07-26 leadership walkthrough remediation', () => {
 
   it('keeps all three quality backlog groups inside the fixed-height screen panel', () => {
     const source = screenPages['../../../screen/src/pages/quality.vue']
-    expect(source).toMatch(/\.qb-ib\s*\{[\s\S]*?gap:\s*4px/)
-    expect(source).toMatch(/\.ib-meta\s*\{[\s\S]*?margin-top:\s*2px/)
-    expect(source).toMatch(/\.ib-bar\s*\{[\s\S]*?margin-top:\s*4px/)
+    expect(parse(source).descriptor.styles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ scoped: true, src: '../styles/quality-backlog-and-footer.css' }),
+      ]),
+    )
+    const qualityBacklogStyles = readFileSync(
+      resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        '../../../screen/src/styles/quality-backlog-and-footer.css',
+      ),
+      'utf8',
+    )
+    expect(qualityBacklogStyles).toMatch(/\.qb-ib\s*\{[\s\S]*?gap:\s*4px/)
+    expect(qualityBacklogStyles).toMatch(/\.ib-meta\s*\{[\s\S]*?margin-top:\s*2px/)
+    expect(qualityBacklogStyles).toMatch(/\.ib-bar\s*\{[\s\S]*?margin-top:\s*4px/)
   })
 })
