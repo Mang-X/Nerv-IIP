@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <Compile Include="../../../../common/Testing/KnownExceptionUserMessageSourceAnalyzer.cs" Link="Support/KnownExceptionUserMessageSourceAnalyzer.cs" />
+    <Compile Include="../../../../common/Testing/UserMessageText.cs" Link="Support/UserMessageText.cs" />
   </ItemGroup>
 
   <ItemGroup>

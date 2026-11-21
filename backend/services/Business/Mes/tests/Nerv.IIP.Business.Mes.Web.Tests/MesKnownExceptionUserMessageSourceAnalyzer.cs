@@ -2,6 +2,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -15,7 +16,6 @@ public sealed record MesExcludedMessageSite(string Path, string TypeName, string
 public static class MesKnownExceptionUserMessageSourceAnalyzer
 {
     private const string KnownExceptionTypeName = "NetCorePal.Extensions.Primitives.KnownException";
-    private const int InterpolationEstimatedLength = 12;
     private const int MaximumMessageLength = 60;
 
     public static IReadOnlyList<string> Analyze(
@@ -169,13 +169,13 @@ public static class MesKnownExceptionUserMessageSourceAnalyzer
         var line = syntaxTree.GetLineSpan(messageExpression.Span).StartLinePosition.Line + 1;
         var path = syntaxTree.FilePath;
 
-        if (!TryExtractMessage(messageExpression, out var message, out var estimatedLength))
+        if (!UserMessageText.TryExtractMessage(messageExpression, out var message, out var estimatedLength))
         {
             AddViolation(syntaxTree, messageExpression, "用户消息必须是可静态分析的字符串字面量或插值字符串。", violations);
             return;
         }
 
-        if (!ContainsChinese(message))
+        if (!UserMessageText.ContainsChinese(message))
         {
             violations.Add(new Violation(path, line, messageExpression.SpanStart, "用户消息必须包含中文。"));
         }
@@ -190,38 +190,6 @@ public static class MesKnownExceptionUserMessageSourceAnalyzer
             violations.Add(new Violation(path, line, messageExpression.SpanStart, "用户消息不能包含控制字符或不安全分隔符。"));
         }
     }
-
-    private static bool TryExtractMessage(
-        ExpressionSyntax expression,
-        out string message,
-        out int estimatedLength)
-    {
-        if (expression is LiteralExpressionSyntax literal && literal.IsKind(SyntaxKind.StringLiteralExpression))
-        {
-            message = literal.Token.ValueText;
-            estimatedLength = message.Length;
-            return true;
-        }
-
-        if (expression is InterpolatedStringExpressionSyntax interpolated)
-        {
-            var fixedText = interpolated.Contents
-                .OfType<InterpolatedStringTextSyntax>()
-                .Select(content => content.TextToken.ValueText)
-                .ToArray();
-            message = string.Concat(fixedText);
-            estimatedLength = fixedText.Sum(text => text.Length)
-                + interpolated.Contents.OfType<InterpolationSyntax>().Count() * InterpolationEstimatedLength;
-            return true;
-        }
-
-        message = string.Empty;
-        estimatedLength = 0;
-        return false;
-    }
-
-    private static bool ContainsChinese(string message) =>
-        message.Any(character => character is >= '\u3400' and <= '\u9fff');
 
     private static IReadOnlyCollection<MetadataReference> CreateMetadataReferences()
     {

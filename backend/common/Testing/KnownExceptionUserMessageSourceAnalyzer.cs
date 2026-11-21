@@ -20,7 +20,6 @@ internal enum UserMessagePolicy
 internal static class KnownExceptionUserMessageSourceAnalyzer
 {
     private const string KnownExceptionTypeName = "NetCorePal.Extensions.Primitives.KnownException";
-    private const int InterpolationEstimatedLength = 12;
     private const int MaximumMessageLength = 60;
 
     public static IReadOnlyList<string> Analyze(
@@ -143,7 +142,7 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
             return;
         }
 
-        if (!TryExtractMessage(messageExpression, out var message, out var estimatedLength))
+        if (!UserMessageText.TryExtractMessage(messageExpression, out var message, out var estimatedLength))
         {
             violations.Add(new Violation(
                 path,
@@ -155,7 +154,7 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
             return;
         }
 
-        if (!ContainsChinese(message))
+        if (!UserMessageText.ContainsChinese(message))
         {
             violations.Add(new Violation(
                 path,
@@ -233,39 +232,6 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
 
         return false;
     }
-
-    private static bool TryExtractMessage(
-        ExpressionSyntax expression,
-        out string message,
-        out int estimatedLength)
-    {
-        if (expression is LiteralExpressionSyntax literal
-            && literal.IsKind(SyntaxKind.StringLiteralExpression))
-        {
-            message = literal.Token.ValueText;
-            estimatedLength = message.Length;
-            return true;
-        }
-
-        if (expression is InterpolatedStringExpressionSyntax interpolated)
-        {
-            var fixedText = interpolated.Contents
-                .OfType<InterpolatedStringTextSyntax>()
-                .Select(content => content.TextToken.ValueText)
-                .ToArray();
-            message = string.Concat(fixedText);
-            estimatedLength = fixedText.Sum(text => text.Length)
-                + (interpolated.Contents.OfType<InterpolationSyntax>().Count() * InterpolationEstimatedLength);
-            return true;
-        }
-
-        message = string.Empty;
-        estimatedLength = 0;
-        return false;
-    }
-
-    private static bool ContainsChinese(string message) =>
-        message.Any(character => character is >= '\u3400' and <= '\u9fff');
 
     private static IReadOnlyCollection<MetadataReference> CreateMetadataReferences()
     {

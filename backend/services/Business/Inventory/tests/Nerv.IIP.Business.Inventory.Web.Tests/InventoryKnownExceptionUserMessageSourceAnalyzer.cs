@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using NetCorePal.Extensions.Primitives;
+using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.Business.Inventory.Web.Tests;
 
@@ -18,7 +19,6 @@ internal static class InventoryKnownExceptionUserMessageSourceAnalyzer
     private const string KnownExceptionTypeName = "NetCorePal.Extensions.Primitives.KnownException";
     private const string InventoryPostingRejectedExceptionTypeName =
         "Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements.InventoryPostingRejectedException";
-    private const int InterpolationEstimatedLength = 12;
     private const int MaximumMessageLength = 60;
 
     public static IReadOnlyList<string> AnalyzeKnownExceptionMessages(
@@ -129,7 +129,7 @@ internal static class InventoryKnownExceptionUserMessageSourceAnalyzer
         var line = syntaxTree.GetLineSpan(messageExpression.Span).StartLinePosition.Line + 1;
         var path = NormalizePath(syntaxTree.FilePath);
 
-        if (!TryExtractMessage(messageExpression, out var message, out var estimatedLength))
+        if (!UserMessageText.TryExtractMessage(messageExpression, out var message, out var estimatedLength))
         {
             violations.Add(new Violation(
                 path,
@@ -139,7 +139,7 @@ internal static class InventoryKnownExceptionUserMessageSourceAnalyzer
             return;
         }
 
-        if (!ContainsChinese(message))
+        if (!UserMessageText.ContainsChinese(message))
         {
             violations.Add(new Violation(path, line, messageExpression.SpanStart, "用户消息必须包含中文。"));
         }
@@ -153,36 +153,6 @@ internal static class InventoryKnownExceptionUserMessageSourceAnalyzer
         {
             violations.Add(new Violation(path, line, messageExpression.SpanStart, "用户消息不能包含控制字符或不安全分隔符。"));
         }
-    }
-
-    private static bool TryExtractMessage(
-        ExpressionSyntax expression,
-        out string message,
-        out int estimatedLength)
-    {
-        if (expression is LiteralExpressionSyntax literal
-            && literal.IsKind(SyntaxKind.StringLiteralExpression))
-        {
-            message = literal.Token.ValueText;
-            estimatedLength = message.Length;
-            return true;
-        }
-
-        if (expression is InterpolatedStringExpressionSyntax interpolated)
-        {
-            var fixedText = interpolated.Contents
-                .OfType<InterpolatedStringTextSyntax>()
-                .Select(content => content.TextToken.ValueText)
-                .ToArray();
-            message = string.Concat(fixedText);
-            estimatedLength = fixedText.Sum(text => text.Length)
-                + (interpolated.Contents.OfType<InterpolationSyntax>().Count() * InterpolationEstimatedLength);
-            return true;
-        }
-
-        message = string.Empty;
-        estimatedLength = 0;
-        return false;
     }
 
     private static SyntaxTree[] ParseTrees(IReadOnlyCollection<InventoryKnownExceptionSourceDocument> documents) =>
@@ -250,9 +220,6 @@ internal static class InventoryKnownExceptionUserMessageSourceAnalyzer
 
     private static string MethodName(MethodDeclarationSyntax method) =>
         method.Identifier.ValueText + (method.TypeParameterList is null ? string.Empty : method.TypeParameterList.ToString());
-
-    private static bool ContainsChinese(string message) =>
-        message.Any(character => character is >= '\u3400' and <= '\u9fff');
 
     private static IReadOnlyCollection<MetadataReference> CreateMetadataReferences()
     {
