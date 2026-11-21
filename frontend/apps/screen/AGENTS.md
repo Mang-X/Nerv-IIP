@@ -36,7 +36,7 @@ pnpm -C frontend --filter @nerv-iip/screen dev   # 端口 5128
 - real 模式由登录 principal 注入 org/env（`src/App.vue`）；mock 模式不触碰鉴权与
   api-client 配置。
 - **诚实标注，不做假绿**：无真实端点的字段显式占位标注（badge/tooltip），
-  数据新鲜度用 `IsSourceFresh` 驱动"失联灰条"（`data/contracts/equipment.ts`），
+  数据新鲜度用 `IsSourceFresh` 驱动"失联灰条"（`src/data/contracts/equipment.ts`），
   断线绝不能看起来像"运行正常"。
 
 ## 设计取向

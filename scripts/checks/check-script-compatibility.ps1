@@ -2,7 +2,6 @@
 #   Category: verify
 #   SideEffects:
 #     - Runs script governance and compatibility verification commands
-#     - Optionally runs the IAM persistent auth verification script
 #   Writes:
 #     - .ryugi/artifacts/script-logs/**
 #     - .ryugi/artifacts/script-logs/script-compatibility/**/evidence.json
