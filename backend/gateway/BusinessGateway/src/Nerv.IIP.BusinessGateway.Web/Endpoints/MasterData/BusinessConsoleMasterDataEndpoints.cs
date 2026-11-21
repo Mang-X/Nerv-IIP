@@ -1017,7 +1017,7 @@ public sealed class DisableBusinessConsoleMasterDataResourceEndpoint(
         correlationId = string.IsNullOrWhiteSpace(correlationId) ? Guid.CreateVersion7().ToString("N") : correlationId.Trim();
         if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
         {
-            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.BadRequest, "idempotency-key-required");
+            throw BusinessServiceProxyException.FromLocalRejection(System.Net.HttpStatusCode.BadRequest, BusinessGatewayLocalRejectionStableWireCodes.IdempotencyKeyRequired);
         }
         return client.SetResourceEnabledAsync(internalTokenProvider.BearerToken, request, enabled, actor, correlationId, request.IdempotencyKey.Trim(), cancellationToken);
     }
@@ -1049,7 +1049,7 @@ public sealed class EnableBusinessConsoleMasterDataResourceEndpoint(
         correlationId = string.IsNullOrWhiteSpace(correlationId) ? Guid.CreateVersion7().ToString("N") : correlationId.Trim();
         if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
         {
-            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.BadRequest, "idempotency-key-required");
+            throw BusinessServiceProxyException.FromLocalRejection(System.Net.HttpStatusCode.BadRequest, BusinessGatewayLocalRejectionStableWireCodes.IdempotencyKeyRequired);
         }
         return masterData.SetResourceEnabledAsync(tokenProvider.BearerToken, request, true, actor, correlationId, request.IdempotencyKey.Trim(), cancellationToken);
     }

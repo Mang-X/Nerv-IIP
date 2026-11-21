@@ -16,7 +16,7 @@ public sealed class BusinessConsoleReadEnrichmentFailureContractTests
         string enricher,
         HttpStatusCode statusCode)
     {
-        var failure = new BusinessServiceProxyException(statusCode, "internal-service-authorization-failed");
+        var failure = BusinessServiceProxyException.FromOpaqueDownstreamFailure(statusCode);
 
         var thrown = enricher switch
         {

@@ -187,11 +187,11 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
     protected (string ActorType, string ActorRef) RequireAuthorizedPrincipalActor()
     {
         var authorization = AuthorizationResult
-            ?? throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "approval-principal-unresolved");
+            ?? throw BusinessServiceProxyException.FromLocalRejection(HttpStatusCode.Forbidden, BusinessGatewayLocalRejectionStableWireCodes.ApprovalPrincipalUnresolved);
         var actorRef = authorization.PrincipalId ?? authorization.LoginName;
         if (string.IsNullOrWhiteSpace(actorRef))
         {
-            throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "approval-principal-unresolved");
+            throw BusinessServiceProxyException.FromLocalRejection(HttpStatusCode.Forbidden, BusinessGatewayLocalRejectionStableWireCodes.ApprovalPrincipalUnresolved);
         }
 
         var actorType = string.IsNullOrWhiteSpace(authorization.PrincipalType)
@@ -213,7 +213,7 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
     {
         var principalId = AuthorizationResult?.PrincipalId;
         return string.IsNullOrWhiteSpace(principalId)
-            ? throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "principal-unresolved")
+            ? throw BusinessServiceProxyException.FromLocalRejection(HttpStatusCode.Forbidden, BusinessGatewayLocalRejectionStableWireCodes.PrincipalUnresolved)
             : principalId;
     }
 

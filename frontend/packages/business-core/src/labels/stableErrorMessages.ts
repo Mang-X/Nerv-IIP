@@ -4,6 +4,21 @@
  * 只负责展示，不归一化或猜测相似值；未知值返回空串，由各端保留原有兜底链。
  */
 export const STABLE_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  'barcode-resolve-page-invalid': '扫码查询的分页参数有误，请返回扫码页重试。',
+  'mes-operation-read-forbidden': '当前账号没有查看工序任务的权限，请联系管理员。',
+  'idempotency-key-required': '本次提交缺少操作标识，请刷新后重新发起。',
+  'operation-task-outside-work-center': '该工序任务不属于所选工作中心，请核对任务和工作中心。',
+  'worker-not-on-duty-at-work-center': '该员工当前未在此工作中心当班，请重新选择员工。',
+  'finished-goods-receipt-not-found': '未找到完工入库申请，请刷新列表后核对。',
+  'permission-denied': '当前账号没有执行该操作的权限，请联系管理员。',
+  'approval-principal-unresolved': '无法确认当前审批人，请重新登录后重试。',
+  'principal-unresolved': '无法确认当前账号，请重新登录后重试。',
+  'maintenance-action-owner-required': '请由该维护工单的当前负责人执行此操作。',
+  'assigned-inspector-not-found': '未找到所选检验员，请刷新人员列表后重新选择。',
+  'assigned-team-not-active': '所选班组已停用，请选择在用班组。',
+  'assigned-team-not-found': '未找到所选班组，请刷新班组列表后重新选择。',
+  'assignment-target-outside-selected-scope': '所选分派对象不在当前作业范围内，请重新选择。',
+  'resource-id-required': '请先选择要分配的作业记录。',
   'work-scope-not-authorized': '当前账号未获授权操作此工作范围，请切换到已授权范围或联系管理员。',
   'replay-window-expired': '模板资产退役的重放窗口已过期，不能重新执行或复用该资产。',
   'stored-maintenance-work-order-receipt-is-invalid':

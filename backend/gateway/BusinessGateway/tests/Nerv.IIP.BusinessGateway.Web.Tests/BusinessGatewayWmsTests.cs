@@ -3803,7 +3803,7 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
             && string.Equals(request.ActorPrincipalId, "user-admin", StringComparison.Ordinal)
             && request.AuthorizedSiteCodes.SequenceEqual(["S1"], StringComparer.Ordinal))
         {
-            throw new BusinessServiceProxyException(HttpStatusCode.Forbidden, "scope-forbidden");
+            throw BusinessServiceProxyException.FromOpaqueDownstreamFailure(HttpStatusCode.Forbidden);
         }
 
         return Task.FromResult(new BusinessConsoleWmsReceivingQualityGateListResponse(

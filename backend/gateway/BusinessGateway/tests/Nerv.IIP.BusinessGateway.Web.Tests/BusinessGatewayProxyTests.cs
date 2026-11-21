@@ -1243,7 +1243,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(
-            BusinessServiceProxyException.DownstreamRequestFailedMessage,
+            "approval-principal-unresolved",
             document.RootElement.GetProperty("message").GetString());
         Assert.Equal(0, masterData.ToolingCallCount);
     }
@@ -2233,9 +2233,8 @@ public sealed class BusinessGatewayProxyTests
             ]);
         var quality = new RecordingQualityClient
         {
-            GetInspectionTaskFailure = new BusinessServiceProxyException(
-                HttpStatusCode.Forbidden,
-                "task-outside-selected-work-scope"),
+            GetInspectionTaskFailure = BusinessServiceProxyException.FromOpaqueDownstreamFailure(
+                HttpStatusCode.Forbidden),
         };
         var masterData = new RecordingMasterDataClient
         {
@@ -6234,9 +6233,8 @@ public sealed class BusinessGatewayProxyTests
     {
         var mes = new RecordingMesClient
         {
-            ReleaseFailure = new BusinessServiceProxyException(
-                HttpStatusCode.Conflict,
-                "<html>secret lifecycle stack trace</html>"),
+            ReleaseFailure = BusinessServiceProxyException.FromOpaqueDownstreamFailure(
+                HttpStatusCode.Conflict),
         };
         await using var lease = LeaseHost(
             AllowedOrganizationScope(BusinessGatewayPermissions.MesWorkOrdersManage),
@@ -9175,7 +9173,10 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal("TEAM-A", mes.LastOperationTaskListRequest!.TeamIds);
-        Assert.DoesNotContain("operationTaskId", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        var body = await response.Content.ReadAsStringAsync();
+        using var rejection = JsonDocument.Parse(body);
+        Assert.Equal("work-scope-not-authorized", rejection.RootElement.GetProperty("message").GetString());
+        Assert.DoesNotContain("operationTaskId", body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -11754,7 +11755,7 @@ public sealed class BusinessGatewayProxyTests
     {
         var masterData = new RecordingMasterDataClient
         {
-            Failure = new BusinessServiceProxyException(HttpStatusCode.BadGateway, "<html>secret stack trace</html>"),
+            Failure = BusinessServiceProxyException.FromOpaqueDownstreamFailure(HttpStatusCode.BadGateway),
         };
         await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
@@ -15513,6 +15514,26 @@ public sealed class BusinessGatewayProxyTests
         Assert.False(errorData.TryGetProperty("authorization", out _));
         Assert.False(errorData.TryGetProperty("token", out _));
         Assert.DoesNotContain("top-secret", errorData.GetRawText(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task AppHub_http_client_never_promotes_downstream_message_to_a_local_rejection()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(
+            HttpStatusCode.Forbidden,
+            """{"success":false,"message":"work-scope-not-authorized","code":403,"data":null}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://apphub.local") };
+        var client = new HttpBusinessAppHubClient(httpClient);
+
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.GetCollectionHealthListAsync(
+                "internal-token",
+                new BusinessConsoleConnectorCollectionHealthListRequest("org-001", "env-dev"),
+                CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Forbidden, exception.StatusCode);
+        Assert.Equal(BusinessServiceProxyException.DownstreamRequestFailedMessage, exception.Message);
+        Assert.Null(exception.SemanticCode);
     }
 
     [Theory]
@@ -20250,7 +20271,7 @@ internal sealed class RecordingErpClient : IBusinessErpClient, IBusinessErpCosti
         WorkOrderCostProgressRequests.Add(request);
         if (WorkOrderCostProgressFailures.Contains(request.WorkOrderId))
         {
-            throw new BusinessServiceProxyException(HttpStatusCode.BadGateway, "downstream-unavailable");
+            throw BusinessServiceProxyException.FromOpaqueDownstreamFailure(HttpStatusCode.BadGateway);
         }
         return Task.FromResult(WorkOrderCostProgress.GetValueOrDefault(request.WorkOrderId));
     }

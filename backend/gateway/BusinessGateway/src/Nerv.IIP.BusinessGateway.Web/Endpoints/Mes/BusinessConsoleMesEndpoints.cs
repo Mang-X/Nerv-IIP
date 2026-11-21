@@ -798,7 +798,7 @@ public sealed class ForceReleaseBusinessConsoleMesQualityHoldEndpoint(
         var actorRef = RequireAuthorizedPrincipalActorReference();
         if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
         {
-            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.BadRequest, "idempotency-key-required");
+            throw BusinessServiceProxyException.FromLocalRejection(System.Net.HttpStatusCode.BadRequest, BusinessGatewayLocalRejectionStableWireCodes.IdempotencyKeyRequired);
         }
         var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
         correlationId = string.IsNullOrWhiteSpace(correlationId)
@@ -1433,7 +1433,7 @@ public sealed class ClaimBusinessConsoleMesOperationTaskEndpoint(
             string.Equals(x.OperationTaskId, request.OperationTaskId, StringComparison.Ordinal));
         if (task is null)
         {
-            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.Forbidden, "operation-task-outside-work-center");
+            throw BusinessServiceProxyException.FromLocalRejection(System.Net.HttpStatusCode.Forbidden, BusinessGatewayLocalRejectionStableWireCodes.OperationTaskOutsideWorkCenter);
         }
 
         var principalId = RequireAuthorizedPrincipalId();
@@ -1451,7 +1451,7 @@ public sealed class ClaimBusinessConsoleMesOperationTaskEndpoint(
         var worker = directory.Items.SingleOrDefault();
         if (worker is null || !worker.Active)
         {
-            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.Forbidden, "worker-not-on-duty-at-work-center");
+            throw BusinessServiceProxyException.FromLocalRejection(System.Net.HttpStatusCode.Forbidden, BusinessGatewayLocalRejectionStableWireCodes.WorkerNotOnDutyAtWorkCenter);
         }
 
         var team = worker.Teams.FirstOrDefault(x => x.IsLeader) ?? worker.Teams.FirstOrDefault();
@@ -2316,9 +2316,9 @@ public sealed class GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkEndpoi
             cancellationToken);
         if (!inventoryAuthorization.IsAllowed)
         {
-            throw new BusinessServiceProxyException(
+            throw BusinessServiceProxyException.FromLocalRejection(
                 System.Net.HttpStatusCode.Forbidden,
-                inventoryAuthorization.DenialReason ?? "forbidden");
+                BusinessGatewayLocalRejectionStableWireCodes.Forbidden);
         }
 
         var receipts = await mes.ListFinishedGoodsReceiptRequestsAsync(
@@ -2336,7 +2336,7 @@ public sealed class GetBusinessConsoleMesFinishedGoodsReceiptInventoryLinkEndpoi
                 || string.Equals(item.WorkOrderId, request.WorkOrderId, StringComparison.Ordinal)));
         if (receipt is null)
         {
-            throw new BusinessServiceProxyException(System.Net.HttpStatusCode.NotFound, "finished-goods-receipt-not-found");
+            throw BusinessServiceProxyException.FromLocalRejection(System.Net.HttpStatusCode.NotFound, BusinessGatewayLocalRejectionStableWireCodes.FinishedGoodsReceiptNotFound);
         }
 
         var stock = await inventory.GetStockBySourceAsync(

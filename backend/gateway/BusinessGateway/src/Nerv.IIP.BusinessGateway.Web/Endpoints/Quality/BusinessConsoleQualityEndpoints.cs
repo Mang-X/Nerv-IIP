@@ -852,9 +852,9 @@ public sealed class AssignBusinessConsoleQualityInspectionTaskEndpoint(
                         request.AssignedInspectorUserId,
                         StringComparison.Ordinal)))
             {
-                throw new BusinessServiceProxyException(
+                throw BusinessServiceProxyException.FromLocalRejection(
                     HttpStatusCode.UnprocessableEntity,
-                    "assigned-inspector-not-found");
+                    BusinessGatewayLocalRejectionStableWireCodes.AssignedInspectorNotFound);
             }
         }
 
@@ -872,17 +872,17 @@ public sealed class AssignBusinessConsoleQualityInspectionTaskEndpoint(
                     cancellationToken);
                 if (!team.Active)
                 {
-                    throw new BusinessServiceProxyException(
+                    throw BusinessServiceProxyException.FromLocalRejection(
                         HttpStatusCode.UnprocessableEntity,
-                        "assigned-team-not-active");
+                        BusinessGatewayLocalRejectionStableWireCodes.AssignedTeamNotActive);
                 }
             }
             catch (BusinessServiceProxyException exception)
                 when (exception.StatusCode == HttpStatusCode.NotFound)
             {
-                throw new BusinessServiceProxyException(
+                throw BusinessServiceProxyException.FromLocalRejection(
                     HttpStatusCode.UnprocessableEntity,
-                    "assigned-team-not-found");
+                    BusinessGatewayLocalRejectionStableWireCodes.AssignedTeamNotFound);
             }
         }
 
@@ -941,9 +941,9 @@ public sealed class AssignBusinessConsoleQualityInspectionTaskEndpoint(
     }
 
     private static BusinessServiceProxyException ForbiddenAssignmentTarget() =>
-        new(
+        BusinessServiceProxyException.FromLocalRejection(
             HttpStatusCode.Forbidden,
-            "assignment-target-outside-selected-scope");
+            BusinessGatewayLocalRejectionStableWireCodes.AssignmentTargetOutsideSelectedScope);
 }
 
 [Tags("Business Console Quality")]

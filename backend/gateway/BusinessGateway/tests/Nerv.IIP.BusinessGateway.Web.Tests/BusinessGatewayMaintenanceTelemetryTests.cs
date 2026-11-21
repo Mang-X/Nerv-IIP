@@ -2088,7 +2088,7 @@ public sealed class BusinessGatewayMaintenanceTelemetryTests
     {
         var masterData = new RecordingMasterDataClient
         {
-            DetailFailure = new BusinessServiceProxyException(HttpStatusCode.BadGateway, "master-data-unavailable"),
+            DetailFailure = BusinessServiceProxyException.FromOpaqueDownstreamFailure(HttpStatusCode.BadGateway),
         };
         await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {

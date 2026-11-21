@@ -48,18 +48,6 @@ public sealed class BusinessServiceProxyException : Exception
         "pin",
     ];
 
-    public BusinessServiceProxyException(
-        HttpStatusCode statusCode,
-        string message,
-        Exception? innerException = null)
-        : base(DownstreamRequestFailedMessage, innerException)
-    {
-        _ = message;
-        StatusCode = statusCode;
-        SemanticCode = null;
-        ErrorData = [];
-    }
-
     private BusinessServiceProxyException(
         HttpStatusCode statusCode,
         string safeMessage,
@@ -90,6 +78,11 @@ public sealed class BusinessServiceProxyException : Exception
     internal string? SemanticCode { get; }
 
     internal IReadOnlyCollection<JsonElement> ErrorData { get; }
+
+    public static BusinessServiceProxyException FromOpaqueDownstreamFailure(
+        HttpStatusCode statusCode,
+        Exception? innerException = null) =>
+        new(statusCode, DownstreamRequestFailedMessage, innerException, messageIsSafe: true);
 
     /// <summary>仅用于 Gateway 本地批准公开的拒绝原因；下游 message 必须使用下游构造入口。</summary>
     internal static BusinessServiceProxyException FromLocalRejection(

@@ -274,9 +274,8 @@ public sealed class BusinessGatewayBarcodeLifecycleEndpointTests
         const string sensitive = "tcp://printer.internal:9100?token=secret-value";
         var barcode = new RecordingBarcodeLabelClient
         {
-            LifecycleFailure = new BusinessServiceProxyException(
+            LifecycleFailure = BusinessServiceProxyException.FromOpaqueDownstreamFailure(
                 HttpStatusCode.BadGateway,
-                sensitive,
                 new InvalidOperationException(sensitive)),
         };
         await using var lease = Lease(FakeBusinessGatewayAuthorizationClient.Allowed(), barcode);

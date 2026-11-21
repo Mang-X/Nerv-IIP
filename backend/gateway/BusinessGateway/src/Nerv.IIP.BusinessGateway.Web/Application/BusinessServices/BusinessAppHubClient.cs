@@ -34,7 +34,7 @@ public sealed class HttpBusinessAppHubClient(HttpClient httpClient) : IBusinessA
         var envelope = await response.Content.ReadFromJsonAsync<ResponseEnvelope<T>>(cancellationToken: cancellationToken);
         if (!response.IsSuccessStatusCode || envelope?.Data is null)
         {
-            throw new BusinessServiceProxyException(response.StatusCode, envelope?.Message ?? "apphub-request-failed");
+            throw BusinessServiceProxyException.FromOpaqueDownstreamFailure(response.StatusCode);
         }
 
         return envelope.Data;
