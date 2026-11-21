@@ -769,6 +769,12 @@
       "nerv.iip.serviceauth": {
         "type": "Project"
       },
+      "nerv.iip.web": {
+        "type": "Project",
+        "dependencies": {
+          "NetCorePal.Extensions.AspNetCore": "[3.4.0, )"
+        }
+      },
       "FluentValidation": {
         "type": "CentralTransitive",
         "requested": "[12.2.0, )",

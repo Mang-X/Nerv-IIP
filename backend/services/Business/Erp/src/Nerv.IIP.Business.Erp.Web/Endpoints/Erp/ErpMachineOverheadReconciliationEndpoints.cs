@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using System.Text.Json;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.MachineOverheadReconciliationAggregate;
 using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
@@ -167,18 +166,10 @@ internal static class ErpMachineOverheadEndpointResults
 {
     private const string MissingScopeHeadersMessage =
         "X-Organization-Id and X-Environment-Id headers are required.";
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    public static async Task WriteMissingScopeHeadersAsync(
+    public static Task WriteMissingScopeHeadersAsync(
         HttpContext context,
-        CancellationToken cancellationToken)
-    {
-        context.Response.StatusCode = StatusCodes.Status400BadRequest;
-        context.Response.ContentType = "application/json; charset=utf-8";
-        await JsonSerializer.SerializeAsync(
-            context.Response.Body,
-            new ResponseData(false, MissingScopeHeadersMessage, StatusCodes.Status400BadRequest, []),
-            JsonOptions,
-            cancellationToken);
-    }
+        CancellationToken cancellationToken) =>
+        Nerv.IIP.Web.ResponseDataEndpointResults.WriteErrorAsync(
+            context, StatusCodes.Status400BadRequest, MissingScopeHeadersMessage, cancellationToken);
 }

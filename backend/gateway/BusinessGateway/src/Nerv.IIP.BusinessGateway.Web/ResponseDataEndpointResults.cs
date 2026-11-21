@@ -11,36 +11,22 @@ internal static class ResponseDataEndpointResults
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    public static async Task WriteDataAsync<T>(
+    public static Task WriteDataAsync<T>(
         HttpContext context,
         int statusCode,
         T data,
         CancellationToken cancellationToken,
-        JsonSerializerOptions? jsonOptions = null)
-    {
-        context.Response.StatusCode = statusCode;
-        context.Response.ContentType = "application/json; charset=utf-8";
-        await JsonSerializer.SerializeAsync(
-            context.Response.Body,
-            data.AsResponseData(),
-            jsonOptions ?? JsonOptions,
-            cancellationToken);
-    }
+        JsonSerializerOptions? jsonOptions = null) =>
+        Nerv.IIP.Web.ResponseDataEndpointResults.WriteDataAsync(
+            context, statusCode, data, cancellationToken, jsonOptions);
 
-    public static async Task WriteErrorAsync(
+    public static Task WriteErrorAsync(
         HttpContext context,
         int statusCode,
         string message,
-        CancellationToken cancellationToken)
-    {
-        context.Response.StatusCode = statusCode;
-        context.Response.ContentType = "application/json; charset=utf-8";
-        await JsonSerializer.SerializeAsync(
-            context.Response.Body,
-            new ResponseData(false, message, statusCode, []),
-            JsonOptions,
-            cancellationToken);
-    }
+        CancellationToken cancellationToken) =>
+        Nerv.IIP.Web.ResponseDataEndpointResults.WriteErrorAsync(
+            context, statusCode, message, cancellationToken);
 
     public static async Task WriteErrorAsync(
         HttpContext context,

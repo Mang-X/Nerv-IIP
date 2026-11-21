@@ -29,7 +29,7 @@
     },
     {
       "path": "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Nerv.IIP.BusinessGateway.Web.csproj",
-      "sha256": "c4648024a08bb95a478d7555486fdd6909b52707de853f6aad177cf5d635e32c"
+      "sha256": "6b10ddb2c51be3e9944d7450d381dedf0771404d407db6b0b89271ee63c6a88d"
     },
     {
       "path": "backend/common/Caching/Nerv.IIP.Caching/Nerv.IIP.Caching.csproj",
@@ -177,7 +177,7 @@
     },
     {
       "path": "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/packages.lock.json",
-      "sha256": "3b4834fb19142fbf4bfa42d01230e72c7b0fa3257c53f0dabc9cd88ba1ad8bc0"
+      "sha256": "d404a3e1ce4b86d09c18aecef9100841c297c16d13cb6e4d35da0c65517ecf50"
     },
     {
       "path": "backend/common/Contracts/Nerv.IIP.Contracts.MasterData/Nerv.IIP.Contracts.MasterData.csproj",
@@ -202,6 +202,14 @@
     {
       "path": "backend/common/Contracts/Nerv.IIP.Contracts.Quality/packages.lock.json",
       "sha256": "5a36c7a4adea509e76abe5afa166113303b9af6a73765524dac894f02236bbd6"
+    },
+    {
+      "path": "backend/common/Web/Nerv.IIP.Web/Nerv.IIP.Web.csproj",
+      "sha256": "41f8e22f42534507bc9dc9e66bbbd9b1a782bce01ee09db24045762409f32659"
+    },
+    {
+      "path": "backend/common/Web/Nerv.IIP.Web/packages.lock.json",
+      "sha256": "1adb1a62d6a2c0483585502c4877c6f2817f71f477ec2f74512ec1204bc3fb21"
     }
   ],
   "lock": {
@@ -227,6 +235,7 @@
       "backend/common/Observability/Nerv.IIP.Observability/packages.lock.json",
       "backend/common/Sdk/Nerv.IIP.Sdk.Core/packages.lock.json",
       "backend/common/ServiceAuth/Nerv.IIP.ServiceAuth/packages.lock.json",
+      "backend/common/Web/Nerv.IIP.Web/packages.lock.json",
       "backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/packages.lock.json"
     ],
     "nugetSchemaVersion": 2,

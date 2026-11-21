@@ -11,6 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../../../../common/Web/Nerv.IIP.Web/Nerv.IIP.Web.csproj" />
     <InternalsVisibleTo Include="Nerv.IIP.Business.Erp.Web.Tests" />
   </ItemGroup>
 
