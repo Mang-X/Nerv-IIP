@@ -61,7 +61,11 @@ import {
 } from '@/composables/lifecycleActionRecovery'
 import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
 import { useAuthStore } from '@/stores/auth'
-import { useWmsWorkScope, type WmsWorkScopeCatalogKind } from '@/composables/useWmsWorkScope'
+import {
+  useWmsSessionKey,
+  useWmsWorkScope,
+  type WmsWorkScopeCatalogKind,
+} from '@/composables/useWmsWorkScope'
 
 const DEFAULT_TAKE = 100
 const TASK_PAGE_SIZE = 20
@@ -464,6 +468,7 @@ export function useWmsInbound(initialFilters: Partial<WmsInboundFilters> = {}) {
     scopeKind: scope.scopeKind,
     scopeId: scope.scopeId,
     scopeKey: scope.selectedScopeKey,
+    sessionKey: scope.sessionKey,
     scopeOptions: scope.scopeOptions,
     selectedScopeLabel: scope.selectedScopeLabel,
     scopeReady: scope.hasScope,
@@ -1422,6 +1427,7 @@ export function useWmsReceivingLines(
   selectedScope: WmsReceivingLinesScope,
 ) {
   const scope = useWmsTenantScope()
+  const sessionKey = useWmsSessionKey()
   const orderNo = computed(() => toValue(inboundOrderNo).trim())
   const scopeKind = computed(() => toValue(selectedScope.scopeKind)?.trim() ?? '')
   const scopeId = computed(() => toValue(selectedScope.scopeId)?.trim() ?? '')
@@ -1433,11 +1439,11 @@ export function useWmsReceivingLines(
       orderNo.value.length > 0,
   )
   const responseScopeKey = computed(
-    () => `${scope.scopeKey.value}:${scopeKind.value}:${scopeId.value}:${orderNo.value}`,
+    () => JSON.stringify([sessionKey.value, scopeKind.value, scopeId.value, orderNo.value]),
   )
 
-  const linesQuery = useQuery(() => ({
-    ...listBusinessConsoleWmsReceivingQualityGatesQueryOptions({
+  const linesQuery = useQuery(() => {
+    const options = listBusinessConsoleWmsReceivingQualityGatesQueryOptions({
       query: {
         ...scope.scopeQuery(),
         scopeKind: scopeKind.value,
@@ -1447,9 +1453,9 @@ export function useWmsReceivingLines(
         inboundOrderNo: orderNo.value,
         includeNotRequired: true,
       },
-    }),
-    enabled: enabled.value,
-  }))
+    })
+    return { ...options, key: [...options.key, sessionKey.value], enabled: enabled.value }
+  })
 
   const currentResponse = useScopeBoundListResponse(
     () => linesQuery.data.value,

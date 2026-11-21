@@ -56,6 +56,7 @@ const router = useRouter()
 const {
   filters,
   scopeKey,
+  sessionKey,
   scopeOptions,
   selectedScopeLabel,
   orders,
@@ -378,6 +379,7 @@ async function confirmComplete() {
   // 防重 + #3：pending / 行数据未加载或失败时禁止提交（不以空 lines 完成丢采集）。
   if (submitDisabled.value) return
   submitError.value = ''
+  const submittingSession = sessionKey.value
   try {
     const payload = intent.payload((idempotencyKey) => ({
       idempotencyKey,
@@ -386,14 +388,17 @@ async function confirmComplete() {
     // 重试复用同一幂等键（不重新生成），#188 客户端去重可识别为同一操作。
     await completeInbound(selectedOrderId.value, payload.idempotencyKey, payload.lines, {
       attempt: intent.attempt.value,
-      onCommandAttempt: intent.markCommandAttempt,
+      onCommandAttempt: () => {
+        if (sessionKey.value === submittingSession) intent.markCommandAttempt()
+      },
     })
+    if (sessionKey.value !== submittingSession) return
     // 成功后立刻关抽屉并切到结果态，重复点击无法再触发。
     sheetOpen.value = false
     completed.value = true
     void refresh()
   } catch (e) {
-    if (await lifecycleRecovery.handle(e)) return
+    if (sessionKey.value !== submittingSession || (await lifecycleRecovery.handle(e))) return
     const info = intent.recordFailure(e, '完成收货入库失败')
     submitError.value = intentLocked.value
       ? `${info.message}。提交结果未知，仅可按原内容重试。`
@@ -411,7 +416,11 @@ function resetFlow() {
   gs1Notice.value = ''
   capturedByLine.value = {}
   activeLineId.value = ''
+  expiryPickerOpen.value = false
+  expiryPickerLineId.value = ''
 }
+
+watch(sessionKey, resetFlow, { flush: 'sync' })
 
 function backToList() {
   resetFlow()

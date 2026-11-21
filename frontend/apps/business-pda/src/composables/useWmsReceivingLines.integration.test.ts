@@ -90,3 +90,66 @@ it('keeps receiving lines bound to the selected order and work scope when reques
   expect(result.lines.value).toEqual([])
   expect(result.complete.value).toBe(false)
 })
+
+it('isolates cached lines and late responses when operators open the same order in the same pool', async () => {
+  const pending: ((response: Response) => void)[] = []
+  configureApiClient({
+    baseUrl: 'https://gateway.test',
+    fetch: () => {
+      const { promise, resolve } = Promise.withResolvers<Response>()
+      pending.push(resolve)
+      return promise
+    },
+  })
+
+  const pinia = createPinia()
+  const auth = useAuthStore(pinia)
+  auth.principal = {
+    principalId: 'operator-a',
+    organizationId: 'org-001',
+    environmentId: 'env-dev',
+  } as never
+  auth.sessionId = 'shift-a'
+  let receiving!: ReturnType<typeof useWmsReceivingLines>
+  mount(
+    defineComponent({
+      setup() {
+        receiving = useWmsReceivingLines('IN-1', { scopeKind: 'work-pool', scopeId: 'SHARED' })
+        return () => h('div')
+      },
+    }),
+    { global: { plugins: [pinia, PiniaColada] } },
+  )
+
+  const line = (id: string) => ({ inboundOrderLineId: id, inboundOrderNo: 'IN-1' })
+  function respond(index: number, id: string) {
+    pending[index]!(Response.json({ success: true, data: { items: [line(id)], total: 1 } }))
+  }
+
+  await flushPromises()
+  respond(0, 'line-a')
+  await flushPromises()
+  expect(receiving.lines.value).toEqual([line('line-a')])
+  void receiving.refresh()
+  await flushPromises()
+  expect(pending).toHaveLength(2)
+
+  auth.principal = {
+    principalId: 'operator-b',
+    organizationId: 'org-001',
+    environmentId: 'env-dev',
+  } as never
+  auth.sessionId = 'shift-b'
+  expect(receiving.lines.value).toEqual([])
+  expect(receiving.complete.value).toBe(false)
+  await flushPromises()
+  expect(pending).toHaveLength(3)
+  expect(receiving.lines.value).toEqual([])
+
+  respond(2, 'line-b')
+  await flushPromises()
+  expect(receiving.lines.value).toEqual([line('line-b')])
+  respond(1, 'line-a-late')
+  await flushPromises()
+  expect(receiving.lines.value).toEqual([line('line-b')])
+})

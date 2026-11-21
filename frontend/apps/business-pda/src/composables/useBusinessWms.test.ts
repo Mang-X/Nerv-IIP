@@ -70,7 +70,8 @@ vi.mock('./makeIdempotencyKey', () => ({
   makeIdempotencyKey: vi.fn(() => 'TASK-KEY'),
 }))
 
-vi.mock('./useWmsWorkScope', () => ({
+vi.mock('./useWmsWorkScope', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./useWmsWorkScope')>()),
   useWmsWorkScope: vi.fn(() => {
     const scopeKey = shallowRef<string | undefined>('self:emp049')
     const parsedScope = computed(() => {

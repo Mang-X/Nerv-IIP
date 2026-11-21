@@ -20,6 +20,18 @@ const selections = shallowReactive<
   Partial<Record<WmsWorkScopeCatalogKind, { sessionKey: string; scopeKey: string | undefined }>>
 >({})
 
+export function useWmsSessionKey() {
+  const auth = useAuthStore()
+  return computed(() =>
+    JSON.stringify([
+      auth.sessionId ?? '',
+      auth.principal?.principalId ?? '',
+      auth.principal?.organizationId ?? '',
+      auth.principal?.environmentId ?? '',
+    ]),
+  )
+}
+
 export function useWmsWorkScope(
   catalog: WmsWorkScopeCatalogKind,
   consumerEnabled: MaybeRefOrGetter<boolean> = true,
@@ -28,14 +40,7 @@ export function useWmsWorkScope(
   const organizationId = computed(() => auth.principal?.organizationId ?? '')
   const environmentId = computed(() => auth.principal?.environmentId ?? '')
   const hasTenant = computed(() => Boolean(organizationId.value && environmentId.value))
-  const sessionKey = computed(() =>
-    JSON.stringify([
-      auth.sessionId ?? '',
-      auth.principal?.principalId ?? '',
-      organizationId.value,
-      environmentId.value,
-    ]),
-  )
+  const sessionKey = useWmsSessionKey()
   const selectedScopeKey = computed<string | undefined>({
     get: () => {
       const selection = selections[catalog]
