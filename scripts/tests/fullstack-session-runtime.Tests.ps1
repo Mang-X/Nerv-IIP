@@ -20,19 +20,23 @@ function Assert-True([bool] $Condition, [string] $Message) {
     if (-not $Condition) { throw $Message }
 }
 
-Assert-True ($null -ne (Get-Command Get-NervFullStackContainerRecords -ErrorAction SilentlyContinue)) 'Shared runtime must expose current session container discovery.'
-Assert-True ($null -ne (Get-Command Merge-NervSessionContainerIds -ErrorAction SilentlyContinue)) 'Cleanup must merge recorded and label-discovered containers.'
-Assert-True ($null -ne (Get-Command Get-NervRecordableDcpNetworkIds -ErrorAction SilentlyContinue)) 'Startup must identify manifest-recordable DCP session networks.'
-
 $sessionId = 'nerv-abcd-123456'
 $fixturePath = Join-Path $PSScriptRoot 'fixtures/fullstack/docker-resources.json'
 $inspectObjects = @(Get-Content -LiteralPath $fixturePath -Raw | ConvertFrom-Json)
 $recordedContainerIds = @('owned-container-id', 'unlabeled-container-id')
+$softHyphen = [string][char]0x00AD
+$foldedContainer = [pscustomobject]@{
+    Id = "owned-container-id$softHyphen"
+    Config = [pscustomobject]@{
+        Labels = [pscustomobject]@{ 'com.nerv-iip.session' = $sessionId }
+    }
+}
+Assert-True (-not (Test-NervDockerResourceOwnership -InspectObject $foldedContainer -SessionId $sessionId -RecordedIds @('owned-container-id'))) 'Docker IDs differing by U+00AD must not satisfy recorded-resource ownership.'
+
 $mergedContainerIds = @(Merge-NervSessionContainerIds `
-    -RecordedIds @('recorded') `
-    -DiscoveredRecords @([pscustomobject]@{ id = 'discovered' }, [pscustomobject]@{ id = 'recorded' }))
-Assert-True ($mergedContainerIds.Count -eq 2) 'Container cleanup candidates must include recorded and label-discovered IDs without duplicates.'
-Assert-True ([Collections.Generic.HashSet[string]]::new([string[]]@($mergedContainerIds), [StringComparer]::Ordinal).Contains('discovered')) 'A partially started label-discovered container must be recoverable.'
+    -RecordedIds @('apple') `
+    -DiscoveredRecords @([pscustomobject]@{ id = 'Banana' }, [pscustomobject]@{ id = 'apple' }))
+Assert-True ([string]::Equals(($mergedContainerIds -join '|'), 'Banana|apple', [StringComparison]::Ordinal)) 'Cleanup must merge recorded and label-discovered IDs, deduplicate them and sort with ordinal semantics.'
 $discoveredNetworkIds = @(Get-NervContainerNetworkIds -Containers @(
     [pscustomobject]@{ NetworkSettings = [pscustomobject]@{ Networks = [pscustomobject]@{ session = [pscustomobject]@{ NetworkID = 'network-from-owned-container' } } } }
 ))
