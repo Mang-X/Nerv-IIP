@@ -225,9 +225,9 @@ public abstract class AuthorizedBusinessProxyEndpoint<TRequest, TResponse>(
         var auditContext = CreateAuditContext(request);
         if (auditContext.IdempotencyKey is null)
         {
-            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+            throw BusinessServiceProxyException.FromLocalRejection(
                 HttpStatusCode.BadRequest,
-                "idempotency-key-required");
+                BusinessGatewayLocalRejectionStableWireCodes.IdempotencyKeyRequired);
         }
 
         return auditContext;

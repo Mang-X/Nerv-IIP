@@ -983,13 +983,11 @@ public sealed class UpdateBusinessConsoleMasterDataResourceEndpoint(
         masterData.UpdateResourceAsync(tokenProvider.BearerToken, request, RequireAuditContext(request), cancellationToken);
 }
 
-[Tags("Business Console MasterData")]
-[HttpPost("/api/business-console/v1/master-data/resources/{ResourceType}/{Code}/disable")]
-[BusinessGatewayOperationId("disableBusinessConsoleMasterDataResource")]
-public sealed class DisableBusinessConsoleMasterDataResourceEndpoint(
+public abstract class SetBusinessConsoleMasterDataResourceEnabledEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMasterDataClient masterData,
-    IInternalServiceTokenProvider tokenProvider)
+    IInternalServiceTokenProvider tokenProvider,
+    bool enabled)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleSetMasterDataResourceEnabledRequest, BusinessConsoleMasterDataResourceDetail>(
         auth,
         BusinessGatewayPermissions.MasterDataResourcesManage)
@@ -1001,26 +999,29 @@ public sealed class DisableBusinessConsoleMasterDataResourceEndpoint(
     protected override Task<BusinessConsoleMasterDataResourceDetail> ForwardAsync(
         BusinessConsoleSetMasterDataResourceEnabledRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        ForwardLifecycleAsync(masterData, tokenProvider, request, false, cancellationToken);
-
-    private Task<BusinessConsoleMasterDataResourceDetail> ForwardLifecycleAsync(
-        IBusinessMasterDataClient client,
-        IInternalServiceTokenProvider internalTokenProvider,
-        BusinessConsoleSetMasterDataResourceEnabledRequest request,
-        bool enabled,
         CancellationToken cancellationToken)
     {
-        var (actorType, actorRef) = RequireAuthorizedPrincipalActor();
-        var actor = BusinessGatewayPrincipalReferences.ToRecipientRef(actorType, actorRef);
-        var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
-        correlationId = string.IsNullOrWhiteSpace(correlationId) ? Guid.CreateVersion7().ToString("N") : correlationId.Trim();
-        if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
-        {
-            throw BusinessServiceProxyException.FromLocalRejection(System.Net.HttpStatusCode.BadRequest, BusinessGatewayLocalRejectionStableWireCodes.IdempotencyKeyRequired);
-        }
-        return client.SetResourceEnabledAsync(internalTokenProvider.BearerToken, request, enabled, actor, correlationId, request.IdempotencyKey.Trim(), cancellationToken);
+        var audit = RequireIdempotentAuditContext(request);
+        return masterData.SetResourceEnabledAsync(
+            tokenProvider.BearerToken,
+            request,
+            enabled,
+            audit.Actor,
+            audit.CorrelationId,
+            audit.IdempotencyKey!,
+            cancellationToken);
     }
+}
+
+[Tags("Business Console MasterData")]
+[HttpPost("/api/business-console/v1/master-data/resources/{ResourceType}/{Code}/disable")]
+[BusinessGatewayOperationId("disableBusinessConsoleMasterDataResource")]
+public sealed class DisableBusinessConsoleMasterDataResourceEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessMasterDataClient masterData,
+    IInternalServiceTokenProvider tokenProvider)
+    : SetBusinessConsoleMasterDataResourceEnabledEndpoint(auth, masterData, tokenProvider, enabled: false)
+{
 }
 
 [Tags("Business Console MasterData")]
@@ -1030,29 +1031,8 @@ public sealed class EnableBusinessConsoleMasterDataResourceEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMasterDataClient masterData,
     IInternalServiceTokenProvider tokenProvider)
-    : AuthorizedBusinessProxyEndpoint<BusinessConsoleSetMasterDataResourceEnabledRequest, BusinessConsoleMasterDataResourceDetail>(
-        auth,
-        BusinessGatewayPermissions.MasterDataResourcesManage)
+    : SetBusinessConsoleMasterDataResourceEnabledEndpoint(auth, masterData, tokenProvider, enabled: true)
 {
-    protected override string OrganizationId(BusinessConsoleSetMasterDataResourceEnabledRequest request) => request.OrganizationId;
-
-    protected override string EnvironmentId(BusinessConsoleSetMasterDataResourceEnabledRequest request) => request.EnvironmentId;
-
-    protected override Task<BusinessConsoleMasterDataResourceDetail> ForwardAsync(
-        BusinessConsoleSetMasterDataResourceEnabledRequest request,
-        string bearerToken,
-        CancellationToken cancellationToken)
-    {
-        var (actorType, actorRef) = RequireAuthorizedPrincipalActor();
-        var actor = BusinessGatewayPrincipalReferences.ToRecipientRef(actorType, actorRef);
-        var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
-        correlationId = string.IsNullOrWhiteSpace(correlationId) ? Guid.CreateVersion7().ToString("N") : correlationId.Trim();
-        if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
-        {
-            throw BusinessServiceProxyException.FromLocalRejection(System.Net.HttpStatusCode.BadRequest, BusinessGatewayLocalRejectionStableWireCodes.IdempotencyKeyRequired);
-        }
-        return masterData.SetResourceEnabledAsync(tokenProvider.BearerToken, request, true, actor, correlationId, request.IdempotencyKey.Trim(), cancellationToken);
-    }
 }
 
 [Tags("Business Console MasterData")]

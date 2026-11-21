@@ -727,7 +727,6 @@ public sealed class BusinessGatewayProxyTests
         });
         var disable = await client.SendAsync(disableMessage);
         using var enableMessage = new HttpRequestMessage(HttpMethod.Post, "/api/business-console/v1/master-data/resources/sku/SKU-001/enable");
-        enableMessage.Headers.Add("X-Correlation-Id", "corr-master-enable");
         enableMessage.Content = JsonContent.Create(new
         {
             organizationId = "org-001",
@@ -753,7 +752,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Contains(masterData.SetResourceEnabledRequests, request => request.Reason == "duplicate");
         Assert.Contains(true, masterData.SetResourceEnabledCalls);
         Assert.All(masterData.SetResourceEnabledActors, actor => Assert.Equal("user:user-admin", actor));
-        Assert.Equal(["corr-master-disable", "corr-master-enable"], masterData.SetResourceEnabledCorrelationIds);
+        Assert.Equal(["corr-master-disable", enable.Headers.GetValues("X-Correlation-Id").Single()], masterData.SetResourceEnabledCorrelationIds);
         Assert.Equal(["idem-master-disable", "idem-master-enable"], masterData.SetResourceEnabledIdempotencyKeys);
     }
 
@@ -6516,8 +6515,10 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("internal-test-token", mes.LastInternalToken);
     }
 
-    [Fact]
-    public async Task Mes_quality_hold_force_release_injects_principal_actor_and_uses_internal_service_token()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Mes_quality_hold_force_release_injects_principal_actor_and_uses_internal_service_token(bool hasCorrelationHeader)
     {
         var mes = new RecordingMesClient();
         await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
@@ -6532,7 +6533,10 @@ public sealed class BusinessGatewayProxyTests
 
         using var forceRequest = new HttpRequestMessage(HttpMethod.Post,
             "/api/business-console/v1/mes/quality-holds/QH-001/force-release?organizationId=org-001&environmentId=env-dev");
-        forceRequest.Headers.TryAddWithoutValidation("X-Correlation-Id", "corr-gateway-1");
+        if (hasCorrelationHeader)
+        {
+            forceRequest.Headers.TryAddWithoutValidation("X-Correlation-Id", "corr-gateway-1");
+        }
         forceRequest.Content = JsonContent.Create(
             // A caller-supplied actor must never be trusted; the gateway overrides it with the principal.
             new { reason = "quality-override", actor = "supervisor-1", sourceService = "BusinessMes", releasedAtUtc = (DateTimeOffset?)null, idempotencyKey = "idem-force-1" });
@@ -6548,7 +6552,12 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("env-dev", mes.LastForceReleaseQualityHoldRequest.EnvironmentId);
         Assert.Equal("quality-override", mes.LastForceReleaseQualityHoldRequest.Reason);
         Assert.Equal("idem-force-1", mes.LastForceReleaseQualityHoldRequest.IdempotencyKey);
-        Assert.Equal("corr-gateway-1", mes.LastForceReleaseQualityHoldCorrelationId);
+        var responseCorrelationId = response.Headers.GetValues("X-Correlation-Id").Single();
+        Assert.Equal(responseCorrelationId, mes.LastForceReleaseQualityHoldCorrelationId);
+        if (hasCorrelationHeader)
+        {
+            Assert.Equal("corr-gateway-1", responseCorrelationId);
+        }
         // The releaser identity is bound to the authenticated principal; the request-body actor is ignored.
         Assert.Equal("user:user-admin", mes.LastForceReleaseQualityHoldActor);
         Assert.NotEqual("supervisor-1", mes.LastForceReleaseQualityHoldActor);

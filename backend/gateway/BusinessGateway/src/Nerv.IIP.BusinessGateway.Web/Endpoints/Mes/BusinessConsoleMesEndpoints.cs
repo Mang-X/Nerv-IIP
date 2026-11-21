@@ -793,23 +793,13 @@ public sealed class ForceReleaseBusinessConsoleMesQualityHoldEndpoint(
         string bearerToken,
         CancellationToken cancellationToken)
     {
-        // Bind the force-release audit actor to the authenticated principal so a caller holding
-        // MesQualityWrite cannot forge the releaser identity via a request-body field.
-        var actorRef = RequireAuthorizedPrincipalActorReference();
-        if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
-        {
-            throw BusinessServiceProxyException.FromLocalRejection(System.Net.HttpStatusCode.BadRequest, BusinessGatewayLocalRejectionStableWireCodes.IdempotencyKeyRequired);
-        }
-        var correlationId = HttpContext.Request.Headers["X-Correlation-Id"].FirstOrDefault();
-        correlationId = string.IsNullOrWhiteSpace(correlationId)
-            ? Guid.CreateVersion7().ToString("N")
-            : correlationId.Trim();
+        var audit = RequireIdempotentAuditContext(request);
         return mes.ForceReleaseQualityHoldAsync(
             tokenProvider.BearerToken,
             request.SourceDocumentId,
             request,
-            actorRef,
-            correlationId,
+            audit.Actor,
+            audit.CorrelationId,
             cancellationToken);
     }
 }
