@@ -84,7 +84,6 @@ vi.mock('vue-router', () => ({
   }),
 }))
 
-
 vi.mock('@/composables/useWmsWorkScope', () => import('@/test/wmsWorkScopePage'))
 
 vi.mock('@/composables/useBusinessWms', () => ({

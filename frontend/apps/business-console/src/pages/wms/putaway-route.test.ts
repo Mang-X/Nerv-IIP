@@ -117,7 +117,6 @@ vi.mock('@/composables/useBusinessWms', async () => {
   }
 })
 
-
 describe('WMS putaway route handoff', () => {
   it('显示授权目录和真实未就绪原因，换范围时回到第一页', async () => {
     const previous = state.routeQuery

@@ -1438,8 +1438,8 @@ export function useWmsReceivingLines(
       scopeId.value.length > 0 &&
       orderNo.value.length > 0,
   )
-  const responseScopeKey = computed(
-    () => JSON.stringify([sessionKey.value, scopeKind.value, scopeId.value, orderNo.value]),
+  const responseScopeKey = computed(() =>
+    JSON.stringify([sessionKey.value, scopeKind.value, scopeId.value, orderNo.value]),
   )
 
   const linesQuery = useQuery(() => {

@@ -1,4 +1,8 @@
-import { useWmsInboundOrders, useWmsOutboundOrders, useWmsCountExecutions } from '@/composables/useBusinessWms'
+import {
+  useWmsInboundOrders,
+  useWmsOutboundOrders,
+  useWmsCountExecutions,
+} from '@/composables/useBusinessWms'
 import { assertScopePageBehavior, scopePageStubs } from '@/test/wmsWorkScopePage'
 import { WMS_RECEIVING_QUALITY_OPTIONS } from '@/data/inventoryReference'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -280,11 +284,14 @@ describe('WMS operate actions', () => {
     ['入库', InboundPage, 'receipts', useWmsInboundOrders],
     ['出库', OutboundPage, 'shipments', useWmsOutboundOrders],
     ['盘点', CountsPage, 'counts', useWmsCountExecutions],
-  ] as const)('%s 显示授权目录和真实未就绪原因，换范围时回到第一页', async (_, page, catalog, query) => {
-    const wrapper = mount(page, { global: { stubs: scopePageStubs } })
-    expect(query).toHaveBeenCalledWith({ workScopeRequired: true })
-    await assertScopePageBehavior(wrapper, catalog)
-  })
+  ] as const)(
+    '%s 显示授权目录和真实未就绪原因，换范围时回到第一页',
+    async (_, page, catalog, query) => {
+      const wrapper = mount(page, { global: { stubs: scopePageStubs } })
+      expect(query).toHaveBeenCalledWith({ workScopeRequired: true })
+      await assertScopePageBehavior(wrapper, catalog)
+    },
+  )
 
   beforeEach(() => {
     vi.clearAllMocks()

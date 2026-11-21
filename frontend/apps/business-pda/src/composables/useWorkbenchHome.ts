@@ -14,10 +14,7 @@ import { computed } from 'vue'
 
 import { useAuthStore } from '@/stores/auth'
 import { MAINTENANCE_READ_MODEL_PERMISSIONS } from '@/permissions/maintenanceReadModelAccess'
-import {
-  useListResponseState,
-  useScopeBoundListResponse,
-} from '@nerv-iip/business-core'
+import { useListResponseState, useScopeBoundListResponse } from '@nerv-iip/business-core'
 
 /**
  * 工作台首页数据封装：按登录人权限裁剪各域摘要。
