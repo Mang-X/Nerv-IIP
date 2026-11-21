@@ -7,6 +7,7 @@ export const STABLE_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   'barcode-resolve-page-invalid': '扫码查询的分页参数有误，请返回扫码页重试。',
   'mes-operation-read-forbidden': '当前账号没有查看工序任务的权限，请联系管理员。',
   'idempotency-key-required': '本次提交缺少操作标识，请刷新后重新发起。',
+  'work-center-required-use-v2': '请在新版本停机登记中选择工作中心后重新提交。',
   'operation-task-outside-work-center': '该工序任务不属于所选工作中心，请核对任务和工作中心。',
   'worker-not-on-duty-at-work-center': '该员工当前未在此工作中心当班，请重新选择员工。',
   'finished-goods-receipt-not-found': '未找到完工入库申请，请刷新列表后核对。',

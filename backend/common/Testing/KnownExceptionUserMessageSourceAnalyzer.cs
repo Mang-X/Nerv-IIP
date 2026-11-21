@@ -203,7 +203,7 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
 
     private static bool ContainsDiagnosticInterpolation(InterpolatedStringExpressionSyntax interpolated)
     {
-        var method = interpolated.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
+        var method = interpolated.Ancestors().OfType<BaseMethodDeclarationSyntax>().FirstOrDefault();
         var catchVariables = method?.DescendantNodes()
             .OfType<CatchDeclarationSyntax>()
             .Select(catchDeclaration => catchDeclaration.Identifier.ValueText)

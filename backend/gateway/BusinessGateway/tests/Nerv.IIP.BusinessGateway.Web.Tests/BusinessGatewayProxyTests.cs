@@ -4341,7 +4341,10 @@ public sealed class BusinessGatewayProxyTests
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("work-center-required-use-v2", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        using var rejection = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.False(rejection.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(400, rejection.RootElement.GetProperty("code").GetInt32());
+        Assert.Equal("work-center-required-use-v2", rejection.RootElement.GetProperty("message").GetString());
         Assert.Equal(0, mes.RecordDowntimeCallCount);
     }
 

@@ -17,5 +17,6 @@ internal static class BusinessGatewayLocalRejectionStableWireCodes
     public const string AssignedTeamNotFound = "assigned-team-not-found";
     public const string ResourceIdRequired = "resource-id-required";
     public const string AssignmentTargetOutsideSelectedScope = "assignment-target-outside-selected-scope";
+    public const string WorkCenterRequiredUseV2 = "work-center-required-use-v2";
     public const string Forbidden = "forbidden";
 }

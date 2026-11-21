@@ -51,26 +51,29 @@ public sealed class DemandPlanningKnownExceptionMessageArchitectureTests
         Assert.DoesNotContain("Demand type 'sales-order' is integration-owned and cannot be created manually.", source, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void Known_exception_interpolation_cannot_include_catch_diagnostics()
+    [Theory]
+    [InlineData("public void Handle()", "ex.Message")]
+    [InlineData("public SyntheticDynamicKnownException()", "ex")]
+    public void Known_exception_interpolation_cannot_include_catch_diagnostics(string declaration, string diagnostic)
     {
         var documents = new[]
         {
             new UserMessageSourceDocument(
                 "synthetic/DynamicKnownException.cs",
-                """
+                $$"""
+                using System;
                 using NetCorePal.Extensions.Primitives;
 
                 public sealed class SyntheticDynamicKnownException
                 {
-                    public void Handle()
+                    {{declaration}}
                     {
                         try
                         {
                         }
                         catch (InvalidOperationException ex)
                         {
-                            throw new KnownException($"操作失败：{ex.Message}");
+                            throw new KnownException($"操作失败：{ {{diagnostic}} }");
                         }
                     }
                 }
@@ -148,6 +151,9 @@ public sealed class DemandPlanningKnownExceptionMessageArchitectureTests
     {
         var sourceRoot = Path.Combine(repositoryRoot, SourceRoot.Replace('/', Path.DirectorySeparatorChar));
         return Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
+            .Where(file => !Path.GetRelativePath(sourceRoot, file)
+                .Split(Path.DirectorySeparatorChar)
+                .Any(segment => segment is "bin" or "obj"))
             .Select(file => new UserMessageSourceDocument(
                 Path.GetRelativePath(repositoryRoot, file).Replace(Path.DirectorySeparatorChar, '/'),
                 File.ReadAllText(file)))

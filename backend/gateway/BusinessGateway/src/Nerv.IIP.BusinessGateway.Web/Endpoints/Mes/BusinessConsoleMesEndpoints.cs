@@ -2566,9 +2566,9 @@ public sealed class RecordBusinessConsoleMesDowntimeEventEndpoint(
         BusinessConsoleMesRecordDowntimeEventRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+        throw BusinessServiceProxyException.FromLocalRejection(
             System.Net.HttpStatusCode.BadRequest,
-            "work-center-required-use-v2");
+            BusinessGatewayLocalRejectionStableWireCodes.WorkCenterRequiredUseV2);
 }
 
 /// <summary>

@@ -154,7 +154,9 @@ public sealed class BusinessServiceProxyException : Exception
 
     private static bool IsSafeDownstreamBusinessMessage(string? downstreamMessage)
     {
-        if (string.IsNullOrWhiteSpace(downstreamMessage) || downstreamMessage.Length > 500)
+        if (string.IsNullOrWhiteSpace(downstreamMessage) ||
+            downstreamMessage.Length > 500 ||
+            downstreamMessage.Contains("Authorization:", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

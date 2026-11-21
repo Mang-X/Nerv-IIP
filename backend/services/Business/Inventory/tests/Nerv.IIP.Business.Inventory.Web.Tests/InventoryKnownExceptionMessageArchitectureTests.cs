@@ -221,6 +221,9 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
         var repositoryRoot = FindRepositoryRoot();
         var sourceRoot = Path.Combine(repositoryRoot, InventorySourceRoot.Replace('/', Path.DirectorySeparatorChar));
         return Directory.EnumerateFiles(sourceRoot, "*.cs", SearchOption.AllDirectories)
+            .Where(file => !Path.GetRelativePath(sourceRoot, file)
+                .Split(Path.DirectorySeparatorChar)
+                .Any(segment => segment is "bin" or "obj"))
             .OrderBy(file => file, StringComparer.Ordinal)
             .Select(file => new InventoryKnownExceptionSourceDocument(
                 Path.GetRelativePath(repositoryRoot, file).Replace(Path.DirectorySeparatorChar, '/'),
