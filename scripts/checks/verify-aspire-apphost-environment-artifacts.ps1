@@ -11,7 +11,7 @@
 #   Requires:
 #     - PowerShell 7
 #     - .NET SDK 10
-#     - Aspire CLI 13.4.6
+#     - Aspire CLI 17.0.0
 
 [CmdletBinding()]
 param(

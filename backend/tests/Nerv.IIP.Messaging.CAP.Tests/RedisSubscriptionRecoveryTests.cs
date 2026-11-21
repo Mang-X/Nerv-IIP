@@ -27,11 +27,11 @@ public sealed class RedisSubscriptionRecoveryTests
     {
         {
             nameof(RedisConnectionException),
-            new RedisConnectionException(ConnectionFailureType.UnableToConnect, "connect failed")
+            new RedisConnectionException(ConnectionFailureType.UnableToConnect, CommandFlags.None, "connect failed")
         },
         {
             nameof(RedisTimeoutException),
-            new RedisTimeoutException("timed out", CommandStatus.WaitingInBacklog)
+            new RedisTimeoutException(CommandFlags.None, "timed out", CommandStatus.WaitingInBacklog)
         },
     };
 
@@ -57,7 +57,7 @@ public sealed class RedisSubscriptionRecoveryTests
     /// </summary>
     public static TheoryData<string, Exception> UnconvertedSubscribeFailures() => new()
     {
-        { nameof(RedisServerException), new RedisServerException("BUSYGROUP Consumer Group name already exists") },
+        { nameof(RedisServerException), new RedisServerException(RedisErrorKind.Unknown, CommandFlags.None, "BUSYGROUP Consumer Group name already exists") },
         { nameof(RedisCommandException), new RedisCommandException("command is not available") },
         { nameof(TimeoutException), new TimeoutException("a plain timeout that is not Redis") },
         { nameof(RedisException), new RedisException("a plain Redis exception") },

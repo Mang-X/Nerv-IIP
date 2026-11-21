@@ -734,7 +734,7 @@ try {
         'business-full-chain-acceptance-v1:',
         'name: Business FullChain Acceptance / v1 Authority',
         "needs.impact-plan.outputs.full_chain != 'false'",
-        'bash "${RUNNER_TEMP}/aspire-install.sh" --version 13.4.6',
+        'bash "${RUNNER_TEMP}/aspire-install.sh" --version 17.0.0',
         'pnpm -C frontend install --frozen-lockfile',
         'pnpm -C frontend --filter @nerv-iip/business-console exec playwright install chromium',
         '-Lane full-chain',

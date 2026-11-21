@@ -1148,7 +1148,7 @@ jobs:
           aspire_attempt=1
           while true; do
             if timeout --kill-after=10 45 curl --fail --silent --show-error --location --max-time 12 --retry 2 --retry-delay 2 https://aspire.dev/install.sh --output "${RUNNER_TEMP}/aspire-install.sh" \
-              && timeout --kill-after=15 105 bash "${RUNNER_TEMP}/aspire-install.sh" --version 13.4.6 --install-path "$aspire_install_path"; then
+              && timeout --kill-after=15 105 bash "${RUNNER_TEMP}/aspire-install.sh" --version 17.0.0 --install-path "$aspire_install_path"; then
               echo "Aspire CLI 安装成功（第 ${aspire_attempt} 次尝试）。"
               break
             fi
@@ -1160,7 +1160,7 @@ jobs:
             aspire_attempt=$((aspire_attempt + 1))
             sleep 10
           done
-          "$aspire_install_path/aspire" --version | grep -E '^13\.4\.6\+'
+          "$aspire_install_path/aspire" --version | grep -E '^17\.0\.0\+'
           echo "$aspire_install_path" >> "$GITHUB_PATH"
 
       - name: Setup pnpm
