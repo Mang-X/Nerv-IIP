@@ -41,7 +41,6 @@
     <PackageReference Include="prometheus-net.AspNetCore" />
     <PackageReference Include="prometheus-net.AspNetCore.HealthChecks" />
     <PackageReference Include="StackExchange.Redis" />
-    <PackageReference Include="Swashbuckle.AspNetCore" />
   </ItemGroup>
 
   <ItemGroup>

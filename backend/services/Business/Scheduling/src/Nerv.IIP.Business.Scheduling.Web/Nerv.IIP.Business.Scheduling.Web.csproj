@@ -35,7 +35,6 @@
     <PackageReference Include="prometheus-net.AspNetCore" />
     <PackageReference Include="prometheus-net.AspNetCore.HealthChecks" />
     <PackageReference Include="Sep" />
-    <PackageReference Include="Swashbuckle.AspNetCore" />
   </ItemGroup>
 
   <ItemGroup>

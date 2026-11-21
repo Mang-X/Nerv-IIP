@@ -92,7 +92,6 @@
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
     <PackageReference Include="StackExchange.Redis" />
-    <PackageReference Include="Swashbuckle.AspNetCore" />
     <PackageReference Include="prometheus-net.AspNetCore" />
     <PackageReference Include="prometheus-net.AspNetCore.HealthChecks" />
     <PackageReference Include="xunit.assert" />
