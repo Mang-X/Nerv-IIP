@@ -1,19 +1,10 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
-import { openSopFileContent } from '@nerv-iip/business-core'
-import {
-  describeRequestError,
-  isIndeterminateError,
-  REQUEST_TIMEOUT_MS,
-} from '@/api/request-timeout'
+import { describeRequestError, isIndeterminateError } from '@/api/request-timeout'
 import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
 import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
 import TaskListShell from '@/components/task-list/TaskListShell.vue'
-import {
-  type OperationActionContext,
-  useMesCurrentOperationSops,
-  useMesOperationTasks,
-} from '@/composables/mes'
+import { type OperationActionContext, useMesOperationTasks } from '@/composables/mes'
 import { makeIdempotencyKey } from '@/composables/shared/makeIdempotencyKey'
 import {
   isLifecycleActionUpdated,
@@ -45,6 +36,7 @@ import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
 import { useMesScanGate } from '@/composables/mes/useMesScanGate'
 import { useMesAndonCall, type AndonOperationContext } from '@/composables/mes/useMesAndonCall'
 import MesAndonCallPanel from './components/MesAndonCallPanel.vue'
+import { useOperationSopFiles } from './useOperationSopFiles'
 
 definePage({
   meta: {
@@ -54,7 +46,6 @@ definePage({
 })
 
 type Task = BusinessConsoleMesOperationTaskRow
-type CurrentSop = { fileId?: string | null; fileName?: string | null }
 
 const {
   filters,
@@ -146,14 +137,15 @@ const operationListError = computed(() =>
     : undefined,
 )
 const {
-  filters: sopFilters,
+  sopFilters,
   currentSops,
-  pending: sopsPending,
-  error: sopsError,
-  refresh: refreshSops,
-} = useMesCurrentOperationSops()
-
-// SOP 文件下载走 PDA 全局超时 fetch —— 弱网/离线有界失败，不无限挂起（#814）。
+  sopsPending,
+  sopsError,
+  refreshSops,
+  openingSopFileId,
+  sopFileError,
+  openSopFile,
+} = useOperationSopFiles()
 
 const ACTION_FNS: Record<
   ActionKind,
@@ -194,8 +186,7 @@ const confirmingComplete = ref(false)
 
 // --- 结果反馈 ---
 const result = ref<ResultState | null>(null)
-const openingSopFileId = ref<string | null>(null)
-const sopFileError = ref('')
+
 const toast = reactive<{ show: boolean; message: string; type: 'success' | 'error' }>({
   show: false,
   message: '',
@@ -457,27 +448,6 @@ async function discardStaleOperationResult(snapshot: OperationPageSnapshot) {
     await refresh()
   } catch {
     // 上下文已变化时只丢弃旧结果；当前列表仍可由用户再次手动刷新。
-  }
-}
-
-async function openSopFile(sop: CurrentSop) {
-  const fileId = sop.fileId?.trim()
-  if (!fileId) {
-    sopFileError.value = '当前SOP未绑定可查看的文件。'
-    return
-  }
-  sopFileError.value = ''
-  openingSopFileId.value = fileId
-  try {
-    await openSopFileContent(
-      fileId,
-      { organizationId: sopFilters.organizationId, environmentId: sopFilters.environmentId },
-      { timeoutMs: REQUEST_TIMEOUT_MS },
-    )
-  } catch (error) {
-    sopFileError.value = error instanceof Error ? error.message : '无法打开SOP。'
-  } finally {
-    openingSopFileId.value = null
   }
 }
 

@@ -18,7 +18,6 @@ import {
   NvMobileResult,
   NvMobileButton,
   NvMobileToast,
-  NvNumberKeyboard,
 } from '@nerv-iip/ui-mobile'
 import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -33,7 +32,6 @@ import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
 import ProductionReportMaterialLots from '@/components/mes/ProductionReportMaterialLots.vue'
 import ProductionReportScrapReasonField from '@/components/mes/ProductionReportScrapReasonField.vue'
 import ProductionReportSerialResult from '@/components/mes/ProductionReportSerialResult.vue'
-import ProductionReportSerialFields from '@/components/mes/ProductionReportSerialFields.vue'
 import ProductionReportOccupiedNotice from '@/components/mes/ProductionReportOccupiedNotice.vue'
 import { useProductionReportSerials } from '@/composables/mes/useProductionReportSerials'
 import { useLifecycleActionRecovery } from '@/composables/shared/lifecycleActionRecovery'
@@ -46,6 +44,7 @@ import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
 import { useMesScanGate } from '@/composables/mes/useMesScanGate'
 import TelemetryCandidateQueue from './components/TelemetryCandidateQueue.vue'
 import { reworkSourceLabel, withReworkLabel } from './components/operationPresentation'
+import ProductionReportGoodQuantity from './components/ProductionReportGoodQuantity.vue'
 
 definePage({
   meta: {
@@ -705,36 +704,19 @@ async function onScanAccepted(value: MesScanAccepted) {
           已核验当前工序人员
         </p>
 
-        <label class="block space-y-1">
-          <span class="text-sm font-medium text-foreground">良品数</span>
-          <input
-            v-model.number="goodQuantity"
-            data-testid="good-quantity"
-            type="number"
-            inputmode="numeric"
-            :readonly="serialRequired"
-            :disabled="submitting"
-            @click="serialRequired && (goodKeyboardOpen = true)"
-            min="0"
-            class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base outline-none focus:border-primary"
-          />
-        </label>
-
-        <NvNumberKeyboard
-          v-model="goodKeyboardValue"
-          v-model:show="goodKeyboardOpen"
-          title="良品数"
-          extra-key=""
-        />
-        <ProductionReportSerialFields
-          v-model="labelTemplateId"
-          :required="serialRequired"
-          :pending-count="serialPendingCount"
-          :pending="serialPending"
-          :message="serialMessage"
-          :templates="serialTemplates"
-          :disabled="submitting || scanGuarded"
-          @refresh="serials.refresh"
+        <ProductionReportGoodQuantity
+          v-model:good-quantity="goodQuantity"
+          v-model:good-keyboard-value="goodKeyboardValue"
+          v-model:good-keyboard-open="goodKeyboardOpen"
+          v-model:label-template-id="labelTemplateId"
+          :serial-required="serialRequired"
+          :submitting="submitting"
+          :serial-pending-count="serialPendingCount"
+          :serial-pending="serialPending"
+          :serial-message="serialMessage"
+          :serial-templates="serialTemplates"
+          :scan-guarded="scanGuarded"
+          @refresh-serials="serials.refresh"
         />
 
         <label class="block space-y-1">
