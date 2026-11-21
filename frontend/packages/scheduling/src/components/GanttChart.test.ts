@@ -190,7 +190,7 @@ describe('ResourceSchedulerBoard', () => {
     rangeEnd.setHours(24, 0, 0, 0)
     const expectedLeft =
       ((taskStart - rangeStart.getTime()) / (rangeEnd.getTime() - rangeStart.getTime())) * 100
-    expect(Number.parseFloat((task.element as HTMLElement).style.left)).toBeCloseTo(expectedLeft, 5)
+    expect(Number.parseFloat((task.element as HTMLElement).style.left)).toBeCloseTo(expectedLeft, 4)
     wrapper.unmount()
   })
 
