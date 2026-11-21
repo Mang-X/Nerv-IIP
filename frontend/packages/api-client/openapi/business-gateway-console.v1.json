@@ -1,5 +1,5 @@
 {
-  "x-generator": "NSwag v14.6.3.0 (NJsonSchema v11.5.2.0 (Newtonsoft.Json v13.0.0.0))",
+  "x-generator": "NSwag v14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))",
   "openapi": "3.0.0",
   "info": {
     "title": "Nerv IIP Business Gateway",
@@ -55684,8 +55684,7 @@
           },
           "evaluatedAtUtc": {
             "type": "string",
-            "format": "date-time",
-            "minLength": 1
+            "format": "date-time"
           }
         }
       },
@@ -55792,8 +55791,7 @@
           },
           "evaluatedAtUtc": {
             "type": "string",
-            "format": "date-time",
-            "minLength": 1
+            "format": "date-time"
           }
         }
       },
@@ -56503,13 +56501,11 @@
           },
           "windowStartUtc": {
             "type": "string",
-            "format": "date-time",
-            "minLength": 1
+            "format": "date-time"
           },
           "windowEndUtc": {
             "type": "string",
-            "format": "date-time",
-            "minLength": 1
+            "format": "date-time"
           },
           "items": {
             "type": "array",
@@ -59008,8 +59004,7 @@
           },
           "occurredAtUtc": {
             "type": "string",
-            "format": "date-time",
-            "minLength": 1
+            "format": "date-time"
           },
           "lines": {
             "type": "array",
@@ -67453,8 +67448,7 @@
           },
           "completedAtUtc": {
             "type": "string",
-            "format": "date-time",
-            "minLength": 1
+            "format": "date-time"
           },
           "sourceEventId": {
             "type": "string",
@@ -67709,8 +67703,7 @@
           },
           "recordedAtUtc": {
             "type": "string",
-            "format": "date-time",
-            "minLength": 1
+            "format": "date-time"
           }
         }
       },
@@ -67977,8 +67970,7 @@
           },
           "changedAtUtc": {
             "type": "string",
-            "format": "date-time",
-            "minLength": 1
+            "format": "date-time"
           }
         }
       },
@@ -71147,8 +71139,7 @@
           },
           "calculatedAtUtc": {
             "type": "string",
-            "format": "date-time",
-            "minLength": 1
+            "format": "date-time"
           },
           "dataFreshness": {
             "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEquipmentHealthDataFreshness"

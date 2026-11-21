@@ -16,6 +16,21 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayOpenApiTests
 {
     [Fact]
+    public async Task Code_rule_segment_type_remains_optional_in_v1_openapi()
+    {
+        using var document = JsonDocument.Parse(await BusinessGatewayTestHost.GetOpenApiDocumentAsync());
+        var schema = document.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty("NervIIPContractsCodingCodeRuleSegment");
+
+        Assert.Equal("#/components/schemas/NervIIPContractsCodingSegmentType",
+            schema.GetProperty("properties").GetProperty("type").GetProperty("$ref").GetString());
+        if (schema.TryGetProperty("required", out var required))
+        {
+            Assert.DoesNotContain(required.EnumerateArray(), property => property.GetString() == "type");
+        }
+    }
+
+    [Fact]
     public async Task First_plan_job_openapi_matches_accepted_wire_response_and_query_contract()
     {
         // #4136 PublicContract: the accepted response is 202; state is the Scheduling camelCase enum.
