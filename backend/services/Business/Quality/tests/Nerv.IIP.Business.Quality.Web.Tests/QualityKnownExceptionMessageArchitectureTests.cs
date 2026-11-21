@@ -15,7 +15,7 @@ public sealed class QualityKnownExceptionMessageArchitectureTests
     {
         var documents = LoadDocuments();
         var violations = KnownExceptionUserMessageSourceAnalyzer.Analyze(
-            documents, [], enforceLengthAndCharacters: false);
+            documents, [], UserMessagePolicy.StaticChinese);
 
         Assert.True(
             violations.Count == 0,

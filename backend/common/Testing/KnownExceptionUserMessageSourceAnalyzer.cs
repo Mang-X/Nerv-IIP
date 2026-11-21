@@ -9,6 +9,13 @@ internal sealed record UserMessageSourceDocument(string Path, string Text);
 
 internal sealed record ExcludedUserMessageSite(string Path, string TypeName, string MethodName, string Reason);
 
+internal enum UserMessagePolicy
+{
+    StaticChinese,
+    SafeText,
+    NoDownstreamDiagnostics,
+}
+
 internal static class KnownExceptionUserMessageSourceAnalyzer
 {
     private const string KnownExceptionTypeName = "NetCorePal.Extensions.Primitives.KnownException";
@@ -18,7 +25,7 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
     public static IReadOnlyList<string> Analyze(
         IReadOnlyCollection<UserMessageSourceDocument> documents,
         IReadOnlyCollection<ExcludedUserMessageSite> excludedSites,
-        bool enforceLengthAndCharacters = true)
+        UserMessagePolicy policy = UserMessagePolicy.SafeText)
     {
         if (documents.Count == 0)
         {
@@ -59,7 +66,12 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
                 var firstArgument = creation.ArgumentList?.Arguments.FirstOrDefault()?.Expression;
                 if (firstArgument is not null)
                 {
-                    AddViolations(syntaxTree, firstArgument, enforceLengthAndCharacters, violations);
+                    AddViolations(syntaxTree, firstArgument, policy, violations);
+                }
+                else if (policy == UserMessagePolicy.NoDownstreamDiagnostics)
+                {
+                    var line = syntaxTree.GetLineSpan(creation.Span).StartLinePosition.Line + 1;
+                    violations.Add(new Violation(syntaxTree.FilePath, line, creation.SpanStart, "用户消息不能为空。"));
                 }
             }
         }
@@ -99,11 +111,19 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
     private static void AddViolations(
         SyntaxTree syntaxTree,
         ExpressionSyntax messageExpression,
-        bool enforceLengthAndCharacters,
+        UserMessagePolicy policy,
         ICollection<Violation> violations)
     {
         var line = syntaxTree.GetLineSpan(messageExpression.Span).StartLinePosition.Line + 1;
         var path = syntaxTree.FilePath;
+
+        if (policy == UserMessagePolicy.NoDownstreamDiagnostics
+            && messageExpression is InterpolatedStringExpressionSyntax interpolated
+            && ContainsDiagnosticInterpolation(interpolated))
+        {
+            violations.Add(new Violation(path, line, messageExpression.SpanStart, "用户消息不能透传动态异常文本。"));
+            return;
+        }
 
         if (!TryExtractMessage(messageExpression, out var message, out var estimatedLength))
         {
@@ -111,7 +131,9 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
                 path,
                 line,
                 messageExpression.SpanStart,
-                "用户消息必须是可静态分析的字符串字面量或插值字符串。"));
+                policy == UserMessagePolicy.NoDownstreamDiagnostics
+                    ? "用户消息必须是静态字符串或插值字符串，不能透传动态异常文本。"
+                    : "用户消息必须是可静态分析的字符串字面量或插值字符串。"));
             return;
         }
 
@@ -124,7 +146,7 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
                 "用户消息必须包含中文。"));
         }
 
-        if (!enforceLengthAndCharacters)
+        if (policy == UserMessagePolicy.StaticChinese)
         {
             return;
         }
@@ -136,6 +158,11 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
                 line,
                 messageExpression.SpanStart,
                 "用户消息估算长度不能超过 60 个字符。"));
+        }
+
+        if (policy != UserMessagePolicy.SafeText)
+        {
+            return;
         }
 
         if (message.Any(char.IsControl))
@@ -155,6 +182,38 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
                 messageExpression.SpanStart,
                 "用户消息不能包含不安全字符。"));
         }
+    }
+
+    private static bool ContainsDiagnosticInterpolation(InterpolatedStringExpressionSyntax interpolated)
+    {
+        var method = interpolated.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
+        var catchVariables = method?.DescendantNodes()
+            .OfType<CatchDeclarationSyntax>()
+            .Select(catchDeclaration => catchDeclaration.Identifier.ValueText)
+            .Where(identifier => !string.IsNullOrEmpty(identifier))
+            .ToHashSet(StringComparer.Ordinal)
+            ?? [];
+
+        foreach (var interpolation in interpolated.Contents.OfType<InterpolationSyntax>())
+        {
+            if (interpolation.Expression
+                .DescendantNodesAndSelf()
+                .OfType<IdentifierNameSyntax>()
+                .Any(identifier => catchVariables.Contains(identifier.Identifier.ValueText)))
+            {
+                return true;
+            }
+
+            if (interpolation.Expression
+                .DescendantNodesAndSelf()
+                .OfType<MemberAccessExpressionSyntax>()
+                .Any(member => member.Name.Identifier.ValueText is "Message" or "Content" or "ReasonPhrase" or "StatusCode" or "InnerException"))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool TryExtractMessage(
