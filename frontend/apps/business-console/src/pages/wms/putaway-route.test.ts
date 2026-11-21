@@ -1,3 +1,5 @@
+import { useWmsPutawayTasks } from '@/composables/useBusinessWms'
+import { assertScopePageBehavior, scopePageStubs } from '@/test/wmsWorkScopePage'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -71,31 +73,13 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: state.permissionCodes } }),
 }))
 
-vi.mock('@/composables/useWmsWorkScope', async () => {
-  const { computed, shallowRef } = await import('vue')
-  return {
-    bindWmsWorkScopeFilters: (filters: { scopeKind?: string; scopeId?: string; skip: number }) => {
-      filters.scopeKind = 'self'
-      filters.scopeId = 'emp049'
-      filters.skip = 0
-      return {
-        scopeKey: shallowRef('self:emp049'),
-        scopeOptions: computed(() => [{ label: '我的任务', value: 'self:emp049' }]),
-        selectedScopeLabel: computed(() => '我的任务'),
-        hasSelection: computed(() => true),
-        pending: shallowRef(false),
-        error: shallowRef(undefined),
-        refresh: vi.fn(async () => undefined),
-      }
-    },
-  }
-})
+vi.mock('@/composables/useWmsWorkScope', () => import('@/test/wmsWorkScopePage'))
 
 vi.mock('@/composables/useBusinessWms', async () => {
   const { computed, reactive, shallowRef } = await import('vue')
   return {
     createWmsIdempotencyKey: () => 'putaway-intent-key',
-    useWmsPutawayTasks: () => ({
+    useWmsPutawayTasks: vi.fn(() => ({
       filters: reactive({
         organizationId: 'org-001',
         environmentId: 'env-dev',
@@ -111,7 +95,7 @@ vi.mock('@/composables/useBusinessWms', async () => {
       createPutaway: state.createPutaway,
       createPutawayPending: shallowRef(false),
       createPutawayError: shallowRef(undefined),
-    }),
+    })),
     // 入库单选择器的目录来源：上架任务必须挂在已存在的入库单下。
     useWmsInboundOrders: () => ({
       filters: reactive({ skip: 0, take: 200 }),
@@ -133,14 +117,23 @@ vi.mock('@/composables/useBusinessWms', async () => {
   }
 })
 
-vi.mock('@/composables/usePagedList', async () => {
-  const { shallowRef } = await import('vue')
-  return {
-    usePagedList: () => ({ page: shallowRef(1), pageSize: shallowRef('100') }),
-  }
-})
 
 describe('WMS putaway route handoff', () => {
+  it('显示授权目录和真实未就绪原因，换范围时回到第一页', async () => {
+    const previous = state.routeQuery
+    state.routeQuery = {}
+    try {
+      const wrapper = mount(PutawayPage, {
+        attachTo: document.body,
+        global: { stubs: { ...wmsStubs(), ...scopePageStubs } },
+      })
+      expect(useWmsPutawayTasks).toHaveBeenCalledWith({ workScopeRequired: true })
+      await assertScopePageBehavior(wrapper, 'receipts')
+    } finally {
+      state.routeQuery = previous
+    }
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     document.body.innerHTML = ''

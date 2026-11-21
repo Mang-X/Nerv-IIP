@@ -1,3 +1,5 @@
+import { useWmsPickingTasks } from '@/composables/useBusinessWms'
+import { assertScopePageBehavior, scopePageStubs } from '@/test/wmsWorkScopePage'
 import type { BusinessConsoleCreateWmsPickingTaskRequest } from '@nerv-iip/api-client'
 import { flushPromises, mount } from '@vue/test-utils'
 import { computed, reactive, shallowRef } from 'vue'
@@ -82,33 +84,8 @@ vi.mock('vue-router', () => ({
   }),
 }))
 
-vi.mock('@/composables/usePagedList', async () => {
-  const { shallowRef } = await import('vue')
 
-  return {
-    usePagedList: () => ({
-      page: shallowRef(1),
-      pageSize: shallowRef(100),
-    }),
-  }
-})
-
-vi.mock('@/composables/useWmsWorkScope', () => ({
-  bindWmsWorkScopeFilters: (filters: { scopeKind?: string; scopeId?: string; skip: number }) => {
-    filters.scopeKind = 'self'
-    filters.scopeId = 'emp049'
-    filters.skip = 0
-    return {
-      scopeKey: shallowRef('self:emp049'),
-      scopeOptions: computed(() => [{ label: '我的任务', value: 'self:emp049' }]),
-      selectedScopeLabel: computed(() => '我的任务'),
-      hasSelection: computed(() => true),
-      pending: shallowRef(false),
-      error: shallowRef(undefined),
-      refresh: vi.fn(async () => undefined),
-    }
-  },
-}))
+vi.mock('@/composables/useWmsWorkScope', () => import('@/test/wmsWorkScopePage'))
 
 vi.mock('@/composables/useBusinessWms', () => ({
   createWmsIdempotencyKey: () => wmsState.key(),
@@ -128,7 +105,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
     outboundOrdersTotal: computed(() => 1),
     refreshOutboundOrders: vi.fn(),
   }),
-  useWmsPickingTasks: () => {
+  useWmsPickingTasks: vi.fn(() => {
     const filters = reactive({
       environmentId: 'env-dev',
       keyword: undefined as string | undefined,
@@ -167,7 +144,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
       pickingActionPending: shallowRef(false),
       refreshPickingTasks: wmsState.refreshPickingTasks,
     }
-  },
+  }),
 }))
 
 const uiStubs = {
@@ -213,6 +190,12 @@ const uiStubs = {
 }
 
 describe('WMS picking route context', () => {
+  it('显示授权目录和真实未就绪原因，换范围时回到第一页', async () => {
+    const wrapper = mount(PickingPage, { global: { stubs: scopePageStubs } })
+    expect(useWmsPickingTasks).toHaveBeenCalledWith({ workScopeRequired: true })
+    await assertScopePageBehavior(wrapper, 'shipments')
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     routeState.query = {}

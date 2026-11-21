@@ -1,3 +1,5 @@
+import { useWmsInboundOrders, useWmsOutboundOrders, useWmsCountExecutions } from '@/composables/useBusinessWms'
+import { assertScopePageBehavior, scopePageStubs } from '@/test/wmsWorkScopePage'
 import { WMS_RECEIVING_QUALITY_OPTIONS } from '@/data/inventoryReference'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -131,26 +133,11 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: wms.permissionCodes } }),
 }))
 
-vi.mock('@/composables/useWmsWorkScope', () => ({
-  bindWmsWorkScopeFilters: (filters: { scopeKind?: string; scopeId?: string; skip: number }) => {
-    filters.scopeKind = 'self'
-    filters.scopeId = 'emp049'
-    filters.skip = 0
-    return {
-      scopeKey: shallowRef('self:emp049'),
-      scopeOptions: computed(() => [{ label: '我的任务', value: 'self:emp049' }]),
-      selectedScopeLabel: computed(() => '我的任务'),
-      hasSelection: computed(() => true),
-      pending: shallowRef(false),
-      error: shallowRef(undefined),
-      refresh: vi.fn(async () => undefined),
-    }
-  },
-}))
+vi.mock('@/composables/useWmsWorkScope', () => import('@/test/wmsWorkScopePage'))
 
 vi.mock('@/composables/useBusinessWms', () => ({
   createWmsIdempotencyKey: wms.createIdempotencyKey,
-  useWmsInboundOrders: () => ({
+  useWmsInboundOrders: vi.fn(() => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
     inboundOrders: computed(() => [
       {
@@ -181,8 +168,8 @@ vi.mock('@/composables/useBusinessWms', () => ({
     supplierReturnsPending: shallowRef(false),
     supplierReturnsError: shallowRef(undefined),
     refreshReceivingQuality: wms.refreshReceivingQuality,
-  }),
-  useWmsOutboundOrders: () => ({
+  })),
+  useWmsOutboundOrders: vi.fn(() => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
     outboundOrders: computed(() => [
       {
@@ -202,8 +189,8 @@ vi.mock('@/composables/useBusinessWms', () => ({
     createOutbound: wms.createOutbound,
     createOutboundPending: shallowRef(false),
     createOutboundError: shallowRef(undefined),
-  }),
-  useWmsCountExecutions: () => ({
+  })),
+  useWmsCountExecutions: vi.fn(() => ({
     filters: reactive({
       organizationId: 'org-001',
       environmentId: 'env-dev',
@@ -233,7 +220,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
     createCountExecutionPending: shallowRef(false),
     completeCountExecution: wms.completeCountExecution,
     completeCountExecutionPending: shallowRef(false),
-  }),
+  })),
   useWmsWcsTasks: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
     wcsTasks: computed(
@@ -289,6 +276,16 @@ const layoutStub = {
 }
 
 describe('WMS operate actions', () => {
+  it.each([
+    ['入库', InboundPage, 'receipts', useWmsInboundOrders],
+    ['出库', OutboundPage, 'shipments', useWmsOutboundOrders],
+    ['盘点', CountsPage, 'counts', useWmsCountExecutions],
+  ] as const)('%s 显示授权目录和真实未就绪原因，换范围时回到第一页', async (_, page, catalog, query) => {
+    const wrapper = mount(page, { global: { stubs: scopePageStubs } })
+    expect(query).toHaveBeenCalledWith({ workScopeRequired: true })
+    await assertScopePageBehavior(wrapper, catalog)
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     document.body.innerHTML = ''
