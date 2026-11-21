@@ -2,7 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import ShiftHandoverPhotoCapture from './ShiftHandoverPhotoCapture.vue'
-import type { ShiftHandoverAttachment } from '@/composables/useBusinessShiftHandover'
+import type { ShiftHandoverAttachment } from '@/composables/mes/useBusinessShiftHandover'
 
 const ATTACHMENT: ShiftHandoverAttachment = {
   fileId: 'file-1',

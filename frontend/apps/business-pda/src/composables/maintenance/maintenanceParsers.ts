@@ -4,10 +4,7 @@ import {
   type BusinessConsoleWorkerDirectoryItem,
 } from '@nerv-iip/api-client'
 import { isStrictRfc3339DateTime } from '@/utils/strictRfc3339'
-import {
-  normalizeCanonicalGuid,
-  normalizeMaintenanceDeviceReference,
-} from '../maintenancePublicIds'
+import { normalizeCanonicalGuid, normalizeMaintenanceDeviceReference } from './maintenancePublicIds'
 
 const MAX_IDENTITY_REFERENCES = 20
 

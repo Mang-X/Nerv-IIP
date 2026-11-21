@@ -4,7 +4,7 @@ import { NvAppShellMobile, NvCellGroup, NvNavBar } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
 
 import PdaNavigationCell from '@/components/navigation/PdaNavigationCell.vue'
-import { HOME_PERMISSIONS, usePdaIdentity } from '@/composables/useWorkbenchHome'
+import { HOME_PERMISSIONS, usePdaIdentity } from '@/composables/workbench/useWorkbenchHome'
 import { canAccessMaintenanceWorkOrderReadModel } from '@/permissions/maintenanceReadModelAccess'
 
 definePage({ meta: { requiresAuth: true, title: '任务' } })

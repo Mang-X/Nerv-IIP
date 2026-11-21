@@ -27,7 +27,7 @@ import {
   useMesProductionReports,
   useMesWorkOrderDetail,
   useMesWorkOrders,
-} from '@/composables/useBusinessMes'
+} from '@/composables/mes'
 import RetryableListError from '@/components/RetryableListError.vue'
 import MesWorkScopeFilter from '@/components/mes/MesWorkScopeFilter.vue'
 import ProductionReportMaterialLots from '@/components/mes/ProductionReportMaterialLots.vue'
@@ -36,11 +36,11 @@ import ProductionReportSerialResult from '@/components/mes/ProductionReportSeria
 import ProductionReportSerialFields from '@/components/mes/ProductionReportSerialFields.vue'
 import ProductionReportOccupiedNotice from '@/components/mes/ProductionReportOccupiedNotice.vue'
 import { useProductionReportSerials } from '@/composables/mes/useProductionReportSerials'
-import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
+import { useLifecycleActionRecovery } from '@/composables/shared/lifecycleActionRecovery'
 import { useProductionReportMaterials } from '@/composables/mes/useProductionReportMaterials'
 import { useProductionReportScrapReason } from '@/composables/mes/useProductionReportScrapReason'
 import { useMesReportSubmission } from '@/composables/mes/useMesReportSubmission'
-import { useMesReportIdentity } from '@/composables/useMesReportIdentity'
+import { useMesReportIdentity } from '@/composables/mes/useMesReportIdentity'
 import MesScanPrevalidation from '@/components/mes/MesScanPrevalidation.vue'
 import type { MesScanAccepted } from '@/composables/mes/useMesScanPrevalidation'
 import { useMesScanGate } from '@/composables/mes/useMesScanGate'

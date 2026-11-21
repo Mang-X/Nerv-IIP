@@ -10,7 +10,7 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
   resolveBusinessConsoleBarcode: resolveBarcode,
 }))
 
-vi.mock('@/composables/useWorkbenchHome', () => ({
+vi.mock('@/composables/workbench/useWorkbenchHome', () => ({
   usePdaIdentity: () => ({
     organizationId: computed(() => 'org-1'),
     environmentId: computed(() => 'env-1'),

@@ -186,7 +186,7 @@ const workOrderListScopeReadyRef = ref(true)
 const workOrderListScopeUnavailableRef = ref(false)
 const workOrderListScopeMessageRef = ref('')
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   useMesWorkOrders: () => ({
     filters: workOrderFilters,
     workOrders: computed(() => workOrdersRef.value),
@@ -335,7 +335,7 @@ const deviceNames: Record<string, string> = {
   'DEV-CNC-01': '数控车床一号（EQ00001）',
   'DEV-CNC-99': '数控车床九号（EQ00099）',
 }
-vi.mock('@/composables/useBusinessDeviceDirectory', () => ({
+vi.mock('@/composables/equipment/useBusinessDeviceDirectory', () => ({
   useDeviceAssetNames: () => ({
     resolveDeviceName: (deviceAssetId?: string | null) =>
       deviceAssetId ? deviceNames[deviceAssetId] : undefined,

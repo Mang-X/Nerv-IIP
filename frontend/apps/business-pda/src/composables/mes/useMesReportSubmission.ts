@@ -1,6 +1,6 @@
 import { describeRequestError } from '@/api/request-timeout'
-import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
-import type { MesReportExecutionContext, RecordReportInput } from '@/composables/useBusinessMes'
+import { makeIdempotencyKey } from '@/composables/shared/makeIdempotencyKey'
+import type { MesReportExecutionContext, RecordReportInput } from '@/composables/mes'
 import type {
   BusinessConsoleMesOperationTaskRow,
   BusinessConsoleRecordProductionReportResponse,

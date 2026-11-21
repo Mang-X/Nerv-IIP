@@ -9,11 +9,11 @@ import {
 } from '@nerv-iip/business-core'
 import { useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
-import { useTaskListPagination } from '../useTaskListPagination'
+import { useTaskListPagination } from '../shared/useTaskListPagination'
 import {
   normalizeMaintenanceDeviceReferences,
   serializeMaintenanceKey,
-} from '../maintenancePublicIds'
+} from './maintenancePublicIds'
 import {
   nextMaintenanceQueryInstanceNonce,
   useFreshGenerationProjection,

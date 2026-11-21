@@ -11,7 +11,7 @@
  * `HEAD`（取 offset）同理：generated operation 只声明 `204: void`，读不到响应头。
  *
  * 会话创建（`POST .../upload-sessions`）与提交（`POST .../{uploadSessionId}/complete`）
- * **仍然走 generated operation**，见 `@/composables/useBusinessShiftHandover`。
+ * **仍然走 generated operation**，见 `@/composables/mes/useBusinessShiftHandover`。
  * 本文件只负责中间那两跳。
  *
  * ## 服务端硬约束（读自代码，不是推断）

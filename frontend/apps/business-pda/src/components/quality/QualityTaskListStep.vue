@@ -2,7 +2,7 @@
 import QualityTaskListView from '@/components/quality/QualityTaskListView.vue'
 import QualityTaskScanFilter from '@/components/quality/QualityTaskScanFilter.vue'
 import TaskListShell from '@/components/task-list/TaskListShell.vue'
-import { useNowClock } from '@/composables/useNowClock'
+import { useNowClock } from '@/composables/shared/useNowClock'
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
 import {
   INSPECTION_TASK_SOURCE_TYPES,

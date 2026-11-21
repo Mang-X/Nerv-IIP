@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import QualityNcrDetail from '@/components/quality/QualityNcrDetail.vue'
-import { useNonconformanceReport } from '@/composables/useBusinessNonconformanceReport'
+import { useNonconformanceReport } from '@/composables/quality/useBusinessNonconformanceReport'
 import { NvAppShellMobile, NvMobileButton } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

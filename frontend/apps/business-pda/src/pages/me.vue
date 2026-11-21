@@ -12,7 +12,7 @@ import {
 import { shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { usePdaLogout, usePdaProfile } from '@/composables/usePdaProfile'
+import { usePdaLogout, usePdaProfile } from '@/composables/workbench/usePdaProfile'
 import { useAuthStore } from '@/stores/auth'
 
 definePage({ meta: { requiresAuth: true, title: '我的' } })

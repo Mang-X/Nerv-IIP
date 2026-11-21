@@ -5,9 +5,9 @@ import {
 } from '@nerv-iip/api-client'
 import { type EntryKey } from '@pinia/colada'
 import { computed, reactive, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
-import { LifecycleActionUnavailableError } from '@/composables/lifecycleActionRecovery'
+import { LifecycleActionUnavailableError } from '@/composables/shared/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
-import { useWmsWorkScope, type WmsWorkScopeCatalogKind } from '@/composables/useWmsWorkScope'
+import { useWmsWorkScope, type WmsWorkScopeCatalogKind } from '@/composables/wms/useWmsWorkScope'
 
 const DEFAULT_TAKE = 100
 

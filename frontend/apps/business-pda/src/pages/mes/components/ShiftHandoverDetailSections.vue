@@ -18,7 +18,7 @@ import {
   type ShiftHandoverOpenIssue,
   type ShiftHandoverUnfinishedWorkOrder,
   type ShiftHandoverWipItem,
-} from '@/composables/useBusinessShiftHandover'
+} from '@/composables/mes/useBusinessShiftHandover'
 
 defineProps<{
   loaded: boolean

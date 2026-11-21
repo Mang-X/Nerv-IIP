@@ -1,6 +1,6 @@
 import type { BusinessConsoleMesOperationTaskRow } from '@nerv-iip/api-client'
 import { operationSequenceLabel, operationTaskStatusLabel } from '@nerv-iip/business-core'
-import type { OperationActionContext } from '@/composables/useBusinessMes'
+import type { OperationActionContext } from '@/composables/mes'
 import {
   hasCompleteReworkAuthority,
   isReworkWorkOrder,

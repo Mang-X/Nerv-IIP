@@ -5,7 +5,7 @@ import { computed, ref } from 'vue'
 const scopeOptionsRef = ref<Array<{ label: string; value: string }>>([])
 const selectionRef = ref<string | undefined>(undefined)
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   useMesWorkScopeSelection: () => ({
     scopeOptions: computed(() => scopeOptionsRef.value),
     scopeSelectionValue: selectionRef,

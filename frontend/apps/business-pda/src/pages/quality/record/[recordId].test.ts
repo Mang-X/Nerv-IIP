@@ -39,7 +39,7 @@ const record = shallowRef<Record<string, unknown> | null>({
 })
 const recordPending = shallowRef(false)
 const recordError = shallowRef<unknown>(null)
-vi.mock('@/composables/useBusinessInspectionRecord', () => ({
+vi.mock('@/composables/quality/useBusinessInspectionRecord', () => ({
   useInspectionRecordDetail: () => ({
     record,
     pending: recordPending,

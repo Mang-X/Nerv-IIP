@@ -38,7 +38,7 @@ import type {
   ShiftHandoverOpenIssue,
   ShiftHandoverUnfinishedWorkOrder,
   ShiftHandoverWipItem,
-} from '@/composables/useBusinessShiftHandover'
+} from '@/composables/mes/useBusinessShiftHandover'
 
 const wipItems = defineModel<ShiftHandoverWipItem[]>('wipItems', { required: true })
 const unfinishedWorkOrders = defineModel<ShiftHandoverUnfinishedWorkOrder[]>(

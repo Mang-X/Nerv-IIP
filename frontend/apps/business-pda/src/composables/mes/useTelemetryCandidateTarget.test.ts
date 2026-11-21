@@ -11,7 +11,7 @@ const allRows: Row[] = [
   { operationTaskId: 'OP-3', workOrderId: 'WO-3', operationSequence: 20 },
 ]
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   useMesTelemetryCandidateTargetTasks: (
     _context: unknown,
     _deviceAssetId: Ref<string>,
@@ -26,7 +26,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
     refresh: vi.fn(),
   }),
 }))
-vi.mock('@/composables/useBusinessDeviceDirectory', () => ({
+vi.mock('@/composables/equipment/useBusinessDeviceDirectory', () => ({
   useDeviceAssetNames: () => ({ resolveDeviceName: () => undefined }),
 }))
 

@@ -2,7 +2,7 @@
 import type {
   DowntimeReasonDirectoryState,
   DowntimeReasonOption,
-} from '@/composables/useMaintenanceDowntimeReasonDirectory'
+} from '@/composables/maintenance/useMaintenanceDowntimeReasonDirectory'
 import { NvBottomSheet, NvListRow, NvMobileButton, NvSearchBar } from '@nerv-iip/ui-mobile'
 import { computed, ref, watch } from 'vue'
 

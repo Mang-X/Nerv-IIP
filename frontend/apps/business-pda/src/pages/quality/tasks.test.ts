@@ -14,7 +14,7 @@ const submitInspection = vi.fn()
 const refresh = vi.fn(async () => {})
 const tasks = ref<BusinessConsoleQualityInspectionTaskItem[]>([])
 
-vi.mock('@/composables/useBusinessQualityInspectionTasks', () => ({
+vi.mock('@/composables/quality/useBusinessQualityInspectionTasks', () => ({
   useBusinessQualityInspectionTasks: () => ({
     tasks,
     total: computed(() => tasks.value.length),
@@ -41,7 +41,7 @@ vi.mock('@/composables/useBusinessQualityInspectionTasks', () => ({
   }),
 }))
 
-vi.mock('@/composables/useWorkbenchHome', () => ({
+vi.mock('@/composables/workbench/useWorkbenchHome', () => ({
   usePdaIdentity: () => ({
     organizationId: shallowRef('org-001'),
     environmentId: shallowRef('env-dev'),

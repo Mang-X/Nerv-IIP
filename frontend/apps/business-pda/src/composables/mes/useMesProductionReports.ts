@@ -31,7 +31,7 @@ import {
 import type { AvailableMaterialLotFields } from '@nerv-iip/business-core'
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
 import { computed, shallowRef, watch, type Ref } from 'vue'
-import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
+import { assertLifecycleActionExecutable } from '@/composables/shared/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
 import {
   MES_REPORTING_WRITE_PERMISSION,

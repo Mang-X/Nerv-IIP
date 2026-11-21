@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import QualityInspectionRecordDetail from '@/components/quality/QualityInspectionRecordDetail.vue'
-import { useInspectionRecordDetail } from '@/composables/useBusinessInspectionRecord'
+import { useInspectionRecordDetail } from '@/composables/quality/useBusinessInspectionRecord'
 import { NvAppShellMobile, NvMobileButton } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

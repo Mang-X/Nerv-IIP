@@ -16,7 +16,7 @@ import {
 } from '@nerv-iip/business-core'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, shallowRef, watch } from 'vue'
-import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
+import { assertLifecycleActionExecutable } from '@/composables/shared/lifecycleActionRecovery'
 import {
   TASK_PAGE_SIZE,
   defaultFilters,

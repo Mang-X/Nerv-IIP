@@ -10,7 +10,7 @@ import {
   normalizeCanonicalGuid,
   normalizeMaintenanceDeviceReference,
   serializeMaintenanceKey,
-} from '../maintenancePublicIds'
+} from './maintenancePublicIds'
 import {
   nextMaintenanceQueryInstanceNonce,
   type FreshGenerationValue,

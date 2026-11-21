@@ -6,8 +6,8 @@ import { useTelemetryCandidateTarget } from '@/composables/mes/useTelemetryCandi
 import {
   type MesReportExecutionContext,
   useMesTelemetryProductionReportCandidates,
-} from '@/composables/useBusinessMes'
-import { useDeviceAssetNames } from '@/composables/useBusinessDeviceDirectory'
+} from '@/composables/mes'
+import { useDeviceAssetNames } from '@/composables/equipment/useBusinessDeviceDirectory'
 import TelemetryCandidateTarget from './TelemetryCandidateTarget.vue'
 import { formatOperationDateTime, telemetryCandidateStateLabel } from './operationPresentation'
 

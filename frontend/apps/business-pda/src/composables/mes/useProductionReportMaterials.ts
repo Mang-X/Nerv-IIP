@@ -1,5 +1,5 @@
 import { computed, reactive, watch, type Ref } from 'vue'
-import { useMesProductionMaterialLots } from '@/composables/useBusinessMes'
+import { useMesProductionMaterialLots } from '@/composables/mes'
 
 type ReportPair = { workOrderId: string; operationTaskId: string }
 

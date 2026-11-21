@@ -16,7 +16,7 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
   RouterView: { template: '<div />' },
 }))
-vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+vi.mock('@/composables/wms/useWmsOperationalCandidates', async () => {
   const { shallowRef } = await import('vue')
   return {
     useWmsOperationalCandidates: () => ({
@@ -117,7 +117,7 @@ const sessionKey = ref('shift-a')
 const scopeKind = computed(() => scopeKey.value?.split(':', 2)[0])
 const scopeId = computed(() => scopeKey.value?.split(':', 2)[1])
 
-vi.mock('@/composables/useBusinessWms', () => ({
+vi.mock('@/composables/wms', () => ({
   useWmsInbound: () => ({
     filters: wmsState.filters,
     scopeKey,

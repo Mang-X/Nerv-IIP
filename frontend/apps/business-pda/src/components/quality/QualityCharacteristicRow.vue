@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ExecutionRow } from '@/composables/useInspectionExecution'
+import type { ExecutionRow } from '@/composables/quality/useInspectionExecution'
 import { characteristicRowOutOfTolerance } from '@nerv-iip/business-core'
 import { NvCell, NvMobileButton, NvMobileTag } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'

@@ -65,7 +65,7 @@ const scopeReady = ref(true)
 const refreshInspections = vi.fn(async () => {})
 const inspectionFilters = { skip: 0, take: 100 }
 
-vi.mock('@/composables/useBusinessMaintenance', () => ({
+vi.mock('@/composables/maintenance/useBusinessMaintenance', () => ({
   useBusinessMaintenance: () => ({
     plans,
     plansPending,

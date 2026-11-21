@@ -10,12 +10,12 @@ import TaskListShell from '@/components/task-list/TaskListShell.vue'
 import {
   ALARM_SHELVE_DURATIONS_MINUTES,
   useBusinessEquipmentAlarms,
-} from '@/composables/useBusinessEquipmentAlarms'
-import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
+} from '@/composables/equipment/useBusinessEquipmentAlarms'
+import { makeIdempotencyKey } from '@/composables/shared/makeIdempotencyKey'
 import {
   isLifecycleActionUpdated,
   LIFECYCLE_ACTION_UPDATED_MESSAGE,
-} from '@/composables/lifecycleActionRecovery'
+} from '@/composables/shared/lifecycleActionRecovery'
 import {
   NvActionSheet,
   NvAppShellMobile,

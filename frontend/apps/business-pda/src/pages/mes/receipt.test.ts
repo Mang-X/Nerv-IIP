@@ -80,7 +80,7 @@ const receiptRows = ref(receipts)
 const receiptsHasSuccessfulResponse = ref(true)
 const receiptsHasFailedResponse = ref(false)
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   useMesReceipts: () => ({
     filters: receiptFilters,
     receipts: computed(() => receiptRows.value),

@@ -28,7 +28,7 @@ import {
 } from '@nerv-iip/business-core'
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
 import { computed, reactive, shallowRef, watch } from 'vue'
-import { assertLifecycleActionExecutable } from '@/composables/lifecycleActionRecovery'
+import { assertLifecycleActionExecutable } from '@/composables/shared/lifecycleActionRecovery'
 import {
   DEFAULT_TAKE,
   bindAuthScope,

@@ -1,6 +1,6 @@
 import { useScopeBoundListResponse } from '@nerv-iip/business-core'
 import { computed, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
-import { serializeMaintenanceKey } from '../maintenancePublicIds'
+import { serializeMaintenanceKey } from './maintenancePublicIds'
 
 let maintenanceQueryInstanceSequence = 0
 

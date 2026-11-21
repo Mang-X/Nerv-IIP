@@ -4,7 +4,7 @@ import {
   canAccessMaintenanceWorkOrderReadModel,
 } from '@/permissions/maintenanceReadModelAccess'
 import { useAuthStore } from '@/stores/auth'
-import { serializeMaintenanceKey } from '../maintenancePublicIds'
+import { serializeMaintenanceKey } from './maintenancePublicIds'
 
 export function useMaintenanceSelfScope() {
   const auth = useAuthStore()

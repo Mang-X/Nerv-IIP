@@ -34,8 +34,8 @@ import {
 } from '@nerv-iip/business-core'
 import { useQuery } from '@pinia/colada'
 import { computed, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
-import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
-import { useWmsSessionKey } from '@/composables/useWmsWorkScope'
+import { makeIdempotencyKey } from '@/composables/shared/makeIdempotencyKey'
+import { useWmsSessionKey } from '@/composables/wms/useWmsWorkScope'
 import {
   TASK_PAGE_SIZE,
   defaultFilters,

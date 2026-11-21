@@ -27,9 +27,9 @@ import {
 } from '@nerv-iip/business-core'
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
 import { computed, reactive, watch, type Ref } from 'vue'
-import { LifecycleActionUnavailableError } from '@/composables/lifecycleActionRecovery'
+import { LifecycleActionUnavailableError } from '@/composables/shared/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
-import { useTaskListPagination } from '../useTaskListPagination'
+import { useTaskListPagination } from '../shared/useTaskListPagination'
 import {
   MES_OPERATIONS_MANAGE_PERMISSION,
   MES_OPERATIONS_READ_PERMISSION,

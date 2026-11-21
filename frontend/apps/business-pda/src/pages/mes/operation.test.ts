@@ -174,7 +174,7 @@ const workScopeOptionsRef = ref([
 ])
 const workScopeSelectionRef = ref<string | undefined>('work-center:WC-A')
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   useMesOperationTasks: () => ({
     filters,
     operationTasks: computed(() => operationTasksRef.value),

@@ -48,7 +48,7 @@ const scopeReady = ref(true)
 const refreshWorkOrders = vi.fn(async () => {})
 const loadMoreWorkOrders = vi.fn(async () => {})
 
-vi.mock('@/composables/useBusinessMaintenance', () => ({
+vi.mock('@/composables/maintenance/useBusinessMaintenance', () => ({
   useBusinessMaintenance: () => ({
     workOrders,
     workOrdersTotal: computed(() => workOrders.value.length),
@@ -74,7 +74,7 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
   }),
 }))
 
-vi.mock('@/composables/useMaintenanceSelfWorkOrders', () => ({
+vi.mock('@/composables/maintenance', () => ({
   useMaintenanceSelfWorkOrderDetail: () => ({
     authoritativeWorkOrder: confirmedCreatedWorkOrder,
     authoritativeHasSuccessfulResponse: createdDetailHasSuccessfulResponse,
@@ -111,7 +111,7 @@ const reasonsTotal = ref(0)
 const searchReasons = vi.fn()
 const refreshReasons = vi.fn(async () => {})
 
-vi.mock('@/composables/useMaintenanceDowntimeReasonDirectory', () => ({
+vi.mock('@/composables/maintenance/useMaintenanceDowntimeReasonDirectory', () => ({
   useMaintenanceDowntimeReasonDirectory: () => ({
     reasonOptions,
     reasonsTotal,

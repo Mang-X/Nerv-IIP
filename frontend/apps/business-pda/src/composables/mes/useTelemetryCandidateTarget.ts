@@ -3,11 +3,11 @@ import type {
   BusinessConsoleMesTelemetryCandidateRow,
 } from '@nerv-iip/api-client'
 import { computed, ref, shallowRef, watch, type Ref } from 'vue'
-import { useDeviceAssetNames } from '@/composables/useBusinessDeviceDirectory'
+import { useDeviceAssetNames } from '@/composables/equipment/useBusinessDeviceDirectory'
 import {
   type MesReportExecutionContext,
   useMesTelemetryCandidateTargetTasks,
-} from '@/composables/useBusinessMes'
+} from '@/composables/mes'
 
 type Task = BusinessConsoleMesOperationTaskRow
 

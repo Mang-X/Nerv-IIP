@@ -1,5 +1,5 @@
 import { computed, ref, type Ref } from 'vue'
-import { useMesScrapReasonCodes } from '@/composables/useBusinessMes'
+import { useMesScrapReasonCodes } from '@/composables/mes'
 
 export function useProductionReportScrapReason(scrapQuantity: Readonly<Ref<number>>) {
   const scrapReasonCode = ref('')
