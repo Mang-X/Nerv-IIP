@@ -124,6 +124,11 @@ public sealed class BusinessServiceProxyException : Exception
         var semanticCodeIsValid = IsSemanticDownstreamCode(downstreamCode);
         var messageIsSemanticCode =
             allowMessageAsSemanticCode && IsExplicitSafeProxyReason(downstreamMessage);
+        if (statusCode == HttpStatusCode.BadRequest && downstreamCode is null && !messageIsSemanticCode)
+        {
+            return FromDownstreamBusinessMessage(downstreamMessage, innerException);
+        }
+
         var envelopeCodeIsValid = semanticCodeIsValid || messageIsSemanticCode;
         var semanticCode = semanticCodeIsValid
             ? downstreamCode!

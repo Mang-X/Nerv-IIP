@@ -15711,6 +15711,7 @@ public sealed class BusinessGatewayProxyTests
 
     [Theory]
     [InlineData(HttpStatusCode.BadRequest, "not-json")]
+    [InlineData(HttpStatusCode.BadRequest, """{"success":true,"message":"private-diagnostic","code":400}""")]
     [InlineData(HttpStatusCode.Forbidden, "{\"success\":false,\"message\":\"Authorization: Bearer top-secret\",\"code\":403}")]
     [InlineData(HttpStatusCode.Forbidden, "{\"success\":false,\"message\":\"Forbidden\",\"code\":\"Forbidden\"}")]
     [InlineData(HttpStatusCode.Forbidden, "{\"success\":false,\"message\":\"top-secret\",\"code\":\"top-secret\"}")]
@@ -15889,6 +15890,29 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.InternalServerError, ex.StatusCode);
         Assert.Equal("downstream-request-failed", ex.Message);
         Assert.DoesNotContain("schema.sql", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Master_data_http_client_preserves_whitelisted_fields_from_a_structured_http_400()
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(
+            HttpStatusCode.BadRequest,
+            """{"success":false,"message":"请选择可用作业池。","code":"assignment-target-invalid","errorData":[{"field":"poolCode","reason":"assignment-required","token":"private-diagnostic"}]}"""));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://master-data.local") };
+        var client = new HttpBusinessMasterDataClient(httpClient);
+
+        var error = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.ListResourcesAsync(
+            "internal-token",
+            new BusinessConsoleListResourcesRequest("org-001", "env-dev", "sku", false, Take: 100),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
+        Assert.Equal("assignment-target-invalid", error.SemanticCode);
+        Assert.Equal("请选择可用作业池。", error.Message);
+        var item = Assert.Single(error.ErrorData);
+        Assert.Equal("poolCode", item.GetProperty("field").GetString());
+        Assert.Equal("assignment-required", item.GetProperty("reason").GetString());
+        Assert.False(item.TryGetProperty("token", out _));
     }
 
     [Fact]

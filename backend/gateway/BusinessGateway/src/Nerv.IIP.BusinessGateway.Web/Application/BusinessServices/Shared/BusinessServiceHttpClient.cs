@@ -135,14 +135,6 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
 
         using (response)
         {
-            if (response.StatusCode == HttpStatusCode.BadRequest)
-            {
-                var downstreamMessage = await ReadDownstreamEnvelopeMessageAsync(
-                    response,
-                    cancellationToken);
-                throw BusinessServiceProxyException.FromDownstreamBusinessMessage(downstreamMessage);
-            }
-
             var envelope = await ReadDownstreamErrorEnvelopeAsync(response, cancellationToken);
             throw BusinessServiceProxyException.FromDownstreamError(
                 response.StatusCode,
@@ -258,31 +250,6 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
             ? message.GetString()
             : null;
 
-    private static async Task<string?> ReadDownstreamEnvelopeMessageAsync(
-        HttpResponseMessage response,
-        CancellationToken cancellationToken)
-    {
-        var text = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return null;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(text);
-            return document.RootElement.ValueKind == JsonValueKind.Object &&
-                document.RootElement.TryGetProperty("message", out var message) &&
-                message.ValueKind == JsonValueKind.String
-                ? message.GetString()
-                : null;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
     private async Task<DownstreamErrorEnvelope> ReadDownstreamErrorEnvelopeAsync(
         HttpResponseMessage response,
         CancellationToken cancellationToken)
@@ -315,7 +282,7 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
 
         if (!root.TryGetProperty("success", out var success) || success.ValueKind != JsonValueKind.False)
         {
-            return AcceptsBareDownstreamErrorPayload
+            return statusCode != HttpStatusCode.BadRequest && AcceptsBareDownstreamErrorPayload
                 ? ParseBareDownstreamErrorPayload(root)
                 : DownstreamErrorEnvelope.Invalid;
         }
@@ -348,7 +315,8 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
 
         if (codeValue.ValueKind == JsonValueKind.Number &&
             codeValue.TryGetInt32(out var numericCode) &&
-            numericCode == (int)statusCode)
+            // KnownException 使用数值 0 表示没有声明领域错误码。
+            (numericCode == (int)statusCode || (statusCode == HttpStatusCode.BadRequest && numericCode == 0)))
         {
             return new(
                 null,
