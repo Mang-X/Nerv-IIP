@@ -3,91 +3,25 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using NetCorePal.Extensions.Primitives;
 
-namespace Nerv.IIP.Business.BarcodeLabel.Web.Tests;
+namespace Nerv.IIP.Testing;
 
-public sealed record BarcodeLabelSourceDocument(string Path, string Text);
+internal sealed record UserMessageSourceDocument(string Path, string Text);
 
-public sealed record BarcodeLabelKnownExceptionSite(
-    string Path,
-    string TypeName,
-    string MethodName,
-    int DirectKnownExceptionCount,
-    BarcodeLabelKnownExceptionSiteKind Kind,
-    string Reason)
-{
-    public string Key => $"{Path}|{TypeName}|{MethodName}";
-}
+internal sealed record ExcludedUserMessageSite(string Path, string TypeName, string MethodName, string Reason);
 
-public sealed record BarcodeLabelExcludedSite(string Path, string TypeName, string MethodName, string Reason);
-
-public enum BarcodeLabelKnownExceptionSiteKind
-{
-    Target,
-    Excluded,
-}
-
-public static class BarcodeLabelUserMessageSourceAnalyzer
+internal static class KnownExceptionUserMessageSourceAnalyzer
 {
     private const string KnownExceptionTypeName = "NetCorePal.Extensions.Primitives.KnownException";
     private const int InterpolationEstimatedLength = 12;
     private const int MaximumMessageLength = 60;
 
-    public static IReadOnlyList<BarcodeLabelKnownExceptionSite> Discover(
-        IReadOnlyCollection<BarcodeLabelSourceDocument> documents)
-    {
-        if (documents.Count == 0)
-        {
-            throw new InvalidOperationException("BarcodeLabel KnownException 源集合不能为空。");
-        }
-
-        var sourceTrees = ParseTrees(documents);
-        var compilation = CreateCompilation(sourceTrees);
-        var discovered = new List<BarcodeLabelKnownExceptionSite>();
-
-        foreach (var syntaxTree in sourceTrees)
-        {
-            var semanticModel = compilation.GetSemanticModel(syntaxTree);
-            foreach (var method in syntaxTree.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>())
-            {
-                var typeName = method.Ancestors()
-                    .OfType<TypeDeclarationSyntax>()
-                    .Select(type => type.Identifier.ValueText)
-                    .FirstOrDefault();
-                if (typeName is null)
-                {
-                    continue;
-                }
-
-                var directKnownExceptionCount = method.DescendantNodes()
-                    .OfType<BaseObjectCreationExpressionSyntax>()
-                    .Count(creation =>
-                        creation.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault() == method
-                        && IsKnownException(semanticModel, creation));
-                if (directKnownExceptionCount == 0)
-                {
-                    continue;
-                }
-
-                discovered.Add(new BarcodeLabelKnownExceptionSite(
-                    NormalizePath(syntaxTree.FilePath),
-                    typeName,
-                    method.Identifier.ValueText,
-                    directKnownExceptionCount,
-                    BarcodeLabelKnownExceptionSiteKind.Excluded,
-                    "discovered BarcodeLabel KnownException site"));
-            }
-        }
-
-        return discovered;
-    }
-
     public static IReadOnlyList<string> Analyze(
-        IReadOnlyCollection<BarcodeLabelSourceDocument> documents,
-        IReadOnlyCollection<BarcodeLabelExcludedSite> excludedSites)
+        IReadOnlyCollection<UserMessageSourceDocument> documents,
+        IReadOnlyCollection<ExcludedUserMessageSite> excludedSites)
     {
         if (documents.Count == 0)
         {
-            throw new InvalidOperationException("BarcodeLabel 用户消息源集合不能为空。");
+            throw new InvalidOperationException("用户消息源集合不能为空。");
         }
 
         var sourceTrees = ParseTrees(documents);
@@ -100,7 +34,8 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
         foreach (var syntaxTree in sourceTrees)
         {
             var semanticModel = compilation.GetSemanticModel(syntaxTree);
-            foreach (var creation in syntaxTree.GetRoot().DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>())
+            var root = syntaxTree.GetRoot();
+            foreach (var creation in root.DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>())
             {
                 if (!IsKnownException(semanticModel, creation))
                 {
@@ -137,7 +72,7 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
             .ToArray();
     }
 
-    private static SyntaxTree[] ParseTrees(IReadOnlyCollection<BarcodeLabelSourceDocument> documents) =>
+    private static SyntaxTree[] ParseTrees(IReadOnlyCollection<UserMessageSourceDocument> documents) =>
         documents
             .Select(document => CSharpSyntaxTree.ParseText(document.Text, path: NormalizePath(document.Path)))
             .ToArray();
@@ -147,10 +82,10 @@ public static class BarcodeLabelUserMessageSourceAnalyzer
         var syntaxTrees = sourceTrees
             .Append(CSharpSyntaxTree.ParseText(
                 "global using NetCorePal.Extensions.Primitives;",
-                path: "__BarcodeLabelGlobalUsings.g.cs"))
+                path: "__UserMessageGlobalUsings.g.cs"))
             .ToArray();
         return CSharpCompilation.Create(
-            "BarcodeLabelUserMessageArchitecture",
+            "KnownExceptionUserMessageArchitecture",
             syntaxTrees,
             CreateMetadataReferences());
     }
