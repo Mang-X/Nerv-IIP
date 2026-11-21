@@ -12,7 +12,7 @@
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
-$bootstrapScript = Join-Path $repoRoot 'scripts/dev/bootstrap-online.ps1'
+$bootstrapScript = Join-Path $repoRoot 'scripts/dev/bootstrap-online-environment.ps1'
 # Load the production functions through the side-effect-free help entrypoint.
 . $bootstrapScript -Help | Out-Null
 

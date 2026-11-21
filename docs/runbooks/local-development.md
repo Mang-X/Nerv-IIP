@@ -88,8 +88,8 @@ export NERV_IIP_TEST_REDIS='127.0.0.1:6379,password=<本机 Parameters:redis-pas
 残留。崩溃或 Ctrl-C 后先预览至少存活 24 小时且没有活动连接的标准临时库，再显式清扫：
 
 ```bash
-pwsh scripts/ci/cleanup-stale-postgres-test-databases.ps1
-pwsh scripts/ci/cleanup-stale-postgres-test-databases.ps1 -MinimumAgeHours 24 -Apply
+pwsh scripts/ci/remove-stale-postgres-test-databases.ps1
+pwsh scripts/ci/remove-stale-postgres-test-databases.ps1 -MinimumAgeHours 24 -Apply
 ```
 
 该入口需要 PowerShell 7、主机可用的 `psql` 和已设置的 `NERV_IIP_TEST_POSTGRES`。它只接受严格的
@@ -105,8 +105,8 @@ pwsh scripts/ci/cleanup-stale-postgres-test-databases.ps1 -MinimumAgeHours 24 -A
 默认预览和显式应用入口清理至少存活 24 小时、且 owner 租约已过期的本地测试命名空间：
 
 ```bash
-pwsh scripts/ci/cleanup-stale-redis-test-keys.ps1
-pwsh scripts/ci/cleanup-stale-redis-test-keys.ps1 -MinimumAgeHours 24 -Apply
+pwsh scripts/ci/remove-stale-redis-test-keys.ps1
+pwsh scripts/ci/remove-stale-redis-test-keys.ps1 -MinimumAgeHours 24 -Apply
 ```
 
 该脚本需要 PowerShell 7、`redis-cli` 与 `NERV_IIP_TEST_REDIS`。它只接受严格的

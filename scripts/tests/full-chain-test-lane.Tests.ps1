@@ -724,7 +724,7 @@ try {
     Assert-Contract ($runnerContent.Contains('Write-NervFullChainSummarySnapshot', [StringComparison]::Ordinal)) 'FullChain runner must write resumable summary snapshots before final completion.'
     Assert-Contract ($runnerContent.IndexOf('Write-NervFullChainSummarySnapshot', [StringComparison]::Ordinal) -lt $runnerContent.IndexOf('try {', [StringComparison]::Ordinal)) 'FullChain runner must create the dependency summary before starting governed work.'
 
-    $fullstackSessionContent = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/fullstack/fullstack-session.ps1'))
+    $fullstackSessionContent = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/fullstack/manage-fullstack-session.ps1'))
     Assert-Contract ($fullstackSessionContent.Contains('[string]::Equals($env:NERV_IIP_FULL_CHAIN_CONFIGURATION, ''Release'', [StringComparison]::Ordinal)', [StringComparison]::Ordinal)) 'FullChain lane probes must opt into Release without changing the standalone fullstack recipe.'
     Assert-Contract (-not $fullstackSessionContent.Contains("'--configuration', 'Release',`n                    '--no-restore'", [StringComparison]::Ordinal)) 'Standalone fullstack probes must retain their existing default configuration.'
 

@@ -4,7 +4,7 @@ description: 完整设置 worktree 环境（前端依赖 + 后端 .NET 还原）
 
 从仓库根目录为此 worktree 运行完整环境设置（与 codex `[setup]` 对等），并报告每一步的结果：
 
-1. 代理技能 + 前端依赖：`pwsh -NoProfile -File scripts/dev/setup-worktree.ps1`，即 SessionStart 钩子运行的同一脚本。它从主 worktree 镜像 `.agents/skills` 以及 `.claude/skills` 链接层（主 worktree 自己也缺这部分 payload 时，才先通过 `npx skills experimental_install` 安装），随后运行 `pnpm -C frontend install --frozen-lockfile --config.confirmModulesPurge=false`。
+1. 代理技能 + 前端依赖：`pwsh -NoProfile -File scripts/dev/prepare-worktree.ps1`，即 SessionStart 钩子运行的同一脚本。它从主 worktree 镜像 `.agents/skills` 以及 `.claude/skills` 链接层（主 worktree 自己也缺这部分 payload 时，才先通过 `npx skills experimental_install` 安装），随后运行 `pnpm -C frontend install --frozen-lockfile --config.confirmModulesPurge=false`。
 2. 后端还原：`dotnet restore backend/Nerv.IIP.sln`
 3. Connector Host 还原：`dotnet restore connector-hosts/Nerv.IIP.ConnectorHost.sln`
 

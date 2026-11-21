@@ -19,16 +19,7 @@ param(
     [string] $StateRoot
 )
 
+# 已启动的旧 coordinator 仍按此文件名启动 guardian，必须在同一 PID 中接管监护。
 $ErrorActionPreference = 'Stop'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
-. (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
-. (Join-Path $repoRoot 'scripts/lib/FullStackSessionState.ps1')
-. (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1')
-if (-not [string]::IsNullOrWhiteSpace($StateRoot)) { $env:NERV_IIP_FULLSTACK_STATE_ROOT = $StateRoot }
-
-Invoke-NervFullStackGuardian `
-    -SessionId $SessionId `
-    -Mode $Mode `
-    -CoordinatorPid $CoordinatorPid `
-    -CoordinatorStartTimeUtc $CoordinatorStartTimeUtc `
-    -IntervalSeconds $IntervalSeconds | Out-Null
+. (Join-Path $PSScriptRoot '../lib/ScriptAutomation.ps1')
+. (Join-Path $PSScriptRoot 'watch-fullstack-session.ps1') @PSBoundParameters

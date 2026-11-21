@@ -81,7 +81,7 @@ try {
 catch { $readbackRejected = $_.Exception.Message.Contains('still exists', [StringComparison]::Ordinal) }
 Assert-Contract $readbackRejected 'A database that survives DROP must fail cleanup.'
 
-$entryPath = Join-Path $repoRoot 'scripts/ci/cleanup-stale-postgres-test-databases.ps1'
+$entryPath = Join-Path $repoRoot 'scripts/ci/remove-stale-postgres-test-databases.ps1'
 Assert-Contract (Test-Path -LiteralPath $entryPath -PathType Leaf) 'The governed cleanup entrypoint must exist.'
 $entry = [IO.File]::ReadAllText($entryPath)
 Assert-Contract ($entry.Contains("lib/ScriptAutomation.ps1", [StringComparison]::Ordinal)) 'The entrypoint must dot-source ScriptAutomation.ps1.'

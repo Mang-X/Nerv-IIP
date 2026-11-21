@@ -36,8 +36,8 @@ $artifactRoot = Join-Path $repoRoot "artifacts/script-logs/connector-health-disc
 [System.IO.Directory]::CreateDirectory($artifactRoot) | Out-Null
 $evidencePath = Join-Path $artifactRoot 'evidence.json'
 $diagnosticsPath = Join-Path $artifactRoot 'diagnostics.json'
-$simulatorScript = Join-Path $repoRoot 'scripts/support/modbus-tcp-simulator.ps1'
-$fullStackScript = Join-Path $repoRoot 'scripts/fullstack/fullstack-session.ps1'
+$simulatorScript = Join-Path $repoRoot 'scripts/support/simulate-modbus-tcp.ps1'
+$fullStackScript = Join-Path $repoRoot 'scripts/fullstack/manage-fullstack-session.ps1'
 $sessionId = New-NervFullStackSessionId -WorktreeRoot $repoRoot
 $adminPassword = New-NervFullStackSecretValue -Bytes 24
 $simulator = $null

@@ -64,7 +64,7 @@ Assert-True ($recordableNetworkIds.Count -eq 1) 'Only the ephemeral DCP network 
 Assert-True ([string]::Equals([string]$recordableNetworkIds[0], 'dcp-session-network', [StringComparison]::Ordinal)) 'The exact DCP session network ID must be recorded.'
 $startFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-start.json'
 $describeFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-describe.json'
-$fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack/fullstack-session.ps1') -Raw
+$fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack/manage-fullstack-session.ps1') -Raw
 $runtimeSourceText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1') -Raw
 $nervEntrypointText = Get-Content -LiteralPath (Join-Path $repoRoot 'nerv.ps1') -Raw
 $appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
@@ -1656,7 +1656,7 @@ finally {
 
 # #3160 Regression/PublicContract：执行真实启动函数和短命子进程；仅替换外部宿主、资源与 manifest IO。
 & {
-    . (Join-Path $repoRoot 'scripts/fullstack/fullstack-session.ps1') -Action help 6>$null
+    . (Join-Path $repoRoot 'scripts/fullstack/manage-fullstack-session.ps1') -Action help 6>$null
     $probeRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-proof-start-$([guid]::NewGuid().ToString('N'))"
     $probeState = @{ Manifest = $null; Failed = $false; FailReadiness = $false; Canary = 'synthetic-proof-canary-3160'; Calls = 0 }
     $realProducer = ${function:New-NervFullStackSecretEnvironment}

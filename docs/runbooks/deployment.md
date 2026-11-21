@@ -20,7 +20,7 @@
 .\nerv.ps1 dev
 ```
 
-`bootstrap` 的真实实现是 `scripts/dev/bootstrap-online.ps1`；它负责联网工具链检查/可选安装、本地 Development secrets、restore 与 AppHost build。它不负责离线包制作、生产 secret 生成、Windows Service/systemd 注册或备份恢复。
+`bootstrap` 的真实实现是 `scripts/dev/bootstrap-online-environment.ps1`；它负责联网工具链检查/可选安装、本地 Development secrets、restore 与 AppHost build。它不负责离线包制作、生产 secret 生成、Windows Service/systemd 注册或备份恢复。
 
 启动后使用受支持的生命周期入口诊断：
 

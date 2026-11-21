@@ -126,7 +126,7 @@ try {
 
     Set-Item -LiteralPath 'Env:NERV_FULLSTACK_WORKER_PROBE_MAN' -Value '1'
     Set-Item -LiteralPath 'Env:Messaging__Provider' -Value 'Redis'
-    . (Join-Path $repoRoot 'scripts/fullstack/fullstack-session.ps1') -Action help | Out-Null
+    . (Join-Path $repoRoot 'scripts/fullstack/manage-fullstack-session.ps1') -Action help | Out-Null
     function Wait-NervAspireResource { param($AppHostProject, $ResourceName, $WorkingDirectory) }
     function Wait-NervFullStackPostgresRelations { param($ContainerId, $Database, $Relations) }
     function Invoke-DotNet { param($Arguments, $WorkingDirectory, $TimeoutSeconds, $Name) }

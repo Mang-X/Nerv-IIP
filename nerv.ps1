@@ -143,7 +143,7 @@ Infrastructure services:
 
 switch ($Command.ToLowerInvariant()) {
     'fullstack' {
-        $fullStackScript = Join-Path $repoRoot 'scripts/fullstack/fullstack-session.ps1'
+        $fullStackScript = Join-Path $repoRoot 'scripts/fullstack/manage-fullstack-session.ps1'
         $fullStackArguments = [System.Collections.Generic.List[string]]::new()
         foreach ($argument in $forwardArguments) { $fullStackArguments.Add($argument) }
         $fullStackParameters = @{}
@@ -157,7 +157,7 @@ switch ($Command.ToLowerInvariant()) {
         exit $LASTEXITCODE
     }
     'bootstrap' {
-        $bootstrapScript = Join-Path $repoRoot 'scripts/dev/bootstrap-online.ps1'
+        $bootstrapScript = Join-Path $repoRoot 'scripts/dev/bootstrap-online-environment.ps1'
         if (-not (Test-Path -LiteralPath $bootstrapScript -PathType Leaf)) {
             Write-Host "Bootstrap script not found: $bootstrapScript"
             exit 1
@@ -214,7 +214,7 @@ switch ($Command.ToLowerInvariant()) {
         exit $LASTEXITCODE
     }
     'stop' {
-        $controlScript = Join-Path $repoRoot 'scripts/dev/aspire-control.ps1'
+        $controlScript = Join-Path $repoRoot 'scripts/dev/control-aspire-apphost.ps1'
         $controlParameters = @{ Action = 'stop' }
         if ($All) {
             $controlParameters['All'] = $true
@@ -224,17 +224,17 @@ switch ($Command.ToLowerInvariant()) {
         exit $LASTEXITCODE
     }
     'status' {
-        $controlScript = Join-Path $repoRoot 'scripts/dev/aspire-control.ps1'
+        $controlScript = Join-Path $repoRoot 'scripts/dev/control-aspire-apphost.ps1'
         & $controlScript -Action status @forwardArguments
         exit $LASTEXITCODE
     }
     'wait' {
-        $controlScript = Join-Path $repoRoot 'scripts/dev/aspire-control.ps1'
+        $controlScript = Join-Path $repoRoot 'scripts/dev/control-aspire-apphost.ps1'
         & $controlScript -Action wait -Status $Status -TimeoutSeconds $TimeoutSeconds @forwardArguments
         exit $LASTEXITCODE
     }
     'logs' {
-        $controlScript = Join-Path $repoRoot 'scripts/dev/aspire-control.ps1'
+        $controlScript = Join-Path $repoRoot 'scripts/dev/control-aspire-apphost.ps1'
         $controlParameters = @{
             Action = 'logs'
             Tail = $Tail
@@ -250,7 +250,7 @@ switch ($Command.ToLowerInvariant()) {
         exit $LASTEXITCODE
     }
     'describe' {
-        $controlScript = Join-Path $repoRoot 'scripts/dev/aspire-control.ps1'
+        $controlScript = Join-Path $repoRoot 'scripts/dev/control-aspire-apphost.ps1'
         $controlParameters = @{ Action = 'describe' }
         if ($IncludeHidden) {
             $controlParameters['IncludeHidden'] = $true
@@ -260,7 +260,7 @@ switch ($Command.ToLowerInvariant()) {
         exit $LASTEXITCODE
     }
     'publish-compose' {
-        $composeScript = Join-Path $repoRoot 'scripts/dev/aspire-compose.ps1'
+        $composeScript = Join-Path $repoRoot 'scripts/dev/invoke-aspire-compose.ps1'
         $composeParameters = @{
             Mode = 'Publish'
             EnvironmentName = $EnvironmentName
@@ -276,7 +276,7 @@ switch ($Command.ToLowerInvariant()) {
         exit $LASTEXITCODE
     }
     'prepare-compose' {
-        $composeScript = Join-Path $repoRoot 'scripts/dev/aspire-compose.ps1'
+        $composeScript = Join-Path $repoRoot 'scripts/dev/invoke-aspire-compose.ps1'
         $composeParameters = @{
             Mode = 'Prepare'
             EnvironmentName = $EnvironmentName
@@ -292,7 +292,7 @@ switch ($Command.ToLowerInvariant()) {
         exit $LASTEXITCODE
     }
     'deploy-compose' {
-        $composeScript = Join-Path $repoRoot 'scripts/dev/aspire-compose.ps1'
+        $composeScript = Join-Path $repoRoot 'scripts/dev/invoke-aspire-compose.ps1'
         $composeParameters = @{
             Mode = 'Deploy'
             EnvironmentName = $EnvironmentName

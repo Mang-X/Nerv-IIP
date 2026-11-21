@@ -3,7 +3,7 @@
     {
       "id": "setup-worktree",
       "name": "初始化工作树",
-      "command": "zsh -lc 'pwsh -NoProfile -File scripts/dev/setup-worktree.ps1'",
+      "command": "zsh -lc 'pwsh -NoProfile -File scripts/dev/prepare-worktree.ps1'",
       "icon": "configure",
       "runOnWorktreeCreate": true
     }

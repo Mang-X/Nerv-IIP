@@ -1865,6 +1865,17 @@ jobs:
           $misplacedFiles = git ls-files -- ':(glob)scripts/*' ':(exclude,glob)scripts/*.md' scripts/tmp/ ':(exclude)scripts/tmp/.gitignore'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($misplacedFiles) { throw "Move tracked files to a permanent scripts subdirectory: $misplacedFiles" }
+          $tracked = git -c core.quotePath=false ls-files -- ':(icase,glob)scripts/**/*.ps1' ':(icase,glob)scripts/**/*.json' ':(exclude,glob)scripts/tests/fixtures/**'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($path in $tracked) {
+            $pattern = switch -Regex ($path) {
+              '\.json$'           { '/[a-z][a-z0-9]*(-[a-z0-9]+)*\.json$'; break }
+              '^scripts/lib/'    { '^scripts/lib/[A-Z][A-Za-z0-9]*\.ps1$'; break }
+              '^scripts/tests/'  { '^scripts/tests/[a-z][a-z0-9]*(-[a-z0-9]+)*\.Tests\.ps1$'; break }
+              default            { '/[a-z][a-z0-9]*(-[a-z0-9]+)+\.ps1$' }
+            }
+            if ($path -cnotmatch $pattern) { throw "Invalid script filename: $path" }
+          }
           ./scripts/ci/run-script-contract-tests.ps1 -ScriptPath @(
             'scripts/checks/check-script-governance.ps1',
             'scripts/checks/verify-adr-format.ps1',

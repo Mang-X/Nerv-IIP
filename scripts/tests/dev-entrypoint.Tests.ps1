@@ -91,7 +91,7 @@ if ($fullStackHelp.ExitCode -ne 0) {
     throw "Expected fullstack help to exit 0, got $($fullStackHelp.ExitCode). Output: $($fullStackHelp.Output)"
 }
 
-$fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack/fullstack-session.ps1') -Raw
+$fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack/manage-fullstack-session.ps1') -Raw
 $tokens = $null
 $parseErrors = $null
 $fullStackSessionAst = [System.Management.Automation.Language.Parser]::ParseInput($fullStackSessionText, [ref] $tokens, [ref] $parseErrors)
@@ -152,7 +152,29 @@ param(
 )
 [pscustomobject]@{ action=$Action; target=$Target; scenario=$Scenario; sessionId=$SessionId; noBuild=[bool]$NoBuild; enableWmsDemoWorker=[bool]$EnableWmsDemoWorker; tail=$Tail; follow=[bool]$Follow } | ConvertTo-Json -Compress
 '@
-    [IO.File]::WriteAllText((Join-Path $dispatchRoot 'scripts/fullstack/fullstack-session.ps1'), $captureScript, [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $dispatchRoot 'scripts/fullstack/manage-fullstack-session.ps1'), $captureScript, [Text.UTF8Encoding]::new($false))
+
+    # 已加载旧版代码的进程按固定路径启动 guardian 或按精确 SessionId 请求回收。
+    $legacyStop = 'scripts/fullstack/fullstack-session.ps1'
+    Copy-Item -LiteralPath (Join-Path $repoRoot $legacyStop) -Destination (Join-Path $dispatchRoot $legacyStop)
+    [IO.Directory]::CreateDirectory((Join-Path $dispatchRoot 'scripts/lib')) | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1') -Destination (Join-Path $dispatchRoot 'scripts/lib')
+    $legacySessionId = 'nerv-abcd-123456'
+    $stop = Invoke-Nerv -ScriptPath (Join-Path $dispatchRoot $legacyStop) -Arguments @('stop', '-SessionId', $legacySessionId)
+    $stopped = $stop.Output | ConvertFrom-Json
+    if ($stop.ExitCode -ne 0 -or -not [string]::Equals($stopped.action, 'stop', [StringComparison]::Ordinal) -or -not [string]::Equals($stopped.sessionId, $legacySessionId, [StringComparison]::Ordinal)) {
+        throw "Legacy guardian cleanup lost its action or session identity: $($stop.Output)"
+    }
+
+    $stateDirectory = [IO.Directory]::CreateDirectory((Join-Path $dispatchRoot 'fullstack-sessions'))
+    [IO.File]::WriteAllText((Join-Path $stateDirectory.FullName "$legacySessionId.json"), '{"state":"Stopped"}')
+    $guardian = Invoke-Nerv -ScriptPath (Join-Path $repoRoot 'scripts/fullstack/fullstack-guardian.ps1') -Arguments @(
+        '-SessionId', $legacySessionId, '-Mode', 'Automated', '-StateRoot', $dispatchRoot,
+        '-IntervalSeconds', '1', '-CoordinatorPid', "$PID", '-CoordinatorStartTimeUtc', ([DateTime]::UtcNow.ToString('O'))
+    )
+    if ($guardian.ExitCode -ne 0 -or -not $guardian.Output.Contains("Guardian started for '$legacySessionId' in Automated mode.", [StringComparison]::Ordinal)) {
+        throw "Legacy coordinator failed to start the guardian for its session: $($guardian.Output)"
+    }
 
     $fullStackRun = Invoke-Nerv -ScriptPath $dispatchNerv -Arguments @('fullstack', 'run', '-Scenario', 'smoke', '-NoBuild')
     $runCapture = $fullStackRun.Output | ConvertFrom-Json

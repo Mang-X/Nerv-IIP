@@ -248,7 +248,7 @@ function Get-NervCiImpactPlan {
         # the same class. 't3.json' is the
         # T3 Code project file and belongs to the same class: it only declares that
         # harness's worktree-create action, which shells out to
-        # 'scripts/dev/setup-worktree.ps1' exactly like the '.claude' SessionStart hook and
+        # 'scripts/dev/prepare-worktree.ps1' exactly like the '.claude' SessionStart hook and
         # the '.codex' '[setup]' block already do. Runtime and build
         # inputs that happen to live in the repository root ('.gitattributes',
         # '.gitignore', '.node-version', 'aspire.config.json', 'dotnet-tools.json',

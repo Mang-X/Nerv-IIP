@@ -81,7 +81,7 @@ try {
 catch { $readbackRejected = $_.Exception.Message.Contains('cleanup left', [StringComparison]::Ordinal) }
 Assert-Contract $readbackRejected 'A key that survives UNLINK must fail cleanup.'
 
-$entryPath = Join-Path $repoRoot 'scripts/ci/cleanup-stale-redis-test-keys.ps1'
+$entryPath = Join-Path $repoRoot 'scripts/ci/remove-stale-redis-test-keys.ps1'
 Assert-Contract (Test-Path -LiteralPath $entryPath -PathType Leaf) 'The governed Redis cleanup entrypoint must exist.'
 $entry = [IO.File]::ReadAllText($entryPath)
 Assert-Contract ($entry.Contains('lib/ScriptAutomation.ps1', [StringComparison]::Ordinal)) 'The entrypoint must dot-source ScriptAutomation.ps1.'

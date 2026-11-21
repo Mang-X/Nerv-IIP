@@ -285,14 +285,14 @@ try {
         throw 'Filtering repo-tracked skills out of the mirror must still carry the payload only the main worktree can supply.'
     }
 
-    # 接线：库对、测试绿，不代表调用点还在。按 AST 断言 setup-worktree.ps1 真的调用了本库的
+    # 接线：库对、测试绿，不代表调用点还在。按 AST 断言 prepare-worktree.ps1 真的调用了本库的
     # 入口，而不是文本匹配——注释掉的调用不产生 CommandAst，因而会被这条杀掉。条件与顺序由上面
     # 的控制流用例承重，这里只管调用点是否还在。
-    $setupPath = Join-Path $repoRoot 'scripts/dev/setup-worktree.ps1'
+    $setupPath = Join-Path $repoRoot 'scripts/dev/prepare-worktree.ps1'
     $parseErrors = $null
     $setupAst = [System.Management.Automation.Language.Parser]::ParseFile($setupPath, [ref] $null, [ref] $parseErrors)
     if ($null -ne $parseErrors -and @($parseErrors).Count -gt 0) {
-        throw "scripts/dev/setup-worktree.ps1 must parse cleanly; got: $(@($parseErrors)[0].Message)"
+        throw "scripts/dev/prepare-worktree.ps1 must parse cleanly; got: $(@($parseErrors)[0].Message)"
     }
 
     $invokedNames = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -307,7 +307,7 @@ try {
     }
     foreach ($required in @('Initialize-NervWorktreeSkills')) {
         if (-not $invokedNames.Contains($required)) {
-            throw "scripts/dev/setup-worktree.ps1 must invoke '$required'; skills are otherwise never brought up for a real worktree."
+            throw "scripts/dev/prepare-worktree.ps1 must invoke '$required'; skills are otherwise never brought up for a real worktree."
         }
     }
 
@@ -319,7 +319,7 @@ try {
             }, $true) | ForEach-Object { $_.Extent.Text })
     $sourcesLibrary = @($dotSourced | Where-Object { $_.Contains('WorktreeSkills.ps1', [StringComparison]::Ordinal) }).Count -gt 0
     if (-not $sourcesLibrary) {
-        throw 'scripts/dev/setup-worktree.ps1 must dot-source scripts/lib/WorktreeSkills.ps1.'
+        throw 'scripts/dev/prepare-worktree.ps1 must dot-source scripts/lib/WorktreeSkills.ps1.'
     }
 
     Write-Host 'Worktree skill link layer contract passed.'
