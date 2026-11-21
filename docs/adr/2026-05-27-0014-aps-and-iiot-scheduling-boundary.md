@@ -6,7 +6,7 @@
 
 ## 背景
 
-ADR 0012 将 APS 作为后置能力处理，首批 MES 只保留规则排产。这在业务平台 MVP 阶段是合理的，因为当时主数据、工程资料、MRP、ERP、WMS、MES、IndustrialTelemetry 和 Maintenance 都还需要先落地事实源。
+[ADR 0012](2026-05-20-0012-business-platform-domain-layering.md) 将 APS 作为后置能力处理，首批 MES 只保留规则排产。这在业务平台 MVP 阶段是合理的，因为当时主数据、工程资料、MRP、ERP、WMS、MES、IndustrialTelemetry 和 Maintenance 都还需要先落地事实源。
 
 2026-05-27 的 MES PC 交付复盘改变了这个前提。Business Console 页面已经暴露 MES 工作台，但真实使用需要排程能够理解工艺路线、工序顺序、设备能力、班次日历、物料齐套、质量阻断、报警、停机和维护窗口。如果继续把 APS 完全后置，甘特图会变成展示壳，MES 派工也会继续依赖手工判断或静态规则。
 
