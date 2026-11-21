@@ -96,9 +96,11 @@ function Get-NervNonRepoPayloadNames {
 
     # 两棵树可在不同分支：只镜像目标锁文件登记的第三方技能，且不借用主树的项目技能。
     $lock = Get-Content -LiteralPath (Join-Path $LockRoot 'skills-lock.json') -Raw | ConvertFrom-Json -AsHashtable
-    $repoOwned = @(Get-NervRepoSkillNames -RepoRoot $RepoRoot)
+    $repoOwned = [Collections.Generic.HashSet[string]]::new(
+        [string[]]@(Get-NervRepoSkillNames -RepoRoot $RepoRoot), [StringComparer]::Ordinal)
     return @($installed | Where-Object {
-        $_ -cnotin $repoOwned -and $lock.skills.ContainsKey($_) -and $lock.skills[$_].sourceType -ne 'local'
+        -not $repoOwned.Contains($_) -and $lock.skills.ContainsKey($_) -and
+            -not [string]::Equals($lock.skills[$_].sourceType, 'local', [StringComparison]::OrdinalIgnoreCase)
     })
 }
 

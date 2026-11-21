@@ -692,7 +692,7 @@ Assert-ImpactCase -Name 'agent-harness-configuration' -Paths @(
 
 $ryugiConfigPlan = Get-NervCiImpactPlan -ChangedPaths @('.ryugi/config.json')
 foreach ($flag in @($ryugiConfigPlan.PSObject.Properties | Where-Object { $_.Value -is [bool] })) {
-    Assert-ImpactFlag -Plan $ryugiConfigPlan -Name ([string]$flag.Name) -Expected ($flag.Name -ceq 'docs')
+    Assert-ImpactFlag -Plan $ryugiConfigPlan -Name ([string]$flag.Name) -Expected ([string]::Equals($flag.Name, 'docs', [StringComparison]::Ordinal))
 }
 Assert-Contract (@($ryugiConfigPlan.business_services).Count -eq 0) 'Ryugi publishing configuration must not select business services.'
 

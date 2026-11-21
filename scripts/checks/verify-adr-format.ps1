@@ -191,7 +191,7 @@ foreach ($file in $adrFiles) {
 
     $text = @(Get-MarkdownLines -Path $file.FullName) -join "`n"
     $declaredDate = [regex]::Match($text, '(?m)^- 日期：[ \t]*(?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})[ \t]*$')
-    if ($declaredDate.Success -and $declaredDate.Groups['date'].Value -cne $date) {
+    if ($declaredDate.Success -and -not [string]::Equals($declaredDate.Groups['date'].Value, $date, [StringComparison]::Ordinal)) {
         $findings.Add("[ADR_DATE_MISMATCH] ${name}: 日期前缀与正文的决策日期不一致。")
     }
     $h1 = [regex]::Match($text, '(?m)^[ \t]{0,3}#[ \t]+(?<title>[^\r\n]+)')
