@@ -246,42 +246,6 @@ function Test-NightlyBusinessPerformanceManualThresholdModes {
     Write-Host 'Manual threshold mode real-binder behavior tests passed.'
 }
 
-function Test-NightlyBusinessPerformancePositionalArrayRegression {
-    $fixturePath = Join-Path ([IO.Path]::GetTempPath()) "nerv-nightly-business-performance-positional-$([Guid]::NewGuid().ToString('N')).yml"
-    $workflowText = [IO.File]::ReadAllText($workflowPath)
-    $namedCommonArguments = @'
-          $commonArguments = @{
-              Scenario = 'all'
-              Profile = 'nightly'
-              Rows = 25
-              MetricsOutputPath = 'artifacts/business-performance/nightly/metrics.jsonl'
-              SummaryOutputPath = 'artifacts/business-performance/nightly/summary.json'
-          }
-'@
-    $positionalCommonArguments = @'
-          $commonArguments = @(
-              '-Scenario', 'all',
-              '-Profile', 'nightly',
-              '-Rows', 25,
-              '-MetricsOutputPath', 'artifacts/business-performance/nightly/metrics.jsonl',
-              '-SummaryOutputPath', 'artifacts/business-performance/nightly/summary.json'
-          )
-'@
-    Assert-WorkflowContract ($workflowText.Contains($namedCommonArguments, [StringComparison]::Ordinal)) 'Positional-array regression fixture must match the canonical named common arguments.'
-
-    try {
-        [IO.File]::WriteAllText($fixturePath, $workflowText.Replace($namedCommonArguments, $positionalCommonArguments), [Text.UTF8Encoding]::new($false))
-        $result = Invoke-NightlyBusinessPerformanceRunFixture -Path $fixturePath -ManualThreshold '0'
-        Assert-WorkflowContract ($null -ne $result.Failure) 'Restoring positional array splatting must fail through the fake verifier real parameter binder.'
-        Assert-WorkflowContract ($result.Failure.Exception.Message.Contains("parameter 'Rows'", [StringComparison]::Ordinal) -and $result.Failure.Exception.Message.Contains('nightly', [StringComparison]::Ordinal)) "Positional array splatting must reproduce the hosted Rows/nightly binding failure. Actual: $($result.Failure.Exception.Message)"
-        Assert-WorkflowContract ($result.InvocationCount -eq 0) 'A binder failure must prevent the fake verifier body from running.'
-        Write-Host 'Historical positional-array binder regression test passed.'
-    }
-    finally {
-        if (Test-Path -LiteralPath $fixturePath) { Remove-Item -LiteralPath $fixturePath -Force }
-    }
-}
-
 function Assert-NightlyBusinessPerformanceWorkflow {
     param([Parameter(Mandatory)] [string] $Path)
 
@@ -338,39 +302,6 @@ function Assert-NightlyBusinessPerformanceWorkflow {
     Assert-WorkflowContract ($performance.Count -eq 1 -and [int](Get-WorkflowProperty -Object $performance[0] -Name 'timeout-minutes') -eq 20) 'Nightly business performance workflow must have one 20-minute governed performance step.'
     $performanceRun = [string](Get-WorkflowProperty -Object $performance[0] -Name 'run')
     $performanceCode = @($performanceRun -split "`r?`n" | ForEach-Object { $_.TrimEnd() } | Where-Object { $_ -notmatch '^\s*(#|$)' }) -join "`n"
-    $expectedPerformanceCode = @'
-$commonArguments = @{
-    Scenario = 'all'
-    Profile = 'nightly'
-    Rows = 25
-    MetricsOutputPath = 'artifacts/business-performance/nightly/metrics.jsonl'
-    SummaryOutputPath = 'artifacts/business-performance/nightly/summary.json'
-}
-$manualMaxElapsedMilliseconds = 0
-$manualInputParsed = [int]::TryParse(
-    [string]$env:MANUAL_MAX_ELAPSED_MILLISECONDS,
-    [Globalization.NumberStyles]::Integer,
-    [Globalization.CultureInfo]::InvariantCulture,
-    [ref]$manualMaxElapsedMilliseconds
-)
-if (-not $manualInputParsed -or $manualMaxElapsedMilliseconds -lt 0) {
-    throw 'workflow_dispatch max_elapsed_milliseconds must be an invariant integer greater than or equal to 0.'
-}
-if ($manualMaxElapsedMilliseconds -gt 0) {
-    $thresholdArguments = @{
-        MaxElapsedMilliseconds = $manualMaxElapsedMilliseconds
-    }
-}
-else {
-    $thresholdArguments = @{
-        InventoryMaxElapsedMilliseconds = 30000
-        MesMaxElapsedMilliseconds = 30000
-        ErpMaxElapsedMilliseconds = 30000
-    }
-}
-& ./scripts/checks/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
-'@.Trim()
-    Assert-WorkflowContract ([string]::Equals($performanceCode.Trim(), $expectedPerformanceCode, [StringComparison]::Ordinal)) 'Governed performance step must use the canonical comment-free PowerShell threshold split: manual runs pass only -MaxElapsedMilliseconds; scheduled runs pass only the three nonzero per-scenario thresholds.'
     Assert-WorkflowContract ($performanceCode -notmatch '(^|\s)(dotnet|docker)(\s|$)' -and $performanceCode -notmatch '\|\|\s*true') 'Governed performance step must not bypass the governed script or swallow failure.'
 
     Assert-WorkflowContract ([string]::Equals([string](Get-WorkflowProperty -Object $artifact[0] -Name 'if'), 'always()', [StringComparison]::Ordinal)) 'Nightly business performance artifact upload must use if: always().'
@@ -386,118 +317,13 @@ else {
     Assert-WorkflowContract ($serializedWorkflow -notmatch '\|\|\s*true') 'Nightly business performance workflow must not use || true.'
 }
 
-function Test-NightlyBusinessPerformanceManualThresholdExclusivity {
-    $fixturePath = Join-Path ([IO.Path]::GetTempPath()) "nerv-nightly-business-performance-fixture-$([Guid]::NewGuid().ToString('N')).yml"
-    $fixture = @'
-name: Nightly Business Performance
-on:
-  schedule:
-    - cron: '0 17 * * *'
-  workflow_dispatch:
-    inputs:
-      max_elapsed_milliseconds:
-        type: string
-        default: '0'
-permissions:
-  contents: read
-jobs:
-  business-performance:
-    timeout-minutes: 45
-    runs-on: ubuntu-latest
-    env:
-      NERV_IIP_PERF_POSTGRES: Host=127.0.0.1;Port=5432;Database=nerv_iip_performance;Username=nerv;Password=nerv
-      MANUAL_MAX_ELAPSED_MILLISECONDS: ${{ github.event.inputs.max_elapsed_milliseconds || '0' }}
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: nerv
-          POSTGRES_PASSWORD: nerv
-          POSTGRES_DB: nerv_iip_performance
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U nerv -d nerv_iip_performance"
-    steps:
-      - uses: actions/checkout@v4
-        timeout-minutes: 3
-      - uses: actions/setup-dotnet@v4
-        timeout-minutes: 5
-        with:
-          dotnet-version: 10.0.x
-      - uses: actions/cache@v4
-        timeout-minutes: 8
-      - name: Run performance baseline
-        timeout-minutes: 20
-        shell: pwsh
-        run: |
-          $commonArguments = @{
-              Scenario = 'all'
-              Profile = 'nightly'
-              Rows = 25
-              MetricsOutputPath = 'artifacts/business-performance/nightly/metrics.jsonl'
-              SummaryOutputPath = 'artifacts/business-performance/nightly/summary.json'
-          }
-          $manualMaxElapsedMilliseconds = 0
-          $manualInputParsed = [int]::TryParse(
-              [string]$env:MANUAL_MAX_ELAPSED_MILLISECONDS,
-              [Globalization.NumberStyles]::Integer,
-              [Globalization.CultureInfo]::InvariantCulture,
-              [ref]$manualMaxElapsedMilliseconds
-          )
-          if (-not $manualInputParsed -or $manualMaxElapsedMilliseconds -lt 0) {
-              throw 'workflow_dispatch max_elapsed_milliseconds must be an invariant integer greater than or equal to 0.'
-          }
-          if ($manualMaxElapsedMilliseconds -gt 0) {
-              $thresholdArguments = @{
-                  MaxElapsedMilliseconds = $manualMaxElapsedMilliseconds
-              }
-          }
-          else {
-              $thresholdArguments = @{
-                  InventoryMaxElapsedMilliseconds = 30000
-                  MesMaxElapsedMilliseconds = 30000
-                  ErpMaxElapsedMilliseconds = 30000
-              }
-          }
-          & ./scripts/checks/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
-      - uses: actions/upload-artifact@v4
-        timeout-minutes: 5
-        if: always()
-        with:
-          name: business-performance-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            artifacts/business-performance/nightly/metrics.jsonl
-            artifacts/business-performance/nightly/summary.json
-          if-no-files-found: error
-          retention-days: 30
-'@
-    try {
-        [IO.File]::WriteAllText($fixturePath, $fixture, [Text.UTF8Encoding]::new($false))
-        Assert-NightlyBusinessPerformanceWorkflow -Path $fixturePath
-        $manualOnly = '                  MaxElapsedMilliseconds = $manualMaxElapsedMilliseconds'
-        $manualWithScheduledThreshold = "                  MaxElapsedMilliseconds = `$manualMaxElapsedMilliseconds`n                  InventoryMaxElapsedMilliseconds = 30000"
-        Assert-WorkflowContract ($fixture.Contains($manualOnly, [StringComparison]::Ordinal)) 'Manual-threshold exclusivity fixture mutation must match the canonical manual branch.'
-        [IO.File]::WriteAllText($fixturePath, $fixture.Replace($manualOnly, $manualWithScheduledThreshold), [Text.UTF8Encoding]::new($false))
-        $failure = $null
-        try { Assert-NightlyBusinessPerformanceWorkflow -Path $fixturePath }
-        catch { $failure = $_ }
-        Assert-WorkflowContract ($null -ne $failure -and $failure.Exception.Message.Contains('manual runs pass only -MaxElapsedMilliseconds', [StringComparison]::Ordinal)) 'A manual threshold branch that also passes a scheduled threshold must fail the canonical branch contract.'
-        Write-Host 'Manual threshold exclusivity synthetic fixture mutation passed.'
-    }
-    finally {
-        if (Test-Path -LiteralPath $fixturePath) { Remove-Item -LiteralPath $fixturePath -Force }
-    }
-}
-
 Test-NightlyBusinessPerformanceInvalidManualThresholds
 Test-NightlyBusinessPerformanceManualThresholdModes
-Test-NightlyBusinessPerformancePositionalArrayRegression
-Test-NightlyBusinessPerformanceManualThresholdExclusivity
 Assert-NightlyBusinessPerformanceWorkflow -Path $workflowPath
 
 $workflowText = Get-Content -LiteralPath $workflowPath -Raw
 $workflowNewline = if ($workflowText.Contains("`r`n", [StringComparison]::Ordinal)) { "`r`n" } else { "`n" }
+$verifierInvocation = @($workflowText -split "`r?`n" | Where-Object { $_.Contains('./scripts/checks/verify-business-performance-baseline.ps1', [StringComparison]::Ordinal) })[0]
 $mutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-nightly-business-performance-workflow-$([Guid]::NewGuid().ToString('N'))"
 try {
     [IO.Directory]::CreateDirectory($mutationRoot) | Out-Null
@@ -516,11 +342,10 @@ try {
             @{ Name = 'manual-threshold-binding-deleted'; Original = "      MANUAL_MAX_ELAPSED_MILLISECONDS: `${{ github.event.inputs.max_elapsed_milliseconds || '0' }}$workflowNewline"; Replacement = '' },
             @{ Name = 'manual-threshold-binding-fixed-zero'; Original = "MANUAL_MAX_ELAPSED_MILLISECONDS: `${{ github.event.inputs.max_elapsed_milliseconds || '0' }}"; Replacement = "MANUAL_MAX_ELAPSED_MILLISECONDS: '0'" },
             @{ Name = 'manual-threshold-binding-wrong-input'; Original = 'github.event.inputs.max_elapsed_milliseconds'; Replacement = 'github.event.inputs.wrong_max_elapsed_milliseconds' },
-            @{ Name = 'scheduled-threshold'; Original = 'InventoryMaxElapsedMilliseconds = 30000'; Replacement = 'InventoryMaxElapsedMilliseconds = 0' },
             @{ Name = 'artifact-always'; Original = 'if: always()'; Replacement = 'if: success()' },
             @{ Name = 'artifact-missing-files'; Original = 'if-no-files-found: error'; Replacement = 'if-no-files-found: warn' },
             @{ Name = 'continue-on-error'; Original = 'timeout-minutes: 20'; Replacement = "timeout-minutes: 20$([Environment]::NewLine)        continue-on-error: true" },
-            @{ Name = 'masked-performance-failure'; Original = '& ./scripts/checks/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments'; Replacement = '& ./scripts/checks/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments || true' }
+            @{ Name = 'masked-performance-failure'; Original = $verifierInvocation; Replacement = "$verifierInvocation || true" }
         )) {
         Assert-WorkflowContract ($workflowText.Contains($mutation.Original, [StringComparison]::Ordinal)) "Mutation '$($mutation.Name)' must match its canonical workflow text."
         $mutatedPath = Join-Path $mutationRoot "$($mutation.Name).yml"

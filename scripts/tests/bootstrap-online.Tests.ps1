@@ -1,11 +1,11 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Runs the bootstrap .NET SDK prerequisite predicate in a disposable harness
+#     - Reads the bootstrap SDK prerequisite and captures generated user-secret writes in memory
 #   Writes:
-#     - Temporary test harness files outside the repository
+#     - Temporary AppHost project outside the repository
 #   Cleanup:
-#     - Deletes the disposable test harness directory
+#     - Removes the owned AppHost fixture directory
 #   Requires:
 #     - PowerShell 7
 
@@ -13,101 +13,50 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $bootstrapScript = Join-Path $repoRoot 'scripts/dev/bootstrap-online.ps1'
-$bootstrapText = Get-Content -LiteralPath $bootstrapScript -Raw
-$mainStart = $bootstrapText.IndexOf("if (`$Help) {", [System.StringComparison]::Ordinal)
-if ($mainStart -lt 0) {
-    throw 'Bootstrap script must retain an explicit help guard after its function definitions.'
-}
+# Load the production functions through the side-effect-free help entrypoint.
+. $bootstrapScript -Help | Out-Null
 
-$harnessRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-bootstrap-online-$([guid]::NewGuid().ToString('N'))"
-try {
-    $harnessScripts = Join-Path $harnessRoot 'scripts'
-    [System.IO.Directory]::CreateDirectory((Join-Path $harnessScripts 'lib')) | Out-Null
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1') -Destination (Join-Path $harnessScripts 'lib/ScriptAutomation.ps1')
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/lib/AppHostUserSecrets.ps1') -Destination (Join-Path $harnessScripts 'lib/AppHostUserSecrets.ps1')
-
-    $harness = @"
-$($bootstrapText.Substring(0, $mainStart))
 function Test-CommandAvailable {
-    param([string] `$Name)
-    return `$Name -ceq 'dotnet'
+    param([string]$Name)
+    return [string]::Equals($Name, 'dotnet', [StringComparison]::Ordinal)
 }
 
 function Invoke-DotNetOutput {
-    param([string[]] `$Arguments, [string] `$WorkingDirectory, [int] `$TimeoutSeconds, [string] `$Name)
+    param([string[]]$Arguments, [string]$WorkingDirectory, [int]$TimeoutSeconds, [string]$Name)
     return [pscustomobject]@{ Stdout = '10.0.302 [/fake/sdk]' }
 }
 
 if (-not (Test-DotNet10Sdk)) {
     throw 'A single installed .NET 10 SDK must satisfy the bootstrap prerequisite.'
 }
-"@
-    [IO.Directory]::CreateDirectory((Join-Path $harnessScripts 'dev')) | Out-Null
-    $harnessPath = Join-Path $harnessScripts 'dev/bootstrap-online.ps1'
-    [System.IO.File]::WriteAllText($harnessPath, $harness, [System.Text.UTF8Encoding]::new($false))
 
-    $output = & pwsh -NoProfile -File $harnessPath 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "Bootstrap single-SDK regression test failed: $($output | Out-String)"
+$fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-bootstrap-online-$([Guid]::NewGuid().ToString('N'))"
+try {
+    [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
+    $project = Join-Path $fixtureRoot 'Fake.AppHost.csproj'
+    [IO.File]::WriteAllText($project, '<Project Sdk="Microsoft.NET.Sdk" />')
+    [IO.File]::WriteAllText(
+        (Join-Path $fixtureRoot 'Program.cs'),
+        'var proof = builder.AddParameter("template-asset-retirement-proof-secret-base64", secret: true);')
+
+    $capturedSecrets = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
+    function Get-AppHostUserSecrets { param([string]$AppHostProject) return @{} }
+    function Invoke-DotNet {
+        param([string[]]$Arguments, [string]$WorkingDirectory, [int]$TimeoutSeconds, [string]$Name, [int[]]$SensitiveArgumentIndexes)
+        $capturedSecrets.Add($Arguments[2], $Arguments[3])
     }
 
-    $appHostDirectory = Join-Path $harnessRoot 'infra/aspire/Fake.AppHost'
-    [System.IO.Directory]::CreateDirectory($appHostDirectory) | Out-Null
-    $appHostProject = Join-Path $appHostDirectory 'Fake.AppHost.csproj'
-    [System.IO.File]::WriteAllText($appHostProject, '<Project Sdk="Microsoft.NET.Sdk" />', [System.Text.UTF8Encoding]::new($false))
-    [System.IO.File]::WriteAllText(
-        (Join-Path $appHostDirectory 'Program.cs'),
-        'var proof = builder.AddParameter("template-asset-retirement-proof-secret-base64", secret: true);',
-        [System.Text.UTF8Encoding]::new($false))
-
-    $secretHarness = @"
-$($bootstrapText.Substring(0, $mainStart))
-`$script:capturedSecrets = @{}
-
-function Get-AppHostUserSecrets {
-    param([string] `$AppHostProject)
-    return @{}
-}
-
-function Invoke-DotNet {
-    param(
-        [string[]] `$Arguments,
-        [string] `$WorkingDirectory,
-        [int] `$TimeoutSeconds,
-        [string] `$Name,
-        [int[]] `$SensitiveArgumentIndexes
-    )
-    `$script:capturedSecrets[`$Arguments[2]] = `$Arguments[3]
-}
-
-Initialize-LocalAppHostSecrets -AppHostProject '$($appHostProject.Replace("'", "''"))'
-
-`$secretName = 'Parameters:template-asset-retirement-proof-secret-base64'
-if (-not `$script:capturedSecrets.ContainsKey(`$secretName)) {
-    throw "Bootstrap did not initialize the AppHost-discovered secret '`$secretName'."
-}
-
-`$secretBytes = [Convert]::FromBase64String(`$script:capturedSecrets[`$secretName])
-if (`$secretBytes.Length -lt 32) {
-    throw "Bootstrap initialized '`$secretName' with fewer than 32 bytes."
-}
-
-`$postgresSecretName = 'Parameters:postgres-password'
-if (-not `$script:capturedSecrets.ContainsKey(`$postgresSecretName)) {
-    throw "Bootstrap did not initialize the implicit AppHost secret '`$postgresSecretName'."
-}
-"@
-    [System.IO.File]::WriteAllText($harnessPath, $secretHarness, [System.Text.UTF8Encoding]::new($false))
-
-    $output = & pwsh -NoProfile -File $harnessPath 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "Bootstrap AppHost secret discovery regression test failed: $($output | Out-String)"
+    Initialize-LocalAppHostSecrets -AppHostProject $project
+    $proofKey = 'Parameters:template-asset-retirement-proof-secret-base64'
+    if (-not $capturedSecrets.ContainsKey($proofKey) -or [Convert]::FromBase64String($capturedSecrets[$proofKey]).Length -lt 32) {
+        throw 'Bootstrap must initialize the discovered AppHost proof secret with at least 32 bytes.'
+    }
+    if (-not $capturedSecrets.ContainsKey('Parameters:postgres-password')) {
+        throw 'Bootstrap must initialize the implicit PostgreSQL AppHost secret.'
     }
 }
 finally {
-    if (Test-Path -LiteralPath $harnessRoot) {
-        Remove-Item -LiteralPath $harnessRoot -Recurse -Force
-    }
+    if (Test-Path -LiteralPath $fixtureRoot) { Remove-Item -LiteralPath $fixtureRoot -Recurse -Force }
 }
 
 Write-Host 'Bootstrap online script tests passed.'

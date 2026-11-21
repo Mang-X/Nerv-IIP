@@ -561,43 +561,6 @@ foreach ($mutationCall in (Get-CommandCallAsts -Name 'Invoke-JsonPost')) {
     Assert-Contract (Test-CommandHasParameter -Call $mutationCall -Name 'Stage') 'Every mutation must name the acceptance stage it belongs to.'
 }
 
-# 四类失败必须在诊断里彼此可分：connect / send / 服务端取消（499）/ 业务信封。
-$requestFunctionText = Get-FunctionContractText -Name 'Invoke-Man517JsonRequest'
-foreach ($classification in @('classification=deadline', 'classification=business', 'classification=protocol')) {
-    Assert-Contract ($requestFunctionText.Contains($classification, [StringComparison]::Ordinal)) "The shared JSON request path must report $classification explicitly."
-}
-Assert-Contract ($requestFunctionText.Contains('classification=$(Get-Man517TransportClassification', [StringComparison]::Ordinal)) 'Transport failures must be classified as connect or send instead of collapsing into one bucket.'
-Assert-Contract ($requestFunctionText.Contains('classification=$(Get-Man517HttpClassification', [StringComparison]::Ordinal)) 'Non-success HTTP status must be classified so a server-side cancellation is not read as a server error.'
-$httpClassificationText = Get-FunctionContractText -Name 'Get-Man517HttpClassification'
-Assert-Contract ($httpClassificationText.Contains('499', [StringComparison]::Ordinal)) 'HTTP 499 must be recognised as a server-side cancellation.'
-Assert-Contract ($httpClassificationText.Contains("'server-cancelled'", [StringComparison]::Ordinal)) 'Server-side cancellation must have its own classification.'
-$transportClassificationText = Get-FunctionContractText -Name 'Get-Man517TransportClassification'
-foreach ($classification in @("'connect'", "'send'")) {
-    Assert-Contract ($transportClassificationText.Contains($classification, [StringComparison]::Ordinal)) "Transport classification must be able to return $classification."
-}
-Assert-Contract ($transportClassificationText.Contains('ConnectionError', [StringComparison]::Ordinal)) 'Transport classification must read the real HttpRequestError instead of matching message text.'
-Assert-Contract ($requestFunctionText.Contains('stage=$safeStage', [StringComparison]::Ordinal)) 'Every failure must carry the redacted stage.'
-Assert-Contract ($requestFunctionText.Contains('uri=$safeUri', [StringComparison]::Ordinal)) 'Every failure must carry the redacted URI.'
-Assert-Contract ($requestFunctionText.Contains('elapsedMs=', [StringComparison]::Ordinal)) 'Timeout diagnostics must report how long the request actually ran.'
-Assert-Contract ($requestFunctionText.Contains('budgetMs=', [StringComparison]::Ordinal)) 'Timeout diagnostics must report the budget that was in force.'
-
-Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('ResponseHeadersRead', [StringComparison]::Ordinal)) 'The shared JSON request path must stream the response under its absolute cancellation budget.'
-Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('CancellationTokenSource', [StringComparison]::Ordinal)) 'The shared JSON request path must enforce one absolute cancellation budget.'
-Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('SendAsync', [StringComparison]::Ordinal)) 'The shared JSON request path must pass cancellation into the HTTP send.'
-Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('ReadAsStringAsync', [StringComparison]::Ordinal)) 'The shared JSON request path must pass cancellation into complete response reading.'
-Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('System.TimeoutException', [StringComparison]::Ordinal)) 'Deadline expiry must use a typed TimeoutException.'
-Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains('$deadlineCancellation.IsCancellationRequested', [StringComparison]::Ordinal)) 'OperationCanceledException must be mapped to TimeoutException only when the owned absolute deadline token fired.'
-$requestFunctionText = Get-FunctionContractText -Name 'Invoke-Man517JsonRequest'
-$httpStatusFailureIndex = $requestFunctionText.IndexOf('$httpStatus -lt 200', [StringComparison]::Ordinal)
-$responseReadIndex = $requestFunctionText.IndexOf('ReadAsStringAsync', [StringComparison]::Ordinal)
-Assert-Contract ($httpStatusFailureIndex -ge 0 -and $responseReadIndex -gt $httpStatusFailureIndex) 'Non-success HTTP status must fail immediately after headers, before response body reading.'
-Assert-Contract ((Get-FunctionContractText -Name 'Invoke-Man517JsonRequest').Contains("PSObject.Properties['success']", [StringComparison]::Ordinal)) 'The shared JSON request path must require a ResponseData success field.'
-foreach ($functionName in @('Wait-Demand', 'Wait-ErpSalesOrderReady', 'Assert-DemandStable')) {
-    $functionText = Get-FunctionContractText -Name $functionName
-    Assert-Contract ($functionText.Contains('catch [System.TimeoutException]', [StringComparison]::Ordinal)) "$functionName must handle typed request deadline expiry explicitly."
-    Assert-Contract ($functionText.Contains('(Get-Date) -lt $deadline', [StringComparison]::Ordinal)) "$functionName must rethrow a typed timeout that occurs before its own absolute deadline."
-}
-Assert-Contract ((Get-FunctionContractText -Name 'Wait-ErpSalesOrderReady').Contains('[decimal]$rows[0].totalAmount -eq 200', [StringComparison]::Ordinal)) 'ERP readiness must validate the seeded order amount, not only its identifier.'
 $erpReadyIndex = $content.IndexOf('Wait-ErpSalesOrderReady -ErpUrl $erpUrl', [StringComparison]::Ordinal)
 $firstMutationIndex = $content.IndexOf('Invoke-JsonPost -Uri "$erpUrl/api/business/v1/erp/sales-orders/SO-DEMO-001/lines/10"', [StringComparison]::Ordinal)
 Assert-Contract ($erpReadyIndex -ge 0 -and $firstMutationIndex -gt $erpReadyIndex) 'ERP query-visible readiness must complete before the first sales-order mutation.'

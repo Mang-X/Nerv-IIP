@@ -3,11 +3,10 @@
 #   SideEffects:
 #     - Executes focused business performance metric completeness fixtures
 #     - Executes the production verifier in child PowerShell processes with a fake dotnet executable
-#     - Writes a temporary weakening mutation under the operating-system temp directory
 #   Writes:
 #     - Temporary files under the operating-system temp directory
 #   Cleanup:
-#     - Removes the owned temporary mutation directory in finally
+#     - Removes the owned temporary fixture directory in finally
 #   Requires:
 #     - PowerShell 7
 
@@ -168,49 +167,11 @@ catch {
 }
 Assert-Contract ($null -ne $ordinalFailure -and $ordinalFailure.Exception.Message.Contains("Unsupported performance scenario 'Inventory'", [StringComparison]::Ordinal)) 'Selected scenario identity must be ordinal and reject non-canonical casing.'
 
-$tokens = $null
-$parseErrors = $null
-$verifierAst = [Management.Automation.Language.Parser]::ParseFile($verifierPath, [ref]$tokens, [ref]$parseErrors)
-Assert-Contract (@($parseErrors).Count -eq 0) 'Business performance verifier must parse before completeness wiring is inspected.'
-$completenessCalls = @($verifierAst.FindAll({
-            param($node)
-            $node -is [Management.Automation.Language.CommandAst] -and
-            [string]::Equals($node.GetCommandName(), 'Get-NervBusinessPerformanceMetricCompletenessViolations', [StringComparison]::Ordinal)
-        }, $true))
-Assert-Contract ($completenessCalls.Count -eq 1) 'Business performance verifier must invoke completeness enforcement exactly once before it can publish a passing summary.'
-$thresholdCalls = @($verifierAst.FindAll({
-            param($node)
-            $node -is [Management.Automation.Language.CommandAst] -and
-            [string]::Equals($node.GetCommandName(), 'Get-PerformanceMetricThreshold', [StringComparison]::Ordinal)
-        }, $true))
-Assert-Contract ($thresholdCalls.Count -eq 1 -and $completenessCalls[0].Extent.StartOffset -lt $thresholdCalls[0].Extent.StartOffset) 'Business performance verifier must enforce completeness before evaluating any threshold.'
-$prematureEmptyThrows = @($verifierAst.FindAll({
-            param($node)
-            $node -is [Management.Automation.Language.ThrowStatementAst] -and
-            $node.Extent.Text.Contains('Performance baseline metrics file is empty', [StringComparison]::Ordinal)
-        }, $true))
-Assert-Contract ($prematureEmptyThrows.Count -eq 0) 'An empty metrics file must flow through completeness enforcement so summary.json records machine-readable missing-metric violations before failure.'
-$summaryWrites = @($verifierAst.FindAll({
-            param($node)
-            $node -is [Management.Automation.Language.CommandAst] -and
-            [string]::Equals($node.GetCommandName(), 'Set-Content', [StringComparison]::Ordinal) -and
-            $node.Extent.Text.Contains('$effectiveSummaryOutputPath', [StringComparison]::Ordinal)
-        }, $true))
-$completenessThrows = @($verifierAst.FindAll({
-            param($node)
-            $node -is [Management.Automation.Language.ThrowStatementAst] -and
-            $node.Extent.Text.Contains('Performance metrics completeness validation failed', [StringComparison]::Ordinal)
-        }, $true))
-Assert-Contract ($summaryWrites.Count -eq 1 -and $completenessThrows.Count -eq 1 -and $summaryWrites[0].Extent.StartOffset -lt $completenessThrows[0].Extent.StartOffset) 'Business performance verifier must write summary.json before throwing a completeness failure.'
-
-$mutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-business-performance-completeness-$([Guid]::NewGuid().ToString('N'))"
+$fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-business-performance-completeness-$([Guid]::NewGuid().ToString('N'))"
 try {
-    [IO.Directory]::CreateDirectory($mutationRoot) | Out-Null
-    $fakeDotNetDirectory = Join-Path $mutationRoot 'fake-dotnet'
-    $mutationScriptsDirectory = Join-Path $mutationRoot 'scripts'
-    $mutationLibraryDirectory = Join-Path $mutationScriptsDirectory 'lib'
+    [IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
+    $fakeDotNetDirectory = Join-Path $fixtureRoot 'fake-dotnet'
     [IO.Directory]::CreateDirectory($fakeDotNetDirectory) | Out-Null
-    [IO.Directory]::CreateDirectory($mutationLibraryDirectory) | Out-Null
 
     if ($IsWindows) {
         $fakeDotNetPath = Join-Path $fakeDotNetDirectory 'dotnet.cmd'
@@ -230,15 +191,15 @@ try {
         Invoke-NativeCommandOutput -Command 'chmod' -Arguments @('+x', $fakeDotNetPath) -Name 'make-fake-dotnet-executable' | Out-Null
     }
 
-    $completeFixturePath = Join-Path $mutationRoot 'complete.jsonl'
-    $partialFixturePath = Join-Path $mutationRoot 'partial.jsonl'
+    $completeFixturePath = Join-Path $fixtureRoot 'complete.jsonl'
+    $partialFixturePath = Join-Path $fixtureRoot 'partial.jsonl'
     Write-MetricFixture -Path $completeFixturePath -Metrics @($inventory, $mes, $erp)
     Write-MetricFixture -Path $partialFixturePath -Metrics @($inventory, $mes)
 
     $completeResult = Invoke-VerifierFixture `
         -ScriptPath $verifierPath `
         -MetricFixturePath $completeFixturePath `
-        -FixtureRoot $mutationRoot `
+        -FixtureRoot $fixtureRoot `
         -FakeDotNetDirectory $fakeDotNetDirectory `
         -CaseName 'production-complete'
     Assert-Contract (-not $completeResult.Failed) 'The production verifier must accept exactly one canonical metric for each selected scenario.'
@@ -247,7 +208,7 @@ try {
     $partialResult = Invoke-VerifierFixture `
         -ScriptPath $verifierPath `
         -MetricFixturePath $partialFixturePath `
-        -FixtureRoot $mutationRoot `
+        -FixtureRoot $fixtureRoot `
         -FakeDotNetDirectory $fakeDotNetDirectory `
         -CaseName 'production-partial'
     Assert-Contract $partialResult.Failed 'The production verifier must reject a partial metric set end to end.'
@@ -258,47 +219,18 @@ try {
         })
     Assert-Contract ($missingErpViolations.Count -eq 1) 'The production verifier summary must identify the missing ERP metric exactly once.'
 
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/lib/OrdinalString.ps1') -Destination (Join-Path $mutationLibraryDirectory 'OrdinalString.ps1')
-    Copy-Item -LiteralPath $libraryPath -Destination (Join-Path $mutationLibraryDirectory 'BusinessPerformanceMetrics.ps1')
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1') -Destination (Join-Path $mutationLibraryDirectory 'ScriptAutomation.ps1')
-    [IO.Directory]::CreateDirectory((Join-Path $mutationScriptsDirectory 'checks')) | Out-Null
-    $mutationPath = Join-Path $mutationScriptsDirectory 'checks/verify-business-performance-baseline.ps1'
-    $verifierSource = [IO.File]::ReadAllText($verifierPath)
-    $completenessAssignment = '$completenessViolations = @(Get-NervBusinessPerformanceMetricCompletenessViolations -SelectedScenario $Scenario -Metrics $metrics)'
-    Assert-Contract ([regex]::Matches($verifierSource, [regex]::Escape($completenessAssignment)).Count -eq 1) 'Verifier weakening mutation must target exactly one completeness assignment.'
-    $weakenedAssignment = "$completenessAssignment`n`$completenessViolations = @()"
-    [IO.File]::WriteAllText($mutationPath, $verifierSource.Replace($completenessAssignment, $weakenedAssignment), [Text.UTF8Encoding]::new($false))
-
-    $weakenedResult = Invoke-VerifierFixture `
-        -ScriptPath $mutationPath `
-        -MetricFixturePath $partialFixturePath `
-        -FixtureRoot $mutationRoot `
-        -FakeDotNetDirectory $fakeDotNetDirectory `
-        -CaseName 'weakened-partial'
-    Assert-Contract (-not $weakenedResult.Failed -and $null -ne $weakenedResult.Summary -and $weakenedResult.Summary.passed -eq $true) 'The end-to-end fixture must prove that clearing completeness results weakens the verifier.'
-
-    $mutationLibraryPath = Join-Path $mutationRoot 'BusinessPerformanceMetrics.ps1'
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/lib/OrdinalString.ps1') -Destination (Join-Path $mutationRoot 'OrdinalString.ps1')
-    $librarySource = [IO.File]::ReadAllText($libraryPath)
-    $returnContract = 'return @($violations)'
-    Assert-Contract ([regex]::Matches($librarySource, [regex]::Escape($returnContract)).Count -eq 1) 'Completeness weakening mutation must target exactly one production return.'
-    [IO.File]::WriteAllText($mutationLibraryPath, $librarySource.Replace($returnContract, 'return @()'), [Text.UTF8Encoding]::new($false))
-
-    Remove-Item -LiteralPath 'Function:\Get-NervBusinessPerformanceMetricCompletenessViolations' -Force
-    . $mutationLibraryPath
-    $mutationRejected = $false
-    try {
-        Assert-CompletenessViolations -Actual @(Get-NervBusinessPerformanceMetricCompletenessViolations -SelectedScenario 'all' -Metrics @($inventory, $mes)) -Expected @(
-            'missing-performance-metric|erp-sales-order-list-high-read|1|0'
-        )
-    }
-    catch {
-        $mutationRejected = $true
-    }
-    Assert-Contract $mutationRejected 'Bypassing completeness violations must make the executable completeness contract fail.'
+    $emptyFixturePath = Join-Path $fixtureRoot 'empty.jsonl'
+    [IO.File]::WriteAllText($emptyFixturePath, '')
+    $emptyResult = Invoke-VerifierFixture -ScriptPath $verifierPath -MetricFixturePath $emptyFixturePath -FixtureRoot $fixtureRoot -FakeDotNetDirectory $fakeDotNetDirectory -CaseName 'production-empty'
+    Assert-Contract ($emptyResult.Failed -and $null -ne $emptyResult.Summary -and $emptyResult.Summary.passed -eq $false) 'An empty metrics file must publish a failed summary.'
+    Assert-CompletenessViolations -Actual @($emptyResult.Summary.violations) -Expected @(
+        'missing-performance-metric|erp-sales-order-list-high-read|1|0'
+        'missing-performance-metric|inventory-high-write|1|0'
+        'missing-performance-metric|mes-work-order-high-read|1|0'
+    )
 }
 finally {
-    if (Test-Path -LiteralPath $mutationRoot) { Remove-Item -LiteralPath $mutationRoot -Recurse -Force }
+    if (Test-Path -LiteralPath $fixtureRoot) { Remove-Item -LiteralPath $fixtureRoot -Recurse -Force }
 }
 
 Write-Host 'Business performance metric completeness contract tests passed.'

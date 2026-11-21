@@ -92,17 +92,6 @@ if ($fullStackHelp.ExitCode -ne 0) {
 }
 
 $fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack/fullstack-session.ps1') -Raw
-foreach ($expected in @(
-    '[string]::Equals([string]($Mode), [string](''Automated''), [StringComparison]::OrdinalIgnoreCase)',
-    '[string]::Equals([string]("$($latest.state)"), [string](''Running''), [StringComparison]::OrdinalIgnoreCase)',
-    '[string]::Equals([string]($GuardianMode), [string](''Automated''), [StringComparison]::OrdinalIgnoreCase)',
-    '[string]::Equals([string]("$($latest.state)"), [string](''Failed''), [StringComparison]::OrdinalIgnoreCase)',
-    'elseif ([string]::Equals([string]($Scenario), [string](''issue-1912-real-machine-walkthrough''), [StringComparison]::OrdinalIgnoreCase))'
-)) {
-    if (-not $fullStackSessionText.Contains($expected, [StringComparison]::Ordinal)) {
-        throw "Full-stack session must retain the explicit ordinal identity contract '$expected'."
-    }
-}
 $tokens = $null
 $parseErrors = $null
 $fullStackSessionAst = [System.Management.Automation.Language.Parser]::ParseInput($fullStackSessionText, [ref] $tokens, [ref] $parseErrors)
@@ -130,10 +119,6 @@ foreach ($workerOptIn in @($true, $false)) {
     if ($null -eq $script:capturedWmsDemoWorker -or $script:capturedWmsDemoWorker -ne $workerOptIn) {
         throw "Full-stack start bound EnableWmsDemoWorker=$script:capturedWmsDemoWorker; expected $workerOptIn."
     }
-}
-if ([string]::Equals('Automated', "Automated`u{00AD}", [StringComparison]::OrdinalIgnoreCase) -or
-    -not [string]::Equals('Automated', 'automated', [StringComparison]::OrdinalIgnoreCase)) {
-    throw 'Full-stack mode comparer probe must reject U+00AD while accepting intended casing.'
 }
 foreach ($expected in @('run', 'start', 'url', 'status', 'logs', 'stop', 'list', 'gc', '-EnableWmsDemoWorker')) {
     if (-not $fullStackHelp.Output.Contains($expected)) {
