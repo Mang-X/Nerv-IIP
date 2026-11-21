@@ -21,7 +21,7 @@
 #   Requires:
 #     - PowerShell 7
 #     - .NET SDK 10
-#     - Docker with local postgres:18 and redis:8 images
+#     - Docker with local postgres:19 and redis:8 images
 #     - NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS environment variables
 
 param(

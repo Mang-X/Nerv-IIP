@@ -59,7 +59,7 @@ else {
 switch ($commandName) {
     'psql' {
         if (@($args | Where-Object { $_.Contains('server_version', [StringComparison]::Ordinal) }).Count -gt 0) {
-            Write-Output '18.6'
+            Write-Output '19.0'
         }
         exit 0
     }

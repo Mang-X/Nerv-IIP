@@ -490,7 +490,7 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
     /// <b>失效方向</b>：判据从 <c>Contains</c> 换成**全等**之后，「PG 怎么 deparse」就从无所谓变成了承重的。
     /// 日后 PostgreSQL 大版本若改括号 / 空格 / 转换的写法，这条全等会变成**环境相关的假红**。
     /// ⭐ 但这个方向是 <b>fail-closed</b>——它会在跑的时候大声炸，⛔ 不会静默放过一条被加了豁免的索引；
-    /// 且 lane 已把镜像钉死在 <c>postgres:18</c>。⇒ **接受这个方向**，⛔ 不加容错、⛔ 不做归一化后比较
+    /// 且 lane 已把镜像钉死在 <c>postgres:19</c>。⇒ **接受这个方向**，⛔ 不加容错、⛔ 不做归一化后比较
     /// （做了就等于把「谓词没别的东西」这条判据又还回给模糊匹配）。
     /// </summary>
     private const string ExpectedSourceIndexPredicate = "((source_type IS NOT NULL) AND (source_no IS NOT NULL))";

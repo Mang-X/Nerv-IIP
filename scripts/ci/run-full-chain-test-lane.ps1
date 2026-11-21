@@ -18,7 +18,7 @@
 #   Requires:
 #     - PowerShell 7
 #     - .NET SDK 10
-#     - Docker with PostgreSQL 18 and Redis 8 images
+#     - Docker with PostgreSQL 19 and Redis 8 images
 
 param(
     [string[]] $MemberId = @(),

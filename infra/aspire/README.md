@@ -102,13 +102,12 @@ AppHost 固定持久化本地基础设施镜像标签，而不使用 provider �
 
 | 资源 | 当前标签 | 原因 |
 | --- | --- | --- |
-| PostgreSQL | `18` | 使用当前 PostgreSQL 18 主版本线，同时避免无界的 `latest` 标签。PostgreSQL Docker 镜像 18+ 在 `/var/lib/postgresql` 下使用特定于主版本的数据目录，因此 AppHost 使用新的本地开发卷 `nerv-iip-postgres-18`，而不复用旧的 17 时代 `nerv-iip-postgres` 卷。AppHost 和 Compose 有意为 PostgreSQL 18 挂载完整的 `/var/lib/postgresql` 父目录；这已在镜像升级后使用 Windows Docker Desktop 上的空本地开发卷验证，并可避免挂载旧 `/var/lib/postgresql/data` 路径导致的 PostgreSQL 18 初始化失败。 |
+| PostgreSQL | `19` | AppHost 与 Compose 继续把原卷挂到 `/var/lib/postgresql`，19 的集群目录为 `19/docker`。卷名中的 `-18` 是既有存储标识。已有数据的升级与回滚见[数据库发布手册](../../docs/runbooks/database-release.md#postgresql-19)。 |
 | Redis | `8` | 使用当前 Redis 8 主版本线，同时避免无界的 `latest` 漂移。AppHost 保留持久化 `nerv-iip-redis` 卷并启用快照持久化，因为当 `Messaging:Provider=Redis` 时，Redis 还可能承载 CAP Redis Streams。仅作缓存的本地数据可以重建，但 Redis 消息 profile 必须将该卷视为消息总线持久性状态。 |
 
 不得将这些标签改为 `latest`。升级到下一个 PostgreSQL 或 Redis 主版本应当作为有意创建的升级事项，
 并包含空卷测试、适用时的保留卷迁移测试、AppHost 构建、Compose 发布验证和启动 smoke test。对于
-PostgreSQL，必须执行显式 `pg_upgrade`/导出恢复计划，或引入新的开发卷名称；不得让默认容器镜像
-决定该迁移。
+PostgreSQL，已有数据的部署应先备份，在停写窗口显式迁移后再开放服务。
 
 ## 证书预检
 
@@ -154,7 +153,7 @@ dotnet user-secrets list --project infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHos
 | Dashboard 显示 `Unresolved parameters`，服务保持 `Waiting`。 | 缺少必需的 AppHost 参数。 | 设置上方全部 `Parameters:*` 用户机密，然后重启 `.\nerv.ps1 dev`。 |
 | Aspire 显示资源已启动，但 `127.0.0.1:5119` 或 `127.0.0.1:5125` 拒绝连接。 | 仓库从链接工作树运行，且 `.\nerv.ps1 dev` 添加了 Aspire `--isolated`，因此主机端口为动态端口。 | 执行 `.\nerv.ps1 describe business-gateway` 和 `.\nerv.ps1 describe business-console`，使用其中显示的 URL。 |
 | 前端端口 `5125` 有响应，但登录或 API 调用挂起。 | 存在过期的 AppHost/DCP 代理或失败的后端资源。 | 执行 `.\nerv.ps1 status`、`.\nerv.ps1 describe -IncludeHidden`，再在重新启动前执行 `.\nerv.ps1 stop`。除非 Aspire CLI 无法看到遗留进程，否则不得手动终止 AppHost/DCP。 |
-| Aspire/provider 升级后，`postgres` 立即退出。 | AppHost 拉取的 PostgreSQL 镜像数据目录布局与现有 PostgreSQL 卷不兼容。 | PostgreSQL 18 使用 `nerv-iip-postgres-18`。除非正在执行显式迁移，否则不得将其指回旧 `nerv-iip-postgres` 卷。删除任何数据库卷前请检查 `.\nerv.ps1 logs postgres -Tail 120`。 |
+| Aspire/provider 升级后，`postgres` 立即退出。 | AppHost 拉取的 PostgreSQL 镜像数据目录布局与现有 PostgreSQL 卷不兼容。 | PostgreSQL 19 保留原卷名。请按数据库发布手册迁移旧集群，并检查 `.\nerv.ps1 logs postgres -Tail 120`。 |
 | `postgres` 为 `Running (Unhealthy)`，依赖服务保持 `Waiting`。 | 持久化 `nerv-iip-postgres-18` Docker 卷使用的 `postgres` 密码不同于当前 Aspire `Parameters:postgres-password`。 | 应优先复用现有用户机密。若机密已改变且必须保留卷，请将容器的 `postgres` 用户密码与当前机密对齐。 |
 | `redis` 因 RDB/AOF 格式错误退出。 | 本地 `nerv-iip-redis` 卷由不兼容的 Redis 主版本写入。 | 若 Redis 仅用于缓存/会话，请停止平台并仅移除 `nerv-iip-redis`，然后重启：`.\nerv.ps1 stop`；`docker volume rm nerv-iip-redis`；`.\nerv.ps1 dev`。若正在使用 `Messaging:Provider=Redis`，必须将该卷视为消息总线持久性状态，予以保留/备份/迁移，而不得随意删除。 |
 | `.\nerv.ps1 dev` 或 `.\nerv.ps1 stop` 看似卡住。 | Aspire CLI 或 DCP 未及时返回。 | 脚本现使用有界命令并输出阶段诊断。检查最新 `.ryugi/artifacts/script-logs/dev-apphost/` 或 `.ryugi/artifacts/script-logs/aspire-stop/` 目录，然后重新执行 `.\nerv.ps1 status`。 |
@@ -203,7 +202,7 @@ Console 在 Compose 输出中仍是开发 Vite 资源，直至 AppHost 建模其
 $container = "<postgres-container-name>"
 $password = "<current-Parameters:postgres-password>"
 $escaped = $password.Replace("'", "''")
-$pgData = "/var/lib/postgresql/18/docker"
+$pgData = "/var/lib/postgresql/19/docker"
 
 docker exec -u root $container sh -lc "cp $pgData/pg_hba.conf /tmp/pg_hba.conf.codex-bak && sed -i 's/scram-sha-256/trust/g' $pgData/pg_hba.conf && chown postgres:postgres $pgData/pg_hba.conf && chmod 600 $pgData/pg_hba.conf && kill -HUP 1"
 docker exec $container psql -U postgres -h 127.0.0.1 -d postgres -c "ALTER USER postgres WITH PASSWORD '$escaped';"

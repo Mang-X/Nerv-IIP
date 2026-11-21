@@ -248,6 +248,94 @@ Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`�
 5. 开始分配新单号后不执行本 migration 的 `Down`：`Down` 会删掉单号列和索引，已经写进成本候选、质量检验与库存流水的单号将无处回查。发布失败时先停止新版本服务，优先前滚补救；确需还原时走第 6 节的批准恢复点。
 6. 已登记的成本候选、质量检验与库存流水里的来源单据不迁移：旧值（工单 ID 或前端截出的 `WO-XXXXXXXX`）保持原样，界面把工单 ID 显示为「维修工单」（`docs/product/maintenance/design.md` §3.4.1）。
 
+<a id="postgresql-19"></a>
+
+### 6.11 PostgreSQL 15 / 18 升级到 19
+
+本节适用于使用官方镜像、Docker 命名卷和默认表空间的单机实例。平台使用 `postgres:19`，MasterData 独立开发环境使用 `postgres:19-alpine`。两者均把卷挂到 `/var/lib/postgresql`，19 的数据目录为 `19/docker`。平台保留卷标识 `nerv-iip-postgres-18`，MasterData 保留原有 `postgres_data` 或 `netcorepal_postgres_data`；Compose 实际卷名可能带项目名前缀。旧集群存在且 19 集群尚未迁移时，官方镜像会拒绝初始化。新安装使用空卷。
+
+1. **确认来源和停写窗口。** 记录旧容器、镜像摘要、数据库版本、数据目录和实际挂载。列出数据库、角色、扩展、编码、locale、业务行数与最近一条业务凭证，以及每个服务的 EF migration history。确认有足够空间保存旧集群、备份和新集群。停止 Web 服务、作业、CAP 消费者和其他写入端，保留旧数据库在线供导出。已有自定义表空间、扩展、复制或外部配置的实例，先准备对应的目标路径、19 版扩展、配置和复制恢复方案。
+
+   以下 Bash 命令须在同一个 shell 中执行。把 `old`、`source_user` 和 `image` 替换成实际部署值，MasterData 使用 Alpine 变体。
+
+   ```bash
+   set -eu
+   umask 077
+   old='<旧容器名>'
+   source_user='<旧集群超级用户>'
+   image='postgres:19'
+   docker inspect --format '{{.Image}} {{range .Mounts}}{{println .Type .Name .Destination}}{{end}}' "$old"
+   read -rsp '旧集群超级用户密码: ' PGPASSWORD
+   echo
+   export PGPASSWORD
+   docker exec -e PGPASSWORD "$old" psql -X -U "$source_user" -d postgres -c 'SHOW server_version' -c 'SHOW data_directory'
+   old_volume=$(docker inspect --format '{{range .Mounts}}{{if and (eq .Type "volume") (or (eq .Destination "/var/lib/postgresql") (eq .Destination "/var/lib/postgresql/data"))}}{{println .Name}}{{end}}{{end}}' "$old")
+   test -n "$old_volume"
+   docker volume inspect "$old_volume" >/dev/null
+   test "$(docker exec -e PGPASSWORD "$old" psql -XAt -U "$source_user" -d postgres \
+     -c "SELECT count(*) FROM pg_roles WHERE rolname = 'nerv_upgrade_bootstrap'")" = 0
+   backup_dir=$(mktemp -d)
+   docker exec -e PGPASSWORD "$old" pg_dumpall -U "$source_user" > "$backup_dir/cluster.sql"
+   test -s "$backup_dir/cluster.sql"
+   unset PGPASSWORD
+   ```
+
+   将备份转存到受控位置；全库导出含角色密码验证信息。保留旧版本的部署配置、镜像与独立可恢复的物理备份。确认所有写入端仍处于停止状态，再停止旧数据库。对受 Aspire / Compose 或其他守护程序管理的服务，同时暂停其自动重启。
+
+2. **在独立新卷还原。** 使用源集群中不存在的临时超级用户；源集群角色与密码由导出恢复。目标端保持隔离，不映射宿主端口。若源库使用非默认 locale 或初始化参数，在创建目标前按源库配置它们。恢复命令任一项报错即停止，保留日志和旧卷。
+
+   ```bash
+   docker stop "$old"
+   stage="nerv-pg19-restore-$(date +%s)-$$"
+   stage_volume="$stage-data"
+   if docker volume inspect "$stage_volume" >/dev/null 2>&1; then exit 1; fi
+   docker volume create "$stage_volume" >/dev/null
+   read -rsp '临时还原用户密码: ' POSTGRES_PASSWORD
+   echo
+   export POSTGRES_PASSWORD
+   docker run -d --name "$stage" --network none \
+     --mount "type=volume,source=$stage_volume,target=/var/lib/postgresql" \
+     -e POSTGRES_USER=nerv_upgrade_bootstrap -e POSTGRES_PASSWORD \
+     -e 'POSTGRES_INITDB_ARGS=--auth-local=scram-sha-256 --auth-host=scram-sha-256' "$image"
+   export PGPASSWORD="$POSTGRES_PASSWORD"
+   unset POSTGRES_PASSWORD
+   ```
+
+   使用 `docker exec "$stage" pg_isready -h 127.0.0.1 -U nerv_upgrade_bootstrap` 等待最终服务就绪。然后导入并使用还原后的原超级用户复核。
+
+   ```bash
+   docker exec -i -e PGPASSWORD "$stage" psql -X -v ON_ERROR_STOP=1 -U nerv_upgrade_bootstrap -d postgres < "$backup_dir/cluster.sql"
+   read -rsp '还原后的原超级用户密码: ' PGPASSWORD
+   echo
+   docker exec -e PGPASSWORD "$stage" psql -X -v ON_ERROR_STOP=1 -U "$source_user" -d postgres \
+     -c 'SHOW server_version' -c 'SHOW data_directory' -c 'ALTER ROLE nerv_upgrade_bootstrap NOLOGIN'
+   unset PGPASSWORD
+   ```
+
+   若恢复的原超级用户没有 SCRAM 凭据，先按原集群批准的认证策略在隔离实例中完成凭据迁移；验证失败时停止切换。对照停写时的清单校验每个数据库、角色权限、扩展、历史、行数和业务凭证。验证源应用账号能够登录；核对服务端配置、访问规则、证书、时区和排序规则。只有还原及这些校验全部通过才进入切换。
+
+3. **离线切换。** 停止还原实例，保持旧服务和业务写入关闭。把已验证且已停止的 19 数据目录复制到原卷里的临时目录，复制成功后在同一文件系统内改名。下列命令遇到已存在的非空 19 数据目录或残留暂存目录会中止，须先核对其归属。15 的旧集群在原卷根部，18 的旧集群在 `18/docker`，两者都保留。
+
+   ```bash
+   docker stop "$stage"
+   docker run --rm --network none --user 0 \
+     --mount "type=volume,source=$stage_volume,target=/stage,readonly" \
+     --mount "type=volume,source=$old_volume,target=/target" \
+     --entrypoint sh "$image" -ec '
+       test "$(cat /stage/19/docker/PG_VERSION)" = 19
+       mkdir -p /target/19
+       test ! -e /target/19/staged-cluster
+       if test -e /target/19/docker; then rmdir /target/19/docker; fi
+       cp -a /stage/19/docker /target/19/staged-cluster
+       mv /target/19/staged-cluster /target/19/docker'
+   ```
+
+   单独启动 19 数据库并检查实际镜像、卷、`SHOW server_version` 和 `SHOW data_directory`。再次核对停写时的业务凭证与 migration history，再按第 4、5 节执行需要的应用迁移。完成只读冒烟并确认回滚窗口后，恢复业务写入与消费者。保留备份、原集群和还原卷直至备份保留期结束。
+
+4. **回滚。** 尚未开放业务写入时，停掉 19 和新版应用，恢复旧配置、镜像、挂载路径与原卷，以旧版本重启并复核停写时的凭证和数据库历史。15 的旧容器应恢复挂载 `/var/lib/postgresql/data`，18 应恢复挂载 `/var/lib/postgresql`。若已开放新写入，旧卷只包含停写时点；先再次停写并备份 19，按约定的恢复点和经验证的数据对账方案处理新增记录。回滚后如再次升级，需重新导出当前源库并在新暂存卷验证，不能直接启动上次切换遗留的 19 数据目录。
+
+官方依据见 [PostgreSQL 主版本升级说明](https://www.postgresql.org/docs/19/upgrading.html) 和 [PostgreSQL 官方 Docker 镜像的卷布局](https://hub.docker.com/_/postgres)。
+
 ## 7. Seed 契约
 
 Seed 是显式步骤，不混入普通 Web 启动；例外是下表默认随 Web 启动执行的产品基线 seed，以及下文非 Development 下随 IAM 启动执行的平台引导。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。

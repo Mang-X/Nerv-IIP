@@ -55,17 +55,15 @@
    BusinessBarcodeLabel 的 Development AppHost 会显式注入 `LabelPrinter__Mode=simulated`，供无物理设备的本地开发使用；该值不是生产默认。非 Development AppHost 必须从 release-install 参数取得逻辑 printer id、host、port、连接/写入超时、DPI 与支持码制，并以 `zpl-tcp` 启动。服务会在启动阶段拒绝缺项、重复 id、非法值或非开发模拟。需要验证真实打印机时必须使用现场批准的独立环境，不要把设备地址或凭据提交到仓库，也不要把 loopback 结果描述为物理出纸证据。
 
 8. **基础设施镜像 tag 必须固定。** 持久化本地资源必须在 AppHost 中显式固定版本。当前 PostgreSQL
-   为 `18`、Redis 为 `8`；不得使用 `latest` 或未固定的 Aspire provider 默认值。PostgreSQL 18+ 的
-   主版本数据目录布局与旧版（18 前）`/var/lib/postgresql/data` 不同，因此本地开发使用
-   `nerv-iip-postgres-18`，绝不得让 PostgreSQL 18 指向旧
-   `nerv-iip-postgres` 卷，除非已显式执行 `pg_upgrade` 或 dump/restore。没有受跟踪的升级计划、空卷测试、适用时的保留卷 migration 测试、AppHost
-   build、Compose publish 验证和 smoke 启动，不得切换主版本。若 Redis 报告 RDB/AOF 格式错误，停止
+   为 `19`、Redis 为 `8`；不得使用 `latest` 或未固定的 Aspire provider 默认值。普通开发沿用物理卷 `nerv-iip-postgres-18`，把父目录挂在
+   `/var/lib/postgresql`。已有 18 集群时，19 会要求显式迁移；请先停写并依照[数据库发布手册](database-release.md#postgresql-19)操作。
+   主版本切换仍须有受跟踪的升级计划、空卷测试、适用时的保留卷 migration 测试、AppHost build、Compose publish 验证和 smoke 启动。若 Redis 报告 RDB/AOF 格式错误，停止
    Aspire 后只移除本地 `nerv-iip-redis` cache 卷。
 
 ### 并行 worktree 共用真实依赖
 
 普通开发只允许一个非 ephemeral AppHost 持有共享基础设施：从主 checkout 运行 `./nerv.ps1 dev`，
-PostgreSQL 18 与 Redis 8 分别固定暴露在 `127.0.0.1:15432`、`127.0.0.1:6379`。其他 worktree
+PostgreSQL 19 与 Redis 8 分别固定暴露在 `127.0.0.1:15432`、`127.0.0.1:6379`。其他 worktree
 只作为测试客户端连接这两个 endpoint，不再各自启动 `./nerv.ps1 dev`；`fullstack run/start` 仍是一次性
 隔离会话并使用动态端口和 session 专属卷，不能把其 endpoint 写入长期 profile。若固定端口已被占用，先用
 `./nerv.ps1 status` 与 Docker 资源列表确认所有者，不得另起第二套共享 AppHost 或随意终止未知容器。

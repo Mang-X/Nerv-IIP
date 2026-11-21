@@ -19,7 +19,7 @@ $ErrorActionPreference = 'Stop'
 [IO.File]::AppendAllText($env:NERV_BUILD_CALLS, ((@{ command=$env:NERV_BUILD_COMMAND; arguments=@($args); connection=$env:NERV_IIP_TEST_POSTGRES } | ConvertTo-Json -Compress) + "`n"))
 $mode=$env:NERV_BUILD_MODE
 if ([string]::Equals([string]$env:NERV_BUILD_COMMAND, 'psql', [StringComparison]::Ordinal)) {
-    if ($args[-1].Contains('server_version', [StringComparison]::Ordinal)) { '18.6' }
+    if ($args[-1].Contains('server_version', [StringComparison]::Ordinal)) { '19.0' }
     if ([string]::Equals([string]$mode, 'cleanup', [StringComparison]::Ordinal) -and $args[-1].StartsWith('DROP DATABASE', [StringComparison]::Ordinal)) { exit 37 }
     exit 0
 }

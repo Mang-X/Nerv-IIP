@@ -34,7 +34,7 @@ printf 'child-ok:%s\n' "$*" >> "$marker"
 
 if [ "${NERV_FULLSTACK_WORKER_PROBE_MAN:-}" = '1' ] && [ "${1:-}" = 'container' ] && [ "${2:-}" = 'inspect' ]; then
   cat <<'JSON'
-[ {"Id":"probe-postgres","Name":"/postgres-probe","Config":{"Image":"postgres:18","Env":["POSTGRES_USER=postgres","POSTGRES_PASSWORD=synthetic-postgres"]},"NetworkSettings":{"Ports":{"5432/tcp":[{"HostPort":"15432"}]}},"Labels":{"com.nerv-iip.session":"nerv-abcd-123456"}},{"Id":"probe-redis","Name":"/redis-probe","Path":"redis-server","Args":["--requirepass","synthetic-redis"],"Config":{"Image":"redis:8","Env":["REDIS_PASSWORD=synthetic-redis"],"Entrypoint":[],"Cmd":["redis-server","--requirepass","synthetic-redis"]},"NetworkSettings":{"Ports":{"6379/tcp":[{"HostPort":"16379"}]}},"Labels":{"com.nerv-iip.session":"nerv-abcd-123456"}}]
+[ {"Id":"probe-postgres","Name":"/postgres-probe","Config":{"Image":"postgres:19","Env":["POSTGRES_USER=postgres","POSTGRES_PASSWORD=synthetic-postgres"]},"NetworkSettings":{"Ports":{"5432/tcp":[{"HostPort":"15432"}]}},"Labels":{"com.nerv-iip.session":"nerv-abcd-123456"}},{"Id":"probe-redis","Name":"/redis-probe","Path":"redis-server","Args":["--requirepass","synthetic-redis"],"Config":{"Image":"redis:8","Env":["REDIS_PASSWORD=synthetic-redis"],"Entrypoint":[],"Cmd":["redis-server","--requirepass","synthetic-redis"]},"NetworkSettings":{"Ports":{"6379/tcp":[{"HostPort":"16379"}]}},"Labels":{"com.nerv-iip.session":"nerv-abcd-123456"}}]
 JSON
   exit 0
 fi
@@ -45,7 +45,7 @@ case "${1:-}:${2:-}" in
   volume:ls) printf '%s\n' 'probe-volume-nerv-abcd-123456' ;;
   container:inspect)
     cat <<'JSON'
-[ {"Id":"probe-container-id","Name":"/postgres-probe","Config":{"Image":"postgres:18","Env":[]},"NetworkSettings":{"Networks":{"session":{"NetworkID":"probe-network-id"}}},"Labels":{"com.nerv-iip.session":"nerv-abcd-123456"}}]
+[ {"Id":"probe-container-id","Name":"/postgres-probe","Config":{"Image":"postgres:19","Env":[]},"NetworkSettings":{"Networks":{"session":{"NetworkID":"probe-network-id"}}},"Labels":{"com.nerv-iip.session":"nerv-abcd-123456"}}]
 JSON
     ;;
   network:inspect)

@@ -276,7 +276,7 @@ function Assert-NightlyBusinessPerformanceWorkflow {
     Assert-WorkflowContract ([string]::Equals($manualThresholdBinding, '${{ github.event.inputs.max_elapsed_milliseconds || ''0'' }}', [StringComparison]::Ordinal)) 'business-performance job must bind MANUAL_MAX_ELAPSED_MILLISECONDS exactly to github.event.inputs.max_elapsed_milliseconds with fallback 0.'
 
     $postgres = Get-WorkflowProperty -Object (Get-WorkflowProperty -Object $job -Name 'services') -Name 'postgres'
-    Assert-WorkflowContract ($null -ne $postgres -and [string]::Equals([string](Get-WorkflowProperty -Object $postgres -Name 'image'), 'postgres:18', [StringComparison]::Ordinal)) 'business-performance job must use postgres:18 service.'
+    Assert-WorkflowContract ($null -ne $postgres -and [string]::Equals([string](Get-WorkflowProperty -Object $postgres -Name 'image'), 'postgres:19', [StringComparison]::Ordinal)) 'business-performance job must use postgres:19 service.'
     $postgresEnvironment = Get-WorkflowProperty -Object $postgres -Name 'env'
     foreach ($expected in @{ POSTGRES_USER = 'nerv'; POSTGRES_PASSWORD = 'nerv'; POSTGRES_DB = 'nerv_iip_performance' }.GetEnumerator()) {
         Assert-WorkflowContract ([string]::Equals([string](Get-WorkflowProperty -Object $postgresEnvironment -Name $expected.Key), $expected.Value, [StringComparison]::Ordinal)) "PostgreSQL service must set $($expected.Key)=$($expected.Value)."

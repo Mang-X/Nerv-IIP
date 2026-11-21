@@ -700,7 +700,7 @@ jobs:
       NERV_IIP_TEST_POSTGRES: Host=127.0.0.1;Port=5432;Database=postgres;Username=nerv;Password=nerv
     services:
       postgres:
-        image: postgres:18
+        image: postgres:19
         env:
           POSTGRES_USER: nerv
           POSTGRES_PASSWORD: nerv
@@ -844,7 +844,7 @@ jobs:
       NERV_IIP_TEST_REDIS: 127.0.0.1:6379
     services:
       postgres:
-        image: postgres:18
+        image: postgres:19
         env:
           POSTGRES_USER: nerv
           POSTGRES_PASSWORD: nerv
@@ -1260,7 +1260,7 @@ jobs:
           # （600s），因此本次不改动任何超时预算。
           docker_attempt=1
           while true; do
-            if { docker image inspect postgres:18 >/dev/null 2>&1 || timeout --kill-after=10 75 docker pull postgres:18; } \
+            if { docker image inspect postgres:19 >/dev/null 2>&1 || timeout --kill-after=10 75 docker pull postgres:19; } \
               && { docker image inspect redis:8 >/dev/null 2>&1 || timeout --kill-after=10 75 docker pull redis:8; }; then
               echo "依赖镜像准备成功（第 ${docker_attempt} 次尝试）。"
               break

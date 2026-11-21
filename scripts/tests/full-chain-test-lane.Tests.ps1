@@ -203,7 +203,7 @@ if not errorlevel 1 (
     >&2 echo NERV_FULLCHAIN_ORIGINAL_FAILURE
     exit /b 42
   )
-  echo 18.6
+  echo 19.0
 )
 echo %* | findstr /C:" redis-cli --raw PING" >nul
 if not errorlevel 1 echo PONG
@@ -244,7 +244,7 @@ case " $* " in
       printf '%s\n' 'NERV_FULLCHAIN_ORIGINAL_FAILURE' >&2
       exit 42
     fi
-    printf '%s\n' '18.6'
+    printf '%s\n' '19.0'
     ;;
   *" redis-cli --raw PING "*) printf '%s\n' 'PONG' ;;
   *" redis-cli --raw INFO server "*) printf '%s\n' 'redis_version:8.10.1' ;;

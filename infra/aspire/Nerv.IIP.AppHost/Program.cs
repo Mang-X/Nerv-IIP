@@ -109,7 +109,8 @@ if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
 // 门控判据与所有项目资源的运行环境、Development-only 注入同源：AppHost 自身的 EnvironmentName。
 
 var postgres = WithFullStackOwnership(builder.AddPostgres("postgres"))
-    .WithImageTag("18")
+    .WithImageTag("19")
+    // 保留已有卷名，让镜像识别旧集群并要求显式迁移。
     .WithDataVolume(SessionVolume("nerv-iip-postgres-18"));
 if (!fullStackEphemeral)
 {
