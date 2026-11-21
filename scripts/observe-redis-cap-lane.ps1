@@ -18,7 +18,7 @@ param(
     [Parameter(Mandatory)] [string]$ResultsDirectory,
     [Parameter(Mandatory)] [string]$OutputDirectory,
     [Parameter(Mandatory)] [string]$CountersPath,
-    [string]$ManifestPath = (Join-Path $PSScriptRoot 'redis-cap-test-lane.json'),
+    [string]$ManifestPath = (Join-Path $PSScriptRoot 'config/redis-cap-test-lane.json'),
     [ValidateRange(1, 1150)] [int]$DurationSeconds = 1150,
     [ValidateRange(1024, 8388608)] [long]$MaxFileBytes = 8388608,
     [switch]$Disabled

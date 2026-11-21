@@ -14,10 +14,10 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $libraryPath = Join-Path $repoRoot 'scripts/lib/CiImpactPlan.ps1'
-$entrypointPath = Join-Path $repoRoot 'scripts/get-ci-impact-plan.ps1'
+$entrypointPath = Join-Path $repoRoot 'scripts/ci/get-impact-plan.ps1'
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $acceptanceScenarioMatrixOwningPaths = @(
-    'scripts/acceptance-scenario-matrix.json'
+    'scripts/config/acceptance-scenario-matrix.json'
     'scripts/lib/AcceptanceScenarioMatrix.ps1'
     'scripts/tests/acceptance-scenario-matrix.Tests.ps1'
 )
@@ -431,7 +431,7 @@ function Assert-PostgresLaneOwningPathsRoute {
     foreach ($owningPath in @(
             'scripts/run-postgres-test-lane.ps1',
             'scripts/lib/PostgresTestLane.ps1',
-            'scripts/postgres-test-lane.json'
+            'scripts/config/postgres-test-lane.json'
         )) {
         Assert-ImpactCase -Name "postgres-lane-owner-$([IO.Path]::GetFileName($owningPath))" -Paths @($owningPath) -Flags @{
             scripts = $true; postgresql = $true; redis_cap = $false; full_chain = $false
@@ -441,8 +441,8 @@ function Assert-PostgresLaneOwningPathsRoute {
 
 function Assert-BackendFastLaneControlInputsRoute {
     foreach ($backendFastLaneControlInput in @(
-            'scripts/backend-test-shards.json',
-            'scripts/test-evidence-policy.json',
+            'scripts/config/backend-test-shards.json',
+            'scripts/config/test-evidence-policy.json',
             'scripts/run-backend-test-shard.ps1',
             'scripts/verify-backend-test-shards.ps1',
             'scripts/verify-backend-real-postgres-tests.ps1',
@@ -462,7 +462,7 @@ function Assert-RedisCapLaneOwningPathsRoute {
     foreach ($owningPath in @(
             'scripts/run-redis-cap-test-lane.ps1',
             'scripts/lib/RedisCapTestLane.ps1',
-            'scripts/redis-cap-test-lane.json'
+            'scripts/config/redis-cap-test-lane.json'
         )) {
         Assert-ImpactCase -Name "redis-cap-lane-owner-$([IO.Path]::GetFileName($owningPath))" -Paths @($owningPath) -Flags @{
             scripts = $true; postgresql = $false; redis_cap = $true; full_chain = $false
@@ -474,7 +474,7 @@ function Assert-FullChainLaneOwningPathsRoute {
     foreach ($owningPath in @(
             'scripts/run-full-chain-test-lane.ps1',
             'scripts/lib/FullChainTestLane.ps1',
-            'scripts/full-chain-test-lane.json',
+            'scripts/config/full-chain-test-lane.json',
             'scripts/tests/full-chain-test-lane.Tests.ps1',
             'scripts/verify-erp-sales-order-demand-planning.ps1',
             'scripts/verify-erp-wms-delivery-completion.ps1'
@@ -579,7 +579,7 @@ Assert-ImpactCase -Name 'reference-api-non-manifest' -Paths @('docs/reference/ap
 # The exemption table reaches the same gate through the generic 'scripts/' rule. Asserted rather
 # than assumed: it is the file that decides which forks stay silent, and if it ever moved out of
 # 'scripts/' the gate would stop being scheduled on changes to it.
-Assert-ImpactCase -Name 'restore-lock-exemption-table' -Paths @('scripts/restore-lock-drift-exemptions.json') -Flags @{
+Assert-ImpactCase -Name 'restore-lock-exemption-table' -Paths @('scripts/config/restore-lock-drift-exemptions.json') -Flags @{
     scripts = $true; docs = $false; backend = $false; frontend = $false
 }
 
@@ -940,7 +940,7 @@ finally {
 $postgresRoutingBlock = @'
             if ([string]::Equals($path, 'scripts/run-postgres-test-lane.ps1', [StringComparison]::Ordinal) -or
                 [string]::Equals($path, 'scripts/lib/PostgresTestLane.ps1', [StringComparison]::Ordinal) -or
-                [string]::Equals($path, 'scripts/postgres-test-lane.json', [StringComparison]::Ordinal)) {
+                [string]::Equals($path, 'scripts/config/postgres-test-lane.json', [StringComparison]::Ordinal)) {
                 Select-Impact -Name 'postgresql' -Reason $reason
             }
 '@

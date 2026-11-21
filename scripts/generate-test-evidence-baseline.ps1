@@ -54,7 +54,7 @@ if ([string]::Equals([string]($PSCmdlet.ParameterSetName), [string]('GitHubConso
             dotnetSdk = [string]$runnerProvenance.dotnetSdk
         })
         selectedLanes = @('backend'); lane = 'backend'
-        generatorCommand = "pwsh scripts/generate-test-evidence-baseline.ps1 -Repository $Repository -GitHubRunId $GitHubRunId -GitHubJobId $GitHubJobId -OutputPath scripts/test-evidence-baseline.json"
+        generatorCommand = "pwsh scripts/generate-test-evidence-baseline.ps1 -Repository $Repository -GitHubRunId $GitHubRunId -GitHubJobId $GitHubJobId -OutputPath scripts/config/test-evidence-baseline.json"
     }
     $summaries = @(ConvertFrom-NervDotNetConsoleSummary -Text $safeLog -RunMetadata $metadata)
 }
@@ -84,7 +84,7 @@ else {
         sourceKind = 'trx-evidence'; repository = [string]$first.repository; workflowRunId = [string]$first.workflowRunId; runAttempt = 1; jobId = ''
         headSha = [string]$first.headSha; testedSha = [string]$first.testedSha; sourceUrl = [string]$first.sourceUrl; event = 'push'; headBranch = 'main'; conclusion = 'success'; jobConclusion = 'success'
         laneProvenance = @(Get-NervEvidenceLaneProvenance -SourceSummaries $sourceSummaries); selectedLanes = @(Get-NervStringsSorted -Values @($summaries.lane) -Comparer ([StringComparer]::Ordinal) -Unique)
-        generatorCommand = 'pwsh scripts/generate-test-evidence-baseline.ps1 -EvidenceRoot artifacts/test-evidence -OutputPath scripts/test-evidence-baseline.json'
+        generatorCommand = 'pwsh scripts/generate-test-evidence-baseline.ps1 -EvidenceRoot artifacts/test-evidence -OutputPath scripts/config/test-evidence-baseline.json'
     }
 }
 

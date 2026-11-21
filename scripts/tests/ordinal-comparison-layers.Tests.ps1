@@ -409,6 +409,17 @@ $exceptions = @(
     @{ Site = 'New-NervTestEvidenceSummary'; Text = 'Group-Object { Get-NervRetainedSkipReason $_ }'; Reason = 'Skip reasons are human prose; folding visually equivalent reasons is intentional.' }
 )
 
+function Get-RepositoryScriptItems([string] $ScriptsRoot) {
+    Get-ChildItem -LiteralPath $ScriptsRoot | Where-Object { -not [string]::Equals($_.Name, 'tmp', [StringComparison]::Ordinal) }
+}
+
+function Get-RepositoryScriptFiles([string] $ScriptsRoot) {
+    foreach ($item in Get-RepositoryScriptItems $ScriptsRoot) {
+        if ($item.PSIsContainer) { Get-ChildItem -LiteralPath $item.FullName -Recurse -File -Filter '*.ps1' }
+        elseif ([string]::Equals($item.Extension, '.ps1', [StringComparison]::OrdinalIgnoreCase)) { $item }
+    }
+}
+
 function Get-NervOrdinalLayers([string] $Root) {
     $scriptsRoot = Join-Path $Root 'scripts'
     $testsRoot = Join-Path $scriptsRoot 'tests'
@@ -432,7 +443,7 @@ function Get-NervOrdinalLayers([string] $Root) {
     foreach ($layer in $layers.Values) {
         foreach ($file in $layer) { [void]$listedPaths.Add($file.FullName) }
     }
-    $layers.other = @(Get-ChildItem $scriptsRoot -Recurse -File -Filter '*.ps1' | Where-Object {
+    $layers.other = @(Get-RepositoryScriptFiles $scriptsRoot | Where-Object {
         -not $listedPaths.Contains($_.FullName)
     })
     return $layers
@@ -455,7 +466,7 @@ function Invoke-NervOrdinalLayerGate([string] $Root, [object[]] $NamedExceptions
         }
     }
     $allScriptPaths = [Collections.Generic.HashSet[string]]::new(
-        [string[]]@(Get-ChildItem (Join-Path $Root 'scripts') -Recurse -File -Filter '*.ps1' | ForEach-Object FullName),
+        [string[]]@(Get-RepositoryScriptFiles (Join-Path $Root 'scripts') | ForEach-Object FullName),
         [StringComparer]::Ordinal)
     Assert-Layer ($seen.SetEquals($allScriptPaths)) 'Ordinal layers must cover every governed scripts/**/*.ps1 source exactly once.'
     foreach ($key in $exceptionHits.Keys) { Assert-Layer ($exceptionHits[$key] -eq 1) "Named ordinal exception '$key' matched $($exceptionHits[$key]) sites; expected exactly one." }
@@ -475,7 +486,8 @@ Assert-Layer ($actualTestPaths.SetEquals($expectedTestPaths)) 'The recursive tes
 $mutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ordinal-layers-$([guid]::NewGuid().ToString('N'))"
 try {
     [IO.Directory]::CreateDirectory($mutationRoot) | Out-Null
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts') -Destination $mutationRoot -Recurse
+    $mirrorScripts = [IO.Directory]::CreateDirectory((Join-Path $mutationRoot 'scripts')).FullName
+    Get-RepositoryScriptItems (Join-Path $repoRoot 'scripts') | Copy-Item -Destination $mirrorScripts -Recurse
     $mutationPaths = @(
         [pscustomobject]@{ Layer = 'verify'; Path = 'scripts/verify-ordinal-layer-mutation.ps1' },
         [pscustomobject]@{ Layer = 'top'; Path = 'scripts/ordinal-layer-mutation.ps1' },

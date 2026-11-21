@@ -13,7 +13,7 @@
 param(
     [string[]] $Path = @((Join-Path $PSScriptRoot '.')),
 
-    [string] $BaselinePath = (Join-Path $PSScriptRoot 'script-governance-baseline.json')
+    [string] $BaselinePath = (Join-Path $PSScriptRoot 'config/script-governance-baseline.json')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,7 +27,7 @@ $allowedCategories = @('check', 'verify', 'generate', 'release-install', 'librar
 # This used to exclude `scripts/lib/*` wholesale, which meant ForbiddenCommand, DynamicInvocation,
 # ForbiddenProcessStart and even ParseError were simply not enforced on the shared libraries — the
 # files with the widest blast radius in the whole tree. The exclusion is now the two files that
-# cannot meaningfully be judged by rules that point at them, plus the test tree; libraries are
+# cannot meaningfully be judged by rules that point at them, plus tests and local scratch files; libraries are
 # scanned under a declared library scope (see $libraryScopePattern below).
 #
 # It is a data table rather than an inline boolean chain because
@@ -41,7 +41,8 @@ $scanExclusions = @(
     'scripts/lib/ScriptAutomation.ps1',
     # Test scripts run the governed programs as real processes and author deliberately invalid
     # fixtures; both are the point of a test and neither is a governance finding.
-    'scripts/tests/*'
+    'scripts/tests/*',
+    'scripts/tmp/*'
 )
 
 # Files under this path are libraries: dot-sourced into a caller's scope, never invoked as programs.

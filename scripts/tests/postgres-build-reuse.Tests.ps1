@@ -72,7 +72,7 @@ try {
     }
     $env:PATH="$fixtureRoot$([IO.Path]::PathSeparator)$($saved.PATH)"
     $env:NERV_IIP_TEST_POSTGRES='Host=fixture;Port=5432;Database=postgres;Username=fixture;Password=fixture'
-    $members=@(Get-Content (Join-Path $repoRoot 'scripts/postgres-test-lane.json') -Raw | ConvertFrom-Json).members
+    $members=@(Get-Content (Join-Path $repoRoot 'scripts/config/postgres-test-lane.json') -Raw | ConvertFrom-Json).members
     $projects=@($members[0].project,$members[1].project)
     $fixtureMembers=@(
         foreach ($index in 0..2) {

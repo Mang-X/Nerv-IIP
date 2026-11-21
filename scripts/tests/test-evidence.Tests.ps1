@@ -1325,7 +1325,7 @@ $liveAssignments = Get-NervSourceSkipAssignments -RepoRoot $repoRoot
 # 移除退役种子拥有的 7 个 skip 来源，余 59 个。
 Assert-Equal 59 $liveAssignments.Count '已批准的 source skip 清单变更必须显式分类。'
 Assert-True (($liveAssignments | Where-Object sourcePath -like '*SimulatedConnectorHostProcessTests.cs').sourceText.Contains('Windows runs the platform-specific executable resolution contract only', [StringComparison]::Ordinal)) 'Quote-aware scanner must retain semicolons inside a C# string literal.'
-$livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/test-evidence-policy.json')
+$livePolicy = Import-NervTestEvidencePolicy -Path (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json')
 $liveViolations = Test-NervTestEvidencePolicy -Policy $livePolicy -RepoRoot $repoRoot -AsOfUtc ([DateTimeOffset]::UtcNow)
 # #3424：失败消息必须把违例逐条摊开。原先只说「must be valid」，而这条断言恰好是
 # 「只加了 testIdentities、忘了同步 expectedRuntimeTestCount」唯一会报的地方 —— 违例对象里
@@ -2250,8 +2250,8 @@ foreach ($malformedSchemaCase in @(
 # durations are usable. What is deliberately NOT asserted any more is topology coverage — "this file
 # must carry a row for every authenticated lane" made a shard rearrangement or a new test project
 # turn a measurement into a red gate, which is the ceremony #1507 removed. Coverage gaps are now
-# reported by scripts/report-backend-test-shard-balance.ps1 as report-only warnings with an estimate.
-$committedBaseline = Get-Content (Join-Path $repoRoot 'scripts/test-evidence-baseline.json') -Raw | ConvertFrom-Json
+# reported by scripts/ci/report-backend-test-shard-balance.ps1 as report-only warnings with an estimate.
+$committedBaseline = Get-Content (Join-Path $repoRoot 'scripts/config/test-evidence-baseline.json') -Raw | ConvertFrom-Json
 Assert-Equal 'test' $committedBaseline.granularity 'Committed snapshot must be test-granularity.'
 Assert-Equal 'trx-elapsed' $committedBaseline.durationMetric 'Committed snapshot must use the trx-elapsed duration metric.'
 Assert-Equal 'trx-evidence' $committedBaseline.source.kind 'Committed snapshot must be generated from TRX evidence, not console wall clock.'
@@ -2510,7 +2510,7 @@ try {
             '-Repository', 'Mang-X/Nerv-IIP', '-JobName', 'Backend Tests', '-CurrentTestOutcome', 'success',
             '-Event', ("push" + [char]0x00AD), '-HeadBranch', 'main', '-SourceUrl', 'https://github.com/Mang-X/Nerv-IIP/actions/runs/fixture-invalid-event',
             '-RunnerImage', 'ubuntu24@20260720.247.2', '-DotnetSdk', '10.0.302', '-ArtifactName', 'fixture-artifact', '-RetentionDays', '14',
-            '-PolicyPath', (Join-Path $repoRoot 'scripts/test-evidence-policy.json'),
+            '-PolicyPath', (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json'),
             '-BaselinePath', $projectBaselinePath
         ) | Out-Null
     }
@@ -2526,7 +2526,7 @@ try {
         '-Repository', 'Mang-X/Nerv-IIP', '-JobName', 'Backend Tests', '-CurrentTestOutcome', 'success',
         '-Event', 'push', '-HeadBranch', 'main', '-SourceUrl', 'https://github.com/Mang-X/Nerv-IIP/actions/runs/fixture-success',
         '-RunnerImage', 'ubuntu24@20260720.247.2', '-DotnetSdk', '10.0.302', '-ArtifactName', 'fixture-artifact', '-RetentionDays', '14',
-        '-PolicyPath', (Join-Path $repoRoot 'scripts/test-evidence-policy.json'),
+        '-PolicyPath', (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json'),
         '-BaselinePath', $projectBaselinePath
     ) | Out-Null
     foreach ($required in @('tests.jsonl', 'summary.json', 'summary.md', 'diagnostics.log')) { Assert-True (Test-Path (Join-Path $successOut $required)) "Collector missing '$required'." }
@@ -2638,8 +2638,8 @@ try {
         '-Repository', 'Mang-X/Nerv-IIP', '-JobName', [string](Get-NervTestEvidenceLaneJobs)[$committedLane], '-CurrentTestOutcome', 'success',
         '-Event', 'push', '-HeadBranch', 'main', '-SourceUrl', 'https://github.com/Mang-X/Nerv-IIP/actions/runs/fixture-committed-baseline',
         '-RunnerImage', 'ubuntu24@20260720.247.2', '-DotnetSdk', '10.0.302', '-ArtifactName', 'fixture-artifact', '-RetentionDays', '14',
-        '-PolicyPath', (Join-Path $repoRoot 'scripts/test-evidence-policy.json'),
-        '-BaselinePath', (Join-Path $repoRoot 'scripts/test-evidence-baseline.json')
+        '-PolicyPath', (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json'),
+        '-BaselinePath', (Join-Path $repoRoot 'scripts/config/test-evidence-baseline.json')
     ) | Out-Null
     $committedSummary = Get-Content (Join-Path $committedOut 'summary.json') -Raw | ConvertFrom-Json
     Assert-True ([bool]$committedSummary.baseline.available) "Committed baseline must be consumable by the collector for lane '$committedLane'."

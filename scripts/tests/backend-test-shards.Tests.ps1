@@ -22,9 +22,9 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 
-$manifestPath = Join-Path $repoRoot 'scripts/backend-test-shards.json'
+$manifestPath = Join-Path $repoRoot 'scripts/config/backend-test-shards.json'
 $validatorPath = Join-Path $repoRoot 'scripts/verify-backend-test-shards.ps1'
-$policyPath = Join-Path $repoRoot 'scripts/test-evidence-policy.json'
+$policyPath = Join-Path $repoRoot 'scripts/config/test-evidence-policy.json'
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $temporaryBackendInventory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-inventory-{0}" -f [Guid]::NewGuid().ToString('N'))
 $temporaryEmptyBackendInventory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-empty-backend-inventory-{0}" -f [Guid]::NewGuid().ToString('N'))
@@ -2064,7 +2064,7 @@ try {
         Assert-Contract ($evidenceValidation.Message.Contains($evidenceMutation.Expected)) "Structured workflow validation must reject the '$($evidenceMutation.Name)' evidence mutation."
     }
 
-    $policy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
+    $policy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json') -Raw | ConvertFrom-Json
     foreach ($rule in @($policy.rules)) {
         if ([string]::Equals([string]([string] $rule.requiredLane), [string]('postgres'), [StringComparison]::Ordinal)) {
             $rule.testIdentities = @()
@@ -2102,7 +2102,7 @@ try {
     Assert-Contract (-not $wrongShardDirectorySelector.Passed) 'Relocating the Inventory directory PostgreSQL selector to a non-owning fast shard must fail shard governance.'
     Assert-Contract ($wrongShardDirectorySelector.Message.Contains($directoryFinding, [StringComparison]::Ordinal)) 'Relocating the Inventory directory PostgreSQL selector must report the complete direct Docker finding for its owning shard.'
 
-    $directoryPolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
+    $directoryPolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json') -Raw | ConvertFrom-Json
     # #1561 之后目录类的身份拆为 Docker 夹具 / directory external，#2228 再拆出 line-side external。
     # 只删其中一条，类选择器仍能经其余规则解析成功，变异就失去鉴别力；因此把覆盖该类的三条规则
     # 一并删掉，验证"选择器无处解析"这条不变量。
@@ -2190,7 +2190,7 @@ try {
     $collisionMethod = $collisionSelector.Substring($collisionSelector.LastIndexOf('.', [StringComparison]::Ordinal) + 1)
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $temporaryCollisionSourcePath) | Out-Null
     Set-Content -LiteralPath $temporaryCollisionSourcePath -NoNewline -Value "public sealed class Fixture { public void $collisionMethod() { } public void ${collisionMethod}Extra() { } }"
-    $collisionPolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
+    $collisionPolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json') -Raw | ConvertFrom-Json
     $collisionSourceIds = @($collisionPolicy.rules | Where-Object { [Collections.Generic.HashSet[string]]::new([string[]]@(@($_.testIdentities)), [StringComparer]::Ordinal).Contains([string]($collisionSelector)) } | ForEach-Object { [string] $_.sourceId })
     foreach ($collisionSource in @($collisionPolicy.sources)) {
         if ([Collections.Generic.HashSet[string]]::new([string[]]@($collisionSourceIds), [StringComparer]::OrdinalIgnoreCase).Contains([string]([string] $collisionSource.id))) {
@@ -2242,8 +2242,8 @@ finally {
 # ---------------------------------------------------------------------------------------------
 . (Join-Path $repoRoot 'scripts/lib/BackendTestShardTimings.ps1')
 
-$balanceScript = Join-Path $repoRoot 'scripts/report-backend-test-shard-balance.ps1'
-$timingUpdateScript = Join-Path $repoRoot 'scripts/update-backend-test-shard-timings.ps1'
+$balanceScript = Join-Path $repoRoot 'scripts/ci/report-backend-test-shard-balance.ps1'
+$timingUpdateScript = Join-Path $repoRoot 'scripts/ci/update-backend-test-shard-timings.ps1'
 Assert-Contract (Test-Path -LiteralPath $balanceScript -PathType Leaf) 'The report-only shard balance entry point is missing.'
 Assert-Contract (Test-Path -LiteralPath $timingUpdateScript -PathType Leaf) 'The shard timing cache refresher is missing.'
 
@@ -2318,7 +2318,7 @@ $timingFixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-shar
 try {
     New-Item -ItemType Directory -Path $timingFixtureRoot -Force | Out-Null
     $absentFallback = Join-Path $timingFixtureRoot 'no-such-snapshot.json'
-    $snapshot = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-baseline.json') -Raw | ConvertFrom-Json
+    $snapshot = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/config/test-evidence-baseline.json') -Raw | ConvertFrom-Json
     $allObservations = @(
         foreach ($row in @(Get-NervShardTimingRowsFromEvidenceSummary -Summary $snapshot)) {
             [pscustomobject]@{ runId = 'fixture-run-1'; assembly = [string] $row.assembly; lane = [string] $row.lane; elapsedMilliseconds = [double] $row.elapsedMilliseconds }
@@ -2373,7 +2373,7 @@ try {
     # coverage drift that is worth knowing about and worthless as a gate.
     $fallbackBalance = Invoke-GovernedScript -ScriptPath $balanceScript -Name 'shard-balance-committed-fallback' -Arguments @(
         '-TimingCachePath', (Join-Path $timingFixtureRoot 'no-such-cache.json'),
-        '-FallbackEvidencePath', (Join-Path $repoRoot 'scripts/test-evidence-baseline.json'),
+        '-FallbackEvidencePath', (Join-Path $repoRoot 'scripts/config/test-evidence-baseline.json'),
         '-NoRefresh'
     )
     Assert-Contract ($fallbackBalance.Passed) 'The balance report must fall back to the committed snapshot without failing.'
@@ -2400,7 +2400,7 @@ try {
     $newProjectBalance = Invoke-GovernedScript -ScriptPath $balanceScript -Name 'shard-balance-new-test-project' -Arguments @(
         '-ManifestPath', $newProjectManifestPath,
         '-TimingCachePath', (Join-Path $timingFixtureRoot 'no-such-cache.json'),
-        '-FallbackEvidencePath', (Join-Path $repoRoot 'scripts/test-evidence-baseline.json'),
+        '-FallbackEvidencePath', (Join-Path $repoRoot 'scripts/config/test-evidence-baseline.json'),
         '-NoRefresh'
     )
     Assert-Contract ($newProjectBalance.Passed) 'Adding a backend test project must not turn the shard balance report red; a coverage gap is report-only by construction.'
@@ -2464,7 +2464,7 @@ try {
     # test. Which project that is stays *derived* rather than pinned: pinning it to a shard id is
     # how the neighbouring lane-attribution fixture once went silently vacuous when MAN-669 PR-A
     # moved an exclusion to another shard.
-    $evidencePolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
+    $evidencePolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json') -Raw | ConvertFrom-Json
     $policyLaneToHeavyLane = @{}
     foreach ($heavyLane in @($manifest.heavyLanes)) { $policyLaneToHeavyLane[[string] $heavyLane.policyLane] = [string] $heavyLane.id }
 
@@ -2563,7 +2563,7 @@ try {
     Assert-Contract (@($receiver.projects) -contains $movedProject -and -not (@($donor.projects) -contains $movedProject)) 'The rearrangement fixture must actually move a project between shards.'
     Assert-Contract ((@($receiver.excludedTestLanes) -contains $donorExtraLane) -and -not (@($donor.excludedTestLanes) -contains $donorExtraLane)) "The rearrangement fixture must move heavy lane '$donorExtraLane' with the project that requires it, otherwise it never reaches the excludedTestLanes coupling point."
 
-    $fullTimings = Get-NervShardTimingLookup -CachePath (Join-Path $timingFixtureRoot 'no-such-cache.json') -FallbackEvidencePath (Join-Path $repoRoot 'scripts/test-evidence-baseline.json')
+    $fullTimings = Get-NervShardTimingLookup -CachePath (Join-Path $timingFixtureRoot 'no-such-cache.json') -FallbackEvidencePath (Join-Path $repoRoot 'scripts/config/test-evidence-baseline.json')
 
     # What a rearrangement must not do is **lose a key**: an assembly must resolve to the same timing
     # key, and that key to the same measurement, whichever shard happens to hold it.
@@ -3020,7 +3020,7 @@ try {
             [Parameter(Mandatory)] [string] $Lane
         )
 
-        $probePolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json
+        $probePolicy = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json') -Raw | ConvertFrom-Json
         $probePolicy.rules = @(@($probePolicy.rules) + @($QuarantineRule))
         return @(
             Get-NervStringsSorted -Values @(Get-NervTestEvidenceViolations -Records @() -Policy $probePolicy -SelectedLanes @($Lane) -RunnerOs 'Linux' |

@@ -12,13 +12,13 @@
 
 [CmdletBinding()]
 param(
-    [string] $WorkflowPath = (Join-Path $PSScriptRoot '../.github/workflows/ci.yml')
+    [string] $WorkflowPath = (Join-Path $PSScriptRoot '../../.github/workflows/ci.yml')
 )
 
 $ErrorActionPreference = 'Stop'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-. (Join-Path $PSScriptRoot 'lib/ScriptAutomation.ps1')
-. (Join-Path $PSScriptRoot 'lib/CiRequiredSummary.ps1')
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+. (Join-Path $PSScriptRoot '../lib/ScriptAutomation.ps1')
+. (Join-Path $PSScriptRoot '../lib/CiRequiredSummary.ps1')
 
 $findings = @(Get-NervCiRequiredSummaryFindings -WorkflowPath $WorkflowPath -RepositoryRoot $repoRoot)
 if ($findings.Count -gt 0) {

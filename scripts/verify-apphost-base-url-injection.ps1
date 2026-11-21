@@ -27,7 +27,7 @@
     护栏对它零鉴别力，PR #3484 已经实测过一次：删掉当时新增的那条注入，既有的
     verify-aspire-apphost-environment-artifacts.ps1 仍然 EXIT=0。
 
-    #3512 销账后 main 上零违例，scripts/apphost-base-url-injection-exemptions.json 的登记表是空的。
+    #3512 销账后 main 上零违例，scripts/config/apphost-base-url-injection-exemptions.json 的登记表是空的。
     登记表只能随销账缩短：一条登记不再匹配任何真实违例就变成 stale，本脚本照样红。
 
 .PARAMETER RepositoryRoot
@@ -38,7 +38,7 @@
     单独开出来是为了让哨兵格能把变异过的副本喂进来，而闭包与消费方扫描仍走真实仓库。
 
 .PARAMETER ExemptionPath
-    豁免登记表。默认 <RepositoryRoot>/scripts/apphost-base-url-injection-exemptions.json。
+    豁免登记表。默认 <RepositoryRoot>/scripts/config/apphost-base-url-injection-exemptions.json。
 #>
 
 [CmdletBinding()]

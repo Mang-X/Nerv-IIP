@@ -18,7 +18,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/CiRequiredSummary.ps1')
 
-$verifierPath = Join-Path $repoRoot 'scripts/verify-ci-required-summary.ps1'
+$verifierPath = Join-Path $repoRoot 'scripts/ci/verify-required-summary.ps1'
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $libraryPath = Join-Path $repoRoot 'scripts/lib/CiRequiredSummary.ps1'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ci-required-summary-$([Guid]::NewGuid().ToString('N'))"

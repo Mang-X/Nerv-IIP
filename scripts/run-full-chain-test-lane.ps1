@@ -22,8 +22,8 @@
 
 param(
     [string[]] $MemberId = @(),
-    [string] $ManifestPath = (Join-Path $PSScriptRoot 'full-chain-test-lane.json'),
-    [string] $ScenarioMatrixPath = (Join-Path $PSScriptRoot 'acceptance-scenario-matrix.json'),
+    [string] $ManifestPath = (Join-Path $PSScriptRoot 'config/full-chain-test-lane.json'),
+    [string] $ScenarioMatrixPath = (Join-Path $PSScriptRoot 'config/acceptance-scenario-matrix.json'),
     [string] $WorkflowPath = (Join-Path $PSScriptRoot '../.github/workflows/ci.yml'),
     [string] $ResultsDirectory = (Join-Path $PSScriptRoot '../artifacts/test-evidence-raw/full-chain'),
     [string] $SummaryPath = (Join-Path $PSScriptRoot '../artifacts/full-chain-test-lane/summary.json'),
@@ -262,12 +262,12 @@ try {
 
     # === #3135 residual 覆盖闭合 ==================================================================
     # 此前本 lane 只按 5 个成员的 FullyQualifiedName 精确 filter 跑，而
-    # scripts/backend-test-shards.json 的 heavyLanes[full-chain] 又把整个项目从四个 fast shard 里
+    # scripts/config/backend-test-shards.json 的 heavyLanes[full-chain] 又把整个项目从四个 fast shard 里
     # 接管掉：项目里其余 16 条用例因此跑在 0 个 CI job 上，而且这种「变暗」不会红。
     # 修法是把选取口径翻过来：默认全跑，没有白名单，也**没有排除注册表**。
     #
     # 覆盖边界（如实声明，不冒充完备）：这条闭合**只对 full-chain 这一个 heavy lane 成立**。
-    # 已穷举 scripts/backend-test-shards.json 的 heavyLanes：real-postgres 与 redis-cap 的
+    # 已穷举 scripts/config/backend-test-shards.json 的 heavyLanes：real-postgres 与 redis-cap 的
     # projects 为空（按 selector 归属，不接管项目），performance 由
     # scripts/verify-business-performance-baseline.ps1 在 -Scenario all 下不带 filter 整项目跑；
     # 只有 full-chain 是白名单选取。将来若有**第三个** heavy lane 采用白名单选取，本机制不覆盖它 ——

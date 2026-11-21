@@ -82,7 +82,7 @@
 
     Class 1 has live instances on main that predate this gate and are not this ticket's to fix
     (they change dependency versions, which needs its own evidence surface). They are registered in
-    scripts/restore-lock-drift-exemptions.json under rules that keep the table from becoming an
+    scripts/config/restore-lock-drift-exemptions.json under rules that keep the table from becoming an
     escape hatch:
 
       * a registration matches on the full tuple — lock path, package id, requested range and
@@ -103,7 +103,7 @@ param(
     # Overridden only by the contract test, which points the checker at throwaway fixtures.
     [string[]] $ManifestPath = @(),
 
-    [string] $ExemptionPath = 'scripts/restore-lock-drift-exemptions.json'
+    [string] $ExemptionPath = 'scripts/config/restore-lock-drift-exemptions.json'
 )
 
 $ErrorActionPreference = 'Stop'

@@ -32,13 +32,13 @@
 
 [CmdletBinding()]
 param(
-    [string] $ManifestPath = (Join-Path $PSScriptRoot 'backend-test-shards.json'),
+    [string] $ManifestPath = (Join-Path $PSScriptRoot '../config/backend-test-shards.json'),
 
-    [string] $TimingCachePath = (Join-Path $PSScriptRoot '../artifacts/backend-test-shard-timings.json'),
+    [string] $TimingCachePath = (Join-Path $PSScriptRoot '../../artifacts/backend-test-shard-timings.json'),
 
     # Last committed evidence snapshot. It is a *fallback* only: keyed by assembly like the cache, so
     # a shard rearrangement cannot lose a key, and never required to be fresh or complete.
-    [string] $FallbackEvidencePath = (Join-Path $PSScriptRoot 'test-evidence-baseline.json'),
+    [string] $FallbackEvidencePath = (Join-Path $PSScriptRoot '../config/test-evidence-baseline.json'),
 
     [string] $Repository = 'Mang-X/Nerv-IIP',
 
@@ -53,7 +53,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/BackendTestShardTimings.ps1')
 

@@ -26,7 +26,7 @@ description: 审 Nerv-IIP 的 PR、复审改动后的 head，或要派并行评�
 gh pr view <N> --json headRefOid,baseRefName,mergeable,files
 git fetch origin "pull/<N>/head:pr-<N>"
 git rev-parse "origin/<baseRefName>"
-pwsh -NoProfile -File scripts/get-ci-impact-plan.ps1 -BaseSha <base> -HeadSha <head>
+pwsh -NoProfile -File scripts/ci/get-impact-plan.ps1 -BaseSha <base> -HeadSha <head>
 ```
 
 仓库里的 `.ps1` 没有执行位，`./scripts/...` 在 bash 下会 `permission denied`；CI 用 `shell: pwsh` 才不需要这层包装。

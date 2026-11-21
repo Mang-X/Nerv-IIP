@@ -90,7 +90,7 @@ $declaredExclusions = @(
         param($node) $node -is [System.Management.Automation.Language.StringConstantExpressionAst]
     }, $true) | ForEach-Object { [string] $_.Value }
 )
-$expectedExclusions = @('scripts/check-script-governance.ps1', 'scripts/lib/ScriptAutomation.ps1', 'scripts/tests/*')
+$expectedExclusions = @('scripts/check-script-governance.ps1', 'scripts/lib/ScriptAutomation.ps1', 'scripts/tests/*', 'scripts/tmp/*')
 # Ordinal, per the #1507 ruling: `-cne` is still culture-aware, so two exclusion lists differing only
 # by an ignorable character would compare equal and this contract would miss the widening.
 if (-not [string]::Equals(($declaredExclusions -join '|'), ($expectedExclusions -join '|'), [StringComparison]::Ordinal)) {

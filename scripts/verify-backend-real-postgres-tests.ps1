@@ -21,7 +21,7 @@ param(
     # worktrees (#2870 / #3295). Bounds are owned by Invoke-NativeCommandOutput; 1800 is a default,
     # not a ceiling, so no ValidateRange is repeated here.
     [int] $TimeoutSeconds = 1800,
-    [string] $ManifestPath = (Join-Path $PSScriptRoot 'backend-test-shards.json')
+    [string] $ManifestPath = (Join-Path $PSScriptRoot 'config/backend-test-shards.json')
 )
 
 Set-StrictMode -Version Latest
@@ -33,7 +33,7 @@ $ErrorActionPreference = 'Stop'
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $resultsRoot = Join-Path $repositoryRoot 'artifacts/real-postgres-tests'
 $manifest = Get-Content -LiteralPath (Resolve-Path $ManifestPath) -Raw | ConvertFrom-Json
-$evidencePolicy = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'test-evidence-policy.json') -Raw | ConvertFrom-Json
+$evidencePolicy = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'config/test-evidence-policy.json') -Raw | ConvertFrom-Json
 $lane = @($manifest.heavyLanes | Where-Object { [string]::Equals([string]($_.id), [string]('real-postgres'), [StringComparison]::OrdinalIgnoreCase) })
 if ($lane.Count -ne 1) {
     throw 'The backend test shard manifest must define exactly one real-postgres heavy lane.'

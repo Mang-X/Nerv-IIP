@@ -26,7 +26,7 @@ function Test-Project([object] $Plan, [string] $Name) {
 
 $inventory = Get-NervFrontendWorkspaceInventory `
     -FrontendRoot (Join-Path $repoRoot 'frontend') `
-    -SkipAllowlistPath (Join-Path $repoRoot 'scripts/frontend-test-skip-allowlist.json')
+    -SkipAllowlistPath (Join-Path $repoRoot 'scripts/config/frontend-test-skip-allowlist.json')
 Assert-Contract ($inventory.project_count -gt 0) 'The live frontend inventory must discover workspace projects.'
 Assert-Contract ($inventory.test_project_count -gt 0) 'The live frontend inventory must discover test projects.'
 Assert-Contract ($inventory.test_file_count -gt 0) 'The live frontend inventory must discover unit tests.'

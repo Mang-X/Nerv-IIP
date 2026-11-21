@@ -34,7 +34,7 @@ param(
     # Bounds are owned by Invoke-NativeCommandOutput; 1800 is a default, not a ceiling (#2870).
     [int] $TimeoutSeconds = 1800,
 
-    [string] $ManifestPath = (Join-Path $PSScriptRoot 'backend-test-shards.json')
+    [string] $ManifestPath = (Join-Path $PSScriptRoot 'config/backend-test-shards.json')
 )
 
 Set-StrictMode -Version Latest

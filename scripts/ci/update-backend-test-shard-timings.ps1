@@ -29,12 +29,12 @@ param(
 
     [ValidateRange(1, 20)] [int] $RunCount = 5,
 
-    [string] $OutputPath = (Join-Path $PSScriptRoot '../artifacts/backend-test-shard-timings.json')
+    [string] $OutputPath = (Join-Path $PSScriptRoot '../../artifacts/backend-test-shard-timings.json')
 )
 
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/BackendTestShardTimings.ps1')
 

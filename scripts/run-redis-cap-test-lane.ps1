@@ -28,7 +28,7 @@ param(
     # worktrees (#2870 / #3295). Bounds are owned by Invoke-NativeCommandOutput; 1800 is a default,
     # not a ceiling, so no ValidateRange is repeated here.
     [int] $TimeoutSeconds = 1800,
-    [string] $ManifestPath = (Join-Path $PSScriptRoot 'redis-cap-test-lane.json')
+    [string] $ManifestPath = (Join-Path $PSScriptRoot 'config/redis-cap-test-lane.json')
 )
 
 $ErrorActionPreference = 'Stop'

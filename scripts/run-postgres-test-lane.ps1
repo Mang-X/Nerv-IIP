@@ -26,7 +26,7 @@ param(
     # worktrees (#2870 / #3295). Bounds are owned by Invoke-NativeCommandOutput; 1800 is a default,
     # not a ceiling, so no ValidateRange is repeated here.
     [int] $TimeoutSeconds = 1800,
-    [string] $ManifestPath = (Join-Path $PSScriptRoot 'postgres-test-lane.json')
+    [string] $ManifestPath = (Join-Path $PSScriptRoot 'config/postgres-test-lane.json')
 )
 
 $ErrorActionPreference = 'Stop'

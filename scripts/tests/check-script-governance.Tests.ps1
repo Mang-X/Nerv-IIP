@@ -116,8 +116,8 @@ Invoke-GovernanceCase -Name 'direct-start-job.ps1' -ExpectedExitCode 1
 Invoke-GovernanceCase -Name 'dynamic-invocation.ps1' -ExpectedExitCode 1
 Invoke-GovernanceScriptCase -RelativePath 'scripts/collect-test-evidence.ps1'
 Invoke-GovernanceScriptCase -RelativePath 'scripts/generate-test-evidence-baseline.ps1'
-Invoke-GovernanceScriptCase -RelativePath 'scripts/update-backend-test-shard-timings.ps1'
-Invoke-GovernanceScriptCase -RelativePath 'scripts/report-backend-test-shard-balance.ps1'
+Invoke-GovernanceScriptCase -RelativePath 'scripts/ci/update-backend-test-shard-timings.ps1'
+Invoke-GovernanceScriptCase -RelativePath 'scripts/ci/report-backend-test-shard-balance.ps1'
 
 $smokeRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-script-governance-$([System.Guid]::NewGuid().ToString('N'))"
 try {

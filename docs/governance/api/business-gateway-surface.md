@@ -44,7 +44,7 @@ restore/reference closure 必须由 Reference manifest 与其登记的 per-proje
 
 manifest 的 `inputs` 语义在 #3145 中有意扩面：由「seed 项目的 restore 输入」扩为「整个 ProjectReference 闭包的合同快照」——闭包内每个项目的 `.csproj` 都进入 `inputs`。原范围下，某个共享库改了自己的 `PackageReference` 而不更新 lock 是无人可见的。
 
-已知无法覆盖、且不假装覆盖的：lock 中 `contentHash` 是否为包的真实哈希（需要下载每个包），以及只有 `resolved` 而无 `requested` 的 `Transitive` 条目（没有声明的范围可比）。`main` 上先于本门禁存在的分叉登记在 `scripts/restore-lock-drift-exemptions.json`，按四元组全等匹配，且登记后不再命中即判红。
+已知无法覆盖、且不假装覆盖的：lock 中 `contentHash` 是否为包的真实哈希（需要下载每个包），以及只有 `resolved` 而无 `requested` 的 `Transitive` 条目（没有声明的范围可比）。`main` 上先于本门禁存在的分叉登记在 `scripts/config/restore-lock-drift-exemptions.json`，按四元组全等匹配，且登记后不再命中即判红。
 
 ### 合同覆盖面：多份 manifest，由模式推导（#3157）
 

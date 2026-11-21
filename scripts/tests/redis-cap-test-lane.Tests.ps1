@@ -13,7 +13,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/RedisCapTestLane.ps1')
 
-$manifestPath = Join-Path $repoRoot 'scripts/redis-cap-test-lane.json'
+$manifestPath = Join-Path $repoRoot 'scripts/config/redis-cap-test-lane.json'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-redis-cap-lane-$([Guid]::NewGuid().ToString('N'))"
 
 function Assert-Contract([bool]$Condition, [string]$Message) {

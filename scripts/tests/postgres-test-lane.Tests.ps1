@@ -14,7 +14,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/PostgresTestLane.ps1')
 . (Join-Path $repoRoot 'scripts/lib/CiRequiredSummary.ps1')
-$manifestPath = Join-Path $repoRoot 'scripts/postgres-test-lane.json'
+$manifestPath = Join-Path $repoRoot 'scripts/config/postgres-test-lane.json'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-postgres-lane-$([Guid]::NewGuid().ToString('N'))"
 function Assert-Contract([bool]$Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
 function Assert-MasterDataDiagnosticSchemas([object]$Member) {
@@ -745,7 +745,7 @@ try {
     foreach ($frozenDemandPlanningIdentity in @($demandPlanningMember.expectedTestIdentities)) {
         Assert-Contract (-not ([string]$frozenDemandPlanningIdentity).Contains('.Redis_cap_', [StringComparison]::Ordinal)) 'The Redis/CAP transport identities stay owned by the redis-cap lane, not by postgres.'
     }
-    $redisCapManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/redis-cap-test-lane.json') -Raw | ConvertFrom-Json -Depth 20
+    $redisCapManifest = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/config/redis-cap-test-lane.json') -Raw | ConvertFrom-Json -Depth 20
     $redisCapIdentities = [Collections.Generic.HashSet[string]]::new([string[]]@($redisCapManifest.members | ForEach-Object { @($_.expectedTestIdentities) }), [StringComparer]::Ordinal)
     foreach ($frozenDemandPlanningIdentity in @($demandPlanningMember.expectedTestIdentities)) {
         $frozenIdentityKey = [string]$frozenDemandPlanningIdentity
@@ -932,7 +932,7 @@ try {
     # 闭合契约：政策里每一条 requiredLane: postgres 的身份，都必须落在 manifest 的成员身份（active 或
     # deferred）或显式的规模种子豁免里。穷举从政策的类型集来，不从审核点名来——否则第三个"漏网"类
     # 可以无声出现（#1510 的教训）。
-    $policyDocument = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/test-evidence-policy.json') -Raw | ConvertFrom-Json -Depth 20
+    $policyDocument = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/config/test-evidence-policy.json') -Raw | ConvertFrom-Json -Depth 20
     $manifestDocument = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -Depth 20
     $manifestIdentities = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($manifestMember in @($manifestDocument.members)) {
@@ -971,7 +971,7 @@ try {
 
     # #3424 反向闭合。上面那条只管一个方向——「政策里的身份有没有落到 lane」。反方向没有任何本机
     # 门禁，而反方向正是 #3129 栽的那一格：三条新 PostgreSQL 用例进了 manifest（本机 lane 门禁逼着
-    # 必须进），漏了 scripts/test-evidence-policy.json，本机全绿，直到 CI 收证阶段
+    # 必须进），漏了 scripts/config/test-evidence-policy.json，本机全绿，直到 CI 收证阶段
     # （scripts/collect-test-evidence.ps1:102）才报 `Runtime skip matched 0 applicable rules`。
     # 这里不新建机制，只是把那条**已经存在的** fail-closed 判据挪到本机能跑的位置。
     #
@@ -990,7 +990,7 @@ try {
     # 既不进 manifest 也不进政策的新用例不在覆盖面内；connector / performance-baseline 那几族
     # env-gated skip 根本没有 manifest，完全在覆盖面之外。⛔ 不要读成「登记遗漏已经全关掉了」。
     $unregisteredManifestIdentities = @(Get-NervUnregisteredManifestIdentity -ManifestMembers @($manifestDocument.members) -PolicyRules @($policyDocument.rules))
-    Assert-Contract ($unregisteredManifestIdentities.Count -eq 0) ("Every PostgreSQL lane manifest identity must be frozen by exactly one scripts/test-evidence-policy.json rule; an unowned runtime skip otherwise fails only at CI evidence collection. Registering one takes TWO fields on the same rule: add it to that rule's testIdentities AND raise the same rule's expectedRuntimeTestCount to match. Unregistered: " + ($unregisteredManifestIdentities -join ', '))
+    Assert-Contract ($unregisteredManifestIdentities.Count -eq 0) ("Every PostgreSQL lane manifest identity must be frozen by exactly one scripts/config/test-evidence-policy.json rule; an unowned runtime skip otherwise fails only at CI evidence collection. Registering one takes TWO fields on the same rule: add it to that rule's testIdentities AND raise the same rule's expectedRuntimeTestCount to match. Unregistered: " + ($unregisteredManifestIdentities -join ', '))
     # 哨兵格：把一条 manifest 身份从政策里摘掉，反向闭合必须点名它、且只点名它。这一格验的是
     # **鉴别力**——没有它，全绿有可能只是因为推导根本没跑起来。
     $reverseMutatedIdentity = 'Nerv.IIP.Business.Scheduling.Web.Tests.RecordSchedulePlanInvalidationsPostgresProfileTests.Postgres_release_gate_blocks_quality_blocked_and_allows_quality_released'

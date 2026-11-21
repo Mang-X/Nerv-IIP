@@ -51,8 +51,8 @@
 #
 # 当前 timing/policy 边界见 docs/governance/testing/evidence.md；形成过程见
 # docs/reports/audits/test-evidence-governance-evolution-2026-08.md。
-# Entry points: scripts/update-backend-test-shard-timings.ps1 (refresh the cache) and
-# scripts/report-backend-test-shard-balance.ps1 (report-only balance).
+# Entry points: scripts/ci/update-backend-test-shard-timings.ps1 (refresh the cache) and
+# scripts/ci/report-backend-test-shard-balance.ps1 (report-only balance).
 
 . (Join-Path $PSScriptRoot 'OrdinalString.ps1')
 
@@ -427,7 +427,7 @@ function Get-NervShardBalanceReport {
             code = 'timing-source-unavailable'
             assembly = ''
             shard = ''
-            message = 'No shard timing observations are available; every shard total below is an estimate. Run scripts/update-backend-test-shard-timings.ps1 with GitHub access to refresh the cache.'
+            message = 'No shard timing observations are available; every shard total below is an estimate. Run scripts/ci/update-backend-test-shard-timings.ps1 with GitHub access to refresh the cache.'
         })
     }
 

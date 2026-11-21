@@ -63,17 +63,18 @@
 - 禁止绕过 wrapper 直接执行被治理的原生命令、任意动态命令或非受控进程启动；
 - 每个扫描脚本必须有合法 Governance header/category；
 - parse error 本身就是治理失败；
-- `scripts/script-governance-baseline.json` 的 legacy exemption 只能逐“文件 × 规则”登记，不接受目录通配式豁免；当前有哪些 exemption 直接读该 producer，不在本文维护状态表。
+- `scripts/config/script-governance-baseline.json` 的 legacy exemption 只能逐“文件 × 规则”登记，不接受目录通配式豁免；当前有哪些 exemption 直接读该 producer，不在本文维护状态表。
 
 不得为本文再造第二份 checker、规则 registry 或自然语言同步器。
 
 ## `scripts/lib` 扫描边界
 
-默认扫描只排除以下三类，精确集合由 checker 与 `scripts/tests/script-governance-scan-boundary.Tests.ps1` 双向守住：
+默认扫描排除以下路径，精确集合由 checker 与 `scripts/tests/script-governance-scan-boundary.Tests.ps1` 双向守住：
 
 1. `scripts/check-script-governance.ps1`：checker 不能按其自身禁止命令字面量自检；
 2. `scripts/lib/ScriptAutomation.ps1`：它是被治理调用重定向到的 wrapper；
-3. `scripts/tests/*`：测试必须能执行真实进程并制造故意违规夹具。
+3. `scripts/tests/*`：测试必须能执行真实进程并制造故意违规夹具；
+4. `scripts/tmp/*`：本机一次性脚本，CI 只允许跟踪该目录自身的 `.gitignore`。
 
 除此之外 `scripts/lib/` 进入 library scope。library scope 的窄差异是：
 

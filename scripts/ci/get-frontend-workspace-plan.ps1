@@ -18,13 +18,13 @@ param(
     [Parameter(Mandatory)] [ValidateSet('Affected', 'Full')] [string] $Mode,
     [string] $PlanOutputPath = 'artifacts/ci-impact-plan/frontend-workspace-plan.json',
     [string] $InventoryOutputPath = 'artifacts/ci-impact-plan/frontend-test-inventory.json',
-    [string] $SkipAllowlistPath = 'scripts/frontend-test-skip-allowlist.json',
+    [string] $SkipAllowlistPath = 'scripts/config/frontend-test-skip-allowlist.json',
     [string] $GitHubOutputPath = $env:GITHUB_OUTPUT,
     [string] $StepSummaryPath = $env:GITHUB_STEP_SUMMARY
 )
 
 $ErrorActionPreference = 'Stop'
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/FrontendWorkspacePlan.ps1')
 

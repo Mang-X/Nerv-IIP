@@ -13,7 +13,7 @@
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
-$policyPath = Join-Path $repoRoot 'scripts/postgres-test-database-consumers.json'
+$policyPath = Join-Path $repoRoot 'scripts/config/postgres-test-database-consumers.json'
 . (Join-Path $repoRoot 'scripts/lib/OrdinalString.ps1')
 $allowedStrategies = Get-NervStringSet -Values @('best-effort-dispose', 'encapsulated-explicit-drop', 'explicit-drop-finally', 'factory-forwarder', 'helper-self-test') -Comparer ([StringComparer]::Ordinal)
 $requiredOwnerships = @(

@@ -12,11 +12,11 @@
 
 [CmdletBinding()]
 param(
-    [string] $ManifestPath = (Join-Path $PSScriptRoot 'backend-test-shards.json'),
+    [string] $ManifestPath = (Join-Path $PSScriptRoot 'config/backend-test-shards.json'),
 
     [string] $WorkflowPath = (Join-Path $PSScriptRoot '../.github/workflows/ci.yml'),
 
-    [string] $PolicyPath = (Join-Path $PSScriptRoot 'test-evidence-policy.json'),
+    [string] $PolicyPath = (Join-Path $PSScriptRoot 'config/test-evidence-policy.json'),
 
     # 测试专用 seam：仅供 backend-test-shards contract test 注入仓库外的镜像 inventory。
     [string] $BackendInventoryRoot

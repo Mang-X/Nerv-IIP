@@ -13,7 +13,7 @@ function Get-NervBackendShardModulePlan {
         [Parameter(Mandatory)] [string[]] $BusinessServices
     )
 
-    $manifest = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'scripts/backend-test-shards.json') -Raw |
+    $manifest = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'scripts/config/backend-test-shards.json') -Raw |
         ConvertFrom-Json -Depth 20
     $requestedModules = [Collections.Generic.HashSet[string]]::new($BusinessServices, [StringComparer]::Ordinal)
     $referenceCache = [Collections.Generic.Dictionary[string, object]]::new([StringComparer]::Ordinal)

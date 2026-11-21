@@ -18,8 +18,8 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/FullChainTestLane.ps1')
 . (Join-Path $repoRoot 'scripts/lib/AcceptanceScenarioMatrix.ps1')
 
-$manifestPath = Join-Path $repoRoot 'scripts/full-chain-test-lane.json'
-$scenarioMatrixPath = Join-Path $repoRoot 'scripts/acceptance-scenario-matrix.json'
+$manifestPath = Join-Path $repoRoot 'scripts/config/full-chain-test-lane.json'
+$scenarioMatrixPath = Join-Path $repoRoot 'scripts/config/acceptance-scenario-matrix.json'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-full-chain-lane-$([Guid]::NewGuid().ToString('N'))"
 
 function Assert-Contract([bool]$Condition, [string]$Message) {

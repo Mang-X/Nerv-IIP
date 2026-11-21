@@ -77,7 +77,7 @@ Set-StrictMode -Version Latest
 #>
 
 $script:NervAppHostProgramRelativePath = 'infra/aspire/Nerv.IIP.AppHost/Program.cs'
-$script:NervAppHostBaseUrlExemptionRelativePath = 'scripts/apphost-base-url-injection-exemptions.json'
+$script:NervAppHostBaseUrlExemptionRelativePath = 'scripts/config/apphost-base-url-injection-exemptions.json'
 $script:NervAppHostBaseUrlTrackingPattern = '^#[1-9][0-9]*$'
 $script:NervAppHostEndpointName = 'http'
 
