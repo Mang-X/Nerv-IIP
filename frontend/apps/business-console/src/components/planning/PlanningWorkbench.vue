@@ -1,1204 +1,173 @@
 <script setup lang="ts">
-import type {
-  BusinessConsoleDemandSourceItem,
-  BusinessConsoleMpsBucketItem,
-  BusinessConsoleMrpPeggingItem,
-  BusinessConsoleMrpRunItem,
-  BusinessConsolePlanningSuggestionItem,
-} from '@nerv-iip/api-client'
-import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/ui'
-import { useBusinessSkus, useBusinessMasterDataResources } from '@/composables/master-data'
-import {
-  SUGGESTION_REJECT_REASON_MAX_LENGTH,
-  useBusinessPlanning,
-} from '@/composables/planning/useBusinessPlanning'
-import {
-  isMesWorkOrderDownstream,
-  normalizeReferenceToken,
-} from '@/composables/planning/fulfillment'
-import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
-import { useOrderUrgencies } from '@/composables/urgency/useOrderUrgency'
-import {
-  DEFAULT_URGENCY_DISPLAY_MODE,
-  orderRowsByUrgency,
-  type UrgencyDisplayMode,
-} from '@/composables/urgency/useUrgencyDisplayMode'
-import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
-import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
-import PlanningRunSuggestionChart from '@/components/planning/PlanningRunSuggestionChart.vue'
+import { runHorizonLabel } from './planningFormatters'
 import PlanningTimePhasedPanel from '@/components/planning/PlanningTimePhasedPanel.vue'
 import PlanningMaterialDeliveryPanel from '@/components/planning/PlanningMaterialDeliveryPanel.vue'
 import PlanningForecastManagement from '@/components/planning/PlanningForecastManagement.vue'
-import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
-import { coveredDemandSkuCodes } from '@/components/planning/planningAggregation'
-import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
-import { useCanScheduleSingleOrder } from '@/composables/scheduling/useSingleOrderScheduling'
-import {
-  inlineErrorMessage,
-  isForbiddenError,
-  notifyOperationFailure,
-  notifySuccess,
-  notifyWarning,
-} from '@/utils/notify'
 import {
   NvButton,
-  NvDataTable,
-  NvDatePicker,
   NvDialog,
   NvDialogContent,
   NvDialogDescription,
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
-  NvDialogTrigger,
-  NvField,
-  NvFieldGroup,
-  NvFieldLabel,
-  NvInput,
   NvMetricCard,
   NvPageHeader,
-  NvSelect,
-  NvSelectContent,
-  NvSelectItem,
-  NvSelectTrigger,
-  NvSelectValue,
-  NvSpinner,
-  NvStatusBadge,
   NvTabs,
   NvTabsContent,
   NvTabsList,
   NvTabsTrigger,
-  NvToolbar,
 } from '@nerv-iip/ui'
-import {
-  CalendarCogIcon,
-  CheckIcon,
-  CornerDownRightIcon,
-  ExternalLinkIcon,
-  NetworkIcon,
-  PlayIcon,
-  PlusIcon,
-  RefreshCwIcon,
-  XIcon,
-} from '@lucide/vue'
-import { computed, shallowRef, watch, watchEffect } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { useCanReadMaterialDeliveries } from '@/composables/planning/useBusinessPlanningMaterialDeliveries'
-import { hasBusinessContext } from '@/composables/shared/businessContextBinding'
-import { useAuthStore } from '@/stores/auth'
+import { RefreshCwIcon } from '@lucide/vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import PlanningMrpRunDialog from './PlanningMrpRunDialog.vue'
+import PlanningMpsFormDialog from './PlanningMpsFormDialog.vue'
+import PlanningDemandFormDialog from './PlanningDemandFormDialog.vue'
+import PlanningDemandsTab from './PlanningDemandsTab.vue'
+import PlanningMpsTab from './PlanningMpsTab.vue'
+import PlanningMrpRunsTab from './PlanningMrpRunsTab.vue'
+import PlanningSuggestionsAndPeggingTab from './PlanningSuggestionsAndPeggingTab.vue'
+import { usePlanningWorkbenchController } from './usePlanningWorkbenchController'
 
-const route = useRoute()
-const sourceOrder = computed(() =>
-  typeof route.query.demandSource === 'string' ? route.query.demandSource.trim() : '',
-)
-const downstreamPage = shallowRef<readonly BusinessConsolePlanningSuggestionItem[]>([])
 const {
-  acceptSuggestion,
-  activeMrpRun,
-  acceptSuggestionError,
+  acceptPlanningSuggestion,
   acceptSuggestionPending,
-  createMpsBucket,
-  createMpsBucketError,
-  createMpsBucketPending,
-  createDemandError,
-  createDemandPending,
-  createOrUpdateDemand,
-  cancelDemand,
+  acceptingSuggestionId,
+  activeMrpRun,
+  activeTab,
+  actorName,
+  canReadDeliveries,
+  canReadDemands,
+  canReadMps,
+  canReadMrp,
+  canReadWorkOrders,
+  canScheduleSingleOrder,
+  canSubmitDemand,
+  canSubmitMps,
+  canSubmitReject,
   cancelDemandPending,
+  cancelTarget,
+  confirmCancelDemand,
+  coverageRunId,
+  coveredSkuCodes,
+  createDemandPending,
+  createMpsBucketPending,
+  defaultTab,
+  demandCancelTarget,
+  demandColumns,
+  demandCoverageForRow,
+  demandCoverageRate,
+  demandFilterActive,
   demandForm,
+  demandKeyword,
+  demandOpen,
+  demandSkuCodes,
+  demandTypeFilter,
+  demandTypeFilterOptions,
+  demandTypeOptions,
+  demandTypeResetNotice,
   demands,
   demandsError,
   demandsPending,
-  mrpRuns,
-  mrpRunsError,
-  mrpRunsPending,
+  demandsReady,
+  deniedSource,
+  displayMode,
+  downstreamRoute,
+  downstreamStatuses,
+  editMpsBucket,
+  errorMessage,
+  filteredDemands,
+  focusPegging,
+  focusSuggestion,
+  focusedSuggestionId,
+  formatMpsQuantity,
+  hasPermission,
+  hasScope,
+  latestCompletedRun,
+  latestRun,
+  latestRunKpiHint,
+  latestRunKpiValue,
   mpsBuckets,
   mpsBucketsError,
   mpsBucketsPending,
+  mpsColumns,
+  mpsEditingId,
   mpsForm,
-  updateMpsBucket,
-  updateMpsBucketPending,
-  releaseMpsBucket,
-  releaseMpsBucketError,
-  releaseMpsBucketPending,
-  reviewMpsBucket,
-  reviewMpsBucketError,
-  reviewMpsBucketPending,
+  mpsOpen,
+  mpsReady,
+  mpsSegments,
+  mrpOpen,
+  mrpRunInProgress,
+  mrpRunLabels,
+  mrpRuns,
+  mrpRunsError,
+  mrpRunsPending,
+  mrpSuggestionSeries,
+  navigateToSuggestion,
+  newMpsBucket,
+  openBomContext,
+  openPeggingSource,
+  openRejectDialog,
+  openSalesOrderDemand,
+  openSuggestionCount,
+  orderUrgencies,
   pegging,
+  peggingColumns,
   peggingPending,
+  planningDataError,
+  planningDataPending,
   refreshPlanning,
-  rejectSuggestion,
-  rejectSuggestionError,
+  refreshUrgency,
+  rejectReason,
   rejectSuggestionPending,
-  runMrp,
-  runMrpError,
+  rejectTarget,
+  releaseMps,
+  releaseMpsBucketPending,
+  returnLabel,
+  reviewKpiHint,
+  reviewMps,
+  reviewMpsBucketPending,
+  router,
+  runChoiceLabel,
+  runColumns,
   runMrpPending,
   runRequest,
   runSelection,
+  runsReady,
+  scheduleTarget,
+  scopedSuggestions,
+  selectedRun,
+  siteLabel,
+  siteOptions,
+  skuLabel,
+  sourceOrder,
+  sourceUnresolved,
+  staleDemandChangeCount,
+  submitDemand,
+  submitMpsBucket,
+  submitMrpRun,
+  submitRejectSuggestion,
+  successorRunLabel,
+  suggestionColumns,
   suggestionFilters,
+  suggestionPage,
+  suggestionPageRows,
+  suggestionPageSize,
+  suggestionRunChoice,
+  suggestionScheduleHint,
+  suggestionStatusOptions,
   suggestionTypeFilter,
+  suggestionTypeFilterOptions,
+  suggestionWorkOrderId,
   suggestions,
   suggestionsError,
   suggestionsPending,
-  downstreamStatuses,
-} = useBusinessPlanning(
-  () => sourceOrder.value,
-  () => downstreamPage.value,
-)
-const router = useRouter()
-const auth = useAuthStore()
-const hasPermission = (permission: string) =>
-  auth.principal?.permissionCodes?.includes(permission) === true
-const canReadDemands = computed(() => hasPermission(P.planningDemandsRead))
-const canReadMps = computed(() => hasPermission(P.planningMpsRead))
-const canReadMrp = computed(() => hasPermission(P.planningMrpRead))
-const canReadDeliveries = useCanReadMaterialDeliveries()
-const defaultTab = computed(() => {
-  if (canReadDemands.value) return 'demands'
-  if (canReadMps.value) return 'mps'
-  if (canReadMrp.value) return hasPermission(P.planningSuggestionsManage) ? 'suggestions' : 'runs'
-  return ''
-})
-const hasScope = computed(() => hasBusinessContext(runRequest))
-const demandsReady = computed(
-  () => hasScope.value && canReadDemands.value && !demandsPending.value && !demandsError.value,
-)
-const mpsReady = computed(
-  () => hasScope.value && canReadMps.value && !mpsBucketsPending.value && !mpsBucketsError.value,
-)
-const runsReady = computed(
-  () => hasScope.value && canReadMrp.value && !mrpRunsPending.value && !mrpRunsError.value,
-)
-const suggestionsReady = computed(
-  () => runsReady.value && !suggestionsPending.value && !suggestionsError.value,
-)
-const canReadWorkOrders = computed(() => hasPermission(P.mesWorkOrdersRead))
-const orderUrgencies = useOrderUrgencies(
-  computed(() => demands.value.map((demand) => demand.sourceReference)),
-)
-const displayMode = shallowRef<UrgencyDisplayMode>(DEFAULT_URGENCY_DISPLAY_MODE)
-// 排序独立于显示模式：需求默认按统一紧急度排序。
-const orderedDemands = computed(() =>
-  orderRowsByUrgency(
-    demands.value,
-    (demand) => demand.sourceReference,
-    orderUrgencies.byReference.value,
-  ),
-)
-function refreshUrgency() {
-  void orderUrgencies.refresh()
-  refreshPlanning()
-}
-
-/**
- * 需求池筛选（GH#1292 第 5 项）：一屏几百条需求此前没有任何查找手段，计划员要找某张销售订单
- * 或某个物料只能肉眼扫。普通入口当前在已载入的需求中筛选。
- */
-const demandKeyword = shallowRef('')
-const demandTypeFilter = shallowRef('all')
-/** 类型选项按池子里真实出现过的类型生成——不列一个筛完必空的类型。 */
-const demandTypeFilterOptions = computed(() => [
-  { label: '全部类型', value: 'all' },
-  ...[...new Set(demands.value.map((demand) => demand.demandType).filter(Boolean))].map((type) => ({
-    label: demandTypeLabel(type),
-    value: type as string,
-  })),
-])
-const filteredDemands = computed(() => {
-  const keyword = demandKeyword.value.trim().toLowerCase()
-  const type = demandTypeFilter.value
-  return orderedDemands.value.filter((demand) => {
-    if (
-      sourceOrder.value &&
-      (demand.sourceReference !== sourceOrder.value || demand.demandType !== 'sales-order')
-    )
-      return false
-    if (type !== 'all' && demand.demandType !== type) return false
-    if (!keyword) return true
-    // 搜来源单号 / 物料 / 客户 / 工厂：计划员手里通常就是这四个之一。
-    return [demand.sourceReference, demand.skuCode, demand.customerCode, demand.siteCode].some(
-      (value) => value?.toLowerCase().includes(keyword),
-    )
-  })
-})
-const demandFilterActive = computed(
-  () => demandKeyword.value.trim().length > 0 || demandTypeFilter.value !== 'all',
-)
-/**
- * 刷新后已选类型可能整类消失（那批需求被消化完了）。选项列表是按现有数据生成的，
- * 留着一个不在列表里的值会让下拉**显示为空白**，而表格又按它筛成空——用户看不出发生了什么。
- * 这里回落「全部类型」并明说一句，让人知道筛选被重置了、不是数据没了。
- */
-const demandTypeResetNotice = shallowRef('')
-watch(demandTypeFilterOptions, (options) => {
-  const selected = demandTypeFilter.value
-  if (selected === 'all' || options.some((option) => option.value === selected)) return
-  demandTypeResetNotice.value = `「${demandTypeLabel(selected)}」类需求已不在当前需求池中，已切回全部类型。`
-  demandTypeFilter.value = 'all'
-})
-// 用户自己改筛选就把提示撤掉，别让它常驻。
-watch([demandTypeFilter, demandKeyword], () => {
-  if (demandTypeResetNotice.value && demandTypeFilter.value === 'all') return
-  demandTypeResetNotice.value = ''
-})
-
-// 主数据：SKU / 工厂 / 计量单位（Select 显名称、绑定编码，码→名解析复用）。
-const canReadResources = () =>
-  auth.principal?.permissionCodes?.includes(P.masterDataResourcesRead) === true
-const { skus } = useBusinessSkus(
-  () => auth.principal?.permissionCodes?.includes(P.masterDataProductsRead) === true,
-)
-const { resources: sites } = useBusinessMasterDataResources('site', { enabled: canReadResources })
-const { resources: units } = useBusinessMasterDataResources('unit-of-measure', {
-  enabled: canReadResources,
-})
-// MPS 的评审人 / 发布人记的是登录账号 ID，按员工名录换成姓名；名录里没有（如系统管理员）就显示「—」。
-const { resolveUser } = useMasterDataDisplayNames({ users: true, enabled: canReadResources })
-function actorName(userId: string) {
-  return resolveUser(userId) ?? '—'
-}
-
-const skuNameByCode = computed(() => {
-  const map = new Map<string, string>()
-  for (const sku of skus.value) {
-    if (sku.code) map.set(sku.code, sku.displayName ?? sku.code)
-  }
-  return map
-})
-const siteNameByCode = computed(() => {
-  const map = new Map<string, string>()
-  for (const site of sites.value) {
-    if (site.code) map.set(site.code, site.displayName ?? site.code)
-  }
-  return map
-})
-function skuLabel(code?: string | null) {
-  if (!code) return '—'
-  return skuNameByCode.value.get(code) ?? code
-}
-function siteLabel(code?: string | null) {
-  if (!code) return '—'
-  return siteNameByCode.value.get(code) ?? code
-}
-
-const siteOptions = computed(() =>
-  sites.value
-    .filter((s) => s.code)
-    .map((s) => ({ value: s.code as string, label: `${s.displayName ?? s.code} · ${s.code}` })),
-)
-const uomOptions = computed(() =>
-  units.value
-    .filter((u) => u.code)
-    .map((u) => ({ value: u.code as string, label: `${u.displayName ?? u.code} · ${u.code}` })),
-)
-
-const canSubmitDemand = computed(
-  () =>
-    !!demandForm.skuCode?.trim() &&
-    !!demandForm.siteCode?.trim() &&
-    !!demandForm.uomCode?.trim() &&
-    (demandForm.quantity ?? 0) > 0,
-)
-const canSubmitMps = computed(
-  () =>
-    !!mpsForm.skuCode?.trim() &&
-    !!mpsForm.siteCode?.trim() &&
-    !!mpsForm.uomCode?.trim() &&
-    !!mpsForm.bucketDate &&
-    (mpsForm.quantity ?? 0) > 0,
-)
-
-// 页内这条只留给「读数据取不到」这一类区域状态。
-// 曾踩坑（MAN-700 / #1289）：写操作的 error ref 也被并进来，于是 RunMrp 一个 500 就把
-// `Internal Server Error` 常驻在页面上，且弹框不会关——操作结果必须走 toast，见
-// `frontend/DESIGN/patterns/feedback-and-notifications.md`。
-const errorMessage = computed(
-  () =>
-    [demandsError, mpsBucketsError, mrpRunsError, suggestionsError]
-      .map((ref) => inlineErrorMessage(ref.value))
-      .find(Boolean) ?? '',
-)
-// 时段视图只关心三份读数据的加载/失败态（不掺入各写操作的错误）。
-const planningDataPending = computed(
-  () => demandsPending.value || mpsBucketsPending.value || suggestionsPending.value,
-)
-const planningDataError = computed(
-  () =>
-    [demandsError, mpsBucketsError, suggestionsError]
-      .map((ref) => inlineErrorMessage(ref.value))
-      .find(Boolean) ?? '',
-)
-
-const demandOpen = shallowRef(false)
-const activeTab = shallowRef('demands')
-const focusedSuggestionId = shallowRef('')
-const demandCancelTarget = shallowRef<BusinessConsoleDemandSourceItem | null>(null)
-const mpsOpen = shallowRef(false)
-const mpsEditingId = shallowRef<string | null>(null)
-const mrpOpen = shallowRef(false)
-const acceptingSuggestionId = shallowRef<string | null>(null)
-const cancelTarget = shallowRef<BusinessConsolePlanningSuggestionItem | null>(null)
-
-// 拒绝建议：弹框要求填写原因（必填、≤128 字），确认后走网关两跳。
-const rejectTarget = shallowRef<BusinessConsolePlanningSuggestionItem | null>(null)
-const rejectReason = shallowRef('')
-const canSubmitReject = computed(() => {
-  const reason = rejectReason.value.trim()
-  return reason.length > 0 && reason.length <= SUGGESTION_REJECT_REASON_MAX_LENGTH
-})
-function openRejectDialog(row: BusinessConsolePlanningSuggestionItem) {
-  rejectTarget.value = row
-  rejectReason.value = ''
-}
-async function submitRejectSuggestion() {
-  const target = rejectTarget.value
-  if (!target?.suggestionId || !canSubmitReject.value) return
-  try {
-    await rejectSuggestion({ suggestionId: target.suggestionId, reason: rejectReason.value })
-    notifySuccess('计划建议已拒绝。')
-    rejectTarget.value = null
-  } catch (error) {
-    // 诚实失败：透传服务端 message（composable 已把软失败转成异常）。
-    notifyOperationFailure('拒绝计划建议失败', error, '计划建议拒绝失败，请稍后重试。')
-  }
-}
-
-const demandTypeOptions = [
-  { label: '预测', value: 'forecast' },
-  { label: '安全库存', value: 'safety-stock' },
-]
-const suggestionStatusOptions = [
-  { label: '全部状态', value: 'all' },
-  { label: '待评审', value: 'open' },
-  { label: '已接受', value: 'accepted' },
-  { label: '已拒绝', value: 'rejected' },
-  { label: '已被替代', value: 'superseded' },
-]
-
-// 建议分型（呼应两组：生产→MES / 采购→ERP）。
-const productionSuggestions = computed(() =>
-  scopedSuggestions.value.filter((i) => i.suggestionType === 'planned-work-order'),
-)
-const purchaseSuggestions = computed(() =>
-  scopedSuggestions.value.filter((i) => i.suggestionType === 'planned-purchase'),
-)
-const openSuggestionCount = computed(
-  () => scopedSuggestions.value.filter((i) => isOpen(i.status)).length,
-)
-const releasedMpsCount = computed(
-  () => mpsBuckets.value.filter((i) => isMpsReleased(i.status)).length,
-)
-
-// KPI #3：换掉无意义的跨 SKU/单位求和，改 3 张语义卡。
-// 卡1：待评审建议条数（生产 N / 采购 N 拆分作脚注）。
-const reviewKpiHint = computed(
-  () =>
-    `生产 ${productionSuggestions.value.filter((i) => isOpen(i.status)).length} · 采购 ${purchaseSuggestions.value.filter((i) => isOpen(i.status)).length}`,
-)
-
-// 卡2：需求 SKU 数 / 已被建议覆盖的 SKU 数（去重）。
-// 需求池保留窗外行，但当前展示的已完成 MRP 没有处理这些行。
-function isOutsideCompletedHorizon(demand: BusinessConsoleDemandSourceItem): boolean {
-  const horizonEnd = timePhasedRun.value?.horizonEnd
-  return !!horizonEnd && !!demand.dueDate && demand.dueDate > horizonEnd
-}
-const demandSkuCodes = computed(
-  () =>
-    new Set(
-      demands.value
-        .filter((demand) => !isOutsideCompletedHorizon(demand))
-        .map((demand) => demand.skuCode)
-        .filter((code): code is string => !!code),
-    ),
-)
-// 覆盖口径集中在 planningAggregation.countsTowardCoverage：供给型 + 状态仍算数（拒绝的不算）
-// + 锁定 timePhasedRun 那一次运行。KPI、需求池「覆盖」列共用建议判据，
-// 不会出现「刚拒绝的建议还占着覆盖」或「KPI 跨运行、图只算一次」这种自相矛盾。
-const coveredSkuCodes = computed(() =>
-  coveredDemandSkuCodes(suggestions.value, coverageRunId.value, demandSkuCodes.value),
-)
-/**
- * 需求覆盖率＝已生成建议的物料 ÷ 需求物料（去重），目标 100%。
- * 需求池为空时分母为 0，覆盖率无从谈起——返回 null 走无样本态，
- * 不能把"没有需求"画成 100% 满绿（那等于宣称计划已全覆盖）。
- */
-const demandCoverageRate = computed(() => {
-  const total = demandSkuCodes.value.size
-  if (total === 0) return null
-  return Math.round((coveredSkuCodes.value.size / total) * 100)
-})
-// 已发布 + 未发布 = 全部主计划行，是真正的构成关系。
-const mpsSegments = computed<NvMetricSegment[]>(() => [
-  { key: 'released', label: '已发布', value: releasedMpsCount.value, tone: 'success' },
-  {
-    key: 'draft',
-    label: '待评审发布',
-    value: mpsBuckets.value.length - releasedMpsCount.value,
-    tone: 'warning',
-  },
-])
-
-// 运行列表由服务端按创建时间降序返回，不能用计划范围判断新旧。
-const runsChronological = computed(() => [...mrpRuns.value].reverse())
-const latestRun = computed(() => mrpRuns.value[0] ?? null)
-const latestCompletedRun = computed(
-  () => mrpRuns.value.find((run) => run.status?.toLowerCase() === 'completed') ?? null,
-)
-const staleDemandChangeCount = computed(() => latestCompletedRun.value?.demandChangeCount ?? 0)
-const manualSuggestionRunId = shallowRef('latest')
-const suggestionRunChoice = computed({
-  get: () =>
-    mrpRuns.value.some((run) => run.runId === manualSuggestionRunId.value)
-      ? manualSuggestionRunId.value
-      : 'latest',
-  set: (runId: string) => {
-    if (sourceSuggestionId.value || sourceRunId.value) {
-      const nextRunId = runId === 'latest' ? latestCompletedRun.value?.runId : runId
-      if (nextRunId)
-        void router.push({ query: { ...route.query, suggestionId: undefined, runId: nextRunId } })
-      return
-    }
-    manualSuggestionRunId.value = runId
-    focusedSuggestionId.value = ''
-  },
-})
-const suggestionRun = computed(() =>
-  suggestionRunChoice.value === 'latest'
-    ? latestCompletedRun.value
-    : (mrpRuns.value.find((run) => run.runId === suggestionRunChoice.value) ?? null),
-)
-const scopedSuggestions = computed(() =>
-  suggestions.value.filter((item) => item.runId === suggestionRun.value?.runId),
-)
-function locatePlanningSuggestion(suggestionId: string, runId: string) {
-  manualSuggestionRunId.value = runId
-  suggestionFilters.status = 'all'
-  suggestionTypeFilter.type = 'all'
-  focusedSuggestionId.value = suggestionId
-  activeTab.value = 'suggestions'
-}
-// 来源强 ID 来自工单 sourcePlanReference；运行从实际建议读回，不猜最近批次。
-const sourceSuggestionId = computed(() =>
-  typeof route.query.suggestionId === 'string' ? route.query.suggestionId.trim() : '',
-)
-const sourceRunId = computed(() =>
-  typeof route.query.runId === 'string' ? route.query.runId.trim() : '',
-)
-watch(
-  [
-    sourceSuggestionId,
-    sourceRunId,
-    sourceOrder,
-    defaultTab,
-    canReadMrp,
-    canReadMps,
-    canReadDeliveries,
-  ],
-  ([suggestionId, runId]) => {
-    suggestionFilters.status = 'all'
-    suggestionTypeFilter.type = 'all'
-    focusedSuggestionId.value = ''
-    activeTab.value = (suggestionId || runId) && canReadMrp.value ? 'suggestions' : defaultTab.value
-    manualSuggestionRunId.value = runId || 'latest'
-  },
-  { immediate: true },
-)
-watch(
-  [
-    sourceSuggestionId,
-    sourceRunId,
-    suggestions,
-    mrpRuns,
-    defaultTab,
-    canReadMrp,
-    canReadMps,
-    canReadDeliveries,
-  ],
-  ([suggestionId, runId]) => {
-    if (!canReadMrp.value || !suggestionId || focusedSuggestionId.value === suggestionId) return
-    const source = suggestions.value.find((row) => row.suggestionId === suggestionId)
-    if (!source?.runId || (runId && source.runId !== runId)) return
-    if (!mrpRuns.value.some((run) => run.runId === source.runId)) return
-    locatePlanningSuggestion(suggestionId, source.runId)
-  },
-  { immediate: true },
-)
-const deniedSource = computed(() => {
-  if (
-    (sourceSuggestionId.value || sourceRunId.value) &&
-    (!canReadMrp.value ||
-      isForbiddenError(mrpRunsError.value) ||
-      isForbiddenError(suggestionsError.value))
-  )
-    return '当前岗位没有来源建议或运行的读取权限。'
-  if (sourceOrder.value && (!canReadDemands.value || isForbiddenError(demandsError.value)))
-    return '当前岗位没有来源需求的读取权限。'
-  return ''
-})
-const returnLabel = computed(() => (defaultTab.value === 'demands' ? '返回需求池' : '返回岗位入口'))
-const sourceUnresolved = computed(() =>
-  Boolean(
-    ((sourceSuggestionId.value || sourceRunId.value) &&
-      (mrpRunsError.value || suggestionsError.value || !hasBusinessContext(runRequest))) ||
-    (sourceSuggestionId.value &&
-      (suggestionFilters.status === 'all' ||
-        focusedSuggestionId.value !== sourceSuggestionId.value) &&
-      !suggestions.value.some(
-        (row) =>
-          row.suggestionId === sourceSuggestionId.value && row.runId === suggestionRun.value?.runId,
-      )) ||
-    (sourceRunId.value && sourceRunId.value !== suggestionRun.value?.runId),
-  ),
-)
-function navigateToSuggestion(suggestionId: string, runId: string) {
-  if (sourceSuggestionId.value || sourceRunId.value) {
-    void router.push({ query: { ...route.query, suggestionId, runId } })
-  }
-  locatePlanningSuggestion(suggestionId, runId)
-}
-function focusSuggestion(row: BusinessConsoleMrpPeggingItem) {
-  if (!row.suggestionId) return
-  navigateToSuggestion(row.suggestionId, runSelection.runId)
-}
-function focusPegging(row: BusinessConsolePlanningSuggestionItem) {
-  if (!row.suggestionId || !row.runId) return
-  runSelection.runId = row.runId
-  focusedSuggestionId.value = row.suggestionId
-  activeTab.value = 'runs'
-}
-async function confirmCancelDemand() {
-  const target = demandCancelTarget.value
-  if (!target?.demandSourceId) return
-  try {
-    await cancelDemand(target.demandSourceId)
-    notifySuccess('需求已作废，追溯记录仍保留。')
-    demandCancelTarget.value = null
-  } catch (error) {
-    notifyOperationFailure('作废需求失败', error, '作废需求失败，请稍后重试。')
-  }
-}
-function runChoiceLabel(run: BusinessConsoleMrpRunItem): string {
-  return `第 ${mrpRuns.value.length - mrpRuns.value.indexOf(run)} 次 · ${runHorizonLabel(run)}`
-}
-function successorRunLabel(runId: string): string {
-  const run = mrpRuns.value.find((item) => item.runId === runId)
-  return run ? runChoiceLabel(run) : '后续 MRP 运行'
-}
-// 历次 MRP 产出的建议条数——真实时序，作为最近一次运行卡的迷你趋势。
-const mrpSuggestionSeries = computed(() =>
-  runsChronological.value.map((run) => run.suggestionCount ?? 0),
-)
-const mrpRunLabels = computed(() =>
-  runsChronological.value.map((run) => formatDate(run.horizonStart)),
-)
-const latestRunKpiValue = computed(() =>
-  latestRun.value ? planningStatus(latestRun.value.status).label : '未运行',
-)
-// 卡片两条脚注分工：左＝这次运行覆盖的计划范围，右＝它读了哪些输入。
-// 没有运行过时只留左边一句「尚未运行 MRP」，右边留空——两边渲染同一句是重复噪音。
-const latestRunKpiHint = computed(() =>
-  latestRun.value ? `输入 ${inputSourcesLabel(latestRun.value.inputSources)}` : '',
-)
-
-// MRP 运行覆盖率 = 建议数 / 需求数（除零保护）。
-function coverageRate(run: BusinessConsoleMrpRunItem): string {
-  const demandCount = run.demandCount ?? 0
-  if (demandCount <= 0) return '—'
-  const pct = Math.round(((run.suggestionCount ?? 0) / demandCount) * 100)
-  return `${pct}%`
-}
-
-// 运行的人读锚点：以「计划范围」作追溯标题，避免裸 GUID。
-function runHorizonLabel(run?: BusinessConsoleMrpRunItem | null): string {
-  if (!run) return '选择一次运行'
-  return `计划范围 ${formatDate(run.horizonStart)} ~ ${formatDate(run.horizonEnd)}`
-}
-const selectedRun = computed(
-  () => mrpRuns.value.find((r) => r.runId === runSelection.runId) ?? null,
-)
-// 时段视图与覆盖统计只看已完成运行：选中已完成批次时使用它，否则使用最近完成批次。
-// 后端 RunMrp 不关闭历史 Open 建议，跨运行求和会重复计数，必须锁单次运行。
-const timePhasedRun = computed(() =>
-  selectedRun.value?.status?.toLowerCase() === 'completed'
-    ? selectedRun.value
-    : latestCompletedRun.value,
-)
-// 覆盖统计锁定的运行 = 时段视图那一次；两图与 KPI 共用，口径不再分叉。
-const coverageRunId = computed(() => timePhasedRun.value?.runId ?? '')
-
-// 需求覆盖状态：本次运行里出现未被拒绝的供给建议 → 已生成建议；否则未覆盖。
-function demandCoverage(skuCode?: string | null): { label: string; tone: StatusTone } {
-  if (skuCode && coveredSkuCodes.value.has(skuCode)) return { label: '已生成建议', tone: 'success' }
-  return { label: '未覆盖', tone: 'neutral' }
-}
-function demandCoverageForRow(row: BusinessConsoleDemandSourceItem): {
-  label: string
-  tone: StatusTone
-} {
-  if (isOutsideCompletedHorizon(row)) return { label: '窗外', tone: 'warning' }
-  return demandCoverage(row.skuCode)
-}
-
-// pegging 分型（成品净需求 / 组件展开）。
-function peggingTypeLabel(value?: string | null): { label: string; tone: StatusTone } {
-  const map: Record<string, { label: string; tone: StatusTone }> = {
-    'finished-good': { label: '成品净需求', tone: 'info' },
-    'finished-good-net-requirement': { label: '成品净需求', tone: 'info' },
-    component: { label: '组件展开', tone: 'neutral' },
-    'component-net-requirement': { label: '组件展开', tone: 'neutral' },
-  }
-  return map[value ?? ''] ?? { label: '需求展开', tone: 'neutral' }
-}
-// 父项=组件 或 无组件 → 视为顶层（成品行，不缩进）；有不同组件 → 缩进。
-function isComponentRow(row: BusinessConsoleMrpPeggingItem): boolean {
-  return !!row.componentSkuCode && row.componentSkuCode !== row.parentSkuCode
-}
-
-// 计划建议分型筛选后的可见行。
-const visibleSuggestions = computed(() => {
-  const t = suggestionTypeFilter.type
-  // 'all' 哨兵 = 不过滤（reka 的 SelectItem 不允许空串 value，故用 'all' 代替原空串）。
-  const rows =
-    !t || t === 'all'
-      ? scopedSuggestions.value
-      : scopedSuggestions.value.filter((s) => s.suggestionType === t)
-  // 表格默认分页；将定位行放到首屏，不改变其它建议的相对次序。
-  const focused = rows.find((row) => row.suggestionId === focusedSuggestionId.value)
-  return focused ? [focused, ...rows.filter((row) => row !== focused)] : rows
-})
-const suggestionPage = shallowRef(1)
-const suggestionPageSize = shallowRef(10)
-watch([visibleSuggestions, suggestionPageSize], () => {
-  suggestionPage.value = 1
-})
-const suggestionPageRows = computed(() => {
-  const start = (suggestionPage.value - 1) * suggestionPageSize.value
-  return visibleSuggestions.value.slice(start, start + suggestionPageSize.value)
-})
-watchEffect(() => {
-  downstreamPage.value =
-    activeTab.value === 'suggestions' && !sourceUnresolved.value ? suggestionPageRows.value : []
-})
-const suggestionTypeFilterOptions = [
-  { label: '全部类型', value: 'all' },
-  { label: '生产建议 (→MES)', value: 'planned-work-order' },
-  { label: '采购建议 (→ERP)', value: 'planned-purchase' },
-  { label: '提前调整', value: 'reschedule-in' },
-  { label: '延期调整', value: 'reschedule-out' },
-  { label: '释放日已过', value: 'release-date-past' },
-  { label: '负可用', value: 'negative-availability' },
-  { label: '超期在途', value: 'overdue-receipt' },
-  { label: '取消计划收货', value: 'cancel' },
-  { label: '销售超出主计划', value: 'mps-sales-excess' },
-]
-
-const demandColumns: NvDataTableColumn<BusinessConsoleDemandSourceItem>[] = [
-  { key: 'sourceReference', header: '来源', cellClass: 'font-medium' },
-  { key: 'demandType', header: '类型', width: 'w-24' },
-  { key: 'sourceStatus', header: '状态', width: 'w-24' },
-  { key: 'skuCode', header: 'SKU' },
-  { key: 'siteCode', header: '工厂' },
-  { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
-  { key: 'dueDate', header: '需求日', width: 'w-32' },
-  { key: 'urgency', header: '紧迫度', width: 'w-28' },
-  { key: 'coverage', header: '覆盖', width: 'w-28' },
-  { key: 'actions', header: '', align: 'end', width: 'w-20' },
-]
-const mpsColumns: NvDataTableColumn<BusinessConsoleMpsBucketItem>[] = [
-  { key: 'bucketDate', header: '计划周期', cellClass: 'font-medium', width: 'w-32' },
-  { key: 'skuCode', header: 'SKU', width: 'w-64' },
-  { key: 'siteCode', header: '工厂', width: 'w-40' },
-  { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
-  { key: 'status', header: '状态', width: 'w-28' },
-  { key: 'reviewRelease', header: '评审/发布', width: 'w-40' },
-  { key: 'actions', header: '', align: 'end', width: 'w-44' },
-]
-const runColumns: NvDataTableColumn<BusinessConsoleMrpRunItem>[] = [
-  // runId 是 GUID，不显裸 GUID；以「计划范围」(horizon) 作人读锚点，追溯按钮内部用 runId。
-  { key: 'horizon', header: '计划范围', cellClass: 'font-medium' },
-  { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'inputSources', header: '输入来源', width: 'w-52' },
-  { key: 'inputCoverage', header: '输入覆盖', width: 'w-40' },
-  { key: 'demandCount', header: '覆盖需求', align: 'end', width: 'w-24' },
-  { key: 'inputDegradationSources', header: '输入状态', width: 'w-36' },
-  { key: 'suggestionCount', header: '建议', align: 'end', width: 'w-20' },
-  { key: 'coverage', header: '覆盖率', align: 'end', width: 'w-24' },
-  { key: 'availabilityCount', header: '库存快照', align: 'end', width: 'w-24' },
-  { key: 'actions', header: '', align: 'end', width: 'w-24' },
-]
-const peggingColumns: NvDataTableColumn<BusinessConsoleMrpPeggingItem>[] = [
-  { key: 'demandSourceReference', header: '需求来源', cellClass: 'font-medium' },
-  { key: 'peggingType', header: '展开类型', width: 'w-28' },
-  { key: 'sourceType', header: '来源类型', width: 'w-28' },
-  { key: 'sku', header: '物料层级' },
-  { key: 'quantity', header: '数量', align: 'end', width: 'w-24' },
-  { key: 'engineeringRef', header: '工程引用' },
-  { key: 'suggestion', header: '建议', width: 'w-24' },
-]
-const suggestionColumns: NvDataTableColumn<BusinessConsolePlanningSuggestionItem>[] = [
-  // suggestionId 是 GUID 且无人读号；不显裸 GUID，行由「类型 + SKU + 数量 + 原因」自识别。
-  { key: 'suggestionType', header: '类型', width: 'w-28', cellClass: 'font-medium' },
-  { key: 'skuCode', header: 'SKU', width: 'w-32' },
-  { key: 'quantity', header: '数量', align: 'end', width: 'w-28' },
-  { key: 'requiredDate', header: '需求日', width: 'w-28' },
-  { key: 'reasonCode', header: '原因', width: 'w-80' },
-  { key: 'downstream', header: '承接单据', width: 'w-56' },
-  { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'actions', header: '', align: 'end', width: 'w-48' },
-]
-
-// 五个写操作此前都没有 try/catch：一次 500 就是「未处理拒绝 + 弹框永远关不掉」（MAN-700 / #1289）。
-// 现在一律 toast 分层透传，失败时弹框保持打开可改可重试，成功才关。
-async function submitDemand() {
-  try {
-    await createOrUpdateDemand()
-    demandOpen.value = false
-  } catch (error) {
-    notifyOperationFailure('保存需求失败', error, '保存需求失败，请稍后重试。')
-  }
-}
-async function submitMpsBucket() {
-  try {
-    if (mpsEditingId.value) await updateMpsBucket(mpsEditingId.value)
-    else await createMpsBucket()
-    mpsOpen.value = false
-    mpsEditingId.value = null
-  } catch (error) {
-    notifyOperationFailure('保存主计划行失败', error, '保存主计划行失败，请稍后重试。')
-  }
-}
-function editMpsBucket(row: BusinessConsoleMpsBucketItem) {
-  if (!row.mpsId) return
-  mpsForm.skuCode = row.skuCode ?? ''
-  mpsForm.uomCode = row.uomCode ?? ''
-  mpsForm.siteCode = row.siteCode ?? ''
-  mpsForm.bucketDate = row.bucketDate ?? ''
-  mpsForm.quantity = row.quantity ?? 0
-  mpsEditingId.value = row.mpsId
-  mpsOpen.value = true
-}
-function newMpsBucket() {
-  mpsEditingId.value = null
-  mpsForm.skuCode = ''
-  mpsForm.uomCode = ''
-  mpsForm.siteCode = ''
-  mpsForm.bucketDate = new Date().toISOString().slice(0, 10)
-  mpsForm.quantity = 0
-}
-// 运行 MRP（#1306 异步任务模式）：提交只是「受理」，弹框显示计算中且全程可关闭，
-// 后台照跑；轮询到终态后统一 toast + 刷新读面（关没关弹框都一样）。
-async function submitMrpRun() {
-  try {
-    await runMrp()
-    notifySuccess('MRP 已受理，正在后台计算，完成后自动刷新。')
-  } catch (error) {
-    notifyOperationFailure('运行 MRP 失败', error, '运行 MRP 失败，请稍后重试。')
-  }
-}
-const mrpRunInProgress = computed(
-  () => activeMrpRun.status === 'queued' || activeMrpRun.status === 'running',
-)
-watch(
-  () => activeMrpRun.status,
-  (status) => {
-    if (status === 'completed') {
-      notifySuccess(`MRP 计算完成，共生成 ${activeMrpRun.suggestionCount ?? 0} 条计划建议。`)
-      mrpOpen.value = false
-    } else if (status === 'failed') {
-      // failureReason 是服务端领域消息，走分层透传（中文原样上屏、英文映射人话）。
-      // 后端 worker 对非预期异常会自带「MRP 计算失败：」前缀，这里去重避免叠成两层。
-      const reason = activeMrpRun.failureReason.replace(/^MRP 计算失败[:：]\s*/, '')
-      notifyOperationFailure('MRP 计算失败', reason, 'MRP 计算失败，请在「MRP 运行」列表查看原因。')
-    } else if (status === 'polling-timeout') {
-      notifyWarning('MRP 仍在后台计算，可稍后在「MRP 运行」列表查看结果。')
-    }
-  },
-)
-async function reviewMps(row: BusinessConsoleMpsBucketItem) {
-  if (!row.mpsId) return
-  try {
-    await reviewMpsBucket(row.mpsId)
-    notifySuccess('主计划行已完成评审。')
-  } catch (error) {
-    notifyOperationFailure('评审主计划行失败', error, '评审主计划行失败，请稍后重试。')
-  }
-}
-async function releaseMps(row: BusinessConsoleMpsBucketItem) {
-  if (!row.mpsId) return
-  try {
-    await releaseMpsBucket(row.mpsId)
-    notifySuccess('主计划行已发布，可作为 MRP 输入。')
-  } catch (error) {
-    notifyOperationFailure('发布主计划行失败', error, '发布主计划行失败，请稍后重试。')
-  }
-}
-async function acceptPlanningSuggestion(row: BusinessConsolePlanningSuggestionItem) {
-  if (!row.suggestionId || !row.suggestionType) return
-  if (!isAcceptableSuggestion(row.suggestionType)) return
-  if (acceptingSuggestionId.value) return
-  if (row.suggestionType === 'cancel' && cancelTarget.value?.suggestionId !== row.suggestionId) {
-    cancelTarget.value = row
-    return
-  }
-  acceptingSuggestionId.value = row.suggestionId
-  try {
-    const response = await acceptSuggestion({
-      suggestionId: row.suggestionId,
-      suggestionType: row.suggestionType,
-    })
-    const reference = response.data?.downstreamDocumentId
-    notifySuccess(
-      reference
-        ? `计划建议已承接到 ${downstreamLabel(response.data?.downstreamService, response.data?.downstreamDocumentType)}「${reference}」。`
-        : '计划建议已接受。',
-    )
-    cancelTarget.value = null
-  } catch (error) {
-    notifyOperationFailure(
-      '接受计划建议失败',
-      error,
-      '计划建议接受失败，请检查生产版本、供应商、库存或权限状态。',
-    )
-  } finally {
-    acceptingSuggestionId.value = null
-  }
-}
-
-function planningStatus(status?: string | null): { label: string; tone: StatusTone } {
-  const s = (status ?? '').toLowerCase()
-  if (s === 'accepted' || s === 'completed')
-    return { label: s === 'accepted' ? '已接受' : '已完成', tone: 'success' }
-  if (s === 'running' || s === 'inprogress') return { label: '运行中', tone: 'info' }
-  // Created = 异步受理后的排队态（#1306）。
-  if (s === 'created' || s === 'queued') return { label: '排队中', tone: 'info' }
-  if (s === 'failed') return { label: '失败', tone: 'danger' }
-  if (s === 'rejected') return { label: '已拒绝', tone: 'neutral' }
-  if (s === 'superseded') return { label: '已被替代', tone: 'neutral' }
-  if (s === 'open' || s === 'pending') return { label: '待评审', tone: 'warning' }
-  return { label: status || '未知', tone: 'neutral' }
-}
-function mpsStatus(status?: string | null): { label: string; tone: StatusTone } {
-  const s = (status ?? '').toLowerCase()
-  if (s === 'released') return { label: '已发布', tone: 'success' }
-  if (s === 'reviewed') return { label: '已评审', tone: 'info' }
-  if (s === 'draft') return { label: '草稿', tone: 'neutral' }
-  return { label: status || '未知', tone: 'neutral' }
-}
-function isMpsReleased(status?: string | null) {
-  return status?.toLowerCase() === 'released'
-}
-function demandTypeLabel(value?: string | null) {
-  return (
-    (
-      { forecast: '预测', 'safety-stock': '安全库存', 'sales-order': '销售订单' } as Record<
-        string,
-        string
-      >
-    )[value ?? ''] ??
-    (value || '未指定')
-  )
-}
-function suggestionTypeLabel(value?: string | null) {
-  return (
-    (
-      {
-        'planned-purchase': '采购建议',
-        'planned-work-order': '生产建议',
-        'reschedule-in': '提前调整',
-        'reschedule-out': '延期调整',
-        'release-date-past': '释放日已过',
-        'negative-availability': '负可用',
-        'overdue-receipt': '超期在途',
-        cancel: '取消收货',
-        'mps-sales-excess': '销售超出主计划',
-      } as Record<string, string>
-    )[value ?? ''] ??
-    (value || '未指定')
-  )
-}
-function suggestionTypeTone(value?: string | null): StatusTone {
-  if (value === 'planned-work-order') return 'info'
-  if (value === 'planned-purchase') return 'neutral'
-  if (
-    value === 'reschedule-in' ||
-    value === 'reschedule-out' ||
-    value === 'release-date-past' ||
-    value === 'overdue-receipt'
-  )
-    return 'warning'
-  if (value === 'negative-availability') return 'danger'
-  if (value === 'mps-sales-excess') return 'danger'
-  if (value === 'cancel') return 'danger'
-  return 'neutral'
-}
-function isAcceptableSuggestion(value?: string | null) {
-  return (
-    value === 'planned-work-order' ||
-    value === 'planned-purchase' ||
-    value === 'reschedule-in' ||
-    value === 'reschedule-out' ||
-    value === 'cancel'
-  )
-}
-function reasonLabel(value?: string | null) {
-  const map: Record<string, string> = {
-    inventory_shortage: '库存不足',
-    material_shortage: '物料不足',
-    demand_pegging: '需求驱动',
-    safety_stock: '安全库存',
-    'finished-good-net-requirement': '成品净需求',
-    'component-net-requirement': '组件净需求',
-    'safety-stock-replenishment': '安全库存低于下限，建议补货',
-    'lead-time-insufficient': '提前期不足，释放日已过',
-    'negative-availability': '可用量为负',
-    'scheduled-receipt-overdue': '在途已超期',
-    'sales-above-mps': '销售需求超出已发布主计划',
-  }
-  // 未知码一律降级为通用中文，绝不回显原始英文码。
-  return map[value ?? ''] ?? '按计划规则形成'
-}
-function sourceTypeLabel(value?: string | null) {
-  const map: Record<string, string> = {
-    sales: '销售来源',
-    'sales-order': '销售来源',
-    forecast: '预测来源',
-    safety: '安全库存来源',
-    'safety-stock': '安全库存来源',
-    mps: 'MPS 来源',
-    component: '组件展开',
-    demand: '需求来源',
-    'scheduled-receipt': '在途来源',
-    'negative-availability': '负可用来源',
-  }
-  return map[(value ?? '').toLowerCase()] ?? '来源未分类'
-}
-function isOpen(status?: string | null) {
-  return status?.toLowerCase() === 'open'
-}
-function downstreamLabel(service?: string | null, type?: string | null) {
-  // 归一化后再比：写侧有两个生产者（种子写 `business-mes`、前端接受建议时写 `BusinessMes`），
-  // 严格比字面量会让一半数据退化成泛称「下游单据」。
-  if (isMesWorkOrderDownstream(service, type)) return 'MES 工单'
-  if (
-    normalizeReferenceToken(service) === 'businesserp' &&
-    normalizeReferenceToken(type) === 'purchaserequisition'
-  )
-    return 'ERP 采购申请'
-  if (
-    normalizeReferenceToken(service) === 'businesserp' &&
-    normalizeReferenceToken(type) === 'purchaseorderline'
-  )
-    return 'ERP 采购单行'
-  return '下游单据'
-}
-function downstreamStatus(status?: string): { label: string; tone: StatusTone } {
-  const names: Record<string, string> = {
-    created: '新建',
-    queued: '排队中',
-    ready: '可开工',
-    released: '已下达',
-    started: '已开工',
-    inprogress: '执行中',
-    running: '执行中',
-    hold: '暂停',
-    blocked: '阻塞',
-    completed: '已完成',
-    closed: '已关闭',
-    cancelled: '已取消',
-    open: '待处理',
-    converted: '已转采购单',
-    loading: '正在核对作业范围',
-    restricted: '无权查看下游状态',
-    partial: '前 400 条候选未定位到回执',
-    unavailable: '状态读取失败',
-    unknown: '状态未知',
-  }
-  const key = (status ?? 'unknown').toLowerCase()
-  return {
-    label: names[key] ?? status ?? '状态未知',
-    tone:
-      key === 'cancelled' || key === 'blocked' || key === 'unavailable'
-        ? 'danger'
-        : key === 'completed' || key === 'closed' || key === 'converted'
-          ? 'success'
-          : 'neutral',
-  }
-}
-// —— 计划建议行的「对该单排产」（MAN-694 / #1262）——
-// 排程的最小单位是 MES 工单。生产建议只有**被接受、承接成 MES 工单之后**才有可排的单，
-// 承接单据 id 就是工单 id（同一个值也被 downstreamRoute 拿去下钻 /mes/work-orders/{id}）。
-const canScheduleSingleOrder = useCanScheduleSingleOrder()
-const scheduleTarget = shallowRef<BusinessConsolePlanningSuggestionItem | null>(null)
-
-function suggestionWorkOrderId(row: BusinessConsolePlanningSuggestionItem) {
-  // 码值口径两侧不一：后端种子写 `business-mes`，这里原来严格比 `BusinessMes`，
-  // 于是演示数据上「对该单排产」一个按钮都不渲染（第五轮走查实测）。归一化后再比。
-  return isMesWorkOrderDownstream(row.downstreamService, row.downstreamDocumentType)
-    ? (row.downstreamDocumentId ?? '')
-    : ''
-}
-function suggestionScheduleHint(row: BusinessConsolePlanningSuggestionItem) {
-  // 排产的最小单位是工单：没承接成工单就没有可排的单，说清楚而不是给个点不动的按钮。
-  return row.suggestionType === 'planned-work-order' ? '未承接工单，暂不能排产' : ''
-}
-function downstreamRoute(
-  service: string | null | undefined,
-  type: string | null | undefined,
-  documentId: string,
-) {
-  // 同一个口径问题：严格比字面量时，种子的 `business-mes` 会被兜底路由到 /erp 关键词搜索，
-  // 看着有链接、点进去却不是工单详情——比按钮不渲染更难发现。
-  if (isMesWorkOrderDownstream(service, type)) {
-    return { path: `/mes/work-orders/${encodeURIComponent(documentId)}` }
-  }
-
-  return {
-    path: '/erp',
-    query: { keyword: documentId },
-  }
-}
-function formatDate(value?: string | null) {
-  return value ? value.slice(0, 10) : '-'
-}
-function formatMpsQuantity(value?: number | null, uom?: string | null) {
-  const name = units.value.find((unit) => unit.code === uom)?.displayName?.trim() || '—'
-  return `${value ?? 0} ${name}`
-}
-function formatQuantity(value?: number | null, uom?: string | null) {
-  return `${value ?? 0} ${uom ?? ''}`.trim()
-}
-/** 比率说人话：0.02 → 「2%」、1 → 「100%」；缺值显 —。计划员看的是百分比，不是小数码。 */
-function formatPercent(value?: number | null) {
-  if (value === null || value === undefined) return '—'
-  return `${Math.round(value * 10000) / 100}%`
-}
-/**
- * 后端把公式串成 `130 - 0 - 0 = 130; scrap/yield 0.02/1`（MrpCalculator.BuildFormula）。
- * `scrap/yield` 是英文码直出（#1418 顺带项），且信息与下方「废品率/良率」重复——
- * 展示时只取分号前的算式部分，比率交给下方中文行。存量建议无需重算即可生效。
- */
-function formulaMathPart(formula?: string | null) {
-  if (!formula) return '—'
-  const [mathPart] = formula.split(';')
-  return (mathPart ?? formula).trim()
-}
-function inputDegradationLabel(sources?: readonly string[] | null) {
-  return sources && sources.length > 0
-    ? sources.map(inputDegradationSourceLabel).join('、')
-    : '正常'
-}
-function inputDegradationSourceLabel(source: string) {
-  return (
-    (
-      {
-        'scheduled-receipts': '在途到货',
-        'master-data-planning-parameters': '主数据规划参数',
-      } as Record<string, string>
-    )[source] ?? source
-  )
-}
-function inputSourcesLabel(sources?: readonly string[] | null) {
-  return sources && sources.length > 0 ? sources.map(inputSourceLabel).join('、') : '未记录'
-}
-function inputSourceLabel(source: string) {
-  return (
-    (
-      {
-        mps: 'MPS 主计划',
-        'demand-source': '需求池',
-        'sales-order': '销售需求',
-        forecast: '预测',
-        'safety-stock': '安全库存',
-      } as Record<string, string>
-    )[source] ?? source
-  )
-}
-function inputCoverageLabel(run: BusinessConsoleMrpRunItem) {
-  const start = run.inputCoverageStart ?? run.horizonStart
-  const end = run.inputCoverageEnd ?? run.horizonEnd
-  return `${formatDate(start)} ~ ${formatDate(end)}`
-}
-
-function parseVersionReference(reference?: string | null) {
-  if (!reference) return {}
-  const separator = reference.lastIndexOf(':')
-  if (separator <= 0 || separator >= reference.length - 1) return {}
-  return {
-    bomCode: reference.slice(0, separator),
-    revision: reference.slice(separator + 1),
-  }
-}
-
-function bomAnalysisQuery(row: BusinessConsoleMrpPeggingItem) {
-  return {
-    kind: 'manufacturing',
-    view: 'tree',
-    skuCode: row.parentSkuCode ?? row.componentSkuCode ?? '',
-    componentCode:
-      row.componentSkuCode && row.componentSkuCode !== row.parentSkuCode
-        ? row.componentSkuCode
-        : undefined,
-    effectiveDate: selectedRun.value?.horizonStart ?? new Date().toISOString().slice(0, 10),
-    lotSize: String(row.quantity ?? 1),
-    ...parseVersionReference(row.manufacturingBomReference),
-  }
-}
-
-function openBomContext(row: BusinessConsoleMrpPeggingItem) {
-  void router.push({
-    path: '/engineering/bom-analysis',
-    query: bomAnalysisQuery(row),
-  })
-}
-
-function explanationRows(row: BusinessConsolePlanningSuggestionItem) {
-  const explanation = row.netRequirementExplanation
-  if (!explanation) return []
-  const grossDemandLabel = explanation.primarySourceType === 'component' ? '组件毛需求' : '总需求'
-  return [
-    { label: grossDemandLabel, value: explanation.grossDemandQuantity },
-    { label: '现有库存', value: explanation.onHandQuantity },
-    { label: '预留', value: explanation.reservedQuantity },
-    { label: '可抵扣库存', value: explanation.availableToNetQuantity },
-    { label: '在途', value: explanation.scheduledReceiptQuantity },
-    { label: '安全库存', value: explanation.safetyStockQuantity },
-    { label: '净需求', value: explanation.netRequirementQuantity },
-    { label: '建议量', value: explanation.plannedQuantity },
-  ]
-}
-
-function openPeggingSource(row: BusinessConsoleMrpPeggingItem) {
-  const sourceType = (row.sourceType ?? '').toLowerCase()
-  if (
-    sourceType === 'component' ||
-    row.manufacturingBomReference ||
-    row.productionVersionReference
-  ) {
-    openBomContext(row)
-    return
-  }
-
-  if (sourceType === 'scheduled-receipt') {
-    void router.push({ path: '/erp', query: { keyword: row.demandSourceReference } })
-    return
-  }
-
-  void router.push({
-    path: '/planning',
-    query: {
-      source: row.demandSourceReference,
-      runId: runSelection.runId,
-    },
-  })
-}
-
-function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
-  void router.push({
-    path: '/erp/sales/orders',
-    query: { keyword: row.sourceReference },
-  })
-}
+  suggestionsReady,
+  timePhasedRun,
+  uomOptions,
+  updateMpsBucketPending,
+  visibleSuggestions,
+} = usePlanningWorkbenchController()
 </script>
 
 <template>
@@ -1215,247 +184,41 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
         刷新
       </NvButton>
 
-      <NvDialog v-if="hasPermission('business.planning.mrp.run')" v-model:open="mrpOpen">
-        <NvDialogTrigger as-child>
-          <NvButton size="sm" type="button" variant="outline">
-            <PlayIcon aria-hidden="true" />
-            运行 MRP
-          </NvButton>
-        </NvDialogTrigger>
-        <NvDialogContent>
-          <NvDialogHeader>
-            <NvDialogTitle>运行 MRP</NvDialogTitle>
-            <NvDialogDescription class="sr-only">选择本次运算的计划范围。</NvDialogDescription>
-          </NvDialogHeader>
-          <form class="grid gap-4" @submit.prevent="submitMrpRun">
-            <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-              <NvField>
-                <NvFieldLabel>开始日期</NvFieldLabel>
-                <NvDatePicker
-                  v-model="runRequest.horizonStart"
-                  placeholder="选择开始日期"
-                  class="w-full"
-                />
-              </NvField>
-              <NvField>
-                <NvFieldLabel>结束日期</NvFieldLabel>
-                <NvDatePicker
-                  v-model="runRequest.horizonEnd"
-                  placeholder="选择结束日期"
-                  class="w-full"
-                />
-              </NvField>
-            </NvFieldGroup>
-            <div
-              v-if="mrpRunInProgress"
-              class="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
-            >
-              <NvSpinner aria-hidden="true" />
-              <span>
-                已受理，{{
-                  activeMrpRun.status === 'running' ? '正在计算' : '排队等待计算'
-                }}…可关闭此窗口，后台继续执行，完成后自动刷新。
-              </span>
-            </div>
-            <NvDialogFooter>
-              <NvButton type="button" variant="outline" @click="mrpOpen = false">
-                {{ mrpRunInProgress ? '关闭' : '取消' }}
-              </NvButton>
-              <NvButton type="submit" :disabled="runMrpPending || mrpRunInProgress">
-                <NvSpinner v-if="runMrpPending" aria-hidden="true" />
-                运行 MRP
-              </NvButton>
-            </NvDialogFooter>
-          </form>
-        </NvDialogContent>
-      </NvDialog>
+      <PlanningMrpRunDialog
+        v-model:mrp-open="mrpOpen"
+        :active-mrp-run="activeMrpRun"
+        :has-permission="hasPermission"
+        :mrp-run-in-progress="mrpRunInProgress"
+        :run-mrp-pending="runMrpPending"
+        :run-request="runRequest"
+        :submit-mrp-run="submitMrpRun"
+      />
 
-      <NvDialog v-if="hasPermission(P.planningMpsManage)" v-model:open="mpsOpen">
-        <NvDialogTrigger as-child>
-          <NvButton size="sm" type="button" variant="outline" @click="newMpsBucket">
-            <PlusIcon aria-hidden="true" />
-            新建 MPS
-          </NvButton>
-        </NvDialogTrigger>
-        <NvDialogContent class="sm:max-w-2xl">
-          <NvDialogHeader>
-            <NvDialogTitle>{{ mpsEditingId ? '编辑主计划行' : '新建主计划行' }}</NvDialogTitle>
-            <NvDialogDescription class="sr-only"
-              >录入一个计划周期的主生产计划。</NvDialogDescription
-            >
-          </NvDialogHeader>
-          <form class="grid gap-4" @submit.prevent="submitMpsBucket">
-            <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-              <NvField>
-                <NvFieldLabel for="mps-sku">SKU</NvFieldLabel>
-                <DirectoryPicker
-                  id="mps-sku"
-                  v-model="mpsForm.skuCode"
-                  directory-type="material"
-                  creatable
-                  placeholder="选择 SKU"
-                />
-              </NvField>
-              <NvField>
-                <NvFieldLabel for="mps-site">工厂</NvFieldLabel>
-                <NvSelect v-model="mpsForm.siteCode">
-                  <NvSelectTrigger id="mps-site"
-                    ><NvSelectValue placeholder="选择工厂"
-                  /></NvSelectTrigger>
-                  <NvSelectContent>
-                    <NvSelectItem v-for="o in siteOptions" :key="o.value" :value="o.value">{{
-                      o.label
-                    }}</NvSelectItem>
-                  </NvSelectContent>
-                </NvSelect>
-              </NvField>
-              <NvField>
-                <NvFieldLabel for="mps-uom">单位</NvFieldLabel>
-                <NvSelect v-model="mpsForm.uomCode">
-                  <NvSelectTrigger id="mps-uom"
-                    ><NvSelectValue placeholder="选择单位"
-                  /></NvSelectTrigger>
-                  <NvSelectContent>
-                    <NvSelectItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{
-                      o.label
-                    }}</NvSelectItem>
-                  </NvSelectContent>
-                </NvSelect>
-              </NvField>
-              <NvField>
-                <NvFieldLabel for="mps-qty">计划数量</NvFieldLabel>
-                <NvInput
-                  id="mps-qty"
-                  v-model.number="mpsForm.quantity"
-                  min="0.0001"
-                  step="0.0001"
-                  type="number"
-                />
-              </NvField>
-              <NvField>
-                <NvFieldLabel>计划周期日期</NvFieldLabel>
-                <NvDatePicker
-                  v-model="mpsForm.bucketDate"
-                  placeholder="选择计划日期"
-                  class="w-full"
-                />
-              </NvField>
-            </NvFieldGroup>
-            <NvDialogFooter>
-              <NvButton type="button" variant="outline" @click="mpsOpen = false">取消</NvButton>
-              <NvButton
-                type="submit"
-                :disabled="createMpsBucketPending || updateMpsBucketPending || !canSubmitMps"
-              >
-                <NvSpinner
-                  v-if="createMpsBucketPending || updateMpsBucketPending"
-                  aria-hidden="true"
-                />
-                保存主计划行
-              </NvButton>
-            </NvDialogFooter>
-          </form>
-        </NvDialogContent>
-      </NvDialog>
+      <PlanningMpsFormDialog
+        v-model:mps-open="mpsOpen"
+        :can-submit-mps="canSubmitMps"
+        :create-mps-bucket-pending="createMpsBucketPending"
+        :has-permission="hasPermission"
+        :mps-editing-id="mpsEditingId"
+        :mps-form="mpsForm"
+        :new-mps-bucket="newMpsBucket"
+        :site-options="siteOptions"
+        :submit-mps-bucket="submitMpsBucket"
+        :uom-options="uomOptions"
+        :update-mps-bucket-pending="updateMpsBucketPending"
+      />
 
-      <NvDialog v-if="hasPermission(P.planningDemandsManage)" v-model:open="demandOpen">
-        <NvDialogTrigger as-child>
-          <NvButton size="sm" type="button">
-            <PlusIcon aria-hidden="true" />
-            新建需求
-          </NvButton>
-        </NvDialogTrigger>
-        <NvDialogContent class="sm:max-w-2xl">
-          <NvDialogHeader>
-            <NvDialogTitle>新建需求</NvDialogTitle>
-            <NvDialogDescription class="sr-only">录入一条计划需求。</NvDialogDescription>
-          </NvDialogHeader>
-          <form class="grid gap-4" @submit.prevent="submitDemand">
-            <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-              <NvField>
-                <NvFieldLabel>需求类型</NvFieldLabel>
-                <NvSelect v-model="demandForm.demandType">
-                  <NvSelectTrigger aria-label="需求类型"><NvSelectValue /></NvSelectTrigger>
-                  <NvSelectContent>
-                    <NvSelectItem v-for="o in demandTypeOptions" :key="o.value" :value="o.value">{{
-                      o.label
-                    }}</NvSelectItem>
-                  </NvSelectContent>
-                </NvSelect>
-              </NvField>
-              <NvField>
-                <NvFieldLabel for="demand-source">来源单号</NvFieldLabel>
-                <NvInput
-                  id="demand-source"
-                  v-model="demandForm.sourceReference"
-                  placeholder="SO-2026-001"
-                />
-              </NvField>
-              <NvField>
-                <NvFieldLabel for="demand-sku">SKU</NvFieldLabel>
-                <DirectoryPicker
-                  id="demand-sku"
-                  v-model="demandForm.skuCode"
-                  directory-type="material"
-                  creatable
-                  placeholder="选择 SKU"
-                />
-              </NvField>
-              <NvField>
-                <NvFieldLabel for="demand-site">工厂</NvFieldLabel>
-                <NvSelect v-model="demandForm.siteCode">
-                  <NvSelectTrigger id="demand-site"
-                    ><NvSelectValue placeholder="选择工厂"
-                  /></NvSelectTrigger>
-                  <NvSelectContent>
-                    <NvSelectItem v-for="o in siteOptions" :key="o.value" :value="o.value">{{
-                      o.label
-                    }}</NvSelectItem>
-                  </NvSelectContent>
-                </NvSelect>
-              </NvField>
-              <NvField>
-                <NvFieldLabel for="demand-uom">单位</NvFieldLabel>
-                <NvSelect v-model="demandForm.uomCode">
-                  <NvSelectTrigger id="demand-uom"
-                    ><NvSelectValue placeholder="选择单位"
-                  /></NvSelectTrigger>
-                  <NvSelectContent>
-                    <NvSelectItem v-for="o in uomOptions" :key="o.value" :value="o.value">{{
-                      o.label
-                    }}</NvSelectItem>
-                  </NvSelectContent>
-                </NvSelect>
-              </NvField>
-              <NvField>
-                <NvFieldLabel for="demand-qty">数量</NvFieldLabel>
-                <NvInput
-                  id="demand-qty"
-                  v-model.number="demandForm.quantity"
-                  min="0.0001"
-                  step="0.0001"
-                  type="number"
-                />
-              </NvField>
-              <NvField>
-                <NvFieldLabel>需求日期</NvFieldLabel>
-                <NvDatePicker
-                  v-model="demandForm.dueDate"
-                  placeholder="选择需求日期"
-                  class="w-full"
-                />
-              </NvField>
-            </NvFieldGroup>
-            <NvDialogFooter>
-              <NvButton type="button" variant="outline" @click="demandOpen = false">取消</NvButton>
-              <NvButton type="submit" :disabled="createDemandPending || !canSubmitDemand">
-                <NvSpinner v-if="createDemandPending" aria-hidden="true" />
-                保存需求
-              </NvButton>
-            </NvDialogFooter>
-          </form>
-        </NvDialogContent>
-      </NvDialog>
+      <PlanningDemandFormDialog
+        v-model:demand-open="demandOpen"
+        :can-submit-demand="canSubmitDemand"
+        :create-demand-pending="createDemandPending"
+        :demand-form="demandForm"
+        :demand-type-options="demandTypeOptions"
+        :has-permission="hasPermission"
+        :site-options="siteOptions"
+        :submit-demand="submitDemand"
+        :uom-options="uomOptions"
+      />
     </template>
   </NvPageHeader>
 
@@ -1579,225 +342,53 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       />
     </NvTabsContent>
 
-    <NvTabsContent v-if="canReadDemands" value="demands" class="grid min-w-0 grid-cols-1 gap-3">
-      <p v-if="sourceOrder" class="text-sm text-muted-foreground">
-        来源销售订单 {{ sourceOrder }} · 核对前 200 条搜索结果
-        <RouterLink to="/planning">查看普通需求池</RouterLink>
-      </p>
-      <NvToolbar
-        v-model:search="demandKeyword"
-        search-placeholder="搜来源单号 / 物料 / 客户 / 工厂"
-        search-label="需求池关键字"
-      >
-        <template #filters>
-          <NvSelect v-model="demandTypeFilter">
-            <NvSelectTrigger class="h-9 w-36" aria-label="需求类型筛选"
-              ><NvSelectValue
-            /></NvSelectTrigger>
-            <NvSelectContent>
-              <NvSelectItem
-                v-for="option in demandTypeFilterOptions"
-                :key="option.value"
-                :value="option.value"
-                >{{ option.label }}</NvSelectItem
-              >
-            </NvSelectContent>
-          </NvSelect>
-        </template>
-        <template #actions>
-          <UrgencyDisplayModeSelect v-model="displayMode" />
-        </template>
-      </NvToolbar>
-      <p v-if="demandTypeResetNotice" class="text-sm text-muted-foreground" role="status">
-        {{ demandTypeResetNotice }}
-      </p>
-      <NvDataTable
-        :columns="
-          canReadMrp ? demandColumns : demandColumns.filter((column) => column.key !== 'coverage')
-        "
-        :rows="filteredDemands"
-        row-key="demandSourceId"
-        :loading="demandsPending"
-        :awaiting-scope="!hasBusinessContext(runRequest)"
-        awaiting-scope-message="请先选择组织与环境。"
-        :error="demandsError"
-        :error-message="inlineErrorMessage(demandsError, '读取需求失败。')"
-        :searchable="false"
-        :column-settings="false"
-        :empty-message="
-          sourceOrder
-            ? '当前搜索范围内未找到符合条件的销售需求。'
-            : demandFilterActive
-              ? '没有符合当前筛选条件的需求，换个关键字或类型试试。'
-              : '当前范围没有计划需求。'
-        "
-      >
-        <template #cell-sourceReference="{ row }">
-          <NvButton
-            v-if="row.demandType === 'sales-order' && hasPermission(P.erpSalesRead)"
-            type="button"
-            size="sm"
-            variant="ghost"
-            :aria-label="`查看销售订单 ${row.sourceReference}`"
-            @click="openSalesOrderDemand(row)"
-          >
-            {{ row.sourceReference }}
-            <ExternalLinkIcon aria-hidden="true" />
-          </NvButton>
-          <span v-else>{{ row.sourceReference }}</span>
-        </template>
-        <template #cell-demandType="{ row }">{{ demandTypeLabel(row.demandType) }}</template>
-        <template #cell-sourceStatus="{ row }">
-          <NvStatusBadge
-            :label="row.sourceStatus === 'cancelled' ? '已取消' : '有效'"
-            :tone="row.sourceStatus === 'cancelled' ? 'neutral' : 'success'"
-          />
-        </template>
-        <template #cell-actions="{ row }">
-          <NvButton
-            v-if="
-              hasPermission(P.planningDemandsManage) &&
-              row.demandType !== 'sales-order' &&
-              row.sourceStatus === 'active'
-            "
-            type="button"
-            size="sm"
-            variant="ghost"
-            @click="demandCancelTarget = row"
-            >作废</NvButton
-          >
-        </template>
-        <template #cell-skuCode="{ row }">
-          <div class="flex flex-col gap-0.5">
-            <span>{{ skuLabel(row.skuCode) }}</span>
-            <span v-if="row.skuCode" class="text-xs text-muted-foreground">{{ row.skuCode }}</span>
-          </div>
-        </template>
-        <template #cell-siteCode="{ row }">
-          <div class="flex flex-col gap-0.5">
-            <span>{{ siteLabel(row.siteCode) }}</span>
-            <span v-if="row.siteCode" class="text-xs text-muted-foreground">{{
-              row.siteCode
-            }}</span>
-          </div>
-        </template>
-        <template #cell-quantity="{ row }"
-          ><span class="tabular-nums">{{
-            formatQuantity(row.quantity, row.uomCode)
-          }}</span></template
-        >
-        <template #cell-dueDate="{ row }">{{ formatDate(row.dueDate) }}</template>
-        <template #cell-urgency="{ row }">
-          <OrderUrgencyBadge
-            :order-reference="row.sourceReference ?? ''"
-            :mode="displayMode"
-            :urgency="
-              row.sourceReference
-                ? orderUrgencies.byReference.value.get(row.sourceReference)
-                : undefined
-            "
-            :source-unavailable="orderUrgencies.error?.value != null"
-            @refresh="refreshUrgency"
-          />
-        </template>
-        <template #cell-coverage="{ row }"
-          ><NvStatusBadge
-            :label="demandCoverageForRow(row).label"
-            :tone="demandCoverageForRow(row).tone"
-        /></template>
-      </NvDataTable>
-    </NvTabsContent>
+    <PlanningDemandsTab
+      v-model:demand-keyword="demandKeyword"
+      v-model:demand-type-filter="demandTypeFilter"
+      v-model:display-mode="displayMode"
+      v-model:demand-cancel-target="demandCancelTarget"
+      :can-read-demands="canReadDemands"
+      :can-read-mrp="canReadMrp"
+      :demand-columns="demandColumns"
+      :demand-coverage-for-row="demandCoverageForRow"
+      :demand-filter-active="demandFilterActive"
+      :demand-type-filter-options="demandTypeFilterOptions"
+      :demand-type-reset-notice="demandTypeResetNotice"
+      :demands-error="demandsError"
+      :demands-pending="demandsPending"
+      :filtered-demands="filteredDemands"
+      :has-permission="hasPermission"
+      :open-sales-order-demand="openSalesOrderDemand"
+      :order-urgencies="orderUrgencies"
+      :refresh-urgency="refreshUrgency"
+      :run-request="runRequest"
+      :site-label="siteLabel"
+      :sku-label="skuLabel"
+      :source-order="sourceOrder"
+    />
 
     <NvTabsContent v-if="canReadDemands" value="forecasts">
       <PlanningForecastManagement />
     </NvTabsContent>
 
-    <NvTabsContent v-if="canReadMps" value="mps">
-      <NvDataTable
-        :columns="mpsColumns"
-        :rows="mpsBuckets"
-        row-key="mpsId"
-        :loading="mpsBucketsPending"
-        :error="mpsBucketsError"
-        :error-message="inlineErrorMessage(mpsBucketsError, '读取主计划失败。')"
-        :awaiting-scope="!hasScope"
-        awaiting-scope-message="请先选择组织与环境。"
-        :searchable="false"
-        :column-settings="false"
-        empty-message="当前范围还没有主计划行。"
-      >
-        <template #cell-bucketDate="{ row }">{{ formatDate(row.bucketDate) }}</template>
-        <template #cell-skuCode="{ row }">
-          <div class="flex min-w-0 flex-col gap-0.5 whitespace-normal [overflow-wrap:anywhere]">
-            <span>{{ skuLabel(row.skuCode) }}</span>
-            <span v-if="row.skuCode" class="text-xs text-muted-foreground">{{ row.skuCode }}</span>
-          </div>
-        </template>
-        <template #cell-siteCode="{ row }">
-          <div class="flex min-w-0 flex-col gap-0.5 whitespace-normal [overflow-wrap:anywhere]">
-            <span>{{ siteLabel(row.siteCode) }}</span>
-            <span v-if="row.siteCode" class="text-xs text-muted-foreground">{{
-              row.siteCode
-            }}</span>
-          </div>
-        </template>
-        <template #cell-quantity="{ row }"
-          ><span class="tabular-nums">{{
-            formatMpsQuantity(row.quantity, row.uomCode)
-          }}</span></template
-        >
-        <template #cell-status="{ row }"
-          ><NvStatusBadge :label="mpsStatus(row.status).label" :tone="mpsStatus(row.status).tone"
-        /></template>
-        <template #cell-reviewRelease="{ row }">
-          <div
-            class="flex min-w-0 flex-col gap-0.5 text-sm whitespace-normal [overflow-wrap:anywhere]"
-          >
-            <span>{{ row.reviewedBy ? `评审 ${actorName(row.reviewedBy)}` : '未评审' }}</span>
-            <span class="text-muted-foreground">{{
-              row.releasedBy ? `发布 ${actorName(row.releasedBy)}` : '未发布'
-            }}</span>
-          </div>
-        </template>
-        <template #cell-actions="{ row }">
-          <div class="flex justify-end gap-2">
-            <NvButton
-              v-if="hasPermission(P.planningMpsManage) && row.status?.toLowerCase() !== 'released'"
-              size="sm"
-              type="button"
-              variant="outline"
-              :aria-label="`编辑主计划行 ${row.skuCode}`"
-              @click="editMpsBucket(row)"
-              >编辑</NvButton
-            >
-            <NvButton
-              v-if="hasPermission(P.planningMpsManage) && row.status?.toLowerCase() === 'draft'"
-              size="sm"
-              type="button"
-              variant="outline"
-              :disabled="reviewMpsBucketPending"
-              @click="reviewMps(row)"
-            >
-              <NvSpinner v-if="reviewMpsBucketPending" aria-hidden="true" />
-              <CheckIcon v-else aria-hidden="true" />
-              评审
-            </NvButton>
-            <NvButton
-              v-if="hasPermission(P.planningMpsRelease) && row.status?.toLowerCase() === 'reviewed'"
-              size="sm"
-              type="button"
-              variant="outline"
-              :disabled="releaseMpsBucketPending"
-              @click="releaseMps(row)"
-            >
-              <NvSpinner v-if="releaseMpsBucketPending" aria-hidden="true" />
-              <CheckIcon v-else aria-hidden="true" />
-              发布
-            </NvButton>
-          </div>
-        </template>
-      </NvDataTable>
-    </NvTabsContent>
+    <PlanningMpsTab
+      :actor-name="actorName"
+      :can-read-mps="canReadMps"
+      :edit-mps-bucket="editMpsBucket"
+      :format-mps-quantity="formatMpsQuantity"
+      :has-permission="hasPermission"
+      :has-scope="hasScope"
+      :mps-buckets="mpsBuckets"
+      :mps-buckets-error="mpsBucketsError"
+      :mps-buckets-pending="mpsBucketsPending"
+      :mps-columns="mpsColumns"
+      :release-mps="releaseMps"
+      :release-mps-bucket-pending="releaseMpsBucketPending"
+      :review-mps="reviewMps"
+      :review-mps-bucket-pending="reviewMpsBucketPending"
+      :site-label="siteLabel"
+      :sku-label="skuLabel"
+    />
 
     <NvTabsContent
       v-if="canReadDemands && canReadMps && canReadMrp"
@@ -1816,548 +407,74 @@ function openSalesOrderDemand(row: BusinessConsoleDemandSourceItem) {
       />
     </NvTabsContent>
 
-    <NvTabsContent v-if="canReadMrp" value="runs" class="grid min-w-0 grid-cols-1 gap-4">
-      <NvDataTable
-        :columns="runColumns"
-        :rows="mrpRuns"
-        row-key="runId"
-        :loading="mrpRunsPending"
-        :error="mrpRunsError"
-        :error-message="inlineErrorMessage(mrpRunsError, '读取 MRP 运行失败。')"
-        :awaiting-scope="!hasScope"
-        awaiting-scope-message="请先选择组织与环境。"
-        :searchable="false"
-        :column-settings="false"
-        empty-message="尚未运行 MRP。"
-      >
-        <template #cell-horizon="{ row }"
-          >{{ formatDate(row.horizonStart) }} ~ {{ formatDate(row.horizonEnd) }}</template
-        >
-        <template #cell-status="{ row }">
-          <div class="flex flex-col gap-0.5">
-            <NvStatusBadge
-              :label="planningStatus(row.status).label"
-              :tone="planningStatus(row.status).tone"
-            />
-            <span
-              v-if="row.failureReason"
-              class="max-w-48 truncate text-xs text-muted-foreground"
-              :title="row.failureReason"
-              >{{ row.failureReason }}</span
-            >
-          </div>
-        </template>
-        <template #cell-inputSources="{ row }">{{ inputSourcesLabel(row.inputSources) }}</template>
-        <template #cell-inputCoverage="{ row }">{{ inputCoverageLabel(row) }}</template>
-        <template #cell-demandCount="{ row }"
-          ><span class="tabular-nums">{{ row.demandCount ?? 0 }}</span></template
-        >
-        <template #cell-inputDegradationSources="{ row }">
-          <NvStatusBadge
-            :label="inputDegradationLabel(row.inputDegradationSources)"
-            :tone="row.hasInputDegradation ? 'warning' : 'success'"
-          />
-        </template>
-        <template #cell-suggestionCount="{ row }"
-          ><span class="tabular-nums">{{ row.suggestionCount ?? 0 }}</span></template
-        >
-        <template #cell-coverage="{ row }"
-          ><span class="tabular-nums font-medium">{{ coverageRate(row) }}</span></template
-        >
-        <template #cell-availabilityCount="{ row }"
-          ><span class="tabular-nums">{{ row.availabilityCount ?? 0 }}</span></template
-        >
-        <template #cell-actions="{ row }">
-          <NvButton
-            size="sm"
-            type="button"
-            :variant="runSelection.runId === row.runId ? 'secondary' : 'ghost'"
-            @click="runSelection.runId = row.runId ?? ''"
-          >
-            查看追溯
-          </NvButton>
-        </template>
-      </NvDataTable>
+    <PlanningMrpRunsTab
+      :can-read-mrp="canReadMrp"
+      :focus-suggestion="focusSuggestion"
+      :focused-suggestion-id="focusedSuggestionId"
+      :has-scope="hasScope"
+      :mrp-runs="mrpRuns"
+      :mrp-runs-error="mrpRunsError"
+      :mrp-runs-pending="mrpRunsPending"
+      :open-bom-context="openBomContext"
+      :open-pegging-source="openPeggingSource"
+      :pegging="pegging"
+      :pegging-columns="peggingColumns"
+      :pegging-pending="peggingPending"
+      :run-columns="runColumns"
+      :run-selection="runSelection"
+      :selected-run="selectedRun"
+      :sku-label="skuLabel"
+      :suggestions="suggestions"
+      :suggestions-pending="suggestionsPending"
+    />
 
-      <div class="grid min-w-0 grid-cols-1 gap-2">
-        <div class="flex items-center gap-2">
-          <span class="text-sm font-medium text-foreground">需求追溯</span>
-          <span class="text-sm text-muted-foreground">{{ runHorizonLabel(selectedRun) }}</span>
-          <NvStatusBadge
-            v-if="selectedRun"
-            :label="planningStatus(selectedRun.status).label"
-            :tone="planningStatus(selectedRun.status).tone"
-          />
-        </div>
-        <PlanningRunSuggestionChart
-          :run="selectedRun"
-          :suggestions="suggestions"
-          :pending="suggestionsPending"
-        />
-        <NvDataTable
-          :columns="peggingColumns"
-          :rows="pegging"
-          :row-class="
-            (row: BusinessConsoleMrpPeggingItem) =>
-              row.suggestionId === focusedSuggestionId ? 'bg-primary/10' : ''
-          "
-          :row-key="(r) => `${r.suggestionId}:${r.componentSkuCode}`"
-          :loading="peggingPending"
-          :searchable="false"
-          :column-settings="false"
-          empty-message="选择一条 MRP 运行查看需求与物料来源。"
-        >
-          <template #cell-peggingType="{ row }">
-            <NvStatusBadge
-              :label="peggingTypeLabel(row.peggingType).label"
-              :tone="peggingTypeLabel(row.peggingType).tone"
-            />
-          </template>
-          <template #cell-sourceType="{ row }">
-            <NvStatusBadge :label="sourceTypeLabel(row.sourceType)" tone="neutral" />
-          </template>
-          <template #cell-demandSourceReference="{ row }">
-            <div class="flex items-center justify-between gap-2">
-              <span class="min-w-0 truncate">{{ row.demandSourceReference }}</span>
-              <NvButton size="sm" type="button" variant="ghost" @click="openPeggingSource(row)">
-                <ExternalLinkIcon aria-hidden="true" />
-              </NvButton>
-            </div>
-          </template>
-          <template #cell-suggestion="{ row }">
-            <NvButton
-              v-if="row.suggestionId"
-              size="sm"
-              type="button"
-              variant="ghost"
-              @click="focusSuggestion(row)"
-              >定位建议</NvButton
-            >
-          </template>
-          <template #cell-sku="{ row }">
-            <div
-              :class="
-                isComponentRow(row) ? 'flex items-start gap-1.5 pl-5' : 'flex flex-col gap-0.5'
-              "
-            >
-              <CornerDownRightIcon
-                v-if="isComponentRow(row)"
-                class="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <div class="flex flex-col gap-0.5">
-                <template v-if="isComponentRow(row)">
-                  <span>{{ skuLabel(row.componentSkuCode) }}</span>
-                  <span class="text-xs text-muted-foreground">
-                    {{ row.componentSkuCode }} · 属 {{ skuLabel(row.parentSkuCode) }}
-                  </span>
-                </template>
-                <template v-else>
-                  <span class="font-medium">{{ skuLabel(row.parentSkuCode) }}</span>
-                  <span v-if="row.parentSkuCode" class="text-xs text-muted-foreground">{{
-                    row.parentSkuCode
-                  }}</span>
-                </template>
-              </div>
-            </div>
-          </template>
-          <template #cell-quantity="{ row }"
-            ><span class="tabular-nums">{{ row.quantity ?? 0 }}</span></template
-          >
-          <template #cell-engineeringRef="{ row }">
-            <div class="flex items-center justify-between gap-2">
-              <div class="flex min-w-0 flex-col gap-0.5">
-                <span>{{
-                  row.manufacturingBomReference ?? row.productionVersionReference ?? '—'
-                }}</span>
-                <span v-if="row.routingReference" class="text-xs text-muted-foreground"
-                  >工艺 {{ row.routingReference }}</span
-                >
-              </div>
-              <NvButton
-                v-if="row.parentSkuCode || row.componentSkuCode"
-                size="sm"
-                type="button"
-                variant="ghost"
-                @click="openBomContext(row)"
-              >
-                <NetworkIcon aria-hidden="true" />
-                查看 BOM
-              </NvButton>
-            </div>
-          </template>
-        </NvDataTable>
-      </div>
-    </NvTabsContent>
-
-    <NvTabsContent v-if="canReadMrp" value="suggestions" class="grid min-w-0 grid-cols-1 gap-3">
-      <div v-if="!sourceUnresolved" class="flex flex-wrap items-center gap-2">
-        <NvSelect v-model="suggestionRunChoice">
-          <NvSelectTrigger class="h-9 w-72" aria-label="建议运行"
-            ><NvSelectValue placeholder="选择运行"
-          /></NvSelectTrigger>
-          <NvSelectContent>
-            <NvSelectItem v-if="latestCompletedRun" value="latest"
-              >最近完成 · {{ runHorizonLabel(latestCompletedRun) }}</NvSelectItem
-            >
-            <NvSelectItem
-              v-for="run in mrpRuns.filter((item) => item.status?.toLowerCase() === 'completed')"
-              :key="run.runId"
-              :value="run.runId ?? ''"
-              >{{ runChoiceLabel(run) }}</NvSelectItem
-            >
-          </NvSelectContent>
-        </NvSelect>
-        <NvSelect v-model="suggestionTypeFilter.type">
-          <NvSelectTrigger class="h-9 w-44" aria-label="建议分型"
-            ><NvSelectValue placeholder="全部类型"
-          /></NvSelectTrigger>
-          <NvSelectContent>
-            <NvSelectItem
-              v-for="o in suggestionTypeFilterOptions"
-              :key="o.value"
-              :value="o.value"
-              >{{ o.label }}</NvSelectItem
-            >
-          </NvSelectContent>
-        </NvSelect>
-        <span class="text-sm text-muted-foreground"> 生产建议 → MES · 采购建议 → ERP </span>
-        <div class="ms-auto flex items-center gap-2">
-          <NvSelect v-model="suggestionFilters.status">
-            <NvSelectTrigger class="h-9 w-32" aria-label="建议状态"
-              ><NvSelectValue placeholder="建议状态"
-            /></NvSelectTrigger>
-            <NvSelectContent>
-              <NvSelectItem v-for="o in suggestionStatusOptions" :key="o.value" :value="o.value">{{
-                o.label
-              }}</NvSelectItem>
-            </NvSelectContent>
-          </NvSelect>
-        </div>
-      </div>
-      <div
-        v-if="sourceUnresolved"
-        role="status"
-        class="grid justify-items-start gap-2 text-sm text-muted-foreground"
-      >
-        {{
-          suggestionsError || mrpRunsError
-            ? '来源读取失败，请刷新后重试。'
-            : suggestionsPending || mrpRunsPending
-              ? '正在定位来源建议…'
-              : !hasBusinessContext(runRequest)
-                ? '请先选择组织与环境。'
-                : '当前可读范围内未定位到来源建议或运行。'
-        }}
-        <NvButton as-child size="sm" variant="outline">
-          <RouterLink to="/planning">{{ returnLabel }}</RouterLink>
-        </NvButton>
-      </div>
-      <NvDataTable
-        v-else
-        :key="focusedSuggestionId"
-        :columns="suggestionColumns"
-        :rows="suggestionPageRows"
-        manual
-        v-model:page="suggestionPage"
-        :page-size="suggestionPageSize"
-        @update:page-size="suggestionPageSize = Number($event)"
-        :total-items="visibleSuggestions.length"
-        :row-class="
-          (row: BusinessConsolePlanningSuggestionItem) =>
-            row.suggestionId === focusedSuggestionId ? 'bg-primary/10' : ''
-        "
-        row-key="suggestionId"
-        :loading="suggestionsPending"
-        :error="suggestionsError"
-        :error-message="inlineErrorMessage(suggestionsError, '读取建议失败。')"
-        :awaiting-scope="!hasScope"
-        awaiting-scope-message="请先选择组织与环境。"
-        :searchable="false"
-        :column-settings="false"
-        :empty-message="
-          latestCompletedRun ? '该次运行在当前状态下没有计划建议。' : '尚无已完成的 MRP 运行。'
-        "
-      >
-        <template #cell-suggestionType="{ row }">
-          <NvStatusBadge
-            :label="suggestionTypeLabel(row.suggestionType)"
-            :tone="suggestionTypeTone(row.suggestionType)"
-          />
-        </template>
-        <template #cell-skuCode="{ row }">
-          <div class="flex flex-col gap-0.5">
-            <span>{{ skuLabel(row.skuCode) }}</span>
-            <span v-if="row.skuCode" class="text-xs text-muted-foreground">{{ row.skuCode }}</span>
-          </div>
-        </template>
-        <template #cell-quantity="{ row }"
-          ><span class="tabular-nums">{{
-            formatQuantity(row.quantity, row.uomCode)
-          }}</span></template
-        >
-        <template #cell-requiredDate="{ row }">{{ formatDate(row.requiredDate) }}</template>
-        <template #cell-reasonCode="{ row }">
-          <div class="grid min-w-80 gap-2">
-            <div class="flex flex-wrap items-center gap-2">
-              <span>{{ reasonLabel(row.reasonCode) }}</span>
-              <NvStatusBadge
-                v-if="row.netRequirementExplanation"
-                :label="sourceTypeLabel(row.netRequirementExplanation.primarySourceType)"
-                tone="info"
-              />
-            </div>
-            <div
-              v-if="row.netRequirementExplanation"
-              class="grid gap-2 rounded-md border border-border/70 bg-muted/30 p-2 text-xs"
-            >
-              <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span class="font-medium text-foreground">{{
-                  ['negative-availability', 'overdue-receipt'].includes(row.suggestionType ?? '')
-                    ? '例外说明'
-                    : '净需求公式'
-                }}</span>
-                <span class="font-mono tabular-nums text-muted-foreground">{{
-                  formulaMathPart(row.netRequirementExplanation.formula)
-                }}</span>
-              </div>
-              <div class="grid grid-cols-2 gap-1 sm:grid-cols-4">
-                <div
-                  v-for="item in explanationRows(row)"
-                  :key="item.label"
-                  class="min-w-0 rounded border border-border/60 bg-background px-2 py-1"
-                >
-                  <div class="text-muted-foreground">{{ item.label }}</div>
-                  <div class="tabular-nums text-foreground">{{ item.value ?? 0 }}</div>
-                </div>
-              </div>
-              <div class="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
-                <span>废品率 {{ formatPercent(row.netRequirementExplanation.scrapRate) }}</span>
-                <span>良率 {{ formatPercent(row.netRequirementExplanation.yieldRate) }}</span>
-                <span
-                  v-if="
-                    row.netRequirementExplanation.primarySourceType === 'component' &&
-                    (row.netRequirementExplanation.scrapRate ||
-                      row.netRequirementExplanation.yieldRate !== 1)
-                  "
-                  >废品率 / 良率已计入组件毛需求</span
-                >
-                <span v-if="row.netRequirementExplanation.uomConversions?.length"
-                  >单位 {{ row.netRequirementExplanation.uomConversions.join('；') }}</span
-                >
-                <span v-if="row.netRequirementExplanation.degradationSources?.length"
-                  >退化
-                  {{
-                    inputDegradationLabel(row.netRequirementExplanation.degradationSources)
-                  }}</span
-                >
-              </div>
-            </div>
-          </div>
-        </template>
-        <template #cell-downstream="{ row }">
-          <div v-if="row.downstreamDocumentId" class="grid gap-1 text-sm">
-            <div class="grid gap-1">
-              <span
-                >{{ downstreamLabel(row.downstreamService, row.downstreamDocumentType) }} ·</span
-              >
-              <NvButton
-                v-if="suggestionWorkOrderId(row) && canReadWorkOrders"
-                size="sm"
-                type="button"
-                variant="ghost"
-                class="justify-start px-0"
-                @click="
-                  router.push(
-                    downstreamRoute(
-                      row.downstreamService,
-                      row.downstreamDocumentType,
-                      row.downstreamDocumentId,
-                    ),
-                  )
-                "
-                >{{ row.downstreamDocumentId }}</NvButton
-              >
-              <span v-else>{{ row.downstreamDocumentId }}</span>
-            </div>
-            <NvStatusBadge
-              v-if="
-                row.suggestionType === 'planned-work-order' ||
-                row.suggestionType === 'planned-purchase'
-              "
-              :label="
-                row.suggestionId && downstreamStatuses[row.suggestionId]
-                  ? downstreamStatus(downstreamStatuses[row.suggestionId]).label
-                  : '状态读取中'
-              "
-              :tone="
-                downstreamStatus(
-                  row.suggestionId ? downstreamStatuses[row.suggestionId] : undefined,
-                ).tone
-              "
-            />
-          </div>
-          <span v-else class="text-sm text-muted-foreground">未承接</span>
-        </template>
-        <template #cell-status="{ row }"
-          ><div class="grid gap-1">
-            <NvStatusBadge
-              :label="planningStatus(row.status).label"
-              :tone="planningStatus(row.status).tone"
-            />
-            <span v-if="row.supersededByRunId" class="text-xs text-muted-foreground">
-              由
-              {{ successorRunLabel(row.supersededByRunId) }} 替代
-            </span>
-          </div></template
-        >
-        <template #cell-actions="{ row }">
-          <NvButton
-            v-if="row.suggestionId"
-            size="sm"
-            type="button"
-            variant="ghost"
-            @click="focusPegging(row)"
-            >定位追溯</NvButton
-          >
-          <div
-            v-if="isOpen(row.status) && hasPermission(P.planningSuggestionsManage)"
-            class="flex items-center justify-end gap-2"
-          >
-            <NvButton
-              v-if="isAcceptableSuggestion(row.suggestionType)"
-              size="sm"
-              type="button"
-              variant="outline"
-              :disabled="acceptingSuggestionId === row.suggestionId"
-              @click="acceptPlanningSuggestion(row)"
-            >
-              <NvSpinner v-if="acceptingSuggestionId === row.suggestionId" aria-hidden="true" />
-              <CheckIcon v-else aria-hidden="true" />
-              接受
-            </NvButton>
-            <span v-else class="text-sm text-muted-foreground">异常待处理</span>
-            <NvButton
-              size="sm"
-              type="button"
-              variant="ghost"
-              :aria-label="`拒绝计划建议 ${skuLabel(row.skuCode)}`"
-              :disabled="rejectSuggestionPending"
-              @click="openRejectDialog(row)"
-            >
-              <XIcon aria-hidden="true" />
-              拒绝
-            </NvButton>
-          </div>
-          <!-- 已承接成 MES 工单的行：可直接对这一张单排产（新建只含该单的方案）。 -->
-          <div v-else-if="!isOpen(row.status)" class="flex items-center justify-end gap-2">
-            <NvButton
-              v-if="suggestionWorkOrderId(row)"
-              size="sm"
-              type="button"
-              variant="outline"
-              data-testid="planning-suggestion-schedule-single"
-              :disabled="!canScheduleSingleOrder"
-              :title="
-                canScheduleSingleOrder
-                  ? `对工单 ${suggestionWorkOrderId(row)} 排产（新建只含该单的方案）`
-                  : '当前账号没有排产管理权限'
-              "
-              @click="scheduleTarget = row"
-            >
-              <CalendarCogIcon aria-hidden="true" />
-              对该单排产
-            </NvButton>
-            <span v-else-if="suggestionScheduleHint(row)" class="text-sm text-muted-foreground">
-              {{ suggestionScheduleHint(row) }}
-            </span>
-          </div>
-        </template>
-      </NvDataTable>
-
-      <SingleOrderSchedulingDialog
-        v-if="scheduleTarget"
-        :open="true"
-        :work-order-id="suggestionWorkOrderId(scheduleTarget)"
-        :context-label="`计划建议 · ${skuLabel(scheduleTarget.skuCode)}`"
-        @update:open="
-          (value: boolean) => {
-            if (!value) scheduleTarget = null
-          }
-        "
-      />
-
-      <NvDialog
-        v-if="hasPermission(P.planningSuggestionsManage)"
-        :open="!!rejectTarget"
-        @update:open="
-          (open) => {
-            if (!open) rejectTarget = null
-          }
-        "
-      >
-        <NvDialogContent>
-          <NvDialogHeader>
-            <NvDialogTitle>拒绝计划建议</NvDialogTitle>
-            <NvDialogDescription>
-              {{ suggestionTypeLabel(rejectTarget?.suggestionType) }} ·
-              {{ skuLabel(rejectTarget?.skuCode) }} ·
-              {{ formatQuantity(rejectTarget?.quantity, rejectTarget?.uomCode) }}
-            </NvDialogDescription>
-          </NvDialogHeader>
-          <form class="grid gap-4" @submit.prevent="submitRejectSuggestion">
-            <NvField>
-              <NvFieldLabel for="reject-reason">拒绝原因</NvFieldLabel>
-              <NvInput
-                id="reject-reason"
-                v-model="rejectReason"
-                :maxlength="SUGGESTION_REJECT_REASON_MAX_LENGTH"
-                placeholder="说明为何不采纳该建议（如：库存已另行调拨）"
-              />
-              <p class="text-xs text-muted-foreground">
-                必填，{{ rejectReason.trim().length }}/{{ SUGGESTION_REJECT_REASON_MAX_LENGTH }}
-                字。
-              </p>
-            </NvField>
-            <NvDialogFooter>
-              <NvButton type="button" variant="outline" @click="rejectTarget = null">取消</NvButton>
-              <NvButton type="submit" :disabled="rejectSuggestionPending || !canSubmitReject">
-                <NvSpinner v-if="rejectSuggestionPending" aria-hidden="true" />
-                确认拒绝
-              </NvButton>
-            </NvDialogFooter>
-          </form>
-        </NvDialogContent>
-      </NvDialog>
-      <NvDialog
-        v-if="hasPermission(P.planningSuggestionsManage)"
-        :open="!!cancelTarget"
-        @update:open="
-          (open) => {
-            if (!open) cancelTarget = null
-          }
-        "
-      >
-        <NvDialogContent>
-          <NvDialogHeader>
-            <NvDialogTitle>确认取消在途单据</NvDialogTitle>
-            <NvDialogDescription
-              >接受此建议会向 ERP 或 MES 下发取消命令。请确认取消
-              {{ skuLabel(cancelTarget?.skuCode) }} 的在途供应。</NvDialogDescription
-            >
-          </NvDialogHeader>
-          <NvDialogFooter>
-            <NvButton type="button" variant="outline" @click="cancelTarget = null">返回</NvButton>
-            <NvButton
-              type="button"
-              :disabled="acceptSuggestionPending"
-              @click="cancelTarget && acceptPlanningSuggestion(cancelTarget)"
-              >确认取消并接受</NvButton
-            >
-          </NvDialogFooter>
-        </NvDialogContent>
-      </NvDialog>
-    </NvTabsContent>
+    <PlanningSuggestionsAndPeggingTab
+      v-model:suggestion-run-choice="suggestionRunChoice"
+      v-model:suggestion-page="suggestionPage"
+      v-model:suggestion-page-size="suggestionPageSize"
+      v-model:schedule-target="scheduleTarget"
+      v-model:reject-reason="rejectReason"
+      v-model:reject-target="rejectTarget"
+      v-model:cancel-target="cancelTarget"
+      :accept-planning-suggestion="acceptPlanningSuggestion"
+      :accept-suggestion-pending="acceptSuggestionPending"
+      :accepting-suggestion-id="acceptingSuggestionId"
+      :can-read-mrp="canReadMrp"
+      :can-read-work-orders="canReadWorkOrders"
+      :can-schedule-single-order="canScheduleSingleOrder"
+      :can-submit-reject="canSubmitReject"
+      :downstream-route="downstreamRoute"
+      :downstream-statuses="downstreamStatuses"
+      :focus-pegging="focusPegging"
+      :focused-suggestion-id="focusedSuggestionId"
+      :has-permission="hasPermission"
+      :has-scope="hasScope"
+      :latest-completed-run="latestCompletedRun"
+      :mrp-runs="mrpRuns"
+      :mrp-runs-error="mrpRunsError"
+      :mrp-runs-pending="mrpRunsPending"
+      :open-reject-dialog="openRejectDialog"
+      :reject-suggestion-pending="rejectSuggestionPending"
+      :return-label="returnLabel"
+      :router="router"
+      :run-choice-label="runChoiceLabel"
+      :run-request="runRequest"
+      :sku-label="skuLabel"
+      :source-unresolved="sourceUnresolved"
+      :submit-reject-suggestion="submitRejectSuggestion"
+      :successor-run-label="successorRunLabel"
+      :suggestion-columns="suggestionColumns"
+      :suggestion-filters="suggestionFilters"
+      :suggestion-page-rows="suggestionPageRows"
+      :suggestion-schedule-hint="suggestionScheduleHint"
+      :suggestion-status-options="suggestionStatusOptions"
+      :suggestion-type-filter="suggestionTypeFilter"
+      :suggestion-type-filter-options="suggestionTypeFilterOptions"
+      :suggestion-work-order-id="suggestionWorkOrderId"
+      :suggestions-error="suggestionsError"
+      :suggestions-pending="suggestionsPending"
+      :visible-suggestions="visibleSuggestions"
+    />
   </NvTabs>
   <NvDialog
     v-if="hasPermission(P.planningDemandsManage)"

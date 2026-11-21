@@ -1,3 +1,5 @@
+import { createPinia, setActivePinia } from 'pinia'
+import { useAuthStore } from '@/stores/auth'
 import { vi } from 'vitest'
 
 vi.mock('@/composables/urgency/useOrderUrgency', () => ({
@@ -456,3 +458,35 @@ vi.mock('@nerv-iip/ui', async () => {
 })
 
 export { planningSpies, routerPush, planningRoute }
+
+export function resetPlanningWorkbench() {
+  setActivePinia(createPinia())
+  useAuthStore().$patch({
+    principal: {
+      permissionCodes: [
+        'business.planning.demands.read',
+        'business.planning.mps.read',
+        'business.planning.mrp.read',
+        'business.planning.demands.manage',
+        'business.planning.mps.manage',
+        'business.planning.mps.release',
+        'business.planning.mrp.run',
+        'business.planning.suggestions.manage',
+        'business.erp.sales.read',
+      ],
+    },
+  })
+  planningSpies.runMrp = vi.fn(async () => undefined)
+  planningSpies.acceptSuggestion.mockReset()
+  planningSpies.cancelDemand.mockReset()
+  routerPush.mockReset()
+  planningRoute.query = {}
+  planningSpies.toastError.mockReset()
+  planningSpies.toastSuccess.mockReset()
+  planningSpies.toastWarning.mockReset()
+  planningSpies.activeMrpRun.runId = ''
+  planningSpies.activeMrpRun.status = ''
+  planningSpies.activeMrpRun.failureReason = ''
+  planningSpies.activeMrpRun.suggestionCount = null
+  planningSpies.resetDemands()
+}

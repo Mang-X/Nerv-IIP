@@ -28,11 +28,8 @@ const RAW_ERROR_ALLOWLIST = new Map<string, string>([
   // 真实 403 退化成普通失败态）——MAN-698 批次 A 已改成按状态码判（`isForbiddenError`），豁免随之取消。
 ])
 
-/**
- * 允许直接调 `toast.*` 的文件：`notify.ts` 是实现本身；`pages/scheduling.vue` 的文案全部是
- * 写死的中文（成功提示与表单校验类拦截），不含任何服务端原文。
- */
-const RAW_TOAST_ALLOWLIST = new Set(['utils/notify.ts', 'pages/scheduling.vue'])
+/** 只有通知实现可以直接调用 toast。 */
+const RAW_TOAST_ALLOWLIST = new Set(['utils/notify.ts'])
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
