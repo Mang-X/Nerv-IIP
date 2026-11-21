@@ -4,7 +4,7 @@
 #     - Executes the business release migration wrapper against ValidateOnly inputs and a fake dotnet apply command
 #   Writes:
 #     - OS temporary fake command files
-#     - artifacts/script-logs/** validation and fake apply summaries
+#     - .ryugi/artifacts/script-logs/** validation and fake apply summaries
 #   Cleanup:
 #     - Restores process environment variables and PATH, then removes the owned temporary directory
 #   Requires:
@@ -138,7 +138,7 @@ foreach ($expected in @('validation completed for 13 service(s)', "releaseId=$va
 if ($valid.Output.Contains($secretMarker, [StringComparison]::Ordinal)) {
     throw 'Business ValidateOnly diagnostics leaked the connection password.'
 }
-$wrapperLogs = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'artifacts/script-logs') -File -Recurse |
+$wrapperLogs = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot '.ryugi/artifacts/script-logs') -File -Recurse |
     Where-Object { $_.FullName.Contains("business-release-migration-$validReleaseId", [StringComparison]::Ordinal) })
 if ($wrapperLogs.Count -lt 2 -or -not ($wrapperLogs | Where-Object Length -GT 0)) {
     throw 'Business wrapper must persist independent child stdout/stderr logs on the successful ValidateOnly path.'
@@ -282,7 +282,7 @@ if ($duplicateDatabase.ExitCode -eq 0 -or -not $duplicateDatabase.Output.Contain
 if ($wrong.Output.Contains($secretMarker, [StringComparison]::Ordinal)) {
     throw 'Wrong business database diagnostics leaked the connection password.'
 }
-$wrongDatabaseLogs = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'artifacts/script-logs') -File -Recurse |
+$wrongDatabaseLogs = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot '.ryugi/artifacts/script-logs') -File -Recurse |
     Where-Object { $_.FullName.Contains("business-release-migration-$wrongReleaseId", [StringComparison]::Ordinal) })
 if ($wrongDatabaseLogs.Count -lt 2 -or -not ($wrongDatabaseLogs | Where-Object Length -GT 0)) {
     throw 'Business wrapper must persist child logs when the executor exits nonzero.'
@@ -401,7 +401,7 @@ esac
             throw "Business apply diagnostics must include actual migration evidence '$evidence'. Output: $($apply.Output)"
         }
     }
-    $applyLogText = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'artifacts/script-logs') -File -Recurse |
+    $applyLogText = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot '.ryugi/artifacts/script-logs') -File -Recurse |
         Where-Object { $_.FullName.Contains($applyReleaseId, [StringComparison]::Ordinal) } |
         ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }) -join [Environment]::NewLine
     foreach ($requiredArgument in @('--startup-project', '--context', '<redacted>', [string]$first.expectedDatabase)) {
@@ -413,7 +413,7 @@ esac
         throw "Business apply diagnostics leaked a sensitive connection value. Output: $($apply.Output)"
     }
     if ($applyLogText.Contains($secretMarker, [StringComparison]::Ordinal)) {
-        $leakingLogs = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'artifacts/script-logs') -File -Recurse |
+        $leakingLogs = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot '.ryugi/artifacts/script-logs') -File -Recurse |
             Where-Object { $_.FullName.Contains($applyReleaseId, [StringComparison]::Ordinal) } |
             Where-Object {
                 $logContent = Get-Content -LiteralPath $_.FullName -Raw

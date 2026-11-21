@@ -5,7 +5,7 @@
 #     - Expands downloaded artifact archives under a caller-supplied working directory
 #   Writes:
 #     - The -OutputPath that Update-NervShardTimingCache is given (callers use the gitignored
-#       artifacts/ tree); no repository-tracked file
+#       .ryugi/artifacts/ tree); no repository-tracked file
 #   Cleanup:
 #     - Owns no long-lived process; temporary extraction directories are removed by the caller
 #   Requires:
@@ -42,7 +42,7 @@
 # So, in this repository:
 #
 #   * Timing is a **cache**: aggregated automatically from recent successful `main` runs, stored
-#     under the gitignored `artifacts/` tree, never committed, never hashed, never a gate. Missing
+#     under the gitignored `.ryugi/artifacts/` tree, never committed, never hashed, never a gate. Missing
 #     data degrades to a report-only warning plus a fallback estimate.
 #   * Timing keys on **assembly only**. Lane is recorded for display and provenance and never
 #     participates in a lookup, so a shard rearrangement can no longer lose a key.
@@ -615,7 +615,7 @@ function Update-NervShardTimingCache {
     # One catch over the whole collect-and-write block, not only over the per-run download. Directory
     # enumeration, unpacking a bundle and writing the cache file are all IO, and IO on a runner
     # fails for reasons that have nothing to do with this repository — a read-only or full
-    # `artifacts/` tree, a partially extracted archive, a permission change. Before this catch
+    # `.ryugi/artifacts/` tree, a partially extracted archive, a permission change. Before this catch
     # existed those escaped into the caller, whose `$ErrorActionPreference = 'Stop'` turned a failed
     # *cache refresh* into a nonzero exit: exactly the ceremony #1507 removed, rebuilt by accident.
     try {

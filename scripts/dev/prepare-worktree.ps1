@@ -12,7 +12,7 @@
 #     - frontend/node_modules/**
 #     - backend/**/obj/**
 #     - connector-hosts/**/obj/**
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Stops managed pnpm/dotnet process trees when they time out through ScriptAutomation.ps1
 #   Requires:

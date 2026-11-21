@@ -1767,8 +1767,8 @@ else {
                     $errors.Add("Fast shard job '$jobId' must not supply a command replacement parameter.")
                 }
 
-                $rawResultsDirectory = "artifacts/test-evidence-raw/`${{ github.run_id }}/attempt-`${{ github.run_attempt }}/$lane"
-                $evidenceDirectory = "artifacts/test-evidence/`${{ github.run_id }}/attempt-`${{ github.run_attempt }}/$lane"
+                $rawResultsDirectory = ".ryugi/artifacts/test-evidence-raw/`${{ github.run_id }}/attempt-`${{ github.run_attempt }}/$lane"
+                $evidenceDirectory = ".ryugi/artifacts/test-evidence/`${{ github.run_id }}/attempt-`${{ github.run_attempt }}/$lane"
                 if ($runText -notmatch [regex]::Escape("-ResultsDirectory $rawResultsDirectory")) {
                     $errors.Add("Fast shard job '$jobId' must write raw TRX only to the job-local evidence input '$rawResultsDirectory'.")
                 }

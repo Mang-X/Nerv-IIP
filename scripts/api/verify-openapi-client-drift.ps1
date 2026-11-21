@@ -5,8 +5,8 @@
 #     - Regenerates the frontend api-client package
 #     - Checks tracked and untracked OpenAPI/api-client drift with git
 #   Writes:
-#     - artifacts/script-logs/**
-#     - artifacts/openapi-export/**
+#     - .ryugi/artifacts/script-logs/**
+#     - .ryugi/artifacts/openapi-export/**
 #     - frontend/node_modules/**
 #     - frontend/packages/api-client/openapi/*.v1.json
 #     - frontend/packages/api-client/src/generated/**

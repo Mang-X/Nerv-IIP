@@ -60,7 +60,8 @@ function Get-RepositoryMarkdownFiles {
                 if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
                 if ($item.Name -match '^(?:\.git|node_modules|bin|obj|dist|\.vitepress|\.cache|fixtures)$') { continue }
                 $relative = [IO.Path]::GetRelativePath($Root, $item.FullName).Replace('\', '/')
-                if ([string]::Equals($relative, 'artifacts', [StringComparison]::Ordinal) -or
+                if ([string]::Equals($relative, '.ryugi', [StringComparison]::Ordinal) -or
+                    [string]::Equals($relative, 'artifacts', [StringComparison]::Ordinal) -or
                     [string]::Equals($relative, 'scripts/tmp', [StringComparison]::Ordinal)) { continue }
                 $pending.Push($item.FullName)
             }

@@ -191,7 +191,7 @@ jobs:
           -BaseSha $env:BASE_SHA
           -HeadSha $env:HEAD_SHA
           -DiffMode $env:DIFF_MODE
-          -OutputPath artifacts/ci-impact-plan/impact-plan.json
+          -OutputPath .ryugi/artifacts/ci-impact-plan/impact-plan.json
 
       - name: Build frontend workspace plan
         id: frontend-plan
@@ -201,7 +201,7 @@ jobs:
           FRONTEND_MODE: ${{ github.event_name == 'push' && 'Full' || 'Affected' }}
         run: >-
           ./scripts/ci/get-frontend-workspace-plan.ps1
-          -ImpactPlanPath artifacts/ci-impact-plan/impact-plan.json
+          -ImpactPlanPath .ryugi/artifacts/ci-impact-plan/impact-plan.json
           -Mode $env:FRONTEND_MODE
 
       - name: Resolve CI impact-plan artifact identity
@@ -216,11 +216,12 @@ jobs:
         timeout-minutes: 3
         uses: actions/upload-artifact@v4
         with:
+          include-hidden-files: true
           name: ${{ steps.impact-artifact-identity.outputs.artifact-name }}
           path: |
-            artifacts/ci-impact-plan/impact-plan.json
-            artifacts/ci-impact-plan/frontend-workspace-plan.json
-            artifacts/ci-impact-plan/frontend-test-inventory.json
+            .ryugi/artifacts/ci-impact-plan/impact-plan.json
+            .ryugi/artifacts/ci-impact-plan/frontend-workspace-plan.json
+            .ryugi/artifacts/ci-impact-plan/frontend-test-inventory.json
           if-no-files-found: error
           retention-days: 14
 
@@ -346,7 +347,7 @@ jobs:
         run: >-
           ./scripts/ci/run-backend-test-shard.ps1
           -ShardId business-gateway
-          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1
+          -ResultsDirectory .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1
           -TrxFilePrefix backend-tests-business-gateway
 
       - name: Collect BusinessGateway shard evidence
@@ -361,8 +362,8 @@ jobs:
           ./scripts/ci/collect-test-evidence.ps1
           -Lane backend-shard-1
           -SelectedLanes backend-shard-1
-          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1
-          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1
+          -ResultsDirectory .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1
+          -OutputDirectory .ryugi/artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1
           -WorkflowRunId ${{ github.run_id }}
           -RunAttempt ${{ github.run_attempt }}
           -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
@@ -385,6 +386,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          include-hidden-files: true
           name: test-evidence-backend-shard-1-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ steps.collect-shard-evidence.outputs.evidence-path }}
           if-no-files-found: error
@@ -447,7 +449,7 @@ jobs:
         run: >-
           ./scripts/ci/run-backend-test-shard.ps1
           -ShardId platform
-          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-2
+          -ResultsDirectory .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-2
           -TrxFilePrefix backend-tests-platform
 
       - name: Collect platform shard evidence
@@ -462,8 +464,8 @@ jobs:
           ./scripts/ci/collect-test-evidence.ps1
           -Lane backend-shard-2
           -SelectedLanes backend-shard-2
-          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-2
-          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-2
+          -ResultsDirectory .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-2
+          -OutputDirectory .ryugi/artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-2
           -WorkflowRunId ${{ github.run_id }}
           -RunAttempt ${{ github.run_attempt }}
           -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
@@ -486,6 +488,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          include-hidden-files: true
           name: test-evidence-backend-shard-2-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ steps.collect-shard-evidence.outputs.evidence-path }}
           if-no-files-found: error
@@ -540,7 +543,7 @@ jobs:
         run: >-
           ./scripts/ci/run-backend-test-shard.ps1
           -ShardId business-core-a
-          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-3
+          -ResultsDirectory .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-3
           -TrxFilePrefix backend-tests-business-core-a
 
       - name: Collect business core A shard evidence
@@ -555,8 +558,8 @@ jobs:
           ./scripts/ci/collect-test-evidence.ps1
           -Lane backend-shard-3
           -SelectedLanes backend-shard-3
-          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-3
-          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-3
+          -ResultsDirectory .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-3
+          -OutputDirectory .ryugi/artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-3
           -WorkflowRunId ${{ github.run_id }}
           -RunAttempt ${{ github.run_attempt }}
           -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
@@ -579,6 +582,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          include-hidden-files: true
           name: test-evidence-backend-shard-3-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ steps.collect-shard-evidence.outputs.evidence-path }}
           if-no-files-found: error
@@ -635,7 +639,7 @@ jobs:
         run: >-
           ./scripts/ci/run-backend-test-shard.ps1
           -ShardId business-core-b
-          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-4
+          -ResultsDirectory .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-4
           -TrxFilePrefix backend-tests-business-core-b
 
       - name: Collect business core B shard evidence
@@ -650,8 +654,8 @@ jobs:
           ./scripts/ci/collect-test-evidence.ps1
           -Lane backend-shard-4
           -SelectedLanes backend-shard-4
-          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-4
-          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-4
+          -ResultsDirectory .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-4
+          -OutputDirectory .ryugi/artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-4
           -WorkflowRunId ${{ github.run_id }}
           -RunAttempt ${{ github.run_attempt }}
           -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
@@ -674,6 +678,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          include-hidden-files: true
           name: test-evidence-backend-shard-4-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ steps.collect-shard-evidence.outputs.evidence-path }}
           if-no-files-found: error
@@ -769,8 +774,8 @@ jobs:
           ./scripts/ci/run-postgres-test-lane.ps1 `
             -AllActiveMembers `
             -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `
-            -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/postgres `
-            -SummaryPath artifacts/postgres-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+            -ResultsDirectory .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/postgres `
+            -SummaryPath .ryugi/artifacts/postgres-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
 
       - name: Collect PostgreSQL profile evidence
         timeout-minutes: 5
@@ -784,8 +789,8 @@ jobs:
           ./scripts/ci/collect-test-evidence.ps1
           -Lane postgres
           -SelectedLanes postgres
-          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/postgres
-          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/postgres
+          -ResultsDirectory .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/postgres
+          -OutputDirectory .ryugi/artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/postgres
           -WorkflowRunId ${{ github.run_id }}
           -RunAttempt ${{ github.run_attempt }}
           -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
@@ -808,6 +813,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          include-hidden-files: true
           name: test-evidence-postgres-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ steps.collect-postgres-evidence.outputs.evidence-path }}
           if-no-files-found: error
@@ -818,8 +824,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          include-hidden-files: true
           name: postgres-dependency-summary-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/postgres-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+          path: .ryugi/artifacts/postgres-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
           if-no-files-found: error
           retention-days: 14
 
@@ -959,7 +966,7 @@ jobs:
           POSTGRES_SERVICE_ID: ${{ job.services.postgres.id }}
         run: |
           . ./scripts/lib/ScriptAutomation.ps1
-          $observationDirectory = 'artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/observation'
+          $observationDirectory = '.ryugi/artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/observation'
           [IO.Directory]::CreateDirectory($observationDirectory) | Out-Null
           $toolsDirectory = Join-Path $env:RUNNER_TEMP 'redis-cap-observation-tools'
           "counters-path=$(Join-Path $toolsDirectory 'dotnet-counters')" >> $env:GITHUB_OUTPUT
@@ -997,18 +1004,18 @@ jobs:
         shell: pwsh
         run: |
           . ./scripts/lib/ScriptAutomation.ps1
-          $observationDirectory = 'artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/observation'
+          $observationDirectory = '.ryugi/artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/observation'
           $observer = $null
           try {
             try {
-              $observer = Start-ManagedBackgroundProcess -Command 'pwsh' -Arguments @('-NoProfile', '-File', './scripts/ci/observe-redis-cap-lane.ps1', '-LaneProcessId', [string]$PID, '-ResultsDirectory', 'artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap', '-OutputDirectory', $observationDirectory, '-CountersPath', '${{ steps.redis-cap-evidence-environment.outputs.counters-path }}') -Name 'redis-cap-observation'
+              $observer = Start-ManagedBackgroundProcess -Command 'pwsh' -Arguments @('-NoProfile', '-File', './scripts/ci/observe-redis-cap-lane.ps1', '-LaneProcessId', [string]$PID, '-ResultsDirectory', '.ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap', '-OutputDirectory', $observationDirectory, '-CountersPath', '${{ steps.redis-cap-evidence-environment.outputs.counters-path }}') -Name 'redis-cap-observation'
             }
             catch { Write-Warning "Redis/CAP observation start unavailable: $($_.Exception.GetType().Name)" }
             ./scripts/ci/run-redis-cap-test-lane.ps1 `
               -AllActiveMembers `
               -DatabaseSuffix ${{ github.run_id }}_${{ github.run_attempt }} `
-              -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap `
-              -SummaryPath artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+              -ResultsDirectory .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap `
+              -SummaryPath .ryugi/artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
           }
           finally {
             if ($null -ne $observer) {
@@ -1021,7 +1028,7 @@ jobs:
             }
             try {
               . ./scripts/lib/RedisCapObservation.ps1
-              $phaseCount = Export-RedisCapFixturePhases -ResultsDirectory 'artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap' -OutputPath (Join-Path $observationDirectory 'fixture-phases.jsonl')
+              $phaseCount = Export-RedisCapFixturePhases -ResultsDirectory '.ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap' -OutputPath (Join-Path $observationDirectory 'fixture-phases.jsonl')
               Write-Host "Redis/CAP retained fixture phase count=$phaseCount"
             }
             catch { Write-Warning "Redis/CAP fixture phases unavailable: $($_.Exception.GetType().Name)" }
@@ -1039,8 +1046,8 @@ jobs:
           ./scripts/ci/collect-test-evidence.ps1
           -Lane redis-cap
           -SelectedLanes redis-cap
-          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap
-          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap
+          -ResultsDirectory .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap
+          -OutputDirectory .ryugi/artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/redis-cap
           -WorkflowRunId ${{ github.run_id }}
           -RunAttempt ${{ github.run_attempt }}
           -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
@@ -1063,6 +1070,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          include-hidden-files: true
           name: test-evidence-redis-cap-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ steps.collect-redis-cap-evidence.outputs.evidence-path }}
           if-no-files-found: error
@@ -1073,10 +1081,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          include-hidden-files: true
           name: redis-cap-dependency-summary-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
-            artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/observation/
+            .ryugi/artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+            .ryugi/artifacts/redis-cap-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/observation/
           if-no-files-found: error
           retention-days: 14
 
@@ -1282,8 +1291,8 @@ jobs:
         shell: pwsh
         run: |
           ./scripts/ci/run-full-chain-test-lane.ps1 `
-            -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain `
-            -SummaryPath artifacts/full-chain-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+            -ResultsDirectory .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain `
+            -SummaryPath .ryugi/artifacts/full-chain-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
 
       - name: Collect FullChain evidence
         timeout-minutes: 5
@@ -1297,8 +1306,8 @@ jobs:
           ./scripts/ci/collect-test-evidence.ps1
           -Lane full-chain
           -SelectedLanes full-chain
-          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain
-          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain
+          -ResultsDirectory .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain
+          -OutputDirectory .ryugi/artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain
           -WorkflowRunId ${{ github.run_id }}
           -RunAttempt ${{ github.run_attempt }}
           -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
@@ -1321,6 +1330,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          include-hidden-files: true
           name: test-evidence-full-chain-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ steps.collect-full-chain-evidence.outputs.evidence-path }}
           if-no-files-found: error
@@ -1331,8 +1341,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          include-hidden-files: true
           name: full-chain-dependency-summary-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/full-chain-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+          path: .ryugi/artifacts/full-chain-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
           if-no-files-found: error
           retention-days: 14
 
@@ -1341,15 +1352,16 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
+          include-hidden-files: true
           name: full-chain-failure-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            artifacts/acceptance/**
-            artifacts/fullstack/**
-            artifacts/script-logs/**
-            artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/entrypoint-evidence.json
-            artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/diagnostics/failure-summary.json
-            artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/diagnostics/postgres-state.txt
-            artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/diagnostics/redis-stream-state.txt
+            .ryugi/artifacts/acceptance/**
+            .ryugi/artifacts/fullstack/**
+            .ryugi/artifacts/script-logs/**
+            .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/entrypoint-evidence.json
+            .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/diagnostics/failure-summary.json
+            .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/diagnostics/postgres-state.txt
+            .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/full-chain/erp-wms-delivery-completion/diagnostics/redis-stream-state.txt
           if-no-files-found: error
           retention-days: 14
 
@@ -1419,7 +1431,7 @@ jobs:
           dotnet test connector-hosts/Nerv.IIP.ConnectorHost.sln
           --configuration Release
           --logger trx
-          --results-directory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
+          --results-directory .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
 
       - name: Collect connector host test evidence
         timeout-minutes: 5
@@ -1433,8 +1445,8 @@ jobs:
           ./scripts/ci/collect-test-evidence.ps1
           -Lane connector-host
           -SelectedLanes connector-host
-          -ResultsDirectory artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
-          -OutputDirectory artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
+          -ResultsDirectory .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
+          -OutputDirectory .ryugi/artifacts/test-evidence/${{ github.run_id }}/attempt-${{ github.run_attempt }}/connector-host
           -WorkflowRunId ${{ github.run_id }}
           -RunAttempt ${{ github.run_attempt }}
           -HeadSha ${{ github.event.pull_request.head.sha || github.sha }}
@@ -1457,6 +1469,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          include-hidden-files: true
           name: test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ steps.collect-connector-host-evidence.outputs.evidence-path }}
           if-no-files-found: error

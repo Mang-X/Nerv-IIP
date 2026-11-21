@@ -4,8 +4,8 @@
 #     - Runs script governance and compatibility verification commands
 #     - Optionally runs the IAM persistent auth verification script
 #   Writes:
-#     - artifacts/script-logs/**
-#     - artifacts/script-logs/script-compatibility/**/evidence.json
+#     - .ryugi/artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/script-compatibility/**/evidence.json
 #   Cleanup:
 #     - Stops managed child process trees through ScriptAutomation.ps1 when commands time out
 #   Requires:

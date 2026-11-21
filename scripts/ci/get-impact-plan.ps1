@@ -4,7 +4,7 @@
 #     - Reads a caller-provided Git diff when explicit changed paths are not supplied
 #     - Writes the impact-plan JSON artifact and optional GitHub output/summary files
 #   Writes:
-#     - artifacts/ci-impact-plan/**
+#     - .ryugi/artifacts/ci-impact-plan/**
 #     - Caller-provided GitHub output and step-summary files
 #   Cleanup:
 #     - None required; outputs are bounded files owned by the current CI run
@@ -18,7 +18,7 @@ param(
     [Parameter(Mandatory, ParameterSetName = 'Diff')] [ValidatePattern('^[0-9a-fA-F]{40}$')] [string] $BaseSha,
     [Parameter(Mandatory, ParameterSetName = 'Diff')] [ValidatePattern('^[0-9a-fA-F]{40}$')] [string] $HeadSha,
     [Parameter(ParameterSetName = 'Diff')] [ValidateSet('MergeBase', 'Range')] [string] $DiffMode = 'MergeBase',
-    [string] $OutputPath = 'artifacts/ci-impact-plan/impact-plan.json',
+    [string] $OutputPath = '.ryugi/artifacts/ci-impact-plan/impact-plan.json',
     [string] $GitHubOutputPath = $env:GITHUB_OUTPUT,
     [string] $StepSummaryPath = $env:GITHUB_STEP_SUMMARY
 )

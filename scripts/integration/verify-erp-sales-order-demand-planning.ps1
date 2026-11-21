@@ -8,11 +8,11 @@
 #     - Runs five production-entry readiness negative probes with real managed processes/listeners
 #   Writes:
 #     - bin/ and obj/ outputs for the three business services and full-chain probe
-#     - artifacts/script-logs/**
-#     - artifacts/acceptance/man517/sales-order-demand-planning-evidence.json
-#     - artifacts/acceptance/man517/readiness-negative-evidence.json
-#     - artifacts/acceptance/man517/cleanup-evidence.json
-#     - artifacts/acceptance/man517/diagnostics/** on failure
+#     - .ryugi/artifacts/script-logs/**
+#     - .ryugi/artifacts/acceptance/man517/sales-order-demand-planning-evidence.json
+#     - .ryugi/artifacts/acceptance/man517/readiness-negative-evidence.json
+#     - .ryugi/artifacts/acceptance/man517/cleanup-evidence.json
+#     - .ryugi/artifacts/acceptance/man517/diagnostics/** on failure
 #     - A caller-selected canonical acceptance result path when requested
 #   Cleanup:
 #     - Releases every script-owned TCP listener reservation in finally
@@ -1407,7 +1407,7 @@ function Invoke-Man517ReadinessNegativeProbes {
         $probes.Add([pscustomobject]$probe)
     }
 
-    $evidencePath = Join-Path $root 'artifacts/acceptance/man517/readiness-negative-evidence.json'
+    $evidencePath = Join-Path $root '.ryugi/artifacts/acceptance/man517/readiness-negative-evidence.json'
     [System.IO.Directory]::CreateDirectory((Split-Path -Parent $evidencePath)) | Out-Null
     $allPassed = $true
     foreach ($probe in $probes) {
@@ -1886,7 +1886,7 @@ function Get-Man517ComposeRunningServicesObservation {
 
     $queryArguments = @('compose', '-f', $ComposeFile, 'ps', '--services', '--status', 'running')
     $query = "docker compose -f `"$ComposeFile`" ps --services --status running"
-    $logDirectory = Join-Path $root "artifacts/script-logs/man517-verify-infrastructure-stopped/attempt-$Attempt"
+    $logDirectory = Join-Path $root ".ryugi/artifacts/script-logs/man517-verify-infrastructure-stopped/attempt-$Attempt"
     try {
         $result = Invoke-NativeCommandOutput `
             -Command 'docker' `
@@ -2108,7 +2108,7 @@ function Register-Man517OwnedComposeCleanupOutcome {
 
 function Export-Man517FailureDiagnostics {
     param([object]$FailureRecord)
-    $diagnosticsRoot = Join-Path $root 'artifacts/acceptance/man517/diagnostics'
+    $diagnosticsRoot = Join-Path $root '.ryugi/artifacts/acceptance/man517/diagnostics'
     [System.IO.Directory]::CreateDirectory($diagnosticsRoot) | Out-Null
     Write-Man517DiagnosticFile -Path (Join-Path $diagnosticsRoot 'failure-summary.json') -Content (@{
         capturedAtUtc = [DateTimeOffset]::UtcNow
@@ -2417,7 +2417,7 @@ try {
         NERV_IIP_TEST_CAP_VERSION = $capVersion
         NERV_IIP_TEST_PROBE_RUN_ID = [Guid]::NewGuid().ToString('N')
     } -ScriptBlock {
-        $probeResultsDirectory = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY)) { Join-Path $root 'artifacts/acceptance/man517' } else { $env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY }
+        $probeResultsDirectory = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY)) { Join-Path $root '.ryugi/artifacts/acceptance/man517' } else { $env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY }
         [System.IO.Directory]::CreateDirectory($probeResultsDirectory) | Out-Null
         $probeResultsFile = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULT_FILE)) { "probe-$([Guid]::NewGuid().ToString('N')).trx" } else { $env:NERV_IIP_FULL_CHAIN_RESULT_FILE }
         $probeResults = Join-Path $probeResultsDirectory $probeResultsFile
@@ -2468,7 +2468,7 @@ try {
     $cancelled = Assert-DemandStable -DemandPlanningUrl $demandPlanningUrl -Headers $headers -Version 4 -Quantity 0 -Status 'cancelled'
     $cancellationConverged = $true
 
-    $evidencePath = Join-Path $root 'artifacts/acceptance/man517/sales-order-demand-planning-evidence.json'
+    $evidencePath = Join-Path $root '.ryugi/artifacts/acceptance/man517/sales-order-demand-planning-evidence.json'
     [System.IO.Directory]::CreateDirectory((Split-Path -Parent $evidencePath)) | Out-Null
     @{
         scenario = 'MAN-517 ERP SalesOrder to DemandPlanning DemandSource'
@@ -2612,7 +2612,7 @@ finally {
     }
     try {
         $injectedCleanupEvidencePath = [Environment]::GetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH')
-        $cleanupEvidencePath = if ([string]::IsNullOrWhiteSpace($injectedCleanupEvidencePath)) { Join-Path $root 'artifacts/acceptance/man517/cleanup-evidence.json' } else { [IO.Path]::GetFullPath($injectedCleanupEvidencePath) }
+        $cleanupEvidencePath = if ([string]::IsNullOrWhiteSpace($injectedCleanupEvidencePath)) { Join-Path $root '.ryugi/artifacts/acceptance/man517/cleanup-evidence.json' } else { [IO.Path]::GetFullPath($injectedCleanupEvidencePath) }
         [System.IO.Directory]::CreateDirectory((Split-Path -Parent $cleanupEvidencePath)) | Out-Null
         @{
             scenario = 'MAN-517 cleanup accounting'

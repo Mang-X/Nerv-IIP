@@ -227,8 +227,8 @@ function Test-NightlyBusinessPerformanceManualThresholdModes {
         Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'Scenario' -ExpectedValue 'all' -ExpectedType ([string])
         Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'Profile' -ExpectedValue 'nightly' -ExpectedType ([string])
         Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'Rows' -ExpectedValue 25 -ExpectedType ([int])
-        Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'MetricsOutputPath' -ExpectedValue 'artifacts/business-performance/nightly/metrics.jsonl' -ExpectedType ([string])
-        Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'SummaryOutputPath' -ExpectedValue 'artifacts/business-performance/nightly/summary.json' -ExpectedType ([string])
+        Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'MetricsOutputPath' -ExpectedValue '.ryugi/artifacts/business-performance/nightly/metrics.jsonl' -ExpectedType ([string])
+        Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name 'SummaryOutputPath' -ExpectedValue '.ryugi/artifacts/business-performance/nightly/summary.json' -ExpectedType ([string])
 
         foreach ($expectedThreshold in $testCase.ExpectedThresholds.GetEnumerator()) {
             Assert-NightlyBoundParameter -BoundParameters $result.BoundParameters -Name $expectedThreshold.Key -ExpectedValue $expectedThreshold.Value -ExpectedType ([int])
@@ -310,7 +310,7 @@ function Assert-NightlyBusinessPerformanceWorkflow {
     Assert-WorkflowContract ([string]::Equals([string](Get-WorkflowProperty -Object $artifactWith -Name 'if-no-files-found'), 'error', [StringComparison]::Ordinal)) 'Nightly business performance artifact upload must fail on missing files.'
     Assert-WorkflowContract ([int](Get-WorkflowProperty -Object $artifactWith -Name 'retention-days') -eq 30) 'Nightly business performance artifact retention must be 30 days.'
     $artifactPaths = @([string](Get-WorkflowProperty -Object $artifactWith -Name 'path') -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_.Length -gt 0 })
-    Assert-WorkflowContract ($artifactPaths.Count -eq 2 -and (Test-OrdinalStringMember -Values $artifactPaths -Expected 'artifacts/business-performance/nightly/metrics.jsonl') -and (Test-OrdinalStringMember -Values $artifactPaths -Expected 'artifacts/business-performance/nightly/summary.json')) 'Nightly business performance artifact must allowlist only metrics.jsonl and summary.json.'
+    Assert-WorkflowContract ($artifactPaths.Count -eq 2 -and (Test-OrdinalStringMember -Values $artifactPaths -Expected '.ryugi/artifacts/business-performance/nightly/metrics.jsonl') -and (Test-OrdinalStringMember -Values $artifactPaths -Expected '.ryugi/artifacts/business-performance/nightly/summary.json')) 'Nightly business performance artifact must allowlist only metrics.jsonl and summary.json.'
 
     $serializedWorkflow = $workflow | ConvertTo-Json -Depth 100 -Compress
     Assert-WorkflowContract ($serializedWorkflow -notmatch 'continue-on-error') 'Nightly business performance workflow must not use continue-on-error.'

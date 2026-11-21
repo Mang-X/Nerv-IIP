@@ -4,8 +4,8 @@
 #     - Runs backend test-determinism checker fixture cases
 #   Writes:
 #     - Temporary baseline JSON files under the operating-system temp directory
-#     - artifacts/script-logs/backend-test-determinism-fixture-*/**
-#     - artifacts/script-tests/backend-test-determinism-*/**
+#     - .ryugi/artifacts/script-logs/backend-test-determinism-fixture-*/**
+#     - .ryugi/artifacts/script-tests/backend-test-determinism-*/**
 #   Cleanup:
 #     - Removes every temporary baseline, source fixture, and governed command log created by this test
 #   Requires:
@@ -24,8 +24,8 @@ $runId = [Guid]::NewGuid().ToString('N')
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-iip-backend-test-determinism-$runId"
 $validBaselinePath = Join-Path $tempRoot 'valid-baseline.json'
 $scriptLogName = "backend-test-determinism-fixture-$runId"
-$scriptLogRoot = Join-Path $repoRoot "artifacts/script-logs/$scriptLogName"
-$generatedFixtureRoot = Join-Path $repoRoot "artifacts/script-tests/backend-test-determinism-$runId"
+$scriptLogRoot = Join-Path $repoRoot ".ryugi/artifacts/script-logs/$scriptLogName"
+$generatedFixtureRoot = Join-Path $repoRoot ".ryugi/artifacts/script-tests/backend-test-determinism-$runId"
 $todayUtc = [DateOnly]::FromDateTime([DateTime]::UtcNow)
 $registeredOnUtc = $todayUtc.ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
 $maximumExpiryUtc = $todayUtc.AddDays(45).ToString('yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
@@ -1038,9 +1038,9 @@ finally {
     foreach ($generatedPath in @($scriptLogRoot, $generatedFixtureRoot)) {
         $resolvedGeneratedPath = Resolve-Path -LiteralPath $generatedPath -ErrorAction SilentlyContinue
         if ($resolvedGeneratedPath) {
-            $allowedArtifactsRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot 'artifacts'))
+            $allowedArtifactsRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot '.ryugi/artifacts'))
             if (-not $resolvedGeneratedPath.Path.StartsWith($allowedArtifactsRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-                throw "Refusing to remove generated test path outside artifacts: $($resolvedGeneratedPath.Path)"
+                throw "Refusing to remove generated test path outside .ryugi/artifacts: $($resolvedGeneratedPath.Path)"
             }
 
             Remove-Item -LiteralPath $resolvedGeneratedPath.Path -Recurse -Force

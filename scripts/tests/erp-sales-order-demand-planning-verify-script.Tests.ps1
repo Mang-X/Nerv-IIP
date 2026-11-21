@@ -6,8 +6,8 @@
 #     - Runs the exact script-governance gate for the MAN-703 HTTP fixture
 #   Writes:
 #     - Temporary real-entry and mutation harnesses, cleanup evidence, and watchdog logs under the system temp directory
-#     - artifacts/script-logs/man703-fixture-governance/**
-#     - A temporary canonical-result failure fixture under artifacts/**
+#     - .ryugi/artifacts/script-logs/man703-fixture-governance/**
+#     - A temporary canonical-result failure fixture under .ryugi/artifacts/**
 #   Cleanup:
 #     - Removes the temporary real-entry and mutation harnesses, evidence, and watchdog logs
 #     - Removes the temporary canonical-result failure fixture
@@ -1123,7 +1123,7 @@ foreach ($sensitiveValue in @('pwd-value', 'token-value', 'secret-value', 'clien
     Assert-Contract (-not $safeDiagnostic.Contains($sensitiveValue, [StringComparison]::Ordinal)) "Shared diagnostic redaction leaked $sensitiveValue."
 }
 
-$canonicalFailureFixtureRoot = Join-Path $repoRoot "artifacts/canonical-result-failure-$([Guid]::NewGuid().ToString('N'))"
+$canonicalFailureFixtureRoot = Join-Path $repoRoot ".ryugi/artifacts/canonical-result-failure-$([Guid]::NewGuid().ToString('N'))"
 $canonicalFailureResultPath = Join-Path $canonicalFailureFixtureRoot 'result.json'
 try {
     [IO.Directory]::CreateDirectory($canonicalFailureFixtureRoot) | Out-Null

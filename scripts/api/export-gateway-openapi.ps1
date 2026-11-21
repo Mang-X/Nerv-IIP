@@ -6,8 +6,8 @@
 #   Writes:
 #     - frontend/packages/api-client/openapi/platform-gateway.v1.json
 #     - frontend/packages/api-client/openapi/business-gateway-console.v1.json
-#     - artifacts/openapi-export/**
-#     - artifacts/script-logs/export-gateway-openapi/**
+#     - .ryugi/artifacts/openapi-export/**
+#     - .ryugi/artifacts/script-logs/export-gateway-openapi/**
 #   Cleanup:
 #     - Stops managed gateway process trees
 #   Requires:
@@ -78,7 +78,7 @@ function Export-GatewayOpenApi {
   )
 
   $assemblyName = [System.IO.Path]::GetFileNameWithoutExtension($ProjectPath)
-  $buildOutputDirectory = Join-Path $root "artifacts/openapi-export/$Name"
+  $buildOutputDirectory = Join-Path $root ".ryugi/artifacts/openapi-export/$Name"
   New-Item -ItemType Directory -Force -Path $buildOutputDirectory | Out-Null
 
   # 与 GitHub Runner 默认口径一致（NUGET_XMLDOC_MODE=skip）：restore 阶段不向本机缓存解出 package XML 文档。

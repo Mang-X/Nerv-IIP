@@ -16,7 +16,7 @@
 #       the env cannot be proven baked into the reused server, so the script WARNS instead
 #       (timeout-injection scenarios may honestly fail as environment blockage)
 #   Writes:
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #     - frontend/apps/business-pda/test-results-live/** (Playwright traces/screenshots)
 #     - frontend/DESIGN/roadmaps/assets/<yyyy-MM-dd-HHmmss-fff>-<shortSHA>-pda-live-<rand4hex>/**
 #       (per-run unique evidence dir; created upfront as an atomic placeholder via New-Item without

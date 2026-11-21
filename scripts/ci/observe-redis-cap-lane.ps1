@@ -5,7 +5,7 @@
 #     - Starts bounded dotnet-counters collectors and reads the CI Redis service statistics
 #   Writes:
 #     - Caller-owned observation directory
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Stops every owned counters process in finally; never stops testhosts or service containers
 #   Requires:

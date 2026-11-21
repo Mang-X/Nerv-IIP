@@ -37,7 +37,7 @@ import { requireBrowserEvidenceOutputDir } from '../playwright.config'
  * `src/pages/erp/finance-voucher-row-key.test.ts` 覆盖。
  *
  * 跑法：
- *   NERV_IIP_OUT_DIR=artifacts/issue3278-s4-walkthrough \
+ *   NERV_IIP_OUT_DIR="$(git rev-parse --show-toplevel)/.ryugi/artifacts/issue3278-s4-walkthrough" \
  *   pnpm -C frontend/apps/business-console exec playwright test \
  *     e2e/issue3278-voucher-row-key.spec.ts --project=desktop --workers=1
  */

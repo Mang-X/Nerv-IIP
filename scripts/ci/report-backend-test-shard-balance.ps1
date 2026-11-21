@@ -34,7 +34,7 @@
 param(
     [string] $ManifestPath = (Join-Path $PSScriptRoot '../config/backend-test-shards.json'),
 
-    [string] $TimingCachePath = (Join-Path $PSScriptRoot '../../artifacts/backend-test-shard-timings.json'),
+    [string] $TimingCachePath = (Join-Path $PSScriptRoot '../../.ryugi/artifacts/backend-test-shard-timings.json'),
 
     # Last committed evidence snapshot. It is a *fallback* only: keyed by assembly like the cache, so
     # a shard rearrangement cannot lose a key, and never required to be fresh or complete.

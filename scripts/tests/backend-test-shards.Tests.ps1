@@ -6,11 +6,11 @@
 #   Writes:
 #     - OS temporary directory: backend inventory, workflow, manifest, policy, shard TRX, aggregated selector TRX, class-exclusion coverage and timing-cache fixtures (temporarily)
 #     - OS temporary directory: a PATH dotnet shim, its launcher, manifest and TRX fixtures for the real-PostgreSQL verifier (temporarily)
-#     - artifacts/real-postgres-tests/Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests/** shim TRX evidence (temporarily)
+#     - .ryugi/artifacts/real-postgres-tests/Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests/** shim TRX evidence (temporarily)
 #     - backend/tests/Nerv.IIP.Testing.Tests/TemporaryDockerLookalikes-*.cs (temporarily)
-#     - artifacts/backend-test-shards-collision-*.cs selector-collision fixture (temporarily)
-#     - artifacts/shard-fixture-*.slnf rearranged solution filters (temporarily)
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/backend-test-shards-collision-*.cs selector-collision fixture (temporarily)
+#     - .ryugi/artifacts/shard-fixture-*.slnf rearranged solution filters (temporarily)
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Removes every temporary project, Docker-lookalike source, workflow, manifest, policy, TRX, timing-cache, solution filter and collision fixture in finally
 #   Requires:
@@ -43,8 +43,8 @@ $shimRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-
 $temporaryPolicyPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-policy-{0}.json" -f [Guid]::NewGuid().ToString('N'))
 $temporaryManifestPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-test-shards-manifest-{0}.json" -f [Guid]::NewGuid().ToString('N'))
 # The validator resolves policy sourcePath against the repository root, so the collision fixture
-# must live inside the repo. artifacts/ is gitignored.
-$temporaryCollisionRelativePath = "artifacts/backend-test-shards-collision-{0}.cs" -f [Guid]::NewGuid().ToString('N')
+# must live inside the repo. .ryugi/artifacts/ is gitignored.
+$temporaryCollisionRelativePath = ".ryugi/artifacts/backend-test-shards-collision-{0}.cs" -f [Guid]::NewGuid().ToString('N')
 $temporaryCollisionSourcePath = Join-Path $repoRoot $temporaryCollisionRelativePath
 $runnerPath = Join-Path $repoRoot 'scripts/ci/run-backend-test-shard.ps1'
 $diagnosticsPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardDiagnostics.ps1'
@@ -1293,7 +1293,7 @@ $realPostgresVerifyPath = Join-Path $repoRoot 'scripts/ci/verify-backend-real-po
 $shimSelector = 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests'
 $shimIdentityOne = "$shimSelector.Initializer_failure_drops_database_and_redacts_diagnostics"
 $shimIdentityTwo = "$shimSelector.Parallel_databases_are_isolated_initialized_and_removed"
-$shimSelectorResultsDirectory = Join-Path $repoRoot (Join-Path 'artifacts/real-postgres-tests' $shimSelector)
+$shimSelectorResultsDirectory = Join-Path $repoRoot (Join-Path '.ryugi/artifacts/real-postgres-tests' $shimSelector)
 $shimBinDirectory = Join-Path $shimRoot 'bin'
 $shimLogicPath = Join-Path $shimRoot 'dotnet-shim.ps1'
 $shimLauncherPath = Join-Path $shimRoot 'launch-real-postgres-verify.ps1'
@@ -2037,7 +2037,7 @@ try {
             @{
                 Name = 'raw-artifact-upload'
                 Pattern = '(?m)^(\s+)path: \$\{\{ steps\.collect-shard-evidence\.outputs\.evidence-path \}\}'
-                Replacement = '$1path: artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1'
+                Replacement = '$1path: .ryugi/artifacts/test-evidence-raw/${{ github.run_id }}/attempt-${{ github.run_attempt }}/backend-shard-1'
                 Expected = 'must upload only the collector-published redacted evidence path'
             },
             @{
@@ -2226,7 +2226,7 @@ finally {
     Remove-Item -LiteralPath $executionTrxDirectory -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $aggregateTrxDirectory -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $shimRoot -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath (Join-Path $repoRoot 'artifacts/real-postgres-tests/Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests') -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $repoRoot '.ryugi/artifacts/real-postgres-tests/Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests') -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryPolicyPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryManifestPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporaryCollisionSourcePath -Force -ErrorAction SilentlyContinue
@@ -2886,17 +2886,17 @@ try {
         $fileName = "shard-fixture-{0}-{1}.slnf" -f ([string] $Shard.id), ([Guid]::NewGuid().ToString('N'))
         $filterPath = Join-Path $Directory $fileName
         Set-Content -LiteralPath $filterPath -NoNewline -Value ([pscustomobject]@{
-            solution = [pscustomobject]@{ path = '../backend/Nerv.IIP.sln'; projects = $projects }
+            solution = [pscustomobject]@{ path = '../../backend/Nerv.IIP.sln'; projects = $projects }
         } | ConvertTo-Json -Depth 10)
         return "$RepositoryRelativeDirectory/$fileName"
     }
 
-    $fixtureFilterDirectory = Join-Path $repoRoot 'artifacts'
+    $fixtureFilterDirectory = Join-Path $repoRoot '.ryugi/artifacts'
     New-Item -ItemType Directory -Path $fixtureFilterDirectory -Force | Out-Null
     $fixtureFilterPaths = [System.Collections.Generic.List[string]]::new()
     try {
         foreach ($shard in @($donor, $receiver)) {
-            $relativeFilter = New-ShardFixtureSolutionFilter -Shard $shard -Directory $fixtureFilterDirectory -RepositoryRelativeDirectory 'artifacts'
+            $relativeFilter = New-ShardFixtureSolutionFilter -Shard $shard -Directory $fixtureFilterDirectory -RepositoryRelativeDirectory '.ryugi/artifacts'
             [void] $fixtureFilterPaths.Add((Join-Path $repoRoot $relativeFilter))
             $shard.solutionFilter = $relativeFilter
         }

@@ -3,7 +3,7 @@
 #   SideEffects:
 #     - Enumerates Redis keys and deletes inactive stale NERV-822 UUIDv7 test namespaces only when -Apply is supplied
 #   Writes:
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Restores REDISCLI_AUTH and leaves Redis plus all non-candidate keys running
 #   Requires:

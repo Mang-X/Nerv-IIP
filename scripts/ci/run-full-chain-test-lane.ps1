@@ -5,11 +5,11 @@
 #     - Creates and removes scenario-owned disposable PostgreSQL databases and Docker resources
 #     - Temporarily overrides and restores process environment used by FullChain entrypoints
 #   Writes:
-#     - FullChain TRX files and a machine-readable dependency summary under artifacts/**
+#     - FullChain TRX files and a machine-readable dependency summary under .ryugi/artifacts/**
 #     - Resumable snapshots and exactly one terminal snapshot through the configured leaf summary writer
 #     - Best-effort memory-dimension evidence inside that same dependency summary
 #     - Invocation-owned probe preparation receipt under the operating-system temp directory
-#     - Existing governed scenario diagnostics under artifacts/acceptance/** and artifacts/fullstack/**
+#     - Existing governed scenario diagnostics under .ryugi/artifacts/acceptance/** and .ryugi/artifacts/fullstack/**
 #   Cleanup:
 #     - Removes the invocation-owned probe preparation receipt in finally
 #     - Stops PostgreSQL and Redis services started by this runner
@@ -25,8 +25,8 @@ param(
     [string] $ManifestPath = (Join-Path $PSScriptRoot '../config/full-chain-test-lane.json'),
     [string] $ScenarioMatrixPath = (Join-Path $PSScriptRoot '../config/acceptance-scenario-matrix.json'),
     [string] $WorkflowPath = (Join-Path $PSScriptRoot '../../.github/workflows/ci.yml'),
-    [string] $ResultsDirectory = (Join-Path $PSScriptRoot '../../artifacts/test-evidence-raw/full-chain'),
-    [string] $SummaryPath = (Join-Path $PSScriptRoot '../../artifacts/full-chain-test-lane/summary.json'),
+    [string] $ResultsDirectory = (Join-Path $PSScriptRoot '../../.ryugi/artifacts/test-evidence-raw/full-chain'),
+    [string] $SummaryPath = (Join-Path $PSScriptRoot '../../.ryugi/artifacts/full-chain-test-lane/summary.json'),
     [scriptblock] $SummaryFileWriter = {
         param([string] $Path, [string] $Payload, [string] $Phase)
 

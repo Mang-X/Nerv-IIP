@@ -143,9 +143,9 @@ Remove-Item Env:\NERV_IIP_FILE_STORAGE_DB -ErrorAction SilentlyContinue
 Docker/本地 PostgreSQL 示例仅用于受控环境；真实客户环境优先使用平台快照，没有快照时才使用 `pg_dump` 或等价受控工具：
 
 ```powershell
-New-Item -ItemType Directory -Force -Path .\artifacts\db-backups | Out-Null
-docker compose -f infra/docker-compose.dev.yml exec -T postgres pg_dump -U nerv -d nerv_iip_apphub > .\artifacts\db-backups\apphub-before-release.sql
-docker compose -f infra/docker-compose.dev.yml exec -T postgres pg_dump -U nerv -d nerv_iip_ops > .\artifacts\db-backups\ops-before-release.sql
+New-Item -ItemType Directory -Force -Path .\.ryugi\artifacts\db-backups | Out-Null
+docker compose -f infra/docker-compose.dev.yml exec -T postgres pg_dump -U nerv -d nerv_iip_apphub > .\.ryugi\artifacts\db-backups\apphub-before-release.sql
+docker compose -f infra/docker-compose.dev.yml exec -T postgres pg_dump -U nerv -d nerv_iip_ops > .\.ryugi\artifacts\db-backups\ops-before-release.sql
 ```
 
 - 备份文件不得提交仓库或写入公开日志；恢复能力至少在非生产库演练一次。

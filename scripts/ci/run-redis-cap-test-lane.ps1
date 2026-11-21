@@ -5,7 +5,7 @@
 #   Writes:
 #     - bin/ and obj/ under the selected test project
 #     - The caller-owned TRX results directory and machine-readable lane summary
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Drops each job-scoped database and removes only keys in the selected member's claimed Redis namespace
 #   Requires:

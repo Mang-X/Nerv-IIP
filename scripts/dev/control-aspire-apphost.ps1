@@ -4,7 +4,7 @@
 #     - Inspects, waits for, streams logs from, or stops the Aspire AppHost
 #     - Warns about Aspire usvc-dev containers whose exact session ownership is unavailable
 #   Writes:
-#     - artifacts/script-logs/** for bounded Aspire helper commands
+#     - .ryugi/artifacts/script-logs/** for bounded Aspire helper commands
 #   Cleanup:
 #     - Uses Aspire CLI lifecycle commands
 #     - Stops matching AppHost processes after stop; session-owned Docker cleanup is coordinator-managed

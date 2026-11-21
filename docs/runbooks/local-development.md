@@ -124,7 +124,7 @@ Redis/CAP 用例的两个进程，需要从同一个唯一 session root 派生�
     `pwsh scripts/integration/verify-connector-health-disconnect.ps1 -Runs 3`；不得启用
     `ConnectorHealthAcceptance:Enabled` 供普通 `nerv.ps1 dev` 或客户 profile 使用。验收 profile 会将 session-scoped internal token、
     IndustrialTelemetry endpoint 和 loopback Modbus mapping 注入 Connector Host，随后把证据写入
-    `artifacts/script-logs/connector-health-disconnect/<timestamp>/`。即使 simulator、script contract 和
+    `.ryugi/artifacts/script-logs/connector-health-disconnect/<timestamp>/`。即使 simulator、script contract 和
     AppHost build 门禁通过，Docker daemon/runtime 健康失败仍表示未发生真实运行（例如 0/3）。修复
     Docker Desktop 后重跑；绝不得放宽固定十秒（ten-second）deadline。
 

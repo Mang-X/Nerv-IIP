@@ -3,7 +3,7 @@
 #   SideEffects:
 #     - Provides shared script automation helpers
 #   Writes:
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Stops managed child process trees when requested
 #   Requires:
@@ -309,7 +309,7 @@ function New-ScriptAutomationLogDirectory {
         }
 
         $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
-        $LogDirectory = Join-Path (Get-ScriptAutomationRepoRoot) "artifacts/script-logs/$safeName/$timestamp"
+        $LogDirectory = Join-Path (Get-ScriptAutomationRepoRoot) ".ryugi/artifacts/script-logs/$safeName/$timestamp"
     }
 
     New-Item -ItemType Directory -Force -Path $LogDirectory | Out-Null

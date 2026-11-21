@@ -3,7 +3,7 @@
 #   SideEffects:
 #     - Starts a loopback Modbus simulator and one isolated full-stack session
 #   Writes:
-#     - artifacts/script-logs/connector-health-disconnect/<timestamp>/evidence.json
+#     - .ryugi/artifacts/script-logs/connector-health-disconnect/<timestamp>/evidence.json
 #     - Managed full-stack session manifests and diagnostics
 #   Cleanup:
 #     - Stops the simulator and exact full-stack session in finally
@@ -32,7 +32,7 @@ $connectorId = 'modbus-acceptance'
 $sampledTagKey = 'acceptance.sampled'
 $neverSampledTagKey = 'acceptance.never-sampled'
 $timestamp = [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssfffZ')
-$artifactRoot = Join-Path $repoRoot "artifacts/script-logs/connector-health-disconnect/$timestamp"
+$artifactRoot = Join-Path $repoRoot ".ryugi/artifacts/script-logs/connector-health-disconnect/$timestamp"
 [System.IO.Directory]::CreateDirectory($artifactRoot) | Out-Null
 $evidencePath = Join-Path $artifactRoot 'evidence.json'
 $diagnosticsPath = Join-Path $artifactRoot 'diagnostics.json'

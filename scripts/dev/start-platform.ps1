@@ -3,7 +3,7 @@
 #   SideEffects:
 #     - Starts the local Nerv-IIP platform through Aspire CLI or dependency services through Docker Compose
 #   Writes:
-#     - artifacts/script-logs/** when -InfraOnly uses the Docker Compose helper
+#     - .ryugi/artifacts/script-logs/** when -InfraOnly uses the Docker Compose helper
 #     - frontend/node_modules/** when the default startup path restores frontend workspace dependencies
 #   Cleanup:
 #     - Aspire-managed resources remain running until `.\nerv.ps1 stop`
@@ -418,7 +418,7 @@ $appHostEnvironment = @{
     DOTNET_ENVIRONMENT = 'Development'
 }
 
-Write-Diagnostic 'Starting Aspire AppHost. This step is bounded and writes logs under artifacts/script-logs/dev-apphost/.'
+Write-Diagnostic 'Starting Aspire AppHost. This step is bounded and writes logs under .ryugi/artifacts/script-logs/dev-apphost/.'
 try {
     Invoke-WithScopedEnvironment -Variables $appHostEnvironment -ScriptBlock {
         Invoke-Aspire -Arguments $arguments -WorkingDirectory $root -TimeoutSeconds 900 -Name 'dev-apphost'

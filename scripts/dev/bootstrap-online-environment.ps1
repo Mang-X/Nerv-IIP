@@ -7,8 +7,8 @@
 #     - Initializes missing local AppHost user secrets for Development startup
 #     - Optionally starts the local platform through scripts/dev/start-platform.ps1
 #   Writes:
-#     - artifacts/script-logs/**
-#     - artifacts/bootstrap-online/**
+#     - .ryugi/artifacts/script-logs/**
+#     - .ryugi/artifacts/bootstrap-online/**
 #     - User-scoped AppHost user secrets when -SkipLocalSecrets is not specified
 #   Cleanup:
 #     - Stops managed child process trees when helper commands time out
@@ -182,7 +182,7 @@ function Get-CurrentPwshCommand {
 }
 
 function Install-AspireCli {
-    $outputDirectory = Join-Path $root 'artifacts/bootstrap-online'
+    $outputDirectory = Join-Path $root '.ryugi/artifacts/bootstrap-online'
     New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
 
     $installer = Join-Path $outputDirectory 'aspire-install.ps1'

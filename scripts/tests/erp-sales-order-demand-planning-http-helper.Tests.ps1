@@ -3,7 +3,7 @@
 #   SideEffects:
 #     - Starts a loopback-only disposable HTTP fixture process
 #   Writes:
-#     - artifacts/script-logs/man703-http-helper-tests/**
+#     - .ryugi/artifacts/script-logs/man703-http-helper-tests/**
 #   Cleanup:
 #     - Stops the managed fixture process and removes its exact test directory
 #   Requires:
@@ -110,7 +110,7 @@ foreach ($functionName in @(
     Import-VerifyFunction -Ast $ast -Name $functionName
 }
 
-$testRoot = Join-Path $repoRoot "artifacts/script-logs/man703-http-helper-tests/$([Guid]::NewGuid().ToString('N'))"
+$testRoot = Join-Path $repoRoot ".ryugi/artifacts/script-logs/man703-http-helper-tests/$([Guid]::NewGuid().ToString('N'))"
 $readyFile = Join-Path $testRoot 'ready.txt'
 $counterFile = Join-Path $testRoot 'sales-order-request-count.txt'
 $mutationCounterFile = Join-Path $testRoot 'mutation-request-count.txt'

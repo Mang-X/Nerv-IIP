@@ -5,10 +5,10 @@
 #       fixtures and against the repository's real producers and vocabularies
 #   Writes:
 #     - OS temporary directory: fixture source files (temporarily)
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Removes the fixture directory in finally
-#     - Leaves artifacts/script-logs/** to the repository's existing artifact hygiene
+#     - Leaves .ryugi/artifacts/script-logs/** to the repository's existing artifact hygiene
 #   Requires:
 #     - PowerShell 7
 

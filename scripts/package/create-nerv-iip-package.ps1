@@ -1,14 +1,14 @@
 # Script-Governance:
 #   Category: generate
 #   SideEffects:
-#     - Publishes Nerv-IIP .NET services into artifacts/packages/**
+#     - Publishes Nerv-IIP .NET services into .ryugi/artifacts/packages/**
 #     - Builds frontend apps unless -SkipFrontend is specified
-#     - Creates a zip package under artifacts/packages/**
+#     - Creates a zip package under .ryugi/artifacts/packages/**
 #   Writes:
-#     - artifacts/packages/**
+#     - .ryugi/artifacts/packages/**
 #     - bin/ and obj/ build outputs under published projects
 #     - frontend/**/dist when frontend build is enabled
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Removes only the package directory for the requested version before regenerating it
 #   Requires:
@@ -30,9 +30,9 @@ $root = Resolve-Path (Join-Path $PSScriptRoot "../..")
 Set-Location $root
 . (Join-Path $root "scripts/lib/ScriptAutomation.ps1")
 
-$packageRoot = Join-Path $root "artifacts/packages/nerv-iip-$Version"
+$packageRoot = Join-Path $root ".ryugi/artifacts/packages/nerv-iip-$Version"
 $resolvedRoot = (Resolve-Path $root).Path
-$packageParent = Join-Path $root "artifacts/packages"
+$packageParent = Join-Path $root ".ryugi/artifacts/packages"
 New-Item -ItemType Directory -Force -Path $packageParent | Out-Null
 
 if (Test-Path $packageRoot) {

@@ -3,7 +3,7 @@
 #   SideEffects:
 #     - Writes generated test artifacts
 #   Writes:
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - None
 #   Requires:

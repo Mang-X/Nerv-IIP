@@ -170,6 +170,7 @@ try {
     Write-Fixture $markdown 'docs/status/archive/history.md' '[冻结快照](retired.md)'
     Write-Fixture $markdown 'tests/fixtures/input.md' '[机器夹具](fixture-only.md)'
     Write-Fixture $markdown 'node_modules/dependency/README.md' '[第三方文档](dependency-only.md)'
+    Write-Fixture $markdown '.ryugi/artifacts/diagnostic/README.md' '[本机诊断](local-only.md)'
     Write-Fixture $markdown 'frontend/apps/docs/guide.md' '[站点语义](extensionless-route)'
     Write-Fixture $markdown 'frontend/apps/design-system/docs/component.md' '[站点语义](another-extensionless-route)'
     Write-Fixture $markdown '.claude/README.md' '[当前入口](../docs/README.md)'

@@ -4,7 +4,7 @@
 #     - Drives the PostgreSQL runner with controlled leaf commands, without a database
 #   Writes:
 #     - Owned temporary command, manifest, call and TRX fixtures
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Removes owned temporary fixtures and restores environment in finally
 #   Requires:

@@ -5,7 +5,7 @@
 #     - Validates environment-gated BarcodeLabel printer configuration and its FileStorage endpoint
 #   Writes:
 #     - A uniquely owned temporary directory under the system temporary directory
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Deletes only the temporary directory created by this invocation
 #   Requires:

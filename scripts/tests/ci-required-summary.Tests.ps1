@@ -5,7 +5,7 @@
 #     - Runs the dot-sourced production contract against temporary workflow mutations
 #   Writes:
 #     - Temporary workflow fixtures under the operating-system temp directory
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Removes owned temporary fixtures in finally
 #   Requires:

@@ -17,7 +17,7 @@
 | `install/`、`package/`、`support/` | 随包安装的脚本与配置、打包命令、可复用的验证辅助程序 |
 | `tmp/` | 仅供本机的一次性脚本与草稿；Git 只跟踪该目录的忽略规则 |
 
-命令按 `动词-对象.ps1` 命名，使用小写英文和连字符。JSON 文件使用小写连字符，函数库沿用 `PascalCase.ps1`，契约测试使用小写连字符主题和固定后缀 `.Tests.ps1`。夹具按被测输入格式命名，Git 控制文件和 Agent 指令沿用工具规定的名称。从 `tmp/` 提升为正式脚本时，按用途迁入相应目录并接入实际调用方。可再生成的运行产物写入仓库根的 `artifacts/`。
+命令按 `动词-对象.ps1` 命名，使用小写英文和连字符。JSON 文件使用小写连字符，函数库沿用 `PascalCase.ps1`，契约测试使用小写连字符主题和固定后缀 `.Tests.ps1`。夹具按被测输入格式命名，Git 控制文件和 Agent 指令沿用工具规定的名称。从 `tmp/` 提升为正式脚本时，按用途迁入相应目录并接入实际调用方。可再生成的运行产物写入仓库根的 `.ryugi/artifacts/`。
 
 旧 coordinator 在启动过程中仍会按 `fullstack/fullstack-guardian.ps1` 启动监护进程，旧 guardian 会按 `fullstack/fullstack-session.ps1 stop -SessionId …` 回收会话。这两个旧路径仅承担跨版本转发。当前入口分别是 `watch-fullstack-session.ps1` 和 `manage-fullstack-session.ps1`。
 

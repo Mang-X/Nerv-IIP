@@ -4,8 +4,8 @@
 #     - Reads the CI impact plan, frontend manifests, and frontend unit-test sources
 #     - Writes bounded frontend selection and inventory artifacts plus optional GitHub outputs
 #   Writes:
-#     - artifacts/ci-impact-plan/frontend-workspace-plan.json
-#     - artifacts/ci-impact-plan/frontend-test-inventory.json
+#     - .ryugi/artifacts/ci-impact-plan/frontend-workspace-plan.json
+#     - .ryugi/artifacts/ci-impact-plan/frontend-test-inventory.json
 #     - Caller-provided GitHub output and step-summary files
 #   Cleanup:
 #     - None required; outputs are bounded files owned by the current CI run
@@ -16,8 +16,8 @@
 param(
     [Parameter(Mandatory)] [string] $ImpactPlanPath,
     [Parameter(Mandatory)] [ValidateSet('Affected', 'Full')] [string] $Mode,
-    [string] $PlanOutputPath = 'artifacts/ci-impact-plan/frontend-workspace-plan.json',
-    [string] $InventoryOutputPath = 'artifacts/ci-impact-plan/frontend-test-inventory.json',
+    [string] $PlanOutputPath = '.ryugi/artifacts/ci-impact-plan/frontend-workspace-plan.json',
+    [string] $InventoryOutputPath = '.ryugi/artifacts/ci-impact-plan/frontend-test-inventory.json',
     [string] $SkipAllowlistPath = 'scripts/config/frontend-test-skip-allowlist.json',
     [string] $GitHubOutputPath = $env:GITHUB_OUTPUT,
     [string] $StepSummaryPath = $env:GITHUB_STEP_SUMMARY

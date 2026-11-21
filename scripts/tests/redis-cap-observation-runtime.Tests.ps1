@@ -4,7 +4,7 @@
 #     - Runs a disposable testhost and the dedicated observer on Linux
 #   Writes:
 #     - Owned temporary test project, manifest, TRX and observation files
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Stops owned observer and test processes and removes owned temporary files in finally
 #   Requires:

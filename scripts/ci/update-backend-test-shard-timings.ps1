@@ -3,7 +3,7 @@
 #   SideEffects:
 #     - Reads GitHub Actions run metadata and downloads retained test-evidence artifacts (read-only)
 #   Writes:
-#     - The exact timing cache passed through OutputPath (default artifacts/backend-test-shard-timings.json)
+#     - The exact timing cache passed through OutputPath (default .ryugi/artifacts/backend-test-shard-timings.json)
 #     - A temporary artifact download directory under the OS temp directory, removed on completion
 #   Cleanup:
 #     - Removes its temporary download directory in finally
@@ -14,7 +14,7 @@
 # Refreshes the backend fast-shard timing cache from the most recent successful `main` push CI runs.
 #
 # This is a cache refresher, not a baseline generator. The file it writes lives under the gitignored
-# `artifacts/` tree, is never committed, carries no hash and gates nothing; a stale or missing cache
+# `.ryugi/artifacts/` tree, is never committed, carries no hash and gates nothing; a stale or missing cache
 # only makes the shard-balance report estimate more rows.
 # 当前 timing/policy 边界见 docs/governance/testing/evidence.md；
 # 缓存刷新与降级行为以 scripts/lib/BackendTestShardTimings.ps1 及对应测试为准。
@@ -29,7 +29,7 @@ param(
 
     [ValidateRange(1, 20)] [int] $RunCount = 5,
 
-    [string] $OutputPath = (Join-Path $PSScriptRoot '../../artifacts/backend-test-shard-timings.json')
+    [string] $OutputPath = (Join-Path $PSScriptRoot '../../.ryugi/artifacts/backend-test-shard-timings.json')
 )
 
 $ErrorActionPreference = 'Stop'

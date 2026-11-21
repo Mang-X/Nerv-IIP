@@ -6,7 +6,7 @@
 #     - Re-evaluates the checker in-process against mutated copies of the AppHost source text
 #   Writes:
 #     - OS temporary directory: exemption registry fixtures (temporarily)
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Removes every fixture directory in finally
 #   Requires:

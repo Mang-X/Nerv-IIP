@@ -3,7 +3,7 @@
 #   SideEffects:
 #     - Enumerates PostgreSQL databases and deletes inactive stale nerv UUIDv7 test databases only when -Apply is supplied
 #   Writes:
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Restores all temporary PG* process environment variables
 #     - Leaves PostgreSQL and all non-candidate databases running

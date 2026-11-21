@@ -18,7 +18,7 @@ $testEvidenceLibraryPath = Join-Path $repoRoot 'scripts/lib/TestEvidence.ps1'
 . $testEvidenceLibraryPath
 . $ciWorkflowBudgetsPath
 
-$repoScriptLogRoot = Join-Path $repoRoot 'artifacts/script-logs'
+$repoScriptLogRoot = Join-Path $repoRoot '.ryugi/artifacts/script-logs'
 $initialRepoCommandLogs = @(
     if (Test-Path $repoScriptLogRoot) {
         Get-ChildItem $repoScriptLogRoot -Directory -Filter 'man-661-*' |
@@ -2258,7 +2258,7 @@ Assert-True ($workflow.Contains('test-evidence-postgres-${{ github.run_id }}-${{
 Assert-True ($workflow.Contains('-Lane postgres', [StringComparison]::Ordinal)) 'PostgreSQL hosted lane must collect the stable postgres evidence ID.'
 Assert-True ($workflow.Contains('test-evidence-redis-cap-${{ github.run_id }}-${{ github.run_attempt }}', [StringComparison]::Ordinal)) 'Redis/CAP artifact identity mismatch.'
 Assert-True ($workflow.Contains('-Lane redis-cap', [StringComparison]::Ordinal)) 'Redis/CAP hosted lane must collect the stable redis-cap evidence ID.'
-Assert-True (-not $workflow.Contains('path: artifacts/test-evidence-raw', [StringComparison]::Ordinal)) 'Raw TRX must not be uploaded.'
+Assert-True (-not $workflow.Contains('path: .ryugi/artifacts/test-evidence-raw', [StringComparison]::Ordinal)) 'Raw TRX must not be uploaded.'
 Assert-True (-not $workflow.Contains('path: TestResults', [StringComparison]::Ordinal)) 'Backend shards must not upload unredacted result directories.'
 
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'

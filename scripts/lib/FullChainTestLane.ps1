@@ -404,7 +404,7 @@ function Assert-NervFullChainMemberEvidence {
             throw "FullChain member '$($Member.id)' FullStack cleanup manifest is incomplete."
         }
         $artifactPath = [IO.Path]::GetFullPath([string]$evidence.artifactPath)
-        $artifactRoot = [IO.Path]::GetFullPath((Join-Path $RepositoryRoot 'artifacts/fullstack')) + [IO.Path]::DirectorySeparatorChar
+        $artifactRoot = [IO.Path]::GetFullPath((Join-Path $RepositoryRoot '.ryugi/artifacts/fullstack')) + [IO.Path]::DirectorySeparatorChar
         if (-not $artifactPath.StartsWith($artifactRoot, [StringComparison]::Ordinal) -or -not (Test-Path -LiteralPath $artifactPath -PathType Container)) {
             throw "FullChain member '$($Member.id)' diagnostic artifact directory is missing or outside the governed root."
         }

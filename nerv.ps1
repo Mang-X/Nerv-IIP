@@ -77,7 +77,7 @@ Usage:
   .\nerv.ps1 fullstack run -Scenario smoke -EnableWmsDemoWorker
   .\nerv.ps1 fullstack start -EnableWmsDemoWorker
   .\nerv.ps1 fullstack run -Scenario issue-1912-real-machine-walkthrough
-  .\nerv.ps1 publish-compose [-EnvironmentName Production] [-OutputPath artifacts/aspire-output/compose]
+  .\nerv.ps1 publish-compose [-EnvironmentName Production] [-OutputPath .ryugi/artifacts/aspire-output/compose]
   .\nerv.ps1 prepare-compose [-EnvironmentName Production]
   .\nerv.ps1 deploy-compose [-EnvironmentName Production]
   .\nerv.ps1 ports

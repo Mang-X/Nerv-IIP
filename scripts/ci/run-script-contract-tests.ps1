@@ -3,7 +3,7 @@
 #   SideEffects:
 #     - Runs every discovered scripts/tests contract test as a bounded child PowerShell process
 #   Writes:
-#     - artifacts/script-logs/** through ScriptAutomation
+#     - .ryugi/artifacts/script-logs/** through ScriptAutomation
 #   Cleanup:
 #     - Stops managed child process trees through ScriptAutomation when a test exceeds its budget
 #   Requires:

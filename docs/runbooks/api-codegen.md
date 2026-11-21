@@ -27,7 +27,7 @@ pwsh -NoProfile -File ./scripts/api/export-gateway-openapi.ps1
 - `frontend/packages/api-client/openapi/platform-gateway.v1.json`
 - `frontend/packages/api-client/openapi/business-gateway-console.v1.json`
 
-同时会写入 `artifacts/openapi-export/**` 与脚本日志，并负责停止其管理的 Gateway 进程。snapshot 只能来自此类后端导出流程，不手工编辑。
+同时会写入 `.ryugi/artifacts/openapi-export/**` 与脚本日志，并负责停止其管理的 Gateway 进程。snapshot 只能来自此类后端导出流程，不手工编辑。
 
 ## 仅重新生成前端 API client
 

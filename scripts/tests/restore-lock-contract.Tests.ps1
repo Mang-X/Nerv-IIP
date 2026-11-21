@@ -5,10 +5,10 @@
 #       against the repository's real restore manifest
 #   Writes:
 #     - OS temporary directory: fixture manifests, .csproj and packages.lock.json files (temporarily)
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Removes the fixture directory in finally
-#     - Leaves artifacts/script-logs/** to the repository's existing artifact hygiene
+#     - Leaves .ryugi/artifacts/script-logs/** to the repository's existing artifact hygiene
 #   Requires:
 #     - PowerShell 7
 

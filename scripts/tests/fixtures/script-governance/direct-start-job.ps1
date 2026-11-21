@@ -3,7 +3,7 @@
 #   SideEffects:
 #     - Starts a background job
 #   Writes:
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Stops managed child process trees
 #   Requires:

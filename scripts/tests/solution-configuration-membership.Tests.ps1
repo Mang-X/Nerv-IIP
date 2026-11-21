@@ -5,7 +5,7 @@
 #       throwaway solution fixtures
 #   Writes:
 #     - OS temporary directory: solution and project fixtures (temporarily)
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Removes every fixture directory in finally
 #   Requires:

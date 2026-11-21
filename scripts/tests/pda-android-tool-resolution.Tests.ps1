@@ -4,7 +4,7 @@
 #     - Executes business-pda Android tool discovery against one disposable fake SDK/JDK fixture
 #   Writes:
 #     - Temporary test files outside the repository
-#     - artifacts/script-logs/** through ScriptAutomation
+#     - .ryugi/artifacts/script-logs/** through ScriptAutomation
 #   Cleanup:
 #     - Removes the disposable fixture in finally
 #   Requires:

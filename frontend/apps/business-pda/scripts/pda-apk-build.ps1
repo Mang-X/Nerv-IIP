@@ -20,7 +20,7 @@
 #     - frontend/apps/business-pda/android/** (gitignored regenerable native project,
 #       including android/app/build/outputs/apk/debug/app-debug.apk and a
 #       build-fingerprint.txt next to the APK)
-#     - artifacts/script-logs/** (via ScriptAutomation command logs)
+#     - .ryugi/artifacts/script-logs/** (via ScriptAutomation command logs)
 #     - ~/.gradle/** (user-level Gradle wrapper/dependency cache)
 #   Cleanup:
 #     - None (android/ and dist/ are gitignored build outputs; re-runs are idempotent

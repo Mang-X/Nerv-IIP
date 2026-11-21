@@ -378,7 +378,7 @@ function Start-NervFullStackSession {
             $SessionId
         }
         $appHostProject = Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
-        $artifactPath = Join-Path $repoRoot "artifacts/fullstack/$newSessionId"
+        $artifactPath = Join-Path $repoRoot ".ryugi/artifacts/fullstack/$newSessionId"
         [System.IO.Directory]::CreateDirectory($artifactPath) | Out-Null
         $sessionProfile = Get-NervFullStackEnvironment -SessionId $newSessionId
         $manifest = New-NervFullStackManifest `

@@ -345,7 +345,7 @@ $profileManifest = New-NervFullStackManifest `
     -SessionId $sessionId `
     -WorktreeRoot $repoRoot `
     -AppHostProject (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj') `
-    -ArtifactPath (Join-Path $repoRoot "artifacts/fullstack/$sessionId") `
+    -ArtifactPath (Join-Path $repoRoot ".ryugi/artifacts/fullstack/$sessionId") `
     -MessagingProvider $environment.Messaging__Provider
 Assert-True ([string]::Equals([string]$profileManifest.messagingProvider, 'Redis', [StringComparison]::Ordinal)) 'The non-secret messaging provider must be recorded in the session manifest.'
 
@@ -353,7 +353,7 @@ $statusManifest = New-NervFullStackManifest `
     -SessionId 'nerv-abcd-5a7a50' `
     -WorktreeRoot $repoRoot `
     -AppHostProject (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj') `
-    -ArtifactPath (Join-Path $repoRoot 'artifacts/fullstack/nerv-abcd-5a7a50')
+    -ArtifactPath (Join-Path $repoRoot '.ryugi/artifacts/fullstack/nerv-abcd-5a7a50')
 $statusManifest.runtime.containerIds = @('recorded-container-1', 'recorded-container-2')
 $statusSummary = Get-NervFullStackStatusSummary `
     -Manifest $statusManifest `
@@ -1592,7 +1592,7 @@ try {
         -SessionId $stopSessionId `
         -WorktreeRoot $repoRoot `
         -AppHostProject (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj') `
-        -ArtifactPath (Join-Path $repoRoot "artifacts/fullstack/$stopSessionId") `
+        -ArtifactPath (Join-Path $repoRoot ".ryugi/artifacts/fullstack/$stopSessionId") `
         -StateRoot $stopStateRoot
     $stopManifest = Move-NervFullStackSessionState -Manifest $stopManifest -State Running
     Write-NervFullStackManifest -Manifest $stopManifest -StateRoot $stopStateRoot
@@ -1631,7 +1631,7 @@ try {
         -SessionId $failedStopSessionId `
         -WorktreeRoot $repoRoot `
         -AppHostProject (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj') `
-        -ArtifactPath (Join-Path $repoRoot "artifacts/fullstack/$failedStopSessionId") `
+        -ArtifactPath (Join-Path $repoRoot ".ryugi/artifacts/fullstack/$failedStopSessionId") `
         -StateRoot $stopStateRoot
     $failedStopManifest = Move-NervFullStackSessionState -Manifest $failedStopManifest -State Running
     Write-NervFullStackManifest -Manifest $failedStopManifest -StateRoot $stopStateRoot

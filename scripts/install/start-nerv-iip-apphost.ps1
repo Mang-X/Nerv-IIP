@@ -5,7 +5,7 @@
 #     - Sets scoped process environment variables for the AppHost run
 #   Writes:
 #     - bin/ and obj/ build outputs under projects built by Aspire
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Restores scoped environment variables after AppHost exits
 #   Requires:

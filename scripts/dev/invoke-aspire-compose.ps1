@@ -4,8 +4,8 @@
 #     - Publishes, prepares, or deploys the Aspire Docker Compose deployment target
 #     - Deploy mode can build images and start/update local Docker Compose containers through Aspire CLI
 #   Writes:
-#     - artifacts/aspire-output/compose/** by default
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/aspire-output/compose/** by default
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Does not destroy deployments; use Aspire destroy explicitly after review
 #   Requires:
@@ -20,7 +20,7 @@ param(
 
     [string] $EnvironmentName = 'Production',
 
-    [string] $OutputPath = 'artifacts/aspire-output/compose',
+    [string] $OutputPath = '.ryugi/artifacts/aspire-output/compose',
 
     [switch] $NoBuild
 )

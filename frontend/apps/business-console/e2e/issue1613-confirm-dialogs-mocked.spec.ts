@@ -15,7 +15,7 @@ import path from 'node:path'
  *
  *   NERV_IIP_PLAYWRIGHT_BASE_URL=http://localhost:5125 \
  *   NERV_IIP_FULLSTACK_ADMIN_PASSWORD=<admin 口令> \
- *   NERV_IIP_OUT_DIR=artifacts/issue1613-walkthrough \
+ *   NERV_IIP_OUT_DIR="$(git rev-parse --show-toplevel)/.ryugi/artifacts/issue1613-walkthrough" \
  *   pnpm exec playwright test e2e/issue1613 --project=desktop --workers=1
  */
 const baseURL = process.env.NERV_IIP_PLAYWRIGHT_BASE_URL

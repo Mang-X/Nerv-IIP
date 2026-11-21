@@ -6,7 +6,7 @@
 #   Writes:
 #     - FileStorage migration history and schema objects in the target database
 #     - bin/ and obj/ build outputs for the FileStorage Infrastructure project
-#     - artifacts/script-logs/**
+#     - .ryugi/artifacts/script-logs/**
 #   Cleanup:
 #     - Does not delete, recreate, or roll back the target database
 #     - Leaves the target database and applied migrations intact

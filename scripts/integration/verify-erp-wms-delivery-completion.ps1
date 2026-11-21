@@ -7,9 +7,9 @@
 #     - Deletes an exact diagnostic artifact path when its post-write scan detects retained secret material
 #   Writes:
 #     - bin/ and obj/ outputs for ERP, WMS, Inventory, and the full-chain replay probe
-#     - artifacts/script-logs/**
-#     - artifacts/acceptance/man527/erp-wms-delivery-completion-evidence.json
-#     - artifacts/acceptance/man527/diagnostics/** on failure
+#     - .ryugi/artifacts/script-logs/**
+#     - .ryugi/artifacts/acceptance/man527/erp-wms-delivery-completion-evidence.json
+#     - .ryugi/artifacts/acceptance/man527/diagnostics/** on failure
 #     - A caller-selected canonical acceptance result when requested
 #     - Same-directory .<leaf>.<guid>.tmp files before atomic diagnostic/evidence publication
 #   Cleanup:
@@ -628,7 +628,7 @@ $probeResultsPath = $null
 $fullChainProbeCounters = $null
 $repeatedEventConverged = $false
 $acceptanceStartedAtUtc = [DateTimeOffset]::UtcNow
-$evidenceDirectory = Join-Path $root 'artifacts/acceptance/man527'
+$evidenceDirectory = Join-Path $root '.ryugi/artifacts/acceptance/man527'
 $injectedEvidencePath = [Environment]::GetEnvironmentVariable('NERV_IIP_FULL_CHAIN_ENTRYPOINT_EVIDENCE_PATH')
 $evidencePath = if ([string]::IsNullOrWhiteSpace($injectedEvidencePath)) { Join-Path $evidenceDirectory 'erp-wms-delivery-completion-evidence.json' } else { [IO.Path]::GetFullPath($injectedEvidencePath) }
 $evidenceDirectory = Split-Path -Parent $evidencePath
@@ -933,7 +933,7 @@ try {
         NERV_IIP_TEST_CAP_VERSION = $capVersion
         NERV_IIP_TEST_DELIVERY_ORDER_NO = $deliveryOrderNo
     } -ScriptBlock {
-        $probeResultsDirectory = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY)) { Join-Path $root 'artifacts/acceptance/man527' } else { $env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY }
+        $probeResultsDirectory = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY)) { Join-Path $root '.ryugi/artifacts/acceptance/man527' } else { $env:NERV_IIP_FULL_CHAIN_RESULTS_DIRECTORY }
         [System.IO.Directory]::CreateDirectory($probeResultsDirectory) | Out-Null
         $probeResultsFile = if ([string]::IsNullOrWhiteSpace($env:NERV_IIP_FULL_CHAIN_RESULT_FILE)) { "replay-$([Guid]::NewGuid().ToString('N')).trx" } else { $env:NERV_IIP_FULL_CHAIN_RESULT_FILE }
         $probeResults = Join-Path $probeResultsDirectory $probeResultsFile

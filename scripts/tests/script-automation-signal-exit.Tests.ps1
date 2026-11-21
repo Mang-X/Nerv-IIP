@@ -4,10 +4,10 @@
 #     - Starts short-lived probe processes that terminate themselves with a signal
 #   Writes:
 #     - Temporary probe scripts, mutated library copies and command logs under the operating-system temp directory
-#     - Shared script-automation command logs under artifacts/script-logs/** for probes whose entry point takes no log directory
+#     - Shared script-automation command logs under .ryugi/artifacts/script-logs/** for probes whose entry point takes no log directory
 #   Cleanup:
 #     - Removes the owned temporary root in finally
-#     - Leaves artifacts/script-logs/** to the repository's existing artifact hygiene
+#     - Leaves .ryugi/artifacts/script-logs/** to the repository's existing artifact hygiene
 #   Requires:
 #     - PowerShell 7
 

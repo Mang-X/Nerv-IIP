@@ -61,7 +61,7 @@ dotnet user-secrets set "Parameters:connector-ingestion-token-signing-key" "<loc
 
 每个会话都会获得已校验的 ID、动态分配的公共端口、会话专属的 PostgreSQL/Redis/MinIO/VictoriaLogs 卷、生成的仅 Development 使用的机密，以及容器归属标签。URL 应从会话清单中发现，而非使用规范端口矩阵。Aspire/DCP 提供逐会话代理；不存在需要在工作树之间协调的共享 Nginx 配置。默认准入上限为三个活跃会话，且没有最低可用内存规则。
 
-`fullstack run` 无论成功或失败都会尝试精确清理，同时保留 `artifacts/fullstack/<sessionId>/`。交互式 `fullstack start` 仅可用于诊断，且必须配对执行 `fullstack stop`；`fullstack gc` 会核对并回收遗弃或过期的会话，而不会清理无关的 Docker 或 Aspire 资源。临时 PostgreSQL 为完整平台拓扑使用更高的连接上限，但持久化 `dev` 的镜像标签、卷名称和数据库设置保持不变。
+`fullstack run` 无论成功或失败都会尝试精确清理，同时保留 `.ryugi/artifacts/fullstack/<sessionId>/`。交互式 `fullstack start` 仅可用于诊断，且必须配对执行 `fullstack stop`；`fullstack gc` 会核对并回收遗弃或过期的会话，而不会清理无关的 Docker 或 Aspire 资源。临时 PostgreSQL 为完整平台拓扑使用更高的连接上限，但持久化 `dev` 的镜像标签、卷名称和数据库设置保持不变。
 
 ## 本地可观测性
 
@@ -157,7 +157,7 @@ dotnet user-secrets list --project infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHos
 | Aspire/provider 升级后，`postgres` 立即退出。 | AppHost 拉取的 PostgreSQL 镜像数据目录布局与现有 PostgreSQL 卷不兼容。 | PostgreSQL 18 使用 `nerv-iip-postgres-18`。除非正在执行显式迁移，否则不得将其指回旧 `nerv-iip-postgres` 卷。删除任何数据库卷前请检查 `.\nerv.ps1 logs postgres -Tail 120`。 |
 | `postgres` 为 `Running (Unhealthy)`，依赖服务保持 `Waiting`。 | 持久化 `nerv-iip-postgres-18` Docker 卷使用的 `postgres` 密码不同于当前 Aspire `Parameters:postgres-password`。 | 应优先复用现有用户机密。若机密已改变且必须保留卷，请将容器的 `postgres` 用户密码与当前机密对齐。 |
 | `redis` 因 RDB/AOF 格式错误退出。 | 本地 `nerv-iip-redis` 卷由不兼容的 Redis 主版本写入。 | 若 Redis 仅用于缓存/会话，请停止平台并仅移除 `nerv-iip-redis`，然后重启：`.\nerv.ps1 stop`；`docker volume rm nerv-iip-redis`；`.\nerv.ps1 dev`。若正在使用 `Messaging:Provider=Redis`，必须将该卷视为消息总线持久性状态，予以保留/备份/迁移，而不得随意删除。 |
-| `.\nerv.ps1 dev` 或 `.\nerv.ps1 stop` 看似卡住。 | Aspire CLI 或 DCP 未及时返回。 | 脚本现使用有界命令并输出阶段诊断。检查最新 `artifacts/script-logs/dev-apphost/` 或 `artifacts/script-logs/aspire-stop/` 目录，然后重新执行 `.\nerv.ps1 status`。 |
+| `.\nerv.ps1 dev` 或 `.\nerv.ps1 stop` 看似卡住。 | Aspire CLI 或 DCP 未及时返回。 | 脚本现使用有界命令并输出阶段诊断。检查最新 `.ryugi/artifacts/script-logs/dev-apphost/` 或 `.ryugi/artifacts/script-logs/aspire-stop/` 目录，然后重新执行 `.\nerv.ps1 status`。 |
 | `http://127.0.0.1:5102/api/iam/v1/me` 返回 `401`。 | IAM 正在运行，但请求未认证。 | 登录前这是预期行为。可将其用作快速存活检查。 |
 | `http://127.0.0.1:5119/swagger/v1/swagger.json` 返回 `200`。 | BusinessGateway 已启动。 | 登录后可从 `5125` 测试 Business Console API 代理。 |
 
@@ -176,7 +176,7 @@ AppHost 包含 Aspire Docker Compose 部署目标。必须从 AppHost 生成 Com
 pwsh scripts/checks/verify-aspire-apphost-environment-artifacts.ps1
 ```
 
-默认输出路径为 `artifacts/aspire-output/compose`。要准备环境特定的值并构建镜像，请使用：
+默认输出路径为 `.ryugi/artifacts/aspire-output/compose`。要准备环境特定的值并构建镜像，请使用：
 
 ```powershell
 .\nerv.ps1 prepare-compose -EnvironmentName Production

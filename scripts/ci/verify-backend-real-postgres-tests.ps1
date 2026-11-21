@@ -4,8 +4,8 @@
 #     - Restores and runs the real PostgreSQL test classes excluded from fast backend shards
 #   Writes:
 #     - bin/ and obj/ build outputs under the classified test projects
-#     - artifacts/script-logs/**
-#     - artifacts/real-postgres-tests/** TRX evidence
+#     - .ryugi/artifacts/script-logs/**
+#     - .ryugi/artifacts/real-postgres-tests/** TRX evidence
 #   Cleanup:
 #     - None
 #   Requires:
@@ -31,7 +31,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '../lib/BackendTestShardSelectors.ps1')
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
-$resultsRoot = Join-Path $repositoryRoot 'artifacts/real-postgres-tests'
+$resultsRoot = Join-Path $repositoryRoot '.ryugi/artifacts/real-postgres-tests'
 $manifest = Get-Content -LiteralPath (Resolve-Path $ManifestPath) -Raw | ConvertFrom-Json
 $evidencePolicy = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../config/test-evidence-policy.json') -Raw | ConvertFrom-Json
 $lane = @($manifest.heavyLanes | Where-Object { [string]::Equals([string]($_.id), [string]('real-postgres'), [StringComparison]::OrdinalIgnoreCase) })
@@ -81,7 +81,7 @@ foreach ($shard in $ownedShards) {
 
         $selectorSlug = ($selector -replace '[^A-Za-z0-9._-]', '_')
         $selectorDirectory = Join-Path $resultsRoot $selectorSlug
-        # #3283：结果目录必须是 **run-scoped** 的。`artifacts/real-postgres-tests/**` 没有任何一处会清理
+        # #3283：结果目录必须是 **run-scoped** 的。`.ryugi/artifacts/real-postgres-tests/**` 没有任何一处会清理
         # （全仓只有 .gitignore 忽略它），而下面读证据的口径是「目录下全部 TRX 的合并」——两件事撞在一起，
         # 上一轮留下的 Passed TRX 就会被这一轮当成自己的执行证据，于是「本轮一个用例都没跑」也能放行。
         #
@@ -92,7 +92,7 @@ foreach ($shard in $ownedShards) {
         #
         # ⚠️ 这条删除动作是本次新增的 blast radius，所以先把它钉在 $resultsRoot 之内再删。
         # $selectorSlug 的字符类 `[^A-Za-z0-9._-]` **保留 `.`**，于是 `.` 与 `..` 会原样通过，
-        # `Join-Path $resultsRoot '..'` 解析出来就是 artifacts/ 本身。今天不可达——这样的 selector
+        # `Join-Path $resultsRoot '..'` 解析出来就是 .ryugi/artifacts/ 本身。今天不可达——这样的 selector
         # 还得匹配上 test-evidence-policy.json 某条 rule 的 identity，没有真实 FQN 长那样——
         # 所以这条守卫**没有配套用例**（不可达的分支喂不进去），它声明的只是「删除范围有上界」，
         # 不声明「有人会那么写」。改之前这里没有删除动作、blast radius 为零，这是补回那个零。
