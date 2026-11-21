@@ -10,7 +10,7 @@ provider 搬迁只保持已经 canonical 的 v1 `ObjectKey`；legacy/non-canonic
 
 ## 执行资格与状态权威
 
-本手册不承载项目状态或 readiness 同步记录。当前实现与执行资格以代码、公开契约、测试、[Issue #1644](https://github.com/Mang-X/Nerv-IIP/issues/1644)、[Issue #1013](https://github.com/Mang-X/Nerv-IIP/issues/1013) 以及具体变更授权为准；动态进度、负责人和验收证据留在 GitHub/Linear。旧 `implementation-readiness.md` 仅是迁移兼容入口，不再构成状态权威。
+本手册不承载项目状态或 readiness 同步记录。当前实现与执行资格以代码、公开契约、测试、[Issue #1644](https://github.com/Mang-X/Nerv-IIP/issues/1644)、[Issue #1013](https://github.com/Mang-X/Nerv-IIP/issues/1013) 以及具体变更授权为准；动态进度、负责人和验收证据留在 GitHub/Linear。
 
 ## 角色与决策分离
 

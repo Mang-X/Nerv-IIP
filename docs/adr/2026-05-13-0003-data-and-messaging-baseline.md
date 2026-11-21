@@ -89,6 +89,8 @@ Nerv-IIP 需要同时支撑事务数据、缓存、异步消息、对象文件�
 
 ## 实施说明
 
+决策 5 记录当时的消息 profile。当前 [CAP 配置](../../backend/common/Messaging/Nerv.IIP.Messaging.CAP/CapMessagingConfiguration.cs) 还支持 Redis Streams，并限制 InMemory 的适用环境。中央可检索日志的后端由 [ADR 0016](2026-06-10-0016-victorialogs-central-log-backend.md) 决定。
+
 1. infra 层需要提供 PostgreSQL、Redis、MinIO、Qdrant、OpenTelemetry 的本地开发编排；RabbitMQ 保留为 `Messaging:Provider=RabbitMQ` 时启用的可选资源。完整平台拓扑后续通过平台级 Aspire AppHost 承接，Docker Compose 作为生成或兜底目标。
 2. backend/services/FileStorage 需要封装文件元数据、上传下载授权、Upload Provider 抽象和 MinIO/object storage（对象存储）适配；业务服务不直接把对象存储 key、tus endpoint 或 S3 multipart 细节当成长期公开契约。
 3. backend/common/Caching 需要封装 FusionCache 的服务注册、Redis L2、Redis backplane、序列化、OpenTelemetry、缓存键命名和默认策略。

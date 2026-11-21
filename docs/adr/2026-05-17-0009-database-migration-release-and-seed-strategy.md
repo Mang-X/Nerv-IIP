@@ -22,8 +22,8 @@
 8. 每个 release 在执行迁移前必须有备份或快照策略；安装脚本必须输出迁移版本、目标数据库、执行结果和诊断位置。
 9. AppHub、Ops、Iam、FileStorage、Notification、Knowledge、AI Integration 和 Observability 索引各自维护数据边界；迁移不得跨服务写表或假设共享 DbContext。
 10. database profile 替换必须覆盖迁移验证。PostgreSQL 是默认 profile；GaussDB、DMDB 等候选 profile 只有在 provider、迁移、CAP storage/outbox 和集成测试通过后才能进入支持矩阵。
-11. 新增或变更业务表时必须同步维护建表注释和 schema catalog。具体规则见 `docs/architecture/database-schema-conventions.md` 与 `docs/architecture/database-schema-catalog.md`。
-12. PoC、私有化和生产发布的数据库执行口径必须满足 `docs/architecture/database-release-runbook.md`；当前第五阶段迁移验证通过不等于完整客户发布 runbook 已完成。
+11. 新增或变更业务表时必须同步维护建表注释和 schema catalog。具体规则见 `docs/governance/data/database-schema.md` 与 `docs/reference/data/database-schema-catalog.md`。
+12. PoC、私有化和生产发布的数据库执行口径必须满足 `docs/runbooks/database-release.md`；当前第五阶段迁移验证通过不等于完整客户发布 runbook 已完成。
 13. 承载数据库迁移、seed、备份、验证或安装的脚本必须同时满足 ADR 0010 的脚本可信执行治理；本 ADR 只定义数据库发布边界。
 
 ## 理由
@@ -46,7 +46,7 @@
 
 ## 实施说明
 
-1. 2026-08-25 起，后果第 2 条关于 `scripts/verify-fourth-slice-real-infra.ps1` 可作为本地门禁的表述不再代表当前入口；ADR 0028 记录该历史入口的退役裁决，本次 #2176 已删除第四阶段路径及第五阶段历史验证脚本，当前真实 PostgreSQL/Redis 证明由专用 provider lane 承担，发布迁移由受控 migrator/release step 承担，全栈验证使用 `nerv.ps1 fullstack run`。后果第 2 条原文保留为本 ADR 作出时的历史事实。
+1. 2026-08-25 起，后果第 2 条关于 `scripts/verify-fourth-slice-real-infra.ps1` 可作为本地门禁的表述不再代表当前入口；ADR 0028 记录该历史入口的退役裁决，第四阶段路径已在提交 `0f85135e0` 删除，当前真实 PostgreSQL/Redis 证明由专用 provider lane 承担，发布迁移由受控 migrator/release step 承担，全栈验证使用 `nerv.ps1 fullstack run`。后果第 2 条原文保留为本 ADR 作出时的历史事实。
 
 ## 已考虑的替代方案
 

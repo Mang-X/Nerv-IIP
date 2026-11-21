@@ -18,8 +18,7 @@
 本 ADR 只决定三件事：通用文件上传的协议与入口拓扑；staging/final 生命周期和 `ObjectKey` 的目标语义；所有 storage provider 共同遵守的 complete 提交不变量。
 
 **本 ADR 接受的是目标架构约束，不是交付证明。** 它只完成 #992 四层拆分中的第 1 层文档裁决，
-不证明代码测试、真实运行、CI、PR 合并或 tracker 完成；实现进度与逐层交付状态以票面和
-`docs/architecture/implementation-readiness.md` 为准。
+不证明代码测试、真实运行、CI、PR 合并或 tracker 完成；实现进度与逐层交付状态以关联 Issue 和 PR 为准。
 
 以下内容不在本 ADR 范围内：
 
@@ -176,6 +175,8 @@ sequenceDiagram
 6. 本 ADR 与现有基线和公开契约会暂时并存冲突；权威文档和生成链的机械同步、兼容裁决及运行时代码由 #992 的独立后续层交付，不能从 ADR 已接受推导为实现完成。
 
 ## 实施说明
+
+[FileStorage 宿主](../../backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Program.cs)通过 tusdotnet 的 `MapTus` 注册传输入口；[上传提交实现](../../backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/Tus/LocalTusUploadCommitStorage.cs)说明当前 Local 字节布局与决策中的目标 provider 之间的差距。
 
 1. 决策 1.3 的「Console/浏览器只访问 **PlatformGateway** 暴露的受控 tus URL」，以及决策 1.1 中「自研 tus endpoint 不得新增消费方」这一面，自 [ADR 0030](2026-09-03-0030-business-gateway-purpose-scoped-file-transfer.md) 起不再成立：BusinessGateway 可以并列暴露受控 tus 代理入口，业务面因此新增一个自研 tus endpoint 的消费方。决策 1.3 的其余部分——客户端不得取得内部 FileStorage URL、存储地址、`ObjectKey` 或长期存储凭据，网关只做鉴权与代理，FileStorage 拥有会话、权限、过期、complete 与文件事实——继续完全有效，并由 ADR 0030 决策 1 逐条继承。决策 1.1 的「自研 tus endpoint 与 `ServerProxyUploadProvider` 属待退役范围、目标实现是 `tusdotnet`」也继续有效，退役范围随消费方增加而扩大。
 2. 本 ADR 的第 2 节（staging、final 与 `ObjectKey`）、第 3 节（complete 通用不变量）、状态机、提交时序与失败矩阵不受 ADR 0030 影响，全部继续有效。

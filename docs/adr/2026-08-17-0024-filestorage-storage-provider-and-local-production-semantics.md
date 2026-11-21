@@ -225,7 +225,7 @@ runtime critical/unready 的优先级高于该表。mount 丢失/替换、root �
 
 本 ADR 不定义停服、manifest、copy、逐对象 checksum、断点/失败清单、配置切换、起服抽样、回退或 source 清理步骤，也不证明这些操作已经可运行。
 
-迁移涉及的 version id/evidence remap 仍属于第 3 层；本 ADR 不决定或展开其映射机制。
+迁移涉及的 version id/evidence remap 由 [ADR 0027](2026-08-18-0027-filestorage-offline-migration-cutover-and-rollback.md) 定义。
 
 ### 第 4 层：周边文档同步
 
@@ -250,3 +250,7 @@ runtime critical/unready 的优先级高于该表。mount 丢失/替换、root �
 5. capacity restricted 保留读与自救操作，运维状态不再等同于简单 healthy/unhealthy 布尔值。
 6. `VersionedArchive` 与通用文件只共享最底层 MinIO 接线，防止合规语义泄漏；选择 Local 仍可能需要为归档子系统单独运行 MinIO。
 7. 本 ADR 与当前 FileStorage baseline、schema catalog、deployment baseline、implementation readiness 及运行时代码暂时并存冲突；机械同步与实现证明必须由后续独立层完成。
+
+## 实施说明
+
+现有 [LocalTusUploadCommitStorage](../../backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/Tus/LocalTusUploadCommitStorage.cs) 仍按上传会话定位字节。决策 1、5–7 的通用 final provider、按 ObjectKey 定位与跨分区提升是目标约束。

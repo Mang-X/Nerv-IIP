@@ -5,10 +5,10 @@
 
 ## 背景
 
-产品文档站是 `frontend/apps/docs` 下的独立 VitePress 应用（#621 落地），当前承载三类内容：
+作出本决策时，产品文档站是 `frontend/apps/docs` 下的独立 VitePress 应用（#621 落地），当时承载三类内容：
 三条端到端上手指南（#621）、六张核心业务流程图（#633）和 internal/gaps 内部缺口记录
 （#634，即 MAN-333 建立的"文档走查 → 缺口证据 → 建议 issue"反查模式）。
-`docs/architecture/implementation-readiness.md` 已冻结其定位：承载上手指南、核心业务流程
+当时的就绪性记录（Git `70558415c^:docs/architecture/implementation-readiness.md`）将其定位为产品文档站：承载上手指南、核心业务流程
 图和内部缺口记录，不把正文放入 Business Console。
 
 产品页面尚未齐全，无法一次写完全流程文档；但文档设计方法论可以先行冻结，让后续内容与功能
@@ -41,7 +41,7 @@
 状态机说明属于概念解释。已发布页面 URL 不迁移（`processes/` 留在原地），新内容一律按象限
 目录落位，不允许在目录外新建散页。
 
-现有文档逐篇归位映射表：
+决策时的归位映射（以下路径相对 `frontend/apps/docs/`）：
 
 | 现有页面 | 归位象限 | 说明 |
 | --- | --- | --- |
@@ -123,12 +123,9 @@
 
 - `frontend/apps/docs` 导航与侧栏按"角色入口 + 四象限"重组；`getting-started/` 与
   `processes/` 的 URL 保持不变，外部链接不断。
-- 新增 `roles/`（角色索引 + 六个角色页）、`how-to/`、`explanation/`、`reference/` 目录；
-  操作指南与参考当前为诚实的占位索引，明确"正文随功能批次补"。
+- 文档站为角色入口、操作指南、解释与参考分别设置目录；已交付的操作指南见[站点索引](../../frontend/apps/docs/docs/how-to/index.md)。
 - `product-docs.contract.test.ts` 扩展角色地图与象限结构守护；后续文档 PR 触碰结构时
   必须让契约测试与本 ADR 保持一致。
 - 本 ADR 规定 PR 文档影响检查清单约定；执行力度依赖评审习惯，
   季度回收作为兜底。
-- 角色路径表成为"产品当前能力"的用户可见口径之一，与 implementation-readiness 的工程
-  口径并存：readiness 面向开发者记录服务事实，角色路径表面向用户回答"这条路今天能不能走通"，
-  两者不一致时以代码事实为准并回改文档。
+- 角色路径表说明用户可以走通哪些路径。工程交付证据由对应 Issue 和 PR 保存，文档与实现有出入时核对代码并修订文档。

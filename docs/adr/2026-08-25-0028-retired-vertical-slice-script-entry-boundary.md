@@ -25,10 +25,7 @@
 
 ## 实施说明
 
-1. 墓碑路径的当前分类、静态约束和允许行为以 [`../governance/script-automation.md`](../governance/script-automation.md)、脚本源码及治理测试为准。
-2. 当前操作入口与排障流程以 [`../runbooks/script-automation.md`](../runbooks/script-automation.md) 和脚本帮助为准。
-3. 当前项目重点、阻塞和全仓级入口见 [`../status/current.md`](../status/current.md)；墓碑是否仍存在、何时删除以及 exact-head CI 证据以关联 Issue、PR 和代码为准。
-4. ADR 0009 通过头部修订依据和实施说明链接本记录；其原后果第 2 条文本不原地改写。
+四个旧入口已全部删除。第四阶段路径的删除见提交 `0f85135e0`，其余三个见 `b27f3917f`。物理删除前的兼容许可至此结束。原路径仅用于追溯；现行操作与门禁入口见[脚本运行手册](../runbooks/script-automation.md)。[ADR 0009](2026-05-17-0009-database-migration-release-and-seed-strategy.md) 后果第 2 条仍按本记录修订。
 
 ## 已考虑的替代方案
 

@@ -49,6 +49,8 @@ Nerv-IIP 面向私有化、混合部署和工程联调场景。目标环境可�
 
 ## 实施说明
 
+[部署手册](../runbooks/deployment.md)点名当前 bootstrap、Compose 和数据库发布入口。Windows Service 与 systemd 注册属于部署目标；本机 bootstrap 只准备开发环境。
+
 1. 平台级 AppHost 建议落点为 `infra/aspire/Nerv.IIP.AppHost`，并显式纳管 Gateway、Iam、FileStorage、AppHub、Ops、Connector Host 和基础设施资源。
 2. Aspire AppHost 首批至少覆盖 PostgreSQL、Redis、MinIO、Qdrant、OpenTelemetry Collector 和平台服务之间的引用关系；RabbitMQ 作为 `Messaging:Provider=RabbitMQ` 时启用的可选资源。
 3. Compose 发布产物应作为构建或发布结果输出，不应手写覆盖生成产物；确需人工补充的生产配置应以 overlay、模板或发布脚本方式表达。
@@ -56,7 +58,7 @@ Nerv-IIP 面向私有化、混合部署和工程联调场景。目标环境可�
 5. Windows 整合安装脚本建议负责 .NET 运行时/SDK 检查、配置目录创建、服务注册、端口检查、连接串写入和健康检查。
 6. Linux 整合安装脚本建议负责运行时检查、目录创建、systemd 单元写入、权限设置、环境文件生成、服务启动和健康检查。
 7. 后续如引入 Kubernetes，应作为新的部署目标接入同一部署模型，不替代当前 Aspire、Compose、安装包和整合脚本策略。
-8. 脚本实现细则、辅助函数契约和迁移清单见 `docs/architecture/script-automation-governance.md`。
+8. 脚本实现细则、辅助函数契约和迁移清单见 `docs/governance/script-automation.md`。
 
 ## 范围之外
 

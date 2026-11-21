@@ -65,7 +65,7 @@ ADR 0012 将 APS 作为后置能力处理，首批 MES 只保留规则排产。�
 
 ## 后果
 
-1. `docs/architecture/business-platform-domain-architecture.md` 中 “APS 后置” 的旧判断必须改为 “APS lite 进入 P0，高级优化后置”。
+1. `docs/architecture/business/domain-architecture.md` 中 “APS 后置” 的旧判断必须改为 “APS lite 进入 P0，高级优化后置”。
 2. P0 issue roadmap 增加 #206 APS 调度内核与排程数据契约，以及 #207 设备 IIoT/IndustrialTelemetry 运行事实与 APS/MES 联动基线。
 3. 后续实现若新增 `BusinessScheduling` 服务或 schema，必须补 schema catalog、authorization matrix、OpenAPI contract tests、IAM seed、BusinessGateway facade、api-client 生成和验证脚本。
 4. #78 甘特图/RFC 仍是前端展示与交互路线，不承担 APS 算法。甘特图完成不代表 APS 完成。

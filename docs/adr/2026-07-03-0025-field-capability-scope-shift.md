@@ -52,7 +52,7 @@ ADR 0014 的原表述是按 P0 交付顺序写的边界，读者容易将其读�
    规划中」标注现场能力，避免把未完成的 Issue、设计方向或路线图写成当前代码事实。
 2. 截至本 ADR 记录时，已交付代码仍只证明 tag mapping、bucket summary、device state snapshot、
    alarm raise/clear、runtime availability 以及 Maintenance/MES/Scheduling 的现有消费者。
-   其余能力由上述票承接，交付状态以 `docs/architecture/implementation-readiness.md` 与票面为准。
+   上述能力的后续交付证据由关联 Issue 和 PR 保存。
 3. 主平台不因本转向获得控制语义：通用任务/审批/审计骨架与业务控制语义的边界维持不变。
 
 ## 范围之外

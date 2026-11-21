@@ -54,7 +54,7 @@ GitHub Issue #72 到 #77 给出了第一版业务域输入，覆盖共享基础�
 15. Maintenance 是维修、保养、点检和停机原因事实源。MES 可以消费停机和可用性结果，DemandPlanning 可以消费产能影响，但不直接改维修事实。
 16. 跨业务服务状态传播默认使用 ADR 0011 定义的 IntegrationEvent envelope、版本策略、幂等、DLQ 和 replay 规则。强一致入口可以使用同步 API，但不得通过共享数据库表或跨 schema 外键协作。
 17. 首批实施顺序固定为：MasterData → ProductEngineering → Inventory/Quality/Approval/Barcode 基础能力 → DemandPlanning → ERP Procurement/Sales/Finance MVP → WMS → MES → IndustrialTelemetry → Maintenance → 全链路验收。
-18. 每个业务服务沿用 `docs/architecture/backend-cleanddd-netcorepal-guidelines.md`、数据库 schema 规范、OpenAPI 规范和权限矩阵。新增权限码先登记到授权矩阵，再进入 IAM seed、端点鉴权和测试。
+18. 每个业务服务沿用 `docs/governance/backend/clean-ddd-netcorepal.md`、数据库 schema 规范、OpenAPI 规范和权限矩阵。新增权限码先登记到授权矩阵，再进入 IAM seed、端点鉴权和测试。
 
 ## 理由
 
@@ -83,7 +83,7 @@ GitHub Issue #72 到 #77 给出了第一版业务域输入，覆盖共享基础�
 
 ## 实施说明
 
-1. 首批业务架构说明见 `docs/architecture/business-platform-domain-architecture.md`。
+1. 首批业务架构说明见 `docs/architecture/business/domain-architecture.md`。
 2. 当时的设计见提交 `d65779529`。
 3. 业务服务首次建表前必须补充 schema catalog 条目、实体配置注释、migration 和 schema convention tests。
 4. 业务服务首次暴露 Gateway 或服务 API 前必须补 OpenAPI 测试，并生成或更新业务前端 api-client。

@@ -69,6 +69,8 @@ Nerv-IIP 已经在 ADR 0001 中冻结服务边界，在 ADR 0003 中选择 CAP o
 
 ## 实施说明
 
+决策 14、16 规定的点分 topic 与部分在用订阅存在差异，例如 ERP 以 `PlanningSuggestionAcceptedIntegrationEvent` 和 `WmsIntegrationEvent` 订阅。契约和消费者可在 [DemandPlanning Contracts](../../backend/common/Contracts/Nerv.IIP.Contracts.DemandPlanning/) 与 [ERP 服务](../../backend/services/Business/Erp/) 核对。尚无确认取代这两条的 ADR；决策 18 的传输 profile 现状见 [CAP 配置](../../backend/common/Messaging/Nerv.IIP.Messaging.CAP/CapMessagingConfiguration.cs)。
+
 1. `backend/common/Contracts/` 下应补充共享 envelope 类型或基础接口；若多个 Contracts 项目重复 envelope，应提升到窄共享 Contracts 包，而不是放入无边界的 Utils。
 2. 每个服务发布集成事件时，应在 Web/Application 层把领域事实转换为公开 IntegrationEvent payload，再交给 CAP outbox 或等价 publisher。
 3. 每个消费者应记录 `consumerName`、`eventId`、`eventType`、`eventVersion`、`idempotencyKey`、处理状态、首次处理时间、最后处理时间和失败原因；记录位置归消费者服务所有，不写入发布方 schema。

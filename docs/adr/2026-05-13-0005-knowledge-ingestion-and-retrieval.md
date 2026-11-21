@@ -50,6 +50,8 @@ Nerv-IIP 的 AI 价值不仅来自工具调用，还来自对业务文档、运�
 
 ## 实施说明
 
+本记录描述规划边界。仓库的[当前架构](../architecture/platform/knowledge-source-lifecycle.md)区分目标能力与已落地模块；独立服务项目以 [backend/services](../../backend/services/) 为准。
+
 1. 首批实现建议先支持文档来源注册、基础分块与嵌入、索引写入、查询检索与引用回显。
 2. 知识源生命周期说明见 docs/architecture/knowledge-source-lifecycle.md，明确首次导入、增量更新、重建索引与删除失效文档的行为。
 3. Knowledge 对外接口需要区分面向 UI 的检索响应与面向 AI/RAG 的检索响应，但底层权限与引用规则保持一致。

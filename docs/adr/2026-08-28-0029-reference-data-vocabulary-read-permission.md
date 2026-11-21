@@ -5,7 +5,7 @@
 
 ## 背景
 
-统一可搜索目录 facade（`listBusinessConsoleSearchableDirectory`，MAN-632）为每种目录类型映射恰好一个权威 owner 和 permission（`docs/architecture/facade-coverage-matrix.md`、`docs/architecture/api-contract-and-codegen.md` §31）。参考数据词表沿用一条未成文惯例：借用 owner 域的业务读权限——`defect-code`/`scrap-reason` 借 `business.quality.inspection-records.read`，`location`/`batch`/`serial` 借 `business.inventory.ledger.read`，`downtime-reason` 及其权威别名 `maintenance-reason` 借 `business.maintenance.work-orders.read`。在本决策之前，`business.*` 中没有任何参考数据专用的**读**权限码；写面已存在同型专用码——`business.inventory.locations.manage` 管理的正是上述词表之一 `location` 的权威数据。
+统一可搜索目录 facade（`listBusinessConsoleSearchableDirectory`，MAN-632）为每种目录类型映射恰好一个权威 owner 和 permission（见 [BusinessConsoleSearchableDirectoryPolicy](../../backend/gateway/BusinessGateway/src/Nerv.IIP.BusinessGateway.Web/Application/BusinessServices/BusinessConsoleSearchableDirectoryPolicy.cs)）。参考数据词表沿用一条未成文惯例：借用 owner 域的业务读权限——`defect-code`/`scrap-reason` 借 `business.quality.inspection-records.read`，`location`/`batch`/`serial` 借 `business.inventory.ledger.read`，`downtime-reason` 及其权威别名 `maintenance-reason` 借 `business.maintenance.work-orders.read`。在本决策之前，`business.*` 中没有任何参考数据专用的**读**权限码；写面已存在同型专用码——`business.inventory.locations.manage` 管理的正是上述词表之一 `location` 的权威数据。
 
 这条惯例在 #2696 首次显形为缺陷：MES 停机读面（原因筛选、原因列显示）与写面（登记停机时选择原因）把停机原因词表作为必需依赖，但只持 `business.mes.downtime.read` 的主体读不到词表——词表钉在维修工单的读权限上，而维修工单是另一域的事务事实。此前的一次实现（PR #2787）尝试用内部令牌把整份词表随 MES 读面响应带出，被判违反 `docs/governance/security/authorization.md` 的两条规则：内部 token 不提升最终主体权限；某个 facade 是否还需邻接域权限，应由当前公开契约与目标服务所有权决定，不从历史矩阵或旧 Issue 推断。
 
@@ -61,7 +61,7 @@ owner 已裁定修复方向：走正门，新增 Maintenance 的参考数据读�
 
 1. **维持现状，词表继续借用 `business.maintenance.work-orders.read`**：否决。消费域要么给角色过度授权（为选原因授予另一域事务事实的读取权），要么绕权限交付词表——后者已被实证走不通（PR #2787 被判违反内部令牌与 facade 权限两条治理规则）。
 2. **内部令牌把词表随消费域读面响应带出（PR #2787 路线）**：否决。内部 token 不提升最终主体权限；该路线把「服务身份可达」偷换成「最终主体有权」，技术可行性不等于治理许可性。
-3. **目录 Definition 的 permission 改为集合（任一满足即放行）**：否决。要同时推翻三处已成文的单一权限规范（`api-contract-and-codegen.md` §31、facade 覆盖矩阵「恰好一个」、钉映射的测试）；且 permission 不只用于放行，还参与 scope grant 的单值解析，集合化必须回答「用哪个码解析 scope」，否则 scope 失配直接 403。爆炸半径覆盖全部四个 owner 域的所有目录类型。
+3. **目录 Definition 的 permission 改为集合（任一满足即放行）**：否决。要同时推翻三处已成文的单一权限规范（当时的 API 契约 §31、facade 覆盖矩阵「恰好一个」、钉映射的测试）；且 permission 不只用于放行，还参与 scope grant 的单值解析，集合化必须回答「用哪个码解析 scope」，否则 scope 失配直接 403。爆炸半径覆盖全部四个 owner 域的所有目录类型。
 4. **由 MES 拥有停机原因词表副本**：否决。制造第二权威，与业务平台域架构的单一所有权原则正面冲突，全仓无「词表复制到消费方」先例。
 5. **消费域读面只返回结果集中已出现过的原因（无需新权限）**：否决。它服务不了写面——登记停机必须能选从未用过的原因；读面干净、写面仍卡旧权限，分期成本高于一次做对。
 6. **窄裁：只裁 `downtime-reason`，不立通则判据**：否决。理由与裁决面不匹配（见理由小节），每个同型场景都要重开 ADR，且窄表述会在第一个跟进场景变成过期描述。

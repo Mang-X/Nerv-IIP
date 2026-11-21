@@ -36,12 +36,6 @@ TimescaleDB 仍是可选的未来优化，而不是本次范围的基线依赖�
 
 保留期任务必须在受影响窗口完成降采样后运行。运维人员应设置足够长的原始数据保留窗口，以覆盖 Connector 延迟投递。PostgreSQL 保留期清理针对已建索引的 Unix 时间列执行集合式删除；非关系型测试提供方保留实体删除回退路径。
 
-## 性能说明
+## 容量复评
 
-本次范围可复现的本地检查如下：
-
-```powershell
-dotnet test backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests.csproj --filter IndustrialTelemetryHistorianTests -v:minimal
-```
-
-该测试覆盖原始数据写入、策略强制执行、选择性启用的调度器执行、小时/日加权汇总和保留期清理。每次调度器运行时，降采样读取数量有界的待处理小时/日窗口；`IndustrialTelemetry:Historian` 限制的是窗口数量（`MaxPendingHourlyWindows`、`MaxPendingDailyWindows`），而不是原始数据行数。对于数据量更大的客户容量评估，在启用更短的原始数据保留期之前，应设置 `NERV_IIP_TEST_POSTGRES` 并对以 PostgreSQL 为后端的测试夹具运行同一命令；首个生产 schema 已包含该基准测试应覆盖的幂等索引和范围/窗口索引。
+历史窗口按批降采样，窗口数上限与每窗口行数分别影响容量。评估目标客户配置时应使用 PostgreSQL 与实际采样量。运行方式见[真实依赖测试手册](../runbooks/testing/real-dependencies.md)，执行范围见 [Historian 测试](../../backend/services/Business/IndustrialTelemetry/tests/Nerv.IIP.Business.IndustrialTelemetry.Web.Tests/IndustrialTelemetryHistorianTests.cs)。

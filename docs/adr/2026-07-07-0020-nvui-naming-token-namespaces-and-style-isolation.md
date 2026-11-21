@@ -6,59 +6,11 @@
 - 上游已定决策（本 ADR 只细化落地，不重议）：品牌前缀 `Nv`、组件库品牌名 **NvUI**、
   组件迁移在业务批之前完成、token 允许跨场景取值相同但名称必须按场景命名空间隔离、
   组件样式全部进入 CSS 层叠层。
-- 执行批次：本 ADR **不改任何代码**。库侧改名与层落地 = MAN-433；分应用代码转换 =
-  MAN-435；守护与收口 = MAN-436。这些批次的执行输入是逐件映射表（原附录 A/B/C），
-  已移出本 ADR，住在 [`nvui-naming-map.md`](../../frontend/DESIGN/nvui-naming-map.md)。
+- 历史迁移映射见 [NvUI 命名映射](../../frontend/DESIGN/nvui-naming-map.md)。
 
 ## 背景
 
-以下现状为 2026-07-07 对仓库的实地清点结果（非估算）。
-
-**命名三风格并存。** `@nerv-iip/ui` 内定制组件同时存在三种命名法：
-
-1. Pro 后缀：`pro/` 35 个目录、116 个组件导出（`ButtonPro`、`DataTablePro`、
-   `AlertDialogProAction`…），其中还混有无后缀件（`Loader`、`StatusDot`、`NotifierHost`）；
-2. 场景前缀/后缀：`screen/` 34 件中 16 件带 `Screen` 前缀、`touch/` 5 件中 2 件带
-   `Touch` 前缀、`@nerv-iip/ui-mobile` 47 个导出中 17 件带 `Mobile` 词根（含
-   `AppShellMobile` 后缀式）；
-3. 裸名：`blocks/`（`PageHeader`、`Toolbar`、`DataTable`…）、screen 18 件
-   （`OeeHero`、`StatusCard`…）、mobile 30 件（`Badge`、`Cell`、`Picker`…）。
-
-**真实撞名已经发生。** `@nerv-iip/ui`（shadcn 原版）与 `@nerv-iip/ui-mobile` 同时导出
-`Badge`、`Empty`、`DropdownMenu`/`DropdownMenuItem`；`blocks/DataTable`（旧代）与
-`pro/DataTablePro`（新代）两代并存；`blocks/StatusBadge` 与 `pro/StatusBadgePro` 并存。
-codex/协作代理反复把 shadcn 原版误当作品牌组件库直接使用——原版与定制层在名字上无法
-区分是直接诱因。
-
-**token 场景间靠自觉隔离。** 大屏 `--sb-*` 表（30 个，`screen/tokens.css`）独立于共享
-`theme.css`，但 PC/mobile/touch 共用一套裸名 token；动效值跨场景复制字面量而非引用
-（`--sb-ease` 与 `--ease-out-quart` 同值 `cubic-bezier(0.25,1,0.5,1)`，两处硬编码）；
-`.sb-scroll` 在 `screen/tokens.css` 与 `apps/screen/src/assets/main.css` 有两份视觉参数
-不一致的定义（悬停时显隐与常显两种方式）。类名前缀同样混乱：PC/touch 用 `.ds-*`
-（`.ds-overlay-content`、`.ds-tbtn`），screen 用 `.sb-*`（`.sb-scroll`、`.sb-tbl`）。
-
-**样式层现状是"两轨制"。** 四个产品 app 的 `main.css` 用标准 `@import 'tailwindcss'`
-（theme/base/components/utilities 四层）；而库内存在**故意 unlayered** 的规则以赢过
-utilities（`theme.css` 中玻璃拟态 `[data-slot=…]` 覆盖、`.ds-overlay-content` 动效、
-侧栏增强选中态，注释明确写着故意不分层（"intentionally UNLAYERED"））。app 自定义规则
-（business-console 的 sidebar active、apps/screen 的 body/滚动条）也全部 unlayered。
-优先级依赖"谁不分层谁赢"，不可审计。
-
-**VitePress 文档站的宿主坑已有一套手工解法。** `apps/design-system` 站的
-`.vitepress/theme/style.css`：因 VitePress 自带 unlayered 重置（`h1..h6`、`button`、
-`.vp-doc table`…）会赢过 Tailwind 的 layered utilities，站内把 utilities **unlayered 导入**
-（首行 `@layer theme, base, components;` + `@import 'tailwindcss/utilities.css'` 不套层）；
-`--vp-*` 全表映射到我们的 token；`.vp-doc` 对 `.sb-tbl`/`.sb-at-tbl` 的表格样式污染靠逐条
-手写反制。历史上的 `revert-layer` hack 已被移除（曾致嵌入组件样式回退异常）。VitePress
-1.6.3 官方提供 `postcssIsolateStyles()`（`.vp-raw` 隔离），本站**尚未启用**（已核实
-1.6.3 dist 导出该函数、默认主题样式未带 `.vp-raw` 保护）。
-
-**规模数据（迁移面）。** `from '@nerv-iip/ui'` 167 个文件、`from '@nerv-iip/ui-mobile'`
-17 个文件，除 `@nerv-iip/ui/file-preview` 子入口外零深 import。页面数：business-console
-93、business-pda 15、console 10、screen 10。全部前端包 `private: true`，无 npm 发布。
-`--sb-*` 引用约 434 处（ui 包 screen 层）+ 759 处（apps/screen）+ design-system 站若干。
-`packages/ui` 为单 barrel 入口，`screen/index.ts` 顶部副作用 `import './tokens.css'`——
-即 PC app 只要 import `@nerv-iip/ui` 也会载入大屏 token 表。
+决策前，PC、大屏和移动组件并用裸名、场景前缀与 Pro 后缀，两套包都导出过 `Badge`。场景 token、宿主重置与未分层的覆盖样式使同一品牌件在应用和文档站中的表现不同。原迁移清点随 2026-07-07 的记录保留在 Git 历史。
 
 ## 决策 1：命名规则
 
@@ -282,15 +234,7 @@ design-system 站是唯一"宿主自带 unlayered 敌意样式"的环境，其�
 
 顺序（总约束：**全部组件迁移批在业务批开始之前完成**）：
 
-| 步 | 批次 | 内容 | 验收口径 |
-|---|---|---|---|
-| S1 别名过渡 | MAN-433 | 库侧：按 [`nvui-naming-map.md`](../../frontend/DESIGN/nvui-naming-map.md) 附录 A 新增 `Nv*` 为规范实现名；旧名以 `export { NvButton as ButtonPro }` 形式保留并标 JSDoc `@deprecated`（IDE 划线）；token 新名落地 + 旧名 var 别名（`--sb-bg: var(--nv-scr-bg)`）；4.1/4.3 层结构落地；4.4 契约守护（别名期形态）上线；design-system 站组件页标题/示例切新名（文档站是唯一教学面，先切断旧名传播） | `pnpm -C frontend typecheck && test && build` 全绿；契约测试别名期断言绿；文档站构建绿 + 实机抽查（亮/暗/大屏）；既有业务代码**零改动**仍编译通过（别名兜底的直接证据） |
-| S2 按应用进行代码转换 | MAN-435 | 按应用逐个 PR 替换导入与模板引用：business-console（93 页）→ business-pda（15）→ screen（10）→ console（10）。代码转换以 [`nvui-naming-map.md`](../../frontend/DESIGN/nvui-naming-map.md) 附录 A 为唯一映射输入（脚本 + 人工复核），同 PR 内完成该应用的 `--sb-*`/类名引用替换 | 每个应用 PR：typecheck/test/build 三绿 + 真机逐模块抽查；该应用源码旧名/旧 token **零匹配**（CI grep）；不允许半迁移合入 |
-| S3 守护 | MAN-436 前置 | 4.4 第 8 项切到“旧名零新增”强断言；PR 评审检查清单增加命名/层归属项（governance.md 已同步） | 守护断言在 CI 稳定绿一周（覆盖并行 PR 汇入） |
-| S4 收口 | MAN-436 | 删除全部弃用别名导出、旧 token 别名、旧类名；1.3 的旧代组件（blocks/DataTable 等）删除；契约测试切收口断言（`--sb-` 全库零匹配、旧名导出不存在）；DESIGN 文档（component-coverage、motion-interaction、screen/product.md、pro/MIGRATION.md）术语归档更新 | 全库 `ButtonPro\|--sb-\|\.sb-\|\.ds-` 等旧标识零匹配（白名单：本 ADR 与历史 roadmap 文档）；frontend 全量门禁绿；文档站构建绿 |
-
-回滚策略：S1 合入后任何一步发现阻断性问题，业务代码可继续用旧名（别名兜底），
-回滚粒度为“撤销单个应用的代码转换 PR”，不存在全局不可逆点；S4 之后才移除退路。
+先在库中提供新名与弃用别名，再逐应用替换导入、模板和 token，同时更新文档站示例。单个应用转换可独立回滚。别名期须验证未改业务代码仍能编译；各应用通过类型、构建、契约与实际界面检查，确认旧标识零新增守护在 CI 连续一周通过，才删除旧组件、别名和 token，并验证源码旧标识零匹配。原批次与验收记录由关联议题保留。
 
 ## 已考虑的替代方案
 
@@ -322,7 +266,7 @@ design-system 站是唯一"宿主自带 unlayered 敌意样式"的环境，其�
 逐坑手补变为容器隔离制度。
 
 **变难。** 一次性认知成本：迁移期内旧名（已弃用）与新名并存，IDE 补全会同时出现
-两套（靠 @deprecated 划线缓解）；S2 是 118 页 × 导入/模板/token 的大面积机械替换，
+两套（靠 @deprecated 划线缓解）；逐应用迁移涉及导入、模板与 token，
 必须依赖 [`nvui-naming-map.md`](../../frontend/DESIGN/nvui-naming-map.md) 附录 A
 而非人脑记忆；类型名连带改名（`DataTableProColumn` 等）会出现在业务代码签名里，
 代码转换须覆盖类型导入。
@@ -337,7 +281,7 @@ design-system 站是唯一"宿主自带 unlayered 敌意样式"的环境，其�
 
 ## 参考数据落点
 
-按 `docs/architecture/decision-record-governance.md` 的分层判据，逐件映射表随代码增长
+按 `docs/governance/decisions/records.md` 的分层判据，逐件映射表随代码增长
 （每新增一个组件就要增补一次），不属于「只被新决策取代」的决策内容，因此三份全表已移出
 本 ADR，落在 [`frontend/DESIGN/nvui-naming-map.md`](../../frontend/DESIGN/nvui-naming-map.md)：
 

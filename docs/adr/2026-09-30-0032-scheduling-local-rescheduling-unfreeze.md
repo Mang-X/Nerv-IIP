@@ -98,6 +98,8 @@ ETR/MTTR 使等待与转移的代价可比较；它们是有来源的预测输�
 
 ## 实施说明与后果
 
+当前[可公开选择的策略](../../backend/common/Contracts/Nerv.IIP.Contracts.Scheduling/SchedulingReschedulingCandidateContracts.cs)只有 `RightShift` 与 `ResourceTransfer`。第 4 节同时规定局部序列插入和 match-up 的目标行为；两者尚未出现在该公开枚举。
+
 - 本记录是 ADR 0022 的部分修订：§8 稳定窗口在本记录 §3 定义；§9 KPI 在本记录 §5 澄清；§2 的抽象落地义务取消，§11 交付前置与后果第 4 条在本记录 §1 取代。旧条款作为历史判断保留，0022 头部与实施说明反向链接本记录。
 - 当前结构和事实所有权仍从 [`../architecture/overview/context-map.md`](../architecture/overview/context-map.md) 与 [`../architecture/business/domain-architecture.md`](../architecture/business/domain-architecture.md) 读取。实现状态、子票拆解与验收证据留在 GitHub/Linear；不得因本记录已接受而把产品页面标成 L3 已可用。
 - 现有工作台产品语义见 [`../product/scheduling/design.md`](../product/scheduling/design.md)。实现 PR 随行为变化更新该 Product；用户教程与产品站按 ADR 0021 同步评估。

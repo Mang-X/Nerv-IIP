@@ -53,7 +53,7 @@
 
 ## 已考虑的替代方案
 
-1. **维持旧判断：只由 PlatformGateway 暴露 tus，business-console 走 platform 面。** 拒绝。它与 `api-contract-and-codegen.md` 的业务控制台消费面约束直接冲突，且会把平台级 `files.*` 权限强加给一线交接班用户；授权口径与门面归属两处同时被破坏，代价大于新增一个受同样约束的代理拓扑。
+1. **维持旧判断：只由 PlatformGateway 暴露 tus，business-console 走 platform 面。** 拒绝。它与 [API 契约治理](../governance/api/contracts-and-codegen.md) 的业务控制台消费面约束直接冲突，且会把平台级 `files.*` 权限强加给一线交接班用户；授权口径与门面归属两处同时被破坏，代价大于新增一个受同样约束的代理拓扑。
 2. **让 business-console 直连 FileStorage 服务 URL。** 拒绝。它同时推翻 0023 决策 1.3 的「客户端不得取得内部 URL」与业务控制台的消费面约束，且没有任何一层能施加业务域权限检查。
 3. **业务面沿用 PlatformGateway 的 grant + content 两跳形状。** 拒绝。PlatformGateway 的文件面只有一个权限口径（`files.*`），grant id 共用命名空间不构成越权；业务面按用途拆权限后，同一命名空间的 grant id 会成为跨用途兑换通道。这是决策 3 的由来。
 
@@ -67,7 +67,7 @@
 1. 受控 tus 入口从「一个」变成「一类」：新增网关代理拓扑时，必须同时满足决策 1 的不泄露约束与决策 2 的用途分面约束，不能只照抄路由形状。
 2. 业务面的下载不再有可分享的短期 URL——字节路由要求 `Authorization` 与组织/环境上下文。需要在页面上直接渲染图片的调用方必须自行取字节并构造 blob，不能把 URL 直接交给 `<img src>`。这与 grant id 从未真正可匿名访问（兑换仍需组织/环境头）的现状一致，不构成能力回退。
 3. 每次取字节多一次 FileStorage 往返（用途复核 + 签发 + 兑换）。这是把用途口径收在网关侧的直接成本。
-4. 自研 tus endpoint 的退役范围扩大：它现在有两个网关消费方，ADR 0023 决策 1.1 的退役工作必须同时迁移两处。
+4. 在作出决策时，自研 tus endpoint 的退役范围扩大：当时有两个网关消费方，ADR 0023 决策 1.1 的退役工作必须同时迁移两处。
 5. 同一下游（FileStorage）在 BusinessGateway 有两个 typed client 注册。它们的差别只有弹性契约，不是领域切分；新增字节路由时必须落在字节面注册上，否则决策 5 会被静默绕过。
 6. BusinessGateway 出现第二个弹性档（字节流档）。ADR 0015 决策 3.4 的口径不变：客户端到策略的完整映射由 Gateway 注册代码与对应测试证明，本 ADR 不维护清单。
 7. 决策 3 使「以 download grant id 为入参的网关路由」成为一个**必须为空的集合**。网关契约里出现任何以 grant id 为入参、或把 grant id 交给调用方的路由，都是对本条的违反，无论其权限码写成什么。
