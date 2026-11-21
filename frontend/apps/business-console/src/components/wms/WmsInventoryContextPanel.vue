@@ -2,8 +2,8 @@
 import type { BusinessConsoleWmsInventoryContext } from '@nerv-iip/api-client'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { useSkuNames } from '@/composables/useSkuNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
+import { useSkuNames } from '@/composables/master-data/useSkuNames'
 
 const props = withDefaults(
   defineProps<{

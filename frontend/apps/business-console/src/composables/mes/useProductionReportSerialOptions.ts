@@ -6,8 +6,8 @@ import {
 } from '@nerv-iip/api-client'
 import { computed, reactive, shallowRef, watch } from 'vue'
 
-import { bindBusinessContext } from '@/composables/businessContextBinding'
-import { useMesPrincipalWorkScope } from '@/composables/useBusinessMes'
+import { bindBusinessContext } from '@/composables/shared/businessContextBinding'
+import { useMesPrincipalWorkScope } from '@/composables/mes'
 import { notifyError } from '@/utils/notify'
 import type { ProductionReportContext } from './productionReportContext'
 

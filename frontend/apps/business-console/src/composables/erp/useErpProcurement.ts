@@ -20,7 +20,7 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
-import { hasBusinessContext, refetchWithBusinessContext } from '../businessContextBinding'
+import { hasBusinessContext, refetchWithBusinessContext } from '../shared/businessContextBinding'
 import {
   DEFAULT_TAKE,
   defaultFilters,

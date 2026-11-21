@@ -112,7 +112,7 @@ function toLocalDateTimeInput(date: Date) {
   return new Date(date.getTime() - localOffset).toISOString().slice(0, 16)
 }
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   makeIdempotencyKey: () => 'record-downtime-stable-key',
   useMesDowntimeEvents: () => ({
     downtimeEvents: computed(() => downtimeRows.value),
@@ -176,7 +176,7 @@ vi.mock('@/stores/auth', () => ({
 }))
 
 // 名录解析不是本用例被测对象；给稳定桩，避免真实实现要求装 Pinia。
-vi.mock('@/composables/useMasterDataDisplayNames', () => ({
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', () => ({
   useMasterDataDisplayNames: () => ({
     resolveDevice: () => undefined,
   }),

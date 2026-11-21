@@ -20,7 +20,7 @@ const state = vi.hoisted(() => ({
   resourceTypes: [] as string[],
 }))
 
-vi.mock('../useBusinessMasterData', async () => {
+vi.mock('../master-data', async () => {
   const { reactive, shallowRef } = await import('vue')
   state.skus = shallowRef<unknown[]>([])
   state.sites = shallowRef<unknown[]>([])

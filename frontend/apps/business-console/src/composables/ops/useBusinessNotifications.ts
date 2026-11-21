@@ -7,7 +7,7 @@ import { useMutation, useQuery } from '@pinia/colada'
 import { computed } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useAuthStore } from '@/stores/auth'
-import { hasBusinessContext } from '../businessContextBinding'
+import { hasBusinessContext } from '../shared/businessContextBinding'
 
 export function isReadMessage(message: BusinessConsoleNotificationMessageItem) {
   return Boolean(message.readAtUtc) || message.status?.toLowerCase() === 'read'

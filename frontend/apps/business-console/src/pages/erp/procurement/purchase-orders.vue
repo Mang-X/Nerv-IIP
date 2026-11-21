@@ -7,9 +7,9 @@ import {
   useErpPartnerCatalog,
   useErpSiteCatalog,
 } from '@/composables/erp/useErpPickerCatalog'
-import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
-import { useSkuNames } from '@/composables/useSkuNames'
-import { usePagedList } from '@/composables/usePagedList'
+import { useBusinessPartnerNames } from '@/composables/master-data/useBusinessPartnerNames'
+import { useSkuNames } from '@/composables/master-data/useSkuNames'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'

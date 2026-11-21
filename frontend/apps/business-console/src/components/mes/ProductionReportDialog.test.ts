@@ -72,7 +72,7 @@ const scrapReasonState = vi.hoisted(() => ({
   ] as Array<Record<string, unknown>>,
 }))
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   makeIdempotencyKey: spies.makeIdempotencyKey,
   useMesProductionReporting: () => ({
     recordProductionReport: spies.recordProductionReport,

@@ -15,7 +15,7 @@ import {
 } from '@/composables/maintenance/useBusinessMaintenance'
 import EquipmentScopeOverviewCard from '@/components/equipment/EquipmentScopeOverviewCard.vue'
 import { useEquipmentScopeSelection } from '@/composables/equipment/useEquipmentScopeSelection'
-import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
+import { useBusinessWorkers } from '@/composables/master-data'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { COMMON_INSPECTION_CHARACTERISTICS } from '@nerv-iip/business-core'
 import {

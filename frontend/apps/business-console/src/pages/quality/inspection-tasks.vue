@@ -7,12 +7,9 @@ import {
   useQualityInspectionTasks,
   isInspectionTaskOverdue,
 } from '@/composables/quality/useQualityInspectionTasks'
-import { useSkuNames } from '@/composables/useSkuNames'
-import {
-  useBusinessWorkers,
-  WORKER_DIRECTORY_MAX_PAGE_SIZE,
-} from '@/composables/useBusinessMasterData'
-import { usePagedList } from '@/composables/usePagedList'
+import { useSkuNames } from '@/composables/master-data/useSkuNames'
+import { useBusinessWorkers, WORKER_DIRECTORY_MAX_PAGE_SIZE } from '@/composables/master-data'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import { useQualitySkuCatalog } from '@/composables/quality/useQualityPickerCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {

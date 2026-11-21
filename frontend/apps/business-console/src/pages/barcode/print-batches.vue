@@ -12,7 +12,7 @@ import {
   useBarcodeRules,
   useBarcodeTemplates,
 } from '@/composables/barcode/useBusinessBarcode'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'

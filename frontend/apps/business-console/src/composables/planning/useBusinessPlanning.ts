@@ -32,8 +32,8 @@ import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive } from 'vue'
-import { bindBusinessContext, hasBusinessContext } from '../businessContextBinding'
-import { assertEnvelopeSuccess } from '../serviceEnvelope'
+import { bindBusinessContext, hasBusinessContext } from '../shared/businessContextBinding'
+import { assertEnvelopeSuccess } from '../shared/serviceEnvelope'
 
 export interface PlanningContextFilters {
   organizationId: string

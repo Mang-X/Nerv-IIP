@@ -14,7 +14,7 @@ import { listBusinessConsoleOrderUrgencies } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useQuery } from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
-import { bindBusinessContext, hasBusinessContext } from '../businessContextBinding'
+import { bindBusinessContext, hasBusinessContext } from '../shared/businessContextBinding'
 import {
   describeMergedWorkOrder,
   describeMrpSuggestion,

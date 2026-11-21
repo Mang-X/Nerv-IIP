@@ -22,7 +22,7 @@ import {
   type BusinessConsoleInventoryAvailabilityLineResponse,
 } from '@nerv-iip/api-client'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { bindBusinessContext, hasBusinessContext } from '../businessContextBinding'
+import { bindBusinessContext, hasBusinessContext } from '../shared/businessContextBinding'
 import { useInventoryScopeCatalog } from './useInventoryScope'
 
 /** 一次「继续扫描」推进的物料数——一屏能看完的量级，也避免一次打出上百个请求。 */

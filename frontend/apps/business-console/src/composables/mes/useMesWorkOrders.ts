@@ -14,8 +14,8 @@ import { useScopeBoundListResponse } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
-import { hasBusinessContext, type BusinessContextFields } from '../businessContextBinding'
-import { businessReadState } from '../businessReadState'
+import { hasBusinessContext, type BusinessContextFields } from '../shared/businessContextBinding'
+import { businessReadState } from '../shared/businessReadState'
 import { mesWorkOrderReleaseBlocker } from './workOrderRelease'
 import {
   MES_WORK_ORDERS_MANAGE_PERMISSION,

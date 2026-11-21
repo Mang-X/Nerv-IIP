@@ -10,9 +10,9 @@ import { qualityCharacteristicLabel, qualitySourceTypeLabel } from '@nerv-iip/bu
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import QualityParetoPanel from '@/components/quality/QualityParetoPanel.vue'
 import QualitySpcCharts from '@/components/quality/QualitySpcCharts.vue'
-import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
+import { useBusinessMasterDataResources } from '@/composables/master-data'
 import { useQualityNcrs } from '@/composables/quality/useBusinessQuality'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import {
   useQualityCharacteristicCatalog,
   useQualityInspectionPlanCatalog,

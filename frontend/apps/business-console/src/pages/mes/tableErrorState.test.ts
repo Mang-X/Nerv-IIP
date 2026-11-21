@@ -78,8 +78,8 @@ const retrySpies = vi.hoisted(() =>
   ),
 )
 
-vi.mock('@/composables/useBusinessMes', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/composables/useBusinessMes')>()
+vi.mock('@/composables/mes', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/composables/mes')>()
   const patched: Record<string, unknown> = { ...actual }
   for (const [hook, errorKeys] of Object.entries(overrides)) {
     const original = actual[hook as keyof typeof actual] as (...args: unknown[]) => object

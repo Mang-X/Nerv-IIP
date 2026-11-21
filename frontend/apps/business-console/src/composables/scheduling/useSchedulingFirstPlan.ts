@@ -8,7 +8,7 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, shallowRef, watch } from 'vue'
-import { assertEnvelopeSuccess } from '../serviceEnvelope'
+import { assertEnvelopeSuccess } from '../shared/serviceEnvelope'
 
 /** 首版受理与状态查询分开；终态只加载一次持久化方案。 */
 export function useSchedulingFirstPlan(onCompleted: () => void) {

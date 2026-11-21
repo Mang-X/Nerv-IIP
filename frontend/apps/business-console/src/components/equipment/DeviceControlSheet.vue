@@ -16,7 +16,7 @@ import {
   useBusinessTelemetryTagCurrentValue,
   useBusinessTelemetryTags,
 } from '@/composables/equipment/useBusinessTelemetry'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import { normalizeTelemetryValueType } from '@/data/businessLabels'
 import { readFaceText } from '@/utils/readFace'
 import { notifyOperationFailure } from '@/utils/notify'

@@ -8,7 +8,7 @@ import {
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { hasBusinessContext } from '../businessContextBinding'
+import { hasBusinessContext } from '../shared/businessContextBinding'
 
 const DEFAULT_TAKE = 100
 

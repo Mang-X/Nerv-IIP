@@ -41,7 +41,7 @@ const inventoryState = vi.hoisted(() => ({
   partnerResolved: true,
 }))
 
-vi.mock('@/composables/useBusinessPartnerNames', async () => {
+vi.mock('@/composables/master-data/useBusinessPartnerNames', async () => {
   const { computed } = await import('vue')
   return {
     useBusinessPartnerNames: () => ({

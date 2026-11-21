@@ -14,12 +14,9 @@ import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter
 import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import ShiftFormDialog from '@/components/masterData/ShiftFormDialog.vue'
-import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
-import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
-import {
-  useMasterDataResource,
-  useMasterDataResourceActions,
-} from '@/composables/useBusinessMasterData'
+import { useIncludeDisabledFilter } from '@/composables/master-data/masterDataIncludeDisabled'
+import { useMasterDataLifecycleConfirm } from '@/composables/master-data/masterDataLifecycleConfirm'
+import { useMasterDataResource, useMasterDataResourceActions } from '@/composables/master-data'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvAlertDialog,

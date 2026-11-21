@@ -15,8 +15,8 @@
 import type { EntityPickerOption, SearchSelectOption } from '@nerv-iip/ui'
 import type { BusinessConsoleInspectionPlanCharacteristicItem } from '@nerv-iip/api-client'
 import { computed, type MaybeRefOrGetter, toValue } from 'vue'
-import { useBusinessSkus, useBusinessUoms, useBusinessWorkers } from '../useBusinessMasterData'
-import { useQualityReasonCodes } from '../usePromotedCatalogs'
+import { useBusinessSkus, useBusinessUoms, useBusinessWorkers } from '../master-data'
+import { useQualityReasonCodes } from '../master-data/usePromotedCatalogs'
 import {
   useQualityInspectionPlanCharacteristics,
   useQualityInspectionPlans,

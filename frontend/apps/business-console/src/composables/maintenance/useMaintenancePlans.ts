@@ -10,7 +10,10 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed } from 'vue'
-import { refetchWithBusinessContext, withBusinessContextEnabled } from '../businessContextBinding'
+import {
+  refetchWithBusinessContext,
+  withBusinessContextEnabled,
+} from '../shared/businessContextBinding'
 import {
   defaultFilters,
   listItems,

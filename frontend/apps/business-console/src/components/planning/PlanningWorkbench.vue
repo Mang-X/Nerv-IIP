@@ -7,10 +7,7 @@ import type {
   BusinessConsolePlanningSuggestionItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/ui'
-import {
-  useBusinessSkus,
-  useBusinessMasterDataResources,
-} from '@/composables/useBusinessMasterData'
+import { useBusinessSkus, useBusinessMasterDataResources } from '@/composables/master-data'
 import {
   SUGGESTION_REJECT_REASON_MAX_LENGTH,
   useBusinessPlanning,
@@ -19,7 +16,7 @@ import {
   isMesWorkOrderDownstream,
   normalizeReferenceToken,
 } from '@/composables/planning/fulfillment'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import { useOrderUrgencies } from '@/composables/urgency/useOrderUrgency'
 import {
   DEFAULT_URGENCY_DISPLAY_MODE,
@@ -87,7 +84,7 @@ import {
 import { computed, shallowRef, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCanReadMaterialDeliveries } from '@/composables/planning/useBusinessPlanningMaterialDeliveries'
-import { hasBusinessContext } from '@/composables/businessContextBinding'
+import { hasBusinessContext } from '@/composables/shared/businessContextBinding'
 import { useAuthStore } from '@/stores/auth'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 

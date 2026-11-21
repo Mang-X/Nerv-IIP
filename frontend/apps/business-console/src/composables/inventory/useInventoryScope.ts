@@ -14,8 +14,8 @@
 import type { EntityPickerOption } from '@nerv-iip/ui'
 import { computed, watch } from 'vue'
 import { useInventoryExpiryAlerts } from './useBusinessInventory'
-import { toBaseUomBySku } from '../skuBaseUom'
-import { useBusinessMasterDataResources, useBusinessSkus } from '../useBusinessMasterData'
+import { toBaseUomBySku } from '../master-data/skuBaseUom'
+import { useBusinessMasterDataResources, useBusinessSkus } from '../master-data'
 
 /**
  * 工厂主数据尚未就绪（目录为空 / 加载失败）时的兜底工厂编码。

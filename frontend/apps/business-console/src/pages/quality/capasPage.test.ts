@@ -92,7 +92,7 @@ vi.mock('@/composables/quality/useQualityPickerCatalog', () => ({
   }),
 }))
 
-vi.mock('@/composables/usePagedList', () => ({
+vi.mock('@/composables/shared/usePagedList', () => ({
   usePagedList: () => ({ page: shallowRef(1), pageSize: shallowRef(20) }),
 }))
 

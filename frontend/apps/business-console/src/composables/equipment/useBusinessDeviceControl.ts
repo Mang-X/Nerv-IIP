@@ -11,7 +11,7 @@ import {
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
 import { computed, reactive, ref, watch, type Ref } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { hasBusinessContext } from '../businessContextBinding'
+import { hasBusinessContext } from '../shared/businessContextBinding'
 
 const POLL_INTERVAL_MS = 2500
 

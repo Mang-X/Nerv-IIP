@@ -11,7 +11,7 @@ import {
 import { useBusinessTelemetryHistory } from '@/composables/equipment/useBusinessTelemetry'
 import { useTelemetryTagCatalog } from '@/composables/equipment/useEquipmentPickerCatalog'
 import { useEquipmentScopeSelection } from '@/composables/equipment/useEquipmentScopeSelection'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { friendlyErrorMessage } from '@/utils/notify'
 import {

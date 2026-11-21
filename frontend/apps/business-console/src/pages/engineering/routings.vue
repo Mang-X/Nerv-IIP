@@ -7,11 +7,8 @@ import type {
 import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/ui'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { pagedBreakdownSegments } from '@/composables/metricSegments'
-import {
-  useBusinessMasterDataResources,
-  useBusinessSkus,
-} from '@/composables/useBusinessMasterData'
+import { pagedBreakdownSegments } from '@/composables/shared/metricSegments'
+import { useBusinessMasterDataResources, useBusinessSkus } from '@/composables/master-data'
 import { useEngineeringRoutings, useStandardOperations } from '@/composables/engineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {

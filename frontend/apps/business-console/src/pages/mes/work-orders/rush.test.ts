@@ -38,19 +38,19 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessMasterDataResources: () => ({ resources: ref([]) }),
   useBusinessSkus: () => ({ skus: ref([]) }),
 }))
 
-vi.mock('@/composables/useMesPickerCatalog', () => ({
+vi.mock('@/composables/mes/useMesPickerCatalog', () => ({
   useMesMaterialVersionCatalog: () => ({
     productionVersionOptions: () => [{ value: 'PV-1', label: '主版本' }],
     productionVersionsPending: ref(false),
   }),
 }))
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   describeMesReadinessReason: (reason: string) => ({
     code: reason,
     detail: reason,

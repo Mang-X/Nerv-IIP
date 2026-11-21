@@ -1,8 +1,8 @@
 import { getBusinessConsoleMesWorkOrderDetailQueryOptions } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
 import { computed } from 'vue'
-import { hasBusinessContext, type BusinessContextFields } from '../businessContextBinding'
-import { useMesPrincipalWorkScope } from '../useBusinessMes'
+import { hasBusinessContext, type BusinessContextFields } from '../shared/businessContextBinding'
+import { useMesPrincipalWorkScope } from '../mes'
 import { useScopeBoundListResponse } from '@nerv-iip/business-core'
 import { inlineErrorMessage } from '@/utils/notify'
 

@@ -13,7 +13,7 @@ import {
 } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
 import { computed, type Ref } from 'vue'
-import type { BusinessContextFields } from '../businessContextBinding'
+import type { BusinessContextFields } from '../shared/businessContextBinding'
 import {
   matchDemandPeggings,
   matchPlanningSuggestion,

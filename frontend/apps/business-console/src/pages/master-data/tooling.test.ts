@@ -78,7 +78,7 @@ vi.mock('@/composables/equipment/useBusinessTooling', () => ({
   toolingTypeLabel: (value: string) => ({ mould: '模具' })[value] ?? value,
 }))
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessMasterDataResources: (resourceType: string) => {
     const filters = reactive({ take: 50, keyword: undefined as string | undefined })
     return {

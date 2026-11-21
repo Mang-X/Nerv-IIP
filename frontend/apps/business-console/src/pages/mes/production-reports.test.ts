@@ -138,7 +138,7 @@ const mesState = vi.hoisted(() => ({
   catalogResolved: true,
 }))
 
-vi.mock('@/composables/useMasterDataDisplayNames', () => ({
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', () => ({
   useMasterDataDisplayNames: () => ({
     resolveDevice: () => (mesState.catalogResolved ? '五轴加工中心' : undefined),
     resolveUser: (id?: string | null) =>
@@ -177,7 +177,7 @@ vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessMes', async () => {
+vi.mock('@/composables/mes', async () => {
   const { reactive, shallowRef, computed } = await import('vue')
   mesState.filters = reactive({
     organizationId: 'org-001',

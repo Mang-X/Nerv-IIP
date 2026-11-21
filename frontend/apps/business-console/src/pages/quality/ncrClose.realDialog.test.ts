@@ -99,7 +99,7 @@ vi.mock('@/composables/quality/useBusinessQuality', async () => {
   }
 })
 
-vi.mock('@/composables/usePagedList', async () => {
+vi.mock('@/composables/shared/usePagedList', async () => {
   const { shallowRef } = await import('vue')
   return { usePagedList: () => ({ page: shallowRef(1), pageSize: shallowRef(100) }) }
 })

@@ -22,7 +22,7 @@ import {
   bindBusinessContext,
   hasBusinessContext,
   withBusinessContextEnabled,
-} from '../businessContextBinding'
+} from '../shared/businessContextBinding'
 import {
   DEFAULT_TAKE,
   optionalQuery,

@@ -154,7 +154,7 @@ vi.mock('@/composables/equipment/useBusinessTelemetry', () => ({
 
 // Worker directory (technician selector) + device-asset resources (device combobox)
 // — both used by the work-orders create sheet.
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessWorkers: () => ({
     filters: reactive({
       organizationId: 'org-001',

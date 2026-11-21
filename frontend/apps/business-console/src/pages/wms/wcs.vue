@@ -8,9 +8,9 @@ import {
   WCS_TASK_STATUS_LABELS,
   wmsStatusTone,
 } from '@/data/businessLabels'
-import { hasBusinessContext } from '@/composables/businessContextBinding'
+import { hasBusinessContext } from '@/composables/shared/businessContextBinding'
 import { useWmsWcsTasks } from '@/composables/wms'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {

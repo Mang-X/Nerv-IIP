@@ -20,7 +20,7 @@ import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia
 import { computed, reactive, ref } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { errorStatusCode } from '@/utils/notify'
-import { hasBusinessContext } from '../businessContextBinding'
+import { hasBusinessContext } from '../shared/businessContextBinding'
 
 /**
  * 逐来源取数上限。扇出没有跨服务游标（见网关 facade 的 `Take` 注释），

@@ -11,7 +11,7 @@ import { FileUpload } from '@nerv-iip/ui'
 
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
 // 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
-vi.mock('@/composables/useSkuNames', async () => {
+vi.mock('@/composables/master-data/useSkuNames', async () => {
   const { computed } = await import('vue')
   return {
     useSkuNames: () => ({
@@ -22,7 +22,7 @@ vi.mock('@/composables/useSkuNames', async () => {
     }),
   }
 })
-vi.mock('@/composables/useBusinessPartnerNames', async () => {
+vi.mock('@/composables/master-data/useBusinessPartnerNames', async () => {
   const { computed } = await import('vue')
   return {
     useBusinessPartnerNames: () => ({
@@ -34,7 +34,7 @@ vi.mock('@/composables/useBusinessPartnerNames', async () => {
     }),
   }
 })
-vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', async () => {
   const { computed } = await import('vue')
   const emptyIndex = computed(() => new Map<string, string>())
   return {
@@ -206,7 +206,7 @@ vi.mock('vue-router', async (importOriginal) => {
   }
 })
 
-vi.mock('@/composables/usePagedList', async () => {
+vi.mock('@/composables/shared/usePagedList', async () => {
   const { shallowRef } = await import('vue')
 
   return {
@@ -1421,7 +1421,7 @@ describe('quality route location behavior', () => {
   })
 
   it('clears the routed inspection task and stale form context after a lifecycle conflict', async () => {
-    const { LifecycleStateChangedError } = await import('@/composables/lifecycleAction')
+    const { LifecycleStateChangedError } = await import('@/composables/shared/lifecycleAction')
     routeState.route!.query = {
       inspectionTaskId: 'TASK-001',
       inspectionPlanId: 'PLAN-001',

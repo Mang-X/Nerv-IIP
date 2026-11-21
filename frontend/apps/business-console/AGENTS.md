@@ -71,7 +71,7 @@
 
 ```
 src/pages/<域>/                 业务页面；路由即文件，definePage 配 title/权限
-src/composables/useBusiness*.ts 每域一个数据组合式函数（封装 useQuery/useMutation）
+src/composables/<域>/           业务组合式函数与同域测试（封装 useQuery/useMutation）
 src/data/*.ts                   前端受控值/字典常量（Phase 1 字典源，如 masterDataReference.ts）
 src/navigation.ts               导航树 + 域解析 + 权限钩子（单一事实源）
 src/components/                  应用级组件（非 @nerv-iip/ui 原版）

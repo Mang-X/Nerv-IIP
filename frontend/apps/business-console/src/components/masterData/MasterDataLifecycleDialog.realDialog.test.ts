@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { shallowRef } from 'vue'
 
 import MasterDataLifecycleDialog from './MasterDataLifecycleDialog.vue'
-import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
+import { useMasterDataLifecycleConfirm } from '@/composables/master-data/masterDataLifecycleConfirm'
 
 /**
  * **不 stub 弹层**，挂真 reka `NvAlertDialog` 的一组用例（#1607）。

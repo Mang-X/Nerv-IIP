@@ -23,7 +23,7 @@ import { useQuery } from '@pinia/colada'
 import { refDebounced } from '@vueuse/core'
 import { computed, ref, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { hasBusinessContext } from '../businessContextBinding'
+import { hasBusinessContext } from '../shared/businessContextBinding'
 import {
   maintenanceWorkOrderDocumentOption,
   maintenanceWorkOrderNoLabel,

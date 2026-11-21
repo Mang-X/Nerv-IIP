@@ -8,7 +8,7 @@ import {
   useErpPayableSourceCatalog,
   useErpReceivableSourceCatalog,
 } from '@/composables/erp/useErpPickerCatalog'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,

@@ -39,7 +39,7 @@ vi.mock('@/composables/equipment/useEquipmentScopeSelection', () => ({
   }),
 }))
 
-vi.mock('@/composables/useMasterDataDisplayNames', () => {
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', () => {
   const devices = [
     { code: 'EQ00001', name: '五轴加工中心' },
     { code: 'EQ00002', name: '清洗机' },

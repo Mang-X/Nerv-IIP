@@ -16,7 +16,7 @@ import {
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, type Ref } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { hasBusinessContext, refetchWithBusinessContext } from '../businessContextBinding'
+import { hasBusinessContext, refetchWithBusinessContext } from '../shared/businessContextBinding'
 import {
   defaultListFilters,
   defaultWindowFilters,

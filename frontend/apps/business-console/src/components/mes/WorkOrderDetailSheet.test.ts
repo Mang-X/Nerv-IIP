@@ -14,7 +14,7 @@ vi.mock('vue-router', () => ({
   RouterLink: { props: ['to'], template: '<a><slot /></a>' },
 }))
 
-vi.mock('@/composables/lifecycleAction', () => ({
+vi.mock('@/composables/shared/lifecycleAction', () => ({
   useLifecycleWriteIntent: () => ({
     locked: ref(false),
     permits: () => true,
@@ -34,7 +34,7 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
     resolveWorkCenter: () => '工作中心',
   }),
 }))
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   describeMesReadinessReasons: () => [],
   useMesWorkOrderDetail: () => ({
     detail: ref({

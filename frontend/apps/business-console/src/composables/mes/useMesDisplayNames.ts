@@ -3,8 +3,8 @@ import {
   useBusinessSkus,
   useBusinessMasterDataResources,
   useBusinessWorkers,
-} from '@/composables/useBusinessMasterData'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+} from '@/composables/master-data'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 
 export interface MesDisplayNameOptions {
   /** 额外加载车间/产线/工作中心关系，用于排产甘特分组；默认关闭。 */

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesProductionPlanRow } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
-import { useMesProductionPlans } from '@/composables/useBusinessMes'
+import { useMesProductionPlans } from '@/composables/mes'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { inlineErrorMessage } from '@/utils/notify'
 import {

@@ -5,7 +5,7 @@ import {
   useBusinessTelemetryConnectors,
 } from '@/composables/equipment/useBusinessTelemetry'
 import ConnectorHealthCard from '@/components/equipment/ConnectorHealthCard.vue'
-import { hasBusinessContext } from '@/composables/businessContextBinding'
+import { hasBusinessContext } from '@/composables/shared/businessContextBinding'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { friendlyErrorMessage, notifyError } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'

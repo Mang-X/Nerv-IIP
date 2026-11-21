@@ -7,7 +7,7 @@ import WorkCenterCreateDialog from './WorkCenterCreateDialog.vue'
 
 const create = vi.hoisted(() => vi.fn().mockResolvedValue({ data: { code: 'NEW-1' } }))
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useCreateMasterDataResource: () => ({
     create,
     error: shallowRef(undefined),

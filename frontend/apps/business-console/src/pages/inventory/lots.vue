@@ -12,13 +12,13 @@ import {
   QUALITY_STATUS_LABELS,
   STOCK_LEDGER_QUALITY_STATUS_TONES,
 } from '@/data/businessLabels'
-import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
+import { useBusinessPartnerNames } from '@/composables/master-data/useBusinessPartnerNames'
 import { useInventoryAvailability } from '@/composables/inventory/useBusinessInventory'
 import { useInventoryExpiryView } from '@/composables/inventory/useInventoryExpiryView'
 import { useInventoryScopeDefaults } from '@/composables/inventory/useInventoryScope'
 import { useInventorySiteStockOverview } from '@/composables/inventory/useInventorySiteStock'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { useSkuNames } from '@/composables/useSkuNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
+import { useSkuNames } from '@/composables/master-data/useSkuNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError } from '@/utils/notify'
 import {

@@ -29,16 +29,16 @@ vi.mock('@/composables/erp/useErpPickerCatalog', () => ({
     baseUomBySku: shallowRef(new Map()),
   }),
 }))
-vi.mock('@/composables/useBusinessPartnerNames', () => ({
+vi.mock('@/composables/master-data/useBusinessPartnerNames', () => ({
   useBusinessPartnerNames: () => ({
     resolvePartnerLabel: (code: string) => code,
     resolvePartner: (code: string) => code,
   }),
 }))
-vi.mock('@/composables/useSkuNames', () => ({
+vi.mock('@/composables/master-data/useSkuNames', () => ({
   useSkuNames: () => ({ resolveSkuName: (code: string) => code }),
 }))
-vi.mock('@/composables/usePagedList', () => ({
+vi.mock('@/composables/shared/usePagedList', () => ({
   usePagedList: () => ({ page: shallowRef(1), pageSize: shallowRef('10') }),
 }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }) }))

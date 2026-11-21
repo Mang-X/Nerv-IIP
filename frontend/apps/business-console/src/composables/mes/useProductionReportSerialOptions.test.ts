@@ -13,11 +13,11 @@ vi.mock('@nerv-iip/api-client', () => ({
   getBusinessConsoleMesWorkOrderDetail: vi.fn(),
   listBusinessConsoleBarcodeTemplates: vi.fn(),
 }))
-vi.mock('@/composables/businessContextBinding', () => ({
+vi.mock('@/composables/shared/businessContextBinding', () => ({
   bindBusinessContext: (value: object) =>
     Object.assign(value, { organizationId: 'org-1', environmentId: 'env-1' }),
 }))
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   useMesPrincipalWorkScope: () => ({
     scopeReady: ref(true),
     scopePending: ref(false),

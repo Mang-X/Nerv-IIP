@@ -4,7 +4,7 @@
  * 工厂下只有一个作业池时直接选中。可选指定池内的某名作业人员，不指定则全池可领。
  */
 import type { EntityPickerOption } from '@nerv-iip/ui'
-import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
+import { useBusinessWorkers } from '@/composables/master-data'
 import { useWmsWorkPools } from '@/composables/wms/useWmsWorkPools'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {

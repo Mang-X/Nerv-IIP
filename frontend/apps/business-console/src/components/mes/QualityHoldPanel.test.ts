@@ -21,7 +21,7 @@ const holdState = vi.hoisted(() => ({
   timeline: [] as Array<Record<string, unknown>>,
 }))
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   useMesQualityHold: () => ({
     timeline: ref(holdState.timeline),
     timelinePending: ref(false),

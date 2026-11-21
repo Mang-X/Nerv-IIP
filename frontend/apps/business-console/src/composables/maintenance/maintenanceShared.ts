@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import { bindBusinessContext } from '../businessContextBinding'
+import { bindBusinessContext } from '../shared/businessContextBinding'
 
 const DEFAULT_TAKE = 100
 

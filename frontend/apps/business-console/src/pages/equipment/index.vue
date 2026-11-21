@@ -12,7 +12,7 @@ import {
   type EquipmentTone,
 } from '@/composables/equipment/useBusinessEquipment'
 import { useEquipmentScopeSelection } from '@/composables/equipment/useEquipmentScopeSelection'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { friendlyErrorMessage } from '@/utils/notify'

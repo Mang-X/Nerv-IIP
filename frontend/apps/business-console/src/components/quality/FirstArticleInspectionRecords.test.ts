@@ -32,7 +32,7 @@ vi.mock('@/composables/quality/useBusinessQuality', () => ({
     refreshFirstArticleRecords: vi.fn(),
   }),
 }))
-vi.mock('@/composables/usePagedList', () => ({
+vi.mock('@/composables/shared/usePagedList', () => ({
   usePagedList: () => ({ page: shallowRef(1), pageSize: shallowRef('20') }),
 }))
 vi.mock('@/utils/notify', () => ({ inlineErrorMessage: () => '' }))

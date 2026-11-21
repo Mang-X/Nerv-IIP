@@ -26,8 +26,11 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, shallowRef } from 'vue'
-import { refetchWithBusinessContext, withBusinessContextEnabled } from '../businessContextBinding'
-import { executeLifecycleAction } from '../lifecycleAction'
+import {
+  refetchWithBusinessContext,
+  withBusinessContextEnabled,
+} from '../shared/businessContextBinding'
+import { executeLifecycleAction } from '../shared/lifecycleAction'
 import {
   baseQuery,
   createWmsIdempotencyKey,

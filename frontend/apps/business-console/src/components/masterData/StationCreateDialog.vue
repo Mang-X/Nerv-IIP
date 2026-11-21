@@ -13,8 +13,8 @@ import type {
   DirectoryCreateContext,
   DirectoryCreatedItem,
 } from '@/components/business/directoryCreators'
-import { useCreateMasterDataResource } from '@/composables/useBusinessMasterData'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useCreateMasterDataResource } from '@/composables/master-data'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   NvButton,

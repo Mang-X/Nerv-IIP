@@ -47,7 +47,7 @@ const detailState = vi.hoisted(() => ({
   scopeMessage: '',
 }))
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   describeMesReadinessReason: (code: string) => ({ code, label: code, nextStep: '' }),
   describeMesReadinessReasons: (reasons: string[]) => describeReadinessReasons(reasons),

@@ -22,7 +22,7 @@ vi.mock('@/composables/wms/useWmsWorkPools', () => ({
     newIdempotencyKey: () => 'assign-intent-1',
   }),
 }))
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessWorkers: () => ({
     workers: computed(() => [
       { userId: 'user-emp-049', displayName: '李仓管', employeeNo: 'EMP-049' },

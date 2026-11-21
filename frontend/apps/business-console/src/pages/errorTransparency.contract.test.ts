@@ -18,7 +18,7 @@ const SRC = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 /** 允许保留裸 `instanceof Error` 的地方，各有明确理由（不是「先放着」）。 */
 const RAW_ERROR_ALLOWLIST = new Map<string, string>([
   ['utils/notify.ts', '分层透传的实现本身'],
-  ['composables/lifecycleAction.ts', '只做类型判定，不取消息上屏'],
+  ['composables/shared/lifecycleAction.ts', '只做类型判定，不取消息上屏'],
   [
     'composables/planning/fulfillmentErrors.ts',
     '包装成领域错误类型 FulfillmentNodeError，不直接上屏',

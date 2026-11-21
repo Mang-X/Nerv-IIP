@@ -36,9 +36,9 @@ import {
   refetchWithBusinessContext,
   withBusinessContextEnabled,
   type BusinessContextFields,
-} from '../businessContextBinding'
-import { businessReadState } from '../businessReadState'
-import { executeLifecycleAction } from '../lifecycleAction'
+} from '../shared/businessContextBinding'
+import { businessReadState } from '../shared/businessReadState'
+import { executeLifecycleAction } from '../shared/lifecycleAction'
 import {
   MES_OPERATIONS_MANAGE_PERMISSION,
   MES_OPERATIONS_READ_PERMISSION,

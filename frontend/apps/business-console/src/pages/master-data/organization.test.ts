@@ -153,7 +153,7 @@ function stubTeamMembers() {
   }
 }
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useMasterDataResource: (resourceType: string) => stubResource(resourceType),
   // 班组绑车间用只读读面（车间在「工厂结构」页维护，这里只取下拉选项）。
   useBusinessMasterDataResources: () => ({

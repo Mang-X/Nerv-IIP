@@ -7,7 +7,7 @@ import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { useBusinessSkus } from '@/composables/useBusinessMasterData'
+import { useBusinessSkus } from '@/composables/master-data'
 import {
   useEngineeringProductionVersions,
   usePublishedMboms,

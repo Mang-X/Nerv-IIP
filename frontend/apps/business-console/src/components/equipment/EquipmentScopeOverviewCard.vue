@@ -4,7 +4,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { NvBadge, NvButton, NvDataTable } from '@nerv-iip/ui'
 import { ArrowRightIcon } from '@lucide/vue'
 import { computed } from 'vue'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 
 /**
  * 设备域四页共用的「范围设备总览」聚合视图：未下钻到单台设备时，

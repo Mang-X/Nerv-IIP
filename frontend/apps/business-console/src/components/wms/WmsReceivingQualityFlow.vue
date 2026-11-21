@@ -7,8 +7,8 @@ import { NvButton, NvStatusBadge } from '@nerv-iip/ui'
 import { AlertCircleIcon, CheckCircle2Icon, ClipboardCheckIcon, MapPinIcon } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { useSkuNames } from '@/composables/useSkuNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
+import { useSkuNames } from '@/composables/master-data/useSkuNames'
 
 const props = defineProps<{
   inboundOrderId?: string

@@ -7,7 +7,7 @@ import type {
 import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { useCodeRules } from '@/composables/useCodeRules'
+import { useCodeRules } from '@/composables/master-data/useCodeRules'
 import { CODE_RULE_VERSION_LABELS, labelFor } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {

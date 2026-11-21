@@ -18,7 +18,7 @@ vi.mock('@/composables/quality/useBusinessQuality', () => ({
     refreshRecord: vi.fn(),
   }),
 }))
-vi.mock('@/composables/useSkuNames', () => ({
+vi.mock('@/composables/master-data/useSkuNames', () => ({
   useSkuNames: () => ({ resolveSkuName: () => '精密泵体' }),
 }))
 vi.mock('@/utils/notify', () => ({ notifyError: vi.fn() }))

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { SchedulingWorkOrderFacts } from '@/composables/useBusinessMes'
+import type { SchedulingWorkOrderFacts } from '@/composables/mes'
 import type { ScheduleModel, ScheduleTask } from '@nerv-iip/scheduling'
 import { operationTaskStatusLabel, workOrderStatusLabel } from '@nerv-iip/business-core'
 import { NvDataTable, NvStatusBadge, type NvDataTableColumn } from '@nerv-iip/ui'

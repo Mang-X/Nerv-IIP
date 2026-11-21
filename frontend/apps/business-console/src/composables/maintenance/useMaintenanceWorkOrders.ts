@@ -25,9 +25,9 @@ import {
   hasBusinessContext,
   refetchWithBusinessContext,
   withBusinessContextEnabled,
-} from '../businessContextBinding'
-import { executeLifecycleAction } from '../lifecycleAction'
-import { assertEnvelopeSuccess } from '../serviceEnvelope'
+} from '../shared/businessContextBinding'
+import { executeLifecycleAction } from '../shared/lifecycleAction'
+import { assertEnvelopeSuccess } from '../shared/serviceEnvelope'
 import {
   defaultFilters,
   listItems,

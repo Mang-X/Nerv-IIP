@@ -4,12 +4,12 @@ import type {
   BusinessConsoleTelemetryOeeAggregateBucket,
 } from '@nerv-iip/api-client'
 import { NvBadge } from '@nerv-iip/ui'
-import type { BusinessReadState } from '@/composables/businessReadState'
+import type { BusinessReadState } from '@/composables/shared/businessReadState'
 import {
   describeTelemetryOeeDegradation,
   formatOeeRate,
 } from '@/composables/equipment/useBusinessTelemetry'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import { readFaceText } from '@/utils/readFace'
 
 defineProps<{

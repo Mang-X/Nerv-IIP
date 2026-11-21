@@ -1,4 +1,4 @@
-import { useMesPrincipalWorkScope } from '../useBusinessMes'
+import { useMesPrincipalWorkScope } from '../mes'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import {
   getBusinessConsoleMesWorkOrderDetail,
@@ -7,8 +7,8 @@ import {
 } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
 import { computed, type Ref } from 'vue'
-import { hasBusinessContext } from '../businessContextBinding'
-import { assertEnvelopeSuccess } from '../serviceEnvelope'
+import { hasBusinessContext } from '../shared/businessContextBinding'
+import { assertEnvelopeSuccess } from '../shared/serviceEnvelope'
 
 interface PlanningScope {
   organizationId: string

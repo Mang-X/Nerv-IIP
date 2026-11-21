@@ -12,7 +12,7 @@ import type {
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
-import { recoverLifecycleAction } from '@/composables/lifecycleAction'
+import { recoverLifecycleAction } from '@/composables/shared/lifecycleAction'
 import QualityHoldPanel from '@/components/mes/QualityHoldPanel.vue'
 import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
 import { isSchedulableWorkbenchCandidate } from '@/composables/scheduling/useSchedulingWorkbench'
@@ -26,7 +26,7 @@ import {
   useMesWorkOrderTransformations,
   useMesWorkOrderDetail,
   type MesWorkOrderTransformationResult,
-} from '@/composables/useBusinessMes'
+} from '@/composables/mes'
 import WorkOrderTransformationDialog, {
   type MergeTransformationSubmit,
   type SplitTransformationSubmit,
@@ -39,7 +39,7 @@ import {
   MATERIAL_READINESS_SCOPE_NOTE,
 } from '@/composables/mes/materialReadinessScope'
 import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'
-import { useSkuNames } from '@/composables/useSkuNames'
+import { useSkuNames } from '@/composables/master-data/useSkuNames'
 import { labelFor, operationQualityStatusLabel } from '@/data/businessLabels'
 import {
   resolveScheduleStatus,

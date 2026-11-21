@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import { pagedBreakdownSegments } from '@/composables/metricSegments'
+import { pagedBreakdownSegments } from '@/composables/shared/metricSegments'
 import { useMesDefectNcrs } from '@/composables/mes/useMesDefectNcrs'
 import { mesQualityStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
@@ -9,15 +9,15 @@ import {
   useMesOperationTasks,
   useMesRelatedQualityItems,
   useMesWorkScopeSelection,
-} from '@/composables/useBusinessMes'
-import { useQualityReasonCodes } from '@/composables/usePromotedCatalogs'
+} from '@/composables/mes'
+import { useQualityReasonCodes } from '@/composables/master-data/usePromotedCatalogs'
 import RecordDefectDialog from '@/components/mes/RecordDefectDialog.vue'
 import {
   labelFor,
   MES_QUALITY_ITEM_STATUS_LABELS,
   QUALITY_SOURCE_TYPE_LABELS,
 } from '@/data/businessLabels'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,

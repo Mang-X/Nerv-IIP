@@ -9,7 +9,7 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, type useQueryCache } from '@pinia/colada'
 import { shallowRef } from 'vue'
-import { executeLifecycleAction } from '../lifecycleAction'
+import { executeLifecycleAction } from '../shared/lifecycleAction'
 import { ignoreBackgroundError, invalidateMesQueries, type MesWorkOrderContext } from './mesShared'
 import type { useMesPrincipalWorkScope } from './useMesWorkScope'
 

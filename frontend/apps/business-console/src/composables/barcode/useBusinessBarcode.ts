@@ -35,7 +35,7 @@ import {
   refetchWithBusinessContext,
   withBusinessContextEnabled,
   type BusinessContextFields,
-} from '../businessContextBinding'
+} from '../shared/businessContextBinding'
 
 const DEFAULT_TAKE = 100
 

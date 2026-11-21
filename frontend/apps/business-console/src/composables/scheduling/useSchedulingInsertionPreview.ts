@@ -6,7 +6,7 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, onScopeDispose, shallowRef, watch, type Ref } from 'vue'
-import { assertEnvelopeSuccess } from '../serviceEnvelope'
+import { assertEnvelopeSuccess } from '../shared/serviceEnvelope'
 
 /** 插单只读预览：终态结果随任务返回，不查询或保存排程方案。 */
 export function useSchedulingInsertionPreview(enabled: Ref<boolean>) {

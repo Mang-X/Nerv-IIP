@@ -46,7 +46,7 @@ vi.mock('@/utils/notify', async (importOriginal) => ({
   notifyOperationFailure: vi.fn(),
 }))
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessMasterDataResources: (resourceType: string) => ({
     resources: ref(
       resourceType === 'worker'
@@ -76,7 +76,7 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
 }))
 
 // 急单表单的物料 ▸ 生产版本目录走 colada 读面，本文件只看文案与提交体，整体打桩。
-vi.mock('@/composables/useMesPickerCatalog', () => ({
+vi.mock('@/composables/mes/useMesPickerCatalog', () => ({
   useMesMaterialVersionCatalog: () => ({
     productionVersionLabel: () => '—',
     skuOptions: ref([]),
@@ -96,7 +96,7 @@ vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   // #1288 工具栏作业范围选择入口（MesWorkScopeSelect）
   useMesWorkScopeSelection: () => ({
     scopeOptions: ref([]),

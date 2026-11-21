@@ -11,23 +11,23 @@ import WmsAssignWorkPoolDialog from '@/components/wms/WmsAssignWorkPoolDialog.vu
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
-import { hasBusinessContext } from '@/composables/businessContextBinding'
+import { hasBusinessContext } from '@/composables/shared/businessContextBinding'
 import {
   isIndeterminateLifecycleWriteError,
   recoverLifecycleAction,
-} from '@/composables/lifecycleAction'
+} from '@/composables/shared/lifecycleAction'
 import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import { createWmsIdempotencyKey, useWmsCountExecutions } from '@/composables/wms'
 import { useInventoryScopeCatalog } from '@/composables/inventory/useInventoryScope'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import {
   wmsCountExecutionStatusFilterOptions,
   wmsCountExecutionStatusLabel,
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import { useWmsOperationalCandidates } from '@/composables/wms/useWmsOperationalCandidates'
-import { useSkuNames } from '@/composables/useSkuNames'
+import { useSkuNames } from '@/composables/master-data/useSkuNames'
 import { bindWmsWorkScopeFilters } from '@/composables/wms/useWmsWorkScope'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'

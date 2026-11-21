@@ -9,7 +9,7 @@ import {
 import { useEquipmentWorkCenterCatalog } from '@/composables/equipment/useEquipmentPickerCatalog'
 import { useEquipmentScopeSelection } from '@/composables/equipment/useEquipmentScopeSelection'
 import EntityMultiPicker from '@/components/business/EntityMultiPicker.vue'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvBadge,

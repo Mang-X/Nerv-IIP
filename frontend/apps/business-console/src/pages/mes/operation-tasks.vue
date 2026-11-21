@@ -8,7 +8,10 @@ import { openSopFileContent, statusActionGate } from '@nerv-iip/business-core'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import ActualHoursCell from '@/components/mes/ActualHoursCell.vue'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
-import { recoverLifecycleAction, useLifecycleWriteIntent } from '@/composables/lifecycleAction'
+import {
+  recoverLifecycleAction,
+  useLifecycleWriteIntent,
+} from '@/composables/shared/lifecycleAction'
 import type { ProductionReportContext } from '@/composables/mes/useProductionReportForm'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
@@ -17,12 +20,12 @@ import {
   mesOperationTaskStatusOptions,
 } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
-import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
+import { useBusinessMasterDataResources } from '@/composables/master-data'
 import {
   describeMesReadinessReason,
   useMesCurrentOperationSops,
   useMesOperationTasks,
-} from '@/composables/useBusinessMes'
+} from '@/composables/mes'
 import { OPERATION_QUALITY_VERDICT_LABELS } from '@/data/businessLabels'
 import { scheduleInvalidationHint } from '@/composables/scheduling/useScheduleInvalidation'
 import type { MesLifecycleActionKey } from '@/composables/mes/useMesTaskSemantics'
@@ -36,14 +39,14 @@ import {
 } from '@/composables/mes/useMesTaskSemantics'
 import type { DispatchAssignTarget } from '@/components/mes/DispatchAssignDialog.vue'
 import DispatchAssignDialog from '@/components/mes/DispatchAssignDialog.vue'
-import { useMesDispatchTasks } from '@/composables/useBusinessMes'
+import { useMesDispatchTasks } from '@/composables/mes'
 import {
   inlineErrorMessage,
   notifyError,
   notifyOperationFailure,
   notifySuccess,
 } from '@/utils/notify'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useAuthStore } from '@/stores/auth'

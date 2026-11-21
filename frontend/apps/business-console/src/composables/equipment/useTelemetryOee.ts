@@ -14,7 +14,7 @@ import {
 import { useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { hasBusinessContext } from '../businessContextBinding'
+import { hasBusinessContext } from '../shared/businessContextBinding'
 import {
   defaultWindowFilters,
   listItems,

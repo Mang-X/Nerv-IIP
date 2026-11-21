@@ -10,13 +10,13 @@ import { computed, reactive, ref, shallowRef } from 'vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import EntityMultiPicker from '@/components/business/EntityMultiPicker.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
+import { useBusinessMasterDataResources } from '@/composables/master-data'
 import {
   toolingStatusLabel,
   toolingTypeLabel,
   useBusinessTooling,
 } from '@/composables/equipment/useBusinessTooling'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'

@@ -33,7 +33,7 @@ import {
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { bindBusinessContext, type BusinessContextFields } from '../businessContextBinding'
+import { bindBusinessContext, type BusinessContextFields } from '../shared/businessContextBinding'
 
 export interface InventoryAvailabilityFilters {
   organizationId: string

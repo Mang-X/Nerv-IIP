@@ -107,7 +107,7 @@ function stubSkillAssignment() {
   }
 }
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessMasterDataResources: (resourceType: string) => stubReadonlyResource(resourceType),
   useBusinessWorkers: () => stubWorkers(),
   usePersonnelSkillMatrix: () => stubSkillMatrix(),
@@ -115,7 +115,7 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
 }))
 
 // 技能目录主数据（#402）：SKILL-A → 焊接技能、SKILL-WELD → 电焊。
-vi.mock('@/composables/usePromotedCatalogs', () => ({
+vi.mock('@/composables/master-data/usePromotedCatalogs', () => ({
   useSkillCatalog: () => ({
     skills: computed(() => [
       { skillCode: 'SKILL-A', skillName: '焊接技能', enabled: true },

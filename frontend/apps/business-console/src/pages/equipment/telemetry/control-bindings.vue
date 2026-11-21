@@ -8,8 +8,8 @@ import {
   useConnectorInstanceCatalog,
   useEquipmentDeviceCatalog,
 } from '@/composables/equipment/useEquipmentPickerCatalog'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { usePagedList } from '@/composables/usePagedList'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'

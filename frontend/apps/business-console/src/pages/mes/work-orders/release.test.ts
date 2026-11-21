@@ -48,12 +48,12 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessMasterDataResources: () => ({ resources: ref([]) }),
   useBusinessSkus: () => ({ skus: ref([]) }),
 }))
 
-vi.mock('@/composables/useMesPickerCatalog', () => ({
+vi.mock('@/composables/mes/useMesPickerCatalog', () => ({
   useMesMaterialVersionCatalog: () => ({
     productionVersionLabel: (id?: string | null) =>
       id === 'PV-1' ? '齿轮箱壳体 · 生效 2026-07-01' : '—',
@@ -62,7 +62,7 @@ vi.mock('@/composables/useMesPickerCatalog', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   describeMesReadinessReason: (reason: string) => ({
     code: reason.split(':')[0],
     detail: reason,

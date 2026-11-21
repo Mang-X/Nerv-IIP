@@ -17,7 +17,7 @@ const state = vi.hoisted(() => ({
   ],
   edges: [] as Array<{ fromNodeId: string; toNodeId: string; relationType: string }>,
 }))
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   useMesTraceability: () => ({
     filters: reactive({
       organizationId: 'org-a',

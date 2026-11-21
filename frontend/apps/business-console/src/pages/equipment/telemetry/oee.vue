@@ -7,8 +7,8 @@ import {
   useBusinessTelemetryOeeAggregates,
   useBusinessTelemetryOeeTrend,
 } from '@/composables/equipment/useBusinessTelemetry'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { usePagedList } from '@/composables/usePagedList'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import {
   localDatesFromOeeWindow,
   oeeWindowFromLocalDates,

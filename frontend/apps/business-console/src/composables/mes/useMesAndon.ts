@@ -7,10 +7,13 @@ import {
 } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
 import { computed, reactive, ref } from 'vue'
-import { bindBusinessContext, hasBusinessContext } from '@/composables/businessContextBinding'
+import {
+  bindBusinessContext,
+  hasBusinessContext,
+} from '@/composables/shared/businessContextBinding'
 import { useAuthStore } from '@/stores/auth'
 import { errorStatusCode } from '@/utils/notify'
-import { useMesPrincipalWorkScope } from '@/composables/useBusinessMes'
+import { useMesPrincipalWorkScope } from '@/composables/mes'
 
 export type AndonAction = 'claim' | 'close'
 

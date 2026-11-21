@@ -11,17 +11,14 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useBusinessApproval } from '@/composables/approval/useBusinessApproval'
-import {
-  useBusinessMasterDataResources,
-  useBusinessWorkers,
-} from '@/composables/useBusinessMasterData'
+import { useBusinessMasterDataResources, useBusinessWorkers } from '@/composables/master-data'
 import {
   APPROVAL_DECISION_ACTION_LABELS,
   APPROVAL_DOCUMENT_TYPE_OPTIONS,
   type ApprovalDecisionValue,
 } from '@/data/approvalReference'
 import { APPROVAL_DECISION_LABELS, DOCUMENT_TYPE_LABELS, labelFor } from '@/data/businessLabels'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {

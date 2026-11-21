@@ -28,7 +28,7 @@ import {
   bindBusinessContext,
   refetchWithBusinessContext,
   withBusinessContextEnabled,
-} from '../businessContextBinding'
+} from '../shared/businessContextBinding'
 import {
   DEFAULT_TAKE,
   ignoreBackgroundError,

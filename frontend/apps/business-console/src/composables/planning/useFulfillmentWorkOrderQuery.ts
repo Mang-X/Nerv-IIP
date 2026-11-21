@@ -1,9 +1,9 @@
-import { useMesPrincipalWorkScope } from '../useBusinessMes'
+import { useMesPrincipalWorkScope } from '../mes'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { getBusinessConsoleMesWorkOrderDetail } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
 import { computed, type Ref } from 'vue'
-import { hasBusinessContext, type BusinessContextFields } from '../businessContextBinding'
+import { hasBusinessContext, type BusinessContextFields } from '../shared/businessContextBinding'
 import type { matchSuggestionWorkOrder } from './fulfillmentMatchers'
 import { runNodeSource } from './fulfillmentErrors'
 

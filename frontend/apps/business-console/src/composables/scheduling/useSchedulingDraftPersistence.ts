@@ -8,7 +8,7 @@ import {
 } from '@nerv-iip/api-client'
 import { computed, shallowRef, toValue, watch, type MaybeRefOrGetter, type ShallowRef } from 'vue'
 import { notifyOperationFailure } from '@/utils/notify'
-import { assertEnvelopeSuccess } from '../serviceEnvelope'
+import { assertEnvelopeSuccess } from '../shared/serviceEnvelope'
 import type { useWorkingScheduleDraft } from './useWorkingScheduleDraft'
 
 type Status = 'loading' | 'empty' | 'saving' | 'saved' | 'clearing' | 'error'

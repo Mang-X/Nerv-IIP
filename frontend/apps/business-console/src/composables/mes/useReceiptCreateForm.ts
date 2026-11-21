@@ -5,8 +5,8 @@ import {
   makeIdempotencyKey,
   useMesFinishedGoodsReceipts,
   useMesWorkOrderProducedLots,
-} from '@/composables/useBusinessMes'
-import { useSkuNames } from '@/composables/useSkuNames'
+} from '@/composables/mes'
+import { useSkuNames } from '@/composables/master-data/useSkuNames'
 import { notifyOperationFailure, notifySuccess, serverErrorMessage } from '@/utils/notify'
 
 /** 登记完工入库所需的工单上下文（由路由页编排后传入，表单本身只负责登记态）。 */

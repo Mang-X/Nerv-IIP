@@ -10,8 +10,8 @@ import { computed, reactive } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { bindBusinessContext, hasBusinessContext } from '../businessContextBinding'
-import { assertEnvelopeSuccess } from '../serviceEnvelope'
+import { bindBusinessContext, hasBusinessContext } from '../shared/businessContextBinding'
+import { assertEnvelopeSuccess } from '../shared/serviceEnvelope'
 
 export interface ForecastFilters {
   organizationId: string

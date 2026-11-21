@@ -1,7 +1,7 @@
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import type { CascadePickerLevel } from '@nerv-iip/ui'
 import { computed, ref, watch } from 'vue'
-import { useBusinessMasterDataResources } from '../useBusinessMasterData'
+import { useBusinessMasterDataResources } from '../master-data'
 
 export interface EquipmentScopeSelection {
   workshop: string

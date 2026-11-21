@@ -308,7 +308,7 @@ vi.mock('@/composables/planning/useBusinessPlanning', async () => {
   }
 })
 
-vi.mock('@/composables/useBusinessMasterData', async () => {
+vi.mock('@/composables/master-data', async () => {
   const { shallowRef } = await vi.importActual<typeof import('vue')>('vue')
   return {
     useBusinessMasterDataResources: (resourceType: string) => ({

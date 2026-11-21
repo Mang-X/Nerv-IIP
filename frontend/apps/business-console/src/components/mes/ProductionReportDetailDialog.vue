@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import ProductionReportMaterialFacts from './ProductionReportMaterialFacts.vue'
-import { useMesProductionReportDetail } from '@/composables/useBusinessMes'
+import { useMesProductionReportDetail } from '@/composables/mes'
 import { inlineErrorMessage } from '@/utils/notify'
 import { formatDateTime } from '@/utils/format'
 import {

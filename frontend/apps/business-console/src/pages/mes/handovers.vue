@@ -41,11 +41,11 @@ import {
 } from '@nerv-iip/ui'
 import { incomingUserLabel, outgoingUserLabel } from '@nerv-iip/business-core'
 import { computed, reactive, ref, watch } from 'vue'
-import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
-import { makeIdempotencyKey, useMesShiftHandovers } from '@/composables/useBusinessMes'
+import { useBusinessMasterDataResources } from '@/composables/master-data'
+import { makeIdempotencyKey, useMesShiftHandovers } from '@/composables/mes'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
-import { usePagedList } from '@/composables/usePagedList'
-import { pagedBreakdownSegments } from '@/composables/metricSegments'
+import { usePagedList } from '@/composables/shared/usePagedList'
+import { pagedBreakdownSegments } from '@/composables/shared/metricSegments'
 import {
   mesHandoverStatusOptions,
   useMesReferenceLabels,

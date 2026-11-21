@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
-import { describeMesReadinessReasons, useMesWipSummary } from '@/composables/useBusinessMes'
+import { describeMesReadinessReasons, useMesWipSummary } from '@/composables/mes'
 import {
   mesOperationTaskStatusOptions,
   useMesReferenceLabels,
 } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,

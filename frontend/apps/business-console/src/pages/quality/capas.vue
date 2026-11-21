@@ -10,7 +10,7 @@ import {
   type QualityCapaActionItem,
   type QualityCapaItem,
 } from '@/composables/quality/useBusinessQualityLedgers'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import { useQualityReadFaceCatalog } from '@/composables/quality/useQualityPickerCatalog'
 import { formatDate, formatDateTime } from '@/utils/format'
 import { friendlyErrorMessage } from '@/utils/notify'

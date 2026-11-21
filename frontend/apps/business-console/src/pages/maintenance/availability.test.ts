@@ -67,7 +67,7 @@ vi.mock('@/composables/equipment/useEquipmentPickerCatalog', () => ({
   }),
 }))
 
-vi.mock('@/composables/useMasterDataDisplayNames', () => ({
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', () => ({
   useMasterDataDisplayNames: () => ({
     resolveDevice: (reference?: string | null) =>
       reference === 'DEV-PRESS-01' ? '冲压机 1 号' : undefined,

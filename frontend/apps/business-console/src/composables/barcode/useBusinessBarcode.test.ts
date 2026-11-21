@@ -31,7 +31,7 @@ const coladaState = vi.hoisted(() => ({
   refetches: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
 
-vi.mock('@/composables/businessContextBinding', () => ({
+vi.mock('@/composables/shared/businessContextBinding', () => ({
   bindBusinessContext: <T extends { organizationId: string; environmentId: string }>(
     filters: T,
   ) => {

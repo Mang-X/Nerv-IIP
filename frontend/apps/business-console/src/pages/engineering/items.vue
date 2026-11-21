@@ -5,7 +5,7 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { pagedBreakdownSegments } from '@/composables/metricSegments'
+import { pagedBreakdownSegments } from '@/composables/shared/metricSegments'
 import { useEngineeringItems } from '@/composables/engineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {

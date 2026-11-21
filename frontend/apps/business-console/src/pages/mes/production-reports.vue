@@ -15,20 +15,20 @@ import {
   useMesProductionReports,
   useMesTelemetryProductionReportCandidates,
   useMesWorkOrders,
-} from '@/composables/useBusinessMes'
+} from '@/composables/mes'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import {
   buildOperationTaskPickerOptions,
   buildWorkOrderPickerOptions,
 } from '@/composables/mes/workOrderPickerOptions'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
   labelFor,
   REPORT_SUSPENSION_REASON_LABELS,
   TELEMETRY_CANDIDATE_STATUS_LABELS,
 } from '@/data/businessLabels'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'

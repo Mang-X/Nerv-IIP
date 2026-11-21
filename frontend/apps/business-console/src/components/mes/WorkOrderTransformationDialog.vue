@@ -2,7 +2,7 @@
 import type {
   MesWorkOrderTransformationLine,
   MesWorkOrderTransformationResult,
-} from '@/composables/useBusinessMes'
+} from '@/composables/mes'
 import type {
   MergeValidationInput,
   SplitTargetDraft,

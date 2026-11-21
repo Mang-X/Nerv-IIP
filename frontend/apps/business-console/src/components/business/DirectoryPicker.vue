@@ -17,7 +17,7 @@ import {
   useMasterDataListPicker,
   useSearchableDirectoryPicker,
   type DirectoryParent,
-} from '@/composables/useSearchableDirectoryPicker'
+} from '@/composables/master-data/useSearchableDirectoryPicker'
 import { useAuthStore } from '@/stores/auth'
 import {
   directoryCreatorFor,

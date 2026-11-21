@@ -2,10 +2,7 @@
 import type { BusinessConsoleWmsWorkPool } from '@nerv-iip/api-client'
 import type { EntityPickerOption, NvDataTableColumn } from '@nerv-iip/ui'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
-import {
-  useBusinessMasterDataResources,
-  useBusinessWorkers,
-} from '@/composables/useBusinessMasterData'
+import { useBusinessMasterDataResources, useBusinessWorkers } from '@/composables/master-data'
 import { useWmsWorkPools } from '@/composables/wms/useWmsWorkPools'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'

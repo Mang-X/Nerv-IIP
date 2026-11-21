@@ -6,7 +6,7 @@ import { useMutation, useQueryCache } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 import { BUSINESS_PERMISSION_CODES } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { bindBusinessContext, hasBusinessContext } from '../businessContextBinding'
+import { bindBusinessContext, hasBusinessContext } from '../shared/businessContextBinding'
 import { isSchedulingWorkbenchQuery } from './useSchedulingWorkbench'
 
 const SCHEDULING_IDS = [

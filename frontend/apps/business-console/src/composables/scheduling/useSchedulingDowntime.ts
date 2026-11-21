@@ -2,8 +2,8 @@ import { getBusinessConsoleSchedulingDowntimeImpactQueryOptions } from '@nerv-ii
 import { useQuery } from '@pinia/colada'
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 import { useIntervalFn, useNow } from '@vueuse/core'
-import { hasBusinessContext, type BusinessContextFields } from '../businessContextBinding'
-import { assertEnvelopeSuccess } from '../serviceEnvelope'
+import { hasBusinessContext, type BusinessContextFields } from '../shared/businessContextBinding'
+import { assertEnvelopeSuccess } from '../shared/serviceEnvelope'
 
 export function useSchedulingDowntime(
   planId: MaybeRefOrGetter<string | undefined>,

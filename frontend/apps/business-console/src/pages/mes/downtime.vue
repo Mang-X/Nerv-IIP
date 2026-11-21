@@ -1,18 +1,14 @@
 <script setup lang="ts">
 import type { DateRange, NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
-import {
-  makeIdempotencyKey,
-  useMesDowntimeEvents,
-  useMesOperationTasks,
-} from '@/composables/useBusinessMes'
-import { pagedBreakdownSegments } from '@/composables/metricSegments'
+import { makeIdempotencyKey, useMesDowntimeEvents, useMesOperationTasks } from '@/composables/mes'
+import { pagedBreakdownSegments } from '@/composables/shared/metricSegments'
 import {
   mesDowntimeStatusOptions,
   useMesReferenceLabels,
 } from '@/composables/mes/useMesReferenceLabels'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import {

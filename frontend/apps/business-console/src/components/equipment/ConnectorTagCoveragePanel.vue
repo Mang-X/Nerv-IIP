@@ -5,7 +5,7 @@ import { RefreshCwIcon, TriangleAlertIcon } from '@lucide/vue'
 import { computed } from 'vue'
 
 import { useBusinessTelemetryConnectorCoverage } from '@/composables/equipment/useBusinessTelemetry'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 
 const props = defineProps<{
   collectionConnectorId: string

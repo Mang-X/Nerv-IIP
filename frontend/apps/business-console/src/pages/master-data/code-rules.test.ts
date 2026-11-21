@@ -31,7 +31,7 @@ const rules = [
   },
 ]
 
-vi.mock('@/composables/useCodeRules', () => ({
+vi.mock('@/composables/master-data/useCodeRules', () => ({
   useCodeRules: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
     rules: computed(() => rules),

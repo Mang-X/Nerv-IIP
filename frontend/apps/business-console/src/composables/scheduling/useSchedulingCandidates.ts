@@ -7,7 +7,7 @@ import {
 } from '@nerv-iip/api-client'
 import { shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { notifyOperationFailure } from '@/utils/notify'
-import { assertEnvelopeSuccess } from '../serviceEnvelope'
+import { assertEnvelopeSuccess } from '../shared/serviceEnvelope'
 
 interface Options {
   context: MaybeRefOrGetter<{ organizationId: string; environmentId: string }>

@@ -62,7 +62,7 @@ vi.mock('@pinia/colada', () => ({
   }),
 }))
 
-vi.mock('../businessContextBinding', () => ({
+vi.mock('../shared/businessContextBinding', () => ({
   bindBusinessContext: (filters: object) =>
     Object.assign(filters, {
       organizationId: 'org-001',

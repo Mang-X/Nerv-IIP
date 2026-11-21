@@ -1,6 +1,6 @@
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { computed, reactive } from 'vue'
-import { useBusinessMasterDataResources } from '../useBusinessMasterData'
+import { useBusinessMasterDataResources } from '../master-data'
 
 const DEFAULT_DEVICE_ASSET_IDS = ''
 

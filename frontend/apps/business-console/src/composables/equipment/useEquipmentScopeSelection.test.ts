@@ -21,7 +21,7 @@ const catalog = vi.hoisted(() => ({
   ] as Array<Record<string, unknown>>,
 }))
 
-vi.mock('../useBusinessMasterData', () => ({
+vi.mock('../master-data', () => ({
   useBusinessMasterDataResources: (resourceType: keyof typeof catalog) => ({
     filters: reactive({ take: 0 }),
     resources: computed(() => catalog[resourceType]),

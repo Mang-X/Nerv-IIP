@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
+import { useBusinessWorkers } from '@/composables/master-data'
 import {
   NvInput,
   NvSelect,

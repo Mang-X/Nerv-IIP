@@ -4,8 +4,8 @@ import {
 } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
 import { computed } from 'vue'
-import { hasBusinessContext, type BusinessContextFields } from '../businessContextBinding'
-import { businessReadState } from '../businessReadState'
+import { hasBusinessContext, type BusinessContextFields } from '../shared/businessContextBinding'
+import { businessReadState } from '../shared/businessReadState'
 
 interface DefectNcrSource extends BusinessContextFields {
   defectNos: string[]

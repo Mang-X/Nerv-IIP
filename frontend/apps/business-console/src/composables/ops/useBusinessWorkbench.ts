@@ -11,7 +11,7 @@ import {
 import { useQuery } from '@pinia/colada'
 import { computed } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { hasBusinessContext, refetchWithBusinessContext } from '../businessContextBinding'
+import { hasBusinessContext, refetchWithBusinessContext } from '../shared/businessContextBinding'
 
 const WORKBENCH_TAKE = 8
 

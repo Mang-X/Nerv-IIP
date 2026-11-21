@@ -3,7 +3,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import type { ProductionStatisticsPresentationRow } from '@/features/mes-production-report/productionStatisticsPresentation'
 import { NvBadge, NvDataTable } from '@nerv-iip/ui'
 import { computed } from 'vue'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import { inlineErrorMessage } from '@/utils/notify'
 import {
   describeProductionStatisticsDegradation,

@@ -12,13 +12,13 @@ import type { EntityPickerOption } from '@nerv-iip/ui'
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import { computed } from 'vue'
 import { useErpDeliveryOrders, useErpPurchaseOrders, useErpSalesOrders } from './useBusinessErp'
-import { toBaseUomBySku } from '../skuBaseUom'
+import { toBaseUomBySku } from '../master-data/skuBaseUom'
 import {
   useBusinessMasterDataResources,
   useBusinessPartners,
   useBusinessSkus,
   useBusinessUoms,
-} from '../useBusinessMasterData'
+} from '../master-data'
 
 /** 主数据目录取数上限——ERP 现场的物料 / 伙伴目录量级在数百条。 */
 const CATALOG_TAKE = 500

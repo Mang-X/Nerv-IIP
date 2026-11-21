@@ -8,7 +8,7 @@ import {
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { hasBusinessContext } from '../businessContextBinding'
+import { hasBusinessContext } from '../shared/businessContextBinding'
 
 /** 单台设备的采集点位一般几个到几十个，一页取全。 */
 const POINTS_TAKE = 500

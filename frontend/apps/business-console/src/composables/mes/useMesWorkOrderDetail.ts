@@ -23,8 +23,8 @@ import { useScopeBoundListResponse } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
 import { computed, shallowRef, watch, toValue, type MaybeRefOrGetter } from 'vue'
-import { hasBusinessContext } from '../businessContextBinding'
-import { businessReadState } from '../businessReadState'
+import { hasBusinessContext } from '../shared/businessContextBinding'
+import { businessReadState } from '../shared/businessReadState'
 import {
   CANCEL_PREVIEW_PAGE_SIZE,
   MES_WORK_ORDERS_MANAGE_PERMISSION,

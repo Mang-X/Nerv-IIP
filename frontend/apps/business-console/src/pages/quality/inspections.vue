@@ -24,10 +24,10 @@ import {
   useQualitySkuCatalog,
   useQualityUomCatalog,
 } from '@/composables/quality/useQualityPickerCatalog'
-import { hasBusinessContext } from '@/composables/businessContextBinding'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { useSkuNames } from '@/composables/useSkuNames'
-import { usePagedList } from '@/composables/usePagedList'
+import { hasBusinessContext } from '@/composables/shared/businessContextBinding'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
+import { useSkuNames } from '@/composables/master-data/useSkuNames'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import {
   inlineErrorMessage,
   notifyError,
@@ -40,7 +40,7 @@ import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import type { SourceDocumentKind } from '@/composables/catalog/useSourceDocumentCatalog'
 import { readFaceText } from '@/utils/readFace'
-import { recoverLifecycleAction } from '@/composables/lifecycleAction'
+import { recoverLifecycleAction } from '@/composables/shared/lifecycleAction'
 import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDetailSheet.vue'
 import FirstArticleInspectionRecords from '@/components/quality/FirstArticleInspectionRecords.vue'
 import FirstArticlePlanSheet from '@/components/quality/FirstArticlePlanSheet.vue'

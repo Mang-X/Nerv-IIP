@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
-import { readStateNote, readStateValue } from '@/composables/businessReadState'
+import { readStateNote, readStateValue } from '@/composables/shared/businessReadState'
 import {
   describeMesReadinessReason,
   mesWorkScopeKindLabel,
   useMesOperationTasks,
   useMesOverview,
-} from '@/composables/useBusinessMes'
+} from '@/composables/mes'
 import { labelFor, MES_READINESS_AREA_LABELS } from '@/data/businessLabels'
 import { type KpiPolarity, buildKpiTrend } from '@/utils/kpiTrend'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'

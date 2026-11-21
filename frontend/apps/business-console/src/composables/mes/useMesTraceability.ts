@@ -7,7 +7,7 @@ import {
 } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
 import { computed } from 'vue'
-import { hasBusinessContext } from '../businessContextBinding'
+import { hasBusinessContext } from '../shared/businessContextBinding'
 import { defaultTraceabilityFilters, isNonEmpty, toContextQuery, unwrapData } from './mesShared'
 
 export function useMesTraceability() {

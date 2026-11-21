@@ -11,8 +11,8 @@ import {
   useTelemetryTagCatalog,
 } from '@/composables/equipment/useEquipmentPickerCatalog'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { usePagedList } from '@/composables/usePagedList'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvBadge,

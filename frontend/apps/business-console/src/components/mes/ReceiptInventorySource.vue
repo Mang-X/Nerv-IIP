@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesReceiptRequestRow } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import { useMesReceiptInventorySource } from '@/composables/useBusinessMes'
+import { useMesReceiptInventorySource } from '@/composables/mes'
 import { receiptStatusLabel } from '@/composables/mes/useMesReferenceLabels'
 import { inlineErrorMessage } from '@/utils/notify'
 import {

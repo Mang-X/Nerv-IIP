@@ -16,7 +16,7 @@ import {
   refetchWithBusinessContext,
   withBusinessContextEnabled,
   type BusinessContextFields,
-} from '../businessContextBinding'
+} from '../shared/businessContextBinding'
 
 export interface ToolingFilters extends BusinessContextFields {
   keyword?: string

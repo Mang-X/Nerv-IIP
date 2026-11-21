@@ -13,7 +13,7 @@ import {
   NvFieldLabel,
   NvInput,
 } from '@nerv-iip/ui'
-import type { MasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
+import type { MasterDataLifecycleConfirm } from '@/composables/master-data/masterDataLifecycleConfirm'
 
 /**
  * 停用 / 重新启用的二次确认框——**每页只渲染一个实例**，放在 `v-for` 外，

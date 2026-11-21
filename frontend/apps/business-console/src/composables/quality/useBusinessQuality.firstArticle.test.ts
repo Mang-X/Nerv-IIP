@@ -48,7 +48,7 @@ vi.mock('@pinia/colada', () => ({
   useQueryCache: () => ({ invalidateQueries: vi.fn().mockResolvedValue(undefined) }),
 }))
 
-vi.mock('../businessContextBinding', () => ({
+vi.mock('../shared/businessContextBinding', () => ({
   bindBusinessContext: <T>(filters: T) => filters,
   hasBusinessContext: (filters: { organizationId?: string; environmentId?: string }) =>
     Boolean(filters.organizationId && filters.environmentId),

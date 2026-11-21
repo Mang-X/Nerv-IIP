@@ -18,7 +18,7 @@ const state = vi.hoisted(() => ({
 }))
 
 // 主数据名录桩：按（编码、公开 ID、名称）小表查，与真实实现同口径——编码和公开 ID 都能解析。
-vi.mock('@/composables/useMasterDataDisplayNames', () => {
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', () => {
   const devices = [
     { code: 'EQ00001', publicId: '019fbb41-5555-7555-8555-555555555555', name: '五轴加工中心' },
   ]

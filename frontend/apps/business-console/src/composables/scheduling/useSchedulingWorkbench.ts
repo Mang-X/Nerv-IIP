@@ -7,8 +7,8 @@ import {
 import { useMutation, useQueryCache } from '@pinia/colada'
 import type { UseQueryEntry } from '@pinia/colada'
 import { computed } from 'vue'
-import { useMesWorkOrders, useMesPrincipalWorkScope } from '../useBusinessMes'
-import { assertEnvelopeSuccess } from '../serviceEnvelope'
+import { useMesWorkOrders, useMesPrincipalWorkScope } from '../mes'
+import { assertEnvelopeSuccess } from '../shared/serviceEnvelope'
 import { useSchedulingFirstPlan } from './useSchedulingFirstPlan'
 
 const SCHEDULING_IDS = [

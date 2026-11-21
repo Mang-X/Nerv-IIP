@@ -17,9 +17,9 @@ import {
   hasBusinessContext,
   refetchWithBusinessContext,
   type BusinessContextFields,
-} from '../businessContextBinding'
-import { assertEnvelopeSuccess } from '../serviceEnvelope'
-import { usePagedList, type PagedListFilters } from '../usePagedList'
+} from '../shared/businessContextBinding'
+import { assertEnvelopeSuccess } from '../shared/serviceEnvelope'
+import { usePagedList, type PagedListFilters } from '../shared/usePagedList'
 import type { BusinessConsoleSchedulingPlanStatus } from '@nerv-iip/api-client'
 
 const SCHEDULING_POLL_INTERVAL_MS = 5_000

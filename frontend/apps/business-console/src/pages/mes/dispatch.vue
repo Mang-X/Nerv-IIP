@@ -3,11 +3,8 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import type { DispatchAssignTarget } from '@/components/mes/DispatchAssignDialog.vue'
 import DispatchAssignDialog from '@/components/mes/DispatchAssignDialog.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
-import {
-  useBusinessMasterDataResources,
-  useBusinessWorkers,
-} from '@/composables/useBusinessMasterData'
-import { describeMesReadinessReasons, useMesDispatchTasks } from '@/composables/useBusinessMes'
+import { useBusinessMasterDataResources, useBusinessWorkers } from '@/composables/master-data'
+import { describeMesReadinessReasons, useMesDispatchTasks } from '@/composables/mes'
 import { describeScheduleInvalidationReason } from '@/composables/scheduling/useScheduleInvalidation'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
@@ -19,7 +16,7 @@ import {
   resolveExecutionState,
   resolveScheduleState,
 } from '@/composables/mes/useMesTaskSemantics'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'

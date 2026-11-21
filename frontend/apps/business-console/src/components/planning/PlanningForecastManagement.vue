@@ -3,10 +3,7 @@ import type { BusinessConsoleForecastInputItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { CalendarRangeIcon, PencilIcon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
-import {
-  useBusinessMasterDataResources,
-  useBusinessSkus,
-} from '@/composables/useBusinessMasterData'
+import { useBusinessMasterDataResources, useBusinessSkus } from '@/composables/master-data'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import {
   useBusinessForecasts,

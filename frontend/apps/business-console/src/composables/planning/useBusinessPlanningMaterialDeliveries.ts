@@ -4,8 +4,8 @@ import {
 } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
 import { computed, reactive, shallowRef, watch } from 'vue'
-import { bindBusinessContext, hasBusinessContext } from '../businessContextBinding'
-import { assertEnvelopeSuccess } from '../serviceEnvelope'
+import { bindBusinessContext, hasBusinessContext } from '../shared/businessContextBinding'
+import { assertEnvelopeSuccess } from '../shared/serviceEnvelope'
 
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'

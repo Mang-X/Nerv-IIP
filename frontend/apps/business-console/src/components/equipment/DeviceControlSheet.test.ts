@@ -81,7 +81,7 @@ vi.mock('@/composables/equipment/useBusinessTelemetry', async (importOriginal) =
   }),
 }))
 
-vi.mock('@/composables/useMasterDataDisplayNames', () => ({
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', () => ({
   useMasterDataDisplayNames: () => ({
     resolveDevice: (reference?: string | null) =>
       reference === 'DEV-CNC-01' ? '数控车床 1 号' : undefined,

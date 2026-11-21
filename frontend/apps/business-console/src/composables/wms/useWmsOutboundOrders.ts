@@ -17,7 +17,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, shallowRef } from 'vue'
-import { executeLifecycleAction } from '../lifecycleAction'
+import { executeLifecycleAction } from '../shared/lifecycleAction'
 import {
   baseQuery,
   createWmsIdempotencyKey,

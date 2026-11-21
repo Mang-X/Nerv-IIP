@@ -7,8 +7,8 @@ import {
   usePersonnelSkillAssignment,
   usePersonnelSkillMatrix,
   useBusinessWorkers,
-} from '@/composables/useBusinessMasterData'
-import { useSkillCatalog } from '@/composables/usePromotedCatalogs'
+} from '@/composables/master-data'
+import { useSkillCatalog } from '@/composables/master-data/usePromotedCatalogs'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'

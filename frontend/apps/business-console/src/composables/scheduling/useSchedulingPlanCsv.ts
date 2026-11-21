@@ -1,7 +1,7 @@
 import { exportBusinessConsoleSchedulingPlanCsv } from '@nerv-iip/api-client'
 import { ref } from 'vue'
 import type { SchedulingPlanSelection } from './useBusinessScheduling'
-import { hasBusinessContext } from '../businessContextBinding'
+import { hasBusinessContext } from '../shared/businessContextBinding'
 
 export function useSchedulingPlanCsv() {
   const pending = ref(false)

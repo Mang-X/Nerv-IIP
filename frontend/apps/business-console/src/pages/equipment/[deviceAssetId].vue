@@ -34,7 +34,7 @@ import {
   deviceReceiptLabel,
   useBusinessDeviceControlCommands,
 } from '@/composables/equipment/useBusinessDeviceControl'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import DeviceControlSheet from '@/components/equipment/DeviceControlSheet.vue'
 import DeviceTelemetryPointsSheet from '@/components/equipment/DeviceTelemetryPointsSheet.vue'
 import EquipmentHealthCard from '@/components/equipment/EquipmentHealthCard.vue'
@@ -48,7 +48,7 @@ import {
   useMaintenanceSpareParts,
   useMaintenanceWorkOrders,
 } from '@/composables/maintenance/useBusinessMaintenance'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import {
   formatIsoInterval,
   labelFor,

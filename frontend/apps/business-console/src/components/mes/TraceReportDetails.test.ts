@@ -24,7 +24,7 @@ vi.mock('@/stores/auth', () => ({
     },
   }),
 }))
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   useMesProductionReportDetail: (getReportNo: () => string | null) => {
     state.requested(getReportNo())
     return {

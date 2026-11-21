@@ -7,13 +7,13 @@ import type {
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { useMaintenanceInspections } from '@/composables/maintenance/useBusinessMaintenance'
 import { labelFor, MAINTENANCE_INSPECTION_RESULT_LABELS } from '@/data/businessLabels'
-import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
+import { useBusinessWorkers } from '@/composables/master-data'
 import {
   useEquipmentUomCatalog,
   useMaintenanceDocumentCatalog,
 } from '@/composables/equipment/useEquipmentPickerCatalog'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { usePagedList } from '@/composables/usePagedList'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'

@@ -162,7 +162,7 @@ vi.mock('@pinia/colada', () => ({
   })),
 }))
 
-vi.mock('../useBusinessMes', () => ({
+vi.mock('../mes', () => ({
   useMesPrincipalWorkScope: () => ({
     selectedScope: shallowRef({ kind: 'team', id: 'team-1' }),
     scopePending: shallowRef(false),

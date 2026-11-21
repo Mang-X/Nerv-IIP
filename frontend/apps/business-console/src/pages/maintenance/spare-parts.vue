@@ -12,9 +12,9 @@ import {
   useEquipmentUomCatalog,
   useMaintenanceDocumentCatalog,
 } from '@/composables/equipment/useEquipmentPickerCatalog'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { usePagedList } from '@/composables/usePagedList'
-import { useSkuNames } from '@/composables/useSkuNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
+import { usePagedList } from '@/composables/shared/usePagedList'
+import { useSkuNames } from '@/composables/master-data/useSkuNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'

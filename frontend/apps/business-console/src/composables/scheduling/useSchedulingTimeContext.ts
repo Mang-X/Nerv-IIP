@@ -1,8 +1,8 @@
 import { getBusinessConsoleSchedulingTimeContextQueryOptions } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
 import { computed } from 'vue'
-import { hasBusinessContext, type BusinessContextFields } from '../businessContextBinding'
-import { assertEnvelopeSuccess } from '../serviceEnvelope'
+import { hasBusinessContext, type BusinessContextFields } from '../shared/businessContextBinding'
+import { assertEnvelopeSuccess } from '../shared/serviceEnvelope'
 
 export function useSchedulingTimeContext(
   planId: () => string | undefined,

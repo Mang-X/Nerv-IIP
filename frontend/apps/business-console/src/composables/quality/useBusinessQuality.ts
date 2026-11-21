@@ -34,8 +34,8 @@ import {
   hasBusinessContext,
   refetchWithBusinessContext,
   type BusinessContextFields,
-} from '../businessContextBinding'
-import { executeLifecycleAction } from '../lifecycleAction'
+} from '../shared/businessContextBinding'
+import { executeLifecycleAction } from '../shared/lifecycleAction'
 
 const DEFAULT_TAKE = 100
 

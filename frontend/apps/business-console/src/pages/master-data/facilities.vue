@@ -14,13 +14,13 @@ import SiteCreateDialog from '@/components/masterData/SiteCreateDialog.vue'
 import StationCreateDialog from '@/components/masterData/StationCreateDialog.vue'
 import WorkCenterCreateDialog from '@/components/masterData/WorkCenterCreateDialog.vue'
 import WorkshopCreateDialog from '@/components/masterData/WorkshopCreateDialog.vue'
-import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
-import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
+import { useIncludeDisabledFilter } from '@/composables/master-data/masterDataIncludeDisabled'
+import { useMasterDataLifecycleConfirm } from '@/composables/master-data/masterDataLifecycleConfirm'
 import {
   useBusinessWorkshops,
   useMasterDataResource,
   useMasterDataResourceActions,
-} from '@/composables/useBusinessMasterData'
+} from '@/composables/master-data'
 import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from '@/data/timeZones'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {

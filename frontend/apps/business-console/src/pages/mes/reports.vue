@@ -7,9 +7,9 @@ import MesProductionContextPanel from '@/components/mes/production-report/MesPro
 import MesProductionReportFilters from '@/components/mes/production-report/MesProductionReportFilters.vue'
 import MesProductionStatisticsTable from '@/components/mes/production-report/MesProductionStatisticsTable.vue'
 import { useBusinessTelemetryOeeAggregates } from '@/composables/equipment/useBusinessTelemetry'
-import { useMesWipSummary } from '@/composables/useBusinessMes'
-import { useMesProductionStatistics } from '@/composables/useMesProductionStatistics'
-import { usePagedList } from '@/composables/usePagedList'
+import { useMesWipSummary } from '@/composables/mes'
+import { useMesProductionStatistics } from '@/composables/mes/useMesProductionStatistics'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import {
   createProductionStatisticsCsv,
   productionStatisticsCsvFilename,

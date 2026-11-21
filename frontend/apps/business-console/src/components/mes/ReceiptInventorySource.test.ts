@@ -9,7 +9,7 @@ const state = vi.hoisted(() => ({
   error: undefined as unknown,
   pending: false,
 }))
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   useMesReceiptInventorySource: () => ({
     source: shallowRef(state.source),
     sourceError: shallowRef(state.error),

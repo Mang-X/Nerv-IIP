@@ -4,7 +4,7 @@ import { useQuery } from '@pinia/colada'
 import { refDebounced } from '@vueuse/core'
 import { computed, ref, toValue, type MaybeRefOrGetter } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { hasBusinessContext } from '../businessContextBinding'
+import { hasBusinessContext } from '../shared/businessContextBinding'
 
 /** 一次取回的候选条数；更多的靠搜索收窄，匹配总数如实交给选择器提示。 */
 const PAGE_SIZE = 50

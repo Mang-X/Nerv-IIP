@@ -25,7 +25,7 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => {
     },
   }
 })
-vi.mock('@/composables/useMasterDataDisplayNames', () => ({
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', () => ({
   useMasterDataDisplayNames: () => ({
     resolveSite: () => undefined,
     resolveWorkshop: () => undefined,

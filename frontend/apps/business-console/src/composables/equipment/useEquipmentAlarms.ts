@@ -19,8 +19,8 @@ import { useBusinessContextStore } from '@/stores/businessContext'
 import { useQuery } from '@pinia/colada'
 import { refDebounced } from '@vueuse/core'
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
-import { hasBusinessContext, refetchWithBusinessContext } from '../businessContextBinding'
-import { executeLifecycleAction } from '../lifecycleAction'
+import { hasBusinessContext, refetchWithBusinessContext } from '../shared/businessContextBinding'
+import { executeLifecycleAction } from '../shared/lifecycleAction'
 import { listItems, toContextQuery } from './equipmentReadScope'
 
 function requirePendingPayloadSnapshot<T extends object>(snapshot: unknown, operation: string): T {

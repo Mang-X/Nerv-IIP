@@ -8,7 +8,7 @@ import ReceiptCreateSheet from './ReceiptCreateSheet.vue'
 // 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
 // 物料主档：登记单位取所选成品的基本单位（两个成品刻意不同单位，用来证明单位来自主档而非常量）。
 const baseUomBySkuFixture: Record<string, string> = { 'FG-A': 'pcs', 'FG-B': 'kg' }
-vi.mock('@/composables/useSkuNames', async () => {
+vi.mock('@/composables/master-data/useSkuNames', async () => {
   const { computed } = await import('vue')
   return {
     useSkuNames: () => ({
@@ -22,7 +22,7 @@ vi.mock('@/composables/useSkuNames', async () => {
     }),
   }
 })
-vi.mock('@/composables/useBusinessPartnerNames', async () => {
+vi.mock('@/composables/master-data/useBusinessPartnerNames', async () => {
   const { computed } = await import('vue')
   return {
     useBusinessPartnerNames: () => ({
@@ -34,7 +34,7 @@ vi.mock('@/composables/useBusinessPartnerNames', async () => {
     }),
   }
 })
-vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', async () => {
   const { computed } = await import('vue')
   const emptyIndex = computed(() => new Map<string, string>())
   return {
@@ -69,7 +69,7 @@ vi.mock('@/utils/notify', async (importOriginal) => ({
   notifyOperationFailure: vi.fn(),
 }))
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-key-${++state.keyCounter}`,
   useMesWorkOrderProducedLots: () => ({
     // 两个工单各一个产出批次，均自动选中。
@@ -97,7 +97,7 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessUoms: () => ({
     filters: reactive({ skip: 0, take: 200 }),
     uoms: ref([

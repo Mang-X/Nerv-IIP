@@ -7,7 +7,7 @@ import {
   hasBusinessContext,
   withBusinessContextEnabled,
   type BusinessContextFields,
-} from '../businessContextBinding'
+} from '../shared/businessContextBinding'
 import {
   MES_WORK_SCOPE_REQUIRED_MESSAGE,
   MES_WORK_SCOPE_UNAVAILABLE_MESSAGE,

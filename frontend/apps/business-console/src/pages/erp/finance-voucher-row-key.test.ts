@@ -56,7 +56,7 @@ vi.mock('@/composables/erp/useBusinessErp', async () => {
   }
 })
 
-vi.mock('@/composables/usePagedList', async () => {
+vi.mock('@/composables/shared/usePagedList', async () => {
   const { shallowRef } = await import('vue')
   return {
     usePagedList: () => ({

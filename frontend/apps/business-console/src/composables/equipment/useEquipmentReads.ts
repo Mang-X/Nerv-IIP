@@ -13,7 +13,7 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useQuery } from '@pinia/colada'
 import { computed } from 'vue'
-import { hasBusinessContext } from '../businessContextBinding'
+import { hasBusinessContext } from '../shared/businessContextBinding'
 import {
   defaultAvailabilityFilters,
   defaultDeviceFilters,

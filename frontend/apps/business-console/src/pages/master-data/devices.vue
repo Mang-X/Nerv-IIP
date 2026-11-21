@@ -5,14 +5,14 @@ import DeviceFormDialog from '@/components/masterData/DeviceFormDialog.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
-import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
-import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
+import { useIncludeDisabledFilter } from '@/composables/master-data/masterDataIncludeDisabled'
+import { useMasterDataLifecycleConfirm } from '@/composables/master-data/masterDataLifecycleConfirm'
 import {
   useBusinessWorkshops,
   useMasterDataResource,
   useMasterDataResourceActions,
-} from '@/composables/useBusinessMasterData'
-import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
+} from '@/composables/master-data'
+import { useBusinessPartnerNames } from '@/composables/master-data/useBusinessPartnerNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { NvButton, NvDataTable, NvPageHeader, NvStatusBadge, NvToolbar } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'

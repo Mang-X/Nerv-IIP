@@ -15,13 +15,9 @@ import {
   useMaintenancePlans,
   useMaintenanceWorkOrders,
 } from '../maintenance/useBusinessMaintenance'
-import { toBaseUomBySku } from '../skuBaseUom'
+import { toBaseUomBySku } from '../master-data/skuBaseUom'
 import { useEquipmentDeviceAlarms } from './useBusinessEquipment'
-import {
-  useBusinessMasterDataResources,
-  useBusinessSkus,
-  useBusinessUoms,
-} from '../useBusinessMasterData'
+import { useBusinessMasterDataResources, useBusinessSkus, useBusinessUoms } from '../master-data'
 import { useBusinessTelemetryConnectors, useBusinessTelemetryTags } from './useBusinessTelemetry'
 
 /** 主数据目录取数上限——一个厂区的设备 / 物料 / 单位目录量级在数百条。 */

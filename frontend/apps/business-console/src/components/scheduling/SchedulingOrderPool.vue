@@ -6,7 +6,7 @@ import WorkOrderDemandChangeBadges from '@/components/mes/WorkOrderDemandChangeB
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import { useOrderUrgencies } from '@/composables/urgency/useOrderUrgency'
 import { DEFAULT_URGENCY_DISPLAY_MODE } from '@/composables/urgency/useUrgencyDisplayMode'
-import { useSkuNames } from '@/composables/useSkuNames'
+import { useSkuNames } from '@/composables/master-data/useSkuNames'
 import { AlertTriangleIcon, RefreshCwIcon, SearchIcon, XIcon } from '@lucide/vue'
 import { NvButton, NvCheckbox, NvInput, NvSpinner } from '@nerv-iip/ui'
 import { computed, ref, reactive, shallowRef } from 'vue'

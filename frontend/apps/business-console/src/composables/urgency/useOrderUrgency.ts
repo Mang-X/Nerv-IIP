@@ -3,7 +3,7 @@ import { listBusinessConsoleOrderUrgencies } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { bindBusinessContext, hasBusinessContext } from '../businessContextBinding'
+import { bindBusinessContext, hasBusinessContext } from '../shared/businessContextBinding'
 
 /**
  * 网关对 `orderReferences` 有 4000 字符校验上限（BusinessConsoleSchedulingEndpoints

@@ -14,16 +14,13 @@ import {
   mesWorkOrderReleaseBlocker,
   mesWorkOrderRetroactiveReleaseNotice,
 } from '@/composables/mes/workOrderRelease'
-import {
-  useBusinessMasterDataResources,
-  useBusinessSkus,
-} from '@/composables/useBusinessMasterData'
+import { useBusinessMasterDataResources, useBusinessSkus } from '@/composables/master-data'
 import {
   useMesOperationTasks,
   useMesWorkOrderTransformations,
   useMesWorkOrders,
   type MesWorkOrderTransformationResult,
-} from '@/composables/useBusinessMes'
+} from '@/composables/mes'
 import WorkOrderTransformationDialog, {
   type MergeTransformationSubmit,
   type SplitTransformationSubmit,
@@ -33,8 +30,8 @@ import {
   isTransformationConflict,
   type WorkOrderTransformationSource,
 } from '@/composables/mes/workOrderTransformation'
-import { toBaseUomBySku } from '@/composables/skuBaseUom'
-import { useMesMaterialVersionCatalog } from '@/composables/useMesPickerCatalog'
+import { toBaseUomBySku } from '@/composables/master-data/skuBaseUom'
+import { useMesMaterialVersionCatalog } from '@/composables/mes/useMesPickerCatalog'
 import { useOrderUrgencies } from '@/composables/urgency/useOrderUrgency'
 import {
   DEFAULT_URGENCY_DISPLAY_MODE,

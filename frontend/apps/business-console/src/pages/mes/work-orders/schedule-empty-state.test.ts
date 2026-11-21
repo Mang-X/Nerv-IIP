@@ -40,7 +40,7 @@ const detailState = vi.hoisted(() => ({
   detail: undefined as Record<string, unknown> | undefined,
 }))
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   describeMesReadinessReason: (code: string) => ({ code, label: code, nextStep: '' }),
   useMesWorkScopeSelection: () => ({

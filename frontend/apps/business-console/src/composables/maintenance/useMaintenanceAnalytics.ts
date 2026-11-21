@@ -14,7 +14,7 @@ import {
 } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
-import { bindBusinessContext, hasBusinessContext } from '../businessContextBinding'
+import { bindBusinessContext, hasBusinessContext } from '../shared/businessContextBinding'
 import { listItems, optionalQuery, unwrapData } from './maintenanceShared'
 
 export interface MaintenanceReliabilityFilters {

@@ -33,7 +33,7 @@ const actionsStub = () => ({
   actionError: computed(() => undefined),
 })
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessUoms: () => ({
     createUom: vi.fn(),
     createUomError: shallowRef(undefined),

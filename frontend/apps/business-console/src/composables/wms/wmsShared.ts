@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
-import { bindBusinessContext } from '../businessContextBinding'
-import { LifecycleStateChangedError } from '../lifecycleAction'
+import { bindBusinessContext } from '../shared/businessContextBinding'
+import { LifecycleStateChangedError } from '../shared/lifecycleAction'
 
 const DEFAULT_TAKE = 100
 

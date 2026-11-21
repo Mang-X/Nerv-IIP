@@ -20,7 +20,7 @@ import {
   useSchedulingPlanSummary,
 } from '@/composables/scheduling/useBusinessScheduling'
 import { useSchedulingTimeContext } from '@/composables/scheduling/useSchedulingTimeContext'
-import { useMesWorkOrderFacts } from '@/composables/useBusinessMes'
+import { useMesWorkOrderFacts } from '@/composables/mes'
 import { useOrderUrgencies } from '@/composables/urgency/useOrderUrgency'
 import {
   DEFAULT_URGENCY_DISPLAY_MODE,

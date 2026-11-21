@@ -51,14 +51,14 @@ vi.mock('@/composables/equipment/useEquipmentPickerCatalog', () => {
   }
 })
 
-vi.mock('@/composables/useMasterDataDisplayNames', () => ({
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', () => ({
   useMasterDataDisplayNames: () => ({
     formatUom: (code?: string | null) => code ?? '',
     resolveDevice: () => undefined,
   }),
 }))
 
-vi.mock('@/composables/useSkuNames', () => ({
+vi.mock('@/composables/master-data/useSkuNames', () => ({
   useSkuNames: () => ({ resolveSkuName: () => undefined }),
 }))
 

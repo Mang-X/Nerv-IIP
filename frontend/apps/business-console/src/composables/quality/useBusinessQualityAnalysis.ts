@@ -14,7 +14,7 @@ import {
   bindBusinessContext,
   hasBusinessContext,
   type BusinessContextFields,
-} from '../businessContextBinding'
+} from '../shared/businessContextBinding'
 
 // Keep aligned with SpcCalculation.NoCompleteSubgroupMessage in the Quality service.
 const SPC_WARMUP_MESSAGE = 'SPC control chart requires at least one complete subgroup.'

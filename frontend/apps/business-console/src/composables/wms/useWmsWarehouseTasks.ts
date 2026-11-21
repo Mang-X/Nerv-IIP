@@ -21,8 +21,11 @@ import {
 import { useScopeBoundListResponse } from '@nerv-iip/business-core'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, shallowRef } from 'vue'
-import { refetchWithBusinessContext, withBusinessContextEnabled } from '../businessContextBinding'
-import { LifecycleStateChangedError } from '../lifecycleAction'
+import {
+  refetchWithBusinessContext,
+  withBusinessContextEnabled,
+} from '../shared/businessContextBinding'
+import { LifecycleStateChangedError } from '../shared/lifecycleAction'
 import {
   baseQuery,
   createWmsIdempotencyKey,

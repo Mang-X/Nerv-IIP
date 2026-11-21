@@ -10,7 +10,7 @@ import { computed } from 'vue'
 import { NvButton } from '@nerv-iip/ui'
 import { useAuthStore } from '@/stores/auth'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
-import { assertEnvelopeSuccess } from '@/composables/serviceEnvelope'
+import { assertEnvelopeSuccess } from '@/composables/shared/serviceEnvelope'
 import { inlineErrorMessage } from '@/utils/notify'
 
 const props = defineProps<{

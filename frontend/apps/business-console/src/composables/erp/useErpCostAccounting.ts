@@ -10,7 +10,7 @@ import {
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive, shallowRef } from 'vue'
-import { hasBusinessContext, refetchWithBusinessContext } from '../businessContextBinding'
+import { hasBusinessContext, refetchWithBusinessContext } from '../shared/businessContextBinding'
 
 // ERP 成本核算：工单成本差异、机器制造费用、工作中心人工费率与机器制造费用率。
 

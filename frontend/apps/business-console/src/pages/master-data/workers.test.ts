@@ -64,7 +64,7 @@ const filters = reactive({
   pageSize: 20,
 })
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useWorkerRegistry: () => ({
     filters,
     workers: computed(() => stub.workers),

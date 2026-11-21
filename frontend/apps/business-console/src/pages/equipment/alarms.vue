@@ -2,9 +2,12 @@
 import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn, NvMetricFacet, NvMetricSegment } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
-import { LifecycleStateChangedError, recoverLifecycleAction } from '@/composables/lifecycleAction'
+import {
+  LifecycleStateChangedError,
+  recoverLifecycleAction,
+} from '@/composables/shared/lifecycleAction'
 import { useBusinessEquipmentAlarms } from '@/composables/equipment/useBusinessEquipment'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'

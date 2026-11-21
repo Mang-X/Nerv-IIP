@@ -36,7 +36,7 @@ vi.mock('@/composables/scheduling/useSingleOrderScheduling', async () => {
   }
 })
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   useMesWorkOrders: () => {
     state.mesCalls += 1
     return {

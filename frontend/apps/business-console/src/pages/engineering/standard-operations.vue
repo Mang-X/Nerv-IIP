@@ -7,7 +7,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
+import { useBusinessMasterDataResources } from '@/composables/master-data'
 import { useStandardOperations } from '@/composables/engineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {

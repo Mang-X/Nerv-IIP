@@ -9,14 +9,14 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
-import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
-import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
+import { useIncludeDisabledFilter } from '@/composables/master-data/masterDataIncludeDisabled'
+import { useMasterDataLifecycleConfirm } from '@/composables/master-data/masterDataLifecycleConfirm'
 import {
   useBusinessMasterDataResources,
   useBusinessUoms,
   useMasterDataResourceActions,
   useUomConversions,
-} from '@/composables/useBusinessMasterData'
+} from '@/composables/master-data'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,

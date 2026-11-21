@@ -75,7 +75,7 @@ function stubActions(resourceType: string) {
   }
 }
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useMasterDataResource: (resourceType: string) => stubResource(resourceType),
   useMasterDataResourceActions: (resourceType: string) => stubActions(resourceType),
   useCreateMasterDataResource: () => ({

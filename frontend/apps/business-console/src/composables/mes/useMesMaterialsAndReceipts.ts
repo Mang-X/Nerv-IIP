@@ -33,8 +33,8 @@ import {
   hasBusinessContext,
   refetchWithBusinessContext,
   withBusinessContextEnabled,
-} from '../businessContextBinding'
-import { businessReadState } from '../businessReadState'
+} from '../shared/businessContextBinding'
+import { businessReadState } from '../shared/businessReadState'
 import {
   defaultContext,
   defaultFilters,

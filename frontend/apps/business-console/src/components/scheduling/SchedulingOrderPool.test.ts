@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SchedulingOrderPool from './SchedulingOrderPool.vue'
 
-vi.mock('@/composables/useSkuNames', () => ({
+vi.mock('@/composables/master-data/useSkuNames', () => ({
   useSkuNames: () => ({
     resolveSkuName: () => undefined,
   }),

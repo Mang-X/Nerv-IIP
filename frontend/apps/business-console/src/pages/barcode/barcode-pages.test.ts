@@ -283,7 +283,7 @@ vi.mock('@/composables/barcode/useBusinessBarcode', () => ({
 }))
 
 // 扫码补录的设备/终端已改成设备资产主数据选择器；目录 composable 走 pinia + colada，测试给定选项。
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessMasterDataResources: () => ({
     filters: reactive({ skip: 0, take: 200 }),
     resources: computed(() => [{ code: 'PC-01', displayName: '工位一体机 PC-01', active: true }]),

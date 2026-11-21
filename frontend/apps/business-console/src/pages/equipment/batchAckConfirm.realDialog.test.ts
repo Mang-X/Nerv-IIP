@@ -18,7 +18,7 @@ import AlarmsPage from './alarms.vue'
  * 1. 写回**进行中**框还开着、确认按钮真的禁用（这条只有普通 `NvButton` 才留得住）；
  * 2. 部分失败后只有失败行仍被选中，用户可就地重发。
  */
-vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', async () => {
   const { computed } = await import('vue')
   const emptyIndex = computed(() => new Map<string, string>())
   return {

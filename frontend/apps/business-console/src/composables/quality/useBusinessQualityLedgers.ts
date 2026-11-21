@@ -18,7 +18,7 @@ import {
   hasBusinessContext,
   refetchWithBusinessContext,
   type BusinessContextFields,
-} from '../businessContextBinding'
+} from '../shared/businessContextBinding'
 
 /**
  * 计量校准 / CAPA / SPC 控制图三本台账的读面。

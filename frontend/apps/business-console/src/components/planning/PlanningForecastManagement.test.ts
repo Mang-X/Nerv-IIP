@@ -49,7 +49,7 @@ vi.mock('@/composables/planning/useBusinessForecasts', () => ({
   },
 }))
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessSkus: () => ({
     skus: shallowRef([{ resourceType: 'sku', code: 'FG-1000', displayName: '减振器总成' }]),
   }),

@@ -11,13 +11,10 @@ import {
   statusActionGate,
 } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import { recoverLifecycleAction } from '@/composables/lifecycleAction'
+import { recoverLifecycleAction } from '@/composables/shared/lifecycleAction'
 import { useMaintenanceWorkOrders } from '@/composables/maintenance/useBusinessMaintenance'
 import { useMaintenanceDowntimeReasonDirectory } from '@/composables/maintenance/useMaintenanceDowntimeReasonDirectory'
-import {
-  useBusinessWorkers,
-  useBusinessMasterDataResources,
-} from '@/composables/useBusinessMasterData'
+import { useBusinessWorkers, useBusinessMasterDataResources } from '@/composables/master-data'
 import {
   maintenanceWorkOrderNoLabel,
   useDeviceSiteLookup,
@@ -25,8 +22,8 @@ import {
   useEquipmentSkuCatalog,
   useEquipmentUomCatalog,
 } from '@/composables/equipment/useEquipmentPickerCatalog'
-import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
-import { usePagedList } from '@/composables/usePagedList'
+import { useBusinessPartnerNames } from '@/composables/master-data/useBusinessPartnerNames'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'

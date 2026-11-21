@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
-import { useBusinessWorkers, useTeamMembers } from '@/composables/useBusinessMasterData'
+import { useBusinessWorkers, useTeamMembers } from '@/composables/master-data'
 import {
   NvAlertDialog,
   NvAlertDialogCancel,

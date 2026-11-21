@@ -1,7 +1,7 @@
 import { type ListBusinessConsoleMesWorkOrdersData } from '@nerv-iip/api-client'
 import { useQueryCache, type UseQueryEntry } from '@pinia/colada'
 import { reactive } from 'vue'
-import { bindBusinessContext, type BusinessContextFields } from '../businessContextBinding'
+import { bindBusinessContext, type BusinessContextFields } from '../shared/businessContextBinding'
 
 export const DEFAULT_TAKE = 100
 

@@ -11,8 +11,8 @@ import NcrEvidenceUpload from '@/components/quality/NcrEvidenceUpload.vue'
 import BusinessDocumentApprovalPanel from '@/components/business/BusinessDocumentApprovalPanel.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
-import { hasBusinessContext } from '@/composables/businessContextBinding'
-import { recoverLifecycleAction } from '@/composables/lifecycleAction'
+import { hasBusinessContext } from '@/composables/shared/businessContextBinding'
+import { recoverLifecycleAction } from '@/composables/shared/lifecycleAction'
 import { useQualityNcrs } from '@/composables/quality/useBusinessQuality'
 import { NCR_DISPOSITION_DOCUMENT_TYPE } from '@/data/approvalReference'
 import {
@@ -26,7 +26,7 @@ import {
   QUALITY_SOURCE_TYPE_LABELS,
   REWORK_WORK_ORDER_CREATION_STATUS_LABELS,
 } from '@/data/businessLabels'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 import {
