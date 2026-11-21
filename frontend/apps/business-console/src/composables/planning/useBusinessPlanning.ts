@@ -1,10 +1,9 @@
-import { useMesPrincipalWorkScope } from '../useBusinessMes'
+import { useMrpRunPolling } from './useMrpRunPolling'
+import { usePlanningDownstreamStatuses } from './usePlanningDownstreamStatuses'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import {
   acceptBusinessConsolePlanningSuggestionMutationOptions,
   cancelBusinessConsolePlanningDemandMutationOptions,
-  getBusinessConsoleMesWorkOrderDetail,
-  listBusinessConsoleErpPurchaseRequisitions,
   rejectBusinessConsolePlanningSuggestionMutationOptions,
   createBusinessConsolePlanningMpsBucketMutationOptions,
   createOrUpdateBusinessConsolePlanningDemandMutationOptions,
@@ -32,7 +31,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import { computed, getCurrentScope, onScopeDispose, reactive } from 'vue'
+import { computed, reactive } from 'vue'
 import { bindBusinessContext, hasBusinessContext } from '../businessContextBinding'
 import { assertEnvelopeSuccess } from '../serviceEnvelope'
 
@@ -96,30 +95,11 @@ export interface PlanningSuggestionRejectInput {
 /** 拒绝原因上限（与网关请求契约一致）。 */
 export const SUGGESTION_REJECT_REASON_MAX_LENGTH = 128
 
-/**
- * 运行 MRP 的异步跟踪状态（#1306）：提交即受理（202 + runId），
- * 之后轮询运行列表读面直到终态；弹框全程可关闭，后台继续跑。
- */
-export interface ActiveMrpRunState {
-  runId: string
-  /** '' = 无进行中的运行。polling-timeout = 轮询超时但任务可能仍在后台执行。 */
-  status: '' | 'queued' | 'running' | 'completed' | 'failed' | 'polling-timeout'
-  failureReason: string
-  suggestionCount: number | null
-}
-
-/** 轮询间隔与上限：MRP 实测十余秒量级，2s 步进、5 分钟封顶足够并且不刷爆网关。 */
-export const MRP_RUN_POLL_INTERVAL_MS = 2_000
-export const MRP_RUN_POLL_TIMEOUT_MS = 5 * 60 * 1_000
-
-function normalizeMrpRunStatus(status: string | null | undefined): ActiveMrpRunState['status'] {
-  const value = (status ?? '').toLowerCase()
-  if (value === 'completed') return 'completed'
-  if (value === 'failed') return 'failed'
-  if (value === 'running') return 'running'
-  // Created（服务端排队态）与未知值都按排队中处理，等待下一次轮询澄清。
-  return 'queued'
-}
+export {
+  type ActiveMrpRunState,
+  MRP_RUN_POLL_INTERVAL_MS,
+  MRP_RUN_POLL_TIMEOUT_MS,
+} from './useMrpRunPolling'
 
 const PLANNING_QUERY_IDS = [
   'listBusinessConsolePlanningDemands',
@@ -353,112 +333,14 @@ export function useBusinessPlanning(
       suggestionsQuery.data.value as BusinessConsolePlanningSuggestionListEnvelope | undefined,
     ),
   )
-  const downstreamSuggestions = computed(() =>
-    (downstreamPage?.() ?? suggestions.value.slice(0, 10)).filter(
-      (item) =>
-        item.suggestionId &&
-        item.downstreamDocumentId &&
-        (item.suggestionType === 'planned-work-order' ||
-          item.suggestionType === 'planned-purchase'),
-    ),
-  )
-  const workOrderScope = useMesPrincipalWorkScope(
+  const { downstreamStatusesQuery, refreshDownstreamStatuses } = usePlanningDownstreamStatuses(
     filters,
-    P.mesWorkOrdersRead,
-    () =>
-      canRead(P.mesWorkOrdersRead) &&
-      downstreamSuggestions.value.some((item) => item.suggestionType === 'planned-work-order'),
+    suggestionFilters,
+    suggestions,
+    downstreamPage,
+    () => auth.principal?.principalId ?? '',
+    canRead,
   )
-  const downstreamStatusesQuery = useQuery(() => ({
-    key: [
-      'planning',
-      'downstream-statuses',
-      auth.principal?.principalId ?? '',
-      canRead(P.erpProcurementRead),
-      canRead(P.mesWorkOrdersRead),
-      workOrderScope.selectedScope.value?.kind ?? '',
-      workOrderScope.selectedScope.value?.id ?? '',
-      workOrderScope.scopePending.value,
-      suggestionFilters.organizationId,
-      suggestionFilters.environmentId,
-      downstreamSuggestions.value
-        .map((item) => `${item.suggestionId}:${item.downstreamDocumentId}`)
-        .join('|'),
-    ],
-    enabled:
-      canRead(P.planningMrpRead) &&
-      hasBusinessContext(suggestionFilters) &&
-      downstreamSuggestions.value.length > 0,
-    query: async () => {
-      const scope = {
-        organizationId: suggestionFilters.organizationId,
-        environmentId: suggestionFilters.environmentId,
-      }
-      const statuses: Record<string, string> = {}
-      await Promise.all(
-        downstreamSuggestions.value.map(async (item) => {
-          try {
-            const permission =
-              item.suggestionType === 'planned-work-order'
-                ? P.mesWorkOrdersRead
-                : P.erpProcurementRead
-            if (!canRead(permission)) {
-              statuses[item.suggestionId!] = 'restricted'
-              return
-            }
-            if (item.suggestionType === 'planned-work-order') {
-              const selected = workOrderScope.selectedScope.value
-              if (!selected) {
-                statuses[item.suggestionId!] = workOrderScope.scopePending.value
-                  ? 'loading'
-                  : 'restricted'
-                return
-              }
-              const { data } = await getBusinessConsoleMesWorkOrderDetail({
-                path: { workOrderId: item.downstreamDocumentId! },
-                query: {
-                  organizationId: suggestionFilters.organizationId,
-                  environmentId: suggestionFilters.environmentId,
-                  scopeKind: selected.kind,
-                  scopeId: selected.id,
-                },
-                throwOnError: true,
-              })
-              statuses[item.suggestionId!] =
-                assertEnvelopeSuccess(data!, '读取工单状态失败。').data?.status ?? 'unknown'
-            } else {
-              // 采购侧关键字同时命中建议、单号、工厂和 SKU；回执同时校验来源和下游标识。
-              let status = 'unknown'
-              for (let skip = 0; skip < 400; skip += 100) {
-                const { data } = await listBusinessConsoleErpPurchaseRequisitions({
-                  query: { ...scope, keyword: item.suggestionId!, skip, take: 100 },
-                  throwOnError: true,
-                })
-                const page = assertEnvelopeSuccess(data!, '读取采购申请状态失败。').data
-                const rows = page?.items ?? []
-                const match = rows.find(
-                  (row) =>
-                    row.suggestionId === item.suggestionId &&
-                    (row.requisitionNo === item.downstreamDocumentId ||
-                      row.purchaseRequisitionId === item.downstreamDocumentId),
-                )
-                if (match || rows.length < 100 || skip + rows.length >= (page?.total ?? Infinity)) {
-                  status = match?.status ?? 'unknown'
-                  break
-                }
-                status = 'partial'
-              }
-              statuses[item.suggestionId!] = status
-            }
-          } catch (error) {
-            statuses[item.suggestionId!] =
-              (error as { status?: number } | null)?.status === 403 ? 'restricted' : 'unavailable'
-          }
-        }),
-      )
-      return statuses
-    },
-  }))
 
   const invalidatePlanningQueries = () =>
     queryCache.invalidateQueries({ predicate: isBusinessQuery(PLANNING_QUERY_IDS) })
@@ -486,75 +368,12 @@ export function useBusinessPlanning(
     },
   })
 
-  // —— 运行 MRP 异步跟踪（#1306）——提交受理后轮询运行列表直到终态。
-  const activeMrpRun = reactive<ActiveMrpRunState>({
-    runId: '',
-    status: '',
-    failureReason: '',
-    suggestionCount: null,
-  })
-  let mrpPollTimer: ReturnType<typeof setTimeout> | null = null
-  let mrpPollDeadline = 0
+  const { activeMrpRun, trackMrpRun } = useMrpRunPolling(
+    mrpRuns,
+    () => runsQuery.refetch(),
+    () => void invalidatePlanningQueries().catch(ignoreBackgroundError),
+  )
 
-  function stopMrpRunPolling() {
-    if (mrpPollTimer !== null) {
-      clearTimeout(mrpPollTimer)
-      mrpPollTimer = null
-    }
-  }
-
-  if (getCurrentScope()) {
-    onScopeDispose(stopMrpRunPolling)
-  }
-
-  function applyActiveRunSnapshot(run: BusinessConsoleMrpRunItem | undefined): boolean {
-    if (!run) {
-      return false
-    }
-
-    activeMrpRun.status = normalizeMrpRunStatus(run.status)
-    if (activeMrpRun.status === 'completed') {
-      activeMrpRun.suggestionCount = run.suggestionCount ?? 0
-    }
-    if (activeMrpRun.status === 'failed') {
-      activeMrpRun.failureReason = run.failureReason ?? ''
-    }
-    return activeMrpRun.status === 'completed' || activeMrpRun.status === 'failed'
-  }
-
-  async function pollActiveMrpRunOnce() {
-    mrpPollTimer = null
-    if (!activeMrpRun.runId) {
-      return
-    }
-
-    await runsQuery.refetch()
-
-    const run = mrpRuns.value.find((item) => item.runId === activeMrpRun.runId)
-    if (applyActiveRunSnapshot(run)) {
-      // 终态：建议/KPI 等读面统一失效重取。
-      void invalidatePlanningQueries().catch(ignoreBackgroundError)
-      return
-    }
-
-    if (Date.now() >= mrpPollDeadline) {
-      // 轮询超时 ≠ 任务失败：后台可能仍在计算，把决定权还给用户（运行列表可回看）。
-      activeMrpRun.status = 'polling-timeout'
-      return
-    }
-
-    mrpPollTimer = setTimeout(() => void pollActiveMrpRunOnce(), MRP_RUN_POLL_INTERVAL_MS)
-  }
-
-  function trackMrpRun(runId: string) {
-    stopMrpRunPolling()
-    activeMrpRun.runId = runId
-    activeMrpRun.status = 'queued'
-    activeMrpRun.failureReason = ''
-    activeMrpRun.suggestionCount = null
-    mrpPollDeadline = Date.now() + MRP_RUN_POLL_TIMEOUT_MS
-    mrpPollTimer = setTimeout(() => void pollActiveMrpRunOnce(), MRP_RUN_POLL_INTERVAL_MS)
-  }
   const createMpsMutation = useMutation({
     ...createBusinessConsolePlanningMpsBucketMutationOptions(),
     onSuccess() {
@@ -711,11 +530,7 @@ export function useBusinessPlanning(
       if (canRead(P.planningMrpRead)) {
         queries.push(runsQuery.refetch(), suggestionsQuery.refetch())
         if (runSelection.runId) queries.push(peggingQuery.refetch())
-        if (downstreamSuggestions.value.length) {
-          if (workOrderScope.scopeError.value && canRead(P.mesWorkOrdersRead))
-            queries.push(workOrderScope.refreshScope())
-          queries.push(downstreamStatusesQuery.refetch())
-        }
+        queries.push(...refreshDownstreamStatuses())
       }
       await Promise.all(queries)
     },
