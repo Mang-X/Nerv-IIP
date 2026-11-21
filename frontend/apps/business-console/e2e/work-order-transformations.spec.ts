@@ -10,7 +10,11 @@ const principal = {
   organizationId: 'org-001',
   environmentId: 'env-dev',
   permissionVersion: 1,
-  permissionCodes: ['business.mes.work-orders.read', 'business.mes.work-orders.manage'],
+  permissionCodes: [
+    'business.mes.work-orders.read',
+    'business.mes.work-orders.manage',
+    'business.masterdata.products.read',
+  ],
 }
 
 const session = {
@@ -241,7 +245,7 @@ test('工单详情拆分：Chromium HTTP lane 覆盖 accepted、回读重试、�
     'data-state',
     'conflict',
   )
-  await expect(dialog.getByTestId('transformation-status')).toContainText('409')
+  await expect(dialog.getByTestId('transformation-status')).toContainText('提交与工单当前状态冲突')
 
   await expect
     .poll(() =>
@@ -433,7 +437,7 @@ test('工单列表合并：同 UOM 的真实 UI 流程覆盖 accepted、回读�
     'data-state',
     'conflict',
   )
-  await expect(dialog.getByTestId('transformation-status')).toContainText('409')
+  await expect(dialog.getByTestId('transformation-status')).toContainText('提交与工单当前状态冲突')
 
   await expect
     .poll(() =>
