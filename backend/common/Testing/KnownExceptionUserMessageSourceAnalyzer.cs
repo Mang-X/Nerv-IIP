@@ -51,8 +51,8 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
                     continue;
                 }
 
-                var method = creation.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault();
-                var methodName = method?.Identifier.ValueText ?? "<global>";
+                var method = creation.Ancestors().OfType<BaseMethodDeclarationSyntax>().FirstOrDefault();
+                var methodName = GetMemberName(method);
                 var typeName = method?.Ancestors()
                     .OfType<TypeDeclarationSyntax>()
                     .Select(type => type.Identifier.ValueText)
@@ -91,6 +91,17 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
             .Select(violation => $"{violation.Path}:{violation.Line}: {violation.Reason}")
             .ToArray();
     }
+
+    private static string GetMemberName(BaseMethodDeclarationSyntax? member) =>
+        member switch
+        {
+            MethodDeclarationSyntax method => method.Identifier.ValueText,
+            ConstructorDeclarationSyntax constructor => constructor.Identifier.ValueText,
+            DestructorDeclarationSyntax destructor => $"~{destructor.Identifier.ValueText}",
+            OperatorDeclarationSyntax @operator => @operator.OperatorToken.ValueText,
+            ConversionOperatorDeclarationSyntax conversion => conversion.Type.ToString(),
+            _ => "<global>",
+        };
 
     private static SyntaxTree[] ParseTrees(IReadOnlyCollection<UserMessageSourceDocument> documents) =>
         documents
