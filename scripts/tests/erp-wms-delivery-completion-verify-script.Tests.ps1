@@ -12,7 +12,7 @@
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
-$verifyScript = Join-Path $repoRoot 'scripts/verify-erp-wms-delivery-completion.ps1'
+$verifyScript = Join-Path $repoRoot 'scripts/integration/verify-erp-wms-delivery-completion.ps1'
 if (-not (Test-Path -LiteralPath $verifyScript)) {
     throw 'ERP and WMS delivery-completion cross-process verify script is missing.'
 }

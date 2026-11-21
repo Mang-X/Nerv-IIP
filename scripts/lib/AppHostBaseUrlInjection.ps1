@@ -64,7 +64,7 @@ Set-StrictMode -Version Latest
 
   * 只读 `infra/aspire/Nerv.IIP.AppHost/Program.cs` 的**源码文本**，不跑 `aspire publish`。
     因此 AppHost 自己能编译、能跑出正确 compose，不在本库的断言面内——那是
-    `scripts/verify-aspire-apphost-environment-artifacts.ps1` 的面。
+    `scripts/checks/verify-aspire-apphost-environment-artifacts.ps1` 的面。
   * **多注入**（AppHost 注了但没有消费方 Resolve 它）不构成违例，只做信息输出：处置它需要逐条判断
     「删注入还是补消费方」。#3512 判过一轮后剩下的两条，都是消费方直读 Configuration["X:BaseUrl"]
     而不经 InternalServiceBaseAddress.Resolve\*，本库的需求集枚举不到——这条盲区另票跟踪。

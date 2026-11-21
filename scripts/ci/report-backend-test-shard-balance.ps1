@@ -15,7 +15,7 @@
 #
 # This script deliberately has no failure mode driven by timing data. Missing, stale or absent
 # measurements produce warnings and an estimate, and the exit code stays 0. The hard gate over the
-# same manifest is scripts/verify-backend-test-shards.ps1, and it governs *policy* only — project
+# same manifest is scripts/checks/verify-backend-test-shards.ps1, and it governs *policy* only — project
 # classification, exclusion registration, solution membership, workflow wiring. Timing never enters
 # it, because a measurement is observed rather than decided and cannot sensibly be "violated".
 # 当前 timing/policy 边界见 docs/governance/testing/evidence.md；M4 后不再经

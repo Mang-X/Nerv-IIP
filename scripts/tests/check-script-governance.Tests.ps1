@@ -12,7 +12,7 @@
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
-$checker = Join-Path $repoRoot 'scripts/check-script-governance.ps1'
+$checker = Join-Path $repoRoot 'scripts/checks/check-script-governance.ps1'
 $fixtures = Join-Path $repoRoot 'scripts/tests/fixtures/script-governance'
 $helper = Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1'
 
@@ -114,8 +114,8 @@ Invoke-GovernanceCase -Name 'missing-helper.ps1' -ExpectedExitCode 1
 Invoke-GovernanceCase -Name 'direct-dotnet.ps1' -ExpectedExitCode 1
 Invoke-GovernanceCase -Name 'direct-start-job.ps1' -ExpectedExitCode 1
 Invoke-GovernanceCase -Name 'dynamic-invocation.ps1' -ExpectedExitCode 1
-Invoke-GovernanceScriptCase -RelativePath 'scripts/collect-test-evidence.ps1'
-Invoke-GovernanceScriptCase -RelativePath 'scripts/generate-test-evidence-baseline.ps1'
+Invoke-GovernanceScriptCase -RelativePath 'scripts/ci/collect-test-evidence.ps1'
+Invoke-GovernanceScriptCase -RelativePath 'scripts/ci/generate-test-evidence-baseline.ps1'
 Invoke-GovernanceScriptCase -RelativePath 'scripts/ci/update-backend-test-shard-timings.ps1'
 Invoke-GovernanceScriptCase -RelativePath 'scripts/ci/report-backend-test-shard-balance.ps1'
 

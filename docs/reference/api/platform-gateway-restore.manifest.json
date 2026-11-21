@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "project": "backend/gateway/PlatformGateway/src/Nerv.IIP.PlatformGateway.Web/Nerv.IIP.PlatformGateway.Web.csproj",
-  "purpose": "Restore contract snapshot for the PlatformGateway.Web ProjectReference closure. Unlike business-gateway-surface-restore.manifest.json this manifest records no canonicalization toolchain: it exists solely as the hash ledger that scripts/verify-restore-lock-contract.ps1 reads (issue #3157). Recording an SDK/reference-pack version here would assert a fact nothing verifies.",
+  "purpose": "Restore contract snapshot for the PlatformGateway.Web ProjectReference closure. Unlike business-gateway-surface-restore.manifest.json this manifest records no canonicalization toolchain: it exists solely as the hash ledger that scripts/checks/verify-restore-lock-contract.ps1 reads (issue #3157). Recording an SDK/reference-pack version here would assert a fact nothing verifies.",
   "tfm": "net10.0",
   "inputs": [
     {

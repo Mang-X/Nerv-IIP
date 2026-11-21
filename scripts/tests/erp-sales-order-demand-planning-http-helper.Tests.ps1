@@ -13,7 +13,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
-$verifyScript = Join-Path $repoRoot 'scripts/verify-erp-sales-order-demand-planning.ps1'
+$verifyScript = Join-Path $repoRoot 'scripts/integration/verify-erp-sales-order-demand-planning.ps1'
 $fixtureScript = Join-Path $repoRoot 'scripts/tests/fixtures/man703-http-fixture.ps1'
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 

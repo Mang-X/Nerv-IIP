@@ -2,7 +2,7 @@
   "schema": 1,
   "exemptions": [
     {
-      "path": "scripts/export-gateway-openapi.ps1",
+      "path": "scripts/api/export-gateway-openapi.ps1",
       "rules": [
         "MissingHelper",
         "ForbiddenCommand",

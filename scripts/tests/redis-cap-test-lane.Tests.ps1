@@ -178,7 +178,7 @@ try {
     $zeroActiveSummaryPath = Join-Path $fixtureRoot 'zero-active-summary.json'
     $zeroActiveRejected = $false
     try {
-        & (Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1') `
+        & (Join-Path $repoRoot 'scripts/ci/run-redis-cap-test-lane.ps1') `
             -AllActiveMembers `
             -ManifestPath $zeroActiveManifestPath `
             -DatabaseSuffix '3031_1' `
@@ -197,7 +197,7 @@ try {
         [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_REDIS', $null)
         $focusedMemberReachedReadiness = $false
         try {
-            & (Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1') `
+            & (Join-Path $repoRoot 'scripts/ci/run-redis-cap-test-lane.ps1') `
                 -MemberId ([string]$focusMember.id) `
                 -DatabaseSuffix '3031_1' `
                 -ResultsDirectory (Join-Path $fixtureRoot 'focused-results') `
@@ -213,7 +213,7 @@ try {
 
     $mixedSelectionRejected = $false
     try {
-        & (Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1') `
+        & (Join-Path $repoRoot 'scripts/ci/run-redis-cap-test-lane.ps1') `
             -MemberId ([string]$focusMember.id) `
             -AllActiveMembers `
             -DatabaseSuffix '3031_1' `
@@ -236,7 +236,7 @@ try {
         [Environment]::SetEnvironmentVariable('PATH', "$fakeCommandDirectory$([IO.Path]::PathSeparator)$savedPath")
         [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_POSTGRES', 'Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=fake')
         [Environment]::SetEnvironmentVariable('NERV_IIP_TEST_REDIS', 'localhost:6379')
-        & (Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1') `
+        & (Join-Path $repoRoot 'scripts/ci/run-redis-cap-test-lane.ps1') `
             -AllActiveMembers `
             -ManifestPath $activeManifestPath `
             -DatabaseSuffix '3031_1' `
@@ -263,7 +263,7 @@ try {
     }
     Remove-Item -LiteralPath $runnerResultsDirectory -Recurse -Force
 
-    $runnerContent = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/run-redis-cap-test-lane.ps1'))
+    $runnerContent = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/ci/run-redis-cap-test-lane.ps1'))
     Assert-Contract (-not $runnerContent.Contains('}.GetNewClosure()', [StringComparison]::Ordinal)) 'Runner callbacks must retain the runner script session state so hosted PowerShell can resolve Get-RedisKeys and Invoke-RedisCli.'
 
     $attempt1Identity = New-NervRedisCapMemberIdentity `

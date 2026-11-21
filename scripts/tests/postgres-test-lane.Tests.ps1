@@ -194,7 +194,7 @@ function Get-PostgresWorkflowRunnerCommand([string]$WorkflowPath, [int]$Statemen
         if ($statement -isnot [System.Management.Automation.Language.PipelineAst] -or $statement.PipelineElements.Count -ne 1) { continue }
         $candidate = $statement.PipelineElements[0]
         if ($candidate -is [System.Management.Automation.Language.CommandAst] -and
-            [string]::Equals($candidate.GetCommandName(), './scripts/run-postgres-test-lane.ps1', [StringComparison]::Ordinal)) {
+            [string]::Equals($candidate.GetCommandName(), './scripts/ci/run-postgres-test-lane.ps1', [StringComparison]::Ordinal)) {
             return $candidate
         }
     }
@@ -206,7 +206,7 @@ function Get-PostgresWorkflowRunnerCommand([string]$WorkflowPath, [int]$Statemen
 # 判据，而不是一条由写法保证的同义反复。
 function Get-PostgresWorkflowSelectedMemberId([string]$WorkflowPath) {
     $command = Get-PostgresWorkflowRunnerCommand -WorkflowPath $WorkflowPath
-    if ($null -eq $command) { throw 'The postgres-tests step must invoke ./scripts/run-postgres-test-lane.ps1 exactly once.' }
+    if ($null -eq $command) { throw 'The postgres-tests step must invoke ./scripts/ci/run-postgres-test-lane.ps1 exactly once.' }
     $statements = @($script:PostgresWorkflowStatements)
     if (@(Get-PostgresRunnerCommandParameter -Command $command -ParameterName 'AllActiveMembers').Count -eq 1) {
         return @(Import-NervPostgresTestLaneMembers -ManifestPath $manifestPath -RepositoryRoot $repoRoot | ForEach-Object { [string]$_.id })
@@ -972,7 +972,7 @@ try {
     # #3424 反向闭合。上面那条只管一个方向——「政策里的身份有没有落到 lane」。反方向没有任何本机
     # 门禁，而反方向正是 #3129 栽的那一格：三条新 PostgreSQL 用例进了 manifest（本机 lane 门禁逼着
     # 必须进），漏了 scripts/config/test-evidence-policy.json，本机全绿，直到 CI 收证阶段
-    # （scripts/collect-test-evidence.ps1:102）才报 `Runtime skip matched 0 applicable rules`。
+    # （scripts/ci/collect-test-evidence.ps1:102）才报 `Runtime skip matched 0 applicable rules`。
     # 这里不新建机制，只是把那条**已经存在的** fail-closed 判据挪到本机能跑的位置。
     #
     # ⚠️ CI 也**不一定**报得出来，别把「CI 会兜住」当理由。因果要写准（复审纠正，别读成 matcher 造成排除）：
@@ -1046,7 +1046,7 @@ try {
         Assert-Contract $deferredRejected "The runner must refuse to execute deferred member '$($deferredMember.id)'."
     }
 
-    $runnerPath = Join-Path $repoRoot 'scripts/run-postgres-test-lane.ps1'
+    $runnerPath = Join-Path $repoRoot 'scripts/ci/run-postgres-test-lane.ps1'
     $runner = [IO.File]::ReadAllText($runnerPath)
     $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
     $workflow = [IO.File]::ReadAllText($workflowPath)
@@ -1076,12 +1076,12 @@ try {
     # 用显式拼接构造锚点，避免在 PowerShell 字符串里同时转义反引号续行符和换行符时出错。
     $backtick = [string][char]0x60
     $newline = [string][char]0x0A
-    $allActiveInvocation = './scripts/run-postgres-test-lane.ps1 ' + $backtick + $newline + '            -AllActiveMembers ' + $backtick
+    $allActiveInvocation = './scripts/ci/run-postgres-test-lane.ps1 ' + $backtick + $newline + '            -AllActiveMembers ' + $backtick
     Assert-Contract ($workflow.Contains($allActiveInvocation, [StringComparison]::Ordinal)) 'The mutation fixture must start from the authoritative all-active invocation.'
     function New-PostgresHardCodedWorkflow([string[]]$MemberIds, [switch]$CommentMasked) {
         $assignment = '$members = @(' + "'" + ($MemberIds -join "', '") + "'" + ')'
         $prefix = if ($CommentMasked) { '# $members = @(' + "'never-selected-sentinel'" + ')' + $newline + '          ' + $assignment } else { $assignment }
-        $replacement = $prefix + $newline + '          ./scripts/run-postgres-test-lane.ps1 ' + $backtick + $newline + '            -MemberId $members ' + $backtick
+        $replacement = $prefix + $newline + '          ./scripts/ci/run-postgres-test-lane.ps1 ' + $backtick + $newline + '            -MemberId $members ' + $backtick
         return $workflow.Replace($allActiveInvocation, $replacement)
     }
     foreach ($droppedMemberId in @('masterdata-device-reference-concurrency', 'maintenance-device-pause-postgres', 'apphub-postgres-profile', 'masterdata-postgres-profile')) {

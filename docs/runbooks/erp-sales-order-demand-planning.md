@@ -13,7 +13,7 @@
 仓库受治理入口：
 
 ```powershell
-pwsh scripts/verify-erp-sales-order-demand-planning.ps1
+pwsh scripts/integration/verify-erp-sales-order-demand-planning.ps1
 ```
 
 脚本当前帮助和源码是参数、超时预算、基础设施 profile、进程管理与 evidence 路径的权威来源。验收必须使用真实受支持 transport 与一次性数据库，不得用 InMemory transport 冒充跨进程消息证明。

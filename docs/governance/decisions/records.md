@@ -2,7 +2,7 @@
 
 本文规定什么内容属于 ADR/决策记录、什么内容必须回到 Architecture / Governance / Reference / Status / Report / Product，以及 ADR 生命周期的评审边界。
 
-`docs/AGENTS.md` 是人工文档触发入口；本页是决策记录分层与生命周期规则的当前权威来源。`scripts/verify-adr-format.ps1` 只保护身份、索引和导航目标，不把写作建议或内容判断变成机器合同。
+`docs/AGENTS.md` 是人工文档触发入口；本页是决策记录分层与生命周期规则的当前权威来源。`scripts/checks/verify-adr-format.ps1` 只保护身份、索引和导航目标，不把写作建议或内容判断变成机器合同。
 
 产品文档信息架构由 `docs/adr/0021-product-docs-information-architecture.md` 治理，不在本页重复。
 
@@ -68,7 +68,7 @@
 
 ## 轻量门禁
 
-`scripts/verify-adr-format.ps1` 只校验：
+`scripts/checks/verify-adr-format.ps1` 只校验：
 
 - 非 `README.md` 的 ADR 文件使用 `NNNN-kebab-case.md`，编号唯一；
 - 首个正文 H1 中的 `ADR NNNN` 与文件名编号一致，不限定标题措辞、冒号宽度或文件首行；
@@ -80,7 +80,7 @@
 回归沿用 `scripts/tests/verify-adr-format-lifecycle.Tests.ps1` 的现有 CI 调用入口，以结构正反例验证实际退出码和诊断，不读取 checker AST 或复制 Governance 表格。不新增逐规则脚本、永久 registry 或独立 CI step。
 
 ```powershell
-pwsh -NoProfile -File scripts/verify-adr-format.ps1
+pwsh -NoProfile -File scripts/checks/verify-adr-format.ps1
 pwsh -NoProfile -File scripts/tests/verify-adr-format-lifecycle.Tests.ps1
 ```
 

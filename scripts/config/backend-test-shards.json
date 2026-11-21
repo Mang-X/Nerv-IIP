@@ -228,21 +228,21 @@
       "id": "real-postgres",
       "policyLane": "postgres",
       "owner": "opt-in real PostgreSQL verification",
-      "ownerScript": "scripts/verify-backend-real-postgres-tests.ps1",
+      "ownerScript": "scripts/ci/verify-backend-real-postgres-tests.ps1",
       "projects": []
     },
     {
       "id": "redis-cap",
       "policyLane": "redis-cap",
       "owner": "governed Redis/CAP transport verification",
-      "ownerScript": "scripts/run-redis-cap-test-lane.ps1",
+      "ownerScript": "scripts/ci/run-redis-cap-test-lane.ps1",
       "projects": []
     },
     {
       "id": "full-chain",
       "policyLane": "full-chain",
       "owner": "full-stack scenario runner",
-      "ownerScript": "scripts/run-full-chain-test-lane.ps1",
+      "ownerScript": "scripts/ci/run-full-chain-test-lane.ps1",
       "projects": [
         "backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj"
       ]
@@ -251,7 +251,7 @@
       "id": "performance",
       "policyLane": "performance",
       "owner": "performance baseline verification",
-      "ownerScript": "scripts/verify-business-performance-baseline.ps1",
+      "ownerScript": "scripts/checks/verify-business-performance-baseline.ps1",
       "projects": []
     }
   ]

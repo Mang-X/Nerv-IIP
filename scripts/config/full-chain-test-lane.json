@@ -32,7 +32,7 @@
       "status": "active",
       "project": "backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj",
       "filter": "FullyQualifiedName=Nerv.IIP.Business.FullChain.Tests.ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts",
-      "entrypoint": { "kind": "script", "path": "scripts/verify-erp-wms-delivery-completion.ps1" },
+      "entrypoint": { "kind": "script", "path": "scripts/integration/verify-erp-wms-delivery-completion.ps1" },
       "dependencies": { "postgres": true, "redis": true, "externalProcesses": true },
       "diagnosticSchemas": ["erp", "wms", "inventory"],
       "expectedTestIdentities": ["Nerv.IIP.Business.FullChain.Tests.ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.External_process_replays_completed_wms_event_without_duplicate_delivery_or_receivable_facts"]
@@ -44,7 +44,7 @@
       "status": "active",
       "project": "backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj",
       "filter": "FullyQualifiedName=Nerv.IIP.Business.FullChain.Tests.SalesOrderDemandPlanningPostgresRedisAcceptanceTests.External_process_injects_duplicate_and_out_of_order_sales_order_events",
-      "entrypoint": { "kind": "script", "path": "scripts/verify-erp-sales-order-demand-planning.ps1" },
+      "entrypoint": { "kind": "script", "path": "scripts/integration/verify-erp-sales-order-demand-planning.ps1" },
       "dependencies": { "postgres": true, "redis": true, "externalProcesses": true },
       "diagnosticSchemas": ["erp", "demand_planning", "master_data"],
       "expectedTestIdentities": ["Nerv.IIP.Business.FullChain.Tests.SalesOrderDemandPlanningPostgresRedisAcceptanceTests.External_process_injects_duplicate_and_out_of_order_sales_order_events"]

@@ -24,8 +24,9 @@ try {
     [IO.Directory]::CreateDirectory((Join-Path $root 'scripts/tests')) | Out-Null
     [IO.Directory]::CreateDirectory((Join-Path $root '.github/workflows')) | Out-Null
     Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/lib') -Destination (Join-Path $root 'scripts/lib') -Recurse
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/run-script-contract-tests.ps1') -Destination (Join-Path $root 'scripts/run-script-contract-tests.ps1')
-    $runner = Join-Path $root 'scripts/run-script-contract-tests.ps1'
+    [IO.Directory]::CreateDirectory((Join-Path $root 'scripts/ci')) | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/ci/run-script-contract-tests.ps1') -Destination (Join-Path $root 'scripts/ci/run-script-contract-tests.ps1')
+    $runner = Join-Path $root 'scripts/ci/run-script-contract-tests.ps1'
     $workflow = "name: Fixture`non: [push]`njobs:`n  suite:`n    runs-on: ubuntu-latest`n    steps:`n"
     # 用现有闭集生成合法边界夹具，不在生产端另建成员表。
     foreach ($entry in (Get-NervScriptTestOutOfBandRegistry)) {
@@ -71,7 +72,7 @@ try {
     Assert-Runner ($LASTEXITCODE -eq 0 -and $explicit.Contains('explicit=1', [StringComparison]::Ordinal) -and -not $explicit.Contains('z-new.Tests.ps1', [StringComparison]::Ordinal)) 'An explicit suite must execute only its caller-owned commands.'
     [IO.File]::WriteAllText($first, 'exit 7')
     $launcher = Join-Path $root 'explicit-suite.ps1'
-    [IO.File]::WriteAllText($launcher, '& (Join-Path $PSScriptRoot "scripts/run-script-contract-tests.ps1") -ScriptPath @("scripts/tests/a.Tests.ps1", "scripts/tests/z-new.Tests.ps1"); exit $LASTEXITCODE')
+    [IO.File]::WriteAllText($launcher, '& (Join-Path $PSScriptRoot "scripts/ci/run-script-contract-tests.ps1") -ScriptPath @("scripts/tests/a.Tests.ps1", "scripts/tests/z-new.Tests.ps1"); exit $LASTEXITCODE')
     $explicitFailed = @(& pwsh -NoProfile -NonInteractive -File $launcher 2>&1) -join "`n"
     Assert-Runner ($LASTEXITCODE -ne 0 -and $explicitFailed.Contains('PASS', [StringComparison]::Ordinal) -and $explicitFailed.Contains('FAIL', [StringComparison]::Ordinal)) 'Explicit suite must also preserve earlier failure after a later success.'
     Write-Host 'PASS explicit suite / independent failure propagation'

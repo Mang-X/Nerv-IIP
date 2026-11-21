@@ -327,7 +327,7 @@ function Assert-FullChainV1WorkflowContract {
     $collectorSteps = @($v1Steps | Where-Object {
             $runProperty = $_.PSObject.Properties['run']
             $null -ne $runProperty -and
-            ([string]$runProperty.Value).Contains('./scripts/collect-test-evidence.ps1', [StringComparison]::Ordinal) -and
+            ([string]$runProperty.Value).Contains('./scripts/ci/collect-test-evidence.ps1', [StringComparison]::Ordinal) -and
             ([string]$runProperty.Value).Contains('-Lane full-chain', [StringComparison]::Ordinal)
         })
     Assert-Contract ($collectorSteps.Count -eq 1) 'The physical v1 worker must remain the sole FullChain MAN-661 collector owner.'
@@ -338,7 +338,7 @@ function Assert-FullChainV1WorkflowContract {
             foreach ($step in @($jobProperty.Value.steps)) {
                 $runProperty = $step.PSObject.Properties['run']
                 $run = if ($null -eq $runProperty) { '' } else { [string]$runProperty.Value }
-                if ($run.Contains('./scripts/collect-test-evidence.ps1', [StringComparison]::Ordinal) -and $run.Contains('-Lane full-chain', [StringComparison]::Ordinal)) {
+                if ($run.Contains('./scripts/ci/collect-test-evidence.ps1', [StringComparison]::Ordinal) -and $run.Contains('-Lane full-chain', [StringComparison]::Ordinal)) {
                     [pscustomobject]@{ Job = [string]$jobProperty.Name; Step = [string]$step.name }
                 }
             }
@@ -545,7 +545,7 @@ try {
     Assert-Contract (@($manifest.members | Where-Object { @($_.diagnosticSchemas).Count -eq 0 }).Count -eq 0) 'Every scenario must declare restricted PostgreSQL diagnostic schemas.'
     Assert-Contract (@($manifest.members | Where-Object { [string]::IsNullOrWhiteSpace([string]$_.entrypoint.kind) }).Count -eq 0) 'Every scenario must declare an entrypoint kind.'
 
-    $runnerPath = Join-Path $repoRoot 'scripts/run-full-chain-test-lane.ps1'
+    $runnerPath = Join-Path $repoRoot 'scripts/ci/run-full-chain-test-lane.ps1'
     Assert-Contract (Test-Path -LiteralPath $runnerPath -PathType Leaf) 'The governed FullChain runner must exist.'
     $runnerWorkflowPath = Write-FullChainRunnerWorkflowFixture -Path (Join-Path $fixtureRoot 'runner-denied-workflow.yml') -RunStepTimeoutMinutes 1
     # Deadline admission is independent of probe reuse. Give the script fixture
@@ -724,7 +724,7 @@ try {
     Assert-Contract ($runnerContent.Contains('Write-NervFullChainSummarySnapshot', [StringComparison]::Ordinal)) 'FullChain runner must write resumable summary snapshots before final completion.'
     Assert-Contract ($runnerContent.IndexOf('Write-NervFullChainSummarySnapshot', [StringComparison]::Ordinal) -lt $runnerContent.IndexOf('try {', [StringComparison]::Ordinal)) 'FullChain runner must create the dependency summary before starting governed work.'
 
-    $fullstackSessionContent = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/fullstack-session.ps1'))
+    $fullstackSessionContent = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/fullstack/fullstack-session.ps1'))
     Assert-Contract ($fullstackSessionContent.Contains('[string]::Equals($env:NERV_IIP_FULL_CHAIN_CONFIGURATION, ''Release'', [StringComparison]::Ordinal)', [StringComparison]::Ordinal)) 'FullChain lane probes must opt into Release without changing the standalone fullstack recipe.'
     Assert-Contract (-not $fullstackSessionContent.Contains("'--configuration', 'Release',`n                    '--no-restore'", [StringComparison]::Ordinal)) 'Standalone fullstack probes must retain their existing default configuration.'
 
@@ -873,7 +873,7 @@ try {
     Assert-Contract $missingReadbackRejected 'Deleting a required cleanup readback field must fail the member evidence contract.'
 
     # === #3135 residual 覆盖闭合 =================================================================
-    # 见 scripts/run-full-chain-test-lane.ps1 里的同名段落：lane 的选取口径从「白名单精确 filter」
+    # 见 scripts/ci/run-full-chain-test-lane.ps1 里的同名段落：lane 的选取口径从「白名单精确 filter」
     # 翻转为「默认全跑 + 无排除注册表」。以下三组断言分别钉住：解析不依赖 locale、`[Theory]` 参数
     # 截断、以及「residual 取全部 members 的差集而非 -MemberId 选中子集」。
 
@@ -1114,7 +1114,7 @@ try {
     # command/helper AST -> real leaf calls + TRX + terminal summary; total assignment
     # AST -> lane totals. #4239 maps the residual outcome guard AST to child-process
     # failure + persisted failed residual outcome for all four fault inputs below.
-    $runnerSourcePath = Join-Path $repoRoot 'scripts/run-full-chain-test-lane.ps1'
+    $runnerSourcePath = Join-Path $repoRoot 'scripts/ci/run-full-chain-test-lane.ps1'
     $runnerSourceText = [IO.File]::ReadAllText($runnerSourcePath)
     $selectionMember = @($manifest.members | Where-Object { [string]::Equals([string]$_.entrypoint.kind, 'dotnet', [StringComparison]::Ordinal) })[0]
     $selectionResidual = @("$fullChainRootNamespace.ResidualFixtureTests.Fact_case", "$fullChainRootNamespace.ResidualFixtureTests.Theory_case")

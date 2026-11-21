@@ -100,8 +100,8 @@ $initialRepoCommandLogs = @(
     }
 )
 
-$collectorSource = Get-Content (Join-Path $repoRoot 'scripts/collect-test-evidence.ps1') -Raw
-$baselineGeneratorSource = Get-Content (Join-Path $repoRoot 'scripts/generate-test-evidence-baseline.ps1') -Raw
+$collectorSource = Get-Content (Join-Path $repoRoot 'scripts/ci/collect-test-evidence.ps1') -Raw
+$baselineGeneratorSource = Get-Content (Join-Path $repoRoot 'scripts/ci/generate-test-evidence-baseline.ps1') -Raw
 
 function Assert-True([bool] $Condition, [string] $Message) {
     if (-not $Condition) { throw $Message }
@@ -145,7 +145,7 @@ $earlyWorkflowJobs = Get-NervCiWorkflowBudgets -Path (Join-Path $repoRoot '.gith
 $fullChainPhysicalJobs = @($earlyWorkflowJobs | Where-Object { [string]::Equals([string]$_.Name, 'business-full-chain-acceptance-v1', [StringComparison]::Ordinal) })
 Assert-Equal 1 $fullChainPhysicalJobs.Count 'CI must define exactly one physical v1 worker for FullChain evidence ownership.'
 $fullChainCollectorSteps = @($fullChainPhysicalJobs[0].Steps | Where-Object {
-        ([string]$_.Run).Contains('./scripts/collect-test-evidence.ps1', [StringComparison]::Ordinal) -and
+        ([string]$_.Run).Contains('./scripts/ci/collect-test-evidence.ps1', [StringComparison]::Ordinal) -and
         ([string]$_.Run).Contains('-Lane full-chain', [StringComparison]::Ordinal)
     })
 Assert-Equal 1 $fullChainCollectorSteps.Count 'Only the physical v1 worker may run the FullChain MAN-661 collector.'
@@ -196,8 +196,8 @@ function Assert-NervFacadeResponsibilityRegistryClosure {
 }
 
 $testEvidenceConsumers = @(
-    'scripts/collect-test-evidence.ps1',
-    'scripts/generate-test-evidence-baseline.ps1',
+    'scripts/ci/collect-test-evidence.ps1',
+    'scripts/ci/generate-test-evidence-baseline.ps1',
     'scripts/tests/test-evidence.Tests.ps1',
     'scripts/tests/backend-test-shards.Tests.ps1',
     'scripts/tests/fixtures/test-evidence/composite-key-production-fixture.ps1'
@@ -816,7 +816,7 @@ Assert-True ([string]::Equals(($actualBaselineHelperNames -join '|'), ($expected
 
 $collectorTokens = $null
 $collectorParseErrors = $null
-$collectorPath = Join-Path $repoRoot 'scripts/collect-test-evidence.ps1'
+$collectorPath = Join-Path $repoRoot 'scripts/ci/collect-test-evidence.ps1'
 $collectorAst = [Management.Automation.Language.Parser]::ParseFile($collectorPath, [ref]$collectorTokens, [ref]$collectorParseErrors)
 Assert-Equal 0 @($collectorParseErrors).Count 'collect-test-evidence.ps1 must parse before redaction ownership is inspected.'
 
@@ -838,7 +838,7 @@ foreach ($expectedCall in $expectedCollectorArtifactCalls) {
 
 $baselineGeneratorTokens = $null
 $baselineGeneratorParseErrors = $null
-$baselineGeneratorPath = Join-Path $repoRoot 'scripts/generate-test-evidence-baseline.ps1'
+$baselineGeneratorPath = Join-Path $repoRoot 'scripts/ci/generate-test-evidence-baseline.ps1'
 $baselineGeneratorAst = [Management.Automation.Language.Parser]::ParseFile(
     $baselineGeneratorPath, [ref]$baselineGeneratorTokens, [ref]$baselineGeneratorParseErrors)
 Assert-Equal 0 @($baselineGeneratorParseErrors).Count `
@@ -2264,7 +2264,7 @@ Assert-Equal 0 @($committedBaseline.assemblies | Where-Object { [string]::IsNull
 
 $invalidBaselineRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-man-661-invalid-baseline-$([Guid]::NewGuid().ToString('N'))"
 try {
-    $baselineGenerator = Join-Path $repoRoot 'scripts/generate-test-evidence-baseline.ps1'
+    $baselineGenerator = Join-Path $repoRoot 'scripts/ci/generate-test-evidence-baseline.ps1'
     $summaryTemplate = [ordered]@{ workflowRunId = '101'; runAttempt = 1; headSha = '0123456789abcdef0123456789abcdef01234567'; testedSha = '0123456789abcdef0123456789abcdef01234567'; repository = 'Mang-X/Nerv-IIP'; event = 'push'; headBranch = 'main'; sourceUrl = 'https://github.com/Mang-X/Nerv-IIP/actions/runs/101'; runnerOs = 'Linux'; runnerImage = 'ubuntu24@20260720.247.2'; dotnetSdk = '10.0.302'; currentTestOutcome = 'success'; collectionStatus = 'succeeded'; attemptClassification = 'initial'; failed = 0; executed = 1; violations = @(); lane = 'backend-shard-1'; jobName = 'Backend Tests - BusinessGateway'; artifactName = 'backend-shard-1-evidence'; assemblies = @() }
     # A baseline refresh consumes every CI-wired lane, so the fixture set is the full allowlist.
     $evidenceLaneJobs = Get-NervTestEvidenceLaneJobs
@@ -2491,7 +2491,7 @@ finally { if (Test-Path $invalidBaselineRoot) { Remove-Item $invalidBaselineRoot
 
 $collectorRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-man-661-collector-$([Guid]::NewGuid().ToString('N'))"
 try {
-    $collector = Join-Path $repoRoot 'scripts/collect-test-evidence.ps1'
+    $collector = Join-Path $repoRoot 'scripts/ci/collect-test-evidence.ps1'
     $successOut = Join-Path $collectorRoot 'success'
     $successRaw = Join-Path $collectorRoot 'success-raw'
     [IO.Directory]::CreateDirectory($successRaw) | Out-Null
@@ -2764,7 +2764,7 @@ finally {
 
 $workflow = Get-Content (Join-Path $repoRoot '.github/workflows/ci.yml') -Raw
 $frontendPackage = Get-Content (Join-Path $repoRoot 'frontend/package.json') -Raw
-$compatibilitySource = Get-Content (Join-Path $repoRoot 'scripts/check-script-compatibility.ps1') -Raw
+$compatibilitySource = Get-Content (Join-Path $repoRoot 'scripts/checks/check-script-compatibility.ps1') -Raw
 $reviewWiringGaps = [Collections.Generic.List[string]]::new()
 if (-not $collectorSource.Contains('#   Category: check, generate', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('collector composite category') }
 if (-not $compatibilitySource.Contains('scripts/tests/test-evidence.Tests.ps1', [StringComparison]::Ordinal)) { $reviewWiringGaps.Add('compat-fast runner') }
@@ -2787,8 +2787,8 @@ Assert-True (-not $workflow.Contains('TestOnly', [StringComparison]::Ordinal)) '
 Assert-True ($workflow.Contains('outputs.evidence-path', [StringComparison]::Ordinal)) 'Workflow upload must use the collector-selected owned evidence path.'
 Assert-True (-not $workflow.Contains('continue-on-error', [StringComparison]::Ordinal)) 'MAN-661 forbids continue-on-error.'
 Assert-True ($workflow.Contains('--logger trx', [StringComparison]::Ordinal)) 'Connector Host must emit TRX.'
-Assert-True ((Get-Content (Join-Path $repoRoot 'scripts/run-backend-test-shard.ps1') -Raw).Contains("'--logger', `"trx;LogFilePrefix=`$TrxFilePrefix`"", [StringComparison]::Ordinal)) 'Backend shards must emit uniquely prefixed TRX.'
-Assert-True ($workflow.Contains('./scripts/collect-test-evidence.ps1', [StringComparison]::Ordinal)) 'CI must use the governed collector.'
+Assert-True ((Get-Content (Join-Path $repoRoot 'scripts/ci/run-backend-test-shard.ps1') -Raw).Contains("'--logger', `"trx;LogFilePrefix=`$TrxFilePrefix`"", [StringComparison]::Ordinal)) 'Backend shards must emit uniquely prefixed TRX.'
+Assert-True ($workflow.Contains('./scripts/ci/collect-test-evidence.ps1', [StringComparison]::Ordinal)) 'CI must use the governed collector.'
 Assert-True ($workflow.Contains('if: always()', [StringComparison]::Ordinal)) 'Collection/upload must run after failures.'
 foreach ($shardLane in @('backend-shard-1', 'backend-shard-2', 'backend-shard-3', 'backend-shard-4')) {
     Assert-True ($workflow.Contains("test-evidence-$shardLane-`${{ github.run_id }}-`${{ github.run_attempt }}", [StringComparison]::Ordinal)) "Backend shard artifact identity mismatch for '$shardLane'."

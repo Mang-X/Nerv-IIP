@@ -19,7 +19,7 @@ $appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.
 $dependenciesText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/compose/nerv-iip.dependencies.yml') -Raw
 $platformText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/compose/nerv-iip.platform.yml') -Raw
 $environmentExampleText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/compose/nerv-iip.production.env.example') -Raw
-$environmentArtifactVerifierText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/verify-aspire-apphost-environment-artifacts.ps1') -Raw
+$environmentArtifactVerifierText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/checks/verify-aspire-apphost-environment-artifacts.ps1') -Raw
 
 function Assert-ContainsOrdinal {
     param(

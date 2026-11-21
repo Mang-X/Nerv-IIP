@@ -35,7 +35,7 @@ heavy lane 在 shard manifest 里接管一个测试项目后，该项目即被�
 
 用例识别按 `FactAttribute`/`TheoryAttribute` 的**继承闭包**判定，不按属性名字列举：自定义派生属性还会继续增加，按名单判定的失效方向是假绿。识别也不得依赖 `async` 这类关键字窗口——表达式体写法（`public Task X() => ...`）不带 `async`。嵌套类里的用例不归属外层 selector：VSTest 把它拼作 `Outer+Inner.Method`，类级过滤器同样匹配不到它。
 
-覆盖边界：本节由 `scripts/verify-backend-test-shards.ps1` 的 `inventory-source` 阶段静态承担，鉴别力读数在 `scripts/tests/backend-test-shards.Tests.ps1` 的类级排除变异格里；它只管 fast shard 的类级排除这一张面，不替代上一节由 lane owner 承担的项目级闭合。
+覆盖边界：本节由 `scripts/checks/verify-backend-test-shards.ps1` 的 `inventory-source` 阶段静态承担，鉴别力读数在 `scripts/tests/backend-test-shards.Tests.ps1` 的类级排除变异格里；它只管 fast shard 的类级排除这一张面，不替代上一节由 lane owner 承担的项目级闭合。
 
 ⚠️ 该静态判据**不是闭合**，只挡得住「同类里混着裸 `[Fact]`/`[Theory]`」这一族的复发。下列三条绕法**已实测成立**（各自带 CONTROL GREEN 与哨兵 RED 的探针，读数为假绿），逐条写在这里是为了不让后来人把它当成完备护栏——本仓判例是「护栏自称完备比有洞更坏」，它让人停止怀疑、把洞制度性固化：
 

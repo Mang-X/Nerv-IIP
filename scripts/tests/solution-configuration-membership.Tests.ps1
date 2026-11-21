@@ -1,7 +1,7 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Runs scripts/verify-solution-configuration-membership.ps1 against the repository and against
+#     - Runs scripts/checks/verify-solution-configuration-membership.ps1 against the repository and against
 #       throwaway solution fixtures
 #   Writes:
 #     - OS temporary directory: solution and project fixtures (temporarily)
@@ -16,7 +16,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 
-$verifierPath = Join-Path $repoRoot 'scripts/verify-solution-configuration-membership.ps1'
+$verifierPath = Join-Path $repoRoot 'scripts/checks/verify-solution-configuration-membership.ps1'
 $fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-solution-membership-{0}" -f [Guid]::NewGuid().ToString('N'))
 
 function Assert-Contract {

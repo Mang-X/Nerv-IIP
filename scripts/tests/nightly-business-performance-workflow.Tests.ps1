@@ -15,7 +15,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $workflowPath = Join-Path $repoRoot '.github/workflows/nightly-business-performance.yml'
-$verifierPath = Join-Path $repoRoot 'scripts/verify-business-performance-baseline.ps1'
+$verifierPath = Join-Path $repoRoot 'scripts/checks/verify-business-performance-baseline.ps1'
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 
 function Assert-WorkflowContract {
@@ -131,7 +131,7 @@ function Invoke-NightlyBusinessPerformanceRunFixture {
     )
 
     $runBlock = Get-NightlyBusinessPerformanceRunBlock -Path $Path
-    $verifierTarget = './scripts/verify-business-performance-baseline.ps1'
+    $verifierTarget = './scripts/checks/verify-business-performance-baseline.ps1'
     Assert-WorkflowContract ([regex]::Matches($runBlock, [regex]::Escape($verifierTarget)).Count -eq 1) 'Performance run fixture must replace exactly one governed verifier target.'
 
     $tokens = $null
@@ -368,7 +368,7 @@ else {
         ErpMaxElapsedMilliseconds = 30000
     }
 }
-& ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
+& ./scripts/checks/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
 '@.Trim()
     Assert-WorkflowContract ([string]::Equals($performanceCode.Trim(), $expectedPerformanceCode, [StringComparison]::Ordinal)) 'Governed performance step must use the canonical comment-free PowerShell threshold split: manual runs pass only -MaxElapsedMilliseconds; scheduled runs pass only the three nonzero per-scenario thresholds.'
     Assert-WorkflowContract ($performanceCode -notmatch '(^|\s)(dotnet|docker)(\s|$)' -and $performanceCode -notmatch '\|\|\s*true') 'Governed performance step must not bypass the governed script or swallow failure.'
@@ -460,7 +460,7 @@ jobs:
                   ErpMaxElapsedMilliseconds = 30000
               }
           }
-          & ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
+          & ./scripts/checks/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments
       - uses: actions/upload-artifact@v4
         timeout-minutes: 5
         if: always()
@@ -520,7 +520,7 @@ try {
             @{ Name = 'artifact-always'; Original = 'if: always()'; Replacement = 'if: success()' },
             @{ Name = 'artifact-missing-files'; Original = 'if-no-files-found: error'; Replacement = 'if-no-files-found: warn' },
             @{ Name = 'continue-on-error'; Original = 'timeout-minutes: 20'; Replacement = "timeout-minutes: 20$([Environment]::NewLine)        continue-on-error: true" },
-            @{ Name = 'masked-performance-failure'; Original = '& ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments'; Replacement = '& ./scripts/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments || true' }
+            @{ Name = 'masked-performance-failure'; Original = '& ./scripts/checks/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments'; Replacement = '& ./scripts/checks/verify-business-performance-baseline.ps1 @commonArguments @thresholdArguments || true' }
         )) {
         Assert-WorkflowContract ($workflowText.Contains($mutation.Original, [StringComparison]::Ordinal)) "Mutation '$($mutation.Name)' must match its canonical workflow text."
         $mutatedPath = Join-Path $mutationRoot "$($mutation.Name).yml"

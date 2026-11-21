@@ -91,7 +91,7 @@ if ($fullStackHelp.ExitCode -ne 0) {
     throw "Expected fullstack help to exit 0, got $($fullStackHelp.ExitCode). Output: $($fullStackHelp.Output)"
 }
 
-$fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack-session.ps1') -Raw
+$fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack/fullstack-session.ps1') -Raw
 foreach ($expected in @(
     '[string]::Equals([string]($Mode), [string](''Automated''), [StringComparison]::OrdinalIgnoreCase)',
     '[string]::Equals([string]("$($latest.state)"), [string](''Running''), [StringComparison]::OrdinalIgnoreCase)',
@@ -151,7 +151,7 @@ foreach ($expected in @(
 
 $dispatchRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nerv-entrypoint-dispatch-$([guid]::NewGuid().ToString('N'))"
 try {
-    [IO.Directory]::CreateDirectory((Join-Path $dispatchRoot 'scripts')) | Out-Null
+    [IO.Directory]::CreateDirectory((Join-Path $dispatchRoot 'scripts/fullstack')) | Out-Null
     $dispatchNerv = Join-Path $dispatchRoot 'nerv.ps1'
     Copy-Item -LiteralPath $nerv -Destination $dispatchNerv
     $captureScript = @'
@@ -167,7 +167,7 @@ param(
 )
 [pscustomobject]@{ action=$Action; target=$Target; scenario=$Scenario; sessionId=$SessionId; noBuild=[bool]$NoBuild; enableWmsDemoWorker=[bool]$EnableWmsDemoWorker; tail=$Tail; follow=[bool]$Follow } | ConvertTo-Json -Compress
 '@
-    [IO.File]::WriteAllText((Join-Path $dispatchRoot 'scripts/fullstack-session.ps1'), $captureScript, [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $dispatchRoot 'scripts/fullstack/fullstack-session.ps1'), $captureScript, [Text.UTF8Encoding]::new($false))
 
     $fullStackRun = Invoke-Nerv -ScriptPath $dispatchNerv -Arguments @('fullstack', 'run', '-Scenario', 'smoke', '-NoBuild')
     $runCapture = $fullStackRun.Output | ConvertFrom-Json

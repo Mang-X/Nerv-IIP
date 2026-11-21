@@ -26,8 +26,8 @@
 | BusinessGateway Console generated output | `frontend/packages/api-client/src/generated/business-console/` |
 | Business Console 稳定导出 | `frontend/packages/api-client/src/business-console.ts` |
 | api-client 总入口 | `frontend/packages/api-client/src/index.ts` |
-| OpenAPI 导出 producer | `scripts/export-gateway-openapi.ps1` |
-| OpenAPI/api-client drift verifier | `scripts/verify-openapi-client-drift.ps1` |
+| OpenAPI 导出 producer | `scripts/api/export-gateway-openapi.ps1` |
+| OpenAPI/api-client drift verifier | `scripts/api/verify-openapi-client-drift.ps1` |
 
 当前 Hey API 配置只有 PlatformGateway 和 BusinessGateway Console 两个输入。`business-gateway-mobile.v1.json`、`src/generated/mobile/` 与 `mobile.ts` 属于历史总账中记录的后续演进设想，不是当前已交付机器事实；若未来落地，以届时代码/OpenAPI 配置为准。
 

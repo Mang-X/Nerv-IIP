@@ -12,7 +12,7 @@
       "contracts": ["Nerv.IIP.Contracts.Erp", "Nerv.IIP.Contracts.DemandPlanning"],
       "entrypoint": {
         "kind": "script",
-        "path": "scripts/verify-erp-sales-order-demand-planning.ps1"
+        "path": "scripts/integration/verify-erp-sales-order-demand-planning.ps1"
       },
       "testProjects": [
         {
@@ -73,7 +73,7 @@
       "contracts": ["Nerv.IIP.Contracts.Wms", "Nerv.IIP.Contracts.Erp", "Nerv.IIP.Contracts.Inventory"],
       "entrypoint": {
         "kind": "script",
-        "path": "scripts/verify-erp-wms-delivery-completion.ps1"
+        "path": "scripts/integration/verify-erp-wms-delivery-completion.ps1"
       },
       "testProjects": [
         {

@@ -16,7 +16,7 @@ Set-StrictMode -Version Latest
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $libraryPath = Join-Path $repoRoot 'scripts/lib/BusinessPerformanceMetrics.ps1'
-$verifierPath = Join-Path $repoRoot 'scripts/verify-business-performance-baseline.ps1'
+$verifierPath = Join-Path $repoRoot 'scripts/checks/verify-business-performance-baseline.ps1'
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 
 function Assert-Contract {
@@ -261,7 +261,8 @@ try {
     Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/lib/OrdinalString.ps1') -Destination (Join-Path $mutationLibraryDirectory 'OrdinalString.ps1')
     Copy-Item -LiteralPath $libraryPath -Destination (Join-Path $mutationLibraryDirectory 'BusinessPerformanceMetrics.ps1')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1') -Destination (Join-Path $mutationLibraryDirectory 'ScriptAutomation.ps1')
-    $mutationPath = Join-Path $mutationScriptsDirectory 'verify-business-performance-baseline.ps1'
+    [IO.Directory]::CreateDirectory((Join-Path $mutationScriptsDirectory 'checks')) | Out-Null
+    $mutationPath = Join-Path $mutationScriptsDirectory 'checks/verify-business-performance-baseline.ps1'
     $verifierSource = [IO.File]::ReadAllText($verifierPath)
     $completenessAssignment = '$completenessViolations = @(Get-NervBusinessPerformanceMetricCompletenessViolations -SelectedScenario $Scenario -Metrics $metrics)'
     Assert-Contract ([regex]::Matches($verifierSource, [regex]::Escape($completenessAssignment)).Count -eq 1) 'Verifier weakening mutation must target exactly one completeness assignment.'

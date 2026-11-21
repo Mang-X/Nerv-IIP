@@ -2,7 +2,7 @@
 
 本文承接 ADR 0010，定义 `scripts/` 当前必须遵守的可信执行边界。它回答“脚本为什么可以被信任、什么行为不得越界”，不维护命令清单、逐脚本迁移状态、某次 CI/兼容验证结果或事故形成史。
 
-当前实现事实以 `scripts/check-script-governance.ps1`、`scripts/lib/ScriptAutomation.ps1`、相关 library、测试与脚本自身 `Get-Help` 为准；本文与机器契约冲突时先停止并核实，不通过改文档让未验证行为变成合规。
+当前实现事实以 `scripts/checks/check-script-governance.ps1`、`scripts/lib/ScriptAutomation.ps1`、相关 library、测试与脚本自身 `Get-Help` 为准；本文与机器契约冲突时先停止并核实，不通过改文档让未验证行为变成合规。
 
 ## 适用范围与分类
 
@@ -44,7 +44,7 @@
 5. `Requires` 只记录运行所需工具/环境，不把某次实测版本写成永久支持证明。
 6. `scripts/lib/` 下文件必须声明 `library`；目录外不得借该分类取得 library scope。
 
-精确 parser、字段校验与错误码由 `scripts/check-script-governance.ps1` 生产。
+精确 parser、字段校验与错误码由 `scripts/checks/check-script-governance.ps1` 生产。
 
 ## 原生命令、Helper 与进程所有权
 
@@ -57,7 +57,7 @@
 
 ## Script Governance 门禁
 
-`scripts/check-script-governance.ps1` 使用 PowerShell parser/AST，而不是自然语言 grep。当前核心边界包括：
+`scripts/checks/check-script-governance.ps1` 使用 PowerShell parser/AST，而不是自然语言 grep。当前核心边界包括：
 
 - 入口脚本必须使用受治理 helper，适用例外由 checker 自身定义；
 - 禁止绕过 wrapper 直接执行被治理的原生命令、任意动态命令或非受控进程启动；
@@ -71,7 +71,7 @@
 
 默认扫描排除以下路径，精确集合由 checker 与 `scripts/tests/script-governance-scan-boundary.Tests.ps1` 双向守住：
 
-1. `scripts/check-script-governance.ps1`：checker 不能按其自身禁止命令字面量自检；
+1. `scripts/checks/check-script-governance.ps1`：checker 不能按其自身禁止命令字面量自检；
 2. `scripts/lib/ScriptAutomation.ps1`：它是被治理调用重定向到的 wrapper；
 3. `scripts/tests/*`：测试必须能执行真实进程并制造故意违规夹具；
 4. `scripts/tmp/*`：本机一次性脚本，CI 只允许跟踪该目录自身的 `.gitignore`。
@@ -128,7 +128,7 @@ PowerShell variable binding 的完整 AST 判定、已知静态残余和 mutatio
 
 `quarantine` 与 [`testing/evidence.md`](testing/evidence.md) 的 `illegal-quarantine` 是**两套不同的隔离**：那一页管的是测试运行时的隔离元数据（含「已到期」必须 fail-closed），本页管的是**文件是否被选进执行面**。本页的 `quarantine` **没有期限字段、结构上不会到期**，靠的是跟踪票自身的验收条目销账；要把「到期」也机器化，得先决定期限从哪来（票状态需联网、硬编码日期会腐烂），那是另一张票的事。
 
-精确实现与失败诊断由 `scripts/lib/ScriptTestSelection.ps1`、`scripts/run-script-contract-tests.ps1` 与 `scripts/tests/script-test-selection.Tests.ps1` 生产；本页不维护逐文件名单、数量或出界条目表。
+精确实现与失败诊断由 `scripts/lib/ScriptTestSelection.ps1`、`scripts/ci/run-script-contract-tests.ps1` 与 `scripts/tests/script-test-selection.Tests.ps1` 生产；本页不维护逐文件名单、数量或出界条目表。
 
 ## 标识符比较
 
@@ -158,7 +158,7 @@ PowerShell variable binding 的完整 AST 判定、已知静态残余和 mutatio
 ## 跨平台声明
 
 1. 仓库脚本以 PowerShell 7 `pwsh` 口径编写，不因此自动获得“已支持 macOS/Linux/Windows”的声明。
-2. 跨平台支持必须在目标 OS 上通过当前 `scripts/check-script-compatibility.ps1` / 相关 producer 所定义的验证层次，并保留实际版本、命令、退出码和日志证据。
+2. 跨平台支持必须在目标 OS 上通过当前 `scripts/checks/check-script-compatibility.ps1` / 相关 producer 所定义的验证层次，并保留实际版本、命令、退出码和日志证据。
 3. `-AllowWindows`、fast-only 或等价 smoke 若 producer 明确为本地诊断，只能报告对应证明范围。
 4. 历史某次 Ubuntu/WSL/macOS 成功记录不能替代当前代码和当前运行的兼容证据。
 
@@ -173,7 +173,7 @@ PowerShell variable binding 的完整 AST 判定、已知静态残余和 mutatio
 1. header、分类、副作用、Writes、Cleanup、Requires 与实际行为一致；
 2. 原生命令/进程行为走现有 helper，不能为单票再造近似 wrapper；
 3. ownership 与 cleanup 可证明，秘密不会进入 retained evidence；
-4. 运行 `pwsh scripts/check-script-governance.ps1`，再运行与改动直接相关的现有契约测试；
+4. 运行 `pwsh scripts/checks/check-script-governance.ps1`，再运行与改动直接相关的现有契约测试；
 5. 若改变 checker、scan boundary、binding/ordinal contract 或 CI routing producer，必须运行对应已有合同测试并按 CI impact plan 验证；
 6. 只报告实际执行成功的 lane，policy skip/未运行项明确写出。
 

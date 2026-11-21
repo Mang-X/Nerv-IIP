@@ -217,7 +217,7 @@ function Get-NervCiImpactPlan {
             continue
         }
 
-        # #3145: a restore manifest is the hash ledger that scripts/verify-restore-lock-contract.ps1
+        # #3145: a restore manifest is the hash ledger that scripts/checks/verify-restore-lock-contract.ps1
         # reads, and the checker runs in the 'Script Governance' job, whose `if` is
         # `scripts != false || backend != false`. Left to the generic 'docs/' rule below, a PR that
         # edits only a manifest routes to 'docs' alone, the job is skipped, and the one gate that
@@ -248,7 +248,7 @@ function Get-NervCiImpactPlan {
         # the same class. 't3.json' is the
         # T3 Code project file and belongs to the same class: it only declares that
         # harness's worktree-create action, which shells out to
-        # 'scripts/setup-worktree.ps1' exactly like the '.claude' SessionStart hook and
+        # 'scripts/dev/setup-worktree.ps1' exactly like the '.claude' SessionStart hook and
         # the '.codex' '[setup]' block already do. Runtime and build
         # inputs that happen to live in the repository root ('.gitattributes',
         # '.gitignore', '.node-version', 'aspire.config.json', 'dotnet-tools.json',
@@ -277,10 +277,10 @@ function Get-NervCiImpactPlan {
 
         if ([string]::Equals($path, 'scripts/config/backend-test-shards.json', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'scripts/config/test-evidence-policy.json', [StringComparison]::Ordinal) -or
-            [string]::Equals($path, 'scripts/run-backend-test-shard.ps1', [StringComparison]::Ordinal) -or
-            [string]::Equals($path, 'scripts/verify-backend-test-shards.ps1', [StringComparison]::Ordinal) -or
-            [string]::Equals($path, 'scripts/verify-backend-real-postgres-tests.ps1', [StringComparison]::Ordinal) -or
-            [string]::Equals($path, 'scripts/verify-business-performance-baseline.ps1', [StringComparison]::Ordinal) -or
+            [string]::Equals($path, 'scripts/ci/run-backend-test-shard.ps1', [StringComparison]::Ordinal) -or
+            [string]::Equals($path, 'scripts/checks/verify-backend-test-shards.ps1', [StringComparison]::Ordinal) -or
+            [string]::Equals($path, 'scripts/ci/verify-backend-real-postgres-tests.ps1', [StringComparison]::Ordinal) -or
+            [string]::Equals($path, 'scripts/checks/verify-business-performance-baseline.ps1', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'scripts/lib/OrdinalString.ps1', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'scripts/lib/BackendTestShardSelectors.ps1', [StringComparison]::Ordinal) -or
             [string]::Equals($path, 'scripts/lib/BackendTestShardDiagnostics.ps1', [StringComparison]::Ordinal) -or
@@ -452,29 +452,29 @@ function Get-NervCiImpactPlan {
                 foreach ($flag in @('backend', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
                 continue
             }
-            if ([string]::Equals($path, 'scripts/run-full-chain-test-lane.ps1', [StringComparison]::Ordinal) -or
+            if ([string]::Equals($path, 'scripts/ci/run-full-chain-test-lane.ps1', [StringComparison]::Ordinal) -or
                 [string]::Equals($path, 'scripts/lib/FullChainTestLane.ps1', [StringComparison]::Ordinal) -or
                 [string]::Equals($path, 'scripts/config/full-chain-test-lane.json', [StringComparison]::Ordinal) -or
                 [string]::Equals($path, 'scripts/tests/full-chain-test-lane.Tests.ps1', [StringComparison]::Ordinal)) {
                 foreach ($flag in @('backend', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
                 continue
             }
-            if ([string]::Equals($path, 'scripts/verify-erp-sales-order-demand-planning.ps1', [StringComparison]::Ordinal)) {
+            if ([string]::Equals($path, 'scripts/integration/verify-erp-sales-order-demand-planning.ps1', [StringComparison]::Ordinal)) {
                 foreach ($flag in @('backend', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
             }
-            if ([string]::Equals($path, 'scripts/verify-erp-wms-delivery-completion.ps1', [StringComparison]::Ordinal)) {
+            if ([string]::Equals($path, 'scripts/integration/verify-erp-wms-delivery-completion.ps1', [StringComparison]::Ordinal)) {
                 foreach ($flag in @('backend', 'full_chain')) { Select-Impact -Name $flag -Reason $reason }
             }
-            if ([string]::Equals($path, 'scripts/export-gateway-openapi.ps1', [StringComparison]::Ordinal) -or
-                [string]::Equals($path, 'scripts/verify-openapi-client-drift.ps1', [StringComparison]::Ordinal)) {
+            if ([string]::Equals($path, 'scripts/api/export-gateway-openapi.ps1', [StringComparison]::Ordinal) -or
+                [string]::Equals($path, 'scripts/api/verify-openapi-client-drift.ps1', [StringComparison]::Ordinal)) {
                 foreach ($flag in @('openapi_codegen', 'business_gateway', 'frontend', 'frontend_packages')) { Select-Impact -Name $flag -Reason $reason }
             }
-            if ([string]::Equals($path, 'scripts/run-postgres-test-lane.ps1', [StringComparison]::Ordinal) -or
+            if ([string]::Equals($path, 'scripts/ci/run-postgres-test-lane.ps1', [StringComparison]::Ordinal) -or
                 [string]::Equals($path, 'scripts/lib/PostgresTestLane.ps1', [StringComparison]::Ordinal) -or
                 [string]::Equals($path, 'scripts/config/postgres-test-lane.json', [StringComparison]::Ordinal)) {
                 Select-Impact -Name 'postgresql' -Reason $reason
             }
-            if ([string]::Equals($path, 'scripts/run-redis-cap-test-lane.ps1', [StringComparison]::Ordinal) -or
+            if ([string]::Equals($path, 'scripts/ci/run-redis-cap-test-lane.ps1', [StringComparison]::Ordinal) -or
                 [string]::Equals($path, 'scripts/lib/RedisCapTestLane.ps1', [StringComparison]::Ordinal) -or
                 [string]::Equals($path, 'scripts/config/redis-cap-test-lane.json', [StringComparison]::Ordinal)) {
                 Select-Impact -Name 'redis_cap' -Reason $reason

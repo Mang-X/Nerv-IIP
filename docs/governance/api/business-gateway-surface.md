@@ -40,7 +40,7 @@ restore/reference closure 必须由 Reference manifest 与其登记的 per-proje
 
 上面这些要求在 #3145 之前没有任何程序执行：本节声明的 canonicalization 工具没有落地，manifest 与 16 个 `packages.lock.json` 因此长期是无门禁的裸合同。代价已经付过一次——BusinessGateway 的 lock 把 MediatR 分叉（`"requested": "[14.0.0, )", "resolved": "12.5.0"`）如实记录了很久而无人读（#3136）。
 
-现在由 `scripts/verify-restore-lock-contract.ps1` 在 CI 的 `Script Governance` job 执行，校验四类：lock 内部 `resolved` 低于自身 `requested` 下界、lock 被篡改、闭包内项目缺 lock、manifest `inputs` hash 与实际文件不符。它是纯静态比对：`dotnet restore --locked-mode` 对第一类实测零鉴别力（它只比对 lock 记录的 Direct `requested` 集合与项目当前声明的 `PackageReference` 集合，从不校验 `resolved` 是不是真实解析结果），因此不能作为该类的承担方。
+现在由 `scripts/checks/verify-restore-lock-contract.ps1` 在 CI 的 `Script Governance` job 执行，校验四类：lock 内部 `resolved` 低于自身 `requested` 下界、lock 被篡改、闭包内项目缺 lock、manifest `inputs` hash 与实际文件不符。它是纯静态比对：`dotnet restore --locked-mode` 对第一类实测零鉴别力（它只比对 lock 记录的 Direct `requested` 集合与项目当前声明的 `PackageReference` 集合，从不校验 `resolved` 是不是真实解析结果），因此不能作为该类的承担方。
 
 manifest 的 `inputs` 语义在 #3145 中有意扩面：由「seed 项目的 restore 输入」扩为「整个 ProjectReference 闭包的合同快照」——闭包内每个项目的 `.csproj` 都进入 `inputs`。原范围下，某个共享库改了自己的 `PackageReference` 而不更新 lock 是无人可见的。
 
@@ -50,7 +50,7 @@ manifest 的 `inputs` 语义在 #3145 中有意扩面：由「seed 项目的 res
 
 #3145 落地时全仓只有 BusinessGateway 一份 manifest，检查器的 manifest 路径和 CI 的路由规则都写死了那一个路径。#3157 起覆盖面不再是单份：
 
-- **受合同约束的 manifest 集合 = `docs/reference/api/*-restore.manifest.json` 的全部匹配项**，由 `scripts/verify-restore-lock-contract.ps1` 在运行时发现，不在脚本里枚举；发现结果为空判红，不得在空集上通过。
+- **受合同约束的 manifest 集合 = `docs/reference/api/*-restore.manifest.json` 的全部匹配项**，由 `scripts/checks/verify-restore-lock-contract.ps1` 在运行时发现，不在脚本里枚举；发现结果为空判红，不得在空集上通过。
 - `scripts/lib/CiImpactPlan.ps1` 把**同一模式**路由到 `scripts` 标志（因而调度 `Script Governance` job）。两处用同一模式而不是各自维护一份名单，是为了让「检查器读到的集合」与「CI 调度到的集合」不能分叉——否则新增一份 manifest 会得到一个「声明了合同但没有任何东西读」的文件，正是本门禁存在的理由本身（#3003 / #3135 / #3140 同形）。
 - 每份 manifest 独立声明自己的 seed 项目与闭包；共享库同时落在多个闭包里是允许的，其 lock 会被各份 manifest 分别校验。
 

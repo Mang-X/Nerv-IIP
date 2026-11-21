@@ -600,7 +600,7 @@ public sealed class ConsumerRecoveryFinalStopTests
         ///
         /// <para>用共享的 <see cref="Eventually"/> 原语而不是自建 sleep 循环——后者是
         /// <c>docs/governance/testing/determinism.md</c> 明令禁止的形态，也会被
-        /// <c>scripts/check-backend-test-determinism.ps1</c> 判红。</para>
+        /// <c>scripts/checks/check-backend-test-determinism.ps1</c> 判红。</para>
         /// </summary>
         private static ValueTask WaitUntilAsync(Func<bool> condition, Func<string> dump) =>
             Eventually.AssertAsync(

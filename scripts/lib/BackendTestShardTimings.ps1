@@ -14,7 +14,7 @@
 #
 # 本库按 library scope 接受 Script Governance 扫描，不能借 scripts/lib 路径豁免治理。
 # 分类、副作用与 helper 约束见 docs/governance/script-automation.md；精确扫描行为以
-# scripts/check-script-governance.ps1 及对应测试为准。调用方先加载 ScriptAutomation.ps1，
+# scripts/checks/check-script-governance.ps1 及对应测试为准。调用方先加载 ScriptAutomation.ps1，
 # 本库只通过既有 helper 执行原生命令，不单独拥有长期进程。
 #
 # Backend test shard timing cache (#1507).

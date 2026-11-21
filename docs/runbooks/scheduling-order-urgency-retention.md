@@ -36,7 +36,7 @@ PostgreSQL lane 的 `scheduling-postgres-profile` 成员包含 `OrderUrgencyRete
 ```powershell
 $run = [Guid]::NewGuid().ToString('N').Substring(0, 12)
 $output = "artifacts/scheduling-postgres/$run"
-pwsh scripts/run-postgres-test-lane.ps1 -MemberId scheduling-postgres-profile -DatabaseSuffix $run -ResultsDirectory "$output/results" -SummaryPath "$output/summary.json"
+pwsh scripts/ci/run-postgres-test-lane.ps1 -MemberId scheduling-postgres-profile -DatabaseSuffix $run -ResultsDirectory "$output/results" -SummaryPath "$output/summary.json"
 ```
 
 该命令执行成员登记的全部 Scheduling PostgreSQL 测试。核对摘要中的用例身份、执行结果与清理状态。

@@ -1,7 +1,7 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Parses scripts/run-full-chain-test-lane.ps1 and drives the memory-evidence library against synthetic kernel files
+#     - Parses scripts/ci/run-full-chain-test-lane.ps1 and drives the memory-evidence library against synthetic kernel files
 #   Writes:
 #     - Temporary /proc and cgroup fixtures plus a mutated library copy under the operating-system temp directory
 #   Cleanup:
@@ -23,7 +23,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $libraryPath = Join-Path $repoRoot 'scripts/lib/RuntimeMemoryEvidence.ps1'
-$runnerPath = Join-Path $repoRoot 'scripts/run-full-chain-test-lane.ps1'
+$runnerPath = Join-Path $repoRoot 'scripts/ci/run-full-chain-test-lane.ps1'
 . $libraryPath
 
 function Assert-Contract([bool]$Condition, [string]$Message) {

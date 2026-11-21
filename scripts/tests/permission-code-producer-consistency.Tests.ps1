@@ -1,7 +1,7 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Runs scripts/verify-permission-code-producer-consistency.ps1 against throwaway C# fixtures
+#     - Runs scripts/checks/verify-permission-code-producer-consistency.ps1 against throwaway C# fixtures
 #       and against the repository's real producers
 #   Writes:
 #     - OS temporary directory: fixture source files (temporarily)
@@ -24,7 +24,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 
-$verifierPath = Join-Path $repoRoot 'scripts/verify-permission-code-producer-consistency.ps1'
+$verifierPath = Join-Path $repoRoot 'scripts/checks/verify-permission-code-producer-consistency.ps1'
 $fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-permission-producers-{0}" -f [Guid]::NewGuid().ToString('N'))
 
 # Assertions are collected rather than thrown at the first failure. A fail-fast run answers "is it

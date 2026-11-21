@@ -17,9 +17,9 @@
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
-$verifyScript = Join-Path $repoRoot 'scripts/verify-erp-sales-order-demand-planning.ps1'
+$verifyScript = Join-Path $repoRoot 'scripts/integration/verify-erp-sales-order-demand-planning.ps1'
 $fixtureScript = Join-Path $repoRoot 'scripts/tests/fixtures/man703-http-fixture.ps1'
-$governanceScript = Join-Path $repoRoot 'scripts/check-script-governance.ps1'
+$governanceScript = Join-Path $repoRoot 'scripts/checks/check-script-governance.ps1'
 if (-not (Test-Path -LiteralPath $verifyScript)) {
     throw 'ERP sales-order DemandPlanning cross-process verify script is missing.'
 }

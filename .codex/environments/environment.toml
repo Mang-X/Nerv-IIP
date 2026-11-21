@@ -68,7 +68,7 @@ command = "pnpm -C frontend check && pnpm -C frontend lint && pnpm -C frontend f
 [[actions]]
 name = "导出Gateway OpenAPI"
 icon = "tool"
-command = "pwsh scripts/export-gateway-openapi.ps1"
+command = "pwsh scripts/api/export-gateway-openapi.ps1"
 
 [[actions]]
 name = "生成前端API Client"

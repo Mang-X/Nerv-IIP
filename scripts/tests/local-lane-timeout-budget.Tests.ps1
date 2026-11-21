@@ -30,9 +30,9 @@ function Assert-Contract([bool]$Condition, [string]$Message) { if (-not $Conditi
 # 该族的成员身份：本机可跑、对真 PostgreSQL/Redis 跑 `dotnet test`、此前把 1800 写死成字面量。
 # CI 传不传这个参数无所谓——默认值就是原来的字面量，所以 CI 行为按构造不变。
 $governedEntrypoints = @(
-    'scripts/run-postgres-test-lane.ps1'
-    'scripts/run-redis-cap-test-lane.ps1'
-    'scripts/verify-backend-real-postgres-tests.ps1'
+    'scripts/ci/run-postgres-test-lane.ps1'
+    'scripts/ci/run-redis-cap-test-lane.ps1'
+    'scripts/ci/verify-backend-real-postgres-tests.ps1'
 )
 
 foreach ($relativePath in $governedEntrypoints) {

@@ -38,7 +38,7 @@ public sealed class GlobalTestStateScopeAcquisitionTimeoutException : TimeoutExc
 /// the previous shape made that omission silent and unrecoverable. Second, it keeps every raw
 /// <c>Environment.SetEnvironmentVariable</c> / <c>CultureInfo.Current*</c> write inside this one
 /// audited type instead of scattered across test bodies, which is what the backend test-determinism
-/// gate (<c>scripts/check-backend-test-determinism.ps1</c>) is looking for.
+/// gate (<c>scripts/checks/check-backend-test-determinism.ps1</c>) is looking for.
 /// <para>
 /// Capture and restore deliberately cover more statics than the mutator surface does: the
 /// FluentValidation global resolvers and the default-thread cultures have no mutator because nothing

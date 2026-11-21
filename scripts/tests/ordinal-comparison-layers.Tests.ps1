@@ -30,7 +30,7 @@ function Get-LayerProbeFindings([string] $Source) {
     finally { Remove-Item -LiteralPath $probePath -Force -ErrorAction SilentlyContinue }
 }
 
-$compatibility = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/check-script-compatibility.ps1'))
+$compatibility = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/checks/check-script-compatibility.ps1'))
 Assert-Layer ($compatibility.Contains('scripts/tests/ordinal-comparison-layers.Tests.ps1', [StringComparison]::Ordinal)) 'compat-fast must run the ordinal layer contract.'
 
 $softHyphen = [char]0x00AD
@@ -427,8 +427,9 @@ function Get-NervOrdinalLayers([string] $Root) {
     $fixturePrefix = [IO.Path]::GetFullPath($fixturesRoot).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
 
     $layers = [ordered]@{
-        verify = @(Get-ChildItem $scriptsRoot -File -Filter 'verify-*.ps1')
-        top = @(Get-ChildItem $scriptsRoot -File -Filter '*.ps1' | Where-Object Name -NotLike 'verify-*')
+        commands = @(foreach ($group in @('api', 'checks', 'ci', 'dev', 'fullstack', 'integration')) {
+            Get-ChildItem -LiteralPath (Join-Path $scriptsRoot $group) -Recurse -File -Filter '*.ps1'
+        })
         tests = @(Get-ChildItem $testsRoot -Recurse -File -Filter '*.ps1' | Where-Object {
             -not ([IO.Path]::GetFullPath($_.FullName).StartsWith($fixturePrefix, [StringComparison]::Ordinal))
         })
@@ -489,8 +490,8 @@ try {
     $mirrorScripts = [IO.Directory]::CreateDirectory((Join-Path $mutationRoot 'scripts')).FullName
     Get-RepositoryScriptItems (Join-Path $repoRoot 'scripts') | Copy-Item -Destination $mirrorScripts -Recurse
     $mutationPaths = @(
-        [pscustomobject]@{ Layer = 'verify'; Path = 'scripts/verify-ordinal-layer-mutation.ps1' },
-        [pscustomobject]@{ Layer = 'top'; Path = 'scripts/ordinal-layer-mutation.ps1' },
+        [pscustomobject]@{ Layer = 'commands'; Path = 'scripts/checks/verify-ordinal-layer-mutation.ps1' },
+        [pscustomobject]@{ Layer = 'commands'; Path = 'scripts/dev/ordinal-layer-mutation.ps1' },
         [pscustomobject]@{ Layer = 'tests'; Path = 'scripts/tests/new-layer/culture.ps1' },
         [pscustomobject]@{ Layer = 'test_fixtures'; Path = 'scripts/tests/fixtures/new-layer/culture.ps1' },
         [pscustomobject]@{ Layer = 'install_package_support'; Path = 'scripts/install/ordinal-layer-mutation.ps1' },

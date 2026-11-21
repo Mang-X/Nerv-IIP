@@ -15,7 +15,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $PSNativeCommandUseErrorActionPreference = $false
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
-$gatePath = Join-Path $repoRoot 'scripts/verify-adr-format.ps1'
+$gatePath = Join-Path $repoRoot 'scripts/checks/verify-adr-format.ps1'
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-adr-structure-$([Guid]::NewGuid().ToString('N'))"
 $checked = 0
 

@@ -12,7 +12,7 @@
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
-$bootstrapScript = Join-Path $repoRoot 'scripts/bootstrap-online.ps1'
+$bootstrapScript = Join-Path $repoRoot 'scripts/dev/bootstrap-online.ps1'
 $bootstrapText = Get-Content -LiteralPath $bootstrapScript -Raw
 $mainStart = $bootstrapText.IndexOf("if (`$Help) {", [System.StringComparison]::Ordinal)
 if ($mainStart -lt 0) {
@@ -42,7 +42,8 @@ if (-not (Test-DotNet10Sdk)) {
     throw 'A single installed .NET 10 SDK must satisfy the bootstrap prerequisite.'
 }
 "@
-    $harnessPath = Join-Path $harnessScripts 'bootstrap-online.ps1'
+    [IO.Directory]::CreateDirectory((Join-Path $harnessScripts 'dev')) | Out-Null
+    $harnessPath = Join-Path $harnessScripts 'dev/bootstrap-online.ps1'
     [System.IO.File]::WriteAllText($harnessPath, $harness, [System.Text.UTF8Encoding]::new($false))
 
     $output = & pwsh -NoProfile -File $harnessPath 2>&1

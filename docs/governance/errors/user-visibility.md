@@ -86,7 +86,7 @@ UI 可以进一步把稳定 code 映射成更友好文案，但不能靠前端�
 ### 稳定码必须在前端词表登记（跨语言单向包含）
 
 后端发布的每个稳定码都必须在对应的前端展示词表里登记。两侧由
-`scripts/verify-stable-code-frontend-vocabulary.ps1` 在 CI 强制，方向是**单向包含（后端 ⊆ 前端）**：
+`scripts/checks/verify-stable-code-frontend-vocabulary.ps1` 在 CI 强制，方向是**单向包含（后端 ⊆ 前端）**：
 前端为已下线的历史码保留展示是合法的，要求相等会误报。两条通道的 producer 与 consumer 都不同，
 分别比对：
 

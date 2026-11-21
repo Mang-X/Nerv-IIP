@@ -6,9 +6,9 @@
 
 - Workflow 与 job/step：`.github/workflows/ci.yml`。
 - 后端 fast shard 分类：`scripts/config/backend-test-shards.json`。
-- 分片执行器：`scripts/run-backend-test-shard.ps1`。
-- 分片契约校验：`scripts/verify-backend-test-shards.ps1` 与 `scripts/tests/backend-test-shards.Tests.ps1`。
-- solution configuration 契约：`scripts/verify-solution-configuration-membership.ps1` 与对应测试。
+- 分片执行器：`scripts/ci/run-backend-test-shard.ps1`。
+- 分片契约校验：`scripts/checks/verify-backend-test-shards.ps1` 与 `scripts/tests/backend-test-shards.Tests.ps1`。
+- solution configuration 契约：`scripts/checks/verify-solution-configuration-membership.ps1` 与对应测试。
 - CI impact/required-check 关系：现有 workflow 与其契约测试/脚本。
 
 需要知道“现在到底有几个 job、每片有哪些项目、用什么参数”时必须直接读取这些 producer，不在 Governance 维护副本。

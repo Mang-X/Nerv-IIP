@@ -173,7 +173,7 @@ AppHost 包含 Aspire Docker Compose 部署目标。必须从 AppHost 生成 Com
 发布前可运行下列真实产物验证；它会分别生成临时 Development 与 Production Compose 产物并逐资源检查环境、迁移和开发 seed 门控，随后删除该临时目录：
 
 ```powershell
-pwsh scripts/verify-aspire-apphost-environment-artifacts.ps1
+pwsh scripts/checks/verify-aspire-apphost-environment-artifacts.ps1
 ```
 
 默认输出路径为 `artifacts/aspire-output/compose`。要准备环境特定的值并构建镜像，请使用：

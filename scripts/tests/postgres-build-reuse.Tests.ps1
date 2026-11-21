@@ -85,7 +85,7 @@ try {
     $env:NERV_IIP_TEST_POSTGRES=$null
     $missingEnvironmentRejected=$false
     try {
-        & (Join-Path $repoRoot 'scripts/run-postgres-test-lane.ps1') -MemberId fixture-0 -DatabaseSuffix fixture -ResultsDirectory (Join-Path $fixtureRoot 'missing-env-results') -SummaryPath (Join-Path $fixtureRoot 'missing-env-summary.json') -ManifestPath $manifest
+        & (Join-Path $repoRoot 'scripts/ci/run-postgres-test-lane.ps1') -MemberId fixture-0 -DatabaseSuffix fixture -ResultsDirectory (Join-Path $fixtureRoot 'missing-env-results') -SummaryPath (Join-Path $fixtureRoot 'missing-env-summary.json') -ManifestPath $manifest
     } catch { $missingEnvironmentRejected=$_.Exception.Message.Contains('Set NERV_IIP_TEST_POSTGRES', [StringComparison]::Ordinal) }
     Assert-Contract $missingEnvironmentRejected 'Missing PostgreSQL environment must fail before leaf commands.'
     $env:NERV_IIP_TEST_POSTGRES='Host=fixture;Port=5432;Database=postgres;Username=fixture;Password=fixture'
@@ -104,11 +104,11 @@ try {
         $failed=$false
         try {
             if ([string]::Equals([string]$mode, 'all-active', [StringComparison]::Ordinal) -or [string]::Equals([string]$mode, 'all-active-discovery', [StringComparison]::Ordinal)) {
-                & (Join-Path $repoRoot 'scripts/run-postgres-test-lane.ps1') -AllActiveMembers -DatabaseSuffix fixture -ResultsDirectory $results -SummaryPath $summaryPath -ManifestPath $manifest
+                & (Join-Path $repoRoot 'scripts/ci/run-postgres-test-lane.ps1') -AllActiveMembers -DatabaseSuffix fixture -ResultsDirectory $results -SummaryPath $summaryPath -ManifestPath $manifest
             } elseif ([string]::Equals([string]$mode, 'single', [StringComparison]::Ordinal)) {
-                & (Join-Path $repoRoot 'scripts/run-postgres-test-lane.ps1') -MemberId fixture-1 -DatabaseSuffix fixture -ResultsDirectory $results -SummaryPath $summaryPath -ManifestPath $manifest
+                & (Join-Path $repoRoot 'scripts/ci/run-postgres-test-lane.ps1') -MemberId fixture-1 -DatabaseSuffix fixture -ResultsDirectory $results -SummaryPath $summaryPath -ManifestPath $manifest
             } else {
-                & (Join-Path $repoRoot 'scripts/run-postgres-test-lane.ps1') -MemberId fixture-0,fixture-1 -DatabaseSuffix fixture -ResultsDirectory $results -SummaryPath $summaryPath -ManifestPath $manifest
+                & (Join-Path $repoRoot 'scripts/ci/run-postgres-test-lane.ps1') -MemberId fixture-0,fixture-1 -DatabaseSuffix fixture -ResultsDirectory $results -SummaryPath $summaryPath -ManifestPath $manifest
             }
         } catch { $failed=$true; $failureMessage=$_.Exception.Message }
         $calls=@(Get-Content $env:NERV_BUILD_CALLS | ForEach-Object { $_ | ConvertFrom-Json })

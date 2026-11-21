@@ -1,7 +1,7 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Runs scripts/verify-stable-code-frontend-vocabulary.ps1 against throwaway C#/TypeScript
+#     - Runs scripts/checks/verify-stable-code-frontend-vocabulary.ps1 against throwaway C#/TypeScript
 #       fixtures and against the repository's real producers and vocabularies
 #   Writes:
 #     - OS temporary directory: fixture source files (temporarily)
@@ -25,7 +25,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 
-$verifierPath = Join-Path $repoRoot 'scripts/verify-stable-code-frontend-vocabulary.ps1'
+$verifierPath = Join-Path $repoRoot 'scripts/checks/verify-stable-code-frontend-vocabulary.ps1'
 $fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-stable-code-vocab-{0}" -f [Guid]::NewGuid().ToString('N'))
 
 # Assertions are collected rather than thrown at the first failure. A fail-fast run answers "is it

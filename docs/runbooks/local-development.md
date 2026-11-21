@@ -9,7 +9,7 @@
 1. **绝不得使用 `dotnet run` 启动 AppHost。** 平台 AppHost 必须由 Aspire CLI 管理：
    `.\nerv.ps1 dev` / `aspire start`、`.\nerv.ps1 stop` /
    `aspire stop`、`.\nerv.ps1 wait <resource>`、`.\nerv.ps1 logs <resource>`。
-   链接工作树（linked worktree）中启动必须使用 Aspire 隔离模式（isolated mode）；由 `scripts/dev.ps1` 处理。
+   链接工作树（linked worktree）中启动必须使用 Aspire 隔离模式（isolated mode）；由 `scripts/dev/start-platform.ps1` 处理。
    直接使用 `dotnet run` 会遗留过期 DCP/backchannel 状态，使后续 `aspire add`、部署和
    诊断不可靠。
 
@@ -88,8 +88,8 @@ export NERV_IIP_TEST_REDIS='127.0.0.1:6379,password=<本机 Parameters:redis-pas
 残留。崩溃或 Ctrl-C 后先预览至少存活 24 小时且没有活动连接的标准临时库，再显式清扫：
 
 ```bash
-pwsh scripts/cleanup-stale-postgres-test-databases.ps1
-pwsh scripts/cleanup-stale-postgres-test-databases.ps1 -MinimumAgeHours 24 -Apply
+pwsh scripts/ci/cleanup-stale-postgres-test-databases.ps1
+pwsh scripts/ci/cleanup-stale-postgres-test-databases.ps1 -MinimumAgeHours 24 -Apply
 ```
 
 该入口需要 PowerShell 7、主机可用的 `psql` 和已设置的 `NERV_IIP_TEST_POSTGRES`。它只接受严格的
@@ -105,8 +105,8 @@ pwsh scripts/cleanup-stale-postgres-test-databases.ps1 -MinimumAgeHours 24 -Appl
 默认预览和显式应用入口清理至少存活 24 小时、且 owner 租约已过期的本地测试命名空间：
 
 ```bash
-pwsh scripts/cleanup-stale-redis-test-keys.ps1
-pwsh scripts/cleanup-stale-redis-test-keys.ps1 -MinimumAgeHours 24 -Apply
+pwsh scripts/ci/cleanup-stale-redis-test-keys.ps1
+pwsh scripts/ci/cleanup-stale-redis-test-keys.ps1 -MinimumAgeHours 24 -Apply
 ```
 
 该脚本需要 PowerShell 7、`redis-cli` 与 `NERV_IIP_TEST_REDIS`。它只接受严格的
@@ -121,7 +121,7 @@ Redis/CAP 用例的两个进程，需要从同一个唯一 session root 派生�
    传入值。设置 secret 的命令必须将敏感参数标记为脚本日志脱敏对象。
 
 10. **Connector 断连验收是 opt-in 的真实基础设施门禁。** 运行
-    `pwsh scripts/verify-connector-health-disconnect.ps1 -Runs 3`；不得启用
+    `pwsh scripts/integration/verify-connector-health-disconnect.ps1 -Runs 3`；不得启用
     `ConnectorHealthAcceptance:Enabled` 供普通 `nerv.ps1 dev` 或客户 profile 使用。验收 profile 会将 session-scoped internal token、
     IndustrialTelemetry endpoint 和 loopback Modbus mapping 注入 Connector Host，随后把证据写入
     `artifacts/script-logs/connector-health-disconnect/<timestamp>/`。即使 simulator、script contract 和

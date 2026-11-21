@@ -23,7 +23,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 
 $manifestPath = Join-Path $repoRoot 'scripts/config/backend-test-shards.json'
-$validatorPath = Join-Path $repoRoot 'scripts/verify-backend-test-shards.ps1'
+$validatorPath = Join-Path $repoRoot 'scripts/checks/verify-backend-test-shards.ps1'
 $policyPath = Join-Path $repoRoot 'scripts/config/test-evidence-policy.json'
 $workflowPath = Join-Path $repoRoot '.github/workflows/ci.yml'
 $temporaryBackendInventory = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-backend-inventory-{0}" -f [Guid]::NewGuid().ToString('N'))
@@ -46,7 +46,7 @@ $temporaryManifestPath = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-
 # must live inside the repo. artifacts/ is gitignored.
 $temporaryCollisionRelativePath = "artifacts/backend-test-shards-collision-{0}.cs" -f [Guid]::NewGuid().ToString('N')
 $temporaryCollisionSourcePath = Join-Path $repoRoot $temporaryCollisionRelativePath
-$runnerPath = Join-Path $repoRoot 'scripts/run-backend-test-shard.ps1'
+$runnerPath = Join-Path $repoRoot 'scripts/ci/run-backend-test-shard.ps1'
 $diagnosticsPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardDiagnostics.ps1'
 $selectorAssertionsPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardSelectors.ps1'
 $timingAssertionsPath = Join-Path $repoRoot 'scripts/lib/BackendTestShardTimings.ps1'
@@ -1261,7 +1261,7 @@ Assert-Contract ($aggregateMissingDirectoryText.Contains("found no executed test
 Assert-Contract (-not $aggregateMissingDirectoryText.Contains('Cannot find path', [StringComparison]::Ordinal)) "The missing-directory failure must not be a bare Get-ChildItem ItemNotFoundException; observed: $aggregateMissingDirectoryText"
 
 # --- #3283 B1 / B3：生产调用点的**行为**覆盖 -----------------------------------------------------
-# 上面全部是库函数的单元对照。它们一条也不约束 `scripts/verify-backend-real-postgres-tests.ps1`
+# 上面全部是库函数的单元对照。它们一条也不约束 `scripts/ci/verify-backend-real-postgres-tests.ps1`
 # 那一行怎么读证据——#3283 复审 B1 实测：把调用点整段改回 pre-PR 写法，全套契约测试 EXIT=0 全绿，
 # 唯一的绑定是一条 `$source.Contains('Get-BackendTestShardSelectorTrxResults')` 子串断言，而**同文件的
 # 一句中文注释自己就满足它**（配对变异：改回调用点 + 保留注释 ⇒ 绿；改回调用点 + 抹掉注释 ⇒ 红）。
@@ -1289,7 +1289,7 @@ Assert-Contract (-not $aggregateMissingDirectoryText.Contains('Cannot find path'
 #   3. 真 TRX 带 `<TestDefinitions>` / `<UnitTest id>` / `testId`，shim 的**不带**。当前读法只用
 #      `testName` + `outcome`，所以覆盖是完整的；但同仓 FullChainTestLane.ps1 / PostgresTestLane.ps1
 #      走的是 `testId → TestMethod` 映射，**若将来本函数改成那种读法，这套夹具会太薄而假绿**。
-$realPostgresVerifyPath = Join-Path $repoRoot 'scripts/verify-backend-real-postgres-tests.ps1'
+$realPostgresVerifyPath = Join-Path $repoRoot 'scripts/ci/verify-backend-real-postgres-tests.ps1'
 $shimSelector = 'Nerv.IIP.Testing.PostgreSql.Tests.PostgreSqlTestDatabaseTests'
 $shimIdentityOne = "$shimSelector.Initializer_failure_drops_database_and_redacts_diagnostics"
 $shimIdentityTwo = "$shimSelector.Parallel_databases_are_isolated_initialized_and_removed"
@@ -1436,7 +1436,7 @@ Set-Content -LiteralPath $shimManifestPath -NoNewline -Value @"
       "id": "real-postgres",
       "policyLane": "postgres",
       "owner": "opt-in real PostgreSQL verification",
-      "ownerScript": "scripts/verify-backend-real-postgres-tests.ps1",
+      "ownerScript": "scripts/ci/verify-backend-real-postgres-tests.ps1",
       "projects": []
     }
   ]
@@ -1753,11 +1753,11 @@ finally {
 $selectorSweep = Get-NervOrdinalComparisonFindings -ScriptPath $selectorAssertionsPath -DisplayName 'BackendTestShardSelectors.ps1'
 Assert-Contract ($selectorSweep.Findings.Count -eq 0) "scripts/lib/BackendTestShardSelectors.ps1 must compare identifiers ordinally (#1509):`n  $(@($selectorSweep.Findings) -join "`n  ")"
 $runnerSweep = Get-NervOrdinalComparisonFindings -ScriptPath $runnerPath -DisplayName 'run-backend-test-shard.ps1'
-Assert-Contract ($runnerSweep.Findings.Count -eq 0) "scripts/run-backend-test-shard.ps1 must compare shard identity ordinally (#1512):`n  $(@($runnerSweep.Findings) -join "`n  ")"
+Assert-Contract ($runnerSweep.Findings.Count -eq 0) "scripts/ci/run-backend-test-shard.ps1 must compare shard identity ordinally (#1512):`n  $(@($runnerSweep.Findings) -join "`n  ")"
 $timingSweep = Get-NervOrdinalComparisonFindings -ScriptPath $timingAssertionsPath -DisplayName 'BackendTestShardTimings.ps1'
 Assert-Contract ($timingSweep.Findings.Count -eq 0) "scripts/lib/BackendTestShardTimings.ps1 must compare timing identities ordinally (#1512):`n  $(@($timingSweep.Findings) -join "`n  ")"
 $validatorSweep = Get-NervOrdinalComparisonFindings -ScriptPath $validatorPath -DisplayName 'verify-backend-test-shards.ps1'
-Assert-Contract ($validatorSweep.Findings.Count -eq 0) "scripts/verify-backend-test-shards.ps1 must compare shard-governance identifiers ordinally (#1512):`n  $(@($validatorSweep.Findings) -join "`n  ")"
+Assert-Contract ($validatorSweep.Findings.Count -eq 0) "scripts/checks/verify-backend-test-shards.ps1 must compare shard-governance identifiers ordinally (#1512):`n  $(@($validatorSweep.Findings) -join "`n  ")"
 $aggregateAssertionEquality = '-not [string]::Equals($aggregateRun.Replace("`r`n", "`n").TrimEnd(), $expectedAggregateRun.Replace("`r`n", "`n").TrimEnd(), [StringComparison]::Ordinal)'
 $validatorSource = [IO.File]::ReadAllText($validatorPath)
 Assert-Contract ([regex]::Matches($validatorSource, [regex]::Escape($aggregateAssertionEquality)).Count -eq 1) 'The aggregate selected/skipped contract must use explicit ordinal equality after line-ending normalization.'
@@ -1810,7 +1810,8 @@ try {
     foreach ($libraryName in @('ScriptAutomation.ps1', 'BackendTestShardSelectors.ps1')) {
         Copy-Item -LiteralPath (Join-Path $repoRoot "scripts/lib/$libraryName") -Destination (Join-Path $mutatedScripts "lib/$libraryName")
     }
-    $mutatedRunner = Join-Path $mutatedScripts 'run-backend-test-shard.ps1'
+    [IO.Directory]::CreateDirectory((Join-Path $mutatedScripts 'ci')) | Out-Null
+    $mutatedRunner = Join-Path $mutatedScripts 'ci/run-backend-test-shard.ps1'
     $runnerSource = [IO.File]::ReadAllText($runnerPath)
     $ordinalLookup = '[string]::Equals([string]$_.id, $ShardId, [StringComparison]::Ordinal)'
     Assert-Contract ([regex]::Matches($runnerSource, [regex]::Escape($ordinalLookup)).Count -eq 1) 'Runner lookup mutation must target exactly one production call site.'

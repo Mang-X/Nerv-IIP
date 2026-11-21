@@ -1,7 +1,7 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Runs scripts/verify-apphost-base-url-injection.ps1 against the repository and against
+#     - Runs scripts/checks/verify-apphost-base-url-injection.ps1 against the repository and against
 #       throwaway exemption registries
 #     - Re-evaluates the checker in-process against mutated copies of the AppHost source text
 #   Writes:
@@ -17,7 +17,7 @@
 
 ## 为什么需要它
 
-`scripts/verify-aspire-apphost-environment-artifacts.ps1` 在同一格上实测是**绿**的：PR #3484 把
+`scripts/checks/verify-aspire-apphost-environment-artifacts.ps1` 在同一格上实测是**绿**的：PR #3484 把
 当时新增的 `Program.cs:885`（gateway 的 `FileStorage__BaseUrl`）删回缺陷态，那个脚本仍然 EXIT=0，
 而同一轮的哨兵格（把另一条注入的值改成 `http://wrong-sentinel:1`）EXIT=1 —— 说明变异确实生效、
 跑法正确，那一格的绿是**护栏没鉴别力**。所以「新护栏在 main 上是绿的」什么都不证明，下面这些
@@ -55,7 +55,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 . (Join-Path $repoRoot 'scripts/lib/AppHostBaseUrlInjection.ps1')
 
-$verifierPath = Join-Path $repoRoot 'scripts/verify-apphost-base-url-injection.ps1'
+$verifierPath = Join-Path $repoRoot 'scripts/checks/verify-apphost-base-url-injection.ps1'
 $appHostProgramPath = Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("nerv-iip-apphost-base-url-{0}" -f [Guid]::NewGuid().ToString('N'))
 

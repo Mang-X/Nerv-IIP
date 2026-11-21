@@ -130,7 +130,7 @@ export const MES_READINESS_REASON_DISPLAYS: Readonly<
   // 出自同一个 evaluator、相隔一行，却因为写成裸字面量而长期不在本表里——未登记的码走
   // `describeMesReadinessReason` 兜底、不在 `RELEASE_IGNORED_TASK_BLOCKERS` 里，
   // 于是静默阻断下达且全仓零红。现在后端注册表与本表由
-  // `scripts/verify-stable-code-frontend-vocabulary.ps1` 单向包含（后端 ⊆ 本表）钉住。
+  // `scripts/checks/verify-stable-code-frontend-vocabulary.ps1` 单向包含（后端 ⊆ 本表）钉住。
   WORK_ORDER_NOT_FOUND: {
     code: 'WORK_ORDER_NOT_FOUND',
     category: '其他门禁',

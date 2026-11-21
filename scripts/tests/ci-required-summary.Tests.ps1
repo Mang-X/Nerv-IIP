@@ -232,7 +232,7 @@ try {
 
     Invoke-Mutation -Name 'full-chain-stable-aggregate-collects-formal-evidence' -Workflow $workflow `
         -Original "          v1_result=`"`${{ needs.business-full-chain-acceptance-v1.result }}`"$([Environment]::NewLine)" `
-        -Replacement "          v1_result=`"`${{ needs.business-full-chain-acceptance-v1.result }}`"$([Environment]::NewLine)          ./scripts/collect-test-evidence.ps1 -Lane full-chain$([Environment]::NewLine)" `
+        -Replacement "          v1_result=`"`${{ needs.business-full-chain-acceptance-v1.result }}`"$([Environment]::NewLine)          ./scripts/ci/collect-test-evidence.ps1 -Lane full-chain$([Environment]::NewLine)" `
         -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
 
     $stableAggregateStepHeader = "    steps:$([Environment]::NewLine)      - name: Require FullChain authority"
@@ -251,7 +251,7 @@ try {
         -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
 
     Invoke-Mutation -Name 'full-chain-v1-drops-formal-evidence-collector' -Workflow $workflow `
-        -Original ('          ./scripts/collect-test-evidence.ps1' + [Environment]::NewLine) -Replacement '' `
+        -Original ('          ./scripts/ci/collect-test-evidence.ps1' + [Environment]::NewLine) -Replacement '' `
         -ExpectedDiagnostic $fullChainEvidenceOwnerDiagnostic
 
     Invoke-Mutation -Name 'full-chain-v1-drops-formal-evidence-artifact' -Workflow $workflow `

@@ -15,7 +15,7 @@
 至少执行：
 
 ```powershell
-pwsh scripts/check-script-governance.ps1
+pwsh scripts/checks/check-script-governance.ps1
 ```
 
 随后运行目标脚本对应的**已有**契约测试。若改动触及 checker、library scan boundary、dynamic invocation/binding、ordinal comparison、CI impact plan、test evidence 或其它共享 producer，必须运行其现有 tests；不要为普通文档/脚本修改新造自然语言 checker 或一次性 fixture。
@@ -70,7 +70,7 @@ pwsh scripts/check-script-governance.ps1
 
 需要声明 macOS/Linux/Windows 支持时：
 
-1. 先读 `pwsh scripts/check-script-compatibility.ps1 -?` 获取当前参数和层次；
+1. 先读 `pwsh scripts/checks/check-script-compatibility.ps1 -?` 获取当前参数和层次；
 2. 在目标 OS 上执行兼容检查。默认还核对 Docker Compose CLI 版本，`-FastOnly` 跳过该检查；
 3. 保存 OS、PowerShell/.NET/Docker 等实际版本、命令、退出码和日志；
 4. fast-only 或 Windows smoke 只能按 producer 定义的证明范围报告；

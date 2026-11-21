@@ -17,7 +17,7 @@ harness 不可见、或永远不会更新。
 判据：**这条流程换到另一个仓库还成立吗？** 成立就不属于 `skills/`——通用技能放全局层，
 放这里会把项目仓库变成通用技能的仓库。
 
-项目专属技能的 payload 由 [`scripts/setup-worktree.ps1`](../scripts/setup-worktree.ps1)（SessionStart hook）
+项目专属技能的 payload 由 [`scripts/dev/setup-worktree.ps1`](../scripts/dev/setup-worktree.ps1)（SessionStart hook）
 每次按 `skills/` 重新发布，改完源不需要手工重装。`skills update` 对本地来源不可用；只在需要
 刷新 `skills-lock.json` 的 `computedHash` 时重跑 `npx skills add ./skills/<name>`。
 
@@ -115,7 +115,7 @@ npx skills experimental_install    # 把 payload 落到 .agents/skills/
 `experimental_install` 落到 `.agents/skills/` 的 payload 重复，可以删掉，
 链接层由下面这步统一重建。
 
-`.claude/skills/` 的链接层由 [`scripts/setup-worktree.ps1`](../scripts/setup-worktree.ps1)
+`.claude/skills/` 的链接层由 [`scripts/dev/setup-worktree.ps1`](../scripts/dev/setup-worktree.ps1)
 （SessionStart hook）按 `.agents/skills/` 的 payload 重建——`experimental_install`
 本身不产出任何 agent 链接。同一个 hook 先把 `skills/` 的每个技能重新发布进 payload：
 安装与镜像都以「payload 已存在」为终点，源改动否则到不了已播种的工作树。契约由

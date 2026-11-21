@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
-$verifyPath = Join-Path $repoRoot 'scripts/verify-connector-health-disconnect.ps1'
+$verifyPath = Join-Path $repoRoot 'scripts/integration/verify-connector-health-disconnect.ps1'
 $simulatorPath = Join-Path $repoRoot 'scripts/support/modbus-tcp-simulator.ps1'
 $appHostPath = Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs'
 $connectorHostProgramPath = Join-Path $repoRoot 'connector-hosts/src/Nerv.IIP.ConnectorHost.Host/Program.cs'

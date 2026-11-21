@@ -17,7 +17,7 @@ Set-StrictMode -Version Latest
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 
-$checker = Join-Path $repoRoot 'scripts/check-backend-test-determinism.ps1'
+$checker = Join-Path $repoRoot 'scripts/checks/check-backend-test-determinism.ps1'
 $fixtureRoot = Join-Path $repoRoot 'scripts/tests/fixtures/backend-test-determinism'
 $validBaselineTemplatePath = Join-Path $fixtureRoot 'valid-baseline.json'
 $runId = [Guid]::NewGuid().ToString('N')

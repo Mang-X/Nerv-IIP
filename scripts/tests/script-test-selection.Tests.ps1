@@ -417,10 +417,10 @@ Assert-Selection ($covered.SetEquals([string[]] $plan.All)) `
 Assert-Selection ($plan.RunnerSelected.Count -gt 0) 'The discovery runner must select at least one test; an empty selection would make its CI step a no-op.'
 
 $workflowSource = [IO.File]::ReadAllText((Join-Path $repoRoot '.github/workflows/ci.yml'))
-Assert-Selection ($workflowSource.Contains('./scripts/run-script-contract-tests.ps1', [StringComparison]::Ordinal)) `
+Assert-Selection ($workflowSource.Contains('./scripts/ci/run-script-contract-tests.ps1', [StringComparison]::Ordinal)) `
     'CI must run the discovery runner; without that step the whole selection closure is dead code.'
 
-$runnerSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/run-script-contract-tests.ps1'))
+$runnerSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/ci/run-script-contract-tests.ps1'))
 Assert-Selection ($runnerSource.Contains('Get-NervScriptTestSelectionPlan', [StringComparison]::Ordinal)) `
     'The discovery runner must take its selection from the shared plan rather than from a list of its own.'
 # 对 All 而不是只对 RunnerSelected 断言：runner 源码里一个测试文件名都不许出现。

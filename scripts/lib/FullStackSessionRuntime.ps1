@@ -835,7 +835,7 @@ function Invoke-NervFullStackGuardian {
             $stopEnvironment = Get-NervFullStackNonSeedEnvironment
             $stopEnvironment.NERV_IIP_FULLSTACK_CALLER_GUARDIAN_PID = "$PID"
             Invoke-PwshScript `
-                -ScriptPath (Join-Path $runtimeLibraryRoot 'scripts/fullstack-session.ps1') `
+                -ScriptPath (Join-Path $runtimeLibraryRoot 'scripts/fullstack/fullstack-session.ps1') `
                 -Arguments @('stop', '-SessionId', $SessionId) `
                 -WorkingDirectory $runtimeLibraryRoot `
                 -TimeoutSeconds 300 `

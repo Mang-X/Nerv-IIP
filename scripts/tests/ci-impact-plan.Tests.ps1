@@ -228,7 +228,7 @@ function Assert-RedisCapActiveSelectionWorkflowContract {
     Assert-Contract ($null -ne $redisCapJobProperty) 'CI must define the Redis/CAP transport job.'
     $runnerSteps = @($redisCapJobProperty.Value.steps | Where-Object {
             $runProperty = $_.PSObject.Properties['run']
-            $null -ne $runProperty -and ([string]$runProperty.Value).Contains('./scripts/run-redis-cap-test-lane.ps1', [StringComparison]::Ordinal)
+            $null -ne $runProperty -and ([string]$runProperty.Value).Contains('./scripts/ci/run-redis-cap-test-lane.ps1', [StringComparison]::Ordinal)
         })
     Assert-Contract ($runnerSteps.Count -eq 1) 'The Redis/CAP job must invoke its governed runner exactly once.'
     $runnerInvocation = [string]$runnerSteps[0].run
@@ -429,7 +429,7 @@ function Assert-FullChainProjectReferenceCoverage {
 
 function Assert-PostgresLaneOwningPathsRoute {
     foreach ($owningPath in @(
-            'scripts/run-postgres-test-lane.ps1',
+            'scripts/ci/run-postgres-test-lane.ps1',
             'scripts/lib/PostgresTestLane.ps1',
             'scripts/config/postgres-test-lane.json'
         )) {
@@ -443,10 +443,10 @@ function Assert-BackendFastLaneControlInputsRoute {
     foreach ($backendFastLaneControlInput in @(
             'scripts/config/backend-test-shards.json',
             'scripts/config/test-evidence-policy.json',
-            'scripts/run-backend-test-shard.ps1',
-            'scripts/verify-backend-test-shards.ps1',
-            'scripts/verify-backend-real-postgres-tests.ps1',
-            'scripts/verify-business-performance-baseline.ps1',
+            'scripts/ci/run-backend-test-shard.ps1',
+            'scripts/checks/verify-backend-test-shards.ps1',
+            'scripts/ci/verify-backend-real-postgres-tests.ps1',
+            'scripts/checks/verify-business-performance-baseline.ps1',
             'scripts/lib/OrdinalString.ps1',
             'scripts/lib/BackendTestShardSelectors.ps1',
             'scripts/lib/BackendTestShardDiagnostics.ps1',
@@ -460,7 +460,7 @@ function Assert-BackendFastLaneControlInputsRoute {
 
 function Assert-RedisCapLaneOwningPathsRoute {
     foreach ($owningPath in @(
-            'scripts/run-redis-cap-test-lane.ps1',
+            'scripts/ci/run-redis-cap-test-lane.ps1',
             'scripts/lib/RedisCapTestLane.ps1',
             'scripts/config/redis-cap-test-lane.json'
         )) {
@@ -472,12 +472,12 @@ function Assert-RedisCapLaneOwningPathsRoute {
 
 function Assert-FullChainLaneOwningPathsRoute {
     foreach ($owningPath in @(
-            'scripts/run-full-chain-test-lane.ps1',
+            'scripts/ci/run-full-chain-test-lane.ps1',
             'scripts/lib/FullChainTestLane.ps1',
             'scripts/config/full-chain-test-lane.json',
             'scripts/tests/full-chain-test-lane.Tests.ps1',
-            'scripts/verify-erp-sales-order-demand-planning.ps1',
-            'scripts/verify-erp-wms-delivery-completion.ps1'
+            'scripts/integration/verify-erp-sales-order-demand-planning.ps1',
+            'scripts/integration/verify-erp-wms-delivery-completion.ps1'
         )) {
         Assert-ImpactCase -Name "full-chain-lane-owner-$([IO.Path]::GetFileName($owningPath))" -Paths @($owningPath) -Flags @{
             scripts = $true; backend = $true; postgresql = $false; redis_cap = $false; full_chain = $true
@@ -545,7 +545,7 @@ Assert-ImpactCase -Name 'script-governance-registry' -Paths @('docs/governance/s
 }
 
 # #3145: the restore manifest lives under 'docs/', and the generic 'docs/' rule would route it to
-# 'docs' alone. The only gate that reads it, scripts/verify-restore-lock-contract.ps1, runs in the
+# 'docs' alone. The only gate that reads it, scripts/checks/verify-restore-lock-contract.ps1, runs in the
 # 'Script Governance' job, whose `if` is `scripts != false || backend != false` — so without
 # 'scripts' here, a PR that edits only the manifest skips the job entirely and the check runs on
 # zero jobs for exactly the change it exists to catch. Measured before the routing rule was added:
@@ -653,7 +653,7 @@ Assert-ImpactCase -Name 'shared-trx-reader' -Paths @('scripts/lib/TrxResults.ps1
 }
 
 foreach ($salesOrderDemandFullChainInput in @(
-        'scripts/verify-erp-sales-order-demand-planning.ps1',
+        'scripts/integration/verify-erp-sales-order-demand-planning.ps1',
         'backend/tests/Nerv.IIP.Business.FullChain.Tests/Scenario.cs',
         'infra/docker-compose.dev.yml'
     )) {
@@ -785,7 +785,7 @@ Assert-ImpactCase -Name 'connector-hosts' -Paths @('connector-hosts/src/Host.cs'
     connector_hosts = $true; backend = $false; frontend = $false; full_chain = $false
 }
 
-Assert-ImpactCase -Name 'openapi-generation-script' -Paths @('scripts/export-gateway-openapi.ps1') -Flags @{
+Assert-ImpactCase -Name 'openapi-generation-script' -Paths @('scripts/api/export-gateway-openapi.ps1') -Flags @{
     scripts = $true; openapi_codegen = $true; business_gateway = $true; frontend = $true; frontend_packages = $true
 }
 
@@ -938,7 +938,7 @@ finally {
 }
 
 $postgresRoutingBlock = @'
-            if ([string]::Equals($path, 'scripts/run-postgres-test-lane.ps1', [StringComparison]::Ordinal) -or
+            if ([string]::Equals($path, 'scripts/ci/run-postgres-test-lane.ps1', [StringComparison]::Ordinal) -or
                 [string]::Equals($path, 'scripts/lib/PostgresTestLane.ps1', [StringComparison]::Ordinal) -or
                 [string]::Equals($path, 'scripts/config/postgres-test-lane.json', [StringComparison]::Ordinal)) {
                 Select-Impact -Name 'postgresql' -Reason $reason

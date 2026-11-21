@@ -41,7 +41,7 @@ export const STABLE_ERROR_MESSAGES: Readonly<Record<string, string>> = {
     '停机原因编码已存在，请换一个编码，或到停机原因页编辑原有原因。',
   // #3155：以下四条此前**没有任何一侧登记**，后端一直在发、前端一直不认，所以直接裸码上屏。
   // 它们现在与上面各条一样受跨语言契约约束：后端注册表里的每个码必须在本表登记，由
-  // `scripts/verify-stable-code-frontend-vocabulary.ps1` 在 CI 强制（方向是后端 ⊆ 本表）。
+  // `scripts/checks/verify-stable-code-frontend-vocabulary.ps1` 在 CI 强制（方向是后端 ⊆ 本表）。
   //
   // 网关幂等键钳的第三条（另两条在上面）。语义是「同一次请求里出现了两个互不相同的幂等键」，
   // 不是「这个键被别人用过」——后者是 `idempotency-conflict`。两句文案刻意分开：

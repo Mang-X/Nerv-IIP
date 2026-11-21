@@ -13,7 +13,7 @@
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
-$checker = Join-Path $repoRoot 'scripts/check-script-governance.ps1'
+$checker = Join-Path $repoRoot 'scripts/checks/check-script-governance.ps1'
 $bindingHelper = Join-Path $repoRoot 'scripts/lib/ScriptVariableBinding.ps1'
 
 # Split out of check-script-governance.Tests.ps1 so it can gate in CI: that file also exercises the
@@ -90,7 +90,7 @@ $declaredExclusions = @(
         param($node) $node -is [System.Management.Automation.Language.StringConstantExpressionAst]
     }, $true) | ForEach-Object { [string] $_.Value }
 )
-$expectedExclusions = @('scripts/check-script-governance.ps1', 'scripts/lib/ScriptAutomation.ps1', 'scripts/tests/*', 'scripts/tmp/*')
+$expectedExclusions = @('scripts/checks/check-script-governance.ps1', 'scripts/lib/ScriptAutomation.ps1', 'scripts/tests/*', 'scripts/tmp/*')
 # Ordinal, per the #1507 ruling: `-cne` is still culture-aware, so two exclusion lists differing only
 # by an ignorable character would compare equal and this contract would miss the widening.
 if (-not [string]::Equals(($declaredExclusions -join '|'), ($expectedExclusions -join '|'), [StringComparison]::Ordinal)) {
@@ -246,8 +246,8 @@ if ($unruledExpressionTypes.Count -gt 0) {
 
 # ---------------------------------------------------------------------------------------------
 # Fixtures live in a mirrored scripts/ tree under the platform temp directory, never in the
-# repository. The checker derives its repo root as `$PSScriptRoot/..` and its default -Path as
-# `$PSScriptRoot/.`, so a verbatim copy at <temp>/…/scripts/check-script-governance.ps1 classifies
+# repository. The checker derives its repo root as `$PSScriptRoot/../..` and its default -Path as
+# `$PSScriptRoot/..`, so a verbatim copy at <temp>/…/scripts/checks/check-script-governance.ps1 classifies
 # <temp>/…/scripts/lib/x.ps1 as the repo-relative `scripts/lib/x.ps1` and runs exactly the same
 # $scanExclusions and library-scope decisions. Planting into the real scripts/lib instead would leave
 # a violating file behind whenever the process is killed or a CI step times out — after which every
@@ -256,7 +256,7 @@ if ($unruledExpressionTypes.Count -gt 0) {
 $mirrorRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-script-governance-boundary-{0}" -f [Guid]::NewGuid().ToString('N'))
 $mirrorScripts = Join-Path $mirrorRoot 'scripts'
 $mirrorLib = Join-Path $mirrorScripts 'lib'
-$mirrorChecker = Join-Path $mirrorScripts 'check-script-governance.ps1'
+$mirrorChecker = Join-Path $mirrorScripts 'checks/check-script-governance.ps1'
 $libraryFixturePath = Join-Path $mirrorLib 'zz-governance-library-fixture.ps1'
 $nonLibraryFixturePath = Join-Path $mirrorScripts 'zz-claims-library-category.ps1'
 $libraryHeader = @'
@@ -302,6 +302,7 @@ function Invoke-LibraryScopeCase {
 
 try {
     New-Item -ItemType Directory -Path $mirrorLib -Force | Out-Null
+    [IO.Directory]::CreateDirectory((Split-Path -Parent $mirrorChecker)) | Out-Null
     Copy-Item -LiteralPath $checker -Destination $mirrorChecker -Force
     Copy-Item -LiteralPath $bindingHelper -Destination (Join-Path $mirrorLib 'ScriptVariableBinding.ps1') -Force
 
