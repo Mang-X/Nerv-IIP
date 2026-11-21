@@ -108,7 +108,7 @@ export function useInventoryScopeDefaults(filters: InventoryScopeFilters) {
  * 出行」的读面，所以首屏在用户选物料之前先给这块**真实**信息。
  *
  * 口径要说清楚：它只覆盖**有效期且已过期或临近到期**的台账行，不是全厂库存总量——
- * 后端没有不带物料的库存汇总查询（缺口见 `artifacts/ui-remediation/inventory-batch-backend-findings.md`），
+ * 后端没有不带物料的库存汇总查询，
  * 所以这里不冒充总量。
  */
 export function useInventorySiteExpiryOverview(siteCode: () => string) {
