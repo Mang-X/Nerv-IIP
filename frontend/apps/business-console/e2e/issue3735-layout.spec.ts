@@ -30,6 +30,7 @@ const principal = {
     'business.mes.operations.write',
     'business.mes.reporting.write',
     'business.masterdata.resources.read',
+    'business.masterdata.products.read',
     'business.erp.procurement.read',
   ],
 }
