@@ -72,7 +72,10 @@ try
         o.SerializerOptions.AddNetCorePalJsonConverters();
     });
     builder.Services.AddFluentValidationAutoValidation();
-    builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
+    // FastEndpoints owns HTTP DTO validators and resolves them from the root provider.
+    builder.Services.AddValidatorsFromAssembly(
+        Assembly.GetExecutingAssembly(),
+        filter: result => result.InterfaceType.GenericTypeArguments[0].IsAssignableTo(typeof(MediatR.IBaseRequest)));
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
     builder.Services.Configure<MaintenanceCompletionOptions>(builder.Configuration.GetSection("Maintenance:Completion"));

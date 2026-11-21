@@ -168,7 +168,10 @@ builder.Services.AddScoped<IMesQualityInspectionPlanReader>(sp =>
 // Register the FluentValidation command validators (CancelWorkOrder/ReturnLineSideMaterial/... — 11 in total)
 // so the MediatR AddKnownExceptionValidationBehavior below can execute them. Without both lines the validators
 // are dead code and command-level validation never runs — matching every other business service.
-builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
+// FastEndpoints owns HTTP DTO validators and resolves them from the root provider.
+builder.Services.AddValidatorsFromAssembly(
+    typeof(Program).Assembly,
+    filter: result => result.InterfaceType.GenericTypeArguments[0].IsAssignableTo(typeof(MediatR.IBaseRequest)));
 builder.Services.AddNervIipCommandLocking(
     builder.Configuration,
     builder.Environment,
