@@ -4,7 +4,7 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvDataTableSort } from '@nerv-iip/ui'
-import { openSopFileContent, statusActionGate } from '@nerv-iip/business-core'
+import { statusActionGate } from '@nerv-iip/business-core'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import ActualHoursCell from '@/components/mes/ActualHoursCell.vue'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
@@ -21,11 +21,7 @@ import {
 } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useBusinessMasterDataResources } from '@/composables/master-data'
-import {
-  describeMesReadinessReason,
-  useMesCurrentOperationSops,
-  useMesOperationTasks,
-} from '@/composables/mes'
+import { describeMesReadinessReason, useMesOperationTasks } from '@/composables/mes'
 import { OPERATION_QUALITY_VERDICT_LABELS } from '@/data/businessLabels'
 import { scheduleInvalidationHint } from '@/composables/scheduling/useScheduleInvalidation'
 import type { MesLifecycleActionKey } from '@/composables/mes/useMesTaskSemantics'
@@ -83,8 +79,8 @@ import {
 } from '@lucide/vue'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-
 import { operationTaskLabel } from '@/utils/mesTaskIdentity'
+import { useOperationTaskSops } from './useOperationTaskSops'
 
 definePage({
   meta: {
@@ -95,7 +91,6 @@ definePage({
 })
 
 type Row = BusinessConsoleMesOperationTaskRow
-type CurrentSop = { fileId?: string | null; fileName?: string | null }
 
 const route = useRoute()
 const focusedOperationTaskId = computed(() => {
@@ -160,37 +155,27 @@ const quickViewOperationTaskId = ref<string | null>(null)
 // 报工在本页行内直接打开，上下文随行带出，不再跳到工单页只带两个 ID。
 const reportOpen = ref(false)
 const reportContext = ref<ProductionReportContext | null>(null)
-const selectedSopTask = ref<Row | null>(null)
-const openingSopFileId = ref<string | null>(null)
-const sopFileError = ref('')
 const {
-  filters: sopFilters,
+  selectedSopTask,
+  openingSopFileId,
+  sopFileError,
   currentSops,
-  currentSopsError,
   currentSopsPending,
   refreshCurrentSops,
-} = useMesCurrentOperationSops()
-
-const sopContextMessage = computed(() => {
-  const task = selectedSopTask.value
-  if (!task) return ''
-  if (!task.routingCode?.trim() || !task.routingRevision?.trim())
-    return '当前任务缺少工艺路线号或版本，无法确定适用的SOP。'
-  if (!task.workCenterCode?.trim()) return '当前任务缺少工作中心编码，无法确定适用的SOP。'
-  return ''
-})
+  sopContextMessage,
+  closeSops,
+  openSops,
+  openSopFile,
+  canOpenSops,
+  selectedSopErrorMessage,
+  selectedSopTitle,
+} = useOperationTaskSops()
 
 // --- Filters (live) ---
 const keyword = ref('')
 const statusFilter = ref('all')
 const workCenterFilter = ref('all')
 const shiftFilter = ref('all')
-
-function closeSops() {
-  selectedSopTask.value = null
-  sopFilters.operationCode = ''
-  sopFileError.value = ''
-}
 
 // SOP 属于打开它的任务范围；切换范围后由操作员重新选择任务。
 watch(
@@ -376,34 +361,7 @@ function openWorkOrder(task: Row) {
   quickViewOperationTaskId.value = task.operationTaskId ?? null
   quickViewWorkOrderId.value = task.workOrderId
 }
-function openSops(task: Row) {
-  selectedSopTask.value = task
-  sopFileError.value = ''
-  sopFilters.operationCode = sopContextMessage.value ? '' : (task.operationCode?.trim() ?? '')
-  sopFilters.workCenterCode = task.workCenterCode?.trim() ?? ''
-  sopFilters.routingCode = task.routingCode?.trim() ?? ''
-  sopFilters.routingRevision = task.routingRevision?.trim() ?? ''
-  sopFilters.asOfDate = ''
-}
-async function openSopFile(sop: CurrentSop) {
-  const fileId = sop.fileId?.trim()
-  if (!fileId) {
-    sopFileError.value = '当前SOP未绑定可查看的文件。'
-    return
-  }
-  sopFileError.value = ''
-  openingSopFileId.value = fileId
-  try {
-    await openSopFileContent(fileId, {
-      organizationId: sopFilters.organizationId,
-      environmentId: sopFilters.environmentId,
-    })
-  } catch (error) {
-    sopFileError.value = inlineErrorMessage(error, '无法打开SOP。')
-  } finally {
-    openingSopFileId.value = null
-  }
-}
+
 function openRoute(path: string, task: Row) {
   void router.push({
     path,
@@ -559,15 +517,7 @@ function formatDate(value?: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
 }
-function canOpenSops(task: Row) {
-  return Boolean(task.operationCode?.trim())
-}
-const selectedSopErrorMessage = computed(() => inlineErrorMessage(currentSopsError.value))
-const selectedSopTitle = computed(() => {
-  const task = selectedSopTask.value
-  if (!task) return ''
-  return `${task.operationTaskNo ?? task.operationTaskId ?? '工序任务'} · ${task.operationCode ?? '未绑定工序'}`
-})
+
 // 质量状态既可能是总体判定（Ready / Warning / Blocked），也可能是具体阻塞原因码。
 // 判定值不在原因码表里，落到兜底分支就会把 Ready 原样显到界面上，所以先过一层中文判定表。
 // 判定表已提到 `@/data/businessLabels` 共享（工单详情的同名列用的是同一份，#1418）。
