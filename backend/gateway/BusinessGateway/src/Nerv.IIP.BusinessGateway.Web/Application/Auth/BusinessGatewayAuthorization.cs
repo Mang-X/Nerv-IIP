@@ -1,3 +1,4 @@
+using Nerv.IIP.Web;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -8,7 +9,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.Iam;
-using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.Auth;
 
@@ -199,7 +199,7 @@ public sealed class HttpBusinessGatewayAuthorizationClient(
     HttpClient httpClient,
     IAppCache cache,
     IOptions<BusinessGatewayAuthorizationOptions> options,
-    BusinessGatewayDownstreamHealthState healthState) : IBusinessGatewayAuthorizationClient
+    DownstreamHealthState healthState) : IBusinessGatewayAuthorizationClient
 {
     private TimeSpan AuthorizationCacheTtl => TimeSpan.FromSeconds(
         options.Value.AuthorizationCacheTtlSeconds > 0

@@ -1,3 +1,4 @@
+using Nerv.IIP.Web;
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Net.Http.Headers;
@@ -8,7 +9,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
-using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
@@ -460,7 +460,7 @@ internal static class BusinessGatewayTestHost
     }
 
     /// <summary>
-    /// <see cref="BusinessGatewayDownstreamHealthState"/> is a process-lifetime singleton that
+    /// <see cref="DownstreamHealthState"/> is a process-lifetime singleton that
     /// records downstream degradation and is read back by <c>/health</c> and the workbench summary.
     /// On a shared host it is the one genuinely cross-test mutable object, so it is scoped per lease
     /// exactly like the downstream clients — and a request with no lease at all gets a fresh
@@ -469,10 +469,10 @@ internal static class BusinessGatewayTestHost
     /// </summary>
     private static void RouteDownstreamHealthStateToScope(IServiceCollection services)
     {
-        services.RemoveAll<BusinessGatewayDownstreamHealthState>();
+        services.RemoveAll<DownstreamHealthState>();
         services.AddScoped(serviceProvider =>
             ResolveScope(serviceProvider)?.HealthState
-            ?? new BusinessGatewayDownstreamHealthState(serviceProvider.GetRequiredService<TimeProvider>()));
+            ?? new DownstreamHealthState(serviceProvider.GetRequiredService<TimeProvider>()));
     }
 
     private static BusinessGatewayTestScope? ResolveScope(IServiceProvider serviceProvider)

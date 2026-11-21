@@ -1,5 +1,5 @@
+using Nerv.IIP.Web;
 using System.Diagnostics;
-using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
@@ -28,7 +28,7 @@ internal sealed class BusinessGatewayTestScope(IReadOnlyDictionary<Type, object>
 
     public IReadOnlyDictionary<Type, object> Overrides { get; } = overrides;
 
-    public BusinessGatewayDownstreamHealthState HealthState { get; } = new(TimeProvider.System);
+    public DownstreamHealthState HealthState { get; } = new(TimeProvider.System);
 
     /// <summary>Marks a request as using this scope until the returned handle is disposed.</summary>
     public IDisposable Enter()

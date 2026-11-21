@@ -1,14 +1,14 @@
+using Nerv.IIP.Web;
 using FastEndpoints;
 using Microsoft.AspNetCore.Authorization;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
-using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 
 namespace Nerv.IIP.BusinessGateway.Web.Endpoints.Health;
 
 [HttpGet("/health")]
 [BusinessGatewayOperationId("HealthEndpoint")]
 [AllowAnonymous]
-public sealed class HealthEndpoint(BusinessGatewayDownstreamHealthState healthState) : EndpointWithoutRequest
+public sealed class HealthEndpoint(DownstreamHealthState healthState) : EndpointWithoutRequest
 {
     public override async Task HandleAsync(CancellationToken ct)
     {

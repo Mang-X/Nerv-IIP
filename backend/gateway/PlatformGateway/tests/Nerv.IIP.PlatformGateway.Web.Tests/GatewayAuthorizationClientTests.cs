@@ -1,3 +1,4 @@
+using Nerv.IIP.Web;
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Options;
@@ -5,7 +6,6 @@ using Nerv.IIP.Caching;
 using Nerv.IIP.Testing;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.PlatformGateway.Web.Application.Auth;
-using Nerv.IIP.PlatformGateway.Web.Application.Resilience;
 
 namespace Nerv.IIP.PlatformGateway.Web.Tests;
 
@@ -226,7 +226,7 @@ public sealed class GatewayAuthorizationClientTests
         {
             BaseAddress = new Uri("http://iam.local")
         };
-        return new HttpGatewayAuthorizationClient(httpClient, cache, options, new GatewayDownstreamHealthState());
+        return new HttpGatewayAuthorizationClient(httpClient, cache, options, new DownstreamHealthState(TimeProvider.System));
     }
 
     private sealed class CountingAuthorizationHandler : HttpMessageHandler

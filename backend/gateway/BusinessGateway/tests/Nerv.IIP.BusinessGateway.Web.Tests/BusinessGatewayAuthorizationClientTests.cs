@@ -1,10 +1,10 @@
+using Nerv.IIP.Web;
 using System.Net;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.Localization;
-using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Testing;
 
@@ -256,7 +256,7 @@ public sealed class BusinessGatewayAuthorizationClientTests
             new HttpClient(handler) { BaseAddress = new Uri("http://iam.local") },
             new FusionAppCache(),
             Options.Create(options ?? new BusinessGatewayAuthorizationOptions { AuthorizationCacheTtlSeconds = 60 }),
-            new BusinessGatewayDownstreamHealthState(TimeProvider.System));
+            new DownstreamHealthState(TimeProvider.System));
 
     private static HttpResponseMessage AuthorizationResponse(HttpStatusCode statusCode, bool allowed)
     {

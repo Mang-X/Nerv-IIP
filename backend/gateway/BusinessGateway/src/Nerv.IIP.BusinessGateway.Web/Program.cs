@@ -1,3 +1,4 @@
+using Nerv.IIP.Web;
 using System.Net;
 using System.Reflection;
 using System.Text.Json;
@@ -12,7 +13,6 @@ using Nerv.IIP.BusinessGateway.Web;
 using Nerv.IIP.BusinessGateway.Web.Application.Auth;
 using Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 using Nerv.IIP.BusinessGateway.Web.Application.OpenApi;
-using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 using Nerv.IIP.Caching;
 using Nerv.IIP.Contracts.EquipmentRuntime;
 using Nerv.IIP.Localization;
@@ -69,7 +69,7 @@ builder.Services.Configure<BusinessGatewayTemplateAssetRetirementProofOptions>(
 builder.Services.AddSingleton<TemplateAssetRetirementProofSigner>();
 builder.Services.Configure<BusinessGatewayAuthorizationOptions>(builder.Configuration.GetSection("Gateway"));
 builder.Services.Configure<BusinessGatewayInventoryForwardedPermissionOptions>(builder.Configuration.GetSection("Inventory:ForwardedPermissions"));
-builder.Services.AddSingleton<BusinessGatewayDownstreamHealthState>();
+builder.Services.AddSingleton<DownstreamHealthState>();
 builder.Services.AddScoped<PrincipalWorkScopeResolver>();
 builder.Services.AddScoped<MesPrincipalWorkScopeAuthorizer>();
 builder.Services.AddScoped<BusinessMesCommercialSourceReader>();

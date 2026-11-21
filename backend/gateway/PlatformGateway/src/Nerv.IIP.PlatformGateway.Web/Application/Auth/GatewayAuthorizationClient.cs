@@ -1,3 +1,4 @@
+using Nerv.IIP.Web;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -9,7 +10,6 @@ using Microsoft.IdentityModel.Tokens;
 using Nerv.IIP.Caching;
 using Nerv.IIP.PlatformGateway.Web.Application.Caching;
 using Nerv.IIP.Contracts.Iam;
-using Nerv.IIP.PlatformGateway.Web.Application.Resilience;
 
 namespace Nerv.IIP.PlatformGateway.Web.Application.Auth;
 
@@ -22,7 +22,7 @@ public sealed class HttpGatewayAuthorizationClient(
     HttpClient httpClient,
     IAppCache cache,
     IOptions<GatewayAuthorizationOptions> options,
-    GatewayDownstreamHealthState healthState) : IGatewayAuthorizationClient
+    DownstreamHealthState healthState) : IGatewayAuthorizationClient
 {
     private TimeSpan AuthorizationCacheTtl => TimeSpan.FromSeconds(
         options.Value.AuthorizationCacheTtlSeconds > 0

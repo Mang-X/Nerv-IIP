@@ -1,5 +1,5 @@
+using Nerv.IIP.Web;
 using Microsoft.Extensions.Time.Testing;
-using Nerv.IIP.BusinessGateway.Web.Application.Resilience;
 
 namespace Nerv.IIP.BusinessGateway.Web.Tests;
 
@@ -11,7 +11,7 @@ public sealed class BusinessGatewayDownstreamHealthStateTests
     public void Failure_is_degraded_before_thirty_seconds_and_available_at_the_boundary()
     {
         var clock = new FakeTimeProvider(FailureAtUtc);
-        var state = new BusinessGatewayDownstreamHealthState(clock);
+        var state = new DownstreamHealthState(clock);
 
         state.RecordFailure("Notification", "notification unavailable");
 
@@ -34,7 +34,7 @@ public sealed class BusinessGatewayDownstreamHealthStateTests
     public void Record_success_restores_availability_immediately()
     {
         var clock = new FakeTimeProvider(FailureAtUtc);
-        var state = new BusinessGatewayDownstreamHealthState(clock);
+        var state = new DownstreamHealthState(clock);
         state.RecordFailure("Notification", "notification unavailable");
 
         state.RecordSuccess("Notification");
