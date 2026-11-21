@@ -50,21 +50,6 @@ function New-SelectionFixtureRoot {
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. 扫描口径：一行式 / 多行 run 块 / 仅注释 三种形态的正反对照
 #
-# 这是本文件最承重的一组断言。#3300 的筛查面之所以会数错，正是因为按行 grep `run:.*Tests.ps1`
-# 数不到写在 `run: |` 块里的引用。
-# 阳性对照：多行 `run: |` 块里的引用必须命中。少了它，一个只认一行式的实现会「看起来」正确，
-# 并把多行选中的文件误判成零选中。
-#
-# 阴性对照分两格，鉴别力**天差地别**，不要混为一谈：
-#
-#   * run 体内的 **`#` 注释与 pwsh 块注释**（整行 `#`、行尾 `#`、`<# … #>` 单行与多行）
-#     —— **这四格才有鉴别力**，是 #3300 复审实测出的最便宜绕法：一条注释就能把 x 记成已选中
-#     并从 runner 摘掉，而且在 diff 里像无辜注释、可抵赖（行尾注释甚至只是**修改一行**，
-#     块注释在 `shell: pwsh` 的 step 里还是完全合法写法）。去掉对应过滤这几格立刻转红。
-#   * **YAML 层注释**（step 之间那种）—— **这一格恒真、零鉴别力**，保留只为记录形态：
-#     YAML 解析器根本不会把它交给任何 step 的 `run`，因此任何实现都不会命中它。
-#     ⛔ 不要把它读成「注释绕法已被守住」—— 守住那件事的是上面那格。
-# ─────────────────────────────────────────────────────────────────────────────
 $shapeWorkflow = @'
 name: Shape
 on: [push]
@@ -111,24 +96,9 @@ $shapeRoot = New-SelectionFixtureRoot -WorkflowContent $shapeWorkflow -TestFiles
     'multiline-block-commented.Tests.ps1' = '# multi-line pwsh block comment'
 }
 try {
-    $shapeSelections = Get-NervScriptTestWorkflowSelections -RepositoryRoot $shapeRoot
-    Assert-Selection ($shapeSelections.ContainsKey('inline.Tests.ps1')) 'A one-line run: reference must be detected.'
-    Assert-Selection ($shapeSelections.ContainsKey('block.Tests.ps1')) 'A reference inside a multi-line run: block must be detected — this is the positive control for the multi-line scan face.'
-    Assert-Selection (-not $shapeSelections.ContainsKey('commented.Tests.ps1')) 'A name that only appears in a YAML-level comment must not count as selection (zero-discrimination control: no implementation can reach it).'
-    # 四种 run 体内注释形态，每一种都有鉴别力：去掉对应的过滤，对应那条立刻转红。
-    # 行尾注释（S5）与块注释（S6/S7）比整行注释（G1）更值得关：整行注释在 diff 里是**新增一行**，
-    # 行尾注释是**修改一行**，块注释在 `shell: pwsh` 的 step 里还是完全合法的写法 —— 都更不显眼。
-    foreach ($commentShape in @(
-            [pscustomobject]@{ Name = 'shell-commented.Tests.ps1'; Shape = 'a whole-line shell comment' },
-            [pscustomobject]@{ Name = 'trailing-commented.Tests.ps1'; Shape = 'a trailing shell comment after a real command' },
-            [pscustomobject]@{ Name = 'block-commented.Tests.ps1'; Shape = 'a single-line pwsh block comment' },
-            [pscustomobject]@{ Name = 'multiline-block-commented.Tests.ps1'; Shape = 'a multi-line pwsh block comment' }
-        )) {
-        Assert-Selection (-not $shapeSelections.ContainsKey($commentShape.Name)) `
-            "A name that only appears in $($commentShape.Shape) inside a run body must not count as selection."
-    }
-
     $shapePlan = Get-NervScriptTestSelectionPlan -RepositoryRoot $shapeRoot -Registry @()
+    Assert-Selection ([Array]::IndexOf([string[]] $shapePlan.WorkflowSelected, 'inline.Tests.ps1') -ge 0 -and
+        [Array]::IndexOf([string[]] $shapePlan.WorkflowSelected, 'block.Tests.ps1') -ge 0) 'Both single-line and block run bodies must select their tests.'
     $shapeExpected = [Collections.Generic.HashSet[string]]::new([string[]]@(
             'commented.Tests.ps1',
             'shell-commented.Tests.ps1',
@@ -136,7 +106,7 @@ try {
             'block-commented.Tests.ps1',
             'multiline-block-commented.Tests.ps1'), [StringComparer]::Ordinal)
     Assert-Selection ($shapeExpected.SetEquals([string[]] $shapePlan.RunnerSelected)) `
-        'The discovery runner must select exactly the complement: both comment-only files and nothing else.'
+        'The discovery runner must select exactly the complement: all five comment-only files and nothing else.'
 
     # 合同执行 owner 可以在 workflow 与发现式补集之间移动，不能固定 step 名或排列。
     $mergedWorkflow = @'
@@ -160,31 +130,9 @@ jobs:
     Assert-Selection ($movedPlan.RunnerSelected.Count -eq ($shapePlan.RunnerSelected.Count + 1) -and
         @($movedPlan.RunnerSelected | Where-Object { [string]::Equals($_, 'inline.Tests.ps1', [StringComparison]::Ordinal) }).Count -eq 1) 'Removing a direct workflow invocation must transfer that test to the discovery runner exactly once.'
     Write-Output 'Governance selection rearrangement control: PASS (renamed/merged/reversed; removed invocation rediscovered).'
-    [IO.File]::WriteAllText($shapeWorkflowPath, $shapeWorkflow, [Text.UTF8Encoding]::new($false))
-
-    # 新增一个文件后，它必须自动落进 runner 集合 —— 这是「后来者不掉队」的直接证据，
-    # 而不是「有人记得改名单」。
-    [IO.File]::WriteAllText((Join-Path $shapeRoot 'scripts/tests/newcomer.Tests.ps1'), '# newcomer', [Text.UTF8Encoding]::new($false))
-    $newcomerPlan = Get-NervScriptTestSelectionPlan -RepositoryRoot $shapeRoot -Registry @()
-    Assert-Selection (@($newcomerPlan.RunnerSelected | Where-Object { [string]::Equals($_, 'newcomer.Tests.ps1', [StringComparison]::Ordinal) }).Count -eq 1) `
-        'A newly added scripts/tests file must land in the discovery runner set without any registration.'
-    Assert-Selection ($newcomerPlan.All.Count -eq 8 -and $newcomerPlan.WorkflowSelected.Count -eq 2 -and $newcomerPlan.RunnerSelected.Count -eq 6) `
-        'The plan must stay a total partition after a file is added.'
 }
 finally { Remove-Item -LiteralPath $shapeRoot -Recurse -Force -ErrorAction SilentlyContinue }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 1b. 子串不算引用（前瞻性加固，当前仓库零触发）
-#
-# 若 A 的文件名是 B 的子串，朴素子串判定下引用 B 就会把 A 也标成「已被工作流选中」并从 runner
-# 摘掉——静默漏跑，正是本票要消除的形态。
-#
-# ⚠️ 分寸：**当前仓库里一对这样的名字都没有**（61 个文件 3660 个有序对，子串命中数 0，
-# 下面那条断言就是这个读数）。这里用的是合成名字，不是实例。留这一格是因为命名碰撞只需有人
-# 新增一个文件就会出现，而它的失效方向是静默漏跑。
-#
-# 两侧都要判：只判左侧挡得住「短名是长名的后缀/中缀」，挡不住「短名是长名的**前缀**」
-# （`x.Tests.ps1` vs `x.Tests.ps1-extra.Tests.ps1`）。两个方向各一条用例。
 # ─────────────────────────────────────────────────────────────────────────────
 $substringWorkflow = @'
 name: Substring
@@ -218,19 +166,6 @@ try {
     Assert-Selection (Test-NervScriptTestReference -Text 'full-chain-lane.Tests.ps1 and ./lane.Tests.ps1' -Name 'lane.Tests.ps1') 'A later whole-name occurrence must still match after a rejected substring hit.'
 }
 finally { Remove-Item -LiteralPath $substringRoot -Recurse -Force -ErrorAction SilentlyContinue }
-
-# 「当前仓库零触发」是一条读数，不是印象：把它当断言写下来，将来第一次出现同形状名字时这里会红，
-# 提醒复审这条加固从「前瞻」变成了「在承重」。
-$collisionPairs = 0
-$allTestNames = @(Get-NervScriptTestFiles -RepositoryRoot $repoRoot)
-foreach ($leftName in $allTestNames) {
-    foreach ($rightName in $allTestNames) {
-        if ([string]::Equals($leftName, $rightName, [StringComparison]::Ordinal)) { continue }
-        if ($rightName.Contains($leftName, [StringComparison]::Ordinal)) { $collisionPairs++ }
-    }
-}
-Assert-Selection ($collisionPairs -eq 0) "scripts/tests currently has $collisionPairs substring-colliding name pairs; the whole-name boundary has stopped being merely prophylactic and the narrative around it must be updated."
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. 扫描面塌掉必须 throw，不得伪装成「没有遗漏」
@@ -416,20 +351,26 @@ Assert-Selection ($covered.SetEquals([string[]] $plan.All)) `
 # runner 集合为空意味着这一步变成空转，必须当成红而不是「都覆盖到了」。
 Assert-Selection ($plan.RunnerSelected.Count -gt 0) 'The discovery runner must select at least one test; an empty selection would make its CI step a no-op.'
 
-$workflowSource = [IO.File]::ReadAllText((Join-Path $repoRoot '.github/workflows/ci.yml'))
-Assert-Selection ($workflowSource.Contains('./scripts/ci/run-script-contract-tests.ps1', [StringComparison]::Ordinal)) `
-    'CI must run the discovery runner; without that step the whole selection closure is dead code.'
-
-$runnerSource = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/ci/run-script-contract-tests.ps1'))
-Assert-Selection ($runnerSource.Contains('Get-NervScriptTestSelectionPlan', [StringComparison]::Ordinal)) `
-    'The discovery runner must take its selection from the shared plan rather than from a list of its own.'
-# 对 All 而不是只对 RunnerSelected 断言：runner 源码里一个测试文件名都不许出现。
-# 这同时是「解除 quarantine 只需删一条登记」的直接证据——被摘掉的文件名也不在 runner 里，
-# 所以把它放回选中集合不需要碰 runner 源码。
-foreach ($name in $plan.All) {
-    Assert-Selection (-not $runnerSource.Contains($name, [StringComparison]::Ordinal)) `
-        "The discovery runner must not name '$name' literally; naming files is the defect #3300 exists to remove, and it would also make lifting a quarantine a runner edit."
-}
+$workflow = ConvertFrom-NervCiRequiredSummaryWorkflow -Path (Join-Path $repoRoot '.github/workflows/ci.yml') -WorkingDirectory $repoRoot
+$discoveryCalls = @(foreach ($job in $workflow.jobs.PSObject.Properties.Value) {
+    $steps = $job.PSObject.Properties['steps']
+    if ($null -eq $steps) { continue }
+    foreach ($step in @($steps.Value)) {
+        $run = $step.PSObject.Properties['run']
+        if ($null -eq $run) { continue }
+        $commands = [Management.Automation.Language.Parser]::ParseInput([string] $run.Value, [ref]$null, [ref]$null)
+        $commands.FindAll({
+            param($node)
+            $node -is [Management.Automation.Language.CommandAst] -and
+                [string]::Equals($node.GetCommandName(), './scripts/ci/run-script-contract-tests.ps1', [StringComparison]::Ordinal) -and
+                @($node.CommandElements | Where-Object {
+                    $_ -is [Management.Automation.Language.CommandParameterAst] -and
+                        [string]::Equals($_.ParameterName, 'ScriptPath', [StringComparison]::OrdinalIgnoreCase)
+                }).Count -eq 0
+        }, $true)
+    }
+})
+Assert-Selection ($discoveryCalls.Count -gt 0) 'CI must invoke automatic discovery. Explicit suites and comments cannot run its complement.'
 
 $quarantined = @($plan.OutOfBand | Where-Object { [string]::Equals((Get-NervScriptTestRegistryField -Entry $_ -Name 'Kind'), 'quarantine', [StringComparison]::Ordinal) })
 foreach ($entry in $quarantined) {

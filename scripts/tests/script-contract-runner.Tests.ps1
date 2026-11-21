@@ -30,14 +30,14 @@ try {
     $workflow = "name: Fixture`non: [push]`njobs:`n  suite:`n    runs-on: ubuntu-latest`n    steps:`n"
     # 用现有闭集生成合法边界夹具，不在生产端另建成员表。
     foreach ($entry in (Get-NervScriptTestOutOfBandRegistry)) {
-        $source = '# fixture'
+        $source = "throw 'out-of-band fixture ran through discovery'"
         if ([string]::Equals($entry.Kind, 'nested', [StringComparison]::Ordinal)) {
             $parentPath = Join-Path $root "scripts/tests/$($entry.Parent)"
             [IO.File]::WriteAllText($parentPath, "& (Join-Path `$PSScriptRoot '$($entry.Name)')")
             $workflow += "      - run: ./scripts/tests/$($entry.Parent)`n"
         }
         elseif ([string]::Equals($entry.Kind, 'excluded', [StringComparison]::Ordinal)) {
-            $source = "# Script-Governance:`n#   Requires:`n#     - $($entry.Requirement)"
+            $source = "# Script-Governance:`n#   Requires:`n#     - $($entry.Requirement)`n$source"
         }
         [IO.File]::WriteAllText((Join-Path $root "scripts/tests/$($entry.Name)"), $source)
     }
@@ -50,7 +50,7 @@ try {
     $control = @(& pwsh -NoProfile -NonInteractive -File $runner 2>&1) -join "`n"
     Assert-Runner ($LASTEXITCODE -eq 0) "Control suite must pass: $control"
     Assert-Runner ([string]::Equals((([IO.File]::ReadAllText($marker).Trim() -split '\r?\n') -join ','), 'a,z-new', [StringComparison]::Ordinal)) 'Discovery must execute exactly the two unregistered tests once, including the new test; named and out-of-band tests must not run again.'
-    Assert-Runner ($control.Contains('PASS', [StringComparison]::Ordinal) -and $control.Contains('z-new.Tests.ps1', [StringComparison]::Ordinal)) 'Every executed file must be identified.'
+    Assert-Runner ($control -match '(?m)^\s*PASS\s+[^\r\n]*scripts/tests/a\.Tests\.ps1\s*$' -and $control -match '(?m)^\s*PASS\s+[^\r\n]*scripts/tests/z-new\.Tests\.ps1\s*$') 'Every executed file must be identified.'
     Write-Host 'PASS control / exact discovery set / new unregistered contract'
 
     [IO.File]::WriteAllText($first, "Write-Error 'fixture-original-error'; exit 7")
@@ -58,18 +58,19 @@ try {
     $failed = @(& pwsh -NoProfile -NonInteractive -File $runner 2>&1) -join "`n"
     Assert-Runner ($LASTEXITCODE -ne 0) 'An earlier child failure must survive a later successful child.'
     Assert-Runner ([string]::Equals([IO.File]::ReadAllText($marker).Trim(), 'z-new', [StringComparison]::Ordinal)) 'The later successful child must actually execute.'
-    Assert-Runner ($failed.Contains('FAIL', [StringComparison]::Ordinal) -and $failed.Contains('fixture-original-error', [StringComparison]::Ordinal) -and $failed.Contains('z-new.Tests.ps1', [StringComparison]::Ordinal)) 'Failure must name its file and preserve the original error beside the later success.'
+    Assert-Runner ($failed -match '(?m)^\s*FAIL\s+[^\r\n]*scripts/tests/a\.Tests\.ps1\s*$' -and $failed.Contains('fixture-original-error', [StringComparison]::Ordinal) -and $failed -match '(?m)^\s*PASS\s+[^\r\n]*scripts/tests/z-new\.Tests\.ps1\s*$') 'Failure must name its file and preserve the original error beside the later success.'
     Write-Host 'PASS earlier nonzero / later success / original diagnostic'
 
     [IO.File]::WriteAllText($first, 'Start-Sleep -Seconds 60')
     $timed = @(& pwsh -NoProfile -NonInteractive -File $runner -TimeoutSeconds 1 2>&1) -join "`n"
     Assert-Runner ($LASTEXITCODE -ne 0) 'A timed-out child must fail the suite.'
-    Assert-Runner ($timed.Contains('a.Tests.ps1', [StringComparison]::Ordinal) -and $timed.Contains('tim', [StringComparison]::OrdinalIgnoreCase)) 'Timeout must retain file-level diagnostics.'
+    Assert-Runner ($timed.Contains('a.Tests.ps1', [StringComparison]::Ordinal) -and $timed.Contains('timed out', [StringComparison]::OrdinalIgnoreCase)) 'Timeout must retain file-level diagnostics.'
     Write-Host 'PASS timeout / bounded diagnostic'
 
-    [IO.File]::WriteAllText($first, 'exit 0')
+    Remove-Item -LiteralPath $marker
+    [IO.File]::WriteAllText($first, "Add-Content -LiteralPath (Join-Path `$PSScriptRoot 'executed.txt') -Value 'a'")
     $explicit = @(& pwsh -NoProfile -NonInteractive -File $runner -ScriptPath 'scripts/tests/a.Tests.ps1' 2>&1) -join "`n"
-    Assert-Runner ($LASTEXITCODE -eq 0 -and $explicit.Contains('explicit=1', [StringComparison]::Ordinal) -and -not $explicit.Contains('z-new.Tests.ps1', [StringComparison]::Ordinal)) 'An explicit suite must execute only its caller-owned commands.'
+    Assert-Runner ($LASTEXITCODE -eq 0 -and [string]::Equals([IO.File]::ReadAllText($marker).Trim(), 'a', [StringComparison]::Ordinal)) 'An explicit suite must execute only its caller-owned commands.'
     [IO.File]::WriteAllText($first, 'exit 7')
     $launcher = Join-Path $root 'explicit-suite.ps1'
     [IO.File]::WriteAllText($launcher, '& (Join-Path $PSScriptRoot "scripts/ci/run-script-contract-tests.ps1") -ScriptPath @("scripts/tests/a.Tests.ps1", "scripts/tests/z-new.Tests.ps1"); exit $LASTEXITCODE')

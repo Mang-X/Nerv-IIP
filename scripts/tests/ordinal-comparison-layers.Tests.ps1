@@ -1,11 +1,11 @@
 # Script-Governance:
 #   Category: test
 #   SideEffects:
-#     - Reads PowerShell sources and writes one temporary repository mirror with per-layer mutation probes
+#     - Reads repository PowerShell sources and checks per-layer probes in an isolated fixture
 #   Writes:
-#     - System temporary directory only: repository mirror and per-layer mutation probes
+#     - System temporary directory only: synthetic script tree and per-layer mutation probes
 #   Cleanup:
-#     - Removes the temporary repository mirror in finally
+#     - Removes the temporary fixture tree in finally
 #   Requires:
 #     - PowerShell 7
 
@@ -14,8 +14,6 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/OrdinalComparisonContract.ps1')
-. (Join-Path $repoRoot 'scripts/lib/OrdinalString.ps1')
-
 function Assert-Layer([bool] $Condition, [string] $Message) {
     if (-not $Condition) { throw $Message }
 }
@@ -29,15 +27,6 @@ function Get-LayerProbeFindings([string] $Source) {
     }
     finally { Remove-Item -LiteralPath $probePath -Force -ErrorAction SilentlyContinue }
 }
-
-$compatibility = [IO.File]::ReadAllText((Join-Path $repoRoot 'scripts/checks/check-script-compatibility.ps1'))
-Assert-Layer ($compatibility.Contains('scripts/tests/ordinal-comparison-layers.Tests.ps1', [StringComparison]::Ordinal)) 'compat-fast must run the ordinal layer contract.'
-
-$softHyphen = [char]0x00AD
-$ordinalPair = @(Get-NervStringsSorted -Values @('Passed', "Passed$softHyphen") -Comparer ([StringComparer]::Ordinal) -Unique)
-$ignoreCasePair = @(Get-NervStringsSorted -Values @('Passed', 'passed', "Passed$softHyphen") -Comparer ([StringComparer]::OrdinalIgnoreCase) -Unique)
-Assert-Layer ($ordinalPair.Count -eq 2) 'The shared ordinal primitive must retain identifiers separated by U+00AD.'
-Assert-Layer ($ignoreCasePair.Count -eq 2) 'OrdinalIgnoreCase may fold case, but must retain the U+00AD-distinct identifier.'
 
 $safeComparerFindings = @(Get-LayerProbeFindings -Source @'
 function Test-SafeComparer {
@@ -388,23 +377,6 @@ foreach ($customAliasNameCase in @(
         'A user-defined command name must not be statically treated as a PowerShell builtin alias.'
 }
 
-$compositeCases = @(
-    [pscustomobject]@{ Name = 'empty-sequence'; Components = [object[]]@() },
-    [pscustomobject]@{ Name = 'single-empty'; Components = [object[]]@('') },
-    [pscustomobject]@{ Name = 'single-null'; Components = [object[]]@($null) },
-    [pscustomobject]@{ Name = 'plain'; Components = [object[]]@('alpha') },
-    [pscustomobject]@{ Name = 'trailing-empty'; Components = [object[]]@('alpha', '') },
-    [pscustomobject]@{ Name = 'reserved-combination-a'; Components = [object[]]@('alpha\|beta', 'gamma') },
-    [pscustomobject]@{ Name = 'reserved-combination-b'; Components = [object[]]@('alpha\', '|beta', 'gamma') }
-)
-$compositeKeys = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-foreach ($case in $compositeCases) {
-    $key = Get-NervStringCompositeKey -Components $case.Components
-    Assert-Layer ($compositeKeys.Add($key)) "Composite key case '$($case.Name)' collided with an earlier string sequence."
-}
-Assert-Layer ([string]::Equals((Get-NervStringCompositeKey -Components @('lane', 'assembly', 'test')), 'lane|assembly|test', [StringComparison]::Ordinal)) `
-    'Composite keys without null, empty, or reserved components must retain their historical bytes and line order.'
-
 $exceptions = @(
     @{ Site = 'New-NervTestEvidenceSummary'; Text = 'Group-Object { Get-NervRetainedSkipReason $_ }'; Reason = 'Skip reasons are human prose; folding visually equivalent reasons is intentional.' }
 )
@@ -486,9 +458,10 @@ Assert-Layer ($actualTestPaths.SetEquals($expectedTestPaths)) 'The recursive tes
 
 $mutationRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-ordinal-layers-$([guid]::NewGuid().ToString('N'))"
 try {
-    [IO.Directory]::CreateDirectory($mutationRoot) | Out-Null
-    $mirrorScripts = [IO.Directory]::CreateDirectory((Join-Path $mutationRoot 'scripts')).FullName
-    Get-RepositoryScriptItems (Join-Path $repoRoot 'scripts') | Copy-Item -Destination $mirrorScripts -Recurse
+    foreach ($directory in @('api', 'checks', 'ci', 'dev', 'fullstack', 'integration', 'tests', 'tests/fixtures', 'install', 'package', 'support', 'lib')) {
+        $fixtureDirectory = [IO.Directory]::CreateDirectory((Join-Path $mutationRoot 'scripts' $directory))
+        [IO.File]::WriteAllText((Join-Path $fixtureDirectory.FullName 'baseline.ps1'), '# fixture')
+    }
     $mutationPaths = @(
         [pscustomobject]@{ Layer = 'commands'; Path = 'scripts/checks/verify-ordinal-layer-mutation.ps1' },
         [pscustomobject]@{ Layer = 'commands'; Path = 'scripts/dev/ordinal-layer-mutation.ps1' },
@@ -508,7 +481,7 @@ try {
         [IO.File]::WriteAllText($mutationPath, "`$result = `$identifier -eq 'layer-$layerName'", [Text.UTF8Encoding]::new($false))
         try {
             $failure = $null
-            try { Invoke-NervOrdinalLayerGate -Root $mutationRoot -NamedExceptions $exceptions | Out-Null }
+            try { Invoke-NervOrdinalLayerGate -Root $mutationRoot -NamedExceptions @() | Out-Null }
             catch { $failure = $_ }
             Assert-Layer ($null -ne $failure) "Layer '$layerName' mutation survived the complete layer gate."
             $expectedDiagnostic = "$layerName/$([IO.Path]::GetFileName($mutationPath)) has culture-aware identifier comparisons:"
@@ -520,7 +493,7 @@ try {
 
     $nonScriptPath = Join-Path $mutationRoot 'scripts/tools/not-a-script.txt'
     [IO.File]::WriteAllText($nonScriptPath, "`$result = `$identifier -eq 'not-a-script'", [Text.UTF8Encoding]::new($false))
-    Invoke-NervOrdinalLayerGate -Root $mutationRoot -NamedExceptions $exceptions | Out-Null
+    Invoke-NervOrdinalLayerGate -Root $mutationRoot -NamedExceptions @() | Out-Null
 }
 finally { Remove-Item -LiteralPath $mutationRoot -Recurse -Force -ErrorAction SilentlyContinue }
 

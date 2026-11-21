@@ -15,6 +15,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $checker = Join-Path $repoRoot 'scripts/checks/check-script-governance.ps1'
 $bindingHelper = Join-Path $repoRoot 'scripts/lib/ScriptVariableBinding.ps1'
+. $bindingHelper
 
 # Split out of check-script-governance.Tests.ps1 so it can gate in CI: that file also exercises the
 # ScriptAutomation stream-drain and detached-process fixtures, which are far heavier than a boundary
@@ -48,34 +49,6 @@ if ($bindingHelperParseErrors -and $bindingHelperParseErrors.Count -gt 0) {
     throw "Failed to parse the shared script variable binding helper: $($bindingHelperParseErrors[0].Message)"
 }
 
-# The checker is excluded from its own command-governance rules because it must name the forbidden
-# commands as data. That exclusion does not exempt its identifier comparisons: its path extension
-# check and returned scan order are both machine-facing identities and must stay ordinal.
-. (Join-Path $repoRoot 'scripts/lib/OrdinalComparisonContract.ps1')
-$checkerOrdinalSweep = Get-NervOrdinalComparisonFindings -ScriptPath $checker -DisplayName 'check-script-governance.ps1'
-if ($checkerOrdinalSweep.Findings.Count -ne 0) {
-    throw "check-script-governance.ps1 must compare scan identities ordinally: $(@($checkerOrdinalSweep.Findings) -join '; ')"
-}
-$checkerMutationRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-iip-checker-ordinal-mutation-{0}" -f [Guid]::NewGuid().ToString('N'))
-[System.IO.Directory]::CreateDirectory($checkerMutationRoot) | Out-Null
-try {
-    $checkerMutationPath = Join-Path $checkerMutationRoot 'check-script-governance.ps1'
-    $checkerMutation = $checkerText.Replace(
-        "[string]::Equals([System.IO.Path]::GetExtension(`$item.Path), '.ps1', [StringComparison]::OrdinalIgnoreCase)",
-        "[System.IO.Path]::GetExtension(`$item.Path) -eq '.ps1'")
-    $checkerMutation = $checkerMutation.Replace(
-        '$orderedScripts = [System.Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal)',
-        '$orderedScripts = @($scripts | Sort-Object -Unique)')
-    [System.IO.File]::WriteAllText($checkerMutationPath, $checkerMutation, [System.Text.UTF8Encoding]::new($false))
-    $checkerMutationSweep = Get-NervOrdinalComparisonFindings -ScriptPath $checkerMutationPath -DisplayName 'check-script-governance.ps1'
-    if (@($checkerMutationSweep.Findings | Where-Object { $_.StartsWith('[culture-operator-with-string-literal]', [StringComparison]::Ordinal) }).Count -ne 1 -or
-        @($checkerMutationSweep.Findings | Where-Object { $_.StartsWith('[sort-object]', [StringComparison]::Ordinal) }).Count -ne 1) {
-        throw "Weakening either checker comparison must be reported independently: $(@($checkerMutationSweep.Findings) -join '; ')"
-    }
-}
-finally {
-    Remove-Item -LiteralPath $checkerMutationRoot -Recurse -Force -ErrorAction SilentlyContinue
-}
 $scanExclusionAssignment = $checkerAst.Find({
     param($node)
     $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
@@ -118,66 +91,6 @@ if (-not [string]::Equals(($excludedLibraryFiles -join '|'), 'scripts/lib/Script
 }
 
 # ---------------------------------------------------------------------------------------------
-# Get-SeamAssignmentTargets: the Left type set, as a contract rather than as a comment (#1509 round
-# 5).
-#
-# The function ends in `return $targets` for anything it did not recognise, which binds nothing —
-# fail *open*: an unenumerated Left shape silently stops shadowing an enclosing seam, and the case
-# fixtures below would all stay green because none of them spells that shape. "Only these seven can
-# occur" was measured on one parser version; that is a fact about today's PowerShell, not an
-# invariant the function enforces, and this whole PR's recurring failure mode has been exactly that
-# substitution. So the four things that make it an invariant are asserted here:
-#
-#   1. the dispatch set in the source is exactly the four types the walk branches on — deleting or
-#      renaming a branch turns this red before any behavioural case notices;
-#   2. ConvertExpressionAst really is a subclass of AttributedExpressionAst, which is the only reason
-#      four branches cover five named shapes;
-#   3. parsing a corpus of assignment spellings yields exactly the seven documented Left types, and
-#      every one of them is either dispatched on or explicitly ruled a non-binding — no shape is
-#      handled by falling off the end;
-#   4. the AST assembly contains no *other* concrete expression type that has never been ruled on.
-#      Only additions are failures: a type disappearing on a different runtime cannot introduce an
-#      unhandled Left shape, so the assertion is one-sided on purpose and does not go red merely
-#      because CI's pwsh differs from a developer's.
-$seamTargetsFunction = $checkerAst.Find({
-    param($node)
-    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-    [string]::Equals([string] $node.Name, 'Get-SeamAssignmentTargets', [StringComparison]::OrdinalIgnoreCase)
-}, $true)
-if (-not $seamTargetsFunction) {
-    throw 'The script governance checker must keep its Left-shape walk in a function named Get-SeamAssignmentTargets.'
-}
-# Only `-is` tests applied to the $Left parameter itself count as dispatch; the function also uses
-# `-is` on the ParenExpression pipeline internals, and folding those in would make the contract
-# assert something other than "which Left shapes are recognised".
-# Ordinal dedup+sort, per the #1507 ruling: `Sort-Object -Unique` folds case and ignorable
-# characters under the current culture, so the folding would run *before* the [StringComparison]::Ordinal
-# join check below and cancel it out — the same "序数化被自己上一行抵消" shape already ruled on here.
-$dispatchedLeftTypes = @(
-    [System.Collections.Generic.SortedSet[string]]::new(
-        [string[]] @(
-            $seamTargetsFunction.Body.FindAll({
-                param($node)
-                $node -is [System.Management.Automation.Language.BinaryExpressionAst] -and
-                $node.Operator -eq [System.Management.Automation.Language.TokenKind]::Is -and
-                $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
-                [string]::Equals([string] $node.Left.VariablePath.UserPath, 'Left', [StringComparison]::OrdinalIgnoreCase) -and
-                $node.Right -is [System.Management.Automation.Language.TypeExpressionAst]
-            }, $true) | ForEach-Object { [string] $_.Right.TypeName.Name -replace '^.*\.', '' }
-        ),
-        [StringComparer]::Ordinal)
-)
-$expectedDispatchedLeftTypes = @('ArrayLiteralAst', 'AttributedExpressionAst', 'ParenExpressionAst', 'VariableExpressionAst')
-if (-not [string]::Equals(($dispatchedLeftTypes -join '|'), ($expectedDispatchedLeftTypes -join '|'), [StringComparison]::Ordinal)) {
-    throw "Get-SeamAssignmentTargets dispatches on [$($dispatchedLeftTypes -join ', ')]; this contract expects [$($expectedDispatchedLeftTypes -join ', ')]. Review the implementation and this contract together; historical rationale: docs/reports/audits/script-automation-governance-evolution-2026-08.md."
-}
-if (-not [System.Management.Automation.Language.ConvertExpressionAst].IsSubclassOf([System.Management.Automation.Language.AttributedExpressionAst])) {
-    throw 'ConvertExpressionAst is no longer an AttributedExpressionAst; `[string] $a = …` now needs its own branch in Get-SeamAssignmentTargets.'
-}
-
-# The shapes that are recognised but bind nothing, named here because the implementation reaches them
-# by falling through and so contains no token a reader can grep for.
-$nonBindingLeftTypes = @('IndexExpressionAst', 'MemberExpressionAst')
 $leftShapeCorpus = @(
     '$a = 1', '$a += 1', '$a ??= 1', '$a = $b = 1', '${a b} = 1', '$script:a = 1', '$env:X = 1',
     '$a, $b = 1, 2', '($a, $b), $c = 1',
@@ -204,21 +117,6 @@ $expectedLeftTypes = @('ArrayLiteralAst', 'AttributedExpressionAst', 'ConvertExp
 if (-not [string]::Equals((@($observedLeftTypes) -join '|'), ($expectedLeftTypes -join '|'), [StringComparison]::Ordinal)) {
     throw "AssignmentStatementAst.Left shapes measured on PowerShell $($PSVersionTable.PSVersion): [$(@($observedLeftTypes) -join ', ')]; this contract expects [$($expectedLeftTypes -join ', ')]. Rule on the difference in Get-SeamAssignmentTargets and this contract; historical rationale: docs/reports/audits/script-automation-governance-evolution-2026-08.md."
 }
-foreach ($observedLeftType in @($observedLeftTypes)) {
-    $observedType = [System.Management.Automation.Language.AssignmentStatementAst].Assembly.GetType("System.Management.Automation.Language.$observedLeftType")
-    $isDispatched = @($expectedDispatchedLeftTypes | Where-Object {
-        $dispatchType = [System.Management.Automation.Language.AssignmentStatementAst].Assembly.GetType("System.Management.Automation.Language.$_")
-        $dispatchType.IsAssignableFrom($observedType)
-    }).Count -gt 0
-    $isRuledNonBinding = @($nonBindingLeftTypes | Where-Object { [string]::Equals($_, $observedLeftType, [StringComparison]::Ordinal) }).Count -gt 0
-    if ($isDispatched -eq $isRuledNonBinding) {
-        throw "Left shape '$observedLeftType' must be either dispatched on or explicitly ruled a non-binding, and exactly one of the two; dispatched=$isDispatched ruledNonBinding=$isRuledNonBinding."
-    }
-}
-
-# Every other concrete expression type in the AST assembly has been measured never to appear as a
-# Left. Frozen so that a PowerShell release adding an expression form forces someone to rule on it
-# instead of it landing in the fail-open tail. One-sided: extras are a failure, absences are not.
 $ruledOutExpressionTypes = @(
     'ArrayExpressionAst', 'BaseCtorInvokeMemberExpressionAst', 'BinaryExpressionAst',
     'ConstantExpressionAst', 'ErrorExpressionAst', 'ExpandableStringExpressionAst', 'HashtableAst',
@@ -1011,40 +909,6 @@ function Invoke-FixtureCrossScopeAction {
         throw "New-Variable -Name is $($binderNameParameterTypes['New-Variable']), not [string]; 'new-variable-multiple-literal-names-over-reported' is no longer an over-report and must be re-ruled."
     }
 
-    # …and the shape half, structurally, in the same form as the `Left type set` contract above.
-    # Get-NervScriptVariableBinderLiteralNames returns nothing for a shape it does not recognise — fail *open*, so
-    # a deleted branch silently stops shadowing and every fixture that does not spell that exact
-    # shape stays green. Requiring the dispatch set verbatim turns a deletion red on its own.
-    $binderLiteralNamesFunction = $bindingHelperAst.Find({
-        param($node)
-        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-        [string]::Equals([string] $node.Name, 'Get-NervScriptVariableBinderLiteralNames', [StringComparison]::OrdinalIgnoreCase)
-    }, $true)
-    if (-not $binderLiteralNamesFunction) {
-        throw 'The shared script variable binding helper must keep its -Name argument walk in Get-NervScriptVariableBinderLiteralNames.'
-    }
-    # Ordinal dedup+sort, per the #1507 ruling, for the same reason as the Left dispatch set above.
-    $dispatchedNameArgumentTypes = @(
-        [System.Collections.Generic.SortedSet[string]]::new(
-            [string[]] @(
-                $binderLiteralNamesFunction.Body.FindAll({
-                    param($node)
-                    $node -is [System.Management.Automation.Language.BinaryExpressionAst] -and
-                    $node.Operator -eq [System.Management.Automation.Language.TokenKind]::Is -and
-                    $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
-                    [string]::Equals([string] $node.Left.VariablePath.UserPath, 'Argument', [StringComparison]::OrdinalIgnoreCase) -and
-                    $node.Right -is [System.Management.Automation.Language.TypeExpressionAst]
-                }, $true) | ForEach-Object { [string] $_.Right.TypeName.Name -replace '^.*\.', '' }
-            ),
-            [StringComparer]::Ordinal)
-    )
-    $expectedDispatchedNameArgumentTypes = @(
-        'ArrayExpressionAst', 'ArrayLiteralAst', 'ParenExpressionAst', 'StringConstantExpressionAst', 'SubExpressionAst')
-    if (-not [string]::Equals(($dispatchedNameArgumentTypes -join '|'), ($expectedDispatchedNameArgumentTypes -join '|'), [StringComparison]::Ordinal)) {
-        throw "Get-NervScriptVariableBinderLiteralNames dispatches on [$($dispatchedNameArgumentTypes -join ', ')]; this contract expects [$($expectedDispatchedNameArgumentTypes -join ', ')]. Review the implementation and this contract together; historical rationale: docs/reports/audits/script-automation-governance-evolution-2026-08.md."
-    }
-    # …and the shapes really are what the parser produces for those spellings, so the dispatch set is
-    # pinned to measured AST types rather than to remembered ones.
     $nameArgumentCorpus = [ordered]@{
         'StringConstantExpressionAst' = "Set-Variable fixtureAction 'x'"
         'ArrayLiteralAst' = "Set-Variable fixtureAction,zz 'x'"

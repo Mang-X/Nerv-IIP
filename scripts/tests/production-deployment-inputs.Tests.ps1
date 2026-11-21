@@ -1,12 +1,12 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Executes release-install input validation paths that fail before Aspire starts
+#     - Executes release-install validation and captures the environment at an isolated Aspire command boundary
 #     - Validates deployment input contracts as repository text
 #   Writes:
-#     - None
+#     - One owned temporary fixture root
 #   Cleanup:
-#     - None
+#     - Removes the fixture in finally
 #   Requires:
 #     - PowerShell 7
 
@@ -14,12 +14,10 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $startScript = Join-Path $repoRoot 'scripts/install/start-nerv-iip-apphost.ps1'
-$startText = Get-Content -LiteralPath $startScript -Raw
 $appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
 $dependenciesText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/compose/nerv-iip.dependencies.yml') -Raw
 $platformText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/compose/nerv-iip.platform.yml') -Raw
 $environmentExampleText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/compose/nerv-iip.production.env.example') -Raw
-$environmentArtifactVerifierText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/checks/verify-aspire-apphost-environment-artifacts.ps1') -Raw
 
 function Assert-ContainsOrdinal {
     param(
@@ -46,20 +44,6 @@ function Assert-StartFails {
     }
 }
 
-$requiredProductionPublishInputs = @(
-    "Messaging__Provider = 'Redis'",
-    "Security__Cors__AllowedOrigins = 'https://console.example.test,https://business.example.test'",
-    "ConnectorHost__ConnectorHostId = 'verify-connector-host'",
-    "ConnectorHost__OrganizationId = 'verify-organization'",
-    "ConnectorHost__EnvironmentId = 'verify-environment'"
-)
-$missingProductionPublishInputs = @($requiredProductionPublishInputs | Where-Object {
-        -not $environmentArtifactVerifierText.Contains($_, [StringComparison]::Ordinal)
-    })
-if ($missingProductionPublishInputs.Count -gt 0) {
-    throw "Production AppHost artifact publish must inject minimal compliant inputs. Missing: $($missingProductionPublishInputs -join ', ')"
-}
-
 Assert-StartFails -Arguments @('-EnvironmentName', 'Production', '-MessagingProvider', 'InMemory') `
     -ExpectedMarker '-MessagingProvider InMemory'
 Assert-StartFails -Arguments @('-EnvironmentName', 'Production', '-MessagingProvider', 'Redis') `
@@ -83,9 +67,9 @@ Assert-StartFails -Arguments @(
     '-IamSecretsPepper', 'pepper',
     '-IamEnterpriseIdentityMfaCode', '000000'
 ) -ExpectedMarker '-IamEnterpriseIdentityMfaCode must override'
-Assert-StartFails -Arguments @(
+$productionArguments = @(
     '-EnvironmentName', 'Production',
-    '-MessagingProvider', 'RabbitMQ',
+    '-MessagingProvider', 'Redis',
     '-RedisPassword', 'redis-password',
     '-IamJwtSigningKeyId', 'kid',
     '-IamJwtPrivateKeyPem', 'private-key',
@@ -101,19 +85,42 @@ Assert-StartFails -Arguments @(
     '-MinioRootUser', 'minio-user',
     '-MinioRootPassword', 'minio-password',
     '-CorsAllowedOrigins', 'https://console.example.test'
-) -ExpectedMarker '-BarcodeLabelPrinterId is required'
+)
+Assert-StartFails -Arguments $productionArguments -ExpectedMarker '-BarcodeLabelPrinterId is required'
+
+# 在 Aspire 边界读取子进程可见的环境；使用真实的作用域设置和不启动服务的替身。
+$fixture = Join-Path ([IO.Path]::GetTempPath()) "nerv-release-inputs-$([guid]::NewGuid().ToString('N'))"
+try {
+    $fixtureInstall = [IO.Directory]::CreateDirectory((Join-Path $fixture 'scripts/install'))
+    $fixtureLibrary = [IO.Directory]::CreateDirectory((Join-Path $fixture 'scripts/lib'))
+    $fixtureStart = Join-Path $fixtureInstall.FullName 'start-nerv-iip-apphost.ps1'
+    Copy-Item -LiteralPath $startScript -Destination $fixtureStart
+    $realLibrary = (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1').Replace("'", "''")
+    $capture = @'
+function Invoke-AspireInteractive {
+    param($Name, $WorkingDirectory, $Arguments)
+    $values = foreach ($key in @('Messaging__Provider', 'Parameters__redis-password', 'Parameters__iam-enterprise-identity-mfa-code', 'Parameters__barcode-label-printer-id', 'Parameters__barcode-label-printer-host')) {
+        [Environment]::GetEnvironmentVariable($key)
+    }
+    [IO.File]::WriteAllLines((Join-Path $WorkingDirectory 'observed.txt'), [string[]] $values)
+}
+'@
+    [IO.File]::WriteAllText((Join-Path $fixtureLibrary.FullName 'ScriptAutomation.ps1'), ". '$realLibrary'`n$capture")
+    $printerArguments = @('-BarcodeLabelPrinterId', 'printer-id', '-BarcodeLabelPrinterHost', 'printer.example.test',
+        '-BarcodeLabelPrinterPort', '9100', '-BarcodeLabelPrinterConnectTimeoutSeconds', '1',
+        '-BarcodeLabelPrinterWriteTimeoutSeconds', '2', '-BarcodeLabelPrinterDpi', '203',
+        '-BarcodeLabelPrinterCapabilities', 'zpl')
+    & pwsh -NoProfile -File $fixtureStart @productionArguments @printerArguments
+    if ($LASTEXITCODE -ne 0) { throw 'Valid production input must reach Aspire without a seed administrator password.' }
+    $observed = [IO.File]::ReadAllLines((Join-Path $fixture 'observed.txt'))
+    if (-not [string]::Equals(($observed -join '|'), 'Redis|redis-password|654321|printer-id|printer.example.test', [StringComparison]::Ordinal)) {
+        throw 'Release-install did not pass the requested messaging, Redis, MFA and printer inputs to Aspire.'
+    }
+}
+finally { if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixture -Recurse -Force } }
 
 foreach ($contract in @(
-    @($startText, '[ValidateSet("InMemory", "RabbitMQ", "Redis")]', 'release-install must accept Redis messaging'),
-    @($startText, '$environment["Parameters__redis-password"] = $RedisPassword', 'release-install must map the Redis password to the AppHost parameter'),
-    @($startText, '$environment["Parameters__iam-enterprise-identity-mfa-code"] = $IamEnterpriseIdentityMfaCode', 'release-install must map the MFA override to the AppHost parameter'),
-    @($startText, '$environment["Parameters__barcode-label-printer-id"] = $BarcodeLabelPrinterId', 'release-install must map the logical printer id to the AppHost parameter'),
-    @($startText, '$environment["Parameters__barcode-label-printer-host"] = $BarcodeLabelPrinterHost', 'release-install must map the site printer host to the AppHost parameter'),
     @($appHostText, 'AddParameter("iam-enterprise-identity-mfa-code", secret: true)', 'AppHost MFA override must be a secret parameter'),
-    @($appHostText, 'AddParameter("barcode-label-printer-id")', 'AppHost production topology must expose a logical printer id parameter'),
-    @($appHostText, '.WithEnvironment("LabelPrinter__Mode", "simulated")', 'AppHost Development topology must select simulated mode explicitly'),
-    @($appHostText, '.WithEnvironment("LabelPrinter__Mode", "zpl-tcp")', 'AppHost delivery topology must select zpl-tcp mode explicitly'),
-    @($appHostText, '"LabelPrinter__Printers__0__Host"', 'AppHost delivery topology must inject the printer route host'),
     @($appHostText, 'Iam__EnterpriseIdentity__Mfa__DevelopmentCode', 'AppHost must deliver the MFA override to IAM'),
     @($dependenciesText, '--requirepass', 'legacy Redis must require authentication'),
     @($platformText, 'password=${NERV_IIP_REDIS_PASSWORD:?set NERV_IIP_REDIS_PASSWORD}', 'legacy services must authenticate to Redis'),
@@ -128,10 +135,6 @@ foreach ($contract in @(
     @($environmentExampleText, 'NERV_IIP_BARCODE_LABEL_PRINTER_HOST=', 'production env example must expose the site printer host without committing a real address')
 )) {
     Assert-ContainsOrdinal -Text $contract[0] -Expected $contract[1] -Message $contract[2]
-}
-
-if ($startText.Contains('throw "-IamSeedAdminPassword is required outside Development."', [StringComparison]::Ordinal)) {
-    throw 'Production startup must not require a seed password when IAM seed is disabled outside Development.'
 }
 
 Write-Host 'Production deployment input contracts passed.'

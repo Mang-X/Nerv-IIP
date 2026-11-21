@@ -1152,13 +1152,10 @@ try {
     catch { $zeroActiveRejected = $_.Exception.Message.Contains('does not contain any active members', [StringComparison]::Ordinal) }
     Assert-Contract $zeroActiveRejected 'All-active resolution must fail closed on an empty active set instead of selecting nothing.'
     # -MemberId 与 -AllActiveMembers 必须互斥，否则两种选择口径可以同时出现在一次调用里。
-    Assert-Contract ($runner.Contains("ParameterSetName = 'AllActiveMembers'", [StringComparison]::Ordinal) -and $runner.Contains("ParameterSetName = 'SelectedMembers'", [StringComparison]::Ordinal)) 'The runner must expose all-active and explicit selection as mutually exclusive parameter sets.'
-    Assert-Contract ($runner.Contains('[string[]] $MemberId', [StringComparison]::Ordinal)) 'The runner must accept an explicit ordered member batch.'
-    Assert-Contract ($runner.Contains('foreach ($selectedMemberId in $MemberId)', [StringComparison]::Ordinal)) 'The runner must execute every selected member instead of authenticating only the pilot.'
-    Assert-Contract ($runner.Contains("Join-Path `$ResultsDirectory ([string]`$member.id)", [StringComparison]::Ordinal)) 'Each selected member must own an isolated TRX directory.'
-    Assert-Contract ($runner.Contains('$summary.members = @($memberSummaries)', [StringComparison]::Ordinal)) 'The dependency summary must retain per-member evidence.'
-    Assert-Contract ($runner.Contains("`$memberSummaries.Count -ne `$selectedMemberIds.Count", [StringComparison]::Ordinal)) 'The aggregate runner must reject incomplete member execution.'
-    Assert-Contract ($runner.Contains("GetEnvironmentVariable('NERV_IIP_TEST_POSTGRES')", [StringComparison]::Ordinal)) 'The runner must consume the frozen external PostgreSQL variable.'
+    $runnerParameters = (Get-Command (Join-Path $repoRoot 'scripts/ci/run-postgres-test-lane.ps1')).ParameterSets
+    Assert-Contract (@($runnerParameters | Where-Object {
+        ([Array]::IndexOf([string[]]$_.Parameters.Name, 'MemberId') -ge 0) -and ([Array]::IndexOf([string[]]$_.Parameters.Name, 'AllActiveMembers') -ge 0)
+    }).Count -eq 0) 'The runner must reject combining explicit and all-active member selection.'
     Assert-Contract (-not $runner.Contains('NERV_IIP_TEST_POSTGRES_ADMIN', [StringComparison]::Ordinal) -and -not $workflow.Contains('NERV_IIP_TEST_POSTGRES_ADMIN', [StringComparison]::Ordinal)) 'No CI-only PostgreSQL connection-string contract may be introduced.'
     Assert-Contract ($runner.Contains('$databaseCreated = $true', [StringComparison]::Ordinal) -and $runner.Contains('if ($databaseCreated)', [StringComparison]::Ordinal)) 'Cleanup must only target a database created by this runner.'
     $diagnosticIndex = $runner.IndexOf('-failure-diagnostics"', [StringComparison]::Ordinal)
