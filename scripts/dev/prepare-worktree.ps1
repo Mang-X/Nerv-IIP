@@ -17,7 +17,7 @@
 #     - Stops managed pnpm/dotnet process trees when they time out through ScriptAutomation.ps1
 #   Requires:
 #     - PowerShell 7
-#     - Node.js 24.22.3
+#     - Node.js 26.13.1
 #     - pnpm 12.21.0
 #     - .NET SDK 10 (only when NERV_SETUP_BACKEND=1)
 #

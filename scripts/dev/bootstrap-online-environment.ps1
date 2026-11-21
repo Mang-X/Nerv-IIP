@@ -104,7 +104,9 @@ function Invoke-WingetInstall {
         [string] $Id,
 
         [Parameter(Mandatory)]
-        [string] $Name
+        [string] $Name,
+
+        [version] $Version
     )
 
     if (-not $IsWindows) {
@@ -115,9 +117,14 @@ function Invoke-WingetInstall {
         throw "winget is required to install $Name automatically. Install App Installer from Microsoft Store, or install $Name manually."
     }
 
+    $arguments = @('install', '--id', $Id, '--exact', '--accept-package-agreements', '--accept-source-agreements', '--silent')
+    if ($null -ne $Version) {
+        $arguments += @('--version', $Version.ToString())
+    }
+
     Invoke-NativeCommandWithTimeout `
         -Command 'winget' `
-        -Arguments @('install', '--id', $Id, '--exact', '--accept-package-agreements', '--accept-source-agreements', '--silent') `
+        -Arguments $arguments `
         -WorkingDirectory $root `
         -TimeoutSeconds 1800 `
         -Name "bootstrap-install-$Name" | Out-Null
@@ -451,7 +458,11 @@ function Ensure-ConnectedPrerequisites {
             throw "Node.js $($minimumNodeVersion.Major).x ($minimumNodeVersion or newer) is required. Re-run with -InstallMissing on Windows or install Node.js manually."
         }
 
-        Invoke-WingetInstall -Id "OpenJS.NodeJS.$($minimumNodeVersion.Major)" -Name 'nodejs'
+        Invoke-WingetInstall -Id 'OpenJS.NodeJS.LTS' -Name 'nodejs' -Version $minimumNodeVersion
+        $nodeVersion = Get-NodeVersion
+        if ($null -eq $nodeVersion -or $nodeVersion.Major -ne $minimumNodeVersion.Major -or $nodeVersion -lt $minimumNodeVersion) {
+            throw "Node.js $minimumNodeVersion is required. Check that the installed Node.js is first on PATH, then rerun bootstrap."
+        }
     }
 
     Ensure-Pnpm

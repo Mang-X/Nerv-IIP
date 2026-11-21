@@ -12,7 +12,7 @@
 #     - PowerShell 7
 #     - .NET SDK 10
 #     - Docker Desktop for container resources
-#     - Node.js 24.22.3
+#     - Node.js 26.13.1
 #     - pnpm 12.21.0
 
 [CmdletBinding()]
