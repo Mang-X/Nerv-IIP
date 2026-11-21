@@ -99,7 +99,7 @@ function Test-CurrentMarkdownLinks {
         # 冻结正文保留时点语义；这些目录中的 README/AGENTS 仍是当前协作入口。
         $isEntry = [string]::Equals($file.Name, 'README.md', [StringComparison]::Ordinal) -or
             [string]::Equals($file.Name, 'AGENTS.md', [StringComparison]::Ordinal)
-        if (-not $isEntry -and $path -match '^docs/(?:adr|reports|superpowers|status/archive)/') { continue }
+        if (-not $isEntry -and $path -match '^docs/(?:adr|reports|status/archive)/') { continue }
         $isSiteDocument = -not $isEntry -and (
             $path.StartsWith('frontend/apps/docs/', [StringComparison]::Ordinal) -or
             $path.StartsWith('frontend/apps/design-system/docs/', [StringComparison]::Ordinal))

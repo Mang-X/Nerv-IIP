@@ -30,4 +30,4 @@
 
 ## M4 后的路径规则
 
-M2/M4 已退出 `docs/architecture/` 根目录旧 Runbook/Governance 文件名。当前操作文档只链接本目录与其它 canonical owner；ADR、Reports、Status archive、Superpowers 等冻结材料中的旧路径作为历史坐标保留，通过 Git 追溯，不恢复为当前兼容入口。
+M2/M4 已退出 `docs/architecture/` 根目录旧 Runbook/Governance 文件名。当前操作文档只链接本目录与其它 canonical owner；ADR、Reports、Status archive 等冻结材料中的旧路径作为历史坐标保留，通过 Git 追溯，不恢复为当前兼容入口。

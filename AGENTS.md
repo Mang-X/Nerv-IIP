@@ -6,7 +6,7 @@
 
 1. 读取从仓库根到目标路径由工具实际选中的各级 Agent 指令；同目录优先级文件会覆盖普通 `AGENTS.md`，不要假定两份文件自动合并。
 2. 当前 Issue、spec 或用户要求存在时先读取；随后以目标代码、配置、公开契约、测试和命令帮助核实当前事实。
-3. 从 `docs/README.md` 按任务类型选择必要文档；不要默认读取历史状态快照。M4 后 `docs/architecture/` 根目录旧平铺路径已退役；若在 ADR、Report、Status archive 或 Superpowers 历史材料中遇到旧路径，按 `docs/architecture/README.md` 和其它文档入口定位当前 owner，必要时用 Git 历史追溯当时内容，不为历史坐标重新建立 shim。
+3. 从 `docs/README.md` 按任务类型选择必要文档；不要默认读取历史状态快照。M4 后 `docs/architecture/` 根目录旧平铺路径已退役；若在 ADR、Report 或 Status archive中遇到旧路径，按 `docs/architecture/README.md` 和其它文档入口定位当前 owner，必要时用 Git 历史追溯当时内容，不为历史坐标重新建立 shim。
 4. 命令、版本、目录、生成入口与运行行为以当前仓库事实为准。
 
 ## 按任务加载
@@ -21,7 +21,6 @@
 - 核对历史时点判断：按提交和原路径从 Git 历史读取；历史不得覆盖当前代码、配置、契约和测试。
 - 人工文档或协作文本：读取 `docs/AGENTS.md` 与 `docs/governance/docs/language.md`。新增文档或链接时使用 canonical owner，不新增指向已退役 Architecture 根目录旧文件名的权威入链。
 - 新增、修改或审核测试断言、golden/snapshot/digest、provider/lane 命名、确定性等待、测试 evidence 或测试删除：从 `docs/governance/testing/README.md` 读取直接相关规则；执行与排障从 `docs/runbooks/testing/README.md` 路由。
-- 新建、修订或执行 Superpowers spec/plan：先读取 `docs/superpowers/AGENTS.md`。
 - GitHub/Linear 发布前：除非用户明确指定其他语言，标题、正文、评论、Review、状态说明和验收结论使用简体中文；代码、命令、路径、标识符、检查名、SHA、URL 和必要英文引文按语言 Governance 保留。
 
 ## 交付

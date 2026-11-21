@@ -14,7 +14,7 @@
 1. 四个纵切脚本不是当前本地、provider 或 FullChain 门禁；在物理删除前，它们只作为保留旧路径并明确失败的兼容墓碑，防止历史入口被静默重新使用。
 2. ADR 不维护替代命令或参数。当前操作者必须从 [`../runbooks/script-automation.md`](../runbooks/script-automation.md)、`nerv.ps1 help`、目标脚本 `Get-Help` 和当前源码选择入口，不能从本记录或历史计划复制命令。
 3. 当前 OpenAPI、provider、FullChain 与其它验证 lane 的选择、运行条件和证据要求，由当前脚本、CI 配置、Governance 与 Runbook 决定；本 ADR 不把任何具体 lane 或命令冻结为长期契约。
-4. `docs/superpowers/plans/` 与 `docs/superpowers/specs/` 的既有计划和规格由 Git 历史保留，不构成当前可执行门禁登记。
+4. 历史计划和规格由 Git 历史保留，不构成当前可执行门禁登记。
 5. 本记录仅部分取代 ADR 0009 后果第 2 条中“第四阶段真实依赖纵切脚本可作为本地门禁”的表述；ADR 0009 的迁移、发布、seed、回滚与真实 provider 证明原则仍有效。
 
 ## 理由

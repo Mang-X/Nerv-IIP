@@ -11,7 +11,7 @@ argument-hint: "<GitHub #issue 或 Linear key>[ <更多任务号或 key>]"
 
 **仅由用户手动调用。** 不要在别的任务中途顺手启动。
 
-权威依据（读取，不复述）：`AGENTS.md`、`docs/superpowers/AGENTS.md`、`docs/governance/docs/language.md`、`skills/nerv-pr-review/SKILL.md`。
+权威依据（读取，不复述）：`AGENTS.md`、`docs/governance/docs/language.md`、`skills/nerv-pr-review/SKILL.md`。
 
 ## 席位边界
 
@@ -33,23 +33,23 @@ argument-hint: "<GitHub #issue 或 Linear key>[ <更多任务号或 key>]"
 
 | 上游调用 | 已完成产物 | 本技能接续 |
 |---|---|---|
-| `/to-spec` | GitHub Issue 原正文内唯一 `superpowers-spec` 区块，含已批准状态、修订号和日期 | 读取获批边界；不复问已决定内容 |
+| `/to-spec` | GitHub Issue 中已获批准的规格 | 读取获批边界；不复问已决定内容 |
 | `/to-tickets` | 已批准并发布的 GitHub 子 Issue；每票写明端到端交付、可验收标准、真实 `Blocked by` 边，无依赖时明确 `None` | 按现有依赖图执行 ready frontier；不重拟粒度或依赖 |
 | `/nerv-task-delivery` | 一个或多个 GitHub Issue 编号，或唯一解析到 GitHub Issue 的 Linear key | 每张实施票一树、一分支、一 PR |
 
 对 L / XL 父任务，`/to-spec` 的获批结果先于 `/to-tickets` 的拆票；两者均由用户手动调用。本技能不代替用户运行上游技能。缺少所需产物时，告诉用户准确的下一步调用：先对父 Issue 调 `/to-spec`、批准 spec，再调 `/to-tickets`、批准并发布子票，然后用子 Issue 编号重入本技能。沿用已给上下文，只问缺失的决定。S / M 票面若已足以验收，不额外要求 spec 或拆票。上游技能不可用时，报告技能名和受阻步骤，不仿写流程或自行安装。
 
-每次开工或恢复时，从 GitHub 回读每张 Issue 的完整正文、标签、评论、子票和 blocker 边。若 Issue 使用 Superpowers plan，还要读取 plan 索引评论、逐 Task 评论和永久链接。spec、索引、Task 链接或审批状态缺失、重复、矛盾时，在建树、派席位或改票前暂停并报告具体缺项；产物完整且获批时直接接续，不重复确认。
+每次开工或恢复时，从 GitHub 回读每张 Issue 的完整正文、标签、评论、子票和 blocker 边。所需规格、子票关系或审批状态缺失、重复、矛盾时，在建树、派席位或改票前暂停并报告具体缺项；产物完整且获批时直接接续，不重复确认。
 
 GitHub Issue 是范围、spec 和子票的权威源。Linear key 沿现有 GitHub → Linear 同步元数据或稳定 cross-link 解析为唯一 GitHub Issue，核对精确 Linear key 及 canonical GitHub URL / number；不按标题模糊匹配，也不把 key 的数字部分当 GitHub issue number。零个或多个匹配时暂停，请用户提供 GitHub Issue 编号或链接。票面和 PR 只在 GitHub 更新，沿用现有同步；不直接创建或维护 Linear 票，同步延迟不阻塞 GitHub 流程。
 
-多个输入先按 GitHub `Parent`、获批 plan 索引和 spec 归组。同一父 spec 的全部获批子票构成一个交付组。输入只包含其中一部分时，只处理这些票当前 ready 的部分，父级验收保持未完成，直到父票列出的全部子票合并。不同父票保持独立；只有同一父 spec 的完整子票组共用父级总体验收。
+多个输入先按 GitHub `Parent` 和获批 spec 归组。同一父 spec 的全部获批子票构成一个交付组。输入只包含其中一部分时，只处理这些票当前 ready 的部分，父级验收保持未完成，直到父票列出的全部子票合并。不同父票保持独立；只有同一父 spec 的完整子票组共用父级总体验收。
 
-中断后使用同一 Issue 编号重入：重新读取审批、plan 评论、子票依赖、现有分支与 PR 当前 head、评论线程和 CI 状态，从第一个未完成边界继续。以持久化结果为准，不依赖旧会话记忆，不重开已完成的 spec 或 breakdown。
+中断后使用同一 Issue 编号重入：重新读取审批记录、子票依赖、现有分支与 PR 当前 head、评论线程和 CI 状态，从第一个未完成边界继续。以持久化结果为准，不依赖旧会话记忆，不重开已完成的 spec 或 breakdown。
 
 派单前确认当前路径的必需技能可用：`scope-gate` 负责定级，`nerv-pr-review` 负责每个 PR 审核。上游产物齐全时不用重跑 `/to-spec` 或 `/to-tickets`；缺失时才检查对应用户手动技能。缺少当前步骤的必需技能时，报告准确名称和受阻步骤并暂停该票；不伪造替代结论或安装技能。
 
-**接入完成条件：** 每个输入唯一解析到 GitHub Issue；所需审批、spec 与 plan 链接有效；当前 Scope Gate 级别、获批票组和 ready frontier 清楚。未满足时只做上游交接，不派实施席位。
+**接入完成条件：** 每个输入唯一解析到 GitHub Issue；所需审批与规格可追溯；当前 Scope Gate 级别、获批票组和 ready frontier 清楚。未满足时只做上游交接，不派实施席位。
 
 ## 2. 定级与依赖波次
 

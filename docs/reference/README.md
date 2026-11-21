@@ -30,5 +30,5 @@
 2. 表格中的状态、枚举、版本、路由、Schema、permission、producer/consumer 关系必须能回到明确 producer；不得把旧 Issue、历史报告或一次性扫描结果升级为当前事实源。
 3. 机器可读输入或生成伴随物必须与其生产者原子迁移；不得为了 Reference 目录再造第二份 JSON registry、哈希清单或自然语言同步器。
 4. 权限目录尤其不能成为第二份 IAM registry：权限是否存在、默认角色是否拥有、endpoint 是否强制是三个独立 producer 事实，必须分别核实。
-5. 当前 Reference 发生结构变化时同步活跃 README/AGENTS/代码注释；冻结报告、ADR 与 `docs/superpowers/**` 不为清理旧 URL 批量改写。
+5. 当前 Reference 发生结构变化时同步活跃 README/AGENTS/代码注释；冻结报告与 ADR 不为清理旧 URL 批量改写。
 6. M4 后旧 `docs/architecture/*` 平铺兼容页已退出；Reference 当前链接只指 canonical owner。冻结历史中的旧路径继续按原时点解释，并通过 Git/Reports 追溯。

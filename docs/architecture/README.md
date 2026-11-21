@@ -50,6 +50,6 @@ Platform 其它专题（File Storage、Notification、Observability、缓存、A
 1. **Current Architecture 正文只从本页进入主题目录。** 根目录只保留本 `README.md` 与主题目录，不再保留旧文件名 shim，也不得新增平铺正文。
 2. **新链接只能引用 canonical owner。** Product / Architecture / Governance / Reference / Runbook / Status / Report 各自维护自己的当前职责，不通过旧 Architecture 路径转发。
 3. 当前状态唯一入口是 [`../status/current.md`](../status/current.md)；历史时点判断按提交从 Git 追溯。
-4. 冻结 ADR、Report、Status archive 与 `docs/superpowers/**` 不为消除历史路径字面批量改写；其中的旧路径属于对应提交时点的坐标，不重新升级成当前入口。
+4. 冻结 ADR、Report 与 Status archive 不为消除历史路径字面批量改写；其中的旧路径属于对应提交时点的坐标，不重新升级成当前入口。
 5. **测试和脚本不得逐字依赖人工文档来证明运行行为。** 当前机器事实由代码、workflow、manifest、脚本帮助与现有行为测试生产；文档只解释稳定边界。
 6. 以后确需移动当前文档时，应在同一迁移批次更新活跃消费者并运行现有 Docs/链接门禁。只有确有跨版本消费者时才允许短期兼容入口，并须在对应 Issue/PR 写明消费者、删除条件与最迟退出阶段；不得建立永久墓碑。

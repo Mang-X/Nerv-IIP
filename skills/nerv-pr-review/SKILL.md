@@ -78,11 +78,7 @@ done
 
 ### 规格轴
 
-判据来源：Step 1 定位出的 GitHub Issue。本仓库的规格权威是**票**，不是目录——见 `docs/superpowers/AGENTS.md`。
-
-- 规格住在 Issue 正文的 `<!-- superpowers-spec:start -->` / `<!-- superpowers-spec:end -->` 受管区块内：`gh issue view <票号> --json body`
-- 走 plan 流程的票，Task 清单与完成态在索引评论里：`gh issue view <票号> --json comments`
-- `docs/superpowers/specs/` 与 `plans/` 下的既有文件不迁移、不改写，是历史件——不要去那里找当前 PR 的规格
+回读 Step 1 定位出的 GitHub Issue 正文与评论，核对获批范围和验收标准：`gh issue view <票号> --json body,comments`。
 
 报告三类：spec 要求了但缺失或只做一半；spec 没要求却做了（范围外）；看着实现了但实现错。每条引原文。
 
@@ -151,9 +147,3 @@ done
 - `docs/governance/testing/evidence.md` —— 执行数量、CI 状态、actual/skipped 与产物口径
 - `docs/governance/docs/language.md` —— 协作文本发布规则
 - `docs/governance/decisions/records.md` —— PR 触及 ADR 时的分层判据与取代规则
-
-## 与其它技能的边界
-
-`superpowers:requesting-code-review` 管作者侧怎么请审，`receiving-code-review` 管怎么处理收到的反馈；本技能管审核方。
-
-那份技能的 `code-reviewer.md` 模板写着席位不得再派子代理——**该约束对席位成立，对协调者不成立**。本技能就是协调者，它派出四个席位。

@@ -56,5 +56,5 @@ BusinessMasterData 是业务平台的首个切片，也是 ProductEngineering、
 
 1. 字段级事实来源是 `docs/architecture/business/master-data-field-ownership.md`；变更审批与审计规则见 `docs/governance/data/master-data-ownership.md`。
 2. 流程制造补充内容由 `docs/architecture/business/master-data-process-manufacturing.md` 治理。
-3. 当时的设计可从 Git 历史追溯 `docs/superpowers/plans/2026-05-21-business-master-data-realignment.md`。
+3. 当时的设计见提交 `f60be4749`。
 4. 原 MasterData 基础计划仍是有效的历史输入，但只有在重整计划更新领域模型、事件和 API 契约后，才可以执行任务 4 和任务 5。
