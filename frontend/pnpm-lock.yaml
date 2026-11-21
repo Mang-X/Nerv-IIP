@@ -576,6 +576,9 @@ importers:
       '@nerv-iip/api-client':
         specifier: workspace:*
         version: link:../api-client
+      vue:
+        specifier: 3.5.45
+        version: 3.5.45(typescript@6.0.3)
 
   packages/scheduling:
     dependencies:

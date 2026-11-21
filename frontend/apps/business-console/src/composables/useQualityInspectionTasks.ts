@@ -14,6 +14,7 @@ import {
   acquirePendingBusinessIntent,
   completePendingBusinessIntent,
   peekPendingBusinessIntent,
+  useScopeBoundListResponse,
 } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -23,7 +24,6 @@ import {
   type BusinessContextFields,
 } from './businessContextBinding'
 import { executeLifecycleAction } from './lifecycleAction'
-import { useScopeBoundListResponse } from './useScopeBoundListResponse'
 
 const DEFAULT_TAKE = 200
 

@@ -17,7 +17,7 @@ import { MAINTENANCE_READ_MODEL_PERMISSIONS } from '@/permissions/maintenanceRea
 import {
   useListResponseState,
   useScopeBoundListResponse,
-} from '@/composables/useScopeBoundListResponse'
+} from '@nerv-iip/business-core'
 
 /**
  * 工作台首页数据封装：按登录人权限裁剪各域摘要。

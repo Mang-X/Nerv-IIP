@@ -10,11 +10,11 @@ import {
 import {
   normalizeMaintenanceWorkOrderStatusFilter,
   type MaintenanceWorkOrderStatusCode,
+  useScopeBoundListResponse,
 } from '@nerv-iip/business-core'
 import { useQuery } from '@pinia/colada'
 import { computed, reactive, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
-import { useScopeBoundListResponse } from './useScopeBoundListResponse'
 import { useTaskListPagination } from './useTaskListPagination'
 import {
   MAINTENANCE_READ_MODEL_PERMISSIONS,

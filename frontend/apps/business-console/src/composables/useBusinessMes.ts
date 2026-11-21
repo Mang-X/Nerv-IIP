@@ -144,6 +144,7 @@ import {
   peekPendingBusinessIntent,
   reduceServerPagination,
   serverPaginationIdentity,
+  useScopeBoundListResponse,
 } from '@nerv-iip/business-core'
 import type { AvailableMaterialLotFields } from '@nerv-iip/business-core'
 export { describeMesReadinessReason, describeMesReadinessReasons } from '@nerv-iip/business-core'
@@ -162,7 +163,6 @@ import {
 import { businessReadState } from './businessReadState'
 import { executeLifecycleAction } from './lifecycleAction'
 import { mesWorkOrderReleaseBlocker } from './mes/workOrderRelease'
-import { useScopeBoundListResponse } from './useScopeBoundListResponse'
 
 const DEFAULT_TAKE = 100
 const MES_OPERATIONS_READ_PERMISSION = 'business.mes.operations.read'

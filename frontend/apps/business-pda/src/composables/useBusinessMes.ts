@@ -68,13 +68,11 @@ import {
   reduceServerPagination,
   serverPaginationIdentity,
   statusActionGate,
+  useListResponseState,
+  useScopeBoundListResponse,
 } from '@nerv-iip/business-core'
 import type { AvailableMaterialLotFields } from '@nerv-iip/business-core'
 import { useMutation, useQuery, useQueryCache, type UseQueryEntry } from '@pinia/colada'
-import {
-  useListResponseState,
-  useScopeBoundListResponse,
-} from '@/composables/useScopeBoundListResponse'
 import { computed, reactive, shallowRef, watch, watchEffect, type Ref } from 'vue'
 import {
   assertLifecycleActionExecutable,
