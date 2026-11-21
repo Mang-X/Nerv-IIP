@@ -7,7 +7,7 @@ import {
   calculateRequiredQuantity,
   selectConcreteMaterialLines,
   type MbomMaterialLineFact,
-} from '../src/issue1851MbomInventoryBaseline'
+} from './issue1851MbomInventoryBaseline'
 
 const evidencePath = process.env.NERV_IIP_NERV2115_EVIDENCE_PATH
 const scenario = process.env.NERV_IIP_NERV2115_SCENARIO!

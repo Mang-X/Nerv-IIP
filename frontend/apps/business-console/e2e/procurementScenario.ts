@@ -19,7 +19,7 @@ import {
   calculateRequiredQuantity,
   selectConcreteMaterialLines,
   type MbomMaterialLineFact,
-} from '../src/issue1851MbomInventoryBaseline'
+} from './issue1851MbomInventoryBaseline'
 
 export type Row = Record<string, unknown>
 export type PublicCall = <T>(

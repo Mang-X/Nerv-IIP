@@ -8,7 +8,7 @@ import {
   calculateRequiredQuantity,
   selectConcreteMaterialLines,
   type MbomMaterialLineFact,
-} from '../src/issue1851MbomInventoryBaseline'
+} from './issue1851MbomInventoryBaseline'
 
 const scope = { organizationId: 'org-001', environmentId: 'env-dev' }
 const workScope = { scopeKind: 'organization', scopeId: 'org-001' }

@@ -9,7 +9,7 @@ import {
   type InventoryAvailabilityFact,
   type InventoryMovementFact,
   type MbomMaterialLineFact,
-} from './issue1851MbomInventoryBaseline'
+} from '../e2e/issue1851MbomInventoryBaseline'
 
 const requirement: MbomMaterialLineFact = {
   skuCode: 'RM-SEL-01',
