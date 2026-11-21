@@ -1,0 +1,132 @@
+@layer app {
+  /* —— 检验任务积压 —— */
+  .qb-pareto {
+    min-height: 0;
+  }
+  .qb-backlog {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .qb-ib {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 4px;
+  }
+  .ib-group {
+    min-height: 0;
+  }
+  .ib-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .ib-label {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--nv-scr-text-2);
+  }
+  .ib-label small {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--nv-scr-faint);
+    letter-spacing: 0.06em;
+    margin-left: 4px;
+  }
+  .ib-n {
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--nv-scr-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .ib-n small {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--nv-scr-muted);
+  }
+  .ib-n.warn {
+    color: var(--nv-scr-amber);
+  }
+  .ib-meta {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-top: 2px;
+    font-size: 12.5px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 0;
+  }
+  .ib-meta b {
+    font-weight: 600;
+    color: var(--nv-scr-text-2);
+  }
+  .ib-meta b.warn {
+    color: var(--nv-scr-amber);
+  }
+  .ib-topsrc {
+    color: var(--nv-scr-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ib-today {
+    flex: none;
+    color: var(--nv-scr-muted);
+  }
+  /* 今日进度：发丝轨道 + 青色渐隐填充（静态不发光） */
+  .ib-bar {
+    margin-top: 4px;
+    height: 3px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.045);
+    box-shadow: inset 0 0 0 1px var(--nv-scr-line);
+    overflow: hidden;
+  }
+  .ib-bar i {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: rgba(74, 166, 238, 0.66);
+    transition: width 0.6s var(--nv-scr-ease-emphasized);
+  }
+
+  /* —— 页脚（诚实标注） —— */
+  .qb-foot-l {
+    display: inline-flex;
+    align-items: center;
+    gap: 18px;
+    min-width: 0;
+  }
+  .qb-back {
+    color: var(--nv-scr-cyan);
+    text-decoration: none;
+    font-size: 13.5px;
+    flex: none;
+  }
+  .qb-foot {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    font-size: 12.5px;
+    color: var(--nv-scr-faint);
+    border-top: 1px solid var(--nv-scr-divider);
+    padding-top: 11px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .qn-alert {
+      animation: none;
+    }
+    .ib-bar i {
+      transition: none;
+    }
+  }
+}
