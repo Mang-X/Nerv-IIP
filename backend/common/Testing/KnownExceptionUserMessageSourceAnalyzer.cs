@@ -17,7 +17,8 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
 
     public static IReadOnlyList<string> Analyze(
         IReadOnlyCollection<UserMessageSourceDocument> documents,
-        IReadOnlyCollection<ExcludedUserMessageSite> excludedSites)
+        IReadOnlyCollection<ExcludedUserMessageSite> excludedSites,
+        bool enforceLengthAndCharacters = true)
     {
         if (documents.Count == 0)
         {
@@ -58,7 +59,7 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
                 var firstArgument = creation.ArgumentList?.Arguments.FirstOrDefault()?.Expression;
                 if (firstArgument is not null)
                 {
-                    AddViolations(syntaxTree, firstArgument, violations);
+                    AddViolations(syntaxTree, firstArgument, enforceLengthAndCharacters, violations);
                 }
             }
         }
@@ -98,6 +99,7 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
     private static void AddViolations(
         SyntaxTree syntaxTree,
         ExpressionSyntax messageExpression,
+        bool enforceLengthAndCharacters,
         ICollection<Violation> violations)
     {
         var line = syntaxTree.GetLineSpan(messageExpression.Span).StartLinePosition.Line + 1;
@@ -120,6 +122,11 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
                 line,
                 messageExpression.SpanStart,
                 "用户消息必须包含中文。"));
+        }
+
+        if (!enforceLengthAndCharacters)
+        {
+            return;
         }
 
         if (estimatedLength > MaximumMessageLength)
