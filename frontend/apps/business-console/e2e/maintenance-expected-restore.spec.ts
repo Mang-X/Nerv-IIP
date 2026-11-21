@@ -24,6 +24,8 @@ test('PC 预计恢复填写、权威读回、刷新、清除与拒绝反馈（HT
   const row = {
     workOrderId: 'wo-etr-01',
     sourceReferenceId: 'MWO-2026-0108',
+    workOrderNo: 'MWO-2026-0108',
+
     deviceAssetId: 'PRESS-01',
     priority: 'high',
     status: 'InProgress',
