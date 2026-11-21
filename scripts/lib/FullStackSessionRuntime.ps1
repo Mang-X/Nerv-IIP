@@ -595,12 +595,13 @@ function Assert-NervIssue1912WalkthroughEvidence {
         }
     }
 
-    $receipt = $entries | Where-Object node -CEQ 'purchase-order-receipt'
-    $inbound = $entries | Where-Object node -CEQ 'receipt-inbound-inventory'
+    $receipt = $entries | Where-Object { [string]::Equals([string]$_.node, 'purchase-order-receipt', [StringComparison]::Ordinal) }
+    $inbound = $entries | Where-Object { [string]::Equals([string]$_.node, 'receipt-inbound-inventory', [StringComparison]::Ordinal) }
     $receiptNo = [string]$receipt.responseOrLog.receipt.data.purchaseReceiptNo
     if ([string]::IsNullOrWhiteSpace($receiptNo) -or
-        $evidence.purchaseReceiptNo -cne $receiptNo -or
-        $receipt.downstreamObject -cne $receiptNo -or $inbound.sourceObject -cne $receiptNo) {
+        -not [string]::Equals([string]$evidence.purchaseReceiptNo, $receiptNo, [StringComparison]::Ordinal) -or
+        -not [string]::Equals([string]$receipt.downstreamObject, $receiptNo, [StringComparison]::Ordinal) -or
+        -not [string]::Equals([string]$inbound.sourceObject, $receiptNo, [StringComparison]::Ordinal)) {
         throw 'Issue #1912 must trace the purchase receipt number returned by ERP into the warehouse evidence.'
     }
     $uiProofs = @($evidence.uiEvidence)

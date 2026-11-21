@@ -521,6 +521,55 @@ Assert-True (
 Assert-True ([string]::Equals($script:issue1912BrowserEnvironment.NERV_IIP_FULLSTACK_STATE_ROOT, (Get-NervFullStackStateRoot), [StringComparison]::Ordinal)) 'Issue #1912 must provide the resolved state root to its nested procurement scenario.'
 $script:issue1912BrowserEnvironment = $null
 
+# #1912 compares the receipt returned by ERP with each later evidence reference.
+$receiptFixturePath = [IO.Path]::GetTempFileName()
+try {
+    $receiptNo = 'PR-WALK-001'
+    $nodes = @(
+        'rfq-supplier-quotation', 'supplier-quotation-purchase-order', 'purchase-order-approval',
+        'purchase-order-receipt', 'receipt-inbound-inventory', 'sales-quotation-sales-order',
+        'sales-order-demand', 'demand-mrp-suggestion', 'mrp-suggestion-mes-work-order',
+        'mes-work-order-production', 'production-finished-goods-receipt', 'finished-goods-inventory',
+        'sales-order-delivery', 'delivery-wms-outbound', 'wms-completed-erp-delivery', 'erp-account-receivable'
+    )
+    $receiptEntry = @{ receipt = @{ data = @{ purchaseReceiptNo = $receiptNo } } }
+    $evidence = @{
+        issue = 'GitHub #1912 / NERV-1127'; runtimeProfileSource = 'session-manifest'
+        transport = 'redis-cross-process'; persistence = 'postgresql'; walkthroughSeedEnabled = 'true'
+        rfqNo = 'RFQ-WALK-001'; supplierQuotationNo = 'SQ-WALK-001'; salesQuotationNo = 'QUO-WALK-001'
+        purchaseOrderNo = 'PO-WALK-001'; salesOrderNo = 'SO-WALK-001'; deliveryOrderNo = 'DO-WALK-001'
+        purchaseReceiptNo = $receiptNo; conclusion = 'runtime-confirmed'
+        entries = @($nodes | ForEach-Object { @{
+            node = $_; sourceObject = $receiptNo; downstreamObject = $receiptNo; responseOrLog = $receiptEntry
+            stableKey = $receiptNo; demoWording = 'fixture'; conclusion = 'runtime-confirmed'
+        } })
+        uiEvidence = @($nodes | ForEach-Object { @{
+            node = $_; page = 'fixture'; listPath = '/fixture'; stableKey = $receiptNo; renderedRowText = $receiptNo
+            emptyText = 'none'; screenshot = $receiptFixturePath; pageHttpStatus = 200; listHttpStatus = 200
+        } })
+        requestFailurePolicy = 'fail'; failedRequests = @(); pageErrors = @()
+        summary = @{ 'runtime-confirmed' = $nodes.Count; gap = 0; 'not-verified' = 0 }
+    }
+    $evidence | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $receiptFixturePath
+    Assert-NervIssue1912WalkthroughEvidence -EvidencePath $receiptFixturePath | Out-Null
+    foreach ($reference in @(
+        @{ Record = $evidence; Field = 'purchaseReceiptNo' }
+        @{ Record = ($evidence.entries | Where-Object { [string]::Equals($_.node, 'purchase-order-receipt', [StringComparison]::Ordinal) }); Field = 'downstreamObject' }
+        @{ Record = ($evidence.entries | Where-Object { [string]::Equals($_.node, 'receipt-inbound-inventory', [StringComparison]::Ordinal) }); Field = 'sourceObject' }
+    )) {
+        $reference.Record[$reference.Field] = "$receiptNo$([char]0x00AD)"
+        $evidence | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $receiptFixturePath
+        $failure = $null
+        try { Assert-NervIssue1912WalkthroughEvidence -EvidencePath $receiptFixturePath | Out-Null }
+        catch { $failure = $_.Exception.Message }
+        Assert-True ($null -ne $failure -and $failure.Contains('trace the purchase receipt number', [StringComparison]::Ordinal)) "Issue #1912 accepted a different receipt in $($reference.Field)."
+        $reference.Record[$reference.Field] = $receiptNo
+    }
+}
+finally {
+    Remove-Item -LiteralPath $receiptFixturePath -Force
+}
+
 $script:issue1912MissingWorkerBrowserInvoked = $false
 $issue1912MissingWorkerFailure = $null
 try {
