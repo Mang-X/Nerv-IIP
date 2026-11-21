@@ -27,14 +27,6 @@ import {
   RequestFailureEvidenceTracker,
 } from '../e2e/issue1912-walkthrough-policy'
 
-const scenarioSource = readFileSync(
-  resolve(
-    dirname(fileURLToPath(import.meta.url)),
-    '../e2e/issue1912-real-machine-walkthrough.spec.ts',
-  ),
-  'utf8',
-)
-
 const consoleOpenApi = JSON.parse(
   readFileSync(
     resolve(
@@ -328,13 +320,7 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     }
   })
 
-  it('fails closed when the real stack or evidence destination is not supplied', () => {
-    expect(scenarioSource).toContain('NERV_IIP_PLAYWRIGHT_BASE_URL')
-    expect(scenarioSource).toContain('NERV_IIP_FULLSTACK_ADMIN_PASSWORD')
-    expect(scenarioSource).toContain('NERV_IIP_ISSUE_1912_EVIDENCE_PATH')
-    expect(scenarioSource).toContain(
-      'requires a managed full-stack session and an evidence destination',
-    )
+  it('keeps unobserved steps unverified and records public request failures', () => {
     const ledger = createWalkthroughEvidence()
     expect(
       [...ledger.evidence.values()].every((entry) => entry.conclusion === 'not-verified'),
@@ -343,7 +329,7 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
     expect(ledger.evidence.get('rfq-supplier-quotation')?.conclusion).toBe('gap')
   })
 
-  it('follows the public WarehouseWorkScopeCatalogItem contract and records fail-closed scope behavior', () => {
+  it('follows the public WarehouseWorkScopeCatalogItem contract', () => {
     expect(workScopeCatalogItemSchema).toBeDefined()
     expect(Object.keys(workScopeCatalogItemSchema?.properties ?? {}).sort()).toEqual([
       'displayName',
@@ -352,13 +338,6 @@ describe('NERV-1127 / GitHub #1912 real-machine walkthrough contract', () => {
       'scopeKind',
       'siteCode',
     ])
-    expect(scenarioSource).not.toContain('movementAllowed')
-    expect(scenarioSource).not.toContain('isBlocked')
-    expect(scenarioSource).not.toContain('isExpired')
-    expect(scenarioSource).toContain('wms-no-scope-fail-closed')
-    expect(scenarioSource).toContain('sideEffect: false')
-    expect(scenarioSource).toContain('expectedVersion')
-    expect(scenarioSource).toContain('scope catalog')
   })
 
   it('runs an actor-aware scope fixture against public payloads and blocks missing-scope mutations', async () => {

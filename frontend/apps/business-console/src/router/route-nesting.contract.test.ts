@@ -24,6 +24,31 @@ const EXPECTED_ROUTES: Array<{
   name: string
   page: () => Promise<{ default: unknown }>
 }> = [
+  {
+    path: '/erp',
+    name: '/erp/',
+    page: () => import('../pages/erp/index.vue'),
+  },
+  {
+    path: '/erp/procurement/rfqs',
+    name: '/erp/procurement/rfqs',
+    page: () => import('../pages/erp/procurement/rfqs.vue'),
+  },
+  {
+    path: '/erp/procurement/supplier-quotations',
+    name: '/erp/procurement/supplier-quotations',
+    page: () => import('../pages/erp/procurement/supplier-quotations.vue'),
+  },
+  {
+    path: '/erp/procurement/purchase-orders',
+    name: '/erp/procurement/purchase-orders',
+    page: () => import('../pages/erp/procurement/purchase-orders.vue'),
+  },
+  {
+    path: '/erp/procurement/receipts',
+    name: '/erp/procurement/receipts',
+    page: () => import('../pages/erp/procurement/receipts.vue'),
+  },
   { path: '/erp/sales', name: '/erp/sales/', page: () => import('../pages/erp/sales/index.vue') },
   {
     path: '/erp/sales/orders',
