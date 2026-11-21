@@ -72,16 +72,6 @@ internal static class MesRoutingSnapshotSources
         $"product-engineering-http:{productionVersionId}:{routingVersionId}";
 }
 
-public sealed class NullMesRoutingSnapshotProvider : IMesRoutingSnapshotProvider
-{
-    public Task<MesRoutingSnapshotResult> GetSnapshotAsync(
-        MesRoutingSnapshotRequest request,
-        CancellationToken cancellationToken)
-    {
-        return Task.FromResult(MesRoutingSnapshotResult.Missing(MesRoutingSnapshotSources.NotConfigured));
-    }
-}
-
 public sealed class MesRoutingSnapshotMissingException(string source)
     : KnownException($"ROUTING_SNAPSHOT_MISSING: 工单缺少已发布生产版本的工艺路线快照，Source = {source}。")
 {
