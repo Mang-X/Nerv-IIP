@@ -290,11 +290,11 @@ function Assert-NightlyBusinessPerformanceWorkflow {
     foreach ($step in $steps) {
         Assert-WorkflowContract ($null -ne (Get-WorkflowProperty -Object $step -Name 'timeout-minutes') -and [int](Get-WorkflowProperty -Object $step -Name 'timeout-minutes') -gt 0) 'Every business-performance step must have a positive timeout-minutes.'
     }
-    $checkout = @($steps | Where-Object { [string]::Equals([string](Get-WorkflowProperty -Object $_ -Name 'uses'), 'actions/checkout@v4', [StringComparison]::Ordinal) })
-    $setupDotnet = @($steps | Where-Object { [string]::Equals([string](Get-WorkflowProperty -Object $_ -Name 'uses'), 'actions/setup-dotnet@v4', [StringComparison]::Ordinal) })
-    $cache = @($steps | Where-Object { [string]::Equals([string](Get-WorkflowProperty -Object $_ -Name 'uses'), 'actions/cache@v4', [StringComparison]::Ordinal) })
-    $artifact = @($steps | Where-Object { [string]::Equals([string](Get-WorkflowProperty -Object $_ -Name 'uses'), 'actions/upload-artifact@v4', [StringComparison]::Ordinal) })
-    Assert-WorkflowContract ($checkout.Count -eq 1 -and $setupDotnet.Count -eq 1 -and $cache.Count -eq 1 -and $artifact.Count -eq 1) 'Nightly business performance workflow must use checkout, setup-dotnet, cache, and upload-artifact at @v4 exactly once each.'
+    $checkout = @($steps | Where-Object { [string]::Equals([string](Get-WorkflowProperty -Object $_ -Name 'uses'), 'actions/checkout@v5', [StringComparison]::Ordinal) })
+    $setupDotnet = @($steps | Where-Object { [string]::Equals([string](Get-WorkflowProperty -Object $_ -Name 'uses'), 'actions/setup-dotnet@v5', [StringComparison]::Ordinal) })
+    $cache = @($steps | Where-Object { [string]::Equals([string](Get-WorkflowProperty -Object $_ -Name 'uses'), 'actions/cache@v5', [StringComparison]::Ordinal) })
+    $artifact = @($steps | Where-Object { [string]::Equals([string](Get-WorkflowProperty -Object $_ -Name 'uses'), 'actions/upload-artifact@v6', [StringComparison]::Ordinal) })
+    Assert-WorkflowContract ($checkout.Count -eq 1 -and $setupDotnet.Count -eq 1 -and $cache.Count -eq 1 -and $artifact.Count -eq 1) 'Nightly business performance workflow must use checkout@v5, setup-dotnet@v5, cache@v5, and upload-artifact@v6 exactly once each.'
     Assert-WorkflowContract ([int](Get-WorkflowProperty -Object $checkout[0] -Name 'timeout-minutes') -eq 3 -and [int](Get-WorkflowProperty -Object $setupDotnet[0] -Name 'timeout-minutes') -eq 5 -and [int](Get-WorkflowProperty -Object $cache[0] -Name 'timeout-minutes') -eq 8 -and [int](Get-WorkflowProperty -Object $artifact[0] -Name 'timeout-minutes') -eq 5) 'Nightly business performance fixed step timeouts must be 3m, 5m, 8m, and 5m.'
     Assert-WorkflowContract ([string]::Equals([string](Get-WorkflowProperty -Object (Get-WorkflowProperty -Object $setupDotnet[0] -Name 'with') -Name 'dotnet-version'), '10.0.x', [StringComparison]::Ordinal)) 'Nightly business performance workflow must use .NET 10.0.x.'
 

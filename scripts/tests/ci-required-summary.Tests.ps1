@@ -186,7 +186,7 @@ try {
         -Original '-Lane full-chain' -Replacement '-Lane "full-chain"'
 
     Assert-AcceptedMutation -Name 'full-chain-v1-evidence-upload-v5' -Workflow $workflow `
-        -Original "      - name: Upload FullChain normalized evidence$([Environment]::NewLine)        timeout-minutes: 5$([Environment]::NewLine)        if: always()$([Environment]::NewLine)        uses: actions/upload-artifact@v4" `
+        -Original "      - name: Upload FullChain normalized evidence$([Environment]::NewLine)        timeout-minutes: 5$([Environment]::NewLine)        if: always()$([Environment]::NewLine)        uses: actions/upload-artifact@v6" `
         -Replacement "      - name: Upload FullChain normalized evidence$([Environment]::NewLine)        timeout-minutes: 5$([Environment]::NewLine)        if: always()$([Environment]::NewLine)        uses: actions/upload-artifact@v5"
 
     foreach ($aggregateMutation in @(
@@ -240,7 +240,7 @@ try {
     steps:
       - name: Publish forbidden formal evidence
         timeout-minutes: 1
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-evidence-full-chain-`${{ github.run_id }}-`${{ github.run_attempt }}
           path: artifacts/forbidden

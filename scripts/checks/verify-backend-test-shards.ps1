@@ -1829,7 +1829,7 @@ else {
 
                 $uploads = @($job.steps | Where-Object {
                         $uses = $_.PSObject.Properties['uses']
-                        $null -ne $uses -and [string]::Equals([string]([string] $uses.Value), [string]('actions/upload-artifact@v4'), [StringComparison]::OrdinalIgnoreCase)
+                        $null -ne $uses -and [string]::Equals([string]([string] $uses.Value), [string]('actions/upload-artifact@v6'), [StringComparison]::OrdinalIgnoreCase)
                     })
                 if ($uploads.Count -ne 1 -or (-not [string]::Equals([string]((Get-WorkflowStringValue -Object $uploads[0] -PropertyName 'if')), [string]('always()'), [StringComparison]::OrdinalIgnoreCase))) {
                     $errors.Add("Fast shard job '$jobId' must always upload exactly one redacted evidence artifact.")

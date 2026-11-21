@@ -17,16 +17,21 @@ describe('NvGroupPanel', () => {
 
   it('is expanded by default and toggles collapsed state on the heading button', async () => {
     const wrapper = mount(NvGroupPanel, {
+      attachTo: document.body,
       props: { title: 'WO-2026-0431' },
       slots: { default: '<p>工序明细</p>' },
     })
-    const toggle = wrapper.get('button[aria-expanded]')
-    expect(toggle.attributes('aria-expanded')).toBe('true')
+    try {
+      const toggle = wrapper.get('button[aria-expanded]')
+      expect(toggle.attributes('aria-expanded')).toBe('true')
 
-    await toggle.trigger('click')
-    expect(toggle.attributes('aria-expanded')).toBe('false')
-    // v-show keeps the node mounted; collapsed content must not be visible.
-    expect(wrapper.get('[id]').isVisible()).toBe(false)
+      await toggle.trigger('click')
+      expect(toggle.attributes('aria-expanded')).toBe('false')
+      // v-show keeps the node mounted; collapsed content must not be visible.
+      expect(wrapper.get('[id]').isVisible()).toBe(false)
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   it('links the toggle to the content region for assistive tech', () => {

@@ -525,7 +525,7 @@ function Get-NervFrontendUnitWorkflowFindings([object[]] $Jobs) {
         $findings.Add('frontend-unit-upload-step')
     }
     else {
-        if (-not [string]::Equals([string]$uploadStep[0].Uses, 'actions/upload-artifact@v4', [StringComparison]::Ordinal)) { $findings.Add('frontend-unit-upload-action') }
+        if (-not [string]::Equals([string]$uploadStep[0].Uses, 'actions/upload-artifact@v6', [StringComparison]::Ordinal)) { $findings.Add('frontend-unit-upload-action') }
         if (-not $uploadStep[0].AlwaysRuns) { $findings.Add('frontend-unit-upload-condition') }
         $uploadPaths = @(([string]$uploadStep[0].With['path']).Split("`n", [StringSplitOptions]::RemoveEmptyEntries))
         $expectedUploadPaths = @(
@@ -2291,7 +2291,7 @@ jobs:
       - name: Upload frontend unit test shard evidence
         timeout-minutes: 5
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           path: |
             frontend/apps/*/artifacts/test-results/*.xml
@@ -2308,7 +2308,7 @@ jobs:
         @{ Name = 'test-pipeline'; Old = '          pnpm -C frontend --filter "${{ matrix.name }}" test'; New = '          pnpm -C frontend --filter "${{ matrix.name }}" test | tee output.log'; Expected = 'frontend-unit-test-pipeline' },
         @{ Name = 'unhandled-errors-ignored'; Old = '          --reporter=default'; New = "          --reporter=default`n          --dangerouslyIgnoreUnhandledErrors"; Expected = 'frontend-unit-test-unhandled-errors' },
         @{ Name = 'upload-step-renamed'; Old = '      - name: Upload frontend unit test shard evidence'; New = '      - name: Upload frontend unit test shard evidence missing'; Expected = 'frontend-unit-upload-step' },
-        @{ Name = 'upload-action-downgraded'; Old = '        uses: actions/upload-artifact@v4'; New = '        uses: actions/upload-artifact@v3'; Expected = 'frontend-unit-upload-action' },
+        @{ Name = 'upload-action-downgraded'; Old = '        uses: actions/upload-artifact@v6'; New = '        uses: actions/upload-artifact@v3'; Expected = 'frontend-unit-upload-action' },
         @{ Name = 'upload-success-gated'; Old = '        if: always()'; New = '        if: success()'; Expected = 'frontend-unit-upload-condition' },
         @{ Name = 'upload-path-moved'; Old = "          path: |`n            frontend/apps/*/artifacts/test-results/*.xml`n            frontend/apps/*/artifacts/test-results/*.json`n            frontend/packages/*/artifacts/test-results/*.xml`n            frontend/packages/*/artifacts/test-results/*.json`n          if-no-files-found: error"; New = "          path: artifacts/unrelated.txt`n          if-no-files-found: error`n      - name: Unrelated evidence note`n        timeout-minutes: 1`n        run: echo frontend/apps/*/artifacts/test-results/*.xml frontend/apps/*/artifacts/test-results/*.json frontend/packages/*/artifacts/test-results/*.xml frontend/packages/*/artifacts/test-results/*.json"; Expected = 'frontend-unit-upload-path' },
         @{ Name = 'recursive-node-modules-glob'; Old = '            frontend/apps/*/artifacts/test-results/*.xml'; New = '            frontend/**/artifacts/test-results/*.xml'; Expected = 'frontend-unit-upload-path' },

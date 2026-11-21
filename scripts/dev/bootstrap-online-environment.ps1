@@ -139,7 +139,7 @@ function Test-DotNet10Sdk {
     }
 }
 
-function Get-NodeMajorVersion {
+function Get-NodeVersion {
     if (-not (Test-CommandAvailable -Name 'node')) {
         return $null
     }
@@ -147,8 +147,8 @@ function Get-NodeMajorVersion {
     try {
         $command = (Get-Command 'node' -ErrorAction Stop).Source
         $result = Invoke-NativeCommandOutput -Command $command -Arguments @('--version') -WorkingDirectory $root -Name 'bootstrap-node-version'
-        if ($result.Stdout -match 'v(?<major>\d+)\.') {
-            return [int] $Matches['major']
+        if ($result.Stdout -match '^v(?<version>\d+\.\d+\.\d+)\s*$') {
+            return [version] $Matches['version']
         }
     }
     catch {
@@ -444,13 +444,14 @@ function Ensure-ConnectedPrerequisites {
         Invoke-WingetInstall -Id 'Microsoft.DotNet.SDK.10' -Name 'dotnet-sdk-10'
     }
 
-    $nodeMajor = Get-NodeMajorVersion
-    if ($null -eq $nodeMajor -or $nodeMajor -lt 22) {
+    $minimumNodeVersion = [version] (Get-Content -LiteralPath (Join-Path $root '.node-version') -Raw).Trim()
+    $nodeVersion = Get-NodeVersion
+    if ($null -eq $nodeVersion -or $nodeVersion.Major -ne $minimumNodeVersion.Major -or $nodeVersion -lt $minimumNodeVersion) {
         if (-not $InstallMissing) {
-            throw 'Node.js >= 22 is required. Re-run with -InstallMissing on Windows or install Node.js manually.'
+            throw "Node.js $($minimumNodeVersion.Major).x ($minimumNodeVersion or newer) is required. Re-run with -InstallMissing on Windows or install Node.js manually."
         }
 
-        Invoke-WingetInstall -Id 'OpenJS.NodeJS' -Name 'nodejs'
+        Invoke-WingetInstall -Id "OpenJS.NodeJS.$($minimumNodeVersion.Major)" -Name 'nodejs'
     }
 
     Ensure-Pnpm

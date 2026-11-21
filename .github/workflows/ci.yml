@@ -174,7 +174,7 @@ jobs:
     steps:
       - name: Checkout full history for impact observation
         timeout-minutes: 3
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -214,7 +214,7 @@ jobs:
 
       - name: Upload CI impact plans
         timeout-minutes: 3
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           include-hidden-files: true
           name: ${{ steps.impact-artifact-identity.outputs.artifact-name }}
@@ -275,7 +275,7 @@ jobs:
     steps:
       - name: Checkout
         timeout-minutes: 3
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Ruby for structured workflow validation
         timeout-minutes: 5
@@ -310,11 +310,11 @@ jobs:
     steps:
       - name: Checkout
         timeout-minutes: 3
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup .NET
         timeout-minutes: 5
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         env:
           DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
@@ -322,7 +322,7 @@ jobs:
 
       - name: Cache NuGet packages
         timeout-minutes: 8
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props', 'infra/aspire/**/*.csproj', 'infra/aspire/**/*.props') }}
@@ -384,7 +384,7 @@ jobs:
       - name: Upload BusinessGateway shard evidence
         timeout-minutes: 5
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           include-hidden-files: true
           name: test-evidence-backend-shard-1-${{ github.run_id }}-${{ github.run_attempt }}
@@ -412,11 +412,11 @@ jobs:
     steps:
       - name: Checkout
         timeout-minutes: 3
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup .NET
         timeout-minutes: 5
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         env:
           DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
@@ -424,7 +424,7 @@ jobs:
 
       - name: Cache NuGet packages
         timeout-minutes: 8
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
@@ -486,7 +486,7 @@ jobs:
       - name: Upload platform shard evidence
         timeout-minutes: 5
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           include-hidden-files: true
           name: test-evidence-backend-shard-2-${{ github.run_id }}-${{ github.run_attempt }}
@@ -506,11 +506,11 @@ jobs:
     steps:
       - name: Checkout
         timeout-minutes: 3
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup .NET
         timeout-minutes: 5
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         env:
           DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
@@ -518,7 +518,7 @@ jobs:
 
       - name: Cache NuGet packages
         timeout-minutes: 8
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
@@ -580,7 +580,7 @@ jobs:
       - name: Upload business core A shard evidence
         timeout-minutes: 5
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           include-hidden-files: true
           name: test-evidence-backend-shard-3-${{ github.run_id }}-${{ github.run_attempt }}
@@ -602,11 +602,11 @@ jobs:
     steps:
       - name: Checkout
         timeout-minutes: 3
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup .NET
         timeout-minutes: 5
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         env:
           DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
@@ -614,7 +614,7 @@ jobs:
 
       - name: Cache NuGet packages
         timeout-minutes: 8
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
@@ -676,7 +676,7 @@ jobs:
       - name: Upload business core B shard evidence
         timeout-minutes: 5
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           include-hidden-files: true
           name: test-evidence-backend-shard-4-${{ github.run_id }}-${{ github.run_attempt }}
@@ -715,11 +715,11 @@ jobs:
     steps:
       - name: Checkout
         timeout-minutes: 3
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup .NET
         timeout-minutes: 5
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         env:
           DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
@@ -727,7 +727,7 @@ jobs:
 
       - name: Cache NuGet packages
         timeout-minutes: 8
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
@@ -811,7 +811,7 @@ jobs:
       - name: Upload PostgreSQL normalized evidence
         timeout-minutes: 5
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           include-hidden-files: true
           name: test-evidence-postgres-${{ github.run_id }}-${{ github.run_attempt }}
@@ -822,7 +822,7 @@ jobs:
       - name: Upload PostgreSQL dependency summary
         timeout-minutes: 5
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           include-hidden-files: true
           name: postgres-dependency-summary-${{ github.run_id }}-${{ github.run_attempt }}
@@ -868,11 +868,11 @@ jobs:
     steps:
       - name: Checkout
         timeout-minutes: 3
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup .NET
         timeout-minutes: 5
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         env:
           DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
@@ -880,7 +880,7 @@ jobs:
 
       - name: Cache NuGet packages
         timeout-minutes: 8
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
@@ -1068,7 +1068,7 @@ jobs:
       - name: Upload Redis/CAP normalized evidence
         timeout-minutes: 5
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           include-hidden-files: true
           name: test-evidence-redis-cap-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1079,7 +1079,7 @@ jobs:
       - name: Upload Redis/CAP dependency summary
         timeout-minutes: 5
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           include-hidden-files: true
           name: redis-cap-dependency-summary-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1105,11 +1105,11 @@ jobs:
     steps:
       - name: Checkout
         timeout-minutes: 3
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup .NET
         timeout-minutes: 5
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         env:
           DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
@@ -1117,7 +1117,7 @@ jobs:
 
       - name: Cache NuGet packages
         timeout-minutes: 8
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
@@ -1165,15 +1165,16 @@ jobs:
 
       - name: Setup pnpm
         timeout-minutes: 3
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
         with:
           package_json_file: frontend/package.json
 
       - name: Setup Node.js
         timeout-minutes: 5
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version-file: .node-version
+          package-manager-cache: false
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
@@ -1328,7 +1329,7 @@ jobs:
       - name: Upload FullChain normalized evidence
         timeout-minutes: 5
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           include-hidden-files: true
           name: test-evidence-full-chain-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1339,7 +1340,7 @@ jobs:
       - name: Upload FullChain dependency summary
         timeout-minutes: 5
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           include-hidden-files: true
           name: full-chain-dependency-summary-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1350,7 +1351,7 @@ jobs:
       - name: Upload FullChain failure diagnostics
         timeout-minutes: 5
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           include-hidden-files: true
           name: full-chain-failure-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1394,11 +1395,11 @@ jobs:
     steps:
       - name: Checkout
         timeout-minutes: 3
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup .NET
         timeout-minutes: 5
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         env:
           DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
@@ -1406,7 +1407,7 @@ jobs:
 
       - name: Cache NuGet packages
         timeout-minutes: 8
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props', 'connector-hosts/**/*.csproj', 'connector-hosts/**/*.props') }}
@@ -1467,7 +1468,7 @@ jobs:
       - name: Upload connector host test evidence
         timeout-minutes: 5
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           include-hidden-files: true
           name: test-evidence-connector-host-${{ github.run_id }}-${{ github.run_attempt }}
@@ -1489,19 +1490,20 @@ jobs:
     steps:
       - name: Checkout
         timeout-minutes: 3
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup pnpm
         timeout-minutes: 3
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
         with:
           package_json_file: frontend/package.json
 
       - name: Setup Node.js
         timeout-minutes: 5
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version-file: .node-version
+          package-manager-cache: false
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
@@ -1548,7 +1550,7 @@ jobs:
       - name: Upload frontend unit test shard evidence
         timeout-minutes: 5
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: frontend-unit-test-evidence-${{ matrix.slug }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -1593,19 +1595,20 @@ jobs:
     steps:
       - name: Checkout
         timeout-minutes: 3
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup pnpm
         timeout-minutes: 3
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
         with:
           package_json_file: frontend/package.json
 
       - name: Setup Node.js
         timeout-minutes: 5
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version-file: .node-version
+          package-manager-cache: false
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
@@ -1656,19 +1659,20 @@ jobs:
     steps:
       - name: Checkout
         timeout-minutes: 3
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup pnpm
         timeout-minutes: 3
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
         with:
           package_json_file: frontend/package.json
 
       - name: Setup Node.js
         timeout-minutes: 5
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version-file: .node-version
+          package-manager-cache: false
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
@@ -1745,7 +1749,7 @@ jobs:
       - name: Upload Business Console browser diagnostics
         timeout-minutes: 5
         if: failure() && steps.business-console-browser-tests.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: business-console-browser-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/issue-2098-tooling-browser
@@ -1793,11 +1797,11 @@ jobs:
     steps:
       - name: Checkout
         timeout-minutes: 3
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup .NET
         timeout-minutes: 5
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         env:
           DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:
@@ -1805,7 +1809,7 @@ jobs:
 
       - name: Cache NuGet packages
         timeout-minutes: 8
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: ${{ runner.os }}-nuget-${{ hashFiles('NuGet.config', 'backend/**/*.csproj', 'backend/**/*.props') }}
@@ -1814,15 +1818,16 @@ jobs:
 
       - name: Setup pnpm
         timeout-minutes: 3
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
         with:
           package_json_file: frontend/package.json
 
       - name: Setup Node.js
         timeout-minutes: 5
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version-file: .node-version
+          package-manager-cache: false
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
@@ -1861,11 +1866,11 @@ jobs:
     steps:
       - name: Checkout
         timeout-minutes: 3
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup .NET
         timeout-minutes: 5
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         env:
           DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
         with:

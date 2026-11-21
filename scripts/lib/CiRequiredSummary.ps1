@@ -139,7 +139,7 @@ test "$v1_result" = "success"
                     Get-NervCiRequiredSummaryStringValue -Object $stepWith.Value -PropertyName 'name'
                 }
                 else { '' }
-                if ($stepUses -cmatch '^actions/upload-artifact@v(?:4|5)$' -and
+                if ($stepUses -cmatch '^actions/upload-artifact@v(?:4|5|6)$' -and
                     $artifactName.Contains('test-evidence-full-chain-', [StringComparison]::Ordinal)) {
                     $formalEvidenceArtifacts.Add($jobName)
                 }
