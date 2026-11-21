@@ -20,9 +20,7 @@ defineProps<{
     <span class="nv-scr-bp-c bl" />
     <span class="nv-scr-bp-c br" />
     <div v-if="title || $slots.title" class="nv-scr-bp-h">
-      <span class="nv-scr-bp-t"
-        ><slot name="title">{{ title }}</slot></span
-      >
+      <span class="nv-scr-bp-t"><slot name="title">{{ title }}</slot></span>
     </div>
     <div class="nv-scr-bp-body"><slot /></div>
   </section>

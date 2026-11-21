@@ -246,9 +246,7 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
                     }}<small>/ {{ nf.format(board.output.plan) }} 件</small>
                   </div>
                   <div class="lb-out-sub">
-                    <span
-                      >良品 <b class="ok">{{ nf.format(board.output.good) }}</b></span
-                    >
+                    <span>良品 <b class="ok">{{ nf.format(board.output.good) }}</b></span>
                     <span
                       >报废
                       <b :class="{ bad: board.output.scrap > 0 }">{{ board.output.scrap }}</b></span
@@ -380,9 +378,7 @@ function wTipSet(i: number, v: number, e: MouseEvent) {
                       >完工 <b>{{ nf.format(board.wo.qtyDone) }}</b> /
                       {{ nf.format(board.wo.qtyPlan) }}</span
                     >
-                    <span
-                      >工序间在制 <b>{{ nf.format(board.wo.wip) }}</b></span
-                    >
+                    <span>工序间在制 <b>{{ nf.format(board.wo.wip) }}</b></span>
                   </div>
                 </div>
                 <div class="lb-due">

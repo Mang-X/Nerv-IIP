@@ -54,9 +54,7 @@ const uid = `oeh-${Math.random().toString(36).slice(2, 8)}`
   <div class="nv-scr-oeh">
     <div class="nv-scr-oeh-cap">{{ label }}</div>
     <div class="nv-scr-oeh-row">
-      <div class="nv-scr-oeh-val">
-        {{ value }}<small v-if="unit">{{ unit }}</small>
-      </div>
+      <div class="nv-scr-oeh-val">{{ value }}<small v-if="unit">{{ unit }}</small></div>
       <div v-if="delta" class="nv-scr-oeh-delta" :class="{ down: deltaDown }">{{ delta }}</div>
     </div>
     <svg

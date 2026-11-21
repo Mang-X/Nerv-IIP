@@ -291,12 +291,8 @@ const uid = Math.random().toString(36).slice(2, 8)
           }"
         >
           <span class="nv-scr-tc-c-t">{{ cross.label }}</span>
-          <span class="nv-scr-tc-c-a"
-            >● {{ actualLabel }}<b>{{ cross.aVal }}</b></span
-          >
-          <span class="nv-scr-tc-c-p"
-            >┄ {{ planLabel }}<b>{{ cross.pVal }}</b></span
-          >
+          <span class="nv-scr-tc-c-a">● {{ actualLabel }}<b>{{ cross.aVal }}</b></span>
+          <span class="nv-scr-tc-c-p">┄ {{ planLabel }}<b>{{ cross.pVal }}</b></span>
           <span v-for="sv in cross.sVals" :key="sv.label" class="nv-scr-tc-c-s">
             <i :style="{ background: sv.color }" aria-hidden="true" />{{ sv.label
             }}<b>{{ sv.val }}</b>

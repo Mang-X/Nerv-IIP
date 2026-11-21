@@ -224,9 +224,7 @@ const devSummary = computed(() => {
             </div>
             <div class="wb-cell">
               <dt><Recycle :size="17" class="wb-cell-ic" />报废 / 返修</dt>
-              <dd>
-                {{ board.quality.scrap }}<small>/ {{ board.quality.rework }} 件</small>
-              </dd>
+              <dd>{{ board.quality.scrap }}<small>/ {{ board.quality.rework }} 件</small></dd>
             </div>
             <div class="wb-cell">
               <dt><OctagonAlert :size="17" class="wb-cell-ic" />当班停机</dt>

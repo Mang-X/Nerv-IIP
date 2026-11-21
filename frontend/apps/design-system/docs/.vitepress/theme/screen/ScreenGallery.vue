@@ -273,12 +273,7 @@ const tones = { run: '运行中', idle: '待机', alarm: '报警' } as const
   padding: 26px 30px 60px;
   color: var(--nv-scr-text);
   font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    'PingFang SC',
-    'Microsoft YaHei',
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei',
     sans-serif;
 }
 .g-cat {

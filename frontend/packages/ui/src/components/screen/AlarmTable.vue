@@ -75,9 +75,7 @@ withDefaults(
 
 <template>
   <ScreenPanel :title="title" class="nv-scr-at">
-    <template v-if="more" #extra
-      ><span class="nv-scr-at-more">{{ more }}</span></template
-    >
+    <template v-if="more" #extra><span class="nv-scr-at-more">{{ more }}</span></template>
     <div class="nv-scr-at-body nv-scr-scroll">
       <table class="nv-scr-at-tbl">
         <thead>

@@ -24,7 +24,7 @@ type WorkerRegistry = ReturnType<typeof useWorkerRegistry>
 declare const resourceActions: ResourceActions
 declare const workerRegistry: WorkerRegistry
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+// eslint-disable-next-line @typescript-eslint/no-unused-expressions
 ;() => {
   // 合法：带上业务原因。
   void resourceActions.disable('SKU-001', { reason: '该规格已被新版图纸替代' })

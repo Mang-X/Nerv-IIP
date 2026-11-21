@@ -12,7 +12,9 @@ export default defineConfig({
       '@dhx/trial-gantt/codebase/dhtmlxgantt.css': fileURLToPath(
         new URL('./vendor/dhtmlx/dhtmlxgantt.css', import.meta.url),
       ),
-      '@dhx/trial-gantt': fileURLToPath(new URL('./vendor/dhtmlx/dhtmlxgantt.es.js', import.meta.url)),
+      '@dhx/trial-gantt': fileURLToPath(
+        new URL('./vendor/dhtmlx/dhtmlxgantt.es.js', import.meta.url),
+      ),
     },
   },
   test: {

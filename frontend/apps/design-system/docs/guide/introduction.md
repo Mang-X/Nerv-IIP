@@ -4,12 +4,12 @@ NvUI 是 Nerv-IIP 的设计系统。这里统一查阅视觉规范、令牌、�
 
 ## 从场景开始
 
-| 场景 | 设计与组件 |
-| --- | --- |
-| 桌面 PC | [排版与布局](/foundations/desktop-layout) · [桌面组件](/components/desktop/) · [完整示例](/components/desktop/gallery) |
-| 移动 PDA | [移动组件](/components/mobile/) · [完整示例](/components/mobile/gallery) |
-| 车间一体机 | [工位组件](/components/touch/) · [工位看板](/components/board) |
-| 挂墙大屏 | [大屏组件](/components/screen/) · [完整示例](/components/screen/gallery) |
+| 场景       | 设计与组件                                                                                                             |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 桌面 PC    | [排版与布局](/foundations/desktop-layout) · [桌面组件](/components/desktop/) · [完整示例](/components/desktop/gallery) |
+| 移动 PDA   | [移动组件](/components/mobile/) · [完整示例](/components/mobile/gallery)                                               |
+| 车间一体机 | [工位组件](/components/touch/) · [工位看板](/components/board)                                                         |
+| 挂墙大屏   | [大屏组件](/components/screen/) · [完整示例](/components/screen/gallery)                                               |
 
 ## 设计与实现
 

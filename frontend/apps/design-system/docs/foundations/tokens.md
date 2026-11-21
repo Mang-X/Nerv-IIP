@@ -4,13 +4,13 @@
 
 ## 定义位置
 
-| 归属 | 定义与消费 |
-| --- | --- |
-| 共享契约 | [theme.css](https://github.com/Mang-X/Nerv-IIP/blob/main/frontend/packages/ui/src/styles/theme.css) 定义 shadcn 契约（如 `--background`、`--radius`）和项目共享扩展（如 `--nv-brand`、`--nv-ease-out-quart`）。应用样式入口负责装配，Tailwind `@theme inline` 把语义映射为工具类。 |
-| 动态主题 | [useTheme.ts](https://github.com/Mang-X/Nerv-IIP/blob/main/frontend/packages/ui/src/composables/useTheme.ts) 定义主题预设，和[色彩预览](/foundations/color)使用同一份数据。 |
-| 移动 PDA | 沿用共享语义，[mobile.css](https://github.com/Mang-X/Nerv-IIP/blob/main/frontend/packages/ui-mobile/src/styles/mobile.css) 提供安全区、触控与行高工具类，组件变体定义实际控件尺寸。移动独有令牌使用 `--nv-m-*`。 |
-| 车间一体机 | 沿用共享语义，触控组件独立定义尺寸。工位独有令牌使用 `--nv-t-*`。 |
-| 挂墙大屏 | [tokens.css](https://github.com/Mang-X/Nerv-IIP/blob/main/frontend/packages/ui/src/components/screen/tokens.css) 定义 `--nv-scr-*`，涵盖大屏专用表面、色彩、边线、文字、图表、圆角和动效。 |
+| 归属       | 定义与消费                                                                                                                                                                                                                                                                         |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 共享契约   | [theme.css](https://github.com/Mang-X/Nerv-IIP/blob/main/frontend/packages/ui/src/styles/theme.css) 定义 shadcn 契约（如 `--background`、`--radius`）和项目共享扩展（如 `--nv-brand`、`--nv-ease-out-quart`）。应用样式入口负责装配，Tailwind `@theme inline` 把语义映射为工具类。 |
+| 动态主题   | [useTheme.ts](https://github.com/Mang-X/Nerv-IIP/blob/main/frontend/packages/ui/src/composables/useTheme.ts) 定义主题预设，和[色彩预览](/foundations/color)使用同一份数据。                                                                                                        |
+| 移动 PDA   | 沿用共享语义，[mobile.css](https://github.com/Mang-X/Nerv-IIP/blob/main/frontend/packages/ui-mobile/src/styles/mobile.css) 提供安全区、触控与行高工具类，组件变体定义实际控件尺寸。移动独有令牌使用 `--nv-m-*`。                                                                   |
+| 车间一体机 | 沿用共享语义，触控组件独立定义尺寸。工位独有令牌使用 `--nv-t-*`。                                                                                                                                                                                                                  |
+| 挂墙大屏   | [tokens.css](https://github.com/Mang-X/Nerv-IIP/blob/main/frontend/packages/ui/src/components/screen/tokens.css) 定义 `--nv-scr-*`，涵盖大屏专用表面、色彩、边线、文字、图表、圆角和动效。                                                                                         |
 
 场景组件使用所属场景的语义。跨场景共用同一语义和取值时，由场景 token 引用共享定义，例如 `--nv-scr-ease` 引用 `--nv-ease-out-quart`。命名与层叠规则见 [ADR 0020](https://github.com/Mang-X/Nerv-IIP/blob/main/docs/adr/2026-07-07-0020-nvui-naming-token-namespaces-and-style-isolation.md)。
 
@@ -61,12 +61,12 @@
 
 ## 尺寸与密度
 
-| 场景 | 选择依据 |
-| --- | --- |
-| 桌面 PC | 优先保证信息密度和键盘可达性。按 [桌面排版与布局](/foundations/desktop-layout) 和 [NvButton](/components/desktop/button) 选择尺寸。 |
-| 移动 PDA | 依据单手操作、触控目标和安全区选尺寸。见 [NvMobileButton](/components/mobile/button) 和 [AppShellMobile](/components/mobile/app-shell-mobile)。 |
-| 车间一体机 | 面向站立操作及戴手套使用，优先选 [NvTouchButton](/components/touch/touch-button) 等大触控组件。 |
-| 挂墙大屏 | 依据现场视距、画布缩放和指标层级保证远读。见 [大屏概览](/components/screen/) 和 [ScreenScaler](/components/screen/screen-scaler)。 |
+| 场景       | 选择依据                                                                                                                                        |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 桌面 PC    | 优先保证信息密度和键盘可达性。按 [桌面排版与布局](/foundations/desktop-layout) 和 [NvButton](/components/desktop/button) 选择尺寸。             |
+| 移动 PDA   | 依据单手操作、触控目标和安全区选尺寸。见 [NvMobileButton](/components/mobile/button) 和 [AppShellMobile](/components/mobile/app-shell-mobile)。 |
+| 车间一体机 | 面向站立操作及戴手套使用，优先选 [NvTouchButton](/components/touch/touch-button) 等大触控组件。                                                 |
+| 挂墙大屏   | 依据现场视距、画布缩放和指标层级保证远读。见 [大屏概览](/components/screen/) 和 [ScreenScaler](/components/screen/screen-scaler)。              |
 
 ## 新增令牌
 

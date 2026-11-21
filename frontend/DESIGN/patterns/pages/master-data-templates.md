@@ -52,7 +52,7 @@ BusinessLayout
      （#1591 已收敛；一页多张表共用同一个，`request(row, actions, label)` 切目标）。
      契约见 `pages/master-data/lifecycleDialogSingleInstance.{contract,runtime}.test.ts`。
 4. **说人话**：UI 不暴露工程语言（`operationId / code(术语) / resourceType / sourceSystem /
-#号 / organizationId / environmentId / demo / seed / mock`）；码值显示**中文**（英文
+   #号 / organizationId / environmentId / demo / seed / mock`）；码值显示**中文**（英文
    种子用 `masterDataReference.ts` 的 `mergeReferenceOptions` 常量**兜底覆盖**）。术语
    对照见产品文档 §6.7。
 5. **空状态分两种**：
@@ -167,7 +167,7 @@ NvPageHeader + [NvSectionCards 可选] + NvToolbar + NvDataTable（内建分页�
 - 列序固定（§0 第 1 条）：编码 ｜ 名称 ｜ typed 列 ｜ 状态 ｜ 更新时间 ｜ 操作。
 - **NvSectionCards 非默认**：维护台一般不放（总量已在 NvPageHeader count）；仅当有能驱动
   决策 / 暴露问题的少量业务指标才加，并按 §0 判定选卡。**禁止** `本页启用 / 本页停用 /
-后端分页总数 / 树的根 / 当前分页` 等机械元数据；value 用总量，hint 说人话或留空。
+  后端分页总数 / 树的根 / 当前分页` 等机械元数据；value 用总量，hint 说人话或留空。
 - NvToolbar：搜索（如后端无 keyword，占位「在当前页内筛选 {字段}」+ hint「全量搜索即将
   上线」）；`#filters` 放状态/分类 NvSelect。
 - 分页 `total` 始终用**服务端 total**（不是当前页长度）；分页用 `usePagedList` / 各域

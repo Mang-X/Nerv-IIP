@@ -102,11 +102,7 @@ const plan = [140, 420, 700, 900, 1010, 1080, 1150, 1180, 1220, 1260, 1320, 1380
 曲线、图例色点与悬停卡使用同一 `series[].color`，可以传入场景令牌。虚线用来展示管控限时，通过 `plan-color` 单独指定颜色，它同时影响悬停卡的对应行。
 
 ```vue
-<NvScreenTrendChart
-  :plan="controlLimits"
-  plan-label="管控限"
-  plan-color="var(--nv-scr-red)"
-/>
+<NvScreenTrendChart :plan="controlLimits" plan-label="管控限" plan-color="var(--nv-scr-red)" />
 ```
 
 ## 属性
@@ -115,7 +111,7 @@ const plan = [140, 420, 700, 900, 1010, 1080, 1150, 1180, 1220, 1260, 1320, 1380
 | --------------------------- | -------------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------- |
 | `actual`                    | 各 x 刻度的实际产量(青色实线)                | `number[]`                                                   | 内置示例序列                                                      |
 | `plan`                      | 各 x 刻度的计划产量(靛色虚线)                | `number[]`                                                   | 内置示例序列                                                      |
-| `planColor` | 虚线及悬停卡对应行的 CSS 色值 | `string` | `var(--nv-scr-indigo)` |
+| `planColor`                 | 虚线及悬停卡对应行的 CSS 色值                | `string`                                                     | `var(--nv-scr-indigo)`                                            |
 | `series`                    | 附加对比序列(细线 + 图例色点 + 悬停逐条读数) | `{ label, color, data }[]`                                   | —                                                                 |
 | `ranges`                    | 真实时间范围切换(经 `v-model:range`)         | `{ label, value }[]`                                         | —                                                                 |
 | `hoverLabels`               | 每个数据点的悬停标签(与 `actual` 等长)       | `string[]`                                                   | 按 24h 均匀推算                                                   |

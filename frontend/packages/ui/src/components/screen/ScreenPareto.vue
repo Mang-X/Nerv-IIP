@@ -64,9 +64,7 @@ function tone(i: number): 't1' | 't2' | 't3' {
       <div class="nv-scr-pa-cum">Σ {{ cums[i].toFixed(1) }}%</div>
     </div>
     <div class="nv-scr-pa-sum">
-      <span
-        >TOP{{ items.length }} 合计 <b>{{ topSum.toFixed(1) }}%</b></span
-      >
+      <span>TOP{{ items.length }} 合计 <b>{{ topSum.toFixed(1) }}%</b></span>
       <span v-if="total" class="nv-scr-pa-tail"
         >长尾 {{ tailCount }} {{ unit }} · {{ (100 - topSum).toFixed(1) }}%</span
       >

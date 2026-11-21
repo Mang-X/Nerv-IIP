@@ -257,15 +257,9 @@ const trendPin = computed(() => {
             </div>
           </NvScreenScrollArea>
           <div class="qn-summary">
-            <span
-              >待评审 <b class="amber">{{ statusCount.review }}</b></span
-            >
-            <span
-              >处置中 <b class="cyan">{{ statusCount.disposing }}</b></span
-            >
-            <span
-              >待验证 <b class="green">{{ statusCount.verify }}</b></span
-            >
+            <span>待评审 <b class="amber">{{ statusCount.review }}</b></span>
+            <span>处置中 <b class="cyan">{{ statusCount.disposing }}</b></span>
+            <span>待验证 <b class="green">{{ statusCount.verify }}</b></span>
             <span class="qn-flex" />
             <span :class="{ 'qn-sla-bad': board.kpis.overdueNcr > 0 }">
               超期 &gt;{{ NCR_SLA_HOURS }}h · {{ board.kpis.overdueNcr }} 条
@@ -299,16 +293,12 @@ const trendPin = computed(() => {
             </template>
             <div class="qb-tri-in">
               <div v-for="l in board.layers" :key="l.key" class="qt-cell">
-                <dt class="qt-t">
-                  {{ l.label }} <small>{{ l.code }}</small>
-                </dt>
+                <dt class="qt-t">{{ l.label }} <small>{{ l.code }}</small></dt>
                 <div class="qt-v" :class="worstLayerKey === l.key ? 'warn' : 'ok'">
                   <span class="qb-num">{{ l.passRate }}<small>%</small></span>
                   <i class="qb-score-line" aria-hidden="true" />
                 </div>
-                <p class="qt-sub">
-                  合格 <b>{{ l.lotsPassed }}</b> / {{ l.lotsDone }} 批
-                </p>
+                <p class="qt-sub">合格 <b>{{ l.lotsPassed }}</b> / {{ l.lotsDone }} 批</p>
                 <p class="qt-sub2">
                   件不良
                   <b class="qt-def" :class="{ bad: l.pieceDefectPct > l.limitPct }">
@@ -360,9 +350,7 @@ const trendPin = computed(() => {
             <div class="qb-ib">
               <div v-for="l in board.layers" :key="l.key" class="ib-group">
                 <div class="ib-top">
-                  <span class="ib-label"
-                    >{{ l.label }} <small>{{ l.code }}</small></span
-                  >
+                  <span class="ib-label">{{ l.label }} <small>{{ l.code }}</small></span>
                   <b class="ib-n" :class="{ warn: hotBacklogKey === l.key && l.backlog > 0 }">
                     {{ l.backlog }}<small> 项</small>
                   </b>

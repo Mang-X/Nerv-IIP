@@ -412,8 +412,7 @@ function selectTask(task: ScheduleTask) {
                 :key="index"
                 class="nv-timeline-task__fact"
               >
-                <span>{{ label }}</span
-                ><span>{{ value }}</span>
+                <span>{{ label }}</span><span>{{ value }}</span>
               </span>
               <span class="nv-timeline-task__meta">
                 <span>{{ taskTime(positioned.task) }}</span>

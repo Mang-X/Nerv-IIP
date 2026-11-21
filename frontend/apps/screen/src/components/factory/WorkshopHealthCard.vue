@@ -35,12 +35,8 @@ const nf = new Intl.NumberFormat('en-US')
     <div class="whc-rate">
       <span class="whc-rate-v" :class="cell.health">{{ cell.rate }}<small>%</small></span>
       <span class="whc-rate-d">
-        <span
-          >实际 <b>{{ nf.format(cell.actualQty) }}</b></span
-        >
-        <span
-          >计划 <b>{{ nf.format(cell.planQty) }}</b></span
-        >
+        <span>实际 <b>{{ nf.format(cell.actualQty) }}</b></span>
+        <span>计划 <b>{{ nf.format(cell.planQty) }}</b></span>
       </span>
     </div>
 

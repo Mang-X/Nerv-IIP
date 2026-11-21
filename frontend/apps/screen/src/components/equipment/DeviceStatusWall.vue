@@ -202,9 +202,7 @@ function pick(d: DeviceCell) {
     <!-- 按车间：分组紧凑格，滚动 -->
     <div v-else-if="view === 'workshop'" class="dsw dsw--groups nv-scr-scroll" @scroll="hideTip">
       <section v-for="[name, list] in groupBy((d) => d.workshopName)" :key="name" class="dsw-group">
-        <h6 class="dsw-group-t">
-          {{ name }} <small>{{ list.length }} 台</small>
-        </h6>
+        <h6 class="dsw-group-t">{{ name }} <small>{{ list.length }} 台</small></h6>
         <div class="dsw-group-grid">
           <button
             v-for="d in list"
@@ -228,9 +226,7 @@ function pick(d: DeviceCell) {
     <!-- 按产线：每线一组，chip 流式换行 -->
     <div v-else class="dsw dsw--lines nv-scr-scroll" @scroll="hideTip">
       <section v-for="[name, list] in groupBy((d) => d.lineName)" :key="name" class="dsw-linegroup">
-        <h6 class="dsw-group-t">
-          {{ name }} <small>{{ list.length }} 台</small>
-        </h6>
+        <h6 class="dsw-group-t">{{ name }} <small>{{ list.length }} 台</small></h6>
         <div class="dsw-chips">
           <button
             v-for="d in list"

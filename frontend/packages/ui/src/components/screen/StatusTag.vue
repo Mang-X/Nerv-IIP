@@ -21,7 +21,7 @@ const props = withDefaults(
 const color = computed(
   () =>
     (
-      ({
+      {
         run: 'green',
         idle: 'amber',
         alarm: 'red',
@@ -29,7 +29,7 @@ const color = computed(
         green: 'green',
         amber: 'amber',
         red: 'red',
-      }) as const
+      } as const
     )[props.tone],
 )
 </script>

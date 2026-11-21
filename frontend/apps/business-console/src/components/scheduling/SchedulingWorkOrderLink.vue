@@ -23,7 +23,5 @@ const target = computed(() => {
   <RouterLink v-if="target" :to="target" class="text-primary hover:underline" @click.stop>
     <slot>{{ workOrderId }}</slot>
   </RouterLink>
-  <span v-else
-    ><slot>{{ workOrderId }}</slot></span
-  >
+  <span v-else><slot>{{ workOrderId }}</slot></span>
 </template>
