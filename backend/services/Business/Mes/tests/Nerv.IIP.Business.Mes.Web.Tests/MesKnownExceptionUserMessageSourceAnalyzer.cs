@@ -7,21 +7,9 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 
 public sealed record MesSourceDocument(string Path, string Text);
 
-public sealed record MesKnownExceptionSite(
-    string Path,
-    string TypeName,
-    string MemberName,
-    int DirectKnownExceptionCount,
-    MesKnownExceptionSiteKind Kind,
-    string Reason)
+public sealed record MesExcludedMessageSite(string Path, string TypeName, string MemberName, string Reason)
 {
     public string Key => $"{Path}|{TypeName}|{MemberName}";
-}
-
-public enum MesKnownExceptionSiteKind
-{
-    Target,
-    Excluded,
 }
 
 public static class MesKnownExceptionUserMessageSourceAnalyzer
@@ -30,61 +18,9 @@ public static class MesKnownExceptionUserMessageSourceAnalyzer
     private const int InterpolationEstimatedLength = 12;
     private const int MaximumMessageLength = 60;
 
-    public static IReadOnlyList<MesKnownExceptionSite> Discover(
-        IReadOnlyCollection<MesSourceDocument> documents)
-    {
-        if (documents.Count == 0)
-        {
-            throw new InvalidOperationException("MES KnownException 源集合不能为空。");
-        }
-
-        var sourceTrees = ParseTrees(documents);
-        var compilation = CreateCompilation(sourceTrees);
-        var discovered = new Dictionary<string, MesKnownExceptionSite>(StringComparer.Ordinal);
-
-        foreach (var syntaxTree in sourceTrees)
-        {
-            var semanticModel = compilation.GetSemanticModel(syntaxTree);
-            foreach (var invocation in FindKnownExceptionInvocations(syntaxTree, semanticModel))
-            {
-                var member = FindMember(invocation);
-                var typeName = member?.AncestorsAndSelf()
-                    .OfType<TypeDeclarationSyntax>()
-                    .Select(type => type.Identifier.ValueText)
-                    .FirstOrDefault() ?? "<global>";
-                var memberName = GetMemberName(member);
-                var path = NormalizePath(syntaxTree.FilePath);
-                var key = $"{path}|{typeName}|{memberName}";
-                if (discovered.TryGetValue(key, out var existing))
-                {
-                    discovered[key] = existing with
-                    {
-                        DirectKnownExceptionCount = existing.DirectKnownExceptionCount + 1,
-                    };
-                }
-                else
-                {
-                    discovered[key] = new MesKnownExceptionSite(
-                        path,
-                        typeName,
-                        memberName,
-                        1,
-                        MesKnownExceptionSiteKind.Excluded,
-                        "discovered MES KnownException site");
-                }
-            }
-        }
-
-        return discovered.Values
-            .OrderBy(site => site.Path, StringComparer.Ordinal)
-            .ThenBy(site => site.TypeName, StringComparer.Ordinal)
-            .ThenBy(site => site.MemberName, StringComparer.Ordinal)
-            .ToArray();
-    }
-
     public static IReadOnlyList<string> Analyze(
         IReadOnlyCollection<MesSourceDocument> documents,
-        IReadOnlyCollection<MesKnownExceptionSite> excludedSites)
+        IReadOnlyCollection<MesExcludedMessageSite> excludedSites)
     {
         if (documents.Count == 0)
         {
