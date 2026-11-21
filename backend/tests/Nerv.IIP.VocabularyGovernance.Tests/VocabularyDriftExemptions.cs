@@ -200,8 +200,6 @@ internal static class VocabularyDriftExemptions
             $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Readiness/MesReadinessReasonCodes.cs"),
         ..Group("maintenance", "同值不同义：日历原因码子串启发式，非事件信封来源。",
             $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Scheduling/SchedulePlanCalendarProjector.cs"),
-        ..Group("maintenance", "同值不同义：维护窗口原因码（排产夹具数据），非事件信封来源。",
-            $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Scheduling/ShockAbsorberSchedulingFixture.cs"),
         // #1370 ③ 批次 D 已销账：维修工单种子的 openedBy 改引
         // IndustrialTelemetryIntegrationEventSources.IndustrialTelemetry——运行路径
         // （OpenWorkOrderWhenAlarmRaisedHandler）本就把该常量直接作为 openedBy 传入建单命令，
