@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readPageComponents } from '../readPageComponents'
 import { describe, expect, it } from 'vitest'
 
 /**
@@ -22,7 +23,7 @@ const rowActionsPath = join(pagesDir, '../../components/masterData/MasterDataRow
 function pageSources() {
   return readdirSync(pagesDir)
     .filter((name) => name.endsWith('.vue'))
-    .map((name) => ({ name, source: readFileSync(join(pagesDir, name), 'utf8') }))
+    .map((name) => ({ name, source: readPageComponents(join(pagesDir, name)) }))
 }
 
 function countOccurrences(source: string, needle: string) {
