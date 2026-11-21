@@ -2,15 +2,15 @@
 
 - 状态：已接受
 - 日期：2026-09-03
-- 关联：[Issue #3085](https://github.com/Mang-X/Nerv-IIP/issues/3085)、[ADR 0023](0023-filestorage-tus-proxy-staging-final-complete-invariants.md)
+- 关联：[Issue #3085](https://github.com/Mang-X/Nerv-IIP/issues/3085)、[ADR 0023](2026-08-17-0023-filestorage-tus-proxy-staging-final-complete-invariants.md)
 - 修订对象：ADR 0023 决策 1.3 与决策 1.1 中「自研 tus endpoint 不得新增消费方」这一面；ADR 0015 决策 2 的「单次调用超时为 10 秒」对字节流跳的适用性
-- 修订依据：[ADR 0033](0033-file-face-owner-id-from-server-compared-business-key.md) 部分修订决策 2「业务侧每条文件门面固定一个 `filePurpose` 与 owner，不从请求体读取」对 **owner 标识**的适用性：满足「使用方逐字比对」与「不因此越权」两个条件时，owner 标识可以取自请求中的业务键；用途与 owner 服务、owner 类型仍由网关固定，其余条款仍有效。
+- 修订依据：[ADR 0033](2026-09-30-0033-file-face-owner-id-from-server-compared-business-key.md) 部分修订决策 2「业务侧每条文件门面固定一个 `filePurpose` 与 owner，不从请求体读取」对 **owner 标识**的适用性：满足「使用方逐字比对」与「不因此越权」两个条件时，owner 标识可以取自请求中的业务键；用途与 owner 服务、owner 类型仍由网关固定，其余条款仍有效。
 - 自我修订（本 ADR 决策 3）：适用范围由「本 ADR 之后新开的**业务**字节面」扩为「**网关暴露的**文件字节面」，并取消既有存量的不追溯登记。扩面把 PlatformGateway 的文件字节面纳入本 ADR 约束，因此本 ADR 的适用对象不再只有 BusinessGateway（标题保留原措辞，不就地改写历史标题）。
 - 本次自我修订**就地改写了三处正文**，逐条点名：决策 3 首句、决策 3 的「既有存量」段、后果 7。三处的旧判断都**保留表述并标注被推翻**，不做无痕替换——这张 ADR 最值得后来人看见的正是「我们曾经这样判断、错在哪」。替代方案 3 的原文未改，只在其后追加一段说明。
 
 ## 背景
 
-[ADR 0023](0023-filestorage-tus-proxy-staging-final-complete-invariants.md) 决策 1.3 规定「Console/浏览器只访问 **PlatformGateway** 暴露的受控 tus URL」，决策 1.1 把现有自研 tus endpoint 列入待退役范围、不再作为可扩展的目标架构。本 ADR 点名推翻的正是这两条：前者的「只由 PlatformGateway 暴露」，与后者在「新增消费方」这一面上的禁止。
+[ADR 0023](2026-08-17-0023-filestorage-tus-proxy-staging-final-complete-invariants.md) 决策 1.3 规定「Console/浏览器只访问 **PlatformGateway** 暴露的受控 tus URL」，决策 1.1 把现有自研 tus endpoint 列入待退役范围、不再作为可扩展的目标架构。本 ADR 点名推翻的正是这两条：前者的「只由 PlatformGateway 暴露」，与后者在「新增消费方」这一面上的禁止。
 
 推翻的直接原因是两条已生效的约束把业务面挤到了 0023 没有覆盖的位置：
 
@@ -19,7 +19,7 @@
 
 0023 写作时业务面尚无字节需求，因此「只由 PlatformGateway 暴露」在当时是完备的；#3085 引入第一个业务侧字节通路后不再成立。
 
-同一次改动还触及 [ADR 0015](0015-gateway-http-client-resilience-strategy.md)。0015 决策 2 冻结的「单次调用超时为 10 秒」是按单次 JSON 调用定的；本仓在它之前没有任何经网关代理的字节流面，因此该参数当时不需要区分调用形态。业务侧出现 tus 字节代理后，同一参数会切断合法的大文件传输，需要按 0015 自己规定的「参数变化必须作为本决策的修订处理」登记，见决策 5。
+同一次改动还触及 [ADR 0015](2026-05-28-0015-gateway-http-client-resilience-strategy.md)。0015 决策 2 冻结的「单次调用超时为 10 秒」是按单次 JSON 调用定的；本仓在它之前没有任何经网关代理的字节流面，因此该参数当时不需要区分调用形态。业务侧出现 tus 字节代理后，同一参数会切断合法的大文件传输，需要按 0015 自己规定的「参数变化必须作为本决策的修订处理」登记，见决策 5。
 
 ## 决策
 
@@ -34,7 +34,7 @@
    **复评触发条件**：若 FileStorage 提供按 grant id 反查其所属文件与用途的能力，使网关能在兑换时复核归属，则「不得交出 id」可以复评为「交出前必须能在兑换侧复核归属」。在该能力存在之前，本条不接受条件式豁免——一条「条件成立就安全」的表述会让后来人以为此处已经论证过。
 
 4. **传输语义不变。** tus 协议语义、staging/final 生命周期、`ObjectKey` 不公开、complete 提交不变量与失败矩阵完全按 ADR 0023 执行，本 ADR 不修改其中任何一条。
-5. **字节流跳不适用 [ADR 0015](0015-gateway-http-client-resilience-strategy.md) 决策 2 的 10 秒总超时；该参数对字节流跳的适用性由本 ADR 部分修订。**
+5. **字节流跳不适用 [ADR 0015](2026-05-28-0015-gateway-http-client-resilience-strategy.md) 决策 2 的 10 秒总超时；该参数对字节流跳的适用性由本 ADR 部分修订。**
 
    0015 决策 2 的原文是「单次调用超时为 10 秒；超时直接失败返回，不自动重试。」，并规定「参数变化会改变可用性与重复执行风险之间的权衡，必须作为本决策的修订处理，不能仅在某个 Gateway 中静默漂移。」——因此本 ADR 走部分取代程序登记，而不是在 Gateway 里静默改。
 
@@ -49,7 +49,7 @@
 
 ## 实施说明
 
-1. 自 [ADR 0033](0033-file-face-owner-id-from-server-compared-business-key.md) 起，决策 2 中「业务侧每条文件门面固定一个 `filePurpose` 与 owner，不从请求体读取」对 **owner 标识**不再一律成立：满足 ADR 0033 的两个条件（使用方逐字比对、不因此越权）时，owner 标识可以取自请求中的业务键，首个实例是条码模板文件门面 `barcode-template-assets`。**其余部分继续有效**：用途（`filePurpose`）、owner 服务与 owner 类型仍由网关固定、不从请求体读取；取字节前复核用途，以及业务域读权限不得退化成通用文件读权限，这两项要求不变；决策 1、3、4、5 不受影响。决策 2 原文保留为本 ADR 作出时的历史事实。
+1. 自 [ADR 0033](2026-09-30-0033-file-face-owner-id-from-server-compared-business-key.md) 起，决策 2 中「业务侧每条文件门面固定一个 `filePurpose` 与 owner，不从请求体读取」对 **owner 标识**不再一律成立：满足 ADR 0033 的两个条件（使用方逐字比对、不因此越权）时，owner 标识可以取自请求中的业务键，首个实例是条码模板文件门面 `barcode-template-assets`。**其余部分继续有效**：用途（`filePurpose`）、owner 服务与 owner 类型仍由网关固定、不从请求体读取；取字节前复核用途，以及业务域读权限不得退化成通用文件读权限，这两项要求不变；决策 1、3、4、5 不受影响。决策 2 原文保留为本 ADR 作出时的历史事实。
 
 ## 已考虑的替代方案
 

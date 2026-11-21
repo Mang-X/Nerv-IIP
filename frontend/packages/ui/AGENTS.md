@@ -4,7 +4,7 @@
 
 > `frontend/AGENTS.md` 路由 NvUI **消费者侧**规则（app 怎么用）；本文件只补充
 > **库内侧**规则（改库本身）。权威 ADR：
-> `docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md`。
+> `docs/adr/2026-07-07-0020-nvui-naming-token-namespaces-and-style-isolation.md`。
 
 ## 分层与改动边界
 

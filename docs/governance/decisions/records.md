@@ -4,7 +4,7 @@
 
 `docs/AGENTS.md` 是人工文档触发入口；本页是决策记录分层与生命周期规则的当前权威来源。`scripts/checks/verify-adr-format.ps1` 只保护身份、索引和导航目标，不把写作建议或内容判断变成机器合同。
 
-产品文档信息架构由 `docs/adr/0021-product-docs-information-architecture.md` 治理，不在本页重复。
+产品文档信息架构由 `docs/adr/2026-07-07-0021-product-docs-information-architecture.md` 治理，不在本页重复。
 
 ## 唯一判据：这段内容什么时候会变
 
@@ -70,12 +70,12 @@
 
 `scripts/checks/verify-adr-format.ps1` 只校验：
 
-- 非 `README.md` 的 ADR 文件使用 `NNNN-kebab-case.md`，编号唯一；
+- 非 `README.md` 的 ADR 文件使用 `YYYY-MM-DD-NNNN-kebab-case.md`，日期使用正文的决策日期，四位编号全目录唯一；
 - 首个正文 H1 中的 `ADR NNNN` 与文件名编号一致，不限定标题措辞、冒号宽度或文件首行；
 - `docs/adr/README.md` 索引表首列逐一覆盖同目录 ADR，无漏项、重复项或显示编号与目标编号错配；其它列的修订关系链接不计作索引项；
 - 索引中 inline Markdown 链接的本地文件或目录目标存在。代码示例和注释不作为导航，不访问外网或锁定标题锚点。
 
-门禁不读取自然语言标题表，不锁定章节、状态文案、日期、ADR 总数、行顺序、审计统计或临时项目状态。正文和取代关系的正确性由评审、代码事实与对应 Issue 验收承担；结构检查通过不等于实现、provider 或 fullchain 已验证。
+门禁不读取自然语言标题表，不锁定章节、状态文案、特定日期、ADR 总数、行顺序、审计统计或临时项目状态。正文和取代关系的正确性由评审、代码事实与对应 Issue 验收承担；结构检查通过不等于实现、provider 或 fullchain 已验证。
 
 回归沿用 `scripts/tests/verify-adr-format-lifecycle.Tests.ps1` 的现有 CI 调用入口，以结构正反例验证实际退出码和诊断，不读取 checker AST 或复制 Governance 表格。不新增逐规则脚本、永久 registry 或独立 CI step。
 

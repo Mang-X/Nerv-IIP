@@ -2,7 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-08-18
-- 关联：[ADR 0023](0023-filestorage-tus-proxy-staging-final-complete-invariants.md)、[ADR 0024](0024-filestorage-storage-provider-and-local-production-semantics.md)、[Issue #1644](https://github.com/Mang-X/Nerv-IIP/issues/1644)、[Issue #1013](https://github.com/Mang-X/Nerv-IIP/issues/1013)
+- 关联：[ADR 0023](2026-08-17-0023-filestorage-tus-proxy-staging-final-complete-invariants.md)、[ADR 0024](2026-08-17-0024-filestorage-storage-provider-and-local-production-semantics.md)、[Issue #1644](https://github.com/Mang-X/Nerv-IIP/issues/1644)、[Issue #1013](https://github.com/Mang-X/Nerv-IIP/issues/1013)
 
 ## 背景
 

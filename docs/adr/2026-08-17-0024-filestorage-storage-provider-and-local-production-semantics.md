@@ -2,11 +2,11 @@
 
 - 状态：已接受
 - 日期：2026-08-17
-- 关联：[Issue #992](https://github.com/Mang-X/Nerv-IIP/issues/992)、[Issue #1627](https://github.com/Mang-X/Nerv-IIP/issues/1627)、[ADR 0023](0023-filestorage-tus-proxy-staging-final-complete-invariants.md)
+- 关联：[Issue #992](https://github.com/Mang-X/Nerv-IIP/issues/992)、[Issue #1627](https://github.com/Mang-X/Nerv-IIP/issues/1627)、[ADR 0023](2026-08-17-0023-filestorage-tus-proxy-staging-final-complete-invariants.md)
 
 ## 背景
 
-[ADR 0023](0023-filestorage-tus-proxy-staging-final-complete-invariants.md) 已经冻结通用 FileStorage 的上游提交协议：tus 是上传协议，PlatformGateway proxy 是受控入口拓扑，storage provider 是字节后端；tusdotnet 只写 upload-session staging；final 只由内部 `ObjectKey` 定位；complete 必须通过持久 `committing` 意图、幂等 promote、final 回读复验和最终数据库事务收敛。它没有决定 storage provider 的接口所有权，也没有定义 Local 如何成为可用于单机生产的字节后端。
+[ADR 0023](2026-08-17-0023-filestorage-tus-proxy-staging-final-complete-invariants.md) 已经冻结通用 FileStorage 的上游提交协议：tus 是上传协议，PlatformGateway proxy 是受控入口拓扑，storage provider 是字节后端；tusdotnet 只写 upload-session staging；final 只由内部 `ObjectKey` 定位；complete 必须通过持久 `committing` 意图、幂等 promote、final 回读复验和最终数据库事务收敛。它没有决定 storage provider 的接口所有权，也没有定义 Local 如何成为可用于单机生产的字节后端。
 
 当前运行时代码仍把上传传输和本地字节存储耦合在一起。`IFileStorageUploadProvider` 只产生 `UploadMode`、`Provider` 和上传指令；`LocalTusFileStore` 未配置 root 时回落系统临时目录，按 `SHA256(uploadSessionId).bin` 存放字节；complete validator 对非 `tus` provider 直接跳过校验。虽然单次 append 调用了 `Flush(flushToDisk: true)`，系统仍没有 final provider 抽象、staging/final 分区、atomic promote、目录元数据持久化、路径 confinement、稳定 storage identity、mount 替换检测或容量健康语义。
 

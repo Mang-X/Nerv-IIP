@@ -3,7 +3,7 @@
 - 状态：已接受
 - 日期：2026-07-03
 - 关联：Linear MAN-419 / GitHub #737
-- 修订对象：[ADR 0014：APS 与设备 IIoT 排程边界](0014-aps-and-iiot-scheduling-boundary.md) 的决策第 8、10、23 条与后果第 6 条
+- 修订对象：[ADR 0014：APS 与设备 IIoT 排程边界](2026-05-27-0014-aps-and-iiot-scheduling-boundary.md) 的决策第 8、10、23 条与后果第 6 条
 
 ## 背景
 

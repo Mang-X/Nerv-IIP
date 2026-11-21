@@ -12,7 +12,7 @@
 | 车间一体机 | 沿用共享语义，触控组件独立定义尺寸。工位独有令牌使用 `--nv-t-*`。 |
 | 挂墙大屏 | [tokens.css](https://github.com/Mang-X/Nerv-IIP/blob/main/frontend/packages/ui/src/components/screen/tokens.css) 定义 `--nv-scr-*`，涵盖大屏专用表面、色彩、边线、文字、图表、圆角和动效。 |
 
-场景组件使用所属场景的语义。跨场景共用同一语义和取值时，由场景 token 引用共享定义，例如 `--nv-scr-ease` 引用 `--nv-ease-out-quart`。命名与层叠规则见 [ADR 0020](https://github.com/Mang-X/Nerv-IIP/blob/main/docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md)。
+场景组件使用所属场景的语义。跨场景共用同一语义和取值时，由场景 token 引用共享定义，例如 `--nv-scr-ease` 引用 `--nv-ease-out-quart`。命名与层叠规则见 [ADR 0020](https://github.com/Mang-X/Nerv-IIP/blob/main/docs/adr/2026-07-07-0020-nvui-naming-token-namespaces-and-style-isolation.md)。
 
 ## 大屏图表配色
 

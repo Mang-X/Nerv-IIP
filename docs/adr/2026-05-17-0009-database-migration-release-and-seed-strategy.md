@@ -2,7 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-05-17
-- 修订依据：[ADR 0028：退役纵切脚本与当前基础设施验证入口](0028-retired-vertical-slice-script-entry-boundary.md)
+- 修订依据：[ADR 0028：退役纵切脚本与当前基础设施验证入口](2026-08-25-0028-retired-vertical-slice-script-entry-boundary.md)
 
 ## 背景
 

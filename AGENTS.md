@@ -14,7 +14,7 @@
 - 服务边界、目录、数据所有权、跨域调用或公开契约调整：先读 `docs/architecture/README.md`，再读其中路由到的当前架构文档；仓库级基础边界至少核对 `docs/architecture/overview/repo-layout.md` 与 `docs/architecture/overview/context-map.md`。
 - 查询当前 Schema 目录、码表、事件消费关系、术语、页面/契约矩阵、权限目录或技术资料：从 `docs/reference/README.md` 路由；Reference 是人工索引，精确实现事实仍回到其 producer。
 - 修改当前工程规则（授权、Schema、后端结构、设计系统、错误传输、持久化启动、文档规则、测试治理等）：先从 `docs/governance/README.md` 选择直接相关 Governance；规则页不替代代码事实。
-- 用户、角色、业务流程、IA 或 UX 变更：先从 `docs/product/README.md` 读取对应当前 Product，再按 `docs/adr/0021-product-docs-information-architecture.md` 评估产品文档影响。
+- 用户、角色、业务流程、IA 或 UX 变更：先从 `docs/product/README.md` 读取对应当前 Product，再按 `docs/adr/2026-07-07-0021-product-docs-information-architecture.md` 评估产品文档影响。
 - 引入、推翻或复评会在当前任务结束后继续约束实现的长期决策：先读 `docs/adr/README.md`、相关 ADR 和 `docs/governance/decisions/records.md`。
 - 本地启动、Aspire/fullstack 运行或排障：读取 `docs/runbooks/local-development.md`；其它操作型任务从 `docs/runbooks/README.md` 路由。
 - 发布、里程碑规划或跨域能力盘点：读取 `docs/status/current.md`；任务细节、负责人和验收证据回到 GitHub/Linear。

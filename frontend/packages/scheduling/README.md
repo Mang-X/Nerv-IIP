@@ -1,7 +1,7 @@
 # @nerv-iip/scheduling
 
 统一接口的两个排程可视化组件：**工单甘特图**（`GanttChart`）与**资源甘特图**（`ResourceSchedulerBoard`）。
-通过一层「引擎无关」适配，使用 DHTMLX Gantt Professional Evaluation 试用版渲染。本仓库无商业部署、不涉及商业行为，永久保留现有试用版，不更换、不移除，也不承诺后续采购或自研；裁决见 [ADR 0036](../../../docs/adr/0036-dhtmlx-evaluation-permanent-retention.md)。
+通过一层「引擎无关」适配，使用 DHTMLX Gantt Professional Evaluation 试用版渲染。本仓库无商业部署、不涉及商业行为，永久保留现有试用版，不更换、不移除，也不承诺后续采购或自研；裁决见 [ADR 0036](../../../docs/adr/2026-10-23-0036-dhtmlx-evaluation-permanent-retention.md)。
 
 ## 三层架构
 

@@ -91,7 +91,7 @@
 | 快捷    | `NvMobileGrid`（宫格） · `NvFab`（悬浮按钮） · `NvScanBar`（扫码） · `NvNumberKeyboard`（数字键盘） |
 
 > 缺口不是遗漏，是**尚无该场景需求**：例如一体机大量复用 PC 件而不重复造轮子；大屏几乎不做表单，
-> 故无 Checkbox/Slider/DatePicker 的大屏版。补任何新件先走 [ADR 0020 §1.2 命名判定](https://github.com/Mang-X/Nerv-IIP/blob/main/docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md) 定场景归属与名字。
+> 故无 Checkbox/Slider/DatePicker 的大屏版。补任何新件先走 [ADR 0020 §1.2 命名判定](https://github.com/Mang-X/Nerv-IIP/blob/main/docs/adr/2026-07-07-0020-nvui-naming-token-namespaces-and-style-isolation.md) 定场景归属与名字。
 
 ## 经验总结（这轮重构沉淀）
 

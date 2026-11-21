@@ -22,4 +22,4 @@ NvUI 是 Nerv-IIP 的设计系统。这里统一查阅视觉规范、令牌、�
 
 - [NvUI 工程治理](https://github.com/Mang-X/Nerv-IIP/blob/main/frontend/DESIGN/governance.md)
 - [前端设计系统治理](https://github.com/Mang-X/Nerv-IIP/blob/main/docs/governance/frontend/design-system.md)
-- [ADR 0020 · 命名、令牌命名空间与样式隔离](https://github.com/Mang-X/Nerv-IIP/blob/main/docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md)
+- [ADR 0020 · 命名、令牌命名空间与样式隔离](https://github.com/Mang-X/Nerv-IIP/blob/main/docs/adr/2026-07-07-0020-nvui-naming-token-namespaces-and-style-isolation.md)

@@ -3,7 +3,7 @@
 - 状态：已接受
 - 日期：2026-08-17
 - 关联：[Issue #992](https://github.com/Mang-X/Nerv-IIP/issues/992)、[Issue #1617](https://github.com/Mang-X/Nerv-IIP/issues/1617)
-- 修订依据：[ADR 0030：BusinessGateway 按用途分面的受控文件字节通路](0030-business-gateway-purpose-scoped-file-transfer.md)
+- 修订依据：[ADR 0030：BusinessGateway 按用途分面的受控文件字节通路](2026-09-03-0030-business-gateway-purpose-scoped-file-transfer.md)
 
 ## 背景
 
@@ -11,7 +11,7 @@
 
 现有字节在 complete 前后都由 `uploadSessionId` 派生的 `SHA256(uploadSessionId).bin` 原地承载。虽然 PostgreSQL upload session 和 `StoredFile` 已保存 `ObjectKey`，它尚未参与实际读、写、下载或删除，不是当前物理定位符。当前 complete 只对 provider 字符串等于 `tus` 的会话执行部分大小和可选 checksum 校验，其他 provider 可以跳过字节证明；系统也没有 staging 到 final 的 promote、final 回读复验或持久化的 canonical checksum。这些是当前实现事实，不是本 ADR 接受的目标状态。
 
-本 ADR 只在“通用文件上传传输分类”上取代 [ADR 0003](0003-data-and-messaging-baseline.md) 与现有 FileStorage 基线中将 `tus`、`server-proxy`、`S3 multipart` 并列为 Upload Provider 的叙述。FileStorage 的事实所有权、`ObjectKey` 不公开、业务服务只保存 `fileId`/`FileReference` 等边界继续有效。
+本 ADR 只在“通用文件上传传输分类”上取代 [ADR 0003](2026-05-13-0003-data-and-messaging-baseline.md) 与现有 FileStorage 基线中将 `tus`、`server-proxy`、`S3 multipart` 并列为 Upload Provider 的叙述。FileStorage 的事实所有权、`ObjectKey` 不公开、业务服务只保存 `fileId`/`FileReference` 等边界继续有效。
 
 ## 范围与非范围
 
@@ -177,5 +177,5 @@ sequenceDiagram
 
 ## 实施说明
 
-1. 决策 1.3 的「Console/浏览器只访问 **PlatformGateway** 暴露的受控 tus URL」，以及决策 1.1 中「自研 tus endpoint 不得新增消费方」这一面，自 [ADR 0030](0030-business-gateway-purpose-scoped-file-transfer.md) 起不再成立：BusinessGateway 可以并列暴露受控 tus 代理入口，业务面因此新增一个自研 tus endpoint 的消费方。决策 1.3 的其余部分——客户端不得取得内部 FileStorage URL、存储地址、`ObjectKey` 或长期存储凭据，网关只做鉴权与代理，FileStorage 拥有会话、权限、过期、complete 与文件事实——继续完全有效，并由 ADR 0030 决策 1 逐条继承。决策 1.1 的「自研 tus endpoint 与 `ServerProxyUploadProvider` 属待退役范围、目标实现是 `tusdotnet`」也继续有效，退役范围随消费方增加而扩大。
+1. 决策 1.3 的「Console/浏览器只访问 **PlatformGateway** 暴露的受控 tus URL」，以及决策 1.1 中「自研 tus endpoint 不得新增消费方」这一面，自 [ADR 0030](2026-09-03-0030-business-gateway-purpose-scoped-file-transfer.md) 起不再成立：BusinessGateway 可以并列暴露受控 tus 代理入口，业务面因此新增一个自研 tus endpoint 的消费方。决策 1.3 的其余部分——客户端不得取得内部 FileStorage URL、存储地址、`ObjectKey` 或长期存储凭据，网关只做鉴权与代理，FileStorage 拥有会话、权限、过期、complete 与文件事实——继续完全有效，并由 ADR 0030 决策 1 逐条继承。决策 1.1 的「自研 tus endpoint 与 `ServerProxyUploadProvider` 属待退役范围、目标实现是 `tusdotnet`」也继续有效，退役范围随消费方增加而扩大。
 2. 本 ADR 的第 2 节（staging、final 与 `ObjectKey`）、第 3 节（complete 通用不变量）、状态机、提交时序与失败矩阵不受 ADR 0030 影响，全部继续有效。

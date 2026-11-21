@@ -12,7 +12,7 @@
 - legacy Compose 迁移资产：`infra/compose/`。
 - 安装、迁移与打包入口：`scripts/install/`、`scripts/package/`。
 - 观测边界：[`observability.md`](observability.md)。
-- 长期部署决策：[`../../adr/0008-multi-target-deployment-and-aspire-apphost.md`](../../adr/0008-multi-target-deployment-and-aspire-apphost.md)。
+- 长期部署决策：[`../../adr/2026-05-16-0008-multi-target-deployment-and-aspire-apphost.md`](../../adr/2026-05-16-0008-multi-target-deployment-and-aspire-apphost.md)。
 
 当文档与上述 producer 冲突时，以 producer 为准并修正文档。
 

@@ -171,10 +171,16 @@ $indexed = [System.Collections.Generic.Dictionary[string,int]]::new([StringCompa
 if ($adrFiles.Count -eq 0) { $findings.Add('[ADR_EMPTY] 目录内没有 ADR 记录。') }
 foreach ($file in $adrFiles) {
     $name = $file.Name
-    $identity = [regex]::Match($name, '^(?<number>[0-9]{4})-[a-z0-9]+(?:-[a-z0-9]+)*\.md$')
+    $identity = [regex]::Match($name, '^(?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})-(?<number>[0-9]{4})-[a-z0-9]+(?:-[a-z0-9]+)*\.md$')
     if (-not $identity.Success) {
-        $findings.Add("[ADR_FILENAME] ${name}: 文件名必须是 NNNN-kebab-case.md")
+        $findings.Add("[ADR_FILENAME] ${name}: 文件名必须是 YYYY-MM-DD-NNNN-kebab-case.md")
         continue
+    }
+    $date = $identity.Groups['date'].Value
+    $parsedDate = [DateOnly]::MinValue
+    if (-not [DateOnly]::TryParseExact($date, 'yyyy-MM-dd', [cultureinfo]::InvariantCulture,
+            [Globalization.DateTimeStyles]::None, [ref]$parsedDate)) {
+        $findings.Add("[ADR_DATE] ${name}: 日期前缀不是有效日历日期。")
     }
     $number = $identity.Groups['number'].Value
     $records.Add($name, $number)
@@ -184,6 +190,10 @@ foreach ($file in $adrFiles) {
     else { $numbers.Add($number, $name) }
 
     $text = @(Get-MarkdownLines -Path $file.FullName) -join "`n"
+    $declaredDate = [regex]::Match($text, '(?m)^- 日期：[ \t]*(?<date>[0-9]{4}-[0-9]{2}-[0-9]{2})[ \t]*$')
+    if ($declaredDate.Success -and $declaredDate.Groups['date'].Value -cne $date) {
+        $findings.Add("[ADR_DATE_MISMATCH] ${name}: 日期前缀与正文的决策日期不一致。")
+    }
     $h1 = [regex]::Match($text, '(?m)^[ \t]{0,3}#[ \t]+(?<title>[^\r\n]+)')
     $titleIdentity = [regex]::Match($h1.Groups['title'].Value, '^ADR[ \t]+(?<number>[0-9]{4})(?=[:： \t]|$)')
     if (-not $h1.Success -or -not $titleIdentity.Success) {

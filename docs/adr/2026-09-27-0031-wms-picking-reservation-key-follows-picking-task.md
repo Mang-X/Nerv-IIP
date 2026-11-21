@@ -5,7 +5,7 @@
 
 ## 背景
 
-[ADR 0019](0019-wms-inventory-rpc-idempotency.md) 决策第 1 条把拣货预留的幂等键定为 `wms-pick-res:<hash(organizationId:environmentId:outboundOrderNo:lineNo)>`，并规定同键同载荷的重试返回既有预留。键只跟随出库单行，不区分这一行上先后建立的拣货任务。
+[ADR 0019](2026-07-07-0019-wms-inventory-rpc-idempotency.md) 决策第 1 条把拣货预留的幂等键定为 `wms-pick-res:<hash(organizationId:environmentId:outboundOrderNo:lineNo)>`，并规定同键同载荷的重试返回既有预留。键只跟随出库单行，不区分这一行上先后建立的拣货任务。
 
 #3836 调查发现这会把一次新的业务请求误当成旧请求的重放：拣货任务建立后，预留在开拣前超时过期，WMS 取消该任务并清掉该行的预留引用；之后为同一行重建拣货任务时，键不变，Inventory 按 ADR 0019 把那份已过期的旧预留原样返回。WMS 把它当成有效预留挂到新任务上，直到出库过账核销时才被拒绝，这一行此后无法再走通。
 

@@ -139,7 +139,7 @@ Scheduling owner 的首版创建、修订 candidate 和 detail 响应提供可�
 ## 6. 技术落点
 
 详见 [`frontend/packages/scheduling/README.md`](../../../frontend/packages/scheduling/README.md)。Vue 组件层(稳定契约)→ `SchedulingEngine` 适配器 / 包内只读时间轴(无供应商包时)→ `ScheduleModel` + `aps-mapper`。
-DHTMLX Gantt Professional Evaluation 试用版供应商文件已纳入 Git。本仓库无商业部署、不涉及商业行为，按 [ADR 0036](../../adr/0036-dhtmlx-evaluation-permanent-retention.md) 永久保留现有试用版，不更换、不移除，不设采购或自研承诺，保留厂商声明、提示与水印。无本地引擎包且 `readOnly=true` 时,`SchedulingCanvas` 使用同一 package 的只读 DOM 时间轴，不引入第二套第三方甘特库。编辑态无引擎时仍明确提示引擎未加载。
+DHTMLX Gantt Professional Evaluation 试用版供应商文件已纳入 Git。本仓库无商业部署、不涉及商业行为，按 [ADR 0036](../../adr/2026-10-23-0036-dhtmlx-evaluation-permanent-retention.md) 永久保留现有试用版，不更换、不移除，不设采购或自研承诺，保留厂商声明、提示与水印。无本地引擎包且 `readOnly=true` 时,`SchedulingCanvas` 使用同一 package 的只读 DOM 时间轴，不引入第二套第三方甘特库。编辑态无引擎时仍明确提示引擎未加载。
 
 ## 7. 分期
 

@@ -3,7 +3,7 @@
 界面规范与用法从[独立设计文档站](../../apps/design-system/docs/components/mobile/index.md)查阅。
 
 > 先读 `frontend/AGENTS.md` 与
-> `docs/adr/0020-nvui-naming-token-namespaces-and-style-isolation.md`；本文件只记移动层
+> `docs/adr/2026-07-07-0020-nvui-naming-token-namespaces-and-style-isolation.md`；本文件只记移动层
 > 差异。冻结命名表 = `frontend/DESIGN/nvui-naming-map.md` 附录 A6。
 
 - 命名：与原版 / PC 层素名冲突 → `NvMobile*`（`NvMobileBadge`

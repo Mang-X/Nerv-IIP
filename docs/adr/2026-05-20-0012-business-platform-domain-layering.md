@@ -2,7 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-05-20
-- 修订依据：[ADR 0014：APS 与设备 IIoT 排程边界](0014-aps-and-iiot-scheduling-boundary.md)
+- 修订依据：[ADR 0014：APS 与设备 IIoT 排程边界](2026-05-27-0014-aps-and-iiot-scheduling-boundary.md)
 
 ## 背景
 

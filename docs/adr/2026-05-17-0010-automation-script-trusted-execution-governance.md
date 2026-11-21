@@ -57,7 +57,7 @@ ADR 0008 冻结多部署目标和统一 AppHost/安装脚本方向，ADR 0009 �
 2. 脚本治理门禁落点为 `scripts/check-script-governance.ps1`。
 3. 具体分类矩阵、辅助函数契约、迁移清单和验证命令见 `docs/architecture/script-automation-governance.md`。
 4. 数据库迁移、seed、备份和发布停止条件继续以 `docs/architecture/database-release-runbook.md` 为准。
-5. 部署拓扑、AppHost、Compose、安装包和整合安装脚本边界继续以 `docs/adr/0008-multi-target-deployment-and-aspire-apphost.md` 与 `docs/architecture/deployment-baseline.md` 为准。
+5. 部署拓扑、AppHost、Compose、安装包和整合安装脚本边界继续以 `docs/adr/2026-05-16-0008-multi-target-deployment-and-aspire-apphost.md` 与 `docs/architecture/deployment-baseline.md` 为准。
 
 ## 范围之外
 

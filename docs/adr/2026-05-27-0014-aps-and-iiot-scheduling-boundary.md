@@ -2,7 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-05-27
-- 修订依据：[ADR 0025：现场采集、控制下发与 historian 转为平台自有能力](0025-field-capability-scope-shift.md)
+- 修订依据：[ADR 0025：现场采集、控制下发与 historian 转为平台自有能力](2026-07-03-0025-field-capability-scope-shift.md)
 
 ## 背景
 

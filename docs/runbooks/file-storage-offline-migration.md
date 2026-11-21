@@ -4,7 +4,7 @@
 
 本文件是目标技术规格/operator runbook；它定义目标接口、人工决策与证据契约，不代表这些目标接口已经实现。是否允许实际执行，以当前代码/公开接口能力、Issue #1644 / #1013 的明确状态和本次变更授权为准。
 
-本手册把 [ADR 0027](../adr/0027-filestorage-offline-migration-cutover-and-rollback.md) 的稳定决策展开为 FileStorage 单 active provider 停服离线迁移的目标接口、人工决策和证据契约。通用文件与 `VersionedArchive` 分轨清点、复制、验证和清源，只共享全局 admission fence、operator 决策与 evidence pack 汇总。`VersionedArchive` 保持 MinIO-only，不并入通用 provider。
+本手册把 [ADR 0027](../adr/2026-08-18-0027-filestorage-offline-migration-cutover-and-rollback.md) 的稳定决策展开为 FileStorage 单 active provider 停服离线迁移的目标接口、人工决策和证据契约。通用文件与 `VersionedArchive` 分轨清点、复制、验证和清源，只共享全局 admission fence、operator 决策与 evidence pack 汇总。`VersionedArchive` 保持 MinIO-only，不并入通用 provider。
 
 provider 搬迁只保持已经 canonical 的 v1 `ObjectKey`；legacy/non-canonical key 的审计和显式修复映射归 #994，在其未闭合时失败关闭，不在迁移中静默 normalize、重写或同时接受 alias。对象存储 I/O 与 PostgreSQL activation transaction 是有序、分别留证的动作，不是跨系统原子事务。
 
@@ -260,7 +260,7 @@ commit target：
 
 ## 容量与健康优先级
 
-容量准入以 [ADR 0024](../adr/0024-filestorage-storage-provider-and-local-production-semantics.md) 为单一权威，本手册只应用其动作语义，不复制第二张分叉表：
+容量准入以 [ADR 0024](../adr/2026-08-17-0024-filestorage-storage-provider-and-local-production-semantics.md) 为单一权威，本手册只应用其动作语义，不复制第二张分叉表：
 
 - `capacity restricted` 时，离线迁移 `source read/verify` 允许，`target copy/new target bytes` 拒绝；source 可读不表示 target 可写。
 - `restore write` 默认拒绝；只有 FileStorage 停服恢复模式、容量 preflight 通过、显式 `operator override` 三项同时具备时，才可作为受控例外允许。

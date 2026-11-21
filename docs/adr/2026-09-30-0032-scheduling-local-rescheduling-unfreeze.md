@@ -2,7 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-09-30
-- 部分修订：[ADR 0022](0022-scheduling-rescheduling-evolution-freeze.md) §2、§8、§9、§11 及其后果第 4 条；其余条款仍有效。
+- 部分修订：[ADR 0022](2026-07-23-0022-scheduling-rescheduling-evolution-freeze.md) §2、§8、§9、§11 及其后果第 4 条；其余条款仍有效。
 
 ## 背景
 

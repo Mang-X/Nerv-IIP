@@ -1,6 +1,6 @@
 # 设备状态事件流
 
-本文只描述设备运行事实从 **IndustrialTelemetry → Maintenance → MES → Scheduling** 的当前所有权、事件和投影边界。长期 APS/IIoT 边界见 [ADR 0014](../../adr/0014-aps-and-iiot-scheduling-boundary.md)。
+本文只描述设备运行事实从 **IndustrialTelemetry → Maintenance → MES → Scheduling** 的当前所有权、事件和投影边界。长期 APS/IIoT 边界见 [ADR 0014](../../adr/2026-05-27-0014-aps-and-iiot-scheduling-boundary.md)。
 
 ## 总体链路
 
@@ -48,7 +48,7 @@ Maintenance 还拥有预防性维护计划、点检、故障、停机原因、�
 
 ### 预计恢复与停机 MTTR
 
-按 [ADR 0032 §2](../../adr/0032-scheduling-local-rescheduling-unfreeze.md)，Maintenance 保存维修人员显式填写的 ETR；创建与在途更新事件只携带这个显式输入，无显式输入时保持 null。预测更新沿用原停机开始时间，使用工单修订区分更新事实；完工或取消才形成实际恢复，预测不会解除停机。
+按 [ADR 0032 §2](../../adr/2026-09-30-0032-scheduling-local-rescheduling-unfreeze.md)，Maintenance 保存维修人员显式填写的 ETR；创建与在途更新事件只携带这个显式输入，无显式输入时保持 null。预测更新沿用原停机开始时间，使用工单修订区分更新事实；完工或取消才形成实际恢复，预测不会解除停机。
 
 Maintenance owner 查询优先使用显式 ETR，否则取同组织、环境、设备的全历史已结束停机持续时间算术平均，无样本时取维护服务配置的默认时长。样本开始来自实际停机，结束来自完工或取消；报警清除不算结束，维修劳动时长不替代停机持续时间。查询结果包含选定预测、依据与该次来源输入的稳定版本；派生预测不写回显式 ETR 列。配置入口与默认值以 Maintenance `RestorePrediction` options 和 `appsettings.json` 为准。
 

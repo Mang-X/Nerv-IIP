@@ -47,4 +47,4 @@
 
 ## 范围与复评边界
 
-Office/PDF、报表、发票、标签和音视频是独立能力，见 [ADR 0035](0035-business-documents-reports-and-media-toolchain.md)。本记录不复制任务映射、迁移进度或验收状态。原裁决未单列复评触发条件；需要改变上述选择或所有权时，按 [决策记录 Governance](../governance/decisions/records.md) 新建取代记录，不从当前实现反推历史裁决。
+Office/PDF、报表、发票、标签和音视频是独立能力，见 [ADR 0035](2026-08-24-0035-business-documents-reports-and-media-toolchain.md)。本记录不复制任务映射、迁移进度或验收状态。原裁决未单列复评触发条件；需要改变上述选择或所有权时，按 [决策记录 Governance](../governance/decisions/records.md) 新建取代记录，不从当前实现反推历史裁决。

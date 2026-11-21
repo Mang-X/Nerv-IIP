@@ -22,11 +22,11 @@
 
 | 任务 | 决策 / 责任边界 | 当前实现 producer |
 | --- | --- | --- |
-| 缓存 | [ADR 0003](../adr/0003-data-and-messaging-baseline.md)：FusionCache L1、Redis L2 与多实例 backplane；当前结构见 [Caching](../architecture/platform/caching.md) | [Caching 模块](../../backend/common/Caching)、[CPM](../../backend/Directory.Packages.props) 和消费项目引用 |
-| tus / storage provider | [ADR 0023](../adr/0023-filestorage-tus-proxy-staging-final-complete-invariants.md)、[ADR 0024](../adr/0024-filestorage-storage-provider-and-local-production-semantics.md)；受控业务网关入口修订见 [ADR 0030](../adr/0030-business-gateway-purpose-scoped-file-transfer.md)。当前结构见 [FileStorage](../architecture/platform/file-storage.md) | [FileStorage 模块](../../backend/services/FileStorage) 的项目、传输与 complete 实现；决策不代表 tusdotnet 迁移已完成 |
+| 缓存 | [ADR 0003](../adr/2026-05-13-0003-data-and-messaging-baseline.md)：FusionCache L1、Redis L2 与多实例 backplane；当前结构见 [Caching](../architecture/platform/caching.md) | [Caching 模块](../../backend/common/Caching)、[CPM](../../backend/Directory.Packages.props) 和消费项目引用 |
+| tus / storage provider | [ADR 0023](../adr/2026-08-17-0023-filestorage-tus-proxy-staging-final-complete-invariants.md)、[ADR 0024](../adr/2026-08-17-0024-filestorage-storage-provider-and-local-production-semantics.md)；受控业务网关入口修订见 [ADR 0030](../adr/2026-09-03-0030-business-gateway-purpose-scoped-file-transfer.md)。当前结构见 [FileStorage](../architecture/platform/file-storage.md) | [FileStorage 模块](../../backend/services/FileStorage) 的项目、传输与 complete 实现；决策不代表 tusdotnet 迁移已完成 |
 | CSV | Sep 是实际依赖；CSV 转义交给库，列、金额、编码及导出权限仍由业务拥有 | [CPM](../../backend/Directory.Packages.props)、[Scheduling 项目引用](../../backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Nerv.IIP.Business.Scheduling.Web.csproj)、[CSV 消费者](../../backend/services/Business/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Queries/SchedulePlanCsv.cs)；不把旧候选讨论当作当前未决选型 |
-| 通用编码 / 时间 / 数字与字符串 | [ADR 0034](../adr/0034-common-tools-and-time-toolchain.md)；Base64URL 先核对 BCL `System.Buffers.Text.Base64Url`，业务编码合同回到所属模块 | [目标框架](../../backend/Directory.Build.props)、[Base64URL 现有消费者](../../backend/common/Contracts/Nerv.IIP.Contracts.IntegrationEvents/IntegrationEventIdempotencyKey.cs)；其它实际使用回到目标项目 |
-| Office/PDF、报表、发票、标签、音视频 | [ADR 0035](../adr/0035-business-documents-reports-and-media-toolchain.md)，保留各子域基线、可选与暂缓项 | [CPM](../../backend/Directory.Packages.props)、目标项目 `.csproj` / worker 配置及代码；不能由 ADR 已接受推导包已引入 |
+| 通用编码 / 时间 / 数字与字符串 | [ADR 0034](../adr/2026-08-24-0034-common-tools-and-time-toolchain.md)；Base64URL 先核对 BCL `System.Buffers.Text.Base64Url`，业务编码合同回到所属模块 | [目标框架](../../backend/Directory.Build.props)、[Base64URL 现有消费者](../../backend/common/Contracts/Nerv.IIP.Contracts.IntegrationEvents/IntegrationEventIdempotencyKey.cs)；其它实际使用回到目标项目 |
+| Office/PDF、报表、发票、标签、音视频 | [ADR 0035](../adr/2026-08-24-0035-business-documents-reports-and-media-toolchain.md)，保留各子域基线、可选与暂缓项 | [CPM](../../backend/Directory.Packages.props)、目标项目 `.csproj` / worker 配置及代码；不能由 ADR 已接受推导包已引入 |
 | Redis 分布式锁 / GS1 | **待评估**；ADR 0003 的 Redis 基线不选定分布式锁产品，ZXing 图像编解码不替代 GS1 Application Identifier 业务语义 | 目标模块实现与项目依赖；不从 Redis / ZXing 名称推导锁或 GS1 方案已经选定 |
 
 ### 通用工具与文档媒体资料
@@ -64,7 +64,7 @@
 | Hey API OpenAPI TypeScript | OpenAPI → 前端客户端生成 | [openapi-ts](https://heyapi.dev/openapi-ts/get-started) | [hey-api/openapi-ts](https://github.com/hey-api/openapi-ts) |
 | shadcn-vue | Console UI 组件体系 | [shadcn-vue](https://www.shadcn-vue.com/docs/) | [unovue/shadcn-vue](https://github.com/unovue/shadcn-vue) |
 | VueUse | 可复用组合式工具候选/依赖；实际使用看 workspace manifest | [VueUse](https://vueuse.org/guide/) | [vueuse/vueuse](https://github.com/vueuse/vueuse) |
-| es-toolkit | 通用数据处理；已接受选择见 [ADR 0034](../adr/0034-common-tools-and-time-toolchain.md)，实际使用看 workspace manifest | [es-toolkit](https://es-toolkit.dev/) | [toss/es-toolkit](https://github.com/toss/es-toolkit) |
+| es-toolkit | 通用数据处理；已接受选择见 [ADR 0034](../adr/2026-08-24-0034-common-tools-and-time-toolchain.md)，实际使用看 workspace manifest | [es-toolkit](https://es-toolkit.dev/) | [toss/es-toolkit](https://github.com/toss/es-toolkit) |
 
 ## Mobile PDA
 
