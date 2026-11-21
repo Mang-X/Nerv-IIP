@@ -1,0 +1,275 @@
+@layer app {
+  /* 安灯（并入左列线体域） */
+  .lb-andon-mini {
+    width: 100%;
+    flex: none;
+    border-top: 1px solid var(--nv-scr-divider);
+    padding-top: 9px;
+  }
+  .lb-andon-h {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--nv-scr-muted);
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+  }
+  .lb-andon-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 2px;
+    font-size: 13px;
+  }
+  .lb-andon-time {
+    flex: none;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .lb-andon-txt {
+    flex: 1;
+    min-width: 0;
+    color: var(--nv-scr-text-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .lb-andon-state {
+    flex: none;
+    color: var(--nv-scr-green);
+  }
+  .lb-andon-state.open {
+    color: var(--nv-scr-red);
+  }
+  .lb-andon-empty {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 2px;
+    color: var(--nv-scr-muted);
+    font-size: 13px;
+  }
+  .lb-andon-ok {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--nv-scr-green);
+    box-shadow: 0 0 8px var(--nv-scr-green);
+  }
+
+  /* OEE 24h 热力（waffle 4×6） */
+  .lb-waffle {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .lb-wf-legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--nv-scr-muted);
+  }
+  .lb-wf-legend i {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    margin-left: 6px;
+  }
+  .lb-wf-grid {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    grid-template-rows: repeat(4, 1fr);
+    gap: 6px;
+  }
+  .lb-wf-cell {
+    border-radius: 4px;
+    cursor: default;
+    transition: filter 0.15s var(--nv-scr-ease);
+  }
+  .lb-wf-cell:hover {
+    filter: brightness(1.35);
+  }
+  .lb-wf-cell.g4,
+  .lb-wf-legend .g4 {
+    background: rgba(69, 208, 137, 0.85);
+  }
+  .lb-wf-cell.g3,
+  .lb-wf-legend .g3 {
+    background: rgba(69, 208, 137, 0.38);
+  }
+  .lb-wf-cell.g2,
+  .lb-wf-legend .g2 {
+    background: rgba(242, 193, 78, 0.55);
+  }
+  .lb-wf-cell.g1,
+  .lb-wf-legend .g1 {
+    background: rgba(239, 90, 99, 0.6);
+  }
+  .lb-wf-tip {
+    position: absolute;
+    transform: translate(-50%, -100%);
+    padding: 4px 9px;
+    border-radius: 5px;
+    background: rgba(10, 16, 30, 0.97);
+    border: 1px solid rgba(148, 190, 255, 0.25);
+    font-size: 11.5px;
+    color: var(--nv-scr-text);
+    white-space: nowrap;
+    pointer-events: none;
+    font-variant-numeric: tabular-nums;
+    z-index: 2;
+  }
+  .lb-wf-axis {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 7px;
+    font-size: 11px;
+    color: var(--nv-scr-faint);
+  }
+
+  .lb-wo-in {
+    display: flex;
+    align-items: center;
+    gap: 26px;
+  }
+  .lb-wo-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .lb-wo-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    min-width: 0;
+  }
+  .lb-wo-code {
+    font-family: ui-monospace, monospace;
+    font-size: 15px;
+    color: var(--nv-scr-cyan);
+    flex: none;
+  }
+  .lb-wo-product {
+    font-size: 19px;
+    font-weight: 700;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* 工序流分布（流水线语义）：工位 = 名称 + 累计完成（沿流向递减），
+   停摆红 / 瓶颈黄，工位间渐隐箭头示流向 */
+  .lb-wo-flow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 13px 0 0;
+    flex-wrap: wrap;
+  }
+  .lb-station {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 66px;
+  }
+  .lb-station-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    color: var(--nv-scr-muted);
+    white-space: nowrap;
+  }
+  .lb-station-name em {
+    font-style: normal;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .lb-station-done {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--nv-scr-text-2);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .lb-station.blocked .lb-station-name,
+  .lb-station.blocked .lb-station-name em {
+    color: var(--nv-scr-red);
+  }
+  .lb-station.blocked .lb-station-done {
+    color: var(--nv-scr-red);
+  }
+  .lb-station.bottleneck .lb-station-name,
+  .lb-station.bottleneck .lb-station-name em {
+    color: var(--nv-scr-amber);
+  }
+  .lb-station.bottleneck .lb-station-done {
+    color: var(--nv-scr-amber);
+  }
+  .lb-flow-arrow {
+    color: var(--nv-scr-faint);
+    font-size: 15px;
+    line-height: 1;
+    opacity: 0.7;
+    flex: none;
+  }
+  .lb-wo-nums {
+    display: flex;
+    gap: 24px;
+    margin-top: 12px;
+    font-size: 14px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .lb-wo-nums b {
+    color: var(--nv-scr-text);
+    font-weight: 700;
+  }
+  .lb-kitting {
+    font-size: 12.5px;
+    color: var(--nv-scr-green);
+  }
+  .lb-due {
+    flex: none;
+    text-align: right;
+  }
+  .lb-due dt {
+    font-size: 13px;
+    color: var(--nv-scr-muted);
+  }
+  .lb-due dd {
+    margin: 6px 0 0;
+    font-size: 44px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--nv-scr-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .lb-due dd.warn {
+    color: var(--nv-scr-amber);
+  }
+
+  .lb-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    font-size: 12.5px;
+    color: var(--nv-scr-faint);
+    border-top: 1px solid var(--nv-scr-divider);
+    padding-top: 11px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lb-banner {
+      animation: none;
+    }
+  }
+}

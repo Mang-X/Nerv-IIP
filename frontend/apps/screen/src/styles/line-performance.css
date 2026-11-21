@@ -1,0 +1,278 @@
+@layer app {
+  /* —— 右列 —— */
+  .lb-right {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 14px;
+    min-height: 0;
+    min-width: 0;
+  }
+  .lb-row1 {
+    display: grid;
+    grid-template-columns: 1.5fr 0.75fr 0.95fr;
+    gap: 14px;
+  }
+  .lb-out-in {
+    display: flex;
+    align-items: center;
+    gap: 26px;
+  }
+  .lb-out-hero {
+    flex: 1;
+    min-width: 0;
+  }
+  .lb-out-v {
+    font-size: 58px;
+    font-weight: 800;
+    line-height: 1;
+    color: #fff;
+    text-shadow: var(--nv-scr-value-glow);
+    font-variant-numeric: tabular-nums;
+  }
+  .lb-out-v small {
+    font-size: 21px;
+    font-weight: 600;
+    color: var(--nv-scr-muted);
+    margin-left: 8px;
+  }
+  .lb-out-sub {
+    display: flex;
+    gap: 22px;
+    margin-top: 13px;
+    font-size: 14.5px;
+    color: var(--nv-scr-muted);
+  }
+  .lb-out-sub b {
+    font-weight: 700;
+    color: var(--nv-scr-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .lb-out-sub b.ok {
+    color: var(--nv-scr-green);
+  }
+  .lb-out-sub b.bad {
+    color: var(--nv-scr-red);
+  }
+  .lb-out-sub b.warn {
+    color: var(--nv-scr-amber);
+  }
+  .lb-shift {
+    font-size: 12.5px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .lb-takt {
+    display: flex;
+    flex-direction: column;
+  }
+  .lb-takt-in {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .lb-takt-v {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    font-size: 42px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--nv-scr-green);
+    font-variant-numeric: tabular-nums;
+  }
+  .lb-takt-v.late {
+    color: var(--nv-scr-red);
+    text-shadow: 0 0 20px rgba(239, 90, 99, 0.45);
+  }
+  .lb-takt-sub {
+    margin: 10px 0 0;
+    font-size: 14px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .lb-takt-sub b {
+    color: var(--nv-scr-text);
+  }
+  .lb-takt-sub b.late {
+    color: var(--nv-scr-red);
+  }
+  .lb-takt-hint {
+    margin: 6px 0 0;
+    font-size: 12.5px;
+    color: var(--nv-scr-faint);
+  }
+
+  .lb-trend {
+    min-height: 0;
+  }
+  .lb-row3 {
+    display: grid;
+    grid-template-columns: 1.7fr 1fr;
+    gap: 14px;
+    min-width: 0;
+  }
+
+  /* 当班四格 */
+  .lb-stats {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 9px;
+    margin: 0;
+  }
+  .lb-stats > div {
+    border: 1px solid var(--nv-scr-line);
+    border-radius: var(--nv-scr-radius);
+    background: rgba(255, 255, 255, 0.02);
+    padding: 9px 12px;
+  }
+  .lb-stats dt {
+    font-size: 12px;
+    color: var(--nv-scr-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .lb-stat-ic {
+    color: var(--nv-scr-faint);
+    flex: none;
+  }
+  .lb-stats dd {
+    margin: 4px 0 0;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--nv-scr-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .lb-stats dd small {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--nv-scr-muted);
+  }
+  .lb-stats dd.warn {
+    color: var(--nv-scr-amber);
+  }
+  .lb-stats dd.bad {
+    color: var(--nv-scr-red);
+  }
+  .lb-stat-txt {
+    letter-spacing: 0.04em;
+  }
+
+  /* 产线 OEE 卡（内容垂直居中） */
+  .lb-oee {
+    display: flex;
+    flex-direction: column;
+  }
+  .lb-oee-in {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+  .lb-oee-big {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    font-size: 44px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--nv-scr-green);
+    font-variant-numeric: tabular-nums;
+    flex: none;
+  }
+
+  /* 大数字 + 单位下标（% 沉右下，与「秒」同款底对齐） */
+  .lb-num {
+    display: inline-flex;
+    align-items: flex-end;
+    line-height: 1;
+  }
+  .lb-num small {
+    font-size: 0.42em;
+    font-weight: 600;
+    margin-left: 2px;
+    padding-bottom: 0.14em;
+  }
+  /* 数据强调线：数字下语义色渐隐短线（TitleBar 下划线的同源语言，替代图标块） */
+  .lb-score-line {
+    width: 46px;
+    height: 2px;
+    margin-top: 10px;
+    border-radius: 1px;
+    background: currentColor;
+    opacity: 0.75;
+  }
+  .lb-oee-big.warn {
+    color: var(--nv-scr-amber);
+  }
+  .lb-oee-big.bad {
+    color: var(--nv-scr-red);
+  }
+  .lb-oee-rates {
+    flex: 1;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .lb-oee-rates div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12.5px;
+  }
+  .lb-oee-rates dt {
+    color: var(--nv-scr-muted);
+  }
+  .lb-oee-rates dd {
+    margin: 0;
+    font-weight: 700;
+    color: var(--nv-scr-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .lb-oee-rates dd.warn {
+    color: var(--nv-scr-amber);
+  }
+
+  /* 设备折叠面板 */
+  .lb-dev-wrap + .lb-dev-wrap {
+    border-top: 1px solid var(--nv-scr-divider);
+  }
+  .lb-chev {
+    flex: none;
+    color: var(--nv-scr-faint);
+    transition: transform 0.2s var(--nv-scr-ease);
+  }
+  .lb-chev.open {
+    transform: rotate(180deg);
+  }
+  .lb-dp {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .lb-dp-l {
+    width: 62px;
+    flex: none;
+    font-size: 12px;
+    color: var(--nv-scr-muted);
+  }
+  .lb-dp-spark {
+    flex: 1;
+    height: 20px;
+    min-width: 0;
+  }
+  .lb-dp b {
+    flex: none;
+    min-width: 72px;
+    text-align: right;
+    font-size: 12.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+}

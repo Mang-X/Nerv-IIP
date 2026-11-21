@@ -1,0 +1,378 @@
+@layer app {
+  /* —— 右列：WCS 自动化（合并面板：失败告警 + 环形 + 适配器行动态共享空间） —— */
+  .wb-wcs {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: 0;
+  }
+  .wb-wcsboard {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .wm {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .wf-count {
+    font-size: 13px;
+    color: var(--nv-scr-red);
+    font-variant-numeric: tabular-nums;
+  }
+  .wf-count.calm {
+    color: var(--nv-scr-green);
+  }
+  /* 失败告警区：约 3 条完整显示，更多滚动（失败量增长不挤压下方环形/适配器行） */
+  .wf-list {
+    flex: none;
+    max-height: 156px;
+  }
+  .wf-row {
+    display: flex;
+    gap: 10px;
+    padding: 9px 2px;
+  }
+  .wf-row + .wf-row {
+    border-top: 1px solid var(--nv-scr-divider);
+  }
+  /* 失败红脉冲 —— 辉光只给活数据 */
+  .wf-dot {
+    width: 9px;
+    height: 9px;
+    margin-top: 4px;
+    border-radius: 50%;
+    background: var(--nv-scr-red);
+    box-shadow: 0 0 9px var(--nv-scr-red);
+    flex: none;
+    animation: wf-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes wf-pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+  .wf-main {
+    flex: 1;
+    min-width: 0;
+  }
+  .wf-top {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    min-width: 0;
+  }
+  .wf-ad {
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--nv-scr-text);
+    flex: none;
+  }
+  .wf-cmd {
+    font-family: ui-monospace, monospace;
+    font-size: 11.5px;
+    color: var(--nv-scr-muted);
+    flex: none;
+  }
+  .wf-since {
+    flex: 1;
+    min-width: 0;
+    text-align: right;
+    font-size: 12px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .wf-sub {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 4px;
+    min-width: 0;
+  }
+  .wf-err {
+    flex: 1;
+    min-width: 0;
+    font-size: 12.5px;
+    color: var(--nv-scr-red);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .wf-retry {
+    font-style: normal;
+    font-size: 12px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+    flex: none;
+  }
+  .wf-empty {
+    padding: 12px 2px;
+    display: flex;
+    justify-content: center;
+  }
+
+  /* 链路负载视图切换：分段器 + 环形/列表二选一区域 */
+  .wm-toggle {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+    padding-top: 9px;
+    border-top: 1px solid var(--nv-scr-divider);
+  }
+  .wm-toggle-t {
+    font-size: 12.5px;
+    color: var(--nv-scr-muted);
+  }
+  .wm-seg {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.05);
+  }
+  .wm-seg-b {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 20px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--nv-scr-faint);
+    cursor: pointer;
+    transition:
+      background 0.2s var(--nv-scr-ease-emphasized),
+      color 0.2s var(--nv-scr-ease-emphasized);
+  }
+  .wm-seg-b:hover {
+    color: var(--nv-scr-text-2);
+  }
+  .wm-seg-b.on {
+    background: rgba(74, 166, 238, 0.18);
+    color: var(--nv-scr-cyan);
+  }
+  .wm-body {
+    flex: 1;
+    min-height: 0;
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+  }
+  /* 环形视图：区域内居中 */
+  .wm-chart {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .wa-donut {
+    flex: none;
+  }
+  /* 视图切换动效：淡入 + 轻微上滑（out-in 顺序切换，不叠加） */
+  .wm-swap-enter-active,
+  .wm-swap-leave-active {
+    transition:
+      opacity 0.22s var(--nv-scr-ease-emphasized),
+      transform 0.22s var(--nv-scr-ease-emphasized);
+  }
+  .wm-swap-enter-from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  .wm-swap-leave-to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  .wa-dn-num {
+    font-size: 21px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--nv-scr-text);
+    font-variant-numeric: tabular-nums;
+    text-shadow: var(--nv-scr-value-glow);
+  }
+  .wa-dn-cap {
+    margin-top: 4px;
+    font-size: 10.5px;
+    color: var(--nv-scr-muted);
+  }
+  /* 适配器行占剩余空间；min-height 0 保证被压缩时内部滚动而非溢出容器 */
+  .wa-rows {
+    flex: 1;
+    min-height: 0;
+  }
+  /* 环形区图例更紧凑（右列窄面板预算） */
+  .wa-donut :deep(.nv-scr-dn-legend) {
+    gap: 4px;
+  }
+  .wa-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 2px;
+    font-size: 13px;
+  }
+  .wa-row + .wa-row {
+    border-top: 1px solid var(--nv-scr-divider);
+  }
+  .wa-ic {
+    color: var(--nv-scr-faint);
+    flex: none;
+  }
+  .wa-name {
+    flex: none;
+    width: 88px;
+    color: var(--nv-scr-text-2);
+    white-space: nowrap;
+  }
+  .wa-nums {
+    flex: 1;
+    min-width: 0;
+    font-size: 12.5px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .wa-nums b {
+    color: var(--nv-scr-text);
+    font-weight: 700;
+  }
+  .wa-done {
+    flex: none;
+    font-size: 12px;
+    color: var(--nv-scr-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .wa-fail {
+    flex: none;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--nv-scr-red);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 任务超时榜 */
+  .wb-overdue {
+    flex: none;
+  }
+  .wo-list {
+    display: flex;
+    flex-direction: column;
+  }
+  .wo-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 2px;
+    font-size: 13px;
+  }
+  .wo-row + .wo-row {
+    border-top: 1px solid var(--nv-scr-divider);
+  }
+  .wo-rank {
+    width: 18px;
+    flex: none;
+    text-align: center;
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--nv-scr-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .wo-rank.top {
+    color: var(--nv-scr-red);
+  }
+  .wo-id {
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    color: var(--nv-scr-cyan);
+    flex: none;
+    width: 66px;
+  }
+  .wo-kind {
+    flex: none;
+    font-size: 12px;
+    color: var(--nv-scr-muted);
+  }
+  .wo-sku {
+    flex: 1;
+    min-width: 0;
+    color: var(--nv-scr-text-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .wo-age {
+    flex: none;
+    font-weight: 700;
+    color: var(--nv-scr-red);
+    font-variant-numeric: tabular-nums;
+  }
+  .wo-empty {
+    padding: 10px 2px;
+    display: flex;
+    justify-content: center;
+  }
+
+  /* —— 页脚 —— */
+  .wb-foot {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    font-size: 12.5px;
+    color: var(--nv-scr-faint);
+    border-top: 1px solid var(--nv-scr-divider);
+    padding-top: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .wb-foot-r b {
+    color: var(--nv-scr-text-2);
+    font-weight: 700;
+  }
+  .wb-stale {
+    color: var(--nv-scr-amber);
+    font-weight: 600;
+  }
+  .wb-foot-l {
+    display: inline-flex;
+    align-items: center;
+    gap: 18px;
+    min-width: 0;
+  }
+  .wb-back {
+    color: var(--nv-scr-cyan);
+    text-decoration: none;
+    font-size: 13.5px;
+    flex: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wf-dot {
+      animation: none;
+    }
+    .wb-bar i {
+      transition: none;
+    }
+    .wm-swap-enter-active,
+    .wm-swap-leave-active,
+    .wm-seg-b {
+      transition: none;
+    }
+    .wm-swap-enter-from,
+    .wm-swap-leave-to {
+      transform: none;
+    }
+  }
+}

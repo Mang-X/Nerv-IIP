@@ -1,0 +1,174 @@
+.domain-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 4px 8px;
+}
+.domain-controls + .wb {
+  height: calc(100% - 42px);
+}
+
+@layer app {
+  .wb {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .wb-loading {
+    height: 100%;
+    display: grid;
+    place-content: center;
+    color: var(--nv-scr-muted);
+    font-size: 15px;
+  }
+
+  /* —— 顶部 KPI 带：出库 hero + 五格 + 发丝分隔（主次分明，远视距标签 14px 起） —— */
+  .wb-band {
+    flex: none;
+  }
+  .wb-band-in {
+    display: grid;
+    grid-template-columns: 300px repeat(5, 1fr);
+    align-items: center;
+  }
+  .wb-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 2px 26px 0 8px;
+  }
+  .wb-hero-v {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    font-size: 48px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--nv-scr-text);
+    font-variant-numeric: tabular-nums;
+    text-shadow: var(--nv-scr-value-glow);
+  }
+  .wb-hero-v .wb-num small {
+    font-size: 19px;
+    font-weight: 600;
+    margin-left: 3px;
+    color: var(--nv-scr-muted);
+  }
+  .wb-hero-l {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 9px;
+    font-size: 14.5px;
+    color: var(--nv-scr-muted);
+  }
+  .wb-hero-sub {
+    display: block;
+    margin-top: 6px;
+    font-size: 12.5px;
+    color: var(--nv-scr-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .wb-kpi {
+    position: relative;
+    padding: 2px 22px;
+  }
+  .wb-kpi::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 1px;
+    background: var(--nv-scr-divider);
+  }
+  /* dt 必须块级 —— inline 级会与数字并排（格宽变化时布局不稳定） */
+  .wb-kpi-t {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 14px;
+    color: var(--nv-scr-muted);
+  }
+  .wb-kpi-ic {
+    color: var(--nv-scr-faint);
+    flex: none;
+  }
+  .wb-kpi-v {
+    margin: 8px 0 0;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    font-size: 34px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--nv-scr-text);
+    font-variant-numeric: tabular-nums;
+    text-shadow: var(--nv-scr-value-glow);
+  }
+  .wb-kpi-v.bad {
+    color: var(--nv-scr-red);
+    text-shadow: 0 0 20px rgba(239, 90, 99, 0.4);
+  }
+  .wb-kpi-v.warn {
+    color: var(--nv-scr-amber);
+    text-shadow: none;
+  }
+  .wb-num {
+    display: inline-flex;
+    align-items: flex-end;
+    line-height: 1;
+  }
+  .wb-num small {
+    font-size: 0.42em;
+    font-weight: 600;
+    margin-left: 3px;
+    padding-bottom: 0.12em;
+    color: var(--nv-scr-muted);
+  }
+  /* 数据强调线：语义色渐隐短线（同 line 屏 .lb-score-line 语言，替代图标装饰） */
+  .wb-kpi-line {
+    width: 44px;
+    height: 2px;
+    margin-top: 9px;
+    border-radius: 1px;
+    background: rgba(255, 255, 255, 0.32);
+    opacity: 0.8;
+  }
+  .wb-kpi-line.cyan {
+    background: var(--nv-scr-cyan);
+  }
+  .wb-kpi-line.bad {
+    background: var(--nv-scr-red);
+  }
+  .wb-kpi-line.warn {
+    background: var(--nv-scr-amber);
+  }
+  .wb-kpi-line.ok {
+    background: var(--nv-scr-green);
+  }
+  .wb-kpi-sub {
+    display: block;
+    margin-top: 7px;
+    font-size: 12px;
+    color: var(--nv-scr-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .wb-kpi-sub.bad {
+    color: var(--nv-scr-red);
+  }
+  .wb-kpi-sub.warn {
+    color: var(--nv-scr-amber);
+  }
+
+  /* —— 主体三列 —— */
+  .wb-main {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 452px minmax(0, 1fr) 464px;
+    gap: 14px;
+  }
+}

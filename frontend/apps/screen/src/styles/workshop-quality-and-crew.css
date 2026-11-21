@@ -1,0 +1,254 @@
+@layer app {
+  /* 右列：齐套 / 质量 / 班组 */
+  .wb-right {
+    display: flex;
+    flex-direction: column;
+    gap: 13px;
+    min-height: 0;
+    min-width: 0;
+  }
+  /* 齐套面板内容自适应 —— 缺料空态（多数车间的健康态）不拉空高度，
+   剩余高度让给当班质量（NCR 列表可增长） */
+  .wb-kit {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+  }
+  .wb-kit-top {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    margin-bottom: 6px;
+  }
+  .wb-kit-v {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    font-size: 36px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--nv-scr-green);
+    font-variant-numeric: tabular-nums;
+  }
+  .wb-kit-v.warn {
+    color: var(--nv-scr-amber);
+  }
+  .wb-kit-mini {
+    flex: 1;
+    margin: 0;
+    display: flex;
+    gap: 26px;
+  }
+  .wb-kit-mini dt {
+    font-size: 12.5px;
+    color: var(--nv-scr-muted);
+  }
+  .wb-kit-mini dd {
+    margin: 5px 0 0;
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--nv-scr-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .wb-kit-mini dd.bad {
+    color: var(--nv-scr-red);
+  }
+  /* 缺料明细：两行完整显示，更多滚动 —— 右列高度预算优先保证当班质量 NCR 可见 */
+  .wb-shorts {
+    max-height: 104px;
+  }
+  .wb-short {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 2px;
+    min-width: 0;
+  }
+  .wb-short + .wb-short {
+    border-top: 1px solid var(--nv-scr-divider);
+  }
+  .wb-short-l {
+    flex: 1;
+    min-width: 0;
+  }
+  .wb-short-mat {
+    display: block;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--nv-scr-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .wb-short-meta {
+    display: block;
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .wb-short-r {
+    flex: none;
+    text-align: right;
+  }
+  .wb-short-qty b {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--nv-scr-red);
+    font-variant-numeric: tabular-nums;
+  }
+  .wb-short-qty small {
+    font-size: 12px;
+    color: var(--nv-scr-muted);
+    margin-left: 2px;
+  }
+  .wb-short-eta {
+    display: block;
+    margin-top: 2px;
+    font-size: 11.5px;
+    color: var(--nv-scr-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .wb-quality {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .wb-quality .wb-ncr {
+    flex: 1;
+    min-height: 0;
+  }
+  /* 面板标题右侧的质量摘要（大数字在 KPI 带，不重复占面板空间）；
+   可收缩截断 —— 绝不超出面板宽 */
+  .wb-q-sum {
+    display: block;
+    font-size: 12.5px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .wb-q-sum b {
+    color: var(--nv-scr-text);
+    font-weight: 700;
+  }
+  .wb-q-sum b.warn {
+    color: var(--nv-scr-amber);
+  }
+  .wb-q-sum b.bad {
+    color: var(--nv-scr-red);
+  }
+  .wb-ncr {
+    margin-top: 2px;
+  }
+  .wb-ncr-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 2px;
+    font-size: 13px;
+    min-width: 0;
+  }
+  .wb-ncr-code {
+    flex: none;
+    font-family: ui-monospace, monospace;
+    color: var(--nv-scr-cyan);
+  }
+  .wb-ncr-txt {
+    flex: 1;
+    min-width: 0;
+    color: var(--nv-scr-text-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .wb-ncr-st {
+    flex: none;
+    font-weight: 600;
+    color: var(--nv-scr-amber);
+  }
+
+  .wb-crew {
+    flex: none;
+  }
+  .wb-crew-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+  }
+  .wb-crew-team {
+    font-size: 21px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.04em;
+  }
+  .wb-crew-lead {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--nv-scr-muted);
+  }
+  .wb-crew-nums {
+    margin: 11px 0 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+  }
+  .wb-crew-nums dt {
+    font-size: 12.5px;
+    color: var(--nv-scr-muted);
+  }
+  .wb-crew-nums dd {
+    margin: 5px 0 0;
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--nv-scr-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .wb-crew-nums dd small {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--nv-scr-muted);
+  }
+  .wb-crew-nums dd.warn {
+    color: var(--nv-scr-amber);
+  }
+  .wb-crew-note {
+    margin: 10px 0 0;
+    padding-top: 8px;
+    border-top: 1px solid var(--nv-scr-divider);
+    font-size: 12.5px;
+    color: var(--nv-scr-amber);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .wb-foot {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    font-size: 12.5px;
+    color: var(--nv-scr-faint);
+    border-top: 1px solid var(--nv-scr-divider);
+    padding-top: 10px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wb-ev.alarm .wb-ev-dot {
+      animation: none;
+    }
+  }
+}

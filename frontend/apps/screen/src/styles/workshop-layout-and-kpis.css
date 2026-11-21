@@ -1,0 +1,211 @@
+@layer app {
+  .wb {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 13px;
+  }
+  .wb-empty {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    align-items: center;
+    justify-content: center;
+    color: var(--nv-scr-muted);
+    font-size: 16px;
+  }
+  .wb-back {
+    color: var(--nv-scr-cyan);
+    text-decoration: none;
+    font-size: 13.5px;
+  }
+
+  /* —— 顶行：切换器 + 车间态/班次 —— */
+  .wb-top {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-height: 34px;
+  }
+  .wb-top-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+  .wb-top-meta {
+    font-size: 13px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* —— KPI 带 —— */
+  .wb-band {
+    flex: none;
+  }
+  .wb-band-in {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+  }
+  .wb-hero {
+    flex: none;
+    padding: 2px 6px 0 2px;
+  }
+  .wb-hero-v {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    font-size: 54px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--nv-scr-green);
+    font-variant-numeric: tabular-nums;
+  }
+  .wb-hero-v.warn {
+    color: var(--nv-scr-amber);
+  }
+  .wb-hero-v.bad {
+    color: var(--nv-scr-red);
+  }
+  .wb-hero-l {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--nv-scr-muted);
+  }
+  /* 大数字 + 单位下标（与产线屏同款语言） */
+  .wb-num {
+    display: inline-flex;
+    align-items: flex-end;
+    line-height: 1;
+  }
+  .wb-num small {
+    font-size: 0.42em;
+    font-weight: 600;
+    margin-left: 2px;
+    padding-bottom: 0.14em;
+  }
+  /* 数据强调线：数字下语义色渐隐短线（替代图标装饰） */
+  .wb-score-line {
+    width: 46px;
+    height: 2px;
+    margin-top: 9px;
+    border-radius: 1px;
+    background: currentColor;
+    opacity: 0.75;
+  }
+  .wb-cells {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+    display: flex;
+    align-items: center;
+  }
+  .wb-cell {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 20px;
+    position: relative;
+    white-space: nowrap;
+  }
+  .wb-cell + .wb-cell::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 7px;
+    bottom: 7px;
+    width: 1px;
+    background: var(--nv-scr-divider);
+  }
+  /* 大屏远视距：KPI 标签 14px 起（12px 级挂墙不可读） */
+  .wb-cell dt {
+    font-size: 14px;
+    color: var(--nv-scr-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .wb-cell-ic {
+    color: var(--nv-scr-faint);
+    flex: none;
+  }
+  .wb-cell dd {
+    margin: 7px 0 0;
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--nv-scr-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .wb-cell dd small {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--nv-scr-muted);
+    margin-left: 2px;
+  }
+  .wb-cell dd.warn {
+    color: var(--nv-scr-amber);
+  }
+  .wb-cell dd.bad {
+    color: var(--nv-scr-red);
+  }
+
+  /* —— 主体三列 —— */
+  .wb-main {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 458px minmax(0, 1fr) 418px;
+    gap: 15px;
+  }
+
+  /* 区块标题（无外壳区域用，与工厂/产线屏同款语言） */
+  .sec-h {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    margin-bottom: 11px;
+    min-height: 24px;
+  }
+  .sec-glyph {
+    width: 8px;
+    height: 18px;
+    flex: none;
+    border-radius: 2px;
+    transform: skewX(-16deg);
+    background: var(--nv-scr-cyan);
+    box-shadow: 0 0 11px rgba(74, 166, 238, 0.55);
+  }
+  .sec-t {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #fff;
+    text-shadow: 0 0 16px rgba(96, 180, 255, 0.4);
+    white-space: nowrap;
+  }
+  .sec-rule {
+    flex: 1;
+    height: 1px;
+    margin: 0 6px;
+    background: rgba(135, 208, 255, 0.2);
+  }
+  .sec-meta {
+    font-size: 12.5px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .sec-meta b.bad {
+    color: var(--nv-scr-red);
+    font-weight: 600;
+  }
+  .sec-meta b.warn {
+    color: var(--nv-scr-amber);
+    font-weight: 600;
+  }
+}
