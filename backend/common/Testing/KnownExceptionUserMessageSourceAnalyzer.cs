@@ -13,6 +13,7 @@ internal enum UserMessagePolicy
 {
     StaticChinese,
     SafeText,
+    RequiredSafeText,
     NoDownstreamDiagnostics,
 }
 
@@ -68,10 +69,16 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
                 {
                     AddViolations(syntaxTree, firstArgument, policy, violations);
                 }
-                else if (policy == UserMessagePolicy.NoDownstreamDiagnostics)
+                else if (policy is UserMessagePolicy.NoDownstreamDiagnostics or UserMessagePolicy.RequiredSafeText)
                 {
                     var line = syntaxTree.GetLineSpan(creation.Span).StartLinePosition.Line + 1;
-                    violations.Add(new Violation(syntaxTree.FilePath, line, creation.SpanStart, "用户消息不能为空。"));
+                    violations.Add(new Violation(
+                        syntaxTree.FilePath,
+                        line,
+                        creation.SpanStart,
+                        policy == UserMessagePolicy.RequiredSafeText
+                            ? "用户消息必须提供可静态分析的首个参数。"
+                            : "用户消息不能为空。"));
                 }
             }
         }
@@ -160,7 +167,7 @@ internal static class KnownExceptionUserMessageSourceAnalyzer
                 "用户消息估算长度不能超过 60 个字符。"));
         }
 
-        if (policy != UserMessagePolicy.SafeText)
+        if (policy is not (UserMessagePolicy.SafeText or UserMessagePolicy.RequiredSafeText))
         {
             return;
         }
