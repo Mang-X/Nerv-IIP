@@ -280,11 +280,16 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
             return DownstreamErrorEnvelope.Invalid;
         }
 
-        if (!root.TryGetProperty("success", out var success) || success.ValueKind != JsonValueKind.False)
+        if (!root.TryGetProperty("success", out var success))
         {
-            return statusCode != HttpStatusCode.BadRequest && AcceptsBareDownstreamErrorPayload
+            return AcceptsBareDownstreamErrorPayload
                 ? ParseBareDownstreamErrorPayload(root)
                 : DownstreamErrorEnvelope.Invalid;
+        }
+
+        if (success.ValueKind != JsonValueKind.False)
+        {
+            return DownstreamErrorEnvelope.Invalid;
         }
 
         var message = root.TryGetProperty("message", out var messageValue) &&
