@@ -7,7 +7,7 @@ import {
 } from '@nerv-iip/api-client'
 import { formatWorkScopeKey, parseWorkScopeKey } from '@nerv-iip/business-core'
 import { useQuery } from '@pinia/colada'
-import { computed, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
+import { computed, shallowReactive, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
 import { useAuthStore } from '@/stores/auth'
 
@@ -20,11 +20,9 @@ export interface WmsWorkScopeOption {
   value: string
 }
 
-const selectedScopeKeys: Record<WmsWorkScopeCatalogKind, ReturnType<typeof shallowRef<string>>> = {
-  receipts: shallowRef<string>(),
-  shipments: shallowRef<string>(),
-  counts: shallowRef<string>(),
-}
+const selections = shallowReactive<
+  Partial<Record<WmsWorkScopeCatalogKind, { sessionKey: string; scopeKey: string | undefined }>>
+>({})
 
 function normalizeScope(
   item: BusinessConsoleWmsWorkScopeCatalogItem,
@@ -45,7 +43,23 @@ export function useWmsWorkScope(
   const organizationId = computed(() => auth.principal?.organizationId ?? '')
   const environmentId = computed(() => auth.principal?.environmentId ?? '')
   const hasTenant = computed(() => Boolean(organizationId.value && environmentId.value))
-  const selectedScopeKey = selectedScopeKeys[catalog]
+  const sessionKey = computed(() =>
+    JSON.stringify([
+      auth.sessionId ?? '',
+      auth.principal?.principalId ?? '',
+      organizationId.value,
+      environmentId.value,
+    ]),
+  )
+  const selectedScopeKey = computed<string | undefined>({
+    get: () => {
+      const selection = selections[catalog]
+      return selection?.sessionKey === sessionKey.value ? selection.scopeKey : undefined
+    },
+    set: (scopeKey) => {
+      selections[catalog] = { sessionKey: sessionKey.value, scopeKey }
+    },
+  })
 
   const catalogQuery = useQuery(() => {
     const options = {
@@ -63,6 +77,7 @@ export function useWmsWorkScope(
 
     return {
       ...queryOptions,
+      key: [...queryOptions.key, sessionKey.value],
       enabled: hasTenant.value && toValue(consumerEnabled),
     }
   })
@@ -115,6 +130,7 @@ export function useWmsWorkScope(
     organizationId,
     environmentId,
     principalId,
+    sessionKey,
     hasTenant,
     hasSelection,
     scopeKey: selectedScopeKey,

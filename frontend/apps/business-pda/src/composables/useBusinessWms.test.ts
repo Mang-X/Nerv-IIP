@@ -86,6 +86,13 @@ vi.mock('./useWmsWorkScope', () => ({
       organizationId: computed(() => reactiveAuthState.principal?.organizationId ?? ''),
       environmentId: computed(() => reactiveAuthState.principal?.environmentId ?? ''),
       principalId: computed(() => reactiveAuthState.principal?.principalId ?? 'emp049'),
+      sessionKey: computed(() =>
+        JSON.stringify([
+          reactiveAuthState.principal?.principalId,
+          reactiveAuthState.principal?.organizationId,
+          reactiveAuthState.principal?.environmentId,
+        ]),
+      ),
       hasTenant,
       hasSelection: computed(
         () =>
