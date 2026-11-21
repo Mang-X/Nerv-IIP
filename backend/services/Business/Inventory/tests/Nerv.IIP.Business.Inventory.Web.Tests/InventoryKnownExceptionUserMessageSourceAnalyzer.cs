@@ -8,31 +8,7 @@ namespace Nerv.IIP.Business.Inventory.Web.Tests;
 
 internal sealed record InventoryKnownExceptionSourceDocument(string Path, string Text);
 
-internal sealed record InventoryKnownExceptionSite(
-    string Path,
-    string TypeName,
-    string MethodName,
-    int DirectKnownExceptionCount,
-    InventoryKnownExceptionSiteKind Kind,
-    string Reason)
-{
-    public string Key => $"{Path}|{TypeName}|{MethodName}";
-}
-
-internal enum InventoryKnownExceptionSiteKind
-{
-    Target,
-    Excluded,
-}
-
-internal sealed record InventoryPostingRejectedSite(
-    string Path,
-    string TypeName,
-    string MethodName,
-    int DirectConstructionCount,
-    int FromDomainCallCount,
-    InventoryKnownExceptionSiteKind Kind,
-    string Reason)
+internal sealed record InventoryExcludedMessageSite(string Path, string TypeName, string MethodName, string Reason)
 {
     public string Key => $"{Path}|{TypeName}|{MethodName}";
 }
@@ -45,130 +21,9 @@ internal static class InventoryKnownExceptionUserMessageSourceAnalyzer
     private const int InterpolationEstimatedLength = 12;
     private const int MaximumMessageLength = 60;
 
-    public static IReadOnlyList<InventoryKnownExceptionSite> DiscoverKnownExceptions(
-        IReadOnlyCollection<InventoryKnownExceptionSourceDocument> documents)
-    {
-        if (documents.Count == 0)
-        {
-            throw new InvalidOperationException("Inventory KnownException 源集合不能为空。");
-        }
-
-        var sourceTrees = ParseTrees(documents);
-        var compilation = CreateCompilation(sourceTrees, "InventoryKnownExceptionDiscovery");
-        var discovered = new List<InventoryKnownExceptionSite>();
-
-        foreach (var syntaxTree in sourceTrees)
-        {
-            var semanticModel = compilation.GetSemanticModel(syntaxTree);
-            foreach (var method in syntaxTree.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>())
-            {
-                var typeName = GetContainingTypeName(method);
-                if (typeName is null)
-                {
-                    continue;
-                }
-
-                var directKnownExceptionCount = method.DescendantNodes()
-                    .OfType<BaseObjectCreationExpressionSyntax>()
-                    .Count(creation =>
-                        creation.Ancestors().OfType<MethodDeclarationSyntax>().FirstOrDefault() == method
-                        && IsTransportVisibleKnownExceptionType(semanticModel, creation));
-                if (directKnownExceptionCount == 0)
-                {
-                    continue;
-                }
-
-                discovered.Add(new InventoryKnownExceptionSite(
-                    NormalizePath(syntaxTree.FilePath),
-                    typeName,
-                    MethodName(method),
-                    directKnownExceptionCount,
-                    InventoryKnownExceptionSiteKind.Excluded,
-                    "discovered Inventory KnownException site"));
-            }
-        }
-
-        return discovered;
-    }
-
-    public static IReadOnlyList<InventoryPostingRejectedSite> DiscoverPostingRejectedCalls(
-        IReadOnlyCollection<InventoryKnownExceptionSourceDocument> documents)
-    {
-        if (documents.Count == 0)
-        {
-            throw new InvalidOperationException("InventoryPostingRejectedException 源集合不能为空。");
-        }
-
-        var sourceTrees = ParseTrees(documents);
-        var compilation = CreateCompilation(sourceTrees, "InventoryPostingRejectedDiscovery");
-        var discovered = new Dictionary<string, InventoryPostingRejectedSiteBuilder>(StringComparer.Ordinal);
-
-        foreach (var syntaxTree in sourceTrees)
-        {
-            var semanticModel = compilation.GetSemanticModel(syntaxTree);
-            var root = syntaxTree.GetRoot();
-            foreach (var creation in root.DescendantNodes().OfType<BaseObjectCreationExpressionSyntax>())
-            {
-                if (!IsType(semanticModel, creation, InventoryPostingRejectedExceptionTypeName))
-                {
-                    continue;
-                }
-
-                var key = GetSiteKey(syntaxTree, creation);
-                if (key is null)
-                {
-                    continue;
-                }
-
-                if (!discovered.TryGetValue(key.Key, out var builder))
-                {
-                    builder = new InventoryPostingRejectedSiteBuilder(key.Path, key.TypeName, key.MethodName);
-                    discovered.Add(key.Key, builder);
-                }
-                builder.DirectConstructionCount++;
-            }
-
-            foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
-            {
-                var symbol = semanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
-                if (symbol is null
-                    || symbol.Name != "FromDomain"
-                    || symbol.ContainingType.ToDisplayString() != InventoryPostingRejectedExceptionTypeName)
-                {
-                    continue;
-                }
-
-                var key = GetSiteKey(syntaxTree, invocation);
-                if (key is null)
-                {
-                    continue;
-                }
-
-                if (!discovered.TryGetValue(key.Key, out var builder))
-                {
-                    builder = new InventoryPostingRejectedSiteBuilder(key.Path, key.TypeName, key.MethodName);
-                    discovered.Add(key.Key, builder);
-                }
-                builder.FromDomainCallCount++;
-            }
-        }
-
-        return discovered.Values
-            .Select(builder => new InventoryPostingRejectedSite(
-                builder.Path,
-                builder.TypeName,
-                builder.MethodName,
-                builder.DirectConstructionCount,
-                builder.FromDomainCallCount,
-                InventoryKnownExceptionSiteKind.Excluded,
-                "discovered InventoryPostingRejectedException call site"))
-            .OrderBy(site => site.Key, StringComparer.Ordinal)
-            .ToArray();
-    }
-
     public static IReadOnlyList<string> AnalyzeKnownExceptionMessages(
         IReadOnlyCollection<InventoryKnownExceptionSourceDocument> documents,
-        IReadOnlyCollection<InventoryKnownExceptionSite> excludedSites)
+        IReadOnlyCollection<InventoryExcludedMessageSite> excludedSites)
     {
         if (documents.Count == 0)
         {
@@ -218,7 +73,7 @@ internal static class InventoryKnownExceptionUserMessageSourceAnalyzer
 
     public static IReadOnlyList<string> AnalyzePostingRejectedMessages(
         IReadOnlyCollection<InventoryKnownExceptionSourceDocument> documents,
-        IReadOnlyCollection<InventoryPostingRejectedSite> excludedSites)
+        IReadOnlyCollection<InventoryExcludedMessageSite> excludedSites)
     {
         if (documents.Count == 0)
         {
@@ -432,15 +287,6 @@ internal static class InventoryKnownExceptionUserMessageSourceAnalyzer
     private sealed record SiteKey(string Path, string TypeName, string MethodName)
     {
         public string Key => $"{Path}|{TypeName}|{MethodName}";
-    }
-
-    private sealed class InventoryPostingRejectedSiteBuilder(string path, string typeName, string methodName)
-    {
-        public string Path { get; } = path;
-        public string TypeName { get; } = typeName;
-        public string MethodName { get; } = methodName;
-        public int DirectConstructionCount { get; set; }
-        public int FromDomainCallCount { get; set; }
     }
 
     private sealed record Violation(string Path, int Line, int Position, string Reason);
