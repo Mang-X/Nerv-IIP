@@ -20,7 +20,6 @@
     <PackageVersion Include="DotNetCore.CAP.RedisStreams" Version="10.0.2" />
     <PackageVersion Include="FastEndpoints" Version="9.0.0" />
     <PackageVersion Include="FastEndpoints.Swagger" Version="9.0.0" />
-    <PackageVersion Include="FastEndpoints.Swagger.Swashbuckle" Version="2.3.0" />
     <PackageVersion Include="FluentValidation" Version="12.2.0" />
     <PackageVersion Include="FluentValidation.AspNetCore" Version="11.3.1" />
     <PackageVersion Include="Hangfire.AspNetCore" Version="1.8.25" />
