@@ -19,7 +19,10 @@ const SRC = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const RAW_ERROR_ALLOWLIST = new Map<string, string>([
   ['utils/notify.ts', '分层透传的实现本身'],
   ['composables/lifecycleAction.ts', '只做类型判定，不取消息上屏'],
-  ['composables/useFulfillmentTimeline.ts', '包装成领域错误类型 FulfillmentNodeError，不直接上屏'],
+  [
+    'composables/planning/fulfillmentErrors.ts',
+    '包装成领域错误类型 FulfillmentNodeError，不直接上屏',
+  ],
   ['composables/mes/useReceiptCreateForm.ts', '已先走 serverErrorMessage，仅作兜底取值'],
   // pages/quality/inspection-tasks.vue 曾在此豁免（靠 `instanceof Error` 判 403，对响应体对象永远不成立，
   // 真实 403 退化成普通失败态）——MAN-698 批次 A 已改成按状态码判（`isForbiddenError`），豁免随之取消。
