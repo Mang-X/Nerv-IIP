@@ -86,57 +86,26 @@ function Get-NervRepoSkillNames {
 }
 
 function Get-NervNonRepoPayloadNames {
-    <#
-        .SYNOPSIS
-        Names of the installed payload entries this worktree's own skills/ does not provide —
-        i.e. everything under .agents/skills that only the install or the mirror can supply.
+    param(
+        [Parameter(Mandatory)] [string] $RepoRoot,
+        [string] $LockRoot = $RepoRoot
+    )
 
-        .DESCRIPTION
-        The single place the "provided by this worktree / has to come from outside" split is
-        expressed. The gate that decides whether to install and mirror, and the mirror that
-        carries the payload, must move the same set: if the gate counts an entry the mirror has
-        to carry it, and an entry the gate does not count must not be carried either.
+    $installed = @(Get-NervSkillPayloadNames -RepoRoot $RepoRoot)
+    if ($installed.Count -eq 0) { return @() }
 
-        Deliberately NOT named after skills-lock.json: the lock does own these entries, but it
-        also owns nerv-pr-review and nerv-task-delivery as sourceType "local" (41 entries, both
-        present — implementation checked), and those two are exactly what this function
-        subtracts. "Lock-owned" would therefore name the complement of what it returns.
-
-        What counts as a payload entry is not decided here: it is Get-NervSkillDirectoryNames'
-        one rule, so the link layer and this gate cannot disagree about it. Why that rule is
-        "directories only" is written there (#3465).
-    #>
-    param([Parameter(Mandatory)] [string] $RepoRoot)
-
-    $repoOwned = [System.Collections.Generic.HashSet[string]]::new(
-        [string[]] @(Get-NervRepoSkillNames -RepoRoot $RepoRoot), [StringComparer]::Ordinal)
-    return @(Get-NervSkillPayloadNames -RepoRoot $RepoRoot |
-            Where-Object { -not $repoOwned.Contains($_) })
+    # 两棵树可在不同分支：只镜像目标锁文件登记的第三方技能，且不借用主树的项目技能。
+    $lock = Get-Content -LiteralPath (Join-Path $LockRoot 'skills-lock.json') -Raw | ConvertFrom-Json -AsHashtable
+    $repoOwned = @(Get-NervRepoSkillNames -RepoRoot $RepoRoot)
+    return @($installed | Where-Object {
+        $_ -cnotin $repoOwned -and $lock.skills.ContainsKey($_) -and $lock.skills[$_].sourceType -ne 'local'
+    })
 }
 
 function Test-NervSkillsPayloadPresent {
-    <#
-        .SYNOPSIS
-        True when a worktree holds at least one installed payload that this worktree's own
-        skills/ does not provide — the payload the lock-driven install and mirror exist to bring in.
+    param([Parameter(Mandatory)] [string] $RepoRoot, [string] $LockRoot = $RepoRoot)
 
-        .DESCRIPTION
-        This is the gate for the lock-driven install and mirror, so it counts exactly what
-        those two move. Repo-tracked skills land in the same directory unconditionally
-        (Sync-NervRepoSkillPayload), so counting them would make the gate report "installed"
-        the moment the repo publishes its own skills — after which a main worktree whose
-        install failed once would never install or mirror again, and every third-party skill
-        in skills-lock.json would stay silently missing.
-
-        Guard on content, not existence: a mirror that fails midway leaves an empty
-        .agents/skills behind, and an existence check would treat that as "installed" forever.
-
-        Failure direction if skills-lock.json ever held nothing but repo-tracked skills: the
-        gate stays false and the install re-runs each session — noisy, not silently missing.
-    #>
-    param([Parameter(Mandatory)] [string] $RepoRoot)
-
-    return @(Get-NervNonRepoPayloadNames -RepoRoot $RepoRoot).Count -gt 0
+    return @(Get-NervNonRepoPayloadNames -RepoRoot $RepoRoot -LockRoot $LockRoot).Count -gt 0
 }
 
 function New-NervSkillLinkLayer {
@@ -236,7 +205,7 @@ function Initialize-NervWorktreeSkills {
         Write-Host '[setup] skills present - skipping'
     }
     else {
-        if (-not (Test-NervSkillsPayloadPresent -RepoRoot $MainRoot)) {
+        if (-not (Test-NervSkillsPayloadPresent -RepoRoot $MainRoot -LockRoot $RepoRoot)) {
             # Only ever install in the main worktree, so every future worktree copies from it.
             Write-Host '[setup] skills: npx skills experimental_install (main worktree)'
             try {
@@ -247,7 +216,7 @@ function Initialize-NervWorktreeSkills {
             }
         }
 
-        if (Test-NervSkillsPayloadPresent -RepoRoot $MainRoot) {
+        if ($MainRoot -ne $RepoRoot -and (Test-NervSkillsPayloadPresent -RepoRoot $MainRoot -LockRoot $RepoRoot)) {
             Write-Host '[setup] skills: mirroring .agents/skills from the main worktree'
             try {
                 $mainPayload = Join-Path $MainRoot $script:NervAgentSkillsRelative
@@ -257,7 +226,7 @@ function Initialize-NervWorktreeSkills {
                 # skills/. Repo-tracked skills are republished from this worktree's source in
                 # step 2, so mirroring main's copy of them would either be overwritten (same
                 # name) or linger with no source here (name only main has).
-                foreach ($name in Get-NervNonRepoPayloadNames -RepoRoot $MainRoot) {
+                foreach ($name in Get-NervNonRepoPayloadNames -RepoRoot $MainRoot -LockRoot $RepoRoot) {
                     Copy-Item -LiteralPath (Join-Path $mainPayload $name) -Destination (Join-Path $targetPayload $name) -Recurse -Force
                 }
             }
@@ -265,7 +234,7 @@ function Initialize-NervWorktreeSkills {
                 Write-Warning "[setup] skills mirror failed: $($_.Exception.Message)"
             }
         }
-        else {
+        elseif ($MainRoot -ne $RepoRoot) {
             Write-Host '[setup] skills: unavailable in the main worktree - skipping'
         }
     }

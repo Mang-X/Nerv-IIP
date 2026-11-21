@@ -148,8 +148,8 @@ rm -rf .agents/skills/<name> .claude/skills/<name>
 `Get-Item` 拿得到 `LinkType=SymbolicLink`，但读不到里面的 `SKILL.md`。两层都删之后不必再做
 别的 —— 本树**有源**的技能下次 SessionStart 会照常重新发布。
 
-同一道门还有一个相邻情形：payload **不全**时（例如安装中途失败，41 条只落了几条），门只要
-看见**一条**非仓库自有的 payload 就判「已安装」，不会回头补齐缺的那些。这一条的处置必须落在
+同一道门还有一个相邻情形：payload **不全**时（例如安装中途失败），门只要
+看见**一条**目标锁文件登记的第三方 payload 就判「已安装」，不会回头补齐缺的那些。这一条的处置必须落在
 **主 worktree**：
 
 ```bash
@@ -160,10 +160,7 @@ rm -rf <主 worktree>/.agents/skills <主 worktree>/.claude/skills
 工作树里删两层**补不回缺的那些** —— 主树的门仍判「已安装」，install 不触发，只是把主树那同一份
 残缺重新镜像过来（实测如此）。
 
-**不做自动清理是既定裁决**（#3466）：判「某条 payload 是不是第三方的」必须真正解析
-`skills-lock.json`，而全仓目前没有任何代码读它的内容，成本与该状态今天的发生率不匹配；
-不要提自动清理方案。**推翻条件**：一旦仓库里出现读取 `skills-lock.json` 内容的代码，
-这条裁决就要重评。
+主树可以处在不同分支。工作树初始化只镜像目标 `skills-lock.json` 登记的第三方技能，项目技能取自目标工作树的 `skills/`。工作树内已有的额外安装由其所有者按上述步骤清理。
 
 两层都在 `.gitignore` 里；第三方技能的事实源是 `skills-lock.json`，项目专属技能的事实源是
 `skills/`（`sourceType: local`，payload 每次由 hook 按源重发布）。

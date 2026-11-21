@@ -28,6 +28,8 @@
 # repeat sessions are a near-instant no-op. Backend restore is opt-in (slow; not needed
 # for frontend work) via:  $env:NERV_SETUP_BACKEND = '1'   (or run /setup-env).
 
+param([switch] $SkillsOnly)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -39,15 +41,7 @@ function Write-SetupStep([string] $message) {
 }
 
 # --- Agent skills ---------------------------------------------------------
-# `npx skills` installs the real skill payload into .agents/skills/ and exposes it to
-# each agent runtime through a directory of relative symlinks (.claude/skills/<name> ->
-# ../../.agents/skills/<name>). Both layers are gitignored, so a fresh worktree starts
-# with .claude/skills/ empty and every repo-level skill silently missing. Reinstalling
-# from the network per worktree costs minutes; the main worktree already holds a
-# resolved, hash-locked copy, so mirror that payload instead (same trick as the codex
-# .codex/environments/environment.toml [setup] block, which copies .agents/skills/).
-# The link layer is then rebuilt from the payload rather than mirrored, because
-# `experimental_install` never produces one to mirror.
+# All worktree setup hooks share the destination lock and project skill sources.
 . (Join-Path $root 'scripts/lib/WorktreeSkills.ps1')
 
 function Get-MainWorktreeRoot([string] $worktreeRoot) {
@@ -67,10 +61,13 @@ catch {
   Write-Warning "[setup] could not resolve the main worktree root: $($_.Exception.Message)"
 }
 
+if ($SkillsOnly) { $WarningPreference = 'Stop' }
 Initialize-NervWorktreeSkills -RepoRoot $root -MainRoot $mainRoot -InstallAction {
   param([string] $mainWorktreeRoot)
   Invoke-NativeCommandWithTimeout -Command 'npx' -Arguments @('skills', 'experimental_install') -WorkingDirectory $mainWorktreeRoot -TimeoutSeconds 900 -Name 'worktree-skills-install'
 }
+
+if ($SkillsOnly) { return }
 
 # --- Frontend dependencies (needed for typecheck / test / build / preview) ---
 if (-not (Test-Path (Join-Path $root 'frontend/node_modules'))) {

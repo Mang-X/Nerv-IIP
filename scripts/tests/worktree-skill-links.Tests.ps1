@@ -52,10 +52,13 @@ function New-SourceSkill([string] $Root, [string] $Name, [string] $Body) {
     New-SkillDirectory -Parent (Join-Path $Root 'skills') -Name $Name -Body $Body
 }
 
-function New-Fixture([string[]] $PayloadNames, [string[]] $StrayFiles = @()) {
+function New-Fixture([string[]] $PayloadNames, [string[]] $StrayFiles = @(), [string[]] $LockedNames = $PayloadNames) {
     $root = Join-Path ([System.IO.Path]::GetTempPath()) ("nerv-skill-links-" + [guid]::NewGuid().ToString('N'))
     $payloadRoot = Join-Path $root '.agents/skills'
     New-Item -ItemType Directory -Path $payloadRoot -Force | Out-Null
+    $entries = @{}
+    foreach ($name in $LockedNames) { $entries[$name] = @{ sourceType = 'github' } }
+    @{ version = 1; skills = $entries } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'skills-lock.json')
     foreach ($name in $PayloadNames) {
         New-PayloadSkill -Root $root -Name $name
     }
@@ -228,10 +231,10 @@ try {
     # 安装/镜像门只看 skills-lock.json 拥有的那部分 payload。仓库自有技能无条件写进同一个目录，
     # 把它们算进门里，主树首次安装失败后这道门就永远判 present——安装与镜像都不再触发，
     # skills-lock.json 里的第三方技能静默缺失且无任何红。
-    $fresh = New-Fixture -PayloadNames @()
+    $fresh = New-Fixture -PayloadNames @() -LockedNames vendor
     $fixtures.Add($fresh)
     New-SourceSkill -Root $fresh -Name 'alpha' -Body 'name: alpha'
-    $freshMain = New-Fixture -PayloadNames @()
+    $freshMain = New-Fixture -PayloadNames @() -LockedNames vendor
     $fixtures.Add($freshMain)
 
     # 第一次会话：主树的安装跑了但什么也没产出（本机 npx 失败只 Write-Warning，不中止）。
@@ -266,11 +269,11 @@ try {
     # 上面那些夹具鉴别不出这条。有差异的是**只有主树那条分支才有源**的技能：本树的 skills/ 里
     # 没有它，发布步骤根本不会遍历到它，于是它会作为一份**在本树没有任何源**的 payload 留下来
     # 被 agent 加载。这也是「谁归 lock、谁归仓库」这条划分必须由门与镜像同一份表达的原因。
-    $mirrorTarget = New-Fixture -PayloadNames @()
+    $mirrorTarget = New-Fixture -PayloadNames @() -LockedNames vendor
     $fixtures.Add($mirrorTarget)
     New-SourceSkill -Root $mirrorTarget -Name 'alpha' -Body 'name: alpha here'
 
-    $mirrorMain = New-Fixture -PayloadNames @('vendor', 'alpha', 'legacy')
+    $mirrorMain = New-Fixture -PayloadNames @('vendor', 'alpha', 'legacy', 'retired-vendor')
     $fixtures.Add($mirrorMain)
     # 主树对 alpha 与 legacy 都有源；alpha 与本树同名，legacy 只有主树有。
     New-SourceSkill -Root $mirrorMain -Name 'alpha' -Body 'name: alpha main'
@@ -278,6 +281,8 @@ try {
 
     Initialize-NervWorktreeSkills -RepoRoot $mirrorTarget -MainRoot $mirrorMain -InstallAction $recordOnlyInstall
 
+    Assert-SameNameSet -Actual (Get-NervSkillPayloadNames $mirrorTarget) -Expected @('alpha', 'vendor') -Message 'A fresh worktree must mirror only its own locked vendors.'
+    Assert-SameNameSet -Actual (Get-LinkNames $mirrorTarget) -Expected @('alpha', 'vendor') -Message 'Both runtimes must discover only the destination skills.'
     if (Test-Path -LiteralPath (Join-Path $mirrorTarget '.agents/skills/legacy')) {
         throw 'The mirror must carry only what this worktree cannot provide itself; a skill that is repo-tracked in the main worktree has no source in this worktree and nothing would ever refresh or remove it.'
     }
