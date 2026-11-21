@@ -3,9 +3,12 @@ import {
   getBusinessConsoleWmsReceiptWorkScopesQueryOptions,
   getBusinessConsoleWmsShipmentWorkScopesQueryOptions,
   type BusinessConsoleWmsWorkScopeCatalogEnvelope,
-  type BusinessConsoleWmsWorkScopeCatalogItem,
 } from '@nerv-iip/api-client'
-import { formatWorkScopeKey, parseWorkScopeKey } from '@nerv-iip/business-core'
+import {
+  parseWorkScopeKey,
+  toWmsWorkScopeOptions,
+  type WmsWorkScopeCatalogKind,
+} from '@nerv-iip/business-core'
 import { useQuery } from '@pinia/colada'
 import { computed, reactive, watch } from 'vue'
 
@@ -13,30 +16,10 @@ import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { inlineErrorMessage } from '@/utils/notify'
 
-const SUPPORTED_SCOPE_KINDS = new Set(['self', 'work-pool', 'site'])
-
-export type WmsWorkScopeCatalogKind = 'receipts' | 'shipments' | 'counts'
-
-export interface WmsWorkScopeOption {
-  label: string
-  value: string
-}
-
 export interface WmsWorkScopeFilters {
   scopeKind?: string
   scopeId?: string
   skip: number
-}
-
-function normalizeScope(
-  item: BusinessConsoleWmsWorkScopeCatalogItem,
-): Required<Pick<BusinessConsoleWmsWorkScopeCatalogItem, 'scopeKind' | 'scopeId'>> &
-  BusinessConsoleWmsWorkScopeCatalogItem {
-  return {
-    ...item,
-    scopeKind: item.scopeKind?.trim() ?? '',
-    scopeId: item.scopeId?.trim() ?? '',
-  }
 }
 
 // 同一 principal/org/env/作业域的范围选择在整个 Console 共享，用户显式切换会记住
@@ -96,20 +79,7 @@ export function useWmsWorkScope(catalog: WmsWorkScopeCatalogKind) {
   const catalogData = computed(() =>
     envelope.value?.success === true && envelope.value.data ? envelope.value.data : undefined,
   )
-  const authorizedScopes = computed(() =>
-    (catalogData.value?.items ?? [])
-      .map(normalizeScope)
-      .filter(
-        (scope) =>
-          Boolean(scope.scopeKind && scope.scopeId) && SUPPORTED_SCOPE_KINDS.has(scope.scopeKind),
-      ),
-  )
-  const scopeOptions = computed<WmsWorkScopeOption[]>(() =>
-    authorizedScopes.value.map((scope) => ({
-      label: scope.scopeKind === 'self' ? '我的任务' : (scope.displayName?.trim() ?? scope.scopeId),
-      value: formatWorkScopeKey(scope.scopeKind, scope.scopeId),
-    })),
-  )
+  const scopeOptions = computed(() => toWmsWorkScopeOptions(catalogData.value?.items ?? []))
 
   const selectionKey = computed(() =>
     [

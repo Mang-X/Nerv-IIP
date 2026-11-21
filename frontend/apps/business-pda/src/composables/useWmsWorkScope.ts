@@ -3,37 +3,22 @@ import {
   getBusinessConsoleWmsReceiptWorkScopesQueryOptions,
   getBusinessConsoleWmsShipmentWorkScopesQueryOptions,
   type BusinessConsoleWmsWorkScopeCatalogEnvelope,
-  type BusinessConsoleWmsWorkScopeCatalogItem,
 } from '@nerv-iip/api-client'
-import { formatWorkScopeKey, parseWorkScopeKey } from '@nerv-iip/business-core'
+import {
+  parseWorkScopeKey,
+  toWmsWorkScopeOptions,
+  type WmsWorkScopeCatalogKind,
+} from '@nerv-iip/business-core'
 import { useQuery } from '@pinia/colada'
 import { computed, shallowReactive, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
 import { useAuthStore } from '@/stores/auth'
 
-const SUPPORTED_SCOPE_KINDS = new Set(['self', 'work-pool', 'site'])
-
-export type WmsWorkScopeCatalogKind = 'receipts' | 'shipments' | 'counts'
-
-export interface WmsWorkScopeOption {
-  label: string
-  value: string
-}
+export type { WmsWorkScopeCatalogKind, WmsWorkScopeOption } from '@nerv-iip/business-core'
 
 const selections = shallowReactive<
   Partial<Record<WmsWorkScopeCatalogKind, { sessionKey: string; scopeKey: string | undefined }>>
 >({})
-
-function normalizeScope(
-  item: BusinessConsoleWmsWorkScopeCatalogItem,
-): Required<Pick<BusinessConsoleWmsWorkScopeCatalogItem, 'scopeKind' | 'scopeId'>> &
-  BusinessConsoleWmsWorkScopeCatalogItem {
-  return {
-    ...item,
-    scopeKind: item.scopeKind?.trim() ?? '',
-    scopeId: item.scopeId?.trim() ?? '',
-  }
-}
 
 export function useWmsWorkScope(
   catalog: WmsWorkScopeCatalogKind,
@@ -93,20 +78,7 @@ export function useWmsWorkScope(
       auth.sessionId ??
       'unrestored-session',
   )
-  const authorizedScopes = computed(() =>
-    (catalogData.value?.items ?? [])
-      .map(normalizeScope)
-      .filter(
-        (scope) =>
-          Boolean(scope.scopeKind && scope.scopeId) && SUPPORTED_SCOPE_KINDS.has(scope.scopeKind),
-      ),
-  )
-  const scopeOptions = computed<WmsWorkScopeOption[]>(() =>
-    authorizedScopes.value.map((scope) => ({
-      label: scope.scopeKind === 'self' ? '我的任务' : (scope.displayName?.trim() ?? scope.scopeId),
-      value: formatWorkScopeKey(scope.scopeKind, scope.scopeId),
-    })),
-  )
+  const scopeOptions = computed(() => toWmsWorkScopeOptions(catalogData.value?.items ?? []))
 
   watch(
     scopeOptions,
