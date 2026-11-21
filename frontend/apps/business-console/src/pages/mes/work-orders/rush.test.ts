@@ -23,7 +23,7 @@ vi.mock('@/utils/notify', () => ({
   notifySuccess: vi.fn(),
 }))
 
-vi.mock('@/composables/useOrderUrgency', () => ({
+vi.mock('@/composables/urgency/useOrderUrgency', () => ({
   useOrderUrgencies: () => ({
     byReference: ref(new Map()),
     error: ref(undefined),

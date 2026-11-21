@@ -9,14 +9,14 @@ import Quotations from './sales/quotations.vue'
 import Vouchers from './finance/vouchers.vue'
 
 const state = vi.hoisted(() => ({ current: undefined as unknown, save: vi.fn() }))
-vi.mock('@/composables/useBusinessErp', () => ({
+vi.mock('@/composables/erp/useBusinessErp', () => ({
   useErpRequestsForQuotation: () => state.current,
   useErpSupplierQuotations: () => state.current,
   useErpPurchaseOrders: () => state.current,
   useErpQuotations: () => state.current,
   useErpJournalVouchers: () => state.current,
 }))
-vi.mock('@/composables/useErpPickerCatalog', () => ({
+vi.mock('@/composables/erp/useErpPickerCatalog', () => ({
   useErpPartnerCatalog: () => ({
     supplierOptions: shallowRef([]),
     customerOptions: shallowRef([]),

@@ -17,8 +17,8 @@ import {
   recoverLifecycleAction,
 } from '@/composables/lifecycleAction'
 import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
-import { createWmsIdempotencyKey, useWmsCountExecutions } from '@/composables/useBusinessWms'
-import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
+import { createWmsIdempotencyKey, useWmsCountExecutions } from '@/composables/wms'
+import { useInventoryScopeCatalog } from '@/composables/inventory/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import {
   wmsCountExecutionStatusFilterOptions,
@@ -26,12 +26,12 @@ import {
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
 import { usePagedList } from '@/composables/usePagedList'
-import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
+import { useWmsOperationalCandidates } from '@/composables/wms/useWmsOperationalCandidates'
 import { useSkuNames } from '@/composables/useSkuNames'
-import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
+import { bindWmsWorkScopeFilters } from '@/composables/wms/useWmsWorkScope'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { useWmsCreateIntent } from '@/composables/useWmsCreateIntent'
+import { useWmsCreateIntent } from '@/composables/wms/useWmsCreateIntent'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import {

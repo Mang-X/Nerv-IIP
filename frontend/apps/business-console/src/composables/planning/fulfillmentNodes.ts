@@ -1,5 +1,5 @@
 import type { RouteLocationRaw } from 'vue-router'
-import { urgencyLevelPresentation } from '../useUrgencyDisplayMode'
+import { urgencyLevelPresentation } from '../urgency/useUrgencyDisplayMode'
 import { classifyFulfillmentFailure, type FulfillmentFailureKind } from './fulfillmentErrors'
 
 export type FulfillmentNodeKey =

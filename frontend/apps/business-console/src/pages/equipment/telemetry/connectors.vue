@@ -3,7 +3,7 @@ import {
   isConnectorFault,
   isConnectorOffline,
   useBusinessTelemetryConnectors,
-} from '@/composables/useBusinessTelemetry'
+} from '@/composables/equipment/useBusinessTelemetry'
 import ConnectorHealthCard from '@/components/equipment/ConnectorHealthCard.vue'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { useBusinessContextStore } from '@/stores/businessContext'

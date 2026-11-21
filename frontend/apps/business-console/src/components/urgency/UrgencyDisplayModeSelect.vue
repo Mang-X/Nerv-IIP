@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { UrgencyDisplayMode } from '@/composables/useUrgencyDisplayMode'
-import { URGENCY_DISPLAY_MODES } from '@/composables/useUrgencyDisplayMode'
+import type { UrgencyDisplayMode } from '@/composables/urgency/useUrgencyDisplayMode'
+import { URGENCY_DISPLAY_MODES } from '@/composables/urgency/useUrgencyDisplayMode'
 import {
   NvSelect,
   NvSelectContent,

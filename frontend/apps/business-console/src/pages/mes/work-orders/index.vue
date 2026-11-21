@@ -35,20 +35,20 @@ import {
 } from '@/composables/mes/workOrderTransformation'
 import { toBaseUomBySku } from '@/composables/skuBaseUom'
 import { useMesMaterialVersionCatalog } from '@/composables/useMesPickerCatalog'
-import { useOrderUrgencies } from '@/composables/useOrderUrgency'
+import { useOrderUrgencies } from '@/composables/urgency/useOrderUrgency'
 import {
   DEFAULT_URGENCY_DISPLAY_MODE,
   orderRowsByUrgency,
   type UrgencyDisplayMode,
-} from '@/composables/useUrgencyDisplayMode'
+} from '@/composables/urgency/useUrgencyDisplayMode'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import ProductionReportDialog from '@/components/mes/ProductionReportDialog.vue'
 import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
-import { isSchedulableWorkbenchCandidate } from '@/composables/useSchedulingWorkbench'
+import { isSchedulableWorkbenchCandidate } from '@/composables/scheduling/useSchedulingWorkbench'
 import {
   useCanScheduleSingleOrder,
   SINGLE_ORDER_SCHEDULING_DENIED_REASON,
-} from '@/composables/useSingleOrderScheduling'
+} from '@/composables/scheduling/useSingleOrderScheduling'
 import WorkOrderDetailSheet from '@/components/mes/WorkOrderDetailSheet.vue'
 import WorkOrderDemandChangeBadges from '@/components/mes/WorkOrderDemandChangeBadges.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'

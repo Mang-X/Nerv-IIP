@@ -80,7 +80,7 @@ vi.mock('vue-router', () => ({
   useRoute: () => barcode.route,
 }))
 
-vi.mock('@/composables/useBusinessBarcode', () => ({
+vi.mock('@/composables/barcode/useBusinessBarcode', () => ({
   useBarcodeRules: () => {
     const filters = reactive({
       organizationId: 'org-001',

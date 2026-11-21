@@ -15,11 +15,11 @@ import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import QualityHoldPanel from '@/components/mes/QualityHoldPanel.vue'
 import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
-import { isSchedulableWorkbenchCandidate } from '@/composables/useSchedulingWorkbench'
+import { isSchedulableWorkbenchCandidate } from '@/composables/scheduling/useSchedulingWorkbench'
 import {
   SINGLE_ORDER_SCHEDULING_DENIED_REASON,
   useCanScheduleSingleOrder,
-} from '@/composables/useSingleOrderScheduling'
+} from '@/composables/scheduling/useSingleOrderScheduling'
 import {
   describeMesReadinessReasons,
   makeIdempotencyKey,
@@ -44,7 +44,7 @@ import { labelFor, operationQualityStatusLabel } from '@/data/businessLabels'
 import {
   resolveScheduleStatus,
   scheduleInvalidationHint,
-} from '@/composables/useScheduleInvalidation'
+} from '@/composables/scheduling/useScheduleInvalidation'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'

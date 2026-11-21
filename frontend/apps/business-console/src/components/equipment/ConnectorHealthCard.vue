@@ -5,7 +5,7 @@ import {
   connectorSourceSystemLabel,
   formatSampleRate,
   isConnectorFault,
-} from '@/composables/useBusinessTelemetry'
+} from '@/composables/equipment/useBusinessTelemetry'
 import type { NvMetricStripCell } from '@nerv-iip/ui'
 import { NvBadge, NvMetricStrip } from '@nerv-iip/ui'
 import { ActivityIcon, ChevronDownIcon, TriangleAlertIcon, TimerIcon } from '@lucide/vue'

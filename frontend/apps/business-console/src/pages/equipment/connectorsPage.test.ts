@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
-import { computeConnectorSampleRate } from '@/composables/useBusinessTelemetry'
+import { computeConnectorSampleRate } from '@/composables/equipment/useBusinessTelemetry'
 import ConnectorHealthCard from '@/components/equipment/ConnectorHealthCard.vue'
 import ConnectorsPage from './telemetry/connectors.vue'
 
@@ -234,8 +234,9 @@ vi.mock('@/stores/businessContext', () => ({
   useBusinessContextStore: () => contextMock,
 }))
 
-vi.mock('@/composables/useBusinessTelemetry', async (importOriginal) => {
-  const original = await importOriginal<typeof import('@/composables/useBusinessTelemetry')>()
+vi.mock('@/composables/equipment/useBusinessTelemetry', async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import('@/composables/equipment/useBusinessTelemetry')>()
   const vue = await import('vue')
   connectorMocks.errorRef = vue.shallowRef<unknown>(undefined)
   connectorMocks.pendingRef = vue.shallowRef(false)

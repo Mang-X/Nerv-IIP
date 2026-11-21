@@ -14,7 +14,7 @@ const state = vi.hoisted(() => ({
   },
 }))
 
-vi.mock('@/composables/useBusinessQuality', () => ({
+vi.mock('@/composables/quality/useBusinessQuality', () => ({
   useQualityFirstArticleInspections: () => ({
     firstArticleRecords: shallowRef([
       {

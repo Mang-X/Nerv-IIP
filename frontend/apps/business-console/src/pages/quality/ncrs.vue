@@ -13,7 +13,7 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
-import { useQualityNcrs } from '@/composables/useBusinessQuality'
+import { useQualityNcrs } from '@/composables/quality/useBusinessQuality'
 import { NCR_DISPOSITION_DOCUMENT_TYPE } from '@/data/approvalReference'
 import {
   NCR_DISPOSITION_TYPE_OPTIONS,

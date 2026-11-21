@@ -30,7 +30,7 @@ import type { WorkbenchFocusItem } from '@/components/workbench/WorkbenchFocusCa
 import { BUSINESS_DOMAINS, WORKBENCH_DOMAIN_ID, sideNavForDomain } from '@/navigation'
 import { BUSINESS_DOMAIN_PERMISSIONS } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
-import { useBusinessWorkbenchSummary } from '@/composables/useBusinessWorkbench'
+import { useBusinessWorkbenchSummary } from '@/composables/ops/useBusinessWorkbench'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import type {
   BusinessConsoleWorkbenchAlertItem,

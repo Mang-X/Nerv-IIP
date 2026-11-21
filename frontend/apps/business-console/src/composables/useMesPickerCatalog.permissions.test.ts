@@ -7,7 +7,7 @@ import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useBusinessSkus } from './useBusinessMasterData'
-import { useEngineeringProductionVersions } from './useProductEngineering'
+import { useEngineeringProductionVersions } from './engineering'
 
 it('目录读取失败后换到无权岗位，旧错误消失且刷新不会再发请求', async () => {
   const fetch = vi.fn(async () => Response.json({ message: '目录暂时不可用' }, { status: 503 }))

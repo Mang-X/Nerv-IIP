@@ -4,7 +4,7 @@ import type {
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
-import { useErpPurchaseRequisitions } from '@/composables/useBusinessErp'
+import { useErpPurchaseRequisitions } from '@/composables/erp/useBusinessErp'
 import { useBusinessPartners } from '@/composables/useBusinessMasterData'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useSkuNames } from '@/composables/useSkuNames'

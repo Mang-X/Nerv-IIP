@@ -82,7 +82,7 @@ const authState = vi.hoisted(() => ({
   ] as string[],
 }))
 
-vi.mock('@/composables/useBusinessDeviceControlBinding', () => ({
+vi.mock('@/composables/equipment/useBusinessDeviceControlBinding', () => ({
   useBusinessDeviceControlBindings: () => ({
     bindings: computed(() => bindingState.rows),
     bindingsError: shallowRef(),
@@ -100,7 +100,7 @@ vi.mock('@/composables/useBusinessDeviceControlBinding', () => ({
 }))
 
 // 设备与连接器实例目录走真实读面（useQuery）；单测只关心页面提交行为，给确定目录。
-vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
+vi.mock('@/composables/equipment/useEquipmentPickerCatalog', () => ({
   useConnectorInstanceCatalog: () => ({
     connectorInstanceOptions: computed(() => [
       { value: 'opcua-cell-01', label: '一号车间采集器' },

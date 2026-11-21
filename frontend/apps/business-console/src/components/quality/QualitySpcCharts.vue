@@ -7,7 +7,7 @@ import { computed } from 'vue'
 import {
   buildSpcChartPresentation,
   hasCompleteSpcControlLimits,
-} from '@/composables/useBusinessQualityAnalysis'
+} from '@/composables/quality/useBusinessQualityAnalysis'
 
 const props = defineProps<{
   chart: BusinessConsoleQualitySpcControlChartResponse | null

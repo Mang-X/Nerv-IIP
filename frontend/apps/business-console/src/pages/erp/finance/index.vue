@@ -2,7 +2,7 @@
 import type { BusinessConsoleErpJournalVoucherItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import type { BuildKpiTrendOptions } from '@/utils/kpiTrend'
-import { useErpFinanceSummary, useErpJournalVouchers } from '@/composables/useBusinessErp'
+import { useErpFinanceSummary, useErpJournalVouchers } from '@/composables/erp/useBusinessErp'
 import { buildKpiTrend } from '@/utils/kpiTrend'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {

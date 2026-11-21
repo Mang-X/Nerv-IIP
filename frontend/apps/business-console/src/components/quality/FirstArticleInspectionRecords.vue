@@ -16,7 +16,7 @@ import {
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'
 
-import { useQualityFirstArticleInspections } from '@/composables/useBusinessQuality'
+import { useQualityFirstArticleInspections } from '@/composables/quality/useBusinessQuality'
 import { usePagedList } from '@/composables/usePagedList'
 import { inlineErrorMessage } from '@/utils/notify'
 

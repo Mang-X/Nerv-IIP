@@ -14,7 +14,7 @@ const spies = vi.hoisted(() => ({
   failure: vi.fn(),
 }))
 
-vi.mock('@/composables/useBusinessForecasts', () => ({
+vi.mock('@/composables/planning/useBusinessForecasts', () => ({
   useBusinessForecasts: () => {
     spies.forecastsError = shallowRef(null)
     return {

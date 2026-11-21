@@ -8,7 +8,7 @@ import { reactive, shallowRef } from 'vue'
 import MachineOverheadPage from './finance/machine-overhead.vue'
 
 const state = vi.hoisted(() => ({ current: undefined as unknown }))
-vi.mock('@/composables/useErpCostAccounting', () => ({
+vi.mock('@/composables/erp/useErpCostAccounting', () => ({
   useErpMachineOverhead: () => state.current,
 }))
 

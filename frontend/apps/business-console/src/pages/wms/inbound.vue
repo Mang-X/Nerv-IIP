@@ -14,11 +14,11 @@ import {
   recoverLifecycleAction,
 } from '@/composables/lifecycleAction'
 import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
-import { createWmsIdempotencyKey, useWmsInboundOrders } from '@/composables/useBusinessWms'
-import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
+import { createWmsIdempotencyKey, useWmsInboundOrders } from '@/composables/wms'
+import { useInventoryScopeDefaults } from '@/composables/inventory/useInventoryScope'
 import { usePagedList } from '@/composables/usePagedList'
-import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
-import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
+import { useWmsOperationalCandidates } from '@/composables/wms/useWmsOperationalCandidates'
+import { bindWmsWorkScopeFilters } from '@/composables/wms/useWmsWorkScope'
 import {
   wmsInboundOrderStatusFilterOptions,
   wmsInboundOrderStatusLabel,

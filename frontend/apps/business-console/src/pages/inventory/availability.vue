@@ -12,18 +12,18 @@ import {
   STOCK_LEDGER_QUALITY_STATUS_TONES,
 } from '@/data/businessLabels'
 import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
-import { useInventoryAvailability } from '@/composables/useBusinessInventory'
+import { useInventoryAvailability } from '@/composables/inventory/useBusinessInventory'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useSkuNames } from '@/composables/useSkuNames'
-import { useInventoryExpiryView } from '@/composables/useInventoryExpiryView'
+import { useInventoryExpiryView } from '@/composables/inventory/useInventoryExpiryView'
 import {
   useInventoryScopeDefaults,
   useInventorySiteExpiryOverview,
-} from '@/composables/useInventoryScope'
+} from '@/composables/inventory/useInventoryScope'
 import {
   useInventorySiteStockOverview,
   type SiteStockRow,
-} from '@/composables/useInventorySiteStock'
+} from '@/composables/inventory/useInventorySiteStock'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyError } from '@/utils/notify'
 import { readFaceText } from '@/utils/readFace'

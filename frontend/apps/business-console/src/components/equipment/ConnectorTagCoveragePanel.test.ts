@@ -59,8 +59,9 @@ const coverageMocks = vi.hoisted(() => ({
   refreshCoverage: vi.fn(),
 }))
 
-vi.mock('@/composables/useBusinessTelemetry', async (importOriginal) => {
-  const original = await importOriginal<typeof import('@/composables/useBusinessTelemetry')>()
+vi.mock('@/composables/equipment/useBusinessTelemetry', async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import('@/composables/equipment/useBusinessTelemetry')>()
   const vue = await import('vue')
   coverageMocks.coverageRef = vue.shallowRef()
   coverageMocks.errorRef = vue.shallowRef()

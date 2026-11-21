@@ -105,7 +105,7 @@ vi.mock('@/utils/notify', async (importOriginal) => ({
   notifySuccess: notifySpies.success,
 }))
 
-vi.mock('@/composables/useQualityInspectionTasks', () => ({
+vi.mock('@/composables/quality/useQualityInspectionTasks', () => ({
   useQualityInspectionTaskActions: () => ({
     startInspection: taskActionSpies.startInspection,
     refreshInspectionTasks: taskActionSpies.refreshInspectionTasks,
@@ -129,7 +129,7 @@ const operationContextState = vi.hoisted(() => ({
   error: undefined as { value: string } | undefined,
   refresh: vi.fn(),
 }))
-vi.mock('@/composables/useQualityOperationContext', async () => {
+vi.mock('@/composables/quality/useQualityOperationContext', async () => {
   const { shallowRef } = await import('vue')
   return {
     useQualityOperationContext: () => {
@@ -218,7 +218,7 @@ vi.mock('@/composables/usePagedList', async () => {
 })
 
 // 方案 / 物料 / 单位 / 原因码一律只选不填：这些目录内部走 pinia + colada，测试整体打桩。
-vi.mock('@/composables/useQualityPickerCatalog', async () => {
+vi.mock('@/composables/quality/useQualityPickerCatalog', async () => {
   const { computed, shallowRef } = await import('vue')
 
   return {
@@ -247,7 +247,7 @@ vi.mock('@/composables/useQualityPickerCatalog', async () => {
   }
 })
 
-vi.mock('@/composables/useBusinessQuality', async () => {
+vi.mock('@/composables/quality/useBusinessQuality', async () => {
   const { computed, reactive, shallowRef } = await import('vue')
 
   return {

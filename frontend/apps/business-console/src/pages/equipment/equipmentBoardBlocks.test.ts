@@ -10,8 +10,8 @@ const state = vi.hoisted(() => ({
   activeBlocks: [] as Array<Record<string, unknown>>,
 }))
 
-vi.mock('@/composables/useBusinessEquipment', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/composables/useBusinessEquipment')>()),
+vi.mock('@/composables/equipment/useBusinessEquipment', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/composables/equipment/useBusinessEquipment')>()),
   useBusinessEquipmentOverview: () => ({
     activeBlocks: computed(() => state.activeBlocks),
     deviceRosterError: computed(() => undefined),
@@ -30,7 +30,7 @@ vi.mock('@/composables/useBusinessEquipment', async (importOriginal) => ({
   }),
 }))
 
-vi.mock('@/composables/useEquipmentScopeSelection', () => ({
+vi.mock('@/composables/equipment/useEquipmentScopeSelection', () => ({
   useEquipmentScopeSelection: () => ({
     scope: ref({ workshop: '', line: '', device: '' }),
     levels: computed(() => []),

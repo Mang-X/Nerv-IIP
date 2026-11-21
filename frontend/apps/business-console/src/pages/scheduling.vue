@@ -18,18 +18,18 @@ import { formatDateTime } from '@/utils/format'
 import {
   useBusinessScheduling,
   useSchedulingPlanSummary,
-} from '@/composables/useBusinessScheduling'
-import { useSchedulingTimeContext } from '@/composables/useSchedulingTimeContext'
+} from '@/composables/scheduling/useBusinessScheduling'
+import { useSchedulingTimeContext } from '@/composables/scheduling/useSchedulingTimeContext'
 import { useMesWorkOrderFacts } from '@/composables/useBusinessMes'
-import { useOrderUrgencies } from '@/composables/useOrderUrgency'
+import { useOrderUrgencies } from '@/composables/urgency/useOrderUrgency'
 import {
   DEFAULT_URGENCY_DISPLAY_MODE,
   orderRowsByUrgency,
   type UrgencyDisplayMode,
-} from '@/composables/useUrgencyDisplayMode'
+} from '@/composables/urgency/useUrgencyDisplayMode'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
-import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
+import { describeScheduleInvalidationReason } from '@/composables/scheduling/useScheduleInvalidation'
 import {
   schedulingPlanStatusLabel,
   schedulingPlanStatusTone,
@@ -42,32 +42,32 @@ import SchedulingResourceLoads from '@/components/scheduling/SchedulingResourceL
 import SchedulingPlanGantt from '@/components/scheduling/SchedulingPlanGantt.vue'
 import SchedulingWorkOrderLink from '@/components/scheduling/SchedulingWorkOrderLink.vue'
 import SchedulingDaySchedule from '@/components/scheduling/SchedulingDaySchedule.vue'
-import { useSchedulingPlanCsv } from '@/composables/useSchedulingPlanCsv'
+import { useSchedulingPlanCsv } from '@/composables/scheduling/useSchedulingPlanCsv'
 import SchedulingHorizonFields from '@/components/scheduling/SchedulingHorizonFields.vue'
 import {
   createSchedulingHorizonInput,
   describeSchedulingHorizon,
   resolveSchedulingHorizon,
-} from '@/composables/schedulingHorizon'
+} from '@/composables/scheduling/schedulingHorizon'
 import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import {
   firstPlanCapacityReason,
   firstPlanSelectionReason,
-} from '@/composables/schedulingFirstPlanCapacity'
+} from '@/composables/scheduling/schedulingFirstPlanCapacity'
 import SchedulingOrderPool from '@/components/scheduling/SchedulingOrderPool.vue'
 import SchedulingDraftClearDialog from '@/components/scheduling/SchedulingDraftClearDialog.vue'
 import SchedulingDraftBoard from '@/components/scheduling/SchedulingDraftBoard.vue'
 import ScheduleRevisionReview from '@/components/scheduling/ScheduleRevisionReview.vue'
 import SchedulingDowntimeBanner from '@/components/scheduling/SchedulingDowntimeBanner.vue'
-import { useSchedulingDowntime } from '@/composables/useSchedulingDowntime'
-import { withDowntimeImpact } from '@/composables/schedulingDowntime'
+import { useSchedulingDowntime } from '@/composables/scheduling/useSchedulingDowntime'
+import { withDowntimeImpact } from '@/composables/scheduling/schedulingDowntime'
 import SchedulingCandidatePanel from '@/components/scheduling/SchedulingCandidatePanel.vue'
-import { useSchedulingCandidates } from '@/composables/useSchedulingCandidates'
+import { useSchedulingCandidates } from '@/composables/scheduling/useSchedulingCandidates'
 import SchedulingRushInsertionResult from '@/components/scheduling/SchedulingRushInsertionResult.vue'
-import { useSchedulingRushInsertion } from '@/composables/useSchedulingRushInsertion'
-import { useSchedulingWorkbench } from '@/composables/useSchedulingWorkbench'
-import { useWorkingScheduleDraft } from '@/composables/useWorkingScheduleDraft'
-import { useSchedulingDraftPersistence } from '@/composables/useSchedulingDraftPersistence'
+import { useSchedulingRushInsertion } from '@/composables/scheduling/useSchedulingRushInsertion'
+import { useSchedulingWorkbench } from '@/composables/scheduling/useSchedulingWorkbench'
+import { useWorkingScheduleDraft } from '@/composables/scheduling/useWorkingScheduleDraft'
+import { useSchedulingDraftPersistence } from '@/composables/scheduling/useSchedulingDraftPersistence'
 import { useAuthStore } from '@/stores/auth'
 import { notifyError, notifyOperationFailure } from '@/utils/notify'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'

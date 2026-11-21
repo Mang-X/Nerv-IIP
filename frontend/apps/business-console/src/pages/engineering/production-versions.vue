@@ -13,7 +13,7 @@ import {
   usePublishedMboms,
   usePublishedRoutings,
   useProductionVersionResolve,
-} from '@/composables/useProductEngineering'
+} from '@/composables/engineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvAlertDialog,

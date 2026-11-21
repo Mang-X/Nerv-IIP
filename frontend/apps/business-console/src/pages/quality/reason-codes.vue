@@ -11,7 +11,7 @@ import {
   QUALITY_DISPOSITION_OPTIONS,
   qualityDispositionLabel,
   useQualityReasonCatalog,
-} from '@/composables/useQualityPickerCatalog'
+} from '@/composables/quality/useQualityPickerCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvAlertDialog,

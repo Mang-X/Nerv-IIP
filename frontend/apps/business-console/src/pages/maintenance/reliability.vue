@@ -12,9 +12,9 @@ import {
   useMaintenanceMeasurementTrend,
   useMaintenanceReliability,
   useMaintenanceReliabilitySummary,
-} from '@/composables/useBusinessMaintenance'
+} from '@/composables/maintenance/useBusinessMaintenance'
 import EquipmentScopeOverviewCard from '@/components/equipment/EquipmentScopeOverviewCard.vue'
-import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
+import { useEquipmentScopeSelection } from '@/composables/equipment/useEquipmentScopeSelection'
 import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { COMMON_INSPECTION_CHARACTERISTICS } from '@nerv-iip/business-core'

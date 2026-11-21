@@ -40,7 +40,7 @@ vi.mock('@/composables/useMesProductionStatistics', async () => {
   }
 })
 
-vi.mock('@/composables/useBusinessTelemetry', () => ({
+vi.mock('@/composables/equipment/useBusinessTelemetry', () => ({
   useBusinessTelemetryOeeAggregates: (_filters: unknown, shouldLoad: () => boolean) => {
     state.oeeShouldLoad = shouldLoad
     return {

@@ -58,7 +58,7 @@ const spies = vi.hoisted(() => ({
  */
 const state = vi.hoisted(() => ({}) as { closeNcrPending: { value: boolean } })
 
-vi.mock('@/composables/useBusinessQuality', async () => {
+vi.mock('@/composables/quality/useBusinessQuality', async () => {
   const { statusActionGate } = await import('@nerv-iip/business-core')
   const { computed, reactive, shallowRef } = await import('vue')
   state.closeNcrPending = shallowRef(false)

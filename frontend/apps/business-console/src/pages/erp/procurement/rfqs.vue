@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpRequestForQuotationItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
-import { useErpRequestsForQuotation } from '@/composables/useBusinessErp'
-import { useErpItemCatalog, useErpPartnerCatalog } from '@/composables/useErpPickerCatalog'
+import { useErpRequestsForQuotation } from '@/composables/erp/useBusinessErp'
+import { useErpItemCatalog, useErpPartnerCatalog } from '@/composables/erp/useErpPickerCatalog'
 import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
 import EntityMultiPicker from '@/components/business/EntityMultiPicker.vue'

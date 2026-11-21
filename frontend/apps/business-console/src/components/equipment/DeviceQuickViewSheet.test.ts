@@ -10,8 +10,8 @@ const state = vi.hoisted(() => ({
   availabilityWindows: [] as Array<Record<string, unknown>>,
 }))
 
-vi.mock('@/composables/useBusinessEquipment', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/composables/useBusinessEquipment')>()),
+vi.mock('@/composables/equipment/useBusinessEquipment', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/composables/equipment/useBusinessEquipment')>()),
   useBusinessEquipmentDevice: () => ({
     activeAlarms: computed(() => []),
     availabilityWindows: computed(() => state.availabilityWindows),

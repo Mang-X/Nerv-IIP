@@ -16,7 +16,7 @@ import {
 } from '@nerv-iip/ui'
 import { useAuthStore } from '@/stores/auth'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
-import { useBarcodeTemplateRetirement } from '@/composables/useBarcodeTemplateRetirement'
+import { useBarcodeTemplateRetirement } from '@/composables/barcode/useBarcodeTemplateRetirement'
 import { notifyError, notifySuccess } from '@/utils/notify'
 
 const props = defineProps<{

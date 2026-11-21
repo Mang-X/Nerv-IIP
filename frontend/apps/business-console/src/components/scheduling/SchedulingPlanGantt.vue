@@ -31,7 +31,7 @@ import {
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { resolveWorkCenterFamily, WORK_CENTER_FAMILY_LIST } from '@/data/workCenterFamilies'
-import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
+import { describeScheduleInvalidationReason } from '@/composables/scheduling/useScheduleInvalidation'
 import {
   schedulingPlanStatusLabel,
   schedulingPlanStatusTone,

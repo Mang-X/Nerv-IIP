@@ -3,7 +3,7 @@ import { useMesWorkOrders } from '@/composables/useBusinessMes'
 import {
   isSchedulableWorkbenchCandidate,
   SCHEDULABLE_WORK_ORDER_STATUSES,
-} from '@/composables/useSchedulingWorkbench'
+} from '@/composables/scheduling/useSchedulingWorkbench'
 import {
   NvButton,
   NvField,

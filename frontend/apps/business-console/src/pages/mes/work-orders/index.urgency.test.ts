@@ -20,7 +20,7 @@ vi.mock('vue-router', () => ({
   RouterLink: { props: ['to'], template: '<a><slot /></a>' },
 }))
 
-vi.mock('@/composables/useOrderUrgency', () => ({
+vi.mock('@/composables/urgency/useOrderUrgency', () => ({
   useOrderUrgencies: () => ({ byReference: { value: new Map() }, refresh: vi.fn() }),
 }))
 vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({

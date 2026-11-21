@@ -10,7 +10,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
-import { useBusinessApproval } from '@/composables/useBusinessApproval'
+import { useBusinessApproval } from '@/composables/approval/useBusinessApproval'
 import {
   useBusinessMasterDataResources,
   useBusinessWorkers,

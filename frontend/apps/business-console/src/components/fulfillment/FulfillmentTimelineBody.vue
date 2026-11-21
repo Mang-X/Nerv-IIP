@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpSalesOrderItem } from '@nerv-iip/api-client'
-import type { FulfillmentNode, FulfillmentNodeStatus } from '@/composables/useFulfillmentTimeline'
+import type { FulfillmentNode, FulfillmentNodeStatus } from '@/composables/planning/fulfillment'
 import type { TimelineItem, TimelineTone } from '@nerv-iip/ui'
-import { useFulfillmentTimeline } from '@/composables/useFulfillmentTimeline'
+import { useFulfillmentTimeline } from '@/composables/planning/fulfillment'
 import { NvButton, NvTimeline } from '@nerv-iip/ui'
 import { RefreshCwIcon } from '@lucide/vue'
 import { computed, toRef } from 'vue'

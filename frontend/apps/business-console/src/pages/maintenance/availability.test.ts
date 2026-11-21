@@ -35,7 +35,7 @@ vi.mock('vue-router', async (importOriginal) => ({
   useRoute: () => reactive({ query: {} }),
 }))
 
-vi.mock('@/composables/useBusinessMaintenance', () => ({
+vi.mock('@/composables/maintenance/useBusinessMaintenance', () => ({
   useMaintenanceAvailabilityWindows: () => ({
     availabilityError: shallowRef(),
     availabilityPending: shallowRef(false),
@@ -50,7 +50,7 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
   }),
 }))
 
-vi.mock('@/composables/useEquipmentScopeSelection', () => ({
+vi.mock('@/composables/equipment/useEquipmentScopeSelection', () => ({
   useEquipmentScopeSelection: () => ({
     scope: shallowRef({}),
     levels: computed(() => []),
@@ -60,7 +60,7 @@ vi.mock('@/composables/useEquipmentScopeSelection', () => ({
   }),
 }))
 
-vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
+vi.mock('@/composables/equipment/useEquipmentPickerCatalog', () => ({
   useEquipmentWorkCenterCatalog: () => ({
     workCenterOptions: computed(() => []),
     workCentersPending: shallowRef(false),

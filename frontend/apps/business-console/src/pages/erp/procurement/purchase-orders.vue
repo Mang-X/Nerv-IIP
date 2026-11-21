@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpPurchaseOrderItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
-import { useErpPurchaseOrders } from '@/composables/useBusinessErp'
+import { useErpPurchaseOrders } from '@/composables/erp/useBusinessErp'
 import {
   useErpItemCatalog,
   useErpPartnerCatalog,
   useErpSiteCatalog,
-} from '@/composables/useErpPickerCatalog'
+} from '@/composables/erp/useErpPickerCatalog'
 import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { usePagedList } from '@/composables/usePagedList'

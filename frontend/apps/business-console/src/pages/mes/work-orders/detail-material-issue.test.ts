@@ -26,7 +26,7 @@ vi.mock('vue-router', () => ({
   RouterLink: { props: ['to'], template: '<a><slot /></a>' },
 }))
 
-vi.mock('@/composables/useScheduleInvalidation', () => ({
+vi.mock('@/composables/scheduling/useScheduleInvalidation', () => ({
   resolveScheduleStatus: () => ({ key: 'scheduled', label: '已排程', tone: 'info' }),
   scheduleInvalidationHint: () => '',
 }))

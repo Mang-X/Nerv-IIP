@@ -3,7 +3,7 @@ import type { SchedulingDowntimeImpactResponse } from '@nerv-iip/api-client'
 import type { ScheduleModel } from '@nerv-iip/scheduling'
 import { NvButton } from '@nerv-iip/ui'
 import { computed } from 'vue'
-import { downtimePresentation } from '@/composables/schedulingDowntime'
+import { downtimePresentation } from '@/composables/scheduling/schedulingDowntime'
 import { formatDateTime } from '@/utils/format'
 const props = defineProps<{
   impact?: SchedulingDowntimeImpactResponse

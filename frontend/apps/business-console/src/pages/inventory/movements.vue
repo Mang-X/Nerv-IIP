@@ -10,10 +10,10 @@ import {
   INVENTORY_MANUAL_MOVEMENT_TYPE_OPTIONS,
   inventoryMovementTypeLabel,
 } from '@/data/inventoryReference'
-import { useInventoryMovement } from '@/composables/useBusinessInventory'
-import { maintenanceWorkOrderNoLabel } from '@/composables/useEquipmentPickerCatalog'
+import { useInventoryMovement } from '@/composables/inventory/useBusinessInventory'
+import { maintenanceWorkOrderNoLabel } from '@/composables/equipment/useEquipmentPickerCatalog'
 import { makeIdempotencyKey } from '@/composables/useBusinessMes'
-import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
+import { useInventoryScopeCatalog } from '@/composables/inventory/useInventoryScope'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { useBusinessContextStore } from '@/stores/businessContext'

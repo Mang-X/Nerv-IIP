@@ -69,7 +69,7 @@ vi.mock('vue-router', async (importOriginal) => ({
   useRouter: () => ({ replace: vi.fn() }),
 }))
 
-vi.mock('@/composables/useOrderUrgency', () => ({
+vi.mock('@/composables/urgency/useOrderUrgency', () => ({
   useOrderUrgencies: () => ({ byReference: { value: new Map() }, refresh: vi.fn() }),
 }))
 vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
@@ -106,8 +106,9 @@ const localCandidateCallback = vi.hoisted(() => ({
   preview: vi.fn(),
   select: vi.fn(),
 }))
-vi.mock('@/composables/useSchedulingCandidates', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/composables/useSchedulingCandidates')>()
+vi.mock('@/composables/scheduling/useSchedulingCandidates', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/composables/scheduling/useSchedulingCandidates')>()
   return {
     useSchedulingCandidates: (options: Parameters<typeof actual.useSchedulingCandidates>[0]) => {
       localCandidateCallback.onSelected = options.onSelected
@@ -130,7 +131,7 @@ let downtimeBaseline: () => string | undefined
 const planTimeContextError = shallowRef<unknown>()
 const factoryTimezone = shallowRef('Asia/Shanghai')
 const assemblyTimezone = shallowRef<string>()
-vi.mock('@/composables/useSchedulingTimeContext', () => ({
+vi.mock('@/composables/scheduling/useSchedulingTimeContext', () => ({
   useSchedulingTimeContext: (planId: () => string | undefined) => ({
     items: computed(() =>
       ['WC-CNC', 'WC-ASSEMBLY'].map((workCenterCode) => ({
@@ -146,7 +147,7 @@ vi.mock('@/composables/useSchedulingTimeContext', () => ({
     error: computed(() => (planId() ? planTimeContextError.value : undefined)),
   }),
 }))
-vi.mock('@/composables/useSchedulingDowntime', () => ({
+vi.mock('@/composables/scheduling/useSchedulingDowntime', () => ({
   useSchedulingDowntime: (planId: () => string | undefined) => {
     downtimeBaseline = planId
     return { impact: downtimeImpact, now: downtimeNow, error: shallowRef() }
@@ -155,10 +156,11 @@ vi.mock('@/composables/useSchedulingDowntime', () => ({
 const savedDrafts = shallowRef<SchedulingWorkingDraft[]>([])
 const savedPlans = new Map<string, BusinessConsoleSchedulePlan>()
 let pagePersistence: ReturnType<
-  typeof import('@/composables/useSchedulingDraftPersistence').useSchedulingDraftPersistence
+  typeof import('@/composables/scheduling/useSchedulingDraftPersistence').useSchedulingDraftPersistence
 >
-vi.mock('@/composables/useSchedulingDraftPersistence', async (original) => {
-  const actual = await original<typeof import('@/composables/useSchedulingDraftPersistence')>()
+vi.mock('@/composables/scheduling/useSchedulingDraftPersistence', async (original) => {
+  const actual =
+    await original<typeof import('@/composables/scheduling/useSchedulingDraftPersistence')>()
   return {
     useSchedulingDraftPersistence: (
       ...args: Parameters<typeof actual.useSchedulingDraftPersistence>
@@ -189,7 +191,7 @@ const capacityCandidates = shallowRef<BusinessConsoleMesWorkOrderItem[]>()
 const releasePending = shallowRef(false)
 const insertionJob =
   shallowRef<import('@nerv-iip/api-client').BusinessConsoleSchedulingInsertionPreviewJob>()
-vi.mock('@/composables/useSchedulingRushInsertion', () => ({
+vi.mock('@/composables/scheduling/useSchedulingRushInsertion', () => ({
   useSchedulingRushInsertion: () => ({
     task: {
       job: insertionJob,
@@ -212,7 +214,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
   },
 }))
 
-vi.mock('@/composables/useSchedulingWorkbench', () => ({
+vi.mock('@/composables/scheduling/useSchedulingWorkbench', () => ({
   useSchedulingWorkbench: () => ({
     // 甘特工序详情用它把物料/数量/交期 join 到工序上（工单级事实，见 SchedulingPlanGantt）。
     candidates: computed(() =>
@@ -429,7 +431,7 @@ const detail = computed(() => {
   return undefined
 })
 
-vi.mock('@/composables/useBusinessScheduling', () => ({
+vi.mock('@/composables/scheduling/useBusinessScheduling', () => ({
   useSchedulingPlanSummary: (planId: () => string | undefined) => ({
     summary: computed(() => {
       const id = planId()

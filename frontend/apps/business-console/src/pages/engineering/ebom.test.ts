@@ -34,7 +34,7 @@ const filters = reactive({
   take: 10,
 })
 
-vi.mock('@/composables/useProductEngineering', () => ({
+vi.mock('@/composables/engineering', () => ({
   useEngineeringEboms: () => ({
     eboms: computed(() => [ebomRow]),
     ebomsError: shallowRef(undefined),

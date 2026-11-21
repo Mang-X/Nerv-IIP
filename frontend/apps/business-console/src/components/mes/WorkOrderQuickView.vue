@@ -4,7 +4,7 @@ import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
   isScheduleInvalidated,
   scheduleInvalidationHint,
-} from '@/composables/useScheduleInvalidation'
+} from '@/composables/scheduling/useScheduleInvalidation'
 import {
   NvButton,
   NvDialog,

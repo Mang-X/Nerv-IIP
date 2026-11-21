@@ -15,15 +15,15 @@ import {
   useQualityFirstArticlePlanActions,
   useQualityInspectionPlanCharacteristics,
   useQualityInspectionPlans,
-} from '@/composables/useBusinessQuality'
-import { useQualityOperationContext } from '@/composables/useQualityOperationContext'
-import { useQualityInspectionTaskActions } from '@/composables/useQualityInspectionTasks'
+} from '@/composables/quality/useBusinessQuality'
+import { useQualityOperationContext } from '@/composables/quality/useQualityOperationContext'
+import { useQualityInspectionTaskActions } from '@/composables/quality/useQualityInspectionTasks'
 import {
   useQualityInspectionPlanCatalog,
   useQualityReasonCatalog,
   useQualitySkuCatalog,
   useQualityUomCatalog,
-} from '@/composables/useQualityPickerCatalog'
+} from '@/composables/quality/useQualityPickerCatalog'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useSkuNames } from '@/composables/useSkuNames'
@@ -38,7 +38,7 @@ import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import SourceDocumentPicker from '@/components/business/SourceDocumentPicker.vue'
-import type { SourceDocumentKind } from '@/composables/useSourceDocumentCatalog'
+import type { SourceDocumentKind } from '@/composables/catalog/useSourceDocumentCatalog'
 import { readFaceText } from '@/utils/readFace'
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
 import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDetailSheet.vue'

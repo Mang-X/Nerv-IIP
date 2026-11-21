@@ -19,11 +19,11 @@ import {
   peekPendingBusinessIntent,
 } from '@nerv-iip/business-core'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { useBusinessEquipmentAlarms } from './useBusinessEquipment'
-import { useMaintenanceWorkOrders } from './useBusinessMaintenance'
+import { useBusinessEquipmentAlarms } from './equipment/useBusinessEquipment'
+import { useMaintenanceWorkOrders } from './maintenance/useBusinessMaintenance'
 import { useMesOperationTasks } from './useBusinessMes'
-import { useQualityNcrs } from './useBusinessQuality'
-import { useWmsInboundOrders, useWmsOutboundOrders } from './useBusinessWms'
+import { useQualityNcrs } from './quality/useBusinessQuality'
+import { useWmsInboundOrders, useWmsOutboundOrders } from './wms'
 import { LifecycleStateChangedError, recoverLifecycleAction } from './lifecycleAction'
 
 const api = vi.hoisted(() => ({

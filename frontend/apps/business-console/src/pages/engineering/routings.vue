@@ -12,7 +12,7 @@ import {
   useBusinessMasterDataResources,
   useBusinessSkus,
 } from '@/composables/useBusinessMasterData'
-import { useEngineeringRoutings, useStandardOperations } from '@/composables/useProductEngineering'
+import { useEngineeringRoutings, useStandardOperations } from '@/composables/engineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,

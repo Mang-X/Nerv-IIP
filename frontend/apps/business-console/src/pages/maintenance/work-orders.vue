@@ -12,8 +12,8 @@ import {
 } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { recoverLifecycleAction } from '@/composables/lifecycleAction'
-import { useMaintenanceWorkOrders } from '@/composables/useBusinessMaintenance'
-import { useMaintenanceDowntimeReasonDirectory } from '@/composables/useMaintenanceDowntimeReasonDirectory'
+import { useMaintenanceWorkOrders } from '@/composables/maintenance/useBusinessMaintenance'
+import { useMaintenanceDowntimeReasonDirectory } from '@/composables/maintenance/useMaintenanceDowntimeReasonDirectory'
 import {
   useBusinessWorkers,
   useBusinessMasterDataResources,
@@ -24,7 +24,7 @@ import {
   useEquipmentAlarmCatalog,
   useEquipmentSkuCatalog,
   useEquipmentUomCatalog,
-} from '@/composables/useEquipmentPickerCatalog'
+} from '@/composables/equipment/useEquipmentPickerCatalog'
 import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'

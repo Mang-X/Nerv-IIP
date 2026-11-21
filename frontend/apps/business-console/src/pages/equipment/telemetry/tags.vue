@@ -6,8 +6,8 @@ import {
   formatTelemetryUnit,
   formatTelemetryValueType,
 } from '@/data/businessLabels'
-import { useBusinessTelemetryTags } from '@/composables/useBusinessTelemetry'
-import { useEquipmentDeviceCatalog } from '@/composables/useEquipmentPickerCatalog'
+import { useBusinessTelemetryTags } from '@/composables/equipment/useBusinessTelemetry'
+import { useEquipmentDeviceCatalog } from '@/composables/equipment/useEquipmentPickerCatalog'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'

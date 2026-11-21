@@ -1,8 +1,4 @@
-import {
-  useWmsInboundOrders,
-  useWmsOutboundOrders,
-  useWmsCountExecutions,
-} from '@/composables/useBusinessWms'
+import { useWmsInboundOrders, useWmsOutboundOrders, useWmsCountExecutions } from '@/composables/wms'
 import { assertScopePageBehavior, scopePageStubs } from '@/test/wmsWorkScopePage'
 import { WMS_RECEIVING_QUALITY_OPTIONS } from '@/data/inventoryReference'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -116,7 +112,7 @@ vi.mock('vue-router', () => ({
 }))
 
 // 物料目录与默认工厂来自主数据 facade（需要 pinia 上下文），页面测试里给确定的目录即可。
-vi.mock('@/composables/useInventoryScope', async () => {
+vi.mock('@/composables/inventory/useInventoryScope', async () => {
   const { computed, ref } = await import('vue')
   const catalog = {
     siteOptions: computed(() => [{ value: 'SITE-001', label: '上海工厂' }]),
@@ -137,9 +133,9 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: wms.permissionCodes } }),
 }))
 
-vi.mock('@/composables/useWmsWorkScope', () => import('@/test/wmsWorkScopePage'))
+vi.mock('@/composables/wms/useWmsWorkScope', () => import('@/test/wmsWorkScopePage'))
 
-vi.mock('@/composables/useBusinessWms', () => ({
+vi.mock('@/composables/wms', () => ({
   createWmsIdempotencyKey: wms.createIdempotencyKey,
   useWmsInboundOrders: vi.fn(() => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 100 }),
@@ -1384,7 +1380,7 @@ describe('WMS operate actions', () => {
     })
   })
 })
-vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+vi.mock('@/composables/wms/useWmsOperationalCandidates', async () => {
   const { shallowRef } = await import('vue')
   return {
     useWmsOperationalCandidates: () => ({

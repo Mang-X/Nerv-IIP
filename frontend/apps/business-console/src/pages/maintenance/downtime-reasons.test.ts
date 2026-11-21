@@ -12,7 +12,7 @@ const state = vi.hoisted(() => ({
   deleteReason: vi.fn(async (_code: string, _scope: Record<string, unknown>) => ({})),
 }))
 
-vi.mock('@/composables/useMaintenanceDowntimeReasonDirectory', () => ({
+vi.mock('@/composables/maintenance/useMaintenanceDowntimeReasonDirectory', () => ({
   useMaintenanceDowntimeReasonDirectory: () => ({
     keyword: shallowRef(''),
     reasons: computed(() => [
@@ -37,7 +37,7 @@ vi.mock('@/composables/useMaintenanceDowntimeReasonDirectory', () => ({
   }),
 }))
 
-vi.mock('@/composables/useMaintenanceDowntimeReasonMutations', () => ({
+vi.mock('@/composables/maintenance/useMaintenanceDowntimeReasonMutations', () => ({
   useMaintenanceDowntimeReasonMutations: () => ({
     createReason: state.createReason,
     updateReason: state.updateReason,

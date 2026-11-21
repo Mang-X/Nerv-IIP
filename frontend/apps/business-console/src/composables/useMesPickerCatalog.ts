@@ -13,7 +13,7 @@ import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import type { EntityPickerOption } from '@nerv-iip/ui'
 import { computed } from 'vue'
 import { useBusinessMasterDataResources, useBusinessSkus } from './useBusinessMasterData'
-import { useEngineeringProductionVersions } from './useProductEngineering'
+import { useEngineeringProductionVersions } from './engineering'
 
 /** 主数据目录取数上限——单厂的产线 / 工作中心量级在数百条。 */
 const CATALOG_TAKE = 500

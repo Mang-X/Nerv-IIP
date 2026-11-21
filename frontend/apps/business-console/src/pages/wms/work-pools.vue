@@ -6,7 +6,7 @@ import {
   useBusinessMasterDataResources,
   useBusinessWorkers,
 } from '@/composables/useBusinessMasterData'
-import { useWmsWorkPools } from '@/composables/useWmsWorkPools'
+import { useWmsWorkPools } from '@/composables/wms/useWmsWorkPools'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {

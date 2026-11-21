@@ -59,7 +59,7 @@ vi.mock('vue-router', async (importOriginal) => {
   }
 })
 
-vi.mock('@/composables/useBusinessMaintenance', () => ({
+vi.mock('@/composables/maintenance/useBusinessMaintenance', () => ({
   useMaintenanceWorkOrders: () => ({
     filters: state.maintenanceFilters,
     workOrders: computed(() => state.workOrders),
@@ -107,7 +107,7 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
   }),
 }))
 
-vi.mock('@/composables/useMaintenanceDowntimeReasonDirectory', () => ({
+vi.mock('@/composables/maintenance/useMaintenanceDowntimeReasonDirectory', () => ({
   useMaintenanceDowntimeReasonDirectory: () => ({
     keyword: shallowRef(''),
     reasons: computed(() =>
@@ -132,7 +132,7 @@ vi.mock('@/composables/useMaintenanceDowntimeReasonDirectory', () => ({
   }),
 }))
 
-vi.mock('@/composables/useMaintenanceDowntimeReasonMutations', () => ({
+vi.mock('@/composables/maintenance/useMaintenanceDowntimeReasonMutations', () => ({
   useMaintenanceDowntimeReasonMutations: () => ({
     createReason: state.createReason,
     updateReason: vi.fn(),
@@ -144,7 +144,7 @@ vi.mock('@/composables/useMaintenanceDowntimeReasonMutations', () => ({
 
 // Remaining runtime hours are derived client-side via the runtime-hours facade; mock the derivation so
 // the plans list shows deterministic remaining values without a live telemetry backend.
-vi.mock('@/composables/useBusinessTelemetry', () => ({
+vi.mock('@/composables/equipment/useBusinessTelemetry', () => ({
   useMaintenancePlanRuntimeRemaining: () => ({
     remainingByPlanId: computed(() => state.remainingByPlanId),
     remainingPending: computed(() => state.remainingPending),
@@ -185,7 +185,7 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
 }))
 
 // 设备 / 班组 / 单位 / 物料 / 单据目录都走真实读面（useQuery）；单测给确定目录，只验页面提交行为。
-vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
+vi.mock('@/composables/equipment/useEquipmentPickerCatalog', () => ({
   useEquipmentAlarmCatalog: () => ({
     alarmOptions: computed(() => [{ value: 'ALARM-1', label: 'OVERHEAT' }]),
     alarmsPending: shallowRef(false),

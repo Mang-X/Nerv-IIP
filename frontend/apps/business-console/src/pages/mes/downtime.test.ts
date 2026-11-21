@@ -52,7 +52,7 @@ const downtimeRows = ref<Array<typeof openRow | typeof recoveredRow | typeof unr
 // #2793：停机原因目录读失败的归因。真实通道抛的是「解析后的响应体 + 被 error 拦截器挂上去的
 // 原始 Response」——`error.response.status` 才是状态码来源（响应体里的 `code` 字段不算，
 // `errorStatusCode` 只认 status/statusCode）。这里照这个形状造夹具；该形状本身由
-// `src/composables/downtimeReasonDirectoryForbidden.contract.test.ts` 用真实客户端实证。
+// `src/composables/maintenance/downtimeReasonDirectoryForbidden.contract.test.ts` 用真实客户端实证。
 function directoryFailure(status: number, message: string) {
   const body = { success: false, message, code: status, data: null, errorData: [] }
   Object.defineProperty(body, 'response', {

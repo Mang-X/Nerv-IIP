@@ -4,7 +4,7 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import TemplateAssetRetirement from '@/components/barcode/TemplateAssetRetirement.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { useBarcodeTemplates } from '@/composables/useBusinessBarcode'
+import { useBarcodeTemplates } from '@/composables/barcode/useBusinessBarcode'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   emptyVariableRow,

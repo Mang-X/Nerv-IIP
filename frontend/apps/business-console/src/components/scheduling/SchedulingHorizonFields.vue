@@ -4,7 +4,7 @@ import {
   resolveSchedulingHorizon,
   SCHEDULING_HORIZON_PRESET_DAYS,
   type SchedulingHorizonInput,
-} from '@/composables/schedulingHorizon'
+} from '@/composables/scheduling/schedulingHorizon'
 import {
   NvField,
   NvFieldGroup,

@@ -15,7 +15,7 @@ import {
   toolingStatusLabel,
   toolingTypeLabel,
   useBusinessTooling,
-} from '@/composables/useBusinessTooling'
+} from '@/composables/equipment/useBusinessTooling'
 import { usePagedList } from '@/composables/usePagedList'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'

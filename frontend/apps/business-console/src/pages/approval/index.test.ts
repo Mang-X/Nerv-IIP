@@ -41,7 +41,7 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessApproval', () => ({
+vi.mock('@/composables/approval/useBusinessApproval', () => ({
   useBusinessApproval: () => ({
     contextReady: computed(() => true),
     chainDetail: computed(() => undefined),

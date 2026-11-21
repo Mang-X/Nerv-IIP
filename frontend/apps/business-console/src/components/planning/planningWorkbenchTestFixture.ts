@@ -1,6 +1,6 @@
 import { vi } from 'vitest'
 
-vi.mock('@/composables/useOrderUrgency', () => ({
+vi.mock('@/composables/urgency/useOrderUrgency', () => ({
   useOrderUrgencies: () => ({ byReference: { value: new Map() }, refresh: vi.fn() }),
 }))
 // 图表面板依赖真实 NvBarChart（unovis），工作台测试只关心装配，桩掉即可。
@@ -71,7 +71,7 @@ const planningSpies = vi.hoisted(() => ({
   },
 }))
 
-vi.mock('@/composables/useBusinessPlanning', async () => {
+vi.mock('@/composables/planning/useBusinessPlanning', async () => {
   const { reactive, shallowRef } = await vi.importActual<typeof import('vue')>('vue')
   planningSpies.activeMrpRun = reactive(planningSpies.activeMrpRun)
   const DEFAULT_DEMANDS = [

@@ -67,7 +67,7 @@ vi.mock('vue-router', () => ({
   useRoute: () => ({ query: { keyword: 'PR-001' } }),
 }))
 
-vi.mock('@/composables/useBusinessErp', () => ({
+vi.mock('@/composables/erp/useBusinessErp', () => ({
   useErpPurchaseRequisitions: () => ({
     filters,
     items: computed(() => [

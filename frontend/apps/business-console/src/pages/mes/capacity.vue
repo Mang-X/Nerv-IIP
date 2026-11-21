@@ -6,7 +6,7 @@ import {
   mesCapacityStatusOptions,
   useMesReferenceLabels,
 } from '@/composables/mes/useMesReferenceLabels'
-import { describeEquipmentReason } from '@/composables/useBusinessEquipment'
+import { describeEquipmentReason } from '@/composables/equipment/useBusinessEquipment'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { usePagedList } from '@/composables/usePagedList'

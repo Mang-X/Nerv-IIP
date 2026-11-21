@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpOpportunityItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
-import { useErpOpportunities } from '@/composables/useBusinessErp'
-import { useErpPartnerCatalog } from '@/composables/useErpPickerCatalog'
+import { useErpOpportunities } from '@/composables/erp/useBusinessErp'
+import { useErpPartnerCatalog } from '@/composables/erp/useErpPickerCatalog'
 import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { buildKpiTrend, seriesFromDatedItems } from '@/utils/kpiTrend'

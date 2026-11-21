@@ -8,7 +8,7 @@ import { watch } from 'vue'
 import {
   useSourceDocumentCatalog,
   type SourceDocumentKind,
-} from '@/composables/useSourceDocumentCatalog'
+} from '@/composables/catalog/useSourceDocumentCatalog'
 
 const props = defineProps<{ kind: SourceDocumentKind; invalid?: boolean }>()
 const model = defineModel<string>({ default: '' })

@@ -40,7 +40,7 @@ const filters = reactive({
 const resolved = shallowRef<Record<string, unknown> | undefined>(undefined)
 const resolvedOnce = ref(false)
 
-vi.mock('@/composables/useProductEngineering', () => ({
+vi.mock('@/composables/engineering', () => ({
   useEngineeringProductionVersions: () => ({
     archiveProductionVersion: stub.archiveProductionVersion,
     archivePending: shallowRef(false),

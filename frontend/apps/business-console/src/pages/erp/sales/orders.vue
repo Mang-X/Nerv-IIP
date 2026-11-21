@@ -1,17 +1,17 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpSalesOrderItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
-import { useErpSalesOrders } from '@/composables/useBusinessErp'
-import { useErpSiteCatalog } from '@/composables/useErpPickerCatalog'
+import { useErpSalesOrders } from '@/composables/erp/useBusinessErp'
+import { useErpSiteCatalog } from '@/composables/erp/useErpPickerCatalog'
 import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
-import { useOrderUrgencies } from '@/composables/useOrderUrgency'
+import { useOrderUrgencies } from '@/composables/urgency/useOrderUrgency'
 import { buildKpiTrend } from '@/utils/kpiTrend'
 import {
   DEFAULT_URGENCY_DISPLAY_MODE,
   orderRowsByUrgency,
   type UrgencyDisplayMode,
-} from '@/composables/useUrgencyDisplayMode'
+} from '@/composables/urgency/useUrgencyDisplayMode'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import FulfillmentTimelineSheet from '@/components/fulfillment/FulfillmentTimelineSheet.vue'

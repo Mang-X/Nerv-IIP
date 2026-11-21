@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import type { EquipmentRuntimeAvailabilityWindow } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
-import { useMaintenanceAvailabilityWindows } from '@/composables/useBusinessMaintenance'
+import { useMaintenanceAvailabilityWindows } from '@/composables/maintenance/useBusinessMaintenance'
 import {
   describeAvailabilityWindowReference,
   describeEquipmentReason,
-} from '@/composables/useBusinessEquipment'
-import { useEquipmentWorkCenterCatalog } from '@/composables/useEquipmentPickerCatalog'
-import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
+} from '@/composables/equipment/useBusinessEquipment'
+import { useEquipmentWorkCenterCatalog } from '@/composables/equipment/useEquipmentPickerCatalog'
+import { useEquipmentScopeSelection } from '@/composables/equipment/useEquipmentScopeSelection'
 import EntityMultiPicker from '@/components/business/EntityMultiPicker.vue'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'

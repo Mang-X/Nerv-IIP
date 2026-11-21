@@ -12,7 +12,7 @@ import {
 import { PrinterIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
 
-import { useQualityInspectionRecordDetail } from '@/composables/useBusinessQuality'
+import { useQualityInspectionRecordDetail } from '@/composables/quality/useBusinessQuality'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { notifyError } from '@/utils/notify'
 

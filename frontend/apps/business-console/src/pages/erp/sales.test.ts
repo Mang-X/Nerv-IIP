@@ -56,7 +56,7 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
   }
 })
 
-vi.mock('@/composables/useOrderUrgency', () => ({
+vi.mock('@/composables/urgency/useOrderUrgency', () => ({
   useOrderUrgencies: () => ({ byReference: { value: new Map() }, refresh: vi.fn() }),
 }))
 vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
@@ -114,7 +114,7 @@ function listShape(itemsRef: () => Array<Record<string, unknown>>) {
   }
 }
 
-vi.mock('@/composables/useBusinessErp', () => ({
+vi.mock('@/composables/erp/useBusinessErp', () => ({
   useErpQuotations: () => ({
     ...listShape(() => state.quotations),
     approveQuotation: state.approveQuotation,
@@ -151,7 +151,7 @@ vi.mock('@/composables/useBusinessErp', () => ({
 }))
 
 // 客户 / 物料 / 工厂改成只选：目录 composable 内部走 pinia + colada，测试整体打桩给定候选。
-vi.mock('@/composables/useErpPickerCatalog', () => ({
+vi.mock('@/composables/erp/useErpPickerCatalog', () => ({
   useErpPartnerCatalog: () => ({
     customerOptions: computed(() => [{ value: 'CUST-001', label: '示例客户' }]),
     supplierOptions: computed(() => []),

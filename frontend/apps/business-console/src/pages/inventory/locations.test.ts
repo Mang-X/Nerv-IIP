@@ -23,7 +23,7 @@ const LINE_SIDE_ROW = {
   updatedAtUtc: '2026-09-23T08:00:00Z',
 }
 
-vi.mock('@/composables/useBusinessInventory', async () => {
+vi.mock('@/composables/inventory/useBusinessInventory', async () => {
   const { computed, reactive, shallowRef } = await import('vue')
   return {
     useInventoryLocations: () => {

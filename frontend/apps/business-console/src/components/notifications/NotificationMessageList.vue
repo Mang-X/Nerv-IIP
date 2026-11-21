@@ -2,7 +2,7 @@
 import { formatDateTime } from '@/utils/format'
 import type { BusinessConsoleNotificationMessageItem } from '@nerv-iip/api-client'
 import { Button } from '@nerv-iip/ui'
-import { isReadMessage } from '@/composables/useBusinessNotifications'
+import { isReadMessage } from '@/composables/ops/useBusinessNotifications'
 import { messageTitle, resourceTypeLabel } from './notificationFormatters'
 
 defineProps<{

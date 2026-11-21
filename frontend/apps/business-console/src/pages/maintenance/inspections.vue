@@ -5,13 +5,13 @@ import type {
   BusinessConsoleRecordMaintenanceInspectionRequest,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import { useMaintenanceInspections } from '@/composables/useBusinessMaintenance'
+import { useMaintenanceInspections } from '@/composables/maintenance/useBusinessMaintenance'
 import { labelFor, MAINTENANCE_INSPECTION_RESULT_LABELS } from '@/data/businessLabels'
 import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
 import {
   useEquipmentUomCatalog,
   useMaintenanceDocumentCatalog,
-} from '@/composables/useEquipmentPickerCatalog'
+} from '@/composables/equipment/useEquipmentPickerCatalog'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'

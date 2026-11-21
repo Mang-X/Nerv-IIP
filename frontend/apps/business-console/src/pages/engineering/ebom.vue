@@ -8,7 +8,7 @@ import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
 import { useBusinessSkus, useBusinessUoms } from '@/composables/useBusinessMasterData'
-import { useBomRevisionSuggestions, useEngineeringEboms } from '@/composables/useProductEngineering'
+import { useBomRevisionSuggestions, useEngineeringEboms } from '@/composables/engineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,

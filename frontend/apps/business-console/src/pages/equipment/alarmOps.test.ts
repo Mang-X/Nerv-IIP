@@ -65,7 +65,7 @@ const routerState = vi.hoisted(() => ({
   query: {} as Record<string, unknown>,
 }))
 
-vi.mock('@/composables/useBusinessEquipment', () => ({
+vi.mock('@/composables/equipment/useBusinessEquipment', () => ({
   useBusinessEquipmentAlarms: () => ({
     acknowledgeAlarm: alarmState.acknowledgeAlarm,
     alarms: computed(() => alarmState.alarms),

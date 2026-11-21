@@ -7,8 +7,8 @@
  * 传了 `reason` 是编辑（原因编码即身份，只读）。
  */
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
-import type { MaintenanceDowntimeReasonRow } from '@/composables/useMaintenanceDowntimeReasonDirectory'
-import { useMaintenanceDowntimeReasonMutations } from '@/composables/useMaintenanceDowntimeReasonMutations'
+import type { MaintenanceDowntimeReasonRow } from '@/composables/maintenance/useMaintenanceDowntimeReasonDirectory'
+import { useMaintenanceDowntimeReasonMutations } from '@/composables/maintenance/useMaintenanceDowntimeReasonMutations'
 import {
   DOWNTIME_LOSS_CATEGORY_OPTIONS,
   DOWNTIME_REASON_CATEGORY_OPTIONS,

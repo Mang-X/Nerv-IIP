@@ -5,7 +5,7 @@
  */
 import type { EntityPickerOption } from '@nerv-iip/ui'
 import { useBusinessWorkers } from '@/composables/useBusinessMasterData'
-import { useWmsWorkPools } from '@/composables/useWmsWorkPools'
+import { useWmsWorkPools } from '@/composables/wms/useWmsWorkPools'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,

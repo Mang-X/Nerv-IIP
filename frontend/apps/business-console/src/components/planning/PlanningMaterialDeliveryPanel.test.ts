@@ -5,7 +5,7 @@ import type { BusinessConsoleMaterialDeliveriesResponse } from '@nerv-iip/api-cl
 import PlanningMaterialDeliveryPanel from './PlanningMaterialDeliveryPanel.vue'
 
 const state = vi.hoisted(() => ({ data: {} as BusinessConsoleMaterialDeliveriesResponse }))
-vi.mock('@/composables/useBusinessPlanningMaterialDeliveries', () => ({
+vi.mock('@/composables/planning/useBusinessPlanningMaterialDeliveries', () => ({
   useBusinessPlanningMaterialDeliveries: () => ({
     selection: reactive({ runId: '', planId: '' }),
     planPage: shallowRef(1),

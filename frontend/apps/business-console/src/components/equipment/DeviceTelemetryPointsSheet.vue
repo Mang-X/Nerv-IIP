@@ -10,7 +10,7 @@ import {
   TELEMETRY_UNIT_LABELS,
   TELEMETRY_VALUE_TYPE_OPTIONS,
 } from '@/data/businessLabels'
-import { useBusinessTelemetryPoints } from '@/composables/useBusinessTelemetryPoints'
+import { useBusinessTelemetryPoints } from '@/composables/equipment/useBusinessTelemetryPoints'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvAlertDialog,

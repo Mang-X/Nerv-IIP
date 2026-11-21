@@ -2,12 +2,12 @@
 import {
   createSchedulingHorizonInput,
   resolveSchedulingHorizon,
-} from '@/composables/schedulingHorizon'
+} from '@/composables/scheduling/schedulingHorizon'
 import {
   useCanScheduleSingleOrder,
   useSingleOrderScheduling,
   SINGLE_ORDER_SCHEDULING_DENIED_REASON,
-} from '@/composables/useSingleOrderScheduling'
+} from '@/composables/scheduling/useSingleOrderScheduling'
 import SchedulingCandidatePicker from './SchedulingCandidatePicker.vue'
 import SchedulingHorizonFields from './SchedulingHorizonFields.vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'

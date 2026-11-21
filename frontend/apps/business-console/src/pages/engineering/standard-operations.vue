@@ -8,7 +8,7 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
-import { useStandardOperations } from '@/composables/useProductEngineering'
+import { useStandardOperations } from '@/composables/engineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvAlertDialog,

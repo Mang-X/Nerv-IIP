@@ -10,7 +10,7 @@ import {
   useBomAnalysis,
   useBomItemCatalog,
   useBomVersionPickerCatalog,
-} from '@/composables/useProductEngineering'
+} from '@/composables/engineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { formatDate, today } from '@/utils/format'
 import { friendlyErrorMessage } from '@/utils/notify'

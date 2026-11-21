@@ -17,7 +17,7 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: state.permissionCodes } }),
 }))
 
-vi.mock('@/composables/useBusinessTooling', () => ({
+vi.mock('@/composables/equipment/useBusinessTooling', () => ({
   useBusinessTooling: () => ({
     filters: reactive({
       organizationId: 'org-001',

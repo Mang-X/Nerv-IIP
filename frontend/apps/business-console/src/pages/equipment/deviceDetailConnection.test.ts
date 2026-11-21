@@ -41,8 +41,8 @@ vi.mock('vue-router', async (importOriginal) => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }))
 
-vi.mock('@/composables/useBusinessEquipment', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/composables/useBusinessEquipment')>()),
+vi.mock('@/composables/equipment/useBusinessEquipment', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/composables/equipment/useBusinessEquipment')>()),
   useBusinessEquipmentDevice: () => ({
     activeAlarms: computed(() => []),
     availabilityWindows: computed(() => state.availabilityWindows),
@@ -58,7 +58,7 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: [] } }),
 }))
 
-vi.mock('@/composables/useBusinessDeviceControl', () => ({
+vi.mock('@/composables/equipment/useBusinessDeviceControl', () => ({
   deviceControlApprovalLabel: () => '',
   deviceControlCommandTypeLabel: () => '',
   deviceControlStatusLabel: () => '',
@@ -73,7 +73,7 @@ vi.mock('@/composables/useBusinessDeviceControl', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessTelemetry', () => {
+vi.mock('@/composables/equipment/useBusinessTelemetry', () => {
   const windowFilters = () => ({ deviceAssetId: '', windowStartUtc: '', windowEndUtc: '' })
   return {
     describeTelemetryOeeDegradation: (reason: string) => reason,
@@ -116,7 +116,7 @@ vi.mock('@/composables/useBusinessTelemetry', () => {
   }
 })
 
-vi.mock('@/composables/useBusinessMaintenance', () => {
+vi.mock('@/composables/maintenance/useBusinessMaintenance', () => {
   const list = <K extends string>(key: K) => ({
     [key]: computed(() => []),
     [`${key}Error`]: shallowRef(),

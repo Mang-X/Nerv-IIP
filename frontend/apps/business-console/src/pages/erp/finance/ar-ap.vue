@@ -10,12 +10,12 @@ import {
   useErpFinanceSummary,
   useErpPayables,
   useErpReceivables,
-} from '@/composables/useBusinessErp'
+} from '@/composables/erp/useBusinessErp'
 import {
   useErpPartnerCatalog,
   useErpPayableSourceCatalog,
   useErpReceivableSourceCatalog,
-} from '@/composables/useErpPickerCatalog'
+} from '@/composables/erp/useErpPickerCatalog'
 import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { buildKpiTrend } from '@/utils/kpiTrend'

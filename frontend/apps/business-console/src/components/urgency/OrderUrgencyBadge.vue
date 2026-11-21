@@ -3,12 +3,15 @@ import type {
   BusinessConsoleOrderUrgency,
   BusinessConsoleOrderUrgencyBusinessPriority,
 } from '@nerv-iip/api-client'
-import type { UrgencyDisplayMode } from '@/composables/useUrgencyDisplayMode'
-import { formatUrgencyDisplay, urgencyLevelPresentation } from '@/composables/useUrgencyDisplayMode'
+import type { UrgencyDisplayMode } from '@/composables/urgency/useUrgencyDisplayMode'
+import {
+  formatUrgencyDisplay,
+  urgencyLevelPresentation,
+} from '@/composables/urgency/useUrgencyDisplayMode'
 import {
   useOrderUrgencyDetail,
   useSetOrderUrgencyBusinessPriority,
-} from '@/composables/useOrderUrgencyDetail'
+} from '@/composables/urgency/useOrderUrgencyDetail'
 import { useAuthStore } from '@/stores/auth'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import {

@@ -8,7 +8,10 @@ import {
   useBusinessSkus,
 } from '@/composables/useBusinessMasterData'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
-import { useBusinessForecasts, type ForecastForm } from '@/composables/useBusinessForecasts'
+import {
+  useBusinessForecasts,
+  type ForecastForm,
+} from '@/composables/planning/useBusinessForecasts'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import {

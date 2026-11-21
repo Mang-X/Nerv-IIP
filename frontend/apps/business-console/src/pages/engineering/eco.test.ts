@@ -30,7 +30,7 @@ const filters = reactive({
 })
 const impactPreview = shallowRef()
 
-vi.mock('@/composables/useProductEngineering', () => ({
+vi.mock('@/composables/engineering', () => ({
   useEngineeringChanges: () => ({
     changes: computed(() => [changeRow]),
     changesError: shallowRef(undefined),

@@ -38,7 +38,7 @@ const receiptFilters = reactive<{ status?: string; keyword?: string; skip: numbe
   take: 10,
 })
 
-vi.mock('@/composables/useBusinessErp', () => ({
+vi.mock('@/composables/erp/useBusinessErp', () => ({
   useErpPurchaseRequisitions: () => ({
     filters: purchaseOrderFilters,
     items: computed(() => state.purchaseRequisitions),

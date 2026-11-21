@@ -3,7 +3,7 @@ import type { BusinessConsoleInventoryLocationResponse } from '@nerv-iip/api-cli
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import LocationFormDialog from '@/components/inventory/LocationFormDialog.vue'
 import { LOCATION_TYPE_OPTIONS } from '@/components/inventory/locationOptions'
-import { useInventoryLocations } from '@/composables/useBusinessInventory'
+import { useInventoryLocations } from '@/composables/inventory/useBusinessInventory'
 import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { NvButton, NvDataTable, NvPageHeader, NvStatusBadge, NvToolbar } from '@nerv-iip/ui'

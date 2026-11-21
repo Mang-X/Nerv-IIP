@@ -87,7 +87,7 @@ function listShape(itemsRef: () => Array<Record<string, unknown>>) {
   }
 }
 
-vi.mock('@/composables/useBusinessErp', () => ({
+vi.mock('@/composables/erp/useBusinessErp', () => ({
   // AR/AP 与成本候选的 KPI 卡改用全库口径的财务摘要（#1418 B5），页面因此多了这路依赖。
   useErpFinanceSummary: () => ({
     ready: computed(() => true),
@@ -128,7 +128,7 @@ vi.mock('@/composables/useBusinessErp', () => ({
 }))
 
 // 客户/供应商与来源单据改成只选：目录 composable 内部走 pinia + colada，测试整体打桩给定候选。
-vi.mock('@/composables/useErpPickerCatalog', () => ({
+vi.mock('@/composables/erp/useErpPickerCatalog', () => ({
   useErpPartnerCatalog: () => ({
     customerOptions: computed(() => [{ value: 'CUST-001', label: '示例客户' }]),
     supplierOptions: computed(() => [{ value: 'SUP-001', label: '示例供应商' }]),

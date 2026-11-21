@@ -49,7 +49,7 @@ const standardOperations = ref([
   },
 ])
 
-vi.mock('@/composables/useProductEngineering', () => ({
+vi.mock('@/composables/engineering', () => ({
   useEngineeringRoutings: () => ({
     routings: computed(() => [routingRow]),
     routingsError: shallowRef(undefined),

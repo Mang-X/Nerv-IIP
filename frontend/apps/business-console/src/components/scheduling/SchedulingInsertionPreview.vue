@@ -6,7 +6,7 @@ import {
 import { useQuery } from '@pinia/colada'
 import { computed, ref, watch } from 'vue'
 import { NvButton, NvDataTable, NvSpinner, type NvDataTableColumn } from '@nerv-iip/ui'
-import { useSchedulingInsertionPreview } from '@/composables/useSchedulingInsertionPreview'
+import { useSchedulingInsertionPreview } from '@/composables/scheduling/useSchedulingInsertionPreview'
 import { assertEnvelopeSuccess } from '@/composables/serviceEnvelope'
 import { notifyOperationFailure } from '@/utils/notify'
 import { schedulingPlanStatusLabel } from '@/utils/schedulingPlanPresentation'

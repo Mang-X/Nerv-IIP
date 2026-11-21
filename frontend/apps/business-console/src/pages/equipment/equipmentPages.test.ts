@@ -321,8 +321,8 @@ vi.mock('vue-router', async (importOriginal) => {
   }
 })
 
-vi.mock('@/composables/useBusinessEquipment', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/composables/useBusinessEquipment')>()),
+vi.mock('@/composables/equipment/useBusinessEquipment', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/composables/equipment/useBusinessEquipment')>()),
   equipmentStatusTone: (state?: string | null) =>
     state === 'faulted' || state === 'down' ? 'danger' : state === 'idle' ? 'neutral' : 'success',
   useBusinessEquipmentAlarms: () => ({
@@ -368,7 +368,7 @@ vi.mock('@/composables/useBusinessEquipment', async (importOriginal) => ({
 }))
 
 // 级联范围选择 composable：真实实现依赖主数据 facade（pinia + query），页面测试给可控桩。
-vi.mock('@/composables/useEquipmentScopeSelection', () => ({
+vi.mock('@/composables/equipment/useEquipmentScopeSelection', () => ({
   useEquipmentScopeSelection: (initial?: { workshop?: string; line?: string; device?: string }) => {
     const scope = ref({
       workshop: initial?.workshop ?? '',
@@ -395,9 +395,9 @@ vi.mock('@/stores/auth', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessDeviceControl', async (importOriginal) => ({
+vi.mock('@/composables/equipment/useBusinessDeviceControl', async (importOriginal) => ({
   deviceReceiptLabel: (
-    await importOriginal<typeof import('@/composables/useBusinessDeviceControl')>()
+    await importOriginal<typeof import('@/composables/equipment/useBusinessDeviceControl')>()
   ).deviceReceiptLabel,
   deviceControlApprovalLabel: (value?: string | null) => value ?? '未知',
   deviceControlCommandTypeLabel: (value?: string | null) =>
@@ -423,7 +423,7 @@ vi.mock('@/composables/useBusinessDeviceControl', async (importOriginal) => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessTelemetry', () => ({
+vi.mock('@/composables/equipment/useBusinessTelemetry', () => ({
   describeTelemetryOeeDegradation: (reason: string) => reason,
   describeTelemetryOeeLimitations: () => 'OEE = 可用率 × 性能率 × 质量率。',
   formatOeeQuantity: (value: number | null | undefined, uom?: string | null) =>
@@ -498,7 +498,7 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessMaintenance', () => ({
+vi.mock('@/composables/maintenance/useBusinessMaintenance', () => ({
   useMaintenanceAvailabilityWindows: () => ({
     availabilityError: shallowRef(),
     availabilityPending: shallowRef(false),

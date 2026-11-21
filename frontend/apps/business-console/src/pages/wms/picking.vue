@@ -10,12 +10,12 @@ import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
-import { useWmsOutboundOrders, useWmsPickingTasks } from '@/composables/useBusinessWms'
+import { useWmsOutboundOrders, useWmsPickingTasks } from '@/composables/wms'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
-import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
+import { useWmsOperationalCandidates } from '@/composables/wms/useWmsOperationalCandidates'
 import { useSkuNames } from '@/composables/useSkuNames'
-import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
+import { bindWmsWorkScopeFilters } from '@/composables/wms/useWmsWorkScope'
 import {
   warehouseTaskBlockReasonText,
   wmsWarehouseTaskStatusFilterOptions,
@@ -23,7 +23,7 @@ import {
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { useWmsCreateIntent } from '@/composables/useWmsCreateIntent'
+import { useWmsCreateIntent } from '@/composables/wms/useWmsCreateIntent'
 import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import {
   inlineErrorMessage,

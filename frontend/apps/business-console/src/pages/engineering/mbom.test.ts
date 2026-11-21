@@ -29,7 +29,7 @@ const filters = reactive({
   take: 10,
 })
 
-vi.mock('@/composables/useProductEngineering', () => ({
+vi.mock('@/composables/engineering', () => ({
   useEngineeringMboms: () => ({
     mboms: computed(() => [mbomRow]),
     mbomsError: shallowRef(undefined),

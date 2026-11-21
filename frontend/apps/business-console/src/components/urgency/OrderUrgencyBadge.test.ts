@@ -4,7 +4,7 @@ import type {
 } from '@nerv-iip/api-client'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { UrgencyDisplayMode } from '@/composables/useUrgencyDisplayMode'
+import type { UrgencyDisplayMode } from '@/composables/urgency/useUrgencyDisplayMode'
 import OrderUrgencyBadge from './OrderUrgencyBadge.vue'
 
 const state = vi.hoisted(() => ({
@@ -21,7 +21,7 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: state.permissionCodes } }),
 }))
 
-vi.mock('@/composables/useOrderUrgencyDetail', async () => {
+vi.mock('@/composables/urgency/useOrderUrgencyDetail', async () => {
   const { shallowRef } = await vi.importActual<typeof import('vue')>('vue')
   return {
     useOrderUrgencyDetail: () => {

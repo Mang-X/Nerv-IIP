@@ -4,12 +4,12 @@ import type { NvDataTableColumn } from '@nerv-iip/ui'
 import {
   useBusinessTelemetryAlarmRules,
   type SaveTelemetryAlarmRuleInput,
-} from '@/composables/useBusinessTelemetry'
+} from '@/composables/equipment/useBusinessTelemetry'
 import {
   useEquipmentDeviceCatalog,
   useEquipmentUomCatalog,
   useTelemetryTagCatalog,
-} from '@/composables/useEquipmentPickerCatalog'
+} from '@/composables/equipment/useEquipmentPickerCatalog'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'

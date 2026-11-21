@@ -6,7 +6,7 @@ import {
   formatOeeRate,
   useBusinessTelemetryOeeAggregates,
   useBusinessTelemetryOeeTrend,
-} from '@/composables/useBusinessTelemetry'
+} from '@/composables/equipment/useBusinessTelemetry'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import {

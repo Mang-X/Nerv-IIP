@@ -5,7 +5,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, h } from 'vue'
 import { SchedulingToolbar, SchedulingLegend, TaskDetailPanel } from '@nerv-iip/scheduling'
 import SchedulingDraftBoard from './SchedulingDraftBoard.vue'
-import { useWorkingScheduleDraft } from '@/composables/useWorkingScheduleDraft'
+import { useWorkingScheduleDraft } from '@/composables/scheduling/useWorkingScheduleDraft'
 import { NvInput } from '@nerv-iip/ui'
 beforeEach(() => setActivePinia(createPinia()))
 

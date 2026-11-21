@@ -8,7 +8,7 @@ import {
   useBusinessWorkers,
 } from '@/composables/useBusinessMasterData'
 import { describeMesReadinessReasons, useMesDispatchTasks } from '@/composables/useBusinessMes'
-import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
+import { describeScheduleInvalidationReason } from '@/composables/scheduling/useScheduleInvalidation'
 import { mesOperationTaskStatusOptions } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {

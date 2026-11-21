@@ -16,7 +16,7 @@ import {
   NvStatusBadge,
 } from '@nerv-iip/ui'
 import { computed, watch } from 'vue'
-import { useBusinessPlanningMaterialDeliveries } from '@/composables/useBusinessPlanningMaterialDeliveries'
+import { useBusinessPlanningMaterialDeliveries } from '@/composables/planning/useBusinessPlanningMaterialDeliveries'
 import { inlineErrorMessage, notifyOperationFailure } from '@/utils/notify'
 import PlanningMaterialDeliverySources from './PlanningMaterialDeliverySources.vue'
 import {

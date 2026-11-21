@@ -47,7 +47,7 @@ const alarmState = vi.hoisted(() => ({
   refreshAlarms: vi.fn((..._args: unknown[]) => Promise.resolve()),
 }))
 
-vi.mock('@/composables/useBusinessEquipment', () => ({
+vi.mock('@/composables/equipment/useBusinessEquipment', () => ({
   useBusinessEquipmentAlarms: () => ({
     acknowledgeAlarm: alarmState.acknowledgeAlarm,
     alarms: computed(() => alarmState.alarms),

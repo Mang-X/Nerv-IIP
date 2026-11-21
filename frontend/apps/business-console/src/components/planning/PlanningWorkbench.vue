@@ -14,18 +14,18 @@ import {
 import {
   SUGGESTION_REJECT_REASON_MAX_LENGTH,
   useBusinessPlanning,
-} from '@/composables/useBusinessPlanning'
+} from '@/composables/planning/useBusinessPlanning'
 import {
   isMesWorkOrderDownstream,
   normalizeReferenceToken,
-} from '@/composables/useFulfillmentTimeline'
+} from '@/composables/planning/fulfillment'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { useOrderUrgencies } from '@/composables/useOrderUrgency'
+import { useOrderUrgencies } from '@/composables/urgency/useOrderUrgency'
 import {
   DEFAULT_URGENCY_DISPLAY_MODE,
   orderRowsByUrgency,
   type UrgencyDisplayMode,
-} from '@/composables/useUrgencyDisplayMode'
+} from '@/composables/urgency/useUrgencyDisplayMode'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
 import UrgencyDisplayModeSelect from '@/components/urgency/UrgencyDisplayModeSelect.vue'
 import PlanningRunSuggestionChart from '@/components/planning/PlanningRunSuggestionChart.vue'
@@ -35,7 +35,7 @@ import PlanningForecastManagement from '@/components/planning/PlanningForecastMa
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import { coveredDemandSkuCodes } from '@/components/planning/planningAggregation'
 import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
-import { useCanScheduleSingleOrder } from '@/composables/useSingleOrderScheduling'
+import { useCanScheduleSingleOrder } from '@/composables/scheduling/useSingleOrderScheduling'
 import {
   inlineErrorMessage,
   isForbiddenError,
@@ -86,7 +86,7 @@ import {
 } from '@lucide/vue'
 import { computed, shallowRef, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useCanReadMaterialDeliveries } from '@/composables/useBusinessPlanningMaterialDeliveries'
+import { useCanReadMaterialDeliveries } from '@/composables/planning/useBusinessPlanningMaterialDeliveries'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
 import { useAuthStore } from '@/stores/auth'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'

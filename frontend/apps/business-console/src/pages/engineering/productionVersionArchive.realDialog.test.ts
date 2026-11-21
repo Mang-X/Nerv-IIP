@@ -39,7 +39,7 @@ const pvRow = {
   status: 'active',
 }
 
-vi.mock('@/composables/useProductEngineering', () => ({
+vi.mock('@/composables/engineering', () => ({
   useEngineeringProductionVersions: () => ({
     archiveProductionVersion: stub.archiveProductionVersion,
     archivePending,

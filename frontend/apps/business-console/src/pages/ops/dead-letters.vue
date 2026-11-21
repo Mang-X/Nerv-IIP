@@ -18,7 +18,7 @@ import {
   type DeadLetterBatchRowResult,
   type DeadLetterReplayOutcome,
   type DeadLetterUnavailableSource,
-} from '@/composables/useBusinessDeadLetters'
+} from '@/composables/ops/useBusinessDeadLetters'
 import {
   inlineErrorMessage,
   notifyOperationFailure,

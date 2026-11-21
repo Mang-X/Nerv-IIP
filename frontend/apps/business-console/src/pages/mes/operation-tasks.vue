@@ -24,7 +24,7 @@ import {
   useMesOperationTasks,
 } from '@/composables/useBusinessMes'
 import { OPERATION_QUALITY_VERDICT_LABELS } from '@/data/businessLabels'
-import { scheduleInvalidationHint } from '@/composables/useScheduleInvalidation'
+import { scheduleInvalidationHint } from '@/composables/scheduling/useScheduleInvalidation'
 import type { MesLifecycleActionKey } from '@/composables/mes/useMesTaskSemantics'
 import {
   isScheduleInvalidatedTask,

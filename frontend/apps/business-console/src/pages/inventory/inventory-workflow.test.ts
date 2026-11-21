@@ -76,7 +76,7 @@ vi.mock('vue-router', () => ({
   useRouter: () => routerState,
 }))
 
-vi.mock('@/composables/useBusinessInventory', () => ({
+vi.mock('@/composables/inventory/useBusinessInventory', () => ({
   useInventoryAvailability: () => {
     const filters = {
       environmentId: 'env-dev',
@@ -236,7 +236,7 @@ vi.mock('@/composables/useBusinessInventory', () => ({
 }))
 
 // 寄售货主取自业务伙伴目录：同一伙伴可兼任客户与供应商，按角色分两组。
-vi.mock('@/composables/useErpPickerCatalog', async () => {
+vi.mock('@/composables/erp/useErpPickerCatalog', async () => {
   const { computed, ref } = await import('vue')
   return {
     useErpPartnerCatalog: () => ({
@@ -255,7 +255,7 @@ vi.mock('@/utils/notify', async (importOriginal) => ({
 }))
 
 // 目录与默认值来自主数据 facade，这里给确定的目录，页面测试只关心「选择器有得选、单位自动带出」。
-vi.mock('@/composables/useInventoryScope', async () => {
+vi.mock('@/composables/inventory/useInventoryScope', async () => {
   const { computed, ref, watch } = await import('vue')
   const baseUomBySku: Record<string, string> = { 'SKU-001': 'pcs', 'RM-BAR-45-01': 'kg' }
   const catalog = {
@@ -302,7 +302,7 @@ vi.mock('@/composables/useInventoryScope', async () => {
 })
 
 // 全厂库存总览：真实实现会按物料目录并发扫台账，测试只关心「首屏有表、覆盖进度如实、能继续扫」。
-vi.mock('@/composables/useInventorySiteStock', async () => {
+vi.mock('@/composables/inventory/useInventorySiteStock', async () => {
   const { computed, ref } = await import('vue')
   const rows = ref([
     {

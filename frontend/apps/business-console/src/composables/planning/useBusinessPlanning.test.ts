@@ -1,0 +1,658 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { shallowRef } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
+
+import {
+  acceptBusinessConsolePlanningSuggestionMutationOptions,
+  rejectBusinessConsolePlanningSuggestionMutationOptions,
+  createBusinessConsolePlanningMpsBucketMutationOptions,
+  createOrUpdateBusinessConsolePlanningDemandMutationOptions,
+  cancelBusinessConsolePlanningDemandMutationOptions,
+  getBusinessConsoleMesWorkOrderDetail,
+  listBusinessConsoleErpPurchaseRequisitions,
+  getBusinessConsolePlanningMrpPeggingQueryOptions,
+  listBusinessConsolePlanningMpsBucketsQueryOptions,
+  listBusinessConsolePlanningDemandsQueryOptions,
+  listBusinessConsolePlanningMrpRunsQueryOptions,
+  listBusinessConsolePlanningSuggestionsQueryOptions,
+  releaseBusinessConsolePlanningMpsBucketMutationOptions,
+  reviewBusinessConsolePlanningMpsBucketMutationOptions,
+  runBusinessConsolePlanningMrpMutationOptions,
+  updateBusinessConsolePlanningMpsBucketMutationOptions,
+} from '@nerv-iip/api-client'
+import { useAuthStore } from '@/stores/auth'
+import { useBusinessContextStore } from '@/stores/businessContext'
+import {
+  MRP_RUN_POLL_INTERVAL_MS,
+  MRP_RUN_POLL_TIMEOUT_MS,
+  useBusinessPlanning,
+} from './useBusinessPlanning'
+
+const coladaState = vi.hoisted(() => ({
+  invalidateQueries: vi.fn(async () => undefined),
+  queryDataById: new Map<string, unknown>(),
+  queryOptionsById: new Map<string, { enabled?: boolean }>(),
+  refetchById: new Map<string, ReturnType<typeof vi.fn>>(),
+}))
+
+vi.mock('@nerv-iip/api-client', () => ({
+  acceptBusinessConsolePlanningSuggestionMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: {
+        accepted: true,
+        downstreamService: vars.body.downstreamService,
+        downstreamDocumentType: vars.body.downstreamDocumentType,
+        downstreamDocumentId: 'WO-20260701-001',
+      },
+    })),
+  })),
+  rejectBusinessConsolePlanningSuggestionMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) =>
+      vars.body.reason === 'trigger-soft-failure'
+        ? { success: false, message: '建议已被其他计划员处理。' }
+        : { success: true, data: { rejected: true } },
+    ),
+  })),
+  createBusinessConsolePlanningMpsBucketMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: { mpsId: 'mps-created', ...vars.body, status: 'Draft' },
+    })),
+  })),
+  createOrUpdateBusinessConsolePlanningDemandMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({ success: true, data: vars.body })),
+  })),
+  cancelBusinessConsolePlanningDemandMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async () => ({ success: true })),
+  })),
+  getBusinessConsoleMesWorkOrderDetail: vi.fn(async () => ({
+    data: { success: true, data: { status: 'Released' } },
+  })),
+  listBusinessConsoleErpPurchaseRequisitions: vi.fn(async () => ({
+    data: {
+      success: true,
+      data: {
+        items: [
+          { suggestionId: 'suggestion-erp', requisitionNo: 'PR-OTHER', status: 'Open' },
+          { suggestionId: 'suggestion-erp', requisitionNo: 'PR-1', status: 'Approved' },
+        ],
+      },
+    },
+  })),
+  getBusinessConsolePlanningMrpPeggingQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'getBusinessConsolePlanningMrpPegging' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsolePlanningDemandsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsolePlanningDemands' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsolePlanningMpsBucketsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsolePlanningMpsBuckets' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsolePlanningMrpRunsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsolePlanningMrpRuns' }],
+    query: vi.fn(),
+  })),
+  listBusinessConsolePlanningSuggestionsQueryOptions: vi.fn(() => ({
+    key: [{ _id: 'listBusinessConsolePlanningSuggestions' }],
+    query: vi.fn(),
+  })),
+  // #1306 异步受理回执：只回 runId + 排队状态（与 BusinessConsoleRunMrpResponse 契约一致）。
+  runBusinessConsolePlanningMrpMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async () => ({
+      success: true,
+      data: { runId: 'run-1', status: 'Created' },
+    })),
+  })),
+  updateBusinessConsolePlanningMpsBucketMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: { mpsId: vars.path.mpsId, ...vars.body },
+    })),
+  })),
+  reviewBusinessConsolePlanningMpsBucketMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: { mpsId: vars.path.mpsId, status: 'Reviewed', reviewedBy: vars.body.reviewedBy },
+    })),
+  })),
+  releaseBusinessConsolePlanningMpsBucketMutationOptions: vi.fn(() => ({
+    mutation: vi.fn(async (vars) => ({
+      success: true,
+      data: { mpsId: vars.path.mpsId, status: 'Released', releasedBy: vars.body.releasedBy },
+    })),
+  })),
+}))
+
+vi.mock('@pinia/colada', () => ({
+  useMutation: vi.fn((options) => ({
+    error: shallowRef(),
+    isLoading: shallowRef(false),
+    mutateAsync: vi.fn(async (vars) => {
+      const result = await options.mutation(vars)
+      await options.onSuccess?.(result)
+      return result
+    }),
+  })),
+  useQuery: vi.fn((optionsFactory) => {
+    const options = optionsFactory()
+    const key = Array.isArray(options.key) ? options.key[0] : undefined
+    const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
+    coladaState.queryOptionsById.set(id, options)
+
+    const data = shallowRef(coladaState.queryDataById.get(id))
+    // refetch 时从 map 重新取数，模拟轮询期间服务端状态推进（#1306 MRP 运行跟踪用）。
+    const refetch = vi.fn(async () => {
+      data.value = coladaState.queryDataById.get(id)
+    })
+    coladaState.refetchById.set(id, refetch)
+
+    return {
+      data,
+      error: shallowRef(),
+      isLoading: shallowRef(false),
+      refetch,
+    }
+  }),
+  useQueryCache: vi.fn(() => ({
+    invalidateQueries: coladaState.invalidateQueries,
+  })),
+}))
+
+vi.mock('../useBusinessMes', () => ({
+  useMesPrincipalWorkScope: () => ({
+    selectedScope: shallowRef({ kind: 'team', id: 'team-1' }),
+    scopePending: shallowRef(false),
+    scopeError: shallowRef(null),
+  }),
+}))
+
+describe('business planning composable', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    useAuthStore().principal = {
+      permissionCodes: [
+        'business.planning.demands.read',
+        'business.planning.mrp.read',
+        'business.planning.mps.read',
+        'business.erp.procurement.read',
+        'business.mes.work-orders.read',
+      ],
+    }
+    useBusinessContextStore().patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+    vi.clearAllMocks()
+    coladaState.invalidateQueries.mockClear()
+    coladaState.queryDataById.clear()
+    coladaState.queryOptionsById.clear()
+    coladaState.refetchById.clear()
+  })
+
+  it('从 MES 和 ERP 当前读面匹配已承接建议的状态', async () => {
+    coladaState.queryDataById.set('listBusinessConsolePlanningSuggestions', {
+      success: true,
+      data: {
+        items: [
+          {
+            suggestionId: 'suggestion-mes',
+            suggestionType: 'planned-work-order',
+            downstreamDocumentId: 'WO-1',
+          },
+          {
+            suggestionId: 'suggestion-erp',
+            suggestionType: 'planned-purchase',
+            downstreamDocumentId: 'PR-1',
+          },
+        ],
+      },
+    })
+    useBusinessPlanning()
+    const query = coladaState.queryOptionsById.get('') as {
+      query: () => Promise<Record<string, string>>
+    }
+    expect(await query.query()).toEqual({
+      'suggestion-mes': 'Released',
+      'suggestion-erp': 'Approved',
+    })
+    vi.mocked(getBusinessConsoleMesWorkOrderDetail).mockRejectedValueOnce(new Error('offline'))
+    expect(await query.query()).toEqual({
+      'suggestion-mes': 'unavailable',
+      'suggestion-erp': 'Approved',
+    })
+    expect(getBusinessConsoleMesWorkOrderDetail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: { workOrderId: 'WO-1' },
+        query: expect.objectContaining({ scopeKind: 'team', scopeId: 'team-1' }),
+      }),
+    )
+    expect(listBusinessConsoleErpPurchaseRequisitions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({ keyword: 'suggestion-erp' }),
+      }),
+    )
+  })
+
+  it('作废需求经现有网关命令提交并刷新计划读面', async () => {
+    const { cancelDemand } = useBusinessPlanning()
+    await cancelDemand('demand-1')
+    expect(
+      vi.mocked(cancelBusinessConsolePlanningDemandMutationOptions).mock.results[0]?.value.mutation,
+    ).toHaveBeenCalledWith({
+      path: { demandSourceId: 'demand-1' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+    })
+    expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
+  })
+
+  it('loads demands, MRP runs, suggestions, and pegging with the current business context', () => {
+    const context = useBusinessContextStore()
+    context.patchContext({ organizationId: 'org-002', environmentId: 'prod' })
+    coladaState.queryDataById.set('listBusinessConsolePlanningDemands', {
+      success: true,
+      data: { items: [{ demandSourceId: 'demand-1', skuCode: 'FG-SHOCK', quantity: 120 }] },
+    })
+    coladaState.queryDataById.set('listBusinessConsolePlanningMrpRuns', {
+      success: true,
+      data: {
+        items: [
+          {
+            runId: 'run-1',
+            suggestionCount: 2,
+            inventorySnapshotSource: 'inventory-http:2;scheduled-receipts:error',
+            hasInputDegradation: true,
+            inputDegradationSources: ['scheduled-receipts'],
+            inputSources: ['mps', 'sales-order', 'forecast', 'safety-stock'],
+            inputCoverageStart: '2026-06-01',
+            inputCoverageEnd: '2026-06-30',
+          },
+        ],
+      },
+    })
+    coladaState.queryDataById.set('listBusinessConsolePlanningMpsBuckets', {
+      success: true,
+      data: {
+        items: [
+          {
+            mpsId: 'mps-1',
+            skuCode: 'FG-SHOCK',
+            quantity: 120,
+            status: 'Released',
+            bucketDate: '2026-06-15',
+          },
+        ],
+      },
+    })
+    coladaState.queryDataById.set('listBusinessConsolePlanningSuggestions', {
+      success: true,
+      data: {
+        items: [
+          { suggestionId: 'suggestion-1', suggestionType: 'planned-work-order', status: 'Open' },
+        ],
+      },
+    })
+    coladaState.queryDataById.set('getBusinessConsolePlanningMrpPegging', {
+      success: true,
+      data: {
+        items: [
+          {
+            suggestionId: 'suggestion-1',
+            demandSourceReference: 'SO-1001',
+            sourceType: 'sales',
+            grossDemandQuantity: 10,
+          },
+        ],
+      },
+    })
+
+    const { demands, mpsBuckets, mrpRuns, pegging, runSelection, suggestions } =
+      useBusinessPlanning()
+
+    expect(listBusinessConsolePlanningMpsBucketsQueryOptions).toHaveBeenCalledWith({
+      query: {
+        organizationId: 'org-002',
+        environmentId: 'prod',
+        skuCode: undefined,
+        siteCode: undefined,
+        status: undefined,
+      },
+    })
+    expect(listBusinessConsolePlanningDemandsQueryOptions).toHaveBeenCalledWith({
+      query: { organizationId: 'org-002', environmentId: 'prod' },
+    })
+    expect(listBusinessConsolePlanningMrpRunsQueryOptions).toHaveBeenCalledWith({
+      query: { organizationId: 'org-002', environmentId: 'prod' },
+    })
+    expect(listBusinessConsolePlanningSuggestionsQueryOptions).toHaveBeenCalledWith({
+      query: { organizationId: 'org-002', environmentId: 'prod', status: undefined },
+    })
+    expect(getBusinessConsolePlanningMrpPeggingQueryOptions).toHaveBeenCalledWith({
+      path: { runId: '' },
+      query: { organizationId: 'org-002', environmentId: 'prod' },
+    })
+    expect(coladaState.queryOptionsById.get('getBusinessConsolePlanningMrpPegging')?.enabled).toBe(
+      false,
+    )
+    expect(runSelection.runId).toBe('')
+    expect(demands.value).toHaveLength(1)
+    expect(mpsBuckets.value[0]?.status).toBe('Released')
+    expect(mrpRuns.value[0]?.inventorySnapshotSource).toBe(
+      'inventory-http:2;scheduled-receipts:error',
+    )
+    expect(mrpRuns.value[0]?.hasInputDegradation).toBe(true)
+    expect(mrpRuns.value[0]?.inputDegradationSources).toEqual(['scheduled-receipts'])
+    expect(mrpRuns.value[0]?.inputSources).toEqual([
+      'mps',
+      'sales-order',
+      'forecast',
+      'safety-stock',
+    ])
+    expect(mrpRuns.value[0]?.inputCoverageStart).toBe('2026-06-01')
+    expect(mrpRuns.value[0]?.inputCoverageEnd).toBe('2026-06-30')
+    expect(suggestions.value[0]?.suggestionType).toBe('planned-work-order')
+    expect(pegging.value[0]?.demandSourceReference).toBe('SO-1001')
+    expect(pegging.value[0]?.sourceType).toBe('sales')
+    expect(pegging.value[0]?.grossDemandQuantity).toBe(10)
+  })
+
+  it('creates, updates, reviews, and releases MPS buckets through generated mutations', async () => {
+    const auth = useAuthStore()
+    auth.$patch({
+      principal: {
+        principalId: 'user-planner-001',
+        principalType: 'user',
+        loginName: 'planner.li',
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        permissionCodes: [],
+      },
+    })
+    const { createMpsBucket, mpsForm, releaseMpsBucket, reviewMpsBucket, updateMpsBucket } =
+      useBusinessPlanning()
+
+    mpsForm.skuCode = 'FG-SHOCK'
+    mpsForm.uomCode = 'pcs'
+    mpsForm.siteCode = 'SITE-01'
+    mpsForm.bucketDate = '2026-06-15'
+    mpsForm.quantity = 120
+    await createMpsBucket()
+    mpsForm.quantity = 132
+    await updateMpsBucket('mps-1')
+    await reviewMpsBucket('mps-1')
+    await releaseMpsBucket('mps-1')
+
+    expect(createBusinessConsolePlanningMpsBucketMutationOptions).toHaveBeenCalled()
+    expect(
+      vi.mocked(createBusinessConsolePlanningMpsBucketMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      body: expect.objectContaining({
+        skuCode: 'FG-SHOCK',
+        bucketDate: '2026-06-15',
+        quantity: 120,
+      }),
+    })
+    expect(updateBusinessConsolePlanningMpsBucketMutationOptions).toHaveBeenCalled()
+    expect(
+      vi.mocked(updateBusinessConsolePlanningMpsBucketMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      path: { mpsId: 'mps-1' },
+      body: expect.objectContaining({ quantity: 132 }),
+    })
+    expect(reviewBusinessConsolePlanningMpsBucketMutationOptions).toHaveBeenCalled()
+    expect(
+      vi.mocked(reviewBusinessConsolePlanningMpsBucketMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      path: { mpsId: 'mps-1' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: { reviewedBy: 'planner.li' },
+    })
+    expect(releaseBusinessConsolePlanningMpsBucketMutationOptions).toHaveBeenCalled()
+    expect(
+      vi.mocked(releaseBusinessConsolePlanningMpsBucketMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      path: { mpsId: 'mps-1' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: { releasedBy: 'planner.li' },
+    })
+    expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
+  })
+
+  it('starts with a blank demand form instead of demo production values', () => {
+    const { demandForm } = useBusinessPlanning()
+
+    expect(demandForm.demandType).toBe('forecast')
+    expect(demandForm.sourceReference).toBe('')
+    expect(demandForm.skuCode).toBe('')
+    expect(demandForm.uomCode).toBe('')
+    expect(demandForm.siteCode).toBe('')
+    expect(demandForm.quantity).toBe(0)
+  })
+
+  it('submits demand and MRP run payloads through generated mutations', async () => {
+    const { createOrUpdateDemand, demandForm, runMrp, runRequest } = useBusinessPlanning()
+
+    demandForm.sourceReference = 'SO-2026-001'
+    demandForm.skuCode = 'FG-SHOCK'
+    demandForm.quantity = 80
+    await createOrUpdateDemand()
+
+    runRequest.horizonStart = '2026-06-01'
+    runRequest.horizonEnd = '2026-06-30'
+    await runMrp()
+
+    expect(createOrUpdateBusinessConsolePlanningDemandMutationOptions).toHaveBeenCalled()
+    expect(
+      vi.mocked(createOrUpdateBusinessConsolePlanningDemandMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      body: expect.objectContaining({
+        sourceReference: 'SO-2026-001',
+        skuCode: 'FG-SHOCK',
+        quantity: 80,
+      }),
+    })
+    expect(runBusinessConsolePlanningMrpMutationOptions).toHaveBeenCalled()
+    expect(
+      vi.mocked(runBusinessConsolePlanningMrpMutationOptions).mock.results[0]?.value.mutation,
+    ).toHaveBeenCalledWith({
+      body: expect.objectContaining({
+        horizonStart: '2026-06-01',
+        horizonEnd: '2026-06-30',
+      }),
+    })
+    expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
+  })
+
+  it('tracks the accepted MRP run through queued/running to completed and stops polling', async () => {
+    vi.useFakeTimers()
+    try {
+      const { activeMrpRun, runMrp } = useBusinessPlanning()
+
+      await runMrp()
+
+      // 受理即回执：runId + 排队态，不含任何计算结果。
+      expect(activeMrpRun.runId).toBe('run-1')
+      expect(activeMrpRun.status).toBe('queued')
+
+      coladaState.queryDataById.set('listBusinessConsolePlanningMrpRuns', {
+        success: true,
+        data: { items: [{ runId: 'run-1', status: 'Running' }] },
+      })
+      await vi.advanceTimersByTimeAsync(MRP_RUN_POLL_INTERVAL_MS)
+      expect(activeMrpRun.status).toBe('running')
+
+      coladaState.queryDataById.set('listBusinessConsolePlanningMrpRuns', {
+        success: true,
+        data: { items: [{ runId: 'run-1', status: 'Completed', suggestionCount: 5 }] },
+      })
+      coladaState.invalidateQueries.mockClear()
+      await vi.advanceTimersByTimeAsync(MRP_RUN_POLL_INTERVAL_MS)
+      expect(activeMrpRun.status).toBe('completed')
+      expect(activeMrpRun.suggestionCount).toBe(5)
+      // 完成后建议/KPI 读面统一失效重取。
+      expect(coladaState.invalidateQueries).toHaveBeenCalledWith({
+        predicate: expect.any(Function),
+      })
+
+      // 终态后停止轮询。
+      const refetch = coladaState.refetchById.get('listBusinessConsolePlanningMrpRuns')!
+      const settledCallCount = refetch.mock.calls.length
+      await vi.advanceTimersByTimeAsync(MRP_RUN_POLL_INTERVAL_MS * 5)
+      expect(refetch.mock.calls.length).toBe(settledCallCount)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('exposes the failure reason when the tracked MRP run fails', async () => {
+    vi.useFakeTimers()
+    try {
+      const { activeMrpRun, runMrp } = useBusinessPlanning()
+
+      await runMrp()
+      coladaState.queryDataById.set('listBusinessConsolePlanningMrpRuns', {
+        success: true,
+        data: {
+          items: [
+            {
+              runId: 'run-1',
+              status: 'Failed',
+              failureReason: 'MRP 计算失败：上游库存快照不可用。',
+            },
+          ],
+        },
+      })
+      await vi.advanceTimersByTimeAsync(MRP_RUN_POLL_INTERVAL_MS)
+
+      expect(activeMrpRun.status).toBe('failed')
+      expect(activeMrpRun.failureReason).toBe('MRP 计算失败：上游库存快照不可用。')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('marks the tracked MRP run as polling-timeout when no terminal status arrives in time', async () => {
+    vi.useFakeTimers()
+    try {
+      const { activeMrpRun, runMrp } = useBusinessPlanning()
+
+      await runMrp()
+      coladaState.queryDataById.set('listBusinessConsolePlanningMrpRuns', {
+        success: true,
+        data: { items: [{ runId: 'run-1', status: 'Running' }] },
+      })
+      await vi.advanceTimersByTimeAsync(MRP_RUN_POLL_TIMEOUT_MS + MRP_RUN_POLL_INTERVAL_MS)
+
+      // 轮询超时 ≠ 失败：后台可能仍在计算，只提示去运行列表回看。
+      expect(activeMrpRun.status).toBe('polling-timeout')
+      const refetch = coladaState.refetchById.get('listBusinessConsolePlanningMrpRuns')!
+      const settledCallCount = refetch.mock.calls.length
+      await vi.advanceTimersByTimeAsync(MRP_RUN_POLL_INTERVAL_MS * 5)
+      expect(refetch.mock.calls.length).toBe(settledCallCount)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('accepts a planning suggestion through generated mutation and refreshes planning queries', async () => {
+    const { acceptSuggestion } = useBusinessPlanning()
+
+    const result = await acceptSuggestion({
+      suggestionId: 'suggestion-1',
+      suggestionType: 'planned-work-order',
+    })
+
+    expect(acceptBusinessConsolePlanningSuggestionMutationOptions).toHaveBeenCalled()
+    expect(
+      vi.mocked(acceptBusinessConsolePlanningSuggestionMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      path: { suggestionId: 'suggestion-1' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+      },
+      body: expect.objectContaining({
+        downstreamService: 'BusinessMes',
+        downstreamDocumentType: 'WorkOrder',
+        downstreamDocumentId: null,
+      }),
+    })
+    expect(result.data?.downstreamDocumentId).toBe('WO-20260701-001')
+    expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
+  })
+
+  it('rejects a planning suggestion with a trimmed reason and refreshes planning queries', async () => {
+    const { rejectSuggestion } = useBusinessPlanning()
+
+    const result = await rejectSuggestion({
+      suggestionId: 'suggestion-1',
+      reason: '  库存已另行调拨  ',
+    })
+
+    expect(rejectBusinessConsolePlanningSuggestionMutationOptions).toHaveBeenCalled()
+    expect(
+      vi.mocked(rejectBusinessConsolePlanningSuggestionMutationOptions).mock.results[0]?.value
+        .mutation,
+    ).toHaveBeenCalledWith({
+      path: { suggestionId: 'suggestion-1' },
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+      },
+      // actor 由网关注入，body 只带 reason（且已 trim）。
+      body: { reason: '库存已另行调拨' },
+    })
+    expect(result.data?.rejected).toBe(true)
+    expect(coladaState.invalidateQueries).toHaveBeenCalledWith({ predicate: expect.any(Function) })
+  })
+
+  it('requires a non-empty reason within 128 chars before calling the reject endpoint', async () => {
+    const { rejectSuggestion } = useBusinessPlanning()
+
+    await expect(rejectSuggestion({ suggestionId: 'suggestion-1', reason: '   ' })).rejects.toThrow(
+      '请填写拒绝原因。',
+    )
+    await expect(
+      rejectSuggestion({ suggestionId: 'suggestion-1', reason: 'x'.repeat(129) }),
+    ).rejects.toThrow('拒绝原因不能超过 128 字。')
+
+    const optionsResult = vi.mocked(rejectBusinessConsolePlanningSuggestionMutationOptions).mock
+      .results[0]?.value
+    expect(optionsResult?.mutation).not.toHaveBeenCalled()
+    expect(coladaState.invalidateQueries).not.toHaveBeenCalled()
+  })
+
+  it('surfaces the server message when the reject envelope reports a soft failure', async () => {
+    const { rejectSuggestion } = useBusinessPlanning()
+
+    await expect(
+      rejectSuggestion({ suggestionId: 'suggestion-1', reason: 'trigger-soft-failure' }),
+    ).rejects.toThrow('建议已被其他计划员处理。')
+  })
+
+  it('does not refresh planning queries when business context is empty', async () => {
+    useBusinessContextStore().patchContext({ organizationId: '', environmentId: '' })
+    const planning = useBusinessPlanning()
+    planning.runSelection.runId = 'run-1'
+
+    await planning.refreshPlanning()
+
+    expect(coladaState.refetchById.get('listBusinessConsolePlanningDemands')).not.toHaveBeenCalled()
+    expect(
+      coladaState.refetchById.get('listBusinessConsolePlanningMpsBuckets'),
+    ).not.toHaveBeenCalled()
+    expect(coladaState.refetchById.get('listBusinessConsolePlanningMrpRuns')).not.toHaveBeenCalled()
+    expect(
+      coladaState.refetchById.get('listBusinessConsolePlanningSuggestions'),
+    ).not.toHaveBeenCalled()
+    expect(
+      coladaState.refetchById.get('getBusinessConsolePlanningMrpPegging'),
+    ).not.toHaveBeenCalled()
+  })
+})

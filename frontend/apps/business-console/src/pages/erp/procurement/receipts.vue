@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
-import { useErpPurchaseReceipts } from '@/composables/useBusinessErp'
+import { useErpPurchaseReceipts } from '@/composables/erp/useBusinessErp'
 import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
 import { useSkuNames } from '@/composables/useSkuNames'
 import { usePagedList } from '@/composables/usePagedList'

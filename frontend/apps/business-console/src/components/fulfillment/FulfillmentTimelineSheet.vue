@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpSalesOrderItem } from '@nerv-iip/api-client'
 import SingleOrderSchedulingDialog from '@/components/scheduling/SingleOrderSchedulingDialog.vue'
-import { useCanScheduleSingleOrder } from '@/composables/useSingleOrderScheduling'
+import { useCanScheduleSingleOrder } from '@/composables/scheduling/useSingleOrderScheduling'
 import {
   NvButton,
   NvSheet,

@@ -5,7 +5,7 @@ import {
   EQUIPMENT_FRESHNESS_DISPLAY,
   equipmentSourceStatus,
   useBusinessEquipmentDevice,
-} from '@/composables/useBusinessEquipment'
+} from '@/composables/equipment/useBusinessEquipment'
 import { friendlyErrorMessage } from '@/utils/notify'
 import { alarmSeverityLabel, equipmentStateLabel } from '@nerv-iip/business-core'
 import {

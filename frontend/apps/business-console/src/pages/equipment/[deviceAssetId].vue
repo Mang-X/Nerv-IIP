@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { maintenanceWorkOrderNoLabel } from '@/composables/useEquipmentPickerCatalog'
+import { maintenanceWorkOrderNoLabel } from '@/composables/equipment/useEquipmentPickerCatalog'
 import type {
   NvDataTableColumn,
   NvMetricFacet,
@@ -14,7 +14,7 @@ import {
   equipmentStatusTone,
   useBusinessEquipmentDevice,
   type EquipmentTone,
-} from '@/composables/useBusinessEquipment'
+} from '@/composables/equipment/useBusinessEquipment'
 import {
   describeTelemetryOeeDegradation,
   describeTelemetryOeeLimitations,
@@ -25,7 +25,7 @@ import {
   useBusinessTelemetryOee,
   useBusinessTelemetryRuntimeHours,
   useMaintenancePlanRuntimeRemaining,
-} from '@/composables/useBusinessTelemetry'
+} from '@/composables/equipment/useBusinessTelemetry'
 import {
   deviceControlApprovalLabel,
   deviceControlCommandTypeLabel,
@@ -33,7 +33,7 @@ import {
   deviceControlStatusTone,
   deviceReceiptLabel,
   useBusinessDeviceControlCommands,
-} from '@/composables/useBusinessDeviceControl'
+} from '@/composables/equipment/useBusinessDeviceControl'
 import { usePagedList } from '@/composables/usePagedList'
 import DeviceControlSheet from '@/components/equipment/DeviceControlSheet.vue'
 import DeviceTelemetryPointsSheet from '@/components/equipment/DeviceTelemetryPointsSheet.vue'
@@ -47,7 +47,7 @@ import {
   useMaintenanceReliability,
   useMaintenanceSpareParts,
   useMaintenanceWorkOrders,
-} from '@/composables/useBusinessMaintenance'
+} from '@/composables/maintenance/useBusinessMaintenance'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import {
   formatIsoInterval,

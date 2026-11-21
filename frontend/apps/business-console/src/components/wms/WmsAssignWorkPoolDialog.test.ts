@@ -13,7 +13,7 @@ const state = vi.hoisted(() => ({
   }>,
 }))
 
-vi.mock('@/composables/useWmsWorkPools', () => ({
+vi.mock('@/composables/wms/useWmsWorkPools', () => ({
   useWmsWorkPools: () => ({
     pools: computed(() => state.pools),
     poolsPending: shallowRef(false),

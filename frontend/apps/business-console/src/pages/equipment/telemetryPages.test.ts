@@ -254,7 +254,7 @@ const scopeMocks = vi.hoisted(() => ({
   devicesInScope: [] as Array<Record<string, unknown>>,
 }))
 
-vi.mock('@/composables/useEquipmentScopeSelection', () => ({
+vi.mock('@/composables/equipment/useEquipmentScopeSelection', () => ({
   useEquipmentScopeSelection: (initial?: { workshop?: string; line?: string; device?: string }) => {
     const scope = ref({
       workshop: initial?.workshop ?? '',
@@ -273,7 +273,7 @@ vi.mock('@/composables/useEquipmentScopeSelection', () => ({
 }))
 
 // 设备 / 采集标签 / 单位目录走真实读面（useQuery）；单测给确定目录，只验页面行为。
-vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
+vi.mock('@/composables/equipment/useEquipmentPickerCatalog', () => ({
   useEquipmentDeviceCatalog: () => ({
     deviceOptions: computed(() => [{ value: 'DEV-CNC-01', label: '五轴加工中心' }]),
     devicesPending: shallowRef(false),
@@ -293,7 +293,7 @@ vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessTelemetry', () => ({
+vi.mock('@/composables/equipment/useBusinessTelemetry', () => ({
   describeTelemetryOeeDegradation: (reason: string) =>
     reason === 'theoreticalRateMissingOrAmbiguous' ? '缺少或存在冲突的工序标准速率' : reason,
   describeTelemetryOeeLimitations: () => 'OEE = 可用率 × 性能率 × 质量率。',

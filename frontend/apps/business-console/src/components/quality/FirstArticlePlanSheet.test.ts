@@ -9,7 +9,7 @@ const state = vi.hoisted(() => ({
   notifySuccess: vi.fn(),
 }))
 
-vi.mock('@/composables/useBusinessQuality', () => ({
+vi.mock('@/composables/quality/useBusinessQuality', () => ({
   useQualityFirstArticlePlanActions: () => ({
     createAndActivateFirstArticlePlan: state.createAndActivate,
     createFirstArticlePlanPending: shallowRef(false),

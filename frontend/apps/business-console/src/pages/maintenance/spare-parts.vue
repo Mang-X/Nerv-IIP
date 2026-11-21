@@ -4,14 +4,14 @@ import type {
   BusinessConsoleMaintenanceSparePartItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import { useMaintenanceSpareParts } from '@/composables/useBusinessMaintenance'
+import { useMaintenanceSpareParts } from '@/composables/maintenance/useBusinessMaintenance'
 import {
   maintenanceWorkOrderNoLabel,
   useDeviceSiteLookup,
   useEquipmentSkuCatalog,
   useEquipmentUomCatalog,
   useMaintenanceDocumentCatalog,
-} from '@/composables/useEquipmentPickerCatalog'
+} from '@/composables/equipment/useEquipmentPickerCatalog'
 import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
 import { usePagedList } from '@/composables/usePagedList'
 import { useSkuNames } from '@/composables/useSkuNames'

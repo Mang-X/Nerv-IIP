@@ -9,7 +9,7 @@ import {
   wmsStatusTone,
 } from '@/data/businessLabels'
 import { hasBusinessContext } from '@/composables/businessContextBinding'
-import { useWmsWcsTasks } from '@/composables/useBusinessWms'
+import { useWmsWcsTasks } from '@/composables/wms'
 import { usePagedList } from '@/composables/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'

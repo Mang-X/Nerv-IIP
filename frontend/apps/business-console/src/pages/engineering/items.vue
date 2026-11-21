@@ -6,7 +6,7 @@ import type {
 import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { pagedBreakdownSegments } from '@/composables/metricSegments'
-import { useEngineeringItems } from '@/composables/useProductEngineering'
+import { useEngineeringItems } from '@/composables/engineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,

@@ -112,7 +112,7 @@ const state = vi.hoisted(() => ({
   pagedListOptions: undefined as { initialPageSize?: string } | undefined,
 }))
 
-vi.mock('@/composables/useQualityInspectionTasks', () => ({
+vi.mock('@/composables/quality/useQualityInspectionTasks', () => ({
   isInspectionTaskOverdue: (task: { status?: string; dueAtUtc?: string }) =>
     task.status === 'pending' && !!task.dueAtUtc && new Date(task.dueAtUtc).getTime() < Date.now(),
   useQualityInspectionTasks: (
@@ -177,7 +177,7 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
 }))
 
 // 物料筛选改成只选：目录 composable 内部走 pinia + colada，测试整体打桩给定候选。
-vi.mock('@/composables/useQualityPickerCatalog', () => ({
+vi.mock('@/composables/quality/useQualityPickerCatalog', () => ({
   useQualitySkuCatalog: () => ({
     skuOptions: shallowRef([{ value: 'SKU-001', label: '示例物料' }]),
     skusPending: shallowRef(false),
