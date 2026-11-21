@@ -857,7 +857,7 @@ try {
         -ExpectedExitCode 1 `
         -ExpectedOutput @('permanent classification is not allowed for path')
 
-    $caseChangedPermanentPath = $permanentSource.RelativePath.Substring(0, 1).ToUpperInvariant() + $permanentSource.RelativePath.Substring(1)
+    $caseChangedPermanentPath = $permanentSource.RelativePath.ToUpperInvariant()
     Assert-CheckerCase `
         -Name 'permanent allowlist path matching is ordinal' `
         -SourceRoot $permanentSource.SourcePath `
