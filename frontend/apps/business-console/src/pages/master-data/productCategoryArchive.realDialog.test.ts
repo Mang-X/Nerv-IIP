@@ -31,7 +31,7 @@ const categories = [
   },
 ]
 
-vi.mock('@/composables/usePromotedCatalogs', () => ({
+vi.mock('@/composables/master-data/usePromotedCatalogs', () => ({
   useProductCategories: () => ({
     archiveCategory: stub.archiveCategory,
     archivePending,

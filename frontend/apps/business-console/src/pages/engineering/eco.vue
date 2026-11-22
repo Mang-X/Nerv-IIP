@@ -8,10 +8,7 @@ import type {
 import type { NvDataTableColumn, NvMetricStripCell, StatusTone } from '@nerv-iip/ui'
 import BusinessDocumentApprovalPanel from '@/components/business/BusinessDocumentApprovalPanel.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import {
-  useEngineeringChanges,
-  useEngineeringProductionVersions,
-} from '@/composables/useProductEngineering'
+import { useEngineeringChanges, useEngineeringProductionVersions } from '@/composables/engineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ENGINEERING_CHANGE_ORDER_DOCUMENT_TYPE,

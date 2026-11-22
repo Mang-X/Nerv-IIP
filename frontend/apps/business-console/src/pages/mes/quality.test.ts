@@ -47,7 +47,7 @@ vi.mock('@/utils/notify', () => ({
   notifySuccess,
 }))
 
-vi.mock('@/composables/usePromotedCatalogs', () => ({
+vi.mock('@/composables/master-data/usePromotedCatalogs', () => ({
   useQualityReasonCodes: () => ({
     reasons: computed(() => [
       { reasonCode: 'DIMENSION', reasonName: '尺寸超差', enabled: true },
@@ -57,11 +57,11 @@ vi.mock('@/composables/usePromotedCatalogs', () => ({
   }),
 }))
 
-vi.mock('@/composables/usePagedList', () => ({
+vi.mock('@/composables/shared/usePagedList', () => ({
   usePagedList: () => ({ page: ref(1), pageSize: ref('20') }),
 }))
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   makeIdempotencyKey,
   mesWorkScopeKindLabel: (kind: string) => (kind === 'work-center' ? '工作中心' : kind),
   useMesWorkScopeSelection: () => ({

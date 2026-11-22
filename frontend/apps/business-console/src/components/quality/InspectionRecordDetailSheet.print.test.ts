@@ -3,7 +3,7 @@ import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import InspectionRecordDetailSheet from './InspectionRecordDetailSheet.vue'
 
-vi.mock('@/composables/useBusinessQuality', () => ({
+vi.mock('@/composables/quality/useBusinessQuality', () => ({
   useQualityInspectionRecordDetail: () => ({
     record: shallowRef({
       inspectionRecordId: 'FA-REC-001',
@@ -18,7 +18,7 @@ vi.mock('@/composables/useBusinessQuality', () => ({
     refreshRecord: vi.fn(),
   }),
 }))
-vi.mock('@/composables/useSkuNames', () => ({
+vi.mock('@/composables/master-data/useSkuNames', () => ({
   useSkuNames: () => ({ resolveSkuName: () => '精密泵体' }),
 }))
 vi.mock('@/utils/notify', () => ({ notifyError: vi.fn() }))

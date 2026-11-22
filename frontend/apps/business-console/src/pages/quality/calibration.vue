@@ -9,8 +9,8 @@ import {
   useQualityMeasuringDevices,
   type QualityCalibrationRecordItem,
   type QualityMeasuringDeviceItem,
-} from '@/composables/useBusinessQualityLedgers'
-import { usePagedList } from '@/composables/usePagedList'
+} from '@/composables/quality/useBusinessQualityLedgers'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import { formatDate, formatDateTime } from '@/utils/format'
 import { friendlyErrorMessage } from '@/utils/notify'
 import {

@@ -17,8 +17,8 @@ import {
   useBusinessPartners,
   useCreateMasterDataResource,
   useMasterDataResourceActions,
-} from '@/composables/useBusinessMasterData'
-import { useReturnFocusOnClose } from '@/composables/useReturnFocusOnClose'
+} from '@/composables/master-data'
+import { useReturnFocusOnClose } from '@/composables/shared/useReturnFocusOnClose'
 import { currencyOptionsIncluding } from '@/data/currencyReference'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {

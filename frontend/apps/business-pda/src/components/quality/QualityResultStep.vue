@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { QualityResultState } from '@/composables/useInspectionExecution'
+import type { QualityResultState } from '@/composables/quality/useInspectionExecution'
 import { NvCell, NvMobileButton, NvMobileResult } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
 

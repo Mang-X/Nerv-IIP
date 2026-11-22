@@ -10,7 +10,7 @@ const state = vi.hoisted(() => ({
   disablePoint: vi.fn(() => Promise.resolve({ data: { telemetryTagId: 'tag-1' } })),
 }))
 
-vi.mock('@/composables/useBusinessTelemetryPoints', () => ({
+vi.mock('@/composables/equipment/useBusinessTelemetryPoints', () => ({
   useBusinessTelemetryPoints: () => ({
     points: computed(() => state.points),
     pointsError: shallowRef(),

@@ -23,7 +23,7 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 /// <c>One or more errors occurred!</c>，而两端的错误展示链都从顶层 <c>message</c> 起读
 /// ⇒ 操作工屏上就是那句英文常量。上屏那一段的证据在前端两端各一格
 /// （<c>frontend/apps/business-console/src/utils/notify.test.ts</c> 与
-/// <c>frontend/apps/business-pda/src/pages/equipment/repair.test.ts</c>），本类只管 wire。</para>
+/// <c>frontend/apps/business-pda/src/pages/equipment/repair.submission.test.ts</c>），本类只管 wire。</para>
 ///
 /// <para><b>固定用 <c>/api/business-console/v1/inventory/movements</c> 的理由</b>：
 /// 它的校验器只有 <c>IdempotencyKey</c> 一条长度规则，且该上界严格小于全局钳

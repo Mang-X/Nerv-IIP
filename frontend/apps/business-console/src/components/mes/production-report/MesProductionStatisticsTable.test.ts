@@ -9,7 +9,7 @@ import MesProductionStatisticsTable from './MesProductionStatisticsTable.vue'
 const directory = vi.hoisted(() => ({
   rows: [] as Array<{ code: string; displayName: string | null }>,
 }))
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessMasterDataResources: () => ({
     filters: {},
     resources: computed(() => directory.rows),

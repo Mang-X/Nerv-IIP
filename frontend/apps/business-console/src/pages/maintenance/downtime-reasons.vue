@@ -9,8 +9,8 @@ import DowntimeReasonFormSheet from '@/components/maintenance/DowntimeReasonForm
 import {
   useMaintenanceDowntimeReasonDirectory,
   type MaintenanceDowntimeReasonRow,
-} from '@/composables/useMaintenanceDowntimeReasonDirectory'
-import { useMaintenanceDowntimeReasonMutations } from '@/composables/useMaintenanceDowntimeReasonMutations'
+} from '@/composables/maintenance/useMaintenanceDowntimeReasonDirectory'
+import { useMaintenanceDowntimeReasonMutations } from '@/composables/maintenance/useMaintenanceDowntimeReasonMutations'
 import {
   downtimeLossCategoryLabel,
   downtimeReasonCategoryLabel,

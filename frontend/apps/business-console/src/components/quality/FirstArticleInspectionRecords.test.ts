@@ -14,7 +14,7 @@ const state = vi.hoisted(() => ({
   },
 }))
 
-vi.mock('@/composables/useBusinessQuality', () => ({
+vi.mock('@/composables/quality/useBusinessQuality', () => ({
   useQualityFirstArticleInspections: () => ({
     firstArticleRecords: shallowRef([
       {
@@ -32,7 +32,7 @@ vi.mock('@/composables/useBusinessQuality', () => ({
     refreshFirstArticleRecords: vi.fn(),
   }),
 }))
-vi.mock('@/composables/usePagedList', () => ({
+vi.mock('@/composables/shared/usePagedList', () => ({
   usePagedList: () => ({ page: shallowRef(1), pageSize: shallowRef('20') }),
 }))
 vi.mock('@/utils/notify', () => ({ inlineErrorMessage: () => '' }))

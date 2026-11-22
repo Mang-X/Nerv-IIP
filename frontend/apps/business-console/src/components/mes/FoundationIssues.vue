@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesReadinessIssue } from '@nerv-iip/api-client'
-import type { MesFoundationReadinessFilters } from '@/composables/useBusinessMes'
+import type { MesFoundationReadinessFilters } from '@/composables/mes'
 import { hasRoutePermission } from '@/router/guards/auth'
 import { useAuthStore } from '@/stores/auth'
 import { computed } from 'vue'

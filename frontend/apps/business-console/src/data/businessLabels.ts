@@ -133,7 +133,7 @@ export const WMS_LINE_OWNER_TYPE_OPTIONS: ReadonlyArray<{ label: string; value: 
 ]
 
 // 不合格品处置方式**不在这里**：受控值与显示函数都在
-// `@/composables/useQualityPickerCatalog` 的 QUALITY_DISPOSITION_OPTIONS /
+// `@/composables/quality/useQualityPickerCatalog` 的 QUALITY_DISPOSITION_OPTIONS /
 // qualityDispositionLabel，那份还会把词表外的历史自由文本显式标成「未知处置：xxx」。
 // 单一事实源，别在本文件另起一份。
 

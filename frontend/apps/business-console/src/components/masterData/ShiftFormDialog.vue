@@ -14,8 +14,8 @@ import type { DirectoryCreatedItem } from '@/components/business/directoryCreato
 import {
   useCreateMasterDataResource,
   useMasterDataResourceActions,
-} from '@/composables/useBusinessMasterData'
-import { useReturnFocusOnClose } from '@/composables/useReturnFocusOnClose'
+} from '@/composables/master-data'
+import { useReturnFocusOnClose } from '@/composables/shared/useReturnFocusOnClose'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   NvButton,

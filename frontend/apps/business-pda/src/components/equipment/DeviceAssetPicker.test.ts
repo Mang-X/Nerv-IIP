@@ -5,7 +5,7 @@ import DeviceAssetPicker from './DeviceAssetPicker.vue'
 
 const directoryMock = vi.hoisted(() => vi.fn())
 
-vi.mock('@/composables/useBusinessDeviceDirectory', () => ({
+vi.mock('@/composables/equipment/useBusinessDeviceDirectory', () => ({
   useBusinessDeviceDirectory: directoryMock,
 }))
 

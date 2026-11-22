@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
-import { useErpPurchaseReceipts } from '@/composables/useBusinessErp'
-import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
-import { useSkuNames } from '@/composables/useSkuNames'
-import { usePagedList } from '@/composables/usePagedList'
+import { useErpPurchaseReceipts } from '@/composables/erp/useBusinessErp'
+import { useBusinessPartnerNames } from '@/composables/master-data/useBusinessPartnerNames'
+import { useSkuNames } from '@/composables/master-data/useSkuNames'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'

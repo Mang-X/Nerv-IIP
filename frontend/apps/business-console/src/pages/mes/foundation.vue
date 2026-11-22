@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesReadinessArea } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import { useMesFoundationReadiness } from '@/composables/useBusinessMes'
+import { useMesFoundationReadiness } from '@/composables/mes'
 import {
   useMesMaterialVersionCatalog,
   useProductionScopeCatalog,
-} from '@/composables/useMesPickerCatalog'
+} from '@/composables/mes/useMesPickerCatalog'
 import { labelFor, MES_READINESS_AREA_LABELS } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {

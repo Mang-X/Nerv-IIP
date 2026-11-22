@@ -7,7 +7,7 @@ import {
   buildParetoChartRows,
   formatQualityQuantity,
   type QualityAnalysisBucket,
-} from '@/composables/useBusinessQualityAnalysis'
+} from '@/composables/quality/useBusinessQualityAnalysis'
 
 const props = withDefaults(
   defineProps<{

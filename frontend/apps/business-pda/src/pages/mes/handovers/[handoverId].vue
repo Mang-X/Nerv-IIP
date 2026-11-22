@@ -21,7 +21,7 @@ import {
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import RetryableListError from '@/components/RetryableListError.vue'
-import { useNonIdempotentWriteResult } from '@/composables/useNonIdempotentWriteResult'
+import { useNonIdempotentWriteResult } from '@/composables/shared/useNonIdempotentWriteResult'
 import {
   formatHandoverTimestamp,
   incomingUserLabel,
@@ -29,7 +29,7 @@ import {
   useMesShiftHandoverDetail,
   useShiftHandoverAttachmentViewer,
   useShiftHandoverDirectoryLabels,
-} from '@/composables/useBusinessShiftHandover'
+} from '@/composables/mes/useBusinessShiftHandover'
 import ShiftHandoverDetailSections from '../components/ShiftHandoverDetailSections.vue'
 
 definePage({

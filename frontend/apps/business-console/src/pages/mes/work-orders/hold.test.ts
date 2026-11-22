@@ -18,7 +18,7 @@ vi.mock('vue-router', () => ({
   RouterLink: { props: ['to'], template: '<a><slot /></a>' },
 }))
 
-vi.mock('@/composables/useScheduleInvalidation', () => ({
+vi.mock('@/composables/scheduling/useScheduleInvalidation', () => ({
   resolveScheduleStatus: () => ({ key: 'scheduled', label: '已排程', tone: 'info' }),
   scheduleInvalidationHint: () => '',
 }))
@@ -55,7 +55,7 @@ vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   // #1288 工具栏作业范围选择入口（MesWorkScopeSelect）
   useMesWorkScopeSelection: () => ({

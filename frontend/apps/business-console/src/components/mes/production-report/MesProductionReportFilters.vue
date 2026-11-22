@@ -15,7 +15,7 @@ import {
 } from '@nerv-iip/ui'
 import { computed } from 'vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
-import type { MesProductionStatisticsFilters } from '@/composables/useMesProductionStatistics'
+import type { MesProductionStatisticsFilters } from '@/composables/mes/useMesProductionStatistics'
 
 const props = defineProps<{ filters: MesProductionStatisticsFilters }>()
 const emit = defineEmits<{

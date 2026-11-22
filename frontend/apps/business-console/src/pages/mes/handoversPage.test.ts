@@ -136,7 +136,7 @@ const mutations = vi.hoisted(() => ({
   notifyOperationFailure: vi.fn(),
 }))
 
-vi.mock('@/composables/useBusinessMes', () => {
+vi.mock('@/composables/mes', () => {
   // 详情读面按 detailHandoverId 取数：写空即停取（与 useMesShiftHandovers 的 enabled 同口径）。
   // 用例要断言页面确实把选中的交接单 id 写进去了，所以这个 ref 由测试持有。
   detailFace.handoverId = ref('')
@@ -196,7 +196,7 @@ vi.mock('@/composables/useBusinessMes', () => {
   }
 })
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessMasterDataResources: (resourceType: string) => ({
     filters: reactive({ take: 100 }),
     resources: computed(() =>
@@ -224,7 +224,7 @@ vi.mock('@/utils/notify', async () => {
   }
 })
 
-vi.mock('@/composables/usePagedList', () => ({
+vi.mock('@/composables/shared/usePagedList', () => ({
   usePagedList: () => ({ page: ref(1), pageSize: ref(20) }),
 }))
 

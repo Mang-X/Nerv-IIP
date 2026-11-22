@@ -36,7 +36,7 @@ import { computed, reactive, shallowRef, watch } from 'vue'
 
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
-import { useEquipmentTeamCatalog } from '@/composables/useEquipmentPickerCatalog'
+import { useEquipmentTeamCatalog } from '@/composables/equipment/useEquipmentPickerCatalog'
 
 const locale = i18n.global.locale
 

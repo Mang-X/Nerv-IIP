@@ -7,17 +7,13 @@ import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
-import { hasBusinessContext } from '@/composables/businessContextBinding'
-import {
-  createWmsIdempotencyKey,
-  useWmsInboundOrders,
-  useWmsPutawayTasks,
-} from '@/composables/useBusinessWms'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { usePagedList } from '@/composables/usePagedList'
-import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
-import { useSkuNames } from '@/composables/useSkuNames'
-import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
+import { hasBusinessContext } from '@/composables/shared/businessContextBinding'
+import { createWmsIdempotencyKey, useWmsInboundOrders, useWmsPutawayTasks } from '@/composables/wms'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
+import { usePagedList } from '@/composables/shared/usePagedList'
+import { useWmsOperationalCandidates } from '@/composables/wms/useWmsOperationalCandidates'
+import { useSkuNames } from '@/composables/master-data/useSkuNames'
+import { bindWmsWorkScopeFilters } from '@/composables/wms/useWmsWorkScope'
 import {
   wmsWarehouseTaskStatusFilterOptions,
   wmsWarehouseTaskStatusLabel,

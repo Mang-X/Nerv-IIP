@@ -8,10 +8,10 @@ import {
   formatTelemetryDateTime,
   projectTelemetryHistory,
 } from '@/components/equipment/telemetryHistoryPresentation'
-import { useBusinessTelemetryHistory } from '@/composables/useBusinessTelemetry'
-import { useTelemetryTagCatalog } from '@/composables/useEquipmentPickerCatalog'
-import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useBusinessTelemetryHistory } from '@/composables/equipment/useBusinessTelemetry'
+import { useTelemetryTagCatalog } from '@/composables/equipment/useEquipmentPickerCatalog'
+import { useEquipmentScopeSelection } from '@/composables/equipment/useEquipmentScopeSelection'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { friendlyErrorMessage } from '@/utils/notify'
 import {

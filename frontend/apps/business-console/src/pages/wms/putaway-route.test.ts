@@ -1,4 +1,4 @@
-import { useWmsPutawayTasks } from '@/composables/useBusinessWms'
+import { useWmsPutawayTasks } from '@/composables/wms'
 import { assertScopePageBehavior, scopePageStubs } from '@/test/wmsWorkScopePage'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -7,7 +7,7 @@ import PutawayPage from './putaway.vue'
 
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
 // 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
-vi.mock('@/composables/useSkuNames', async () => {
+vi.mock('@/composables/master-data/useSkuNames', async () => {
   const { computed } = await import('vue')
   return {
     useSkuNames: () => ({
@@ -18,7 +18,7 @@ vi.mock('@/composables/useSkuNames', async () => {
     }),
   }
 })
-vi.mock('@/composables/useBusinessPartnerNames', async () => {
+vi.mock('@/composables/master-data/useBusinessPartnerNames', async () => {
   const { computed } = await import('vue')
   return {
     useBusinessPartnerNames: () => ({
@@ -30,7 +30,7 @@ vi.mock('@/composables/useBusinessPartnerNames', async () => {
     }),
   }
 })
-vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', async () => {
   const { computed } = await import('vue')
   const emptyIndex = computed(() => new Map<string, string>())
   return {
@@ -73,9 +73,9 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: state.permissionCodes } }),
 }))
 
-vi.mock('@/composables/useWmsWorkScope', () => import('@/test/wmsWorkScopePage'))
+vi.mock('@/composables/wms/useWmsWorkScope', () => import('@/test/wmsWorkScopePage'))
 
-vi.mock('@/composables/useBusinessWms', async () => {
+vi.mock('@/composables/wms', async () => {
   const { computed, reactive, shallowRef } = await import('vue')
   return {
     createWmsIdempotencyKey: () => 'putaway-intent-key',
@@ -298,7 +298,7 @@ async function setInput(selector: string, value: string) {
   input!.dispatchEvent(new Event('input', { bubbles: true }))
   await flushPromises()
 }
-vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+vi.mock('@/composables/wms/useWmsOperationalCandidates', async () => {
   const { shallowRef } = await import('vue')
   return {
     useWmsOperationalCandidates: () => ({

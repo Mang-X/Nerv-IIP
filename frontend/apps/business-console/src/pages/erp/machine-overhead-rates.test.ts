@@ -13,10 +13,10 @@ const state = vi.hoisted(() => ({
   current: undefined as unknown,
   permissionCodes: [] as string[],
 }))
-vi.mock('@/composables/useErpCostAccounting', () => ({
+vi.mock('@/composables/erp/useErpCostAccounting', () => ({
   useErpWorkCenterMachineOverheadRates: () => state.current,
 }))
-vi.mock('@/composables/useEquipmentPickerCatalog', () => ({
+vi.mock('@/composables/equipment/useEquipmentPickerCatalog', () => ({
   useEquipmentWorkCenterCatalog: () => ({
     workCenterOptions: shallowRef([{ value: 'WC-CNC-01', label: '数控加工中心一线' }]),
     workCentersPending: shallowRef(false),

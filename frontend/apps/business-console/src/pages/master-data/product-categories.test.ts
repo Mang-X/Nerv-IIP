@@ -21,7 +21,7 @@ const stub = vi.hoisted(() => ({
   ],
 }))
 
-vi.mock('@/composables/usePromotedCatalogs', () => ({
+vi.mock('@/composables/master-data/usePromotedCatalogs', () => ({
   useProductCategories: () => ({
     archiveCategory: stub.archiveCategory,
     archivePending: shallowRef(false),

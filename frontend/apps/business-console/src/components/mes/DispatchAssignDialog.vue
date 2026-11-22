@@ -1,12 +1,9 @@
 <script setup lang="ts">
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
-import {
-  useBusinessMasterDataResources,
-  useBusinessWorkers,
-} from '@/composables/useBusinessMasterData'
+import { useBusinessMasterDataResources, useBusinessWorkers } from '@/composables/master-data'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
-import { useSkillCatalog } from '@/composables/usePromotedCatalogs'
+import { useSkillCatalog } from '@/composables/master-data/usePromotedCatalogs'
 import { labelFor, SKILL_LEVEL_LABELS } from '@/data/businessLabels'
 import { resolveDispatchAffordance } from '@/composables/mes/useMesTaskSemantics'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'

@@ -22,7 +22,7 @@ import { stableRowKey } from './shared'
 
 const hoisted = vi.hoisted(() => ({ rows: null as { value: Record<string, unknown>[] } | null }))
 
-vi.mock('@/composables/useBusinessErp', async () => {
+vi.mock('@/composables/erp/useBusinessErp', async () => {
   const { computed, reactive, shallowRef } = await import('vue')
   const rows = shallowRef<Record<string, unknown>[]>([])
   hoisted.rows = rows
@@ -56,7 +56,7 @@ vi.mock('@/composables/useBusinessErp', async () => {
   }
 })
 
-vi.mock('@/composables/usePagedList', async () => {
+vi.mock('@/composables/shared/usePagedList', async () => {
   const { shallowRef } = await import('vue')
   return {
     usePagedList: () => ({

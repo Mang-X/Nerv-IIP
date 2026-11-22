@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useNowClock } from '@/composables/useNowClock'
+import { useNowClock } from '@/composables/shared/useNowClock'
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
 import { inspectionTaskSourceTypeLabel } from '@nerv-iip/business-core'
 import { NvMobileTag } from '@nerv-iip/ui-mobile'

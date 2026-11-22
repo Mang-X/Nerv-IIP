@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readPageComponents } from '../readPageComponents'
 import { describe, expect, it } from 'vitest'
 
 /**
@@ -19,7 +20,16 @@ const pagesDir = dirname(fileURLToPath(import.meta.url))
 function pageSources() {
   return readdirSync(pagesDir)
     .filter((name) => name.endsWith('.vue'))
-    .map((name) => ({ name, source: readFileSync(join(pagesDir, name), 'utf8') }))
+    .map((name) => {
+      const file = join(pagesDir, name)
+      const entry = readFileSync(file, 'utf8')
+      const controller = entry.match(/from ['"](\.\/use\w+Page)['"]/)?.[1]
+      return {
+        name,
+        source: readPageComponents(file),
+        setup: controller ? readFileSync(join(pagesDir, controller + '.ts'), 'utf8') : entry,
+      }
+    })
 }
 
 /**
@@ -43,7 +53,7 @@ describe('主数据列表页的「包含停用」开关', () => {
   it('接了开关的页面都把它绑到了过滤器上（不是个摆设）', () => {
     const offenders = pageSources()
       .filter((page) => rendersFilter(page.source))
-      .filter(({ source }) => !source.includes('useIncludeDisabledFilter('))
+      .filter(({ setup }) => !setup.includes('useIncludeDisabledFilter('))
       .map(({ name }) => name)
 
     expect(offenders).toEqual([])

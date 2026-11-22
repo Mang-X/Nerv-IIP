@@ -10,14 +10,14 @@ import {
   useErpFinanceSummary,
   useErpPayables,
   useErpReceivables,
-} from '@/composables/useBusinessErp'
+} from '@/composables/erp/useBusinessErp'
 import {
   useErpPartnerCatalog,
   useErpPayableSourceCatalog,
   useErpReceivableSourceCatalog,
-} from '@/composables/useErpPickerCatalog'
-import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
-import { usePagedList } from '@/composables/usePagedList'
+} from '@/composables/erp/useErpPickerCatalog'
+import { useBusinessPartnerNames } from '@/composables/master-data/useBusinessPartnerNames'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import { buildKpiTrend } from '@/utils/kpiTrend'
 import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'

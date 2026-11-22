@@ -14,8 +14,8 @@ import type {
   DeadLetterReplayOutcome,
   DeadLetterReplayResult,
   DeadLetterTarget,
-} from '@/composables/useBusinessDeadLetters'
-import { deadLetterRowKey } from '@/composables/useBusinessDeadLetters'
+} from '@/composables/ops/useBusinessDeadLetters'
+import { deadLetterRowKey } from '@/composables/ops/useBusinessDeadLetters'
 
 /**
  * 截获层在 `@nerv-iip/ui` 的 `toast`，**不在** `@/utils/notify`：真实的 notify 要跑完共享文案映射。
@@ -65,8 +65,8 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: state.permissionCodes } }),
 }))
 
-vi.mock('@/composables/useBusinessDeadLetters', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/composables/useBusinessDeadLetters')>()
+vi.mock('@/composables/ops/useBusinessDeadLetters', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/composables/ops/useBusinessDeadLetters')>()
   const { computed, reactive, ref } = await import('vue')
   return {
     ...actual,

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
-import { useMesQualityHold } from '@/composables/useBusinessMes'
+import { useMesQualityHold } from '@/composables/mes'
 import { notifyError, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvAlertDialog,

@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { describeMesReadinessReasons, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
+import { describeMesReadinessReasons, useMesWorkOrderDetail } from '@/composables/mes'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
   isScheduleInvalidated,
   scheduleInvalidationHint,
-} from '@/composables/useScheduleInvalidation'
+} from '@/composables/scheduling/useScheduleInvalidation'
 import {
   NvButton,
   NvDialog,

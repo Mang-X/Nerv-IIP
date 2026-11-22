@@ -17,7 +17,7 @@ import {
   Wrench,
 } from '@lucide/vue'
 import { PDA_TASK_KINDS } from '@nerv-iip/business-core'
-import { useUnacknowledgedAlarmCount } from '@/composables/useBusinessEquipmentAlarms'
+import { useUnacknowledgedAlarmCount } from '@/composables/equipment/useBusinessEquipmentAlarms'
 import RetryableListError from '@/components/RetryableListError.vue'
 import {
   HOME_PERMISSIONS,
@@ -25,7 +25,7 @@ import {
   usePendingInspectionSummary,
   useWarehouseSummary,
   type WarehouseSummaryEntryState,
-} from '@/composables/useWorkbenchHome'
+} from '@/composables/workbench/useWorkbenchHome'
 import {
   NvAppShellMobile,
   NvCell,

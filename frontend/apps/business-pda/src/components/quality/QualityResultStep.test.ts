@@ -1,4 +1,4 @@
-import type { QualityResultState } from '@/composables/useInspectionExecution'
+import type { QualityResultState } from '@/composables/quality/useInspectionExecution'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import QualityResultStep from './QualityResultStep.vue'

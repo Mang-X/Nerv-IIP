@@ -4,7 +4,7 @@ import { storeToRefs } from 'pinia'
 import { reactive, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { usePdaLogout } from '@/composables/usePdaProfile'
+import { usePdaLogout } from '@/composables/workbench/usePdaProfile'
 import { useAuthStore } from '@/stores/auth'
 
 definePage({ meta: { requiresAuth: true, title: '修改密码' } })

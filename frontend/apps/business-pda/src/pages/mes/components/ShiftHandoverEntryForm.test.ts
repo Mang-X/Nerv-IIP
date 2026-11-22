@@ -7,7 +7,7 @@ import type {
   ShiftHandoverOpenIssue,
   ShiftHandoverUnfinishedWorkOrder,
   ShiftHandoverWipItem,
-} from '@/composables/useBusinessShiftHandover'
+} from '@/composables/mes/useBusinessShiftHandover'
 
 // jsdom 没有实现 `Element.prototype.scrollTo`，而 NvPicker 打开时会调用它对齐滚轮。
 // 不补这个桩的话，Picker 内部的 nextTick 回调会抛出未捕获拒绝，把整个文件判红——

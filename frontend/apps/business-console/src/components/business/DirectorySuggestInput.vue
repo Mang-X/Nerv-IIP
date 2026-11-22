@@ -10,7 +10,7 @@ import { watch } from 'vue'
 import {
   useSearchableDirectoryPicker,
   type SearchableDirectoryType,
-} from '@/composables/useSearchableDirectoryPicker'
+} from '@/composables/master-data/useSearchableDirectoryPicker'
 
 const props = defineProps<{
   directoryType: SearchableDirectoryType

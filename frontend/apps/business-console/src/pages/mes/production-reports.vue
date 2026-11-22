@@ -1,9 +1,6 @@
 <script setup lang="ts">
-import type {
-  BusinessConsoleMesProductionReportRow,
-  BusinessConsoleMesWorkOrderItem,
-} from '@nerv-iip/api-client'
-import type { EntityPickerOption, NvDataTableColumn } from '@nerv-iip/ui'
+import type { BusinessConsoleMesProductionReportRow } from '@nerv-iip/api-client'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { RouterLink } from 'vue-router'
 import { useProductionReportDetailSelection } from '@/composables/mes/useProductionReportDetailSelection'
 import ProductionReportDetailDialog from '@/components/mes/ProductionReportDetailDialog.vue'
@@ -14,21 +11,10 @@ import WorkOrderQuickView from '@/components/mes/WorkOrderQuickView.vue'
 import {
   useMesProductionReports,
   useMesTelemetryProductionReportCandidates,
-  useMesWorkOrders,
-} from '@/composables/useBusinessMes'
-import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
-import {
-  buildOperationTaskPickerOptions,
-  buildWorkOrderPickerOptions,
-} from '@/composables/mes/workOrderPickerOptions'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+} from '@/composables/mes'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
-import {
-  labelFor,
-  REPORT_SUSPENSION_REASON_LABELS,
-  TELEMETRY_CANDIDATE_STATUS_LABELS,
-} from '@/data/businessLabels'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
@@ -63,7 +49,8 @@ import {
 } from '@nerv-iip/ui'
 import { ClipboardPenIcon, RefreshCwIcon, Undo2Icon } from '@lucide/vue'
 import { storeToRefs } from 'pinia'
-import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { useTelemetryReportCandidates } from './useTelemetryReportCandidates'
 
 definePage({
   meta: {
@@ -94,64 +81,21 @@ const candidateQueue = useMesTelemetryProductionReportCandidates()
 // 候选卡上只有设备标识，设备名在主数据里；查不到就只显标识，不编名字。
 const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
 const { resolveSkuLabel } = useMesDisplayNames()
-type TelemetryCandidate = (typeof candidateQueue.candidates.value)[number]
-/** 候选当前处境：优先说明为什么挂起，没挂起就说它在队列里的状态。 */
-function candidateStateText(candidate: TelemetryCandidate) {
-  return candidate.suspensionReason
-    ? labelFor(REPORT_SUSPENSION_REASON_LABELS, candidate.suspensionReason)
-    : labelFor(TELEMETRY_CANDIDATE_STATUS_LABELS, candidate.status) || '未标注状态'
-}
-const candidateWorkOrderId = ref('')
-const candidateOperationTaskId = ref('')
-const dismissalReason = ref('')
-const selectedCandidateId = ref<string | null>(null)
-
-// 转正要挑工单和它下面的工序任务。工单是持续新增的大目录，走服务端搜索（同追溯查询页）；
-// 工序任务取已选工单自带的工序，不另起一份目录。
-const workOrderCatalog = useMesWorkOrders({ initialTake: 50 })
-const { keyword: workOrderSearch } = useMesKeywordFilter(workOrderCatalog.filters)
-const candidateWorkOrderOptions = computed<EntityPickerOption[]>(() =>
-  buildWorkOrderPickerOptions(workOrderCatalog.workOrders.value, candidateWorkOrderId.value),
-)
-// 工序取自已选工单那一行。工单目录走服务端搜索，改搜别的单号后已选工单会滑出结果集，
-// 所以记住最后一次在结果里见到的那一行，别让已选工序凭空变成「未选择」。
-const candidateWorkOrder = shallowRef<BusinessConsoleMesWorkOrderItem>()
-watch(
-  [() => workOrderCatalog.workOrders.value, candidateWorkOrderId],
-  ([orders, workOrderId]) => {
-    const found = orders.find((order) => order.workOrderId?.trim() === workOrderId)
-    if (found) candidateWorkOrder.value = found
-    else if (candidateWorkOrder.value?.workOrderId?.trim() !== workOrderId)
-      candidateWorkOrder.value = undefined
-  },
-  { immediate: true },
-)
-const candidateOperationTaskOptions = computed<EntityPickerOption[]>(() =>
-  buildOperationTaskPickerOptions(candidateWorkOrder.value),
-)
-// 换了工单，上一张工单的工序任务就不再成立，跟着清掉。
-const candidateWorkOrderModel = computed({
-  get: () => candidateWorkOrderId.value,
-  set: (value: string) => {
-    if (value === candidateWorkOrderId.value) return
-    candidateWorkOrderId.value = value
-    candidateOperationTaskId.value = ''
-  },
-})
-
-function resetCandidateAction(candidate?: TelemetryCandidate) {
-  // 候选自带的工单 / 工序任务就是默认选中，操作员只在需要改派时才动。
-  candidateWorkOrderId.value = candidate?.workOrderId?.trim() ?? ''
-  candidateOperationTaskId.value = candidate?.operationTaskId?.trim() ?? ''
-  dismissalReason.value = ''
-  // 选择器一页装不下整个工单目录：用候选自带的工单号当搜索词，让服务端把它和它的工序捞回来。
-  workOrderSearch.value = candidateWorkOrderId.value
-}
-function toggleCandidate(candidate: TelemetryCandidate) {
-  const opening = selectedCandidateId.value !== candidate.candidateId
-  resetCandidateAction(opening ? candidate : undefined)
-  selectedCandidateId.value = opening ? (candidate.candidateId ?? null) : null
-}
+const {
+  candidateWorkOrderId,
+  candidateStateText,
+  candidateOperationTaskId,
+  dismissalReason,
+  selectedCandidateId,
+  workOrderCatalog,
+  workOrderSearch,
+  candidateWorkOrderOptions,
+  candidateOperationTaskOptions,
+  candidateWorkOrderModel,
+  toggleCandidate,
+  promoteCandidate,
+  dismissCandidate,
+} = useTelemetryReportCandidates(candidateQueue)
 
 // 冲销是写操作(网关按 business.mes.reporting.write 鉴权)。页面准入只需 read,故写权限需单独门控:
 // 无写权限的只读角色不展示冲销/重新报工入口,避免看到必然 403 的破坏性动作(AGENTS.md §5 权限同步)。
@@ -466,21 +410,6 @@ function formatDateTime(value?: string | null) {
 }
 function openWorkOrder(workOrderId?: string | null) {
   if (workOrderId) quickViewWorkOrderId.value = workOrderId
-}
-async function promoteCandidate(candidateId?: string) {
-  if (!candidateId) return
-  const workOrderId = candidateWorkOrderId.value
-  const operationTaskId = candidateOperationTaskId.value
-  if (!workOrderId || !operationTaskId) return
-  await candidateQueue.promote(candidateId, workOrderId, operationTaskId)
-  selectedCandidateId.value = null
-  resetCandidateAction()
-}
-async function dismissCandidate(candidateId?: string) {
-  if (!candidateId || !dismissalReason.value.trim()) return
-  await candidateQueue.dismiss(candidateId, dismissalReason.value.trim())
-  selectedCandidateId.value = null
-  resetCandidateAction()
 }
 </script>
 

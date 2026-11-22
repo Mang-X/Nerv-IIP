@@ -23,7 +23,7 @@ import {
   useMesShiftHandovers,
   useShiftHandoverDirectoryLabels,
   type ShiftHandoverRow,
-} from '@/composables/useBusinessShiftHandover'
+} from '@/composables/mes/useBusinessShiftHandover'
 
 definePage({
   meta: {

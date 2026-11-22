@@ -18,18 +18,18 @@ const SRC = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 /** 允许保留裸 `instanceof Error` 的地方，各有明确理由（不是「先放着」）。 */
 const RAW_ERROR_ALLOWLIST = new Map<string, string>([
   ['utils/notify.ts', '分层透传的实现本身'],
-  ['composables/lifecycleAction.ts', '只做类型判定，不取消息上屏'],
-  ['composables/useFulfillmentTimeline.ts', '包装成领域错误类型 FulfillmentNodeError，不直接上屏'],
+  ['composables/shared/lifecycleAction.ts', '只做类型判定，不取消息上屏'],
+  [
+    'composables/planning/fulfillmentErrors.ts',
+    '包装成领域错误类型 FulfillmentNodeError，不直接上屏',
+  ],
   ['composables/mes/useReceiptCreateForm.ts', '已先走 serverErrorMessage，仅作兜底取值'],
   // pages/quality/inspection-tasks.vue 曾在此豁免（靠 `instanceof Error` 判 403，对响应体对象永远不成立，
   // 真实 403 退化成普通失败态）——MAN-698 批次 A 已改成按状态码判（`isForbiddenError`），豁免随之取消。
 ])
 
-/**
- * 允许直接调 `toast.*` 的文件：`notify.ts` 是实现本身；`pages/scheduling.vue` 的文案全部是
- * 写死的中文（成功提示与表单校验类拦截），不含任何服务端原文。
- */
-const RAW_TOAST_ALLOWLIST = new Set(['utils/notify.ts', 'pages/scheduling.vue'])
+/** 只有通知实现可以直接调用 toast。 */
+const RAW_TOAST_ALLOWLIST = new Set(['utils/notify.ts'])
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {

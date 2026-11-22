@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /** 新建工厂（工厂结构的根）。 */
 import type { BusinessConsoleCreateSiteRequest } from '@nerv-iip/api-client'
-import { useCreateMasterDataResource } from '@/composables/useBusinessMasterData'
-import { useReturnFocusOnClose } from '@/composables/useReturnFocusOnClose'
+import { useCreateMasterDataResource } from '@/composables/master-data'
+import { useReturnFocusOnClose } from '@/composables/shared/useReturnFocusOnClose'
 import { DEFAULT_TIME_ZONE, TIME_ZONE_OPTIONS } from '@/data/timeZones'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {

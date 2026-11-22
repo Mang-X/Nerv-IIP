@@ -3,7 +3,7 @@
  * 客户 / 供应商单元格：主行显中文名称，编号降为次要信息。
  * 名录里查不到名称时只显编号（不编造名字）。
  */
-import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
+import { useBusinessPartnerNames } from '@/composables/master-data/useBusinessPartnerNames'
 
 const props = defineProps<{ code?: string | null; fallback?: string }>()
 

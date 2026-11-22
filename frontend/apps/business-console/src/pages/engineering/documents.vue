@@ -19,7 +19,7 @@ import {
 } from '@/components/engineering/sopFileTransfer'
 import { useAuthStore } from '@/stores/auth'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { useEngineeringDocuments, useEngineeringItems } from '@/composables/useProductEngineering'
+import { useEngineeringDocuments, useEngineeringItems } from '@/composables/engineering'
 import {
   ENGINEERING_DOCUMENT_TYPE_ALIASES,
   ENGINEERING_DOCUMENT_TYPE_OPTIONS,

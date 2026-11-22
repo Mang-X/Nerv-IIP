@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FulfillmentNode } from '@/composables/useFulfillmentTimeline'
+import type { FulfillmentNode } from '@/composables/planning/fulfillment'
 import { NvButton, resolveStatus } from '@nerv-iip/ui'
 import { AlertTriangleIcon, LockIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed } from 'vue'

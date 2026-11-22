@@ -5,7 +5,7 @@ import { computed, shallowRef } from 'vue'
 
 import PdaBarcodeResolver from '@/components/barcode/PdaBarcodeResolver.vue'
 import PdaNavigationCell from '@/components/navigation/PdaNavigationCell.vue'
-import { usePdaIdentity } from '@/composables/useWorkbenchHome'
+import { usePdaIdentity } from '@/composables/workbench/useWorkbenchHome'
 
 definePage({ meta: { requiresAuth: true, title: '扫码' } })
 

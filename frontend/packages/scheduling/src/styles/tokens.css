@@ -1,0 +1,17 @@
+/* 排程域色板:一次性定义(而非散落内联 oklch)。图例/详情面板渲染在 .nerv-gantt 容器外的工作台外壳里,
+   故挂在 :root 保证包内处处可用。语义色能复用就复用,仅 rush / kit-warn / lineChange 保留专有色相。 */
+@layer nv-tokens {
+  :root {
+    /* rush 拉开与 warning 的色相(warning ~68/70, rush 移到 ~45 偏橙红),避免赶工与齐套警告撞色 */
+    --nv-scheduling-rush: oklch(0.68 0.18 45);
+    --nv-scheduling-kit-ok: var(--nv-success);
+    --nv-scheduling-kit-warn: oklch(0.82 0.15 85);
+    /* 设备数据风险(状态未知)。中性语义:它是数据盲区,不是预警级的物料缺口,更不是阻断。 */
+    --nv-scheduling-equip-unknown: var(--muted-foreground);
+    --nv-scheduling-kit-bad: var(--destructive);
+    --nv-scheduling-block-maintenance: var(--muted-foreground);
+    --nv-scheduling-block-downtime: var(--destructive);
+    --nv-scheduling-block-linechange: oklch(0.58 0.13 250);
+    --nv-scheduling-block-changeover: var(--nv-scheduling-rush);
+  }
+}

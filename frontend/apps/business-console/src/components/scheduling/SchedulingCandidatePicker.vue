@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { useMesWorkOrders } from '@/composables/useBusinessMes'
+import { useMesWorkOrders } from '@/composables/mes'
 import {
   isSchedulableWorkbenchCandidate,
   SCHEDULABLE_WORK_ORDER_STATUSES,
-} from '@/composables/useSchedulingWorkbench'
+} from '@/composables/scheduling/useSchedulingWorkbench'
 import {
   NvButton,
   NvField,

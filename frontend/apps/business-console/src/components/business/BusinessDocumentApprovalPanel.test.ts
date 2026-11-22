@@ -61,7 +61,7 @@ const approvalState = vi.hoisted(() => ({
   },
 }))
 
-vi.mock('@/composables/useBusinessApproval', () => ({
+vi.mock('@/composables/approval/useBusinessApproval', () => ({
   useBusinessApproval: () => ({
     chainDetail: computed(() => approvalState.chainDetail),
     chainDetailError: shallowRef(),

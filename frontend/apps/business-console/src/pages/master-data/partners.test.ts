@@ -76,7 +76,7 @@ function stubActions() {
   }
 }
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessPartners: () => stubPartners(),
   useMasterDataResourceActions: () => stubActions(),
 }))

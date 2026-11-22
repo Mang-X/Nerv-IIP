@@ -9,14 +9,14 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
-import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
-import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
+import { useIncludeDisabledFilter } from '@/composables/master-data/masterDataIncludeDisabled'
+import { useMasterDataLifecycleConfirm } from '@/composables/master-data/masterDataLifecycleConfirm'
 import {
   useBusinessMasterDataResources,
   useBusinessUoms,
   useMasterDataResourceActions,
   useUomConversions,
-} from '@/composables/useBusinessMasterData'
+} from '@/composables/master-data'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -47,11 +47,21 @@ import {
   NvTabsTrigger,
   NvToolbar,
 } from '@nerv-iip/ui'
-import { ArrowRightLeftIcon, PlusIcon, RulerIcon } from '@lucide/vue'
+import { PlusIcon, RulerIcon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { formatDateTime } from '@/utils/format'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import { mergeReferenceOptions } from '@/data/masterDataReference'
+import {
+  isNonEmpty,
+  inOptions,
+  isPrecisionValid,
+  precisionNumber,
+  isFactorValid,
+  isOffsetValid,
+  offsetNumber,
+} from './unitFormValues'
+import UnitConversionDialog from './components/UnitConversionDialog.vue'
 
 definePage({
   meta: {
@@ -359,39 +369,7 @@ watch(
 function rowKey(item: BusinessConsoleResourceItem) {
   return `${item.resourceType ?? 'unit-of-measure'}:${item.code || item.displayName || ''}`
 }
-function isNonEmpty(value: string) {
-  return value.trim().length > 0
-}
-function inOptions(options: readonly Option[], value: string) {
-  return options.some((option) => option.value === value)
-}
-// 数字输入框的 v-model 可能回传 number；统一收成可 trim 的字符串。
-function asText(value: string | number): string {
-  return value == null ? '' : String(value)
-}
-// 精度可空；填了则必须是 >= 0 的整数。
-function isPrecisionValid(value: string | number) {
-  if (asText(value).trim() === '') return true
-  const n = Number(value)
-  return Number.isInteger(n) && n >= 0
-}
-function precisionNumber(value: string | number): number | undefined {
-  return asText(value).trim() === '' ? undefined : Number(value)
-}
-// 换算系数必填，必须是 > 0 的有限数。
-function isFactorValid(value: string | number) {
-  if (asText(value).trim() === '') return false
-  const n = Number(value)
-  return Number.isFinite(n) && n > 0
-}
-// 偏移量可空；填了则必须是有限数（可负）。
-function isOffsetValid(value: string | number) {
-  if (asText(value).trim() === '') return true
-  return Number.isFinite(Number(value))
-}
-function offsetNumber(value: string | number): number | undefined {
-  return asText(value).trim() === '' ? undefined : Number(value)
-}
+
 function resetCreateForm() {
   Object.assign(createForm, {
     code: '',
@@ -715,158 +693,22 @@ async function submitConversion() {
             <IncludeDisabledFilter v-model="includeDisabled" />
           </template>
           <template #actions>
-            <NvDialog v-model:open="conversionOpen">
-              <NvDialogTrigger as-child>
-                <NvButton size="sm" type="button" @click="openCreateConversion">
-                  <ArrowRightLeftIcon aria-hidden="true" />
-                  新建换算关系
-                </NvButton>
-              </NvDialogTrigger>
-              <NvDialogContent class="sm:max-w-2xl">
-                <NvDialogHeader>
-                  <NvDialogTitle>新建换算关系</NvDialogTitle>
-                  <NvDialogDescription class="sr-only">新建单位换算关系</NvDialogDescription>
-                </NvDialogHeader>
-                <form class="grid gap-4" @submit.prevent="submitConversion">
-                  <p
-                    v-if="conversionShowErrors && !canCreateConversion"
-                    class="text-sm text-destructive"
-                    role="alert"
-                  >
-                    请检查带 * 的必填项：源单位与目标单位不能相同，换算系数须大于 0（已标红）。
-                  </p>
-                  <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <NvField
-                      :data-invalid="
-                        conversionShowErrors &&
-                        (!inOptions(uomSelectOptions, conversionForm.fromUom) ||
-                          conversionForm.fromUom === conversionForm.toUom)
-                      "
-                    >
-                      <NvFieldLabel for="conv-from"
-                        >源单位 <span class="text-destructive">*</span></NvFieldLabel
-                      >
-                      <NvSelect v-model="conversionForm.fromUom">
-                        <NvSelectTrigger id="conv-from"
-                          ><NvSelectValue placeholder="请选择源单位"
-                        /></NvSelectTrigger>
-                        <NvSelectContent>
-                          <NvSelectItem
-                            v-for="o in uomSelectOptions"
-                            :key="o.value"
-                            :value="o.value"
-                            >{{ o.label }}</NvSelectItem
-                          >
-                        </NvSelectContent>
-                      </NvSelect>
-                    </NvField>
-                    <NvField
-                      :data-invalid="
-                        conversionShowErrors &&
-                        (!inOptions(uomSelectOptions, conversionForm.toUom) ||
-                          conversionForm.fromUom === conversionForm.toUom)
-                      "
-                    >
-                      <NvFieldLabel for="conv-to"
-                        >目标单位 <span class="text-destructive">*</span></NvFieldLabel
-                      >
-                      <NvSelect v-model="conversionForm.toUom">
-                        <NvSelectTrigger id="conv-to"
-                          ><NvSelectValue placeholder="请选择目标单位"
-                        /></NvSelectTrigger>
-                        <NvSelectContent>
-                          <NvSelectItem
-                            v-for="o in uomSelectOptions"
-                            :key="o.value"
-                            :value="o.value"
-                            >{{ o.label }}</NvSelectItem
-                          >
-                        </NvSelectContent>
-                      </NvSelect>
-                    </NvField>
-                    <NvField
-                      :data-invalid="conversionShowErrors && !isFactorValid(conversionForm.factor)"
-                    >
-                      <NvFieldLabel for="conv-factor"
-                        >换算系数 <span class="text-destructive">*</span></NvFieldLabel
-                      >
-                      <NvInput
-                        id="conv-factor"
-                        v-model="conversionForm.factor"
-                        type="number"
-                        min="0"
-                        step="any"
-                        autocomplete="off"
-                        placeholder="如 1000"
-                      />
-                      <!-- 换算口径（非显而易见），保留一行。 -->
-                      <NvFieldDescription>1 源单位等于多少目标单位。</NvFieldDescription>
-                    </NvField>
-                    <NvField
-                      :data-invalid="conversionShowErrors && !isOffsetValid(conversionForm.offset)"
-                    >
-                      <NvFieldLabel for="conv-offset">偏移量</NvFieldLabel>
-                      <NvInput
-                        id="conv-offset"
-                        v-model="conversionForm.offset"
-                        type="number"
-                        step="any"
-                        autocomplete="off"
-                        placeholder="可留空"
-                      />
-                      <!-- 换算口径（非显而易见），保留一行。 -->
-                      <NvFieldDescription>线性换算的常数项，如温标换算。</NvFieldDescription>
-                    </NvField>
-                    <NvField
-                      :data-invalid="
-                        conversionShowErrors &&
-                        !inOptions(ROUNDING_OPTIONS, conversionForm.roundingMode)
-                      "
-                    >
-                      <NvFieldLabel for="conv-rounding"
-                        >取整方式 <span class="text-destructive">*</span></NvFieldLabel
-                      >
-                      <NvSelect v-model="conversionForm.roundingMode">
-                        <NvSelectTrigger id="conv-rounding"><NvSelectValue /></NvSelectTrigger>
-                        <NvSelectContent>
-                          <NvSelectItem
-                            v-for="o in ROUNDING_OPTIONS"
-                            :key="o.value"
-                            :value="o.value"
-                            >{{ o.label }}</NvSelectItem
-                          >
-                        </NvSelectContent>
-                      </NvSelect>
-                    </NvField>
-                    <NvField
-                      :data-invalid="
-                        conversionShowErrors && !isPrecisionValid(conversionForm.precision)
-                      "
-                    >
-                      <NvFieldLabel for="conv-precision">小数精度</NvFieldLabel>
-                      <NvInput
-                        id="conv-precision"
-                        v-model="conversionForm.precision"
-                        type="number"
-                        min="0"
-                        step="1"
-                        autocomplete="off"
-                        placeholder="可留空"
-                      />
-                    </NvField>
-                  </NvFieldGroup>
-                  <NvDialogFooter>
-                    <NvButton type="button" variant="outline" @click="conversionOpen = false"
-                      >取消</NvButton
-                    >
-                    <NvButton type="submit" :disabled="createUomConversionPending">
-                      <NvSpinner v-if="createUomConversionPending" aria-hidden="true" />
-                      保存换算关系
-                    </NvButton>
-                  </NvDialogFooter>
-                </form>
-              </NvDialogContent>
-            </NvDialog>
+            <UnitConversionDialog
+              v-model:conversion-open="conversionOpen"
+              v-model:from-uom="conversionForm.fromUom"
+              v-model:to-uom="conversionForm.toUom"
+              v-model:factor="conversionForm.factor"
+              v-model:offset="conversionForm.offset"
+              v-model:rounding-mode="conversionForm.roundingMode"
+              v-model:precision="conversionForm.precision"
+              :conversion-show-errors="conversionShowErrors"
+              :can-create-conversion="canCreateConversion"
+              :uom-select-options="uomSelectOptions"
+              :rounding-options="ROUNDING_OPTIONS"
+              :create-uom-conversion-pending="createUomConversionPending"
+              @prepare="openCreateConversion"
+              @submit="submitConversion"
+            />
           </template>
         </NvToolbar>
 

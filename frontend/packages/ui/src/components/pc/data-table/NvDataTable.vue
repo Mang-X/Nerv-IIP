@@ -1,6 +1,6 @@
 <script setup lang="ts" generic="T extends object = Record<string, unknown>">
 import type { HTMLAttributes } from 'vue'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -8,9 +8,7 @@ import {
   CircleHelpIcon,
   ListFilterIcon,
   RotateCcwIcon,
-  SearchIcon,
   Settings2Icon,
-  TriangleAlertIcon,
   XIcon,
 } from '@lucide/vue'
 import { displayValue, isEmptyValue } from '../../../lib/empty'
@@ -25,14 +23,10 @@ import NvInput from '../input/NvInput.vue'
 import NvPagination from '../pagination/NvPagination.vue'
 import { NvTooltip, NvTooltipContent, NvTooltipProvider, NvTooltipTrigger } from '../tooltip'
 import NvDataTableToolbar from './NvDataTableToolbar.vue'
-import type {
-  NvDataTableColumn,
-  NvDataTableDensity,
-  NvDataTableFilterOption,
-  NvDataTableFilters,
-  NvDataTableSort,
-} from './types'
-
+import type { NvDataTableColumn, NvDataTableDensity, NvDataTableSort } from './types'
+import NvDataTableFilterChips from './NvDataTableFilterChips.vue'
+import NvDataTableStatusRows from './NvDataTableStatusRows.vue'
+import { useDataTableState } from './useDataTableState'
 /**
  * Pro — a complete, premium data-table experience (does NOT touch原版 Table).
  * Built-in toolbar (search · field filters · density · column settings · action
@@ -156,16 +150,6 @@ const alignClass: Record<'start' | 'center' | 'end', string> = {
   end: 'text-right',
 }
 
-function keyOf(row: T): string | number {
-  if (typeof props.rowKey === 'function') return props.rowKey(row)
-  return (row as Record<string, unknown>)[props.rowKey] as string | number
-}
-function valueOf(row: T, column: NvDataTableColumn<T>): unknown {
-  return column.accessor ? column.accessor(row) : (row as Record<string, unknown>)[column.key]
-}
-
-// 列宽只有两种写法，落到 <th> 上的方式各不相同：
-// 1) 原始 CSS 尺寸（`160px`）→ inline style。
 // 2) Tailwind 宽度类（`w-48`、`w-[22rem]`）→ 原样作为 class，Tailwind 自己解析成
 //    width。任意值写法 `w-[…]` 也走这条，`table-layout: fixed` 只认 width，
 //    而 w-* 解析出来的正是 width。
@@ -179,8 +163,6 @@ function isCssDimension(width?: string): boolean {
 const widthStyle = (w?: string) => (isCssDimension(w) ? { width: w } : undefined)
 const widthClass = (w?: string) => (w && !isCssDimension(w) ? w : undefined)
 
-// ── Column visibility & density ──
-const hiddenKeys = ref(new Set(props.columns.filter((c) => c.defaultHidden).map((c) => c.key)))
 const headerHelpOpen = ref<Record<string, boolean>>({})
 
 function setHeaderHelpOpen(key: string, open: boolean) {
@@ -190,310 +172,49 @@ function setHeaderHelpOpen(key: string, open: boolean) {
 function openHeaderHelpForTouch(event: PointerEvent, key: string) {
   if (event.pointerType === 'touch') setHeaderHelpOpen(key, true)
 }
-const visibleColumns = computed(() => props.columns.filter((c) => !hiddenKeys.value.has(c.key)))
-function toggleColumn(key: string, visible: boolean) {
-  const next = new Set(hiddenKeys.value)
-  if (visible) next.delete(key)
-  else next.add(key)
-  hiddenKeys.value = next
-}
-function resetColumns() {
-  hiddenKeys.value = new Set(props.columns.filter((c) => c.defaultHidden).map((c) => c.key))
-}
-const hideableColumns = computed(() => props.columns.filter((c) => c.hideable !== false))
 
-const innerDensity = ref<NvDataTableDensity>(props.density)
-const rowPad = computed(() => (innerDensity.value === 'compact' ? 'h-9 py-0' : 'h-12 py-2'))
-const cellText = computed(() => (innerDensity.value === 'compact' ? 'text-[0.8125rem]' : 'text-sm'))
-
-// ── Search ──
-const search = ref('')
-const searchKeys = computed(() => props.columns.map((c) => c.key))
-function matchesSearch(row: T): boolean {
-  const q = search.value.trim().toLowerCase()
-  if (!q) return true
-  return searchKeys.value.some((k) => {
-    const col = props.columns.find((c) => c.key === k)
-    if (!col) return false
-    const v = valueOf(row, col)
-    return v != null && String(v).toLowerCase().includes(q)
-  })
-}
-function resetView() {
-  search.value = ''
-  filters.value = {}
-  resetPage()
-}
-// Searching narrows the result set — always snap back to the first page.
-watch(search, () => resetPage())
-
-// ── Per-column filters ──
-const filterableColumns = computed(() => props.columns.filter((c) => c.filter))
-const filters = ref<NvDataTableFilters>({})
-
-function distinctOptions(col: NvDataTableColumn<T>): NvDataTableFilterOption[] {
-  if (col.filterOptions) return col.filterOptions
-  const seen = new Map<string, string>()
-  for (const row of props.rows) {
-    const v = valueOf(row, col)
-    if (v == null) continue
-    const s = String(v)
-    if (!seen.has(s)) seen.set(s, s)
-  }
-  return [...seen.values()]
-    .sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
-    .map((v) => ({ label: v, value: v }))
-}
-
-function enumSelected(key: string): string[] {
-  const v = filters.value[key]
-  return Array.isArray(v) ? v : []
-}
-function toggleEnum(key: string, value: string, on: boolean) {
-  const cur = new Set(enumSelected(key))
-  if (on) cur.add(value)
-  else cur.delete(value)
-  const next = { ...filters.value }
-  if (cur.size) next[key] = [...cur]
-  else delete next[key]
-  filters.value = next
-  resetPage()
-}
-function setText(key: string, value: string) {
-  const next = { ...filters.value }
-  if (value.trim()) next[key] = value
-  else delete next[key]
-  filters.value = next
-  resetPage()
-}
-function clearFilter(key: string) {
-  const next = { ...filters.value }
-  delete next[key]
-  filters.value = next
-  resetPage()
-}
-function clearAllFilters() {
-  filters.value = {}
-  resetPage()
-}
-const activeFilterCount = computed(() => Object.keys(filters.value).length)
-
-// ── Quick-filter tabs (a segmented shortcut over the `tabKey` enum filter) ──
-const tabsWithCount = computed(() => {
-  if (!props.tabs || !props.tabKey) return undefined
-  const col = props.columns.find((c) => c.key === props.tabKey)
-  return props.tabs.map((t) => ({
-    ...t,
-    count:
-      t.value === ''
-        ? props.rows.length
-        : props.rows.filter((r) => String(col ? valueOf(r, col) : '') === t.value).length,
-  }))
-})
-const activeTab = computed<string>({
-  get() {
-    if (!props.tabKey) return ''
-    const f = filters.value[props.tabKey]
-    return Array.isArray(f) && f.length === 1 ? f[0] : ''
-  },
-  set(value) {
-    if (!props.tabKey) return
-    if (!value) {
-      clearFilter(props.tabKey)
-    } else {
-      filters.value = { ...filters.value, [props.tabKey]: [value] }
-      resetPage()
-    }
-  },
-})
-
-function matchesFilters(row: T): boolean {
-  for (const col of filterableColumns.value) {
-    const f = filters.value[col.key]
-    if (f == null) continue
-    const raw = valueOf(row, col)
-    const v = raw == null ? '' : String(raw)
-    if (col.filter === 'text') {
-      if (!v.toLowerCase().includes(String(f).toLowerCase())) return false
-    } else if (col.filter === 'enum') {
-      const sel = Array.isArray(f) ? f : [f]
-      if (sel.length && !sel.includes(v)) return false
-    }
-  }
-  return true
-}
-
-// Map an enum value back to its human label (falls back to the raw value).
-function labelFor(col: NvDataTableColumn<T> | undefined, value: string): string {
-  return col?.filterOptions?.find((o) => o.value === value)?.label ?? value
-}
-
-// Active filter chips (label + value preview) for the summary row.
-interface FilterChip {
-  key: string
-  header: string
-  text: string
-}
-const filterChips = computed<FilterChip[]>(() =>
-  Object.keys(filters.value).map((key) => {
-    const col = props.columns.find((c) => c.key === key)
-    const f = filters.value[key]
-    const text = Array.isArray(f) ? f.map((v) => labelFor(col, v)).join('、') : String(f)
-    return { key, header: col?.header ?? key, text }
-  }),
-)
-
-// ── Sorting (client-side) ──
-const innerSort = ref<NvDataTableSort | null>(null)
-// Controlled when the parent passes `sort` (including null); otherwise internal.
-const currentSort = computed(() => (props.sort !== undefined ? props.sort : innerSort.value))
-function cycleSort(col: NvDataTableColumn<T>) {
-  if (!col.sortable) return
-  const cur = currentSort.value
-  let next: NvDataTableSort | null
-  if (!cur || cur.key !== col.key) next = { key: col.key, direction: 'asc' }
-  else if (cur.direction === 'asc') next = { key: col.key, direction: 'desc' }
-  else next = null
-  emit('update:sort', next)
-  if (props.sort === undefined) innerSort.value = next
-}
-function sortStateOf(key: string): false | 'asc' | 'desc' {
-  return currentSort.value?.key === key ? currentSort.value.direction : false
-}
-
-// ── Data pipeline: filter → search → sort ──
-const processed = computed(() => {
-  let out = props.rows.filter((r) => matchesSearch(r) && matchesFilters(r))
-  if (props.clientSort && currentSort.value) {
-    const { key, direction } = currentSort.value
-    const col = props.columns.find((c) => c.key === key)
-    const sign = direction === 'desc' ? -1 : 1
-    out = [...out].sort((a, b) => {
-      const av = col ? valueOf(a, col) : (a as Record<string, unknown>)[key]
-      const bv = col ? valueOf(b, col) : (b as Record<string, unknown>)[key]
-      if (av == null && bv == null) return 0
-      if (av == null) return -sign
-      if (bv == null) return sign
-      const r =
-        typeof av === 'number' && typeof bv === 'number'
-          ? av - bv
-          : String(av).localeCompare(String(bv), 'zh-Hans-CN')
-      return r * sign
-    })
-  }
-  return out
-})
-
-// ── Pagination ──
-const innerPage = ref(1)
-const innerPageSize = ref(Number(props.pageSize) || 10)
-// Manual (server-driven) mode: parent owns page / size / total. Otherwise paginate client-side.
-const currentPage = computed(() => (props.manual ? (props.page ?? 1) : innerPage.value))
-const currentPageSize = computed(() =>
-  props.manual ? Number(props.pageSize) || 10 : innerPageSize.value,
-)
-const resolvedTotal = computed(() =>
-  props.manual ? (props.totalItems ?? processed.value.length) : processed.value.length,
-)
-/**
- * A pager under a list that already shows everything is pure furniture — it
- * offers a page to jump to that is the page you are on, and a size to pick that
- * changes nothing. Hide it only when even the SMALLEST offered page size would
- * still fit the whole result: below that threshold every control is inert, above
- * it shrinking the page size is a real (if unusual) choice the user keeps.
- */
-const smallestPageSize = computed(() =>
-  props.pageSizeOptions.length > 0 ? Math.min(...props.pageSizeOptions) : currentPageSize.value,
-)
-const showPagination = computed(
-  () =>
-    props.pagination &&
-    !props.loading &&
-    // 失败 / 未查询时页脚是假信息（manual 模式下 totalItems 还留着上一次的总数）。
-    !hasError.value &&
-    !props.awaitingScope &&
-    resolvedTotal.value > Math.max(1, smallestPageSize.value),
-)
-const pagedRows = computed(() => {
-  // Manual mode (parent already paged) or pagination off → render the given rows verbatim.
-  if (props.manual || !props.pagination) return processed.value
-  const start = (innerPage.value - 1) * innerPageSize.value
-  return processed.value.slice(start, start + innerPageSize.value)
-})
-function setPage(p: number) {
-  if (props.manual) emit('update:page', p)
-  else innerPage.value = p
-}
-function setPageSize(s: number) {
-  if (props.manual) {
-    emit('update:pageSize', s)
-    return
-  }
-  innerPageSize.value = s
-  innerPage.value = 1
-}
-// Any pipeline change that shrinks results below the window snaps back to page 1.
-function resetPage() {
-  if (props.manual) emit('update:page', 1)
-  else innerPage.value = 1
-}
-
-// ── Selection (covers the rows currently in view) ──
-const selectedSet = computed(() => new Set(props.selected))
-const visibleKeys = computed(() => pagedRows.value.map((r) => keyOf(r)))
-const allSelected = computed(
-  () => visibleKeys.value.length > 0 && visibleKeys.value.every((k) => selectedSet.value.has(k)),
-)
-const someSelected = computed(
-  () => !allSelected.value && visibleKeys.value.some((k) => selectedSet.value.has(k)),
-)
-const headerState = computed<boolean | 'indeterminate'>(() =>
-  allSelected.value ? true : someSelected.value ? 'indeterminate' : false,
-)
-function toggleAll() {
-  if (allSelected.value) {
-    const remove = new Set(visibleKeys.value)
-    emit(
-      'update:selected',
-      props.selected.filter((k) => !remove.has(k)),
-    )
-  } else {
-    const next = new Set(props.selected)
-    for (const k of visibleKeys.value) next.add(k)
-    emit('update:selected', [...next])
-  }
-}
-function toggleRow(key: string | number) {
-  const next = new Set(props.selected)
-  if (next.has(key)) next.delete(key)
-  else next.add(key)
-  emit('update:selected', [...next])
-}
-function clearSelection() {
-  emit('update:selected', [])
-}
-
-// ── 表体状态机：加载 / 失败 / 未查询 / 有数据 / 空 ──
-// 失败最高优先：一次 500 与「真的 0 条」必须长得不一样，绝不允许失败落进空态。
-// `error` + `loading` 同时为真 = 正在重试，仍停在错误态，只把重试按钮切成进行中。
-const hasError = computed(() => {
-  const e = props.error
-  return e !== undefined && e !== null && e !== false && e !== ''
-})
-const resolvedErrorMessage = computed(() => {
-  if (props.errorMessage?.trim()) return props.errorMessage
-  const e = props.error
-  if (typeof e === 'string' && e.trim()) return e
-  const m = (e as { message?: unknown } | null | undefined)?.message
-  if (typeof m === 'string' && m.trim()) return m
-  return '请检查网络连接后重试；若持续失败请联系管理员。'
-})
-const bodyState = computed<'error' | 'loading' | 'awaiting' | 'rows' | 'empty'>(() => {
-  if (hasError.value) return 'error'
-  if (props.loading) return 'loading'
-  if (props.awaitingScope) return 'awaiting'
-  return pagedRows.value.length ? 'rows' : 'empty'
-})
+const {
+  keyOf,
+  valueOf,
+  hiddenKeys,
+  visibleColumns,
+  toggleColumn,
+  resetColumns,
+  hideableColumns,
+  innerDensity,
+  rowPad,
+  cellText,
+  search,
+  resetView,
+  filterableColumns,
+  filters,
+  distinctOptions,
+  enumSelected,
+  toggleEnum,
+  setText,
+  clearFilter,
+  clearAllFilters,
+  activeFilterCount,
+  tabsWithCount,
+  activeTab,
+  filterChips,
+  cycleSort,
+  sortStateOf,
+  currentPage,
+  currentPageSize,
+  resolvedTotal,
+  showPagination,
+  pagedRows,
+  setPage,
+  setPageSize,
+  selectedSet,
+  headerState,
+  toggleAll,
+  toggleRow,
+  clearSelection,
+  resolvedErrorMessage,
+  bodyState,
+} = useDataTableState(props, emit)
 
 const colSpan = computed(() => visibleColumns.value.length + (props.selectable ? 1 : 0))
 const hasToolbar = computed(
@@ -642,27 +363,11 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
 
       <!-- Active filter chips -->
       <template v-if="filterChips.length" #below>
-        <div class="flex flex-wrap items-center gap-1.5">
-          <span class="text-xs text-muted-foreground">筛选：</span>
-          <button
-            v-for="chip in filterChips"
-            :key="chip.key"
-            type="button"
-            class="nv-dt-chip"
-            @click="clearFilter(chip.key)"
-          >
-            <span class="text-muted-foreground">{{ chip.header }}</span>
-            <span class="font-medium">{{ chip.text }}</span>
-            <XIcon class="size-3 opacity-60" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            class="text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
-            @click="clearAllFilters"
-          >
-            清除全部
-          </button>
-        </div>
+        <NvDataTableFilterChips
+          :filter-chips="filterChips"
+          @clear="clearFilter"
+          @clear-all="clearAllFilters"
+        />
       </template>
     </NvDataTableToolbar>
 
@@ -848,89 +553,25 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
               </TableCell>
             </TableRow>
           </template>
-
-          <!-- 失败：红色警示 + 具体原因 + 重试。此处禁止出现任何安慰性措辞 -->
-          <template v-else-if="bodyState === 'error'">
-            <TableRow class="hover:bg-transparent">
-              <TableCell :colspan="colSpan" class="h-40 p-0">
-                <!-- role="alert"（= assertive + atomic 的活动区域）承担读屏播报：
-                     列表已渲染时分页失败，错误面板是唯一变化的部分，不播报读屏用户
-                     察觉不到。此前由各页面手写错误行携带，页面改接组件一等 error
-                     态后无人承担。包住整个插槽，调用点自定义呈现同样被播报。 -->
-                <div
-                  role="alert"
-                  class="flex flex-col items-center justify-center gap-2 py-10 text-center"
-                >
-                  <slot name="error" :message="resolvedErrorMessage" :error="error">
-                    <div class="nv-dt-state-icon nv-dt-state-icon--error">
-                      <TriangleAlertIcon class="size-5" aria-hidden="true" />
-                    </div>
-                    <p class="text-sm font-medium text-destructive-strong">数据加载失败</p>
-                    <p class="max-w-md px-6 text-xs text-muted-foreground">
-                      {{ resolvedErrorMessage }}
-                    </p>
-                    <NvButton
-                      variant="outline"
-                      size="sm"
-                      class="mt-1"
-                      :disabled="loading"
-                      @click="emit('retry')"
-                    >
-                      <RotateCcwIcon aria-hidden="true" />
-                      {{ loading ? '重试中…' : '重新加载' }}
-                    </NvButton>
-                  </slot>
-                </div>
-              </TableCell>
-            </TableRow>
-          </template>
-
-          <!-- 未查询：还没查，不是没有数据。只说下一步该选什么 -->
-          <template v-else-if="bodyState === 'awaiting'">
-            <TableRow class="hover:bg-transparent">
-              <TableCell :colspan="colSpan" class="h-40 p-0">
-                <div class="flex flex-col items-center justify-center gap-2 py-10 text-center">
-                  <slot name="awaiting">
-                    <div class="nv-dt-state-icon nv-dt-state-icon--awaiting">
-                      <ListFilterIcon class="size-5" aria-hidden="true" />
-                    </div>
-                    <p class="text-sm font-medium text-foreground">尚未发起查询</p>
-                    <p class="max-w-md px-6 text-xs text-muted-foreground">
-                      {{ awaitingScopeMessage }}
-                    </p>
-                  </slot>
-                </div>
-              </TableCell>
-            </TableRow>
-          </template>
-
-          <!-- Empty -->
-          <template v-else>
-            <TableRow class="hover:bg-transparent">
-              <TableCell :colspan="colSpan" class="h-40 p-0">
-                <div class="flex flex-col items-center justify-center gap-2 py-10 text-center">
-                  <slot name="empty">
-                    <div
-                      class="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground"
-                    >
-                      <SearchIcon class="size-5" aria-hidden="true" />
-                    </div>
-                    <p class="text-sm text-muted-foreground">
-                      {{ search || activeFilterCount ? '没有匹配的结果' : emptyMessage }}
-                    </p>
-                    <button
-                      v-if="search || activeFilterCount"
-                      type="button"
-                      class="text-xs text-brand-strong underline-offset-2 hover:underline"
-                      @click="resetView"
-                    >
-                      清除筛选条件
-                    </button>
-                  </slot>
-                </div>
-              </TableCell>
-            </TableRow>
-          </template>
+          <NvDataTableStatusRows
+            v-else
+            :body-state="bodyState"
+            :col-span="colSpan"
+            :error="error"
+            :resolved-error-message="resolvedErrorMessage"
+            :loading="loading"
+            :awaiting-scope-message="awaitingScopeMessage"
+            :empty-message="emptyMessage"
+            :has-active-search="!!search || activeFilterCount > 0"
+            @retry="emit('retry')"
+            @reset="resetView"
+          >
+            <template v-if="$slots.error" #error="slotProps"
+              ><slot name="error" v-bind="slotProps"
+            /></template>
+            <template v-if="$slots.awaiting" #awaiting><slot name="awaiting" /></template>
+            <template v-if="$slots.empty" #empty><slot name="empty" /></template>
+          </NvDataTableStatusRows>
         </TableBody>
       </Table>
     </div>
@@ -1090,52 +731,10 @@ const roundTop = computed(() => !hasToolbar.value && !showBulk.value)
     font-variant-numeric: tabular-nums;
   }
 
-  /* 表体状态图章：空 / 失败 / 未查询三态在颜色与轮廓上就分得开，
-     不靠读文案区分（失败 = 警示描边的红章，未查询 = 虚线待办章）。 */
-  .nv-dt-state-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 9999px;
-  }
-  .nv-dt-state-icon--error {
-    background-color: color-mix(in oklch, var(--destructive) 12%, transparent);
-    border: 1px solid color-mix(in oklch, var(--destructive) 30%, transparent);
-    color: var(--destructive);
-  }
-  .nv-dt-state-icon--awaiting {
-    background-color: transparent;
-    border: 1px dashed var(--border);
-    color: var(--muted-foreground);
-  }
-
   .nv-dt-opt {
     transition: background-color 0.12s ease;
   }
   .nv-dt-opt:hover {
-    background-color: var(--muted);
-  }
-
-  /* Active-filter chips. */
-  .nv-dt-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    height: 1.625rem;
-    padding-inline: 0.5rem;
-    border-radius: 7px;
-    border: 1px solid var(--border);
-    background-color: color-mix(in oklch, var(--muted) 50%, var(--card));
-    font-size: 0.75rem;
-    color: var(--foreground);
-    transition:
-      border-color 0.15s ease,
-      background-color 0.15s ease;
-  }
-  .nv-dt-chip:hover {
-    border-color: color-mix(in oklch, var(--foreground) 20%, transparent);
     background-color: var(--muted);
   }
 

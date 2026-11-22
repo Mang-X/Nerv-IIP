@@ -17,9 +17,9 @@ import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import {
   useBusinessMasterDataResources,
   useCreateMasterDataResource,
-} from '@/composables/useBusinessMasterData'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { useReturnFocusOnClose } from '@/composables/useReturnFocusOnClose'
+} from '@/composables/master-data'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
+import { useReturnFocusOnClose } from '@/composables/shared/useReturnFocusOnClose'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   NvButton,

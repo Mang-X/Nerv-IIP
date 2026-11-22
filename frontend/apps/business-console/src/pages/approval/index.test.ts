@@ -30,7 +30,7 @@ vi.mock('@nerv-iip/ui', async (importOriginal) => ({
   },
 }))
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessWorkers: () => ({
     workers: computed(() => approvalState.workers),
     workersPending: shallowRef(false),
@@ -41,7 +41,7 @@ vi.mock('@/composables/useBusinessMasterData', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessApproval', () => ({
+vi.mock('@/composables/approval/useBusinessApproval', () => ({
   useBusinessApproval: () => ({
     contextReady: computed(() => true),
     chainDetail: computed(() => undefined),

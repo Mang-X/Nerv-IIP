@@ -17,7 +17,7 @@ import { describeRequestError } from '@/api/request-timeout'
 import {
   formatAttachmentSize,
   type ShiftHandoverAttachment,
-} from '@/composables/useBusinessShiftHandover'
+} from '@/composables/mes/useBusinessShiftHandover'
 
 const props = defineProps<{
   upload: (file: File) => Promise<ShiftHandoverAttachment>

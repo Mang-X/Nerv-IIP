@@ -17,7 +17,7 @@ import {
   NvDataTable,
 } from '@nerv-iip/ui'
 import { computed, shallowRef, watch } from 'vue'
-import { useMesWorkOrders, useMesWorkOrderDetail } from '@/composables/useBusinessMes'
+import { useMesWorkOrders, useMesWorkOrderDetail } from '@/composables/mes'
 import MesWorkScopeSelect from './MesWorkScopeSelect.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'

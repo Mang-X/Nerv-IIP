@@ -6,9 +6,9 @@ import type {
 import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/ui'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { pagedBreakdownSegments } from '@/composables/metricSegments'
-import { useBusinessSkus, useBusinessUoms } from '@/composables/useBusinessMasterData'
-import { useBomRevisionSuggestions, useEngineeringEboms } from '@/composables/useProductEngineering'
+import { pagedBreakdownSegments } from '@/composables/shared/metricSegments'
+import { useBusinessSkus, useBusinessUoms } from '@/composables/master-data'
+import { useBomRevisionSuggestions, useEngineeringEboms } from '@/composables/engineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,

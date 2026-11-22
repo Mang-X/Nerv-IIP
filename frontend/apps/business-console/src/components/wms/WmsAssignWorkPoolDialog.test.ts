@@ -13,7 +13,7 @@ const state = vi.hoisted(() => ({
   }>,
 }))
 
-vi.mock('@/composables/useWmsWorkPools', () => ({
+vi.mock('@/composables/wms/useWmsWorkPools', () => ({
   useWmsWorkPools: () => ({
     pools: computed(() => state.pools),
     poolsPending: shallowRef(false),
@@ -22,7 +22,7 @@ vi.mock('@/composables/useWmsWorkPools', () => ({
     newIdempotencyKey: () => 'assign-intent-1',
   }),
 }))
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessWorkers: () => ({
     workers: computed(() => [
       { userId: 'user-emp-049', displayName: '李仓管', employeeNo: 'EMP-049' },

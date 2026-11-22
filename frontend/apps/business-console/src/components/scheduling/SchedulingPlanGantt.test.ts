@@ -7,7 +7,7 @@ import SchedulingPlanGantt from './SchedulingPlanGantt.vue'
 import { useAuthStore } from '@/stores/auth'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
-vi.mock('@/composables/useSkuNames', () => ({
+vi.mock('@/composables/master-data/useSkuNames', () => ({
   useSkuNames: () => ({ resolveSkuName: () => undefined }),
 }))
 vi.mock('@/composables/mes/useMesDisplayNames', () => ({

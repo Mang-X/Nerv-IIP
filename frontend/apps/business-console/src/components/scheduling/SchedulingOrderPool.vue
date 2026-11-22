@@ -1,19 +1,19 @@
 <script setup lang="ts">
 import type { BusinessConsoleMesWorkOrderItem } from '@nerv-iip/api-client'
-import type { WorkingScheduleOrder } from '@/composables/useWorkingScheduleDraft'
+import type { WorkingScheduleOrder } from '@/composables/scheduling/useWorkingScheduleDraft'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import WorkOrderDemandChangeBadges from '@/components/mes/WorkOrderDemandChangeBadges.vue'
 import OrderUrgencyBadge from '@/components/urgency/OrderUrgencyBadge.vue'
-import { useOrderUrgencies } from '@/composables/useOrderUrgency'
-import { DEFAULT_URGENCY_DISPLAY_MODE } from '@/composables/useUrgencyDisplayMode'
-import { useSkuNames } from '@/composables/useSkuNames'
+import { useOrderUrgencies } from '@/composables/urgency/useOrderUrgency'
+import { DEFAULT_URGENCY_DISPLAY_MODE } from '@/composables/urgency/useUrgencyDisplayMode'
+import { useSkuNames } from '@/composables/master-data/useSkuNames'
 import { AlertTriangleIcon, RefreshCwIcon, SearchIcon, XIcon } from '@lucide/vue'
 import { NvButton, NvCheckbox, NvInput, NvSpinner } from '@nerv-iip/ui'
 import { computed, ref, reactive, shallowRef } from 'vue'
 import {
   FIRST_PLAN_ORDER_LIMIT,
   firstPlanSelectionReason,
-} from '@/composables/schedulingFirstPlanCapacity'
+} from '@/composables/scheduling/schedulingFirstPlanCapacity'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 const props = withDefaults(

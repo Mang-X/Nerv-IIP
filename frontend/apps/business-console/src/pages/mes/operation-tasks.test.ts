@@ -10,7 +10,7 @@ import OperationTasksPage from './operation-tasks.vue'
 
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
 // 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
-vi.mock('@/composables/useSkuNames', async () => {
+vi.mock('@/composables/master-data/useSkuNames', async () => {
   const { computed } = await import('vue')
   return {
     useSkuNames: () => ({
@@ -21,7 +21,7 @@ vi.mock('@/composables/useSkuNames', async () => {
     }),
   }
 })
-vi.mock('@/composables/useBusinessPartnerNames', async () => {
+vi.mock('@/composables/master-data/useBusinessPartnerNames', async () => {
   const { computed } = await import('vue')
   return {
     useBusinessPartnerNames: () => ({
@@ -33,7 +33,7 @@ vi.mock('@/composables/useBusinessPartnerNames', async () => {
     }),
   }
 })
-vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', async () => {
   const { computed } = await import('vue')
   const emptyIndex = computed(() => new Map<string, string>())
   return {
@@ -67,7 +67,7 @@ const state = vi.hoisted(() => ({
 }))
 
 // 派工弹窗的技能筛选改取技能目录主数据（中文 skillName）；目录不是本用例被测对象。
-vi.mock('@/composables/usePromotedCatalogs', async () => {
+vi.mock('@/composables/master-data/usePromotedCatalogs', async () => {
   const { computed } = await import('vue')
   return {
     useSkillCatalog: () => ({
@@ -101,7 +101,7 @@ vi.mock('@nerv-iip/business-core', async (importOriginal) => ({
   openSopFileContent: vi.fn(async () => {}),
   statusActionGate: () => ({ executable: true, legalNoop: false }),
 }))
-vi.mock('@/composables/usePagedList', () => ({
+vi.mock('@/composables/shared/usePagedList', () => ({
   usePagedList: () => ({ page: ref(1), pageSize: ref('20') }),
 }))
 vi.mock('@/composables/mes/useMesDisplayNames', () => ({
@@ -111,7 +111,7 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
   }),
 }))
 const workerRows = ref<{ userId: string; displayName: string }[]>([])
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessMasterDataResources: () => ({
     resources: computed(() => []),
     resourcesPending: shallowRef(false),
@@ -133,7 +133,7 @@ vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessMes', async () => {
+vi.mock('@/composables/mes', async () => {
   state.filters = reactive({ organizationId: 'org-001', environmentId: 'env-dev' })
   return {
     makeIdempotencyKey: (prefix: string) => `${prefix}-test`,

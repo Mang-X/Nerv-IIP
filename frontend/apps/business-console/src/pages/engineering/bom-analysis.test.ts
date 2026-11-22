@@ -59,8 +59,8 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
 
 // BOM 编码 ▸ 修订的候选目录走已发布 EBOM/MBOM 读面（colada useQuery，需要 pinia），
 // 这个页面用例只关心「表单值 → facade 入参」，所以整module 打桩给确定候选。
-vi.mock('@/composables/useProductEngineering', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/composables/useProductEngineering')>()),
+vi.mock('@/composables/engineering', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/composables/engineering')>()),
   useBomVersionPickerCatalog: () => ({
     bomCodeOptions: () => [{ value: 'EBOM-FG', label: 'EBOM-FG' }],
     revisionOptions: () => [

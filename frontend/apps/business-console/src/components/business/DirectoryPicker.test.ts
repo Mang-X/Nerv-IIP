@@ -4,7 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, ref } from 'vue'
-import { useMasterDataResource } from '@/composables/useBusinessMasterData'
+import { useMasterDataResource } from '@/composables/master-data'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import DirectoryPicker from './DirectoryPicker.vue'
 

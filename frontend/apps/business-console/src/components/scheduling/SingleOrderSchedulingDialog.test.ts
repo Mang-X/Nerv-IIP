@@ -17,10 +17,10 @@ const state = vi.hoisted(() => ({
   toasts: [] as { action: string; fallback: string; error: unknown }[],
 }))
 
-vi.mock('@/composables/useSingleOrderScheduling', async () => {
-  const actual = await vi.importActual<typeof import('@/composables/useSingleOrderScheduling')>(
-    '@/composables/useSingleOrderScheduling',
-  )
+vi.mock('@/composables/scheduling/useSingleOrderScheduling', async () => {
+  const actual = await vi.importActual<
+    typeof import('@/composables/scheduling/useSingleOrderScheduling')
+  >('@/composables/scheduling/useSingleOrderScheduling')
   return {
     ...actual,
     useSingleOrderScheduling: () => ({
@@ -36,7 +36,7 @@ vi.mock('@/composables/useSingleOrderScheduling', async () => {
   }
 })
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   useMesWorkOrders: () => {
     state.mesCalls += 1
     return {

@@ -4,8 +4,8 @@ import { NvMobileButton, NvScanBar } from '@nerv-iip/ui-mobile'
 import { computed, onBeforeUnmount, shallowRef } from 'vue'
 import { isNavigationFailure, useRouter } from 'vue-router'
 
-import { usePdaBarcodeResolver } from '@/composables/usePdaBarcodeResolver'
-import { usePdaIdentity } from '@/composables/useWorkbenchHome'
+import { usePdaBarcodeResolver } from '@/composables/shared/usePdaBarcodeResolver'
+import { usePdaIdentity } from '@/composables/workbench/useWorkbenchHome'
 
 const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true })
 const identity = usePdaIdentity()

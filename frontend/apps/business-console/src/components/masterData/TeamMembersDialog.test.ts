@@ -12,7 +12,7 @@ const stub = vi.hoisted(() => ({
   setMemberError: undefined as undefined | ((error: unknown) => void),
 }))
 
-vi.mock('@/composables/useBusinessMasterData', () => {
+vi.mock('@/composables/master-data', () => {
   const memberError = shallowRef<unknown>()
   stub.setMemberError = (error) => {
     memberError.value = error

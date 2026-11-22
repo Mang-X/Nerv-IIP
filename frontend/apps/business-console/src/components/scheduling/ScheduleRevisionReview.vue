@@ -3,7 +3,7 @@ import type {
   BusinessConsoleSchedulePlan,
   BusinessConsoleSchedulingPlanRevision,
 } from '@nerv-iip/api-client'
-import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
+import { describeScheduleInvalidationReason } from '@/composables/scheduling/useScheduleInvalidation'
 import { ChangeSummaryPanel, toModel } from '@nerv-iip/scheduling'
 import { computed } from 'vue'
 import { NvStatusBadge } from '@nerv-iip/ui'

@@ -6,7 +6,7 @@ import {
 import { computed, shallowRef, watch, type ComputedRef, type Ref } from 'vue'
 import { describeRequestError } from '@/api/request-timeout'
 import { useAuthStore } from '@/stores/auth'
-import type { MesReportExecutionContext } from '@/composables/useBusinessMes'
+import type { MesReportExecutionContext } from '@/composables/mes'
 
 export function useProductionReportSerials(
   pair: ComputedRef<{ workOrderId: string; operationTaskId: string } | null>,

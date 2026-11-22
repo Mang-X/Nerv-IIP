@@ -12,11 +12,8 @@ import {
   receiptStatusTone,
 } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
-import {
-  useMesFinishedGoodsReceipts,
-  useMesWorkOrderProducedLots,
-} from '@/composables/useBusinessMes'
-import { usePagedList } from '@/composables/usePagedList'
+import { useMesFinishedGoodsReceipts, useMesWorkOrderProducedLots } from '@/composables/mes'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'

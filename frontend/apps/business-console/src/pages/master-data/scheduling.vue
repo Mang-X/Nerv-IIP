@@ -1,60 +1,13 @@
 <script setup lang="ts">
-import type {
-  BusinessConsoleCreateShiftRequest,
-  BusinessConsoleCreateWorkCalendarRequest,
-  BusinessConsoleResourceItem,
-  BusinessConsoleWorkCalendarException,
-  BusinessConsoleWorkCalendarHoliday,
-  BusinessConsoleWorkCalendarWorkingTime,
-  SystemDayOfWeek,
-} from '@nerv-iip/api-client'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
-import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
 import ShiftFormDialog from '@/components/masterData/ShiftFormDialog.vue'
-import { useIncludeDisabledFilter } from '@/composables/masterDataIncludeDisabled'
-import { useMasterDataLifecycleConfirm } from '@/composables/masterDataLifecycleConfirm'
-import {
-  useMasterDataResource,
-  useMasterDataResourceActions,
-} from '@/composables/useBusinessMasterData'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
-  NvAlertDialog,
-  NvAlertDialogCancel,
-  NvAlertDialogContent,
-  NvAlertDialogDescription,
-  NvAlertDialogFooter,
-  NvAlertDialogHeader,
-  NvAlertDialogTitle,
   NvButton,
   NvDataTable,
-  NvDatePicker,
-  NvDialog,
-  NvDialogContent,
-  NvDialogDescription,
-  NvDialogFooter,
-  NvDialogHeader,
-  NvDialogTitle,
-  NvDialogTrigger,
-  NvField,
-  NvFieldGroup,
-  NvFieldLabel,
-  NvInput,
   NvPageHeader,
-  NvSelect,
-  NvSelectContent,
-  NvSelectItem,
-  NvSelectTrigger,
-  NvSelectValue,
-  NvSheet,
-  NvSheetContent,
-  NvSheetDescription,
-  NvSheetHeader,
-  NvSheetTitle,
-  NvSpinner,
   NvStatusBadge,
   NvTabs,
   NvTabsContent,
@@ -62,23 +15,9 @@ import {
   NvTabsTrigger,
   NvToolbar,
 } from '@nerv-iip/ui'
-import {
-  CalendarCogIcon,
-  CalendarRangeIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  PlusIcon,
-  RefreshCwIcon,
-  Trash2Icon,
-} from '@lucide/vue'
-import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { formatDate, formatDateTime } from '@/utils/format'
-import {
-  inlineErrorMessage,
-  notifyError,
-  notifyOperationFailure,
-  notifySuccess,
-} from '@/utils/notify'
+import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
+import WorkCalendarTab from './components/WorkCalendarTab.vue'
+import { useShiftCalendarPage } from './useShiftCalendarPage'
 
 definePage({
   meta: {
@@ -88,664 +27,78 @@ definePage({
   },
 })
 
-const shifts = useMasterDataResource<BusinessConsoleCreateShiftRequest>('shift')
-const calendars = useMasterDataResource<BusinessConsoleCreateWorkCalendarRequest>('work-calendar')
-const shiftActions = useMasterDataResourceActions('shift')
-const calActions = useMasterDataResourceActions('work-calendar')
-// 停用/启用确认框收在页面层单实例，行操作只负责指向当前行（#1591）。
-const lifecycle = useMasterDataLifecycleConfirm()
-
-const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
-  { key: 'code', header: '编码', cellClass: 'font-medium', accessor: (r) => r.code ?? '无' },
-  { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
-  { key: 'active', header: '状态', width: 'w-24' },
-  {
-    key: 'snapshotVersion',
-    header: '更新时间',
-    width: 'w-40',
-    accessor: (r) => formatDateTime(r.snapshotVersion),
-  },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-16' },
-]
-function baseDetailFields(row: BusinessConsoleResourceItem, codeLabel: string, nameLabel: string) {
-  return [
-    { label: codeLabel, value: row.code ?? '' },
-    { label: nameLabel, value: row.displayName ?? '' },
-  ]
-}
-function rowKey(item: BusinessConsoleResourceItem) {
-  return `${item.resourceType ?? ''}:${item.code || item.displayName || ''}`
-}
-function isNonEmpty(value: string) {
-  return value.trim().length > 0
-}
-function filterRows(items: BusinessConsoleResourceItem[], keyword: string) {
-  const kw = keyword.trim().toLowerCase()
-  if (!kw) return items
-  return items.filter((row) =>
-    [row.code, row.displayName, row.snapshotVersion].some((value) =>
-      (value ?? '').toLowerCase().includes(kw),
-    ),
-  )
-}
-function refreshAll() {
-  void shifts.refresh()
-  void calendars.refresh()
-}
-
-// ---- 班次 ----
-const shiftKeyword = ref('')
-const shiftPage = ref(1)
-// 停用后的行默认不在列表里，「启用」入口就永远够不到；班次与日历共用一个开关（#1594）。
-const includeDisabled = useIncludeDisabledFilter([shifts.filters, calendars.filters], () => {
-  shiftPage.value = 1
-})
-const shiftPageSize = ref('10')
-// 班次弹窗：每次打开递增作 key，拿到全新实例（按 editing 初始化表单）；0 表示还没打开过。
-const shiftOpen = shallowRef(false)
-const shiftSession = shallowRef(0)
-const shiftEditing = shallowRef<BusinessConsoleResourceItem>()
-const shiftRows = computed(() => filterRows(shifts.items.value, shiftKeyword.value))
-const shiftListError = computed(() => inlineErrorMessage(shifts.error.value))
-watch([shiftKeyword, shiftPageSize], () => {
-  shiftPage.value = 1
-})
-watch(
-  [shiftPage, shiftPageSize],
-  () => {
-    shifts.filters.skip = (shiftPage.value - 1) * (Number(shiftPageSize.value) || 10)
-    shifts.filters.take = Number(shiftPageSize.value) || 10
-  },
-  { immediate: true },
-)
-function openShiftForm(row?: BusinessConsoleResourceItem) {
-  shiftEditing.value = row
-  shiftSession.value += 1
-  shiftOpen.value = true
-}
-function openEditShift(row: BusinessConsoleResourceItem) {
-  if (!row.code) return
-  openShiftForm(row)
-}
-
-// ---- 工作日历 ----
-const calKeyword = ref('')
-const calOpen = ref(false)
-const calShowErrors = ref(false)
-const calEditingCode = shallowRef<string | null>(null)
-const calEditLoading = shallowRef(false)
-const calForm = reactive({ code: '', name: '' })
-const calRows = computed(() => filterRows(calendars.items.value, calKeyword.value))
-const canCreateCal = computed(() => isNonEmpty(calForm.name))
-const calListError = computed(() => inlineErrorMessage(calendars.error.value))
-watch(calOpen, (open) => {
-  if (open) calShowErrors.value = false
-})
-// 日历用整行可点列表（无分页），一次取足；通常数量很少。
-calendars.filters.skip = 0
-calendars.filters.take = 200
-function resetCalForm() {
-  Object.assign(calForm, { code: '', name: '' })
-}
-function openCreateCal() {
-  calEditingCode.value = null
-  resetCalForm()
-  calShowErrors.value = false
-  calOpen.value = true
-}
-async function openEditCal(row: BusinessConsoleResourceItem) {
-  if (!row.code) return
-  calEditingCode.value = row.code
-  calShowErrors.value = false
-  calEditLoading.value = true
-  calOpen.value = true
-  try {
-    const d = await calActions.fetchDetail(row.code)
-    calForm.code = row.code
-    calForm.name = d?.name ?? row.displayName ?? ''
-  } finally {
-    calEditLoading.value = false
-  }
-}
-async function submitCal() {
-  if (!canCreateCal.value) {
-    calShowErrors.value = true
-    return
-  }
-  try {
-    if (calEditingCode.value) {
-      await calActions.update(calEditingCode.value, { name: calForm.name.trim() })
-      notifySuccess(`工作日历「${calForm.name.trim()}」已更新。`)
-    } else {
-      await calendars.create({
-        organizationId: calendars.filters.organizationId,
-        environmentId: calendars.filters.environmentId,
-        name: calForm.name.trim(),
-      })
-      notifySuccess(`工作日历「${calForm.name.trim()}」已创建。`)
-    }
-    resetCalForm()
-    calEditingCode.value = null
-    calShowErrors.value = false
-    calOpen.value = false
-  } catch (error) {
-    notifyOperationFailure('保存工作日历失败', error, '保存工作日历失败，请稍后重试。')
-  }
-}
-
-// ---- 工作日历月历视图（读真实明细 + 编辑写回） ----
-const WEEK_DAYS: { key: SystemDayOfWeek; label: string; short: string }[] = [
-  { key: 'sunday', label: '周日', short: '日' },
-  { key: 'monday', label: '周一', short: '一' },
-  { key: 'tuesday', label: '周二', short: '二' },
-  { key: 'wednesday', label: '周三', short: '三' },
-  { key: 'thursday', label: '周四', short: '四' },
-  { key: 'friday', label: '周五', short: '五' },
-  { key: 'saturday', label: '周六', short: '六' },
-]
-const WEEK_KEYS: SystemDayOfWeek[] = WEEK_DAYS.map((d) => d.key)
-
-// 后端 dayOfWeek 实际回传整数 0-6(契约写的是字符串,实测不一致),统一归一化成 'sunday'..'saturday'
-// 字符串键,避免「数字 vs 字符串」比较永远不成立导致星期亮不起来。数字字符串('1')也兼容。
-function normalizeDow(dow: string | number | null | undefined): SystemDayOfWeek | undefined {
-  if (dow == null || dow === '') return undefined
-  const n = typeof dow === 'number' ? dow : Number(dow)
-  if (Number.isInteger(n) && n >= 0 && n <= 6) return WEEK_KEYS[n]
-  return dow as SystemDayOfWeek
-}
-
-const selectedCalCode = shallowRef<string | null>(null)
-const calDetailLoading = shallowRef(false)
-const calDetailLoaded = shallowRef(false)
-// 选中日历的真实明细（全部读自 fetchDetail，不画假数据）。
-const workingTimes = ref<BusinessConsoleWorkCalendarWorkingTime[]>([])
-const holidays = ref<BusinessConsoleWorkCalendarHoliday[]>([])
-const exceptions = ref<BusinessConsoleWorkCalendarException[]>([])
-const calBoardSaving = shallowRef(false)
-// 节假日 / 例外日的增删收进右侧抽屉，月历网格保持只读展示。
-const manageSheetOpen = ref(false)
-
-const today = new Date()
-const viewYear = ref(today.getFullYear())
-const viewMonth = ref(today.getMonth()) // 0-based
-const monthLabel = computed(
-  () => `${viewYear.value}-${String(viewMonth.value + 1).padStart(2, '0')}`,
-)
-
-// 该日历配置了工作时段的星期集合（有 workingTime 即为工作日）。
-const workingDaySet = computed(() => {
-  const set = new Set<SystemDayOfWeek>()
-  for (const wt of workingTimes.value) {
-    const k = normalizeDow(wt.dayOfWeek)
-    if (k) set.add(k)
-  }
-  return set
-})
-const holidayMap = computed(() => {
-  const map = new Map<string, BusinessConsoleWorkCalendarHoliday>()
-  for (const h of holidays.value) if (h.date) map.set(toDateKey(h.date), h)
-  return map
-})
-const exceptionMap = computed(() => {
-  const map = new Map<string, BusinessConsoleWorkCalendarException>()
-  for (const e of exceptions.value) if (e.date) map.set(toDateKey(e.date), e)
-  return map
-})
-const hasAnyDetail = computed(
-  () => workingTimes.value.length > 0 || holidays.value.length > 0 || exceptions.value.length > 0,
-)
-
-function toDateKey(value: string) {
-  // 后端日期可能是 YYYY-MM-DD 或带时间；统一取本地 YYYY-MM-DD。
-  return value.length >= 10 ? value.slice(0, 10) : value
-}
-function dateKey(year: number, month0: number, day: number) {
-  return `${year}-${String(month0 + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-}
-
-interface DayCell {
-  key: string
-  day: number
-  inMonth: boolean
-  dow: SystemDayOfWeek
-  // 'working' | 'rest' | 'holiday' | 'exception-working' | 'exception-rest'
-  kind: 'working' | 'rest' | 'holiday' | 'exception-working' | 'exception-rest'
-  label: string
-  badge: string
-  title: string
-  isToday: boolean
-}
-
-const monthCells = computed<DayCell[]>(() => {
-  const first = new Date(viewYear.value, viewMonth.value, 1)
-  const startOffset = first.getDay() // 0=Sun
-  const daysInMonth = new Date(viewYear.value, viewMonth.value + 1, 0).getDate()
-  const cells: DayCell[] = []
-  const todayKey = dateKey(today.getFullYear(), today.getMonth(), today.getDate())
-  // 前导补白
-  for (let i = 0; i < startOffset; i++) {
-    cells.push(emptyCell(`pad-pre-${i}`))
-  }
-  for (let day = 1; day <= daysInMonth; day++) {
-    const d = new Date(viewYear.value, viewMonth.value, day)
-    const dow = WEEK_KEYS[d.getDay()]!
-    const key = dateKey(viewYear.value, viewMonth.value, day)
-    const holiday = holidayMap.value.get(key)
-    const exception = exceptionMap.value.get(key)
-    const baseWorking = workingDaySet.value.has(dow)
-
-    let kind: DayCell['kind']
-    let badge = ''
-    let title = ''
-    if (holiday) {
-      kind = 'holiday'
-      badge = '假'
-      title = `法定节假日${holiday.name ? `：${holiday.name}` : ''}`
-    } else if (exception) {
-      kind = exception.isWorkingDay ? 'exception-working' : 'exception-rest'
-      badge = exception.isWorkingDay ? '班' : '休'
-      title = `例外日${exception.reason ? `：${exception.reason}` : ''}（${exception.isWorkingDay ? '当日上班' : '当日休息'}）`
-    } else if (baseWorking) {
-      kind = 'working'
-      title = '工作日'
-    } else {
-      kind = 'rest'
-      title = '休息日'
-    }
-    cells.push({
-      key,
-      day,
-      inMonth: true,
-      dow,
-      kind,
-      label: String(day),
-      badge,
-      title,
-      isToday: key === todayKey,
-    })
-  }
-  // 尾部补白凑满整周
-  while (cells.length % 7 !== 0) {
-    cells.push(emptyCell(`pad-post-${cells.length}`))
-  }
-  return cells
-})
-
-function emptyCell(key: string): DayCell {
-  return {
-    key,
-    day: 0,
-    inMonth: false,
-    dow: 'sunday',
-    kind: 'rest',
-    label: '',
-    badge: '',
-    title: '',
-    isToday: false,
-  }
-}
-
-// 月历格底色（语义 token，跟随主题；色盲友好靠角标 + title 文字双编码）。
-// 4 类语义色,均为主题 token(随主题/明暗自适应):工作日=绿(明确可见,修隐形)、休息日=灰(下沉)、
-// 节假日=红、例外日=琥珀(班/休 靠角标区分)。
-const cellClassMap: Record<DayCell['kind'], string> = {
-  working: 'bg-success/15 text-foreground ring-1 ring-inset ring-success/35',
-  rest: 'bg-muted/50 text-muted-foreground',
-  holiday: 'bg-destructive/15 text-destructive ring-1 ring-inset ring-destructive/40',
-  'exception-working': 'bg-warning/20 text-foreground ring-1 ring-inset ring-warning/45',
-  'exception-rest': 'bg-warning/20 text-foreground ring-1 ring-inset ring-warning/45',
-}
-
-async function selectCalendar(row: BusinessConsoleResourceItem) {
-  if (!row.code) return
-  selectedCalCode.value = row.code
-  await loadCalendarDetail(row.code)
-}
-async function loadCalendarDetail(code: string) {
-  calDetailLoading.value = true
-  calDetailLoaded.value = false
-  try {
-    const d = await calActions.fetchDetail(code)
-    workingTimes.value = (d?.workingTimes ?? []).map((w) => ({ ...w }))
-    holidays.value = (d?.holidays ?? []).map((h) => ({ ...h }))
-    exceptions.value = (d?.exceptions ?? []).map((e) => ({ ...e }))
-    calDetailLoaded.value = true
-  } catch (error) {
-    notifyError(error, '加载工作日历明细失败，请稍后重试。')
-  } finally {
-    calDetailLoading.value = false
-  }
-}
-function prevMonth() {
-  if (viewMonth.value === 0) {
-    viewMonth.value = 11
-    viewYear.value--
-  } else viewMonth.value--
-}
-function nextMonth() {
-  if (viewMonth.value === 11) {
-    viewMonth.value = 0
-    viewYear.value++
-  } else viewMonth.value++
-}
-function goToday() {
-  viewYear.value = today.getFullYear()
-  viewMonth.value = today.getMonth()
-}
-// 点月历某天 → 打开抽屉并把该日期预填进两个草稿（加分项）。
-function openManageSheet(prefillDate?: string) {
-  if (prefillDate) {
-    holidayDraft.date = prefillDate
-    exceptionDraft.date = prefillDate
-  }
-  manageSheetOpen.value = true
-}
-
-const selectedCalName = computed(
-  () =>
-    calendars.items.value.find((c) => c.code === selectedCalCode.value)?.displayName ??
-    selectedCalCode.value ??
-    '',
-)
-
-// 防御性去重：按某个键保留第一条。配合后端 #382(Clear 累积 bug),前端发送前先去重,
-// 避免自身制造重复数据。
-function dedupeBy<T>(items: T[], keyOf: (item: T) => string | null | undefined): T[] {
-  const seen = new Set<string>()
-  const out: T[] = []
-  for (const item of items) {
-    const key = keyOf(item)
-    if (key == null || key === '') {
-      out.push(item)
-      continue
-    }
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push(item)
-  }
-  return out
-}
-
-// 写回：把当前编辑后的 workingTimes/holidays/exceptions 经 update 提交。
-// 返回是否写回成功——删除/替换确认框据此决定「关框」还是「保留原地重试」（confirm-destroy 规则 3）。
-async function persistCalendar(successMsg: string) {
-  if (!selectedCalCode.value) return false
-  calBoardSaving.value = true
-  // 发送前去重：workingTimes 按 dayOfWeek、holidays / exceptions 按 date(归一化),各保留第一条。
-  const dedupedWorkingTimes = dedupeBy(workingTimes.value, (w) => normalizeDow(w.dayOfWeek) ?? '')
-  const dedupedHolidays = dedupeBy(holidays.value, (h) => (h.date ? toDateKey(h.date) : ''))
-  const dedupedExceptions = dedupeBy(exceptions.value, (e) => (e.date ? toDateKey(e.date) : ''))
-  workingTimes.value = dedupedWorkingTimes
-  holidays.value = dedupedHolidays
-  exceptions.value = dedupedExceptions
-  try {
-    await calActions.update(selectedCalCode.value, {
-      workingTimes: dedupedWorkingTimes,
-      holidays: dedupedHolidays,
-      exceptions: dedupedExceptions,
-    })
-    notifySuccess(successMsg)
-    return true
-  } catch (error) {
-    notifyOperationFailure('保存工作日历失败', error, '保存工作日历失败，请稍后重试。')
-    return false
-  } finally {
-    calBoardSaving.value = false
-  }
-}
-
-// 设每周工作模式：切换某星期是否为工作日（默认时段 08:00–17:00）。
-async function toggleWeekday(day: SystemDayOfWeek) {
-  if (!selectedCalCode.value) return
-  // 快照必须在改本地**之前**取整份 workingTimes：persistCalendar 会在 try 之前就把集合就地写成
-  // 去重结果，而回滚只能还原整份快照——反向补一条 { dayOfWeek } 会把该星期原有的多条时段抹平。
-  const snapshot = workingTimes.value
-  const exists = workingDaySet.value.has(day)
-  if (exists) {
-    workingTimes.value = workingTimes.value.filter((w) => normalizeDow(w.dayOfWeek) !== day)
-  }
-  // 仅当该星期尚无工作时段时才追加,避免重复添加同一 dayOfWeek。
-  else if (!workingTimes.value.some((w) => normalizeDow(w.dayOfWeek) === day)) {
-    workingTimes.value = [...workingTimes.value, { dayOfWeek: day }]
-  }
-  const ok = await persistCalendar('每周工作模式已更新。')
-  if (!ok) workingTimes.value = snapshot
-}
-
-// 节假日与例外日互斥：一个日期至多一种覆盖。检测到跨类型冲突时，弹确认对话框，
-// 确认后删掉另一类型再写入当前类型。冲突的待写入项暂存于 conflict。
-const conflict = reactive({
-  open: false,
-  // 'holiday' = 待加节假日（该日已有例外日）；'exception' = 待加例外日（该日已有节假日）。
-  kind: '' as '' | 'holiday' | 'exception',
-  date: '',
-  // 节假日待写入
-  name: '',
-  // 例外日待写入
-  isWorkingDay: true,
-  reason: null as string | null,
-})
-const conflictTitle = computed(() => {
-  if (conflict.kind === 'holiday') return `${formatDate(conflict.date)} 已设为例外日`
-  if (conflict.kind === 'exception') return `${formatDate(conflict.date)} 已是节假日`
-  return ''
-})
-const conflictDescription = computed(() => {
-  if (conflict.kind === 'holiday')
-    return '节假日与例外日不能并存。确认后将删除该日期的例外日，并将其设为节假日。'
-  if (conflict.kind === 'exception')
-    return '节假日与例外日不能并存。确认后将删除该日期的节假日，并将其设为例外日。'
-  return ''
-})
-
-// 加 / 删 节假日。
-const holidayDraft = reactive({ date: '', name: '' })
-async function addHoliday() {
-  if (!selectedCalCode.value || !holidayDraft.date) return
-  const key = holidayDraft.date
-  if (holidayMap.value.has(key)) {
-    notifyError(new Error('该日期已是节假日。'))
-    return
-  }
-  // 与例外日冲突 → 弹确认（替换）。
-  if (exceptionMap.value.has(key)) {
-    Object.assign(conflict, {
-      open: true,
-      kind: 'holiday',
-      date: key,
-      name: holidayDraft.name.trim(),
-    })
-    return
-  }
-  // 写回失败要回滚并保留草稿：否则界面多出一条服务端没有的幻影节假日，草稿又被清空，连原地重试都做不到。
-  const snapshot = holidays.value
-  holidays.value = [...holidays.value, { date: key, name: holidayDraft.name.trim() || '节假日' }]
-  const ok = await persistCalendar('节假日已添加。')
-  if (!ok) {
-    holidays.value = snapshot
-    return
-  }
-  holidayDraft.date = ''
-  holidayDraft.name = ''
-}
-async function removeHoliday(date: string) {
-  if (!selectedCalCode.value) return false
-  const key = toDateKey(date)
-  // 写回失败要回滚：否则界面显示已删、服务端仍在，是静默的数据不一致。
-  const snapshot = holidays.value
-  holidays.value = holidays.value.filter((h) => toDateKey(h.date ?? '') !== key)
-  const ok = await persistCalendar('节假日已删除。')
-  if (!ok) holidays.value = snapshot
-  return ok
-}
-
-// 加 / 删 例外日（指定某日上班或休息，覆盖每周模式）。
-const exceptionDraft = reactive({ date: '', isWorkingDay: 'true', reason: '' })
-async function addException() {
-  if (!selectedCalCode.value || !exceptionDraft.date) return
-  const key = exceptionDraft.date
-  if (exceptionMap.value.has(key)) {
-    notifyError(new Error('该日期已有例外设置。'))
-    return
-  }
-  // 与节假日冲突 → 弹确认（替换）。
-  if (holidayMap.value.has(key)) {
-    Object.assign(conflict, {
-      open: true,
-      kind: 'exception',
-      date: key,
-      isWorkingDay: exceptionDraft.isWorkingDay === 'true',
-      reason: exceptionDraft.reason.trim() || null,
-    })
-    return
-  }
-  // 同 addHoliday：失败回滚集合并保留草稿，成功后才清草稿。
-  const snapshot = exceptions.value
-  exceptions.value = [
-    ...exceptions.value,
-    {
-      date: key,
-      isWorkingDay: exceptionDraft.isWorkingDay === 'true',
-      reason: exceptionDraft.reason.trim() || null,
-    },
-  ]
-  const ok = await persistCalendar('例外日已添加。')
-  if (!ok) {
-    exceptions.value = snapshot
-    return
-  }
-  exceptionDraft.date = ''
-  exceptionDraft.reason = ''
-}
-
-// 确认替换：删除另一类型在该日期的项，写入当前类型，单次持久化。
-async function resolveConflict() {
-  const key = conflict.date
-  if (!selectedCalCode.value || !key || !conflict.kind) {
-    conflict.open = false
-    conflict.kind = ''
-    return
-  }
-  if (calBoardSaving.value) return
-  // 失败要回滚并保留草稿与确认框：确认按钮是普通 NvButton，关框由成功路径决定。
-  const holidaySnapshot = holidays.value
-  const exceptionSnapshot = exceptions.value
-  let ok = false
-  if (conflict.kind === 'holiday') {
-    // 删该日例外日，加节假日。
-    exceptions.value = exceptions.value.filter((e) => toDateKey(e.date ?? '') !== key)
-    holidays.value = [...holidays.value, { date: key, name: conflict.name || '节假日' }]
-    ok = await persistCalendar('已替换为节假日（原例外日已删除）。')
-    if (ok) {
-      holidayDraft.date = ''
-      holidayDraft.name = ''
-    }
-  } else if (conflict.kind === 'exception') {
-    // 删该日节假日，加例外日。
-    holidays.value = holidays.value.filter((h) => toDateKey(h.date ?? '') !== key)
-    exceptions.value = [
-      ...exceptions.value,
-      { date: key, isWorkingDay: conflict.isWorkingDay, reason: conflict.reason },
-    ]
-    ok = await persistCalendar('已替换为例外日（原节假日已删除）。')
-    if (ok) {
-      exceptionDraft.date = ''
-      exceptionDraft.reason = ''
-    }
-  }
-  if (!ok) {
-    holidays.value = holidaySnapshot
-    exceptions.value = exceptionSnapshot
-    return
-  }
-  conflict.open = false
-  conflict.kind = ''
-}
-function cancelConflict() {
-  conflict.open = false
-  conflict.kind = ''
-}
-async function removeException(date: string) {
-  if (!selectedCalCode.value) return false
-  const key = toDateKey(date)
-  const snapshot = exceptions.value
-  exceptions.value = exceptions.value.filter((e) => toDateKey(e.date ?? '') !== key)
-  const ok = await persistCalendar('例外日已删除。')
-  if (!ok) exceptions.value = snapshot
-  return ok
-}
-
-// 删除确认：节假日与例外日共用**页面层单实例**确认框（confirm-destroy 规则 5，#1608）。
-// 两类目标共用一个 deleteTarget，必须靠 kind 判别——删错类型是静默的数据损失，不会报错。
-type CalendarDeleteTarget =
-  | { kind: 'holiday'; date: string; name: string }
-  | { kind: 'exception'; date: string; isWorkingDay: boolean }
-const deleteConfirmOpen = ref(false)
-const deleteTarget = shallowRef<CalendarDeleteTarget | null>(null)
-
-function openDeleteHoliday(holiday: BusinessConsoleWorkCalendarHoliday) {
-  if (!holiday.date) return
-  deleteTarget.value = { kind: 'holiday', date: holiday.date, name: holiday.name ?? '' }
-  deleteConfirmOpen.value = true
-}
-function openDeleteException(exception: BusinessConsoleWorkCalendarException) {
-  if (!exception.date) return
-  deleteTarget.value = {
-    kind: 'exception',
-    date: exception.date,
-    isWorkingDay: exception.isWorkingDay ?? false,
-  }
-  deleteConfirmOpen.value = true
-}
-const deleteConfirmTitle = computed(() => {
-  const target = deleteTarget.value
-  if (!target) return ''
-  if (target.kind === 'holiday')
-    return `确定删除节假日 ${formatDate(target.date)}${target.name ? ` ${target.name}` : ''}？`
-  return `确定删除例外日 ${formatDate(target.date)}（${target.isWorkingDay ? '当日上班' : '当日休息'}）？`
-})
-const deleteConfirmDescription = computed(() => {
-  const target = deleteTarget.value
-  if (!target) return ''
-  return target.kind === 'holiday' ? '该日将不再标记为节假日。' : '该日将恢复按每周工作模式判定。'
-})
-// 成功才关框：失败时留在原地可重试（确认按钮是普通 NvButton，不是点击即关的 NvAlertDialogAction）。
-async function confirmDelete() {
-  const target = deleteTarget.value
-  if (!target || calBoardSaving.value) return
-  const ok =
-    target.kind === 'holiday'
-      ? await removeHoliday(target.date)
-      : await removeException(target.date)
-  if (!ok) return
-  deleteConfirmOpen.value = false
-  deleteTarget.value = null
-}
-
-// DatePicker 的 modelValue 是 'YYYY-MM-DD' | null；草稿仍用字符串，故清空(null)归一为 ''。
-const holidayDateModel = computed<string | null>({
-  get: () => holidayDraft.date || null,
-  set: (value) => {
-    holidayDraft.date = value ?? ''
-  },
-})
-const exceptionDateModel = computed<string | null>({
-  get: () => exceptionDraft.date || null,
-  set: (value) => {
-    exceptionDraft.date = value ?? ''
-  },
-})
-
-const sortedHolidays = computed(() =>
-  [...holidays.value]
-    .filter((h) => h.date)
-    .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '')),
-)
-const sortedExceptions = computed(() =>
-  [...exceptions.value]
-    .filter((e) => e.date)
-    .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '')),
-)
+const {
+  WEEK_DAYS,
+  addException,
+  addHoliday,
+  baseDetailFields,
+  calActions,
+  calBoardSaving,
+  calDetailLoaded,
+  calDetailLoading,
+  calEditLoading,
+  calEditingCode,
+  calForm,
+  calKeyword,
+  calListError,
+  calOpen,
+  calRows,
+  calShowErrors,
+  calendars,
+  canCreateCal,
+  cancelConflict,
+  cellClassMap,
+  columns,
+  confirmDelete,
+  conflict,
+  conflictDescription,
+  conflictTitle,
+  deleteConfirmDescription,
+  deleteConfirmOpen,
+  deleteConfirmTitle,
+  exceptionDateModel,
+  exceptionDraft,
+  goToday,
+  hasAnyDetail,
+  holidayDateModel,
+  holidayDraft,
+  includeDisabled,
+  isNonEmpty,
+  lifecycle,
+  manageSheetOpen,
+  monthCells,
+  monthLabel,
+  nextMonth,
+  openCreateCal,
+  openDeleteException,
+  openDeleteHoliday,
+  openEditCal,
+  openEditShift,
+  openManageSheet,
+  openShiftForm,
+  prevMonth,
+  refreshAll,
+  resolveConflict,
+  rowKey,
+  selectCalendar,
+  selectedCalCode,
+  selectedCalName,
+  shiftActions,
+  shiftEditing,
+  shiftKeyword,
+  shiftListError,
+  shiftOpen,
+  shiftPage,
+  shiftPageSize,
+  shiftRows,
+  shiftSession,
+  shifts,
+  sortedExceptions,
+  sortedHolidays,
+  submitCal,
+  toggleWeekday,
+  workingDaySet,
+} = useShiftCalendarPage()
 </script>
 
 <template>
@@ -821,465 +174,64 @@ const sortedExceptions = computed(() =>
       </NvTabsContent>
 
       <!-- 工作日历 -->
-      <NvTabsContent value="work-calendar" class="grid gap-3">
-        <NvToolbar v-model:search="calKeyword" search-placeholder="在当前页内筛选日历编码、名称">
-          <template #filters>
-            <IncludeDisabledFilter v-model="includeDisabled" />
-          </template>
-          <template #actions>
-            <NvDialog v-model:open="calOpen">
-              <NvDialogTrigger as-child>
-                <NvButton size="sm" type="button" @click="openCreateCal"
-                  ><PlusIcon aria-hidden="true" />新建工作日历</NvButton
-                >
-              </NvDialogTrigger>
-              <NvDialogContent class="sm:max-w-lg">
-                <NvDialogHeader>
-                  <NvDialogTitle>{{
-                    calEditingCode ? `编辑工作日历 · ${calEditingCode}` : '新建工作日历'
-                  }}</NvDialogTitle>
-                  <NvDialogDescription class="sr-only">{{
-                    calEditingCode ? `工作日历 ${calEditingCode}` : '新建工作日历'
-                  }}</NvDialogDescription>
-                </NvDialogHeader>
-                <form class="grid gap-4" @submit.prevent="submitCal">
-                  <CarriedContextSummary
-                    v-if="calEditingCode"
-                    label="日历标识"
-                    :items="[{ label: '日历编码', value: calForm.code }]"
-                  />
-                  <p
-                    v-if="calShowErrors && !canCreateCal"
-                    class="text-sm text-destructive"
-                    role="alert"
-                  >
-                    请完整填写带 * 的必填项（已标红）。
-                  </p>
-                  <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-                    <NvField :data-invalid="calShowErrors && !isNonEmpty(calForm.name)">
-                      <NvFieldLabel for="cal-name"
-                        >日历名称 <span class="text-destructive">*</span></NvFieldLabel
-                      >
-                      <NvInput id="cal-name" v-model="calForm.name" autocomplete="off" required />
-                    </NvField>
-                  </NvFieldGroup>
-                  <NvDialogFooter>
-                    <NvButton type="button" variant="outline" @click="calOpen = false"
-                      >取消</NvButton
-                    >
-                    <NvButton
-                      type="submit"
-                      :disabled="
-                        calendars.createPending.value ||
-                        calActions.updatePending.value ||
-                        calEditLoading
-                      "
-                    >
-                      <NvSpinner
-                        v-if="calendars.createPending.value || calActions.updatePending.value"
-                        aria-hidden="true"
-                      />{{ calEditingCode ? '保存修改' : '保存日历' }}
-                    </NvButton>
-                  </NvDialogFooter>
-                </form>
-              </NvDialogContent>
-            </NvDialog>
-          </template>
-        </NvToolbar>
-        <p v-if="calListError" class="text-sm text-destructive" role="alert">{{ calListError }}</p>
-
-        <div class="grid items-start gap-4 md:grid-cols-[16rem_minmax(0,1fr)]">
-          <!-- 左：日历列表（整行可点，选中一个驱动右侧月历）。 -->
-          <div class="grid h-fit min-w-0 gap-1.5">
-            <div
-              v-if="calendars.pending.value"
-              class="flex items-center gap-2 px-2 py-6 text-sm text-muted-foreground"
-            >
-              <NvSpinner aria-hidden="true" />加载工作日历…
-            </div>
-            <p
-              v-else-if="!calRows.length"
-              class="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground"
-            >
-              暂无工作日历。可清空筛选或新建日历。
-            </p>
-            <ul v-else class="grid gap-1">
-              <li v-for="row in calRows" :key="rowKey(row)" class="relative">
-                <button
-                  type="button"
-                  class="flex w-full items-center gap-2 rounded-md py-2 pl-3 pr-10 text-left transition-colors hover:bg-accent/50"
-                  :class="row.code === selectedCalCode ? 'bg-accent text-accent-foreground' : ''"
-                  :aria-current="row.code === selectedCalCode ? 'true' : undefined"
-                  @click="selectCalendar(row)"
-                >
-                  <span class="min-w-0 flex-1 truncate text-sm font-medium">{{
-                    row.displayName ?? '无'
-                  }}</span>
-                  <NvStatusBadge :value="row.active === false ? 'disabled' : 'active'" />
-                </button>
-                <!-- 行尾「⋯」操作菜单：编辑 / 停用。绝对定位避免按钮嵌套。 -->
-                <div class="absolute inset-y-0 right-1 flex items-center">
-                  <MasterDataRowActions
-                    :row="row"
-                    entity-label="工作日历"
-                    :detail-fields="baseDetailFields(row, '日历编码', '日历名称')"
-                    @toggle="(row) => lifecycle.request(row, calActions, '工作日历')"
-                    @edit="openEditCal"
-                  />
-                </div>
-              </li>
-            </ul>
-          </div>
-
-          <!-- 右：月历视图（全部读真实 detail，无明细给空态引导） -->
-          <div class="grid h-fit gap-3 rounded-lg border border-border bg-card p-4">
-            <div
-              v-if="!selectedCalCode"
-              class="flex flex-col items-center justify-center gap-3 py-16 text-center"
-            >
-              <CalendarRangeIcon class="size-8 text-muted-foreground" aria-hidden="true" />
-              <p class="text-sm font-medium">先在左侧选择或新建一个工作日历</p>
-              <p class="text-xs text-muted-foreground">
-                选中后这里按工作日 / 休息日 / 节假日 / 例外日渲染月历，可直接维护。
-              </p>
-            </div>
-
-            <template v-else>
-              <!-- 头部：选中日历名 + 月份切换 + 管理入口 -->
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <div class="flex items-center gap-2">
-                  <span class="text-sm font-semibold">{{ selectedCalName }}</span>
-                  <span
-                    v-if="calBoardSaving"
-                    class="inline-flex items-center gap-1 text-xs text-muted-foreground"
-                    ><NvSpinner aria-hidden="true" />保存中</span
-                  >
-                </div>
-                <div class="flex items-center gap-1">
-                  <NvButton
-                    size="icon"
-                    variant="outline"
-                    type="button"
-                    aria-label="上个月"
-                    @click="prevMonth"
-                    ><ChevronLeftIcon aria-hidden="true"
-                  /></NvButton>
-                  <span class="min-w-20 text-center text-sm font-medium tabular-nums">{{
-                    monthLabel
-                  }}</span>
-                  <NvButton
-                    size="icon"
-                    variant="outline"
-                    type="button"
-                    aria-label="下个月"
-                    @click="nextMonth"
-                    ><ChevronRightIcon aria-hidden="true"
-                  /></NvButton>
-                  <NvButton size="sm" variant="outline" type="button" @click="goToday"
-                    >今天</NvButton
-                  >
-                </div>
-              </div>
-
-              <div
-                v-if="calDetailLoading"
-                class="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground"
-              >
-                <NvSpinner aria-hidden="true" />加载日历明细…
-              </div>
-
-              <template v-else>
-                <!-- 每周工作模式：月历正上方一行 7 个星期 chip，点亮=工作日，即时保存 -->
-                <div class="grid gap-2">
-                  <div class="flex flex-wrap items-center justify-between gap-2">
-                    <p class="text-sm font-medium">每周工作模式</p>
-                    <NvButton size="sm" variant="outline" type="button" @click="openManageSheet()">
-                      <CalendarCogIcon aria-hidden="true" />管理节假日 / 例外日
-                    </NvButton>
-                  </div>
-                  <div class="flex flex-wrap gap-1.5">
-                    <NvButton
-                      v-for="wd in WEEK_DAYS"
-                      :key="wd.key"
-                      size="sm"
-                      type="button"
-                      :variant="workingDaySet.has(wd.key) ? 'default' : 'outline'"
-                      :disabled="calBoardSaving"
-                      :aria-pressed="workingDaySet.has(wd.key)"
-                      @click="toggleWeekday(wd.key)"
-                    >
-                      {{ wd.label }}
-                    </NvButton>
-                  </div>
-                  <p class="text-xs text-muted-foreground">
-                    点亮的星期为工作日；点击切换，立即保存。每天的作息时段由「班次」定义，日历只决定哪几天开工。
-                  </p>
-                </div>
-
-                <!-- 图例（放月历上方，免下拉才能看到；色 + 文字角标双编码，色盲友好） -->
-                <div
-                  class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground"
-                >
-                  <span class="inline-flex items-center gap-1.5"
-                    ><span
-                      class="size-3 rounded-sm bg-success/20 ring-1 ring-inset ring-success/40"
-                      aria-hidden="true"
-                    />工作日</span
-                  >
-                  <span class="inline-flex items-center gap-1.5"
-                    ><span
-                      class="size-3 rounded-sm bg-muted/50 ring-1 ring-inset ring-border"
-                      aria-hidden="true"
-                    />休息日</span
-                  >
-                  <span class="inline-flex items-center gap-1.5"
-                    ><span
-                      class="size-3 rounded-sm bg-destructive/20 ring-1 ring-inset ring-destructive/40"
-                      aria-hidden="true"
-                    /><span class="font-medium text-foreground">假</span> 节假日</span
-                  >
-                  <span class="inline-flex items-center gap-1.5"
-                    ><span
-                      class="size-3 rounded-sm bg-warning/25 ring-1 ring-inset ring-warning/45"
-                      aria-hidden="true"
-                    /><span class="text-foreground"
-                      >例外日 <span class="font-medium">班</span>上班 /
-                      <span class="font-medium">休</span>休息</span
-                    ></span
-                  >
-                </div>
-
-                <!-- 月历网格（只读展示；点某天可在抽屉里预填该日期） -->
-                <div class="grid grid-cols-7 gap-1">
-                  <div
-                    v-for="wd in WEEK_DAYS"
-                    :key="wd.key"
-                    class="pb-1 text-center text-xs font-medium text-muted-foreground"
-                  >
-                    {{ wd.short }}
-                  </div>
-                  <button
-                    v-for="cell in monthCells"
-                    :key="cell.key"
-                    type="button"
-                    class="relative aspect-square rounded-md p-1.5 text-left text-sm"
-                    :class="
-                      cell.inMonth
-                        ? [
-                            cellClassMap[cell.kind],
-                            cell.isToday ? 'outline outline-2 outline-primary' : '',
-                            'transition-shadow hover:ring-1 hover:ring-inset hover:ring-primary/50',
-                          ]
-                        : 'pointer-events-none opacity-0'
-                    "
-                    :title="cell.inMonth ? cell.title : undefined"
-                    :disabled="!cell.inMonth"
-                    @click="cell.inMonth && openManageSheet(cell.key)"
-                  >
-                    <template v-if="cell.inMonth">
-                      <span class="tabular-nums">{{ cell.label }}</span>
-                      <span
-                        v-if="cell.badge"
-                        class="absolute bottom-1 right-1 text-[10px] font-semibold leading-none"
-                        >{{ cell.badge }}</span
-                      >
-                    </template>
-                  </button>
-                </div>
-
-                <!-- 空态引导：选中日历但完全没有明细 -->
-                <div
-                  v-if="calDetailLoaded && !hasAnyDetail"
-                  class="rounded-md border border-dashed border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground"
-                >
-                  该日历还没有任何工作时间 /
-                  节假日设置，当前全部按休息日显示。请在上方设置每周工作模式，或点「管理节假日 /
-                  例外日」添加。
-                </div>
-              </template>
-            </template>
-          </div>
-        </div>
-
-        <!-- 节假日 / 例外日管理抽屉（右侧滑出） -->
-        <NvSheet v-model:open="manageSheetOpen">
-          <NvSheetContent class="w-full gap-0 overflow-y-auto sm:max-w-md">
-            <NvSheetHeader>
-              <NvSheetTitle>节假日 / 例外日 · {{ selectedCalName }}</NvSheetTitle>
-              <NvSheetDescription class="sr-only"
-                >日历 {{ selectedCalName }} 的节假日与例外日</NvSheetDescription
-              >
-            </NvSheetHeader>
-
-            <div class="grid gap-6 px-4 pb-6">
-              <!-- 节假日 -->
-              <section class="grid gap-2">
-                <p class="text-sm font-medium">法定节假日</p>
-                <form
-                  class="grid gap-2 sm:grid-cols-[auto_1fr_auto] sm:items-end"
-                  @submit.prevent="addHoliday"
-                >
-                  <div class="grid gap-1">
-                    <label class="text-xs text-muted-foreground">日期</label>
-                    <NvDatePicker v-model="holidayDateModel" placeholder="选择日期" class="w-40" />
-                  </div>
-                  <div class="grid gap-1">
-                    <label for="holiday-name" class="text-xs text-muted-foreground"
-                      >名称（可选）</label
-                    >
-                    <NvInput
-                      id="holiday-name"
-                      v-model="holidayDraft.name"
-                      placeholder="如 端午节"
-                    />
-                  </div>
-                  <NvButton size="sm" type="submit" :disabled="!holidayDraft.date || calBoardSaving"
-                    ><PlusIcon aria-hidden="true" />添加</NvButton
-                  >
-                </form>
-                <p v-if="!sortedHolidays.length" class="text-xs text-muted-foreground">
-                  暂无节假日。
-                </p>
-                <ul v-else class="grid gap-1">
-                  <li
-                    v-for="h in sortedHolidays"
-                    :key="h.date"
-                    class="flex items-center justify-between rounded-md bg-muted/40 px-2.5 py-1.5 text-sm"
-                  >
-                    <span
-                      ><span class="font-medium tabular-nums">{{ formatDate(h.date) }}</span>
-                      <span class="text-muted-foreground">{{ h.name || '节假日' }}</span></span
-                    >
-                    <!-- 触发只开框；确认框是页面层单实例（v-for 外），见文件末尾。 -->
-                    <NvButton
-                      size="icon"
-                      variant="ghost"
-                      type="button"
-                      aria-label="删除节假日"
-                      :disabled="calBoardSaving"
-                      @click="openDeleteHoliday(h)"
-                      ><Trash2Icon aria-hidden="true"
-                    /></NvButton>
-                  </li>
-                </ul>
-              </section>
-
-              <!-- 例外日 -->
-              <section class="grid gap-2 border-t border-border pt-4">
-                <p class="text-sm font-medium">例外日</p>
-                <form class="grid gap-2" @submit.prevent="addException">
-                  <div class="grid gap-2 sm:grid-cols-2">
-                    <div class="grid gap-1">
-                      <label class="text-xs text-muted-foreground">日期</label>
-                      <NvDatePicker
-                        v-model="exceptionDateModel"
-                        placeholder="选择日期"
-                        class="w-40"
-                      />
-                    </div>
-                    <div class="grid gap-1">
-                      <label for="exception-kind" class="text-xs text-muted-foreground">类型</label>
-                      <NvSelect v-model="exceptionDraft.isWorkingDay">
-                        <NvSelectTrigger id="exception-kind" class="w-40"
-                          ><NvSelectValue
-                        /></NvSelectTrigger>
-                        <NvSelectContent>
-                          <NvSelectItem value="true">当日上班</NvSelectItem>
-                          <NvSelectItem value="false">当日休息</NvSelectItem>
-                        </NvSelectContent>
-                      </NvSelect>
-                    </div>
-                  </div>
-                  <div class="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
-                    <div class="grid gap-1">
-                      <label for="exception-reason" class="text-xs text-muted-foreground"
-                        >原因（可选）</label
-                      >
-                      <NvInput
-                        id="exception-reason"
-                        v-model="exceptionDraft.reason"
-                        placeholder="如 调休"
-                      />
-                    </div>
-                    <NvButton
-                      size="sm"
-                      type="submit"
-                      :disabled="!exceptionDraft.date || calBoardSaving"
-                      ><PlusIcon aria-hidden="true" />添加</NvButton
-                    >
-                  </div>
-                </form>
-                <p v-if="!sortedExceptions.length" class="text-xs text-muted-foreground">
-                  暂无例外日。
-                </p>
-                <ul v-else class="grid gap-1">
-                  <li
-                    v-for="e in sortedExceptions"
-                    :key="e.date"
-                    class="flex items-center justify-between rounded-md bg-muted/40 px-2.5 py-1.5 text-sm"
-                  >
-                    <span
-                      ><span class="font-medium tabular-nums">{{ formatDate(e.date) }}</span>
-                      <span class="text-muted-foreground"
-                        >{{ e.isWorkingDay ? '当日上班' : '当日休息'
-                        }}{{ e.reason ? ` · ${e.reason}` : '' }}</span
-                      ></span
-                    >
-                    <!-- 触发只开框；与节假日共用页面层那一个确认框，靠 deleteTarget.kind 判别。 -->
-                    <NvButton
-                      size="icon"
-                      variant="ghost"
-                      type="button"
-                      aria-label="删除例外日"
-                      :disabled="calBoardSaving"
-                      @click="openDeleteException(e)"
-                      ><Trash2Icon aria-hidden="true"
-                    /></NvButton>
-                  </li>
-                </ul>
-              </section>
-            </div>
-          </NvSheetContent>
-        </NvSheet>
-
-        <!-- 节假日 / 例外日删除确认（受控，页面层单实例；两类目标共用，靠 deleteTarget.kind 判别） -->
-        <NvAlertDialog v-model:open="deleteConfirmOpen">
-          <NvAlertDialogContent>
-            <NvAlertDialogHeader>
-              <NvAlertDialogTitle>{{ deleteConfirmTitle }}</NvAlertDialogTitle>
-              <NvAlertDialogDescription>{{ deleteConfirmDescription }}</NvAlertDialogDescription>
-            </NvAlertDialogHeader>
-            <NvAlertDialogFooter>
-              <NvAlertDialogCancel>取消</NvAlertDialogCancel>
-              <!-- 普通 NvButton，不用 NvAlertDialogAction：后者点击即无条件关框（confirm-destroy 规则 3）。 -->
-              <NvButton
-                type="button"
-                variant="destructive"
-                :disabled="calBoardSaving"
-                @click="confirmDelete"
-                >确认删除</NvButton
-              >
-            </NvAlertDialogFooter>
-          </NvAlertDialogContent>
-        </NvAlertDialog>
-
-        <!-- 节假日 / 例外日互斥冲突确认（受控） -->
-        <NvAlertDialog v-model:open="conflict.open">
-          <NvAlertDialogContent>
-            <NvAlertDialogHeader>
-              <NvAlertDialogTitle>{{ conflictTitle }}</NvAlertDialogTitle>
-              <NvAlertDialogDescription>{{ conflictDescription }}</NvAlertDialogDescription>
-            </NvAlertDialogHeader>
-            <NvAlertDialogFooter>
-              <NvAlertDialogCancel @click="cancelConflict">取消</NvAlertDialogCancel>
-              <!-- 同上：替换要等写回结果，失败时保留草稿与本框，故不用 NvAlertDialogAction。 -->
-              <NvButton type="button" :disabled="calBoardSaving" @click="resolveConflict"
-                >确认替换</NvButton
-              >
-            </NvAlertDialogFooter>
-          </NvAlertDialogContent>
-        </NvAlertDialog>
-      </NvTabsContent>
+      <WorkCalendarTab
+        v-model:cal-keyword="calKeyword"
+        v-model:include-disabled="includeDisabled"
+        v-model:cal-open="calOpen"
+        v-model:manage-sheet-open="manageSheetOpen"
+        v-model:holiday-date-model="holidayDateModel"
+        v-model:exception-date-model="exceptionDateModel"
+        v-model:delete-confirm-open="deleteConfirmOpen"
+        :-w-e-e-k_-d-a-y-s="WEEK_DAYS"
+        :add-exception="addException"
+        :add-holiday="addHoliday"
+        :base-detail-fields="baseDetailFields"
+        :cal-actions="calActions"
+        :cal-board-saving="calBoardSaving"
+        :cal-detail-loaded="calDetailLoaded"
+        :cal-detail-loading="calDetailLoading"
+        :cal-edit-loading="calEditLoading"
+        :cal-editing-code="calEditingCode"
+        :cal-form="calForm"
+        :cal-list-error="calListError"
+        :cal-rows="calRows"
+        :cal-show-errors="calShowErrors"
+        :calendars="calendars"
+        :can-create-cal="canCreateCal"
+        :cancel-conflict="cancelConflict"
+        :cell-class-map="cellClassMap"
+        :confirm-delete="confirmDelete"
+        :conflict="conflict"
+        :conflict-description="conflictDescription"
+        :conflict-title="conflictTitle"
+        :delete-confirm-description="deleteConfirmDescription"
+        :delete-confirm-title="deleteConfirmTitle"
+        :exception-draft="exceptionDraft"
+        :go-today="goToday"
+        :has-any-detail="hasAnyDetail"
+        :holiday-draft="holidayDraft"
+        :is-non-empty="isNonEmpty"
+        :lifecycle="lifecycle"
+        :month-cells="monthCells"
+        :month-label="monthLabel"
+        :next-month="nextMonth"
+        :open-create-cal="openCreateCal"
+        :open-delete-exception="openDeleteException"
+        :open-delete-holiday="openDeleteHoliday"
+        :open-edit-cal="openEditCal"
+        :open-manage-sheet="openManageSheet"
+        :prev-month="prevMonth"
+        :resolve-conflict="resolveConflict"
+        :row-key="rowKey"
+        :select-calendar="selectCalendar"
+        :selected-cal-code="selectedCalCode"
+        :selected-cal-name="selectedCalName"
+        :sorted-exceptions="sortedExceptions"
+        :sorted-holidays="sortedHolidays"
+        :submit-cal="submitCal"
+        :toggle-weekday="toggleWeekday"
+        :working-day-set="workingDaySet"
+      />
     </NvTabs>
     <MasterDataLifecycleDialog :controller="lifecycle" />
     <ShiftFormDialog

@@ -52,7 +52,7 @@ const lineSideInventoryBalances = ref([
 ])
 const initialLineSideInventoryBalances = lineSideInventoryBalances.value
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   useMesMaterialIssueRequests: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
     materialIssueRequests: ref([]),

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import MesProductionContextPanel from './MesProductionContextPanel.vue'
 
 // 班次名录缺失时显示中性占位。
-vi.mock('@/composables/useMasterDataDisplayNames', () => {
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', () => {
   const names: Record<string, string> = {
     'WC-CNC-01': '数控车削中心',
     'SHIFT-NIGHT': '夜班',

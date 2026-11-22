@@ -17,7 +17,7 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
 
 // 报警角标数据源：mock composable，避免拉起 pinia/colada；用 ref 驱动角标可见性。
 const unacknowledgedCount = ref(0)
-vi.mock('@/composables/useBusinessEquipmentAlarms', () => ({
+vi.mock('@/composables/equipment/useBusinessEquipmentAlarms', () => ({
   useUnacknowledgedAlarmCount: () => ({ unacknowledgedCount }),
 }))
 
@@ -59,7 +59,7 @@ const refreshInspection = vi.fn(async () => {})
 const inspectionHasSuccessfulResponse = ref(true)
 const inspectionHasFailedResponse = ref(false)
 
-vi.mock('@/composables/useWorkbenchHome', () => {
+vi.mock('@/composables/workbench/useWorkbenchHome', () => {
   const HOME_PERMISSIONS = {
     workerProfile: 'business.masterdata.resources.read',
     wmsReceipts: 'business.wms.receipts.read',

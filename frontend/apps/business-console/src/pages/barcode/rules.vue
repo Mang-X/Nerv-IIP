@@ -3,7 +3,7 @@ import type { BusinessConsoleBarcodeRuleItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { useBarcodeRules } from '@/composables/useBusinessBarcode'
+import { useBarcodeRules } from '@/composables/barcode/useBusinessBarcode'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import {
   NvButton,

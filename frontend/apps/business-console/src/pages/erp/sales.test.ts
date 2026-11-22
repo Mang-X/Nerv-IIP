@@ -10,7 +10,7 @@ import QuotationsPage from './sales/quotations.vue'
 
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
 // 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
-vi.mock('@/composables/useSkuNames', async () => {
+vi.mock('@/composables/master-data/useSkuNames', async () => {
   const { computed } = await import('vue')
   return {
     useSkuNames: () => ({
@@ -21,7 +21,7 @@ vi.mock('@/composables/useSkuNames', async () => {
     }),
   }
 })
-vi.mock('@/composables/useBusinessPartnerNames', async () => {
+vi.mock('@/composables/master-data/useBusinessPartnerNames', async () => {
   const { computed } = await import('vue')
   return {
     useBusinessPartnerNames: () => ({
@@ -33,7 +33,7 @@ vi.mock('@/composables/useBusinessPartnerNames', async () => {
     }),
   }
 })
-vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', async () => {
   const { computed } = await import('vue')
   const emptyIndex = computed(() => new Map<string, string>())
   return {
@@ -56,7 +56,7 @@ vi.mock('@/composables/useMasterDataDisplayNames', async () => {
   }
 })
 
-vi.mock('@/composables/useOrderUrgency', () => ({
+vi.mock('@/composables/urgency/useOrderUrgency', () => ({
   useOrderUrgencies: () => ({ byReference: { value: new Map() }, refresh: vi.fn() }),
 }))
 vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
@@ -114,7 +114,7 @@ function listShape(itemsRef: () => Array<Record<string, unknown>>) {
   }
 }
 
-vi.mock('@/composables/useBusinessErp', () => ({
+vi.mock('@/composables/erp/useBusinessErp', () => ({
   useErpQuotations: () => ({
     ...listShape(() => state.quotations),
     approveQuotation: state.approveQuotation,
@@ -151,7 +151,7 @@ vi.mock('@/composables/useBusinessErp', () => ({
 }))
 
 // 客户 / 物料 / 工厂改成只选：目录 composable 内部走 pinia + colada，测试整体打桩给定候选。
-vi.mock('@/composables/useErpPickerCatalog', () => ({
+vi.mock('@/composables/erp/useErpPickerCatalog', () => ({
   useErpPartnerCatalog: () => ({
     customerOptions: computed(() => [{ value: 'CUST-001', label: '示例客户' }]),
     supplierOptions: computed(() => []),
@@ -183,7 +183,7 @@ vi.mock('@/composables/useErpPickerCatalog', () => ({
   }),
 }))
 
-vi.mock('@/composables/usePagedList', () => ({
+vi.mock('@/composables/shared/usePagedList', () => ({
   usePagedList: () => ({
     page: shallowRef(1),
     pageSize: shallowRef('10'),

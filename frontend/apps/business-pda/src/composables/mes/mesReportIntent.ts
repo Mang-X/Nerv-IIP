@@ -1,4 +1,4 @@
-import type { MesReportExecutionContext, RecordReportInput } from '@/composables/useBusinessMes'
+import type { MesReportExecutionContext, RecordReportInput } from './mesShared'
 import type { PendingBusinessIntentScope } from '@nerv-iip/business-core'
 
 export function mesReportIntentScope(

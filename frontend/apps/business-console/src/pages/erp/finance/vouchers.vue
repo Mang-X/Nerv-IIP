@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpJournalVoucherItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
-import { useErpJournalVouchers } from '@/composables/useBusinessErp'
-import { usePagedList } from '@/composables/usePagedList'
+import { useErpJournalVouchers } from '@/composables/erp/useBusinessErp'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { i18n } from '@/i18n'
 import {

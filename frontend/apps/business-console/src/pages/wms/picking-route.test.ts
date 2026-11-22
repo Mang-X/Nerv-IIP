@@ -1,4 +1,4 @@
-import { useWmsPickingTasks } from '@/composables/useBusinessWms'
+import { useWmsPickingTasks } from '@/composables/wms'
 import { assertScopePageBehavior, scopePageStubs } from '@/test/wmsWorkScopePage'
 import type { BusinessConsoleCreateWmsPickingTaskRequest } from '@nerv-iip/api-client'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -9,7 +9,7 @@ import PickingPage from './picking.vue'
 
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
 // 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
-vi.mock('@/composables/useSkuNames', async () => {
+vi.mock('@/composables/master-data/useSkuNames', async () => {
   const { computed } = await import('vue')
   return {
     useSkuNames: () => ({
@@ -20,7 +20,7 @@ vi.mock('@/composables/useSkuNames', async () => {
     }),
   }
 })
-vi.mock('@/composables/useBusinessPartnerNames', async () => {
+vi.mock('@/composables/master-data/useBusinessPartnerNames', async () => {
   const { computed } = await import('vue')
   return {
     useBusinessPartnerNames: () => ({
@@ -32,7 +32,7 @@ vi.mock('@/composables/useBusinessPartnerNames', async () => {
     }),
   }
 })
-vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', async () => {
   const { computed } = await import('vue')
   const emptyIndex = computed(() => new Map<string, string>())
   return {
@@ -84,9 +84,9 @@ vi.mock('vue-router', () => ({
   }),
 }))
 
-vi.mock('@/composables/useWmsWorkScope', () => import('@/test/wmsWorkScopePage'))
+vi.mock('@/composables/wms/useWmsWorkScope', () => import('@/test/wmsWorkScopePage'))
 
-vi.mock('@/composables/useBusinessWms', () => ({
+vi.mock('@/composables/wms', () => ({
   createWmsIdempotencyKey: () => wmsState.key(),
   // 拣货任务必须挂在已存在的出库单下：出库单选择器的目录来源。
   useWmsOutboundOrders: () => ({
@@ -427,7 +427,7 @@ describe('WMS picking route context', () => {
     expect(wrapper.text()).toContain('请调整实拣数量')
   })
 })
-vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+vi.mock('@/composables/wms/useWmsOperationalCandidates', async () => {
   const { shallowRef } = await import('vue')
   return {
     useWmsOperationalCandidates: () => ({

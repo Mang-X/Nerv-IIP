@@ -4,7 +4,7 @@ import {
   useMesTraceability,
   useMesWorkOrders,
   useMesWorkOrderHistoricalProducedLots,
-} from '@/composables/useBusinessMes'
+} from '@/composables/mes'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { buildWorkOrderPickerOptions } from '@/composables/mes/workOrderPickerOptions'
 import { useMesReferenceLabels } from '@/composables/mes/useMesReferenceLabels'

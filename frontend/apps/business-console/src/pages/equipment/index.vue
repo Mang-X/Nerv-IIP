@@ -10,9 +10,9 @@ import {
   MAX_DEVICE_ASSET_IDS,
   useBusinessEquipmentOverview,
   type EquipmentTone,
-} from '@/composables/useBusinessEquipment'
-import { useEquipmentScopeSelection } from '@/composables/useEquipmentScopeSelection'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+} from '@/composables/equipment/useBusinessEquipment'
+import { useEquipmentScopeSelection } from '@/composables/equipment/useEquipmentScopeSelection'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'
 import { friendlyErrorMessage } from '@/utils/notify'

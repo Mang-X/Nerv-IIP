@@ -22,7 +22,7 @@ import {
 import type {
   AuthoritativeMaintenanceWorkOrderDetail,
   MaintenanceWorkOrderIdentityDirectory,
-} from '@/composables/useMaintenanceSelfWorkOrders'
+} from '@/composables/maintenance'
 
 const props = defineProps<{
   workOrder: AuthoritativeMaintenanceWorkOrderDetail

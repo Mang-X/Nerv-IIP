@@ -23,7 +23,7 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
   RouterView: { template: '<div />' },
 }))
-vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+vi.mock('@/composables/wms/useWmsOperationalCandidates', async () => {
   const { shallowRef } = await import('vue')
   return {
     useWmsOperationalCandidates: () => ({
@@ -100,7 +100,7 @@ const wmsState = vi.hoisted(() => ({
 }))
 const scopeKey = ref<string | undefined>('self:emp049')
 
-vi.mock('@/composables/useBusinessWms', () => ({
+vi.mock('@/composables/wms', () => ({
   useWmsCount: () => ({
     filters: wmsState.filters,
     scopeKey,

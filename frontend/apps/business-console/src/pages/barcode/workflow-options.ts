@@ -1,5 +1,5 @@
 import type { RouteLocationRaw } from 'vue-router'
-import type { SourceDocumentKind } from '@/composables/useSourceDocumentCatalog'
+import type { SourceDocumentKind } from '@/composables/catalog/useSourceDocumentCatalog'
 
 /** 条码类型中文名：与 BarcodeLabel 条码规则支持的码制（`BarcodeRule.SupportedTypes`）一一对应，规则页与打印批次页共用。 */
 export const BARCODE_TYPE_OPTIONS = [

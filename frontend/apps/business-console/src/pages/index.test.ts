@@ -21,7 +21,7 @@ vi.mock('@nerv-iip/api-client', () => ({
 
 // 设备名 join 走主数据台账；本用例只验工作台自身的三态，主数据整条链路桩掉，
 // 免得为一个 resolveDevice 把 useBusinessMasterData 的全部 mutation options 都补进 mock。
-vi.mock('@/composables/useMasterDataDisplayNames', () => ({
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', () => ({
   useMasterDataDisplayNames: () => ({
     resolveDevice: (code: string) => (code === 'DEV-1001' ? '注塑机 1 号' : undefined),
     formatUom: (code: string, fallback: string) => code || fallback,

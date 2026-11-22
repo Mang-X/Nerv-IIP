@@ -27,7 +27,7 @@ const ncr = shallowRef<Record<string, unknown> | null>({
 })
 const ncrPending = shallowRef(false)
 const ncrError = shallowRef<unknown>(null)
-vi.mock('@/composables/useBusinessNonconformanceReport', () => ({
+vi.mock('@/composables/quality/useBusinessNonconformanceReport', () => ({
   useNonconformanceReport: () => ({
     ncr,
     pending: ncrPending,

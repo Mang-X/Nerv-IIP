@@ -10,12 +10,12 @@ import {
   INVENTORY_MANUAL_MOVEMENT_TYPE_OPTIONS,
   inventoryMovementTypeLabel,
 } from '@/data/inventoryReference'
-import { useInventoryMovement } from '@/composables/useBusinessInventory'
-import { maintenanceWorkOrderNoLabel } from '@/composables/useEquipmentPickerCatalog'
-import { makeIdempotencyKey } from '@/composables/useBusinessMes'
-import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { useSkuNames } from '@/composables/useSkuNames'
+import { useInventoryMovement } from '@/composables/inventory/useBusinessInventory'
+import { maintenanceWorkOrderNoLabel } from '@/composables/equipment/useEquipmentPickerCatalog'
+import { makeIdempotencyKey } from '@/composables/mes'
+import { useInventoryScopeCatalog } from '@/composables/inventory/useInventoryScope'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
+import { useSkuNames } from '@/composables/master-data/useSkuNames'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'

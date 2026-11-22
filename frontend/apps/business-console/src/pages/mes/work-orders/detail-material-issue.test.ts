@@ -26,7 +26,7 @@ vi.mock('vue-router', () => ({
   RouterLink: { props: ['to'], template: '<a><slot /></a>' },
 }))
 
-vi.mock('@/composables/useScheduleInvalidation', () => ({
+vi.mock('@/composables/scheduling/useScheduleInvalidation', () => ({
   resolveScheduleStatus: () => ({ key: 'scheduled', label: '已排程', tone: 'info' }),
   scheduleInvalidationHint: () => '',
 }))
@@ -68,7 +68,7 @@ const state = vi.hoisted(() => ({
 const readinessQuery = reactive({ pending: false, error: undefined as unknown })
 
 // 单位取自物料主档（#1294 姿势）：主档缺单位就不许发起领料，绝不写死占位值。
-vi.mock('@/composables/useSkuNames', () => ({
+vi.mock('@/composables/master-data/useSkuNames', () => ({
   useSkuNames: () => ({
     resolveBaseUom: (code?: string | null) =>
       code ? state.baseUomBySku.get(code.trim()) : undefined,
@@ -78,7 +78,7 @@ vi.mock('@/composables/useSkuNames', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   describeMesReadinessReason: (code: string) => ({ code, label: code, nextStep: '' }),
   describeMesReadinessReasons: () => [],

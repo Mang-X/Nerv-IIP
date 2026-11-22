@@ -13,9 +13,9 @@ import type {
   DirectoryCreatedItem,
 } from '@/components/business/directoryCreators'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { useInventoryLocationSave } from '@/composables/useBusinessInventory'
-import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
-import { FALLBACK_INVENTORY_SITE_CODE } from '@/composables/useInventoryScope'
+import { useInventoryLocationSave } from '@/composables/inventory/useBusinessInventory'
+import { useBusinessMasterDataResources } from '@/composables/master-data'
+import { FALLBACK_INVENTORY_SITE_CODE } from '@/composables/inventory/useInventoryScope'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   NvButton,

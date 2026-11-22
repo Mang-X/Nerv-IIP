@@ -3,13 +3,13 @@ import type { BusinessConsoleTelemetryDeviceControlBindingItem } from '@nerv-iip
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
-import { useBusinessDeviceControlBindings } from '@/composables/useBusinessDeviceControlBinding'
+import { useBusinessDeviceControlBindings } from '@/composables/equipment/useBusinessDeviceControlBinding'
 import {
   useConnectorInstanceCatalog,
   useEquipmentDeviceCatalog,
-} from '@/composables/useEquipmentPickerCatalog'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { usePagedList } from '@/composables/usePagedList'
+} from '@/composables/equipment/useEquipmentPickerCatalog'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'

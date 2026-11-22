@@ -1,0 +1,35 @@
+.nv-eyebrow {
+  position: relative;
+  padding-left: 0.875rem;
+}
+.nv-eyebrow::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.25rem;
+  bottom: 0.25rem;
+  width: 2px;
+  border-radius: 9999px;
+  background: var(--nv-brand);
+}
+
+.reveal-init {
+  opacity: 0;
+  transform: translateY(14px);
+  will-change: opacity, transform;
+}
+.reveal-in {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 0.55s var(--nv-ease-out-expo),
+    transform 0.55s var(--nv-ease-out-expo);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal-init {
+    opacity: 1;
+    transform: none;
+  }
+}

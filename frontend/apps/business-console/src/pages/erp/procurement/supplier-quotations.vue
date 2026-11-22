@@ -4,9 +4,12 @@ import type {
   BusinessConsoleErpSupplierQuotationItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
-import { useErpRequestsForQuotation, useErpSupplierQuotations } from '@/composables/useBusinessErp'
-import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
-import { usePagedList } from '@/composables/usePagedList'
+import {
+  useErpRequestsForQuotation,
+  useErpSupplierQuotations,
+} from '@/composables/erp/useBusinessErp'
+import { useBusinessPartnerNames } from '@/composables/master-data/useBusinessPartnerNames'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'

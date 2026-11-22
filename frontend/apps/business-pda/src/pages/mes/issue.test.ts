@@ -112,7 +112,7 @@ const refreshLineSideInventory = vi.fn(async () => {})
 const nextLineSideInventoryPage = vi.fn()
 const previousLineSideInventoryPage = vi.fn()
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   useMesMaterialIssue: () => ({
     filters: issueFilters,
     requests: computed(() => issueRequests.value),

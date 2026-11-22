@@ -1,6 +1,8 @@
+import { createPinia, setActivePinia } from 'pinia'
+import { useAuthStore } from '@/stores/auth'
 import { vi } from 'vitest'
 
-vi.mock('@/composables/useOrderUrgency', () => ({
+vi.mock('@/composables/urgency/useOrderUrgency', () => ({
   useOrderUrgencies: () => ({ byReference: { value: new Map() }, refresh: vi.fn() }),
 }))
 // 图表面板依赖真实 NvBarChart（unovis），工作台测试只关心装配，桩掉即可。
@@ -71,7 +73,7 @@ const planningSpies = vi.hoisted(() => ({
   },
 }))
 
-vi.mock('@/composables/useBusinessPlanning', async () => {
+vi.mock('@/composables/planning/useBusinessPlanning', async () => {
   const { reactive, shallowRef } = await vi.importActual<typeof import('vue')>('vue')
   planningSpies.activeMrpRun = reactive(planningSpies.activeMrpRun)
   const DEFAULT_DEMANDS = [
@@ -308,7 +310,7 @@ vi.mock('@/composables/useBusinessPlanning', async () => {
   }
 })
 
-vi.mock('@/composables/useBusinessMasterData', async () => {
+vi.mock('@/composables/master-data', async () => {
   const { shallowRef } = await vi.importActual<typeof import('vue')>('vue')
   return {
     useBusinessMasterDataResources: (resourceType: string) => ({
@@ -456,3 +458,35 @@ vi.mock('@nerv-iip/ui', async () => {
 })
 
 export { planningSpies, routerPush, planningRoute }
+
+export function resetPlanningWorkbench() {
+  setActivePinia(createPinia())
+  useAuthStore().$patch({
+    principal: {
+      permissionCodes: [
+        'business.planning.demands.read',
+        'business.planning.mps.read',
+        'business.planning.mrp.read',
+        'business.planning.demands.manage',
+        'business.planning.mps.manage',
+        'business.planning.mps.release',
+        'business.planning.mrp.run',
+        'business.planning.suggestions.manage',
+        'business.erp.sales.read',
+      ],
+    },
+  })
+  planningSpies.runMrp = vi.fn(async () => undefined)
+  planningSpies.acceptSuggestion.mockReset()
+  planningSpies.cancelDemand.mockReset()
+  routerPush.mockReset()
+  planningRoute.query = {}
+  planningSpies.toastError.mockReset()
+  planningSpies.toastSuccess.mockReset()
+  planningSpies.toastWarning.mockReset()
+  planningSpies.activeMrpRun.runId = ''
+  planningSpies.activeMrpRun.status = ''
+  planningSpies.activeMrpRun.failureReason = ''
+  planningSpies.activeMrpRun.suggestionCount = null
+  planningSpies.resetDemands()
+}

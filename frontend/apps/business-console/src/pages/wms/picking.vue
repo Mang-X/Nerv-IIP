@@ -9,13 +9,13 @@ import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { wmsStatusTone } from '@/data/businessLabels'
-import { hasBusinessContext } from '@/composables/businessContextBinding'
-import { useWmsOutboundOrders, useWmsPickingTasks } from '@/composables/useBusinessWms'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
-import { usePagedList } from '@/composables/usePagedList'
-import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
-import { useSkuNames } from '@/composables/useSkuNames'
-import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
+import { hasBusinessContext } from '@/composables/shared/businessContextBinding'
+import { useWmsOutboundOrders, useWmsPickingTasks } from '@/composables/wms'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
+import { usePagedList } from '@/composables/shared/usePagedList'
+import { useWmsOperationalCandidates } from '@/composables/wms/useWmsOperationalCandidates'
+import { useSkuNames } from '@/composables/master-data/useSkuNames'
+import { bindWmsWorkScopeFilters } from '@/composables/wms/useWmsWorkScope'
 import {
   warehouseTaskBlockReasonText,
   wmsWarehouseTaskStatusFilterOptions,
@@ -23,7 +23,7 @@ import {
   WMS_STATUS_ANY,
 } from '@/data/wmsReference'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import { useWmsCreateIntent } from '@/composables/useWmsCreateIntent'
+import { useWmsCreateIntent } from '@/composables/wms/useWmsCreateIntent'
 import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import {
   inlineErrorMessage,
@@ -31,7 +31,7 @@ import {
   notifyOperationFailure,
   notifySuccess,
 } from '@/utils/notify'
-import { recoverLifecycleAction } from '@/composables/lifecycleAction'
+import { recoverLifecycleAction } from '@/composables/shared/lifecycleAction'
 import {
   NvButton,
   NvDataTable,

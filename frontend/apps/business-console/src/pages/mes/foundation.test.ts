@@ -50,7 +50,7 @@ const readiness = {
 readiness.blockingIssues = readiness.areas[0]!.issues
 readiness.warningIssues = readiness.areas[1]!.issues
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   useMesFoundationReadiness: () => ({
     filters: reactive({}),
     readiness: computed(() => readiness),
@@ -60,7 +60,7 @@ vi.mock('@/composables/useBusinessMes', () => ({
   }),
 }))
 
-vi.mock('@/composables/useMesPickerCatalog', () => ({
+vi.mock('@/composables/mes/useMesPickerCatalog', () => ({
   useProductionScopeCatalog: () => ({
     siteOptions: computed(() => []),
     sitesPending: ref(false),

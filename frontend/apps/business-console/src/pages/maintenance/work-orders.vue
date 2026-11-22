@@ -1,81 +1,21 @@
 <script setup lang="ts">
-import type {
-  BusinessConsoleAuthorizedWorkScope,
-  BusinessConsoleMaintenanceSparePartInput,
-  BusinessConsoleMaintenanceWorkOrderItem,
-} from '@nerv-iip/api-client'
-import {
-  formatWorkScopeKey,
-  maintenancePriorityLabel,
-  maintenancePriorityLabels,
-  statusActionGate,
-} from '@nerv-iip/business-core'
-import type { NvDataTableColumn } from '@nerv-iip/ui'
-import { recoverLifecycleAction } from '@/composables/lifecycleAction'
-import { useMaintenanceWorkOrders } from '@/composables/useBusinessMaintenance'
-import { useMaintenanceDowntimeReasonDirectory } from '@/composables/useMaintenanceDowntimeReasonDirectory'
-import {
-  useBusinessWorkers,
-  useBusinessMasterDataResources,
-} from '@/composables/useBusinessMasterData'
-import {
-  maintenanceWorkOrderNoLabel,
-  useDeviceSiteLookup,
-  useEquipmentAlarmCatalog,
-  useEquipmentSkuCatalog,
-  useEquipmentUomCatalog,
-} from '@/composables/useEquipmentPickerCatalog'
-import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
-import { usePagedList } from '@/composables/usePagedList'
-import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
-import { useAuthStore } from '@/stores/auth'
-import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
-import { formatDateTime as formatLocalDateTime } from '@/utils/format'
-import { CURRENCY_OPTIONS } from '@/data/currencyReference'
-import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
-import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import DowntimeReasonFormSheet from '@/components/maintenance/DowntimeReasonFormSheet.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import {
-  inlineErrorMessage,
-  notifyError,
-  notifyOperationFailure,
-  notifySuccess,
-} from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
   NvDropdownMenuItem,
-  NvEntityPicker,
-  NvField,
-  NvFieldDescription,
-  NvFieldError,
-  NvFieldGroup,
-  NvFieldLabel,
-  NvInput,
   NvMetricCard,
   NvMetricStrip,
   NvPageHeader,
   NvRowActions,
-  NvSearchSelect,
-  NvSelect,
-  NvSelectContent,
-  NvSelectItem,
-  NvSelectTrigger,
-  NvSelectValue,
-  NvSheet,
-  NvSheetContent,
-  NvSheetDescription,
-  NvSheetFooter,
-  NvSheetHeader,
-  NvSheetTitle,
-  NvSpinner,
   NvStatusBadge,
 } from '@nerv-iip/ui'
-import { CheckCircle2Icon, PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
-import { storeToRefs } from 'pinia'
-import { computed, reactive, shallowRef, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
+import MaintenanceWorkOrderCreateSheet from './components/MaintenanceWorkOrderCreateSheet.vue'
+import MaintenanceExpectedRestoreSheet from './components/MaintenanceExpectedRestoreSheet.vue'
+import MaintenanceWorkOrderCompleteSheet from './components/MaintenanceWorkOrderCompleteSheet.vue'
+import { useMaintenanceWorkOrdersPage } from './useMaintenanceWorkOrdersPage'
 
 definePage({
   meta: {
@@ -86,695 +26,85 @@ definePage({
 })
 
 const {
+  addSpareRow,
+  alarmOptions,
+  alarmsPending,
+  applySpareRowSku,
+  autoSparePartCost,
+  canComplete,
+  canManageWorkOrders,
+  canUpdateExpectedRestore,
+  columns,
+  completeCarriedItems,
+  completeErrorMessage,
+  completeForm,
+  completeOpen,
+  completeReasonKeyword,
+  completeReasonMessage,
+  completeReasonOptions,
+  completeReasonState,
+  completeReasonsTotal,
+  completeSiteCode,
+  completeTarget,
+  completeWorkOrderPending,
+  createCarried,
+  createCarriedItems,
+  createDeviceModel,
+  createErrorMessage,
+  createForm,
+  createOpen,
+  createWorkOrderPending,
+  deviceLabel,
+  directoryMessage,
+  directoryState,
+  downtimeReasonOptions,
+  downtimeReasons,
+  expectedRestoreAtLocal,
+  expectedRestoreOpen,
+  expectedRestorePending,
+  expectedRestoreScope,
+  expectedRestoreScopeKey,
+  expectedRestoreScopeOptions,
+  expectedRestoreScopes,
+  expectedRestoreTarget,
+  highPriorityPending,
+  knownReasonCodes,
+  listErrorMessage,
+  onReasonSaved,
+  openComplete,
+  openCreate,
+  openExpectedRestore,
+  openReasonCreate,
+  page,
+  pageSize,
+  pendingCount,
+  priorityLabel,
+  priorityOptions,
+  reasonFormOpen,
+  reasonFormSession,
+  reasonKeyword,
+  reasonsTotal,
+  refreshWorkOrders,
+  removeSpareRow,
+  resultOptions,
+  round2,
+  router,
+  rowKey,
+  sparePartCostDisplay,
+  spareRows,
+  submitComplete,
+  submitCreate,
+  submitExpectedRestore,
+  uomOptions,
+  uomsPending,
+  warrantyStatusLabel,
+  workOrderNo,
   workOrders,
-  workOrdersError,
   workOrdersPending,
   workOrdersTotal,
-  refreshWorkOrders,
-  createWorkOrder,
-  createWorkOrderPending,
-  readExpectedRestoreScopes,
-  updateExpectedRestore,
-  expectedRestorePending,
-  completeWorkOrder,
-  completeWorkOrderPending,
-  filters,
-} = useMaintenanceWorkOrders()
-const { page, pageSize } = usePagedList(filters)
-const route = useRoute()
-const router = useRouter()
-
-// 技师目录（人员选择器数据源，读自 /master-data/workers）。
-const { workers, workersPending } = useBusinessWorkers()
-// 设备台账（列表里把编号解析成设备名，读自 master-data device-asset 资源）。
-const { resources: deviceResources } = useBusinessMasterDataResources('device-asset')
-// 完工登记的换件行：物料与单位从主数据选，单位默认跟随物料基本单位。
-const { baseUomBySku } = useEquipmentSkuCatalog()
-const { uomOptions, uomsPending } = useEquipmentUomCatalog()
-function applySpareRowSku(row: { skuCode: string; uomCode: string }) {
-  const code = row.skuCode.trim()
-  const baseUom = baseUomBySku.value.get(code)
-  if (baseUom) {
-    row.uomCode = baseUom
-    return
-  }
-  if (!code) return
-  // 就地新建的物料要等物料列表刷新回来才查得到基本单位：等到查得到再带出，期间该行换了物料就作废。
-  const stop = watch(
-    () => baseUomBySku.value.get(code),
-    (next) => {
-      if (!next) return
-      stop()
-      if (row.skuCode.trim() === code) row.uomCode = next
-    },
-  )
-}
-const deviceNameByCode = computed(() => {
-  const map = new Map<string, string>()
-  for (const r of deviceResources.value) {
-    if (r.code) map.set(r.code, r.displayName ?? r.code)
-  }
-  return map
-})
-// 设备所在工厂：维修工单归属设备所在工厂，备件从该工厂已登记的库位领出（#3902）。
-const { deviceSiteCode, siteLabel } = useDeviceSiteLookup()
-/** 设备展示串：名称优先，台账查不到就只显编号，不编名字。 */
-function deviceLabel(code?: string | null, fallback = '—') {
-  if (!code) return fallback
-  return deviceNameByCode.value.get(code) ?? code
-}
-// 外部维修供应商只回编码（SUP-…），客户/供应商中文名在主数据业务伙伴里。
-const { resolvePartner } = useBusinessPartnerNames()
-// 当前登录用户（开单人默认当前用户，可改选他人，不自由输入）。
-const auth = useAuthStore()
-const { principal } = storeToRefs(auth)
-const currentUserId = computed(() => principal.value?.principalId ?? '')
-const canManageWorkOrders = computed(() =>
-  (principal.value?.permissionCodes ?? []).includes(P.maintenanceWorkOrdersManage),
-)
-const workerOptions = computed(() =>
-  workers.value
-    .map((w) => ({
-      value: w.userId ?? '',
-      label: w.displayName ?? w.userId ?? '',
-      hint: w.employeeNo ?? undefined,
-    }))
-    .filter((o) => o.value.length > 0),
-)
-function personLabel(userId: string) {
-  return (
-    workers.value.find((w) => w.userId === userId)?.displayName ??
-    principal.value?.loginName ??
-    userId
-  )
-}
-
-const priorityOptions = [
-  { label: '高', value: 'high' },
-  { label: '中', value: 'medium' },
-  { label: '低', value: 'low' },
-]
-const resultOptions = [
-  { label: '已修复', value: 'repaired' },
-  { label: '已更换部件', value: 'replaced' },
-  { label: '已校准', value: 'calibrated' },
-]
-// 指派技师 / 实际技师均走 master-data 复用件 WorkerSelect（服务端检索工人目录，绑 userId）。
-// 建单写 assignedTechnicianUserId、完工写 actualTechnicianUserId（#897 已补契约）。
-// 可靠性汇总按技师聚合。
-
-// 待执行 / 已完成基于本页可见行的语义统计（可行动数，非机械总数）。
-const OPEN_STATUSES = new Set(['open', 'opened', 'scheduled', 'inprogress', 'in-progress'])
-const pendingCount = computed(
-  () => workOrders.value.filter((w) => OPEN_STATUSES.has((w.status ?? '').toLowerCase())).length,
-)
-const highPriorityPending = computed(
-  () =>
-    workOrders.value.filter(
-      (w) =>
-        OPEN_STATUSES.has((w.status ?? '').toLowerCase()) &&
-        (w.priority ?? '').toLowerCase() === 'high',
-    ).length,
-)
-
-const createOpen = shallowRef(false)
-const createForm = reactive({
-  deviceAssetId: '',
-  priority: 'medium',
-  openedByUserId: '',
-  sourceAlarmId: '',
-  assignedTechnicianUserId: '',
-  estimatedLaborMinutes: '',
-  assetUnavailableReasonCode: '',
-  unavailabilityMode: 'none',
-  expectedRestoreAtLocal: '',
-})
-const createError = shallowRef('')
-const { alarmOptions, alarmsPending } = useEquipmentAlarmCatalog(() => createForm.deviceAssetId)
-// 用户换了设备，原先挑的报警就不属于这台设备了。清空写在设备框的 setter 里，
-// 只有用户操作才触发；从报警页带入建单时直接写字段，不会误清带入的报警。
-const createDeviceModel = computed({
-  get: () => createForm.deviceAssetId,
-  set: (value: string) => {
-    if (value === createForm.deviceAssetId) return
-    createForm.deviceAssetId = value
-    createForm.sourceAlarmId = ''
-  },
-})
-const downtimeReasons = useMaintenanceDowntimeReasonDirectory(filters)
-const {
-  keyword: reasonKeyword,
-  options: downtimeReasonOptions,
-  state: directoryState,
-  message: directoryMessage,
-  total: reasonsTotal,
-} = downtimeReasons
-// 完工登记的停机原因与建单同一份权威目录（#3855）。以前是写死的三个码，目录里根本没有，
-// 服务端按目录硬校验，完工一律失败。单独一个实例：两个抽屉的检索词互不串。
-const completeReasons = useMaintenanceDowntimeReasonDirectory(filters)
-const {
-  keyword: completeReasonKeyword,
-  options: completeReasonOptions,
-  state: completeReasonState,
-  message: completeReasonMessage,
-  total: completeReasonsTotal,
-} = completeReasons
-watch(
-  () => [filters.organizationId, filters.environmentId],
-  () => {
-    createForm.assetUnavailableReasonCode = ''
-    reasonKeyword.value = ''
-    completeReasonKeyword.value = ''
-  },
-  { flush: 'sync' },
-)
-
-// 停机原因就地新增：目录里没有要用的原因时不离开当前抽屉，建好后自动选中（#3855）。
-const reasonFormSession = shallowRef(0)
-const reasonFormOpen = shallowRef(false)
-let reasonFormTarget: 'create' | 'complete' = 'create'
-function openReasonCreate(target: 'create' | 'complete') {
-  reasonFormTarget = target
-  reasonFormSession.value += 1
-  reasonFormOpen.value = true
-}
-const knownReasonCodes = computed(() => [
-  ...new Set([
-    ...downtimeReasons.reasons.value.map((row) => row.reasonCode),
-    ...completeReasons.reasons.value.map((row) => row.reasonCode),
-  ]),
-])
-function onReasonSaved(reasonCode: string) {
-  if (reasonFormTarget === 'create') createForm.assetUnavailableReasonCode = reasonCode
-  else completeForm.downtimeReasonCode = reasonCode
-}
-
-interface SparePartRow {
-  id: number
-  skuCode: string
-  quantity: string
-  uomCode: string
-  unitCost: string
-  /** 领出库位：设备所在工厂下已登记的库位（#3902）。 */
-  locationCode: string
-}
-let nextSpareRowId = 1
-function createSpareRow(): SparePartRow {
-  // 单位留空：选完物料自动带出它的基本单位；主档没维护就由操作员选，不预填假单位。
-  return {
-    id: nextSpareRowId++,
-    skuCode: '',
-    quantity: '1',
-    uomCode: '',
-    unitCost: '',
-    locationCode: '',
-  }
-}
-
-const completeOpen = shallowRef(false)
-const completeTarget = shallowRef<BusinessConsoleMaintenanceWorkOrderItem>()
-const completeForm = reactive({
-  result: 'repaired',
-  // 停机原因从目录里选，不预填：预填码一旦不在目录里，完工就会被拒。
-  downtimeReasonCode: '',
-  downtimeMinutes: '30',
-  actualLaborMinutes: '',
-  externalServiceCostAmount: '',
-  costCurrencyCode: 'CNY',
-  // 实际执行技师（#897 完工契约 actualTechnicianUserId，userId）。默认取建单指派技师。
-  actualTechnicianUserId: '',
-})
-const spareRows = reactive<SparePartRow[]>([createSpareRow()])
-// 备件成本覆盖：空串 = 未覆盖（用自动合计）；非空 = 人工改写值。
-const sparePartCostOverride = shallowRef('')
-const completeError = shallowRef('')
-
-// 自动合计：Σ(数量 × 单价)，仅计入数值有效的行。
-const autoSparePartCost = computed(() =>
-  spareRows.reduce((sum, row) => {
-    // number 输入框经 v-model 可能回传 number，String() 归一后再判空/解析。
-    const unitRaw = String(row.unitCost ?? '').trim()
-    const qty = Number(row.quantity)
-    const unit = Number(unitRaw)
-    if (!unitRaw || !Number.isFinite(qty) || !Number.isFinite(unit)) return sum
-    return sum + qty * unit
-  }, 0),
-)
-// 展示/编辑用：未覆盖时回显自动合计，人工输入即视为覆盖。
-const sparePartCostDisplay = computed({
-  get: () =>
-    sparePartCostOverride.value !== ''
-      ? sparePartCostOverride.value
-      : autoSparePartCost.value > 0
-        ? String(round2(autoSparePartCost.value))
-        : '',
-  set: (value: string) => {
-    sparePartCostOverride.value = value
-  },
-})
-const listErrorMessage = computed(() => inlineErrorMessage(workOrdersError.value))
-// 服务端错误走 toast；这里只留点提交后的字段级校验汇总。
-const createErrorMessage = computed(() => createError.value)
-const completeErrorMessage = computed(() => completeError.value)
-const queryPrefilled = shallowRef(false)
-// 从报警行「创建维修工单」带入时：设备与来源报警是既定事实，只读呈现，不再给输入位。
-const createCarried = shallowRef(false)
-const createCarriedItems = computed(() => [
-  { label: '设备', value: deviceLabel(createForm.deviceAssetId) },
-  { label: '来源报警', value: createForm.sourceAlarmId },
-])
-const completeCarriedItems = computed(() => {
-  const target = completeTarget.value
-  if (!target) return []
-  // 「—」是列表占位符，不是事实——只读区里直接不渲染该条。
-  const omitPlaceholder = (value: string) => (value === '—' ? undefined : value)
-  return [
-    { label: '工单号', value: workOrderNo(target) },
-    { label: '设备', value: deviceLabel(target.deviceAssetId) },
-    { label: '优先级', value: omitPlaceholder(priorityLabel(target.priority)) },
-    { label: '保修', value: omitPlaceholder(warrantyStatusLabel(target.warrantyStatus)) },
-    {
-      label: '供应商',
-      value: target.supplierPartnerCode
-        ? (resolvePartner(target.supplierPartnerCode) ?? target.supplierPartnerCode)
-        : undefined,
-    },
-    { label: '开单时间', value: omitPlaceholder(formatOpenedAt(target.openedAtUtc)) },
-    {
-      label: '备件领出工厂',
-      value: completeSiteCode.value ? siteLabel(completeSiteCode.value) : '设备未登记所属工厂',
-    },
-  ]
-})
-/** 完工工单的设备所在工厂：备件的领出库位只在这个工厂里选。 */
-const completeSiteCode = computed(() => deviceSiteCode(completeTarget.value?.deviceAssetId))
-
-type WorkOrderRow = BusinessConsoleMaintenanceWorkOrderItem
-// 没有可用操作的角色不渲染「操作」列，免得只剩表头、整列空白。
-const columns = computed<NvDataTableColumn<WorkOrderRow>[]>(() => [
-  {
-    key: 'workOrderNo',
-    header: '工单号',
-    // 正式单号形如 MWO-yyyyMMdd-NNNNNN，固定列宽避免与设备列重叠（#3852）
-    width: 'w-48',
-    cellClass: 'font-medium whitespace-nowrap',
-    accessor: (r) => workOrderNo(r),
-  },
-  {
-    key: 'deviceAssetId',
-    header: '设备',
-    cellClass: 'truncate',
-    accessor: (r) =>
-      r.deviceAssetId && deviceNameByCode.value.has(r.deviceAssetId)
-        ? `${deviceLabel(r.deviceAssetId)} ${r.deviceAssetId}`
-        : (r.deviceAssetId ?? '—'),
-  },
-  { key: 'warrantyStatus', header: '保修', width: 'w-24' },
-  {
-    key: 'warrantyExpiresOn',
-    header: '保修到期',
-    width: 'w-28',
-    accessor: (r) => formatDate(r.warrantyExpiresOn),
-  },
-  {
-    key: 'supplierPartnerCode',
-    header: '供应商',
-    width: 'w-32',
-    accessor: (r) =>
-      r.supplierPartnerCode
-        ? (resolvePartner(r.supplierPartnerCode) ?? r.supplierPartnerCode)
-        : '—',
-  },
-  { key: 'priority', header: '优先级', width: 'w-20' },
-  { key: 'status', header: '状态', width: 'w-24' },
-  {
-    key: 'assignedTechnicianUserId',
-    header: '技师',
-    accessor: (r) => technicianLabel(r.assignedTechnicianUserId),
-  },
-  {
-    key: 'expectedRestoreAtUtc',
-    header: '预计恢复',
-    accessor: (r) => formatDateTime(r.expectedRestoreAtUtc),
-  },
-  { key: 'openedAtUtc', header: '开单时间', accessor: (r) => formatOpenedAt(r.openedAtUtc) },
-  ...(canManageWorkOrders.value
-    ? [{ key: 'actions', header: '操作', align: 'end' as const, width: 'w-12' }]
-    : []),
-])
-
-/** 人读工单号：后端按编码规则分配的正式单号（#3852，MWO-yyyyMMdd-NNNNNN），可按单号检索。 */
-function workOrderNo(row: WorkOrderRow) {
-  return maintenanceWorkOrderNoLabel(row.workOrderNo)
-}
-// 建单只开放高/中/低三档，但报警自动开单等来源还会带 critical/urgent/normal；
-// 显示统一走 business-core 的跨端生产词表，PC 的空值/未知值继续显示破折号。
-function priorityLabel(value?: string | null) {
-  const code = (value ?? '').trim().toLowerCase()
-  if (!Object.hasOwn(maintenancePriorityLabels, code)) return '—'
-  return maintenancePriorityLabel(code)
-}
-function technicianLabel(userId?: string | null) {
-  if (!userId) return '未指派'
-  const worker = workers.value.find((w) => w.userId === userId)
-  return worker?.displayName ?? userId
-}
-function warrantyStatusLabel(value?: string | null) {
-  switch ((value ?? '').toLowerCase()) {
-    case 'in-warranty':
-      return '在保'
-    case 'out-of-warranty':
-      return '出保'
-    default:
-      // 设备没登记保修信息不是一种"状态"，用占位符弱化，别喊「未知」制造疑问。
-      return '—'
-  }
-}
-function rowKey(row: WorkOrderRow) {
-  return row.workOrderId ?? '维护工单'
-}
-function round2(value: number) {
-  return Math.round(value * 100) / 100
-}
-
-function openCreate(prefill: Partial<typeof createForm> = {}) {
-  createCarried.value = Boolean(prefill.deviceAssetId || prefill.sourceAlarmId)
-  createForm.deviceAssetId = prefill.deviceAssetId ?? ''
-  createForm.priority = 'medium'
-  createForm.openedByUserId = currentUserId.value
-  createForm.sourceAlarmId = prefill.sourceAlarmId ?? ''
-  createForm.assignedTechnicianUserId = ''
-  createForm.estimatedLaborMinutes = ''
-  createForm.assetUnavailableReasonCode = ''
-  createForm.unavailabilityMode = 'none'
-  createForm.expectedRestoreAtLocal = ''
-  reasonKeyword.value = ''
-  createError.value = ''
-  createOpen.value = true
-}
-async function submitCreate() {
-  if (!createForm.deviceAssetId.trim() || !createForm.openedByUserId) {
-    createError.value = '请填写设备并选择开单人。'
-    return
-  }
-  const estimatedLaborMinutes = optionalNonNegativeInt(createForm.estimatedLaborMinutes)
-  if (estimatedLaborMinutes === false) {
-    createError.value = '预估工时需为非负整数。'
-    return
-  }
-  if (
-    createForm.unavailabilityMode === 'reason' &&
-    (directoryState.value !== 'ok' || !createForm.assetUnavailableReasonCode)
-  ) {
-    createError.value = directoryMessage.value || '请选择设备占用原因。'
-    return
-  }
-  const body = {
-    organizationId: filters.organizationId,
-    environmentId: filters.environmentId,
-    deviceAssetId: createForm.deviceAssetId.trim(),
-    priority: createForm.priority,
-    openedBy: personLabel(createForm.openedByUserId),
-    sourceAlarmId: createForm.sourceAlarmId.trim() || undefined,
-    assignedTechnicianUserId: createForm.assignedTechnicianUserId || undefined,
-    assetUnavailableReasonCode:
-      createForm.unavailabilityMode === 'reason' ? createForm.assetUnavailableReasonCode : null,
-    expectedRestoreAtUtc:
-      createForm.unavailabilityMode === 'reason' && createForm.expectedRestoreAtLocal
-        ? new Date(createForm.expectedRestoreAtLocal).toISOString()
-        : null,
-    ...(estimatedLaborMinutes !== undefined ? { estimatedLaborMinutes } : {}),
-  }
-  try {
-    await createWorkOrder(body)
-    createOpen.value = false
-    notifySuccess('维护工单已创建')
-  } catch (error) {
-    notifyOperationFailure('维护工单创建失败', error, '维护工单创建失败，请稍后重试。')
-  }
-}
-
-const expectedRestoreOpen = shallowRef(false)
-const expectedRestoreTarget = shallowRef<WorkOrderRow>()
-const expectedRestoreAtLocal = shallowRef('')
-const expectedRestoreScopes = shallowRef<BusinessConsoleAuthorizedWorkScope[]>([])
-const expectedRestoreScopeKey = shallowRef('')
-const expectedRestoreScopeOptions = computed(() =>
-  expectedRestoreScopes.value.map((scope) => ({
-    value: formatWorkScopeKey(scope.kind!, scope.id!),
-    label: scope.displayName ?? scope.id!,
-  })),
-)
-const expectedRestoreScope = computed(() =>
-  expectedRestoreScopes.value.find(
-    (scope) => formatWorkScopeKey(scope.kind!, scope.id!) === expectedRestoreScopeKey.value,
-  ),
-)
-function localDateTime(value?: string | null) {
-  if (!value) return ''
-  const date = new Date(value)
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
-  return local.toISOString().slice(0, 19)
-}
-function canUpdateExpectedRestore(row: WorkOrderRow) {
-  return (
-    canManageWorkOrders.value &&
-    Boolean(row.workOrderId) &&
-    ['open', 'accepted', 'inprogress', 'paused', 'waitingforparts'].includes(
-      (row.status ?? '').toLowerCase(),
-    ) &&
-    (!row.assignedTechnicianUserId || row.assignedTechnicianUserId === currentUserId.value)
-  )
-}
-async function openExpectedRestore(row: WorkOrderRow) {
-  expectedRestoreTarget.value = row
-  expectedRestoreAtLocal.value = localDateTime(row.expectedRestoreAtUtc)
-  expectedRestoreScopes.value = []
-  expectedRestoreScopeKey.value = ''
-  expectedRestoreOpen.value = true
-  try {
-    const scopes = (await readExpectedRestoreScopes()).filter(
-      (scope) => scope.kind === 'organization' || scope.kind === 'self' || scope.kind === 'team',
-    )
-    expectedRestoreScopes.value = scopes
-    const selected =
-      scopes.find(
-        (scope) => scope.kind === 'organization' && scope.id === filters.organizationId,
-      ) ??
-      scopes.find((scope) => scope.kind === 'team' && scope.id === row.assignedTeamId) ??
-      scopes.find((scope) => scope.kind === 'self' && scope.id === currentUserId.value) ??
-      scopes[0]
-    if (selected) expectedRestoreScopeKey.value = formatWorkScopeKey(selected.kind!, selected.id!)
-    else notifyError('当前没有可用的维修作业范围，请联系管理员。')
-  } catch (error) {
-    notifyOperationFailure(
-      '维修作业范围读取失败',
-      error,
-      '维修作业范围读取失败，请关闭抽屉后重试。',
-    )
-  }
-}
-async function submitExpectedRestore() {
-  const target = expectedRestoreTarget.value!
-  try {
-    const detail = await updateExpectedRestore(
-      target,
-      expectedRestoreAtLocal.value ? new Date(expectedRestoreAtLocal.value).toISOString() : null,
-      expectedRestoreScope.value!,
-    )
-    expectedRestoreTarget.value = detail
-    expectedRestoreAtLocal.value = localDateTime(detail.expectedRestoreAtUtc)
-    expectedRestoreOpen.value = false
-    notifySuccess('预计恢复时间已保存')
-  } catch (error) {
-    notifyOperationFailure('预计恢复时间保存失败', error, '预计恢复时间保存失败，请刷新后重试。')
-  }
-}
-
-function openComplete(row: WorkOrderRow) {
-  completeTarget.value = row
-  completeForm.result = 'repaired'
-  completeForm.downtimeReasonCode = ''
-  completeReasonKeyword.value = ''
-  completeForm.downtimeMinutes = '30'
-  completeForm.actualLaborMinutes = ''
-  completeForm.externalServiceCostAmount = ''
-  completeForm.costCurrencyCode = 'CNY'
-  // 实际技师默认沿用建单指派技师，完工时可改选真正执行人。
-  completeForm.actualTechnicianUserId = row.assignedTechnicianUserId ?? ''
-  spareRows.splice(0, spareRows.length, createSpareRow())
-  sparePartCostOverride.value = ''
-  completeError.value = ''
-  completeOpen.value = true
-}
-function canComplete(row: WorkOrderRow) {
-  return statusActionGate({
-    domain: 'maintenance-work-order',
-    action: 'complete',
-    facts: { status: row.status },
-  }).executable
-}
-function addSpareRow() {
-  spareRows.push(createSpareRow())
-}
-function removeSpareRow(rowId: number) {
-  if (spareRows.length === 1) {
-    Object.assign(spareRows[0], createSpareRow())
-    return
-  }
-  const index = spareRows.findIndex((row) => row.id === rowId)
-  if (index >= 0) spareRows.splice(index, 1)
-}
-function spareOutOfBounds(row: SparePartRow) {
-  return Boolean(row.skuCode.trim()) && !(Number(row.quantity) > 0)
-}
-
-async function submitComplete() {
-  const target = completeTarget.value
-  if (!target?.workOrderId) return
-  if (!completeForm.downtimeReasonCode) {
-    completeError.value = completeReasonMessage.value || '请选择停机原因。'
-    return
-  }
-  const minutes = Number(completeForm.downtimeMinutes)
-  if (!(minutes >= 0)) {
-    completeError.value = '停机时长需为非负数。'
-    return
-  }
-  const actualLaborMinutes = optionalNonNegativeInt(completeForm.actualLaborMinutes)
-  if (actualLaborMinutes === false) {
-    completeError.value = '实际工时需为非负整数。'
-    return
-  }
-  const externalServiceCostAmount = optionalNonNegativeNumber(
-    completeForm.externalServiceCostAmount,
-  )
-  if (externalServiceCostAmount === false) {
-    completeError.value = '外委费用需为非负数。'
-    return
-  }
-  // 备件成本人工覆盖须为合法非负数——否则负值会发出负成本、非法值会静默丢字段。
-  const overrideCost = optionalNonNegativeNumber(sparePartCostOverride.value)
-  if (overrideCost === false) {
-    completeError.value = '备件成本汇总需为非负数。'
-    return
-  }
-  const sparePartCostAmount =
-    overrideCost !== undefined
-      ? overrideCost
-      : autoSparePartCost.value > 0
-        ? round2(autoSparePartCost.value)
-        : undefined
-  // 完成需登记至少一条更换备件（领料扣减）；后端以此核销维护成本。
-  const filledSpares = spareRows.filter((row) => row.skuCode.trim())
-  if (filledSpares.length === 0) {
-    completeError.value = '请登记至少一条更换备件（物料 + 数量）。'
-    return
-  }
-  if (filledSpares.some(spareOutOfBounds)) {
-    completeError.value = '备件数量需为正数。'
-    return
-  }
-  // 单位来自备件的物料主档（选完物料自动带出），主档没维护基本单位时要人工选，不替它兜一个通用单位：
-  // 按 kg / l 计量的备件用错单位，后端单位换算会直接失败。
-  if (filledSpares.some((row) => !row.uomCode.trim())) {
-    completeError.value = '备件单位缺失，请为每条备件选择计量单位。'
-    return
-  }
-  // 备件从设备所在工厂的已登记库位领出，库存按工厂 + 库位扣减（#3902）。
-  const siteCode = completeSiteCode.value
-  if (!siteCode) {
-    completeError.value =
-      '该设备未登记所属工厂，无法确定备件从哪里领出，请先在设备台账维护所属工厂。'
-    return
-  }
-  if (filledSpares.some((row) => !row.locationCode.trim())) {
-    completeError.value = '请为每条备件选择领出库位。'
-    return
-  }
-  const spareParts: BusinessConsoleMaintenanceSparePartInput[] = filledSpares.map((row) => ({
-    skuCode: row.skuCode.trim(),
-    quantity: Number(row.quantity),
-    uomCode: row.uomCode.trim(),
-    siteCode,
-    locationCode: row.locationCode.trim(),
-  }))
-  try {
-    await completeWorkOrder(target.workOrderId, {
-      organizationId: filters.organizationId,
-      environmentId: filters.environmentId,
-      result: completeForm.result,
-      downtimeReasonCode: completeForm.downtimeReasonCode,
-      downtimeMinutes: minutes,
-      spareParts,
-      ...(actualLaborMinutes !== undefined ? { actualLaborMinutes } : {}),
-      ...(sparePartCostAmount !== undefined ? { sparePartCostAmount } : {}),
-      ...(externalServiceCostAmount !== undefined ? { externalServiceCostAmount } : {}),
-      costCurrencyCode: completeForm.costCurrencyCode,
-      // #897：完工登记实际执行技师（userId）；空则不带该字段。
-      actualTechnicianUserId: completeForm.actualTechnicianUserId.trim() || undefined,
-    })
-    completeOpen.value = false
-    notifySuccess(`维护工单 ${workOrderNo(target)} 已完成`)
-  } catch (error) {
-    if (
-      await recoverLifecycleAction(error, {
-        reset: () => {
-          completeOpen.value = false
-          completeTarget.value = undefined
-          completeError.value = ''
-        },
-        refresh: refreshWorkOrders,
-        notify: (message) => notifyError(message),
-      })
-    ) {
-      return
-    }
-    notifyOperationFailure('维护工单完成失败', error, '维护工单完成失败，请稍后重试。')
-  }
-}
-
-// 非负整数：空 → undefined（不带该字段）；非法 → false；合法 → number。
-// number 输入框经 v-model 可能回传 number（非 string），故统一 String() 归一再判。
-function optionalNonNegativeInt(value: string | number): number | undefined | false {
-  const trimmed = String(value ?? '').trim()
-  if (!trimmed) return undefined
-  const n = Number(trimmed)
-  return Number.isInteger(n) && n >= 0 ? n : false
-}
-function optionalNonNegativeNumber(value: string | number): number | undefined | false {
-  const trimmed = String(value ?? '').trim()
-  if (!trimmed) return undefined
-  const n = Number(trimmed)
-  return Number.isFinite(n) && n >= 0 ? round2(n) : false
-}
-
-function formatOpenedAt(value?: string | null) {
-  return value ? formatLocalDateTime(value) : '—'
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) return '—'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
-}
-function formatDate(value?: string | null) {
-  if (!value) return '—'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
-}
-watch(
-  () => route.query,
-  (query) => {
-    if (queryPrefilled.value || !canManageWorkOrders.value) return
-    const deviceAssetId = typeof query.deviceAssetId === 'string' ? query.deviceAssetId : ''
-    const sourceAlarmId = typeof query.sourceAlarmId === 'string' ? query.sourceAlarmId : ''
-    if (!deviceAssetId && !sourceAlarmId) return
-    queryPrefilled.value = true
-    openCreate({ deviceAssetId, sourceAlarmId })
-  },
-  { immediate: true },
-)
+  workerOptions,
+  workersPending,
+} = useMaintenanceWorkOrdersPage()
 </script>
 
 <template>
@@ -889,454 +219,73 @@ watch(
     </NvDataTable>
 
     <!-- 新建维护工单：设备/优先级/开单人/报警/技师/预估工时/设备占用原因（7 字段）→ 侧滑 Sheet（A1 §1）。 -->
-    <NvSheet v-model:open="createOpen">
-      <NvSheetContent class="flex w-full flex-col overflow-y-auto sm:max-w-xl">
-        <NvSheetHeader>
-          <NvSheetTitle>新建维护工单</NvSheetTitle>
-          <!-- 开单对象在下方呈现；此处仅供读屏播报。 -->
-          <NvSheetDescription class="sr-only">
-            为设备 {{ createForm.deviceAssetId || '（待选择）' }} 开具维护工单。
-          </NvSheetDescription>
-        </NvSheetHeader>
-        <form class="grid gap-4 px-4 pb-4" @submit.prevent="submitCreate">
-          <!-- 从报警行带入：设备与来源报警只读呈现，不做成看起来还能改的输入位。 -->
-          <CarriedContextSummary
-            v-if="createCarried"
-            label="开单对象"
-            :items="createCarriedItems"
-          />
+    <MaintenanceWorkOrderCreateSheet
+      v-model:create-open="createOpen"
+      v-model:create-device-model="createDeviceModel"
+      v-model:reason-keyword="reasonKeyword"
+      :alarm-options="alarmOptions"
+      :alarms-pending="alarmsPending"
+      :can-manage-work-orders="canManageWorkOrders"
+      :create-carried="createCarried"
+      :create-carried-items="createCarriedItems"
+      :create-error-message="createErrorMessage"
+      :create-form="createForm"
+      :create-work-order-pending="createWorkOrderPending"
+      :directory-message="directoryMessage"
+      :directory-state="directoryState"
+      :downtime-reason-options="downtimeReasonOptions"
+      :downtime-reasons="downtimeReasons"
+      :open-reason-create="openReasonCreate"
+      :priority-options="priorityOptions"
+      :reasons-total="reasonsTotal"
+      :submit-create="submitCreate"
+      :worker-options="workerOptions"
+      :workers-pending="workersPending"
+    />
 
-          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField v-if="!createCarried">
-              <NvFieldLabel for="mwo-device">设备</NvFieldLabel>
-              <DirectoryPicker
-                id="mwo-device"
-                v-model="createDeviceModel"
-                directory-type="equipment"
-                creatable
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="mwo-priority">优先级</NvFieldLabel>
-              <NvSelect v-model="createForm.priority">
-                <NvSelectTrigger id="mwo-priority" aria-label="优先级"
-                  ><NvSelectValue
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem v-for="o in priorityOptions" :key="o.value" :value="o.value">{{
-                    o.label
-                  }}</NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="mwo-opened-by">开单人</NvFieldLabel>
-              <NvSearchSelect
-                id="mwo-opened-by"
-                v-model="createForm.openedByUserId"
-                :options="workerOptions"
-                :loading="workersPending"
-                aria-label="开单人"
-                placeholder="选择开单人"
-                search-placeholder="搜索姓名 / 工号…"
-              />
-            </NvField>
-            <NvField v-if="!createCarried">
-              <NvFieldLabel for="mwo-alarm">关联报警</NvFieldLabel>
-              <NvEntityPicker
-                id="mwo-alarm"
-                v-model="createForm.sourceAlarmId"
-                :options="alarmOptions"
-                :show-code="false"
-                :disabled="!createForm.deviceAssetId.trim()"
-                title="选择关联报警"
-                :placeholder="createForm.deviceAssetId.trim() ? '可选' : '先选设备'"
-                empty-text="该设备当前没有报警"
-                :loading="alarmsPending"
-                clearable
-                aria-label="关联报警"
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="mwo-technician">指派技师</NvFieldLabel>
-              <WorkerSelect
-                id="mwo-technician"
-                v-model="createForm.assignedTechnicianUserId"
-                placeholder="未指派"
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="mwo-est-labor">预估工时（分钟）</NvFieldLabel>
-              <NvInput
-                id="mwo-est-labor"
-                v-model="createForm.estimatedLaborMinutes"
-                type="number"
-                min="0"
-                step="1"
-                placeholder="可选"
-              />
-            </NvField>
-            <NvField class="sm:col-span-2">
-              <NvFieldLabel for="mwo-unavailability-mode">设备占用登记</NvFieldLabel>
-              <NvSearchSelect
-                id="mwo-unavailability-mode"
-                v-model="createForm.unavailabilityMode"
-                :options="[
-                  { value: 'none', label: '不登记设备不可用' },
-                  { value: 'reason', label: '登记设备不可用' },
-                ]"
-                aria-label="设备占用登记"
-              />
-              <NvFieldDescription>
-                登记后从建单时刻占用设备，工单完工时自动释放。
-              </NvFieldDescription>
-            </NvField>
-            <NvField v-if="createForm.unavailabilityMode === 'reason'" class="sm:col-span-2">
-              <NvFieldLabel for="mwo-asset-unavailable-reason">设备占用原因</NvFieldLabel>
-              <NvEntityPicker
-                id="mwo-asset-unavailable-reason"
-                v-model="createForm.assetUnavailableReasonCode"
-                v-model:search="reasonKeyword"
-                title="停机原因"
-                :options="downtimeReasonOptions"
-                :server-search="true"
-                :total-count="reasonsTotal"
-                :loading="directoryState === 'loading'"
-                :empty-text="directoryMessage"
-                placeholder="请选择停机原因"
-              />
-              <NvFieldDescription v-if="directoryMessage" role="status">
-                {{ directoryMessage }}；也可选择“不登记设备不可用”继续建单。
-              </NvFieldDescription>
-              <div class="flex flex-wrap gap-2">
-                <NvButton
-                  v-if="directoryState === 'failed'"
-                  type="button"
-                  variant="outline"
-                  @click="downtimeReasons.refresh()"
-                  >重试读取停机原因</NvButton
-                >
-                <NvButton
-                  v-if="canManageWorkOrders"
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  @click="openReasonCreate('create')"
-                >
-                  <PlusIcon aria-hidden="true" />
-                  新增停机原因
-                </NvButton>
-              </div>
-            </NvField>
-            <NvField v-if="createForm.unavailabilityMode === 'reason'" class="sm:col-span-2">
-              <NvFieldLabel for="mwo-create-expected-restore">预计恢复时间</NvFieldLabel>
-              <NvInput
-                id="mwo-create-expected-restore"
-                v-model="createForm.expectedRestoreAtLocal"
-                type="datetime-local"
-                step="1"
-              />
-              <NvFieldDescription>可选，按本机时区填写；预测不代表设备已恢复。</NvFieldDescription>
-            </NvField>
-          </NvFieldGroup>
-
-          <NvFieldError v-if="createErrorMessage" :errors="[createErrorMessage]" />
-
-          <NvSheetFooter class="px-0">
-            <NvButton type="button" variant="outline" @click="createOpen = false">取消</NvButton>
-            <NvButton type="submit" :disabled="createWorkOrderPending">
-              <NvSpinner v-if="createWorkOrderPending" aria-hidden="true" />
-              创建维护工单
-            </NvButton>
-          </NvSheetFooter>
-        </form>
-      </NvSheetContent>
-    </NvSheet>
-
-    <NvSheet v-model:open="expectedRestoreOpen">
-      <NvSheetContent class="flex w-full flex-col sm:max-w-xl">
-        <NvSheetHeader>
-          <NvSheetTitle>更新预计恢复时间</NvSheetTitle>
-          <NvSheetDescription
-            >填写维修预测，留空可清除；不改变实际恢复或工单状态。</NvSheetDescription
-          >
-        </NvSheetHeader>
-        <form class="grid gap-4 px-4 pb-4" @submit.prevent="submitExpectedRestore">
-          <CarriedContextSummary
-            v-if="expectedRestoreTarget"
-            label="维修工单"
-            :items="[
-              { label: '工单号', value: workOrderNo(expectedRestoreTarget) },
-              { label: '设备', value: deviceLabel(expectedRestoreTarget.deviceAssetId) },
-            ]"
-          />
-          <NvField v-if="expectedRestoreScopes.length > 1">
-            <NvFieldLabel for="mwo-expected-restore-scope">维修作业范围</NvFieldLabel>
-            <NvSearchSelect
-              id="mwo-expected-restore-scope"
-              v-model="expectedRestoreScopeKey"
-              :options="expectedRestoreScopeOptions"
-              :disabled="expectedRestorePending"
-              aria-label="维修作业范围"
-            />
-          </NvField>
-          <NvField>
-            <NvFieldLabel for="mwo-expected-restore">预计恢复时间</NvFieldLabel>
-            <NvInput
-              id="mwo-expected-restore"
-              v-model="expectedRestoreAtLocal"
-              type="datetime-local"
-              step="1"
-              :disabled="expectedRestorePending"
-            />
-            <NvFieldDescription
-              >按本机时区填写。仅已登记设备不可用的工单可更新。</NvFieldDescription
-            >
-          </NvField>
-          <NvSheetFooter class="px-0">
-            <NvButton
-              type="button"
-              variant="outline"
-              :disabled="expectedRestorePending"
-              @click="expectedRestoreOpen = false"
-              >取消</NvButton
-            >
-            <NvButton type="submit" :disabled="expectedRestorePending || !expectedRestoreScope">
-              <NvSpinner v-if="expectedRestorePending" aria-hidden="true" />保存预计恢复时间
-            </NvButton>
-          </NvSheetFooter>
-        </form>
-      </NvSheetContent>
-    </NvSheet>
+    <MaintenanceExpectedRestoreSheet
+      v-model:expected-restore-open="expectedRestoreOpen"
+      v-model:expected-restore-scope-key="expectedRestoreScopeKey"
+      v-model:expected-restore-at-local="expectedRestoreAtLocal"
+      :device-label="deviceLabel"
+      :expected-restore-pending="expectedRestorePending"
+      :expected-restore-scope="expectedRestoreScope"
+      :expected-restore-scope-options="expectedRestoreScopeOptions"
+      :expected-restore-scopes="expectedRestoreScopes"
+      :expected-restore-target="expectedRestoreTarget"
+      :submit-expected-restore="submitExpectedRestore"
+      :work-order-no="workOrderNo"
+    />
 
     <!-- 完成维护工单：结果/停机/工时 + 备件动态行 + 成本汇总 → 侧滑 Sheet（A1 §1）。 -->
-    <NvSheet v-model:open="completeOpen">
-      <NvSheetContent class="flex w-full flex-col overflow-y-auto sm:max-w-xl">
-        <NvSheetHeader>
-          <NvSheetTitle>完成维护工单</NvSheetTitle>
-          <!-- 工单事实已在下方只读区完整呈现；此处仅供读屏播报。 -->
-          <NvSheetDescription class="sr-only">
-            {{ completeTarget ? workOrderNo(completeTarget) : '完成维护工单' }} 的完工登记。
-          </NvSheetDescription>
-        </NvSheetHeader>
-        <form class="grid gap-4 px-4 pb-4" @submit.prevent="submitComplete">
-          <CarriedContextSummary label="完工工单" :items="completeCarriedItems" />
-
-          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField>
-              <NvFieldLabel for="mwo-result">维护结果</NvFieldLabel>
-              <NvSearchSelect
-                id="mwo-result"
-                v-model="completeForm.result"
-                :options="resultOptions"
-                aria-label="维护结果"
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="mwo-reason">停机原因</NvFieldLabel>
-              <NvEntityPicker
-                id="mwo-reason"
-                v-model="completeForm.downtimeReasonCode"
-                v-model:search="completeReasonKeyword"
-                title="停机原因"
-                :options="completeReasonOptions"
-                :server-search="true"
-                :total-count="completeReasonsTotal"
-                :loading="completeReasonState === 'loading'"
-                :empty-text="completeReasonMessage"
-                placeholder="请选择停机原因"
-                aria-label="停机原因"
-              />
-              <NvButton
-                v-if="canManageWorkOrders"
-                type="button"
-                variant="link"
-                size="sm"
-                class="h-auto justify-start px-0"
-                @click="openReasonCreate('complete')"
-              >
-                没有合适的原因？新增停机原因
-              </NvButton>
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="mwo-minutes">停机时长（分钟）</NvFieldLabel>
-              <NvInput
-                id="mwo-minutes"
-                v-model="completeForm.downtimeMinutes"
-                type="number"
-                min="0"
-                step="1"
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="mwo-actual-labor">实际工时（分钟）</NvFieldLabel>
-              <NvInput
-                id="mwo-actual-labor"
-                v-model="completeForm.actualLaborMinutes"
-                type="number"
-                min="0"
-                step="1"
-                placeholder="可选"
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="mwo-actual-technician">实际执行技师</NvFieldLabel>
-              <!-- #897 完工登记实际技师；keep-out-of-range 保留预填的建单指派技师（即便不在当前检索页）。 -->
-              <WorkerSelect
-                id="mwo-actual-technician"
-                v-model="completeForm.actualTechnicianUserId"
-                keep-out-of-range
-                placeholder="请选择实际执行技师"
-              />
-            </NvField>
-          </NvFieldGroup>
-
-          <div class="grid gap-2">
-            <div class="flex items-center justify-between">
-              <span class="text-sm font-medium">更换备件</span>
-              <NvButton type="button" variant="outline" size="sm" @click="addSpareRow">
-                <PlusIcon aria-hidden="true" />
-                添加一行
-              </NvButton>
-            </div>
-            <!-- 列宽按**抽屉的 512px** 算，不是按视口。`sm:` 是视口断点：视口 1366px 时
-                 规则照样生效，可这一行实际待在 md 档抽屉里——原来的固定列
-                 5rem+8rem+6rem=19rem，加间距与删除按钮吃掉约 368px，留给 `1fr` 的物料
-                 只剩 60 来 px，选择器被压成「选…」，最该看清的字段反而最窄。
-                 收窄固定列并给物料 minmax 下限：512px 下物料仍有约 132px，
-                 容器更宽时它继续吃掉多余空间。 -->
-            <div
-              v-for="row in spareRows"
-              :key="row.id"
-              :data-testid="`spare-row-${row.id}`"
-              class="grid items-end gap-2 rounded-md border p-3 sm:grid-cols-[minmax(7rem,1fr)_4rem_7rem_5rem_auto]"
-            >
-              <NvField>
-                <NvFieldLabel :for="`spare-sku-${row.id}`">物料</NvFieldLabel>
-                <DirectoryPicker
-                  :id="`spare-sku-${row.id}`"
-                  :model-value="row.skuCode"
-                  directory-type="material"
-                  creatable
-                  placeholder="选择备件物料"
-                  aria-label="备件物料"
-                  @update:model-value="
-                    (value: string) => {
-                      row.skuCode = value
-                      applySpareRowSku(row)
-                    }
-                  "
-                />
-              </NvField>
-              <NvField>
-                <NvFieldLabel :for="`spare-qty-${row.id}`">数量</NvFieldLabel>
-                <NvInput
-                  :id="`spare-qty-${row.id}`"
-                  v-model="row.quantity"
-                  type="number"
-                  min="1"
-                  step="1"
-                />
-              </NvField>
-              <NvField>
-                <NvFieldLabel :for="`spare-uom-${row.id}`">单位</NvFieldLabel>
-                <NvEntityPicker
-                  :id="`spare-uom-${row.id}`"
-                  v-model="row.uomCode"
-                  :options="uomOptions"
-                  title="选择单位"
-                  placeholder="跟随物料"
-                  empty-text="暂无计量单位，请先在基础数据维护单位"
-                  :loading="uomsPending"
-                  clearable
-                  aria-label="备件单位"
-                />
-              </NvField>
-              <NvField>
-                <NvFieldLabel :for="`spare-cost-${row.id}`">单价</NvFieldLabel>
-                <NvInput
-                  :id="`spare-cost-${row.id}`"
-                  v-model="row.unitCost"
-                  type="number"
-                  min="0"
-                  step="any"
-                  placeholder="可选"
-                />
-              </NvField>
-              <NvButton
-                type="button"
-                variant="ghost"
-                size="icon"
-                aria-label="移除该备件"
-                @click="removeSpareRow(row.id)"
-              >
-                <Trash2Icon aria-hidden="true" />
-              </NvButton>
-              <!-- 领出库位：只列设备所在工厂下已登记的库位，库存按工厂 + 库位扣减（#3902）。 -->
-              <NvField class="sm:col-span-full">
-                <NvFieldLabel :for="`spare-location-${row.id}`">领出库位</NvFieldLabel>
-                <DirectoryPicker
-                  :id="`spare-location-${row.id}`"
-                  v-model="row.locationCode"
-                  directory-type="location"
-                  creatable
-                  :form-site-code="completeSiteCode"
-                  site-missing-text="设备未登记所属工厂，请先在设备台账维护所属工厂"
-                  placeholder="选择领出库位"
-                  aria-label="领出库位"
-                />
-              </NvField>
-            </div>
-          </div>
-
-          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField>
-              <NvFieldLabel for="mwo-spare-cost">备件成本汇总</NvFieldLabel>
-              <NvInput
-                id="mwo-spare-cost"
-                v-model="sparePartCostDisplay"
-                type="number"
-                min="0"
-                step="any"
-                :placeholder="`自动合计 ${round2(autoSparePartCost)}`"
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="mwo-external-cost">外委费用</NvFieldLabel>
-              <NvInput
-                id="mwo-external-cost"
-                v-model="completeForm.externalServiceCostAmount"
-                type="number"
-                min="0"
-                step="any"
-                placeholder="可选"
-              />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="mwo-currency">币种</NvFieldLabel>
-              <NvSearchSelect
-                id="mwo-currency"
-                v-model="completeForm.costCurrencyCode"
-                :options="CURRENCY_OPTIONS"
-                search-placeholder="搜索币种代码或名称"
-                aria-label="币种"
-              />
-            </NvField>
-          </NvFieldGroup>
-
-          <NvFieldError v-if="completeErrorMessage" :errors="[completeErrorMessage]" />
-
-          <NvSheetFooter class="px-0">
-            <NvButton type="button" variant="outline" @click="completeOpen = false">取消</NvButton>
-            <NvButton type="submit" :disabled="completeWorkOrderPending">
-              <NvSpinner v-if="completeWorkOrderPending" aria-hidden="true" />
-              <CheckCircle2Icon v-else aria-hidden="true" />
-              完成工单
-            </NvButton>
-          </NvSheetFooter>
-        </form>
-      </NvSheetContent>
-    </NvSheet>
+    <MaintenanceWorkOrderCompleteSheet
+      v-model:complete-open="completeOpen"
+      v-model:complete-reason-keyword="completeReasonKeyword"
+      v-model:spare-part-cost-display="sparePartCostDisplay"
+      :add-spare-row="addSpareRow"
+      :apply-spare-row-sku="applySpareRowSku"
+      :auto-spare-part-cost="autoSparePartCost"
+      :can-manage-work-orders="canManageWorkOrders"
+      :complete-carried-items="completeCarriedItems"
+      :complete-error-message="completeErrorMessage"
+      :complete-form="completeForm"
+      :complete-reason-message="completeReasonMessage"
+      :complete-reason-options="completeReasonOptions"
+      :complete-reason-state="completeReasonState"
+      :complete-reasons-total="completeReasonsTotal"
+      :complete-site-code="completeSiteCode"
+      :complete-target="completeTarget"
+      :complete-work-order-pending="completeWorkOrderPending"
+      :open-reason-create="openReasonCreate"
+      :remove-spare-row="removeSpareRow"
+      :result-options="resultOptions"
+      :round2="round2"
+      :spare-rows="spareRows"
+      :submit-complete="submitComplete"
+      :uom-options="uomOptions"
+      :uoms-pending="uomsPending"
+      :work-order-no="workOrderNo"
+    />
     <DowntimeReasonFormSheet
       v-if="reasonFormSession"
       :key="reasonFormSession"

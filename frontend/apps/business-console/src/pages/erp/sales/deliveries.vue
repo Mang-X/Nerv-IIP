@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import type { BusinessConsoleErpDeliveryOrderItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
-import { useErpDeliveryOrders } from '@/composables/useBusinessErp'
-import { useBusinessPartnerNames } from '@/composables/useBusinessPartnerNames'
-import { usePagedList } from '@/composables/usePagedList'
+import { useErpDeliveryOrders } from '@/composables/erp/useBusinessErp'
+import { useBusinessPartnerNames } from '@/composables/master-data/useBusinessPartnerNames'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import PartnerNameCell from '@/components/erp/PartnerNameCell.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {

@@ -11,7 +11,7 @@ const state = vi.hoisted(() => ({
   filters: undefined as unknown as Record<string, string | number>,
 }))
 
-vi.mock('@/composables/useMesProductionStatistics', async () => {
+vi.mock('@/composables/mes/useMesProductionStatistics', async () => {
   const { computed, reactive, shallowRef } = await import('vue')
   state.filters = reactive({
     organizationId: 'org-001',
@@ -40,7 +40,7 @@ vi.mock('@/composables/useMesProductionStatistics', async () => {
   }
 })
 
-vi.mock('@/composables/useBusinessTelemetry', () => ({
+vi.mock('@/composables/equipment/useBusinessTelemetry', () => ({
   useBusinessTelemetryOeeAggregates: (_filters: unknown, shouldLoad: () => boolean) => {
     state.oeeShouldLoad = shouldLoad
     return {
@@ -53,7 +53,7 @@ vi.mock('@/composables/useBusinessTelemetry', () => ({
   },
 }))
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   useMesWipSummary: (shouldLoad: () => boolean) => {
     state.wipShouldLoad = shouldLoad
     return {

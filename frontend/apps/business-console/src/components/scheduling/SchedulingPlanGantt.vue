@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { SchedulingWorkOrderFacts } from '@/composables/useBusinessMes'
+import type { SchedulingWorkOrderFacts } from '@/composables/mes'
 import SchedulingPlanOrders from './SchedulingPlanOrders.vue'
 import SchedulingWorkOrderLink from './SchedulingWorkOrderLink.vue'
 import SchedulingMaterialShortageSummary from './SchedulingMaterialShortageSummary.vue'
@@ -29,9 +29,9 @@ import {
   type TimeScale,
 } from '@nerv-iip/scheduling'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
-import { useSkuNames } from '@/composables/useSkuNames'
+import { useSkuNames } from '@/composables/master-data/useSkuNames'
 import { resolveWorkCenterFamily, WORK_CENTER_FAMILY_LIST } from '@/data/workCenterFamilies'
-import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
+import { describeScheduleInvalidationReason } from '@/composables/scheduling/useScheduleInvalidation'
 import {
   schedulingPlanStatusLabel,
   schedulingPlanStatusTone,

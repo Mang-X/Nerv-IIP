@@ -3,8 +3,8 @@ import DeviceAssetPicker from '@/components/equipment/DeviceAssetPicker.vue'
 import MaintenanceWorkOrderFilters from './components/MaintenanceWorkOrderFilters.vue'
 import MaintenanceWorkOrderList from './components/MaintenanceWorkOrderList.vue'
 import TaskListShell from '@/components/task-list/TaskListShell.vue'
-import { normalizeCanonicalGuid } from '@/composables/maintenancePublicIds'
-import { useMaintenanceSelfWorkOrders } from '@/composables/useMaintenanceSelfWorkOrders'
+import { normalizeCanonicalGuid } from '@/composables/maintenance/maintenancePublicIds'
+import { useMaintenanceSelfWorkOrders } from '@/composables/maintenance'
 import type {
   BusinessConsoleMaintenanceWorkOrderItem,
   BusinessConsoleResourceItem,

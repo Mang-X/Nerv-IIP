@@ -13,7 +13,7 @@ const profileState = ref<'loading' | 'error' | 'partial' | 'ready'>('ready')
 
 vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ logoutAndRevoke }) }))
-vi.mock('@/composables/usePdaProfile', () => ({
+vi.mock('@/composables/workbench/usePdaProfile', () => ({
   usePdaProfile: () => ({
     principalType: ref('User'),
     loginName: ref('emp010'),

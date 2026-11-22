@@ -6,8 +6,8 @@ import {
   type BusinessConsoleMesRaiseAndonCallRequest,
 } from '@nerv-iip/api-client'
 import { computed, shallowRef, watch, type Ref } from 'vue'
-import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
-import { useIdempotentWriteIntent } from '@/composables/useIdempotentWriteIntent'
+import { makeIdempotencyKey } from '@/composables/shared/makeIdempotencyKey'
+import { useIdempotentWriteIntent } from '@/composables/shared/useIdempotentWriteIntent'
 
 export type AndonOperationContext = Omit<
   BusinessConsoleMesRaiseAndonCallRequest,

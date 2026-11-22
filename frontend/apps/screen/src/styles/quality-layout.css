@@ -1,0 +1,197 @@
+@layer app {
+  .qb {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .qb-loading {
+    height: 100%;
+    display: grid;
+    place-content: center;
+    color: var(--nv-scr-muted);
+    font-size: 15px;
+  }
+  .qb-cap {
+    font-size: 12.5px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 大数字 + 单位下标 + 语义色渐隐强调线（与产线屏同源语言） */
+  .qb-num {
+    display: inline-flex;
+    align-items: flex-end;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .qb-num small {
+    font-size: 0.42em;
+    font-weight: 600;
+    margin-left: 2px;
+    padding-bottom: 0.14em;
+  }
+  .qb-score-line {
+    width: 46px;
+    height: 2px;
+    margin-top: 10px;
+    border-radius: 1px;
+    background: currentColor;
+    opacity: 0.75;
+  }
+
+  /* —— 顶部 KPI 带 —— */
+  .qb-band-in {
+    display: flex;
+    align-items: center;
+    gap: 34px;
+  }
+  .qb-hero {
+    flex: none;
+    min-width: 218px;
+    position: relative;
+  }
+  .qb-hero + .qb-hero::before,
+  .qb-cells::before {
+    content: '';
+    position: absolute;
+    left: -17px;
+    top: 6px;
+    bottom: 6px;
+    width: 1px;
+    background: var(--nv-scr-divider);
+  }
+  .qb-hero-t {
+    font-size: 14.5px;
+    color: var(--nv-scr-muted);
+    letter-spacing: 0.04em;
+  }
+  .qb-hero-v {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    margin-top: 9px;
+    font-size: 50px;
+    font-weight: 800;
+    color: var(--nv-scr-text);
+    text-shadow: var(--nv-scr-value-glow);
+  }
+  .qb-hero-v.ok {
+    color: var(--nv-scr-text);
+  }
+  .qb-hero-v.ok .qb-score-line {
+    color: var(--nv-scr-green);
+  }
+  .qb-hero-v.bad {
+    color: var(--nv-scr-red);
+    text-shadow: 0 0 20px rgba(239, 90, 99, 0.4);
+  }
+  .qb-hero-sub {
+    margin: 9px 0 0;
+    font-size: 13px;
+    color: var(--nv-scr-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .qb-hero-sub b {
+    color: var(--nv-scr-text-2);
+    font-weight: 700;
+  }
+  .qb-over {
+    margin-left: 8px;
+    color: var(--nv-scr-red);
+    font-weight: 700;
+  }
+  .qb-cells {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+  .qb-cell {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 20px;
+    position: relative;
+  }
+  .qb-cell + .qb-cell::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 1px;
+    background: var(--nv-scr-divider);
+  }
+  /* 大屏远视距：KPI 标签 14px 起 */
+  .qb-cell dt {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 14px;
+    color: var(--nv-scr-muted);
+    white-space: nowrap;
+  }
+  .qb-cell-ic {
+    color: var(--nv-scr-faint);
+    flex: none;
+  }
+  .qb-cell dd {
+    margin: 8px 0 0;
+    font-size: 31px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--nv-scr-text);
+    font-variant-numeric: tabular-nums;
+  }
+  .qb-cell dd.warn {
+    color: var(--nv-scr-text);
+  }
+  .qb-cell-sub {
+    margin: 7px 0 0;
+    font-size: 12px;
+    color: var(--nv-scr-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .qb-cell-sub.bad {
+    color: var(--nv-scr-red);
+    font-weight: 600;
+  }
+  .qb-cell-sub.warn {
+    color: var(--nv-scr-amber);
+  }
+
+  /* —— 主体三列 —— */
+  /* fr 必须包 minmax(0,·)：裸 fr 的隐式 min-width = 内容宽，
+   多序列图例一长就把整列撑溢出（30 天 tab 宽度异常的根因） */
+  .qb-main {
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1.42fr) minmax(0, 1.18fr) minmax(0, 1fr);
+    gap: 16px;
+  }
+  .qb-mid,
+  .qb-right {
+    display: grid;
+    gap: 14px;
+    min-height: 0;
+    min-width: 0;
+  }
+  .qb-mid {
+    grid-template-rows: 1fr auto;
+  }
+  .qb-right {
+    grid-template-rows: auto 1fr;
+  }
+  .qb-trend {
+    --nv-scr-quality-limit: rgba(239, 90, 99, 0.9);
+    --nv-scr-quality-iqc: #5fbf7a;
+    --nv-scr-quality-factory-rate: rgba(200, 214, 235, 0.65);
+
+    min-height: 0;
+    min-width: 0;
+  }
+}

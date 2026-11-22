@@ -20,7 +20,7 @@ vi.mock('vue-router', () => ({
   RouterLink: { props: ['to'], template: '<a><slot /></a>' },
 }))
 
-vi.mock('@/composables/useOrderUrgency', () => ({
+vi.mock('@/composables/urgency/useOrderUrgency', () => ({
   useOrderUrgencies: () => ({ byReference: { value: new Map() }, refresh: vi.fn() }),
 }))
 vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
@@ -40,13 +40,13 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
     resolveWorkCenter: (v?: string | null) => v ?? '无',
   }),
 }))
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessMasterDataResources: () => ({ resources: ref([]) }),
   useBusinessSkus: () => ({ skus: ref([]) }),
 }))
 
 // 急单表单的物料 ▸ 生产版本目录走 colada 读面（需要 pinia），本用例只看紧急度徽章，整体打桩。
-vi.mock('@/composables/useMesPickerCatalog', () => ({
+vi.mock('@/composables/mes/useMesPickerCatalog', () => ({
   useMesMaterialVersionCatalog: () => ({
     productionVersionLabel: () => '—',
     skuOptions: ref([]),
@@ -70,7 +70,7 @@ vi.mock('@/composables/mes/useProductionReportSerialOptions', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   // #1288 工具栏作业范围选择入口（MesWorkScopeSelect）
   useMesWorkScopeSelection: () => ({

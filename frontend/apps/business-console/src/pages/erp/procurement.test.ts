@@ -38,7 +38,7 @@ const receiptFilters = reactive<{ status?: string; keyword?: string; skip: numbe
   take: 10,
 })
 
-vi.mock('@/composables/useBusinessErp', () => ({
+vi.mock('@/composables/erp/useBusinessErp', () => ({
   useErpPurchaseRequisitions: () => ({
     filters: purchaseOrderFilters,
     items: computed(() => state.purchaseRequisitions),
@@ -83,7 +83,7 @@ vi.mock('@/composables/useBusinessErp', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessPartners: () => ({
     filters: reactive({
       organizationId: 'org-001',
@@ -135,7 +135,7 @@ vi.mock('@/utils/notify', async (importOriginal) => ({
   notifySuccess: state.notifySuccess,
 }))
 
-vi.mock('@/composables/usePagedList', () => ({
+vi.mock('@/composables/shared/usePagedList', () => ({
   usePagedList: () => ({
     page: shallowRef(1),
     pageSize: shallowRef('10'),

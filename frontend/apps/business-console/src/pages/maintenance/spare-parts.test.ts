@@ -12,7 +12,7 @@ const state = vi.hoisted(() => ({
   baseUomBySku: undefined as unknown as { value: Map<string, string> },
 }))
 
-vi.mock('@/composables/useBusinessMaintenance', () => ({
+vi.mock('@/composables/maintenance/useBusinessMaintenance', () => ({
   useMaintenanceSpareParts: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 20 }),
     spareParts: computed(() => []),
@@ -25,7 +25,7 @@ vi.mock('@/composables/useBusinessMaintenance', () => ({
   }),
 }))
 
-vi.mock('@/composables/useEquipmentPickerCatalog', () => {
+vi.mock('@/composables/equipment/useEquipmentPickerCatalog', () => {
   state.baseUomBySku = shallowRef(new Map([['BRG-6205', 'pcs']]))
   return {
     useEquipmentSkuCatalog: () => ({ baseUomBySku: state.baseUomBySku }),
@@ -51,14 +51,14 @@ vi.mock('@/composables/useEquipmentPickerCatalog', () => {
   }
 })
 
-vi.mock('@/composables/useMasterDataDisplayNames', () => ({
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', () => ({
   useMasterDataDisplayNames: () => ({
     formatUom: (code?: string | null) => code ?? '',
     resolveDevice: () => undefined,
   }),
 }))
 
-vi.mock('@/composables/useSkuNames', () => ({
+vi.mock('@/composables/master-data/useSkuNames', () => ({
   useSkuNames: () => ({ resolveSkuName: () => undefined }),
 }))
 

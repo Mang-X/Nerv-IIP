@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import MaintenanceWorkOrderDetail from './components/MaintenanceWorkOrderDetail.vue'
 import RetryableListError from '@/components/RetryableListError.vue'
-import { useMaintenanceSelfWorkOrderDetail } from '@/composables/useMaintenanceSelfWorkOrders'
-import { normalizeMaintenancePublicReference } from '@/composables/maintenancePublicIds'
+import { useMaintenanceSelfWorkOrderDetail } from '@/composables/maintenance'
+import { normalizeMaintenancePublicReference } from '@/composables/maintenance/maintenancePublicIds'
 import { NvAppShellMobile, NvMobileButton } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

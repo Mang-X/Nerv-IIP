@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useMesWorkScopeSelection } from '@/composables/useBusinessMes'
+import { useMesWorkScopeSelection } from '@/composables/mes'
 import {
   NvSelect,
   NvSelectContent,

@@ -1,4 +1,4 @@
-import type { FulfillmentNode } from '@/composables/useFulfillmentTimeline'
+import type { FulfillmentNode } from '@/composables/planning/fulfillment'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import FulfillmentTimelineNode from './FulfillmentTimelineNode.vue'

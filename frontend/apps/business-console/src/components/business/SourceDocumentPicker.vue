@@ -5,7 +5,7 @@
  * 页面负责把自己的单据类型码映射成 `kind`；`kind` 为空即自由输入。
  */
 import { NvInput } from '@nerv-iip/ui'
-import type { SourceDocumentKind } from '@/composables/useSourceDocumentCatalog'
+import type { SourceDocumentKind } from '@/composables/catalog/useSourceDocumentCatalog'
 import SourceDocumentCatalogPicker from './SourceDocumentCatalogPicker.vue'
 
 defineProps<{ kind?: SourceDocumentKind; invalid?: boolean }>()

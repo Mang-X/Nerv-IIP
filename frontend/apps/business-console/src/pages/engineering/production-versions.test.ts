@@ -40,7 +40,7 @@ const filters = reactive({
 const resolved = shallowRef<Record<string, unknown> | undefined>(undefined)
 const resolvedOnce = ref(false)
 
-vi.mock('@/composables/useProductEngineering', () => ({
+vi.mock('@/composables/engineering', () => ({
   useEngineeringProductionVersions: () => ({
     archiveProductionVersion: stub.archiveProductionVersion,
     archivePending: shallowRef(false),
@@ -88,7 +88,7 @@ vi.mock('@/composables/useProductEngineering', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessSkus: () => ({
     skus: computed(() => [{ code: 'SKU-1', displayName: '智能网关主机' }]),
   }),

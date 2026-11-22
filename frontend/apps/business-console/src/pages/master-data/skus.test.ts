@@ -36,7 +36,7 @@ const skuRow = {
   baseUomCode: 'pcs',
 }
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessSkus: () => ({
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev', skip: 0, take: 10 }),
     refreshSkus: vi.fn(),
@@ -67,7 +67,7 @@ vi.mock('@/stores/businessContext', () => ({
 }))
 
 // 产品分类已升为主数据（#400）：electronic → 电子料。
-vi.mock('@/composables/usePromotedCatalogs', () => ({
+vi.mock('@/composables/master-data/usePromotedCatalogs', () => ({
   useProductCategories: () => ({
     categories: shallowRef([{ categoryCode: 'electronic', categoryName: '电子料', enabled: true }]),
     categoriesPending: shallowRef(false),

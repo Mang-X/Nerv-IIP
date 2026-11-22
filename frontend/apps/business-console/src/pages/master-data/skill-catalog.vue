@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import type { CreateSkillCatalogRequest, SkillCatalogItem } from '@/composables/usePromotedCatalogs'
+import type {
+  CreateSkillCatalogRequest,
+  SkillCatalogItem,
+} from '@/composables/master-data/usePromotedCatalogs'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { useSkillCatalog } from '@/composables/usePromotedCatalogs'
+import { useSkillCatalog } from '@/composables/master-data/usePromotedCatalogs'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvAlertDialog,

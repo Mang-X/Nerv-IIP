@@ -3,7 +3,7 @@ import { formatDateTime } from '@/utils/format'
 import type { BusinessConsoleNotificationMessageItem } from '@nerv-iip/api-client'
 import { Button } from '@nerv-iip/ui'
 import { messageTitle, resourceTypeLabel } from './notificationFormatters'
-import { isReadMessage } from '@/composables/useBusinessNotifications'
+import { isReadMessage } from '@/composables/ops/useBusinessNotifications'
 
 defineProps<{ message: BusinessConsoleNotificationMessageItem; markReadPending: boolean }>()
 defineEmits<{ markRead: [messageId: string]; close: [] }>()

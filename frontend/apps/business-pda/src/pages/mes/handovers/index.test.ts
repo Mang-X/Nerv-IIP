@@ -96,7 +96,7 @@ const hasSuccessfulResponse = ref(true)
 const hasFailedResponse = ref(false)
 const refresh = vi.fn(async () => {})
 
-vi.mock('@/composables/useBusinessShiftHandover', async (importOriginal) => {
+vi.mock('@/composables/mes/useBusinessShiftHandover', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>()
   return {
     ...actual,

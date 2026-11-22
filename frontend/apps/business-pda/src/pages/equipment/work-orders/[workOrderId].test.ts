@@ -4,7 +4,7 @@ import { shallowRef, type ComputedRef } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { AuthoritativeMaintenanceWorkOrderDetail } from '@/composables/useMaintenanceSelfWorkOrders'
+import type { AuthoritativeMaintenanceWorkOrderDetail } from '@/composables/maintenance'
 
 const state = vi.hoisted(() => ({
   scopeReady: true,
@@ -23,7 +23,7 @@ const state = vi.hoisted(() => ({
   refresh: vi.fn(),
 }))
 
-vi.mock('@/composables/useMaintenanceSelfWorkOrders', () => ({
+vi.mock('@/composables/maintenance', () => ({
   useMaintenanceSelfWorkOrderDetail: (requestedId: ComputedRef<string>) => {
     state.requestedId = requestedId
     return {

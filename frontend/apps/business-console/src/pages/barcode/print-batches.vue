@@ -11,8 +11,8 @@ import {
   useBarcodePrintBatches,
   useBarcodeRules,
   useBarcodeTemplates,
-} from '@/composables/useBusinessBarcode'
-import { usePagedList } from '@/composables/usePagedList'
+} from '@/composables/barcode/useBusinessBarcode'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'

@@ -3,8 +3,8 @@ import WarehouseTaskExecutionView, {
   type WarehouseTaskExecutionIntent,
 } from '@/components/wms/WarehouseTaskExecutionView.vue'
 import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
-import { useWmsPicking } from '@/composables/useBusinessWms'
-import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
+import { useWmsPicking } from '@/composables/wms'
+import { useWmsOperationalCandidates } from '@/composables/wms/useWmsOperationalCandidates'
 import { NvAppShellMobile } from '@nerv-iip/ui-mobile'
 import { computed } from 'vue'
 

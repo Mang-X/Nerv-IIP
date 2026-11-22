@@ -63,7 +63,7 @@ function stubActions() {
 
 const actionsFactoryArgs = vi.hoisted(() => ({ calls: [] as unknown[][] }))
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useReferenceDataCodes: () => stubCodes(),
   useMasterDataResourceActions: (...args: unknown[]) => {
     actionsFactoryArgs.calls.push(args)

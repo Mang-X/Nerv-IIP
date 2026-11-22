@@ -1,0 +1,27 @@
+@layer nv-components {
+  @media (prefers-reduced-motion: reduce) {
+    /* DHTMLX 引擎:关掉条形/进度的过渡(hover 提亮、选中辉光等),尊重减少动态偏好 */
+    .nerv-gantt-dhx .gantt_task_line,
+    .nerv-gantt-dhx .gantt_task_progress,
+    .nerv-gantt-dhx .gantt_bar_task {
+      transition: none !important;
+    }
+    /* 覆盖所有新增动效:过渡关闭 */
+    .nerv-gantt-dhx .nerv-drop-hint,
+    .nerv-gantt-dhx .nerv-drop-cancel,
+    .nerv-gantt-dhx .nerv-drop-cancel svg,
+    .nerv-gantt-dhx .gantt_task_line.nerv-drag-source,
+    .nerv-gantt-dhx .gantt_ver_scroll > div,
+    .nerv-gantt-dhx .gantt_hor_scroll > div,
+    .gantt_tooltip,
+    .nerv-tip {
+      transition: none !important;
+    }
+    /* 关键帧动效降级为瞬时(锁定抖动/落定入场/连线淡入) */
+    .nerv-gantt-dhx .gantt_task_line.nerv-lock-deny,
+    .nerv-gantt-dhx .gantt_task_line.nerv-card-settle,
+    .nerv-gantt-dhx .gantt_task_link {
+      animation: none !important;
+    }
+  }
+}

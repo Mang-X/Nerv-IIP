@@ -1,0 +1,73 @@
+@layer nv-components {
+  /* 拖拽落点预览:卡片大小的虚影,跟随指针落在目标泳道的时间位置(DHTMLX 重绘不影响) */
+  .nerv-gantt-dhx .nerv-drop-hint {
+    position: absolute;
+    z-index: 7;
+    pointer-events: none;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    border: 2px dashed var(--nv-brand);
+    border-radius: 8px;
+    background: color-mix(in oklch, var(--nv-brand), transparent 82%);
+    box-shadow: 0 6px 18px -6px color-mix(in oklch, var(--nv-brand), transparent 55%);
+    /* top/height/width/opacity 过渡;left 不加过渡(保持紧跟指针);出现/消失走 opacity 淡入淡出 */
+    transition:
+      top var(--nv-duration-base) var(--nv-ease-out-expo),
+      height var(--nv-duration-base) var(--nv-ease-out-expo),
+      width var(--nv-duration-base) var(--nv-ease-out-expo),
+      opacity var(--nv-duration-base) var(--nv-ease-out-expo);
+  }
+  .nerv-gantt-dhx .nerv-drop-hint .nerv-drop-tip {
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
+    color: var(--nv-brand);
+    background: var(--card);
+    padding: 2px 9px;
+    border-radius: 999px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* 拖拽取消区:拖拽时浮现于顶部居中,松手于此撤销改派 */
+  .nerv-gantt-dhx .nerv-drop-cancel {
+    position: absolute;
+    z-index: 8;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    pointer-events: none;
+    color: var(--muted-foreground);
+    background: color-mix(in oklch, var(--card), transparent 8%);
+    border: 1.5px dashed color-mix(in oklch, var(--muted-foreground), transparent 50%);
+    box-shadow: var(--shadow-lg);
+    backdrop-filter: blur(6px);
+    transition:
+      color var(--nv-duration-base) var(--nv-ease-out-expo),
+      background-color var(--nv-duration-base) var(--nv-ease-out-expo),
+      border-color var(--nv-duration-base) var(--nv-ease-out-expo),
+      transform var(--nv-duration-base) var(--nv-ease-out-expo);
+  }
+  .nerv-gantt-dhx .nerv-drop-cancel-hot {
+    color: var(--destructive);
+    background: color-mix(in oklch, var(--destructive), var(--card) 82%);
+    border-color: var(--destructive);
+    border-style: solid;
+    /* 保留居中位移,hot 叠加轻微放大 */
+    transform: translateX(-50%) scale(1.06);
+  }
+  /* 取消区内 svg 进入 hot 态时转 90°(过渡) */
+  .nerv-gantt-dhx .nerv-drop-cancel svg {
+    transition: transform var(--nv-duration-base) var(--nv-ease-out-expo);
+  }
+  .nerv-gantt-dhx .nerv-drop-cancel-hot svg {
+    transform: rotate(90deg);
+  }
+}

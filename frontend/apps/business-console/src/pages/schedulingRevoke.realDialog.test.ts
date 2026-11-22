@@ -26,7 +26,7 @@ const stub = vi.hoisted(() => ({
   toastSuccess: vi.fn(),
 }))
 
-vi.mock('@/composables/useSkuNames', async () => {
+vi.mock('@/composables/master-data/useSkuNames', async () => {
   const { computed } = await import('vue')
   return {
     useSkuNames: () => ({
@@ -37,7 +37,7 @@ vi.mock('@/composables/useSkuNames', async () => {
     }),
   }
 })
-vi.mock('@/composables/useBusinessPartnerNames', async () => {
+vi.mock('@/composables/master-data/useBusinessPartnerNames', async () => {
   const { computed } = await import('vue')
   return {
     useBusinessPartnerNames: () => ({
@@ -49,7 +49,7 @@ vi.mock('@/composables/useBusinessPartnerNames', async () => {
     }),
   }
 })
-vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', async () => {
   const { computed } = await import('vue')
   const emptyIndex = computed(() => new Map<string, string>())
   return {
@@ -75,7 +75,7 @@ vi.mock('vue-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('vue-router')>()),
   useRoute: () => ({ query: {} }),
 }))
-vi.mock('@/composables/useOrderUrgency', () => ({
+vi.mock('@/composables/urgency/useOrderUrgency', () => ({
   useOrderUrgencies: () => ({ byReference: { value: new Map() }, refresh: vi.fn() }),
 }))
 vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
@@ -95,7 +95,7 @@ vi.mock('@/stores/auth', () => ({
     },
   }),
 }))
-vi.mock('@/composables/useSchedulingWorkbench', () => ({
+vi.mock('@/composables/scheduling/useSchedulingWorkbench', () => ({
   useSchedulingWorkbench: () => ({
     candidates: computed(() => []),
     candidatesError: shallowRef(undefined),
@@ -118,7 +118,7 @@ vi.mock('@/composables/useSchedulingWorkbench', () => ({
 /** `revokePlanPending` 必须是真 ref，否则「pending 期间禁点」那条会假绿。 */
 const revokePlanPending = shallowRef(false)
 
-vi.mock('@/composables/useSchedulingDowntime', () => ({
+vi.mock('@/composables/scheduling/useSchedulingDowntime', () => ({
   useSchedulingDowntime: () => ({
     impact: shallowRef(),
     now: shallowRef(new Date()),
@@ -126,7 +126,7 @@ vi.mock('@/composables/useSchedulingDowntime', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessScheduling', () => ({
+vi.mock('@/composables/scheduling/useBusinessScheduling', () => ({
   useSchedulingPlanSummary: () => ({ summary: shallowRef() }),
   useBusinessScheduling: () => ({
     detailSelection: reactive({ planId: '' }),

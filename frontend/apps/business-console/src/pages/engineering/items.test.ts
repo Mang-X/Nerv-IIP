@@ -29,7 +29,7 @@ const filters = reactive({
   take: 10,
 })
 
-vi.mock('@/composables/useProductEngineering', () => ({
+vi.mock('@/composables/engineering', () => ({
   useEngineeringItems: () => ({
     items: computed(() => [itemRow]),
     itemsError: shallowRef(undefined),

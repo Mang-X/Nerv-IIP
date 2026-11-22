@@ -10,7 +10,7 @@ import {
   SheetTrigger,
 } from '@nerv-iip/ui'
 import { computed, ref } from 'vue'
-import { useBusinessNotifications } from '@/composables/useBusinessNotifications'
+import { useBusinessNotifications } from '@/composables/ops/useBusinessNotifications'
 import NotificationMessageList from './NotificationMessageList.vue'
 import NotificationMessageDetail from './NotificationMessageDetail.vue'
 import { resourceTypeLabel } from './notificationFormatters'

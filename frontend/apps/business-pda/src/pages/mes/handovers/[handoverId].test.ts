@@ -53,7 +53,7 @@ const acceptHandover = vi.fn(async () => ({ data: { accepted: true } }))
 const openAttachment = vi.fn(async () => {})
 const viewerError = ref('')
 
-vi.mock('@/composables/useBusinessShiftHandover', async (importOriginal) => {
+vi.mock('@/composables/mes/useBusinessShiftHandover', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>()
   return {
     ...actual,

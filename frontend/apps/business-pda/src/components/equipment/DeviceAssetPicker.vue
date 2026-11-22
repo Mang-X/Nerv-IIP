@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useBusinessDeviceDirectory } from '@/composables/useBusinessDeviceDirectory'
+import { useBusinessDeviceDirectory } from '@/composables/equipment/useBusinessDeviceDirectory'
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import { NvBottomSheet, NvListRow, NvMobileButton, NvSearchBar } from '@nerv-iip/ui-mobile'
 import { computed, ref, watch } from 'vue'

@@ -3,8 +3,8 @@ import RetryableListError from '@/components/RetryableListError.vue'
 import InspectionMeasurementRow, {
   type MeasurementFormRow,
 } from '@/components/equipment/InspectionMeasurementRow.vue'
-import { useBusinessMaintenance } from '@/composables/useBusinessMaintenance'
-import { useNonIdempotentWriteResult } from '@/composables/useNonIdempotentWriteResult'
+import { useBusinessMaintenance } from '@/composables/maintenance/useBusinessMaintenance'
+import { useNonIdempotentWriteResult } from '@/composables/shared/useNonIdempotentWriteResult'
 import {
   createMeasurementDraft,
   inspectionFlow,

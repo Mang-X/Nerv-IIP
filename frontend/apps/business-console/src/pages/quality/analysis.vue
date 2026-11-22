@@ -10,14 +10,14 @@ import { qualityCharacteristicLabel, qualitySourceTypeLabel } from '@nerv-iip/bu
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import QualityParetoPanel from '@/components/quality/QualityParetoPanel.vue'
 import QualitySpcCharts from '@/components/quality/QualitySpcCharts.vue'
-import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
-import { useQualityNcrs } from '@/composables/useBusinessQuality'
-import { usePagedList } from '@/composables/usePagedList'
+import { useBusinessMasterDataResources } from '@/composables/master-data'
+import { useQualityNcrs } from '@/composables/quality/useBusinessQuality'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import {
   useQualityCharacteristicCatalog,
   useQualityInspectionPlanCatalog,
   useQualitySkuCatalog,
-} from '@/composables/useQualityPickerCatalog'
+} from '@/composables/quality/useQualityPickerCatalog'
 import {
   buildQualityAnalysisSummary,
   buildQualityBucketDetail,
@@ -26,11 +26,11 @@ import {
   useQualitySpcAnalysis,
   type QualityAnalysisBucket,
   type QualitySpcViolation,
-} from '@/composables/useBusinessQualityAnalysis'
+} from '@/composables/quality/useBusinessQualityAnalysis'
 import {
   useQualitySpcControlCharts,
   type QualitySpcControlChartItem,
-} from '@/composables/useBusinessQualityLedgers'
+} from '@/composables/quality/useBusinessQualityLedgers'
 import { formatDateTime } from '@/utils/format'
 import { deltaFrom } from '@/utils/kpiTrend'
 import { friendlyErrorMessage } from '@/utils/notify'

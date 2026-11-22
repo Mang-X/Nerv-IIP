@@ -6,7 +6,7 @@ import type {
   BusinessConsoleMesShiftHandoverWipItem,
   BusinessConsoleResourceItem,
 } from '@nerv-iip/api-client'
-import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import {
   NvButton,
@@ -41,22 +41,16 @@ import {
 } from '@nerv-iip/ui'
 import { incomingUserLabel, outgoingUserLabel } from '@nerv-iip/business-core'
 import { computed, reactive, ref, watch } from 'vue'
-import { useBusinessMasterDataResources } from '@/composables/useBusinessMasterData'
-import { makeIdempotencyKey, useMesShiftHandovers } from '@/composables/useBusinessMes'
+import { useBusinessMasterDataResources } from '@/composables/master-data'
+import { makeIdempotencyKey, useMesShiftHandovers } from '@/composables/mes'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
-import { usePagedList } from '@/composables/usePagedList'
-import { pagedBreakdownSegments } from '@/composables/metricSegments'
+import { usePagedList } from '@/composables/shared/usePagedList'
+import { pagedBreakdownSegments } from '@/composables/shared/metricSegments'
 import {
   mesHandoverStatusOptions,
   useMesReferenceLabels,
 } from '@/composables/mes/useMesReferenceLabels'
-import {
-  labelFor,
-  normalizeCode,
-  MES_HANDOVER_ISSUE_CATEGORY_LABELS,
-  MES_HANDOVER_ISSUE_SEVERITY_LABELS,
-  MES_HANDOVER_STATUS_LABELS,
-} from '@/data/businessLabels'
+import { labelFor, MES_HANDOVER_STATUS_LABELS } from '@/data/businessLabels'
 import HandoverDetailsEditor from '@/components/mes/HandoverDetailsEditor.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -68,6 +62,7 @@ import {
   notifyOperationFailure,
   notifySuccess,
 } from '@/utils/notify'
+import HandoverSnapshotTables from './components/HandoverSnapshotTables.vue'
 
 definePage({
   meta: {
@@ -265,57 +260,6 @@ watch(detailOpen, (open) => {
   if (open) return
   detailHandoverId.value = ''
 })
-
-const ISSUE_SEVERITY_TONES: Readonly<Record<string, StatusTone>> = {
-  low: 'neutral',
-  medium: 'warning',
-  high: 'danger',
-}
-function issueSeverityTone(value?: string | null): StatusTone {
-  return ISSUE_SEVERITY_TONES[normalizeCode(value)] ?? 'neutral'
-}
-
-const wipColumns: NvDataTableColumn<BusinessConsoleMesShiftHandoverWipItem>[] = [
-  { key: 'workOrderId', header: '工单', cellClass: 'font-medium' },
-  {
-    key: 'operationTaskId',
-    header: '工序任务',
-    accessor: (row) => row.operationTaskId?.trim() || '按工单登记',
-  },
-  { key: 'quantity', header: '在制数量', align: 'end', width: 'w-28' },
-]
-
-const unfinishedWorkOrderColumns: NvDataTableColumn<BusinessConsoleMesShiftHandoverUnfinishedWorkOrder>[] =
-  [
-    { key: 'workOrderId', header: '工单', cellClass: 'font-medium' },
-    { key: 'plannedQuantity', header: '计划数量', align: 'end', width: 'w-24' },
-    { key: 'completedQuantity', header: '完成数量', align: 'end', width: 'w-24' },
-    { key: 'workOrderStatus', header: '工单状态', width: 'w-28' },
-  ]
-
-const openIssueColumns: NvDataTableColumn<BusinessConsoleMesShiftHandoverOpenIssue>[] = [
-  {
-    key: 'category',
-    header: '类别',
-    width: 'w-20',
-    accessor: (row) => labelFor(MES_HANDOVER_ISSUE_CATEGORY_LABELS, row.category, '未分类'),
-  },
-  { key: 'severity', header: '严重度', width: 'w-24' },
-  { key: 'description', header: '问题描述' },
-  { key: 'referenceId', header: '关联单据', accessor: (row) => row.referenceId?.trim() || '无' },
-]
-
-/**
- * 三类明细的读面都没有 id 字段（WipItem / UnfinishedWorkOrder / OpenIssue 只有业务属性），
- * 拿属性拼键就会撞——同类别同描述的两条遗留问题、同工单同工序的两条在制清点都是合法数据。
- *
- * 这里查的是**对象引用**在本数组里的位置，成立条件只有一条：同一数组内各元素引用互不相同
- * （读面反序列化出来的对象天然满足）。所以给某列加排序也不必重做这个键——`NvDataTable`
- * 排序后透传的仍是同一批对象引用。真正会坏的是换成「渲染时的下标」那类与数据脱钩的写法。
- */
-function rowPositionKey<T>(rows: readonly T[]) {
-  return (row: T) => String(rows.indexOf(row))
-}
 
 const createDialogOpen = ref(false)
 const createShowErrors = ref(false)
@@ -776,72 +720,13 @@ function formatDateTime(value?: string | null) {
               </div>
             </dl>
 
-            <section class="grid grid-cols-1 gap-2 [&>*]:min-w-0">
-              <h3 class="text-sm font-semibold text-foreground">在制清点</h3>
-              <NvDataTable
-                :columns="wipColumns"
-                :rows="detailWipItems"
-                :row-key="rowPositionKey(detailWipItems)"
-                :loading="handoverDetailPending"
-                :searchable="false"
-                :column-settings="false"
-                :pagination="false"
-                empty-message="交班时点没有登记在制清点。"
-              >
-                <template #cell-quantity="{ row }"
-                  ><span class="tabular-nums">{{ row.quantity ?? 0 }}</span></template
-                >
-              </NvDataTable>
-            </section>
-
-            <section class="grid grid-cols-1 gap-2 [&>*]:min-w-0">
-              <h3 class="text-sm font-semibold text-foreground">未完工单</h3>
-              <NvDataTable
-                :columns="unfinishedWorkOrderColumns"
-                :rows="detailUnfinishedWorkOrders"
-                :row-key="rowPositionKey(detailUnfinishedWorkOrders)"
-                :loading="handoverDetailPending"
-                :searchable="false"
-                :column-settings="false"
-                :pagination="false"
-                empty-message="交班时点没有未完工单。"
-              >
-                <template #cell-plannedQuantity="{ row }"
-                  ><span class="tabular-nums">{{ row.plannedQuantity ?? 0 }}</span></template
-                >
-                <template #cell-completedQuantity="{ row }"
-                  ><span class="tabular-nums">{{ row.completedQuantity ?? 0 }}</span></template
-                >
-                <template #cell-workOrderStatus="{ row }">
-                  <NvStatusBadge
-                    :value="row.workOrderStatus"
-                    :label="statusLabel(row.workOrderStatus)"
-                  />
-                </template>
-              </NvDataTable>
-            </section>
-
-            <section class="grid grid-cols-1 gap-2 [&>*]:min-w-0">
-              <h3 class="text-sm font-semibold text-foreground">设备与质量遗留问题</h3>
-              <NvDataTable
-                :columns="openIssueColumns"
-                :rows="detailOpenIssues"
-                :row-key="rowPositionKey(detailOpenIssues)"
-                :loading="handoverDetailPending"
-                :searchable="false"
-                :column-settings="false"
-                :pagination="false"
-                empty-message="交班时点没有登记遗留问题。"
-              >
-                <template #cell-severity="{ row }">
-                  <NvStatusBadge
-                    :value="row.severity"
-                    :label="labelFor(MES_HANDOVER_ISSUE_SEVERITY_LABELS, row.severity, '未定级')"
-                    :tone="issueSeverityTone(row.severity)"
-                  />
-                </template>
-              </NvDataTable>
-            </section>
+            <HandoverSnapshotTables
+              :detail-wip-items="detailWipItems"
+              :detail-unfinished-work-orders="detailUnfinishedWorkOrders"
+              :detail-open-issues="detailOpenIssues"
+              :handover-detail-pending="handoverDetailPending"
+              :status-label="statusLabel"
+            />
           </template>
         </div>
       </NvSheetContent>

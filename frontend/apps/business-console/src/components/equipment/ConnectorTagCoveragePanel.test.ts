@@ -5,7 +5,7 @@ import ConnectorTagCoveragePanel from './ConnectorTagCoveragePanel.vue'
 
 // 名录解析不是这些用例的被测对象；给稳定桩（解析不出名称→页面回退显编码），
 // 避免真实实现去取业务上下文 store 而要求测试装 Pinia。
-vi.mock('@/composables/useSkuNames', async () => {
+vi.mock('@/composables/master-data/useSkuNames', async () => {
   const { computed } = await import('vue')
   return {
     useSkuNames: () => ({
@@ -16,7 +16,7 @@ vi.mock('@/composables/useSkuNames', async () => {
     }),
   }
 })
-vi.mock('@/composables/useBusinessPartnerNames', async () => {
+vi.mock('@/composables/master-data/useBusinessPartnerNames', async () => {
   const { computed } = await import('vue')
   return {
     useBusinessPartnerNames: () => ({
@@ -28,7 +28,7 @@ vi.mock('@/composables/useBusinessPartnerNames', async () => {
     }),
   }
 })
-vi.mock('@/composables/useMasterDataDisplayNames', async () => {
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', async () => {
   const { computed } = await import('vue')
   const emptyIndex = computed(() => new Map<string, string>())
   return {
@@ -59,8 +59,9 @@ const coverageMocks = vi.hoisted(() => ({
   refreshCoverage: vi.fn(),
 }))
 
-vi.mock('@/composables/useBusinessTelemetry', async (importOriginal) => {
-  const original = await importOriginal<typeof import('@/composables/useBusinessTelemetry')>()
+vi.mock('@/composables/equipment/useBusinessTelemetry', async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import('@/composables/equipment/useBusinessTelemetry')>()
   const vue = await import('vue')
   coverageMocks.coverageRef = vue.shallowRef()
   coverageMocks.errorRef = vue.shallowRef()

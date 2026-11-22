@@ -19,7 +19,13 @@ export default defineConfig({
       routesFolder: [
         {
           src: 'src/pages',
-          exclude: (excluded) => excluded.concat(['**/components/**/*']),
+          exclude: (excluded) =>
+            excluded.concat([
+              '**/components/**/*',
+              '**/dialogs/**/*',
+              '**/drawers/**/*',
+              '**/fragments/**/*',
+            ]),
         },
       ],
       dts: 'typed-router.d.ts',

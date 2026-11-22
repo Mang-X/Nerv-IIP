@@ -27,7 +27,7 @@ vi.mock('vue-router', () => ({
   RouterLink: { props: ['to'], template: '<a :data-to="JSON.stringify(to)"><slot /></a>' },
 }))
 
-vi.mock('@/composables/useScheduleInvalidation', () => ({
+vi.mock('@/composables/scheduling/useScheduleInvalidation', () => ({
   resolveScheduleStatus: () => ({ key: 'scheduled', label: '已排程', tone: 'info' }),
   scheduleInvalidationHint: () => '',
 }))
@@ -47,7 +47,7 @@ const detailState = vi.hoisted(() => ({
   scopeMessage: '',
 }))
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
   describeMesReadinessReason: (code: string) => ({ code, label: code, nextStep: '' }),
   describeMesReadinessReasons: (reasons: string[]) => describeReadinessReasons(reasons),

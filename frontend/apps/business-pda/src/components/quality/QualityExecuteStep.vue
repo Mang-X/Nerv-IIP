@@ -5,8 +5,8 @@ import QualityCharacteristicPicker from '@/components/quality/QualityCharacteris
 import QualityCharacteristicRow from '@/components/quality/QualityCharacteristicRow.vue'
 import QualityDispositionSubmit from '@/components/quality/QualityDispositionSubmit.vue'
 import QualityTaskContextCard from '@/components/quality/QualityTaskContextCard.vue'
-import type { AuthoritativeInspectionResult } from '@/composables/useInspectionExecution'
-import { useInspectionExecution } from '@/composables/useInspectionExecution'
+import type { AuthoritativeInspectionResult } from '@/composables/quality/useInspectionExecution'
+import { useInspectionExecution } from '@/composables/quality/useInspectionExecution'
 import type {
   BusinessConsoleInspectionPlanCharacteristicItem,
   BusinessConsoleQualityInspectionTaskItem,

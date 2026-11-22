@@ -18,7 +18,7 @@ const state = vi.hoisted(() => ({
   loadMore: vi.fn(),
 }))
 
-vi.mock('@/composables/useMaintenanceSelfWorkOrders', () => ({
+vi.mock('@/composables/maintenance', () => ({
   normalizeMaintenanceDeviceReferences: (values: unknown) =>
     Array.isArray(values)
       ? [

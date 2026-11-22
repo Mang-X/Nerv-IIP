@@ -247,7 +247,7 @@ function openFull() {
 
 **键身份 = OpenAPI operationId（即 `_id`）**。全部约定围绕它展开：
 
-1. **失效以 operationId 为单位**，用谓词匹配 `key[0]._id`。现行形态（保留为标准）——出处 `apps/business-console/src/composables/useBusinessQuality.ts:127`：
+1. **失效以 operationId 为单位**，用谓词匹配 `key[0]._id`。现行形态（保留为标准）——出处 `apps/business-console/src/composables/quality/useBusinessQuality.ts:127`：
 
 ```ts
 queryCache.invalidateQueries({ predicate: isBusinessQuery('listBusinessConsoleQualityNcrs') })

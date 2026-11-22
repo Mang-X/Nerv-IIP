@@ -22,8 +22,8 @@ import SchedulingMaterialShortageSummary from './SchedulingMaterialShortageSumma
 import SchedulingPlanRisks from './SchedulingPlanRisks.vue'
 import SchedulingDraftFeedback from './SchedulingDraftFeedback.vue'
 import SchedulingWorkOrderLink from './SchedulingWorkOrderLink.vue'
-import type { WorkingSchedulePendingOperation } from '@/composables/useWorkingScheduleDraft'
-import { describeScheduleInvalidationReason } from '@/composables/useScheduleInvalidation'
+import type { WorkingSchedulePendingOperation } from '@/composables/scheduling/useWorkingScheduleDraft'
+import { describeScheduleInvalidationReason } from '@/composables/scheduling/useScheduleInvalidation'
 import type { EntityPickerOption } from '@nerv-iip/ui'
 import {
   NvButton,

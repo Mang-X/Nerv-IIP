@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const permissions = vi.hoisted(() => ({ maintenanceRead: true, masterDataRead: true }))
 
-vi.mock('@/composables/useWorkbenchHome', () => ({
+vi.mock('@/composables/workbench/useWorkbenchHome', () => ({
   HOME_PERMISSIONS: {
     mesOperations: 'business.mes.operations.read',
     quality: 'business.quality.inspection-records.read',

@@ -27,7 +27,7 @@ vi.mock('@/stores/auth', () => ({
  * 关单失败时框立刻消失，用户填的关闭原因、报废库存移动全都白填一遍
  * （confirm-destroy 规则 3、票面子项 d「注意失败后表单值保留」）。
  *
- * `quality-location.test.ts` 里这页的弹层被桩成 `<div><slot /></div>`，因此上面这件事在那
+ * `quality-location.ncr.test.ts` 里这页的弹层被桩成 `<div><slot /></div>`，因此上面这件事在那
  * 一份里测不到。门禁（`src/confirmDestroy.contract.test.ts`）只挡写法，行为由本文件在
  * **真弹层**上钉住。
  *
@@ -58,7 +58,7 @@ const spies = vi.hoisted(() => ({
  */
 const state = vi.hoisted(() => ({}) as { closeNcrPending: { value: boolean } })
 
-vi.mock('@/composables/useBusinessQuality', async () => {
+vi.mock('@/composables/quality/useBusinessQuality', async () => {
   const { statusActionGate } = await import('@nerv-iip/business-core')
   const { computed, reactive, shallowRef } = await import('vue')
   state.closeNcrPending = shallowRef(false)
@@ -99,7 +99,7 @@ vi.mock('@/composables/useBusinessQuality', async () => {
   }
 })
 
-vi.mock('@/composables/usePagedList', async () => {
+vi.mock('@/composables/shared/usePagedList', async () => {
   const { shallowRef } = await import('vue')
   return { usePagedList: () => ({ page: shallowRef(1), pageSize: shallowRef(100) }) }
 })

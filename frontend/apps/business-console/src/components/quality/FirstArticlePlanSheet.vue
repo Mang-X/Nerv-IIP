@@ -27,7 +27,7 @@ import { PlusIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
 
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
-import { useQualityFirstArticlePlanActions } from '@/composables/useBusinessQuality'
+import { useQualityFirstArticlePlanActions } from '@/composables/quality/useBusinessQuality'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
 const props = defineProps<{

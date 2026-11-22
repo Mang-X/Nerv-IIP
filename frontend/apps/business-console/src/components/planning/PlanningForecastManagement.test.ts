@@ -14,7 +14,7 @@ const spies = vi.hoisted(() => ({
   failure: vi.fn(),
 }))
 
-vi.mock('@/composables/useBusinessForecasts', () => ({
+vi.mock('@/composables/planning/useBusinessForecasts', () => ({
   useBusinessForecasts: () => {
     spies.forecastsError = shallowRef(null)
     return {
@@ -49,7 +49,7 @@ vi.mock('@/composables/useBusinessForecasts', () => ({
   },
 }))
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessSkus: () => ({
     skus: shallowRef([{ resourceType: 'sku', code: 'FG-1000', displayName: '减振器总成' }]),
   }),

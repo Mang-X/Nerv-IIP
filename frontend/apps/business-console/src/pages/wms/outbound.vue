@@ -9,18 +9,18 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import {
   isIndeterminateLifecycleWriteError,
   recoverLifecycleAction,
-} from '@/composables/lifecycleAction'
+} from '@/composables/shared/lifecycleAction'
 import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import WmsAssignWorkPoolDialog from '@/components/wms/WmsAssignWorkPoolDialog.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
 import { WMS_LINE_OWNER_TYPE_OPTIONS, wmsStatusTone } from '@/data/businessLabels'
-import { hasBusinessContext } from '@/composables/businessContextBinding'
-import { createWmsIdempotencyKey, useWmsOutboundOrders } from '@/composables/useBusinessWms'
-import { useInventoryScopeCatalog } from '@/composables/useInventoryScope'
-import { usePagedList } from '@/composables/usePagedList'
-import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
-import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
+import { hasBusinessContext } from '@/composables/shared/businessContextBinding'
+import { createWmsIdempotencyKey, useWmsOutboundOrders } from '@/composables/wms'
+import { useInventoryScopeCatalog } from '@/composables/inventory/useInventoryScope'
+import { usePagedList } from '@/composables/shared/usePagedList'
+import { useWmsOperationalCandidates } from '@/composables/wms/useWmsOperationalCandidates'
+import { bindWmsWorkScopeFilters } from '@/composables/wms/useWmsWorkScope'
 import {
   wmsOutboundOrderStatusFilterOptions,
   wmsOutboundOrderStatusLabel,

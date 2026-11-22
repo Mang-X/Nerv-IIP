@@ -34,6 +34,9 @@ test('后台失效在下一轮轮询更新提示和发布按钮，退出后停�
   await page.route('**/api/business-console/v1/**', async (route) => {
     const url = new URL(route.request().url())
     const pathname = url.pathname
+    if (pathname.endsWith('/working-drafts') || pathname.endsWith('/time-context')) {
+      return route.fulfill({ json: { success: true, data: [] } })
+    }
     if (pathname.endsWith('/scheduling/plans/history')) {
       historyRequests++
       return route.fulfill({
@@ -151,7 +154,9 @@ for (const scenario of ['查阅另一方案', '筛选未失效方案']) {
     await page.route('**/api/business-console/v1/**', async (route) => {
       const url = new URL(route.request().url())
       let data: unknown = { items: [], total: 0 }
-      if (url.pathname.endsWith('/scheduling/plans/history')) {
+      if (url.pathname.endsWith('/working-drafts') || url.pathname.endsWith('/time-context')) {
+        data = []
+      } else if (url.pathname.endsWith('/scheduling/plans/history')) {
         const items = [
           {
             ...draft,
@@ -181,10 +186,21 @@ for (const scenario of ['查阅另一方案', '筛选未失效方案']) {
           ],
           total: 1,
         }
-      } else if (
-        url.pathname.endsWith('/scheduling/workbench/plans') ||
-        url.pathname.endsWith('/scheduling/plans/APS-260930-001')
-      ) {
+      } else if (url.pathname.endsWith('/workbench/first-plan-jobs')) {
+        expect(route.request().method()).toBe('POST')
+        data = {
+          jobId: 'first-plan-001',
+          status: 'completed',
+          input: route.request().postDataJSON(),
+          planId: draft.planId,
+        }
+      } else if (url.pathname.endsWith('/plans/APS-260930-001/working-draft')) {
+        data = {
+          planId: draft.planId,
+          state: route.request().postDataJSON().state,
+          savedAtUtc: '2026-09-30T08:00:00Z',
+        }
+      } else if (url.pathname.endsWith('/scheduling/plans/APS-260930-001')) {
         data = draft
       } else if (url.pathname.endsWith('/scheduling/plans/APS-260930-002')) {
         data = { ...draft, planId: 'APS-260930-002' }

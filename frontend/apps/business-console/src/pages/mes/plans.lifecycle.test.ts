@@ -12,7 +12,7 @@ vi.mock('vue-router', () => ({
   useRoute: () => ({ query: {} }),
 }))
 
-vi.mock('@/composables/useBusinessMes', () => ({
+vi.mock('@/composables/mes', () => ({
   useMesProductionPlans: () => ({
     filters: reactive({ organizationId: 'org-1', environmentId: 'env-1', skip: 0, take: 20 }),
     productionPlans: computed(() => state.productionPlans),
@@ -27,7 +27,7 @@ vi.mock('@/composables/mes/useMesDisplayNames', () => ({
   useMesDisplayNames: () => ({ resolveSkuLabel: () => '活塞杆组件' }),
 }))
 
-vi.mock('@/composables/usePagedList', () => ({
+vi.mock('@/composables/shared/usePagedList', () => ({
   usePagedList: () => ({ page: ref(1), pageSize: ref(20) }),
 }))
 

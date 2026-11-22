@@ -6,12 +6,12 @@ import { InspectionTaskClaimBlockedError } from '@/components/quality/inspection
 import type {
   AuthoritativeInspectionResult,
   QualityResultState,
-} from '@/composables/useInspectionExecution'
+} from '@/composables/quality/useInspectionExecution'
 import {
   useBusinessQualityInspectionTasks,
   useInspectionPlanCharacteristics,
-} from '@/composables/useBusinessQualityInspectionTasks'
-import { useLifecycleActionRecovery } from '@/composables/lifecycleActionRecovery'
+} from '@/composables/quality/useBusinessQualityInspectionTasks'
+import { useLifecycleActionRecovery } from '@/composables/shared/lifecycleActionRecovery'
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
 import { NvAppShellMobile, NvMobileButton, NvMobileToast } from '@nerv-iip/ui-mobile'
 import { computed, ref, shallowRef, useTemplateRef } from 'vue'

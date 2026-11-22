@@ -13,7 +13,7 @@ import {
 import { computed, shallowRef, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
 import { describeRequestError } from '@/api/request-timeout'
-import { usePdaBarcodeResolver } from '@/composables/usePdaBarcodeResolver'
+import { usePdaBarcodeResolver } from '@/composables/shared/usePdaBarcodeResolver'
 
 export type MesScanPrevalidationStatus =
   | 'idle'

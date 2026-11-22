@@ -1,16 +1,13 @@
 <script setup lang="ts">
 import type { NvDataTableColumn } from '@nerv-iip/ui'
-import {
-  useMesLineSideInventoryBalances,
-  useMesMaterialIssueRequests,
-} from '@/composables/useBusinessMes'
+import { useMesLineSideInventoryBalances, useMesMaterialIssueRequests } from '@/composables/mes'
 import LineSideInventoryBalancesPanel from '@/components/mes/LineSideInventoryBalancesPanel.vue'
 import {
   mesMaterialIssueStatusOptions,
   useMesReferenceLabels,
 } from '@/composables/mes/useMesReferenceLabels'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,

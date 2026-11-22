@@ -1,45 +1,10 @@
 <script setup lang="ts">
-import type {
-  BusinessConsoleCodeRuleItem,
-  BusinessConsoleCodeRuleSegment,
-  BusinessConsoleCreateCodeRuleVersionRequest,
-} from '@nerv-iip/api-client'
-import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
-import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
-import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { useCodeRules } from '@/composables/useCodeRules'
-import { CODE_RULE_VERSION_LABELS, labelFor } from '@/data/businessLabels'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
-import {
-  NvButton,
-  NvCheckbox,
-  NvDataTable,
-  NvDatePicker,
-  NvDialog,
-  NvDialogContent,
-  NvDialogDescription,
-  NvDialogFooter,
-  NvDialogHeader,
-  NvDialogTitle,
-  NvDialogTrigger,
-  NvField,
-  NvFieldDescription,
-  NvFieldError,
-  NvFieldGroup,
-  NvFieldLabel,
-  NvInput,
-  NvPageHeader,
-  NvSelect,
-  NvSelectContent,
-  NvSelectItem,
-  NvSelectTrigger,
-  NvSelectValue,
-  NvSpinner,
-  NvStatusBadge,
-} from '@nerv-iip/ui'
-import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
-import { computed, reactive, ref, shallowRef } from 'vue'
-import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { NvButton, NvDataTable, NvPageHeader, NvStatusBadge } from '@nerv-iip/ui'
+import { RefreshCwIcon } from '@lucide/vue'
+import CodeRuleDetailDialog from './components/CodeRuleDetailDialog.vue'
+import CodeRuleVersionDialog from './components/CodeRuleVersionDialog.vue'
+import { useCodeRulesPage } from './useCodeRulesPage'
 
 definePage({
   meta: {
@@ -50,478 +15,59 @@ definePage({
 })
 
 const {
-  filters,
-  rules,
-  rulesError,
-  rulesPending,
-  refresh,
-  fetchRuleDetail,
-  previewCode,
-  createRuleVersion,
+  CHANGE_REASON_MAX_LENGTH,
+  CHECKSUM_ALGORITHM_OPTIONS,
+  DATE_FORMAT_OPTIONS,
+  RESET_OPTIONS,
+  SCOPE_OPTIONS,
+  SEGMENT_TYPE_OPTIONS,
+  TRANSFORM_OPTIONS,
+  addSegment,
+  canSubmit,
+  changeReasonError,
+  changeReasonValid,
+  columns,
   createPending,
-} = useCodeRules()
-
-// ── 中文映射 ────────────────────────────────────────────────────
-type SegmentType = NonNullable<BusinessConsoleCodeRuleSegment['type']>
-type ScopeDimension = NonNullable<BusinessConsoleCodeRuleItem['scope']>
-type ResetPeriod = NonNullable<BusinessConsoleCodeRuleSegment['reset']>
-type FieldTransform = NonNullable<BusinessConsoleCodeRuleSegment['transform']>
-
-const SEGMENT_TYPE_LABEL: Record<SegmentType, string> = {
-  constant: '常量',
-  date: '日期',
-  sequence: '流水号',
-  field: '字段',
-  checksum: '校验位',
-}
-const SCOPE_LABEL: Record<ScopeDimension, string> = {
-  organization: '组织',
-  environment: '环境',
-  site: '站点',
-}
-const RESET_LABEL: Record<ResetPeriod, string> = {
-  none: '不重置',
-  day: '按天',
-  month: '按月',
-  year: '按年',
-}
-const TRANSFORM_LABEL: Record<FieldTransform, string> = {
-  none: '原样',
-  upper: '大写',
-  lower: '小写',
-}
-
-// 后端 CodeRuleDefinition.Validate() 允许的日期格式 / 校验算法，下拉给定避免提交必被拒。
-const DATE_FORMAT_OPTIONS = ['yyyyMMdd', 'yyMMdd', 'yyyyMM', 'yyMM', 'yyyy', 'yy']
-const CHECKSUM_ALGORITHM_OPTIONS = ['hash-mod10', 'hash-mod11']
-
-const SEGMENT_TYPE_OPTIONS = (Object.keys(SEGMENT_TYPE_LABEL) as SegmentType[]).map((value) => ({
-  value,
-  label: SEGMENT_TYPE_LABEL[value],
-}))
-const SCOPE_OPTIONS = (Object.keys(SCOPE_LABEL) as ScopeDimension[]).map((value) => ({
-  value,
-  label: SCOPE_LABEL[value],
-}))
-const RESET_OPTIONS = (Object.keys(RESET_LABEL) as ResetPeriod[]).map((value) => ({
-  value,
-  label: RESET_LABEL[value],
-}))
-const TRANSFORM_OPTIONS = (Object.keys(TRANSFORM_LABEL) as FieldTransform[]).map((value) => ({
-  value,
-  label: TRANSFORM_LABEL[value],
-}))
-
-function segmentTypeLabel(type?: SegmentType | null) {
-  return type ? (SEGMENT_TYPE_LABEL[type] ?? type) : '—'
-}
-function scopeLabel(scope?: ScopeDimension | null) {
-  return scope ? (SCOPE_LABEL[scope] ?? scope) : '—'
-}
-function resetLabel(reset?: ResetPeriod | null) {
-  return reset ? (RESET_LABEL[reset] ?? reset) : '不重置'
-}
-function transformLabel(transform?: FieldTransform | null) {
-  return transform ? (TRANSFORM_LABEL[transform] ?? transform) : '原样'
-}
-
-// 单段拼成可读串，如「常量(SKU)」「日期(yyMM)」「流水(4)」。
-function segmentSummary(segment: BusinessConsoleCodeRuleSegment) {
-  const name = segmentTypeLabel(segment.type)
-  switch (segment.type) {
-    case 'constant':
-      return segment.value ? `${name}(${segment.value})` : name
-    case 'date':
-      return segment.format ? `${name}(${segment.format})` : name
-    case 'sequence':
-      return segment.width != null ? `${name}(${segment.width})` : name
-    case 'field':
-      return segment.source ? `${name}(${segment.source})` : name
-    case 'checksum':
-      return segment.algorithm ? `${name}(${segment.algorithm})` : name
-    default:
-      return name
-  }
-}
-function formatSegments(segments?: BusinessConsoleCodeRuleSegment[] | null) {
-  if (!segments?.length) return '—'
-  return segments.map(segmentSummary).join('-')
-}
-
-// 只读 Sheet 中每段的关键参数串。
-function segmentParams(segment: BusinessConsoleCodeRuleSegment) {
-  switch (segment.type) {
-    case 'constant':
-      return segment.value ?? '—'
-    case 'date':
-      return segment.format ?? '—'
-    case 'sequence':
-      return `宽${segment.width ?? 0} 起${segment.start ?? 0} 补'${segment.padChar ?? ''}' ${resetLabel(segment.reset)}`
-    case 'field':
-      return `源:${segment.source ?? '—'} ${transformLabel(segment.transform)} 上限:${segment.maxLength ?? '—'}`
-    case 'checksum':
-      return segment.algorithm ?? '—'
-    default:
-      return '—'
-  }
-}
-
-function ruleStatusTone(rule: BusinessConsoleCodeRuleItem): StatusTone {
-  return rule.isActive ? 'success' : 'neutral'
-}
-function ruleStatusLabel(rule: BusinessConsoleCodeRuleItem) {
-  return rule.isActive ? '启用' : '停用'
-}
-const listErrorMessage = computed(() => inlineErrorMessage(rulesError.value))
-
-// ── 客户端分页 ──────────────────────────────────────────────────
-const page = ref(1)
-const pageSize = ref('10')
-const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
-const pagedRules = computed(() => {
-  const startIndex = (page.value - 1) * pageSizeNumber.value
-  return rules.value.slice(startIndex, startIndex + pageSizeNumber.value)
-})
-
-const columns: NvDataTableColumn<BusinessConsoleCodeRuleItem>[] = [
-  { key: 'ruleKey', header: '规则键', width: 'w-48' },
-  { key: 'displayName', header: '名称', cellClass: 'font-medium' },
-  { key: 'appliesTo', header: '适用对象' },
-  { key: 'scope', header: '范围', width: 'w-24' },
-  { key: 'format', header: '格式预览' },
-  { key: 'version', header: '版本', width: 'w-20', align: 'end' },
-  { key: 'status', header: '状态', width: 'w-24' },
-  { key: 'actions', header: '操作', align: 'end', width: 'w-32' },
-]
-
-// ── 查看 Sheet 抽屉 ─────────────────────────────────────────────
-interface VersionRow {
-  version?: number
-  status?: string
-  effectiveFromUtc?: string
-  createdBy?: string
-  changeReason?: string
-  createdAtUtc?: string
-}
-
-const viewOpen = shallowRef(false)
-const viewTarget = shallowRef<BusinessConsoleCodeRuleItem | null>(null)
-const versions = ref<VersionRow[]>([])
-const versionsPending = ref(false)
-const versionsError = ref('')
-const viewSegments = computed(() => viewTarget.value?.segments ?? [])
-
-const viewPreview = ref('')
-const viewPreviewPending = ref(false)
-
-async function openView(row: BusinessConsoleCodeRuleItem) {
-  viewTarget.value = row
-  viewOpen.value = true
-  versions.value = []
-  versionsError.value = ''
-  viewPreview.value = ''
-  if (!row.ruleKey) return
-  versionsPending.value = true
-  try {
-    const detail = await fetchRuleDetail(row.ruleKey)
-    if (detail?.rule) viewTarget.value = detail.rule
-    versions.value = detail?.versions ?? []
-  } catch (error) {
-    versionsError.value = inlineErrorMessage(error) || '加载版本历史失败，请稍后重试。'
-  } finally {
-    versionsPending.value = false
-  }
-}
-
-async function previewViewSample() {
-  const rule = viewTarget.value
-  if (!rule?.ruleKey) return
-  viewPreviewPending.value = true
-  viewPreview.value = ''
-  try {
-    const sample = await previewCode(rule.ruleKey, rule.segments ?? [])
-    viewPreview.value = sample ?? '（无返回）'
-  } catch (error) {
-    notifyOperationFailure('生成编码预览失败', error, '生成编码预览失败，请稍后重试。')
-  } finally {
-    viewPreviewPending.value = false
-  }
-}
-
-// ── 新建版本 Dialog ─────────────────────────────────────────────
-interface SegmentRow {
-  type: SegmentType | ''
-  value: string
-  format: string
-  width: string
-  start: string
-  padChar: string
-  reset: ResetPeriod
-  source: string
-  transform: FieldTransform
-  maxLength: string
-  algorithm: string
-  required: boolean
-}
-
-interface VersionForm {
-  displayName: string
-  appliesTo: string
-  scope: ScopeDimension
-  effectiveFromUtc: string | null
-  changeReason: string
-  createdBy: string
-  segments: SegmentRow[]
-}
-
-function blankSegment(): SegmentRow {
-  return {
-    type: 'constant',
-    value: '',
-    format: '',
-    width: '',
-    start: '',
-    padChar: '',
-    reset: 'none',
-    source: '',
-    transform: 'none',
-    maxLength: '',
-    algorithm: '',
-    required: false,
-  }
-}
-
-function toSegmentRow(segment: BusinessConsoleCodeRuleSegment): SegmentRow {
-  return {
-    type: segment.type ?? 'constant',
-    value: segment.value ?? '',
-    format: segment.format ?? '',
-    width: segment.width == null ? '' : String(segment.width),
-    start: segment.start == null ? '' : String(segment.start),
-    padChar: segment.padChar ?? '',
-    reset: segment.reset ?? 'none',
-    source: segment.source ?? '',
-    transform: segment.transform ?? 'none',
-    maxLength: segment.maxLength == null ? '' : String(segment.maxLength),
-    algorithm: segment.algorithm ?? '',
-    required: segment.required ?? false,
-  }
-}
-
-function blankForm(): VersionForm {
-  return {
-    displayName: '',
-    appliesTo: '',
-    scope: 'organization',
-    effectiveFromUtc: null,
-    changeReason: '',
-    createdBy: '',
-    segments: [blankSegment()],
-  }
-}
-
-const formOpen = shallowRef(false)
-const showErrors = ref(false)
-const editingRuleKey = shallowRef<string | null>(null)
-// 从所选规则行带出的只读上下文（规则键 / 当前版本），不让用户重填。
-const editingCurrentVersion = shallowRef<string>('')
-const form = reactive<VersionForm>(blankForm())
-const formPreview = ref('')
-const formPreviewPending = ref(false)
-
-function parseNumber(value: string): number | undefined {
-  const trimmed = value.trim()
-  if (!trimmed) return undefined
-  const parsed = Number(trimmed)
-  return Number.isFinite(parsed) ? parsed : undefined
-}
-
-const displayNameValid = computed(() => form.displayName.trim().length > 0)
-const createdByValid = computed(() => form.createdBy.trim().length > 0)
-const CHANGE_REASON_MAX_LENGTH = 500
-const changeReasonError = computed(() => {
-  if (form.changeReason.length > CHANGE_REASON_MAX_LENGTH) {
-    return `变更原因不能超过 ${CHANGE_REASON_MAX_LENGTH} 个字符。`
-  }
-  if (form.changeReason.length > 0 && form.changeReason.trim().length === 0) {
-    return '变更原因不能只包含空白字符。'
-  }
-  if (form.changeReason.trim().length === 0) return '请输入变更原因。'
-  return ''
-})
-const changeReasonValid = computed(() => changeReasonError.value === '')
-
-// 单段校验，对齐后端 CodeRuleDefinition.Validate()：返回 null 表示该段合法，否则给中文错误。
-function segmentError(row: SegmentRow): string | null {
-  if (row.type === '') return '请选择段类型。'
-  switch (row.type) {
-    case 'constant':
-      return row.value.trim() ? null : '常量段的常量值必填。'
-    case 'date':
-      return DATE_FORMAT_OPTIONS.includes(row.format.trim()) ? null : '请选择有效的日期格式。'
-    case 'sequence': {
-      const width = parseNumber(row.width)
-      const start = parseNumber(row.start)
-      if (width == null || width <= 0) return '流水段宽度必须大于 0。'
-      if (start == null || start <= 0) return '流水段起始值必须大于 0。'
-      return null
-    }
-    case 'field': {
-      if (!row.source.trim()) return '字段段的源必填。'
-      const maxLength = parseNumber(row.maxLength)
-      if (maxLength == null || maxLength <= 0) return '字段段的上限必须大于 0。'
-      return null
-    }
-    case 'checksum':
-      return CHECKSUM_ALGORITHM_OPTIONS.includes(row.algorithm.trim())
-        ? null
-        : '请选择有效的校验算法。'
-    default:
-      return null
-  }
-}
-
-const segmentErrors = computed(() => form.segments.map(segmentError))
-// 后端要求有且仅有 1 个流水段（0 或 ≥2 都报错）。
-const sequenceCount = computed(() => form.segments.filter((s) => s.type === 'sequence').length)
-const sequenceCountError = computed(() => {
-  if (sequenceCount.value === 0) return '至少需要 1 个流水段。'
-  if (sequenceCount.value > 1) return '只能有 1 个流水段。'
-  return ''
-})
-const segmentsValid = computed(
-  () =>
-    form.segments.length > 0 &&
-    segmentErrors.value.every((e) => e === null) &&
-    sequenceCountError.value === '',
-)
-const canSubmit = computed(
-  () =>
-    displayNameValid.value &&
-    createdByValid.value &&
-    changeReasonValid.value &&
-    segmentsValid.value,
-)
-
-// 把编辑行映射成契约段（number 空串转 undefined）。
-function rowToSegment(row: SegmentRow): BusinessConsoleCodeRuleSegment {
-  const segment: BusinessConsoleCodeRuleSegment = {
-    type: (row.type || 'constant') as SegmentType,
-    required: row.required,
-  }
-  switch (row.type) {
-    case 'constant':
-      segment.value = row.value.trim() || undefined
-      break
-    case 'date':
-      segment.format = row.format.trim() || undefined
-      break
-    case 'sequence':
-      segment.width = parseNumber(row.width)
-      segment.start = parseNumber(row.start)
-      segment.padChar = row.padChar || undefined
-      segment.reset = row.reset
-      break
-    case 'field':
-      segment.source = row.source.trim() || undefined
-      segment.transform = row.transform
-      segment.maxLength = parseNumber(row.maxLength)
-      break
-    case 'checksum':
-      segment.algorithm = row.algorithm.trim() || undefined
-      break
-  }
-  return segment
-}
-
-function openCreate(row: BusinessConsoleCodeRuleItem) {
-  if (!row.ruleKey) return
-  editingRuleKey.value = row.ruleKey
-  editingCurrentVersion.value =
-    row.version === null || row.version === undefined ? '' : String(row.version)
-  showErrors.value = false
-  formPreview.value = ''
-  Object.assign(form, {
-    displayName: row.displayName ?? '',
-    appliesTo: row.appliesTo ?? '',
-    scope: row.scope ?? 'organization',
-    effectiveFromUtc: null,
-    changeReason: '',
-    createdBy: '',
-    segments: row.segments?.length ? row.segments.map(toSegmentRow) : [blankSegment()],
-  })
-  formOpen.value = true
-}
-
-function resetVersionForm() {
-  Object.assign(form, blankForm())
-  showErrors.value = false
-  formPreview.value = ''
-  editingRuleKey.value = null
-  editingCurrentVersion.value = ''
-}
-
-function onFormOpenChange(value: boolean) {
-  formOpen.value = value
-  if (!value && !createPending.value) resetVersionForm()
-}
-
-function addSegment() {
-  form.segments.push(blankSegment())
-}
-function removeSegment(index: number) {
-  if (form.segments.length <= 1) return
-  form.segments.splice(index, 1)
-}
-
-async function previewFormSample() {
-  if (!editingRuleKey.value) return
-  if (!canSubmit.value) {
-    showErrors.value = true
-    return
-  }
-  formPreviewPending.value = true
-  formPreview.value = ''
-  try {
-    const segments = form.segments.map(rowToSegment)
-    const sample = await previewCode(editingRuleKey.value, segments)
-    formPreview.value = sample ?? '（无返回）'
-  } catch (error) {
-    notifyOperationFailure('生成编码预览失败', error, '生成编码预览失败，请稍后重试。')
-  } finally {
-    formPreviewPending.value = false
-  }
-}
-
-async function submitForm() {
-  if (!canSubmit.value) {
-    showErrors.value = true
-    return
-  }
-  const ruleKey = editingRuleKey.value
-  if (!ruleKey) return
-  const displayName = form.displayName.trim()
-  const body: BusinessConsoleCreateCodeRuleVersionRequest = {
-    organizationId: filters.organizationId,
-    environmentId: filters.environmentId,
-    displayName,
-    appliesTo: form.appliesTo.trim() || undefined,
-    scope: form.scope,
-    segments: form.segments.map(rowToSegment),
-    isActive: true,
-    effectiveFromUtc: form.effectiveFromUtc || null,
-    createdBy: form.createdBy.trim(),
-    changeReason: form.changeReason.trim(),
-  }
-  try {
-    await createRuleVersion(ruleKey, body)
-    notifySuccess(`规则「${displayName}」新版本已发布。`)
-    formOpen.value = false
-    resetVersionForm()
-  } catch (error) {
-    notifyOperationFailure('发布编码规则失败', error, '发布编码规则失败，请稍后重试。')
-  }
-}
+  createdByValid,
+  displayNameValid,
+  editingCurrentVersion,
+  editingRuleKey,
+  form,
+  formOpen,
+  formPreview,
+  formPreviewPending,
+  formatSegments,
+  listErrorMessage,
+  onFormOpenChange,
+  openCreate,
+  openView,
+  page,
+  pageSize,
+  pagedRules,
+  previewFormSample,
+  previewViewSample,
+  refresh,
+  removeSegment,
+  ruleStatusLabel,
+  ruleStatusTone,
+  rules,
+  rulesPending,
+  scopeLabel,
+  segmentErrors,
+  segmentParams,
+  segmentTypeLabel,
+  sequenceCountError,
+  showErrors,
+  submitForm,
+  versions,
+  versionsError,
+  versionsPending,
+  viewOpen,
+  viewPreview,
+  viewPreviewPending,
+  viewSegments,
+  viewTarget,
+} = useCodeRulesPage()
 </script>
 
 <template>
@@ -582,483 +128,52 @@ async function submitForm() {
     </NvDataTable>
 
     <!-- 查看 Sheet 抽屉 -->
-    <NvDialog v-model:open="viewOpen">
-      <NvDialogContent class="sm:max-w-4xl">
-        <NvDialogHeader>
-          <NvDialogTitle>编码规则 · 明细</NvDialogTitle>
-          <NvDialogDescription>
-            {{ viewTarget ? `${viewTarget.ruleKey} · ${viewTarget.displayName ?? ''}` : '' }}
-          </NvDialogDescription>
-        </NvDialogHeader>
-        <div v-if="viewTarget" class="grid max-h-[70vh] content-start gap-4 overflow-y-auto px-1">
-          <div class="grid gap-2 text-sm">
-            <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">规则键</span>
-              <span class="font-medium">{{ viewTarget.ruleKey ?? '—' }}</span>
-            </div>
-            <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">名称</span>
-              <span class="font-medium">{{ viewTarget.displayName ?? '—' }}</span>
-            </div>
-            <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">适用对象</span>
-              <span class="font-medium">{{ viewTarget.appliesTo ?? '—' }}</span>
-            </div>
-            <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">范围</span>
-              <span class="font-medium">{{ scopeLabel(viewTarget.scope) }}</span>
-            </div>
-            <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">当前版本</span>
-              <span class="font-medium tabular-nums">{{ viewTarget.version ?? '—' }}</span>
-            </div>
-            <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">状态</span>
-              <NvStatusBadge
-                :label="ruleStatusLabel(viewTarget)"
-                :tone="ruleStatusTone(viewTarget)"
-              />
-            </div>
-          </div>
-
-          <div>
-            <FormSectionTitle>段定义</FormSectionTitle>
-            <div v-if="viewSegments.length" class="mt-2 overflow-x-auto rounded-md border">
-              <table class="w-full text-sm">
-                <thead class="bg-muted/40 text-muted-foreground">
-                  <tr>
-                    <th class="px-3 py-2 text-right font-medium">序号</th>
-                    <th class="px-3 py-2 text-left font-medium">类型</th>
-                    <th class="px-3 py-2 text-left font-medium">关键参数</th>
-                    <th class="px-3 py-2 text-left font-medium">必填</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(segment, i) in viewSegments" :key="i" class="border-t">
-                    <td class="px-3 py-2 text-right tabular-nums">{{ i + 1 }}</td>
-                    <td class="px-3 py-2">{{ segmentTypeLabel(segment.type) }}</td>
-                    <td class="px-3 py-2 text-muted-foreground">{{ segmentParams(segment) }}</td>
-                    <td class="px-3 py-2">{{ segment.required ? '是' : '—' }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <p v-else class="mt-2 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
-              该规则没有段定义。
-            </p>
-          </div>
-
-          <div class="grid gap-2">
-            <div class="flex items-center gap-2">
-              <NvButton
-                type="button"
-                variant="outline"
-                size="sm"
-                :disabled="viewPreviewPending"
-                @click="previewViewSample"
-              >
-                <NvSpinner v-if="viewPreviewPending" aria-hidden="true" />
-                预览示例编码
-              </NvButton>
-              <code v-if="viewPreview" class="rounded bg-muted px-2 py-1 text-sm font-mono">{{
-                viewPreview
-              }}</code>
-            </div>
-          </div>
-
-          <div>
-            <FormSectionTitle>版本历史</FormSectionTitle>
-            <div
-              v-if="versionsPending"
-              class="mt-2 flex items-center gap-2 py-2 text-sm text-muted-foreground"
-            >
-              <NvSpinner aria-hidden="true" />
-              加载版本历史…
-            </div>
-            <p
-              v-else-if="versionsError"
-              class="mt-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-              role="alert"
-            >
-              {{ versionsError }}
-            </p>
-            <div v-else-if="versions.length" class="mt-2 overflow-x-auto rounded-md border">
-              <table class="w-full text-sm">
-                <thead class="bg-muted/40 text-muted-foreground">
-                  <tr>
-                    <th class="px-3 py-2 text-right font-medium">版本</th>
-                    <th class="px-3 py-2 text-left font-medium">状态</th>
-                    <th class="px-3 py-2 text-left font-medium">生效时间</th>
-                    <th class="px-3 py-2 text-left font-medium">创建人</th>
-                    <th class="px-3 py-2 text-left font-medium">变更原因</th>
-                    <th class="px-3 py-2 text-left font-medium">创建时间</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(ver, i) in versions" :key="i" class="border-t">
-                    <td class="px-3 py-2 text-right tabular-nums">{{ ver.version ?? '—' }}</td>
-                    <td class="px-3 py-2">
-                      {{ labelFor(CODE_RULE_VERSION_LABELS, ver.status, '—') }}
-                    </td>
-                    <td class="px-3 py-2">{{ ver.effectiveFromUtc ?? '即时' }}</td>
-                    <td class="px-3 py-2">{{ ver.createdBy ?? '—' }}</td>
-                    <td class="px-3 py-2 text-muted-foreground">{{ ver.changeReason ?? '—' }}</td>
-                    <td class="px-3 py-2 text-muted-foreground">{{ ver.createdAtUtc ?? '—' }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <p v-else class="mt-2 rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
-              暂无版本历史
-            </p>
-          </div>
-        </div>
-      </NvDialogContent>
-    </NvDialog>
+    <CodeRuleDetailDialog
+      v-model:view-open="viewOpen"
+      :preview-view-sample="previewViewSample"
+      :rule-status-label="ruleStatusLabel"
+      :rule-status-tone="ruleStatusTone"
+      :scope-label="scopeLabel"
+      :segment-params="segmentParams"
+      :segment-type-label="segmentTypeLabel"
+      :versions="versions"
+      :versions-error="versionsError"
+      :versions-pending="versionsPending"
+      :view-preview="viewPreview"
+      :view-preview-pending="viewPreviewPending"
+      :view-segments="viewSegments"
+      :view-target="viewTarget"
+    />
 
     <!-- 新建版本 Dialog -->
-    <NvDialog :open="formOpen" @update:open="onFormOpenChange">
-      <NvDialogContent class="sm:max-w-3xl">
-        <NvDialogHeader>
-          <NvDialogTitle>新建编码规则版本</NvDialogTitle>
-          <!-- 规则键与当前版本已在下方只读区呈现；此处仅供读屏播报。 -->
-          <NvDialogDescription class="sr-only">
-            规则 {{ editingRuleKey }}，当前版本 {{ editingCurrentVersion || '无' }}
-          </NvDialogDescription>
-        </NvDialogHeader>
-        <form class="grid gap-5" novalidate @submit.prevent="submitForm">
-          <CarriedContextSummary
-            label="规则上下文"
-            :items="[
-              { label: '规则键', value: editingRuleKey },
-              { label: '当前版本', value: editingCurrentVersion },
-            ]"
-          />
-          <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-            请填写带 * 的必填项（名称、变更原因、创建人），并修正下方红字提示。
-          </p>
-
-          <FormSectionTitle>版本信息</FormSectionTitle>
-          <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
-            <NvField :data-invalid="showErrors && !displayNameValid">
-              <NvFieldLabel for="cr-name"
-                >名称 <span class="text-destructive">*</span></NvFieldLabel
-              >
-              <NvInput id="cr-name" v-model="form.displayName" placeholder="规则名称" />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="cr-applies">适用对象</NvFieldLabel>
-              <NvInput id="cr-applies" v-model="form.appliesTo" placeholder="如 物料 / 工单" />
-            </NvField>
-            <NvField>
-              <NvFieldLabel for="cr-scope">范围</NvFieldLabel>
-              <NvSelect v-model="form.scope">
-                <NvSelectTrigger id="cr-scope"
-                  ><NvSelectValue placeholder="选择范围"
-                /></NvSelectTrigger>
-                <NvSelectContent>
-                  <NvSelectItem v-for="o in SCOPE_OPTIONS" :key="o.value" :value="o.value">{{
-                    o.label
-                  }}</NvSelectItem>
-                </NvSelectContent>
-              </NvSelect>
-            </NvField>
-            <NvField>
-              <NvFieldLabel>生效时间</NvFieldLabel>
-              <NvDatePicker
-                v-model="form.effectiveFromUtc"
-                placeholder="留空即时生效"
-                class="w-full"
-              />
-            </NvField>
-            <NvField :data-invalid="showErrors && !changeReasonValid">
-              <NvFieldLabel for="cr-reason">
-                变更原因 <span class="text-destructive">*</span>
-              </NvFieldLabel>
-              <NvInput
-                id="cr-reason"
-                v-model="form.changeReason"
-                required
-                :maxlength="CHANGE_REASON_MAX_LENGTH"
-                placeholder="说明本次规则调整的业务依据"
-                :invalid="showErrors && !changeReasonValid"
-                :aria-invalid="showErrors && !changeReasonValid ? 'true' : undefined"
-                :aria-describedby="
-                  showErrors && changeReasonError
-                    ? 'cr-reason-error cr-reason-count'
-                    : 'cr-reason-help cr-reason-count'
-                "
-              />
-              <div class="flex items-start justify-between gap-3">
-                <NvFieldError
-                  v-if="showErrors && changeReasonError"
-                  id="cr-reason-error"
-                  :errors="[changeReasonError]"
-                />
-                <NvFieldDescription v-else id="cr-reason-help">
-                  原因会记入版本历史，供后续审计与追溯。
-                </NvFieldDescription>
-                <span
-                  id="cr-reason-count"
-                  class="ml-auto shrink-0 text-xs text-muted-foreground"
-                  aria-live="polite"
-                >
-                  {{ form.changeReason.length }} / {{ CHANGE_REASON_MAX_LENGTH }}
-                </span>
-              </div>
-            </NvField>
-            <NvField :data-invalid="showErrors && !createdByValid">
-              <NvFieldLabel for="cr-by"
-                >创建人 <span class="text-destructive">*</span></NvFieldLabel
-              >
-              <NvInput id="cr-by" v-model="form.createdBy" placeholder="你的账号/姓名" />
-            </NvField>
-          </NvFieldGroup>
-
-          <div class="flex items-center justify-between">
-            <FormSectionTitle>段定义</FormSectionTitle>
-            <NvButton type="button" variant="outline" size="sm" @click="addSegment">
-              <PlusIcon aria-hidden="true" />
-              增加段
-            </NvButton>
-          </div>
-
-          <p v-if="showErrors && sequenceCountError" class="text-sm text-destructive" role="alert">
-            {{ sequenceCountError }}
-          </p>
-
-          <div class="grid gap-2">
-            <div
-              v-for="(segment, index) in form.segments"
-              :key="index"
-              class="grid gap-2 rounded-md border p-3"
-            >
-              <div class="grid grid-cols-[8rem_1fr_auto] items-end gap-2">
-                <NvField :data-invalid="showErrors && segment.type === ''">
-                  <NvFieldLabel :for="`cr-type-${index}`"
-                    >类型 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvSelect v-model="segment.type">
-                    <NvSelectTrigger :id="`cr-type-${index}`"
-                      ><NvSelectValue placeholder="选择类型"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem
-                        v-for="o in SEGMENT_TYPE_OPTIONS"
-                        :key="o.value"
-                        :value="o.value"
-                        >{{ o.label }}</NvSelectItem
-                      >
-                    </NvSelectContent>
-                  </NvSelect>
-                </NvField>
-
-                <!-- 常量 -->
-                <NvField
-                  v-if="segment.type === 'constant'"
-                  :data-invalid="showErrors && !!segmentErrors[index]"
-                >
-                  <NvFieldLabel :for="`cr-value-${index}`"
-                    >常量值 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvInput :id="`cr-value-${index}`" v-model="segment.value" placeholder="如 SKU" />
-                </NvField>
-
-                <!-- 日期 -->
-                <NvField
-                  v-else-if="segment.type === 'date'"
-                  :data-invalid="showErrors && !!segmentErrors[index]"
-                >
-                  <NvFieldLabel :for="`cr-format-${index}`"
-                    >日期格式 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvSelect v-model="segment.format">
-                    <NvSelectTrigger :id="`cr-format-${index}`"
-                      ><NvSelectValue placeholder="选择日期格式"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem v-for="f in DATE_FORMAT_OPTIONS" :key="f" :value="f">{{
-                        f
-                      }}</NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
-                </NvField>
-
-                <!-- 流水号 -->
-                <div
-                  v-else-if="segment.type === 'sequence'"
-                  class="grid grid-cols-2 gap-2 sm:grid-cols-4"
-                >
-                  <NvField :data-invalid="showErrors && !!segmentErrors[index]">
-                    <NvFieldLabel :for="`cr-width-${index}`"
-                      >宽度 <span class="text-destructive">*</span></NvFieldLabel
-                    >
-                    <NvInput
-                      :id="`cr-width-${index}`"
-                      v-model="segment.width"
-                      type="number"
-                      min="1"
-                      placeholder="4"
-                    />
-                  </NvField>
-                  <NvField :data-invalid="showErrors && !!segmentErrors[index]">
-                    <NvFieldLabel :for="`cr-start-${index}`"
-                      >起始 <span class="text-destructive">*</span></NvFieldLabel
-                    >
-                    <NvInput
-                      :id="`cr-start-${index}`"
-                      v-model="segment.start"
-                      type="number"
-                      min="1"
-                      placeholder="1"
-                    />
-                  </NvField>
-                  <NvField>
-                    <NvFieldLabel :for="`cr-pad-${index}`">补位字符</NvFieldLabel>
-                    <NvInput :id="`cr-pad-${index}`" v-model="segment.padChar" placeholder="0" />
-                  </NvField>
-                  <NvField>
-                    <NvFieldLabel :for="`cr-reset-${index}`">重置</NvFieldLabel>
-                    <NvSelect v-model="segment.reset">
-                      <NvSelectTrigger :id="`cr-reset-${index}`"><NvSelectValue /></NvSelectTrigger>
-                      <NvSelectContent>
-                        <NvSelectItem v-for="o in RESET_OPTIONS" :key="o.value" :value="o.value">{{
-                          o.label
-                        }}</NvSelectItem>
-                      </NvSelectContent>
-                    </NvSelect>
-                  </NvField>
-                </div>
-
-                <!-- 字段 -->
-                <div
-                  v-else-if="segment.type === 'field'"
-                  class="grid grid-cols-1 gap-2 sm:grid-cols-3"
-                >
-                  <NvField :data-invalid="showErrors && !!segmentErrors[index]">
-                    <NvFieldLabel :for="`cr-source-${index}`"
-                      >源 <span class="text-destructive">*</span></NvFieldLabel
-                    >
-                    <NvInput
-                      :id="`cr-source-${index}`"
-                      v-model="segment.source"
-                      placeholder="如 categoryCode"
-                    />
-                  </NvField>
-                  <NvField>
-                    <NvFieldLabel :for="`cr-transform-${index}`">变换</NvFieldLabel>
-                    <NvSelect v-model="segment.transform">
-                      <NvSelectTrigger :id="`cr-transform-${index}`"
-                        ><NvSelectValue
-                      /></NvSelectTrigger>
-                      <NvSelectContent>
-                        <NvSelectItem
-                          v-for="o in TRANSFORM_OPTIONS"
-                          :key="o.value"
-                          :value="o.value"
-                          >{{ o.label }}</NvSelectItem
-                        >
-                      </NvSelectContent>
-                    </NvSelect>
-                  </NvField>
-                  <NvField :data-invalid="showErrors && !!segmentErrors[index]">
-                    <NvFieldLabel :for="`cr-maxlen-${index}`"
-                      >上限 <span class="text-destructive">*</span></NvFieldLabel
-                    >
-                    <NvInput
-                      :id="`cr-maxlen-${index}`"
-                      v-model="segment.maxLength"
-                      type="number"
-                      min="1"
-                      placeholder="如 8"
-                    />
-                  </NvField>
-                </div>
-
-                <!-- 校验位 -->
-                <NvField
-                  v-else-if="segment.type === 'checksum'"
-                  :data-invalid="showErrors && !!segmentErrors[index]"
-                >
-                  <NvFieldLabel :for="`cr-algo-${index}`"
-                    >算法 <span class="text-destructive">*</span></NvFieldLabel
-                  >
-                  <NvSelect v-model="segment.algorithm">
-                    <NvSelectTrigger :id="`cr-algo-${index}`"
-                      ><NvSelectValue placeholder="选择校验算法"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem v-for="a in CHECKSUM_ALGORITHM_OPTIONS" :key="a" :value="a">{{
-                        a
-                      }}</NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
-                </NvField>
-
-                <div v-else />
-
-                <NvButton
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label="删除该段"
-                  :disabled="form.segments.length <= 1"
-                  @click="removeSegment(index)"
-                >
-                  <Trash2Icon aria-hidden="true" />
-                </NvButton>
-              </div>
-
-              <div class="flex items-center justify-between gap-3">
-                <label
-                  :for="`cr-required-${index}`"
-                  class="flex cursor-pointer select-none items-center gap-2 text-sm"
-                >
-                  <NvCheckbox :id="`cr-required-${index}`" v-model="segment.required" />
-                  <span>必填</span>
-                </label>
-                <p
-                  v-if="showErrors && segmentErrors[index]"
-                  class="text-sm text-destructive"
-                  role="alert"
-                >
-                  {{ segmentErrors[index] }}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <NvButton
-              type="button"
-              variant="outline"
-              size="sm"
-              :disabled="formPreviewPending"
-              @click="previewFormSample"
-            >
-              <NvSpinner v-if="formPreviewPending" aria-hidden="true" />
-              预览
-            </NvButton>
-            <code v-if="formPreview" class="rounded bg-muted px-2 py-1 text-sm font-mono">{{
-              formPreview
-            }}</code>
-          </div>
-
-          <NvDialogFooter>
-            <NvButton
-              type="button"
-              variant="outline"
-              :disabled="createPending"
-              @click="onFormOpenChange(false)"
-              >取消</NvButton
-            >
-            <NvButton type="submit" :disabled="createPending">
-              <NvSpinner v-if="createPending" aria-hidden="true" />
-              发布版本
-            </NvButton>
-          </NvDialogFooter>
-        </form>
-      </NvDialogContent>
-    </NvDialog>
+    <CodeRuleVersionDialog
+      :-c-h-a-n-g-e_-r-e-a-s-o-n_-m-a-x_-l-e-n-g-t-h="CHANGE_REASON_MAX_LENGTH"
+      :-c-h-e-c-k-s-u-m_-a-l-g-o-r-i-t-h-m_-o-p-t-i-o-n-s="CHECKSUM_ALGORITHM_OPTIONS"
+      :-d-a-t-e_-f-o-r-m-a-t_-o-p-t-i-o-n-s="DATE_FORMAT_OPTIONS"
+      :-r-e-s-e-t_-o-p-t-i-o-n-s="RESET_OPTIONS"
+      :-s-c-o-p-e_-o-p-t-i-o-n-s="SCOPE_OPTIONS"
+      :-s-e-g-m-e-n-t_-t-y-p-e_-o-p-t-i-o-n-s="SEGMENT_TYPE_OPTIONS"
+      :-t-r-a-n-s-f-o-r-m_-o-p-t-i-o-n-s="TRANSFORM_OPTIONS"
+      :add-segment="addSegment"
+      :can-submit="canSubmit"
+      :change-reason-error="changeReasonError"
+      :change-reason-valid="changeReasonValid"
+      :create-pending="createPending"
+      :created-by-valid="createdByValid"
+      :display-name-valid="displayNameValid"
+      :editing-current-version="editingCurrentVersion"
+      :editing-rule-key="editingRuleKey"
+      :form="form"
+      :form-open="formOpen"
+      :form-preview="formPreview"
+      :form-preview-pending="formPreviewPending"
+      :on-form-open-change="onFormOpenChange"
+      :preview-form-sample="previewFormSample"
+      :remove-segment="removeSegment"
+      :segment-errors="segmentErrors"
+      :sequence-count-error="sequenceCountError"
+      :show-errors="showErrors"
+      :submit-form="submitForm"
+    />
   </BusinessLayout>
 </template>

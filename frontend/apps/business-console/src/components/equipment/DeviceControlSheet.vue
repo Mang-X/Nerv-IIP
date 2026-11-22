@@ -9,14 +9,14 @@ import {
   isTerminalDeviceControlStatus,
   useBusinessDeviceControlCommands,
   type DeviceControlCommandType,
-} from '@/composables/useBusinessDeviceControl'
+} from '@/composables/equipment/useBusinessDeviceControl'
 import {
   formatOeeQuantity,
   useBusinessTelemetryHistory,
   useBusinessTelemetryTagCurrentValue,
   useBusinessTelemetryTags,
-} from '@/composables/useBusinessTelemetry'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+} from '@/composables/equipment/useBusinessTelemetry'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import { normalizeTelemetryValueType } from '@/data/businessLabels'
 import { readFaceText } from '@/utils/readFace'
 import { notifyOperationFailure } from '@/utils/notify'

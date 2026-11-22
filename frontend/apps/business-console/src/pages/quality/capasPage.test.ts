@@ -41,7 +41,7 @@ const state = vi.hoisted(() => ({
   },
 }))
 
-vi.mock('@/composables/useBusinessQualityLedgers', () => ({
+vi.mock('@/composables/quality/useBusinessQualityLedgers', () => ({
   capaActionTypeLabel: (value?: string) => value ?? '未知',
   capaStatusLabel: (value?: string) => value ?? '未知',
   capaStatusTone: () => 'neutral',
@@ -72,7 +72,7 @@ vi.mock('@/composables/useBusinessQualityLedgers', () => ({
   }),
 }))
 
-vi.mock('@/composables/useQualityPickerCatalog', () => ({
+vi.mock('@/composables/quality/useQualityPickerCatalog', () => ({
   useQualityReadFaceCatalog: () => ({
     ncrCodeById: computed(() =>
       state.catalogResolved
@@ -92,7 +92,7 @@ vi.mock('@/composables/useQualityPickerCatalog', () => ({
   }),
 }))
 
-vi.mock('@/composables/usePagedList', () => ({
+vi.mock('@/composables/shared/usePagedList', () => ({
   usePagedList: () => ({ page: shallowRef(1), pageSize: shallowRef(20) }),
 }))
 

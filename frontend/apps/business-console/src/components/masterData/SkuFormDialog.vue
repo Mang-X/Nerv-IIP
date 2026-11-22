@@ -9,9 +9,9 @@ import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import type { DirectoryCreatedItem } from '@/components/business/directoryCreators'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { useCreateSku, useMasterDataResourceActions } from '@/composables/useBusinessMasterData'
-import { useSkuReferenceOptions } from '@/composables/useSkuReferenceOptions'
-import { useReturnFocusOnClose } from '@/composables/useReturnFocusOnClose'
+import { useCreateSku, useMasterDataResourceActions } from '@/composables/master-data'
+import { useSkuReferenceOptions } from '@/composables/master-data/useSkuReferenceOptions'
+import { useReturnFocusOnClose } from '@/composables/shared/useReturnFocusOnClose'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
   NvButton,

@@ -8,17 +8,17 @@ import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandi
 import WmsReceivingQualityFlow from '@/components/wms/WmsReceivingQualityFlow.vue'
 import { WMS_LINE_OWNER_TYPE_OPTIONS, wmsStatusTone } from '@/data/businessLabels'
 import { WMS_RECEIVING_QUALITY_OPTIONS } from '@/data/inventoryReference'
-import { hasBusinessContext } from '@/composables/businessContextBinding'
+import { hasBusinessContext } from '@/composables/shared/businessContextBinding'
 import {
   isIndeterminateLifecycleWriteError,
   recoverLifecycleAction,
-} from '@/composables/lifecycleAction'
+} from '@/composables/shared/lifecycleAction'
 import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
-import { createWmsIdempotencyKey, useWmsInboundOrders } from '@/composables/useBusinessWms'
-import { useInventoryScopeDefaults } from '@/composables/useInventoryScope'
-import { usePagedList } from '@/composables/usePagedList'
-import { useWmsOperationalCandidates } from '@/composables/useWmsOperationalCandidates'
-import { bindWmsWorkScopeFilters } from '@/composables/useWmsWorkScope'
+import { createWmsIdempotencyKey, useWmsInboundOrders } from '@/composables/wms'
+import { useInventoryScopeDefaults } from '@/composables/inventory/useInventoryScope'
+import { usePagedList } from '@/composables/shared/usePagedList'
+import { useWmsOperationalCandidates } from '@/composables/wms/useWmsOperationalCandidates'
+import { bindWmsWorkScopeFilters } from '@/composables/wms/useWmsWorkScope'
 import {
   wmsInboundOrderStatusFilterOptions,
   wmsInboundOrderStatusLabel,

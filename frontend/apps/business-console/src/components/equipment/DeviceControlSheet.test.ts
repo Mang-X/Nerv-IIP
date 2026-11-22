@@ -24,7 +24,7 @@ const tagName = vi.hoisted(() => ({ value: '主轴设定转速' as string | null
 
 const TERMINAL = new Set(['completed', 'failed', 'rejected', 'abandoned'])
 
-vi.mock('@/composables/useBusinessDeviceControl', () => ({
+vi.mock('@/composables/equipment/useBusinessDeviceControl', () => ({
   deviceControlApprovalLabel: (v?: string | null) => v ?? '未知',
   deviceControlCommandTypeLabel: (v?: string | null) => v ?? '未知',
   deviceControlStatusLabel: (v?: string | null) => v ?? '未知',
@@ -42,9 +42,10 @@ vi.mock('@/composables/useBusinessDeviceControl', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessTelemetry', async (importOriginal) => ({
-  formatOeeQuantity: (await importOriginal<typeof import('@/composables/useBusinessTelemetry')>())
-    .formatOeeQuantity,
+vi.mock('@/composables/equipment/useBusinessTelemetry', async (importOriginal) => ({
+  formatOeeQuantity: (
+    await importOriginal<typeof import('@/composables/equipment/useBusinessTelemetry')>()
+  ).formatOeeQuantity,
   useBusinessTelemetryTags: () => ({
     filters: reactive({ deviceAssetId: 'DEV-CNC-01' }),
     tags: computed(() => [
@@ -80,7 +81,7 @@ vi.mock('@/composables/useBusinessTelemetry', async (importOriginal) => ({
   }),
 }))
 
-vi.mock('@/composables/useMasterDataDisplayNames', () => ({
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', () => ({
   useMasterDataDisplayNames: () => ({
     resolveDevice: (reference?: string | null) =>
       reference === 'DEV-CNC-01' ? '数控车床 1 号' : undefined,

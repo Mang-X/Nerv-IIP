@@ -5,7 +5,10 @@ import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import type { DispatchAssignTarget } from '@/components/mes/DispatchAssignDialog.vue'
 import DispatchAssignDialog from '@/components/mes/DispatchAssignDialog.vue'
-import { recoverLifecycleAction, useLifecycleWriteIntent } from '@/composables/lifecycleAction'
+import {
+  recoverLifecycleAction,
+  useLifecycleWriteIntent,
+} from '@/composables/shared/lifecycleAction'
 import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import { useMesDisplayNames } from '@/composables/mes/useMesDisplayNames'
 import {
@@ -25,7 +28,7 @@ import {
   useMesDispatchTasks,
   useMesOperationTasks,
   useMesWorkOrderDetail,
-} from '@/composables/useBusinessMes'
+} from '@/composables/mes'
 import {
   inlineErrorMessage,
   notifyError,

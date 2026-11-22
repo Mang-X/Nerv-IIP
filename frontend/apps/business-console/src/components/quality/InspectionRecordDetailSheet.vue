@@ -12,8 +12,8 @@ import {
 import { PrinterIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, watch } from 'vue'
 
-import { useQualityInspectionRecordDetail } from '@/composables/useBusinessQuality'
-import { useSkuNames } from '@/composables/useSkuNames'
+import { useQualityInspectionRecordDetail } from '@/composables/quality/useBusinessQuality'
+import { useSkuNames } from '@/composables/master-data/useSkuNames'
 import { notifyError } from '@/utils/notify'
 
 // 来源检验记录只读详情，从质检页抽出（路由页只负责按 ?inspectionRecordId= 编排开合，Vue best-practices §2）。

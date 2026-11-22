@@ -59,7 +59,7 @@ const shelve = vi.fn(
 )
 const actionPending = ref(false)
 
-vi.mock('@/composables/useBusinessEquipmentAlarms', () => ({
+vi.mock('@/composables/equipment/useBusinessEquipmentAlarms', () => ({
   ALARM_SHELVE_DURATIONS_MINUTES: [30, 120, 480],
   useBusinessEquipmentAlarms: () => ({
     filters,

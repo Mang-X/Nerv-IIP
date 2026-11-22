@@ -10,7 +10,7 @@ const workerDirectory = vi.hoisted(() => ({
   filters: undefined as unknown as { keyword?: string },
 }))
 
-vi.mock('@/composables/useBusinessMasterData', async () => {
+vi.mock('@/composables/master-data', async () => {
   const { reactive, shallowRef } = await import('vue')
   workerDirectory.workers = shallowRef([])
   workerDirectory.workersPending = shallowRef(false)

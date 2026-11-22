@@ -23,7 +23,7 @@ const LINE_SIDE_ROW = {
   updatedAtUtc: '2026-09-23T08:00:00Z',
 }
 
-vi.mock('@/composables/useBusinessInventory', async () => {
+vi.mock('@/composables/inventory/useBusinessInventory', async () => {
   const { computed, reactive, shallowRef } = await import('vue')
   return {
     useInventoryLocations: () => {
@@ -52,7 +52,7 @@ vi.mock('@/composables/useBusinessInventory', async () => {
   }
 })
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessMasterDataResources: () => ({
     resources: computed(() => [{ code: 'SITE-001', displayName: '一号工厂' }]),
     resourcesPending: computed(() => false),

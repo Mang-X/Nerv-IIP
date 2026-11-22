@@ -6,7 +6,7 @@ import type {
   BusinessConsoleApprovalStepItem,
   BusinessConsoleApprovalTemplateItem,
 } from '@nerv-iip/api-client'
-import { useBusinessApproval } from '@/composables/useBusinessApproval'
+import { useBusinessApproval } from '@/composables/approval/useBusinessApproval'
 import { APPROVAL_DECISION_LABELS, DOCUMENT_TYPE_LABELS, labelFor } from '@/data/businessLabels'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { useAuthStore } from '@/stores/auth'

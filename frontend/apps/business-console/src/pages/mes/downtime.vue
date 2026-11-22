@@ -1,18 +1,15 @@
 <script setup lang="ts">
+import type { DowntimeTarget } from './downtimeTarget'
 import type { DateRange, NvDataTableColumn, NvMetricSegment } from '@nerv-iip/ui'
-import {
-  makeIdempotencyKey,
-  useMesDowntimeEvents,
-  useMesOperationTasks,
-} from '@/composables/useBusinessMes'
-import { pagedBreakdownSegments } from '@/composables/metricSegments'
+import { makeIdempotencyKey, useMesDowntimeEvents, useMesOperationTasks } from '@/composables/mes'
+import { pagedBreakdownSegments } from '@/composables/shared/metricSegments'
 import {
   mesDowntimeStatusOptions,
   useMesReferenceLabels,
 } from '@/composables/mes/useMesReferenceLabels'
-import { useMasterDataDisplayNames } from '@/composables/useMasterDataDisplayNames'
+import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDataDisplayNames'
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
-import { usePagedList } from '@/composables/usePagedList'
+import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import {
@@ -25,9 +22,6 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
-  NvField,
-  NvFieldGroup,
-  NvFieldLabel,
   NvInput,
   NvMetricCard,
   NvPageHeader,
@@ -50,6 +44,13 @@ import {
   notifyOperationFailure,
   notifySuccess,
 } from '@/utils/notify'
+import {
+  toDateInput,
+  toInclusiveEndDateInput,
+  fromDateInput,
+  toLocalDateTimeInput,
+} from './downtimeDates'
+import RecordDowntimeDialog from './components/RecordDowntimeDialog.vue'
 
 definePage({
   meta: {
@@ -173,30 +174,6 @@ const windowRange = computed<DateRange>({
   },
 })
 
-function toDateInput(value?: string, dayOffset = 0) {
-  if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
-  date.setDate(date.getDate() + dayOffset)
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
-  return local.toISOString().slice(0, 10)
-}
-
-function toInclusiveEndDateInput(value?: string) {
-  const date = value ? new Date(value) : null
-  const isExclusiveDayBoundary =
-    date?.getHours() === 0 &&
-    date.getMinutes() === 0 &&
-    date.getSeconds() === 0 &&
-    date.getMilliseconds() === 0
-  return toDateInput(value, isExclusiveDayBoundary ? -1 : 0)
-}
-
-function fromDateInput(value: string, dayOffset: number) {
-  const [year, month, day] = value.split('-').map(Number)
-  return new Date(year!, month! - 1, day! + dayOffset).toISOString()
-}
-
 // 停机读面只回设备编码，中文设备名在设备台账里，按编码 join 出来。
 const { resolveDevice } = useMasterDataDisplayNames({ devices: true })
 
@@ -278,17 +255,6 @@ const sourceWorkOrderRoute = computed(() => ({
   query: { operationTaskId: firstQuery(route.query.operationTaskId) || undefined },
 }))
 
-type OperationTask = (typeof operationTasks)['value'][number]
-type DowntimeTarget = {
-  key: string
-  workOrderId: string
-  operationTaskId: string
-  workCenterId: string
-  deviceAssetId: string
-  operationTask: OperationTask
-  label: string
-}
-
 const eligibleDowntimeTargets = computed<DowntimeTarget[]>(() => {
   const writeScope = downtimeWriteScope.value
   if (!writeScope || !canManageDowntime.value) return []
@@ -368,11 +334,6 @@ const recordEntryBlocker = computed(() => {
 function firstQuery(value: unknown) {
   if (Array.isArray(value)) return typeof value[0] === 'string' ? value[0] : ''
   return typeof value === 'string' ? value : ''
-}
-
-function toLocalDateTimeInput(date: Date) {
-  const offset = date.getTimezoneOffset() * 60_000
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16)
 }
 
 function clearRecordIntent() {
@@ -731,126 +692,20 @@ function formatDateTime(value?: string | null) {
       </template>
     </NvDataTable>
 
-    <NvDialog v-model:open="recordDialogOpen">
-      <NvDialogContent>
-        <NvDialogHeader>
-          <NvDialogTitle>确认登记停机</NvDialogTitle>
-          <NvDialogDescription>
-            从当前主体可见且可管理的工序中选择真实作业上下文，登记后将刷新停机事件列表。
-          </NvDialogDescription>
-        </NvDialogHeader>
-
-        <NvFieldGroup class="grid gap-4">
-          <NvField :data-invalid="recordShowErrors && !selectedDowntimeTarget">
-            <NvFieldLabel>工单与工序</NvFieldLabel>
-            <NvSelect v-model="recordForm.targetKey" aria-label="工单与工序">
-              <NvSelectTrigger><NvSelectValue placeholder="选择工单与工序" /></NvSelectTrigger>
-              <NvSelectContent>
-                <NvSelectItem
-                  v-for="target in eligibleDowntimeTargets"
-                  :key="target.key"
-                  :value="target.key"
-                >
-                  {{ target.label }}
-                </NvSelectItem>
-              </NvSelectContent>
-            </NvSelect>
-            <p v-if="recordShowErrors && !selectedDowntimeTarget" class="text-sm text-destructive">
-              请选择同时具备工单、工序、工作中心与设备上下文的记录。
-            </p>
-          </NvField>
-
-          <dl v-if="selectedDowntimeTarget" class="grid gap-2 rounded-md border p-3 text-sm">
-            <div class="flex justify-between gap-4">
-              <dt class="text-muted-foreground">工单</dt>
-              <dd>
-                {{
-                  selectedDowntimeTarget.operationTask.workOrderNo ||
-                  selectedDowntimeTarget.workOrderId
-                }}
-              </dd>
-            </div>
-            <div class="flex justify-between gap-4">
-              <dt class="text-muted-foreground">工序</dt>
-              <dd>
-                {{
-                  selectedDowntimeTarget.operationTask.operationTaskNo ||
-                  selectedDowntimeTarget.operationTaskId
-                }}
-              </dd>
-            </div>
-            <div class="flex justify-between gap-4">
-              <dt class="text-muted-foreground">工作中心</dt>
-              <dd>
-                {{
-                  selectedDowntimeTarget.operationTask.workCenterName ||
-                  selectedDowntimeTarget.workCenterId
-                }}
-              </dd>
-            </div>
-            <div class="flex justify-between gap-4">
-              <dt class="text-muted-foreground">设备</dt>
-              <dd>
-                {{
-                  selectedDowntimeTarget.operationTask.deviceAssetName ||
-                  selectedDowntimeTarget.operationTask.deviceAssetCode ||
-                  selectedDowntimeTarget.deviceAssetId
-                }}
-              </dd>
-            </div>
-          </dl>
-
-          <NvField :data-invalid="recordShowErrors && !recordForm.reasonCode.trim()">
-            <NvFieldLabel>停机原因</NvFieldLabel>
-            <NvSelect v-model="recordForm.reasonCode" aria-label="停机原因">
-              <NvSelectTrigger><NvSelectValue placeholder="选择停机原因" /></NvSelectTrigger>
-              <NvSelectContent>
-                <NvSelectItem
-                  v-for="option in downtimeReasonOptions"
-                  :key="option.value"
-                  :value="option.value"
-                >
-                  {{ option.label }}
-                </NvSelectItem>
-              </NvSelectContent>
-            </NvSelect>
-            <p
-              v-if="recordShowErrors && !recordForm.reasonCode.trim()"
-              class="text-sm text-destructive"
-            >
-              请选择已配置的停机原因。
-            </p>
-          </NvField>
-
-          <NvField :data-invalid="recordShowErrors && !validStartedAtUtc()">
-            <NvFieldLabel>停机开始时间</NvFieldLabel>
-            <NvInput
-              v-model="recordForm.startedAtLocal"
-              type="datetime-local"
-              aria-label="停机开始时间"
-              :max="toLocalDateTimeInput(new Date())"
-            />
-            <p v-if="recordShowErrors && !validStartedAtUtc()" class="text-sm text-destructive">
-              请输入有效且不晚于当前时间的停机开始时间。
-            </p>
-          </NvField>
-        </NvFieldGroup>
-
-        <NvDialogFooter>
-          <NvButton type="button" variant="outline" @click="recordDialogOpen = false">
-            取消
-          </NvButton>
-          <NvButton
-            type="button"
-            :disabled="recordPending"
-            data-testid="record-downtime-submit"
-            @click="submitDowntime"
-          >
-            {{ recordPending ? '登记中…' : '确认登记' }}
-          </NvButton>
-        </NvDialogFooter>
-      </NvDialogContent>
-    </NvDialog>
+    <RecordDowntimeDialog
+      v-model:record-dialog-open="recordDialogOpen"
+      v-model:record-target-key="recordForm.targetKey"
+      v-model:record-reason-code="recordForm.reasonCode"
+      v-model:record-started-at-local="recordForm.startedAtLocal"
+      :record-show-errors="recordShowErrors"
+      :selected-downtime-target="selectedDowntimeTarget"
+      :eligible-downtime-targets="eligibleDowntimeTargets"
+      :downtime-reason-options="downtimeReasonOptions"
+      :valid-started-at-utc="validStartedAtUtc"
+      :to-local-date-time-input="toLocalDateTimeInput"
+      :record-pending="recordPending"
+      @submit="submitDowntime"
+    />
 
     <NvDialog v-model:open="recoverOpen">
       <NvDialogContent>

@@ -5,7 +5,7 @@ import {
 } from '@nerv-iip/api-client'
 import { NvMobileButton } from '@nerv-iip/ui-mobile'
 import { computed, shallowRef, watch } from 'vue'
-import type { MesReportExecutionContext } from '@/composables/useBusinessMes'
+import type { MesReportExecutionContext } from '@/composables/mes'
 import { describeRequestError } from '@/api/request-timeout'
 
 const props = defineProps<{

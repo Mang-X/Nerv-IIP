@@ -3,7 +3,7 @@ import type { BusinessConsoleWorkerDirectoryItem } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { useMasterDataResource, useWorkerRegistry } from '@/composables/useBusinessMasterData'
+import { useMasterDataResource, useWorkerRegistry } from '@/composables/master-data'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvAlertDialog,

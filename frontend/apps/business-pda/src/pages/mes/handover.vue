@@ -18,8 +18,8 @@ import {
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import RetryableListError from '@/components/RetryableListError.vue'
-import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
-import { useNonIdempotentWriteResult } from '@/composables/useNonIdempotentWriteResult'
+import { makeIdempotencyKey } from '@/composables/shared/makeIdempotencyKey'
+import { useNonIdempotentWriteResult } from '@/composables/shared/useNonIdempotentWriteResult'
 import {
   useShiftHandoverDirectory,
   useShiftHandoverSubmission,
@@ -27,7 +27,7 @@ import {
   type ShiftHandoverOpenIssue,
   type ShiftHandoverUnfinishedWorkOrder,
   type ShiftHandoverWipItem,
-} from '@/composables/useBusinessShiftHandover'
+} from '@/composables/mes/useBusinessShiftHandover'
 import ShiftHandoverEntryForm from './components/ShiftHandoverEntryForm.vue'
 import ShiftHandoverPhotoCapture from './components/ShiftHandoverPhotoCapture.vue'
 

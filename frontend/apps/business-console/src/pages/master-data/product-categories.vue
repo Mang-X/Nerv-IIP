@@ -2,11 +2,11 @@
 import type {
   CreateProductCategoryRequest,
   ProductCategoryItem,
-} from '@/composables/usePromotedCatalogs'
+} from '@/composables/master-data/usePromotedCatalogs'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { useProductCategories } from '@/composables/usePromotedCatalogs'
+import { useProductCategories } from '@/composables/master-data/usePromotedCatalogs'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvAlertDialog,

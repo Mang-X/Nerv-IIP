@@ -2,15 +2,15 @@
 import TaskListShell from '@/components/task-list/TaskListShell.vue'
 import DeviceAssetPicker from '@/components/equipment/DeviceAssetPicker.vue'
 import DowntimeReasonPicker from '@/components/equipment/DowntimeReasonPicker.vue'
-import { makeIdempotencyKey } from '@/composables/makeIdempotencyKey'
-import { useBusinessMaintenance } from '@/composables/useBusinessMaintenance'
+import { makeIdempotencyKey } from '@/composables/shared/makeIdempotencyKey'
+import { useBusinessMaintenance } from '@/composables/maintenance/useBusinessMaintenance'
 import {
   useMaintenanceDowntimeReasonDirectory,
   type DowntimeReasonOption,
-} from '@/composables/useMaintenanceDowntimeReasonDirectory'
-import { confirmedMaintenanceCreateWorkOrderId } from '@/composables/maintenanceCreateReceipt'
-import { useMaintenanceSelfWorkOrderDetail } from '@/composables/useMaintenanceSelfWorkOrders'
-import { useNonIdempotentWriteResult } from '@/composables/useNonIdempotentWriteResult'
+} from '@/composables/maintenance/useMaintenanceDowntimeReasonDirectory'
+import { confirmedMaintenanceCreateWorkOrderId } from '@/composables/maintenance/maintenanceCreateReceipt'
+import { useMaintenanceSelfWorkOrderDetail } from '@/composables/maintenance'
+import { useNonIdempotentWriteResult } from '@/composables/shared/useNonIdempotentWriteResult'
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
 import {
   maintenancePriorityLabel,

@@ -53,7 +53,7 @@ const conversionRow = {
 
 const conversionState = vi.hoisted(() => ({ rows: [] as unknown[] }))
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessUoms: () => ({
     createUom: stub.createUom,
     createUomError: shallowRef(undefined),

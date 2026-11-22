@@ -32,7 +32,7 @@ const task = {
   allowedActions: ['start'],
 }
 
-vi.mock('@/composables/useBusinessWms', () => ({
+vi.mock('@/composables/wms', () => ({
   useWmsPutaway: () => ({
     filters,
     scopeKey,
@@ -52,7 +52,7 @@ vi.mock('@/composables/useBusinessWms', () => ({
     executeTask,
   }),
 }))
-vi.mock('@/composables/useWmsOperationalCandidates', async () => {
+vi.mock('@/composables/wms/useWmsOperationalCandidates', async () => {
   const { shallowRef } = await import('vue')
   return {
     useWmsOperationalCandidates: () => ({

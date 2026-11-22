@@ -53,7 +53,7 @@ const filters = reactive({
   take: 10,
 })
 
-vi.mock('@/composables/useProductEngineering', () => ({
+vi.mock('@/composables/engineering', () => ({
   useEngineeringDocuments: () => ({
     documents: computed(() => [docRow]),
     documentsError: shallowRef(undefined),

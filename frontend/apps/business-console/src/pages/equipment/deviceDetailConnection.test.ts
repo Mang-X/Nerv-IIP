@@ -18,7 +18,7 @@ const state = vi.hoisted(() => ({
 }))
 
 // 主数据名录桩：按（编码、公开 ID、名称）小表查，与真实实现同口径——编码和公开 ID 都能解析。
-vi.mock('@/composables/useMasterDataDisplayNames', () => {
+vi.mock('@/composables/master-data/useMasterDataDisplayNames', () => {
   const devices = [
     { code: 'EQ00001', publicId: '019fbb41-5555-7555-8555-555555555555', name: '五轴加工中心' },
   ]
@@ -41,8 +41,8 @@ vi.mock('vue-router', async (importOriginal) => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }))
 
-vi.mock('@/composables/useBusinessEquipment', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/composables/useBusinessEquipment')>()),
+vi.mock('@/composables/equipment/useBusinessEquipment', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/composables/equipment/useBusinessEquipment')>()),
   useBusinessEquipmentDevice: () => ({
     activeAlarms: computed(() => []),
     availabilityWindows: computed(() => state.availabilityWindows),
@@ -58,7 +58,7 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: [] } }),
 }))
 
-vi.mock('@/composables/useBusinessDeviceControl', () => ({
+vi.mock('@/composables/equipment/useBusinessDeviceControl', () => ({
   deviceControlApprovalLabel: () => '',
   deviceControlCommandTypeLabel: () => '',
   deviceControlStatusLabel: () => '',
@@ -73,7 +73,7 @@ vi.mock('@/composables/useBusinessDeviceControl', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessTelemetry', () => {
+vi.mock('@/composables/equipment/useBusinessTelemetry', () => {
   const windowFilters = () => ({ deviceAssetId: '', windowStartUtc: '', windowEndUtc: '' })
   return {
     describeTelemetryOeeDegradation: (reason: string) => reason,
@@ -116,7 +116,7 @@ vi.mock('@/composables/useBusinessTelemetry', () => {
   }
 })
 
-vi.mock('@/composables/useBusinessMaintenance', () => {
+vi.mock('@/composables/maintenance/useBusinessMaintenance', () => {
   const list = <K extends string>(key: K) => ({
     [key]: computed(() => []),
     [`${key}Error`]: shallowRef(),

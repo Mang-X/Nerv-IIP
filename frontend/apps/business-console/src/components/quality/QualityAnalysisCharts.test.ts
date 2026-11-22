@@ -9,7 +9,7 @@ import {
   buildSpcChartPresentation,
   formatQualityQuantity,
   type QualityAnalysisBucket,
-} from '@/composables/useBusinessQualityAnalysis'
+} from '@/composables/quality/useBusinessQualityAnalysis'
 
 const chart: BusinessConsoleQualitySpcControlChartResponse = {
   subgroups: [

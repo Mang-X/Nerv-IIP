@@ -2,16 +2,16 @@
 import type {
   CreateQualityReasonRequest,
   QualityReasonItem,
-} from '@/composables/usePromotedCatalogs'
+} from '@/composables/master-data/usePromotedCatalogs'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { useQualityReasonCodes } from '@/composables/usePromotedCatalogs'
+import { useQualityReasonCodes } from '@/composables/master-data/usePromotedCatalogs'
 import {
   QUALITY_DISPOSITION_OPTIONS,
   qualityDispositionLabel,
   useQualityReasonCatalog,
-} from '@/composables/useQualityPickerCatalog'
+} from '@/composables/quality/useQualityPickerCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvAlertDialog,

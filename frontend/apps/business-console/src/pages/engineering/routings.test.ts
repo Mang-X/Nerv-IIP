@@ -49,7 +49,7 @@ const standardOperations = ref([
   },
 ])
 
-vi.mock('@/composables/useProductEngineering', () => ({
+vi.mock('@/composables/engineering', () => ({
   useEngineeringRoutings: () => ({
     routings: computed(() => [routingRow]),
     routingsError: shallowRef(undefined),
@@ -68,7 +68,7 @@ vi.mock('@/composables/useProductEngineering', () => ({
   }),
 }))
 
-vi.mock('@/composables/useBusinessMasterData', () => ({
+vi.mock('@/composables/master-data', () => ({
   useBusinessSkus: () => ({
     skus: computed(() => [{ code: 'SKU-1', displayName: '智能网关主机' }]),
   }),
