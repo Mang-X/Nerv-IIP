@@ -21,6 +21,7 @@ import {
 import { computed, ref, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { describeRequestError } from '@/api/request-timeout'
+import { useAuthStore } from '@/stores/auth'
 import { useMesReceipts, useMesWorkOrders } from '@/composables/mes'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { makeIdempotencyKey } from '@/composables/shared/makeIdempotencyKey'
@@ -39,6 +40,15 @@ type Receipt = BusinessConsoleMesReceiptRequestRow
 type WorkOrder = BusinessConsoleMesWorkOrderItem
 
 const router = useRouter()
+const auth = useAuthStore()
+const canCreateReceipt = computed(() => {
+  const permissions = auth.principal?.permissionCodes ?? []
+  return (
+    permissions.includes('business.mes.work-orders.read') &&
+    permissions.includes('business.mes.receipts.read') &&
+    permissions.includes('business.mes.receipts.manage')
+  )
+})
 
 const {
   filters,
@@ -205,6 +215,7 @@ function resetForm() {
 }
 
 function openCreate() {
+  if (!canCreateReceipt.value) return
   scanGate.clear('list')
   result.value = null
   resetForm()
@@ -230,7 +241,7 @@ function chooseWorkOrder(wo: WorkOrder) {
 
 async function runCreate() {
   const original = intent.value
-  if (!original || submitting.value) return
+  if (!original || submitting.value || (!accepted.value && !canCreateReceipt.value)) return
   result.value = null
   submitting.value = true
   try {
@@ -290,7 +301,14 @@ async function runCreate() {
 function submitCreate() {
   const wo = selectedWorkOrder.value
   const lot = selectedLot.value
-  if (!createValid.value || !wo?.workOrderId || !lot || scanGuarded.value || submitting.value)
+  if (
+    !canCreateReceipt.value ||
+    !createValid.value ||
+    !wo?.workOrderId ||
+    !lot ||
+    scanGuarded.value ||
+    submitting.value
+  )
     return
   intent.value = {
     requestedAtUtc: new Date().toISOString(),
@@ -309,6 +327,7 @@ function submitCreate() {
 }
 
 function correctCreate() {
+  if (!canCreateReceipt.value) return
   intent.value = undefined
   result.value = null
   reloadLots.value += 1
@@ -358,6 +377,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
         </button>
         <h1 class="text-lg font-semibold text-foreground">完工入库</h1>
         <button
+          v-if="canCreateReceipt"
           type="button"
           data-testid="new-receipt"
           :disabled="scanPending || submitting || result !== null"
@@ -470,7 +490,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
 
     <!-- 新建完工入库（选工单 → 选批次并填写数量和单位 → 登记）-->
     <NvBottomSheet
-      :open="createSheetOpen"
+      :open="canCreateReceipt && createSheetOpen"
       title="新建完工入库"
       @update:open="createSheetOpen = $event"
     >

@@ -2,6 +2,14 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
 
+const receiptPermissions = [
+  'business.mes.work-orders.read',
+  'business.mes.receipts.read',
+  'business.mes.receipts.manage',
+]
+const auth = reactive({ principal: { permissionCodes: [...receiptPermissions] } })
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }))
+
 const push = vi.fn()
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push }),
@@ -119,6 +127,7 @@ import ReceiptPage from './receipt.vue'
 
 describe('PDA MES finished-goods receipt page', () => {
   beforeEach(() => {
+    auth.principal.permissionCodes = [...receiptPermissions]
     createReceipt.mockClear()
     createReceipt.mockResolvedValue(confirmation)
     readReceipt.mockClear()
@@ -233,6 +242,16 @@ describe('PDA MES finished-goods receipt page', () => {
     })
     expect(receiptFilters.workOrderId).toBe('WO-2026-0002')
     expect(receiptFilters.keyword).toBeUndefined()
+  })
+
+  it('keeps existing receipts visible without opening registration for read-only roles', () => {
+    auth.principal.permissionCodes = receiptPermissions.filter(
+      (permission) => permission !== 'business.mes.receipts.manage',
+    )
+    const wrapper = mount(ReceiptPage)
+
+    expect(wrapper.text()).toContain('WO-2026-0001')
+    expect(wrapper.find('[data-testid="new-receipt"]').exists()).toBe(false)
   })
 
   it('starts the new-receipt flow on the select-work-order step', async () => {
