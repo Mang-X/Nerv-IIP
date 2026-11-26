@@ -29,14 +29,10 @@ const permissionCodes = computed(() =>
 
 const currentDomainId = computed(() => resolveDomainId(route.path))
 
-// Top capability areas, RBAC-filtered (permissive default — see navigation.ts).
+// Use the first visible page in side navigation order as the domain landing page.
 const topDomains = computed(() =>
   permittedBy(BUSINESS_DOMAINS, permissionCodes.value).flatMap((domain) => {
-    if (domain.id !== 'mes') return [domain]
-
-    const firstPage = sideNavForDomain('mes', permissionCodes.value).flatMap(
-      (group) => group.items,
-    )[0]
+    const firstPage = sideNavForDomain(domain.id, permissionCodes.value)[0]?.items[0]
     return firstPage ? [{ ...domain, to: firstPage.to }] : []
   }),
 )

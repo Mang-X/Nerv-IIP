@@ -2,6 +2,66 @@ import { test, expectHeading } from './fixture'
 import { expect } from '@playwright/test'
 
 export function registerEntry() {
+  test.describe('桌面顶栏按岗位授权进入业务域', () => {
+    test.skip(({ isMobile }) => isMobile, '桌面顶栏交互')
+
+    for (const role of [
+      {
+        permission: 'business.erp.sales.read',
+        domain: '经营管理',
+        path: '/erp/sales',
+        pageTitle: '销售机会',
+        forbiddenPath: '/erp',
+      },
+      {
+        permission: 'business.masterdata.resources.read',
+        domain: '基础数据',
+        path: '/master-data/partners',
+        pageTitle: '业务伙伴',
+        forbiddenPath: '/master-data/skus',
+      },
+      {
+        permission: 'business.engineering.changes.read',
+        domain: '产品工程',
+        path: '/engineering/eco',
+        pageTitle: '工程变更',
+        forbiddenPath: '/engineering/production-versions',
+      },
+    ]) {
+      test.describe(role.pageTitle, () => {
+        test.use({ permissionCodes: [role.permission] })
+
+        test('从顶栏打开首个有权页面，未授权直链被拒绝', async ({ page }) => {
+          await page.goto('/', { waitUntil: 'domcontentloaded' })
+          const topNav = page.getByRole('navigation', { name: '一级能力区' })
+          await topNav.getByRole('link', { name: role.domain, exact: true }).click()
+          await expect(page).toHaveURL(role.path, { timeout: 30_000 })
+          await expect(page.locator('[data-slot="breadcrumb-page"]')).toHaveText(role.pageTitle, {
+            timeout: 15_000,
+          })
+
+          await page.goto(role.forbiddenPath, { waitUntil: 'domcontentloaded' })
+          await expect(page).toHaveURL(
+            (url) =>
+              url.pathname === '/forbidden' && url.searchParams.get('from') === role.forbiddenPath,
+          )
+        })
+      })
+    }
+
+    test.describe('只有资源管理权限', () => {
+      test.use({ permissionCodes: ['business.masterdata.resources.manage'] })
+
+      test('顶栏隐藏没有可访问页面的基础数据域', async ({ page }) => {
+        await page.goto('/', { waitUntil: 'domcontentloaded' })
+        const topNav = page.getByRole('navigation', { name: '一级能力区' })
+        await expect(topNav.getByRole('link', { name: '数字化工作台' })).toBeVisible()
+        await expect(topNav.getByRole('link', { name: '基础数据' })).toHaveCount(0)
+        await expect(topNav.getByRole('button', { name: '更多' })).toHaveCount(0)
+      })
+    })
+  })
+
   test('business console smoke pages render', async ({ page }) => {
     await expectHeading(page, '/master-data/skus', '物料与产品')
     await expectHeading(page, '/master-data/partners', '业务伙伴')
