@@ -205,11 +205,25 @@ export function useMesLineSideInventoryBalances() {
 
 export function useMesMaterialIssue() {
   const filters = defaultFilters()
+  const auth = useAuthStore()
   const queryCache = useQueryCache()
   const scopeReady = computed(() => hasScope(filters))
   const scopeKey = computed(() =>
     scopeReady.value ? `${filters.organizationId}:${filters.environmentId}` : '',
   )
+
+  const receiveScopeIdentity = computed(() => {
+    const principal = auth.principal
+    if (
+      !scopeReady.value ||
+      !principal?.principalId ||
+      principal.organizationId !== filters.organizationId ||
+      principal.environmentId !== filters.environmentId ||
+      !principal.permissionCodes?.includes('business.mes.materials.manage')
+    )
+      return ''
+    return JSON.stringify([principal.principalId, filters.organizationId, filters.environmentId])
+  })
 
   const requestsQuery = useQuery(() => ({
     ...listBusinessConsoleMesMaterialIssueRequestsQueryOptions({
@@ -235,14 +249,9 @@ export function useMesMaterialIssue() {
     },
   })
 
-  const confirmMutation = useMutation({
-    ...confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions(),
-    onSuccess() {
-      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests']).catch(
-        ignoreBackgroundError,
-      )
-    },
-  })
+  const confirmMutation = useMutation(
+    confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions(),
+  )
 
   const returnMutation = useMutation({
     ...returnBusinessConsoleMesLineSideMaterialMutationOptions(),
@@ -250,6 +259,38 @@ export function useMesMaterialIssue() {
       await invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests'])
     },
   })
+
+  async function readMaterialIssue(
+    requestId: string,
+    workOrderId: string | undefined,
+    scope: ReturnType<typeof scopeQuery>,
+  ) {
+    let skip = 0
+    let authoritative: BusinessConsoleMesMaterialIssueRequestRow | undefined
+    while (!authoritative) {
+      const { data } = await listBusinessConsoleMesMaterialIssueRequests({
+        query: {
+          ...scope,
+          ...(workOrderId ? { workOrderId } : {}),
+          skip,
+          take: DEFAULT_TAKE,
+        },
+        throwOnError: true,
+      })
+      const envelope = data as BusinessConsoleMesMaterialIssueRequestListEnvelope | undefined
+      authoritative = exactItem(
+        envelope,
+        (item: BusinessConsoleMesMaterialIssueRequestRow) =>
+          item.requestId === requestId && (!workOrderId || item.workOrderId === workOrderId),
+      )
+      if (authoritative) break
+      const items = envelope?.success ? (envelope.data?.items ?? []) : []
+      const total = envelope?.success ? (envelope.data?.total ?? 0) : 0
+      if (items.length === 0 || skip + items.length >= total) break
+      skip += items.length
+    }
+    return authoritative
+  }
 
   return {
     filters,
@@ -272,44 +313,52 @@ export function useMesMaterialIssue() {
         query: scopeQuery(filters),
         body: { ...body } satisfies BusinessConsoleMesCreateMaterialIssueRequest,
       }),
+    receiveScopeIdentity,
     confirmLineSideReceipt: async (
       requestId: string,
-      body: ConfirmLineSideReceiptInput,
-      context: { workOrderId?: string } = {},
+      body: ConfirmLineSideReceiptInput & { idempotencyKey: string },
+      context: { workOrderId?: string; replay?: boolean } = {},
     ) => {
-      let skip = 0
-      let authoritative: BusinessConsoleMesMaterialIssueRequestRow | undefined
-      while (!authoritative) {
-        const { data } = await listBusinessConsoleMesMaterialIssueRequests({
-          query: {
-            ...scopeQuery(filters),
-            ...(context.workOrderId?.trim() ? { workOrderId: context.workOrderId.trim() } : {}),
-            skip,
-            take: DEFAULT_TAKE,
-          },
-          throwOnError: true,
-        })
-        const envelope = data as BusinessConsoleMesMaterialIssueRequestListEnvelope | undefined
-        authoritative = exactItem(
-          envelope,
-          (item: BusinessConsoleMesMaterialIssueRequestRow) => item.requestId === requestId,
-        )
-        if (authoritative) break
-        const items = envelope?.success ? (envelope.data?.items ?? []) : []
-        const total = envelope?.success ? (envelope.data?.total ?? 0) : 0
-        if (items.length === 0 || skip + items.length >= total) break
-        skip += items.length
+      const identity = receiveScopeIdentity.value
+      const scope = scopeQuery(filters)
+      const workOrderId = context.workOrderId?.trim()
+      function assertCurrentScope() {
+        if (!identity || receiveScopeIdentity.value !== identity) {
+          throw new Error('当前作业范围已变化，请重新打开领料申请。')
+        }
       }
-      assertLifecycleActionExecutable({
-        domain: 'mes-material-issue',
-        action: 'confirm-receipt',
-        facts: { status: authoritative?.status },
-      })
-      return confirmMutation.mutateAsync({
+
+      assertCurrentScope()
+      if (!context.replay) {
+        const current = await readMaterialIssue(requestId, workOrderId, scope)
+        assertCurrentScope()
+        assertLifecycleActionExecutable({
+          domain: 'mes-material-issue',
+          action: 'confirm-receipt',
+          facts: { status: current?.status },
+        })
+      }
+
+      // MES 按键恢复原回执，即使该领料单已进入过账中或已收，重放仍由网关重新授权。
+      const response = await confirmMutation.mutateAsync({
         path: { requestId },
-        query: scopeQuery(filters),
-        body: { ...body } satisfies BusinessConsoleMesConfirmLineSideReceiptRequest,
+        query: scope,
+        body,
       })
+      assertCurrentScope()
+      const reference = response?.data?.downstreamDocumentId?.trim()
+      if (!response?.success || response.data?.accepted !== true || !reference) {
+        throw new Error(response?.message || '尚未取得线边接收回执，请重试原操作。')
+      }
+
+      const current = await readMaterialIssue(requestId, workOrderId, scope)
+      assertCurrentScope()
+      if (!current) throw new Error('收料已受理，暂未读到原领料申请，请重试核实。')
+      await invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesMaterialIssueRequests',
+        'listBusinessConsoleMesLineSideInventoryBalances',
+      ]).catch(ignoreBackgroundError)
+      return { reference, current }
     },
     returnLineSideMaterial: async (
       requestId: string,

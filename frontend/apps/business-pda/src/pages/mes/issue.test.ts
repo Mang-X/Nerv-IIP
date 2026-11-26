@@ -10,8 +10,12 @@ vi.mock('vue-router', () => ({
 // --- composable mock: 2 issue requests + 2 work orders + create/confirm spies ---
 const createIssue = vi.fn(async (_workOrderId: string, _body: Record<string, unknown>) => {})
 const confirmLineSideReceipt = vi.fn(
-  async (_requestId: string, _body: Record<string, unknown>) => {},
+  async (_requestId: string, _body: Record<string, unknown>, _context: { replay?: boolean }) => ({
+    reference: 'MI-001',
+    current: { status: 'PartiallyReceived', receivedQuantity: 100 },
+  }),
 )
+const receiveScopeIdentity = ref('operator-001:org-001:env-dev')
 const returnLineSideMaterial = vi.fn(
   async (_requestId: string, _body: Record<string, unknown>) => {},
 )
@@ -124,6 +128,7 @@ vi.mock('@/composables/mes', () => ({
     refresh: refreshRequests,
     createIssue,
     confirmLineSideReceipt,
+    receiveScopeIdentity,
     returnLineSideMaterial,
   }),
   useMesWorkOrders: () => ({
@@ -157,7 +162,11 @@ describe('PDA MES material issue page', () => {
     createIssue.mockClear()
     createIssue.mockResolvedValue(undefined)
     confirmLineSideReceipt.mockClear()
-    confirmLineSideReceipt.mockResolvedValue(undefined)
+    confirmLineSideReceipt.mockResolvedValue({
+      reference: 'MI-001',
+      current: { status: 'PartiallyReceived', receivedQuantity: 100 },
+    })
+    receiveScopeIdentity.value = 'operator-001:org-001:env-dev'
     returnLineSideMaterial.mockClear()
     returnLineSideMaterial.mockResolvedValue(undefined)
     push.mockClear()
@@ -439,9 +448,11 @@ describe('PDA MES material issue page', () => {
     wrapper.unmount()
   })
 
-  // #3328：线边收料的 idempotencyKey 已从网关公开契约摘掉（MES 侧从不消费它）。
-  // 本条改断言请求体只带该端点真正消费的字段、且不含幂等键。
-  it('confirms line-side receipt without an idempotency key and shows success', async () => {
+  it('submits a keyed line-side receipt and shows the accepted reference and readback', async () => {
+    confirmLineSideReceipt.mockResolvedValueOnce({
+      reference: 'MI-001',
+      current: { status: 'ReceiptPosting', receivedQuantity: 0 },
+    })
     const wrapper = mount(IssuePage, { attachTo: document.body })
 
     // 行内线边接收动作（第一条申请）
@@ -464,17 +475,15 @@ describe('PDA MES material issue page', () => {
     const [requestId, body] = confirmLineSideReceipt.mock.calls[0]
     expect(requestId).toBe('REQ-1')
     expect(body.receivedQuantity).toBe(100)
-    expect(body).not.toHaveProperty('idempotencyKey')
+    expect(body.idempotencyKey).toEqual(expect.any(String))
 
-    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
-    wrapper.unmount()
+    const outcome = wrapper.get('[data-result][data-status="success"]')
+    expect(outcome.text()).toContain('领料单 MI-001')
+    expect(outcome.text()).toContain('库存过账中')
+    expect(outcome.text()).toContain('已收 0')
   })
 
-  // #3328：原来这里断言「重试复用同键、新一轮铸新键」。键摘掉之后，重试仍然必须发出
-  // **与首次逐字相同**的请求（没有任何随尝试次数变化的字段）——这是本条今天能证的那句。
-  // 重放安全的权威落在 MES 侧 MaterialIssueRequest.ConfirmLineSideReceipt 的
-  // 「过账尚未回执」守卫（MesWriteReplaySafetyTests）。
-  it('replays an identical receive request on retry', async () => {
+  it('replays the same receipt body and assigns a new key to the next receipt', async () => {
     const wrapper = mount(IssuePage, { attachTo: document.body })
 
     async function fillReceive(testid: string) {
@@ -500,10 +509,14 @@ describe('PDA MES material issue page', () => {
     await flushPromises()
 
     expect(confirmLineSideReceipt).toHaveBeenCalledTimes(2)
-    expect(confirmLineSideReceipt.mock.calls[1]).toEqual(confirmLineSideReceipt.mock.calls[0])
-    expect(confirmLineSideReceipt.mock.calls[0][1]).not.toHaveProperty('idempotencyKey')
+    const [requestId, body] = confirmLineSideReceipt.mock.calls[0]
+    expect(confirmLineSideReceipt.mock.calls[1]).toEqual([
+      requestId,
+      body,
+      { workOrderId: 'WO-2026-0001', replay: true },
+    ])
 
-    // 成功后回到起点，对同一条申请再发起一轮接收：仍然是同一份请求体。
+    // 继续进入同一申请时，创建新的收料意图。
     await wrapper
       .findAll('button')
       .find((b) => b.text() === '继续')!
@@ -512,8 +525,8 @@ describe('PDA MES material issue page', () => {
     await fillReceive('receive-REQ-1')
 
     expect(confirmLineSideReceipt).toHaveBeenCalledTimes(3)
-    expect(confirmLineSideReceipt.mock.calls[2]).toEqual(confirmLineSideReceipt.mock.calls[0])
-    wrapper.unmount()
+    expect(confirmLineSideReceipt.mock.calls[2][1]).toMatchObject({ receivedQuantity: 100 })
+    expect(confirmLineSideReceipt.mock.calls[2][1].idempotencyKey).not.toBe(body.idempotencyKey)
   })
 
   it('returns received line-side material from the same issue list', async () => {

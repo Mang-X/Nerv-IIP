@@ -187,30 +187,44 @@ describe('pda useBusinessMes composables', () => {
     expect(payload.body.idempotencyKey).toBe('op-issue-1')
   })
 
-  // #3328：线边收料的 idempotencyKey 已从网关公开契约摘掉（MES 侧从不消费它），
-  // 所以这里不再断言「把调用方给的键转发下去」，改为断言请求体只带该端点真正消费的字段、
-  // 且**不含**幂等键——有人把它加回来会红。重放安全的权威落在 MES 侧
-  // MaterialIssueRequest.ConfirmLineSideReceipt 的「过账尚未回执」守卫（MesWriteReplaySafetyTests）。
-  it('confirms a line-side material receipt without an idempotency key in the body', async () => {
+  it('replays a keyed line-side receipt and reads back only the original issue request', async () => {
+    reactiveAuthState.principal!.permissionCodes = ['business.mes.materials.manage']
     const { confirmLineSideReceipt } = useMesMaterialIssue()
+    const mutate = coladaState.mutateById.get('confirmBusinessConsoleMesLineSideMaterialReceipt')!
+    mutate.mockResolvedValue({
+      success: true,
+      data: { accepted: true, downstreamDocumentId: 'MI-002' },
+    })
+    const current = {
+      requestId: 'req-2',
+      workOrderId: 'wo-2',
+      status: 'ReceiptPosting',
+      receivedQuantity: 4,
+    } as const
+    vi.mocked(listBusinessConsoleMesMaterialIssueRequests).mockResolvedValueOnce({
+      data: { success: true, data: { items: [current], total: 1 } },
+    } as Awaited<ReturnType<typeof listBusinessConsoleMesMaterialIssueRequests>>)
 
-    await confirmLineSideReceipt('req-2', { receivedQuantity: 4 }, { workOrderId: 'wo-2' })
-
+    const body = { receivedQuantity: 4, idempotencyKey: 'original-receipt-key' }
+    await expect(
+      confirmLineSideReceipt('req-2', body, { workOrderId: 'wo-2', replay: true }),
+    ).resolves.toEqual({ reference: 'MI-002', current })
     expect(confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions).toHaveBeenCalled()
-    expect(listBusinessConsoleMesMaterialIssueRequests).toHaveBeenCalledWith({
-      query: expect.objectContaining({ workOrderId: 'wo-2', skip: 0, take: 100 }),
+    expect(mutate).toHaveBeenCalledWith({
+      path: { requestId: 'req-2' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body,
+    })
+    expect(listBusinessConsoleMesMaterialIssueRequests).toHaveBeenCalledExactlyOnceWith({
+      query: {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        workOrderId: 'wo-2',
+        skip: 0,
+        take: 100,
+      },
       throwOnError: true,
     })
-    expect(
-      vi.mocked(listBusinessConsoleMesMaterialIssueRequests).mock.calls[0]?.[0].query,
-    ).not.toHaveProperty('keyword')
-    const mutateAsync = coladaState.mutateById.get(
-      'confirmBusinessConsoleMesLineSideMaterialReceipt',
-    )
-    const payload = mutateAsync!.mock.calls[0][0]
-    expect(payload.path).toEqual({ requestId: 'req-2' })
-    expect(payload.body).toEqual({ receivedQuantity: 4 })
-    expect(payload.body).not.toHaveProperty('idempotencyKey')
   })
 
   it('replays a return with the same key after the authoritative list shows zero returnable quantity', async () => {
