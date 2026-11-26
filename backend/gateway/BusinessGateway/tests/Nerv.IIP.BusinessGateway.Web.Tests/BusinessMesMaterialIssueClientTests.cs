@@ -44,6 +44,21 @@ public sealed class BusinessMesMaterialIssueClientTests
     }
 
     [Fact]
+    public async Task Confirm_line_side_receipt_forwards_the_caller_intent_key_to_mes()
+    {
+        var handler = new RecordingHandler(
+            """{"data":{"status":"Accepted","referenceId":"MIR-000123","acceptedAtUtc":"2026-07-31T08:05:00Z"}}""");
+        var client = new HttpBusinessMesClient(new HttpClient(handler) { BaseAddress = new Uri("http://mes") });
+        var request = new BusinessConsoleMesConfirmLineSideReceiptRequest(
+            "MIR-000123", "org", "env", "LOT-A", 2m, null, IdempotencyKey: "receipt-intent-4551");
+
+        await client.ConfirmLineSideMaterialReceiptAsync("token", "MIR-000123", request, CancellationToken.None);
+
+        using var body = JsonDocument.Parse(handler.LastRequestBody!);
+        Assert.Equal("receipt-intent-4551", body.RootElement.GetProperty("idempotencyKey").GetString());
+    }
+
+    [Fact]
     public async Task Create_material_issue_request_forwards_supplementary_semantics_to_mes()
     {
         var handler = new RecordingHandler(

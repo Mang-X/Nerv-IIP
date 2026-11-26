@@ -5339,6 +5339,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     materialLotId?: string | null;
     receivedQuantity?: number | null;
     evidenceFileIds?: Array<string> | null;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReturnLineSideMaterialRequest = {
