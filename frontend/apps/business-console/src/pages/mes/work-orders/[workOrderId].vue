@@ -127,6 +127,7 @@ const {
   qualityHolds,
   receiveError,
   receiveForm,
+  receiveRetry,
   receiveOpen,
   recordEngineeringChangeDecisionPending,
   refreshAll,
@@ -421,6 +422,7 @@ const {
       :confirm-line-side-receipt-pending="confirmLineSideReceiptPending"
       :receive-error="receiveError"
       :receive-form="receiveForm"
+      :receive-retry="receiveRetry"
       :submit-receipt="submitReceipt"
     />
 
