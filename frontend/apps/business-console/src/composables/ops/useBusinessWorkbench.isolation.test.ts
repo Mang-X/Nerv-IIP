@@ -83,7 +83,7 @@ it('isolates workbench data on a principal change and refreshes the current prin
   await flushPromises()
   expect(visibleItems()).toEqual(['PO-B-UPDATED', 'MSG-B-UPDATED'])
 
-  auth.clearSession()
+  auth.clearSession('logout')
   await wrapper.get('button').trigger('click')
   await flushPromises()
   expect(visibleItems()).toEqual(['', ''])
