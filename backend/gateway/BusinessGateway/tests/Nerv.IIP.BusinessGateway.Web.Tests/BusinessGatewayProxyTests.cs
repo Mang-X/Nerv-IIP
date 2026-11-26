@@ -10533,6 +10533,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -10576,6 +10578,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -10734,6 +10738,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -10807,6 +10813,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -10855,6 +10863,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
             services.RemoveAll<IBusinessMasterDataClient>();
