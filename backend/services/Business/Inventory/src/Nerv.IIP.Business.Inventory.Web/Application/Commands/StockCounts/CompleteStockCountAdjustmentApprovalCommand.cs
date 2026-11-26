@@ -87,12 +87,12 @@ public sealed class CompleteStockCountAdjustmentApprovalCommandHandler(Applicati
             {
                 var movement = task.ConfirmApprovedAdjustment(ledger, adjustment.IdempotencyKey);
                 dbContext.StockMovements.Add(movement);
-                adjustment.MarkPosted(movement);
+                adjustment.MarkPosted(movement, task.IdempotencyKey);
                 return movement;
             }
 
             task.RequireRecountAfterApprovalRejection(ledger);
-            adjustment.VoidAfterApprovalRejection();
+            adjustment.VoidAfterApprovalRejection(task.IdempotencyKey);
             return null;
         }
         catch (InvalidOperationException exception)

@@ -2441,7 +2441,7 @@ public sealed class CompleteCountExecutionCommandHandler
         return new CompleteWmsMovementResult(movementRequest.Id, null);
     }
 
-    private static void RecordRecountRequired(CountExecution count, InventoryMovementRequest receipt)
+    internal static void RecordRecountRequired(CountExecution count, InventoryMovementRequest receipt)
     {
         receipt.MarkFailed(WmsCountAdjustmentOutcome.RecountRequiredCode, WmsCountAdjustmentOutcome.RecountRequiredMessage);
         count.RequireRecount();
@@ -2633,7 +2633,7 @@ internal static class WmsInventoryReservationIdempotencyKeys
     public static string ForCountExecution(CountExecution count)
     {
         var raw = $"{count.OrganizationId}:{count.EnvironmentId}:{count.CountNo}";
-        return $"wms-count-freeze:{StableHash(raw)}";
+        return StockCountApprovalSettledPayload.WarehouseCountTaskKeyPrefix + StableHash(raw);
     }
 
     private static string StableHash(string raw)

@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountAdjustmentAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
@@ -15,3 +16,5 @@ public sealed record StockReservationExpiredDomainEvent(
     StockReservation StockReservation,
     decimal ReleasedQuantity,
     DateTime ExpiredAtUtc) : IDomainEvent;
+
+public sealed record StockCountApprovalSettledDomainEvent(StockCountAdjustment Adjustment, string CountTaskKey) : IDomainEvent;

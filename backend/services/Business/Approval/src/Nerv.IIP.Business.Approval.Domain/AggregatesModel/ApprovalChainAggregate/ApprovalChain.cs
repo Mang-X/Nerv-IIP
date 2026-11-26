@@ -81,7 +81,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         var identity = string.Join('\n',
             ApprovalText.Required(organizationId),
             ApprovalText.Required(environmentId),
-            ApprovalText.Required(templateCode),
+            documentReference.IsStockCountAdjustment ? string.Empty : ApprovalText.Required(templateCode),
             documentReference.SourceService,
             documentReference.DocumentType,
             documentReference.DocumentId,
@@ -203,9 +203,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
     {
         // Inventory uses the adjustment key as the document line. A retry of that
         // adjustment must recover the same chain after it reaches a terminal state.
-        if (DocumentReference.SourceService != ApprovalSourceServices.Inventory
-            || DocumentReference.DocumentType != ApprovalDocumentTypes.StockCountVariance
-            || DocumentReference.DocumentLineId is null)
+        if (!DocumentReference.IsStockCountAdjustment)
         {
             PendingIdentityKey = null;
         }
@@ -746,6 +744,9 @@ public sealed class ApprovalDocumentReference
     public string DocumentType { get; private set; } = string.Empty;
     public string DocumentId { get; private set; } = string.Empty;
     public string? DocumentLineId { get; private set; }
+
+    public bool IsStockCountAdjustment => SourceService == ApprovalSourceServices.Inventory
+        && DocumentType == ApprovalDocumentTypes.StockCountVariance && DocumentLineId is not null;
     public decimal? Amount { get; private set; }
     public string? OrganizationId { get; private set; }
     public string? DepartmentId { get; private set; }

@@ -716,7 +716,7 @@ public sealed class ApprovalEndpointContractTests
         await dbContext.SaveChangesAsync();
         dbContext.ChangeTracker.Clear();
 
-        var replay = await start.Handle(command, CancellationToken.None);
+        var replay = await start.Handle(command with { TemplateCode = "replacement-template" }, CancellationToken.None);
         Assert.Equal(new StartApprovalChainResult(first.ChainId, status), replay);
         Assert.Equal(1, await dbContext.ApprovalChains.CountAsync());
         var recount = await start.Handle(command with { DocumentLineId = "adjustment-2" }, CancellationToken.None);

@@ -52,6 +52,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | Inventory | `StockMovementPostedIntegrationEvent` | Inventory | WMS、MES、ERP | `consumed-internally` |
 | Inventory | `StockMovementPostingFailedIntegrationEvent` | Inventory | WMS | `consumed-internally` |
 | Inventory | `StockCountVarianceConfirmedIntegrationEvent` | Inventory | 当前无必须改变平台状态的活动消费者 | `producer-only-until-feature` |
+| Inventory | `StockCountApprovalSettledIntegrationEvent` | Inventory | WMS 按原调整键保存盘点过账或复盘状态 | `consumed-internally` |
 | Inventory | `StockAvailabilityChangedIntegrationEvent` | Inventory | Scheduling：仅失效问题快照中缺料项含该物料的方案，记录命中工序；无匹配时留痕 | `consumed-internally` |
 | Maintenance | V1 `AssetUnavailableIntegrationEvent`；V2 `AssetUnavailableV2IntegrationEvent` | V1 Maintenance（v1 自由文本入口只发 V1；v2 原因码入口双发 V1 companion + V2）；V2 Maintenance（`POST /api/business/v2/maintenance/work-orders`，#2964 C/D 阶段） | V1 MES、Scheduling；V2 MES、Scheduling 均精确订阅 canonical topic，并按共享 `idempotencyKey` 折叠双发 | V1/V2 `consumed-internally` |
 | Maintenance | `AssetRestoredIntegrationEvent` | Maintenance | MES、Scheduling | `consumed-internally` |

@@ -70,6 +70,18 @@ public sealed class StartApprovalChainCommandHandler(ApplicationDbContext dbCont
                     && x.DocumentReference.DocumentLineId == documentReference.DocumentLineId))
             .Select(x => new StartApprovalChainResult(x.Id, x.Status))
             .SingleOrDefaultAsync(cancellationToken);
+        if (existingChain is null && documentReference.IsStockCountAdjustment)
+        {
+            existingChain = await dbContext.ApprovalChains
+                .Where(x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.DocumentReference.SourceService == documentReference.SourceService
+                    && x.DocumentReference.DocumentType == documentReference.DocumentType
+                    && x.DocumentReference.DocumentId == documentReference.DocumentId
+                    && x.DocumentReference.DocumentLineId == documentReference.DocumentLineId)
+                .Select(x => new StartApprovalChainResult(x.Id, x.Status))
+                .SingleOrDefaultAsync(cancellationToken);
+        }
         if (existingChain is not null)
         {
             return existingChain;

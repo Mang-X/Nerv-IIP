@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.Inventory.Domain.DomainEvents;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 
@@ -91,7 +92,7 @@ public sealed class StockCountAdjustment : Entity<StockCountAdjustmentId>, IAggr
         return new StockCountAdjustment(task, idempotencyKey, StockCountAdjustmentStatuses.PendingApproval, approvalChainId, null, varianceAmount);
     }
 
-    public void MarkPosted(StockMovement movement)
+    public void MarkPosted(StockMovement movement, string countTaskKey)
     {
         ArgumentNullException.ThrowIfNull(movement);
         if (Status == StockCountAdjustmentStatuses.Posted)
@@ -109,9 +110,10 @@ public sealed class StockCountAdjustment : Entity<StockCountAdjustmentId>, IAggr
         VarianceAmount = Math.Abs(movement.MovementAmount ?? 0m);
         Status = StockCountAdjustmentStatuses.Posted;
         ConfirmedAtUtc = DateTime.UtcNow;
+        this.AddDomainEvent(new StockCountApprovalSettledDomainEvent(this, countTaskKey));
     }
 
-    public void VoidAfterApprovalRejection()
+    public void VoidAfterApprovalRejection(string countTaskKey)
     {
         if (Status == StockCountAdjustmentStatuses.Voided)
         {
@@ -124,5 +126,6 @@ public sealed class StockCountAdjustment : Entity<StockCountAdjustmentId>, IAggr
         }
 
         Status = StockCountAdjustmentStatuses.Voided;
+        this.AddDomainEvent(new StockCountApprovalSettledDomainEvent(this, countTaskKey));
     }
 }

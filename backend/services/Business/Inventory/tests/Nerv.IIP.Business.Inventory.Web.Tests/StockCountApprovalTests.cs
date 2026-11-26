@@ -7,6 +7,8 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Business.Inventory.Infrastructure;
+using Nerv.IIP.Business.Inventory.Domain.DomainEvents;
+using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Inventory.Web.Application.Approval;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
@@ -106,6 +108,13 @@ public sealed class StockCountApprovalTests
         };
         await Assert.ThrowsAsync<InvalidOperationException>(() => completion.HandleAsync(decision, CancellationToken.None));
         var result = await handler.Handle(command, CancellationToken.None);
+        var domainEvent = Assert.IsType<StockCountApprovalSettledDomainEvent>(
+            Assert.Single(db.StockCountAdjustments.Local.Single().GetDomainEvents()));
+        var message = new StockCountApprovalSettledIntegrationEventConverter(new CountApprovalEventContext()).Convert(domainEvent);
+        Assert.Equal(task.IdempotencyKey, message.Payload.CountTaskKey);
+        Assert.Equal(command.IdempotencyKey, message.Payload.AdjustmentKey);
+        Assert.Equal(result.MovementId?.ToString(), message.Payload.MovementId);
+        Assert.Equal(expectedStatus == StockCountAdjustmentStatuses.Voided, message.Payload.RequiresRecount);
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
         await completion.HandleAsync(decision, CancellationToken.None);
@@ -381,6 +390,11 @@ public sealed class StockCountApprovalTests
 
         public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class CountApprovalEventContext : IInventoryIntegrationEventContextAccessor
+    {
+        public InventoryIntegrationEventContext GetContext() => new("corr-count", "cause-count", "system:inventory");
     }
 
     private sealed class NoopMediator : IMediator
