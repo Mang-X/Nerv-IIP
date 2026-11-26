@@ -1,19 +1,26 @@
 <script setup lang="ts">
 import type {
+  BusinessConsoleMesCreateReceiptResponse,
   BusinessConsoleMesReceiptRequestRow,
   BusinessConsoleMesWorkOrderItem,
 } from '@nerv-iip/api-client'
 import {
   finishedGoodsReceiptFlow,
-  type ReceiptCtx,
   receiptPendingReason,
   receiptStatusLabel,
   workOrderSubtitle,
   workOrderTitle,
 } from '@nerv-iip/business-core'
-import { NvAppShellMobile, NvBottomSheet, NvListRow, NvMobileResult } from '@nerv-iip/ui-mobile'
-import { computed, reactive, ref } from 'vue'
+import {
+  NvAppShellMobile,
+  NvBottomSheet,
+  NvListRow,
+  NvMobileResult,
+  NvNumberKeyboard,
+} from '@nerv-iip/ui-mobile'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { describeRequestError } from '@/api/request-timeout'
 import { useMesReceipts, useMesWorkOrders } from '@/composables/mes'
 import RetryableListError from '@/components/RetryableListError.vue'
 import { makeIdempotencyKey } from '@/composables/shared/makeIdempotencyKey'
@@ -35,6 +42,7 @@ const router = useRouter()
 
 const {
   filters,
+  receiptScopeIdentity,
   receipts,
   pending,
   error,
@@ -42,6 +50,8 @@ const {
   hasFailedResponse,
   refresh,
   createReceipt,
+  readProducedLots,
+  readReceipt,
 } = useMesReceipts()
 
 const {
@@ -83,70 +93,115 @@ function formatReceiptNumber(value: number) {
   return new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 6 }).format(value)
 }
 
-// --- 流程上下文（finishedGoodsReceiptFlow 驱动当前步/进度）---
-const ctx = reactive<ReceiptCtx>({
-  workOrderId: undefined,
-  skuId: undefined,
-  quantityEntered: false,
-  created: false,
-})
-
-const currentStep = computed(() => finishedGoodsReceiptFlow.currentStep(ctx).id)
-const progress = computed(() => finishedGoodsReceiptFlow.progress(ctx))
-
-// --- 新建完工入库表单 ---
-const creating = ref(false)
-const selectedWorkOrder = ref<WorkOrder | null>(null)
-const skuId = ref('')
-const quantity = ref<number | null>(null)
-const uomCode = ref('')
-
-// SKU/数量录入是否就绪（用于驱动流程第二步 done）
-function syncEnterStep() {
-  ctx.skuId = skuId.value.trim() || undefined
-  ctx.quantityEntered = quantity.value !== null && quantity.value > 0
+type ProducedLot = Awaited<ReturnType<typeof readProducedLots>>[number]
+type ResultState = {
+  status: 'success' | 'error'
+  title: string
+  description?: string
+  action?: 'retry' | 'correct' | 'read'
 }
 
-const createValid = computed(() => {
-  if (!selectedWorkOrder.value?.workOrderId) return false
-  if (skuId.value.trim() === '') return false
-  if (uomCode.value.trim() === '') return false
-  if (quantity.value === null || !(quantity.value > 0)) return false
-  return true
-})
-
-// --- 结果反馈 ---
-type ResultState = { status: 'success' | 'error'; title: string; description?: string }
+const creating = ref(false)
+const selectedWorkOrder = ref<WorkOrder | null>(null)
+const lots = shallowRef<ProducedLot[]>([])
+const lotsPending = ref(false)
+const lotsError = shallowRef<Error | null>(null)
+const reloadLots = ref(0)
+const selectedLotNo = ref('')
+const selectedLot = computed(() =>
+  lots.value.find((lot) => lot.producedLotNo === selectedLotNo.value),
+)
+const quantityText = ref('')
+const quantity = computed(() => Number(quantityText.value))
+const quantityKeyboardOpen = ref(false)
+const uomCode = ref('')
 const result = ref<ResultState | null>(null)
 const submitting = ref(false)
+const intent = shallowRef<{
+  input: Parameters<typeof createReceipt>[0] & { workOrderId: string }
+  requestedAtUtc: string
+}>()
+const accepted = shallowRef<BusinessConsoleMesCreateReceiptResponse>()
 
-// 稳定的逐操作幂等键：提交时铸造一次，重试复用同键；
-// 开始新完工入库（重新打开新建、成功）时清空 → 下次提交铸造新键。
-const operationKey = ref('')
 const scanGate = useMesScanGate()
 const scanPending = scanGate.pending
 const scanGuarded = scanGate.guarded
 const scannedWorkOrderId = ref('')
 const scannedOperationTaskId = ref('')
 
+const quantityError = computed(() => {
+  if (!Number.isFinite(quantity.value) || quantity.value <= 0) return '入库数量须大于 0。'
+  if (!/^\d*(\.\d{0,6})?$/.test(quantityText.value)) return '入库数量最多保留 6 位小数。'
+  if (selectedLot.value && quantity.value > selectedLot.value.remainingQuantity)
+    return '入库数量不能超过该批次剩余可入库数量。'
+})
+const createValid = computed(() =>
+  Boolean(
+    scopeReady.value &&
+    selectedWorkOrder.value?.workOrderId &&
+    selectedWorkOrder.value.skuId &&
+    selectedLot.value &&
+    !quantityError.value &&
+    uomCode.value.trim() &&
+    uomCode.value.trim().length <= 30,
+  ),
+)
+const progress = computed(() =>
+  finishedGoodsReceiptFlow.progress({
+    workOrderId: selectedWorkOrder.value?.workOrderId,
+    skuId: selectedWorkOrder.value?.skuId,
+    quantityEntered: createValid.value,
+    created: result.value?.status === 'success',
+  }),
+)
+
 const createSheetOpen = computed({
   get: () => creating.value && result.value === null,
   set: (open) => {
-    if (!open) closeCreate()
+    if (!open && !submitting.value) closeCreate()
   },
 })
 
-function resetForm() {
+watch(
+  [receiptScopeIdentity, () => selectedWorkOrder.value?.workOrderId, reloadLots],
+  async ([, workOrderId], _, onCleanup) => {
+    lots.value = []
+    lotsError.value = null
+    lotsPending.value = false
+    if (!workOrderId || !scopeReady.value) return
+    const request = new AbortController()
+    onCleanup(() => request.abort())
+    lotsPending.value = true
+    try {
+      const rows = await readProducedLots(workOrderId, request.signal)
+      if (request.signal.aborted) return
+      lots.value = rows
+      if (!rows.some((lot) => lot.producedLotNo === selectedLotNo.value)) selectedLotNo.value = ''
+    } catch (error) {
+      if (!request.signal.aborted) {
+        lotsError.value = new Error(
+          describeRequestError(error, '无法读取产出批次，请重试。').message,
+        )
+      }
+    } finally {
+      if (!request.signal.aborted) lotsPending.value = false
+    }
+  },
+)
+
+function changeWorkOrder() {
   selectedWorkOrder.value = null
-  skuId.value = ''
-  quantity.value = null
+  lots.value = []
+  selectedLotNo.value = ''
+  quantityText.value = ''
   uomCode.value = ''
-  ctx.workOrderId = undefined
-  ctx.skuId = undefined
-  ctx.quantityEntered = false
-  ctx.created = false
-  // 新一轮完工入库 → 作废上一个幂等键
-  operationKey.value = ''
+}
+
+function resetForm() {
+  changeWorkOrder()
+  quantityKeyboardOpen.value = false
+  intent.value = undefined
+  accepted.value = undefined
 }
 
 function openCreate() {
@@ -159,63 +214,105 @@ function closeCreate() {
   creating.value = false
   resetForm()
 }
+watch(
+  receiptScopeIdentity,
+  () => {
+    result.value = null
+    submitting.value = false
+    closeCreate()
+  },
+  { flush: 'sync' },
+)
 
 function chooseWorkOrder(wo: WorkOrder) {
   selectedWorkOrder.value = wo
-  ctx.workOrderId = wo.workOrderId
-  // 工单自带 skuId 时预填，便于扫码后直接确认
-  if (wo.skuId && skuId.value.trim() === '') {
-    skuId.value = wo.skuId
-  }
-  syncEnterStep()
-}
-function changeWorkOrder() {
-  selectedWorkOrder.value = null
-  ctx.workOrderId = undefined
 }
 
-async function submitCreate() {
-  if (scanGuarded.value) return
-  const workOrderId = selectedWorkOrder.value?.workOrderId
-  const sku = skuId.value.trim()
-  const uom = uomCode.value.trim()
-  const qty = quantity.value
-  if (!workOrderId || sku === '' || uom === '' || qty === null || !(qty > 0)) return
-  syncEnterStep()
-  // 首次提交铸造稳定幂等键，重试复用同键。
-  if (operationKey.value === '') {
-    operationKey.value = makeIdempotencyKey()
-  }
+async function runCreate() {
+  const original = intent.value
+  if (!original || submitting.value) return
+  result.value = null
   submitting.value = true
-  creating.value = false
   try {
-    await createReceipt({
-      workOrderId,
-      skuId: sku,
-      quantity: qty,
-      uomCode: uom,
-      idempotencyKey: operationKey.value,
-    })
-    ctx.created = true
+    if (!accepted.value) {
+      const response = await createReceipt(original.input, original.requestedAtUtc)
+      if (intent.value !== original) return
+      if (response?.success === false) throw response
+      const confirmation = response?.data
+      if (!confirmation?.requestNo || !confirmation.finishedGoodsReceiptRequestId) {
+        result.value = {
+          status: 'error',
+          title: '完工入库结果待确认',
+          action: 'retry',
+          description: '未收到原登记单号，请重试原提交。',
+        }
+        return
+      }
+      accepted.value = confirmation
+    }
+    const row = await readReceipt(original.input.workOrderId, accepted.value)
+    if (intent.value !== original) return
+    if (
+      !row ||
+      row.producedLotNo !== original.input.producedLotNo ||
+      typeof row.quantity !== 'number' ||
+      !row.receiptStatus
+    )
+      throw new Error('未找到原登记')
     result.value = {
       status: 'success',
       title: '完工入库已提交',
+      description: `单号 ${row.requestNo} · 批次 ${row.producedLotNo} · 数量 ${row.quantity} · ${receiptStatusLabel(row.receiptStatus)}`,
     }
-  } catch (e) {
+  } catch (error) {
+    if (intent.value !== original) return
+    if (accepted.value) {
+      result.value = {
+        status: 'error',
+        title: '完工入库待回读',
+        action: 'read',
+        description: `已收到单号 ${accepted.value.requestNo}，请重新读取原登记。`,
+      }
+      return
+    }
+    const failure = describeRequestError(error, '请核对产出批次、入库数量和工单计量单位后重试。')
     result.value = {
       status: 'error',
-      title: '完工入库失败',
-      description: e instanceof Error ? e.message : '请检查网络后重试。',
+      title: failure.indeterminate ? '完工入库结果待确认' : '完工入库失败',
+      description: failure.message,
+      action: failure.indeterminate ? 'retry' : 'correct',
     }
   } finally {
-    submitting.value = false
+    if (intent.value === original) submitting.value = false
   }
 }
 
-async function retryCreate() {
+function submitCreate() {
+  const wo = selectedWorkOrder.value
+  const lot = selectedLot.value
+  if (!createValid.value || !wo?.workOrderId || !lot || scanGuarded.value || submitting.value)
+    return
+  intent.value = {
+    requestedAtUtc: new Date().toISOString(),
+    input: {
+      workOrderId: wo.workOrderId,
+      skuId: wo.skuId,
+      quantity: quantity.value,
+      uomCode: uomCode.value.trim(),
+      producedLotNo: lot.producedLotNo,
+      serialNo: lot.serialNo,
+      idempotencyKey: makeIdempotencyKey(),
+    },
+  }
+  creating.value = false
+  return runCreate()
+}
+
+function correctCreate() {
+  intent.value = undefined
   result.value = null
+  reloadLots.value += 1
   creating.value = true
-  await submitCreate()
 }
 
 function continueWork() {
@@ -224,12 +321,11 @@ function continueWork() {
 }
 function goBack() {
   result.value = null
-  operationKey.value = ''
+  resetForm()
   router.push('/').catch(() => {})
 }
 
-// 扫码仅在列表态活跃；新建/结果展开时不抢焦点。
-const scanActive = computed(() => result.value === null && !creating.value)
+const scanActive = computed(() => result.value === null && !creating.value && !submitting.value)
 
 function onScanAccepted(value: MesScanAccepted) {
   if (value.kind !== 'work-order' && value.kind !== 'operation-task') return
@@ -264,7 +360,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
         <button
           type="button"
           data-testid="new-receipt"
-          :disabled="scanPending"
+          :disabled="scanPending || submitting || result !== null"
           class="ml-auto rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
           @click="openCreate"
         >
@@ -295,9 +391,15 @@ function onCreateScanAccepted(value: MesScanAccepted) {
           type="button"
           data-testid="retry-receipt"
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
-          @click="retryCreate"
+          @click="result.action === 'correct' ? correctCreate() : runCreate()"
         >
-          重试
+          {{
+            result.action === 'correct'
+              ? '返回修改'
+              : result.action === 'read'
+                ? '重新读取原登记'
+                : '重试原提交'
+          }}
         </button>
         <button
           type="button"
@@ -309,6 +411,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
       </template>
     </NvMobileResult>
 
+    <p v-else-if="submitting" role="status" class="p-4">正在核对完工入库登记…</p>
     <div v-else class="space-y-4 p-4">
       <MesScanPrevalidation
         :organization-id="filters.organizationId"
@@ -365,7 +468,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
       </div>
     </div>
 
-    <!-- 新建完工入库（finishedGoodsReceiptFlow：选工单 → 录 SKU/数量/单位 → 创建）-->
+    <!-- 新建完工入库（选工单 → 选批次并填写数量和单位 → 登记）-->
     <NvBottomSheet
       :open="createSheetOpen"
       title="新建完工入库"
@@ -381,7 +484,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
         </p>
 
         <!-- 步骤 1：选工单 -->
-        <div v-if="currentStep === 'selectWorkOrder' || !selectedWorkOrder" class="space-y-2">
+        <div v-if="!selectedWorkOrder" class="space-y-2">
           <MesScanPrevalidation
             :organization-id="filters.organizationId"
             :environment-id="filters.environmentId"
@@ -424,7 +527,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
           </div>
         </div>
 
-        <!-- 步骤 2：录 SKU / 数量 / 单位 -->
+        <!-- 步骤 2：选择实际产出批次，填写数量与单位 -->
         <div v-else class="space-y-4">
           <div
             class="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3"
@@ -445,44 +548,85 @@ function onCreateScanAccepted(value: MesScanAccepted) {
             </button>
           </div>
 
-          <label class="block space-y-1">
-            <span class="text-sm font-medium text-foreground">入库物料（SKU）</span>
-            <input
-              v-model="skuId"
-              data-testid="receipt-sku"
-              type="text"
-              class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base outline-none focus:border-primary"
-              @input="syncEnterStep"
+          <p class="text-sm">入库物料 {{ selectedWorkOrder.skuCode ?? selectedWorkOrder.skuId }}</p>
+          <fieldset class="space-y-2">
+            <legend class="text-sm font-medium">选择产出批次</legend>
+            <p v-if="lotsPending" role="status" class="text-sm">正在读取产出批次…</p>
+            <RetryableListError
+              v-else-if="lotsError"
+              :error="lotsError"
+              :pending="lotsPending"
+              fallback="无法读取产出批次，请重试。"
+              @retry="reloadLots += 1"
             />
-          </label>
+            <p v-else-if="!lots.length" class="text-sm text-muted-foreground">
+              当前工单暂无可入库批次。请确认已报工产出，或改选工单。
+              <button type="button" class="min-h-touch text-primary" @click="reloadLots += 1">
+                刷新批次
+              </button>
+            </p>
+            <div v-else class="max-h-40 overflow-y-auto">
+              <label
+                v-for="lot in lots"
+                :key="lot.producedLotNo"
+                class="flex min-h-touch items-center gap-2 rounded-lg border border-border px-3 py-2"
+              >
+                <input
+                  v-model="selectedLotNo"
+                  type="radio"
+                  name="receipt-lot"
+                  :value="lot.producedLotNo"
+                />
+                <span class="min-w-0">
+                  <span class="block break-all">{{ lot.producedLotNo }}</span>
+                  <span class="block text-sm text-muted-foreground">
+                    <template v-if="lot.reportNo">报工 {{ lot.reportNo }} · </template>
+                    <template v-if="lot.serialNo">序列号 {{ lot.serialNo }} · </template>
+                    剩余可入库 {{ formatReceiptNumber(lot.remainingQuantity) }}
+                  </span>
+                </span>
+              </label>
+            </div>
+          </fieldset>
 
-          <label class="block space-y-1">
-            <span class="text-sm font-medium text-foreground">入库数量</span>
-            <input
-              v-model.number="quantity"
-              data-testid="receipt-quantity"
-              type="number"
-              inputmode="decimal"
-              min="0.000001"
-              step="0.000001"
-              class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base outline-none focus:border-primary"
-              @input="syncEnterStep"
-            />
-          </label>
+          <button
+            type="button"
+            data-testid="receipt-quantity"
+            :aria-describedby="
+              quantityText && quantityError && !quantityKeyboardOpen
+                ? 'receipt-quantity-error'
+                : undefined
+            "
+            class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-left"
+            @click="quantityKeyboardOpen = true"
+          >
+            入库数量 {{ quantityText || '请输入' }}
+          </button>
+          <NvNumberKeyboard
+            v-model="quantityText"
+            v-model:show="quantityKeyboardOpen"
+            title="入库数量"
+          />
 
           <label class="block space-y-1">
             <span class="text-sm font-medium text-foreground">计量单位</span>
             <input
               v-model="uomCode"
               data-testid="receipt-uom"
+              maxlength="30"
               type="text"
               class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base outline-none focus:border-primary"
             />
           </label>
 
-          <p v-if="!createValid" class="text-sm text-muted-foreground">
-            请填写入库物料与计量单位，且入库数量须大于 0。
+          <p
+            v-if="quantityText && quantityError && !quantityKeyboardOpen"
+            id="receipt-quantity-error"
+            class="text-sm text-destructive"
+          >
+            {{ quantityError }}
           </p>
+          <p v-if="!uomCode.trim()" class="text-sm text-muted-foreground">请填写工单计量单位。</p>
 
           <button
             type="button"

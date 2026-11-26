@@ -8,7 +8,15 @@ vi.mock('vue-router', () => ({
 }))
 
 // --- composable mock: 2 receipts + 2 work orders + createReceipt spy ---
-const createReceipt = vi.fn(async (_input: Record<string, unknown>) => {})
+const confirmation = {
+  success: true,
+  data: { finishedGoodsReceiptRequestId: 'RCPT-1', requestNo: 'FGR-2026-0001' },
+}
+const createReceipt = vi.fn(
+  async (_input: Record<string, unknown>, _requestedAtUtc: string) => confirmation,
+)
+const readProducedLots = vi.fn(async () => [{ producedLotNo: 'LOT-A', remainingQuantity: 25 }])
+const readReceipt = vi.fn(async () => ({ ...receipts[0], producedLotNo: 'LOT-A' }))
 const refreshReceipts = vi.fn(async () => {})
 const refreshWorkOrders = vi.fn(async () => {})
 
@@ -83,6 +91,9 @@ const receiptsHasFailedResponse = ref(false)
 vi.mock('@/composables/mes', () => ({
   useMesReceipts: () => ({
     filters: receiptFilters,
+    receiptScopeIdentity: computed(() =>
+      JSON.stringify([receiptFilters.organizationId, receiptFilters.environmentId]),
+    ),
     receipts: computed(() => receiptRows.value),
     total: computed(() => receiptRows.value.length),
     pending: receiptsPending,
@@ -91,6 +102,8 @@ vi.mock('@/composables/mes', () => ({
     hasFailedResponse: receiptsHasFailedResponse,
     refresh: refreshReceipts,
     createReceipt,
+    readProducedLots,
+    readReceipt,
   }),
   useMesWorkOrders: () => ({
     filters: workOrderFilters,
@@ -107,7 +120,9 @@ import ReceiptPage from './receipt.vue'
 describe('PDA MES finished-goods receipt page', () => {
   beforeEach(() => {
     createReceipt.mockClear()
-    createReceipt.mockResolvedValue(undefined)
+    createReceipt.mockResolvedValue(confirmation)
+    readReceipt.mockClear()
+    readProducedLots.mockClear()
     push.mockClear()
     receiptFilters.keyword = undefined
     receiptFilters.workOrderId = undefined
@@ -228,125 +243,92 @@ describe('PDA MES finished-goods receipt page', () => {
     // 选工单步：列出工单，尚未要求录 SKU
     expect(document.body.querySelector('[data-testid="receipt-work-order"]')).not.toBeNull()
     expect(document.body.querySelector('[data-testid="receipt-sku"]')).toBeNull()
-    wrapper.unmount()
   })
 
-  it('creates a receipt with the bound fields after picking a work order and entering sku/quantity/uom', async () => {
-    const wrapper = mount(ReceiptPage, { attachTo: document.body })
-    await wrapper.get('[data-testid="new-receipt"]').trigger('click')
-    await flushPromises()
-
-    // 选工单
-    const woRow = document.body.querySelector<HTMLElement>('[data-testid="receipt-work-order"]')!
-    woRow.click()
-    await flushPromises()
-
-    // 录 SKU / 数量 / 单位
-    const skuInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-sku"]')!
-    skuInput.value = 'SKU-A'
-    skuInput.dispatchEvent(new Event('input'))
-    const qtyInput = document.body.querySelector<HTMLInputElement>(
-      '[data-testid="receipt-quantity"]',
-    )!
-    qtyInput.value = '20'
-    qtyInput.dispatchEvent(new Event('input'))
-    const uomInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-uom"]')!
-    uomInput.value = 'PCS'
-    uomInput.dispatchEvent(new Event('input'))
-    await flushPromises()
-
-    document.body.querySelector<HTMLElement>('[data-testid="submit-receipt"]')!.click()
-    await flushPromises()
-
-    expect(createReceipt).toHaveBeenCalledTimes(1)
-    const body = createReceipt.mock.calls[0][0]
-    expect(document.body.querySelector('[data-testid="receipt-unit-cost"]')).toBeNull()
-    expect(body).toMatchObject({
-      workOrderId: 'WO-2026-0001',
-      skuId: 'SKU-A',
-      quantity: 20,
-      uomCode: 'PCS',
-    })
-    expect(body).not.toHaveProperty('unitCost')
-    // idempotencyKey 现由页面提供（稳定逐操作键）；org/env/timestamp 仍由 composable 注入
-    expect(body.idempotencyKey).toBeTruthy()
-    expect(body).not.toHaveProperty('organizationId')
-    expect(body).not.toHaveProperty('environmentId')
-    expect(body).not.toHaveProperty('requestedAtUtc')
-
-    // 成功后 Result 成功态
-    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('完工入库已提交')
-    wrapper.unmount()
-  })
-
-  it('reuses the SAME idempotencyKey on create retry; a new receipt mints a different key', async () => {
-    const wrapper = mount(ReceiptPage, { attachTo: document.body })
-
-    async function fillCreate(sku: string) {
-      await wrapper.get('[data-testid="new-receipt"]').trigger('click')
-      await flushPromises()
-      document.body.querySelector<HTMLElement>('[data-testid="receipt-work-order"]')!.click()
-      await flushPromises()
-      const skuInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-sku"]')!
-      skuInput.value = sku
-      skuInput.dispatchEvent(new Event('input'))
-      const qtyInput = document.body.querySelector<HTMLInputElement>(
-        '[data-testid="receipt-quantity"]',
-      )!
-      qtyInput.value = '20'
-      qtyInput.dispatchEvent(new Event('input'))
-      const uomInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-uom"]')!
-      uomInput.value = 'PCS'
-      uomInput.dispatchEvent(new Event('input'))
-      await flushPromises()
-      document.body.querySelector<HTMLElement>('[data-testid="submit-receipt"]')!.click()
-      await flushPromises()
-    }
-
-    // 首次提交失败
-    createReceipt.mockRejectedValueOnce(new Error('lost response'))
-    await fillCreate('SKU-A')
-    expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
-
-    // 不重新发起，直接点重试 → 复用同一 idempotencyKey
-    await wrapper.get('[data-testid="retry-receipt"]').trigger('click')
-    await flushPromises()
-
-    expect(createReceipt).toHaveBeenCalledTimes(2)
-    const firstKey = createReceipt.mock.calls[0][0].idempotencyKey
-    const retryKey = createReceipt.mock.calls[1][0].idempotencyKey
-    expect(firstKey).toBeTruthy()
-    expect(retryKey).toBe(firstKey)
-
-    // 成功后继续，发起新一轮完工入库 → 新键
-    await wrapper.get('[data-testid="continue-receipt"]').trigger('click')
-    await flushPromises()
-    await fillCreate('SKU-B')
-
-    expect(createReceipt).toHaveBeenCalledTimes(3)
-    const newKey = createReceipt.mock.calls[2][0].idempotencyKey
-    expect(newKey).toBeTruthy()
-    expect(newKey).not.toBe(firstKey)
-    wrapper.unmount()
-  })
-
-  it('does not submit when sku or quantity is missing', async () => {
-    const wrapper = mount(ReceiptPage, { attachTo: document.body })
+  async function fillReceipt(wrapper: ReturnType<typeof mount>, uom = 'PCS') {
     await wrapper.get('[data-testid="new-receipt"]').trigger('click')
     await flushPromises()
     document.body.querySelector<HTMLElement>('[data-testid="receipt-work-order"]')!.click()
     await flushPromises()
-
-    // 仅填单位，缺 SKU 与数量
-    const uomInput = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-uom"]')!
-    uomInput.value = 'PCS'
-    uomInput.dispatchEvent(new Event('input'))
+    document.body.querySelector<HTMLInputElement>('[name="receipt-lot"]')!.click()
+    document.body.querySelector<HTMLElement>('[data-testid="receipt-quantity"]')!.click()
     await flushPromises()
-
+    for (const digit of ['2', '0', '完成']) {
+      Array.from(document.body.querySelectorAll('button'))
+        .find((button) => button.textContent?.trim() === digit)!
+        .click()
+      await flushPromises()
+    }
+    setUom(uom)
+    await flushPromises()
     document.body.querySelector<HTMLElement>('[data-testid="submit-receipt"]')!.click()
     await flushPromises()
-    expect(createReceipt).not.toHaveBeenCalled()
-    wrapper.unmount()
+  }
+
+  function setUom(value: string) {
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="receipt-uom"]')!
+    input.value = value
+    input.dispatchEvent(new Event('input'))
+  }
+
+  it('retries the original payload and timestamp after a lost response and uses a new key for a new receipt', async () => {
+    const wrapper = mount(ReceiptPage, { attachTo: document.body })
+    createReceipt.mockRejectedValueOnce(new TypeError('lost response'))
+    await fillReceipt(wrapper)
+    expect(wrapper.text()).toContain('完工入库结果待确认')
+
+    await wrapper.get('[data-testid="retry-receipt"]').trigger('click')
+    await flushPromises()
+    expect(createReceipt).toHaveBeenCalledTimes(2)
+    expect(createReceipt.mock.calls[1]).toEqual(createReceipt.mock.calls[0])
+    const [original] = createReceipt.mock.calls[0]
+    expect(original).toMatchObject({
+      workOrderId: 'WO-2026-0001',
+      skuId: 'SKU-A',
+      producedLotNo: 'LOT-A',
+      quantity: 20,
+      uomCode: 'PCS',
+    })
+    expect(original).not.toHaveProperty('unitCost')
+    expect(wrapper.text()).toContain('完工入库已提交')
+
+    await wrapper.get('[data-testid="continue-receipt"]').trigger('click')
+    await fillReceipt(wrapper)
+    expect(createReceipt).toHaveBeenCalledTimes(3)
+    expect(createReceipt.mock.calls[2][0].idempotencyKey).not.toBe(original.idempotencyKey)
+  })
+
+  it('lets the operator correct a unit rejected by MES', async () => {
+    const wrapper = mount(ReceiptPage, { attachTo: document.body })
+    createReceipt.mockRejectedValueOnce({ message: '完工入库 UoM 与工单不一致' })
+    await fillReceipt(wrapper, 'KG')
+    expect(wrapper.text()).toContain('完工入库 UoM 与工单不一致')
+
+    await wrapper.get('[data-testid="retry-receipt"]').trigger('click')
+    await flushPromises()
+    setUom('PCS')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="submit-receipt"]')!.click()
+    await flushPromises()
+    expect(createReceipt).toHaveBeenCalledTimes(2)
+    expect(createReceipt.mock.calls[1][0].uomCode).toBe('PCS')
+    expect(createReceipt.mock.calls[1][0].idempotencyKey).not.toBe(
+      createReceipt.mock.calls[0][0].idempotencyKey,
+    )
+    expect(wrapper.text()).toContain('完工入库已提交')
+  })
+
+  it('retries only the read when the accepted registration is temporarily unavailable', async () => {
+    const wrapper = mount(ReceiptPage, { attachTo: document.body })
+    readReceipt.mockRejectedValueOnce(new Error('read unavailable'))
+    await fillReceipt(wrapper)
+    expect(wrapper.text()).toContain('完工入库待回读')
+
+    await wrapper.get('[data-testid="retry-receipt"]').trigger('click')
+    await flushPromises()
+    expect(createReceipt).toHaveBeenCalledTimes(1)
+    expect(readReceipt.mock.calls).toHaveLength(2)
+    expect(readReceipt.mock.calls[1]).toEqual(readReceipt.mock.calls[0])
+    expect(wrapper.text()).toContain('单号 FGR-2026-0001')
   })
 })
