@@ -121,6 +121,9 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
         AssignedPoolCode = WmsText.Required(assignedPoolCode, nameof(assignedPoolCode));
         AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
         AdvanceVersion();
+        AddDomainEvent(new OutboundOrderWorkPoolAssignedDomainEvent(
+            OrganizationId, EnvironmentId, OutboundOrderNo, SiteCode,
+            AssignedPoolCode, AssignedOperatorUserId));
     }
 
     public WarehouseTask CreatePickingTask(
