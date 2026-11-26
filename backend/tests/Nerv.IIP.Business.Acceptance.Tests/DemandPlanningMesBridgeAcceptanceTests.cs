@@ -46,7 +46,7 @@ public sealed class DemandPlanningMesBridgeAcceptanceTests
                 new PostgreSqlMesSkuAvailabilityScopeCoordinator(mesDb),
                 AcceptanceRoutingSnapshotProvider.Instance));
         await new AcceptPlanningSuggestionCommandHandler(demandDb, mesBridge).Handle(
-            new AcceptPlanningSuggestionCommand(suggestion.Id, "BusinessMes", "WorkOrder", null),
+            new AcceptPlanningSuggestionCommand(suggestion.Id, "org-001", "env-dev", "BusinessMes", "WorkOrder", null),
             CancellationToken.None);
         await demandDb.SaveChangesAsync(CancellationToken.None);
         await mesDb.SaveChangesAsync(CancellationToken.None);
@@ -107,7 +107,7 @@ public sealed class DemandPlanningMesBridgeAcceptanceTests
                 new PostgreSqlMesSkuAvailabilityScopeCoordinator(mesDb),
                 AcceptanceRoutingSnapshotProvider.Instance));
         await new AcceptPlanningSuggestionCommandHandler(demandDb, mesBridge).Handle(
-            new AcceptPlanningSuggestionCommand(suggestion.Id, "BusinessMes", "WorkOrder", null),
+            new AcceptPlanningSuggestionCommand(suggestion.Id, "org-001", "env-dev", "BusinessMes", "WorkOrder", null),
             CancellationToken.None);
         await demandDb.SaveChangesAsync(CancellationToken.None);
         await mesDb.SaveChangesAsync(CancellationToken.None);

@@ -144,7 +144,9 @@ public sealed record ListMrpPeggingRequest(MrpRunId RunId, string OrganizationId
 public sealed record ListPlanningSuggestionsRequest(string OrganizationId, string EnvironmentId, string? Status);
 
 public sealed record AcceptPlanningSuggestionRequest(
-    PlanningSuggestionId SuggestionId,
+    [property: RouteParam] PlanningSuggestionId SuggestionId,
+    string OrganizationId,
+    string EnvironmentId,
     string DownstreamService,
     string DownstreamDocumentType,
     string? DownstreamDocumentId,
@@ -157,7 +159,9 @@ public sealed record AcceptPlanningSuggestionResponse(
     string? DownstreamDocumentId);
 
 public sealed record RejectPlanningSuggestionRequest(
-    PlanningSuggestionId SuggestionId,
+    [property: RouteParam] PlanningSuggestionId SuggestionId,
+    string OrganizationId,
+    string EnvironmentId,
     string RejectedBy,
     string Reason);
 
@@ -460,6 +464,8 @@ public sealed class AcceptPlanningSuggestionEndpoint(ISender sender)
     {
         var result = await sender.Send(new AcceptPlanningSuggestionCommand(
             req.SuggestionId,
+            req.OrganizationId,
+            req.EnvironmentId,
             req.DownstreamService,
             req.DownstreamDocumentType,
             req.DownstreamDocumentId,
@@ -484,6 +490,8 @@ public sealed class RejectPlanningSuggestionEndpoint(ISender sender)
     {
         await sender.Send(new RejectPlanningSuggestionCommand(
             req.SuggestionId,
+            req.OrganizationId,
+            req.EnvironmentId,
             req.RejectedBy,
             req.Reason), ct);
         await Send.OkAsync(new RejectPlanningSuggestionResponse(true).AsResponseData(), cancellation: ct);

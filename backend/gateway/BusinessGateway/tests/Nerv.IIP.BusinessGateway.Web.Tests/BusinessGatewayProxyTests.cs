@@ -11729,6 +11729,45 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(0, scheduling.ListCallCount);
     }
 
+    [Theory]
+    [InlineData("accept")]
+    [InlineData("reject")]
+    public async Task Planning_suggestion_decision_forwards_the_authorized_object_scope(string action)
+    {
+        const string suggestionId = "SUG-001";
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        using var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = true,
+            data = new { accepted = true, rejected = true },
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://planning.test") };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(new HttpBusinessPlanningClient(http));
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/business-console/v1/planning/suggestions/{suggestionId}/{action}?organizationId=org-001&environmentId=env-dev",
+            new { downstreamService = "BusinessErp", downstreamDocumentType = "PurchaseRequisition", reason = "取消需求" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var requirement = Assert.IsType<BusinessGatewayPermissionRequirement>(auth.LastRequirement);
+        Assert.Equal((BusinessGatewayPermissions.PlanningSuggestionsManage, "planning-suggestion", suggestionId),
+            (requirement.PermissionCode, requirement.ResourceType, requirement.ResourceId));
+        Assert.Equal(("org-001", "env-dev"), (requirement.OrganizationId, requirement.EnvironmentId));
+        var forwarded = Assert.Single(handler.Requests);
+        Assert.Equal($"/api/business/v1/planning/suggestions/{suggestionId}/{action}", forwarded.RequestUri!.AbsolutePath);
+        using var json = JsonDocument.Parse(Assert.Single(handler.RequestBodies)!);
+        Assert.Equal(requirement.OrganizationId, json.RootElement.GetProperty("organizationId").GetString());
+        Assert.Equal(requirement.EnvironmentId, json.RootElement.GetProperty("environmentId").GetString());
+    }
+
     [Fact]
     public async Task Accept_planning_suggestion_returns_downstream_reference_to_business_console()
     {
