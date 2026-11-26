@@ -25,6 +25,7 @@ defineProps<{
   confirmLineSideReceiptPending: View['confirmLineSideReceiptPending']
   receiveError: View['receiveError']
   receiveForm: View['receiveForm']
+  receiveRetry: View['receiveRetry']
   submitReceipt: View['submitReceipt']
 }>()
 
@@ -40,7 +41,7 @@ const receiveOpen = defineModel<View['receiveOpen']>('receiveOpen', { required: 
           >线边收料 · {{ readFaceText(receiveForm.requestId) }}</NvAlertDialogTitle
         >
         <NvAlertDialogDescription>
-          确认收料后线边可用量随即增加；数量留空表示按未收余量一次收齐。
+          线边可用量在库存过账后更新。数量留空表示按未收余量一次收齐。
         </NvAlertDialogDescription>
       </NvAlertDialogHeader>
       <NvFieldGroup class="grid gap-3">
@@ -58,6 +59,7 @@ const receiveOpen = defineModel<View['receiveOpen']>('receiveOpen', { required: 
             id="receive-quantity"
             v-model="receiveForm.quantity"
             inputmode="decimal"
+            :disabled="receiveRetry || confirmLineSideReceiptPending"
             placeholder="留空表示收齐剩余数量"
           />
         </NvField>
@@ -68,6 +70,7 @@ const receiveOpen = defineModel<View['receiveOpen']>('receiveOpen', { required: 
             v-model="receiveForm.materialLotId"
             directory-type="batch"
             :sku-code="receiveForm.materialCode"
+            :disabled="receiveRetry || confirmLineSideReceiptPending"
             placeholder="退料与追溯依赖批次，建议如实选择"
             clearable
           />
@@ -89,7 +92,7 @@ const receiveOpen = defineModel<View['receiveOpen']>('receiveOpen', { required: 
           @click="submitReceipt"
         >
           <NvSpinner v-if="confirmLineSideReceiptPending" aria-hidden="true" />
-          确认收料
+          {{ receiveRetry ? '重试本次收料' : '确认收料' }}
         </NvButton>
       </NvAlertDialogFooter>
     </NvAlertDialogContent>
