@@ -97,7 +97,7 @@ public sealed class CompleteStockCountAdjustmentApprovalCommandHandler(Applicati
         }
         catch (InvalidOperationException exception)
         {
-            throw new KnownException(exception.Message, exception);
+            throw new KnownException("盘点审批结果处理失败，请刷新库存盘点后重试。", exception);
         }
     }
 }

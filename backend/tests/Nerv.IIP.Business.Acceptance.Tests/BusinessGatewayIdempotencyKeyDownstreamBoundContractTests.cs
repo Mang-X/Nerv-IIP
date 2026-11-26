@@ -978,6 +978,8 @@ public sealed class BusinessGatewayIdempotencyKeyDownstreamBoundContractTests
         // .line_side_return_idempotency_keys_json，该列 HasColumnType("text") 且没有 HasMaxLength，
         // GetMaxLength() 为 null ⇒ 登记它只会让 Every_declared_downstream_authority_resolves 报「解析不到」。
         // 该列对键长度不施加上界，本位点的上界由命令校验器单独承担。
+        [typeof(BusinessConsoleMesConfirmLineSideReceiptRequest)] =
+            [Command<ConfirmLineSideMaterialReceiptCommand>()],
         [typeof(BusinessConsoleMesReturnLineSideMaterialRequest)] =
             [Command<ReturnLineSideMaterialCommand>()],
 

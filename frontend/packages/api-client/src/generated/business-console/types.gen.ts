@@ -18492,6 +18492,10 @@ export type ConfirmBusinessConsoleMesLineSideMaterialReceiptData = {
 
 export type ConfirmBusinessConsoleMesLineSideMaterialReceiptErrors = {
     /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
      * Unauthorized
      */
     401: unknown;
