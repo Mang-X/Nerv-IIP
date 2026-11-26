@@ -66,7 +66,6 @@ describe('编码规则版本 composable 的变更原因契约', () => {
       displayName: 'SKU 编码规则',
       scope: 'organization',
       segments: [],
-      createdBy: 'user-admin',
       changeReason: '统一物料标签编码',
     }
 
@@ -90,7 +89,6 @@ declare const createRuleVersion: CodeRules['createRuleVersion']
     environmentId: 'env-dev',
     displayName: 'SKU 编码规则',
     segments: [],
-    createdBy: 'user-admin',
     changeReason: '统一物料标签编码',
   })
 
@@ -100,6 +98,5 @@ declare const createRuleVersion: CodeRules['createRuleVersion']
     environmentId: 'env-dev',
     displayName: 'SKU 编码规则',
     segments: [],
-    createdBy: 'user-admin',
   })
 }

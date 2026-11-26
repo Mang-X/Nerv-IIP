@@ -54,13 +54,15 @@ describe('generated API client contract', () => {
       CreateBusinessConsoleCodeRuleVersionData['body']
     >().toEqualTypeOf<BusinessConsoleCreateCodeRuleVersionRequest>()
 
+    expectTypeOf<Extract<keyof BusinessConsoleCreateCodeRuleVersionRequest, 'createdBy'>>()
+      .toEqualTypeOf<never>()
+
     // @ts-expect-error changeReason is a required generated request field
     const missingChangeReason: BusinessConsoleCreateCodeRuleVersionRequest = {
       organizationId: 'org-001',
       environmentId: 'env-dev',
       displayName: 'SKU 编码规则',
       segments: [],
-      createdBy: 'user-admin',
     }
     expect(missingChangeReason).toBeDefined()
   })

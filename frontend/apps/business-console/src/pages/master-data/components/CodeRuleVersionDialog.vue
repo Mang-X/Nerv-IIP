@@ -43,7 +43,6 @@ defineProps<{
   changeReasonError: View['changeReasonError']
   changeReasonValid: View['changeReasonValid']
   createPending: View['createPending']
-  createdByValid: View['createdByValid']
   displayNameValid: View['displayNameValid']
   editingCurrentVersion: View['editingCurrentVersion']
   editingRuleKey: View['editingRuleKey']
@@ -149,10 +148,6 @@ defineProps<{
                 {{ form.changeReason.length }} / {{ CHANGE_REASON_MAX_LENGTH }}
               </span>
             </div>
-          </NvField>
-          <NvField :data-invalid="showErrors && !createdByValid">
-            <NvFieldLabel for="cr-by">创建人 <span class="text-destructive">*</span></NvFieldLabel>
-            <NvInput id="cr-by" v-model="form.createdBy" placeholder="你的账号/姓名" />
           </NvField>
         </NvFieldGroup>
 

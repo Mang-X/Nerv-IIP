@@ -20,6 +20,10 @@ describe('PDA private page components', () => {
     expect(paths.some((path) => path.includes('MesOperationExecutionPanel'))).toBe(false)
   })
 
+  it('不注册设计系统演示页面', () => {
+    expect(routePaths(routes).some((path) => path.startsWith('/design-system'))).toBe(false)
+  })
+
   it('routes the three shift-handover pages and keeps their private components out (#2784)', () => {
     const paths = routePaths(routes)
 

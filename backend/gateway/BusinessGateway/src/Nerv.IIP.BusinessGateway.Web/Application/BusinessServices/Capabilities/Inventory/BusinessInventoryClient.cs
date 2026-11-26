@@ -77,11 +77,15 @@ public interface IBusinessInventoryClient
     Task<BusinessConsoleRestartStockCountTaskResponse> RestartCountTaskAsync(
         string internalBearerToken,
         string countTaskId,
+        string organizationId,
+        string environmentId,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleCancelStockCountTaskResponse> CancelCountTaskAsync(
         string internalBearerToken,
         string countTaskId,
+        string organizationId,
+        string environmentId,
         string reason,
         CancellationToken cancellationToken);
 }
@@ -335,24 +339,28 @@ public sealed class HttpBusinessInventoryClient(
     public Task<BusinessConsoleRestartStockCountTaskResponse> RestartCountTaskAsync(
         string internalBearerToken,
         string countTaskId,
+        string organizationId,
+        string environmentId,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleRestartStockCountTaskResponse>(
             internalBearerToken,
             HttpMethod.Post,
             $"/api/inventory/v1/count-tasks/{Uri.EscapeDataString(countTaskId)}/recount",
-            new DownstreamRestartStockCountTaskRequest(countTaskId),
+            new DownstreamRestartStockCountTaskRequest(countTaskId, organizationId, environmentId),
             cancellationToken);
 
     public Task<BusinessConsoleCancelStockCountTaskResponse> CancelCountTaskAsync(
         string internalBearerToken,
         string countTaskId,
+        string organizationId,
+        string environmentId,
         string reason,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleCancelStockCountTaskResponse>(
             internalBearerToken,
             HttpMethod.Post,
             $"/api/inventory/v1/count-tasks/{Uri.EscapeDataString(countTaskId)}/cancel",
-            new DownstreamCancelStockCountTaskRequest(countTaskId, reason),
+            new DownstreamCancelStockCountTaskRequest(countTaskId, organizationId, environmentId, reason),
             cancellationToken);
 
     private sealed record DownstreamConfirmStockCountAdjustmentRequest(
@@ -360,9 +368,9 @@ public sealed class HttpBusinessInventoryClient(
         decimal CountedQuantity,
         string IdempotencyKey);
 
-    private sealed record DownstreamRestartStockCountTaskRequest(string CountTaskId);
+    private sealed record DownstreamRestartStockCountTaskRequest(string CountTaskId, string OrganizationId, string EnvironmentId);
 
-    private sealed record DownstreamCancelStockCountTaskRequest(string CountTaskId, string Reason);
+    private sealed record DownstreamCancelStockCountTaskRequest(string CountTaskId, string OrganizationId, string EnvironmentId, string Reason);
 
     private void AddForwardedPermissions(
         HttpRequestMessage request,

@@ -116,7 +116,8 @@ public sealed record ConvertPurchaseRequisitionsToPurchaseOrderCommand(
     IReadOnlyCollection<string>? RfqSupplierCodes = null,
     string? RfqNo = null,
     string? IdempotencyKey = null,
-    string CurrencyCode = "CNY") : ICommand<ConvertPurchaseRequisitionsToPurchaseOrderResult>;
+    string CurrencyCode = "CNY",
+    string StartedBy = "system:erp") : ICommand<ConvertPurchaseRequisitionsToPurchaseOrderResult>;
 
 public sealed record ConvertPurchaseRequisitionsToPurchaseOrderResult(
     PurchaseRequisitionConversionStatus Status,
@@ -144,6 +145,7 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandValidator :
 {
     public ConvertPurchaseRequisitionsToPurchaseOrderCommandValidator()
     {
+        RuleFor(x => x.StartedBy).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.PurchaseRequisitionNos).NotEmpty();
@@ -345,7 +347,7 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
                 ApprovalDocumentTypes.PurchaseOrder,
                 allocation.Code,
                 null,
-                "system:erp",
+                request.StartedBy,
                 GeneratedPurchaseOrderApprovalClient.BuildChainId(request.OrganizationId, request.EnvironmentId, allocation.Code),
                 lineDrafts.Sum(x => x.Quantity * x.UnitPrice)),
             cancellationToken);
@@ -687,12 +689,14 @@ public sealed record CreatePurchaseOrderCommand(
     string SiteCode,
     IReadOnlyCollection<PurchaseOrderCommandLine> Lines,
     string? IdempotencyKey = null,
-    string CurrencyCode = "CNY") : ICommand<PurchaseOrderId>;
+    string CurrencyCode = "CNY",
+    string StartedBy = "system:erp") : ICommand<PurchaseOrderId>;
 
 public sealed class CreatePurchaseOrderCommandValidator : AbstractValidator<CreatePurchaseOrderCommand>
 {
     public CreatePurchaseOrderCommandValidator()
     {
+        RuleFor(x => x.StartedBy).NotEmpty().MaximumLength(150);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.PurchaseOrderNo).MaximumLength(100);
@@ -780,7 +784,7 @@ public sealed class CreatePurchaseOrderCommandHandler(
                 ApprovalDocumentTypes.PurchaseOrder,
                 allocation.Code,
                 null,
-                "system:erp",
+                request.StartedBy,
                 GeneratedPurchaseOrderApprovalClient.BuildChainId(request.OrganizationId, request.EnvironmentId, allocation.Code),
                 request.Lines.Sum(x => x.Quantity * x.UnitPrice)),
             cancellationToken);

@@ -20,15 +20,22 @@ services:
   redis:
     image: redis:8
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1", "--requirepass", "${NERV_IIP_REDIS_PASSWORD:?Set NERV_IIP_REDIS_PASSWORD}"]
-    environment:
-      NERV_IIP_REDIS_PASSWORD: ${NERV_IIP_REDIS_PASSWORD:?Set NERV_IIP_REDIS_PASSWORD}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        password="$$(cat /run/secrets/redis_password)"
+        test -n "$$password"
+        password_hash="$$(printf '%s' "$$password" | sha256sum)"
+        printf 'appendonly yes\nsave 60 1\nuser default on #%s ~* &* +@all\n' "$${password_hash%% *}" |
+          exec /usr/local/bin/docker-entrypoint.sh redis-server -
+    secrets:
+      - redis_password
     ports:
       - "${NERV_IIP_REDIS_PORT:-6379}:6379"
     volumes:
       - nerv-iip-redis:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$$NERV_IIP_REDIS_PASSWORD\" --no-auth-warning ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/redis_password)\" redis-cli ping | grep -qx PONG"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -128,6 +135,11 @@ services:
       - "${NERV_IIP_ASPIRE_DASHBOARD_PORT:-18888}:18888"
       - "${NERV_IIP_ASPIRE_DASHBOARD_OTLP_PORT:-18889}:18889"
       - "${NERV_IIP_ASPIRE_DASHBOARD_OTLP_HTTP_PORT:-18890}:18890"
+
+secrets:
+  redis_password:
+    # 文件只存一行 Redis 密码，须与业务服务连接串使用的密码一致。
+    file: ${NERV_IIP_REDIS_PASSWORD_FILE:?Set NERV_IIP_REDIS_PASSWORD_FILE}
 
 volumes:
   nerv-iip-postgres-18:

@@ -7067,7 +7067,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     segments: Array<NervIipContractsCodingCodeRuleSegment>;
     isActive?: boolean;
     effectiveFromUtc?: string | null;
-    createdBy: string;
     changeReason: string;
 };
 

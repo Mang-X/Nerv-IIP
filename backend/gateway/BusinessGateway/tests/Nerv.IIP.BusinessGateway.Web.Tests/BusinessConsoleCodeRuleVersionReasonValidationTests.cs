@@ -51,6 +51,5 @@ public sealed class BusinessConsoleCodeRuleVersionReasonValidationTests
             [CodeRuleSegment.ConstantOf("SKU-"), CodeRuleSegment.SequenceOf(4)],
             true,
             new DateTimeOffset(2026, 8, 18, 0, 0, 0, TimeSpan.Zero),
-            "admin-001",
             reason!);
 }

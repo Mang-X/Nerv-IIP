@@ -62767,7 +62767,6 @@
           "environmentId",
           "displayName",
           "segments",
-          "createdBy",
           "changeReason"
         ],
         "properties": {
@@ -62812,12 +62811,6 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
-          },
-          "createdBy": {
-            "type": "string",
-            "maxLength": 100,
-            "minLength": 0,
-            "nullable": false
           },
           "changeReason": {
             "type": "string",

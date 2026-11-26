@@ -121,13 +121,19 @@ public sealed class GetBusinessConsoleApprovalChainEndpoint(
     protected override string? ResourceId(BusinessConsoleApprovalChainRequest request) =>
         Route<string>("chainId") ?? request.ChainId;
 
-    protected override Task<BusinessConsoleApprovalChainResponse> ForwardAsync(
+    protected override async Task<BusinessConsoleApprovalChainResponse> ForwardAsync(
         BusinessConsoleApprovalChainRequest request,
         string bearerToken,
         CancellationToken cancellationToken)
     {
         var downstreamRequest = request with { ChainId = Route<string>("chainId") ?? request.ChainId };
-        return approval.GetChainAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
+        var (actorType, actorRef) = RequireAuthorizedPrincipalActor();
+        var chain = await approval.GetChainAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
+        return chain with
+        {
+            Decisions = chain.Decisions.Where(decision =>
+                decision.ActorType == actorType && decision.ActorRef == actorRef).ToArray(),
+        };
     }
 }
 
@@ -180,8 +186,12 @@ public sealed class ListBusinessConsoleApprovalDecisionsEndpoint(
     protected override Task<BusinessConsoleApprovalDecisionListResponse> ForwardAsync(
         BusinessConsoleApprovalDecisionListRequest request,
         string bearerToken,
-        CancellationToken cancellationToken) =>
-        approval.ListDecisionsAsync(tokenProvider.BearerToken, request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var (actorType, actorRef) = RequireAuthorizedPrincipalActor();
+        return approval.ListDecisionsAsync(tokenProvider.BearerToken,
+            request with { ActorType = actorType, ActorRef = actorRef }, cancellationToken);
+    }
 }
 
 [Tags("Business Console Approval")]

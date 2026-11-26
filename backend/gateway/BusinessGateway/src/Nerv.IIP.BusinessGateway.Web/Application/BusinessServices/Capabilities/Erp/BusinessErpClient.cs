@@ -19,6 +19,7 @@ public interface IBusinessErpClient
     Task<BusinessConsoleConvertErpPurchaseRequisitionsResponse> ConvertPurchaseRequisitionsToPurchaseOrderAsync(
         string internalBearerToken,
         BusinessConsoleConvertErpPurchaseRequisitionsRequest request,
+        string startedBy,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleReceiveErpSupplierQuotationResponse> ReceiveSupplierQuotationAsync(
@@ -56,6 +57,7 @@ public interface IBusinessErpClient
     Task<BusinessConsoleCreateErpPurchaseOrderResponse> CreatePurchaseOrderAsync(
         string internalBearerToken,
         BusinessConsoleCreateErpPurchaseOrderRequest request,
+        string startedBy,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleRecordErpPurchaseReceiptResponse> RecordPurchaseReceiptAsync(
@@ -246,12 +248,25 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
     public Task<BusinessConsoleConvertErpPurchaseRequisitionsResponse> ConvertPurchaseRequisitionsToPurchaseOrderAsync(
         string internalBearerToken,
         BusinessConsoleConvertErpPurchaseRequisitionsRequest request,
+        string startedBy,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleConvertErpPurchaseRequisitionsResponse>(
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/erp/purchase-requisitions/convert-to-purchase-order",
-            request,
+            new
+            {
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.PurchaseRequisitionNos,
+                request.PurchaseOrderNo,
+                request.SupplierCode,
+                request.RfqSupplierCodes,
+                request.RfqNo,
+                request.IdempotencyKey,
+                request.CurrencyCode,
+                startedBy
+            },
             cancellationToken);
 
     public Task<BusinessConsoleReceiveErpSupplierQuotationResponse> ReceiveSupplierQuotationAsync(
@@ -327,12 +342,23 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
     public Task<BusinessConsoleCreateErpPurchaseOrderResponse> CreatePurchaseOrderAsync(
         string internalBearerToken,
         BusinessConsoleCreateErpPurchaseOrderRequest request,
+        string startedBy,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleCreateErpPurchaseOrderResponse>(
             internalBearerToken,
             HttpMethod.Post,
             "/api/business/v1/erp/purchase-orders",
-            request,
+            new
+            {
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.PurchaseOrderNo,
+                request.SupplierCode,
+                request.SiteCode,
+                request.Lines,
+                request.IdempotencyKey,
+                startedBy
+            },
             cancellationToken);
 
     public Task<BusinessConsoleRecordErpPurchaseReceiptResponse> RecordPurchaseReceiptAsync(

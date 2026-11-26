@@ -766,7 +766,6 @@ public sealed record BusinessConsoleCreateCodeRuleVersionRequest(
     IReadOnlyList<CodeRuleSegment> Segments,
     bool IsActive,
     DateTimeOffset? EffectiveFromUtc,
-    string CreatedBy,
     string ChangeReason);
 
 public sealed record BusinessConsolePreviewCodeRuleRequest(

@@ -5,7 +5,7 @@
  * - list `{ rules }`（无分页，一次取全），CodeRuleItem 已内含 segments。
  * - get-by-id `{ rule, versions }`（版本历史）。
  * - preview：给 segments（+可选字段值）→ 返回 sampleCode（样例编码）。
- * - create-version：版本化配置，需 createdBy + changeReason；不影响历史已分配编码。
+ * - create-version：版本化配置，由服务端记录创建人，提交时需填写变更原因；不影响历史已分配编码。
  */
 import {
   createBusinessConsoleCodeRuleVersionMutationOptions,

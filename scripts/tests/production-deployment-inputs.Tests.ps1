@@ -122,7 +122,9 @@ finally { if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixtu
 foreach ($contract in @(
     @($appHostText, 'AddParameter("iam-enterprise-identity-mfa-code", secret: true)', 'AppHost MFA override must be a secret parameter'),
     @($appHostText, 'Iam__EnterpriseIdentity__Mfa__DevelopmentCode', 'AppHost must deliver the MFA override to IAM'),
-    @($dependenciesText, '--requirepass', 'legacy Redis must require authentication'),
+    @($dependenciesText, '/run/secrets/redis_password', 'legacy Redis must read the password from the mounted secret'),
+    @($dependenciesText, 'user default on #%s', 'legacy Redis must require authentication'),
+    @($dependenciesText, 'grep -qx PONG', 'legacy Redis health check must verify the authenticated PONG'),
     @($platformText, 'password=${NERV_IIP_REDIS_PASSWORD:?set NERV_IIP_REDIS_PASSWORD}', 'legacy services must authenticate to Redis'),
     @($platformText, 'Iam__Secrets__Pepper: ${NERV_IIP_IAM_SECRETS_PEPPER:?set NERV_IIP_IAM_SECRETS_PEPPER}', 'legacy IAM must receive its pepper'),
     @($platformText, 'Iam__EnterpriseIdentity__Mfa__DevelopmentCode: ${NERV_IIP_IAM_ENTERPRISE_IDENTITY_MFA_CODE:?set NERV_IIP_IAM_ENTERPRISE_IDENTITY_MFA_CODE}', 'legacy IAM must receive its MFA override'),

@@ -251,6 +251,7 @@ public interface IBusinessMasterDataClient
     Task<BusinessConsoleCodeRuleVersionResponse> CreateCodeRuleVersionAsync(
         string internalBearerToken,
         BusinessConsoleCreateCodeRuleVersionRequest request,
+        string createdBy,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleCodeRulePreviewResponse> PreviewCodeRuleAsync(
@@ -836,12 +837,26 @@ public sealed class HttpBusinessMasterDataClient(HttpClient httpClient)
     public Task<BusinessConsoleCodeRuleVersionResponse> CreateCodeRuleVersionAsync(
         string internalBearerToken,
         BusinessConsoleCreateCodeRuleVersionRequest request,
+        string createdBy,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleCodeRuleVersionResponse>(
             internalBearerToken,
             HttpMethod.Post,
             CodeRulePath(request.RuleKey) + "/versions",
-            request,
+            new
+            {
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.RuleKey,
+                request.DisplayName,
+                request.AppliesTo,
+                request.Scope,
+                request.Segments,
+                request.IsActive,
+                request.EffectiveFromUtc,
+                request.ChangeReason,
+                createdBy
+            },
             cancellationToken);
 
     public Task<BusinessConsoleCodeRulePreviewResponse> PreviewCodeRuleAsync(
