@@ -1,11 +1,13 @@
 import { expect, test } from '@playwright/test'
 import {
+  envelope,
   expectNoHorizontalOverflow,
   expectTouchTargets,
   principal,
   routeBusinessConsoleApi,
   routeConsoleApi,
   seedStoredSession,
+  session,
   workerProfile,
 } from './fixtures'
 
@@ -145,6 +147,40 @@ test('clicking an app-wall entry navigates to its work page', async ({ page }) =
   await page.getByRole('button', { name: '收货入库' }).click()
   await expect(page).toHaveURL('/wms/inbound')
 })
+
+for (const job of ['出库', '收货'] as const) {
+  test(`复核发货应用墙入口按${job}专岗读权限裁剪`, async ({ page }) => {
+    const jobPrincipal = {
+      ...principal,
+      permissionCodes: [
+        job === '出库' ? 'business.wms.shipments.read' : 'business.wms.receipts.read',
+      ],
+    }
+    await page.route('**/api/console/v1/auth/login', (route) =>
+      route.fulfill({ json: envelope({ ...session, principal: jobPrincipal }) }),
+    )
+    await page.route('**/api/console/v1/auth/me', (route) =>
+      route.fulfill({ json: envelope(jobPrincipal) }),
+    )
+    await page.goto('/login')
+    await page.getByLabel('账号').fill('operator01')
+    await page.getByLabel('密码').fill('Operator123!')
+    await page.getByRole('button', { name: '登录' }).click()
+
+    await expect(page).toHaveURL('/')
+    const review = page.getByRole('button', { name: '复核发货', exact: true })
+    if (job === '收货') {
+      await expect(page.getByRole('button', { name: '收货入库', exact: true })).toBeEnabled()
+      await expect(review).toHaveCount(0)
+      return
+    }
+
+    await review.click()
+    await expect(page).toHaveURL('/wms/review')
+    await expect(page.getByRole('heading', { name: '复核发货' })).toBeVisible()
+    await expect(page.getByText('OUT-1', { exact: true })).toBeVisible()
+  })
+}
 
 test('home scan: an unknown result stays on the workbench and offers honest next steps', async ({
   page,

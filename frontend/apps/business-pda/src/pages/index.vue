@@ -115,7 +115,7 @@ const KIND_PERMISSIONS: Record<string, string> = {
   'wms.inbound': 'business.wms.receipts.read',
   'wms.putaway': 'business.wms.receipts.read',
   'wms.pick': 'business.wms.shipments.read',
-  'wms.review': 'business.wms.receipts.read',
+  'wms.review': HOME_PERMISSIONS.wmsShipments,
   'wms.count': 'business.wms.counts.read',
   'mes.report': 'business.mes.reporting.read',
   'mes.issue': 'business.mes.materials.read',
