@@ -9,7 +9,11 @@ import {
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation } from '@pinia/colada'
-import { useBusinessErp, useErpPurchaseRequisitions } from './useBusinessErp'
+import {
+  useBusinessErp,
+  useErpPurchaseReceipts,
+  useErpPurchaseRequisitions,
+} from './useBusinessErp'
 import {
   useErpWorkCenterCostRates,
   useErpWorkCenterMachineOverheadRates,
@@ -22,7 +26,13 @@ const coladaState = vi.hoisted(() => ({
   mutateAsync: vi.fn(),
 }))
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { principalId: 'receipt-clerk' } }),
+}))
+
 vi.mock('@nerv-iip/api-client', () => ({
+  createBusinessConsoleErpPurchaseOrderMutationOptions: vi.fn(() => ({ mutation: vi.fn() })),
+  recordBusinessConsoleErpPurchaseReceiptMutationOptions: vi.fn(() => ({ mutation: vi.fn() })),
   configureBusinessConsoleErpWorkCenterCostRateMutationOptions: vi.fn(() => ({
     mutation: vi.fn(),
   })),
@@ -121,6 +131,42 @@ describe('business ERP composable', () => {
         rfqSupplierCodes: ['SUP-001', 'SUP-002'],
       }),
     })
+  })
+
+  it('recovers the original purchase receipt after a lost response and starts a new intent after confirmation', async () => {
+    useBusinessContextStore().patchContext({ organizationId: 'org-002', environmentId: 'prod' })
+    const receipts = useErpPurchaseReceipts()
+    const payload = {
+      purchaseOrderNo: 'PO-001',
+      lines: [
+        {
+          purchaseOrderLineNo: '10',
+          receivedQuantity: 2,
+          qualityStatus: 'unrestricted',
+          locationCode: 'RAW-01',
+        },
+      ],
+    }
+    const original = { purchaseReceiptId: 'receipt-1', purchaseReceiptNo: 'RCV-001' }
+    const next = { purchaseReceiptId: 'receipt-2', purchaseReceiptNo: 'RCV-002' }
+    const timeout = Object.assign(new Error('response lost'), { name: 'RequestTimeoutError' })
+    coladaState.mutateAsync
+      .mockRejectedValueOnce(timeout)
+      .mockResolvedValueOnce({ success: true, data: original })
+      .mockResolvedValueOnce({ success: true, data: next })
+
+    await expect(receipts.recordPurchaseReceipt(payload)).rejects.toBe(timeout)
+    const firstRequest = coladaState.mutateAsync.mock.calls[0]?.[0]
+    expect(firstRequest.body.idempotencyKey).toEqual(expect.any(String))
+
+    const reopened = useErpPurchaseReceipts()
+    await expect(reopened.recordPurchaseReceipt(payload)).resolves.toEqual(original)
+    expect(coladaState.mutateAsync.mock.calls[1]?.[0]).toEqual(firstRequest)
+
+    await expect(reopened.recordPurchaseReceipt(payload)).resolves.toEqual(next)
+    expect(coladaState.mutateAsync.mock.calls[2]?.[0].body.idempotencyKey).not.toEqual(
+      firstRequest.body.idempotencyKey,
+    )
   })
 
   it('loads procurement purchase orders through the generated gateway client', () => {

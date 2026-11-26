@@ -1,4 +1,5 @@
 import {
+  BusinessOperationUnconfirmedError,
   createBusinessConsoleErpPurchaseOrderMutationOptions,
   createBusinessConsoleErpRequestForQuotationMutationOptions,
   convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderMutationOptions,
@@ -17,10 +18,16 @@ import {
   type BusinessConsoleErpSupplierQuotationItem,
   type BusinessConsoleErpSupplierQuotationListEnvelope,
 } from '@nerv-iip/api-client'
+import {
+  acquirePendingBusinessIntent,
+  completePendingBusinessIntent,
+} from '@nerv-iip/business-core'
+import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMutation, useQuery } from '@pinia/colada'
 import { computed, reactive } from 'vue'
 import { hasBusinessContext, refetchWithBusinessContext } from '../shared/businessContextBinding'
+import { assertEnvelopeSuccess } from '../shared/serviceEnvelope'
 import {
   DEFAULT_TAKE,
   defaultFilters,
@@ -315,12 +322,8 @@ export function useErpPurchaseOrders(initialFilters: Partial<BusinessErpListFilt
 
 export function useErpPurchaseReceipts(initialFilters: Partial<BusinessErpListFilters> = {}) {
   const purchaseOrders = useErpPurchaseOrders(initialFilters)
-  const recordMutation = useMutation({
-    ...recordBusinessConsoleErpPurchaseReceiptMutationOptions(),
-    onSuccess() {
-      void purchaseOrders.refresh()
-    },
-  })
+  const auth = useAuthStore()
+  const recordMutation = useMutation(recordBusinessConsoleErpPurchaseReceiptMutationOptions())
 
   return {
     ...purchaseOrders,
@@ -336,16 +339,40 @@ export function useErpPurchaseReceipts(initialFilters: Partial<BusinessErpListFi
         locationCode: string
       }[]
     }) => {
-      const envelope = await recordMutation.mutateAsync({
-        body: {
-          organizationId: purchaseOrders.organizationId.value,
-          environmentId: purchaseOrders.environmentId.value,
-          purchaseOrderNo: payload.purchaseOrderNo,
-          lines: payload.lines,
-          idempotencyKey: makeIdempotencyKey(),
-        },
+      const organizationId = purchaseOrders.organizationId.value
+      const environmentId = purchaseOrders.environmentId.value
+      const scope = {
+        principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+        organizationId,
+        environmentId,
+        operationType: 'erp.purchase-receipt.record',
+        payloadFingerprint: JSON.stringify(payload),
+      }
+      const intent = acquirePendingBusinessIntent(scope, makeIdempotencyKey)
+      const recorded = await completePendingBusinessIntent(scope, async () => {
+        const envelope = await recordMutation.mutateAsync({
+          body: {
+            organizationId,
+            environmentId,
+            purchaseOrderNo: payload.purchaseOrderNo,
+            lines: payload.lines,
+            idempotencyKey: intent.idempotencyKey,
+          },
+        })
+        if (envelope?.success === false) {
+          assertEnvelopeSuccess(envelope, '确认收货失败，请检查收货数据。')
+        }
+        if (
+          !envelope?.success ||
+          !envelope.data?.purchaseReceiptNo ||
+          !envelope.data.purchaseReceiptId
+        ) {
+          throw new BusinessOperationUnconfirmedError('暂未确认收货单号。')
+        }
+        return envelope.data
       })
-      return envelope?.data ?? null
+      void purchaseOrders.refresh()
+      return recorded
     },
     recordPurchaseReceiptPending: recordMutation.isLoading,
     recordPurchaseReceiptError: recordMutation.error,
