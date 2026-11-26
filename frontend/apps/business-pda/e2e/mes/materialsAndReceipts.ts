@@ -133,6 +133,70 @@ export function registerMaterialsAndReceipts() {
     expect(bodies[2].idempotencyKey).not.toBe(bodies[0].idempotencyKey)
   })
 
+  test('线边部分收料：明确拒绝后刷新可更正数量', async ({ page }) => {
+    const operator = {
+      ...principal,
+      permissionCodes: [...principal.permissionCodes, 'business.mes.materials.manage'],
+    }
+    await page.route('**/api/console/v1/auth/me', (route) =>
+      route.fulfill({ json: envelope(operator) }),
+    )
+    await page.route('**/api/console/v1/auth/refresh', (route) =>
+      route.fulfill({ json: envelope({ ...session, principal: operator }) }),
+    )
+    const base = '**/api/business-console/v1/mes/material-issue-requests'
+    const bodies: { idempotencyKey: string; receivedQuantity: number }[] = []
+    let receivedQuantity = 4
+    await page.route(`${base}*`, (route) =>
+      route.fulfill({
+        json: envelope({
+          items: [
+            {
+              requestId: 'ISS-1',
+              workOrderId: 'WO-1',
+              materialId: 'MAT-1',
+              requestedQuantity: 10,
+              receivedQuantity,
+              status: 'PartiallyReceived',
+            },
+          ],
+          total: 1,
+        }),
+      }),
+    )
+    await page.route(`${base}/ISS-1/line-side-receipts*`, (route) => {
+      const body = route.request().postDataJSON() as (typeof bodies)[number]
+      bodies.push(body)
+      if (body.receivedQuantity + receivedQuantity > 10) {
+        return route.fulfill({
+          status: 400,
+          json: { success: false, message: 'Received quantity cannot exceed requested quantity.' },
+        })
+      }
+      receivedQuantity += body.receivedQuantity
+      return route.fulfill({
+        json: envelope({ accepted: true, downstreamDocumentId: 'MI-001' }),
+      })
+    })
+
+    await page.goto('/mes/issue')
+    await page.getByTestId('receive-ISS-1').click()
+    await page.getByTestId('received-quantity').fill('10')
+    await page.getByTestId('submit-receive').click()
+    await expect(page.getByText('线边接收未受理')).toBeVisible()
+    await expect(page.getByRole('button', { name: '更正接收' })).toBeVisible()
+
+    await page.reload()
+    await page.getByTestId('receive-ISS-1').click()
+    await expect(page.getByTestId('received-quantity')).toBeVisible()
+    expect(bodies).toHaveLength(1)
+    await page.getByTestId('received-quantity').fill('2')
+    await page.getByTestId('submit-receive').click()
+    await expect(page.getByText(/MI-001.*已收 6/)).toBeVisible()
+    expect(bodies.map((body) => body.receivedQuantity)).toEqual([10, 2])
+    expect(bodies[1].idempotencyKey).not.toBe(bodies[0].idempotencyKey)
+  })
+
   test('领料：总量收缩后自动回到最后有效页', async ({ page }) => {
     let pageOneRequests = 0
     await page.route(

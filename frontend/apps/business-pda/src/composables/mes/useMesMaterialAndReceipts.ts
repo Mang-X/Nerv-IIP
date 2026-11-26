@@ -31,6 +31,7 @@ import {
 } from '@nerv-iip/business-core'
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
 import { computed, reactive, shallowRef, watch } from 'vue'
+import { describeRequestError } from '@/api/request-timeout'
 import { assertLifecycleActionExecutable } from '@/composables/shared/lifecycleActionRecovery'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -328,6 +329,7 @@ export function useMesMaterialIssue() {
         replay?: boolean
         isCurrent?: () => boolean
         beforeDispatch?: () => void
+        onValidationRejected?: () => void
       } = {},
     ) => {
       const identity = receiveScopeIdentity.value
@@ -356,11 +358,13 @@ export function useMesMaterialIssue() {
 
       // MES 按键恢复原回执，即使该领料单已进入过账中或已收，重放仍由网关重新授权。
       context.beforeDispatch?.()
-      const response = await confirmMutation.mutateAsync({
-        path: { requestId },
-        query: scope,
-        body,
-      })
+      const response = await confirmMutation
+        .mutateAsync({ path: { requestId }, query: scope, body })
+        .catch((error: unknown) => {
+          const { status } = describeRequestError(error)
+          if (status === 400 || status === 422) context.onValidationRejected?.()
+          throw error
+        })
       assertCurrentScope()
       const reference = response?.data?.downstreamDocumentId?.trim()
       if (!response?.success || response.data?.accepted !== true || !reference) {

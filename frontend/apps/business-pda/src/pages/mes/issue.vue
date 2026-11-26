@@ -117,6 +117,7 @@ type ResultState = {
   status: 'success' | 'error'
   title: string
   description?: string
+  retryLabel?: string
   retry: () => void | Promise<void>
 }
 const result = ref<ResultState | null>(null)
@@ -393,12 +394,16 @@ async function sendReceive(intent: ReceiveIntent, replay: boolean) {
   const isCurrent = () =>
     receiveIntent.value === intent && receiveScopeIdentity.value === intent.scope
   let dispatched = false
+  let validationRejected = false
   submitting.value = true
   try {
     const { reference, current } = await confirmLineSideReceipt(intent.requestId, intent.body, {
       workOrderId: intent.workOrderId,
       replay,
       isCurrent,
+      onValidationRejected: () => {
+        validationRejected = true
+      },
       beforeDispatch: () => {
         const saved = readReceiveBody(key)
         if (saved && saved.idempotencyKey !== intent.body.idempotencyKey) {
@@ -425,6 +430,26 @@ async function sendReceive(intent: ReceiveIntent, replay: boolean) {
   } catch (error) {
     if (!isCurrent()) return
     closeReceive()
+    if (validationRejected) {
+      if (readReceiveBody(key)?.idempotencyKey === intent.body.idempotencyKey) {
+        sessionStorage.removeItem(key)
+      }
+      receiveIntent.value = null
+      result.value = {
+        status: 'error',
+        title: '线边接收未受理',
+        description: describeRequestError(error, '请核对接收数量后重新提交。').message,
+        retryLabel: '更正接收',
+        retry: () => {
+          const current = scopedRequests.value.find(
+            (row) => row.requestId === intent.requestId && row.workOrderId === intent.workOrderId,
+          )
+          if (current) return openReceive(current)
+          return continueWork()
+        },
+      }
+      return
+    }
     if (!replay && (await lifecycleRecovery.handle(error))) return
     if (!isCurrent()) return
     result.value = {
@@ -582,7 +607,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
           @click="result.retry"
         >
-          重试
+          {{ result.retryLabel ?? '重试' }}
         </button>
         <button
           type="button"
