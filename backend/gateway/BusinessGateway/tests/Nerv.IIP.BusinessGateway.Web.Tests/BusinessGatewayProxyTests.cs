@@ -8782,6 +8782,77 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("user-admin", approval.LastRevokeDelegationRequest?.RevokedBy);
     }
 
+    [Theory]
+    [InlineData("org-001", "env-dev", true)]
+    [InlineData("org-002", "env-dev", false)]
+    [InlineData("org-001", "env-other", false)]
+    public async Task Approval_chain_read_requires_matching_service_scope(
+        string ownerOrganizationId, string ownerEnvironmentId, bool allowed)
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new BusinessConsoleApprovalChainResponse(
+                "chain-fixture", ownerOrganizationId, ownerEnvironmentId, "fixture-template", 1,
+                "pending", "fixture", "fixture-document", "doc-fixture", null, [], []),
+            success = true,
+        }));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://approval.local") };
+        var approval = new HttpBusinessApprovalClient(downstream);
+        var request = new BusinessConsoleApprovalChainRequest("org-001", "env-dev", "chain-fixture");
+
+        if (allowed)
+        {
+            var result = await approval.GetChainAsync("internal-test-token", request, CancellationToken.None);
+            Assert.Equal("chain-fixture", result.ChainId);
+        }
+        else
+        {
+            var error = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+                approval.GetChainAsync("internal-test-token", request, CancellationToken.None));
+            Assert.Equal(HttpStatusCode.NotFound, error.StatusCode);
+        }
+    }
+
+    [Theory]
+    [InlineData("org-001", "env-dev", true)]
+    [InlineData("org-002", "env-dev", false)]
+    [InlineData("org-001", "env-other", false)]
+    public async Task Approval_step_resolution_requires_matching_service_scope(
+        string ownerOrganizationId, string ownerEnvironmentId, bool allowed)
+    {
+        var handler = new RecordingHandler(request => request.Method == HttpMethod.Get
+            ? JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new BusinessConsoleApprovalChainResponse(
+                    "chain-fixture", ownerOrganizationId, ownerEnvironmentId, "fixture-template", 1,
+                    "pending", "fixture", "fixture-document", "doc-fixture", null, [], []),
+                success = true,
+            })
+            : JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new BusinessConsoleResolveApprovalStepResponse("decision-fixture"),
+                success = true,
+            }));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://approval.local") };
+        var approval = new HttpBusinessApprovalClient(downstream);
+        var request = new BusinessConsoleResolveApprovalStepRequest(
+            "org-001", "env-dev", "chain-fixture", 1, "user", "user-fixture", "approve", null);
+
+        if (allowed)
+        {
+            var result = await approval.ResolveStepAsync("internal-test-token", request, CancellationToken.None);
+            Assert.Equal("decision-fixture", result.DecisionId);
+            Assert.Single(handler.Requests, request => request.Method == HttpMethod.Post);
+        }
+        else
+        {
+            var error = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+                approval.ResolveStepAsync("internal-test-token", request, CancellationToken.None));
+            Assert.Equal(HttpStatusCode.NotFound, error.StatusCode);
+            Assert.DoesNotContain(handler.Requests, request => request.Method == HttpMethod.Post);
+        }
+    }
+
     [Fact]
     public async Task Approval_resolve_facade_derives_actor_from_authorized_principal()
     {

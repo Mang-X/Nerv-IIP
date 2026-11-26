@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
@@ -122,16 +123,25 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : Business
             null,
             cancellationToken);
 
-    public Task<BusinessConsoleApprovalChainResponse> GetChainAsync(
+    public async Task<BusinessConsoleApprovalChainResponse> GetChainAsync(
         string internalBearerToken,
         BusinessConsoleApprovalChainRequest request,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleApprovalChainResponse>(
+        CancellationToken cancellationToken)
+    {
+        var chain = await SendAsync<BusinessConsoleApprovalChainResponse>(
             internalBearerToken,
             HttpMethod.Get,
             $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(request.ChainId)}",
             null,
             cancellationToken);
+        if (string.IsNullOrWhiteSpace(chain.OrganizationId) || string.IsNullOrWhiteSpace(chain.EnvironmentId)
+            || chain.OrganizationId != request.OrganizationId || chain.EnvironmentId != request.EnvironmentId)
+        {
+            throw BusinessServiceProxyException.FromOpaqueDownstreamFailure(HttpStatusCode.NotFound);
+        }
+
+        return chain;
+    }
 
     public Task<BusinessConsoleApprovalTaskListResponse> ListPendingTasksAsync(
         string internalBearerToken,
@@ -171,16 +181,24 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : Business
             null,
             cancellationToken);
 
-    public Task<BusinessConsoleResolveApprovalStepResponse> ResolveStepAsync(
+    public async Task<BusinessConsoleResolveApprovalStepResponse> ResolveStepAsync(
         string internalBearerToken,
         BusinessConsoleResolveApprovalStepRequest request,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleResolveApprovalStepResponse>(
+        CancellationToken cancellationToken)
+    {
+        // 审批链创建时确定组织和环境。裁决前按审批服务返回的归属核对已授权范围。
+        await GetChainAsync(
+            internalBearerToken,
+            new BusinessConsoleApprovalChainRequest(request.OrganizationId, request.EnvironmentId, request.ChainId),
+            cancellationToken);
+
+        return await SendAsync<BusinessConsoleResolveApprovalStepResponse>(
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(request.ChainId)}/steps/{request.StepNo.ToString(CultureInfo.InvariantCulture)}/resolve",
             request,
             cancellationToken);
+    }
 
     public Task<BusinessConsoleApprovalDelegationListResponse> ListDelegationsAsync(
         string internalBearerToken,
