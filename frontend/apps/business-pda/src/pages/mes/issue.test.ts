@@ -8,7 +8,10 @@ vi.mock('vue-router', () => ({
 }))
 
 // --- composable mock: 2 issue requests + 2 work orders + create/confirm spies ---
-const createIssue = vi.fn(async (_workOrderId: string, _body: Record<string, unknown>) => {})
+const createdIssue = { requestId: 'MIR-001', requestedQuantity: 12, uomCode: 'KG' }
+const createIssue = vi.fn(
+  async (_workOrderId: string, _body: Record<string, unknown>) => createdIssue,
+)
 const confirmLineSideReceipt = vi.fn(
   async (
     _requestId: string,
@@ -162,7 +165,7 @@ describe('PDA MES material issue page', () => {
   beforeEach(() => {
     sessionStorage.clear()
     createIssue.mockClear()
-    createIssue.mockResolvedValue(undefined)
+    createIssue.mockResolvedValue(createdIssue)
     confirmLineSideReceipt.mockClear()
     confirmLineSideReceipt.mockResolvedValue({
       reference: 'MI-001',
@@ -371,14 +374,16 @@ describe('PDA MES material issue page', () => {
     const [workOrderId, body] = createIssue.mock.calls[0]
     expect(workOrderId).toBe('WO-2026-0001')
     expect(body.materialId).toBe('MAT-X')
+    expect(body.uomCode).toBe('')
     expect(body.quantity).toBe(12)
     // idempotencyKey 现由页面提供（稳定逐操作键）；org/env 仍由 composable 注入
     expect(body.idempotencyKey).toBeTruthy()
     expect(body).not.toHaveProperty('organizationId')
     expect(body).not.toHaveProperty('environmentId')
 
-    // 成功 Result
-    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(true)
+    // 已回读的原申请及单位显示在成功结果。
+    expect(wrapper.get('[data-result][data-status="success"]').text()).toContain('MIR-001')
+    expect(wrapper.get('[data-result][data-status="success"]').text()).toContain('12 KG')
     wrapper.unmount()
   })
 

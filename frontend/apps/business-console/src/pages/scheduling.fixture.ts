@@ -185,6 +185,7 @@ const firstPlanJob = shallowRef()
 const generationError = shallowRef()
 const capacityCandidates = shallowRef<BusinessConsoleMesWorkOrderItem[]>()
 const releasePending = shallowRef(false)
+const retryInsertion = vi.fn()
 const insertionJob =
   shallowRef<import('@nerv-iip/api-client').BusinessConsoleSchedulingInsertionPreviewJob>()
 vi.mock('@/composables/scheduling/useSchedulingRushInsertion', () => ({
@@ -199,7 +200,8 @@ vi.mock('@/composables/scheduling/useSchedulingRushInsertion', () => ({
       insertionJob.value = undefined
     },
     message: shallowRef(''),
-    retry: vi.fn(),
+    saveError: shallowRef(''),
+    retry: retryInsertion,
     saveOrder: vi.fn(),
   }),
 }))
@@ -639,6 +641,7 @@ export {
   generatedPlan,
   releasePending,
   insertionJob,
+  retryInsertion,
   detailSelection,
   historyFilters,
   planOne,

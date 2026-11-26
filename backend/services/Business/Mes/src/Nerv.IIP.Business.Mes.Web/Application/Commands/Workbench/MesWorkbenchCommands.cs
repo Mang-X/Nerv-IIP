@@ -888,12 +888,14 @@ public sealed class CreateMaterialIssueRequestCommandValidator : AbstractValidat
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.WorkOrderId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.MaterialId).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.UomCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.UomCode).MaximumLength(50);
         RuleFor(x => x.Quantity).GreaterThan(0).When(x => x.Quantity.HasValue);
     }
 }
 
-public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContext dbContext, MesCodingService? codingService = null)
+public sealed class CreateMaterialIssueRequestCommandHandler(
+    ApplicationDbContext dbContext, MesCodingService? codingService = null,
+    MesMaterialIssueUnitReader? unitReader = null)
     : ICommandHandler<CreateMaterialIssueRequestCommand, MesAcceptedResponse>
 {
     private readonly MesCodingService _codingService = codingService ?? new MesCodingService();
@@ -911,6 +913,8 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
             throw new KnownException($"未找到生产工单，WorkOrderId = {request.WorkOrderId}");
         }
 
+        var useBaseUnit = string.IsNullOrWhiteSpace(request.UomCode);
+        // 自动取单位的提交由服务端生成受理时间，重试时只比较领料意图。
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
             request.EnvironmentId, "material-issue-request",
@@ -922,17 +926,19 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
                 request.MaterialId,
                 request.UomCode,
                 request.Quantity,
-                request.RequestedAtUtc,
+                useBaseUnit ? (DateTimeOffset?)null : request.RequestedAtUtc,
                 request.IsSupplementary,
                 request.OriginalMaterialIssueRequestNo),
             cancellationToken);
-        if (allocation.IsIdempotentReplay && await dbContext.MaterialIssueRequests.AnyAsync(
-                x => x.OrganizationId == request.OrganizationId &&
-                    x.EnvironmentId == request.EnvironmentId &&
-                    x.RequestNo == allocation.Code,
-                cancellationToken))
+        if (allocation.IsIdempotentReplay)
         {
-            return new MesAcceptedResponse("Accepted", allocation.Code, request.RequestedAtUtc);
+            var original = await dbContext.MaterialIssueRequests
+                .Where(x => x.OrganizationId == request.OrganizationId &&
+                    x.EnvironmentId == request.EnvironmentId && x.RequestNo == allocation.Code)
+                .Select(x => new { x.RequestedAtUtc })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (original is not null)
+                return new MesAcceptedResponse("Accepted", allocation.Code, original.RequestedAtUtc);
         }
 
         if (string.IsNullOrWhiteSpace(request.MaterialId))
@@ -941,9 +947,10 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
         }
 
         var materialId = request.MaterialId.Trim();
-        var uomCode = string.IsNullOrWhiteSpace(request.UomCode)
-            ? throw new KnownException("领料申请必须指定单位，UomCode 不能为空。")
-            : request.UomCode.Trim();
+        var uomCode = useBaseUnit
+            ? await (unitReader ?? throw new KnownException("领料申请缺少计量单位。"))
+                .ReadBaseUnitAsync(request.OrganizationId, request.EnvironmentId, materialId, cancellationToken)
+            : request.UomCode!.Trim();
         // 单位是物料主档的事实，不是界面常量。占位单位会一路带到集成事件转换处才炸（库存腿无法换算），
         // 那时已经是发布侧异常而非业务拒绝；在受理时就以业务错误回绝，让调用方能看懂并修正。
         if (string.Equals(uomCode, MaterialIssueRequest.UnspecifiedUomCode, StringComparison.OrdinalIgnoreCase))
@@ -953,7 +960,7 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
 
         var resolvedFrozenSelection = request.IsSupplementary
             ? null
-            : await ResolveFrozenMaterialSelectionAsync(request, materialId, cancellationToken);
+            : await ResolveFrozenMaterialSelectionAsync(request, materialId, useBaseUnit ? uomCode : null, cancellationToken);
         var frozenSelection = resolvedFrozenSelection?.SubstitutedMaterialId is null
             ? null
             : resolvedFrozenSelection;
@@ -1031,6 +1038,7 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
     private async Task<FrozenMaterialSelection> ResolveFrozenMaterialSelectionAsync(
         CreateMaterialIssueRequestCommand request,
         string actualMaterialId,
+        string? baseUnit,
         CancellationToken cancellationToken)
     {
         var operationTaskId = string.IsNullOrWhiteSpace(request.OperationTaskId)
@@ -1060,6 +1068,12 @@ public sealed class CreateMaterialIssueRequestCommandHandler(ApplicationDbContex
         if (primaryMaterialIds.Length > 1)
         {
             throw new KnownException("替代料在该工单冻结快照中对应多个主料，无法确定审计归属。");
+        }
+
+        if (!request.Quantity.HasValue && baseUnit is not null &&
+            eligibleRows.Any(row => !string.Equals(row.UomCode, baseUnit, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new KnownException($"工单需求的单位与物料基本单位不同，请按 {baseUnit} 填写领料数量。");
         }
 
         var primaryMaterialId = primaryMaterialIds[0];

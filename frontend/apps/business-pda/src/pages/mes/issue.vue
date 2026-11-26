@@ -100,7 +100,9 @@ function requestTitle(req: IssueRequest) {
 }
 function requestSubtitle(req: IssueRequest) {
   const parts = [materialIssueStatusLabel(req.status)]
-  if (req.requestedQuantity !== undefined) parts.push(`申请 ${req.requestedQuantity}`)
+  if (req.requestedQuantity !== undefined) {
+    parts.push(`申请 ${req.requestedQuantity}${req.uomCode ? ` ${req.uomCode}` : ''}`)
+  }
   if (req.receivedQuantity !== undefined) parts.push(`已收 ${req.receivedQuantity}`)
   return parts.join(' · ')
 }
@@ -134,14 +136,20 @@ const scannedMaterialIssueRequestId = ref('')
 const creating = ref(false)
 const selectedWorkOrder = ref<WorkOrder | null>(null)
 const issueMaterialId = ref('')
-const issueQuantity = ref<number | null>(null)
+const issueQuantity = ref<number | string | null>(null)
+const issueQuantityValid = computed(() => {
+  const quantity = issueQuantity.value
+  return (
+    quantity === null ||
+    quantity === '' ||
+    (typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0)
+  )
+})
 
 const createValid = computed(() => {
   if (!selectedWorkOrder.value?.workOrderId) return false
   if (issueMaterialId.value.trim() === '') return false
-  // 数量可选；若填写则须 > 0
-  if (issueQuantity.value !== null && !(issueQuantity.value > 0)) return false
-  return true
+  return issueQuantityValid.value
 })
 
 const createSheetOpen = computed({
@@ -171,11 +179,11 @@ function chooseWorkOrder(wo: WorkOrder) {
 }
 
 async function submitCreate() {
-  if (scanGuarded.value) return
+  if (submitting.value || scanGuarded.value) return
   const workOrderId = selectedWorkOrder.value?.workOrderId
   const materialId = issueMaterialId.value.trim()
   if (!workOrderId || materialId === '') return
-  if (issueQuantity.value !== null && !(issueQuantity.value > 0)) return
+  if (!issueQuantityValid.value) return
   const quantity = issueQuantity.value
   // 首次提交铸造稳定幂等键，重试复用同键。
   if (operationKey.value === '') {
@@ -186,20 +194,22 @@ async function submitCreate() {
   const doSubmit = () =>
     createIssue(workOrderId, {
       materialId,
-      ...(quantity === null ? {} : { quantity }),
+      uomCode: '',
+      ...(typeof quantity === 'number' ? { quantity } : {}),
       idempotencyKey: operationKey.value,
     })
   try {
-    await doSubmit()
+    const original = await doSubmit()
     result.value = {
       status: 'success',
       title: '领料申请已提交',
+      description: `${original.requestId} · ${requestSubtitle(original)}`,
     }
   } catch (e) {
     result.value = {
       status: 'error',
       title: '领料申请失败',
-      description: e instanceof Error ? e.message : '请检查网络后重试。',
+      description: describeRequestError(e, '请检查网络后重试。').message,
       retry: retryCreate,
     }
   } finally {

@@ -44,7 +44,12 @@ import { useSchedulingWorkbench } from '@/composables/scheduling/useSchedulingWo
 import { useWorkingScheduleDraft } from '@/composables/scheduling/useWorkingScheduleDraft'
 import { useSchedulingDraftPersistence } from '@/composables/scheduling/useSchedulingDraftPersistence'
 import { useAuthStore } from '@/stores/auth'
-import { notifyError, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import {
+  inlineErrorMessage,
+  notifyError,
+  notifyOperationFailure,
+  notifySuccess,
+} from '@/utils/notify'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -220,30 +225,36 @@ export function useSchedulingPageController() {
         void router.replace({ query: { ...route.query, draftPlanId: planId } })
     },
   })
-  const candidateDraftBlockedReason = computed(() => {
+  const draftPlacementChanged = computed(() => {
     const plan = persistedDraftPlan.value
-    if (!plan || !draft.model.value) return undefined
+    if (!plan || !draft.model.value) return false
     const baseline = new Map(
-      (plan.assignments ?? []).map((assignment) => [assignment.assignmentId, assignment]),
+      toModel(plan)
+        .tasks.filter((task) => task.type === 'operation' && !task.blockKind)
+        .map((task) => [task.id, task]),
     )
     const tasks = draft.exportState().tasks!
-    if (
+    return (
       tasks.length !== baseline.size ||
       tasks.some((task) => {
-        const original = baseline.get(task.taskId)
+        const original = baseline.get(task.taskId!)
         return (
           !original ||
           original.resourceId !== task.resourceId ||
+          original.workCenterId !== task.workCenterId ||
           original.startUtc !== task.startUtc ||
           original.endUtc !== task.endUtc ||
-          Boolean(original.isLocked) !== task.locked ||
+          original.locked !== task.locked ||
           JSON.stringify(original.segments ?? []) !== JSON.stringify(task.segments ?? [])
         )
       })
     )
-      return '草稿有人工编辑，请先锁定重预览生成新基线，再生成局部候选。'
-    return undefined
   })
+  const candidateDraftBlockedReason = computed(() =>
+    draftPlacementChanged.value
+      ? '草稿有人工编辑，请先锁定重预览生成新基线，再生成局部候选。'
+      : undefined,
+  )
   const downtimeCandidateBlockedReason = computed(() =>
     !canManage.value
       ? '当前账号没有排产管理权限'
@@ -598,6 +609,7 @@ export function useSchedulingPageController() {
       workbench.revisionPending.value
     )
       return
+    if (insertion.saveError.value) return
     const selectionBaseline = persistedDraftPlan.value
     try {
       const revision = await workbench.revisePlan(result.candidatePlanId, {
@@ -623,7 +635,9 @@ export function useSchedulingPageController() {
       }
       notifySuccess('所选插单候选已保存为修订，请核对后确认发布')
     } catch (error) {
-      notifyOperationFailure('候选保存失败', error, '候选尚未保存，请重试。')
+      if (insertion.task.job.value?.jobId !== job.jobId) return
+      insertion.saveError.value = inlineErrorMessage(error, '候选尚未保存，请重新计算。')
+      notifyOperationFailure('候选保存失败', error, '候选尚未保存，请重新计算。')
     }
   }
 
@@ -639,17 +653,34 @@ export function useSchedulingPageController() {
   }
 
   const publishConfirmOpen = shallowRef(false)
-  const publishTargetPlanId = shallowRef('')
+  const publishTarget = shallowRef<{
+    plan: BusinessConsoleSchedulePlan
+    organizationId: string
+    environmentId: string
+  }>()
+  const publishTargetPlanId = computed(() => publishTarget.value?.plan.planId)
+  const publishTargetChanged = computed(() => {
+    const target = publishTarget.value
+    return (
+      !target ||
+      target.plan !== persistedDraftPlan.value ||
+      target.organizationId !== schedulingFilters.organizationId ||
+      target.environmentId !== schedulingFilters.environmentId
+    )
+  })
   function requestPublishCandidate() {
-    const planId = draft.model.value?.meta.planId
-    if (publishCandidateBlockedReason.value || !planId) return
-    publishTargetPlanId.value = planId
+    const plan = persistedDraftPlan.value
+    if (publishCandidateBlockedReason.value || !plan?.planId) return
+    publishTarget.value = {
+      plan,
+      organizationId: schedulingFilters.organizationId,
+      environmentId: schedulingFilters.environmentId,
+    }
     publishConfirmOpen.value = true
   }
   async function publishCandidate() {
-    const planId = draft.model.value?.meta.planId
-    if (publishCandidateBlockedReason.value || !planId || planId !== publishTargetPlanId.value)
-      return
+    const planId = publishTargetPlanId.value
+    if (publishCandidateBlockedReason.value || publishTargetChanged.value || !planId) return
     detailSelection.planId = planId
     try {
       await releasePlan(planId)
@@ -783,7 +814,16 @@ export function useSchedulingPageController() {
         reason: '请先选定插单候选并保存修订',
       },
       { blocked: !draftReady.value, reason: '正在处理草稿，请稍候' },
-      { blocked: !draft.model.value, reason: '还没有可发布的版本：先生成首版或重预览出一版方案' },
+      {
+        blocked:
+          !persistedDraftPlan.value?.planId ||
+          draft.model.value?.meta.planId !== persistedDraftPlan.value.planId,
+        reason: '还没有可发布的版本：先生成首版或重预览出一版方案',
+      },
+      {
+        blocked: draftPlacementChanged.value,
+        reason: '草稿有未生成修订的修改，请先锁定重预览，再确认发布新版本',
+      },
       {
         blocked: Boolean(draftInvalidationReason.value),
         reason: draftInvalidationReason.value ?? '',
@@ -874,6 +914,7 @@ export function useSchedulingPageController() {
     publishCandidateBlockedReason,
     publishCandidateDisabledReason,
     publishConfirmOpen,
+    publishTargetChanged,
     publishTargetPlanId,
     refreshPlans,
     refreshUrgency,

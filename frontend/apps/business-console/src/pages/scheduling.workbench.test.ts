@@ -13,6 +13,7 @@ import {
   generatedPlan,
   releasePending,
   insertionJob,
+  retryInsertion,
   detailSelection,
   historyFilters,
   planOne,
@@ -31,7 +32,7 @@ import type {
 } from '@nerv-iip/api-client'
 
 describe('APS scheduling workbench page', () => {
-  it.each(['confirm', 'switch', 'restore', 'cancel'])(
+  it.each(['confirm', 'switch', 'restore', 'cancel', 'edit', 'stale'])(
     '选定保存实际插单候选并绑定确认身份：%s',
     async (action) => {
       const candidate = {
@@ -79,6 +80,10 @@ describe('APS scheduling workbench page', () => {
             finishRevision = resolve
           }),
         )
+      } else if (action === 'stale') {
+        stub.revisePlan.mockRejectedValueOnce(
+          new Error('插单候选已失效，排程输入或基线已变化，请重新计算。'),
+        )
       } else stub.revisePlan.mockResolvedValueOnce({ candidate })
       const wrapper = mount(SchedulingPage, {
         global: { plugins: [createPinia()], stubs: layoutStub },
@@ -101,6 +106,19 @@ describe('APS scheduling workbench page', () => {
         expect.objectContaining({ includedOrderIds: ['WO-11', 'WO-12'], lockedAssignments: [] }),
       )
       expect(stub.releasePlan).not.toHaveBeenCalled()
+      if (action === 'stale') {
+        expect(wrapper.get('[role="alert"]').text()).toContain('插单候选已失效')
+        expect(wrapper.findAll('button').some((b) => b.text().includes('选定候选并保存修订'))).toBe(
+          false,
+        )
+        await wrapper
+          .findAll('button')
+          .find((b) => b.text() === '重新计算候选')!
+          .trigger('click')
+        expect(retryInsertion).toHaveBeenCalled()
+        wrapper.unmount()
+        return
+      }
       if (action === 'restore') {
         await pagePersistence.select('plan-other')
         await flushPromises()
@@ -128,6 +146,17 @@ describe('APS scheduling workbench page', () => {
         (b) => b.textContent?.trim() === '确认发布',
       )!
       expect(confirm).toBeTruthy()
+      if (action === 'edit') {
+        wrapper
+          .findComponent({ name: 'SchedulingDraftBoard' })
+          .vm.$emit('update', candidate.assignments[0]!.assignmentId, { resourceId: 'RES-CNC-02' })
+        await flushPromises()
+        expect(confirm.disabled).toBe(true)
+        confirm.click()
+        expect(stub.releasePlan).not.toHaveBeenCalled()
+        wrapper.unmount()
+        return
+      }
       if (action === 'switch') {
         generatedPlan.value = { ...candidate, planId: 'plan-other' }
         await flushPromises()
@@ -458,7 +487,16 @@ describe('APS scheduling workbench page', () => {
       workingDraft: {
         planId: plan.planId,
         savedAtUtc: '2026-10-08T08:00:00Z',
-        state: { contractVersion: 1, orders: [], tasks: [], pendingOperations: [] },
+        state: {
+          contractVersion: 1,
+          orders: [],
+          tasks: plan.assignments.map(({ assignmentId, isLocked, ...assignment }) => ({
+            ...assignment,
+            taskId: assignmentId,
+            locked: Boolean(isLocked),
+          })),
+          pendingOperations: [],
+        },
       },
       comparison: { basePlanId: 'plan-001', candidatePlanId: plan.planId, movedOperationCount: 1 },
     })
@@ -571,6 +609,10 @@ describe('APS scheduling workbench page', () => {
       .find((button) => button.text() === '锁定全部修改')!
       .trigger('click')
     await flushPromises()
+    const publish = wrapper.findAll('button').find((button) => button.text().includes('发布新版'))!
+    expect(publish.attributes('disabled')).toBeDefined()
+    expect(publish.attributes('title')).toContain('锁定重预览')
+    expect(stub.releasePlan).not.toHaveBeenCalled()
     await wrapper
       .findAll('button')
       .find((button) => button.text().includes('锁定重预览'))!
@@ -723,7 +765,16 @@ it('generates from the downtime banner, selects the actual candidate and confirm
         workingDraft: {
           planId: plan.planId,
           savedAtUtc: '2026-10-09T08:00:00Z',
-          state: { contractVersion: 1, orders: [], tasks: [], pendingOperations: [] },
+          state: {
+            contractVersion: 1,
+            orders: [],
+            tasks: plan.assignments.map(({ assignmentId, isLocked, ...assignment }) => ({
+              ...assignment,
+              taskId: assignmentId,
+              locked: Boolean(isLocked),
+            })),
+            pendingOperations: [],
+          },
         },
         comparison: { basePlanId: 'plan-001', candidatePlanId: plan.planId },
       },

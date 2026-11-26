@@ -85,7 +85,11 @@ public sealed partial class SchedulingFirstPlanJobPostgresTests
                 using var saved = await http.PostAsJsonAsync(
                     $"{prefix}/scheduling/plans/{request.PlanId}/revisions", request, SchedulingJson.Options);
                 if (!saved.IsSuccessStatusCode)
-                    return (false, null!, await saved.Content.ReadAsStringAsync());
+                {
+                    var error = await saved.Content.ReadFromJsonAsync<JsonElement>(SchedulingJson.Options);
+                    return (false, null!, !error.TryGetProperty("errors", out _) && error.TryGetProperty("message", out var message)
+                        ? message.GetString() : error.GetRawText());
+                }
                 var envelope = (await saved.Content.ReadFromJsonAsync<ResponseData<SchedulePlanRevisionContract>>(SchedulingJson.Options))!;
                 return (envelope.Success, envelope.Data, envelope.Message);
             }
@@ -104,6 +108,28 @@ public sealed partial class SchedulingFirstPlanJobPostgresTests
             Assert.False((await Save(input with { OrganizationId = "other" })).Success);
             Assert.False((await Save(input with { EnvironmentId = "other" })).Success);
             Assert.False((await Save(input with { PlanId = $"insertion-{Guid.NewGuid():N}" })).Success);
+            if (baselineOrderCount == 3)
+            {
+                source.InsertionProblem = problem with
+                {
+                    Orders = problem.Orders.Select(order => order with
+                    {
+                        Operations = order.Operations.Select(op => op with
+                        {
+                            DurationMinutes = op.DurationMinutes + 5,
+                        }).ToArray(),
+                    }).ToArray(),
+                };
+                var stale = await Save(input, viaGateway: true);
+                Assert.False(stale.Success);
+                Assert.Contains("插单候选已失效", stale.Message);
+                await using var rejectedScope = factory.Services.CreateAsyncScope();
+                var rejectedDb = rejectedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                Assert.False(await rejectedDb.SchedulePlans.AnyAsync(x => x.PlanId == candidateId));
+                Assert.False(await rejectedDb.ScheduleProblems.AnyAsync(x => x.ProblemId == candidateId));
+                source.InsertionProblem = problem;
+            }
+
             var saved = await Save(input, viaGateway: true);
             Assert.True(saved.Success, saved.Message);
             Assert.Equal(candidateId, saved.Data.Candidate.PlanId);
@@ -163,7 +189,7 @@ public sealed partial class SchedulingFirstPlanJobPostgresTests
                 var baselineSnapshot = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().ScheduleProblems.SingleAsync(x => x.ProblemId == original.ProblemId);
                 Assert.Equal(before, JsonSerializer.Serialize(new { Plan = baseline, baselineSnapshot.ProblemJson }, SchedulingJson.Options));
             }
-            Assert.Equal(1, source.Calls);
+            Assert.Equal(baselineOrderCount == 3 ? 3 : 2, source.Calls);
             await Release(candidateId);
             AssertReleasedAssignments(draft, publisher.Released.Last());
             var revoked = Assert.Single(publisher.Revoked);
@@ -175,7 +201,7 @@ public sealed partial class SchedulingFirstPlanJobPostgresTests
             await Release(candidateId);
             Assert.Equal(2, publisher.Released.Count);
             Assert.Single(publisher.Revoked);
-            Assert.Equal(1, source.Calls);
+            Assert.Equal(baselineOrderCount == 3 ? 3 : 2, source.Calls);
             await using (var scope = factory.Services.CreateAsyncScope())
             {
                 var sender = scope.ServiceProvider.GetRequiredService<ISender>();
@@ -184,6 +210,21 @@ public sealed partial class SchedulingFirstPlanJobPostgresTests
                 Assert.Equal(SchedulePlanStatusContract.Superseded, baseline.Status);
                 Assert.Equal(SchedulePlanStatusContract.Released, released.Status);
                 Assert.Equal(JsonSerializer.Serialize(draft.Assignments, SchedulingJson.Options), JsonSerializer.Serialize(released.Assignments, SchedulingJson.Options));
+            }
+            if (baselineOrderCount == 3)
+            {
+                var assignment = draft.Assignments.Single(x => x.OrderId == "order-004");
+                var revised = await Save(input with
+                {
+                    LockedAssignments = [new SchedulingLockedAssignmentContract(assignment.AssignmentId,
+                        assignment.OrderId, assignment.OperationId, assignment.OperationSequence,
+                        assignment.ResourceId, assignment.WorkCenterId, assignment.StartUtc, assignment.EndUtc,
+                        "planner-draft-lock", assignment.Segments)],
+                }, viaGateway: true);
+                Assert.True(revised.Success, revised.Message);
+                Assert.NotEqual(candidateId, revised.Data.Candidate.PlanId);
+                Assert.Equal(SchedulePlanStatusContract.Generated, revised.Data.Candidate.Status);
+                Assert.Equal(2, publisher.Released.Count);
             }
         }
         finally { source.Release.TrySetResult(); await worker.StopAsync(CancellationToken.None); }

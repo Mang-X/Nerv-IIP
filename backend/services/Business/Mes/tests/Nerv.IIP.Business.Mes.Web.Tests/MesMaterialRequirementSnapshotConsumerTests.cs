@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Http.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using NetCorePal.Extensions.Primitives;
@@ -8,6 +10,8 @@ using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.Commands.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
+using Nerv.IIP.Business.Mes.Web.Application.MasterData;
+using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Mes.Web.Tests;
 
@@ -25,6 +29,73 @@ public sealed class MesMaterialRequirementSnapshotConsumerTests
     private const string WorkOrderId = "WO-SNAPSHOT";
     private static readonly DateTimeOffset Earlier = DateTimeOffset.Parse("2026-08-27T08:00:00Z");
     private static readonly DateTimeOffset Latest = DateTimeOffset.Parse("2026-08-27T09:00:00Z");
+
+    // #4549：PDA 委托 MES 解析有效单位；传输重试回读首次建单结果。
+    [Theory]
+    [InlineData("KG", true)]
+    [InlineData("KG", false)]
+    [InlineData(null, false)]
+    public async Task Pda_issue_resolves_active_base_unit_and_replays_original_request(string? baseUnit, bool unitActive)
+    {
+        await using var dbContext = CreateDbContext();
+        dbContext.WorkOrders.Add(CreateReleasedWorkOrder());
+        dbContext.MaterialRequirements.Add(Requirement(null, "MAT-A", null, 12m, Latest));
+        await dbContext.SaveChangesAsync();
+        var source = new MaterialUnitSource(baseUnit, unitActive);
+        using var client = new HttpClient(source) { BaseAddress = new Uri("http://master-data") };
+        var reader = new MesMaterialIssueUnitReader(new MesMasterDataHttpClient(client), new TestToken());
+        var handler = new CreateMaterialIssueRequestCommandHandler(dbContext, unitReader: reader);
+        var request = new CreateMaterialIssueRequestCommand(
+            OrganizationId, EnvironmentId, WorkOrderId, null, "MAT-A", "", 12m, Latest, "pda-issue");
+
+        if (!unitActive)
+        {
+            var failure = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(request, default));
+            Assert.Contains("缺少有效的基本计量单位", failure.Message);
+            Assert.Empty(await dbContext.MaterialIssueRequests.ToArrayAsync());
+            return;
+        }
+
+        var first = await handler.Handle(request, default);
+        await dbContext.SaveChangesAsync();
+        source.UnitActive = false;
+        var replay = await handler.Handle(request with { RequestedAtUtc = Latest.AddMinutes(1) }, default);
+        Assert.Equal(first, replay);
+        Assert.Equal(1, await dbContext.MaterialIssueRequests.CountAsync());
+        var original = await new GetMaterialIssueRequestQueryHandler(dbContext).Handle(
+            new GetMaterialIssueRequestQuery(OrganizationId, EnvironmentId, first.ReferenceId), default);
+        Assert.Equal(first.ReferenceId, original.RequestId);
+        Assert.Equal(WorkOrderId, original.WorkOrderId);
+        Assert.Equal("KG", original.UomCode);
+        Assert.Equal(12m, original.RequestedQuantity);
+        Assert.Equal(Latest, original.RequestedAtUtc);
+    }
+
+    private sealed class TestToken : IInternalServiceTokenProvider
+    {
+        public string BearerToken => "test-token";
+    }
+
+    private sealed class MaterialUnitSource(string? baseUnit, bool unitActive) : HttpMessageHandler
+    {
+        public bool UnitActive { get; set; } = unitActive;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Assert.Equal("?organizationId=org-001&environmentId=env-dev", request.RequestUri!.Query);
+            Assert.Equal("test-token", request.Headers.Authorization?.Parameter);
+            object data = request.RequestUri.AbsolutePath switch
+            {
+                "/api/business/v1/master-data/resources/sku/MAT-A" => new { active = true, baseUomCode = baseUnit },
+                "/api/business/v1/master-data/resources/unit-of-measure/KG" => new { active = UnitActive },
+                _ => throw new InvalidOperationException(request.RequestUri.AbsolutePath),
+            };
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new { success = true, data }),
+            });
+        }
+    }
 
     [Theory]
     [InlineData("OP-10", 9)]

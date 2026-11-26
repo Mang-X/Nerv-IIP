@@ -250,6 +250,7 @@ const horizonInput = defineModel<View['horizonInput']>('horizonInput', { require
       :pending="insertion.task.pending.value"
       :failed="Boolean(insertion.task.error.value)"
       :saving="workbench.revisionPending.value"
+      :save-error="insertion.saveError.value"
       :selected="
         Boolean(
           selectedInsertionId &&
