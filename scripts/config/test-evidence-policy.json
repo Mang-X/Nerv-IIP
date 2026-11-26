@@ -1159,7 +1159,7 @@
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_executor_result_before_deadline_commits_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_result_waiting_for_row_lock_samples_deadline_after_lock_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_executor_unknown_preserves_both_remote_outcome_counterexamples_on_postgres",
-        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_dispatch_preserves_the_original_cancellation_when_another_dispatch_committed_first",
+        "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Concurrent_dispatch_and_retry_after_response_loss_send_once_on_postgres",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_reprint_attempt_does_not_overwrite_facts_when_the_item_was_concurrently_voided",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_reprint_attempt_facts_commit_outside_the_rolling_back_command_transaction",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Conflicting_snapshot_checksum_is_unknown_on_postgres",
@@ -1231,9 +1231,10 @@
       "expiresOn": null,
       "exitCondition": null,
       "testIdentities": [
-        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Device_disabled_consumer_durably_blocks_pm_generation_on_postgres"
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Device_disabled_consumer_durably_blocks_pm_generation_on_postgres",
+        "Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Clearance_survives_reopen_and_alarm_routes_return_the_same_order_on_postgres"
       ],
-      "expectedRuntimeTestCount": 1
+      "expectedRuntimeTestCount": 2
     },
     {
       "id": "maintenance-asset-unavailable-v2",

@@ -47,8 +47,10 @@ public sealed class MarkWorkOrderAlarmClearedHandler(
             new MarkMaintenanceWorkOrderAlarmClearedCommand(
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
-                integrationEvent.Payload.ExternalAlarmId,
-                integrationEvent.Payload.ClearedAtUtc),
+                integrationEvent.Payload.AlarmEventId,
+                integrationEvent.Payload.ClearedAtUtc,
+                new MaintenanceAlarmOrigin(
+                    integrationEvent.Payload.ExternalAlarmId, integrationEvent.Payload.DeviceAssetId, integrationEvent.Payload.AlarmCode)),
             cancellationToken);
     }
 }

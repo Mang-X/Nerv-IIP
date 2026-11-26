@@ -72,7 +72,8 @@ public sealed record CreateMaintenanceWorkOrderRequest(
     string IdempotencyKey,
     string? AssignedTechnicianUserId = null,
     int? EstimatedLaborMinutes = null,
-    DateTimeOffset? ExpectedRestoreAtUtc = null);
+    DateTimeOffset? ExpectedRestoreAtUtc = null,
+    MaintenanceAlarmOrigin? AlarmOrigin = null);
 
 public sealed record CreateMaintenanceWorkOrderResponse(
     MaintenanceWorkOrderId WorkOrderId,
@@ -95,7 +96,8 @@ public sealed record CreateMaintenanceWorkOrderV2Request(
     string IdempotencyKey,
     string? AssignedTechnicianUserId = null,
     int? EstimatedLaborMinutes = null,
-    DateTimeOffset? ExpectedRestoreAtUtc = null);
+    DateTimeOffset? ExpectedRestoreAtUtc = null,
+    MaintenanceAlarmOrigin? AlarmOrigin = null);
 
 public sealed record CompleteMaintenanceWorkOrderRequest(
     MaintenanceWorkOrderId WorkOrderId,
@@ -513,7 +515,7 @@ public sealed class CreateMaintenanceWorkOrderEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreateMaintenanceWorkOrderRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new CreateMaintenanceWorkOrderCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Priority, req.SourceAlarmId, req.OpenedBy, req.AssetUnavailableReason, AssignedTechnicianUserId: req.AssignedTechnicianUserId, EstimatedLaborMinutes: req.EstimatedLaborMinutes, IdempotencyKey: req.IdempotencyKey, ExpectedRestoreAtUtc: req.ExpectedRestoreAtUtc), ct);
+        var result = await sender.Send(new CreateMaintenanceWorkOrderCommand(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Priority, req.SourceAlarmId, req.OpenedBy, req.AssetUnavailableReason, AssignedTechnicianUserId: req.AssignedTechnicianUserId, EstimatedLaborMinutes: req.EstimatedLaborMinutes, IdempotencyKey: req.IdempotencyKey, ExpectedRestoreAtUtc: req.ExpectedRestoreAtUtc, AlarmOrigin: req.AlarmOrigin), ct);
         await Send.OkAsync(
             new CreateMaintenanceWorkOrderResponse(
                 result.WorkOrderId,
@@ -530,7 +532,7 @@ public sealed class CreateMaintenanceWorkOrderV2Endpoint(ISender sender)
 
     public override async Task HandleAsync(CreateMaintenanceWorkOrderV2Request req, CancellationToken ct)
     {
-        var result = await sender.Send(new CreateMaintenanceWorkOrderV2Command(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Priority, req.SourceAlarmId, req.OpenedBy, req.AssetUnavailableReasonCode, AssignedTechnicianUserId: req.AssignedTechnicianUserId, EstimatedLaborMinutes: req.EstimatedLaborMinutes, IdempotencyKey: req.IdempotencyKey, ExpectedRestoreAtUtc: req.ExpectedRestoreAtUtc), ct);
+        var result = await sender.Send(new CreateMaintenanceWorkOrderV2Command(req.OrganizationId, req.EnvironmentId, req.DeviceAssetId, req.Priority, req.SourceAlarmId, req.OpenedBy, req.AssetUnavailableReasonCode, AssignedTechnicianUserId: req.AssignedTechnicianUserId, EstimatedLaborMinutes: req.EstimatedLaborMinutes, IdempotencyKey: req.IdempotencyKey, ExpectedRestoreAtUtc: req.ExpectedRestoreAtUtc, AlarmOrigin: req.AlarmOrigin), ct);
         await Send.OkAsync(
             new CreateMaintenanceWorkOrderResponse(
                 result.WorkOrderId,

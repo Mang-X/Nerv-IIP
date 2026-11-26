@@ -14,6 +14,7 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure;
 public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IMediator mediator)
     : AppDbContextBase(options, mediator), IPostgreSqlCapDataStorage
 {
+    public DbSet<MaintenanceAlarmClearance> MaintenanceAlarmClearances => Set<MaintenanceAlarmClearance>();
     public DbSet<MaintenanceWorkOrder> MaintenanceWorkOrders => Set<MaintenanceWorkOrder>();
     public DbSet<SparePartLine> SparePartLines => Set<SparePartLine>();
     public DbSet<MaintenanceWorkOrderLifecycleEvent> MaintenanceWorkOrderLifecycleEvents => Set<MaintenanceWorkOrderLifecycleEvent>();

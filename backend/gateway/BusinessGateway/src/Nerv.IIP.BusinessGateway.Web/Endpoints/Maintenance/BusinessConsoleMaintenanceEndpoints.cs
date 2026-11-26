@@ -27,9 +27,9 @@ internal static class MaintenanceWorkOrderCreateGuard
 {
     /// <summary>
     /// 归一化并校验 sourceAlarmId：非空时必须在同一 organization/environment 精确命中一条告警，
-    /// 且该告警的设备与请求设备解析到同一个 canonical 设备聚合 ID。返回归一化后的 sourceAlarmId。
+    /// 且该告警的设备与请求设备解析到同一个 canonical 设备聚合 ID。返回核对过的遥测告警。
     /// </summary>
-    public static async Task<string?> EnsureSourceAlarmConsistencyAsync(
+    public static async Task<BusinessConsoleTelemetryAlarmEventItem?> EnsureSourceAlarmConsistencyAsync(
         IBusinessIndustrialTelemetryClient industrialTelemetry,
         IBusinessMasterDataClient masterData,
         IInternalServiceTokenProvider tokenProvider,
@@ -42,7 +42,7 @@ internal static class MaintenanceWorkOrderCreateGuard
         var normalizedSourceAlarmId = NormalizeSourceAlarmId(sourceAlarmId);
         if (string.IsNullOrEmpty(normalizedSourceAlarmId))
         {
-            return normalizedSourceAlarmId;
+            return null;
         }
 
         var alarms = await industrialTelemetry.ListAlarmsAsync(
@@ -90,7 +90,7 @@ internal static class MaintenanceWorkOrderCreateGuard
                 "source-alarm-device-mismatch");
         }
 
-        return normalizedSourceAlarmId;
+        return alarm;
     }
 
     private static async Task<string> ResolveDeviceAggregateIdAsync(
@@ -171,7 +171,7 @@ public sealed class CreateBusinessConsoleMaintenanceWorkOrderEndpoint(
         CancellationToken cancellationToken)
     {
         var (_, actorRef) = RequireAuthorizedPrincipalActor();
-        var sourceAlarmId = await MaintenanceWorkOrderCreateGuard.EnsureSourceAlarmConsistencyAsync(
+        var alarm = await MaintenanceWorkOrderCreateGuard.EnsureSourceAlarmConsistencyAsync(
             industrialTelemetry,
             masterData,
             tokenProvider,
@@ -183,7 +183,7 @@ public sealed class CreateBusinessConsoleMaintenanceWorkOrderEndpoint(
 
         return await maintenance.CreateWorkOrderAsync(
             tokenProvider.BearerToken,
-            request with { OpenedBy = actorRef, SourceAlarmId = sourceAlarmId },
+            request with { OpenedBy = actorRef, SourceAlarmId = alarm?.AlarmEventId, ResolvedAlarm = alarm },
             cancellationToken);
     }
 }
@@ -221,7 +221,7 @@ public sealed class CreateBusinessConsoleMaintenanceWorkOrderV2Endpoint(
         CancellationToken cancellationToken)
     {
         var (_, actorRef) = RequireAuthorizedPrincipalActor();
-        var sourceAlarmId = await MaintenanceWorkOrderCreateGuard.EnsureSourceAlarmConsistencyAsync(
+        var alarm = await MaintenanceWorkOrderCreateGuard.EnsureSourceAlarmConsistencyAsync(
             industrialTelemetry,
             masterData,
             tokenProvider,
@@ -233,7 +233,7 @@ public sealed class CreateBusinessConsoleMaintenanceWorkOrderV2Endpoint(
 
         return await maintenance.CreateWorkOrderV2Async(
             tokenProvider.BearerToken,
-            request with { OpenedBy = actorRef, SourceAlarmId = sourceAlarmId },
+            request with { OpenedBy = actorRef, SourceAlarmId = alarm?.AlarmEventId, ResolvedAlarm = alarm },
             cancellationToken);
     }
 }

@@ -267,7 +267,7 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         var (resourceId, receipt) = await SendCreateWorkOrderAsync(
             internalBearerToken,
             "/api/business/v1/maintenance/work-orders",
-            request,
+            AddAlarmOrigin(request, request.ResolvedAlarm),
             request.IdempotencyKey,
             cancellationToken);
         return new BusinessConsoleCreateMaintenanceWorkOrderResponse(resourceId, receipt);
@@ -281,10 +281,23 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         var (resourceId, receipt) = await SendCreateWorkOrderAsync(
             internalBearerToken,
             "/api/business/v2/maintenance/work-orders",
-            request,
+            AddAlarmOrigin(request, request.ResolvedAlarm),
             request.IdempotencyKey,
             cancellationToken);
         return new BusinessConsoleCreateMaintenanceWorkOrderV2Response(resourceId, receipt);
+    }
+
+    private static object AddAlarmOrigin(object request, BusinessConsoleTelemetryAlarmEventItem? alarm)
+    {
+        if (alarm is null)
+        {
+            return request;
+        }
+
+        var payload = JsonSerializer.SerializeToNode(request, LifecycleJsonOptions)!.AsObject();
+        payload["alarmOrigin"] = JsonSerializer.SerializeToNode(
+            new { alarm.ExternalAlarmId, alarm.DeviceAssetId, alarm.AlarmCode, alarm.ClearedAtUtc }, LifecycleJsonOptions);
+        return payload;
     }
 
     // v1 与 v2 共享同一段下游响应校验和回执构造：任何一处收紧/放松都同时作用于两个版本，

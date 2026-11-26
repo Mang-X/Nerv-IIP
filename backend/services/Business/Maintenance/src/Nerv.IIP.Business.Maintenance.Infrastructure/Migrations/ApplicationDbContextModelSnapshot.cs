@@ -18,7 +18,7 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("maintenance")
-                .HasAnnotation("ProductVersion", "10.0.8")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -957,6 +957,39 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                     b.ToTable("processed_integration_events", "maintenance", t =>
                         {
                             t.HasComment("Integration events already processed by BusinessMaintenance for idempotent consumption.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Maintenance.Infrastructure.MaintenanceAlarmClearance", b =>
+                {
+                    b.Property<string>("OrganizationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("告警所属组织。");
+
+                    b.Property<string>("EnvironmentId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("告警所属环境。");
+
+                    b.Property<string>("AlarmEventId")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("alarm_event_id")
+                        .HasComment("遥测告警记录 ID。");
+
+                    b.Property<DateTimeOffset>("ClearedAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cleared_at_utc")
+                        .HasComment("遥测记录的告警清除时间。");
+
+                    b.HasKey("OrganizationId", "EnvironmentId", "AlarmEventId");
+
+                    b.ToTable("maintenance_alarm_clearances", "maintenance", t =>
+                        {
+                            t.HasComment("维修工单关联所需的告警清除事实。");
                         });
                 });
 

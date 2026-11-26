@@ -109,7 +109,10 @@ public sealed record BusinessConsoleCreateMaintenanceWorkOrderRequest(
     string? AssetUnavailableReason = null,
     string? AssignedTechnicianUserId = null,
     int? EstimatedLaborMinutes = null,
-    DateTimeOffset? ExpectedRestoreAtUtc = null);
+    DateTimeOffset? ExpectedRestoreAtUtc = null)
+{
+    internal BusinessConsoleTelemetryAlarmEventItem? ResolvedAlarm { get; init; }
+}
 
 public sealed record BusinessConsoleCreateMaintenanceWorkOrderResponse(
     string WorkOrderId,
@@ -132,7 +135,10 @@ public sealed record BusinessConsoleCreateMaintenanceWorkOrderV2Request(
     string? AssetUnavailableReasonCode = null,
     string? AssignedTechnicianUserId = null,
     int? EstimatedLaborMinutes = null,
-    DateTimeOffset? ExpectedRestoreAtUtc = null);
+    DateTimeOffset? ExpectedRestoreAtUtc = null)
+{
+    internal BusinessConsoleTelemetryAlarmEventItem? ResolvedAlarm { get; init; }
+}
 
 public sealed record BusinessConsoleCreateMaintenanceWorkOrderV2Response(
     string WorkOrderId,

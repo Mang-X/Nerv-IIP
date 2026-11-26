@@ -2184,44 +2184,67 @@ public sealed partial class BarcodeLabelPostgresProfileTests
     }
 
     [RealPostgresFact]
-    public async Task Canceled_dispatch_preserves_the_original_cancellation_when_another_dispatch_committed_first()
+    public async Task Concurrent_dispatch_and_retry_after_response_loss_send_once_on_postgres()
     {
         await ResetAndMigrateSchemaAsync();
         using var cancellation = new CancellationTokenSource();
-        var printer = new MutatingCancelingLabelPrinter(
-            cancellation,
-            async () =>
-            {
-                await using var concurrentDb = CreatePostgresDbContext(LaneConnectionString);
-                var concurrentBatch = await concurrentDb.LabelPrintBatches
-                    .SingleAsync(batch => batch.IdempotencyKey == "idem-concurrent-dispatch");
-                concurrentBatch.RecordSentToPrinter("printer-concurrent", "concurrent-job");
-                await concurrentDb.SaveChangesAsync();
-            });
+        var printer = new GatedDispatchPrinter(cancellation);
         await using var provider = CreateCommandProvider(printer);
         var batchId = await AddReplayableBatchAsync(provider, "idem-concurrent-dispatch", markSent: false);
+        var command = new ScopedDispatchLabelPrintBatchCommand(batchId, "org-001", "env-dev", "printer-01");
 
-        await using (var commandScope = provider.CreateAsyncScope())
+        await TestTimeout.RunAsync("并发派发及响应丢失后的重试", async token =>
         {
-            var sender = commandScope.ServiceProvider.GetRequiredService<ISender>();
-            var exception = await Assert.ThrowsAsync<LabelPrinterDispatchCanceledException>(() => sender.Send(
-                new ScopedDispatchLabelPrintBatchCommand(
-                    batchId,
-                    "org-001",
-                    "env-dev",
-                    "printer-canceled"),
-                cancellation.Token));
-            Assert.Same(printer.ThrownCancellation, exception);
-            Assert.Same(printer.OriginalCancellation, exception.InnerException);
-        }
+            await using var firstScope = provider.CreateAsyncScope();
+            var first = firstScope.ServiceProvider.GetRequiredService<ISender>().Send(command, cancellation.Token);
+            try
+            {
+                await printer.Entered.Task.WaitAsync(token);
+                await using var concurrentScope = provider.CreateAsyncScope();
+                var concurrent = concurrentScope.ServiceProvider.GetRequiredService<ISender>();
+                await Assert.ThrowsAsync<KnownException>(() => concurrent.Send(command, token));
+            }
+            finally
+            {
+                printer.Release.TrySetResult();
+            }
 
-        await using var verificationScope = provider.CreateAsyncScope();
-        var verificationDb = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var persisted = await verificationDb.LabelPrintBatches.SingleAsync(batch => batch.Id == batchId);
-        Assert.Equal("sent-to-printer", persisted.Status);
-        Assert.Equal("printer-concurrent", persisted.PrinterId);
-        Assert.Equal("concurrent-job", persisted.PrintJobId);
-        Assert.Null(persisted.FailureReason);
+            await Assert.ThrowsAsync<LabelPrinterDispatchCanceledException>(() => first.WaitAsync(token));
+            await using var retryScope = provider.CreateAsyncScope();
+            var retry = retryScope.ServiceProvider.GetRequiredService<ISender>();
+            await Assert.ThrowsAsync<KnownException>(() => retry.Send(command, token));
+            Assert.Equal(1, printer.SendCount);
+
+            var db = retryScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var batch = await db.LabelPrintBatches.SingleAsync(x => x.Id == batchId, token);
+            Assert.Equal("delivery-unknown", batch.Status);
+            Assert.Equal("lost-response-job", batch.PrintJobId);
+        }, TimeSpan.FromSeconds(15), sensitiveValues: [LaneConnectionString]);
+    }
+
+    private sealed class GatedDispatchPrinter(CancellationTokenSource cancellation) : ILabelPrinter
+    {
+        private int sendCount;
+        public int SendCount => sendCount;
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<LabelPrinterDispatchResult> PrintAsync(
+            string printerId, IReadOnlyCollection<CompiledLabelDocument> documents, CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref sendCount) > 1)
+            {
+                return LabelPrinterDispatchResult.Sent("duplicate-job");
+            }
+
+            Entered.TrySetResult();
+            await Release.Task;
+            cancellation.Cancel();
+            throw new LabelPrinterDispatchCanceledException(
+                LabelPrinterDispatchResult.DeliveryUnknown("lost-response-job", "设备收到发送数据后响应丢失。"),
+                new OperationCanceledException(cancellationToken),
+                cancellationToken);
+        }
     }
 
     [RealPostgresFact]

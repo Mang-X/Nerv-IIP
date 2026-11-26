@@ -454,7 +454,7 @@ try {
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_result_waiting_for_row_lock_samples_deadline_after_lock_on_postgres',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Retirement_executor_unknown_preserves_both_remote_outcome_counterexamples_on_postgres',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_attempt_facts_commit_outside_the_rolling_back_command_transaction',
-                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_dispatch_preserves_the_original_cancellation_when_another_dispatch_committed_first',
+                'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Concurrent_dispatch_and_retry_after_response_loss_send_once_on_postgres',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_reprint_attempt_does_not_overwrite_facts_when_the_item_was_concurrently_voided',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Canceled_reprint_attempt_facts_commit_outside_the_rolling_back_command_transaction',
                 'Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests.Conflicting_snapshot_checksum_is_unknown_on_postgres',
@@ -489,7 +489,8 @@ try {
             source = 'backend/services/FileStorage/tests/Nerv.IIP.FileStorage.Web.Tests/FileStorageRestartPersistenceTests.cs'
             innerDatabaseFactory = 'PostgreSqlTestDatabase.CreateAsync' },
         @{ id = 'maintenance-device-pause-postgres'; service = 'Maintenance'; schema = 'maintenance'; identities = @(
-                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Device_disabled_consumer_durably_blocks_pm_generation_on_postgres')
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Device_disabled_consumer_durably_blocks_pm_generation_on_postgres',
+                'Nerv.IIP.Business.Maintenance.Web.Tests.MaintenanceIntegrationEventHandlerTests.Clearance_survives_reopen_and_alarm_routes_return_the_same_order_on_postgres')
             source = 'backend/services/Business/Maintenance/tests/Nerv.IIP.Business.Maintenance.Web.Tests/MaintenanceIntegrationEventHandlerTests.cs'
             innerDatabaseFactory = 'TemporaryPostgresDatabase.CreateAsync' },
         # #2968：Maintenance v2 工单入口的目录精确命中、v1+v2 双发同事务与回滚、v1 零漂移证明落在独立成员，

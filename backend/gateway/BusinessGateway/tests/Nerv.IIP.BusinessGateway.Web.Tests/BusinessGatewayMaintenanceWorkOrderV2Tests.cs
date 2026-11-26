@@ -42,6 +42,32 @@ public sealed class BusinessGatewayMaintenanceWorkOrderV2Tests
     }
 
     [Fact]
+    public async Task V2_client_forwards_canonical_alarm_and_verified_legacy_identity()
+    {
+        var handler = new RecordingCreateHandler();
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://maintenance.local") };
+        var client = new HttpBusinessMaintenanceClient(httpClient);
+        var clearedAt = new DateTimeOffset(2026, 11, 1, 9, 0, 0, TimeSpan.Zero);
+        const string alarmId = "019f2000-0000-7000-8000-0000000000ab";
+        var request = V2Request() with
+        {
+            SourceAlarmId = alarmId,
+            ResolvedAlarm = new BusinessConsoleTelemetryAlarmEventItem(
+                alarmId, "org-001", "env-dev", "DEV-PRESS-01", "OVER_TEMP", "critical", "cleared",
+                clearedAt.AddHours(-1), clearedAt, "legacy-alarm"),
+        };
+
+        await client.CreateWorkOrderV2Async("internal-token-001", request, CancellationToken.None);
+
+        Assert.Equal(alarmId, handler.LastBody.GetProperty("sourceAlarmId").GetString());
+        var origin = handler.LastBody.GetProperty("alarmOrigin");
+        Assert.Equal("legacy-alarm", origin.GetProperty("externalAlarmId").GetString());
+        Assert.Equal("DEV-PRESS-01", origin.GetProperty("deviceAssetId").GetString());
+        Assert.Equal("OVER_TEMP", origin.GetProperty("alarmCode").GetString());
+        Assert.Equal(clearedAt, origin.GetProperty("clearedAtUtc").GetDateTimeOffset());
+    }
+
+    [Fact]
     public async Task V1_client_still_posts_to_the_maintenance_v1_route_with_the_free_text_reason()
     {
         var handler = new RecordingCreateHandler();
