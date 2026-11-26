@@ -24,6 +24,11 @@ internal static class FileStoragePurposePolicies
         return FilePurposeRegistration.NotRegistered(purpose);
     }
 
+    public static bool AllowsDownloadCaller(string purpose, string caller, IConfiguration? configuration) =>
+        caller == Nerv.IIP.ServiceAuth.InternalServiceAuthentication.SchemeName
+        || string.Equals(configuration?[$"FileStorage:PurposePolicies:{purpose}:DownloadFacade"],
+            caller, StringComparison.Ordinal);
+
     public static IReadOnlyList<string> GetRegisteredPurposes(IConfiguration? configuration)
     {
         if (configuration is null)

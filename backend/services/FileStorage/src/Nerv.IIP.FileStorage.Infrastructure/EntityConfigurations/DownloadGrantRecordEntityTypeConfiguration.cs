@@ -34,6 +34,11 @@ public sealed class DownloadGrantRecordEntityTypeConfiguration : IEntityTypeConf
             .IsRequired()
             .HasMaxLength(128)
             .HasComment("Environment identifier that scopes the download grant.");
+        builder.Property(x => x.Caller)
+            .HasColumnName("caller")
+            .IsRequired()
+            .HasMaxLength(64)
+            .HasComment("Authenticated caller that may redeem the download grant.");
         builder.Property(x => x.Provider)
             .HasColumnName("provider")
             .IsRequired()

@@ -263,10 +263,15 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
                 return FileStorageResult<FileMetadataResponse>.BadRequest("上传内容与声明的文件类型不匹配。");
             }
 
-            session.BeginCommit(
-                NewId("cmt"),
-                NormalizeCanonicalChecksum(session.Checksum) ?? NormalizeCanonicalChecksum(request.Checksum),
-                now);
+            var commitChecksum = NormalizeCanonicalChecksum(session.Checksum) ?? NormalizeCanonicalChecksum(request.Checksum);
+            if (commitChecksum is null && session.Provider == TusUploadProvider.Name
+                && tusStoreAccessor is not null && tusStoreAccessor.TryGet(out var localStore)
+                && localStore.Exists(session.UploadSessionId))
+            {
+                commitChecksum = $"sha256:{await localStore.ComputeSha256HexAsync(session.UploadSessionId, cancellationToken)}";
+            }
+
+            session.BeginCommit(NewId("cmt"), commitChecksum, now);
             try
             {
                 await dbContext.SaveChangesAsync(cancellationToken); // 在执行任何存储 I/O 前持久提交 Tx1。
@@ -565,9 +570,16 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             quota));
     }
 
+    public Task<FileStorageResult<DownloadGrantResponse>> CreateDownloadGrantAsync(
+        string fileId,
+        CreateDownloadGrantRequest request,
+        CancellationToken cancellationToken) =>
+        CreateDownloadGrantAsync(fileId, request, Nerv.IIP.ServiceAuth.InternalServiceAuthentication.SchemeName, cancellationToken);
+
     public async Task<FileStorageResult<DownloadGrantResponse>> CreateDownloadGrantAsync(
         string fileId,
         CreateDownloadGrantRequest request,
+        string caller,
         CancellationToken cancellationToken)
     {
         var file = await dbContext.StoredFiles.SingleOrDefaultAsync(x => x.FileId == fileId, cancellationToken);
@@ -582,6 +594,11 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return FileStorageResult<DownloadGrantResponse>.BadRequest("File context does not match.");
         }
 
+        if (!FileStoragePurposePolicies.AllowsDownloadCaller(file.FilePurpose, caller, configuration))
+        {
+            return FileStorageResult<DownloadGrantResponse>.NotFound("当前文件用途不属于此下载门面。");
+        }
+
         var now = timeProvider.GetUtcNow();
         var grant = DownloadGrantRecord.Create(
             NewId("dgr"),
@@ -590,7 +607,8 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             file.EnvironmentId,
             ServerProxyUploadProvider.Name,
             now,
-            now.AddMinutes(10));
+            now.AddMinutes(10),
+            caller);
 
         dbContext.DownloadGrants.Add(grant);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -608,17 +626,19 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
                 })));
     }
 
-    public async Task<string?> GetUploadSessionIdForDownloadGrantAsync(
+    public async Task<LocalDownloadContent?> RedeemDownloadGrantAsync(
         string downloadGrantId,
         string organizationId,
         string environmentId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string caller = "InternalService")
     {
         var now = timeProvider.GetUtcNow();
         var grant = await dbContext.DownloadGrants.SingleOrDefaultAsync(x =>
             x.DownloadGrantId == downloadGrantId
             && x.OrganizationId == organizationId
             && x.EnvironmentId == environmentId
+            && x.Caller == caller
             && x.ExpiresAtUtc > now,
             cancellationToken);
         if (grant is null)
@@ -630,17 +650,27 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             x => x.FileId == grant.FileId,
             cancellationToken);
         if (file is null
-            || !string.Equals(file.Status, FileStorageFileStatus.Available, StringComparison.Ordinal))
+            || !string.Equals(file.Status, FileStorageFileStatus.Available, StringComparison.Ordinal)
+            || !FileStoragePurposePolicies.AllowsDownloadCaller(file.FilePurpose, caller, configuration))
         {
             return null;
         }
 
-        var session = await dbContext.UploadSessions.SingleOrDefaultAsync(
-            x => x.FileId == grant.FileId,
-            cancellationToken);
-        if (session is null)
+        if (tusStoreAccessor is not null && tusStoreAccessor.TryGet(out var store)
+            && !store.FinalExists(file.ObjectKey)
+            && NormalizeCanonicalChecksum(file.Checksum) is { } checksum)
         {
-            return null;
+            var legacySession = await dbContext.UploadSessions.SingleOrDefaultAsync(
+                x => x.FileId == file.FileId, cancellationToken);
+            if (legacySession is { Completed: true })
+            {
+                var evidence = await store.PromoteLegacyAsync(
+                    legacySession.UploadSessionId, file.ObjectKey, file.SizeBytes, checksum, cancellationToken);
+                if (!evidence.IsVerified || evidence.SizeBytes != file.SizeBytes || evidence.CanonicalChecksum != checksum)
+                {
+                    return null;
+                }
+            }
         }
 
         var consumed = dbContext.Database.IsRelational()
@@ -648,10 +678,13 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
                 .Where(x => x.DownloadGrantId == downloadGrantId
                     && x.OrganizationId == organizationId
                     && x.EnvironmentId == environmentId
+                    && x.Caller == caller
                     && x.ExpiresAtUtc > now)
                 .ExecuteDeleteAsync(cancellationToken)
             : await ConsumeGrantForNonRelationalTestStoreAsync(grant, cancellationToken);
-        return consumed == 1 ? session.UploadSessionId : null;
+        return consumed == 1
+            ? new LocalDownloadContent(file.ObjectKey, file.FileName, file.SizeBytes)
+            : null;
     }
 
     private async Task<int> ConsumeGrantForNonRelationalTestStoreAsync(

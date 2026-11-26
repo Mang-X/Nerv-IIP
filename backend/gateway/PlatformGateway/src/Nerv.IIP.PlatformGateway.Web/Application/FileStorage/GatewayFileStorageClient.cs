@@ -60,8 +60,27 @@ public interface IGatewayFileStorageClient
 
 public sealed class HttpGatewayFileStorageClient(
     HttpClient httpClient,
-    IInternalServiceTokenProvider internalServiceToken) : IGatewayFileStorageClient
+    IInternalServiceTokenProvider internalServiceToken,
+    IConfiguration? configuration = null,
+    IHostEnvironment? environment = null) : IGatewayFileStorageClient
 {
+    private string GetDownloadBearerToken()
+    {
+        if (configuration is null)
+        {
+            return internalServiceToken.BearerToken;
+        }
+
+        var token = configuration["FileStorage:DownloadBearerToken"]
+            ?? (environment?.IsDevelopment() == true ? "local-file-download-platform-gateway" : null);
+        if (string.IsNullOrWhiteSpace(token) || token == internalServiceToken.BearerToken)
+        {
+            throw GatewayAuthException.Unavailable("filestorage-download-identity-unavailable");
+        }
+
+        return token;
+    }
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private static readonly HashSet<string> HopByHopResponseHeaders = new(StringComparer.OrdinalIgnoreCase)
@@ -174,11 +193,13 @@ public sealed class HttpGatewayFileStorageClient(
         HttpResponse response,
         CancellationToken cancellationToken)
     {
+        var bearerToken = GetDownloadBearerToken();
         var grant = await SendForJsonAsync<DownloadGrantResponse>(
             () => JsonContent.Create(new CreateDownloadGrantRequest(organizationId, environmentId)),
             HttpMethod.Post,
             $"/api/files/v1/files/{Uri.EscapeDataString(fileId)}/download-grants",
-            cancellationToken);
+            cancellationToken,
+            bearerToken);
 
         // 取字节地址只能由**刚刚签发的那个 grant** 产出（见 FileStorageDownstreamAddress）：
         // 本方法没有、也不可能有一个接受调用方标识或 URL 字符串的分支。下游 URL 的形状校验
@@ -195,7 +216,8 @@ public sealed class HttpGatewayFileStorageClient(
             null,
             response,
             cancellationToken,
-            grant.Download.Headers);
+            grant.Download.Headers,
+            bearerToken);
     }
 
     /// <summary>
@@ -209,12 +231,13 @@ public sealed class HttpGatewayFileStorageClient(
         HttpRequest? sourceRequest,
         HttpResponse targetResponse,
         CancellationToken cancellationToken,
-        IReadOnlyDictionary<string, string>? headers = null)
+        IReadOnlyDictionary<string, string>? headers = null,
+        string? bearerToken = null)
     {
         try
         {
             using var request = new HttpRequestMessage(method, address.Path);
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalServiceToken.BearerToken);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken ?? internalServiceToken.BearerToken);
             CopyTransferRequestHeaders(sourceRequest, request);
             CopyHeaders(headers, request);
             if (sourceRequest is not null && method == HttpMethod.Patch)
@@ -252,9 +275,10 @@ public sealed class HttpGatewayFileStorageClient(
         Func<HttpContent?> contentFactory,
         HttpMethod method,
         string requestUri,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? bearerToken = null)
     {
-        using var response = await SendAsync(contentFactory, method, requestUri, cancellationToken);
+        using var response = await SendAsync(contentFactory, method, requestUri, cancellationToken, bearerToken);
         try
         {
             var payload = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -280,13 +304,14 @@ public sealed class HttpGatewayFileStorageClient(
         Func<HttpContent?> contentFactory,
         HttpMethod method,
         string requestUri,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? bearerToken = null)
     {
         try
         {
             using var request = new HttpRequestMessage(method, requestUri);
             request.Content = contentFactory();
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalServiceToken.BearerToken);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken ?? internalServiceToken.BearerToken);
 
             var response = await httpClient.SendAsync(request, cancellationToken);
             if (response.IsSuccessStatusCode)

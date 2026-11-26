@@ -28,14 +28,19 @@ public interface IFileStorageService
     Task<FileStorageResult<DownloadGrantResponse>> CreateDownloadGrantAsync(
         string fileId,
         CreateDownloadGrantRequest request,
+        string caller,
         CancellationToken cancellationToken);
 }
 
 public interface ILocalFileContentIndex
 {
-    Task<string?> GetUploadSessionIdForDownloadGrantAsync(
+    Task<LocalDownloadContent?> RedeemDownloadGrantAsync(
         string downloadGrantId,
         string organizationId,
         string environmentId,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string caller = "InternalService");
 }
+
+public sealed record LocalDownloadContent(
+    string ObjectKey, string FileName, long SizeBytes);

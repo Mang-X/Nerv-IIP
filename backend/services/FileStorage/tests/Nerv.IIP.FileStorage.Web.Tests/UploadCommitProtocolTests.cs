@@ -656,6 +656,7 @@ public sealed class UploadCommitProtocolTests
         public Task<FileStorageResult<DownloadGrantResponse>> CreateDownloadGrantAsync(
             string fileId,
             CreateDownloadGrantRequest request,
+            string caller,
             CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 

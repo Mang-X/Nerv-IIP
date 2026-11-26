@@ -972,7 +972,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
             now.AddMinutes(-10)));
         await dbContext.SaveChangesAsync();
 
-        var uploadSessionId = await service.GetUploadSessionIdForDownloadGrantAsync(
+        var uploadSessionId = await service.RedeemDownloadGrantAsync(
             "dgr_expired",
             "org-001",
             "prod",
@@ -989,7 +989,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         AddCompletedTusFileWithGrant(dbContext, "file_123", "ups_123", grantId: "dgr_123");
         await dbContext.SaveChangesAsync();
 
-        var uploadSessionId = await service.GetUploadSessionIdForDownloadGrantAsync(
+        var uploadSessionId = await service.RedeemDownloadGrantAsync(
             "dgr_123",
             "org-other",
             "prod",
@@ -1007,18 +1007,18 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         AddCompletedTusFileWithGrant(dbContext, "file_123", "ups_123", grantId: "dgr_123");
         await dbContext.SaveChangesAsync();
 
-        var first = await service.GetUploadSessionIdForDownloadGrantAsync(
+        var first = await service.RedeemDownloadGrantAsync(
             "dgr_123",
             "org-001",
             "prod",
             CancellationToken.None);
-        var second = await service.GetUploadSessionIdForDownloadGrantAsync(
+        var second = await service.RedeemDownloadGrantAsync(
             "dgr_123",
             "org-001",
             "prod",
             CancellationToken.None);
 
-        Assert.Equal("ups_123", first);
+        Assert.Equal("org-001/file_123", first?.ObjectKey);
         Assert.Null(second);
         Assert.Equal(0, await dbContext.DownloadGrants.CountAsync());
     }
@@ -1034,7 +1034,7 @@ public sealed class PostgreSqlFileStorageServiceEfCoreInMemoryTests
         file.MarkDeleted(DateTimeOffset.UtcNow, "test-deletion");
         await dbContext.SaveChangesAsync();
 
-        var uploadSessionId = await service.GetUploadSessionIdForDownloadGrantAsync(
+        var uploadSessionId = await service.RedeemDownloadGrantAsync(
             "dgr_deleted",
             "org-001",
             "prod",

@@ -38,10 +38,11 @@ public sealed partial class FileStorageRestartPersistenceTests
         CreateUploadSessionResponse created;
         try
         {
+            await File.WriteAllTextAsync(Path.Combine(root.FullName, ".filestorage-volume-v1"), "local-test-volume");
             await using (var factory = TusFactory(root.FullName, autoMigrate: true))
             {
                 using var client = CreateClient(factory);
-                created = await CreateTusSession(client, payload.Length);
+                created = await CreateTusSession(client, payload.Length, fileName: "路径/目录\\数据?.txt");
                 using var partial = TusPatch(created.Upload.Url, 0, payload[..1024]);
                 Assert.Equal(HttpStatusCode.NoContent, (await client.SendAsync(partial)).StatusCode);
             }
@@ -63,14 +64,133 @@ public sealed partial class FileStorageRestartPersistenceTests
                 using var scope = factory.Services.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
                 Assert.Equal(UploadSessionState.Completed, (await db.UploadSessions.SingleAsync(x => x.UploadSessionId == created.UploadSessionId)).State);
-                var grantResponse = await client.PostAsJsonAsync($"/api/files/v1/files/{created.FileId}/download-grants", new CreateDownloadGrantRequest("org-tus", "production"));
-                var grant = (await grantResponse.Content.ReadFromJsonAsync<DownloadGrantResponse>())!;
-                using var download = new HttpRequestMessage(HttpMethod.Get, grant.Download.Url);
-                foreach (var header in grant.Download.Headers) download.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                Assert.Equal(payload, await (await client.SendAsync(download)).Content.ReadAsByteArrayAsync());
+            }
+            await using (var factory = TusFactory(root.FullName, autoMigrate: false))
+            {
+                using var client = CreateClient(factory);
+                await VerifyDownloadBoundary(client, created, payload);
             }
         }
         finally { root.Delete(recursive: true); }
+    }
+
+    private const string PlatformDownloadToken = "local-file-download-platform-gateway";
+    private const string BusinessDownloadToken = "local-file-download-business-gateway";
+
+    private static async Task VerifyDownloadBoundary(HttpClient client, CreateUploadSessionResponse created, byte[] payload)
+    {
+        var restricted = await CreateTusSession(client, 4, "engineering-document");
+        using var upload = TusPatch(restricted.Upload.Url, 0, Encoding.UTF8.GetBytes("work"));
+        var uploaded = await client.SendAsync(upload);
+        Assert.Equal(HttpStatusCode.NoContent, uploaded.StatusCode);
+        using var denied = await IssueGrant(client, restricted.FileId, PlatformDownloadToken);
+        Assert.Equal(HttpStatusCode.NotFound, denied.StatusCode);
+        Assert.Contains("当前文件用途不属于此下载门面", await denied.Content.ReadAsStringAsync());
+
+        using var businessGrant = await IssueGrant(client, restricted.FileId, BusinessDownloadToken);
+        businessGrant.EnsureSuccessStatusCode();
+
+        using var issued = await IssueGrant(client, created.FileId, PlatformDownloadToken);
+        issued.EnsureSuccessStatusCode();
+        var grant = (await issued.Content.ReadFromJsonAsync<DownloadGrantResponse>())!;
+        using var wrongCaller = await Redeem(client, grant, BusinessDownloadToken);
+        Assert.Equal(HttpStatusCode.NotFound, wrongCaller.StatusCode);
+        using var wrongOrg = await Redeem(client, grant, PlatformDownloadToken, organization: "org-other");
+        Assert.Equal(HttpStatusCode.NotFound, wrongOrg.StatusCode);
+        using var wrongEnv = await Redeem(client, grant, PlatformDownloadToken, environment: "staging");
+        Assert.Equal(HttpStatusCode.NotFound, wrongEnv.StatusCode);
+        using var download = await Redeem(client, grant, PlatformDownloadToken);
+        Assert.Equal(HttpStatusCode.OK, download.StatusCode);
+        Assert.Equal("attachment", download.Content.Headers.ContentDisposition?.DispositionType);
+        Assert.Equal("数据_.txt", download.Content.Headers.ContentDisposition?.FileNameStar);
+        Assert.Equal("nosniff", Assert.Single(download.Headers.GetValues("X-Content-Type-Options")));
+        Assert.True(download.Headers.CacheControl is { Private: true, NoStore: true });
+        Assert.Equal(payload, await download.Content.ReadAsByteArrayAsync());
+        using var reused = await Redeem(client, grant, PlatformDownloadToken);
+        Assert.Equal(HttpStatusCode.NotFound, reused.StatusCode);
+    }
+
+    private static Task<HttpResponseMessage> IssueGrant(HttpClient client, string fileId, string? token = null)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/files/v1/files/{fileId}/download-grants")
+        {
+            Content = JsonContent.Create(new CreateDownloadGrantRequest("org-tus", "production"))
+        };
+        if (token is not null)
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return SendDownloadRequest(client, request);
+    }
+
+    private static Task<HttpResponseMessage> Redeem(HttpClient client, DownloadGrantResponse grant, string? token = null,
+        string organization = "org-tus", string environment = "production")
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, grant.Download.Url);
+        request.Headers.Add("X-Organization-Id", organization);
+        request.Headers.Add("X-Environment-Id", environment);
+        if (token is not null)
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return SendDownloadRequest(client, request);
+    }
+
+    private static async Task<HttpResponseMessage> SendDownloadRequest(HttpClient client, HttpRequestMessage request)
+    {
+        using (request)
+            return await client.SendAsync(request);
+    }
+
+    private static async Task<byte[]> DownloadTusFile(HttpClient client, string fileId)
+    {
+        using var issued = await IssueGrant(client, fileId);
+        issued.EnsureSuccessStatusCode();
+        var grant = (await issued.Content.ReadFromJsonAsync<DownloadGrantResponse>())!;
+        using var download = await Redeem(client, grant);
+        download.EnsureSuccessStatusCode();
+        return await download.Content.ReadAsByteArrayAsync();
+    }
+
+    private static async Task Verify_Tus_complete_recovers_after_final_publication_and_host_restart()
+    {
+        var root = Directory.CreateTempSubdirectory("nerv-tus-interrupted-");
+        var payload = Encoding.UTF8.GetBytes("recover after publication");
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(root.FullName, ".filestorage-volume-v1"), "local-test-volume");
+            CreateUploadSessionResponse created;
+            await using (var factory = TusFactory(root.FullName, autoMigrate: true).WithWebHostBuilder(builder =>
+                builder.ConfigureServices(services => services.AddSingleton<IUploadCommitStorage>(provider =>
+                    new InterruptAfterLocalPublication(provider.GetRequiredService<ILocalTusFileStoreAccessor>())))))
+            {
+                using var client = CreateClient(factory);
+                created = await CreateTusSession(client, payload.Length);
+                using var patch = TusPatch(created.Upload.Url, 0, payload);
+                using var interrupted = await client.SendAsync(patch);
+                Assert.Equal(HttpStatusCode.ServiceUnavailable, interrupted.StatusCode);
+                using var metadata = await client.GetAsync($"/api/files/v1/files/{created.FileId}");
+                Assert.Equal(HttpStatusCode.NotFound, metadata.StatusCode);
+            }
+
+            await using var restarted = TusFactory(root.FullName, autoMigrate: false);
+            using var restartedClient = CreateClient(restarted);
+            using var completed = await restartedClient.PostAsJsonAsync(
+                $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
+                new CompleteUploadSessionRequest("org-tus", "production", "attachment", null, payload.Length));
+            completed.EnsureSuccessStatusCode();
+            Assert.Equal(payload, await DownloadTusFile(restartedClient, created.FileId));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    private sealed class InterruptAfterLocalPublication(ILocalTusFileStoreAccessor accessor) : IUploadCommitStorage
+    {
+        public async Task<UploadCommitStorageResult> CommitAsync(UploadCommitIntent intent, CancellationToken token)
+        {
+            var result = await new LocalTusUploadCommitStorage(accessor).CommitAsync(intent, token);
+            Assert.True(result.IsVerified);
+            throw new IOException("模拟发布文件后、提交元数据前发生的进程故障。");
+        }
     }
 
     private static async Task Verify_Tus_admitted_patch_is_rejected_after_complete_commits_intent()
@@ -80,6 +200,7 @@ public sealed partial class FileStorageRestartPersistenceTests
         var storage = new TransportCommitBarrier();
         try
         {
+            await File.WriteAllTextAsync(Path.Combine(root.FullName, ".filestorage-volume-v1"), "local-test-volume");
             await using var factory = TusFactory(root.FullName, true, barrier, storage);
             using var client = CreateClient(factory);
             var created = await CreateTusSession(client, 10);
@@ -126,7 +247,7 @@ public sealed partial class FileStorageRestartPersistenceTests
             }
             storage.Release.TrySetResult();
             Assert.Equal(HttpStatusCode.OK, (await completion).StatusCode);
-            Assert.Equal(Encoding.UTF8.GetBytes("helloworld"), await ReadTusBytes(factory, created.UploadSessionId));
+            Assert.Equal(Encoding.UTF8.GetBytes("helloworld"), await DownloadTusFile(client, created.FileId));
         }
         finally { barrier.Release.TrySetResult(); storage.Release.TrySetResult(); root.Delete(recursive: true); }
     }
@@ -137,6 +258,7 @@ public sealed partial class FileStorageRestartPersistenceTests
         var barrier = new TransportMutationBarrier(beforeGate: false);
         try
         {
+            await File.WriteAllTextAsync(Path.Combine(root.FullName, ".filestorage-volume-v1"), "local-test-volume");
             await using var factory = TusFactory(root.FullName, true, barrier);
             using var client = CreateClient(factory);
             var created = await CreateTusSession(client, 10);
@@ -181,7 +303,7 @@ public sealed partial class FileStorageRestartPersistenceTests
             barrier.Release.TrySetResult();
             Assert.Equal(HttpStatusCode.NoContent, (await writing).StatusCode);
             Assert.Equal(HttpStatusCode.OK, (await completion).StatusCode);
-            Assert.Equal(Encoding.UTF8.GetBytes("helloworld"), await ReadTusBytes(factory, created.UploadSessionId));
+            Assert.Equal(Encoding.UTF8.GetBytes("helloworld"), await DownloadTusFile(client, created.FileId));
             using var scope = factory.Services.CreateScope();
             Assert.Single(await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().StoredFiles
                 .Where(x => x.FileId == created.FileId).ToArrayAsync());
@@ -209,6 +331,7 @@ public sealed partial class FileStorageRestartPersistenceTests
             builder.UseSetting("ConnectionStrings:FileStorageDb", LaneConnectionString);
             builder.UseSetting("FileStorage:UploadProvider", "tus");
             builder.UseSetting("FileStorage:Tus:RootPath", root);
+            builder.UseSetting("FileStorage:Tus:VolumeIdentity", "local-test-volume");
             builder.ConfigureServices(services =>
             {
                 if (mutation is not null) services.AddSingleton<IUploadSessionMutationGate>(provider =>
@@ -219,10 +342,10 @@ public sealed partial class FileStorageRestartPersistenceTests
             });
         });
 
-    private static async Task<CreateUploadSessionResponse> CreateTusSession(HttpClient client, long size)
+    private static async Task<CreateUploadSessionResponse> CreateTusSession(HttpClient client, long size, string purpose = "attachment", string fileName = "payload.txt")
     {
         var response = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", new CreateUploadSessionRequest(
-            "org-tus", "production", new OwnerReference("test", "attachment", "999"), "attachment", "payload.txt", "text/plain", size, null));
+            "org-tus", "production", new OwnerReference("test", "attachment", "999"), purpose, fileName, "text/plain", size, null));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<CreateUploadSessionResponse>())!;
     }

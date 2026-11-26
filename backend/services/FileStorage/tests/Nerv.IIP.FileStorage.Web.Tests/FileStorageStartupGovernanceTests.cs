@@ -159,6 +159,39 @@ public sealed class FileStorageStartupGovernanceTests
         Assert.Contains($"configured={expectedDiagnostic}", exception.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("different-volume")]
+    public void Tus_startup_rejects_missing_or_replaced_persistent_volume(string? markerIdentity)
+    {
+        var root = Directory.CreateTempSubdirectory("nerv-tus-volume-");
+        try
+        {
+            if (markerIdentity is not null)
+            {
+                File.WriteAllText(Path.Combine(root.FullName, ".filestorage-volume-v1"), markerIdentity);
+            }
+
+            using var factory = CreateFactory(
+                "Production",
+                provider: "PostgreSQL",
+                connectionString: PostgreSqlConnectionString,
+                storageSettings: new Dictionary<string, string?>
+                {
+                    ["FileStorage:UploadProvider"] = "tus",
+                    ["FileStorage:Tus:RootPath"] = root.FullName,
+                    ["FileStorage:Tus:VolumeIdentity"] = "expected-volume"
+                });
+
+            var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+            Assert.Contains("持久卷身份缺失或不匹配", exception.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
     [Fact]
     public void Unknown_versioned_storage_provider_fails_fast()
     {

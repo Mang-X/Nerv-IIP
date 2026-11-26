@@ -7,12 +7,129 @@ namespace Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 public sealed class LocalUploadByteStore
 {
     private readonly string rootPath;
+    private readonly string? volumeIdentity;
+    private const string FinalPrefix = "final-";
     private readonly ConcurrentDictionary<string, SemaphoreSlim> uploadLocks = new(StringComparer.Ordinal);
 
     public LocalUploadByteStore(IConfiguration configuration)
     {
         // 不回落系统 temp：该目录承载已 complete 文件的字节（ADR 0024 §5）。缺配置由 Program.cs 在启动时拒绝。
         rootPath = configuration["FileStorage:Tus:RootPath"]!;
+        volumeIdentity = configuration["FileStorage:Tus:VolumeIdentity"];
+    }
+
+    public void VerifyVolume(bool required)
+    {
+        if (!required && volumeIdentity is null)
+        {
+            return;
+        }
+
+        var marker = Path.Combine(rootPath, ".filestorage-volume-v1");
+        if (string.IsNullOrWhiteSpace(volumeIdentity)
+            || !File.Exists(marker)
+            || !string.Equals(File.ReadAllText(marker).Trim(), volumeIdentity, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("FileStorage 持久卷身份缺失或不匹配。");
+        }
+    }
+
+    public bool FinalExists(string objectKey) => File.Exists(GetFinalPath(objectKey));
+
+    public FileStream? TryOpenFinal(string objectKey)
+    {
+        try
+        {
+            return new FileStream(GetFinalPath(objectKey), FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    public bool DeleteFinal(string objectKey)
+    {
+        var path = GetFinalPath(objectKey);
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        File.Delete(path);
+        return true;
+    }
+
+    internal Task<UploadCommitStorageResult> PromoteAsync(
+        string uploadSessionId,
+        string objectKey,
+        long expectedSizeBytes,
+        string? expectedChecksum,
+        CancellationToken cancellationToken) =>
+        PromoteFromPathAsync(GetUploadPath(uploadSessionId), objectKey, expectedSizeBytes, expectedChecksum, cancellationToken);
+
+    internal Task<UploadCommitStorageResult> PromoteLegacyAsync(
+        string uploadSessionId,
+        string objectKey,
+        long expectedSizeBytes,
+        string expectedChecksum,
+        CancellationToken cancellationToken) =>
+        PromoteFromPathAsync(GetUploadPaths(uploadSessionId).Legacy, objectKey, expectedSizeBytes, expectedChecksum, cancellationToken);
+
+    private async Task<UploadCommitStorageResult> PromoteFromPathAsync(
+        string staging, string objectKey, long expectedSizeBytes, string? expectedChecksum, CancellationToken cancellationToken)
+    {
+        var destination = GetFinalPath(objectKey);
+        if (!File.Exists(destination))
+        {
+            if (!File.Exists(staging))
+            {
+                return UploadCommitStorageResult.ProvenNoFinalActionStarted();
+            }
+
+            var stagingEvidence = await ReadEvidenceAsync(staging, cancellationToken);
+            if (!MatchesIntent(stagingEvidence, expectedSizeBytes, expectedChecksum))
+            {
+                return stagingEvidence with
+                {
+                    FailureDisposition = UploadCommitFailureDisposition.ProvenNoFinalActionStarted
+                };
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                // 两种命名空间共享父目录，提交始终在同一个文件系统内。
+                File.Move(staging, destination);
+            }
+            catch (IOException) when (File.Exists(destination))
+            {
+                // 并发恢复可能已经发布了目标，统一回读最终文件。
+            }
+        }
+
+        return await ReadEvidenceAsync(destination, cancellationToken);
+    }
+
+    private static bool MatchesIntent(UploadCommitStorageResult result, long size, string? checksum) =>
+        result.SizeBytes == size
+        && (checksum is null || string.Equals(result.CanonicalChecksum, checksum, StringComparison.Ordinal));
+
+    private static async Task<UploadCommitStorageResult> ReadEvidenceAsync(string path, CancellationToken cancellationToken)
+    {
+        await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+        var hash = await SHA256.HashDataAsync(file, cancellationToken);
+        return UploadCommitStorageResult.Verified(file.Length, $"sha256:{Convert.ToHexStringLower(hash)}");
+    }
+
+    private string GetFinalPath(string objectKey)
+    {
+        VerifyVolume(required: false);
+        return Path.Combine(rootPath, $"{FinalPrefix}{Hash(objectKey)}.bin");
     }
 
     public long GetOffset(string uploadSessionId)
@@ -28,31 +145,43 @@ public sealed class LocalUploadByteStore
 
     public bool Delete(string uploadSessionId)
     {
-        var path = GetUploadPath(uploadSessionId);
-        if (File.Exists(path))
+        var removed = false;
+        var paths = GetUploadPaths(uploadSessionId);
+        foreach (var path in new[] { paths.Staging, paths.Legacy })
         {
-            return TryDeleteFile(path);
+            if (File.Exists(path))
+            {
+                removed |= TryDeleteFile(path);
+            }
         }
 
-        return false;
+        return removed;
     }
 
     public int DeleteFilesExcept(IEnumerable<string> uploadSessionIds, DateTimeOffset olderThanUtc)
     {
+        VerifyVolume(required: false);
         if (!Directory.Exists(rootPath))
         {
             return 0;
         }
 
         var retainedFileNames = uploadSessionIds
-            .Select(uploadSessionId => Path.GetFileName(GetUploadPath(uploadSessionId)))
+            .SelectMany(id =>
+            {
+                var paths = GetUploadPaths(id);
+                return new[] { paths.Staging, paths.Legacy };
+            })
+            .Select(Path.GetFileName)
             .ToHashSet(StringComparer.Ordinal);
         var removed = 0;
         foreach (var path in Directory.EnumerateFiles(rootPath, "*.bin"))
         {
             try
             {
-                if (retainedFileNames.Contains(Path.GetFileName(path))
+                var fileName = Path.GetFileName(path);
+                if (fileName.StartsWith(FinalPrefix, StringComparison.Ordinal)
+                    || retainedFileNames.Contains(fileName)
                     || File.GetLastWriteTimeUtc(path) > olderThanUtc.UtcDateTime)
                 {
                     continue;
@@ -83,8 +212,8 @@ public sealed class LocalUploadByteStore
 
     public async Task<long> AppendAsync(string uploadSessionId, long expectedOffset, Stream content, CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(rootPath);
         var path = GetUploadPath(uploadSessionId);
+        Directory.CreateDirectory(rootPath);
         var uploadLock = uploadLocks.GetOrAdd(uploadSessionId, _ => new SemaphoreSlim(1, 1));
         await uploadLock.WaitAsync(cancellationToken);
         try
@@ -108,8 +237,9 @@ public sealed class LocalUploadByteStore
 
     internal FileStream OpenWrite(string uploadSessionId)
     {
+        var path = GetUploadPath(uploadSessionId);
         Directory.CreateDirectory(rootPath);
-        return new FileStream(GetUploadPath(uploadSessionId), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
+        return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
     }
 
     public FileStream OpenRead(string uploadSessionId)
@@ -119,7 +249,15 @@ public sealed class LocalUploadByteStore
 
     private string GetUploadPath(string uploadSessionId)
     {
-        return Path.Combine(rootPath, $"{Hash(uploadSessionId)}.bin");
+        var paths = GetUploadPaths(uploadSessionId);
+        return File.Exists(paths.Legacy) && !File.Exists(paths.Staging) ? paths.Legacy : paths.Staging;
+    }
+
+    private (string Staging, string Legacy) GetUploadPaths(string uploadSessionId)
+    {
+        VerifyVolume(required: false);
+        var name = $"{Hash(uploadSessionId)}.bin";
+        return (Path.Combine(rootPath, $"staging-{name}"), Path.Combine(rootPath, name));
     }
 
     private static string Hash(string value)

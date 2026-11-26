@@ -37,6 +37,7 @@ public sealed partial class FileStorageRestartPersistenceTests
     {
         await ResetFileStorageSchemaAsync();
         await Verify_Tus_bytes_offset_and_canonical_checksum_survive_host_restart();
+        await Verify_Tus_complete_recovers_after_final_publication_and_host_restart();
     }
 
     [FileStorageRealPostgresFact]
@@ -69,9 +70,8 @@ public sealed partial class FileStorageRestartPersistenceTests
             {
                 var contentIndex = Assert.IsAssignableFrom<ILocalFileContentIndex>(
                     migrationScope.ServiceProvider.GetRequiredService<IFileStorageService>());
-                Assert.Equal(
-                    "legacy-upload-clean",
-                    await contentIndex.GetUploadSessionIdForDownloadGrantAsync(
+                Assert.Null(
+                    await contentIndex.RedeemDownloadGrantAsync(
                         "legacy-grant-clean",
                         "org-legacy-scan",
                         "production",
@@ -79,7 +79,7 @@ public sealed partial class FileStorageRestartPersistenceTests
 
                 foreach (var blockedState in new[] { "malware", "pending", "failed" })
                 {
-                    Assert.Null(await contentIndex.GetUploadSessionIdForDownloadGrantAsync(
+                    Assert.Null(await contentIndex.RedeemDownloadGrantAsync(
                         $"legacy-grant-{blockedState}",
                         "org-legacy-scan",
                         "production",
@@ -103,7 +103,7 @@ public sealed partial class FileStorageRestartPersistenceTests
                 }
 
                 Assert.Equal(
-                    new[] { "legacy-grant-failed", "legacy-grant-malware", "legacy-grant-pending" },
+                    new[] { "legacy-grant-clean", "legacy-grant-failed", "legacy-grant-malware", "legacy-grant-pending" },
                     await migrationDb.DownloadGrants
                         .AsNoTracking()
                         .Where(x => x.OrganizationId == "org-legacy-scan")
@@ -636,6 +636,7 @@ public sealed partial class FileStorageRestartPersistenceTests
         public Task<FileStorageResult<DownloadGrantResponse>> CreateDownloadGrantAsync(
             string fileId,
             CreateDownloadGrantRequest request,
+            string caller,
             CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
@@ -693,7 +694,7 @@ public sealed partial class FileStorageRestartPersistenceTests
                 await SeedRetirementAssetAsync(factory);
                 using var scope = factory.Services.CreateScope();
                 var files = scope.ServiceProvider.GetRequiredService<IFileStorageService>();
-                var oldGrant = await files.CreateDownloadGrantAsync("retirement-file", new("retirement-org", "retirement-env"), default);
+                var oldGrant = await files.CreateDownloadGrantAsync("retirement-file", new("retirement-org", "retirement-env"), InternalServiceAuthentication.SchemeName, default);
                 Assert.Equal(12, (await files.GetUsageAsync(new("retirement-org", "retirement-env", "barcode-label-template"), default)).Value!.UsedBytes);
                 using var response = await client.PostAsJsonAsync(RetirementRoute, Sign(Fields()));
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -703,11 +704,11 @@ public sealed partial class FileStorageRestartPersistenceTests
                 Assert.Equal("physical-hold", accepted.Status);
                 scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().ChangeTracker.Clear();
                 Assert.Equal(0, (await files.GetUsageAsync(new("retirement-org", "retirement-env", "barcode-label-template"), default)).Value!.UsedBytes);
-                var newGrant = await files.CreateDownloadGrantAsync("retirement-file", new("retirement-org", "retirement-env"), default);
+                var newGrant = await files.CreateDownloadGrantAsync("retirement-file", new("retirement-org", "retirement-env"), InternalServiceAuthentication.SchemeName, default);
                 foreach (var grant in new[] { oldGrant.Value!, newGrant.Value! })
                 {
                     var grantId = grant.Download.Url.Split('/')[5];
-                    Assert.Null(await ((ILocalFileContentIndex)files).GetUploadSessionIdForDownloadGrantAsync(
+                    Assert.Null(await ((ILocalFileContentIndex)files).RedeemDownloadGrantAsync(
                         grantId, "retirement-org", "retirement-env", default));
                 }
                 // Same decision cannot change its frozen upstream policy, file or ownership facts.
