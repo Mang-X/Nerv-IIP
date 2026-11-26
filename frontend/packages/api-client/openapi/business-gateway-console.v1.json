@@ -55877,6 +55877,12 @@
             "items": {
               "type": "string"
             }
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 1,
+            "nullable": true
           }
         }
       },

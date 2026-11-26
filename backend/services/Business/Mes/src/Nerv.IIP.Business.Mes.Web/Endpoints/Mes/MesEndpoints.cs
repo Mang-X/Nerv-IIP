@@ -441,7 +441,8 @@ public sealed record LineSideMaterialReceiptRequest(
     [property: RouteParam] string RequestId,
     DateTimeOffset? ReceivedAtUtc,
     decimal? ReceivedQuantity = null,
-    string? MaterialLotId = null);
+    string? MaterialLotId = null,
+    string? IdempotencyKey = null);
 
 public sealed record LineSideMaterialReturnRequest(
     string OrganizationId,
@@ -1298,7 +1299,8 @@ public sealed class ConfirmLineSideMaterialReceiptEndpoint(ISender sender, TimeP
             req.RequestId,
             req.ReceivedAtUtc ?? timeProvider.GetUtcNow(),
             req.ReceivedQuantity,
-            req.MaterialLotId), ct);
+            req.MaterialLotId,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(response, ct);
     }
 }

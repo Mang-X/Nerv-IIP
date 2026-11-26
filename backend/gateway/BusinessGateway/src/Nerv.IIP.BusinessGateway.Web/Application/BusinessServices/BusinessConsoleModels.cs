@@ -5399,7 +5399,8 @@ public sealed record BusinessConsoleMesConfirmLineSideReceiptRequest(
     [property: QueryParam] string EnvironmentId,
     string? MaterialLotId,
     decimal? ReceivedQuantity,
-    IReadOnlyCollection<string>? EvidenceFileIds);
+    IReadOnlyCollection<string>? EvidenceFileIds,
+    [property: StringLength(150, MinimumLength = 1)] string? IdempotencyKey = null);
 
 public sealed record BusinessConsoleMesReturnLineSideMaterialRequest(
     [property: RouteParam] string RequestId,
