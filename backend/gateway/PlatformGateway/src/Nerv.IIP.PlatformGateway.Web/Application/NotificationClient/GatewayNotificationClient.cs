@@ -95,6 +95,8 @@ public interface IGatewayNotificationClient
 
 public sealed class HttpGatewayNotificationClient(HttpClient httpClient, IInternalServiceTokenProvider internalServiceToken) : IGatewayNotificationClient
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     public Task<NotificationMessageListResponse> ListMessagesAsync(
         GatewayNotificationRequestContext context,
         CancellationToken cancellationToken) =>
@@ -253,7 +255,10 @@ public sealed class HttpGatewayNotificationClient(HttpClient httpClient, IIntern
             }
 
             using var response = await httpClient.SendAsync(request, cancellationToken);
-            var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<T>>(cancellationToken);
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            var envelope = string.IsNullOrWhiteSpace(json)
+                ? null
+                : JsonSerializer.Deserialize<ResponseDataEnvelope<T>>(json, JsonOptions);
             if (envelope is null)
             {
                 throw new HttpRequestException("Notification returned an empty response.");
@@ -268,9 +273,14 @@ public sealed class HttpGatewayNotificationClient(HttpClient httpClient, IIntern
 
             if (!envelope.Success)
             {
+                if (envelope.Code is not (400 or 403 or 404 or 409 or 422))
+                {
+                    throw new GatewayNotificationException(HttpStatusCode.BadGateway, "downstream-invalid-response");
+                }
+
                 throw new GatewayNotificationException(
-                    response.StatusCode,
-                    string.IsNullOrWhiteSpace(envelope.Message) ? "Notification request failed." : envelope.Message);
+                    (HttpStatusCode)envelope.Code,
+                    SafeBusinessMessage(envelope.Message));
             }
 
             return envelope.Data ?? throw new HttpRequestException("Notification returned an empty data response.");
@@ -284,6 +294,14 @@ public sealed class HttpGatewayNotificationClient(HttpClient httpClient, IIntern
             throw new HttpRequestException("Notification returned an invalid response.", ex);
         }
     }
+
+    private static string SafeBusinessMessage(string? message) =>
+        !string.IsNullOrWhiteSpace(message) &&
+        message.Length <= 500 &&
+        !message.Contains("Authorization:", StringComparison.OrdinalIgnoreCase) &&
+        message.All(character => !char.IsControl(character) && character is not ('<' or '>' or '{' or '}' or '/' or '\\'))
+            ? message
+            : "Notification request failed.";
 
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 }

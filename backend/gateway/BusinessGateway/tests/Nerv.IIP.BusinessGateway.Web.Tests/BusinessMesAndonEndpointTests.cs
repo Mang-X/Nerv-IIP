@@ -121,10 +121,12 @@ public sealed class BusinessMesAndonEndpointTests
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
         var response = await client.PostAsJsonAsync($"{Root}/{Id}/close", ActionRequest());
-        Assert.Equal(status == 409 ? HttpStatusCode.Conflict : HttpStatusCode.BadRequest, response.StatusCode);
+        var expectedStatus = status == 200 ? HttpStatusCode.BadGateway : (HttpStatusCode)status;
+        Assert.Equal(expectedStatus, response.StatusCode);
         using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.False(result.RootElement.GetProperty("success").GetBoolean());
-        Assert.Contains(message, result.RootElement.GetProperty("message").GetString());
+        Assert.Equal(status == 200 ? "downstream-invalid-response" : message,
+            result.RootElement.GetProperty("message").GetString());
     }
 
     [Fact]

@@ -78,22 +78,23 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
     }
 
     [Fact]
-    public async Task Detail_by_idempotency_key_returns_no_batch_for_the_scoped_not_found_result()
+    public async Task Detail_by_idempotency_key_rejects_a_scoped_failure_with_invalid_envelope_code()
     {
         var handler = new RecordingResponseHandler(
             """{"success":false,"data":null,"message":"未找到打印批次。","code":0}""");
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://barcode-label.test") };
         var client = new HttpBusinessBarcodeLabelClient(httpClient);
 
-        var response = await client.GetPrintBatchByIdempotencyKeyAsync(
+        var exception = await Assert.ThrowsAsync<BusinessServiceProxyException>(() => client.GetPrintBatchByIdempotencyKeyAsync(
             "internal-token",
             new BusinessConsoleBarcodePrintBatchByIdempotencyKeyRequest(
                 "org-001",
                 "env-dev",
                 "intent-unknown"),
-            CancellationToken.None);
+            CancellationToken.None));
 
-        Assert.Null(response);
+        Assert.Equal(HttpStatusCode.BadGateway, exception.StatusCode);
+        Assert.Equal("downstream-invalid-response", exception.Message);
     }
 
     [Fact]

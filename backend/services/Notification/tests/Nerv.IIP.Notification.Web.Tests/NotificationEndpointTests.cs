@@ -100,6 +100,34 @@ public sealed class NotificationEndpointTests
         Assert.True((await ReadDataAsync<NotificationSubscriptionResponse>(subscription)).Enabled);
     }
 
+    [Theory]
+    [Trait("Contract", "PublicContract")]
+    [Trait("Contract", "Regression")]
+    [InlineData("org-001", "env-dev", "user:user-admin")]
+    [InlineData("org-other", "env-dev", "role:ops-admin")]
+    [InlineData("org-001", "env-other", "role:ops-admin")]
+    public async Task Submit_expands_default_ops_role_only_in_its_scope(
+        string organizationId, string environmentId, string expectedRecipient)
+    {
+        using var factory = new NotificationWebApplicationFactory();
+        using var client = factory.CreateNotificationClient(organizationId, environmentId);
+        var explicitRecipient = expectedRecipient.StartsWith("user:", StringComparison.Ordinal)
+            ? expectedRecipient
+            : "user:other";
+
+        using var submitted = await client.PostAsJsonAsync("/api/notifications/v1/intents",
+            CreateIntent("role-expansion", "role:ops-admin", explicitRecipient));
+        var intent = await ReadDataAsync<NotificationIntentResponse>(submitted);
+        Assert.Equal(new[] { expectedRecipient, explicitRecipient }.Distinct().Order(),
+            intent.Messages.Select(x => x.RecipientRef).Order());
+
+        using var mailbox = await client.GetAsync(
+            $"/api/notifications/v1/messages?recipientRef={Uri.EscapeDataString(explicitRecipient)}");
+        var inbox = await ReadDataAsync<NotificationMessageListResponse>(mailbox);
+        Assert.Equal(intent.Messages.Single(x => x.RecipientRef == explicitRecipient).MessageId,
+            Assert.Single(inbox.Items).MessageId);
+    }
+
     [Fact]
     public async Task Submit_intent_with_duplicate_dedupe_key_returns_existing_intent()
     {

@@ -142,7 +142,7 @@ public sealed class BusinessGatewayProxyTests
         {
             success = false,
             message = reason,
-            code = 0,
+            code = downstreamStatus == HttpStatusCode.OK ? 400 : 0,
         }));
         using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://business.local") };
         await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
@@ -9678,6 +9678,42 @@ public sealed class BusinessGatewayProxyTests
         Assert.Empty(handler.Requests);
     }
 
+    [Theory]
+    [Trait("Contract", "PublicContract")]
+    [Trait("Contract", "Regression")]
+    [InlineData(""","code":400""", 400, "insertion-rejected")]
+    [InlineData(""","code":403""", 403, "insertion-rejected")]
+    [InlineData(""","code":404""", 404, "insertion-rejected")]
+    [InlineData(",\"code\":\"409\"", 409, "insertion-rejected")]
+    [InlineData(""","code":422""", 422, "insertion-rejected")]
+    [InlineData("", 502, "downstream-invalid-response")]
+    [InlineData(",\"code\":\"invalid\"", 502, "downstream-invalid-response")]
+    [InlineData(""","code":200""", 502, "downstream-invalid-response")]
+    [InlineData(""","code":500""", 502, "downstream-invalid-response")]
+    public async Task Insertion_preview_facade_uses_valid_status_in_success_transport_failure_envelope(
+        string codeField, int expectedStatus, string expectedMessage)
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(
+            HttpStatusCode.OK, $$"""{"success":false,"message":"insertion-rejected"{{codeField}}}"""));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://scheduling.local") };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(new HttpBusinessSchedulingClient(downstream));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        using var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/scheduling/workbench/insertion-preview-jobs",
+            new SchedulingInsertionPreviewRequestContract("org-001", "env-dev", "plan-001", "WO-12"), SchedulingJson.Options);
+
+        Assert.Equal(expectedStatus, (int)response.StatusCode);
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        Assert.False(body["success"]!.GetValue<bool>());
+        Assert.Equal(expectedStatus, body["code"]!.GetValue<int>());
+        Assert.Equal(expectedMessage, body["message"]!.GetValue<string>());
+    }
+
     // #4162 PublicContract：公开合同要求异步首版受理/查询原样透传，权限分别沿管理/读取。
     [Theory]
     [InlineData(true, SchedulingInsertionPreviewJobStatusContract.Created, false)]
@@ -16031,10 +16067,11 @@ public sealed class BusinessGatewayProxyTests
 
     [Theory]
     [InlineData(null)]
+    [InlineData(0)]
     [InlineData(500)]
     [InlineData(30000)]
     [InlineData("BUSINESS_VALIDATION_FAILED")]
-    public async Task Master_data_http_client_maps_success_false_business_envelope_to_bad_request(object? downstreamCode)
+    public async Task Master_data_http_client_rejects_invalid_status_in_success_transport_failure_envelope(object? downstreamCode)
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
         {
@@ -16051,7 +16088,8 @@ public sealed class BusinessGatewayProxyTests
             Issue355CreateSkuRequest(),
             CancellationToken.None));
 
-        Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);
+        Assert.Equal(HttpStatusCode.BadGateway, ex.StatusCode);
+        Assert.Equal("downstream-invalid-response", ex.Message);
     }
 
     [Fact]
