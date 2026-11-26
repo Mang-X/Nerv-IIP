@@ -228,6 +228,49 @@ public sealed class CreateBusinessConsoleErpPurchaseOrderEndpoint(
 }
 
 [Tags("Business Console ERP")]
+[HttpPost("/api/business-console/v1/erp/procurement/purchase-orders/{purchaseOrderNo}/revision")]
+[BusinessGatewayOperationId("reviseBusinessConsoleErpPurchaseOrder")]
+public sealed class ReviseBusinessConsoleErpPurchaseOrderEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessErpClient erp,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleReviseErpPurchaseOrderRequest, BusinessConsoleReviseErpPurchaseOrderResponse>(
+        auth,
+        BusinessGatewayPermissions.ErpProcurementManage)
+{
+    protected override string OrganizationId(BusinessConsoleReviseErpPurchaseOrderRequest request) => request.OrganizationId;
+
+    protected override string EnvironmentId(BusinessConsoleReviseErpPurchaseOrderRequest request) => request.EnvironmentId;
+
+    protected override string ResourceType(BusinessConsoleReviseErpPurchaseOrderRequest request) => "purchase-order";
+
+    protected override string? ResourceId(BusinessConsoleReviseErpPurchaseOrderRequest request) => Route<string>("purchaseOrderNo");
+
+    protected override Task<BusinessConsoleReviseErpPurchaseOrderResponse> ForwardAsync(
+        BusinessConsoleReviseErpPurchaseOrderRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        erp.RevisePurchaseOrderAsync(tokenProvider.BearerToken, Route<string>("purchaseOrderNo")!,
+            RequireAuthorizedPrincipalActor().ActorRef, request, cancellationToken);
+}
+
+public sealed class BusinessConsoleReviseErpPurchaseOrderRequestValidator : Validator<BusinessConsoleReviseErpPurchaseOrderRequest>
+{
+    public BusinessConsoleReviseErpPurchaseOrderRequestValidator()
+    {
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.Lines).NotEmpty();
+        RuleForEach(x => x.Lines).ChildRules(line =>
+        {
+            line.RuleFor(x => x.LineNo).NotEmpty().MaximumLength(100);
+            line.RuleFor(x => x.OrderedQuantity).GreaterThan(0);
+            line.RuleFor(x => x.UnitPrice).GreaterThan(0);
+        });
+    }
+}
+
+[Tags("Business Console ERP")]
 [HttpPost("/api/business-console/v1/erp/procurement/purchase-receipts")]
 [BusinessGatewayOperationId("recordBusinessConsoleErpPurchaseReceipt")]
 public sealed class RecordBusinessConsoleErpPurchaseReceiptEndpoint(

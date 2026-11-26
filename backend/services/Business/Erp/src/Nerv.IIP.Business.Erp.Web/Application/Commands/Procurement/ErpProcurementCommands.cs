@@ -1283,7 +1283,8 @@ public sealed record RequestPurchaseOrderChangeCommand(
     string PurchaseOrderNo,
     IReadOnlyCollection<PurchaseOrderLineChangeDraft> Lines,
     string? Reason = null,
-    string StartedBy = "system:erp") : ICommand<string>;
+    string StartedBy = "system:erp",
+    bool RevisionOnly = false) : ICommand<string>;
 
 public sealed class RequestPurchaseOrderChangeCommandValidator : AbstractValidator<RequestPurchaseOrderChangeCommand>
 {
@@ -1346,6 +1347,11 @@ public sealed class RequestPurchaseOrderChangeCommandHandler(
                     cancellationToken);
                 order.MarkApprovalRequested(revisedApproval.ChainId);
                 return revisedApproval.ChainId;
+            }
+
+            if (request.RevisionOnly)
+            {
+                throw new KnownException("只有审批驳回或退回后待修订的采购单可以重提。");
             }
 
             var change = order.RequestChange(request.Lines, request.Reason);

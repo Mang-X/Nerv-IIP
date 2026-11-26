@@ -8159,6 +8159,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     receiptReadiness?: string;
     totalAmount?: number;
     lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderLineItem>;
+    approvalChainId?: string | null;
+    canReviseBeforeApproval?: boolean;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpPurchaseOrderLineItem = {
@@ -8644,6 +8646,27 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     skuCode?: string;
     uomCode?: string;
     quantity?: number;
+    unitPrice?: number;
+    promisedDate?: string;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReviseErpPurchaseOrderResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviseErpPurchaseOrderResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviseErpPurchaseOrderResponse = {
+    approvalChainId?: string;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviseErpPurchaseOrderRequest = {
+    organizationId: string;
+    environmentId: string;
+    lines: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviseErpPurchaseOrderLine>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviseErpPurchaseOrderLine = {
+    lineNo?: string;
+    orderedQuantity?: number;
     unitPrice?: number;
     promisedDate?: string;
 };
@@ -10044,6 +10067,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     version?: number;
     isActive?: boolean;
     steps?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApprovalTemplateStepItem>;
+    createOnly?: boolean;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleStartApprovalChainResponse = NetCorePalExtensionsDtoResponseData & {
@@ -10130,6 +10154,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
     documentId?: string;
     documentLineId?: string | null;
     dueAtUtc?: string | null;
+    stepId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleApprovalTaskListRequest = {
@@ -10179,6 +10204,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleR
     actorRef?: string;
     decision?: string;
     comment?: string | null;
+    targetStepId?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleApprovalDelegationListResponse = NetCorePalExtensionsDtoResponseData & {
@@ -24251,6 +24277,41 @@ export type ConvertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderResponse
 };
 
 export type ConvertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderResponse = ConvertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderResponses[keyof ConvertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderResponses];
+
+export type ReviseBusinessConsoleErpPurchaseOrderData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleReviseErpPurchaseOrderRequest;
+    path: {
+        purchaseOrderNo: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/erp/procurement/purchase-orders/{purchaseOrderNo}/revision';
+};
+
+export type ReviseBusinessConsoleErpPurchaseOrderErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type ReviseBusinessConsoleErpPurchaseOrderError = ReviseBusinessConsoleErpPurchaseOrderErrors[keyof ReviseBusinessConsoleErpPurchaseOrderErrors];
+
+export type ReviseBusinessConsoleErpPurchaseOrderResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleReviseErpPurchaseOrderResponse;
+};
+
+export type ReviseBusinessConsoleErpPurchaseOrderResponse = ReviseBusinessConsoleErpPurchaseOrderResponses[keyof ReviseBusinessConsoleErpPurchaseOrderResponses];
 
 export type RecordBusinessConsoleErpPurchaseReceiptData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRecordErpPurchaseReceiptRequest;

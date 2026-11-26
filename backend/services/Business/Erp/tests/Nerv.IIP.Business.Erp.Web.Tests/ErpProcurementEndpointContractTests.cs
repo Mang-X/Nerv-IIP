@@ -1050,17 +1050,28 @@ public sealed class ErpProcurementEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var approvalClient = new CapturingPurchaseOrderApprovalClient();
 
-        var chainId = await new RequestPurchaseOrderChangeCommandHandler(dbContext, approvalClient).Handle(
-            new RequestPurchaseOrderChangeCommand("org-001", "env-dev", "PO-REVISE-001",
-                [new PurchaseOrderLineChangeDraft("LINE-001", 5m, 14m, new DateOnly(2026, 7, 20))], "revise after rejection", "user:buyer-001"),
-            CancellationToken.None);
+        var list = new ListPurchaseOrdersQueryHandler(dbContext);
+        var query = new ListPurchaseOrdersQuery("org-001", "env-dev", null, null);
+        Assert.True(Assert.Single((await list.Handle(query, CancellationToken.None)).Items).CanReviseBeforeApproval);
 
+        var handler = new RequestPurchaseOrderChangeCommandHandler(dbContext, approvalClient);
+        var command = new RequestPurchaseOrderChangeCommand("org-001", "env-dev", "PO-REVISE-001",
+                [new PurchaseOrderLineChangeDraft("LINE-001", 5m, 14m, new DateOnly(2026, 7, 20))], "revise after rejection", "user:buyer-001", RevisionOnly: true);
+        var chainId = await handler.Handle(command, CancellationToken.None);
+
+        await dbContext.SaveChangesAsync();
+        var updated = Assert.Single((await list.Handle(query, CancellationToken.None)).Items);
+        Assert.Equal(order.PurchaseOrderNo, updated.PurchaseOrderNo);
+        Assert.Equal(chainId, updated.ApprovalChainId);
+        Assert.False(updated.CanReviseBeforeApproval);
         Assert.Equal(chainId, order.ApprovalChainId);
         Assert.Equal(70m, order.TotalAmount);
         Assert.Equal(70m, approvalClient.LastRequest!.Amount);
         // #1685：驳回后修订重提同样走变更模板（走的是 RequestPurchaseOrderChangeCommand 的修订分支）。
         Assert.Equal(ApprovalTemplateCodes.PurchaseOrderChange, approvalClient.LastRequest.TemplateCode);
         Assert.Equal(ApprovalDocumentTypes.PurchaseOrder, approvalClient.LastRequest.DocumentType);
+        Assert.Equal(order.PurchaseOrderNo, approvalClient.LastRequest.DocumentId);
+        await Assert.ThrowsAsync<KnownException>(() => handler.Handle(command, CancellationToken.None));
     }
 
     [Fact]

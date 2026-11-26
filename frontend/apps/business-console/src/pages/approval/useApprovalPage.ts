@@ -4,6 +4,7 @@ import type {
   BusinessConsoleApprovalDelegationItem,
   BusinessConsoleApprovalTaskItem,
   BusinessConsoleApprovalTemplateItem,
+  BusinessConsoleApprovalTemplateStepItem,
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
@@ -18,7 +19,7 @@ import { DOCUMENT_TYPE_LABELS, labelFor } from '@/data/businessLabels'
 import { usePagedList } from '@/composables/shared/usePagedList'
 import { useAuthStore } from '@/stores/auth'
 import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, reactive, shallowRef } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 
@@ -49,6 +50,7 @@ export function useApprovalPage() {
   const decisionForm = reactive({
     chainId: '',
     stepNo: 0,
+    targetStepId: undefined as string | null | undefined,
     // 权威取值是小写 approve/reject/return（`APPROVAL_DECISION_VALUES`）——曾经写死大写导致一切裁决必 400（#1311）。
     decision: 'approve' as ApprovalDecisionValue,
     comment: '',
@@ -71,7 +73,7 @@ export function useApprovalPage() {
     documentType: '',
     version: '1',
     isActive: 'true',
-    stepNo: '10',
+    stepNo: '1',
     stepName: '',
     approverType: 'role',
     approverRef: '',
@@ -102,31 +104,14 @@ export function useApprovalPage() {
     },
   })
 
-  // 审批人类型是上游：换了类型，原来的审批人取值必然作废。
-  watch(
-    () => templateForm.approverType,
-    () => {
-      templateForm.approverRef = ''
-    },
-  )
+  const templateSteps = shallowRef<BusinessConsoleApprovalTemplateStepItem[]>([])
+  const templateStepIndex = shallowRef(0)
+  const editingTemplate = shallowRef(false)
 
-  // 模板编码既可能复用已有模板（改版本 / 改步骤），也可能是本次新建的编码——
-  // 给已有模板编码做建议，同时保留录入新编码的能力。
-  const templateCodeSuggestions = computed(() => {
-    const byCode = new Map<string, { value: string; label: string; hint?: string }>()
-    for (const template of approval.templates.value) {
-      const code = template.templateCode?.trim()
-      if (!code || byCode.has(code)) continue
-      byCode.set(code, {
-        value: code,
-        label: code,
-        hint: [documentTypeLabel(template.documentType), `v${template.version ?? 1}`]
-          .filter(Boolean)
-          .join(' · '),
-      })
-    }
-    return [...byCode.values()]
-  })
+  function setTemplateApproverType(value: string) {
+    templateForm.approverType = value
+    templateForm.approverRef = ''
+  }
 
   // 审批人取值随「审批人类型」切换目录：人员走员工名录，部门走部门主数据；
   // 角色目录在平台管理台（IAM）维护，业务网关无读面，暂保留手工录入（后端缺口已登记）。
@@ -263,6 +248,7 @@ export function useApprovalPage() {
     },
     { key: 'isActive', header: '状态', width: 'w-24' },
     { key: 'steps', header: '步骤', accessor: (row) => `${row.steps?.length ?? 0} 步` },
+    { key: 'actions', header: '操作', align: 'end' },
   ]
 
   const activeDelegations = computed(
@@ -472,6 +458,7 @@ export function useApprovalPage() {
       approval.templateFilters.documentType = documentType
     }
     if (documentId) {
+      activeTab.value = 'chains'
       approval.chainFilters.documentId = documentId
       approval.decisionFilters.documentId = documentId
     }
@@ -487,6 +474,7 @@ export function useApprovalPage() {
     decisionTarget.value = row
     decisionForm.chainId = row.chainId
     decisionForm.stepNo = row.stepNo
+    decisionForm.targetStepId = row.stepId
     decisionForm.decision = decision
     decisionForm.comment = ''
     taskDecisionOpen.value = true
@@ -501,6 +489,7 @@ export function useApprovalPage() {
       await approval.resolveTask({
         chainId: row.chainId,
         stepNo: row.stepNo,
+        targetStepId: row.stepId,
         decision,
         comment: '',
       })
@@ -580,35 +569,77 @@ export function useApprovalPage() {
     }
   }
 
-  function openTemplate() {
-    templateForm.templateCode = ''
-    templateForm.documentType = ''
-    templateForm.version = '1'
-    templateForm.isActive = 'true'
-    templateForm.stepNo = '10'
-    templateForm.stepName = ''
-    templateForm.approverType = 'role'
-    templateForm.approverRef = ''
-    templateForm.dueInHours = ''
+  function loadTemplateStep(index: number) {
+    const step = templateSteps.value[index]
+    templateStepIndex.value = index
+    templateForm.stepNo = String(step.stepNo ?? 1)
+    templateForm.stepName = step.stepName ?? ''
+    templateForm.approverType = step.approverType ?? 'role'
+    templateForm.approverRef = step.approverRef ?? ''
+    templateForm.dueInHours = String(step.dueInHours ?? '')
+  }
+
+  function currentTemplateStep(): BusinessConsoleApprovalTemplateStepItem {
+    const step = templateSteps.value[templateStepIndex.value]
+    return {
+      ...step,
+      stepNo: Number(templateForm.stepNo),
+      stepName: templateForm.stepName.trim(),
+      approverType: templateForm.approverType,
+      approverRef: templateForm.approverRef.trim(),
+      dueInHours: String(templateForm.dueInHours).trim() ? Number(templateForm.dueInHours) : null,
+      conditionExpression: step.condition ? null : step.conditionExpression,
+    }
+  }
+
+  function selectTemplateStep(value: string) {
+    templateSteps.value = templateSteps.value.map((step, index) =>
+      index === templateStepIndex.value ? currentTemplateStep() : step,
+    )
+    loadTemplateStep(Number(value))
+  }
+
+  function openTemplate(template?: BusinessConsoleApprovalTemplateItem) {
+    editingTemplate.value = Boolean(template)
+    templateForm.templateCode = template?.templateCode ?? ''
+    templateForm.documentType = template?.documentType ?? ''
+    templateForm.version = String(template?.version ?? 1)
+    templateForm.isActive = String(template?.isActive ?? true)
+    templateSteps.value = template?.steps?.length
+      ? [...template.steps]
+      : [{ stepNo: 1, stepName: '审批', approverType: 'role', approverRef: '' }]
+    loadTemplateStep(0)
     templateError.value = ''
     templateOpen.value = true
   }
 
   async function submitTemplate() {
     const version = Number(templateForm.version)
-    const stepNo = Number(templateForm.stepNo)
-    const dueInHours = templateForm.dueInHours.trim() ? Number(templateForm.dueInHours) : undefined
+    const steps = templateSteps.value.map((step, index) =>
+      index === templateStepIndex.value
+        ? currentTemplateStep()
+        : {
+            ...step,
+            conditionExpression: step.condition ? null : step.conditionExpression,
+          },
+    )
     if (
       !templateForm.templateCode.trim() ||
       !templateForm.documentType.trim() ||
-      !templateForm.stepName.trim() ||
-      !templateForm.approverRef.trim()
+      steps.some((step) => !step.stepName || !step.approverRef)
     ) {
       templateError.value = '请填写模板、单据类型、步骤和审批人。'
       return
     }
-    if (!(version > 0) || !(stepNo > 0)) {
-      templateError.value = '版本与步骤序号需为正数。'
+    const stepNumbers = [...new Set(steps.map((step) => step.stepNo))].sort(
+      (a, b) => Number(a) - Number(b),
+    )
+    if (
+      !Number.isInteger(version) ||
+      version < 1 ||
+      stepNumbers.some((no, index) => no !== index + 1)
+    ) {
+      templateError.value = '版本需为正整数，步骤序号须从 1 开始连续编号。'
       return
     }
 
@@ -619,15 +650,8 @@ export function useApprovalPage() {
         documentType: templateForm.documentType.trim(),
         version,
         isActive: templateForm.isActive === 'true',
-        steps: [
-          {
-            stepNo,
-            stepName: templateForm.stepName.trim(),
-            approverType: templateForm.approverType,
-            approverRef: templateForm.approverRef.trim(),
-            dueInHours,
-          },
-        ],
+        createOnly: !editingTemplate.value,
+        steps,
       })
       templateOpen.value = false
       notifySuccess('审批模板已保存')
@@ -689,7 +713,11 @@ export function useApprovalPage() {
     taskDecisionOpen,
     taskPager,
     tasksState,
-    templateCodeSuggestions,
+    editingTemplate,
+    selectTemplateStep,
+    setTemplateApproverType,
+    templateStepIndex,
+    templateSteps,
     templateColumns,
     templateError,
     templateForm,

@@ -46,6 +46,13 @@ public interface IBusinessErpClient
         BusinessConsoleErpListRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleReviseErpPurchaseOrderResponse> RevisePurchaseOrderAsync(
+        string internalBearerToken,
+        string purchaseOrderNo,
+        string startedBy,
+        BusinessConsoleReviseErpPurchaseOrderRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleCreateErpPurchaseOrderResponse> CreatePurchaseOrderAsync(
         string internalBearerToken,
         BusinessConsoleCreateErpPurchaseOrderRequest request,
@@ -303,6 +310,19 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
         BusinessConsoleErpListRequest request,
         CancellationToken cancellationToken) =>
         ListPurchaseOrdersCoreAsync(internalBearerToken, request, cancellationToken);
+
+    public Task<BusinessConsoleReviseErpPurchaseOrderResponse> RevisePurchaseOrderAsync(
+        string internalBearerToken,
+        string purchaseOrderNo,
+        string startedBy,
+        BusinessConsoleReviseErpPurchaseOrderRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleReviseErpPurchaseOrderResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/erp/purchase-orders/{Uri.EscapeDataString(purchaseOrderNo)}/changes",
+            new { request.OrganizationId, request.EnvironmentId, PurchaseOrderNo = purchaseOrderNo, request.Lines, StartedBy = startedBy, RevisionOnly = true },
+            cancellationToken);
 
     public Task<BusinessConsoleCreateErpPurchaseOrderResponse> CreatePurchaseOrderAsync(
         string internalBearerToken,
@@ -707,7 +727,9 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
                     line.OpenQuantity,
                     line.FinalDelivery,
                     line.UnitPrice,
-                    line.PromisedDate)).ToArray())).ToArray(),
+                    line.PromisedDate)).ToArray(),
+                x.ApprovalChainId,
+                x.CanReviseBeforeApproval)).ToArray(),
             response.Total);
     }
 
@@ -755,7 +777,9 @@ public sealed class HttpBusinessErpClient(HttpClient httpClient)
         string SiteCode,
         string Status,
         decimal TotalAmount,
-        IReadOnlyCollection<DownstreamPurchaseOrderLineItem> Lines);
+        IReadOnlyCollection<DownstreamPurchaseOrderLineItem> Lines,
+        string? ApprovalChainId,
+        bool CanReviseBeforeApproval);
 
     private sealed record DownstreamPurchaseOrderLineItem(
         string LineNo,

@@ -8691,6 +8691,47 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("LOT-001", line.LotNo);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Purchase_order_revision_facade_requires_write_permission_and_uses_the_route_order(bool canWrite)
+    {
+        var erp = new RecordingErpClient();
+        var authorization = FakeBusinessGatewayAuthorizationClient.AllowOnly(
+            canWrite ? BusinessGatewayPermissions.ErpProcurementManage : BusinessGatewayPermissions.ErpProcurementRead);
+        await using var lease = LeaseHost(authorization, services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/erp/procurement/purchase-orders/PO-001/revision", new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                purchaseOrderNo = "PO-OTHER",
+                startedBy = "spoofed",
+                lines = new[] { new { lineNo = "10", orderedQuantity = 3m, unitPrice = 15m, promisedDate = "2026-12-01" } },
+            });
+
+        Assert.Equal(canWrite ? HttpStatusCode.OK : HttpStatusCode.Forbidden, response.StatusCode);
+        if (canWrite)
+        {
+            Assert.Equal(("internal-test-token", "PO-001", "user-admin"), erp.LastRevision);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal("chain-revised", body.RootElement.GetProperty("data").GetProperty("approvalChainId").GetString());
+        }
+        else
+        {
+            Assert.Null(erp.LastRevision);
+        }
+    }
+
     [Fact]
     public async Task Approval_center_facade_uses_internal_service_token_for_downstream_business_service()
     {
@@ -8720,6 +8761,8 @@ public sealed class BusinessGatewayProxyTests
         var approval = new RecordingApprovalClient();
         await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IBusinessApprovalClient>();
             services.AddSingleton<IBusinessApprovalClient>(approval);
             services.RemoveAll<IInternalServiceTokenProvider>();
@@ -8771,7 +8814,9 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("internal-test-token", approval.LastInternalToken);
         Assert.Equal(new BusinessConsoleApprovalChainListRequest("org-001", "env-dev", "pending", "u-requester", null, "purchase-order", "PO-001", 1, 10), approval.LastChainListRequest);
         Assert.Equal(new BusinessConsoleApprovalDecisionListRequest("org-001", "env-dev", "chain-001", "user", "u-manager", "approve", null, null, 2, 11), approval.LastDecisionListRequest);
-        Assert.Equal(new BusinessConsoleApprovalTaskListRequest("org-001", "env-dev", "user", "u-manager", 3, 12), approval.LastRequest);
+        Assert.Equal("user-admin", approval.LastRequest?.ActorRef);
+        Assert.Equal(3, approval.LastRequest?.Skip);
+        Assert.Equal(12, approval.LastRequest?.Take);
         Assert.Equal(new BusinessConsoleApprovalDelegationListRequest("org-001", "env-dev", "active", null, "u-backup", null, 4, 13), approval.LastDelegationListRequest);
         Assert.Equal("user-admin", approval.LastStartChainRequest?.StartedBy);
         Assert.Equal("user", approval.LastCreateDelegationRequest?.DelegatorActorType);
@@ -8854,6 +8899,8 @@ public sealed class BusinessGatewayProxyTests
         var approval = new RecordingApprovalClient();
         await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IBusinessApprovalClient>();
             services.AddSingleton<IBusinessApprovalClient>(approval);
             services.RemoveAll<IInternalServiceTokenProvider>();
@@ -20229,6 +20276,19 @@ internal sealed class RecordingPlanningClient : IBusinessPlanningClient
 
 internal sealed class RecordingErpClient : IBusinessErpClient, IBusinessErpCostingClient
 {
+    public (string InternalToken, string OrderNo, string StartedBy)? LastRevision { get; private set; }
+
+    public Task<BusinessConsoleReviseErpPurchaseOrderResponse> RevisePurchaseOrderAsync(
+        string internalBearerToken,
+        string purchaseOrderNo,
+        string startedBy,
+        BusinessConsoleReviseErpPurchaseOrderRequest request,
+        CancellationToken cancellationToken)
+    {
+        LastRevision = (internalBearerToken, purchaseOrderNo, startedBy);
+        return Task.FromResult(new BusinessConsoleReviseErpPurchaseOrderResponse("chain-revised"));
+    }
+
     public int PurchaseOrderListCallCount { get; private set; }
 
     public string? LastInternalToken { get; private set; }

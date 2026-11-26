@@ -1110,7 +1110,11 @@ public sealed record BusinessConsoleApprovalTaskListRequest(
     string ActorType,
     string ActorRef,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    internal ApprovalRoutingMembership? RoutingMembership { get; init; }
+}
 
 public sealed record BusinessConsoleApprovalTaskListResponse(
     IReadOnlyCollection<BusinessConsoleApprovalTaskItem> Items,
@@ -1124,7 +1128,8 @@ public sealed record BusinessConsoleApprovalTaskItem(
     string DocumentType,
     string DocumentId,
     string? DocumentLineId,
-    DateTimeOffset? DueAtUtc);
+    DateTimeOffset? DueAtUtc,
+    string? StepId = null);
 
 public sealed record BusinessConsoleNotificationListRequest(
     string OrganizationId,
@@ -3894,7 +3899,22 @@ public sealed record BusinessConsoleErpPurchaseOrderItem(
     string Status,
     string ReceiptReadiness,
     decimal TotalAmount,
-    IReadOnlyCollection<BusinessConsoleErpPurchaseOrderLineItem> Lines);
+    IReadOnlyCollection<BusinessConsoleErpPurchaseOrderLineItem> Lines,
+    string? ApprovalChainId = null,
+    bool CanReviseBeforeApproval = false);
+
+public sealed record BusinessConsoleReviseErpPurchaseOrderRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyCollection<BusinessConsoleReviseErpPurchaseOrderLine> Lines);
+
+public sealed record BusinessConsoleReviseErpPurchaseOrderLine(
+    string LineNo,
+    decimal OrderedQuantity,
+    decimal UnitPrice,
+    DateOnly PromisedDate);
+
+public sealed record BusinessConsoleReviseErpPurchaseOrderResponse(string ApprovalChainId);
 
 public sealed record BusinessConsoleErpPurchaseOrderLineItem(
     string LineNo,
@@ -4335,7 +4355,8 @@ public sealed record BusinessConsoleCreateOrUpdateApprovalTemplateRequest(
     string DocumentType,
     int Version,
     bool IsActive,
-    IReadOnlyCollection<BusinessConsoleApprovalTemplateStepItem> Steps);
+    IReadOnlyCollection<BusinessConsoleApprovalTemplateStepItem> Steps,
+    bool CreateOnly = false);
 
 public sealed record BusinessConsoleCreateOrUpdateApprovalTemplateResponse(string TemplateId);
 
@@ -4460,7 +4481,12 @@ public sealed record BusinessConsoleResolveApprovalStepRequest(
     string ActorType,
     string ActorRef,
     string Decision,
-    string? Comment);
+    string? Comment,
+    string? TargetStepId = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    internal ApprovalRoutingMembership? RoutingMembership { get; init; }
+}
 
 public sealed record BusinessConsoleResolveApprovalStepResponse(string DecisionId);
 

@@ -753,6 +753,122 @@ public sealed class ApprovalEndpointContractTests
     }
 
     [Fact]
+    public async Task Replacing_a_template_keeps_the_original_chain_snapshot_and_decision()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var saveTemplate = new CreateOrUpdateApprovalTemplateCommandHandler(dbContext);
+        var original = NewTemplateCommand() with { CreateOnly = true };
+        await saveTemplate.Handle(original, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var chainId = (await new StartApprovalChainCommandHandler(dbContext).Handle(
+            new("org-001", "env-dev", original.TemplateCode, "eco", original.DocumentType, "ECO-1001", null, "requester"),
+            CancellationToken.None)).ChainId;
+        await new ResolveApprovalStepCommandHandler(dbContext).Handle(
+            new("org-001", "env-dev", chainId, 1, "user", "u-engineering", "reject", "需要补充依据"),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<KnownException>(() => saveTemplate.Handle(original, CancellationToken.None));
+        var steps = original.Steps.Select(step => step.StepNo == 1 ? step with { StepName = "工程复审" } : step).ToArray();
+        await saveTemplate.Handle(original with { CreateOnly = false, Version = 2, Steps = steps }, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var result = await new GetApprovalChainQueryHandler(dbContext).Handle(new(chainId), CancellationToken.None);
+        Assert.Equal(1, result.TemplateVersion);
+        Assert.Equal(original.Steps.First().StepName, result.Steps.First().StepName);
+        Assert.Equal("需要补充依据", Assert.Single(result.Decisions).Comment);
+    }
+
+    [Fact]
+    public async Task Retrying_a_routed_parallel_task_does_not_resolve_another_signer()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var template = ApprovalTemplate.Create("org-001", "env-dev", "ECO-PARALLEL",
+            "engineering-change-order", 1, true,
+            [new(1, "角色审核", "joint", "role", "buyer", null),
+             new(1, "部门审核", "joint", "department", "purchasing", null)]);
+        var chain = ApprovalChain.Start(template, NewDocument(), "requester");
+        dbContext.ApprovalTemplates.Add(template);
+        dbContext.ApprovalChains.Add(chain);
+        await dbContext.SaveChangesAsync();
+
+        var query = new ListPendingApprovalTasksQuery("org-001", "env-dev", "user", "reviewer", 0, 10, "buyer", "purchasing");
+        var tasks = new ListPendingApprovalTasksQueryHandler(dbContext);
+        var task = Assert.Single((await tasks.Handle(query, CancellationToken.None)).Items);
+        var command = new ResolveApprovalStepCommand("org-001", "env-dev", chain.Id, 1,
+            "user", "reviewer", "approve", null, "buyer", "purchasing", task.StepId);
+        var resolve = new ResolveApprovalStepCommandHandler(dbContext);
+
+        var first = await resolve.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        Assert.Equal(first, await resolve.Handle(command, CancellationToken.None));
+        var other = Assert.Single((await tasks.Handle(query, CancellationToken.None)).Items);
+        Assert.NotEqual(task.StepId, other.StepId);
+        Assert.NotEqual(first, await resolve.Handle(command with { TargetStepId = other.StepId }, CancellationToken.None));
+        await dbContext.SaveChangesAsync();
+
+        var history = await new GetApprovalChainQueryHandler(dbContext).Handle(new(chain.Id), CancellationToken.None);
+        Assert.Equal(ApprovalChainStatuses.Approved, history.Status);
+        Assert.Equal(2, history.Decisions.Count);
+    }
+
+    [Theory]
+    [InlineData("role", "buyer", "buyer", null, true)]
+    [InlineData("department", "purchasing", null, "purchasing", true)]
+    [InlineData("department", "purchasing", null, "engineering", false)]
+    [InlineData("user", "delegator", null, null, true, 1)]
+    [InlineData("user", "delegator", null, null, false, -1)]
+    public async Task Routed_task_eligibility_matches_resolution(
+        string approverType, string approverRef, string? roles, string? department, bool visible,
+        int? delegationEndsInHours = null)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var template = ApprovalTemplate.Create("org-001", "env-dev", "ECO-ROUTED",
+            "engineering-change-order", 1, true, [new(1, "审批", null, approverType, approverRef, null)]);
+        var chain = ApprovalChain.Start(template, NewDocument(), "system:eco");
+        dbContext.ApprovalTemplates.Add(template);
+        dbContext.ApprovalChains.Add(chain);
+        if (delegationEndsInHours is int endsInHours)
+        {
+            var now = DateTimeOffset.UtcNow;
+            await new CreateApprovalDelegationCommandHandler(dbContext).Handle(new(
+                "org-001", "env-dev", "user", approverRef, "user", "reviewer",
+                "engineering-change-order", now.AddHours(-2), now.AddHours(endsInHours),
+                "代班", approverRef), CancellationToken.None);
+        }
+        await dbContext.SaveChangesAsync();
+
+        var query = new ListPendingApprovalTasksQuery("org-001", "env-dev", "user", "reviewer", 0, 10, roles, department);
+        var tasks = new ListPendingApprovalTasksQueryHandler(dbContext);
+        var command = new ResolveApprovalStepCommand("org-001", "env-dev", chain.Id, 1,
+            "user", "reviewer", "approve", null, roles, department);
+        var resolve = new ResolveApprovalStepCommandHandler(dbContext);
+
+        var result = await tasks.Handle(query, CancellationToken.None);
+        if (!visible)
+        {
+            Assert.Empty(result.Items);
+            await Assert.ThrowsAsync<KnownException>(() => resolve.Handle(command, CancellationToken.None));
+            return;
+        }
+
+        Assert.Equal(chain.Id.ToString(), Assert.Single(result.Items).ChainId);
+        var decisionId = await resolve.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var history = await new GetApprovalChainQueryHandler(dbContext).Handle(new(chain.Id), CancellationToken.None);
+        Assert.Equal(decisionId!.ToString(), Assert.Single(history.Decisions).DecisionId);
+        Assert.Equal("reviewer", Assert.Single(history.Decisions).ActorRef);
+        Assert.Empty((await tasks.Handle(query, CancellationToken.None)).Items);
+    }
+
+    [Fact]
     public async Task Pending_tasks_query_only_returns_actor_current_sequence_tasks()
     {
         await using var provider = CreateInMemoryProvider();

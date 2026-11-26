@@ -92,10 +92,18 @@ public sealed class BusinessGatewayWorkbenchTests
             BusinessGatewayPermissions.ApprovalsRead,
             BusinessGatewayPermissions.NotificationMessagesRead,
             BusinessGatewayPermissions.NotificationTasksRead);
+        var masterData = new RecordingMasterDataClient
+        {
+            PrincipalWorkContext = new BusinessMasterDataPrincipalWorkContextResponse(
+                "resolved", new("worker-1", "user-admin", "E001", "采购审核员", "purchasing", "采购部", null, "active"),
+                [], [], [], [], [], [], [], []),
+        };
         var approval = new RecordingApprovalClient();
         var notification = new RecordingNotificationClient();
         await using var lease = LeaseHost(auth, services =>
         {
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(masterData);
             services.RemoveAll<IBusinessApprovalClient>();
             services.AddSingleton<IBusinessApprovalClient>(approval);
             services.RemoveAll<IBusinessNotificationClient>();
@@ -109,7 +117,11 @@ public sealed class BusinessGatewayWorkbenchTests
         var response = await client.GetAsync("/api/business-console/v1/workbench/summary?organizationId=org-001&environmentId=env-dev");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(new BusinessConsoleApprovalTaskListRequest("org-001", "env-dev", "user", "user-admin"), approval.LastRequest);
+        Assert.Equal("user-admin", approval.LastRequest?.ActorRef);
+        Assert.Equal("purchasing", approval.LastRequest?.RoutingMembership?.DepartmentRef);
+        using var summary = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Contains(summary.RootElement.GetProperty("data").GetProperty("todos").GetProperty("items").EnumerateArray(),
+            item => item.GetProperty("source").GetString() == "BusinessApproval");
         Assert.Equal(new BusinessConsoleNotificationListRequest("org-001", "env-dev", "user:user-admin", "unread", 20), notification.LastMessagesRequest);
         Assert.Equal(new BusinessConsoleNotificationListRequest("org-001", "env-dev", "user:user-admin", "open", 20), notification.LastTasksRequest);
     }

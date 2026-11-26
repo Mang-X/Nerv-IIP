@@ -9,6 +9,8 @@ import ReceiptsPage from './procurement/receipts.vue'
 const state = vi.hoisted(() => ({
   purchaseOrders: [] as Array<Record<string, unknown>>,
   purchaseOrdersTotal: 42,
+  canManagePurchaseOrders: false,
+  revisePurchaseOrder: vi.fn(),
   purchaseRequisitions: [] as Array<Record<string, unknown>>,
   purchaseRequisitionsTotal: 9,
   receipts: [] as Array<Record<string, unknown>>,
@@ -65,6 +67,8 @@ vi.mock('@/composables/erp/useBusinessErp', () => ({
     ready: computed(() => true),
     refresh: vi.fn(),
     createPurchaseOrder: vi.fn(),
+    revisePurchaseOrder: state.revisePurchaseOrder,
+    revisePurchaseOrderPending: shallowRef(false),
     createPurchaseOrderPending: shallowRef(false),
     createPurchaseOrderError: shallowRef(undefined),
   }),
@@ -145,7 +149,16 @@ vi.mock('@/composables/shared/usePagedList', () => ({
   }),
 }))
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({
+    principal: {
+      permissionCodes: state.canManagePurchaseOrders ? ['business.erp.procurement.manage'] : [],
+    },
+  }),
+}))
+
 vi.mock('vue-router', () => ({
+  RouterLink: { props: ['to'], template: '<a><slot /></a>' },
   useRoute: () => ({ query: {} }),
 }))
 
@@ -218,6 +231,8 @@ beforeEach(() => {
   receiptFilters.keyword = undefined
   receiptFilters.skip = 0
   receiptFilters.take = 10
+  state.canManagePurchaseOrders = false
+  state.revisePurchaseOrder.mockReset()
   state.purchaseOrdersTotal = 42
   state.purchaseRequisitionsTotal = 9
   state.receiptsTotal = 7
@@ -503,3 +518,47 @@ describe('ERP procurement receipt page', () => {
     })
   })
 })
+
+it.each([true, false])(
+  '只允许有采购维护权限的用户从待修订原单重提（权限 %s）',
+  async (canManage) => {
+    state.canManagePurchaseOrders = canManage
+    state.purchaseOrders = [
+      {
+        purchaseOrderNo: 'PO-REV-001',
+        status: 'PendingApproval',
+        canReviseBeforeApproval: true,
+        lines: [
+          {
+            lineNo: '10',
+            skuCode: 'STEEL-14',
+            orderedQuantity: 4,
+            unitPrice: 12,
+            promisedDate: '2026-12-01',
+          },
+        ],
+      },
+      {
+        purchaseOrderNo: 'PO-ACTIVE-001',
+        status: 'PendingApproval',
+        canReviseBeforeApproval: false,
+        approvalChainId: 'chain-active',
+        lines: [{ lineNo: '10', skuCode: 'STEEL-14' }],
+      },
+    ]
+    state.revisePurchaseOrder.mockResolvedValue({ approvalChainId: 'chain-revised' })
+    const wrapper = mount(PurchaseOrdersPage, { global: { stubs: globalStubs } })
+    const actions = wrapper.findAll('button').filter((button) => button.text() === '修订并重提')
+    expect(actions).toHaveLength(canManage ? 1 : 0)
+    if (canManage) {
+      await actions[0]!.trigger('click')
+      await wrapper.get('#revision-quantity-0').setValue(6)
+      await wrapper.get('.dialog form').trigger('submit')
+      await flushPromises()
+      expect(state.revisePurchaseOrder).toHaveBeenCalledWith('PO-REV-001', [
+        { lineNo: '10', orderedQuantity: 6, unitPrice: 12, promisedDate: '2026-12-01' },
+      ])
+    }
+    wrapper.unmount()
+  },
+)

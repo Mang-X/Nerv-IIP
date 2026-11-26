@@ -43,7 +43,8 @@ public sealed record CreateOrUpdateApprovalTemplateRequest(
     string DocumentType,
     int Version,
     bool IsActive,
-    IReadOnlyCollection<ApprovalTemplateStepRequest> Steps);
+    IReadOnlyCollection<ApprovalTemplateStepRequest> Steps,
+    bool CreateOnly = false);
 
 public sealed record ApprovalTemplateStepRequest(
     int StepNo,
@@ -100,7 +101,9 @@ public sealed record ListPendingApprovalTasksRequest(
     string ActorType,
     string ActorRef,
     int Skip = 0,
-    int Take = 100);
+    int Take = 100,
+    string? RoleRefs = null,
+    string? DepartmentRef = null);
 
 public sealed record CheckOverdueApprovalStepsRequest(
     string OrganizationId,
@@ -128,7 +131,10 @@ public sealed record ResolveApprovalStepRequest(
     string ActorType,
     string ActorRef,
     string Decision,
-    string? Comment);
+    string? Comment,
+    string? RoleRefs = null,
+    string? DepartmentRef = null,
+    string? TargetStepId = null);
 
 public sealed record ResolveApprovalStepResponse(ApprovalDecisionId DecisionId);
 
@@ -227,7 +233,7 @@ public sealed class CreateOrUpdateApprovalTemplateEndpoint(ISender sender)
                 x.DueInHours,
                 x.CompletionPolicy,
                 x.ConditionExpression,
-                x.Condition)).ToArray()), ct);
+                x.Condition)).ToArray(), req.CreateOnly), ct);
         await Send.OkAsync(new CreateOrUpdateApprovalTemplateResponse(templateId).AsResponseData(), cancellation: ct);
     }
 }
@@ -322,7 +328,7 @@ public sealed class ListPendingApprovalTasksEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListPendingApprovalTasksRequest req, CancellationToken ct)
     {
-        var response = await sender.Send(new ListPendingApprovalTasksQuery(req.OrganizationId, req.EnvironmentId, req.ActorType, req.ActorRef, req.Skip, req.Take), ct);
+        var response = await sender.Send(new ListPendingApprovalTasksQuery(req.OrganizationId, req.EnvironmentId, req.ActorType, req.ActorRef, req.Skip, req.Take, req.RoleRefs, req.DepartmentRef), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -385,7 +391,10 @@ public sealed class ResolveApprovalStepEndpoint(ISender sender)
             req.ActorType,
             req.ActorRef,
             req.Decision,
-            req.Comment), ct);
+            req.Comment,
+            req.RoleRefs,
+            req.DepartmentRef,
+            req.TargetStepId), ct);
         if (decisionId is null)
         {
             await Send.NotFoundAsync(ct);

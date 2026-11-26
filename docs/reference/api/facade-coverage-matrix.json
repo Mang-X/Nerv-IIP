@@ -1252,8 +1252,13 @@
       "method": "POST",
       "route": "/api/business/v1/erp/purchase-orders/{purchaseOrderNo}/changes",
       "operationId": "requestErpPurchaseOrderChange",
-      "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; purchase-order amendment approval follows the ERP order-management Business Console menu phase."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "reviseBusinessConsoleErpPurchaseOrder"
+      ]
     },
     {
       "service": "Erp",

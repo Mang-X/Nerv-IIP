@@ -1,6 +1,7 @@
 import {
   BusinessOperationUnconfirmedError,
   createBusinessConsoleErpPurchaseOrderMutationOptions,
+  reviseBusinessConsoleErpPurchaseOrderMutationOptions,
   createBusinessConsoleErpRequestForQuotationMutationOptions,
   convertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrderMutationOptions,
   listBusinessConsoleErpPurchaseOrdersQueryOptions,
@@ -289,8 +290,27 @@ export function useErpPurchaseOrders(initialFilters: Partial<BusinessErpListFilt
     },
   })
 
+  const reviseMutation = useMutation(reviseBusinessConsoleErpPurchaseOrderMutationOptions())
+
   return {
     ...list,
+    revisePurchaseOrder: async (
+      purchaseOrderNo: string,
+      lines: { lineNo: string; orderedQuantity: number; unitPrice: number; promisedDate: string }[],
+    ) => {
+      const result = await reviseMutation.mutateAsync({
+        path: { purchaseOrderNo },
+        body: {
+          organizationId: list.organizationId.value,
+          environmentId: list.environmentId.value,
+          lines,
+        },
+      })
+      assertEnvelopeSuccess(result, '采购单重提失败。')
+      void list.refresh()
+      return result.data
+    },
+    revisePurchaseOrderPending: reviseMutation.isLoading,
     createPurchaseOrder: (payload: {
       supplierCode: string
       siteCode: string

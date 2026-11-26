@@ -8,7 +8,6 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
-  NvCombobox,
   NvEntityPicker,
   NvField,
   NvFieldError,
@@ -33,7 +32,11 @@ defineProps<{
   departmentsPending: View['departmentsPending']
   documentTypeOptions: View['documentTypeOptions']
   submitTemplate: View['submitTemplate']
-  templateCodeSuggestions: View['templateCodeSuggestions']
+  editingTemplate: View['editingTemplate']
+  selectTemplateStep: View['selectTemplateStep']
+  setTemplateApproverType: View['setTemplateApproverType']
+  templateStepIndex: View['templateStepIndex']
+  templateSteps: View['templateSteps']
   templateError: View['templateError']
   templateForm: View['templateForm']
   workersPending: View['workersPending']
@@ -47,18 +50,17 @@ const templateOpen = defineModel<View['templateOpen']>('templateOpen', { require
     <NvDialogContent class="sm:max-w-2xl">
       <NvDialogHeader>
         <NvDialogTitle>维护审批模板</NvDialogTitle>
-        <NvDialogDescription class="sr-only">维护审批模板与首个步骤。</NvDialogDescription>
+        <NvDialogDescription class="sr-only">维护审批模板及其步骤。</NvDialogDescription>
       </NvDialogHeader>
       <form class="grid gap-4" @submit.prevent="submitTemplate">
         <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
           <NvField>
             <NvFieldLabel for="approval-template-code">模板</NvFieldLabel>
-            <NvCombobox
+            <NvInput
               id="approval-template-code"
               v-model="templateForm.templateCode"
-              :suggestions="templateCodeSuggestions"
-              placeholder="选择已有模板或填写新模板编码"
-              empty-text="暂无已有模板，请填写新模板编码"
+              :disabled="editingTemplate"
+              placeholder="填写模板编码"
             />
           </NvField>
           <NvField>
@@ -97,6 +99,24 @@ const templateOpen = defineModel<View['templateOpen']>('templateOpen', { require
               </NvSelectContent>
             </NvSelect>
           </NvField>
+          <NvField v-if="templateSteps.length > 1" class="sm:col-span-2">
+            <NvFieldLabel for="approval-template-step">编辑步骤</NvFieldLabel>
+            <NvSelect
+              :model-value="String(templateStepIndex)"
+              @update:model-value="(value) => selectTemplateStep(String(value))"
+            >
+              <NvSelectTrigger id="approval-template-step"><NvSelectValue /></NvSelectTrigger>
+              <NvSelectContent>
+                <NvSelectItem
+                  v-for="(step, index) in templateSteps"
+                  :key="index"
+                  :value="String(index)"
+                >
+                  {{ step.stepNo }} · {{ step.stepName }} · {{ step.approverRef }}
+                </NvSelectItem>
+              </NvSelectContent>
+            </NvSelect>
+          </NvField>
           <NvField>
             <NvFieldLabel for="approval-template-step-no">步骤序号</NvFieldLabel>
             <NvInput
@@ -117,7 +137,10 @@ const templateOpen = defineModel<View['templateOpen']>('templateOpen', { require
           </NvField>
           <NvField>
             <NvFieldLabel for="approval-template-actor-type">审批人类型</NvFieldLabel>
-            <NvSelect v-model="templateForm.approverType">
+            <NvSelect
+              :model-value="templateForm.approverType"
+              @update:model-value="(value) => setTemplateApproverType(String(value))"
+            >
               <NvSelectTrigger id="approval-template-actor-type"><NvSelectValue /></NvSelectTrigger>
               <NvSelectContent>
                 <NvSelectItem value="role">角色</NvSelectItem>

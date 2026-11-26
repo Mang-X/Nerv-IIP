@@ -105,7 +105,7 @@ public sealed record CreatePurchaseOrderRequest(
 
 public sealed record CreatePurchaseOrderResponse(PurchaseOrderId PurchaseOrderId);
 
-public sealed record RequestPurchaseOrderChangeRequest(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, IReadOnlyCollection<PurchaseOrderLineChangeDraft> Lines, string? Reason = null, string StartedBy = "system:erp");
+public sealed record RequestPurchaseOrderChangeRequest(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, IReadOnlyCollection<PurchaseOrderLineChangeDraft> Lines, string? Reason = null, string StartedBy = "system:erp", bool RevisionOnly = false);
 public sealed record RequestPurchaseOrderChangeResponse(string ApprovalChainId);
 public sealed record ClosePurchaseOrderLineRequest(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, string LineNo, string Reason);
 public sealed record ReschedulePurchaseOrderLineRequest(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, string LineNo, DateOnly PromisedDate);
@@ -356,7 +356,7 @@ public sealed class RequestPurchaseOrderChangeEndpoint(ISender sender)
 
     public override async Task HandleAsync(RequestPurchaseOrderChangeRequest req, CancellationToken ct)
     {
-        var approvalChainId = await sender.Send(new RequestPurchaseOrderChangeCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseOrderNo, req.Lines, req.Reason, req.StartedBy), ct);
+        var approvalChainId = await sender.Send(new RequestPurchaseOrderChangeCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseOrderNo, req.Lines, req.Reason, req.StartedBy, req.RevisionOnly), ct);
         await Send.OkAsync(new RequestPurchaseOrderChangeResponse(approvalChainId).AsResponseData(), cancellation: ct);
     }
 }
