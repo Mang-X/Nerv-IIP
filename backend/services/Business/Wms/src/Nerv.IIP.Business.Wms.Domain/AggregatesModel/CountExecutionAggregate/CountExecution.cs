@@ -8,6 +8,7 @@ public enum CountExecutionStatus
 {
     Open = 0,
     Completed = 1,
+    PendingApproval = 2,
 }
 
 public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
@@ -118,12 +119,28 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         InventoryCountTaskId = normalizedCountTaskId;
     }
 
+    public void SubmitForApproval(decimal countedQuantity, long expectedVersion)
+    {
+        RecordCount(countedQuantity, expectedVersion);
+        Status = CountExecutionStatus.PendingApproval;
+        AdvanceVersion();
+    }
+
     public void Complete(decimal countedQuantity, long expectedVersion)
     {
+        RecordCount(countedQuantity, expectedVersion);
+        Status = CountExecutionStatus.Completed;
+        CompletedAtUtc = DateTime.UtcNow;
+        AdvanceVersion();
+        this.AddDomainEvent(new CountExecutionCompletedDomainEvent(this));
+    }
+
+    private void RecordCount(decimal countedQuantity, long expectedVersion)
+    {
         EnsureExpectedVersion(expectedVersion);
-        if (Status == CountExecutionStatus.Completed)
+        if (Status != CountExecutionStatus.Open)
         {
-            throw new InvalidOperationException("Completed count executions are immutable.");
+            throw new InvalidOperationException("Only open count executions may accept counted quantities.");
         }
 
         if (countedQuantity < 0)
@@ -136,10 +153,6 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
 
         CountedQuantity = countedQuantity;
         VarianceQuantity = countedQuantity - ExpectedQuantity;
-        Status = CountExecutionStatus.Completed;
-        CompletedAtUtc = DateTime.UtcNow;
-        AdvanceVersion();
-        this.AddDomainEvent(new CountExecutionCompletedDomainEvent(this));
     }
 
     private void EnsureExpectedVersion(long expectedVersion)

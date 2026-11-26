@@ -30,6 +30,7 @@ export const WMS_WAREHOUSE_TASK_STATUS_OPTIONS: SearchSelectOption[] = [
 
 export const WMS_COUNT_EXECUTION_STATUS_OPTIONS: SearchSelectOption[] = [
   { value: 'Open', label: '待盘点' },
+  { value: 'PendingApproval', label: '待审批' },
   { value: 'Completed', label: '已完成' },
 ]
 

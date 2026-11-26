@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { BusinessOperationPendingError } from '@nerv-iip/api-client'
 import type {
   BusinessConsoleCreateWmsCountExecutionRequest,
   BusinessConsoleWmsCountExecutionItem,
@@ -39,6 +40,7 @@ import {
   notifyError,
   notifyOperationFailure,
   notifySuccess,
+  notifyWarning,
 } from '@/utils/notify'
 import {
   NvButton,
@@ -395,6 +397,14 @@ const completeContextItems = computed(() => {
     },
   ]
 })
+function closeSettledCount() {
+  completeOpen.value = false
+  completeIntentKey.value = ''
+  completeIntentAttempted.value = false
+  completeIntentLocked.value = false
+  completeFrozenPayload.value = undefined
+}
+
 async function submitComplete() {
   if (!canManageCounts.value) return
   const target = completeTarget.value
@@ -422,13 +432,15 @@ async function submitComplete() {
         },
       },
     )
-    completeOpen.value = false
-    completeIntentKey.value = ''
-    completeIntentAttempted.value = false
-    completeIntentLocked.value = false
-    completeFrozenPayload.value = undefined
+    closeSettledCount()
     notifySuccess(`盘点单 ${target.countNo ?? MISSING_COUNT_NO} 已完成`)
   } catch (error) {
+    if (error instanceof BusinessOperationPendingError) {
+      closeSettledCount()
+      notifyWarning(error.message)
+      void refreshCountExecutions()
+      return
+    }
     if (
       await recoverLifecycleAction(error, {
         reset: () => {
