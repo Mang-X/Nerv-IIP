@@ -589,6 +589,16 @@ public sealed class CreateSalesReturnAuthorizationCommandHandler(ApplicationDbCo
             throw new KnownException("RMA sales order customer must match the account receivable customer.");
         }
 
+        var deliveryOrders = await dbContext.DeliveryOrders
+            .AsNoTracking()
+            .Include(x => x.Lines)
+            .Where(x => x.OrganizationId == salesOrder.OrganizationId
+                && x.EnvironmentId == salesOrder.EnvironmentId
+                && x.SalesOrderNo == salesOrder.SalesOrderNo)
+            .ToListAsync(cancellationToken);
+        var shippedByLine = deliveryOrders.SelectMany(x => x.Lines)
+            .ToLookup(x => x.SalesOrderLineNo, StringComparer.Ordinal);
+
         var priorRmas = await dbContext.SalesReturnAuthorizations
             .Include(x => x.Lines)
             .Where(x => x.OrganizationId == request.OrganizationId
@@ -603,7 +613,8 @@ public sealed class CreateSalesReturnAuthorizationCommandHandler(ApplicationDbCo
             var alreadyAuthorized = priorRmas.SelectMany(x => x.Lines)
                 .Where(x => x.SalesOrderLineNo == salesLine.LineNo)
                 .Sum(x => x.Quantity);
-            if (requestedLine.Quantity > salesLine.DeliveredQuantity - alreadyAuthorized)
+            var shippedQuantity = shippedByLine[salesLine.LineNo].Sum(x => x.ShippedQuantity);
+            if (requestedLine.Quantity > shippedQuantity - alreadyAuthorized)
             {
                 throw new KnownException($"RMA quantity for sales order line '{salesLine.LineNo}' exceeds delivered quantity available for return.");
             }

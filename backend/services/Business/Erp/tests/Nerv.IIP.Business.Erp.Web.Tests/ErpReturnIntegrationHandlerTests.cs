@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountReceivableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.CreditNoteAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
@@ -106,11 +107,12 @@ public sealed class ErpReturnIntegrationHandlerTests
             20m,
             [new SupplierInvoiceLineDraft("LINE-001", "LINE-001", 1m, 110m)]);
         var payable = AccountPayable.Create(
-            "org-001", "env-dev", "AP-RETURN-001", "SI-RETURN-001", "SUP-001", 110m, "CNY");
+            "org-001", "env-dev", "AP-RETURN-001", "SI-RETURN-001", "SUP-001", 60m, "CNY");
         dbContext.PurchaseOrders.Add(order);
         dbContext.PurchaseReceipts.Add(receipt);
         dbContext.SupplierInvoices.Add(invoice);
-        dbContext.AccountPayables.Add(payable);
+        dbContext.AccountPayables.AddRange(payable, AccountPayable.Create(
+            "org-001", "env-dev", "AP-RETURN-002", "SI-RETURN-001", "SUP-001", 50m, "CNY"));
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
@@ -129,8 +131,8 @@ public sealed class ErpReturnIntegrationHandlerTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var purchaseReturn = Assert.Single(await dbContext.PurchaseReturns.Include(x => x.Lines).ToListAsync());
-        var debitNote = Assert.Single(await dbContext.DebitNotes.ToListAsync());
-        var persistedPayable = await dbContext.AccountPayables.SingleAsync(x => x.PayableNo == "AP-RETURN-001");
+        var debitNotes = await dbContext.DebitNotes.ToListAsync();
+        var persistedPayables = await dbContext.AccountPayables.ToListAsync();
         // #3278 / S7：同上，按来源两列定位。
         var voucher = Assert.Single(await dbContext.JournalVouchers
             .Where(x => x.SourceType == JournalVoucherSourceType.PurchaseReturn.Code && x.SourceNo == purchaseReturn.PurchaseReturnNo)
@@ -140,9 +142,10 @@ public sealed class ErpReturnIntegrationHandlerTests
         Assert.NotEqual($"JV-PRTN-{purchaseReturn.PurchaseReturnNo}", voucher.VoucherNo);
         Assert.Equal(0m, purchaseReturn.GrIrReversalAmount);
         Assert.Equal(110m, purchaseReturn.DebitNoteAmount);
-        Assert.Equal(purchaseReturn.PurchaseReturnNo, debitNote.PurchaseReturnNo);
-        Assert.Equal(110m, persistedPayable.DebitNoteAmount);
-        Assert.Equal(0m, persistedPayable.OpenAmount);
+        Assert.Equal(2, debitNotes.Count);
+        Assert.All(debitNotes, note => Assert.Equal(purchaseReturn.PurchaseReturnNo, note.PurchaseReturnNo));
+        Assert.Equal(110m, persistedPayables.Sum(x => x.DebitNoteAmount));
+        Assert.All(persistedPayables, item => Assert.Equal(0m, item.OpenAmount));
         Assert.Contains(voucher.Lines, x => x.AccountCode == "2202" && x.DebitAmount == 110m);
         Assert.Contains(voucher.Lines, x => x.AccountCode == "1401" && x.CreditAmount == 110m);
         Assert.Empty(await deadLetters.ListAsync(WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn.ConsumerName, IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
@@ -344,6 +347,9 @@ public sealed class ErpReturnIntegrationHandlerTests
         await new ReleaseDeliveryOrderCommandHandler(dbContext).Handle(
             new ReleaseDeliveryOrderCommand("org-001", "env-dev", "DO-RMA-CLOSE-001", "SO-RMA-CLOSE-001", [new DeliveryOrderCommandLine("LINE-001", 2m)]),
             CancellationToken.None);
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var delivery = await dbContext.DeliveryOrders.Include(x => x.Lines).SingleAsync();
+        delivery.ApplyShipment([new DeliveryOrderShipmentLine("LINE-001", 2m)], new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc));
         await dbContext.SaveChangesAsync(CancellationToken.None);
     }
 

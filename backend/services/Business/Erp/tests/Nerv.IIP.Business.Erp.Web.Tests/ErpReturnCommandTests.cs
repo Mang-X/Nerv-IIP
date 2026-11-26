@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountReceivableAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.DeliveryOrderAggregate;
+using NetCorePal.Extensions.Primitives;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Sales;
@@ -22,17 +24,25 @@ public sealed class ErpReturnCommandTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var rmaId = await new CreateSalesReturnAuthorizationCommandHandler(dbContext, new ErpCodingService()).Handle(
-            new CreateSalesReturnAuthorizationCommand(
-                "org-001",
-                "env-dev",
-                "RMA-001",
-                "SO-RMA-001",
-                "AR-RMA-001",
-                "SITE-01",
-                [new SalesReturnAuthorizationCommandLine("LINE-001", 1m, "LOC-RETURN", null)],
-                "rma-command-001"),
-            CancellationToken.None);
+        var command = new CreateSalesReturnAuthorizationCommand(
+            "org-001",
+            "env-dev",
+            "RMA-001",
+            "SO-RMA-001",
+            "AR-RMA-001",
+            "SITE-01",
+            [new SalesReturnAuthorizationCommandLine("LINE-001", 1m, "LOC-RETURN", null)],
+            "rma-command-001");
+        var handler = new CreateSalesReturnAuthorizationCommandHandler(dbContext, new ErpCodingService());
+        var rejected = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(command, CancellationToken.None));
+        Assert.Contains("exceeds delivered quantity", rejected.Message);
+        Assert.Empty(dbContext.SalesReturnAuthorizations);
+
+        var delivery = await dbContext.DeliveryOrders.Include(x => x.Lines).SingleAsync();
+        delivery.ApplyShipment([new DeliveryOrderShipmentLine("LINE-001", 1m)], new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+
+        var rmaId = await handler.Handle(command, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var rma = await dbContext.SalesReturnAuthorizations.SingleAsync(x => x.Id == rmaId);

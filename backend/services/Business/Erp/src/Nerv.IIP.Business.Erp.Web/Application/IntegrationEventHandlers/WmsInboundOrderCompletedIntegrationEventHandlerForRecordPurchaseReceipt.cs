@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
@@ -182,7 +183,8 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurc
                     purchaseReceiptNo,
                     purchaseOrderNo,
                     receiptLines,
-                    $"{ConsumerName}:{integrationEvent.IdempotencyKey}"),
+                    $"{ConsumerName}:{integrationEvent.IdempotencyKey}",
+                    InventoryPostingRoute: PurchaseReceiptInventoryPostingRoute.Wms),
                 cancellationToken);
         }
         catch (Exception exception) when (exception is KnownException or ArgumentException or InvalidOperationException)
