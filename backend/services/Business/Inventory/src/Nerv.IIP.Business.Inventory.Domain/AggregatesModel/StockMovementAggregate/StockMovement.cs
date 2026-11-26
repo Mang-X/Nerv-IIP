@@ -177,7 +177,7 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
     /// 反过来也不能整体跳过成本比较：调拨的入库腿由调用方 UnitCost 定价，
     /// 而调拨幂等只查出库腿，跳过就会把「改了成本的重放」静默判成幂等成功。
     /// </summary>
-    public bool HasSamePayload(StockMovement other)
+    public bool HasSamePayload(StockMovement other, bool compareExpiryDate = true)
     {
         return OrganizationId == other.OrganizationId
             && EnvironmentId == other.EnvironmentId
@@ -196,7 +196,7 @@ public sealed class StockMovement : Entity<StockMovementId>, IAggregateRoot
             && OwnerType == other.OwnerType
             && OwnerId == other.OwnerId
             && ProductionDate == other.ProductionDate
-            && ExpiryDate == other.ExpiryDate
+            && (!compareExpiryDate || ExpiryDate == other.ExpiryDate)
             && Quantity == other.Quantity
             && RequestedUnitCost == other.RequestedUnitCost;
     }

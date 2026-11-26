@@ -212,6 +212,25 @@ public sealed class InventoryTransferBalanceTests
         Assert.Equal(10m, dbContext.StockLedgers.Sum(x => x.OnHandQuantity));
     }
 
+    [Theory]
+    [InlineData("SITE-02", TargetLocation)]
+    [InlineData(null, "LOC-C-99")]
+    public async Task Transfer_replay_rejects_a_changed_destination(string? site, string location)
+    {
+        await using var dbContext = CreateContext();
+        var handler = new PostStockMovementCommandHandler(dbContext);
+        await SeedSourceStockAsync(handler, dbContext, 10m);
+        var command = TransferCommand("idem-transfer-destination", -4m, transferInLocationCode: TargetLocation, transferInQuantity: 4m);
+        await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var conflict = await Assert.ThrowsAsync<InventoryPostingRejectedException>(() => handler.Handle(
+            command with { TransferInSiteCode = site, TransferInLocationCode = location }, CancellationToken.None));
+
+        Assert.Equal(InventoryPostingFailureCodes.IdempotencyConflict, conflict.FailureCode);
+        Assert.Equal(2, dbContext.StockMovements.Count(x => x.MovementType == "transfer"));
+    }
+
     [Fact]
     public async Task Non_transfer_movement_cannot_carry_a_transfer_in_leg()
     {

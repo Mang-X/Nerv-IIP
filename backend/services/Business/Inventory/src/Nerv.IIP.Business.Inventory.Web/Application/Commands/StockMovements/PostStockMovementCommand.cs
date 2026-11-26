@@ -100,7 +100,6 @@ public sealed class PostStockMovementCommandHandler(
 
     public async Task<PostStockMovementResult> Handle(PostStockMovementCommand request, CancellationToken cancellationToken)
     {
-        request = await ApplySkuShelfLifeDefaultAsync(request, cancellationToken);
         var isTransfer = IsTransfer(request.MovementType);
         ValidateTransferLegsOrReject(request, isTransfer);
 
@@ -111,7 +110,7 @@ public sealed class PostStockMovementCommandHandler(
         var existingMovement = await FindMovementByIdempotencyKeyAsync(movement, outboundKey, cancellationToken);
         if (existingMovement is not null)
         {
-            if (!existingMovement.HasSamePayload(movement))
+            if (!existingMovement.HasSamePayload(movement, compareExpiryDate: !UsesSkuShelfLifeDefault(request)))
             {
                 throw new InventoryPostingRejectedException(
                     InventoryPostingFailureCodes.IdempotencyConflict,
@@ -128,12 +127,21 @@ public sealed class PostStockMovementCommandHandler(
             }
 
             var existingInbound = await FindMovementByIdempotencyKeyAsync(movement, inboundKey!, cancellationToken);
-            var existingInboundLedger = existingInbound is null ? null : await FindLedgerAsync(existingInbound, cancellationToken);
+            if (existingInbound is null
+                || existingInbound.SiteCode != ResolveTransferInSiteCode(request).Trim()
+                || existingInbound.LocationCode != request.TransferInLocationCode!.Trim())
+            {
+                throw new InventoryPostingRejectedException(
+                    InventoryPostingFailureCodes.IdempotencyConflict,
+                    "调拨幂等键与已有入库腿冲突，请核对目标库区和库位。");
+            }
+
+            var existingInboundLedger = await FindLedgerAsync(existingInbound, cancellationToken);
             return new PostStockMovementResult(
                 existingMovement.Id,
                 existingLedger?.OnHandQuantity ?? 0m,
                 existingLedger?.AvailableQuantity ?? 0m,
-                existingInbound?.Id,
+                existingInbound.Id,
                 existingInboundLedger?.OnHandQuantity);
         }
 
@@ -143,7 +151,13 @@ public sealed class PostStockMovementCommandHandler(
             await EnsureRegisteredLocationAsync(request, ResolveTransferInSiteCode(request), request.TransferInLocationCode!, cancellationToken);
         }
 
-        var provenance = ResolveExpiryProvenance(request);
+        var requestWithShelfLife = await ApplySkuShelfLifeDefaultAsync(request, cancellationToken);
+        if (requestWithShelfLife.ShelfLifeDays != request.ShelfLifeDays)
+        {
+            movement = CreateMovementOrReject(requestWithShelfLife, outboundKey);
+        }
+
+        var provenance = ResolveExpiryProvenance(requestWithShelfLife);
         var ledger = await GetOrCreateLedgerAsync(movement, provenance.ShelfLifeDays, provenance.Source, cancellationToken);
         if (request.Quantity < 0 && ledger.IsExpired(GetBusinessDate(request)) && !HasExpiredStockOverride(request.AllowExpiredStock, request.ExpiryOverridePermissionGranted))
         {
@@ -262,13 +276,14 @@ public sealed class PostStockMovementCommandHandler(
         }
     }
 
+    private static bool UsesSkuShelfLifeDefault(PostStockMovementCommand request) =>
+        request.ProductionDate is not null && request.ExpiryDate is null && request.ShelfLifeDays is null;
+
     private async Task<PostStockMovementCommand> ApplySkuShelfLifeDefaultAsync(
         PostStockMovementCommand request,
         CancellationToken cancellationToken)
     {
-        if (request.ProductionDate is null
-            || request.ExpiryDate is not null
-            || request.ShelfLifeDays is not null
+        if (!UsesSkuShelfLifeDefault(request)
             || skuExpiryPolicyProvider is null)
         {
             return request;

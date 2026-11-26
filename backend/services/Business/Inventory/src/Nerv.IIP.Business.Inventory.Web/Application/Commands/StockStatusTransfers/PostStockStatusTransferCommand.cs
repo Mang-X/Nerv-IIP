@@ -3,6 +3,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
 using Nerv.IIP.Contracts.Inventory;
+using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Commands.StockStatusTransfers;
 
@@ -99,10 +100,23 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
         var inboundKey = InventoryIdempotencyKeyPolicy.Compose(request.IdempotencyKey, InboundLegSuffix);
         var existingOutbound = await FindMovementAsync(request, outboundKey, cancellationToken);
         var existingInbound = await FindMovementAsync(request, inboundKey, cancellationToken);
-        if (existingOutbound is not null && existingInbound is not null)
+        if (existingOutbound is not null || existingInbound is not null)
         {
-            var sourceLedger = await FindLedgerAsync(request, sourceStatus, cancellationToken);
-            var targetLedger = await FindLedgerAsync(request, targetStatus, cancellationToken);
+            if (existingOutbound is null || existingInbound is null
+                || !existingOutbound.HasSamePayload(CreateLeg(request, outboundKey, sourceStatus, ownerType, false,
+                    existingOutbound.RequestedUnitCost, request.ProductionDate ?? existingOutbound.ProductionDate,
+                    request.ExpiryDate ?? existingOutbound.ExpiryDate))
+                || !existingInbound.HasSamePayload(CreateLeg(request, inboundKey, targetStatus, ownerType, true,
+                    existingInbound.RequestedUnitCost, request.ProductionDate ?? existingInbound.ProductionDate,
+                    request.ExpiryDate ?? existingInbound.ExpiryDate)))
+            {
+                throw new InventoryPostingRejectedException(
+                    InventoryPostingFailureCodes.IdempotencyConflict,
+                    "库存状态转移幂等键与已有流水内容冲突，请更换幂等键。");
+            }
+
+            var sourceLedger = await FindLedgerAsync(request, sourceStatus, existingOutbound.ProductionDate, existingOutbound.ExpiryDate, cancellationToken);
+            var targetLedger = await FindLedgerAsync(request, targetStatus, existingInbound.ProductionDate, existingInbound.ExpiryDate, cancellationToken);
             return new PostStockStatusTransferResult(
                 existingOutbound.Id,
                 existingInbound.Id,
@@ -120,26 +134,7 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
         var transferUnitCost = source.MovingAverageUnitCost;
         var productionDate = request.ProductionDate ?? source.ProductionDate;
         var expiryDate = request.ExpiryDate ?? source.ExpiryDate;
-        var outbound = StockMovement.Post(
-            request.OrganizationId,
-            request.EnvironmentId,
-            InventoryMovementTypes.StatusTransferOut,
-            request.SourceService,
-            request.SourceDocumentId,
-            request.SourceDocumentLineId,
-            outboundKey,
-            request.SkuCode,
-            request.UomCode,
-            request.SiteCode,
-            request.LocationCode,
-            request.LotNo,
-            request.SerialNo,
-            sourceStatus,
-            ownerType,
-            request.OwnerId,
-            -request.Quantity,
-            ProductionDate: productionDate,
-            ExpiryDate: expiryDate);
+        var outbound = CreateLeg(request, outboundKey, sourceStatus, ownerType, false, null, productionDate, expiryDate);
         try
         {
             source.ApplyMovement(outbound);
@@ -177,27 +172,7 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
             target.MergeExpiryProvenance(source.ShelfLifeDays, source.ExpiryDateSource);
         }
 
-        var inbound = StockMovement.Post(
-            request.OrganizationId,
-            request.EnvironmentId,
-            InventoryMovementTypes.StatusTransferIn,
-            request.SourceService,
-            request.SourceDocumentId,
-            request.SourceDocumentLineId,
-            inboundKey,
-            request.SkuCode,
-            request.UomCode,
-            request.SiteCode,
-            request.LocationCode,
-            request.LotNo,
-            request.SerialNo,
-            targetStatus,
-            ownerType,
-            request.OwnerId,
-            request.Quantity,
-            transferUnitCost,
-            productionDate,
-            expiryDate);
+        var inbound = CreateLeg(request, inboundKey, targetStatus, ownerType, true, transferUnitCost, productionDate, expiryDate);
         try
         {
             target.ApplyMovement(inbound);
@@ -211,6 +186,37 @@ public sealed class PostStockStatusTransferCommandHandler(ApplicationDbContext d
 
         return new PostStockStatusTransferResult(outbound.Id, inbound.Id, source.OnHandQuantity, target.OnHandQuantity);
     }
+
+    private static StockMovement CreateLeg(
+        PostStockStatusTransferCommand request,
+        string key,
+        string status,
+        string ownerType,
+        bool inbound,
+        decimal? unitCost,
+        DateOnly? productionDate,
+        DateOnly? expiryDate) =>
+        StockMovement.Post(
+            request.OrganizationId,
+            request.EnvironmentId,
+            inbound ? InventoryMovementTypes.StatusTransferIn : InventoryMovementTypes.StatusTransferOut,
+            request.SourceService,
+            request.SourceDocumentId,
+            request.SourceDocumentLineId,
+            key,
+            request.SkuCode,
+            request.UomCode,
+            request.SiteCode,
+            request.LocationCode,
+            request.LotNo,
+            request.SerialNo,
+            status,
+            ownerType,
+            request.OwnerId,
+            inbound ? request.Quantity : -request.Quantity,
+            unitCost,
+            productionDate,
+            expiryDate);
 
     private Task<StockMovement?> FindMovementAsync(PostStockStatusTransferCommand request, string idempotencyKey, CancellationToken cancellationToken)
     {
