@@ -1,4 +1,6 @@
+using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.CountExecutionAggregate;
@@ -10,8 +12,10 @@ using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
+using Nerv.IIP.Business.Wms.Web.Application.Queries;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.ServiceAuth;
+using NetCorePal.Extensions.DependencyInjection;
 
 namespace Nerv.IIP.Business.Wms.Web.Tests;
 
@@ -100,6 +104,86 @@ public sealed class WarehouseAssignmentCommandTests
         Assert.Equal("POOL-WAREHOUSE", resources.Picking.AssignedPoolCode);
         Assert.Equal("POOL-WAREHOUSE", resources.Count.AssignedPoolCode);
         Assert.Equal(5, await dbContext.WarehouseAssignmentReceipts.CountAsync());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("user-target")]
+    public async Task Picking_created_before_outbound_assignment_is_visible_and_can_start_in_the_assigned_pool(
+        string? assignedOperator)
+    {
+        await using var provider = CreatePickingWorkflowProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+        SeedAssignmentBoundary(dbContext);
+        SeedOtherPool(dbContext);
+        var resources = SeedResources(dbContext);
+        await dbContext.SaveChangesAsync();
+        var taskId = await sender.Send(
+            new CreatePickingTaskCommand(resources.Outbound.Id, "PICK-LATE", "10", "BIN-01", "PACK-01", 5m));
+
+        var command = Command.ForOutbound(resources.Outbound.Id) with
+        {
+            ExpectedVersion = 2,
+            OperatorPrincipalId = assignedOperator,
+        };
+        var assignment = await sender.Send(command);
+        Assert.Equal(3, assignment.Version);
+        Assert.Equal(assignment, await sender.Send(command));
+
+        var task = Assert.Single(await ReadPickingPoolAsync(dbContext, "POOL-WAREHOUSE", "user-target", "PICK-LATE"));
+        Assert.Equal(taskId, task.WarehouseTaskId);
+        Assert.Equal(2, task.Version);
+        Assert.Equal(assignedOperator, task.AssignedOperatorUserId);
+        Assert.Contains("start", task.AllowedActions);
+        Assert.Empty(await ReadPickingPoolAsync(dbContext, "POOL-OTHER", "user-other", "PICK-LATE"));
+
+        var forbidden = await Assert.ThrowsAsync<WmsAuthorizationException>(() =>
+            sender.Send(StartPicking(taskId, "POOL-OTHER", "user-other", task.Version)));
+        Assert.Equal("task-outside-selected-work-scope", forbidden.Reason);
+        var started = await sender.Send(StartPicking(taskId, "POOL-WAREHOUSE", "user-target", task.Version));
+        Assert.Equal("InProgress", started.Status);
+        var persisted = Assert.Single(await ReadPickingPoolAsync(dbContext, "POOL-WAREHOUSE", "user-target", "PICK-LATE"));
+        Assert.Equal("InProgress", persisted.Status);
+        Assert.Equal(3, persisted.Version);
+    }
+
+    [Theory]
+    [InlineData(false, "Open", 2)]
+    [InlineData(true, "InProgress", 3)]
+    public async Task Outbound_assignment_preserves_picking_already_assigned_to_another_pool(
+        bool started,
+        string expectedStatus,
+        long expectedVersion)
+    {
+        await using var provider = CreatePickingWorkflowProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+        SeedAssignmentBoundary(dbContext);
+        SeedOtherPool(dbContext);
+        var resources = SeedResources(dbContext);
+        await dbContext.SaveChangesAsync();
+
+        var assignment = await sender.Send(Command.ForPicking(resources.Picking.Id) with
+        {
+            PoolCode = "POOL-OTHER",
+            OperatorPrincipalId = "user-other",
+        });
+        if (started)
+        {
+            await sender.Send(StartPicking(resources.Picking.Id, "POOL-OTHER", "user-other", assignment.Version));
+        }
+
+        await sender.Send(Command.ForOutbound(resources.Outbound.Id));
+
+        var task = Assert.Single(await ReadPickingPoolAsync(dbContext, "POOL-OTHER", "user-other", "PICK-001"));
+        Assert.Equal(resources.Picking.Id, task.WarehouseTaskId);
+        Assert.Equal("user-other", task.AssignedOperatorUserId);
+        Assert.Equal(expectedStatus, task.Status);
+        Assert.Equal(expectedVersion, task.Version);
+        Assert.Empty(await ReadPickingPoolAsync(dbContext, "POOL-WAREHOUSE", "user-target", "PICK-001"));
     }
 
     [Fact]
@@ -199,6 +283,51 @@ public sealed class WarehouseAssignmentCommandTests
             Now.AddDays(-1),
             Now.AddDays(1)));
     }
+
+    private static ServiceProvider CreatePickingWorkflowProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<TimeProvider>(new StaticTimeProvider(Now));
+        services.AddScoped<WarehouseWorkScopeAuthorizer>();
+        services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly)
+            .AddUnitOfWorkBehaviors());
+        var databaseName = $"wms-picking-assignment-{Guid.NewGuid():N}";
+        services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName)
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)));
+        services.AddUnitOfWork<ApplicationDbContext>();
+        return services.BuildServiceProvider();
+    }
+
+    private static void SeedOtherPool(ApplicationDbContext dbContext)
+    {
+        dbContext.WarehouseWorkPools.Add(WarehouseWorkPool.Create(
+            "org-001", "env-dev", "POOL-OTHER", "其他作业池", "SITE-001"));
+        dbContext.WarehouseWorkPoolMemberships.Add(WarehouseWorkPoolMembership.Create(
+            "org-001", "env-dev", "POOL-OTHER", "user-other", Now.AddDays(-1), Now.AddDays(1)));
+    }
+
+    private static async Task<IReadOnlyCollection<WarehouseTaskFact>> ReadPickingPoolAsync(
+        ApplicationDbContext dbContext,
+        string pool,
+        string actor,
+        string taskNo)
+    {
+        var result = await new ListWarehouseTasksQueryHandler(dbContext).Handle(
+            new ListWarehouseTasksQuery(
+                "org-001", "env-dev", WarehouseTaskType.Picking,
+                Keyword: taskNo, AssignedPoolCodes: [pool], SiteCodes: ["SITE-001"], ActorPrincipalId: actor),
+            CancellationToken.None);
+        return result.Items;
+    }
+
+    private static StartWarehouseTaskCommand StartPicking(
+        WarehouseTaskId id,
+        string pool,
+        string actor,
+        long version) =>
+        new(id, "org-001", "env-dev", actor, "start-picking", version,
+            WarehouseTaskType.Picking, ["SITE-001"], "work-pool", pool);
 
     private static AssignmentResources SeedResources(ApplicationDbContext dbContext)
     {

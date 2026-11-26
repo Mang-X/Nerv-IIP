@@ -225,6 +225,22 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
         AdvanceVersion();
     }
 
+    public void InheritPickingAssignment(string poolCode, string? operatorPrincipalId)
+    {
+        if (TaskType != WarehouseTaskType.Picking
+            || Status != WarehouseTaskStatus.Open
+            || ExecutionChannel is not (
+                WarehouseTaskExecutionChannel.Unclaimed
+                or WarehouseTaskExecutionChannel.LegacyUnclaimed)
+            || AssignedPoolCode is not null
+            || AssignedOperatorUserId is not null)
+        {
+            return;
+        }
+
+        Assign(poolCode, operatorPrincipalId, Version);
+    }
+
     public void ClaimPoolAssignment(string actorUserId, long expectedVersion)
     {
         EnsureExpectedVersion(expectedVersion);
