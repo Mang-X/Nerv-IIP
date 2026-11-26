@@ -1,3 +1,8 @@
+using System.Security.Cryptography;
+using System.IdentityModel.Tokens.Jwt;
+using Microsoft.AspNetCore.Http;
+using Microsoft.IdentityModel.Tokens;
+using Nerv.IIP.Iam.Web.Tests;
 using DotNetCore.CAP;
 using System.Net;
 using System.Net.Http.Headers;
@@ -75,15 +80,50 @@ public sealed class ProductEngineeringStartupGovernanceTests
         Assert.Equal(JwtBearerDefaults.AuthenticationScheme, options.DefaultChallengeScheme);
     }
 
-    [Fact]
-    public async Task Jwt_metadata_requires_https_outside_development()
+    [Theory]
+    [InlineData("iam", "nerv-iip-iam", "nerv-iip-api", true)]
+    [InlineData("other", "nerv-iip-iam", "nerv-iip-api", false)]
+    [InlineData("iam", "other-issuer", "nerv-iip-api", false)]
+    [InlineData("iam", "nerv-iip-iam", "other-audience", false)]
+    public async Task Iam_access_token_requires_matching_signature_issuer_and_audience(
+        string signer, string issuer, string audience, bool expected)
     {
         await using var factory = CreateFactory();
+        using var scope = factory.Services.CreateScope();
+        using var rsa = RSA.Create(2048);
+        if (signer == "iam")
+        {
+            rsa.ImportFromPem(IamJwtTestKeys.PrivateKeyPem);
+        }
 
-        var options = factory.Services.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
-            .Get(JwtBearerDefaults.AuthenticationScheme);
+        var key = new RsaSecurityKey(rsa)
+        {
+            KeyId = IamJwtTestKeys.Kid,
+            CryptoProviderFactory = new CryptoProviderFactory { CacheSignatureProviders = false }
+        };
+        var token = new JwtSecurityToken(
+            issuer, audience, expires: DateTime.UtcNow.AddMinutes(5),
+            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.RsaSha256));
+        var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
+        context.Request.Headers.Authorization = $"Bearer {new JwtSecurityTokenHandler().WriteToken(token)}";
 
-        Assert.True(options.RequireHttpsMetadata);
+        var result = await context.AuthenticateAsync();
+
+        Assert.Equal(expected, result.Succeeded);
+    }
+
+    [Fact]
+    public async Task Production_host_fails_to_start_without_iam_jwks()
+    {
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Production");
+            builder.UseSetting("Iam:Jwt:JwksJson", string.Empty);
+        });
+
+        var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+
+        Assert.Contains("Iam:Jwt:JwksJson", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]

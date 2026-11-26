@@ -11,6 +11,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="../../../../../common/ServiceAuth/IamJwtAuthentication.cs" Link="Application/Auth/IamJwtAuthentication.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="DotNetCore.CAP.Dashboard" />
     <PackageReference Include="DotNetCore.CAP.PostgreSql" />
     <PackageReference Include="DotNetCore.CAP.RabbitMQ" />

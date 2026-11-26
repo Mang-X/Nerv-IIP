@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="../../../../../services/Iam/tests/Nerv.IIP.Iam.Web.Tests/IamJwtTestKeys.cs" Link="Support/IamJwtTestKeys.cs" />
     <Compile Include="../../../../../common/Testing/UserMessageText.cs" Link="Support/UserMessageText.cs" />
   </ItemGroup>
 
