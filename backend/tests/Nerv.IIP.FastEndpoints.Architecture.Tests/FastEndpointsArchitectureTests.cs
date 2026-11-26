@@ -245,7 +245,7 @@ public sealed class FastEndpointsArchitectureTests
     {
         var root = FindRepositoryRoot();
         var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
-        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        var programText = ReadAppHostSources(appHostDirectory);
         var projectText = File.ReadAllText(Path.Combine(appHostDirectory, "Nerv.IIP.AppHost.csproj"));
         var composeText = File.ReadAllText(Path.Combine(root, "infra", "docker-compose.dev.yml"));
         var collectorConfig = Path.Combine(root, "infra", "otel", "otel-collector.dev.yaml");
@@ -264,10 +264,9 @@ public sealed class FastEndpointsArchitectureTests
         Assert.Contains("OpenTelemetry__Logs__Path", programText);
         Assert.Contains("VictoriaLogs__BaseUrl", programText);
         Assert.Contains("VictoriaLogs__Enabled", programText);
-        var normalizedProgramText = programText.Replace("\r\n", "\n", StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            ".WithEnvironment(\"OpenTelemetry__Protocol\", \"HttpProtobuf\")\n            .WithEnvironment(\"OpenTelemetry__Logs__Endpoint\"",
-            normalizedProgramText);
+        Assert.DoesNotMatch(
+            @"\.WithEnvironment\(""OpenTelemetry__Protocol"", ""HttpProtobuf""\)\s*\.WithEnvironment\(""OpenTelemetry__Logs__Endpoint""",
+            programText);
         Assert.Contains("AddContainer(\"otel-collector\"", programText);
         Assert.Contains("otel-collector.dev.yaml", programText);
         Assert.Contains("OTEL_EXPORTER_OTLP_ENDPOINT", programText);
@@ -304,7 +303,7 @@ public sealed class FastEndpointsArchitectureTests
     {
         var root = FindRepositoryRoot();
         var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
-        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        var programText = ReadAppHostSources(appHostDirectory);
         var normalizedProgramText = programText.Replace("\r\n", "\n", StringComparison.Ordinal);
 
         Assert.Contains("AddParameter(\"redis-password\", secret: true)", programText);
@@ -320,7 +319,7 @@ public sealed class FastEndpointsArchitectureTests
 
         var helper = Regex.Match(
             normalizedProgramText,
-            @"ProjectResource> WithAppHostEnvironment\([\s\S]*?\n\}").Value;
+            @"ProjectResource> WithAppHostEnvironment\([\s\S]*?\n    \}").Value;
         Assert.NotEmpty(helper);
         Assert.Contains(
             ".WithEnvironment(\"ASPNETCORE_ENVIRONMENT\", builder.Environment.EnvironmentName)",
@@ -338,11 +337,11 @@ public sealed class FastEndpointsArchitectureTests
     {
         var root = FindRepositoryRoot();
         var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
-        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        var programText = ReadAppHostSources(appHostDirectory);
         var collapsed = Regex.Replace(programText.Replace("\r\n", "\n", StringComparison.Ordinal), @"\s+", " ");
 
         Assert.Contains(
-            "var developmentOnlyEnabledValue = localDevelopmentAppHost ? \"true\" : \"false\";",
+            "developmentOnlyEnabledValue = localDevelopmentAppHost ? \"true\" : \"false\";",
             collapsed,
             StringComparison.Ordinal);
         Assert.Contains("var walkthroughSeedEnabled = localDevelopmentAppHost &&", collapsed, StringComparison.Ordinal);
@@ -361,7 +360,7 @@ public sealed class FastEndpointsArchitectureTests
     public void Aspire_apphost_closes_production_security_inputs_without_development_fallbacks()
     {
         var root = FindRepositoryRoot();
-        var programText = File.ReadAllText(Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost", "Program.cs"));
+        var programText = ReadAppHostSources(Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost"));
 
         Assert.Contains("AddParameter(\"iam-enterprise-identity-mfa-code\", secret: true)", programText);
         Assert.Contains(
@@ -383,7 +382,7 @@ public sealed class FastEndpointsArchitectureTests
     {
         var root = FindRepositoryRoot();
         var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
-        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "AppHostServices.cs"));
         var resourceBlock = GetAspireResourceBlock(programText, "businessProductEngineering");
         Assert.Contains(
             ".WithEnvironment(\"MasterData__BaseUrl\", businessMasterData.GetEndpoint(\"http\"))",
@@ -400,7 +399,7 @@ public sealed class FastEndpointsArchitectureTests
     {
         var root = FindRepositoryRoot();
         var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
-        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "AppHostServices.cs"));
         // `businessMasterData = businessMasterData` 出现多次（PostgreSQL 分支也有一处），
         // 取其中真正做 ProductEngineering 回填的那条语句。
         var backfill = Regex
@@ -422,7 +421,7 @@ public sealed class FastEndpointsArchitectureTests
     {
         var root = FindRepositoryRoot();
         var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
-        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "AppHostServices.cs"));
         var backfill = Regex
             .Matches(programText, @"businessInventory = businessInventory[^;]*;", RegexOptions.Singleline)
             .Select(match => match.Value)
@@ -441,7 +440,7 @@ public sealed class FastEndpointsArchitectureTests
     {
         var root = FindRepositoryRoot();
         var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
-        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "AppHostServices.cs"));
         var resourceBlock = GetAspireResourceBlock(programText, "businessScheduling");
         Assert.Contains(
             ".WithEnvironment(\"Mes__BaseUrl\", businessMes.GetEndpoint(\"http\"))",
@@ -456,7 +455,7 @@ public sealed class FastEndpointsArchitectureTests
     {
         var root = FindRepositoryRoot();
         var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
-        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "AppHostServices.cs"));
         var resourceBlock = GetAspireResourceBlock(programText, "businessScheduling");
         Assert.Contains(
             ".WithEnvironment(\"IndustrialTelemetry__BaseUrl\", businessIndustrialTelemetry.GetEndpoint(\"http\"))",
@@ -478,7 +477,7 @@ public sealed class FastEndpointsArchitectureTests
     {
         var root = FindRepositoryRoot();
         var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
-        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "AppHostServices.cs"));
 
         Assert.Matches(
             $"var {resourceVariable} =(?:(?!\\bvar )[\\s\\S])*?WithEnvironment\\(\"Persistence__Provider\", \"PostgreSQL\"\\)(?:(?!\\bvar )[\\s\\S])*?WithEnvironment\\(\"Persistence__AutoMigrate\", developmentOnlyEnabledValue\\)",
@@ -491,7 +490,7 @@ public sealed class FastEndpointsArchitectureTests
     {
         var root = FindRepositoryRoot();
         var appHostDirectory = Path.Combine(root, "infra", "aspire", "Nerv.IIP.AppHost");
-        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "Program.cs"));
+        var programText = File.ReadAllText(Path.Combine(appHostDirectory, "AppHostGatewaysAndFrontend.cs"));
 
         foreach (var (name, path, port) in new[]
                  {
@@ -584,6 +583,11 @@ public sealed class FastEndpointsArchitectureTests
             Assert.Contains("b.AddContextIntegrationFilters()", programText);
         }
     }
+
+    private static string ReadAppHostSources(string appHostDirectory) =>
+        string.Join("\n", Directory.EnumerateFiles(appHostDirectory, "*.cs")
+            .Order(StringComparer.Ordinal)
+            .Select(File.ReadAllText));
 
     private static string GetAspireResourceBlock(string programText, string resourceVariable)
     {

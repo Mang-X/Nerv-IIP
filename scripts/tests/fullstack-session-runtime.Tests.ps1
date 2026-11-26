@@ -67,7 +67,7 @@ $describeFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-describe.j
 $fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack/manage-fullstack-session.ps1') -Raw
 $runtimeSourceText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1') -Raw
 $nervEntrypointText = Get-Content -LiteralPath (Join-Path $repoRoot 'nerv.ps1') -Raw
-$appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
+$appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/AppHostInfrastructure.cs') -Raw
 Assert-True ($runtimeSourceText.Contains('function Get-NervFullStackNonSeedEnvironment', [StringComparison]::Ordinal)) 'Full-stack runtime must expose a reusable non-seed environment boundary.'
 foreach ($runtimeFunctionName in @('Get-NervAspireDescribeObject', 'Wait-NervAspireResource', 'Collect-NervFullStackDiagnostics', 'Stop-NervFullStackSession')) {
     $runtimeFunctionDefinition = (Get-Command $runtimeFunctionName -ErrorAction Stop).Definition
@@ -365,7 +365,7 @@ Assert-True ($statusSummary.ContainerCount -eq 0) 'Full-stack status must report
 Assert-True ($statusSummary.RecordedContainerCount -eq 2) 'Full-stack status may retain the historical recorded-container count as a separate diagnostic.'
 Assert-True ($statusSummary.UnresolvedCount -eq 0) 'A clean stopped session must have no unresolved Docker ownership.'
 
-$appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
+$appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/AppHostServices.cs') -Raw
 $businessMesStart = $appHostText.IndexOf('var businessMes =', [StringComparison]::Ordinal)
 $businessMesEnd = $appHostText.IndexOf([char]';', $businessMesStart)
 Assert-True (

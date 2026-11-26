@@ -11,7 +11,8 @@ namespace Nerv.IIP.Business.Mes.Web.Tests;
 /// </summary>
 public sealed class MesInventoryLocationDeploymentConfigurationTests
 {
-    private const string AppHostProgramPath = "infra/aspire/Nerv.IIP.AppHost/Program.cs";
+    private const string AppHostEnvironmentPath = "infra/aspire/Nerv.IIP.AppHost/AppHostEnvironment.cs";
+    private const string AppHostServicesPath = "infra/aspire/Nerv.IIP.AppHost/AppHostServices.cs";
     private const string InventoryLocationSeedServicePath =
         "backend/services/Business/Inventory/src/Nerv.IIP.Business.Inventory.Web/Application/Seed/InventoryLocationSeedService.cs";
     private const string MasterDataDictionaryRulesPath =
@@ -81,7 +82,7 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
         // 围栏而不是形态匹配：只禁某一个位置码前缀的双字面量形态时，把受治理位置值经
         // const/局部变量转手就能绕过。这里要求**每一个**位置字面量都出现在同一条语句内的
         // DeploymentWarehouseLocation(s) 调用里，转手一次就落到调用之外，立刻转红。
-        var appHost = ReadRepositoryFile(AppHostProgramPath);
+        var appHost = ReadRepositoryFile(AppHostServicesPath);
         var literals = DemandLocationLiterals(appHost);
 
         Assert.NotEmpty(literals);
@@ -102,7 +103,7 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
     [Fact]
     public void AppHost_product_location_fallbacks_are_present_in_master_data_dictionary()
     {
-        var fallbackCodes = LocationCodesOnly(DeploymentFallbackLiterals(ReadRepositoryFile(AppHostProgramPath)));
+        var fallbackCodes = LocationCodesOnly(DeploymentFallbackLiterals(ReadRepositoryFile(AppHostServicesPath)));
         var dictionaryCodes = Regex
             .Matches(
                 ReadRepositoryFile(MasterDataDictionaryRulesPath),
@@ -124,7 +125,7 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
     [Fact]
     public void AppHost_product_location_fallbacks_are_all_seeded_by_the_inventory_product_baseline()
     {
-        var plain = DeploymentFallbackLiterals(ReadRepositoryFile(AppHostProgramPath));
+        var plain = DeploymentFallbackLiterals(ReadRepositoryFile(AppHostServicesPath));
         var seed = ReadRepositoryFile(InventoryLocationSeedServicePath);
         var seededCodes = Regex
             .Matches(seed, @"new\(""(?<code>[^""]+)"",\s*""[^""]+""\)")
@@ -270,14 +271,14 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
     {
         // 门控判据的**值**必须一并钉住：只钉 `LocalDevelopmentEnvironment` 这个名字的话，把常量
         // 改成 "Production" 就恰好是本门禁要拦的错误（生产回落主线位置），却一条测试都不会红。
-        var appHost = ReadRepositoryFile(AppHostProgramPath);
+        var appHost = ReadRepositoryFile(AppHostEnvironmentPath);
 
         Assert.Contains(
             "const string LocalDevelopmentEnvironment = \"Development\";",
             appHost,
             StringComparison.Ordinal);
         Assert.Contains(
-            "var localDevelopmentAppHost = string.Equals( builder.Environment.EnvironmentName, " +
+            "localDevelopmentAppHost = string.Equals( builder.Environment.EnvironmentName, " +
             "LocalDevelopmentEnvironment, StringComparison.OrdinalIgnoreCase);",
             Regex.Replace(appHost.Replace("\r\n", "\n", StringComparison.Ordinal), @"\s+", " "),
             StringComparison.Ordinal);
@@ -290,7 +291,7 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
         // 钉 return 语句的**完整集合**而不是若干子串：子串断言对加性变异无感——在受门控 return
         // 之前插一句无条件早退，原来的子串全都还在，测试照绿。集合断言里多出一条 return 即红。
         // 语句内空白已归一，等价重排版不会假红。
-        var appHost = ReadRepositoryFile(AppHostProgramPath);
+        var appHost = ReadRepositoryFile(AppHostEnvironmentPath);
 
         Assert.Equal(
             ["return configured.Trim();", "return localDevelopmentAppHost ? developmentSeedValue : null;"],
@@ -300,7 +301,7 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
             ReturnStatements(appHost, "IReadOnlyList<string> DeploymentWarehouseLocations(", "> WithDeploymentEnvironment("));
         Assert.Equal(
             ["return string.IsNullOrWhiteSpace(value) ? project : project.WithEnvironment(name, value);"],
-            ReturnStatements(appHost, "> WithDeploymentEnvironment(", "> WithRedisMessagingTransport("));
+            ReturnStatements(appHost, "> WithDeploymentEnvironment(", "> WithAppHostEnvironment("));
     }
 
     /// <summary>
@@ -371,7 +372,7 @@ public sealed class MesInventoryLocationDeploymentConfigurationTests
     }
 
     private static string AppHostMesRegion() =>
-        TextBetween(ReadRepositoryFile(AppHostProgramPath), "var businessMes =", "var businessDemandPlanning =");
+        TextBetween(ReadRepositoryFile(AppHostServicesPath), "var businessMes =", "var businessDemandPlanning =");
 
     private static string ComposeServiceBlock(string yaml, string serviceName)
     {

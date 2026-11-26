@@ -9,7 +9,7 @@ namespace Nerv.IIP.Business.Wms.Web.Tests;
 /// </summary>
 public sealed class WmsMaterialIssueDeploymentConfigurationTests
 {
-    private const string AppHostProgramPath = "infra/aspire/Nerv.IIP.AppHost/Program.cs";
+    private const string AppHostServicesPath = "infra/aspire/Nerv.IIP.AppHost/AppHostServices.cs";
     private const string WmsProgramPath =
         "backend/services/Business/Wms/src/Nerv.IIP.Business.Wms.Web/Program.cs";
 
@@ -62,7 +62,7 @@ public sealed class WmsMaterialIssueDeploymentConfigurationTests
         // 围栏而不是形态匹配：只禁某一个位置码前缀的双字面量形态时，把受治理位置值经
         // const/局部变量转手就能绕过。这里要求**每一个**位置字面量都出现在同一条语句内的
         // DeploymentWarehouseLocation(s) 调用里，转手一次就落到调用之外，立刻转红。
-        foreach (var literal in DemandLocationLiterals(ReadRepositoryFile(AppHostProgramPath)))
+        foreach (var literal in DemandLocationLiterals(ReadRepositoryFile(AppHostServicesPath)))
         {
             Assert.True(
                 literal.IsGated,
@@ -102,7 +102,7 @@ public sealed class WmsMaterialIssueDeploymentConfigurationTests
     }
 
     private static string AppHostWmsRegion() =>
-        TextBetween(ReadRepositoryFile(AppHostProgramPath), "var businessWms =", "var businessIndustrialTelemetry =");
+        TextBetween(ReadRepositoryFile(AppHostServicesPath), "var businessWms =", "var businessIndustrialTelemetry =");
 
     private static string Normalize(string text) => text.Replace("\r\n", "\n", StringComparison.Ordinal);
 

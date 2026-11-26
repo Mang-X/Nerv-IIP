@@ -56,7 +56,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/AppHostBaseUrlInjection.ps1')
 
 $verifierPath = Join-Path $repoRoot 'scripts/checks/verify-apphost-base-url-injection.ps1'
-$appHostProgramPath = Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs'
+$appHostDirectory = Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost'
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("nerv-iip-apphost-base-url-{0}" -f [Guid]::NewGuid().ToString('N'))
 
 $failures = [Collections.Generic.List[string]]::new()
@@ -138,7 +138,7 @@ try {
         'The checker must report how many requirements it enumerated; a collapsed scan surface would otherwise read as a clean pass.'
 
     $cache = @{}
-    $originalText = [IO.File]::ReadAllText($appHostProgramPath)
+    $originalText = Get-NervAppHostSourceText -AppHostDirectory $appHostDirectory
     $baseline = Get-NervAppHostBaseUrlInjectionReport -RepositoryRoot $repoRoot -AppHostProgramText $originalText -Cache $cache
 
     Assert-Contract ($baseline.UnexemptedViolations.Count -eq 0) `
@@ -389,7 +389,7 @@ try {
             "A $($case.Name) must stop the scan rather than silently drop the requirement; got: $message"
     }
 
-    # ── G. AppHost 侧 fail-closed（对真实 Program.cs 做变异，不用合成夹具） ─────────────────────
+    # ── G. AppHost 侧 fail-closed（对真实 AppHost 源码 做变异，不用合成夹具） ─────────────────────
     # 合成 AppHost 会把断言钉死在真实消费方代码上：gateway 或 ops 任何时候新增一处 Resolve，
     # 合成夹具就少声明一个提供方而假红，并要求回来改夹具。这里改成变异真实文件。
     $sampleInjection = $baseline.Injections[0]

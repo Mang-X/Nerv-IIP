@@ -1,7 +1,7 @@
 # Script-Governance:
 #   Category: library
 #   SideEffects:
-#     - Reads the AppHost Program.cs source to discover required local user-secrets
+#     - Reads the AppHost source files to discover required local user-secrets
 #   Writes:
 #     - None
 #   Cleanup:
@@ -11,21 +11,29 @@
 
 Set-StrictMode -Version Latest
 
+function Get-AppHostParameterSourceText {
+    param([Parameter(Mandatory)] [string] $AppHostProject)
+
+    $directory = Split-Path -Parent $AppHostProject
+    $paths = [IO.Directory]::GetFiles($directory, '*.cs')
+    [Array]::Sort($paths, [StringComparer]::Ordinal)
+    return ($paths | ForEach-Object { [IO.File]::ReadAllText($_) }) -join "`n"
+}
+
 function Get-AppHostRequiredUserSecretNames {
     param(
         [Parameter(Mandatory)]
         [string] $AppHostProject
     )
 
-    $appHostSource = Join-Path (Split-Path -Parent $AppHostProject) 'Program.cs'
-    $sourceText = Get-Content -LiteralPath $appHostSource -Raw
+    $sourceText = Get-AppHostParameterSourceText -AppHostProject $AppHostProject
     $explicitSecrets = @(
         [regex]::Matches($sourceText, 'AddParameter\s*\(\s*"(?<name>[^"]+)"\s*,\s*secret\s*:\s*true\s*\)') |
             ForEach-Object { "Parameters:$($_.Groups['name'].Value)" }
     )
 
     if ($explicitSecrets.Count -eq 0) {
-        throw "Could not discover required AppHost secret parameters from $appHostSource."
+        throw "Could not discover required AppHost secret parameters beside $AppHostProject."
     }
 
     $requiredSecrets = [Collections.Generic.SortedSet[string]]::new([StringComparer]::Ordinal)

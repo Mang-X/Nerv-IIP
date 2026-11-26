@@ -31,7 +31,7 @@ public sealed class FileStorageDeploymentConfigurationTests
     public void Legacy_compose_and_apphost_inject_the_same_minio_configuration()
     {
         var platform = ReadRepositoryFile("infra/compose/nerv-iip.platform.yml");
-        var appHost = ReadRepositoryFile("infra/aspire/Nerv.IIP.AppHost/Program.cs");
+        var appHost = ReadRepositoryFile("infra/aspire/Nerv.IIP.AppHost/AppHostServices.cs");
         var fileStorage = ComposeServiceBlock(platform, "file-storage");
         var appHostFileStorage = TextBetween(appHost, "var fileStorage =", "var notification =");
         string[] configurationKeys =
@@ -66,7 +66,7 @@ public sealed class FileStorageDeploymentConfigurationTests
     public void Legacy_compose_and_apphost_enable_the_tus_upload_provider()
     {
         var platform = ReadRepositoryFile("infra/compose/nerv-iip.platform.yml");
-        var appHost = ReadRepositoryFile("infra/aspire/Nerv.IIP.AppHost/Program.cs");
+        var appHost = ReadRepositoryFile("infra/aspire/Nerv.IIP.AppHost/AppHostServices.cs");
         var fileStorage = ComposeServiceBlock(platform, "file-storage");
         var appHostFileStorage = TextBetween(
             appHost.Replace("\r\n", "\n", StringComparison.Ordinal),

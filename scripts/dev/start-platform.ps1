@@ -110,8 +110,7 @@ function Assert-AppHostUserSecrets {
         [string] $AppHostProject
     )
 
-    $appHostSource = Join-Path (Split-Path -Parent $AppHostProject) 'Program.cs'
-    $sourceText = Get-Content -LiteralPath $appHostSource -Raw
+    $sourceText = Get-AppHostParameterSourceText -AppHostProject $AppHostProject
     $requiredSecrets = Get-AppHostRequiredUserSecretNames -AppHostProject $AppHostProject
 
     $appHostSecretParameterNames = @(

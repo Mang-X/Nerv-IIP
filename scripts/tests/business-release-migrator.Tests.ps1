@@ -15,7 +15,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $wrapperPath = Join-Path $repoRoot 'scripts/install/migrate-business-databases.ps1'
 $manifestPath = Join-Path $repoRoot 'scripts/install/business-release-database-migrations.json'
-$appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
+$appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/AppHostInfrastructure.cs') -Raw
 $manifest = @(Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json)
 
 $expectedConnectionVariables = @{

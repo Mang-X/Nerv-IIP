@@ -1,7 +1,7 @@
 # Script-Governance:
 #   Category: check
 #   SideEffects:
-#     - Reads infra/aspire/Nerv.IIP.AppHost/Program.cs, every .csproj in its project reference
+#     - Reads infra/aspire/Nerv.IIP.AppHost/ source files, every .csproj in its project reference
 #       closure, and the .cs sources owned by those projects
 #   Writes:
 #     - None
@@ -34,7 +34,7 @@
     仓库根。默认是本脚本的上级目录。
 
 .PARAMETER AppHostProgramPath
-    被读的 AppHost 源码。默认 <RepositoryRoot>/infra/aspire/Nerv.IIP.AppHost/Program.cs。
+    指定一个 AppHost 源码文件。默认扫描仓库 AppHost 目录下的顶层 C# 源码。
     单独开出来是为了让哨兵格能把变异过的副本喂进来，而闭包与消费方扫描仍走真实仓库。
 
 .PARAMETER ExemptionPath
