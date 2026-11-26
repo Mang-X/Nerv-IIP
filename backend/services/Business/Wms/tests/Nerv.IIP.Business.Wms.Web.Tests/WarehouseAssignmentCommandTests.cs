@@ -106,6 +106,30 @@ public sealed class WarehouseAssignmentCommandTests
         Assert.Equal(5, await dbContext.WarehouseAssignmentReceipts.CountAsync());
     }
 
+    [Fact]
+    public async Task Putaway_created_before_inbound_assignment_can_start_in_the_assigned_pool()
+    {
+        await using var provider = CreatePickingWorkflowProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+        SeedAssignmentBoundary(dbContext);
+        var resources = SeedResources(dbContext);
+        await dbContext.SaveChangesAsync();
+
+        var command = Command.ForInbound(resources.Inbound.Id);
+        var assignment = await sender.Send(command);
+        Assert.Equal(assignment, await sender.Send(command));
+
+        var task = await dbContext.WarehouseTasks.SingleAsync(x => x.Id == resources.Putaway.Id);
+        Assert.Equal("POOL-WAREHOUSE", task.AssignedPoolCode);
+        Assert.Equal("user-target", task.AssignedOperatorUserId);
+        Assert.Equal(2, task.Version);
+        var started = await sender.Send(StartPicking(task.Id, "POOL-WAREHOUSE", "user-target", task.Version)
+            with { ExpectedTaskType = WarehouseTaskType.Putaway });
+        Assert.Equal("InProgress", started.Status);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("user-target")]

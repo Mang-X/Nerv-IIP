@@ -226,8 +226,14 @@ public sealed class WarehouseTask : Entity<WarehouseTaskId>, IAggregateRoot
     }
 
     public void InheritPickingAssignment(string poolCode, string? operatorPrincipalId)
+        => InheritAssignment(WarehouseTaskType.Picking, poolCode, operatorPrincipalId);
+
+    public void InheritPutawayAssignment(string poolCode, string? operatorPrincipalId)
+        => InheritAssignment(WarehouseTaskType.Putaway, poolCode, operatorPrincipalId);
+
+    private void InheritAssignment(WarehouseTaskType taskType, string poolCode, string? operatorPrincipalId)
     {
-        if (TaskType != WarehouseTaskType.Picking
+        if (TaskType != taskType
             || Status != WarehouseTaskStatus.Open
             || ExecutionChannel is not (
                 WarehouseTaskExecutionChannel.Unclaimed
