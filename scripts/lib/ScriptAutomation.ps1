@@ -125,6 +125,35 @@ function Get-ScriptAutomationRepoRoot {
     return $root.Path
 }
 
+function Protect-ScriptAutomationJsonValue {
+    param([AllowNull()] $Value)
+
+    if ($Value -is [string]) {
+        return (Protect-ScriptAutomationText -Text $Value)
+    }
+    if ($Value -is [System.Collections.IDictionary] -or $Value -is [pscustomobject]) {
+        $safe = [System.Collections.Specialized.OrderedDictionary]::new([StringComparer]::Ordinal)
+        $keys = if ($Value -is [System.Collections.IDictionary]) { $Value.Keys } else { $Value.PSObject.Properties.Name }
+        foreach ($key in $keys) {
+            $safe[$key] = if ($key -match '^(authorization|password|pwd|token|secret|client_secret|customerName|phone|email|address)$') {
+                '<redacted>'
+            }
+            else {
+                $child = if ($Value -is [System.Collections.IDictionary]) { ,$Value[$key] } else { ,$Value.PSObject.Properties[$key].Value }
+                ,(Protect-ScriptAutomationJsonValue -Value $child)
+            }
+        }
+        return $safe
+    }
+    if ($Value -is [System.Collections.IList]) {
+        $safe = @(foreach ($item in $Value) {
+            ,(Protect-ScriptAutomationJsonValue -Value $item)
+        })
+        return ,$safe
+    }
+    return $Value
+}
+
 function Protect-ScriptAutomationText {
     param(
         [AllowNull()]

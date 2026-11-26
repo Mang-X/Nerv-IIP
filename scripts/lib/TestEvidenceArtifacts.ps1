@@ -388,7 +388,7 @@ function Write-NervTestEvidenceArtifacts {
             $safeRecord | ConvertTo-Json -Compress -Depth 20
         }
         Write-NervUtf8NoBom (Join-Path $temporary 'tests.jsonl') ([string]::Join("`n", @($recordLines)) + $(if (@($recordLines).Count -gt 0) { "`n" } else { '' }))
-        $safeSummaryJson = Protect-ScriptAutomationText ($Summary | ConvertTo-Json -Depth 100)
+        $safeSummaryJson = ConvertTo-Json -InputObject (Protect-ScriptAutomationJsonValue -Value $Summary) -Depth 100
         Write-NervUtf8NoBom (Join-Path $temporary 'summary.json') ($safeSummaryJson + "`n")
         $baselineSource = if ($null -ne $Summary.baseline.source) { [string]$Summary.baseline.source.sourceUrl } else { 'unavailable' }
         $markdown = @(

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
 import * as ui from './index'
@@ -229,6 +230,8 @@ const NV_ALL = [
   'NvTouchButton',
   'NvTouchSegmented',
   'nvFieldVariants',
+  'nvMessage',
+  'nvNotification',
 ]
 // Names exported as types only (not runtime-checkable via the namespace object).
 const NV_TYPE_ONLY = new Set([
@@ -260,20 +263,25 @@ function walk(dir: string, keep: (n: string) => boolean): string[] {
   }
   return out
 }
-const barrels = walk(resolve(srcDir, 'components'), (n) => n === 'index.ts').map((f) =>
-  readFileSync(f, 'utf8'),
-)
+const barrels = walk(resolve(srcDir, 'components'), (name) => name === 'index.ts')
+const program = ts.createProgram(barrels, {
+  module: ts.ModuleKind.ESNext,
+  moduleResolution: ts.ModuleResolutionKind.Bundler,
+  noLib: true,
+  types: [],
+})
+const checker = program.getTypeChecker()
 const liveNv = new Set<string>()
 const liveOld = new Set<string>()
-for (const src of barrels) {
-  for (const m of src.matchAll(/(?:default|[A-Za-z0-9_]+)\s+as\s+(Nv[A-Za-z0-9]+)/g))
-    liveNv.add(m[1])
-  for (const m of src.matchAll(/export\s+(?:const|type)\s+(Nv[A-Za-z0-9]+|nv[A-Za-z0-9]+)\b/g))
-    liveNv.add(m[1])
-  for (const m of src.matchAll(
-    /@deprecated[^\n]*\n\s*(?:default|[A-Za-z0-9_]+)\s+as\s+([A-Za-z0-9_]+)/g,
-  ))
-    liveOld.add(m[1])
+for (const barrel of barrels) {
+  const source = program.getSourceFile(barrel)!
+  const module = checker.getSymbolAtLocation(source)
+  if (!module) continue
+  for (const symbol of checker.getExportsOfModule(module)) {
+    const name = symbol.getName()
+    if (/^(?:Nv|nv)[A-Za-z0-9]+$/.test(name)) liveNv.add(name)
+    if (symbol.getJsDocTags(checker).some((tag) => tag.name === 'deprecated')) liveOld.add(name)
+  }
 }
 
 describe('NvUI Appendix A full-mapping freeze (@nerv-iip/ui / #787)', () => {
