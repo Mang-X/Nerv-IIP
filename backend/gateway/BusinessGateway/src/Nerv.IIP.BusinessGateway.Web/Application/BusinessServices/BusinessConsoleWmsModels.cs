@@ -301,10 +301,29 @@ public sealed record BusinessWmsCompleteOutboundOrderRequest(
     bool Passed,
     string IdempotencyKey);
 
+public sealed record BusinessConsoleRetryWmsInboundInventoryPostingRequest(
+    [property: RouteParam] string InboundOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string IdempotencyKey,
+    string? ScopeKind = null,
+    string? ScopeId = null);
+
 public sealed record BusinessConsoleRetryWmsOutboundInventoryPostingRequest(
     [property: RouteParam] string OutboundOrderId,
     [property: QueryParam] string OrganizationId,
     [property: QueryParam] string EnvironmentId,
+    string IdempotencyKey,
+    string? ScopeKind = null,
+    string? ScopeId = null);
+
+public sealed record BusinessWmsRetryInventoryPostingRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId,
     string IdempotencyKey);
 
 public sealed record BusinessConsoleCreateWmsCountExecutionRequest(
@@ -496,7 +515,10 @@ public sealed record BusinessConsoleWmsInboundOrderItem(
     string SiteCode,
     string? AssignedOperatorUserId,
     string? AssignedPoolCode,
-    long Version);
+    long Version,
+    string? InventoryPostingStatus = null,
+    IReadOnlyCollection<string>? InventoryMovementIds = null,
+    IReadOnlyCollection<string>? PostingFailureHistory = null);
 
 public sealed record BusinessConsoleWmsOutboundOrderListResponse(
     IReadOnlyCollection<BusinessConsoleWmsOutboundOrderItem> Items,
@@ -544,7 +566,8 @@ public sealed record BusinessConsoleWmsOutboundOrderLineItem(
     string? OwnerId,
     string InventoryPostingStatus,
     string? FailureCode,
-    string? FailureMessage);
+    string? FailureMessage,
+    string? InventoryMovementId = null);
 
 public sealed record BusinessConsoleWmsWarehouseTaskListRequest(
     string OrganizationId,

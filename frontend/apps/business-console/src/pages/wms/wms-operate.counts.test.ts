@@ -117,6 +117,7 @@ describe('WMS operate actions', () => {
       if (!canRecount) wms.permissionCodes = ['business.wms.counts.read']
       wms.countRows = [
         { countExecutionId: 'count-1', countNo: 'CNT-1', status: 'RecountRequired' },
+        { countExecutionId: 'count-3', countNo: 'CNT-3', status: 'PendingApproval' },
         {
           countExecutionId: 'count-2',
           countNo: 'CNT-2',
@@ -130,6 +131,7 @@ describe('WMS operate actions', () => {
       await flushPromises()
 
       expect(wrapper.text()).toContain('库存流水 MOV-2')
+      expect(wrapper.text()).toContain('待审批')
       const links = wrapper.findAll('[data-router-link]')
       if (canRecount) {
         const link = links.find((entry) => entry.text() === '打开原盘点任务')

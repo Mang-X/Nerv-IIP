@@ -19,6 +19,7 @@ import { hasBusinessContext } from '@/composables/shared/businessContextBinding'
 import { createWmsIdempotencyKey, useWmsOutboundOrders } from '@/composables/wms'
 import { useInventoryScopeCatalog } from '@/composables/inventory/useInventoryScope'
 import { usePagedList } from '@/composables/shared/usePagedList'
+import { useWmsPostingRetry } from '@/composables/wms/useWmsPostingRetry'
 import { useWmsOperationalCandidates } from '@/composables/wms/useWmsOperationalCandidates'
 import { bindWmsWorkScopeFilters } from '@/composables/wms/useWmsWorkScope'
 import {
@@ -301,6 +302,15 @@ watch(
   },
 )
 
+const canManageShipments = computed(() =>
+  (auth.principal?.permissionCodes ?? []).includes('business.wms.shipments.manage'),
+)
+const { retry: retryPosting, pending: retryPostingPending } = useWmsPostingRetry(
+  'outbound',
+  filters,
+  refreshOutboundOrders,
+)
+
 function canComplete(row: OutboundRow) {
   return statusActionGate({
     domain: 'wms-outbound',
@@ -571,14 +581,39 @@ function refreshAll() {
         <p>当前作业范围内没有匹配筛选条件的出库单。</p>
         <NvButton size="sm" variant="outline" @click="clearListFilters">清空筛选</NvButton>
       </template>
-      <template #cell-status="{ row }"
-        ><NvStatusBadge
+      <template #cell-status="{ row }">
+        <NvStatusBadge
           :value="row.status"
           :label="statusLabel(row.status)"
           :tone="wmsStatusTone(row.status)"
-      /></template>
+        />
+        <p v-if="row.failureMessage" class="text-sm text-muted-foreground">
+          {{ row.failureMessage }}
+        </p>
+        <template v-for="line in row.lines" :key="line.lineNo">
+          <p v-if="line.inventoryMovementId" class="text-sm text-muted-foreground">
+            库存流水 {{ line.inventoryMovementId }}
+          </p>
+        </template>
+      </template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end gap-2">
+          <NvButton
+            v-if="
+              canManageShipments &&
+              contextReady &&
+              row.status === 'InventoryPostingFailed' &&
+              row.outboundOrderId
+            "
+            size="sm"
+            type="button"
+            variant="outline"
+            :aria-label="`重试库存过账 ${row.outboundOrderNo ?? ''}`"
+            :disabled="retryPostingPending"
+            @click="retryPosting(row.outboundOrderId)"
+          >
+            重试库存过账
+          </NvButton>
           <NvButton
             v-if="canManagePools"
             size="sm"

@@ -51,6 +51,9 @@ vi.mock('@/composables/master-data/useMasterDataDisplayNames', async () => {
 
 const wms = vi.hoisted(() => ({
   createIdempotencyKey: vi.fn(() => 'wms-intent-1'),
+  retryInboundPosting: vi.fn(),
+  retryOutboundPosting: vi.fn(),
+  outboundStatus: 'open',
   completeInbound: vi.fn(),
   completeOutbound: vi.fn(),
   completeCountExecution: vi.fn(),
@@ -124,6 +127,12 @@ vi.mock('@/stores/auth', () => ({
 
 vi.mock('@/composables/wms/useWmsWorkScope', () => import('@/test/wmsWorkScopePage'))
 
+vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@nerv-iip/api-client')>()),
+  retryBusinessConsoleWmsInboundInventoryPosting: wms.retryInboundPosting,
+  retryBusinessConsoleWmsOutboundInventoryPosting: wms.retryOutboundPosting,
+}))
+
 vi.mock('@/composables/wms', () => ({
   createWmsIdempotencyKey: wms.createIdempotencyKey,
   useWmsInboundOrders: vi.fn(() => ({
@@ -164,7 +173,7 @@ vi.mock('@/composables/wms', () => ({
       {
         outboundOrderId: 'ob-1',
         outboundOrderNo: 'OB-1',
-        status: 'open',
+        status: wms.outboundStatus,
         createdAtUtc: '2026-06-01T00:00:00Z',
       },
     ]),
@@ -331,6 +340,9 @@ const resetFixture = () => {
   wms.qualityGateStatus = undefined
   wms.isReleasedForPutaway = true
   wms.inboundStatus = 'open'
+  wms.outboundStatus = 'open'
+  wms.retryInboundPosting.mockReset()
+  wms.retryOutboundPosting.mockReset()
   wms.permissionCodes = [
     'business.wms.receipts.read',
     'business.wms.receipts.manage',

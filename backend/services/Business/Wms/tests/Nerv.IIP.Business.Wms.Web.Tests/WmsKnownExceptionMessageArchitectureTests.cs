@@ -12,7 +12,6 @@ public sealed class WmsKnownExceptionMessageArchitectureTests
 
     private static readonly IReadOnlyCollection<ExcludedUserMessageSite> ExcludedSites =
     [
-        new($"{WmsWebRoot}/Application/Commands/WmsCommands.cs", "RetryInboundInventoryPostingCommandHandler", "Handle", "异步/延迟库存过账，无同步公开 facade"),
         new($"{WmsWebRoot}/Application/Commands/WmsCommands.cs", "RecordWarehouseTaskProgressCommandHandler", "Handle", "内部手工执行回调，不是用户可见同步 transport"),
         new($"{WmsWebRoot}/Application/Commands/WmsCommands.cs", "CompleteWarehouseTaskCommandHandler", "Handle", "内部手工执行回调，不是用户可见同步 transport"),
         new($"{WmsWebRoot}/Application/Commands/WmsCommands.cs", "CloseBackorderOrderCommandHandler", "Handle", "延迟 backorder 处理，无同步公开 facade"),

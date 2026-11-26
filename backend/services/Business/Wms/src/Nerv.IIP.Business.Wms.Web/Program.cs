@@ -132,6 +132,8 @@ try
             .AddUnitOfWorkBehaviors());
     builder.Services.AddScoped<ICommandLock<CompleteInboundOrderCommand>, CompleteInboundOrderCommandLock>();
     builder.Services.AddScoped<ICommandLock<CompleteOutboundOrderCommand>, CompleteOutboundOrderCommandLock>();
+    builder.Services.AddScoped<ICommandLock<RetryInboundInventoryPostingCommand>, RetryInboundInventoryPostingCommandLock>();
+    builder.Services.AddScoped<ICommandLock<RetryOutboundInventoryPostingCommand>, RetryOutboundInventoryPostingCommandLock>();
     builder.Services.AddScoped<ICommandLock<CompleteCountExecutionCommand>, CompleteCountExecutionCommandLock>();
     builder.Services.AddScoped<
         ICommandLock<StartWarehouseTaskCommand>,

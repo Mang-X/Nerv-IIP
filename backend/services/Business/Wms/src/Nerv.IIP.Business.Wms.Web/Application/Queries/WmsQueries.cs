@@ -527,7 +527,10 @@ public sealed record InboundOrderListItem(
     string SiteCode,
     string? AssignedOperatorUserId,
     string? AssignedPoolCode,
-    long Version);
+    long Version,
+    string? InventoryPostingStatus = null,
+    IReadOnlyCollection<string>? InventoryMovementIds = null,
+    IReadOnlyCollection<string>? PostingFailureHistory = null);
 
 internal static class InboundOrderQualityAggregate
 {
@@ -650,24 +653,45 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
                 HasPassed = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.Passed),
             })
             .ToArrayAsync(cancellationToken);
+        var orderNos = rows.Select(x => x.InboundOrderNo).ToArray();
+        var postingRequests = orderNos.Length == 0
+            ? []
+            : await dbContext.InventoryMovementRequests.AsNoTracking()
+                .Where(x => x.OrganizationId == tenant.OrganizationId
+                    && x.EnvironmentId == tenant.EnvironmentId
+                    && x.MovementType == InventoryMovementTypes.Inbound
+                    && orderNos.Contains(x.SourceDocumentId))
+                .ToArrayAsync(cancellationToken);
+        var attemptsByOrder = postingRequests.ToLookup(x => x.SourceDocumentId, StringComparer.Ordinal);
         var items = rows
-            .Select(x => new InboundOrderListItem(
-                x.Id,
-                x.InboundOrderNo,
-                x.StatusValue.ToString(),
-                x.CreatedAtUtc,
-                InboundOrderQualityAggregate.Derive(x.HasAnyLine, x.HasRejected, x.HasPending, x.HasConditional, x.HasPassed),
-                InboundOrderQualityAggregate.ReleasedForPutaway(
-                    x.StatusValue,
-                    x.HasAnyLine,
-                    x.HasRejected,
-                    x.HasPending,
-                    x.HasConditional,
-                    x.HasPassed),
-                x.SiteCode,
-                x.AssignedOperatorUserId,
-                x.AssignedPoolCode,
-                x.Version))
+            .Select(x =>
+            {
+                var attempts = attemptsByOrder[x.InboundOrderNo];
+                var latest = InventoryMovementRequestAttempts.LatestByLine(attempts).Values.ToArray();
+                return new InboundOrderListItem(
+                    x.Id,
+                    x.InboundOrderNo,
+                    x.StatusValue.ToString(),
+                    x.CreatedAtUtc,
+                    InboundOrderQualityAggregate.Derive(x.HasAnyLine, x.HasRejected, x.HasPending, x.HasConditional, x.HasPassed),
+                    InboundOrderQualityAggregate.ReleasedForPutaway(
+                        x.StatusValue,
+                        x.HasAnyLine,
+                        x.HasRejected,
+                        x.HasPending,
+                        x.HasConditional,
+                        x.HasPassed),
+                    x.SiteCode,
+                    x.AssignedOperatorUserId,
+                    x.AssignedPoolCode,
+                    x.Version,
+                    latest.Any(a => a.Status == InventoryMovementRequestStatus.Failed) ? "failed"
+                        : latest.Any(a => a.Status == InventoryMovementRequestStatus.Pending) ? "pending"
+                        : latest.Length > 0 ? "posted" : null,
+                    latest.Select(a => a.InventoryMovementId).OfType<string>().ToArray(),
+                    attempts.OrderByDescending(a => a.CreatedAtUtc).Select(a => a.FailureMessage)
+                        .OfType<string>().Distinct(StringComparer.Ordinal).ToArray());
+            })
             .ToArray();
         return new ListInboundOrdersResponse(items, total);
     }
@@ -720,7 +744,8 @@ public sealed record OutboundOrderLineListItem(
     string? OwnerId,
     string InventoryPostingStatus,
     string? FailureCode,
-    string? FailureMessage);
+    string? FailureMessage,
+    string? InventoryMovementId = null);
 
 public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListOutboundOrdersQuery, ListOutboundOrdersResponse>
@@ -865,7 +890,8 @@ public sealed class ListOutboundOrdersQueryHandler(ApplicationDbContext dbContex
                     line.OwnerId,
                     PostingStatus(latestRequest),
                     latestRequest?.FailureCode,
-                    latestRequest?.FailureMessage);
+                    latestRequest?.FailureMessage,
+                    latestRequest?.InventoryMovementId);
             }).ToArray();
             var failedLine = lineItems.FirstOrDefault(line => line.InventoryPostingStatus == "failed");
             return new OutboundOrderListItem(

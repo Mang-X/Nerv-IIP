@@ -572,7 +572,7 @@ public sealed class CompleteInboundOrderCommandHandler
     }
 }
 
-public sealed record RetryInboundInventoryPostingCommand(InboundOrderId InboundOrderId, string IdempotencyKey) : ICommand<CompleteWmsMovementResult>;
+public sealed record RetryInboundInventoryPostingCommand(InboundOrderId InboundOrderId, string IdempotencyKey, WarehouseAssignedResourceExecutionRequest? Execution = null) : ICommand<CompleteWmsMovementResult>;
 
 public sealed class RetryInboundInventoryPostingCommandValidator : AbstractValidator<RetryInboundInventoryPostingCommand>
 {
@@ -580,6 +580,20 @@ public sealed class RetryInboundInventoryPostingCommandValidator : AbstractValid
     {
         RuleFor(x => x.InboundOrderId).NotEmpty();
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.Execution).NotNull();
+    }
+}
+
+public sealed class RetryInboundInventoryPostingCommandLock : ICommandLock<RetryInboundInventoryPostingCommand>
+{
+    public Task<CommandLockSettings> GetLockKeysAsync(
+        RetryInboundInventoryPostingCommand command,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new CommandLockSettings(
+            $"business-wms:inbound-order-complete:{command.InboundOrderId}",
+            30));
     }
 }
 
@@ -589,13 +603,41 @@ public sealed class RetryInboundInventoryPostingCommandHandler(ApplicationDbCont
     public async Task<CompleteWmsMovementResult> Handle(RetryInboundInventoryPostingCommand request, CancellationToken cancellationToken)
     {
         var inbound = await dbContext.InboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.InboundOrderId, cancellationToken)
-            ?? throw new KnownException($"Inbound order was not found: {request.InboundOrderId}");
+            ?? throw new KnownException($"未找到入库单，入库单 ID = {request.InboundOrderId}");
+        if (request.Execution is { } execution)
+        {
+            await WarehouseAssignedResourceCompletionExecution.CreateAuthorizer(dbContext).AuthorizeAsync(
+                execution with
+                {
+                    ResourceOrganizationId = inbound.OrganizationId,
+                    ResourceEnvironmentId = inbound.EnvironmentId,
+                    ResourceSiteCode = inbound.SiteCode,
+                    AssignedPoolCode = inbound.AssignedPoolCode,
+                    AssignedOperatorUserId = inbound.AssignedOperatorUserId,
+                },
+                cancellationToken);
+        }
+
         var postingAttempts = await dbContext.InventoryMovementRequests
             .Where(x => x.OrganizationId == inbound.OrganizationId
                 && x.EnvironmentId == inbound.EnvironmentId
                 && x.MovementType == InventoryMovementTypes.Inbound
                 && x.SourceDocumentId == inbound.InboundOrderNo)
             .ToArrayAsync(cancellationToken);
+        var replay = postingAttempts.OrderBy(x => x.SourceDocumentLineId).FirstOrDefault(x =>
+            WmsText.ReplayIdempotencyKeys(request.IdempotencyKey).Contains(x.IdempotencyKey)
+            || (x.SourceDocumentLineId is { } lineNo &&
+                WmsText.ReplayLineIdempotencyKeys(request.IdempotencyKey, lineNo).Contains(x.IdempotencyKey)));
+        if (replay is not null)
+        {
+            return new CompleteWmsMovementResult(replay.Id, replay.InventoryMovementId);
+        }
+
+        if (request.Execution is not null && inbound.Status != InboundOrderStatus.InventoryPostingFailed)
+        {
+            throw new WmsLifecycleConflictException("retry-inbound-inventory-posting", inbound.Status.ToString());
+        }
+
         var failedRequestsByLine = InventoryMovementRequestAttempts.LatestByLine(postingAttempts)
             .Where(pair => pair.Value.Status == InventoryMovementRequestStatus.Failed)
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
@@ -2031,7 +2073,7 @@ public sealed class CancelInboundOrdersForSourceCommandHandler(ApplicationDbCont
     }
 }
 
-public sealed record RetryOutboundInventoryPostingCommand(OutboundOrderId OutboundOrderId, string IdempotencyKey) : ICommand<CompleteWmsMovementResult>;
+public sealed record RetryOutboundInventoryPostingCommand(OutboundOrderId OutboundOrderId, string IdempotencyKey, WarehouseAssignedResourceExecutionRequest? Execution = null) : ICommand<CompleteWmsMovementResult>;
 
 public sealed class RetryOutboundInventoryPostingCommandValidator : AbstractValidator<RetryOutboundInventoryPostingCommand>
 {
@@ -2039,6 +2081,20 @@ public sealed class RetryOutboundInventoryPostingCommandValidator : AbstractVali
     {
         RuleFor(x => x.OutboundOrderId).NotEmpty();
         RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.Execution).NotNull();
+    }
+}
+
+public sealed class RetryOutboundInventoryPostingCommandLock : ICommandLock<RetryOutboundInventoryPostingCommand>
+{
+    public Task<CommandLockSettings> GetLockKeysAsync(
+        RetryOutboundInventoryPostingCommand command,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new CommandLockSettings(
+            $"business-wms:outbound-order-complete:{command.OutboundOrderId}",
+            30));
     }
 }
 
@@ -2051,27 +2107,51 @@ public sealed class RetryOutboundInventoryPostingCommandHandler(
     {
         var outbound = await dbContext.OutboundOrders.Include(x => x.Lines).SingleOrDefaultAsync(x => x.Id == request.OutboundOrderId, cancellationToken)
             ?? throw new KnownException($"未找到出库单，出库单 ID = {request.OutboundOrderId}");
-        var failedRequests = await dbContext.InventoryMovementRequests
+        if (request.Execution is { } execution)
+        {
+            await WarehouseAssignedResourceCompletionExecution.CreateAuthorizer(dbContext).AuthorizeAsync(
+                execution with
+                {
+                    ResourceOrganizationId = outbound.OrganizationId,
+                    ResourceEnvironmentId = outbound.EnvironmentId,
+                    ResourceSiteCode = outbound.SiteCode,
+                    AssignedPoolCode = outbound.AssignedPoolCode,
+                    AssignedOperatorUserId = outbound.AssignedOperatorUserId,
+                },
+                cancellationToken);
+        }
+
+        var postingAttempts = await dbContext.InventoryMovementRequests
             .Where(x => x.OrganizationId == outbound.OrganizationId
                 && x.EnvironmentId == outbound.EnvironmentId
                 && x.MovementType == InventoryMovementTypes.Outbound
-                && x.SourceDocumentId == outbound.OutboundOrderNo
-                && x.Status == InventoryMovementRequestStatus.Failed)
+                && x.SourceDocumentId == outbound.OutboundOrderNo)
             .ToArrayAsync(cancellationToken);
-        var failedLineNos = failedRequests
-            .Select(x => x.SourceDocumentLineId)
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => x!)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        outbound.EnsureCanRetryInventoryPosting(failedLineNos);
+        var replay = postingAttempts.OrderBy(x => x.SourceDocumentLineId).FirstOrDefault(x =>
+            WmsText.ReplayIdempotencyKeys(request.IdempotencyKey).Contains(x.IdempotencyKey)
+            || (x.SourceDocumentLineId is { } lineNo &&
+                WmsText.ReplayLineIdempotencyKeys(request.IdempotencyKey, lineNo).Contains(x.IdempotencyKey)));
+        if (replay is not null)
+        {
+            return new CompleteWmsMovementResult(replay.Id, replay.InventoryMovementId);
+        }
+
+        if (request.Execution is not null && outbound.Status != OutboundOrderStatus.InventoryPostingFailed)
+        {
+            throw new WmsLifecycleConflictException("retry-outbound-inventory-posting", outbound.Status.ToString());
+        }
+
+        var failedRequestsByLine = InventoryMovementRequestAttempts.LatestByLine(postingAttempts)
+            .Where(pair => pair.Value.Status == InventoryMovementRequestStatus.Failed)
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
+        outbound.EnsureCanRetryInventoryPosting(failedRequestsByLine.Keys.ToArray());
         if (inventoryReservationClient is null)
         {
             throw new KnownException("重试出库过账需要库存预留服务。");
         }
 
         var reservationIds = new Dictionary<string, string?>(StringComparer.Ordinal);
-        foreach (var line in outbound.Lines.Where(x => failedLineNos.Contains(x.LineNo, StringComparer.Ordinal)).OrderBy(x => x.LineNo, StringComparer.Ordinal))
+        foreach (var line in outbound.Lines.Where(x => failedRequestsByLine.ContainsKey(x.LineNo)).OrderBy(x => x.LineNo, StringComparer.Ordinal))
         {
             var reservationId = (await inventoryReservationClient.ReserveAsync(
                 new WmsInventoryReservationRequest(
@@ -2083,7 +2163,7 @@ public sealed class RetryOutboundInventoryPostingCommandHandler(
                     WmsInventoryReservationIdempotencyKeys.ForOutboundRetry(
                         outbound,
                         line.LineNo,
-                        WmsText.IdempotencyKey(request.IdempotencyKey)),
+                        failedRequestsByLine[line.LineNo].IdempotencyKey),
                     line.SkuCode,
                     line.UomCode,
                     outbound.SiteCode,
@@ -2093,7 +2173,7 @@ public sealed class RetryOutboundInventoryPostingCommandHandler(
                     line.QualityStatus,
                     line.OwnerType,
                     line.OwnerId,
-                    line.RequestedQuantity),
+                    line.IssuedQuantity),
                 cancellationToken)).ReservationId;
 
             reservationIds[line.LineNo] = reservationId;
@@ -2569,7 +2649,7 @@ public sealed class MarkInventoryMovementRequestFailedCommandHandler(
                 && x.SourceDocumentLineId == request.SourceDocumentLineId
                 && x.IdempotencyKey == request.IdempotencyKey,
             cancellationToken);
-        if (movementRequest is null)
+        if (movementRequest is null || movementRequest.Status != InventoryMovementRequestStatus.Pending)
         {
             return;
         }
@@ -2624,9 +2704,10 @@ internal static class WmsInventoryReservationIdempotencyKeys
         return $"wms-pick-res:{StableHash(raw)}";
     }
 
-    public static string ForOutboundRetry(OutboundOrder outbound, string lineNo, string retryIdempotencyKey)
+    // 同一失败尝试恢复同一份预留，避免多行重试中途失败后再预留已经成功的行。
+    public static string ForOutboundRetry(OutboundOrder outbound, string lineNo, string failedPostingKey)
     {
-        var raw = $"{outbound.OrganizationId}:{outbound.EnvironmentId}:{outbound.OutboundOrderNo}:{lineNo}:{retryIdempotencyKey}";
+        var raw = $"{outbound.OrganizationId}:{outbound.EnvironmentId}:{outbound.OutboundOrderNo}:{lineNo}:{failedPostingKey}";
         return $"wms-retry-res:{StableHash(raw)}";
     }
 

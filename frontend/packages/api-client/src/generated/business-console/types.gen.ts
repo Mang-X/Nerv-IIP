@@ -223,6 +223,9 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     assignedOperatorUserId?: string | null;
     assignedPoolCode?: string | null;
     version?: number;
+    inventoryPostingStatus?: string | null;
+    inventoryMovementIds?: Array<string> | null;
+    postingFailureHistory?: Array<string> | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInventoryContext = {
@@ -473,6 +476,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     inventoryPostingStatus?: string;
     failureCode?: string | null;
     failureMessage?: string | null;
+    inventoryMovementId?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsOutboundOrderListRequest = {
@@ -495,8 +499,16 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     expectedVersion: number;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRetryWmsInboundInventoryPostingRequest = {
+    idempotencyKey?: string;
+    scopeKind?: string | null;
+    scopeId?: string | null;
+};
+
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRetryWmsOutboundInventoryPostingRequest = {
     idempotencyKey?: string;
+    scopeKind?: string | null;
+    scopeId?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateWmsCountExecutionResponse = NetCorePalExtensionsDtoResponseData & {
@@ -11470,6 +11482,44 @@ export type CompleteBusinessConsoleWmsOutboundOrderResponses = {
 };
 
 export type CompleteBusinessConsoleWmsOutboundOrderResponse = CompleteBusinessConsoleWmsOutboundOrderResponses[keyof CompleteBusinessConsoleWmsOutboundOrderResponses];
+
+export type RetryBusinessConsoleWmsInboundInventoryPostingData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRetryWmsInboundInventoryPostingRequest;
+    path: {
+        inboundOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/inventory-posting/retry';
+};
+
+export type RetryBusinessConsoleWmsInboundInventoryPostingErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type RetryBusinessConsoleWmsInboundInventoryPostingError = RetryBusinessConsoleWmsInboundInventoryPostingErrors[keyof RetryBusinessConsoleWmsInboundInventoryPostingErrors];
+
+export type RetryBusinessConsoleWmsInboundInventoryPostingResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCompleteWmsMovementResponse;
+};
+
+export type RetryBusinessConsoleWmsInboundInventoryPostingResponse = RetryBusinessConsoleWmsInboundInventoryPostingResponses[keyof RetryBusinessConsoleWmsInboundInventoryPostingResponses];
 
 export type RetryBusinessConsoleWmsOutboundInventoryPostingData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRetryWmsOutboundInventoryPostingRequest;
