@@ -81,8 +81,8 @@ public sealed class NetRequirementIdentityPersistenceTests
             var splitIds = split.Select(x => x.Id).ToArray();
             var runId = split[0].MrpRunId;
             await new AcceptPlanningSuggestionCommandHandler(db).Handle(
-                new(split[0].Id, "test", "document", "DOC-1"), default);
-            await new RejectPlanningSuggestionCommandHandler(db).Handle(new(split[1].Id, "user", "same-reason"), default);
+                new(split[0].Id, "org-a", "env-a", "test", "document", "DOC-1"), default);
+            await new RejectPlanningSuggestionCommandHandler(db).Handle(new(split[1].Id, "org-a", "env-a", "user", "same-reason"), default);
             await db.SaveChangesAsync();
             await Execute(db, NetRequirementIdentityTests.SplitInput());
             db.ChangeTracker.Clear();
@@ -104,7 +104,7 @@ public sealed class NetRequirementIdentityPersistenceTests
             Assert.Equal(2, collision.Select(x => x.NetRequirementReference).Distinct().Count());
             var references = collision.ToDictionary(x => x.Id, x => x.NetRequirementReference);
             foreach (var suggestion in collision)
-                await new RejectPlanningSuggestionCommandHandler(db).Handle(new(suggestion.Id, "user", "same-reason"), default);
+                await new RejectPlanningSuggestionCommandHandler(db).Handle(new(suggestion.Id, "org-a", "env-a", "user", "same-reason"), default);
             await db.SaveChangesAsync();
             db.ChangeTracker.Clear();
             var rejected = await db.PlanningSuggestions.Where(x => x.MrpRunId == collision[0].MrpRunId).ToListAsync();

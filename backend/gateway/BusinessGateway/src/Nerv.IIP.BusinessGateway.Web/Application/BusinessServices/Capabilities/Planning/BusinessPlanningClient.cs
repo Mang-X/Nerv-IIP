@@ -472,11 +472,14 @@ public sealed class HttpBusinessPlanningClient(HttpClient httpClient)
             internalBearerToken,
             HttpMethod.Post,
             $"/api/business/v1/planning/suggestions/{Uri.EscapeDataString(suggestionId)}/reject",
-            new DownstreamRejectPlanningSuggestionRequest(suggestionId, rejectedBy, request.Reason),
+            new DownstreamRejectPlanningSuggestionRequest(
+                suggestionId, request.OrganizationId, request.EnvironmentId, rejectedBy, request.Reason),
             cancellationToken);
 
     private sealed record DownstreamRejectPlanningSuggestionRequest(
         string SuggestionId,
+        string OrganizationId,
+        string EnvironmentId,
         string RejectedBy,
         string Reason);
 

@@ -71,10 +71,10 @@ public sealed class DemandPlanningEndpointContractTests
 
         var bridge = new CountingPlanningSuggestionDownstreamBridge();
         await new AcceptPlanningSuggestionCommandHandler(dbContext, bridge).Handle(
-            new AcceptPlanningSuggestionCommand(child.Id, "BusinessMes", "WorkOrder", null),
+            new AcceptPlanningSuggestionCommand(child.Id, "org-001", "env-dev", "BusinessMes", "WorkOrder", null),
             CancellationToken.None);
         await new AcceptPlanningSuggestionCommandHandler(dbContext, bridge).Handle(
-            new AcceptPlanningSuggestionCommand(otherPathChild.Id, "BusinessMes", "WorkOrder", null),
+            new AcceptPlanningSuggestionCommand(otherPathChild.Id, "org-001", "env-dev", "BusinessMes", "WorkOrder", null),
             CancellationToken.None);
 
         Assert.Equal(2, bridge.CreateCount);
@@ -944,10 +944,10 @@ public sealed class DemandPlanningEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var handler = new AcceptPlanningSuggestionCommandHandler(dbContext);
 
-        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "erp", "purchase-request", "PR-001"), CancellationToken.None);
-        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "erp", "purchase-request", "PR-001"), CancellationToken.None);
+        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "org-001", "env-dev", "erp", "purchase-request", "PR-001"), CancellationToken.None);
+        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "org-001", "env-dev", "erp", "purchase-request", "PR-001"), CancellationToken.None);
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "erp", "purchase-request", "PR-002"), CancellationToken.None));
+            handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "org-001", "env-dev", "erp", "purchase-request", "PR-002"), CancellationToken.None));
 
         Assert.Equal("计划建议已使用其他下游引用接受。", exception.Message);
     }
@@ -964,8 +964,8 @@ public sealed class DemandPlanningEndpointContractTests
         var bridge = new CountingPlanningSuggestionDownstreamBridge();
         var handler = new AcceptPlanningSuggestionCommandHandler(dbContext, bridge);
 
-        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "BusinessErp", "PurchaseRequisition", null), CancellationToken.None);
-        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "BusinessErp", "PurchaseRequisition", null), CancellationToken.None);
+        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "org-001", "env-dev", "BusinessErp", "PurchaseRequisition", null), CancellationToken.None);
+        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "org-001", "env-dev", "BusinessErp", "PurchaseRequisition", null), CancellationToken.None);
 
         Assert.Equal(PlanningSuggestionStatus.Accepted, suggestion.Status);
         Assert.Equal("BusinessErp", suggestion.AcceptedDownstreamService);
@@ -986,7 +986,7 @@ public sealed class DemandPlanningEndpointContractTests
         var bridge = new CountingPlanningSuggestionDownstreamBridge();
         var handler = new AcceptPlanningSuggestionCommandHandler(dbContext, bridge);
 
-        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "BusinessErp", "PurchaseRequisition", null), CancellationToken.None);
+        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "org-001", "env-dev", "BusinessErp", "PurchaseRequisition", null), CancellationToken.None);
 
         Assert.Equal(PlanningSuggestionStatus.Accepted, suggestion.Status);
         Assert.Equal("BusinessErp", suggestion.AcceptedDownstreamService);
@@ -1006,8 +1006,8 @@ public sealed class DemandPlanningEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var handler = new AcceptPlanningSuggestionCommandHandler(dbContext, new CountingPlanningSuggestionDownstreamBridge());
 
-        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "BusinessErp", "PurchaseRequisition", "PR-CALLER-SHOULD-NOT-WIN"), CancellationToken.None);
-        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "BusinessErp", "PurchaseRequisition", "PR-REPLAY-SHOULD-NOT-CONFLICT"), CancellationToken.None);
+        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "org-001", "env-dev", "BusinessErp", "PurchaseRequisition", "PR-CALLER-SHOULD-NOT-WIN"), CancellationToken.None);
+        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "org-001", "env-dev", "BusinessErp", "PurchaseRequisition", "PR-REPLAY-SHOULD-NOT-CONFLICT"), CancellationToken.None);
 
         Assert.Equal("BusinessErp", suggestion.AcceptedDownstreamService);
         Assert.Equal("PurchaseRequisition", suggestion.AcceptedDownstreamDocumentType);
@@ -1026,8 +1026,8 @@ public sealed class DemandPlanningEndpointContractTests
         var bridge = new CountingPlanningSuggestionDownstreamBridge();
         var handler = new AcceptPlanningSuggestionCommandHandler(dbContext, bridge);
 
-        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "BusinessMes", "WorkOrder", null), CancellationToken.None);
-        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "BusinessMes", "WorkOrder", null), CancellationToken.None);
+        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "org-001", "env-dev", "BusinessMes", "WorkOrder", null), CancellationToken.None);
+        await handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "org-001", "env-dev", "BusinessMes", "WorkOrder", null), CancellationToken.None);
 
         Assert.Equal(PlanningSuggestionStatus.Accepted, suggestion.Status);
         Assert.Equal("BusinessMes", suggestion.AcceptedDownstreamService);
@@ -1050,7 +1050,7 @@ public sealed class DemandPlanningEndpointContractTests
         var handler = new AcceptPlanningSuggestionCommandHandler(dbContext, bridge);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "BusinessMes", "WorkOrder", null), CancellationToken.None));
+            handler.Handle(new AcceptPlanningSuggestionCommand(suggestion.Id, "org-001", "env-dev", "BusinessMes", "WorkOrder", null), CancellationToken.None));
 
         Assert.Equal("只有开放状态的计划建议才能接受。", exception.Message);
         Assert.Equal(0, bridge.CreateCount);
@@ -1072,7 +1072,7 @@ public sealed class DemandPlanningEndpointContractTests
         var handler = new AcceptPlanningSuggestionCommandHandler(dbContext, new FailingPlanningSuggestionDownstreamBridge());
 
         await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
-            new AcceptPlanningSuggestionCommand(suggestion.Id, "ScheduledReceipt", "ScheduledReceipt", callerDocumentId), CancellationToken.None));
+            new AcceptPlanningSuggestionCommand(suggestion.Id, "org-001", "env-dev", "ScheduledReceipt", "ScheduledReceipt", callerDocumentId), CancellationToken.None));
 
         Assert.Equal(PlanningSuggestionStatus.Open, suggestion.Status);
         Assert.Null(suggestion.AcceptedDownstreamDocumentId);
@@ -1093,16 +1093,16 @@ public sealed class DemandPlanningEndpointContractTests
         var handler = new AcceptPlanningSuggestionCommandHandler(dbContext);
 
         var replay = await handler.Handle(new AcceptPlanningSuggestionCommand(
-            suggestion.Id, "ScheduledReceipt", "ScheduledReceipt", null), CancellationToken.None);
+            suggestion.Id, "org-001", "env-dev", "ScheduledReceipt", "ScheduledReceipt", null), CancellationToken.None);
         Assert.Equal("PO-001:10", replay.DownstreamDocumentId);
         await Assert.ThrowsAsync<KnownException>(() => handler.Handle(new AcceptPlanningSuggestionCommand(
-            suggestion.Id, "ScheduledReceipt", "OtherType", "other-id"), CancellationToken.None));
+            suggestion.Id, "org-001", "env-dev", "ScheduledReceipt", "OtherType", "other-id"), CancellationToken.None));
         await Assert.ThrowsAsync<KnownException>(() => handler.Handle(new AcceptPlanningSuggestionCommand(
-            suggestion.Id, "ScheduledReceipt", "ScheduledReceipt", "other-id"), CancellationToken.None));
+            suggestion.Id, "org-001", "env-dev", "ScheduledReceipt", "ScheduledReceipt", "other-id"), CancellationToken.None));
         await Assert.ThrowsAsync<KnownException>(() => handler.Handle(new AcceptPlanningSuggestionCommand(
-            suggestion.Id, "BusinessErp", "PurchaseOrderLine", "PO-999:10"), CancellationToken.None));
+            suggestion.Id, "org-001", "env-dev", "BusinessErp", "PurchaseOrderLine", "PO-999:10"), CancellationToken.None));
         await Assert.ThrowsAsync<KnownException>(() => handler.Handle(new AcceptPlanningSuggestionCommand(
-            suggestion.Id, "BusinessErp", "PurchaseOrderLine", null), CancellationToken.None));
+            suggestion.Id, "org-001", "env-dev", "BusinessErp", "PurchaseOrderLine", null), CancellationToken.None));
     }
 
     [Fact]
@@ -1116,7 +1116,7 @@ public sealed class DemandPlanningEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var handler = new RejectPlanningSuggestionCommandHandler(dbContext);
 
-        await handler.Handle(new RejectPlanningSuggestionCommand(suggestion.Id, "planner.li", "demand-cancelled"), CancellationToken.None);
+        await handler.Handle(new RejectPlanningSuggestionCommand(suggestion.Id, "org-001", "env-dev", "planner.li", "demand-cancelled"), CancellationToken.None);
 
         Assert.Equal(PlanningSuggestionStatus.Rejected, suggestion.Status);
         Assert.Equal("demand-cancelled", suggestion.ReasonCode);
@@ -1133,8 +1133,8 @@ public sealed class DemandPlanningEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         var handler = new RejectPlanningSuggestionCommandHandler(dbContext);
 
-        await handler.Handle(new RejectPlanningSuggestionCommand(suggestion.Id, "planner.li", "demand-cancelled"), CancellationToken.None);
-        await handler.Handle(new RejectPlanningSuggestionCommand(suggestion.Id, "planner.li", "replayed-reason"), CancellationToken.None);
+        await handler.Handle(new RejectPlanningSuggestionCommand(suggestion.Id, "org-001", "env-dev", "planner.li", "demand-cancelled"), CancellationToken.None);
+        await handler.Handle(new RejectPlanningSuggestionCommand(suggestion.Id, "org-001", "env-dev", "planner.li", "replayed-reason"), CancellationToken.None);
 
         Assert.Equal(PlanningSuggestionStatus.Rejected, suggestion.Status);
         Assert.Equal("demand-cancelled", suggestion.ReasonCode);
@@ -1153,7 +1153,7 @@ public sealed class DemandPlanningEndpointContractTests
         var handler = new RejectPlanningSuggestionCommandHandler(dbContext);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
-            handler.Handle(new RejectPlanningSuggestionCommand(suggestion.Id, "planner.li", "too-late"), CancellationToken.None));
+            handler.Handle(new RejectPlanningSuggestionCommand(suggestion.Id, "org-001", "env-dev", "planner.li", "too-late"), CancellationToken.None));
 
         Assert.Equal("只有开放状态的计划建议才能拒绝。", exception.Message);
         Assert.Equal(PlanningSuggestionStatus.Accepted, suggestion.Status);
@@ -1164,15 +1164,90 @@ public sealed class DemandPlanningEndpointContractTests
     {
         var validator = new RejectPlanningSuggestionCommandValidator();
 
-        var missingReason = validator.Validate(new RejectPlanningSuggestionCommand(new(Guid.CreateVersion7()), "planner.li", ""));
-        var missingActor = validator.Validate(new RejectPlanningSuggestionCommand(new(Guid.CreateVersion7()), "", "demand-cancelled"));
-        var valid = validator.Validate(new RejectPlanningSuggestionCommand(new(Guid.CreateVersion7()), "planner.li", "demand-cancelled"));
+        var missingReason = validator.Validate(new RejectPlanningSuggestionCommand(new(Guid.CreateVersion7()), "org-001", "env-dev", "planner.li", ""));
+        var missingActor = validator.Validate(new RejectPlanningSuggestionCommand(new(Guid.CreateVersion7()), "org-001", "env-dev", "", "demand-cancelled"));
+        var valid = validator.Validate(new RejectPlanningSuggestionCommand(new(Guid.CreateVersion7()), "org-001", "env-dev", "planner.li", "demand-cancelled"));
 
         Assert.False(missingReason.IsValid);
         Assert.Contains(missingReason.Errors, x => string.Equals(x.PropertyName, nameof(RejectPlanningSuggestionCommand.Reason), StringComparison.OrdinalIgnoreCase));
         Assert.False(missingActor.IsValid);
         Assert.Contains(missingActor.Errors, x => string.Equals(x.PropertyName, nameof(RejectPlanningSuggestionCommand.RejectedBy), StringComparison.OrdinalIgnoreCase));
         Assert.True(valid.IsValid);
+    }
+
+    [Theory]
+    [InlineData("", "env-dev", "OrganizationId")]
+    [InlineData("org-001", "", "EnvironmentId")]
+    public void Suggestion_decisions_require_both_scope_dimensions(
+        string organizationId, string environmentId, string missingDimension)
+    {
+        var suggestionId = new PlanningSuggestionId(Guid.CreateVersion7());
+        var accept = new AcceptPlanningSuggestionCommandValidator().Validate(new AcceptPlanningSuggestionCommand(
+            suggestionId, organizationId, environmentId, "BusinessErp", "PurchaseRequisition", null));
+        var reject = new RejectPlanningSuggestionCommandValidator().Validate(new RejectPlanningSuggestionCommand(
+            suggestionId, organizationId, environmentId, "planner.li", "cancelled"));
+
+        Assert.Contains(accept.Errors, error => error.PropertyName == missingDimension);
+        Assert.Contains(reject.Errors, error => error.PropertyName == missingDimension);
+    }
+
+    [Theory]
+    [InlineData("accept", "org-001", "env-dev", "accepted")]
+    [InlineData("reject", "org-001", "env-dev", "rejected")]
+    [InlineData("accept", "org-002", "env-dev", "open")]
+    [InlineData("reject", "org-002", "env-dev", "open")]
+    [InlineData("accept", "org-001", "env-other", "open")]
+    [InlineData("reject", "org-001", "env-other", "open")]
+    public async Task Suggestion_decisions_follow_the_persisted_owner_scope(
+        string action, string organizationId, string environmentId, string expectedStatus)
+    {
+        var bridge = new CountingPlanningSuggestionDownstreamBridge();
+        await using var factory = new DemandPlanningLiveHttpTestFactory();
+        await using var host = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<IPlanningSuggestionDownstreamBridge>();
+            services.AddSingleton<IPlanningSuggestionDownstreamBridge>(bridge);
+        }));
+        using var client = host.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        var suggestion = PlanningSuggestion.Create(
+            "org-001", "env-dev", new(Guid.CreateVersion7()), "planned-purchase", "SKU-RM-1000", "pcs",
+            "SITE-01", 19m, new DateOnly(2026, 6, 1), new DateOnly(2026, 5, 27), "MRP-001");
+        using (var scope = host.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            dbContext.PlanningSuggestions.Add(suggestion);
+            await dbContext.SaveChangesAsync();
+        }
+
+        using var response = await client.PostAsJsonAsync(
+            $"/api/business/v1/planning/suggestions/{suggestion.Id}/{action}",
+            new
+            {
+                organizationId,
+                environmentId,
+                downstreamService = "BusinessErp",
+                downstreamDocumentType = "PurchaseRequisition",
+                rejectedBy = "planner.li",
+                reason = "demand-cancelled",
+            });
+        using var decision = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var allowed = expectedStatus != "open";
+        Assert.Equal(allowed, decision.RootElement.GetProperty("success").GetBoolean());
+        if (!allowed)
+            Assert.StartsWith("计划建议不存在", decision.RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
+
+        using var readback = await client.GetAsync(
+            $"/api/business/v1/planning/suggestions?organizationId=org-001&environmentId=env-dev&status={expectedStatus}");
+        Assert.Equal(HttpStatusCode.OK, readback.StatusCode);
+        using var result = JsonDocument.Parse(await readback.Content.ReadAsStringAsync());
+        var saved = Assert.Single(result.RootElement.GetProperty("data").EnumerateArray());
+        Assert.Equal(suggestion.Id.ToString(), saved.GetProperty("suggestionId").GetString());
+        Assert.Equal(expectedStatus == "rejected" ? "demand-cancelled" : "MRP-001",
+            saved.GetProperty("reasonCode").GetString());
+        var accepted = expectedStatus == "accepted";
+        Assert.Equal(accepted ? "PR-SHOULD-BE-CREATED" : null, saved.GetProperty("acceptedDownstreamDocumentId").GetString());
+        Assert.Equal(accepted ? 1 : 0, bridge.CreateCount);
     }
 
     [Fact]
