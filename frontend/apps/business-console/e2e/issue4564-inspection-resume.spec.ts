@@ -174,6 +174,7 @@ test('质检员重新进入工作台后续办本人检验并读取提交结果',
   const otherRow = page.getByRole('row').filter({ hasText: 'GR-OTHER' })
   await expect(otherRow).toBeVisible()
   await expect(otherRow.getByRole('button', { name: /开始检验|继续检验/ })).toHaveCount(0)
+  await expect(otherRow.getByRole('button', { name: '改派', exact: true })).toHaveCount(0)
   await ownRow.getByRole('button', { name: '继续检验' }).click()
   await expect(form.getByText('GR-RESUME', { exact: true })).toBeVisible()
   const resumedUrl = new URL(page.url())

@@ -515,7 +515,7 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
           <ArrowRightIcon aria-hidden="true" />
         </NvButton>
         <NvButton
-          v-if="isTaskClaimedByAnother(row)"
+          v-if="row.status === 'pending' && isTaskClaimedByAnother(row)"
           size="sm"
           variant="outline"
           @click="openReassignment(row)"
