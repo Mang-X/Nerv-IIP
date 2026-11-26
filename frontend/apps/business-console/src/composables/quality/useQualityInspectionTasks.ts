@@ -102,7 +102,7 @@ export function isInspectionTaskOverdue(
   now = new Date(),
 ) {
   return (
-    task.status === 'pending' &&
+    (task.status === 'pending' || task.status === 'in-progress') &&
     !!task.dueAtUtc &&
     new Date(task.dueAtUtc).getTime() < now.getTime()
   )
@@ -220,7 +220,8 @@ export function useQualityInspectionTasks(initialFilters: Partial<InspectionTask
   const scopeReady = computed(() => hasBusinessContext(filters))
   const currentResponse = useScopeBoundListResponse(
     () => tasksQuery.data.value,
-    () => `${filters.organizationId.trim()}:${filters.environmentId.trim()}`,
+    () =>
+      `${filters.organizationId.trim()}:${filters.environmentId.trim()}:${filters.status ?? ''}`,
     scopeReady,
   )
   const taskActions = useQualityInspectionTaskActions(filters)
