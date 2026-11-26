@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { shouldRetainPendingBusinessIntent } from '@nerv-iip/business-core'
 import type { NvDataTableColumn, NvMetricStripCell } from '@nerv-iip/ui'
 import { useErpPurchaseReceipts } from '@/composables/erp/useBusinessErp'
 import { useBusinessPartnerNames } from '@/composables/master-data/useBusinessPartnerNames'
@@ -7,7 +8,7 @@ import { usePagedList } from '@/composables/shared/usePagedList'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
-import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { notifyOperationFailure, notifySuccess, notifyWarning } from '@/utils/notify'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -184,7 +185,7 @@ function openDialog(row: (typeof rows.value)[number]) {
 
 async function submit() {
   const row = receiptRow.value
-  if (!row) return
+  if (!row || receipts.recordPurchaseReceiptPending.value) return
   showErrors.value = true
   if (!canSubmit.value) return
   try {
@@ -200,19 +201,15 @@ async function submit() {
       ],
     })
     open.value = false
-    // 我方收货单号由编码规则生成（#3900），收货后回显给用户。
-    const receiptNo = recorded?.purchaseReceiptNo
     notifySuccess(
-      receiptNo
-        ? `${row.purchaseOrderNo} 第 ${row.lineNo} 行已收货，收货单号 ${receiptNo}`
-        : `${row.purchaseOrderNo} 第 ${row.lineNo} 行已收货`,
+      `${row.purchaseOrderNo} 第 ${row.lineNo} 行已收货，收货单号 ${recorded.purchaseReceiptNo}`,
     )
   } catch (error) {
-    notifyOperationFailure(
-      '确认收货失败',
-      receipts.recordPurchaseReceiptError.value ?? error,
-      '确认收货失败，请稍后重试。',
-    )
+    if (shouldRetainPendingBusinessIntent(error)) {
+      notifyWarning('收货结果暂未确认，请保持原填写内容并再次确认收货。')
+      return
+    }
+    notifyOperationFailure('确认收货失败', error, '确认收货失败，请稍后重试。')
   }
 }
 </script>
