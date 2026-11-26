@@ -22,6 +22,7 @@ describe('WMS PC 服务端状态契约', () => {
     ])
     expect(WMS_COUNT_EXECUTION_STATUS_OPTIONS.map(({ value }) => value)).toEqual([
       'Open',
+      'PendingApproval',
       'Completed',
     ])
     expect(WMS_INBOUND_ORDER_STATUS_OPTIONS.map(({ value }) => value)).toEqual([

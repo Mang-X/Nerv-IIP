@@ -2324,6 +2324,31 @@ public sealed class CompleteCountExecutionCommandHandler
             var adjustment = await inventoryReservationClient.ConfirmCountAdjustmentAsync(
                 new WmsInventoryCountAdjustmentRequest(count.InventoryCountTaskId!, request.CountedQuantity, baseIdempotencyKey),
                 cancellationToken);
+            if (adjustment.Status == "pending-approval")
+            {
+                count.SubmitForApproval(request.CountedQuantity, request.ExpectedVersion);
+                var pendingReceipt = InventoryMovementRequest.RecordCountApprovalPending(
+                    count.OrganizationId,
+                    count.EnvironmentId,
+                    count.CountNo,
+                    baseIdempotencyKey,
+                    count.SkuCode,
+                    count.UomCode,
+                    count.SiteCode,
+                    count.LocationCode,
+                    WmsReceivingQualityStatuses.Qualified,
+                    "company",
+                    adjustment.VarianceQuantity,
+                    count.LotNo);
+                dbContext.InventoryMovementRequests.Add(pendingReceipt);
+                return new CompleteWmsMovementResult(pendingReceipt.Id, null);
+            }
+
+            if (adjustment.Status != "posted" || string.IsNullOrWhiteSpace(adjustment.MovementId))
+            {
+                throw new WmsUnprocessableException("库存盘点调整当前状态无法完成过账，请刷新后核实。");
+            }
+
             try
             {
                 count.Complete(request.CountedQuantity, request.ExpectedVersion);
@@ -2416,7 +2441,7 @@ public sealed class CompleteCountExecutionCommandHandler
     {
         var expectedVariance = request.CountedQuantity - count.ExpectedQuantity;
         if (count.CountedQuantity != request.CountedQuantity ||
-            replay.Quantity != expectedVariance ||
+            (count.Status != CountExecutionStatus.PendingApproval && replay.Quantity != expectedVariance) ||
             !string.Equals(replay.SkuCode, count.SkuCode, StringComparison.Ordinal) ||
             !string.Equals(replay.UomCode, count.UomCode, StringComparison.Ordinal) ||
             !string.Equals(replay.SiteCode, count.SiteCode, StringComparison.Ordinal) ||

@@ -8,7 +8,10 @@ import {
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, ref } from 'vue'
 import { RequestTimeoutError } from '@/api/request-timeout'
-import type { BusinessConsoleWmsCountExecutionItem } from '@nerv-iip/api-client'
+import {
+  BusinessOperationPendingError,
+  type BusinessConsoleWmsCountExecutionItem,
+} from '@nerv-iip/api-client'
 
 const push = vi.fn()
 const authPermissionCodes = ref(['business.inventory.counts.manage'])
@@ -441,6 +444,25 @@ describe('WMS 盘点', () => {
     await enterCount(wrapper, '8')
     const confirm = document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!
     expect(confirm.disabled).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('shows a neutral pending-approval acknowledgement after submission', async () => {
+    wmsState.completeCount.mockRejectedValueOnce(
+      new BusinessOperationPendingError('wms.count-execution.complete'),
+    )
+    const wrapper = mount(CountPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await enterCount(wrapper, '8')
+    document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    expect(document.body.querySelector('.nv-m-toast[role="status"]')?.textContent).toContain(
+      '待审批',
+    )
+    expect(wrapper.find('[data-result][data-status="success"]').exists()).toBe(false)
+    expect(document.querySelector('[data-testid="confirm-complete"]')).toBeNull()
+    expect(document.body.textContent).not.toContain('提交盘点失败')
     wrapper.unmount()
   })
 

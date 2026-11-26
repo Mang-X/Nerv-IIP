@@ -2001,6 +2001,47 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
+    public async Task Complete_count_accepts_pending_approval_and_replays_the_same_receipt()
+    {
+        await using var dbContext = CreateContext();
+        var inventoryResponse = new StubHttpMessageHandler(
+            """{"data":{"movementId":null,"varianceQuantity":15,"onHandQuantity":10,"status":"pending-approval","approvalChainId":"chain-count-001"},"success":true,"message":"","code":0}""");
+        using var httpClient = new HttpClient(inventoryResponse) { BaseAddress = new Uri("http://inventory.test") };
+        var inventory = new HttpWmsInventoryReservationClient(httpClient, new TestInternalServiceTokenProvider());
+        var countId = await new CreateCountExecutionCommandHandler(dbContext, new FakeWmsInventoryReservationClient("res-unused")).Handle(
+            new CreateCountExecutionCommand("org-001", "env-dev", "COUNT-APPROVAL-001", "SKU-FG-1000", "kg", "SITE-01", "LOC-A-01", 10m),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var count = await dbContext.CountExecutions.SingleAsync(x => x.Id == countId);
+        var command = new CompleteCountExecutionCommand(countId, 25m, "idem-count-approval-001")
+            .TrustedFor(dbContext, count);
+
+        var result = await new CompleteCountExecutionCommandHandler(dbContext, inventory).Handle(command, CancellationToken.None);
+        Assert.NotNull(result.RequestId);
+        Assert.Null(result.InventoryMovementId);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var readback = await new ListCountExecutionsQueryHandler(dbContext).Handle(
+            new ListCountExecutionsQuery("org-001", "env-dev", CountExecutionId: countId, SiteCodes: ["SITE-01"], SiteWideScope: true),
+            CancellationToken.None);
+        var item = Assert.Single(readback.Items);
+        Assert.Equal("PendingApproval", item.Status);
+        Assert.Equal(25m, item.CountedQuantity);
+        Assert.Null(item.CompletedAtUtc);
+        Assert.Equal("Pending", item.InventoryPostingStatus);
+        Assert.Null(item.InventoryMovementId);
+
+        var handler = new CompleteCountExecutionCommandHandler(dbContext, inventory);
+        Assert.Equal(result, await handler.Handle(command, CancellationToken.None));
+        await Assert.ThrowsAsync<WmsIdempotencyConflictException>(() =>
+            handler.Handle(command with { IdempotencyKey = "another-intent" }, CancellationToken.None));
+        await Assert.ThrowsAsync<WmsIdempotencyConflictException>(() =>
+            handler.Handle(command with { CountedQuantity = 23m }, CancellationToken.None));
+        Assert.Equal(1, inventoryResponse.CallCount);
+    }
+
+    [Fact]
     public async Task Complete_count_rejects_completed_status_before_inventory_side_effects()
     {
         await using var dbContext = CreateContext();
@@ -2946,8 +2987,11 @@ public sealed class WmsInventoryBoundaryTests
 
     private sealed class StubHttpMessageHandler(string json) : HttpMessageHandler
     {
+        public int CallCount { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            CallCount++;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(json, Encoding.UTF8, "application/json"),

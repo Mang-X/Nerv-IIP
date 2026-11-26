@@ -96,7 +96,11 @@ public sealed record WmsInventoryCountAdjustmentRequest(
     decimal CountedQuantity,
     string IdempotencyKey);
 
-public sealed record WmsInventoryCountAdjustmentResult(string MovementId, decimal VarianceQuantity, decimal OnHandQuantity);
+public sealed record WmsInventoryCountAdjustmentResult(
+    string? MovementId,
+    decimal VarianceQuantity,
+    decimal OnHandQuantity,
+    string Status = "posted");
 
 public interface IWmsInventoryReservationClient
 {
