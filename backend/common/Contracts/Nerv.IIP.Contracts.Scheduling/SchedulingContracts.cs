@@ -18,6 +18,17 @@ public static class SchedulingWorkbenchLimits
     /// </summary>
     public const int MaxOrderCount = 10;
 
+    public static int GetRevisionMaxOrderCount(string? planId) =>
+        TryGetInsertionJobId(planId, out _) ? SchedulingFirstPlanJobLimits.MaxOrderCount : MaxOrderCount;
+
+    public static bool TryGetInsertionJobId(string? planId, out Guid jobId)
+    {
+        const string prefix = "insertion-";
+        jobId = default;
+        return planId is not null && planId.StartsWith(prefix, StringComparison.Ordinal) &&
+            Guid.TryParseExact(planId.AsSpan(prefix.Length), "N", out jobId);
+    }
+
     /// <summary>
     /// 向 MES 拉取权威工单时的翻页页大小。
     ///

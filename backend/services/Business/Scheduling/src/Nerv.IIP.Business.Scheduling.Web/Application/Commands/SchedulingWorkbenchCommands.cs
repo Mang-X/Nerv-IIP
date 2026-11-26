@@ -106,7 +106,8 @@ public sealed class CreateSchedulePlanRevisionCommandValidator
         RuleFor(x => x.PlanId).NotEmpty().MaximumLength(128);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
-        RuleFor(x => x.IncludedOrderIds).NotEmpty().Must(x => x.Count <= SchedulingWorkbenchLimits.MaxOrderCount);
+        RuleFor(x => x.IncludedOrderIds).NotEmpty()
+            .Must((request, ids) => ids.Count <= SchedulingWorkbenchLimits.GetRevisionMaxOrderCount(request.PlanId));
         RuleFor(x => x.IncludedOrderIds).Must(x => x.Distinct(StringComparer.Ordinal).Count() == x.Count)
             .WithMessage("Included work-order ids must be distinct.");
         RuleForEach(x => x.LockedAssignments).ChildRules(assignment =>
@@ -131,8 +132,7 @@ public sealed class CreateSchedulePlanRevisionCommandHandler(
         CreateSchedulePlanRevisionCommand request,
         CancellationToken cancellationToken)
     {
-        if (request.PlanId.StartsWith("insertion-", StringComparison.Ordinal) &&
-            Guid.TryParseExact(request.PlanId["insertion-".Length..], "N", out var jobId))
+        if (SchedulingWorkbenchLimits.TryGetInsertionJobId(request.PlanId, out var jobId))
         {
             return await SaveInsertionCandidateAsync(request, jobId, cancellationToken);
         }

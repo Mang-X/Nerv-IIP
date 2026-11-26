@@ -18,7 +18,7 @@ namespace Nerv.IIP.Business.Scheduling.Web.Tests;
 public sealed partial class SchedulingFirstPlanJobPostgresTests
 {
     // #4230 / approved #3620 r1: persist the selected result, never solve a different plan or publish implicitly.
-    private static async Task VerifyInsertionCandidateSave()
+    private static async Task VerifyInsertionCandidateSave(int baselineOrderCount)
     {
         await SchedulingPostgresLaneDatabase.ResetSchemaAsync();
         var sample = ShockAbsorberSchedulingFixture.CreateProblem();
@@ -31,7 +31,7 @@ public sealed partial class SchedulingFirstPlanJobPostgresTests
         var problem = sample with
         {
             ProblemId = "save-insertion-baseline", AssemblyDependencies = [], QualityBlocks = [], UnavailabilityWindows = [],
-            Orders = Enumerable.Range(1, 3).Select(i => template with
+            Orders = Enumerable.Range(1, baselineOrderCount + 1).Where(i => i != 4).Select(i => template with
             {
                 OrderId = $"order-{i:D3}", IsRush = false, Priority = 0,
                 Operations = [operation with { OperationId = $"order-{i:D3}-op", DurationMinutes = 10,
@@ -48,6 +48,8 @@ public sealed partial class SchedulingFirstPlanJobPostgresTests
             freezeSettings: new SchedulingFreezeSettings(TimeSpan.Zero, new Dictionary<string, TimeSpan>()), publisher: publisher);
         await Migrate(factory);
         using var client = Client(factory);
+        await using var gateway = new GatewayJobFactory(client);
+        using var gatewayClient = GatewayClient(gateway);
         SchedulePlanContract original;
         await using (var scope = factory.Services.CreateAsyncScope())
             original = await scope.ServiceProvider.GetRequiredService<ISender>().Send(new CreateSchedulePlanCommand(problem));
@@ -74,10 +76,18 @@ public sealed partial class SchedulingFirstPlanJobPostgresTests
             var ids = problem.Orders.Select(x => x.OrderId).Append("order-004").ToArray();
             var input = new Nerv.IIP.Business.Scheduling.Web.Endpoints.Scheduling.CreateSchedulePlanRevisionRequest(
                 candidateId, problem.OrganizationId, problem.EnvironmentId, ids, []);
-            async Task<ResponseData<SchedulePlanRevisionContract>> Save(Nerv.IIP.Business.Scheduling.Web.Endpoints.Scheduling.CreateSchedulePlanRevisionRequest request)
+            async Task<(bool Success, SchedulePlanRevisionContract Data, string? Message)> Save(
+                Nerv.IIP.Business.Scheduling.Web.Endpoints.Scheduling.CreateSchedulePlanRevisionRequest request,
+                bool viaGateway = false)
             {
-                using var saved = await client.PostAsJsonAsync($"/api/business/v1/scheduling/plans/{request.PlanId}/revisions", request, SchedulingJson.Options);
-                return (await saved.Content.ReadFromJsonAsync<ResponseData<SchedulePlanRevisionContract>>(SchedulingJson.Options))!;
+                var http = viaGateway ? gatewayClient : client;
+                var prefix = viaGateway ? "/api/business-console/v1" : "/api/business/v1";
+                using var saved = await http.PostAsJsonAsync(
+                    $"{prefix}/scheduling/plans/{request.PlanId}/revisions", request, SchedulingJson.Options);
+                if (!saved.IsSuccessStatusCode)
+                    return (false, null!, await saved.Content.ReadAsStringAsync());
+                var envelope = (await saved.Content.ReadFromJsonAsync<ResponseData<SchedulePlanRevisionContract>>(SchedulingJson.Options))!;
+                return (envelope.Success, envelope.Data, envelope.Message);
             }
             Assert.False((await Save(input)).Success); // Running job cannot become a draft.
             source.Release.TrySetResult();
@@ -94,15 +104,33 @@ public sealed partial class SchedulingFirstPlanJobPostgresTests
             Assert.False((await Save(input with { OrganizationId = "other" })).Success);
             Assert.False((await Save(input with { EnvironmentId = "other" })).Success);
             Assert.False((await Save(input with { PlanId = $"insertion-{Guid.NewGuid():N}" })).Success);
-            var saved = await Save(input);
+            var saved = await Save(input, viaGateway: true);
             Assert.True(saved.Success, saved.Message);
             Assert.Equal(candidateId, saved.Data.Candidate.PlanId);
+            if (baselineOrderCount == 10)
+            {
+                var manual = input with { PlanId = original.PlanId };
+                var oversizedCandidate = input with
+                {
+                    IncludedOrderIds = Enumerable.Range(1, 501).Select(i => $"order-{i:D3}").ToArray()
+                };
+                foreach (var viaGateway in new[] { false, true })
+                {
+                    var manualFailure = await Save(manual, viaGateway);
+                    Assert.False(manualFailure.Success);
+                    Assert.Contains("includedOrderIds", manualFailure.Message, StringComparison.OrdinalIgnoreCase);
+                    var oversizedFailure = await Save(oversizedCandidate, viaGateway);
+                    Assert.False(oversizedFailure.Success);
+                    Assert.Contains("includedOrderIds", oversizedFailure.Message, StringComparison.OrdinalIgnoreCase);
+                }
+            }
             // The existing HTTP endpoint overlays live execution; it is separate from the saved placement.
             var draft = saved.Data.Candidate with
             {
                 Assignments = saved.Data.Candidate.Assignments.Select(x => x with { CurrentExecution = null }).ToArray()
             };
             Assert.Equal(SchedulePlanStatusContract.Generated, draft.Status);
+            Assert.Equal(ids.Order(StringComparer.Ordinal), draft.Assignments.Select(x => x.OrderId).Order(StringComparer.Ordinal));
             Assert.Equal(JsonSerializer.Serialize(result.Candidate.Assignments, SchedulingJson.Options), JsonSerializer.Serialize(draft.Assignments, SchedulingJson.Options));
             Assert.Equal(JsonSerializer.Serialize(result.Candidate.ResourceLoads.OrderBy(x => x.ResourceId), SchedulingJson.Options), JsonSerializer.Serialize(draft.ResourceLoads.OrderBy(x => x.ResourceId), SchedulingJson.Options));
             Assert.Equal(JsonSerializer.Serialize(result.Candidate.Conflicts.OrderBy(x => x.ConflictId), SchedulingJson.Options), JsonSerializer.Serialize(draft.Conflicts.OrderBy(x => x.ConflictId), SchedulingJson.Options));
