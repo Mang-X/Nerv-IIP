@@ -172,8 +172,8 @@ async function openCreateAndFill(wrapper: ReturnType<typeof mount>) {
   const selects = wrapper.findAll('select')
   // 顺序：物料、MBOM、工艺路线、状态筛选、resolve 物料……取表单内前三个。
   await selects[0]!.setValue('SKU-1')
-  await selects[1]!.setValue('MBOM-1')
-  await selects[2]!.setValue('RT-1')
+  await selects[1]!.setValue('MBOM-1:A')
+  await selects[2]!.setValue('RT-1:A')
   // 生效起：表单内第一个 date input。
   const dates = wrapper.findAll('input[type="date"]')
   await dates[0]!.setValue('2026-03-01')
@@ -229,8 +229,8 @@ describe('engineering production-versions page', () => {
     expect(stub.createProductionVersion).toHaveBeenCalledTimes(1)
     const body = stub.createProductionVersion.mock.calls[0]![0] as Record<string, unknown>
     expect(body.skuCode).toBe('SKU-1')
-    expect(body.mbomVersionId).toBe('MBOM-1')
-    expect(body.routingVersionId).toBe('RT-1')
+    expect(body.mbomVersionId).toBe('MBOM-1:A')
+    expect(body.routingVersionId).toBe('RT-1:A')
     expect(body.validFrom).toBe('2026-03-01')
     expect(body.lotSizeMin).toBe(20)
     expect(body.lotSizeMax).toBe(300)

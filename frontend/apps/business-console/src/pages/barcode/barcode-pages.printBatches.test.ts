@@ -325,7 +325,7 @@ describe('barcode pages', () => {
   it('offers only active rules that allow the chosen source type', async () => {
     barcode.extraRules = [
       COUNT_RULE,
-      { ...COUNT_RULE, barcodeRuleId: 'rule-off', ruleCode: 'OFF', status: 'disabled' },
+      { ...COUNT_RULE, barcodeRuleId: 'rule-off', ruleCode: 'OFF', status: 'inactive' },
     ]
     const wrapper = mountPrintBatches()
     await openCreateDialog(wrapper)
@@ -382,9 +382,9 @@ describe('barcode pages', () => {
     expect(barcode.createPrintBatch).not.toHaveBeenCalled()
   })
 
-  it('leaves disabled templates out of the picker', async () => {
+  it('leaves inactive templates out of the picker', async () => {
     barcode.extraTemplates = [
-      { ...LOT_TEMPLATE, templateId: 'tpl-off', templateName: '停用标签', status: 'disabled' },
+      { ...LOT_TEMPLATE, templateId: 'tpl-off', templateName: '停用标签', status: 'inactive' },
     ]
     const { NvEntityPicker: _realPicker, ...stubsWithRealPicker } = selectStubs
     const wrapper = mount(PrintBatchesPage, {

@@ -1,6 +1,10 @@
 <script setup lang="ts">
+import { openBusinessConsoleQualityNcrFromInspection } from '@nerv-iip/api-client'
+import { useAuthStore } from '@/stores/auth'
+import { RouterLink } from 'vue-router'
 import {
   NvButton,
+  NvInput,
   NvSheet,
   NvSheetContent,
   NvSheetDescription,
@@ -10,11 +14,11 @@ import {
   NvSpinner,
 } from '@nerv-iip/ui'
 import { PrinterIcon, RefreshCwIcon } from '@lucide/vue'
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { useQualityInspectionRecordDetail } from '@/composables/quality/useBusinessQuality'
 import { useSkuNames } from '@/composables/master-data/useSkuNames'
-import { notifyError } from '@/utils/notify'
+import { notifyError, notifySuccess } from '@/utils/notify'
 
 // 来源检验记录只读详情，从质检页抽出（路由页只负责按 ?inspectionRecordId= 编排开合，Vue best-practices §2）。
 const props = defineProps<{
@@ -53,6 +57,50 @@ watch(
   },
   { immediate: true },
 )
+
+const auth = useAuthStore()
+const defectReason = ref('')
+const openedNcrId = ref('')
+const openingNcr = ref(false)
+const canOpenNcr = computed(() =>
+  auth.principal?.permissionCodes?.includes('business.quality.ncr.manage') &&
+  record.value?.result === 'failed' &&
+  !record.value.nonconformanceReportId &&
+  !openedNcrId.value,
+)
+
+watch(() => [props.open, props.recordId, props.organizationId, props.environmentId], () => {
+  defectReason.value = ''
+  openedNcrId.value = ''
+})
+
+async function openNcr() {
+  const reason = defectReason.value.trim()
+  if (!canOpenNcr.value || !reason || openingNcr.value) return
+
+  openingNcr.value = true
+  const inspectionRecordId = props.recordId
+  const { organizationId, environmentId } = props
+  try {
+    const { data } = await openBusinessConsoleQualityNcrFromInspection({
+      path: { inspectionRecordId },
+      query: { organizationId, environmentId },
+      body: { defectReason: reason },
+      throwOnError: true,
+    })
+    if (!data.success || !data.data?.ncrId) throw data
+    if (props.recordId === inspectionRecordId && props.organizationId === organizationId &&
+        props.environmentId === environmentId) {
+      openedNcrId.value = data.data.ncrId
+      void refreshRecord()
+    }
+    notifySuccess('已开立不合格品报告。')
+  } catch (error) {
+    notifyError(error, '开立不合格品报告失败，请稍后重试。')
+  } finally {
+    openingNcr.value = false
+  }
+}
 
 function printRecord() {
   const printingClass = 'printing-inspection-record'
@@ -125,9 +173,21 @@ function printRecord() {
               <dd>{{ record.dispositionReason }}</dd>
             </template>
           </dl>
-          <p v-if="record.nonconformanceReportId" class="text-sm text-muted-foreground">
-            关联不合格品：{{ record.nonconformanceReportId }}
-          </p>
+          <RouterLink
+            v-if="openedNcrId || record.nonconformanceReportId"
+            data-print-hidden
+            class="text-sm underline"
+            :to="{ path: '/quality/ncrs', query: { ncrId: openedNcrId || record.nonconformanceReportId } }"
+          >
+            查看关联不合格品报告
+          </RouterLink>
+          <form v-else-if="canOpenNcr" data-print-hidden class="grid gap-2" @submit.prevent="openNcr">
+            <label for="inspection-defect-reason" class="text-sm font-medium">缺陷原因</label>
+            <NvInput id="inspection-defect-reason" v-model="defectReason" maxlength="200" required />
+            <NvButton type="submit" :disabled="openingNcr || !defectReason.trim()">
+              开立不合格品报告
+            </NvButton>
+          </form>
           <div v-if="(record.resultLines?.length ?? 0) > 0" class="grid gap-2">
             <span class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
               >特性实测值</span

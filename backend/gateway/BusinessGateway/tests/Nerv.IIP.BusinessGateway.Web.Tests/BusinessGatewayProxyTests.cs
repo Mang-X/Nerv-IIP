@@ -1809,6 +1809,36 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Quality_capa_close_forwards_scope_and_authorized_principal()
+    {
+        var quality = new RecordingQualityClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        const string capaId = "16f51ac6-cdae-488b-bfc2-70012f0882ac";
+
+        using var response = await client.PostAsJsonAsync($"/api/business-console/v1/quality/capas/{capaId}/close", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            closeApprovalChainId = "approval-001",
+            closedByUserId = "client-value",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", quality.LastInternalToken);
+        Assert.Equal("user-admin", quality.LastCloseCapaActor);
+        Assert.Equal(new BusinessConsoleCloseQualityCapaRequest(capaId, "org-001", "env-dev", "approval-001"),
+            quality.LastCloseCapaRequest);
+    }
+
+    [Fact]
     public async Task Quality_spc_analysis_facades_use_internal_service_token_for_downstream_business_service()
     {
         var quality = new RecordingQualityClient();
@@ -19118,6 +19148,21 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient, IBusiness
         BusinessConsoleVerifyQualityCapaEffectivenessRequest request,
         string actor,
         CancellationToken cancellationToken) => Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+
+    public BusinessConsoleCloseQualityCapaRequest? LastCloseCapaRequest { get; private set; }
+    public string? LastCloseCapaActor { get; private set; }
+
+    public Task<BusinessConsoleAcceptedResponse> CloseCorrectiveActionAsync(
+        string internalBearerToken,
+        BusinessConsoleCloseQualityCapaRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCloseCapaRequest = request;
+        LastCloseCapaActor = actor;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
 
     public Task<BusinessConsoleAcceptedResponse> CompleteCorrectiveActionItemAsync(
         string internalBearerToken,

@@ -1610,3 +1610,40 @@ public sealed class VerifyBusinessConsoleQualityCapaEffectivenessEndpoint(
             RequireAuthorizedPrincipalId(),
             cancellationToken);
 }
+
+[Tags("Business Console Quality")]
+[HttpPost("/api/business-console/v1/quality/capas/{correctiveActionId}/close")]
+[BusinessGatewayOperationId("closeBusinessConsoleQualityCapa")]
+public sealed class CloseBusinessConsoleQualityCapaEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessQualityClient quality,
+    IInternalServiceTokenProvider tokenProvider)
+    : AuthorizedBusinessProxyEndpoint<BusinessConsoleCloseQualityCapaRequest, BusinessConsoleAcceptedResponse>(
+        auth,
+        BusinessGatewayPermissions.QualityNcrManage)
+{
+    protected override string OrganizationId(BusinessConsoleCloseQualityCapaRequest request) => request.OrganizationId;
+    protected override string EnvironmentId(BusinessConsoleCloseQualityCapaRequest request) => request.EnvironmentId;
+    protected override string ResourceType(BusinessConsoleCloseQualityCapaRequest request) => "capa";
+    protected override string? ResourceId(BusinessConsoleCloseQualityCapaRequest request) => request.CorrectiveActionId;
+
+    protected override Task<BusinessConsoleAcceptedResponse> ForwardAsync(
+        BusinessConsoleCloseQualityCapaRequest request,
+        string bearerToken,
+        CancellationToken cancellationToken) =>
+        quality.CloseCorrectiveActionAsync(
+            tokenProvider.BearerToken,
+            request,
+            RequireAuthorizedPrincipalId(),
+            cancellationToken);
+}
+
+public sealed class BusinessConsoleCloseQualityCapaRequestValidator : Validator<BusinessConsoleCloseQualityCapaRequest>
+{
+    public BusinessConsoleCloseQualityCapaRequestValidator()
+    {
+        RuleFor(x => x.CorrectiveActionId).Must(value => Guid.TryParse(value, out var id) && id != Guid.Empty);
+        RuleFor(x => x.OrganizationId).NotEmpty();
+        RuleFor(x => x.EnvironmentId).NotEmpty();
+    }
+}

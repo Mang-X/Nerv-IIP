@@ -138,17 +138,17 @@ function skuLabel(code?: string | null) {
 
 const mbomOptions = computed(() =>
   mboms.value
-    .filter((m) => m.bomCode)
+    .filter((m) => m.bomCode && m.revision)
     .map((m) => ({
-      value: m.bomCode as string,
+      value: `${m.bomCode}:${m.revision}`,
       label: `${m.bomCode} · ${m.revision ?? '—'}${m.skuCode ? ` · ${skuLabel(m.skuCode)}` : ''}`,
     })),
 )
 const routingOptions = computed(() =>
   routings.value
-    .filter((r) => r.routingCode)
+    .filter((r) => r.routingCode && r.revision)
     .map((r) => ({
-      value: r.routingCode as string,
+      value: `${r.routingCode}:${r.revision}`,
       label: `${r.routingCode} · ${r.revision ?? '—'}${r.skuCode ? ` · ${skuLabel(r.skuCode)}` : ''}`,
     })),
 )

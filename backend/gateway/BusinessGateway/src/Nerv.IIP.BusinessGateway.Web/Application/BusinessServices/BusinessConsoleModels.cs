@@ -1772,6 +1772,12 @@ public sealed record BusinessConsoleVerifyQualityCapaEffectivenessRequest(
     DateTimeOffset VerifiedAtUtc,
     string EffectivenessInspectionRecordId);
 
+public sealed record BusinessConsoleCloseQualityCapaRequest(
+    [property: RouteParam] string CorrectiveActionId,
+    string OrganizationId,
+    string EnvironmentId,
+    string? CloseApprovalChainId);
+
 public sealed record BusinessConsoleCompleteQualityCapaActionRequest(
     [property: RouteParam] string CorrectiveActionId,
     [property: RouteParam] string CorrectiveActionItemId,

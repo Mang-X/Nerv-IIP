@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import {
+  closeBusinessConsoleQualityCapa,
+  completeBusinessConsoleQualityCapaAction,
+  verifyBusinessConsoleQualityCapaEffectiveness,
+} from '@nerv-iip/api-client'
+import { useAuthStore } from '@/stores/auth'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
@@ -13,9 +19,10 @@ import {
 import { usePagedList } from '@/composables/shared/usePagedList'
 import { useQualityReadFaceCatalog } from '@/composables/quality/useQualityPickerCatalog'
 import { formatDate, formatDateTime } from '@/utils/format'
-import { friendlyErrorMessage } from '@/utils/notify'
+import { friendlyErrorMessage, notifyError, notifySuccess } from '@/utils/notify'
 import {
   NvButton,
+  NvInput,
   NvDataTable,
   NvMetricCard,
   NvPageHeader,
@@ -41,8 +48,8 @@ import {
   ShieldCheckIcon,
   TriangleAlertIcon,
 } from '@lucide/vue'
-import { computed, shallowRef, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { computed, ref, shallowRef, watch } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
 
 definePage({
   meta: {
@@ -64,6 +71,11 @@ const {
   capaOverdueCount,
   refreshCapas,
 } = useQualityCapas()
+
+const route = useRoute()
+watch(() => route.query.sourceNcrId, (id) => {
+  filters.sourceNcrId = typeof id === 'string' ? id : undefined
+}, { immediate: true })
 
 const paging = usePagedList(filters, {
   initialPageSize: '20',
@@ -109,7 +121,7 @@ const listErrorMessage = computed(() =>
 // 详情抽屉：列表行给出即时上下文，明细项以单据详情读面为准。
 const detailOpen = shallowRef(false)
 const selectedCapa = shallowRef<QualityCapaItem>()
-const { capaDetail, capaDetailError, capaDetailPending } = useQualityCapaDetail(() => ({
+const { capaDetail, capaDetailError, capaDetailPending, refreshCapaDetail } = useQualityCapaDetail(() => ({
   organizationId: filters.organizationId,
   environmentId: filters.environmentId,
   correctiveActionId: detailOpen.value ? (selectedCapa.value?.correctiveActionId ?? '') : '',
@@ -132,6 +144,66 @@ watch(detailOpen, (open) => {
 function openCapa(row: QualityCapaItem) {
   selectedCapa.value = row
   detailOpen.value = true
+}
+
+const auth = useAuthStore()
+const canManageCapa = computed(() => auth.principal?.permissionCodes?.includes('business.quality.ncr.manage'))
+const capaWritePending = ref(false)
+const verificationRecordId = ref('')
+const verificationResult = ref('')
+const closeApprovalChainId = ref('')
+const canVerifyCapa = computed(() =>
+  detailCapa.value?.status === 'open' &&
+  detailActions.value.some((row) => row.actionType === 'corrective' || row.actionType === 'preventive') &&
+  detailActions.value.every((row) => row.status === 'completed'),
+)
+
+watch(() => selectedCapa.value?.correctiveActionId, () => {
+  verificationRecordId.value = ''
+  verificationResult.value = ''
+  closeApprovalChainId.value = ''
+})
+
+async function submitCapaAction(action: 'complete' | 'verify' | 'close', actionId?: string | null) {
+  const correctiveActionId = detailCapa.value?.correctiveActionId
+  if (!canManageCapa.value || !correctiveActionId || capaWritePending.value) return
+
+  const body = { organizationId: filters.organizationId, environmentId: filters.environmentId }
+  const path = { correctiveActionId }
+  const now = new Date().toISOString()
+  capaWritePending.value = true
+  try {
+    if (action === 'verify') {
+      const result = verificationResult.value.trim()
+      const effectivenessInspectionRecordId = verificationRecordId.value.trim()
+      if (!canVerifyCapa.value || !result || !effectivenessInspectionRecordId) return
+      const { data } = await verifyBusinessConsoleQualityCapaEffectiveness({
+        path, body: { ...body, result, effectivenessInspectionRecordId, verifiedAtUtc: now }, throwOnError: true,
+      })
+      if (!data.success || !data.data?.accepted) throw data
+      notifySuccess('CAPA 效果验证已登记。')
+    } else if (action === 'close') {
+      const { data } = await closeBusinessConsoleQualityCapa({
+        path, body: { ...body, closeApprovalChainId: closeApprovalChainId.value.trim() || undefined }, throwOnError: true,
+      })
+      if (!data.success || !data.data?.accepted) throw data
+      notifySuccess('CAPA 已关闭。')
+    } else {
+      if (!actionId) return
+      const { data } = await completeBusinessConsoleQualityCapaAction({
+        path: { ...path, correctiveActionItemId: actionId },
+        body: { ...body, completedAtUtc: now },
+        throwOnError: true,
+      })
+      if (!data.success || !data.data?.accepted) throw data
+      notifySuccess('CAPA 措施已完成。')
+    }
+    await Promise.all([refreshCapaDetail(), refreshCapas()])
+  } catch (error) {
+    notifyError(error, '更新 CAPA 失败，请稍后重试。')
+  } finally {
+    capaWritePending.value = false
+  }
 }
 
 function actionProgress(row: QualityCapaItem) {
@@ -420,12 +492,36 @@ function actionRowKey(row: QualityCapaActionItem) {
                       row.status === 'completed' ? 'success' : row.overdue ? 'danger' : 'warning'
                     "
                   />
+                  <NvButton
+                    v-if="canManageCapa && detailCapa.status === 'open' && row.status !== 'completed'"
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    :disabled="capaWritePending"
+                    @click="submitCapaAction('complete', row.correctiveActionItemId)"
+                  >
+                    完成措施
+                  </NvButton>
                 </template>
               </NvDataTable>
             </section>
 
             <section class="grid grid-cols-1 gap-2 [&>*]:min-w-0">
               <h3 class="text-sm font-semibold text-foreground">效果验证与关单</h3>
+              <form v-if="canManageCapa && canVerifyCapa" class="grid gap-2" @submit.prevent="submitCapaAction('verify')">
+                <label for="capa-verification-record" class="text-sm font-medium">合格的验证检验记录编号</label>
+                <NvInput id="capa-verification-record" v-model="verificationRecordId" required />
+                <label for="capa-verification-result" class="text-sm font-medium">验证结论</label>
+                <NvInput id="capa-verification-result" v-model="verificationResult" required />
+                <NvButton type="submit" :disabled="capaWritePending || !verificationRecordId.trim() || !verificationResult.trim()">
+                  登记效果验证
+                </NvButton>
+              </form>
+              <form v-if="canManageCapa && detailCapa.status === 'effectiveness-verified'" class="grid gap-2" @submit.prevent="submitCapaAction('close')">
+                <label for="capa-close-approval" class="text-sm font-medium">关闭审批链编号（要求审批时填写）</label>
+                <NvInput id="capa-close-approval" v-model="closeApprovalChainId" />
+                <NvButton type="submit" :disabled="capaWritePending">关闭 CAPA</NvButton>
+              </form>
               <dl class="grid gap-3 sm:grid-cols-2">
                 <div class="rounded-lg border bg-card p-3 sm:col-span-2">
                   <dt class="text-xs text-muted-foreground">效果验证结论</dt>

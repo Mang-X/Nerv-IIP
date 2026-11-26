@@ -75,7 +75,7 @@ const NON_BUSINESS_SOURCE_TYPES = new Set(['facade'])
 
 const STATUS_OPTIONS = [
   { value: 'active', label: '启用' },
-  { value: 'disabled', label: '停用' },
+  { value: 'inactive', label: '停用' },
 ]
 
 // 校验规则是受控枚举：后端只识别 `gs1-mod10`（GS1 类条码强制），其余一律按不校验处理，
@@ -210,7 +210,7 @@ function sourceLabels(values?: readonly string[] | null) {
 }
 
 function statusLabel(value?: string | null) {
-  return value === 'disabled' ? '停用' : '启用'
+  return value === 'inactive' ? '停用' : '启用'
 }
 
 function firstQuery(value: unknown) {
@@ -241,7 +241,7 @@ function openEdit(row: BusinessConsoleBarcodeRuleItem) {
     checksumRule: row.checksumRule ?? 'none',
     gs1CompanyPrefixLength: row.gs1CompanyPrefixLength ? String(row.gs1CompanyPrefixLength) : '',
     allowedSourceDocumentTypes: [...(row.allowedSourceDocumentTypes ?? [])],
-    status: row.status === 'disabled' ? 'disabled' : 'active',
+    status: row.status === 'inactive' ? 'inactive' : 'active',
   })
   editingRuleCode.value = row.ruleCode ?? null
   showErrors.value = false
@@ -502,7 +502,7 @@ async function submitRule() {
       </template>
       <template #cell-status="{ row }">
         <NvStatusBadge
-          :value="row.status === 'disabled' ? 'disabled' : 'active'"
+          :value="row.status === 'inactive' ? 'inactive' : 'active'"
           :label="statusLabel(row.status)"
         />
       </template>

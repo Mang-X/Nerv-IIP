@@ -377,7 +377,7 @@ public sealed class GetEngineeringChangeImpactPreviewQueryHandler(ApplicationDbC
 
         foreach (var affected in request.AffectedVersions)
         {
-            var kind = NormalizeVersionKind(affected.VersionKind);
+            var kind = EngineeringChangeVersionKind.Normalize(affected.VersionKind);
             var versionId = NormalizeVersionId(kind, affected.VersionId);
             AddNode(nodes, kind, versionId, DisplayName(kind, versionId), "direct", null, null, ConsoleRoute(kind, versionId));
 
@@ -569,18 +569,6 @@ public sealed class GetEngineeringChangeImpactPreviewQueryHandler(ApplicationDbC
         string? relatedVersionId)
     {
         risks.TryAdd($"{code}:{relatedVersionId}", new EngineeringChangeImpactRisk(code, severity, message, relatedVersionId));
-    }
-
-    private static string NormalizeVersionKind(string kind)
-    {
-        var normalized = kind.Trim().Replace("_", "-", StringComparison.Ordinal).ToLowerInvariant();
-        return normalized switch
-        {
-            "engineeringbom" or "engineering-bom" => "engineering-bom",
-            "manufacturingbom" or "manufacturing-bom" => "manufacturing-bom",
-            "productionversion" or "production-version" => "production-version",
-            _ => normalized
-        };
     }
 
     private static string NormalizeVersionId(string kind, string versionId)

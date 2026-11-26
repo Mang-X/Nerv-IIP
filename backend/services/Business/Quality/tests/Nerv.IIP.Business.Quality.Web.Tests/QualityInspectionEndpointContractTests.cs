@@ -1010,27 +1010,30 @@ public sealed class QualityInspectionEndpointContractTests
             10m,
             "BATCH-001",
             null,
-            [InspectionResultLineInput.Fail("coa", "mismatch", "wrong-spec", 10m, ["file-photo-001"])],
+            [InspectionResultLineInput.Fail("coa", "mismatch", "wrong-spec", 2m, ["file-photo-001"])],
             "Supplier certificate mismatch",
             ["file-mrb-001"]);
         dbContext.InspectionRecords.Add(record);
         await dbContext.SaveChangesAsync();
 
+        using var commandScope = provider.CreateScope();
+        var commandDb = commandScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var handler = new OpenNcrFromInspectionCommandHandler(
-            new InspectionRecordRepository(dbContext),
-            new NonconformanceReportRepository(dbContext),
+            new InspectionRecordRepository(commandDb),
+            new NonconformanceReportRepository(commandDb),
             new FixedNonconformanceReportCodeGenerator());
 
         var ncrId = await handler.Handle(
             new OpenNcrFromInspectionCommand(record.Id, "Supplier certificate mismatch", ["file-photo-001"]),
             CancellationToken.None);
-        await dbContext.SaveChangesAsync();
+        await commandDb.SaveChangesAsync();
 
-        var ncr = Assert.Single(dbContext.NonconformanceReports);
+        var ncr = Assert.Single(commandDb.NonconformanceReports);
         Assert.Equal(ncr.Id, ncrId);
         Assert.Equal(record.Id, ncr.SourceInspectionRecordId);
         Assert.Equal("RCV-001", ncr.SourceDocumentId);
-        Assert.Equal(ncr.Id.ToString(), record.NonconformanceReportId);
+        Assert.Equal(2m, ncr.DefectQuantity);
+        Assert.Equal(ncr.Id.ToString(), Assert.Single(commandDb.InspectionRecords).NonconformanceReportId);
     }
 
     [Fact]
@@ -1630,8 +1633,8 @@ public sealed class QualityInspectionEndpointContractTests
     {
         var services = new ServiceCollection();
         services.AddMediatR(configuration => configuration.RegisterServicesFromAssembly(typeof(Program).Assembly));
-        services.AddDbContext<ApplicationDbContext>(options =>
-            options.UseInMemoryDatabase($"quality-inspection-api-contract-{Guid.NewGuid():N}"));
+        var databaseName = $"quality-inspection-api-contract-{Guid.NewGuid():N}";
+        services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase(databaseName));
         return services.BuildServiceProvider();
     }
 

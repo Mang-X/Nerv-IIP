@@ -1,4 +1,5 @@
 using System.Net;
+using Nerv.IIP.Business.Quality.Web.Application.Errors;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
@@ -61,8 +62,8 @@ public sealed class QualityNcrEvidenceTests
             existing ? ["good-file"] : ["bad-file"], []);
 
         var exception = await Record.ExceptionAsync(() => handler.Handle(command, CancellationToken.None));
-        if (failure is "missing" or "metadata-failure") Assert.IsType<HttpRequestException>(exception);
-        else Assert.IsType<KnownException>(exception);
+        if (failure == "metadata-failure") Assert.IsType<HttpRequestException>(exception);
+        else Assert.IsType<QualityUnprocessableException>(exception);
         Assert.Equal(0, automation.Calls);
         Assert.Empty(ncr.GetDomainEvents());
         // 即使调用方随后保存同一 DbContext，拒绝路径也不能留下部分变更。

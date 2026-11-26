@@ -30,6 +30,10 @@ const filters = reactive({
 })
 const impactPreview = shallowRef()
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { permissionCodes: [] } }),
+}))
+
 vi.mock('@/composables/engineering', () => ({
   useEngineeringChanges: () => ({
     changes: computed(() => [changeRow]),
@@ -215,10 +219,16 @@ describe('engineering eco page', () => {
     expect(wrapper.text()).toContain('已发布')
   })
 
-  it('状态筛选只暴露「已发布」，不假造草稿/待审状态', async () => {
-    const wrapper = mount(EcoPage, { global: { stubs: { ...layoutStub } } })
+  it('状态筛选包含计划生效与已发布', async () => {
+    const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
     await flushPromises()
     const text = wrapper.text()
+    expect(text).toContain('计划生效')
+    const statusSelect = wrapper.findAll('select').find((select) => select.find('option[value="Scheduled"]').exists())!
+    await statusSelect.setValue('Scheduled')
+    expect(filters.status).toBe('Scheduled')
+    await statusSelect.setValue('Published')
+    expect(filters.status).toBe('Published')
     expect(text).not.toContain('草稿')
     expect(text).not.toContain('待审')
   })
@@ -378,8 +388,8 @@ describe('engineering eco page', () => {
       reason: '更换供应商物料',
       status: 'Released',
       affectedVersions: [
-        { versionKind: 'ManufacturingBom', versionId: 'MBOM-VER-9' },
-        { versionKind: 'ProductionVersion', versionId: 'PV-1' },
+        { versionKind: 'manufacturing-bom', versionId: 'MBOM-VER-9' },
+        { versionKind: 'production-version', versionId: 'PV-1' },
         { versionKind: 'ProductionVersion', versionId: 'PV-GONE' },
       ],
     })

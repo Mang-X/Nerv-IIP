@@ -367,7 +367,14 @@ public sealed class InspectionRecord : Entity<InspectionRecordId>, IAggregateRoo
         UomCode = stockRelease.UomCode;
         SiteCode = stockRelease.SiteCode;
         LocationCode = stockRelease.LocationCode;
-        SourceQualityStatus = stockRelease.SourceQualityStatus;
+        SourceQualityStatus = stockRelease.SourceQualityStatus.Trim().ToLowerInvariant() switch
+        {
+            "unrestricted" or "qualified" or "available" => "unrestricted",
+            "quality" or "inspection" or "quality-inspection" => "quality",
+            "restricted" or "conditional-release" => "restricted",
+            "blocked" or "rejected" => "blocked",
+            _ => throw new KnownException("库存放行的来源质量状态无效，请检查检验记录的库存信息。"),
+        };
         OwnerType = stockRelease.OwnerType;
         OwnerId = stockRelease.OwnerId;
     }

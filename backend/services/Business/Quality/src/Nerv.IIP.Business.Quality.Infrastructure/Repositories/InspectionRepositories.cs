@@ -76,6 +76,10 @@ public interface IInspectionRecordRepository : IRepository<InspectionRecord, Ins
         string environmentId,
         CancellationToken cancellationToken = default);
 
+    Task<InspectionRecord?> GetWithResultLinesAsync(
+        InspectionRecordId id,
+        CancellationToken cancellationToken = default);
+
     Task<InspectionRecord?> FindByReinspectionOfAsync(
         InspectionRecordId inspectionRecordId,
         CancellationToken cancellationToken = default);
@@ -125,6 +129,15 @@ public sealed class InspectionRecordRepository(ApplicationDbContext context)
                 && x.OrganizationId == organizationId
                 && x.EnvironmentId == environmentId,
             cancellationToken);
+    }
+
+    public Task<InspectionRecord?> GetWithResultLinesAsync(
+        InspectionRecordId id,
+        CancellationToken cancellationToken = default)
+    {
+        return DbContext.InspectionRecords
+            .Include(x => x.ResultLines)
+            .SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
     }
 
     public Task<InspectionRecord?> FindByReinspectionOfAsync(

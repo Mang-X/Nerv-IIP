@@ -41,6 +41,10 @@ const state = vi.hoisted(() => ({
   },
 }))
 
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { permissionCodes: [] } }),
+}))
+
 vi.mock('@/composables/quality/useBusinessQualityLedgers', () => ({
   capaActionTypeLabel: (value?: string) => value ?? '未知',
   capaStatusLabel: (value?: string) => value ?? '未知',
@@ -97,6 +101,7 @@ vi.mock('@/composables/shared/usePagedList', () => ({
 }))
 
 vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: {} }),
   RouterLink: { props: ['to'], template: '<a><slot /></a>' },
 }))
 

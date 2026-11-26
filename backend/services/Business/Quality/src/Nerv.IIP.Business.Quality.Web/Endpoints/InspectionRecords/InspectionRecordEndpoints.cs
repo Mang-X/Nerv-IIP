@@ -45,7 +45,9 @@ public sealed record CreateReinspectionResponse(
 public sealed record OpenNcrFromInspectionRequest(
     InspectionRecordId InspectionRecordId,
     string DefectReason,
-    IReadOnlyCollection<string>? AttachmentFileIds);
+    IReadOnlyCollection<string>? AttachmentFileIds,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
 
 public sealed record OpenNcrFromInspectionResponse(NonconformanceReportId NcrId);
 
@@ -137,7 +139,9 @@ public sealed class OpenNcrFromInspectionEndpoint(ISender sender)
         var ncrId = await sender.Send(new OpenNcrFromInspectionCommand(
             req.InspectionRecordId,
             req.DefectReason,
-            req.AttachmentFileIds ?? []), ct);
+            req.AttachmentFileIds ?? [],
+            req.OrganizationId,
+            req.EnvironmentId), ct);
         await Send.OkAsync(new OpenNcrFromInspectionResponse(ncrId).AsResponseData(), cancellation: ct);
     }
 }
