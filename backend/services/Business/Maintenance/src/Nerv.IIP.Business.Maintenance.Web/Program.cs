@@ -84,6 +84,7 @@ try
         .Validate(x => x.DefaultDowntimeMinutes > 0, "Default downtime minutes must be positive.")
         .ValidateOnStart();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, MaintenanceIntegrationEventDeadLetterStore>();
+    builder.Services.AddScoped<IntegrationEventCapFailureDeadLetterer>();
     builder.Services.AddIntegrationEventDeadLetterEndpoints();
     builder.Services.AddScoped<OpenWorkOrderWhenAlarmRaisedHandler>();
     builder.Services.AddScoped<MarkWorkOrderAlarmClearedHandler>();

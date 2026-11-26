@@ -96,6 +96,7 @@ try
         WmsFacts.ServiceName);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddScoped<IntegrationEventCapFailureDeadLetterer>();
     builder.Services.AddIntegrationEventDeadLetterEndpoints();
     builder.Services.AddWmsDeadLetterReplay();
     builder.Services.AddHttpClient<IWcsCancellationAdapter, HttpWcsCancellationAdapter>().UseHttpClientMetrics();
@@ -117,6 +118,7 @@ try
         builder.Services.AddCap(x =>
         {
             x.Version = builder.Configuration["Cap:Version"] ?? "v1";
+            x.UseIntegrationEventDeadLetterOnFailedThreshold();
             x.UseEntityFramework<ApplicationDbContext>();
             x.JsonSerializerOptions.AddNetCorePalJsonConverters();
             x.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);

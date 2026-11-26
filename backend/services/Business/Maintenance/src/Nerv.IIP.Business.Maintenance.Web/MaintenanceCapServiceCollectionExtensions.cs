@@ -46,6 +46,7 @@ public static class MaintenanceCapServiceCollectionExtensions
         services.AddCap(x =>
         {
             x.Version = configuration["Cap:Version"] ?? "v1";
+            x.UseIntegrationEventDeadLetterOnFailedThreshold();
             x.UseEntityFramework<ApplicationDbContext>();
             x.JsonSerializerOptions.AddNetCorePalJsonConverters();
             x.UseConfiguredTransport(configuration, environmentName);

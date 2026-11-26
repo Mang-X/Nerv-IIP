@@ -32,6 +32,30 @@ public sealed class IntegrationEventDeadLetterEndpointCoverageTests
         @"Add(?:Scoped|Singleton|Transient)<\s*" + StoreInterfaceName + @"\s*,",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    private static readonly Regex FailedThresholdCallbackRegistration = new(
+        @"^\s*(?:builder\.Services|services)\.AddCap\(\s*(?<options>\w+)\s*=>\s*\{[^{}]*?^\s*\k<options>\.UseIntegrationEventDeadLetterOnFailedThreshold\(\);",
+        RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
+    private static readonly Regex FailureDeadLettererRegistration = new(
+        @"^\s*(?:builder\.Services|services)\.AddScoped<IntegrationEventCapFailureDeadLetterer>\(\);",
+        RegexOptions.Multiline | RegexOptions.CultureInvariant);
+
+    [Fact]
+    public void Every_service_registering_a_dead_letter_store_wires_cap_retry_exhaustion()
+    {
+        var registering = DiscoverServices().Where(service => service.RegistersStore).ToArray();
+        Assert.NotEmpty(registering);
+
+        var uncovered = registering
+            .Where(service => !service.WiresCapRetryExhaustion)
+            .Select(service => service.Name)
+            .ToArray();
+
+        Assert.True(uncovered.Length == 0,
+            "下列服务注册了死信存储，但缺少 CAP 阈值回调或回调所需的死信写入器（#3741）："
+            + string.Join("、", uncovered));
+    }
+
     [Fact]
     public void Every_service_registering_a_dead_letter_store_exposes_dead_letter_endpoints()
     {
@@ -175,6 +199,8 @@ public sealed class IntegrationEventDeadLetterEndpointCoverageTests
             Path.GetFileName(serviceRoot),
             sources.Any(source => StoreRegistration.IsMatch(source.Text)),
             sources.Any(source => source.Text.Contains(StoreInterfaceName, StringComparison.Ordinal)),
+            sources.Any(source => FailedThresholdCallbackRegistration.IsMatch(source.Text))
+                && sources.Any(source => FailureDeadLettererRegistration.IsMatch(source.Text)),
             usesSharedModule || hasLocalDeadLetterEndpoint,
             declaresRouteGroup,
             localRoutePrefixes);
@@ -201,6 +227,7 @@ public sealed class IntegrationEventDeadLetterEndpointCoverageTests
         string Name,
         bool RegistersStore,
         bool MentionsStore,
+        bool WiresCapRetryExhaustion,
         bool ExposesEndpoints,
         bool DeclaresRouteGroup,
         IReadOnlyList<string> LocalDeadLetterRoutePrefixes);

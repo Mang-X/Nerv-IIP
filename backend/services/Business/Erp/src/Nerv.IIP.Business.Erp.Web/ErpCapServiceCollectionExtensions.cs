@@ -46,6 +46,7 @@ public static class ErpCapServiceCollectionExtensions
         {
             x.Version = configuration["Cap:Version"] ?? "v1";
             x.UseConfiguredRecovery(configuration);
+            x.UseIntegrationEventDeadLetterOnFailedThreshold();
             x.UseEntityFramework<ApplicationDbContext>();
             x.JsonSerializerOptions.AddNetCorePalJsonConverters();
             x.UseConfiguredTransport(configuration, environmentName);
