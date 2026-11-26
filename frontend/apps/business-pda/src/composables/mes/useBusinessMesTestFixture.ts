@@ -96,6 +96,7 @@ vi.mock('@nerv-iip/api-client', () => ({
       environmentId: query.environmentId,
     },
   ]),
+  getBusinessConsoleMesMaterialIssueRequest: vi.fn(),
   listBusinessConsoleMesMaterialIssueRequests: vi.fn(),
   listBusinessConsoleMesOperationTasks: vi.fn(),
   listBusinessConsoleMesReportableOperationTasks: vi.fn(),

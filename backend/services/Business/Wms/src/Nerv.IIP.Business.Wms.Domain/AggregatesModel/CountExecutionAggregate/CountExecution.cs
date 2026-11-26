@@ -8,6 +8,8 @@ public enum CountExecutionStatus
 {
     Open = 0,
     Completed = 1,
+    PendingApproval = 2,
+    RecountRequired = 3,
 }
 
 public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
@@ -118,12 +120,56 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         InventoryCountTaskId = normalizedCountTaskId;
     }
 
-    public void Complete(decimal countedQuantity, long expectedVersion)
+    public void SubmitForApproval(decimal countedQuantity, long expectedVersion, decimal inventoryVariance)
+    {
+        RecordCount(countedQuantity, expectedVersion, inventoryVariance);
+        Status = CountExecutionStatus.PendingApproval;
+        AdvanceVersion();
+    }
+
+    public void Complete(decimal countedQuantity, long expectedVersion, decimal? inventoryVariance = null)
+    {
+        RecordCount(countedQuantity, expectedVersion, inventoryVariance);
+        MarkCompleted(DateTime.UtcNow);
+    }
+
+    public void ApplyPostedAdjustment(DateTime postedAtUtc, decimal inventoryVariance)
+    {
+        if (Status != CountExecutionStatus.PendingApproval)
+        {
+            throw new InvalidOperationException("Only pending count executions can accept an approval posting.");
+        }
+
+        ExpectedQuantity = CountedQuantity!.Value - inventoryVariance;
+        VarianceQuantity = inventoryVariance;
+        MarkCompleted(postedAtUtc);
+    }
+
+    public void RequireRecount()
+    {
+        if (Status != CountExecutionStatus.PendingApproval)
+        {
+            throw new InvalidOperationException("Only pending count executions can require recount after approval.");
+        }
+
+        Status = CountExecutionStatus.RecountRequired;
+        AdvanceVersion();
+    }
+
+    private void MarkCompleted(DateTime postedAtUtc)
+    {
+        Status = CountExecutionStatus.Completed;
+        CompletedAtUtc = postedAtUtc;
+        AdvanceVersion();
+        this.AddDomainEvent(new CountExecutionCompletedDomainEvent(this));
+    }
+
+    private void RecordCount(decimal countedQuantity, long expectedVersion, decimal? inventoryVariance)
     {
         EnsureExpectedVersion(expectedVersion);
-        if (Status == CountExecutionStatus.Completed)
+        if (Status != CountExecutionStatus.Open)
         {
-            throw new InvalidOperationException("Completed count executions are immutable.");
+            throw new InvalidOperationException("Only open count executions may accept counted quantities.");
         }
 
         if (countedQuantity < 0)
@@ -135,11 +181,12 @@ public sealed class CountExecution : Entity<CountExecutionId>, IAggregateRoot
         }
 
         CountedQuantity = countedQuantity;
-        VarianceQuantity = countedQuantity - ExpectedQuantity;
-        Status = CountExecutionStatus.Completed;
-        CompletedAtUtc = DateTime.UtcNow;
-        AdvanceVersion();
-        this.AddDomainEvent(new CountExecutionCompletedDomainEvent(this));
+        if (inventoryVariance is { } variance)
+        {
+            ExpectedQuantity = countedQuantity - variance;
+        }
+
+        VarianceQuantity = inventoryVariance ?? countedQuantity - ExpectedQuantity;
     }
 
     private void EnsureExpectedVersion(long expectedVersion)

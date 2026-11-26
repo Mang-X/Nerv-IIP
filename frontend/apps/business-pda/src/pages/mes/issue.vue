@@ -16,7 +16,7 @@ import {
   NvMobileResult,
   NvMobileToast,
 } from '@nerv-iip/ui-mobile'
-import { computed, ref } from 'vue'
+import { computed, onScopeDispose, ref, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   useMesLineSideInventoryBalances,
@@ -54,6 +54,7 @@ const {
   refresh,
   createIssue,
   confirmLineSideReceipt,
+  receiveScopeIdentity,
   returnLineSideMaterial,
 } = useMesMaterialIssue()
 
@@ -81,8 +82,6 @@ const {
   refresh: refreshLineSideInventory,
 } = useMesLineSideInventoryBalances()
 
-// 可读中文状态标签 + 工单标题/副标题来自 @nerv-iip/business-core（不暴露原始状态码）。
-const statusLabel = materialIssueStatusLabel
 const scopeReady = computed(() => Boolean(filters.organizationId && filters.environmentId))
 const scopedRequests = computed(() => (scopeReady.value ? requests.value : []))
 const listFailure = computed(() =>
@@ -100,7 +99,7 @@ function requestTitle(req: IssueRequest) {
   return req.materialId ? `${wo} · 物料 ${req.materialId}` : wo
 }
 function requestSubtitle(req: IssueRequest) {
-  const parts = [statusLabel(req.status)]
+  const parts = [materialIssueStatusLabel(req.status)]
   if (req.requestedQuantity !== undefined) parts.push(`申请 ${req.requestedQuantity}`)
   if (req.receivedQuantity !== undefined) parts.push(`已收 ${req.receivedQuantity}`)
   return parts.join(' · ')
@@ -112,16 +111,16 @@ function returnableQuantity(req: IssueRequest) {
 
 // --- 结果反馈 ---
 type ResultState = {
-  status: 'success' | 'error'
   title: string
   description?: string
-  retry: () => void | Promise<void>
-}
+} & (
+  | { status: 'success' }
+  | { status: 'error'; retryLabel?: string; retry: () => void | Promise<void> }
+)
 const result = ref<ResultState | null>(null)
 const submitting = ref(false)
 
-// 稳定的逐操作幂等键：在提交（创建/接收）时铸造一次，重试复用同键；
-// 开始新操作（重新打开新建/接收表单、成功）时清空 → 下次提交铸造新键。
+// 新建领料的逐操作幂等键。
 const operationKey = ref('')
 const returnOperationKey = ref('')
 const scanGate = useMesScanGate()
@@ -153,6 +152,7 @@ const createSheetOpen = computed({
 })
 
 function openCreate() {
+  if (submitting.value) return
   scanGate.clear('list')
   result.value = null
   selectedWorkOrder.value = null
@@ -194,7 +194,6 @@ async function submitCreate() {
     result.value = {
       status: 'success',
       title: '领料申请已提交',
-      retry: () => {},
     }
   } catch (e) {
     result.value = {
@@ -215,39 +214,102 @@ async function retryCreate() {
 
 // --- 线边接收 ---
 const receiving = ref<IssueRequest | null>(null)
-const receivedQuantity = ref<number | null>(null)
+const receivedQuantity = ref<number | string | null>(null)
+type ReceiveIntent = {
+  scope: string
+  requestId: string
+  workOrderId?: string
+  body: { idempotencyKey: string; receivedQuantity?: number }
+}
+const receiveIntent = shallowRef<ReceiveIntent | null>(null)
+
+function receiveStorageKey(scope: string, requestId: string, workOrderId?: string) {
+  return `nerv-iip.pda-mes-line-side-receipt.v1:${JSON.stringify([scope, workOrderId, requestId])}`
+}
+
+function readReceiveBody(key: string): ReceiveIntent['body'] | null {
+  const stored = sessionStorage.getItem(key)
+  if (stored === null) return null
+  const body = JSON.parse(stored) as ReceiveIntent['body'] | null
+  if (
+    typeof body?.idempotencyKey !== 'string' ||
+    !body.idempotencyKey ||
+    (body.receivedQuantity !== undefined &&
+      (!Number.isFinite(body.receivedQuantity) || body.receivedQuantity < 0))
+  ) {
+    throw new Error('原接收凭据不可用，请核实收料结果。')
+  }
+  const { idempotencyKey, receivedQuantity } = body
+  return { idempotencyKey, ...(receivedQuantity === undefined ? {} : { receivedQuantity }) }
+}
+
+function canRecoverReceive(req: IssueRequest) {
+  const scope = receiveScopeIdentity.value
+  if (!scope || !req.requestId) return false
+  try {
+    return readReceiveBody(receiveStorageKey(scope, req.requestId, req.workOrderId)) !== null
+  } catch {
+    return false
+  }
+}
+
 const returning = ref<IssueRequest | null>(null)
 const returnedQuantity = ref<number | null>(null)
 
 const receiveValid = computed(() => {
-  // 接收数量可选；若填写则须 >= 0
-  if (receivedQuantity.value === null) return true
-  return receivedQuantity.value >= 0
+  const quantity = receivedQuantity.value
+  return (
+    quantity === null ||
+    quantity === '' ||
+    (typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0)
+  )
 })
 
 const receiveSheetOpen = computed({
   get: () => receiving.value !== null && result.value === null,
   set: (open) => {
-    if (!open) closeReceive()
+    if (!open && !submitting.value) closeReceive()
   },
 })
 
 function canReceive(req: IssueRequest) {
-  return statusActionGate({
-    domain: 'mes-material-issue',
-    action: 'confirm-receipt',
-    facts: { status: req.status },
-  }).executable
+  return (
+    Boolean(receiveScopeIdentity.value && req.requestId) &&
+    statusActionGate({
+      domain: 'mes-material-issue',
+      action: 'confirm-receipt',
+      facts: { status: req.status },
+    }).executable
+  )
 }
 
-function openReceive(req: IssueRequest) {
-  if (!canReceive(req)) return
+async function openReceive(req: IssueRequest) {
+  const scope = receiveScopeIdentity.value
+  if (submitting.value || scanPending.value || !scope || !req.requestId) return
   scanGate.clear('list')
   result.value = null
-  // 新一轮线边接收 → 作废上一个幂等键
-  operationKey.value = ''
+  try {
+    const body = readReceiveBody(receiveStorageKey(scope, req.requestId, req.workOrderId))
+    if (body) {
+      if (scanGuarded.value) return
+      const intent = { scope, requestId: req.requestId, workOrderId: req.workOrderId, body }
+      receiveIntent.value = intent
+      await sendReceive(intent, true)
+      return
+    }
+  } catch {
+    result.value = {
+      status: 'error',
+      title: '无法读取原接收凭据',
+      description: '请核实收料结果后再操作。',
+      retry: () => openReceive(req),
+    }
+    return
+  }
+  if (!canReceive(req)) return
   receiving.value = req
-  receivedQuantity.value = req.requestedQuantity ?? null
+  receivedQuantity.value =
+    req.status?.toLowerCase() === 'partiallyreceived' ? null : (req.requestedQuantity ?? null)
 }
 
 function canReturn(req: IssueRequest) {
@@ -259,7 +321,7 @@ function canReturn(req: IssueRequest) {
 }
 
 function openReturn(req: IssueRequest) {
-  if (!canReturn(req)) return
+  if (submitting.value || !canReturn(req)) return
   scanGate.clear('list')
   result.value = null
   returnOperationKey.value = makeIdempotencyKey()
@@ -279,7 +341,7 @@ function closeReceive() {
 function resetReceiveIntent() {
   result.value = null
   closeReceive()
-  operationKey.value = ''
+  receiveIntent.value = null
 }
 
 const lifecycleRecovery = useLifecycleActionRecovery({
@@ -287,39 +349,109 @@ const lifecycleRecovery = useLifecycleActionRecovery({
   refresh,
 })
 
+onScopeDispose(() => {
+  receiveIntent.value = null
+})
+
+watch(
+  receiveScopeIdentity,
+  () => {
+    if (receiving.value || receiveIntent.value) resetReceiveIntent()
+  },
+  { flush: 'sync' },
+)
+
 async function submitReceive() {
-  if (scanGuarded.value) return
   const req = receiving.value
-  const requestId = req?.requestId
-  if (!requestId) return
+  if (submitting.value || scanGuarded.value || !req?.requestId || !canReceive(req)) return
   if (!receiveValid.value) return
   const quantity = receivedQuantity.value
+  const intent: ReceiveIntent = {
+    scope: receiveScopeIdentity.value,
+    requestId: req.requestId,
+    workOrderId: req.workOrderId,
+    body: {
+      idempotencyKey: makeIdempotencyKey(),
+      ...(typeof quantity === 'number' ? { receivedQuantity: quantity } : {}),
+    },
+  }
+  receiveIntent.value = intent
+  await sendReceive(intent, false)
+}
+
+async function sendReceive(intent: ReceiveIntent, replay: boolean) {
+  if (
+    submitting.value ||
+    receiveIntent.value !== intent ||
+    receiveScopeIdentity.value !== intent.scope
+  )
+    return
+  const key = receiveStorageKey(intent.scope, intent.requestId, intent.workOrderId)
+  const isCurrent = () =>
+    receiveIntent.value === intent && receiveScopeIdentity.value === intent.scope
+  let dispatched = false
+  let validationRejected = false
   submitting.value = true
-  receiving.value = null
-  const doSubmit = () =>
-    confirmLineSideReceipt(
-      requestId,
-      // #3328：线边收料的 idempotencyKey 已从网关公开契约摘掉——MES 侧从不消费它，
-      // 重放安全由 MaterialIssueRequest.ConfirmLineSideReceipt 的「过账尚未回执」守卫承担。
-      quantity === null ? {} : { receivedQuantity: quantity },
-      {
-        workOrderId: req?.workOrderId,
-      },
-    )
   try {
-    await doSubmit()
+    const { reference, current } = await confirmLineSideReceipt(intent.requestId, intent.body, {
+      workOrderId: intent.workOrderId,
+      replay,
+      isCurrent,
+      onValidationRejected: () => {
+        validationRejected = true
+      },
+      beforeDispatch: () => {
+        const saved = readReceiveBody(key)
+        if (saved && saved.idempotencyKey !== intent.body.idempotencyKey) {
+          throw new Error('已有待核实的收料，请重新打开领料申请。')
+        }
+        if (replay && !saved) {
+          throw new Error('原接收凭据已更新，请重新打开领料申请。')
+        }
+        if (!saved) sessionStorage.setItem(key, JSON.stringify(intent.body))
+        dispatched = true
+      },
+    })
+    if (!isCurrent()) return
+    if (readReceiveBody(key)?.idempotencyKey === intent.body.idempotencyKey) {
+      sessionStorage.removeItem(key)
+    }
+    closeReceive()
     result.value = {
       status: 'success',
-      title: '线边接收已确认',
-      retry: () => {},
+      title: '线边接收已受理',
+      description: `领料单 ${reference} · ${requestSubtitle(current)}`,
     }
-  } catch (e) {
-    if (await lifecycleRecovery.handle(e)) return
+  } catch (error) {
+    if (!isCurrent()) return
+    closeReceive()
+    if (validationRejected) {
+      if (readReceiveBody(key)?.idempotencyKey === intent.body.idempotencyKey) {
+        sessionStorage.removeItem(key)
+      }
+      receiveIntent.value = null
+      result.value = {
+        status: 'error',
+        title: '线边接收未受理',
+        description: describeRequestError(error, '请核对接收数量后重新提交。').message,
+        retryLabel: '更正接收',
+        retry: () => {
+          const current = scopedRequests.value.find(
+            (row) => row.requestId === intent.requestId && row.workOrderId === intent.workOrderId,
+          )
+          if (current) return openReceive(current)
+          return continueWork()
+        },
+      }
+      return
+    }
+    if (!replay && (await lifecycleRecovery.handle(error))) return
+    if (!isCurrent()) return
     result.value = {
       status: 'error',
-      title: '线边接收失败',
-      description: e instanceof Error ? e.message : '请检查网络后重试。',
-      retry: () => retryReceive(req!, quantity),
+      title: '线边接收结果待核实',
+      description: describeRequestError(error, '请重试原接收操作。').message,
+      retry: () => sendReceive(intent, replay || dispatched),
     }
   } finally {
     submitting.value = false
@@ -343,7 +475,7 @@ async function submitReturn() {
     )
   try {
     await doSubmit()
-    result.value = { status: 'success', title: '线边退料已提交', retry: () => {} }
+    result.value = { status: 'success', title: '线边退料已提交' }
   } catch (e) {
     const described = describeRequestError(e)
     result.value = {
@@ -365,14 +497,8 @@ async function retryReturn(req: IssueRequest, quantity: number) {
   await submitReturn()
 }
 
-async function retryReceive(req: IssueRequest, quantity: number | null) {
-  result.value = null
-  receiving.value = req
-  receivedQuantity.value = quantity
-  await submitReceive()
-}
-
 function continueWork() {
+  receiveIntent.value = null
   result.value = null
   // 成功 → 作废本次操作幂等键，下次发起铸造新键
   operationKey.value = ''
@@ -472,14 +598,16 @@ function onCreateScanAccepted(value: MesScanAccepted) {
           v-else
           type="button"
           data-testid="retry-issue"
+          :disabled="submitting"
           class="min-h-touch w-full rounded-lg bg-primary text-base font-medium text-primary-foreground"
           @click="result.retry"
         >
-          重试
+          {{ result.retryLabel ?? '重试' }}
         </button>
         <button
           type="button"
           class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground"
+          :disabled="submitting"
           @click="goBack"
         >
           返回
@@ -553,14 +681,14 @@ function onCreateScanAccepted(value: MesScanAccepted) {
         >
           <template #trailing>
             <button
-              v-if="canReceive(req)"
+              v-if="canRecoverReceive(req) || canReceive(req)"
               type="button"
               :data-testid="`receive-${req.requestId}`"
-              :disabled="scanPending"
+              :disabled="scanPending || submitting"
               class="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-primary disabled:opacity-60"
               @click="openReceive(req)"
             >
-              线边接收
+              {{ canRecoverReceive(req) ? '核实原接收' : '线边接收' }}
             </button>
             <button
               v-if="canReturn(req)"
@@ -748,7 +876,9 @@ function onCreateScanAccepted(value: MesScanAccepted) {
       @update:open="receiveSheetOpen = $event"
     >
       <div v-if="receiving" class="space-y-4 pb-2">
-        <p class="text-sm text-muted-foreground">当前状态：{{ statusLabel(receiving.status) }}</p>
+        <p class="text-sm text-muted-foreground">
+          当前状态：{{ materialIssueStatusLabel(receiving.status) }}
+        </p>
 
         <label class="block space-y-1">
           <span class="text-sm font-medium text-foreground">接收数量</span>
@@ -758,11 +888,14 @@ function onCreateScanAccepted(value: MesScanAccepted) {
             type="number"
             inputmode="numeric"
             min="0"
+            aria-describedby="receive-quantity-help"
             class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base outline-none focus:border-primary"
           />
         </label>
 
-        <p v-if="!receiveValid" class="text-sm text-muted-foreground">接收数量须为非负数。</p>
+        <p id="receive-quantity-help" class="text-sm text-muted-foreground">
+          {{ receiveValid ? '留空时按系统计算的待接收数量提交。' : '接收数量必须大于 0。' }}
+        </p>
 
         <button
           type="button"
@@ -776,6 +909,7 @@ function onCreateScanAccepted(value: MesScanAccepted) {
         <button
           type="button"
           class="min-h-touch w-full rounded-lg border border-border bg-card text-base font-medium text-foreground"
+          :disabled="submitting"
           @click="closeReceive"
         >
           取消

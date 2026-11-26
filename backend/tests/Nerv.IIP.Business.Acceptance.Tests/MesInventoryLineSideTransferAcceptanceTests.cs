@@ -8,6 +8,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Inventory.Web.Application.Valuation;
+using Nerv.IIP.Business.Inventory.Web.Application.Queries;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.MaterialSupplyAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.OperationTaskAggregate;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.ProductionReportAggregate;
@@ -19,6 +20,8 @@ using Nerv.IIP.Business.Mes.Web.Application.Commands.WorkOrders;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Production;
+using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
+using Nerv.IIP.Business.Mes.Web.Application.Errors;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
 using NetCorePal.Extensions.DistributedTransactions;
@@ -36,6 +39,85 @@ public sealed class MesInventoryLineSideTransferAcceptanceTests
             SiteCode = "SITE-001",
             LocationCode = "WH-WB-FG-01",
         });
+
+    [Fact]
+    public async Task Partial_receipt_replays_original_result_and_distinct_intent_posts_its_own_inventory_legs()
+    {
+        await using var mesDb = CreateMesContext();
+        await using var inventoryDb = CreateInventoryContext();
+        SeedMesWorkOrder(mesDb);
+        await mesDb.SaveChangesAsync();
+        var now = DateTimeOffset.Parse("2026-06-18T08:00:00Z");
+        var inventoryHandler = CreateInventoryHandler(inventoryDb, new RecordingIntegrationEventPublisher());
+        await inventoryHandler.HandleAsync(CreateWarehouseSeedEvent(now), CancellationToken.None);
+        var issue = await new CreateMaterialIssueRequestCommandHandler(mesDb).Handle(
+            new CreateMaterialIssueRequestCommand(
+                "org-001", "env-dev", "WO-446", "OP-10", "MAT-OIL", "L", 5m, now, "issue-4551"),
+            CancellationToken.None);
+        await mesDb.SaveChangesAsync();
+        mesDb.ChangeTracker.Clear();
+
+        var handler = new ConfirmLineSideMaterialReceiptCommandHandler(mesDb, MaterialSupplyTestFixtures.Resolver);
+        var first = ReceiptIntent("receipt-4551-first", now.AddMinutes(1));
+        var accepted = await handler.Handle(first, CancellationToken.None);
+        await SettleAsync();
+        var firstReadback = await ReadInventoryAsync();
+        Assert.Equal(2, firstReadback.TotalCount);
+        Assert.Equal(2m, firstReadback.InboundQuantityTotal);
+        Assert.Equal(2m, firstReadback.OutboundQuantityTotal);
+
+        Assert.Equal(accepted, await handler.Handle(first with { ReceivedAtUtc = now.AddMinutes(2) }, CancellationToken.None));
+        await Assert.ThrowsAsync<MesIdempotencyConflictException>(() =>
+            handler.Handle(first with { ReceivedQuantity = 1m }, CancellationToken.None));
+        Assert.Equal(2m, (await ReadMesAsync()).ReceivedQuantity);
+        Assert.Equal(firstReadback.Items.ToArray(), (await ReadInventoryAsync()).Items.ToArray());
+
+        // An otherwise identical payload with a different intent is a second partial receipt.
+        var second = ReceiptIntent("receipt-4551-second", now.AddMinutes(3));
+        Assert.NotEqual(accepted, await handler.Handle(second, CancellationToken.None));
+        await SettleAsync();
+        Assert.Equal(4m, (await ReadMesAsync()).ReceivedQuantity);
+        var readback = await ReadInventoryAsync();
+        Assert.Equal(4, readback.TotalCount);
+        Assert.Equal(4m, readback.InboundQuantityTotal);
+        Assert.Equal(4m, readback.OutboundQuantityTotal);
+        var suffix = $"org-001:env-dev:{issue.ReferenceId}:LOT-OIL-A";
+        Assert.Equal(
+            new[]
+            {
+                $"mes:line-side-receipt:{suffix}:2:a1",
+                $"mes:line-side-receipt:{suffix}:4:a2",
+                $"mes:material-issue:{suffix}:2:a1",
+                $"mes:material-issue:{suffix}:4:a2",
+            },
+            readback.Items.Select(x => x.IdempotencyKey).Order(StringComparer.Ordinal).ToArray());
+
+        ConfirmLineSideMaterialReceiptCommand ReceiptIntent(string key, DateTimeOffset receivedAtUtc) =>
+            new("org-001", "env-dev", issue.ReferenceId, receivedAtUtc, 2m, "LOT-OIL-A", key);
+
+        Task<MesMaterialIssueRequestRow> ReadMesAsync() =>
+            new GetMaterialIssueRequestQueryHandler(mesDb).Handle(
+                new GetMaterialIssueRequestQuery("org-001", "env-dev", issue.ReferenceId), CancellationToken.None);
+
+        Task<StockMovementListResponse> ReadInventoryAsync() =>
+            new ListStockMovementsQueryHandler(inventoryDb).Handle(
+                new ListStockMovementsQuery("org-001", "env-dev",
+                    SourceService: InventoryIntegrationEventSources.BusinessMes, SourceDocumentId: issue.ReferenceId),
+                CancellationToken.None);
+
+        async Task SettleAsync()
+        {
+            var issueRequest = mesDb.MaterialIssueRequests.Local.Single(x => x.RequestNo == issue.ReferenceId);
+            var issueEvent = new MaterialIssueRequestedIntegrationEventConverter().Convert(
+                Assert.Single(issueRequest.GetDomainEvents().OfType<MaterialIssueRequestedDomainEvent>()));
+            var receiptEvent = await PostSourceAndCreateReceiptAsync(inventoryDb, inventoryHandler, issueRequest, issueEvent);
+            issueRequest.ClearDomainEvents();
+            await mesDb.SaveChangesAsync();
+            await inventoryHandler.HandleAsync(receiptEvent, CancellationToken.None);
+            await PostTransferLegsAsync(mesDb, issueEvent, receiptEvent);
+            mesDb.ChangeTracker.Clear();
+        }
+    }
 
     [Fact]
     public async Task Mes_work_order_cancel_releases_inventory_reservation_and_returns_received_line_side_material_idempotently()

@@ -13,6 +13,8 @@ export const PDA_WAREHOUSE_TASK_STATUS_OPTIONS: DropdownOption[] = [
 export const PDA_COUNT_EXECUTION_STATUS_OPTIONS: DropdownOption[] = [
   { label: '全部状态', value: '' },
   { label: '待盘点', value: 'Open' },
+  { label: '待审批', value: 'PendingApproval' },
+  { label: '需复盘', value: 'RecountRequired' },
   { label: '已完成', value: 'Completed' },
 ]
 

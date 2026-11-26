@@ -55,7 +55,9 @@ const authState = vi.hoisted(() => ({
 
 const reactiveAuthState = reactive(authState)
 
-vi.mock('@nerv-iip/api-client', () => ({
+vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
+  BusinessOperationUnconfirmedError: (await importOriginal<typeof import('@nerv-iip/api-client')>())
+    .BusinessOperationUnconfirmedError,
   listBusinessConsoleMesReceivableProducedLotsQueryOptions: vi.fn((options) => ({
     key: [{ _id: 'listBusinessConsoleMesReceivableProducedLots', ...options }],
     query: vi.fn(),
@@ -144,9 +146,9 @@ vi.mock('@nerv-iip/api-client', () => ({
     })),
   })),
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions: vi.fn(() => ({
-    mutation: vi.fn(async (vars) => ({
+    mutation: vi.fn(async () => ({
       success: true,
-      data: vars.body,
+      data: { accepted: true },
     })),
   })),
   returnBusinessConsoleMesLineSideMaterialMutationOptions: vi.fn(() => ({
@@ -382,6 +384,7 @@ vi.mock('@nerv-iip/api-client', () => ({
 }))
 
 vi.mock('@pinia/colada', () => ({
+  defineQueryOptions: (options: unknown) => options,
   useMutation: vi.fn((options) => ({
     error: shallowRef(),
     isLoading: shallowRef(false),

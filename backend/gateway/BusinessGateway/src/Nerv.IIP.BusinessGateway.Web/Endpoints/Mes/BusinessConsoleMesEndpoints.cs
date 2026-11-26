@@ -1161,6 +1161,16 @@ public sealed class PrevalidateBusinessConsoleMesContextScanEndpoint(
     }
 }
 
+public sealed class BusinessConsoleMesConfirmLineSideReceiptRequestValidator
+    : Validator<BusinessConsoleMesConfirmLineSideReceiptRequest>
+{
+    public BusinessConsoleMesConfirmLineSideReceiptRequestValidator()
+    {
+        RuleFor(x => x.IdempotencyKey).NotEmpty().MaximumLength(150)
+            .When(x => x.IdempotencyKey is not null);
+    }
+}
+
 [Tags("Business Console MES")]
 [HttpPost("/api/business-console/v1/mes/material-issue-requests/{requestId}/line-side-receipts")]
 [BusinessGatewayOperationId("confirmBusinessConsoleMesLineSideMaterialReceipt")]

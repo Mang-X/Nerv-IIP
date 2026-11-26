@@ -1334,15 +1334,6 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
             query = query.Where(x => siteCodes.Contains(x.SiteCode));
         }
 
-        if (WmsListQueryFilters.TryParseStatus<CountExecutionStatus>(request.Status, out var status))
-        {
-            query = query.Where(x => x.Status == status);
-        }
-        else if (!string.IsNullOrWhiteSpace(request.Status))
-        {
-            return new ListCountExecutionsResponse([], 0);
-        }
-
         if (!string.IsNullOrWhiteSpace(request.LocationCode))
         {
             query = query.Where(x => x.LocationCode == request.LocationCode);
@@ -1354,6 +1345,15 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
                 x.CountNo.ToLower().Contains(keyword)
                 || x.SkuCode.ToLower().Contains(keyword)
                 || x.LocationCode.ToLower().Contains(keyword));
+        }
+
+        if (WmsListQueryFilters.TryParseStatus<CountExecutionStatus>(request.Status, out var status))
+        {
+            query = query.Where(x => x.Status == status);
+        }
+        else if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            return new ListCountExecutionsResponse([], 0);
         }
 
         var total = await query.CountAsync(cancellationToken);
@@ -1387,22 +1387,13 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
                 x.LotNo))
             .ToArrayAsync(cancellationToken);
         var countNumbers = items.Select(x => x.CountNo).ToArray();
-        var movementRequests = await dbContext.InventoryMovementRequests
-            .AsNoTracking()
-            .Where(x => x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.MovementType == InventoryMovementTypes.CountAdjustment
-                && countNumbers.Contains(x.SourceDocumentId)
-                && x.SourceDocumentLineId == null)
-            .OrderBy(x => x.CreatedAtUtc)
-            .ToArrayAsync(cancellationToken);
-        var movementByCountNumber = movementRequests
-            .GroupBy(x => x.SourceDocumentId, StringComparer.Ordinal)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var movementByCountNumber = await ReadMovementRequestsAsync(tenant, countNumbers, cancellationToken);
         var projectedItems = items
             .Select(item => movementByCountNumber.TryGetValue(item.CountNo, out var movement)
                 ? item with
                 {
+                    ExpectedQuantity = (item.CountedQuantity - movement.Quantity) ?? item.ExpectedQuantity,
+                    VarianceQuantity = movement.Quantity,
                     InventoryPostingStatus = movement.Status.ToString(),
                     InventoryPostingFailureCode = movement.FailureCode,
                     InventoryPostingFailureMessage = movement.FailureMessage,
@@ -1412,6 +1403,30 @@ public sealed class ListCountExecutionsQueryHandler(ApplicationDbContext dbConte
             .ToArray();
         return new ListCountExecutionsResponse(projectedItems, total);
     }
+
+    private async Task<Dictionary<string, InventoryMovementRequest>> ReadMovementRequestsAsync(
+        TenantScope tenant,
+        string[] countNumbers,
+        CancellationToken cancellationToken)
+    {
+        if (countNumbers.Length == 0)
+        {
+            return new Dictionary<string, InventoryMovementRequest>(StringComparer.Ordinal);
+        }
+
+        var receipts = await dbContext.InventoryMovementRequests
+            .AsNoTracking()
+            .Where(x => x.OrganizationId == tenant.OrganizationId
+                && x.EnvironmentId == tenant.EnvironmentId
+                && x.MovementType == InventoryMovementTypes.CountAdjustment
+                && countNumbers.Contains(x.SourceDocumentId)
+                && x.SourceDocumentLineId == null)
+            .OrderBy(x => x.CreatedAtUtc)
+            .ToArrayAsync(cancellationToken);
+        return receipts.GroupBy(x => x.SourceDocumentId, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+    }
+
 }
 
 public sealed record ListWcsTasksQuery(

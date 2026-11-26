@@ -5,6 +5,7 @@ import { defineComponent, shallowRef } from 'vue'
 import IndexPage from './index.vue'
 import { createBusinessConsoleI18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
+import { useBusinessContextStore } from '@/stores/businessContext'
 
 const coladaState = vi.hoisted(() => ({
   isLoading: false,
@@ -49,12 +50,19 @@ function mountWorkbench(permissionCodes: string[]) {
   const pinia = createPinia()
   const auth = useAuthStore(pinia)
   auth.$patch({
+    accessToken: 'workbench-test-token',
     principal: {
+      principalId: 'workbench-test-user',
       principalType: 'user',
       organizationId: 'org-001',
       environmentId: 'env-dev',
       permissionCodes,
     },
+  })
+
+  useBusinessContextStore(pinia).patchContext({
+    organizationId: 'org-001',
+    environmentId: 'env-dev',
   })
 
   return mount(IndexPage, {

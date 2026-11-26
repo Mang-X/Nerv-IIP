@@ -1,7 +1,15 @@
 import type { EntityPickerOption, NvDataTableColumn } from '@nerv-iip/ui'
+import {
+  acquirePendingBusinessIntent,
+  clearPendingBusinessIntent,
+  getBusinessWriteErrorStatus,
+  peekPendingBusinessIntent,
+  shouldRetainPendingBusinessIntent,
+} from '@nerv-iip/business-core'
 import { makeIdempotencyKey } from '@/composables/mes'
 import { useSkuNames } from '@/composables/master-data/useSkuNames'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
 import { readFaceText } from '@/utils/readFace'
 import {
   inlineErrorMessage,
@@ -9,7 +17,7 @@ import {
   notifyOperationFailure,
   notifySuccess,
 } from '@/utils/notify'
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import type { Ref } from 'vue'
 import type { useMesWorkOrderDetail } from '@/composables/mes'
 
@@ -20,7 +28,6 @@ export function useWorkOrderMaterialActions(
     createMaterialIssueRequest,
     createMaterialIssueRequestPending,
     confirmLineSideReceipt,
-    confirmLineSideReceiptPending,
     returnLineSideMaterial,
     returnLineSideMaterialPending,
     refreshMaterialReadiness,
@@ -31,7 +38,6 @@ export function useWorkOrderMaterialActions(
     | 'createMaterialIssueRequest'
     | 'createMaterialIssueRequestPending'
     | 'confirmLineSideReceipt'
-    | 'confirmLineSideReceiptPending'
     | 'returnLineSideMaterial'
     | 'returnLineSideMaterialPending'
     | 'refreshMaterialReadiness'
@@ -50,6 +56,25 @@ export function useWorkOrderMaterialActions(
   // 齐套区的「下一步动作」以前指向一个 PC 上并不存在的动作（只有 PDA 能发起）。这里补齐两处入口，
   // 语义与校验与 PDA 侧同源：领料必须指定物料且数量>0；收料数量可省（默认收齐），指定时必须>0。
   const canManageMaterials = computed(() => permissionCodes.value.includes(P.mesMaterialsManage))
+  const auth = useAuthStore()
+  const receiptContext = computed(() => ({
+    principalId: auth.principal?.principalId ?? auth.sessionId ?? 'unrestored-session',
+    organizationId: filters.organizationId,
+    environmentId: filters.environmentId,
+    workOrderId: filters.workOrderId,
+  }))
+  function receiptScope(requestId: string) {
+    const { workOrderId, ...scope } = receiptContext.value
+    return {
+      ...scope,
+      operationType: 'mes.line-side-receipt',
+      payloadFingerprint: JSON.stringify([workOrderId, requestId]),
+    }
+  }
+  type ReceiptPayload = { receivedQuantity?: number; materialLotId?: string }
+  const receiptPending = ref(false)
+  const receiveRetry = ref(false)
+  const receiptUnconfirmed = '暂未确认收料结果，请重试本次收料。'
   // 单位是物料主档的事实（钢材 kg、油品 l、计件件号才是 pcs）。界面写死一个占位单位会被 MES 直接拒收，
   // 也无法在库存腿上换算——取不到主档单位就阻断提交并说明原因，绝不猜（#1294 同款姿势）。
   const { resolveBaseUom, skusPending } = useSkuNames()
@@ -62,6 +87,13 @@ export function useWorkOrderMaterialActions(
     idempotencyKey: '',
   })
   const receiveOpen = ref(false)
+  watch(
+    receiptContext,
+    () => {
+      receiveOpen.value = false
+    },
+    { flush: 'sync' },
+  )
   const receiveError = ref('')
   const receiveForm = reactive({
     requestId: '',
@@ -149,9 +181,11 @@ export function useWorkOrderMaterialActions(
   }
 
   function canReceive(row: MaterialIssueRow) {
+    if (!canManageMaterials.value || !row.requestId) return false
+    // 过账中或已收齐的申请也可以重放尚未确认的本次收料。
     return (
-      canManageMaterials.value &&
-      OPEN_ISSUE_STATUSES.has((row.status ?? '').toLowerCase().replace(/[^a-z]/g, ''))
+      OPEN_ISSUE_STATUSES.has((row.status ?? '').toLowerCase().replace(/[^a-z]/g, '')) ||
+      Boolean(peekPendingBusinessIntent(receiptScope(row.requestId)))
     )
   }
 
@@ -174,12 +208,15 @@ export function useWorkOrderMaterialActions(
   }
 
   function openReceiveDialog(row: MaterialIssueRow) {
-    if (!canReceive(row)) return
-    receiveError.value = ''
+    if (receiptPending.value || !row.requestId || !canReceive(row)) return
+    const pending = peekPendingBusinessIntent(receiptScope(row.requestId))
+    const payload = pending?.payloadSnapshot as ReceiptPayload | undefined
+    receiveRetry.value = Boolean(pending)
+    receiveError.value = pending ? receiptUnconfirmed : ''
     receiveForm.requestId = row.requestId ?? ''
     receiveForm.materialCode = row.materialCode ?? row.materialId ?? ''
-    receiveForm.quantity = ''
-    receiveForm.materialLotId = row.materialLotId ?? ''
+    receiveForm.quantity = payload?.receivedQuantity?.toString() ?? ''
+    receiveForm.materialLotId = pending ? (payload?.materialLotId ?? '') : (row.materialLotId ?? '')
     receiveOpen.value = true
   }
 
@@ -215,19 +252,41 @@ export function useWorkOrderMaterialActions(
   }
 
   async function submitReceipt() {
-    if (!canSubmitReceipt.value || confirmLineSideReceiptPending.value) return
+    if (!receiveOpen.value || !canSubmitReceipt.value || receiptPending.value) return
     receiveError.value = ''
-    const receivedQuantity = receiveForm.quantity.trim() ? Number(receiveForm.quantity) : undefined
+    const requestId = receiveForm.requestId
+    const scope = receiptScope(requestId)
+    const pending = acquirePendingBusinessIntent(scope, () => makeIdempotencyKey('mes-receipt'), {
+      receivedQuantity: receiveForm.quantity.trim() ? Number(receiveForm.quantity) : undefined,
+      materialLotId: receiveForm.materialLotId.trim() || undefined,
+    } satisfies ReceiptPayload)
+    function clearCurrentReceipt() {
+      if (peekPendingBusinessIntent(scope)?.idempotencyKey === pending.idempotencyKey) {
+        clearPendingBusinessIntent(scope)
+      }
+    }
+    receiptPending.value = true
     try {
-      await confirmLineSideReceipt(receiveForm.requestId, {
-        receivedQuantity,
-        materialLotId: receiveForm.materialLotId.trim() || undefined,
+      await confirmLineSideReceipt(requestId, {
+        ...(pending.payloadSnapshot as ReceiptPayload),
+        idempotencyKey: pending.idempotencyKey,
       })
+      clearCurrentReceipt()
       receiveOpen.value = false
       notifySuccess('收料已受理，正在更新齐套。')
     } catch (error) {
-      receiveError.value = inlineErrorMessage(error, '线边收料失败，请稍后重试。')
-      notifyOperationFailure('线边收料失败', error, '线边收料失败，请稍后重试。')
+      receiveRetry.value =
+        shouldRetainPendingBusinessIntent(error) || getBusinessWriteErrorStatus(error) === 408
+      if (receiveRetry.value) {
+        receiveError.value = receiptUnconfirmed
+        notifyError(receiptUnconfirmed)
+      } else {
+        clearCurrentReceipt()
+        receiveError.value = inlineErrorMessage(error, '线边收料失败，请稍后重试。')
+        notifyOperationFailure('线边收料失败', error, '线边收料失败，请稍后重试。')
+      }
+    } finally {
+      receiptPending.value = false
     }
   }
 
@@ -264,6 +323,8 @@ export function useWorkOrderMaterialActions(
     receiveOpen,
     receiveError,
     receiveForm,
+    receiveRetry,
+    receiptPending,
     returnOpen,
     returnForm,
     materialIssueRows,

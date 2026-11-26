@@ -18,7 +18,9 @@ public sealed record StartApprovalChainCommand(
     string StartedBy,
     decimal? Amount = null,
     string? RoutingOrganizationId = null,
-    string? DepartmentId = null) : ICommand<ApprovalChainId>;
+    string? DepartmentId = null) : ICommand<StartApprovalChainResult>;
+
+public sealed record StartApprovalChainResult(ApprovalChainId ChainId, string Status);
 
 public sealed class StartApprovalChainCommandValidator : AbstractValidator<StartApprovalChainCommand>
 {
@@ -39,12 +41,12 @@ public sealed class StartApprovalChainCommandValidator : AbstractValidator<Start
 }
 
 public sealed class StartApprovalChainCommandHandler(ApplicationDbContext dbContext)
-    : ICommandHandler<StartApprovalChainCommand, ApprovalChainId>
+    : ICommandHandler<StartApprovalChainCommand, StartApprovalChainResult>
 {
     private const string PendingIdentityUniqueIndex = "IX_approval_chains_pending_identity_key";
     private const string DuplicateRecoverySavepoint = "approval_chain_start_duplicate";
 
-    public async Task<ApprovalChainId> Handle(StartApprovalChainCommand request, CancellationToken cancellationToken)
+    public async Task<StartApprovalChainResult> Handle(StartApprovalChainCommand request, CancellationToken cancellationToken)
     {
         var documentReference = new ApprovalDocumentReference(
             request.SourceService,
@@ -55,7 +57,7 @@ public sealed class StartApprovalChainCommandHandler(ApplicationDbContext dbCont
             request.RoutingOrganizationId ?? request.OrganizationId,
             request.DepartmentId);
         var pendingIdentityKey = ApprovalChain.BuildPendingIdentityKey(request.OrganizationId, request.EnvironmentId, request.TemplateCode, documentReference);
-        var existingChainId = await dbContext.ApprovalChains
+        var existingChain = await dbContext.ApprovalChains
             .Where(x => x.PendingIdentityKey == pendingIdentityKey
                 || (x.PendingIdentityKey == null
                     && x.OrganizationId == request.OrganizationId
@@ -66,11 +68,23 @@ public sealed class StartApprovalChainCommandHandler(ApplicationDbContext dbCont
                     && x.DocumentReference.DocumentType == documentReference.DocumentType
                     && x.DocumentReference.DocumentId == documentReference.DocumentId
                     && x.DocumentReference.DocumentLineId == documentReference.DocumentLineId))
-            .Select(x => x.Id)
+            .Select(x => new StartApprovalChainResult(x.Id, x.Status))
             .SingleOrDefaultAsync(cancellationToken);
-        if (existingChainId is not null)
+        if (existingChain is null && documentReference.IsStockCountAdjustment)
         {
-            return existingChainId;
+            existingChain = await dbContext.ApprovalChains
+                .Where(x => x.OrganizationId == request.OrganizationId
+                    && x.EnvironmentId == request.EnvironmentId
+                    && x.DocumentReference.SourceService == documentReference.SourceService
+                    && x.DocumentReference.DocumentType == documentReference.DocumentType
+                    && x.DocumentReference.DocumentId == documentReference.DocumentId
+                    && x.DocumentReference.DocumentLineId == documentReference.DocumentLineId)
+                .Select(x => new StartApprovalChainResult(x.Id, x.Status))
+                .SingleOrDefaultAsync(cancellationToken);
+        }
+        if (existingChain is not null)
+        {
+            return existingChain;
         }
 
         var template = await dbContext.ApprovalTemplates
@@ -110,7 +124,7 @@ public sealed class StartApprovalChainCommandHandler(ApplicationDbContext dbCont
                 await transaction.ReleaseSavepointAsync(DuplicateRecoverySavepoint, cancellationToken);
             }
 
-            return chain.Id;
+            return new StartApprovalChainResult(chain.Id, chain.Status);
         }
         catch (DbUpdateException exception) when (IsPendingIdentityConflict(exception))
         {
@@ -123,7 +137,7 @@ public sealed class StartApprovalChainCommandHandler(ApplicationDbContext dbCont
             var duplicate = await dbContext.ApprovalChains
                 .AsNoTracking()
                 .Where(x => x.PendingIdentityKey == pendingIdentityKey)
-                .Select(x => x.Id)
+                .Select(x => new StartApprovalChainResult(x.Id, x.Status))
                 .SingleOrDefaultAsync(cancellationToken);
             if (duplicate is null)
             {

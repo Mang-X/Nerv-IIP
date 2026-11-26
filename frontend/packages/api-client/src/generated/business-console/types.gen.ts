@@ -5339,6 +5339,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     materialLotId?: string | null;
     receivedQuantity?: number | null;
     evidenceFileIds?: Array<string> | null;
+    idempotencyKey?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesReturnLineSideMaterialRequest = {
@@ -18490,6 +18491,10 @@ export type ConfirmBusinessConsoleMesLineSideMaterialReceiptData = {
 };
 
 export type ConfirmBusinessConsoleMesLineSideMaterialReceiptErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
     /**
      * Unauthorized
      */

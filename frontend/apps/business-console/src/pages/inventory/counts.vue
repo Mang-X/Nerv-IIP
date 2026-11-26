@@ -126,6 +126,7 @@ const contextWorkOrderId = computed(() => firstQuery(route.query.workOrderId))
 watch(
   () => route.query,
   (query) => {
+    filters.countTaskCode = firstQuery(query.countTaskCode) || undefined
     const sku = firstQuery(query.skuCode) || firstQuery(query.skuId)
     if (sku) taskForm.skuCode = sku
     const site = firstQuery(query.siteCode)

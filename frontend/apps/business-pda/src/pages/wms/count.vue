@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { BusinessOperationFailedError, BusinessOperationPendingError } from '@nerv-iip/api-client'
 import WmsOperationalCandidatePicker from '@/components/wms/WmsOperationalCandidatePicker.vue'
 import WmsPagedListFrame from '@/components/wms/WmsPagedListFrame.vue'
 import WmsScopeStatusFilter from '@/components/wms/WmsScopeStatusFilter.vue'
@@ -102,6 +103,7 @@ const selectedLotNo = shallowRef('')
 const expectedQuantity = ref(0)
 const sheetOpen = ref(false)
 const completed = ref(false)
+const approvalNotice = shallowRef('')
 
 // 每次用户发起操作（点任务开抽屉）生成一次稳定幂等键，跨重试复用以防丢响应重复提交；
 // 选新任务/继续后再点任务才换新键。绝不在重试时重新生成。
@@ -234,6 +236,15 @@ async function confirmComplete() {
     sheetOpen.value = false
     completed.value = true
   } catch (e) {
+    if (
+      e instanceof BusinessOperationPendingError ||
+      (e instanceof BusinessOperationFailedError &&
+        e.failureCode === 'count-approval-recount-required')
+    ) {
+      resetFlow()
+      approvalNotice.value = e.message
+      return
+    }
     if (await lifecycleRecovery.handle(e)) return
     const info = intent.recordFailure(e, '提交盘点失败')
     submitError.value = intentLocked.value
@@ -246,6 +257,7 @@ function resetFlow() {
   numberKeyboardOpen.value = false
   sheetOpen.value = false
   completed.value = false
+  approvalNotice.value = ''
   selectedExecutionId.value = ''
   selectedCountNo.value = ''
   selectedLotNo.value = ''
@@ -359,6 +371,12 @@ function goHome() {
                 <p class="mt-1 break-all text-sm text-foreground">
                   批次 {{ execution.lotNo || '无批次' }}
                 </p>
+                <p
+                  v-if="execution.inventoryMovementId"
+                  class="mt-1 break-all text-sm text-muted-foreground"
+                >
+                  库存流水 {{ execution.inventoryMovementId }}
+                </p>
               </template>
             </NvListRow>
           </div>
@@ -424,6 +442,11 @@ function goHome() {
       extra-key="."
     />
 
+    <NvMobileToast
+      :show="Boolean(approvalNotice)"
+      :message="approvalNotice"
+      @update:show="approvalNotice = ''"
+    />
     <NvMobileToast
       :show="lifecycleRecovery.toast.value.show"
       :message="lifecycleRecovery.toast.value.message"

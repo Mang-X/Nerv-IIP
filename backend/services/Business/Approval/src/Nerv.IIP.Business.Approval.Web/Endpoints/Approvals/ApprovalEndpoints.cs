@@ -90,7 +90,7 @@ public sealed record StartApprovalChainRequest(
     string? RoutingOrganizationId = null,
     string? DepartmentId = null);
 
-public sealed record StartApprovalChainResponse(ApprovalChainId ChainId);
+public sealed record StartApprovalChainResponse(ApprovalChainId ChainId, string Status);
 
 public sealed record GetApprovalChainRequest(ApprovalChainId ChainId);
 
@@ -121,6 +121,8 @@ public sealed record ListApprovalDecisionsRequest(
     int Take = 100);
 
 public sealed record ResolveApprovalStepRequest(
+    string OrganizationId,
+    string EnvironmentId,
     ApprovalChainId ChainId,
     int StepNo,
     string ActorType,
@@ -279,7 +281,7 @@ public sealed class StartApprovalChainEndpoint(ISender sender)
 
     public override async Task HandleAsync(StartApprovalChainRequest req, CancellationToken ct)
     {
-        var chainId = await sender.Send(new StartApprovalChainCommand(
+        var chain = await sender.Send(new StartApprovalChainCommand(
             req.OrganizationId,
             req.EnvironmentId,
             req.TemplateCode,
@@ -291,7 +293,7 @@ public sealed class StartApprovalChainEndpoint(ISender sender)
             req.Amount,
             req.RoutingOrganizationId,
             req.DepartmentId), ct);
-        await Send.OkAsync(new StartApprovalChainResponse(chainId).AsResponseData(), cancellation: ct);
+        await Send.OkAsync(new StartApprovalChainResponse(chain.ChainId, chain.Status).AsResponseData(), cancellation: ct);
     }
 }
 
@@ -376,12 +378,20 @@ public sealed class ResolveApprovalStepEndpoint(ISender sender)
     public override async Task HandleAsync(ResolveApprovalStepRequest req, CancellationToken ct)
     {
         var decisionId = await sender.Send(new ResolveApprovalStepCommand(
+            req.OrganizationId,
+            req.EnvironmentId,
             req.ChainId,
             req.StepNo,
             req.ActorType,
             req.ActorRef,
             req.Decision,
             req.Comment), ct);
+        if (decisionId is null)
+        {
+            await Send.NotFoundAsync(ct);
+            return;
+        }
+
         await Send.OkAsync(new ResolveApprovalStepResponse(decisionId).AsResponseData(), cancellation: ct);
     }
 }

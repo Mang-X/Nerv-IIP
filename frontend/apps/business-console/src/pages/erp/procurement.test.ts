@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   convertPurchaseRequisition: vi.fn(),
   recordPurchaseReceipt: vi.fn(),
   notifySuccess: vi.fn(),
+  notifyWarning: vi.fn(),
   supplierPartners: [] as Array<Record<string, unknown>>,
 }))
 
@@ -79,7 +80,6 @@ vi.mock('@/composables/erp/useBusinessErp', () => ({
     refresh: vi.fn(),
     recordPurchaseReceipt: state.recordPurchaseReceipt,
     recordPurchaseReceiptPending: shallowRef(false),
-    recordPurchaseReceiptError: shallowRef(undefined),
   }),
 }))
 
@@ -133,6 +133,7 @@ vi.mock('@/composables/master-data', () => ({
 vi.mock('@/utils/notify', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/utils/notify')>()),
   notifySuccess: state.notifySuccess,
+  notifyWarning: state.notifyWarning,
 }))
 
 vi.mock('@/composables/shared/usePagedList', () => ({
@@ -418,10 +419,14 @@ describe('ERP procurement receipt page', () => {
   }
 
   it('submits the receipt with the selected quality status and receiving location, defaulting to pending inspection', async () => {
-    state.recordPurchaseReceipt.mockResolvedValue({
-      purchaseReceiptId: 'receipt-id-1',
-      purchaseReceiptNo: 'PR-20260928-000001',
-    })
+    state.recordPurchaseReceipt
+      .mockRejectedValueOnce(
+        Object.assign(new Error('response lost'), { name: 'RequestTimeoutError' }),
+      )
+      .mockResolvedValue({
+        purchaseReceiptId: 'receipt-id-1',
+        purchaseReceiptNo: 'PR-20260928-000001',
+      })
     const wrapper = mount(ReceiptsPage, {
       global: { stubs: { ...globalStubs, ...receiptLocationStub } },
     })
@@ -452,6 +457,16 @@ describe('ERP procurement receipt page', () => {
     await location.setValue('loc-raw-01')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
+
+    expect(state.notifyWarning).toHaveBeenCalledWith(
+      '收货结果暂未确认，请保持原填写内容并再次确认收货。',
+    )
+    expect(state.notifySuccess).not.toHaveBeenCalled()
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(state.recordPurchaseReceipt.mock.calls[1]).toEqual(
+      state.recordPurchaseReceipt.mock.calls[0],
+    )
 
     expect(state.recordPurchaseReceipt).toHaveBeenCalledWith({
       purchaseOrderNo: 'PO-002',

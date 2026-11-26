@@ -494,7 +494,8 @@ public sealed class BusinessConsoleCreateSchedulePlanRevisionRequestValidator
         RuleFor(x => x.PlanId).NotEmpty().MaximumLength(128);
         RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
-        RuleFor(x => x.IncludedOrderIds).NotEmpty().Must(x => x.Count <= SchedulingWorkbenchLimits.MaxOrderCount);
+        RuleFor(x => x.IncludedOrderIds).NotEmpty()
+            .Must((request, ids) => ids.Count <= SchedulingWorkbenchLimits.GetRevisionMaxOrderCount(request.PlanId));
         RuleFor(x => x.IncludedOrderIds)
             .Must(x => x.Distinct(StringComparer.Ordinal).Count() == x.Count)
             .WithMessage("Included work-order ids must be distinct.");

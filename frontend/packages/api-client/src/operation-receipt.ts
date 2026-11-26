@@ -70,6 +70,7 @@ export class BusinessOperationUnconfirmedError extends Error {
  */
 const PENDING_OPERATION_MESSAGES: Record<string, string> = {
   'quality.ncr.rework': '返工请求已受理，系统工单仍在创建中。请刷新查看最新状态。',
+  'wms.count-execution.complete': '实盘已提交，待审批。',
   'wms.outbound-order.complete': '出库复核已提交，库存正在过账。请稍后刷新查看过账结果。',
 }
 
@@ -298,6 +299,7 @@ export function verifyBusinessConsoleOperationReadback(
       matchesResource(candidate, 'countExecutionId', resourceId),
     )
     const postingStatus = normalized(item?.inventoryPostingStatus)
+    if (normalized(item?.status) === 'pendingapproval') return { state: 'pending' }
     if (postingStatus === 'posted') return { state: 'confirmed-success' }
     if (item && postingStatus === 'failed') {
       return confirmedFailure(item, '盘点库存过账失败，请刷新后按最新状态处理')

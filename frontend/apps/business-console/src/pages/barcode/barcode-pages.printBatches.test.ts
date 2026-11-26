@@ -81,6 +81,18 @@ describe('barcode pages', () => {
     expect(wrapper.text()).not.toContain('其他状态')
   })
 
+  it('guides operators to verify delivery without offering another send', async () => {
+    barcode.printBatchStatus = 'delivery-unknown'
+    const wrapper = mountPrintBatches()
+    await flushPromises()
+
+    const detail = wrapper
+      .findAll('section')
+      .find((section) => section.text().includes('批次详情'))!
+    expect(detail.text()).toContain('请检查打印机作业记录和现场出纸。')
+    expect(detail.text()).not.toContain('发送打印')
+  })
+
   it('filters print batches by the status codes the service reports', async () => {
     const wrapper = mountPrintBatches()
     await flushPromises()

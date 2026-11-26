@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountAdjustmentAggregate;
 using Nerv.IIP.Business.Inventory.Domain.DomainEvents;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.IntegrationEvents;
@@ -166,4 +167,23 @@ internal static class EventIds
     public static string Idempotency(params string[] parts) =>
         IntegrationEventIdempotencyKey.ComposeServiceScoped("inventory:", parts);
 
+}
+
+public sealed class StockCountApprovalSettledIntegrationEventConverter(IInventoryIntegrationEventContextAccessor contextAccessor)
+    : IIntegrationEventConverter<StockCountApprovalSettledDomainEvent, StockCountApprovalSettledIntegrationEvent>
+{
+    public StockCountApprovalSettledIntegrationEvent Convert(StockCountApprovalSettledDomainEvent domainEvent)
+    {
+        var adjustment = domainEvent.Adjustment;
+        var context = contextAccessor.GetContext();
+        return new StockCountApprovalSettledIntegrationEvent(
+            EventIds.New(), InventoryIntegrationEventTypes.StockCountApprovalSettled, InventoryIntegrationEventVersions.V1,
+            DateTimeOffset.UtcNow, InventoryIntegrationEventSources.BusinessInventory,
+            context.CorrelationId, context.CausationId, adjustment.OrganizationId, adjustment.EnvironmentId, context.Actor,
+            EventIds.Idempotency("stock-count-approval-settled", adjustment.OrganizationId, adjustment.EnvironmentId,
+                adjustment.CountTaskCode, adjustment.IdempotencyKey),
+            new StockCountApprovalSettledPayload(adjustment.CountTaskCode, domainEvent.CountTaskKey,
+                adjustment.IdempotencyKey, adjustment.Status == StockCountAdjustmentStatuses.Voided,
+                adjustment.MovementId, adjustment.ConfirmedAtUtc));
+    }
 }

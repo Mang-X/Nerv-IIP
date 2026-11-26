@@ -616,7 +616,7 @@ public sealed class WmsInventoryRpcIdempotencyAcceptanceTests
                     new ConfirmStockCountAdjustmentCommand(new StockCountTaskId(Guid.Parse(request.CountTaskId)),
                         request.CountedQuantity, request.IdempotencyKey), cancellationToken);
             await inventoryDb.SaveChangesAsync(cancellationToken);
-            return new WmsInventoryCountAdjustmentResult(result.MovementId!.ToString(), result.VarianceQuantity, result.OnHandQuantity);
+            return new WmsInventoryCountAdjustmentResult(result.MovementId?.ToString(), result.VarianceQuantity, result.OnHandQuantity, result.Status);
         }
     }
 

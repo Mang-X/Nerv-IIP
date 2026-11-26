@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 
 namespace Nerv.IIP.BusinessGateway.Web.Application.BusinessServices;
 
@@ -122,16 +123,25 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : Business
             null,
             cancellationToken);
 
-    public Task<BusinessConsoleApprovalChainResponse> GetChainAsync(
+    public async Task<BusinessConsoleApprovalChainResponse> GetChainAsync(
         string internalBearerToken,
         BusinessConsoleApprovalChainRequest request,
-        CancellationToken cancellationToken) =>
-        SendAsync<BusinessConsoleApprovalChainResponse>(
+        CancellationToken cancellationToken)
+    {
+        var chain = await SendAsync<BusinessConsoleApprovalChainResponse>(
             internalBearerToken,
             HttpMethod.Get,
             $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(request.ChainId)}",
             null,
             cancellationToken);
+        if (string.IsNullOrWhiteSpace(chain.OrganizationId) || string.IsNullOrWhiteSpace(chain.EnvironmentId)
+            || chain.OrganizationId != request.OrganizationId || chain.EnvironmentId != request.EnvironmentId)
+        {
+            throw BusinessServiceProxyException.FromOpaqueDownstreamFailure(HttpStatusCode.NotFound);
+        }
+
+        return chain;
+    }
 
     public Task<BusinessConsoleApprovalTaskListResponse> ListPendingTasksAsync(
         string internalBearerToken,

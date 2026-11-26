@@ -26,7 +26,6 @@ const coladaState = vi.hoisted(() => ({
   mutations: [] as ReturnType<typeof vi.fn>[],
   mutationOptions: [] as Array<{
     onSuccess?: () => Promise<void> | void
-    onSettled?: () => Promise<void> | void
   }>,
   refetches: new Map<string, ReturnType<typeof vi.fn>>(),
 }))
@@ -85,7 +84,7 @@ vi.mock('@pinia/colada', () => ({
     const key = Array.isArray(options.key) ? options.key[0] : undefined
     const id = key && typeof key === 'object' && '_id' in key ? String(key._id) : ''
 
-    const refetch = vi.fn()
+    const refetch = vi.fn().mockResolvedValue(undefined)
     coladaState.refetches.set(id, refetch)
     return {
       data: shallowRef(coladaState.queryDataById.get(id)),
@@ -148,7 +147,6 @@ describe('business barcode composables', () => {
       query: { organizationId: 'org-001', environmentId: 'env-dev' },
       body: { printBatchId: 'pb-1', printerId: 'printer-01' },
     })
-    await coladaState.mutationOptions[2]!.onSettled!()
     expect(coladaState.refetches.get('listBusinessConsoleBarcodePrintBatches')).toHaveBeenCalled()
     expect(coladaState.refetches.get('getBusinessConsoleBarcodePrintBatch')).toHaveBeenCalled()
   })

@@ -251,7 +251,8 @@ public sealed partial class SchedulingFirstPlanJobPostgresTests
         await VerifyCandidateSelection();
         await VerifyCandidateSelection(SchedulingReschedulingStrategyContract.RightShift);
         await VerifyCandidateSelection(SchedulingReschedulingStrategyContract.ResourceTransfer);
-        await VerifyInsertionCandidateSave();
+        await VerifyInsertionCandidateSave(3);
+        await VerifyInsertionCandidateSave(10);
     }
 
     private static async Task VerifyEquipmentSourceSnapshot()

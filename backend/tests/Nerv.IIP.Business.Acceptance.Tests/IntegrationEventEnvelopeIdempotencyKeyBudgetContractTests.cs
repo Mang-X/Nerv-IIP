@@ -7,6 +7,9 @@ using Nerv.IIP.Business.IndustrialTelemetry.Domain.AggregatesModel.TelemetrySumm
 using Nerv.IIP.Business.IndustrialTelemetry.Domain.DomainEvents;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockMovementAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountAdjustmentAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate;
+using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
@@ -217,7 +220,7 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
     /// 哪天上游把段收窄到纯拼接也装得下了，这条会红，届时回落分支是否还需要要重新评估。
     /// </summary>
     [Theory]
-    [MemberData(nameof(ConvertedProducerNames))]
+    [MemberData(nameof(DigestRequiredProducerNames))]
     public void Plain_concatenation_of_the_same_worst_case_input_would_not_fit(string producer)
     {
         var (narrowest, _) = NarrowestCarrierWidth();
@@ -232,11 +235,11 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
     /// 回落形态的长度只由前缀与摘要决定，与输入多长无关；这条把那个上界也钉在承载列上。
     /// </summary>
     [Fact]
-    public void Fallback_shape_fits_the_narrowest_platform_carrier_column_for_every_converted_producer()
+    public void Fallback_shape_fits_the_narrowest_platform_carrier_column_for_producers_that_need_it()
     {
         var (narrowest, _) = NarrowestCarrierWidth();
 
-        foreach (var (producer, factory) in ConvertedProducerKeys())
+        foreach (var (producer, factory) in ConvertedProducerKeys().Where(entry => entry.Key != StockCountApprovalSettledProducer))
         {
             var reading = factory();
             Assert.True(
@@ -256,6 +259,12 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
     /// </summary>
     internal static IReadOnlyList<Type> ConvertedProducerConverterTypes() =>
         [.. ConvertedProducerKeys().Values.Select(factory => factory().ConverterType)];
+
+    private const string StockCountApprovalSettledProducer = "Inventory.stock-count-approval-settled";
+
+    // At the current source column widths this producer fits without a digest.
+    public static TheoryData<string> DigestRequiredProducerNames() =>
+        new(ConvertedProducerKeys().Keys.Where(name => name != StockCountApprovalSettledProducer));
 
     public static TheoryData<string> ConvertedProducerNames()
     {
@@ -279,6 +288,7 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
         ["Wms.wcs-retry-exhausted"] = WmsRetryExhaustedKey,
         ["AppHub.connector-host-unreachable"] = AppHubConnectorHostUnreachableKey,
         ["Inventory.stock-movement-posted"] = InventoryStockMovementPostedKey,
+        [StockCountApprovalSettledProducer] = InventoryStockCountApprovalSettledKey,
         ["Approval.step-resolved"] = ApprovalStepResolvedKey,
         ["Mes.production-consumption"] = MesProductionConsumptionKey,
         ["ProductEngineering.production-version-created"] = ProductEngineeringProductionVersionCreatedKey,
@@ -389,6 +399,30 @@ public sealed class IntegrationEventEnvelopeIdempotencyKeyBudgetContractTests
             prefix,
             integrationEvent.IdempotencyKey,
             PlainLength(prefix, widest[0], widest[1], widest[2], widest[3], detectedAtUtc.ToString("O")));
+    }
+
+    private static ProducerKeyReading InventoryStockCountApprovalSettledKey()
+    {
+        using var model = ModelOnly<InventoryDbContext>();
+        var widest = Saturate(model, typeof(StockCountAdjustment),
+            nameof(StockCountAdjustment.OrganizationId), nameof(StockCountAdjustment.EnvironmentId),
+            nameof(StockCountAdjustment.CountTaskCode), nameof(StockCountAdjustment.IdempotencyKey));
+        var ledger = StockLedger.Create(widest[0], widest[1], "SKU-001", "ea", "SITE-001", "WH-01",
+            null, null, "unrestricted", "company", null);
+        var task = StockCountTask.Create(widest[0], widest[1], widest[2], "freeze-count",
+            ledger.OrganizationId, ledger.EnvironmentId, ledger.SkuCode, ledger.UomCode, ledger.SiteCode,
+            ledger.LocationCode, ledger.LotNo, ledger.SerialNo, ledger.QualityStatus, ledger.OwnerType,
+            ledger.OwnerId, ledger.LedgerVersion);
+        ledger.FreezeForCount(task.CountTaskCode);
+        task.SubmitForApproval(ledger, 1m);
+        var adjustment = StockCountAdjustment.RecordPendingApproval(task, widest[3], "approval-chain", 1m);
+        adjustment.VoidAfterApprovalRejection(task.IdempotencyKey);
+
+        var converter = new StockCountApprovalSettledIntegrationEventConverter(new StubInventoryContextAccessor());
+        var integrationEvent = converter.Convert(new InventoryDomainEvents.StockCountApprovalSettledDomainEvent(adjustment, task.IdempotencyKey));
+        const string prefix = "inventory:stock-count-approval-settled:";
+        return new ProducerKeyReading(converter.GetType(), prefix, integrationEvent.IdempotencyKey,
+            PlainLength(prefix, widest));
     }
 
     private static ProducerKeyReading InventoryStockMovementPostedKey()

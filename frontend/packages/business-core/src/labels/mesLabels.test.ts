@@ -75,6 +75,7 @@ describe('materialIssueStatusLabel', () => {
     expect(materialIssueStatusLabel('Requested')).toBe('待领料')
     expect(materialIssueStatusLabel('Pending')).toBe('待领料')
     expect(materialIssueStatusLabel('Issued')).toBe('已发料')
+    expect(materialIssueStatusLabel('ReceiptPosting')).toBe('库存过账中')
     expect(materialIssueStatusLabel('PartiallyReceived')).toBe('部分接收')
     expect(materialIssueStatusLabel('Received')).toBe('已接收')
     expect(materialIssueStatusLabel('Confirmed')).toBe('已接收')

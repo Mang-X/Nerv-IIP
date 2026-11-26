@@ -7,6 +7,8 @@ namespace Nerv.IIP.Business.DemandPlanning.Web.Application.Commands;
 
 public sealed record AcceptPlanningSuggestionCommand(
     PlanningSuggestionId SuggestionId,
+    string OrganizationId,
+    string EnvironmentId,
     string DownstreamService,
     string DownstreamDocumentType,
     string? DownstreamDocumentId,
@@ -22,6 +24,8 @@ public sealed class AcceptPlanningSuggestionCommandValidator : AbstractValidator
     public AcceptPlanningSuggestionCommandValidator()
     {
         RuleFor(x => x.SuggestionId).NotEmpty();
+        RuleFor(x => x.OrganizationId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.EnvironmentId).NotEmpty().MaximumLength(64);
         RuleFor(x => x.DownstreamService).NotEmpty().MaximumLength(64);
         RuleFor(x => x.DownstreamDocumentType).NotEmpty().MaximumLength(64);
         RuleFor(x => x.DownstreamDocumentId).MaximumLength(128);
@@ -68,7 +72,10 @@ public sealed class AcceptPlanningSuggestionCommandHandler(
     {
         var suggestion = await dbContext.PlanningSuggestions
             .Include(x => x.PeggingLinks)
-            .SingleOrDefaultAsync(x => x.Id == request.SuggestionId, cancellationToken)
+            .SingleOrDefaultAsync(x =>
+                x.Id == request.SuggestionId &&
+                x.OrganizationId == request.OrganizationId &&
+                x.EnvironmentId == request.EnvironmentId, cancellationToken)
             ?? throw new KnownException($"计划建议不存在：{request.SuggestionId}");
         var assemblyParentSuggestionIds = await GetAssemblyParentSuggestionIdsAsync(suggestion, cancellationToken);
         var downstreamReference = await ResolveDownstreamReferenceAsync(suggestion, request, cancellationToken);

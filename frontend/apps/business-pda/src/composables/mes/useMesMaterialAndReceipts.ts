@@ -3,7 +3,10 @@ import {
   returnBusinessConsoleMesLineSideMaterialMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
+  listBusinessConsoleMesFinishedGoodsReceiptRequests,
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
+  listBusinessConsoleMesReceivableProducedLots,
+  getBusinessConsoleMesMaterialIssueRequest,
   listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
   listBusinessConsoleMesLineSideInventoryBalancesQueryOptions,
@@ -11,6 +14,7 @@ import {
   type BusinessConsoleMesReturnLineSideMaterialRequest,
   type BusinessConsoleMesCreateMaterialIssueRequest,
   type BusinessConsoleMesCreateReceiptRequest,
+  type BusinessConsoleMesCreateReceiptResponse,
   type BusinessConsoleMesMaterialIssueRequestListEnvelope,
   type BusinessConsoleMesMaterialIssueRequestRow,
   type BusinessConsoleMesLineSideInventoryBalanceItem,
@@ -28,7 +32,9 @@ import {
 } from '@nerv-iip/business-core'
 import { useMutation, useQuery, useQueryCache } from '@pinia/colada'
 import { computed, reactive, shallowRef, watch } from 'vue'
+import { describeRequestError } from '@/api/request-timeout'
 import { assertLifecycleActionExecutable } from '@/composables/shared/lifecycleActionRecovery'
+import { useAuthStore } from '@/stores/auth'
 import {
   DEFAULT_TAKE,
   bindAuthScope,
@@ -201,11 +207,31 @@ export function useMesLineSideInventoryBalances() {
 
 export function useMesMaterialIssue() {
   const filters = defaultFilters()
+  const auth = useAuthStore()
   const queryCache = useQueryCache()
   const scopeReady = computed(() => hasScope(filters))
   const scopeKey = computed(() =>
     scopeReady.value ? `${filters.organizationId}:${filters.environmentId}` : '',
   )
+
+  const receiveScopeIdentity = computed(() => {
+    const principal = auth.principal
+    if (
+      !scopeReady.value ||
+      !auth.sessionId ||
+      !principal?.principalId ||
+      principal.organizationId !== filters.organizationId ||
+      principal.environmentId !== filters.environmentId ||
+      !principal.permissionCodes?.includes('business.mes.materials.manage')
+    )
+      return ''
+    return JSON.stringify([
+      auth.sessionId,
+      principal.principalId,
+      filters.organizationId,
+      filters.environmentId,
+    ])
+  })
 
   const requestsQuery = useQuery(() => ({
     ...listBusinessConsoleMesMaterialIssueRequestsQueryOptions({
@@ -231,14 +257,9 @@ export function useMesMaterialIssue() {
     },
   })
 
-  const confirmMutation = useMutation({
-    ...confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions(),
-    onSuccess() {
-      void invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests']).catch(
-        ignoreBackgroundError,
-      )
-    },
-  })
+  const confirmMutation = useMutation(
+    confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions(),
+  )
 
   const returnMutation = useMutation({
     ...returnBusinessConsoleMesLineSideMaterialMutationOptions(),
@@ -246,6 +267,22 @@ export function useMesMaterialIssue() {
       await invalidateMesQueries(queryCache, ['listBusinessConsoleMesMaterialIssueRequests'])
     },
   })
+
+  async function readMaterialIssue(
+    requestId: string,
+    workOrderId: string | undefined,
+    scope: ReturnType<typeof scopeQuery>,
+  ) {
+    const { data } = await getBusinessConsoleMesMaterialIssueRequest({
+      path: { requestId },
+      query: scope,
+      throwOnError: true,
+    })
+    const issue = data?.success ? data.data : undefined
+    return issue?.requestId === requestId && (!workOrderId || issue.workOrderId === workOrderId)
+      ? issue
+      : undefined
+  }
 
   return {
     filters,
@@ -268,44 +305,66 @@ export function useMesMaterialIssue() {
         query: scopeQuery(filters),
         body: { ...body } satisfies BusinessConsoleMesCreateMaterialIssueRequest,
       }),
+    receiveScopeIdentity,
     confirmLineSideReceipt: async (
       requestId: string,
-      body: ConfirmLineSideReceiptInput,
-      context: { workOrderId?: string } = {},
+      body: ConfirmLineSideReceiptInput & { idempotencyKey: string },
+      context: {
+        workOrderId?: string
+        replay?: boolean
+        isCurrent?: () => boolean
+        beforeDispatch?: () => void
+        onValidationRejected?: () => void
+      } = {},
     ) => {
-      let skip = 0
-      let authoritative: BusinessConsoleMesMaterialIssueRequestRow | undefined
-      while (!authoritative) {
-        const { data } = await listBusinessConsoleMesMaterialIssueRequests({
-          query: {
-            ...scopeQuery(filters),
-            ...(context.workOrderId?.trim() ? { workOrderId: context.workOrderId.trim() } : {}),
-            skip,
-            take: DEFAULT_TAKE,
-          },
-          throwOnError: true,
-        })
-        const envelope = data as BusinessConsoleMesMaterialIssueRequestListEnvelope | undefined
-        authoritative = exactItem(
-          envelope,
-          (item: BusinessConsoleMesMaterialIssueRequestRow) => item.requestId === requestId,
-        )
-        if (authoritative) break
-        const items = envelope?.success ? (envelope.data?.items ?? []) : []
-        const total = envelope?.success ? (envelope.data?.total ?? 0) : 0
-        if (items.length === 0 || skip + items.length >= total) break
-        skip += items.length
+      const identity = receiveScopeIdentity.value
+      const scope = scopeQuery(filters)
+      const workOrderId = context.workOrderId?.trim()
+      function assertCurrentScope() {
+        if (
+          !identity ||
+          receiveScopeIdentity.value !== identity ||
+          context.isCurrent?.() === false
+        ) {
+          throw new Error('当前作业范围已变化，请重新打开领料申请。')
+        }
       }
-      assertLifecycleActionExecutable({
-        domain: 'mes-material-issue',
-        action: 'confirm-receipt',
-        facts: { status: authoritative?.status },
-      })
-      return confirmMutation.mutateAsync({
-        path: { requestId },
-        query: scopeQuery(filters),
-        body: { ...body } satisfies BusinessConsoleMesConfirmLineSideReceiptRequest,
-      })
+
+      assertCurrentScope()
+      if (!context.replay) {
+        const current = await readMaterialIssue(requestId, workOrderId, scope)
+        assertCurrentScope()
+        assertLifecycleActionExecutable({
+          domain: 'mes-material-issue',
+          action: 'confirm-receipt',
+          facts: { status: current?.status },
+        })
+      }
+
+      // MES 按键恢复原回执，即使该领料单已进入过账中或已收，重放仍由网关重新授权。
+      context.beforeDispatch?.()
+      const response = await confirmMutation
+        .mutateAsync({ path: { requestId }, query: scope, body })
+        .catch((error: unknown) => {
+          const { status } = describeRequestError(error)
+          if (status === 400 || status === 422) context.onValidationRejected?.()
+          throw error
+        })
+      assertCurrentScope()
+      const reference = response?.data?.downstreamDocumentId?.trim()
+      if (!response?.success || response.data?.accepted !== true || !reference) {
+        throw new Error(response?.message || '尚未取得线边接收回执，请重试原操作。')
+      }
+
+      const current = await readMaterialIssue(requestId, workOrderId, scope)
+      assertCurrentScope()
+      if (!current) throw new Error('收料已受理，暂未读到原领料申请，请重试核实。')
+      await invalidateMesQueries(queryCache, [
+        'listBusinessConsoleMesMaterialIssueRequests',
+        'listBusinessConsoleMesLineSideInventoryBalances',
+      ]).catch(ignoreBackgroundError)
+      assertCurrentScope()
+      return { reference, current }
     },
     returnLineSideMaterial: async (
       requestId: string,
@@ -354,10 +413,13 @@ export type CreateReceiptInput = Omit<
 
 export function useMesReceipts() {
   const filters = defaultFilters()
+  const auth = useAuthStore()
   const queryCache = useQueryCache()
   const scopeReady = computed(() => hasScope(filters))
   const scopeKey = computed(() =>
-    scopeReady.value ? `${filters.organizationId}:${filters.environmentId}` : '',
+    scopeReady.value
+      ? JSON.stringify([auth.principal?.principalId, filters.organizationId, filters.environmentId])
+      : '',
   )
 
   const receiptsQuery = useQuery(() => ({
@@ -389,6 +451,7 @@ export function useMesReceipts() {
   return {
     filters,
     scopeReady,
+    receiptScopeIdentity: scopeKey,
     receipts: computed<BusinessConsoleMesReceiptRequestRow[]>(() =>
       envelopeItems<
         BusinessConsoleMesReceiptRequestRow,
@@ -401,7 +464,45 @@ export function useMesReceipts() {
     hasSuccessfulResponse,
     hasFailedResponse,
     refresh: () => (hasScope(filters) ? receiptsQuery.refetch() : Promise.resolve()),
-    createReceipt: (input: CreateReceiptInput) => {
+    async readProducedLots(workOrderId: string, signal: AbortSignal) {
+      const { data } = await listBusinessConsoleMesReceivableProducedLots({
+        path: { workOrderId },
+        query: scopeQuery(filters),
+        signal,
+        throwOnError: true,
+      })
+      if (!data?.success || !data.data?.items) throw new Error('无法读取产出批次，请重试。')
+      return data.data.items.filter(
+        (lot): lot is typeof lot & { producedLotNo: string; remainingQuantity: number } =>
+          Boolean(lot.producedLotNo?.trim()) &&
+          typeof lot.remainingQuantity === 'number' &&
+          Number.isFinite(lot.remainingQuantity) &&
+          lot.remainingQuantity > 0,
+      )
+    },
+    async readReceipt(workOrderId: string, receipt: BusinessConsoleMesCreateReceiptResponse) {
+      const scope = scopeQuery(filters)
+      const take = 20
+      let skip = 0
+      while (true) {
+        const { data } = await listBusinessConsoleMesFinishedGoodsReceiptRequests({
+          query: { ...scope, workOrderId, keyword: receipt.requestNo, skip, take },
+          throwOnError: true,
+        })
+        if (!data?.success || !data.data?.items) return undefined
+        const { items, total } = data.data
+        const match = items.find(
+          (row) =>
+            row.workOrderId === workOrderId &&
+            row.receiptRequestId === receipt.finishedGoodsReceiptRequestId &&
+            row.requestNo === receipt.requestNo,
+        )
+        if (match) return match
+        skip += items.length
+        if (items.length === 0 || skip >= (total ?? 0)) return undefined
+      }
+    },
+    createReceipt: (input: CreateReceiptInput, requestedAtUtc = new Date().toISOString()) => {
       // 只组装公共写契约字段，旧运行时对象中的未知字段不会进入请求体。
       const safeInput: CreateReceiptInput = {
         workOrderId: input.workOrderId,
@@ -415,10 +516,10 @@ export function useMesReceipts() {
       return createMutation.mutateAsync({
         body: {
           ...safeInput,
-          // org/env + timestamp injected LAST from principal scope — never the caller.
+          // Scope comes from the principal. The intent timestamp stays fixed on replay.
           organizationId: filters.organizationId,
           environmentId: filters.environmentId,
-          requestedAtUtc: new Date().toISOString(),
+          requestedAtUtc,
         } satisfies BusinessConsoleMesCreateReceiptRequest,
       })
     },

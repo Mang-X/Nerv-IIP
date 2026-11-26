@@ -116,11 +116,22 @@ public sealed class ConfirmStockCountAdjustmentCommandHandler(
                     approvalOptions.DocumentType,
                     task.CountTaskCode,
                     "system:inventory",
-                    varianceAmount),
+                    varianceAmount,
+                    request.IdempotencyKey),
                 cancellationToken);
             var pendingAdjustment = StockCountAdjustment.RecordPendingApproval(task, request.IdempotencyKey, approval.ChainId, varianceAmount);
             dbContext.StockCountAdjustments.Add(pendingAdjustment);
-            return new ConfirmStockCountAdjustmentResult(null, varianceQuantity, ledger.OnHandQuantity, pendingAdjustment.Status, approval.ChainId);
+            StockMovement? postedMovement = approval.Status switch
+            {
+                ApprovalChainStatuses.Pending => null,
+                ApprovalChainStatuses.Approved => CompleteStockCountAdjustmentApprovalCommandHandler.ApplyOutcome(
+                    dbContext, pendingAdjustment, task, ledger, approved: true),
+                ApprovalChainStatuses.Rejected or ApprovalChainStatuses.Returned => CompleteStockCountAdjustmentApprovalCommandHandler.ApplyOutcome(
+                    dbContext, pendingAdjustment, task, ledger, approved: false),
+                _ => throw new KnownException("审批链状态无法用于恢复盘点调整，请核实审批结果。"),
+            };
+            return new ConfirmStockCountAdjustmentResult(
+                postedMovement?.Id, varianceQuantity, ledger.OnHandQuantity, pendingAdjustment.Status, approval.ChainId);
         }
 
         StockMovement movement;

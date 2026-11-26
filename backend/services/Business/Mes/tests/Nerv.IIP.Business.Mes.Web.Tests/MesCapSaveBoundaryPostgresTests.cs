@@ -371,11 +371,21 @@ public sealed class MesCapSaveBoundaryPostgresTests
             await db.SaveChangesAsync();
         }
 
-        var response = await client.PostAsJsonAsync("/api/business/v1/mes/material-issue-requests/MIR-3646/line-side-receipts", new
+        const string receiptUrl = "/api/business/v1/mes/material-issue-requests/MIR-3646/line-side-receipts";
+        var receiptBody = new
         {
-            organizationId = "org-001", environmentId = "env-dev", receivedAtUtc = At, receivedQuantity = 3m, materialLotId = "LINE-LOT",
-        });
+            organizationId = "org-001", environmentId = "env-dev", receivedAtUtc = At.AddTicks(1),
+            receivedQuantity = 3m, materialLotId = "LINE-LOT", idempotencyKey = "receipt-3646",
+        };
+        using var response = await client.PostAsJsonAsync(receiptUrl, receiptBody);
         response.EnsureSuccessStatusCode();
+        var accepted = await response.Content.ReadAsStringAsync();
+
+        using var pendingReplay = await client.PostAsJsonAsync(receiptUrl,
+            receiptBody with { receivedAtUtc = At.AddMinutes(1) });
+        pendingReplay.EnsureSuccessStatusCode();
+        Assert.Equal(accepted, await pendingReplay.Content.ReadAsStringAsync());
+
         var request = await ReadRequestAsync(factory.Services);
         Assert.True(request.ReceiptUsesActualIssueValue);
         Assert.False(request.PendingReceiptIntentSent);
@@ -419,6 +429,16 @@ public sealed class MesCapSaveBoundaryPostgresTests
         request = await ReadRequestAsync(factory.Services);
         Assert.Equal(3m, request.ReceivedQuantity);
         Assert.Equal(MaterialIssueRequest.ReceivedStatus, request.Status);
+        Assert.Single(await ReadInboundAsync());
+
+        using var postedReplay = await client.PostAsJsonAsync(receiptUrl,
+            receiptBody with { receivedAtUtc = At.AddMinutes(2) });
+        postedReplay.EnsureSuccessStatusCode();
+        Assert.Equal(accepted, await postedReplay.Content.ReadAsStringAsync());
+
+        using var conflict = await client.PostAsJsonAsync(receiptUrl, receiptBody with { receivedQuantity = 2m });
+        Assert.Equal(System.Net.HttpStatusCode.Conflict, conflict.StatusCode);
+        Assert.Equal(3m, (await ReadRequestAsync(factory.Services)).ReceivedQuantity);
         Assert.Single(await ReadInboundAsync());
     }
 

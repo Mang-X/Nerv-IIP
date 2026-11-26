@@ -81,7 +81,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         var identity = string.Join('\n',
             ApprovalText.Required(organizationId),
             ApprovalText.Required(environmentId),
-            ApprovalText.Required(templateCode),
+            documentReference.IsStockCountAdjustment ? string.Empty : ApprovalText.Required(templateCode),
             documentReference.SourceService,
             documentReference.DocumentType,
             documentReference.DocumentId,
@@ -165,7 +165,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         if (normalizedDecision == ApprovalDecisions.Reject)
         {
             Status = ApprovalChainStatuses.Rejected;
-            PendingIdentityKey = null;
+            ReleaseStartIdentity();
             CompletedAtUtc = decidedAtUtc;
             this.AddDomainEvent(new ApprovalRejectedDomainEvent(this, approvalDecision));
             return approvalDecision;
@@ -174,7 +174,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         if (normalizedDecision == ApprovalDecisions.Return)
         {
             Status = ApprovalChainStatuses.Returned;
-            PendingIdentityKey = null;
+            ReleaseStartIdentity();
             CompletedAtUtc = decidedAtUtc;
             this.AddDomainEvent(new ApprovalReturnedDomainEvent(this, approvalDecision));
             return approvalDecision;
@@ -191,12 +191,22 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         if (steps.GroupBy(x => x.StepNo).All(ApprovalStep.IsGroupComplete))
         {
             Status = ApprovalChainStatuses.Approved;
-            PendingIdentityKey = null;
+            ReleaseStartIdentity();
             CompletedAtUtc = decidedAtUtc;
             this.AddDomainEvent(new ApprovalApprovedDomainEvent(this, approvalDecision));
         }
 
         return approvalDecision;
+    }
+
+    private void ReleaseStartIdentity()
+    {
+        // Inventory uses the adjustment key as the document line. A retry of that
+        // adjustment must recover the same chain after it reaches a terminal state.
+        if (!DocumentReference.IsStockCountAdjustment)
+        {
+            PendingIdentityKey = null;
+        }
     }
 
     public void Withdraw(string actorType, string actorRef, string? reason, DateTimeOffset withdrawnAtUtc)
@@ -224,7 +234,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
             normalizedReason,
             withdrawnAtUtc);
         Status = ApprovalChainStatuses.Withdrawn;
-        PendingIdentityKey = null;
+        ReleaseStartIdentity();
         CompletedAtUtc = withdrawnAtUtc;
         IncrementRowVersion();
         this.AddDomainEvent(new ApprovalChainActionRecordedDomainEvent(this, decision, recipientRefs));
@@ -734,6 +744,9 @@ public sealed class ApprovalDocumentReference
     public string DocumentType { get; private set; } = string.Empty;
     public string DocumentId { get; private set; } = string.Empty;
     public string? DocumentLineId { get; private set; }
+
+    public bool IsStockCountAdjustment => SourceService == ApprovalSourceServices.Inventory
+        && DocumentType == ApprovalDocumentTypes.StockCountVariance && DocumentLineId is not null;
     public decimal? Amount { get; private set; }
     public string? OrganizationId { get; private set; }
     public string? DepartmentId { get; private set; }

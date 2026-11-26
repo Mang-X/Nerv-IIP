@@ -7,17 +7,21 @@ using Nerv.IIP.Contracts.Approval;
 namespace Nerv.IIP.Business.Approval.Web.Application.Commands.Chains;
 
 public sealed record ResolveApprovalStepCommand(
+    string OrganizationId,
+    string EnvironmentId,
     ApprovalChainId ChainId,
     int StepNo,
     string ActorType,
     string ActorRef,
     string Decision,
-    string? Comment) : ICommand<ApprovalDecisionId>;
+    string? Comment) : ICommand<ApprovalDecisionId?>;
 
 public sealed class ResolveApprovalStepCommandValidator : AbstractValidator<ResolveApprovalStepCommand>
 {
     public ResolveApprovalStepCommandValidator()
     {
+        RuleFor(x => x.OrganizationId).RequiredApprovalCode(100);
+        RuleFor(x => x.EnvironmentId).RequiredApprovalCode(100);
         RuleFor(x => x.ChainId).NotEmpty();
         RuleFor(x => x.StepNo).GreaterThan(0);
         RuleFor(x => x.ActorType).RequiredApprovalCode(50);
@@ -34,15 +38,21 @@ public sealed class ResolveApprovalStepCommandValidator : AbstractValidator<Reso
 }
 
 public sealed class ResolveApprovalStepCommandHandler(ApplicationDbContext dbContext)
-    : ICommandHandler<ResolveApprovalStepCommand, ApprovalDecisionId>
+    : ICommandHandler<ResolveApprovalStepCommand, ApprovalDecisionId?>
 {
-    public async Task<ApprovalDecisionId> Handle(ResolveApprovalStepCommand request, CancellationToken cancellationToken)
+    public async Task<ApprovalDecisionId?> Handle(ResolveApprovalStepCommand request, CancellationToken cancellationToken)
     {
         var chain = await dbContext.ApprovalChains
             .Include(x => x.Steps)
             .Include(x => x.Decisions)
-            .SingleOrDefaultAsync(x => x.Id == request.ChainId, cancellationToken)
-            ?? throw new KnownException("审批链不存在或已不在当前业务范围。");
+            .SingleOrDefaultAsync(x => x.Id == request.ChainId
+                && x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId, cancellationToken);
+        if (chain is null)
+        {
+            return null;
+        }
+
         var actorType = request.ActorType.Trim().ToLowerInvariant();
         var actorRef = request.ActorRef.Trim();
         var nowUtc = DateTimeOffset.UtcNow;

@@ -254,6 +254,33 @@ describe('business operation receipt confirmation', () => {
     },
   )
 
+  it('acknowledges an accepted count awaiting approval from exact readback', async () => {
+    const envelope = accepted('wms.count-execution.complete', 'count-1')
+    await expect(
+      confirmBusinessConsoleOperation(envelope, {
+        expectedOperationType: 'wms.count-execution.complete',
+        expectedIdempotencyKey: 'idem:wms.count-execution.complete:count-1',
+        expectedResourceId: 'count-1',
+        attempts: 1,
+        readback: async () => ({
+          success: true,
+          data: {
+            items: [
+              {
+                countExecutionId: 'count-1',
+                status: 'PendingApproval',
+                inventoryPostingStatus: 'Pending',
+              },
+            ],
+          },
+        }),
+      }),
+    ).rejects.toMatchObject({
+      name: 'BusinessOperationPendingError',
+      message: expect.stringContaining('待审批'),
+    })
+  })
+
   it('reads an accepted count receipt until the authoritative inventory movement is posted', async () => {
     const envelope = accepted('wms.count-execution.complete', 'count-1')
     const readback = vi

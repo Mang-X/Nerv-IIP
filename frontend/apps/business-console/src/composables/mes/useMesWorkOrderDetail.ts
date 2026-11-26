@@ -1,4 +1,5 @@
 import {
+  BusinessOperationUnconfirmedError,
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
   returnBusinessConsoleMesLineSideMaterialMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
@@ -32,6 +33,7 @@ import {
   defaultWorkOrderContext,
   envelopeItems,
   fetchAllCompensationItems,
+  ignoreBackgroundError,
   invalidateMesQueries,
   isNonEmpty,
   toContextQuery,
@@ -177,11 +179,12 @@ export function useMesWorkOrderDetail(workOrderId?: MaybeRefOrGetter<string>) {
   })
 
   // 收料回执只表示受理；库存 CAP 回执前仍是 ReceiptPosting，不能用此时的旧齐套当终态。
-  const receiptReadbacks = shallowRef<Array<{ workOrderId: string; requestId: string }>>([])
+  const receiptReadbacks = shallowRef<Array<{ identity: string; requestId: string }>>([])
   const receiptReadbackActive = computed(() =>
-    receiptReadbacks.value.some((item) => item.workOrderId === filters.workOrderId),
+    receiptReadbacks.value.some((item) => item.identity === detailIdentity.value),
   )
   const materialQuery = useQuery(() => {
+    const identity = detailIdentity.value
     const options = getBusinessConsoleMesMaterialReadinessQueryOptions({
       path: { workOrderId: filters.workOrderId },
       query: toContextQuery(filters),
@@ -190,9 +193,7 @@ export function useMesWorkOrderDetail(workOrderId?: MaybeRefOrGetter<string>) {
       ...options,
       enabled: detailEnabled.value,
       query: async (context: Parameters<typeof options.query>[0]) => {
-        const readbacks = receiptReadbacks.value.filter(
-          (item) => item.workOrderId === filters.workOrderId,
-        )
+        const readbacks = receiptReadbacks.value.filter((item) => item.identity === identity)
         let posting = false
         if (readbacks.length) {
           await materialIssueQuery.refetch(true)
@@ -335,20 +336,24 @@ export function useMesWorkOrderDetail(workOrderId?: MaybeRefOrGetter<string>) {
       requestId: string,
       body: BusinessConsoleMesConfirmLineSideReceiptRequest,
     ) => {
-      const workOrderId = filters.workOrderId
+      const identity = detailIdentity.value
       const result = await confirmLineSideReceiptMutation.mutateAsync({
         path: { requestId },
         query: toContextQuery(filters),
         body,
       })
-      receiptReadbacks.value = [...receiptReadbacks.value, { workOrderId, requestId }]
+      if (result?.success !== true || result.data?.accepted !== true) {
+        throw new BusinessOperationUnconfirmedError(result?.message || '未取得收料受理回执。')
+      }
+      receiptReadbacks.value = [...receiptReadbacks.value, { identity, requestId }]
       // 受理结果与读回结果分开：失败保留 query.error，用户只需重试读取。
-      await refreshMaterialIssueQueries(false)
-      void materialQuery.refetch()
-      void detailQuery.refetch()
+      await refreshMaterialIssueQueries(false).catch(ignoreBackgroundError)
+      if (detailIdentity.value === identity) {
+        void materialQuery.refetch().catch(ignoreBackgroundError)
+        void detailQuery.refetch().catch(ignoreBackgroundError)
+      }
       return result
     },
-    confirmLineSideReceiptPending: confirmLineSideReceiptMutation.isLoading,
     returnLineSideMaterial: async (
       requestId: string,
       body: BusinessConsoleMesReturnLineSideMaterialRequest,

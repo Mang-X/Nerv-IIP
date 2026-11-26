@@ -8782,6 +8782,72 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("user-admin", approval.LastRevokeDelegationRequest?.RevokedBy);
     }
 
+    [Theory]
+    [InlineData("org-001", "env-dev", true)]
+    [InlineData("org-002", "env-dev", false)]
+    [InlineData("org-001", "env-other", false)]
+    public async Task Approval_chain_read_requires_matching_service_scope(
+        string ownerOrganizationId, string ownerEnvironmentId, bool allowed)
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new BusinessConsoleApprovalChainResponse(
+                "chain-fixture", ownerOrganizationId, ownerEnvironmentId, "fixture-template", 1,
+                "pending", "fixture", "fixture-document", "doc-fixture", null, [], []),
+            success = true,
+        }));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://approval.local") };
+        var approval = new HttpBusinessApprovalClient(downstream);
+        var request = new BusinessConsoleApprovalChainRequest("org-001", "env-dev", "chain-fixture");
+
+        if (allowed)
+        {
+            var result = await approval.GetChainAsync("internal-test-token", request, CancellationToken.None);
+            Assert.Equal("chain-fixture", result.ChainId);
+        }
+        else
+        {
+            var error = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+                approval.GetChainAsync("internal-test-token", request, CancellationToken.None));
+            Assert.Equal(HttpStatusCode.NotFound, error.StatusCode);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Approval_step_resolution_forwards_scope_in_one_write(bool allowed)
+    {
+        var handler = new RecordingHandler(_ => allowed
+            ? JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new BusinessConsoleResolveApprovalStepResponse("decision-fixture"),
+                success = true,
+            })
+            : new HttpResponseMessage(HttpStatusCode.NotFound));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://approval.local") };
+        var approval = new HttpBusinessApprovalClient(downstream);
+        var request = new BusinessConsoleResolveApprovalStepRequest(
+            "org-001", "env-dev", "chain-fixture", 1, "user", "user-fixture", "approve", null);
+
+        if (allowed)
+        {
+            var result = await approval.ResolveStepAsync("internal-test-token", request, CancellationToken.None);
+            Assert.Equal("decision-fixture", result.DecisionId);
+        }
+        else
+        {
+            var error = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+                approval.ResolveStepAsync("internal-test-token", request, CancellationToken.None));
+            Assert.Equal(HttpStatusCode.NotFound, error.StatusCode);
+        }
+
+        Assert.Equal(HttpMethod.Post, Assert.Single(handler.Requests).Method);
+        using var body = JsonDocument.Parse(Assert.Single(handler.RequestBodies)!);
+        Assert.Equal("org-001", body.RootElement.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", body.RootElement.GetProperty("environmentId").GetString());
+    }
+
     [Fact]
     public async Task Approval_resolve_facade_derives_actor_from_authorized_principal()
     {
@@ -11656,6 +11722,45 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(0, planning.SuggestionListCallCount);
         Assert.Equal(0, erp.PurchaseOrderListCallCount);
         Assert.Equal(0, scheduling.ListCallCount);
+    }
+
+    [Theory]
+    [InlineData("accept")]
+    [InlineData("reject")]
+    public async Task Planning_suggestion_decision_forwards_the_authorized_object_scope(string action)
+    {
+        const string suggestionId = "SUG-001";
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        using var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = true,
+            data = new { accepted = true, rejected = true },
+        }));
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("https://planning.test") };
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessPlanningClient>();
+            services.AddSingleton<IBusinessPlanningClient>(new HttpBusinessPlanningClient(http));
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/business-console/v1/planning/suggestions/{suggestionId}/{action}?organizationId=org-001&environmentId=env-dev",
+            new { downstreamService = "BusinessErp", downstreamDocumentType = "PurchaseRequisition", reason = "取消需求" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var requirement = Assert.IsType<BusinessGatewayPermissionRequirement>(auth.LastRequirement);
+        Assert.Equal((BusinessGatewayPermissions.PlanningSuggestionsManage, "planning-suggestion", suggestionId),
+            (requirement.PermissionCode, requirement.ResourceType, requirement.ResourceId));
+        Assert.Equal(("org-001", "env-dev"), (requirement.OrganizationId, requirement.EnvironmentId));
+        var forwarded = Assert.Single(handler.Requests);
+        Assert.Equal($"/api/business/v1/planning/suggestions/{suggestionId}/{action}", forwarded.RequestUri!.AbsolutePath);
+        using var json = JsonDocument.Parse(Assert.Single(handler.RequestBodies)!);
+        Assert.Equal(requirement.OrganizationId, json.RootElement.GetProperty("organizationId").GetString());
+        Assert.Equal(requirement.EnvironmentId, json.RootElement.GetProperty("environmentId").GetString());
     }
 
     [Fact]

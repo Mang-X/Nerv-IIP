@@ -1,3 +1,4 @@
+using System.Globalization;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Mes.Domain.AggregatesModel.FinishedGoodsReceiptRequestAggregate;
@@ -1101,7 +1102,37 @@ public sealed record ConfirmLineSideMaterialReceiptCommand(
     string RequestId,
     DateTimeOffset ReceivedAtUtc,
     decimal? ReceivedQuantity = null,
-    string? MaterialLotId = null) : ICommand<MesAcceptedResponse>;
+    string? MaterialLotId = null,
+    string? IdempotencyKey = null) : ICommand<MesAcceptedResponse>;
+
+public sealed class ConfirmLineSideMaterialReceiptCommandValidator : AbstractValidator<ConfirmLineSideMaterialReceiptCommand>
+{
+    public ConfirmLineSideMaterialReceiptCommandValidator()
+    {
+        RuleFor(x => x.IdempotencyKey)
+            .NotEmpty().WithMessage("收料幂等键不能为空。")
+            .MaximumLength(CodeIdempotencyKey.IdempotencyKeyMaxLength).WithMessage("收料幂等键长度不能超过 150 个字符。")
+            .When(x => x.IdempotencyKey is not null);
+    }
+}
+
+public sealed class ConfirmLineSideMaterialReceiptCommandLock(ApplicationDbContext dbContext)
+    : ICommandLock<ConfirmLineSideMaterialReceiptCommand>
+{
+    public async Task<CommandLockSettings> GetLockKeysAsync(
+        ConfirmLineSideMaterialReceiptCommand command,
+        CancellationToken cancellationToken)
+    {
+        var scopedQuery = dbContext.MaterialIssueRequests.AsNoTracking().Where(x =>
+            x.OrganizationId == command.OrganizationId && x.EnvironmentId == command.EnvironmentId);
+        var materialRequest = await MaterialIssueRequestLookup.FindAsync(scopedQuery, command.RequestId, cancellationToken)
+            ?? throw new KnownException($"未找到领料申请，RequestId = {command.RequestId}");
+
+        return new CommandLockSettings(
+            $"business-mes:material-issue-receipt:{materialRequest.OrganizationId}:{materialRequest.EnvironmentId}:{materialRequest.Id.Id:D}",
+            30);
+    }
+}
 
 public sealed class ConfirmLineSideMaterialReceiptCommandHandler(
     ApplicationDbContext dbContext,
@@ -1115,6 +1146,31 @@ public sealed class ConfirmLineSideMaterialReceiptCommandHandler(
             x.EnvironmentId == request.EnvironmentId);
         var materialRequest = await MaterialIssueRequestLookup.FindAsync(scopedQuery, request.RequestId, cancellationToken)
             ?? throw new KnownException($"未找到领料申请，RequestId = {request.RequestId}");
+
+        var key = request.IdempotencyKey?.Trim();
+        var receiptScope = $"mes.line-side-receipt:{materialRequest.Id.Id:D}";
+        var fingerprint = string.Join('|',
+            request.ReceivedQuantity?.ToString("G29", CultureInfo.InvariantCulture),
+            request.MaterialLotId?.Trim().ToUpperInvariant());
+        if (key is not null)
+        {
+            var original = await dbContext.CodeIdempotencyKeys.AsNoTracking().SingleOrDefaultAsync(x =>
+                x.OrganizationId == materialRequest.OrganizationId &&
+                x.EnvironmentId == materialRequest.EnvironmentId &&
+                x.RuleKey == receiptScope &&
+                x.IdempotencyKey == key,
+                cancellationToken);
+            if (original is not null)
+            {
+                if (!string.Equals(original.PayloadFingerprint, fingerprint, StringComparison.Ordinal))
+                {
+                    throw new MesIdempotencyConflictException();
+                }
+
+                return new MesAcceptedResponse("Accepted", materialRequest.RequestNo,
+                    DateTimeOffset.ParseExact(original.Code, "O", CultureInfo.InvariantCulture));
+            }
+        }
 
         if (materialRequest.Status is not MaterialIssueRequest.RequestedStatus and
             not MaterialIssueRequest.PartiallyReceivedStatus)
@@ -1148,6 +1204,16 @@ public sealed class ConfirmLineSideMaterialReceiptCommandHandler(
                 request.ReceivedAtUtc,
                 request.ReceivedQuantity,
                 request.MaterialLotId));
+        if (key is not null)
+        {
+            // Save with the aggregate and its outbox. The round-trip value retains the original
+            // response precision when the database audit timestamp rounds to microseconds.
+            dbContext.CodeIdempotencyKeys.Add(new CodeIdempotencyKey(
+                materialRequest.OrganizationId, materialRequest.EnvironmentId, receiptScope, key,
+                request.ReceivedAtUtc.ToString("O", CultureInfo.InvariantCulture),
+                fingerprint, request.ReceivedAtUtc.ToUniversalTime()));
+        }
+
         return new MesAcceptedResponse("Accepted", materialRequest.RequestNo, request.ReceivedAtUtc);
     }
 }

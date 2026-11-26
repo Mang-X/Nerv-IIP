@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.WebUtilities;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Inventory;
@@ -96,7 +97,11 @@ public sealed record WmsInventoryCountAdjustmentRequest(
     decimal CountedQuantity,
     string IdempotencyKey);
 
-public sealed record WmsInventoryCountAdjustmentResult(string MovementId, decimal VarianceQuantity, decimal OnHandQuantity);
+public sealed record WmsInventoryCountAdjustmentResult(
+    string? MovementId,
+    decimal VarianceQuantity,
+    decimal OnHandQuantity,
+    string Status);
 
 public interface IWmsInventoryReservationClient
 {
@@ -130,9 +135,26 @@ public interface IWmsInventoryReservationClient
         CancellationToken cancellationToken);
 }
 
+public interface IWmsCountAdjustmentReader
+{
+    Task<WmsCountAdjustmentOutcome?> FindAsync(
+        string organizationId, string environmentId, string countNo, string idempotencyKey,
+        CancellationToken cancellationToken);
+}
+
+public sealed record WmsCountAdjustmentOutcome(
+    string IdempotencyKey, string Status, string? MovementId, DateTime? ConfirmedAtUtc)
+{
+    public const string RecountRequiredCode = "count-approval-recount-required";
+    public const string RecountRequiredMessage = "盘点差异审批未通过，请在库存盘点中按原盘点单号复盘。";
+
+    public bool IsPosted => Status == "posted" && !string.IsNullOrWhiteSpace(MovementId) && ConfirmedAtUtc.HasValue;
+    public bool RequiresRecount => Status == "voided";
+}
+
 public sealed class HttpWmsInventoryReservationClient(
     HttpClient httpClient,
-    IInternalServiceTokenProvider internalTokenProvider) : IWmsInventoryReservationClient
+    IInternalServiceTokenProvider internalTokenProvider) : IWmsInventoryReservationClient, IWmsCountAdjustmentReader
 {
     public async Task<WmsInventoryReservationResult> ReserveAsync(
         WmsInventoryReservationRequest request,
@@ -281,5 +303,30 @@ public sealed class HttpWmsInventoryReservationClient(
         return envelope.Data;
     }
 
+    public async Task<WmsCountAdjustmentOutcome?> FindAsync(
+        string organizationId, string environmentId, string countNo, string idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        var path = QueryHelpers.AddQueryString("/api/inventory/v1/count-adjustments", new Dictionary<string, string?>
+        {
+            ["organizationId"] = organizationId,
+            ["environmentId"] = environmentId,
+            ["countTaskCode"] = countNo,
+            ["idempotencyKey"] = idempotencyKey,
+        });
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", internalTokenProvider.BearerToken);
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<CountAdjustmentsPage>>(cancellationToken);
+        if (envelope is not { Success: true, Data: not null })
+        {
+            throw new KnownException("库存盘点调整读取失败，请刷新后重试。");
+        }
+
+        return envelope.Data.Items.SingleOrDefault(x => x.IdempotencyKey == idempotencyKey);
+    }
+
+    private sealed record CountAdjustmentsPage(IReadOnlyCollection<WmsCountAdjustmentOutcome> Items);
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 }

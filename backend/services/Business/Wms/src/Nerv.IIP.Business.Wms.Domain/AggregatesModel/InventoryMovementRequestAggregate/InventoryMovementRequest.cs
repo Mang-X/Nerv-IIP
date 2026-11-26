@@ -144,6 +144,43 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
             unitCost: unitCost);
     }
 
+    public static InventoryMovementRequest RecordCountApprovalPending(
+        string organizationId,
+        string environmentId,
+        string sourceDocumentId,
+        string idempotencyKey,
+        string skuCode,
+        string uomCode,
+        string siteCode,
+        string locationCode,
+        string qualityStatus,
+        string ownerType,
+        decimal varianceQuantity,
+        string? lotNo)
+    {
+        return new InventoryMovementRequest(
+            organizationId,
+            environmentId,
+            "count-adjustment",
+            sourceDocumentId,
+            null,
+            idempotencyKey,
+            skuCode,
+            uomCode,
+            siteCode,
+            locationCode,
+            lotNo,
+            null,
+            qualityStatus,
+            ownerType,
+            null,
+            varianceQuantity,
+            null,
+            null,
+            null,
+            publishCreatedEvent: false);
+    }
+
     public static InventoryMovementRequest RecordPosted(
         string organizationId,
         string environmentId,

@@ -8,6 +8,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InventoryMovementRequestAggregate;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Inventory;
@@ -53,6 +54,18 @@ public static class WmsDeadLetterReplayServiceCollectionExtensions
                     && x.SourceDocumentId == ev.Payload.SourceDocumentId && x.SourceDocumentLineId == ev.Payload.SourceDocumentLineId
                     && x.IdempotencyKey == ev.Payload.IdempotencyKey && x.Status == InventoryMovementRequestStatus.Posted
                     && x.InventoryMovementId == ev.Payload.InventoryMovementId, token));
+        Add<StockCountApprovalSettledIntegrationEvent, StockCountApprovalSettledIntegrationEventHandler>(services,
+            StockCountApprovalSettledIntegrationEventHandler.ConsumerName, async (provider, ev, token) =>
+                ev.SourceService == InventoryIntegrationEventSources.BusinessInventory
+                && await Db(provider).InventoryMovementRequests.AsNoTracking().AnyAsync(x =>
+                    x.OrganizationId == ev.OrganizationId && x.EnvironmentId == ev.EnvironmentId
+                    && x.MovementType == InventoryMovementTypes.CountAdjustment
+                    && x.SourceDocumentId == ev.Payload.CountTaskCode && x.SourceDocumentLineId == null
+                    && x.IdempotencyKey == ev.Payload.AdjustmentKey
+                    && (ev.Payload.MovementId != null
+                        ? x.Status == InventoryMovementRequestStatus.Posted && x.InventoryMovementId == ev.Payload.MovementId
+                        : ev.Payload.RequiresRecount && x.Status == InventoryMovementRequestStatus.Failed
+                            && x.FailureCode == WmsCountAdjustmentOutcome.RecountRequiredCode), token));
         Add<StockMovementPostingFailedIntegrationEvent, StockMovementPostingFailedIntegrationEventHandlerForMarkWmsRequestFailed>(services,
             StockMovementPostingFailedIntegrationEventHandlerForMarkWmsRequestFailed.ConsumerName, async (provider, ev, token) =>
                 string.Equals(ev.Payload.SourceService, InventoryMovementSourceServices.Wms, StringComparison.OrdinalIgnoreCase)

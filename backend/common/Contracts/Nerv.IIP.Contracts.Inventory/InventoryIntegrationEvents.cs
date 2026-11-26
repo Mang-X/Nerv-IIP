@@ -9,6 +9,7 @@ public static class InventoryIntegrationEventTypes
     public const string StockReservationExpired = "inventory.StockReservationExpired";
     public const string StockMovementPosted = "inventory.StockMovementPosted";
     public const string StockMovementPostingFailed = "inventory.StockMovementPostingFailed";
+    public const string StockCountApprovalSettled = "inventory.StockCountApprovalSettled";
     public const string StockCountVarianceConfirmed = "inventory.StockCountVarianceConfirmed";
     public const string StockAvailabilityChanged = "inventory.StockAvailabilityChanged";
 }
@@ -301,3 +302,26 @@ public sealed record StockAvailabilityChangedPayload(
     decimal InventoryValue,
     DateOnly? ProductionDate = null,
     DateOnly? ExpiryDate = null);
+
+public sealed record StockCountApprovalSettledIntegrationEvent(
+    string EventId,
+    string EventType,
+    int EventVersion,
+    DateTimeOffset OccurredAtUtc,
+    string SourceService,
+    string CorrelationId,
+    string CausationId,
+    string OrganizationId,
+    string EnvironmentId,
+    string Actor,
+    string IdempotencyKey,
+    StockCountApprovalSettledPayload Payload) : IIntegrationEventEnvelope
+{
+    object? IIntegrationEventEnvelope.PayloadObject => Payload;
+}
+
+public sealed record StockCountApprovalSettledPayload(
+    string CountTaskCode, string CountTaskKey, string AdjustmentKey, bool RequiresRecount, string? MovementId, DateTime? ConfirmedAtUtc)
+{
+    public const string WarehouseCountTaskKeyPrefix = "wms-count-freeze:";
+}

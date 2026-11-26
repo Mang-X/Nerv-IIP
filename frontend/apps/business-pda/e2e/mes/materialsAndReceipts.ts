@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test'
+import { principal, session } from '../fixtures/auth'
+import { envelope } from '../fixtures/http'
 
 export function registerMaterialsAndReceipts() {
   test('领料：列表渲染领料申请行（不退化为空态）', async ({ page }) => {
@@ -25,6 +27,165 @@ export function registerMaterialsAndReceipts() {
     await lineSideInventory.getByRole('button', { name: '上一页' }).click()
     await expect(lineSideInventory.getByText('SKU-DAMPER-001', { exact: true })).toBeVisible()
     await expect(lineSideInventory).toContainText('第 1 / 2 页')
+  })
+
+  test('领料只读角色可查看申请且没有线边接收入口', async ({ page }) => {
+    await page.goto('/mes/issue')
+    await expect(page.getByText('WO-1 · 物料 MAT-1')).toBeVisible()
+    await expect(page.getByTestId('receive-ISS-1')).toHaveCount(0)
+  })
+
+  test('线边部分收料：刷新及返回后恢复原回执和数量，再发起新的收料', async ({ page }) => {
+    const operator = {
+      ...principal,
+      permissionCodes: [...principal.permissionCodes, 'business.mes.materials.manage'],
+    }
+    await page.route('**/api/console/v1/auth/me', (route) =>
+      route.fulfill({
+        json: envelope(operator),
+      }),
+    )
+    await page.route('**/api/console/v1/auth/refresh', (route) =>
+      route.fulfill({
+        json: envelope({ ...session, principal: operator }),
+      }),
+    )
+
+    const base = '**/api/business-console/v1/mes/material-issue-requests'
+    const bodies: { idempotencyKey?: string; receivedQuantity: number }[] = []
+    let receivedQuantity = 0
+    let status = 'Requested'
+    let readBackOriginal = false
+    const currentIssue = () => ({
+      requestId: 'ISS-1',
+      workOrderId: 'WO-1',
+      materialId: 'MAT-1',
+      requestedQuantity: 10,
+      receivedQuantity,
+      status,
+    })
+    await page.route(`${base}*`, (route) =>
+      route.fulfill({ json: envelope({ items: [currentIssue()], total: 1 }) }),
+    )
+    await page.route(`${base}/ISS-1*`, (route) => {
+      if (bodies.length === 2) readBackOriginal = true
+      return route.fulfill({ json: envelope(currentIssue()) })
+    })
+    await page.route(`${base}/ISS-1/line-side-receipts*`, async (route) => {
+      const body = route.request().postDataJSON() as (typeof bodies)[number]
+      bodies.push(body)
+      const receipt = { accepted: true, downstreamDocumentId: 'MI-001' }
+      if (bodies.length === 1) {
+        receivedQuantity = 4
+        status = 'ReceiptPosting'
+        return route.abort('connectionreset')
+      }
+      if (bodies.length === 2) {
+        if (!body.idempotencyKey || body.idempotencyKey !== bodies[0].idempotencyKey) {
+          return route.fulfill({ status: 409, json: { success: false } })
+        }
+        status = 'PartiallyReceived'
+      } else {
+        receivedQuantity += body.receivedQuantity
+      }
+      return route.fulfill({ json: envelope(receipt) })
+    })
+
+    await page.goto('/mes/issue')
+    async function receive(quantity: string) {
+      await page.getByTestId('receive-ISS-1').click()
+      await page.getByTestId('received-quantity').fill(quantity)
+      await page.getByTestId('submit-receive').click()
+    }
+
+    await receive('4')
+    await expect(page.getByText('线边接收结果待核实')).toBeVisible()
+    await page.reload()
+    await expect(page.getByText(/库存过账中/)).toBeVisible()
+    const recoverReceipt = page.getByRole('button', { name: '核实原接收' })
+    await expect(recoverReceipt).toBeVisible()
+    await page.getByRole('button', { name: '返回', exact: true }).click()
+    await expect(page).toHaveURL(/\/$/)
+    await page.goBack()
+    await expect(recoverReceipt).toBeVisible()
+    status = 'PartiallyReceived'
+    await page.reload()
+    await expect(page.getByText(/部分接收.*已收 4/)).toBeVisible()
+    await expect(page.getByRole('button', { name: '线边接收', exact: true })).toHaveCount(0)
+    expect(bodies).toHaveLength(1)
+    await recoverReceipt.click()
+    await expect(page.getByTestId('received-quantity')).toHaveCount(0)
+    await expect(page.getByText(/MI-001.*已收 4/)).toBeVisible()
+    expect(readBackOriginal).toBe(true)
+    expect(bodies[0]).toEqual({ idempotencyKey: expect.any(String), receivedQuantity: 4 })
+    expect(bodies[1]).toEqual(bodies[0])
+
+    await page.getByRole('button', { name: '继续', exact: true }).click()
+    await receive('2')
+    await expect(page.getByText(/MI-001.*已收 6/)).toBeVisible()
+    expect(bodies).toHaveLength(3)
+    expect(bodies[2]).toEqual({ idempotencyKey: expect.any(String), receivedQuantity: 2 })
+    expect(bodies[2].idempotencyKey).not.toBe(bodies[0].idempotencyKey)
+  })
+
+  test('线边部分收料：明确拒绝后刷新可更正数量', async ({ page }) => {
+    const operator = {
+      ...principal,
+      permissionCodes: [...principal.permissionCodes, 'business.mes.materials.manage'],
+    }
+    await page.route('**/api/console/v1/auth/me', (route) =>
+      route.fulfill({ json: envelope(operator) }),
+    )
+    await page.route('**/api/console/v1/auth/refresh', (route) =>
+      route.fulfill({ json: envelope({ ...session, principal: operator }) }),
+    )
+    const base = '**/api/business-console/v1/mes/material-issue-requests'
+    const bodies: { idempotencyKey: string; receivedQuantity?: number }[] = []
+    let receivedQuantity = 4
+    const currentIssue = () => ({
+      requestId: 'ISS-1',
+      workOrderId: 'WO-1',
+      materialId: 'MAT-1',
+      requestedQuantity: 10,
+      receivedQuantity,
+      status: 'PartiallyReceived',
+    })
+    await page.route(`${base}*`, (route) =>
+      route.fulfill({ json: envelope({ items: [currentIssue()], total: 1 }) }),
+    )
+    await page.route(`${base}/ISS-1*`, (route) => route.fulfill({ json: envelope(currentIssue()) }))
+    await page.route(`${base}/ISS-1/line-side-receipts*`, (route) => {
+      const body = route.request().postDataJSON() as (typeof bodies)[number]
+      bodies.push(body)
+      const quantity = body.receivedQuantity ?? 10 - receivedQuantity
+      if (quantity + receivedQuantity > 10) {
+        return route.fulfill({
+          status: 400,
+          json: { success: false, message: 'Received quantity cannot exceed requested quantity.' },
+        })
+      }
+      receivedQuantity += quantity
+      return route.fulfill({
+        json: envelope({ accepted: true, downstreamDocumentId: 'MI-001' }),
+      })
+    })
+
+    await page.goto('/mes/issue')
+    await page.getByTestId('receive-ISS-1').click()
+    await expect(page.getByTestId('received-quantity')).toHaveValue('')
+    await page.getByTestId('received-quantity').fill('10')
+    await page.getByTestId('submit-receive').click()
+    await expect(page.getByText('线边接收未受理')).toBeVisible()
+    await expect(page.getByRole('button', { name: '更正接收' })).toBeVisible()
+
+    await page.reload()
+    await page.getByTestId('receive-ISS-1').click()
+    await expect(page.getByTestId('received-quantity')).toHaveValue('')
+    expect(bodies).toHaveLength(1)
+    await page.getByTestId('submit-receive').click()
+    await expect(page.getByText(/MI-001.*已收 10/)).toBeVisible()
+    expect(bodies.map((body) => body.receivedQuantity)).toEqual([10, undefined])
+    expect(bodies[1].idempotencyKey).not.toBe(bodies[0].idempotencyKey)
   })
 
   test('领料：总量收缩后自动回到最后有效页', async ({ page }) => {

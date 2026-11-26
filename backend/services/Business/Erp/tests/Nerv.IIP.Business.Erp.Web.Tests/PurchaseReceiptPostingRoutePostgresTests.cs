@@ -132,6 +132,30 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
         }
         Assert.All(await finalDb.PurchaseOrders.Include(x => x.Lines).ToArrayAsync(),
             order => Assert.Equal(2m, Assert.Single(order.Lines).ReceivedQuantity));
+
+        var followingReceipt = Command("direct") with
+        {
+            PurchaseReceiptNo = "RCV-direct-next",
+            IdempotencyKey = "receipt-direct-next",
+            Lines = [new PurchaseReceiptCommandLine("10", 1m, "unrestricted", "RAW-A-01")],
+        };
+        var next = await Handler(final.ServiceProvider).Handle(followingReceipt, CancellationToken.None);
+        Assert.Equal("RCV-direct-next", next.PurchaseReceiptNo);
+        await finalDb.SaveChangesAsync();
+
+        await using var excess = provider.CreateAsyncScope();
+        await Assert.ThrowsAsync<KnownException>(() => Handler(excess.ServiceProvider).Handle(
+            followingReceipt with { PurchaseReceiptNo = "RCV-direct-excess", IdempotencyKey = "receipt-direct-excess" },
+            CancellationToken.None));
+
+        await using var readAfter = provider.CreateAsyncScope();
+        var readAfterDb = readAfter.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(3, await readAfterDb.PurchaseReceipts.CountAsync());
+        var directOrder = await readAfterDb.PurchaseOrders.Include(x => x.Lines).SingleAsync(x => x.PurchaseOrderNo == "PO-direct");
+        Assert.Equal(3m, Assert.Single(directOrder.Lines).ReceivedQuantity);
+        var replay = await Handler(readAfter.ServiceProvider).Handle(Command("direct"), CancellationToken.None);
+        Assert.Equal("RCV-direct", replay.PurchaseReceiptNo);
+        Assert.NotEqual(next.PurchaseReceiptId, replay.PurchaseReceiptId);
     }
 
     [PurchaseReceiptPostgresFact]

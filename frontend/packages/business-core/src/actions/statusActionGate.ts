@@ -220,7 +220,7 @@ function wmsGate(
       'inventorypostingpending',
       'cancelled',
     ]),
-    'wms-count': new Set(['open', 'completed']),
+    'wms-count': new Set(['open', 'completed', 'pendingapproval', 'recountrequired']),
   }
   if (!isKnown(status, knownByDomain[domain])) return unknown()
   if (status === 'open') return allowed()
@@ -229,7 +229,7 @@ function wmsGate(
     (domain === 'wms-inbound' &&
       new Set(['completed', 'pendingqualitycheck', 'inventorypostingfailed']).has(status)) ||
     (domain === 'wms-outbound' && new Set(['completed', 'inventorypostingpending']).has(status)) ||
-    (domain === 'wms-count' && status === 'completed')
+    (domain === 'wms-count' && ['completed', 'pendingapproval', 'recountrequired'].includes(status))
   return replayStatus && facts.idempotentReplay ? noop(true) : terminal()
 }
 

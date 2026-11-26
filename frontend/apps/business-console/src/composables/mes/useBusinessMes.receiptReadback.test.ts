@@ -11,6 +11,24 @@ import { describe } from 'vitest'
 describe('business MES composables', () => {
   setupBusinessMesTests()
 
+  it('收料回执未确认受理时保留待确认结果且不触发已受理回读', async () => {
+    const detail = useMesWorkOrderDetail()
+    detail.filters.workOrderId = 'WO-RECEIPT'
+    const options = vi.mocked(confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions).mock
+      .results[0]!.value
+    vi.mocked(options.mutation).mockResolvedValueOnce({
+      success: true,
+      data: { accepted: false },
+    })
+    await expect(
+      detail.confirmLineSideReceipt('MIR-1', { receivedQuantity: 2, idempotencyKey: 'receipt-1' }),
+    ).rejects.toMatchObject({ code: 'business-operation-unconfirmed' })
+    expect(detail.materialReadinessPending.value).toBe(false)
+    expect(
+      coladaState.queryRefetchById.get('getBusinessConsoleMesMaterialReadiness'),
+    ).not.toHaveBeenCalled()
+  })
+
   it('收料受理后跨过 ReceiptPosting 再结束齐套自动读回，失败后重试只读取', async () => {
     const detail = useMesWorkOrderDetail()
     detail.filters.workOrderId = 'WO-RECEIPT'
@@ -62,8 +80,8 @@ describe('business MES composables', () => {
   it('收料POST已受理后，齐套读取失败不把受理结果改为失败且重试不重复POST', async () => {
     const detail = useMesWorkOrderDetail()
     detail.filters.workOrderId = 'WO-RECEIPT'
-    coladaState.invalidateQueries.mockImplementation(async (_options, refetchActive) => {
-      if (refetchActive !== false) throw new Error('齐套GET失败')
+    coladaState.invalidateQueries.mockImplementation(async () => {
+      throw new Error('收料查询缓存失效失败')
     })
     const readinessRefetch = coladaState.queryRefetchById.get(
       'getBusinessConsoleMesMaterialReadiness',

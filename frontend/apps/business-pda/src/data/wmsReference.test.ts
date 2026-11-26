@@ -20,6 +20,8 @@ describe('WMS PDA 服务端状态契约', () => {
     expect(PDA_COUNT_EXECUTION_STATUS_OPTIONS.map(({ value }) => value)).toEqual([
       '',
       'Open',
+      'PendingApproval',
+      'RecountRequired',
       'Completed',
     ])
     expect(PDA_INBOUND_ORDER_STATUS_OPTIONS.map(({ value }) => value)).toEqual([

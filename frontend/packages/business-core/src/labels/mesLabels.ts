@@ -65,6 +65,7 @@ export const MATERIAL_ISSUE_STATUS_LABELS: Record<string, string> = {
   Requested: '待领料',
   Pending: '待领料',
   Issued: '已发料',
+  ReceiptPosting: '库存过账中',
   PartiallyReceived: '部分接收',
   Received: '已接收',
   Confirmed: '已接收',

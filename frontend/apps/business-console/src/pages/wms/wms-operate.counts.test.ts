@@ -1,7 +1,8 @@
 import { wms, routeGuardState, layoutStub, setInput, resetFixture } from './wms-operate.fixture'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { NvDialog } from '@nerv-iip/ui'
+import { BusinessOperationPendingError } from '@nerv-iip/api-client'
+import { NvDialog, toast } from '@nerv-iip/ui'
 import CountsPage from './counts.vue'
 
 describe('WMS operate actions', () => {
@@ -80,6 +81,67 @@ describe('WMS operate actions', () => {
     expect(wrapper.text()).not.toContain('新建盘点单')
     expect(wrapper.find('button[aria-label="盘点操作 CNT-1"]').exists()).toBe(false)
   })
+
+  it('acknowledges pending approval and refreshes the count list', async () => {
+    wms.completeCountExecution.mockRejectedValueOnce(
+      new BusinessOperationPendingError('wms.count-execution.complete'),
+    )
+    const wrapper = mount(CountsPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+    await wrapper.get('button[aria-label="盘点操作 CNT-1"]').trigger('click')
+    await flushPromises()
+    const completeItem = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent?.includes('完成盘点'),
+    )!
+    completeItem.click()
+    await flushPromises()
+    wms.refreshCountExecutions.mockClear()
+    setInput('#cnt-counted', '8')
+    document.body
+      .querySelector('#cnt-counted')!
+      .closest('form')!
+      .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(toast.warning).toHaveBeenCalledWith('实盘已提交，待审批。')
+    expect(toast.success).not.toHaveBeenCalled()
+    expect(toast.error).not.toHaveBeenCalled()
+    expect(wms.refreshCountExecutions).toHaveBeenCalled()
+    expect(wrapper.findAllComponents(NvDialog).some((dialog) => dialog.props('open'))).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each([true, false])(
+    '显示原盘点结果并按权限提供复盘入口，库存盘点权限 %s',
+    async (canRecount) => {
+      if (!canRecount) wms.permissionCodes = ['business.wms.counts.read']
+      wms.countRows = [
+        { countExecutionId: 'count-1', countNo: 'CNT-1', status: 'RecountRequired' },
+        {
+          countExecutionId: 'count-2',
+          countNo: 'CNT-2',
+          status: 'Completed',
+          inventoryMovementId: 'MOV-2',
+        },
+      ]
+      const wrapper = mount(CountsPage, {
+        global: { stubs: layoutStub },
+      })
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('库存流水 MOV-2')
+      const links = wrapper.findAll('[data-router-link]')
+      if (canRecount) {
+        const link = links.find((entry) => entry.text() === '打开原盘点任务')
+        expect(JSON.parse(link?.attributes('data-to') ?? 'null')).toEqual({
+          path: '/inventory/counts',
+          query: { countTaskCode: 'CNT-1' },
+        })
+      } else {
+        expect(links.some((entry) => entry.text() === '打开原盘点任务')).toBe(false)
+      }
+    },
+  )
 
   it('keeps an indeterminate count intent frozen when the dialog requests close', async () => {
     wms.completeCountExecution.mockImplementationOnce(

@@ -3,6 +3,7 @@ import { shallowRef } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { getBusinessConsoleWorkbenchSummaryQueryOptions } from '@nerv-iip/api-client'
+import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useBusinessWorkbenchSummary } from './useBusinessWorkbench'
 
@@ -11,14 +12,16 @@ const coladaState = vi.hoisted(() => ({
   queryData: undefined as unknown,
 }))
 
-vi.mock('@nerv-iip/api-client', () => ({
+vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@nerv-iip/api-client')>()),
   getBusinessConsoleWorkbenchSummaryQueryOptions: vi.fn(() => ({
     key: [{ _id: 'getBusinessConsoleWorkbenchSummary' }],
     query: vi.fn(),
   })),
 }))
 
-vi.mock('@pinia/colada', () => ({
+vi.mock('@pinia/colada', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pinia/colada')>()),
   useQuery: vi.fn((optionsFactory) => {
     coladaState.queryFactory = optionsFactory
     optionsFactory()
@@ -41,6 +44,9 @@ describe('business workbench summary composable', () => {
   })
 
   it('loads the workbench summary through the stable api-client export', () => {
+    const auth = useAuthStore()
+    auth.accessToken = 'synthetic-session'
+    auth.principal = { principalId: 'operator-a', principalType: 'user' }
     const context = useBusinessContextStore()
     context.patchContext({ organizationId: 'org-workbench', environmentId: 'env-workbench' })
     coladaState.queryData = {

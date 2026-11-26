@@ -79,7 +79,8 @@ vi.mock('@/composables/master-data/useSkuNames', () => ({
 }))
 
 vi.mock('@/composables/mes', () => ({
-  makeIdempotencyKey: (prefix: string) => `${prefix}-test`,
+  makeIdempotencyKey: (prefix: string) =>
+    prefix === 'mes-receipt' ? `${prefix}-${crypto.randomUUID()}` : `${prefix}-test`,
   describeMesReadinessReason: (code: string) => ({ code, label: code, nextStep: '' }),
   describeMesReadinessReasons: () => [],
   useMesWorkScopeSelection: () => ({
@@ -101,7 +102,6 @@ vi.mock('@/composables/mes', () => ({
     cancelWorkOrder: vi.fn(),
     cancelWorkOrderPending: ref(false),
     confirmLineSideReceipt: state.confirmLineSideReceipt,
-    confirmLineSideReceiptPending: ref(false),
     createMaterialIssueRequest: state.createMaterialIssueRequest,
     createMaterialIssueRequestPending: ref(false),
     detail: ref(state.detail),
@@ -531,6 +531,54 @@ describe('work-order detail — PC 领料入口 (#1324)', () => {
     await metric.get('button').trigger('click')
     expect(state.refreshMaterialReadiness).toHaveBeenCalledTimes(1)
     expect(state.confirmLineSideReceipt).not.toHaveBeenCalled()
+  })
+
+  it('部分收料响应丢失后重开工单重放原意图，受理后相同数量可再次收料', async () => {
+    state.materialIssueRequests.push({
+      requestId: 'MIR-REPLAY',
+      workOrderId: 'WO-1',
+      materialId: 'MAT-OIL',
+      materialLotId: 'LOT-OIL',
+      requestedQuantity: 6,
+      receivedQuantity: 0,
+      status: 'Requested',
+    })
+    state.confirmLineSideReceipt.mockRejectedValueOnce(new TypeError('收料响应丢失'))
+    const permissions = ['business.mes.work-orders.read', 'business.mes.materials.manage']
+    const receive = '[data-testid="receive-material-MIR-REPLAY"]'
+    const submit = '[data-testid="submit-line-side-receipt"]'
+    const first = mountDetail(permissions)
+    await first.get(receive).trigger('click')
+    await first.get('#receive-quantity').setValue('2')
+    await first.get(submit).trigger('click')
+    expect(first.get('[role="alert"]').text()).toContain('收料')
+    first.unmount()
+
+    state.materialIssueRequests[0]!.status = 'ReceiptPosting'
+    state.materialIssueRequests[0]!.receivedQuantity = 2
+    const retry = mountDetail(permissions)
+    await retry.get(receive).trigger('click')
+    expect(retry.get<HTMLInputElement>('#receive-quantity').element.value).toBe('2')
+    expect(retry.get<HTMLInputElement>('#receive-quantity').element.disabled).toBe(true)
+    await retry.get(submit).trigger('click')
+    expect(retry.find(submit).exists()).toBe(false)
+    state.materialIssueRequests[0]!.status = 'PartiallyReceived'
+    await retry.get(receive).trigger('click')
+    await retry.get('#receive-quantity').setValue('2')
+    await retry.get(submit).trigger('click')
+
+    const [firstPost, replayPost, nextPost] = state.confirmLineSideReceipt.mock.calls
+    expect(firstPost).toEqual([
+      'MIR-REPLAY',
+      { receivedQuantity: 2, materialLotId: 'LOT-OIL', idempotencyKey: expect.any(String) },
+    ])
+    expect(replayPost).toEqual(firstPost)
+    expect(nextPost).toEqual([
+      'MIR-REPLAY',
+      { receivedQuantity: 2, materialLotId: 'LOT-OIL', idempotencyKey: expect.any(String) },
+    ])
+    expect(nextPost?.[1].idempotencyKey).not.toBe(firstPost?.[1].idempotencyKey)
+    expect(state.confirmLineSideReceipt).toHaveBeenCalledTimes(3)
   })
 
   it('收料受理后读回失败关闭提交表单，齐套重试不重复收料', async () => {
