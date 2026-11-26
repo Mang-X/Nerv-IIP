@@ -59,7 +59,7 @@ vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ principal: { permissionCodes: barcode.permissionCodes } }),
 }))
 
-const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
+const toastMock = vi.hoisted(() => ({ success: vi.fn(), warning: vi.fn(), error: vi.fn() }))
 
 vi.mock('@nerv-iip/ui', async (orig) => ({
   ...(await orig<typeof import('@nerv-iip/ui')>()),
@@ -422,7 +422,7 @@ const resetFixture = () => {
   barcode.printBatchStatus = 'ready-to-print'
   barcode.confirmPrintBatchPending = false
   barcode.dispatchPrintBatchPending = false
-  barcode.dispatchPrintBatch.mockResolvedValue(undefined)
+  barcode.dispatchPrintBatch.mockResolvedValue({ acknowledged: true })
   barcode.templateId = 'tpl-1'
   barcode.extraRules = []
   barcode.extraTemplates = []

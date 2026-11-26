@@ -64,11 +64,15 @@ describe('barcode pages', () => {
     await flushPromises()
     expect(barcode.dispatchPrintBatch).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('请选择打印机。')
+    barcode.dispatchPrintBatch.mockResolvedValueOnce({
+      acknowledged: true,
+      batch: { printBatchId: 'pb-1', status: 'sent-to-printer' },
+    })
     await wrapper.find('#barcode-print-printer').setValue('printer-01')
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await flushPromises()
     expect(barcode.dispatchPrintBatch).toHaveBeenCalledWith('pb-1', 'printer-01')
-    expect(toastMock.success).toHaveBeenCalledWith('打印批次已发送。')
+    expect(toastMock.success).toHaveBeenCalledWith('打印批次已发送至打印机，请现场确认出纸。')
     expect(wrapper.text()).toContain('待打印')
     expect(wrapper.find('section').text()).not.toContain('已打印')
   })

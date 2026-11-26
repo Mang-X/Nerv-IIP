@@ -267,8 +267,39 @@ export function useBarcodePrintBatches(initialFilters: Partial<BarcodePrintBatch
 
   const dispatchPrintBatchMutation = useMutation({
     ...dispatchBusinessConsoleBarcodePrintBatchMutationOptions(),
-    onSettled: refreshLifecycle,
   })
+
+  async function dispatchPrintBatch(printBatchId: string, printerId: string) {
+    const { organizationId, environmentId } = filters
+    const query = { organizationId, environmentId }
+    let acknowledged = false
+    let error: unknown
+    try {
+      const response = await dispatchPrintBatchMutation.mutateAsync({
+        path: { printBatchId },
+        query,
+        body: { printBatchId, printerId },
+      })
+      acknowledged = response?.success === true
+    } catch (dispatchError) {
+      error = dispatchError
+    }
+
+    const isCurrentBatch = () =>
+      filters.selectedPrintBatchId === printBatchId &&
+      filters.organizationId === organizationId &&
+      filters.environmentId === environmentId
+    const [, detail] = await Promise.all([
+      refetchWithBusinessContext(filters, printBatchesQuery),
+      isCurrentBatch() ? printBatchDetailQuery.refetch(true).catch(() => undefined) : undefined,
+    ])
+    const batch = detail?.status === 'success' ? printBatchDetail(detail.data) : undefined
+    return {
+      acknowledged,
+      error,
+      batch: isCurrentBatch() && batch?.printBatchId === printBatchId ? batch : undefined,
+    }
+  }
 
   return {
     filters,
@@ -294,12 +325,7 @@ export function useBarcodePrintBatches(initialFilters: Partial<BarcodePrintBatch
         query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
       }),
     confirmPrintBatchPending: confirmPrintBatchMutation.isLoading,
-    dispatchPrintBatch: (printBatchId: string, printerId: string) =>
-      dispatchPrintBatchMutation.mutateAsync({
-        path: { printBatchId },
-        query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
-        body: { printBatchId, printerId },
-      }),
+    dispatchPrintBatch,
     dispatchPrintBatchPending: dispatchPrintBatchMutation.isLoading,
     createPrintBatch: (body: CreateBusinessConsoleBarcodePrintBatchData['body']) =>
       createPrintBatchMutation.mutateAsync({ body }),

@@ -16,7 +16,13 @@ import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
-import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import {
+  errorStatusCode,
+  inlineErrorMessage,
+  notifyOperationFailure,
+  notifySuccess,
+  notifyWarning,
+} from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -85,6 +91,8 @@ const STATUS_OPTIONS = [
   { value: 'failed', label: '打印失败', tone: 'failed' },
 ]
 
+const DELIVERY_CHECK_GUIDANCE = '请检查打印机作业记录和现场出纸。'
+
 // 这两个数据项由表单其它字段或条码规则决定，不让用户在取值区重复填写。
 const SOURCE_DOCUMENT_VARIABLE = 'sourceDocumentId'
 const LOT_NO_VARIABLE = 'lotNo'
@@ -107,6 +115,7 @@ const {
   printBatchesError,
   printBatchesPending,
   printBatchesTotal,
+  refreshPrintBatchDetail,
   refreshPrintBatches,
 } = useBarcodePrintBatches()
 const { page, pageSize } = usePagedList(filters, {
@@ -382,17 +391,35 @@ async function confirmSelectedBatch() {
 
 async function dispatchSelectedBatch() {
   const printBatchId = printBatchDetail.value?.printBatchId
-  if (!printBatchId || !canDispatch.value) return
+  if (!printBatchId || !canDispatch.value || printBatchDetailError.value) return
   if (!selectedPrinterId.value) {
     showPrinterError.value = true
     return
   }
-  try {
-    await dispatchPrintBatch(printBatchId, selectedPrinterId.value)
-    notifySuccess('打印批次已发送。')
-  } catch (error) {
+  const previousStatus = printBatchDetail.value?.status
+  const { batch, error, acknowledged } = await dispatchPrintBatch(
+    printBatchId,
+    selectedPrinterId.value,
+  )
+  const statusCode = errorStatusCode(error)
+  if (statusCode === 400 || statusCode === 401 || statusCode === 403 || statusCode === 404) {
     notifyOperationFailure('发送打印失败', error, '发送打印失败，请查看批次状态。')
+  } else if (batch?.status === 'failed' && (acknowledged || previousStatus !== 'failed')) {
+    notifyOperationFailure('发送打印失败', batch.failureReason, '发送打印失败，请查看批次详情。')
+  } else if (batch?.status === 'delivery-unknown') {
+    notifyWarning(`送达待核实，${DELIVERY_CHECK_GUIDANCE}`)
+  } else if (batch?.status === 'sent-to-printer') {
+    notifySuccess('打印批次已发送至打印机，请现场确认出纸。')
+  } else if (batch?.status === 'printed') {
+    notifySuccess('打印批次已完成。')
+  } else {
+    notifyWarning('暂无法确认派发结果，请刷新批次详情并现场核实后再处理。')
   }
+}
+
+function refreshBatchViews() {
+  void refreshPrintBatches()
+  void refreshPrintBatchDetail()
 }
 
 async function submitCreate() {
@@ -483,8 +510,8 @@ function firstQuery(value: unknown) {
           size="sm"
           variant="outline"
           type="button"
-          :disabled="printBatchesPending"
-          @click="refreshPrintBatches"
+          :disabled="printBatchesPending || printBatchDetailPending"
+          @click="refreshBatchViews"
         >
           <RefreshCwIcon aria-hidden="true" />
           刷新
@@ -760,6 +787,12 @@ function firstQuery(value: unknown) {
           <span class="text-muted-foreground">打印时间：</span>
           {{ formatDateTime(printBatchDetail.completedAtUtc) }}
         </div>
+        <p
+          v-if="printBatchDetail?.status === 'delivery-unknown'"
+          class="text-sm text-muted-foreground"
+        >
+          {{ DELIVERY_CHECK_GUIDANCE }}
+        </p>
         <NvButton
           v-if="canPrint && printBatchDetail?.status === 'reserved'"
           class="justify-self-start"
@@ -794,7 +827,12 @@ function firstQuery(value: unknown) {
             class="justify-self-start"
             type="submit"
             :loading="dispatchPrintBatchPending"
-            :disabled="dispatchPrintBatchPending || printBatchDetailPending || printersPending"
+            :disabled="
+              dispatchPrintBatchPending ||
+              printBatchDetailPending ||
+              printersPending ||
+              !!detailErrorMessage
+            "
           >
             发送打印
           </NvButton>
