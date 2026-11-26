@@ -496,11 +496,14 @@ internal sealed partial class AppHostComposition
             .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
             .WithEnvironment("Messaging__Provider", messagingProvider)
             .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
+            .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
             .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
             .WithReference(businessIndustrialTelemetryDatabase, "PostgreSQL")
             .WithReference(ops)
+            .WithReference(businessMasterData)
             .WaitFor(businessIndustrialTelemetryDatabase)
-            .WaitFor(ops);
+            .WaitFor(ops)
+            .WaitFor(businessMasterData);
         businessIndustrialTelemetry = WithRedisMessagingTransport(businessIndustrialTelemetry);
         if (rabbitmq is not null)
         {
