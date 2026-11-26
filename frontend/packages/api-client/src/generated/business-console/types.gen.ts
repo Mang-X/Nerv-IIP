@@ -7276,6 +7276,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     blockReasons?: Array<string> | null;
     expectedRestoreAtUtc?: string | null;
     workOrderNo?: string | null;
+    inventoryPostingFailureReason?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderLifecycleEventItem = {
@@ -7540,6 +7541,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     siteCode?: string | null;
     locationCode?: string | null;
     workOrderNo?: string | null;
+    inventoryPostingFailureReason?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanceSparePartResponse = NetCorePalExtensionsDtoResponseData & {
@@ -17941,7 +17943,13 @@ export type GetBusinessConsoleMesWorkOrderDetailErrors = {
      * Forbidden
      */
     403: unknown;
+    /**
+     * Not Found
+     */
+    404: NetCorePalExtensionsDtoResponseData;
 };
+
+export type GetBusinessConsoleMesWorkOrderDetailError = GetBusinessConsoleMesWorkOrderDetailErrors[keyof GetBusinessConsoleMesWorkOrderDetailErrors];
 
 export type GetBusinessConsoleMesWorkOrderDetailResponses = {
     /**

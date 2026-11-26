@@ -67,7 +67,7 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext) :
         dbContext.WorkCenterUnavailabilities.Add(DomainWorkCenterUnavailability.Open(
             unavailability.OrganizationId,
             unavailability.EnvironmentId,
-            $"UNAV-{workCenterSegment}-{unavailability.FromUtc:yyyyMMddHHmmssfff}",
+            unavailability.DowntimeEventNo ?? $"UNAV-{workCenterSegment}-{unavailability.FromUtc:yyyyMMddHHmmssfff}",
             unavailability.WorkCenterId,
             unavailability.FromUtc,
             unavailability.ToUtc,
@@ -211,7 +211,7 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext) :
     public async Task CloseUnavailabilityAsync(string deviceAssetId, DateTimeOffset restoredAtUtc, CancellationToken cancellationToken = default)
     {
         var current = await dbContext.WorkCenterUnavailabilities
-            .Where(x => x.DeviceAssetId == deviceAssetId && x.ToUtc == null)
+            .Where(x => x.DeviceAssetId == deviceAssetId && x.ToUtc == null && !x.DowntimeEventNo.StartsWith("UNAV-MWO-"))
             .OrderByDescending(x => x.FromUtc)
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -230,7 +230,7 @@ public sealed class PersistentMesPlanningStore(ApplicationDbContext dbContext) :
                 (x.OrganizationId == null || x.OrganizationId == organizationId) &&
                 (x.EnvironmentId == null || x.EnvironmentId == environmentId) &&
                 x.DeviceAssetId == deviceAssetId &&
-                x.ToUtc == null)
+                x.ToUtc == null && !x.DowntimeEventNo.StartsWith("UNAV-MWO-"))
             .OrderByDescending(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId)
             .ThenByDescending(x => x.FromUtc)
             .FirstOrDefaultAsync(cancellationToken);

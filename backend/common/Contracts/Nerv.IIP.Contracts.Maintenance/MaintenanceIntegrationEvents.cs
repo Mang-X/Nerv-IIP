@@ -262,4 +262,6 @@ public sealed record AssetRestoredIntegrationEvent(
 
 public sealed record AssetRestoredPayload(
     string DeviceAssetId,
-    DateTimeOffset RestoredAtUtc);
+    DateTimeOffset RestoredAtUtc,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? MaintenanceWorkOrderId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateTimeOffset? UnavailableFromUtc = null);

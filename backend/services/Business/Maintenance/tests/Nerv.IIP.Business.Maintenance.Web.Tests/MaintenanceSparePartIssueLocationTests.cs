@@ -3,6 +3,10 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.DowntimeReasonAggregate;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Nerv.IIP.Business.Maintenance.Web.Application.Commands;
+using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Maintenance.Web.Application.Queries;
+using Nerv.IIP.Contracts.Inventory;
+using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 
@@ -12,6 +16,40 @@ namespace Nerv.IIP.Business.Maintenance.Web.Tests;
 /// </summary>
 public sealed class MaintenanceSparePartIssueLocationTests
 {
+    [Fact]
+    public async Task Inventory_rejection_is_visible_on_the_matching_issue_line_only()
+    {
+        await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
+        var order = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "MWO-001", "DEV-001", "high", "operator");
+        order.Accept("technician");
+        order.StartWork();
+        order.Complete("fixed", "DT-MECH", 10,
+            [new("SPARE-01", 1, "pcs", "SITE-01", "LOC-01"), new("SPARE-02", 2, "pcs", "SITE-01", "LOC-01")]);
+        db.MaintenanceWorkOrders.Add(order);
+        await db.SaveChangesAsync();
+
+        var line = Assert.Single(order.SparePartLines, x => x.SkuCode == "SPARE-01");
+        var at = new DateTimeOffset(2026, 8, 1, 1, 0, 0, TimeSpan.Zero);
+        var rejected = new StockMovementPostingFailedIntegrationEvent(
+            "event-rejected", InventoryIntegrationEventTypes.StockMovementPostingFailed, InventoryIntegrationEventVersions.V1,
+            at, InventoryIntegrationEventSources.BusinessInventory, order.Id.ToString(), "cause-rejected", "org-001", "env-dev",
+            "inventory", "stock-rejection", new(
+                InventoryMovementTypes.Outbound, InventoryMovementSourceServices.Maintenance, order.WorkOrderNo,
+                line.Id.ToString(), $"maintenance:org-001:env-dev:{order.Id}:{line.Id}", line.SkuCode, "pcs",
+                "SITE-01", "LOC-01", null, null, "available", "organization", null, 1,
+                "insufficient-stock", "库位库存不足", at));
+        var handler = new MarkSparePartPostingFailedHandler(db, new InMemoryIntegrationEventDeadLetterStore());
+        await handler.HandleAsync(rejected with { OrganizationId = "another-org" }, CancellationToken.None);
+        await handler.HandleAsync(rejected, CancellationToken.None);
+        await handler.HandleAsync(rejected, CancellationToken.None);
+        db.ChangeTracker.Clear();
+
+        var lines = await new ListMaintenanceSparePartsQueryHandler(db).Handle(new("org-001", "env-dev"), CancellationToken.None);
+        Assert.Equal("库位库存不足", Assert.Single(lines.Items, x => x.SkuCode == "SPARE-01").InventoryPostingFailureReason);
+        Assert.Null(Assert.Single(lines.Items, x => x.SkuCode == "SPARE-02").InventoryPostingFailureReason);
+        Assert.Equal(1, await db.ProcessedIntegrationEvents.CountAsync());
+    }
+
     public static TheoryData<string?, string?, string> MissingLocations => new()
     {
         { null, "loc-spare-01", nameof(MaintenanceSparePartInput.SiteCode) },
@@ -97,6 +135,8 @@ public sealed class MaintenanceSparePartIssueLocationTests
         await using var dbContext = MaintenanceEndpointContractTests.CreateTestDbContext();
         dbContext.DowntimeReasons.Add(DowntimeReason.Create("org-001", "env-dev", "DT-MECH", "机械故障", "breakdown", "availability"));
         var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "high", "operator-001");
+        workOrder.Accept(workOrder.AssignedTechnicianUserId ?? "technician-001");
+        workOrder.StartWork();
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         await dbContext.SaveChangesAsync();
 

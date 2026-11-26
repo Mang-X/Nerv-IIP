@@ -476,6 +476,7 @@ public sealed class ListBusinessConsoleMesWorkOrdersEndpoint(
 [Tags("Business Console MES")]
 [HttpGet("/api/business-console/v1/mes/work-orders/{workOrderId}")]
 [BusinessGatewayOperationId("getBusinessConsoleMesWorkOrderDetail")]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(NetCorePal.Extensions.Dto.ResponseData), StatusCodes.Status404NotFound)]
 public sealed class GetBusinessConsoleMesWorkOrderDetailEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
@@ -508,7 +509,8 @@ public sealed class GetBusinessConsoleMesWorkOrderDetailEndpoint(
             request.ScopeKind,
             request.ScopeId,
             request.WorkOrderId,
-            cancellationToken);
+            cancellationToken,
+            distinguishMissing: true);
         var response = await mes.GetWorkOrderDetailAsync(
             tokenProvider.BearerToken,
             request.WorkOrderId,
@@ -2599,6 +2601,7 @@ public sealed class BusinessConsoleMesRecordDowntimeEventRequestValidator
 public sealed class RecordBusinessConsoleMesDowntimeEventV2Endpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessMesClient mes,
+    IBusinessMaintenanceClient maintenance,
     MesPrincipalWorkScopeAuthorizer workScopeAuthorizer,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleMesRecordDowntimeEventV2Request, BusinessConsoleAcceptedResponse>(
@@ -2628,6 +2631,32 @@ public sealed class RecordBusinessConsoleMesDowntimeEventV2Endpoint(
             request.ScopeId,
             request.WorkCenterId,
             cancellationToken);
+        const int pageSize = 100;
+        var reasonCode = request.ReasonCode.Trim();
+        var skip = 0;
+        while (true)
+        {
+            var page = await maintenance.ListDowntimeReasonsAsync(
+                tokenProvider.BearerToken,
+                new BusinessConsoleMaintenanceReasonDirectoryRequest(
+                    request.OrganizationId, request.EnvironmentId, reasonCode, skip, pageSize),
+                cancellationToken);
+            var reason = page.Items.FirstOrDefault(item =>
+                string.Equals(item.ReasonCode, reasonCode, StringComparison.Ordinal));
+            if (reason is not null)
+            {
+                reasonCode = reason.ReasonCode;
+                break;
+            }
+
+            skip += page.Items.Count;
+            if (page.Items.Count == 0 || skip >= page.Total)
+            {
+                throw BusinessServiceProxyException.FromLocalRejection(
+                    System.Net.HttpStatusCode.BadRequest, "downtime-reason-not-found");
+            }
+        }
+
         return await mes.RecordDowntimeEventAsync(
             tokenProvider.BearerToken,
             new BusinessMesRecordDowntimeEventRequest(
@@ -2637,7 +2666,7 @@ public sealed class RecordBusinessConsoleMesDowntimeEventV2Endpoint(
                 request.OperationTaskId,
                 request.WorkCenterId,
                 request.DeviceAssetId,
-                request.ReasonCode,
+                reasonCode,
                 request.StartedAtUtc,
                 request.IdempotencyKey,
                 request.ToUtc),

@@ -66,7 +66,8 @@ public sealed class GetEquipmentHealthQueryValidator : AbstractValidator<GetEqui
 
 public sealed class GetEquipmentHealthQueryHandler(
     ApplicationDbContext dbContext,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    ITelemetryDeviceReferences? references = null)
     : IQueryHandler<GetEquipmentHealthQuery, EquipmentHealthResponse>
 {
     private static readonly TimeSpan FactWindow = TimeSpan.FromHours(24);
@@ -75,15 +76,19 @@ public sealed class GetEquipmentHealthQueryHandler(
         GetEquipmentHealthQuery request,
         CancellationToken cancellationToken)
     {
+        var aliases = references is null
+            ? new[] { request.DeviceAssetId }
+            : (await references.ResolveAsync(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, cancellationToken)).Aliases;
         var now = timeProvider.GetUtcNow();
         var windowStartUtc = now.Subtract(FactWindow);
         var observations = await LoadRuleObservationsAsync(
             request,
+            aliases,
             windowStartUtc,
             now,
             cancellationToken);
-        var runtime = await LoadRuntimeAsync(request, windowStartUtc, now, cancellationToken);
-        var alarms = await LoadAlarmsAsync(request, windowStartUtc, now, cancellationToken);
+        var runtime = await LoadRuntimeAsync(request, aliases, windowStartUtc, now, cancellationToken);
+        var alarms = await LoadAlarmsAsync(request, aliases, windowStartUtc, now, cancellationToken);
         var scoringResult = EquipmentHealthScoringPolicy.Evaluate(
             new EquipmentHealthScoringInput(now, observations, runtime, alarms));
         var evaluations = scoringResult.Evaluations
@@ -116,6 +121,7 @@ public sealed class GetEquipmentHealthQueryHandler(
 
     private async Task<ImmutableArray<EquipmentHealthRuleObservation>> LoadRuleObservationsAsync(
         GetEquipmentHealthQuery request,
+        string[] aliases,
         DateTimeOffset windowStartUtc,
         DateTimeOffset now,
         CancellationToken cancellationToken)
@@ -124,7 +130,7 @@ public sealed class GetEquipmentHealthQueryHandler(
             .AsNoTracking()
             .Where(rule => rule.OrganizationId == request.OrganizationId)
             .Where(rule => rule.EnvironmentId == request.EnvironmentId)
-            .Where(rule => rule.DeviceAssetId == request.DeviceAssetId)
+            .Where(rule => aliases.Contains(rule.DeviceAssetId))
             .Where(rule => rule.IsEnabled)
             .Where(rule =>
                 rule.ComparisonOperator == ">"
@@ -156,7 +162,7 @@ public sealed class GetEquipmentHealthQueryHandler(
             .AsNoTracking()
             .Where(sample => sample.OrganizationId == request.OrganizationId)
             .Where(sample => sample.EnvironmentId == request.EnvironmentId)
-            .Where(sample => sample.DeviceAssetId == request.DeviceAssetId)
+            .Where(sample => aliases.Contains(sample.DeviceAssetId))
             .Where(sample => tagKeys.Contains(sample.TagKey))
             .Where(sample => sample.BucketEndUnixTimeMilliseconds > windowStartUnixTimeMilliseconds)
             .Where(sample => sample.BucketEndUnixTimeMilliseconds <= nowUnixTimeMilliseconds)
@@ -208,11 +214,12 @@ public sealed class GetEquipmentHealthQueryHandler(
 
     private async Task<EquipmentHealthRuntimeFact?> LoadRuntimeAsync(
         GetEquipmentHealthQuery request,
+        string[] aliases,
         DateTimeOffset windowStartUtc,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        var response = await new QueryRuntimeHoursQueryHandler(dbContext).Handle(
+        var response = await new QueryRuntimeHoursQueryHandler(dbContext, references).Handle(
             new QueryRuntimeHoursQuery(
                 request.OrganizationId,
                 request.EnvironmentId,
@@ -229,7 +236,7 @@ public sealed class GetEquipmentHealthQueryHandler(
             .AsNoTracking()
             .Where(snapshot => snapshot.OrganizationId == request.OrganizationId)
             .Where(snapshot => snapshot.EnvironmentId == request.EnvironmentId)
-            .Where(snapshot => snapshot.DeviceAssetId == request.DeviceAssetId)
+            .Where(snapshot => aliases.Contains(snapshot.DeviceAssetId))
             .Where(snapshot => snapshot.OccurredAtUtc <= now)
             .OrderByDescending(snapshot => snapshot.OccurredAtUtc)
             .ThenByDescending(snapshot => snapshot.RecordedAtUtc)
@@ -251,6 +258,7 @@ public sealed class GetEquipmentHealthQueryHandler(
 
     private async Task<ImmutableArray<EquipmentHealthAlarmFact>> LoadAlarmsAsync(
         GetEquipmentHealthQuery request,
+        string[] aliases,
         DateTimeOffset windowStartUtc,
         DateTimeOffset now,
         CancellationToken cancellationToken)
@@ -259,7 +267,7 @@ public sealed class GetEquipmentHealthQueryHandler(
             .AsNoTracking()
             .Where(alarm => alarm.OrganizationId == request.OrganizationId)
             .Where(alarm => alarm.EnvironmentId == request.EnvironmentId)
-            .Where(alarm => alarm.DeviceAssetId == request.DeviceAssetId)
+            .Where(alarm => aliases.Contains(alarm.DeviceAssetId))
             .Where(alarm => alarm.RaisedAtUtc <= now)
             .Where(alarm =>
                 alarm.RaisedAtUtc >= windowStartUtc

@@ -115,6 +115,7 @@ public sealed class GetBusinessConsoleEquipmentDeviceEndpoint(
     IBusinessGatewayAuthorizationClient auth,
     IBusinessIndustrialTelemetryClient industrialTelemetry,
     IBusinessMaintenanceClient maintenance,
+    IBusinessMasterDataClient masterData,
     IInternalServiceTokenProvider tokenProvider)
     : AuthorizedBusinessEquipmentProxyEndpoint<BusinessConsoleEquipmentContextRequest, BusinessConsoleEquipmentDeviceDetailResponse>(
         auth,
@@ -152,18 +153,29 @@ public sealed class GetBusinessConsoleEquipmentDeviceEndpoint(
             deviceAssetId,
             availabilityRequest,
             cancellationToken);
-        var maintenanceWindows = await maintenance.GetAssetAvailabilityWindowsAsync(
+        var catalog = await masterData.ListResourcesAsync(
             tokenProvider.BearerToken,
-            deviceAssetId,
-            availabilityRequest,
+            new BusinessConsoleListResourcesRequest(request.OrganizationId, request.EnvironmentId, "device-asset",
+                IncludeDisabled: true, All: true, DeviceAssetId: deviceAssetId),
             cancellationToken);
+        var device = catalog.Resources.SingleOrDefault();
+        var references = new[] { deviceAssetId, device?.DeviceAssetId, device?.Code }
+            .OfType<string>().Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.Ordinal).ToArray();
+        var maintenanceWindows = references.Length == 1
+            ? await maintenance.GetAssetAvailabilityWindowsAsync(
+                tokenProvider.BearerToken, deviceAssetId, availabilityRequest, cancellationToken)
+            : await maintenance.GetAvailabilityWindowsAsync(
+                tokenProvider.BearerToken,
+                availabilityRequest with { DeviceAssetIds = string.Join(',', references) },
+                cancellationToken);
         var availability = new EquipmentRuntimeAvailabilityResponse(
             iiot.ContractVersion,
             availabilityRequest.OrganizationId,
             availabilityRequest.EnvironmentId,
             availabilityRequest.WindowStartUtc,
             availabilityRequest.WindowEndUtc,
-            BusinessConsoleEquipmentAvailabilityMerger.Merge(iiot.Items, maintenanceWindows.Items));
+            BusinessConsoleEquipmentAvailabilityMerger.Merge(iiot.Items,
+                maintenanceWindows.Items.Select(window => window with { DeviceAssetId = deviceAssetId }).ToArray()));
         return new BusinessConsoleEquipmentDeviceDetailResponse(currentState, availability);
     }
 }

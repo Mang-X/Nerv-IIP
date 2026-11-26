@@ -323,6 +323,7 @@ vi.mock('@/composables/equipment/useBusinessEquipment', async (importOriginal) =
   useBusinessEquipmentAlarms: () => ({
     acknowledgeAlarm: vi.fn(),
     alarms: computed(() => []),
+    alarmsTotal: computed(() => 0),
     alarmsError: shallowRef(),
     alarmsPending: shallowRef(false),
     refreshAlarms: vi.fn(),

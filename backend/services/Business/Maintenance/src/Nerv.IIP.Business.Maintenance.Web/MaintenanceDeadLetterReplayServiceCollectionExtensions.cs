@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.MasterData;
+using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.Business.Maintenance.Web;
@@ -18,6 +19,7 @@ public static class MaintenanceDeadLetterReplayServiceCollectionExtensions
         Add<AlarmRaisedIntegrationEvent, OpenWorkOrderWhenAlarmRaisedHandler>(services, OpenWorkOrderWhenAlarmRaisedHandler.ConsumerName);
         Add<AlarmClearedIntegrationEvent, MarkWorkOrderAlarmClearedHandler>(services, MarkWorkOrderAlarmClearedHandler.ConsumerName);
         Add<DeviceAssetChangedIntegrationEvent, PauseMaintenancePlansWhenDeviceDisabledHandler>(services, PauseMaintenancePlansWhenDeviceDisabledHandler.ConsumerName);
+        Add<StockMovementPostingFailedIntegrationEvent, MarkSparePartPostingFailedHandler>(services, MarkSparePartPostingFailedHandler.ConsumerName);
         return services;
     }
 

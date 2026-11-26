@@ -854,7 +854,7 @@ public sealed class RecordTelemetrySampleCommandValidator : AbstractValidator<Re
     }
 }
 
-public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbContext)
+public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbContext, ITelemetryDeviceReferences? references = null)
     : ICommandHandler<RecordTelemetrySampleCommand, RecordTelemetrySampleResult>
 {
     public async Task<RecordTelemetrySampleResult> Handle(RecordTelemetrySampleCommand request, CancellationToken cancellationToken)
@@ -1068,21 +1068,26 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
 
     private async Task<DeviceStateSnapshotId> RecordDeviceStateAsync(RecordTelemetrySampleCommand request, CancellationToken cancellationToken)
     {
+        var device = references is null
+            ? new TelemetryDeviceReference(request.DeviceAssetId, request.DeviceAssetId)
+            : await references.ResolveAsync(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, cancellationToken);
+        var aliases = device.Aliases;
         var normalizedSourceSequence = IndustrialTelemetryText.Required(request.SourceSequence, nameof(request.SourceSequence));
         var normalizedSourceSystem = IndustrialTelemetryText.Optional(request.SourceSystem);
         var normalizedSourceConnector = IndustrialTelemetryText.Optional(request.SourceConnector);
-        var existingState = await dbContext.DeviceStateSnapshots.SingleOrDefaultAsync(
+        var existingState = await dbContext.DeviceStateSnapshots.Where(
             x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
                 && x.SourceSystem == normalizedSourceSystem
                 && x.SourceConnector == normalizedSourceConnector
-                && x.DeviceAssetId == request.DeviceAssetId
-                && x.SourceSequence == normalizedSourceSequence,
-            cancellationToken);
+                && aliases.Contains(x.DeviceAssetId)
+                && x.SourceSequence == normalizedSourceSequence)
+            .OrderByDescending(x => x.DeviceAssetId == device.PublicId)
+            .FirstOrDefaultAsync(cancellationToken);
         var incoming = DeviceStateSnapshot.Record(
             request.OrganizationId,
             request.EnvironmentId,
-            request.DeviceAssetId,
+            existingState?.DeviceAssetId ?? device.PublicId,
             request.DeviceState!,
             request.StateOccurredAtUtc ?? request.BucketEndUtc,
             normalizedSourceSequence,
@@ -1102,7 +1107,7 @@ public sealed class RecordTelemetrySampleCommandHandler(ApplicationDbContext dbC
         var latestState = await dbContext.DeviceStateSnapshots
             .Where(x => x.OrganizationId == request.OrganizationId
                 && x.EnvironmentId == request.EnvironmentId
-                && x.DeviceAssetId == request.DeviceAssetId)
+                && aliases.Contains(x.DeviceAssetId))
             .OrderByDescending(x => x.OccurredAtUnixTimeMilliseconds)
             .ThenByDescending(x => x.RecordedAtUnixTimeMilliseconds)
             .ThenByDescending(x => x.SourceSequence)

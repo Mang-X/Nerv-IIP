@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -1596,6 +1597,59 @@ public sealed class IndustrialTelemetryEndpointContractTests
         Assert.Equal("running", current.Data.CurrentState);
         Assert.NotNull(availability?.Data);
         Assert.DoesNotContain(availability.Data.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable);
+    }
+
+    [Fact]
+    public async Task Device_code_and_public_id_share_current_state_oee_and_availability()
+    {
+        const string code = "EQ00002";
+        const string publicId = "5f25caca-eec6-4af2-a219-9e2ef97bdead";
+        const string org = "org-001";
+        const string env = "env-dev";
+        var start = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.Zero);
+        var end = start.AddHours(1);
+        await using var db = CreateDbContext(nameof(Device_code_and_public_id_share_current_state_oee_and_availability));
+        var resolver = new FixedDeviceReferences(new(publicId, code));
+        db.DeviceStateSnapshots.Add(DeviceStateSnapshot.Record(org, env, code, "running", start, "legacy"));
+        await db.SaveChangesAsync();
+        var sample = await new RecordTelemetrySampleCommandHandler(db, resolver).Handle(
+            new(org, env, code, "speed", start.AddMinutes(29), start.AddMinutes(30), 1, 0, 0, 0, "current",
+                DeviceState: "stopped"), CancellationToken.None);
+        Assert.NotNull(sample.DeviceStateSnapshotId);
+        Assert.Equal(publicId, (await db.DeviceStateSnapshots.FindAsync(sample.DeviceStateSnapshotId!))?.DeviceAssetId);
+
+        var report = CreateOeeHistoryEvent(org, env, "ALIAS", start.AddMinutes(20), null, null, null, null);
+        report = report with { Payload = report.Payload with { DeviceAssetId = code } };
+        var projection = new ProductionReportOeeProjectionHandler(db, new InMemoryIntegrationEventDeadLetterStore(), resolver);
+        await projection.HandleAsync(report, CancellationToken.None);
+        Assert.Equal(publicId, (await db.OeeProductionFacts.SingleAsync()).DeviceAssetId);
+
+        var states = new GetRuntimeCurrentStateQueryHandler(db, resolver);
+        var byCode = await states.Handle(new(org, env, code, end, 60), CancellationToken.None);
+        var byId = await states.Handle(new(org, env, publicId, end, 60), CancellationToken.None);
+        Assert.Equal("stopped", byCode.CurrentState);
+        Assert.Equal(byCode.StateOccurredAtUtc, byId.StateOccurredAtUtc);
+
+        var oee = new QueryOeeQueryHandler(db, resolver);
+        var codeOee = await oee.Handle(new(org, env, code, start, end), CancellationToken.None);
+        var idOee = await oee.Handle(new(org, env, publicId, start, end), CancellationToken.None);
+        Assert.Equal(0.5m, codeOee.AvailabilityRate);
+        Assert.Equal(1, codeOee.ProductionFactCount);
+        Assert.Equal(codeOee.ProductionFactCount, idOee.ProductionFactCount);
+        Assert.Equal(codeOee.AvailabilityRate, idOee.AvailabilityRate);
+
+        var availability = new QueryRuntimeAvailabilityQueryHandler(db, resolver);
+        var codeWindows = await availability.Handle(new(org, env, start, end, [code], null), CancellationToken.None);
+        var idWindows = await availability.Handle(new(org, env, start, end, [publicId], null), CancellationToken.None);
+        Assert.Equal(
+            Assert.Single(codeWindows.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable).SourceReferenceId,
+            Assert.Single(idWindows.Items, x => x.ReasonCode == EquipmentRuntimeReasonCodes.StateUnavailable).SourceReferenceId);
+    }
+
+    private sealed class FixedDeviceReferences(TelemetryDeviceReference device) : ITelemetryDeviceReferences
+    {
+        public Task<TelemetryDeviceReference> ResolveAsync(string organizationId, string environmentId, string reference, CancellationToken cancellationToken)
+            => Task.FromResult(device);
     }
 
     [Fact]

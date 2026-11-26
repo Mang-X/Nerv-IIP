@@ -3561,8 +3561,10 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
     }
 
-    [Fact]
-    public async Task Mes_work_order_detail_rejects_a_known_id_outside_the_selected_self_scope()
+    [Theory]
+    [InlineData(true, HttpStatusCode.Forbidden)]
+    [InlineData(false, HttpStatusCode.NotFound)]
+    public async Task Mes_work_order_detail_distinguishes_absence_from_outside_the_selected_self_scope(bool exists, HttpStatusCode expected)
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
             scopeGrants:
@@ -3576,6 +3578,7 @@ public sealed class BusinessGatewayProxyTests
             ]);
         var mes = new RecordingMesClient
         {
+            UnscopedWorkOrderId = exists ? "WO-FOREIGN" : null,
             WorkOrders =
             [
                 new BusinessConsoleMesWorkOrderItem(
@@ -3612,7 +3615,12 @@ public sealed class BusinessGatewayProxyTests
         var response = await client.GetAsync(
             "/api/business-console/v1/mes/work-orders/WO-FOREIGN?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin");
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(expected, response.StatusCode);
+        Assert.Equal(2, mes.WorkOrderListCallCount);
+        Assert.Equal("org-001", mes.LastWorkOrderListRequest!.OrganizationId);
+        Assert.Equal("env-dev", mes.LastWorkOrderListRequest.EnvironmentId);
+        Assert.Equal("WO-FOREIGN", mes.LastWorkOrderListRequest.WorkOrderId);
+        Assert.Null(mes.LastWorkOrderListRequest.AssignedUserIds);
         Assert.Equal(0, mes.WorkOrderDetailCallCount);
         Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
     }
@@ -4099,6 +4107,11 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessMesClient>(mes);
             services.RemoveAll<IBusinessMasterDataClient>();
             services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(new RecordingMaintenanceFacadeClient
+            {
+                DowntimeReasonDirectory = [new("reason-1", "MECH-FAULT", "机械故障", "breakdown", "availability")],
+            });
         });
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
@@ -10844,6 +10857,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
         });
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
@@ -22658,6 +22673,8 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public IReadOnlyCollection<BusinessConsoleMesWorkOrderItem>? WorkOrders { get; set; }
 
+    public string? UnscopedWorkOrderId { get; init; }
+
     public int? WorkOrdersTotal { get; init; }
 
     public BusinessConsoleMesWorkOrderDetailResponse? WorkOrderDetail { get; init; }
@@ -22832,6 +22849,12 @@ internal sealed class RecordingMesClient : IBusinessMesClient
                     "released",
                     []),
             ];
+        if (UnscopedWorkOrderId is { } unscopedId && request.WorkOrderId == unscopedId &&
+            request.AssignedUserIds is null && request.TeamIds is null && request.WorkCenterIds is null)
+        {
+            return Task.FromResult(new BusinessConsoleMesWorkOrderListResponse(
+                [new(unscopedId, "SKU-001", null, 10, 0, DateTimeOffset.UnixEpoch, "released", [])], 1));
+        }
         if (EmulateMesListPaging)
         {
             var keyword = request.Keyword?.Trim();

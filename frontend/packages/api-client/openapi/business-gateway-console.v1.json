@@ -17175,6 +17175,16 @@
           }
         ],
         "responses": {
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetCorePalExtensionsDtoResponseData"
+                }
+              }
+            }
+          },
           "200": {
             "description": "Success",
             "content": {
@@ -63809,6 +63819,10 @@
           "workOrderNo": {
             "type": "string",
             "nullable": true
+          },
+          "inventoryPostingFailureReason": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -64864,6 +64878,10 @@
             "nullable": true
           },
           "workOrderNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "inventoryPostingFailureReason": {
             "type": "string",
             "nullable": true
           }

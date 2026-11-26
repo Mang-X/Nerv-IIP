@@ -31,10 +31,12 @@ public sealed class MaintenanceDowntimeFactsTests
         await using var db = MaintenanceEndpointContractTests.CreateTestDbContext();
         var active = Order("org", "env", "device");
         var completed = Order("org", "env", "device");
+        completed.Accept(completed.AssignedTechnicianUserId ?? "technician-001");
+        completed.StartWork();
         completed.Complete("fixed", "fault", 20, []);
         var cancelled = Order("org", "env", "device");
         cancelled.Cancel();
-        var clearedAlarm = MaintenanceWorkOrder.OpenFromAlarm("org", "env", $"MWO-T-{Guid.NewGuid():N}", "device", "alarm", "high", sourceReferenceId: "MWO-FACT-001");
+        var clearedAlarm = MaintenanceWorkOrder.OpenFromAlarm("org", "env", $"MWO-T-{Guid.NewGuid():N}", "device", "alarm", "high", openedBy: "operator-001", sourceReferenceId: "MWO-FACT-001");
         clearedAlarm.MarkAssetUnavailable(From, "fault");
         clearedAlarm.MarkAlarmCleared(From.AddMinutes(30));
         db.MaintenanceWorkOrders.AddRange(active, completed, cancelled, clearedAlarm,

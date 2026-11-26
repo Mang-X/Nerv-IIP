@@ -114,7 +114,12 @@ public sealed class MaintenanceRestorePredictionTests
             var sample = MaintenanceWorkOrder.OpenManual(org, env, $"MWO-T-{Guid.NewGuid():N}", device, "high", "operator");
             sample.MarkAssetUnavailable(from, "fault");
             if (cancel) sample.Cancel();
-            else sample.Complete("fixed", "fault", 1, []);
+            else
+            {
+                sample.Accept("technician-001");
+                sample.StartWork();
+                sample.Complete("fixed", "fault", 1, []);
+            }
             db.MaintenanceWorkOrders.Add(sample);
             db.Entry(sample).Property(cancel ? "CancelledAtUtc" : "CompletedAtUtc").CurrentValue = from.AddMinutes(minutes);
             // Repair labor cannot explain the 30/90 minute downtime samples.

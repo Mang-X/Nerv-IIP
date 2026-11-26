@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.IndustrialTelemetry.Domain;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Scheduling;
+using Nerv.IIP.Business.IndustrialTelemetry.Web.Application;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Commands;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Errors;
 using Nerv.IIP.Business.IndustrialTelemetry.Web.Application.Historian;
@@ -77,6 +78,18 @@ try
         var token = services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken;
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
     });
+
+    if (!isTesting || !string.IsNullOrWhiteSpace(builder.Configuration["MasterData:BaseUrl"]))
+    {
+        builder.Services.AddMemoryCache();
+        builder.Services.AddHttpClient<ITelemetryDeviceReferences, MasterDataTelemetryDeviceReferences>((services, client) =>
+        {
+            client.BaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
+                builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+            var token = services.GetRequiredService<IInternalServiceTokenProvider>().BearerToken;
+            client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        });
+    }
 
     var connectionString = builder.Configuration.GetConnectionString("PostgreSQL");
     if (isTesting && string.IsNullOrWhiteSpace(connectionString))

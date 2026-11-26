@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenanceWorkOrderAggregate;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Contracts.Maintenance;
 
@@ -25,7 +26,12 @@ public sealed class QueryMaintenanceDowntimeFactsQueryHandler(
             {
                 x.Id, x.DeviceAssetId, x.SourceType, x.SourceReferenceId,
                 FromUtc = x.AssetUnavailableFromUtc!.Value,
-                ReleasedAtUtc = x.CompletedAtUtc ?? x.CancelledAtUtc,
+                ReleasedAtUtc = x.SourceType == MaintenanceWorkOrderSourceTypes.Alarm &&
+                    x.OpenedBy == MaintenanceWorkOrderSourceActors.AutomaticAlarm &&
+                    x.AlarmClearedAtUtc >= x.AssetUnavailableFromUtc &&
+                    (x.RepairStartedAtUtc == null || x.AlarmClearedAtUtc < x.RepairStartedAtUtc)
+                    ? x.AlarmClearedAtUtc
+                    : x.CompletedAtUtc ?? x.CancelledAtUtc,
             })
             .Where(x => x.ReleasedAtUtc == null || x.ReleasedAtUtc > from)
             .OrderBy(x => x.FromUtc)

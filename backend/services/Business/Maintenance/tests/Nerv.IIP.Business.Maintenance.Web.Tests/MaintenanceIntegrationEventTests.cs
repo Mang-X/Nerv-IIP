@@ -33,6 +33,8 @@ public sealed class MaintenanceIntegrationEventTests
     {
         var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
         workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, "planned maintenance");
+        workOrder.Accept(workOrder.AssignedTechnicianUserId ?? "technician-001");
+        workOrder.StartWork();
         workOrder.Complete("fixed", "minor-stop", 5, []);
 
         var restored = new AssetRestoredIntegrationEventConverter().Convert(new AssetRestoredDomainEvent(workOrder, workOrder.CompletedAtUtc!.Value));
@@ -48,6 +50,8 @@ public sealed class MaintenanceIntegrationEventTests
     public void Spare_part_issue_converter_requests_inventory_outbound_movement()
     {
         var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
+        workOrder.Accept(workOrder.AssignedTechnicianUserId ?? "technician-001");
+        workOrder.StartWork();
         workOrder.Complete(
             "fixed",
             "minor-stop",
@@ -85,6 +89,8 @@ public sealed class MaintenanceIntegrationEventTests
     public void Spare_part_issue_converter_refuses_to_invent_a_missing_unit_of_measure()
     {
         var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
+        workOrder.Accept(workOrder.AssignedTechnicianUserId ?? "technician-001");
+        workOrder.StartWork();
         workOrder.Complete("fixed", "minor-stop", 5, [new SparePartLineDraft("SPARE-001", 2m, SiteCode: "SITE-001", LocationCode: "loc-spare-01")]);
         var domainEvent = Assert.Single(workOrder.GetDomainEvents().OfType<MaintenanceSparePartIssuedDomainEvent>());
 
@@ -105,6 +111,8 @@ public sealed class MaintenanceIntegrationEventTests
     public void Spare_part_issue_converter_refuses_to_invent_an_issue_location(string? siteCode, string? locationCode)
     {
         var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
+        workOrder.Accept(workOrder.AssignedTechnicianUserId ?? "technician-001");
+        workOrder.StartWork();
         workOrder.Complete("fixed", "minor-stop", 5, [new SparePartLineDraft("SPARE-001", 2m, "pcs", siteCode, locationCode)]);
         var domainEvent = Assert.Single(workOrder.GetDomainEvents().OfType<MaintenanceSparePartIssuedDomainEvent>());
 

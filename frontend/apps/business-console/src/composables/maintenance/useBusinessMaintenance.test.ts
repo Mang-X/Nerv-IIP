@@ -24,7 +24,7 @@ import {
 const coladaState = vi.hoisted(() => ({
   confirmOperation: vi.fn(),
   predictionValue: null as string | null,
-  maintenanceWorkOrderStatus: 'Open',
+  maintenanceWorkOrderStatus: 'InProgress',
   mutationCallsById: new Map<string, unknown[]>(),
   mutationFailuresById: new Map<string, Error[]>(),
   queryDataById: new Map<string, unknown>(),
@@ -152,7 +152,7 @@ describe('business maintenance composables', () => {
     vi.clearAllMocks()
     coladaState.confirmOperation.mockReset()
     coladaState.confirmOperation.mockImplementation(async (value) => value)
-    coladaState.maintenanceWorkOrderStatus = 'Open'
+    coladaState.maintenanceWorkOrderStatus = 'InProgress'
     coladaState.mutationCallsById.clear()
     coladaState.mutationFailuresById.clear()
     coladaState.queryDataById.clear()

@@ -48,6 +48,7 @@ public static class MaintenanceWorkOrderSourceTypes
 public static class MaintenanceWorkOrderSourceActors
 {
     public const string Inspection = "maintenanceInspection";
+    public const string AutomaticAlarm = "industrialTelemetry";
 }
 
 /// <summary>
@@ -384,7 +385,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
             MaintenanceWorkOrderStatus.WaitingForParts);
         Status = MaintenanceWorkOrderStatus.Cancelled;
         CancelledAtUtc = DateTimeOffset.UtcNow;
-        if (AssetUnavailable)
+        if (AssetUnavailable && !ReleasedByAlarmClearance())
         {
             this.AddDomainEvent(new AssetRestoredDomainEvent(this, CancelledAtUtc.Value));
         }
@@ -410,7 +411,19 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         AlarmCleared = true;
         AlarmClearedAtUtc = clearedAtUtc.ToUniversalTime();
         this.AddDomainEvent(new MaintenanceWorkOrderAlarmClearedDomainEvent(this, AlarmClearedAtUtc.Value));
+        if (ReleasedByAlarmClearance())
+        {
+            this.AddDomainEvent(new AssetRestoredDomainEvent(this, AlarmClearedAtUtc.Value));
+        }
     }
+
+    private bool ReleasedByAlarmClearance() =>
+        AssetUnavailable &&
+        SourceType == MaintenanceWorkOrderSourceTypes.Alarm &&
+        OpenedBy == MaintenanceWorkOrderSourceActors.AutomaticAlarm &&
+        AlarmClearedAtUtc is { } clearedAt &&
+        clearedAt >= AssetUnavailableFromUtc &&
+        (RepairStartedAtUtc is null || clearedAt < RepairStartedAtUtc);
 
     public void MarkAssetUnavailable(DateTimeOffset fromUtc, string reason, DateTimeOffset? expectedRestoreAtUtc = null)
     {
@@ -489,7 +502,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         string? costCurrencyCode = null,
         string? actualTechnicianUserId = null)
     {
-        EnsureStatus(MaintenanceWorkOrderStatus.Open, MaintenanceWorkOrderStatus.InProgress);
+        EnsureStatus(MaintenanceWorkOrderStatus.InProgress);
         CompleteCore(
             result,
             downtimeReasonCode,
@@ -536,7 +549,7 @@ public sealed class MaintenanceWorkOrder : Entity<MaintenanceWorkOrderId>, IAggr
         Status = MaintenanceWorkOrderStatus.Completed;
         CompletedAtUtc = DateTimeOffset.UtcNow;
         this.AddDomainEvent(new MaintenanceWorkOrderCompletedDomainEvent(this));
-        if (AssetUnavailable)
+        if (AssetUnavailable && !ReleasedByAlarmClearance())
         {
             this.AddDomainEvent(new AssetRestoredDomainEvent(this, CompletedAtUtc.Value));
         }
@@ -668,6 +681,11 @@ public sealed class SparePartLine : Entity<SparePartLineId>
     public string? UomCode { get; private set; }
     public string? SiteCode { get; private set; }
     public string? LocationCode { get; private set; }
+
+    public string? InventoryPostingFailureReason { get; private set; }
+
+    public void MarkInventoryPostingFailed(string reason) =>
+        InventoryPostingFailureReason = reason;
 
     public static SparePartLine Create(SparePartLineDraft draft)
     {

@@ -248,7 +248,8 @@ public sealed record BusinessConsoleMaintenanceWorkOrderItem(
     IReadOnlyCollection<string>? BlockReasons = null,
     DateTimeOffset? ExpectedRestoreAtUtc = null,
 
-    string? WorkOrderNo = null);
+    string? WorkOrderNo = null,
+    string? InventoryPostingFailureReason = null);
 
 public sealed record BusinessConsoleMaintenanceWorkOrderLifecycleEventItem(
     string Action,
@@ -316,7 +317,8 @@ public sealed record BusinessConsoleMaintenanceSparePartItem(
     string? UomCode,
     string? SiteCode = null,
     string? LocationCode = null,
-    string? WorkOrderNo = null);
+    string? WorkOrderNo = null,
+    string? InventoryPostingFailureReason = null);
 
 public sealed record BusinessConsoleCreateMaintenanceSparePartRequest(
     string OrganizationId,

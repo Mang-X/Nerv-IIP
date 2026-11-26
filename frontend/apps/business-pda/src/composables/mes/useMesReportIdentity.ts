@@ -1,3 +1,4 @@
+import { describeRequestError } from '@/api/request-timeout'
 import type {
   BusinessConsoleMesOperationTaskRow,
   BusinessConsoleMesWorkOrderDetailResponse,
@@ -155,6 +156,9 @@ export function useMesReportIdentity(options: UseMesReportIdentityOptions) {
       return '报工链接缺少工单，已阻止报工。'
     }
     if (workOrderId && options.workOrderDetailError.value) {
+      const { status } = describeRequestError(options.workOrderDetailError.value)
+      if (status === 404) return `未找到工单 ${workOrderId}，请核对扫描的工单号。`
+      if (status === 403) return `工单 ${workOrderId} 不在当前授权作业范围内，请联系班组长。`
       return `工单 ${workOrderId} 详情加载失败，已阻止报工，请重试。`
     }
     const detail = options.workOrderDetail.value

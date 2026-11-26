@@ -18,7 +18,7 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("mes")
-                .HasAnnotation("ProductVersion", "10.0.8")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -3830,6 +3830,45 @@ namespace Nerv.IIP.Business.Mes.Infrastructure.Migrations
                     b.ToTable("schedule_release_watermarks", "mes", t =>
                         {
                             t.HasComment("Highest revoked Scheduling release revision consumed by MES for each business scope.");
+                        });
+                });
+
+            modelBuilder.Entity("Nerv.IIP.Business.Mes.Infrastructure.MaintenanceAssetRecovery", b =>
+                {
+                    b.Property<string>("OrganizationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("组织标识。");
+
+                    b.Property<string>("EnvironmentId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("环境标识。");
+
+                    b.Property<Guid>("MaintenanceWorkOrderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("maintenance_work_order_id")
+                        .HasComment("维修工单标识。");
+
+                    b.Property<string>("DeviceAssetId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("device_asset_id")
+                        .HasComment("设备标识。");
+
+                    b.Property<DateTimeOffset>("RestoredAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("restored_at_utc")
+                        .HasComment("首次设备恢复时间。");
+
+                    b.HasKey("OrganizationId", "EnvironmentId", "MaintenanceWorkOrderId");
+
+                    b.ToTable("maintenance_asset_recoveries", "mes", t =>
+                        {
+                            t.HasComment("维保设备恢复事实，用于关闭已登记或乱序到达的停机窗口。");
                         });
                 });
 

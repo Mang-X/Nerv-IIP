@@ -30,6 +30,8 @@ public sealed class MaintenanceLifecycleConflictTests
             "DEV-CNC-01",
             "medium",
             "operator-001");
+        workOrder.Accept(workOrder.AssignedTechnicianUserId ?? "technician-001");
+        workOrder.StartWork();
         workOrder.Complete("fixed", "equipment-failure", 10, []);
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         await dbContext.SaveChangesAsync();
@@ -110,6 +112,8 @@ public sealed class MaintenanceLifecycleConflictTests
             "DEV-CNC-01",
             "medium",
             "operator-001");
+        workOrder.Accept(workOrder.AssignedTechnicianUserId ?? "technician-001");
+        workOrder.StartWork();
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         await dbContext.SaveChangesAsync();
 
@@ -125,7 +129,7 @@ public sealed class MaintenanceLifecycleConflictTests
 
         Assert.IsNotType<MaintenanceLifecycleConflictException>(missingWorkOrder);
         Assert.IsNotType<MaintenanceLifecycleConflictException>(missingReason);
-        Assert.Equal(MaintenanceWorkOrderStatus.Open, workOrder.Status);
+        Assert.Equal(MaintenanceWorkOrderStatus.InProgress, workOrder.Status);
     }
 
     [Fact]

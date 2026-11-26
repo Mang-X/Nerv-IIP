@@ -459,7 +459,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 AssignedTeamId: workOrder.AssignedTeamId,
                 Version: workOrder.Version,
             ExpectedRestoreAtUtc: workOrder.ExpectedRestoreAtUtc,
-                WorkOrderNo: workOrder.WorkOrderNo)).ToArray(),
+                WorkOrderNo: workOrder.WorkOrderNo,
+                InventoryPostingFailureReason: workOrder.InventoryPostingFailureReason)).ToArray(),
             workOrders.Skip,
             workOrders.Take,
             workOrders.Total);
@@ -758,7 +759,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
             AssignedTeamId: workOrder.AssignedTeamId,
             Version: workOrder.Version,
             ExpectedRestoreAtUtc: workOrder.ExpectedRestoreAtUtc,
-            WorkOrderNo: workOrder.WorkOrderNo);
+            WorkOrderNo: workOrder.WorkOrderNo,
+            InventoryPostingFailureReason: workOrder.InventoryPostingFailureReason);
 
     public async Task<BusinessConsoleMaintenancePlanListResponse> ListPlansAsync(
         string internalBearerToken,
@@ -937,7 +939,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
                 sparePart.UomCode,
                 sparePart.SiteCode,
                 sparePart.LocationCode,
-                sparePart.WorkOrderNo)).ToArray(),
+                sparePart.WorkOrderNo,
+                sparePart.InventoryPostingFailureReason)).ToArray(),
             spareParts.Skip,
             spareParts.Take,
             spareParts.Total);
@@ -1122,7 +1125,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         int Version = 0,
         DateTimeOffset? ExpectedRestoreAtUtc = null,
 
-        string? WorkOrderNo = null);
+        string? WorkOrderNo = null,
+        string? InventoryPostingFailureReason = null);
 
     private sealed record DownstreamMaintenanceWorkOrderDetail(
         DownstreamMaintenanceWorkOrderListItem WorkOrder,
@@ -1218,7 +1222,8 @@ public sealed class HttpBusinessMaintenanceClient(HttpClient httpClient)
         string? UomCode,
         string? SiteCode = null,
         string? LocationCode = null,
-        string? WorkOrderNo = null);
+        string? WorkOrderNo = null,
+        string? InventoryPostingFailureReason = null);
 
     private sealed record DownstreamCreateMaintenanceWorkOrderResponse(
         JsonElement WorkOrderId,

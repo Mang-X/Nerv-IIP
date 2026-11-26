@@ -25,6 +25,15 @@ public sealed class BusinessGatewayMesDowntimeOrganizationScopeTests
         Assert.Equal("env-dev", mes.LastRecordDowntimeRequest.EnvironmentId);
     }
 
+    [Fact]
+    public async Task Downtime_rejects_a_reason_missing_from_the_tenant_catalog()
+    {
+        var (response, mes) = await RecordAsync(
+            [OrganizationGrant()], "organization", "org-001", reasonCode: "MECH");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, mes.RecordDowntimeCallCount);
+    }
+
     [Theory]
     [InlineData("no-grant")]
     [InlineData("wrong-permission")]
@@ -66,7 +75,8 @@ public sealed class BusinessGatewayMesDowntimeOrganizationScopeTests
 
     private static async Task<(HttpResponseMessage Response, RecordingMesClient Mes)> RecordAsync(
         AuthorizationScopeGrant[] grants, string? scopeKind, string? scopeId, string workCenter = "WC-A",
-        string authorizedOrganization = "org-001", string authorizedEnvironment = "env-dev")
+        string authorizedOrganization = "org-001", string authorizedEnvironment = "env-dev",
+        string reasonCode = "DT-MECH")
     {
         var authorization = BusinessGatewayAuthorizationResult.Allowed("user-admin", "user", "operator",
             authorizedOrganization, authorizedEnvironment, scopeGrants: grants);
@@ -79,6 +89,8 @@ public sealed class BusinessGatewayMesDowntimeOrganizationScopeTests
         };
         await using var lease = BusinessGatewayTestHost.Lease(auth, services =>
         {
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(new RecordingMaintenanceFacadeClient());
             services.RemoveAll<IBusinessMesClient>();
             services.AddSingleton<IBusinessMesClient>(mes);
             services.RemoveAll<IBusinessMasterDataClient>();
@@ -89,7 +101,7 @@ public sealed class BusinessGatewayMesDowntimeOrganizationScopeTests
         var response = await client.PostAsJsonAsync("/api/business-console/v2/mes/downtime-events", new
         {
             organizationId = "org-001", environmentId = "env-dev", workOrderId = "WO-DOWNTIME",
-            workCenterId = workCenter, reasonCode = "DT-MECH", startedAtUtc = "2026-10-11T12:30:00Z",
+            workCenterId = workCenter, reasonCode, startedAtUtc = "2026-10-11T12:30:00Z",
             idempotencyKey = "issue-4320-downtime", scopeKind, scopeId,
         });
         Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);

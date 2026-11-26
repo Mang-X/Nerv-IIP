@@ -662,6 +662,40 @@ public sealed class MaintenanceEventHandlerTests
         Assert.Single(await assertionDbContext.ProcessedIntegrationEvents.ToListAsync());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Recovery_closes_only_its_maintenance_order_even_when_delivered_first(bool recoveryFirst)
+    {
+        await using var db = CreateDbContext();
+        var store = new PersistentMesPlanningStore(db);
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var unavailable = new AssetUnavailableIntegrationEventHandlerForReschedule(
+            CreateUnavailableProcessor(store, db), deadLetters);
+        var restored = new AssetRestoredIntegrationEventHandlerForReschedule(store, db, deadLetters);
+        var start = DateTimeOffset.Parse("2026-05-22T08:00:00Z");
+        var target = Guid.Parse("4de71c95-3b9d-4016-9c95-08e56b4d36c3");
+        var other = Guid.Parse("8405f11c-e75a-4f1c-9d4f-f99dd2c0ca34");
+        AssetUnavailableIntegrationEvent ForOrder(Guid id) => CreateUnavailableEvent(start) with
+        {
+            EventId = id.ToString(),
+            CorrelationId = id.ToString(),
+            IdempotencyKey = $"asset-unavailable:{id:D}:{start:O}",
+        };
+        var recoveredAt = start.AddHours(1);
+        var recovery = CreateRestoredEvent(recoveredAt);
+        recovery = recovery with { Payload = recovery.Payload with { MaintenanceWorkOrderId = target.ToString() } };
+
+        if (recoveryFirst) await restored.HandleAsync(recovery, CancellationToken.None);
+        await unavailable.HandleAsync(ForOrder(target), CancellationToken.None);
+        await unavailable.HandleAsync(ForOrder(other), CancellationToken.None);
+        if (!recoveryFirst) await restored.HandleAsync(recovery, CancellationToken.None);
+
+        var windows = await db.WorkCenterUnavailabilities.ToArrayAsync();
+        Assert.Equal(recoveredAt, Assert.Single(windows, x => x.DowntimeEventNo == MaintenanceAssetRecovery.DowntimeEventNo(target)).ToUtc);
+        Assert.Null(Assert.Single(windows, x => x.DowntimeEventNo == MaintenanceAssetRecovery.DowntimeEventNo(other)).ToUtc);
+    }
+
     [Fact]
     public async Task AssetRestoredHandler_ClosesUnavailableWindow()
     {
@@ -917,7 +951,7 @@ public sealed class MaintenanceEventHandlerTests
                 new PostgreSqlMesAssetUnavailableInboxClaimCoordinator(dbContext),
                 store,
                 workCenterResolver,
-                NullLogger<ProcessAssetUnavailableCommandHandler>.Instance);
+                NullLogger<ProcessAssetUnavailableCommandHandler>.Instance, dbContext);
             var result = await handler.Handle(command, cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             return (TResponse)(object)result;

@@ -301,7 +301,7 @@ beforeEach(() => {
       workOrderNo: 'MWO-20260706-000001',
       deviceAssetId: 'DEV-PRESS-01',
       priority: 'high',
-      status: 'open',
+      status: 'inProgress',
       openedAtUtc: '2026-07-06T00:00:00Z',
       warrantyStatus: 'in-warranty',
       warrantyExpiresOn: '2027-01-14',

@@ -1,5 +1,5 @@
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { shallowRef, type ComputedRef } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -21,23 +21,44 @@ const state = vi.hoisted(() => ({
   identitiesUnavailable: false,
   requestedId: undefined as ComputedRef<string> | undefined,
   refresh: vi.fn(),
+  transition: vi.fn(),
+  confirm: vi.fn(),
+}))
+
+vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@nerv-iip/api-client')>()),
+  transitionBusinessConsoleMaintenanceWorkOrder: state.transition,
+  confirmBusinessConsoleOperation: state.confirm,
 }))
 
 vi.mock('@/composables/maintenance', () => ({
   useMaintenanceSelfWorkOrderDetail: (requestedId: ComputedRef<string>) => {
     state.requestedId = requestedId
+    const workOrder = shallowRef(state.workOrder)
     return {
       scopeReady: shallowRef(state.scopeReady),
       enabled: shallowRef(state.enabled),
       pending: shallowRef(state.pending),
       error: shallowRef(state.error),
       hasFailedResponse: shallowRef(state.failed),
-      workOrder: shallowRef(state.workOrder),
+      workOrder,
+      authoritativeWorkOrder: workOrder,
+      workOrderId: requestedId,
+      scopeKey: shallowRef('org:env:principal-1'),
+      queryScope: () => ({
+        organizationId: 'org',
+        environmentId: 'env',
+        scopeKind: 'self',
+        scopeId: 'principal-1',
+      }),
       device: shallowRef(state.device),
       identities: shallowRef(state.identities),
       identityPending: shallowRef(false),
       identitiesUnavailable: shallowRef(state.identitiesUnavailable),
-      refresh: state.refresh,
+      refresh: async () => {
+        await state.refresh()
+        workOrder.value = state.workOrder
+      },
     }
   },
 }))
@@ -102,7 +123,7 @@ describe('maintenance work-order authoritative detail page', () => {
       sourceAlarmId: 'ALM-9',
       version: 7,
       allowedActions: ['start', 'cancel'],
-      blockReasons: ['manage-permission-required'],
+      blockReasons: [],
       lifecycle: [
         {
           action: 'accept',
@@ -146,10 +167,9 @@ describe('maintenance work-order authoritative detail page', () => {
     expect(wrapper.text()).not.toContain('team-a')
     expect(wrapper.text()).toContain('开工')
     expect(wrapper.text()).toContain('取消')
-    expect(wrapper.text()).toContain('当前账号没有维护动作权限')
     expect(wrapper.text()).toContain('现场接单')
     expect(wrapper.text()).toContain('待处理 → 已接单')
-    expect(wrapper.findAll('button').some((button) => button.text() === '开工')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === '开工')).toBe(true)
     expect(wrapper.findAll('button').some((button) => button.text() === '取消')).toBe(false)
   })
 
@@ -255,6 +275,71 @@ describe('maintenance work-order authoritative detail page', () => {
     const wrapper = await mountPage()
 
     expect(wrapper.findAll('button').some((button) => button.text() === '开工')).toBe(false)
+  })
+
+  it('reads before accepting and keeps the same key for an unconfirmed result', async () => {
+    state.workOrder = authoritativeWorkOrder({ allowedActions: ['accept'] })
+    state.transition.mockResolvedValue({ response: { status: 200 }, data: { success: true } })
+    state.confirm.mockRejectedValueOnce(new Error('回执未确认'))
+    state.confirm.mockImplementationOnce(() => {
+      state.workOrder = authoritativeWorkOrder({
+        status: 'accepted',
+        version: 2,
+        allowedActions: ['start'],
+        lifecycle: [
+          {
+            action: 'accept',
+            fromStatus: 'open',
+            toStatus: 'accepted',
+            actorPrincipalId: 'principal-1',
+            resultingVersion: 2,
+            occurredAtUtc: '2026-08-02T01:02:03.000Z',
+          },
+        ],
+      })
+    })
+    const wrapper = await mountPage()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '接单')!
+      .trigger('click')
+    await wrapper.get('textarea').setValue('接手维修')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    const first = state.transition.mock.calls[0][0]
+    expect(first.path.workOrderId).toBe(state.workOrder.workOrderId)
+    expect(first.body).toMatchObject({ action: 'accept', expectedVersion: 1, reason: '接手维修' })
+    expect(first.body.idempotencyKey).toBeTruthy()
+    expect(state.refresh).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).not.toContain('操作已确认。')
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(state.transition.mock.calls[1][0].body).toEqual(first.body)
+    expect(wrapper.text()).toContain('操作已确认。')
+    expect(wrapper.findAll('button').some((button) => button.text() === '开工')).toBe(true)
+  })
+
+  it('refreshes a stale start action after a conflict', async () => {
+    state.workOrder = authoritativeWorkOrder({ status: 'accepted', allowedActions: ['start'] })
+    state.transition.mockImplementationOnce(() => {
+      state.workOrder = authoritativeWorkOrder({ status: 'cancelled', version: 2 })
+      return { response: { status: 409 }, error: {} }
+    })
+    const wrapper = await mountPage()
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '开工')!
+      .trigger('click')
+    await wrapper.get('textarea').setValue('现场开工')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(state.refresh).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('form').exists()).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === '开工')).toBe(false)
+    expect(wrapper.text()).toContain('工单状态已更新')
   })
 
   it('offers an actionable identity refresh when enrichment returns 502', async () => {

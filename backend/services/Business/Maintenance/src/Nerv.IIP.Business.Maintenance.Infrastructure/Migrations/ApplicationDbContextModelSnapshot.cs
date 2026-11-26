@@ -708,6 +708,11 @@ namespace Nerv.IIP.Business.Maintenance.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasComment("Spare part line id.");
 
+                    b.Property<string>("InventoryPostingFailureReason")
+                        .HasColumnType("text")
+                        .HasColumnName("inventory_posting_failure_reason")
+                        .HasComment("Inventory rejection reason for the maintenance issue.");
+
                     b.Property<string>("LocationCode")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")

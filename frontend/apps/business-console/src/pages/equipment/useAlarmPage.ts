@@ -1,5 +1,5 @@
 import { statusActionGate } from '@nerv-iip/business-core'
-import type { NvDataTableColumn, NvMetricFacet, NvMetricSegment } from '@nerv-iip/ui'
+import type { NvDataTableColumn } from '@nerv-iip/ui'
 import {
   LifecycleStateChangedError,
   recoverLifecycleAction,
@@ -22,53 +22,57 @@ export function useAlarmPage() {
   const router = useRouter()
   const route = useRoute()
   const auth = useAuthStore()
+  // Quick-filter views. 升级 is ORTHOGONAL to disposition — an escalated alarm may also be
+  // acknowledged/shelved, so each view is an independent predicate (a row can match several)
+  // rather than one mutually-exclusive bucket. This keeps escalated+acknowledged alarms in
+  // 已确认 with their acknowledger visible.
+  const VIEW_TABS = [
+    { value: 'all', label: '全部' },
+    { value: 'escalated', label: '已升级' },
+    { value: 'raised', label: '待确认' },
+    { value: 'shelved', label: '已搁置' },
+    { value: 'acknowledged', label: '已确认' },
+  ] as const
+  type AlarmView = (typeof VIEW_TABS)[number]['value']
+  const DEFAULT_PAGE_SIZE = 10
+  const MAX_PAGE_SIZE = 500
+
+  function queryView(): AlarmView {
+    return VIEW_TABS.find((v) => v.value === route.query.view)?.value ?? 'all'
+  }
+  function queryInt(key: string, fallback: number): number {
+    const raw = route.query[key]
+    const n = typeof raw === 'string' ? Number.parseInt(raw, 10) : Number.NaN
+    return Number.isSafeInteger(n) && n > 0 ? n : fallback
+  }
+
+  // View + pagination are the controlled source of truth and round-trip through the URL
+  // (§5.3 双向同步:view / page / pageSize).
+  const activeView = ref<AlarmView>(queryView())
+  const page = ref(queryInt('page', 1))
+  const pageSize = ref(Math.min(queryInt('pageSize', DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE))
+
   const {
     acknowledgeAlarm,
     alarms,
     alarmsError,
     alarmsPending,
+    alarmsTotal,
     refreshAlarms,
     shelveAlarm,
     unshelveAlarm,
-  } = useBusinessEquipmentAlarms()
+  } = useBusinessEquipmentAlarms(() => ({
+    status:
+      activeView.value === 'all'
+        ? 'active'
+        : activeView.value === 'acknowledged'
+          ? 'active-acknowledged'
+          : activeView.value,
+    skip: Math.min((page.value - 1) * pageSize.value, 2147483647),
+    take: pageSize.value,
+  }))
 
   const errorMessage = computed(() => inlineErrorMessage(alarmsError.value))
-  const criticalCount = computed(
-    () =>
-      alarms.value.filter((a) => ['critical', 'blocked'].includes((a.severity ?? '').toLowerCase()))
-        .length,
-  )
-  const warningCount = computed(
-    () => alarms.value.filter((a) => (a.severity ?? '').toLowerCase() === 'warning').length,
-  )
-  const shelvedCount = computed(() => alarms.value.filter((a) => isShelved(a)).length)
-  const escalatedCount = computed(
-    () => alarms.value.filter((a) => Boolean(a.escalatedAtUtc)).length,
-  )
-  // 级别构成：严重 / 预警 / 其他 互斥且相加等于未解除报警总数（Ring 的构成前提）。
-  const otherSeverityCount = computed(() =>
-    Math.max(0, alarms.value.length - criticalCount.value - warningCount.value),
-  )
-  const severitySegments = computed<NvMetricSegment[]>(() => [
-    { key: 'critical', label: '严重', value: criticalCount.value, tone: 'danger' },
-    { key: 'warning', label: '预警', value: warningCount.value, tone: 'warning' },
-    { key: 'other', label: '其他级别', value: otherSeverityCount.value, tone: 'neutral' },
-  ])
-  // 升级与搁置是彼此正交的处置视图（同一条报警可同时被升级和搁置），不构成一个整体，用 facets 表达。
-  const dispositionFacets = computed<NvMetricFacet[]>(() => [
-    {
-      key: 'escalated',
-      label: '已升级',
-      value: escalatedCount.value,
-      tone: escalatedCount.value > 0 ? 'danger' : 'neutral',
-    },
-    {
-      key: 'shelved',
-      label: '已搁置',
-      value: shelvedCount.value,
-      tone: shelvedCount.value > 0 ? 'warning' : 'neutral',
-    },
-  ])
   const permissionCodes = computed(() => auth.principal?.permissionCodes ?? [])
   const canManageAlarms = computed(() => permissionCodes.value.includes(P.iiotAlarmsWrite))
   const canCreateMaintenanceWorkOrder = computed(() =>
@@ -148,82 +152,16 @@ export function useAlarmPage() {
     { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
   ]
 
-  // Quick-filter views. 升级 is ORTHOGONAL to disposition — an escalated alarm may also be
-  // acknowledged/shelved, so each view is an independent predicate (a row can match several)
-  // rather than one mutually-exclusive bucket. This keeps escalated+acknowledged alarms in
-  // 已确认 with their acknowledger visible.
-  const VIEW_TABS = [
-    { value: 'all', label: '全部' },
-    { value: 'escalated', label: '已升级' },
-    { value: 'raised', label: '待确认' },
-    { value: 'shelved', label: '已搁置' },
-    { value: 'acknowledged', label: '已确认' },
-  ] as const
-  type AlarmView = (typeof VIEW_TABS)[number]['value']
-  const DEFAULT_PAGE_SIZE = 10
+  const totalItems = computed(() => alarmsTotal.value ?? 0)
 
-  function queryView(): AlarmView {
-    return VIEW_TABS.find((v) => v.value === route.query.view)?.value ?? 'all'
-  }
-  function queryInt(key: string, fallback: number): number {
-    const raw = route.query[key]
-    const n = typeof raw === 'string' ? Number.parseInt(raw, 10) : Number.NaN
-    return Number.isInteger(n) && n > 0 ? n : fallback
-  }
-
-  // View + pagination are the controlled source of truth and round-trip through the URL
-  // (§5.3 双向同步:view / page / pageSize).
-  const activeView = ref<AlarmView>(queryView())
-  const page = ref(queryInt('page', 1))
-  const pageSize = ref(queryInt('pageSize', DEFAULT_PAGE_SIZE))
-
-  function matchesView(row: Alarm, view: AlarmView): boolean {
-    switch (view) {
-      case 'escalated':
-        return Boolean(row.escalatedAtUtc)
-      case 'shelved':
-        return isShelved(row)
-      case 'acknowledged':
-        return Boolean(row.acknowledgedAtUtc)
-      case 'raised':
-        return !row.acknowledgedAtUtc && !isShelved(row)
-      default:
-        return true
-    }
-  }
-  const viewCounts = computed<Record<AlarmView, number>>(() => {
-    const counts: Record<AlarmView, number> = {
-      all: 0,
-      escalated: 0,
-      raised: 0,
-      shelved: 0,
-      acknowledged: 0,
-    }
-    for (const view of VIEW_TABS)
-      counts[view.value] = alarms.value.filter((a) => matchesView(a, view.value)).length
-    return counts
-  })
-  const filteredAlarms = computed(() =>
-    alarms.value.filter((a) => matchesView(a, activeView.value)),
-  )
-  const totalItems = computed(() => filteredAlarms.value.length)
-  // Slice here (manual pagination) so page/pageSize are parent-owned and URL-syncable.
-  const pagedAlarms = computed(() => {
-    const start = (page.value - 1) * pageSize.value
-    return filteredAlarms.value.slice(start, start + pageSize.value)
-  })
-
-  // Explicit view switch (user click): reset to page 1 + prune the selection to the now-visible
-  // rows so bulk actions never touch rows hidden by the current view (误操作 guard). Page reset
-  // lives here (not in a watcher) so URL-driven view changes keep their own page from the query.
   function selectView(view: AlarmView) {
     activeView.value = view
     page.value = 1
   }
-  watch(activeView, () => {
-    const visible = new Set<string | number>(filteredAlarms.value.map(alarmKey))
-    selectedKeys.value = selectedKeys.value.filter((k) => visible.has(k))
+  watch([activeView, page, pageSize], () => {
+    selectedKeys.value = []
   })
+
   function updatePageSize(size: number) {
     pageSize.value = size
     page.value = 1
@@ -233,8 +171,9 @@ export function useAlarmPage() {
   // page can never render an empty table. The clamped value is normalized back into the query by
   // the state→URL watcher below.
   watch(
-    [page, pageSize, totalItems],
+    [alarmsTotal, alarmsPending],
     () => {
+      if (alarmsPending.value || alarmsTotal.value === undefined) return
       const maxPage = Math.max(1, Math.ceil(totalItems.value / pageSize.value))
       if (page.value > maxPage) page.value = maxPage
     },
@@ -265,7 +204,7 @@ export function useAlarmPage() {
       if (nextView !== activeView.value) activeView.value = nextView
       const nextPage = queryInt('page', 1)
       if (nextPage !== page.value) page.value = nextPage
-      const nextSize = queryInt('pageSize', DEFAULT_PAGE_SIZE)
+      const nextSize = Math.min(queryInt('pageSize', DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE)
       if (nextSize !== pageSize.value) pageSize.value = nextSize
     },
   )
@@ -700,7 +639,6 @@ export function useAlarmPage() {
     confirmShelve,
     customMinutesError,
     deviceLabel,
-    dispositionFacets,
     errorMessage,
     escalationTooltip,
     formatDateTime,
@@ -713,7 +651,6 @@ export function useAlarmPage() {
     openShelve,
     page,
     pageSize,
-    pagedAlarms,
     reasonError,
     reasonRequired,
     recordDowntime,
@@ -723,7 +660,6 @@ export function useAlarmPage() {
     selectView,
     selectedKeys,
     severityLabel,
-    severitySegments,
     severityVariant,
     shelve,
     shelveContextItems,
@@ -734,6 +670,5 @@ export function useAlarmPage() {
     statusVariant,
     totalItems,
     updatePageSize,
-    viewCounts,
   }
 }

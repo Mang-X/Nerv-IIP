@@ -204,12 +204,22 @@ public sealed class AssetRestoredIntegrationEventHandlerForReschedule(
     private async Task HandleValidEventAsync(AssetRestoredIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(integrationEvent);
+        var payload = integrationEvent.Payload;
+        if (payload.MaintenanceWorkOrderId is not null && !Guid.TryParse(payload.MaintenanceWorkOrderId, out _))
+        {
+            throw new InvalidOperationException("恢复事件的维修工单标识无效。");
+        }
+        if (Guid.TryParse(payload.MaintenanceWorkOrderId ?? integrationEvent.CorrelationId, out var workOrderId))
+        {
+            await HandleWorkOrderRecoveryAsync(integrationEvent, workOrderId, cancellationToken);
+            return;
+        }
+
         if (!await MesProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
         {
             return;
         }
 
-        var payload = integrationEvent.Payload;
         await store.CloseUnavailabilityAsync(
             integrationEvent.OrganizationId,
             integrationEvent.EnvironmentId,
@@ -219,6 +229,49 @@ public sealed class AssetRestoredIntegrationEventHandlerForReschedule(
 
         await dbContext.SaveChangesAsync(cancellationToken);
     }
+
+    private async Task HandleWorkOrderRecoveryAsync(
+        AssetRestoredIntegrationEvent integrationEvent, Guid workOrderId, CancellationToken cancellationToken)
+    {
+        var organizationId = integrationEvent.OrganizationId;
+        var environmentId = integrationEvent.EnvironmentId;
+        var payload = integrationEvent.Payload;
+        await using var transaction = dbContext.Database.IsNpgsql() && dbContext.Database.CurrentTransaction is null
+            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        await MaintenanceAssetRecovery.AcquireAsync(dbContext, organizationId, environmentId, workOrderId, cancellationToken);
+        if (!await MesProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        {
+            return;
+        }
+
+        var recovery = await dbContext.MaintenanceAssetRecoveries.FindAsync(
+            [organizationId, environmentId, workOrderId], cancellationToken);
+        if (recovery is null)
+        {
+            dbContext.MaintenanceAssetRecoveries.Add(
+                new(organizationId, environmentId, workOrderId, payload.DeviceAssetId, payload.RestoredAtUtc));
+
+            var downtimeEventNo = MaintenanceAssetRecovery.DowntimeEventNo(workOrderId);
+            var scope = dbContext.WorkCenterUnavailabilities.Where(x =>
+                x.OrganizationId == organizationId && x.EnvironmentId == environmentId &&
+                x.DeviceAssetId == payload.DeviceAssetId);
+            var window = await scope.SingleOrDefaultAsync(x => x.DowntimeEventNo == downtimeEventNo, cancellationToken);
+            if (window is null && payload.UnavailableFromUtc is { } fromUtc)
+            {
+                // 升级前的窗口没有维修工单关联。仅在同一设备、开始时间且只有一个候选时补偿。
+                var legacy = await scope.Where(x =>
+                    x.FromUtc == fromUtc && x.DowntimeEventNo.StartsWith("UNAV-") &&
+                    !x.DowntimeEventNo.StartsWith("UNAV-MWO-")).Take(2).ToArrayAsync(cancellationToken);
+                if (legacy.Length == 1) window = legacy[0];
+            }
+            if (window is { ToUtc: null }) window.Close(payload.RestoredAtUtc);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+    }
+
 }
 
 internal static class MesProcessedIntegrationEventInbox

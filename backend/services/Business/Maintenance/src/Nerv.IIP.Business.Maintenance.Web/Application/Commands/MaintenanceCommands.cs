@@ -212,7 +212,9 @@ public sealed class CreateMaintenanceWorkOrderCommandHandler(
 
         if (!string.IsNullOrWhiteSpace(request.AssetUnavailableReason))
         {
-            workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, request.AssetUnavailableReason, request.ExpectedRestoreAtUtc);
+            workOrder.MarkAssetUnavailable(
+                request.AlarmOrigin?.RaisedAtUtc?.ToUniversalTime() ?? DateTimeOffset.UtcNow,
+                request.AssetUnavailableReason, request.ExpectedRestoreAtUtc);
         }
 
         await MaintenanceWorkOrderAlarmAssociation.ApplyRecordedClearanceAsync(dbContext, workOrder, request.AlarmOrigin, cancellationToken);
@@ -628,7 +630,7 @@ public sealed class CompleteMaintenanceWorkOrderCommandHandler(
             }
         }
 
-        if (workOrder.Status != MaintenanceWorkOrderStatus.Open)
+        if (workOrder.Status != MaintenanceWorkOrderStatus.InProgress)
         {
             throw new MaintenanceLifecycleConflictException("complete", workOrder.Status.ToString());
         }
@@ -826,7 +828,7 @@ public sealed class StartMaintenanceRepairCommandHandler(ApplicationDbContext db
 }
 
 public sealed record MaintenanceAlarmOrigin(
-    string ExternalAlarmId, string DeviceAssetId, string AlarmCode, DateTimeOffset? ClearedAtUtc = null);
+    string ExternalAlarmId, string DeviceAssetId, string AlarmCode, DateTimeOffset? ClearedAtUtc = null, DateTimeOffset? RaisedAtUtc = null);
 
 public sealed record MarkMaintenanceWorkOrderAlarmClearedCommand(
     string OrganizationId,

@@ -92,7 +92,8 @@ public sealed class AssetRestoredIntegrationEventConverter
             workOrder.EnvironmentId,
             workOrder.OpenedBy,
             $"asset-restored:{workOrder.Id}:{domainEvent.RestoredAtUtc:O}",
-            new AssetRestoredPayload(workOrder.DeviceAssetId, domainEvent.RestoredAtUtc));
+            new AssetRestoredPayload(
+                workOrder.DeviceAssetId, domainEvent.RestoredAtUtc, workOrder.Id.ToString(), workOrder.AssetUnavailableFromUtc));
     }
 }
 

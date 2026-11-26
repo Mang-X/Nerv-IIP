@@ -59,12 +59,14 @@ export function useEquipmentDeviceAlarms(deviceAssetId: MaybeRefOrGetter<string>
   }
 }
 
-export function useBusinessEquipmentAlarms() {
+export function useBusinessEquipmentAlarms(
+  pagination: MaybeRefOrGetter<{ status?: string; skip?: number; take?: number }> = {},
+) {
   const auth = useAuthStore()
   const businessContext = useBusinessContextStore()
   const alarmsQuery = useQuery(() => ({
     ...listBusinessConsoleEquipmentAlarmsQueryOptions({
-      query: toContextQuery(businessContext),
+      query: { ...toContextQuery(businessContext), ...toValue(pagination) },
     }),
     enabled: hasBusinessContext(businessContext),
   }))
@@ -107,7 +109,12 @@ export function useBusinessEquipmentAlarms() {
   const alarmsScopeReady = computed(() => hasBusinessContext(businessContext))
   const alarmsResponse = useScopeBoundListResponse(
     () => alarmsQuery.data.value,
-    () => `${businessContext.organizationId.trim()}:${businessContext.environmentId.trim()}`,
+    () =>
+      JSON.stringify([
+        businessContext.organizationId.trim(),
+        businessContext.environmentId.trim(),
+        toValue(pagination),
+      ]),
     alarmsScopeReady,
   )
 
@@ -281,6 +288,7 @@ export function useBusinessEquipmentAlarms() {
         alarmsResponse.value,
       ),
     ),
+    alarmsTotal: computed(() => alarmsResponse.value?.data?.total),
     alarmsError: alarmsQuery.error,
     alarmsPending: alarmsQuery.isLoading,
     refreshAlarms: () => refetchWithBusinessContext(businessContext, alarmsQuery),
