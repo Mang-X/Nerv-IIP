@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { NvDataTableColumn, NvMetricFacet } from '@nerv-iip/ui'
 import type { BusinessConsoleQualityInspectionTaskItem } from '@nerv-iip/api-client'
+import InspectionRecordDetailSheet from '@/components/quality/InspectionRecordDetailSheet.vue'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
 import {
@@ -27,6 +28,8 @@ import {
   NvInput,
   NvMetricCard,
   NvPageHeader,
+  NvRadioGroup,
+  NvRadioGroupItem,
 } from '@nerv-iip/ui'
 import { AlertCircleIcon, ArrowRightIcon, ClipboardCheckIcon, RefreshCwIcon } from '@lucide/vue'
 import {
@@ -49,6 +52,9 @@ definePage({
 
 const route = useRoute()
 const router = useRouter()
+const recordDetailId = computed(() => firstQuery(route.query.inspectionRecordId))
+const recordDetailOpen = ref(false)
+watch(recordDetailId, (id) => (recordDetailOpen.value = !!id), { immediate: true })
 const initialSourceDocumentNo = firstQuery(route.query.sourceDocumentNo)
 const initialInspectionTaskId = firstQuery(route.query.inspectionTaskId)
 const {
@@ -78,8 +84,11 @@ const workerByUserId = computed(
 )
 const { page, pageSize } = usePagedList(filters, {
   initialPageSize: '200',
-  resetOn: [() => filters.sourceType, () => filters.skuCode],
+  resetOn: [() => filters.status, () => filters.sourceType, () => filters.skuCode],
 })
+
+const inProgress = computed(() => filters.status === 'in-progress')
+const taskStatusLabel = computed(() => (inProgress.value ? '检验中' : '待检任务'))
 
 const sourceTabs = [
   { label: '全部来源', value: 'all' as const },
@@ -130,14 +139,16 @@ const locatorMessage = computed(() => {
 const emptyMessage = computed(() =>
   locatorMessage.value
     ? `${locatorMessage.value.replace('正在定位', '未找到')}。请确认来源单据已生成待检任务，或清除定位条件后查看全部任务。`
-    : '当前没有待检任务。免检 SKU 不会生成任务；若刚完成收货或报工，请刷新后再查看。',
+    : inProgress.value
+      ? '当前没有检验中的任务。'
+      : '当前没有待检任务。免检 SKU 不会生成任务；若刚完成收货或报工，请刷新后再查看。',
 )
 // 任务总数已在页头；这里只提醒来源筛选的真实限制。
 const scopeHint = computed(() =>
   filters.sourceType === 'all' ? '' : '来源筛选只在当前页内生效，其它页可能还有匹配的任务。',
 )
 
-const claimPendingTaskId = shallowRef('')
+const openingTaskId = shallowRef('')
 const assignmentDialogOpen = ref(false)
 const assignmentTask = shallowRef<BusinessConsoleQualityInspectionTaskItem>()
 const assignmentTargetUserId = ref('')
@@ -282,18 +293,15 @@ function sourceDocumentRoute(task: BusinessConsoleQualityInspectionTaskItem) {
   return workOrderId ? `/mes/work-orders/${encodeURIComponent(workOrderId)}` : ''
 }
 
-// 方案选择：让“开始检验”先 claim 成功再打开表单；这样按钮语义与后端状态一致，不会留下“看似接手、实际未认领”的中间态。
 async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem) {
   const inspectionTaskId = task.inspectionTaskId?.trim()
   if (!inspectionTaskId) return
-  if (!task.allowedActions?.includes('claim')) {
-    if (isTaskClaimedByAnother(task)) openReassignment(task)
-    return
-  }
+  const needsClaim = task.allowedActions?.includes('claim')
+  if (!needsClaim && !task.allowedActions?.includes('submit-inspection')) return
 
-  claimPendingTaskId.value = inspectionTaskId
+  openingTaskId.value = inspectionTaskId
   try {
-    await claimInspectionTask(inspectionTaskId, task.version ?? 0)
+    if (needsClaim) await claimInspectionTask(inspectionTaskId, task.version ?? 0)
     await router.push({
       path: '/quality/inspections',
       query: {
@@ -313,10 +321,14 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
       },
     })
   } catch (error) {
-    notifyOperationFailure('认领失败', error, '任务刚被其他检验员认领，请刷新列表后使用“改派”。')
-    await refreshTasks()
+    if (needsClaim) {
+      notifyOperationFailure('认领失败', error, '任务刚被其他检验员认领，请刷新列表后使用“改派”。')
+      await refreshTasks()
+    } else {
+      notifyOperationFailure('打开检验失败', error, '请刷新任务列表后重试。')
+    }
   } finally {
-    claimPendingTaskId.value = ''
+    openingTaskId.value = ''
   }
 }
 </script>
@@ -326,7 +338,7 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
     <NvPageHeader
       title="质检待检工作台"
       :breadcrumbs="[{ label: '质量管理' }]"
-      :count="`${total} 个待检任务`"
+      :count="`${total} 个${inProgress ? '检验中的任务' : '待检任务'}`"
     >
       <template #actions>
         <NvButton size="sm" variant="outline" :disabled="pending" @click="refreshTasks">
@@ -339,7 +351,7 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       <NvMetricCard
         variant="facets"
-        label="待检任务"
+        :label="taskStatusLabel"
         :value="total"
         unit="个"
         :facets="sourceFacets"
@@ -358,7 +370,7 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
         :foot-start="
           overdueCount > 0
             ? '超期任务已在下方列表置顶，先检完再看其余任务。'
-            : '当前待检任务都还在检验时限内。'
+            : '当前任务都还在检验时限内。'
         "
       />
       <NvMetricCard
@@ -380,7 +392,7 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
         value="—"
         tone="neutral"
         :status="{ label: '暂无样本', tone: 'neutral' }"
-        foot-start="当前没有待检任务，暂不计算时限内完成率。"
+        foot-start="当前没有任务，暂不计算时限内完成率。"
       />
     </div>
 
@@ -408,6 +420,11 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
           查看全部待检任务
         </NvButton>
       </div>
+
+      <NvRadioGroup v-model="filters.status" aria-label="任务状态" class="flex flex-wrap gap-4">
+        <NvRadioGroupItem value="pending">待认领</NvRadioGroupItem>
+        <NvRadioGroupItem value="in-progress">检验中</NvRadioGroupItem>
+      </NvRadioGroup>
 
       <div class="grid gap-3 sm:grid-cols-[minmax(0,280px)_auto] sm:items-end">
         <NvField>
@@ -485,17 +502,20 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
       </template>
       <template #cell-actions="{ row }">
         <NvButton
-          v-if="row.allowedActions?.includes('claim')"
+          v-if="
+            row.allowedActions?.includes('claim') ||
+            row.allowedActions?.includes('submit-inspection')
+          "
           size="sm"
-          :disabled="!row.inspectionTaskId || claimPendingTaskId === row.inspectionTaskId"
+          :disabled="!row.inspectionTaskId || openingTaskId === row.inspectionTaskId"
           @click="goToInspectionForm(row)"
         >
           <ClipboardCheckIcon aria-hidden="true" />
-          认领并开始检验
+          {{ row.allowedActions?.includes('claim') ? '认领并开始检验' : '继续检验' }}
           <ArrowRightIcon aria-hidden="true" />
         </NvButton>
         <NvButton
-          v-if="isTaskClaimedByAnother(row)"
+          v-if="row.status === 'pending' && isTaskClaimedByAnother(row)"
           size="sm"
           variant="outline"
           @click="openReassignment(row)"
@@ -504,6 +524,14 @@ async function goToInspectionForm(task: BusinessConsoleQualityInspectionTaskItem
         </NvButton>
       </template>
     </NvDataTable>
+
+    <InspectionRecordDetailSheet
+      v-if="recordDetailId"
+      v-model:open="recordDetailOpen"
+      :record-id="recordDetailId"
+      :organization-id="filters.organizationId"
+      :environment-id="filters.environmentId"
+    />
 
     <NvDialog v-model:open="assignmentDialogOpen">
       <NvDialogContent>

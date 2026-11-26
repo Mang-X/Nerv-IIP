@@ -717,12 +717,14 @@ export function useInspectionPage() {
     if (!canCreateRecord.value) return
     const inspectionTaskId = firstQuery(route.query.inspectionTaskId)
     if (inspectionTaskId) {
+      let inspectionRecordId: string | null | undefined
       try {
-        await taskActions.startInspection(inspectionTaskId, {
+        const response = await taskActions.startInspection(inspectionTaskId, {
           resultLines: toCharacteristicResults(validResultLines.value),
           dispositionReason: optionalText(recordForm.dispositionReason),
           dispositionAttachmentFileIds: splitCsv(recordForm.dispositionAttachmentFileIds),
         })
+        inspectionRecordId = response.data?.inspectionRecordId
       } catch (error) {
         if (
           await recoverLifecycleAction(error, {
@@ -740,6 +742,7 @@ export function useInspectionPage() {
       notifySuccess(`${inspectionSubmissionSubject()}已提交，待检任务已闭合。`)
       await router.push({
         path: '/quality/inspection-tasks',
+        ...(inspectionRecordId ? { query: { inspectionRecordId } } : {}),
       })
       return
     }

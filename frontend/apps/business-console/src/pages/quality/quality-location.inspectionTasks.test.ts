@@ -426,7 +426,10 @@ describe('quality route location behavior', () => {
       )
       expect(vm.recordSheetOpen).toBe(false)
       if (taskFlow)
-        expect(routerSpies.push).toHaveBeenCalledWith({ path: '/quality/inspection-tasks' })
+        expect(routerSpies.push).toHaveBeenCalledWith({
+          path: '/quality/inspection-tasks',
+          query: { inspectionRecordId: '01a0f250-1234-7234-8234-123456789abc' },
+        })
       else
         expect(createRecordSpy).toHaveBeenCalledWith(
           expect.objectContaining({
