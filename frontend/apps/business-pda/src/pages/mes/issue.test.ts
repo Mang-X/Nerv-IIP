@@ -10,10 +10,11 @@ vi.mock('vue-router', () => ({
 // --- composable mock: 2 issue requests + 2 work orders + create/confirm spies ---
 const createIssue = vi.fn(async (_workOrderId: string, _body: Record<string, unknown>) => {})
 const confirmLineSideReceipt = vi.fn(
-  async (_requestId: string, _body: Record<string, unknown>, _context: { replay?: boolean }) => ({
-    reference: 'MI-001',
-    current: { status: 'PartiallyReceived', receivedQuantity: 100 },
-  }),
+  async (
+    _requestId: string,
+    _body: Record<string, unknown>,
+    _context: { replay?: boolean; beforeDispatch: () => void },
+  ) => ({ reference: 'MI-001', current: { status: 'PartiallyReceived', receivedQuantity: 100 } }),
 )
 const receiveScopeIdentity = ref('operator-001:org-001:env-dev')
 const returnLineSideMaterial = vi.fn(
@@ -159,6 +160,7 @@ import IssuePage from './issue.vue'
 
 describe('PDA MES material issue page', () => {
   beforeEach(() => {
+    sessionStorage.clear()
     createIssue.mockClear()
     createIssue.mockResolvedValue(undefined)
     confirmLineSideReceipt.mockClear()
@@ -500,7 +502,10 @@ describe('PDA MES material issue page', () => {
     }
 
     // 首次确认失败
-    confirmLineSideReceipt.mockRejectedValueOnce(new Error('lost response'))
+    confirmLineSideReceipt.mockImplementationOnce(async (_requestId, _body, context) => {
+      context.beforeDispatch()
+      throw new Error('lost response')
+    })
     await fillReceive('receive-REQ-1')
     expect(wrapper.find('[data-result][data-status="error"]').exists()).toBe(true)
 
@@ -513,7 +518,7 @@ describe('PDA MES material issue page', () => {
     expect(confirmLineSideReceipt.mock.calls[1]).toEqual([
       requestId,
       body,
-      { workOrderId: 'WO-2026-0001', replay: true },
+      expect.objectContaining({ workOrderId: 'WO-2026-0001', replay: true }),
     ])
 
     // 继续进入同一申请时，创建新的收料意图。
@@ -527,6 +532,43 @@ describe('PDA MES material issue page', () => {
     expect(confirmLineSideReceipt).toHaveBeenCalledTimes(3)
     expect(confirmLineSideReceipt.mock.calls[2][1]).toMatchObject({ receivedQuantity: 100 })
     expect(confirmLineSideReceipt.mock.calls[2][1].idempotencyKey).not.toBe(body.idempotencyKey)
+  })
+
+  it('ignores a late receipt after scope changes and recovers the frozen write in the original scope', async () => {
+    const receipt = Promise.withResolvers<{
+      reference: string
+      current: { status: string; receivedQuantity: number }
+    }>()
+    confirmLineSideReceipt.mockImplementationOnce(async (_requestId, _body, context) => {
+      context.beforeDispatch()
+      return receipt.promise
+    })
+    const wrapper = mount(IssuePage, { attachTo: document.body })
+    await wrapper.get('[data-testid="receive-REQ-1"]').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="submit-receive"]')!.click()
+    await flushPromises()
+    expect(confirmLineSideReceipt).toHaveBeenCalledTimes(1)
+
+    const originalScope = receiveScopeIdentity.value
+    receiveScopeIdentity.value = ''
+    await flushPromises()
+    expect(wrapper.find('[data-testid="receive-REQ-1"]').exists()).toBe(false)
+    receiveScopeIdentity.value = originalScope
+    receipt.resolve({
+      reference: 'LATE-RECEIPT',
+      current: { status: 'PartiallyReceived', receivedQuantity: 100 },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-result]').exists()).toBe(false)
+
+    const recovery = wrapper.get('[data-testid="receive-REQ-1"]')
+    expect(recovery.text()).toBe('核实原接收')
+    await recovery.trigger('click')
+    await flushPromises()
+    expect(confirmLineSideReceipt).toHaveBeenCalledTimes(2)
+    expect(confirmLineSideReceipt.mock.calls[1][1]).toEqual(confirmLineSideReceipt.mock.calls[0][1])
+    expect(wrapper.get('[data-result][data-status="success"]').text()).toContain('MI-001')
   })
 
   it('returns received line-side material from the same issue list', async () => {

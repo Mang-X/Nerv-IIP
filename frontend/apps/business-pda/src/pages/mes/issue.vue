@@ -16,7 +16,7 @@ import {
   NvMobileResult,
   NvMobileToast,
 } from '@nerv-iip/ui-mobile'
-import { computed, ref, shallowRef, watch } from 'vue'
+import { computed, onScopeDispose, ref, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   useMesLineSideInventoryBalances,
@@ -154,6 +154,7 @@ const createSheetOpen = computed({
 })
 
 function openCreate() {
+  if (submitting.value) return
   scanGate.clear('list')
   result.value = null
   selectedWorkOrder.value = null
@@ -224,6 +225,37 @@ type ReceiveIntent = {
   body: { idempotencyKey: string; receivedQuantity?: number }
 }
 const receiveIntent = shallowRef<ReceiveIntent | null>(null)
+
+function receiveStorageKey(scope: string, requestId: string, workOrderId?: string) {
+  return `nerv-iip.pda-mes-line-side-receipt.v1:${JSON.stringify([scope, workOrderId, requestId])}`
+}
+
+function readReceiveBody(key: string): ReceiveIntent['body'] | null {
+  const stored = sessionStorage.getItem(key)
+  if (stored === null) return null
+  const body = JSON.parse(stored) as ReceiveIntent['body'] | null
+  if (
+    typeof body?.idempotencyKey !== 'string' ||
+    !body.idempotencyKey ||
+    (body.receivedQuantity !== undefined &&
+      (!Number.isFinite(body.receivedQuantity) || body.receivedQuantity < 0))
+  ) {
+    throw new Error('原接收凭据不可用，请核实收料结果。')
+  }
+  const { idempotencyKey, receivedQuantity } = body
+  return { idempotencyKey, ...(receivedQuantity === undefined ? {} : { receivedQuantity }) }
+}
+
+function canRecoverReceive(req: IssueRequest) {
+  const scope = receiveScopeIdentity.value
+  if (!scope || !req.requestId) return false
+  try {
+    return readReceiveBody(receiveStorageKey(scope, req.requestId, req.workOrderId)) !== null
+  } catch {
+    return false
+  }
+}
+
 const returning = ref<IssueRequest | null>(null)
 const returnedQuantity = ref<number | null>(null)
 
@@ -255,10 +287,30 @@ function canReceive(req: IssueRequest) {
   )
 }
 
-function openReceive(req: IssueRequest) {
-  if (submitting.value || !canReceive(req)) return
+async function openReceive(req: IssueRequest) {
+  const scope = receiveScopeIdentity.value
+  if (submitting.value || scanPending.value || !scope || !req.requestId) return
   scanGate.clear('list')
   result.value = null
+  try {
+    const body = readReceiveBody(receiveStorageKey(scope, req.requestId, req.workOrderId))
+    if (body) {
+      if (scanGuarded.value) return
+      const intent = { scope, requestId: req.requestId, workOrderId: req.workOrderId, body }
+      receiveIntent.value = intent
+      await sendReceive(intent, true)
+      return
+    }
+  } catch {
+    result.value = {
+      status: 'error',
+      title: '无法读取原接收凭据',
+      description: '请核实收料结果后再操作。',
+      retry: () => openReceive(req),
+    }
+    return
+  }
+  if (!canReceive(req)) return
   receiving.value = req
   receivedQuantity.value = req.requestedQuantity ?? null
 }
@@ -272,7 +324,7 @@ function canReturn(req: IssueRequest) {
 }
 
 function openReturn(req: IssueRequest) {
-  if (!canReturn(req)) return
+  if (submitting.value || !canReturn(req)) return
   scanGate.clear('list')
   result.value = null
   returnOperationKey.value = makeIdempotencyKey()
@@ -298,6 +350,10 @@ function resetReceiveIntent() {
 const lifecycleRecovery = useLifecycleActionRecovery({
   reset: resetReceiveIntent,
   refresh,
+})
+
+onScopeDispose(() => {
+  receiveIntent.value = null
 })
 
 watch(
@@ -333,13 +389,32 @@ async function sendReceive(intent: ReceiveIntent, replay: boolean) {
     receiveScopeIdentity.value !== intent.scope
   )
     return
+  const key = receiveStorageKey(intent.scope, intent.requestId, intent.workOrderId)
+  const isCurrent = () =>
+    receiveIntent.value === intent && receiveScopeIdentity.value === intent.scope
+  let dispatched = false
   submitting.value = true
   try {
     const { reference, current } = await confirmLineSideReceipt(intent.requestId, intent.body, {
       workOrderId: intent.workOrderId,
       replay,
+      isCurrent,
+      beforeDispatch: () => {
+        const saved = readReceiveBody(key)
+        if (saved && saved.idempotencyKey !== intent.body.idempotencyKey) {
+          throw new Error('已有待核实的收料，请重新打开领料申请。')
+        }
+        if (replay && !saved) {
+          throw new Error('原接收凭据已更新，请重新打开领料申请。')
+        }
+        if (!saved) sessionStorage.setItem(key, JSON.stringify(intent.body))
+        dispatched = true
+      },
     })
-    if (receiveIntent.value !== intent) return
+    if (!isCurrent()) return
+    if (readReceiveBody(key)?.idempotencyKey === intent.body.idempotencyKey) {
+      sessionStorage.removeItem(key)
+    }
     closeReceive()
     result.value = {
       status: 'success',
@@ -348,14 +423,15 @@ async function sendReceive(intent: ReceiveIntent, replay: boolean) {
       retry: () => {},
     }
   } catch (error) {
-    if (receiveIntent.value !== intent) return
+    if (!isCurrent()) return
     closeReceive()
     if (!replay && (await lifecycleRecovery.handle(error))) return
+    if (!isCurrent()) return
     result.value = {
       status: 'error',
       title: '线边接收结果待核实',
       description: describeRequestError(error, '请重试原接收操作。').message,
-      retry: () => sendReceive(intent, true),
+      retry: () => sendReceive(intent, replay || dispatched),
     }
   } finally {
     submitting.value = false
@@ -585,14 +661,14 @@ function onCreateScanAccepted(value: MesScanAccepted) {
         >
           <template #trailing>
             <button
-              v-if="canReceive(req)"
+              v-if="canRecoverReceive(req) || canReceive(req)"
               type="button"
               :data-testid="`receive-${req.requestId}`"
-              :disabled="scanPending"
+              :disabled="scanPending || submitting"
               class="shrink-0 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-primary disabled:opacity-60"
               @click="openReceive(req)"
             >
-              线边接收
+              {{ canRecoverReceive(req) ? '核实原接收' : '线边接收' }}
             </button>
             <button
               v-if="canReturn(req)"

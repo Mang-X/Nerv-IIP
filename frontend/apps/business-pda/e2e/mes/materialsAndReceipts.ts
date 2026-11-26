@@ -35,7 +35,7 @@ export function registerMaterialsAndReceipts() {
     await expect(page.getByTestId('receive-ISS-1')).toHaveCount(0)
   })
 
-  test('线边部分收料：响应丢失后恢复原回执和收料数量，再发起新的收料', async ({ page }) => {
+  test('线边部分收料：刷新及返回后恢复原回执和数量，再发起新的收料', async ({ page }) => {
     const operator = {
       ...principal,
       permissionCodes: [...principal.permissionCodes, 'business.mes.materials.manage'],
@@ -104,7 +104,22 @@ export function registerMaterialsAndReceipts() {
     }
 
     await receive('4')
-    await page.getByTestId('retry-issue').click()
+    await expect(page.getByText('线边接收结果待核实')).toBeVisible()
+    await page.reload()
+    await expect(page.getByText(/库存过账中/)).toBeVisible()
+    const recoverReceipt = page.getByRole('button', { name: '核实原接收' })
+    await expect(recoverReceipt).toBeVisible()
+    await page.getByRole('button', { name: '返回', exact: true }).click()
+    await expect(page).toHaveURL(/\/$/)
+    await page.goBack()
+    await expect(recoverReceipt).toBeVisible()
+    status = 'PartiallyReceived'
+    await page.reload()
+    await expect(page.getByText(/部分接收.*已收 4/)).toBeVisible()
+    await expect(page.getByRole('button', { name: '线边接收', exact: true })).toHaveCount(0)
+    expect(bodies).toHaveLength(1)
+    await recoverReceipt.click()
+    await expect(page.getByTestId('received-quantity')).toHaveCount(0)
     await expect(page.getByText(/MI-001.*已收 4/)).toBeVisible()
     expect(readBackOriginal).toBe(true)
     expect(bodies[0]).toEqual({ idempotencyKey: expect.any(String), receivedQuantity: 4 })

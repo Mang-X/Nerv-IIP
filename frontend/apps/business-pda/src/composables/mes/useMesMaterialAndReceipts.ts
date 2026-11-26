@@ -216,13 +216,19 @@ export function useMesMaterialIssue() {
     const principal = auth.principal
     if (
       !scopeReady.value ||
+      !auth.sessionId ||
       !principal?.principalId ||
       principal.organizationId !== filters.organizationId ||
       principal.environmentId !== filters.environmentId ||
       !principal.permissionCodes?.includes('business.mes.materials.manage')
     )
       return ''
-    return JSON.stringify([principal.principalId, filters.organizationId, filters.environmentId])
+    return JSON.stringify([
+      auth.sessionId,
+      principal.principalId,
+      filters.organizationId,
+      filters.environmentId,
+    ])
   })
 
   const requestsQuery = useQuery(() => ({
@@ -317,13 +323,22 @@ export function useMesMaterialIssue() {
     confirmLineSideReceipt: async (
       requestId: string,
       body: ConfirmLineSideReceiptInput & { idempotencyKey: string },
-      context: { workOrderId?: string; replay?: boolean } = {},
+      context: {
+        workOrderId?: string
+        replay?: boolean
+        isCurrent?: () => boolean
+        beforeDispatch?: () => void
+      } = {},
     ) => {
       const identity = receiveScopeIdentity.value
       const scope = scopeQuery(filters)
       const workOrderId = context.workOrderId?.trim()
       function assertCurrentScope() {
-        if (!identity || receiveScopeIdentity.value !== identity) {
+        if (
+          !identity ||
+          receiveScopeIdentity.value !== identity ||
+          context.isCurrent?.() === false
+        ) {
           throw new Error('当前作业范围已变化，请重新打开领料申请。')
         }
       }
@@ -340,6 +355,7 @@ export function useMesMaterialIssue() {
       }
 
       // MES 按键恢复原回执，即使该领料单已进入过账中或已收，重放仍由网关重新授权。
+      context.beforeDispatch?.()
       const response = await confirmMutation.mutateAsync({
         path: { requestId },
         query: scope,
@@ -358,6 +374,7 @@ export function useMesMaterialIssue() {
         'listBusinessConsoleMesMaterialIssueRequests',
         'listBusinessConsoleMesLineSideInventoryBalances',
       ]).catch(ignoreBackgroundError)
+      assertCurrentScope()
       return { reference, current }
     },
     returnLineSideMaterial: async (
