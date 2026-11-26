@@ -2240,24 +2240,29 @@ public sealed class CompleteCountExecutionCommandHandler
     private readonly ApplicationDbContext dbContext;
     private readonly WarehouseAssignedResourceExecutionAuthorizer executionAuthorizer;
     private readonly IWmsInventoryReservationClient? inventoryReservationClient;
+    private readonly IWmsCountAdjustmentReader? adjustmentReader;
 
     public CompleteCountExecutionCommandHandler(
         ApplicationDbContext dbContext,
         WarehouseAssignedResourceExecutionAuthorizer executionAuthorizer,
-        IWmsInventoryReservationClient? inventoryReservationClient = null)
+        IWmsInventoryReservationClient? inventoryReservationClient = null,
+        IWmsCountAdjustmentReader? adjustmentReader = null)
     {
         this.dbContext = dbContext;
         this.executionAuthorizer = executionAuthorizer;
         this.inventoryReservationClient = inventoryReservationClient;
+        this.adjustmentReader = adjustmentReader;
     }
 
     public CompleteCountExecutionCommandHandler(
         ApplicationDbContext dbContext,
-        IWmsInventoryReservationClient? inventoryReservationClient = null)
+        IWmsInventoryReservationClient? inventoryReservationClient = null,
+        IWmsCountAdjustmentReader? adjustmentReader = null)
         : this(
             dbContext,
             WarehouseAssignedResourceCompletionExecution.CreateAuthorizer(dbContext),
-            inventoryReservationClient)
+            inventoryReservationClient,
+            adjustmentReader)
     {
     }
 
@@ -2288,6 +2293,21 @@ public sealed class CompleteCountExecutionCommandHandler
         if (replay is not null)
         {
             EnsureSameCountPayload(count, request, replay);
+            if (count.Status == CountExecutionStatus.PendingApproval && adjustmentReader is not null)
+            {
+                var outcome = await adjustmentReader.FindAsync(
+                    replay.OrganizationId, replay.EnvironmentId, replay.SourceDocumentId, replay.IdempotencyKey, cancellationToken);
+                if (outcome?.IsPosted == true && outcome is { MovementId: { } movementId, ConfirmedAtUtc: { } confirmedAt })
+                {
+                    replay.MarkPosted(movementId);
+                    count.ApplyPostedAdjustment(confirmedAt, replay.Quantity);
+                }
+                else if (outcome?.RequiresRecount == true)
+                {
+                    RecordRecountRequired(count, replay);
+                }
+            }
+
             return new CompleteWmsMovementResult(replay.Id, replay.InventoryMovementId);
         }
 
@@ -2324,9 +2344,9 @@ public sealed class CompleteCountExecutionCommandHandler
             var adjustment = await inventoryReservationClient.ConfirmCountAdjustmentAsync(
                 new WmsInventoryCountAdjustmentRequest(count.InventoryCountTaskId!, request.CountedQuantity, baseIdempotencyKey),
                 cancellationToken);
-            if (adjustment.Status == "pending-approval")
+            if (adjustment.Status is "pending-approval" or "voided")
             {
-                count.SubmitForApproval(request.CountedQuantity, request.ExpectedVersion);
+                count.SubmitForApproval(request.CountedQuantity, request.ExpectedVersion, adjustment.VarianceQuantity);
                 var pendingReceipt = InventoryMovementRequest.RecordCountApprovalPending(
                     count.OrganizationId,
                     count.EnvironmentId,
@@ -2340,6 +2360,10 @@ public sealed class CompleteCountExecutionCommandHandler
                     "company",
                     adjustment.VarianceQuantity,
                     count.LotNo);
+                if (adjustment.Status == "voided")
+                {
+                    RecordRecountRequired(count, pendingReceipt);
+                }
                 dbContext.InventoryMovementRequests.Add(pendingReceipt);
                 return new CompleteWmsMovementResult(pendingReceipt.Id, null);
             }
@@ -2351,7 +2375,7 @@ public sealed class CompleteCountExecutionCommandHandler
 
             try
             {
-                count.Complete(request.CountedQuantity, request.ExpectedVersion);
+                count.Complete(request.CountedQuantity, request.ExpectedVersion, adjustment.VarianceQuantity);
             }
             catch (ArgumentException exception)
             {
@@ -2374,8 +2398,7 @@ public sealed class CompleteCountExecutionCommandHandler
                 count.LocationCode,
                 WmsReceivingQualityStatuses.Qualified,
                 "company",
-                count.VarianceQuantity
-                    ?? throw new KnownException("未计算盘点执行差异。"),
+                adjustment.VarianceQuantity,
                 adjustment.MovementId,
                 lotNo: count.LotNo);
             dbContext.InventoryMovementRequests.Add(postedReceipt);
@@ -2418,6 +2441,12 @@ public sealed class CompleteCountExecutionCommandHandler
         return new CompleteWmsMovementResult(movementRequest.Id, null);
     }
 
+    private static void RecordRecountRequired(CountExecution count, InventoryMovementRequest receipt)
+    {
+        receipt.MarkFailed(WmsCountAdjustmentOutcome.RecountRequiredCode, WmsCountAdjustmentOutcome.RecountRequiredMessage);
+        count.RequireRecount();
+    }
+
     private static WarehouseAssignedResourceExecutionRequest AssignedResourceExecution(
         CompleteCountExecutionCommand request,
         CountExecution count) =>
@@ -2439,9 +2468,7 @@ public sealed class CompleteCountExecutionCommandHandler
         CompleteCountExecutionCommand request,
         InventoryMovementRequest replay)
     {
-        var expectedVariance = request.CountedQuantity - count.ExpectedQuantity;
         if (count.CountedQuantity != request.CountedQuantity ||
-            (count.Status != CountExecutionStatus.PendingApproval && replay.Quantity != expectedVariance) ||
             !string.Equals(replay.SkuCode, count.SkuCode, StringComparison.Ordinal) ||
             !string.Equals(replay.UomCode, count.UomCode, StringComparison.Ordinal) ||
             !string.Equals(replay.SiteCode, count.SiteCode, StringComparison.Ordinal) ||

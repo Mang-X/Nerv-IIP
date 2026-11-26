@@ -338,6 +338,7 @@ export function useInventoryMovement() {
 
 export interface InventoryCountFilters extends BusinessContextFields {
   status?: string
+  countTaskCode?: string
   skuCode?: string
   siteCode?: string
   locationCode?: string
@@ -368,6 +369,7 @@ export function useInventoryCounts() {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
         ...optionalQuery('status', filters.status),
+        ...optionalQuery('countTaskCode', filters.countTaskCode),
         ...optionalQuery('skuCode', filters.skuCode),
         ...optionalQuery('siteCode', filters.siteCode),
         ...optionalQuery('locationCode', filters.locationCode),
@@ -387,6 +389,7 @@ export function useInventoryCounts() {
       query: {
         organizationId: filters.organizationId,
         environmentId: filters.environmentId,
+        ...optionalQuery('countTaskCode', filters.countTaskCode),
         page: 1,
         pageSize: pageSize.value,
       },
@@ -405,6 +408,7 @@ export function useInventoryCounts() {
       filters.organizationId,
       filters.environmentId,
       filters.status,
+      filters.countTaskCode,
       filters.skuCode,
       filters.siteCode,
       filters.locationCode,

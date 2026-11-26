@@ -69,6 +69,56 @@ public sealed class StockCountApprovalTests
         Assert.Equal("COUNT-001", approvalClient.Request.DocumentId);
     }
 
+    [Theory]
+    [InlineData(ApprovalChainStatuses.Approved, StockCountAdjustmentStatuses.Posted, 7)]
+    [InlineData(ApprovalChainStatuses.Rejected, StockCountAdjustmentStatuses.Voided, 10)]
+    [InlineData(ApprovalChainStatuses.Returned, StockCountAdjustmentStatuses.Voided, 10)]
+    public async Task Confirm_recovers_terminal_approval_after_a_lost_inventory_commit(
+        string chainStatus, string expectedStatus, decimal expectedOnHand)
+    {
+        var options = CreateDbContextOptions(Guid.CreateVersion7().ToString(), new InMemoryDatabaseRoot());
+        await using var db = CreateDbContext(options);
+        var ledger = NewLedgerWithOnHand(10m);
+        var task = DomainCountTaskFactory.NewTask(ledger);
+        ledger.FreezeForCount(task.CountTaskCode);
+        db.StockLedgers.Add(ledger);
+        db.StockCountTasks.Add(task);
+        await db.SaveChangesAsync();
+
+        var client = new CapturingStockCountApprovalClient("chain-count-001", chainStatus);
+        var handler = new ConfirmStockCountAdjustmentCommandHandler(db, client,
+            Options.Create(new StockCountAdjustmentApprovalOptions { QuantityThreshold = 1m }));
+        var command = new ConfirmStockCountAdjustmentCommand(task.Id, 7m, "adjustment-1");
+        var completion = new ApprovalCompletedIntegrationEventHandlerForStockCountAdjustment(
+            new CommandExecutingSender(db), new InMemoryIntegrationEventDeadLetterStore());
+        var decision = ApprovalCompletedEvent(chainStatus switch
+        {
+            ApprovalChainStatuses.Approved => ApprovalResults.Approved,
+            ApprovalChainStatuses.Rejected => ApprovalResults.Rejected,
+            _ => ApprovalResults.Returned,
+        });
+        decision = decision with
+        {
+            Payload = decision.Payload with
+            {
+                DocumentReference = decision.Payload.DocumentReference with { DocumentLineId = command.IdempotencyKey },
+            },
+        };
+        await Assert.ThrowsAsync<InvalidOperationException>(() => completion.HandleAsync(decision, CancellationToken.None));
+        var result = await handler.Handle(command, CancellationToken.None);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        await completion.HandleAsync(decision, CancellationToken.None);
+
+        Assert.Equal("adjustment-1", client.Request!.AdjustmentKey);
+        Assert.Equal(expectedStatus, result.Status);
+        Assert.Equal(expectedOnHand, result.OnHandQuantity);
+        var replay = await handler.Handle(command, CancellationToken.None);
+        Assert.Equal(result, replay);
+        Assert.Single(db.StockCountAdjustments);
+        Assert.Equal(chainStatus == ApprovalChainStatuses.Approved ? 1 : 0, await db.StockMovements.CountAsync());
+    }
+
     [Fact]
     public void Approval_client_is_required_instead_of_fabricating_a_chain_id()
     {
@@ -84,6 +134,7 @@ public sealed class StockCountApprovalTests
     [Theory]
     [InlineData(ApprovalResults.Approved, StockCountAdjustmentStatuses.Posted, StockCountTaskStatuses.Confirmed, 7, false)]
     [InlineData(ApprovalResults.Rejected, StockCountAdjustmentStatuses.Voided, StockCountTaskStatuses.RecountRequired, 10, false)]
+    [InlineData(ApprovalResults.Returned, StockCountAdjustmentStatuses.Voided, StockCountTaskStatuses.RecountRequired, 10, false)]
     public async Task Approval_completion_posts_or_voids_the_pending_adjustment(
         string approvalResult,
         string expectedAdjustmentStatus,
@@ -109,7 +160,9 @@ public sealed class StockCountApprovalTests
             var handler = new ApprovalCompletedIntegrationEventHandlerForStockCountAdjustment(
                 new CommandExecutingSender(dbContext),
                 new InMemoryIntegrationEventDeadLetterStore());
-            await handler.HandleAsync(ApprovalCompletedEvent(approvalResult), CancellationToken.None);
+            var decision = ApprovalCompletedEvent(approvalResult);
+            await handler.HandleAsync(decision, CancellationToken.None);
+            await handler.HandleAsync(decision, CancellationToken.None);
 
             await using var verificationDbContext = CreateDbContext(options);
             Assert.Equal(expectedOnHandQuantity, verificationDbContext.StockLedgers.Single().OnHandQuantity);
@@ -118,6 +171,7 @@ public sealed class StockCountApprovalTests
             var persistedAdjustment = verificationDbContext.StockCountAdjustments.Single();
             Assert.Equal(expectedAdjustmentStatus, persistedAdjustment.Status);
             Assert.Equal(approvalResult == ApprovalResults.Approved, persistedAdjustment.MovementId is not null);
+            Assert.Equal(approvalResult == ApprovalResults.Approved ? 1 : 0, verificationDbContext.StockMovements.Count());
         }
     }
 
@@ -265,8 +319,15 @@ public sealed class StockCountApprovalTests
         string result,
         string? documentSourceService = null)
     {
+        var eventType = result switch
+        {
+            ApprovalResults.Approved => ApprovalIntegrationEventTypes.ApprovalApproved,
+            ApprovalResults.Rejected => ApprovalIntegrationEventTypes.ApprovalRejected,
+            ApprovalResults.Returned => ApprovalIntegrationEventTypes.ApprovalReturned,
+            _ => throw new ArgumentOutOfRangeException(nameof(result)),
+        };
         return new ApprovalCompletedIntegrationEvent(
-            "evt-approval-001", ApprovalIntegrationEventTypes.ApprovalApproved, ApprovalIntegrationEventVersions.V1,
+            "evt-approval-001", eventType, ApprovalIntegrationEventVersions.V1,
             DateTimeOffset.Parse("2026-07-10T01:00:00Z"), ApprovalIntegrationEventSources.BusinessApproval,
             "corr-001", "cause-001", "org-001", "env-dev", "system:approval", "approval-completed:chain-count-001",
             new ApprovalCompletedPayload(
@@ -284,14 +345,14 @@ public sealed class StockCountApprovalTests
     private static DbContextOptions<ApplicationDbContext> CreateDbContextOptions(string databaseName, InMemoryDatabaseRoot databaseRoot) =>
         new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(databaseName, databaseRoot).Options;
 
-    private sealed class CapturingStockCountApprovalClient(string chainId) : IStockCountApprovalClient
+    private sealed class CapturingStockCountApprovalClient(string chainId, string status = ApprovalChainStatuses.Pending) : IStockCountApprovalClient
     {
         public StockCountApprovalRequest? Request { get; private set; }
 
         public Task<StockCountApprovalResult> StartApprovalAsync(StockCountApprovalRequest request, CancellationToken cancellationToken)
         {
             Request = request;
-            return Task.FromResult(new StockCountApprovalResult(chainId));
+            return Task.FromResult(new StockCountApprovalResult(chainId, status));
         }
     }
 

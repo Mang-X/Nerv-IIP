@@ -286,6 +286,7 @@ export {
   getBusinessConsoleMesQualityReadiness,
   getBusinessConsoleMesSupplyReadiness,
   getBusinessConsoleMesWipSummary,
+  getBusinessConsoleMesMaterialIssueRequest,
   getBusinessConsoleMesWorkOrderDetail,
   listBusinessConsoleMesReceivableProducedLots,
   getBusinessConsoleMesWorkOrderTraceability,

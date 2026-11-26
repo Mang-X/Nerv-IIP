@@ -33,9 +33,10 @@ public sealed record StockCountApprovalRequest(
     string DocumentType,
     string DocumentId,
     string StartedBy,
-    decimal Amount = 0m);
+    decimal Amount,
+    string AdjustmentKey);
 
-public sealed record StockCountApprovalResult(string ChainId);
+public sealed record StockCountApprovalResult(string ChainId, string Status);
 
 public interface IStockCountApprovalClient
 {
@@ -57,7 +58,7 @@ public sealed class HttpStockCountApprovalClient(
                 request.SourceService,
                 request.DocumentType,
                 request.DocumentId,
-                null,
+                request.AdjustmentKey,
                 request.StartedBy,
                 request.Amount,
                 request.OrganizationId,
@@ -73,7 +74,7 @@ public sealed class HttpStockCountApprovalClient(
             throw new KnownException("审批服务未返回审批链，请稍后重试。");
         }
 
-        return new StockCountApprovalResult(envelope.Data.ChainId);
+        return new StockCountApprovalResult(envelope.Data.ChainId, envelope.Data.Status);
     }
 
     private sealed record StartApprovalChainHttpRequest(
@@ -89,6 +90,6 @@ public sealed class HttpStockCountApprovalClient(
         string? RoutingOrganizationId,
         string? DepartmentId);
 
-    private sealed record StartApprovalChainHttpResponse(string ChainId);
+    private sealed record StartApprovalChainHttpResponse(string ChainId, string Status);
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
 }

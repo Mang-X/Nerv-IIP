@@ -8814,25 +8814,17 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Theory]
-    [InlineData("org-001", "env-dev", true)]
-    [InlineData("org-002", "env-dev", false)]
-    [InlineData("org-001", "env-other", false)]
-    public async Task Approval_step_resolution_requires_matching_service_scope(
-        string ownerOrganizationId, string ownerEnvironmentId, bool allowed)
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Approval_step_resolution_forwards_scope_in_one_write(bool allowed)
     {
-        var handler = new RecordingHandler(request => request.Method == HttpMethod.Get
+        var handler = new RecordingHandler(_ => allowed
             ? JsonResponse(HttpStatusCode.OK, new
-            {
-                data = new BusinessConsoleApprovalChainResponse(
-                    "chain-fixture", ownerOrganizationId, ownerEnvironmentId, "fixture-template", 1,
-                    "pending", "fixture", "fixture-document", "doc-fixture", null, [], []),
-                success = true,
-            })
-            : JsonResponse(HttpStatusCode.OK, new
             {
                 data = new BusinessConsoleResolveApprovalStepResponse("decision-fixture"),
                 success = true,
-            }));
+            })
+            : new HttpResponseMessage(HttpStatusCode.NotFound));
         using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://approval.local") };
         var approval = new HttpBusinessApprovalClient(downstream);
         var request = new BusinessConsoleResolveApprovalStepRequest(
@@ -8842,15 +8834,18 @@ public sealed class BusinessGatewayProxyTests
         {
             var result = await approval.ResolveStepAsync("internal-test-token", request, CancellationToken.None);
             Assert.Equal("decision-fixture", result.DecisionId);
-            Assert.Single(handler.Requests, request => request.Method == HttpMethod.Post);
         }
         else
         {
             var error = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
                 approval.ResolveStepAsync("internal-test-token", request, CancellationToken.None));
             Assert.Equal(HttpStatusCode.NotFound, error.StatusCode);
-            Assert.DoesNotContain(handler.Requests, request => request.Method == HttpMethod.Post);
         }
+
+        Assert.Equal(HttpMethod.Post, Assert.Single(handler.Requests).Method);
+        using var body = JsonDocument.Parse(Assert.Single(handler.RequestBodies)!);
+        Assert.Equal("org-001", body.RootElement.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", body.RootElement.GetProperty("environmentId").GetString());
     }
 
     [Fact]

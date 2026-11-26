@@ -307,6 +307,8 @@ public sealed class ApprovalEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var decisionId = await new ResolveApprovalStepCommandHandler(dbContext).Handle(new ResolveApprovalStepCommand(
+            "org-001",
+            "env-dev",
             chain.Id,
             1,
             "user",
@@ -338,10 +340,34 @@ public sealed class ApprovalEndpointContractTests
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             new ResolveApprovalStepCommandHandler(dbContext).Handle(
-                new ResolveApprovalStepCommand(chain.Id, 1, "user", "u-outsider", "approve", "ok"),
+                new ResolveApprovalStepCommand("org-001", "env-dev", chain.Id, 1, "user", "u-outsider", "approve", "ok"),
                 CancellationToken.None));
 
         Assert.Contains("不是该步骤的审批人", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("org-other", "env-dev")]
+    [InlineData("org-001", "env-other")]
+    public async Task Resolve_step_does_not_change_chain_outside_requested_scope(string organizationId, string environmentId)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var template = NewTemplate();
+        dbContext.ApprovalTemplates.Add(template);
+        var chain = ApprovalChain.Start(template, NewDocument(), "system:eco");
+        dbContext.ApprovalChains.Add(chain);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var result = await new ResolveApprovalStepCommandHandler(dbContext).Handle(
+            new ResolveApprovalStepCommand(organizationId, environmentId, chain.Id, 1, "user", "u-engineering", "approve", null),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Null(result);
+        Assert.Empty(await dbContext.ApprovalDecisions.ToListAsync());
     }
 
     [Fact]
@@ -652,7 +678,7 @@ public sealed class ApprovalEndpointContractTests
         var pendingDuplicate = await handler.Handle(command, CancellationToken.None);
         Assert.Equal(first, pendingDuplicate);
 
-        var firstChain = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == first);
+        var firstChain = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == first.ChainId);
         firstChain.ResolveStep(1, "user", "user-admin", "reject", "额度维持冻结，先催收应收");
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -662,8 +688,39 @@ public sealed class ApprovalEndpointContractTests
 
         Assert.NotEqual(first, second);
         Assert.Equal(2, await dbContext.ApprovalChains.CountAsync());
-        Assert.Equal(ApprovalChainStatuses.Rejected, (await dbContext.ApprovalChains.SingleAsync(x => x.Id == first)).Status);
-        Assert.Equal(ApprovalChainStatuses.Pending, (await dbContext.ApprovalChains.SingleAsync(x => x.Id == second)).Status);
+        Assert.Equal(ApprovalChainStatuses.Rejected, (await dbContext.ApprovalChains.SingleAsync(x => x.Id == first.ChainId)).Status);
+        Assert.Equal(ApprovalChainStatuses.Pending, (await dbContext.ApprovalChains.SingleAsync(x => x.Id == second.ChainId)).Status);
+    }
+
+    [Theory]
+    [InlineData("approve", ApprovalChainStatuses.Approved)]
+    [InlineData("reject", ApprovalChainStatuses.Rejected)]
+    [InlineData("return", ApprovalChainStatuses.Returned)]
+    public async Task Stock_count_start_replays_terminal_chain_by_adjustment_key(string decision, string status)
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.ApprovalTemplates.Add(ApprovalTemplate.Create(
+            "org-001", "env-dev", ApprovalTemplateCodes.StockCountVariance, ApprovalDocumentTypes.StockCountVariance, 1, true,
+            [new ApprovalTemplateStepDefinition(1, "盘点差异复核", null, "user", "user-admin", 24)]));
+        await dbContext.SaveChangesAsync();
+        var start = new StartApprovalChainCommandHandler(dbContext);
+        var command = new StartApprovalChainCommand(
+            "org-001", "env-dev", ApprovalTemplateCodes.StockCountVariance, ApprovalSourceServices.Inventory,
+            ApprovalDocumentTypes.StockCountVariance, "COUNT-1", "adjustment-1", "system:inventory");
+
+        var first = await start.Handle(command, CancellationToken.None);
+        var chain = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == first.ChainId);
+        chain.ResolveStep(1, "user", "user-admin", decision, null);
+        await dbContext.SaveChangesAsync();
+        dbContext.ChangeTracker.Clear();
+
+        var replay = await start.Handle(command, CancellationToken.None);
+        Assert.Equal(new StartApprovalChainResult(first.ChainId, status), replay);
+        Assert.Equal(1, await dbContext.ApprovalChains.CountAsync());
+        var recount = await start.Handle(command with { DocumentLineId = "adjustment-2" }, CancellationToken.None);
+        Assert.NotEqual(first.ChainId, recount.ChainId);
     }
 
     [Fact]
@@ -692,7 +749,7 @@ public sealed class ApprovalEndpointContractTests
 
         await using var verification = new ApplicationDbContext(options, mediator: null!);
         var winner = await verification.ApprovalChains.SingleAsync(CancellationToken.None);
-        Assert.Equal(winner.Id, returnedId);
+        Assert.Equal(winner.Id, returnedId.ChainId);
     }
 
     [Fact]
@@ -726,7 +783,7 @@ public sealed class ApprovalEndpointContractTests
         var templateResult = new CreateOrUpdateApprovalTemplateCommandValidator().Validate(
             NewTemplateCommand() with { TemplateCode = "ECO;DROP" });
         var resolveResult = new ResolveApprovalStepCommandValidator().Validate(
-            new ResolveApprovalStepCommand(new ApprovalChainId(Guid.CreateVersion7()), 1, "user", "u-engineering", "escalate", null));
+            new ResolveApprovalStepCommand("org-001", "env-dev", new ApprovalChainId(Guid.CreateVersion7()), 1, "user", "u-engineering", "escalate", null));
         var decisionsResult = new ListApprovalDecisionsQueryValidator().Validate(
             new ListApprovalDecisionsQuery("org-001", "env-dev", "not-a-guid", null, null, null, null, null, 0, 10));
 
@@ -744,7 +801,7 @@ public sealed class ApprovalEndpointContractTests
         // #1311：审批中心发的是大写 "Approve"，而校验器写死小写字面量、比领域（先归一化再判定）更严，
         // 于是一切裁决必 400，且英文提示在前端被兜底文案吞掉、用户看不到合法值。
         static ResolveApprovalStepCommand Command(string decision) =>
-            new(new ApprovalChainId(Guid.CreateVersion7()), 1, "user", "u-engineering", decision, null);
+            new("org-001", "env-dev", new ApprovalChainId(Guid.CreateVersion7()), 1, "user", "u-engineering", decision, null);
 
         foreach (var decision in new[] { "approve", "reject", "return", "Approve", "REJECT", " Return " })
         {

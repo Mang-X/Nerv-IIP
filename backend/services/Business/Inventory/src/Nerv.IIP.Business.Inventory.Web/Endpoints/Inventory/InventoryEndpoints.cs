@@ -207,7 +207,8 @@ public sealed record ListStockCountAdjustmentsRequest(
     string? CountTaskCode = null,
     string? SkuCode = null,
     int Page = 1,
-    int PageSize = 50);
+    int PageSize = 50,
+    string? IdempotencyKey = null);
 
 public sealed record CancelStockCountTaskRequest(StockCountTaskId CountTaskId, string Reason);
 
@@ -836,7 +837,8 @@ public sealed class ListStockCountAdjustmentsEndpoint(ISender sender)
             req.CountTaskCode,
             req.SkuCode,
             req.Page,
-            req.PageSize), ct);
+            req.PageSize,
+            req.IdempotencyKey), ct);
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }

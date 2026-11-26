@@ -183,7 +183,8 @@ public sealed record ListStockCountAdjustmentsQuery(
     string? CountTaskCode = null,
     string? SkuCode = null,
     int Page = 1,
-    int PageSize = 50) : IQuery<StockCountAdjustmentListResponse>;
+    int PageSize = 50,
+    string? IdempotencyKey = null) : IQuery<StockCountAdjustmentListResponse>;
 
 public sealed record StockCountAdjustmentListResponse(
     IReadOnlyCollection<StockCountAdjustmentLineResponse> Items,
@@ -223,6 +224,7 @@ public sealed class ListStockCountAdjustmentsQueryValidator : AbstractValidator<
         RuleFor(x => x.OrganizationId).RequiredInventoryCode(100);
         RuleFor(x => x.EnvironmentId).RequiredInventoryCode(100);
         RuleFor(x => x.Status).OptionalInventoryCode(50);
+        RuleFor(x => x.IdempotencyKey).OptionalInventoryCode(InventoryValidationRules.IdempotencyKeyMaxLength);
         RuleFor(x => x.CountTaskCode).OptionalInventoryCode(150);
         RuleFor(x => x.SkuCode).OptionalInventoryCode(100);
         RuleFor(x => x.Page).GreaterThanOrEqualTo(1);
@@ -253,6 +255,11 @@ public sealed class ListStockCountAdjustmentsQueryHandler(ApplicationDbContext d
         if (skuCode is not null)
         {
             scoped = scoped.Where(x => x.SkuCode == skuCode);
+        }
+
+        if (request.IdempotencyKey is { } idempotencyKey)
+        {
+            scoped = scoped.Where(x => x.IdempotencyKey == idempotencyKey);
         }
 
         var summaries = await scoped

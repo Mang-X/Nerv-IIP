@@ -82,9 +82,6 @@ const {
   refresh: refreshLineSideInventory,
 } = useMesLineSideInventoryBalances()
 
-function statusLabel(status: IssueRequest['status']) {
-  return status === 'ReceiptPosting' ? '库存过账中' : materialIssueStatusLabel(status)
-}
 const scopeReady = computed(() => Boolean(filters.organizationId && filters.environmentId))
 const scopedRequests = computed(() => (scopeReady.value ? requests.value : []))
 const listFailure = computed(() =>
@@ -102,7 +99,7 @@ function requestTitle(req: IssueRequest) {
   return req.materialId ? `${wo} · 物料 ${req.materialId}` : wo
 }
 function requestSubtitle(req: IssueRequest) {
-  const parts = [statusLabel(req.status)]
+  const parts = [materialIssueStatusLabel(req.status)]
   if (req.requestedQuantity !== undefined) parts.push(`申请 ${req.requestedQuantity}`)
   if (req.receivedQuantity !== undefined) parts.push(`已收 ${req.receivedQuantity}`)
   return parts.join(' · ')
@@ -114,12 +111,12 @@ function returnableQuantity(req: IssueRequest) {
 
 // --- 结果反馈 ---
 type ResultState = {
-  status: 'success' | 'error'
   title: string
   description?: string
-  retryLabel?: string
-  retry: () => void | Promise<void>
-}
+} & (
+  | { status: 'success' }
+  | { status: 'error'; retryLabel?: string; retry: () => void | Promise<void> }
+)
 const result = ref<ResultState | null>(null)
 const submitting = ref(false)
 
@@ -197,7 +194,6 @@ async function submitCreate() {
     result.value = {
       status: 'success',
       title: '领料申请已提交',
-      retry: () => {},
     }
   } catch (e) {
     result.value = {
@@ -261,12 +257,11 @@ const returning = ref<IssueRequest | null>(null)
 const returnedQuantity = ref<number | null>(null)
 
 const receiveValid = computed(() => {
-  // 接收数量可选；若填写则须 >= 0
   const quantity = receivedQuantity.value
   return (
     quantity === null ||
     quantity === '' ||
-    (typeof quantity === 'number' && Number.isFinite(quantity) && quantity >= 0)
+    (typeof quantity === 'number' && Number.isFinite(quantity) && quantity > 0)
   )
 })
 
@@ -313,7 +308,8 @@ async function openReceive(req: IssueRequest) {
   }
   if (!canReceive(req)) return
   receiving.value = req
-  receivedQuantity.value = req.requestedQuantity ?? null
+  receivedQuantity.value =
+    req.status?.toLowerCase() === 'partiallyreceived' ? null : (req.requestedQuantity ?? null)
 }
 
 function canReturn(req: IssueRequest) {
@@ -425,7 +421,6 @@ async function sendReceive(intent: ReceiveIntent, replay: boolean) {
       status: 'success',
       title: '线边接收已受理',
       description: `领料单 ${reference} · ${requestSubtitle(current)}`,
-      retry: () => {},
     }
   } catch (error) {
     if (!isCurrent()) return
@@ -480,7 +475,7 @@ async function submitReturn() {
     )
   try {
     await doSubmit()
-    result.value = { status: 'success', title: '线边退料已提交', retry: () => {} }
+    result.value = { status: 'success', title: '线边退料已提交' }
   } catch (e) {
     const described = describeRequestError(e)
     result.value = {
@@ -881,7 +876,9 @@ function onCreateScanAccepted(value: MesScanAccepted) {
       @update:open="receiveSheetOpen = $event"
     >
       <div v-if="receiving" class="space-y-4 pb-2">
-        <p class="text-sm text-muted-foreground">当前状态：{{ statusLabel(receiving.status) }}</p>
+        <p class="text-sm text-muted-foreground">
+          当前状态：{{ materialIssueStatusLabel(receiving.status) }}
+        </p>
 
         <label class="block space-y-1">
           <span class="text-sm font-medium text-foreground">接收数量</span>
@@ -891,11 +888,14 @@ function onCreateScanAccepted(value: MesScanAccepted) {
             type="number"
             inputmode="numeric"
             min="0"
+            aria-describedby="receive-quantity-help"
             class="min-h-touch w-full rounded-lg border border-border bg-card px-3 text-base outline-none focus:border-primary"
           />
         </label>
 
-        <p v-if="!receiveValid" class="text-sm text-muted-foreground">接收数量须为非负数。</p>
+        <p id="receive-quantity-help" class="text-sm text-muted-foreground">
+          {{ receiveValid ? '留空时按系统计算的待接收数量提交。' : '接收数量必须大于 0。' }}
+        </p>
 
         <button
           type="button"

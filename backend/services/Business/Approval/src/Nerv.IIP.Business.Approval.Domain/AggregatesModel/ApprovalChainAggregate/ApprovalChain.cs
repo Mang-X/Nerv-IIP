@@ -165,7 +165,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         if (normalizedDecision == ApprovalDecisions.Reject)
         {
             Status = ApprovalChainStatuses.Rejected;
-            PendingIdentityKey = null;
+            ReleaseStartIdentity();
             CompletedAtUtc = decidedAtUtc;
             this.AddDomainEvent(new ApprovalRejectedDomainEvent(this, approvalDecision));
             return approvalDecision;
@@ -174,7 +174,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         if (normalizedDecision == ApprovalDecisions.Return)
         {
             Status = ApprovalChainStatuses.Returned;
-            PendingIdentityKey = null;
+            ReleaseStartIdentity();
             CompletedAtUtc = decidedAtUtc;
             this.AddDomainEvent(new ApprovalReturnedDomainEvent(this, approvalDecision));
             return approvalDecision;
@@ -191,12 +191,24 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
         if (steps.GroupBy(x => x.StepNo).All(ApprovalStep.IsGroupComplete))
         {
             Status = ApprovalChainStatuses.Approved;
-            PendingIdentityKey = null;
+            ReleaseStartIdentity();
             CompletedAtUtc = decidedAtUtc;
             this.AddDomainEvent(new ApprovalApprovedDomainEvent(this, approvalDecision));
         }
 
         return approvalDecision;
+    }
+
+    private void ReleaseStartIdentity()
+    {
+        // Inventory uses the adjustment key as the document line. A retry of that
+        // adjustment must recover the same chain after it reaches a terminal state.
+        if (DocumentReference.SourceService != ApprovalSourceServices.Inventory
+            || DocumentReference.DocumentType != ApprovalDocumentTypes.StockCountVariance
+            || DocumentReference.DocumentLineId is null)
+        {
+            PendingIdentityKey = null;
+        }
     }
 
     public void Withdraw(string actorType, string actorRef, string? reason, DateTimeOffset withdrawnAtUtc)
@@ -224,7 +236,7 @@ public sealed class ApprovalChain : Entity<ApprovalChainId>, IAggregateRoot
             normalizedReason,
             withdrawnAtUtc);
         Status = ApprovalChainStatuses.Withdrawn;
-        PendingIdentityKey = null;
+        ReleaseStartIdentity();
         CompletedAtUtc = withdrawnAtUtc;
         IncrementRowVersion();
         this.AddDomainEvent(new ApprovalChainActionRecordedDomainEvent(this, decision, recipientRefs));

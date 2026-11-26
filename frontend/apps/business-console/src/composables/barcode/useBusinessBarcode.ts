@@ -265,9 +265,9 @@ export function useBarcodePrintBatches(initialFilters: Partial<BarcodePrintBatch
     onSuccess: refreshLifecycle,
   })
 
-  const dispatchPrintBatchMutation = useMutation({
-    ...dispatchBusinessConsoleBarcodePrintBatchMutationOptions(),
-  })
+  const dispatchPrintBatchMutation = useMutation(
+    dispatchBusinessConsoleBarcodePrintBatchMutationOptions(),
+  )
 
   async function dispatchPrintBatch(printBatchId: string, printerId: string) {
     const { organizationId, environmentId } = filters

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BusinessOperationPendingError } from '@nerv-iip/api-client'
+import { BusinessOperationFailedError, BusinessOperationPendingError } from '@nerv-iip/api-client'
 import WmsOperationalCandidatePicker from '@/components/wms/WmsOperationalCandidatePicker.vue'
 import WmsPagedListFrame from '@/components/wms/WmsPagedListFrame.vue'
 import WmsScopeStatusFilter from '@/components/wms/WmsScopeStatusFilter.vue'
@@ -236,7 +236,11 @@ async function confirmComplete() {
     sheetOpen.value = false
     completed.value = true
   } catch (e) {
-    if (e instanceof BusinessOperationPendingError) {
+    if (
+      e instanceof BusinessOperationPendingError ||
+      (e instanceof BusinessOperationFailedError &&
+        e.failureCode === 'count-approval-recount-required')
+    ) {
       resetFlow()
       approvalNotice.value = e.message
       return
@@ -366,6 +370,12 @@ function goHome() {
               <template #meta>
                 <p class="mt-1 break-all text-sm text-foreground">
                   批次 {{ execution.lotNo || '无批次' }}
+                </p>
+                <p
+                  v-if="execution.inventoryMovementId"
+                  class="mt-1 break-all text-sm text-muted-foreground"
+                >
+                  库存流水 {{ execution.inventoryMovementId }}
                 </p>
               </template>
             </NvListRow>

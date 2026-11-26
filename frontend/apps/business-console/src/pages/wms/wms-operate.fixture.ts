@@ -54,6 +54,7 @@ const wms = vi.hoisted(() => ({
   completeInbound: vi.fn(),
   completeOutbound: vi.fn(),
   completeCountExecution: vi.fn(),
+  countRows: undefined as unknown[] | undefined,
   createCountExecution: vi.fn(),
   failWcs: vi.fn(),
   dispatchWcs: vi.fn(),
@@ -187,19 +188,22 @@ vi.mock('@/composables/wms', () => ({
       skip: 0,
       take: 100,
     }),
-    countExecutions: computed(() => [
-      {
-        countExecutionId: 'count-1',
-        countNo: 'CNT-1',
-        lotNo: 'LOT-COUNT-01',
-        skuCode: 'SKU-001',
-        uomCode: 'pcs',
-        siteCode: 'SITE-001',
-        locationCode: 'RACK-A-01',
-        expectedQuantity: 7,
-        status: 'open',
-      },
-    ]),
+    countExecutions: computed(
+      () =>
+        wms.countRows ?? [
+          {
+            countExecutionId: 'count-1',
+            countNo: 'CNT-1',
+            lotNo: 'LOT-COUNT-01',
+            skuCode: 'SKU-001',
+            uomCode: 'pcs',
+            siteCode: 'SITE-001',
+            locationCode: 'RACK-A-01',
+            expectedQuantity: 7,
+            status: 'open',
+          },
+        ],
+    ),
     countExecutionsError: shallowRef(undefined),
     countExecutionsPending: shallowRef(false),
     countExecutionsTotal: computed(() => 1),
@@ -318,6 +322,7 @@ const resetFixture = () => {
   )
   wms.failWcs.mockResolvedValue(undefined)
   wms.wcsRows = undefined
+  wms.countRows = undefined
   wms.createInbound.mockResolvedValue(undefined)
   wms.createOutbound.mockResolvedValue(undefined)
   wms.inventoryContext = undefined

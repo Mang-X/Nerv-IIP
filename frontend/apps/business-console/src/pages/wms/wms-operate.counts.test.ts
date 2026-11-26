@@ -111,6 +111,38 @@ describe('WMS operate actions', () => {
     wrapper.unmount()
   })
 
+  it.each([true, false])(
+    '显示原盘点结果并按权限提供复盘入口，库存盘点权限 %s',
+    async (canRecount) => {
+      if (!canRecount) wms.permissionCodes = ['business.wms.counts.read']
+      wms.countRows = [
+        { countExecutionId: 'count-1', countNo: 'CNT-1', status: 'RecountRequired' },
+        {
+          countExecutionId: 'count-2',
+          countNo: 'CNT-2',
+          status: 'Completed',
+          inventoryMovementId: 'MOV-2',
+        },
+      ]
+      const wrapper = mount(CountsPage, {
+        global: { stubs: layoutStub },
+      })
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('库存流水 MOV-2')
+      const links = wrapper.findAll('[data-router-link]')
+      if (canRecount) {
+        const link = links.find((entry) => entry.text() === '打开原盘点任务')
+        expect(JSON.parse(link?.attributes('data-to') ?? 'null')).toEqual({
+          path: '/inventory/counts',
+          query: { countTaskCode: 'CNT-1' },
+        })
+      } else {
+        expect(links.some((entry) => entry.text() === '打开原盘点任务')).toBe(false)
+      }
+    },
+  )
+
   it('keeps an indeterminate count intent frozen when the dialog requests close', async () => {
     wms.completeCountExecution.mockImplementationOnce(
       (

@@ -102,7 +102,6 @@ vi.mock('@/composables/mes', () => ({
     cancelWorkOrder: vi.fn(),
     cancelWorkOrderPending: ref(false),
     confirmLineSideReceipt: state.confirmLineSideReceipt,
-    confirmLineSideReceiptPending: ref(false),
     createMaterialIssueRequest: state.createMaterialIssueRequest,
     createMaterialIssueRequestPending: ref(false),
     detail: ref(state.detail),

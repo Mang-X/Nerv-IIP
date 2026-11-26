@@ -64,7 +64,8 @@ public sealed class ApprovalCompletedIntegrationEventHandlerForStockCountAdjustm
                 integrationEvent.EnvironmentId,
                 document.DocumentId,
                 integrationEvent.Payload.ChainId,
-                integrationEvent.Payload.Result),
+                integrationEvent.Payload.Result,
+                document.DocumentLineId),
             cancellationToken);
     }
 }

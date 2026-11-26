@@ -193,7 +193,7 @@ public sealed class ApprovalTemplateCodeContractTests
                 "user:user-engineer"),
             CancellationToken.None);
 
-        var chain = await dbContext.ApprovalChains.SingleAsync(x => x.Id == chainId, CancellationToken.None);
+        var chain = await dbContext.ApprovalChains.SingleAsync(x => x.Id == chainId.ChainId, CancellationToken.None);
         Assert.Equal(ApprovalTemplateCodes.EngineeringChangeOrder, chain.TemplateCode);
         Assert.Equal(ApprovalDocumentTypes.EngineeringChangeOrder, chain.DocumentReference.DocumentType);
         Assert.Equal(ApprovalSourceServices.ProductEngineering, chain.DocumentReference.SourceService);
@@ -241,7 +241,7 @@ public sealed class ApprovalTemplateCodeContractTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var chain = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == chainId);
+        var chain = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == chainId.ChainId);
         chain.ResolveStep(1, "user", "user-admin", "approve", "差异核准，允许调整账面");
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -312,7 +312,7 @@ public sealed class ApprovalTemplateCodeContractTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var chain = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == chainId);
+        var chain = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == chainId.ChainId);
         chain.ResolveStep(1, "user", "user-admin", "approve", "同意下达");
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -389,7 +389,7 @@ public sealed class ApprovalTemplateCodeContractTests
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
-        var chain = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == chainId);
+        var chain = await dbContext.ApprovalChains.Include(x => x.Steps).SingleAsync(x => x.Id == chainId.ChainId);
         chain.ResolveStep(1, "user", "user-admin", "approve", "同意变更");
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -428,8 +428,8 @@ public sealed class ApprovalTemplateCodeContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         Assert.NotEqual(releaseChainId, changeChainId);
-        var releaseChain = await dbContext.ApprovalChains.AsNoTracking().Include(x => x.Steps).SingleAsync(x => x.Id == releaseChainId);
-        var changeChain = await dbContext.ApprovalChains.AsNoTracking().Include(x => x.Steps).SingleAsync(x => x.Id == changeChainId);
+        var releaseChain = await dbContext.ApprovalChains.AsNoTracking().Include(x => x.Steps).SingleAsync(x => x.Id == releaseChainId.ChainId);
+        var changeChain = await dbContext.ApprovalChains.AsNoTracking().Include(x => x.Steps).SingleAsync(x => x.Id == changeChainId.ChainId);
 
         // 单据号与单据类型两条链一致——这正是收件箱此前分辨不出来的原因。
         Assert.Equal(releaseChain.DocumentReference.DocumentId, changeChain.DocumentReference.DocumentId);

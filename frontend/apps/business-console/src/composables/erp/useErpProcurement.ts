@@ -375,6 +375,5 @@ export function useErpPurchaseReceipts(initialFilters: Partial<BusinessErpListFi
       return recorded
     },
     recordPurchaseReceiptPending: recordMutation.isLoading,
-    recordPurchaseReceiptError: recordMutation.error,
   }
 }

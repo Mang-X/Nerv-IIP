@@ -21,6 +21,7 @@ const WAREHOUSE_TASK_STATUS: Record<string, string> = {
 const COUNT_EXECUTION_STATUS: Record<string, string> = {
   open: '待盘点',
   pendingapproval: '待审批',
+  recountrequired: '请到库存盘点复盘',
   completed: '已完成',
 }
 

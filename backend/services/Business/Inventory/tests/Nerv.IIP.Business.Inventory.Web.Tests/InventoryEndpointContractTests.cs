@@ -1883,6 +1883,6 @@ public sealed class InventoryEndpointContractTests
         public static readonly TestStockCountApprovalClient Instance = new();
 
         public Task<StockCountApprovalResult> StartApprovalAsync(StockCountApprovalRequest request, CancellationToken cancellationToken) =>
-            Task.FromResult(new StockCountApprovalResult("test-approval-chain"));
+            Task.FromResult(new StockCountApprovalResult("test-approval-chain", "pending"));
     }
 }

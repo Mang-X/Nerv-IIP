@@ -80,7 +80,6 @@ vi.mock('@/composables/erp/useBusinessErp', () => ({
     refresh: vi.fn(),
     recordPurchaseReceipt: state.recordPurchaseReceipt,
     recordPurchaseReceiptPending: shallowRef(false),
-    recordPurchaseReceiptError: shallowRef(undefined),
   }),
 }))
 

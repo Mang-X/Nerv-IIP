@@ -10,6 +10,7 @@ import {
   confirmBusinessConsoleMesLineSideMaterialReceiptMutationOptions,
   createBusinessConsoleMesFinishedGoodsReceiptRequestMutationOptions,
   createBusinessConsoleMesMaterialIssueRequestMutationOptions,
+  getBusinessConsoleMesMaterialIssueRequest,
   listBusinessConsoleMesMaterialIssueRequests,
 } from '@nerv-iip/api-client'
 import { useMesMaterialIssue, useMesReceipts } from '.'
@@ -201,9 +202,9 @@ describe('pda useBusinessMes composables', () => {
       status: 'ReceiptPosting',
       receivedQuantity: 4,
     } as const
-    vi.mocked(listBusinessConsoleMesMaterialIssueRequests).mockResolvedValueOnce({
-      data: { success: true, data: { items: [current], total: 1 } },
-    } as Awaited<ReturnType<typeof listBusinessConsoleMesMaterialIssueRequests>>)
+    vi.mocked(getBusinessConsoleMesMaterialIssueRequest).mockResolvedValueOnce({
+      data: { success: true, data: current },
+    } as Awaited<ReturnType<typeof getBusinessConsoleMesMaterialIssueRequest>>)
 
     const body = { receivedQuantity: 4, idempotencyKey: 'original-receipt-key' }
     await expect(
@@ -215,14 +216,9 @@ describe('pda useBusinessMes composables', () => {
       query: { organizationId: 'org-001', environmentId: 'env-dev' },
       body,
     })
-    expect(listBusinessConsoleMesMaterialIssueRequests).toHaveBeenCalledExactlyOnceWith({
-      query: {
-        organizationId: 'org-001',
-        environmentId: 'env-dev',
-        workOrderId: 'wo-2',
-        skip: 0,
-        take: 100,
-      },
+    expect(getBusinessConsoleMesMaterialIssueRequest).toHaveBeenCalledExactlyOnceWith({
+      path: { requestId: 'req-2' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
       throwOnError: true,
     })
   })

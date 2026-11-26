@@ -209,7 +209,8 @@ public sealed class InventoryKnownExceptionMessageArchitectureTests
                 "COUNT-VARIANCE",
                 "COUNT-001",
                 "system:inventory",
-                12m),
+                12m,
+                "adjustment-001"),
             CancellationToken.None));
 
         Assert.Equal("审批服务未返回审批链，请稍后重试。", exception.Message);

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BusinessOperationPendingError } from '@nerv-iip/api-client'
+import { BusinessOperationFailedError, BusinessOperationPendingError } from '@nerv-iip/api-client'
 import type {
   BusinessConsoleCreateWmsCountExecutionRequest,
   BusinessConsoleWmsCountExecutionItem,
@@ -71,6 +71,7 @@ import {
 } from '@nerv-iip/ui'
 import { CheckCircle2Icon, PlusIcon, RefreshCwIcon, UsersRoundIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch, watchEffect } from 'vue'
+import { RouterLink } from 'vue-router'
 
 definePage({
   meta: {
@@ -161,13 +162,13 @@ const varianceCardReady = computed(
 const varianceCardStatus = computed(() => {
   if (!varianceCardReady.value) return { label: '取不到数据', tone: 'neutral' as const }
   return varianceCount.value > 0
-    ? { label: '待复盘', tone: 'danger' as const }
+    ? { label: '有差异', tone: 'danger' as const }
     : { label: '本页账实一致', tone: 'success' as const }
 })
 const varianceCardNote = computed(() => {
   if (!varianceCardReady.value) return '盘点单读不到，账实是否一致无法判断，请重试。'
   return varianceCount.value > 0
-    ? '差异单需复盘确认后再做库存调整，否则账面数量会一直不准。'
+    ? '请按盘点单状态跟进审批、过账或复盘。'
     : '本页盘点单账面与实盘一致。'
 })
 
@@ -435,7 +436,11 @@ async function submitComplete() {
     closeSettledCount()
     notifySuccess(`盘点单 ${target.countNo ?? MISSING_COUNT_NO} 已完成`)
   } catch (error) {
-    if (error instanceof BusinessOperationPendingError) {
+    if (
+      error instanceof BusinessOperationPendingError ||
+      (error instanceof BusinessOperationFailedError &&
+        error.failureCode === 'count-approval-recount-required')
+    ) {
       closeSettledCount()
       notifyWarning(error.message)
       void refreshCountExecutions()
@@ -617,12 +622,23 @@ function refreshAll() {
       <template #cell-skuCode="{ row }">
         <CodeWithNameCell :code="row.skuCode" :name="resolveSkuName(row.skuCode)" fallback="—" />
       </template>
-      <template #cell-status="{ row }"
-        ><NvStatusBadge
+      <template #cell-status="{ row }">
+        <NvStatusBadge
           :value="row.status"
           :label="statusLabel(row.status)"
           :tone="wmsStatusTone(row.status)"
-      /></template>
+        />
+        <p v-if="row.inventoryMovementId" class="mt-1 break-all text-xs text-muted-foreground">
+          库存流水 {{ row.inventoryMovementId }}
+        </p>
+        <RouterLink
+          v-if="row.status === 'RecountRequired' && canManageCounts && row.countNo"
+          :to="{ path: '/inventory/counts', query: { countTaskCode: row.countNo } }"
+          class="mt-1 block text-sm text-primary underline"
+        >
+          打开原盘点任务
+        </RouterLink>
+      </template>
       <template #cell-actions="{ row }">
         <NvRowActions v-if="canManageCounts" :label="`盘点操作 ${row.countNo ?? MISSING_COUNT_NO}`">
           <NvDropdownMenuItem

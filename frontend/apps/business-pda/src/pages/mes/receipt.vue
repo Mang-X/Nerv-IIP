@@ -161,7 +161,6 @@ const progress = computed(() =>
     workOrderId: selectedWorkOrder.value?.workOrderId,
     skuId: selectedWorkOrder.value?.skuId,
     quantityEntered: createValid.value,
-    created: result.value?.status === 'success',
   }),
 )
 

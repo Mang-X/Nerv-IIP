@@ -354,7 +354,6 @@ export function useMesWorkOrderDetail(workOrderId?: MaybeRefOrGetter<string>) {
       }
       return result
     },
-    confirmLineSideReceiptPending: confirmLineSideReceiptMutation.isLoading,
     returnLineSideMaterial: async (
       requestId: string,
       body: BusinessConsoleMesReturnLineSideMaterialRequest,

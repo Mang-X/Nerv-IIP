@@ -621,7 +621,8 @@ public sealed class WmsAssignedResourceCompletionTests
             return Task.FromResult(new WmsInventoryCountAdjustmentResult(
                 "movement-001",
                 request.CountedQuantity - 10m,
-                request.CountedQuantity));
+                request.CountedQuantity,
+                "posted"));
         }
     }
 }

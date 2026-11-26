@@ -48,6 +48,10 @@ try
     {
         client.BaseAddress = inventoryBaseAddress;
     }).UseHttpClientMetrics();
+    builder.Services.AddHttpClient<IWmsCountAdjustmentReader, HttpWmsInventoryReservationClient>(client =>
+    {
+        client.BaseAddress = inventoryBaseAddress;
+    }).UseHttpClientMetrics();
     var erpBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, "Erp:BaseUrl", "http://localhost:5118");
     builder.Services.AddHttpClient<IWmsPurchaseReceiptPostingRouteClient, HttpWmsPurchaseReceiptPostingRouteClient>(client =>
     {

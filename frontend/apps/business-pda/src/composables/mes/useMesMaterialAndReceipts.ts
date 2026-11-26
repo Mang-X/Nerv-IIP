@@ -6,6 +6,7 @@ import {
   listBusinessConsoleMesFinishedGoodsReceiptRequests,
   listBusinessConsoleMesFinishedGoodsReceiptRequestsQueryOptions,
   listBusinessConsoleMesReceivableProducedLots,
+  getBusinessConsoleMesMaterialIssueRequest,
   listBusinessConsoleMesMaterialIssueRequests,
   listBusinessConsoleMesMaterialIssueRequestsQueryOptions,
   listBusinessConsoleMesLineSideInventoryBalancesQueryOptions,
@@ -272,31 +273,15 @@ export function useMesMaterialIssue() {
     workOrderId: string | undefined,
     scope: ReturnType<typeof scopeQuery>,
   ) {
-    let skip = 0
-    let authoritative: BusinessConsoleMesMaterialIssueRequestRow | undefined
-    while (!authoritative) {
-      const { data } = await listBusinessConsoleMesMaterialIssueRequests({
-        query: {
-          ...scope,
-          ...(workOrderId ? { workOrderId } : {}),
-          skip,
-          take: DEFAULT_TAKE,
-        },
-        throwOnError: true,
-      })
-      const envelope = data as BusinessConsoleMesMaterialIssueRequestListEnvelope | undefined
-      authoritative = exactItem(
-        envelope,
-        (item: BusinessConsoleMesMaterialIssueRequestRow) =>
-          item.requestId === requestId && (!workOrderId || item.workOrderId === workOrderId),
-      )
-      if (authoritative) break
-      const items = envelope?.success ? (envelope.data?.items ?? []) : []
-      const total = envelope?.success ? (envelope.data?.total ?? 0) : 0
-      if (items.length === 0 || skip + items.length >= total) break
-      skip += items.length
-    }
-    return authoritative
+    const { data } = await getBusinessConsoleMesMaterialIssueRequest({
+      path: { requestId },
+      query: scope,
+      throwOnError: true,
+    })
+    const issue = data?.success ? data.data : undefined
+    return issue?.requestId === requestId && (!workOrderId || issue.workOrderId === workOrderId)
+      ? issue
+      : undefined
   }
 
   return {
@@ -492,7 +477,7 @@ export function useMesReceipts() {
           Boolean(lot.producedLotNo?.trim()) &&
           typeof lot.remainingQuantity === 'number' &&
           Number.isFinite(lot.remainingQuantity) &&
-          lot.remainingQuantity > 0.000001,
+          lot.remainingQuantity > 0,
       )
     },
     async readReceipt(workOrderId: string, receipt: BusinessConsoleMesCreateReceiptResponse) {
