@@ -10,8 +10,9 @@ import {
 } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
 import { computed } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
-import { hasBusinessContext, refetchWithBusinessContext } from '../shared/businessContextBinding'
+import { hasBusinessContext } from '../shared/businessContextBinding'
 
 const WORKBENCH_TAKE = 8
 
@@ -30,23 +31,41 @@ function isAvailable(status: string | null | undefined) {
 }
 
 export function useBusinessWorkbenchSummary() {
+  const auth = useAuthStore()
   const businessContext = useBusinessContextStore()
-  const summaryQuery = useQuery(() => ({
-    ...getBusinessConsoleWorkbenchSummaryQueryOptions({
+  const principal = computed(() => {
+    const { principalId, principalType } = auth.principal ?? {}
+    return auth.isAuthenticated && principalId && principalType
+      ? { principalId, principalType }
+      : null
+  })
+  const canReadSummary = computed(
+    () => hasBusinessContext(businessContext) && principal.value !== null,
+  )
+  const summaryQuery = useQuery(() => {
+    const options = getBusinessConsoleWorkbenchSummaryQueryOptions({
       query: {
         organizationId: businessContext.organizationId,
         environmentId: businessContext.environmentId,
         take: WORKBENCH_TAKE,
       },
-    }),
-    enabled: hasBusinessContext(businessContext),
-  }))
+    })
+    return {
+      ...options,
+      key: [...options.key, principal.value],
+      enabled: canReadSummary.value,
+      staleTime: 0,
+    }
+  })
 
-  const summary = computed(() =>
-    unwrapData<BusinessConsoleWorkbenchSummaryResponse, BusinessConsoleWorkbenchSummaryEnvelope>(
-      summaryQuery.data.value,
-    ),
-  )
+  const summary = computed(() => {
+    if (!canReadSummary.value) return undefined
+
+    return unwrapData<
+      BusinessConsoleWorkbenchSummaryResponse,
+      BusinessConsoleWorkbenchSummaryEnvelope
+    >(summaryQuery.data.value)
+  })
 
   return {
     alertItems: computed<BusinessConsoleWorkbenchAlertItem[]>(() =>
@@ -64,7 +83,8 @@ export function useBusinessWorkbenchSummary() {
     messageItems: computed<BusinessConsoleWorkbenchMessageItem[]>(() =>
       isAvailable(summary.value?.messages?.status) ? (summary.value?.messages?.items ?? []) : [],
     ),
-    refreshWorkbenchSummary: () => refetchWithBusinessContext(businessContext, summaryQuery),
+    refreshWorkbenchSummary: () =>
+      canReadSummary.value ? summaryQuery.refetch() : Promise.resolve(undefined),
     sourceStatuses: computed<BusinessConsoleWorkbenchSourceStatus[]>(
       () => summary.value?.sourceStatuses ?? [],
     ),
