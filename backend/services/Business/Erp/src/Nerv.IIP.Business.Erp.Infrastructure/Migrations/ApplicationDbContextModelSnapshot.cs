@@ -18,7 +18,7 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("erp")
-                .HasAnnotation("ProductVersion", "10.0.8")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -2771,6 +2771,15 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("sales_order_id")
                         .HasComment("Owning sales order id.");
+
+                    b.Property<decimal>("ShippedQuantity")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasDefaultValue(0m)
+                        .HasColumnName("shipped_quantity")
+                        .HasComment("Actual WMS shipped quantity across ERP delivery orders for this sales order line.");
 
                     b.Property<string>("SkuCode")
                         .IsRequired()

@@ -96,6 +96,11 @@ public sealed class SalesOrder : Entity<SalesOrderId>, IAggregateRoot
         line.ReleaseDelivery(quantity);
     }
 
+    public void RegisterShipment(string lineNo, decimal quantity)
+    {
+        FindLine(lineNo).RegisterShipment(quantity);
+    }
+
     public void RecordDeliveryCancellation()
     {
         Version++;
@@ -234,6 +239,7 @@ public sealed class SalesOrderLine : Entity<SalesOrderLineId>
     public string UomCode { get; private set; } = string.Empty;
     public decimal OrderedQuantity { get; private set; }
     public decimal DeliveredQuantity { get; private set; }
+    public decimal ShippedQuantity { get; private set; }
     public decimal UnitPrice { get; private set; }
     public DateOnly RequiredDate { get; private set; }
     public bool Cancelled { get; private set; }
@@ -256,12 +262,23 @@ public sealed class SalesOrderLine : Entity<SalesOrderLineId>
         DeliveredQuantity += quantity;
     }
 
+    internal void RegisterShipment(decimal quantity)
+    {
+        _ = ErpText.Positive(quantity, nameof(quantity));
+        if (quantity > DeliveredQuantity - ShippedQuantity)
+        {
+            throw new InvalidOperationException("Shipment quantity cannot exceed the remaining sales order line allocation.");
+        }
+
+        ShippedQuantity += quantity;
+    }
+
     internal void ReleaseDelivery(decimal quantity)
     {
         _ = ErpText.Positive(quantity, nameof(quantity));
-        if (quantity > DeliveredQuantity)
+        if (quantity > DeliveredQuantity - ShippedQuantity)
         {
-            throw new InvalidOperationException("Released delivery quantity cannot exceed the sales order line delivery quantity.");
+            throw new InvalidOperationException("Released delivery quantity cannot exceed the unshipped sales order line allocation.");
         }
 
         DeliveredQuantity -= quantity;
