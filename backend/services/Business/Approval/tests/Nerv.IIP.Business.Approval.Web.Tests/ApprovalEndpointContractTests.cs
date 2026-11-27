@@ -1416,16 +1416,18 @@ public sealed class ApprovalEndpointContractTests
     }
 
     [Theory]
-    [InlineData(ApprovalDecisions.Withdraw)]
-    [InlineData(ApprovalDecisions.Resubmit)]
-    [InlineData(ApprovalDecisions.Transfer)]
-    public async Task Chain_action_uses_verified_user_in_a_scope_other_than_the_default(string action)
+    [InlineData(ApprovalDecisions.Withdraw, false)]
+    [InlineData(ApprovalDecisions.Resubmit, false)]
+    [InlineData(ApprovalDecisions.Resubmit, true)]
+    [InlineData(ApprovalDecisions.Transfer, false)]
+    [InlineData(ApprovalDecisions.Transfer, true)]
+    public async Task Chain_action_uses_verified_user_in_a_scope_other_than_the_default(string action, bool legacyBody)
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         var template = ApprovalTemplate.Create("org-001", "env-dev", "purchase", "purchase-order", 1, true,
             [new ApprovalTemplateStepDefinition(1, "Review", null, "user", "u-reviewer", 24)]);
-        var chain = ApprovalChain.Start(template, new ApprovalDocumentReference("erp", "purchase-order", "PO-1", null), "u-requester");
+        var chain = ApprovalChain.Start(template, new ApprovalDocumentReference("erp", "purchase-order", "PO-1", null, organizationId: "org-001"), "u-requester");
         if (action == ApprovalDecisions.Resubmit)
         {
             chain.Withdraw("user", "u-original", null, DateTimeOffset.Parse("2026-11-27T00:00:00Z"));
@@ -1459,6 +1461,7 @@ public sealed class ApprovalEndpointContractTests
             Assert.Equal("approval-chain", check.ResourceType);
             Assert.Equal(chain.Id.ToString(), check.ResourceId);
             Assert.True(check.IncludeSelectedMembership);
+            Assert.Equal(action != ApprovalDecisions.Withdraw, check.IncludePrincipalContext);
             if (check.EnvironmentId == "env-read-only")
             {
                 return new HttpResponseMessage(HttpStatusCode.Forbidden);
@@ -1468,6 +1471,7 @@ public sealed class ApprovalEndpointContractTests
             {
                 Content = JsonContent.Create(new { success = true, data = new
                 {
+                    dataScope = new Nerv.IIP.Contracts.Iam.AuthorizationDataScope([], [], [], OrganizationIds: ["org-001"]),
                     allowed = true, principalId = "u-requester", principalType = "user",
                     selectedMembership = check.EnvironmentId == "env-no-membership"
                         ? null
@@ -1526,8 +1530,17 @@ public sealed class ApprovalEndpointContractTests
         using var outsideOrganization = await client.PostAsJsonAsync(route, request with { organizationId = "org-other" });
         Assert.False((await outsideOrganization.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("success").GetBoolean());
 
-        using var response = await client.PostAsJsonAsync(route, request);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        object body = legacyBody
+            ? new
+            {
+                chainId = chain.Id.ToString(), stepNo = 1, request.reason,
+                actorType = "user", actorRef = "u-requester",
+                requestedByActorType = "user", requestedByActorRef = "u-requester",
+                request.fromActorType, request.fromActorRef, request.toActorType, request.toActorRef,
+            }
+            : request;
+        using var response = await client.PostAsJsonAsync(route, body);
+        Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
         var result = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.True(result.GetProperty("success").GetBoolean());
         Assert.True(result.GetProperty("data").GetProperty("accepted").GetBoolean());

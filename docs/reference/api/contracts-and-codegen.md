@@ -45,6 +45,23 @@
 
 ## 受控兼容例外
 
+### Approval 重提与转交 v1 有界兼容（#1777）
+
+此条仅适用于 `POST /api/business/v1/approvals/chains/{chainId}/resubmit` 和
+`POST /api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/transfer`。
+保留旧 JSON 字段和响应结构，审批链和步骤分别由 URL 路径定位。旧的
+`actorType`、`actorRef`、`requestedByActorType`、`requestedByActorRef` 仍可随请求发送，
+实际操作人与审计记录统一采用 IAM 验证的最终主体。调用方需传递其最终主体 Bearer。
+仅持有内部服务凭据的调用方须在启用此变更前完成凭据迁移。
+
+旧请求可省略 `organizationId` 和 `environmentId`，服务从持久化审批链读取两者并验证 IAM 所选成员关系；
+显式传入时，两字段必须成对提供并与审批链一致。资源授权仅在持久化来源能证明所需范围时放行。
+Approval 已存储的来源引用缺少可验证的工厂、车间、产线、工作中心、团队和单据所有人证据，
+因此携带这些边界的授权返回 403。仅有组织限制时，来源组织必须与审批链及授权组织一致。
+
+旧操作人字段的接受和组织环境回填仅属于上述两个 v1 路由。
+待支持的调用方完成迁移后，删除兼容字段或回填行为须通过后续主版本治理。
+
 ### FileStorage `scanStatus` v1 删除（#1604）
 
 2026-08-17 已批准一个窄范围版本例外：在 FileStorage v1 尚未形成受支持客户发布基线、且 `scanStatus` 没有受支持外部消费方的前提下，#1604 允许从当前 `/v1` DTO、PlatformGateway v1 OpenAPI snapshot 和同批生成客户端直接删除病毒扫描字段，而不为该废弃字段单独建立 v2 路由。

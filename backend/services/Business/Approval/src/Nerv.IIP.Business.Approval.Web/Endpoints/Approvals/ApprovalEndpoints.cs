@@ -146,10 +146,12 @@ public sealed record WithdrawApprovalChainRequest(
 public sealed record ApprovalActionAcceptedResponse(bool Accepted);
 
 public sealed record ResubmitApprovalChainRequest(
-    string OrganizationId,
-    string EnvironmentId,
-    [property: RouteParam] string ChainId,
-    string? Reason);
+    ApprovalChainId? ChainId,
+    string? ActorType,
+    string? ActorRef,
+    string? Reason,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
 
 public sealed record AddApprovalStepSignerRequest(
     ApprovalChainId ChainId,
@@ -163,15 +165,17 @@ public sealed record AddApprovalStepSignerRequest(
 public sealed record AddApprovalStepSignerResponse(ApprovalStepId StepId);
 
 public sealed record TransferApprovalStepRequest(
-    string OrganizationId,
-    string EnvironmentId,
-    [property: RouteParam] string ChainId,
-    [property: RouteParam] int StepNo,
+    ApprovalChainId? ChainId,
+    int StepNo,
     string FromActorType,
     string FromActorRef,
     string ToActorType,
     string ToActorRef,
-    string? Reason);
+    string? RequestedByActorType,
+    string? RequestedByActorRef,
+    string? Reason,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
 
 public sealed record ListApprovalDelegationsRequest(
     string OrganizationId,
@@ -496,17 +500,15 @@ public sealed class ResubmitApprovalChainEndpoint(ISender sender, ResolveApprova
 
     public override async Task HandleAsync(ResubmitApprovalChainRequest req, CancellationToken ct)
     {
-        if (!Guid.TryParse(Route<string>("chainId"), out var chainGuid) || chainGuid == Guid.Empty
-            || string.IsNullOrWhiteSpace(req.OrganizationId) || string.IsNullOrWhiteSpace(req.EnvironmentId))
+        if (!Guid.TryParse(Route<string>("chainId"), out var chainGuid) || chainGuid == Guid.Empty)
         {
             await WriteErrorAsync(StatusCodes.Status400BadRequest, "审批目标或组织环境无效。", ct);
             return;
         }
 
         var chainId = new ApprovalChainId(chainGuid);
-        var (status, actor) = await authority.ResolveAsync(
-            HttpContext.Request.Headers.Authorization.ToString(), req.OrganizationId, req.EnvironmentId, chainId, ct,
-            loadApproverContext: false);
+        var (status, actor) = await authority.ResolveChainActionAsync(
+            HttpContext.Request.Headers.Authorization.ToString(), req.OrganizationId, req.EnvironmentId, chainId, ct);
         if (actor is null)
         {
             await WriteErrorAsync(status, "无法授权当前审批重新提交。", ct);
@@ -562,17 +564,15 @@ public sealed class TransferApprovalStepEndpoint(ISender sender, ResolveApproval
     public override async Task HandleAsync(TransferApprovalStepRequest req, CancellationToken ct)
     {
         var stepNo = Route<int>("stepNo");
-        if (!Guid.TryParse(Route<string>("chainId"), out var chainGuid) || chainGuid == Guid.Empty || stepNo <= 0
-            || string.IsNullOrWhiteSpace(req.OrganizationId) || string.IsNullOrWhiteSpace(req.EnvironmentId))
+        if (!Guid.TryParse(Route<string>("chainId"), out var chainGuid) || chainGuid == Guid.Empty || stepNo <= 0)
         {
             await WriteErrorAsync(StatusCodes.Status400BadRequest, "审批目标或组织环境无效。", ct);
             return;
         }
 
         var chainId = new ApprovalChainId(chainGuid);
-        var (status, actor) = await authority.ResolveAsync(
-            HttpContext.Request.Headers.Authorization.ToString(), req.OrganizationId, req.EnvironmentId, chainId, ct,
-            loadApproverContext: false);
+        var (status, actor) = await authority.ResolveChainActionAsync(
+            HttpContext.Request.Headers.Authorization.ToString(), req.OrganizationId, req.EnvironmentId, chainId, ct);
         if (actor is null)
         {
             await WriteErrorAsync(status, "无法授权当前审批转交。", ct);
