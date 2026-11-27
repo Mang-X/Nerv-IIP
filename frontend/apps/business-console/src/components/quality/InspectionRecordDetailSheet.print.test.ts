@@ -21,7 +21,10 @@ vi.mock('@/composables/quality/useBusinessQuality', () => ({
 vi.mock('@/composables/master-data/useSkuNames', () => ({
   useSkuNames: () => ({ resolveSkuName: () => '精密泵体' }),
 }))
-vi.mock('@/utils/notify', () => ({ notifyError: vi.fn() }))
+vi.mock('@/utils/notify', () => ({ notifyError: vi.fn(), notifySuccess: vi.fn() }))
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ hasPermission: () => true }),
+}))
 
 const stubs = {
   NvSheet: { template: '<section><slot /></section>' },
