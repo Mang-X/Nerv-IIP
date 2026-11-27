@@ -11,6 +11,10 @@ public static class NervIipPermissionCodes
     public const string InternalApprovalChainsCreateErp = "internal.approval-chains.create-erp";
     public const string InternalApprovalChainsCreateInventory = "internal.approval-chains.create-inventory";
     public const string InternalApprovalChainsCreateGateway = "internal.approval-chains.create-gateway";
+    public const string InternalApprovalChainsReadMes = "internal.approval-chains.read-mes";
+    public const string InternalApprovalChainsReadQuality = "internal.approval-chains.read-quality";
+    public const string InternalApprovalChainsReadProductEngineering = "internal.approval-chains.read-product-engineering";
+    public const string InternalApprovalChainsReadGateway = "internal.approval-chains.read-gateway";
     public const string InternalGatewayCacheInvalidate = "internal.gateway-cache.invalidate";
 
     // iam.*

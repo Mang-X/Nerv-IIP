@@ -130,12 +130,25 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient, IConfigura
         BusinessConsoleApprovalChainRequest request,
         CancellationToken cancellationToken)
     {
-        var chain = await SendAsync<BusinessConsoleApprovalChainResponse>(
-            internalBearerToken,
-            HttpMethod.Get,
-            $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(request.ChainId)}",
-            null,
-            cancellationToken);
+        var scopedCredentials = configuration?.GetSection("Approval:GetChain:OutboundCredentials");
+        var bearerToken = ScopedCallerOutboundToken.Resolve(
+            scopedCredentials, request.OrganizationId, request.EnvironmentId, internalBearerToken);
+        BusinessConsoleApprovalChainResponse chain;
+        try
+        {
+            chain = await SendAsync<BusinessConsoleApprovalChainResponse>(
+                bearerToken,
+                HttpMethod.Get,
+                $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(request.ChainId)}",
+                null,
+                cancellationToken);
+        }
+        catch (BusinessServiceProxyException exception) when (
+            scopedCredentials?.Exists() == true && exception.StatusCode == HttpStatusCode.Forbidden)
+        {
+            throw BusinessServiceProxyException.FromOpaqueDownstreamFailure(HttpStatusCode.NotFound);
+        }
+
         if (string.IsNullOrWhiteSpace(chain.OrganizationId) || string.IsNullOrWhiteSpace(chain.EnvironmentId)
             || chain.OrganizationId != request.OrganizationId || chain.EnvironmentId != request.EnvironmentId)
         {

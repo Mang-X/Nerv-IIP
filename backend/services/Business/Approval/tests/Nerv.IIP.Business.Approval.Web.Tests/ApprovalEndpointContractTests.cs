@@ -59,7 +59,7 @@ public sealed class ApprovalEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/approvals/chains/{chainId}"
             && x.PermissionCode == ApprovalPermissionCodes.Read
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy == "Approval.GetChain"
             && x.OperationId == "getApprovalChain");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/approvals/tasks"
@@ -1148,6 +1148,106 @@ public sealed class ApprovalEndpointContractTests
             Assert.Equal(sourceService, data.GetProperty("sourceService").GetString());
             Assert.Equal(documentType, data.GetProperty("documentType").GetString());
         }
+    }
+
+    [Theory]
+    [InlineData("business-mes", "mes", "business-mes", "mes-operation-task-start-authorization", HttpStatusCode.OK)]
+    [InlineData("quality", "quality", "BusinessQuality", "ncr-disposition", HttpStatusCode.OK)]
+    [InlineData("quality", "quality", "business-quality", "corrective-action-closure", HttpStatusCode.OK)]
+    [InlineData("product-engineering", "product-engineering", "product-engineering", "engineering-change-order", HttpStatusCode.OK)]
+    [InlineData("business-gateway", "gateway", "quality", "corrective-action-closure", HttpStatusCode.OK)]
+    [InlineData("business-gateway", "gateway", "quality", "corrective-action-closure", HttpStatusCode.OK, "org-001", "env-dev", false, true)]
+    [InlineData("business-mes", "mes", "quality", "mes-operation-task-start-authorization", HttpStatusCode.Forbidden)]
+    [InlineData("quality", "quality", "quality", "engineering-change-order", HttpStatusCode.Forbidden)]
+    [InlineData("product-engineering", "quality", "product-engineering", "engineering-change-order", HttpStatusCode.Forbidden)]
+    [InlineData("business-mes", "mes", "business-mes", "mes-operation-task-start-authorization", HttpStatusCode.Forbidden, "org-other")]
+    [InlineData("business-gateway", "gateway", "quality", "corrective-action-closure", HttpStatusCode.Forbidden, "org-001", "env-other")]
+    [InlineData("quality", "quality", "quality", "corrective-action-closure", HttpStatusCode.Unauthorized, "org-001", "env-dev", true)]
+    [InlineData("quality", "quality", "quality", "corrective-action-closure", HttpStatusCode.OK, "org-001", "env-dev", true, true)]
+    [InlineData("business-gateway", "create-gateway", "quality", "corrective-action-closure", HttpStatusCode.Forbidden)]
+    public async Task Get_chain_checks_persisted_scope_and_caller_capability(
+        string subject, string capability, string sourceService, string documentType, HttpStatusCode expected,
+        string callerOrganization = "org-001", string callerEnvironment = "env-dev",
+        bool useLegacy = false, bool allowLegacy = false)
+    {
+        const string sharedToken = "synthetic-shared-internal-token";
+        const string scopedToken = "synthetic-scoped-approval-token";
+        const string createToken = "synthetic-gateway-create-token";
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("environment", "Testing");
+            builder.UseSetting("InternalService:BearerToken", sharedToken);
+            builder.UseSetting("Approval:Seed:Enabled", "false");
+            builder.UseSetting("Approval:GetChain:AllowLegacyBearer", allowLegacy ? "true" : "false");
+            const string profile = "Approval:GetChain:ScopedCallers:Profiles:0:";
+            builder.UseSetting(profile + "Name", "fixture-reader");
+            builder.UseSetting(profile + "BearerToken", scopedToken);
+            builder.UseSetting(profile + "Subject", subject);
+            builder.UseSetting(profile + "OrganizationId", callerOrganization);
+            builder.UseSetting(profile + "EnvironmentId", callerEnvironment);
+            builder.UseSetting(profile + "Permissions:0", capability == "create-gateway"
+                ? "internal.approval-chains.create-gateway"
+                : $"internal.approval-chains.read-{capability}");
+            const string createProfile = "Approval:CreateChain:ScopedCallers:Profiles:0:";
+            builder.UseSetting(createProfile + "Name", "fixture-creator");
+            builder.UseSetting(createProfile + "BearerToken", createToken);
+            builder.UseSetting(createProfile + "Subject", "business-gateway");
+            builder.UseSetting(createProfile + "OrganizationId", "org-001");
+            builder.UseSetting(createProfile + "EnvironmentId", "env-dev");
+            builder.UseSetting(createProfile + "Permissions:0", "internal.approval-chains.create-gateway");
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+                services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connection));
+                services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
+            });
+        });
+        using var client = factory.CreateClient();
+        const string route = "/api/business/v1/approvals/chains";
+        client.DefaultRequestHeaders.Authorization = new("Bearer", sharedToken);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Database.EnsureCreatedAsync();
+            var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+            await sender.Send(NewTemplateCommand() with { TemplateCode = "engineering-change-order", DocumentType = documentType });
+        }
+
+        var createRequest = new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            templateCode = "engineering-change-order",
+            sourceService,
+            documentType,
+            documentId = "fixture-document",
+            startedBy = "u-requester",
+        };
+        using var created = await client.PostAsJsonAsync(route, createRequest);
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        using var body = System.Text.Json.JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var chainId = body.RootElement.GetProperty("data").GetProperty("chainId").GetString();
+
+        client.DefaultRequestHeaders.Authorization = new("Bearer", useLegacy ? sharedToken : scopedToken);
+        using var response = await client.GetAsync($"{route}/{chainId}?organizationId={callerOrganization}&environmentId={callerEnvironment}");
+        Assert.Equal(expected, response.StatusCode);
+        if (expected == HttpStatusCode.OK)
+        {
+            using var detail = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal("fixture-document", detail.RootElement.GetProperty("data").GetProperty("documentId").GetString());
+        }
+
+        client.DefaultRequestHeaders.Authorization = new("Bearer", scopedToken);
+        using var list = await client.GetAsync(route + "?organizationId=org-001&environmentId=env-dev");
+        Assert.Equal(HttpStatusCode.Unauthorized, list.StatusCode);
+        using var write = await client.PostAsJsonAsync(route, createRequest);
+        Assert.Equal(HttpStatusCode.Unauthorized, write.StatusCode);
+
+        client.DefaultRequestHeaders.Authorization = new("Bearer", createToken);
+        using var createCredentialRead = await client.GetAsync($"{route}/{chainId}");
+        Assert.Equal(HttpStatusCode.Unauthorized, createCredentialRead.StatusCode);
     }
 
     [Fact]

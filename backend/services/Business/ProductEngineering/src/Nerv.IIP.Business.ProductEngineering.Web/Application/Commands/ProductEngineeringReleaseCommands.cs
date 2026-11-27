@@ -1459,7 +1459,10 @@ internal sealed class RejectingEngineeringApprovalVerifier : IEngineeringApprova
     }
 }
 
-public sealed class HttpEngineeringApprovalVerifier(HttpClient httpClient, IInternalServiceTokenProvider tokenProvider)
+public sealed class HttpEngineeringApprovalVerifier(
+    HttpClient httpClient,
+    IInternalServiceTokenProvider tokenProvider,
+    IConfiguration? configuration = null)
     : IEngineeringApprovalVerifier
 {
     public async Task EnsureApprovedAsync(
@@ -1474,8 +1477,10 @@ public sealed class HttpEngineeringApprovalVerifier(HttpClient httpClient, IInte
             throw new KnownException("审批引用标识必须是 BusinessApproval 审批链 ID。");
         }
 
-        var request = new HttpRequestMessage(HttpMethod.Get, $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(approvalReferenceId)}");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenProvider.BearerToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(approvalReferenceId)}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ScopedCallerOutboundToken.Resolve(
+            configuration?.GetSection("Approval:GetChain:OutboundCredentials"),
+            organizationId, environmentId, tokenProvider.BearerToken));
         using var response = await httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {

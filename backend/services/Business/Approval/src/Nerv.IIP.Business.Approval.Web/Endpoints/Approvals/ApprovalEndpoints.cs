@@ -319,6 +319,12 @@ public sealed class GetApprovalChainEndpoint(ISender sender)
     public override async Task HandleAsync(GetApprovalChainRequest req, CancellationToken ct)
     {
         var response = await sender.Send(new GetApprovalChainQuery(req.ChainId), ct);
+        if (!GetApprovalChainAuthorization.Allows(User, response))
+        {
+            await Send.ForbiddenAsync(ct);
+            return;
+        }
+
         await Send.OkAsync(response.AsResponseData(), cancellation: ct);
     }
 }
@@ -629,7 +635,7 @@ public static class ApprovalEndpointContracts
         new(typeof(ListApprovalTemplatesEndpoint), "GET", "/api/business/v1/approvals/templates", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalTemplates"),
         new(typeof(ListApprovalChainsEndpoint), "GET", "/api/business/v1/approvals/chains", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalChains"),
         new(typeof(StartApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains", ApprovalPermissionCodes.Manage, CreateApprovalChainAuthorization.PolicyName, "startApprovalChain"),
-        new(typeof(GetApprovalChainEndpoint), "GET", "/api/business/v1/approvals/chains/{chainId}", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "getApprovalChain"),
+        new(typeof(GetApprovalChainEndpoint), "GET", "/api/business/v1/approvals/chains/{chainId}", ApprovalPermissionCodes.Read, GetApprovalChainAuthorization.PolicyName, "getApprovalChain"),
         new(typeof(ListPendingApprovalTasksEndpoint), "GET", "/api/business/v1/approvals/tasks", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listPendingApprovalTasks"),
         new(typeof(CheckOverdueApprovalStepsEndpoint), "POST", "/api/business/v1/approvals/tasks/overdue/check", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "checkOverdueApprovalSteps"),
         new(typeof(ListApprovalDecisionsEndpoint), "GET", "/api/business/v1/approvals/decisions", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalDecisions"),

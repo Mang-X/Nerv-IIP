@@ -9091,6 +9091,43 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Approval_client_uses_the_scoped_read_bearer_and_preserves_detail_not_found()
+    {
+        const string profile = "Approval:GetChain:OutboundCredentials:0:";
+        const string readToken = "synthetic-gateway-approval-read-token";
+        const string sharedToken = "synthetic-shared-token";
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [profile + "OrganizationId"] = "org-001",
+            [profile + "EnvironmentId"] = "env-dev",
+            [profile + "BearerToken"] = readToken,
+        }).Build();
+        using var handler = new RecordingHandler(request => request.RequestUri!.AbsolutePath.EndsWith("/chain-other", StringComparison.Ordinal)
+            ? new HttpResponseMessage(HttpStatusCode.Forbidden)
+            : JsonResponse(HttpStatusCode.OK, new
+            {
+                data = new BusinessConsoleApprovalChainResponse(
+                    "chain-001", "org-001", "env-dev", "fixture", 1,
+                    "pending", "quality", "ncr-disposition", "doc-001", null, [], []),
+                success = true,
+            }));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://approval.local") };
+        var client = new HttpBusinessApprovalClient(downstream, configuration);
+        var request = new BusinessConsoleApprovalChainRequest("org-001", "env-dev", "chain-001");
+
+        var chain = await client.GetChainAsync(sharedToken, request, CancellationToken.None);
+        Assert.Equal("chain-001", chain.ChainId);
+        var missing = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.GetChainAsync(sharedToken, request with { ChainId = "chain-other" }, CancellationToken.None));
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            client.GetChainAsync(sharedToken, request with { EnvironmentId = "env-other" }, CancellationToken.None));
+
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.All(handler.Requests, sent => Assert.Equal(readToken, sent.Headers.Authorization?.Parameter));
+    }
+
+    [Fact]
     public async Task Approval_chain_detail_exposes_only_the_authenticated_actors_decisions()
     {
         var decidedAt = new DateTimeOffset(2026, 6, 5, 8, 0, 0, TimeSpan.Zero);

@@ -60,6 +60,15 @@
 3. 确认所有实例已切换后，将 `AllowLegacyBearer` 设为 `false`。验证共享凭据在建链入口收到 `401`，且其他 Approval 入口继续使用各自现有认证。
 4. 若新凭据或范围配置阻断合法建链，先恢复 Approval 的 `AllowLegacyBearer=true`，再关闭发送方的限定凭据配置，检查建链恢复后再继续切换。
 
+### Approval 审批链详情读取凭据
+
+迁移时设置 `ApprovalGetChain:Enabled=true`，并在 `ApprovalGetChain:Scopes` 中配置各调用方实际使用的 `OrganizationId` 与 `EnvironmentId`。为每个范围按列表下标分别提供 Aspire secret 参数 `approval-get-chain-mes-{index}`、`approval-get-chain-quality-{index}`、`approval-get-chain-product-engineering-{index}` 和 `approval-get-chain-gateway-{index}`。每项使用独立凭据，且与共享凭据和建链凭据分开。
+
+1. 先更新 Approval，设置 `ApprovalGetChain:AllowLegacyBearer=true` 和 `ApprovalGetChain:ConfigureSenders=false`。
+2. 更新四个调用方，将 `ConfigureSenders` 设为 `true`。逐范围验证 MES 工序开工、Quality 的 NCR 处置和 CAPA 关闭、ProductEngineering 工程变更发布及 BusinessGateway 审批链详情。记录相关链 ID 与各入口的响应状态。
+3. 确认所有实例完成切换后，将 `AllowLegacyBearer` 设为 `false`。验证限定凭据可以读取各自的审批链，且共享凭据读取详情时收到 `401`。
+4. 如需回滚，先在 Approval 恢复 `AllowLegacyBearer=true`，再将 `ConfigureSenders` 设为 `false`。用同一组业务入口和链 ID 核对恢复情况。
+
 ### FileStorage tus 字节落点
 
 FileStorage 的 tus 目录同时承载已 complete 文件的字节，因此部署必须给它一个显式、绝对、持久的位置：

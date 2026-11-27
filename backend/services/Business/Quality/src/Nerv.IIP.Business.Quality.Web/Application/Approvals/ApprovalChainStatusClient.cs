@@ -25,7 +25,8 @@ public interface IApprovalChainStatusClient
 
 public sealed class HttpApprovalChainStatusClient(
     HttpClient httpClient,
-    IInternalServiceTokenProvider tokenProvider) : IApprovalChainStatusClient
+    IInternalServiceTokenProvider tokenProvider,
+    IConfiguration? configuration = null) : IApprovalChainStatusClient
 {
     /// <summary>
     /// 受理的审批链来源服务：权威码值 + 全部历史别名，取值来自审批契约的唯一事实来源
@@ -54,7 +55,7 @@ public sealed class HttpApprovalChainStatusClient(
         string ncrCode,
         CancellationToken cancellationToken)
     {
-        var chain = await GetChainAsync(chainId, cancellationToken);
+        var chain = await GetChainAsync(chainId, organizationId, environmentId, cancellationToken);
         return chain is not null
             && string.Equals(chain.Status, ApprovalChainStatuses.Approved, StringComparison.OrdinalIgnoreCase)
             && string.Equals(chain.OrganizationId, organizationId, StringComparison.Ordinal)
@@ -83,7 +84,7 @@ public sealed class HttpApprovalChainStatusClient(
         string capaCode,
         CancellationToken cancellationToken)
     {
-        var chain = await GetChainAsync(chainId, cancellationToken);
+        var chain = await GetChainAsync(chainId, organizationId, environmentId, cancellationToken);
         return chain is not null
             && string.Equals(chain.Status, ApprovalChainStatuses.Approved, StringComparison.OrdinalIgnoreCase)
             && string.Equals(chain.OrganizationId, organizationId, StringComparison.Ordinal)
@@ -95,12 +96,15 @@ public sealed class HttpApprovalChainStatusClient(
             && string.Equals(chain.DocumentId, capaCode, StringComparison.Ordinal);
     }
 
-    private async Task<ApprovalChainStatusResponse?> GetChainAsync(string chainId, CancellationToken cancellationToken)
+    private async Task<ApprovalChainStatusResponse?> GetChainAsync(
+        string chainId, string organizationId, string environmentId, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(chainId)}");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenProvider.BearerToken);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ScopedCallerOutboundToken.Resolve(
+            configuration?.GetSection("Approval:GetChain:OutboundCredentials"),
+            organizationId, environmentId, tokenProvider.BearerToken));
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Forbidden)

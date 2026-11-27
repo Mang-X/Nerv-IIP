@@ -158,7 +158,15 @@ internal sealed partial class AppHostComposition
             .WaitFor(businessMaintenance)
             .WaitFor(redis);
 
-        ConfigureApprovalCreateChainCallers(businessApproval, businessErp, businessInventory, businessGateway);
+        ConfigureApprovalChainCallers(businessApproval, "CreateChain", "create-chain", "create",
+            (businessErp, "business-erp", "erp"),
+            (businessInventory, "inventory", "inventory"),
+            (businessGateway, "business-gateway", "gateway"));
+        ConfigureApprovalChainCallers(businessApproval, "GetChain", "get-chain", "read",
+            (businessMes, "business-mes", "mes"),
+            (businessQuality, "quality", "quality"),
+            (businessProductEngineering, "product-engineering", "product-engineering"),
+            (businessGateway, "business-gateway", "gateway"));
 
         if (fullStackEphemeral)
         {
@@ -283,13 +291,14 @@ internal sealed partial class AppHostComposition
             .WaitFor(businessGateway);
     }
 
-    private void ConfigureApprovalCreateChainCallers(
+    private void ConfigureApprovalChainCallers(
         IResourceBuilder<ProjectResource> approval,
-        IResourceBuilder<ProjectResource> erp,
-        IResourceBuilder<ProjectResource> inventory,
-        IResourceBuilder<ProjectResource> gateway)
+        string operation,
+        string parameterOperation,
+        string permissionAction,
+        params (IResourceBuilder<ProjectResource> Resource, string Subject, string Capability)[] callers)
     {
-        var configuration = builder.Configuration.GetSection("ApprovalCreateChain");
+        var configuration = builder.Configuration.GetSection($"Approval{operation}");
         if (!configuration.GetValue("Enabled", false))
         {
             return;
@@ -298,23 +307,17 @@ internal sealed partial class AppHostComposition
         var scopes = configuration.GetSection("Scopes").GetChildren().ToArray();
         if (scopes.Length == 0)
         {
-            throw new InvalidOperationException("ApprovalCreateChain requires at least one organization and environment.");
+            throw new InvalidOperationException($"Approval{operation} requires at least one organization and environment.");
         }
 
         var configureSenders = configuration.GetValue("ConfigureSenders", true);
         var allowLegacy = configuration.GetValue("AllowLegacyBearer", true);
         if (!configureSenders && !allowLegacy)
         {
-            throw new InvalidOperationException("ApprovalCreateChain requires scoped senders when legacy authentication is disabled.");
+            throw new InvalidOperationException($"Approval{operation} requires scoped senders when legacy authentication is disabled.");
         }
 
-        approval.WithEnvironment("Approval__CreateChain__AllowLegacyBearer", allowLegacy ? "true" : "false");
-        var callers = new[]
-        {
-            (Resource: erp, Subject: "business-erp", Capability: "erp"),
-            (Resource: inventory, Subject: "inventory", Capability: "inventory"),
-            (Resource: gateway, Subject: "business-gateway", Capability: "gateway"),
-        };
+        approval.WithEnvironment($"Approval__{operation}__AllowLegacyBearer", allowLegacy ? "true" : "false");
         var configuredScopes = new HashSet<(string, string)>();
         var profileIndex = 0;
         for (var index = 0; index < scopes.Length; index++)
@@ -325,24 +328,24 @@ internal sealed partial class AppHostComposition
                 || organizationId != organizationId.Trim() || environmentId != environmentId.Trim()
                 || !configuredScopes.Add((organizationId, environmentId)))
             {
-                throw new InvalidOperationException("ApprovalCreateChain scopes require unique, nonempty organization and environment IDs.");
+                throw new InvalidOperationException($"Approval{operation} scopes require unique, nonempty organization and environment IDs.");
             }
 
             foreach (var (resource, subject, capability) in callers)
             {
-                var name = $"approval-create-chain-{capability}-{index}";
+                var name = $"approval-{parameterOperation}-{capability}-{index}";
                 var secret = builder.AddParameter(name, secret: true);
-                var profile = $"Approval__CreateChain__ScopedCallers__Profiles__{profileIndex++}__";
+                var profile = $"Approval__{operation}__ScopedCallers__Profiles__{profileIndex++}__";
                 approval.WithEnvironment(profile + "Name", name)
                     .WithEnvironment(profile + "Subject", subject)
                     .WithEnvironment(profile + "OrganizationId", organizationId)
                     .WithEnvironment(profile + "EnvironmentId", environmentId)
-                    .WithEnvironment(profile + "Permissions__0", $"internal.approval-chains.create-{capability}")
+                    .WithEnvironment(profile + "Permissions__0", $"internal.approval-chains.{permissionAction}-{capability}")
                     .WithEnvironment(profile + "BearerToken", secret);
 
                 if (configureSenders)
                 {
-                    var outbound = $"Approval__CreateChain__OutboundCredentials__{index}__";
+                    var outbound = $"Approval__{operation}__OutboundCredentials__{index}__";
                     resource.WithEnvironment(outbound + "OrganizationId", organizationId)
                         .WithEnvironment(outbound + "EnvironmentId", environmentId)
                         .WithEnvironment(outbound + "BearerToken", secret);
