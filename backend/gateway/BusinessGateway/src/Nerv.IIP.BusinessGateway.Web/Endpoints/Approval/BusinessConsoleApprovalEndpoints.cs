@@ -199,15 +199,11 @@ public sealed class ListBusinessConsoleApprovalDecisionsEndpoint(
 [BusinessGatewayOperationId("resolveBusinessConsoleApprovalStep")]
 public sealed class ResolveBusinessConsoleApprovalStepEndpoint(
     IBusinessGatewayAuthorizationClient auth,
-    IBusinessApprovalClient approval,
-    IBusinessMasterDataClient masterData,
-    IInternalServiceTokenProvider tokenProvider)
+    IBusinessApprovalClient approval)
     : AuthorizedBusinessProxyEndpoint<BusinessConsoleResolveApprovalStepRequest, BusinessConsoleResolveApprovalStepResponse>(
         auth,
         BusinessGatewayPermissions.ApprovalsManage)
 {
-    protected override bool IncludePrincipalContext => true;
-
     protected override string OrganizationId(BusinessConsoleResolveApprovalStepRequest request) => request.OrganizationId;
 
     protected override string EnvironmentId(BusinessConsoleResolveApprovalStepRequest request) => request.EnvironmentId;
@@ -217,25 +213,15 @@ public sealed class ResolveBusinessConsoleApprovalStepEndpoint(
     protected override string? ResourceId(BusinessConsoleResolveApprovalStepRequest request) =>
         Route<string>("chainId") ?? request.ChainId;
 
-    protected override async Task<BusinessConsoleResolveApprovalStepResponse> ForwardAsync(
+    protected override Task<BusinessConsoleResolveApprovalStepResponse> ForwardAsync(
         BusinessConsoleResolveApprovalStepRequest request,
         string bearerToken,
-        CancellationToken cancellationToken)
-    {
-        var (actorType, actorRef) = RequireAuthorizedPrincipalActor();
-
-        var membership = await ApprovalRoutingMembership.LoadAsync(masterData, tokenProvider.BearerToken,
-            request.OrganizationId, request.EnvironmentId, AuthorizationResult!, cancellationToken);
-        var downstreamRequest = request with
+        CancellationToken cancellationToken) =>
+        approval.ResolveStepAsync(bearerToken, request with
         {
             ChainId = Route<string>("chainId") ?? request.ChainId,
             StepNo = Route<int>("stepNo"),
-            ActorType = actorType,
-            ActorRef = actorRef,
-            RoutingMembership = membership,
-        };
-        return await approval.ResolveStepAsync(tokenProvider.BearerToken, downstreamRequest, cancellationToken);
-    }
+        }, cancellationToken);
 }
 
 [Tags("Business Console Approval")]

@@ -1,3 +1,4 @@
+using Nerv.IIP.Business.Approval.Web.Application.Auth;
 using System.Reflection;
 using System.Text.Json;
 using FastEndpoints;
@@ -34,6 +35,17 @@ try
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
+    builder.Services.AddScoped<ResolveApprovalStepAuthority>();
+    AddApprovalAuthorityClient(ResolveApprovalStepAuthority.IamClient, "Iam:BaseUrl", "http://localhost:5102");
+    AddApprovalAuthorityClient(ResolveApprovalStepAuthority.MasterDataClient, "MasterData:BaseUrl", "http://localhost:5107");
+
+    void AddApprovalAuthorityClient(string name, string key, string developmentUrl)
+    {
+        var baseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, key, developmentUrl);
+        builder.Services.AddHttpClient(name, client => client.BaseAddress = baseAddress)
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
+    }
+
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
     builder.Services
         .AddFastEndpoints(o => o.IncludeAbstractValidators = true)

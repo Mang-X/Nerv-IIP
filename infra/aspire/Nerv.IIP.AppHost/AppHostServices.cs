@@ -431,6 +431,8 @@ internal sealed partial class AppHostComposition
             .WithEnvironment("Approval__OverdueCheck__Scopes__0__EnvironmentId", "env-dev")
             .WithEnvironment("Approval__OverdueCheck__Interval", "00:05:00")
             .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
+            .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
+            .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
             .WithReference(businessApprovalDatabase, "PostgreSQL")
             .WaitFor(businessApprovalDatabase);
         businessApproval = WithRedisMessagingTransport(businessApproval);
