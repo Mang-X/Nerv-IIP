@@ -19,7 +19,8 @@ public sealed record AcceptWmsPurchaseReceiptCommand(
     string PurchaseOrderNo,
     string SiteCode,
     decimal ExchangeRate,
-    IReadOnlyCollection<WmsPurchaseReceiptActualLine> Lines) : ICommand<RecordPurchaseReceiptResult>;
+    IReadOnlyCollection<WmsPurchaseReceiptActualLine> Lines,
+    bool Unrestricted = false) : ICommand<RecordPurchaseReceiptResult>;
 
 public sealed class AcceptWmsPurchaseReceiptCommandValidator : AbstractValidator<AcceptWmsPurchaseReceiptCommand>
 {
@@ -54,11 +55,12 @@ public sealed class AcceptWmsPurchaseReceiptCommandHandler(ApplicationDbContext 
             .Select(line => new PurchaseReceiptCommandLine(
                 line.PurchaseOrderLineNo,
                 line.ReceivedQuantity,
-                ErpReceiptQualityStatuses.Quality,
+                request.Unrestricted ? ErpReceiptQualityStatuses.Unrestricted : ErpReceiptQualityStatuses.Quality,
                 line.LocationCode?.Trim(),
                 string.IsNullOrWhiteSpace(line.LotNo) ? null : line.LotNo.Trim()))
             .ToArray();
-        var fingerprint = WmsPurchaseReceiptAcceptanceIdentity.FingerprintPrefix + Convert.ToHexString(
+        var fingerprint = WmsPurchaseReceiptAcceptanceIdentity.FingerprintPrefix
+            + (request.Unrestricted ? "unrestricted:" : string.Empty) + Convert.ToHexString(
             SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new
             {
                 request.PurchaseOrderNo,

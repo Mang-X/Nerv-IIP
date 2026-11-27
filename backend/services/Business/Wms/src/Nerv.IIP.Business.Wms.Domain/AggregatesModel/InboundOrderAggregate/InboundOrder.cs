@@ -17,6 +17,7 @@ public enum InboundOrderStatus
     InventoryPostingFailed = 2,
     PendingQualityCheck = 3,
     Cancelled = 4,
+    InventoryPostingPending = 5,
 }
 
 public sealed record InboundOrderLineDraft(
@@ -266,6 +267,22 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         ErpReceiptAcceptedVersion = Version;
     }
 
+    public void EnsureErpReceiptCanPost()
+    {
+        if (ReceiptBatchId is null || ErpPurchaseReceiptNo is null || ErpReceiptAcceptedVersion is null)
+        {
+            throw new InvalidOperationException("ERP must accept this receipt batch first.");
+        }
+
+        if (lines.Any(line => line.RequiresQualityInspection))
+        {
+            throw new InvalidOperationException("Quality inspection is not wired for the accepted ERP receipt batch.");
+        }
+    }
+
+    public string ErpReceiptMovementKey(string lineNo) =>
+        WmsText.LineIdempotencyKey($"wms-receipt:{ReceiptBatchId:N}", lineNo);
+
     private void EnsureReceiptStockTransitionReady()
     {
         if (RequiresErpReceiptAcceptance)
@@ -369,7 +386,15 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         EnsureOpen();
         _ = WmsText.Required(idempotencyKey, nameof(idempotencyKey));
         EnsureHasLines();
-        EnsureReceiptStockTransitionReady();
+        if (RequiresErpReceiptAcceptance)
+        {
+            EnsureErpReceiptCanPost();
+            if (unitCostsByLine is null || lines.Any(line => !unitCostsByLine.ContainsKey(line.LineNo)))
+            {
+                throw new InvalidOperationException("Accepted ERP receipt requires a frozen cost for every original line.");
+            }
+        }
+
         if (lines.Any(line => line.AwaitingReceiptConfirmation))
         {
             throw new InvalidOperationException("Inbound order requires receipt confirmation before completion.");
@@ -378,13 +403,26 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         var validatedCaptures = ValidateCaptures(captures);
         foreach (var (line, capture) in validatedCaptures)
         {
+            if (RequiresErpReceiptAcceptance && WmsText.Optional(capture.LotNo) != line.LotNo)
+            {
+                throw new InvalidOperationException("The lot of an ERP accepted receipt cannot be changed.");
+            }
+
             line.Capture(capture);
         }
 
-        Status = lines.Any(x => x.RequiresQualityInspection)
-            ? InboundOrderStatus.PendingQualityCheck
-            : InboundOrderStatus.Completed;
-        CompletedAtUtc = DateTime.UtcNow;
+        if (RequiresErpReceiptAcceptance)
+        {
+            Status = InboundOrderStatus.InventoryPostingPending;
+        }
+        else
+        {
+            Status = lines.Any(x => x.RequiresQualityInspection)
+                ? InboundOrderStatus.PendingQualityCheck
+                : InboundOrderStatus.Completed;
+            CompletedAtUtc = DateTime.UtcNow;
+        }
+
         AdvanceVersion();
         var singleLine = lines.Count == 1;
         var requests = lines.Select(line => InventoryMovementRequest.Create(
@@ -393,7 +431,9 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 "inbound",
                 InboundOrderNo,
                 line.LineNo,
-                singleLine ? idempotencyKey : WmsText.LineIdempotencyKey(idempotencyKey, line.LineNo),
+                RequiresErpReceiptAcceptance
+                    ? ErpReceiptMovementKey(line.LineNo)
+                    : singleLine ? idempotencyKey : WmsText.LineIdempotencyKey(idempotencyKey, line.LineNo),
                 line.SkuCode,
                 line.UomCode,
                 SiteCode,
@@ -408,7 +448,10 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 ExpiryDate: line.ExpiryDate,
                 unitCost: unitCostsByLine?[line.LineNo]))
             .ToArray();
-        this.AddDomainEvent(new InboundOrderCompletedDomainEvent(this));
+        if (!RequiresErpReceiptAcceptance)
+        {
+            this.AddDomainEvent(new InboundOrderCompletedDomainEvent(this));
+        }
         return requests;
     }
 
@@ -464,12 +507,42 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             return;
         }
 
-        if (Status != InboundOrderStatus.Completed)
+        if (Status is not (InboundOrderStatus.Completed or InboundOrderStatus.InventoryPostingPending))
         {
-            throw new InvalidOperationException("Only completed inbound orders can be marked as Inventory posting failed.");
+            throw new InvalidOperationException("Only completed or posting inbound orders can be marked as Inventory posting failed.");
+        }
+
+        if (Status == InboundOrderStatus.InventoryPostingPending)
+        {
+            AdvanceVersion();
         }
 
         Status = InboundOrderStatus.InventoryPostingFailed;
+    }
+
+    public void ResumeErpReceiptPosting()
+    {
+        EnsureErpReceiptCanPost();
+        if (Status == InboundOrderStatus.InventoryPostingFailed)
+        {
+            Status = InboundOrderStatus.InventoryPostingPending;
+            CompletedAtUtc = null;
+            AdvanceVersion();
+        }
+    }
+
+    public void AcknowledgeErpReceiptPosting()
+    {
+        EnsureErpReceiptCanPost();
+        if (Status is not (InboundOrderStatus.InventoryPostingPending or InboundOrderStatus.InventoryPostingFailed))
+        {
+            throw new InvalidOperationException("Only pending or failed ERP receipt posting can be acknowledged.");
+        }
+
+        Status = InboundOrderStatus.Completed;
+        CompletedAtUtc = DateTime.UtcNow;
+        AdvanceVersion();
+        this.AddDomainEvent(new InboundOrderCompletedDomainEvent(this));
     }
 
     public IReadOnlyCollection<InventoryMovementRequest> RetryInventoryPosting(

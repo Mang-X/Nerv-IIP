@@ -222,6 +222,19 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         return receipt;
     }
 
+    public void RetryFailedPosting()
+    {
+        if (Status != InventoryMovementRequestStatus.Failed)
+        {
+            throw new InvalidOperationException("Only a failed movement request can be retried.");
+        }
+
+        Status = InventoryMovementRequestStatus.Pending;
+        FailureCode = null;
+        FailureMessage = null;
+        this.AddDomainEvent(new InventoryMovementRequestCreatedDomainEvent(this));
+    }
+
     public void MarkPosted(string inventoryMovementId)
     {
         var requiredMovementId = WmsText.Required(inventoryMovementId, nameof(inventoryMovementId));

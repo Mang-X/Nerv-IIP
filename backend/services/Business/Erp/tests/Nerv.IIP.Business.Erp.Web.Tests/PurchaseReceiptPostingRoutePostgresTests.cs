@@ -231,6 +231,68 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
         Assert.Equal(2m, Assert.Single(received.Lines).ReceivedQuantity);
     }
 
+    [PurchaseReceiptPostgresFact]
+    public async Task Bound_completion_rejects_wrong_reference_and_acknowledges_only_the_accepted_receipt()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = CreateConcurrencyProvider();
+        var command = new AcceptWmsPurchaseReceiptCommand(
+            "org-route", "env-route", Guid.NewGuid(), "PO-bound", "SITE-001", 1.25m,
+            [new("10", 1m, "RAW-A-01")], Unrestricted: true);
+        string receiptNo;
+        await using (var setup = provider.CreateAsyncScope())
+        {
+            var db = setup.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Database.MigrateAsync();
+            AddReleasedOrder(db, "bound", authority: PurchaseReceiptInventoryPostingRoute.Wms);
+            await db.SaveChangesAsync();
+            using var causation = setup.ServiceProvider.GetRequiredService<IErpIntegrationEventContextAccessor>()
+                .BeginScope("command:test:wms-bound");
+            receiptNo = (await setup.ServiceProvider.GetRequiredService<ISender>().Send(command)).PurchaseReceiptNo;
+        }
+
+        var legacyShape = InboundEvent("PO-bound", "PO-bound");
+        WmsIntegrationEvent Completion(string acceptedReference) => legacyShape with
+        {
+            Payload = legacyShape.Payload with
+            {
+                SourceDocumentType = WmsSourceDocumentTypes.PurchaseReceipt,
+                SourceDocumentId = acceptedReference,
+                WmsReceiptBatchId = command.WmsReceiptBatchId,
+                SiteCode = "SITE-001",
+                Lines = [new("10", "SKU-001", "pcs", "SITE-001", "RAW-A-01", 1m, "unrestricted")],
+            },
+        };
+
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        await using (var rejected = provider.CreateAsyncScope())
+        {
+            await InboundHandler(rejected.ServiceProvider, deadLetters)
+                .HandleCapAsync(Completion("wrong-receipt"), CancellationToken.None);
+            await InboundHandler(rejected.ServiceProvider, deadLetters)
+                .HandleCapAsync(legacyShape with { EventId = "old-shape", IdempotencyKey = "old-shape" }, CancellationToken.None);
+            Assert.Empty(await rejected.ServiceProvider.GetRequiredService<ApplicationDbContext>().ProcessedIntegrationEvents.ToListAsync());
+        }
+
+        var consumer = WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.ConsumerName;
+        var failures = await deadLetters.ListAsync(consumer, IntegrationEventDeadLetterStatus.Pending, CancellationToken.None);
+        Assert.Equal(2, failures.Count);
+        Assert.Contains(failures, letter => letter.FailureCode == "bound-receipt-completion-mismatch");
+        Assert.Contains(failures, letter => letter.FailureCode == "missing-bound-receipt-reference");
+        for (var delivery = 0; delivery < 2; delivery++)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            await InboundHandler(scope.ServiceProvider, deadLetters)
+                .HandleCapAsync(Completion(receiptNo), CancellationToken.None);
+        }
+
+        await using var read = provider.CreateAsyncScope();
+        var final = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(receiptNo, (await final.PurchaseReceipts.SingleAsync()).PurchaseReceiptNo);
+        Assert.Equal(1m, Assert.Single((await LoadOrderAsync(read.ServiceProvider, "PO-bound")).Lines).ReceivedQuantity);
+        Assert.Equal(consumer, (await final.ProcessedIntegrationEvents.SingleAsync()).ConsumerName);
+    }
+
     private static void AddReleasedOrder(ApplicationDbContext db, string suffix, bool alreadyReceived = false,
         PurchaseReceiptInventoryPostingRoute authority = PurchaseReceiptInventoryPostingRoute.Direct)
     {

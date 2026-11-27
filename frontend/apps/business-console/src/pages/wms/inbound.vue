@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import type { BusinessConsoleWmsInboundOrderItem } from '@nerv-iip/api-client'
+import {
+  BusinessOperationPendingError,
+  type BusinessConsoleWmsInboundOrderItem,
+} from '@nerv-iip/api-client'
 import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
 import WmsAssignWorkPoolDialog from '@/components/wms/WmsAssignWorkPoolDialog.vue'
@@ -37,6 +40,7 @@ import {
   notifyError,
   notifyOperationFailure,
   notifySuccess,
+  notifyWarning,
 } from '@/utils/notify'
 import {
   NvAlertDialog,
@@ -285,6 +289,13 @@ function onCompleteOpenChange(open: boolean) {
   if (!open && completeIntentLocked.value) return
   completeOpen.value = open
 }
+function closeSettledCompletion() {
+  completeOpen.value = false
+  completeIntentKey.value = ''
+  completeIntentAttempted.value = false
+  completeIntentLocked.value = false
+}
+
 async function confirmComplete() {
   const id = pendingOrder.value?.inboundOrderId
   if (!id) return
@@ -295,20 +306,20 @@ async function confirmComplete() {
         completeIntentAttempted.value = true
       },
     })
-    completeOpen.value = false
-    completeIntentKey.value = ''
-    completeIntentAttempted.value = false
-    completeIntentLocked.value = false
+    closeSettledCompletion()
     notifySuccess('入库单已完成')
   } catch (error) {
+    if (error instanceof BusinessOperationPendingError) {
+      closeSettledCompletion()
+      notifyWarning(error.message)
+      void refreshInboundOrders()
+      return
+    }
     if (
       await recoverLifecycleAction(error, {
         reset: () => {
-          completeOpen.value = false
+          closeSettledCompletion()
           pendingOrder.value = undefined
-          completeIntentKey.value = ''
-          completeIntentAttempted.value = false
-          completeIntentLocked.value = false
         },
         refresh: refreshInboundOrders,
         notify: (message) => notifyError(message),

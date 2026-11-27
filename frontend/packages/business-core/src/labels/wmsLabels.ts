@@ -30,6 +30,7 @@ const INBOUND_ORDER_STATUS: Record<string, string> = {
   completed: '已完成',
   inventorypostingfailed: '库存过账失败',
   pendingqualitycheck: '待质检',
+  inventorypostingpending: '库存过账中',
   cancelled: '已取消',
 }
 
