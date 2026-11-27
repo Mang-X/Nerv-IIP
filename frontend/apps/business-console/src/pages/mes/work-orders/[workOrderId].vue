@@ -184,7 +184,7 @@ const {
 </script>
 
 <template>
-  <BusinessLayout>
+  <BusinessLayout class="max-sm:overflow-x-clip">
     <NvPageHeader
       :title="`工单 ${workOrderLabel}`"
       :breadcrumbs="[{ label: '制造执行' }, { label: '工单与派工' }]"
