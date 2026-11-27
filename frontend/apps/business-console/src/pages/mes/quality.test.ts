@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   qualityItems: [] as Array<Record<string, unknown>>,
   routeQuery: {} as Record<string, string>,
   ncrState: 'ready',
+  qualityReadState: 'ready',
   ncrs: {} as Record<string, Record<string, unknown> | null>,
   organizationId: 'org-1',
   environmentId: 'prod',
@@ -117,6 +118,7 @@ vi.mock('@/composables/mes', () => ({
     qualityItems: computed(() => state.qualityItems),
     qualityItemsError: shallowRef(undefined),
     qualityItemsPending: shallowRef(false),
+    qualityItemsState: computed(() => state.qualityReadState),
     qualityItemsTotal: computed(() => state.qualityItems.length),
     recordDefect,
     recordDefectPending: shallowRef(false),
@@ -279,6 +281,7 @@ describe('MES 质量页 — 缺陷登记入口', () => {
       }),
     ]
     state.qualityItems = []
+    state.qualityReadState = 'ready'
     state.ncrState = 'ready'
     state.ncrs = {}
     state.routeQuery = {}
@@ -303,6 +306,14 @@ describe('MES 质量页 — 缺陷登记入口', () => {
         downstreamDocumentId: 'DEF-20260825-001',
       },
     })
+  })
+
+  it('质量记录加载中不显示空记录结论', () => {
+    state.qualityReadState = 'loading'
+    const wrapper = mountPage()
+    expect(wrapper.text()).not.toContain('当前没有不良记录')
+    expect(wrapper.text()).not.toContain('0 条质量项')
+    wrapper.unmount()
   })
 
   it('opens the real work order with the source operation using quality facts without operations permission', async () => {

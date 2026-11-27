@@ -7,6 +7,7 @@ import {
 } from '@nerv-iip/api-client'
 import { useQuery } from '@pinia/colada'
 import { computed } from 'vue'
+import { businessReadState } from '../shared/businessReadState'
 import { hasBusinessContext } from '../shared/businessContextBinding'
 import { defaultTraceabilityFilters, isNonEmpty, toContextQuery, unwrapData } from './mesShared'
 
@@ -56,8 +57,23 @@ export function useMesTraceability() {
     return workOrderQuery.data.value
   })
 
+  const activeQuery = computed(() => {
+    if (filters.mode === 'batch') return batchQuery
+    if (filters.mode === 'material-lot') return materialLotQuery
+    return workOrderQuery
+  })
+  const state = businessReadState(
+    {
+      data: activeEnvelope,
+      error: computed(() => activeQuery.value.error.value),
+      isLoading: computed(() => activeQuery.value.isLoading.value),
+    },
+    () => workOrderEnabled.value || batchEnabled.value || materialLotEnabled.value,
+  )
+
   return {
     filters,
+    traceabilityState: state,
     refreshTraceability: () => {
       if (filters.mode === 'batch') {
         return batchEnabled.value ? batchQuery.refetch() : Promise.resolve()
@@ -72,15 +88,13 @@ export function useMesTraceability() {
         activeEnvelope.value,
       ),
     ),
-    traceabilityError: computed(() => {
-      if (filters.mode === 'batch') return batchQuery.error.value
-      if (filters.mode === 'material-lot') return materialLotQuery.error.value
-      return workOrderQuery.error.value
-    }),
-    traceabilityPending: computed(() => {
-      if (filters.mode === 'batch') return batchQuery.isLoading.value
-      if (filters.mode === 'material-lot') return materialLotQuery.isLoading.value
-      return workOrderQuery.isLoading.value
-    }),
+    traceabilityError: computed(() =>
+      state.value === 'error'
+        ? (activeQuery.value.error.value ?? new Error('追溯数据读取失败'))
+        : undefined,
+    ),
+    traceabilityPending: computed(
+      () => state.value === 'loading' || activeQuery.value.isLoading.value,
+    ),
   }
 }

@@ -150,6 +150,14 @@ describe('生产准备检查页', () => {
     wrapper.unmount()
   })
 
+  it('页头是唯一的重新检查入口', () => {
+    const wrapper = mountPage()
+    expect(wrapper.findAll('button').filter((button) => button.text() === '重新检查')).toHaveLength(
+      1,
+    )
+    wrapper.unmount()
+  })
+
   it('每条问题都带出去哪里补的提示', () => {
     const wrapper = mountPage()
 

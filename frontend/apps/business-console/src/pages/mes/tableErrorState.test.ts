@@ -171,7 +171,7 @@ const pages: Array<{
   {
     name: '报工记录',
     page: ProductionReportsPage,
-    absentText: ['还没有报工记录'],
+    absentText: ['暂无报工记录'],
   },
   {
     name: '质量记录',
@@ -181,7 +181,7 @@ const pages: Array<{
   {
     name: '完工入库',
     page: ReceiptsPage,
-    absentText: ['还没有完工入库登记'],
+    absentText: ['暂无完工入库登记'],
   },
   {
     name: '批次追溯',

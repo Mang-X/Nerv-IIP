@@ -3,6 +3,7 @@ import { formatWorkScopeKey, parseWorkScopeKey } from '@nerv-iip/business-core'
 import { useAuthStore } from '@/stores/auth'
 import { useQuery } from '@pinia/colada'
 import { computed, reactive, shallowRef, watch } from 'vue'
+import { businessReadState } from '../shared/businessReadState'
 import {
   hasBusinessContext,
   withBusinessContextEnabled,
@@ -182,20 +183,26 @@ export function useMesPrincipalWorkScope(
       ...(displayName ? { displayName } : {}),
     }
   })
+  const scopeReadState = businessReadState(
+    workContextQuery,
+    () => hasBusinessContext(context) && canResolve(),
+  )
+  const scopePending = computed(
+    () => scopeReadState.value === 'loading' || workContextQuery.isLoading.value,
+  )
   const scopeReady = computed(() => selectedScope.value !== undefined)
   // 「读到了、但确实一个授权范围都没有」——与「还没选」是两回事，提示必须说清缺什么、去哪配。
   const scopeUnavailable = computed(
     () =>
-      !workContextQuery.isLoading.value &&
-      !workContextQuery.error.value &&
-      workContextQuery.data.value?.success === true &&
+      scopeReadState.value === 'ready' &&
+      !scopePending.value &&
       knownAuthorizedScopes.value.length === 0 &&
       !scopeReady.value,
   )
   const scopeMessage = computed(() => {
-    if (!hasBusinessContext(context)) return '尚未确定当前组织，当前操作已禁用。'
-    if (workContextQuery.isLoading.value) return '正在核验当前作业范围…'
-    if (workContextQuery.error.value) return '作业范围核验失败，当前操作已禁用。请刷新后重试。'
+    if (!hasBusinessContext(context)) return '尚未确定当前组织或环境，当前操作已禁用。'
+    if (scopePending.value) return '正在核验当前作业范围…'
+    if (scopeReadState.value === 'error') return '作业范围核验失败，当前操作已禁用。请刷新后重试。'
     if (scopeReady.value) return ''
     if (scopeUnavailable.value) return MES_WORK_SCOPE_UNAVAILABLE_MESSAGE
     return MES_WORK_SCOPE_REQUIRED_MESSAGE
@@ -273,7 +280,8 @@ export function useMesPrincipalWorkScope(
     scopeMessage,
     scopeError: workContextQuery.error,
     scopeOptions,
-    scopePending: workContextQuery.isLoading,
+    scopePending,
+    scopeReadState,
     scopeReady,
     scopeSelectionValue,
     scopeUnavailable,

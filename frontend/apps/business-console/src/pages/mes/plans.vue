@@ -86,9 +86,7 @@ const hasActiveFilters = computed(
   () => Boolean(keyword.value.trim()) || sourceFilter.value !== 'all',
 )
 const emptyMessage = computed(() =>
-  hasActiveFilters.value
-    ? '没有符合当前筛选的计划。可点上方「重置」清空筛选。'
-    : '还没有可执行的生产计划。需求与计划（MRP/MPS）下达后，计划会自动出现在这里。',
+  hasActiveFilters.value ? '没有符合当前筛选的计划。' : '暂无生产计划。',
 )
 
 const columns: NvDataTableColumn<BusinessConsoleMesProductionPlanRow>[] = [
@@ -225,6 +223,18 @@ function normalizeSourceQuery(value: unknown): string {
       :empty-message="emptyMessage"
       @retry="refreshProductionPlans"
     >
+      <template #empty>
+        <p class="text-sm text-muted-foreground">{{ emptyMessage }}</p>
+        <NvButton
+          v-if="hasActiveFilters"
+          type="button"
+          size="sm"
+          variant="outline"
+          @click="resetFilters"
+        >
+          清除筛选
+        </NvButton>
+      </template>
       <template #cell-sourceDemandReference="{ row }">
         <span v-if="row.sourceDemandReference">{{ row.sourceDemandReference }}</span>
         <span v-else class="text-muted-foreground">暂无需求号</span>

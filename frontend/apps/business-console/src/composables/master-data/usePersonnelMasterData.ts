@@ -18,6 +18,7 @@ import {
 } from '@nerv-iip/api-client'
 import { useMutation, useQuery, useQueryCache, type UseMutationOptions } from '@pinia/colada'
 import { computed, reactive, toValue, type MaybeRefOrGetter } from 'vue'
+import { businessReadState } from '../shared/businessReadState'
 import {
   bindBusinessContext,
   hasBusinessContext,
@@ -98,7 +99,11 @@ function workerTotal(envelope: BusinessConsoleWorkerDirectoryEnvelope | undefine
  * 部门 / 班组 / 工作中心 / 技能 / 在岗状态过滤——派工候选就是靠 workCenterCode 收敛的。
  * UI 只呈现姓名 / 工号 / 部门 / 班组 / 技能，userId 仅作为绑定值。
  */
-export function useBusinessWorkers(initial: Partial<WorkerDirectoryFilters> = {}, all = false) {
+export function useBusinessWorkers(
+  initial: Partial<WorkerDirectoryFilters> = {},
+  all = false,
+  enabled = () => true,
+) {
   const filters = bindBusinessContext(
     reactive<WorkerDirectoryFilters>({
       organizationId: '',
@@ -135,12 +140,16 @@ export function useBusinessWorkers(initial: Partial<WorkerDirectoryFilters> = {}
       pageSize: filters.pageSize,
     }
     const options = listBusinessConsoleWorkersQueryOptions({ query })
-    return withBusinessContextEnabled(
+    const boundOptions = withBusinessContextEnabled(
       all
         ? {
             ...options,
             key: [...options.key, 'all'],
-            query: ({ signal }): Promise<BusinessConsoleWorkerDirectoryEnvelope> =>
+            query: ({
+              signal,
+            }: {
+              signal: AbortSignal
+            }): Promise<BusinessConsoleWorkerDirectoryEnvelope> =>
               fetchCompleteCatalog<BusinessConsoleWorkerDirectoryItem>(async (skip) => {
                 const { data } = await listBusinessConsoleWorkers({
                   query: { ...query, pageIndex: Math.floor(skip / query.pageSize) + 1 },
@@ -153,11 +162,18 @@ export function useBusinessWorkers(initial: Partial<WorkerDirectoryFilters> = {}
         : options,
       filters,
     )
+    const canRead = enabled()
+    return {
+      ...boundOptions,
+      enabled: boundOptions.enabled && canRead,
+      key: [...boundOptions.key, ...(canRead ? [] : ['disabled'])],
+    }
   })
 
   return {
     filters,
     refresh: () => refetchWithBusinessContext(filters, workersQuery),
+    workersState: businessReadState(workersQuery, () => hasBusinessContext(filters) && enabled()),
     workers: computed<BusinessConsoleWorkerDirectoryItem[]>(() =>
       workerItems(workersQuery.data.value),
     ),

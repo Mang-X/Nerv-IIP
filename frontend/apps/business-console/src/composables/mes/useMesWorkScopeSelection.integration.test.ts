@@ -4,9 +4,11 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 
+import MesWorkScopeSelect from '@/components/mes/MesWorkScopeSelect.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useMesWorkOrders } from '.'
+import { useMesWorkScopeSelection } from './useMesWorkScope'
 
 /**
  * #1288 作业范围就绪链路（root cause 回归）。
@@ -124,7 +126,7 @@ function resolveReadContext(
   })
 }
 
-async function createHarness() {
+async function createHarness(showSelector = false, contextReady = true) {
   const pinia = createPinia()
   setActivePinia(pinia)
   const auth = useAuthStore(pinia)
@@ -133,15 +135,21 @@ async function createHarness() {
     organizationId: 'org-001',
     environmentId: 'env-dev',
   } as never
-  useBusinessContextStore(pinia).patchContext({
-    organizationId: 'org-001',
-    environmentId: 'env-dev',
-  })
+  const contextStore = useBusinessContextStore(pinia)
+  function selectContext() {
+    contextStore.patchContext({ organizationId: 'org-001', environmentId: 'env-dev' })
+  }
+  if (contextReady) selectContext()
+  let refreshScope: (() => Promise<unknown>) | undefined
 
   let list: ReturnType<typeof useMesWorkOrders> | undefined
   const Harness = defineComponent({
     setup() {
       list = useMesWorkOrders()
+      if (showSelector) {
+        refreshScope = useMesWorkScopeSelection('business.mes.work-orders.read').refreshScope
+        return () => h(MesWorkScopeSelect, { permissionCode: 'business.mes.work-orders.read' })
+      }
       return () =>
         h(
           'div',
@@ -160,10 +168,34 @@ async function createHarness() {
   })
   await flushPromises()
   if (!list) throw new Error('工单 composable 未初始化')
-  return { wrapper, list }
+  return { wrapper, list, refreshScope, selectContext }
 }
 
 describe('PC MES work scope selection readiness (#1288)', () => {
+  it('选择器在读取或失败时不显示零授权，成功读空后才显示', async () => {
+    const { wrapper, refreshScope, selectContext } = await createHarness(true, false)
+    expect(wrapper.text()).toContain('等待组织与环境就绪')
+    expect(wrapper.text()).not.toContain('无可选授权范围')
+
+    selectContext()
+    await flushPromises()
+    expect(wrapper.text()).toContain('正在读取作业范围')
+    expect(wrapper.text()).not.toContain('无可选授权范围')
+
+    readContextRequests()[0]!.resolve({ success: false })
+    await flushPromises()
+    expect(wrapper.text()).toContain('范围读取失败')
+    expect(wrapper.text()).not.toContain('无可选授权范围')
+
+    const refreshing = refreshScope!()
+    await flushPromises()
+    resolveReadContext(1, { authorizedScopes: [] })
+    await refreshing
+    await flushPromises()
+    expect(wrapper.text()).toContain('无可选授权范围')
+    wrapper.unmount()
+  })
+
   beforeEach(() => {
     sdkState.workContextRequests.length = 0
     sdkState.workOrderListRequests.length = 0

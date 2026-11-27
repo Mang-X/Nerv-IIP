@@ -3,8 +3,38 @@ import type {
   BusinessConsoleMesShiftHandoverUnfinishedWorkOrder,
   BusinessConsoleMesShiftHandoverWipItem,
 } from '@nerv-iip/api-client'
+import {
+  incomingPartyState,
+  outgoingPartyState,
+  SHIFT_HANDOVER_PARTY_STATE_LABELS,
+} from '@nerv-iip/business-core'
 import type { NvDataTableColumn, StatusTone } from '@nerv-iip/ui'
 import { labelFor, normalizeCode, MES_HANDOVER_ISSUE_CATEGORY_LABELS } from '@/data/businessLabels'
+
+function reliablePartyName(name?: string | null, id?: string | null) {
+  const value = name?.trim()
+  return value && value !== id?.trim() && !/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(value)
+    ? value
+    : undefined
+}
+
+export function outgoingUserLabel(row: Parameters<typeof outgoingPartyState>[0]) {
+  const name = reliablePartyName(row.outgoingUserName, row.outgoingUserId)
+  const state = outgoingPartyState({ ...row, outgoingUserName: name })
+  return name ?? partyStateLabel(state)
+}
+
+export function incomingUserLabel(row: Parameters<typeof incomingPartyState>[0]) {
+  const name = reliablePartyName(row.incomingUserName, row.incomingUserId)
+  const state = incomingPartyState({ ...row, incomingUserName: name })
+  return name ?? partyStateLabel(state)
+}
+
+function partyStateLabel(state: keyof typeof SHIFT_HANDOVER_PARTY_STATE_LABELS) {
+  return state === 'name-unresolved'
+    ? '人员已记录，姓名未显示'
+    : SHIFT_HANDOVER_PARTY_STATE_LABELS[state]
+}
 
 const ISSUE_SEVERITY_TONES: Readonly<Record<string, StatusTone>> = {
   low: 'neutral',

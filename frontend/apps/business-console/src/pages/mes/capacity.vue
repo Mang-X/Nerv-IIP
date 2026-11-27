@@ -11,6 +11,9 @@ import { useMasterDataDisplayNames } from '@/composables/master-data/useMasterDa
 import { useMesKeywordFilter } from '@/composables/mes/useMesKeywordFilter'
 import { usePagedList } from '@/composables/shared/usePagedList'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
+import { useAuthStore } from '@/stores/auth'
+import { RouterLink } from 'vue-router'
 import CodeWithNameCell from '@/components/business/CodeWithNameCell.vue'
 import {
   NvButton,
@@ -46,6 +49,8 @@ const {
   filters,
   refreshCapacityImpacts,
 } = useMesCapacityImpacts()
+const auth = useAuthStore()
+const canReadDowntime = computed(() => auth.principal?.permissionCodes?.includes(P.mesDowntimeRead))
 const { keyword } = useMesKeywordFilter(filters)
 const { statusLabel } = useMesReferenceLabels()
 const { page, pageSize } = usePagedList(filters, {
@@ -143,6 +148,9 @@ function formatDateTime(value?: string | null) {
       :count="`${capacityImpactsTotal} 条影响`"
     >
       <template #actions>
+        <NvButton v-if="canReadDowntime" size="sm" variant="outline" as-child>
+          <RouterLink to="/mes/downtime">查看停机事件</RouterLink>
+        </NvButton>
         <NvButton
           size="sm"
           type="button"
@@ -220,7 +228,7 @@ function formatDateTime(value?: string | null) {
       :error-message="errorMessage"
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无产能影响。先在「设备与停机」登记停机，再回到这里跟踪对产线产能的影响。"
+      empty-message="暂无产能影响记录。"
       @retry="refreshCapacityImpacts"
     >
       <template #cell-workCenterId="{ row }">

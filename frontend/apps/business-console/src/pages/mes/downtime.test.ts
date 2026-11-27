@@ -244,7 +244,9 @@ const stubs = {
 }
 
 function mountPage(stubOverrides: Record<string, unknown> = {}) {
-  return mount(DowntimePage, { global: { stubs: { ...stubs, ...stubOverrides } } })
+  return mount(DowntimePage, {
+    global: { stubs: { ...stubs, RouterLink: { template: '<a><slot /></a>' }, ...stubOverrides } },
+  })
 }
 
 /** 逐列渲染的表格桩：默认桩只出「操作」列，读面列断言必须自己把 accessor 跑一遍。 */
@@ -277,7 +279,11 @@ beforeEach(() => {
   downtimeRows.value = [openRow, recoveredRow]
   writeScope.value = { kind: 'work-center', id: 'WC-01', displayName: '装配一线' }
   operationTasks.value = [{ ...operationTaskFixture }]
-  permissionCodes = ['business.mes.downtime.read', 'business.mes.downtime.manage']
+  permissionCodes = [
+    'business.mes.downtime.read',
+    'business.mes.downtime.manage',
+    'business.mes.operations.read',
+  ]
   downtimeReasonsError.value = undefined
   recordDowntimeEvent.mockReset()
   recordDowntimeEvent.mockResolvedValue({
@@ -340,8 +346,13 @@ describe('MES downtime record entry', () => {
     // blocker 会落到"当前授权范围内暂无…工序"分支，disabled 依旧为真。精确文案断言
     // 能抓住这条差异。
     expect(button?.attributes('title')).toBe('没有停机登记权限')
+    expect(wrapper.text()).toContain('没有停机登记权限')
 
-    permissionCodes = ['business.mes.downtime.read', 'business.mes.downtime.manage']
+    permissionCodes = [
+      'business.mes.downtime.read',
+      'business.mes.downtime.manage',
+      'business.mes.operations.read',
+    ]
     filters.organizationId = ''
     await button!.trigger('click')
     expect(recordDowntimeEvent).not.toHaveBeenCalled()
@@ -488,7 +499,11 @@ describe('MES downtime record entry', () => {
 
 describe('MES downtime recovery entry', () => {
   it('shows the recover action only on open rows for users with downtime.manage', async () => {
-    permissionCodes = ['business.mes.downtime.read', 'business.mes.downtime.manage']
+    permissionCodes = [
+      'business.mes.downtime.read',
+      'business.mes.downtime.manage',
+      'business.mes.operations.read',
+    ]
     const wrapper = mountPage()
 
     const rows = wrapper.findAll('[data-row]')

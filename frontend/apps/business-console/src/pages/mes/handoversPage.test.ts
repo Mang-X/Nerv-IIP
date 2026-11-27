@@ -755,7 +755,7 @@ describe('MES handovers read-face guard', () => {
   // 仍会因为「未记录」恰好也在屏上而漏过。
   it.each([
     ['已接班且目录解出显示名', 'user-emp-1042', '周敏', '周敏'],
-    ['已接班、id 在案但目录解不出显示名', 'user-admin', undefined, '姓名未知'],
+    ['已接班、id 在案但目录解不出显示名', 'user-admin', undefined, '人员已记录，姓名未显示'],
     ['已接班却连 id 都没有（问责链真的断了）', undefined, undefined, '未记录'],
   ])('接班人列在%s时给出对应说法', (_label, incomingUserId, incomingUserName, expected) => {
     state.row.handoverStatus = 'accepted'
@@ -771,7 +771,9 @@ describe('MES handovers read-face guard', () => {
     // 交班人一列在这三行里始终是解得出名字的「李海生」；两列 accessor 对调时本条必红。
     expect(readRowCell(wrapper, 'outgoingUserName')).toBe('李海生')
     expect(rowText).toContain(expected)
-    for (const other of ['周敏', '姓名未知', '未记录', '待接班'].filter((w) => w !== expected)) {
+    for (const other of ['周敏', '人员已记录，姓名未显示', '未记录', '待接班'].filter(
+      (w) => w !== expected,
+    )) {
       expect(rowText).not.toContain(other)
     }
     expect(rowText).not.toMatch(TECHNICAL_USER_PATTERN)
@@ -896,15 +898,15 @@ describe('MES handovers read-face guard', () => {
   // 没有一条让它为空，于是「拿 id 兜底」注入进去 23/23 全绿。网关目录解不出显示名时
   // name 为 null 而 id 仍在，是可达状态；用户 id 属工程标识符，两个呈现面都不许印出来。
   //
-  // #3475：这一态的说法从「未记录」改成「姓名未知」。id 仍在 = 人记在案、问责链完整，
+  // #3475：这一态的说法从「未记录」改成「人员已记录，姓名未显示」。id 仍在 = 人记在案、问责链完整，
   // 写「未记录」是在一张已提交的单子上断言「没有这个人」。两个呈现面（列表 + 抽屉）
   // 都要跟上，`not.toContain('未记录')` 是把判据改回按 name 判时变红的那一条。
-  it('目录解不出交班人显示名但 id 在案时说「姓名未知」，列表与抽屉都不印用户 id', async () => {
+  it('目录解不出交班人显示名但 id 在案时说「人员已记录，姓名未显示」，列表与抽屉都不印用户 id', async () => {
     state.row.outgoingUserName = null
     state.detail.outgoingUserName = null
     const wrapper = mountPage()
 
-    expect(readRowCell(wrapper, 'outgoingUserName')).toBe('姓名未知')
+    expect(readRowCell(wrapper, 'outgoingUserName')).toBe('人员已记录，姓名未显示')
     expect(wrapper.text()).not.toContain('未记录')
     expect(wrapper.text()).not.toMatch(TECHNICAL_USER_PATTERN)
 
@@ -912,16 +914,16 @@ describe('MES handovers read-face guard', () => {
     await flushPromises()
 
     const detailText = wrapper.get('[data-testid="handover-detail"]').text()
-    expect(detailText).toContain('姓名未知')
+    expect(detailText).toContain('人员已记录，姓名未显示')
     expect(detailText).not.toContain('未记录')
     expect(detailText).not.toMatch(TECHNICAL_USER_PATTERN)
-    // 逐格精确值：`toContain` 对「姓名未知」加后缀那类文案漂移没有鉴别力（子串仍命中）。
-    expect(readDetailSummary(wrapper)['交班人']).toBe('姓名未知')
+    // 逐格精确值：`toContain` 对「人员已记录，姓名未显示」加后缀那类文案漂移没有鉴别力（子串仍命中）。
+    expect(readDetailSummary(wrapper)['交班人']).toBe('人员已记录，姓名未显示')
   })
 
   // 与上一条互斥的另一半：id 也没有时仍然必须说「未记录」。缺了这条，把四态压成
-  // 「有名字/没名字 → 姓名未知」的实现会全绿通过。
-  it('交班人连 id 都没有时仍说「未记录」，不得改口成「姓名未知」', async () => {
+  // 「有名字/没名字 → 人员已记录，姓名未显示」的实现会全绿通过。
+  it('交班人连 id 都没有时仍说「未记录」，不得改口成「人员已记录，姓名未显示」', async () => {
     state.row.outgoingUserId = null
     state.row.outgoingUserName = null
     state.detail.outgoingUserId = null
@@ -929,14 +931,14 @@ describe('MES handovers read-face guard', () => {
     const wrapper = mountPage()
 
     expect(readRowCell(wrapper, 'outgoingUserName')).toBe('未记录')
-    expect(wrapper.text()).not.toContain('姓名未知')
+    expect(wrapper.text()).not.toContain('人员已记录，姓名未显示')
 
     await wrapper.get('[data-testid="handovers-table"] > div').trigger('click')
     await flushPromises()
 
     const detailText = wrapper.get('[data-testid="handover-detail"]').text()
     expect(detailText).toContain('未记录')
-    expect(detailText).not.toContain('姓名未知')
+    expect(detailText).not.toContain('人员已记录，姓名未显示')
     expect(readDetailSummary(wrapper)['交班人']).toBe('未记录')
   })
 
