@@ -822,7 +822,9 @@ public sealed class BusinessConsoleAssignPersonnelSkillRequestValidator : Valida
         RuleFor(x => x.UserId).NotEmpty().MaximumLength(100);
         RuleFor(x => x.SkillCode).NotEmpty().MaximumLength(100);
         RuleFor(x => x.Level).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.EffectiveTo).GreaterThanOrEqualTo(x => x.EffectiveFrom);
+        RuleFor(x => x.EffectiveFrom).NotEmpty().WithMessage("请选择生效日期。");
+        RuleFor(x => x.EffectiveTo).Cascade(CascadeMode.Stop).NotEmpty().WithMessage("请选择有效期截止日期。")
+            .GreaterThanOrEqualTo(x => x.EffectiveFrom).WithMessage("有效期截止日期不能早于生效日期。");
     }
 }
 

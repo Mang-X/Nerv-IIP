@@ -709,8 +709,10 @@ public sealed class ProductEngineeringReleaseApiContractTests
         Assert.Equal("mix-temperature", Assert.Single(detail.RecipeLines).ParameterCode);
     }
 
-    [Fact]
-    public async Task Bom_diff_returns_structured_added_removed_replaced_and_field_changes()
+    [Theory]
+    [InlineData("EBOM-DIFF")]
+    [InlineData("EBOM-OTHER")]
+    public async Task Bom_diff_returns_structured_added_removed_replaced_and_field_changes(string targetCode)
     {
         await using var provider = CreateInMemoryProvider();
         using var scope = provider.CreateScope();
@@ -720,7 +722,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
             .AddLine("SKU-RM-REPLACE-OLD", 1m, "EA", alternateGroup: "main")
             .AddLine("SKU-RM-REMOVE", 1m, "EA");
         source.Release(new DateOnly(2026, 1, 1));
-        var target = EngineeringBom.CreateDraft("org-001", "env-dev", "EBOM-DIFF", "B", "SKU-FG-1000")
+        var target = EngineeringBom.CreateDraft("org-001", "env-dev", targetCode, "B", "SKU-FG-1000")
             .AddLine("SKU-RM-KEEP", 2.5m, "KG", scrapRate: 0.03m, yieldRate: 0.95m)
             .AddLine("SKU-RM-REPLACE-NEW", 1m, "EA", alternateGroup: "main")
             .AddLine("SKU-RM-ADD", 4m, "EA");
@@ -729,7 +731,7 @@ public sealed class ProductEngineeringReleaseApiContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var response = await new GetBomDiffQueryHandler(dbContext).Handle(
-            new GetBomDiffQuery("org-001", "env-dev", "EngineeringBom", "EBOM-DIFF", "A", "EBOM-DIFF", "B"),
+            new GetBomDiffQuery("org-001", "env-dev", "EngineeringBom", "EBOM-DIFF", "A", targetCode, "B"),
             CancellationToken.None);
 
         Assert.Equal("EngineeringBom", response.BomKind);

@@ -369,6 +369,18 @@ describe('engineering bom analysis page', () => {
     expect(wrapper.text()).toContain('控制主板')
     expect(wrapper.text()).toContain('虚拟件')
     expect(wrapper.text()).toContain('缺少下级有效版本')
+    for (const label of ['反查', '对比']) {
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text().trim() === label)!
+        .trigger('click')
+      expect(wrapper.text()).not.toContain('缺少下级有效版本')
+    }
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '树视图')!
+      .trigger('click')
+    expect(wrapper.text()).toContain('缺少下级有效版本')
   })
 
   it('MBOM 爆炸视图转调制造 BOM facade 并展示替代与位号', async () => {
@@ -555,7 +567,8 @@ describe('engineering bom analysis page', () => {
     expect(wrapper.text()).toContain('得率')
   })
   it('迟到的对比失败只出现在对比页，反查保留自己的空态和结果', async () => {
-    let rejectDiff!: (reason: Error) => void
+    let rejectDiff!: (reason: unknown) => void
+    const reason = '工程 BOM 两个版本必须属于同一父物料才能比较。'
     api.getBusinessConsoleEngineeringBomDiff.mockImplementationOnce(
       () =>
         new Promise((_resolve, reject) => {
@@ -572,13 +585,13 @@ describe('engineering bom analysis page', () => {
     await button('对比').trigger('click')
     await wrapper.get('#bom-from-code').setValue('EBOM-FG')
     await wrapper.get('#bom-from-revision').setValue('A')
-    await wrapper.get('#bom-to-code').setValue('EBOM-FG')
+    await wrapper.get('#bom-to-code').setValue('EBOM-OTHER')
     await wrapper.get('#bom-to-revision').setValue('B')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     await button('反查').trigger('click')
     expect(wrapper.text()).toContain('请选择组件物料后反查')
-    rejectDiff(new Error('对比读取失败'))
+    rejectDiff({ success: false, code: 400, message: reason })
     await flushPromises()
     expect(wrapper.text()).not.toContain('分析失败')
     await wrapper.get('#bom-component').setValue('PCB-200')
@@ -586,7 +599,7 @@ describe('engineering bom analysis page', () => {
     await flushPromises()
     expect(api.getBusinessConsoleEngineeringBomWhereUsed).toHaveBeenCalledTimes(1)
     await button('对比').trigger('click')
-    expect(wrapper.text()).toContain('分析失败')
+    expect(wrapper.text()).toContain(reason)
     api.getBusinessConsoleEngineeringBomDiff.mockResolvedValueOnce({
       data: { success: true, data: { lines: [] } },
     })

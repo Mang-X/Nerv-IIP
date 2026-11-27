@@ -27,8 +27,10 @@ namespace Nerv.IIP.Business.MasterData.Web.Tests;
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MasterDataResourceListHttpTests
 {
-    [Fact]
-    public async Task Skill_creation_and_personnel_assignment_succeed_with_scope_validation()
+    [Theory]
+    [InlineData(false, "9999-12-31")]
+    [InlineData(true, "2026-12-31")]
+    public async Task Skill_creation_and_personnel_assignment_succeed_with_scope_validation(bool requiresCertification, string expiry)
     {
         await using var factory = new MasterDataResourceListHttpTestFactory(validateScopes: true);
         using (var scope = factory.Services.CreateScope())
@@ -45,7 +47,8 @@ public sealed class MasterDataResourceListHttpTests
             skillCode = "welding",
             skillName = "焊接",
             groupName = "生产",
-            requiresCertification = false,
+            requiresCertification,
+            validityMonths = requiresCertification ? (int?)12 : null,
         });
         var createdBody = await created.Content.ReadAsStringAsync();
         Assert.True(created.StatusCode == HttpStatusCode.OK, createdBody);
@@ -61,7 +64,7 @@ public sealed class MasterDataResourceListHttpTests
             skillCode,
             level = "senior",
             effectiveFrom = new DateOnly(2026, 1, 1),
-            effectiveTo = new DateOnly(2026, 12, 31),
+            effectiveTo = expiry,
         });
         Assert.True(assigned.StatusCode == HttpStatusCode.OK, await assigned.Content.ReadAsStringAsync());
     }

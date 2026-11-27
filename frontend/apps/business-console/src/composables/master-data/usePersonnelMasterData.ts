@@ -315,7 +315,8 @@ export interface PersonnelSkillAssignInput {
   userId: string
   skillCode: string
   level: string
-  effectiveFrom?: string
+  effectiveFrom: string
+  effectiveTo: string
 }
 
 /**
@@ -344,7 +345,8 @@ export function usePersonnelSkillAssignment() {
           userId: input.userId,
           skillCode: input.skillCode,
           level: input.level,
-          ...optionalQuery('effectiveFrom', input.effectiveFrom),
+          effectiveFrom: input.effectiveFrom,
+          effectiveTo: input.effectiveTo,
         },
       }),
     assignPending: assignMutation.isLoading,

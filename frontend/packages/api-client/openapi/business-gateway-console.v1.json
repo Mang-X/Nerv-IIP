@@ -62451,7 +62451,9 @@
           "environmentId",
           "userId",
           "skillCode",
-          "level"
+          "level",
+          "effectiveFrom",
+          "effectiveTo"
         ],
         "properties": {
           "organizationId": {
@@ -62486,11 +62488,15 @@
           },
           "effectiveFrom": {
             "type": "string",
-            "format": "date"
+            "format": "date",
+            "minLength": 1,
+            "nullable": false
           },
           "effectiveTo": {
             "type": "string",
-            "format": "date"
+            "format": "date",
+            "minLength": 1,
+            "nullable": false
           }
         }
       },

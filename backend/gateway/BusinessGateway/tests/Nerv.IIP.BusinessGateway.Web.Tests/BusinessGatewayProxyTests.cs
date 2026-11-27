@@ -7205,6 +7205,29 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Engineering_bom_diff_returns_business_rejection_for_different_root_items()
+    {
+        const string reason = "工程 BOM 两个版本必须属于同一父物料才能比较。";
+        using var http = new HttpClient(new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK,
+            new { success = false, code = 0, message = reason }))) { BaseAddress = new Uri("http://engineering.local") };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessProductEngineeringClient>();
+            services.AddSingleton<IBusinessProductEngineeringClient>(new HttpBusinessProductEngineeringClient(http));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        using var response = await client.GetAsync(
+            "/api/business-console/v1/engineering/boms/diff?organizationId=org-001&environmentId=env-dev"
+            + "&bomKind=engineering&fromBomCode=EBOM-A&fromRevision=1&toBomCode=EBOM-B&toRevision=1");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(reason, body.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
     public async Task Engineering_bom_explosion_facade_forwards_context_and_internal_service_token()
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed();

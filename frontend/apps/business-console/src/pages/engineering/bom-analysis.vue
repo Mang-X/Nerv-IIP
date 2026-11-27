@@ -7,7 +7,7 @@ import {
 } from '@/composables/engineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import { formatDate, today } from '@/utils/format'
-import { friendlyErrorMessage } from '@/utils/notify'
+import { inlineErrorMessage } from '@/utils/notify'
 import {
   NvButton,
   NvDataTable,
@@ -252,7 +252,9 @@ const canSubmit = computed(() => {
     : form.rootCode.trim().length > 0
 })
 const root = computed(() => explosion.value?.root)
-const diagnostics = computed(() => explosion.value?.diagnostics ?? [])
+const diagnostics = computed(() =>
+  requestView.value === 'explosion' ? (explosion.value?.diagnostics ?? []) : [],
+)
 const diffRows = computed(() => diff.value?.lines ?? [])
 const whereUsedRows = computed(() => whereUsed.value?.items ?? [])
 const flattenedNodes = computed(() => flattenBom(root.value))
@@ -363,7 +365,7 @@ const tableEmptyMessage = computed(() => {
 })
 
 const errorMessage = computed(() =>
-  error.value ? `分析失败：${friendlyErrorMessage(error.value, '请稍后重试。')}` : '',
+  error.value ? `分析失败：${inlineErrorMessage(error.value, '请稍后重试。')}` : '',
 )
 
 function setKind(kind: BomKind) {

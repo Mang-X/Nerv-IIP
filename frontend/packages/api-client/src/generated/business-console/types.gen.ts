@@ -6944,8 +6944,8 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleA
     userId: string;
     skillCode: string;
     level: string;
-    effectiveFrom?: string;
-    effectiveTo?: string;
+    effectiveFrom: string;
+    effectiveTo: string;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsolePersonnelSkillMatrixResponse = NetCorePalExtensionsDtoResponseData & {

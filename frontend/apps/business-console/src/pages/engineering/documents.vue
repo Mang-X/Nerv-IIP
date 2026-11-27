@@ -429,14 +429,14 @@ function downloadAttachment(blob: Blob, name: string) {
   }
 }
 
-async function openFile() {
+async function openFile(mode: 'preview' | 'download') {
   const target = viewTarget.value
   if (!target?.fileId || fileOpening.value) return
   const generation = viewGeneration
-  const type = previewType.value
+  const type = mode === 'preview' ? previewType.value : undefined
   fileOpening.value = true
   fileFailed.value = false
-  clearPreview()
+  if (type) clearPreview()
   try {
     const blob = await readSopFile(target.fileId, {
       organizationId: filters.organizationId,
@@ -748,22 +748,30 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
               <span class="text-muted-foreground">内容类型</span>
               <span class="font-medium">{{ viewTarget.contentType || '—' }}</span>
             </div>
-            <NvButton
-              v-if="viewTarget.fileId"
-              type="button"
-              :disabled="fileOpening"
-              @click="openFile"
-            >
-              {{
-                fileOpening
-                  ? '正在读取附件…'
-                  : fileFailed
-                    ? '重试打开附件'
-                    : previewType
-                      ? '预览附件'
+            <div v-if="viewTarget.fileId" class="flex flex-wrap gap-2">
+              <NvButton
+                v-if="previewType"
+                type="button"
+                :disabled="fileOpening"
+                @click="openFile('preview')"
+              >
+                预览附件
+              </NvButton>
+              <NvButton
+                type="button"
+                :variant="previewType ? 'outline' : 'default'"
+                :disabled="fileOpening"
+                @click="openFile('download')"
+              >
+                {{
+                  fileOpening
+                    ? '正在读取附件…'
+                    : fileFailed && !previewType
+                      ? '重试打开附件'
                       : '下载附件'
-              }}
-            </NvButton>
+                }}
+              </NvButton>
+            </div>
             <iframe
               v-if="openedFileUrl"
               :src="openedFileUrl"

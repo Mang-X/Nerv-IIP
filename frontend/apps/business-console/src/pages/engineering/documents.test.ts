@@ -578,6 +578,45 @@ describe('engineering documents page', () => {
     expect(sheet.text()).not.toContain('file-detail')
     expect(sheet.text()).toContain('预览附件')
   })
+  it('对可预览附件直接下载原始文件并释放下载地址', async () => {
+    const original = new Blob(['original PDF'])
+    stub.readFile.mockResolvedValueOnce(original)
+    const createObjectURL = vi.fn(() => 'blob:download-pdf')
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal(
+      'URL',
+      class extends URL {
+        static createObjectURL = createObjectURL
+        static revokeObjectURL = revokeObjectURL
+      },
+    )
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      expect(this.download).toBe(docRow.fileName)
+      expect(this.href).toBe('blob:download-pdf')
+    })
+    const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
+    try {
+      await findButton(wrapper, '查看')!.trigger('click')
+      await flushPromises()
+      expect(findButton(wrapper, '预览附件')).toBeDefined()
+      vi.useFakeTimers({ toFake: ['setTimeout'] })
+      await findButton(wrapper, '下载附件')!.trigger('click')
+      await flushPromises()
+      expect(createObjectURL).toHaveBeenCalledWith(original)
+      expect(click).toHaveBeenCalledOnce()
+      expect(wrapper.find('iframe').exists()).toBe(false)
+      expect(revokeObjectURL).not.toHaveBeenCalled()
+      await vi.runAllTimersAsync()
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:download-pdf')
+    } finally {
+      vi.useRealTimers()
+      click.mockRestore()
+      wrapper.unmount()
+    }
+  })
+
   it('非预览附件点击一次即可下载，读取失败可重试', async () => {
     stub.fetchDocumentDetail.mockResolvedValue({
       ...docRow,

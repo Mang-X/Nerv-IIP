@@ -45,8 +45,13 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, ref, watch } from 'vue'
-import { formatDate } from '@/utils/format'
-import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
+import { today } from '@/utils/format'
+import {
+  errorStatusCode,
+  notifyOperationFailure,
+  notifySuccess,
+  serverErrorMessage,
+} from '@/utils/notify'
 import { i18n } from '@/i18n'
 
 const locale = i18n.global.locale
@@ -123,9 +128,9 @@ const cellOf = (
 type ExpiryTone = 'past' | 'soon' | 'ok' | 'none'
 function expiryTone(effectiveTo: string | undefined): ExpiryTone {
   if (!effectiveTo) return 'none'
-  const end = new Date(effectiveTo)
-  if (Number.isNaN(end.getTime())) return 'none'
-  const days = Math.floor((end.getTime() - Date.now()) / 86_400_000)
+  const end = Date.parse(effectiveTo.slice(0, 10))
+  if (Number.isNaN(end)) return 'none'
+  const days = (end - Date.parse(today())) / 86_400_000
   if (days < 0) return 'past'
   if (days <= 30) return 'soon'
   return 'ok'
@@ -196,7 +201,32 @@ function refreshAll() {
 // ── 登记 Dialog ─────────────────────────────────────────────
 const skillOpen = ref(false)
 const skillShowErrors = ref(false)
-const skillForm = reactive({ userId: '', skillCode: '', level: '', effectiveFrom: '' })
+const noExpiryDate = '9999-12-31'
+const skillForm = reactive({
+  userId: '',
+  skillCode: '',
+  level: '',
+  effectiveFrom: '',
+  effectiveTo: '',
+})
+const requiresCertification = computed(
+  () =>
+    skillCatalog.value.find((item) => item.skillCode === skillForm.skillCode)
+      ?.requiresCertification === true,
+)
+const expiryError = computed(() => {
+  if (!requiresCertification.value) return ''
+  if (!skillForm.effectiveTo) return '请选择证书到期日。'
+  if (skillForm.effectiveTo < (skillForm.effectiveFrom || today()))
+    return '证书到期日不能早于生效日期。'
+  return ''
+})
+watch(
+  () => skillForm.skillCode,
+  () => {
+    skillForm.effectiveTo = ''
+  },
+)
 function isNonEmpty(value: string) {
   return value.trim().length > 0
 }
@@ -221,6 +251,7 @@ function openAssign(prefill?: { userId?: string; skillCode?: string }) {
     skillCode: prefill?.skillCode ?? '',
     level: '',
     effectiveFrom: '',
+    effectiveTo: '',
   })
   assignLockedUser.value = Boolean(prefill?.userId)
   assignLockedSkill.value = Boolean(prefill?.skillCode)
@@ -228,7 +259,7 @@ function openAssign(prefill?: { userId?: string; skillCode?: string }) {
   skillOpen.value = true
 }
 async function submitSkill() {
-  if (!canAssignSkill.value) {
+  if (!canAssignSkill.value || expiryError.value) {
     skillShowErrors.value = true
     return
   }
@@ -237,14 +268,30 @@ async function submitSkill() {
       userId: skillForm.userId,
       skillCode: skillForm.skillCode.trim(),
       level: skillForm.level,
-      effectiveFrom: skillForm.effectiveFrom.trim() || undefined,
+      effectiveFrom: skillForm.effectiveFrom || today(),
+      effectiveTo: requiresCertification.value ? skillForm.effectiveTo : noExpiryDate,
     })
     notifySuccess('已登记人员技能。')
     skillShowErrors.value = false
     skillOpen.value = false
     void matrix.refresh()
   } catch (error) {
-    notifyOperationFailure('登记人员技能失败', error, '登记人员技能失败，请稍后重试。')
+    const message = serverErrorMessage(error)
+    const validationReasons =
+      error && typeof error === 'object' && 'errorData' in error && Array.isArray(error.errorData)
+        ? error.errorData.flatMap((item) =>
+            typeof item?.reason === 'string' && /^(请选择|有效期截止日期不能早于)/.test(item.reason)
+              ? [item.reason]
+              : [],
+          )
+        : []
+    const displayError =
+      message === 'request-payload-invalid' && validationReasons.length
+        ? validationReasons.join(' ')
+        : errorStatusCode(error) === 400 && message === 'downstream-request-failed'
+          ? '登记内容未通过校验，请检查技能、等级和有效期。'
+          : error
+    notifyOperationFailure('登记人员技能失败', displayError, '登记人员技能失败，请稍后重试。')
   }
 }
 </script>
@@ -439,7 +486,11 @@ async function submitSkill() {
                   </span>
                 </NvBadge>
                 <span v-if="cellOf(row, code)!.effectiveTo" class="text-xs text-muted-foreground">
-                  至 {{ formatDate(cellOf(row, code)!.effectiveTo) }}
+                  {{
+                    cellOf(row, code)!.effectiveTo === noExpiryDate
+                      ? '长期有效'
+                      : `至 ${cellOf(row, code)!.effectiveTo?.slice(0, 10)}`
+                  }}
                 </span>
               </button>
               <button
@@ -545,7 +596,27 @@ async function submitSkill() {
                 :locale="locale"
                 clearable
               />
-              <NvFieldDescription>留空表示即时生效。</NvFieldDescription>
+              <NvFieldDescription>留空表示当天生效。</NvFieldDescription>
+            </NvField>
+            <NvField v-if="requiresCertification" :data-invalid="skillShowErrors && !!expiryError">
+              <NvFieldLabel for="skill-to"
+                >证书到期日 <span class="text-destructive">*</span></NvFieldLabel
+              >
+              <NvDatePicker
+                id="skill-to"
+                v-model="skillForm.effectiveTo"
+                :locale="locale"
+                :aria-invalid="skillShowErrors && !!expiryError"
+                :aria-describedby="skillShowErrors && expiryError ? 'skill-to-error' : undefined"
+                clearable
+              />
+              <NvFieldDescription
+                v-if="skillShowErrors && expiryError"
+                id="skill-to-error"
+                class="text-destructive"
+              >
+                {{ expiryError }}
+              </NvFieldDescription>
             </NvField>
           </NvFieldGroup>
           <NvDialogFooter>

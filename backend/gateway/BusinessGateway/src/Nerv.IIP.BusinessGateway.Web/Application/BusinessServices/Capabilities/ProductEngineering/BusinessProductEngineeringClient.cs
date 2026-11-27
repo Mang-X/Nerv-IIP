@@ -420,7 +420,8 @@ public sealed class HttpBusinessProductEngineeringClient(HttpClient httpClient)
                 ("toBomCode", request.ToBomCode),
                 ("toRevision", request.ToRevision)),
             null,
-            cancellationToken);
+            cancellationToken,
+            acceptKnownExceptionCodeZero: true);
 
     public Task<BusinessConsoleManufacturingBomListResponse> ListManufacturingBomsAsync(
         string internalBearerToken,
