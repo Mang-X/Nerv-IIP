@@ -819,6 +819,12 @@ public sealed class CreatePickingTaskCommandHandler(
             ?? throw new KnownException($"未找到出库单，出库单 ID = {request.OutboundOrderId}");
         var line = outbound.Lines.SingleOrDefault(x => x.LineNo == request.LineNo)
             ?? throw new KnownException($"未找到出库行，行号 = {request.LineNo}");
+        var blockedSupplierReturn = line.MatchReceiptStockDates;
+        if (blockedSupplierReturn && WmsText.Required(request.FromLocationCode, nameof(request.FromLocationCode)) != line.PickLocationCode)
+        {
+            throw new KnownException("退供拣货必须使用原收货过账库位。");
+        }
+
         var fingerprint = WmsCodingService.Fingerprint(
             request.OutboundOrderId,
             request.LineNo,
@@ -857,6 +863,11 @@ public sealed class CreatePickingTaskCommandHandler(
             throw new KnownException("当前出库单不可创建拣货任务，请检查状态后重试。", exception);
         }
 
+        if (blockedSupplierReturn && inventoryReservationClient is null)
+        {
+            throw new KnownException("退供拣货需要库存预留服务。");
+        }
+
         var taskNo = await _codingService.AllocateAsync(
             outbound.OrganizationId,
             outbound.EnvironmentId,
@@ -869,7 +880,8 @@ public sealed class CreatePickingTaskCommandHandler(
         // Remote Inventory reservation and local WMS task persistence are not atomic; the stable
         // line-level idempotency key lets command retries recover the same reservation.
         var reservation = line.InventoryReservationId is null && inventoryReservationClient is not null
-            ? await ReserveInventoryForPickingAsync(inventoryReservationClient, outbound, line, taskNo, request.FromLocationCode, request.Quantity, cancellationToken)
+            ? await ReserveInventoryForPickingAsync(inventoryReservationClient, outbound, line, taskNo,
+                request.FromLocationCode, request.Quantity, blockedSupplierReturn, cancellationToken)
             : null;
         var inventoryReservationId = line.InventoryReservationId ?? reservation?.ReservationId;
         var task = outbound.CreatePickingTask(
@@ -895,10 +907,11 @@ public sealed class CreatePickingTaskCommandHandler(
         string taskNo,
         string fromLocationCode,
         decimal quantity,
+        bool blockedSupplierReturn,
         CancellationToken cancellationToken)
     {
         var idempotencyKey = WmsInventoryReservationIdempotencyKeys.ForPickingTask(outbound, line.LineNo, taskNo);
-        if (string.IsNullOrWhiteSpace(line.LotNo))
+        if (string.IsNullOrWhiteSpace(line.LotNo) && !blockedSupplierReturn)
         {
             var fefo = await inventoryReservationClient.ReserveFefoAsync(
                 new WmsInventoryFefoReservationRequest(
@@ -950,7 +963,10 @@ public sealed class CreatePickingTaskCommandHandler(
                 line.QualityStatus,
                 line.OwnerType,
                 line.OwnerId,
-                quantity),
+                quantity,
+                line.ProductionDate,
+                line.ExpiryDate,
+                MatchReceiptStockDates: line.MatchReceiptStockDates),
             cancellationToken);
         return new PickingReservationResult(reservation.ReservationId, fromLocationCode, reservation.LotNo ?? line.LotNo, line.SerialNo);
     }
@@ -2268,7 +2284,10 @@ public sealed class RetryOutboundInventoryPostingCommandHandler(
                     line.QualityStatus,
                     line.OwnerType,
                     line.OwnerId,
-                    line.IssuedQuantity),
+                    line.IssuedQuantity,
+                    line.ProductionDate,
+                    line.ExpiryDate,
+                    MatchReceiptStockDates: line.MatchReceiptStockDates),
                 cancellationToken)).ReservationId;
 
             reservationIds[line.LineNo] = reservationId;
@@ -2661,7 +2680,8 @@ public sealed record MarkInventoryMovementRequestPostedCommand(
     string SourceDocumentId,
     string? SourceDocumentLineId,
     string IdempotencyKey,
-    string InventoryMovementId) : ICommand;
+    string InventoryMovementId,
+    (DateOnly? ProductionDate, DateOnly? ExpiryDate)? PostedDates = null) : ICommand;
 
 public sealed class MarkInventoryMovementRequestPostedCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<MarkInventoryMovementRequestPostedCommand>
@@ -2689,7 +2709,9 @@ public sealed class MarkInventoryMovementRequestPostedCommandHandler(Application
         }
 
         var alreadyPosted = movementRequest.Status == InventoryMovementRequestStatus.Posted;
-        movementRequest.MarkPosted(request.InventoryMovementId);
+        var postedDates = movementRequest.MovementType == InventoryMovementTypes.Inbound
+            && movementRequest.QualityStatus == InventoryQualityStatuses.Blocked ? request.PostedDates : null;
+        movementRequest.MarkPosted(request.InventoryMovementId, postedDates);
         if (request.MovementType == InventoryMovementTypes.Inbound && !alreadyPosted)
         {
             await AcknowledgeBoundReceiptAsync(movementRequest, cancellationToken);
@@ -2751,7 +2773,14 @@ public sealed class MarkInventoryMovementRequestPostedCommandHandler(Application
             .ToArrayAsync(cancellationToken);
         if (movements.Length == keys.Length && movements.All(movement => movement.Status == InventoryMovementRequestStatus.Posted))
         {
-            inbound.AcknowledgeErpReceiptPosting();
+            foreach (var supplierReturn in inbound.AcknowledgeErpReceiptPosting())
+            {
+                var original = movements.Single(movement => movement.SourceDocumentLineId == supplierReturn.InboundOrderLineNo);
+                dbContext.SupplierReturnRequests.Add(supplierReturn);
+                dbContext.OutboundOrders.Add(SupplierReturnOutbound.Create(
+                    supplierReturn, inbound.ErpPurchaseReceiptNo!, InventoryQualityStatuses.Blocked,
+                    original.PostedProductionDate, original.PostedExpiryDate, matchReceiptStockDates: true));
+            }
         }
     }
 

@@ -36,7 +36,8 @@ public sealed record PostStockMovementCommand(
     bool ExpiryOverridePermissionGranted = false,
     string? TransferInSiteCode = null,
     string? TransferInLocationCode = null,
-    decimal? TransferInQuantity = null) : ICommand<PostStockMovementResult>;
+    decimal? TransferInQuantity = null,
+    bool MatchReceiptStockDates = false) : ICommand<PostStockMovementResult>;
 
 public sealed record PostStockMovementResult(
     StockMovementId MovementId,
@@ -110,14 +111,14 @@ public sealed class PostStockMovementCommandHandler(
         var existingMovement = await FindMovementByIdempotencyKeyAsync(movement, outboundKey, cancellationToken);
         if (existingMovement is not null)
         {
-            if (!existingMovement.HasSamePayload(movement, compareExpiryDate: !UsesSkuShelfLifeDefault(request)))
+            if (!existingMovement.HasSamePayload(movement, compareExpiryDate: !UsesSkuShelfLifeDefault(request, movement)))
             {
                 throw new InventoryPostingRejectedException(
                     InventoryPostingFailureCodes.IdempotencyConflict,
                     "库存移动幂等键与已有流水内容冲突，请更换幂等键。");
             }
 
-            var existingLedger = await FindLedgerAsync(existingMovement, cancellationToken);
+            var existingLedger = await FindLedgerAsync(existingMovement, cancellationToken, UsesExactReceiptDates(request, existingMovement));
             if (!isTransfer)
             {
                 return new PostStockMovementResult(
@@ -151,14 +152,15 @@ public sealed class PostStockMovementCommandHandler(
             await EnsureRegisteredLocationAsync(request, ResolveTransferInSiteCode(request), request.TransferInLocationCode!, cancellationToken);
         }
 
-        var requestWithShelfLife = await ApplySkuShelfLifeDefaultAsync(request, cancellationToken);
+        var requestWithShelfLife = await ApplySkuShelfLifeDefaultAsync(request, movement, cancellationToken);
         if (requestWithShelfLife.ShelfLifeDays != request.ShelfLifeDays)
         {
             movement = CreateMovementOrReject(requestWithShelfLife, outboundKey);
         }
 
         var provenance = ResolveExpiryProvenance(requestWithShelfLife);
-        var ledger = await GetOrCreateLedgerAsync(movement, provenance.ShelfLifeDays, provenance.Source, cancellationToken);
+        var ledger = await GetOrCreateLedgerAsync(movement, provenance.ShelfLifeDays, provenance.Source, cancellationToken,
+            UsesExactReceiptDates(request, movement));
         if (request.Quantity < 0 && ledger.IsExpired(GetBusinessDate(request)) && !HasExpiredStockOverride(request.AllowExpiredStock, request.ExpiryOverridePermissionGranted))
         {
             throw new InventoryPostingRejectedException(
@@ -276,14 +278,22 @@ public sealed class PostStockMovementCommandHandler(
         }
     }
 
-    private static bool UsesSkuShelfLifeDefault(PostStockMovementCommand request) =>
-        request.ProductionDate is not null && request.ExpiryDate is null && request.ShelfLifeDays is null;
+    private static bool UsesSkuShelfLifeDefault(PostStockMovementCommand request, StockMovement movement) =>
+        request.ProductionDate is not null && request.ExpiryDate is null && request.ShelfLifeDays is null
+        && !(movement.MovementType == InventoryMovementTypes.Outbound && UsesExactReceiptDates(request, movement));
+
+    private static bool UsesExactReceiptDates(PostStockMovementCommand request, StockMovement movement) =>
+        request.MatchReceiptStockDates
+        && movement.QualityStatus == StockQualityStatus.Blocked
+        && string.Equals(movement.SourceService, InventoryMovementSourceServices.Wms, StringComparison.OrdinalIgnoreCase)
+        && movement.MovementType is InventoryMovementTypes.Inbound or InventoryMovementTypes.Outbound;
 
     private async Task<PostStockMovementCommand> ApplySkuShelfLifeDefaultAsync(
         PostStockMovementCommand request,
+        StockMovement movement,
         CancellationToken cancellationToken)
     {
-        if (!UsesSkuShelfLifeDefault(request)
+        if (!UsesSkuShelfLifeDefault(request, movement)
             || skuExpiryPolicyProvider is null)
         {
             return request;
@@ -299,7 +309,7 @@ public sealed class PostStockMovementCommandHandler(
             : request;
     }
 
-    private Task<StockLedger?> FindLedgerAsync(StockMovement movement, CancellationToken cancellationToken)
+    private Task<StockLedger?> FindLedgerAsync(StockMovement movement, CancellationToken cancellationToken, bool exactDates = false)
     {
         var query = dbContext.StockLedgers.Where(
             x => x.OrganizationId == movement.OrganizationId
@@ -313,12 +323,12 @@ public sealed class PostStockMovementCommandHandler(
                 && x.QualityStatus == movement.QualityStatus
                 && x.OwnerType == movement.OwnerType
                 && x.OwnerId == movement.OwnerId);
-        if (movement.ProductionDate is not null)
+        if (exactDates || movement.ProductionDate is not null)
         {
             query = query.Where(x => x.ProductionDate == movement.ProductionDate);
         }
 
-        if (movement.ExpiryDate is not null)
+        if (exactDates || movement.ExpiryDate is not null)
         {
             query = query.Where(x => x.ExpiryDate == movement.ExpiryDate);
         }
@@ -330,9 +340,10 @@ public sealed class PostStockMovementCommandHandler(
         StockMovement movement,
         int? shelfLifeDays,
         string? expiryDateSource,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool exactDates = false)
     {
-        var ledger = await FindLedgerAsync(movement, cancellationToken);
+        var ledger = await FindLedgerAsync(movement, cancellationToken, exactDates);
         if (ledger is not null)
         {
             if (movement.Quantity > 0)

@@ -239,7 +239,11 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
     public Task Bound_inspected_receipt_posts_pass_and_concession_at_frozen_cost_after_both_decisions() =>
         AssertBoundReceiptPostingAsync(inspected: true);
 
-    private static async Task AssertBoundReceiptPostingAsync(bool inspected)
+    [WmsDeadLetterReplayPostgresFact]
+    public Task Bound_rejection_posts_quarantine_stock_and_opens_one_return_after_all_acknowledgements() =>
+        AssertBoundReceiptPostingAsync(inspected: true, rejected: true);
+
+    private static async Task AssertBoundReceiptPostingAsync(bool inspected, bool rejected = false)
     {
         var erp = new ReceiptAcceptanceTransport(inspected);
         var settings = Settings();
@@ -281,11 +285,14 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
             var db = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             Assert.Empty(await db.InventoryMovementRequests.ToListAsync());
             Assert.Empty(await ReadOutboxAsync(db, nameof(InventoryMovementRequestedIntegrationEvent)));
-            await DeliverDecisionAsync("010", "SKU-B", 2m, QualityIntegrationEventTypes.InspectionConditionalReleased, "conditional-release");
-            await DeliverDecisionAsync("010", "SKU-B", 2m, QualityIntegrationEventTypes.InspectionConditionalReleased, "conditional-release");
+            var eventType = rejected ? QualityIntegrationEventTypes.InspectionRejected : QualityIntegrationEventTypes.InspectionConditionalReleased;
+            var result = rejected ? "rejected" : "conditional-release";
+            await DeliverDecisionAsync("010", "SKU-B", 2m, eventType, result, replay: rejected);
+            await DeliverDecisionAsync("010", "SKU-B", 2m, eventType, result);
             completion = completion with { ExpectedVersion = accepted.Version + 2 };
         }
 
+        var secondLineStatus = rejected ? "blocked" : inspected ? "restricted" : "unrestricted";
         erp.ReceiptNo = "WRONG";
         await Assert.ThrowsAsync<WmsUnprocessableException>(() => SendAsync(fixture, completion));
         erp.ReceiptNo = "RCV-123";
@@ -318,7 +325,7 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
             var request = await db.InventoryMovementRequests.SingleAsync(x => x.SourceDocumentLineId == "020");
             var secondLine = await db.InventoryMovementRequests.SingleAsync(x => x.SourceDocumentLineId == "010");
             Assert.Equal(6.25m, secondLine.UnitCost);
-            Assert.Equal(inspected ? "restricted" : "unrestricted", secondLine.QualityStatus);
+            Assert.Equal(secondLineStatus, secondLine.QualityStatus);
             Assert.Equal("unrestricted", request.QualityStatus);
             Assert.Equal(15.625m, request.UnitCost);
             Assert.Equal("020", request.SourceDocumentLineId);
@@ -396,6 +403,8 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
         Assert.Empty(await ReadOutboxAsync(verifiedDb, nameof(WmsIntegrationEvent)));
         await verifiedDb.Database.ExecuteSqlRawAsync("DROP TRIGGER test_reject_inbound_completion ON cap.published");
 
+        Assert.Empty(await verifiedDb.SupplierReturnRequests.ToListAsync());
+        Assert.Empty(await verifiedDb.OutboundOrders.ToListAsync());
         await DeliverPostedAsync(retried);
         var completedAt = await AssertPostingAsync("Completed", "posted", "MOV-010", "MOV-020");
         await DeliverPostedAsync(retried);
@@ -410,11 +419,26 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
             .ToDictionary(line => line.GetProperty("LineReference").GetString()!, line => line.GetProperty("Status").GetString());
         var completed = Assert.Single((await SendAsync(fixture, new ListInboundOrdersQuery("org-replay", "env-replay",
             InboundOrderId: receipt.InboundOrderId, SiteCodes: ["SITE"], SiteWideScope: true))).Items);
-        Assert.Equal(inspected ? "conditional-release" : "not-required", completed.QualityGateStatus);
+        Assert.Equal(rejected ? "rejected" : inspected ? "conditional-release" : "not-required", completed.QualityGateStatus);
         Assert.Equal("unrestricted", acknowledgedLines["020"]);
-        Assert.Equal(inspected ? "restricted" : "unrestricted", acknowledgedLines["010"]);
+        Assert.Equal(secondLineStatus, acknowledgedLines["010"]);
+        if (rejected)
+        {
+            var supplierReturn = await verifiedDb.SupplierReturnRequests.SingleAsync();
+            Assert.Equal("PO-123", supplierReturn.InboundOrderNo);
+            Assert.Equal("010", supplierReturn.InboundOrderLineNo);
+            Assert.Equal("inspection-010", supplierReturn.InspectionRecordId);
+            var outbound = await verifiedDb.OutboundOrders.Include(x => x.Lines).SingleAsync();
+            Assert.Equal(supplierReturn.SupplierReturnNo, outbound.OutboundOrderNo);
+            Assert.Equal(WmsSourceDocumentTypes.PurchaseReceiptReturn, outbound.SourceDocumentType);
+            Assert.Equal("RCV-123", outbound.SourceDocumentId);
+            var returnLine = Assert.Single(outbound.Lines);
+            Assert.Equal("010", returnLine.LineNo);
+            Assert.Equal("blocked", returnLine.QualityStatus);
+            Assert.Equal(2m, returnLine.RequestedQuantity);
+        }
 
-        async Task DeliverDecisionAsync(string line, string sku, decimal quantity, string eventType, string result, bool throughCap = false)
+        async Task DeliverDecisionAsync(string line, string sku, decimal quantity, string eventType, string result, bool throughCap = false, bool replay = false)
         {
             using var delivery = fixture.Factory.Services.CreateScope();
             var eventId = $"inspection-{line}";
@@ -425,6 +449,18 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
                 "system:quality", eventId,
                 new(eventId, "PLAN", "receiving", "erp", "RCV-123", sku, quantity, result, null, [],
                     RecordedAtUtc: time, SourceDocumentLineId: line, WmsReceiptBatchId: batchId));
+            if (replay)
+            {
+                const string consumer = QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate.ConsumerName;
+                await fixture.ReplayAsync(await fixture.AddLetterAsync(message, consumer), "replayed");
+                await fixture.ReplayAsync(await fixture.AddLetterAsync(message with
+                {
+                    EventId = "rejected-decision-collision",
+                    Payload = message.Payload with { InspectionRecordId = "different-record" },
+                }, consumer), "failed");
+                return;
+            }
+
             if (!throughCap)
             {
                 await delivery.ServiceProvider.GetRequiredService<QualityInspectionResultIntegrationEventHandlerForReleaseWmsInboundGate>()

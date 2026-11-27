@@ -319,6 +319,17 @@
       ]
     },
     {
+      "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpReturnClosurePostgresAcceptanceTests.BlockedStock.cs",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 1,
+          "reason": "Each blocked supplier-return case owns its temporary database and disposes it after all three DbContexts are closed."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpReturnClosurePostgresAcceptanceTests.cs",
       "factoryCallCount": 1,
       "ownerships": [

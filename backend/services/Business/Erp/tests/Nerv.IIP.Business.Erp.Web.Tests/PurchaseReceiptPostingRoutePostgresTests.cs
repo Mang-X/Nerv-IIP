@@ -242,7 +242,11 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
     public Task Bound_completion_acknowledges_restricted_stock_without_rebooking_the_inspected_receipt() =>
         AssertBoundCompletionAsync(inspected: true);
 
-    private static async Task AssertBoundCompletionAsync(bool inspected)
+    [PurchaseReceiptPostgresFact]
+    public Task Bound_completion_acknowledges_blocked_stock_without_rebooking_the_inspected_receipt() =>
+        AssertBoundCompletionAsync(inspected: true, inspectedStockStatus: "blocked");
+
+    private static async Task AssertBoundCompletionAsync(bool inspected, string inspectedStockStatus = "restricted")
     {
         await ErpPostgresLaneDatabase.ResetSchemaAsync();
         await using var provider = CreateConcurrencyProvider();
@@ -302,7 +306,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
         {
             await using var scope = provider.CreateAsyncScope();
             await InboundHandler(scope.ServiceProvider, deadLetters)
-                .HandleCapAsync(Completion(receiptNo, inspected ? "restricted" : "unrestricted"), CancellationToken.None);
+                .HandleCapAsync(Completion(receiptNo, inspected ? inspectedStockStatus : "unrestricted"), CancellationToken.None);
         }
 
         await using var read = provider.CreateAsyncScope();
@@ -312,6 +316,53 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
         Assert.Equal(inspected ? "quality" : "unrestricted", Assert.Single(original.Lines).QualityStatus);
         Assert.Equal(1m, Assert.Single((await LoadOrderAsync(read.ServiceProvider, "PO-bound")).Lines).ReceivedQuantity);
         Assert.Equal(consumer, (await final.ProcessedIntegrationEvents.SingleAsync()).ConsumerName);
+
+        if (inspectedStockStatus == "blocked")
+        {
+            await AssertUninvoicedReturnReversesAccrualAsync(read, original);
+        }
+    }
+
+    private static async Task AssertUninvoicedReturnReversesAccrualAsync(AsyncServiceScope scope, PurchaseReceipt receipt)
+    {
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var coding = scope.ServiceProvider.GetRequiredService<ErpCodingService>();
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        var recorded = new PurchaseReceiptRecordedIntegrationEventConverter()
+            .Convert(new PurchaseReceiptRecordedDomainEvent(receipt));
+        await new PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAccrual(db, deadLetters, coding)
+            .HandleAsync(recorded, CancellationToken.None);
+        await db.SaveChangesAsync();
+
+        var template = InboundEvent("RTS-BOUND", "PO-bound");
+        var shipment = template with
+        {
+            EventType = WmsIntegrationEventTypes.OutboundOrderCompleted,
+            Payload = template.Payload with
+            {
+                SourceDocumentType = WmsSourceDocumentTypes.PurchaseReceiptReturn,
+                SourceDocumentId = receipt.PurchaseReceiptNo,
+            },
+        };
+        var handler = new WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn(db, deadLetters, coding);
+        await handler.HandleAsync(shipment, CancellationToken.None);
+        await db.SaveChangesAsync();
+        await handler.HandleAsync(shipment with { EventId = "duplicate-return", IdempotencyKey = "duplicate-return" }, CancellationToken.None);
+        await db.SaveChangesAsync();
+
+        var returned = await db.PurchaseReturns.Include(x => x.Lines).SingleAsync();
+        Assert.Equal(receipt.PurchaseReceiptNo, returned.PurchaseReceiptNo);
+        Assert.Equal("10", Assert.Single(returned.Lines).PurchaseOrderLineNo);
+        Assert.Equal(12.5m, returned.GrIrReversalAmount);
+        var vouchers = await db.JournalVouchers.Include(x => x.Lines).ToListAsync();
+        Assert.Equal(2, vouchers.Count);
+        var accrual = Assert.Single(vouchers, x => x.SourceNo == receipt.PurchaseReceiptNo);
+        var reversal = Assert.Single(vouchers, x => x.SourceNo == returned.PurchaseReturnNo);
+        Assert.Equal(15.625m, Assert.Single(accrual.Lines, x => x.AccountCode == "GR-IR").LocalCreditAmount);
+        Assert.Equal(15.625m, Assert.Single(reversal.Lines, x => x.AccountCode == "GR-IR").LocalDebitAmount);
+        Assert.Empty(await db.DebitNotes.ToListAsync());
+        Assert.Empty(await db.AccountPayables.ToListAsync());
+        Assert.Empty(await db.PaymentExecutions.ToListAsync());
     }
 
     [PurchaseReceiptPostgresFact]

@@ -48,7 +48,8 @@ public sealed class StockMovementPostedIntegrationEventHandlerForMarkWmsRequestP
                 integrationEvent.Payload.SourceDocumentId,
                 integrationEvent.Payload.SourceDocumentLineId,
                 integrationEvent.Payload.IdempotencyKey,
-                integrationEvent.Payload.InventoryMovementId),
+                integrationEvent.Payload.InventoryMovementId,
+                (integrationEvent.Payload.ProductionDate, integrationEvent.Payload.ExpiryDate)),
             cancellationToken);
     }
 }
