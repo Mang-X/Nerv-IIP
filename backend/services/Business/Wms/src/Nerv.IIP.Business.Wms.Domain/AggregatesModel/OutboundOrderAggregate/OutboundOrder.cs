@@ -29,7 +29,8 @@ public sealed record OutboundOrderLineDraft(
     string OwnerType,
     string? OwnerId,
     DateOnly? ProductionDate = null,
-    DateOnly? ExpiryDate = null);
+    DateOnly? ExpiryDate = null,
+    bool MatchReceiptStockDates = false);
 
 public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
 {
@@ -258,7 +259,8 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
                 line.IssuedQuantity,
                 line.InventoryReservationId,
                 line.ProductionDate,
-                line.ExpiryDate))
+                line.ExpiryDate,
+                matchReceiptStockDates: line.MatchReceiptStockDates))
             .ToArray();
         return requests;
     }
@@ -416,7 +418,8 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
                     line.IssuedQuantity,
                     line.InventoryReservationId,
                     line.ProductionDate,
-                    line.ExpiryDate);
+                    line.ExpiryDate,
+                    matchReceiptStockDates: line.MatchReceiptStockDates);
             })
             .ToArray();
         AdvanceVersion();
@@ -480,6 +483,7 @@ public sealed class OutboundOrderLine : Entity<OutboundOrderLineId>
         OwnerId = WmsText.Optional(draft.OwnerId);
         ProductionDate = draft.ProductionDate;
         ExpiryDate = draft.ExpiryDate;
+        MatchReceiptStockDates = draft.MatchReceiptStockDates;
     }
 
     public string LineNo { get; private set; } = string.Empty;
@@ -494,6 +498,7 @@ public sealed class OutboundOrderLine : Entity<OutboundOrderLineId>
     public string? OwnerId { get; private set; }
     public DateOnly? ProductionDate { get; private set; }
     public DateOnly? ExpiryDate { get; private set; }
+    public bool MatchReceiptStockDates { get; private set; }
     public string? InventoryReservationId { get; private set; }
     public decimal IssuedQuantity { get; private set; }
     public decimal BackorderQuantity { get; private set; }

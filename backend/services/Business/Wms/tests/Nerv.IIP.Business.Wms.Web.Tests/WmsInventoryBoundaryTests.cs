@@ -1249,13 +1249,13 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
-    public async Task Blocked_supplier_return_reserves_the_original_location_and_unlotted_stock()
+    public async Task Authoritative_blocked_supplier_return_reserves_the_original_location_and_unlotted_stock()
     {
         await using var db = CreateContext();
         var outbound = OutboundOrder.Create("org-001", "env-dev", "RTS-001",
             Nerv.IIP.Contracts.Wms.WmsSourceDocumentTypes.PurchaseReceiptReturn, "GR-001", "SITE-01",
             [new OutboundOrderLineDraft("PO-LINE-001", "SKU-001", "kg", 2m, "LOC-STAGE",
-                null, null, "blocked", "company", null)]);
+                null, null, "blocked", "company", null, MatchReceiptStockDates: true)]);
         db.OutboundOrders.Add(outbound);
         await db.SaveChangesAsync();
         var inventory = new FakeWmsInventoryReservationClient("res-original");
@@ -1274,6 +1274,9 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal("LOC-STAGE", reservation.LocationCode);
         Assert.Equal("blocked", reservation.QualityStatus);
         Assert.Null(reservation.LotNo);
+        Assert.True(reservation.MatchReceiptStockDates);
+        Assert.Null(reservation.ProductionDate);
+        Assert.Null(reservation.ExpiryDate);
     }
 
     [Fact]

@@ -197,6 +197,7 @@ public sealed class OutboundOrderLineEntityTypeConfiguration : IEntityTypeConfig
         InboundOrderLineEntityTypeConfiguration.AddLineColumns(builder, "requested_quantity", "Outbound requested quantity.");
         builder.Property(x => x.ProductionDate).HasColumnName("production_date").HasComment("Production date of the original stock posted for a blocked supplier return.");
         builder.Property(x => x.ExpiryDate).HasColumnName("expiry_date").HasComment("Expiry date of the original stock posted for a blocked supplier return.");
+        builder.Property(x => x.MatchReceiptStockDates).HasColumnName("match_receipt_stock_dates").HasComment("Use the exact posted dates for an authoritative rejected receipt return.");
         builder.Property(x => x.PickLocationCode).HasColumnName("pick_location_code").IsRequired().HasMaxLength(100).HasComment("Pick location for outbound stock.");
         builder.Property(x => x.InventoryReservationId).HasColumnName("inventory_reservation_id").HasMaxLength(150).HasComment("Public Inventory reservation id allocated for this outbound line.");
         builder.Property(x => x.IssuedQuantity).HasColumnName("issued_quantity").IsRequired().HasPrecision(18, 6).HasComment("Actual outbound quantity issued after picking and pack review.");
@@ -485,6 +486,9 @@ public sealed class InventoryMovementRequestEntityTypeConfiguration : IEntityTyp
         builder.Property(x => x.InventoryReservationId).HasColumnName("inventory_reservation_id").HasMaxLength(150).HasComment("Optional Inventory reservation id used to allocate outbound stock.");
         builder.Property(x => x.ProductionDate).HasColumnName("production_date").HasComment("Optional production date carried to Inventory for inbound postings.");
         builder.Property(x => x.ExpiryDate).HasColumnName("expiry_date").HasComment("Optional expiry date carried to Inventory for FEFO-managed batches.");
+        builder.Property(x => x.MatchReceiptStockDates).HasColumnName("match_receipt_stock_dates").HasComment("Use exact stock dates for an authoritative rejected receipt or its return.");
+        builder.Property(x => x.PostedProductionDate).HasColumnName("posted_production_date").HasComment("Production date acknowledged by Inventory for the blocked inbound movement.");
+        builder.Property(x => x.PostedExpiryDate).HasColumnName("posted_expiry_date").HasComment("Expiry date acknowledged by Inventory for the blocked inbound movement.");
         builder.Property(x => x.Quantity).HasColumnName("quantity").IsRequired().HasPrecision(18, 6).HasComment("Movement quantity requested from Inventory.");
         builder.Property(x => x.UnitCost).HasColumnName("unit_cost").HasPrecision(18, 6).HasComment("Frozen receipt cost per movement UOM in base currency; null for legacy or unvalued requests.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Posting status for the Inventory request.");

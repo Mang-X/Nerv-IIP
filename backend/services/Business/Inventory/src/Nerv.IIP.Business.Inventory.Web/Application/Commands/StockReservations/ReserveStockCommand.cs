@@ -29,7 +29,8 @@ public sealed record ReserveStockCommand(
     DateOnly? ExpiryDate = null,
     DateOnly? AsOfDate = null,
     bool AllowExpiredStock = false,
-    bool ExpiryOverridePermissionGranted = false) : ICommand<ReserveStockResult>;
+    bool ExpiryOverridePermissionGranted = false,
+    bool MatchReceiptStockDates = false) : ICommand<ReserveStockResult>;
 
 public sealed record ReserveStockResult(
     StockReservationId ReservationId,
@@ -116,7 +117,7 @@ public sealed class ReserveStockCommandHandler(
                 && x.QualityStatus == qualityStatus
                 && x.OwnerType == ownerType
                 && x.OwnerId == request.OwnerId);
-        var exactDates = qualityStatus == StockQualityStatus.Blocked
+        var exactDates = request.MatchReceiptStockDates && qualityStatus == StockQualityStatus.Blocked
             && string.Equals(request.SourceService.Trim(), InventoryMovementSourceServices.Wms, StringComparison.OrdinalIgnoreCase);
         if (exactDates || request.ProductionDate is not null)
         {

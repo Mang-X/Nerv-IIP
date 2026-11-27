@@ -1,4 +1,5 @@
 using MediatR;
+using Nerv.IIP.Business.Inventory.Web.Application.Commands.StockMovements;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
@@ -271,15 +272,23 @@ public sealed partial class ErpReturnClosurePostgresAcceptanceTests
         return new WmsDbContext(options, new NoopMediator());
     }
 
-    private sealed class NoopMediator(Func<MarkInventoryMovementRequestPostedCommand, CancellationToken, Task>? acknowledge = null) : IMediator
+    private sealed class NoopMediator(Func<MarkInventoryMovementRequestPostedCommand, CancellationToken, Task>? acknowledge = null,
+        Func<PostStockMovementCommand, CancellationToken, Task<PostStockMovementResult>>? post = null) : IMediator
     {
         public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
         public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
             where TNotification : INotification => Task.CompletedTask;
 
-        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException("No mediator requests are expected in this acceptance test.");
+        public async Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+        {
+            if (request is PostStockMovementCommand command && post is not null)
+            {
+                return (TResponse)(object)await post(command, cancellationToken);
+            }
+
+            throw new NotSupportedException("Unexpected mediator request in this acceptance test.");
+        }
 
         public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
             where TRequest : IRequest

@@ -447,7 +447,9 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 line.ReceivedQuantity,
                 ProductionDate: line.ProductionDate,
                 ExpiryDate: line.ExpiryDate,
-                unitCost: unitCostsByLine?[line.LineNo]))
+                unitCost: unitCostsByLine?[line.LineNo],
+                matchReceiptStockDates: RequiresErpReceiptAcceptance
+                    && line.ErpReceiptInspectionResult == InboundQualityGateStatuses.Rejected))
             .ToArray();
         if (!RequiresErpReceiptAcceptance)
         {

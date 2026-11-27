@@ -109,7 +109,8 @@ public sealed record InventoryMovementRequestedPayload(
     DateOnly? ProductionDate = null,
     DateOnly? ExpiryDate = null,
     int? ShelfLifeDays = null,
-    string? UnitCostAuthorityReference = null);
+    string? UnitCostAuthorityReference = null,
+    bool MatchReceiptStockDates = false);
 
 public sealed record InventoryReservationReleaseRequestedIntegrationEvent(
     string EventId,

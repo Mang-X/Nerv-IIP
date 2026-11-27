@@ -660,6 +660,11 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("lot_no")
                         .HasComment("Optional lot number.");
 
+                    b.Property<bool>("MatchReceiptStockDates")
+                        .HasColumnType("boolean")
+                        .HasColumnName("match_receipt_stock_dates")
+                        .HasComment("Use exact stock dates for an authoritative rejected receipt or its return.");
+
                     b.Property<string>("MovementType")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -691,6 +696,16 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("posted_at_utc")
                         .HasComment("UTC posted time.");
+
+                    b.Property<DateOnly?>("PostedExpiryDate")
+                        .HasColumnType("date")
+                        .HasColumnName("posted_expiry_date")
+                        .HasComment("Expiry date acknowledged by Inventory for the blocked inbound movement.");
+
+                    b.Property<DateOnly?>("PostedProductionDate")
+                        .HasColumnType("date")
+                        .HasColumnName("posted_production_date")
+                        .HasComment("Production date acknowledged by Inventory for the blocked inbound movement.");
 
                     b.Property<DateOnly?>("ProductionDate")
                         .HasColumnType("date")
@@ -944,6 +959,11 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("lot_no")
                         .HasComment("Optional lot number.");
+
+                    b.Property<bool>("MatchReceiptStockDates")
+                        .HasColumnType("boolean")
+                        .HasColumnName("match_receipt_stock_dates")
+                        .HasComment("Use the exact posted dates for an authoritative rejected receipt return.");
 
                     b.Property<Guid>("OutboundOrderId")
                         .HasColumnType("uuid")

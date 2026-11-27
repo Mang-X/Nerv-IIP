@@ -8,7 +8,7 @@ internal static class SupplierReturnOutbound
 {
     public static OutboundOrder Create(
         SupplierReturnRequest supplierReturn, string sourceDocumentId, string qualityStatus,
-        DateOnly? productionDate = null, DateOnly? expiryDate = null)
+        DateOnly? productionDate = null, DateOnly? expiryDate = null, bool matchReceiptStockDates = false)
     {
         return OutboundOrder.Create(
             supplierReturn.OrganizationId,
@@ -29,6 +29,7 @@ internal static class SupplierReturnOutbound
                 supplierReturn.OwnerType,
                 supplierReturn.OwnerId,
                 productionDate,
-                expiryDate)]);
+                expiryDate,
+                matchReceiptStockDates)]);
     }
 }

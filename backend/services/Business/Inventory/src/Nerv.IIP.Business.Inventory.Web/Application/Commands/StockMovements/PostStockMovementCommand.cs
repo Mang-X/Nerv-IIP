@@ -36,7 +36,8 @@ public sealed record PostStockMovementCommand(
     bool ExpiryOverridePermissionGranted = false,
     string? TransferInSiteCode = null,
     string? TransferInLocationCode = null,
-    decimal? TransferInQuantity = null) : ICommand<PostStockMovementResult>;
+    decimal? TransferInQuantity = null,
+    bool MatchReceiptStockDates = false) : ICommand<PostStockMovementResult>;
 
 public sealed record PostStockMovementResult(
     StockMovementId MovementId,
@@ -117,7 +118,7 @@ public sealed class PostStockMovementCommandHandler(
                     "库存移动幂等键与已有流水内容冲突，请更换幂等键。");
             }
 
-            var existingLedger = await FindLedgerAsync(existingMovement, cancellationToken);
+            var existingLedger = await FindLedgerAsync(existingMovement, cancellationToken, UsesExactReceiptDates(request, existingMovement));
             if (!isTransfer)
             {
                 return new PostStockMovementResult(
@@ -158,7 +159,8 @@ public sealed class PostStockMovementCommandHandler(
         }
 
         var provenance = ResolveExpiryProvenance(requestWithShelfLife);
-        var ledger = await GetOrCreateLedgerAsync(movement, provenance.ShelfLifeDays, provenance.Source, cancellationToken);
+        var ledger = await GetOrCreateLedgerAsync(movement, provenance.ShelfLifeDays, provenance.Source, cancellationToken,
+            UsesExactReceiptDates(request, movement));
         if (request.Quantity < 0 && ledger.IsExpired(GetBusinessDate(request)) && !HasExpiredStockOverride(request.AllowExpiredStock, request.ExpiryOverridePermissionGranted))
         {
             throw new InventoryPostingRejectedException(
@@ -278,10 +280,11 @@ public sealed class PostStockMovementCommandHandler(
 
     private static bool UsesSkuShelfLifeDefault(PostStockMovementCommand request, StockMovement movement) =>
         request.ProductionDate is not null && request.ExpiryDate is null && request.ShelfLifeDays is null
-        && !(movement.MovementType == InventoryMovementTypes.Outbound && UsesExactWmsBlockedDates(movement));
+        && !(movement.MovementType == InventoryMovementTypes.Outbound && UsesExactReceiptDates(request, movement));
 
-    private static bool UsesExactWmsBlockedDates(StockMovement movement) =>
-        movement.QualityStatus == StockQualityStatus.Blocked
+    private static bool UsesExactReceiptDates(PostStockMovementCommand request, StockMovement movement) =>
+        request.MatchReceiptStockDates
+        && movement.QualityStatus == StockQualityStatus.Blocked
         && string.Equals(movement.SourceService, InventoryMovementSourceServices.Wms, StringComparison.OrdinalIgnoreCase)
         && movement.MovementType is InventoryMovementTypes.Inbound or InventoryMovementTypes.Outbound;
 
@@ -306,7 +309,7 @@ public sealed class PostStockMovementCommandHandler(
             : request;
     }
 
-    private Task<StockLedger?> FindLedgerAsync(StockMovement movement, CancellationToken cancellationToken)
+    private Task<StockLedger?> FindLedgerAsync(StockMovement movement, CancellationToken cancellationToken, bool exactDates = false)
     {
         var query = dbContext.StockLedgers.Where(
             x => x.OrganizationId == movement.OrganizationId
@@ -320,7 +323,6 @@ public sealed class PostStockMovementCommandHandler(
                 && x.QualityStatus == movement.QualityStatus
                 && x.OwnerType == movement.OwnerType
                 && x.OwnerId == movement.OwnerId);
-        var exactDates = UsesExactWmsBlockedDates(movement);
         if (exactDates || movement.ProductionDate is not null)
         {
             query = query.Where(x => x.ProductionDate == movement.ProductionDate);
@@ -338,9 +340,10 @@ public sealed class PostStockMovementCommandHandler(
         StockMovement movement,
         int? shelfLifeDays,
         string? expiryDateSource,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool exactDates = false)
     {
-        var ledger = await FindLedgerAsync(movement, cancellationToken);
+        var ledger = await FindLedgerAsync(movement, cancellationToken, exactDates);
         if (ledger is not null)
         {
             if (movement.Quantity > 0)

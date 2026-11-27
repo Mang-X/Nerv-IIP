@@ -819,8 +819,7 @@ public sealed class CreatePickingTaskCommandHandler(
             ?? throw new KnownException($"未找到出库单，出库单 ID = {request.OutboundOrderId}");
         var line = outbound.Lines.SingleOrDefault(x => x.LineNo == request.LineNo)
             ?? throw new KnownException($"未找到出库行，行号 = {request.LineNo}");
-        var blockedSupplierReturn = outbound.SourceDocumentType == WmsSourceDocumentTypes.PurchaseReceiptReturn
-            && line.QualityStatus == InventoryQualityStatuses.Blocked;
+        var blockedSupplierReturn = line.MatchReceiptStockDates;
         if (blockedSupplierReturn && WmsText.Required(request.FromLocationCode, nameof(request.FromLocationCode)) != line.PickLocationCode)
         {
             throw new KnownException("退供拣货必须使用原收货过账库位。");
@@ -966,7 +965,8 @@ public sealed class CreatePickingTaskCommandHandler(
                 line.OwnerId,
                 quantity,
                 line.ProductionDate,
-                line.ExpiryDate),
+                line.ExpiryDate,
+                MatchReceiptStockDates: line.MatchReceiptStockDates),
             cancellationToken);
         return new PickingReservationResult(reservation.ReservationId, fromLocationCode, reservation.LotNo ?? line.LotNo, line.SerialNo);
     }
@@ -2286,7 +2286,8 @@ public sealed class RetryOutboundInventoryPostingCommandHandler(
                     line.OwnerId,
                     line.IssuedQuantity,
                     line.ProductionDate,
-                    line.ExpiryDate),
+                    line.ExpiryDate,
+                    MatchReceiptStockDates: line.MatchReceiptStockDates),
                 cancellationToken)).ReservationId;
 
             reservationIds[line.LineNo] = reservationId;
@@ -2778,7 +2779,7 @@ public sealed class MarkInventoryMovementRequestPostedCommandHandler(Application
                 dbContext.SupplierReturnRequests.Add(supplierReturn);
                 dbContext.OutboundOrders.Add(SupplierReturnOutbound.Create(
                     supplierReturn, inbound.ErpPurchaseReceiptNo!, InventoryQualityStatuses.Blocked,
-                    original.ProductionDate, original.ExpiryDate));
+                    original.PostedProductionDate, original.PostedExpiryDate, matchReceiptStockDates: true));
             }
         }
     }

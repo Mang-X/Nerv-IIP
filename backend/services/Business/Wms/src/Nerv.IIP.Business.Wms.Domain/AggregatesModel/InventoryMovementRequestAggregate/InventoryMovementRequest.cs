@@ -38,7 +38,8 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         DateOnly? productionDate,
         DateOnly? expiryDate,
         bool publishCreatedEvent = true,
-        decimal? unitCost = null)
+        decimal? unitCost = null,
+        bool matchReceiptStockDates = false)
     {
         OrganizationId = WmsText.Required(organizationId, nameof(organizationId));
         EnvironmentId = WmsText.Required(environmentId, nameof(environmentId));
@@ -60,6 +61,7 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         InventoryReservationId = WmsText.Optional(inventoryReservationId);
         ProductionDate = productionDate;
         ExpiryDate = expiryDate;
+        MatchReceiptStockDates = matchReceiptStockDates;
         Status = InventoryMovementRequestStatus.Pending;
         CreatedAtUtc = DateTime.UtcNow;
         if (publishCreatedEvent)
@@ -86,6 +88,9 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
     public string? InventoryReservationId { get; private set; }
     public DateOnly? ProductionDate { get; private set; }
     public DateOnly? ExpiryDate { get; private set; }
+    public bool MatchReceiptStockDates { get; private set; }
+    public DateOnly? PostedProductionDate { get; private set; }
+    public DateOnly? PostedExpiryDate { get; private set; }
     /// <summary>
     /// Signed movement quantity sent to Inventory. Inbound increases stock, outbound decreases stock,
     /// and count-adjustment uses the counted-minus-expected variance.
@@ -119,7 +124,8 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         string? inventoryReservationId = null,
         DateOnly? ProductionDate = null,
         DateOnly? ExpiryDate = null,
-        decimal? unitCost = null)
+        decimal? unitCost = null,
+        bool matchReceiptStockDates = false)
     {
         return new InventoryMovementRequest(
             organizationId,
@@ -141,7 +147,8 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
             inventoryReservationId,
             ProductionDate,
             ExpiryDate,
-            unitCost: unitCost);
+            unitCost: unitCost,
+            matchReceiptStockDates: matchReceiptStockDates);
     }
 
     public static InventoryMovementRequest RecordCountApprovalPending(
@@ -250,8 +257,8 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
 
         if (postedDates is { } dates)
         {
-            ProductionDate = dates.ProductionDate;
-            ExpiryDate = dates.ExpiryDate;
+            PostedProductionDate = dates.ProductionDate;
+            PostedExpiryDate = dates.ExpiryDate;
         }
 
         InventoryMovementId = requiredMovementId;
