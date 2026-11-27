@@ -10,6 +10,7 @@ using Nerv.IIP.Business.Erp.Web;
 using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.Auth;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
+using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Erp.Web.Application.MasterData;
@@ -93,6 +94,8 @@ try
     builder.Services.AddScoped<OperationLaborSettlementOrchestrator>();
     builder.Services.AddScoped<OperationMachineOverheadSettlementOrchestrator>();
     builder.Services.AddScoped<ErpCodingService>();
+    builder.Services.Configure<ErpPurchaseOrderReceivingOptions>(
+        builder.Configuration.GetSection(ErpPurchaseOrderReceivingOptions.SectionName));
     builder.Services.AddScoped<SalesOrderDemandDemoSeedService>();
     builder.Services.AddScoped<WalkthroughSeedService>();
     builder.Services.AddInMemoryDistributedLock();

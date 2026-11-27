@@ -35,7 +35,11 @@ public sealed record PurchaseOrderReleasedV2Payload(
     string PurchaseOrderNo,
     string SupplierCode,
     string SiteCode,
-    IReadOnlyList<PurchaseOrderReleasedV2LinePayload> Lines);
+    IReadOnlyList<PurchaseOrderReleasedV2LinePayload> Lines)
+{
+    // Older release snapshots predate the opt-in and retain Direct authority.
+    public PurchaseReceiptInventoryPostingRoute ReceivingAuthority { get; init; } = PurchaseReceiptInventoryPostingRoute.Direct;
+}
 
 /// <summary>采购订单原始行号及下达时承诺的采购数量与交期。</summary>
 public sealed record PurchaseOrderReleasedV2LinePayload(

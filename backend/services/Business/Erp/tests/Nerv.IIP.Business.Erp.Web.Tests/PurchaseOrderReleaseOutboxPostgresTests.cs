@@ -1,11 +1,19 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text.Json;
+using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Infrastructure;
+using Nerv.IIP.Business.Erp.Web.Application.Approval;
+using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.Erp;
@@ -29,23 +37,48 @@ public sealed class PurchaseOrderReleaseOutboxPostgresTests
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
             await db.Database.MigrateAsync();
-            var order = PurchaseOrder.Create("org-001", "env-tenant", "PO-001", "SUP-001", "SITE-01",
+            await scope.ServiceProvider.GetRequiredService<ISender>().Send(new CreatePurchaseOrderCommand(
+                "org-001", "env-tenant", "PO-001", "SUP-001", "SITE-01",
                 [
-                    new PurchaseOrderLineDraft("20", "SKU-001", "kg", 2.75m, 4m, new DateOnly(2026, 12, 2)),
-                    new PurchaseOrderLineDraft("10", "SKU-001", "kg", 3.5m, 2m, new DateOnly(2026, 12, 1)),
-                ]);
-            order.MarkApprovalRequested("chain-001");
-            db.PurchaseOrders.Add(order);
-            await db.SaveChangesAsync();
+                    new("20", "SKU-001", "kg", 2.75m, 4m, new DateOnly(2026, 12, 2)),
+                    new("10", "SKU-001", "kg", 3.5m, 2m, new DateOnly(2026, 12, 1)),
+                ]));
         }
 
         await ApplyApprovalAsync(factory);
         await ApplyApprovalAsync(factory);
 
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        foreach (var route in new[] { "direct", "wms" })
+        {
+            using var response = await client.PostAsJsonAsync("/api/business/v1/erp/purchase-receipts", new
+            {
+                organizationId = "org-001",
+                environmentId = "env-tenant",
+                purchaseOrderNo = "PO-001",
+                purchaseReceiptNo = "RCV-NEW",
+                idempotencyKey = "new-erp-receipt",
+                inventoryPostingRoute = route,
+                lines = new[] { new { purchaseOrderLineNo = "10", receivedQuantity = 1m,
+                    qualityStatus = "unrestricted", locationCode = "RAW-A-01" } },
+            });
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var body = await response.Content.ReadFromJsonAsync<JsonDocument>();
+            Assert.NotNull(body);
+            Assert.False(body.RootElement.GetProperty("success").GetBoolean());
+            Assert.Equal("该采购订单由 WMS 收货，请在 WMS 完成收货。", body.RootElement.GetProperty("message").GetString());
+        }
+
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            Assert.Equal(PurchaseOrderStatus.Released, (await db.PurchaseOrders.SingleAsync()).Status);
+            var order = await db.PurchaseOrders.Include(x => x.Lines).SingleAsync();
+            Assert.Equal(PurchaseOrderStatus.Released, order.Status);
+            Assert.Equal(PurchaseReceiptInventoryPostingRoute.Wms, order.ReceivingAuthority);
+            Assert.All(order.Lines, line => Assert.Equal(0m, line.ReceivedQuantity));
+            Assert.Empty(await db.PurchaseReceipts.ToListAsync());
+            Assert.Empty(await db.CodeIdempotencyKeys.ToListAsync());
             Assert.Equal(1, await db.ProcessedIntegrationEvents.CountAsync());
             var snapshot = Assert.Single(await ReadEventsAsync(db, Topic));
             var legacy = Assert.Single(await ReadEventsAsync(db, LegacyTopic));
@@ -75,6 +108,7 @@ public sealed class PurchaseOrderReleaseOutboxPostgresTests
             Assert.Equal("PO-001", payload.GetProperty("PurchaseOrderNo").GetString());
             Assert.Equal("SUP-001", payload.GetProperty("SupplierCode").GetString());
             Assert.Equal("SITE-01", payload.GetProperty("SiteCode").GetString());
+            Assert.Equal("wms", payload.GetProperty("ReceivingAuthority").GetString());
             Assert.Collection(payload.GetProperty("Lines").EnumerateArray(),
                 line => AssertLine(line, "10", 3.5m, "2026-12-01"),
                 line => AssertLine(line, "20", 2.75m, "2026-12-02"));
@@ -173,6 +207,9 @@ public sealed class PurchaseOrderReleaseOutboxPostgresTests
             ["Approval:BaseUrl"] = "https://approval.test",
             ["MasterData:BaseUrl"] = "https://master-data.test",
             ["Wms:BaseUrl"] = "https://wms.test",
+            ["PurchaseOrderReceiving:WmsScopes:0:OrganizationId"] = "org-001",
+            ["PurchaseOrderReceiving:WmsScopes:0:EnvironmentId"] = "env-tenant",
+            ["PurchaseOrderReceiving:WmsScopes:0:SiteCode"] = "SITE-01",
         };
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -183,7 +220,19 @@ public sealed class PurchaseOrderReleaseOutboxPostgresTests
             }
 
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(settings));
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IPurchaseOrderApprovalClient>();
+                services.AddSingleton<IPurchaseOrderApprovalClient, TestApprovalClient>();
+            });
         });
+    }
+
+    private sealed class TestApprovalClient : IPurchaseOrderApprovalClient
+    {
+        public Task<PurchaseOrderApprovalResult> StartApprovalAsync(
+            PurchaseOrderApprovalRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(new PurchaseOrderApprovalResult("chain-001"));
     }
 }
 

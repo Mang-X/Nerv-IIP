@@ -176,15 +176,14 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurc
 
         try
         {
-            await new RecordPurchaseReceiptCommandHandler(dbContext, codingService).Handle(
+            await new RecordPurchaseReceiptCommandHandler(dbContext, codingService).HandleWmsCompletionAsync(
                 new RecordPurchaseReceiptCommand(
                     integrationEvent.OrganizationId,
                     integrationEvent.EnvironmentId,
                     purchaseReceiptNo,
                     purchaseOrderNo,
                     receiptLines,
-                    $"{ConsumerName}:{integrationEvent.IdempotencyKey}",
-                    InventoryPostingRoute: PurchaseReceiptInventoryPostingRoute.Wms),
+                    $"{ConsumerName}:{integrationEvent.IdempotencyKey}"),
                 cancellationToken);
         }
         catch (Exception exception) when (exception is KnownException or ArgumentException or InvalidOperationException)

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
@@ -167,7 +168,8 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandValidator :
 public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
     ApplicationDbContext dbContext,
     ErpCodingService? codingService = null,
-    IPurchaseOrderApprovalClient? approvalClient = null)
+    IPurchaseOrderApprovalClient? approvalClient = null,
+    IOptions<ErpPurchaseOrderReceivingOptions>? receiving = null)
     : ICommandHandler<ConvertPurchaseRequisitionsToPurchaseOrderCommand, ConvertPurchaseRequisitionsToPurchaseOrderResult>
 {
     private const string RequisitionLineNo = "10";
@@ -337,7 +339,9 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderCommandHandler(
             supplierCode,
             siteCodes[0],
             request.CurrencyCode,
-            lineDrafts);
+            lineDrafts,
+            receiving?.Value.Resolve(request.OrganizationId, request.EnvironmentId, siteCodes[0])
+                ?? PurchaseReceiptInventoryPostingRoute.Direct);
         var approvalResult = await _approvalClient.StartApprovalAsync(
             new PurchaseOrderApprovalRequest(
                 request.OrganizationId,
@@ -719,7 +723,8 @@ public sealed class CreatePurchaseOrderCommandValidator : AbstractValidator<Crea
 public sealed class CreatePurchaseOrderCommandHandler(
     ApplicationDbContext dbContext,
     ErpCodingService? codingService = null,
-    IPurchaseOrderApprovalClient? approvalClient = null)
+    IPurchaseOrderApprovalClient? approvalClient = null,
+    IOptions<ErpPurchaseOrderReceivingOptions>? receiving = null)
     : ICommandHandler<CreatePurchaseOrderCommand, PurchaseOrderId>
 {
     private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
@@ -774,7 +779,9 @@ public sealed class CreatePurchaseOrderCommandHandler(
             request.SupplierCode,
             request.SiteCode,
             request.CurrencyCode,
-            request.Lines.Select(x => new PurchaseOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.Quantity, x.UnitPrice, x.PromisedDate)));
+            request.Lines.Select(x => new PurchaseOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.Quantity, x.UnitPrice, x.PromisedDate)),
+            receiving?.Value.Resolve(request.OrganizationId, request.EnvironmentId, request.SiteCode)
+                ?? PurchaseReceiptInventoryPostingRoute.Direct);
         var approvalResult = await _approvalClient.StartApprovalAsync(
             new PurchaseOrderApprovalRequest(
                 request.OrganizationId,
@@ -860,7 +867,16 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
 {
     private readonly ErpCodingService _codingService = codingService ?? new ErpCodingService();
 
-    public async Task<RecordPurchaseReceiptResult> Handle(RecordPurchaseReceiptCommand request, CancellationToken cancellationToken)
+    public Task<RecordPurchaseReceiptResult> Handle(RecordPurchaseReceiptCommand request, CancellationToken cancellationToken) =>
+        RecordAsync(request, fromWmsCompletion: false, cancellationToken);
+
+    internal Task<RecordPurchaseReceiptResult> HandleWmsCompletionAsync(
+        RecordPurchaseReceiptCommand request, CancellationToken cancellationToken) =>
+        RecordAsync(request with { InventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Wms },
+            fromWmsCompletion: true, cancellationToken);
+
+    private async Task<RecordPurchaseReceiptResult> RecordAsync(
+        RecordPurchaseReceiptCommand request, bool fromWmsCompletion, CancellationToken cancellationToken)
     {
         // Direct 保留旧指纹，使升级前的幂等键仍可重放；WMS 显式绑定不同路径。
         var fingerprint = ErpCodingService.Fingerprint(request.PurchaseOrderNo, request.ExchangeRate, request.Lines.Select(x => $"{x.PurchaseOrderLineNo}:{x.ReceivedQuantity}:{x.QualityStatus}:{x.FinalDelivery}"));
@@ -868,21 +884,12 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
         {
             fingerprint = ErpCodingService.Fingerprint(fingerprint, request.InventoryPostingRoute);
         }
-        var allocation = await _codingService.AllocateAsync(
-            request.OrganizationId,
-            request.EnvironmentId, "purchase-receipt",
-            request.PurchaseReceiptNo,
-            request.IdempotencyKey,
-            fingerprint,
-            cancellationToken);
-        if (allocation.IsIdempotentReplay)
+        var replay = await _codingService.TryPeekReplayAsync(
+            request.OrganizationId, request.EnvironmentId, "purchase-receipt",
+            request.IdempotencyKey, fingerprint, cancellationToken);
+        if (replay is not null)
         {
-            var replayed = await dbContext.PurchaseReceipts.SingleAsync(x =>
-                x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.PurchaseReceiptNo == allocation.Code,
-                cancellationToken);
-            return new RecordPurchaseReceiptResult(replayed.Id, replayed.PurchaseReceiptNo);
+            return await ReadReplayAsync(request, replay.Code, cancellationToken);
         }
 
         var order = await dbContext.PurchaseOrders
@@ -893,6 +900,23 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
                 && x.PurchaseOrderNo == request.PurchaseOrderNo,
                 cancellationToken)
             ?? throw new KnownException($"采购订单『{request.PurchaseOrderNo}』不存在。");
+
+        if (!fromWmsCompletion && order.ReceivingAuthority == PurchaseReceiptInventoryPostingRoute.Wms)
+        {
+            throw new KnownException("该采购订单由 WMS 收货，请在 WMS 完成收货。");
+        }
+
+        var allocation = await _codingService.AllocateAsync(
+            request.OrganizationId,
+            request.EnvironmentId, "purchase-receipt",
+            request.PurchaseReceiptNo,
+            request.IdempotencyKey,
+            fingerprint,
+            cancellationToken);
+        if (allocation.IsIdempotentReplay)
+        {
+            return await ReadReplayAsync(request, allocation.Code, cancellationToken);
+        }
 
         PurchaseReceipt receipt;
         try
@@ -911,6 +935,17 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
 
         dbContext.PurchaseReceipts.Add(receipt);
         return new RecordPurchaseReceiptResult(receipt.Id, receipt.PurchaseReceiptNo);
+    }
+
+    private async Task<RecordPurchaseReceiptResult> ReadReplayAsync(
+        RecordPurchaseReceiptCommand request, string code, CancellationToken cancellationToken)
+    {
+        var replayed = await dbContext.PurchaseReceipts.SingleAsync(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.PurchaseReceiptNo == code,
+            cancellationToken);
+        return new RecordPurchaseReceiptResult(replayed.Id, replayed.PurchaseReceiptNo);
     }
 }
 

@@ -1601,6 +1601,15 @@ namespace Nerv.IIP.Business.Erp.Infrastructure.Migrations
                         .HasColumnName("purchase_order_no")
                         .HasComment("Purchase order number.");
 
+                    b.Property<string>("ReceivingAuthority")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Direct")
+                        .HasColumnName("receiving_authority")
+                        .HasComment("Immutable receiving authority determined when the purchase order is created.");
+
                     b.Property<string>("SiteCode")
                         .IsRequired()
                         .HasMaxLength(100)
