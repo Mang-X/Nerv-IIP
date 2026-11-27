@@ -16,6 +16,23 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayOpenApiTests
 {
     [Fact]
+    public async Task Mes_engineering_change_impacts_openapi_exposes_only_public_filters_and_valid_dispositions()
+    {
+        using var document = JsonDocument.Parse(await BusinessGatewayTestHost.GetOpenApiDocumentAsync());
+        var operation = document.RootElement.GetProperty("paths")
+            .GetProperty("/api/business-console/v1/mes/work-order-engineering-change-impacts").GetProperty("get");
+        Assert.Equal("listBusinessConsoleMesEngineeringChangeWorkOrderImpacts", operation.GetProperty("operationId").GetString());
+        Assert.Equal(
+            ["changeNumber", "environmentId", "organizationId", "scopeId", "scopeKind", "skip", "take", "workOrderId"],
+            operation.GetProperty("parameters").EnumerateArray()
+                .Select(parameter => parameter.GetProperty("name").GetString()).Order(StringComparer.Ordinal));
+        AssertStringEnumSchema(
+            document,
+            "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeDisposition",
+            "pending-decision", "auto-rebound", "blocked-for-manual-confirmation", "continue-with-archived-version", "abort-work-order");
+    }
+
+    [Fact]
     public async Task Code_rule_segment_type_remains_optional_in_v1_openapi()
     {
         using var document = JsonDocument.Parse(await BusinessGatewayTestHost.GetOpenApiDocumentAsync());

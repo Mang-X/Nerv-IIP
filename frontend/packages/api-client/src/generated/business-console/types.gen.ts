@@ -6153,6 +6153,30 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     deviceAssetName?: string | null;
 };
 
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesEngineeringChangeImpactsResponse = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeImpactsResponse | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeImpactsResponse = {
+    items: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeImpact>;
+    total: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeImpact = {
+    changeNumber: string;
+    workOrderId: string;
+    disposition: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeDisposition;
+    decidedBy?: string | null;
+    decidedAtUtc?: string | null;
+    decisionReason?: string | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeDisposition = 'pending-decision' | 'auto-rebound' | 'blocked-for-manual-confirmation' | 'continue-with-archived-version' | 'abort-work-order';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMesEngineeringChangeImpactsRequest = {
+    [key: string]: never;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfLineSideInventoryBalancesResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipContractsInventoryLineSideInventoryBalancesResponse | null;
 };
@@ -20041,6 +20065,51 @@ export type ListBusinessConsoleMesCapacityImpactsResponses = {
 };
 
 export type ListBusinessConsoleMesCapacityImpactsResponse = ListBusinessConsoleMesCapacityImpactsResponses[keyof ListBusinessConsoleMesCapacityImpactsResponses];
+
+export type ListBusinessConsoleMesEngineeringChangeWorkOrderImpactsData = {
+    body?: never;
+    path?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+        changeNumber?: string | null;
+        workOrderId?: string | null;
+        skip?: number;
+        take?: number;
+        scopeKind?: string | null;
+        scopeId?: string | null;
+    };
+    url: '/api/business-console/v1/mes/work-order-engineering-change-impacts';
+};
+
+export type ListBusinessConsoleMesEngineeringChangeWorkOrderImpactsErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: NetCorePalExtensionsDtoResponseData;
+    502: NetCorePalExtensionsDtoResponseData;
+    503: NetCorePalExtensionsDtoResponseData;
+    504: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ListBusinessConsoleMesEngineeringChangeWorkOrderImpactsError = ListBusinessConsoleMesEngineeringChangeWorkOrderImpactsErrors[keyof ListBusinessConsoleMesEngineeringChangeWorkOrderImpactsErrors];
+
+export type ListBusinessConsoleMesEngineeringChangeWorkOrderImpactsResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleMesEngineeringChangeImpactsResponse;
+};
+
+export type ListBusinessConsoleMesEngineeringChangeWorkOrderImpactsResponse = ListBusinessConsoleMesEngineeringChangeWorkOrderImpactsResponses[keyof ListBusinessConsoleMesEngineeringChangeWorkOrderImpactsResponses];
 
 export type ListBusinessConsoleMesLineSideInventoryBalancesData = {
     body?: never;
