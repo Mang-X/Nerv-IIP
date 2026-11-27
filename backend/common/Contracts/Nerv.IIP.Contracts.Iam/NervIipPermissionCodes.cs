@@ -17,6 +17,7 @@ public static class NervIipPermissionCodes
     public const string InternalApprovalChainsReadGateway = "internal.approval-chains.read-gateway";
     public const string InternalApprovalChainsListGateway = "internal.approval-chains.list-gateway";
     public const string InternalGatewayCacheInvalidate = "internal.gateway-cache.invalidate";
+    public const string InternalMasterDataApprovalDepartmentRead = "internal.masterdata.approval-department.read";
 
     // iam.*
     public const string IamUsersRead = "iam.users.read";

@@ -20,6 +20,7 @@ public static class IamPermissionCatalog
         [NervIipPermissionCodes.InternalApprovalChainsReadGateway] = "Read approval chain details from the scoped BusinessGateway caller.",
         [NervIipPermissionCodes.InternalApprovalChainsListGateway] = "List approval chains, pending tasks and decisions from the scoped BusinessGateway caller.",
         [NervIipPermissionCodes.InternalGatewayCacheInvalidate] = "Invalidate one organization/environment of PlatformGateway read caches via a scoped internal caller.",
+        [NervIipPermissionCodes.InternalMasterDataApprovalDepartmentRead] = "Read an approval actor’s department from MasterData as a scoped Approval caller.",
         [NervIipPermissionCodes.IamUsersRead] = "Read IAM users.",
         [NervIipPermissionCodes.IamUsersManage] = "Create, update, disable and reset IAM users.",
         [NervIipPermissionCodes.IamRolesRead] = "Read IAM roles and permission catalog.",

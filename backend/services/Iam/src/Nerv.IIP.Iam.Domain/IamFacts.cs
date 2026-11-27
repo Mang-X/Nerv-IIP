@@ -124,6 +124,7 @@ public static class NervIipSeedPermissions
         "internal.approval-chains.read-gateway",
         "internal.approval-chains.list-gateway",
         "internal.gateway-cache.invalidate",
+        "internal.masterdata.approval-department.read",
         "iam.users.read",
         "iam.users.manage",
         "iam.roles.read",

@@ -20,6 +20,38 @@ public sealed class PrincipalWorkContextQueryTests
     private const string EnvironmentId = "env-dev";
     private static readonly DateOnly EffectiveFrom = new(2020, 1, 1);
 
+    [Theory]
+    [InlineData("org-001", "env-dev", "user-active", "DEPT-A")]
+    [InlineData("org-001", "env-dev", "user-on-leave", null)]
+    [InlineData("org-001", "env-dev", "user-ambiguous", null)]
+    [InlineData("org-001", "env-dev", "user-disabled", null)]
+    [InlineData("org-001", "env-dev", "user-missing", null)]
+    [InlineData("org-002", "env-dev", "user-active", null)]
+    [InlineData("org-001", "env-other", "user-active", null)]
+    public async Task Approval_department_requires_one_enabled_active_worker_in_the_selected_scope(
+        string organizationId, string environmentId, string userId, string? departmentId)
+    {
+        await using var db = CreateDbContext();
+        Worker AddWorker(string code, string user, string status = Worker.StatusActive)
+        {
+            var worker = Worker.Create(OrganizationId, EnvironmentId, code, code, user, "DEPT-A", null, status, null);
+            db.Workers.Add(worker);
+            return worker;
+        }
+
+        AddWorker("EMP-A", "user-active");
+        AddWorker("EMP-B", "user-on-leave", Worker.StatusOnLeave);
+        AddWorker("EMP-C", "user-ambiguous");
+        AddWorker("EMP-D", "user-ambiguous", Worker.StatusResigned);
+        AddWorker("EMP-E", "user-disabled").Disable("Disabled fixture");
+        await db.SaveChangesAsync();
+
+        var result = await new GetApprovalPrincipalDepartmentQueryHandler(db).Handle(
+            new GetApprovalPrincipalDepartmentQuery(organizationId, environmentId, userId), CancellationToken.None);
+
+        Assert.Equal(departmentId, result.DepartmentId);
+    }
+
     [Fact]
     public async Task Current_worker_context_returns_multi_team_work_center_and_shift_names()
     {

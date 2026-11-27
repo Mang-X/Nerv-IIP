@@ -30,6 +30,7 @@
 - `internal.approval-chains.read-product-engineering`
 - `internal.approval-chains.read-quality`
 - `internal.gateway-cache.invalidate`
+- `internal.masterdata.approval-department.read`
 - `iam.users.read`
 - `iam.users.manage`
 - `iam.roles.read`
