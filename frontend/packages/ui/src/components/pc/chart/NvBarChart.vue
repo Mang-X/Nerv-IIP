@@ -38,7 +38,10 @@ const colors = computed(() => props.series.map((s, i) => s.color ?? palette[i % 
 
 const x = (_d: Row, i: number) => i
 const yAccessors = computed(() => props.series.map((s) => (d: Row) => Number(d[s.key])))
-const xTickFormat = (i: number) => String(props.data[i]?.[props.xKey] ?? '')
+const xTickFormat = computed(() => {
+  const labels = props.data.map((row) => String(row[props.xKey] ?? ''))
+  return (i: number) => labels[i] ?? ''
+})
 const tooltipTemplate = (d: Row) => {
   const rows = props.series
     .map(
@@ -84,7 +87,7 @@ const tooltipTemplate = (d: Row) => {
         :domain-line="false"
       />
       <VisAxis type="y" :num-ticks="4" :tick-line="false" :domain-line="false" />
-      <VisCrosshair :x="x" :color="colors" :template="tooltipTemplate" />
+      <VisCrosshair :x="x" :y="yAccessors" :color="colors" :template="tooltipTemplate" />
       <VisTooltip />
     </VisXYContainer>
   </div>

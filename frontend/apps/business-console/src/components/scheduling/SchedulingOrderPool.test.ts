@@ -86,6 +86,23 @@ describe('SchedulingOrderPool 搜索 (#1399 M5)', () => {
     return input
   }
 
+  it('仅移出当前筛选候选中已加入的工单，交集为空时禁用', async () => {
+    const wrapper = mountPool({
+      draftOrders: [
+        { workOrderId: 'wo-1', included: true },
+        { workOrderId: 'wo-3', included: false },
+        { workOrderId: 'outside-candidate-pool', included: true },
+      ],
+    })
+    await typeSearch(wrapper, '03007')
+    const action = () => wrapper.findAll('button').find((item) => item.text() === '移出筛选结果')!
+    expect(action().attributes('disabled')).toBeDefined()
+    await typeSearch(wrapper, '0300')
+    expect(action().attributes('disabled')).toBeUndefined()
+    await action().trigger('click')
+    expect(wrapper.emitted('include')).toEqual([[['wo-1'], false]])
+  })
+
   it('按工单号过滤表体，只留命中行', async () => {
     const wrapper = mountPool()
     expect(wrapper.findAll('tbody tr')).toHaveLength(3)

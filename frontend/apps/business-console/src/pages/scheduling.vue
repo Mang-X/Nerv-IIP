@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import SchedulingDraftClearDialog from '@/components/scheduling/SchedulingDraftClearDialog.vue'
+import { BUSINESS_PERMISSION_CODES as P } from '@/permissions'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvAlertDialog,
@@ -93,6 +94,7 @@ const {
   planHeaderCount,
   plansError,
   plansPending,
+  plansState,
   plansTotal,
   previewDowntimeCandidates,
   publish,
@@ -225,6 +227,16 @@ const {
       />
 
       <SchedulingPlanGanttSection
+        :no-plans="
+          plansState === 'ready' &&
+          !plansPending &&
+          plansTotal === 0 &&
+          !planDetail &&
+          !detailSelection.planId &&
+          !hasHistoryFilters
+        "
+        :can-read-production-suggestions="permissionCodes.includes(P.planningMrpRead)"
+        @open-workbench="activeView = 'workbench'"
         v-model:detail-open="detailOpen"
         :actionable-plans="actionablePlans"
         :associated-work-orders="associatedWorkOrders"

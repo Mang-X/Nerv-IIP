@@ -38,8 +38,8 @@ const hasOptions = computed(() => scope.scopeOptions.value.length > 0)
 </script>
 
 <template>
-  <div class="flex items-center gap-2" data-testid="mes-work-scope-select">
-    <span class="text-sm text-muted-foreground">作业范围</span>
+  <div class="flex max-w-full items-center gap-2" data-testid="mes-work-scope-select">
+    <span class="shrink-0 whitespace-nowrap text-sm text-muted-foreground">作业范围</span>
     <NvSelect
       v-model="selection"
       :disabled="!hasOptions || props.readPending || !!props.readFailed"

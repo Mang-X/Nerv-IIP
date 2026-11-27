@@ -35,7 +35,11 @@ vi.mock('@/components/planning/PlanningForecastManagement.vue', () => ({
 }))
 // 物料选择器的取数与就地新增由 DirectoryPicker 自己的测试覆盖。
 vi.mock('@/components/business/DirectoryPicker.vue', () => ({
-  default: { props: ['modelValue'], template: '<input readonly :value="modelValue" />' },
+  default: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: `<input :value="modelValue" @input="$emit('update:modelValue', $event.target.value)" />`,
+  },
 }))
 vi.mock('@/components/urgency/OrderUrgencyBadge.vue', () => ({
   default: {
@@ -327,7 +331,7 @@ vi.mock('@/composables/master-data', async () => {
             : [],
       ),
     }),
-    useBusinessSkus: () => ({ skus: shallowRef([]) }),
+    useBusinessSkus: () => ({ skus: shallowRef([{ code: 'FG-SHOCK', baseUomCode: 'pcs' }]) }),
   }
 })
 
@@ -444,6 +448,15 @@ vi.mock('@nerv-iip/ui', async () => {
     NvSelectItem: SelectItem,
     NvSelectTrigger: Shell,
     NvSelectValue: Shell,
+    NvSheet: defineComponent({
+      props: ['open'],
+      emits: ['update:open'],
+      template: `<aside v-if="open" role="dialog"><slot /><button type="button" @click="$emit('update:open', false)">关闭依据</button></aside>`,
+    }),
+    NvSheetContent: Shell,
+    NvSheetDescription: Shell,
+    NvSheetHeader: Shell,
+    NvSheetTitle: Shell,
     NvSpinner: Shell,
     NvStatusBadge: defineComponent({ props: ['label'], template: '<span>{{ label }}</span>' }),
     NvTabs: defineComponent({

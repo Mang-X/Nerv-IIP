@@ -10,6 +10,8 @@ import {
   associatedOrders,
   associatedError,
   candidatesEmpty,
+  candidatesState,
+  capacityCandidates,
   generatedPlan,
   releasePending,
   insertionJob,
@@ -32,6 +34,24 @@ import type {
 } from '@nerv-iip/api-client'
 
 describe('APS scheduling workbench page', () => {
+  it('候选成功读取为空时保留作业范围与排程窗口，并说明入池条件', async () => {
+    candidatesEmpty.value = true
+    capacityCandidates.value = []
+    candidatesState.value = 'loading'
+    const wrapper = mount(SchedulingPage, {
+      global: { plugins: [createPinia()], stubs: layoutStub },
+    })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('MES 已下达且未完工')
+    candidatesState.value = 'ready'
+    await flushPromises()
+    expect(wrapper.text()).toContain('MES 已下达且未完工')
+    expect(wrapper.find('[data-testid="mes-work-scope-select"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="scheduling-horizon-fields"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="scheduling-draft-board"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it.each(['confirm', 'switch', 'restore', 'cancel', 'edit', 'stale'])(
     '选定保存实际插单候选并绑定确认身份：%s',
     async (action) => {

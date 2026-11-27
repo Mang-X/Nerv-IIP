@@ -101,6 +101,7 @@ vi.mock('@/composables/scheduling/useSchedulingWorkbench', () => ({
     candidatesError: shallowRef(undefined),
     candidatesPending: shallowRef(false),
     candidatesScopeMessage: computed(() => ''),
+    candidatesState: computed(() => 'ready'),
     candidatesScopeReady: computed(() => true),
     filters: reactive({ organizationId: 'org-001', environmentId: 'env-dev' }),
     generatePending: shallowRef(false),
@@ -136,6 +137,7 @@ vi.mock('@/composables/scheduling/useBusinessScheduling', () => ({
     planDetail: computed(() => undefined),
     planDetailError: shallowRef(undefined),
     planDetailPending: shallowRef(false),
+    plansState: computed(() => 'ready'),
     plansTotal: computed(() => 1),
     plans: computed(() => [
       {

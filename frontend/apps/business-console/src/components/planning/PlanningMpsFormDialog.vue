@@ -28,7 +28,8 @@ import type { usePlanningWorkbenchController } from './usePlanningWorkbenchContr
 
 type View = ShallowUnwrapRef<ReturnType<typeof usePlanningWorkbenchController>>
 
-defineProps<{
+const props = defineProps<{
+  baseUomBySku: View['baseUomBySku']
   canSubmitMps: View['canSubmitMps']
   createMpsBucketPending: View['createMpsBucketPending']
   hasPermission: View['hasPermission']
@@ -42,6 +43,11 @@ defineProps<{
 }>()
 
 const mpsOpen = defineModel<View['mpsOpen']>('mpsOpen', { required: true })
+function selectSku(code: string) {
+  if (code === props.mpsForm.skuCode) return
+  props.mpsForm.skuCode = code
+  props.mpsForm.uomCode = props.baseUomBySku.get(code.trim()) ?? ''
+}
 </script>
 
 <template>
@@ -63,7 +69,8 @@ const mpsOpen = defineModel<View['mpsOpen']>('mpsOpen', { required: true })
             <NvFieldLabel for="mps-sku">SKU</NvFieldLabel>
             <DirectoryPicker
               id="mps-sku"
-              v-model="mpsForm.skuCode"
+              :model-value="mpsForm.skuCode"
+              @update:model-value="selectSku"
               directory-type="material"
               creatable
               placeholder="选择 SKU"
