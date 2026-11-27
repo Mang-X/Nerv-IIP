@@ -734,14 +734,28 @@ public sealed class AssignPersonnelSkillCommandHandler(
         return new MasterDataResourceResult("personnel-skill", $"{skill.UserId}:{skill.SkillCode}", skill.Level);
     }
 
+    private static readonly DateOnly PermanentEffectiveToSentinel = new(9999, 12, 31);
+
     private async Task ValidateControlledReferenceDataAsync(AssignPersonnelSkillCommand request, CancellationToken cancellationToken)
     {
         var skillCode = request.SkillCode.Trim();
-        var enabled = await skills.GetEnabledAsync(
+        var catalogSkill = await skills.FindByCodeAsync(
             request.OrganizationId, request.EnvironmentId, skillCode, cancellationToken);
         // 技能目录优先，只有目录尚未收录的旧技能码走历史字典。
-        if (!(enabled ?? await referenceDataRepository.ExistsActiveAsync(
-            request.OrganizationId, request.EnvironmentId, "skill", skillCode, cancellationToken)))
+        if (catalogSkill is not null)
+        {
+            if (catalogSkill.Disabled)
+            {
+                throw new KnownException($"人员技能字段 'SkillCode' 的值 '{request.SkillCode}' 不存在或未启用。");
+            }
+
+            if (catalogSkill.RequiresCertification && request.EffectiveTo >= PermanentEffectiveToSentinel)
+            {
+                throw new KnownException("持证技能必须填写明确的证书到期日，不能登记为长期有效。");
+            }
+        }
+        else if (!await referenceDataRepository.ExistsActiveAsync(
+            request.OrganizationId, request.EnvironmentId, "skill", skillCode, cancellationToken))
         {
             throw new KnownException($"人员技能字段 'SkillCode' 的值 '{request.SkillCode}' 不存在或未启用。");
         }

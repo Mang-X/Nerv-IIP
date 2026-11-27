@@ -2558,6 +2558,46 @@ public sealed class MasterDataApiContractTests
     }
 
     [Fact]
+    public async Task Assign_personnel_skill_command_rejects_permanent_effective_to_for_certified_skill()
+    {
+        await using var provider = CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        dbContext.Skills.Add(Skill.Create("org-001", "env-dev", "SK-CERT-01", "高压安规测试", "质量检测", true, 12, null));
+        dbContext.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill-level", "senior", "高级"));
+        await dbContext.SaveChangesAsync(CancellationToken.None);
+        var handler = new AssignPersonnelSkillCommandHandler(
+            new PersonnelSkillRepository(dbContext),
+            new ReferenceDataCodeRepository(dbContext),
+            new SkillRepository(dbContext));
+
+        var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(
+            new AssignPersonnelSkillCommand(
+                "org-001",
+                "env-dev",
+                "worker-001",
+                "SK-CERT-01",
+                "senior",
+                new DateOnly(2026, 11, 28),
+                new DateOnly(9999, 12, 31)),
+            CancellationToken.None));
+
+        Assert.Contains("持证技能必须填写明确的证书到期日", exception.Message, StringComparison.Ordinal);
+
+        var created = await handler.Handle(
+            new AssignPersonnelSkillCommand(
+                "org-001",
+                "env-dev",
+                "worker-001",
+                "SK-CERT-01",
+                "senior",
+                new DateOnly(2026, 11, 28),
+                new DateOnly(2027, 11, 28)),
+            CancellationToken.None);
+        Assert.Equal("worker-001:SK-CERT-01", created.Code);
+    }
+
+    [Fact]
     public async Task Master_data_seed_is_idempotent_and_creates_controlled_reference_data()
     {
         await using var provider = CreateInMemoryProvider();

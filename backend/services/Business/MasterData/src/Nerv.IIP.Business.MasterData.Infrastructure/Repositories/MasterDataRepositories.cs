@@ -275,6 +275,7 @@ public interface ISkillRepository : IRepository<Skill, SkillId>
 {
     Task<bool> ExistsAsync(string organizationId, string environmentId, string skillCode, CancellationToken cancellationToken = default);
     Task<bool?> GetEnabledAsync(string organizationId, string environmentId, string skillCode, CancellationToken cancellationToken);
+    Task<Skill?> FindByCodeAsync(string organizationId, string environmentId, string skillCode, CancellationToken cancellationToken = default);
 }
 
 public sealed class SkillRepository(ApplicationDbContext context)
@@ -292,6 +293,13 @@ public sealed class SkillRepository(ApplicationDbContext context)
             .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.SkillCode == skillCode)
             .Select(x => (bool?)!x.Disabled)
             .SingleOrDefaultAsync(cancellationToken);
+
+    public Task<Skill?> FindByCodeAsync(string organizationId, string environmentId, string skillCode, CancellationToken cancellationToken = default) =>
+        DbContext.Skills
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.SkillCode == skillCode,
+                cancellationToken);
 }
 
 public interface ISiteRepository : IRepository<Site, SiteId>
