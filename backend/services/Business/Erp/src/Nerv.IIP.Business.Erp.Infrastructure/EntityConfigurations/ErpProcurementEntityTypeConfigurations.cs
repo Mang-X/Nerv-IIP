@@ -133,6 +133,10 @@ public sealed class PurchaseOrderEntityTypeConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.SupplierCode).HasColumnName("supplier_code").IsRequired().HasMaxLength(100).HasComment("MasterData supplier code.");
         builder.Property(x => x.SiteCode).HasColumnName("site_code").IsRequired().HasMaxLength(100).HasComment("MasterData site code.");
         builder.Property(x => x.CurrencyCode).HasColumnName("currency_code").IsRequired().HasMaxLength(10).HasComment("Purchase order currency code.");
+        builder.Property(x => x.ReceivingAuthority).HasColumnName("receiving_authority").IsRequired()
+            .HasConversion<string>().HasMaxLength(20)
+            .HasDefaultValue(Nerv.IIP.Contracts.Erp.PurchaseReceiptInventoryPostingRoute.Direct)
+            .HasComment("Immutable receiving authority determined when the purchase order is created.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Purchase order status.");
         builder.Property(x => x.TotalAmount).HasColumnName("total_amount").IsRequired().HasPrecision(18, 6).HasComment("Purchase order total amount.");
         builder.Property(x => x.Version).HasColumnName("version").IsRequired().IsConcurrencyToken().HasComment("Monotonic purchase order revision number.");
