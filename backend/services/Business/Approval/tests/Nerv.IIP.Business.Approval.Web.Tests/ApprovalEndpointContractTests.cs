@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using MediatR;
 using Microsoft.Data.Sqlite;
 using Microsoft.AspNetCore.Hosting;
@@ -83,7 +84,7 @@ public sealed class ApprovalEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/chains/{chainId}/withdraw"
             && x.PermissionCode == ApprovalPermissionCodes.Manage
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy is null
             && x.OperationId == "withdrawApprovalChain");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/chains/{chainId}/resubmit"
@@ -432,6 +433,8 @@ public sealed class ApprovalEndpointContractTests
 
         var clock = new FixedApprovalClock(DateTimeOffset.Parse("2026-06-21T08:00:00Z"));
         await new WithdrawApprovalChainCommandHandler(dbContext, clock).Handle(new WithdrawApprovalChainCommand(
+            chain.OrganizationId,
+            chain.EnvironmentId,
             chain.Id,
             "user",
             "u-requester",
@@ -511,7 +514,7 @@ public sealed class ApprovalEndpointContractTests
         chain.ResolveStep(2, "user", "u-quality", "approve", "ok");
         await dbContext.SaveChangesAsync(CancellationToken.None);
         await Assert.ThrowsAsync<KnownException>(() => new WithdrawApprovalChainCommandHandler(dbContext, clock).Handle(
-            new WithdrawApprovalChainCommand(chain.Id, "user", "u-requester", "already approved"),
+            new WithdrawApprovalChainCommand(chain.OrganizationId, chain.EnvironmentId, chain.Id, "user", "u-requester", "already approved"),
             CancellationToken.None));
 
         await Assert.ThrowsAsync<KnownException>(() => new AddApprovalStepSignerCommandHandler(dbContext, clock).Handle(
@@ -1154,6 +1157,120 @@ public sealed class ApprovalEndpointContractTests
         var decision = Assert.Single(storedChain.Decisions);
         Assert.Equal("u-reviewer", decision.ActorRef);
         Assert.Equal("user", decision.ActorType);
+    }
+
+    [Fact]
+    public async Task Withdraw_uses_verified_user_in_a_scope_other_than_the_default()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var template = ApprovalTemplate.Create("org-001", "env-dev", "purchase", "purchase-order", 1, true,
+            [new ApprovalTemplateStepDefinition(1, "Review", null, "user", "u-reviewer", 24)]);
+        var chain = ApprovalChain.Start(template, new ApprovalDocumentReference("erp", "purchase-order", "PO-1", null), "u-requester");
+        var iam = new ApprovalAuthorityHandler(request =>
+        {
+            if (request.Headers.Authorization?.Parameter == "expired-session")
+            {
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            }
+
+            Assert.Equal("test-end-principal", request.Headers.Authorization?.Parameter);
+            if (request.Method == HttpMethod.Get)
+            {
+                Assert.Equal("/api/iam/v1/me", request.RequestUri!.AbsolutePath);
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new { success = true, data = new
+                    {
+                        userId = "u-requester", principalType = "user", organizationId = "org-default",
+                        environmentId = "env-default",
+                    } }),
+                };
+            }
+
+            Assert.Equal("/internal/iam/v1/authorization/check", request.RequestUri!.AbsolutePath);
+            var check = request.Content!.ReadFromJsonAsync<Nerv.IIP.Contracts.Iam.AuthorizationCheckRequest>().GetAwaiter().GetResult();
+            Assert.Equal("business.approvals.manage", check!.PermissionCode);
+            Assert.Contains(check.OrganizationId, new[] { "org-001", "org-other" });
+            Assert.Equal("approval-chain", check.ResourceType);
+            Assert.Equal(chain.Id.ToString(), check.ResourceId);
+            Assert.True(check.IncludeSelectedMembership);
+            if (check.EnvironmentId == "env-read-only")
+            {
+                return new HttpResponseMessage(HttpStatusCode.Forbidden);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new { success = true, data = new
+                {
+                    allowed = true, principalId = "u-requester", principalType = "user",
+                    selectedMembership = check.EnvironmentId == "env-no-membership"
+                        ? null
+                        : new { organizationId = check.OrganizationId, environmentId = check.EnvironmentId, roleIds = new[] { "buyer" } },
+                } }),
+            };
+        });
+        var masterData = new ApprovalAuthorityHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.UseSetting("Approval:Seed:Enabled", "false");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+                    services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connection));
+                    services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
+                    services.AddHttpClient(ResolveApprovalStepAuthority.IamClient)
+                        .ConfigurePrimaryHttpMessageHandler(() => iam);
+                    services.AddHttpClient(ResolveApprovalStepAuthority.MasterDataClient)
+                        .ConfigurePrimaryHttpMessageHandler(() => masterData);
+                });
+            });
+        using var client = factory.CreateClient();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Database.EnsureCreatedAsync();
+            db.ApprovalTemplates.Add(template);
+            db.ApprovalChains.Add(chain);
+            await db.SaveChangesAsync();
+        }
+
+        var route = $"/api/business/v1/approvals/chains/{chain.Id}/withdraw";
+        var request = new { organizationId = "org-001", environmentId = "env-dev", reason = "duplicate" };
+
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "expired-session");
+        using var unauthorized = await client.PostAsJsonAsync(route, request);
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-end-principal");
+        using var forbidden = await client.PostAsJsonAsync(route, request with { environmentId = "env-read-only" });
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        using var noMembership = await client.PostAsJsonAsync(route, request with { environmentId = "env-no-membership" });
+        Assert.Equal(HttpStatusCode.Forbidden, noMembership.StatusCode);
+        using var outsideEnvironment = await client.PostAsJsonAsync(route, request with { environmentId = "env-other" });
+        Assert.False((await outsideEnvironment.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("success").GetBoolean());
+        using var outsideOrganization = await client.PostAsJsonAsync(route, request with { organizationId = "org-other" });
+        Assert.False((await outsideOrganization.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("success").GetBoolean());
+
+        using var response = await client.PostAsJsonAsync(route, request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(result.GetProperty("success").GetBoolean());
+        Assert.True(result.GetProperty("data").GetProperty("accepted").GetBoolean());
+        Assert.Empty(masterData.Paths);
+        using var persistedScope = factory.Services.CreateScope();
+        var dbContext = persistedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var stored = await dbContext.ApprovalChains.Include(x => x.Decisions).SingleAsync();
+        Assert.Equal(ApprovalChainStatuses.Withdrawn, stored.Status);
+        var decision = Assert.Single(stored.Decisions);
+        Assert.Equal(ApprovalDecisions.Withdraw, decision.Decision);
+        Assert.Equal("u-requester", decision.ActorRef);
+        Assert.Equal("user", decision.ActorType);
+        Assert.Equal("duplicate", decision.Comment);
     }
 
     private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher

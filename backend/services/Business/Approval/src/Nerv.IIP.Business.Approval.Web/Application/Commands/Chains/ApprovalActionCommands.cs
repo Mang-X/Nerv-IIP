@@ -5,6 +5,8 @@ using Nerv.IIP.Business.Approval.Web.Application.Validation;
 namespace Nerv.IIP.Business.Approval.Web.Application.Commands.Chains;
 
 public sealed record WithdrawApprovalChainCommand(
+    string OrganizationId,
+    string EnvironmentId,
     ApprovalChainId ChainId,
     string ActorType,
     string ActorRef,
@@ -14,6 +16,8 @@ public sealed class WithdrawApprovalChainCommandValidator : AbstractValidator<Wi
 {
     public WithdrawApprovalChainCommandValidator()
     {
+        RuleFor(x => x.OrganizationId).RequiredApprovalCode(100);
+        RuleFor(x => x.EnvironmentId).RequiredApprovalCode(100);
         RuleFor(x => x.ChainId).NotEmpty();
         RuleFor(x => x.ActorType).RequiredApprovalCode(50);
         RuleFor(x => x.ActorRef).RequiredApprovalCode(150);
@@ -26,7 +30,14 @@ public sealed class WithdrawApprovalChainCommandHandler(ApplicationDbContext dbC
 {
     public async Task Handle(WithdrawApprovalChainCommand request, CancellationToken cancellationToken)
     {
-        var chain = await ApprovalActionCommandHelpers.LoadChainAsync(dbContext, request.ChainId, cancellationToken);
+        var chain = await dbContext.ApprovalChains
+            .Include(x => x.Steps)
+            .Include(x => x.Decisions)
+            .SingleOrDefaultAsync(x => x.Id == request.ChainId
+                && x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId, cancellationToken)
+            ?? throw new KnownException("审批链不存在或已不在当前业务范围。");
+
         ApprovalActionCommandHelpers.ExecuteDomainAction(() => chain.Withdraw(request.ActorType, request.ActorRef, request.Reason, clock.UtcNow));
     }
 }

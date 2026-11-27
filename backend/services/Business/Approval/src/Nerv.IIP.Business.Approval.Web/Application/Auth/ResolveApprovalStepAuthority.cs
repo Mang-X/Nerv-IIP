@@ -17,7 +17,8 @@ public sealed class ResolveApprovalStepAuthority(
     public const string MasterDataClient = "ApprovalMasterData";
 
     internal async Task<(int Status, Actor? Actor)> ResolveAsync(
-        string authorization, string organizationId, string environmentId, ApprovalChainId chainId, CancellationToken ct)
+        string authorization, string organizationId, string environmentId, ApprovalChainId chainId, CancellationToken ct,
+        bool loadApproverContext = true)
     {
         if (!AuthenticationHeaderValue.TryParse(authorization, out var bearer)
             || !string.Equals(bearer.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase)
@@ -74,8 +75,11 @@ public sealed class ResolveApprovalStepAuthority(
                     return (StatusCodes.Status403Forbidden, null);
                 }
 
-                roles = string.Join(",", membership.RoleIds);
-                department = await LoadDepartmentAsync(principal.UserId, organizationId, environmentId, ct);
+                if (loadApproverContext)
+                {
+                    roles = string.Join(",", membership.RoleIds);
+                    department = await LoadDepartmentAsync(principal.UserId, organizationId, environmentId, ct);
+                }
             }
 
             return (StatusCodes.Status200OK, new Actor(organizationId, environmentId,
@@ -84,7 +88,7 @@ public sealed class ResolveApprovalStepAuthority(
         catch (Exception ex) when (ex is HttpRequestException or JsonException
                                    || ex is OperationCanceledException && !ct.IsCancellationRequested)
         {
-            logger.LogWarning("Approval resolution authority unavailable ({ErrorType}).", ex.GetType().Name);
+            logger.LogWarning("Approval action authority unavailable ({ErrorType}).", ex.GetType().Name);
             return (StatusCodes.Status503ServiceUnavailable, null);
         }
     }
