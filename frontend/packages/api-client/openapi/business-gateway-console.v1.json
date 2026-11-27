@@ -60260,9 +60260,7 @@
           "validityMonths": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0,
-            "nullable": true,
-            "exclusiveMinimum": true
+            "nullable": true
           },
           "description": {
             "type": "string",
@@ -60304,9 +60302,7 @@
           "validityMonths": {
             "type": "integer",
             "format": "int32",
-            "minimum": 0.0,
-            "nullable": true,
-            "exclusiveMinimum": true
+            "nullable": true
           },
           "description": {
             "type": "string",
@@ -62694,16 +62690,14 @@
       "NervIIPContractsCodingScopeDimension": {
         "type": "string",
         "description": "",
-        "x-enumFlags": true,
-        "x-enumNames": [
-          "Organization",
-          "Environment",
-          "Site"
-        ],
         "enum": [
           "organization",
           "environment",
-          "site"
+          "site",
+          "organization, environment",
+          "organization, site",
+          "environment, site",
+          "organization, environment, site"
         ]
       },
       "NervIIPContractsCodingCodeRuleSegment": {

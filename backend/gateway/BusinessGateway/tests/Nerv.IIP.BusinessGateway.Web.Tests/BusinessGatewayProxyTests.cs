@@ -937,6 +937,12 @@ public sealed class BusinessGatewayProxyTests
 
         var list = await client.GetAsync("/api/business-console/v1/master-data/code-rules?organizationId=org-001&environmentId=env-dev");
         var detail = await client.GetAsync("/api/business-console/v1/master-data/code-rules/master-data.sku?organizationId=org-001&environmentId=env-dev");
+        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
+        using var listJson = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
+        var rule = listJson.RootElement.GetProperty("data").GetProperty("rules")[0];
+        var scope = rule.GetProperty("scope").GetString();
+        Assert.Equal("organization, environment", scope);
+
         var version = await client.PostAsJsonAsync("/api/business-console/v1/master-data/code-rules/master-data.sku/versions", new
         {
             organizationId = "org-001",
@@ -944,7 +950,7 @@ public sealed class BusinessGatewayProxyTests
             ruleKey = "master-data.sku",
             displayName = "SKU code v2",
             appliesTo = "sku",
-            scope = 3,
+            scope,
             segments = new object[]
             {
                 new { type = "constant", value = "SKU-" },
@@ -968,12 +974,10 @@ public sealed class BusinessGatewayProxyTests
             siteCode = "SITE-01",
         });
 
-        Assert.Equal(HttpStatusCode.OK, list.StatusCode);
         Assert.Equal(HttpStatusCode.OK, detail.StatusCode);
         Assert.Equal(HttpStatusCode.OK, version.StatusCode);
         Assert.Equal(HttpStatusCode.OK, preview.StatusCode);
-        using var listJson = JsonDocument.Parse(await list.Content.ReadAsStringAsync());
-        var segments = listJson.RootElement.GetProperty("data").GetProperty("rules")[0].GetProperty("segments");
+        var segments = rule.GetProperty("segments");
         Assert.Equal("constant", segments[0].GetProperty("type").GetString());
         Assert.Equal("sequence", segments[1].GetProperty("type").GetString());
         Assert.Equal("none", segments[1].GetProperty("reset").GetString());
@@ -981,6 +985,9 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(new BusinessConsoleCodeRuleContextRequest("org-001", "env-dev"), masterData.LastCodeRuleListRequest);
         Assert.Equal(new BusinessConsoleCodeRuleRequest("org-001", "env-dev", "master-data.sku"), masterData.LastCodeRuleDetailRequest);
         Assert.Equal("master-data.sku", masterData.LastCodeRuleVersionRequest!.RuleKey);
+        Assert.Equal(
+            Nerv.IIP.Contracts.Coding.ScopeDimension.Organization | Nerv.IIP.Contracts.Coding.ScopeDimension.Environment,
+            masterData.LastCodeRuleVersionRequest.Scope);
         Assert.Equal("user-admin", masterData.LastCodeRuleVersionCreatedBy);
         Assert.Equal("align plant convention", masterData.LastCodeRuleVersionRequest.ChangeReason);
         Assert.Equal("master-data.sku", masterData.LastCodeRulePreviewRequest!.RuleKey);

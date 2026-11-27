@@ -8,6 +8,11 @@ import { useCodeRules } from '@/composables/master-data/useCodeRules'
 import { computed, reactive, ref, shallowRef } from 'vue'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
+export function parsePositiveInt32(value: string | number): number | undefined {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 2_147_483_647 ? parsed : undefined
+}
+
 export function useCodeRulesPage() {
   const {
     filters,
@@ -34,11 +39,11 @@ export function useCodeRulesPage() {
     field: '字段',
     checksum: '校验位',
   }
-  const SCOPE_LABEL: Record<ScopeDimension, string> = {
+  const SCOPE_LABEL = {
     organization: '组织',
     environment: '环境',
     site: '站点',
-  }
+  } satisfies Partial<Record<ScopeDimension, string>>
   const RESET_LABEL: Record<ResetPeriod, string> = {
     none: '不重置',
     day: '按天',
@@ -59,7 +64,7 @@ export function useCodeRulesPage() {
     value,
     label: SEGMENT_TYPE_LABEL[value],
   }))
-  const SCOPE_OPTIONS = (Object.keys(SCOPE_LABEL) as ScopeDimension[]).map((value) => ({
+  const SCOPE_OPTIONS = (Object.keys(SCOPE_LABEL) as (keyof typeof SCOPE_LABEL)[]).map((value) => ({
     value,
     label: SCOPE_LABEL[value],
   }))
@@ -79,7 +84,7 @@ export function useCodeRulesPage() {
     return scope
       ? scope
           .split(', ')
-          .map((part) => SCOPE_LABEL[part as ScopeDimension] ?? part)
+          .map((part) => SCOPE_LABEL[part as keyof typeof SCOPE_LABEL] ?? part)
           .join(' / ')
       : '—'
   }
@@ -292,13 +297,6 @@ export function useCodeRulesPage() {
   const formPreview = ref('')
   const formPreviewPending = ref(false)
 
-  function parseNumber(value: string | number): number | undefined {
-    const trimmed = String(value).trim()
-    if (!trimmed) return undefined
-    const parsed = Number(trimmed)
-    return Number.isFinite(parsed) ? parsed : undefined
-  }
-
   const displayNameValid = computed(() => form.displayName.trim().length > 0)
   const CHANGE_REASON_MAX_LENGTH = 500
   const changeReasonError = computed(() => {
@@ -322,16 +320,16 @@ export function useCodeRulesPage() {
       case 'date':
         return DATE_FORMAT_OPTIONS.includes(row.format.trim()) ? null : '请选择有效的日期格式。'
       case 'sequence': {
-        const width = parseNumber(row.width)
-        const start = parseNumber(row.start)
-        if (width == null || width <= 0) return '流水段宽度必须大于 0。'
-        if (start == null || start <= 0) return '流水段起始值必须大于 0。'
+        const width = parsePositiveInt32(row.width)
+        const start = parsePositiveInt32(row.start)
+        if (width === undefined) return '流水段宽度必须是 1 至 2147483647 之间的整数。'
+        if (start === undefined) return '流水段起始值必须是 1 至 2147483647 之间的整数。'
         return null
       }
       case 'field': {
         if (!row.source.trim()) return '字段段的源必填。'
-        const maxLength = parseNumber(row.maxLength)
-        if (maxLength == null || maxLength <= 0) return '字段段的上限必须大于 0。'
+        const maxLength = parsePositiveInt32(row.maxLength)
+        if (maxLength === undefined) return '字段段的上限必须是 1 至 2147483647 之间的整数。'
         return null
       }
       case 'checksum':
@@ -375,15 +373,15 @@ export function useCodeRulesPage() {
         segment.format = row.format.trim() || undefined
         break
       case 'sequence':
-        segment.width = parseNumber(row.width)
-        segment.start = parseNumber(row.start)
+        segment.width = parsePositiveInt32(row.width)
+        segment.start = parsePositiveInt32(row.start)
         segment.padChar = row.padChar || undefined
         segment.reset = row.reset
         break
       case 'field':
         segment.source = row.source.trim() || undefined
         segment.transform = row.transform
-        segment.maxLength = parseNumber(row.maxLength)
+        segment.maxLength = parsePositiveInt32(row.maxLength)
         break
       case 'checksum':
         segment.algorithm = row.algorithm.trim() || undefined

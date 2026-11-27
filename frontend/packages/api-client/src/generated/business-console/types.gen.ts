@@ -7001,7 +7001,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleC
     updatedAtUtc?: string;
 };
 
-export type NervIipContractsCodingScopeDimension = 'organization' | 'environment' | 'site';
+export type NervIipContractsCodingScopeDimension = 'organization' | 'environment' | 'site' | 'organization, environment' | 'organization, site' | 'environment, site' | 'organization, environment, site';
 
 export type NervIipContractsCodingCodeRuleSegment = {
     type?: NervIipContractsCodingSegmentType;

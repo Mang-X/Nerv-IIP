@@ -16,6 +16,20 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayOpenApiTests
 {
     [Fact]
+    public async Task Code_rule_scope_openapi_lists_all_nonempty_flag_combinations()
+    {
+        using var document = JsonDocument.Parse(await BusinessGatewayTestHost.GetOpenApiDocumentAsync());
+        var schema = document.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty("NervIIPContractsCodingScopeDimension");
+
+        Assert.Equal("string", schema.GetProperty("type").GetString());
+        Assert.Equal(
+            ["organization", "environment", "site", "organization, environment", "organization, site",
+                "environment, site", "organization, environment, site"],
+            schema.GetProperty("enum").EnumerateArray().Select(value => value.GetString()));
+    }
+
+    [Fact]
     public async Task Code_rule_segment_type_remains_optional_in_v1_openapi()
     {
         using var document = JsonDocument.Parse(await BusinessGatewayTestHost.GetOpenApiDocumentAsync());

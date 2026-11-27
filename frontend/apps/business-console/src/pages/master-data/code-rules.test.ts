@@ -15,7 +15,7 @@ const rules = [
     ruleKey: 'sku',
     displayName: 'SKU 编码规则',
     appliesTo: '物料',
-    scope: 'organization' as const,
+    scope: 'organization, environment' as const,
     version: 3,
     isActive: true,
     segments: [
@@ -109,21 +109,25 @@ beforeEach(() => {
 })
 
 describe('编码规则版本的变更原因', () => {
-  it('默认显示段摘要，展开修改后收起保留输入，提交失败自动展开并定位', async () => {
-    await openVersionForm()
-    const summary = wrapper!.get('button[aria-controls="cr-segment-0"]')
-    expect(summary.attributes('aria-expanded')).toBe('false')
-    expect(summary.text()).toContain('宽 4')
-    await summary.trigger('click')
-    await wrapper!.get('#cr-width-0').setValue('0')
-    await summary.trigger('click')
-    expect(summary.text()).toContain('宽 0')
-    await wrapper!.get('#cr-reason').setValue('调整流水号')
-    await submitVersionForm()
-    expect(summary.attributes('aria-expanded')).toBe('true')
-    expect(document.activeElement?.id).toBe('cr-width-0')
-    expect(stub.createRuleVersion).not.toHaveBeenCalled()
-  })
+  it.each(['1.5', '2147483648', '0', '-1'])(
+    '流水段宽度为 %s 时自动展开并定位，且不发请求',
+    async (width) => {
+      await openVersionForm()
+      const summary = wrapper!.get('button[aria-controls="cr-segment-0"]')
+      expect(summary.attributes('aria-expanded')).toBe('false')
+      expect(summary.text()).toContain('宽 4')
+      await summary.trigger('click')
+      await wrapper!.get('#cr-width-0').setValue(width)
+      await summary.trigger('click')
+      expect(summary.text()).toContain(`宽 ${width}`)
+      await wrapper!.get('#cr-reason').setValue('调整流水号')
+      await submitVersionForm()
+      expect(summary.attributes('aria-expanded')).toBe('true')
+      expect(wrapper!.get('#cr-width-0').attributes('aria-invalid')).toBe('true')
+      expect(document.activeElement?.id).toBe('cr-width-0')
+      expect(stub.createRuleVersion).not.toHaveBeenCalled()
+    },
+  )
 
   it('提交后内联拒绝空值与 Unicode 空白，且不发请求', async () => {
     await openVersionForm()
@@ -175,6 +179,7 @@ describe('编码规则版本的变更原因', () => {
       'sku',
       expect.objectContaining({
         changeReason: '调整物料标签编号规则',
+        scope: 'organization, environment',
         segments: expect.arrayContaining([expect.objectContaining({ type: 'sequence', width: 4 })]),
       }),
     )

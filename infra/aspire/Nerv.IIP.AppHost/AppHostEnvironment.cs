@@ -61,6 +61,11 @@ internal sealed partial class AppHostComposition
             Environment.GetEnvironmentVariable("NERV_IIP_EPHEMERAL"),
             "true",
             StringComparison.OrdinalIgnoreCase);
+        if (fullStackEphemeral && !localDevelopmentAppHost)
+        {
+            throw new InvalidOperationException("NERV_IIP_EPHEMERAL=true is only supported in Development.");
+        }
+
         // 人工走查最小数据默认随本地 AppHost 启用，并可独立关闭。
         var walkthroughSeedEnabled = localDevelopmentAppHost &&
             !string.Equals(

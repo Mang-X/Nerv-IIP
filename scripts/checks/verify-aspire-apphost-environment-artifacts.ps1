@@ -1,7 +1,7 @@
 ﻿# Script-Governance:
 #   Category: verify
 #   SideEffects:
-#     - Builds and publishes two temporary Aspire Docker Compose artifacts
+#     - Builds and publishes two temporary Aspire Docker Compose artifacts and probes rejected Production ephemeral publish
 #     - Validates environment-gated BarcodeLabel printer and retirement proof configuration and its FileStorage endpoint
 #   Writes:
 #     - A uniquely owned temporary directory under the system temporary directory
@@ -265,6 +265,25 @@ try {
             throw 'Published Compose artifact must declare the nerv-iip-file-storage volume.'
         }
     }
+    $rejectedOutputPath = Join-Path $temporaryRoot 'rejected-production-ephemeral'
+    $rejected = $false
+    try {
+        Invoke-AspireOutput -Arguments @('publish', '--output-path', $rejectedOutputPath, '--environment', 'Production', '--apphost', $appHostProject, '--non-interactive', '--nologo') -WorkingDirectory $root -TimeoutSeconds $PublishTimeoutSeconds -Name 'verify-apphost-production-ephemeral-rejection' -Environment @{
+            NERV_IIP_EPHEMERAL = 'true'
+            NERV_IIP_SESSION_ID = 'nerv-abcd-123456'
+        } | Out-Null
+    }
+    catch {
+        if (-not $_.Exception.Data.Contains('ExitCode') -or
+            -not $_.Exception.Message.Contains('System.InvalidOperationException: NERV_IIP_EPHEMERAL=true is only supported in Development.', [StringComparison]::Ordinal)) {
+            throw
+        }
+        $rejected = $true
+    }
+    if (-not $rejected -or (Test-Path -LiteralPath (Join-Path $rejectedOutputPath 'docker-compose.yaml'))) {
+        throw 'Production ephemeral publish must fail before generating a Compose artifact.'
+    }
+    Write-Diagnostic 'Production rejects ephemeral publish before generating Compose.'
     Write-Diagnostic 'Aspire Development and Production Compose artifacts preserve environment, migration, seed, BarcodeLabel printer, retirement proof, and FileStorage endpoint profiles.'
 }
 finally {

@@ -28,7 +28,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, Trash2Icon } from '@lucide/vue'
 import { reactive, watch, type ShallowUnwrapRef } from 'vue'
-import type { useCodeRulesPage } from '../useCodeRulesPage'
+import { parsePositiveInt32, type useCodeRulesPage } from '../useCodeRulesPage'
 
 type View = ShallowUnwrapRef<ReturnType<typeof useCodeRulesPage>>
 
@@ -105,8 +105,7 @@ function segmentParameters(segment: Segment) {
 }
 
 function invalidPositiveParameter(value: string | number) {
-  const amount = Number(value)
-  return !Number.isFinite(amount) || amount <= 0
+  return parsePositiveInt32(value) === undefined
 }
 
 async function revealErrors() {

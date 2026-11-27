@@ -150,7 +150,7 @@ watch(
       </ScrollArea>
 
       <p v-if="treeTruncated" class="text-xs text-muted-foreground">
-        节点较多，当前仅展示前 {{ TREE_TAKE }} 条；请使用搜索缩小范围。
+        每类设施最多加载首批 {{ TREE_TAKE }} 条，树内搜索仅筛选已加载的节点。
       </p>
     </section>
 
