@@ -103,6 +103,7 @@ export {
   closeBusinessConsoleQualityNcr,
   completeBusinessConsoleQualityCapaAction,
   verifyBusinessConsoleQualityCapaEffectiveness,
+  closeBusinessConsoleQualityCapa,
   createBusinessConsoleQualityEvidenceUploadSession,
   completeBusinessConsoleQualityEvidenceUpload,
   getBusinessConsoleQualityEvidenceTusOffset,

@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Cryptography;
 using Nerv.IIP.Sdk.FileStorage;
 using System.Text;
@@ -10,6 +11,7 @@ using Nerv.IIP.Business.Quality.Web.Application.Approvals;
 using Nerv.IIP.Business.Quality.Web.Application.Commands.CorrectiveActions;
 using Nerv.IIP.Business.Quality.Web.Application.Errors;
 using Nerv.IIP.Coding;
+using Nerv.IIP.Contracts.FileStorage;
 using Nerv.IIP.Contracts.Inventory;
 using Nerv.IIP.Contracts.Quality;
 
@@ -119,14 +121,24 @@ public sealed class SubmitNonconformanceReportDispositionCommandHandler(
         foreach (var fileId in ncr.AttachmentFileIds.Concat(request.AttachmentFileIds)
             .Select(value => value.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            var file = await files.GetFileMetadataAsync(fileId, cancellationToken);
+            const string invalidEvidence = "处置附件必须是当前不合格报告已完成上传的合法证据，请重新上传后再提交。";
+            FileMetadataResponse file;
+            try
+            {
+                file = await files.GetFileMetadataAsync(fileId, cancellationToken);
+            }
+            catch (HttpRequestException exception) when (exception.StatusCode == HttpStatusCode.NotFound)
+            {
+                throw new QualityUnprocessableException(invalidEvidence);
+            }
+
             if (file.FileId != fileId || file.Status != "available"
                 || file.FilePurpose != QualityNcrEvidence.FilePurpose
                 || file.OrganizationId != ncr.OrganizationId || file.EnvironmentId != ncr.EnvironmentId
                 || file.Owner.OwnerService != QualityNcrEvidence.OwnerService
                 || file.Owner.OwnerType != QualityNcrEvidence.OwnerType || file.Owner.OwnerId != ncr.Id.ToString())
             {
-                throw new KnownException("处置附件必须是当前不合格报告已完成上传的合法证据，请重新上传后再提交。");
+                throw new QualityUnprocessableException(invalidEvidence);
             }
         }
 

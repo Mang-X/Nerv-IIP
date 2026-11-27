@@ -88,6 +88,7 @@ try
     builder.Services.AddIntegrationEventDeadLetterEndpoints();
     builder.Services.AddScoped<OpenWorkOrderWhenAlarmRaisedHandler>();
     builder.Services.AddScoped<MarkWorkOrderAlarmClearedHandler>();
+    builder.Services.AddScoped<MarkSparePartPostingFailedHandler>();
     builder.Services.AddScoped<PauseMaintenancePlansWhenDeviceDisabledHandler>();
     builder.Services.AddMaintenanceDeadLetterReplay();
     builder.Services.AddScoped<ICommandLock<GenerateDueMaintenanceWorkOrdersCommand>, GenerateDueMaintenanceWorkOrdersCommandLock>();

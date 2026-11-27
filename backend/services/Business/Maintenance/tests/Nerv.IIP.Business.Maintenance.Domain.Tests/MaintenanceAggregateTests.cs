@@ -9,11 +9,29 @@ namespace Nerv.IIP.Business.Maintenance.Domain.Tests;
 public sealed class MaintenanceAggregateTests
 {
     [Fact]
+    public void Completion_requires_acceptance_and_start()
+    {
+        var order = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", "MWO-001", "DEV-001", "normal", "operator-001");
+
+        Assert.Throws<InvalidOperationException>(() => order.Complete("fixed", "fault", 10, []));
+        order.Accept("technician-001");
+        Assert.Throws<InvalidOperationException>(() => order.Complete("fixed", "fault", 10, []));
+        order.StartWork();
+        order.Complete("fixed", "fault", 10, []);
+
+        Assert.NotNull(order.AcceptedAtUtc);
+        Assert.NotNull(order.RepairStartedAtUtc);
+        Assert.Equal(MaintenanceWorkOrderStatus.Completed, order.Status);
+    }
+
+    [Fact]
     public void Work_order_from_alarm_can_mark_asset_unavailable_and_complete_with_downtime_attribution()
     {
         var workOrder = MaintenanceWorkOrder.OpenFromAlarm("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "alarm-001", "critical");
         workOrder.MarkAssetUnavailable(DateTimeOffset.UtcNow, "over temperature");
 
+        workOrder.Accept(workOrder.AssignedTechnicianUserId ?? "technician-001");
+        workOrder.StartWork();
         workOrder.Complete("replaced sensor", "equipment-failure", 45, [new SparePartLineDraft("SKU-SP-001", 1m, "pcs")]);
 
         Assert.Equal(MaintenanceWorkOrderStatus.Completed, workOrder.Status);
@@ -48,6 +66,8 @@ public sealed class MaintenanceAggregateTests
     {
         var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
 
+        workOrder.Accept(workOrder.AssignedTechnicianUserId ?? "technician-001");
+        workOrder.StartWork();
         workOrder.Complete("fixed", "minor-stop", 5, []);
 
         Assert.Equal(MaintenanceWorkOrderStatus.Completed, workOrder.Status);
@@ -94,6 +114,8 @@ public sealed class MaintenanceAggregateTests
     {
         var workOrder = MaintenanceWorkOrder.OpenManual("org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "normal", "operator-001");
 
+        workOrder.Accept("technician-001");
+        workOrder.StartWork();
         Assert.ThrowsAny<Exception>(() => workOrder.Complete(result, reasonCode, downtimeMinutes, []));
     }
 
@@ -159,10 +181,12 @@ public sealed class MaintenanceAggregateTests
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", "high", "reporter-001");
 
+        workOrder.Accept(workOrder.AssignedTechnicianUserId ?? "technician-001");
+        workOrder.StartWork();
         workOrder.Complete("fixed", "equipment-failure", 20, []);
 
         Assert.Equal(MaintenanceWorkOrderStatus.Completed, workOrder.Status);
-        Assert.Equal(1, workOrder.Version);
+        Assert.Equal(3, workOrder.Version);
     }
 
     [Fact]
@@ -484,6 +508,8 @@ public sealed class MaintenanceAggregateTests
             assignedTechnicianUserId: "worker-001",
             estimatedLaborMinutes: 90);
 
+        workOrder.Accept(workOrder.AssignedTechnicianUserId ?? "technician-001");
+        workOrder.StartWork();
         workOrder.Complete(
             "fixed",
             "minor-stop",
@@ -514,6 +540,8 @@ public sealed class MaintenanceAggregateTests
             "operator-001",
             assignedTechnicianUserId: "worker-planned");
 
+        workOrder.Accept(workOrder.AssignedTechnicianUserId ?? "technician-001");
+        workOrder.StartWork();
         workOrder.Complete(
             "fixed",
             "minor-stop",
@@ -537,6 +565,8 @@ public sealed class MaintenanceAggregateTests
             "operator-001",
             assignedTechnicianUserId: "worker-planned");
 
+        workOrder.Accept(workOrder.AssignedTechnicianUserId ?? "technician-001");
+        workOrder.StartWork();
         workOrder.Complete("fixed", "minor-stop", 5, []);
 
         Assert.Equal("worker-planned", workOrder.ActualTechnicianUserId);

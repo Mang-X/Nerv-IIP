@@ -98,7 +98,7 @@ public sealed class ScopedLabelLifecycleHttpTests
         Assert.Equal(
             WireId(expected.Id),
             result.RootElement.GetProperty("data").GetProperty("printBatch").GetProperty("printBatchId").GetString());
-        Assert.Equal(HttpStatusCode.OK, wrongCaseResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, wrongCaseResponse.StatusCode);
         using var wrongCaseResult = JsonDocument.Parse(wrongCaseBody);
         Assert.False(wrongCaseResult.RootElement.GetProperty("success").GetBoolean(), wrongCaseBody);
         Assert.Equal("未找到打印批次。", wrongCaseResult.RootElement.GetProperty("message").GetString());
@@ -122,9 +122,10 @@ public sealed class ScopedLabelLifecycleHttpTests
             $"organizationId={organizationId}&environmentId={environmentId}&idempotencyKey={idempotencyKey}");
         var body = await response.Content.ReadAsStringAsync();
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         using var result = JsonDocument.Parse(body);
         Assert.False(result.RootElement.GetProperty("success").GetBoolean(), body);
+        Assert.Equal(404, result.RootElement.GetProperty("code").GetInt32());
         Assert.Equal("未找到打印批次。", result.RootElement.GetProperty("message").GetString());
         Assert.DoesNotContain(WireId((await GetOnlyBatchAsync(factory)).Id), body, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("intent-owned", body, StringComparison.Ordinal);

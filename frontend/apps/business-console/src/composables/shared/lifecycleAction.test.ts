@@ -76,7 +76,7 @@ describe('executeLifecycleAction', () => {
       readLatest: async () => ({
         domain: 'maintenance-work-order',
         action: 'complete',
-        facts: { status: 'Open' },
+        facts: { status: 'InProgress' },
       }),
       command: async () => {
         throw generatedConflict
@@ -105,7 +105,7 @@ describe('executeLifecycleAction', () => {
         readLatest: async () => ({
           domain: 'maintenance-work-order',
           action: 'complete',
-          facts: { status: 'Open' },
+          facts: { status: 'InProgress' },
         }),
         command: async () => {
           throw generatedValidation
@@ -135,7 +135,7 @@ describe('executeLifecycleAction', () => {
             readLatest: async () => ({
               domain: 'maintenance-work-order',
               action: 'complete',
-              facts: { status: 'Open' },
+              facts: { status: 'InProgress' },
             }),
             command: async () => {
               throw generatedUnavailable

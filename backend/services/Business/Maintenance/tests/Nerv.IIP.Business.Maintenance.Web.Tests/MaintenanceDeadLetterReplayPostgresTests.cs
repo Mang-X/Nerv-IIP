@@ -12,8 +12,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Maintenance.Domain.AggregatesModel.MaintenancePlanAggregate;
 using Nerv.IIP.Business.Maintenance.Infrastructure;
 using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Business.Maintenance.Web.Application.IntegrationEvents;
 using Nerv.IIP.Contracts.IndustrialTelemetry;
 using Nerv.IIP.Contracts.IntegrationEvents;
+using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.MasterData;
 using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing.PostgreSql;
@@ -108,7 +110,16 @@ public sealed class MaintenanceDeadLetterReplayPostgresTests
                 var inbox = await db.ProcessedIntegrationEvents.AsNoTracking().ToListAsync();
                 Assert.Equal(4, inbox.Count);
                 Assert.Contains(inbox, x => x.EventId == raised.EventId && x.IdempotencyKey == raised.IdempotencyKey);
-                Assert.Equal(2, await db.Database.SqlQueryRaw<long>("SELECT count(*) AS \"Value\" FROM cap.published").SingleAsync());
+                var publishedTopics = await db.Database
+                    .SqlQueryRaw<string>("SELECT \"Name\" AS \"Value\" FROM cap.published").ToListAsync();
+                Assert.Equal(
+                    new[]
+                    {
+                        nameof(AssetRestoredIntegrationEvent),
+                        nameof(AssetUnavailableIntegrationEvent),
+                        nameof(MaintenanceWorkOrderOpenedIntegrationEvent),
+                    },
+                    publishedTopics.Order(StringComparer.Ordinal).ToArray());
                 var store = scope.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
                 Assert.Equal(unsupported, await store.GetAsync(unsupported.Id, default));
                 foreach (var original in new[] { letter, clearLetter, deviceLetter })

@@ -344,10 +344,6 @@ export function useDataTableState<T extends object>(
   })
   const resolvedErrorMessage = computed(() => {
     if (props.errorMessage?.trim()) return props.errorMessage
-    const e = props.error
-    if (typeof e === 'string' && e.trim()) return e
-    const m = (e as { message?: unknown } | null | undefined)?.message
-    if (typeof m === 'string' && m.trim()) return m
     return '请检查网络连接后重试；若持续失败请联系管理员。'
   })
   const bodyState = computed<'error' | 'loading' | 'awaiting' | 'rows' | 'empty'>(() => {

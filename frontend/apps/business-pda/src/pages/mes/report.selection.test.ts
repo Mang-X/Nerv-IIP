@@ -473,6 +473,19 @@ describe('PDA MES production reporting page', () => {
     expect(recordReport).not.toHaveBeenCalled()
   })
 
+  it.each([
+    [404, '请核对扫描的工单号'],
+    [403, '不在当前授权作业范围内'],
+  ])('按 HTTP %s 显示可核实的工单处理指引', async (status, text) => {
+    workOrderDetailErrorRef.value = { response: { status } }
+    route.query = { workOrderId: 'WO-2026-0001', operationTaskId: 'OP-1' }
+    const wrapper = mount(ReportPage, { attachTo: document.body })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="report-route-issue"]').text()).toContain(text)
+    expect(recordReport).not.toHaveBeenCalled()
+  })
+
   it('同一路由 query 变化及浏览器前进后退会重新绑定 pair 并清空数量', async () => {
     route.query = {
       workOrderId: 'WO-2026-0001',

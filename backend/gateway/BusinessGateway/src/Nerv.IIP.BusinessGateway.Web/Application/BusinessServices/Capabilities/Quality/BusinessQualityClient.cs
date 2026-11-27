@@ -141,6 +141,12 @@ public interface IBusinessQualityClient
         string actor,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleAcceptedResponse> CloseCorrectiveActionAsync(
+        string internalBearerToken,
+        BusinessConsoleCloseQualityCapaRequest request,
+        string actor,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleAcceptedResponse> CompleteCorrectiveActionItemAsync(
         string internalBearerToken,
         BusinessConsoleCompleteQualityCapaActionRequest request,
@@ -746,6 +752,25 @@ public sealed class HttpBusinessQualityClient(HttpClient httpClient)
                 request.EffectivenessInspectionRecordId,
                 request.OrganizationId,
                 request.EnvironmentId),
+            cancellationToken);
+
+    public Task<BusinessConsoleAcceptedResponse> CloseCorrectiveActionAsync(
+        string internalBearerToken,
+        BusinessConsoleCloseQualityCapaRequest request,
+        string actor,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleAcceptedResponse>(
+            internalBearerToken,
+            HttpMethod.Post,
+            CorrectiveActionPath(request.CorrectiveActionId) + "/close",
+            new
+            {
+                request.CorrectiveActionId,
+                ClosedByUserId = actor,
+                request.CloseApprovalChainId,
+                request.OrganizationId,
+                request.EnvironmentId,
+            },
             cancellationToken);
 
     public Task<BusinessConsoleAcceptedResponse> CompleteCorrectiveActionItemAsync(

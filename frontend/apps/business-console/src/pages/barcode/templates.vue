@@ -62,7 +62,7 @@ definePage({
 
 const STATUS_OPTIONS = [
   { value: 'active', label: '启用' },
-  { value: 'disabled', label: '停用' },
+  { value: 'inactive', label: '停用' },
 ]
 
 const {
@@ -272,7 +272,7 @@ function openEdit(row: BusinessConsoleBarcodeTemplateItem) {
     templateCode: row.templateCode ?? '',
     templateName: row.templateName ?? '',
     templateFileId: row.templateFileId ?? '',
-    status: row.status === 'disabled' ? 'disabled' : 'active',
+    status: row.status === 'inactive' ? 'inactive' : 'active',
   })
   const rows = parseVariableRows(row.variableSchemaJson)
   variableRows.value = rows.length ? rows : [emptyVariableRow()]
@@ -283,7 +283,7 @@ function openEdit(row: BusinessConsoleBarcodeTemplateItem) {
 }
 
 function statusLabel(value?: string | null) {
-  return value === 'disabled' ? '停用' : '启用'
+  return value === 'inactive' ? '停用' : '启用'
 }
 
 async function submitTemplate() {
@@ -583,7 +583,7 @@ async function submitTemplate() {
       </template>
       <template #cell-status="{ row }">
         <NvStatusBadge
-          :value="row.status === 'disabled' ? 'disabled' : 'active'"
+          :value="row.status === 'inactive' ? 'inactive' : 'active'"
           :label="statusLabel(row.status)"
         />
       </template>
@@ -598,7 +598,7 @@ async function submitTemplate() {
           :template-id="row.templateId"
           :file-id="row.templateFileId"
           :template-name="row.templateName ?? row.templateCode ?? ''"
-          :inactive="row.status === 'disabled'"
+          :inactive="row.status === 'inactive'"
         />
         <NvButton
           size="sm"

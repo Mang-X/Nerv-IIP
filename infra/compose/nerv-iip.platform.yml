@@ -316,6 +316,7 @@ services:
     environment:
       <<: *dotnet-env
       ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=nerv_iip_industrial_telemetry;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
+      MasterData__BaseUrl: http://business-master-data:8080
 
   business-maintenance:
     <<: *dotnet-service

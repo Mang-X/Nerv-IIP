@@ -64,7 +64,7 @@ public sealed record GetScopedLabelPrintBatchQuery(
 public sealed record GetScopedLabelPrintBatchByIdempotencyKeyQuery(
     string OrganizationId,
     string EnvironmentId,
-    string IdempotencyKey) : IQuery<ScopedLabelPrintBatchDetail>;
+    string IdempotencyKey) : IQuery<ScopedLabelPrintBatchDetail?>;
 
 public sealed record ScopedLabelPrintBatchDetail(
     LabelPrintBatchId PrintBatchId,
@@ -139,9 +139,9 @@ public sealed class GetScopedLabelPrintBatchByIdempotencyKeyQueryValidator
 }
 
 public sealed class GetScopedLabelPrintBatchByIdempotencyKeyQueryHandler(ApplicationDbContext dbContext)
-    : IQueryHandler<GetScopedLabelPrintBatchByIdempotencyKeyQuery, ScopedLabelPrintBatchDetail>
+    : IQueryHandler<GetScopedLabelPrintBatchByIdempotencyKeyQuery, ScopedLabelPrintBatchDetail?>
 {
-    public async Task<ScopedLabelPrintBatchDetail> Handle(
+    public async Task<ScopedLabelPrintBatchDetail?> Handle(
         GetScopedLabelPrintBatchByIdempotencyKeyQuery request,
         CancellationToken cancellationToken)
     {
@@ -151,8 +151,7 @@ public sealed class GetScopedLabelPrintBatchByIdempotencyKeyQueryHandler(Applica
                 && x.EnvironmentId == tenant.EnvironmentId
                 && x.IdempotencyKey == request.IdempotencyKey)
             .Select(ScopedLabelPrintBatchProjection.Detail)
-            .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new KnownException("未找到打印批次。");
+            .SingleOrDefaultAsync(cancellationToken);
     }
 }
 

@@ -222,8 +222,9 @@ public sealed class HttpBusinessBarcodeLabelClient(HttpClient httpClient)
                 cancellationToken);
         }
         catch (BusinessServiceProxyException exception) when (
-            exception.StatusCode == HttpStatusCode.BadRequest &&
-            string.Equals(exception.Message, "未找到打印批次。", StringComparison.Ordinal))
+            exception.StatusCode == HttpStatusCode.NotFound ||
+            (exception.StatusCode == HttpStatusCode.BadRequest &&
+             string.Equals(exception.Message, "未找到打印批次。", StringComparison.Ordinal)))
         {
             return null;
         }

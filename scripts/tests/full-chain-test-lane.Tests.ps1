@@ -1,4 +1,4 @@
-# Script-Governance:
+﻿# Script-Governance:
 #   Category: check
 #   SideEffects:
 #     - Validates FullChain lane manifest, TRX and summary contracts with temporary fixtures
@@ -314,13 +314,21 @@ function Assert-FullChainV1WorkflowContract {
         'Run governed FullChain scenarios',
         'Collect FullChain evidence',
         'Upload FullChain normalized evidence',
+        'Write FullChain comparison diagnostics',
         'Upload FullChain dependency summary',
+        'Upload FullChain comparison diagnostics',
         'Upload FullChain failure diagnostics'
     )
     Assert-Contract ([string]::Equals((@($v1Steps.name) -join '|'), ($expectedStepNames -join '|'), [StringComparison]::Ordinal)) 'The physical v1 worker must carry the complete governed workflow step sequence.'
     Assert-Contract (@($v1Steps | Where-Object { $null -eq $_.PSObject.Properties['timeout-minutes'] -or [int]$_.'timeout-minutes' -le 0 }).Count -eq 0) 'Every physical v1 workflow step must retain a positive timeout.'
     $v1StepBudget = (@($v1Steps | ForEach-Object { [int]$_.'timeout-minutes' }) | Measure-Object -Sum).Sum
     Assert-Contract ($v1StepBudget -lt [int]$v1Job.'timeout-minutes') 'The physical v1 worker explicit step budget must remain strictly below its job budget.'
+    $diagnosticWriter = $v1Steps | Where-Object { [string]::Equals([string]$_.name, 'Write FullChain comparison diagnostics', [StringComparison]::Ordinal) }
+    $diagnosticUpload = $v1Steps | Where-Object { [string]::Equals([string]$_.name, 'Upload FullChain comparison diagnostics', [StringComparison]::Ordinal) }
+    $failureUpload = $v1Steps | Where-Object { [string]::Equals([string]$_.name, 'Upload FullChain failure diagnostics', [StringComparison]::Ordinal) }
+    Assert-Contract ([string]::Equals([string]$diagnosticWriter.if, 'always()', [StringComparison]::Ordinal) -and [string]::Equals([string]$diagnosticUpload.if, 'always()', [StringComparison]::Ordinal)) 'FullChain 红绿运行必须生成并上传同一份对照摘要。'
+    Assert-Contract ($diagnosticUpload.with.path.EndsWith('/comparison-diagnostics.json', [StringComparison]::Ordinal)) 'FullChain 对照诊断上传必须指向生成的摘要。'
+    Assert-Contract ([string]::Equals([string]$failureUpload.if, 'failure()', [StringComparison]::Ordinal)) 'FullChain 详细诊断必须在失败时上传。'
     $runSteps = @($v1Steps | Where-Object { [string]::Equals([string]$_.name, 'Run governed FullChain scenarios', [StringComparison]::Ordinal) })
     Assert-Contract ($runSteps.Count -eq 1 -and [int]$runSteps[0].'timeout-minutes' -eq 120) 'The physical v1 worker must retain exactly one 120-minute governed FullChain runner step.'
     $v1Run = [string]$runSteps[0].run

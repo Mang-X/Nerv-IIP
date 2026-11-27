@@ -81,6 +81,7 @@ public sealed class WmsInboundCompletedPurchaseReceiptConsumerTests
         var receipt = Assert.Single(dbContext.PurchaseReceipts.Include(x => x.Lines));
         Assert.Equal("WMS-IN-GRIR-001", receipt.PurchaseReceiptNo);
         Assert.Equal("PO-WMS-GRIR-001", receipt.PurchaseOrderNo);
+        Assert.Equal(Nerv.IIP.Contracts.Erp.PurchaseReceiptInventoryPostingRoute.Wms, receipt.InventoryPostingRoute);
         var receiptLine = Assert.Single(receipt.Lines);
         Assert.Equal("LINE-001", receiptLine.PurchaseOrderLineNo);
         Assert.Equal("unrestricted", receiptLine.QualityStatus);

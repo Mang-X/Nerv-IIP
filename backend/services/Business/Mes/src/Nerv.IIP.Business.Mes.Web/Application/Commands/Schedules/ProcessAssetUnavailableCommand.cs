@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using FluentValidation;
 using Nerv.IIP.Business.Mes.Infrastructure;
 using Nerv.IIP.Business.Mes.Web.Application.IntegrationEventHandlers;
@@ -39,7 +40,8 @@ public sealed class ProcessAssetUnavailableCommandHandler(
     IMesAssetUnavailableInboxClaimCoordinator claimCoordinator,
     IMesPlanningStore store,
     IMesDeviceWorkCenterResolver workCenterResolver,
-    ILogger<ProcessAssetUnavailableCommandHandler> logger)
+    ILogger<ProcessAssetUnavailableCommandHandler> logger,
+    ApplicationDbContext dbContext)
     : ICommandHandler<ProcessAssetUnavailableCommand, ProcessAssetUnavailableResult>
 {
     public async Task<ProcessAssetUnavailableResult> Handle(
@@ -61,12 +63,29 @@ public sealed class ProcessAssetUnavailableCommandHandler(
         var envelope = request.Envelope;
         // 同一实际停机的预测更新/清除仅登记投递；已恢复的事实也不得重新打开。
         // coordinator 持有事实锁直至 UoW 提交，初始事件与新 prediction 身份并发时仍只插入一次。
-        if (await store.UnavailabilityExistsAsync(
-                envelope.OrganizationId,
-                envelope.EnvironmentId,
-                request.DeviceAssetId,
-                request.FromUtc,
-                cancellationToken))
+        string? downtimeEventNo = null;
+        DateTimeOffset? restoredAtUtc = null;
+        if (Guid.TryParse(envelope.CorrelationId, out var workOrderId) &&
+            envelope.IdempotencyKey.StartsWith($"asset-unavailable:{workOrderId:D}:", StringComparison.Ordinal))
+        {
+            await MaintenanceAssetRecovery.AcquireAsync(dbContext, envelope.OrganizationId, envelope.EnvironmentId, workOrderId, cancellationToken);
+            downtimeEventNo = MaintenanceAssetRecovery.DowntimeEventNo(workOrderId);
+            if (await dbContext.WorkCenterUnavailabilities.AnyAsync(x =>
+                x.OrganizationId == envelope.OrganizationId && x.EnvironmentId == envelope.EnvironmentId &&
+                x.DowntimeEventNo == downtimeEventNo, cancellationToken))
+            {
+                return new ProcessAssetUnavailableResult(true);
+            }
+
+            var recovery = await dbContext.MaintenanceAssetRecoveries.FindAsync(
+                [envelope.OrganizationId, envelope.EnvironmentId, workOrderId], cancellationToken);
+            if (recovery?.DeviceAssetId == request.DeviceAssetId && recovery.RestoredAtUtc >= request.FromUtc)
+            {
+                restoredAtUtc = recovery.RestoredAtUtc;
+            }
+        }
+        else if (await store.UnavailabilityExistsAsync(
+            envelope.OrganizationId, envelope.EnvironmentId, request.DeviceAssetId, request.FromUtc, cancellationToken))
         {
             return new ProcessAssetUnavailableResult(true);
         }
@@ -94,11 +113,12 @@ public sealed class ProcessAssetUnavailableCommandHandler(
         store.AddUnavailability(new WorkCenterUnavailability(
             workCenterId,
             request.FromUtc,
-            null,
+            restoredAtUtc,
             request.Reason,
             request.DeviceAssetId,
             envelope.OrganizationId,
-            envelope.EnvironmentId));
+            envelope.EnvironmentId,
+            downtimeEventNo));
 
         return new ProcessAssetUnavailableResult(true);
     }

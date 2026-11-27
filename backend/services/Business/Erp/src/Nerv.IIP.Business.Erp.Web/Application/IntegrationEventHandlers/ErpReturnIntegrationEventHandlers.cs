@@ -204,30 +204,35 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
             "supplier purchase return voucher",
             cancellationToken);
         var remainingDebitAmount = returnLines.Sum(x => x.DebitNoteQuantity * x.UnitPrice);
-        var payablesByInvoiceNo = await dbContext.AccountPayables
-            .Where(x => x.OrganizationId == receipt.OrganizationId && x.EnvironmentId == receipt.EnvironmentId && x.SupplierCode == receipt.SupplierCode)
-            .ToDictionaryAsync(x => x.SourceDocumentNo, StringComparer.Ordinal, cancellationToken);
+        var invoiceNos = invoices.Select(x => x.InvoiceNo).ToArray();
+        var payables = await dbContext.AccountPayables
+            .Where(x => x.OrganizationId == receipt.OrganizationId && x.EnvironmentId == receipt.EnvironmentId
+                && x.SupplierCode == receipt.SupplierCode && invoiceNos.Contains(x.SourceDocumentNo))
+            .OrderBy(x => x.PayableNo)
+            .ToListAsync(cancellationToken);
+        var payablesByInvoiceNo = payables.ToLookup(x => x.SourceDocumentNo, StringComparer.Ordinal);
         var debitApplications = new List<(SupplierInvoice Invoice, AccountPayable Payable, decimal Amount)>();
         foreach (var invoice in invoices)
         {
-            if (remainingDebitAmount <= 0m)
+            foreach (var payable in payablesByInvoiceNo[invoice.InvoiceNo])
+            {
+                var appliedAmount = Math.Min(remainingDebitAmount, payable.OpenAmount);
+                if (appliedAmount > 0m)
+                {
+                    debitApplications.Add((invoice, payable, appliedAmount));
+                    remainingDebitAmount -= appliedAmount;
+                }
+
+                if (remainingDebitAmount == 0m)
+                {
+                    break;
+                }
+            }
+
+            if (remainingDebitAmount == 0m)
             {
                 break;
             }
-
-            if (!payablesByInvoiceNo.TryGetValue(invoice.InvoiceNo, out var payable))
-            {
-                continue;
-            }
-
-            var appliedAmount = Math.Min(remainingDebitAmount, payable.OpenAmount);
-            if (appliedAmount <= 0m)
-            {
-                continue;
-            }
-
-            debitApplications.Add((invoice, payable, appliedAmount));
-            remainingDebitAmount -= appliedAmount;
         }
 
         if (remainingDebitAmount > 0m)
@@ -267,7 +272,7 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
                 receipt.EnvironmentId,
                 "debit-note",
                 null,
-                $"{ConsumerName}:{integrationEvent.IdempotencyKey}:{application.Invoice.InvoiceNo}",
+                ErpCodingService.Fingerprint(ConsumerName, integrationEvent.IdempotencyKey, application.Invoice.InvoiceNo, application.Payable.PayableNo),
                 ErpCodingService.Fingerprint(returnAllocation.Code, application.Invoice.InvoiceNo, application.Payable.PayableNo, application.Amount),
                 cancellationToken);
             application.Payable.ApplyDebitNote(application.Amount);

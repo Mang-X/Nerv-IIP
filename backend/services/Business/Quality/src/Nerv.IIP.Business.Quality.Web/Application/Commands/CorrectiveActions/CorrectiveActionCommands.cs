@@ -172,7 +172,9 @@ public sealed class CapaCloseApprovalOptions
 public sealed record CloseCorrectiveActionCommand(
     CorrectiveActionId CorrectiveActionId,
     string ClosedByUserId,
-    string? CloseApprovalChainId = null) : ICommand;
+    string? CloseApprovalChainId = null,
+    string? OrganizationId = null,
+    string? EnvironmentId = null) : ICommand;
 
 public sealed class CloseCorrectiveActionCommandHandler(
     ICorrectiveActionRepository repository,
@@ -183,8 +185,19 @@ public sealed class CloseCorrectiveActionCommandHandler(
 {
     public async Task Handle(CloseCorrectiveActionCommand request, CancellationToken cancellationToken)
     {
-        var capa = await repository.GetWithActionsAsync(request.CorrectiveActionId, cancellationToken)
-            ?? throw new KnownException($"找不到 CAPA {request.CorrectiveActionId}，请在 CAPA 页面确认编号后重试。");
+        var capa = await repository.GetWithActionsAsync(request.CorrectiveActionId, cancellationToken);
+        if (capa is null
+            || (request.OrganizationId is not null && capa.OrganizationId != request.OrganizationId)
+            || (request.EnvironmentId is not null && capa.EnvironmentId != request.EnvironmentId))
+        {
+            throw new KnownException($"找不到 CAPA {request.CorrectiveActionId}，请在 CAPA 页面确认编号后重试。");
+        }
+
+        if (capa.Status != "effectiveness-verified" || capa.EffectivenessInspectionRecordId is null)
+        {
+            throw new KnownException($"CAPA {capa.CapaCode} 尚未完成效果验证，请在纠正措施台账完成验证后再关闭。");
+        }
+
         if (closeApprovalOptions.Value.Required)
         {
             if (string.IsNullOrWhiteSpace(request.CloseApprovalChainId))

@@ -415,6 +415,8 @@ public sealed class ListAlarmEventsQueryHandler(ApplicationDbContext dbContext)
         {
             null => query,
             "active" => query.Where(x => x.Status != "cleared"),
+            "escalated" => query.Where(x => x.Status != "cleared" && x.EscalatedAtUtc != null),
+            "active-acknowledged" => query.Where(x => x.Status != "cleared" && x.AcknowledgedAtUtc != null),
             _ => query.Where(x => x.Status == status),
         };
         var total = await query.CountAsync(cancellationToken);
@@ -484,13 +486,16 @@ public sealed record QueryDeviceStateTimelineQuery(string DeviceAssetId, string?
 
 public sealed record DeviceTimelineItem(string ItemType, string DeviceAssetId, string? TagKey, string Value, DateTimeOffset OccurredAtUtc);
 
-public sealed class QueryDeviceStateTimelineQueryHandler(ApplicationDbContext dbContext)
+public sealed class QueryDeviceStateTimelineQueryHandler(ApplicationDbContext dbContext, ITelemetryDeviceReferences? references = null)
     : IQueryHandler<QueryDeviceStateTimelineQuery, IReadOnlyCollection<DeviceTimelineItem>>
 {
     public async Task<IReadOnlyCollection<DeviceTimelineItem>> Handle(QueryDeviceStateTimelineQuery request, CancellationToken cancellationToken)
     {
+        var aliases = references is null || request.OrganizationId is null || request.EnvironmentId is null
+            ? new[] { request.DeviceAssetId }
+            : (await references.ResolveAsync(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, cancellationToken)).Aliases;
         var states = await dbContext.DeviceStateSnapshots
-            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => aliases.Contains(x.DeviceAssetId))
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
             .Where(x => request.FromUtc == null || x.OccurredAtUtc >= request.FromUtc)
@@ -500,7 +505,7 @@ public sealed class QueryDeviceStateTimelineQueryHandler(ApplicationDbContext db
             .Take(100)
             .ToArrayAsync(cancellationToken);
         var rawSamples = await dbContext.TelemetryRawSamples
-            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => aliases.Contains(x.DeviceAssetId))
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
             .Where(x => request.FromUtc == null || x.BucketEndUtc >= request.FromUtc)
@@ -510,7 +515,7 @@ public sealed class QueryDeviceStateTimelineQueryHandler(ApplicationDbContext db
             .Take(100)
             .ToArrayAsync(cancellationToken);
         var rollups = await dbContext.TelemetryRollups
-            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => aliases.Contains(x.DeviceAssetId))
             .Where(x => request.OrganizationId == null || x.OrganizationId == request.OrganizationId)
             .Where(x => request.EnvironmentId == null || x.EnvironmentId == request.EnvironmentId)
             .Where(x => request.FromUtc == null || x.WindowEndUtc >= request.FromUtc)
@@ -604,27 +609,34 @@ public sealed class QueryRuntimeHoursQueryValidator : AbstractValidator<QueryRun
     }
 }
 
-public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
+public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext, ITelemetryDeviceReferences? references = null)
     : IQueryHandler<QueryOeeQuery, OeeResponse>
 {
     public async Task<OeeResponse> Handle(QueryOeeQuery request, CancellationToken cancellationToken)
     {
+        var aliases = references is null
+            ? new[] { request.DeviceAssetId }
+            : (await references.ResolveAsync(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, cancellationToken)).Aliases;
         var carryInState = await dbContext.DeviceStateSnapshots
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => aliases.Contains(x.DeviceAssetId))
             .Where(x => x.OccurredAtUtc < request.WindowStartUtc)
             .OrderByDescending(x => x.OccurredAtUtc)
+            .ThenByDescending(x => x.RecordedAtUtc)
+            .ThenByDescending(x => x.SourceSequence)
             .Select(x => new OeeStatePoint(request.WindowStartUtc, x.State))
             .FirstOrDefaultAsync(cancellationToken);
 
         var inWindowStates = await dbContext.DeviceStateSnapshots
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => aliases.Contains(x.DeviceAssetId))
             .Where(x => x.OccurredAtUtc >= request.WindowStartUtc)
             .Where(x => x.OccurredAtUtc < request.WindowEndUtc)
             .OrderBy(x => x.OccurredAtUtc)
+            .ThenBy(x => x.RecordedAtUtc)
+            .ThenBy(x => x.SourceSequence)
             .Select(x => new OeeStatePoint(x.OccurredAtUtc, x.State))
             .ToArrayAsync(cancellationToken);
 
@@ -637,7 +649,7 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
             .AsNoTracking()
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => aliases.Contains(x.DeviceAssetId))
             .Where(x => x.ReportedAtUtc >= request.WindowStartUtc)
             .Where(x => x.ReportedAtUtc < request.WindowEndUtc)
             .ToArrayAsync(cancellationToken);
@@ -830,16 +842,19 @@ public sealed class QueryOeeQueryHandler(ApplicationDbContext dbContext)
     private sealed record OeeStatePoint(DateTimeOffset OccurredAtUtc, string State);
 }
 
-public sealed class QueryRuntimeHoursQueryHandler(ApplicationDbContext dbContext)
+public sealed class QueryRuntimeHoursQueryHandler(ApplicationDbContext dbContext, ITelemetryDeviceReferences? references = null)
     : IQueryHandler<QueryRuntimeHoursQuery, RuntimeHoursResponse>
 {
     private static readonly TimeSpan QueryChunkSize = TimeSpan.FromDays(366);
 
     public async Task<RuntimeHoursResponse> Handle(QueryRuntimeHoursQuery request, CancellationToken cancellationToken)
     {
+        var aliases = references is null
+            ? new[] { request.DeviceAssetId }
+            : (await references.ResolveAsync(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, cancellationToken)).Aliases;
         var windowStartUtc = request.WindowStartUtc.ToUniversalTime();
         var windowEndUtc = request.WindowEndUtc.ToUniversalTime();
-        var stateSampleCount = await CountStateSamplesAsync(request, windowStartUtc, windowEndUtc, cancellationToken);
+        var stateSampleCount = await CountStateSamplesAsync(request, aliases, windowStartUtc, windowEndUtc, cancellationToken);
         var buckets = new Dictionary<string, RuntimeHoursBucket>(StringComparer.Ordinal);
         for (var chunkStartUtc = windowStartUtc; chunkStartUtc < windowEndUtc;)
         {
@@ -849,7 +864,7 @@ public sealed class QueryRuntimeHoursQueryHandler(ApplicationDbContext dbContext
                 chunkEndUtc = windowEndUtc;
             }
 
-            MergeBuckets(buckets, await QueryChunkBucketsAsync(request, chunkStartUtc, chunkEndUtc, cancellationToken));
+            MergeBuckets(buckets, await QueryChunkBucketsAsync(request, aliases, chunkStartUtc, chunkEndUtc, cancellationToken));
             chunkStartUtc = chunkEndUtc;
         }
 
@@ -883,6 +898,7 @@ public sealed class QueryRuntimeHoursQueryHandler(ApplicationDbContext dbContext
 
     private async Task<int> CountStateSamplesAsync(
         QueryRuntimeHoursQuery request,
+        string[] aliases,
         DateTimeOffset windowStartUtc,
         DateTimeOffset windowEndUtc,
         CancellationToken cancellationToken)
@@ -890,13 +906,13 @@ public sealed class QueryRuntimeHoursQueryHandler(ApplicationDbContext dbContext
         var hasCarryInState = await dbContext.DeviceStateSnapshots
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => aliases.Contains(x.DeviceAssetId))
             .Where(x => x.OccurredAtUtc < windowStartUtc)
             .AnyAsync(cancellationToken);
         var inWindowStateCount = await dbContext.DeviceStateSnapshots
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => aliases.Contains(x.DeviceAssetId))
             .Where(x => x.OccurredAtUtc >= windowStartUtc)
             .Where(x => x.OccurredAtUtc < windowEndUtc)
             .CountAsync(cancellationToken);
@@ -906,6 +922,7 @@ public sealed class QueryRuntimeHoursQueryHandler(ApplicationDbContext dbContext
 
     private async Task<IReadOnlyCollection<RuntimeHoursBucket>> QueryChunkBucketsAsync(
         QueryRuntimeHoursQuery request,
+        string[] aliases,
         DateTimeOffset chunkStartUtc,
         DateTimeOffset chunkEndUtc,
         CancellationToken cancellationToken)
@@ -913,7 +930,7 @@ public sealed class QueryRuntimeHoursQueryHandler(ApplicationDbContext dbContext
         var carryInState = await dbContext.DeviceStateSnapshots
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => aliases.Contains(x.DeviceAssetId))
             .Where(x => x.OccurredAtUtc < chunkStartUtc)
             .OrderByDescending(x => x.OccurredAtUtc)
             .ThenByDescending(x => x.RecordedAtUtc)
@@ -924,7 +941,7 @@ public sealed class QueryRuntimeHoursQueryHandler(ApplicationDbContext dbContext
         var inWindowStates = await dbContext.DeviceStateSnapshots
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => aliases.Contains(x.DeviceAssetId))
             .Where(x => x.OccurredAtUtc >= chunkStartUtc)
             .Where(x => x.OccurredAtUtc < chunkEndUtc)
             .OrderBy(x => x.OccurredAtUtc)
@@ -1029,15 +1046,18 @@ public sealed class GetRuntimeCurrentStateQueryValidator : AbstractValidator<Get
     }
 }
 
-public sealed class GetRuntimeCurrentStateQueryHandler(ApplicationDbContext dbContext)
+public sealed class GetRuntimeCurrentStateQueryHandler(ApplicationDbContext dbContext, ITelemetryDeviceReferences? references = null)
     : IQueryHandler<GetRuntimeCurrentStateQuery, EquipmentRuntimeCurrentStateResponse>
 {
     public async Task<EquipmentRuntimeCurrentStateResponse> Handle(GetRuntimeCurrentStateQuery request, CancellationToken cancellationToken)
     {
+        var aliases = references is null
+            ? new[] { request.DeviceAssetId }
+            : (await references.ResolveAsync(request.OrganizationId, request.EnvironmentId, request.DeviceAssetId, cancellationToken)).Aliases;
         var latestState = await dbContext.DeviceStateSnapshots
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => aliases.Contains(x.DeviceAssetId))
             .Where(x => x.OccurredAtUtc <= request.AsOfUtc)
             .OrderByDescending(x => x.OccurredAtUtc)
             .ThenByDescending(x => x.RecordedAtUtc)
@@ -1048,7 +1068,7 @@ public sealed class GetRuntimeCurrentStateQueryHandler(ApplicationDbContext dbCo
         var activeAlarms = await dbContext.AlarmEvents
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => aliases.Contains(x.DeviceAssetId))
             .Where(x => x.RaisedAtUtc <= request.AsOfUtc)
             .Where(x => x.ClearedAtUtc == null || x.ClearedAtUtc > request.AsOfUtc)
             .OrderByDescending(x => x.RaisedAtUtc)
@@ -1077,7 +1097,7 @@ public sealed class GetRuntimeCurrentStateQueryHandler(ApplicationDbContext dbCo
         var latestSampleAtUtc = await dbContext.TelemetryRawSamples
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
-            .Where(x => x.DeviceAssetId == request.DeviceAssetId)
+            .Where(x => aliases.Contains(x.DeviceAssetId))
             .Where(x => x.BucketEndUtc <= request.AsOfUtc)
             .MaxAsync(x => (DateTimeOffset?)x.BucketEndUtc, cancellationToken);
 
@@ -1128,7 +1148,7 @@ public sealed class QueryRuntimeAvailabilityQueryValidator : AbstractValidator<Q
     }
 }
 
-public sealed class QueryRuntimeAvailabilityQueryHandler(ApplicationDbContext dbContext)
+public sealed class QueryRuntimeAvailabilityQueryHandler(ApplicationDbContext dbContext, ITelemetryDeviceReferences? references = null)
     : IQueryHandler<QueryRuntimeAvailabilityQuery, EquipmentRuntimeAvailabilityResponse>
 {
     public async Task<EquipmentRuntimeAvailabilityResponse> Handle(QueryRuntimeAvailabilityQuery request, CancellationToken cancellationToken)
@@ -1153,11 +1173,19 @@ public sealed class QueryRuntimeAvailabilityQueryHandler(ApplicationDbContext db
             throw new KnownException("deviceAssetIds is required in P0 runtime availability.");
         }
 
+        var aliasesByDevice = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        foreach (var deviceAssetId in requestedDeviceAssetIds)
+        {
+            aliasesByDevice[deviceAssetId] = references is null ? [deviceAssetId] :
+                (await references.ResolveAsync(request.OrganizationId, request.EnvironmentId, deviceAssetId, cancellationToken)).Aliases;
+        }
+        var allAliases = aliasesByDevice.Values.SelectMany(x => x).Distinct(StringComparer.Ordinal).ToArray();
+
         var latestStates = await dbContext.DeviceStateSnapshots
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => x.OccurredAtUtc <= request.WindowEndUtc)
-            .Where(x => requestedDeviceAssetIds.Contains(x.DeviceAssetId))
+            .Where(x => allAliases.Contains(x.DeviceAssetId))
             .GroupBy(x => x.DeviceAssetId)
             .Select(group => group
                 .OrderByDescending(x => x.OccurredAtUtc)
@@ -1172,15 +1200,23 @@ public sealed class QueryRuntimeAvailabilityQueryHandler(ApplicationDbContext db
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => x.RaisedAtUtc <= request.WindowEndUtc)
             .Where(x => x.ClearedAtUtc == null || x.ClearedAtUtc > request.WindowStartUtc)
-            .Where(x => requestedDeviceAssetIds.Contains(x.DeviceAssetId))
+            .Where(x => allAliases.Contains(x.DeviceAssetId))
             .OrderBy(x => x.RaisedAtUtc)
             .Select(x => new RuntimeAlarmProjection(x.Id, x.DeviceAssetId, x.AlarmCode, x.Severity, x.RaisedAtUtc, x.ExternalAlarmId))
             .ToArrayAsync(cancellationToken);
 
-        var deviceAssetIds = requestedDeviceAssetIds ?? latestStates
-            .Select(x => x.DeviceAssetId)
-            .Concat(activeAlarms.Select(x => x.DeviceAssetId))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+        var statesByAlias = latestStates.ToDictionary(x => x.DeviceAssetId, StringComparer.Ordinal);
+        latestStates = aliasesByDevice.Select(pair => pair.Value
+                .Where(statesByAlias.ContainsKey)
+                .Select(alias => statesByAlias[alias])
+                .OrderByDescending(state => state.OccurredAtUtc)
+                .ThenByDescending(state => state.RecordedAtUtc)
+                .ThenByDescending(state => state.SourceSequence, StringComparer.Ordinal)
+                .FirstOrDefault() is { } latest ? latest with { DeviceAssetId = pair.Key } : null)
+            .OfType<RuntimeStateProjection>().ToArray();
+        activeAlarms = aliasesByDevice.SelectMany(pair => activeAlarms
+                .Where(alarm => pair.Value.Contains(alarm.DeviceAssetId))
+                .Select(alarm => alarm with { DeviceAssetId = pair.Key }))
             .ToArray();
 
         var windows = new List<EquipmentRuntimeAvailabilityWindowContract>();
@@ -1236,14 +1272,18 @@ public sealed class QueryRuntimeAvailabilityQueryHandler(ApplicationDbContext db
         // 结果是「当前阻塞」面板被 sourceStale 塞满、activeBlockCount 恒 ≥ 1。
         //
         // 正确语义：sourceStale 描述的是「采集源现在确实已经过期」，而不是「再过几小时可能会过期」。
-        var latestSampleByDevice = await dbContext.TelemetryRawSamples
+        var latestSampleByAlias = await dbContext.TelemetryRawSamples
             .Where(x => x.OrganizationId == request.OrganizationId)
             .Where(x => x.EnvironmentId == request.EnvironmentId)
             .Where(x => x.BucketEndUtc <= request.WindowStartUtc)
-            .Where(x => deviceAssetIds.Contains(x.DeviceAssetId))
+            .Where(x => allAliases.Contains(x.DeviceAssetId))
             .GroupBy(x => x.DeviceAssetId)
             .Select(g => new { DeviceAssetId = g.Key, LatestBucketEndUtc = g.Max(x => x.BucketEndUtc) })
             .ToDictionaryAsync(x => x.DeviceAssetId, x => x.LatestBucketEndUtc, StringComparer.OrdinalIgnoreCase, cancellationToken);
+
+        var latestSampleByDevice = aliasesByDevice.Where(pair => pair.Value.Any(latestSampleByAlias.ContainsKey))
+            .ToDictionary(pair => pair.Key, pair => pair.Value.Where(latestSampleByAlias.ContainsKey)
+                .Max(alias => latestSampleByAlias[alias]), StringComparer.Ordinal);
 
         foreach (var state in latestStates)
         {
@@ -1277,7 +1317,7 @@ public sealed class QueryRuntimeAvailabilityQueryHandler(ApplicationDbContext db
         // 没有状态快照的设备。快照只在样本带设备状态时才写，Modbus / MQTT / OPC UA 连接器上报的样本不带状态，
         // 所以「没有快照」不等于「没接入」：有样本的按样本新鲜度判（新鲜不出窗口，过期发采集过期）；
         // 快照和样本都没有，才是尚未接入采集。
-        foreach (var deviceAssetId in deviceAssetIds.Where(deviceAssetId => latestStates.All(x => !string.Equals(x.DeviceAssetId, deviceAssetId, StringComparison.OrdinalIgnoreCase))))
+        foreach (var deviceAssetId in requestedDeviceAssetIds.Where(deviceAssetId => latestStates.All(x => !string.Equals(x.DeviceAssetId, deviceAssetId, StringComparison.OrdinalIgnoreCase))))
         {
             DateTimeOffset startUtc;
             string reasonCode;

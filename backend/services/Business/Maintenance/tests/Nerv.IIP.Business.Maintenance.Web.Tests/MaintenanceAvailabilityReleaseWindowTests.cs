@@ -86,9 +86,9 @@ public sealed class MaintenanceAvailabilityReleaseWindowTests
         var workOrder = MaintenanceWorkOrder.OpenFromAlarm(
             "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", "DEV-CNC-01", sourceAlarmId: "WH-DEV-CNC-01-spindle:0001", priority: "high");
         workOrder.MarkAssetUnavailable(unavailableFromUtc, "alarm downtime");
-        workOrder.MarkAlarmCleared(now.AddHours(-1));
         workOrder.Accept("tech-001");
         workOrder.StartWork();
+        workOrder.MarkAlarmCleared(DateTimeOffset.UtcNow.AddMinutes(1));
         dbContext.MaintenanceWorkOrders.Add(workOrder);
         await dbContext.SaveChangesAsync();
 

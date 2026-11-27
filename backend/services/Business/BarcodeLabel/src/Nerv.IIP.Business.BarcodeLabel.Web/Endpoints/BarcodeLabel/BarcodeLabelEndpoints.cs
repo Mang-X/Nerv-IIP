@@ -359,6 +359,14 @@ public sealed class GetScopedLabelPrintBatchByIdempotencyKeyEndpoint(ISender sen
             req.OrganizationId,
             req.EnvironmentId,
             req.IdempotencyKey), ct);
+        if (batch is null)
+        {
+            HttpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            await HttpContext.Response.WriteAsJsonAsync(
+                new ResponseData(false, "未找到打印批次。", StatusCodes.Status404NotFound, []), ct);
+            return;
+        }
+
         await Send.OkAsync(new GetScopedLabelPrintBatchResponse(batch).AsResponseData(), cancellation: ct);
     }
 }

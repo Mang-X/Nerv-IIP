@@ -78,6 +78,23 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
     }
 
     [Fact]
+    public async Task Detail_by_idempotency_key_returns_null_for_not_found()
+    {
+        var handler = new RecordingResponseHandler(
+            """{"success":false,"message":"未找到打印批次。","code":404}""",
+            HttpStatusCode.NotFound);
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://barcode-label.test") };
+        var client = new HttpBusinessBarcodeLabelClient(httpClient);
+
+        var result = await client.GetPrintBatchByIdempotencyKeyAsync(
+            "internal-token",
+            new BusinessConsoleBarcodePrintBatchByIdempotencyKeyRequest("org-001", "env-dev", "intent-unknown"),
+            CancellationToken.None);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
     public async Task Detail_by_idempotency_key_returns_no_batch_for_the_scoped_not_found_result()
     {
         var handler = new RecordingResponseHandler(
@@ -312,7 +329,7 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
         Assert.False(body.RootElement.TryGetProperty("environmentId", out _));
     }
 
-    private sealed class RecordingResponseHandler(string responseBody) : HttpMessageHandler
+    private sealed class RecordingResponseHandler(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK) : HttpMessageHandler
     {
         public HttpRequestMessage? LastRequest { get; private set; }
 
@@ -326,7 +343,7 @@ public sealed class BusinessBarcodeLabelLifecycleClientTests
             LastRequestBody = request.Content is null
                 ? string.Empty
                 : await request.Content.ReadAsStringAsync(cancellationToken);
-            return new HttpResponseMessage(HttpStatusCode.OK)
+            return new HttpResponseMessage(statusCode)
             {
                 Content = new StringContent(responseBody, Encoding.UTF8, "application/json"),
             };

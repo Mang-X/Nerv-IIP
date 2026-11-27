@@ -5,11 +5,8 @@ import {
   NvButton,
   NvDataTable,
   NvDropdownMenuItem,
-  NvMetricCard,
-  NvMetricRing,
   NvPageHeader,
   NvRowActions,
-  NvSectionCards,
   NvTooltip,
   NvTooltipContent,
   NvTooltipProvider,
@@ -61,7 +58,6 @@ const {
   confirmShelve,
   customMinutesError,
   deviceLabel,
-  dispositionFacets,
   errorMessage,
   escalationTooltip,
   formatDateTime,
@@ -74,7 +70,6 @@ const {
   openShelve,
   page,
   pageSize,
-  pagedAlarms,
   reasonError,
   reasonRequired,
   recordDowntime,
@@ -84,7 +79,6 @@ const {
   selectView,
   selectedKeys,
   severityLabel,
-  severitySegments,
   severityVariant,
   shelve,
   shelveContextItems,
@@ -95,7 +89,6 @@ const {
   statusVariant,
   totalItems,
   updatePageSize,
-  viewCounts,
 } = useAlarmPage()
 </script>
 
@@ -104,7 +97,7 @@ const {
     <NvPageHeader
       title="设备报警"
       :breadcrumbs="[{ label: '设备监控' }]"
-      :count="`${alarms.length} 条未解除`"
+      :count="`${totalItems} 条`"
     >
       <template #actions>
         <NvButton size="sm" type="button" variant="outline" as-child>
@@ -128,22 +121,6 @@ const {
       </template>
     </NvPageHeader>
 
-    <NvSectionCards :columns="2">
-      <NvMetricRing
-        label="未解除报警级别构成"
-        :value="alarms.length"
-        center-caption="条未解除"
-        :segments="severitySegments"
-      />
-      <NvMetricCard
-        variant="facets"
-        label="处置进展"
-        :value="alarms.length"
-        unit=" 条"
-        :facets="dispositionFacets"
-      />
-    </NvSectionCards>
-
     <p v-if="errorMessage" class="text-sm text-destructive" role="alert">{{ errorMessage }}</p>
 
     <!-- 快捷筛选:升级是与处置正交的独立视图(可与已确认/已搁置重叠) -->
@@ -159,14 +136,13 @@ const {
         @click="selectView(view.value)"
       >
         {{ view.label }}
-        <span class="ms-1 text-xs tabular-nums opacity-70">{{ viewCounts[view.value] }}</span>
       </NvButton>
     </div>
 
     <NvDataTable
       v-model:selected="selectedKeys"
       :columns="columns"
-      :rows="pagedAlarms"
+      :rows="alarms"
       :row-key="alarmKey"
       :row-class="rowClass"
       :loading="alarmsPending"
@@ -177,7 +153,7 @@ const {
       :page="page"
       :total-items="totalItems"
       :page-size="pageSize"
-      empty-message="当前没有未解除设备报警。"
+      empty-message="当前筛选下没有设备报警。"
       @update:page="page = $event"
       @update:page-size="updatePageSize"
     >

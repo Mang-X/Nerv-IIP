@@ -360,6 +360,12 @@ export function useMaintenanceWorkOrdersPage() {
     { key: 'priority', header: '优先级', width: 'w-20' },
     { key: 'status', header: '状态', width: 'w-24' },
     {
+      key: 'inventoryPostingFailureReason',
+      header: '备件过账',
+      accessor: (row) =>
+        row.inventoryPostingFailureReason ? `过账失败：${row.inventoryPostingFailureReason}` : '—',
+    },
+    {
       key: 'assignedTechnicianUserId',
       header: '技师',
       accessor: (r) => technicianLabel(r.assignedTechnicianUserId),

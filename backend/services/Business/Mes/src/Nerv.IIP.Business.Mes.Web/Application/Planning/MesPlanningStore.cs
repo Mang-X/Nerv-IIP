@@ -17,7 +17,8 @@ public sealed record WorkCenterUnavailability(
     string Reason,
     string? DeviceAssetId = null,
     string? OrganizationId = null,
-    string? EnvironmentId = null);
+    string? EnvironmentId = null,
+    string? DowntimeEventNo = null);
 
 public sealed record PlannedWorkOrder(
     string OrganizationId,

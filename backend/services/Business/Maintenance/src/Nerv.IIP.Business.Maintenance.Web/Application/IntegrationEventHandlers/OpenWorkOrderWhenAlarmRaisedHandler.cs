@@ -59,7 +59,8 @@ public sealed class OpenWorkOrderWhenAlarmRaisedHandler(
                 integrationEvent.Payload.TagKey,
                 IdempotencyKey: BuildInternalIdempotencyKey(integrationEvent),
                 AlarmOrigin: new MaintenanceAlarmOrigin(
-                    integrationEvent.Payload.ExternalAlarmId, integrationEvent.Payload.DeviceAssetId, integrationEvent.Payload.AlarmCode)),
+                    integrationEvent.Payload.ExternalAlarmId, integrationEvent.Payload.DeviceAssetId, integrationEvent.Payload.AlarmCode,
+                    RaisedAtUtc: integrationEvent.Payload.RaisedAtUtc)),
             cancellationToken);
     }
 

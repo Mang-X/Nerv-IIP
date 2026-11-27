@@ -51,6 +51,7 @@ vi.mock('@/composables/equipment/useBusinessEquipment', () => ({
   useBusinessEquipmentAlarms: () => ({
     acknowledgeAlarm: alarmState.acknowledgeAlarm,
     alarms: computed(() => alarmState.alarms),
+    alarmsTotal: computed(() => alarmState.alarms.length),
     alarmsError: shallowRef(),
     alarmsPending: shallowRef(false),
     refreshAlarms: alarmState.refreshAlarms,

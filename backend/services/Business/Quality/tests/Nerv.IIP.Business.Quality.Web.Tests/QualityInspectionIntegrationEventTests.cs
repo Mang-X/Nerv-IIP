@@ -238,7 +238,7 @@ public sealed class QualityInspectionIntegrationEventTests
             20m,
             "BATCH-001",
             null,
-            StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", "quality", "company", null),
+            StockReleaseDimension.Create("ea", "SITE-01", "IQC-HOLD", " Quality-Inspection ", "company", null),
             [InspectionResultLineInput.Measure("length", 11m, "mm", ["file-photo-001"])],
             "Supplier certificate mismatch",
             ["file-mrb-001"]);

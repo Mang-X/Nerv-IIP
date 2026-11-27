@@ -140,10 +140,7 @@ public static class MesReadinessReasonCodes
     private static bool IsMaintenanceReason(string reason) =>
         reason.Equals(MaintenanceWindow, StringComparison.OrdinalIgnoreCase) ||
         reason.Equals(InspectionRequired, StringComparison.OrdinalIgnoreCase) ||
-        reason.Equals(PlannedMaintenanceDowntimeReasonCode, StringComparison.OrdinalIgnoreCase) ||
-        reason.Contains("maintenance", StringComparison.OrdinalIgnoreCase) ||
-        reason.Contains("保养", StringComparison.OrdinalIgnoreCase) ||
-        reason.Contains("维修", StringComparison.OrdinalIgnoreCase);
+        reason.Equals(PlannedMaintenanceDowntimeReasonCode, StringComparison.OrdinalIgnoreCase);
 
     private static bool IsIndustrialTelemetryReason(string reason) =>
         reason.Equals(ActiveAlarm, StringComparison.OrdinalIgnoreCase) ||

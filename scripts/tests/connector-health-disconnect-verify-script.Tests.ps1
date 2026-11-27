@@ -4,7 +4,6 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 . (Join-Path $repoRoot 'scripts/lib/ScriptAutomation.ps1')
 $verifyPath = Join-Path $repoRoot 'scripts/integration/verify-connector-health-disconnect.ps1'
 $simulatorPath = Join-Path $repoRoot 'scripts/support/simulate-modbus-tcp.ps1'
-$appHostPath = Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs'
 $connectorHostProgramPath = Join-Path $repoRoot 'connector-hosts/src/Nerv.IIP.ConnectorHost.Host/Program.cs'
 
 function Assert-Contract([bool] $Condition, [string] $Message) {
@@ -15,7 +14,8 @@ Assert-Contract (Test-Path -LiteralPath $verifyPath -PathType Leaf) 'Connector d
 Assert-Contract (Test-Path -LiteralPath $simulatorPath -PathType Leaf) 'Loopback Modbus simulator script is missing.'
 
 $verify = Get-Content -LiteralPath $verifyPath -Raw
-$appHost = Get-Content -LiteralPath $appHostPath -Raw
+$appHostEnvironment = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/AppHostEnvironment.cs') -Raw
+$appHost = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/AppHostGatewaysAndFrontend.cs') -Raw
 $connectorHostProgram = Get-Content -LiteralPath $connectorHostProgramPath -Raw
 
 Assert-Contract ($verify.Contains("scripts/lib/ScriptAutomation.ps1", [StringComparison]::Ordinal)) 'Verify script must dot-source ScriptAutomation.ps1.'
@@ -67,7 +67,7 @@ $simulator = Get-Content -LiteralPath $simulatorPath -Raw
 Assert-Contract ($simulator.Contains('127.0.0.1', [StringComparison]::Ordinal)) 'Simulator must bind loopback only.'
 Assert-Contract ($simulator.Contains('[System.IO.File]::Move($readyStagingPath, $readyFullPath, $true)', [StringComparison]::Ordinal)) 'Simulator must publish the ready record by renaming a sibling staging file so readers never observe a truncated file.'
 
-Assert-Contract ($appHost.Contains('ConnectorHealthAcceptance:Enabled', [StringComparison]::Ordinal)) 'AppHost must have an explicit acceptance-only opt-in.'
+Assert-Contract ($appHostEnvironment.Contains('ConnectorHealthAcceptance:Enabled', [StringComparison]::Ordinal)) 'AppHost must have an explicit acceptance-only opt-in.'
 Assert-Contract ($appHost.Contains('Platform__IndustrialTelemetryBaseUrl', [StringComparison]::Ordinal)) 'Acceptance wiring must inject the IndustrialTelemetry URL into Connector Host.'
 Assert-Contract ($appHost.Contains('InternalService__BearerToken', [StringComparison]::Ordinal)) 'Acceptance wiring must inject the session internal token into Connector Host.'
 Assert-Contract ($appHost.Contains('Modbus__Registers__0__TagKey', [StringComparison]::Ordinal)) 'Acceptance wiring must configure the sampled Modbus mapping.'

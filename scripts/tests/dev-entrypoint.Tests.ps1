@@ -14,7 +14,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $nerv = Join-Path $repoRoot 'nerv.ps1'
 
-$appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
+$appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/AppHostGatewaysAndFrontend.cs') -Raw
 if ($appHostText.Contains('env: fullStackEphemeral ? "PORT" : null', [StringComparison]::Ordinal) -or -not $appHostText.Contains('env: fullStackEphemeral ? "NERV_IIP_VITE_PORT" : null', [StringComparison]::Ordinal)) {
     throw 'Ephemeral Vite endpoints must use the dedicated NERV_IIP_VITE_PORT environment variable.'
 }

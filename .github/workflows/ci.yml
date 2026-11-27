@@ -1337,6 +1337,43 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Write FullChain comparison diagnostics
+        timeout-minutes: 2
+        if: always()
+        shell: pwsh
+        env:
+          FULL_CHAIN_OUTCOME: ${{ steps.full-chain-tests.outcome }}
+          FULL_CHAIN_SUMMARY_DIR: .ryugi/artifacts/full-chain-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}
+        run: |
+          $summaryDir = $env:FULL_CHAIN_SUMMARY_DIR
+          $summaryPath = Join-Path $summaryDir 'summary.json'
+          $lane = if (Test-Path -LiteralPath $summaryPath -PathType Leaf) {
+            Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json
+          }
+          $diagnostics = [ordered]@{
+            schemaVersion = 1
+            outcome = $env:FULL_CHAIN_OUTCOME
+            laneSummaryAvailable = $null -ne $lane
+            counts = $lane | Select-Object expected, discovered, passed, failed, skipped
+            dependencyReadiness = $lane.readiness
+            cleanup = $lane.cleanup
+            members = @(
+              foreach ($member in $lane.members) {
+                [ordered]@{
+                  memberId = $member.memberId
+                  outcome = $member.outcome
+                  cleanup = $member.cleanup
+                  deadlineAdmission = $member.deadlineAdmission
+                  memoryBeforeEntrypoint = $member.memory.beforeEntrypoint
+                  memoryAfterEntrypoint = $member.memory.afterEntrypoint
+                }
+              }
+            )
+          }
+          [IO.Directory]::CreateDirectory($summaryDir) | Out-Null
+          $diagnostics | ConvertTo-Json -Depth 12 |
+            Set-Content -LiteralPath (Join-Path $summaryDir 'comparison-diagnostics.json')
+
       - name: Upload FullChain dependency summary
         timeout-minutes: 5
         if: always()
@@ -1345,6 +1382,17 @@ jobs:
           include-hidden-files: true
           name: full-chain-dependency-summary-${{ github.run_id }}-${{ github.run_attempt }}
           path: .ryugi/artifacts/full-chain-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/summary.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload FullChain comparison diagnostics
+        timeout-minutes: 5
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          include-hidden-files: true
+          name: full-chain-comparison-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ryugi/artifacts/full-chain-test-lane/${{ github.run_id }}/attempt-${{ github.run_attempt }}/comparison-diagnostics.json
           if-no-files-found: error
           retention-days: 14
 

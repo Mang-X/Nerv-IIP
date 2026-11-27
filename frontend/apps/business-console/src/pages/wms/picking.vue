@@ -243,7 +243,8 @@ async function submitCreate() {
     createError.value = '请填写出库单、出库单行与起讫库位。'
     return
   }
-  if (createForm.quantity !== '' && !(Number(createForm.quantity) > 0)) {
+  const quantity = Number(createForm.quantity)
+  if (!Number.isFinite(quantity) || quantity <= 0) {
     createError.value = '拣货数量需为正数。'
     return
   }
@@ -253,7 +254,7 @@ async function submitCreate() {
       lineNo: createForm.lineNo.trim(),
       fromLocationCode: createForm.fromLocationCode.trim(),
       toLocationCode: createForm.toLocationCode.trim(),
-      quantity: createForm.quantity === '' ? undefined : Number(createForm.quantity),
+      quantity,
     })
     const { outboundOrderId, ...body } = intent.payload
     await createPicking(outboundOrderId, { ...body, idempotencyKey: intent.idempotencyKey })
@@ -776,7 +777,7 @@ function firstQuery(value: unknown) {
               />
             </NvField>
             <NvField>
-              <NvFieldLabel for="wms-picking-qty">拣货数量（可选）</NvFieldLabel>
+              <NvFieldLabel for="wms-picking-qty">拣货数量（必填）</NvFieldLabel>
               <NvInput
                 :disabled="createIntentLocked"
                 id="wms-picking-qty"

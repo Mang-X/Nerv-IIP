@@ -3343,6 +3343,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleV
     effectivenessInspectionRecordId?: string;
 };
 
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCloseQualityCapaRequest = {
+    organizationId: string;
+    environmentId: string;
+    closeApprovalChainId?: string | null;
+};
+
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleEngineeringEntityResponse = NetCorePalExtensionsDtoResponseData & {
     data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleEngineeringEntityResponse | null;
 };
@@ -7270,6 +7276,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     blockReasons?: Array<string> | null;
     expectedRestoreAtUtc?: string | null;
     workOrderNo?: string | null;
+    inventoryPostingFailureReason?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleMaintenanceWorkOrderLifecycleEventItem = {
@@ -7534,6 +7541,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleM
     siteCode?: string | null;
     locationCode?: string | null;
     workOrderNo?: string | null;
+    inventoryPostingFailureReason?: string | null;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleCreateMaintenanceSparePartResponse = NetCorePalExtensionsDtoResponseData & {
@@ -15200,6 +15208,41 @@ export type VerifyBusinessConsoleQualityCapaEffectivenessResponses = {
 
 export type VerifyBusinessConsoleQualityCapaEffectivenessResponse = VerifyBusinessConsoleQualityCapaEffectivenessResponses[keyof VerifyBusinessConsoleQualityCapaEffectivenessResponses];
 
+export type CloseBusinessConsoleQualityCapaData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCloseQualityCapaRequest;
+    path: {
+        correctiveActionId: string;
+    };
+    query?: never;
+    url: '/api/business-console/v1/quality/capas/{correctiveActionId}/close';
+};
+
+export type CloseBusinessConsoleQualityCapaErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type CloseBusinessConsoleQualityCapaError = CloseBusinessConsoleQualityCapaErrors[keyof CloseBusinessConsoleQualityCapaErrors];
+
+export type CloseBusinessConsoleQualityCapaResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleAcceptedResponse;
+};
+
+export type CloseBusinessConsoleQualityCapaResponse = CloseBusinessConsoleQualityCapaResponses[keyof CloseBusinessConsoleQualityCapaResponses];
+
 export type ListBusinessConsoleEngineeringDocumentsData = {
     body?: never;
     path?: never;
@@ -17900,7 +17943,13 @@ export type GetBusinessConsoleMesWorkOrderDetailErrors = {
      * Forbidden
      */
     403: unknown;
+    /**
+     * Not Found
+     */
+    404: NetCorePalExtensionsDtoResponseData;
 };
+
+export type GetBusinessConsoleMesWorkOrderDetailError = GetBusinessConsoleMesWorkOrderDetailErrors[keyof GetBusinessConsoleMesWorkOrderDetailErrors];
 
 export type GetBusinessConsoleMesWorkOrderDetailResponses = {
     /**

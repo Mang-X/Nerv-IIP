@@ -55,7 +55,8 @@ public sealed record MaintenanceWorkOrderListItem(
     int Version = 0,
     DateTimeOffset? ExpectedRestoreAtUtc = null,
 
-    string WorkOrderNo = "");
+    string WorkOrderNo = "",
+    string? InventoryPostingFailureReason = null);
 
 public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaintenanceWorkOrdersQuery, PagedMaintenanceListResponse<MaintenanceWorkOrderListItem>>
@@ -120,7 +121,9 @@ public sealed class ListMaintenanceWorkOrdersQueryHandler(ApplicationDbContext d
                 x.AssignedTeamId,
                 x.Version,
                 x.ExpectedRestoreAtUtc,
-                x.WorkOrderNo))
+                x.WorkOrderNo,
+                x.SparePartLines.Where(line => line.InventoryPostingFailureReason != null)
+                    .OrderBy(line => line.Id).Select(line => line.InventoryPostingFailureReason).FirstOrDefault()))
             .Skip(page.Skip)
             .Take(page.Take)
             .ToArrayAsync(cancellationToken);
@@ -224,7 +227,9 @@ public sealed class GetMaintenanceWorkOrderQueryHandler(ApplicationDbContext dbC
                     x.AssignedTeamId,
                     x.Version,
                     x.ExpectedRestoreAtUtc,
-                    x.WorkOrderNo),
+                    x.WorkOrderNo,
+                    x.SparePartLines.Where(line => line.InventoryPostingFailureReason != null)
+                        .OrderBy(line => line.Id).Select(line => line.InventoryPostingFailureReason).FirstOrDefault()),
                 x.CompletionResult != null
                     && x.DowntimeReasonCode != null
                     && x.DowntimeMinutes != null
@@ -567,7 +572,8 @@ public sealed record MaintenanceSparePartListItem(
     string? UomCode,
     string? SiteCode = null,
     string? LocationCode = null,
-    string WorkOrderNo = "");
+    string WorkOrderNo = "",
+    string? InventoryPostingFailureReason = null);
 
 public sealed class ListMaintenanceSparePartsQueryHandler(ApplicationDbContext dbContext)
     : IQueryHandler<ListMaintenanceSparePartsQuery, PagedMaintenanceListResponse<MaintenanceSparePartListItem>>
@@ -600,7 +606,8 @@ public sealed class ListMaintenanceSparePartsQueryHandler(ApplicationDbContext d
                 x.sparePart.UomCode,
                 x.sparePart.SiteCode,
                 x.sparePart.LocationCode,
-                x.workOrder.WorkOrderNo))
+                x.workOrder.WorkOrderNo,
+                x.sparePart.InventoryPostingFailureReason))
             .ToArrayAsync(cancellationToken);
         return new PagedMaintenanceListResponse<MaintenanceSparePartListItem>(items, skip, take, total);
     }
@@ -1140,15 +1147,7 @@ internal static class MaintenanceAvailabilityWindowCalculator
             throw new KnownException("deviceAssetIds is required in P0 maintenance availability.");
         }
 
-        // 占用窗口 [AssetUnavailableFromUtc, 释放时刻] 与查询窗口求交才进读面。
-        // 「释放时刻」取聚合发 AssetRestoredDomainEvent 的那两个位点：完工（CompletedAtUtc）与
-        // 取消（CancelledAtUtc）。两者皆无即尚未释放，右边界取查询窗口末端。报警清除不算释放 ——
-        // MarkAlarmCleared 既不清 AssetUnavailable 也不发 AssetRestoredDomainEvent，清警后工单仍可
-        // Accept/StartWork 继续修；把它算进释放会让在途停机少扣。
-        //
-        // 这里分两段投影不是啰嗦：释放时刻必须以单个 COALESCE 下推到服务端参与区间比较。
-        // 合并成一段、或把下面那条 Where 提到 Select 之前写成 `x.CompletedAtUtc ?? x.CancelledAtUtc`，
-        // 会让这个判据在查询里出现两次，改一处漏一处。
+        // 自动报警在维修开工前清除时释放其占用。已开工的维修或人工登记占用仍由完工、取消释放。
         var workOrders = await dbContext.MaintenanceWorkOrders
             .Where(x => x.OrganizationId == contract.OrganizationId)
             .Where(x => x.EnvironmentId == contract.EnvironmentId)
@@ -1162,7 +1161,12 @@ internal static class MaintenanceAvailabilityWindowCalculator
                 x.DeviceAssetId,
                 x.SourceAlarmId,
                 x.AssetUnavailableFromUtc,
-                ReleasedAtUtc = x.CompletedAtUtc ?? x.CancelledAtUtc,
+                ReleasedAtUtc = x.SourceType == MaintenanceWorkOrderSourceTypes.Alarm &&
+                    x.OpenedBy == MaintenanceWorkOrderSourceActors.AutomaticAlarm &&
+                    x.AlarmClearedAtUtc >= x.AssetUnavailableFromUtc &&
+                    (x.RepairStartedAtUtc == null || x.AlarmClearedAtUtc < x.RepairStartedAtUtc)
+                    ? x.AlarmClearedAtUtc
+                    : x.CompletedAtUtc ?? x.CancelledAtUtc,
                 x.SourcePlanCode,
                 x.SourceReferenceId,
                 x.SourceType,

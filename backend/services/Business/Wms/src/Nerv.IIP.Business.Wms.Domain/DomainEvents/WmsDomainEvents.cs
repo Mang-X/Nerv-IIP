@@ -10,6 +10,14 @@ public sealed record InboundOrderCompletedDomainEvent(InboundOrder InboundOrder)
 
 public sealed record OutboundOrderCompletedDomainEvent(OutboundOrder OutboundOrder) : IDomainEvent;
 
+public sealed record InboundOrderWorkPoolAssignedDomainEvent(
+    string OrganizationId,
+    string EnvironmentId,
+    string InboundOrderNo,
+    string SiteCode,
+    string PoolCode,
+    string? OperatorPrincipalId) : IDomainEvent;
+
 public sealed record OutboundOrderWorkPoolAssignedDomainEvent(
     string OrganizationId,
     string EnvironmentId,

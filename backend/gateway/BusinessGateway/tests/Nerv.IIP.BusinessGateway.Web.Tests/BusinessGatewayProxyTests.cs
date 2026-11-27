@@ -1809,6 +1809,36 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Quality_capa_close_forwards_scope_and_authorized_principal()
+    {
+        var quality = new RecordingQualityClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessQualityClient>();
+            services.AddSingleton<IBusinessQualityClient>(quality);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        const string capaId = "16f51ac6-cdae-488b-bfc2-70012f0882ac";
+
+        using var response = await client.PostAsJsonAsync($"/api/business-console/v1/quality/capas/{capaId}/close", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            closeApprovalChainId = "approval-001",
+            closedByUserId = "client-value",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("internal-test-token", quality.LastInternalToken);
+        Assert.Equal("user-admin", quality.LastCloseCapaActor);
+        Assert.Equal(new BusinessConsoleCloseQualityCapaRequest(capaId, "org-001", "env-dev", "approval-001"),
+            quality.LastCloseCapaRequest);
+    }
+
+    [Fact]
     public async Task Quality_spc_analysis_facades_use_internal_service_token_for_downstream_business_service()
     {
         var quality = new RecordingQualityClient();
@@ -3531,8 +3561,10 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
     }
 
-    [Fact]
-    public async Task Mes_work_order_detail_rejects_a_known_id_outside_the_selected_self_scope()
+    [Theory]
+    [InlineData(true, HttpStatusCode.Forbidden)]
+    [InlineData(false, HttpStatusCode.NotFound)]
+    public async Task Mes_work_order_detail_distinguishes_absence_from_outside_the_selected_self_scope(bool exists, HttpStatusCode expected)
     {
         var auth = FakeBusinessGatewayAuthorizationClient.Allowed(
             scopeGrants:
@@ -3546,6 +3578,7 @@ public sealed class BusinessGatewayProxyTests
             ]);
         var mes = new RecordingMesClient
         {
+            UnscopedWorkOrderId = exists ? "WO-FOREIGN" : null,
             WorkOrders =
             [
                 new BusinessConsoleMesWorkOrderItem(
@@ -3582,7 +3615,12 @@ public sealed class BusinessGatewayProxyTests
         var response = await client.GetAsync(
             "/api/business-console/v1/mes/work-orders/WO-FOREIGN?organizationId=org-001&environmentId=env-dev&scopeKind=self&scopeId=user-admin");
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(expected, response.StatusCode);
+        Assert.Equal(2, mes.WorkOrderListCallCount);
+        Assert.Equal("org-001", mes.LastWorkOrderListRequest!.OrganizationId);
+        Assert.Equal("env-dev", mes.LastWorkOrderListRequest.EnvironmentId);
+        Assert.Equal("WO-FOREIGN", mes.LastWorkOrderListRequest.WorkOrderId);
+        Assert.Null(mes.LastWorkOrderListRequest.AssignedUserIds);
         Assert.Equal(0, mes.WorkOrderDetailCallCount);
         Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
     }
@@ -4069,6 +4107,11 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessMesClient>(mes);
             services.RemoveAll<IBusinessMasterDataClient>();
             services.AddSingleton<IBusinessMasterDataClient>(masterData);
+            services.RemoveAll<IBusinessMaintenanceClient>();
+            services.AddSingleton<IBusinessMaintenanceClient>(new RecordingMaintenanceFacadeClient
+            {
+                DowntimeReasonDirectory = [new("reason-1", "MECH-FAULT", "机械故障", "breakdown", "availability")],
+            });
         });
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
@@ -10490,6 +10533,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -10533,6 +10578,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -10691,6 +10738,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -10764,6 +10813,8 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
         });
@@ -10812,8 +10863,12 @@ public sealed class BusinessGatewayProxyTests
             services.AddSingleton<IBusinessIndustrialTelemetryClient>(industrialTelemetry);
             services.RemoveAll<IBusinessMaintenanceClient>();
             services.AddSingleton<IBusinessMaintenanceClient>(maintenance);
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IInternalServiceTokenProvider>();
             services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
         });
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
@@ -19119,6 +19174,21 @@ internal sealed class RecordingQualityClient : IBusinessQualityClient, IBusiness
         string actor,
         CancellationToken cancellationToken) => Task.FromResult(new BusinessConsoleAcceptedResponse(true));
 
+    public BusinessConsoleCloseQualityCapaRequest? LastCloseCapaRequest { get; private set; }
+    public string? LastCloseCapaActor { get; private set; }
+
+    public Task<BusinessConsoleAcceptedResponse> CloseCorrectiveActionAsync(
+        string internalBearerToken,
+        BusinessConsoleCloseQualityCapaRequest request,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        LastInternalToken = internalBearerToken;
+        LastCloseCapaRequest = request;
+        LastCloseCapaActor = actor;
+        return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
+    }
+
     public Task<BusinessConsoleAcceptedResponse> CompleteCorrectiveActionItemAsync(
         string internalBearerToken,
         BusinessConsoleCompleteQualityCapaActionRequest request,
@@ -22613,6 +22683,8 @@ internal sealed class RecordingMesClient : IBusinessMesClient
 
     public IReadOnlyCollection<BusinessConsoleMesWorkOrderItem>? WorkOrders { get; set; }
 
+    public string? UnscopedWorkOrderId { get; init; }
+
     public int? WorkOrdersTotal { get; init; }
 
     public BusinessConsoleMesWorkOrderDetailResponse? WorkOrderDetail { get; init; }
@@ -22787,6 +22859,12 @@ internal sealed class RecordingMesClient : IBusinessMesClient
                     "released",
                     []),
             ];
+        if (UnscopedWorkOrderId is { } unscopedId && request.WorkOrderId == unscopedId &&
+            request.AssignedUserIds is null && request.TeamIds is null && request.WorkCenterIds is null)
+        {
+            return Task.FromResult(new BusinessConsoleMesWorkOrderListResponse(
+                [new(unscopedId, "SKU-001", null, 10, 0, DateTimeOffset.UnixEpoch, "released", [])], 1));
+        }
         if (EmulateMesListPaging)
         {
             var keyword = request.Keyword?.Trim();

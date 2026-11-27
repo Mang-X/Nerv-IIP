@@ -17,7 +17,8 @@ public sealed class MesPrincipalWorkScopeAuthorizer(
         string? requestedScopeKind,
         string? requestedScopeId,
         string workOrderId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool distinguishMissing = false)
     {
         var scope = await workScopeResolver.ResolveAsync(
             authorization,
@@ -38,10 +39,25 @@ public sealed class MesPrincipalWorkScopeAuthorizer(
                 WorkCenterIds: Join(scope.WorkCenterIds),
                 WorkOrderId: workOrderId),
             cancellationToken);
-        if (!response.Items.Any(x => string.Equals(x.WorkOrderId, workOrderId, StringComparison.Ordinal)))
+        if (response.Items.Any(x => string.Equals(x.WorkOrderId, workOrderId, StringComparison.Ordinal)))
         {
-            throw Forbidden();
+            return;
         }
+
+        if (distinguishMissing)
+        {
+            // 授权范围已通过校验。存在性探针只在当前组织和环境内读取精确标识。
+            var tenantMatches = await mes.ListWorkOrdersAsync(
+                tokenProvider.BearerToken,
+                new BusinessMesWorkOrderListRequest(organizationId, environmentId, Take: 1, WorkOrderId: workOrderId),
+                cancellationToken);
+            if (!tenantMatches.Items.Any(x => string.Equals(x.WorkOrderId, workOrderId, StringComparison.Ordinal)))
+            {
+                throw BusinessServiceProxyException.FromLocalRejection(HttpStatusCode.NotFound, "mes-work-order-not-found");
+            }
+        }
+
+        throw Forbidden();
     }
 
     // 历史目录没有显式范围选择；复用工单列表的授权并集验证目标工单成员关系。

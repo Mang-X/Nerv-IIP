@@ -1,4 +1,4 @@
-# Script-Governance:
+﻿# Script-Governance:
 #   Category: check
 #   SideEffects:
 #     - Runs deterministic MAN-661 evidence fixtures
@@ -1357,6 +1357,13 @@ try {
     $sensitiveParseResult = Read-NervTrxResults -Path @((Join-Path $fixtures 'sensitive-results.trx')) -RunMetadata $run
     $sensitiveRecords = @($sensitiveParseResult.Records)
     $summary = New-NervTestEvidenceSummary -Records $sensitiveRecords -RunMetadata $run -Violations @() -Baseline (Get-Content (Join-Path $fixtures 'baseline-report-only.json') -Raw | ConvertFrom-Json) -PriorAttemptOutcome 'failure' -TopCount 5
+    $summary | Add-Member -NotePropertyName redactionProbe -NotePropertyValue ([ordered]@{
+        connection = 'Host=db;Password=summary-inline-secret'
+        nextField = '保留后继字段'
+        items = @([pscustomobject]@{ Password = 'summary-key-secret'; enabled = $true }, $null)
+        single = @('保留单元素')
+        empty = @()
+    })
     Write-NervTestEvidenceArtifacts -Records $sensitiveRecords -Summary $summary -OutputDirectory $artifactRoot
     foreach ($required in @('tests.jsonl', 'summary.json', 'summary.md', 'diagnostics.log')) {
         Assert-True (Test-Path (Join-Path $artifactRoot $required)) "Missing retained artifact '$required'."
@@ -1367,7 +1374,16 @@ try {
     $normalizedTrx = @(Get-ChildItem (Join-Path $artifactRoot 'trx') -Filter '*.trx')
     Assert-True ($normalizedTrx.Count -gt 0) 'Normalized TRX artifact is missing.'
     $retainedText = [string]::Join("`n", @(Get-ChildItem $artifactRoot -File -Recurse | ForEach-Object { Get-Content $_.FullName -Raw }))
-    foreach ($sentinel in @('user:password', 'fixture-bearer-value', 'fixture-client-secret', 'Fixture Customer', '13800000000', 'fixture@example.invalid', 'example.invalid', 'Fixture Address', 'quoted-password', 'quoted-auth', 'pem-secret', 'request body must never be retained')) {
+    $retainedSummary = Get-Content -LiteralPath (Join-Path $artifactRoot 'summary.json') -Raw | ConvertFrom-Json
+    Assert-Equal 'Host=db;Password=<redacted>' $retainedSummary.redactionProbe.connection '摘要必须保留脱敏后的连接字符串。'
+    Assert-Equal '保留后继字段' $retainedSummary.redactionProbe.nextField '摘要 JSON 必须保留敏感值之后的字段。'
+    Assert-Equal '<redacted>' $retainedSummary.redactionProbe.items[0].Password '嵌套对象的敏感键必须脱敏。'
+    Assert-True ($retainedSummary.redactionProbe.items[0].enabled -is [bool]) '摘要必须保留布尔值类型。'
+    Assert-True ($retainedSummary.redactionProbe.items.Count -eq 2 -and $null -eq $retainedSummary.redactionProbe.items[1]) '摘要必须保留数组中的空值。'
+    Assert-True ($retainedSummary.redactionProbe.single -is [array] -and $retainedSummary.redactionProbe.single.Count -eq 1) '摘要必须保留单元素数组。'
+    Assert-True ($retainedSummary.redactionProbe.empty -is [array] -and $retainedSummary.redactionProbe.empty.Count -eq 0) '摘要必须保留空数组。'
+    Assert-Equal 'summary-key-secret' $summary.redactionProbe.items[0].Password '写入摘要不得修改原始对象。'
+    foreach ($sentinel in @('summary-inline-secret', 'summary-key-secret', 'user:password', 'fixture-bearer-value', 'fixture-client-secret', 'Fixture Customer', '13800000000', 'fixture@example.invalid', 'example.invalid', 'Fixture Address', 'quoted-password', 'quoted-auth', 'pem-secret', 'request body must never be retained')) {
         Assert-True (-not $retainedText.Contains($sentinel)) "Retained evidence leaked sentinel '$sentinel'."
     }
     # #3213 second direction. The sentinel sweep above alone is satisfied by retaining nothing,

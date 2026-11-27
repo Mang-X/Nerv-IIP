@@ -6,7 +6,8 @@
 #   Writes:
 #     - The session state and evidence roots the caller supplies
 #   Cleanup:
-#     - Stops the sessions it starts through the caller-supplied stop action
+#     - 通过调用方提供的操作停止会话
+#     - 回收已停止的临时会话专属 tus 目录
 #   Requires:
 #     - PowerShell 7
 
@@ -1948,6 +1949,20 @@ function Stop-NervFullStackSession {
     catch {
         $errors.Add((Protect-ScriptAutomationText -Text "$($_.Exception.Message)"))
         $dockerResult = [pscustomobject]@{ Complete = $false; Remaining = @('docker:inspection-failed') }
+    }
+    if ($errors.Count -eq 0 -and $dockerResult.Complete -and
+        [string]::Equals([string]$manifest.mode, 'ephemeral', [StringComparison]::Ordinal)) {
+        $tusPath = Join-Path $StateRoot "file-storage/tus-$SessionId"
+        try {
+            [IO.Directory]::Delete([IO.Path]::GetFullPath($tusPath), $true)
+        }
+        catch [IO.DirectoryNotFoundException] {
+            # 目录可能从未创建，也可能已被并行回收。
+        }
+        catch {
+            $errors.Add((Protect-ScriptAutomationText -Text "$($_.Exception.Message)"))
+            $cleanupFailures.Add('tus:remove-failed')
+        }
     }
     $remaining = @(Get-NervStringsSorted -Values @(
         @($cleanupFailures) + @($dockerResult.Remaining | ForEach-Object { "$_" })) -Comparer ([StringComparer]::Ordinal) -Unique)

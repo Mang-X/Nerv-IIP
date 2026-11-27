@@ -129,6 +129,8 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         AssignedPoolCode = WmsText.Required(assignedPoolCode, nameof(assignedPoolCode));
         AssignedOperatorUserId = WmsText.Optional(assignedOperatorUserId);
         AdvanceVersion();
+        AddDomainEvent(new InboundOrderWorkPoolAssignedDomainEvent(
+            OrganizationId, EnvironmentId, InboundOrderNo, SiteCode, AssignedPoolCode, AssignedOperatorUserId));
     }
 
     public void Cancel(string reason)

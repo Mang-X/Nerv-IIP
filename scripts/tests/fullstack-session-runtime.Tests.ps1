@@ -1,4 +1,4 @@
-# Script-Governance:
+﻿# Script-Governance:
 #   Category: check
 #   SideEffects:
 #     - Validates full-stack Docker ownership predicates against synthetic inspect data
@@ -67,7 +67,7 @@ $describeFixture = Join-Path $PSScriptRoot 'fixtures/fullstack/aspire-describe.j
 $fullStackSessionText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/fullstack/manage-fullstack-session.ps1') -Raw
 $runtimeSourceText = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts/lib/FullStackSessionRuntime.ps1') -Raw
 $nervEntrypointText = Get-Content -LiteralPath (Join-Path $repoRoot 'nerv.ps1') -Raw
-$appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
+$appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/AppHostInfrastructure.cs') -Raw
 Assert-True ($runtimeSourceText.Contains('function Get-NervFullStackNonSeedEnvironment', [StringComparison]::Ordinal)) 'Full-stack runtime must expose a reusable non-seed environment boundary.'
 foreach ($runtimeFunctionName in @('Get-NervAspireDescribeObject', 'Wait-NervAspireResource', 'Collect-NervFullStackDiagnostics', 'Stop-NervFullStackSession')) {
     $runtimeFunctionDefinition = (Get-Command $runtimeFunctionName -ErrorAction Stop).Definition
@@ -365,7 +365,7 @@ Assert-True ($statusSummary.ContainerCount -eq 0) 'Full-stack status must report
 Assert-True ($statusSummary.RecordedContainerCount -eq 2) 'Full-stack status may retain the historical recorded-container count as a separate diagnostic.'
 Assert-True ($statusSummary.UnresolvedCount -eq 0) 'A clean stopped session must have no unresolved Docker ownership.'
 
-$appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
+$appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/AppHostServices.cs') -Raw
 $businessMesStart = $appHostText.IndexOf('var businessMes =', [StringComparison]::Ordinal)
 $businessMesEnd = $appHostText.IndexOf([char]';', $businessMesStart)
 Assert-True (
@@ -1614,7 +1614,17 @@ try {
         [pscustomobject]@{ Complete = $true; Remaining = @() }
     }
 
+    $tusPath = Join-Path $stopStateRoot "file-storage/tus-$stopSessionId"
+    $persistentTusPath = Join-Path $stopStateRoot 'file-storage/tus'
+    $otherTusPath = Join-Path $stopStateRoot 'file-storage/tus-nerv-dead-000002'
+    foreach ($path in @($tusPath, $persistentTusPath, $otherTusPath)) {
+        [IO.Directory]::CreateDirectory($path) | Out-Null
+        Set-Content -LiteralPath (Join-Path $path 'upload') -Value 'fixture'
+    }
     $firstStop = Stop-NervFullStackSession -SessionId $stopSessionId -StateRoot $stopStateRoot -AspireStopAction $aspireStop -ProcessStopAction $processStop -DockerRemoveAction $dockerStop
+    Assert-True (-not (Test-Path -LiteralPath $tusPath)) 'stop 必须回收对应会话的 tus 目录和上传文件。'
+    Assert-True (Test-Path -LiteralPath (Join-Path $persistentTusPath 'upload')) 'stop 必须保留持久 tus 文件。'
+    Assert-True (Test-Path -LiteralPath (Join-Path $otherTusPath 'upload')) 'stop 必须保留其他会话的 tus 文件。'
     $secondStop = Stop-NervFullStackSession -SessionId $stopSessionId -StateRoot $stopStateRoot -AspireStopAction $aspireStop -ProcessStopAction $processStop -DockerRemoveAction $dockerStop
     Assert-True $firstStop.Complete 'The first exact stop must complete.'
     Assert-True $secondStop.Complete 'A repeated exact stop must remain complete.'
@@ -1635,6 +1645,8 @@ try {
         -StateRoot $stopStateRoot
     $failedStopManifest = Move-NervFullStackSessionState -Manifest $failedStopManifest -State Running
     Write-NervFullStackManifest -Manifest $failedStopManifest -StateRoot $stopStateRoot
+    $failedTusPath = Join-Path $stopStateRoot "file-storage/tus-$failedStopSessionId"
+    [IO.Directory]::CreateDirectory($failedTusPath) | Out-Null
     $failedStop = Stop-NervFullStackSession `
         -SessionId $failedStopSessionId `
         -StateRoot $stopStateRoot `
@@ -1648,6 +1660,14 @@ try {
     $remainingFailures = [Collections.Generic.HashSet[string]]::new([string[]]@($failedStop.Remaining), [StringComparer]::Ordinal)
     Assert-True ($remainingFailures.Contains($aspireStopFailure)) 'Aspire cleanup failure must be explicit.'
     Assert-True ($remainingFailures.Contains($processStopFailure)) 'Process cleanup failure must be explicit.'
+    Assert-True (Test-Path -LiteralPath $failedTusPath) '进程停止失败时必须保留 tus 目录。'
+
+    $afterLeaseExpiry = ([DateTimeOffset]$failedStop.Manifest.leaseExpiresAtUtc).AddSeconds(1)
+    $claimedSessions = @(Claim-NervStaleFullStackSessions -StateRoot $stopStateRoot -Now $afterLeaseExpiry)
+    Assert-True ($claimedSessions.Count -eq 1 -and [string]::Equals([string]$claimedSessions[0], [string]$failedStopSessionId, [StringComparison]::Ordinal)) 'GC 必须领取清理失败的会话。'
+    $gcStop = Stop-NervFullStackSession -SessionId $claimedSessions[0] -StateRoot $stopStateRoot -AspireStopAction $aspireStop -ProcessStopAction $processStop -DockerRemoveAction $dockerStop
+    Assert-True $gcStop.Complete 'GC 重试必须完成会话回收。'
+    Assert-True (-not (Test-Path -LiteralPath $failedTusPath)) 'GC 必须回收所领取会话的 tus 目录。'
 }
 finally {
     [Environment]::SetEnvironmentVariable('NERV_IIP_SESSION_ID', $ambientSessionId, 'Process')

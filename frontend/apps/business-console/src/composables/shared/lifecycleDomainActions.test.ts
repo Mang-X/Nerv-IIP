@@ -239,7 +239,7 @@ const terminalStatus: Record<string, string> = {
 }
 const allowedStatus: Record<string, string> = {
   WMS: 'Open',
-  Maintenance: 'Open',
+  Maintenance: 'InProgress',
   Quality: 'Open',
   Equipment: 'Raised',
   MES: 'Queued',

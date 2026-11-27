@@ -11,7 +11,8 @@ namespace Nerv.IIP.Business.IndustrialTelemetry.Web.Application.IntegrationEvent
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Mes.ProductionReportRecordedIntegrationEvent", ConsumerName)]
 public sealed class ProductionReportOeeProjectionHandler(
     ApplicationDbContext dbContext,
-    IIntegrationEventDeadLetterStore deadLetterStore)
+    IIntegrationEventDeadLetterStore deadLetterStore,
+    ITelemetryDeviceReferences? references = null)
     : IIntegrationEventHandler<ProductionReportRecordedIntegrationEvent>, ICapSubscribe
 {
     public const string ConsumerName = "business-industrial-telemetry.production-report-oee-projection";
@@ -84,12 +85,15 @@ public sealed class ProductionReportOeeProjectionHandler(
         }
         else
         {
+            var deviceId = references is null ? payload.DeviceAssetId! :
+                (await references.ResolveAsync(integrationEvent.OrganizationId, integrationEvent.EnvironmentId,
+                    payload.DeviceAssetId!, cancellationToken)).PublicId;
             fact = OeeProductionFact.Project(
                 integrationEvent.OrganizationId,
                 integrationEvent.EnvironmentId,
                 payload.ReportNo,
                 payload.WorkCenterId,
-                payload.DeviceAssetId!,
+                deviceId,
                 payload.GoodQuantity,
                 payload.ScrapQuantity,
                 payload.ReworkQuantity,

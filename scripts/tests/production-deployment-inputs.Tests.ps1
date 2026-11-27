@@ -14,7 +14,8 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
 $startScript = Join-Path $repoRoot 'scripts/install/start-nerv-iip-apphost.ps1'
-$appHostText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/Program.cs') -Raw
+$appHostEnvironment = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/AppHostEnvironment.cs') -Raw
+$appHostServices = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/AppHostServices.cs') -Raw
 $dependenciesText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/compose/nerv-iip.dependencies.yml') -Raw
 $platformText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/compose/nerv-iip.platform.yml') -Raw
 $environmentExampleText = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/compose/nerv-iip.production.env.example') -Raw
@@ -120,8 +121,8 @@ function Invoke-AspireInteractive {
 finally { if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixture -Recurse -Force } }
 
 foreach ($contract in @(
-    @($appHostText, 'AddParameter("iam-enterprise-identity-mfa-code", secret: true)', 'AppHost MFA override must be a secret parameter'),
-    @($appHostText, 'Iam__EnterpriseIdentity__Mfa__DevelopmentCode', 'AppHost must deliver the MFA override to IAM'),
+    @($appHostEnvironment, 'AddParameter("iam-enterprise-identity-mfa-code", secret: true)', 'AppHost MFA override must be a secret parameter'),
+    @($appHostServices, 'Iam__EnterpriseIdentity__Mfa__DevelopmentCode', 'AppHost must deliver the MFA override to IAM'),
     @($dependenciesText, '/run/secrets/redis_password', 'legacy Redis must read the password from the mounted secret'),
     @($dependenciesText, 'user default on #%s', 'legacy Redis must require authentication'),
     @($dependenciesText, 'grep -qx PONG', 'legacy Redis health check must verify the authenticated PONG'),

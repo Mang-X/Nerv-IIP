@@ -115,7 +115,12 @@ describe('NvDataTable 空 / 失败 / 未查询三态（架构契约）', () => {
     expect(text).not.toContain('暂无')
     expect(text).not.toContain('没有匹配的结果')
     expect(text).toContain('数据加载失败')
-    expect(text).toContain('网关 502')
+    expect(text).toContain('请检查网络连接后重试')
+    expect(text).not.toContain('网关 502')
+
+    await wrapper.setProps({ error: '数据库内部错误', errorMessage: ' ' })
+    expect(wrapper.text()).toContain('请检查网络连接后重试')
+    expect(wrapper.text()).not.toContain('数据库内部错误')
 
     const retry = wrapper.findAll('button').find((b) => b.text().includes('重新加载'))
     expect(retry).toBeDefined()
@@ -134,13 +139,15 @@ describe('NvDataTable 空 / 失败 / 未查询三态（架构契约）', () => {
         pagination: false,
         emptyMessage: EMPTY,
         error: new Error('网关 502'),
+        errorMessage: '暂时无法查询，请稍后重试。',
       },
     })
     await nextTick()
 
     const alert = wrapper.get('[role="alert"]')
     expect(alert.text()).toContain('数据加载失败')
-    expect(alert.text()).toContain('网关 502')
+    expect(alert.text()).toContain('暂时无法查询，请稍后重试。')
+    expect(alert.text()).not.toContain('网关 502')
     wrapper.unmount()
 
     // 只有错误态播报：空态若也落进活动区域，正常查询无结果会被读屏当成告警。
@@ -160,7 +167,8 @@ describe('NvDataTable 空 / 失败 / 未查询三态（架构契约）', () => {
         pagination: false,
         emptyMessage: EMPTY,
         loading: true,
-        error: '库存批次加载失败',
+        error: true,
+        errorMessage: '库存批次加载失败',
       },
     })
     await nextTick()

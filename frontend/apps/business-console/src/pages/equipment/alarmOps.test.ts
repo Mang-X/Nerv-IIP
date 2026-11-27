@@ -66,15 +66,32 @@ const routerState = vi.hoisted(() => ({
 }))
 
 vi.mock('@/composables/equipment/useBusinessEquipment', () => ({
-  useBusinessEquipmentAlarms: () => ({
-    acknowledgeAlarm: alarmState.acknowledgeAlarm,
-    alarms: computed(() => alarmState.alarms),
-    alarmsError: shallowRef(),
-    alarmsPending: shallowRef(false),
-    refreshAlarms: alarmState.refreshAlarms,
-    shelveAlarm: alarmState.shelveAlarm,
-    unshelveAlarm: alarmState.unshelveAlarm,
-  }),
+  useBusinessEquipmentAlarms: (
+    pagination: () => { status: string; skip: number; take: number },
+  ) => {
+    const matching = computed(() =>
+      alarmState.alarms.filter((alarm) => {
+        const { status } = pagination()
+        if (status === 'active') return alarm.status !== 'cleared'
+        if (status === 'escalated') return Boolean(alarm.escalatedAtUtc)
+        if (status === 'active-acknowledged') return Boolean(alarm.acknowledgedAtUtc)
+        return alarm.status === status
+      }),
+    )
+    return {
+      acknowledgeAlarm: alarmState.acknowledgeAlarm,
+      alarms: computed(() => {
+        const { skip, take } = pagination()
+        return matching.value.slice(skip, skip + take)
+      }),
+      alarmsTotal: computed(() => matching.value.length),
+      alarmsError: shallowRef(),
+      alarmsPending: shallowRef(false),
+      refreshAlarms: alarmState.refreshAlarms,
+      shelveAlarm: alarmState.shelveAlarm,
+      unshelveAlarm: alarmState.unshelveAlarm,
+    }
+  },
 }))
 
 const authState = vi.hoisted(() => ({
@@ -617,6 +634,23 @@ describe('alarm ops — view filtering (orthogonal, selection prune, URL, page r
     await nextTick()
     expect(routerState.query.pageSize).toBe('20')
     expect(routerState.query.page).toBeUndefined() // reset to 1 → default omitted
+  })
+
+  it('shows pending alarms and the full server count beyond the first batch', () => {
+    alarmState.alarms = Array.from({ length: 125 }, (_, index) => ({
+      alarmEventId: `ALM-PENDING-${index + 1}`,
+      externalAlarmId: `ALM-PENDING-${index + 1}`,
+      deviceAssetId: 'DEV-1',
+      alarmCode: 'PRESSURE-LOW',
+      severity: 'warning',
+      status: 'raised',
+    }))
+    resetQuery({ view: 'raised', page: '12', pageSize: '10' })
+    const wrapper = mount(AlarmsPage, { global: { stubs } })
+
+    expect(rowByText(wrapper, 'ALM-PENDING-111')).toBeTruthy()
+    expect(rowByText(wrapper, 'ALM-PENDING-121')).toBeUndefined()
+    expect(wrapper.text()).toContain('125 条')
   })
 
   it('honors pageSize from the URL query', () => {

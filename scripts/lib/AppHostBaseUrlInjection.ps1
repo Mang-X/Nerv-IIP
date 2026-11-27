@@ -1,7 +1,7 @@
 # Script-Governance:
 #   Category: library
 #   SideEffects:
-#     - Reads the Aspire AppHost Program.cs, every .csproj in its project reference closure, and the
+#     - Reads the Aspire AppHost source files, every .csproj in its project reference closure, and the
 #       .cs sources owned by those projects
 #   Writes:
 #     - None
@@ -43,7 +43,7 @@ Set-StrictMode -Version Latest
 本仓反复实证「身份判据在实现时会退化成白名单」，所以这里**没有任何一处人工枚举的服务名、资源名
 或目录名**。三条链路全部由代码推导：
 
-  * **哪些项目算消费方**：从 `Program.cs` 的 `builder.AddProject<Projects.X>("resource")` 取出被托管
+  * **哪些项目算消费方**：从 AppHost 的 `builder.AddProject<Projects.X>("resource")` 取出被托管
     的项目，再按 `.csproj` 的 `ProjectReference` 求传递闭包。扫描面 = 闭包内每个项目自己的 `.cs`。
     新加一个服务、或把 Resolve 调用下沉进某个共享库，都会自动进扫描面；
     `backend/tests/**` 不在任何托管项目的闭包里，因此自动落在面外——不需要一条排除规则。
@@ -62,7 +62,7 @@ Set-StrictMode -Version Latest
 
 ## 覆盖边界（声明多少就只断言多少）
 
-  * 只读 `infra/aspire/Nerv.IIP.AppHost/Program.cs` 的**源码文本**，不跑 `aspire publish`。
+  * 只读 `infra/aspire/Nerv.IIP.AppHost/` 下的顶层 C# 源码，不跑 `aspire publish`。
     因此 AppHost 自己能编译、能跑出正确 compose，不在本库的断言面内——那是
     `scripts/checks/verify-aspire-apphost-environment-artifacts.ps1` 的面。
   * **多注入**（AppHost 注了但没有消费方 Resolve 它）不构成违例，只做信息输出：处置它需要逐条判断
@@ -131,7 +131,7 @@ function Get-NervCSharpScanSurface {
         （`#fooif` 会静默走置空分支）。条件编译指令因此自动落在拒绝面上——它决定哪一段代码是活的，
         本函数不建模这件事。
 
-        扫描面（托管项目闭包内提及 InternalServiceBaseAddress 的 .cs，加 AppHost Program.cs）是
+        扫描面（托管项目闭包内提及 InternalServiceBaseAddress 的 .cs，加 AppHost 源码）是
         17 个文件，上表的次数即在该面上实测；它不是对全仓的断言。
     #>
     param([Parameter(Mandatory)] [AllowEmptyString()] [string] $Text)
@@ -679,6 +679,15 @@ function Get-NervRequirementsSorted {
         -Comparer ([StringComparer]::Ordinal))
 }
 
+function Get-NervAppHostSourceText {
+    param([Parameter(Mandatory)] [string] $AppHostDirectory)
+
+    # 固定拼接顺序，使报告行号与变异测试的输入一致。
+    $paths = [IO.Directory]::GetFiles($AppHostDirectory, '*.cs')
+    [Array]::Sort($paths, [StringComparer]::Ordinal)
+    return ($paths | ForEach-Object { [IO.File]::ReadAllText($_) }) -join "`n"
+}
+
 function Get-NervAppHostBaseUrlInjectionReport {
     <#
         求出需求集、注入集与两者的差，并把豁免登记表套上去。
@@ -701,14 +710,20 @@ function Get-NervAppHostBaseUrlInjectionReport {
     )
 
     $resolvedRoot = (Resolve-Path -LiteralPath $RepositoryRoot).Path
-    if ([string]::IsNullOrEmpty($AppHostProgramPath)) {
+    $useExplicitProgramPath = -not [string]::IsNullOrEmpty($AppHostProgramPath)
+    if (-not $useExplicitProgramPath) {
         $AppHostProgramPath = Join-Path $resolvedRoot $script:NervAppHostProgramRelativePath
     }
     if (-not $PSBoundParameters.ContainsKey('AppHostProgramText')) {
-        if (-not (Test-Path -LiteralPath $AppHostProgramPath -PathType Leaf)) {
-            throw "AppHost source '$AppHostProgramPath' does not exist."
+        $AppHostProgramText = if ($useExplicitProgramPath) {
+            if (-not (Test-Path -LiteralPath $AppHostProgramPath -PathType Leaf)) {
+                throw "AppHost source '$AppHostProgramPath' does not exist."
+            }
+            [IO.File]::ReadAllText($AppHostProgramPath)
         }
-        $AppHostProgramText = [IO.File]::ReadAllText($AppHostProgramPath)
+        else {
+            Get-NervAppHostSourceText -AppHostDirectory (Split-Path -Parent $AppHostProgramPath)
+        }
     }
     if ([string]::IsNullOrEmpty($ExemptionPath)) {
         $ExemptionPath = Join-Path $resolvedRoot $script:NervAppHostBaseUrlExemptionRelativePath

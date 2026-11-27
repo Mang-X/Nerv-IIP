@@ -45,7 +45,7 @@ public sealed class CloseNonconformanceReportCommandHandler(
                 ncr.Id.ToString(),
                 cancellationToken))
         {
-            throw new KnownException($"不合格报告 {ncr.NcrCode} 关闭前需要关联已生效的 CAPA，请在 CAPA 页面完成效果验证并关联后再关闭。");
+            throw new KnownException($"不合格报告 {ncr.NcrCode} 关闭前需要关联已生效的 CAPA，请在纠正措施台账完成关联 CAPA 的效果验证后再关闭。");
         }
 
         try

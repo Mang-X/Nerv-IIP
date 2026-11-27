@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import {
+  cancelScheduledBusinessConsoleEngineeringChange,
+  rescheduleBusinessConsoleEngineeringChange,
+} from '@nerv-iip/api-client'
+import { useAuthStore } from '@/stores/auth'
 import type {
   BusinessConsoleEngineeringChangeImpactNode,
   BusinessConsoleEngineeringChangeImpactRisk,
@@ -87,9 +92,13 @@ const VERSION_KIND_OPTIONS = [
   { label: '制造 BOM（MBOM）', value: 'ManufacturingBom' },
   { label: '工艺路线', value: 'Routing' },
   { label: '生产版本', value: 'ProductionVersion' },
+  { label: '工程文档', value: 'EngineeringDocument' },
 ]
 function versionKindLabel(kind?: string | null) {
-  return VERSION_KIND_OPTIONS.find((o) => o.value === kind)?.label ?? (kind || '—')
+  const key = kind?.trim().toLowerCase().replace(/[-_]/g, '')
+  return (
+    VERSION_KIND_OPTIONS.find((option) => option.value.toLowerCase() === key)?.label ?? '未知类型'
+  )
 }
 
 // 受影响版本的 versionId 是版本主键。四类对象里只有「生产版本」的读面直接暴露该主键
@@ -120,7 +129,7 @@ const UNKNOWN_VERSION_LABEL = '暂无法显示版本名称'
  */
 function affectedVersionLabel(kind?: string | null, versionId?: string | null) {
   if (!versionId) return '—'
-  if (kind !== 'ProductionVersion') return versionId
+  if (kind?.trim().toLowerCase().replace(/[-_]/g, '') !== 'productionversion') return versionId
   return (
     productionVersionOptions.value.find((option) => option.value === versionId)?.label ??
     UNKNOWN_VERSION_LABEL
@@ -139,7 +148,9 @@ function affectedVersionOptions(kind: string, current: string) {
 // 后端是一步发布（Open→Approve→Release），变更落库即为已发布状态——不假造草稿/待审。
 const STATUS_FILTER_OPTIONS = [
   { label: '全部状态', value: 'all' },
-  { label: '已发布', value: 'Released' },
+  { label: '计划生效', value: 'Scheduled' },
+  { label: '已发布', value: 'Published' },
+  { label: '已取消', value: 'Cancelled' },
 ]
 const statusFilter = ref('all')
 watch(statusFilter, (value) => {
@@ -165,7 +176,7 @@ const ECO_STATUS_DISPLAY: Record<string, { label: string; tone: StatusTone }> = 
   open: { label: '待处理', tone: 'warning' },
   submitted: { label: '已提交', tone: 'warning' },
   approved: { label: '已批准', tone: 'info' },
-  scheduled: { label: '待生效', tone: 'info' },
+  scheduled: { label: '计划生效', tone: 'info' },
   released: { label: '已发布', tone: 'success' },
   published: { label: '已发布', tone: 'success' },
   effective: { label: '已生效', tone: 'success' },
@@ -343,7 +354,11 @@ async function submitForm() {
   }
   try {
     await releaseChange(body)
-    notifySuccess(`已发布工程变更，受影响版本 ${form.affectedVersions.length} 个。`)
+    notifySuccess(
+      form.effectiveDate && form.effectiveDate > today()
+        ? `已提交工程变更，计划生效于 ${formatDate(form.effectiveDate)}。`
+        : `已发布工程变更，受影响版本 ${form.affectedVersions.length} 个。`,
+    )
     showErrors.value = false
     formOpen.value = false
   } catch (error) {
@@ -355,6 +370,56 @@ async function submitForm() {
 const viewOpen = shallowRef(false)
 const viewTarget = shallowRef<BusinessConsoleEngineeringChangeItem | null>(null)
 const detailPending = ref(false)
+const auth = useAuthStore()
+const canManageSchedule = computed(() =>
+  auth.principal?.permissionCodes?.includes('business.engineering.changes.manage'),
+)
+const scheduleAction = ref<'reschedule' | 'cancel'>()
+const scheduleReason = ref('')
+const scheduleDate = ref<string | null>(null)
+const schedulePending = ref(false)
+
+function openScheduleAction(action: 'reschedule' | 'cancel') {
+  scheduleReason.value = ''
+  scheduleDate.value = viewTarget.value?.effectiveDate ?? null
+  scheduleAction.value = action
+}
+
+async function submitScheduleAction() {
+  const action = scheduleAction.value
+  const changeNumber = viewTarget.value?.changeNumber
+  const reason = scheduleReason.value.trim()
+  const effectiveDate = scheduleDate.value
+  if (!action || !changeNumber || !reason || schedulePending.value) return
+  if (action === 'reschedule' && (!effectiveDate || effectiveDate <= today())) return
+
+  schedulePending.value = true
+  const body = {
+    organizationId: filters.organizationId,
+    environmentId: filters.environmentId,
+    changeNumber,
+    reason,
+  }
+  try {
+    const { data } =
+      effectiveDate && action === 'reschedule'
+        ? await rescheduleBusinessConsoleEngineeringChange({
+            body: { ...body, effectiveDate },
+            throwOnError: true,
+          })
+        : await cancelScheduledBusinessConsoleEngineeringChange({ body, throwOnError: true })
+    if (!data.success) throw data
+    scheduleAction.value = undefined
+    viewOpen.value = false
+    notifySuccess(action === 'reschedule' ? '工程变更已改期。' : '工程变更调度已取消。')
+    await refresh()
+  } catch (error) {
+    notifyError(error, '更新工程变更调度失败，请稍后重试。')
+  } finally {
+    schedulePending.value = false
+  }
+}
+
 const viewAffected = computed(() => viewTarget.value?.affectedVersions ?? [])
 async function openView(row: BusinessConsoleEngineeringChangeItem) {
   viewTarget.value = row
@@ -713,7 +778,9 @@ function riskTone(severity?: string | null): StatusTone {
         <NvStatusBadge :label="ecoStatus(row.status).label" :tone="ecoStatus(row.status).tone" />
       </template>
       <template #cell-effectiveDate="{ row }">{{
-        row.effectiveDate ? formatDate(row.effectiveDate) : '即时'
+        row.effectiveDate
+          ? `${row.status?.toLowerCase() === 'scheduled' ? '计划生效于 ' : ''}${formatDate(row.effectiveDate)}`
+          : '即时'
       }}</template>
       <template #cell-affected="{ row }">
         <span class="tabular-nums">{{ row.affectedVersions?.length ?? 0 }}</span>
@@ -725,6 +792,47 @@ function riskTone(severity?: string | null): StatusTone {
       </template>
     </NvDataTable>
 
+    <NvDialog
+      v-if="scheduleAction"
+      :open="true"
+      @update:open="
+        (open) => {
+          if (!open) scheduleAction = undefined
+        }
+      "
+    >
+      <NvDialogContent>
+        <NvDialogHeader>
+          <NvDialogTitle>{{
+            scheduleAction === 'reschedule' ? '确认工程变更改期' : '确认取消工程变更调度'
+          }}</NvDialogTitle>
+          <NvDialogDescription>{{ viewTarget?.changeNumber }}</NvDialogDescription>
+        </NvDialogHeader>
+        <form class="grid gap-3" @submit.prevent="submitScheduleAction">
+          <NvField v-if="scheduleAction === 'reschedule'">
+            <NvFieldLabel for="eco-schedule-date">新生效日</NvFieldLabel>
+            <NvDatePicker id="eco-schedule-date" v-model="scheduleDate" />
+          </NvField>
+          <NvField>
+            <NvFieldLabel for="eco-schedule-reason">原因</NvFieldLabel>
+            <NvInput id="eco-schedule-reason" v-model="scheduleReason" required maxlength="500" />
+          </NvField>
+          <NvDialogFooter>
+            <NvButton
+              type="submit"
+              :disabled="
+                schedulePending ||
+                !scheduleReason.trim() ||
+                (scheduleAction === 'reschedule' && (!scheduleDate || scheduleDate <= today()))
+              "
+            >
+              确认
+            </NvButton>
+          </NvDialogFooter>
+        </form>
+      </NvDialogContent>
+    </NvDialog>
+
     <NvSheet v-model:open="viewOpen">
       <NvSheetContent class="sm:max-w-lg">
         <NvSheetHeader>
@@ -734,6 +842,13 @@ function riskTone(severity?: string | null): StatusTone {
           </NvSheetDescription>
         </NvSheetHeader>
         <div v-if="viewTarget" class="grid gap-3 px-4 py-2">
+          <div
+            v-if="canManageSchedule && viewTarget.status?.toLowerCase() === 'scheduled'"
+            class="flex gap-2"
+          >
+            <NvButton variant="outline" @click="openScheduleAction('reschedule')">改期</NvButton>
+            <NvButton variant="outline" @click="openScheduleAction('cancel')">取消调度</NvButton>
+          </div>
           <div class="grid gap-2 text-sm">
             <div class="flex justify-between gap-3">
               <span class="text-muted-foreground">状态</span>

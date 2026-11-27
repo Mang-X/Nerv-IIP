@@ -395,12 +395,12 @@ describe('statusActionGate', () => {
     expect(gate({ domain: 'quality-ncr', action, facts })).toEqual(expected)
   })
 
-  it('allows maintenance completion only while open', () => {
+  it('allows maintenance completion only while in progress', () => {
     expect(
       gate({
         domain: 'maintenance-work-order',
         action: 'complete',
-        facts: { status: 'Open' },
+        facts: { status: 'InProgress' },
       }).executable,
     ).toBe(true)
     expect(

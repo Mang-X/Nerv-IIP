@@ -46,7 +46,9 @@ public sealed record VerifyCorrectiveActionEffectivenessRequest(
 public sealed record CloseCorrectiveActionRequest(
     CorrectiveActionId CorrectiveActionId,
     string ClosedByUserId,
-    string? CloseApprovalChainId);
+    string? CloseApprovalChainId,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
 
 public sealed record ListCorrectiveActionsRequest(
     string OrganizationId,
@@ -217,7 +219,8 @@ public sealed class CloseCorrectiveActionEndpoint(ISender sender)
 
     public override async Task HandleAsync(CloseCorrectiveActionRequest req, CancellationToken ct)
     {
-        await sender.Send(new CloseCorrectiveActionCommand(req.CorrectiveActionId, req.ClosedByUserId, req.CloseApprovalChainId), ct);
+        await sender.Send(new CloseCorrectiveActionCommand(
+            req.CorrectiveActionId, req.ClosedByUserId, req.CloseApprovalChainId, req.OrganizationId, req.EnvironmentId), ct);
         await Send.OkAsync(new AcceptedResponse(true).AsResponseData(), cancellation: ct);
     }
 }

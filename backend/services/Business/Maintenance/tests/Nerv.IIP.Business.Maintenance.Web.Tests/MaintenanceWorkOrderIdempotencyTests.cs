@@ -25,6 +25,8 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
         Assert.InRange(receipt.Code.Length, 1, 128);
         Assert.False(Guid.TryParse(receipt.Code, out _));
         var persisted = await db.MaintenanceWorkOrders.SingleAsync();
+        persisted.Accept(persisted.AssignedTechnicianUserId ?? "technician-001");
+        persisted.StartWork();
         persisted.Complete("fixed", "equipment-failure", 10, []);
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
@@ -65,6 +67,8 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
             structuredReceipt.PayloadFingerprint,
             structuredReceipt.CreatedAtUtc));
         var persisted = await db.MaintenanceWorkOrders.SingleAsync();
+        persisted.Accept(persisted.AssignedTechnicianUserId ?? "technician-001");
+        persisted.StartWork();
         persisted.Complete("fixed", "equipment-failure", 10, []);
         await db.SaveChangesAsync();
         db.ChangeTracker.Clear();
@@ -177,6 +181,8 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
             "DEV-CNC-01",
             "high",
             "emp010");
+        workOrder.Accept(workOrder.AssignedTechnicianUserId ?? "technician-001");
+        workOrder.StartWork();
         db.MaintenanceWorkOrders.Add(workOrder);
         db.DowntimeReasons.Add(DowntimeReason.Create(
             "org-001",
@@ -204,7 +210,7 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
 
         Assert.Equal(first, replay);
         Assert.Equal(MaintenanceWorkOrderStatus.Completed, replay.Status);
-        Assert.Equal(1, replay.Version);
+        Assert.Equal(3, replay.Version);
     }
 
     [Fact]
@@ -218,7 +224,7 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
 
         Assert.Equal(MaintenanceWorkOrderStatus.Completed, replay.Status);
         Assert.Equal(changedAtUtc, replay.ChangedAtUtc);
-        Assert.Equal(1, replay.Version);
+        Assert.Equal(3, replay.Version);
     }
 
     [Theory]
@@ -269,6 +275,8 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
             "DEV-CNC-01",
             "high",
             "emp010");
+        workOrder.Accept(workOrder.AssignedTechnicianUserId ?? "technician-001");
+        workOrder.StartWork();
         db.MaintenanceWorkOrders.Add(workOrder);
         db.DowntimeReasons.Add(DowntimeReason.Create(
             "org-001",
@@ -318,6 +326,8 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
             "DEV-CNC-01",
             "high",
             "emp010");
+        workOrder.Accept(workOrder.AssignedTechnicianUserId ?? "technician-001");
+        workOrder.StartWork();
         db.MaintenanceWorkOrders.Add(workOrder);
         db.DowntimeReasons.Add(DowntimeReason.Create(
             "org-001",
@@ -369,6 +379,8 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
             "DEV-CNC-01",
             "high",
             "emp010");
+        workOrder.Accept(workOrder.AssignedTechnicianUserId ?? "technician-001");
+        workOrder.StartWork();
         db.MaintenanceWorkOrders.Add(workOrder);
         db.DowntimeReasons.Add(DowntimeReason.Create(
             "org-001",
@@ -423,6 +435,8 @@ public sealed class MaintenanceWorkOrderIdempotencyTests
     {
         var workOrder = MaintenanceWorkOrder.OpenManual(
             "org-001", "env-dev", $"MWO-T-{Guid.NewGuid():N}", $"DEV-{Guid.CreateVersion7():N}", "high", "emp010");
+        workOrder.Accept(workOrder.AssignedTechnicianUserId ?? "technician-001");
+        workOrder.StartWork();
         db.MaintenanceWorkOrders.Add(workOrder);
         if (!await db.DowntimeReasons.AnyAsync(x => x.ReasonCode == "equipment-failure"))
         {

@@ -233,8 +233,12 @@ describe('WMS picking route context', () => {
     await wrapper.get('#wms-picking-outbound').setValue('OB-001')
     await wrapper.get('#wms-picking-from').setValue('A-01')
     await wrapper.get('#wms-picking-to').setValue('STAGE-01')
-    await wrapper.get('#wms-picking-qty').setValue('5')
     const form = wrapper.get('#wms-picking-qty').element.closest('form')!
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(wmsState.createPicking).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('拣货数量需为正数。')
+    await wrapper.get('#wms-picking-qty').setValue('5')
     const submit = async () => {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
       await flushPromises()
@@ -374,6 +378,7 @@ describe('WMS picking route context', () => {
 
     await wrapper.get('#wms-picking-from').setValue('A-01')
     await wrapper.get('#wms-picking-to').setValue('STAGE-01')
+    await wrapper.get('#wms-picking-qty').setValue('5')
     await wrapper
       .get('#wms-picking-from')
       .element.closest('form')!
@@ -384,7 +389,7 @@ describe('WMS picking route context', () => {
       lineNo: '1',
       fromLocationCode: 'A-01',
       toLocationCode: 'STAGE-01',
-      quantity: undefined,
+      quantity: 5,
       idempotencyKey: expect.any(String),
     })
   })

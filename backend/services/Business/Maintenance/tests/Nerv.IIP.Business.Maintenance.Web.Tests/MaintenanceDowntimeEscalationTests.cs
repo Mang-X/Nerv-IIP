@@ -22,6 +22,8 @@ public sealed class MaintenanceDowntimeEscalationTests
         Add("other", "env");
         Add("org", "other");
         var completed = Add("org", "env");
+        completed.Accept(completed.AssignedTechnicianUserId ?? "technician-001");
+        completed.StartWork();
         completed.Complete("fixed", "fault", 1, []);
         var cancelled = Add("org", "env");
         cancelled.Cancel();

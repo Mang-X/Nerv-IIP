@@ -7,8 +7,7 @@ public class MesReadinessReasonCodesTests
 {
     [Theory]
     [InlineData("DT-PM")]
-    [InlineData("计划保养")]
-    public void Planned_maintenance_catalog_code_and_legacy_text_classify_as_maintenance(string reason)
+    public void Planned_maintenance_catalog_code_classifies_as_maintenance(string reason)
     {
         var classification = MesReadinessReasonCodes.ClassifyEquipmentReason(reason);
 

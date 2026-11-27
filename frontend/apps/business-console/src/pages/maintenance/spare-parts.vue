@@ -151,6 +151,12 @@ const columns: NvDataTableColumn<SparePartRow>[] = [
     // 早期登记的备件行没有领出库位，如实显示未记录。
     accessor: (r) => (r.locationCode ? r.locationCode : '未记录'),
   },
+  {
+    key: 'inventoryPostingFailureReason',
+    header: '库存过账',
+    accessor: (row) =>
+      row.inventoryPostingFailureReason ? `过账失败：${row.inventoryPostingFailureReason}` : '—',
+  },
   { key: 'actions', header: '操作', align: 'end', width: 'w-12' },
 ]
 

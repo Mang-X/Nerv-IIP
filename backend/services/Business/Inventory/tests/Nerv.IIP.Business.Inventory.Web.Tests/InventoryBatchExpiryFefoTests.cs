@@ -77,6 +77,55 @@ public sealed class InventoryBatchExpiryFefoTests
         Assert.Equal("derived", ledger.ExpiryDateSource);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData(30)]
+    public async Task Inbound_replay_preserves_the_original_expiry_after_sku_policy_changes(int? originalShelfLife)
+    {
+        await using var dbContext = CreateContext();
+        var command = CreateInboundCommand("LOT-REPLAY", Today, Today) with { ExpiryDate = null };
+        var originalHandler = new PostStockMovementCommandHandler(
+            dbContext, new FakeSkuExpiryPolicyProvider(new InventorySkuExpiryPolicy(originalShelfLife, null)));
+        var original = await originalHandler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var replayHandler = new PostStockMovementCommandHandler(
+            dbContext, new FakeSkuExpiryPolicyProvider(new InventorySkuExpiryPolicy(365, null)));
+        var replay = await replayHandler.Handle(command, CancellationToken.None);
+        var conflict = await Assert.ThrowsAsync<InventoryPostingRejectedException>(() =>
+            replayHandler.Handle(command with { ExpiryDate = Today.AddDays(20) }, CancellationToken.None));
+
+        Assert.Equal(original.MovementId, replay.MovementId);
+        Assert.Equal(InventoryPostingFailureCodes.IdempotencyConflict, conflict.FailureCode);
+        Assert.Equal(originalShelfLife is int days ? Today.AddDays(days) : (DateOnly?)null,
+            Assert.Single(dbContext.StockMovements).ExpiryDate);
+    }
+
+    [Fact]
+    public async Task Status_transfer_replay_checks_quantity_and_both_statuses()
+    {
+        await using var dbContext = CreateContext();
+        await SeedLedgerAsync(dbContext, "LOT-STATUS-REPLAY", Today.AddDays(60), 5m);
+        var command = new PostStockStatusTransferCommand(
+            "org-001", "env-dev", "qualified", "blocked", "wms", "IN-STATUS", "10",
+            "idem-status-transfer", "SKU-FEFO", "kg", "SITE-01", "LOC-A-01",
+            "LOT-STATUS-REPLAY", null, "company", "owner-001", 2m);
+        var handler = new PostStockStatusTransferCommandHandler(dbContext);
+        var first = await handler.Handle(command, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var replay = await handler.Handle(command, CancellationToken.None);
+        Assert.Equal(first, replay);
+        foreach (var changed in new[] { command with { Quantity = 3m }, command with { TargetQualityStatus = "quality" } })
+        {
+            var conflict = await Assert.ThrowsAsync<InventoryPostingRejectedException>(() =>
+                handler.Handle(changed, CancellationToken.None));
+            Assert.Equal(InventoryPostingFailureCodes.IdempotencyConflict, conflict.FailureCode);
+        }
+
+        Assert.Equal(2, dbContext.StockMovements.Count());
+    }
+
     [Fact]
     public async Task Outbound_movement_preserves_existing_derived_expiry_provenance()
     {
