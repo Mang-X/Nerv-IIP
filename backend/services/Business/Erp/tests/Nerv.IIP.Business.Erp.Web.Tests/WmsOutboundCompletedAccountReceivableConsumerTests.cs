@@ -132,6 +132,8 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
                 new SalesDeliveryLineSpec("SO-LINE-001", 2m, 80m),
                 new SalesDeliveryLineSpec("SO-LINE-002", 2m, 20m),
             ]);
+        Assert.Equal([0m, 0m], await ReadSalesOrderShipmentQuantitiesAsync(dbContext));
+
         var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
         var handler = CreateHandler(dbContext, deadLetters);
         var firstAtUtc = DateTimeOffset.Parse("2026-07-03T16:30:00Z");
@@ -154,6 +156,7 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
         Assert.Equal(firstAtUtc.UtcDateTime, partiallyShipped.ShippedAtUtc);
         Assert.Null(partiallyShipped.CompletedAtUtc);
         Assert.Equal([1m, 0m], partiallyShipped.Lines.OrderBy(x => x.SalesOrderLineNo).Select(x => x.ShippedQuantity).ToArray());
+        Assert.Equal([1m, 0m], await ReadSalesOrderShipmentQuantitiesAsync(dbContext));
         Assert.Empty(dbContext.AccountReceivables);
         Assert.Empty(dbContext.JournalVouchers);
 
@@ -177,6 +180,7 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
         Assert.Equal("completed", completed.Status);
         Assert.Equal(completedAtUtc.UtcDateTime, completed.CompletedAtUtc);
         Assert.All(completed.Lines, line => Assert.Equal(line.Quantity, line.ShippedQuantity));
+        Assert.Equal([2m, 2m], await ReadSalesOrderShipmentQuantitiesAsync(dbContext));
         Assert.Single(dbContext.AccountReceivables);
         Assert.Single(dbContext.JournalVouchers);
         Assert.Equal(2, dbContext.ProcessedIntegrationEvents.Count());
@@ -225,11 +229,12 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
 
         await using (var winnerContext = new ApplicationDbContext(options, new NoopMediator()))
         {
-            var winner = await winnerContext.DeliveryOrders.Include(x => x.Lines).SingleAsync(CancellationToken.None);
-            winner.ApplyShipment(
-                [new DeliveryOrderShipmentLine("SO-LINE-001", 1m)],
-                DateTime.Parse("2026-07-20T02:01:00Z").ToUniversalTime());
-            await winnerContext.SaveChangesAsync(CancellationToken.None);
+            var winnerEvent = BuildWmsCompletedEvent(
+                releasedDelivery,
+                "CONCURRENT-WINNER",
+                new Dictionary<string, decimal>(StringComparer.Ordinal) { ["SO-LINE-001"] = 1m });
+            await CreateHandler(winnerContext, new InMemoryIntegrationEventDeadLetterStore())
+                .HandleCapAsync(winnerEvent, CancellationToken.None);
         }
 
         var integrationEvent = BuildWmsCompletedEvent(
@@ -251,7 +256,11 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
         Assert.Equal("partially-shipped", persisted.Status);
         Assert.Equal(2m, Assert.Single(persisted.Lines).ShippedQuantity);
         Assert.Empty(assertionContext.AccountReceivables);
-        Assert.Single(assertionContext.ProcessedIntegrationEvents);
+        var order = await assertionContext.SalesOrders.Include(x => x.Lines).SingleAsync(CancellationToken.None);
+        var orderLine = Assert.Single(order.Lines);
+        Assert.Equal(2m, orderLine.ShippedQuantity);
+        Assert.Equal(3m, orderLine.DeliveredQuantity);
+        Assert.Equal(2, await assertionContext.ProcessedIntegrationEvents.CountAsync(CancellationToken.None));
         Assert.Equal(2, interceptor.SaveAttempts);
     }
 
@@ -479,6 +488,14 @@ public sealed class WmsOutboundCompletedAccountReceivableConsumerTests
             && x.Message.Contains("WMS outbound completion", StringComparison.Ordinal)
             && x.Message.Contains("WMS-OUT-UNRELATED", StringComparison.Ordinal));
     }
+
+    private static Task<decimal[]> ReadSalesOrderShipmentQuantitiesAsync(ApplicationDbContext dbContext) =>
+        dbContext.SalesOrders.AsNoTracking()
+            .Where(x => x.SalesOrderNo == "SO-AR-PARTIAL")
+            .SelectMany(x => x.Lines)
+            .OrderBy(x => x.LineNo)
+            .Select(x => x.ShippedQuantity)
+            .ToArrayAsync(CancellationToken.None);
 
     private static WmsOutboundOrderCompletedIntegrationEventHandlerForCreateAccountReceivable CreateHandler(
         ApplicationDbContext dbContext,

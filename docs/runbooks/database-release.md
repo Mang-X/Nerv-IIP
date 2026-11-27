@@ -336,6 +336,30 @@ Quality 数量巡检链路依次引入 `AddPeriodicInspectionQuantityWatermark`�
 
 官方依据见 [PostgreSQL 主版本升级说明](https://www.postgresql.org/docs/19/upgrading.html) 和 [PostgreSQL 官方 Docker 镜像的卷布局](https://hub.docker.com/_/postgres)。
 
+### 6.12 BusinessERP 销售订单实际发运数量 migration
+
+`20261127134330_AddSalesOrderLineShippedQuantity` 从 ERP 发货单的已确认行数量回填销售订单行 `shipped_quantity`。`delivered_quantity` 继续记录开单占量。
+
+1. 按第 2 节备份并暂停 ERP 写入和 WMS 完成事件消费，在第 4.1 节的受治理业务数据库迁移入口应用 ERP migration，成功后再启用新版本写入。
+2. 在备份副本预跑迁移。旧消费者可能已用 ERP 发货单号登记或复用应收，同时用独立的 WMS 出库单号写入 inbox，发货单仍处于 `released` 或后来变为 `cancelled`。迁移会阻止同一组织、环境和发货单号下存在应收来源记录的这两类发货单。可用以下只读查询一次列出这类待核对单据。
+
+   ```sql
+   SELECT d.organization_id, d.environment_id, d.delivery_order_no, d.sales_order_no, d.status,
+          ar.receivable_no
+   FROM erp.delivery_orders d
+   JOIN erp.account_receivables ar
+     ON ar.organization_id = d.organization_id
+    AND ar.environment_id = d.environment_id
+    AND ar.source_document_no = d.delivery_order_no
+   WHERE d.status IN ('released', 'cancelled')
+   ORDER BY d.organization_id, d.environment_id, d.delivery_order_no, ar.receivable_no;
+   ```
+
+3. 若迁移失败，继续停写并保留迁移日志。由 ERP、WMS 和库存负责人按组织、环境及 ERP 发货单号定位 WMS 出库单。核对 WMS 的 `source_document_type = 'erp-delivery-order'` 和 `source_document_id`，或留存完成事件的 `Payload.PublicReference`。找到出库单后可按原始事件 ID 或原始幂等键定位 ERP inbox。inbox 只保留信封标识，金额、开单占量及事件的请求数量只能辅助核对。
+4. 逐行以库存成功过账记录及其生效数量、时间为准，核对 WMS 出库行号、SKU、UOM 和实际出库量。WMS 已记录履约时可用 `issued_quantity` 交叉检查。旧完成事件在缺少履约记录时可能填入请求数量。证据不足、人工提前登记应收、或发运与取消/释放占量冲突的单据，保持发布阻塞并交业务负责人裁定。保留原应收、会计凭证和 inbox。
+5. 对证据完整且状态、占量可核对的单据，在副本先验证经审批的单次事务修复。按 ERP 发货单及销售行标识锁定目标行，校验旧状态、版本和现有数量，按证据写入发货单行的绝对实际发运量。同一事务更新发货单状态、发运时间和版本。全量完成时写入 `completed` 和完成时间，部分完成时写入 `partially-shipped`。保留前后行值、过账来源和审批记录。用第 4.1 节入口重跑迁移，由迁移汇总销售订单行累计，再核对迁移历史、行级汇总和应收记录后恢复写入。迁移异常会回滚本次 DDL 和回填，已有 inbox 会阻止原事件重放补写投影。
+6. 若需降级运行，保持 WMS 完成事件消费暂停，或在恢复新版本消费前按批准的发布方案重新核对和回填累计数量。旧消费者可能继续写发货单行和 inbox，销售订单行累计会落后。
+
 ## 7. Seed 契约
 
 Seed 是显式步骤，不混入普通 Web 启动；例外是下表默认随 Web 启动执行的产品基线 seed，以及下文非 Development 下随 IAM 启动执行的平台引导。每个 seed 至少声明 `seedName`、`seedVersion`、`ownerService`、幂等规则、输入来源、重复执行结果和敏感信息处理。初始管理员密码、客户端密钥、Connector 凭据不得写入日志。
