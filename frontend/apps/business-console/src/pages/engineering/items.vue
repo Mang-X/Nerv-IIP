@@ -21,6 +21,7 @@ import {
   NvDialogTrigger,
   NvEntityPicker,
   NvField,
+  NvFieldError,
   NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
@@ -128,20 +129,6 @@ const itemSegments = computed(() => {
   return pagedBreakdownSegments(itemsTotal.value, segments)
 })
 
-// 已知物料编码（用于「在已有物料上派生新修订」下拉）。去重保留首个。
-const knownItemCodes = computed(() => {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const it of items.value) {
-    const code = it.itemCode?.trim()
-    if (code && !seen.has(code)) {
-      seen.add(code)
-      out.push(code)
-    }
-  }
-  return out.sort()
-})
-
 const listErrorMessage = computed(() => inlineErrorMessage(itemsError.value))
 
 const columns: NvDataTableColumn<BusinessConsoleEngineeringItemRevisionItem>[] = [
@@ -170,14 +157,23 @@ function blankForm(): ItemForm {
 const formOpen = shallowRef(false)
 const showErrors = ref(false)
 const form = reactive<ItemForm>(blankForm())
-const { skuEntries, pending: skuCatalogPending, load: loadItemCatalog } = useBomItemCatalog()
+const {
+  skuEntries,
+  skuError,
+  engineeringEntries,
+  engineeringRevisions,
+  engineeringError,
+  pending: skuCatalogPending,
+  load: loadItemCatalog,
+} = useBomItemCatalog()
 const skuOptions = computed(() =>
   skuEntries.value.map((sku) => ({ value: sku.code, label: sku.name, hint: sku.code })),
 )
 
 function changeTargetMode() {
   form.itemCode = ''
-  if (form.targetMode === 'sku') void loadItemCatalog()
+  form.name = ''
+  if (form.targetMode !== 'new') void loadItemCatalog()
 }
 
 function selectSku(code: string) {
@@ -185,11 +181,33 @@ function selectSku(code: string) {
   form.name = skuEntries.value.find((sku) => sku.code === code)?.name ?? ''
 }
 
-const revisionValid = computed(() => form.revision.trim().length > 0)
+const existingOptions = computed(() =>
+  engineeringEntries.value.map((item) => ({ value: item.code, label: item.name })),
+)
+const skuAlreadyImported = computed(
+  () =>
+    form.targetMode === 'sku' && existingOptions.value.some((item) => item.value === form.itemCode),
+)
+const revisionTaken = computed(
+  () =>
+    form.targetMode !== 'new' &&
+    engineeringRevisions.value.some(
+      (item) => item.itemCode === form.itemCode && item.revision === form.revision.trim(),
+    ),
+)
+const revisionValid = computed(() => form.revision.trim().length > 0 && !revisionTaken.value)
 const nameValid = computed(() => form.name.trim().length > 0)
 // 在已有物料上派生时必须选物料编码；建新物料时编码由后端自动生成，无需填。
 const targetValid = computed(() => form.targetMode === 'new' || form.itemCode.trim().length > 0)
-const canSubmit = computed(() => revisionValid.value && nameValid.value && targetValid.value)
+const canSubmit = computed(
+  () =>
+    revisionValid.value &&
+    nameValid.value &&
+    targetValid.value &&
+    !skuAlreadyImported.value &&
+    (form.targetMode !== 'sku' || !skuError.value) &&
+    (form.targetMode === 'new' || (!skuCatalogPending.value && !engineeringError.value)),
+)
 
 function openCreate() {
   Object.assign(form, blankForm())
@@ -287,17 +305,23 @@ async function openView(row: BusinessConsoleEngineeringItemRevisionItem) {
               <FormSectionTitle>派生对象</FormSectionTitle>
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
                 <NvField>
-                  <NvFieldLabel for="item-mode">派生方式</NvFieldLabel>
+                  <NvFieldLabel for="item-mode">创建路径</NvFieldLabel>
                   <NvSelect v-model="form.targetMode" @update:model-value="changeTargetMode">
                     <NvSelectTrigger id="item-mode"><NvSelectValue /></NvSelectTrigger>
                     <NvSelectContent>
-                      <NvSelectItem value="new">新建物料</NvSelectItem>
-                      <NvSelectItem value="existing">在已有物料上派生</NvSelectItem>
-                      <NvSelectItem value="sku">从基础数据 SKU 创建修订</NvSelectItem>
+                      <NvSelectItem value="new">新建工程物料</NvSelectItem>
+                      <NvSelectItem value="existing">为已有工程物料派生修订</NvSelectItem>
+                      <NvSelectItem value="sku">从基础数据 SKU 引入首次修订</NvSelectItem>
                     </NvSelectContent>
                   </NvSelect>
                   <NvFieldDescription v-if="form.targetMode === 'new'">
-                    编码由系统自动生成。
+                    编码由系统自动生成，请填写修订号与名称。
+                  </NvFieldDescription>
+                  <NvFieldDescription v-else-if="form.targetMode === 'existing'">
+                    沿用所选工程物料编码，请填写新的修订号与名称。
+                  </NvFieldDescription>
+                  <NvFieldDescription v-else>
+                    带入基础数据 SKU 编码与名称，请填写首次修订号。
                   </NvFieldDescription>
                 </NvField>
                 <NvField
@@ -307,16 +331,24 @@ async function openView(row: BusinessConsoleEngineeringItemRevisionItem) {
                   <NvFieldLabel for="item-code"
                     >物料编码 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvSelect v-model="form.itemCode">
-                    <NvSelectTrigger id="item-code"
-                      ><NvSelectValue placeholder="选择已有物料"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem v-for="code in knownItemCodes" :key="code" :value="code">{{
-                        code
-                      }}</NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
+                  <NvEntityPicker
+                    id="item-code"
+                    v-model="form.itemCode"
+                    :options="existingOptions"
+                    :loading="skuCatalogPending"
+                    title="选择已有工程物料"
+                    placeholder="选择已有工程物料"
+                    :empty-text="engineeringError ? '工程物料加载失败' : '暂无可派生的工程物料'"
+                    no-match-text="没有匹配的工程物料"
+                  />
+                  <NvButton
+                    v-if="engineeringError"
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    @click="loadItemCatalog"
+                    >重试加载目录</NvButton
+                  >
                 </NvField>
                 <NvField
                   v-if="form.targetMode === 'sku'"
@@ -330,8 +362,22 @@ async function openView(row: BusinessConsoleEngineeringItemRevisionItem) {
                     :loading="skuCatalogPending"
                     title="选择基础数据 SKU"
                     placeholder="选择基础数据 SKU"
+                    :empty-text="skuError ? 'SKU 加载失败' : '暂无基础数据 SKU'"
+                    no-match-text="没有匹配的 SKU"
                     aria-label="基础数据 SKU"
                     @update:model-value="selectSku"
+                  />
+                  <NvButton
+                    v-if="skuError || engineeringError"
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    @click="loadItemCatalog"
+                    >重试加载目录</NvButton
+                  >
+                  <NvFieldError
+                    v-if="skuAlreadyImported"
+                    :errors="['该 SKU 已有工程物料，请选择派生修订。']"
                   />
                 </NvField>
               </NvFieldGroup>
@@ -343,6 +389,10 @@ async function openView(row: BusinessConsoleEngineeringItemRevisionItem) {
                     >修订号 <span class="text-destructive">*</span></NvFieldLabel
                   >
                   <NvInput id="item-rev" v-model="form.revision" placeholder="如 A、B、001" />
+                  <NvFieldError
+                    v-if="revisionTaken"
+                    :errors="['该物料已有此修订号，请填写新修订号。']"
+                  />
                 </NvField>
                 <NvField :data-invalid="showErrors && !nameValid">
                   <NvFieldLabel for="item-name"

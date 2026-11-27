@@ -31,6 +31,10 @@ const filters = reactive({
 
 vi.mock('@/composables/engineering', () => ({
   useBomItemCatalog: () => ({
+    engineeringEntries: shallowRef([{ code: 'ITEM-1', name: '控制主板' }]),
+    engineeringRevisions: shallowRef([{ itemCode: 'ITEM-1', revision: 'A' }]),
+    engineeringError: shallowRef(undefined),
+    skuError: shallowRef(undefined),
     skuEntries: shallowRef([{ code: 'SKU-FG', name: '成品' }]),
     pending: shallowRef(false),
     load: vi.fn(),
@@ -98,7 +102,14 @@ const allStubs = {
   ...dialogStubs,
   ...sheetStubs,
   ...formSelectStubs,
-  NvEntityPicker: formSelectStubs.NvSelect,
+  NvEntityPicker: {
+    props: ['modelValue', 'options'],
+    emits: ['update:modelValue'],
+    template: `<select :value="modelValue" @change="$emit('update:modelValue', $event.target.value)">
+      <option value=""></option>
+      <option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option>
+    </select>`,
+  },
 }
 
 function findButton(wrapper: ReturnType<typeof mount>, text: string) {
@@ -204,5 +215,21 @@ describe('engineering items page', () => {
     expect(stub.fetchItemDetail).toHaveBeenCalledWith('ITEM-1', 'A')
     const sheet = wrapper.find('[data-testid="sheet"]')
     expect(sheet.text()).toContain('主控板详情')
+  })
+  it('派生修订时提示已占用的修订号并阻止提交', async () => {
+    const wrapper = mount(ItemsPage, { global: { stubs: allStubs } })
+    await findButton(wrapper, '新建修订')!.trigger('click')
+    await wrapper.get('form select').setValue('existing')
+    await wrapper.get('#item-code').setValue('ITEM-1')
+    await wrapper.get('#item-name').setValue('控制主板')
+    await wrapper.get('#item-rev').setValue('A')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.text()).toContain('该物料已有此修订号')
+    expect(stub.createItemRevision).not.toHaveBeenCalled()
+    await wrapper.get('#item-rev').setValue('B')
+    await wrapper.get('form').trigger('submit')
+    expect(stub.createItemRevision).toHaveBeenCalledWith(
+      expect.objectContaining({ itemCode: 'ITEM-1', revision: 'B' }),
+    )
   })
 })

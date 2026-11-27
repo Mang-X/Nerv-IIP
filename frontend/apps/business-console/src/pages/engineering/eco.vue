@@ -13,7 +13,14 @@ import type {
 import type { NvDataTableColumn, NvMetricStripCell, StatusTone } from '@nerv-iip/ui'
 import BusinessDocumentApprovalPanel from '@/components/business/BusinessDocumentApprovalPanel.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { useEngineeringChanges, useEngineeringProductionVersions } from '@/composables/engineering'
+import {
+  useEngineeringChanges,
+  useEngineeringDocuments,
+  useEngineeringProductionVersions,
+  usePublishedEboms,
+  usePublishedMboms,
+  usePublishedRoutings,
+} from '@/composables/engineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ENGINEERING_CHANGE_ORDER_DOCUMENT_TYPE,
@@ -101,12 +108,11 @@ function versionKindLabel(kind?: string | null) {
   )
 }
 
-// 受影响版本的 versionId 是版本主键。四类对象里只有「生产版本」的读面直接暴露该主键
-// （ProductionVersionItem.productionVersionId），可以做成选择器；EBOM / MBOM / 工艺路线的
-// 列表读面只给 bomCode + revision、拿不到版本主键，暂时保留手工录入（后端缺口已登记）。
 const {
   productionVersions,
   productionVersionsPending,
+  productionVersionsError,
+  refresh: refreshProductionVersions,
   filters: productionVersionFilters,
 } = useEngineeringProductionVersions()
 productionVersionFilters.take = 500
@@ -121,28 +127,85 @@ const productionVersionOptions = computed(() =>
       ...(row.isDefault ? { hint: '默认版本' } : {}),
     })),
 )
-// 生产版本读不到名称（无权限、清单截断或仍在加载）时的中性说法，不回吐版本主键。
-const UNKNOWN_VERSION_LABEL = '暂无法显示版本名称'
-/**
- * 查看抽屉里受影响版本的说法。生产版本存的是版本主键，换成「物料 · 生效日」再上屏；
- * 其余三类是用户手工录入的版本标识，原样显示。
- */
+// BOM、工艺路线和文档的版本引用由服务端按「业务编号:修订」解析。
+const { eboms, ebomsPending, ebomsError, refreshEboms } = usePublishedEboms()
+const { mboms, mbomsPending, mbomsError, refreshMboms } = usePublishedMboms()
+const { routings, routingsPending, routingsError, refreshRoutings } = usePublishedRoutings()
+const {
+  documents,
+  documentsPending,
+  documentsError,
+  filters: documentFilters,
+  refresh: refreshDocuments,
+} = useEngineeringDocuments()
+documentFilters.take = 500
+
+function versionOption(code?: string | null, revision?: string | null, owner?: string | null) {
+  if (!code || !revision) return []
+  return [
+    {
+      value: `${code}:${revision}`,
+      label: [code, `修订 ${revision}`, owner].filter(Boolean).join(' · '),
+    },
+  ]
+}
+
+const versionCatalogs = {
+  EngineeringBom: {
+    options: computed(() =>
+      eboms.value.flatMap((row) => versionOption(row.bomCode, row.revision, row.parentItemCode)),
+    ),
+    pending: ebomsPending,
+    error: ebomsError,
+    refresh: refreshEboms,
+  },
+  ManufacturingBom: {
+    options: computed(() =>
+      mboms.value.flatMap((row) => versionOption(row.bomCode, row.revision, row.skuCode)),
+    ),
+    pending: mbomsPending,
+    error: mbomsError,
+    refresh: refreshMboms,
+  },
+  Routing: {
+    options: computed(() =>
+      routings.value.flatMap((row) => versionOption(row.routingCode, row.revision, row.skuCode)),
+    ),
+    pending: routingsPending,
+    error: routingsError,
+    refresh: refreshRoutings,
+  },
+  ProductionVersion: {
+    options: productionVersionOptions,
+    pending: productionVersionsPending,
+    error: productionVersionsError,
+    refresh: refreshProductionVersions,
+  },
+  EngineeringDocument: {
+    options: computed(() =>
+      documents.value.flatMap((row) =>
+        versionOption(row.documentNumber, row.revision, row.itemCode),
+      ),
+    ),
+    pending: documentsPending,
+    error: documentsError,
+    refresh: refreshDocuments,
+  },
+}
+
+function versionCatalog(kind?: string | null) {
+  const key = kind?.trim().toLowerCase().replace(/[-_]/g, '')
+  return Object.entries(versionCatalogs).find(([name]) => name.toLowerCase() === key)?.[1]
+}
+
 function affectedVersionLabel(kind?: string | null, versionId?: string | null) {
   if (!versionId) return '—'
-  if (kind?.trim().toLowerCase().replace(/[-_]/g, '') !== 'productionversion') return versionId
   return (
-    productionVersionOptions.value.find((option) => option.value === versionId)?.label ??
-    UNKNOWN_VERSION_LABEL
+    versionCatalog(kind)?.options.value.find((option) => option.value === versionId)?.label ??
+    (kind?.trim().toLowerCase().replace(/[-_]/g, '') === 'productionversion'
+      ? '暂无法显示版本名称'
+      : versionId)
   )
-}
-function affectedVersionOptions(kind: string, current: string) {
-  if (kind !== 'ProductionVersion') return []
-  const options = productionVersionOptions.value
-  const trimmed = current.trim()
-  if (trimmed && !options.some((option) => option.value === trimmed)) {
-    return [{ value: trimmed, label: UNKNOWN_VERSION_LABEL }, ...options]
-  }
-  return options
 }
 
 // 后端是一步发布（Open→Approve→Release），变更落库即为已发布状态——不假造草稿/待审。
@@ -250,6 +313,12 @@ interface EcoForm {
   effectiveDate: string | null
   affectedVersions: AffectedRow[]
 }
+function selectVersionKind(row: AffectedRow, value: unknown) {
+  if (typeof value !== 'string' || value === row.versionKind) return
+  row.versionKind = value
+  row.versionId = ''
+}
+
 function blankAffected(): AffectedRow {
   return { versionKind: '', versionId: '' }
 }
@@ -606,7 +675,10 @@ function riskTone(severity?: string | null): StatusTone {
                     <NvFieldLabel :for="`eco-kind-${index}`"
                       >对象种类 <span class="text-destructive">*</span></NvFieldLabel
                     >
-                    <NvSelect v-model="row.versionKind">
+                    <NvSelect
+                      :model-value="row.versionKind"
+                      @update:model-value="selectVersionKind(row, $event)"
+                    >
                       <NvSelectTrigger :id="`eco-kind-${index}`"
                         ><NvSelectValue placeholder="选择对象"
                       /></NvSelectTrigger>
@@ -625,24 +697,33 @@ function riskTone(severity?: string | null): StatusTone {
                       >受影响版本 <span class="text-destructive">*</span></NvFieldLabel
                     >
                     <NvEntityPicker
-                      v-if="row.versionKind === 'ProductionVersion'"
                       :id="`eco-vid-${index}`"
                       v-model="row.versionId"
-                      :options="affectedVersionOptions(row.versionKind, row.versionId)"
-                      title="选择生产版本"
-                      placeholder="选择生产版本"
-                      empty-text="暂无生产版本，请先在工程数据维护"
-                      :loading="productionVersionsPending"
+                      :options="versionCatalog(row.versionKind)?.options.value ?? []"
+                      title="选择受影响版本"
+                      :placeholder="row.versionKind ? '选择受影响版本' : '请先选择对象类型'"
+                      :empty-text="
+                        versionCatalog(row.versionKind)?.error.value
+                          ? '版本目录加载失败'
+                          : '暂无可选版本'
+                      "
+                      no-match-text="没有匹配的版本"
+                      :disabled="!row.versionKind"
+                      :loading="versionCatalog(row.versionKind)?.pending.value"
+                      :invalid="showErrors && !row.versionId.trim()"
                       aria-label="受影响版本"
                       clearable
                       :show-code="false"
                     />
-                    <NvInput
-                      v-else
-                      :id="`eco-vid-${index}`"
-                      v-model="row.versionId"
-                      placeholder="受影响的版本标识"
-                    />
+                    <NvButton
+                      v-if="versionCatalog(row.versionKind)?.error.value"
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      @click="versionCatalog(row.versionKind)?.refresh()"
+                    >
+                      重试加载版本
+                    </NvButton>
                   </NvField>
                   <NvButton
                     type="button"

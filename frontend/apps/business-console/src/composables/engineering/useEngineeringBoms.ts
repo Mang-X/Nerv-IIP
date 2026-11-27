@@ -53,7 +53,7 @@ export interface ManufacturingBomListFilters {
 /**
  * 已发布 MBOM 选择器数据源（status=Published）。绑定值用 `bomCode`，label 显示 `code · rev · SKU`。
  */
-export function usePublishedMboms() {
+export function usePublishedMboms(skuScope?: () => string) {
   const context = useBusinessContextStore()
   const filters = bindBusinessContext(
     reactive({
@@ -63,13 +63,13 @@ export function usePublishedMboms() {
     }),
   )
 
-  const query = useQuery(() =>
-    withBusinessContextEnabled(
+  const query = useQuery(() => ({
+    ...withBusinessContextEnabled(
       listBusinessConsoleEngineeringManufacturingBomsQueryOptions({
         query: {
           organizationId: filters.organizationId,
           environmentId: filters.environmentId,
-          ...optionalQuery('skuCode', filters.skuCode),
+          ...optionalQuery('skuCode', skuScope ? skuScope() : filters.skuCode),
           status: PUBLISHED,
           skip: 0,
           take: DEFAULT_TAKE,
@@ -77,12 +77,16 @@ export function usePublishedMboms() {
       }),
       filters,
     ),
-  )
+    ...(skuScope && !skuScope() ? { enabled: false } : {}),
+  }))
 
   return {
     filters,
     mboms: computed<BusinessConsoleManufacturingBomItem[]>(() =>
       unwrapItems(query.data.value as BusinessConsoleManufacturingBomListEnvelope | undefined),
+    ),
+    mbomsTotal: computed(() =>
+      unwrapTotal(query.data.value as BusinessConsoleManufacturingBomListEnvelope | undefined),
     ),
     mbomsError: query.error,
     mbomsPending: query.isLoading,
@@ -153,17 +157,23 @@ export function useEngineeringEboms() {
     releasePending: releaseMutation.isLoading,
     releaseError: releaseMutation.error,
 
-    // 按需取某版本明细（含组件行），用于「查看」。失败抛错由调用方处理。
-    fetchEbomDetail: async (bomCode: string, revision: string) => {
-      const envelope = await runQueryOption(
-        getBusinessConsoleEngineeringBomQueryOptions({
-          path: { bomCode, revision },
-          query: { organizationId: filters.organizationId, environmentId: filters.environmentId },
-        }),
-      )
-      return unwrapDetail<BusinessConsoleEngineeringBomItem>(envelope)
-    },
+    fetchEbomDetail: (bomCode: string, revision: string) =>
+      fetchEbomDetail(filters, bomCode, revision),
   }
+}
+
+async function fetchEbomDetail(
+  context: Pick<EngineeringBomListFilters, 'organizationId' | 'environmentId'>,
+  bomCode: string,
+  revision: string,
+) {
+  const envelope = await runQueryOption(
+    getBusinessConsoleEngineeringBomQueryOptions({
+      path: { bomCode, revision },
+      query: { organizationId: context.organizationId, environmentId: context.environmentId },
+    }),
+  )
+  return unwrapDetail<BusinessConsoleEngineeringBomItem>(envelope)
 }
 
 /**
@@ -204,6 +214,8 @@ export function usePublishedEboms() {
     ebomsError: query.error,
     ebomsPending: query.isLoading,
     refreshEboms: () => refetchWithBusinessContext(filters, query),
+    fetchEbomDetail: (bomCode: string, revision: string) =>
+      fetchEbomDetail(filters, bomCode, revision),
   }
 }
 

@@ -35,6 +35,31 @@ vi.mock('@/stores/auth', () => ({
 }))
 
 vi.mock('@/composables/engineering', () => ({
+  usePublishedEboms: () => ({
+    eboms: shallowRef([{ bomCode: 'EBOM-FG', revision: 'A', parentItemCode: 'SKU-FG' }]),
+    ebomsPending: shallowRef(false),
+    ebomsError: shallowRef(undefined),
+    refreshEboms: vi.fn(),
+  }),
+  usePublishedMboms: () => ({
+    mboms: shallowRef([]),
+    mbomsPending: shallowRef(false),
+    mbomsError: shallowRef(undefined),
+    refreshMboms: vi.fn(),
+  }),
+  usePublishedRoutings: () => ({
+    routings: shallowRef([{ routingCode: 'RT-1', revision: 'B', skuCode: 'SKU-FG' }]),
+    routingsPending: shallowRef(false),
+    routingsError: shallowRef(undefined),
+    refreshRoutings: vi.fn(),
+  }),
+  useEngineeringDocuments: () => ({
+    documents: shallowRef([]),
+    documentsPending: shallowRef(false),
+    documentsError: shallowRef(undefined),
+    filters: reactive({ take: 10 }),
+    refresh: vi.fn(),
+  }),
   useEngineeringChanges: () => ({
     changes: computed(() => [changeRow]),
     changesError: shallowRef(undefined),
@@ -65,8 +90,8 @@ vi.mock('@/composables/engineering', () => ({
         isDefault: true,
       },
     ]),
-    productionVersionsError: shallowRef(undefined),
     productionVersionsPending: shallowRef(false),
+    productionVersionsError: shallowRef(undefined),
     productionVersionsTotal: computed(() => 1),
     refresh: vi.fn(),
   }),
@@ -138,6 +163,15 @@ const approvalPanelStub = {
 }
 
 const allStubs = {
+  NvEntityPicker: {
+    props: ['modelValue', 'options', 'disabled'],
+    emits: ['update:modelValue'],
+    template: `<select :value="modelValue" :disabled="disabled" @change="$emit('update:modelValue', $event.target.value)">
+      <option value=""></option>
+      <option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option>
+    </select>`,
+  },
+
   ...layoutStub,
   ...dialogStubs,
   ...sheetStubs,
@@ -248,7 +282,7 @@ describe('engineering eco page', () => {
     await wrapper.findAll('input[type="date"]')[0]!.setValue('2026-03-01')
     // 受影响版本：第一个 select 是对象种类
     await wrapper.findAll('select')[0]!.setValue('Routing')
-    await wrapper.find('#eco-vid-0').setValue('ROUTING-VER-1')
+    await wrapper.find('#eco-vid-0').setValue('RT-1:B')
     await flushPromises()
 
     await wrapper.find('form').trigger('submit')
@@ -263,7 +297,7 @@ describe('engineering eco page', () => {
     const affected = body.affectedVersions as Array<Record<string, unknown>>
     expect(affected).toHaveLength(1)
     expect(affected[0]!.versionKind).toBe('Routing')
-    expect(affected[0]!.versionId).toBe('ROUTING-VER-1')
+    expect(affected[0]!.versionId).toBe('RT-1:B')
     expect(stub.toastSuccess).toHaveBeenCalled()
   })
 
@@ -301,7 +335,7 @@ describe('engineering eco page', () => {
     await findButton(wrapper, '关联审批链')!.trigger('click')
     await wrapper.findAll('input[type="date"]')[0]!.setValue('2026-03-01')
     await wrapper.findAll('select')[0]!.setValue('Routing')
-    await wrapper.find('#eco-vid-0').setValue('ROUTING-VER-1')
+    await wrapper.find('#eco-vid-0').setValue('RT-1:B')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
@@ -372,7 +406,7 @@ describe('engineering eco page', () => {
     expect(stub.releaseChange).not.toHaveBeenCalled()
   })
 
-  it('受影响版本可增删：增加一行后多一组 select+input', async () => {
+  it('受影响版本可增删：增加一行后多一组类型和版本选择器', async () => {
     const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
     await flushPromises()
     await findButton(wrapper, '发布变更')!.trigger('click')
@@ -381,7 +415,7 @@ describe('engineering eco page', () => {
     const before = wrapper.findAll('select').length
     await findButton(wrapper, '增加一条')!.trigger('click')
     await flushPromises()
-    expect(wrapper.findAll('select').length).toBe(before + 1)
+    expect(wrapper.findAll('select').length).toBe(before + 2)
   })
 
   it('查看：行「查看」拉 get-by-id 渲染受影响版本', async () => {
@@ -411,5 +445,18 @@ describe('engineering eco page', () => {
     // 读不到名称（无权限、清单截断或仍在加载）时说中性话，不回吐主键。
     expect(sheet.text()).toContain('暂无法显示版本名称')
     expect(sheet.text()).not.toContain('PV-GONE')
+  })
+  it('对象类型切换时清空旧版本，候选显示编号、修订和父项', async () => {
+    const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
+    await findButton(wrapper, '发布变更')!.trigger('click')
+    const kind = wrapper.findAll('select')[0]!
+    await kind.setValue('EngineeringBom')
+    const version = wrapper.get('#eco-vid-0')
+    expect(version.text()).toContain('EBOM-FG · 修订 A · SKU-FG')
+    await version.setValue('EBOM-FG:A')
+    await kind.setValue('Routing')
+    expect(version.text()).toContain('RT-1 · 修订 B · SKU-FG')
+    expect((version.element as HTMLSelectElement).value).toBe('')
+    expect(version.text()).not.toContain('EBOM-FG')
   })
 })

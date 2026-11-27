@@ -111,7 +111,12 @@ const documentTypeFilter = computed({
 })
 
 // 关联物料从工程物料目录里选（同一 itemCode 多修订只出现一次）。
-const { itemEntries, pending: itemCatalogPending, load: loadItemCatalog } = useBomItemCatalog()
+const {
+  engineeringEntries,
+  engineeringError,
+  pending: itemCatalogPending,
+  load: loadItemCatalog,
+} = useBomItemCatalog()
 
 const itemSearch = computed({
   get: () => filters.itemCode ?? '',
@@ -217,7 +222,7 @@ function hashPayload(payload: string) {
 }
 
 const itemPickerOptions = computed(() => {
-  const options = itemEntries.value.map((item) => ({
+  const options = engineeringEntries.value.map((item) => ({
     value: item.code,
     label: item.name,
     hint: item.code,
@@ -383,27 +388,70 @@ async function submitForm() {
 
 // ── 查看文档明细（get-by-id）────────────────────────────────────
 const fileOpening = ref(false)
+const fileFailed = ref(false)
 const openedFileUrl = ref('')
-watch(openedFileUrl, (_url, previous) => {
-  if (previous) URL.revokeObjectURL(previous)
+const previewTypes = new Set([
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'text/plain',
+])
+const previewType = computed(() => {
+  const type = viewTarget.value?.contentType?.split(';')[0]?.trim().toLowerCase()
+  return type && previewTypes.has(type) ? type : undefined
 })
-onBeforeUnmount(() => {
+
+function clearPreview() {
   if (openedFileUrl.value) URL.revokeObjectURL(openedFileUrl.value)
+  openedFileUrl.value = ''
+}
+
+onBeforeUnmount(() => {
+  viewGeneration += 1
+  clearPreview()
 })
-async function openFile() {
-  if (!viewTarget.value?.fileId || fileOpening.value) return
-  const target = viewTarget.value
-  const generation = viewGeneration
-  fileOpening.value = true
+
+function downloadAttachment(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = name
+  document.body.append(link)
   try {
-    const blob = await readSopFile(target.fileId!, {
+    link.click()
+  } finally {
+    link.remove()
+    // 浏览器开始下载后再释放地址。
+    const revokeObjectURL = URL.revokeObjectURL.bind(URL)
+    window.setTimeout(() => revokeObjectURL(url), 1000)
+  }
+}
+
+async function openFile() {
+  const target = viewTarget.value
+  if (!target?.fileId || fileOpening.value) return
+  const generation = viewGeneration
+  const type = previewType.value
+  fileOpening.value = true
+  fileFailed.value = false
+  clearPreview()
+  try {
+    const blob = await readSopFile(target.fileId, {
       organizationId: filters.organizationId,
       environmentId: filters.environmentId,
     })
     if (generation !== viewGeneration || !viewOpen.value || viewTarget.value !== target) return
-    openedFileUrl.value = URL.createObjectURL(blob)
+    if (type) {
+      openedFileUrl.value = URL.createObjectURL(blob.slice(0, blob.size, type))
+    } else {
+      downloadAttachment(blob, target.fileName || '工程文档')
+    }
   } catch (error) {
-    if (generation === viewGeneration) notifyError(error, '打开文件失败，请稍后重试。')
+    if (generation !== viewGeneration) return
+    fileFailed.value = true
+    notifyError(error, '打开附件失败，请重试。')
   } finally {
     if (generation === viewGeneration) fileOpening.value = false
   }
@@ -412,17 +460,23 @@ let viewGeneration = 0
 const viewOpen = shallowRef(false)
 const viewTarget = shallowRef<BusinessConsoleEngineeringDocumentItem | null>(null)
 const detailPending = ref(false)
-watch(viewOpen, (open) => {
-  if (!open) {
-    viewGeneration += 1
-    fileOpening.value = false
-    openedFileUrl.value = ''
-  }
-})
+watch(
+  viewOpen,
+  (open) => {
+    if (!open) {
+      viewGeneration += 1
+      fileOpening.value = false
+      clearPreview()
+    }
+  },
+  { flush: 'sync' },
+)
 async function openView(row: BusinessConsoleEngineeringDocumentItem) {
   const generation = ++viewGeneration
   fileOpening.value = false
-  openedFileUrl.value = ''
+  fileFailed.value = false
+  clearPreview()
+  detailPending.value = false
   viewTarget.value = row
   viewOpen.value = true
   if (!row.documentNumber || !row.revision) return
@@ -432,7 +486,7 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
     if (detail && generation === viewGeneration && viewOpen.value) viewTarget.value = detail
   } catch (error) {
     // 结果一律 toast；列表行数据仍可展示，不在抽屉里留常驻错误条。
-    notifyError(error, '加载文档明细失败，请稍后重试。')
+    if (generation === viewGeneration) notifyError(error, '加载文档明细失败，请稍后重试。')
   } finally {
     if (generation === viewGeneration) detailPending.value = false
   }
@@ -569,20 +623,31 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
                 >
               </NvField>
 
-              <FormSectionTitle>关联（可选）</FormSectionTitle>
+              <FormSectionTitle>文档关联</FormSectionTitle>
               <NvField>
-                <NvFieldLabel for="doc-item-code">关联物料</NvFieldLabel>
+                <NvFieldLabel for="doc-item-code">关联工程物料（可选）</NvFieldLabel>
                 <NvEntityPicker
                   id="doc-item-code"
                   v-model="form.itemCode"
                   :options="itemPickerOptions"
-                  title="选择关联物料"
+                  title="选择关联工程物料"
                   placeholder="可留空"
-                  empty-text="暂无物料，请在基础数据或工程物料中维护"
+                  :empty-text="
+                    engineeringError ? '工程物料目录加载失败' : '工程物料目录为空，请先维护工程物料'
+                  "
+                  no-match-text="没有匹配的工程物料"
                   :loading="itemCatalogPending"
-                  aria-label="关联物料"
+                  aria-label="关联工程物料"
                   clearable
                 />
+                <NvButton
+                  v-if="engineeringError"
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  @click="loadItemCatalog"
+                  >重试加载目录</NvButton
+                >
               </NvField>
 
               <NvDialogFooter>
@@ -655,7 +720,7 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
     </NvDataTable>
 
     <NvSheet v-model:open="viewOpen">
-      <NvSheetContent class="sm:max-w-md">
+      <NvSheetContent class="overflow-y-auto sm:max-w-xl">
         <NvSheetHeader>
           <NvSheetTitle>工程文档 · 明细</NvSheetTitle>
           <NvSheetDescription>
@@ -689,19 +754,24 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
               :disabled="fileOpening"
               @click="openFile"
             >
-              {{ fileOpening ? '正在打开…' : '打开文件' }}
+              {{
+                fileOpening
+                  ? '正在读取附件…'
+                  : fileFailed
+                    ? '重试打开附件'
+                    : previewType
+                      ? '预览附件'
+                      : '下载附件'
+              }}
             </NvButton>
-            <a
+            <iframe
               v-if="openedFileUrl"
-              :href="openedFileUrl"
-              target="_blank"
-              rel="noopener"
-              class="text-primary underline"
-            >
-              查看 {{ viewTarget.fileName }}
-            </a>
+              :src="openedFileUrl"
+              :title="`附件预览：${viewTarget.fileName ?? '工程文档'}`"
+              class="h-[50vh] w-full rounded-md border"
+            />
             <div class="flex justify-between gap-3">
-              <span class="text-muted-foreground">关联物料</span>
+              <span class="text-muted-foreground">关联工程物料</span>
               <span class="font-medium">{{ viewTarget.itemCode || '无' }}</span>
             </div>
             <div class="flex justify-between gap-3">

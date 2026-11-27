@@ -478,4 +478,47 @@ describe('engineering bom analysis page', () => {
     expect(wrapper.text()).toContain('损耗')
     expect(wrapper.text()).toContain('得率')
   })
+  it('迟到的对比失败只出现在对比页，反查保留自己的空态和结果', async () => {
+    let rejectDiff!: (reason: Error) => void
+    api.getBusinessConsoleEngineeringBomDiff.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectDiff = reject
+        }),
+    )
+    api.getBusinessConsoleEngineeringBomWhereUsed.mockResolvedValue({
+      data: { success: true, data: { componentCode: 'PCB-200', items: [] } },
+    })
+    const wrapper = mount(BomAnalysisPage, { global: { stubs: layoutStub } })
+    const button = (label: string) =>
+      wrapper.findAll('button').find((item) => item.text().trim() === label)!
+    await flushPromises()
+    await button('对比').trigger('click')
+    await wrapper.get('#bom-from-code').setValue('EBOM-FG')
+    await wrapper.get('#bom-from-revision').setValue('A')
+    await wrapper.get('#bom-to-code').setValue('EBOM-FG')
+    await wrapper.get('#bom-to-revision').setValue('B')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    await button('反查').trigger('click')
+    expect(wrapper.text()).toContain('请选择组件物料后反查')
+    rejectDiff(new Error('对比读取失败'))
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('分析失败')
+    await wrapper.get('#bom-component').setValue('PCB-200')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(api.getBusinessConsoleEngineeringBomWhereUsed).toHaveBeenCalledTimes(1)
+    await button('对比').trigger('click')
+    expect(wrapper.text()).toContain('分析失败')
+    api.getBusinessConsoleEngineeringBomDiff.mockResolvedValueOnce({
+      data: { success: true, data: { lines: [] } },
+    })
+    await button('重试').trigger('click')
+    await flushPromises()
+    expect(api.getBusinessConsoleEngineeringBomDiff).toHaveBeenCalledTimes(2)
+    expect(api.getBusinessConsoleEngineeringBomWhereUsed).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).not.toContain('分析失败')
+    wrapper.unmount()
+  })
 })

@@ -45,6 +45,7 @@ const props = withDefaults(
     placeholder?: string
     searchPlaceholder?: string
     emptyText?: string
+    noMatchText?: string
     loading?: boolean
     disabled?: boolean
     /** 字段校验失败状态；同时标记容器并把 `aria-invalid` 传给触发按钮。 */
@@ -243,6 +244,7 @@ function clear() {
           :model-value="modelValue"
           :search-placeholder="searchPlaceholder"
           :empty-text="emptyText"
+          :no-match-text="noMatchText"
           :loading="loading"
           :search-aria-label="searchAriaLabel"
           :show-code="showCode"
@@ -272,6 +274,7 @@ function clear() {
         :model-value="modelValue"
         :search-placeholder="searchPlaceholder"
         :empty-text="emptyText"
+        :no-match-text="noMatchText"
         :loading="loading"
         :search-aria-label="searchAriaLabel"
         :show-code="showCode"

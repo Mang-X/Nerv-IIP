@@ -67,7 +67,7 @@ vi.mock('@/composables/engineering', () => ({
     fetchDocumentDetail: stub.fetchDocumentDetail,
   }),
   useBomItemCatalog: () => ({
-    itemEntries: shallowRef([
+    engineeringEntries: shallowRef([
       { code: 'ITEM-1', name: '控制主板' },
       { code: 'SKU-FG', name: '成品' },
     ]),
@@ -500,25 +500,27 @@ describe('engineering documents page', () => {
 
   it('从详情打开真实文件内容，沿用当前组织和环境', async () => {
     const createObjectURL = vi.fn(() => 'blob:sop-content')
+    const revokeObjectURL = vi.fn()
     vi.stubGlobal(
       'URL',
       class extends URL {
         static createObjectURL = createObjectURL
-        static revokeObjectURL = vi.fn()
+        static revokeObjectURL = revokeObjectURL
       },
     )
     stub.readFile.mockResolvedValue(new Blob(['SOP: torque 12 Nm.']))
     const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
     await findButton(wrapper, '查看')!.trigger('click')
     await flushPromises()
-    await findButton(wrapper, '打开文件')!.trigger('click')
+    await findButton(wrapper, '预览附件')!.trigger('click')
     await flushPromises()
     expect(stub.readFile).toHaveBeenCalledWith('file-abc', {
       organizationId: 'org-001',
       environmentId: 'env-dev',
     })
-    expect(wrapper.find('a[href="blob:sop-content"]').exists()).toBe(true)
+    expect(wrapper.find('iframe[src="blob:sop-content"]').exists()).toBe(true)
     wrapper.unmount()
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:sop-content')
   })
 
   it('关闭A详情并查看B后，A内容晚返回不能覆盖B文件', async () => {
@@ -540,7 +542,7 @@ describe('engineering documents page', () => {
     const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
     await findButton(wrapper, '查看')!.trigger('click')
     await flushPromises()
-    await findButton(wrapper, '打开文件')!.trigger('click')
+    await findButton(wrapper, '预览附件')!.trigger('click')
     wrapper.findComponent({ name: 'NvSheet' }).vm.$emit('update:open', false)
     await flushPromises()
     const b = { ...docRow, documentNumber: 'DOC-2', fileId: 'file-b', fileName: 'B.pdf' }
@@ -551,7 +553,7 @@ describe('engineering documents page', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="sheet"]').text()).toContain('B.pdf')
     expect(createObjectURL).not.toHaveBeenCalled()
-    expect(wrapper.find('a[href="blob:old-a"]').exists()).toBe(false)
+    expect(wrapper.find('iframe[src="blob:old-a"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -574,6 +576,45 @@ describe('engineering documents page', () => {
     const sheet = wrapper.find('[data-testid="sheet"]')
     expect(sheet.text()).toContain('detail.pdf')
     expect(sheet.text()).not.toContain('file-detail')
-    expect(sheet.text()).toContain('打开文件')
+    expect(sheet.text()).toContain('预览附件')
+  })
+  it('非预览附件点击一次即可下载，读取失败可重试', async () => {
+    stub.fetchDocumentDetail.mockResolvedValue({
+      ...docRow,
+      fileName: '规范.xlsx',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    stub.readFile
+      .mockRejectedValueOnce(new Error('读取失败'))
+      .mockResolvedValueOnce(new Blob(['spreadsheet']))
+    const createObjectURL = vi.fn(() => 'blob:spreadsheet')
+    vi.stubGlobal(
+      'URL',
+      class extends URL {
+        static createObjectURL = createObjectURL
+        static revokeObjectURL = vi.fn()
+      },
+    )
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      expect(this.download).toBe('规范.xlsx')
+      expect(this.href).toBe('blob:spreadsheet')
+    })
+    try {
+      const wrapper = mount(DocumentsPage, { global: { stubs: allStubs } })
+      await findButton(wrapper, '查看')!.trigger('click')
+      await flushPromises()
+      await findButton(wrapper, '下载附件')!.trigger('click')
+      await flushPromises()
+      expect(click).not.toHaveBeenCalled()
+      await findButton(wrapper, '重试打开附件')!.trigger('click')
+      await flushPromises()
+      expect(click).toHaveBeenCalledTimes(1)
+      expect(wrapper.find('iframe').exists()).toBe(false)
+      wrapper.unmount()
+    } finally {
+      click.mockRestore()
+    }
   })
 })

@@ -16,6 +16,7 @@ const props = withDefaults(
     modelValue?: string
     searchPlaceholder?: string
     emptyText?: string
+    noMatchText?: string
     loading?: boolean
     /** 搜索框的可访问名称。 */
     searchAriaLabel?: string
@@ -163,6 +164,11 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
+function clearSearch() {
+  query.value = ''
+  inputEl.value?.focus()
+}
+
 defineExpose({ focus: () => inputEl.value?.focus() })
 </script>
 
@@ -229,10 +235,22 @@ defineExpose({ focus: () => inputEl.value?.focus() })
             {{ option.hint }}
           </span>
         </button>
-        <div v-if="!filtered.length" class="px-3 py-8 text-center text-sm text-muted-foreground">
-          {{ emptyText }}
-        </div>
       </div>
+    </div>
+
+    <div
+      v-if="!loading && !filtered.length"
+      class="px-3 py-8 text-center text-sm text-muted-foreground"
+    >
+      <p role="status">{{ query.trim() ? (noMatchText ?? emptyText) : emptyText }}</p>
+      <button
+        v-if="query.trim()"
+        type="button"
+        class="mt-2 text-primary underline"
+        @click="clearSearch"
+      >
+        清除关键词
+      </button>
     </div>
 
     <div v-if="createText" :class="cn('border-t border-border', dense ? 'p-1.5' : 'px-4 py-2')">

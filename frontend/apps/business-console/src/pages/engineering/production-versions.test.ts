@@ -18,8 +18,8 @@ const pvRow = {
   organizationId: 'org-001',
   environmentId: 'env-dev',
   skuCode: 'SKU-1',
-  mbomVersionId: 'MBOM-1',
-  routingVersionId: 'RT-1',
+  mbomVersionId: 'MBOM-1:A',
+  routingVersionId: 'RT-1:A',
   validFrom: '2026-01-01',
   validTo: '2026-12-31',
   lotSizeMin: 10,
@@ -64,6 +64,7 @@ vi.mock('@/composables/engineering', () => ({
       { bomCode: 'MBOM-1', revision: 'A', skuCode: 'SKU-1', status: 'Published' },
     ]),
     mbomsError: shallowRef(undefined),
+    mbomsTotal: shallowRef(1),
     mbomsPending: shallowRef(false),
     refreshMboms: vi.fn(),
   }),
@@ -73,6 +74,7 @@ vi.mock('@/composables/engineering', () => ({
       { routingCode: 'RT-1', revision: 'A', skuCode: 'SKU-1', status: 'Published' },
     ]),
     routingsError: shallowRef(undefined),
+    routingsTotal: shallowRef(1),
     routingsPending: shallowRef(false),
     refreshRoutings: vi.fn(),
   }),
@@ -118,6 +120,15 @@ const datePickerStub = {
   },
 }
 const formSelectStubs = {
+  NvEntityPicker: {
+    props: ['modelValue', 'options', 'disabled'],
+    emits: ['update:modelValue'],
+    template: `<select :value="modelValue" :disabled="disabled" @change="$emit('update:modelValue', $event.target.value)">
+      <option value=""></option>
+      <option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option>
+    </select>`,
+  },
+
   NvSelect: {
     props: ['modelValue'],
     emits: ['update:modelValue'],
@@ -152,6 +163,7 @@ const alertDialogStubs = {
 }
 
 const allStubs = {
+  RouterLink: { props: ['to'], template: '<a><slot /></a>' },
   ...layoutStub,
   ...dialogStubs,
   ...datePickerStub,
@@ -300,7 +312,7 @@ describe('engineering production-versions page', () => {
       Record<string, unknown>,
     ]
     expect(id).toBe('pv-1')
-    expect(body.mbomVersionId).toBe('MBOM-1')
+    expect(body.mbomVersionId).toBe('MBOM-1:A')
     expect(stub.toastSuccess).toHaveBeenCalled()
   })
 
@@ -327,8 +339,8 @@ describe('engineering production-versions page', () => {
     stub.resolve.mockImplementation(async () => {
       resolved.value = {
         skuCode: 'SKU-1',
-        mbomVersionId: 'MBOM-1',
-        routingVersionId: 'RT-1',
+        mbomVersionId: 'MBOM-1:A',
+        routingVersionId: 'RT-1:A',
         status: 'active',
       }
       resolvedOnce.value = true
@@ -337,8 +349,14 @@ describe('engineering production-versions page', () => {
     await flushPromises()
 
     // <select> 顺序：表单内 物料/MBOM/路线（3）、resolve 卡物料（第 4）、状态筛选（第 5）。
-    const selects = wrapper.findAll('select')
-    await selects[3]!.setValue('SKU-1')
+    await wrapper
+      .findAll('select')
+      .find(
+        (select) =>
+          select.find('option[value="SKU-1"]').exists() &&
+          !select.find('option[value="SKU-2"]').exists(),
+      )!
+      .setValue('SKU-1')
     await flushPromises()
 
     await wrapper
@@ -351,5 +369,20 @@ describe('engineering production-versions page', () => {
     const arg = stub.resolve.mock.calls[0]![0] as Record<string, unknown>
     expect(arg.skuCode).toBe('SKU-1')
     expect(wrapper.text()).toContain('命中物料')
+  })
+  it('先选 SKU 才绑定唯一版本，切换到无候选 SKU 清空且拦截保存', async () => {
+    const wrapper = mount(ProductionVersionsPage, { global: { stubs: allStubs } })
+    await findButton(wrapper, '新建生产版本')!.trigger('click')
+    expect(wrapper.get('#pv-mbom').attributes('disabled')).toBeDefined()
+    await wrapper.get('#pv-sku').setValue('SKU-1')
+    expect((wrapper.get('#pv-mbom').element as HTMLSelectElement).value).toBe('MBOM-1:A')
+    expect((wrapper.get('#pv-routing').element as HTMLSelectElement).value).toBe('RT-1:A')
+    await wrapper.get('#pv-sku').setValue('SKU-2')
+    expect((wrapper.get('#pv-mbom').element as HTMLSelectElement).value).toBe('')
+    expect((wrapper.get('#pv-routing').element as HTMLSelectElement).value).toBe('')
+    expect(wrapper.text()).toContain('此物料暂无已发布MBOM')
+    expect(wrapper.text()).toContain('生产版本当前无需选择工厂')
+    await wrapper.get('form').trigger('submit')
+    expect(stub.createProductionVersion).not.toHaveBeenCalled()
   })
 })

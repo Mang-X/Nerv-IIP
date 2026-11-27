@@ -39,6 +39,7 @@ import {
   NvDialogTitle,
   NvDialogTrigger,
   NvField,
+  NvEntityPicker,
   NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
@@ -55,7 +56,8 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, SearchIcon } from '@lucide/vue'
-import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, reactive, ref, shallowRef, watch, watchEffect } from 'vue'
+import { RouterLink } from 'vue-router'
 import { formatDate, today } from '@/utils/format'
 import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/utils/notify'
 
@@ -82,8 +84,6 @@ const {
   updatePending,
 } = useEngineeringProductionVersions()
 
-const { mboms, mbomsPending } = usePublishedMboms()
-const { routings, routingsPending } = usePublishedRoutings()
 const { skus } = useBusinessSkus()
 const {
   resolve,
@@ -136,22 +136,6 @@ function skuLabel(code?: string | null) {
   return skuNameByCode.value.get(code) ?? code
 }
 
-const mbomOptions = computed(() =>
-  mboms.value
-    .filter((m) => m.bomCode && m.revision)
-    .map((m) => ({
-      value: `${m.bomCode}:${m.revision}`,
-      label: `${m.bomCode} · ${m.revision ?? '—'}${m.skuCode ? ` · ${skuLabel(m.skuCode)}` : ''}`,
-    })),
-)
-const routingOptions = computed(() =>
-  routings.value
-    .filter((r) => r.routingCode && r.revision)
-    .map((r) => ({
-      value: `${r.routingCode}:${r.revision}`,
-      label: `${r.routingCode} · ${r.revision ?? '—'}${r.skuCode ? ` · ${skuLabel(r.skuCode)}` : ''}`,
-    })),
-)
 const skuOptions = computed(() =>
   skus.value
     .filter((s) => s.code)
@@ -246,6 +230,27 @@ const editingId = shallowRef<string | null>(null)
 const editingRow = shallowRef<BusinessConsoleProductionVersionItem | null>(null)
 const form = reactive<ProductionVersionForm>(blankForm())
 
+const { mboms, mbomsPending, mbomsError, mbomsTotal, refreshMboms } = usePublishedMboms(() =>
+  formOpen.value ? form.skuCode : '',
+)
+const { routings, routingsPending, routingsError, routingsTotal, refreshRoutings } =
+  usePublishedRoutings(() => (formOpen.value ? form.skuCode : ''))
+const mbomOptions = computed(() =>
+  mboms.value
+    .filter((m) => m.bomCode && m.revision && m.skuCode === form.skuCode)
+    .map((m) => ({
+      value: `${m.bomCode}:${m.revision}`,
+      label: `${m.bomCode} · ${m.revision ?? '—'}${m.skuCode ? ` · ${skuLabel(m.skuCode)}` : ''}`,
+    })),
+)
+const routingOptions = computed(() =>
+  routings.value
+    .filter((r) => r.routingCode && r.revision && r.skuCode === form.skuCode)
+    .map((r) => ({
+      value: `${r.routingCode}:${r.revision}`,
+      label: `${r.routingCode} · ${r.revision ?? '—'}${r.skuCode ? ` · ${skuLabel(r.skuCode)}` : ''}`,
+    })),
+)
 // 编辑态由所选行带出的只读上下文（物料是生产版本的身份，不可改）。
 const carriedItems = computed(() => [
   { label: '物料', value: editingRow.value ? skuLabel(editingRow.value.skuCode) : undefined },
@@ -268,8 +273,12 @@ const lotMin = computed(() => parseNumber(form.lotSizeMin))
 const lotMax = computed(() => parseNumber(form.lotSizeMax))
 
 const skuValid = computed(() => form.skuCode.trim().length > 0)
-const mbomValid = computed(() => form.mbomVersionId.trim().length > 0)
-const routingValid = computed(() => form.routingVersionId.trim().length > 0)
+const mbomValid = computed(() =>
+  mbomOptions.value.some((option) => option.value === form.mbomVersionId),
+)
+const routingValid = computed(() =>
+  routingOptions.value.some((option) => option.value === form.routingVersionId),
+)
 const validFromValid = computed(() => !!form.validFrom)
 // from ≤ to（to 可空）
 const validRangeValid = computed(
@@ -290,18 +299,23 @@ const canSubmit = computed(
     lotRangeValid.value,
 )
 
-// 只有一份已发布 MBOM / 工艺路线时直接选中——没有选择余地的「选择」不该让用户做。
-watch([mbomOptions, routingOptions, formOpen], ([mbomList, routingList, open]) => {
-  if (!open) return
-  if (!form.mbomVersionId && mbomList.length === 1) form.mbomVersionId = mbomList[0]!.value
-  if (!form.routingVersionId && routingList.length === 1)
-    form.routingVersionId = routingList[0]!.value
-})
+function selectSku(code: string) {
+  if (code === form.skuCode) return
+  form.skuCode = code
+  form.mbomVersionId = ''
+  form.routingVersionId = ''
+}
 
-const selectorsPending = computed(() => mbomsPending.value || routingsPending.value)
-const hasSelectorData = computed(
-  () => mbomOptions.value.length > 0 && routingOptions.value.length > 0,
-)
+watchEffect(() => {
+  if (!formOpen.value || !form.skuCode || mbomsPending.value || mbomsError.value) return
+  if (!form.mbomVersionId && mbomOptions.value.length === 1 && mbomsTotal.value === 1)
+    form.mbomVersionId = mbomOptions.value[0]!.value
+})
+watchEffect(() => {
+  if (!formOpen.value || !form.skuCode || routingsPending.value || routingsError.value) return
+  if (!form.routingVersionId && routingOptions.value.length === 1 && routingsTotal.value === 1)
+    form.routingVersionId = routingOptions.value[0]!.value
+})
 
 function openCreate() {
   editingId.value = null
@@ -462,15 +476,6 @@ async function runResolve() {
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
                 请完整填写带 * 的必填项，并确保有效期起止、批量区间合法（已标红）。
               </p>
-              <p
-                v-if="!selectorsPending && !hasSelectorData"
-                class="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning"
-                role="alert"
-              >
-                当前没有已发布的 MBOM 或工艺路线可绑定。请先在 MBOM /
-                工艺路线页发布版本，再回来创建生产版本。
-              </p>
-
               <!-- 编辑态：物料由所选行带出，只读展示，不做成禁用的选择框。 -->
               <CarriedContextSummary v-if="editingId" label="编辑对象" :items="carriedItems" />
 
@@ -482,7 +487,8 @@ async function runResolve() {
                   >
                   <DirectoryPicker
                     id="pv-sku"
-                    v-model="form.skuCode"
+                    :model-value="form.skuCode"
+                    @update:model-value="selectSku"
                     directory-type="material"
                     creatable
                   />
@@ -501,35 +507,84 @@ async function runResolve() {
                   <NvFieldLabel for="pv-mbom"
                     >已发布 MBOM <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvSelect v-model="form.mbomVersionId">
-                    <NvSelectTrigger id="pv-mbom"
-                      ><NvSelectValue placeholder="选择已发布 MBOM"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem v-for="o in mbomOptions" :key="o.value" :value="o.value">{{
-                        o.label
-                      }}</NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
+                  <NvEntityPicker
+                    id="pv-mbom"
+                    v-model="form.mbomVersionId"
+                    :options="mbomOptions"
+                    title="选择已发布MBOM"
+                    :placeholder="form.skuCode ? '选择已发布MBOM' : '请先选择物料'"
+                    :disabled="!form.skuCode"
+                    :loading="mbomsPending"
+                    :invalid="showErrors && !mbomValid"
+                    :empty-text="mbomsError ? '候选加载失败' : '该物料暂无已发布MBOM'"
+                    no-match-text="没有匹配的版本"
+                    :show-code="false"
+                  />
+                  <NvButton
+                    v-if="mbomsError"
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    @click="refreshMboms"
+                    >重试加载</NvButton
+                  >
+                  <p
+                    v-else-if="form.skuCode && !mbomsPending && !mbomOptions.length"
+                    class="text-sm text-muted-foreground"
+                  >
+                    此物料暂无已发布MBOM。
+                    <RouterLink
+                      to="/engineering/mbom"
+                      target="_blank"
+                      rel="noopener"
+                      class="text-primary underline"
+                      >前往维护</RouterLink
+                    >
+                  </p>
                 </NvField>
                 <NvField :data-invalid="showErrors && !routingValid">
                   <NvFieldLabel for="pv-routing"
                     >已发布工艺路线 <span class="text-destructive">*</span></NvFieldLabel
                   >
-                  <NvSelect v-model="form.routingVersionId">
-                    <NvSelectTrigger id="pv-routing"
-                      ><NvSelectValue placeholder="选择已发布工艺路线"
-                    /></NvSelectTrigger>
-                    <NvSelectContent>
-                      <NvSelectItem v-for="o in routingOptions" :key="o.value" :value="o.value">{{
-                        o.label
-                      }}</NvSelectItem>
-                    </NvSelectContent>
-                  </NvSelect>
+                  <NvEntityPicker
+                    id="pv-routing"
+                    v-model="form.routingVersionId"
+                    :options="routingOptions"
+                    title="选择已发布工艺路线"
+                    :placeholder="form.skuCode ? '选择已发布工艺路线' : '请先选择物料'"
+                    :disabled="!form.skuCode"
+                    :loading="routingsPending"
+                    :invalid="showErrors && !routingValid"
+                    :empty-text="routingsError ? '候选加载失败' : '该物料暂无已发布工艺路线'"
+                    no-match-text="没有匹配的版本"
+                    :show-code="false"
+                  />
+                  <NvButton
+                    v-if="routingsError"
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    @click="refreshRoutings"
+                    >重试加载</NvButton
+                  >
+                  <p
+                    v-else-if="form.skuCode && !routingsPending && !routingOptions.length"
+                    class="text-sm text-muted-foreground"
+                  >
+                    此物料暂无已发布工艺路线。
+                    <RouterLink
+                      to="/engineering/routings"
+                      target="_blank"
+                      rel="noopener"
+                      class="text-primary underline"
+                      >前往维护</RouterLink
+                    >
+                  </p>
                 </NvField>
               </NvFieldGroup>
 
               <FormSectionTitle>有效期与适用范围</FormSectionTitle>
+              <p class="text-sm text-muted-foreground">生产版本当前无需选择工厂。</p>
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
                 <NvField :data-invalid="showErrors && (!validFromValid || !validRangeValid)">
                   <NvFieldLabel>生效起 <span class="text-destructive">*</span></NvFieldLabel>
