@@ -195,8 +195,9 @@ public sealed class QualityNcrDispositionPostgresProfileTests
         }
 
         await SendInNewScopeAsync(provider, new(acceptedId, "org-a", "env-a", "sort-and-screen", null, ["sort-new"], []));
-        await Assert.ThrowsAsync<KnownException>(() => SendInNewScopeAsync(provider,
+        var invalidEvidence = await Assert.ThrowsAsync<QualityUnprocessableException>(() => SendInNewScopeAsync(provider,
             new(rejectedId, "org-a", "env-a", "sort-and-screen", null, ["rejected-new"], [])));
+        Assert.Equal("处置附件必须是当前不合格报告已完成上传的合法证据，请重新上传后再提交。", invalidEvidence.Reason);
         using (var scope = provider.CreateScope())
         {
             var sender = scope.ServiceProvider.GetRequiredService<ISender>();
