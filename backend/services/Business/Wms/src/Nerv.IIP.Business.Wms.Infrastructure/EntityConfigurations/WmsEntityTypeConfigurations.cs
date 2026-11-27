@@ -53,6 +53,8 @@ public sealed class InboundOrderEntityTypeConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.AssignedPoolCode).HasColumnName("assigned_pool_code").HasMaxLength(150).HasComment("Optional WMS work-pool assignment snapshot captured when the inbound order is created.");
         builder.Property(x => x.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(50).HasComment("Inbound execution status.");
         builder.Property(x => x.Version).HasColumnName("version").IsRequired().IsConcurrencyToken().HasComment("Optimistic concurrency token advanced for inbound assignment and lifecycle mutations.");
+        builder.Property(x => x.ReceiptConfirmationKey).HasColumnName("receipt_confirmation_key").HasMaxLength(128).HasComment("Normalized idempotency key for confirming actual receipt quantities.");
+        builder.Property(x => x.ReceiptConfirmationFingerprint).HasColumnName("receipt_confirmation_fingerprint").HasMaxLength(64).HasComment("SHA-256 fingerprint of the receipt confirmation intent.");
         builder.Property(x => x.CreatedAtUtc).HasColumnName("created_at_utc").IsRequired().HasComment("UTC creation time.");
         builder.Property(x => x.CompletedAtUtc).HasColumnName("completed_at_utc").HasComment("UTC completion time.");
         builder.Property(x => x.CancelledAtUtc).HasColumnName("cancelled_at_utc").HasComment("UTC time when the open inbound expectation was cancelled.");

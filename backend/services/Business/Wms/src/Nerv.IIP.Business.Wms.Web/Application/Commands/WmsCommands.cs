@@ -315,10 +315,11 @@ public sealed class CompleteInboundOrderCommandLock : ICommandLock<CompleteInbou
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(new CommandLockSettings(
-            $"business-wms:inbound-order-complete:{command.InboundOrderId}",
-            30));
+        return Task.FromResult(ForInboundOrder(command.InboundOrderId));
     }
+
+    internal static CommandLockSettings ForInboundOrder(InboundOrderId id) =>
+        new($"business-wms:inbound-order-complete:{id}", 30);
 }
 
 public sealed record CompleteWmsMovementResult(InventoryMovementRequestId? RequestId, string? InventoryMovementId);

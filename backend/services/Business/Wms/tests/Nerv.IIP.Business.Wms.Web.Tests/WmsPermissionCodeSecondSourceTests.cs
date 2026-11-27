@@ -34,6 +34,7 @@ public sealed class WmsPermissionCodeSecondSourceTests
             ["createWmsPutawayTask"] = "business.wms.receipts.manage", // POST /api/business/v1/wms/inbound-orders/{inboundOrderId}/putaway-tasks
             ["listWmsPutawayTasks"] = "business.wms.receipts.read", // GET /api/business/v1/wms/putaway-tasks
             ["assignWmsPutawayTask"] = "business.wms.receipts.manage", // POST /api/business/v1/wms/putaway-tasks/{warehouseTaskId}/assignment
+            ["confirmWmsInboundReceipt"] = "business.wms.receipts.manage", // POST /api/business/v1/wms/inbound-orders/{inboundOrderId}/confirm-receipt
             ["completeWmsInboundOrder"] = "business.wms.receipts.manage", // POST /api/business/v1/wms/inbound-orders/{inboundOrderId}/complete
             ["retryWmsInboundInventoryPosting"] = "business.wms.receipts.manage", // POST /api/business/v1/wms/inbound-orders/{inboundOrderId}/inventory-posting/retry
             ["cancelWmsInboundOrdersForSource"] = "business.wms.receipts.manage", // POST /api/business/v1/wms/inbound-orders/cancel-by-source

@@ -133,6 +133,7 @@ try
             .AddOpenBehavior(typeof(WarehouseTaskActionReceiptRecoveryBehavior<,>))
             .AddUnitOfWorkBehaviors());
     builder.Services.AddScoped<ICommandLock<CompleteInboundOrderCommand>, CompleteInboundOrderCommandLock>();
+    builder.Services.AddScoped<ICommandLock<ConfirmInboundReceiptCommand>, ConfirmInboundReceiptCommandLock>();
     builder.Services.AddScoped<ICommandLock<CompleteOutboundOrderCommand>, CompleteOutboundOrderCommandLock>();
     builder.Services.AddScoped<ICommandLock<RetryInboundInventoryPostingCommand>, RetryInboundInventoryPostingCommandLock>();
     builder.Services.AddScoped<ICommandLock<RetryOutboundInventoryPostingCommand>, RetryOutboundInventoryPostingCommandLock>();

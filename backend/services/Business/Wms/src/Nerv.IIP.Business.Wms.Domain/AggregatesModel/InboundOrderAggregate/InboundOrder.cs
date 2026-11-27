@@ -49,7 +49,10 @@ public sealed record ExpectedInboundOrderLine(
     string OwnerType,
     string? OwnerId);
 
+/// <summary>仓库核实的入库单行号和实际收货数量。</summary>
 public sealed record InboundReceiptQuantity(string LineNo, decimal ReceivedQuantity);
+
+public sealed record InboundReceiptConfirmation(string Key, string Fingerprint);
 
 public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
 {
@@ -99,6 +102,10 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
     public string? AssignedPoolCode { get; private set; }
     public InboundOrderStatus Status { get; private set; }
     public long Version { get; private set; }
+
+    public string? ReceiptConfirmationKey { get; private set; }
+
+    public string? ReceiptConfirmationFingerprint { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
     public DateTime? CompletedAtUtc { get; private set; }
     public DateTime? CancelledAtUtc { get; private set; }
@@ -157,7 +164,10 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         return order;
     }
 
-    public void ConfirmReceipt(long expectedVersion, IReadOnlyCollection<InboundReceiptQuantity> quantities)
+    public void ConfirmReceipt(
+        long expectedVersion,
+        IReadOnlyCollection<InboundReceiptQuantity> quantities,
+        InboundReceiptConfirmation? confirmation = null)
     {
         EnsureExpectedVersion(expectedVersion);
         EnsureOpen();
@@ -185,6 +195,8 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         }
 
         AdvanceVersion();
+        ReceiptConfirmationKey = confirmation?.Key;
+        ReceiptConfirmationFingerprint = confirmation?.Fingerprint;
     }
 
     public void AssignWorkPool(
