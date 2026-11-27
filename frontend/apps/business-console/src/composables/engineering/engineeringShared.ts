@@ -31,10 +31,33 @@ export function unwrapDetail<T>(
   return envelope.data ?? undefined
 }
 
-export async function runQueryOption<T>(options: {
-  query: (context: never) => Promise<T>
-}): Promise<T> {
-  return options.query({} as never)
+export async function runQueryOption<T>(
+  options: { query: (context: never) => Promise<T> },
+  signal?: AbortSignal,
+): Promise<T> {
+  return options.query({ signal } as never)
+}
+
+export async function loadEngineeringCatalogPages<T>(
+  fetchPage: (skip: number) => Promise<{ items: T[]; total: number }>,
+  keyOf: (item: T) => string,
+  signal: AbortSignal,
+) {
+  const maxPages = 50
+  const byKey = new Map<string, T>()
+  let total = 0
+  let skip = 0
+  for (let page = 0; page < maxPages; page += 1) {
+    signal.throwIfAborted()
+    const batch = await fetchPage(skip)
+    signal.throwIfAborted()
+    total = batch.total
+    const previousSize = byKey.size
+    for (const item of batch.items) byKey.set(keyOf(item), item)
+    skip += batch.items.length
+    if (byKey.size === previousSize || skip >= total) break
+  }
+  return { items: [...byKey.values()], total }
 }
 
 export function isBusinessQuery(id: string) {

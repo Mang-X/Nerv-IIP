@@ -4,6 +4,8 @@ import { defineComponent, h, reactive, shallowRef } from 'vue'
 
 import BomAnalysisPage from './bom-analysis.vue'
 
+const businessContext = reactive({ organizationId: 'org-001', environmentId: 'env-dev' })
+
 const routeState = reactive<{ query: Record<string, unknown> }>({ query: {} })
 const routerReplace = vi.fn(async (location: { query?: Record<string, unknown> }) => {
   routeState.query = location.query ?? {}
@@ -30,7 +32,7 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('@/stores/businessContext', () => ({
-  useBusinessContextStore: () => ({ organizationId: 'org-001', environmentId: 'env-dev' }),
+  useBusinessContextStore: () => businessContext,
 }))
 
 vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
@@ -158,6 +160,8 @@ vi.mock('@nerv-iip/ui', () => {
 const layoutStub = { BusinessLayout: { template: '<main><slot /></main>' } }
 
 beforeEach(() => {
+  businessContext.organizationId = 'org-001'
+  businessContext.environmentId = 'env-dev'
   routeState.query = {}
   routerReplace.mockClear()
   api.getBusinessConsoleEngineeringBomExplosion.mockReset()
@@ -233,6 +237,78 @@ describe('engineering bom analysis page', () => {
     expect(optionsFor('bom-component')).toContainEqual(
       expect.objectContaining({ value: 'SKU-FG', label: '整机成品（销售件）' }),
     )
+  })
+
+  it('切换上下文后，旧 SKU 请求被取消且迟到响应不会覆盖新目录', async () => {
+    const oldSkuPage = Promise.withResolvers<{
+      success: boolean
+      data: { resources: { code: string }[]; total: number }
+    }>()
+    let oldSignal: AbortSignal | undefined
+    api.listBusinessConsoleSkusQueryOptions.mockImplementation(({ query }) => ({
+      query: ({ signal }: { signal: AbortSignal }) => {
+        if (query.environmentId === 'env-dev') {
+          oldSignal = signal
+          return oldSkuPage.promise
+        }
+        return Promise.resolve({
+          success: true,
+          data: { resources: [{ code: 'SKU-B' }], total: 1 },
+        })
+      },
+    }))
+
+    const wrapper = mount(BomAnalysisPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+    const picker = wrapper
+      .findAllComponents({ name: 'NvEntityPicker' })
+      .find((candidate) => candidate.props('id') === 'bom-root')!
+    expect(picker.props('loading')).toBe(true)
+
+    businessContext.environmentId = 'env-prod'
+    expect(oldSignal?.aborted).toBe(true)
+    await flushPromises()
+    expect(picker.props('loading')).toBe(false)
+    expect(picker.props('options')).toContainEqual(expect.objectContaining({ value: 'SKU-B' }))
+
+    oldSkuPage.resolve({ success: true, data: { resources: [{ code: 'SKU-A' }], total: 1 } })
+    await flushPromises()
+    expect(picker.props('options')).toContainEqual(expect.objectContaining({ value: 'SKU-B' }))
+    expect(picker.props('options')).not.toContainEqual(expect.objectContaining({ value: 'SKU-A' }))
+    wrapper.unmount()
+  })
+
+  it('工程物料与 SKU 返回重复页后结束加载并保留已读候选', async () => {
+    api.listBusinessConsoleEngineeringItemsQueryOptions.mockReturnValue({
+      query: async () => ({
+        success: true,
+        data: {
+          items: [{ itemCode: 'FG-100', revision: 'A', name: '整机成品' }],
+          total: 120,
+        },
+      }),
+    })
+    api.listBusinessConsoleSkusQueryOptions.mockReturnValue({
+      query: async () => ({
+        success: true,
+        data: { resources: [{ code: 'SKU-FG' }], total: 120 },
+      }),
+    })
+    const wrapper = mount(BomAnalysisPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+
+    const picker = wrapper
+      .findAllComponents({ name: 'NvEntityPicker' })
+      .find((candidate) => candidate.props('id') === 'bom-root')!
+    expect(picker.props('loading')).toBe(false)
+    expect(picker.props('options')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: 'FG-100' }),
+        expect.objectContaining({ value: 'SKU-FG' }),
+      ]),
+    )
+    expect(api.listBusinessConsoleEngineeringItemsQueryOptions).toHaveBeenCalledTimes(2)
+    expect(api.listBusinessConsoleSkusQueryOptions).toHaveBeenCalledTimes(2)
   })
 
   it('用后端 explosion 响应渲染多级树和诊断', async () => {

@@ -12,11 +12,20 @@ import {
   type BusinessConsoleBomDiffResponse,
   type BusinessConsoleBomWhereUsedResponse,
   type BusinessConsoleEngineeringItemRevisionItem,
-  type BusinessConsoleResourceListEnvelope,
 } from '@nerv-iip/api-client'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import { useQuery } from '@pinia/colada'
-import { computed, reactive, ref, shallowRef, toValue, type MaybeRefOrGetter } from 'vue'
+import {
+  computed,
+  nextTick,
+  onScopeDispose,
+  reactive,
+  ref,
+  shallowRef,
+  toValue,
+  watch,
+  type MaybeRefOrGetter,
+} from 'vue'
 import {
   bindBusinessContext,
   hasBusinessContext,
@@ -24,10 +33,12 @@ import {
 } from '../shared/businessContextBinding'
 import {
   DEFAULT_TAKE,
+  loadEngineeringCatalogPages,
   optionalQuery,
   runQueryOption,
   unwrapDetail,
   unwrapItems,
+  unwrapTotal,
 } from './engineeringShared'
 import { usePublishedEboms, usePublishedMboms } from './useEngineeringBoms'
 
@@ -227,43 +238,16 @@ export function useBomItemCatalog() {
     }))
   }
 
-  async function loadSkus(query: { organizationId: string; environmentId: string; take: number }) {
-    const byCode = new Map<string, BomCatalogEntry>()
-    let skip = 0
-    while (true) {
-      const envelope: BusinessConsoleResourceListEnvelope = await runQueryOption(
-        listBusinessConsoleSkusQueryOptions({ query: { ...query, skip } }),
-      )
-      const resources = envelope.success ? (envelope.data?.resources ?? []) : []
-      for (const sku of resources) {
-        if (sku.code) byCode.set(sku.code, { code: sku.code, name: sku.displayName ?? sku.code })
-      }
-      skip += resources.length
-      if (resources.length === 0 || skip >= (envelope.data?.total ?? 0)) break
-    }
-    return [...byCode.values()]
-  }
-
-  async function loadEngineeringItems(query: {
-    organizationId: string
-    environmentId: string
-    take: number
-  }) {
-    const revisions: BusinessConsoleEngineeringItemRevisionItem[] = []
-    while (true) {
-      const envelope = await runQueryOption(
-        listBusinessConsoleEngineeringItemsQueryOptions({
-          query: { ...query, skip: revisions.length },
-        }),
-      )
-      const batch = unwrapItems<BusinessConsoleEngineeringItemRevisionItem>(envelope)
-      revisions.push(...batch)
-      if (!batch.length || revisions.length >= (envelope.data?.total ?? 0)) return revisions
-    }
-  }
+  let generation = 0
+  let controller: AbortController | undefined
+  let requested = false
 
   async function load() {
-    if (pending.value) return
+    requested = true
+    if (pending.value || !hasBusinessContext(context)) return
+    const request = ++generation
+    controller = new AbortController()
+    const { signal } = controller
     pending.value = true
     engineeringError.value = undefined
     skuError.value = undefined
@@ -272,16 +256,72 @@ export function useBomItemCatalog() {
       environmentId: context.environmentId,
       take: DEFAULT_TAKE,
     }
-    try {
-      const [items, skus] = await Promise.allSettled([loadEngineeringItems(query), loadSkus(query)])
-      if (items.status === 'fulfilled') engineeringRevisions.value = items.value
-      else engineeringError.value = items.reason
-      if (skus.status === 'fulfilled') skuEntries.value = skus.value
-      else skuError.value = skus.reason
-    } finally {
-      pending.value = false
-    }
+    const [items, skus] = await Promise.allSettled([
+      loadEngineeringCatalogPages(
+        async (skip) => {
+          const envelope = await runQueryOption(
+            listBusinessConsoleEngineeringItemsQueryOptions({ query: { ...query, skip } }),
+            signal,
+          )
+          return { items: unwrapItems(envelope), total: unwrapTotal(envelope) }
+        },
+        (item) => JSON.stringify([item.itemCode, item.revision]),
+        signal,
+      ),
+      loadEngineeringCatalogPages(
+        async (skip) => {
+          const envelope = await runQueryOption(
+            listBusinessConsoleSkusQueryOptions({ query: { ...query, skip } }),
+            signal,
+          )
+          return {
+            items: envelope.success ? (envelope.data?.resources ?? []) : [],
+            total: unwrapTotal(envelope),
+          }
+        },
+        (sku) => sku.code ?? '',
+        signal,
+      ),
+    ])
+    if (
+      request !== generation ||
+      query.organizationId !== context.organizationId ||
+      query.environmentId !== context.environmentId
+    )
+      return
+
+    if (items.status === 'fulfilled') engineeringRevisions.value = items.value.items
+    else engineeringError.value = items.reason
+    if (skus.status === 'fulfilled')
+      skuEntries.value = skus.value.items.flatMap((sku) =>
+        sku.code ? [{ code: sku.code, name: sku.displayName ?? sku.code }] : [],
+      )
+    else skuError.value = skus.reason
+    pending.value = false
   }
+
+  watch(
+    [() => context.organizationId, () => context.environmentId],
+    () => {
+      const invalidated = ++generation
+      controller?.abort()
+      engineeringRevisions.value = []
+      skuEntries.value = []
+      engineeringError.value = undefined
+      skuError.value = undefined
+      pending.value = false
+      if (requested)
+        void nextTick(() => {
+          if (invalidated === generation) void load()
+        })
+    },
+    { flush: 'sync' },
+  )
+
+  onScopeDispose(() => {
+    generation += 1
+    controller?.abort()
+  })
 
   return {
     engineeringEntries,

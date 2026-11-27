@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import {
   cancelScheduledBusinessConsoleEngineeringChange,
+  listBusinessConsoleEngineeringBomsQueryOptions,
+  listBusinessConsoleEngineeringDocumentsQueryOptions,
+  listBusinessConsoleEngineeringProductionVersionsQueryOptions,
   rescheduleBusinessConsoleEngineeringChange,
 } from '@nerv-iip/api-client'
 import { useAuthStore } from '@/stores/auth'
@@ -13,14 +16,13 @@ import type {
 import type { NvDataTableColumn, NvMetricStripCell, StatusTone } from '@nerv-iip/ui'
 import BusinessDocumentApprovalPanel from '@/components/business/BusinessDocumentApprovalPanel.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
+import { useEngineeringChanges } from '@/composables/engineering'
+import { PUBLISHED } from '@/composables/engineering/engineeringShared'
 import {
-  useEngineeringChanges,
-  useEngineeringDocuments,
-  useEngineeringProductionVersions,
-  usePublishedEboms,
-  usePublishedMboms,
-  usePublishedRoutings,
-} from '@/composables/engineering'
+  useEngineeringVersionCatalog,
+  usePublishedMbomCatalog,
+  usePublishedRoutingCatalog,
+} from '@/composables/engineering/useEngineeringVersionCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   ENGINEERING_CHANGE_ORDER_DOCUMENT_TYPE,
@@ -108,16 +110,27 @@ function versionKindLabel(kind?: string | null) {
   )
 }
 
-const {
-  productionVersions,
-  productionVersionsPending,
-  productionVersionsError,
-  refresh: refreshProductionVersions,
-  filters: productionVersionFilters,
-} = useEngineeringProductionVersions()
-productionVersionFilters.take = 500
+const ebomCatalog = useEngineeringVersionCatalog(
+  filters,
+  ({ skuCode: _skuCode, ...query }) =>
+    listBusinessConsoleEngineeringBomsQueryOptions({ query: { ...query, status: PUBLISHED } }),
+  (row) => JSON.stringify([row.bomCode, row.revision]),
+)
+const mbomCatalog = usePublishedMbomCatalog(filters)
+const routingCatalog = usePublishedRoutingCatalog(filters)
+const productionCatalog = useEngineeringVersionCatalog(
+  filters,
+  (query) => listBusinessConsoleEngineeringProductionVersionsQueryOptions({ query }),
+  (row) => row.productionVersionId ?? '',
+)
+const documentCatalog = useEngineeringVersionCatalog(
+  filters,
+  ({ skuCode: _skuCode, ...query }) =>
+    listBusinessConsoleEngineeringDocumentsQueryOptions({ query }),
+  (row) => JSON.stringify([row.documentNumber, row.revision]),
+)
 const productionVersionOptions = computed(() =>
-  productionVersions.value
+  productionCatalog.items.value
     .filter((row) => !!row.productionVersionId)
     .map((row) => ({
       value: row.productionVersionId as string,
@@ -127,18 +140,6 @@ const productionVersionOptions = computed(() =>
       ...(row.isDefault ? { hint: '默认版本' } : {}),
     })),
 )
-// BOM、工艺路线和文档的版本引用由服务端按「业务编号:修订」解析。
-const { eboms, ebomsPending, ebomsError, refreshEboms } = usePublishedEboms()
-const { mboms, mbomsPending, mbomsError, refreshMboms } = usePublishedMboms()
-const { routings, routingsPending, routingsError, refreshRoutings } = usePublishedRoutings()
-const {
-  documents,
-  documentsPending,
-  documentsError,
-  filters: documentFilters,
-  refresh: refreshDocuments,
-} = useEngineeringDocuments()
-documentFilters.take = 500
 
 function versionOption(code?: string | null, revision?: string | null, owner?: string | null) {
   if (!code || !revision) return []
@@ -153,43 +154,49 @@ function versionOption(code?: string | null, revision?: string | null, owner?: s
 const versionCatalogs = {
   EngineeringBom: {
     options: computed(() =>
-      eboms.value.flatMap((row) => versionOption(row.bomCode, row.revision, row.parentItemCode)),
+      ebomCatalog.items.value.flatMap((row) =>
+        versionOption(row.bomCode, row.revision, row.parentItemCode),
+      ),
     ),
-    pending: ebomsPending,
-    error: ebomsError,
-    refresh: refreshEboms,
+    pending: ebomCatalog.pending,
+    error: ebomCatalog.error,
+    refresh: ebomCatalog.refresh,
   },
   ManufacturingBom: {
     options: computed(() =>
-      mboms.value.flatMap((row) => versionOption(row.bomCode, row.revision, row.skuCode)),
+      mbomCatalog.items.value.flatMap((row) =>
+        versionOption(row.bomCode, row.revision, row.skuCode),
+      ),
     ),
-    pending: mbomsPending,
-    error: mbomsError,
-    refresh: refreshMboms,
+    pending: mbomCatalog.pending,
+    error: mbomCatalog.error,
+    refresh: mbomCatalog.refresh,
   },
   Routing: {
     options: computed(() =>
-      routings.value.flatMap((row) => versionOption(row.routingCode, row.revision, row.skuCode)),
+      routingCatalog.items.value.flatMap((row) =>
+        versionOption(row.routingCode, row.revision, row.skuCode),
+      ),
     ),
-    pending: routingsPending,
-    error: routingsError,
-    refresh: refreshRoutings,
+    pending: routingCatalog.pending,
+    error: routingCatalog.error,
+    refresh: routingCatalog.refresh,
   },
   ProductionVersion: {
     options: productionVersionOptions,
-    pending: productionVersionsPending,
-    error: productionVersionsError,
-    refresh: refreshProductionVersions,
+    pending: productionCatalog.pending,
+    error: productionCatalog.error,
+    refresh: productionCatalog.refresh,
   },
   EngineeringDocument: {
     options: computed(() =>
-      documents.value.flatMap((row) =>
+      documentCatalog.items.value.flatMap((row) =>
         versionOption(row.documentNumber, row.revision, row.itemCode),
       ),
     ),
-    pending: documentsPending,
-    error: documentsError,
-    refresh: refreshDocuments,
+    pending: documentCatalog.pending,
+    error: documentCatalog.error,
+    refresh: documentCatalog.refresh,
   },
 }
 
@@ -353,8 +360,20 @@ const changeNumberValid = computed(() => form.changeNumber.trim().length > 0)
 const approvalValid = computed(() => form.approvalReferenceId.trim().length > 0)
 const effectiveValid = computed(() => !!form.effectiveDate)
 function affectedValid(row: AffectedRow) {
-  return row.versionKind.trim().length > 0 && row.versionId.trim().length > 0
+  const id = row.versionId.trim()
+  if (!row.versionKind || !id) return false
+  if (row.versionKind === 'ProductionVersion') return true
+  const separator = id.indexOf(':')
+  return separator > 0 && !!id.slice(0, separator).trim() && !!id.slice(separator + 1).trim()
 }
+function affectedVersionOptions(row: AffectedRow) {
+  const options = versionCatalog(row.versionKind)?.options.value ?? []
+  const value = row.versionId.trim()
+  return affectedValid(row) && !options.some((option) => option.value === value)
+    ? [{ value, label: value, hint: '手动指定' }, ...options]
+    : options
+}
+
 const affectedListValid = computed(
   () => form.affectedVersions.length > 0 && form.affectedVersions.every(affectedValid),
 )
@@ -698,8 +717,9 @@ function riskTone(severity?: string | null): StatusTone {
                     >
                     <NvEntityPicker
                       :id="`eco-vid-${index}`"
-                      v-model="row.versionId"
-                      :options="versionCatalog(row.versionKind)?.options.value ?? []"
+                      :model-value="row.versionId.trim()"
+                      :options="affectedVersionOptions(row)"
+                      @update:model-value="row.versionId = String($event ?? '')"
                       title="选择受影响版本"
                       :placeholder="row.versionKind ? '选择受影响版本' : '请先选择对象类型'"
                       :empty-text="
@@ -710,11 +730,26 @@ function riskTone(severity?: string | null): StatusTone {
                       no-match-text="没有匹配的版本"
                       :disabled="!row.versionKind"
                       :loading="versionCatalog(row.versionKind)?.pending.value"
-                      :invalid="showErrors && !row.versionId.trim()"
+                      :invalid="showErrors && !affectedValid(row)"
                       aria-label="受影响版本"
                       clearable
                       :show-code="false"
                     />
+                    <details v-if="row.versionKind" class="text-sm">
+                      <summary class="cursor-pointer text-muted-foreground">直接输入版本</summary>
+                      <NvInput
+                        v-model="row.versionId"
+                        :aria-label="
+                          row.versionKind === 'ProductionVersion' ? '生产版本 ID' : '编号:修订'
+                        "
+                        :placeholder="
+                          row.versionKind === 'ProductionVersion'
+                            ? '输入生产版本 ID'
+                            : '输入编号:修订'
+                        "
+                        :aria-invalid="showErrors && !affectedValid(row)"
+                      />
+                    </details>
                     <NvButton
                       v-if="versionCatalog(row.versionKind)?.error.value"
                       type="button"

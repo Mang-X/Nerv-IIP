@@ -10,10 +10,12 @@ import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useBusinessSkus } from '@/composables/master-data'
 import {
   useEngineeringProductionVersions,
-  usePublishedMboms,
-  usePublishedRoutings,
   useProductionVersionResolve,
 } from '@/composables/engineering'
+import {
+  usePublishedMbomCatalog,
+  usePublishedRoutingCatalog,
+} from '@/composables/engineering/useEngineeringVersionCatalog'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvAlertDialog,
@@ -230,26 +232,51 @@ const editingId = shallowRef<string | null>(null)
 const editingRow = shallowRef<BusinessConsoleProductionVersionItem | null>(null)
 const form = reactive<ProductionVersionForm>(blankForm())
 
-const { mboms, mbomsPending, mbomsError, mbomsTotal, refreshMboms } = usePublishedMboms(() =>
-  formOpen.value ? form.skuCode : '',
-)
-const { routings, routingsPending, routingsError, routingsTotal, refreshRoutings } =
-  usePublishedRoutings(() => (formOpen.value ? form.skuCode : ''))
+const candidateSku = () => (formOpen.value ? form.skuCode : '')
+const {
+  items: mboms,
+  pending: mbomsPending,
+  error: mbomsError,
+  total: mbomsTotal,
+  refresh: refreshMboms,
+} = usePublishedMbomCatalog(filters, candidateSku)
+const {
+  items: routings,
+  pending: routingsPending,
+  error: routingsError,
+  total: routingsTotal,
+  refresh: refreshRoutings,
+} = usePublishedRoutingCatalog(filters, candidateSku)
+
+function keepExistingBinding(
+  options: { value: string; label: string }[],
+  existing?: string | null,
+) {
+  if (!existing || options.some((option) => option.value === existing)) return options
+  return [{ value: existing, label: `${existing} · 现有绑定（未列入候选）` }, ...options]
+}
+
 const mbomOptions = computed(() =>
-  mboms.value
-    .filter((m) => m.bomCode && m.revision && m.skuCode === form.skuCode)
-    .map((m) => ({
-      value: `${m.bomCode}:${m.revision}`,
-      label: `${m.bomCode} · ${m.revision ?? '—'}${m.skuCode ? ` · ${skuLabel(m.skuCode)}` : ''}`,
-    })),
+  keepExistingBinding(
+    mboms.value
+      .filter((m) => m.bomCode && m.revision && m.skuCode === form.skuCode)
+      .map((m) => ({
+        value: `${m.bomCode}:${m.revision}`,
+        label: `${m.bomCode} · ${m.revision ?? '—'}${m.skuCode ? ` · ${skuLabel(m.skuCode)}` : ''}`,
+      })),
+    editingRow.value?.mbomVersionId,
+  ),
 )
 const routingOptions = computed(() =>
-  routings.value
-    .filter((r) => r.routingCode && r.revision && r.skuCode === form.skuCode)
-    .map((r) => ({
-      value: `${r.routingCode}:${r.revision}`,
-      label: `${r.routingCode} · ${r.revision ?? '—'}${r.skuCode ? ` · ${skuLabel(r.skuCode)}` : ''}`,
-    })),
+  keepExistingBinding(
+    routings.value
+      .filter((r) => r.routingCode && r.revision && r.skuCode === form.skuCode)
+      .map((r) => ({
+        value: `${r.routingCode}:${r.revision}`,
+        label: `${r.routingCode} · ${r.revision ?? '—'}${r.skuCode ? ` · ${skuLabel(r.skuCode)}` : ''}`,
+      })),
+    editingRow.value?.routingVersionId,
+  ),
 )
 // 编辑态由所选行带出的只读上下文（物料是生产版本的身份，不可改）。
 const carriedItems = computed(() => [
