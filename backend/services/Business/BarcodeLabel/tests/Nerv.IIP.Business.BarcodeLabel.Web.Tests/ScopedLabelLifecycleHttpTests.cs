@@ -549,7 +549,10 @@ public sealed class ScopedLabelLifecycleHttpTests
         var body = await response.Content.ReadAsStringAsync();
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var visibleOutput = body + (await GetBatchAsync(client, batch.Id)).GetRawText();
-        Assert.Contains("打印服务暂时不可用", visibleOutput, StringComparison.Ordinal);
+        var expectedSafeMessage = operation == LifecycleOperation.Dispatch
+            ? "未能确认打印机交付结果"
+            : "打印服务暂时不可用";
+        Assert.Contains(expectedSafeMessage, visibleOutput, StringComparison.Ordinal);
         Assert.DoesNotContain("super-secret", visibleOutput, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("https://", visibleOutput, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("printer.internal.example", visibleOutput, StringComparison.OrdinalIgnoreCase);

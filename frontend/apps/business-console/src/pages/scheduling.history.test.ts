@@ -671,14 +671,15 @@ describe('APS scheduling workbench page', () => {
         .find((button) => button.text().includes('生成首版'))!
         .trigger('click')
       await flushPromises()
-      const board = wrapper.findComponent({ name: 'SchedulingDraftBoard' })
-      board.vm.$emit('update', 'assign-001', { resourceId: 'RES-CNC-02' })
-      await flushPromises()
-      const editedModel = board.props('model')
       const publish = wrapper
         .findAll('button')
         .find((button) => button.text().includes('发布新版'))!
       expect(publish.attributes('disabled')).toBeUndefined()
+      const board = wrapper.findComponent({ name: 'SchedulingDraftBoard' })
+      board.vm.$emit('update', 'assign-001', { resourceId: 'RES-CNC-02' })
+      await flushPromises()
+      const editedModel = board.props('model')
+      expect(publish.attributes('disabled')).toBeDefined()
 
       if (scenario === 'filtered-history') {
         historyFilters.isInvalidated = false

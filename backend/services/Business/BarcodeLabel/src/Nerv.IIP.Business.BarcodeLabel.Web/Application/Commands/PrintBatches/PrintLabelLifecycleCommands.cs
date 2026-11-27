@@ -298,10 +298,23 @@ public sealed class IndependentLabelPrintAttemptRecorder(IServiceScopeFactory sc
         await using var scope = scopeFactory.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         // 先提交占位。即使发送后请求取消或事务回滚，后续请求也不会再次发送。
-        return await dbContext.LabelPrintBatches
-            .Where(x => x.Id == batch.Id && x.Status == batch.Status && x.CompletedAtUtc == batch.CompletedAtUtc)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Status, LabelPrintBatch.DeliveryUnknown),
-                cancellationToken) == 1;
+        if (dbContext.Database.IsRelational())
+        {
+            return await dbContext.LabelPrintBatches
+                .Where(x => x.Id == batch.Id && x.Status == batch.Status && x.CompletedAtUtc == batch.CompletedAtUtc)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.Status, LabelPrintBatch.DeliveryUnknown),
+                    cancellationToken) == 1;
+        }
+
+        var target = await dbContext.LabelPrintBatches.FirstOrDefaultAsync(
+            x => x.Id == batch.Id && x.Status == batch.Status && x.CompletedAtUtc == batch.CompletedAtUtc,
+            cancellationToken);
+        if (target is null)
+            return false;
+
+        dbContext.Entry(target).Property(x => x.Status).CurrentValue = LabelPrintBatch.DeliveryUnknown;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     public async Task TryRecordDispatchCanceledAsync(

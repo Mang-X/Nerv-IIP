@@ -821,14 +821,14 @@ export function useSchedulingPageController() {
         reason: '还没有可发布的版本：先生成首版或重预览出一版方案',
       },
       {
-        blocked: draftPlacementChanged.value,
-        reason: '草稿有未生成修订的修改，请先锁定重预览，再确认发布新版本',
-      },
-      {
         blocked: Boolean(draftInvalidationReason.value),
         reason: draftInvalidationReason.value ?? '',
       },
       { blocked: Boolean(draftTerminalReason.value), reason: draftTerminalReason.value ?? '' },
+      {
+        blocked: draftPlacementChanged.value,
+        reason: '草稿有未生成修订的修改，请先锁定重预览，再确认发布新版本',
+      },
       { blocked: releasePlanPending.value, reason: '正在发布，请稍候' },
       { blocked: workbench.generatePending.value, reason: '正在生成首版排程，请稍候' },
     ]),
