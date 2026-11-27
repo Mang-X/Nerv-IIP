@@ -63,7 +63,12 @@ try
         });
     builder.Services.Configure<JsonOptions>(o => o.SerializerOptions.AddNetCorePalJsonConverters());
     builder.Services.AddFluentValidationAutoValidation();
-    builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
+    builder.Services.AddValidatorsFromAssembly(
+        Assembly.GetExecutingAssembly(),
+        filter: result =>
+            result.InterfaceType.GenericTypeArguments[0].IsAssignableTo(typeof(MediatR.IBaseRequest)) &&
+            !typeof(Validator<>).MakeGenericType(result.InterfaceType.GenericTypeArguments[0])
+                .IsAssignableFrom(result.ValidatorType));
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
 

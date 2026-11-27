@@ -30,6 +30,11 @@ const filters = reactive({
 })
 
 vi.mock('@/composables/engineering', () => ({
+  useBomItemCatalog: () => ({
+    skuEntries: shallowRef([{ code: 'SKU-FG', name: '成品' }]),
+    pending: shallowRef(false),
+    load: vi.fn(),
+  }),
   useEngineeringItems: () => ({
     items: computed(() => [itemRow]),
     itemsError: shallowRef(undefined),
@@ -88,7 +93,13 @@ const formSelectStubs = {
   },
 }
 
-const allStubs = { ...layoutStub, ...dialogStubs, ...sheetStubs, ...formSelectStubs }
+const allStubs = {
+  ...layoutStub,
+  ...dialogStubs,
+  ...sheetStubs,
+  ...formSelectStubs,
+  NvEntityPicker: formSelectStubs.NvSelect,
+}
 
 function findButton(wrapper: ReturnType<typeof mount>, text: string) {
   return wrapper.findAll('button').find((b) => b.text().trim() === text)
@@ -113,6 +124,30 @@ describe('engineering items page', () => {
     expect(wrapper.text()).toContain('ITEM-1')
     expect(wrapper.text()).toContain('主控板')
     expect(wrapper.text()).toContain('已发布')
+  })
+
+  it('用已有 SKU 编码创建工程修订', async () => {
+    const wrapper = mount(ItemsPage, {
+      global: {
+        stubs: {
+          ...allStubs,
+          NvEntityPicker: {
+            props: ['options'],
+            emits: ['update:modelValue'],
+            template:
+              '<button type="button" @click="$emit(\'update:modelValue\', options[0].value)">{{ options[0].label }}</button>',
+          },
+        },
+      },
+    })
+    await findButton(wrapper, '新建修订')!.trigger('click')
+    await wrapper.get('form select').setValue('sku')
+    await wrapper.get('#item-sku').trigger('click')
+    await wrapper.get('#item-rev').setValue('A')
+    await wrapper.get('form').trigger('submit')
+    expect(stub.createItemRevision).toHaveBeenCalledWith(
+      expect.objectContaining({ itemCode: 'SKU-FG', name: '成品', revision: 'A' }),
+    )
   })
 
   it('新建修订向导：新建物料模式下不传 itemCode，create 收到正确 body', async () => {

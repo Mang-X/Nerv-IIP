@@ -19,7 +19,7 @@ import {
 } from '@/components/engineering/sopFileTransfer'
 import { useAuthStore } from '@/stores/auth'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
-import { useEngineeringDocuments, useEngineeringItems } from '@/composables/engineering'
+import { useBomItemCatalog, useEngineeringDocuments } from '@/composables/engineering'
 import {
   ENGINEERING_DOCUMENT_TYPE_ALIASES,
   ENGINEERING_DOCUMENT_TYPE_OPTIONS,
@@ -111,7 +111,7 @@ const documentTypeFilter = computed({
 })
 
 // 关联物料从工程物料目录里选（同一 itemCode 多修订只出现一次）。
-const { items: engineeringItems, itemsPending: engineeringItemsPending } = useEngineeringItems()
+const { itemEntries, pending: itemCatalogPending, load: loadItemCatalog } = useBomItemCatalog()
 
 const itemSearch = computed({
   get: () => filters.itemCode ?? '',
@@ -217,20 +217,15 @@ function hashPayload(payload: string) {
 }
 
 const itemPickerOptions = computed(() => {
-  const byCode = new Map<string, { value: string; label: string; hint?: string }>()
-  for (const item of engineeringItems.value) {
-    if (!item.itemCode || byCode.has(item.itemCode)) continue
-    byCode.set(item.itemCode, {
-      value: item.itemCode,
-      label: item.name ?? item.itemCode,
-      hint: item.itemCode,
-    })
-  }
-  const options = [...byCode.values()]
+  const options = itemEntries.value.map((item) => ({
+    value: item.code,
+    label: item.name,
+    hint: item.code,
+  }))
   // 深链 / 目录截断时保住已填编码，避免选择器显示成未选。
   const current = form.itemCode.trim()
   if (current && !options.some((option) => option.value === current)) {
-    options.unshift({ value: current, label: current })
+    options.unshift({ value: current, label: current, hint: current })
   }
   return options
 })
@@ -259,6 +254,7 @@ function openCreate() {
   formNonce.value = newNonce()
   uploading.value = false
   formOpen.value = true
+  void loadItemCatalog()
 }
 
 watch(formOpen, (open) => {
@@ -582,8 +578,8 @@ async function openView(row: BusinessConsoleEngineeringDocumentItem) {
                   :options="itemPickerOptions"
                   title="选择关联物料"
                   placeholder="可留空"
-                  empty-text="暂无工程物料，请先在工程物料维护物料修订"
-                  :loading="engineeringItemsPending"
+                  empty-text="暂无物料，请在基础数据或工程物料中维护"
+                  :loading="itemCatalogPending"
                   aria-label="关联物料"
                   clearable
                 />

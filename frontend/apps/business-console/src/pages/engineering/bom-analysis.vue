@@ -109,18 +109,18 @@ const kindOptions = [
 const {
   engineeringEntries,
   skuEntries,
+  itemEntries,
   pending: catalogPending,
   load: loadCatalog,
 } = useBomItemCatalog()
 
 const codeLabel = computed(() => (form.kind === 'engineering' ? '父项物料' : '产出物料'))
-// EBOM 分析吃工程物料 itemCode，MBOM 分析吃基础数据 skuCode —— 目录按 BOM 类型切换。
 const catalogEntries = computed(() =>
-  form.kind === 'engineering' ? engineeringEntries.value : skuEntries.value,
+  form.kind === 'engineering' ? itemEntries.value : skuEntries.value,
 )
 const catalogEmptyText = computed(() =>
   form.kind === 'engineering'
-    ? '暂无工程物料，请先在工程数据维护物料修订'
+    ? '暂无物料，请在基础数据或工程物料中维护'
     : '暂无物料主数据，请先在基础数据维护物料',
 )
 

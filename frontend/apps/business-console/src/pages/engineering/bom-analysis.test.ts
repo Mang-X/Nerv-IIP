@@ -102,6 +102,7 @@ vi.mock('@nerv-iip/ui', () => {
     }),
     NvDatePicker: modelInput,
     NvEntityPicker: {
+      name: 'NvEntityPicker',
       props: [
         'modelValue',
         'id',
@@ -213,6 +214,27 @@ beforeEach(() => {
 })
 
 describe('engineering bom analysis page', () => {
+  it('EBOM 展开和反查都能选择没有工程修订的基础数据 SKU', async () => {
+    const wrapper = mount(BomAnalysisPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+    const optionsFor = (id: string) =>
+      wrapper
+        .findAllComponents({ name: 'NvEntityPicker' })
+        .find((picker) => picker.props('id') === id)
+        ?.props('options')
+
+    expect(optionsFor('bom-root')).toContainEqual(
+      expect.objectContaining({ value: 'SKU-FG', label: '整机成品（销售件）' }),
+    )
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text().trim() === '反查')!
+      .trigger('click')
+    expect(optionsFor('bom-component')).toContainEqual(
+      expect.objectContaining({ value: 'SKU-FG', label: '整机成品（销售件）' }),
+    )
+  })
+
   it('用后端 explosion 响应渲染多级树和诊断', async () => {
     api.getBusinessConsoleEngineeringBomExplosion.mockResolvedValue({
       data: {

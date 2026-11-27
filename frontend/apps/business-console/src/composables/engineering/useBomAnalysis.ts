@@ -192,18 +192,17 @@ const ENGINEERING_ITEM_STATUS_LABELS: Record<string, string> = {
   archived: '已归档',
 }
 
-/**
- * BOM 分析的物料选择目录（一次性拉取，非分页联动）：
- * - EBOM 侧取工程物料修订链（itemCode 口径，与 EBOM 爆炸 / 反查 facade 的入参一致），
- *   同一 itemCode 只保留一条（优先已发布修订）。
- * - MBOM 侧取基础数据 SKU（skuCode 口径，与 MBOM 爆炸 / 反查 facade 的入参一致）。
- * 目录加载失败不阻塞分析主流程（选择器空态引导去维护主数据）。
- */
+/** 工程物料和基础数据 SKU 共享编码的选择目录。 */
 export function useBomItemCatalog() {
   const context = useBusinessContextStore()
   const engineeringEntries = shallowRef<BomCatalogEntry[]>([])
   const skuEntries = shallowRef<BomCatalogEntry[]>([])
   const pending = ref(false)
+  const itemEntries = computed(() => {
+    const byCode = new Map(skuEntries.value.map((entry) => [entry.code, entry]))
+    for (const entry of engineeringEntries.value) byCode.set(entry.code, entry)
+    return [...byCode.values()]
+  })
 
   function dedupeEngineeringItems(items: BusinessConsoleEngineeringItemRevisionItem[]) {
     const byCode = new Map<string, BusinessConsoleEngineeringItemRevisionItem>()
@@ -221,6 +220,23 @@ export function useBomItemCatalog() {
     }))
   }
 
+  async function loadSkus(query: { organizationId: string; environmentId: string; take: number }) {
+    const byCode = new Map<string, BomCatalogEntry>()
+    let skip = 0
+    while (true) {
+      const envelope: BusinessConsoleResourceListEnvelope = await runQueryOption(
+        listBusinessConsoleSkusQueryOptions({ query: { ...query, skip } }),
+      )
+      const resources = envelope.success ? (envelope.data?.resources ?? []) : []
+      for (const sku of resources) {
+        if (sku.code) byCode.set(sku.code, { code: sku.code, name: sku.displayName ?? sku.code })
+      }
+      skip += resources.length
+      if (resources.length === 0 || skip >= (envelope.data?.total ?? 0)) break
+    }
+    return [...byCode.values()]
+  }
+
   async function load() {
     if (pending.value) return
     pending.value = true
@@ -231,32 +247,24 @@ export function useBomItemCatalog() {
       take: DEFAULT_TAKE,
     }
     try {
-      const [itemEnvelope, skuEnvelope] = await Promise.all([
+      const [itemEnvelope, skus] = await Promise.all([
         runQueryOption(listBusinessConsoleEngineeringItemsQueryOptions({ query })).catch(
           () => undefined,
         ),
-        runQueryOption(listBusinessConsoleSkusQueryOptions({ query })).catch(() => undefined),
+        loadSkus(query).catch(() => []),
       ])
       engineeringEntries.value = dedupeEngineeringItems(
         unwrapItems<BusinessConsoleEngineeringItemRevisionItem>(
           itemEnvelope as BusinessConsoleEngineeringItemListEnvelope | undefined,
         ),
       )
-      const resources = (skuEnvelope as BusinessConsoleResourceListEnvelope | undefined)?.success
-        ? ((skuEnvelope as BusinessConsoleResourceListEnvelope).data?.resources ?? [])
-        : []
-      skuEntries.value = resources
-        .filter((sku) => !!sku.code)
-        .map<BomCatalogEntry>((sku) => ({
-          code: sku.code as string,
-          name: sku.displayName ?? (sku.code as string),
-        }))
+      skuEntries.value = skus
     } finally {
       pending.value = false
     }
   }
 
-  return { engineeringEntries, skuEntries, pending, load }
+  return { engineeringEntries, skuEntries, itemEntries, pending, load }
 }
 
 export type BomVersionKind = 'engineering' | 'manufacturing'

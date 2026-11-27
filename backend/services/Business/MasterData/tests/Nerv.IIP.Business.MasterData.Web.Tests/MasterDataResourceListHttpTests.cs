@@ -1,5 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using Microsoft.Extensions.Hosting;
+using Nerv.IIP.Business.MasterData.Domain.AggregatesModel.ReferenceDataAggregate;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -24,6 +27,45 @@ namespace Nerv.IIP.Business.MasterData.Web.Tests;
 [Collection(WebApplicationFactoryCollection.Name)]
 public sealed class MasterDataResourceListHttpTests
 {
+    [Fact]
+    public async Task Skill_creation_and_personnel_assignment_succeed_with_scope_validation()
+    {
+        await using var factory = new MasterDataResourceListHttpTestFactory(validateScopes: true);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.ReferenceDataCodes.Add(ReferenceDataCode.Create("org-001", "env-dev", "skill-level", "senior", "高级"));
+            await db.SaveChangesAsync();
+        }
+        using var client = CreateAuthenticatedClient(factory);
+        using var created = await client.PostAsJsonAsync("/api/business/v1/master-data/skills", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skillCode = "welding",
+            skillName = "焊接",
+            groupName = "生产",
+            requiresCertification = false,
+        });
+        var createdBody = await created.Content.ReadAsStringAsync();
+        Assert.True(created.StatusCode == HttpStatusCode.OK, createdBody);
+        using var skill = JsonDocument.Parse(createdBody);
+        var skillCode = skill.RootElement.GetProperty("data").GetProperty("code").GetString();
+        Assert.Equal("welding", skillCode);
+
+        using var assigned = await client.PostAsJsonAsync("/api/business/v1/master-data/personnel-skills", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            userId = "worker-001",
+            skillCode,
+            level = "senior",
+            effectiveFrom = new DateOnly(2026, 1, 1),
+            effectiveTo = new DateOnly(2026, 12, 31),
+        });
+        Assert.True(assigned.StatusCode == HttpStatusCode.OK, await assigned.Content.ReadAsStringAsync());
+    }
+
     // #4257 DomainInvariant/Regression：授权 OR 谓词必须在 total、排序、分页前应用。
     // 本宿主使用 EF InMemory；不据此宣称 PostgreSQL SQL 翻译已验证。
     [Fact]
@@ -464,12 +506,20 @@ public sealed class MasterDataResourceListHttpTests
         Assert.False(document.RootElement.TryGetProperty("data", out _), body);
     }
 
-    private sealed class MasterDataResourceListHttpTestFactory : WebApplicationFactory<Program>
+    private sealed class MasterDataResourceListHttpTestFactory(bool validateScopes = false) : WebApplicationFactory<Program>
     {
         private readonly string databaseName = $"master-data-resource-list-http-{Guid.CreateVersion7():N}";
         private readonly ServiceProvider efServices = new ServiceCollection()
             .AddEntityFrameworkInMemoryDatabase()
             .BuildServiceProvider();
+
+        protected override IHost CreateHost(IHostBuilder builder)
+        {
+            if (validateScopes)
+                builder.UseDefaultServiceProvider(options => options.ValidateScopes = true);
+
+            return base.CreateHost(builder);
+        }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {

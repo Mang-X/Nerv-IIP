@@ -66,16 +66,13 @@ vi.mock('@/composables/engineering', () => ({
     registerError: shallowRef(undefined),
     fetchDocumentDetail: stub.fetchDocumentDetail,
   }),
-  // 关联物料改成从工程物料目录里选，页面新引入了这个读面。
-  useEngineeringItems: () => ({
-    filters: reactive({ skip: 0, take: 200 }),
-    items: computed(() => [
-      { itemCode: 'ITEM-1', revision: 'A', name: '控制主板', status: 'Published' },
+  useBomItemCatalog: () => ({
+    itemEntries: shallowRef([
+      { code: 'ITEM-1', name: '控制主板' },
+      { code: 'SKU-FG', name: '成品' },
     ]),
-    itemsError: shallowRef(undefined),
-    itemsPending: shallowRef(false),
-    itemsTotal: computed(() => 1),
-    refresh: vi.fn(),
+    pending: shallowRef(false),
+    load: vi.fn(),
   }),
 }))
 
@@ -108,6 +105,7 @@ const sheetStubs = {
 // 桩成带同名 id 的输入位，用例继续用 `#doc-item-code` 表达「选中了某个物料」。
 const pickerStubs = {
   NvEntityPicker: {
+    name: 'NvEntityPicker',
     props: ['modelValue', 'options', 'id'],
     emits: ['update:modelValue'],
     template:
@@ -328,6 +326,13 @@ describe('engineering documents page', () => {
     await wrapper.find('#doc-rev').setValue('A')
     // 文档类型改成受控下拉后，提交体带的是受控值（label 只用于显示）。
     await wrapper.find('#doc-type').setValue('specification')
+    const picker = wrapper.findComponent({ name: 'NvEntityPicker' })
+    expect(picker.props('options')).toContainEqual({
+      value: 'SKU-FG',
+      label: '成品',
+      hint: 'SKU-FG',
+    })
+    await wrapper.get('#doc-item-code').setValue('SKU-FG')
     await selectFile(wrapper)
     await flushPromises()
 
@@ -339,6 +344,7 @@ describe('engineering documents page', () => {
     expect(body.documentNumber).toBe('DOC-9')
     expect(body.revision).toBe('A')
     expect(body.documentType).toBe('specification')
+    expect(body.itemCode).toBe('SKU-FG')
     expect(body.fileId).toBe('file-xyz')
     expect(body.fileName).toBe('spec.pdf')
     expect(body.contentType).toBe('application/pdf')

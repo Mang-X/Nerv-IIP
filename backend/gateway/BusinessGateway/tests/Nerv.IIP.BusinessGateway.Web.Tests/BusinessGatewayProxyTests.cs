@@ -7168,6 +7168,42 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("active", document.RootElement.GetProperty("data").GetProperty("status").GetString());
     }
 
+    [Theory]
+    [InlineData("engineering", "EngineeringBom")]
+    [InlineData("manufacturing", "ManufacturingBom")]
+    public async Task Engineering_bom_diff_facade_translates_console_kind(string consoleKind, string serviceKind)
+    {
+        var downstream = new RecordingHandler(request =>
+        {
+            var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(request.RequestUri!.Query);
+            if (request.RequestUri.AbsolutePath != "/api/business/v1/engineering/boms/diff"
+                || query["bomKind"] != serviceKind)
+                return JsonResponse(HttpStatusCode.BadRequest, new { success = false });
+
+            return JsonResponse(HttpStatusCode.OK, new
+            {
+                success = true,
+                data = new BusinessConsoleBomDiffResponse(serviceKind, "BOM:A", "BOM:B", "SKU-FG", [], new(0, 0, 0, 0)),
+            });
+        });
+        using var http = new HttpClient(downstream) { BaseAddress = new Uri("http://engineering.local") };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessProductEngineeringClient>();
+            services.AddSingleton<IBusinessProductEngineeringClient>(new HttpBusinessProductEngineeringClient(http));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        using var response = await client.GetAsync(
+            "/api/business-console/v1/engineering/boms/diff?organizationId=org-001&environmentId=env-dev"
+            + $"&bomKind={consoleKind}&fromBomCode=BOM&fromRevision=A&toBomCode=BOM&toRevision=B");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(serviceKind, document.RootElement.GetProperty("data").GetProperty("bomKind").GetString());
+    }
+
     [Fact]
     public async Task Engineering_bom_explosion_facade_forwards_context_and_internal_service_token()
     {

@@ -6,7 +6,7 @@ import type {
 import type { NvDataTableColumn, NvMetricSegment, StatusTone } from '@nerv-iip/ui'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { pagedBreakdownSegments } from '@/composables/shared/metricSegments'
-import { useEngineeringItems } from '@/composables/engineering'
+import { useBomItemCatalog, useEngineeringItems } from '@/composables/engineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
 import {
   NvButton,
@@ -19,6 +19,7 @@ import {
   NvDialogHeader,
   NvDialogTitle,
   NvDialogTrigger,
+  NvEntityPicker,
   NvField,
   NvFieldDescription,
   NvFieldGroup,
@@ -156,7 +157,7 @@ const columns: NvDataTableColumn<BusinessConsoleEngineeringItemRevisionItem>[] =
 // 工程数据语义：物料不是直接改，而是派生新修订。targetMode='new' 建全新物料（编码自动），
 // 'existing' 在已有物料编码上派生新修订。release 决定新修订是否立即发布。
 interface ItemForm {
-  targetMode: 'new' | 'existing'
+  targetMode: 'new' | 'existing' | 'sku'
   itemCode: string
   revision: string
   name: string
@@ -169,6 +170,20 @@ function blankForm(): ItemForm {
 const formOpen = shallowRef(false)
 const showErrors = ref(false)
 const form = reactive<ItemForm>(blankForm())
+const { skuEntries, pending: skuCatalogPending, load: loadItemCatalog } = useBomItemCatalog()
+const skuOptions = computed(() =>
+  skuEntries.value.map((sku) => ({ value: sku.code, label: sku.name, hint: sku.code })),
+)
+
+function changeTargetMode() {
+  form.itemCode = ''
+  if (form.targetMode === 'sku') void loadItemCatalog()
+}
+
+function selectSku(code: string) {
+  form.itemCode = code
+  form.name = skuEntries.value.find((sku) => sku.code === code)?.name ?? ''
+}
 
 const revisionValid = computed(() => form.revision.trim().length > 0)
 const nameValid = computed(() => form.name.trim().length > 0)
@@ -191,7 +206,7 @@ async function submitForm() {
     organizationId: filters.organizationId,
     environmentId: filters.environmentId,
     // 建新物料时不传编码（后端自动编码）；派生时带已有物料编码。
-    itemCode: form.targetMode === 'existing' ? form.itemCode.trim() : undefined,
+    itemCode: form.targetMode === 'new' ? undefined : form.itemCode.trim(),
     revision: form.revision.trim(),
     name: form.name.trim(),
     release: form.release,
@@ -273,11 +288,12 @@ async function openView(row: BusinessConsoleEngineeringItemRevisionItem) {
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
                 <NvField>
                   <NvFieldLabel for="item-mode">派生方式</NvFieldLabel>
-                  <NvSelect v-model="form.targetMode">
+                  <NvSelect v-model="form.targetMode" @update:model-value="changeTargetMode">
                     <NvSelectTrigger id="item-mode"><NvSelectValue /></NvSelectTrigger>
                     <NvSelectContent>
                       <NvSelectItem value="new">新建物料</NvSelectItem>
                       <NvSelectItem value="existing">在已有物料上派生</NvSelectItem>
+                      <NvSelectItem value="sku">从基础数据 SKU 创建修订</NvSelectItem>
                     </NvSelectContent>
                   </NvSelect>
                   <NvFieldDescription v-if="form.targetMode === 'new'">
@@ -301,6 +317,22 @@ async function openView(row: BusinessConsoleEngineeringItemRevisionItem) {
                       }}</NvSelectItem>
                     </NvSelectContent>
                   </NvSelect>
+                </NvField>
+                <NvField
+                  v-if="form.targetMode === 'sku'"
+                  :data-invalid="showErrors && !targetValid"
+                >
+                  <NvFieldLabel for="item-sku">基础数据 SKU</NvFieldLabel>
+                  <NvEntityPicker
+                    id="item-sku"
+                    :model-value="form.itemCode"
+                    :options="skuOptions"
+                    :loading="skuCatalogPending"
+                    title="选择基础数据 SKU"
+                    placeholder="选择基础数据 SKU"
+                    aria-label="基础数据 SKU"
+                    @update:model-value="selectSku"
+                  />
                 </NvField>
               </NvFieldGroup>
 

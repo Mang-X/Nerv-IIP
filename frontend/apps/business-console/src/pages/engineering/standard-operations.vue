@@ -158,8 +158,8 @@ interface StandardOperationForm {
   operationName: string
   defaultWorkCenterCode: string
   controlKey: string
-  standardSetupMinutes: string
-  standardRunMinutes: string
+  standardSetupMinutes: string | number
+  standardRunMinutes: string | number
   requiresReporting: boolean
   requiresQualityInspection: boolean
   isOutsourced: boolean
@@ -204,8 +204,8 @@ watch([workCenterOptions, formOpen], ([options, open]) => {
   }
 })
 
-function parseNumber(value: string): number | undefined {
-  const trimmed = value.trim()
+function parseNumber(value: string | number): number | undefined {
+  const trimmed = String(value ?? '').trim()
   if (!trimmed) return undefined
   const parsed = Number(trimmed)
   return Number.isFinite(parsed) ? parsed : undefined
@@ -219,12 +219,13 @@ const workCenterValid = computed(() => form.defaultWorkCenterCode.trim().length 
 const controlKeyValid = computed(() => form.controlKey.trim().length > 0)
 const setupValid = computed(
   () =>
-    form.standardSetupMinutes.trim() === '' ||
+    String(form.standardSetupMinutes ?? '').trim() === '' ||
     (setupMinutes.value != null && setupMinutes.value >= 0),
 )
 const runValid = computed(
   () =>
-    form.standardRunMinutes.trim() === '' || (runMinutes.value != null && runMinutes.value >= 0),
+    String(form.standardRunMinutes ?? '').trim() === '' ||
+    (runMinutes.value != null && runMinutes.value >= 0),
 )
 const canSubmit = computed(
   () =>

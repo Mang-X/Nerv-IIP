@@ -1386,12 +1386,13 @@ public sealed class ProductEngineeringReleaseApiContractTests
         var exception = await Assert.ThrowsAsync<KnownException>(() => handler.Handle(command, CancellationToken.None));
         Assert.Contains("MBOM MBOM-1000 的修订 A 已存在", exception.Message, StringComparison.Ordinal);
 
-        var createdCommand = command with { Revision = "B" };
+        var createdCommand = command with { Revision = "B", RecipeLines = null };
         await handler.Handle(createdCommand, CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var created = await dbContext.ManufacturingBoms.SingleAsync(x => x.BomCode == "MBOM-1000" && x.Revision == "B", CancellationToken.None);
         Assert.Equal("EBOM-1000:A", created.EngineeringBomVersionId);
+        Assert.Empty(created.RecipeLines);
     }
 
     [Fact]
