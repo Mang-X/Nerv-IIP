@@ -176,6 +176,12 @@ internal sealed partial class AppHostComposition
         ConfigureApprovalCallers(businessApproval, "ReadDelegations", "read-delegations", "internal.approval-delegations.list",
             (businessGateway, "business-gateway", "gateway"));
 
+        if (platformGatewayDownloadToken is not null && businessGatewayDownloadToken is not null)
+        {
+            gateway.WithEnvironment("FileStorage__DownloadBearerToken", platformGatewayDownloadToken);
+            businessGateway.WithEnvironment("FileStorage__DownloadBearerToken", businessGatewayDownloadToken);
+        }
+
         if (fullStackEphemeral)
         {
             var templateAssetRetirementProofIssuer = builder.AddParameter("template-asset-retirement-proof-issuer");

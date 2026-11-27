@@ -2,6 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-08-17
+- 修订：2026-11-27，[ADR 0037](2026-11-27-0037-filestorage-single-instance-s3.md) 部分取代同后端 staging、provider 缺省与 canonical key 强制迁移条款，明确当前单实例范围。
 - 关联：[Issue #992](https://github.com/Mang-X/Nerv-IIP/issues/992)、[Issue #1627](https://github.com/Mang-X/Nerv-IIP/issues/1627)、[ADR 0023](2026-08-17-0023-filestorage-tus-proxy-staging-final-complete-invariants.md)
 
 ## 背景
@@ -254,3 +255,7 @@ runtime critical/unready 的优先级高于该表。mount 丢失/替换、root �
 ## 实施说明
 
 现有 [LocalTusUploadCommitStorage](../../backend/services/FileStorage/src/Nerv.IIP.FileStorage.Web/Application/Files/Tus/LocalTusUploadCommitStorage.cs) 仍按上传会话定位字节。决策 1、5–7 的通用 final provider、按 ObjectKey 定位与跨分区提升是目标约束。
+
+[ADR 0037](2026-11-27-0037-filestorage-single-instance-s3.md) 允许单实例使用本地 tus staging 加 S3 final，并要求按意图校验大小及 SHA-256、幂等写入、回读复验、提交正式元数据后清理暂存。它取代决策 1–3 的同后端 staging 条款，以及决策 2、决策 9 和健康与失败矩阵中缺省 provider 启动阻断的条款。缺省选择 `local`，显式值仅允许 ordinal 精确匹配的 `local`、`s3`。
+
+决策 4 与后续层接口中要求先全量切换 canonical v1 key 的条款由 [ADR 0037](2026-11-27-0037-filestorage-single-instance-s3.md) 推迟。S3 可使用经过验证的既有 `ObjectKey` 加可选前缀。Local 持久生产要求、ADR 0023 提交不变量和版本化归档隔离继续有效。

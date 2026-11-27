@@ -121,6 +121,29 @@ describe('SOP file transfer', () => {
     })
   })
 
+  it('resumes from the server offset and sends only the remaining bytes', async () => {
+    api.head.mockResolvedValueOnce(offset(5))
+    await uploadSopFile(file, scope)
+    const request = api.patch.mock.calls[0]![0]
+    expect(request.headers['Upload-Offset']).toBe('5')
+    expect(await request.body.text()).toBe((await file.text()).slice(5))
+    expect(api.complete).toHaveBeenCalledOnce()
+  })
+
+  it('completes without PATCH when the server already has all bytes', async () => {
+    api.head.mockResolvedValueOnce(offset(file.size))
+    await uploadSopFile(file, scope)
+    expect(api.patch).not.toHaveBeenCalled()
+    expect(api.complete).toHaveBeenCalledOnce()
+  })
+
+  it.each([-1, 1.5, file.size + 1])('rejects invalid server offset %s', async (invalidOffset) => {
+    api.head.mockResolvedValueOnce(offset(invalidOffset))
+    await expect(uploadSopFile(file, scope)).rejects.toThrow('上传起点无法确认')
+    expect(api.patch).not.toHaveBeenCalled()
+    expect(api.complete).not.toHaveBeenCalled()
+  })
+
   it('does not complete an incomplete upload or expose a failed completion reference', async () => {
     api.patch.mockResolvedValueOnce(offset(file.size - 1))
     await expect(uploadSopFile(file, scope)).rejects.toThrow('没有完整上传')

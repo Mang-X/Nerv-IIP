@@ -89,6 +89,7 @@ const evidenceApi = vi.hoisted(() => ({
   patch: vi.fn(),
   complete: vi.fn(),
   read: vi.fn(),
+  download: vi.fn(),
 }))
 const routerSpies = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }))
 const ncrActionSpies = vi.hoisted(() => ({ closeNcr: vi.fn(), submitDisposition: vi.fn() }))
@@ -112,6 +113,7 @@ vi.mock('@nerv-iip/api-client', async (importOriginal) => ({
   getBusinessConsoleQualityEvidenceTusOffset: evidenceApi.head,
   patchBusinessConsoleQualityEvidenceTusUpload: evidenceApi.patch,
   completeBusinessConsoleQualityEvidenceUpload: evidenceApi.complete,
+  downloadBusinessConsoleQualityEvidenceContent: evidenceApi.download,
   getBusinessConsoleQualityNcrQueryOptions: (options: unknown) => ({
     query: () => evidenceApi.read(options),
   }),
@@ -512,6 +514,7 @@ export function resetQualityLocationFixture() {
   evidenceApi.complete
     .mockReset()
     .mockResolvedValue({ data: { success: true, data: { fileId: 'completed-file' } } })
+  evidenceApi.download.mockReset()
   evidenceApi.read.mockReset().mockResolvedValue({
     success: true,
     data: {

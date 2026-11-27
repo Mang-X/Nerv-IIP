@@ -19,6 +19,13 @@ public interface IBusinessFileStorageClient
         BusinessConsoleCompleteQualityEvidenceUploadRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessFileDownloadTicket> AuthorizeQualityEvidenceDownloadAsync(
+        string internalBearerToken,
+        string fileId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken);
+
     /// <summary>
     /// 工程 SOP 文件下载的**唯一**授权入口：复核用途、签发 download grant、校验下游 URL 可代理，
     /// 返回只在网关进程内流转的取字节凭据。调用方全程拿不到 downloadGrantId（#3314）。
@@ -139,7 +146,7 @@ public sealed record BusinessFileDownloadTicket
 /// 字节面不共用这条管线，见 <see cref="IBusinessFileTransferClient"/> 与 ADR 0015。
 /// </summary>
 public sealed class HttpBusinessFileStorageClient(
-    HttpClient httpClient, IConfiguration? configuration = null, IHostEnvironment? environment = null)
+    HttpClient httpClient, IConfiguration configuration, IHostEnvironment? environment = null)
     : BusinessServiceHttpClient(httpClient), IBusinessFileStorageClient
 {
     // FileStorage 的错误载体是裸 FileStorageError{Code,Message}，不套平台 ResponseData envelope。
@@ -456,8 +463,23 @@ public sealed class HttpBusinessFileStorageClient(
             "filestorage-file-not-shift-handover-attachment",
             cancellationToken);
 
+    public Task<BusinessFileDownloadTicket> AuthorizeQualityEvidenceDownloadAsync(
+        string internalBearerToken,
+        string fileId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken) =>
+        AuthorizeDownloadAsync(
+            internalBearerToken,
+            fileId,
+            organizationId,
+            environmentId,
+            QualityNcrEvidence.FilePurpose,
+            "filestorage-file-not-quality-evidence",
+            cancellationToken);
+
     /// <summary>
-    /// 两个业务门面共用的下载授权序列。业务域读权限只授权读**本门面用途**的文件，而 FileStorage 的
+    /// 业务门面共用的下载授权序列。业务域读权限只授权读**本门面用途**的文件，而 FileStorage 的
     /// download-grant 既不看用途、也不记签发门面，所以用途口径必须在这里收：否则持任一门面读权限的
     /// 主体可以拿任意 fileId（例如另一门面的文件）换字节。
     ///
@@ -485,6 +507,14 @@ public sealed class HttpBusinessFileStorageClient(
             throw BusinessServiceProxyException.FromSafeDownstreamMessage(
                 HttpStatusCode.NotFound,
                 purposeMismatchCode);
+        }
+
+        if (!string.Equals(metadata.OrganizationId, organizationId, StringComparison.Ordinal)
+            || !string.Equals(metadata.EnvironmentId, environmentId, StringComparison.Ordinal))
+        {
+            throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                HttpStatusCode.NotFound,
+                "filestorage-file-not-found");
         }
 
         var grant = await SendAsync<DownloadGrantResponse>(
@@ -535,13 +565,8 @@ public static class FileStorageRoutes
 {
     public const string DownstreamTusPrefix = "/api/files/v1/tus/";
     public static string ResolveDownloadBearerToken(
-        IConfiguration? configuration, IHostEnvironment? environment, string internalBearerToken)
+        IConfiguration configuration, IHostEnvironment? environment, string internalBearerToken)
     {
-        if (configuration is null)
-        {
-            return internalBearerToken;
-        }
-
         var token = configuration["FileStorage:DownloadBearerToken"]
             ?? (environment?.IsDevelopment() == true ? "local-file-download-business-gateway" : null);
         if (string.IsNullOrWhiteSpace(token) || token == internalBearerToken)

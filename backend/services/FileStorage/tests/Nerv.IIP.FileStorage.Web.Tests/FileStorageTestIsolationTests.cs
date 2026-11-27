@@ -29,9 +29,9 @@ public sealed class FileStorageTestIsolationTests
 
         try
         {
-            await using var serverProxyFactoryRoot = new FileStorageWebApplicationFactory();
-            await using var serverProxyFactory = WithRequestConcurrencyProbe(
-                serverProxyFactoryRoot,
+            await using var defaultTusFactoryRoot = new FileStorageWebApplicationFactory();
+            await using var defaultTusFactory = WithRequestConcurrencyProbe(
+                defaultTusFactoryRoot,
                 requestGate);
             await using var tusFactoryRoot = new FileStorageWebApplicationFactory();
             await using var tusFactory = WithRequestConcurrencyProbe(
@@ -44,22 +44,22 @@ public sealed class FileStorageTestIsolationTests
                 });
 
             var clients = await Task.WhenAll(
-                Task.Run(() => CreateInternalServiceClient(serverProxyFactory)),
+                Task.Run(() => CreateInternalServiceClient(defaultTusFactory)),
                 Task.Run(() => CreateInternalServiceClient(tusFactory)));
-            using var serverProxyClient = clients[0];
+            using var defaultTusClient = clients[0];
             using var tusClient = clients[1];
 
             var created = await Task.WhenAll(
-                CreateUploadSessionAsync(serverProxyClient, "server-proxy-owner"),
+                CreateUploadSessionAsync(defaultTusClient, "default-tus-owner"),
                 CreateUploadSessionAsync(tusClient, "tus-owner"));
 
-            Assert.Equal("server-proxy", created[0].Provider);
-            Assert.Equal("server-proxy", created[0].UploadMode);
+            Assert.Equal("tus", created[0].Provider);
+            Assert.Equal("tus", created[0].UploadMode);
             Assert.Equal("tus", created[1].Provider);
             Assert.Equal("tus", created[1].UploadMode);
 
             await AssertProviderIdentityAndOwnedSessionAsync(
-                serverProxyFactory,
+                defaultTusFactory,
                 ownedUploadSessionId: created[0].UploadSessionId,
                 foreignUploadSessionId: created[1].UploadSessionId);
             await AssertProviderIdentityAndOwnedSessionAsync(
@@ -67,7 +67,7 @@ public sealed class FileStorageTestIsolationTests
                 ownedUploadSessionId: created[1].UploadSessionId,
                 foreignUploadSessionId: created[0].UploadSessionId);
 
-            var serverProxyRequest = serverProxyClient.GetAsync(RequestConcurrencyProbeStartupFilter.Route);
+            var defaultTusRequest = defaultTusClient.GetAsync(RequestConcurrencyProbeStartupFilter.Route);
             var tusRequest = tusClient.GetAsync(RequestConcurrencyProbeStartupFilter.Route);
             try
             {
@@ -79,9 +79,9 @@ public sealed class FileStorageTestIsolationTests
                 requestGate.Release();
             }
 
-            using var serverProxyResponse = await serverProxyRequest;
+            using var defaultTusResponse = await defaultTusRequest;
             using var tusResponse = await tusRequest;
-            Assert.Equal(StatusCodes.Status204NoContent, (int)serverProxyResponse.StatusCode);
+            Assert.Equal(StatusCodes.Status204NoContent, (int)defaultTusResponse.StatusCode);
             Assert.Equal(StatusCodes.Status204NoContent, (int)tusResponse.StatusCode);
         }
         finally

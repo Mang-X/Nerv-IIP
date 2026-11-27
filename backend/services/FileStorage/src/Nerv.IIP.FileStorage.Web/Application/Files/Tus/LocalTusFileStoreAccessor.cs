@@ -12,12 +12,6 @@ public sealed class LocalTusFileStoreAccessor(IConfiguration configuration) : IL
 
     public bool TryGet(out LocalUploadByteStore store)
     {
-        if (!string.Equals(configuration["FileStorage:UploadProvider"] ?? "tus", "tus", StringComparison.OrdinalIgnoreCase))
-        {
-            store = null!;
-            return false;
-        }
-
         if (this.store is null)
         {
             lock (syncRoot)

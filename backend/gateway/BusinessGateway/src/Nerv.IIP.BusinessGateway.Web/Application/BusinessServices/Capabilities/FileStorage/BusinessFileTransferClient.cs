@@ -85,7 +85,7 @@ public interface IBusinessFileTransferClient
 }
 
 public sealed class HttpBusinessFileTransferClient(
-    HttpClient httpClient, IConfiguration? configuration = null, IHostEnvironment? environment = null)
+    HttpClient httpClient, IConfiguration configuration, IHostEnvironment? environment = null)
     : BusinessServiceHttpClient(httpClient), IBusinessFileTransferClient
 {
     private static readonly string[] TusForwardedRequestHeaders =

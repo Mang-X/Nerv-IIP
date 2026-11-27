@@ -199,35 +199,6 @@ public sealed partial class FileStorageTusProviderTests
         }
     }
 
-    /// <summary>
-    /// server-proxy 部署没有本地字节面：生产注册的提交存储报告“最终存储动作从未开始”，complete 返回 503 且会话回到 open。
-    /// 这是 provider 切换对既有 server-proxy 部署“行为不变”的唯一行为承担。
-    /// </summary>
-    [Fact]
-    public async Task CompleteUploadSession_ServerProxyOnProductionCommitStorage_ReturnsServiceUnavailableAndReopensSession()
-    {
-        await using var factory = new FileStorageWebApplicationFactory();
-        var client = CreateInternalServiceClient(factory);
-        var createResponse = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", CreateUploadRequest());
-        createResponse.EnsureSuccessStatusCode();
-        var created = (await createResponse.Content.ReadFromJsonAsync<CreateUploadSessionResponse>())!;
-        Assert.Equal("server-proxy", created.Provider);
-
-        var completeResponse = await client.PostAsJsonAsync(
-            $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
-            new CompleteUploadSessionRequest("org-001", "prod", "application-package", "sha256:test", 4096));
-
-        Assert.Equal(StatusCodes.Status503ServiceUnavailable, (int)completeResponse.StatusCode);
-        Assert.Contains("最终存储提交暂不可用", await completeResponse.Content.ReadAsStringAsync(), StringComparison.Ordinal);
-        using var scope = factory.Services.CreateScope();
-        var session = await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().UploadSessions
-            .SingleAsync(x => x.UploadSessionId == created.UploadSessionId);
-        // 承重的是下面这条状态断言，不是上面的 503：删掉 TryGet 分支后会走 NRE → RetryableUnavailable，
-        // 状态码仍是 503，只有「会话回到 open」能把那个变异杀掉。改这条前先想清楚防线还剩什么。
-        Assert.Equal(UploadSessionState.Open, session.State);
-        Assert.Null(session.CommitId);
-    }
-
     [Fact]
     public async Task CompleteUploadSession_TusStoreUnavailable_ReturnsServiceUnavailable()
     {
@@ -472,22 +443,6 @@ public sealed partial class FileStorageTusProviderTests
     }
 
     [Fact]
-    public async Task TusUploadEndpoint_ServerProxySession_ReturnsNotFound()
-    {
-        await using var factory = CreateFactory();
-        var client = CreateInternalServiceClient(factory);
-        var createdResponse = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", CreateUploadRequest());
-        createdResponse.EnsureSuccessStatusCode();
-        var created = await createdResponse.Content.ReadFromJsonAsync<CreateUploadSessionResponse>();
-        Assert.NotNull(created);
-        Assert.Equal("server-proxy", created.Provider);
-
-        var response = await SendTusHeadAsync(client, $"/api/files/v1/tus/{created.UploadSessionId}");
-
-        Assert.Equal(StatusCodes.Status404NotFound, (int)response.StatusCode);
-    }
-
-    [Fact]
     public async Task DownloadGrantContentEndpoint_VerifiedSeam_ReturnsUploadedBytesOnce()
     {
         var rootPath = CreateTempDirectory();
@@ -510,6 +465,7 @@ public sealed partial class FileStorageTusProviderTests
             grantResponse.EnsureSuccessStatusCode();
             var grant = await grantResponse.Content.ReadFromJsonAsync<DownloadGrantResponse>();
             Assert.NotNull(grant);
+            Assert.Equal("server-proxy", grant.Download.Headers["x-nerv-download-mode"]);
 
             using var firstRequest = new HttpRequestMessage(HttpMethod.Get, grant.Download.Url);
             AddTransferHeaders(firstRequest, grant.Download.Headers);

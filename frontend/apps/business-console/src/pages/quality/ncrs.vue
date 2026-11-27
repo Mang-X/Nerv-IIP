@@ -6,7 +6,10 @@ import type {
   BusinessConsoleQualityNcrDetailResponse,
 } from '@nerv-iip/api-client'
 import type { FileUploadCompletedFile, NvDataTableColumn } from '@nerv-iip/ui'
-import { getBusinessConsoleQualityNcrQueryOptions } from '@nerv-iip/api-client'
+import {
+  downloadBusinessConsoleQualityEvidenceContent,
+  getBusinessConsoleQualityNcrQueryOptions,
+} from '@nerv-iip/api-client'
 import NcrEvidenceUpload from '@/components/quality/NcrEvidenceUpload.vue'
 import BusinessDocumentApprovalPanel from '@/components/business/BusinessDocumentApprovalPanel.vue'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
@@ -106,6 +109,7 @@ const selectedNcr = shallowRef<BusinessConsoleQualityNcrDetailResponse>()
 const detailOpen = shallowRef(false)
 const evidenceFiles = shallowRef<FileUploadCompletedFile[]>([])
 const evidenceBusy = shallowRef(false)
+const evidenceDownloadPending = shallowRef(false)
 const dispositionOpening = shallowRef(0)
 watch([detailOpen, () => filters.organizationId, () => filters.environmentId], () => {
   evidenceFiles.value = []
@@ -296,7 +300,7 @@ function ncrStatusLabel(status?: string | null) {
   return labelFor(NCR_STATUS_LABELS, status) || '未知'
 }
 
-function openNcr(ncr: BusinessConsoleQualityNcrItem) {
+async function openNcr(ncr: BusinessConsoleQualityNcrItem) {
   dispositionOpening.value++
   evidenceFiles.value = []
   evidenceBusy.value = false
@@ -308,6 +312,74 @@ function openNcr(ncr: BusinessConsoleQualityNcrItem) {
   closeConfirmOpen.value = false
   reworkSubmissionOutcome.value = 'idle'
   detailOpen.value = true
+  if (!ncr.id || !hasBusinessContext(filters)) return
+
+  const opening = dispositionOpening.value
+  const query = { organizationId: filters.organizationId, environmentId: filters.environmentId }
+  const stillSelected = () =>
+    detailOpen.value &&
+    dispositionOpening.value === opening &&
+    selectedNcr.value?.id === ncr.id &&
+    filters.organizationId === query.organizationId &&
+    filters.environmentId === query.environmentId
+
+  try {
+    const detailQuery = getBusinessConsoleQualityNcrQueryOptions({ path: { ncrId: ncr.id }, query })
+    const response = await detailQuery.query({
+      signal: new AbortController().signal,
+    } as Parameters<typeof detailQuery.query>[0])
+    if (!response.success || !response.data) throw new Error('未取得不合格品详情。')
+    if (stillSelected() && selectedNcr.value && selectedNcr.value.attachmentFileIds == null) {
+      selectedNcr.value = {
+        ...selectedNcr.value,
+        attachmentFileIds: response.data.attachmentFileIds,
+      }
+    }
+  } catch (error) {
+    if (stillSelected()) {
+      notifyOperationFailure('证据读取失败', error, '请重新打开不合格品详情后重试。')
+    }
+  }
+}
+
+async function downloadNcrEvidence(fileId: string, index: number) {
+  if (!hasBusinessContext(filters) || evidenceDownloadPending.value) return
+  evidenceDownloadPending.value = true
+  try {
+    const { data, response } = await downloadBusinessConsoleQualityEvidenceContent({
+      path: { fileId },
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
+      },
+      parseAs: 'blob',
+      throwOnError: true,
+    })
+    if (!data) throw new Error('未取得证据文件。')
+    const disposition = response.headers.get('Content-Disposition')
+    const encodedName = disposition?.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+    let fileName = `证据 ${index + 1}`
+    if (encodedName) {
+      try {
+        fileName = decodeURIComponent(encodedName)
+      } catch {
+        // 文件名解析失败时仍可保存证据字节。
+      }
+    }
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(data)
+    link.href = url
+    link.download = fileName
+    try {
+      link.click()
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  } catch (error) {
+    notifyOperationFailure('证据下载失败', error, '证据下载失败，请稍后重试。')
+  } finally {
+    evidenceDownloadPending.value = false
+  }
 }
 
 async function submitNcrDisposition() {
@@ -451,13 +523,21 @@ function isPresent(value: string | undefined | null): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
+watch([() => filters.organizationId, () => filters.environmentId], () => {
+  dispositionOpening.value++
+  if (selectedNcr.value?.attachmentFileIds) {
+    selectedNcr.value = { ...selectedNcr.value, attachmentFileIds: undefined }
+  }
+})
+
 watch(detailOpen, (open) => {
   if (!open) selectedNcr.value = undefined
 })
 
 watch(ncrs, (items) => {
   if (!selectedNcr.value) return
-  selectedNcr.value = items.find((item) => item.id === selectedNcr.value?.id) ?? selectedNcr.value
+  const row = items.find((item) => item.id === selectedNcr.value?.id)
+  if (row) selectedNcr.value = { ...selectedNcr.value, ...row }
 })
 
 // 带 ncrId 进入时使用后端 keyword 定位，避免目标 NCR 因分页、筛选或排序不在当前页。
@@ -592,6 +672,20 @@ watch(
           </div>
 
           <CarriedContextSummary label="不合格品信息" :items="ncrContextItems" />
+
+          <div v-if="selectedNcr?.attachmentFileIds?.length" class="flex flex-wrap gap-2">
+            <NvButton
+              v-for="(fileId, index) in selectedNcr.attachmentFileIds"
+              :key="fileId"
+              type="button"
+              size="sm"
+              variant="outline"
+              :disabled="evidenceDownloadPending || !hasBusinessContext(filters)"
+              @click="downloadNcrEvidence(fileId, index)"
+            >
+              下载证据 {{ index + 1 }}
+            </NvButton>
+          </div>
 
           <NvButton v-if="reworkWorkOrderLink" type="button" variant="outline" as-child>
             <RouterLink :to="reworkWorkOrderLink">

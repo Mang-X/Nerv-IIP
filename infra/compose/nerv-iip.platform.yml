@@ -104,6 +104,9 @@ services:
       ConnectionStrings__FileStorageDb: Host=postgres;Port=5432;Database=nerv_iip_filestorage;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
       FileStorage__UploadProvider: tus
       FileStorage__Tus__RootPath: /var/lib/nerv-iip/filestorage/tus
+      FileStorage__Tus__VolumeIdentity: ${NERV_IIP_FILE_STORAGE_VOLUME_IDENTITY:?set NERV_IIP_FILE_STORAGE_VOLUME_IDENTITY}
+      FileStorage__DownloadCallers__platform-gateway__BearerToken: ${NERV_IIP_FILE_STORAGE_PLATFORM_GATEWAY_DOWNLOAD_TOKEN:?set NERV_IIP_FILE_STORAGE_PLATFORM_GATEWAY_DOWNLOAD_TOKEN}
+      FileStorage__DownloadCallers__business-gateway__BearerToken: ${NERV_IIP_FILE_STORAGE_BUSINESS_GATEWAY_DOWNLOAD_TOKEN:?set NERV_IIP_FILE_STORAGE_BUSINESS_GATEWAY_DOWNLOAD_TOKEN}
       Storage__Provider: MinIO
       Storage__MinIO__Endpoint: http://minio:9000
       Storage__MinIO__AccessKey: ${NERV_IIP_MINIO_ROOT_USER:?set NERV_IIP_MINIO_ROOT_USER}
@@ -354,6 +357,8 @@ services:
         DLL: Nerv.IIP.PlatformGateway.Web.dll
     environment:
       <<: *dotnet-env
+      FileStorage__BaseUrl: http://file-storage:8080
+      FileStorage__DownloadBearerToken: ${NERV_IIP_FILE_STORAGE_PLATFORM_GATEWAY_DOWNLOAD_TOKEN:?set NERV_IIP_FILE_STORAGE_PLATFORM_GATEWAY_DOWNLOAD_TOKEN}
       AppHub__BaseUrl: http://apphub:8080
       Iam__BaseUrl: http://iam:8080
       Iam__Jwt__JwksJson: ${NERV_IIP_IAM_JWT_JWKS_JSON:?set NERV_IIP_IAM_JWT_JWKS_JSON}
@@ -376,6 +381,8 @@ services:
         DLL: Nerv.IIP.BusinessGateway.Web.dll
     environment:
       <<: *dotnet-env
+      FileStorage__BaseUrl: http://file-storage:8080
+      FileStorage__DownloadBearerToken: ${NERV_IIP_FILE_STORAGE_BUSINESS_GATEWAY_DOWNLOAD_TOKEN:?set NERV_IIP_FILE_STORAGE_BUSINESS_GATEWAY_DOWNLOAD_TOKEN}
       Iam__BaseUrl: http://iam:8080
       Iam__Jwt__JwksJson: ${NERV_IIP_IAM_JWT_JWKS_JSON:?set NERV_IIP_IAM_JWT_JWKS_JSON}
       Security__ForwardedHeaders__TrustedProxies: ${NERV_IIP_GATEWAY_TRUSTED_PROXIES:?set NERV_IIP_GATEWAY_TRUSTED_PROXIES}
