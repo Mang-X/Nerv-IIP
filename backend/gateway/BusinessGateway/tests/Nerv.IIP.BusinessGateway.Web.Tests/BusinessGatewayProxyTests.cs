@@ -8986,30 +8986,32 @@ public sealed class BusinessGatewayProxyTests
 
         if (allowed)
         {
-            var result = await approval.ResolveStepAsync("internal-test-token", request, CancellationToken.None);
+            var result = await approval.ResolveStepAsync("end-principal-fixture", request, CancellationToken.None);
             Assert.Equal("decision-fixture", result.DecisionId);
         }
         else
         {
             var error = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
-                approval.ResolveStepAsync("internal-test-token", request, CancellationToken.None));
+                approval.ResolveStepAsync("end-principal-fixture", request, CancellationToken.None));
             Assert.Equal(HttpStatusCode.NotFound, error.StatusCode);
         }
 
-        Assert.Equal(HttpMethod.Post, Assert.Single(handler.Requests).Method);
+        var forwarded = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Post, forwarded.Method);
         using var body = JsonDocument.Parse(Assert.Single(handler.RequestBodies)!);
         Assert.Equal("org-001", body.RootElement.GetProperty("organizationId").GetString());
         Assert.Equal("env-dev", body.RootElement.GetProperty("environmentId").GetString());
+        Assert.Equal(
+            new[] { "comment", "decision", "environmentId", "organizationId", "targetStepId" },
+            body.RootElement.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
     }
 
     [Fact]
-    public async Task Approval_resolve_facade_derives_actor_from_authorized_principal()
+    public async Task Approval_resolve_facade_forwards_end_principal_and_route_target()
     {
         var approval = new RecordingApprovalClient();
         await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
         {
-            services.RemoveAll<IBusinessMasterDataClient>();
-            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient());
             services.RemoveAll<IBusinessApprovalClient>();
             services.AddSingleton<IBusinessApprovalClient>(approval);
             services.RemoveAll<IInternalServiceTokenProvider>();
@@ -9033,11 +9035,9 @@ public sealed class BusinessGatewayProxyTests
             });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("internal-test-token", approval.LastInternalToken);
+        Assert.Equal(client.DefaultRequestHeaders.Authorization!.Parameter, approval.LastInternalToken);
         Assert.Equal("chain-001", approval.LastResolveStepRequest?.ChainId);
         Assert.Equal(1, approval.LastResolveStepRequest?.StepNo);
-        Assert.Equal("user", approval.LastResolveStepRequest?.ActorType);
-        Assert.Equal("user-admin", approval.LastResolveStepRequest?.ActorRef);
     }
 
     [Fact]

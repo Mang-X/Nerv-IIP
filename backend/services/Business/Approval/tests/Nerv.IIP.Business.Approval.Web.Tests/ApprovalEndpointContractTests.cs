@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
 using Nerv.IIP.Business.Approval.Infrastructure;
@@ -21,6 +23,7 @@ using Nerv.IIP.Business.Approval.Web.Endpoints.Approvals;
 using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.ServiceAuth;
 using NetCorePal.Extensions.Primitives;
+using NetCorePal.Extensions.DistributedTransactions;
 
 namespace Nerv.IIP.Business.Approval.Web.Tests;
 
@@ -75,7 +78,7 @@ public sealed class ApprovalEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/resolve"
             && x.PermissionCode == ApprovalPermissionCodes.Manage
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy is null
             && x.OperationId == "resolveApprovalStep");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/chains/{chainId}/withdraw"
@@ -801,7 +804,7 @@ public sealed class ApprovalEndpointContractTests
         var tasks = new ListPendingApprovalTasksQueryHandler(dbContext);
         var task = Assert.Single((await tasks.Handle(query, CancellationToken.None)).Items);
         var command = new ResolveApprovalStepCommand("org-001", "env-dev", chain.Id, 1,
-            "user", "reviewer", "approve", null, "buyer", "purchasing", task.StepId);
+            "user", "reviewer", "approve", null, "buyer", "purchasing", new ApprovalStepId(Guid.Parse(task.StepId)));
         var resolve = new ResolveApprovalStepCommandHandler(dbContext);
 
         var first = await resolve.Handle(command, CancellationToken.None);
@@ -809,7 +812,7 @@ public sealed class ApprovalEndpointContractTests
         Assert.Equal(first, await resolve.Handle(command, CancellationToken.None));
         var other = Assert.Single((await tasks.Handle(query, CancellationToken.None)).Items);
         Assert.NotEqual(task.StepId, other.StepId);
-        Assert.NotEqual(first, await resolve.Handle(command with { TargetStepId = other.StepId }, CancellationToken.None));
+        Assert.NotEqual(first, await resolve.Handle(command with { TargetStepId = new ApprovalStepId(Guid.Parse(other.StepId)) }, CancellationToken.None));
         await dbContext.SaveChangesAsync();
 
         var history = await new GetApprovalChainQueryHandler(dbContext).Handle(new(chain.Id), CancellationToken.None);
@@ -1012,6 +1015,151 @@ public sealed class ApprovalEndpointContractTests
         });
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Resolve_approval_step_requires_a_verified_end_principal()
+    {
+        var iam = new ApprovalAuthorityHandler(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized));
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.UseSetting("Approval:Seed:Enabled", "false");
+                builder.ConfigureServices(services => services.AddHttpClient(ResolveApprovalStepAuthority.IamClient)
+                    .ConfigurePrimaryHttpMessageHandler(() => iam));
+            });
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-end-principal");
+        var chainId = Guid.CreateVersion7();
+
+        using var response = await client.PostAsJsonAsync(
+            $"/api/business/v1/approvals/chains/{chainId}/steps/1/resolve",
+            new { organizationId = "org-001", environmentId = "env-dev", decision = "approve" });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        Assert.Equal("/api/iam/v1/me", Assert.Single(iam.Paths));
+    }
+
+    [Theory]
+    [InlineData("user", "u-reviewer")]
+    [InlineData("role", "buyer")]
+    [InlineData("department", "purchasing")]
+    public async Task Resolve_approval_step_uses_verified_membership_and_the_typed_route_target(
+        string approverType, string approverRef)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var template = ApprovalTemplate.Create("org-001", "env-dev", "purchase", "purchase-order", 1, true,
+            [new ApprovalTemplateStepDefinition(1, "Review", null, approverType, approverRef, 24)]);
+        var chain = ApprovalChain.Start(template, new ApprovalDocumentReference("erp", "purchase-order", "PO-1", null), "u-requester");
+        var target = Assert.Single(chain.Steps).Id;
+        var iam = new ApprovalAuthorityHandler(request =>
+        {
+            Assert.Equal("test-end-principal", request.Headers.Authorization?.Parameter);
+            if (request.Method == HttpMethod.Get)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new { success = true, data = new
+                    {
+                        userId = "u-reviewer", principalType = "user", organizationId = "org-001",
+                        environmentId = "env-dev", roleIds = new[] { "buyer" },
+                    } }),
+                };
+            }
+
+            Assert.Equal("/internal/iam/v1/authorization/check", request.RequestUri!.AbsolutePath);
+            var check = request.Content!.ReadFromJsonAsync<Nerv.IIP.Contracts.Iam.AuthorizationCheckRequest>().GetAwaiter().GetResult();
+            Assert.Equal("business.approvals.manage", check!.PermissionCode);
+            Assert.Equal("org-001", check.OrganizationId);
+            Assert.Equal("env-dev", check.EnvironmentId);
+            Assert.Equal("approval-chain", check.ResourceType);
+            Assert.Equal(chain.Id.ToString(), check.ResourceId);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new { success = true, data = new
+                {
+                    allowed = true, principalId = "u-reviewer", principalType = "user",
+                } }),
+            };
+        });
+        var masterData = new ApprovalAuthorityHandler(request =>
+        {
+            Assert.Equal("test-internal-token", request.Headers.Authorization?.Parameter);
+            Assert.Equal("/api/business/v1/master-data/principals/u-reviewer/work-context?organizationId=org-001&environmentId=env-dev",
+                request.RequestUri!.PathAndQuery);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new { success = true, data = new
+                {
+                    worker = new { userId = "u-reviewer", employmentStatus = "active", departmentId = "purchasing" },
+                } }),
+            };
+        });
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseSetting("environment", "Testing");
+                builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+                builder.UseSetting("Approval:Seed:Enabled", "false");
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+                    services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connection));
+                    services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
+                    services.AddHttpClient(ResolveApprovalStepAuthority.IamClient)
+                        .ConfigurePrimaryHttpMessageHandler(() => iam);
+                    services.AddHttpClient(ResolveApprovalStepAuthority.MasterDataClient)
+                        .ConfigurePrimaryHttpMessageHandler(() => masterData);
+                });
+            });
+        using var client = factory.CreateClient();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Database.EnsureCreatedAsync();
+            db.ApprovalTemplates.Add(template);
+            db.ApprovalChains.Add(chain);
+            await db.SaveChangesAsync();
+        }
+
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "test-end-principal");
+        var route = $"/api/business/v1/approvals/chains/{chain.Id}/steps/1/resolve";
+        var command = new { organizationId = "org-001", environmentId = "env-dev", decision = "approve", targetStepId = target.ToString() };
+        using var wrongEnvironment = await client.PostAsJsonAsync(route, command with { environmentId = "env-other" });
+        Assert.Equal(HttpStatusCode.Forbidden, wrongEnvironment.StatusCode);
+        Assert.Empty(masterData.Paths);
+
+        using var wrongTarget = await client.PostAsJsonAsync(route, command with { targetStepId = "invalid" });
+        Assert.Equal(HttpStatusCode.BadRequest, wrongTarget.StatusCode);
+
+        using var response = await client.PostAsJsonAsync(route, command);
+        Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
+        using var persistedScope = factory.Services.CreateScope();
+        var persisted = persistedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var storedChain = await persisted.ApprovalChains.Include(x => x.Decisions).SingleAsync();
+        var decision = Assert.Single(storedChain.Decisions);
+        Assert.Equal("u-reviewer", decision.ActorRef);
+        Assert.Equal("user", decision.ActorType);
+    }
+
+    private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher
+    {
+        public Task PublishAsync<T>(T integrationEvent, CancellationToken cancellationToken) where T : notnull =>
+            Task.CompletedTask;
+    }
+
+    private sealed class ApprovalAuthorityHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
+    {
+        public List<string> Paths { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Paths.Add(request.RequestUri!.AbsolutePath);
+            return Task.FromResult(respond(request));
+        }
     }
 
     private static ServiceProvider CreateInMemoryProvider()

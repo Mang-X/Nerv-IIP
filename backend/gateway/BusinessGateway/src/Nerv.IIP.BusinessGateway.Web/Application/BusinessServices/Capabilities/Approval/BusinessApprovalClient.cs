@@ -41,7 +41,7 @@ public interface IBusinessApprovalClient
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleResolveApprovalStepResponse> ResolveStepAsync(
-        string internalBearerToken,
+        string bearerToken,
         BusinessConsoleResolveApprovalStepRequest request,
         CancellationToken cancellationToken);
 
@@ -184,19 +184,16 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : Business
             cancellationToken);
 
     public Task<BusinessConsoleResolveApprovalStepResponse> ResolveStepAsync(
-        string internalBearerToken,
+        string bearerToken,
         BusinessConsoleResolveApprovalStepRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleResolveApprovalStepResponse>(
-            internalBearerToken,
+            bearerToken,
             HttpMethod.Post,
             $"/api/business/v1/approvals/chains/{Uri.EscapeDataString(request.ChainId)}/steps/{request.StepNo.ToString(CultureInfo.InvariantCulture)}/resolve",
             new
             {
-                request.OrganizationId, request.EnvironmentId, request.ChainId, request.StepNo,
-                request.ActorType, request.ActorRef, request.Decision, request.Comment, request.TargetStepId,
-                RoleRefs = request.RoutingMembership?.RoleRefs,
-                DepartmentRef = request.RoutingMembership?.DepartmentRef,
+                request.OrganizationId, request.EnvironmentId, request.Decision, request.Comment, request.TargetStepId,
             },
             cancellationToken);
 
