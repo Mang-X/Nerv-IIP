@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
@@ -44,8 +45,8 @@ public sealed class TusVolumeDiagnosticsTests : IDisposable
     [Theory]
     [InlineData("expected-volume", 0, HealthStatus.Healthy)]
     [InlineData("expected-volume", long.MaxValue, HealthStatus.Degraded)]
-    [InlineData("wrong-volume", 0, HealthStatus.Degraded)]
-    [InlineData(null, 0, HealthStatus.Degraded)]
+    [InlineData("wrong-volume", 0, HealthStatus.Unhealthy)]
+    [InlineData(null, 0, HealthStatus.Unhealthy)]
     public async Task Volume_health_reports_capacity_and_identity(
         string? marker, long minimumFreeBytes, HealthStatus expected)
     {
@@ -90,8 +91,9 @@ public sealed class TusVolumeDiagnosticsTests : IDisposable
         await store.AppendAsync("staging-only", 0, staging, cancellationToken);
 
         var before = volume.GetFiles().Select(file => file.Name).Order(StringComparer.Ordinal).ToArray();
-        var result = TusFinalReconciliation.Compare(store,
-            [new("expected-file", "expected-key"), new("deleted-file", "deleted-key")], cancellationToken);
+        TusFinalReconciliation.FinalFileRecord[] records = [new("expected-file", "expected-key"), new("deleted-file", "deleted-key")];
+        var result = await TusFinalReconciliation.CompareAsync(store, records.ToAsyncEnumerable(), cancellationToken);
+        Assert.False(result.Truncated);
 
         Assert.Equal(hasExpectedBytes ? [] : ["expected-file"], result.MissingFinalFiles);
         Assert.Equal(hasOrphan ? [LocalUploadByteStore.GetFinalFileName("orphan-key")] : [], result.OrphanFinalFiles);
@@ -105,6 +107,107 @@ public sealed class TusVolumeDiagnosticsTests : IDisposable
         }
     }
 
+    [Theory]
+    [InlineData("healthy", HttpStatusCode.OK, "Healthy")]
+    [InlineData("missing-root", HttpStatusCode.ServiceUnavailable, "Unhealthy")]
+    [InlineData("missing-marker", HttpStatusCode.ServiceUnavailable, "Unhealthy")]
+    [InlineData("wrong-marker", HttpStatusCode.ServiceUnavailable, "Unhealthy")]
+    public async Task Volume_http_probe_tracks_volume_loss_while_liveness_stays_healthy(
+        string scenario, HttpStatusCode status, string body)
+    {
+        var markerPath = Path.Combine(volume.FullName, ".filestorage-volume-v1");
+        await File.WriteAllTextAsync(markerPath, "expected-volume");
+        await using var factory = new FileStorageWebApplicationFactory();
+        await using var host = factory.WithWebHostBuilder(builder => builder
+            .UseEnvironment(Environments.Production)
+            .UseSetting("InternalService:BearerToken", "diagnostics-test-internal-token-32bytes")
+            .UseSetting("FileStorage:Tus:RootPath", volume.FullName)
+            .UseSetting("FileStorage:Tus:VolumeIdentity", "expected-volume")
+            .UseSetting("FileStorage:Tus:MinimumFreeBytes", "0"));
+        using var client = host.CreateClient();
+        switch (scenario)
+        {
+            case "missing-root": volume.Delete(recursive: true); break;
+            case "missing-marker": File.Delete(markerPath); break;
+            case "wrong-marker": await File.WriteAllTextAsync(markerPath, "wrong-volume"); break;
+        }
+
+        using var health = await client.GetAsync("/health/tus-volume");
+        Assert.Equal(status, health.StatusCode);
+        Assert.Equal(body, await health.Content.ReadAsStringAsync());
+        using var live = await client.GetAsync("/health");
+        Assert.Equal(HttpStatusCode.OK, live.StatusCode);
+        Assert.Equal("Healthy", await live.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Reconciliation_rejects_a_concurrent_request_and_accepts_retry()
+    {
+        await using var factory = new FileStorageWebApplicationFactory();
+        await using var host = factory.WithWebHostBuilder(builder => builder
+            .UseSetting("FileStorage:Tus:RootPath", volume.FullName));
+        using var client = host.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", InternalServiceAuthentication.DefaultDevelopmentBearerToken);
+        var gate = host.Services.GetRequiredService<TusFinalReconciliationGate>();
+        Assert.True(await gate.Permit.WaitAsync(0));
+        const string path = "/internal/file-storage/v1/diagnostics/reconcile";
+        try
+        {
+            using var busy = await client.GetAsync(path);
+            Assert.Equal(HttpStatusCode.TooManyRequests, busy.StatusCode);
+        }
+        finally
+        {
+            gate.Permit.Release();
+        }
+
+        using var retry = await client.GetAsync(path);
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+    }
+
+    [Fact]
+    public async Task Reconciliation_observes_cancellation_during_record_read_and_before_a_new_scan()
+    {
+        var store = new LocalUploadByteStore(Configuration(0));
+        using var cancellation = new CancellationTokenSource();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            TusFinalReconciliation.CompareAsync(store, CancelDuringRead(), cancellation.Token));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            TusFinalReconciliation.CompareAsync(store, CancelDuringRead(), cancellation.Token));
+
+        async IAsyncEnumerable<TusFinalReconciliation.FinalFileRecord> CancelDuringRead()
+        {
+            await Task.CompletedTask;
+            cancellation.Cancel();
+            yield return new("file", "key");
+        }
+    }
+
+    [Theory]
+    [InlineData(1, 2, 1, 1, null)]
+    [InlineData(3, 1, 2, 2, 1)]
+    public async Task Reconciliation_bounds_scans_and_report_without_false_orphans(
+        int maxEntries, int maxReportItems, int files, int missing, int? orphans)
+    {
+        await File.WriteAllBytesAsync(Path.Combine(volume.FullName, "final-unmatched.bin"), [1]);
+        await File.WriteAllBytesAsync(Path.Combine(volume.FullName, "staging.bin"), [2]);
+        await File.WriteAllTextAsync(Path.Combine(volume.FullName, ".filestorage-volume-v1"), "expected-volume");
+        var store = new LocalUploadByteStore(Configuration(0));
+        TusFinalReconciliation.FinalFileRecord[] records = [new("one", "key-one"), new("two", "key-two")];
+        var result = await TusFinalReconciliation.CompareAsync(
+            store, records.ToAsyncEnumerable(), CancellationToken.None, maxEntries, maxReportItems);
+
+        Assert.True(result.Truncated);
+        Assert.Equal(maxEntries, result.ScannedVolumeEntries);
+        Assert.Equal(files, result.ScannedStoredFiles);
+        Assert.Equal(missing, result.MissingFinalFileCount);
+        Assert.Equal(orphans, result.OrphanFinalFileCount);
+        Assert.Single(result.MissingFinalFiles);
+        Assert.Empty(result.OrphanFinalFiles);
+    }
+
     private IConfiguration Configuration(long minimumFreeBytes) => new ConfigurationBuilder()
         .AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -114,5 +217,11 @@ public sealed class TusVolumeDiagnosticsTests : IDisposable
         })
         .Build();
 
-    public void Dispose() => volume.Delete(recursive: true);
+    public void Dispose()
+    {
+        if (Directory.Exists(volume.FullName))
+        {
+            volume.Delete(recursive: true);
+        }
+    }
 }

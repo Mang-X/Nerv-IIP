@@ -170,6 +170,52 @@ public sealed class BusinessConsoleQualityEvidenceUploadFacadeTests
     }
 
     [Fact]
+    public async Task Public_download_contract_requires_scope_and_returns_binary_content()
+    {
+        using var doc = JsonDocument.Parse(await BusinessGatewayTestHost.GetOpenApiDocumentAsync());
+        var download = doc.RootElement.GetProperty("paths")
+            .GetProperty("/api/business-console/v1/files/quality-evidence/{fileId}/content").GetProperty("get");
+        var content = download.GetProperty("responses").GetProperty("200").GetProperty("content");
+        var binary = Assert.Single(content.EnumerateObject());
+        Assert.Equal("application/octet-stream", binary.Name);
+        Assert.Equal("binary", binary.Value.GetProperty("schema").GetProperty("format").GetString());
+        foreach (var name in new[] { "organizationId", "environmentId" })
+        {
+            var parameter = Assert.Single(download.GetProperty("parameters").EnumerateArray(),
+                item => item.GetProperty("name").GetString() == name);
+            Assert.Equal("query", parameter.GetProperty("in").GetString());
+            Assert.True(parameter.GetProperty("required").GetBoolean());
+            Assert.Equal("string", parameter.GetProperty("schema").GetProperty("type").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task Cors_exposes_tus_response_headers_to_the_allowed_origin()
+    {
+        const string origin = "http://localhost:5105";
+        await using var lease = Lease(
+            FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.QualityNcrManage),
+            new Downstream());
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        using var request = Scoped(HttpMethod.Head, Tus);
+        request.Headers.Add("Origin", origin);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(origin, Assert.Single(response.Headers.GetValues("Access-Control-Allow-Origin")));
+        Assert.Equal("0", Assert.Single(response.Headers.GetValues("Upload-Offset")));
+        Assert.Subset(
+            ExposedHeaders(response).ToHashSet(StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>(["Content-Disposition", "Upload-Offset", "Upload-Length", "Tus-Resumable"],
+                StringComparer.OrdinalIgnoreCase));
+    }
+
+    private static IEnumerable<string> ExposedHeaders(HttpResponseMessage response) =>
+        response.Headers.GetValues("Access-Control-Expose-Headers")
+            .SelectMany(value => value.Split(',', StringSplitOptions.TrimEntries));
+
+    [Fact]
     public async Task Ncr_read_permission_downloads_evidence_using_the_dedicated_grant_credential()
     {
         var handler = new Downstream();
@@ -177,7 +223,7 @@ public sealed class BusinessConsoleQualityEvidenceUploadFacadeTests
         await using var lease = Lease(auth, handler);
         var client = lease.CreateClient();
         BusinessGatewayTestHost.Authenticated(client);
-        using var request = Scoped(HttpMethod.Get, EvidenceContent);
+        using var request = new HttpRequestMessage(HttpMethod.Get, EvidenceContent + "?organizationId=org-001&environmentId=env-dev");
         request.Headers.Add("Origin", "http://localhost:5105");
         using var response = await client.SendAsync(request);
 
@@ -185,7 +231,7 @@ public sealed class BusinessConsoleQualityEvidenceUploadFacadeTests
         Assert.Equal(Downstream.Content, await response.Content.ReadAsByteArrayAsync());
         Assert.Equal("application/octet-stream", response.Content.Headers.ContentType!.MediaType);
         Assert.Equal("attachment", response.Content.Headers.ContentDisposition!.DispositionType);
-        Assert.Contains("Content-Disposition", response.Headers.GetValues("Access-Control-Expose-Headers"));
+        Assert.Contains("Content-Disposition", ExposedHeaders(response));
         Assert.True(response.Headers.CacheControl!.NoStore);
         Assert.Equal("nosniff", Assert.Single(response.Headers.GetValues("X-Content-Type-Options")));
         Assert.Equal(1, handler.GrantIssues);

@@ -70,6 +70,7 @@ if (hasStorageConfiguration && !useMinio)
 
 builder.Services.AddFastEndpoints();
 builder.Services.AddHealthChecks().AddCheck<TusVolumeHealthCheck>("tus-volume");
+builder.Services.AddSingleton<TusFinalReconciliationGate>();
 builder.Services.AddScoped<TusFinalReconciliation>();
 builder.Services.AddSingleton(TemplateAssetRetirementOptions.Load(builder.Configuration));
 builder.Services.AddSingleton<TemplateAssetRetirementProof>();

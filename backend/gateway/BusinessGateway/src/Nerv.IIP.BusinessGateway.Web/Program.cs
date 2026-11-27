@@ -233,7 +233,7 @@ builder.Services.AddCors(options =>
         policy.WithOrigins(allowedCorsOrigins)
             .AllowAnyHeader()
             .AllowAnyMethod()
-            .WithExposedHeaders("Content-Disposition"));
+            .WithExposedHeaders("Content-Disposition", "Upload-Offset", "Upload-Length", "Tus-Resumable"));
 });
 builder.Services.AddRateLimiter(options =>
 {

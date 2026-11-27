@@ -134,8 +134,12 @@ public sealed class LocalUploadByteStore
 
     internal static string GetFinalFileName(string objectKey) => $"{FinalPrefix}{Hash(objectKey)}.bin";
 
-    internal IEnumerable<string> EnumerateFinalFileNames() =>
-        Directory.EnumerateFiles(rootPath, $"{FinalPrefix}*.bin").Select(path => Path.GetFileName(path));
+    internal IEnumerable<string> EnumerateVolumeEntries() => Directory.EnumerateFileSystemEntries(rootPath);
+
+    internal static bool IsFinalFile(string path) =>
+        Path.GetFileName(path).StartsWith(FinalPrefix, StringComparison.Ordinal)
+        && Path.GetExtension(path) == ".bin"
+        && File.Exists(path);
 
     public long GetOffset(string uploadSessionId)
     {

@@ -208,7 +208,7 @@ describe('quality route location behavior', () => {
 
       expect(evidenceApi.download).toHaveBeenCalledWith({
         path: { fileId: 'completed-file' },
-        headers: { 'X-Organization-Id': 'org-001', 'X-Environment-Id': 'env-dev' },
+        query: { organizationId: 'org-001', environmentId: 'env-dev' },
         parseAs: 'blob',
         throwOnError: true,
       })

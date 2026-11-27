@@ -11,8 +11,14 @@ public sealed class ReconcileTusFinalFilesEndpoint(TusFinalReconciliation reconc
 {
     public override async Task HandleAsync(CancellationToken ct)
     {
-        var result = await reconciliation.ScanAsync(ct);
         HttpContext.Response.Headers.CacheControl = "no-store";
+        var result = await reconciliation.TryScanAsync(ct);
+        if (result is null)
+        {
+            HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+            await HttpContext.Response.WriteAsync("A tus reconciliation scan is already in progress.", ct);
+            return;
+        }
         await HttpContext.Response.WriteAsJsonAsync(result, ct);
     }
 }

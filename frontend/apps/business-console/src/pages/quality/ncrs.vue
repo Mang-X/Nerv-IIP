@@ -348,9 +348,9 @@ async function downloadNcrEvidence(fileId: string, index: number) {
   try {
     const { data, response } = await downloadBusinessConsoleQualityEvidenceContent({
       path: { fileId },
-      headers: {
-        'X-Organization-Id': filters.organizationId,
-        'X-Environment-Id': filters.environmentId,
+      query: {
+        organizationId: filters.organizationId,
+        environmentId: filters.environmentId,
       },
       parseAs: 'blob',
       throwOnError: true,

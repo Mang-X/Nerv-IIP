@@ -23695,7 +23695,10 @@ export type DownloadBusinessConsoleQualityEvidenceContentData = {
     path: {
         fileId: string;
     };
-    query?: never;
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
     url: '/api/business-console/v1/files/quality-evidence/{fileId}/content';
 };
 

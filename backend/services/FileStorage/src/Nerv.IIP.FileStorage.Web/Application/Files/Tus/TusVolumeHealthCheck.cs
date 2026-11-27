@@ -15,11 +15,13 @@ internal sealed class TusVolumeHealthCheck(
         var rootPath = configuration["FileStorage:Tus:RootPath"];
         if (!Directory.Exists(rootPath) || !stores.TryGet(out var store))
         {
-            return Task.FromResult(HealthCheckResult.Degraded("The tus volume is unavailable."));
+            return Task.FromResult(HealthCheckResult.Unhealthy("The tus volume is unavailable."));
         }
 
         try
         {
+            using var entries = Directory.EnumerateFileSystemEntries(rootPath!).GetEnumerator();
+            _ = entries.MoveNext();
             store.VerifyVolume(required: !environment.IsDevelopment());
             var minimumFreeBytes = configuration.GetValue("FileStorage:Tus:MinimumFreeBytes", 256L * 1024 * 1024);
             var drivePath = OperatingSystem.IsWindows() ? Path.GetPathRoot(rootPath!)! : rootPath!;
@@ -30,7 +32,7 @@ internal sealed class TusVolumeHealthCheck(
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            return Task.FromResult(HealthCheckResult.Degraded("The tus volume could not be verified.", error));
+            return Task.FromResult(HealthCheckResult.Unhealthy("The tus volume could not be verified.", error));
         }
     }
 }
