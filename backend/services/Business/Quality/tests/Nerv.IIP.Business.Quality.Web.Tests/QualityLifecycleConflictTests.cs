@@ -428,13 +428,18 @@ public sealed class QualityLifecycleConflictTests
         Assert.DoesNotContain(InspectionTaskStatuses.InProgress, body, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public async Task Concurrency_exception_endpoint_returns_409_with_safe_lifecycle_code()
+    [Theory]
+    [InlineData(false, HttpStatusCode.BadRequest)]
+    [InlineData(true, HttpStatusCode.Conflict)]
+    public async Task Inspection_submission_preserves_validation_and_concurrency_error_responses(
+        bool hasIdempotencyKey,
+        HttpStatusCode expectedStatusCode)
     {
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
+                builder.UseDefaultServiceProvider(options => options.ValidateScopes = true);
                 builder.UseSetting("Iam:Jwt:JwksJson", Nerv.IIP.Testing.IamJwtFixture.PublicJwksJson);
                 builder.UseSetting("Quality:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
                 builder.ConfigureAppConfiguration((_, configuration) =>
@@ -464,13 +469,20 @@ public sealed class QualityLifecycleConflictTests
                 environmentId = "env-dev",
                 inspectorUserId = "inspector-001",
                 resultLines = Array.Empty<object>(),
-                idempotencyKey = "quality-concurrency-http",
+                idempotencyKey = hasIdempotencyKey ? "quality-concurrency-http" : "",
             });
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(expectedStatusCode, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
-        Assert.Contains("\"success\":false", body, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("\"message\":\"lifecycle-conflict\"", body, StringComparison.OrdinalIgnoreCase);
+        if (hasIdempotencyKey)
+        {
+            Assert.Contains("\"success\":false", body, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("\"message\":\"lifecycle-conflict\"", body, StringComparison.OrdinalIgnoreCase);
+        }
+        else
+        {
+            Assert.Contains("\"idempotencyKey\"", body, StringComparison.OrdinalIgnoreCase);
+        }
         Assert.DoesNotContain("forced concurrency conflict", body, StringComparison.OrdinalIgnoreCase);
     }
 
