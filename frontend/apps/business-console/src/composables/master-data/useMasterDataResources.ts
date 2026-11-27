@@ -102,21 +102,31 @@ export function defaultResourceFilters(
  * 新建走车间专属端点（需 code/name/siteCode，managerUserId/description 可选）。
  * onSuccess 同时失效车间列表与通用 resources 列表（产线/工作中心归属读时复用）。
  */
-export function useBusinessWorkshops() {
+export function useBusinessWorkshops(all = false) {
   const filters = defaultListFilters()
   const queryCache = useQueryCache()
 
   const workshopsQuery = useQuery(() =>
     withBusinessContextEnabled(
-      listBusinessConsoleWorkshopsQueryOptions({
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-          ...optionalQuery('includeDisabled', filters.includeDisabled),
-          skip: filters.skip,
-          take: filters.take,
-        },
-      }),
+      all
+        ? listBusinessConsoleMasterDataResourcesQueryOptions({
+            query: {
+              organizationId: filters.organizationId,
+              environmentId: filters.environmentId,
+              resourceType: 'workshop',
+              ...optionalQuery('includeDisabled', filters.includeDisabled),
+              all: true,
+            },
+          })
+        : listBusinessConsoleWorkshopsQueryOptions({
+            query: {
+              organizationId: filters.organizationId,
+              environmentId: filters.environmentId,
+              ...optionalQuery('includeDisabled', filters.includeDisabled),
+              skip: filters.skip,
+              take: filters.take,
+            },
+          }),
       filters,
     ),
   )
@@ -148,7 +158,7 @@ export function useBusinessWorkshops() {
 
 export function useBusinessMasterDataResources(
   resourceType: string,
-  options: { codeSet?: string; enabled?: () => boolean } = {},
+  options: { codeSet?: string; enabled?: () => boolean; all?: boolean } = {},
 ) {
   const filters = defaultResourceFilters(resourceType, options.codeSet)
   const enabled = options.enabled ?? (() => true)
@@ -162,6 +172,8 @@ export function useBusinessMasterDataResources(
         ...optionalQuery('codeSet', filters.codeSet),
         ...optionalQuery('includeDisabled', filters.includeDisabled),
         ...optionalQuery('keyword', filters.keyword),
+        ...optionalQuery('all', options.all),
+        ...optionalQuery('partnerType', filters.partnerType),
         skip: filters.skip,
         take: filters.take,
       },
@@ -243,7 +255,10 @@ export type MasterDataResourceType = keyof typeof RESOURCE_CREATE_OPTIONS
  * docs/product/master-data/design.md §0/§7），新建走各自 create 端点。
  * 编辑/停用待后端 #344；本 Phase 1 只做查 + 增。
  */
-export function useMasterDataResource<TBody>(resourceType: MasterDataResourceType) {
+export function useMasterDataResource<TBody>(
+  resourceType: MasterDataResourceType,
+  options: { all?: boolean } = {},
+) {
   const filters = defaultResourceFilters(resourceType)
 
   const listQuery = useQuery(() =>
@@ -263,6 +278,7 @@ export function useMasterDataResource<TBody>(resourceType: MasterDataResourceTyp
           ...optionalQuery('category', filters.category),
           ...optionalQuery('partnerType', filters.partnerType),
           ...optionalQuery('keyword', filters.keyword),
+          ...optionalQuery('all', options.all),
           skip: filters.skip,
           take: filters.take,
         },

@@ -63,12 +63,14 @@ const {
   updateSkill,
   updatePending,
 } = useSkillCatalog()
+const { skills: groupCatalog, refresh: refreshGroupCatalog } = useSkillCatalog(true)
 
 // Toolbar 搜索绑定到 search 筛选（空串不污染查询）。
 const search = computed({
   get: () => filters.search ?? '',
   set: (value: string) => {
-    filters.search = value.trim() ? value : undefined
+    filters.skip = 0
+    filters.search = value.trim() || undefined
   },
 })
 
@@ -95,7 +97,7 @@ const listErrorMessage = computed(() =>
 // 允许新建组名，所以给「已有组」建议而不是只读选择器。
 const groupSuggestions = computed(() => {
   const names = new Set<string>()
-  for (const skill of skills.value) {
+  for (const skill of groupCatalog.value) {
     const group = skill.groupName?.trim()
     if (group) names.add(group)
   }
@@ -118,7 +120,7 @@ interface SkillCatalogForm {
   skillName: string
   groupName: string
   requiresCertification: boolean
-  validityMonths: string
+  validityMonths: string | number
   description: string
 }
 
@@ -138,20 +140,15 @@ const showErrors = ref(false)
 const editingCode = shallowRef<string | null>(null)
 const form = reactive<SkillCatalogForm>(blankForm())
 
-function parseNumber(value: string): number | undefined {
-  const trimmed = value.trim()
-  if (!trimmed) return undefined
-  const parsed = Number(trimmed)
-  return Number.isFinite(parsed) ? parsed : undefined
-}
-const validityMonths = computed(() => parseNumber(form.validityMonths))
-
+const validityMonths = computed(() => Number(form.validityMonths))
 const nameValid = computed(() => form.skillName.trim().length > 0)
 const groupValid = computed(() => form.groupName.trim().length > 0)
 const validityValid = computed(
   () =>
-    form.validityMonths.trim() === '' ||
-    (validityMonths.value != null && validityMonths.value >= 0),
+    !form.requiresCertification ||
+    (Number.isInteger(validityMonths.value) &&
+      validityMonths.value > 0 &&
+      validityMonths.value <= 2147483647),
 )
 const canSubmit = computed(() => nameValid.value && groupValid.value && validityValid.value)
 
@@ -184,7 +181,7 @@ async function submitForm() {
     skillName: form.skillName.trim(),
     groupName: form.groupName.trim(),
     requiresCertification: form.requiresCertification,
-    validityMonths: validityMonths.value ?? null,
+    validityMonths: form.requiresCertification ? validityMonths.value : null,
     description: form.description.trim() || null,
   }
   try {
@@ -201,6 +198,7 @@ async function submitForm() {
       notifySuccess(`已创建技能「${shared.skillName}」。`)
     }
     showErrors.value = false
+    void refreshGroupCatalog()
     formOpen.value = false
     editingCode.value = null
   } catch (error) {
@@ -281,7 +279,7 @@ async function confirmArchive() {
                 :items="[{ label: '技能编码', value: editingCode }]"
               />
               <p v-if="showErrors && !canSubmit" class="text-sm text-destructive" role="alert">
-                请填写技能名与技能组，并确保证书有效期为非负数（已标红）。
+                请填写技能名与技能组，并确保持证技能的证书有效期为正整数月（已标红）。
               </p>
 
               <FormSectionTitle>基本信息</FormSectionTitle>
@@ -325,8 +323,10 @@ async function confirmArchive() {
                     id="skill-validity"
                     v-model="form.validityMonths"
                     type="number"
-                    min="0"
-                    placeholder="0"
+                    min="1"
+                    :disabled="!form.requiresCertification"
+                    :required="form.requiresCertification"
+                    placeholder="例如 12"
                   />
                 </NvField>
               </NvFieldGroup>

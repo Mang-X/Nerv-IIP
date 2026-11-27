@@ -110,13 +110,7 @@ const selectedLabel = computed(() => codeSetLabel(selectedCodeSet.value))
 // 系统枚举由平台维护，不可新增条目；平台预置 / 工厂自定义可新增。
 const selectedCodeSetCanAdd = computed(() => selectedCodeSetMeta.value.kind !== 'system-enum')
 
-const listRows = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  if (!kw) return codes.value
-  return codes.value.filter((row) =>
-    [row.code, row.displayName].some((value) => (value ?? '').toLowerCase().includes(kw)),
-  )
-})
+const listRows = codes
 const sortedRows = computed(() => {
   if (!sort.value) return listRows.value
   const { key, direction } = sort.value
@@ -173,6 +167,8 @@ watch(
 )
 
 watch([keyword, pageSize], () => {
+  filters.skip = 0
+  filters.keyword = keyword.value.trim() || undefined
   page.value = 1
 })
 

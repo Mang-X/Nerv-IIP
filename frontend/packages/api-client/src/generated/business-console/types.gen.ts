@@ -20372,6 +20372,7 @@ export type ListBusinessConsoleSkusData = {
         includeDisabled?: boolean;
         skip?: number;
         take?: number;
+        keyword?: string | null;
     };
     url: '/api/business-console/v1/master-data/skus';
 };

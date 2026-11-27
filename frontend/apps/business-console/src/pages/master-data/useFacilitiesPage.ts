@@ -21,7 +21,7 @@ import { inlineErrorMessage, notifyOperationFailure, notifySuccess } from '@/uti
 export function useFacilitiesPage() {
   // 列表端点有分页上限（默认 take=100），层级树需尽量全量拼装：用较大 take 兜底。
   // 真正全量需后端全量端点（#373），超过此阈值的层级在树底给出提示。
-  const TREE_TAKE = 200
+  const TREE_TAKE = 5000
   const DEFAULT_TIMEZONE = DEFAULT_TIME_ZONE
   const WORK_CENTER_DEFAULTS = {
     capacityUnit: 'minutes',
@@ -29,11 +29,11 @@ export function useFacilitiesPage() {
     finiteCapacity: true,
   }
 
-  const sites = useMasterDataResource('site')
-  const workshops = useBusinessWorkshops()
-  const lines = useMasterDataResource('production-line')
-  const workCenters = useMasterDataResource('work-center')
-  const stations = useMasterDataResource('station')
+  const sites = useMasterDataResource('site', { all: true })
+  const workshops = useBusinessWorkshops(true)
+  const lines = useMasterDataResource('production-line', { all: true })
+  const workCenters = useMasterDataResource('work-center', { all: true })
+  const stations = useMasterDataResource('station', { all: true })
   const siteActions = useMasterDataResourceActions('site')
   const workshopActions = useMasterDataResourceActions('workshop')
   const lineActions = useMasterDataResourceActions('production-line')
@@ -42,8 +42,6 @@ export function useFacilitiesPage() {
   // 停用/启用确认框收在页面层单实例，行操作只负责指向当前行（#1591）。
   const lifecycle = useMasterDataLifecycleConfirm()
 
-  // 拉大每类的 take，尽量一页拼全树（不做假分页，超上限处给提示）。
-  for (const r of [sites, lines, workCenters, stations]) r.filters.take = TREE_TAKE
   // 停用后的节点默认不在树里，「启用」入口就永远够不到；各层共用一个开关（#1594）。
   const includeDisabled = useIncludeDisabledFilter([
     sites.filters,
@@ -52,11 +50,9 @@ export function useFacilitiesPage() {
     workCenters.filters,
     stations.filters,
   ])
-  workshops.filters.take = TREE_TAKE
 
   // 工作日历列表（仅供"默认工作日历"在详情面板解析编码→名称）。
-  const calendars = useMasterDataResource('work-calendar')
-  calendars.filters.take = TREE_TAKE
+  const calendars = useMasterDataResource('work-calendar', { all: true })
 
   // 归属 / 日历 编码 → 名称解析（详情面板显示名称而非裸编码；列表加载后 computed 实时更新）。
   const siteNameByCode = computed(

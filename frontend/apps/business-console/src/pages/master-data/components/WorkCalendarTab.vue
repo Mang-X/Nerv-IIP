@@ -127,7 +127,7 @@ const deleteConfirmOpen = defineModel<View['deleteConfirmOpen']>('deleteConfirmO
 
 <template>
   <NvTabsContent value="work-calendar" class="grid gap-3">
-    <NvToolbar v-model:search="calKeyword" search-placeholder="在当前页内筛选日历编码、名称">
+    <NvToolbar v-model:search="calKeyword" search-placeholder="搜索日历编码、名称">
       <template #filters>
         <IncludeDisabledFilter v-model="includeDisabled" />
       </template>

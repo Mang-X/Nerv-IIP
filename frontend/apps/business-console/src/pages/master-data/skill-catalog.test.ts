@@ -151,3 +151,45 @@ describe('技能目录停用原因', () => {
     )
   })
 })
+
+describe('持证技能创建', () => {
+  it.each(['', '0', '12.5', '12'])('有效期 %j 只接受正整数月', async (months) => {
+    stub.createSkill.mockClear()
+    const wrapper = mount(SkillCatalogPage, {
+      global: {
+        stubs: {
+          ...layoutStub,
+          ...dialogStubs,
+          NvCombobox: {
+            emits: ['update:modelValue'],
+            template: `<input @input="$emit('update:modelValue', $event.target.value)" />`,
+          },
+          NvCheckbox: {
+            emits: ['update:modelValue'],
+            template: `<input type="checkbox" @change="$emit('update:modelValue', $event.target.checked)" />`,
+          },
+        },
+      },
+    })
+    await findButton(wrapper, '新建技能')!.trigger('click')
+    await wrapper.get('#skill-name').setValue('高压电工')
+    await wrapper.get('#skill-group').setValue('设备维护')
+    await wrapper.get('#skill-cert').setValue(true)
+    await wrapper.get('#skill-validity').setValue(months)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    if (months === '12') {
+      expect(stub.createSkill).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requiresCertification: true,
+          validityMonths: 12,
+        }),
+      )
+    } else {
+      expect(stub.createSkill).not.toHaveBeenCalled()
+      expect(wrapper.text()).toContain('证书有效期为正整数月')
+    }
+    wrapper.unmount()
+  })
+})

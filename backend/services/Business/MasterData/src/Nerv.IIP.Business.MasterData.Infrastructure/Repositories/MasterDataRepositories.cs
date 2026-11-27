@@ -274,6 +274,7 @@ public sealed class ProductCategoryRepository(ApplicationDbContext context)
 public interface ISkillRepository : IRepository<Skill, SkillId>
 {
     Task<bool> ExistsAsync(string organizationId, string environmentId, string skillCode, CancellationToken cancellationToken = default);
+    Task<bool?> GetEnabledAsync(string organizationId, string environmentId, string skillCode, CancellationToken cancellationToken);
 }
 
 public sealed class SkillRepository(ApplicationDbContext context)
@@ -285,6 +286,12 @@ public sealed class SkillRepository(ApplicationDbContext context)
             x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.SkillCode == skillCode,
             cancellationToken);
     }
+
+    public Task<bool?> GetEnabledAsync(string organizationId, string environmentId, string skillCode, CancellationToken cancellationToken) =>
+        DbContext.Skills
+            .Where(x => x.OrganizationId == organizationId && x.EnvironmentId == environmentId && x.SkillCode == skillCode)
+            .Select(x => (bool?)!x.Disabled)
+            .SingleOrDefaultAsync(cancellationToken);
 }
 
 public interface ISiteRepository : IRepository<Site, SiteId>

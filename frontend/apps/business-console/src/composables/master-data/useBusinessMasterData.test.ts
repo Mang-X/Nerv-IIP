@@ -194,6 +194,18 @@ describe('business master data composables', () => {
     })
   })
 
+  it('forwards the SKU keyword in the generated paged query', () => {
+    const { filters } = useBusinessSkus()
+    filters.keyword = 'SKU-20261127-000001'
+    filters.take = 10
+
+    coladaState.queryFactoriesById.get('listBusinessConsoleSkus')?.()
+
+    expect(listBusinessConsoleSkusQueryOptions).toHaveBeenLastCalledWith({
+      query: expect.objectContaining({ keyword: 'SKU-20261127-000001', skip: 0, take: 10 }),
+    })
+  })
+
   it('creates SKUs and invalidates the SKU list query', async () => {
     const { create } = useCreateSku()
 

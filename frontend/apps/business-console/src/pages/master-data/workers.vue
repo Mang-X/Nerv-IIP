@@ -66,7 +66,7 @@ const {
   workersTotal,
 } = useWorkerRegistry()
 
-const { items: departments } = useMasterDataResource('department')
+const { items: departments } = useMasterDataResource('department', { all: true })
 
 /** 在岗状态受控值——与后端 Worker.EmploymentStatus 常量一一对应。 */
 const EMPLOYMENT_STATUS = [
@@ -84,18 +84,24 @@ function statusTone(value?: string | null) {
 const search = computed({
   get: () => filters.keyword ?? '',
   set: (value: string) => {
-    filters.keyword = value.trim() ? value.trim() : undefined
+    filters.pageIndex = 1
+    filters.keyword = value.trim() || undefined
+    page.value = 1
   },
 })
 
 const departmentFilter = shallowRef('all')
 watch(departmentFilter, (value) => {
-  filters.departmentCode = value === 'all' ? undefined : value
   filters.pageIndex = 1
+  filters.departmentCode = value === 'all' ? undefined : value
+  page.value = 1
 })
 
 const page = ref(1)
 const pageSize = ref('20')
+watch(pageSize, () => {
+  page.value = 1
+})
 watch([page, pageSize], () => {
   filters.pageIndex = page.value
   filters.pageSize = Number(pageSize.value) || 20

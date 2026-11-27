@@ -76,7 +76,12 @@ export function useCodeRulesPage() {
     return type ? (SEGMENT_TYPE_LABEL[type] ?? type) : '—'
   }
   function scopeLabel(scope?: ScopeDimension | null) {
-    return scope ? (SCOPE_LABEL[scope] ?? scope) : '—'
+    return scope
+      ? scope
+          .split(', ')
+          .map((part) => SCOPE_LABEL[part as ScopeDimension] ?? part)
+          .join(' / ')
+      : '—'
   }
   function resetLabel(reset?: ResetPeriod | null) {
     return reset ? (RESET_LABEL[reset] ?? reset) : '不重置'
@@ -287,8 +292,8 @@ export function useCodeRulesPage() {
   const formPreview = ref('')
   const formPreviewPending = ref(false)
 
-  function parseNumber(value: string): number | undefined {
-    const trimmed = value.trim()
+  function parseNumber(value: string | number): number | undefined {
+    const trimmed = String(value).trim()
     if (!trimmed) return undefined
     const parsed = Number(trimmed)
     return Number.isFinite(parsed) ? parsed : undefined

@@ -63,9 +63,9 @@ definePage({
 const matrix = usePersonnelSkillMatrix()
 const skillAssignment = usePersonnelSkillAssignment()
 // 技能目录已升为主数据（#402，「基础数据 › 技能目录」）：登记选技能 + 矩阵列头解析中文名。
-const { skills: skillCatalog, refresh: refreshSkillCatalog } = useSkillCatalog()
+const { skills: skillCatalog, refresh: refreshSkillCatalog } = useSkillCatalog(true)
 // 工人目录（IAM 用户）：把行 userId 解析成工人姓名（工号 · 部门）。
-const workerDir = useBusinessWorkers()
+const workerDir = useBusinessWorkers({}, true)
 
 // 技能等级取自字典 `skill-level`（系统枚举），Phase 1 用前端常量兜底中文。
 const SKILL_LEVELS = [

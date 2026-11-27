@@ -79,11 +79,8 @@ const canManage = computed(() =>
   (auth.principal?.permissionCodes ?? []).includes(P.masterDataResourcesManage),
 )
 
-const workCenters = useBusinessMasterDataResources('work-center')
-const skus = useBusinessMasterDataResources('sku')
-const CATALOG_PAGE_SIZE = 50
-workCenters.filters.take = CATALOG_PAGE_SIZE
-skus.filters.take = CATALOG_PAGE_SIZE
+const workCenters = useBusinessMasterDataResources('work-center', { all: true })
+const skus = useBusinessMasterDataResources('sku', { all: true })
 const workCenterSearch = ref('')
 const skuSearch = ref('')
 watchDebounced(

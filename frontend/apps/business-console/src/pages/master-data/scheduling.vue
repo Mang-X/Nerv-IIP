@@ -130,7 +130,7 @@ const {
 
       <!-- 班次 -->
       <NvTabsContent value="shift" class="grid gap-3">
-        <NvToolbar v-model:search="shiftKeyword" search-placeholder="在当前页内筛选班次编码、名称">
+        <NvToolbar v-model:search="shiftKeyword" search-placeholder="搜索班次编码、名称">
           <template #filters>
             <IncludeDisabledFilter v-model="includeDisabled" />
           </template>

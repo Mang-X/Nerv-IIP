@@ -4,6 +4,7 @@ import {
   createBusinessConsoleWorkerMutationOptions,
   listBusinessConsolePersonnelSkillMatrixQueryOptions,
   listBusinessConsoleTeamMembersQueryOptions,
+  listBusinessConsoleWorkers,
   listBusinessConsoleWorkersQueryOptions,
   removeBusinessConsoleTeamMemberMutationOptions,
   type BusinessConsoleCreateWorkerRequest,
@@ -26,6 +27,7 @@ import {
 import {
   DEFAULT_TAKE,
   defaultContext,
+  fetchCompleteCatalog,
   ignoreBackgroundError,
   isBusinessQuery,
   optionalQuery,
@@ -96,7 +98,7 @@ function workerTotal(envelope: BusinessConsoleWorkerDirectoryEnvelope | undefine
  * 部门 / 班组 / 工作中心 / 技能 / 在岗状态过滤——派工候选就是靠 workCenterCode 收敛的。
  * UI 只呈现姓名 / 工号 / 部门 / 班组 / 技能，userId 仅作为绑定值。
  */
-export function useBusinessWorkers(initial: Partial<WorkerDirectoryFilters> = {}) {
+export function useBusinessWorkers(initial: Partial<WorkerDirectoryFilters> = {}, all = false) {
   const filters = bindBusinessContext(
     reactive<WorkerDirectoryFilters>({
       organizationId: '',
@@ -115,29 +117,43 @@ export function useBusinessWorkers(initial: Partial<WorkerDirectoryFilters> = {}
     }),
   )
 
-  const workersQuery = useQuery(() =>
-    withBusinessContextEnabled(
-      listBusinessConsoleWorkersQueryOptions({
-        query: {
-          organizationId: filters.organizationId,
-          environmentId: filters.environmentId,
-          ...optionalQuery('keyword', filters.keyword),
-          ...optionalQuery('userId', filters.userId),
-          ...optionalQuery('departmentCode', filters.departmentCode),
-          ...optionalQuery('teamCode', filters.teamCode),
-          ...optionalQuery('workshopCode', filters.workshopCode),
-          ...optionalQuery('workCenterCode', filters.workCenterCode),
-          ...optionalQuery('skillCode', filters.skillCode),
-          ...optionalQuery('employmentStatus', filters.employmentStatus),
-          ...optionalQuery('includeDisabled', filters.includeDisabled),
-          ...optionalQuery('includeLoginNames', filters.includeLoginNames),
-          pageIndex: filters.pageIndex,
-          pageSize: filters.pageSize,
-        },
-      }),
+  const workersQuery = useQuery(() => {
+    const query = {
+      organizationId: filters.organizationId,
+      environmentId: filters.environmentId,
+      ...optionalQuery('keyword', filters.keyword),
+      ...optionalQuery('userId', filters.userId),
+      ...optionalQuery('departmentCode', filters.departmentCode),
+      ...optionalQuery('teamCode', filters.teamCode),
+      ...optionalQuery('workshopCode', filters.workshopCode),
+      ...optionalQuery('workCenterCode', filters.workCenterCode),
+      ...optionalQuery('skillCode', filters.skillCode),
+      ...optionalQuery('employmentStatus', filters.employmentStatus),
+      ...optionalQuery('includeDisabled', filters.includeDisabled),
+      ...optionalQuery('includeLoginNames', filters.includeLoginNames),
+      pageIndex: filters.pageIndex,
+      pageSize: filters.pageSize,
+    }
+    const options = listBusinessConsoleWorkersQueryOptions({ query })
+    return withBusinessContextEnabled(
+      all
+        ? {
+            ...options,
+            key: [...options.key, 'all'],
+            query: ({ signal }): Promise<BusinessConsoleWorkerDirectoryEnvelope> =>
+              fetchCompleteCatalog<BusinessConsoleWorkerDirectoryItem>(async (skip) => {
+                const { data } = await listBusinessConsoleWorkers({
+                  query: { ...query, pageIndex: Math.floor(skip / query.pageSize) + 1 },
+                  signal,
+                  throwOnError: true,
+                })
+                return data
+              }),
+          }
+        : options,
       filters,
-    ),
-  )
+    )
+  })
 
   return {
     filters,

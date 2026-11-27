@@ -157,7 +157,10 @@ describe('编码规则版本的变更原因', () => {
 
     expect(stub.createRuleVersion).toHaveBeenCalledWith(
       'sku',
-      expect.objectContaining({ changeReason: '调整物料标签编号规则' }),
+      expect.objectContaining({
+        changeReason: '调整物料标签编号规则',
+        segments: expect.arrayContaining([expect.objectContaining({ type: 'sequence', width: 4 })]),
+      }),
     )
     expect(stub.notifySuccess).toHaveBeenCalledTimes(1)
     expect(wrapper!.find('#cr-reason').exists()).toBe(false)

@@ -72,6 +72,7 @@ export {
   archiveBusinessConsoleSkill,
   listBusinessConsoleMasterDataResources,
   getBusinessConsoleMasterDataResourceDetail,
+  listBusinessConsoleProductCategories,
   listBusinessConsoleSkills,
   listBusinessConsoleWorkers,
 } from '../generated/business-console/sdk.gen'

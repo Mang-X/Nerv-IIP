@@ -14,7 +14,6 @@ import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import type { DirectoryCreatedItem } from '@/components/business/directoryCreators'
 import {
   useBusinessMasterDataResources,
-  useBusinessPartners,
   useCreateMasterDataResource,
   useMasterDataResourceActions,
 } from '@/composables/master-data'
@@ -83,8 +82,8 @@ const returnFocus = useReturnFocusOnClose()
 const creation =
   useCreateMasterDataResource<BusinessConsoleRegisterDeviceAssetRequest>('device-asset')
 const deviceActions = useMasterDataResourceActions('device-asset')
-const sites = useBusinessMasterDataResources('site')
-const devices = useBusinessMasterDataResources('device-asset')
+const sites = useBusinessMasterDataResources('site', { all: true })
+const devices = useBusinessMasterDataResources('device-asset', { all: true })
 
 const editingCode = props.editing?.code ?? null
 const showErrors = shallowRef(false)
@@ -145,6 +144,7 @@ function codeOptions(rows: BusinessConsoleResourceItem[], current: string) {
 // 设备类别取数据字典 `asset-class` CodeSet；字典为空时给空态引导，不编造码值。
 const assetClassCatalog = useBusinessMasterDataResources('reference-data', {
   codeSet: 'asset-class',
+  all: true,
 })
 const assetClassOptions = computed(() =>
   codeOptions(
@@ -154,7 +154,9 @@ const assetClassOptions = computed(() =>
 )
 
 // 供应商只列带 supplier 角色的业务伙伴（伙伴可同时是客户与供应商，按角色包含关系筛）。
-const { partners, partnersPending } = useBusinessPartners()
+const suppliers = useBusinessMasterDataResources('business-partner', { all: true })
+suppliers.filters.partnerType = 'supplier'
+const { resources: partners, resourcesPending: partnersPending } = suppliers
 const supplierOptions = computed(() =>
   codeOptions(
     partners.value

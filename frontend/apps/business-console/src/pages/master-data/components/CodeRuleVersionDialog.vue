@@ -99,6 +99,20 @@ defineProps<{
                 ><NvSelectValue placeholder="选择范围"
               /></NvSelectTrigger>
               <NvSelectContent>
+                <NvSelectItem
+                  v-if="form.scope && !SCOPE_OPTIONS.some((option) => option.value === form.scope)"
+                  :value="form.scope"
+                >
+                  {{
+                    form.scope
+                      .split(', ')
+                      .map(
+                        (part) =>
+                          SCOPE_OPTIONS.find((option) => option.value === part)?.label ?? part,
+                      )
+                      .join(' / ')
+                  }}
+                </NvSelectItem>
                 <NvSelectItem v-for="o in SCOPE_OPTIONS" :key="o.value" :value="o.value">{{
                   o.label
                 }}</NvSelectItem>

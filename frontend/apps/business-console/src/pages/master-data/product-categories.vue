@@ -66,11 +66,13 @@ const {
   updateCategory,
   updatePending,
 } = useProductCategories()
+const { categories: categoryCandidates, refresh: refreshCategoryCandidates } =
+  useProductCategories(true)
 
 // 上级分类名称解析：编码 → 分类名，用于列表与表单显名。
 const categoryNameByCode = computed(() => {
   const map = new Map<string, string>()
-  for (const item of categories.value) {
+  for (const item of categoryCandidates.value) {
     if (item.categoryCode) map.set(item.categoryCode, item.categoryName ?? item.categoryCode)
   }
   return map
@@ -84,12 +86,17 @@ function parentLabel(row: ProductCategoryItem) {
 const search = computed({
   get: () => filters.search ?? '',
   set: (value: string) => {
-    filters.search = value.trim() ? value : undefined
+    filters.skip = 0
+    page.value = 1
+    filters.search = value.trim() || undefined
   },
 })
 
 const page = ref(1)
 const pageSize = ref('10')
+watch(pageSize, () => {
+  page.value = 1
+})
 const pageSizeNumber = computed(() => Number(pageSize.value) || 10)
 watch(
   [page, pageSize],
@@ -142,7 +149,7 @@ const canSubmit = computed(() => nameValid.value)
 
 // 上级分类候选：仅取有编码的分类，编辑时排除自身避免自引用。
 const parentOptions = computed(() =>
-  categories.value
+  categoryCandidates.value
     .filter((item) => item.categoryCode && item.categoryCode !== editingCode.value)
     .map((item) => ({
       value: item.categoryCode as string,
@@ -191,6 +198,7 @@ async function submitForm() {
       await createCategory(body)
       notifySuccess(`已创建产品分类「${payload.categoryName}」。`)
     }
+    void refreshCategoryCandidates()
     showErrors.value = false
     formOpen.value = false
     editingCode.value = null
@@ -222,6 +230,7 @@ async function confirmArchive() {
   if (!target?.categoryCode || !reason) return
   try {
     await archiveCategory(target.categoryCode, reason)
+    void refreshCategoryCandidates()
     notifySuccess(`分类「${target.categoryName}」已停用。`)
     archiveOpen.value = false
     archiveTarget.value = null

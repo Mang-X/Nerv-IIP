@@ -100,19 +100,7 @@ function rolesLabel(row: BusinessConsoleResourceItem) {
   return labels.length ? labels.join(' / ') : '未分配'
 }
 
-const listRows = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  return partners.value.filter((row) => {
-    const roles = partnerRoles(row)
-    const roleMatched = roleFilter.value === 'all' || roles.includes(roleFilter.value)
-    const kwMatched =
-      !kw ||
-      [row.code, row.displayName, rolesLabel(row), row.taxId].some((value) =>
-        (value ?? '').toLowerCase().includes(kw),
-      )
-    return roleMatched && kwMatched
-  })
-})
+const listRows = partners
 const sortedRows = computed(() => {
   if (!sort.value) return listRows.value
   const { key, direction } = sort.value
@@ -213,6 +201,9 @@ function partnerDetailFields(row: BusinessConsoleResourceItem) {
 }
 
 watch([keyword, roleFilter, pageSize], () => {
+  filters.skip = 0
+  filters.keyword = keyword.value.trim() || undefined
+  filters.partnerType = roleFilter.value === 'all' ? undefined : roleFilter.value
   page.value = 1
 })
 
@@ -514,7 +505,7 @@ function formatCreditLimit(
       </template>
     </NvPageHeader>
 
-    <NvToolbar v-model:search="keyword" search-placeholder="在当前页内筛选编码、名称、角色">
+    <NvToolbar v-model:search="keyword" search-placeholder="搜索编码、名称、税号">
       <template #filters>
         <IncludeDisabledFilter v-model="includeDisabled" />
         <NvSelect v-model="roleFilter">

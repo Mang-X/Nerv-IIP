@@ -72,7 +72,7 @@ function toTimeInput(value?: string | null) {
   return value.slice(0, 5)
 }
 function toTimePayload(value: string) {
-  const v = value.trim()
+  const v = String(value).trim()
   if (!v) return undefined
   return v.length === 5 ? `${v}:00` : v
 }

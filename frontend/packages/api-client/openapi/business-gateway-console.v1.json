@@ -23223,6 +23223,14 @@
               "default": 100,
               "nullable": false
             }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "responses": {
