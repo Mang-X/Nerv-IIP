@@ -69632,6 +69632,38 @@
           "totalAmount": {
             "type": "number",
             "format": "decimal"
+          },
+          "lines": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSalesOrderLineItem"
+            }
+          }
+        }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSalesOrderLineItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "lineNo": {
+            "type": "string"
+          },
+          "skuCode": {
+            "type": "string"
+          },
+          "uomCode": {
+            "type": "string"
+          },
+          "allocatedQuantity": {
+            "type": "number",
+            "description": "已分配数量。由已开立发货单占用，包含其中已发运的数量，以订单行计量单位计。",
+            "format": "decimal"
+          },
+          "shippedQuantity": {
+            "type": "number",
+            "description": "实际已发运数量。由 WMS 确认后累计，以订单行计量单位计。",
+            "format": "decimal"
           }
         }
       },

@@ -775,6 +775,15 @@ public sealed class BusinessGatewayOpenApiTests
             "purchaseOrderNo",
             "lines");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/sales-orders", "get", "listBusinessConsoleErpSalesOrders");
+        var salesOrderProperties = FindSchemaBySuffix(document, "BusinessConsoleErpSalesOrderItem").GetProperty("properties");
+        Assert.Equal("array", salesOrderProperties.GetProperty("lines").GetProperty("type").GetString());
+        var salesLineProperties = FindSchemaBySuffix(document, "BusinessConsoleErpSalesOrderLineItem").GetProperty("properties");
+        var allocatedQuantity = salesLineProperties.GetProperty("allocatedQuantity");
+        var shippedQuantity = salesLineProperties.GetProperty("shippedQuantity");
+        Assert.Equal("number", allocatedQuantity.GetProperty("type").GetString());
+        Assert.Equal("number", shippedQuantity.GetProperty("type").GetString());
+        Assert.Contains("已分配数量", allocatedQuantity.GetProperty("description").GetString(), StringComparison.Ordinal);
+        Assert.Contains("实际已发运数量", shippedQuantity.GetProperty("description").GetString(), StringComparison.Ordinal);
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/opportunities", "get", "listBusinessConsoleErpOpportunities");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/opportunities", "post", "openBusinessConsoleErpOpportunity");
         AssertOperationId(paths, "/api/business-console/v1/erp/sales/quotations", "get", "listBusinessConsoleErpQuotations");

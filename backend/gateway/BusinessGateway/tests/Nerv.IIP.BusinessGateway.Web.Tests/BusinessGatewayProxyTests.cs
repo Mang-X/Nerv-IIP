@@ -8613,6 +8613,59 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Erp_sales_orders_facade_forwards_allocated_and_shipped_line_quantities()
+    {
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new
+            {
+                items = new[]
+                {
+                    new
+                    {
+                        salesOrderNo = "SO-001",
+                        customerCode = "CUST-001",
+                        siteCode = "SITE-001",
+                        status = "released",
+                        totalAmount = 1200m,
+                        lines = new[]
+                        {
+                            new { lineNo = "10", skuCode = "SKU-001", uomCode = "EA", allocatedQuantity = 12m, shippedQuantity = 0m },
+                            new { lineNo = "20", skuCode = "SKU-002", uomCode = "KG", allocatedQuantity = 8m, shippedQuantity = 2.5m },
+                        },
+                    },
+                },
+                total = 1,
+            },
+            success = true,
+            message = string.Empty,
+            code = 0,
+        }));
+        var auth = FakeBusinessGatewayAuthorizationClient.Allowed();
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.AddSingleton<IHttpMessageHandlerBuilderFilter>(
+                new NamedPrimaryHandlerFilter("IBusinessErpClient", handler));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.GetAsync(
+            "/api/business-console/v1/erp/sales/sales-orders?organizationId=org-001&environmentId=env-dev");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(BusinessGatewayPermissions.ErpSalesRead, auth.LastRequirement!.PermissionCode);
+        Assert.Equal("/api/business/v1/erp/sales-orders?organizationId=org-001&environmentId=env-dev&skip=0&take=100",
+            Assert.Single(handler.Requests).RequestUri!.PathAndQuery);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var lines = document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("lines");
+        Assert.Equal(12m, lines[0].GetProperty("allocatedQuantity").GetDecimal());
+        Assert.Equal(0m, lines[0].GetProperty("shippedQuantity").GetDecimal());
+        Assert.Equal(8m, lines[1].GetProperty("allocatedQuantity").GetDecimal());
+        Assert.Equal(2.5m, lines[1].GetProperty("shippedQuantity").GetDecimal());
+    }
+
+    [Fact]
     public async Task Erp_sales_order_create_forwards_real_site_code()
     {
         var erp = new RecordingErpClient();

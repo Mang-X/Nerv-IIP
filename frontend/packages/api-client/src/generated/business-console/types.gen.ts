@@ -8744,6 +8744,21 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleE
     siteCode?: string;
     status?: string;
     totalAmount?: number;
+    lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSalesOrderLineItem> | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleErpSalesOrderLineItem = {
+    lineNo?: string;
+    skuCode?: string;
+    uomCode?: string;
+    /**
+     * 已分配数量。由已开立发货单占用，包含其中已发运的数量，以订单行计量单位计。
+     */
+    allocatedQuantity?: number;
+    /**
+     * 实际已发运数量。由 WMS 确认后累计，以订单行计量单位计。
+     */
+    shippedQuantity?: number;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleErpOpportunityListResponse = NetCorePalExtensionsDtoResponseData & {

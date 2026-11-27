@@ -18,6 +18,7 @@ using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Finance;
+using Nerv.IIP.Business.Erp.Web.Application.Queries.SalesFinance;
 using Nerv.IIP.Business.Erp.Web.Application.Seed;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Inventory;
@@ -170,6 +171,16 @@ public sealed class ErpCostAccountingPostgresAcceptanceTests
             .ToListAsync();
         Assert.Equal([1m, 0m, 0m, 0m], orders.Select(x => Assert.Single(x.Lines).ShippedQuantity));
         Assert.All(orders, order => Assert.Equal(2m, Assert.Single(order.Lines).DeliveredQuantity));
+
+        var read = await new ListSalesOrdersQueryHandler(db).Handle(
+            new ListSalesOrdersQuery("org-1", "env-1", "released"), CancellationToken.None);
+        Assert.Equal(2, read.Total);
+        var lines = read.Items.ToDictionary(order => order.SalesOrderNo, order => Assert.Single(order.Lines!));
+        Assert.Equal(2m, lines["SO-1"].AllocatedQuantity);
+        Assert.Equal(1m, lines["SO-1"].ShippedQuantity);
+        Assert.Equal(2m, lines["SO-2"].AllocatedQuantity);
+        Assert.Equal(0m, lines["SO-2"].ShippedQuantity);
+
         Assert.Equal(3, await db.DeliveryOrders.CountAsync(x => x.Status == "released"));
         Assert.Single(await db.Database.GetAppliedMigrationsAsync(), x => x == target);
         Assert.Empty(await deadLetters.ListAsync(

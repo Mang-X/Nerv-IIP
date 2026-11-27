@@ -1440,7 +1440,7 @@
       "route": "/api/business/v1/erp/sales-orders",
       "operationId": "listErpSalesOrders",
       "classification": "exposed",
-      "note": "#2121：复用组合式租户、关键词与分页 criteria；保留公开字段、默认值与销售订单专属状态语义。",
+      "note": "#2121：复用组合式租户、关键词与分页 criteria；保留公开字段、默认值与销售订单专属状态语义。 #1389：订单项新增可选行明细，分别透传 ERP 持久化的开单分配与实际发运数量。",
       "gateways": [
         "business"
       ],
