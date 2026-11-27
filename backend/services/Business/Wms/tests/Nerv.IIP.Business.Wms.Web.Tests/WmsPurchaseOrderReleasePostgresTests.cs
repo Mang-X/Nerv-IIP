@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using DotNetCore.CAP;
 using MediatR;
 using Microsoft.AspNetCore.Hosting;
@@ -28,7 +30,9 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
     {
         await using var fixture = await ReplayFixture.CreateAsync(settings: Settings());
         var message = Released();
-        await fixture.ReplayAsync(await fixture.AddLetterAsync(message, Consumer), "replayed");
+        var letter = await fixture.AddLetterAsync(message, Consumer);
+        await fixture.ReplayAsync(letter, "replayed");
+        await fixture.ReplayAsync(letter, "replayed");
 
         using var scope = fixture.Factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -140,31 +144,70 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
                 });
             });
             using var scope = factory.Services.CreateScope();
-            var connection = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Database.GetDbConnection();
-            Assert.Equal(database.DatabaseName, connection.Database);
+            var persisted = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Equal(database.DatabaseName, persisted.Database.GetDbConnection().Database);
             await CapTestHost.WaitForCapBootstrapAsync(factory.Services);
-            await scope.ServiceProvider.GetRequiredService<ICapPublisher>()
-                .PublishAsync(PurchaseOrderReleasedV2IntegrationEvent.Topic("Development"), Released());
+            var publisher = scope.ServiceProvider.GetRequiredService<ICapPublisher>();
+            var topic = PurchaseOrderReleasedV2IntegrationEvent.Topic("Development");
+            await publisher.PublishAsync(topic, Released(), Headers("wms"));
+            await publisher.PublishAsync(topic, WireRelease("direct", "PO-DIRECT"), Headers("direct"));
+            await publisher.PublishAsync(topic, WireRelease(null, "PO-LEGACY"), Headers("legacy"));
+            await publisher.PublishAsync(topic, WireRelease("unknown", "PO-UNKNOWN"), Headers("unknown"));
+
             await Eventually.AssertAsync(
-                condition: "WMS persists the canonical PO release as an expected-only receipt",
+                condition: "CAP completes the supported authorities and fails the unknown authority",
                 assertion: async token =>
                 {
                     using var read = factory.Services.CreateScope();
                     var db = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                    var orders = await db.InboundOrders.AsNoTracking().Include(x => x.Lines)
-                        .Where(x => x.OrganizationId == "org-replay" && x.EnvironmentId == "env-replay"
-                            && x.InboundOrderNo == "PO-123")
-                        .ToArrayAsync(token);
-                    var line = Assert.Single(Assert.Single(orders).Lines);
-                    Assert.Equal(12.5m, line.ExpectedQuantity);
-                    Assert.Equal(0m, line.ReceivedQuantity);
+                    var statuses = await db.Database.SqlQueryRaw<AuthorityDelivery>("""
+                        SELECT "Content"::jsonb -> 'Headers' ->> 'test-authority' AS "Authority", "StatusName" AS "Status"
+                        FROM cap.received WHERE "Name" = {0}
+                        """, topic).ToListAsync(token);
+                    Assert.Contains(new AuthorityDelivery("wms", "Succeeded"), statuses);
+                    Assert.Contains(new AuthorityDelivery("direct", "Succeeded"), statuses);
+                    Assert.Contains(new AuthorityDelivery("legacy", "Succeeded"), statuses);
+                    Assert.Contains(new AuthorityDelivery("unknown", "Failed"), statuses);
                 },
                 options: new EventuallyOptions(TimeSpan.FromSeconds(60), TimeSpan.FromMilliseconds(250), []));
+
+            var order = Assert.Single(await persisted.InboundOrders.AsNoTracking().Include(x => x.Lines).ToArrayAsync());
+            Assert.Equal("PO-123", order.InboundOrderNo);
+            var line = Assert.Single(order.Lines);
+            Assert.Equal(12.5m, line.ExpectedQuantity);
+            Assert.Equal(0m, line.ReceivedQuantity);
+            Assert.Empty(await persisted.InventoryMovementRequests.ToArrayAsync());
         }
         finally
         {
             await database.DropAsync();
         }
+    }
+
+    private sealed record AuthorityDelivery(string Authority, string Status);
+
+    private static Dictionary<string, string?> Headers(string authority) => new() { ["test-authority"] = authority };
+
+    private static JsonObject WireRelease(string? authority, string orderNo)
+    {
+        var release = Released();
+        var wire = JsonSerializer.SerializeToNode(release with
+        {
+            EventId = orderNo,
+            IdempotencyKey = orderNo,
+            Payload = release.Payload with { PurchaseOrderNo = orderNo }
+        })!.AsObject();
+        var payload = wire["Payload"]!.AsObject();
+        if (authority is null)
+        {
+            payload.Remove("ReceivingAuthority");
+        }
+        else
+        {
+            payload["ReceivingAuthority"] = authority;
+        }
+
+        return wire;
     }
 
     private static async Task DeliverAsync(ReplayFixture fixture, PurchaseOrderReleasedV2IntegrationEvent message)
@@ -197,5 +240,8 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
         DateTimeOffset.Parse("2026-10-01T00:00:00Z"), ErpIntegrationEventSources.BusinessErp,
         "corr-123", "cause-123", "org-replay", "env-replay", "system:erp", "release-key-123",
         new("01800000-0000-7000-8000-000000000123", "PO-123", "SUPPLIER", "SITE",
-            [new("020", "SKU-A", "kg", 12.5m, new DateOnly(2026, 10, 12))]));
+            [new("020", "SKU-A", "kg", 12.5m, new DateOnly(2026, 10, 12))])
+        {
+            ReceivingAuthority = PurchaseReceiptInventoryPostingRoute.Wms
+        });
 }

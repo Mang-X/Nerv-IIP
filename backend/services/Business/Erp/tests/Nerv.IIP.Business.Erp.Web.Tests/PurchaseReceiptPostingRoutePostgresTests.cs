@@ -361,15 +361,18 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
             var db = setup.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var previousMigration = db.Database.GetMigrations().TakeWhile(x => !x.EndsWith("_AddPurchaseReceiptInventoryPostingRoute", StringComparison.Ordinal)).Last();
             await db.GetService<IMigrator>().MigrateAsync(previousMigration);
-            var order = PurchaseOrder.Create("org-route", "env-route", "PO-legacy", "SUP-001", "SITE-001",
-                [new PurchaseOrderLineDraft("10", "SKU-001", "pcs", 2m, 12.5m, new DateOnly(2026, 9, 1))]);
-            order.MarkApprovalRequested("approval-legacy");
-            order.ReleaseAfterApproval("approval-legacy");
-            order.RegisterReceipt("10", 2m);
-            db.PurchaseOrders.Add(order);
-            await db.SaveChangesAsync();
-            // 升级前旧表没有路径列；保留旧生产指纹，不能用新处理器生成“历史”样本。
+            // 历史样本使用旧表列，避免当前 EF 模型向旧表写入新增列。
             await db.Database.ExecuteSqlRawAsync("""
+                INSERT INTO erp.purchase_orders
+                    (id, organization_id, environment_id, purchase_order_no, supplier_code, site_code,
+                     currency_code, status, version, approval_chain_id, total_amount, created_at_utc)
+                VALUES ('00000000-0000-0000-0000-000000002118', 'org-route', 'env-route', 'PO-legacy',
+                        'SUP-001', 'SITE-001', 'CNY', 'Closed', 1, 'approval-legacy', 25, '2026-09-01T00:00:00Z');
+                INSERT INTO erp.purchase_order_lines
+                    (id, purchase_order_id, line_no, sku_code, uom_code, ordered_quantity, received_quantity,
+                     unit_price, promised_date, over_receipt_tolerance_percent, under_receipt_tolerance_percent, final_delivery)
+                VALUES ('00000000-0000-0000-0000-000000002119', '00000000-0000-0000-0000-000000002118',
+                        '10', 'SKU-001', 'pcs', 2, 2, 12.5, '2026-09-01', 0, 0, false);
                 INSERT INTO erp.purchase_receipts
                     (id, organization_id, environment_id, purchase_receipt_no, purchase_order_no,
                      supplier_code, site_code, currency_code, exchange_rate, quality_status, status, recorded_at_utc)
@@ -392,6 +395,8 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
 
         await using var read = provider.CreateAsyncScope();
         var readDb = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var legacyOrder = await readDb.PurchaseOrders.SingleAsync();
+        Assert.Equal(PurchaseReceiptInventoryPostingRoute.Direct, legacyOrder.ReceivingAuthority);
         var receipt = await readDb.PurchaseReceipts.SingleAsync();
         Assert.Equal(PurchaseReceiptInventoryPostingRoute.Direct, receipt.InventoryPostingRoute);
         var source = await new GetPurchaseReceiptSourceDocumentQueryHandler(readDb).Handle(

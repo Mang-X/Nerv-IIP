@@ -45,7 +45,10 @@ internal sealed class PurchaseOrderReleaseOutbox(
                 order.Lines.OrderBy(line => line.LineNo, StringComparer.Ordinal)
                     .Select(line => new PurchaseOrderReleasedV2LinePayload(
                         line.LineNo, line.SkuCode, line.UomCode, line.OrderedQuantity, line.PromisedDate))
-                    .ToArray()));
+                    .ToArray())
+            {
+                ReceivingAuthority = order.ReceivingAuthority,
+            });
 
         return publisher.PublishAsync(PurchaseOrderReleasedV2IntegrationEvent.Topic(environment.EnvironmentName),
             snapshot, cancellationToken: cancellationToken);

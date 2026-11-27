@@ -51,6 +51,18 @@ public sealed class ErpPurchaseOrderReleasedIntegrationEventHandler(
         }
 
         var payload = message.Payload;
+        if (payload.ReceivingAuthority == PurchaseReceiptInventoryPostingRoute.Direct)
+        {
+            return;
+        }
+
+        if (payload.ReceivingAuthority != PurchaseReceiptInventoryPostingRoute.Wms)
+        {
+            await RejectAsync(message, "invalid-purchase-order-receiving-authority",
+                "Purchase order release has an unsupported receiving authority.", token);
+            return;
+        }
+
         var number = payload.PurchaseOrderNo;
         await PurchaseOrderInboundLock.AcquireAsync(db, message.OrganizationId, message.EnvironmentId, number, token);
         var candidates = await Candidates(db, message).ToListAsync(token);
@@ -86,7 +98,8 @@ public sealed class ErpPurchaseOrderReleasedIntegrationEventHandler(
     internal static async Task<bool> HasPersistedReleaseAsync(
         ApplicationDbContext db, PurchaseOrderReleasedV2IntegrationEvent message, CancellationToken token)
     {
-        if (message.SourceService != ErpIntegrationEventSources.BusinessErp || !IsValid(message))
+        if (message.SourceService != ErpIntegrationEventSources.BusinessErp || !IsValid(message)
+            || message.Payload.ReceivingAuthority != PurchaseReceiptInventoryPostingRoute.Wms)
         {
             return false;
         }
