@@ -1,27 +1,21 @@
-/**
- * 库存查询范围（物料 / 单位 / 工厂）的目录、默认值与全厂效期概览。
- *
- * 背景：库存可用量读面（`getBusinessConsoleInventoryAvailability`）是**单物料单单位**的台账
- * 维度查询，后端强制 skuCode + uomCode + siteCode 三者必填，没有「不选物料的全局汇总」。
- * 过去这三项在前端都是空字符串的自由输入框，首屏因此永远不发请求、永远空白。
- *
- * 这里把三项拆成三种不同性质：
- * - **物料**：唯一需要人做的选择，走物料主数据的可搜索选择弹窗，只选不填。
- * - **单位**：不是独立选择项——台账维度上单位由物料决定（原材料按品类是 kg / l，
- *   计件件号才是 pcs），所以跟随所选物料的基本单位自动带出，避免手输错单位查不到货。
- * - **工厂**：绝大多数现场只有一个工厂，默认取工厂主数据的第一条，不劳用户先选。
- */
 import type { EntityPickerOption } from '@nerv-iip/ui'
-import { computed, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { useAuthStore } from '@/stores/auth'
+import { useBusinessContextStore } from '@/stores/businessContext'
 import { useInventoryExpiryAlerts } from './useBusinessInventory'
 import { toBaseUomBySku } from '../master-data/skuBaseUom'
 import { useBusinessMasterDataResources, useBusinessSkus } from '../master-data'
 
-/**
- * 工厂主数据尚未就绪（目录为空 / 加载失败）时的兜底工厂编码。
- * 与库存台账种子写入的站点一致，保证单工厂现场首屏仍能出数；主数据一旦返回工厂就以主数据为准。
- */
-export const FALLBACK_INVENTORY_SITE_CODE = 'SITE-001'
+const siteSelections = reactive(new Map<string, string>())
+const SITE_STORAGE_PREFIX = 'nerv-iip.business-console.inventory-site.v1:'
+
+function storedSite(key: string) {
+  try {
+    return globalThis.localStorage?.getItem(SITE_STORAGE_PREFIX + key)
+  } catch {
+    return undefined
+  }
+}
 
 /** 目录里挑不到「物料主数据」时的取数上限——库存现场的物料目录量级在数百条。 */
 const CATALOG_TAKE = 500
@@ -55,13 +49,9 @@ export function useInventoryScopeCatalog() {
     siteCatalog.resources.value.flatMap((site) => toOption(site.code, site.displayName)),
   )
   const baseUomBySku = toBaseUomBySku(skuCatalog.skus)
-  const defaultSiteCode = computed(
-    () => siteOptions.value[0]?.value ?? FALLBACK_INVENTORY_SITE_CODE,
-  )
 
   return {
     baseUomBySku,
-    defaultSiteCode,
     /**
      * 所选物料的基本单位；目录里查不到就返回空串，绝不猜一个通用单位。
      * 单位是物料主档的事实（钢材 kg、油品 l、计件件号才是 pcs），主档建物料时 baseUomCode 必填，
@@ -80,16 +70,64 @@ export function useInventoryScopeCatalog() {
  * 把目录接到一组库存筛选条件上：工厂缺省填默认工厂，单位始终跟随所选物料。
  * 页面只需要负责让用户选物料。
  */
-export function useInventoryScopeDefaults(filters: InventoryScopeFilters) {
+export function useInventoryScopeDefaults(
+  filters: InventoryScopeFilters,
+  linkedSite: () => string = () => '',
+  options: { rememberSite?: boolean } = {},
+) {
   const catalog = useInventoryScopeCatalog()
 
+  const context = useBusinessContextStore()
+  const auth = useAuthStore()
+  const rememberSite = options.rememberSite ?? true
+  const selectionKey = computed(() =>
+    JSON.stringify([
+      auth.principal?.principalId || auth.sessionId || 'unrestored-session',
+      context.organizationId,
+      context.environmentId,
+    ]),
+  )
+  const localSelection = ref<string>()
   watch(
-    catalog.defaultSiteCode,
-    (siteCode) => {
-      // 深链带进来的工厂优先，不被默认值盖掉。
-      if (!(filters.siteCode ?? '').trim()) filters.siteCode = siteCode
+    [linkedSite, selectionKey],
+    () => {
+      localSelection.value = undefined
     },
-    { immediate: true },
+    { flush: 'sync' },
+  )
+  const isLegal = (site?: string | null) =>
+    catalog.siteOptions.value.some((option) => option.value === site)
+  const siteSelection = computed({
+    get: () => {
+      if (isLegal(localSelection.value)) return localSelection.value!
+      const linked = linkedSite().trim()
+      if (isLegal(linked)) return linked
+      const remembered = rememberSite
+        ? (siteSelections.get(selectionKey.value) ?? storedSite(selectionKey.value))
+        : undefined
+      if (isLegal(remembered)) return remembered!
+      if (isLegal(context.siteCode)) return context.siteCode
+      return catalog.siteOptions.value.length === 1 ? catalog.siteOptions.value[0]!.value : ''
+    },
+    set: (site: string) => {
+      if (!isLegal(site)) return
+      localSelection.value = site
+      if (!rememberSite) return
+      const key = selectionKey.value
+      siteSelections.set(key, site)
+      try {
+        globalThis.localStorage?.setItem(SITE_STORAGE_PREFIX + key, site)
+      } catch {
+        // 内存选择仍可在本次会话继承。
+      }
+    },
+  })
+  watch(
+    siteSelection,
+    (site) => {
+      filters.siteCode = site
+    },
+    { immediate: true, flush: 'sync' },
   )
   watch(
     [() => filters.skuCode, catalog.baseUomBySku],
@@ -100,7 +138,7 @@ export function useInventoryScopeDefaults(filters: InventoryScopeFilters) {
     { immediate: true },
   )
 
-  return catalog
+  return { ...catalog, siteSelection }
 }
 
 /**

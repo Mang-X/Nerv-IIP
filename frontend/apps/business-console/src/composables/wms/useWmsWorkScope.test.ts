@@ -104,7 +104,7 @@ describe('useWmsWorkScope', () => {
     })
   })
 
-  it('只接受 self/work-pool/site，并默认选择后端排序的首项', () => {
+  it('只接受 self/work-pool/site，并继承唯一工厂', () => {
     const scope = useWmsWorkScope('receipts')
 
     expect(scope.principalId.value).toBe('emp049')
@@ -113,9 +113,9 @@ describe('useWmsWorkScope', () => {
       { label: '一号仓库', value: 'site:SITE-001' },
       { label: '我的任务', value: 'self:emp049' },
     ])
-    expect(scope.scopeKey.value).toBe('work-pool:WMS-SITE-001-RECEIVING')
-    expect(scope.scopeKind.value).toBe('work-pool')
-    expect(scope.scopeId.value).toBe('WMS-SITE-001-RECEIVING')
+    expect(scope.scopeKey.value).toBe('site:SITE-001')
+    expect(scope.scopeKind.value).toBe('site')
+    expect(scope.scopeId.value).toBe('SITE-001')
   })
 
   it('切换目录范围时重置分页，并把可信 kind/id 绑定到列表筛选', () => {
@@ -131,21 +131,21 @@ describe('useWmsWorkScope', () => {
 
     expect(filters).toMatchObject({
       skip: 0,
-      scopeKind: 'work-pool',
-      scopeId: 'WMS-SITE-001-RECEIVING',
-    })
-
-    filters.skip = 20
-    scope.scopeKey.value = 'site:SITE-001'
-
-    expect(filters).toMatchObject({
-      skip: 0,
       scopeKind: 'site',
       scopeId: 'SITE-001',
     })
 
+    filters.skip = 20
+    scope.scopeKey.value = 'work-pool:WMS-SITE-001-RECEIVING'
+
+    expect(filters).toMatchObject({
+      skip: 0,
+      scopeKind: 'work-pool',
+      scopeId: 'WMS-SITE-001-RECEIVING',
+    })
+
     // 越权选择（组织全量）被整条忽略：既不会绑上去，也不会把页面卡在无范围状态，
-    // 而是回落到后端授权清单的首项——可信 kind/id 始终来自服务端目录。
+    // 当前合法作业池保持选中。
     scope.scopeKey.value = 'organization:org-001'
     expect(filters.scopeKind).not.toBe('organization')
     expect(filters).toMatchObject({

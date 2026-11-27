@@ -1,7 +1,6 @@
 import {
   UUID_PATTERN,
   inventoryState,
-  siteStockState,
   routeState,
   mountInventoryPage,
   resetFixture,
@@ -125,17 +124,12 @@ describe('inventory workflow pages', () => {
       expect(wrapper.text()).not.toContain('请选择物料')
     })
 
-    it('如实交代扫描覆盖范围并给出继续扫描的出路', async () => {
+    it('如实显示自动扫描的覆盖进度', () => {
       inventoryState.initialSkuCode = ''
       const wrapper = mountInventoryPage(AvailabilityPage)
 
       expect(wrapper.text()).toContain('已扫描 24/48 个物料')
-      const scanMore = wrapper
-        .findAll('button')
-        .find((button) => button.text().includes('继续扫描'))
-      expect(scanMore).toBeDefined()
-      await scanMore!.trigger('click')
-      expect(siteStockState.scanMore).toHaveBeenCalledTimes(1)
+      expect(wrapper.text()).not.toContain('继续扫描')
     })
 
     it('点总览行的物料即下钻到该物料台账，无需回到筛选条重填', async () => {

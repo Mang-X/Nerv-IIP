@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useBusinessWorkers } from '@/composables/master-data'
 import {
+  NvButton,
   NvInput,
   NvSelect,
   NvSelectContent,
@@ -23,12 +24,13 @@ const props = defineProps<{
   keepOutOfRange?: boolean
 }>()
 
-const { workers, workersPending, filters } = useBusinessWorkers()
+const { workers, workersPending, workersError, filters, refresh } = useBusinessWorkers()
 
 const keyword = computed({
   get: () => filters.keyword ?? '',
   set: (value: string) => {
-    filters.keyword = value.trim() ? value.trim() : undefined
+    filters.keyword = value.trim() || undefined
+    filters.pageIndex = 1
   },
 })
 
@@ -52,6 +54,8 @@ const options = computed(() =>
 // to preserving a planned/selected technician while server-side search or pagination changes.
 watch(options, (list) => {
   if (
+    !workersPending.value &&
+    !workersError.value &&
     !props.keepOutOfRange &&
     model.value &&
     !list.some((option) => option.value === model.value)
@@ -76,9 +80,19 @@ watch(options, (list) => {
         />
       </div>
       <p v-if="workersPending" class="px-3 py-2 text-sm text-muted-foreground">加载工人中…</p>
-      <p v-else-if="options.length === 0" class="px-3 py-2 text-sm text-muted-foreground">
-        未找到工人，可调整搜索词。
-      </p>
+      <div v-else-if="workersError" class="space-y-1 px-3 py-2 text-sm">
+        <p>人员目录加载失败。</p>
+        <NvButton type="button" size="sm" variant="outline" @click="refresh()">重试</NvButton>
+      </div>
+      <div
+        v-else-if="options.length === 0"
+        class="space-y-1 px-3 py-2 text-sm text-muted-foreground"
+      >
+        <p>{{ keyword ? '没有符合搜索条件的人员。' : '人员目录暂无可选人员。' }}</p>
+        <NvButton v-if="keyword" type="button" size="sm" variant="outline" @click="keyword = ''">
+          清除搜索
+        </NvButton>
+      </div>
       <NvSelectItem v-for="option in options" :key="option.value" :value="option.value">
         {{ option.label }}
       </NvSelectItem>

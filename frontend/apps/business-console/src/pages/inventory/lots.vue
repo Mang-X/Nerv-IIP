@@ -88,7 +88,8 @@ const {
   visibleExpiryAlerts,
 } = useInventoryExpiryView(filters)
 // 工厂给默认值、单位跟随物料——用户只需要选物料这一件事。
-const { siteOptions, sitesPending, skuOptions, skusPending } = useInventoryScopeDefaults(filters)
+const { siteSelection, siteOptions, sitesPending, skuOptions, skusPending } =
+  useInventoryScopeDefaults(filters, () => firstQuery(route.query.siteCode) ?? '')
 // 读面只回编码（RM-BAR-01 / WH-WB-A-01 / pcs），名称在主数据里，前端按编码 join 出中文名。
 const { resolveSkuName } = useSkuNames()
 const { formatUom, resolveLocation } = useMasterDataDisplayNames({ locations: true, uoms: true })
@@ -122,12 +123,10 @@ watch(
     const lot =
       firstQuery(query.lotNo) || firstQuery(query.batchNo) || firstQuery(query.materialLotId)
     const serial = firstQuery(query.serialNo)
-    const site = firstQuery(query.siteCode)
     const location = firstQuery(query.locationCode)
     if (sku) filters.skuCode = sku
     if (lot) filters.lotNo = lot
     if (serial) filters.serialNo = serial
-    if (site) filters.siteCode = site
     if (location) filters.locationCode = location
   },
   { immediate: true },
@@ -355,8 +354,11 @@ function lineBlockedQuantity(line: DisplayLine) {
 }
 
 function movementBlockReason(line: DisplayLine) {
-  if (line.movementAllowed === true) return ''
-  return line.movementBlockReason ?? '该库存行暂不能发起移动，请稍后重试或联系管理员。'
+  const movement =
+    line.movementAllowed === true
+      ? undefined
+      : (line.movementBlockReason ?? '该库存行暂不能发起移动，请稍后重试或联系管理员。')
+  return [...new Set([line.blockReason, movement].filter(Boolean))].join('；')
 }
 
 function sumQuantity(lines: Line[], key: 'reservedQuantity') {
@@ -453,7 +455,7 @@ async function refreshCurrentView() {
           >单位 {{ formatUom(filters.uomCode) }}</span
         >
         <NvEntityPicker
-          v-model="filters.siteCode"
+          v-model="siteSelection"
           class="w-40"
           :options="siteOptions"
           title="选择工厂"
@@ -582,7 +584,7 @@ async function refreshCurrentView() {
         />
       </template>
       <template #cell-expiryStatus="{ row }">
-        <InventoryExpiryStatusBadge :line="row" />
+        <InventoryExpiryStatusBadge :line="{ ...row, blockReason: undefined }" />
       </template>
       <template #cell-onHandQuantity="{ row }"
         ><span class="tabular-nums">{{ formatQuantity(row.onHandQuantity) }}</span></template

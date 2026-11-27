@@ -79,9 +79,10 @@ describe('inventory workflow pages', () => {
     ).toBe(true)
     const disabledWms = wrapper.findAll('button').find((button) => button.text().trim() === 'WMS')
     expect(disabledWms?.attributes()).toHaveProperty('disabled')
-    expect(wrapper.get('[data-operation-block-reason]').text()).toBe(
-      '该库存行暂不能发起移动，请稍后重试或联系管理员。',
-    )
+    const blockReason = '已过期，常规移动需授权放行。'
+    expect(wrapper.get('[data-cell="expiryStatus"]').text()).toBe('已过期')
+    expect(wrapper.get('[data-operation-block-reason]').text()).toContain(blockReason)
+    expect(wrapper.text().split(blockReason)).toHaveLength(2)
 
     await wrapper
       .findAll('button')

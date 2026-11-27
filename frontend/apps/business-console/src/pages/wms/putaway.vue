@@ -46,7 +46,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 
 definePage({
   meta: {
@@ -72,6 +72,7 @@ const {
 const {
   scopeKey,
   scopeOptions,
+  siteCode: workSiteCode,
   hasSelection: putawayScopeReady,
   unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
@@ -467,9 +468,17 @@ function firstQuery(value: unknown) {
       "
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无上架任务。完工入库后由系统派生，或在此手工登记。"
+      empty-message="当前范围暂无上架任务。"
       @retry="refreshPutawayTasks"
     >
+      <template #empty>
+        <p>当前筛选范围暂无上架任务。</p>
+        <NvButton as-child size="sm">
+          <RouterLink :to="{ path: '/wms/inbound', query: { siteCode: workSiteCode } }">
+            查看入库单
+          </RouterLink>
+        </NvButton>
+      </template>
       <template #cell-status="{ row }"
         ><NvStatusBadge
           :value="row.status"

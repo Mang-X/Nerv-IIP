@@ -55,7 +55,7 @@ import {
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 
 definePage({
   meta: {
@@ -82,6 +82,7 @@ const {
 const {
   scopeKey,
   scopeOptions,
+  siteCode: workSiteCode,
   hasSelection: pickingScopeReady,
   unreadyMessage: workScopeUnreadyMessage,
   pending: workScopePending,
@@ -583,9 +584,17 @@ function firstQuery(value: unknown) {
       "
       :searchable="false"
       :column-settings="false"
-      empty-message="暂无拣货任务。领料齐套或出库拣货时由系统派生，或在此手工登记。"
+      empty-message="当前范围暂无拣货任务。"
       @retry="refreshPickingTasks"
     >
+      <template #empty>
+        <p>当前筛选范围暂无拣货任务。</p>
+        <NvButton as-child size="sm">
+          <RouterLink :to="{ path: '/wms/outbound', query: { siteCode: workSiteCode } }">
+            查看出库单
+          </RouterLink>
+        </NvButton>
+      </template>
       <template #cell-status="{ row }"
         ><NvStatusBadge
           :value="row.status"

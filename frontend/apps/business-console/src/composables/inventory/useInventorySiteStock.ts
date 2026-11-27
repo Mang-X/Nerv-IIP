@@ -11,7 +11,7 @@
  * 所以首屏在后端补齐之前，这里用**按物料目录并发扫描 + 前端聚合**把可见集合做到最大：
  * 逐个物料真实查台账，再按物料汇总成一行。这不是伪造数据——每一行都来自真实查询；
  * 代价是覆盖面受扫描批次限制，因此 `scannedSkuCount` / `totalSkuCount` / `hasMore`
- * 必须在界面上如实说清楚，并给「继续扫描」的出路。
+ * 必须在界面上如实说清楚，供页面显示自动续扫或手动续扫进度。
  *
  * 后端补齐 `GET /api/business-console/v1/inventory/ledgers`（工厂可选、分页）之后，
  * 这个 composable 应当整体删除、页面直接换成那个读面。缺口已登记在
@@ -21,11 +21,11 @@ import {
   getBusinessConsoleInventoryAvailability,
   type BusinessConsoleInventoryAvailabilityLineResponse,
 } from '@nerv-iip/api-client'
-import { computed, reactive, ref, shallowRef, watch } from 'vue'
+import { computed, onScopeDispose, reactive, ref, shallowRef, watch } from 'vue'
 import { bindBusinessContext, hasBusinessContext } from '../shared/businessContextBinding'
 import { useInventoryScopeCatalog } from './useInventoryScope'
 
-/** 一次「继续扫描」推进的物料数——一屏能看完的量级，也避免一次打出上百个请求。 */
+/** 每批扫描的物料数。 */
 export const SITE_STOCK_SCAN_BATCH = 24
 /** 并发上限：既让首屏快，又不至于把网关打满。 */
 const SCAN_CONCURRENCY = 6
@@ -125,9 +125,12 @@ async function mapWithConcurrency<TItem, TResult>(
 }
 
 /**
- * @param siteCode 当前工厂（由页面的筛选条给出，通常来自工厂主数据第一条）
+ * @param siteCode 当前有效工厂。空值暂停扫描。
  */
-export function useInventorySiteStockOverview(siteCode: () => string) {
+export function useInventorySiteStockOverview(
+  siteCode: () => string,
+  options: { autoContinue?: boolean } = {},
+) {
   const context = bindBusinessContext(reactive({ organizationId: '', environmentId: '' }))
   const catalog = useInventoryScopeCatalog()
 
@@ -139,7 +142,8 @@ export function useInventorySiteStockOverview(siteCode: () => string) {
   const failedSkuCount = ref(0)
   const scanError = shallowRef<unknown>(undefined)
   /** 换工厂/换目录要作废在途的旧扫描，避免慢响应把新结果覆盖回去。 */
-  const scanToken = ref(0)
+  let scanToken = 0
+  let controller = new AbortController()
 
   const totalSkuCount = computed(() => catalog.skuOptions.value.length)
   const hasMore = computed(() => scannedSkuCount.value < totalSkuCount.value)
@@ -150,15 +154,19 @@ export function useInventorySiteStockOverview(siteCode: () => string) {
   /** 汇总口径：只统计真正有货的物料，零库存物料不占表格行（可用「显示零库存」放开）。 */
   const nonEmptyRows = computed(() => rows.value.filter((row) => row.lineCount > 0))
 
-  async function scanOne(option: {
-    value: string
-    label: string
-  }): Promise<{ row: SiteStockRow; lines: SiteStockLine[] } | null> {
+  async function scanOne(
+    option: {
+      value: string
+      label: string
+    },
+    signal: AbortSignal,
+  ): Promise<{ row: SiteStockRow; lines: SiteStockLine[] } | null> {
     const uomCode = catalog.resolveUomCode(option.value)
     // 物料主档还没给出基本单位就跳过这条：台账查询是「单物料单单位」维度，
     // 猜一个单位只会查回空数据，还会让总览把这条算成「零库存」。
     if (!uomCode) return null
-    const { data } = await getBusinessConsoleInventoryAvailability({
+    const { data, error } = await getBusinessConsoleInventoryAvailability({
+      signal,
       query: {
         organizationId: context.organizationId,
         environmentId: context.environmentId,
@@ -170,6 +178,7 @@ export function useInventorySiteStockOverview(siteCode: () => string) {
 
     // 总览要的是「这个物料在本厂到底有多少货」，所以不带 qualityStatus / ownerType 过滤，
     // 冻结件与寄售件也要计入现存量，否则总量对不上仓库实物。
+    if (error) throw error
     if (!data?.success || !data.data) return null
     const payload = data.data
     const items = payload.items ?? []
@@ -190,40 +199,50 @@ export function useInventorySiteStockOverview(siteCode: () => string) {
   }
 
   async function scanBatch(startIndex: number) {
-    if (!ready.value) return
-    const token = scanToken.value
-    const slice = catalog.skuOptions.value.slice(startIndex, startIndex + SITE_STOCK_SCAN_BATCH)
-    if (slice.length === 0) return
-
+    if (!ready.value || scanning.value) return
+    const token = scanToken
+    const signal = controller.signal
     scanning.value = true
     try {
-      const settled = await mapWithConcurrency(slice, SCAN_CONCURRENCY, async (option) => {
-        if (token !== scanToken.value) return null
-        try {
-          return await scanOne(option)
-        } catch (error) {
-          // 单个物料查失败不该让整张表塌掉，记数后继续。
-          if (token === scanToken.value) scanError.value ??= error
-          return null
-        }
-      })
-      // 期间换了工厂就丢弃这批结果。
-      if (token !== scanToken.value) return
-
-      const collected = settled.filter(
-        (result): result is { row: SiteStockRow; lines: SiteStockLine[] } => result !== null,
-      )
-      failedSkuCount.value += slice.length - collected.length
-      rows.value = [...rows.value, ...collected.map((result) => result.row)]
-      lines.value = [...lines.value, ...collected.flatMap((result) => result.lines)]
-      scannedSkuCount.value = startIndex + slice.length
+      do {
+        await scanSlice(startIndex, token, signal)
+        startIndex = scannedSkuCount.value
+      } while (options.autoContinue && token === scanToken && hasMore.value)
     } finally {
-      if (token === scanToken.value) scanning.value = false
+      if (token === scanToken) scanning.value = false
     }
   }
 
+  async function scanSlice(startIndex: number, token: number, signal: AbortSignal) {
+    const slice = catalog.skuOptions.value.slice(startIndex, startIndex + SITE_STOCK_SCAN_BATCH)
+    if (slice.length === 0) return
+
+    const settled = await mapWithConcurrency(slice, SCAN_CONCURRENCY, async (option) => {
+      if (token !== scanToken) return null
+      try {
+        return await scanOne(option, signal)
+      } catch (error) {
+        // 单个物料查失败不该让整张表塌掉，记数后继续。
+        if (token === scanToken) scanError.value ??= error
+        return null
+      }
+    })
+    // 期间换了工厂就丢弃这批结果。
+    if (token !== scanToken) return
+
+    const collected = settled.filter(
+      (result): result is { row: SiteStockRow; lines: SiteStockLine[] } => result !== null,
+    )
+    failedSkuCount.value += slice.length - collected.length
+    rows.value = [...rows.value, ...collected.map((result) => result.row)]
+    lines.value = [...lines.value, ...collected.flatMap((result) => result.lines)]
+    scannedSkuCount.value = startIndex + slice.length
+  }
+
   function reset() {
-    scanToken.value += 1
+    scanToken += 1
+    controller.abort()
+    controller = new AbortController()
     rows.value = []
     lines.value = []
     scannedSkuCount.value = 0
@@ -234,13 +253,24 @@ export function useInventorySiteStockOverview(siteCode: () => string) {
 
   /** 工厂或物料目录变了就重扫——首屏因此不需要用户点任何东西。 */
   watch(
-    [siteCode, totalSkuCount, () => context.organizationId, () => context.environmentId],
+    [
+      siteCode,
+      catalog.skuOptions,
+      ready,
+      () => context.organizationId,
+      () => context.environmentId,
+    ],
     () => {
       reset()
       if (ready.value) void scanBatch(0)
     },
     { immediate: true },
   )
+
+  onScopeDispose(() => {
+    scanToken += 1
+    controller.abort()
+  })
 
   return {
     /** 有货的物料行（默认表格数据源）。 */

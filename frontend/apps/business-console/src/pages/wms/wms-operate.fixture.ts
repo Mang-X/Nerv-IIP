@@ -57,6 +57,7 @@ const wms = vi.hoisted(() => ({
   completeInbound: vi.fn(),
   completeOutbound: vi.fn(),
   completeCountExecution: vi.fn(),
+  verifyCountExecution: vi.fn(),
   countRows: undefined as unknown[] | undefined,
   createCountExecution: vi.fn(),
   failWcs: vi.fn(),
@@ -115,7 +116,6 @@ vi.mock('@/composables/inventory/useInventoryScope', async () => {
     resolveUomCode: () => 'pcs',
   }
   return {
-    FALLBACK_INVENTORY_SITE_CODE: 'SITE-001',
     useInventoryScopeCatalog: () => catalog,
     useInventoryScopeDefaults: () => catalog,
   }
@@ -220,6 +220,7 @@ vi.mock('@/composables/wms', () => ({
     createCountExecution: wms.createCountExecution,
     createCountExecutionPending: shallowRef(false),
     completeCountExecution: wms.completeCountExecution,
+    verifyCountExecution: wms.verifyCountExecution,
     completeCountExecutionPending: shallowRef(false),
   })),
   useWmsWcsTasks: () => ({

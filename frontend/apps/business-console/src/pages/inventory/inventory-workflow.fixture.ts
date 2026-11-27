@@ -263,15 +263,17 @@ vi.mock('@/composables/inventory/useInventoryScope', async () => {
     resolveUomCode: (skuCode: string) => baseUomBySku[skuCode.trim()] ?? '',
   }
   return {
-    FALLBACK_INVENTORY_SITE_CODE: 'SITE-001',
     useInventoryScopeCatalog: () => catalog,
     // 与真实实现同构：工厂缺省填默认工厂，单位始终跟随所选物料的基本单位。
-    useInventoryScopeDefaults: (filters: {
-      skuCode?: string
-      uomCode?: string
-      siteCode?: string
-    }) => {
-      if (!(filters.siteCode ?? '').trim()) filters.siteCode = 'S1'
+    useInventoryScopeDefaults: (
+      filters: {
+        skuCode?: string
+        uomCode?: string
+        siteCode?: string
+      },
+      linkedSite?: () => string,
+    ) => {
+      if (!(filters.siteCode ?? '').trim()) filters.siteCode = linkedSite?.() || 'S1'
       watch(
         () => filters.skuCode,
         (skuCode) => {
@@ -280,7 +282,15 @@ vi.mock('@/composables/inventory/useInventoryScope', async () => {
         },
         { immediate: true },
       )
-      return catalog
+      return {
+        ...catalog,
+        siteSelection: computed({
+          get: () => filters.siteCode,
+          set: (site) => {
+            filters.siteCode = site
+          },
+        }),
+      }
     },
     useInventorySiteExpiryOverview: () => ({
       overviewError: ref(undefined),

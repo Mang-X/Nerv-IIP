@@ -28,6 +28,7 @@ export function bindWmsWorkScopeFilters(
   return {
     scopeKey,
     scopeOptions,
+    siteCode: computed(() => 'SITE-001'),
     selectedScopeLabel: computed(
       () => scopeOptions.value.find((option) => option.value === scopeKey.value)?.label ?? '',
     ),
