@@ -109,7 +109,7 @@ function formatDate(value?: string | null) {
 }
 
 function sessionLabel(session: ConsoleIamSessionResponse) {
-  return `${formatDate(session.issuedAtUtc)} 签发的会话`
+  return `会话 · ${session.sessionId?.slice(-8) || '标识缺失'}`
 }
 
 function isCurrentSession(session: ConsoleIamSessionResponse) {
@@ -198,7 +198,14 @@ async function confirmRevoke(sessionId: string) {
       >
         <template #cell-sessionContext="{ row }">
           <div class="flex flex-col gap-1">
-            <span>{{ sessionLabel(row) }}</span>
+            <details v-if="row.sessionId">
+              <summary class="cursor-pointer font-medium">{{ sessionLabel(row) }}</summary>
+              <span class="break-all text-xs text-muted-foreground">{{ row.sessionId }}</span>
+            </details>
+            <span v-else>{{ sessionLabel(row) }}</span>
+            <span v-if="row.userId" class="break-all text-xs text-muted-foreground">
+              账号标识 {{ row.userId }}
+            </span>
             <span v-if="isCurrentSession(row)" class="text-xs font-normal text-muted-foreground">
               当前会话
             </span>

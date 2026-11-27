@@ -118,6 +118,9 @@ describe('Notification DLQ page', () => {
     const wrapper = mountPage()
 
     expect(wrapper.text()).toContain('死信队列')
+    expect(wrapper.get('option[value="Pending"]').text()).toBe('待重放')
+    expect(wrapper.get('option[value="Failed"]').text()).toBe('重放失败')
+    expect(wrapper.text()).not.toContain('Pending')
     expect(wrapper.text()).toContain('ops.OperationTaskFailed')
     expect(wrapper.text()).toContain('notification.operation-task-failed')
     expect(wrapper.text()).toContain('{"eventId":"event-001"}')

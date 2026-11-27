@@ -52,6 +52,17 @@ import {
 import { PencilIcon, PlusIcon, RefreshCwIcon, Trash2Icon, UploadIcon } from '@lucide/vue'
 import { computed, reactive, shallowRef, useTemplateRef, watch } from 'vue'
 
+const TEMPLATE_EXAMPLE = {
+  format: 'nerv-iip.label-template',
+  version: 1,
+  media: { dpi: 203, widthDots: 812, heightDots: 406 },
+  fields: [
+    { kind: 'text', x: 40, y: 30, fontHeight: 30, fontWidth: 30, variable: 'skuCode' },
+    { kind: 'barcode', x: 40, y: 90, moduleWidth: 2, height: 100, variable: 'label.value' },
+  ],
+}
+const templateExampleUrl = `data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(TEMPLATE_EXAMPLE, null, 2))}`
+
 definePage({
   meta: {
     requiresAuth: true,
@@ -410,6 +421,11 @@ async function submitTemplate() {
                       <UploadIcon v-else aria-hidden="true" />
                       {{ form.templateFileId ? '重新上传' : '上传模板文件' }}
                     </NvButton>
+                    <NvButton as-child variant="outline" size="sm">
+                      <a :href="templateExampleUrl" download="label-template.json"
+                        >下载 JSON 样例</a
+                      >
+                    </NvButton>
                     <span
                       class="min-w-0 text-sm break-all text-muted-foreground"
                       data-testid="barcode-template-file-status"
@@ -424,6 +440,10 @@ async function submitTemplate() {
                       }}</span
                     >
                   </div>
+                  <NvFieldDescription>
+                    JSON
+                    包含格式（format）、版本（version）、纸张规格（media）和标签字段（fields）。
+                  </NvFieldDescription>
                   <NvFieldError v-if="uploadError" :errors="[uploadError]" />
                 </NvField>
                 <NvField>

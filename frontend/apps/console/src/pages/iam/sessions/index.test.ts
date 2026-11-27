@@ -100,8 +100,10 @@ describe('IAM sessions page', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('会话')
-    expect(wrapper.text()).not.toContain('session-1')
-    expect(wrapper.text()).not.toContain('user-admin')
+    const session = wrapper.findAll('details')[1]!
+    expect(session.get('summary').text()).toBe('会话 · ession-1')
+    expect(session.text()).toContain('session-1')
+    expect(wrapper.text()).toContain('账号标识 user-admin')
     expect(wrapper.text()).toContain('签发时间')
     expect(wrapper.text()).toContain('吊销')
     expect(wrapper.find('[style*="--legacy-color"]').exists()).toBe(false)
@@ -158,7 +160,7 @@ describe('IAM sessions page', () => {
     await wrapper.findAll('button[aria-label^="吊销会话"]')[1]!.trigger('click')
     await flushPromises()
 
-    expect(document.body.textContent).not.toContain('session-1')
+    expect(document.body.textContent).toContain('会话 · ession-1')
     expect(document.body.textContent).not.toContain('user-admin')
     const confirmButton = [...document.body.querySelectorAll('button')].find(
       (button) => button.textContent?.trim() === '吊销会话',

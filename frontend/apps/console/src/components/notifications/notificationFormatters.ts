@@ -1,4 +1,8 @@
-import type { NotificationMessageResponse, NotificationResourceRef } from '@nerv-iip/api-client'
+import type {
+  NotificationMessageResponse,
+  NotificationResourceRef,
+  NotificationTaskResponse,
+} from '@nerv-iip/api-client'
 import type { StatusTone } from '@nerv-iip/ui'
 
 // 通知严重级 / 状态值是后端原始字符串；这里映射到 StatusBadge 的 tone，
@@ -83,4 +87,29 @@ export function formatResource(resource?: NotificationResourceRef | null) {
   const id = resource.resourceId ?? resource.fileId
 
   return id ? `${type}: ${id}` : type
+}
+
+export function notificationTaskTypeLabel(value?: string | null) {
+  return value?.toLowerCase() === 'review' ? '复核' : value || '通知任务'
+}
+
+export function notificationTaskTitle(
+  task: NotificationTaskResponse,
+  titles: ReadonlyMap<string, string>,
+) {
+  const title = task.messageId ? titles.get(task.messageId) : undefined
+  const shortId = (task.taskId || task.messageId)?.slice(-8)
+  return title || [notificationTaskTypeLabel(task.taskType), shortId].filter(Boolean).join(' · ')
+}
+
+export const NOTIFICATION_DLQ_STATUS_LABELS = {
+  Pending: '待重放',
+  Failed: '重放失败',
+  Replayed: '已重放',
+  Ignored: '已忽略',
+} as const
+
+export function notificationDlqStatusLabel(status?: string | null) {
+  const entry = Object.entries(NOTIFICATION_DLQ_STATUS_LABELS).find(([code]) => code === status)
+  return entry?.[1] ?? (status ? `未知状态（${status}）` : '未知状态')
 }

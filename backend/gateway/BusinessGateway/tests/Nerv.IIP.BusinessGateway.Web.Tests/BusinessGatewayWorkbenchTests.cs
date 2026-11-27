@@ -85,12 +85,14 @@ public sealed class BusinessGatewayWorkbenchTests
         Assert.Equal(1, data.GetProperty("kpis").EnumerateArray().Count(kpi => kpi.GetProperty("source").GetString() == "BusinessMES"));
     }
 
-    [Fact]
-    public async Task Workbench_summary_uses_principal_context_for_approval_and_notification_queries()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Workbench_summary_uses_principal_context_and_projects_only_readable_message_titles(bool canReadMessages)
     {
         var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(
             BusinessGatewayPermissions.ApprovalsRead,
-            BusinessGatewayPermissions.NotificationMessagesRead,
+            canReadMessages ? BusinessGatewayPermissions.NotificationMessagesRead : BusinessGatewayPermissions.NotificationTasksRead,
             BusinessGatewayPermissions.NotificationTasksRead);
         var masterData = new RecordingMasterDataClient
         {
@@ -122,7 +124,18 @@ public sealed class BusinessGatewayWorkbenchTests
         using var summary = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Contains(summary.RootElement.GetProperty("data").GetProperty("todos").GetProperty("items").EnumerateArray(),
             item => item.GetProperty("source").GetString() == "BusinessApproval");
-        Assert.Equal(new BusinessConsoleNotificationListRequest("org-001", "env-dev", "user:user-admin", "unread", 20), notification.LastMessagesRequest);
+        var task = summary.RootElement.GetProperty("data").GetProperty("todos").GetProperty("items")
+            .EnumerateArray().Single(item => item.GetProperty("itemId").GetString() == "task-001");
+        if (canReadMessages)
+        {
+            Assert.Equal("Sensitive supplier overdue", task.GetProperty("notificationTitle").GetString());
+            Assert.Equal(new BusinessConsoleNotificationListRequest("org-001", "env-dev", "user:user-admin", "unread", 20), notification.LastMessagesRequest);
+        }
+        else
+        {
+            Assert.Equal(0, notification.MessageCallCount);
+            Assert.True(!task.TryGetProperty("notificationTitle", out var title) || title.ValueKind == JsonValueKind.Null);
+        }
         Assert.Equal(new BusinessConsoleNotificationListRequest("org-001", "env-dev", "user:user-admin", "open", 20), notification.LastTasksRequest);
     }
 

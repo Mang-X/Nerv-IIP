@@ -1069,7 +1069,8 @@ public sealed record BusinessConsoleWorkbenchTodoItem(
     string ItemType,
     string Status,
     string? ReferenceId,
-    DateTimeOffset? DueAtUtc);
+    DateTimeOffset? DueAtUtc,
+    string? NotificationTitle = null);
 
 public sealed record BusinessConsoleWorkbenchMessageSummary(
     string Status,

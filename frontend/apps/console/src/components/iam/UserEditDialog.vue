@@ -14,6 +14,7 @@ import {
   FieldGroup,
   FieldLabel,
   NvInput,
+  NvDatePicker,
 } from '@nerv-iip/ui'
 import { reactive, watch } from 'vue'
 
@@ -136,11 +137,16 @@ watch(open, (isOpen) => {
 
           <Field>
             <FieldLabel for="iam-edit-account-expires">账号有效期</FieldLabel>
-            <NvInput id="iam-edit-account-expires" v-model="form.accountExpiresDate" type="date" />
+            <NvDatePicker
+              id="iam-edit-account-expires"
+              v-model="form.accountExpiresDate"
+              clearable
+            />
           </Field>
         </FieldGroup>
 
-        <NvDialogFooter show-close-button>
+        <NvDialogFooter>
+          <Button type="button" variant="outline" @click="open = false">取消</Button>
           <Button type="submit"> 保存修改 </Button>
         </NvDialogFooter>
       </form>

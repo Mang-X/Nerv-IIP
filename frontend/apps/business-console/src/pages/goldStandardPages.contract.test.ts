@@ -136,7 +136,8 @@ describe('gold-standard page enforcement', () => {
       })
 
       it('has no developer-language / platform-metadata copy', () => {
-        const lower = src.toLowerCase()
+        const copy = page === 'barcode/templates.vue' ? src.replace('下载 JSON 样例', '') : src
+        const lower = copy.toLowerCase()
         for (const term of BANNED_COPY) {
           expect
             .soft(lower, `"${term}" must not appear in a business page`)

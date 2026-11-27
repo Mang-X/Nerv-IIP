@@ -37028,6 +37028,10 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "notificationTitle": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

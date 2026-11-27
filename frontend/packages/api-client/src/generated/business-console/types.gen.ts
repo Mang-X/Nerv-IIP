@@ -39,6 +39,7 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     status?: string;
     referenceId?: string | null;
     dueAtUtc?: string | null;
+    notificationTitle?: string | null;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWorkbenchMessageSummary = {

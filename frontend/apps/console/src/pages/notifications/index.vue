@@ -28,6 +28,16 @@ const {
   unreadMessages,
 } = useNotifications()
 
+const messageTitles = computed(() => {
+  const titles = new Map<string, string>()
+  for (const message of [...unreadMessages.value, ...readMessages.value]) {
+    if (message.messageId && message.title?.trim()) {
+      titles.set(message.messageId, message.title.trim())
+    }
+  }
+  return titles
+})
+
 const pending = computed(() => messagesPending.value || tasksPending.value)
 const errorMessage = computed(() => (allError.value ? allError.value.message : ''))
 const markAllDisabled = computed(
@@ -126,7 +136,11 @@ async function handleMarkAllRead() {
           />
         </div>
 
-        <NotificationTaskList :pending="tasksPending" :tasks="openTasks" />
+        <NotificationTaskList
+          :pending="tasksPending"
+          :tasks="openTasks"
+          :message-titles="messageTitles"
+        />
       </div>
     </section>
   </DefaultLayout>

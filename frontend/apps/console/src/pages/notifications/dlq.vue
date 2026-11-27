@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  NOTIFICATION_DLQ_STATUS_LABELS,
+  notificationDlqStatusLabel,
+} from '@/components/notifications/notificationFormatters'
 import type { NotificationDeadLetterResponse } from '@nerv-iip/api-client'
 import { useNotificationDeadLetters } from '@/composables/useNotificationDeadLetters'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
@@ -178,9 +182,13 @@ function shortText(value: string | null | undefined, fallback = '-') {
 
       <NvSectionCards :columns="4">
         <NvSectionCard description="当前筛选" :value="deadLetters.length" hint="列表结果" />
-        <NvSectionCard description="可处理积压" :value="actionableCount" hint="Pending + Failed" />
-        <NvSectionCard description="待重放" :value="pendingCount" hint="全局 Pending" />
-        <NvSectionCard description="重放失败" :value="failedCount" hint="全局 Failed" />
+        <NvSectionCard
+          description="可处理积压"
+          :value="actionableCount"
+          hint="待重放与重放失败合计"
+        />
+        <NvSectionCard description="待重放" :value="pendingCount" hint="全部范围内待重放" />
+        <NvSectionCard description="重放失败" :value="failedCount" hint="全部范围内重放失败" />
       </NvSectionCards>
 
       <p v-if="errorMessage" class="text-sm text-destructive" role="alert">
@@ -209,10 +217,13 @@ function shortText(value: string | null | undefined, fallback = '-') {
             <span>状态</span>
             <select v-model="statusFilter" class="h-9 rounded-md border bg-background px-3 text-sm">
               <option value="">全部</option>
-              <option value="Pending">Pending</option>
-              <option value="Failed">Failed</option>
-              <option value="Replayed">Replayed</option>
-              <option value="Ignored">Ignored</option>
+              <option
+                v-for="(label, status) in NOTIFICATION_DLQ_STATUS_LABELS"
+                :key="status"
+                :value="status"
+              >
+                {{ label }}
+              </option>
             </select>
           </label>
         </div>
@@ -255,7 +266,7 @@ function shortText(value: string | null | undefined, fallback = '-') {
                         type="button"
                         @click="selectDeadLetter(item)"
                       >
-                        {{ item.status ?? '-' }}
+                        {{ notificationDlqStatusLabel(item.status) }}
                       </button>
                     </td>
                     <td class="px-3 py-3 align-top font-medium">
@@ -311,7 +322,7 @@ function shortText(value: string | null | undefined, fallback = '-') {
           <div v-else-if="selectedDeadLetter" class="grid gap-3 text-sm">
             <dl class="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-3 gap-y-2">
               <dt class="text-muted-foreground">状态</dt>
-              <dd>{{ selectedDeadLetter.status }}</dd>
+              <dd>{{ notificationDlqStatusLabel(selectedDeadLetter.status) }}</dd>
               <dt class="text-muted-foreground">事件类型</dt>
               <dd class="break-all">{{ selectedDeadLetter.eventType ?? '-' }}</dd>
               <dt class="text-muted-foreground">消费者</dt>
