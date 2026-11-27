@@ -274,7 +274,14 @@ try {
         } | Out-Null
     }
     catch {
-        if (-not $_.Exception.Data.Contains('ExitCode') -or
+        $hasExitCode = $false
+        foreach ($key in $_.Exception.Data.Keys) {
+            if ([string]::Equals([string]$key, 'ExitCode', [StringComparison]::Ordinal)) {
+                $hasExitCode = $true
+                break
+            }
+        }
+        if (-not $hasExitCode -or
             -not $_.Exception.Message.Contains('System.InvalidOperationException: NERV_IIP_EPHEMERAL=true is only supported in Development.', [StringComparison]::Ordinal)) {
             throw
         }
