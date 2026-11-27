@@ -37,16 +37,20 @@ public sealed class ResolveApprovalStepAuthority(
             }
 
             var principal = await ReadDataAsync<Principal>(me, ct);
-            // IAM's current principal carries the roles of the token's active membership.
             if (string.IsNullOrWhiteSpace(principal.UserId)
-                || principal.OrganizationId != organizationId || principal.EnvironmentId != environmentId)
+                || principal.PrincipalType is not ("user" or "external-client")
+                || (principal.PrincipalType == "external-client"
+                    && (principal.OrganizationId != organizationId || principal.EnvironmentId != environmentId)))
             {
                 return (StatusCodes.Status403Forbidden, null);
             }
 
             using var check = await iam.PostAsJsonAsync("/internal/iam/v1/authorization/check",
                 new AuthorizationCheckRequest(ApprovalPermissionCodes.Manage, organizationId, environmentId,
-                    "approval-chain", chainId.Id.ToString("D")), ct);
+                    "approval-chain", chainId.Id.ToString("D"))
+                {
+                    IncludeSelectedMembership = principal.PrincipalType == "user",
+                }, ct);
             if (check.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
             {
                 return ((int)check.StatusCode, null);
@@ -54,17 +58,27 @@ public sealed class ResolveApprovalStepAuthority(
 
             var permission = await ReadDataAsync<AuthorizationCheckResponse>(check, ct);
             if (!permission.Allowed || permission.PrincipalId != principal.UserId
-                || permission.PrincipalType != principal.PrincipalType || permission.DataScope?.DenyAll == true
-                || principal.PrincipalType is not ("user" or "external-client"))
+                || permission.PrincipalType != principal.PrincipalType || permission.DataScope?.DenyAll == true)
             {
                 return (StatusCodes.Status403Forbidden, null);
             }
 
-            var department = principal.PrincipalType == "user"
-                ? await LoadDepartmentAsync(principal, ct)
-                : null;
-            var roles = principal.PrincipalType == "user" ? string.Join(",", principal.RoleIds ?? []) : null;
-            return (StatusCodes.Status200OK, new Actor(principal.OrganizationId, principal.EnvironmentId,
+            string? roles = null;
+            string? department = null;
+            if (principal.PrincipalType == "user")
+            {
+                var membership = permission.SelectedMembership;
+                if (membership?.RoleIds is not { Count: > 0 }
+                    || membership.OrganizationId != organizationId || membership.EnvironmentId != environmentId)
+                {
+                    return (StatusCodes.Status403Forbidden, null);
+                }
+
+                roles = string.Join(",", membership.RoleIds);
+                department = await LoadDepartmentAsync(principal.UserId, organizationId, environmentId, ct);
+            }
+
+            return (StatusCodes.Status200OK, new Actor(organizationId, environmentId,
                 principal.PrincipalType, principal.UserId, roles, department));
         }
         catch (Exception ex) when (ex is HttpRequestException or JsonException
@@ -75,16 +89,17 @@ public sealed class ResolveApprovalStepAuthority(
         }
     }
 
-    private async Task<string?> LoadDepartmentAsync(Principal principal, CancellationToken ct)
+    private async Task<string?> LoadDepartmentAsync(
+        string userId, string organizationId, string environmentId, CancellationToken ct)
     {
         using var masterData = clients.CreateClient(MasterDataClient);
         masterData.DefaultRequestHeaders.Authorization = new("Bearer", internalToken.BearerToken);
         using var response = await masterData.GetAsync(
-            $"/api/business/v1/master-data/principals/{Uri.EscapeDataString(principal.UserId)}/work-context"
-            + $"?organizationId={Uri.EscapeDataString(principal.OrganizationId)}"
-            + $"&environmentId={Uri.EscapeDataString(principal.EnvironmentId)}", ct);
+            $"/api/business/v1/master-data/principals/{Uri.EscapeDataString(userId)}/work-context"
+            + $"?organizationId={Uri.EscapeDataString(organizationId)}"
+            + $"&environmentId={Uri.EscapeDataString(environmentId)}", ct);
         var workContext = await ReadDataAsync<WorkContext>(response, ct);
-        return workContext.Worker is { EmploymentStatus: "active" } worker && worker.UserId == principal.UserId
+        return workContext.Worker is { EmploymentStatus: "active" } worker && worker.UserId == userId
             ? worker.DepartmentId
             : null;
     }
@@ -103,7 +118,7 @@ public sealed class ResolveApprovalStepAuthority(
         string OrganizationId, string EnvironmentId, string Type, string Id, string? RoleRefs, string? DepartmentRef);
     private sealed record Envelope<T>(bool Success, T? Data);
     private sealed record Principal(
-        string UserId, string PrincipalType, string OrganizationId, string EnvironmentId, IReadOnlyList<string>? RoleIds);
+        string UserId, string PrincipalType, string OrganizationId, string EnvironmentId);
     private sealed record WorkContext(Worker? Worker);
     private sealed record Worker(string UserId, string EmploymentStatus, string? DepartmentId);
 }

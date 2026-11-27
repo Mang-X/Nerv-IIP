@@ -36,12 +36,15 @@ try
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services.AddScoped<ResolveApprovalStepAuthority>();
-    AddApprovalAuthorityClient(ResolveApprovalStepAuthority.IamClient, "Iam:BaseUrl", "http://localhost:5102");
-    AddApprovalAuthorityClient(ResolveApprovalStepAuthority.MasterDataClient, "MasterData:BaseUrl", "http://localhost:5107");
+    var iamBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
+        builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
+    var masterDataBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
+        builder.Configuration, builder.Environment, "MasterData:BaseUrl", "http://localhost:5107");
+    AddApprovalAuthorityClient(ResolveApprovalStepAuthority.IamClient, iamBaseAddress);
+    AddApprovalAuthorityClient(ResolveApprovalStepAuthority.MasterDataClient, masterDataBaseAddress);
 
-    void AddApprovalAuthorityClient(string name, string key, string developmentUrl)
+    void AddApprovalAuthorityClient(string name, Uri baseAddress)
     {
-        var baseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(builder.Configuration, builder.Environment, key, developmentUrl);
         builder.Services.AddHttpClient(name, client => client.BaseAddress = baseAddress)
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
     }

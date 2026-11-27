@@ -6,7 +6,10 @@ public sealed record AuthorizationCheckRequest(
     string EnvironmentId,
     string? ResourceType,
     string? ResourceId,
-    bool IncludePrincipalContext = false);
+    bool IncludePrincipalContext = false)
+{
+    public bool IncludeSelectedMembership { get; init; }
+}
 
 public sealed record AuthorizationCheckResponse(
     bool Allowed,
@@ -16,7 +19,15 @@ public sealed record AuthorizationCheckResponse(
     string? DenialReason,
     AuthorizationDataScope? DataScope = null,
     IReadOnlyCollection<AuthorizationScopeGrant>? ScopeGrants = null,
-    IReadOnlyCollection<AuthorizationRole>? Roles = null);
+    IReadOnlyCollection<AuthorizationRole>? Roles = null)
+{
+    public AuthorizationMembership? SelectedMembership { get; init; }
+}
+
+public sealed record AuthorizationMembership(
+    string OrganizationId,
+    string EnvironmentId,
+    IReadOnlyCollection<string> RoleIds);
 
 public sealed record AuthorizationRole(string Id, string DisplayName);
 

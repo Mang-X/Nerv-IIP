@@ -1064,8 +1064,8 @@ public sealed class ApprovalEndpointContractTests
                 {
                     Content = JsonContent.Create(new { success = true, data = new
                     {
-                        userId = "u-reviewer", principalType = "user", organizationId = "org-001",
-                        environmentId = "env-dev", roleIds = new[] { "buyer" },
+                        userId = "u-reviewer", principalType = "user", organizationId = "org-token",
+                        environmentId = "env-token", roleIds = new[] { "token-only" },
                     } }),
                 };
             }
@@ -1074,7 +1074,12 @@ public sealed class ApprovalEndpointContractTests
             var check = request.Content!.ReadFromJsonAsync<Nerv.IIP.Contracts.Iam.AuthorizationCheckRequest>().GetAwaiter().GetResult();
             Assert.Equal("business.approvals.manage", check!.PermissionCode);
             Assert.Equal("org-001", check.OrganizationId);
-            Assert.Equal("env-dev", check.EnvironmentId);
+            if (check.EnvironmentId == "env-denied")
+            {
+                return new HttpResponseMessage(HttpStatusCode.Forbidden);
+            }
+
+            Assert.Contains(check.EnvironmentId, new[] { "env-dev", "env-absent" });
             Assert.Equal("approval-chain", check.ResourceType);
             Assert.Equal(chain.Id.ToString(), check.ResourceId);
             return new HttpResponseMessage(HttpStatusCode.OK)
@@ -1082,6 +1087,9 @@ public sealed class ApprovalEndpointContractTests
                 Content = JsonContent.Create(new { success = true, data = new
                 {
                     allowed = true, principalId = "u-reviewer", principalType = "user",
+                    selectedMembership = check.EnvironmentId == "env-dev"
+                        ? new { organizationId = "org-001", environmentId = "env-dev", roleIds = new[] { "buyer" } }
+                        : null,
                 } }),
             };
         });
@@ -1127,9 +1135,12 @@ public sealed class ApprovalEndpointContractTests
 
         client.DefaultRequestHeaders.Authorization = new("Bearer", "test-end-principal");
         var route = $"/api/business/v1/approvals/chains/{chain.Id}/steps/1/resolve";
-        var command = new { organizationId = "org-001", environmentId = "env-dev", decision = "approve", targetStepId = target.ToString() };
-        using var wrongEnvironment = await client.PostAsJsonAsync(route, command with { environmentId = "env-other" });
-        Assert.Equal(HttpStatusCode.Forbidden, wrongEnvironment.StatusCode);
+        var command = new { organizationId = "org-001", environmentId = "env-dev", decision = "approve", targetStepId = target.ToString(),
+            actorType = "user", actorRef = "u-forged", roleRefs = "token-only", departmentRef = "forged" };
+        using var denied = await client.PostAsJsonAsync(route, command with { environmentId = "env-denied" });
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        using var absentMembership = await client.PostAsJsonAsync(route, command with { environmentId = "env-absent" });
+        Assert.Equal(HttpStatusCode.Forbidden, absentMembership.StatusCode);
         Assert.Empty(masterData.Paths);
 
         using var wrongTarget = await client.PostAsJsonAsync(route, command with { targetStepId = "invalid" });

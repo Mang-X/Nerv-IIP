@@ -2,8 +2,10 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.Iam.Web.Application.Auth;
+using Nerv.IIP.Iam.Infrastructure;
 
 namespace Nerv.IIP.Iam.Web.Tests;
 
@@ -88,6 +90,39 @@ public sealed class IamAuthorizationCheckEndpointTests
             new AuthorizationCheckRequest("apphub.instances.read", "org-001", "env-prod", null, null));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Authorization_check_projects_the_selected_membership_and_denies_missing_or_unprivileged_membership()
+    {
+        await using var factory = new WebApplicationFactory<Program>();
+        using var client = factory.CreateClient();
+        var store = factory.Services.GetRequiredService<InMemoryIamStore>();
+        var selectedRole = store.CreateRole("Selected scope reader", ["apphub.instances.read"]);
+        store.ReplaceMembershipRoles("user-admin", "org-001", "env-selected", [selectedRole.RoleId]);
+        using var auth = await client.PostAsJsonAsync("/api/iam/v1/auth/login", new LoginRequest("admin", "Admin123!"));
+        var tokens = await ReadResponseDataAsync<AuthResponse>(auth);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
+
+        async Task<HttpResponseMessage> CheckAsync(string environmentId, string permissionCode) =>
+            await client.PostAsJsonAsync("/internal/iam/v1/authorization/check",
+                new AuthorizationCheckRequest(permissionCode, "org-001", environmentId, null, null)
+                {
+                    IncludeSelectedMembership = true,
+                });
+
+        using var response = await CheckAsync("env-selected", "apphub.instances.read");
+        response.EnsureSuccessStatusCode();
+        var body = await ReadResponseDataAsync<AuthorizationCheckResponse>(response);
+        var membership = Assert.IsType<AuthorizationMembership>(body.SelectedMembership);
+        Assert.Equal("org-001", membership.OrganizationId);
+        Assert.Equal("env-selected", membership.EnvironmentId);
+        Assert.Equal(selectedRole.RoleId, Assert.Single(membership.RoleIds));
+
+        using var absent = await CheckAsync("env-absent", "apphub.instances.read");
+        Assert.Equal(HttpStatusCode.Forbidden, absent.StatusCode);
+        using var denied = await CheckAsync("env-selected", "permission.not.granted");
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
     }
 
     private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
