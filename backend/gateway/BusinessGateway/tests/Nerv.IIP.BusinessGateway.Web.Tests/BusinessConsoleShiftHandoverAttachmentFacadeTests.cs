@@ -65,7 +65,6 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
             session.UploadUrl);
     }
 
-    // 仓库默认 FileStorage:UploadProvider 就是 server-proxy，而 server-proxy 没有任何字节 endpoint。
     [Fact]
     public async Task Upload_session_fails_closed_when_file_storage_is_not_running_the_tus_protocol()
     {
@@ -224,7 +223,9 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         Assert.Equal("env-dev", grantBody.RootElement.GetProperty("environmentId").GetString());
 
         // 取字节那一跳必须带 FileStorage 要求的传输头
+        Assert.Equal(FileStorageClientTestConfiguration.DownloadToken, handler.Requests[1].Headers.Authorization?.Parameter);
         var contentRequest = handler.Requests[2];
+        Assert.Equal(FileStorageClientTestConfiguration.DownloadToken, contentRequest.Headers.Authorization?.Parameter);
         Assert.Equal(HttpMethod.Get, contentRequest.Method);
         Assert.Equal("org-001", contentRequest.Headers.GetValues("X-Organization-Id").Single());
         Assert.Equal("env-dev", contentRequest.Headers.GetValues("X-Environment-Id").Single());
@@ -972,10 +973,10 @@ public sealed class BusinessConsoleShiftHandoverAttachmentFacadeTests
         });
 
     private static HttpBusinessFileStorageClient CreateClient(StubHandler handler) =>
-        new(new HttpClient(handler) { BaseAddress = new Uri("http://file-storage.local") });
+        new(new HttpClient(handler) { BaseAddress = new Uri("http://file-storage.local") }, FileStorageClientTestConfiguration.Create());
 
     private static HttpBusinessFileTransferClient CreateTransferClient(StubHandler handler) =>
-        new(new HttpClient(handler) { BaseAddress = new Uri("http://file-storage.local") });
+        new(new HttpClient(handler) { BaseAddress = new Uri("http://file-storage.local") }, FileStorageClientTestConfiguration.Create());
 
     private static HttpResponseMessage Json<T>(T payload) =>
         new(HttpStatusCode.OK) { Content = JsonContent.Create(payload) };

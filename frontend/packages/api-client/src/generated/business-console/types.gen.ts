@@ -23690,6 +23690,38 @@ export type PatchBusinessConsoleQualityEvidenceTusUploadResponses = {
 
 export type PatchBusinessConsoleQualityEvidenceTusUploadResponse = PatchBusinessConsoleQualityEvidenceTusUploadResponses[keyof PatchBusinessConsoleQualityEvidenceTusUploadResponses];
 
+export type DownloadBusinessConsoleQualityEvidenceContentData = {
+    body?: never;
+    path: {
+        fileId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/files/quality-evidence/{fileId}/content';
+};
+
+export type DownloadBusinessConsoleQualityEvidenceContentErrors = {
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: unknown;
+};
+
+export type DownloadBusinessConsoleQualityEvidenceContentResponses = {
+    /**
+     * Success
+     */
+    200: Blob | File;
+};
+
+export type DownloadBusinessConsoleQualityEvidenceContentResponse = DownloadBusinessConsoleQualityEvidenceContentResponses[keyof DownloadBusinessConsoleQualityEvidenceContentResponses];
+
 export type CreateBusinessConsoleSopFileUploadSessionData = {
     body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleCreateSopFileUploadSessionRequest;
     path?: never;

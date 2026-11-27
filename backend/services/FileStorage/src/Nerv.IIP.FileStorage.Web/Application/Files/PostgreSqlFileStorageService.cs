@@ -11,12 +11,15 @@ namespace Nerv.IIP.FileStorage.Web.Application.Files;
 
 public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFileContentIndex
 {
+    private const string DownloadTransferMode = "server-proxy";
+
     private readonly ApplicationDbContext dbContext;
     private readonly IFileStorageUploadProvider uploadProvider;
     private readonly ILocalTusFileStoreAccessor? tusStoreAccessor;
     private readonly IConfiguration? configuration;
     private readonly TimeProvider timeProvider;
     private readonly IUploadCommitStorage commitStorage;
+    private readonly S3FinalFileStore? s3;
     private readonly UploadSessionGateRegistry gateRegistry;
     private readonly UploadCommitExecutionLeaseManager executionLeaseManager;
     private readonly ILogger<PostgreSqlFileStorageService> logger;
@@ -30,7 +33,8 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         IUploadCommitStorage commitStorage,
         UploadSessionGateRegistry gateRegistry,
         ILogger<PostgreSqlFileStorageService> logger,
-        UploadCommitExecutionLeaseManager executionLeaseManager)
+        UploadCommitExecutionLeaseManager executionLeaseManager,
+        S3FinalFileStore? s3 = null)
     {
         this.dbContext = dbContext;
         this.uploadProvider = uploadProvider;
@@ -41,6 +45,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
         this.gateRegistry = gateRegistry;
         this.executionLeaseManager = executionLeaseManager;
         this.logger = logger;
+        this.s3 = s3;
     }
 
     public async Task<FileStorageResult<CreateUploadSessionResponse>> CreateUploadSessionAsync(
@@ -132,6 +137,12 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             var now = timeProvider.GetUtcNow();
             var uploadSessionId = NewId("ups");
             var fileId = NewId("file");
+            var objectKey = BuildObjectKey(request.OrganizationId, fileId);
+            if (s3 is { IsEnabled: true } && (!s3.AcceptsKey(objectKey)
+                || request.ExpectedSizeBytes > S3FinalFileStore.MaximumObjectBytes))
+            {
+                return FileStorageResult<CreateUploadSessionResponse>.BadRequest("文件标识或大小超出 S3 存储支持范围。");
+            }
             session = UploadSessionRecord.Create(
                 uploadSessionId,
                 fileId,
@@ -145,7 +156,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
                 request.ContentType,
                 request.ExpectedSizeBytes,
                 request.Checksum,
-                BuildObjectKey(request.OrganizationId, fileId),
+                objectKey,
                 uploadProvider.Provider,
                 now,
                 now.AddMinutes(15));
@@ -237,38 +248,50 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
                 return FileStorageResult<FileMetadataResponse>.BadRequest("上传会话已过期。");
             }
 
-            var tusValidation = await TusUploadCompletionValidator.ValidateAsync(
-                session.Provider,
-                session.UploadSessionId,
-                session.ExpectedSizeBytes,
-                session.Checksum,
-                request,
-                tusStoreAccessor,
-                cancellationToken);
-            if (tusValidation is not null)
+            string? commitChecksum;
+            try
             {
-                return FileStorageResult<FileMetadataResponse>.Failure(
-                    tusValidation.StatusCode,
-                    tusValidation.Message);
-            }
-
-            if (!await FileStoragePurposePolicies.MatchesDeclaredContentAsync(
-                    session.FileName,
-                    session.ContentType,
+                var tusValidation = await TusUploadCompletionValidator.ValidateAsync(
                     session.Provider,
                     session.UploadSessionId,
+                    session.ExpectedSizeBytes,
+                    session.Checksum,
+                    request,
                     tusStoreAccessor,
-                    cancellationToken))
-            {
-                return FileStorageResult<FileMetadataResponse>.BadRequest("上传内容与声明的文件类型不匹配。");
-            }
+                    cancellationToken);
+                if (tusValidation is not null)
+                {
+                    return FileStorageResult<FileMetadataResponse>.Failure(
+                        tusValidation.StatusCode,
+                        tusValidation.Message);
+                }
 
-            var commitChecksum = NormalizeCanonicalChecksum(session.Checksum) ?? NormalizeCanonicalChecksum(request.Checksum);
-            if (commitChecksum is null && session.Provider == TusUploadProvider.Name
-                && tusStoreAccessor is not null && tusStoreAccessor.TryGet(out var localStore)
-                && localStore.Exists(session.UploadSessionId))
+                if (!await FileStoragePurposePolicies.MatchesDeclaredContentAsync(
+                        session.FileName,
+                        session.ContentType,
+                        session.Provider,
+                        session.UploadSessionId,
+                        tusStoreAccessor,
+                        cancellationToken))
+                {
+                    return FileStorageResult<FileMetadataResponse>.BadRequest("上传内容与声明的文件类型不匹配。");
+                }
+
+                commitChecksum = NormalizeCanonicalChecksum(session.Checksum) ?? NormalizeCanonicalChecksum(request.Checksum);
+                if (commitChecksum is null && session.Provider == TusUploadProvider.Name
+                    && tusStoreAccessor is not null && tusStoreAccessor.TryGet(out var localStore)
+                    && localStore.Exists(session.UploadSessionId))
+                {
+                    commitChecksum = $"sha256:{await localStore.ComputeSha256HexAsync(session.UploadSessionId, cancellationToken)}";
+                }
+            }
+            catch (Exception error) when (s3 is { IsEnabled: true } && error is IOException or UnauthorizedAccessException)
             {
-                commitChecksum = $"sha256:{await localStore.ComputeSha256HexAsync(session.UploadSessionId, cancellationToken)}";
+                cancellationToken.ThrowIfCancellationRequested();
+                logger.LogWarning("FileStorage 无法读取上传暂存字节；UploadSessionId={UploadSessionId}。", uploadSessionId);
+                return FileStorageResult<FileMetadataResponse>.Failure(
+                    StatusCodes.Status503ServiceUnavailable,
+                    "上传暂存字节暂不可用，请稍后重试。");
             }
 
             session.BeginCommit(NewId("cmt"), commitChecksum, now);
@@ -464,7 +487,23 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return CommitOwnershipChanged();
         }
 
+        DeleteCommittedS3Staging(session.UploadSessionId);
         return FileStorageResult<FileMetadataResponse>.Ok(ToResponse(file));
+    }
+
+    private void DeleteCommittedS3Staging(string uploadSessionId)
+    {
+        if (s3 is { IsEnabled: true } && tusStoreAccessor is not null && tusStoreAccessor.TryGet(out var store))
+        {
+            try
+            {
+                store.Delete(uploadSessionId);
+            }
+            catch (Exception error) when (error is InvalidOperationException or IOException or UnauthorizedAccessException)
+            {
+                logger.LogWarning("FileStorage 暂存卷暂不可用，稍后由 GC 重试清理已提交的暂存字节。");
+            }
+        }
     }
 
     public async Task<FileStorageResult<FileMetadataResponse>> GetFileMetadataAsync(
@@ -605,7 +644,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             file.FileId,
             file.OrganizationId,
             file.EnvironmentId,
-            ServerProxyUploadProvider.Name,
+            DownloadTransferMode,
             now,
             now.AddMinutes(10),
             caller);
@@ -620,7 +659,7 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
                 $"/api/files/v1/download-grants/{grant.DownloadGrantId}/content",
                 new Dictionary<string, string>
                 {
-                    ["x-nerv-download-mode"] = ServerProxyUploadProvider.Name,
+                    ["x-nerv-download-mode"] = DownloadTransferMode,
                     [FileStorageTransferHeaders.OrganizationId] = file.OrganizationId,
                     [FileStorageTransferHeaders.EnvironmentId] = file.EnvironmentId
                 })));
@@ -656,7 +695,8 @@ public sealed class PostgreSqlFileStorageService : IFileStorageService, ILocalFi
             return null;
         }
 
-        if (tusStoreAccessor is not null && tusStoreAccessor.TryGet(out var store)
+        if (s3 is not { IsEnabled: true }
+            && tusStoreAccessor is not null && tusStoreAccessor.TryGet(out var store)
             && !store.FinalExists(file.ObjectKey)
             && NormalizeCanonicalChecksum(file.Checksum) is { } checksum)
         {

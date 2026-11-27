@@ -452,6 +452,7 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/files/quality-evidence/upload-sessions/{uploadSessionId}/complete", "post", "completeBusinessConsoleQualityEvidenceUpload");
         AssertOperationId(paths, "/api/business-console/v1/files/quality-evidence/tus/{uploadSessionId}", "head", "getBusinessConsoleQualityEvidenceTusOffset");
         AssertOperationId(paths, "/api/business-console/v1/files/quality-evidence/tus/{uploadSessionId}", "patch", "patchBusinessConsoleQualityEvidenceTusUpload");
+        AssertOperationId(paths, "/api/business-console/v1/files/quality-evidence/{fileId}/content", "get", "downloadBusinessConsoleQualityEvidenceContent");
         // #3314 结构不变量，见 AssertFileFaceExposesOnlyFileIdKeyedByteRoutes 的注释。
         AssertFileFaceExposesOnlyFileIdKeyedByteRoutes(
             paths,
@@ -469,7 +470,8 @@ public sealed class BusinessGatewayOpenApiTests
             "/api/business-console/v1/files/barcode-template-assets/tus/{uploadSessionId}",
             "/api/business-console/v1/files/quality-evidence/upload-sessions",
             "/api/business-console/v1/files/quality-evidence/upload-sessions/{uploadSessionId}/complete",
-            "/api/business-console/v1/files/quality-evidence/tus/{uploadSessionId}");
+            "/api/business-console/v1/files/quality-evidence/tus/{uploadSessionId}",
+            "/api/business-console/v1/files/quality-evidence/{fileId}/content");
         AssertOperationId(paths, "/api/business-console/v1/engineering/items", "post", "createBusinessConsoleEngineeringItemRevision");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms", "get", "listBusinessConsoleEngineeringBoms");
         AssertOperationId(paths, "/api/business-console/v1/engineering/engineering-boms/explosion", "get", "getBusinessConsoleEngineeringBomExplosion");

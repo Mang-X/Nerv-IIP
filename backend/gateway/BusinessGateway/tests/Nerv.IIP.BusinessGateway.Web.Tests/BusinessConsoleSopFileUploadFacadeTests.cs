@@ -190,9 +190,9 @@ public sealed class BusinessConsoleSopFileUploadFacadeTests
         {
             var http = new HttpClient(handler) { BaseAddress = new Uri("http://file-storage.local") };
             services.RemoveAll<IBusinessFileStorageClient>();
-            services.AddSingleton<IBusinessFileStorageClient>(new HttpBusinessFileStorageClient(http));
+            services.AddSingleton<IBusinessFileStorageClient>(new HttpBusinessFileStorageClient(http, FileStorageClientTestConfiguration.Create()));
             services.RemoveAll<IBusinessFileTransferClient>();
-            services.AddSingleton<IBusinessFileTransferClient>(new HttpBusinessFileTransferClient(http));
+            services.AddSingleton<IBusinessFileTransferClient>(new HttpBusinessFileTransferClient(http, FileStorageClientTestConfiguration.Create()));
             services.RemoveAll<IBusinessProductEngineeringClient>();
             services.AddSingleton<IBusinessProductEngineeringClient>(handler.Engineering);
             services.RemoveAll<IInternalServiceTokenProvider>();
@@ -218,8 +218,12 @@ public sealed class BusinessConsoleSopFileUploadFacadeTests
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Calls++;
-            Assert.Equal("Bearer internal-test-token", request.Headers.Authorization!.ToString());
             var path = request.RequestUri!.AbsolutePath;
+            var expectedToken = path.Contains("/download-grants", StringComparison.Ordinal)
+                ? FileStorageClientTestConfiguration.DownloadToken
+                : "internal-test-token";
+            Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+            Assert.Equal(expectedToken, request.Headers.Authorization?.Parameter);
             if (path == "/api/files/v1/upload-sessions")
             {
                 CreatedSession = await request.Content!.ReadAsStringAsync(ct);

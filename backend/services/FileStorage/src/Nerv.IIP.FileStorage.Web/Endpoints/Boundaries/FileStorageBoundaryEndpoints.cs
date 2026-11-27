@@ -5,20 +5,6 @@ using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.FileStorage.Web.Endpoints.Boundaries;
 
-public sealed record FileStorageBoundaryResponse(IReadOnlyList<string> DomainFacts, IReadOnlyList<string> ProviderBoundaries);
-
-[HttpGet("/internal/file-storage/v1/boundaries")]
-[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
-public sealed class GetFileStorageBoundariesEndpoint : EndpointWithoutRequest
-{
-    public override async Task HandleAsync(CancellationToken ct)
-    {
-        await HttpContext.Response.WriteAsJsonAsync(new FileStorageBoundaryResponse(
-            ["FileMetadata", "UploadSession", "UploadInstruction", "DownloadGrant", "FilePurposePolicy"],
-            ["UploadProvider", "tus", "s3-multipart", "server-proxy", "ObjectStorageAdapter", "MinIO"]), ct);
-    }
-}
-
 public sealed record FilePurposeBoundaryResponse(
     string Purpose,
     bool Allowed,

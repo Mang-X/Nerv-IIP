@@ -26,7 +26,8 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
     ApplicationDbContext dbContext,
     ILocalTusFileStoreAccessor tusStoreAccessor,
     IConfiguration? configuration = null,
-    TimeProvider? timeProvider = null)
+    TimeProvider? timeProvider = null,
+    S3FinalFileStore? s3 = null)
 {
     private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
 
@@ -83,7 +84,15 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
                 .Where(x => physicalDeleteFileIds.Contains(x.FileId))
                 .ToArrayAsync(cancellationToken);
         var localTusFilesRemoved = 0;
-        if (tusStoreAccessor.TryGet(out var store))
+        var hasLocalStore = tusStoreAccessor.TryGet(out var store);
+        if (s3 is { IsEnabled: true })
+        {
+            foreach (var file in physicalDeleteFiles)
+            {
+                await s3.DeleteAsync(file.ObjectKey, cancellationToken);
+            }
+        }
+        else if (hasLocalStore)
         {
             // 仅清理已经软删除的文件。失败时保留元数据，以便下一轮按 ObjectKey 重试。
             foreach (var file in physicalDeleteFiles)
@@ -118,15 +127,28 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
                 }
             }
 
+            if (s3 is { IsEnabled: true })
+            {
+                localTusFilesRemoved += await CollectCommittedS3StagingAsync(store, s3, cancellationToken);
+            }
+
             var retainedTusUploadSessionIds = await dbContext.UploadSessions
                 .Where(x => x.LegacyCompleted
                     || x.State != UploadSessionState.Open
                     || x.ExpiresAtUtc > now)
                 .Select(x => x.UploadSessionId)
                 .ToArrayAsync(cancellationToken);
-            localTusFilesRemoved += store.DeleteFilesExcept(
-                retainedTusUploadSessionIds,
-                now - ResolveOrphanGracePeriod(configuration));
+            try
+            {
+                localTusFilesRemoved += store.DeleteFilesExcept(
+                    retainedTusUploadSessionIds,
+                    now - ResolveOrphanGracePeriod(configuration));
+            }
+            catch (Exception error) when (s3 is { IsEnabled: true } && error is IOException or UnauthorizedAccessException)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                throw new IOException("FileStorage 无法检查暂存目录。");
+            }
         }
 
         return new FileStorageGarbageCollectionResult(
@@ -135,6 +157,35 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
             localTusFilesRemoved,
             softDeleted,
             physicalDeleteFiles.Length);
+    }
+
+    private async Task<int> CollectCommittedS3StagingAsync(
+        LocalUploadByteStore store, S3FinalFileStore s3, CancellationToken cancellationToken)
+    {
+        var completed = await (
+            from session in dbContext.UploadSessions
+            join file in dbContext.StoredFiles on session.FileId equals file.FileId
+            where session.State == UploadSessionState.Completed && file.Checksum != null
+            select new { session.UploadSessionId, file.ObjectKey, file.SizeBytes, file.Checksum }
+        ).ToArrayAsync(cancellationToken);
+
+        var removed = 0;
+        foreach (var file in completed)
+        {
+            if (!store.Exists(file.UploadSessionId) || !s3.AcceptsKey(file.ObjectKey))
+            {
+                continue;
+            }
+
+            // 崩溃可能发生在 Tx2 与清理之间。先验证远端仍有完整副本，再删除暂存。
+            var evidence = await s3.ReadEvidenceAsync(file.ObjectKey, cancellationToken);
+            if (evidence?.SizeBytes == file.SizeBytes && evidence.CanonicalChecksum == file.Checksum
+                && store.Delete(file.UploadSessionId))
+            {
+                removed++;
+            }
+        }
+        return removed;
     }
 
     private static TimeSpan ResolveOrphanGracePeriod(IConfiguration? configuration)

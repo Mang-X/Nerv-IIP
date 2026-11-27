@@ -3,12 +3,9 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nerv.IIP.Contracts.FileStorage;
-using Nerv.IIP.FileStorage.Web.Application.Files;
+using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 using Nerv.IIP.ServiceAuth;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
@@ -37,7 +34,8 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
             await client.PostAsJsonAsync("/api/files/v1/files/file-missing/download-grants", new CreateDownloadGrantRequest("org-001", "prod")),
             await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, "/api/files/v1/tus/ups-missing")),
             await client.SendAsync(patchRequest),
-            await client.GetAsync("/api/files/v1/download-grants/grant-missing/content")
+            await client.GetAsync("/api/files/v1/download-grants/grant-missing/content"),
+            await client.GetAsync("/internal/file-storage/v1/diagnostics/reconcile")
         };
 
         Assert.All(responses, response => Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode));
@@ -52,20 +50,6 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("Healthy", await response.Content.ReadAsStringAsync());
-    }
-
-    [Fact]
-    public async Task Authenticated_client_can_read_file_storage_boundaries()
-    {
-        var client = factory.CreateClient();
-
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-            "Bearer",
-            InternalServiceAuthentication.DefaultDevelopmentBearerToken);
-        var boundaries = await client.GetFromJsonAsync<FileStorageBoundaries>("/internal/file-storage/v1/boundaries");
-
-        Assert.Contains("FileMetadata", boundaries!.DomainFacts);
-        Assert.Contains("UploadProvider", boundaries.ProviderBoundaries);
     }
 
     [Fact]
@@ -133,18 +117,14 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
     }
 
     [Fact]
-    public async Task UploadSessionWorkflow_VerifiedSeam_CompletesFileAndIssuesDownloadGrant()
+    public async Task UploadSessionWorkflow_Tus_CompletesFileAndIssuesDownloadGrant()
     {
-        await using var verifiedFactory = factory.WithWebHostBuilder(builder =>
-            builder.ConfigureTestServices(services =>
-            {
-                services.RemoveAll<IUploadCommitStorage>();
-                services.AddSingleton<IUploadCommitStorage>(new VerifiedTestCommitStorage());
-            }));
-        var client = verifiedFactory.CreateClient();
+        using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer",
             InternalServiceAuthentication.DefaultDevelopmentBearerToken);
+        var bytes = TusTestStaging.ZipBytes(4096);
+        var checksum = TusTestStaging.Checksum(bytes);
         var createRequest = new CreateUploadSessionRequest(
             "org-001",
             "prod",
@@ -153,7 +133,7 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
             "demo.zip",
             "application/zip",
             4096,
-            "sha256:test");
+            checksum);
 
         var createdResponse = await client.PostAsJsonAsync("/api/files/v1/upload-sessions", createRequest);
 
@@ -162,14 +142,18 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
         Assert.NotNull(created);
         Assert.False(string.IsNullOrWhiteSpace(created.UploadSessionId));
         Assert.False(string.IsNullOrWhiteSpace(created.FileId));
-        Assert.Equal("server-proxy", created.UploadMode);
-        Assert.Equal("server-proxy", created.Provider);
-        Assert.StartsWith("/api/files/v1/upload-sessions/", created.Upload.Url, StringComparison.Ordinal);
+        Assert.Equal("tus", created.UploadMode);
+        Assert.Equal("tus", created.Provider);
+        Assert.Equal($"/api/files/v1/tus/{created.UploadSessionId}", created.Upload.Url);
         await AssertObjectKeyIsNotExposedAsync(createdResponse);
+
+        using var scope = factory.Services.CreateScope();
+        var accessor = scope.ServiceProvider.GetRequiredService<ILocalTusFileStoreAccessor>();
+        await TusTestStaging.StageAsync(accessor, created.UploadSessionId, bytes);
 
         var completeResponse = await client.PostAsJsonAsync(
             $"/api/files/v1/upload-sessions/{created.UploadSessionId}/complete",
-            new CompleteUploadSessionRequest("org-001", "prod", "application-package", "sha256:test", 4096));
+            new CompleteUploadSessionRequest("org-001", "prod", "application-package", checksum, 4096));
 
         completeResponse.EnsureSuccessStatusCode();
         var completed = await completeResponse.Content.ReadFromJsonAsync<FileMetadataResponse>();
@@ -184,7 +168,7 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
         Assert.Equal("demo.zip", completed.FileName);
         Assert.Equal("application/zip", completed.ContentType);
         Assert.Equal(4096, completed.SizeBytes);
-        Assert.Equal($"sha256:{new string('e', 64)}", completed.Checksum);
+        Assert.Equal(checksum, completed.Checksum);
         Assert.Equal("available", completed.Status);
         await AssertObjectKeyIsNotExposedAsync(completeResponse);
         await AssertFlatOwnerFieldsAreNotExposedAsync(completeResponse);
@@ -255,16 +239,6 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
             "sha256:test");
     }
 
-    private sealed class VerifiedTestCommitStorage : IUploadCommitStorage
-    {
-        public Task<UploadCommitStorageResult> CommitAsync(
-            UploadCommitIntent intent,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(UploadCommitStorageResult.Verified(
-                intent.ExpectedSizeBytes,
-                $"sha256:{new string('e', 64)}"));
-    }
-
     private static async Task AssertObjectKeyIsNotExposedAsync(HttpResponseMessage response)
     {
         var body = await response.Content.ReadAsStringAsync();
@@ -297,7 +271,6 @@ public sealed class FileStorageSkeletonTests(FileStorageWebApplicationFactory fa
         };
     }
 
-    private sealed record FileStorageBoundaries(IReadOnlyList<string> DomainFacts, IReadOnlyList<string> ProviderBoundaries);
 }
 
 public sealed record FilePurposeBoundary(

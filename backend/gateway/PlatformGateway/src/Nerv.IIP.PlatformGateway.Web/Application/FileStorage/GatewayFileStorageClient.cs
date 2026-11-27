@@ -61,16 +61,11 @@ public interface IGatewayFileStorageClient
 public sealed class HttpGatewayFileStorageClient(
     HttpClient httpClient,
     IInternalServiceTokenProvider internalServiceToken,
-    IConfiguration? configuration = null,
+    IConfiguration configuration,
     IHostEnvironment? environment = null) : IGatewayFileStorageClient
 {
     private string GetDownloadBearerToken()
     {
-        if (configuration is null)
-        {
-            return internalServiceToken.BearerToken;
-        }
-
         var token = configuration["FileStorage:DownloadBearerToken"]
             ?? (environment?.IsDevelopment() == true ? "local-file-download-platform-gateway" : null);
         if (string.IsNullOrWhiteSpace(token) || token == internalServiceToken.BearerToken)
@@ -381,39 +376,16 @@ public sealed class HttpGatewayFileStorageClient(
 
     private static TransferInstructions RewriteTransferInstructions(TransferInstructions instructions)
     {
-        if (IsExternallyAddressedTransferUrl(instructions.Url))
+        var prefix = ConsoleFileStorageTransferRoutes.DownstreamTusPrefix;
+        if (!instructions.Url.StartsWith(prefix, StringComparison.Ordinal))
         {
             throw GatewayAuthException.BadGateway("filestorage-transfer-url-not-proxyable");
         }
 
         return instructions with
         {
-            Url = RewriteTransferUrl(instructions.Url)
+            Url = ConsoleFileStorageTransferRoutes.ConsoleTusPrefix + instructions.Url[prefix.Length..]
         };
-    }
-
-    private static string RewriteTransferUrl(string url)
-    {
-        if (url.StartsWith(ConsoleFileStorageTransferRoutes.DownstreamTusPrefix, StringComparison.Ordinal))
-        {
-            return ConsoleFileStorageTransferRoutes.ConsoleTusPrefix
-                + url[ConsoleFileStorageTransferRoutes.DownstreamTusPrefix.Length..];
-        }
-
-        return url;
-    }
-
-    private static bool IsExternallyAddressedTransferUrl(string url)
-    {
-        var trimmed = url.TrimStart();
-        if (trimmed.StartsWith("//", StringComparison.Ordinal))
-        {
-            return true;
-        }
-
-        var firstSeparator = trimmed.IndexOfAny(['/', '?', '#']);
-        var firstColon = trimmed.IndexOf(':');
-        return firstColon > 0 && (firstSeparator < 0 || firstColon < firstSeparator);
     }
 
     private static string BuildListQuery(ListFilesRequest request)

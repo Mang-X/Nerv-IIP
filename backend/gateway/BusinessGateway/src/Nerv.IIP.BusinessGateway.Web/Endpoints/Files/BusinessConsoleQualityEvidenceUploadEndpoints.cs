@@ -176,3 +176,40 @@ public sealed class PatchBusinessConsoleQualityEvidenceTusUploadEndpoint(
                 QualityNcrEvidence.FilePurpose),
             ct);
 }
+
+[Tags("Business Console Files")]
+[HttpGet("/api/business-console/v1/files/quality-evidence/{fileId}/content")]
+[BusinessGatewayOperationId("downloadBusinessConsoleQualityEvidenceContent")]
+[Authorize(Policy = BusinessGatewayPolicies.BusinessConsoleAuthenticated)]
+[Microsoft.AspNetCore.Mvc.ProducesResponseType(typeof(byte[]), StatusCodes.Status200OK, "application/octet-stream")]
+public sealed class DownloadBusinessConsoleQualityEvidenceContentEndpoint(
+    IBusinessGatewayAuthorizationClient auth,
+    IBusinessFileStorageClient files,
+    IBusinessFileTransferClient transfer,
+    IInternalServiceTokenProvider tokenProvider)
+    : EndpointWithoutRequest
+{
+    public override Task HandleAsync(CancellationToken ct) =>
+        BusinessConsoleFileTransfer.ProxyAsync(
+            HttpContext,
+            auth,
+            BusinessGatewayPermissions.QualityNcrRead,
+            "quality-evidence",
+            Route<string>("fileId")!,
+            async (organizationId, environmentId, cancellationToken) =>
+            {
+                // 授权（用途复核 + 签发 + URL 校验）走 JSON 面的弹性管线；只有取字节那一跳走字节面。
+                var ticket = await files.AuthorizeQualityEvidenceDownloadAsync(
+                    tokenProvider.BearerToken,
+                    Route<string>("fileId")!,
+                    organizationId,
+                    environmentId,
+                    cancellationToken);
+                await transfer.StreamFileContentAsync(
+                    tokenProvider.BearerToken,
+                    ticket,
+                    HttpContext.Response,
+                    cancellationToken);
+            },
+            ct);
+}

@@ -129,6 +129,13 @@ internal sealed partial class AppHostComposition
             .WaitFor(redis)
             .WaitFor(minio);
 
+        if (fileStorageVolumeIdentity is not null)
+        {
+            fileStorage.WithEnvironment("FileStorage__Tus__VolumeIdentity", fileStorageVolumeIdentity)
+                .WithEnvironment("FileStorage__DownloadCallers__platform-gateway__BearerToken", platformGatewayDownloadToken!)
+                .WithEnvironment("FileStorage__DownloadCallers__business-gateway__BearerToken", businessGatewayDownloadToken!);
+        }
+
         var notification = infrastructure.WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Notification_Web>("notification")))
             .WithHttpEndpoint(port: fullStackEphemeral ? null : 5106, name: "http")
             .WithEnvironment("Persistence__Provider", "PostgreSQL")

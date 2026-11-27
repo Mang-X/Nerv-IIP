@@ -15,6 +15,7 @@ public sealed class BusinessConsoleQualityEvidenceUploadFacadeTests
     private const string NcrId = "b871553a-d3e0-45d8-960b-df0e9c2eac88";
     private const string Sessions = "/api/business-console/v1/files/quality-evidence/upload-sessions";
     private const string Tus = "/api/business-console/v1/files/quality-evidence/tus/ups-quality-1";
+    private const string EvidenceContent = "/api/business-console/v1/files/quality-evidence/file-quality-1/content";
     private const string Detail = "/api/business-console/v1/quality/ncrs/" + NcrId;
 
     [Fact]
@@ -168,6 +169,99 @@ public sealed class BusinessConsoleQualityEvidenceUploadFacadeTests
             .GetProperty("application/offset+octet-stream").GetProperty("schema").GetProperty("format").GetString());
     }
 
+    [Fact]
+    public async Task Public_download_contract_requires_scope_and_returns_binary_content()
+    {
+        using var doc = JsonDocument.Parse(await BusinessGatewayTestHost.GetOpenApiDocumentAsync());
+        var download = doc.RootElement.GetProperty("paths")
+            .GetProperty("/api/business-console/v1/files/quality-evidence/{fileId}/content").GetProperty("get");
+        var content = download.GetProperty("responses").GetProperty("200").GetProperty("content");
+        var binary = Assert.Single(content.EnumerateObject());
+        Assert.Equal("application/octet-stream", binary.Name);
+        Assert.Equal("binary", binary.Value.GetProperty("schema").GetProperty("format").GetString());
+        foreach (var name in new[] { "organizationId", "environmentId" })
+        {
+            var parameter = Assert.Single(download.GetProperty("parameters").EnumerateArray(),
+                item => item.GetProperty("name").GetString() == name);
+            Assert.Equal("query", parameter.GetProperty("in").GetString());
+            Assert.True(parameter.GetProperty("required").GetBoolean());
+            Assert.Equal("string", parameter.GetProperty("schema").GetProperty("type").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task Cors_exposes_tus_response_headers_to_the_allowed_origin()
+    {
+        const string origin = "http://localhost:5105";
+        await using var lease = Lease(
+            FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.QualityNcrManage),
+            new Downstream());
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        using var request = Scoped(HttpMethod.Head, Tus);
+        request.Headers.Add("Origin", origin);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(origin, Assert.Single(response.Headers.GetValues("Access-Control-Allow-Origin")));
+        Assert.Equal("0", Assert.Single(response.Headers.GetValues("Upload-Offset")));
+        Assert.Subset(
+            ExposedHeaders(response).ToHashSet(StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>(["Content-Disposition", "Upload-Offset", "Upload-Length", "Tus-Resumable"],
+                StringComparer.OrdinalIgnoreCase));
+    }
+
+    private static IEnumerable<string> ExposedHeaders(HttpResponseMessage response) =>
+        response.Headers.GetValues("Access-Control-Expose-Headers")
+            .SelectMany(value => value.Split(',', StringSplitOptions.TrimEntries));
+
+    [Fact]
+    public async Task Ncr_read_permission_downloads_evidence_using_the_dedicated_grant_credential()
+    {
+        var handler = new Downstream();
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.QualityNcrRead);
+        await using var lease = Lease(auth, handler);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        using var request = new HttpRequestMessage(HttpMethod.Get, EvidenceContent + "?organizationId=org-001&environmentId=env-dev");
+        request.Headers.Add("Origin", "http://localhost:5105");
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(Downstream.Content, await response.Content.ReadAsByteArrayAsync());
+        Assert.Equal("application/octet-stream", response.Content.Headers.ContentType!.MediaType);
+        Assert.Equal("attachment", response.Content.Headers.ContentDisposition!.DispositionType);
+        Assert.Contains("Content-Disposition", ExposedHeaders(response));
+        Assert.True(response.Headers.CacheControl!.NoStore);
+        Assert.Equal("nosniff", Assert.Single(response.Headers.GetValues("X-Content-Type-Options")));
+        Assert.Equal(1, handler.GrantIssues);
+        Assert.Equal(1, handler.GrantRedemptions);
+    }
+
+    [Theory]
+    [InlineData("permission", HttpStatusCode.Forbidden, 0)]
+    [InlineData("purpose", HttpStatusCode.NotFound, 1)]
+    [InlineData("organization", HttpStatusCode.NotFound, 1)]
+    [InlineData("environment", HttpStatusCode.NotFound, 1)]
+    public async Task Evidence_download_denies_wrong_permission_purpose_or_scope(
+        string failure, HttpStatusCode expected, int expectedFileCalls)
+    {
+        var handler = new Downstream { DownloadMismatch = failure };
+        var auth = FakeBusinessGatewayAuthorizationClient.AllowOnly(failure == "permission"
+            ? BusinessGatewayPermissions.QualityNcrManage
+            : BusinessGatewayPermissions.QualityNcrRead);
+        await using var lease = Lease(auth, handler);
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        using var request = Scoped(HttpMethod.Get, EvidenceContent);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(expected, response.StatusCode);
+        Assert.Equal(expectedFileCalls, handler.FileCalls);
+        Assert.Equal(0, handler.GrantIssues);
+        Assert.Equal(0, handler.GrantRedemptions);
+    }
+
     private static object CreateRequest() => new
     {
         organizationId = "org-001", environmentId = "env-dev", ncrId = NcrId,
@@ -196,9 +290,9 @@ public sealed class BusinessConsoleQualityEvidenceUploadFacadeTests
         {
             var http = new HttpClient(handler) { BaseAddress = new Uri("http://downstream.test") };
             services.RemoveAll<IBusinessFileStorageClient>();
-            services.AddSingleton<IBusinessFileStorageClient>(new HttpBusinessFileStorageClient(http));
+            services.AddSingleton<IBusinessFileStorageClient>(new HttpBusinessFileStorageClient(http, FileStorageClientTestConfiguration.Create()));
             services.RemoveAll<IBusinessFileTransferClient>();
-            services.AddSingleton<IBusinessFileTransferClient>(new HttpBusinessFileTransferClient(http));
+            services.AddSingleton<IBusinessFileTransferClient>(new HttpBusinessFileTransferClient(http, FileStorageClientTestConfiguration.Create()));
             services.RemoveAll<IBusinessQualityClient>();
             services.AddSingleton<IBusinessQualityClient>(new HttpBusinessQualityClient(http));
             services.RemoveAll<IInternalServiceTokenProvider>();
@@ -218,13 +312,19 @@ public sealed class BusinessConsoleQualityEvidenceUploadFacadeTests
         public bool NcrExists { get; init; } = true;
         public string SessionPurpose { get; init; } = "quality-evidence";
         public string? CompletionFailure { get; init; }
+        public string? DownloadMismatch { get; init; }
+        public int GrantIssues { get; private set; }
+        public int GrantRedemptions { get; private set; }
+        private const string GrantContent = "/api/files/v1/download-grants/grant-quality-1/content";
+        private const string CreateGrant = "/api/files/v1/files/file-quality-1/download-grants";
         private string[] attachments = [];
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Calls++;
-            Assert.Equal("Bearer internal-test-token", request.Headers.Authorization!.ToString());
             var path = request.RequestUri!.AbsolutePath;
+            var token = path is CreateGrant or GrantContent ? FileStorageClientTestConfiguration.DownloadToken : "internal-test-token";
+            Assert.Equal($"Bearer {token}", request.Headers.Authorization!.ToString());
             if (path.StartsWith("/api/business/v1/quality/ncrs/", StringComparison.Ordinal))
             {
                 if (request.Method == HttpMethod.Get)
@@ -244,6 +344,41 @@ public sealed class BusinessConsoleQualityEvidenceUploadFacadeTests
                 return Envelope(new { accepted = true });
             }
             FileCalls++;
+            if (request.Method == HttpMethod.Get && path == "/api/files/v1/files/file-quality-1")
+            {
+                return Json(new FileMetadataResponse("file-quality-1",
+                    DownloadMismatch == "organization" ? "other-org" : "org-001",
+                    DownloadMismatch == "environment" ? "other-env" : "env-dev",
+                    new OwnerReference("business-quality", "nonconformance-report", NcrId),
+                    DownloadMismatch == "purpose" ? "engineering-document" : "quality-evidence",
+                    "evidence.png", "image/png", Content.Length, null, "available",
+                    DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch));
+            }
+            if (request.Method == HttpMethod.Post && path == CreateGrant)
+            {
+                GrantIssues++;
+                Assert.Equal(new CreateDownloadGrantRequest("org-001", "env-dev"),
+                    await request.Content!.ReadFromJsonAsync<CreateDownloadGrantRequest>(ct));
+                return Json(new DownloadGrantResponse("file-quality-1", DateTimeOffset.UnixEpoch.AddYears(100),
+                    new TransferInstructions(GrantContent, new Dictionary<string, string>
+                    {
+                        ["X-Organization-Id"] = "org-001",
+                        ["X-Environment-Id"] = "env-dev",
+                    })));
+            }
+            if (request.Method == HttpMethod.Get && path == GrantContent)
+            {
+                Assert.Equal(1, GrantIssues);
+                GrantRedemptions++;
+                Assert.Equal("org-001", request.Headers.GetValues("X-Organization-Id").Single());
+                Assert.Equal("env-dev", request.Headers.GetValues("X-Environment-Id").Single());
+                var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Content) };
+                response.Content.Headers.ContentType = new("application/octet-stream");
+                response.Content.Headers.ContentDisposition = new("attachment") { FileName = "evidence.png" };
+                response.Headers.CacheControl = new() { Private = true, NoStore = true };
+                response.Headers.Add("X-Content-Type-Options", "nosniff");
+                return response;
+            }
             if (path == "/api/files/v1/upload-sessions")
             {
                 CreatedSession = await request.Content!.ReadAsStringAsync(ct);

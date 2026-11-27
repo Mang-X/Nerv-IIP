@@ -78,24 +78,32 @@ export async function transferSopFile(
     signal,
     throwOnError: true,
   }).catch(uploadError)
-  const offset = Number(head.response.headers.get('Upload-Offset'))
-  if (head.response.headers.get('Upload-Offset') === null || offset !== 0) {
+  const rawOffset = head.response.headers.get('Upload-Offset')
+  const offset = Number(rawOffset)
+  if (
+    rawOffset === null ||
+    !/^\d+$/.test(rawOffset) ||
+    !Number.isSafeInteger(offset) ||
+    offset > file.size
+  ) {
     throw new Error('上传起点无法确认，请重新选择文件。')
   }
-  const patch = await patchBusinessConsoleSopFileTusUpload({
-    path: { uploadSessionId },
-    headers: {
-      ...headers,
-      'Upload-Offset': '0',
-      'Content-Type': 'application/offset+octet-stream',
-    },
-    body: file,
-    signal,
-    bodySerializer: null,
-    throwOnError: true,
-  }).catch(uploadError)
-  if (Number(patch.response.headers.get('Upload-Offset')) !== file.size) {
-    throw new Error('文件没有完整上传，请重新选择文件。')
+  if (offset < file.size) {
+    const patch = await patchBusinessConsoleSopFileTusUpload({
+      path: { uploadSessionId },
+      headers: {
+        ...headers,
+        'Upload-Offset': String(offset),
+        'Content-Type': 'application/offset+octet-stream',
+      },
+      body: offset === 0 ? file : file.slice(offset),
+      signal,
+      bodySerializer: null,
+      throwOnError: true,
+    }).catch(uploadError)
+    if (patch.response.headers.get('Upload-Offset') !== String(file.size)) {
+      throw new Error('文件没有完整上传，请重新选择文件。')
+    }
   }
   onProgress(100)
 }

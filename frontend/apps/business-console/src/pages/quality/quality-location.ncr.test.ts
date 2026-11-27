@@ -170,6 +170,67 @@ describe('quality route location behavior', () => {
     },
   )
 
+  it('downloads persisted evidence from a reopened NCR with read permission', async () => {
+    authState.permissionCodes = ['business.quality.ncr.read']
+    const row = { ...qualityState.ncrs[0], status: 'disposition-in-progress' }
+    qualityState.ncrs = [row]
+    const data = new Blob(['尺寸复检记录'])
+    evidenceApi.download.mockResolvedValue({
+      data,
+      response: new Response(null, {
+        headers: { 'Content-Disposition': "attachment; filename*=UTF-8''%E5%A4%8D%E6%A3%80.txt" },
+      }),
+    })
+    const create = vi.fn(() => 'blob:ncr-evidence')
+    const revoke = vi.fn()
+    vi.stubGlobal(
+      'URL',
+      class extends URL {
+        static createObjectURL = create
+        static revokeObjectURL = revoke
+      },
+    )
+    const saved = vi.fn()
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      saved(this.href, this.download)
+    })
+    try {
+      const wrapper = mountQualityPage(NcrsPage)
+      const vm = wrapper.vm as unknown as { openNcr: (ncr: BusinessConsoleQualityNcrItem) => void }
+      vm.openNcr(row)
+      await flushPromises()
+      const download = wrapper.findAll('button').find((button) => button.text() === '下载证据 1')
+      expect(download).toBeDefined()
+      await download!.trigger('click')
+      await flushPromises()
+
+      expect(evidenceApi.download).toHaveBeenCalledWith({
+        path: { fileId: 'completed-file' },
+        query: { organizationId: 'org-001', environmentId: 'env-dev' },
+        parseAs: 'blob',
+        throwOnError: true,
+      })
+      expect(create).toHaveBeenCalledWith(data)
+      expect(saved).toHaveBeenCalledWith('blob:ncr-evidence', '复检.txt')
+      expect(revoke).toHaveBeenCalledWith('blob:ncr-evidence')
+
+      evidenceApi.download.mockRejectedValueOnce(new Error('文件不可用'))
+      await download!.trigger('click')
+      await flushPromises()
+      expect(notifySpies.operationFailure).toHaveBeenCalledWith(
+        '证据下载失败',
+        expect.any(Error),
+        '证据下载失败，请稍后重试。',
+      )
+      expect(saved).toHaveBeenCalledTimes(1)
+    } finally {
+      click.mockRestore()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('preserves disposition input after a lost final PATCH response and recovers HEAD 404 evidence with public readback', async () => {
     evidenceApi.patch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
     const wrapper = mountQualityPage(NcrsPage)

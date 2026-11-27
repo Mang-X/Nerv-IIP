@@ -28,7 +28,7 @@ internal static class FileStorageServiceTestFactory
         var manager = executionLeaseManager ?? CreateLeaseManager(dbContext, clock);
         return new PostgreSqlFileStorageService(
             dbContext,
-            uploadProvider ?? new ServerProxyUploadProvider(),
+            uploadProvider ?? new TusUploadProvider(),
             tusStoreAccessor!,
             configuration ?? FileStorageTestConfiguration.Default,
             clock,

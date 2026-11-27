@@ -7221,7 +7221,7 @@ public sealed class BusinessGatewayProxyTests
         var client = new HttpBusinessFileStorageClient(new HttpClient(handler)
         {
             BaseAddress = new Uri("http://file-storage.local"),
-        });
+        }, FileStorageClientTestConfiguration.Create());
 
         var ticket = await client.AuthorizeSopFileDownloadAsync(
             "internal-test-token",
@@ -19445,6 +19445,14 @@ internal sealed class RecordingBusinessFileStorageClient : IBusinessFileStorageC
     public string? LastAuthorizedOrganizationId { get; private set; }
 
     public string? LastAuthorizedEnvironmentId { get; private set; }
+
+    public Task<BusinessFileDownloadTicket> AuthorizeQualityEvidenceDownloadAsync(
+        string internalBearerToken,
+        string fileId,
+        string organizationId,
+        string environmentId,
+        CancellationToken cancellationToken) =>
+        throw new NotSupportedException();
 
     public Task<BusinessFileDownloadTicket> AuthorizeShiftHandoverAttachmentDownloadAsync(
         string internalBearerToken,

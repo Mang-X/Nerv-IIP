@@ -54,6 +54,10 @@
 
    使用本地 tus 持久卷部署到非 Development 环境时，先将卷挂到 `FileStorage__Tus__RootPath` 指定的绝对路径。在确认挂载正确后，把该卷的唯一标识写入卷根目录的 `.filestorage-volume-v1`，并通过 `FileStorage__Tus__VolumeIdentity` 配置同一个标识。挂载丢失或标识不一致时，File Storage 拒绝启动。Development 可用临时测试卷，配置卷标识后也会校验标记。
 
+   `GET /health/tus-volume` 检查 tus 根目录、卷标记和磁盘可用空间。根目录不存在、不可访问，或非 Development 环境的卷标记缺失或不匹配时返回 `Unhealthy`（HTTP 503）。默认低于 256 MiB 时返回 `Degraded`（HTTP 200），可通过 `FileStorage__Tus__MinimumFreeBytes` 调整。既有 `GET /health` 继续用作存活探针。
+
+   使用 File Storage 内部服务凭据调用 `GET /internal/file-storage/v1/diagnostics/reconcile` 可只读对账。每个服务实例同一时刻只允许一次扫描，并发请求返回 HTTP 429。每次最多对账 10,000 个目录条目和 10,000 条数据库记录，两侧各额外探读一条以判断是否截断。差异列表合计最多返回 500 条。任一扫描或报告触顶且仍有条目时，`truncated` 为 `true`。响应包含已扫描的条目和记录数，以及在扫描范围内发现的差异数。数据库扫描不完整时，`orphanFinalFileCount` 为 `null`，孤儿列表为空。结果中的 `missingFinalFiles` 列出缺少正式字节的文件 ID，`orphanFinalFiles` 列出无元数据记录的磁盘文件名。软删除后仍保留的字节计为已关联。上传文件转正或回收时可出现短暂差异，应在写入平稳后复查。此接口不会删除数据。
+
    发布前执行 File Storage 数据库迁移。旧下载授权缺少签发身份，需要重新签发。分别为两个网关配置 `FileStorage__DownloadBearerToken`，并在 File Storage 侧配置对应的 `FileStorage__DownloadCallers__platform-gateway__BearerToken` 和 `FileStorage__DownloadCallers__business-gateway__BearerToken`。两个专用令牌必须彼此不同，也必须与 `InternalService__BearerToken` 不同。直接调用 File Storage 的既有内部服务仍使用共享服务身份。
 
    BusinessBarcodeLabel 的 Development AppHost 会显式注入 `LabelPrinter__Mode=simulated`，供无物理设备的本地开发使用；该值不是生产默认。非 Development AppHost 必须从 release-install 参数取得逻辑 printer id、host、port、连接/写入超时、DPI 与支持码制，并以 `zpl-tcp` 启动。服务会在启动阶段拒绝缺项、重复 id、非法值或非开发模拟。需要验证真实打印机时必须使用现场批准的独立环境，不要把设备地址或凭据提交到仓库，也不要把 loopback 结果描述为物理出纸证据。

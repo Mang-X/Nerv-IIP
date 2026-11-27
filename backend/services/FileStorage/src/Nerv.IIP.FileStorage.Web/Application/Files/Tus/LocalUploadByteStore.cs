@@ -26,11 +26,18 @@ public sealed class LocalUploadByteStore
         }
 
         var marker = Path.Combine(rootPath, ".filestorage-volume-v1");
-        if (string.IsNullOrWhiteSpace(volumeIdentity)
-            || !File.Exists(marker)
-            || !string.Equals(File.ReadAllText(marker).Trim(), volumeIdentity, StringComparison.Ordinal))
+        try
         {
-            throw new InvalidOperationException("FileStorage 持久卷身份缺失或不匹配。");
+            if (string.IsNullOrWhiteSpace(volumeIdentity)
+                || !File.Exists(marker)
+                || !string.Equals(File.ReadAllText(marker).Trim(), volumeIdentity, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("FileStorage 持久卷身份缺失或不匹配。");
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            throw new IOException("FileStorage 无法读取持久卷身份。");
         }
     }
 
@@ -129,8 +136,17 @@ public sealed class LocalUploadByteStore
     private string GetFinalPath(string objectKey)
     {
         VerifyVolume(required: false);
-        return Path.Combine(rootPath, $"{FinalPrefix}{Hash(objectKey)}.bin");
+        return Path.Combine(rootPath, GetFinalFileName(objectKey));
     }
+
+    internal static string GetFinalFileName(string objectKey) => $"{FinalPrefix}{Hash(objectKey)}.bin";
+
+    internal IEnumerable<string> EnumerateVolumeEntries() => Directory.EnumerateFileSystemEntries(rootPath);
+
+    internal static bool IsFinalFile(string path) =>
+        Path.GetFileName(path).StartsWith(FinalPrefix, StringComparison.Ordinal)
+        && Path.GetExtension(path) == ".bin"
+        && File.Exists(path);
 
     public long GetOffset(string uploadSessionId)
     {

@@ -106,6 +106,7 @@ export {
   closeBusinessConsoleQualityCapa,
   createBusinessConsoleQualityEvidenceUploadSession,
   completeBusinessConsoleQualityEvidenceUpload,
+  downloadBusinessConsoleQualityEvidenceContent,
   getBusinessConsoleQualityEvidenceTusOffset,
   patchBusinessConsoleQualityEvidenceTusUpload,
   createBusinessConsoleQualityInspectionRecord,

@@ -10,6 +10,7 @@ using Nerv.IIP.FileStorage.Infrastructure;
 using Nerv.IIP.FileStorage.Infrastructure.Records;
 using Nerv.IIP.FileStorage.Web.Application.Files;
 using Nerv.IIP.FileStorage.Web.Application.Files.UploadProviders;
+using Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 using Nerv.IIP.Testing;
 
 namespace Nerv.IIP.FileStorage.Web.Tests;
@@ -72,10 +73,15 @@ public sealed class UploadCommitProtocolTests
     [Fact]
     public async Task FinalEvidenceChecksumDifferentFromFrozenIntent_FailsClosed()
     {
+        using var staging = new TusTestStaging();
+        var accessor = staging.CreateAccessor();
+        var bytes = TusTestStaging.ZipBytes(5);
+        var checksum = TusTestStaging.Checksum(bytes);
         await using var db = CreateDbContext();
-        var expected = $"sha256:{new string('a', 64)}";
-        var service = CreateService(db, new VerifiedStorage($"sha256:{new string('b', 64)}"));
+        var expected = checksum;
+        var service = CreateService(db, new VerifiedStorage($"sha256:{new string('b', 64)}"), tusStoreAccessor: accessor);
         var created = (await service.CreateUploadSessionAsync(CreateRequest(expected), CancellationToken.None)).Value!;
+        await TusTestStaging.StageAsync(accessor, created.UploadSessionId, bytes);
 
         var result = await service.CompleteUploadSessionAsync(
             created.UploadSessionId,
@@ -197,14 +203,14 @@ public sealed class UploadCommitProtocolTests
             5,
             null,
             "org-001/file_expiry_gate",
-            ServerProxyUploadProvider.Name,
+            TusUploadProvider.Name,
             clock.GetUtcNow(),
             clock.GetUtcNow().AddMinutes(1));
         db.UploadSessions.Add(session);
         await db.SaveChangesAsync();
         var service = FileStorageServiceTestFactory.Create(
             db,
-            new ServerProxyUploadProvider(),
+            new TusUploadProvider(),
             configuration: FileStorageTestConfiguration.Default,
             timeProvider: clock,
             commitStorage: new ThrowingStorage(),
@@ -365,10 +371,15 @@ public sealed class UploadCommitProtocolTests
     [Fact]
     public async Task UppercaseExpectedChecksumDifferentFromFinalEvidence_FailsClosedWithCanonicalIntent()
     {
+        using var staging = new TusTestStaging();
+        var accessor = staging.CreateAccessor();
+        var bytes = TusTestStaging.ZipBytes(5);
+        var checksum = TusTestStaging.Checksum(bytes);
         await using var db = CreateDbContext();
-        var expected = $"SHA256:{new string('A', 64)}";
-        var service = CreateService(db, new VerifiedStorage($"sha256:{new string('b', 64)}"));
+        var expected = checksum.ToUpperInvariant();
+        var service = CreateService(db, new VerifiedStorage($"sha256:{new string('b', 64)}"), tusStoreAccessor: accessor);
         var created = (await service.CreateUploadSessionAsync(CreateRequest(expected), CancellationToken.None)).Value!;
+        await TusTestStaging.StageAsync(accessor, created.UploadSessionId, bytes);
 
         var result = await service.CompleteUploadSessionAsync(
             created.UploadSessionId,
@@ -377,7 +388,7 @@ public sealed class UploadCommitProtocolTests
 
         Assert.Equal(StatusCodes.Status503ServiceUnavailable, result.StatusCode);
         var session = await db.UploadSessions.SingleAsync();
-        Assert.Equal($"sha256:{new string('a', 64)}", session.CommitChecksum);
+        Assert.Equal(checksum, session.CommitChecksum);
         Assert.Equal(UploadSessionState.Committing, session.State);
         Assert.Empty(await db.StoredFiles.ToArrayAsync());
     }
@@ -406,7 +417,7 @@ public sealed class UploadCommitProtocolTests
 
             var service = FileStorageServiceTestFactory.Create(
                 db,
-                new ServerProxyUploadProvider(),
+                new TusUploadProvider(),
                 configuration: FileStorageTestConfiguration.Default,
                 timeProvider: clock,
                 gateRegistry: scope.ServiceProvider.GetRequiredService<UploadSessionGateRegistry>());
@@ -443,9 +454,14 @@ public sealed class UploadCommitProtocolTests
     public async Task MayHaveFinalFailure_RemainsCommittingAndRecoveryContinuesSameIntentIntoTx2()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var staging = new TusTestStaging();
+        var accessor = staging.CreateAccessor();
+        var bytes = TusTestStaging.ZipBytes(5);
+        var checksum = TusTestStaging.Checksum(bytes);
         await using var db = CreateDbContext();
-        var unavailable = CreateService(db, new MayHaveFinalStorage(), clock);
+        var unavailable = CreateService(db, new MayHaveFinalStorage(), clock, tusStoreAccessor: accessor);
         var created = (await unavailable.CreateUploadSessionAsync(CreateRequest(null), CancellationToken.None)).Value!;
+        await TusTestStaging.StageAsync(accessor, created.UploadSessionId, bytes);
         var first = await unavailable.CompleteUploadSessionAsync(
             created.UploadSessionId,
             new CompleteUploadSessionRequest("org-001", "prod", "application-package", null, 5),
@@ -457,7 +473,7 @@ public sealed class UploadCommitProtocolTests
         Assert.NotNull(failedSession.StorageActionStartedAtUtc);
         clock.Advance(TimeSpan.FromSeconds(2));
 
-        var recoveringService = CreateService(db, new VerifiedStorage($"sha256:{new string('c', 64)}"), clock);
+        var recoveringService = CreateService(db, new VerifiedStorage(checksum), clock);
         var processor = new UploadCommitRecoveryProcessor(
             db,
             FileStorageServiceTestFactory.CreateRecoveryScopeFactory(recoveringService),
@@ -476,10 +492,11 @@ public sealed class UploadCommitProtocolTests
         ApplicationDbContext db,
         IUploadCommitStorage storage,
         TimeProvider? timeProvider = null,
-        UploadCommitExecutionLeaseManager? executionLeaseManager = null) =>
+        UploadCommitExecutionLeaseManager? executionLeaseManager = null,
+        ILocalTusFileStoreAccessor? tusStoreAccessor = null) =>
         FileStorageServiceTestFactory.Create(
             db,
-            new ServerProxyUploadProvider(),
+            tusStoreAccessor: tusStoreAccessor,
             configuration: FileStorageTestConfiguration.Default,
             timeProvider: timeProvider,
             commitStorage: storage,

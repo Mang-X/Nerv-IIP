@@ -1,6 +1,7 @@
 using FastEndpoints;
 using tusdotnet;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Minio;
 using Nerv.IIP.Caching;
 using Nerv.IIP.FileStorage.Infrastructure;
@@ -68,6 +69,9 @@ if (hasStorageConfiguration && !useMinio)
 }
 
 builder.Services.AddFastEndpoints();
+builder.Services.AddHealthChecks().AddCheck<TusVolumeHealthCheck>("tus-volume");
+builder.Services.AddSingleton<TusFinalReconciliationGate>();
+builder.Services.AddScoped<TusFinalReconciliation>();
 builder.Services.AddSingleton(TemplateAssetRetirementOptions.Load(builder.Configuration));
 builder.Services.AddSingleton<TemplateAssetRetirementProof>();
 builder.Services.AddScoped<TemplateAssetRetirementStore>();
@@ -80,10 +84,7 @@ builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
 builder.AddFileDownloadAuthorization();
 builder.Services.AddSingleton<ILocalTusFileStoreAccessor, LocalTusFileStoreAccessor>();
-builder.Services.AddSingleton<IFileStorageUploadProvider>(services =>
-    string.Equals(services.GetRequiredService<IConfiguration>()["FileStorage:UploadProvider"] ?? "tus", "tus", StringComparison.OrdinalIgnoreCase)
-        ? new TusUploadProvider()
-        : new ServerProxyUploadProvider());
+builder.Services.AddSingleton<IFileStorageUploadProvider, TusUploadProvider>();
 builder.Services.AddSingleton<IVersionedObjectStore>(_ =>
 {
     if (!useMinio)
@@ -101,9 +102,21 @@ builder.Services.AddSingleton<IVersionedObjectStore>(_ =>
 builder.Services.AddSingleton<VersionedArchiveService>();
 builder.Services.AddSingleton<UploadSessionGateRegistry>();
 builder.Services.AddSingleton<IUploadSessionMutationGate, UploadSessionMutationGate>();
-// 提交存储读回的是本地 tus 盘上的实际字节。server-proxy 部署没有本地字节面，
-// LocalTusUploadCommitStorage 会据实报告“最终存储动作从未开始”，complete 与本次改动前一样保持 503 可重试。
-builder.Services.AddSingleton<IUploadCommitStorage, LocalTusUploadCommitStorage>();
+builder.Services.AddSingleton<S3FinalFileStore>();
+builder.Services.AddSingleton<S3HttpMeterFactory>();
+builder.Services.AddHttpClient(S3FinalFileStore.ClientName)
+    .RemoveAllLoggers()
+    .ConfigurePrimaryHttpMessageHandler(services => new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        ActivityHeadersPropagator = null,
+        MeterFactory = services.GetRequiredService<S3HttpMeterFactory>(),
+        MaxResponseDrainSize = 0
+    });
+builder.Services.AddSingleton<IUploadCommitStorage>(services =>
+    services.GetRequiredService<S3FinalFileStore>().IsEnabled
+        ? ActivatorUtilities.CreateInstance<S3TusUploadCommitStorage>(services)
+        : ActivatorUtilities.CreateInstance<LocalTusUploadCommitStorage>(services));
 builder.Services.AddScoped<UploadCommitExecutionLeaseManager>();
 
 builder.Services.AddScoped<IFileStorageService, PostgreSqlFileStorageService>();
@@ -118,11 +131,16 @@ builder.Services.AddNervIipObservability(builder.Configuration, "file-storage");
 builder.Services.AddNervIipLocalization();
 
 var app = builder.Build();
-// 读 app.Configuration 而非 builder.Configuration：测试宿主的 ConfigureAppConfiguration 要到 Build() 才生效，
-// 与上面按 IConfiguration 惰性判定 provider 的口径一致。
+// 测试宿主的 ConfigureAppConfiguration 到 Build() 才生效。
+_ = app.Services.GetRequiredService<S3FinalFileStore>();
+var uploadProvider = app.Configuration["FileStorage:UploadProvider"] ?? TusUploadProvider.Name;
+if (!string.Equals(uploadProvider, TusUploadProvider.Name, StringComparison.Ordinal))
+{
+    throw new InvalidOperationException("FileStorage:UploadProvider only supports tus.");
+}
+
 var tusRootPath = app.Configuration["FileStorage:Tus:RootPath"];
-if (string.Equals(app.Configuration["FileStorage:UploadProvider"] ?? "tus", "tus", StringComparison.OrdinalIgnoreCase)
-    && (string.IsNullOrWhiteSpace(tusRootPath) || !Path.IsPathFullyQualified(tusRootPath)))
+if (string.IsNullOrWhiteSpace(tusRootPath) || !Path.IsPathFullyQualified(tusRootPath))
 {
     // tus 盘承载已 complete 文件的字节，ADR 0024 §5 要求显式、绝对、持久的 root。这里只判前两项：
     // 「持久」需要 storage identity / mount identity 探测，归 #1012，所以不在文案里宣称已经拒绝 temp。
@@ -166,6 +184,10 @@ app.Use(async (context, next) =>
     }
 });
 app.UseFastEndpoints();
+app.MapHealthChecks("/health/tus-volume", new HealthCheckOptions
+{
+    Predicate = registration => registration.Name == "tus-volume"
+});
 app.MapTus("/api/files/v1/tus", TusTransport.CreateConfigurationAsync)
     .RequireAuthorization(InternalServiceAuthorizationPolicy.Name);
 app.Run();
