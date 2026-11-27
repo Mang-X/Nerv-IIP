@@ -350,7 +350,7 @@ internal static class PlanningSuggestionDownstreamDiagnostics
         var root = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken);
         if (root.TryGetProperty("success", out var success) && success.ValueKind == JsonValueKind.False)
         {
-            var message = root.TryGetProperty("message", out var messageElement) && messageElement.ValueKind == JsonValueKind.String
+            var message = root.TryGetProperty(JsonNamingPolicy.CamelCase.ConvertName(nameof(Exception.Message)), out var messageElement) && messageElement.ValueKind == JsonValueKind.String
                 ? messageElement.GetString()
                 : null;
             if (!string.IsNullOrWhiteSpace(message) &&
