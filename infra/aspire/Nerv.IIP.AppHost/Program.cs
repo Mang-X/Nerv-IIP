@@ -101,6 +101,8 @@ if (string.IsNullOrWhiteSpace(gatewayCorsAllowedOrigins))
         : throw new InvalidOperationException("Security:Cors:AllowedOrigins is required outside Development.");
 }
 
+var gatewayTrustedProxies = DeploymentRequiredValue("Security:ForwardedHeaders:TrustedProxies", string.Empty);
+
 // Development 使用库存产品基线种子的 loc-* 库位；在手量由业务流程建立。
 // 非 Development 下 AppHost 不再无条件下发它们（#2008）：部署方要么用与服务同名的配置键显式
 // 给出真实站点/库位（例如 Inventory__SiteCode、MaterialIssue__SourceLocationCode），要么这些键
@@ -330,6 +332,7 @@ if (rabbitmq is not null)
 
 var businessMasterData = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_MasterData_Web>("business-master-data")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5107, name: "http")
+    .WithEnvironment("Iam__Jwt__JwksJson", iamJwtJwksJson)
     .WithEnvironment("MasterData__SchedulingTimeContext__SigningKey", schedulingTimeContextSigningKey)
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
@@ -349,6 +352,7 @@ if (rabbitmq is not null)
 
 var businessProductEngineering = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_ProductEngineering_Web>("business-product-engineering")))
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5108, name: "http")
+    .WithEnvironment("Iam__Jwt__JwksJson", iamJwtJwksJson)
     .WithEnvironment("Persistence__Provider", "PostgreSQL")
     .WithEnvironment("Persistence__AutoMigrate", developmentOnlyEnabledValue)
     .WithEnvironment("Messaging__Provider", messagingProvider)
@@ -399,6 +403,7 @@ if (rabbitmq is not null)
 
 var businessQuality = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Projects.Nerv_IIP_Business_Quality_Web>("business-quality")))
     .WithEnvironment("FileStorage__BaseUrl", fileStorage.GetEndpoint("http"))
+    .WithEnvironment("Iam__Jwt__JwksJson", iamJwtJwksJson)
     .WithReference(fileStorage)
     .WaitFor(fileStorage)
     .WithHttpEndpoint(port: fullStackEphemeral ? null : 5110, name: "http")
@@ -802,6 +807,7 @@ var gateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddProject<Pro
     .WithEnvironment("Iam__BaseUrl", iam.GetEndpoint("http"))
     .WithEnvironment("Iam__Jwt__JwksJson", iamJwtJwksJson)
     .WithEnvironment("Security__Cors__AllowedOrigins", gatewayCorsAllowedOrigins)
+    .WithEnvironment("Security__ForwardedHeaders__TrustedProxies", gatewayTrustedProxies)
     .WithEnvironment("Ops__BaseUrl", ops.GetEndpoint("http"))
     .WithEnvironment("Notification__BaseUrl", notification.GetEndpoint("http"))
     // PlatformGateway 的控制台文件面缺这行，客户端回落到固定端口 5104：ephemeral 会话上打不到本会话的
@@ -872,6 +878,7 @@ var businessGateway = WithNervIipTelemetry(WithAppHostEnvironment(builder.AddPro
     .WithEnvironment("Iam__Jwt__Issuer", "nerv-iip-iam")
     .WithEnvironment("Iam__Jwt__Audience", "nerv-iip-api")
     .WithEnvironment("Security__Cors__AllowedOrigins", gatewayCorsAllowedOrigins)
+    .WithEnvironment("Security__ForwardedHeaders__TrustedProxies", gatewayTrustedProxies)
     .WithEnvironment("MasterData__BaseUrl", businessMasterData.GetEndpoint("http"))
     .WithEnvironment("Inventory__BaseUrl", businessInventory.GetEndpoint("http"))
     .WithEnvironment("Quality__BaseUrl", businessQuality.GetEndpoint("http"))

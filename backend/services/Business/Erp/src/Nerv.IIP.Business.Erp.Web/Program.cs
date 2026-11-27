@@ -87,6 +87,7 @@ try
 
     builder.Services.AddErpPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddScoped<IntegrationEventCapFailureDeadLetterer>();
     builder.Services.AddIntegrationEventDeadLetterEndpoints();
     builder.Services.AddErpDeadLetterReplay();
     builder.Services.AddScoped<OperationLaborSettlementOrchestrator>();

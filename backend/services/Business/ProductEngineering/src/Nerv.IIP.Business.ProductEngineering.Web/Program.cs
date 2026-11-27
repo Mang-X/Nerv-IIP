@@ -24,11 +24,11 @@ using Nerv.IIP.ServiceAuth;
 using Newtonsoft.Json;
 using Prometheus;
 
-var isTesting = false;
+var builder = WebApplication.CreateBuilder(args);
+var isTesting = builder.Environment.IsEnvironment("Testing");
+builder.Services.AddNervIipIamJwtAuthentication(builder.Configuration, builder.Environment);
 try
 {
-    var builder = WebApplication.CreateBuilder(args);
-    isTesting = builder.Environment.IsEnvironment("Testing");
     builder.Services.AddNervIipObservability(builder.Configuration, "business-product-engineering");
 
     builder.Services.AddHealthChecks();
@@ -48,21 +48,6 @@ try
         client.BaseAddress = approvalBaseAddress;
     }).UseHttpClientMetrics();
 
-    builder.Services
-        .AddAuthentication(options =>
-        {
-            options.DefaultScheme = Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
-            options.DefaultAuthenticateScheme = Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
-            options.DefaultChallengeScheme = Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
-        })
-        .AddJwtBearer(options =>
-        {
-            options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
-            options.TokenValidationParameters.ValidAudience = "netcorepal";
-            options.TokenValidationParameters.ValidateAudience = true;
-            options.TokenValidationParameters.ValidIssuer = "netcorepal";
-            options.TokenValidationParameters.ValidateIssuer = true;
-        });
     builder.Services.AddNervIipInternalServiceAuthorization(builder.Configuration, builder.Environment);
 
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();

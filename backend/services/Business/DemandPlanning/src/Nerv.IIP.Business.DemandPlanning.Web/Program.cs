@@ -95,6 +95,7 @@ try
 
     builder.Services.AddDemandPlanningPostgreSqlPersistence(connectionString, builder.Environment.IsDevelopment());
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddScoped<IntegrationEventCapFailureDeadLetterer>();
     builder.Services.AddIntegrationEventDeadLetterEndpoints();
     builder.Services.AddDemandPlanningDeadLetterReplay();
     builder.Services.AddScoped<DemandPlanningCodingService>();
@@ -133,6 +134,7 @@ try
             x.Version = builder.Configuration["Cap:Version"] ?? "v1";
             x.TopicNamePrefix = builder.Configuration["Cap:TopicNamePrefix"] ?? string.Empty;
             x.UseConfiguredRecovery(builder.Configuration);
+            x.UseIntegrationEventDeadLetterOnFailedThreshold();
             x.UseEntityFramework<ApplicationDbContext>();
             x.JsonSerializerOptions.AddNetCorePalJsonConverters();
             x.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);

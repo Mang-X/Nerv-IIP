@@ -37,8 +37,7 @@ public sealed class ObservabilityAlertMonitorTests
                     {
                         ["Observability:Alerts:Enabled"] = "true",
                         ["Observability:Alerts:OrganizationId"] = "org-001",
-                        ["Observability:Alerts:EnvironmentId"] = "env-001",
-                        ["Observability:Alerts:RecipientRefs:0"] = "role:ops-admin",
+                        ["Observability:Alerts:EnvironmentId"] = "env-dev",
                         ["Observability:Alerts:DedupeWindow"] = "00:30:00",
                         ["Observability:Alerts:SilentWindow"] = "00:10:00"
                     });
@@ -89,7 +88,7 @@ public sealed class ObservabilityAlertMonitorTests
         Assert.Equal(NotificationContractConstants.SeverityCritical, intents[0].Severity);
         Assert.Equal("observability-alert:service-health:apphub:1:202607050100", intents[0].DedupeKey);
         Assert.Equal(NotificationIntentTypes.Task, intents[0].IntentType);
-        Assert.Equal("role:ops-admin", Assert.Single(intents[0].Messages).RecipientRef);
+        Assert.Equal("user:user-admin", Assert.Single(intents[0].Messages).RecipientRef);
         Assert.Equal("observability.AlertResolved", intents[1].SourceEventType);
         Assert.Equal(NotificationContractConstants.SeverityInfo, intents[1].Severity);
         Assert.Equal("observability-alert-resolved:service-health:apphub:1:202607050100", intents[1].DedupeKey);

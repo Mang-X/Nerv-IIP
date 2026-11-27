@@ -105,8 +105,14 @@ public sealed class BusinessServiceProxyException : Exception
     public static BusinessServiceProxyException FromDownstreamBusinessMessage(
         string? downstreamMessage,
         Exception? innerException = null) =>
+        FromDownstreamBusinessMessage(HttpStatusCode.BadRequest, downstreamMessage, innerException);
+
+    internal static BusinessServiceProxyException FromDownstreamBusinessMessage(
+        HttpStatusCode statusCode,
+        string? downstreamMessage,
+        Exception? innerException = null) =>
         new(
-            HttpStatusCode.BadRequest,
+            statusCode,
             IsSafeDownstreamBusinessMessage(downstreamMessage)
                 ? downstreamMessage!
                 : DownstreamRequestFailedMessage,

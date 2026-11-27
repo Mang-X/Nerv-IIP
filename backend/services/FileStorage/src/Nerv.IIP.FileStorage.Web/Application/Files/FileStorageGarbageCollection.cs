@@ -82,13 +82,25 @@ public sealed class PostgreSqlFileStorageGarbageCollector(
             : await dbContext.DownloadGrants
                 .Where(x => physicalDeleteFileIds.Contains(x.FileId))
                 .ToArrayAsync(cancellationToken);
+        var localTusFilesRemoved = 0;
+        if (tusStoreAccessor.TryGet(out var store))
+        {
+            // 仅清理已经软删除的文件。失败时保留元数据，以便下一轮按 ObjectKey 重试。
+            foreach (var file in physicalDeleteFiles)
+            {
+                if (store.DeleteFinal(file.ObjectKey))
+                {
+                    localTusFilesRemoved++;
+                }
+            }
+        }
+
         dbContext.StoredFiles.RemoveRange(physicalDeleteFiles);
         dbContext.UploadSessions.RemoveRange(physicalDeleteUploadSessions);
         dbContext.DownloadGrants.RemoveRange(physicalDeleteDownloadGrants);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var localTusFilesRemoved = 0;
-        if (tusStoreAccessor.TryGet(out var store))
+        if (store is not null)
         {
             foreach (var session in expiredUploadSessions)
             {

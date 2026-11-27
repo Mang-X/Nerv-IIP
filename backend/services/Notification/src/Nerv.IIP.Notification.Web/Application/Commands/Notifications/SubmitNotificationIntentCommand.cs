@@ -68,7 +68,8 @@ public sealed record SubmitNotificationIntentCommand : ICommand<NotificationInte
 public sealed class SubmitNotificationIntentCommandHandler(
     INotificationIntentRepository repository,
     ApplicationDbContext dbContext,
-    NotificationDeliveryService deliveryService)
+    NotificationDeliveryService deliveryService,
+    IConfiguration? configuration = null)
     : ICommandHandler<SubmitNotificationIntentCommand, NotificationIntentResponse>
 {
     public async Task<NotificationIntentResponse> Handle(SubmitNotificationIntentCommand command, CancellationToken cancellationToken)
@@ -100,19 +101,28 @@ public sealed class SubmitNotificationIntentCommandHandler(
             request.Resource?.FileId,
             request.Title,
             request.Summary,
-            request.SuggestedRecipientRefs,
+            ExpandRecipientRefs(command),
             command.Now);
 
+        // 聚合新增意图、消息和任务，投递暂存仅新增 DeliveryAttempt；绑定、偏好和订阅只读。
+        // 记录调用方已有的待插入实体，只撤销本次新增图和投递记录。
+        var existingAdds = dbContext.ChangeTracker.Entries()
+            .Where(entry => entry.State == EntityState.Added)
+            .Select(entry => entry.Entity)
+            .ToHashSet(ReferenceEqualityComparer.Instance);
         await repository.AddAsync(intent, cancellationToken);
         await deliveryService.StageSubmittedIntentAsync(intent, command.Now, cancellationToken);
 
+        var submitAdds = dbContext.ChangeTracker.Entries()
+            .Where(entry => entry.State == EntityState.Added && !existingAdds.Contains(entry.Entity))
+            .ToArray();
+
         const string duplicateRecoverySavepoint = "notification_intent_submit_before_save";
-        // Use EF's native current transaction here. The CAP unit-of-work wrapper does not expose savepoints,
-        // while EF's relational transaction does and can recover from a duplicate unique-conflict inside an outer transaction.
+        // CAP 工作单元未暴露保存点，通过 EF 当前事务恢复唯一键冲突。
         var transaction = dbContext.Database.CurrentTransaction;
         if (transaction is not null)
         {
-            Debug.Assert(transaction.SupportsSavepoints, "Notification duplicate recovery requires a transaction that supports savepoints.");
+            Debug.Assert(transaction.SupportsSavepoints, "通知去重冲突恢复需要事务支持保存点。");
             await transaction.CreateSavepointAsync(duplicateRecoverySavepoint, cancellationToken);
         }
 
@@ -136,7 +146,16 @@ public sealed class SubmitNotificationIntentCommandHandler(
                 await transaction.RollbackToSavepointAsync(duplicateRecoverySavepoint, cancellationToken);
             }
 
-            dbContext.ChangeTracker.Clear();
+            foreach (var entry in submitAdds)
+            {
+                entry.State = EntityState.Detached;
+            }
+
+            if (transaction is not null)
+            {
+                await transaction.ReleaseSavepointAsync(duplicateRecoverySavepoint, cancellationToken);
+            }
+
             var duplicate = await repository.GetByDedupeKeyAsync(
                 command.OrganizationId,
                 command.EnvironmentId,
@@ -153,6 +172,41 @@ public sealed class SubmitNotificationIntentCommandHandler(
         }
 
         return intent.ToResponse(duplicate: false);
+    }
+
+    private IReadOnlyCollection<string> ExpandRecipientRefs(SubmitNotificationIntentCommand command)
+    {
+        var recipients = command.Request.SuggestedRecipientRefs;
+        var roles = configuration?.GetSection("Notification:RoleRecipients").GetChildren()
+            .FirstOrDefault(scope => scope.Key == command.OrganizationId)?.GetChildren()
+            .FirstOrDefault(scope => scope.Key == command.EnvironmentId);
+        if (roles is null || recipients is null)
+        {
+            return recipients!;
+        }
+
+        const string rolePrefix = "role:";
+        var hasExpansion = false;
+        var expanded = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var recipient in recipients)
+        {
+            var role = recipient;
+            var userIds = role?.StartsWith(rolePrefix, StringComparison.Ordinal) == true
+                ? roles.GetChildren().FirstOrDefault(section => section.Key == role[rolePrefix.Length..])
+                    ?.Get<string[]>()
+                : null;
+            if (userIds is { Length: > 0 })
+            {
+                hasExpansion = true;
+                expanded.UnionWith(userIds.Select(userId => $"user:{userId.Trim()}"));
+            }
+            else
+            {
+                expanded.Add(recipient!);
+            }
+        }
+
+        return hasExpansion ? expanded.ToArray() : recipients;
     }
 
     private bool IsDuplicateIntentConflict(DbUpdateException exception)

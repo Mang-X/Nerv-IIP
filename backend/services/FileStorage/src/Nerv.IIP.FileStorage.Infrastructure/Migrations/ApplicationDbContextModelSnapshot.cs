@@ -18,7 +18,7 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("filestorage")
-                .HasAnnotation("ProductVersion", "10.0.8")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -30,6 +30,13 @@ namespace Nerv.IIP.FileStorage.Infrastructure.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("download_grant_id")
                         .HasComment("Stable download grant identifier used to serve a short-lived download.");
+
+                    b.Property<string>("Caller")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("caller")
+                        .HasComment("Authenticated caller that may redeem the download grant.");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone")

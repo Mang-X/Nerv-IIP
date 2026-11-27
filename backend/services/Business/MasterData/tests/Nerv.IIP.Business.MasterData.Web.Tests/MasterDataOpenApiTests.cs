@@ -297,6 +297,7 @@ public sealed class MasterDataOpenApiTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
+                builder.UseSetting("Iam:Jwt:JwksJson", Nerv.IIP.Testing.IamJwtFixture.PublicJwksJson);
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>
                     {

@@ -73,13 +73,14 @@ public sealed class GetFileStorageUsageEndpoint(IFileStorageService files)
 
 [Tags("Files")]
 [HttpPost("/api/files/v1/files/{fileId}/download-grants")]
-[Authorize(Policy = InternalServiceAuthorizationPolicy.Name)]
+[Authorize(Policy = FileDownloadAuthorization.Policy)]
 public sealed class CreateDownloadGrantEndpoint(IFileStorageService files)
     : Endpoint<CreateDownloadGrantRequest, DownloadGrantResponse>
 {
     public override async Task HandleAsync(CreateDownloadGrantRequest req, CancellationToken ct)
     {
-        var result = await files.CreateDownloadGrantAsync(Route<string>("fileId")!, req, ct);
+        var result = await files.CreateDownloadGrantAsync(Route<string>("fileId")!, req,
+            FileDownloadAuthorization.GetCaller(User), ct);
         await this.SendResultAsync(result, ct);
     }
 }

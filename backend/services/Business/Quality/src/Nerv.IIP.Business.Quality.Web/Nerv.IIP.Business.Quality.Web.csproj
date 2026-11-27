@@ -11,6 +11,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="../../../../../common/ServiceAuth/IamJwtAuthentication.cs" Link="Application/Auth/IamJwtAuthentication.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../../../../../common/Sdk/Nerv.IIP.Sdk.FileStorage/Nerv.IIP.Sdk.FileStorage.csproj" />
     <ProjectReference Include="..\..\..\..\..\common\DistributedLocking\Nerv.IIP.DistributedLocking\Nerv.IIP.DistributedLocking.csproj" />
     <PackageReference Include="DotNetCore.CAP.Dashboard" />

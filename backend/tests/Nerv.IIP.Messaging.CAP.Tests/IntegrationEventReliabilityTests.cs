@@ -272,11 +272,19 @@ public sealed class IntegrationEventReliabilityTests
     [Fact]
     public async Task Cap_retry_exhausted_subscribe_failure_dead_letters_handler_exception_without_throwing_from_callback()
     {
-        var store = new InMemoryIntegrationEventDeadLetterStore();
-        var services = new ServiceCollection()
-            .AddSingleton<IIntegrationEventDeadLetterStore>(store)
-            .AddSingleton<IntegrationEventCapFailureDeadLetterer>()
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var services = new ServiceCollection()
+            .AddDbContext<TestDeadLetterDbContext>(options => options.UseSqlite(connection))
+            .AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<TestDeadLetterDbContext>>()
+            .AddScoped<IntegrationEventCapFailureDeadLetterer>()
             .BuildServiceProvider();
+        await using (var setup = services.CreateAsyncScope())
+        {
+            await setup.ServiceProvider.GetRequiredService<TestDeadLetterDbContext>().Database.EnsureCreatedAsync();
+        }
+        var options = new DotNetCore.CAP.CapOptions().UseIntegrationEventDeadLetterOnFailedThreshold();
+        var callback = Assert.IsType<Action<DotNetCore.CAP.Messages.FailedInfo>>(options.FailedThresholdCallback);
         var capMessage = new DotNetCore.CAP.Messages.Message(
             new Dictionary<string, string?>
             {
@@ -293,10 +301,11 @@ public sealed class IntegrationEventReliabilityTests
             Message = capMessage
         };
 
-        var exception = await Record.ExceptionAsync(() =>
-            new IntegrationEventCapFailureDeadLetterer(store).HandleAsync(failure, CancellationToken.None));
+        var exception = Record.Exception(() => callback(failure));
 
         Assert.Null(exception);
+        await using var read = services.CreateAsyncScope();
+        var store = read.ServiceProvider.GetRequiredService<IIntegrationEventDeadLetterStore>();
         var deadLetter = Assert.Single(await store.ListAsync("sample.consumer", IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
         Assert.Equal("event-handler-failed-001", deadLetter.EventId);
         Assert.Equal("handler-retry-exhausted", deadLetter.FailureCode);

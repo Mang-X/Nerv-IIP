@@ -390,6 +390,7 @@ public sealed class QualityLifecycleConflictTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
+                builder.UseSetting("Iam:Jwt:JwksJson", Nerv.IIP.Testing.IamJwtFixture.PublicJwksJson);
                 builder.UseSetting("Quality:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>
@@ -434,6 +435,7 @@ public sealed class QualityLifecycleConflictTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
+                builder.UseSetting("Iam:Jwt:JwksJson", Nerv.IIP.Testing.IamJwtFixture.PublicJwksJson);
                 builder.UseSetting("Quality:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>
@@ -491,6 +493,7 @@ public sealed class QualityLifecycleConflictTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
+                builder.UseSetting("Iam:Jwt:JwksJson", Nerv.IIP.Testing.IamJwtFixture.PublicJwksJson);
                 builder.UseSetting("Quality:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>
@@ -552,6 +555,7 @@ public sealed class QualityLifecycleConflictTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
+                builder.UseSetting("Iam:Jwt:JwksJson", Nerv.IIP.Testing.IamJwtFixture.PublicJwksJson);
                 builder.UseSetting("Quality:Seed:Enabled", "false"); // 产品基线 seed 默认开启（#3805），本用例不具备真实数据库
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(new Dictionary<string, string?>

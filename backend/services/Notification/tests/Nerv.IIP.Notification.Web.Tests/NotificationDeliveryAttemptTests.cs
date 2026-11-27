@@ -1,9 +1,12 @@
+using System.Data.Common;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Contracts.Notification;
 using Nerv.IIP.Notification.Domain.AggregatesModel.NotificationIntentAggregate;
 using Nerv.IIP.Notification.Infrastructure;
+using Nerv.IIP.Notification.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Notification.Infrastructure.Repositories;
 using Nerv.IIP.Notification.Web.Application.Commands.Notifications;
 using Nerv.IIP.Notification.Web.Application.Notifications;
@@ -324,15 +327,24 @@ public sealed class NotificationDeliveryAttemptTests
     }
 
     [Fact]
+    [Trait("Contract", "ProviderBehavior")]
+    [Trait("Contract", "Regression")]
     public async Task Concurrent_duplicate_submit_returns_persisted_winner_after_unique_conflict()
     {
-        await using var fixture = await NotificationSqliteFixture.CreateAsync();
-        var firstHandler = fixture.CreateSubmitHandler();
-        var first = await firstHandler.Handle(SubmitCommand(fixture, CreateIntent("dedupe-race", ["user:admin"]),
-            DateTimeOffset.Parse("2026-06-29T00:00:00Z")), CancellationToken.None);
+        var staleRead = new StaleDedupeRead();
+        await using var fixture = await NotificationSqliteFixture.CreateAsync(staleRead);
+        var now = DateTimeOffset.Parse("2026-06-29T00:00:00Z");
+        var first = await fixture.CreateSubmitHandler().Handle(
+            SubmitCommand(fixture, CreateIntent("dedupe-race", ["user:admin"]), now),
+            CancellationToken.None);
 
         await using var secondDb = fixture.CreateContext();
         await using var transaction = await secondDb.Database.BeginTransactionAsync();
+        secondDb.ProcessedIntegrationEvents.Add(new ProcessedIntegrationEvent(
+            "notification-consumer", "event-race", "ops.OperationTaskFailed", 1, "ops", "inbox-race", now));
+        secondDb.RecipientChannelBindings.Add(NotificationRecipientChannelBinding.Create(
+            "org-001", "env-dev", "user:other", NotificationDeliveryChannels.Email, "other@example.test", now));
+        staleRead.MissNextRead = true;
         var secondHandler = new SubmitNotificationIntentCommandHandler(
             new NotificationIntentRepository(secondDb),
             secondDb,
@@ -344,8 +356,40 @@ public sealed class NotificationDeliveryAttemptTests
         Assert.True(second.Duplicate);
         Assert.Equal(first.IntentId, second.IntentId);
         Assert.Equal("user:admin", Assert.Single(second.Messages).RecipientRef);
-        Assert.Equal(1, await fixture.Db.NotificationIntents.CountAsync());
-        Assert.Equal(1, await fixture.Db.NotificationMessages.CountAsync());
+        Assert.False(staleRead.MissNextRead);
+        await secondDb.SaveChangesAsync();
+        await transaction.CommitAsync();
+
+        await using var persisted = fixture.CreateContext();
+        Assert.Equal(1, await persisted.NotificationIntents.CountAsync());
+        Assert.Equal(1, await persisted.NotificationMessages.CountAsync());
+        Assert.Equal(1, await persisted.NotificationTasks.CountAsync());
+        Assert.Equal(1, await persisted.DeliveryAttempts.CountAsync());
+        var inbox = await persisted.ProcessedIntegrationEvents.SingleAsync();
+        Assert.Equal(("notification-consumer", "inbox-race"), (inbox.ConsumerName, inbox.IdempotencyKey));
+        Assert.Equal("user:other", (await persisted.RecipientChannelBindings.SingleAsync()).RecipientRef);
+    }
+
+    private sealed class StaleDedupeRead : DbCommandInterceptor
+    {
+        public bool MissNextRead { get; set; }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            // 只让预检查错过已提交的赢家，实际 INSERT 仍由 SQLite 唯一索引拒绝。
+            if (MissNextRead && command.CommandText.StartsWith("SELECT", StringComparison.Ordinal) &&
+                command.Parameters.Cast<DbParameter>().FirstOrDefault(x => Equals(x.Value, "dedupe-race")) is { } key)
+            {
+                key.Value = "missing-dedupe-key";
+                MissNextRead = false;
+            }
+
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
     }
 
     // 命令不收裸 string 摘要：测试与生产走同一个具名工厂，上界同样从 EF 模型派生而不是手抄列宽。
@@ -464,12 +508,13 @@ public sealed class NotificationDeliveryAttemptTests
                 _rateLimiter);
         }
 
-        public static async Task<NotificationSqliteFixture> CreateAsync()
+        public static async Task<NotificationSqliteFixture> CreateAsync(params IInterceptor[] interceptors)
         {
             var connection = new SqliteConnection("DataSource=:memory:");
             await connection.OpenAsync();
             var options = new DbContextOptionsBuilder<ApplicationDbContext>()
                 .UseSqlite(connection)
+                .AddInterceptors(interceptors)
                 .Options;
             var fixture = new NotificationSqliteFixture(connection, options);
             await fixture.Db.Database.EnsureCreatedAsync();

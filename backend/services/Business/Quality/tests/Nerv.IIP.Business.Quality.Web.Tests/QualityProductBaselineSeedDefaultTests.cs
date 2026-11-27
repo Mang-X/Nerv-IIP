@@ -46,6 +46,7 @@ public sealed class QualityProductBaselineSeedDefaultTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
+                builder.UseSetting("Iam:Jwt:JwksJson", Nerv.IIP.Testing.IamJwtFixture.PublicJwksJson);
                 builder.UseSetting("InternalService:BearerToken", "test-internal-token");
                 if (seedEnabled.HasValue)
                 {

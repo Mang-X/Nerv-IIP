@@ -70,6 +70,7 @@ if (usePostgreSql)
     builder.Services.AddCap(options =>
     {
         options.Version = builder.Configuration["Cap:Version"] ?? "v1";
+        options.UseIntegrationEventDeadLetterOnFailedThreshold();
         options.UseEntityFramework<ApplicationDbContext>();
         options.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);
     });
@@ -84,6 +85,7 @@ builder.Services.Configure<AppHubHeartbeatTimeoutScanOptions>(
     builder.Configuration.GetSection(AppHubHeartbeatTimeoutScanOptions.SectionName));
 builder.Services.AddNervIipLocalization();
 builder.Services.AddAppHubIntegrationEventDeadLetterStore(usePostgreSql);
+builder.Services.AddScoped<IntegrationEventCapFailureDeadLetterer>();
 builder.Services.AddIntegrationEventDeadLetterEndpoints();
 builder.Services.AddScoped<OperationTaskCompletedIntegrationEventHandlerForRefreshInstanceState>();
 builder.Services.AddScoped<OperationTaskFailedIntegrationEventHandlerForRefreshInstanceState>();

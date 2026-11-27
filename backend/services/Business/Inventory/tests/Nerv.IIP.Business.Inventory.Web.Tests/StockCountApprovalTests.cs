@@ -205,7 +205,7 @@ public sealed class StockCountApprovalTests
         // 回写命令随后踩到 EnsureStatus(pending-approval) 抛异常，从 CAP 消费者逃逸成毒消息。
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             new CancelStockCountTaskCommandHandler(dbContext).Handle(
-                new CancelStockCountTaskCommand(task.Id, "盘点范围调整"),
+                new CancelStockCountTaskCommand("org-001", "env-dev", task.Id, "盘点范围调整"),
                 CancellationToken.None));
         Assert.Contains("状态不支持取消", exception.Message, StringComparison.Ordinal);
         Assert.Equal(StockCountTaskStatuses.PendingApproval, dbContext.StockCountTasks.Single().Status);
@@ -224,7 +224,7 @@ public sealed class StockCountApprovalTests
 
         // 审批走完之后，这张任务既可以重盘，也可以关闭——出口没有被守卫堵死。
         var restarted = await new RestartStockCountTaskCommandHandler(verificationDbContext).Handle(
-            new RestartStockCountTaskCommand(task.Id),
+            new RestartStockCountTaskCommand("org-001", "env-dev", task.Id),
             CancellationToken.None);
         Assert.Equal(StockCountTaskStatuses.Open, restarted.Status);
     }

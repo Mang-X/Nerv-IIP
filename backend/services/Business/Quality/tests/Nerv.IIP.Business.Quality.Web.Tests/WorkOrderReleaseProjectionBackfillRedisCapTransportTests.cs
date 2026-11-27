@@ -86,6 +86,7 @@ public sealed class WorkOrderReleaseProjectionBackfillRedisCapTransportTests
             ["Cap:Version"] = Environment.GetEnvironmentVariable("NERV_IIP_TEST_CAP_VERSION"),
             ["Cap:TopicNamePrefix"] = Environment.GetEnvironmentVariable("NERV_IIP_TEST_CAP_TOPIC_PREFIX"),
             ["InternalService:BearerToken"] = "test-internal-token",
+            ["Iam:Jwt:JwksJson"] = IamJwtFixture.PublicJwksJson,
             ["Approval:BaseUrl"] = "https://approval.test",
             ["Erp:BaseUrl"] = "https://erp.test",
             ["FileStorage:BaseUrl"] = "https://filestorage.test",

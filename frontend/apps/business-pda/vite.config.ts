@@ -4,7 +4,7 @@ import Vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vite-plus'
 import VueRouter from 'vue-router/vite'
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig({
   plugins: [
     tailwindcss(),
     VueRouter({
@@ -17,10 +17,6 @@ export default defineConfig(({ mode }) => ({
               '**/dialogs/**/*',
               '**/drawers/**/*',
               '**/fragments/**/*',
-              // The design-system gallery is a dev-only test harness (Playwright e2e
-              // mounts it via `vp dev`). Exclude it from production so it never
-              // becomes a public route or ships as a chunk.
-              ...(mode === 'production' ? ['**/design-system/**', '**/design-system/**/*'] : []),
             ]),
         },
       ],
@@ -66,4 +62,4 @@ export default defineConfig(({ mode }) => ({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
   },
-}))
+})

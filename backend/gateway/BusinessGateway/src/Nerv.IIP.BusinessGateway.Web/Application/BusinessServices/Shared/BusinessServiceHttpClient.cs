@@ -34,7 +34,8 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         CancellationToken cancellationToken,
         JsonSerializerOptions? jsonOptions = null,
         Action<HttpRequestMessage>? configureRequest = null,
-        bool failClosedOnFailureEnvelope = false)
+        bool failClosedOnFailureEnvelope = false,
+        bool acceptKnownExceptionCodeZero = false)
     {
         using var response = await SendRequestAsync(
             internalBearerToken,
@@ -50,7 +51,8 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
                 response,
                 jsonOptions ?? JsonOptions,
                 cancellationToken,
-                failClosedOnFailureEnvelope);
+                failClosedOnFailureEnvelope,
+                acceptKnownExceptionCodeZero);
         }
         catch (JsonException ex)
         {
@@ -207,7 +209,8 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
         HttpResponseMessage response,
         JsonSerializerOptions jsonOptions,
         CancellationToken cancellationToken,
-        bool failClosedOnFailureEnvelope)
+        bool failClosedOnFailureEnvelope,
+        bool acceptKnownExceptionCodeZero)
     {
         var content = response.Content
             ?? throw new InvalidOperationException("Platform API returned an empty response.");
@@ -219,17 +222,20 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
 
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
-        // Business services use the platform response envelope. A 2xx response
-        // with success=false is a business validation failure, not a parse error.
         if (root.ValueKind == JsonValueKind.Object &&
             root.TryGetProperty("success", out var success) &&
             success.ValueKind == JsonValueKind.False)
         {
-            if (failClosedOnFailureEnvelope)
+            var statusCode = ReadFailureEnvelopeStatus(root, acceptKnownExceptionCodeZero);
+            if (failClosedOnFailureEnvelope || statusCode is not (400 or 403 or 404 or 409 or 422))
             {
-                throw new InvalidOperationException("Platform API returned a failure envelope for an authoritative read.");
+                throw BusinessServiceProxyException.FromSafeDownstreamMessage(
+                    HttpStatusCode.BadGateway,
+                    "downstream-invalid-response");
             }
-            throw BusinessServiceProxyException.FromDownstreamBusinessMessage(DownstreamEnvelopeMessage(root));
+
+            throw BusinessServiceProxyException.FromDownstreamBusinessMessage(
+                (HttpStatusCode)statusCode, DownstreamEnvelopeMessage(root));
         }
 
         var payload = root.TryGetProperty("data", out var data)
@@ -243,6 +249,23 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
 
         return payload.Deserialize<TResponse>(jsonOptions)
             ?? throw new InvalidOperationException("Platform API returned an empty response data payload.");
+    }
+
+    private static int ReadFailureEnvelopeStatus(JsonElement root, bool acceptKnownExceptionCodeZero)
+    {
+        if (!root.TryGetProperty("code", out var code))
+        {
+            return -1;
+        }
+
+        return code.ValueKind switch
+        {
+            JsonValueKind.Number when code.TryGetInt32(out var number) =>
+                acceptKnownExceptionCodeZero && number == 0 ? (int)HttpStatusCode.BadRequest : number,
+            JsonValueKind.String when int.TryParse(code.GetString(), System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var number) => number,
+            _ => -1,
+        };
     }
 
     private static string? DownstreamEnvelopeMessage(JsonElement root) =>

@@ -10,6 +10,7 @@ public sealed class DownloadGrantRecord
     public string FileId { get; private set; } = string.Empty;
     public string OrganizationId { get; private set; } = string.Empty;
     public string EnvironmentId { get; private set; } = string.Empty;
+    public string Caller { get; private set; } = string.Empty;
     public string Provider { get; private set; } = string.Empty;
     public DateTimeOffset CreatedAtUtc { get; private set; }
     public DateTimeOffset ExpiresAtUtc { get; private set; }
@@ -21,7 +22,8 @@ public sealed class DownloadGrantRecord
         string environmentId,
         string provider,
         DateTimeOffset createdAtUtc,
-        DateTimeOffset expiresAtUtc)
+        DateTimeOffset expiresAtUtc,
+        string caller = "InternalService")
     {
         return new DownloadGrantRecord
         {
@@ -30,6 +32,7 @@ public sealed class DownloadGrantRecord
             OrganizationId = organizationId,
             EnvironmentId = environmentId,
             Provider = provider,
+            Caller = caller,
             CreatedAtUtc = createdAtUtc,
             ExpiresAtUtc = expiresAtUtc
         };

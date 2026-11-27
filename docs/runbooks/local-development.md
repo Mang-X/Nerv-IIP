@@ -52,6 +52,10 @@
    `Persistence__Provider=PostgreSQL`、`FileStorageDb` 和由上述判据决定的 `Persistence__AutoMigrate`。直接运行其 Web
    项目或设置 `Persistence:Provider=InMemory` 会在启动阶段失败，以避免磁盘 tus 字节变成无 metadata 的孤儿。
 
+   使用本地 tus 持久卷部署到非 Development 环境时，先将卷挂到 `FileStorage__Tus__RootPath` 指定的绝对路径。在确认挂载正确后，把该卷的唯一标识写入卷根目录的 `.filestorage-volume-v1`，并通过 `FileStorage__Tus__VolumeIdentity` 配置同一个标识。挂载丢失或标识不一致时，File Storage 拒绝启动。Development 可用临时测试卷，配置卷标识后也会校验标记。
+
+   发布前执行 File Storage 数据库迁移。旧下载授权缺少签发身份，需要重新签发。分别为两个网关配置 `FileStorage__DownloadBearerToken`，并在 File Storage 侧配置对应的 `FileStorage__DownloadCallers__platform-gateway__BearerToken` 和 `FileStorage__DownloadCallers__business-gateway__BearerToken`。两个专用令牌必须彼此不同，也必须与 `InternalService__BearerToken` 不同。直接调用 File Storage 的既有内部服务仍使用共享服务身份。
+
    BusinessBarcodeLabel 的 Development AppHost 会显式注入 `LabelPrinter__Mode=simulated`，供无物理设备的本地开发使用；该值不是生产默认。非 Development AppHost 必须从 release-install 参数取得逻辑 printer id、host、port、连接/写入超时、DPI 与支持码制，并以 `zpl-tcp` 启动。服务会在启动阶段拒绝缺项、重复 id、非法值或非开发模拟。需要验证真实打印机时必须使用现场批准的独立环境，不要把设备地址或凭据提交到仓库，也不要把 loopback 结果描述为物理出纸证据。
 
 8. **基础设施镜像 tag 必须固定。** 持久化本地资源必须在 AppHost 中显式固定版本。当前 PostgreSQL

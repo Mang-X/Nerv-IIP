@@ -230,7 +230,6 @@ export function useCodeRulesPage() {
     scope: ScopeDimension
     effectiveFromUtc: string | null
     changeReason: string
-    createdBy: string
     segments: SegmentRow[]
   }
 
@@ -275,7 +274,6 @@ export function useCodeRulesPage() {
       scope: 'organization',
       effectiveFromUtc: null,
       changeReason: '',
-      createdBy: '',
       segments: [blankSegment()],
     }
   }
@@ -297,7 +295,6 @@ export function useCodeRulesPage() {
   }
 
   const displayNameValid = computed(() => form.displayName.trim().length > 0)
-  const createdByValid = computed(() => form.createdBy.trim().length > 0)
   const CHANGE_REASON_MAX_LENGTH = 500
   const changeReasonError = computed(() => {
     if (form.changeReason.length > CHANGE_REASON_MAX_LENGTH) {
@@ -356,11 +353,7 @@ export function useCodeRulesPage() {
       sequenceCountError.value === '',
   )
   const canSubmit = computed(
-    () =>
-      displayNameValid.value &&
-      createdByValid.value &&
-      changeReasonValid.value &&
-      segmentsValid.value,
+    () => displayNameValid.value && changeReasonValid.value && segmentsValid.value,
   )
 
   // 把编辑行映射成契约段（number 空串转 undefined）。
@@ -407,7 +400,6 @@ export function useCodeRulesPage() {
       scope: row.scope ?? 'organization',
       effectiveFromUtc: null,
       changeReason: '',
-      createdBy: '',
       segments: row.segments?.length ? row.segments.map(toSegmentRow) : [blankSegment()],
     })
     formOpen.value = true
@@ -470,7 +462,6 @@ export function useCodeRulesPage() {
       segments: form.segments.map(rowToSegment),
       isActive: true,
       effectiveFromUtc: form.effectiveFromUtc || null,
-      createdBy: form.createdBy.trim(),
       changeReason: form.changeReason.trim(),
     }
     try {
@@ -497,7 +488,6 @@ export function useCodeRulesPage() {
     changeReasonValid,
     columns,
     createPending,
-    createdByValid,
     displayNameValid,
     editingCurrentVersion,
     editingRuleKey,

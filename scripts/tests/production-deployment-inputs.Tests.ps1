@@ -1,4 +1,4 @@
-# Script-Governance:
+﻿# Script-Governance:
 #   Category: check
 #   SideEffects:
 #     - Executes release-install validation and captures the environment at an isolated Aspire command boundary
@@ -122,7 +122,9 @@ finally { if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixtu
 foreach ($contract in @(
     @($appHostText, 'AddParameter("iam-enterprise-identity-mfa-code", secret: true)', 'AppHost MFA override must be a secret parameter'),
     @($appHostText, 'Iam__EnterpriseIdentity__Mfa__DevelopmentCode', 'AppHost must deliver the MFA override to IAM'),
-    @($dependenciesText, '--requirepass', 'legacy Redis must require authentication'),
+    @($dependenciesText, '/run/secrets/redis_password', 'legacy Redis must read the password from the mounted secret'),
+    @($dependenciesText, 'user default on #%s', 'legacy Redis must require authentication'),
+    @($dependenciesText, 'grep -qx PONG', 'legacy Redis health check must verify the authenticated PONG'),
     @($platformText, 'password=${NERV_IIP_REDIS_PASSWORD:?set NERV_IIP_REDIS_PASSWORD}', 'legacy services must authenticate to Redis'),
     @($platformText, 'Iam__Secrets__Pepper: ${NERV_IIP_IAM_SECRETS_PEPPER:?set NERV_IIP_IAM_SECRETS_PEPPER}', 'legacy IAM must receive its pepper'),
     @($platformText, 'Iam__EnterpriseIdentity__Mfa__DevelopmentCode: ${NERV_IIP_IAM_ENTERPRISE_IDENTITY_MFA_CODE:?set NERV_IIP_IAM_ENTERPRISE_IDENTITY_MFA_CODE}', 'legacy IAM must receive its MFA override'),
@@ -135,6 +137,31 @@ foreach ($contract in @(
     @($environmentExampleText, 'NERV_IIP_BARCODE_LABEL_PRINTER_HOST=', 'production env example must expose the site printer host without committing a real address')
 )) {
     Assert-ContainsOrdinal -Text $contract[0] -Expected $contract[1] -Message $contract[2]
+}
+
+# 校验各服务的独立块，避免其他服务上的同名键掩盖漏配。
+$serviceBlocks = @{}
+foreach ($match in [regex]::Matches($platformText, '(?ms)^  (?<name>[a-z0-9-]+):\r?\n(?<body>.*?)(?=^  [a-z0-9-]+:|^\S|\z)')) {
+    $serviceBlocks[$match.Groups['name'].Value] = $match.Groups['body'].Value
+}
+foreach ($service in @('business-master-data', 'business-product-engineering', 'business-quality')) {
+    Assert-ContainsOrdinal -Text $serviceBlocks[$service] -Expected 'Iam__Jwt__JwksJson: ${NERV_IIP_IAM_JWT_JWKS_JSON:?' -Message "服务 $service 缺少必填 JWKS。"
+    if ($serviceBlocks[$service] -match 'PrivateKey') { throw "服务 $service 不得接收 IAM 私钥。" }
+}
+foreach ($gateway in @('gateway', 'business-gateway')) {
+    Assert-ContainsOrdinal -Text $serviceBlocks[$gateway] -Expected 'Security__ForwardedHeaders__TrustedProxies: ${NERV_IIP_GATEWAY_TRUSTED_PROXIES:?' -Message "网关 $gateway 缺少必填可信代理配置。"
+}
+Assert-ContainsOrdinal -Text $environmentExampleText -Expected 'NERV_IIP_GATEWAY_TRUSTED_PROXIES=' -Message '生产环境样例缺少可信代理输入。'
+$exposedBusinessServices = @('business-gateway', 'business-console')
+$internalBusinessServices = @(
+    $serviceBlocks.Keys | Where-Object {
+        $candidate = [string] $_
+        $candidate.StartsWith('business-', [StringComparison]::Ordinal) -and
+            -not ($exposedBusinessServices | Where-Object { [string]::Equals($_, $candidate, [StringComparison]::Ordinal) })
+    }
+)
+foreach ($service in @('iam') + $internalBusinessServices) {
+    if ($serviceBlocks[$service] -match '(?m)^    ports:') { throw "服务 $service 不得发布宿主机端口。" }
 }
 
 Write-Host 'Production deployment input contracts passed.'

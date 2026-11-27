@@ -154,7 +154,8 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
         SendAsync<SchedulingCandidateSetContract>(token, HttpMethod.Post, "/api/business/v1/scheduling/workbench/candidates/preview", request, ct, SchedulingJson.Options);
     public Task<SchedulingCandidateSelectionContract> SelectCandidateAsync(string token, SchedulingCandidateSelectRequestContract request, string userId, CancellationToken ct) =>
         SendAsync<SchedulingCandidateSelectionContract>(token, HttpMethod.Post, "/api/business/v1/scheduling/workbench/candidates/select", request, ct, SchedulingJson.Options,
-            message => message.Headers.Add(SchedulingWorkingDraftHeaders.UserId, userId));
+            message => message.Headers.Add(SchedulingWorkingDraftHeaders.UserId, userId),
+            acceptKnownExceptionCodeZero: true);
 
     public Task<SchedulingFirstPlanJobContract> AcceptFirstPlanJobAsync(
         string internalBearerToken, SchedulingFirstPlanInputContract input, CancellationToken cancellationToken) =>
@@ -227,7 +228,8 @@ public sealed class HttpBusinessSchedulingClient(HttpClient httpClient)
             $"/api/business/v1/scheduling/plans/{Uri.EscapeDataString(request.PlanId)}/revisions",
             request,
             cancellationToken,
-            SchedulingJson.Options);
+            SchedulingJson.Options,
+            acceptKnownExceptionCodeZero: true);
 
     public Task<SchedulePlanContract> PreviewPlanAsync(
         string internalBearerToken,

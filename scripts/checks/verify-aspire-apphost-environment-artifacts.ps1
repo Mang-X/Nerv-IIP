@@ -1,4 +1,4 @@
-# Script-Governance:
+﻿# Script-Governance:
 #   Category: verify
 #   SideEffects:
 #     - Builds and publishes two temporary Aspire Docker Compose artifacts
@@ -100,6 +100,26 @@ function Assert-EnvironmentArtifact {
         }
     }
 
+    if ([string]::Equals($EnvironmentName, 'Production', [StringComparison]::Ordinal)) {
+        $allowedJwtKeys = @('Iam__Jwt__JwksJson', 'Iam__Jwt__Issuer', 'Iam__Jwt__Audience')
+        foreach ($service in @('business-master-data', 'business-product-engineering', 'business-quality', 'gateway', 'business-gateway')) {
+            $jwtKeys = @($Services[$service].Keys | Where-Object { ([string] $_).StartsWith('Iam__Jwt__', [StringComparison]::Ordinal) })
+            $unexpectedJwtKeys = @($jwtKeys | Where-Object {
+                $candidate = [string] $_
+                -not ($allowedJwtKeys | Where-Object { [string]::Equals($_, $candidate, [StringComparison]::Ordinal) })
+            })
+            if (-not [string]::Equals([string] $Services[$service]['Iam__Jwt__JwksJson'], '${IAM_JWT_JWKS_JSON}', [StringComparison]::Ordinal) -or
+                $unexpectedJwtKeys.Count -gt 0) {
+                throw "Production $service 必须使用 IAM 公钥 JWKS 占位符，且不得注入签名材料。"
+            }
+        }
+        foreach ($gateway in @('gateway', 'business-gateway')) {
+            if (-not [string]::Equals([string] $Services[$gateway]['Security__ForwardedHeaders__TrustedProxies'], '192.0.2.10,192.0.2.16/28', [StringComparison]::Ordinal)) {
+                throw "Production $gateway 必须接收显式的可信代理配置。"
+            }
+        }
+    }
+
     # #3097：tus 盘承载已 complete 文件的字节，生成产物必须给 FileStorage 一个容器内绝对路径并挂命名卷；
     # 系统 temp 或容器可写层不是持久落点（ADR 0024 §5）。
     $fileStorage = $Services['file-storage']
@@ -160,6 +180,7 @@ try {
         if ([string]::Equals($environmentName, 'Production', [StringComparison]::Ordinal)) {
             $publishEnvironment = @{
                 Messaging__Provider = 'Redis'
+                Security__ForwardedHeaders__TrustedProxies = '192.0.2.10,192.0.2.16/28'
                 Security__Cors__AllowedOrigins = 'https://console.example.test,https://business.example.test'
                 ConnectorHost__ConnectorHostId = 'verify-connector-host'
                 ConnectorHost__OrganizationId = 'verify-organization'

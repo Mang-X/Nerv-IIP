@@ -4,6 +4,8 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockCountTaskAggregate
 namespace Nerv.IIP.Business.Inventory.Web.Application.Commands.StockCounts;
 
 public sealed record RestartStockCountTaskCommand(
+    string OrganizationId,
+    string EnvironmentId,
     StockCountTaskId CountTaskId) : ICommand<RestartStockCountTaskResult>;
 
 public sealed record RestartStockCountTaskResult(
@@ -15,6 +17,8 @@ public sealed class RestartStockCountTaskCommandValidator : AbstractValidator<Re
 {
     public RestartStockCountTaskCommandValidator()
     {
+        RuleFor(x => x.OrganizationId).NotEmpty();
+        RuleFor(x => x.EnvironmentId).NotEmpty();
         RuleFor(x => x.CountTaskId).NotEmpty();
     }
 }
@@ -24,7 +28,10 @@ public sealed class RestartStockCountTaskCommandHandler(ApplicationDbContext dbC
 {
     public async Task<RestartStockCountTaskResult> Handle(RestartStockCountTaskCommand request, CancellationToken cancellationToken)
     {
-        var task = await dbContext.StockCountTasks.SingleOrDefaultAsync(x => x.Id == request.CountTaskId, cancellationToken)
+        var task = await dbContext.StockCountTasks.SingleOrDefaultAsync(x =>
+                x.Id == request.CountTaskId
+                && x.OrganizationId == request.OrganizationId
+                && x.EnvironmentId == request.EnvironmentId, cancellationToken)
             ?? throw new KnownException($"未找到盘点任务：{request.CountTaskId}。");
 
         var ledger = await dbContext.StockLedgers.SingleOrDefaultAsync(

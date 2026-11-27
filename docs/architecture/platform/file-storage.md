@@ -12,7 +12,7 @@ Knowledge、Ops、AppHub 与业务域可以引用文件，但文件的业务语�
 
 1. 当前通用文件 metadata 使用 PostgreSQL-backed 实现；`filestorage` schema 与服务代码是持久化事实来源，运行环境不以 InMemory 作为 metadata 实现。
 2. 当前通用文件字节只有本地 tus 链路可用，当前部署（AppHost 生成产物与 legacy overlay）都显式选择它；代码内的 provider 缺省值也是 `tus`。传输协议由 tusdotnet 承接，实际 PATCH 在 application-owned mutation gate 内重读 durable `open`，字节写入、checksum 回退与 offset 推进都在该 gate 内完成；完整上传回调复用 application complete。显式选择 `server-proxy` 时 只产生占位上传指令，仓库没有与其对应的通用字节 `PUT` endpoint，其 complete 会失败关闭并把上传会话重新打开。
-3. complete 的提交证据由服务从本地 tus 字节读回实际 size 与 canonical SHA-256，再与冻结的提交意图比对；该字节目录同时承载已 complete 文件，必须是显式、绝对、持久的位置（ADR 0024 §5）；其中「显式且绝对」在启动期校验，不满足即失败关闭，「持久」的判定手段仍未实现。staging/final 分区、按 `ObjectKey` 定位 final 与 atomic promote 仍未实现。
+3. complete 冻结大小与 SHA-256 校验和。File Storage 在持久卷的同一目录内把 staging 文件原子发布到 final 命名空间，按 `ObjectKey` 定位并回读校验字节，再提交正式元数据。发布后中断时，重试复核同一个 final 对象。既有会话字节在长度和已保存的 SHA-256 一致时可发布至 final，下载始终从 final 读取。
 4. MinIO 当前服务独立的 `VersionedArchive` 合规归档边界，不是通用 File Storage 的当前字节后端。
 5. `ObjectKey` 可以作为 File Storage 内部持久化事实存在，但不得暴露到公开 API、Gateway facade、SDK DTO 或业务持久化模型。
 6. UI、外部应用、Connector Host 与业务服务不得绕过 File Storage 直接访问对象存储；上传、完成、下载都必须经过受控会话或授权入口。
@@ -21,7 +21,8 @@ Knowledge、Ops、AppHub 与业务域可以引用文件，但文件的业务语�
 
    Quality 证据面固定 `quality-evidence`，owner 服务/类型为 `business-quality` / `nonconformance-report`，owner 标识绑定网关在当前组织/环境确认的 NCR。建会话、受控 tus HEAD/PATCH 与完成复用 NCR 处置管理权限，不增加 `files.*` 权限前置；公开 NCR 详情仍沿用 NCR 读取权限。Quality 在提交处置前经 FileStorage 元数据校验既存与新增附件并集的可用性、用途、租户和 NCR 归属。该面不提供控制台下载入口。
 
-9. PlatformGateway 的文件面同样不把 download grant id 交给调用方（一条以 `fileId` 为入参的字节路由，网关服务端签发并就地兑换），但**它不按用途分面**：该路由不复核 `filePurpose`，因此持 `files.download-grants.create` + `files.read` 即可取得本租户全部用途的文件字节。[ADR 0030](../../adr/2026-09-03-0030-business-gateway-purpose-scoped-file-transfer.md) 决策 2 只写了业务面按用途分面，**对平台面未置可否**；因此这个差别**尚未经裁决**，本页不替条文表态。收窄与否由 [Issue #3663](https://github.com/Mang-X/Nerv-IIP/issues/3663) 承接，本页只陈述当前事实。
+9. PlatformGateway 的 `GET /api/console/v1/files/{fileId}/content` 要求 `files.download-grants.create` 和 `files.read`。网关用专用服务凭据签发并兑换授权。File Storage 按文件的注册用途及其 `DownloadFacade` 声明校验网关身份。缺少归属的用途不能通过网关签发授权。BusinessGateway 仍先检查具体路由固定的用途，以维持 SOP 与交接班附件各自的权限边界。
+10. 下载授权绑定签发调用身份、组织和环境，并且仅可成功兑换一次。File Storage 输出 `attachment`、安全文件名、`nosniff` 和 `private, no-store`，网关保留这些响应头。
 
 ## 契约与目标边界
 

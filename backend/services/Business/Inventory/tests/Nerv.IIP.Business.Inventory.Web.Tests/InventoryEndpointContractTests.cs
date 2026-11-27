@@ -1003,7 +1003,7 @@ public sealed class InventoryEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var result = await new CancelStockCountTaskCommandHandler(dbContext).Handle(
-            new CancelStockCountTaskCommand(taskResult.CountTaskId, "operator-cancelled"),
+            new CancelStockCountTaskCommand("org-001", "env-dev", taskResult.CountTaskId, "operator-cancelled"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -1773,8 +1773,22 @@ public sealed class InventoryEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
         Assert.Equal(StockCountTaskStatuses.RecountRequired, dbContext.StockCountTasks.Single().Status);
 
-        var restarted = await new RestartStockCountTaskCommandHandler(dbContext).Handle(
-            new RestartStockCountTaskCommand(taskResult.CountTaskId),
+        var restart = new RestartStockCountTaskCommandHandler(dbContext);
+        var cancel = new CancelStockCountTaskCommandHandler(dbContext);
+        foreach (var (organizationId, environmentId) in new[] { ("org-other", "env-dev"), ("org-001", "env-other") })
+        {
+            await Assert.ThrowsAsync<KnownException>(() => restart.Handle(
+                new RestartStockCountTaskCommand(organizationId, environmentId, taskResult.CountTaskId),
+                CancellationToken.None));
+            await Assert.ThrowsAsync<KnownException>(() => cancel.Handle(
+                new CancelStockCountTaskCommand(organizationId, environmentId, taskResult.CountTaskId, "盘点范围调整"),
+                CancellationToken.None));
+            Assert.Equal(StockCountTaskStatuses.RecountRequired, dbContext.StockCountTasks.Single().Status);
+            Assert.False(dbContext.StockLedgers.Single().IsFrozenForCount);
+        }
+
+        var restarted = await restart.Handle(
+            new RestartStockCountTaskCommand("org-001", "env-dev", taskResult.CountTaskId),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -1820,7 +1834,7 @@ public sealed class InventoryEndpointContractTests
 
         var exception = await Assert.ThrowsAsync<KnownException>(() =>
             new RestartStockCountTaskCommandHandler(dbContext).Handle(
-                new RestartStockCountTaskCommand(taskResult.CountTaskId),
+                new RestartStockCountTaskCommand("org-001", "env-dev", taskResult.CountTaskId),
                 CancellationToken.None));
 
         Assert.Contains("状态不支持重新盘点", exception.Message, StringComparison.Ordinal);
@@ -1853,7 +1867,7 @@ public sealed class InventoryEndpointContractTests
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
         var cancelled = await new CancelStockCountTaskCommandHandler(dbContext).Handle(
-            new CancelStockCountTaskCommand(taskResult.CountTaskId, "盘点范围调整，任务作废"),
+            new CancelStockCountTaskCommand("org-001", "env-dev", taskResult.CountTaskId, "盘点范围调整，任务作废"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 

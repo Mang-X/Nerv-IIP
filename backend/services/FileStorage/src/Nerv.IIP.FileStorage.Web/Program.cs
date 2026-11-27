@@ -78,6 +78,7 @@ builder.Services.AddScoped<TemplateAssetRetirementStore>();
 // never driven by two clocks.
 builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
+builder.AddFileDownloadAuthorization();
 builder.Services.AddSingleton<ILocalTusFileStoreAccessor, LocalTusFileStoreAccessor>();
 builder.Services.AddSingleton<IFileStorageUploadProvider>(services =>
     string.Equals(services.GetRequiredService<IConfiguration>()["FileStorage:UploadProvider"] ?? "tus", "tus", StringComparison.OrdinalIgnoreCase)
@@ -121,7 +122,7 @@ var app = builder.Build();
 // 与上面按 IConfiguration 惰性判定 provider 的口径一致。
 var tusRootPath = app.Configuration["FileStorage:Tus:RootPath"];
 if (string.Equals(app.Configuration["FileStorage:UploadProvider"] ?? "tus", "tus", StringComparison.OrdinalIgnoreCase)
-    && (string.IsNullOrWhiteSpace(tusRootPath) || !Path.IsPathRooted(tusRootPath)))
+    && (string.IsNullOrWhiteSpace(tusRootPath) || !Path.IsPathFullyQualified(tusRootPath)))
 {
     // tus 盘承载已 complete 文件的字节，ADR 0024 §5 要求显式、绝对、持久的 root。这里只判前两项：
     // 「持久」需要 storage identity / mount identity 探测，归 #1012，所以不在文案里宣称已经拒绝 temp。
@@ -129,6 +130,11 @@ if (string.Equals(app.Configuration["FileStorage:UploadProvider"] ?? "tus", "tus
         "FileStorage:UploadProvider=tus requires FileStorage:Tus:RootPath to be an explicit absolute path " +
         $"(configured={(string.IsNullOrWhiteSpace(tusRootPath) ? "<missing>" : "<relative>")}). " +
         "Point it at persistent storage.");
+}
+
+if (app.Services.GetRequiredService<ILocalTusFileStoreAccessor>().TryGet(out var localStore))
+{
+    localStore.VerifyVolume(required: !app.Environment.IsDevelopment());
 }
 
 if (persistence.AutoMigrate)

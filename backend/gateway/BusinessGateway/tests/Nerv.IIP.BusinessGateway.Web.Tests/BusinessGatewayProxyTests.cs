@@ -142,7 +142,7 @@ public sealed class BusinessGatewayProxyTests
         {
             success = false,
             message = reason,
-            code = 0,
+            code = downstreamStatus == HttpStatusCode.OK ? 400 : 0,
         }));
         using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://business.local") };
         await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
@@ -923,7 +923,7 @@ public sealed class BusinessGatewayProxyTests
             },
             isActive = true,
             effectiveFromUtc = "2026-06-01T00:00:00Z",
-            createdBy = "admin-001",
+            createdBy = "伪造账号",
             changeReason = "  align plant convention  ",
         });
         var preview = await client.PostAsJsonAsync("/api/business-console/v1/master-data/code-rules/master-data.sku/preview", new
@@ -947,7 +947,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(new BusinessConsoleCodeRuleContextRequest("org-001", "env-dev"), masterData.LastCodeRuleListRequest);
         Assert.Equal(new BusinessConsoleCodeRuleRequest("org-001", "env-dev", "master-data.sku"), masterData.LastCodeRuleDetailRequest);
         Assert.Equal("master-data.sku", masterData.LastCodeRuleVersionRequest!.RuleKey);
-        Assert.Equal("admin-001", masterData.LastCodeRuleVersionRequest.CreatedBy);
+        Assert.Equal("user-admin", masterData.LastCodeRuleVersionCreatedBy);
         Assert.Equal("align plant convention", masterData.LastCodeRuleVersionRequest.ChangeReason);
         Assert.Equal("master-data.sku", masterData.LastCodeRulePreviewRequest!.RuleKey);
     }
@@ -8272,16 +8272,20 @@ public sealed class BusinessGatewayProxyTests
 
         var response = await client.PostAsJsonAsync(
             "/api/business-console/v1/erp/procurement/purchase-requisitions/convert-to-purchase-order",
-            new BusinessConsoleConvertErpPurchaseRequisitionsRequest(
-                "org-001",
-                "env-dev",
-                ["PR-001", "PR-002"],
-                PurchaseOrderNo: "PO-REQ-001",
-                RfqSupplierCodes: ["SUP-001"],
-                IdempotencyKey: "idem-convert-001"));
+            new
+            {
+                organizationId = "org-001",
+                environmentId = "env-dev",
+                purchaseRequisitionNos = new[] { "PR-001", "PR-002" },
+                purchaseOrderNo = "PO-REQ-001",
+                rfqSupplierCodes = new[] { "SUP-001" },
+                idempotencyKey = "idem-convert-001",
+                startedBy = "user-victim",
+            });
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("internal-test-token", erp.LastInternalToken);
+        Assert.Equal("user-admin", erp.LastConversionStartedBy);
         Assert.NotNull(erp.LastConvertPurchaseRequisitionRequest);
         Assert.Equal("org-001", erp.LastConvertPurchaseRequisitionRequest.OrganizationId);
         Assert.Equal("env-dev", erp.LastConvertPurchaseRequisitionRequest.EnvironmentId);
@@ -8294,6 +8298,34 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("PurchaseOrderCreated", data.GetProperty("status").GetString());
         Assert.Equal("PO-REQ-001", data.GetProperty("purchaseOrderNo").GetString());
         Assert.Equal("SUP-001", data.GetProperty("supplierCode").GetString());
+    }
+
+    [Fact]
+    public async Task Erp_procurement_purchase_order_binds_approval_initiator_to_principal()
+    {
+        var erp = new RecordingErpClient();
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessErpClient>();
+            services.AddSingleton<IBusinessErpClient>(erp);
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync("/api/business-console/v1/erp/procurement/purchase-orders", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            purchaseOrderNo = "PO-001",
+            supplierCode = "SUP-001",
+            siteCode = "SITE-01",
+            lines = new[] { new { lineNo = "1", skuCode = "SKU-001", uomCode = "EA", quantity = 2, unitPrice = 10, promisedDate = "2026-06-05" } },
+            idempotencyKey = "idem-create-po-001",
+            startedBy = "user-victim",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("user-admin", erp.LastPurchaseOrderStartedBy);
     }
 
     [Fact]
@@ -8813,7 +8845,7 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, revokeDelegation.StatusCode);
         Assert.Equal("internal-test-token", approval.LastInternalToken);
         Assert.Equal(new BusinessConsoleApprovalChainListRequest("org-001", "env-dev", "pending", "u-requester", null, "purchase-order", "PO-001", 1, 10), approval.LastChainListRequest);
-        Assert.Equal(new BusinessConsoleApprovalDecisionListRequest("org-001", "env-dev", "chain-001", "user", "u-manager", "approve", null, null, 2, 11), approval.LastDecisionListRequest);
+        Assert.Equal(new BusinessConsoleApprovalDecisionListRequest("org-001", "env-dev", "chain-001", "user", "user-admin", "approve", null, null, 2, 11), approval.LastDecisionListRequest);
         Assert.Equal("user-admin", approval.LastRequest?.ActorRef);
         Assert.Equal(3, approval.LastRequest?.Skip);
         Assert.Equal(12, approval.LastRequest?.Take);
@@ -8825,6 +8857,40 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("u-backup", approval.LastCreateDelegationRequest?.DelegateActorRef);
         Assert.Equal("delegation-001", approval.LastRevokeDelegationRequest?.DelegationId);
         Assert.Equal("user-admin", approval.LastRevokeDelegationRequest?.RevokedBy);
+    }
+
+    [Fact]
+    public async Task Approval_chain_detail_exposes_only_the_authenticated_actors_decisions()
+    {
+        var decidedAt = new DateTimeOffset(2026, 6, 5, 8, 0, 0, TimeSpan.Zero);
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            data = new BusinessConsoleApprovalChainResponse(
+                "chain-001", "org-001", "env-dev", "fixture-template", 1,
+                "pending", "erp", "purchase-order", "PO-001", null, [],
+                [
+                    new("decision-mine", 1, "user", "user-admin", "approve", null, decidedAt),
+                    new("decision-other", 2, "user", "u-manager", "reject", "其他人的备注", decidedAt),
+                ]),
+            success = true,
+        }));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://approval.local") };
+        await using var lease = LeaseHost(
+            FakeBusinessGatewayAuthorizationClient.AllowOnly(BusinessGatewayPermissions.ApprovalsRead), services =>
+            {
+                services.RemoveAll<IBusinessApprovalClient>();
+                services.AddSingleton<IBusinessApprovalClient>(new HttpBusinessApprovalClient(downstream));
+                services.RemoveAll<IInternalServiceTokenProvider>();
+                services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+            });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        using var response = await client.GetAsync("/api/business-console/v1/approval/chains/chain-001?organizationId=org-001&environmentId=env-dev");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var decision = Assert.Single(document.RootElement.GetProperty("data").GetProperty("decisions").EnumerateArray());
+        Assert.Equal("decision-mine", decision.GetProperty("decisionId").GetString());
     }
 
     [Theory]
@@ -9610,6 +9676,42 @@ public sealed class BusinessGatewayProxyTests
             : await client.GetAsync($"{route}/{Guid.NewGuid()}?organizationId={org}&environmentId={env}");
         Assert.Equal(denial == "anonymous" ? HttpStatusCode.Unauthorized : HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Empty(handler.Requests);
+    }
+
+    [Theory]
+    [Trait("Contract", "PublicContract")]
+    [Trait("Contract", "Regression")]
+    [InlineData(""","code":400""", 400, "insertion-rejected")]
+    [InlineData(""","code":403""", 403, "insertion-rejected")]
+    [InlineData(""","code":404""", 404, "insertion-rejected")]
+    [InlineData(",\"code\":\"409\"", 409, "insertion-rejected")]
+    [InlineData(""","code":422""", 422, "insertion-rejected")]
+    [InlineData("", 502, "downstream-invalid-response")]
+    [InlineData(",\"code\":\"invalid\"", 502, "downstream-invalid-response")]
+    [InlineData(""","code":200""", 502, "downstream-invalid-response")]
+    [InlineData(""","code":500""", 502, "downstream-invalid-response")]
+    public async Task Insertion_preview_facade_uses_valid_status_in_success_transport_failure_envelope(
+        string codeField, int expectedStatus, string expectedMessage)
+    {
+        var handler = new RecordingHandler(_ => StringJsonResponse(
+            HttpStatusCode.OK, $$"""{"success":false,"message":"insertion-rejected"{{codeField}}}"""));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://scheduling.local") };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessSchedulingClient>();
+            services.AddSingleton<IBusinessSchedulingClient>(new HttpBusinessSchedulingClient(downstream));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        using var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/scheduling/workbench/insertion-preview-jobs",
+            new SchedulingInsertionPreviewRequestContract("org-001", "env-dev", "plan-001", "WO-12"), SchedulingJson.Options);
+
+        Assert.Equal(expectedStatus, (int)response.StatusCode);
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        Assert.False(body["success"]!.GetValue<bool>());
+        Assert.Equal(expectedStatus, body["code"]!.GetValue<int>());
+        Assert.Equal(expectedMessage, body["message"]!.GetValue<string>());
     }
 
     // #4162 PublicContract：公开合同要求异步首版受理/查询原样透传，权限分别沿管理/读取。
@@ -12278,7 +12380,7 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Count_task_recount_and_cancel_facades_forward_the_route_task_id_downstream()
+    public async Task Count_task_recount_and_cancel_facades_forward_the_authorized_scope_and_route_task_id()
     {
         var inventory = new RecordingInventoryClient();
         await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
@@ -12298,7 +12400,9 @@ public sealed class BusinessGatewayProxyTests
 
         Assert.Equal(HttpStatusCode.OK, recountResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, cancelResponse.StatusCode);
+        Assert.Equal(("org-001", "env-dev"), inventory.LastRestartedCountTaskScope);
         Assert.Equal("count-042", inventory.LastRestartedCountTaskId);
+        Assert.Equal(("org-001", "env-dev"), inventory.LastCancelledCountTaskScope);
         Assert.Equal("count-043", inventory.LastCancelledCountTaskId);
         Assert.Equal("盘点范围调整", inventory.LastCancelledCountTaskReason);
     }
@@ -15963,10 +16067,11 @@ public sealed class BusinessGatewayProxyTests
 
     [Theory]
     [InlineData(null)]
+    [InlineData(0)]
     [InlineData(500)]
     [InlineData(30000)]
     [InlineData("BUSINESS_VALIDATION_FAILED")]
-    public async Task Master_data_http_client_maps_success_false_business_envelope_to_bad_request(object? downstreamCode)
+    public async Task Master_data_http_client_rejects_invalid_status_in_success_transport_failure_envelope(object? downstreamCode)
     {
         var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
         {
@@ -15983,7 +16088,8 @@ public sealed class BusinessGatewayProxyTests
             Issue355CreateSkuRequest(),
             CancellationToken.None));
 
-        Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);
+        Assert.Equal(HttpStatusCode.BadGateway, ex.StatusCode);
+        Assert.Equal("downstream-invalid-response", ex.Message);
     }
 
     [Fact]
@@ -17937,19 +18043,23 @@ internal sealed class RecordingMasterDataClient : IBusinessMasterDataClient
             ]));
     }
 
+    public string? LastCodeRuleVersionCreatedBy { get; private set; }
+
     public Task<BusinessConsoleCodeRuleVersionResponse> CreateCodeRuleVersionAsync(
         string internalBearerToken,
         BusinessConsoleCreateCodeRuleVersionRequest request,
+        string createdBy,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
         LastCodeRuleVersionRequest = request;
+        LastCodeRuleVersionCreatedBy = createdBy;
         return Task.FromResult(new BusinessConsoleCodeRuleVersionResponse(
             request.RuleKey,
             2,
             "active",
             request.EffectiveFromUtc ?? DateTimeOffset.UtcNow,
-            request.CreatedBy,
+            createdBy,
             request.ChangeReason));
     }
 
@@ -18466,7 +18576,11 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
         return Task.FromResult(new BusinessConsoleConfirmStockCountAdjustmentResponse("move-001", 1, 11, "posted", null));
     }
 
+    public (string OrganizationId, string EnvironmentId) LastRestartedCountTaskScope { get; private set; }
+
     public string? LastRestartedCountTaskId { get; private set; }
+
+    public (string OrganizationId, string EnvironmentId) LastCancelledCountTaskScope { get; private set; }
 
     public string? LastCancelledCountTaskId { get; private set; }
 
@@ -18475,9 +18589,12 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
     public Task<BusinessConsoleRestartStockCountTaskResponse> RestartCountTaskAsync(
         string internalBearerToken,
         string countTaskId,
+        string organizationId,
+        string environmentId,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
+        LastRestartedCountTaskScope = (organizationId, environmentId);
         LastRestartedCountTaskId = countTaskId;
         return Task.FromResult(new BusinessConsoleRestartStockCountTaskResponse(countTaskId, "open", 7));
     }
@@ -18485,10 +18602,13 @@ internal sealed class RecordingInventoryClient : IBusinessInventoryClient
     public Task<BusinessConsoleCancelStockCountTaskResponse> CancelCountTaskAsync(
         string internalBearerToken,
         string countTaskId,
+        string organizationId,
+        string environmentId,
         string reason,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
+        LastCancelledCountTaskScope = (organizationId, environmentId);
         LastCancelledCountTaskId = countTaskId;
         LastCancelledCountTaskReason = reason;
         return Task.FromResult(new BusinessConsoleCancelStockCountTaskResponse(countTaskId, "cancelled"));
@@ -20297,6 +20417,8 @@ internal sealed class RecordingErpClient : IBusinessErpClient, IBusinessErpCosti
 
     public BusinessConsoleErpListRequest? LastPurchaseRequisitionListRequest { get; private set; }
 
+    public string? LastPurchaseOrderStartedBy { get; private set; }
+    public string? LastConversionStartedBy { get; private set; }
     public BusinessConsoleConvertErpPurchaseRequisitionsRequest? LastConvertPurchaseRequisitionRequest { get; private set; }
 
     public BusinessConsoleRecordErpPurchaseReceiptRequest? LastRecordPurchaseReceiptRequest { get; private set; }
@@ -20498,10 +20620,12 @@ internal sealed class RecordingErpClient : IBusinessErpClient, IBusinessErpCosti
     public Task<BusinessConsoleConvertErpPurchaseRequisitionsResponse> ConvertPurchaseRequisitionsToPurchaseOrderAsync(
         string internalBearerToken,
         BusinessConsoleConvertErpPurchaseRequisitionsRequest request,
+        string startedBy,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
         LastConvertPurchaseRequisitionRequest = request;
+        LastConversionStartedBy = startedBy;
         return Task.FromResult(new BusinessConsoleConvertErpPurchaseRequisitionsResponse(
             "PurchaseOrderCreated",
             "po-id-001",
@@ -20635,9 +20759,11 @@ internal sealed class RecordingErpClient : IBusinessErpClient, IBusinessErpCosti
     public Task<BusinessConsoleCreateErpPurchaseOrderResponse> CreatePurchaseOrderAsync(
         string internalBearerToken,
         BusinessConsoleCreateErpPurchaseOrderRequest request,
+        string startedBy,
         CancellationToken cancellationToken)
     {
         LastInternalToken = internalBearerToken;
+        LastPurchaseOrderStartedBy = startedBy;
         return Task.FromResult(new BusinessConsoleCreateErpPurchaseOrderResponse("po-id-001"));
     }
 

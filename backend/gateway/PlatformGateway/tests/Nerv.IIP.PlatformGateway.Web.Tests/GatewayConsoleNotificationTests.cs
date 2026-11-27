@@ -265,6 +265,44 @@ public sealed class GatewayConsoleNotificationTests
         Assert.Equal("idem-client", request.Headers["Idempotency-Key"]);
     }
 
+    [Theory]
+    [Trait("Contract", "PublicContract")]
+    [Trait("Contract", "Regression")]
+    [InlineData(200, """{"success":false,"code":409,"message":"notification-conflict"}""", 409, "notification-conflict")]
+    [InlineData(200, """{"success":false,"code":200,"message":"Authorization: Bearer private"}""", 502, "downstream-invalid-response")]
+    [InlineData(200, """{"success":false,"code":422,"message":"Authorization: Bearer private"}""", 422, "Notification request failed.")]
+    [InlineData(200, """{"success":true,"data":{"items":[]}}""", 200, null)]
+    [InlineData(400, """{"success":false,"code":400,"message":"invalid-recipient"}""", 400, "invalid-recipient")]
+    [InlineData(500, """{"success":false,"code":500,"message":"notification-unavailable"}""", 500, "notification-unavailable")]
+    [InlineData(200, "", 502, "Notification unavailable: Notification returned an empty response.")]
+    [InlineData(200, "null", 502, "Notification unavailable: Notification returned an empty response.")]
+    [InlineData(200, "{", 502, "Notification unavailable: Notification returned an invalid response.")]
+    public async Task Notification_facade_keeps_http_status_and_envelope_code_consistent(
+        int downstreamStatus, string json, int expectedStatus, string? expectedMessage)
+    {
+        using var downstream = new HttpClient(new RecordingHttpMessageHandler(_ => new HttpResponseMessage((HttpStatusCode)downstreamStatus)
+        {
+            Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json"),
+        })) { BaseAddress = new Uri("http://notification.local") };
+        await using var factory = CreateFactory(
+            new HttpGatewayNotificationClient(downstream, new TestInternalServiceTokenProvider("internal-test-token")));
+        using var client = factory.CreateClient();
+        using var request = AuthorizedRequest(HttpMethod.Get, "/api/console/v1/notifications/messages");
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(expectedStatus, (int)response.StatusCode);
+        if (expectedMessage is null)
+        {
+            Assert.Empty((await ReadResponseDataAsync<NotificationMessageListResponse>(response)).Items);
+            return;
+        }
+
+        using var body = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.False(body.RootElement.GetProperty("success").GetBoolean());
+        Assert.Equal(expectedStatus, body.RootElement.GetProperty("code").GetInt32());
+        Assert.Equal(expectedMessage, body.RootElement.GetProperty("message").GetString());
+    }
+
     [Fact]
     public async Task Notification_client_preserves_downstream_response_data_error()
     {
@@ -354,7 +392,7 @@ public sealed class GatewayConsoleNotificationTests
     }
 
     private static WebApplicationFactory<Program> CreateFactory(
-        FakeGatewayNotificationClient notification,
+        IGatewayNotificationClient notification,
         FakeGatewayAuthorizationClient? auth = null)
     {
         return PlatformGatewayTestHost.CreateFactory()

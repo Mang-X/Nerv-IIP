@@ -43,11 +43,11 @@ using Newtonsoft.Json;
 using Prometheus;
 using StackExchange.Redis;
 
-var isTesting = false;
+var builder = WebApplication.CreateBuilder(args);
+var isTesting = builder.Environment.IsEnvironment("Testing");
+builder.Services.AddNervIipIamJwtAuthentication(builder.Configuration, builder.Environment);
 try
 {
-    var builder = WebApplication.CreateBuilder(args);
-    isTesting = builder.Environment.IsEnvironment("Testing");
     builder.Services.AddNervIipObservability(builder.Configuration, "business-quality");
 
     builder.Services.AddHealthChecks();
@@ -86,21 +86,6 @@ try
         builder.Services.AddDataProtection().PersistKeysToStackExchangeRedis(redis, "DataProtection-Keys");
     }
 
-    builder.Services
-        .AddAuthentication(options =>
-        {
-            options.DefaultScheme = Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
-            options.DefaultAuthenticateScheme = Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
-            options.DefaultChallengeScheme = Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme;
-        })
-        .AddJwtBearer(options =>
-        {
-            options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
-            options.TokenValidationParameters.ValidAudience = "netcorepal";
-            options.TokenValidationParameters.ValidateAudience = true;
-            options.TokenValidationParameters.ValidIssuer = "netcorepal";
-            options.TokenValidationParameters.ValidateIssuer = true;
-        });
     builder.Services.AddNervIipInternalServiceAuthorization(builder.Configuration, builder.Environment);
 
     builder.Services.AddControllers().AddNetCorePalSystemTextJson();
@@ -134,6 +119,7 @@ try
         QualityFacts.ServiceName);
     builder.Services.AddScoped<ICapTransactionFactory, NetCorePalCapTransactionFactory>();
     builder.Services.AddScoped<IIntegrationEventDeadLetterStore, PersistentIntegrationEventDeadLetterStore<ApplicationDbContext>>();
+    builder.Services.AddScoped<IntegrationEventCapFailureDeadLetterer>();
     builder.Services.AddIntegrationEventDeadLetterEndpoints();
     builder.Services.AddQualityDeadLetterReplay();
     builder.Services.AddScoped<IReworkWorkOrderBindingWriter, PostgresReworkWorkOrderBindingWriter>();
@@ -177,6 +163,7 @@ try
         builder.Services.AddCap(x =>
         {
             x.Version = builder.Configuration["Cap:Version"] ?? "v1";
+            x.UseIntegrationEventDeadLetterOnFailedThreshold();
             x.UseEntityFramework<ApplicationDbContext>();
             x.JsonSerializerOptions.AddNetCorePalJsonConverters();
             x.UseConfiguredTransport(builder.Configuration, builder.Environment.EnvironmentName);

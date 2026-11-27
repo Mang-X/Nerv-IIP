@@ -210,11 +210,18 @@ public sealed record ListStockCountAdjustmentsRequest(
     int PageSize = 50,
     string? IdempotencyKey = null);
 
-public sealed record CancelStockCountTaskRequest(StockCountTaskId CountTaskId, string Reason);
+public sealed record CancelStockCountTaskRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    StockCountTaskId CountTaskId,
+    string Reason);
 
 public sealed record CancelStockCountTaskResponse(string CountTaskId, string Status);
 
-public sealed record RestartStockCountTaskRequest(StockCountTaskId CountTaskId);
+public sealed record RestartStockCountTaskRequest(
+    string OrganizationId,
+    string EnvironmentId,
+    StockCountTaskId CountTaskId);
 
 public sealed record RestartStockCountTaskResponse(string CountTaskId, string Status, long ExpectedLedgerVersion);
 
@@ -746,7 +753,7 @@ public sealed class CancelStockCountTaskEndpoint(ISender sender)
 
     public override async Task HandleAsync(CancelStockCountTaskRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new CancelStockCountTaskCommand(req.CountTaskId, req.Reason), ct);
+        var result = await sender.Send(new CancelStockCountTaskCommand(req.OrganizationId, req.EnvironmentId, req.CountTaskId, req.Reason), ct);
         await Send.OkAsync(new CancelStockCountTaskResponse(result.CountTaskId.ToString(), result.Status).AsResponseData(), cancellation: ct);
     }
 }
@@ -761,7 +768,7 @@ public sealed class RestartStockCountTaskEndpoint(ISender sender)
 
     public override async Task HandleAsync(RestartStockCountTaskRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new RestartStockCountTaskCommand(req.CountTaskId), ct);
+        var result = await sender.Send(new RestartStockCountTaskCommand(req.OrganizationId, req.EnvironmentId, req.CountTaskId), ct);
         await Send.OkAsync(
             new RestartStockCountTaskResponse(result.CountTaskId.ToString(), result.Status, result.ExpectedLedgerVersion).AsResponseData(),
             cancellation: ct);

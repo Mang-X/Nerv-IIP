@@ -736,10 +736,12 @@ public sealed class ErpProcurementEndpointContractTests
                 "PO-TEMPLATE-001",
                 "SUP-001",
                 "SITE-01",
-                [new PurchaseOrderCommandLine("LINE-001", "SKU-RM-1000", "kg", 3m, 12m, new DateOnly(2026, 6, 5))]),
+                [new PurchaseOrderCommandLine("LINE-001", "SKU-RM-1000", "kg", 3m, 12m, new DateOnly(2026, 6, 5))],
+                StartedBy: "user-buyer"),
             CancellationToken.None);
 
         Assert.NotNull(approvalClient.LastRequest);
+        Assert.Equal("user-buyer", approvalClient.LastRequest.StartedBy);
         Assert.Equal(ApprovalTemplateCodes.PurchaseOrderRelease, approvalClient.LastRequest!.TemplateCode);
         Assert.Equal("purchase-order", approvalClient.LastRequest.DocumentType);
         Assert.Equal("business-erp", approvalClient.LastRequest.SourceService);
@@ -770,7 +772,8 @@ public sealed class ErpProcurementEndpointContractTests
                 "org-001",
                 "env-dev",
                 ["PR-001", "PR-002"],
-                PurchaseOrderNo: "PO-REQ-001"),
+                PurchaseOrderNo: "PO-REQ-001",
+                StartedBy: "user-converter"),
             CancellationToken.None);
         await dbContext.SaveChangesAsync(CancellationToken.None);
 
@@ -778,6 +781,7 @@ public sealed class ErpProcurementEndpointContractTests
         Assert.Equal("PO-REQ-001", result.PurchaseOrderNo);
         Assert.Equal("SUP-001", result.SupplierCode);
         Assert.NotNull(approvalClient.LastRequest);
+        Assert.Equal("user-converter", approvalClient.LastRequest.StartedBy);
         // 三方漂移契约：转单发起的审批必须用 Approval 产品种子落库的中性契约码，
         // 不得再回到从未落库的 erp-purchase-order-release 字面量（种子态必 400）。
         Assert.Equal(ApprovalTemplateCodes.PurchaseOrderRelease, approvalClient.LastRequest!.TemplateCode);

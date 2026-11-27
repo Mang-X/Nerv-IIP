@@ -114,6 +114,7 @@ public sealed class ToolingAssetDirectoryHttpTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("environment", "Testing");
+            builder.UseSetting("Iam:Jwt:JwksJson", Nerv.IIP.Testing.IamJwtFixture.PublicJwksJson);
             builder.UseSetting("InternalService:BearerToken", "tooling-http-test-token");
             builder.ConfigureTestServices(services =>
             {

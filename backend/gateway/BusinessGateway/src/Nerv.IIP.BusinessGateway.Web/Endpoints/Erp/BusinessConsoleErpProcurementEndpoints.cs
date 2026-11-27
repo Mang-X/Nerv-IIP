@@ -180,7 +180,8 @@ public sealed class ConvertBusinessConsoleErpPurchaseRequisitionsToPurchaseOrder
         BusinessConsoleConvertErpPurchaseRequisitionsRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        erp.ConvertPurchaseRequisitionsToPurchaseOrderAsync(tokenProvider.BearerToken, request, cancellationToken);
+        erp.ConvertPurchaseRequisitionsToPurchaseOrderAsync(tokenProvider.BearerToken, request,
+            RequireAuthorizedPrincipalId(), cancellationToken);
 }
 
 [Tags("Business Console ERP")]
@@ -224,7 +225,8 @@ public sealed class CreateBusinessConsoleErpPurchaseOrderEndpoint(
         BusinessConsoleCreateErpPurchaseOrderRequest request,
         string bearerToken,
         CancellationToken cancellationToken) =>
-        erp.CreatePurchaseOrderAsync(tokenProvider.BearerToken, request, cancellationToken);
+        erp.CreatePurchaseOrderAsync(tokenProvider.BearerToken, request,
+            RequireAuthorizedPrincipalId(), cancellationToken);
 }
 
 [Tags("Business Console ERP")]

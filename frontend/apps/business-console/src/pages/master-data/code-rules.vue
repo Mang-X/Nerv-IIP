@@ -28,7 +28,6 @@ const {
   changeReasonValid,
   columns,
   createPending,
-  createdByValid,
   displayNameValid,
   editingCurrentVersion,
   editingRuleKey,
@@ -159,7 +158,6 @@ const {
       :change-reason-error="changeReasonError"
       :change-reason-valid="changeReasonValid"
       :create-pending="createPending"
-      :created-by-valid="createdByValid"
       :display-name-valid="displayNameValid"
       :editing-current-version="editingCurrentVersion"
       :editing-rule-key="editingRuleKey"

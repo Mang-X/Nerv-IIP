@@ -226,6 +226,7 @@ builder.Services.AddSingleton(new BusinessDeadLetterSources(new Dictionary<strin
 }));
 builder.Services.AddBusinessGatewayAuthentication(builder.Configuration, builder.Environment);
 var allowedCorsOrigins = ResolveGatewayCorsOrigins(builder.Configuration, builder.Environment);
+builder.Services.AddNervIipGatewayForwardedHeaders(builder.Configuration, builder.Environment);
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(BusinessConsoleCorsPolicy, policy =>
@@ -256,11 +257,16 @@ builder.Services.AddRateLimiter(options =>
     });
 });
 
+builder.Services.AddHttpsRedirection(options => options.HttpsPort = 443);
 var app = builder.Build();
 if (!app.Environment.IsDevelopment())
 {
+    app.UseForwardedHeaders();
     app.UseHsts();
-    app.UseHttpsRedirection();
+    // 容器探针和内部服务调用使用部署网络内的 HTTP。
+    app.UseWhen(context => context.Request.Path != "/health"
+        && !context.Request.Path.StartsWithSegments("/internal"),
+        branch => branch.UseHttpsRedirection());
 }
 
 app.UseNervIipCorrelation();

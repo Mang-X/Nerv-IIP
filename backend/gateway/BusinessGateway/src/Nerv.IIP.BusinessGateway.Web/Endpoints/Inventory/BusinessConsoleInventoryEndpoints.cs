@@ -327,6 +327,8 @@ public sealed class RestartBusinessConsoleInventoryCountTaskEndpoint(
         inventory.RestartCountTaskAsync(
             tokenProvider.BearerToken,
             Route<string>("countTaskId") ?? request.CountTaskId,
+            request.OrganizationId,
+            request.EnvironmentId,
             cancellationToken);
 }
 
@@ -363,6 +365,8 @@ public sealed class CancelBusinessConsoleInventoryCountTaskEndpoint(
         inventory.CancelCountTaskAsync(
             tokenProvider.BearerToken,
             Route<string>("countTaskId") ?? request.CountTaskId,
+            request.OrganizationId,
+            request.EnvironmentId,
             request.Reason,
             cancellationToken);
 }

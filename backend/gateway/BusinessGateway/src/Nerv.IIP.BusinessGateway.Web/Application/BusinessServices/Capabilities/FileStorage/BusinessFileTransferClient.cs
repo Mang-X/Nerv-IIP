@@ -84,7 +84,8 @@ public interface IBusinessFileTransferClient
         CancellationToken cancellationToken);
 }
 
-public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
+public sealed class HttpBusinessFileTransferClient(
+    HttpClient httpClient, IConfiguration? configuration = null, IHostEnvironment? environment = null)
     : BusinessServiceHttpClient(httpClient), IBusinessFileTransferClient
 {
     private static readonly string[] TusForwardedRequestHeaders =
@@ -200,7 +201,7 @@ public sealed class HttpBusinessFileTransferClient(HttpClient httpClient)
         ProxyRawAsync(
             HttpMethod.Get,
             ticket.DownstreamAddress,
-            internalBearerToken,
+            FileStorageRoutes.ResolveDownloadBearerToken(configuration, environment, internalBearerToken),
             sourceRequest: null,
             targetResponse,
             ticket.TransferHeaders,

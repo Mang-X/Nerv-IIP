@@ -72,7 +72,8 @@ public sealed record ConvertPurchaseRequisitionsToPurchaseOrderRequest(
     IReadOnlyCollection<string>? RfqSupplierCodes = null,
     string? RfqNo = null,
     string? IdempotencyKey = null,
-    string CurrencyCode = "CNY");
+    string CurrencyCode = "CNY",
+    string StartedBy = "");
 
 public sealed record ConvertPurchaseRequisitionsToPurchaseOrderResponse(
     string Status,
@@ -101,11 +102,12 @@ public sealed record CreatePurchaseOrderRequest(
     string SiteCode,
     IReadOnlyCollection<PurchaseOrderCommandLine> Lines,
     string? IdempotencyKey = null,
-    string CurrencyCode = "CNY");
+    string CurrencyCode = "CNY",
+    string StartedBy = "");
 
 public sealed record CreatePurchaseOrderResponse(PurchaseOrderId PurchaseOrderId);
 
-public sealed record RequestPurchaseOrderChangeRequest(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, IReadOnlyCollection<PurchaseOrderLineChangeDraft> Lines, string? Reason = null, string StartedBy = "system:erp", bool RevisionOnly = false);
+public sealed record RequestPurchaseOrderChangeRequest(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, IReadOnlyCollection<PurchaseOrderLineChangeDraft> Lines, string? Reason = null, string StartedBy = "", bool RevisionOnly = false);
 public sealed record RequestPurchaseOrderChangeResponse(string ApprovalChainId);
 public sealed record ClosePurchaseOrderLineRequest(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, string LineNo, string Reason);
 public sealed record ReschedulePurchaseOrderLineRequest(string OrganizationId, string EnvironmentId, string PurchaseOrderNo, string LineNo, DateOnly PromisedDate);
@@ -256,7 +258,7 @@ public sealed class ConvertPurchaseRequisitionsToPurchaseOrderEndpoint(ISender s
             req.RfqSupplierCodes,
             req.RfqNo,
             req.IdempotencyKey,
-            req.CurrencyCode), ct);
+            req.CurrencyCode, req.StartedBy), ct);
         await Send.OkAsync(new ConvertPurchaseRequisitionsToPurchaseOrderResponse(
             result.Status.ToString(),
             result.PurchaseOrderId,
@@ -344,7 +346,7 @@ public sealed class CreatePurchaseOrderEndpoint(ISender sender)
 
     public override async Task HandleAsync(CreatePurchaseOrderRequest req, CancellationToken ct)
     {
-        var id = await sender.Send(new CreatePurchaseOrderCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseOrderNo, req.SupplierCode, req.SiteCode, req.Lines, req.IdempotencyKey, req.CurrencyCode), ct);
+        var id = await sender.Send(new CreatePurchaseOrderCommand(req.OrganizationId, req.EnvironmentId, req.PurchaseOrderNo, req.SupplierCode, req.SiteCode, req.Lines, req.IdempotencyKey, req.CurrencyCode, req.StartedBy), ct);
         await Send.OkAsync(new CreatePurchaseOrderResponse(id).AsResponseData(), cancellation: ct);
     }
 }
