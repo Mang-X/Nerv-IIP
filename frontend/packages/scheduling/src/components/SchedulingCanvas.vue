@@ -62,11 +62,11 @@ defineExpose({ command, engineName })
     </div>
     <template v-else>
       <div
-        v-show="engineName === 'dhtmlx' && !unresolvedFactoryTime"
         ref="container"
         :data-view="view"
         :data-engine="engineName"
-        class="h-full w-full"
+        class="absolute inset-0 min-h-[50px]"
+        :class="{ invisible: engineName !== 'dhtmlx' || unresolvedFactoryTime }"
       />
       <!-- 无可用引擎时的优雅占位:容器仍在 DOM 中,引擎一旦可用即可挂载。 -->
       <p v-if="unresolvedFactoryTime" role="status" class="p-4 text-sm text-muted-foreground">

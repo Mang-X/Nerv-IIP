@@ -26,7 +26,7 @@ import { computed, shallowRef, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 
 const props = defineProps<{
-  target: 'inbound' | 'outbound' | 'count'
+  target: 'inbound' | 'outbound' | 'count' | 'picking'
   resourceId?: string | null
   /** 读屏与标题用的人读名称，如「入库单 IB-20260928-000001」。 */
   resourceLabel: string

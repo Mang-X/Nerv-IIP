@@ -147,6 +147,7 @@ const PLAN_SOURCE_LABELS: Record<string, string> = {
   'stock-build': '备货生产',
   erp: 'ERP 下达',
   mrp: 'MRP 运算',
+  demandplanning: '需求计划',
   aps: 'APS 排程',
   mes: 'MES 自建',
   manual: '手工新建',

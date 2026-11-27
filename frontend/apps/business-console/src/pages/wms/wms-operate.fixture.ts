@@ -54,6 +54,7 @@ const wms = vi.hoisted(() => ({
   retryInboundPosting: vi.fn(),
   retryOutboundPosting: vi.fn(),
   outboundStatus: 'open',
+  outboundPoolCode: 'POOL-01' as string | null,
   completeInbound: vi.fn(),
   completeOutbound: vi.fn(),
   completeCountExecution: vi.fn(),
@@ -174,6 +175,7 @@ vi.mock('@/composables/wms', () => ({
         outboundOrderId: 'ob-1',
         outboundOrderNo: 'OB-1',
         status: wms.outboundStatus,
+        assignedPoolCode: wms.outboundPoolCode,
         createdAtUtc: '2026-06-01T00:00:00Z',
       },
     ]),
@@ -342,6 +344,7 @@ const resetFixture = () => {
   wms.isReleasedForPutaway = true
   wms.inboundStatus = 'open'
   wms.outboundStatus = 'open'
+  wms.outboundPoolCode = 'POOL-01'
   wms.retryInboundPosting.mockReset()
   wms.retryOutboundPosting.mockReset()
   wms.permissionCodes = [

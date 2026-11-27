@@ -363,7 +363,11 @@ function restoreEvidenceFocus(event: Event) {
     </NvDataTable>
 
     <NvSheet v-model:open="evidenceOpen">
-      <NvSheetContent size="lg" @close-auto-focus="restoreEvidenceFocus">
+      <NvSheetContent
+        size="lg"
+        class="[&>[data-slot=nv-sheet-close]]:z-20"
+        @close-auto-focus="restoreEvidenceFocus"
+      >
         <NvSheetHeader>
           <NvSheetTitle>净算依据 · {{ skuLabel(evidenceRow?.skuCode) }}</NvSheetTitle>
           <NvSheetDescription>{{ reasonLabel(evidenceRow?.reasonCode) }}</NvSheetDescription>

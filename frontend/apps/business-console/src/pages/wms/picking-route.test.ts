@@ -1,3 +1,4 @@
+import WmsAssignWorkPoolDialog from '@/components/wms/WmsAssignWorkPoolDialog.vue'
 import { useWmsPickingTasks } from '@/composables/wms'
 import { assertScopePageBehavior, scopePageStubs } from '@/test/wmsWorkScopePage'
 import type { BusinessConsoleCreateWmsPickingTaskRequest } from '@nerv-iip/api-client'
@@ -60,6 +61,8 @@ const routeState = vi.hoisted(() => ({
 }))
 
 const wmsState = vi.hoisted(() => ({
+  permissionCodes: [] as string[],
+  unassigned: false,
   taskQuantities: {} as { plannedQuantity?: number; executedQuantity?: number; uomCode?: string },
   filters: undefined as { keyword?: string; locationCode?: string; status?: string } | undefined,
   completePicking: vi.fn(async () => undefined),
@@ -82,6 +85,10 @@ vi.mock('vue-router', () => ({
   onBeforeRouteLeave: vi.fn((guard: () => boolean) => {
     routeGuardState.guard = guard
   }),
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => ({ principal: { permissionCodes: wmsState.permissionCodes } }),
 }))
 
 vi.mock('@/composables/wms/useWmsWorkScope', () => import('@/test/wmsWorkScopePage'))
@@ -134,6 +141,14 @@ vi.mock('@/composables/wms', () => ({
           uomCode: 'EA',
           warehouseTaskId: 'pick-1',
           ...wmsState.taskQuantities,
+          ...(wmsState.unassigned
+            ? {
+                status: 'Open',
+                allowedActions: [],
+                blockReasons: ['TASK_NOT_ASSIGNED_TO_WORK_POOL'],
+                version: 3,
+              }
+            : {}),
         },
       ]),
       pickingTasksError: shallowRef(undefined),
@@ -201,9 +216,48 @@ describe('WMS picking route context', () => {
     routeGuardState.guard = undefined
     wmsState.filters = undefined
     wmsState.taskQuantities = {}
+    wmsState.permissionCodes = []
+    wmsState.unassigned = false
     let keyIndex = 0
     wmsState.key.mockImplementation(() => `picking-intent-${++keyIndex}`)
     wmsState.createPicking.mockReset().mockResolvedValue(undefined)
+  })
+
+  it('只允许具备分派和作业池目录权限的用户补派，成功后刷新拣货任务', async () => {
+    wmsState.unassigned = true
+    const button = 'button[aria-label="分配作业池 PICK-001"]'
+    wmsState.permissionCodes = ['business.wms.shipments.manage']
+    const withoutPoolAccess = mount(PickingPage, { global: { stubs: uiStubs } })
+    expect(withoutPoolAccess.find(button).exists()).toBe(false)
+    expect(withoutPoolAccess.text()).toContain('任务尚未分配作业池')
+    withoutPoolAccess.unmount()
+
+    wmsState.permissionCodes.push('business.wms.work-pools.manage')
+    const wrapper = mount(PickingPage, {
+      global: {
+        stubs: {
+          ...uiStubs,
+          WmsAssignWorkPoolDialog: {
+            props: ['open', 'target', 'resourceId', 'siteCode', 'version'],
+            emits: ['assigned'],
+            template: `<button @click="$emit('assigned')">确认分配</button>`,
+          },
+        },
+      },
+    })
+    await wrapper.get(button).trigger('click')
+    const dialog = wrapper.getComponent(WmsAssignWorkPoolDialog)
+    expect(dialog.props()).toMatchObject({
+      open: true,
+      target: 'picking',
+      resourceId: 'pick-1',
+      siteCode: 'S1',
+      version: 3,
+    })
+    wmsState.refreshPickingTasks.mockClear()
+    await dialog.get('button').trigger('click')
+    expect(wmsState.refreshPickingTasks).toHaveBeenCalledOnce()
+    wrapper.unmount()
   })
 
   it.each([
