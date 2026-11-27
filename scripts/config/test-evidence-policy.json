@@ -254,6 +254,12 @@
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP return closure acceptance test\\.\";$"
     },
     {
+      "id": "fullchain-warehouse-purchase-receipt",
+      "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/WarehousePurchaseReceiptBrokerAcceptanceTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the warehouse receipt broker acceptance\\.\";$"
+    },
+    {
       "id": "fullchain-erp-wms",
       "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/ErpWmsDeliveryCompletionPostgresRedisAcceptanceTests.cs",
       "sourceOrdinal": 1,
@@ -610,6 +616,26 @@
         "Nerv.IIP.Business.FullChain.Tests.ErpReturnClosurePostgresAcceptanceTests.Purchase_return_and_sales_rma_close_through_real_postgres_contexts_with_replay_safety"
       ],
       "expectedRuntimeTestCount": 1
+    },
+    {
+      "id": "fullchain-warehouse-purchase-receipt",
+      "sourceId": "fullchain-warehouse-purchase-receipt",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.FullChain\\.Tests\\.WarehousePurchaseReceiptBrokerAcceptanceTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the warehouse receipt broker acceptance\\.$",
+      "allowedLanes": ["backend"],
+      "requiredLane": "full-chain",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.FullChain.Tests.WarehousePurchaseReceiptBrokerAcceptanceTests.Warehouse_release_explicit_receipt_and_inventory_completion_converge_to_one_valued_erp_receipt",
+        "Nerv.IIP.Business.FullChain.Tests.WarehousePurchaseReceiptBrokerAcceptanceTests.Passed_receiving_inspection_posts_unrestricted_inventory",
+        "Nerv.IIP.Business.FullChain.Tests.WarehousePurchaseReceiptBrokerAcceptanceTests.Concession_receiving_inspection_posts_restricted_inventory",
+        "Nerv.IIP.Business.FullChain.Tests.WarehousePurchaseReceiptBrokerAcceptanceTests.Rejected_receiving_inspection_posts_blocked_inventory_and_opens_one_return"
+      ],
+      "expectedRuntimeTestCount": 4
     },
     {
       "id": "acceptance-runtime-maintenance",
