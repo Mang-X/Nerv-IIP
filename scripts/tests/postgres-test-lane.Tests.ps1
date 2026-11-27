@@ -768,7 +768,7 @@ try {
     # ErpJournalVoucherNoPostgresAcceptanceTests 与 PostgreSQL_dedup_sites_key_on_the_source_document_*
     # 在来源键那一面承担。⛔ 这是「要证的事没了」，不是「测试碍事」。
     # 完工与末笔材料过账的两个并发顺序都需要真库事务证明。
-    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 46) 'The ERP member must freeze exactly its forty-six PostgreSQL identities.'
+    Assert-Contract (@($erpMember.expectedTestIdentities).Count -eq 47) 'The ERP member must freeze exactly its forty-seven PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$erpMember.databaseOwnership, 'runner', [StringComparison]::Ordinal)) 'ERP keeps runner-owned databases for failure diagnostics.'
     $acceptanceMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'acceptance-postgres-profile' -RepositoryRoot $repoRoot
     Assert-Contract (@($acceptanceMember.expectedTestIdentities).Count -eq 16) '跨服务验收成员必须冻结十六条 PostgreSQL 测试身份。'

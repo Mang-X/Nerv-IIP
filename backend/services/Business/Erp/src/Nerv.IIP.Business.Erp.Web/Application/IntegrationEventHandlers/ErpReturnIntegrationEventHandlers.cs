@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
@@ -13,6 +14,7 @@ using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.Validation;
+using Nerv.IIP.Coding;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Contracts.Wms;
@@ -56,6 +58,47 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
             dbContext.ChangeTracker.Clear();
             await DeadLetterAsync(integrationEvent, "invalid-purchase-return-projection", exception.Message, cancellationToken);
         }
+    }
+
+    private static string PurchaseReturnAllocationKey(string eventKey)
+    {
+        var legacyKey = $"{ConsumerName}:{eventKey}";
+        return CanPreserveAllocationKey(legacyKey)
+            ? legacyKey
+            : DigestAllocationKey("return", eventKey);
+    }
+
+    private static string DebitNoteAllocationKey(string eventKey, string invoiceNo, string payableNo)
+    {
+        // The old format is reversible only when none of its fields contains the separator.
+        if (!eventKey.Contains('|') && !invoiceNo.Contains('|') && !payableNo.Contains('|'))
+        {
+            var legacyKey = $"{ConsumerName}|{eventKey}|{invoiceNo}|{payableNo}";
+            if (CanPreserveAllocationKey(legacyKey))
+            {
+                return legacyKey;
+            }
+        }
+
+        return DigestAllocationKey("debit", eventKey, invoiceNo, payableNo);
+    }
+
+    private static bool CanPreserveAllocationKey(string key) =>
+        !char.IsWhiteSpace(key[^1])
+        && key.EnumerateRunes().Count() <= CodeIdempotencyKey.IdempotencyKeyMaxLength;
+
+    private static string DigestAllocationKey(string kind, params string[] fields)
+    {
+        using var buffer = new MemoryStream();
+        using var writer = new BinaryWriter(buffer);
+        // BinaryWriter encodes each string as a length-prefixed UTF-8 field.
+        foreach (var field in fields)
+        {
+            writer.Write(field);
+        }
+
+        var digest = Convert.ToHexStringLower(SHA256.HashData(buffer.ToArray()));
+        return $"{ConsumerName}-v2-{kind}:{digest}";
     }
 
     private async Task ResolveReceiptAndRecordAsync(WmsIntegrationEvent integrationEvent, CancellationToken cancellationToken)
@@ -274,7 +317,7 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
             receipt.EnvironmentId,
             "purchase-return",
             null,
-            $"{ConsumerName}:{integrationEvent.IdempotencyKey}",
+            PurchaseReturnAllocationKey(integrationEvent.IdempotencyKey),
             ErpCodingService.Fingerprint(receipt.PurchaseReceiptNo, payload.PublicReference, returnLines),
             cancellationToken);
         var purchaseReturn = PurchaseReturn.Record(
@@ -296,7 +339,7 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
                 receipt.EnvironmentId,
                 "debit-note",
                 null,
-                ErpCodingService.Fingerprint(ConsumerName, integrationEvent.IdempotencyKey, application.Invoice.InvoiceNo, application.Payable.PayableNo),
+                DebitNoteAllocationKey(integrationEvent.IdempotencyKey, application.Invoice.InvoiceNo, application.Payable.PayableNo),
                 ErpCodingService.Fingerprint(returnAllocation.Code, application.Invoice.InvoiceNo, application.Payable.PayableNo, application.Amount),
                 cancellationToken);
             application.Payable.ApplyDebitNote(application.Amount);

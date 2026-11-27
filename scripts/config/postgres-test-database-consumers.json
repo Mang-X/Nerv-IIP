@@ -342,6 +342,17 @@
       ]
     },
     {
+      "sourcePath": "backend/tests/Nerv.IIP.Business.FullChain.Tests/WarehousePurchaseReceiptBrokerAcceptanceTests.cs",
+      "factoryCallCount": 4,
+      "ownerships": [
+        {
+          "strategy": "best-effort-dispose",
+          "factoryCallCount": 4,
+          "reason": "Each running service owns a separate CAP outbox and inbox in its own test database."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/tests/Nerv.IIP.Messaging.CAP.Tests/IntegrationEventDeadLetterPostgresFilterTests.cs",
       "factoryCallCount": 1,
       "ownerships": [
