@@ -1099,6 +1099,12 @@ public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbC
                 && x.PurchaseReceiptNo == request.PurchaseReceiptNo,
                 cancellationToken)
             ?? throw new KnownException($"Purchase receipt '{request.PurchaseReceiptNo}' was not found.");
+        Dictionary<string, decimal>? returnedGrIrQuantities = null;
+        if (await PurchaseReceiptSettlement.IsAcceptedBatchAsync(dbContext, receipt, cancellationToken))
+        {
+            await PurchaseReceiptSettlement.LockAsync(dbContext, receipt, cancellationToken);
+            returnedGrIrQuantities = await PurchaseReceiptSettlement.ReadReturnedGrIrAsync(dbContext, receipt, cancellationToken);
+        }
         var alreadyInvoicedQuantitiesByReceiptLineNo = (await dbContext.SupplierInvoices
             .Include(x => x.Lines)
             .Where(x =>
@@ -1125,7 +1131,8 @@ public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbC
                 priceTolerancePercent,
                 invoiceLines,
                 alreadyInvoicedQuantitiesByReceiptLineNo,
-                request.ExchangeRate)
+                request.ExchangeRate,
+                returnedGrIrQuantities)
             : SupplierInvoice.Match(
                 order,
                 receipt,
@@ -1137,7 +1144,8 @@ public sealed class RecordSupplierInvoiceCommandHandler(ApplicationDbContext dbC
                 request.AmountTolerance,
                 invoiceLines,
                 alreadyInvoicedQuantitiesByReceiptLineNo,
-                request.ExchangeRate);
+                request.ExchangeRate,
+                returnedGrIrQuantities);
         dbContext.SupplierInvoices.Add(invoice);
 
         if (invoice.MatchStatus == SupplierInvoiceMatchStatus.PaymentHeld)
@@ -1237,6 +1245,8 @@ public sealed class ReleaseSupplierInvoicePaymentHoldCommandHandler(ApplicationD
                 && x.InvoiceNo == request.InvoiceNo,
                 cancellationToken)
             ?? throw new KnownException($"Supplier invoice '{request.InvoiceNo}' was not found.");
+
+        await PurchaseReceiptSettlement.EnsureHeldInvoiceCanClearAsync(dbContext, invoice, cancellationToken);
 
         var existingPayableForInvoice = await dbContext.AccountPayables.SingleOrDefaultAsync(x =>
             x.OrganizationId == request.OrganizationId

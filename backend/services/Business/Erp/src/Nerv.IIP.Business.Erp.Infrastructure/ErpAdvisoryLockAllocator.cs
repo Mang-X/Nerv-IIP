@@ -12,6 +12,7 @@ public enum ErpAdvisoryLockDomain
     WorkCenterLaborCostRate,
     WorkCenterMachineOverheadRate,
     WorkCenterMachineOverheadReconciliation,
+    PurchaseReceiptSettlement,
 }
 
 public interface IErpAdvisoryLockAllocator
@@ -78,6 +79,7 @@ public sealed class PostgreSqlErpAdvisoryLockAllocator(ApplicationDbContext dbCo
         ErpAdvisoryLockDomain.WorkCenterLaborCostRate => "work-center-labor-cost-rate",
         ErpAdvisoryLockDomain.WorkCenterMachineOverheadRate => "work-center-machine-overhead-rate",
         ErpAdvisoryLockDomain.WorkCenterMachineOverheadReconciliation => "work-center-machine-overhead-reconciliation",
+        ErpAdvisoryLockDomain.PurchaseReceiptSettlement => "purchase-receipt-settlement",
         _ => throw new ArgumentOutOfRangeException(nameof(domain), domain, "Unknown ERP advisory-lock domain."),
     };
 

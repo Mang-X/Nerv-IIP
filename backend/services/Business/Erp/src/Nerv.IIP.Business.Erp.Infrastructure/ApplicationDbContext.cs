@@ -36,6 +36,12 @@ namespace Nerv.IIP.Business.Erp.Infrastructure;
 public partial class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IMediator mediator)
     : AppDbContextBase(options, mediator), IPostgreSqlCapDataStorage
 {
+    public Task LockPurchaseReceiptSettlementAsync(
+        string organizationId, string environmentId, string purchaseReceiptNo, CancellationToken cancellationToken) =>
+        new PostgreSqlErpAdvisoryLockAllocator(this).AcquireAsync(
+            ErpAdvisoryLockDomain.PurchaseReceiptSettlement, organizationId, environmentId,
+            purchaseReceiptNo, cancellationToken);
+
     public DbSet<PurchaseRequisition> PurchaseRequisitions => Set<PurchaseRequisition>();
     public DbSet<RequestForQuotation> RequestForQuotations => Set<RequestForQuotation>();
     public DbSet<SupplierQuotation> SupplierQuotations => Set<SupplierQuotation>();
