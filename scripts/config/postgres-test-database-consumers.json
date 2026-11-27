@@ -195,6 +195,18 @@
       ]
     },
     {
+      "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsPurchaseOrderReleasePostgresTests.cs",
+      "factoryCallCount": 1,
+      "ownerships": [
+        {
+          "strategy": "explicit-drop-finally",
+          "factoryCallCount": 1,
+          "ownerVariable": "database",
+          "reason": "The WMS purchase-order CAP startup proof drops its owned database after host disposal."
+        }
+      ]
+    },
+    {
       "sourcePath": "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/WmsQualityInspectionGateConsumerTests.cs",
       "factoryCallCount": 2,
       "ownerships": [

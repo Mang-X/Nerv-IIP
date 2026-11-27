@@ -701,14 +701,10 @@ try {
     $silentSkipDetected = [IO.File]::ReadAllText($silentSkipSourcePath).Contains('if (string.IsNullOrWhiteSpace(connectionString))', [StringComparison]::Ordinal)
     Assert-Contract $silentSkipDetected 'The silent-return detector must recognize the pattern it forbids.'
 
-    # WMS：六个类只有 11 条是真实 PostgreSQL 证明，因此 filter 逐条精确到方法。
-    # 归属 test-owned：NERV-822③ 的 #1563 已把这些类的手写建库收敛到共享 PostgreSqlTestDatabase，
-    # lane 因此只证明执行数与冻结身份，不声称能在成员数据库里留下诊断。
-    # 第 11 条由 #3305 加入（WcsTaskCallbackValidatorTests）：failure_message 改无界后，
-    # 「物理列类型是 text」「越界 failure_code 仍是 22001」两个方向只有真库分得开，
-    # InMemory provider 对两者都无感、在那上面跑会双向假绿。
+    # WMS 的 filter 逐条精确到方法。#1752 在既有 18 条基础上增加 5 条采购待收货证明。
+    # 各测试通过共享 PostgreSqlTestDatabase 管理独立数据库，lane 校验实际执行数及冻结身份。
     $wmsMember = Import-NervPostgresTestLaneMember -ManifestPath $manifestPath -MemberId 'wms-postgres-profile' -RepositoryRoot $repoRoot
-    Assert-Contract (@($wmsMember.expectedTestIdentities).Count -eq 18) 'The WMS member must freeze exactly its eighteen governed PostgreSQL identities.'
+    Assert-Contract (@($wmsMember.expectedTestIdentities).Count -eq 23) 'The WMS member must freeze exactly its twenty-three governed PostgreSQL identities.'
     Assert-Contract ([string]::Equals([string]$wmsMember.databaseOwnership, 'test-owned', [StringComparison]::Ordinal)) 'WMS tests own governed temporary databases per NERV-822, so the member must be registered as test-owned.'
     Assert-MethodScopedFilter -Member $wmsMember
     foreach ($wmsSource in @(
@@ -717,7 +713,8 @@ try {
             'WcsTaskCallbackValidatorTests.cs',
             'WmsQualityInspectionGateConsumerTests.cs',
             'WmsShortPickBackorderTests.cs',
-            'WmsWorkAssignmentMigrationPostgresTests.cs')) {
+            'WmsWorkAssignmentMigrationPostgresTests.cs',
+            'WmsPurchaseOrderReleasePostgresTests.cs')) {
         $wmsSourcePath = Join-Path $repoRoot "backend/services/Business/Wms/tests/Nerv.IIP.Business.Wms.Web.Tests/$wmsSource"
         Assert-Contract (Test-Path -LiteralPath $wmsSourcePath -PathType Leaf) "WMS lane source '$wmsSource' must exist."
         $wmsSourceText = [IO.File]::ReadAllText($wmsSourcePath)

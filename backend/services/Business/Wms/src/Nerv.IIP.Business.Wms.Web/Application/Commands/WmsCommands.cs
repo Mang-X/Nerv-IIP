@@ -112,6 +112,22 @@ public sealed class CreateInboundOrderCommandHandler(
             request.SourceDocumentId,
             request.SiteCode,
             request.Lines.Select(x => new InboundOrderLineDraft(x.LineNo, x.SkuCode, x.UomCode, x.ReceivedQuantity, x.StagingLocationCode, x.LotNo, x.SerialNo, x.QualityStatus, x.OwnerType, x.OwnerId, x.ProductionDate, x.ExpiryDate)));
+        if (string.Equals(proposedOrder.SourceDocumentType, WmsSourceDocumentTypes.PurchaseOrder, StringComparison.OrdinalIgnoreCase))
+        {
+            await PurchaseOrderInboundLock.AcquireAsync(dbContext, proposedOrder.OrganizationId,
+                proposedOrder.EnvironmentId, proposedOrder.SourceDocumentId, cancellationToken);
+            var hasExpectedReceipt = await dbContext.InboundOrders.AnyAsync(x =>
+                x.OrganizationId == proposedOrder.OrganizationId && x.EnvironmentId == proposedOrder.EnvironmentId
+                && x.SourceDocumentType == WmsSourceDocumentTypes.PurchaseOrder
+                && x.SourceDocumentId == proposedOrder.SourceDocumentId
+                && x.InboundOrderNo == proposedOrder.SourceDocumentId
+                && x.Lines.Any(line => line.ExpectedQuantity != null), cancellationToken);
+            if (hasExpectedReceipt)
+            {
+                throw new KnownException($"采购订单 '{proposedOrder.SourceDocumentId}' 已有待收货来源单。请使用该入库单处理收货。");
+            }
+        }
+
         var existingOrder = await dbContext.InboundOrders
             .Include(x => x.Lines)
             .SingleOrDefaultAsync(
