@@ -101,7 +101,10 @@ try
         });
     builder.Services.Configure<JsonOptions>(o => o.SerializerOptions.AddNetCorePalJsonConverters());
     builder.Services.AddFluentValidationAutoValidation();
-    builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
+    // FastEndpoints owns its DTO validators and resolves them as singletons.
+    builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly(), filter: result =>
+        !typeof(Validator<>).MakeGenericType(result.InterfaceType.GenericTypeArguments[0])
+            .IsAssignableFrom(result.ValidatorType));
     builder.Services.AddKnownExceptionErrorModelInterceptor();
     builder.Services.AddNervIipLocalization();
 
