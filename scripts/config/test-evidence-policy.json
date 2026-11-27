@@ -110,6 +110,12 @@
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP material supply ETA acceptance test\\.\";$"
     },
     {
+      "id": "erp-purchase-order-release-outbox",
+      "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/PurchaseOrderReleaseOutboxPostgresTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP purchase order release outbox acceptance test\\.\";$"
+    },
+    {
       "id": "erp-purchase-receipt-route",
       "sourcePath": "backend/services/Business/Erp/tests/Nerv.IIP.Business.Erp.Web.Tests/PurchaseReceiptPostingRoutePostgresTests.cs",
       "sourceOrdinal": 1,
@@ -1627,6 +1633,25 @@
       "exitCondition": null,
       "testIdentities": [
         "Nerv.IIP.Business.Erp.Web.Tests.MaterialSupplyEtaPostgresTests.Query_accumulates_open_quantity_and_isolates_organization_and_environment_on_postgres"
+      ],
+      "expectedRuntimeTestCount": 1
+    },
+    {
+      "id": "erp-purchase-order-release-outbox",
+      "sourceId": "erp-purchase-order-release-outbox",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Erp\\.Web\\.Tests\\.PurchaseOrderReleaseOutboxPostgresTests\\..+$",
+      "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run the real PostgreSQL ERP purchase order release outbox acceptance test\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "postgres",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseOrderReleaseOutboxPostgresTests.Approval_commits_both_release_versions_once_and_outbox_failure_rolls_back"
       ],
       "expectedRuntimeTestCount": 1
     },
