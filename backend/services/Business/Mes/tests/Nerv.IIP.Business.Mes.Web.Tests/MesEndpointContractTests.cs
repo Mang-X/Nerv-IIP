@@ -1152,7 +1152,7 @@ public sealed class MesEndpointContractTests
     [Fact]
     public void MesEndpointContracts_ExposePlanningAndRushOrderRoutes()
     {
-        Assert.Equal(77, MesEndpointContracts.All.Count);
+        Assert.Equal(78, MesEndpointContracts.All.Count);
         Assert.Contains(MesEndpointContracts.All, x =>
             x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/mes/foundation-readiness/{areaCode}"

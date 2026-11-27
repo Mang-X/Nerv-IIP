@@ -3970,6 +3970,14 @@
     },
     {
       "service": "Mes",
+      "method": "GET",
+      "route": "/api/business/v1/mes/work-order-engineering-change-impacts",
+      "operationId": "listBusinessMesEngineeringChangeWorkOrderImpacts",
+      "classification": "deferred",
+      "followUp": "#806 BusinessGateway、生成客户端与 Business Console 交付"
+    },
+    {
+      "service": "Mes",
       "method": "POST",
       "route": "/api/business/v1/mes/work-orders/{workOrderId}/hold",
       "operationId": "holdBusinessMesWorkOrder",

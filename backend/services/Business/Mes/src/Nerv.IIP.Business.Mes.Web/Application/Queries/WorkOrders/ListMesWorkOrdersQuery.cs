@@ -5,6 +5,7 @@ using Nerv.IIP.Business.Mes.Web.Application.Queries;
 using Nerv.IIP.Business.Mes.Web.Application.Queries.Workbench;
 using Nerv.IIP.Business.Mes.Web.Application.Readiness;
 using Nerv.IIP.Contracts.DemandPlanning;
+using static Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders.WorkOrderTaskReadScope;
 
 namespace Nerv.IIP.Business.Mes.Web.Application.Queries.WorkOrders;
 
@@ -143,13 +144,10 @@ public sealed class ListMesWorkOrdersQueryHandler(
             !string.IsNullOrWhiteSpace(request.DeviceAssetIds) ||
             request.AssignedUserIds is not null ||
             request.TeamIds is not null;
-        var authorizedUsers = SplitCsv(request.AuthorizedAssignedUserIds);
-        var authorizedTeams = SplitCsv(request.AuthorizedTeamIds);
-        var authorizedWorkCenters = SplitCsv(request.AuthorizedWorkCenterIds);
-        var hasAuthorizationScope = request.AuthorizedAssignedUserIds is not null ||
-            request.AuthorizedTeamIds is not null || request.AuthorizedWorkCenterIds is not null;
+        var readScope = new WorkOrderTaskReadScope(
+            request.AuthorizedAssignedUserIds, request.AuthorizedTeamIds, request.AuthorizedWorkCenterIds);
         // 同一查询同时用于工单 EXISTS 和返回工序；授权维度 OR，业务筛选仍为 AND。
-        var visibleTasks = dbContext.OperationTasks.AsNoTracking().Where(task =>
+        var visibleTasks = readScope.ApplyTo(dbContext.OperationTasks.AsNoTracking().Where(task =>
             task.OrganizationId == tenant.OrganizationId &&
             task.EnvironmentId == tenant.EnvironmentId &&
             (!hasTaskFilters ||
@@ -159,12 +157,8 @@ public sealed class ListMesWorkOrdersQueryHandler(
                  (deviceAssetId == null || task.DeviceAssetId == deviceAssetId) &&
                  (deviceAssetIds.Count == 0 || deviceAssetIds.Contains(task.DeviceAssetId)) &&
                  (!hasAssignedUserScope || assignedUserIds.Contains(task.AssignedUserId)) &&
-                 (!hasTeamScope || teamIds.Contains(task.TeamId)))) &&
-            (!hasAuthorizationScope ||
-                authorizedUsers.Contains(task.AssignedUserId) ||
-                authorizedTeams.Contains(task.TeamId) ||
-                authorizedWorkCenters.Contains(task.WorkCenterId)));
-        if (hasTaskFilters || hasAuthorizationScope)
+                 (!hasTeamScope || teamIds.Contains(task.TeamId))))));
+        if (hasTaskFilters || readScope.IsRestricted)
         {
             workOrdersQuery = workOrdersQuery.Where(x =>
                 visibleTasks.Any(task => task.WorkOrderId == x.WorkOrderIdValue));
@@ -318,15 +312,5 @@ public sealed class ListMesWorkOrdersQueryHandler(
         return string.IsNullOrWhiteSpace(value)
             ? []
             : value.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-    }
-
-    private static IReadOnlyCollection<string> SplitCsv(string? value)
-    {
-        return string.IsNullOrWhiteSpace(value)
-            ? []
-            : value
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Distinct(StringComparer.Ordinal)
-                .ToArray();
     }
 }
