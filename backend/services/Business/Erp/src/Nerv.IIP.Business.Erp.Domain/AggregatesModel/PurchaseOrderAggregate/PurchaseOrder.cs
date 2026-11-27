@@ -209,6 +209,7 @@ public sealed class PurchaseOrder : Entity<PurchaseOrderId>, IAggregateRoot
         var line = lines.SingleOrDefault(x => x.LineNo == lineNo)
             ?? throw new InvalidOperationException($"Purchase order line '{lineNo}' was not found.");
         line.RegisterReceipt(quantity, finalDelivery);
+        Version++;
         if (lines.All(x => x.OpenQuantity == 0 || x.FinalDelivery))
         {
             Status = PurchaseOrderStatus.Closed;
