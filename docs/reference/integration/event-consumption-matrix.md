@@ -31,7 +31,7 @@ Reference 与源码冲突时，以当前代码/契约/测试为准并修正本�
 | DemandPlanning | `SalesOrderDemandChangedForWorkOrderIntegrationEvent` | DemandPlanning | MES 按组织、环境、工单、来源建议与需求引用持久标记需求变更或取消，不改变工单执行状态；Notification 按 IAM 当前组织/环境的有效计划员成员逐人生成站内消息与待办 | `consumed-internally` |
 | ERP | `PurchaseRequisitionCreatedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
 | ERP | `PurchaseOrderReleasedPayload` | ERP | 当前无必须改变平台状态的活动消费者 | `audit-or-external-only` |
-| ERP | `PurchaseOrderReleasedV2IntegrationEvent` | ERP：采购订单首次下达，在订单与审批 inbox 的事务内写入 CAP outbox；提供原始行号、物料、单位、采购数量和承诺交期 | WMS 入库预期单据 | `needs-business-consumer` |
+| ERP | `PurchaseOrderReleasedV2IntegrationEvent` | ERP：采购订单首次下达，在订单与审批 inbox 的事务内写入 CAP outbox；提供原始行号、物料、单位、采购数量和承诺交期 | WMS `ErpPurchaseOrderReleasedIntegrationEventHandler` 按组织、环境及采购单号创建待收货预期；缺少站点收货配置或已存在冲突收货单时保留原事件进入死信 | `consumed-internally` |
 | ERP | `MaterialSupplyEtaChangedIntegrationEvent` | ERP | Scheduling 按受影响 SKU 精确失效 generated 排程方案 | `consumed-internally` |
 | ERP | `PurchaseReceiptRecordedIntegrationEvent` | ERP | ERP GR/IR 处理；Quality 来料检验 | `consumed-internally` |
 | ERP | `SalesReturnAuthorizedIntegrationEvent` | ERP | WMS | `consumed-internally` |

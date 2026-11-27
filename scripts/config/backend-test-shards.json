@@ -35,7 +35,8 @@
         "Nerv.IIP.Business.Wms.Web.Tests.WarehouseTaskActionConcurrencyPostgresTests",
         "Nerv.IIP.Business.Wms.Web.Tests.WcsDispatchConcurrencyPostgresTests",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterReplayPostgresTests",
-        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests"
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests"
       ],
       "excludedTestLanes": [
         "real-postgres",

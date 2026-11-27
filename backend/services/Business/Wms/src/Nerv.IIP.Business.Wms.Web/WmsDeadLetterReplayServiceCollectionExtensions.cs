@@ -37,6 +37,9 @@ public static class WmsDeadLetterReplayServiceCollectionExtensions
                     && x.SourceDocumentId == ev.Payload.RequestNo.Trim(), token)
                 && await Db(provider).WarehouseTasks.AsNoTracking().AnyAsync(x => x.OrganizationId == ev.OrganizationId
                     && x.EnvironmentId == ev.EnvironmentId && x.SourceOrderNo == PrepareMesMaterialIssueOutboundCommandHandler.OutboundOrderNoFor(ev.Payload.RequestNo), token));
+        Add<PurchaseOrderReleasedV2IntegrationEvent, ErpPurchaseOrderReleasedIntegrationEventHandler>(services,
+            ErpPurchaseOrderReleasedIntegrationEventHandler.ConsumerName,
+            (provider, ev, token) => ErpPurchaseOrderReleasedIntegrationEventHandler.HasPersistedReleaseAsync(Db(provider), ev, token));
         Add<SalesReturnAuthorizedIntegrationEvent, ErpSalesReturnAuthorizedIntegrationEventHandler>(services,
             ErpSalesReturnAuthorizedIntegrationEventHandler.ConsumerName, async (provider, ev, token) =>
                 await HasInboxAsync(provider, ErpSalesReturnAuthorizedIntegrationEventHandler.ConsumerName, ev, token)
