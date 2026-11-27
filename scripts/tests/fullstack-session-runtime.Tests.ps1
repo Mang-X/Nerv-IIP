@@ -1,4 +1,4 @@
-# Script-Governance:
+﻿# Script-Governance:
 #   Category: check
 #   SideEffects:
 #     - Validates full-stack Docker ownership predicates against synthetic inspect data
@@ -1664,7 +1664,7 @@ try {
 
     $afterLeaseExpiry = ([DateTimeOffset]$failedStop.Manifest.leaseExpiresAtUtc).AddSeconds(1)
     $claimedSessions = @(Claim-NervStaleFullStackSessions -StateRoot $stopStateRoot -Now $afterLeaseExpiry)
-    Assert-True ($claimedSessions.Count -eq 1 -and $claimedSessions[0] -ceq $failedStopSessionId) 'GC 必须领取清理失败的会话。'
+    Assert-True ($claimedSessions.Count -eq 1 -and [string]::Equals([string]$claimedSessions[0], [string]$failedStopSessionId, [StringComparison]::Ordinal)) 'GC 必须领取清理失败的会话。'
     $gcStop = Stop-NervFullStackSession -SessionId $claimedSessions[0] -StateRoot $stopStateRoot -AspireStopAction $aspireStop -ProcessStopAction $processStop -DockerRemoveAction $dockerStop
     Assert-True $gcStop.Complete 'GC 重试必须完成会话回收。'
     Assert-True (-not (Test-Path -LiteralPath $failedTusPath)) 'GC 必须回收所领取会话的 tus 目录。'

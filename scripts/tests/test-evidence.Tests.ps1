@@ -1,4 +1,4 @@
-# Script-Governance:
+﻿# Script-Governance:
 #   Category: check
 #   SideEffects:
 #     - Runs deterministic MAN-661 evidence fixtures
@@ -1382,7 +1382,7 @@ try {
     Assert-True ($retainedSummary.redactionProbe.items.Count -eq 2 -and $null -eq $retainedSummary.redactionProbe.items[1]) '摘要必须保留数组中的空值。'
     Assert-True ($retainedSummary.redactionProbe.single -is [array] -and $retainedSummary.redactionProbe.single.Count -eq 1) '摘要必须保留单元素数组。'
     Assert-True ($retainedSummary.redactionProbe.empty -is [array] -and $retainedSummary.redactionProbe.empty.Count -eq 0) '摘要必须保留空数组。'
-    Assert-True ($summary.redactionProbe.items[0].Password -eq 'summary-key-secret') '写入摘要不得修改原始对象。'
+    Assert-Equal 'summary-key-secret' $summary.redactionProbe.items[0].Password '写入摘要不得修改原始对象。'
     foreach ($sentinel in @('summary-inline-secret', 'summary-key-secret', 'user:password', 'fixture-bearer-value', 'fixture-client-secret', 'Fixture Customer', '13800000000', 'fixture@example.invalid', 'example.invalid', 'Fixture Address', 'quoted-password', 'quoted-auth', 'pem-secret', 'request body must never be retained')) {
         Assert-True (-not $retainedText.Contains($sentinel)) "Retained evidence leaked sentinel '$sentinel'."
     }

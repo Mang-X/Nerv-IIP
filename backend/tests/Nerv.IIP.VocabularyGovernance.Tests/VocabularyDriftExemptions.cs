@@ -196,8 +196,6 @@ internal static class VocabularyDriftExemptions
         // 站点与库位改取备件行上的领用值，归属类型改为企业自有 company，原豁免条目随之删除。
         ..Group("maintenance", "同值不同义：MasterData device-status 字典码（保养），非事件信封来源。",
             $"{Svc}/MasterData/src/Nerv.IIP.Business.MasterData.Web/Application/Seed/MasterDataDictionaryRules.cs"),
-        ..Group("maintenance", "同值不同义：就绪原因文本的子串启发式匹配，非事件信封来源。",
-            $"{Svc}/Mes/src/Nerv.IIP.Business.Mes.Web/Application/Readiness/MesReadinessReasonCodes.cs"),
         ..Group("maintenance", "同值不同义：日历原因码子串启发式，非事件信封来源。",
             $"{Svc}/Scheduling/src/Nerv.IIP.Business.Scheduling.Web/Application/Scheduling/SchedulePlanCalendarProjector.cs"),
         // #1370 ③ 批次 D 已销账：维修工单种子的 openedBy 改引
