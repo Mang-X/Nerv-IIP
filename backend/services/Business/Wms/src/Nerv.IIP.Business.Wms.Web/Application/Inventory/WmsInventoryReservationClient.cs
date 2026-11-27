@@ -169,12 +169,14 @@ public sealed class HttpWmsInventoryReservationClient(
         using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
         response.EnsureSuccessStatusCode();
         var envelope = await response.Content.ReadFromJsonAsync<ResponseDataEnvelope<WmsInventoryReservationResult>>(cancellationToken);
-        if (envelope is null || !envelope.Success || envelope.Data is null)
+        if (envelope is { Success: false, Code: 0 or 400 or 409 or 422 })
         {
-            throw new KnownException("库存预留失败，请检查库存可用量后重试。");
+            throw new KnownException("库存预留失败，请检查库存可用量后重试。", 400);
         }
 
-        return envelope.Data;
+        return envelope is { Success: true, Data: not null }
+            ? envelope.Data
+            : throw new InvalidOperationException("Inventory returned an invalid reservation response.");
     }
 
     public async Task<WmsInventoryFefoReservationResult> ReserveFefoAsync(
@@ -333,5 +335,5 @@ public sealed class HttpWmsInventoryReservationClient(
     }
 
     private sealed record CountAdjustmentsPage(IReadOnlyCollection<WmsCountAdjustmentOutcome> Items);
-    private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int Code);
+    private sealed record ResponseDataEnvelope<T>(T? Data, bool Success, string Message, int? Code);
 }

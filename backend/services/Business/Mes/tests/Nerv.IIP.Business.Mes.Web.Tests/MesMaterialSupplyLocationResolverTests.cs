@@ -146,8 +146,28 @@ public sealed class MesMaterialSupplyLocationResolverTests
             new MesMaterialSupplyLocationRequest("org-001", "env-dev", "RM-SPR-02", "pcs", "LOT-WO", 650m),
             CancellationToken.None));
 
+        Assert.Equal(400, exception.ErrorCode);
         Assert.Contains("需求650", exception.Message, StringComparison.Ordinal);
         Assert.Contains("合计可用600", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Resolver_does_not_report_inventory_server_failure_as_stock_shortage()
+    {
+        using var handler = new AvailabilityHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://inventory.local") };
+        var resolver = new InventoryMesMaterialSupplyLocationResolver(
+            new MesMaterialSupplyLocationOptions
+            {
+                SiteCode = "SITE-001", SourceLocationCodes = ["WH-01"], LineSideLocationCode = "LINE-01",
+            },
+            new MesInventoryHttpClient(httpClient));
+
+        var error = await Assert.ThrowsAsync<HttpRequestException>(() => resolver.ResolveAsync(
+            new MesMaterialSupplyLocationRequest("org-001", "env-dev", "MAT-01", "KG", null, 2m),
+            CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.InternalServerError, error.StatusCode);
     }
 
     private static HttpResponseMessage AvailabilityResponse(decimal quantity, string? lotNo = null)

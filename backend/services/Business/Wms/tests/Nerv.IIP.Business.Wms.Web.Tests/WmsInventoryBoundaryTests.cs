@@ -1907,11 +1907,13 @@ public sealed class WmsInventoryBoundaryTests
         Assert.Equal("该物料在所选库位和批次没有库存台账，无法创建盘点。", error.Message);
     }
 
-    [Fact]
-    public async Task Reservation_client_uses_a_safe_outer_message_for_downstream_rejection()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(400)]
+    public async Task Reservation_client_uses_a_safe_outer_message_for_downstream_rejection(int code)
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(
-            """{"data":null,"success":false,"message":"Reservation quantity exceeds available stock.","code":400}"""))
+            $$"""{"data":null,"success":false,"message":"Reservation quantity exceeds available stock.","code":{{code}}}"""))
         {
             BaseAddress = new Uri("http://inventory.test"),
         };
@@ -1937,6 +1939,7 @@ public sealed class WmsInventoryBoundaryTests
                 4m),
             CancellationToken.None));
 
+        Assert.Equal(400, exception.ErrorCode);
         Assert.Equal("库存预留失败，请检查库存可用量后重试。", exception.Message);
         Assert.DoesNotContain("exceeds available stock", exception.Message, StringComparison.OrdinalIgnoreCase);
     }

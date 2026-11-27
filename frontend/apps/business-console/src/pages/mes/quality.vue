@@ -69,9 +69,11 @@ const {
   operationListScopeReady,
   refreshOperationTasks,
 } = useMesOperationTasks()
-const qualityReadReady = computed(() => qualityItemsState.value === 'ready')
 const qualityReadPending = computed(
   () => qualityItemsPending.value || qualityItemsState.value === 'loading',
+)
+const qualityReadReady = computed(
+  () => qualityItemsState.value === 'ready' && !qualityReadPending.value,
 )
 const qualityReadError = computed(
   () =>
@@ -467,7 +469,7 @@ async function submitDefect() {
           size="sm"
           type="button"
           variant="outline"
-          :disabled="qualityItemsPending || ncrAssociations.pending.value"
+          :disabled="qualityReadPending || ncrAssociations.pending.value"
           @click="refreshQuality"
         >
           <RefreshCwIcon aria-hidden="true" />
