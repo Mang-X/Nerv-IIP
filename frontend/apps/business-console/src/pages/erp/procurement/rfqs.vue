@@ -180,6 +180,12 @@ const invalidLines = computed(() =>
     siteCode: !line.siteCode.trim(),
   })),
 )
+const draftQuantityTotal = computed(() =>
+  lines.value.reduce((sum, line) => {
+    const qty = Number(line.quantity)
+    return sum + (Number.isFinite(qty) && qty > 0 ? qty : 0)
+  }, 0),
+)
 const canSubmit = computed(
   () =>
     !Object.values(invalid.value).some(Boolean) &&
@@ -428,13 +434,18 @@ async function submit() {
               请核对第 {{ index + 1 }} 行标出的字段。
             </p>
           </fieldset>
-          <NvButton
-            type="button"
-            variant="outline"
-            class="justify-self-start"
-            @click="lines.push(newLine())"
-            >添加明细</NvButton
-          >
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <NvButton
+              type="button"
+              variant="outline"
+              class="justify-self-start"
+              @click="lines.push(newLine())"
+              >添加明细</NvButton
+            >
+            <p class="text-sm text-muted-foreground tabular-nums">
+              草稿合计：{{ lines.length }} 行 · 询价数量 {{ draftQuantityTotal }}
+            </p>
+          </div>
           <p
             v-if="showErrors && !canSubmit"
             id="erp-rfq-form-error"

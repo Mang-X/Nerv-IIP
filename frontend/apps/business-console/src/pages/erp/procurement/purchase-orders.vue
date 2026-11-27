@@ -517,13 +517,6 @@ async function submitRevision() {
                 required
               />
             </NvField>
-            <p
-              v-if="showErrors && Object.values(invalidLines[index] ?? {}).some(Boolean)"
-              role="alert"
-              class="text-sm text-destructive"
-            >
-              请核对第 {{ index + 1 }} 行标出的字段。
-            </p>
           </fieldset>
           <NvFieldError v-if="revisionError" :errors="[revisionError]" />
           <NvDialogFooter>

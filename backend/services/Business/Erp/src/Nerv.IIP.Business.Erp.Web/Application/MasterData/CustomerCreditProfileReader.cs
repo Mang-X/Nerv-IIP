@@ -29,6 +29,14 @@ public sealed class HttpCustomerCreditProfileReader(
             return null;
         }
 
+        if ((int)response.StatusCode >= 500)
+        {
+            throw new HttpRequestException(
+                $"主数据信用额度查询返回 HTTP {(int)response.StatusCode}。",
+                null,
+                response.StatusCode);
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             throw new KnownException($"客户『{customerCode}』的信用额度主数据不可用，请先维护客户信用额度。");
