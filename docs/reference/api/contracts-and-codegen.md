@@ -45,10 +45,11 @@
 
 ## 受控兼容例外
 
-### Approval 重提与转交 v1 有界兼容（#1777）
+### Approval 重提、转交与加签 v1 有界兼容（#1777）
 
-此条仅适用于 `POST /api/business/v1/approvals/chains/{chainId}/resubmit` 和
-`POST /api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/transfer`。
+此条仅适用于 `POST /api/business/v1/approvals/chains/{chainId}/resubmit` 、
+`POST /api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/transfer` 和
+`POST /api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/add-signer`。
 保留旧 JSON 字段和响应结构，审批链和步骤分别由 URL 路径定位。旧的
 `actorType`、`actorRef`、`requestedByActorType`、`requestedByActorRef` 仍可随请求发送，
 实际操作人与审计记录统一采用 IAM 验证的最终主体。调用方需传递其最终主体 Bearer。
@@ -59,7 +60,7 @@
 Approval 已存储的来源引用缺少可验证的工厂、车间、产线、工作中心、团队和单据所有人证据，
 因此携带这些边界的授权返回 403。仅有组织限制时，来源组织必须与审批链及授权组织一致。
 
-旧操作人字段的接受和组织环境回填仅属于上述两个 v1 路由。
+旧操作人字段的接受和组织环境回填仅属于上述三个 v1 路由。
 待支持的调用方完成迁移后，删除兼容字段或回填行为须通过后续主版本治理。
 
 ### FileStorage `scanStatus` v1 删除（#1604）

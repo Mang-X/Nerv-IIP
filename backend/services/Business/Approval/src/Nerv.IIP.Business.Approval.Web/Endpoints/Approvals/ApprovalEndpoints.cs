@@ -160,7 +160,9 @@ public sealed record AddApprovalStepSignerRequest(
     string ApproverRef,
     string RequestedByActorType,
     string RequestedByActorRef,
-    string? Reason);
+    string? Reason,
+    string? OrganizationId = null,
+    string? EnvironmentId = null);
 
 public sealed record AddApprovalStepSignerResponse(ApprovalStepId StepId);
 
@@ -528,27 +530,51 @@ public sealed class ResubmitApprovalChainEndpoint(ISender sender, ResolveApprova
     }
 }
 
-public sealed class AddApprovalStepSignerEndpoint(ISender sender)
+public sealed class AddApprovalStepSignerEndpoint(ISender sender, ResolveApprovalStepAuthority authority)
     : ApprovalEndpoint<AddApprovalStepSignerRequest, ResponseData<AddApprovalStepSignerResponse>>
 {
     public override void Configure()
     {
         ConfigureApprovalContract(ApprovalEndpointContracts.Get<AddApprovalStepSignerEndpoint>());
+        // IAM verifies the end-principal bearer before dispatching the command.
+        AllowAnonymous();
     }
 
     public override async Task HandleAsync(AddApprovalStepSignerRequest req, CancellationToken ct)
     {
-        var chainId = Route<ApprovalChainId>("chainId") ?? req.ChainId;
         var stepNo = Route<int>("stepNo");
+        if (!Guid.TryParse(Route<string>("chainId"), out var chainGuid) || chainGuid == Guid.Empty || stepNo <= 0)
+        {
+            await WriteErrorAsync(StatusCodes.Status400BadRequest, "审批目标或组织环境无效。", ct);
+            return;
+        }
+
+        var chainId = new ApprovalChainId(chainGuid);
+        var (status, actor) = await authority.ResolveChainActionAsync(
+            HttpContext.Request.Headers.Authorization.ToString(), req.OrganizationId, req.EnvironmentId, chainId, ct);
+        if (actor is null)
+        {
+            await WriteErrorAsync(status, "无法授权当前审批加签。", ct);
+            return;
+        }
+
         var stepId = await sender.Send(new AddApprovalStepSignerCommand(
+            actor.OrganizationId,
+            actor.EnvironmentId,
             chainId,
-            stepNo == 0 ? req.StepNo : stepNo,
+            stepNo,
             req.ApproverType,
             req.ApproverRef,
-            req.RequestedByActorType,
-            req.RequestedByActorRef,
+            actor.Type,
+            actor.Id,
             req.Reason), ct);
         await Send.OkAsync(new AddApprovalStepSignerResponse(stepId).AsResponseData(), cancellation: ct);
+    }
+
+    private Task WriteErrorAsync(int status, string message, CancellationToken ct)
+    {
+        HttpContext.Response.StatusCode = status;
+        return HttpContext.Response.WriteAsJsonAsync(new ResponseData(false, message, status, []), ct);
     }
 }
 
@@ -694,7 +720,7 @@ public static class ApprovalEndpointContracts
         new(typeof(ResolveApprovalStepEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/resolve", ApprovalPermissionCodes.Manage, null, "resolveApprovalStep"),
         new(typeof(WithdrawApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/withdraw", ApprovalPermissionCodes.Manage, null, "withdrawApprovalChain"),
         new(typeof(ResubmitApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/resubmit", ApprovalPermissionCodes.Manage, null, "resubmitApprovalChain"),
-        new(typeof(AddApprovalStepSignerEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/add-signer", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "addApprovalStepSigner"),
+        new(typeof(AddApprovalStepSignerEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/add-signer", ApprovalPermissionCodes.Manage, null, "addApprovalStepSigner"),
         new(typeof(TransferApprovalStepEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/transfer", ApprovalPermissionCodes.Manage, null, "transferApprovalStep"),
         new(typeof(ListApprovalDelegationsEndpoint), "GET", "/api/business/v1/approvals/delegations", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalDelegations"),
         new(typeof(CreateApprovalDelegationEndpoint), "POST", "/api/business/v1/approvals/delegations", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "createApprovalDelegation"),

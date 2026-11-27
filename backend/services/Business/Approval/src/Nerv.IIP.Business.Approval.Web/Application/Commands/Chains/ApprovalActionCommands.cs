@@ -70,6 +70,8 @@ public sealed class ResubmitApprovalChainCommandHandler(ApplicationDbContext dbC
 }
 
 public sealed record AddApprovalStepSignerCommand(
+    string OrganizationId,
+    string EnvironmentId,
     ApprovalChainId ChainId,
     int StepNo,
     string ApproverType,
@@ -82,6 +84,8 @@ public sealed class AddApprovalStepSignerCommandValidator : AbstractValidator<Ad
 {
     public AddApprovalStepSignerCommandValidator()
     {
+        RuleFor(x => x.OrganizationId).RequiredApprovalCode(100);
+        RuleFor(x => x.EnvironmentId).RequiredApprovalCode(100);
         RuleFor(x => x.ChainId).NotEmpty();
         RuleFor(x => x.StepNo).GreaterThan(0);
         RuleFor(x => x.ApproverType).RequiredApprovalCode(50);
@@ -97,7 +101,8 @@ public sealed class AddApprovalStepSignerCommandHandler(ApplicationDbContext dbC
 {
     public async Task<ApprovalStepId> Handle(AddApprovalStepSignerCommand request, CancellationToken cancellationToken)
     {
-        var chain = await ApprovalActionCommandHelpers.LoadChainAsync(dbContext, request.ChainId, cancellationToken);
+        var chain = await ApprovalActionCommandHelpers.LoadScopedChainAsync(
+            dbContext, request.ChainId, request.OrganizationId, request.EnvironmentId, cancellationToken);
         ApprovalStep step = null!;
         ApprovalActionCommandHelpers.ExecuteDomainAction(() => step = chain.AddSigner(
             request.StepNo,
@@ -164,18 +169,6 @@ public sealed class TransferApprovalStepCommandHandler(ApplicationDbContext dbCo
 
 file static class ApprovalActionCommandHelpers
 {
-    public static async Task<ApprovalChain> LoadChainAsync(
-        ApplicationDbContext dbContext,
-        ApprovalChainId chainId,
-        CancellationToken cancellationToken)
-    {
-        return await dbContext.ApprovalChains
-            .Include(x => x.Steps)
-            .Include(x => x.Decisions)
-            .SingleOrDefaultAsync(x => x.Id == chainId, cancellationToken)
-            ?? throw new KnownException("审批链不存在或已不在当前业务范围。");
-    }
-
     public static async Task<ApprovalChain> LoadScopedChainAsync(
         ApplicationDbContext dbContext,
         ApprovalChainId chainId,

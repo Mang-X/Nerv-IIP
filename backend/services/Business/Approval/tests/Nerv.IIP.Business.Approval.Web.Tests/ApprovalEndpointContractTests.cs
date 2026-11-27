@@ -94,7 +94,7 @@ public sealed class ApprovalEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/add-signer"
             && x.PermissionCode == ApprovalPermissionCodes.Manage
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy is null
             && x.OperationId == "addApprovalStepSigner");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/transfer"
@@ -474,7 +474,7 @@ public sealed class ApprovalEndpointContractTests
             "shift change"), CancellationToken.None);
         clock.UtcNow = DateTimeOffset.Parse("2026-06-21T09:10:00Z");
         var addedStepId = await new AddApprovalStepSignerCommandHandler(dbContext, clock).Handle(new AddApprovalStepSignerCommand(
-            chain.Id,
+            chain.OrganizationId, chain.EnvironmentId, chain.Id,
             1,
             "user",
             "u-finance",
@@ -522,7 +522,7 @@ public sealed class ApprovalEndpointContractTests
             CancellationToken.None));
 
         await Assert.ThrowsAsync<KnownException>(() => new AddApprovalStepSignerCommandHandler(dbContext, clock).Handle(
-            new AddApprovalStepSignerCommand(chain.Id, 1, "user", "u-finance", "user", "u-engineering", "late"),
+            new AddApprovalStepSignerCommand(chain.OrganizationId, chain.EnvironmentId, chain.Id, 1, "user", "u-finance", "user", "u-engineering", "late"),
             CancellationToken.None));
         await Assert.ThrowsAsync<KnownException>(() => new TransferApprovalStepCommandHandler(dbContext, clock).Handle(
             new TransferApprovalStepCommand(chain.OrganizationId, chain.EnvironmentId, chain.Id, 2, "user", "u-not-current", "user", "u-backup", "user", "u-manager", "invalid"),
@@ -1436,6 +1436,8 @@ public sealed class ApprovalEndpointContractTests
     [InlineData(ApprovalDecisions.Resubmit, true)]
     [InlineData(ApprovalDecisions.Transfer, false)]
     [InlineData(ApprovalDecisions.Transfer, true)]
+    [InlineData(ApprovalDecisions.AddSigner, false)]
+    [InlineData(ApprovalDecisions.AddSigner, true)]
     public async Task Chain_action_uses_verified_user_in_a_scope_other_than_the_default(string action, bool legacyBody)
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -1523,12 +1525,18 @@ public sealed class ApprovalEndpointContractTests
         }
 
         var route = $"/api/business/v1/approvals/chains/{chain.Id}/"
-            + (action == ApprovalDecisions.Transfer ? "steps/1/transfer" : action);
+            + (action switch
+            {
+                ApprovalDecisions.Transfer => "steps/1/transfer",
+                ApprovalDecisions.AddSigner => "steps/1/add-signer",
+                _ => action,
+            });
         var request = new
         {
             organizationId = "org-001", environmentId = "env-dev", reason = "duplicate",
             fromActorType = "user", fromActorRef = "u-reviewer",
             toActorType = "user", toActorRef = "u-backup",
+            approverType = "user", approverRef = "u-additional",
         };
 
         client.DefaultRequestHeaders.Authorization = new("Bearer", "expired-session");
@@ -1552,6 +1560,7 @@ public sealed class ApprovalEndpointContractTests
                 actorType = "user", actorRef = "u-requester",
                 requestedByActorType = "user", requestedByActorRef = "u-requester",
                 request.fromActorType, request.fromActorRef, request.toActorType, request.toActorRef,
+                request.approverType, request.approverRef,
             }
             : request;
         siteRestricted = true;
@@ -1563,7 +1572,14 @@ public sealed class ApprovalEndpointContractTests
         Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
         var result = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.True(result.GetProperty("success").GetBoolean());
-        Assert.True(result.GetProperty("data").GetProperty("accepted").GetBoolean());
+        if (action == ApprovalDecisions.AddSigner)
+        {
+            Assert.True(Guid.TryParse(result.GetProperty("data").GetProperty("stepId").GetString(), out _));
+        }
+        else
+        {
+            Assert.True(result.GetProperty("data").GetProperty("accepted").GetBoolean());
+        }
         Assert.Empty(masterData.Paths);
         using var persistedScope = factory.Services.CreateScope();
         var dbContext = persistedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -1575,7 +1591,11 @@ public sealed class ApprovalEndpointContractTests
         Assert.Equal("u-requester", decision.ActorRef);
         Assert.Equal("user", decision.ActorType);
         Assert.Equal("duplicate", decision.Comment);
-        var step = Assert.Single(stored.Steps);
+        if (action == ApprovalDecisions.AddSigner)
+        {
+            Assert.Contains(stored.Steps, step => step.ApproverType == "user" && step.ApproverRef == "u-additional");
+        }
+        var step = Assert.Single(stored.Steps, step => step.ApproverRef != "u-additional");
         Assert.Equal(action == ApprovalDecisions.Transfer ? "u-backup" : "u-reviewer", step.ApproverRef);
         Assert.Equal("user", step.ApproverType);
     }

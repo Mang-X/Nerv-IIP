@@ -150,7 +150,7 @@
       "route": "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/add-signer",
       "operationId": "addApprovalStepSigner",
       "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; follows the approval-governance Business Console menu phase (#488)."
+      "followUp": "Approval verifies the end-principal bearer and selected scope; BusinessGateway facade pending and follows the approval-governance Business Console menu phase (#488)."
     },
     {
       "service": "Approval",
