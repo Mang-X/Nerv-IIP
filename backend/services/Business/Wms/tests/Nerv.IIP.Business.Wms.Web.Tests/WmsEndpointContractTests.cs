@@ -421,10 +421,14 @@ public sealed class WmsEndpointContractTests
         Assert.Contains("PLC_TIMEOUT", diagnostics, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public async Task Receipt_confirmation_uses_explicit_quantities_and_leaves_inventory_unposted()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Receipt_confirmation_uses_explicit_quantities_and_leaves_inventory_unposted(bool firstPostCommitted)
     {
-        await using var factory = CreateAuthorizedFactory();
+        var erp = new ReceiptAcceptanceErp(firstPostCommitted);
+        await using var factory = new WmsLiveHttpTestFactory(erp);
+        erp.Services = factory.Services;
         using var client = factory.CreateClient();
         InboundOrderId id;
         using (var scope = factory.Services.CreateScope())
@@ -452,6 +456,7 @@ public sealed class WmsEndpointContractTests
             scopeKind = "site",
             scopeId = "SITE-01",
             expectedVersion = 1L,
+            exchangeRate = 1.25m,
             idempotencyKey = "receipt-confirm-1",
             lines = new[] { new { lineNo = "10", receivedQuantity = 5m }, new { lineNo = "20", receivedQuantity = 3m } },
         };
@@ -468,6 +473,25 @@ public sealed class WmsEndpointContractTests
             lines = [body.lines[0], body.lines[1] with { receivedQuantity = 2m }],
         })).StatusCode);
 
+        var failed = await client.PostAsJsonAsync(route, body);
+        using var failure = JsonDocument.Parse(await failed.Content.ReadAsStringAsync());
+        Assert.False(failure.RootElement.GetProperty("success").GetBoolean());
+        Assert.Single(erp.PostedBatchIds);
+        using (var beforeReplay = factory.Services.CreateScope())
+        {
+            var db = beforeReplay.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var staged = await db.InboundOrders.Include(x => x.Lines).SingleAsync(x => x.Id == id);
+            Assert.Equal(erp.PostedBatchIds[0], staged.ReceiptBatchId);
+            Assert.Null(staged.ErpPurchaseReceiptNo);
+            Assert.Null(staged.ReceiptConfirmationKey);
+            Assert.All(staged.Lines, line => Assert.Equal(0m, line.ReceivedQuantity));
+            Assert.Throws<InvalidOperationException>(() => staged.Complete("blocked", staged.Version));
+            Assert.Throws<InvalidOperationException>(() => staged.CreatePutawayTask("PUT-1", "10", "STAGE-01", "BIN-01", 5m));
+        }
+
+        Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync(route, body with { exchangeRate = 2m })).StatusCode);
+        Assert.Single(erp.PostedBatchIds);
+
         var responses = await Task.WhenAll(
             client.PostAsJsonAsync(route, body),
             client.PostAsJsonAsync(route, body with { lines = [body.lines[1], body.lines[0]] }));
@@ -480,7 +504,7 @@ public sealed class WmsEndpointContractTests
         }
         Assert.Equal(results[0], results[1]);
         using var confirmation = JsonDocument.Parse(results[0]);
-        Assert.Equal(2, confirmation.RootElement.GetProperty("data").GetProperty("version").GetInt64());
+        Assert.Equal(3, confirmation.RootElement.GetProperty("data").GetProperty("version").GetInt64());
         Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync(route, body with
         {
             authorizedSiteCodes = ["SITE-02"],
@@ -502,7 +526,14 @@ public sealed class WmsEndpointContractTests
         var persisted = verification.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var order = await persisted.InboundOrders.Include(x => x.Lines).SingleAsync(x => x.Id == id);
         Assert.Equal(InboundOrderStatus.Open, order.Status);
-        Assert.Equal(2, order.Version);
+        Assert.Equal(3, order.Version);
+        Assert.Equal("RCV-001", order.ErpPurchaseReceiptNo);
+        Assert.Throws<InvalidOperationException>(() => order.Complete("blocked", order.Version));
+        Assert.Throws<InvalidOperationException>(() => order.CreatePutawayTask("PUT-2", "10", "STAGE-01", "BIN-01", 5m));
+        Assert.Equal(firstPostCommitted ? 1 : 2, erp.PostedBatchIds.Count);
+        Assert.All(erp.PostedBatchIds, id => Assert.Equal(erp.PostedBatchIds[0], id));
+        Assert.Equal(2, erp.QueriedBatchIds.Count);
+        Assert.All(erp.QueriedBatchIds, id => Assert.Equal(erp.PostedBatchIds[0], id));
         Assert.Equal([5m, 3m], order.Lines.OrderBy(x => x.LineNo).Select(x => x.ReceivedQuantity));
         Assert.Empty(await persisted.InventoryMovementRequests.ToListAsync());
         Assert.Empty(await persisted.WarehouseTasks.ToListAsync());
@@ -1613,7 +1644,7 @@ public sealed class WmsEndpointContractTests
         Assert.True(response.IsSuccessStatusCode, $"Expected successful WMS live HTTP response from {route}, got {(int)response.StatusCode}: {body}");
     }
 
-    private sealed class WmsLiveHttpTestFactory : WebApplicationFactory<Program>
+    private sealed class WmsLiveHttpTestFactory(ReceiptAcceptanceErp? erp = null) : WebApplicationFactory<Program>
     {
         private readonly string databaseName = $"wms-live-http-acceptance-{Guid.NewGuid():N}";
         private readonly ServiceProvider efServices = new ServiceCollection()
@@ -1628,6 +1659,11 @@ public sealed class WmsEndpointContractTests
             builder.UseSetting("Wcs:Retry:InitialRetryBackoff", "00:00:00");
             builder.ConfigureTestServices(services =>
             {
+                if (erp is not null)
+                {
+                    services.ConfigureAll<Microsoft.Extensions.Http.HttpClientFactoryOptions>(options =>
+                        options.HttpMessageHandlerBuilderActions.Add(builder => builder.PrimaryHandler = erp));
+                }
                 services.RemoveAll<ApplicationDbContext>();
                 services.RemoveAll<DbContextOptions>();
                 services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
@@ -1651,6 +1687,81 @@ public sealed class WmsEndpointContractTests
             {
                 efServices.Dispose();
             }
+        }
+    }
+
+    private sealed class ReceiptAcceptanceErp(bool firstPostCommitted) : HttpMessageHandler
+    {
+        private const string Route = "/api/business/v1/erp/wms-purchase-receipt-acceptances";
+        public IServiceProvider Services { get; set; } = null!;
+        public List<Guid> PostedBatchIds { get; } = [];
+        public List<Guid> QueriedBatchIds { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Assert.Equal("test-internal-token", request.Headers.Authorization?.Parameter);
+            var path = request.RequestUri!.AbsolutePath;
+            Guid batchId;
+            if (request.Method == HttpMethod.Post)
+            {
+                Assert.Equal(Route, path);
+                using var payload = await request.Content!.ReadFromJsonAsync<JsonDocument>(ct);
+                var body = payload!.RootElement;
+                Assert.Equal("org-http", body.GetProperty("organizationId").GetString());
+                Assert.Equal("env-http", body.GetProperty("environmentId").GetString());
+                Assert.Equal("PO-001", body.GetProperty("purchaseOrderNo").GetString());
+                Assert.Equal("SITE-01", body.GetProperty("siteCode").GetString());
+                Assert.Equal(1.25m, body.GetProperty("exchangeRate").GetDecimal());
+                Assert.Equal(new[] { ("10", 5m), ("20", 3m) }, body.GetProperty("lines").EnumerateArray()
+                    .Select(line => (line.GetProperty("purchaseOrderLineNo").GetString()!, line.GetProperty("receivedQuantity").GetDecimal())));
+
+                using var scope = Services.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var order = await db.InboundOrders.Include(x => x.Lines).SingleAsync(ct);
+                Assert.All(order.Lines, line => Assert.Equal(0m, line.ReceivedQuantity));
+                Assert.Null(order.ReceiptConfirmationKey);
+                batchId = body.GetProperty("wmsReceiptBatchId").GetGuid();
+                Assert.NotEqual(Guid.Empty, batchId);
+                PostedBatchIds.Add(batchId);
+                if (PostedBatchIds.Count == 1)
+                {
+                    return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+                }
+            }
+            else
+            {
+                Assert.Equal(HttpMethod.Get, request.Method);
+                Assert.StartsWith(Route + "/", path, StringComparison.Ordinal);
+                Assert.Equal("?organizationId=org-http&environmentId=env-http", request.RequestUri.Query);
+                batchId = Guid.Parse(path[(Route.Length + 1)..]);
+                QueriedBatchIds.Add(batchId);
+                if (!firstPostCommitted || PostedBatchIds.Count == 0)
+                {
+                    return new HttpResponseMessage(HttpStatusCode.NotFound);
+                }
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new
+                {
+                    success = true,
+                    data = new
+                    {
+                        wmsReceiptBatchId = batchId,
+                        purchaseReceiptId = "00000000-0000-0000-0000-000000000001",
+                        purchaseReceiptNo = "RCV-001",
+                        purchaseOrderNo = "PO-001",
+                        siteCode = "SITE-01",
+                        exchangeRate = 1.25m,
+                        lines = new[]
+                        {
+                            new { purchaseOrderLineNo = "10", skuCode = "SKU-1", uomCode = "pcs", receivedQuantity = 5m, locationCode = "STAGE-01" },
+                            new { purchaseOrderLineNo = "20", skuCode = "SKU-2", uomCode = "pcs", receivedQuantity = 3m, locationCode = "STAGE-01" },
+                        },
+                    },
+                }),
+            };
         }
     }
 

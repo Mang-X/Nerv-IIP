@@ -7,9 +7,12 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
+using Nerv.IIP.Business.Wms.Web.Application.Errors;
+using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Wms;
@@ -25,6 +28,188 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
     private const string Consumer = "business-wms.erp-purchase-order-released";
     private const string CancellationConsumer = "business-wms.erp-purchase-order-cancelled";
     private const string Route = "PurchaseOrderReceiving:Routes:0:";
+
+    [WmsDeadLetterReplayPostgresFact]
+    public async Task Migration_separates_unbound_candidate_requests_from_confirmed_history()
+    {
+        await using var fixture = await ReplayFixture.CreateAsync(settings: Settings());
+        var release = Released();
+        await DeliverAsync(fixture, release);
+        await DeliverAsync(fixture, release with
+        {
+            Payload = release.Payload with { PurchaseOrderNo = "PO-CANCELLED" }
+        });
+        await DeliverAsync(fixture, release with
+        {
+            Payload = release.Payload with { PurchaseOrderNo = "PO-LEGACY" }
+        });
+
+        using var scope = fixture.Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var batchId = Guid.NewGuid();
+        await db.Database.MigrateAsync("20261127175533_BindInboundErpPurchaseReceipt");
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            UPDATE wms.inbound_orders
+            SET receipt_confirmation_key = 'candidate', receipt_confirmation_fingerprint = 'fingerprint',
+                receipt_batch_id = {batchId}, receipt_exchange_rate = 1.25
+            WHERE inbound_order_no = 'PO-123';
+
+            UPDATE wms.inbound_orders
+            SET receipt_confirmation_key = 'cancelled', receipt_confirmation_fingerprint = 'fingerprint',
+                receipt_batch_id = {Guid.NewGuid()}, receipt_exchange_rate = 1.25
+            WHERE inbound_order_no = 'PO-CANCELLED';
+
+            UPDATE wms.inbound_orders SET receipt_confirmation_key = 'legacy'
+            WHERE inbound_order_no = 'PO-LEGACY';
+
+            UPDATE wms.inbound_order_lines SET received_quantity = 12.5;
+            """);
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO wms.purchase_order_cancellations
+                (organization_id, environment_id, purchase_order_no, purchase_order_id, site_code,
+                    purchase_order_version, cancelled_at_utc, reason)
+            VALUES ('org-replay', 'env-replay', 'PO-CANCELLED', {release.Payload.PurchaseOrderId},
+                'SITE', 4, {Cancelled().OccurredAtUtc.UtcDateTime}, 'supplier cancellation')
+            """);
+
+        await db.Database.MigrateAsync();
+        var orders = await db.InboundOrders.Include(x => x.Lines).ToDictionaryAsync(x => x.InboundOrderNo);
+        var staged = orders["PO-123"];
+        Assert.Equal(batchId, staged.ReceiptBatchId);
+        Assert.Equal(1.25m, staged.ReceiptExchangeRate);
+        Assert.Equal("candidate", staged.ReceiptRequestKey);
+        Assert.Null(staged.ReceiptConfirmationKey);
+        var line = Assert.Single(staged.Lines);
+        Assert.Equal(12.5m, line.RequestedReceiptQuantity);
+        Assert.Equal(0m, line.ReceivedQuantity);
+        Assert.Equal(InboundOrderStatus.Cancelled, orders["PO-CANCELLED"].Status);
+        Assert.Equal(0m, Assert.Single(orders["PO-CANCELLED"].Lines).ReceivedQuantity);
+        Assert.Equal("legacy", orders["PO-LEGACY"].ReceiptConfirmationKey);
+        Assert.Equal(12.5m, Assert.Single(orders["PO-LEGACY"].Lines).ReceivedQuantity);
+    }
+
+    [WmsDeadLetterReplayPostgresFact]
+    public async Task Staged_receipt_keeps_actual_zero_and_cancellation_closes_the_expectation()
+    {
+        var erp = new ReceiptAcceptanceStub((_, _) =>
+            throw new WmsLifecycleConflictException("confirm-inbound-receipt", "erp-acceptance-conflict"));
+        await using var fixture = await ReplayFixture.CreateAsync(
+            services => services.AddSingleton<IWmsPurchaseReceiptAcceptanceClient>(erp), Settings());
+        await DeliverAsync(fixture, Released());
+        var receipt = await AssignForConfirmationAsync(fixture, "PO-123");
+
+        var staged = await SendAsync(fixture, receipt);
+        Assert.Equal(receipt.ExpectedVersion + 1, staged.Version);
+        var bind = new BindInboundErpReceiptCommand(receipt, await BatchIdAsync(fixture));
+        await Assert.ThrowsAsync<WmsLifecycleConflictException>(() => SendAsync(fixture, bind));
+        Assert.Equal(0, await SendAsync(fixture,
+            new CancelInboundOrdersForSourceCommand("org-replay", "env-replay", WmsSourceDocumentTypes.PurchaseOrder, "PO-123", "legacy call")));
+
+        using (var read = fixture.Factory.Services.CreateScope())
+        {
+            var db = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var order = await db.InboundOrders.Include(x => x.Lines).SingleAsync();
+            Assert.Equal(bind.BatchId, order.ReceiptBatchId);
+            Assert.Equal(0m, Assert.Single(order.Lines).ReceivedQuantity);
+            Assert.Null(order.ReceiptConfirmationKey);
+        }
+
+        await DeliverAsync(fixture, Cancelled());
+        await Assert.ThrowsAsync<WmsLifecycleConflictException>(() => SendAsync(fixture, bind));
+        await Assert.ThrowsAsync<WmsLifecycleConflictException>(() => SendAsync(fixture, receipt));
+        Assert.Single(erp.Requests);
+
+        using var closedScope = fixture.Factory.Services.CreateScope();
+        var closedDb = closedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var closed = await closedDb.InboundOrders.Include(x => x.Lines).SingleAsync();
+        Assert.Equal(InboundOrderStatus.Cancelled, closed.Status);
+        Assert.Equal(0m, Assert.Single(closed.Lines).ReceivedQuantity);
+        Assert.Empty(await closedDb.InventoryMovementRequests.ToListAsync());
+        Assert.Empty(await closedDb.WarehouseTasks.ToListAsync());
+    }
+
+    [WmsDeadLetterReplayPostgresFact]
+    public async Task Ambiguous_ack_replays_the_frozen_batch_and_committed_actual_survives_cancellation()
+    {
+        var ackReached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseAck = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var erp = new ReceiptAcceptanceStub(async (call, token) =>
+        {
+            if (call == 1)
+            {
+                throw new KnownException("ERP accepted but the response was lost");
+            }
+
+            ackReached.SetResult();
+            await releaseAck.Task.WaitAsync(token);
+            return "RCV-123";
+        });
+        await using var fixture = await ReplayFixture.CreateAsync(
+            services => services.AddSingleton<IWmsPurchaseReceiptAcceptanceClient>(erp), Settings());
+        await DeliverAsync(fixture, Released());
+        var receipt = await AssignForConfirmationAsync(fixture, "PO-123");
+
+        var staged = await SendAsync(fixture, receipt);
+        Assert.Equal(receipt.ExpectedVersion + 1, staged.Version);
+        var bind = new BindInboundErpReceiptCommand(receipt, await BatchIdAsync(fixture));
+        await Assert.ThrowsAsync<KnownException>(() => SendAsync(fixture, bind));
+        await Assert.ThrowsAsync<WmsIdempotencyConflictException>(
+            () => SendAsync(fixture, receipt with { ExchangeRate = 2m }));
+        Assert.Equal(staged, await SendAsync(fixture, receipt));
+        var binding = SendAsync(fixture, bind);
+        try
+        {
+            await ackReached.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        catch
+        {
+            releaseAck.TrySetResult();
+            if (binding.IsFaulted) await binding;
+            throw;
+        }
+
+        var cancellation = DeliverAsync(fixture, Cancelled());
+        try
+        {
+            using var observe = fixture.Factory.Services.CreateScope();
+            var observer = observe.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await Eventually.AssertAsync(
+                condition: "The cancellation waits for receipt binding on the purchase-order transaction lock",
+                assertion: async token =>
+                {
+                    var waiters = await observer.Database.SqlQueryRaw<long>("""
+                        SELECT count(*) AS "Value" FROM pg_locks
+                        WHERE database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                            AND locktype = 'advisory' AND NOT granted AND objsubid = 1
+                        """).SingleAsync(token);
+                    Assert.Equal(1, waiters);
+                },
+                options: new EventuallyOptions(TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(100), []));
+        }
+        finally
+        {
+            releaseAck.SetResult();
+            await Task.WhenAll(binding, cancellation);
+        }
+
+        var accepted = await binding;
+        Assert.Equal(receipt.ExpectedVersion + 2, accepted.Version);
+        Assert.Equal(accepted, await SendAsync(fixture, receipt));
+
+        Assert.Equal(2, erp.Requests.Count);
+        Assert.All(erp.Requests, request => Assert.Equal((bind.BatchId, "PO-123", 1.25m, 12.5m, 0m), request));
+        Assert.Equal(0, await SendAsync(fixture,
+            new CancelInboundOrdersForSourceCommand("org-replay", "env-replay", WmsSourceDocumentTypes.PurchaseOrder, "PO-123", "legacy call")));
+        using var read = fixture.Factory.Services.CreateScope();
+        var db = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = await db.InboundOrders.Include(x => x.Lines).SingleAsync();
+        Assert.Equal(InboundOrderStatus.Open, order.Status);
+        Assert.Equal("RCV-123", order.ErpPurchaseReceiptNo);
+        Assert.Equal(WmsText.IdempotencyKey("receipt"), order.ReceiptConfirmationKey);
+        Assert.Equal(12.5m, Assert.Single(order.Lines).ReceivedQuantity);
+        Assert.Empty(await db.InventoryMovementRequests.ToListAsync());
+        Assert.Empty(await db.WarehouseTasks.ToListAsync());
+    }
 
     [WmsDeadLetterReplayPostgresFact]
     public async Task Concurrent_cancellation_replays_and_release_converge_to_the_closed_source()
@@ -156,22 +341,22 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
             db.InboundOrders.Add(PendingReceipt("other-org", "env-replay"));
             db.InboundOrders.Add(PendingReceipt("org-replay", "other-env"));
         });
-        ConfirmInboundReceiptCommand receipt;
-        using (var assign = fixture.Factory.Services.CreateScope())
-        {
-            var db = assign.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var order = await db.InboundOrders.SingleAsync(x => x.InboundOrderNo == "PO-ACCEPTED");
-            order.AssignWorkPool("receiving", null, order.Version);
-            await db.SaveChangesAsync();
-            receipt = new ConfirmInboundReceiptCommand(order.Id, order.OrganizationId, order.EnvironmentId,
-                "operator", ["SITE"], "site", "SITE", order.Version, "accepted", [new("020", 12.5m)]);
-        }
-
-        ConfirmInboundReceiptResult acceptedResult;
         using (var receive = fixture.Factory.Services.CreateScope())
         {
-            acceptedResult = await receive.ServiceProvider.GetRequiredService<ISender>().Send(receipt);
+            var db = receive.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Database.ExecuteSqlRawAsync("""
+                UPDATE wms.inbound_order_lines
+                SET received_quantity = 12.5
+                WHERE inbound_order_id = (SELECT id FROM wms.inbound_orders WHERE inbound_order_no = 'PO-ACCEPTED');
+
+                UPDATE wms.inbound_orders
+                SET receipt_confirmation_key = 'legacy', receipt_confirmation_fingerprint = 'legacy-fingerprint',
+                    version = version + 1
+                WHERE inbound_order_no = 'PO-ACCEPTED';
+                """);
         }
+        Assert.Equal(0, await SendAsync(fixture,
+            new CancelInboundOrdersForSourceCommand("org-replay", "env-replay", WmsSourceDocumentTypes.PurchaseOrder, "PO-ACCEPTED", "legacy call")));
 
         var cancellation = Cancelled();
         await DeliverAsync(fixture, cancellation);
@@ -188,7 +373,6 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
         });
 
         using var scope = fixture.Factory.Services.CreateScope();
-        Assert.Equal(acceptedResult, await scope.ServiceProvider.GetRequiredService<ISender>().Send(receipt));
         var read = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var orders = await read.InboundOrders.Include(x => x.Lines).ToListAsync();
         var closed = Assert.Single(orders, x => x.Status == InboundOrderStatus.Cancelled);
@@ -197,7 +381,8 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
         Assert.Equal(0m, Assert.Single(closed.Lines).ReceivedQuantity);
         var received = Assert.Single(orders, x => x.InboundOrderNo == "PO-ACCEPTED");
         Assert.Equal(InboundOrderStatus.Open, received.Status);
-        Assert.Equal(acceptedResult.Version, received.Version);
+        Assert.Equal(2, received.Version);
+        Assert.Equal("legacy", received.ReceiptConfirmationKey);
         Assert.Equal(12.5m, Assert.Single(received.Lines).ReceivedQuantity);
         var manual = Assert.Single(orders, x => x.InboundOrderNo == "MANUAL-123");
         Assert.Equal(InboundOrderStatus.Open, manual.Status);
@@ -420,6 +605,44 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
         }
 
         return wire;
+    }
+
+    private static async Task<ConfirmInboundReceiptCommand> AssignForConfirmationAsync(ReplayFixture fixture, string orderNo)
+    {
+        using var scope = fixture.Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = await db.InboundOrders.SingleAsync(x => x.InboundOrderNo == orderNo);
+        order.AssignWorkPool("receiving", null, order.Version);
+        await db.SaveChangesAsync();
+        return new(order.Id, order.OrganizationId, order.EnvironmentId, "operator",
+            ["SITE"], "site", "SITE", order.Version, "receipt", [new("020", 12.5m)], ExchangeRate: 1.25m);
+    }
+
+    private static async Task<Guid> BatchIdAsync(ReplayFixture fixture)
+    {
+        using var scope = fixture.Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        return Assert.IsType<Guid>(await db.InboundOrders.Select(x => x.ReceiptBatchId).SingleAsync());
+    }
+
+    private static async Task<T> SendAsync<T>(ReplayFixture fixture, IRequest<T> request)
+    {
+        using var scope = fixture.Factory.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<ISender>().Send(request);
+    }
+
+    private sealed class ReceiptAcceptanceStub(Func<int, CancellationToken, Task<string>> respond)
+        : IWmsPurchaseReceiptAcceptanceClient
+    {
+        public List<(Guid Batch, string Order, decimal Rate, decimal Requested, decimal Actual)> Requests { get; } = [];
+
+        public Task<string> GetOrAcceptAsync(InboundOrder inbound, Guid batchId, CancellationToken cancellationToken)
+        {
+            var line = Assert.Single(inbound.Lines);
+            Requests.Add((batchId, inbound.SourceDocumentId, inbound.ReceiptExchangeRate!.Value,
+                line.RequestedReceiptQuantity!.Value, line.ReceivedQuantity));
+            return respond(Requests.Count, cancellationToken);
+        }
     }
 
     private static async Task DeliverAsync(ReplayFixture fixture, PurchaseOrderCancelledIntegrationEvent message)

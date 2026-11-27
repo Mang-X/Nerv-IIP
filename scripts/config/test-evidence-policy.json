@@ -2037,9 +2037,12 @@
         "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Cancellation_closes_only_the_scoped_unreceived_auto_order",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Concurrent_cancellation_replays_and_release_converge_to_the_closed_source",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Failed_inbound_update_rolls_back_cancellation_and_inbox_then_original_replay_commits",
-        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Cancellation_rejects_foreign_source_invalid_version_and_conflicting_source_facts"
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Cancellation_rejects_foreign_source_invalid_version_and_conflicting_source_facts",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Staged_receipt_keeps_actual_zero_and_cancellation_closes_the_expectation",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Ambiguous_ack_replays_the_frozen_batch_and_committed_actual_survives_cancellation",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Migration_separates_unbound_candidate_requests_from_confirmed_history"
       ],
-      "expectedRuntimeTestCount": 17
+      "expectedRuntimeTestCount": 20
     }
   ]
 }

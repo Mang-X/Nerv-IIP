@@ -318,6 +318,17 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("environment_id")
                         .HasComment("Environment id.");
 
+                    b.Property<string>("ErpPurchaseReceiptNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("erp_purchase_receipt_no")
+                        .HasComment("Scoped ERP receipt number returned by committed batch acceptance.");
+
+                    b.Property<long?>("ErpReceiptAcceptedVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("erp_receipt_accepted_version")
+                        .HasComment("Inbound version returned by the original successful ERP receipt binding.");
+
                     b.Property<string>("InboundOrderNo")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -332,6 +343,11 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id.");
 
+                    b.Property<Guid?>("ReceiptBatchId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("receipt_batch_id")
+                        .HasComment("Stable ERP acceptance identity for an explicitly confirmed purchase order receipt.");
+
                     b.Property<string>("ReceiptConfirmationFingerprint")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
@@ -343,6 +359,24 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("character varying(128)")
                         .HasColumnName("receipt_confirmation_key")
                         .HasComment("Normalized idempotency key for confirming actual receipt quantities.");
+
+                    b.Property<decimal?>("ReceiptExchangeRate")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("numeric(18,8)")
+                        .HasColumnName("receipt_exchange_rate")
+                        .HasComment("Exchange rate frozen when the ERP acceptance batch is staged.");
+
+                    b.Property<string>("ReceiptRequestFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("receipt_request_fingerprint")
+                        .HasComment("SHA-256 fingerprint of the frozen ERP receipt request.");
+
+                    b.Property<string>("ReceiptRequestKey")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("receipt_request_key")
+                        .HasComment("Normalized idempotency key of the frozen ERP receipt request.");
 
                     b.Property<string>("SiteCode")
                         .IsRequired()
@@ -381,6 +415,9 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "InboundOrderNo")
+                        .IsUnique();
+
+                    b.HasIndex("OrganizationId", "EnvironmentId", "ReceiptBatchId")
                         .IsUnique();
 
                     b.HasIndex("OrganizationId", "EnvironmentId", "SourceDocumentType", "SourceDocumentId", "Status")
@@ -485,6 +522,12 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("numeric(18,6)")
                         .HasColumnName("received_quantity")
                         .HasComment("Inbound received quantity.");
+
+                    b.Property<decimal?>("RequestedReceiptQuantity")
+                        .HasPrecision(18, 6)
+                        .HasColumnType("numeric(18,6)")
+                        .HasColumnName("requested_receipt_quantity")
+                        .HasComment("Quantity frozen in the ERP receipt request before acceptance.");
 
                     b.Property<string>("SerialNo")
                         .HasMaxLength(100)

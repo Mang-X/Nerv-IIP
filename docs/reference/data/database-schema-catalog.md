@@ -499,6 +499,8 @@ Schema 演进说明（发布、降级与恢复操作统一见 [`../../runbooks/d
 
 `inventory_movement_requests.unit_cost` 保存首次采购收货请求从 ERP 精确来源行取得的本位币单位暂估成本，单位与请求 UOM 一致；重放和失败重试沿用该快照。该列可空以保留旧请求及非估值请求语义，迁移不回填历史价格，也不重新发送旧请求。
 
+`inbound_orders.receipt_batch_id` 与 `receipt_exchange_rate` 保存自动采购收货批次和冻结汇率。`receipt_request_key`、`receipt_request_fingerprint` 和 `inbound_order_lines.requested_receipt_quantity` 保存原确认请求。批次 UUID 在组织和环境内唯一。绑定已提交的 ERP 收货时，同时写入逐行 `received_quantity`、收货确认凭据、`erp_purchase_receipt_no` 和 `erp_receipt_accepted_version`，用于同一确认请求重放。手工入库保留空值。
+
 维护服务：`backend/services/Business/Wms`
 
 权威来源：

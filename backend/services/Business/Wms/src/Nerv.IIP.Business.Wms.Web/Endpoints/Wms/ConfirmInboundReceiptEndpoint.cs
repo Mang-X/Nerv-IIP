@@ -15,9 +15,10 @@ public sealed record ConfirmInboundReceiptRequest(
     string ScopeId,
     long ExpectedVersion,
     string IdempotencyKey,
-    IReadOnlyCollection<InboundReceiptQuantity> Lines);
+    IReadOnlyCollection<InboundReceiptQuantity> Lines,
+    decimal? ExchangeRate = null);
 
-public sealed class ConfirmInboundReceiptEndpoint(ISender sender)
+public sealed class ConfirmInboundReceiptEndpoint(ISender sender, IServiceScopeFactory scopeFactory)
     : WmsEndpoint<ConfirmInboundReceiptRequest, ResponseData<ConfirmInboundReceiptResult>>
 {
     public override void Configure() => ConfigureWmsContract(
@@ -28,10 +29,19 @@ public sealed class ConfirmInboundReceiptEndpoint(ISender sender)
 
     public override async Task HandleAsync(ConfirmInboundReceiptRequest req, CancellationToken ct)
     {
-        var result = await sender.Send(new ConfirmInboundReceiptCommand(
+        var command = new ConfirmInboundReceiptCommand(
             req.InboundOrderId, req.OrganizationId, req.EnvironmentId, req.ActorPrincipalId,
             req.AuthorizedSiteCodes, req.ScopeKind, req.ScopeId, req.ExpectedVersion,
-            req.IdempotencyKey, req.Lines), ct);
+            req.IdempotencyKey, req.Lines, req.ExchangeRate);
+        var result = await sender.Send(command, ct);
+        if (result.PendingErpBatchId is { } batchId)
+        {
+            // Read the committed staging transaction in a fresh unit of work.
+            await using var scope = scopeFactory.CreateAsyncScope();
+            result = await scope.ServiceProvider.GetRequiredService<ISender>()
+                .Send(new BindInboundErpReceiptCommand(command, batchId), ct);
+        }
+
         await Send.OkAsync(result.AsResponseData(), cancellation: ct);
     }
 }

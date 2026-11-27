@@ -2050,17 +2050,27 @@ public sealed class CancelInboundOrdersForSourceCommandHandler(ApplicationDbCont
         var sourceDocumentType = WmsText.Required(request.SourceDocumentType, nameof(request.SourceDocumentType));
         var sourceDocumentId = WmsText.Required(request.SourceDocumentId, nameof(request.SourceDocumentId));
         var reason = WmsText.Required(request.Reason, nameof(request.Reason));
+        var organizationId = WmsText.Required(request.OrganizationId, nameof(request.OrganizationId));
+        var environmentId = WmsText.Required(request.EnvironmentId, nameof(request.EnvironmentId));
+        var isPurchaseOrder = string.Equals(sourceDocumentType, WmsSourceDocumentTypes.PurchaseOrder, StringComparison.OrdinalIgnoreCase);
+        if (isPurchaseOrder)
+        {
+            await PurchaseOrderInboundLock.AcquireAsync(dbContext, organizationId, environmentId, sourceDocumentId, cancellationToken);
+        }
+
         var inboundOrders = await dbContext.InboundOrders
-            .Where(x => x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
                 && x.SourceDocumentType == sourceDocumentType
                 && x.SourceDocumentId == sourceDocumentId
-                && x.Status == InboundOrderStatus.Open)
+                && x.Status == InboundOrderStatus.Open
+                && (!isPurchaseOrder || x.ReceiptBatchId == null && x.ReceiptConfirmationKey == null
+                    && !x.Lines.Any(line => line.ExpectedQuantity != null && line.ReceivedQuantity > 0m)))
             .ToArrayAsync(cancellationToken);
         var inboundOrderNos = inboundOrders.Select(x => x.InboundOrderNo).ToArray();
         var openPutawayTasks = await dbContext.WarehouseTasks
-            .Where(x => x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
+            .Where(x => x.OrganizationId == organizationId
+                && x.EnvironmentId == environmentId
                 && x.TaskType == WarehouseTaskType.Putaway
                 && inboundOrderNos.Contains(x.SourceOrderNo)
                 && (x.Status == WarehouseTaskStatus.Open

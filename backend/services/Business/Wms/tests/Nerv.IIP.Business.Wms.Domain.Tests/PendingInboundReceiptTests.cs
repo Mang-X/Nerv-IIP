@@ -10,7 +10,7 @@ public sealed class PendingInboundReceiptTests
     public void Pending_receipt_requires_explicit_actual_quantity_before_putaway_or_posting()
     {
         var order = InboundOrder.CreatePendingReceipt(
-            "org", "env", "IN-001", "purchase-order", "PO-001", "site",
+            "org", "env", "IN-001", "manual", "PO-001", "site",
             [new("10", "SKU-001", "EA", 5m, "STAGE", "unrestricted", "company", null)]);
 
         var line = Assert.Single(order.Lines);
@@ -37,7 +37,7 @@ public sealed class PendingInboundReceiptTests
     public void Invalid_confirmation_leaves_every_line_pending(string secondLineNo, int secondQuantity)
     {
         var order = InboundOrder.CreatePendingReceipt(
-            "org", "env", "IN-002", "purchase-order", "PO-002", "site",
+            "org", "env", "IN-002", "manual", "PO-002", "site",
             [
                 new("10", "SKU-001", "EA", 5m, "STAGE", "unrestricted", "company", null),
                 new("20", "SKU-002", "EA", 3m, "STAGE", "unrestricted", "company", null),

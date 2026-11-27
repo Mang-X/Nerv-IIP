@@ -19,10 +19,14 @@ public sealed record ConfirmInboundReceiptCommand(
     string ScopeId,
     long ExpectedVersion,
     string IdempotencyKey,
-    IReadOnlyCollection<InboundReceiptQuantity> Lines) : ICommand<ConfirmInboundReceiptResult>;
+    IReadOnlyCollection<InboundReceiptQuantity> Lines,
+    decimal? ExchangeRate = null) : ICommand<ConfirmInboundReceiptResult>;
 
 /// <summary>入库单及本次确认写入的版本。</summary>
-public sealed record ConfirmInboundReceiptResult(InboundOrderId InboundOrderId, long Version);
+public sealed record ConfirmInboundReceiptResult(InboundOrderId InboundOrderId, long Version)
+{
+    internal Guid? PendingErpBatchId { get; init; }
+}
 
 public sealed class ConfirmInboundReceiptCommandValidator : AbstractValidator<ConfirmInboundReceiptCommand>
 {
@@ -69,12 +73,87 @@ public sealed class ConfirmInboundReceiptCommandHandler(
         ConfirmInboundReceiptCommand request,
         CancellationToken cancellationToken)
     {
+        var inbound = await LoadAuthorizedAsync(dbContext, authorizer, request, cancellationToken);
+
+        var key = WmsText.IdempotencyKey(request.IdempotencyKey);
+        var fingerprint = Fingerprint(request);
+        if (inbound.ReceiptRequestKey == key)
+        {
+            if (inbound.ReceiptRequestFingerprint != fingerprint || inbound.ReceiptExchangeRate != request.ExchangeRate)
+            {
+                throw new WmsIdempotencyConflictException();
+            }
+
+            if (inbound.Status != InboundOrderStatus.Open && inbound.ErpReceiptAcceptedVersion is null)
+            {
+                throw new WmsLifecycleConflictException(Action, inbound.Status.ToString());
+            }
+
+            return ErpReceiptResult(inbound);
+        }
+
+        if (inbound.ReceiptConfirmationKey == key)
+        {
+            if (inbound.ReceiptConfirmationFingerprint != fingerprint
+                || (inbound.ReceiptBatchId is not null && inbound.ReceiptExchangeRate != request.ExchangeRate))
+            {
+                throw new WmsIdempotencyConflictException();
+            }
+
+            return new ConfirmInboundReceiptResult(inbound.Id,
+                inbound.ErpReceiptAcceptedVersion ?? checked(request.ExpectedVersion + 1));
+        }
+
+        WarehouseAssignedResourceCompletionExecution.EnsureExpectedVersion(
+            inbound.Version, request.ExpectedVersion, Action);
+        if (inbound.Status != InboundOrderStatus.Open || inbound.ReceiptConfirmationKey is not null
+            || inbound.ReceiptBatchId is not null)
+        {
+            throw new WmsLifecycleConflictException(Action, inbound.Status.ToString());
+        }
+
+        try
+        {
+            if (inbound.RequiresErpReceiptAcceptance)
+            {
+                ValidateExchangeRate(request.ExchangeRate);
+                inbound.StageErpReceipt(request.ExpectedVersion, request.Lines, new(key, fingerprint), request.ExchangeRate!.Value);
+                return ErpReceiptResult(inbound);
+            }
+
+            inbound.ConfirmReceipt(request.ExpectedVersion, request.Lines, new(key, fingerprint));
+            return new ConfirmInboundReceiptResult(inbound.Id, inbound.Version);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new WmsUnprocessableException(exception.Message);
+        }
+    }
+
+    private static ConfirmInboundReceiptResult ErpReceiptResult(InboundOrder inbound) =>
+        new(inbound.Id, inbound.ErpReceiptAcceptedVersion ?? inbound.Version)
+        {
+            PendingErpBatchId = inbound.ErpReceiptAcceptedVersion is null ? inbound.ReceiptBatchId : null,
+        };
+
+    private static void ValidateExchangeRate(decimal? exchangeRate)
+    {
+        if (exchangeRate is not > 0 or >= 10_000_000_000m || decimal.Round(exchangeRate.Value, 8) != exchangeRate)
+        {
+            throw new WmsUnprocessableException("ERP receipt acceptance requires an explicit exchange rate with precision (18,8).");
+        }
+    }
+
+    internal static async Task<InboundOrder> LoadAuthorizedAsync(ApplicationDbContext dbContext,
+        WarehouseAssignedResourceExecutionAuthorizer authorizer, ConfirmInboundReceiptCommand request,
+        CancellationToken cancellationToken)
+    {
         var organizationId = request.OrganizationId.Trim();
         var environmentId = request.EnvironmentId.Trim();
         var purchaseOrderNo = await dbContext.InboundOrders
             .Where(order => order.Id == request.InboundOrderId && order.OrganizationId == organizationId
                 && order.EnvironmentId == environmentId && order.SourceDocumentType == WmsSourceDocumentTypes.PurchaseOrder
-                && order.InboundOrderNo == order.SourceDocumentId && order.Lines.Any(line => line.ExpectedQuantity != null))
+                && order.Lines.Any(line => line.ExpectedQuantity != null))
             .Select(order => order.SourceDocumentId)
             .SingleOrDefaultAsync(cancellationToken);
         if (purchaseOrderNo is not null)
@@ -92,36 +171,7 @@ public sealed class ConfirmInboundReceiptCommandHandler(
             request.AuthorizedSiteCodes, request.ScopeKind, request.ScopeId,
             inbound.OrganizationId, inbound.EnvironmentId, inbound.SiteCode,
             inbound.AssignedPoolCode, inbound.AssignedOperatorUserId), cancellationToken);
-
-        var key = WmsText.IdempotencyKey(request.IdempotencyKey);
-        var fingerprint = Fingerprint(request);
-        if (inbound.ReceiptConfirmationKey == key)
-        {
-            if (inbound.ReceiptConfirmationFingerprint != fingerprint)
-            {
-                throw new WmsIdempotencyConflictException();
-            }
-
-            return new ConfirmInboundReceiptResult(inbound.Id, checked(request.ExpectedVersion + 1));
-        }
-
-        WarehouseAssignedResourceCompletionExecution.EnsureExpectedVersion(
-            inbound.Version, request.ExpectedVersion, Action);
-        if (inbound.Status != InboundOrderStatus.Open || inbound.ReceiptConfirmationKey is not null)
-        {
-            throw new WmsLifecycleConflictException(Action, inbound.Status.ToString());
-        }
-
-        try
-        {
-            inbound.ConfirmReceipt(request.ExpectedVersion, request.Lines, new(key, fingerprint));
-        }
-        catch (InvalidOperationException exception)
-        {
-            throw new WmsUnprocessableException(exception.Message);
-        }
-
-        return new ConfirmInboundReceiptResult(inbound.Id, inbound.Version);
+        return inbound;
     }
 
     private static string Fingerprint(ConfirmInboundReceiptCommand request)

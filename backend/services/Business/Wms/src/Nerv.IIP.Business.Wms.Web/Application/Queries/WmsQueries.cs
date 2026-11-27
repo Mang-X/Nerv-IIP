@@ -11,6 +11,7 @@ using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WarehouseTaskAggregate;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.WcsTaskAggregate;
 using Nerv.IIP.Contracts.Inventory;
+using Nerv.IIP.Contracts.Wms;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Queries;
 
@@ -647,7 +648,9 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
                 x.AssignedPoolCode,
                 x.Version,
                 HasAnyLine = x.Lines.Any(),
-                HasUnconfirmedReceipt = x.Lines.Any(l => l.ExpectedQuantity != null && l.ReceivedQuantity == 0m),
+                HasReceiptPutawayBlock = x.SourceDocumentType.ToLower() == WmsSourceDocumentTypes.PurchaseOrder
+                    ? x.Lines.Any(l => l.ExpectedQuantity != null)
+                    : x.Lines.Any(l => l.ExpectedQuantity != null && l.ReceivedQuantity == 0m),
                 HasRejected = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.Rejected),
                 HasPending = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.Pending),
                 HasConditional = x.Lines.Any(l => l.QualityGateStatus == InboundQualityGateStatuses.ConditionalReleased),
@@ -675,7 +678,7 @@ public sealed class ListInboundOrdersQueryHandler(ApplicationDbContext dbContext
                     x.StatusValue.ToString(),
                     x.CreatedAtUtc,
                     InboundOrderQualityAggregate.Derive(x.HasAnyLine, x.HasRejected, x.HasPending, x.HasConditional, x.HasPassed),
-                    !x.HasUnconfirmedReceipt && InboundOrderQualityAggregate.ReleasedForPutaway(
+                    !x.HasReceiptPutawayBlock && InboundOrderQualityAggregate.ReleasedForPutaway(
                         x.StatusValue,
                         x.HasAnyLine,
                         x.HasRejected,
