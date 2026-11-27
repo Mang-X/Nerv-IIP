@@ -7,7 +7,8 @@ namespace Nerv.IIP.Business.Wms.Web.Application.Commands;
 internal static class SupplierReturnOutbound
 {
     public static OutboundOrder Create(
-        SupplierReturnRequest supplierReturn, string sourceDocumentId, string qualityStatus)
+        SupplierReturnRequest supplierReturn, string sourceDocumentId, string qualityStatus,
+        DateOnly? productionDate = null, DateOnly? expiryDate = null)
     {
         return OutboundOrder.Create(
             supplierReturn.OrganizationId,
@@ -26,6 +27,8 @@ internal static class SupplierReturnOutbound
                 supplierReturn.SerialNo,
                 qualityStatus,
                 supplierReturn.OwnerType,
-                supplierReturn.OwnerId)]);
+                supplierReturn.OwnerId,
+                productionDate,
+                expiryDate)]);
     }
 }

@@ -910,6 +910,11 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("backorder_quantity")
                         .HasComment("Short-picked outbound quantity left as backorder.");
 
+                    b.Property<DateOnly?>("ExpiryDate")
+                        .HasColumnType("date")
+                        .HasColumnName("expiry_date")
+                        .HasComment("Expiry date of the original stock posted for a blocked supplier return.");
+
                     b.Property<bool>("FulfillmentRecorded")
                         .HasColumnType("boolean")
                         .HasColumnName("fulfillment_recorded")
@@ -964,6 +969,11 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("pick_location_code")
                         .HasComment("Pick location for outbound stock.");
+
+                    b.Property<DateOnly?>("ProductionDate")
+                        .HasColumnType("date")
+                        .HasColumnName("production_date")
+                        .HasComment("Production date of the original stock posted for a blocked supplier return.");
 
                     b.Property<string>("QualityStatus")
                         .IsRequired()

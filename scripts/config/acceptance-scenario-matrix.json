@@ -249,11 +249,11 @@
     {
       "id": "erp-return-closure",
       "v1Alias": "erp-return-closure",
-      "services": ["ERP", "WMS"],
+      "services": ["ERP", "WMS", "Inventory"],
       "ownerIssue": "#1240",
       "status": "active",
       "tier": "core",
-      "contracts": ["Nerv.IIP.Contracts.Erp", "Nerv.IIP.Contracts.Wms"],
+      "contracts": ["Nerv.IIP.Contracts.Erp", "Nerv.IIP.Contracts.Wms", "Nerv.IIP.Contracts.Inventory"],
       "entrypoint": {
         "kind": "dotnet"
       },
@@ -269,8 +269,8 @@
         "externalProcesses": false
       },
       "impact": {
-        "paths": ["backend/services/Business/Erp/**", "backend/services/Business/Wms/**", "backend/common/Contracts/Nerv.IIP.Contracts.Erp/**", "backend/common/Contracts/Nerv.IIP.Contracts.Wms/**"],
-        "owners": ["ERP", "WMS"]
+        "paths": ["backend/services/Business/Erp/**", "backend/services/Business/Wms/**", "backend/services/Business/Inventory/**", "backend/common/Contracts/Nerv.IIP.Contracts.Erp/**", "backend/common/Contracts/Nerv.IIP.Contracts.Wms/**", "backend/common/Contracts/Nerv.IIP.Contracts.Inventory/**"],
+        "owners": ["ERP", "WMS", "Inventory"]
       },
       "runPolicy": {
         "pullRequest": "impact",
@@ -288,7 +288,7 @@
         "safetyMarginSeconds": 300
       },
       "diagnosticProtocol": {
-        "schemas": ["erp", "wms"],
+        "schemas": ["erp", "wms", "inventory"],
         "captureBeforeCleanup": true,
         "redactSecrets": true
       },

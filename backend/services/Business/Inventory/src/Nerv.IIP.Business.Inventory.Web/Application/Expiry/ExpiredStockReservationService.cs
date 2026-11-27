@@ -31,6 +31,8 @@ public sealed class ExpiredStockReservationService(
                     && x.LocationCode == reservation.LocationCode
                     && x.LotNo == reservation.LotNo
                     && x.SerialNo == reservation.SerialNo
+                    && x.ProductionDate == reservation.ProductionDate
+                    && x.ExpiryDate == reservation.ExpiryDate
                     && x.QualityStatus == reservation.QualityStatus
                     && x.OwnerType == reservation.OwnerType
                     && x.OwnerId == reservation.OwnerId,

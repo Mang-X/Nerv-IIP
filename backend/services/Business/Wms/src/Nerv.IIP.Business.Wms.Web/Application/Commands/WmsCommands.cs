@@ -964,7 +964,9 @@ public sealed class CreatePickingTaskCommandHandler(
                 line.QualityStatus,
                 line.OwnerType,
                 line.OwnerId,
-                quantity),
+                quantity,
+                line.ProductionDate,
+                line.ExpiryDate),
             cancellationToken);
         return new PickingReservationResult(reservation.ReservationId, fromLocationCode, reservation.LotNo ?? line.LotNo, line.SerialNo);
     }
@@ -2282,7 +2284,9 @@ public sealed class RetryOutboundInventoryPostingCommandHandler(
                     line.QualityStatus,
                     line.OwnerType,
                     line.OwnerId,
-                    line.IssuedQuantity),
+                    line.IssuedQuantity,
+                    line.ProductionDate,
+                    line.ExpiryDate),
                 cancellationToken)).ReservationId;
 
             reservationIds[line.LineNo] = reservationId;
@@ -2675,7 +2679,8 @@ public sealed record MarkInventoryMovementRequestPostedCommand(
     string SourceDocumentId,
     string? SourceDocumentLineId,
     string IdempotencyKey,
-    string InventoryMovementId) : ICommand;
+    string InventoryMovementId,
+    (DateOnly? ProductionDate, DateOnly? ExpiryDate)? PostedDates = null) : ICommand;
 
 public sealed class MarkInventoryMovementRequestPostedCommandHandler(ApplicationDbContext dbContext)
     : ICommandHandler<MarkInventoryMovementRequestPostedCommand>
@@ -2703,7 +2708,9 @@ public sealed class MarkInventoryMovementRequestPostedCommandHandler(Application
         }
 
         var alreadyPosted = movementRequest.Status == InventoryMovementRequestStatus.Posted;
-        movementRequest.MarkPosted(request.InventoryMovementId);
+        var postedDates = movementRequest.MovementType == InventoryMovementTypes.Inbound
+            && movementRequest.QualityStatus == InventoryQualityStatuses.Blocked ? request.PostedDates : null;
+        movementRequest.MarkPosted(request.InventoryMovementId, postedDates);
         if (request.MovementType == InventoryMovementTypes.Inbound && !alreadyPosted)
         {
             await AcknowledgeBoundReceiptAsync(movementRequest, cancellationToken);
@@ -2767,9 +2774,11 @@ public sealed class MarkInventoryMovementRequestPostedCommandHandler(Application
         {
             foreach (var supplierReturn in inbound.AcknowledgeErpReceiptPosting())
             {
+                var original = movements.Single(movement => movement.SourceDocumentLineId == supplierReturn.InboundOrderLineNo);
                 dbContext.SupplierReturnRequests.Add(supplierReturn);
                 dbContext.OutboundOrders.Add(SupplierReturnOutbound.Create(
-                    supplierReturn, inbound.ErpPurchaseReceiptNo!, InventoryQualityStatuses.Blocked));
+                    supplierReturn, inbound.ErpPurchaseReceiptNo!, InventoryQualityStatuses.Blocked,
+                    original.ProductionDate, original.ExpiryDate));
             }
         }
     }

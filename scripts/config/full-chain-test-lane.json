@@ -51,14 +51,14 @@
     },
     {
       "id": "erp-return-closure",
-      "service": "ERP+WMS",
+      "service": "ERP+WMS+Inventory",
       "tier": "core",
       "status": "active",
       "project": "backend/tests/Nerv.IIP.Business.FullChain.Tests/Nerv.IIP.Business.FullChain.Tests.csproj",
       "filter": "FullyQualifiedName=Nerv.IIP.Business.FullChain.Tests.ErpReturnClosurePostgresAcceptanceTests.Purchase_return_and_sales_rma_close_through_real_postgres_contexts_with_replay_safety",
       "entrypoint": { "kind": "dotnet" },
       "dependencies": { "postgres": true, "redis": false, "externalProcesses": false },
-      "diagnosticSchemas": ["erp", "wms"],
+      "diagnosticSchemas": ["erp", "wms", "inventory"],
       "expectedTestIdentities": ["Nerv.IIP.Business.FullChain.Tests.ErpReturnClosurePostgresAcceptanceTests.Purchase_return_and_sales_rma_close_through_real_postgres_contexts_with_replay_safety"]
     }
   ]

@@ -1,4 +1,5 @@
 using MediatR;
+using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountReceivableAggregate;
@@ -16,6 +17,7 @@ using Nerv.IIP.Business.Wms.Domain.DomainEvents;
 using Nerv.IIP.Business.Wms.Domain;
 using Nerv.IIP.Business.Wms.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Wms.Web.Application.IntegrationEventHandlers;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
@@ -28,12 +30,15 @@ using WmsOutboundOrderCompletedDomainEvent = Nerv.IIP.Business.Wms.Domain.Domain
 
 namespace Nerv.IIP.Business.FullChain.Tests;
 
-public sealed class ErpReturnClosurePostgresAcceptanceTests
+public sealed partial class ErpReturnClosurePostgresAcceptanceTests
 {
     [RealPostgresFact]
     public async Task Purchase_return_and_sales_rma_close_through_real_postgres_contexts_with_replay_safety()
     {
         var baseConnectionString = Environment.GetEnvironmentVariable("NERV_IIP_TEST_POSTGRES")!;
+        await AssertBlockedReturnAsync(baseConnectionString, hasProductionDate: true, deriveExpiryAtReceipt: true);
+        await AssertBlockedReturnAsync(baseConnectionString, hasProductionDate: true, deriveExpiryAtReceipt: false);
+        await AssertBlockedReturnAsync(baseConnectionString, hasProductionDate: false, deriveExpiryAtReceipt: false);
         await using var database = await PostgreSqlTestDatabase.CreateAsync(
             baseConnectionString,
             "nerv_fullchain_erp_return_closure");
@@ -194,7 +199,7 @@ public sealed class ErpReturnClosurePostgresAcceptanceTests
         }
     }
 
-    private static async Task SeedUninvoicedPurchaseReceiptAsync(ErpDbContext dbContext)
+    private static async Task SeedUninvoicedPurchaseReceiptAsync(ErpDbContext dbContext, Guid? batchId = null)
     {
         var order = PurchaseOrder.Create(
             "org-001",
@@ -210,7 +215,9 @@ public sealed class ErpReturnClosurePostgresAcceptanceTests
             order,
             "GR-RETURN-PG-001",
             [new PurchaseReceiptLineDraft("LINE-001", 1m, "quality", "LOC-QA", null)],
-            1m);
+            1m,
+            batchId is null ? PurchaseReceiptInventoryPostingRoute.Direct : PurchaseReceiptInventoryPostingRoute.Wms,
+            batchId);
         dbContext.PurchaseOrders.Add(order);
         dbContext.PurchaseReceipts.Add(receipt);
         await dbContext.SaveChangesAsync(CancellationToken.None);
@@ -264,7 +271,7 @@ public sealed class ErpReturnClosurePostgresAcceptanceTests
         return new WmsDbContext(options, new NoopMediator());
     }
 
-    private sealed class NoopMediator : IMediator
+    private sealed class NoopMediator(Func<MarkInventoryMovementRequestPostedCommand, CancellationToken, Task>? acknowledge = null) : IMediator
     {
         public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
 
@@ -276,7 +283,9 @@ public sealed class ErpReturnClosurePostgresAcceptanceTests
 
         public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default)
             where TRequest : IRequest
-            => throw new NotSupportedException("No mediator requests are expected in this acceptance test.");
+            => request is MarkInventoryMovementRequestPostedCommand command && acknowledge is not null
+                ? acknowledge(command, cancellationToken)
+                : throw new NotSupportedException("No mediator requests are expected in this acceptance test.");
 
         public Task<object?> Send(object request, CancellationToken cancellationToken = default)
             => throw new NotSupportedException("No mediator requests are expected in this acceptance test.");

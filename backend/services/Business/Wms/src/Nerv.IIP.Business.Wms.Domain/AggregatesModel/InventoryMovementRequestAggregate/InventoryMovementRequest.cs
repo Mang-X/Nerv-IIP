@@ -235,7 +235,7 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
         this.AddDomainEvent(new InventoryMovementRequestCreatedDomainEvent(this));
     }
 
-    public void MarkPosted(string inventoryMovementId)
+    public void MarkPosted(string inventoryMovementId, (DateOnly? ProductionDate, DateOnly? ExpiryDate)? postedDates = null)
     {
         var requiredMovementId = WmsText.Required(inventoryMovementId, nameof(inventoryMovementId));
         if (Status == InventoryMovementRequestStatus.Posted)
@@ -246,6 +246,12 @@ public sealed class InventoryMovementRequest : Entity<InventoryMovementRequestId
             }
 
             throw new InvalidOperationException("Inventory movement request was already posted with a different Inventory movement id.");
+        }
+
+        if (postedDates is { } dates)
+        {
+            ProductionDate = dates.ProductionDate;
+            ExpiryDate = dates.ExpiryDate;
         }
 
         InventoryMovementId = requiredMovementId;

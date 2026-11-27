@@ -27,7 +27,9 @@ public sealed record OutboundOrderLineDraft(
     string? SerialNo,
     string QualityStatus,
     string OwnerType,
-    string? OwnerId);
+    string? OwnerId,
+    DateOnly? ProductionDate = null,
+    DateOnly? ExpiryDate = null);
 
 public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
 {
@@ -254,7 +256,9 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
                 line.OwnerType,
                 line.OwnerId,
                 line.IssuedQuantity,
-                line.InventoryReservationId))
+                line.InventoryReservationId,
+                line.ProductionDate,
+                line.ExpiryDate))
             .ToArray();
         return requests;
     }
@@ -410,7 +414,9 @@ public sealed class OutboundOrder : Entity<OutboundOrderId>, IAggregateRoot
                     line.OwnerType,
                     line.OwnerId,
                     line.IssuedQuantity,
-                    line.InventoryReservationId);
+                    line.InventoryReservationId,
+                    line.ProductionDate,
+                    line.ExpiryDate);
             })
             .ToArray();
         AdvanceVersion();
@@ -472,6 +478,8 @@ public sealed class OutboundOrderLine : Entity<OutboundOrderLineId>
         QualityStatus = WmsText.Required(draft.QualityStatus, nameof(draft.QualityStatus)).ToLowerInvariant();
         OwnerType = WmsText.Required(draft.OwnerType, nameof(draft.OwnerType)).ToLowerInvariant();
         OwnerId = WmsText.Optional(draft.OwnerId);
+        ProductionDate = draft.ProductionDate;
+        ExpiryDate = draft.ExpiryDate;
     }
 
     public string LineNo { get; private set; } = string.Empty;
@@ -484,6 +492,8 @@ public sealed class OutboundOrderLine : Entity<OutboundOrderLineId>
     public string QualityStatus { get; private set; } = string.Empty;
     public string OwnerType { get; private set; } = string.Empty;
     public string? OwnerId { get; private set; }
+    public DateOnly? ProductionDate { get; private set; }
+    public DateOnly? ExpiryDate { get; private set; }
     public string? InventoryReservationId { get; private set; }
     public decimal IssuedQuantity { get; private set; }
     public decimal BackorderQuantity { get; private set; }

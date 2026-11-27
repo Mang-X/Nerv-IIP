@@ -4,6 +4,7 @@ using Nerv.IIP.Business.Inventory.Domain.AggregatesModel;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLedgerAggregate;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockReservationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Application.Expiry;
+using Nerv.IIP.Contracts.Inventory;
 
 namespace Nerv.IIP.Business.Inventory.Web.Application.Commands.StockReservations;
 
@@ -115,12 +116,14 @@ public sealed class ReserveStockCommandHandler(
                 && x.QualityStatus == qualityStatus
                 && x.OwnerType == ownerType
                 && x.OwnerId == request.OwnerId);
-        if (request.ProductionDate is not null)
+        var exactDates = qualityStatus == StockQualityStatus.Blocked
+            && string.Equals(request.SourceService.Trim(), InventoryMovementSourceServices.Wms, StringComparison.OrdinalIgnoreCase);
+        if (exactDates || request.ProductionDate is not null)
         {
             query = query.Where(x => x.ProductionDate == request.ProductionDate);
         }
 
-        if (request.ExpiryDate is not null)
+        if (exactDates || request.ExpiryDate is not null)
         {
             query = query.Where(x => x.ExpiryDate == request.ExpiryDate);
         }

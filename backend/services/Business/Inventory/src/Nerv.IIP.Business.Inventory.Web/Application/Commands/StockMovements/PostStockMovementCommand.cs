@@ -110,7 +110,7 @@ public sealed class PostStockMovementCommandHandler(
         var existingMovement = await FindMovementByIdempotencyKeyAsync(movement, outboundKey, cancellationToken);
         if (existingMovement is not null)
         {
-            if (!existingMovement.HasSamePayload(movement, compareExpiryDate: !UsesSkuShelfLifeDefault(request)))
+            if (!existingMovement.HasSamePayload(movement, compareExpiryDate: !UsesSkuShelfLifeDefault(request, movement)))
             {
                 throw new InventoryPostingRejectedException(
                     InventoryPostingFailureCodes.IdempotencyConflict,
@@ -151,7 +151,7 @@ public sealed class PostStockMovementCommandHandler(
             await EnsureRegisteredLocationAsync(request, ResolveTransferInSiteCode(request), request.TransferInLocationCode!, cancellationToken);
         }
 
-        var requestWithShelfLife = await ApplySkuShelfLifeDefaultAsync(request, cancellationToken);
+        var requestWithShelfLife = await ApplySkuShelfLifeDefaultAsync(request, movement, cancellationToken);
         if (requestWithShelfLife.ShelfLifeDays != request.ShelfLifeDays)
         {
             movement = CreateMovementOrReject(requestWithShelfLife, outboundKey);
@@ -276,14 +276,21 @@ public sealed class PostStockMovementCommandHandler(
         }
     }
 
-    private static bool UsesSkuShelfLifeDefault(PostStockMovementCommand request) =>
-        request.ProductionDate is not null && request.ExpiryDate is null && request.ShelfLifeDays is null;
+    private static bool UsesSkuShelfLifeDefault(PostStockMovementCommand request, StockMovement movement) =>
+        request.ProductionDate is not null && request.ExpiryDate is null && request.ShelfLifeDays is null
+        && !(movement.MovementType == InventoryMovementTypes.Outbound && UsesExactWmsBlockedDates(movement));
+
+    private static bool UsesExactWmsBlockedDates(StockMovement movement) =>
+        movement.QualityStatus == StockQualityStatus.Blocked
+        && string.Equals(movement.SourceService, InventoryMovementSourceServices.Wms, StringComparison.OrdinalIgnoreCase)
+        && movement.MovementType is InventoryMovementTypes.Inbound or InventoryMovementTypes.Outbound;
 
     private async Task<PostStockMovementCommand> ApplySkuShelfLifeDefaultAsync(
         PostStockMovementCommand request,
+        StockMovement movement,
         CancellationToken cancellationToken)
     {
-        if (!UsesSkuShelfLifeDefault(request)
+        if (!UsesSkuShelfLifeDefault(request, movement)
             || skuExpiryPolicyProvider is null)
         {
             return request;
@@ -313,12 +320,13 @@ public sealed class PostStockMovementCommandHandler(
                 && x.QualityStatus == movement.QualityStatus
                 && x.OwnerType == movement.OwnerType
                 && x.OwnerId == movement.OwnerId);
-        if (movement.ProductionDate is not null)
+        var exactDates = UsesExactWmsBlockedDates(movement);
+        if (exactDates || movement.ProductionDate is not null)
         {
             query = query.Where(x => x.ProductionDate == movement.ProductionDate);
         }
 
-        if (movement.ExpiryDate is not null)
+        if (exactDates || movement.ExpiryDate is not null)
         {
             query = query.Where(x => x.ExpiryDate == movement.ExpiryDate);
         }

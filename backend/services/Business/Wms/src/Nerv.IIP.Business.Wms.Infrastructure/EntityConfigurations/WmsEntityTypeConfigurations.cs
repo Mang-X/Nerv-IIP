@@ -195,6 +195,8 @@ public sealed class OutboundOrderLineEntityTypeConfiguration : IEntityTypeConfig
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Outbound order line id.");
         builder.Property<OutboundOrderId>("OutboundOrderId").HasColumnName("outbound_order_id").IsRequired().HasComment("Owning outbound order id.");
         InboundOrderLineEntityTypeConfiguration.AddLineColumns(builder, "requested_quantity", "Outbound requested quantity.");
+        builder.Property(x => x.ProductionDate).HasColumnName("production_date").HasComment("Production date of the original stock posted for a blocked supplier return.");
+        builder.Property(x => x.ExpiryDate).HasColumnName("expiry_date").HasComment("Expiry date of the original stock posted for a blocked supplier return.");
         builder.Property(x => x.PickLocationCode).HasColumnName("pick_location_code").IsRequired().HasMaxLength(100).HasComment("Pick location for outbound stock.");
         builder.Property(x => x.InventoryReservationId).HasColumnName("inventory_reservation_id").HasMaxLength(150).HasComment("Public Inventory reservation id allocated for this outbound line.");
         builder.Property(x => x.IssuedQuantity).HasColumnName("issued_quantity").IsRequired().HasPrecision(18, 6).HasComment("Actual outbound quantity issued after picking and pack review.");
