@@ -115,6 +115,11 @@ public static class QualityDeadLetterReplayServiceCollectionExtensions
     private static async Task<bool> HasWmsTasksAsync(IServiceProvider provider, WmsIntegrationEvent evt, CancellationToken token)
     {
         var payload = evt.Payload;
+        if (WmsInboundOrderCompletedIntegrationEventHandlerForCreateInspectionTasks.IsErpAcceptedReceipt(payload))
+        {
+            return true;
+        }
+
         var lines = payload.Lines?.Count > 0 ? payload.Lines
             : payload.SkuCode is null || payload.UomCode is null || payload.Quantity is null ? []
                 : [new WmsIntegrationPayloadLine(payload.LineReference ?? payload.PublicReference, payload.SkuCode,

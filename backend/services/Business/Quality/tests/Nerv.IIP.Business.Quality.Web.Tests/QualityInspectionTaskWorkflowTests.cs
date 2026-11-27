@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionPlanAggregate;
 using Nerv.IIP.Business.Quality.Domain.AggregatesModel.InspectionRecordAggregate;
@@ -817,6 +818,69 @@ public sealed class QualityInspectionTaskWorkflowTests
         Assert.Equal(target.Id, Assert.Single(exact.Items).InspectionTaskId);
         Assert.Empty(crossTenant.Items);
         Assert.Equal(0, crossTenant.Total);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Erp_accepted_wms_receipt_creates_one_pending_task_across_delivery_and_replay(bool wmsFirst)
+    {
+        await using var dbContext = CreateDbContext($"erp-accepted-wms-receipt-{wmsFirst}");
+        dbContext.InspectionPlans.Add(ActivePlan("PLAN-ERP-RCV-1000", "receiving", "SKU-RM-1000"));
+        await dbContext.SaveChangesAsync();
+        var erp = ErpPurchaseReceiptRecorded();
+        var receiptLine = Assert.Single(erp.Payload.Lines!);
+        erp = erp with
+        {
+            Payload = erp.Payload with
+            {
+                QualityStatus = ErpReceiptQualityStatuses.Quality,
+                Lines = [receiptLine with { QualityStatus = ErpReceiptQualityStatuses.Quality }]
+            }
+        };
+        var wms = WmsInboundCompleted("IN-001", "PO-001-L1", "SKU-RM-1000", "quality");
+        var batchId = Guid.Parse("8478ac56-69a3-4782-b835-2d1786b4b846");
+        wms = wms with
+        {
+            IdempotencyKey = $"wms:inbound-receipt-posted:org-001:env-dev:{batchId:N}",
+            Payload = wms.Payload with { WmsReceiptBatchId = batchId }
+        };
+        var wmsHandler = CreateWmsHandler(dbContext);
+        var erpHandler = CreateErpHandler(dbContext);
+
+        if (wmsFirst)
+        {
+            await wmsHandler.HandleAsync(wms, CancellationToken.None);
+            Assert.Empty(await dbContext.InspectionTasks.ToListAsync());
+        }
+
+        await erpHandler.HandleAsync(erp, CancellationToken.None);
+        await wmsHandler.HandleAsync(wms, CancellationToken.None);
+        await erpHandler.HandleAsync(erp with { EventId = "evt-erp-retry", IdempotencyKey = "erp-retry-key" }, CancellationToken.None);
+
+        var task = Assert.Single(await dbContext.InspectionTasks.ToListAsync());
+        Assert.Equal("erp", task.SourceService);
+        Assert.Equal("PR-001", task.SourceDocumentId);
+        Assert.Equal("PO-001-L1", task.SourceDocumentLineId);
+        Assert.Equal("LOT-001", task.BatchNo);
+        Assert.Equal(10m, task.Quantity);
+        Assert.Equal("pending", task.Status);
+
+        var store = new InMemoryIntegrationEventDeadLetterStore();
+        var letter = await store.AddAsync(IntegrationEventDeadLetterMessage.Create(
+            WmsInboundOrderCompletedIntegrationEventHandlerForCreateInspectionTasks.ConsumerName, wms,
+            "transient", "original database outage"), CancellationToken.None);
+        var services = new ServiceCollection();
+        services.AddSingleton(dbContext);
+        services.AddSingleton<IIntegrationEventDeadLetterStore>(store);
+        services.AddQualityDeadLetterReplay();
+        using var provider = services.BuildServiceProvider();
+        var routes = provider.GetServices<IIntegrationEventDeadLetterReplayHandler>();
+        var replay = await new IntegrationEventDeadLetterReplayExecutor(store, routes, TimeProvider.System)
+            .ReplayAsync(letter.Id, CancellationToken.None);
+
+        Assert.True(replay.Succeeded, replay.Message);
+        Assert.Equal(task.Id, (await dbContext.InspectionTasks.SingleAsync()).Id);
     }
 
     [Fact]

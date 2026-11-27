@@ -36,7 +36,8 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForCreateInsp
 
     private async Task HandleValidEventAsync(WmsIntegrationEvent integrationEvent, CancellationToken cancellationToken)
     {
-        if (integrationEvent.EventType != WmsIntegrationEventTypes.InboundOrderCompleted)
+        if (integrationEvent.EventType != WmsIntegrationEventTypes.InboundOrderCompleted
+            || IsErpAcceptedReceipt(integrationEvent.Payload))
         {
             return;
         }
@@ -76,6 +77,9 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForCreateInsp
 
         await InspectionTaskGeneration.SaveChangesIgnoreDuplicateTasksAsync(dbContext, cancellationToken);
     }
+
+    // ERP records the accepted receipt before WMS posts stock. Its receipt number and lines own IQC.
+    internal static bool IsErpAcceptedReceipt(WmsIntegrationPayload payload) => payload.WmsReceiptBatchId.HasValue;
 }
 
 [IntegrationEventConsumer("Nerv.IIP.Contracts.Erp.PurchaseReceiptRecordedIntegrationEvent", ConsumerName)]
