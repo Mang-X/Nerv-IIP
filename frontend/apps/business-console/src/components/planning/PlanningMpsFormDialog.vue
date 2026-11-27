@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { listBusinessConsoleMasterDataSkus } from '@nerv-iip/api-client'
+import { listBusinessConsoleSkus } from '@nerv-iip/api-client'
 import DirectoryPicker from '@/components/business/DirectoryPicker.vue'
 import { useBusinessContextStore } from '@/stores/businessContext'
 import {
@@ -63,14 +63,14 @@ function selectSku(code: string) {
   const generation = ++skuLookupGeneration
   const { organizationId, environmentId } = businessContext
   if (!organizationId || !environmentId) return
-  void listBusinessConsoleMasterDataSkus({
+  void listBusinessConsoleSkus({
     query: { organizationId, environmentId, keyword: trimmed, take: 20 },
     throwOnError: false,
   })
     .then((response) => {
       if (generation !== skuLookupGeneration || props.mpsForm.skuCode.trim() !== trimmed) return
       if (props.mpsForm.uomCode) return
-      const items = response.data?.data?.items ?? []
+      const items = response.data?.data?.resources ?? []
       const exact = items.find((item) => item.code?.trim() === trimmed)
       if (exact?.baseUomCode) props.mpsForm.uomCode = exact.baseUomCode
     })
