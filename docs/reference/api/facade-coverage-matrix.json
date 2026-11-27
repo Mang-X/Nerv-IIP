@@ -142,7 +142,7 @@
       "route": "/api/business/v1/approvals/chains/{chainId}/resubmit",
       "operationId": "resubmitApprovalChain",
       "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; follows the approval-governance (withdraw/resubmit/add-signer/transfer) Business Console menu phase (#488)."
+      "followUp": "BusinessGateway facade 随审批治理菜单交付（#488），调用服务端重新提交时转发经 IAM 校验的最终主体凭据及组织环境。"
     },
     {
       "service": "Approval",
@@ -150,7 +150,7 @@
       "route": "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/add-signer",
       "operationId": "addApprovalStepSigner",
       "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; follows the approval-governance Business Console menu phase (#488)."
+      "followUp": "Approval verifies the end-principal bearer and selected scope; BusinessGateway facade pending and follows the approval-governance Business Console menu phase (#488)."
     },
     {
       "service": "Approval",
@@ -171,7 +171,7 @@
       "route": "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/transfer",
       "operationId": "transferApprovalStep",
       "classification": "deferred",
-      "followUp": "BusinessGateway facade pending; follows the approval-governance Business Console menu phase (#488)."
+      "followUp": "BusinessGateway facade 随审批治理菜单交付（#488），调用服务端转交时转发经 IAM 校验的最终主体凭据及组织环境。"
     },
     {
       "service": "Approval",

@@ -359,6 +359,10 @@ internal sealed class RecordingApprovalClient : IBusinessApprovalClient
 
     public BusinessConsoleStartApprovalChainRequest? LastStartChainRequest { get; private set; }
 
+    public string? LastCreateDelegationBearer { get; private set; }
+
+    public string? LastRevokeDelegationBearer { get; private set; }
+
     public BusinessConsoleCreateApprovalDelegationRequest? LastCreateDelegationRequest { get; private set; }
 
     public BusinessConsoleRevokeApprovalDelegationRequest? LastRevokeDelegationRequest { get; private set; }
@@ -546,7 +550,7 @@ internal sealed class RecordingApprovalClient : IBusinessApprovalClient
         BusinessConsoleCreateApprovalDelegationRequest request,
         CancellationToken cancellationToken)
     {
-        LastInternalToken = internalBearerToken;
+        LastCreateDelegationBearer = internalBearerToken;
         LastCreateDelegationRequest = request;
         return Task.FromResult(new BusinessConsoleCreateApprovalDelegationResponse("delegation-001"));
     }
@@ -557,7 +561,7 @@ internal sealed class RecordingApprovalClient : IBusinessApprovalClient
         BusinessConsoleRevokeApprovalDelegationRequest request,
         CancellationToken cancellationToken)
     {
-        LastInternalToken = internalBearerToken;
+        LastRevokeDelegationBearer = internalBearerToken;
         LastRevokeDelegationRequest = request with { DelegationId = delegationId };
         return Task.FromResult(new BusinessConsoleAcceptedResponse(true));
     }

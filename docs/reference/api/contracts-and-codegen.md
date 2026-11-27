@@ -45,6 +45,34 @@
 
 ## 受控兼容例外
 
+### Approval 重提、转交与加签 v1 有界兼容（#1777）
+
+此条仅适用于 `POST /api/business/v1/approvals/chains/{chainId}/resubmit` 、
+`POST /api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/transfer` 和
+`POST /api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/add-signer`。
+保留旧 JSON 字段和响应结构，审批链和步骤分别由 URL 路径定位。旧的
+`actorType`、`actorRef`、`requestedByActorType`、`requestedByActorRef` 仍可随请求发送，
+实际操作人与审计记录统一采用 IAM 验证的最终主体。调用方需传递其最终主体 Bearer。
+仅持有内部服务凭据的调用方须在启用此变更前完成凭据迁移。
+
+旧请求可省略 `organizationId` 和 `environmentId`，服务从持久化审批链读取两者并验证 IAM 所选成员关系；
+显式传入时，两字段必须成对提供并与审批链一致。资源授权仅在持久化来源能证明所需范围时放行。
+Approval 已存储的来源引用缺少可验证的工厂、车间、产线、工作中心、团队和单据所有人证据，
+因此携带这些边界的授权返回 403。单组织授权要求已记录的来源组织与审批链组织一致，
+IAM 返回组织级授权或组织数据范围时均应用这项校验。旧记录缺少来源组织时沿用审批链组织。
+
+旧操作人字段的接受和组织环境回填仅属于上述三个 v1 路由。
+待支持的调用方完成迁移后，删除兼容字段或回填行为须通过后续主版本治理。
+
+### Approval 委托写入 v1 有界兼容（#1777）
+
+`POST /api/business/v1/approvals/delegations` 和
+`POST /api/business/v1/approvals/delegations/{delegationId}/revoke` 保留 v1 请求和响应结构。
+`delegatorActorType`、`delegatorActorRef`、`createdBy` 和 `revokedBy` 可随请求发送，
+审计采用 IAM 验证的最终主体，撤销目标由 URL 路径定位。BusinessGateway 使用当前主体 Bearer，
+仅持有内部服务凭据的直连调用方须在启用此变更前完成凭据迁移。
+创建按请求组织环境校验，撤销按持久化委托的组织环境校验。超出可证明范围的委托写入返回 403。
+
 ### FileStorage `scanStatus` v1 删除（#1604）
 
 2026-08-17 已批准一个窄范围版本例外：在 FileStorage v1 尚未形成受支持客户发布基线、且 `scanStatus` 没有受支持外部消费方的前提下，#1604 允许从当前 `/v1` DTO、PlatformGateway v1 OpenAPI snapshot 和同批生成客户端直接删除病毒扫描字段，而不为该废弃字段单独建立 v2 路由。

@@ -39,6 +39,8 @@ PlatformGateway 与 BusinessGateway 分别拥有自己的 OpenAPI 输出和生�
 
 BusinessGateway 的报工列表和详情在 MES 读取授权与响应范围确定后，为响应内出现的操作人引用读取同一组织/环境的 IAM 当前显示名。MES 保留原始身份与报工事实，IAM 保留姓名事实；公开投影只增加可空姓名，不开放账号目录、登录名或其它账号资料。三个追溯读面复用同一受限解析，仅整理已授权图中 Operator 的显示名称；原始节点身份和关联以及质量内容权限分层不变。
 
+BusinessGateway 在创建和撤销审批委托时转发当前主体的 bearer。Approval 创建时验证请求的组织环境，撤销时验证路由目标中持久化的委托组织环境。两条写入路径均需通过 IAM 的 `business.approvals.manage` 和数据范围校验，委托人、创建人或撤销人均来自验证后的主体。受托人和委托条件由业务请求携带。请求及权限登记以 [Approval 端点登记](../../../backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web/Endpoints/Approvals/ApprovalEndpoints.cs) 为准。
+
 ## Platform SDK 边界
 
 Platform SDK 是平台向应用、Connector Host 和扩展提供的稳定能力集合，模块与能力基线由 [`../platform/sdk.md`](../platform/sdk.md) 维护。SDK 应从 OpenAPI、公开 DTO 和版本化协议生成或包装，不依赖服务端 Domain、Infrastructure 或数据库模型；SDK/ApplicationVersion 的版本治理见 Governance。

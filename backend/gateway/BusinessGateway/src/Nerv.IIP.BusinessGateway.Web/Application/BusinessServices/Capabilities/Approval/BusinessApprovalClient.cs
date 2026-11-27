@@ -52,12 +52,12 @@ public interface IBusinessApprovalClient
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleCreateApprovalDelegationResponse> CreateDelegationAsync(
-        string internalBearerToken,
+        string bearerToken,
         BusinessConsoleCreateApprovalDelegationRequest request,
         CancellationToken cancellationToken);
 
     Task<BusinessConsoleAcceptedResponse> RevokeDelegationAsync(
-        string internalBearerToken,
+        string bearerToken,
         string delegationId,
         BusinessConsoleRevokeApprovalDelegationRequest request,
         CancellationToken cancellationToken);
@@ -232,23 +232,23 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient, IConfigura
             cancellationToken);
 
     public Task<BusinessConsoleCreateApprovalDelegationResponse> CreateDelegationAsync(
-        string internalBearerToken,
+        string bearerToken,
         BusinessConsoleCreateApprovalDelegationRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleCreateApprovalDelegationResponse>(
-            internalBearerToken,
+            bearerToken,
             HttpMethod.Post,
             "/api/business/v1/approvals/delegations",
             request,
             cancellationToken);
 
     public Task<BusinessConsoleAcceptedResponse> RevokeDelegationAsync(
-        string internalBearerToken,
+        string bearerToken,
         string delegationId,
         BusinessConsoleRevokeApprovalDelegationRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleAcceptedResponse>(
-            internalBearerToken,
+            bearerToken,
             HttpMethod.Post,
             $"/api/business/v1/approvals/delegations/{Uri.EscapeDataString(delegationId)}/revoke?" + Query(
                 ("organizationId", request.OrganizationId),

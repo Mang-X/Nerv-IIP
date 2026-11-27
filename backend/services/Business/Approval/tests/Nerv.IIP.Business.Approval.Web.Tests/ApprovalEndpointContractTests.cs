@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
+using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalDelegationAggregate;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
 using Nerv.IIP.Business.Approval.Infrastructure;
 using Nerv.IIP.Business.Approval.Web.Application.Auth;
@@ -89,17 +90,17 @@ public sealed class ApprovalEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/chains/{chainId}/resubmit"
             && x.PermissionCode == ApprovalPermissionCodes.Manage
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy is null
             && x.OperationId == "resubmitApprovalChain");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/add-signer"
             && x.PermissionCode == ApprovalPermissionCodes.Manage
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy is null
             && x.OperationId == "addApprovalStepSigner");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/transfer"
             && x.PermissionCode == ApprovalPermissionCodes.Manage
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy is null
             && x.OperationId == "transferApprovalStep");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/approvals/delegations"
@@ -109,12 +110,12 @@ public sealed class ApprovalEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/delegations"
             && x.PermissionCode == ApprovalPermissionCodes.Manage
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy is null
             && x.OperationId == "createApprovalDelegation");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/delegations/{delegationId}/revoke"
             && x.PermissionCode == ApprovalPermissionCodes.Manage
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy is null
             && x.OperationId == "revokeApprovalDelegation");
     }
 
@@ -447,6 +448,8 @@ public sealed class ApprovalEndpointContractTests
 
         clock.UtcNow = DateTimeOffset.Parse("2026-06-21T09:00:00Z");
         await new ResubmitApprovalChainCommandHandler(dbContext, clock).Handle(new ResubmitApprovalChainCommand(
+            chain.OrganizationId,
+            chain.EnvironmentId,
             chain.Id,
             "user",
             "u-requester",
@@ -459,6 +462,8 @@ public sealed class ApprovalEndpointContractTests
 
         clock.UtcNow = DateTimeOffset.Parse("2026-06-21T09:05:00Z");
         await new TransferApprovalStepCommandHandler(dbContext, clock).Handle(new TransferApprovalStepCommand(
+            chain.OrganizationId,
+            chain.EnvironmentId,
             chain.Id,
             1,
             "user",
@@ -470,7 +475,7 @@ public sealed class ApprovalEndpointContractTests
             "shift change"), CancellationToken.None);
         clock.UtcNow = DateTimeOffset.Parse("2026-06-21T09:10:00Z");
         var addedStepId = await new AddApprovalStepSignerCommandHandler(dbContext, clock).Handle(new AddApprovalStepSignerCommand(
-            chain.Id,
+            chain.OrganizationId, chain.EnvironmentId, chain.Id,
             1,
             "user",
             "u-finance",
@@ -508,7 +513,7 @@ public sealed class ApprovalEndpointContractTests
 
         var clock = new FixedApprovalClock(DateTimeOffset.Parse("2026-06-21T08:00:00Z"));
         await Assert.ThrowsAsync<KnownException>(() => new ResubmitApprovalChainCommandHandler(dbContext, clock).Handle(
-            new ResubmitApprovalChainCommand(chain.Id, "user", "u-requester", "retry"),
+            new ResubmitApprovalChainCommand(chain.OrganizationId, chain.EnvironmentId, chain.Id, "user", "u-requester", "retry"),
             CancellationToken.None));
         chain.ResolveStep(1, "user", "u-engineering", "approve", "ok");
         chain.ResolveStep(2, "user", "u-quality", "approve", "ok");
@@ -518,10 +523,10 @@ public sealed class ApprovalEndpointContractTests
             CancellationToken.None));
 
         await Assert.ThrowsAsync<KnownException>(() => new AddApprovalStepSignerCommandHandler(dbContext, clock).Handle(
-            new AddApprovalStepSignerCommand(chain.Id, 1, "user", "u-finance", "user", "u-engineering", "late"),
+            new AddApprovalStepSignerCommand(chain.OrganizationId, chain.EnvironmentId, chain.Id, 1, "user", "u-finance", "user", "u-engineering", "late"),
             CancellationToken.None));
         await Assert.ThrowsAsync<KnownException>(() => new TransferApprovalStepCommandHandler(dbContext, clock).Handle(
-            new TransferApprovalStepCommand(chain.Id, 2, "user", "u-not-current", "user", "u-backup", "user", "u-manager", "invalid"),
+            new TransferApprovalStepCommand(chain.OrganizationId, chain.EnvironmentId, chain.Id, 2, "user", "u-not-current", "user", "u-backup", "user", "u-manager", "invalid"),
             CancellationToken.None));
     }
 
@@ -1310,6 +1315,9 @@ public sealed class ApprovalEndpointContractTests
             [new ApprovalTemplateStepDefinition(1, "Review", null, approverType, approverRef, 24)]);
         var chain = ApprovalChain.Start(template, new ApprovalDocumentReference("erp", "purchase-order", "PO-1", null), "u-requester");
         var target = Assert.Single(chain.Steps).Id;
+        var siteRestricted = false;
+        var iamDenied = false;
+        var hasMembership = true;
         var iam = new ApprovalAuthorityHandler(request =>
         {
             Assert.Equal("test-end-principal", request.Headers.Authorization?.Parameter);
@@ -1329,12 +1337,13 @@ public sealed class ApprovalEndpointContractTests
             var check = request.Content!.ReadFromJsonAsync<Nerv.IIP.Contracts.Iam.AuthorizationCheckRequest>().GetAwaiter().GetResult();
             Assert.Equal("business.approvals.manage", check!.PermissionCode);
             Assert.Equal("org-001", check.OrganizationId);
-            if (check.EnvironmentId == "env-denied")
+            Assert.Equal("env-dev", check.EnvironmentId);
+            Assert.True(check.IncludePrincipalContext);
+            if (iamDenied)
             {
                 return new HttpResponseMessage(HttpStatusCode.Forbidden);
             }
 
-            Assert.Contains(check.EnvironmentId, new[] { "env-dev", "env-absent" });
             Assert.Equal("approval-chain", check.ResourceType);
             Assert.Equal(chain.Id.ToString(), check.ResourceId);
             return new HttpResponseMessage(HttpStatusCode.OK)
@@ -1342,7 +1351,8 @@ public sealed class ApprovalEndpointContractTests
                 Content = JsonContent.Create(new { success = true, data = new
                 {
                     allowed = true, principalId = "u-reviewer", principalType = "user",
-                    selectedMembership = check.EnvironmentId == "env-dev"
+                    dataScope = new Nerv.IIP.Contracts.Iam.AuthorizationDataScope(siteRestricted ? ["site-1"] : [], [], []),
+                    selectedMembership = hasMembership
                         ? new { organizationId = "org-001", environmentId = "env-dev", roleIds = new[] { "buyer" } }
                         : null,
                 } }),
@@ -1392,14 +1402,24 @@ public sealed class ApprovalEndpointContractTests
         var route = $"/api/business/v1/approvals/chains/{chain.Id}/steps/1/resolve";
         var command = new { organizationId = "org-001", environmentId = "env-dev", decision = "approve", targetStepId = target.ToString(),
             actorType = "user", actorRef = "u-forged", roleRefs = "token-only", departmentRef = "forged" };
-        using var denied = await client.PostAsJsonAsync(route, command with { environmentId = "env-denied" });
+        iamDenied = true;
+        using var denied = await client.PostAsJsonAsync(route, command);
         Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
-        using var absentMembership = await client.PostAsJsonAsync(route, command with { environmentId = "env-absent" });
+        iamDenied = false;
+        hasMembership = false;
+        using var absentMembership = await client.PostAsJsonAsync(route, command);
         Assert.Equal(HttpStatusCode.Forbidden, absentMembership.StatusCode);
         Assert.Empty(masterData.Paths);
 
+        hasMembership = true;
         using var wrongTarget = await client.PostAsJsonAsync(route, command with { targetStepId = "invalid" });
         Assert.Equal(HttpStatusCode.BadRequest, wrongTarget.StatusCode);
+
+        siteRestricted = true;
+        using var restricted = await client.PostAsJsonAsync(route, command);
+        Assert.Equal(HttpStatusCode.Forbidden, restricted.StatusCode);
+        Assert.Empty(masterData.Paths);
+        siteRestricted = false;
 
         using var response = await client.PostAsJsonAsync(route, command);
         Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
@@ -1411,14 +1431,32 @@ public sealed class ApprovalEndpointContractTests
         Assert.Equal("user", decision.ActorType);
     }
 
-    [Fact]
-    public async Task Withdraw_uses_verified_user_in_a_scope_other_than_the_default()
+    [Theory]
+    [InlineData(ApprovalDecisions.Withdraw, false)]
+    [InlineData(ApprovalDecisions.Resubmit, false)]
+    [InlineData(ApprovalDecisions.Resubmit, true)]
+    [InlineData(ApprovalDecisions.Transfer, false)]
+    [InlineData(ApprovalDecisions.Transfer, true)]
+    [InlineData(ApprovalDecisions.AddSigner, false)]
+    [InlineData(ApprovalDecisions.AddSigner, true)]
+    [InlineData(ApprovalDecisions.Transfer, true, "org-001", true)]
+    [InlineData(ApprovalDecisions.Transfer, true, "org-source", true)]
+    [InlineData(ApprovalDecisions.Transfer, true, "org-source", false)]
+    public async Task Chain_action_uses_verified_user_in_a_scope_other_than_the_default(
+        string action, bool legacyBody, string sourceOrganization = "org-001", bool organizationWideGrant = false)
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         var template = ApprovalTemplate.Create("org-001", "env-dev", "purchase", "purchase-order", 1, true,
             [new ApprovalTemplateStepDefinition(1, "Review", null, "user", "u-reviewer", 24)]);
-        var chain = ApprovalChain.Start(template, new ApprovalDocumentReference("erp", "purchase-order", "PO-1", null), "u-requester");
+        var chain = ApprovalChain.Start(template, new ApprovalDocumentReference(
+            "erp", "purchase-order", "PO-1", null, organizationId: sourceOrganization), "u-requester");
+        if (action == ApprovalDecisions.Resubmit)
+        {
+            chain.Withdraw("user", "u-original", null, DateTimeOffset.Parse("2026-11-27T00:00:00Z"));
+        }
+
+        var siteRestricted = false;
         var iam = new ApprovalAuthorityHandler(request =>
         {
             if (request.Headers.Authorization?.Parameter == "expired-session")
@@ -1456,6 +1494,14 @@ public sealed class ApprovalEndpointContractTests
             {
                 Content = JsonContent.Create(new { success = true, data = new
                 {
+                    dataScope = organizationWideGrant && !siteRestricted
+                        ? null
+                        : new Nerv.IIP.Contracts.Iam.AuthorizationDataScope(
+                            siteRestricted ? ["site-1"] : [], [], [], OrganizationIds: ["org-001"]),
+                    scopeGrants = organizationWideGrant
+                        ? new[] { new Nerv.IIP.Contracts.Iam.AuthorizationScopeGrant(
+                            "role", "buyer", "organization", "org-001", ["business.approvals.manage"], OrganizationWide: true) }
+                        : null,
                     allowed = true, principalId = "u-requester", principalType = "user",
                     selectedMembership = check.EnvironmentId == "env-no-membership"
                         ? null
@@ -1491,8 +1537,20 @@ public sealed class ApprovalEndpointContractTests
             await db.SaveChangesAsync();
         }
 
-        var route = $"/api/business/v1/approvals/chains/{chain.Id}/withdraw";
-        var request = new { organizationId = "org-001", environmentId = "env-dev", reason = "duplicate" };
+        var route = $"/api/business/v1/approvals/chains/{chain.Id}/"
+            + (action switch
+            {
+                ApprovalDecisions.Transfer => "steps/1/transfer",
+                ApprovalDecisions.AddSigner => "steps/1/add-signer",
+                _ => action,
+            });
+        var request = new
+        {
+            organizationId = "org-001", environmentId = "env-dev", reason = "duplicate",
+            fromActorType = "user", fromActorRef = "u-reviewer",
+            toActorType = "user", toActorRef = "u-backup",
+            approverType = "user", approverRef = "u-additional",
+        };
 
         client.DefaultRequestHeaders.Authorization = new("Bearer", "expired-session");
         using var unauthorized = await client.PostAsJsonAsync(route, request);
@@ -1508,27 +1566,184 @@ public sealed class ApprovalEndpointContractTests
         using var outsideOrganization = await client.PostAsJsonAsync(route, request with { organizationId = "org-other" });
         Assert.False((await outsideOrganization.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("success").GetBoolean());
 
-        using var response = await client.PostAsJsonAsync(route, request);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        object body = legacyBody
+            ? new
+            {
+                chainId = chain.Id.ToString(), stepNo = 1, request.reason,
+                actorType = "user", actorRef = "u-requester",
+                requestedByActorType = "user", requestedByActorRef = "u-requester",
+                request.fromActorType, request.fromActorRef, request.toActorType, request.toActorRef,
+                request.approverType, request.approverRef,
+            }
+            : request;
+        siteRestricted = true;
+        using var restricted = await client.PostAsJsonAsync(route, body);
+        Assert.Equal(HttpStatusCode.Forbidden, restricted.StatusCode);
+        siteRestricted = false;
+
+        using var response = await client.PostAsJsonAsync(route, body);
+        if (sourceOrganization != "org-001")
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            using var deniedScope = factory.Services.CreateScope();
+            var deniedContext = deniedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var unchanged = await deniedContext.ApprovalChains.Include(x => x.Decisions).SingleAsync();
+            Assert.Empty(unchanged.Decisions);
+            return;
+        }
+        Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
         var result = await response.Content.ReadFromJsonAsync<JsonElement>();
         Assert.True(result.GetProperty("success").GetBoolean());
-        Assert.True(result.GetProperty("data").GetProperty("accepted").GetBoolean());
+        if (action == ApprovalDecisions.AddSigner)
+        {
+            Assert.True(Guid.TryParse(result.GetProperty("data").GetProperty("stepId").GetString(), out _));
+        }
+        else
+        {
+            Assert.True(result.GetProperty("data").GetProperty("accepted").GetBoolean());
+        }
         Assert.Empty(masterData.Paths);
         using var persistedScope = factory.Services.CreateScope();
         var dbContext = persistedScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var stored = await dbContext.ApprovalChains.Include(x => x.Decisions).SingleAsync();
-        Assert.Equal(ApprovalChainStatuses.Withdrawn, stored.Status);
-        var decision = Assert.Single(stored.Decisions);
-        Assert.Equal(ApprovalDecisions.Withdraw, decision.Decision);
+        var stored = await dbContext.ApprovalChains.Include(x => x.Decisions).Include(x => x.Steps).SingleAsync();
+        Assert.Equal(action == ApprovalDecisions.Withdraw ? ApprovalChainStatuses.Withdrawn : ApprovalChainStatuses.Pending,
+            stored.Status);
+        Assert.Equal(action == ApprovalDecisions.Resubmit ? 2 : 1, stored.Decisions.Count);
+        var decision = Assert.Single(stored.Decisions, x => x.Decision == action);
         Assert.Equal("u-requester", decision.ActorRef);
         Assert.Equal("user", decision.ActorType);
         Assert.Equal("duplicate", decision.Comment);
+        if (action == ApprovalDecisions.AddSigner)
+        {
+            Assert.Contains(stored.Steps, step => step.ApproverType == "user" && step.ApproverRef == "u-additional");
+        }
+        var step = Assert.Single(stored.Steps, step => step.ApproverRef != "u-additional");
+        Assert.Equal(action == ApprovalDecisions.Transfer ? "u-backup" : "u-reviewer", step.ApproverRef);
+        Assert.Equal("user", step.ApproverType);
     }
 
     private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher
     {
         public Task PublishAsync<T>(T integrationEvent, CancellationToken cancellationToken) where T : notnull =>
             Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task Delegation_writes_record_verified_actors_and_preserve_the_delegate_in_selected_scope()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        const string route = "/api/business/v1/approvals/delegations";
+        string? delegationId = null;
+        var siteRestricted = false;
+        var iam = new ApprovalAuthorityHandler(request =>
+        {
+            var principalId = request.Headers.Authorization?.Parameter switch
+            {
+                "delegation-creator" => "u-creator",
+                "delegation-manager" => "u-manager",
+                _ => null,
+            };
+            if (principalId is null)
+            {
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            }
+
+            if (request.Method == HttpMethod.Get)
+            {
+                Assert.Equal("/api/iam/v1/me", request.RequestUri!.AbsolutePath);
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new { success = true, data = new
+                    {
+                        userId = principalId, principalType = "user", organizationId = "org-default",
+                        environmentId = "env-default",
+                    } }),
+                };
+            }
+
+            Assert.Equal("/internal/iam/v1/authorization/check", request.RequestUri!.AbsolutePath);
+            var check = request.Content!.ReadFromJsonAsync<Nerv.IIP.Contracts.Iam.AuthorizationCheckRequest>().GetAwaiter().GetResult();
+            Assert.Equal("business.approvals.manage", check!.PermissionCode);
+            Assert.Equal(principalId == "u-creator" ? null : "approval-delegation", check.ResourceType);
+            Assert.Equal(principalId == "u-creator" ? null : delegationId, check.ResourceId);
+            Assert.Equal("org-001", check.OrganizationId);
+            Assert.True(check.IncludeSelectedMembership);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new { success = true, data = new
+                {
+                    allowed = true, principalId, principalType = "user",
+                    dataScope = new Nerv.IIP.Contracts.Iam.AuthorizationDataScope(siteRestricted ? ["site-1"] : [], [], [], OrganizationIds: ["org-001"]),
+                    selectedMembership = new { organizationId = "org-001", environmentId = "env-dev", roleIds = new[] { "manager" } },
+                } }),
+            };
+        });
+        var masterData = new ApprovalAuthorityHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("environment", "Testing");
+            builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            builder.UseSetting("Approval:Seed:Enabled", "false");
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+                services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connection));
+                services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
+                services.AddHttpClient(ResolveApprovalStepAuthority.IamClient)
+                    .ConfigurePrimaryHttpMessageHandler(() => iam);
+                services.AddHttpClient(ResolveApprovalStepAuthority.MasterDataClient)
+                    .ConfigurePrimaryHttpMessageHandler(() => masterData);
+            });
+        });
+        using var client = factory.CreateClient();
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await db.Database.EnsureCreatedAsync();
+
+        var create = new
+        {
+            organizationId = "org-001", environmentId = "env-dev", delegateActorType = "user",
+            delegatorActorType = "user", delegatorActorRef = "u-creator", createdBy = "u-creator",
+            delegateActorRef = "u-backup", documentType = "purchase-order",
+            effectiveFromUtc = "2026-06-01T00:00:00Z", effectiveToUtc = "2026-06-30T00:00:00Z", reason = "travel",
+        };
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "delegation-creator");
+        siteRestricted = true;
+        using var restrictedCreate = await client.PostAsJsonAsync(route, create);
+        Assert.Equal(HttpStatusCode.Forbidden, restrictedCreate.StatusCode);
+        siteRestricted = false;
+
+        using var created = await client.PostAsJsonAsync(route, create);
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        var result = await created.Content.ReadFromJsonAsync<JsonElement>();
+        delegationId = result.GetProperty("data").GetProperty("delegationId").GetString();
+        Assert.True(Guid.TryParse(delegationId, out _));
+        var revoke = new { delegationId, organizationId = "org-001", environmentId = "env-dev", revokedBy = "u-manager" };
+        var revokeRoute = $"{route}/{delegationId}/revoke";
+
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "delegation-manager");
+        using var denied = await client.PostAsJsonAsync(revokeRoute, revoke with { environmentId = "env-other" });
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        Assert.Equal(ApprovalDelegationStatuses.Active, (await db.ApprovalDelegations.AsNoTracking().SingleAsync()).Status);
+
+        siteRestricted = true;
+        using var restrictedRevoke = await client.PostAsJsonAsync(revokeRoute, revoke);
+        Assert.Equal(HttpStatusCode.Forbidden, restrictedRevoke.StatusCode);
+        siteRestricted = false;
+
+        using var revoked = await client.PostAsJsonAsync(revokeRoute, revoke);
+        Assert.Equal(HttpStatusCode.OK, revoked.StatusCode);
+        var delegation = await db.ApprovalDelegations.AsNoTracking().SingleAsync();
+        Assert.Equal("user", delegation.DelegatorActorType);
+        Assert.Equal("u-creator", delegation.DelegatorActorRef);
+        Assert.Equal("u-creator", delegation.CreatedBy);
+        Assert.Equal("user", delegation.DelegateActorType);
+        Assert.Equal("u-backup", delegation.DelegateActorRef);
+        Assert.Equal("purchase-order", delegation.DocumentType);
+        Assert.Equal(ApprovalDelegationStatuses.Revoked, delegation.Status);
+        Assert.Equal("u-manager", delegation.RevokedBy);
+        Assert.Empty(masterData.Paths);
     }
 
     private sealed class ApprovalAuthorityHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
