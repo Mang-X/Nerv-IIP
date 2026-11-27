@@ -1307,6 +1307,22 @@
     },
     {
       "service": "Erp",
+      "method": "POST",
+      "route": "/api/business/v1/erp/wms-purchase-receipt-acceptances",
+      "operationId": "acceptErpWmsPurchaseReceipt",
+      "classification": "internal",
+      "rationale": "WMS submits a receipt batch for authoritative ERP acceptance."
+    },
+    {
+      "service": "Erp",
+      "method": "GET",
+      "route": "/api/business/v1/erp/wms-purchase-receipt-acceptances/{wmsReceiptBatchId}",
+      "operationId": "getErpWmsPurchaseReceiptAcceptance",
+      "classification": "internal",
+      "rationale": "WMS recovers the committed ERP result for an existing receipt batch."
+    },
+    {
+      "service": "Erp",
       "method": "GET",
       "route": "/api/business/v1/erp/purchase-receipts/{purchaseReceiptNo}/source-document",
       "operationId": "getErpPurchaseReceiptSourceDocument",
