@@ -5432,8 +5432,13 @@
       "method": "POST",
       "route": "/api/business/v1/wms/inbound-orders/{inboundOrderId}/confirm-receipt",
       "operationId": "confirmWmsInboundReceipt",
-      "classification": "deferred",
-      "followUp": "Track BusinessGateway and warehouse receiving UI integration in #1752."
+      "classification": "exposed",
+      "gateways": [
+        "business"
+      ],
+      "gatewayOperationIds": [
+        "confirmBusinessConsoleWmsInboundReceipt"
+      ]
     },
     {
       "service": "Wms",

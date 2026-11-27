@@ -74,6 +74,18 @@ public sealed class WmsInboundReceivingQueryTests
             acceptedReceipt.StageErpReceipt(acceptedReceipt.Version, [new("1", 5m)], new("confirm-q-d", "fixture"), 1m);
             acceptedReceipt.BindErpPurchaseReceipt(acceptedReceipt.ReceiptBatchId!.Value, "RCV-002");
             seed.InboundOrders.Add(acceptedReceipt);
+            var stagedReceipt = Domain.AggregatesModel.InboundOrderAggregate.InboundOrder.CreatePendingReceipt(
+                "org-001", "env-dev", "IN-Q-E", "purchase-order", "PO-003", "SITE-1",
+                [new("1", "SKU-1", "kg", 5m, "LOC-STAGE", "unrestricted", "company", "owner-001")],
+                assignedPoolCode: "POOL-RECEIVING");
+            stagedReceipt.StageErpReceipt(stagedReceipt.Version, [new("1", 5m)], new("confirm-q-e", "fixture"), 1m);
+            seed.InboundOrders.Add(stagedReceipt);
+            var legacyReceipt = Domain.AggregatesModel.InboundOrderAggregate.InboundOrder.CreatePendingReceipt(
+                "org-001", "env-dev", "IN-Q-F", "purchase-order", "PO-004", "SITE-1",
+                [new("1", "SKU-1", "kg", 5m, "LOC-STAGE", "unrestricted", "company", "owner-001")],
+                assignedPoolCode: "POOL-RECEIVING");
+            seed.InboundOrders.Add(legacyReceipt);
+            seed.Entry(legacyReceipt).Property(order => order.ReceiptConfirmationKey).CurrentValue = "legacy";
             await seed.SaveChangesAsync(CancellationToken.None);
         }
 
@@ -97,7 +109,18 @@ public sealed class WmsInboundReceivingQueryTests
 
         var pendingReceipt = result.Items.Single(x => x.InboundOrderNo == "IN-Q-C");
         Assert.False(pendingReceipt.IsReleasedForPutaway);
-        Assert.False(result.Items.Single(x => x.InboundOrderNo == "IN-Q-D").IsReleasedForPutaway);
+        Assert.Null(b.PurchaseReceipt);
+        Assert.Equal("awaiting-confirmation", pendingReceipt.PurchaseReceipt?.Status);
+        var line = Assert.Single(pendingReceipt.PurchaseReceipt!.Lines);
+        Assert.Equal(("1", "SKU-1", "kg", 5m), (line.LineNo, line.SkuCode, line.UomCode, line.ExpectedQuantity));
+        var accepted = result.Items.Single(x => x.InboundOrderNo == "IN-Q-D");
+        Assert.False(accepted.IsReleasedForPutaway);
+        Assert.Equal("erp-accepted", accepted.PurchaseReceipt?.Status);
+        Assert.Equal("RCV-002", accepted.PurchaseReceipt?.ErpReceiptNo);
+        var staged = result.Items.Single(x => x.InboundOrderNo == "IN-Q-E");
+        Assert.Equal("erp-pending", staged.PurchaseReceipt?.Status);
+        Assert.Null(staged.PurchaseReceipt?.ErpReceiptNo);
+        Assert.Equal("wms-confirmed", result.Items.Single(x => x.InboundOrderNo == "IN-Q-F").PurchaseReceipt?.Status);
     }
 
     [Fact]

@@ -100,6 +100,11 @@ public interface IBusinessWmsClient
         BusinessWmsCompleteWarehouseTaskActionRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleWmsReceiptConfirmationResult> ConfirmInboundReceiptAsync(
+        string internalBearerToken,
+        BusinessWmsConfirmInboundReceiptRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleCompleteWmsMovementResponse> CompleteInboundOrderAsync(
         string internalBearerToken,
         string inboundOrderId,
@@ -472,6 +477,17 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
             "putaway-tasks",
             warehouseTaskId,
             "complete",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleWmsReceiptConfirmationResult> ConfirmInboundReceiptAsync(
+        string internalBearerToken,
+        BusinessWmsConfirmInboundReceiptRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleWmsReceiptConfirmationResult>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/wms/inbound-orders/{Uri.EscapeDataString(request.InboundOrderId)}/confirm-receipt",
             request,
             cancellationToken);
 

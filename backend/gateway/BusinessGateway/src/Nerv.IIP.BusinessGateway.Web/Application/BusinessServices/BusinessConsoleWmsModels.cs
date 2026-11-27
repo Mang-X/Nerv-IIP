@@ -225,6 +225,36 @@ public sealed record BusinessWmsAssignCountExecutionRequest(
     string IdempotencyKey,
     long ExpectedVersion);
 
+public sealed record BusinessConsoleConfirmWmsInboundReceiptRequest(
+    [property: RouteParam] string InboundOrderId,
+    [property: QueryParam] string OrganizationId,
+    [property: QueryParam] string EnvironmentId,
+    string ScopeKind,
+    string ScopeId,
+    [property: JsonRequired, Required] long ExpectedVersion,
+    string IdempotencyKey,
+    IReadOnlyCollection<BusinessConsoleWmsReceiptQuantity> Lines,
+    [property: JsonRequired, Required] decimal ExchangeRate);
+
+public sealed record BusinessConsoleWmsReceiptQuantity(
+    [property: JsonRequired, Required] string LineNo,
+    [property: JsonRequired, Required] decimal ReceivedQuantity);
+
+public sealed record BusinessWmsConfirmInboundReceiptRequest(
+    string InboundOrderId,
+    string OrganizationId,
+    string EnvironmentId,
+    string ActorPrincipalId,
+    IReadOnlyCollection<string> AuthorizedSiteCodes,
+    string ScopeKind,
+    string ScopeId,
+    long ExpectedVersion,
+    string IdempotencyKey,
+    IReadOnlyCollection<BusinessConsoleWmsReceiptQuantity> Lines,
+    decimal ExchangeRate);
+
+public sealed record BusinessConsoleWmsReceiptConfirmationResult(string InboundOrderId, long Version);
+
 public sealed record BusinessConsoleCompleteWmsInboundOrderRequest(
     [property: RouteParam] string InboundOrderId,
     [property: QueryParam] string OrganizationId,
@@ -518,7 +548,16 @@ public sealed record BusinessConsoleWmsInboundOrderItem(
     long Version,
     string? InventoryPostingStatus = null,
     IReadOnlyCollection<string>? InventoryMovementIds = null,
-    IReadOnlyCollection<string>? PostingFailureHistory = null);
+    IReadOnlyCollection<string>? PostingFailureHistory = null,
+    BusinessConsoleWmsPurchaseReceipt? PurchaseReceipt = null);
+
+public sealed record BusinessConsoleWmsPurchaseReceipt(
+    string Status,
+    string? ErpReceiptNo,
+    IReadOnlyCollection<BusinessConsoleWmsPurchaseReceiptLine> Lines);
+
+public sealed record BusinessConsoleWmsPurchaseReceiptLine(
+    string LineNo, string SkuCode, string UomCode, decimal ExpectedQuantity);
 
 public sealed record BusinessConsoleWmsOutboundOrderListResponse(
     IReadOnlyCollection<BusinessConsoleWmsOutboundOrderItem> Items,

@@ -746,6 +746,83 @@ public sealed partial class BusinessGatewayWmsTests
     }
 
     [Fact]
+    public async Task Receipt_confirmation_client_posts_original_intent_to_wms()
+    {
+        using var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = true,
+            data = new { inboundOrderId = "inbound-001", version = 5 }
+        }));
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("http://wms.local") };
+        var client = new HttpBusinessWmsClient(httpClient);
+        var intent = new BusinessWmsConfirmInboundReceiptRequest(
+            "inbound-001", "org-001", "env-dev", "user-admin", ["SITE-A"], "site", "SITE-A",
+            3, "original-receipt", [new("10", 5m)], 1.25m);
+
+        var result = await client.ConfirmInboundReceiptAsync("internal-token-001", intent, CancellationToken.None);
+
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal("/api/business/v1/wms/inbound-orders/inbound-001/confirm-receipt", request.RequestUri!.AbsolutePath);
+        Assert.Equal("internal-token-001", request.Headers.Authorization!.Parameter);
+        using var body = JsonDocument.Parse(Assert.Single(handler.RequestBodies)!);
+        Assert.Equal("original-receipt", body.RootElement.GetProperty("idempotencyKey").GetString());
+        Assert.Equal(3, body.RootElement.GetProperty("expectedVersion").GetInt64());
+        Assert.Equal(1.25m, body.RootElement.GetProperty("exchangeRate").GetDecimal());
+        Assert.Equal(5m, body.RootElement.GetProperty("lines")[0].GetProperty("receivedQuantity").GetDecimal());
+        Assert.Equal(new BusinessConsoleWmsReceiptConfirmationResult("inbound-001", 5), result);
+    }
+
+    [Fact]
+    public async Task Receipt_confirmation_requires_manage_scope_and_uses_trusted_actor()
+    {
+        var wms = new RecordingWmsClient();
+        var permission = BusinessGatewayPermissions.WmsReceiptsManage;
+        var auth = ScopeAuth([permission],
+            new AuthorizationScopeGrant("role", "warehouse", "site", "SITE-A", [permission]));
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+        const string path = "/api/business-console/v1/wms/inbound-orders/inbound-001/confirm-receipt?organizationId=org-001&environmentId=env-dev";
+        Task<HttpResponseMessage> Confirm(string site, decimal quantity) => client.PostAsJsonAsync(path, new
+        {
+            scopeKind = "site", scopeId = site, expectedVersion = 3,
+            idempotencyKey = "confirmation-001", exchangeRate = 1.25m,
+            actorPrincipalId = "forged", authorizedSiteCodes = new[] { "SITE-B" },
+            lines = new[] { new { lineNo = "10", receivedQuantity = quantity } }
+        });
+
+        using var invalid = await Confirm("SITE-A", 0);
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        using var forbidden = await Confirm("SITE-B", 5);
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        Assert.Empty(wms.Calls);
+        using var confirmed = await Confirm("SITE-A", 5);
+        Assert.Equal(HttpStatusCode.OK, confirmed.StatusCode);
+        var response = await confirmed.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(4, response.GetProperty("data").GetProperty("version").GetInt64());
+        var request = Assert.IsType<BusinessWmsConfirmInboundReceiptRequest>(wms.LastConfirmInboundRequest);
+        Assert.Equal("inbound-001", request.InboundOrderId);
+        Assert.Equal("org-001", request.OrganizationId);
+        Assert.Equal("env-dev", request.EnvironmentId);
+        Assert.Equal("user-admin", request.ActorPrincipalId);
+        Assert.Equal(["SITE-A"], request.AuthorizedSiteCodes);
+        Assert.Equal("SITE-A", request.ScopeId);
+        Assert.Equal(3, request.ExpectedVersion);
+        Assert.Equal("confirmation-001", request.IdempotencyKey);
+        Assert.Equal(1.25m, request.ExchangeRate);
+        Assert.Equal(new BusinessConsoleWmsReceiptQuantity("10", 5m), Assert.Single(request.Lines));
+        Assert.Equal("internal-test-token", wms.LastInternalToken);
+        Assert.Equal(BusinessGatewayAuthorizationContinuityMode.RealtimeRequired, auth.LastContinuityMode);
+    }
+
+    [Fact]
     public async Task Receipt_and_count_write_facades_use_domain_permissions_internal_token_and_route_ids()
     {
         var wms = new RecordingWmsClient();
@@ -3400,6 +3477,20 @@ internal sealed class RecordingWmsClient : IBusinessWmsClient
         BusinessWmsAssignPutawayTaskRequest request,
         CancellationToken cancellationToken) =>
         RecordAssignment(internalBearerToken, request, "putaway-task", warehouseTaskId);
+
+    public BusinessWmsConfirmInboundReceiptRequest? LastConfirmInboundRequest { get; private set; }
+
+    public Task<BusinessConsoleWmsReceiptConfirmationResult> ConfirmInboundReceiptAsync(
+        string internalBearerToken,
+        BusinessWmsConfirmInboundReceiptRequest request,
+        CancellationToken cancellationToken)
+    {
+        Calls.Add("confirm-inbound-receipt");
+        LastInternalToken = internalBearerToken;
+        LastConfirmInboundRequest = request;
+        return Task.FromResult(new BusinessConsoleWmsReceiptConfirmationResult(
+            request.InboundOrderId, request.ExpectedVersion + 1));
+    }
 
     public Task<BusinessConsoleCompleteWmsMovementResponse> CompleteInboundOrderAsync(
         string internalBearerToken,
