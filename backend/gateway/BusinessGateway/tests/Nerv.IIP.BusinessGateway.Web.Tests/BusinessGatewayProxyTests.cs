@@ -251,6 +251,106 @@ public sealed class BusinessGatewayProxyTests
             new(id, reference, type, "1", customer, 1, "active", "SKU-A", "EA", "SITE-A", 10m, new DateOnly(2026, 10, 2));
     }
 
+    [Theory]
+    [InlineData(null, "ECO-001", "WO-001", "continue-with-archived-version", HttpStatusCode.OK)]
+    [InlineData(null, "ECO-001", "WO-001", "abort-work-order", HttpStatusCode.OK)]
+    [InlineData(null, "ECO-001", "WO-001", "pending-decision", HttpStatusCode.OK, "&changeNumber=ECO-001")]
+    [InlineData(null, "ECO-001", "WO-001", "auto-rebound", HttpStatusCode.OK, "&workOrderId=WO-001")]
+    [InlineData(null, "ECO-001", "WO-001", "blocked-for-manual-confirmation", HttpStatusCode.OK)]
+    [InlineData(null, "ECO-001", "WO-001", "decided", HttpStatusCode.BadGateway)]
+    [InlineData(null, "ECO-OTHER", "WO-001", "continue-with-archived-version", HttpStatusCode.BadGateway)]
+    [InlineData(null, "ECO-001", "WO-OTHER", "continue-with-archived-version", HttpStatusCode.BadGateway)]
+    [InlineData(null, "ECO-001", "WO-001", "continue-with-archived-version", HttpStatusCode.Forbidden, "&workOrderId=WO-001&scopeKind=work-center&scopeId=WC-UNTRUSTED")]
+    [InlineData(null, "ECO-001", "WO-001", "continue-with-archived-version", HttpStatusCode.BadRequest, "")]
+    [InlineData(BusinessGatewayPermissions.EngineeringChangesRead, "ECO-001", "WO-001", "continue-with-archived-version", HttpStatusCode.Forbidden)]
+    [InlineData(BusinessGatewayPermissions.MesWorkOrdersRead, "ECO-001", "WO-001", "continue-with-archived-version", HttpStatusCode.Forbidden)]
+    public async Task Mes_engineering_change_impacts_require_both_reads_and_forward_only_scoped_valid_facts(
+        string? deniedPermission,
+        string changeNumber,
+        string workOrderId,
+        string disposition,
+        HttpStatusCode expectedStatus,
+        string identityFilter = "&changeNumber=ECO-001&workOrderId=WO-001")
+    {
+        var hasAudit = disposition is "continue-with-archived-version" or "abort-work-order";
+        var handler = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK, new
+        {
+            items = new[]
+            {
+                new
+                {
+                    changeNumber,
+                    workOrderId,
+                    disposition,
+                    decidedBy = hasAudit ? "user:operator" : null,
+                    decidedAtUtc = hasAudit ? "2026-07-06T12:00:00+00:00" : null,
+                    decisionReason = hasAudit ? "现场确认" : null,
+                },
+            },
+            total = 8,
+        }));
+        var auth = new FakeBusinessGatewayAuthorizationClient(
+            permission => permission.PermissionCode != deniedPermission,
+            scopeGrants: [new AuthorizationScopeGrant("role", "lead", "work-center", "WC-A", [BusinessGatewayPermissions.MesWorkOrdersRead])]);
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.AddSingleton<IHttpMessageHandlerBuilderFilter>(new NamedPrimaryHandlerFilter("MesEngineeringChangeImpacts", handler));
+            services.RemoveAll<IBusinessMasterDataClient>();
+            services.AddSingleton<IBusinessMasterDataClient>(new RecordingMasterDataClient
+            {
+                PrincipalWorkContext = PrincipalWorkContext(new BusinessMasterDataWorkContextCandidateScope(
+                    "work-center", "WC-A", "工作中心 A", "workshop-covered", [])),
+            });
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(new TestInternalServiceTokenProvider("internal-test-token"));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        using var response = await client.GetAsync(
+            "/api/business-console/v1/mes/work-order-engineering-change-impacts?organizationId=org-001&environmentId=env-dev" +
+            identityFilter + "&skip=2&take=3&authorizedWorkCenterIds=WC-UNTRUSTED");
+
+        Assert.Equal(expectedStatus, response.StatusCode);
+        if (expectedStatus is HttpStatusCode.Forbidden or HttpStatusCode.BadRequest)
+        {
+            Assert.Empty(handler.Requests);
+            return;
+        }
+
+        var downstream = Assert.Single(handler.Requests);
+        Assert.Equal("internal-test-token", downstream.Headers.Authorization?.Parameter);
+        Assert.Equal("/api/business/v1/mes/work-order-engineering-change-impacts", downstream.RequestUri!.AbsolutePath);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(downstream.RequestUri.Query);
+        Assert.Equal("WC-A", query["authorizedWorkCenterIds"]);
+        Assert.Equal(identityFilter.Contains("changeNumber=", StringComparison.Ordinal) ? "ECO-001" : "", query.GetValueOrDefault("changeNumber").ToString());
+        Assert.Equal(identityFilter.Contains("workOrderId=", StringComparison.Ordinal) ? "WO-001" : "", query.GetValueOrDefault("workOrderId").ToString());
+        Assert.Equal("2", query["skip"]);
+        Assert.Equal("3", query["take"]);
+
+        if (expectedStatus == HttpStatusCode.OK)
+        {
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var data = body.RootElement.GetProperty("data");
+            Assert.Equal(8, data.GetProperty("total").GetInt32());
+            var item = Assert.Single(data.GetProperty("items").EnumerateArray());
+            Assert.Equal("ECO-001", item.GetProperty("changeNumber").GetString());
+            Assert.Equal("WO-001", item.GetProperty("workOrderId").GetString());
+            Assert.Equal(disposition, item.GetProperty("disposition").GetString());
+            Assert.Equal(hasAudit ? "user:operator" : null, item.GetProperty("decidedBy").GetString());
+            Assert.Equal(hasAudit ? "现场确认" : null, item.GetProperty("decisionReason").GetString());
+            if (hasAudit)
+            {
+                Assert.Equal(new DateTimeOffset(2026, 7, 6, 12, 0, 0, TimeSpan.Zero),
+                    item.GetProperty("decidedAtUtc").GetDateTimeOffset());
+            }
+            else
+            {
+                Assert.Equal(JsonValueKind.Null, item.GetProperty("decidedAtUtc").ValueKind);
+            }
+        }
+    }
+
     [Fact]
     public void Inventory_operation_flags_fail_closed_when_an_older_service_omits_them()
     {
