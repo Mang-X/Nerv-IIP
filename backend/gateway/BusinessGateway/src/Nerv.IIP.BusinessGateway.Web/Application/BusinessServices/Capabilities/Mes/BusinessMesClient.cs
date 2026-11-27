@@ -1085,7 +1085,8 @@ public sealed class HttpBusinessMesClient(HttpClient httpClient)
                     ("environmentId", request.EnvironmentId),
                     ("idempotencyKey", request.IdempotencyKey)),
                 null,
-                cancellationToken);
+                cancellationToken,
+                acceptKnownExceptionCodeZero: true);
         }
         catch (BusinessServiceProxyException exception) when (
             exception.StatusCode == HttpStatusCode.BadRequest &&

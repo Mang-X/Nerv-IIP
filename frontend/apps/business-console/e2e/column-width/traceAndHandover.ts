@@ -217,8 +217,13 @@ export function registerTraceAndHandover() {
               await expect(table).toContainText(handover.incomingUserName)
               await expect(table).toContainText('待接班')
               const actions = table.getByRole('button', { name: '班次交接操作' })
-              await actions.scrollIntoViewIfNeeded()
-              expect(await table.evaluate((el) => el.parentElement!.scrollLeft)).toBeGreaterThan(0)
+              await expect(actions).toBeVisible()
+              const scrolledRight = await table.evaluate((el) => {
+                const container = el.parentElement!
+                container.scrollLeft = container.scrollWidth
+                return container.scrollLeft
+              })
+              expect(scrolledRight).toBeGreaterThan(0)
               await page.screenshot({
                 path: testInfo.outputPath('handovers-right.png'),
                 fullPage: true,
