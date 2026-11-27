@@ -85,6 +85,7 @@ public sealed class InboundOrderLineEntityTypeConfiguration : IEntityTypeConfigu
         builder.Property(x => x.Id).HasColumnName("id").UseGuidVersion7ValueGenerator().HasComment("Inbound order line id.");
         builder.Property<InboundOrderId>("InboundOrderId").HasColumnName("inbound_order_id").IsRequired().HasComment("Owning inbound order id.");
         AddLineColumns(builder, "received_quantity", "Inbound received quantity.");
+        builder.Property(x => x.ExpectedQuantity).HasColumnName("expected_quantity").HasPrecision(18, 6).HasComment("Expected quantity for a receipt requiring actual quantity confirmation; null for manual inbound lines.");
         builder.Property(x => x.StagingLocationCode).HasColumnName("staging_location_code").IsRequired().HasMaxLength(100).HasComment("Staging location for received stock.");
         builder.Property(x => x.ProductionDate).HasColumnName("production_date").HasComment("Optional received batch production date captured by WMS.");
         builder.Property(x => x.ExpiryDate).HasColumnName("expiry_date").HasComment("Optional received batch expiry date captured by WMS.");
