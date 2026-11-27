@@ -63,6 +63,15 @@ Approval 已存储的来源引用缺少可验证的工厂、车间、产线、�
 旧操作人字段的接受和组织环境回填仅属于上述三个 v1 路由。
 待支持的调用方完成迁移后，删除兼容字段或回填行为须通过后续主版本治理。
 
+### Approval 委托写入 v1 有界兼容（#1777）
+
+`POST /api/business/v1/approvals/delegations` 和
+`POST /api/business/v1/approvals/delegations/{delegationId}/revoke` 保留 v1 请求和响应结构。
+`delegatorActorType`、`delegatorActorRef`、`createdBy` 和 `revokedBy` 可随请求发送，
+审计采用 IAM 验证的最终主体，撤销目标由 URL 路径定位。BusinessGateway 使用当前主体 Bearer，
+仅持有内部服务凭据的直连调用方须在启用此变更前完成凭据迁移。
+创建按请求组织环境校验，撤销按持久化委托的组织环境校验。超出可证明范围的委托写入返回 403。
+
 ### FileStorage `scanStatus` v1 删除（#1604）
 
 2026-08-17 已批准一个窄范围版本例外：在 FileStorage v1 尚未形成受支持客户发布基线、且 `scanStatus` 没有受支持外部消费方的前提下，#1604 允许从当前 `/v1` DTO、PlatformGateway v1 OpenAPI snapshot 和同批生成客户端直接删除病毒扫描字段，而不为该废弃字段单独建立 v2 路由。

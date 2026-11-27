@@ -8985,7 +8985,7 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
-    public async Task Approval_center_list_and_delegation_facades_forward_filters_and_internal_token()
+    public async Task Approval_center_forwards_end_principal_for_delegation_writes_and_internal_token_for_reads()
     {
         var approval = new RecordingApprovalClient();
         await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
@@ -9041,6 +9041,8 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(HttpStatusCode.OK, createDelegation.StatusCode);
         Assert.Equal(HttpStatusCode.OK, revokeDelegation.StatusCode);
         Assert.Equal("internal-test-token", approval.LastInternalToken);
+        Assert.Equal(client.DefaultRequestHeaders.Authorization!.Parameter, approval.LastCreateDelegationBearer);
+        Assert.Equal(client.DefaultRequestHeaders.Authorization.Parameter, approval.LastRevokeDelegationBearer);
         Assert.Equal(new BusinessConsoleApprovalChainListRequest("org-001", "env-dev", "pending", "u-requester", null, "purchase-order", "PO-001", 1, 10), approval.LastChainListRequest);
         Assert.Equal(new BusinessConsoleApprovalDecisionListRequest("org-001", "env-dev", "chain-001", "user", "user-admin", "approve", null, null, 2, 11), approval.LastDecisionListRequest);
         Assert.Equal("user-admin", approval.LastRequest?.ActorRef);
@@ -9054,6 +9056,44 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("u-backup", approval.LastCreateDelegationRequest?.DelegateActorRef);
         Assert.Equal("delegation-001", approval.LastRevokeDelegationRequest?.DelegationId);
         Assert.Equal("user-admin", approval.LastRevokeDelegationRequest?.RevokedBy);
+    }
+
+    [Fact]
+    public async Task Approval_delegation_client_sends_scope_and_business_target_with_the_end_principal_bearer()
+    {
+        using var handler = new RecordingHandler(request => JsonResponse(HttpStatusCode.OK, new
+        {
+            success = true,
+            data = request.RequestUri!.AbsolutePath.EndsWith("/revoke", StringComparison.Ordinal)
+                ? (object)new { accepted = true }
+                : new { delegationId = "delegation-001" },
+        }));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://approval.local") };
+        var client = new HttpBusinessApprovalClient(downstream);
+        const string bearer = "test-end-principal";
+        var from = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
+        var created = await client.CreateDelegationAsync(bearer,
+            new("org-001", "env-dev", "user", "u-creator", "user", "u-backup",
+                "purchase-order", from, from.AddDays(1), "travel", "u-creator"), CancellationToken.None);
+        var revoked = await client.RevokeDelegationAsync(bearer, created.DelegationId,
+            new(created.DelegationId, "org-001", "env-dev", "u-manager"), CancellationToken.None);
+
+        Assert.True(revoked.Accepted);
+        Assert.Collection(handler.Requests,
+            create => Assert.Equal("/api/business/v1/approvals/delegations", create.RequestUri!.AbsolutePath),
+            revoke => Assert.Equal("/api/business/v1/approvals/delegations/delegation-001/revoke", revoke.RequestUri!.AbsolutePath));
+        Assert.All(handler.Requests, request => Assert.Equal(bearer, request.Headers.Authorization?.Parameter));
+        using var createBody = JsonDocument.Parse(handler.RequestBodies[0]!);
+        using var revokeBody = JsonDocument.Parse(handler.RequestBodies[1]!);
+        Assert.Equal("org-001", createBody.RootElement.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", createBody.RootElement.GetProperty("environmentId").GetString());
+        Assert.Equal("user", createBody.RootElement.GetProperty("delegateActorType").GetString());
+        Assert.Equal("u-backup", createBody.RootElement.GetProperty("delegateActorRef").GetString());
+        Assert.Equal("u-creator", createBody.RootElement.GetProperty("delegatorActorRef").GetString());
+        Assert.Equal("u-creator", createBody.RootElement.GetProperty("createdBy").GetString());
+        Assert.Equal("org-001", revokeBody.RootElement.GetProperty("organizationId").GetString());
+        Assert.Equal("env-dev", revokeBody.RootElement.GetProperty("environmentId").GetString());
+        Assert.Equal("u-manager", revokeBody.RootElement.GetProperty("revokedBy").GetString());
     }
 
     [Fact]

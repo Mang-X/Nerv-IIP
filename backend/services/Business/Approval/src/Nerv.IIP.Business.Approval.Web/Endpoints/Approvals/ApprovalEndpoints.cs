@@ -37,6 +37,12 @@ public abstract class ApprovalEndpoint<TRequest, TResponse> : Endpoint<TRequest,
             Policies(policy);
         }
     }
+
+    protected Task WriteApprovalErrorAsync(int status, string message, CancellationToken ct)
+    {
+        HttpContext.Response.StatusCode = status;
+        return HttpContext.Response.WriteAsJsonAsync(new ResponseData(false, message, status, []), ct);
+    }
 }
 
 public sealed record CreateOrUpdateApprovalTemplateRequest(
@@ -651,48 +657,81 @@ public sealed class ListApprovalDelegationsEndpoint(ISender sender)
     }
 }
 
-public sealed class CreateApprovalDelegationEndpoint(ISender sender)
+public sealed class CreateApprovalDelegationEndpoint(ISender sender, ResolveApprovalStepAuthority authority)
     : ApprovalEndpoint<CreateApprovalDelegationRequest, ResponseData<CreateApprovalDelegationResponse>>
 {
     public override void Configure()
     {
         ConfigureApprovalContract(ApprovalEndpointContracts.Get<CreateApprovalDelegationEndpoint>());
+        // IAM verifies the end-principal bearer before dispatching the command.
+        AllowAnonymous();
     }
 
     public override async Task HandleAsync(CreateApprovalDelegationRequest req, CancellationToken ct)
     {
+        if (string.IsNullOrWhiteSpace(req.OrganizationId) || string.IsNullOrWhiteSpace(req.EnvironmentId))
+        {
+            await WriteApprovalErrorAsync(StatusCodes.Status400BadRequest, "组织环境无效。", ct);
+            return;
+        }
+
+        var (status, actor) = await authority.ResolveDelegationAsync(
+            HttpContext.Request.Headers.Authorization.ToString(), req.OrganizationId, req.EnvironmentId, null, ct);
+        if (actor is null)
+        {
+            await WriteApprovalErrorAsync(status, "无法授权当前审批委托创建。", ct);
+            return;
+        }
+
         var delegationId = await sender.Send(new CreateApprovalDelegationCommand(
-            req.OrganizationId,
-            req.EnvironmentId,
-            req.DelegatorActorType,
-            req.DelegatorActorRef,
+            actor.OrganizationId,
+            actor.EnvironmentId,
+            actor.Type,
+            actor.Id,
             req.DelegateActorType,
             req.DelegateActorRef,
             req.DocumentType,
             req.EffectiveFromUtc,
             req.EffectiveToUtc,
             req.Reason,
-            req.CreatedBy), ct);
+            actor.Id), ct);
         await Send.OkAsync(new CreateApprovalDelegationResponse(delegationId).AsResponseData(), cancellation: ct);
     }
 }
 
-public sealed class RevokeApprovalDelegationEndpoint(ISender sender)
+public sealed class RevokeApprovalDelegationEndpoint(ISender sender, ResolveApprovalStepAuthority authority)
     : ApprovalEndpoint<RevokeApprovalDelegationRequest, ResponseData<RevokeApprovalDelegationResponse>>
 {
     public override void Configure()
     {
         ConfigureApprovalContract(ApprovalEndpointContracts.Get<RevokeApprovalDelegationEndpoint>());
+        // IAM verifies the end-principal bearer before dispatching the command.
+        AllowAnonymous();
     }
 
     public override async Task HandleAsync(RevokeApprovalDelegationRequest req, CancellationToken ct)
     {
-        var delegationId = Route<ApprovalDelegationId>("delegationId") ?? req.DelegationId;
+        if (!Guid.TryParse(Route<string>("delegationId"), out var delegationGuid) || delegationGuid == Guid.Empty
+            || string.IsNullOrWhiteSpace(req.OrganizationId) || string.IsNullOrWhiteSpace(req.EnvironmentId))
+        {
+            await WriteApprovalErrorAsync(StatusCodes.Status400BadRequest, "委托目标或组织环境无效。", ct);
+            return;
+        }
+
+        var delegationId = new ApprovalDelegationId(delegationGuid);
+        var (status, actor) = await authority.ResolveDelegationAsync(
+            HttpContext.Request.Headers.Authorization.ToString(), req.OrganizationId, req.EnvironmentId, delegationId, ct);
+        if (actor is null)
+        {
+            await WriteApprovalErrorAsync(status, "无法授权当前审批委托撤销。", ct);
+            return;
+        }
+
         await sender.Send(new RevokeApprovalDelegationCommand(
             delegationId,
-            req.OrganizationId,
-            req.EnvironmentId,
-            req.RevokedBy), ct);
+            actor.OrganizationId,
+            actor.EnvironmentId,
+            actor.Id), ct);
         await Send.OkAsync(new RevokeApprovalDelegationResponse(true).AsResponseData(), cancellation: ct);
     }
 }
@@ -723,8 +762,8 @@ public static class ApprovalEndpointContracts
         new(typeof(AddApprovalStepSignerEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/add-signer", ApprovalPermissionCodes.Manage, null, "addApprovalStepSigner"),
         new(typeof(TransferApprovalStepEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/transfer", ApprovalPermissionCodes.Manage, null, "transferApprovalStep"),
         new(typeof(ListApprovalDelegationsEndpoint), "GET", "/api/business/v1/approvals/delegations", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalDelegations"),
-        new(typeof(CreateApprovalDelegationEndpoint), "POST", "/api/business/v1/approvals/delegations", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "createApprovalDelegation"),
-        new(typeof(RevokeApprovalDelegationEndpoint), "POST", "/api/business/v1/approvals/delegations/{delegationId}/revoke", ApprovalPermissionCodes.Manage, InternalServiceAuthorizationPolicy.Name, "revokeApprovalDelegation"),
+        new(typeof(CreateApprovalDelegationEndpoint), "POST", "/api/business/v1/approvals/delegations", ApprovalPermissionCodes.Manage, null, "createApprovalDelegation"),
+        new(typeof(RevokeApprovalDelegationEndpoint), "POST", "/api/business/v1/approvals/delegations/{delegationId}/revoke", ApprovalPermissionCodes.Manage, null, "revokeApprovalDelegation"),
     ];
 
     public static ApprovalEndpointContract Get<TEndpoint>()

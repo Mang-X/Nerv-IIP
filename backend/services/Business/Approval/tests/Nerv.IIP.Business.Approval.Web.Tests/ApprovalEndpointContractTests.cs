@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
+using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalDelegationAggregate;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalTemplateAggregate;
 using Nerv.IIP.Business.Approval.Infrastructure;
 using Nerv.IIP.Business.Approval.Web.Application.Auth;
@@ -109,12 +110,12 @@ public sealed class ApprovalEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/delegations"
             && x.PermissionCode == ApprovalPermissionCodes.Manage
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy is null
             && x.OperationId == "createApprovalDelegation");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/delegations/{delegationId}/revoke"
             && x.PermissionCode == ApprovalPermissionCodes.Manage
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy is null
             && x.OperationId == "revokeApprovalDelegation");
     }
 
@@ -1604,6 +1605,124 @@ public sealed class ApprovalEndpointContractTests
     {
         public Task PublishAsync<T>(T integrationEvent, CancellationToken cancellationToken) where T : notnull =>
             Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task Delegation_writes_record_verified_actors_and_preserve_the_delegate_in_selected_scope()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        const string route = "/api/business/v1/approvals/delegations";
+        string? delegationId = null;
+        var siteRestricted = false;
+        var iam = new ApprovalAuthorityHandler(request =>
+        {
+            var principalId = request.Headers.Authorization?.Parameter switch
+            {
+                "delegation-creator" => "u-creator",
+                "delegation-manager" => "u-manager",
+                _ => null,
+            };
+            if (principalId is null)
+            {
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            }
+
+            if (request.Method == HttpMethod.Get)
+            {
+                Assert.Equal("/api/iam/v1/me", request.RequestUri!.AbsolutePath);
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new { success = true, data = new
+                    {
+                        userId = principalId, principalType = "user", organizationId = "org-default",
+                        environmentId = "env-default",
+                    } }),
+                };
+            }
+
+            Assert.Equal("/internal/iam/v1/authorization/check", request.RequestUri!.AbsolutePath);
+            var check = request.Content!.ReadFromJsonAsync<Nerv.IIP.Contracts.Iam.AuthorizationCheckRequest>().GetAwaiter().GetResult();
+            Assert.Equal("business.approvals.manage", check!.PermissionCode);
+            Assert.Equal(principalId == "u-creator" ? null : "approval-delegation", check.ResourceType);
+            Assert.Equal(principalId == "u-creator" ? null : delegationId, check.ResourceId);
+            Assert.Equal("org-001", check.OrganizationId);
+            Assert.True(check.IncludeSelectedMembership);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new { success = true, data = new
+                {
+                    allowed = true, principalId, principalType = "user",
+                    dataScope = new Nerv.IIP.Contracts.Iam.AuthorizationDataScope(siteRestricted ? ["site-1"] : [], [], [], OrganizationIds: ["org-001"]),
+                    selectedMembership = new { organizationId = "org-001", environmentId = "env-dev", roleIds = new[] { "manager" } },
+                } }),
+            };
+        });
+        var masterData = new ApprovalAuthorityHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("environment", "Testing");
+            builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            builder.UseSetting("Approval:Seed:Enabled", "false");
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+                services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connection));
+                services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
+                services.AddHttpClient(ResolveApprovalStepAuthority.IamClient)
+                    .ConfigurePrimaryHttpMessageHandler(() => iam);
+                services.AddHttpClient(ResolveApprovalStepAuthority.MasterDataClient)
+                    .ConfigurePrimaryHttpMessageHandler(() => masterData);
+            });
+        });
+        using var client = factory.CreateClient();
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await db.Database.EnsureCreatedAsync();
+
+        var create = new
+        {
+            organizationId = "org-001", environmentId = "env-dev", delegateActorType = "user",
+            delegatorActorType = "user", delegatorActorRef = "u-creator", createdBy = "u-creator",
+            delegateActorRef = "u-backup", documentType = "purchase-order",
+            effectiveFromUtc = "2026-06-01T00:00:00Z", effectiveToUtc = "2026-06-30T00:00:00Z", reason = "travel",
+        };
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "delegation-creator");
+        siteRestricted = true;
+        using var restrictedCreate = await client.PostAsJsonAsync(route, create);
+        Assert.Equal(HttpStatusCode.Forbidden, restrictedCreate.StatusCode);
+        siteRestricted = false;
+
+        using var created = await client.PostAsJsonAsync(route, create);
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        var result = await created.Content.ReadFromJsonAsync<JsonElement>();
+        delegationId = result.GetProperty("data").GetProperty("delegationId").GetString();
+        Assert.True(Guid.TryParse(delegationId, out _));
+        var revoke = new { delegationId, organizationId = "org-001", environmentId = "env-dev", revokedBy = "u-manager" };
+        var revokeRoute = $"{route}/{delegationId}/revoke";
+
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "delegation-manager");
+        using var denied = await client.PostAsJsonAsync(revokeRoute, revoke with { environmentId = "env-other" });
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        Assert.Equal(ApprovalDelegationStatuses.Active, (await db.ApprovalDelegations.AsNoTracking().SingleAsync()).Status);
+
+        siteRestricted = true;
+        using var restrictedRevoke = await client.PostAsJsonAsync(revokeRoute, revoke);
+        Assert.Equal(HttpStatusCode.Forbidden, restrictedRevoke.StatusCode);
+        siteRestricted = false;
+
+        using var revoked = await client.PostAsJsonAsync(revokeRoute, revoke);
+        Assert.Equal(HttpStatusCode.OK, revoked.StatusCode);
+        var delegation = await db.ApprovalDelegations.AsNoTracking().SingleAsync();
+        Assert.Equal("user", delegation.DelegatorActorType);
+        Assert.Equal("u-creator", delegation.DelegatorActorRef);
+        Assert.Equal("u-creator", delegation.CreatedBy);
+        Assert.Equal("user", delegation.DelegateActorType);
+        Assert.Equal("u-backup", delegation.DelegateActorRef);
+        Assert.Equal("purchase-order", delegation.DocumentType);
+        Assert.Equal(ApprovalDelegationStatuses.Revoked, delegation.Status);
+        Assert.Equal("u-manager", delegation.RevokedBy);
+        Assert.Empty(masterData.Paths);
     }
 
     private sealed class ApprovalAuthorityHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler

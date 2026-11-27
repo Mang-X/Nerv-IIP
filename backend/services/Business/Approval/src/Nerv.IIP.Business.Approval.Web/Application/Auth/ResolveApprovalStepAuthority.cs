@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalChainAggregate;
+using Nerv.IIP.Business.Approval.Domain.AggregatesModel.ApprovalDelegationAggregate;
 using Nerv.IIP.Contracts.Iam;
 using Nerv.IIP.ServiceAuth;
 
@@ -18,9 +19,18 @@ public sealed class ResolveApprovalStepAuthority(
     public const string IamClient = "ApprovalIam";
     public const string MasterDataClient = "ApprovalMasterData";
 
-    internal async Task<(int Status, Actor? Actor)> ResolveChainActionAsync(
+    internal Task<(int Status, Actor? Actor)> ResolveChainActionAsync(
         string authorization, string? organizationId, string? environmentId, ApprovalChainId chainId, CancellationToken ct,
-        bool loadApproverContext = false)
+        bool loadApproverContext = false) =>
+        ResolveAsync(authorization, organizationId, environmentId, chainId, null, loadApproverContext, ct);
+
+    internal Task<(int Status, Actor? Actor)> ResolveDelegationAsync(
+        string authorization, string organizationId, string environmentId, ApprovalDelegationId? delegationId, CancellationToken ct) =>
+        ResolveAsync(authorization, organizationId, environmentId, null, delegationId, false, ct);
+
+    private async Task<(int Status, Actor? Actor)> ResolveAsync(
+        string authorization, string? organizationId, string? environmentId,
+        ApprovalChainId? chainId, ApprovalDelegationId? delegationId, bool loadApproverContext, CancellationToken ct)
     {
         if (!AuthenticationHeaderValue.TryParse(authorization, out var bearer)
             || !string.Equals(bearer.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase)
@@ -53,11 +63,7 @@ public sealed class ResolveApprovalStepAuthority(
                 return (StatusCodes.Status400BadRequest, null);
             }
 
-            var source = await dbContext.ApprovalChains.AsNoTracking()
-                .Where(chain => chain.Id == chainId)
-                .Select(chain => new ChainSource(
-                    chain.OrganizationId, chain.EnvironmentId, chain.DocumentReference.OrganizationId))
-                .SingleOrDefaultAsync(ct);
+            var source = await LoadScopeAsync(organizationId, environmentId, chainId, delegationId, ct);
             if (source is null || (organizationId is not null
                 && (organizationId != source.OrganizationId || environmentId != source.EnvironmentId)))
             {
@@ -72,9 +78,12 @@ public sealed class ResolveApprovalStepAuthority(
                 return (StatusCodes.Status403Forbidden, null);
             }
 
+            var resourceType = chainId is not null ? "approval-chain"
+                : delegationId is not null ? "approval-delegation" : null;
+            var resourceId = chainId?.Id.ToString("D") ?? delegationId?.Id.ToString("D");
             using var check = await iam.PostAsJsonAsync("/internal/iam/v1/authorization/check",
                 new AuthorizationCheckRequest(ApprovalPermissionCodes.Manage, organizationId, environmentId,
-                    "approval-chain", chainId.Id.ToString("D"))
+                    resourceType, resourceId)
                 {
                     IncludeSelectedMembership = principal.PrincipalType == "user",
                     IncludePrincipalContext = principal.PrincipalType == "user",
@@ -121,7 +130,35 @@ public sealed class ResolveApprovalStepAuthority(
         }
     }
 
-    private static bool AllowsSource(AuthorizationCheckResponse permission, ChainSource source)
+    private async Task<ApprovalScope?> LoadScopeAsync(
+        string? organizationId, string? environmentId,
+        ApprovalChainId? chainId, ApprovalDelegationId? delegationId, CancellationToken ct)
+    {
+        if (chainId is not null)
+        {
+            return await dbContext.ApprovalChains.AsNoTracking()
+                .Where(chain => chain.Id == chainId)
+                .Select(chain => new ApprovalScope(
+                    chain.OrganizationId, chain.EnvironmentId, chain.DocumentReference.OrganizationId))
+                .SingleOrDefaultAsync(ct);
+        }
+
+        if (delegationId is not null)
+        {
+            return await dbContext.ApprovalDelegations.AsNoTracking()
+                .Where(delegation => delegation.Id == delegationId)
+                .Select(delegation => new ApprovalScope(
+                    delegation.OrganizationId, delegation.EnvironmentId, delegation.OrganizationId))
+                .SingleOrDefaultAsync(ct);
+        }
+
+        // A new delegation has only the organization and environment of the requested record.
+        return organizationId is not null && environmentId is not null
+            ? new ApprovalScope(organizationId, environmentId, organizationId)
+            : null;
+    }
+
+    private static bool AllowsSource(AuthorizationCheckResponse permission, ApprovalScope source)
     {
         var scope = permission.DataScope;
         if (scope is null)
@@ -134,8 +171,8 @@ public sealed class ResolveApprovalStepAuthority(
                     && grant.ApplicablePermissionCodes?.Contains(ApprovalPermissionCodes.Manage, StringComparer.Ordinal) == true);
         }
 
-        // Approval stores routing metadata. It has no authoritative source location,
-        // team or owner to compare with these IAM grants.
+        // Approval has no authoritative location, team or document owner
+        // to compare with these IAM grants.
         return scope.SiteCodes is { Count: 0 }
             && scope.WorkshopCodes is { Count: 0 }
             && scope.ProductionLineCodes is { Count: 0 }
@@ -143,11 +180,11 @@ public sealed class ResolveApprovalStepAuthority(
             && scope.TeamCodes is not { Count: > 0 }
             && scope.SelfIds is not { Count: > 0 }
             && (scope.OrganizationIds is not { Count: > 0 } organizations
-                || (source.DocumentOrganizationId == source.OrganizationId
-                    && organizations.All(id => id == source.DocumentOrganizationId)));
+                || (source.ResourceOrganizationId == source.OrganizationId
+                    && organizations.All(id => id == source.ResourceOrganizationId)));
     }
 
-    private sealed record ChainSource(string OrganizationId, string EnvironmentId, string? DocumentOrganizationId);
+    private sealed record ApprovalScope(string OrganizationId, string EnvironmentId, string? ResourceOrganizationId);
 
     private async Task<string?> LoadDepartmentAsync(
         string userId, string organizationId, string environmentId, CancellationToken ct)
