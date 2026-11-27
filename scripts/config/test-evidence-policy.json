@@ -1735,9 +1735,10 @@
         "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Bound_completion_acknowledges_blocked_stock_without_rebooking_the_inspected_receipt",
         "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Accepted_receipt_invoice_and_supplier_return_use_the_committed_winner",
         "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Accepted_receipt_only_grir_returns_limit_invoice_matching_and_hold_release",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Supplier_return_keeps_distinct_debits_and_replays_once_with_delimited_business_numbers",
         "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Wms_batches_and_cancellation_share_the_purchase_order_write_boundary"
       ],
-      "expectedRuntimeTestCount": 10
+      "expectedRuntimeTestCount": 11
     },
     {
       "id": "erp-wms-purchase-receipt-acceptance",

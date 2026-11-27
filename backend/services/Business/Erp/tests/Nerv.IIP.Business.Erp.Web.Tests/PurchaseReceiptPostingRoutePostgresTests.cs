@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.JournalVoucherAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
@@ -601,6 +602,131 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
                     (await db.SupplierInvoices.SingleAsync(x => x.InvoiceNo == followUp.InvoiceNo)).MatchStatus);
                 Assert.Equal(!hasGrIrReturn, await db.AccountPayables.AnyAsync(x => x.SourceDocumentNo == followUp.InvoiceNo));
             }
+        }
+    }
+
+    [PurchaseReceiptPostgresFact]
+    public async Task Supplier_return_keeps_distinct_debits_and_replays_once_with_delimited_business_numbers()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = CreateConcurrencyProvider();
+        string[] eventKeys = ["short|event", $"long-event:{new string('x', 140)}", "legacy-event"];
+        await using (var setup = provider.CreateAsyncScope())
+        {
+            var db = setup.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+            await db.Database.MigrateAsync();
+            for (var index = 0; index < eventKeys.Length; index++)
+                AddReleasedOrder(db, $"debit-key-{index}", authority: PurchaseReceiptInventoryPostingRoute.Wms);
+            await db.SaveChangesAsync();
+        }
+
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        for (var index = 0; index < eventKeys.Length; index++)
+        {
+            var outboundNo = $"RTS-debit-key-{index}";
+            var batch = new AcceptWmsPurchaseReceiptCommand(
+                "org-route", "env-route", Guid.NewGuid(), $"PO-debit-key-{index}", "SITE-001", 2m,
+                [new("10", 2m, "RAW-A-01")]);
+            string receiptNo;
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var services = scope.ServiceProvider;
+                using var causation = services.GetRequiredService<IErpIntegrationEventContextAccessor>()
+                    .BeginScope($"command:test:{outboundNo}");
+                receiptNo = (await services.GetRequiredService<ISender>().Send(batch)).PurchaseReceiptNo;
+            }
+
+            (string Invoice, string Payable)[] pairs = index switch
+            {
+                0 => [("A", "B|C"), ("A|B", "C")],
+                1 => [("X", "Y|Z"), ("X|Y", "Z")],
+                _ => [("OLD-A", "OLD-B"), ("OLD-C", "OLD-D")],
+            };
+            foreach (var (invoice, payable) in pairs)
+            {
+                await using var scope = provider.CreateAsyncScope();
+                var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+                await sender.Send(new RecordSupplierInvoiceCommand(
+                    batch.OrganizationId, batch.EnvironmentId, invoice, batch.PurchaseOrderNo,
+                    receiptNo, new DateOnly(2026, 9, 1), new DateOnly(2026, 10, 1), "CNY",
+                    0m, 0m, [new("10", "10", 1m, 12.5m)], payable));
+            }
+
+            var outbound = InboundEvent(outboundNo, batch.PurchaseOrderNo);
+            var shipment = outbound with
+            {
+                EventType = WmsIntegrationEventTypes.OutboundOrderCompleted,
+                IdempotencyKey = eventKeys[index],
+                Payload = outbound.Payload with
+                {
+                    SourceDocumentType = WmsSourceDocumentTypes.PurchaseReceiptReturn,
+                    SourceDocumentId = receiptNo,
+                    Lines = [Assert.Single(outbound.Payload.Lines!) with { Quantity = 2m }],
+                },
+            };
+
+            await DeliverAsync(shipment);
+            await using var verify = provider.CreateAsyncScope();
+            var read = verify.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var firstPosting = await ReadPostingAsync();
+            await DeliverAsync(shipment);
+            var replay = await ReadPostingAsync();
+            Assert.Equal(firstPosting, replay);
+
+            async Task<string[]> ReadPostingAsync()
+            {
+                var returned = await read.PurchaseReturns.AsNoTracking().Include(x => x.Lines)
+                    .SingleAsync(x => x.WmsOutboundOrderNo == outboundNo);
+                Assert.Equal(receiptNo, returned.PurchaseReceiptNo);
+                Assert.Equal(25m, returned.DebitNoteAmount);
+                Assert.Equal(0m, returned.GrIrReversalAmount);
+                var notes = await read.DebitNotes.AsNoTracking()
+                    .Where(x => x.PurchaseReturnNo == returned.PurchaseReturnNo)
+                    .OrderBy(x => x.PayableNo).ToArrayAsync();
+                Assert.Equal(2, notes.Select(x => x.DebitNoteNo).Distinct().Count());
+                foreach (var (invoice, payable) in pairs)
+                {
+                    Assert.Equal(12.5m, Assert.Single(notes, x => x.PayableNo == payable).Amount);
+                    var account = await read.AccountPayables.AsNoTracking().SingleAsync(x => x.PayableNo == payable);
+                    Assert.Equal(invoice, account.SourceDocumentNo);
+                    Assert.Equal(0m, account.OpenAmount);
+                }
+                var voucher = await read.JournalVouchers.AsNoTracking().SingleAsync(x =>
+                    x.SourceType == JournalVoucherSourceType.PurchaseReturn.Code && x.SourceNo == returned.PurchaseReturnNo);
+                const string consumer = WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn.ConsumerName;
+                var returnKey = await read.CodeIdempotencyKeys.Where(x => x.RuleKey == "purchase-return"
+                        && x.Code == returned.PurchaseReturnNo)
+                    .Select(x => x.IdempotencyKey).SingleAsync();
+                if (index == 1)
+                    Assert.Matches($"^{consumer}-v2-return:[0-9a-f]{{64}}$", returnKey);
+                else
+                    Assert.Equal($"{consumer}:{shipment.IdempotencyKey}", returnKey);
+
+                foreach (var (invoice, payable) in pairs)
+                {
+                    var noteNo = Assert.Single(notes, x => x.PayableNo == payable).DebitNoteNo;
+                    var debitKey = await read.CodeIdempotencyKeys.Where(x => x.RuleKey == "debit-note" && x.Code == noteNo)
+                        .Select(x => x.IdempotencyKey).SingleAsync();
+                    if (index == 2)
+                        Assert.Equal($"{consumer}|{shipment.IdempotencyKey}|{invoice}|{payable}", debitKey);
+                    else
+                        Assert.Matches($"^{consumer}-v2-debit:[0-9a-f]{{64}}$", debitKey);
+                }
+                Assert.Equal(1, await read.ProcessedIntegrationEvents.CountAsync(x =>
+                    x.ConsumerName == consumer && x.IdempotencyKey == shipment.IdempotencyKey));
+                return [returned.PurchaseReturnNo, voucher.VoucherNo, .. notes.Select(x => x.DebitNoteNo)];
+            }
+        }
+
+        async Task DeliverAsync(WmsIntegrationEvent shipment)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var services = scope.ServiceProvider;
+            await new WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn(
+                services.GetRequiredService<ApplicationDbContext>(), deadLetters,
+                services.GetRequiredService<ErpCodingService>()).HandleAsync(shipment, CancellationToken.None);
+            Assert.Empty(await deadLetters.ListAsync(null, IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
         }
     }
 
