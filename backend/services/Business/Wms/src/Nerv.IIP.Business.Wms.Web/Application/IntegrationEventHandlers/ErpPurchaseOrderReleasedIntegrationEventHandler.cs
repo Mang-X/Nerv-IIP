@@ -2,6 +2,7 @@ using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
+using Nerv.IIP.Business.Wms.Infrastructure.IntegrationEvents;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
@@ -65,6 +66,18 @@ public sealed class ErpPurchaseOrderReleasedIntegrationEventHandler(
 
         var number = payload.PurchaseOrderNo;
         await PurchaseOrderInboundLock.AcquireAsync(db, message.OrganizationId, message.EnvironmentId, number, token);
+        var cancellation = await FindCancellationAsync(db, message, token);
+        if (cancellation is not null)
+        {
+            if (!MatchesCancellation(cancellation, message))
+            {
+                await RejectAsync(message, "purchase-order-cancellation-conflict",
+                    "The source already has a cancellation with a different ERP identity or site.", token);
+            }
+
+            return;
+        }
+
         var candidates = await Candidates(db, message).ToListAsync(token);
         var order = candidates.SingleOrDefault(x => x.InboundOrderNo == number);
         if (order is not null && MatchesRelease(order, message))
@@ -104,10 +117,24 @@ public sealed class ErpPurchaseOrderReleasedIntegrationEventHandler(
             return false;
         }
 
+        var cancellation = await FindCancellationAsync(db, message, token);
+        if (cancellation is not null)
+        {
+            return MatchesCancellation(cancellation, message);
+        }
+
         var order = await Candidates(db, message)
             .SingleOrDefaultAsync(x => x.InboundOrderNo == message.Payload.PurchaseOrderNo, token);
         return order is not null && MatchesRelease(order, message);
     }
+
+    private static Task<PurchaseOrderCancellation?> FindCancellationAsync(
+        ApplicationDbContext db, PurchaseOrderReleasedV2IntegrationEvent message, CancellationToken token) =>
+        db.PurchaseOrderCancellations.AsNoTracking().SingleOrDefaultAsync(x => x.OrganizationId == message.OrganizationId
+            && x.EnvironmentId == message.EnvironmentId && x.PurchaseOrderNo == message.Payload.PurchaseOrderNo, token);
+
+    private static bool MatchesCancellation(PurchaseOrderCancellation cancellation, PurchaseOrderReleasedV2IntegrationEvent message) =>
+        cancellation.PurchaseOrderId == message.Payload.PurchaseOrderId && cancellation.SiteCode == message.Payload.SiteCode;
 
     private static IQueryable<InboundOrder> Candidates(ApplicationDbContext db, PurchaseOrderReleasedV2IntegrationEvent message) =>
         db.InboundOrders.AsNoTracking().Include(x => x.Lines).Where(x =>

@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
 using Nerv.IIP.Business.Wms.Web.Application.Auth;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
+using Nerv.IIP.Contracts.Wms;
 
 namespace Nerv.IIP.Business.Wms.Web.Application.Commands;
 
@@ -68,6 +69,20 @@ public sealed class ConfirmInboundReceiptCommandHandler(
         ConfirmInboundReceiptCommand request,
         CancellationToken cancellationToken)
     {
+        var organizationId = request.OrganizationId.Trim();
+        var environmentId = request.EnvironmentId.Trim();
+        var purchaseOrderNo = await dbContext.InboundOrders
+            .Where(order => order.Id == request.InboundOrderId && order.OrganizationId == organizationId
+                && order.EnvironmentId == environmentId && order.SourceDocumentType == WmsSourceDocumentTypes.PurchaseOrder
+                && order.InboundOrderNo == order.SourceDocumentId && order.Lines.Any(line => line.ExpectedQuantity != null))
+            .Select(order => order.SourceDocumentId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (purchaseOrderNo is not null)
+        {
+            await PurchaseOrderInboundLock.AcquireAsync(dbContext, organizationId, environmentId,
+                purchaseOrderNo, cancellationToken);
+        }
+
         var inbound = await dbContext.InboundOrders.Include(order => order.Lines)
             .SingleOrDefaultAsync(order => order.Id == request.InboundOrderId, cancellationToken)
             ?? throw new WmsLifecycleConflictException(Action, "not-found");

@@ -1887,6 +1887,65 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nerv.IIP.Business.Wms.Infrastructure.IntegrationEvents.PurchaseOrderCancellation", b =>
+                {
+                    b.Property<string>("OrganizationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("organization_id")
+                        .HasComment("Organization tenant id.");
+
+                    b.Property<string>("EnvironmentId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("environment_id")
+                        .HasComment("Environment id.");
+
+                    b.Property<string>("PurchaseOrderNo")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("purchase_order_no")
+                        .HasComment("ERP purchase order number unique within the organization and environment.");
+
+                    b.Property<DateTimeOffset>("CancelledAtUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at_utc")
+                        .HasComment("UTC time of the committed ERP cancellation.");
+
+                    b.Property<string>("PurchaseOrderId")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("purchase_order_id")
+                        .HasComment("Stable ERP purchase order identity for consistency checks.");
+
+                    b.Property<int>("PurchaseOrderVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("purchase_order_version")
+                        .HasComment("ERP aggregate version at the committed cancellation.");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("reason")
+                        .HasComment("Reason for closing the purchase order receiving source.");
+
+                    b.Property<string>("SiteCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("site_code")
+                        .HasComment("Site owning the cancelled purchase order.");
+
+                    b.HasKey("OrganizationId", "EnvironmentId", "PurchaseOrderNo");
+
+                    b.ToTable("purchase_order_cancellations", "wms", t =>
+                        {
+                            t.HasComment("Terminal ERP cancellation projection for WMS-owned purchase orders.");
+                        });
+                });
+
             modelBuilder.Entity("Nerv.IIP.Coding.CodeCounter", b =>
                 {
                     b.Property<long>("Id")

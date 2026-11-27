@@ -52,6 +52,9 @@ public sealed class CapSubscribeTopicConventionTests
         Assert.True(IsAllowedSubscriptionTopic(
             typeof(PurchaseOrderReleasedV2IntegrationEvent),
             PurchaseOrderReleasedV2IntegrationEvent.TopicTemplate));
+        Assert.True(IsAllowedSubscriptionTopic(
+            typeof(PurchaseOrderCancelledIntegrationEvent),
+            PurchaseOrderCancelledIntegrationEvent.TopicTemplate));
         Assert.False(IsAllowedSubscriptionTopic(
             typeof(AssetUnavailableV2IntegrationEvent),
             "nerv-iip.{deployment-profile}.business-maintenance.maintenance.asset-unavailable.v3"));
@@ -137,6 +140,9 @@ public sealed class CapSubscribeTopicConventionTests
         ?? MesActualTimeIntegrationEventTopics.CanonicalSubscriptionTemplate(integrationEventType)
         ?? (integrationEventType == typeof(PurchaseOrderReleasedV2IntegrationEvent)
             ? PurchaseOrderReleasedV2IntegrationEvent.TopicTemplate
+            : null)
+        ?? (integrationEventType == typeof(PurchaseOrderCancelledIntegrationEvent)
+            ? PurchaseOrderCancelledIntegrationEvent.TopicTemplate
             : null)
         ?? (integrationEventType == typeof(AndonCallEscalatedIntegrationEvent)
             ? AndonCallEscalatedIntegrationEvent.TopicTemplate

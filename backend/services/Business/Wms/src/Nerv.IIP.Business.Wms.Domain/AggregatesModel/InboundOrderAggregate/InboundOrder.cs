@@ -213,6 +213,15 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             OrganizationId, EnvironmentId, InboundOrderNo, SiteCode, AssignedPoolCode, AssignedOperatorUserId));
     }
 
+    public void CancelUnreceivedExpectation(string reason)
+    {
+        if (Status == InboundOrderStatus.Open && ReceiptConfirmationKey is null
+            && lines.Count > 0 && lines.All(line => line.AwaitingReceiptConfirmation))
+        {
+            Cancel(reason);
+        }
+    }
+
     public void Cancel(string reason)
     {
         EnsureOpen();

@@ -2032,9 +2032,14 @@
         "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Concurrent_deliveries_with_distinct_envelopes_create_one_receipt_for_the_scoped_po",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Missing_scoped_route_can_be_corrected_before_original_event_replay",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Manual_receipt_requires_reconciliation_before_replay_can_create_an_expectation",
-        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Running_wms_subscribes_to_the_concrete_canonical_topic"
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Running_wms_subscribes_to_the_concrete_canonical_topic",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Cancellation_before_release_replays_without_creating_an_inbound_order",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Cancellation_closes_only_the_scoped_unreceived_auto_order",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Concurrent_cancellation_replays_and_release_converge_to_the_closed_source",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Failed_inbound_update_rolls_back_cancellation_and_inbox_then_original_replay_commits",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Cancellation_rejects_foreign_source_invalid_version_and_conflicting_source_facts"
       ],
-      "expectedRuntimeTestCount": 12
+      "expectedRuntimeTestCount": 17
     }
   ]
 }

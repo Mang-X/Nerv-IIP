@@ -23,7 +23,206 @@ namespace Nerv.IIP.Business.Wms.Web.Tests;
 public sealed class WmsPurchaseOrderReleasePostgresTests
 {
     private const string Consumer = "business-wms.erp-purchase-order-released";
+    private const string CancellationConsumer = "business-wms.erp-purchase-order-cancelled";
     private const string Route = "PurchaseOrderReceiving:Routes:0:";
+
+    [WmsDeadLetterReplayPostgresFact]
+    public async Task Concurrent_cancellation_replays_and_release_converge_to_the_closed_source()
+    {
+        await using var fixture = await ReplayFixture.CreateAsync(settings: Settings());
+        var cancellation = Cancelled();
+        var first = await fixture.AddLetterAsync(cancellation, CancellationConsumer);
+        var second = await fixture.AddLetterAsync(cancellation with
+        {
+            EventId = "cancel-republished",
+            IdempotencyKey = "cancel-republished-key"
+        }, CancellationConsumer);
+        using var scope = fixture.Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await using (var gate = await db.Database.BeginTransactionAsync())
+        {
+            await PurchaseOrderInboundLock.AcquireAsync(db, "org-replay", "env-replay", "PO-123", default);
+            var deliveries = Task.WhenAll(fixture.ReplayAsync(first, "replayed"), fixture.ReplayAsync(second, "replayed"),
+                DeliverAsync(fixture, Released()), DeliverAsync(fixture, cancellation));
+            try
+            {
+                await Eventually.AssertAsync(
+                    condition: "all four deliveries wait on the scoped PostgreSQL transaction lock",
+                    assertion: async token =>
+                    {
+                        var waiters = await db.Database.SqlQueryRaw<long>("""
+                            SELECT count(*) AS "Value" FROM pg_locks
+                            WHERE database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                                AND locktype = 'advisory' AND NOT granted AND objsubid = 1
+                            """).SingleAsync(token);
+                        Assert.Equal(4, waiters);
+                    },
+                    options: new EventuallyOptions(TimeSpan.FromSeconds(10), TimeSpan.FromMilliseconds(100), []));
+            }
+            finally
+            {
+                await gate.RollbackAsync();
+                await deliveries;
+            }
+        }
+
+        var marker = await db.PurchaseOrderCancellations.SingleAsync();
+        Assert.Equal(("org-replay", "env-replay", "PO-123", 4),
+            (marker.OrganizationId, marker.EnvironmentId, marker.PurchaseOrderNo, marker.PurchaseOrderVersion));
+        Assert.Equal(2, await db.ProcessedIntegrationEvents.CountAsync(x => x.ConsumerName == CancellationConsumer));
+        Assert.InRange(await db.InboundOrders.CountAsync(), 0, 1);
+        Assert.False(await db.InboundOrders.AnyAsync(x => x.Status != InboundOrderStatus.Cancelled));
+    }
+
+    [WmsDeadLetterReplayPostgresFact]
+    public async Task Failed_inbound_update_rolls_back_cancellation_and_inbox_then_original_replay_commits()
+    {
+        await using var fixture = await ReplayFixture.CreateAsync(settings: Settings());
+        await DeliverAsync(fixture, Released());
+        var cancellation = Cancelled();
+        var letter = await fixture.AddLetterAsync(cancellation, CancellationConsumer);
+
+        using (var scope = fixture.Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Database.ExecuteSqlRawAsync("""
+                CREATE FUNCTION wms.test_reject_cancellation() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN
+                    RAISE EXCEPTION 'Injected cancellation commit failure';
+                END;
+                $$;
+                CREATE CONSTRAINT TRIGGER test_reject_cancellation AFTER UPDATE ON wms.inbound_orders
+                    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+                    WHEN (NEW.status = 'Cancelled') EXECUTE FUNCTION wms.test_reject_cancellation()
+                """);
+            await fixture.ReplayAsync(letter, "failed");
+            Assert.Empty(await db.PurchaseOrderCancellations.ToListAsync());
+            Assert.False(await db.ProcessedIntegrationEvents.AnyAsync(x => x.ConsumerName == CancellationConsumer));
+            Assert.Equal(InboundOrderStatus.Open, (await db.InboundOrders.SingleAsync()).Status);
+            await db.Database.ExecuteSqlRawAsync("DROP TRIGGER test_reject_cancellation ON wms.inbound_orders");
+        }
+
+        await fixture.ReplayAsync(letter, "replayed");
+        using var read = fixture.Factory.Services.CreateScope();
+        var persisted = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(InboundOrderStatus.Cancelled, (await persisted.InboundOrders.SingleAsync()).Status);
+        Assert.Equal(4, (await persisted.PurchaseOrderCancellations.SingleAsync()).PurchaseOrderVersion);
+        Assert.Equal(cancellation.EventId, (await persisted.ProcessedIntegrationEvents
+            .SingleAsync(x => x.ConsumerName == CancellationConsumer)).EventId);
+    }
+
+    [WmsDeadLetterReplayPostgresFact]
+    public async Task Cancellation_rejects_foreign_source_invalid_version_and_conflicting_source_facts()
+    {
+        await using var fixture = await ReplayFixture.CreateAsync(settings: Settings());
+        var cancellation = Cancelled();
+        var foreign = cancellation with { EventId = "foreign", SourceService = "business-mes" };
+        var invalid = cancellation with { EventId = "invalid", Payload = cancellation.Payload with { PurchaseOrderVersion = 0 } };
+        await DeliverAsync(fixture, foreign);
+        await DeliverAsync(fixture, invalid);
+        Assert.Equal("unexpected-source-service", (await fixture.LetterAsync(foreign, CancellationConsumer)).FailureCode);
+        Assert.Equal("invalid-purchase-order-cancellation", (await fixture.LetterAsync(invalid, CancellationConsumer)).FailureCode);
+
+        await DeliverAsync(fixture, cancellation);
+        var conflict = cancellation with { EventId = "conflict", Payload = cancellation.Payload with { PurchaseOrderVersion = 5 } };
+        await DeliverAsync(fixture, conflict);
+        var letter = await fixture.LetterAsync(conflict, CancellationConsumer);
+        Assert.Equal("purchase-order-cancellation-conflict", letter.FailureCode);
+        await fixture.ReplayAsync(letter, "failed");
+
+        var release = Released();
+        var mismatchedRelease = release with { Payload = release.Payload with { PurchaseOrderId = "another-erp-id" } };
+        await DeliverAsync(fixture, mismatchedRelease);
+        Assert.Equal("purchase-order-cancellation-conflict", (await fixture.LetterAsync(mismatchedRelease, Consumer)).FailureCode);
+
+        using var read = fixture.Factory.Services.CreateScope();
+        var db = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(4, (await db.PurchaseOrderCancellations.SingleAsync()).PurchaseOrderVersion);
+        Assert.Equal(cancellation.EventId, (await db.ProcessedIntegrationEvents.SingleAsync(x => x.ConsumerName == CancellationConsumer)).EventId);
+        Assert.Empty(await db.InboundOrders.ToListAsync());
+    }
+
+    [WmsDeadLetterReplayPostgresFact]
+    public async Task Cancellation_closes_only_the_scoped_unreceived_auto_order()
+    {
+        await using var fixture = await ReplayFixture.CreateAsync(settings: Settings());
+        var release = Released();
+        var accepted = release with { Payload = release.Payload with { PurchaseOrderNo = "PO-ACCEPTED" } };
+        await DeliverAsync(fixture, release);
+        await DeliverAsync(fixture, accepted);
+        await fixture.SeedAsync(db =>
+        {
+            db.InboundOrders.Add(ManualReceipt("org-replay", "env-replay"));
+            db.InboundOrders.Add(PendingReceipt("other-org", "env-replay"));
+            db.InboundOrders.Add(PendingReceipt("org-replay", "other-env"));
+        });
+        ConfirmInboundReceiptCommand receipt;
+        using (var assign = fixture.Factory.Services.CreateScope())
+        {
+            var db = assign.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var order = await db.InboundOrders.SingleAsync(x => x.InboundOrderNo == "PO-ACCEPTED");
+            order.AssignWorkPool("receiving", null, order.Version);
+            await db.SaveChangesAsync();
+            receipt = new ConfirmInboundReceiptCommand(order.Id, order.OrganizationId, order.EnvironmentId,
+                "operator", ["SITE"], "site", "SITE", order.Version, "accepted", [new("020", 12.5m)]);
+        }
+
+        ConfirmInboundReceiptResult acceptedResult;
+        using (var receive = fixture.Factory.Services.CreateScope())
+        {
+            acceptedResult = await receive.ServiceProvider.GetRequiredService<ISender>().Send(receipt);
+        }
+
+        var cancellation = Cancelled();
+        await DeliverAsync(fixture, cancellation);
+        await DeliverAsync(fixture, cancellation with
+        {
+            EventId = "cancel-accepted",
+            IdempotencyKey = "cancel-accepted-key",
+            Payload = cancellation.Payload with { PurchaseOrderNo = "PO-ACCEPTED" }
+        });
+        await DeliverAsync(fixture, release);
+        await DeliverAsync(fixture, release with
+        {
+            Payload = release.Payload with { ReceivingAuthority = PurchaseReceiptInventoryPostingRoute.Direct }
+        });
+
+        using var scope = fixture.Factory.Services.CreateScope();
+        Assert.Equal(acceptedResult, await scope.ServiceProvider.GetRequiredService<ISender>().Send(receipt));
+        var read = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var orders = await read.InboundOrders.Include(x => x.Lines).ToListAsync();
+        var closed = Assert.Single(orders, x => x.Status == InboundOrderStatus.Cancelled);
+        Assert.Equal(("org-replay", "env-replay", "PO-123", "supplier cancellation"),
+            (closed.OrganizationId, closed.EnvironmentId, closed.InboundOrderNo, closed.CancellationReason));
+        Assert.Equal(0m, Assert.Single(closed.Lines).ReceivedQuantity);
+        var received = Assert.Single(orders, x => x.InboundOrderNo == "PO-ACCEPTED");
+        Assert.Equal(InboundOrderStatus.Open, received.Status);
+        Assert.Equal(acceptedResult.Version, received.Version);
+        Assert.Equal(12.5m, Assert.Single(received.Lines).ReceivedQuantity);
+        var manual = Assert.Single(orders, x => x.InboundOrderNo == "MANUAL-123");
+        Assert.Equal(InboundOrderStatus.Open, manual.Status);
+        Assert.Equal(2m, Assert.Single(manual.Lines).ReceivedQuantity);
+        Assert.Empty(await read.InventoryMovementRequests.ToListAsync());
+        Assert.Empty(await read.WarehouseTasks.ToListAsync());
+    }
+
+    [WmsDeadLetterReplayPostgresFact]
+    public async Task Cancellation_before_release_replays_without_creating_an_inbound_order()
+    {
+        await using var fixture = await ReplayFixture.CreateAsync(settings: Settings());
+        var cancellation = Cancelled();
+        var letter = await fixture.AddLetterAsync(cancellation, CancellationConsumer);
+        await fixture.ReplayAsync(letter, "replayed");
+
+        var release = Released();
+        await DeliverAsync(fixture, release);
+        await fixture.ReplayAsync(await fixture.AddLetterAsync(release, Consumer), "replayed");
+
+        using var scope = fixture.Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Empty(await db.InboundOrders.ToListAsync());
+        Assert.Single(await db.ProcessedIntegrationEvents.Where(x => x.ConsumerName == CancellationConsumer).ToListAsync());
+    }
 
     [WmsDeadLetterReplayPostgresFact]
     public async Task Replay_creates_expected_only_receipt_with_original_order_and_line_numbers()
@@ -177,6 +376,19 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
             Assert.Equal(12.5m, line.ExpectedQuantity);
             Assert.Equal(0m, line.ReceivedQuantity);
             Assert.Empty(await persisted.InventoryMovementRequests.ToArrayAsync());
+
+            await publisher.PublishAsync(PurchaseOrderCancelledIntegrationEvent.Topic("Development"), Cancelled());
+            await Eventually.AssertAsync(
+                condition: "WMS consumes the canonical cancellation topic and closes the pending order",
+                assertion: async token =>
+                {
+                    using var read = factory.Services.CreateScope();
+                    var db = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                    Assert.Equal(InboundOrderStatus.Cancelled, (await db.InboundOrders.SingleAsync(token)).Status);
+                    Assert.Equal("cancel-123", (await db.ProcessedIntegrationEvents
+                        .SingleAsync(x => x.ConsumerName == CancellationConsumer, token)).EventId);
+                },
+                options: new EventuallyOptions(TimeSpan.FromSeconds(60), TimeSpan.FromMilliseconds(250), []));
         }
         finally
         {
@@ -210,6 +422,17 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
         return wire;
     }
 
+    private static async Task DeliverAsync(ReplayFixture fixture, PurchaseOrderCancelledIntegrationEvent message)
+    {
+        using var scope = fixture.Factory.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<ErpPurchaseOrderCancelledIntegrationEventHandler>()
+            .HandleCapAsync(message, default);
+    }
+
+    private static InboundOrder PendingReceipt(string organization, string environment) => InboundOrder.CreatePendingReceipt(
+        organization, environment, "PO-123", WmsSourceDocumentTypes.PurchaseOrder, "PO-123", "SITE",
+        [new ExpectedInboundOrderLine("020", "SKU-A", "kg", 12.5m, "STAGE-A", "quality", "company", null)]);
+
     private static async Task DeliverAsync(ReplayFixture fixture, PurchaseOrderReleasedV2IntegrationEvent message)
     {
         using var scope = fixture.Factory.Services.CreateScope();
@@ -234,6 +457,12 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
         [Route + "QualityStatus"] = "quality",
         [Route + "OwnerType"] = "company"
     };
+
+    private static PurchaseOrderCancelledIntegrationEvent Cancelled() => new(
+        "cancel-123", PurchaseOrderCancelledIntegrationEvent.Type, PurchaseOrderCancelledIntegrationEvent.Version,
+        DateTimeOffset.Parse("2026-10-02T00:00:00Z"), ErpIntegrationEventSources.BusinessErp,
+        "corr-123", "cause-123", "org-replay", "env-replay", "system:erp", "cancel-key-123",
+        new(Released().Payload.PurchaseOrderId, "PO-123", "SITE", 4, "supplier cancellation"));
 
     private static PurchaseOrderReleasedV2IntegrationEvent Released() => new(
         "release-123", PurchaseOrderReleasedV2IntegrationEvent.Type, PurchaseOrderReleasedV2IntegrationEvent.Version,
