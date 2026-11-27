@@ -32,6 +32,7 @@ import {
   NvDialogTrigger,
   NvEntityPicker,
   NvField,
+  NvFieldDescription,
   NvFieldGroup,
   NvFieldLabel,
   NvInput,
@@ -579,12 +580,19 @@ function riskTone(severity?: string | null): StatusTone {
                 </p>
                 <div class="grid gap-3 sm:grid-cols-2">
                   <NvField :data-invalid="showErrors && !effectiveValid">
-                    <NvFieldLabel>生效日 <span class="text-destructive">*</span></NvFieldLabel>
+                    <NvFieldLabel for="eco-effective-date">
+                      生效日 <span class="text-destructive">*</span>
+                    </NvFieldLabel>
                     <NvDatePicker
+                      id="eco-effective-date"
                       v-model="form.effectiveDate"
+                      aria-describedby="eco-effective-date-help"
                       placeholder="选择生效日"
                       class="w-full"
                     />
+                    <NvFieldDescription id="eco-effective-date-help">
+                      选择未来日期，提交后进入「计划生效」。此次变更在生效前不会更新下游版本。
+                    </NvFieldDescription>
                   </NvField>
                 </div>
               </NvFieldGroup>

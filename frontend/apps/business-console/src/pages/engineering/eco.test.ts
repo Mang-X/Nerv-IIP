@@ -235,6 +235,18 @@ describe('engineering eco page', () => {
     expect(text).not.toContain('待审')
   })
 
+  it('发布前说明未来生效日会进入计划生效状态', async () => {
+    const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
+    await findButton(wrapper, '发布变更')!.trigger('click')
+
+    const datePicker = wrapper.get('form input[type="date"]')
+    const helpId = datePicker.attributes('aria-describedby')
+    expect(helpId).toBeTruthy()
+    expect(wrapper.get(`[id="${helpId}"]`).text()).toContain(
+      '选择未来日期，提交后进入「计划生效」。此次变更在生效前不会更新下游版本。',
+    )
+  })
+
   it('发布向导：填变更信息 + 一条受影响版本提交，release 收到正确 body', async () => {
     const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
     await flushPromises()
