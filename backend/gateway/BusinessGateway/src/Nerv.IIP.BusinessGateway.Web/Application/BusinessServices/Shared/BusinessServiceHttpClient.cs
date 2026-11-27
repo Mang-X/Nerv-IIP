@@ -224,15 +224,16 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
             success.ValueKind == JsonValueKind.False)
         {
             var statusCode = ReadFailureEnvelopeStatus(root);
-            if (failClosedOnFailureEnvelope || statusCode is not (400 or 403 or 404 or 409 or 422))
+            if (failClosedOnFailureEnvelope || statusCode is not (0 or 400 or 403 or 404 or 409 or 422))
             {
                 throw BusinessServiceProxyException.FromSafeDownstreamMessage(
                     HttpStatusCode.BadGateway,
                     "downstream-invalid-response");
             }
 
+            var mappedStatusCode = statusCode == 0 ? HttpStatusCode.BadRequest : (HttpStatusCode)statusCode;
             throw BusinessServiceProxyException.FromDownstreamBusinessMessage(
-                (HttpStatusCode)statusCode, DownstreamEnvelopeMessage(root));
+                mappedStatusCode, DownstreamEnvelopeMessage(root));
         }
 
         var payload = root.TryGetProperty("data", out var data)
@@ -252,7 +253,7 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
     {
         if (!root.TryGetProperty("code", out var code))
         {
-            return 0;
+            return -1;
         }
 
         return code.ValueKind switch
@@ -260,7 +261,7 @@ public abstract class BusinessServiceHttpClient(HttpClient httpClient)
             JsonValueKind.Number when code.TryGetInt32(out var number) => number,
             JsonValueKind.String when int.TryParse(code.GetString(), System.Globalization.NumberStyles.None,
                 System.Globalization.CultureInfo.InvariantCulture, out var number) => number,
-            _ => 0,
+            _ => -1,
         };
     }
 
