@@ -114,6 +114,7 @@ public sealed class ReportingDimensionResourceHttpTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("environment", "Testing");
+            builder.UseSetting("Iam:Jwt:JwksJson", Nerv.IIP.Testing.IamJwtFixture.PublicJwksJson);
             builder.UseSetting("InternalService:BearerToken", "reporting-dimension-http-token");
             // 产品基线 seed 默认开启，会往这个内存库写班次，混进本用例对单一资源的断言。
             builder.UseSetting("MasterData:Seed:Enabled", "false");

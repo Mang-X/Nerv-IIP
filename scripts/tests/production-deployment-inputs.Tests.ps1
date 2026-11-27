@@ -1,4 +1,4 @@
-# Script-Governance:
+﻿# Script-Governance:
 #   Category: check
 #   SideEffects:
 #     - Executes release-install validation and captures the environment at an isolated Aspire command boundary
@@ -152,7 +152,15 @@ foreach ($gateway in @('gateway', 'business-gateway')) {
     Assert-ContainsOrdinal -Text $serviceBlocks[$gateway] -Expected 'Security__ForwardedHeaders__TrustedProxies: ${NERV_IIP_GATEWAY_TRUSTED_PROXIES:?' -Message "网关 $gateway 缺少必填可信代理配置。"
 }
 Assert-ContainsOrdinal -Text $environmentExampleText -Expected 'NERV_IIP_GATEWAY_TRUSTED_PROXIES=' -Message '生产环境样例缺少可信代理输入。'
-foreach ($service in @('iam') + @($serviceBlocks.Keys | Where-Object { $_ -like 'business-*' -and $_ -notin @('business-gateway', 'business-console') })) {
+$exposedBusinessServices = @('business-gateway', 'business-console')
+$internalBusinessServices = @(
+    $serviceBlocks.Keys | Where-Object {
+        $candidate = [string] $_
+        $candidate.StartsWith('business-', [StringComparison]::Ordinal) -and
+            -not ($exposedBusinessServices | Where-Object { [string]::Equals($_, $candidate, [StringComparison]::Ordinal) })
+    }
+)
+foreach ($service in @('iam') + $internalBusinessServices) {
     if ($serviceBlocks[$service] -match '(?m)^    ports:') { throw "服务 $service 不得发布宿主机端口。" }
 }
 

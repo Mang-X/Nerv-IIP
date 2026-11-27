@@ -474,6 +474,7 @@ public sealed class MasterDataResourceListHttpTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("environment", "Testing");
+            builder.UseSetting("Iam:Jwt:JwksJson", Nerv.IIP.Testing.IamJwtFixture.PublicJwksJson);
             builder.UseSetting("InternalService:BearerToken", "master-data-resource-list-http-test-token");
             builder.ConfigureTestServices(services =>
             {

@@ -48,6 +48,7 @@ public sealed class SchedulingTimeContextTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("environment", "Testing");
+            builder.UseSetting("Iam:Jwt:JwksJson", Nerv.IIP.Testing.IamJwtFixture.PublicJwksJson);
             builder.UseSetting("InternalService:BearerToken", "time-context-internal-test");
             builder.UseSetting(SchedulingTimeContextAuthorization.ConfigurationKey, "test-key");
             builder.ConfigureTestServices(services => {

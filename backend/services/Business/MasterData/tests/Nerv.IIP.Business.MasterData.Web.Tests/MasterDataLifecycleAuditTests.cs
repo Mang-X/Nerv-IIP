@@ -554,6 +554,7 @@ public sealed class MasterDataLifecycleAuditTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseSetting("environment", "Testing");
+            builder.UseSetting("Iam:Jwt:JwksJson", Nerv.IIP.Testing.IamJwtFixture.PublicJwksJson);
             builder.UseSetting("InternalService:BearerToken", "audit-test-token");
             builder.ConfigureTestServices(services =>
             {

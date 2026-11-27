@@ -353,10 +353,7 @@ export function useCodeRulesPage() {
       sequenceCountError.value === '',
   )
   const canSubmit = computed(
-    () =>
-      displayNameValid.value &&
-      changeReasonValid.value &&
-      segmentsValid.value,
+    () => displayNameValid.value && changeReasonValid.value && segmentsValid.value,
   )
 
   // 把编辑行映射成契约段（number 空串转 undefined）。

@@ -1,4 +1,4 @@
-# Script-Governance:
+﻿# Script-Governance:
 #   Category: verify
 #   SideEffects:
 #     - Builds and publishes two temporary Aspire Docker Compose artifacts
@@ -100,16 +100,21 @@ function Assert-EnvironmentArtifact {
         }
     }
 
-    if ($EnvironmentName -ceq 'Production') {
+    if ([string]::Equals($EnvironmentName, 'Production', [StringComparison]::Ordinal)) {
+        $allowedJwtKeys = @('Iam__Jwt__JwksJson', 'Iam__Jwt__Issuer', 'Iam__Jwt__Audience')
         foreach ($service in @('business-master-data', 'business-product-engineering', 'business-quality', 'gateway', 'business-gateway')) {
-            $jwtKeys = @($Services[$service].Keys | Where-Object { $_ -clike 'Iam__Jwt__*' })
-            if ($Services[$service]['Iam__Jwt__JwksJson'] -cne '${IAM_JWT_JWKS_JSON}' -or
-                @($jwtKeys | Where-Object { $_ -cnotin @('Iam__Jwt__JwksJson', 'Iam__Jwt__Issuer', 'Iam__Jwt__Audience') }).Count -gt 0) {
+            $jwtKeys = @($Services[$service].Keys | Where-Object { ([string] $_).StartsWith('Iam__Jwt__', [StringComparison]::Ordinal) })
+            $unexpectedJwtKeys = @($jwtKeys | Where-Object {
+                $candidate = [string] $_
+                -not ($allowedJwtKeys | Where-Object { [string]::Equals($_, $candidate, [StringComparison]::Ordinal) })
+            })
+            if (-not [string]::Equals([string] $Services[$service]['Iam__Jwt__JwksJson'], '${IAM_JWT_JWKS_JSON}', [StringComparison]::Ordinal) -or
+                $unexpectedJwtKeys.Count -gt 0) {
                 throw "Production $service 必须使用 IAM 公钥 JWKS 占位符，且不得注入签名材料。"
             }
         }
         foreach ($gateway in @('gateway', 'business-gateway')) {
-            if ($Services[$gateway]['Security__ForwardedHeaders__TrustedProxies'] -cne '192.0.2.10,192.0.2.16/28') {
+            if (-not [string]::Equals([string] $Services[$gateway]['Security__ForwardedHeaders__TrustedProxies'], '192.0.2.10,192.0.2.16/28', [StringComparison]::Ordinal)) {
                 throw "Production $gateway 必须接收显式的可信代理配置。"
             }
         }
