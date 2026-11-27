@@ -9,6 +9,7 @@ namespace Nerv.IIP.Business.Approval.Web.Application.Auth;
 internal static class CreateApprovalChainAuthorization
 {
     internal const string PolicyName = "Approval.CreateChain";
+    internal const string PrincipalHeader = "X-Nerv-IIP-Approval-Principal";
     private const string SchemeName = "ApprovalCreateChainCaller";
 
     internal static void AddCreateApprovalChainAuthorization(this IServiceCollection services, IConfiguration configuration)
@@ -50,8 +51,7 @@ internal static class CreateApprovalChainAuthorization
 
     internal static bool Allows(ClaimsPrincipal principal, StartApprovalChainRequest request)
     {
-        var caller = principal.Identities.SingleOrDefault(identity =>
-            identity.IsAuthenticated && identity.AuthenticationType == SchemeName);
+        var caller = ScopedIdentity(principal);
         if (caller is null)
         {
             return principal.Identities.Any(identity =>
@@ -79,6 +79,13 @@ internal static class CreateApprovalChainAuthorization
             _ => false,
         };
     }
+
+    internal static string? CallerSubject(ClaimsPrincipal principal) =>
+        ScopedIdentity(principal)?.FindFirst(ScopedCallerClaimTypes.Subject)?.Value;
+
+    private static ClaimsIdentity? ScopedIdentity(ClaimsPrincipal principal) =>
+        principal.Identities.SingleOrDefault(identity =>
+            identity.IsAuthenticated && identity.AuthenticationType == SchemeName);
 
     private static bool HasLocalRouting(StartApprovalChainRequest request)
         => request.RoutingOrganizationId is null || request.RoutingOrganizationId == request.OrganizationId;

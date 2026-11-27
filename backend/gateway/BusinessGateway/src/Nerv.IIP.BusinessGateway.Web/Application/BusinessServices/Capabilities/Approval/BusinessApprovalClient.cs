@@ -19,7 +19,8 @@ public interface IBusinessApprovalClient
     Task<BusinessConsoleStartApprovalChainResponse> StartChainAsync(
         string internalBearerToken,
         BusinessConsoleStartApprovalChainRequest request,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        string? principalBearer = null);
 
     Task<BusinessConsoleApprovalChainListResponse> ListChainsAsync(
         string internalBearerToken,
@@ -96,14 +97,17 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient, IConfigura
     public Task<BusinessConsoleStartApprovalChainResponse> StartChainAsync(
         string internalBearerToken,
         BusinessConsoleStartApprovalChainRequest request,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        string? principalBearer = null) =>
         SendAsync<BusinessConsoleStartApprovalChainResponse>(
             ScopedCallerOutboundToken.Resolve(configuration?.GetSection("Approval:CreateChain:OutboundCredentials"),
                 request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Post,
             "/api/business/v1/approvals/chains",
             request,
-            cancellationToken);
+            cancellationToken,
+            configureRequest: principalBearer is null ? null : message =>
+                message.Headers.Add("X-Nerv-IIP-Approval-Principal", $"Bearer {principalBearer}"));
 
     public Task<BusinessConsoleApprovalChainListResponse> ListChainsAsync(
         string internalBearerToken,

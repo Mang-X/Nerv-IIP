@@ -9115,14 +9115,18 @@ public sealed class BusinessGatewayProxyTests
         var request = new BusinessConsoleStartApprovalChainRequest("org-001", "env-dev", "fixture", "quality",
             "ncr-disposition", "ncr-001", null, "user-admin", RoutingOrganizationId: "org-routing");
 
-        var started = await client.StartChainAsync(legacy, request, CancellationToken.None);
+        var started = await client.StartChainAsync(legacy, request, CancellationToken.None, "synthetic-user-token");
         Assert.Equal("chain-001", started.ChainId);
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.StartChainAsync(legacy,
             request with { EnvironmentId = "env-other" }, CancellationToken.None));
         await client.ListChainsAsync(legacy, new("org-001", "env-dev", null, null, null, null, null), CancellationToken.None);
 
         Assert.Collection(handler.Requests,
-            posted => Assert.Equal("synthetic-gateway-approval-token", posted.Headers.Authorization?.Parameter),
+            posted =>
+            {
+                Assert.Equal("synthetic-gateway-approval-token", posted.Headers.Authorization?.Parameter);
+                Assert.Equal("Bearer synthetic-user-token", Assert.Single(posted.Headers.GetValues("X-Nerv-IIP-Approval-Principal")));
+            },
             listed => Assert.Equal(legacy, listed.Headers.Authorization?.Parameter));
         using var payload = JsonDocument.Parse(handler.RequestBodies[0]!);
         Assert.Equal("quality", payload.RootElement.GetProperty("sourceService").GetString());

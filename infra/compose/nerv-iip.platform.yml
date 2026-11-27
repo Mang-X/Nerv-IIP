@@ -65,6 +65,7 @@ services:
         DLL: Nerv.IIP.Iam.Web.dll
     environment:
       <<: *dotnet-env
+      InternalService__BearerToken: ""
       ConnectionStrings__IamDb: Host=postgres;Port=5432;Database=nerv_iip_iam;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
       Iam__Seed__Enabled: ${NERV_IIP_IAM_SEED_ENABLED:-false}
       Iam__Seed__AdminPassword: ${NERV_IIP_IAM_SEED_ADMIN_PASSWORD:-}
@@ -197,6 +198,10 @@ services:
         DLL: Nerv.IIP.Business.ProductEngineering.Web.dll
     environment:
       <<: *dotnet-env
+      Approval__BaseUrl: http://business-approval:8080
+      Approval__GetChain__OutboundCredentials__0__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__GetChain__OutboundCredentials__0__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__GetChain__OutboundCredentials__0__BearerToken: ${NERV_IIP_APPROVAL_GET_CHAIN_PRODUCT_ENGINEERING_TOKEN:?set NERV_IIP_APPROVAL_GET_CHAIN_PRODUCT_ENGINEERING_TOKEN}
       Iam__Jwt__JwksJson: ${NERV_IIP_IAM_JWT_JWKS_JSON:?set NERV_IIP_IAM_JWT_JWKS_JSON}
       ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=nerv_iip_product_engineering;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
 
@@ -210,6 +215,10 @@ services:
         DLL: Nerv.IIP.Business.Inventory.Web.dll
     environment:
       <<: *dotnet-env
+      Approval__BaseUrl: http://business-approval:8080
+      Approval__CreateChain__OutboundCredentials__0__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__CreateChain__OutboundCredentials__0__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__CreateChain__OutboundCredentials__0__BearerToken: ${NERV_IIP_APPROVAL_CREATE_CHAIN_INVENTORY_TOKEN:?set NERV_IIP_APPROVAL_CREATE_CHAIN_INVENTORY_TOKEN}
       ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=nerv_iip_inventory;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
 
   business-quality:
@@ -222,6 +231,10 @@ services:
         DLL: Nerv.IIP.Business.Quality.Web.dll
     environment:
       <<: *dotnet-env
+      Approval__BaseUrl: http://business-approval:8080
+      Approval__GetChain__OutboundCredentials__0__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__GetChain__OutboundCredentials__0__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__GetChain__OutboundCredentials__0__BearerToken: ${NERV_IIP_APPROVAL_GET_CHAIN_QUALITY_TOKEN:?set NERV_IIP_APPROVAL_GET_CHAIN_QUALITY_TOKEN}
       Iam__Jwt__JwksJson: ${NERV_IIP_IAM_JWT_JWKS_JSON:?set NERV_IIP_IAM_JWT_JWKS_JSON}
       ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=nerv_iip_quality;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
       FileStorage__BaseUrl: http://file-storage:8080
@@ -236,6 +249,10 @@ services:
         DLL: Nerv.IIP.Business.Mes.Web.dll
     environment:
       <<: *dotnet-env
+      Approval__BaseUrl: http://business-approval:8080
+      Approval__GetChain__OutboundCredentials__0__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__GetChain__OutboundCredentials__0__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__GetChain__OutboundCredentials__0__BearerToken: ${NERV_IIP_APPROVAL_GET_CHAIN_MES_TOKEN:?set NERV_IIP_APPROVAL_GET_CHAIN_MES_TOKEN}
       ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=nerv_iip_mes;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
       # 本 legacy overlay 不下发 Inventory__SiteCode / Inventory__SourceLocationCodes__N /
       # Inventory__LineSideLocationCode / Inventory__FinishedGoodsLocationCode，因此不支持线边收料
@@ -290,6 +307,85 @@ services:
         DLL: Nerv.IIP.Business.Approval.Web.dll
     environment:
       <<: *dotnet-env
+      Approval__CreateChain__AllowLegacyBearer: ${NERV_IIP_APPROVAL_ALLOW_LEGACY_BEARER:-false}
+      Approval__CreateChain__ScopedCallers__Profiles__0__Name: create-chain-erp
+      Approval__CreateChain__ScopedCallers__Profiles__0__Subject: business-erp
+      Approval__CreateChain__ScopedCallers__Profiles__0__Permissions__0: internal.approval-chains.create-erp
+      Approval__CreateChain__ScopedCallers__Profiles__0__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__CreateChain__ScopedCallers__Profiles__0__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__CreateChain__ScopedCallers__Profiles__0__BearerToken: ${NERV_IIP_APPROVAL_CREATE_CHAIN_ERP_TOKEN:?set NERV_IIP_APPROVAL_CREATE_CHAIN_ERP_TOKEN}
+      Approval__CreateChain__ScopedCallers__Profiles__1__Name: create-chain-inventory
+      Approval__CreateChain__ScopedCallers__Profiles__1__Subject: inventory
+      Approval__CreateChain__ScopedCallers__Profiles__1__Permissions__0: internal.approval-chains.create-inventory
+      Approval__CreateChain__ScopedCallers__Profiles__1__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__CreateChain__ScopedCallers__Profiles__1__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__CreateChain__ScopedCallers__Profiles__1__BearerToken: ${NERV_IIP_APPROVAL_CREATE_CHAIN_INVENTORY_TOKEN:?set NERV_IIP_APPROVAL_CREATE_CHAIN_INVENTORY_TOKEN}
+      Approval__CreateChain__ScopedCallers__Profiles__2__Name: create-chain-gateway
+      Approval__CreateChain__ScopedCallers__Profiles__2__Subject: business-gateway
+      Approval__CreateChain__ScopedCallers__Profiles__2__Permissions__0: internal.approval-chains.create-gateway
+      Approval__CreateChain__ScopedCallers__Profiles__2__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__CreateChain__ScopedCallers__Profiles__2__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__CreateChain__ScopedCallers__Profiles__2__BearerToken: ${NERV_IIP_APPROVAL_CREATE_CHAIN_GATEWAY_TOKEN:?set NERV_IIP_APPROVAL_CREATE_CHAIN_GATEWAY_TOKEN}
+      Approval__GetChain__AllowLegacyBearer: ${NERV_IIP_APPROVAL_ALLOW_LEGACY_BEARER:-false}
+      Approval__GetChain__ScopedCallers__Profiles__0__Name: get-chain-mes
+      Approval__GetChain__ScopedCallers__Profiles__0__Subject: business-mes
+      Approval__GetChain__ScopedCallers__Profiles__0__Permissions__0: internal.approval-chains.read-mes
+      Approval__GetChain__ScopedCallers__Profiles__0__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__GetChain__ScopedCallers__Profiles__0__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__GetChain__ScopedCallers__Profiles__0__BearerToken: ${NERV_IIP_APPROVAL_GET_CHAIN_MES_TOKEN:?set NERV_IIP_APPROVAL_GET_CHAIN_MES_TOKEN}
+      Approval__GetChain__ScopedCallers__Profiles__1__Name: get-chain-quality
+      Approval__GetChain__ScopedCallers__Profiles__1__Subject: quality
+      Approval__GetChain__ScopedCallers__Profiles__1__Permissions__0: internal.approval-chains.read-quality
+      Approval__GetChain__ScopedCallers__Profiles__1__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__GetChain__ScopedCallers__Profiles__1__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__GetChain__ScopedCallers__Profiles__1__BearerToken: ${NERV_IIP_APPROVAL_GET_CHAIN_QUALITY_TOKEN:?set NERV_IIP_APPROVAL_GET_CHAIN_QUALITY_TOKEN}
+      Approval__GetChain__ScopedCallers__Profiles__2__Name: get-chain-product-engineering
+      Approval__GetChain__ScopedCallers__Profiles__2__Subject: product-engineering
+      Approval__GetChain__ScopedCallers__Profiles__2__Permissions__0: internal.approval-chains.read-product-engineering
+      Approval__GetChain__ScopedCallers__Profiles__2__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__GetChain__ScopedCallers__Profiles__2__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__GetChain__ScopedCallers__Profiles__2__BearerToken: ${NERV_IIP_APPROVAL_GET_CHAIN_PRODUCT_ENGINEERING_TOKEN:?set NERV_IIP_APPROVAL_GET_CHAIN_PRODUCT_ENGINEERING_TOKEN}
+      Approval__GetChain__ScopedCallers__Profiles__3__Name: get-chain-gateway
+      Approval__GetChain__ScopedCallers__Profiles__3__Subject: business-gateway
+      Approval__GetChain__ScopedCallers__Profiles__3__Permissions__0: internal.approval-chains.read-gateway
+      Approval__GetChain__ScopedCallers__Profiles__3__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__GetChain__ScopedCallers__Profiles__3__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__GetChain__ScopedCallers__Profiles__3__BearerToken: ${NERV_IIP_APPROVAL_GET_CHAIN_GATEWAY_TOKEN:?set NERV_IIP_APPROVAL_GET_CHAIN_GATEWAY_TOKEN}
+      Approval__ReadCollections__AllowLegacyBearer: ${NERV_IIP_APPROVAL_ALLOW_LEGACY_BEARER:-false}
+      Approval__ReadCollections__ScopedCallers__Profiles__0__Name: read-collections-gateway
+      Approval__ReadCollections__ScopedCallers__Profiles__0__Subject: business-gateway
+      Approval__ReadCollections__ScopedCallers__Profiles__0__Permissions__0: internal.approval-chains.list-gateway
+      Approval__ReadCollections__ScopedCallers__Profiles__0__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__ReadCollections__ScopedCallers__Profiles__0__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__ReadCollections__ScopedCallers__Profiles__0__BearerToken: ${NERV_IIP_APPROVAL_READ_COLLECTIONS_GATEWAY_TOKEN:?set NERV_IIP_APPROVAL_READ_COLLECTIONS_GATEWAY_TOKEN}
+      Approval__ReadTemplates__AllowLegacyBearer: ${NERV_IIP_APPROVAL_ALLOW_LEGACY_BEARER:-false}
+      Approval__ReadTemplates__ScopedCallers__Profiles__0__Name: read-templates-gateway
+      Approval__ReadTemplates__ScopedCallers__Profiles__0__Subject: business-gateway
+      Approval__ReadTemplates__ScopedCallers__Profiles__0__Permissions__0: internal.approval-templates.read-gateway
+      Approval__ReadTemplates__ScopedCallers__Profiles__0__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__ReadTemplates__ScopedCallers__Profiles__0__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__ReadTemplates__ScopedCallers__Profiles__0__BearerToken: ${NERV_IIP_APPROVAL_READ_TEMPLATES_GATEWAY_TOKEN:?set NERV_IIP_APPROVAL_READ_TEMPLATES_GATEWAY_TOKEN}
+      Approval__WriteTemplates__AllowLegacyBearer: ${NERV_IIP_APPROVAL_ALLOW_LEGACY_BEARER:-false}
+      Approval__WriteTemplates__ScopedCallers__Profiles__0__Name: write-templates-gateway
+      Approval__WriteTemplates__ScopedCallers__Profiles__0__Subject: business-gateway
+      Approval__WriteTemplates__ScopedCallers__Profiles__0__Permissions__0: internal.approval-templates.write-gateway
+      Approval__WriteTemplates__ScopedCallers__Profiles__0__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__WriteTemplates__ScopedCallers__Profiles__0__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__WriteTemplates__ScopedCallers__Profiles__0__BearerToken: ${NERV_IIP_APPROVAL_WRITE_TEMPLATES_GATEWAY_TOKEN:?set NERV_IIP_APPROVAL_WRITE_TEMPLATES_GATEWAY_TOKEN}
+      Approval__ReadDelegations__AllowLegacyBearer: ${NERV_IIP_APPROVAL_ALLOW_LEGACY_BEARER:-false}
+      Approval__ReadDelegations__ScopedCallers__Profiles__0__Name: read-delegations-gateway
+      Approval__ReadDelegations__ScopedCallers__Profiles__0__Subject: business-gateway
+      Approval__ReadDelegations__ScopedCallers__Profiles__0__Permissions__0: internal.approval-delegations.list-gateway
+      Approval__ReadDelegations__ScopedCallers__Profiles__0__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__ReadDelegations__ScopedCallers__Profiles__0__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__ReadDelegations__ScopedCallers__Profiles__0__BearerToken: ${NERV_IIP_APPROVAL_READ_DELEGATIONS_GATEWAY_TOKEN:?set NERV_IIP_APPROVAL_READ_DELEGATIONS_GATEWAY_TOKEN}
+      Approval__OverdueCheck__HttpAuthorization__AllowLegacyBearer: ${NERV_IIP_APPROVAL_ALLOW_LEGACY_BEARER:-false}
+      Approval__OverdueCheck__HttpAuthorization__ScopedCallers__Profiles__0__Name: overdue-check-operator
+      Approval__OverdueCheck__HttpAuthorization__ScopedCallers__Profiles__0__Subject: approval-overdue-operator
+      Approval__OverdueCheck__HttpAuthorization__ScopedCallers__Profiles__0__Permissions__0: internal.approval-tasks.check-overdue
+      Approval__OverdueCheck__HttpAuthorization__ScopedCallers__Profiles__0__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__OverdueCheck__HttpAuthorization__ScopedCallers__Profiles__0__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__OverdueCheck__HttpAuthorization__ScopedCallers__Profiles__0__BearerToken: ${NERV_IIP_APPROVAL_OVERDUE_CHECK_OPERATOR_TOKEN:?set NERV_IIP_APPROVAL_OVERDUE_CHECK_OPERATOR_TOKEN}
       Iam__BaseUrl: http://iam:8080
       MasterData__BaseUrl: http://business-master-data:8080
       ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=nerv_iip_business_approval;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
@@ -345,6 +441,10 @@ services:
         DLL: Nerv.IIP.Business.Erp.Web.dll
     environment:
       <<: *dotnet-env
+      Approval__BaseUrl: http://business-approval:8080
+      Approval__CreateChain__OutboundCredentials__0__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__CreateChain__OutboundCredentials__0__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__CreateChain__OutboundCredentials__0__BearerToken: ${NERV_IIP_APPROVAL_CREATE_CHAIN_ERP_TOKEN:?set NERV_IIP_APPROVAL_CREATE_CHAIN_ERP_TOKEN}
       ConnectionStrings__PostgreSQL: Host=postgres;Port=5432;Database=nerv_iip_erp;Username=${NERV_IIP_POSTGRES_USER:-nerv};Password=${NERV_IIP_POSTGRES_PASSWORD:?set NERV_IIP_POSTGRES_PASSWORD}
 
   gateway:
@@ -381,6 +481,25 @@ services:
         DLL: Nerv.IIP.BusinessGateway.Web.dll
     environment:
       <<: *dotnet-env
+      Approval__BaseUrl: http://business-approval:8080
+      Approval__CreateChain__OutboundCredentials__0__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__CreateChain__OutboundCredentials__0__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__CreateChain__OutboundCredentials__0__BearerToken: ${NERV_IIP_APPROVAL_CREATE_CHAIN_GATEWAY_TOKEN:?set NERV_IIP_APPROVAL_CREATE_CHAIN_GATEWAY_TOKEN}
+      Approval__GetChain__OutboundCredentials__0__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__GetChain__OutboundCredentials__0__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__GetChain__OutboundCredentials__0__BearerToken: ${NERV_IIP_APPROVAL_GET_CHAIN_GATEWAY_TOKEN:?set NERV_IIP_APPROVAL_GET_CHAIN_GATEWAY_TOKEN}
+      Approval__ReadCollections__OutboundCredentials__0__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__ReadCollections__OutboundCredentials__0__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__ReadCollections__OutboundCredentials__0__BearerToken: ${NERV_IIP_APPROVAL_READ_COLLECTIONS_GATEWAY_TOKEN:?set NERV_IIP_APPROVAL_READ_COLLECTIONS_GATEWAY_TOKEN}
+      Approval__ReadTemplates__OutboundCredentials__0__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__ReadTemplates__OutboundCredentials__0__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__ReadTemplates__OutboundCredentials__0__BearerToken: ${NERV_IIP_APPROVAL_READ_TEMPLATES_GATEWAY_TOKEN:?set NERV_IIP_APPROVAL_READ_TEMPLATES_GATEWAY_TOKEN}
+      Approval__WriteTemplates__OutboundCredentials__0__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__WriteTemplates__OutboundCredentials__0__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__WriteTemplates__OutboundCredentials__0__BearerToken: ${NERV_IIP_APPROVAL_WRITE_TEMPLATES_GATEWAY_TOKEN:?set NERV_IIP_APPROVAL_WRITE_TEMPLATES_GATEWAY_TOKEN}
+      Approval__ReadDelegations__OutboundCredentials__0__OrganizationId: ${NERV_IIP_APPROVAL_ORGANIZATION_ID:?set NERV_IIP_APPROVAL_ORGANIZATION_ID}
+      Approval__ReadDelegations__OutboundCredentials__0__EnvironmentId: ${NERV_IIP_APPROVAL_ENVIRONMENT_ID:?set NERV_IIP_APPROVAL_ENVIRONMENT_ID}
+      Approval__ReadDelegations__OutboundCredentials__0__BearerToken: ${NERV_IIP_APPROVAL_READ_DELEGATIONS_GATEWAY_TOKEN:?set NERV_IIP_APPROVAL_READ_DELEGATIONS_GATEWAY_TOKEN}
       FileStorage__BaseUrl: http://file-storage:8080
       FileStorage__DownloadBearerToken: ${NERV_IIP_FILE_STORAGE_BUSINESS_GATEWAY_DOWNLOAD_TOKEN:?set NERV_IIP_FILE_STORAGE_BUSINESS_GATEWAY_DOWNLOAD_TOKEN}
       Iam__BaseUrl: http://iam:8080

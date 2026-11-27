@@ -272,6 +272,55 @@ function Assert-ApprovalDepartmentArtifact {
     }
 }
 
+$approvalCallers = [ordered]@{
+    CreateChain = @('business-erp', 'business-inventory', 'business-gateway')
+    GetChain = @('business-mes', 'business-quality', 'business-product-engineering', 'business-gateway')
+    ReadCollections = @('business-gateway')
+    ReadTemplates = @('business-gateway')
+    WriteTemplates = @('business-gateway')
+    ReadDelegations = @('business-gateway')
+    OverdueCheck = @('approval-overdue-operator')
+}
+
+function Assert-ApprovalCallerArtifact {
+    param([hashtable] $Services, [bool] $AllowLegacy)
+
+    if ($Services['iam'].ContainsKey('InternalService__BearerToken')) {
+        throw 'IAM must receive no shared internal credential.'
+    }
+    $approval = $Services['business-approval']
+    $tokens = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    foreach ($operation in $approvalCallers.Keys) {
+        $settings = if ($operation -eq 'OverdueCheck') { 'OverdueCheck__HttpAuthorization' } else { $operation }
+        if ($approval["Approval__${settings}__AllowLegacyBearer"] -cne $AllowLegacy.ToString().ToLowerInvariant()) {
+            throw "Unexpected legacy authentication policy for Approval $operation."
+        }
+        $index = 0
+        foreach ($caller in $approvalCallers[$operation]) {
+            $profile = "Approval__${settings}__ScopedCallers__Profiles__${index}__"
+            $token = [string] $approval[$profile + 'BearerToken']
+            if ($token -cnotmatch '^\$\{APPROVAL_[A-Z0-9_]+\}$' -or -not $tokens.Add($token)) {
+                throw "Approval $operation must receive a unique secret for $caller."
+            }
+            $expectedRecipients = @('business-approval')
+            if (-not $AllowLegacy -and $Services.ContainsKey($caller)) {
+                $expectedRecipients += $caller
+                $outbound = "Approval__${operation}__OutboundCredentials__0__"
+                foreach ($field in @('OrganizationId', 'EnvironmentId', 'BearerToken')) {
+                    if ([string]::IsNullOrEmpty($approval[$profile + $field]) -or $approval[$profile + $field] -cne $Services[$caller][$outbound + $field]) {
+                        throw "Approval $operation and $caller must receive matching $field."
+                    }
+                }
+            }
+            $recipients = @($Services.GetEnumerator() | Where-Object { $_.Value.Values -ccontains $token } | ForEach-Object Key)
+            if (-not (Test-OrdinalSetEquals -Actual $recipients -Expected $expectedRecipients)) {
+                throw "Approval $operation has an invalid recipient set for $caller."
+            }
+            $index++
+        }
+    }
+}
+
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-apphost-environment-artifacts-$([Guid]::NewGuid().ToString('N'))"
 try {
     [IO.Directory]::CreateDirectory($temporaryRoot) | Out-Null
@@ -287,6 +336,16 @@ try {
                 ConnectorHost__ConnectorHostId = 'verify-connector-host'
                 ConnectorHost__OrganizationId = 'verify-organization'
                 ConnectorHost__EnvironmentId = 'verify-environment'
+            }
+        }
+        $allowLegacyApproval = $environmentName -ceq 'Development'
+        foreach ($operation in $approvalCallers.Keys) {
+            $publishEnvironment["Approval${operation}__Scopes__0__OrganizationId"] = 'verify-approval-org-a'
+            $publishEnvironment["Approval${operation}__Scopes__0__EnvironmentId"] = 'verify-approval-env-a'
+            if ($allowLegacyApproval) {
+                $publishEnvironment["Approval${operation}__Enabled"] = 'true'
+                $publishEnvironment["Approval${operation}__AllowLegacyBearer"] = 'true'
+                $publishEnvironment["Approval${operation}__ConfigureSenders"] = 'false'
             }
         }
         $configureApprovalDepartmentSender = $environmentName -ceq 'Development'
@@ -305,6 +364,7 @@ try {
         if (-not (Test-Path -LiteralPath $composePath -PathType Leaf)) { throw "Aspire publish did not produce $composePath." }
         $services = Get-ComposeProjectEnvironments -ComposePath $composePath
         Assert-EnvironmentArtifact -Services $services -EnvironmentName $environmentName
+        Assert-ApprovalCallerArtifact -Services $services -AllowLegacy $allowLegacyApproval
         Assert-ApprovalDepartmentArtifact -Services $services -ConfigureSender $configureApprovalDepartmentSender
         $composeText = [IO.File]::ReadAllText($composePath)
         if ($environmentName -ceq 'Production') {

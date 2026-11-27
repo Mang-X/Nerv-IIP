@@ -51,9 +51,30 @@
 
 不要把 `infra/compose/` 的 legacy overlay 当成完整平台拓扑；它只用于已有迁移期验证/发布演练。生成产物进入交付前，运行当前仓库提供的 production deployment artifact / release rehearsal 验证入口；准确脚本名、参数和 impact 以 `scripts/` 与 CI producer 为准。
 
+### Approval 生产认证与存量切换
+
+IAM 的授权检查和当前主体查询使用 IAM 凭据。网关、Approval 等请求方将当前主体的令牌传给 IAM。IAM 服务部署不接收共享内部令牌。
+
+Approval 的生产配置默认关闭七组 HTTP 操作的共享令牌兼容。为每个组织与环境范围配置下表中的调用方凭据。每个调用方、操作和范围独立生成凭据，经部署 secret 机制注入。共享内部令牌仍由其他内部接口使用，保留到这些接口完成迁移。
+
+| AppHost 配置节 | 调用方 |
+| --- | --- |
+| `ApprovalCreateChain` | ERP、Inventory、BusinessGateway |
+| `ApprovalGetChain` | MES、Quality、ProductEngineering、BusinessGateway |
+| `ApprovalReadCollections`、`ApprovalReadTemplates`、`ApprovalWriteTemplates`、`ApprovalReadDelegations` | BusinessGateway，每组独立 |
+| `ApprovalOverdueCheck` | 运维调用方，使用 `approval-check-overdue-operator-<范围索引>` 参数。进程内后台检查沿用自己的配置 |
+
+每节的 `Scopes` 数组必填，例如 `ApprovalCreateChain__Scopes__0__OrganizationId` 与 `ApprovalCreateChain__Scopes__0__EnvironmentId`。按各操作后续章节的参数名提供相应 secret。legacy Compose 验证入口在 `nerv-iip.production.env.example` 中列出单组范围和独立 secret 输入。多范围部署使用 Aspire 生成入口。
+
+已经给 BusinessGateway 配置建链专用凭据的部署，先更新全部 BusinessGateway 实例并验证建链，再更新 Approval。更新后的网关继续向上一版 Approval 提供原建链请求，并额外传递主体证明。
+
+1. 仍使用共享凭据的存量部署先更新 Approval。Aspire 按操作显式设置 `AllowLegacyBearer=true`、`ConfigureSenders=false`。legacy Compose 验证时显式设置 `NERV_IIP_APPROVAL_ALLOW_LEGACY_BEARER=true` 并保留旧发送方实例。
+2. 更新发送方并启用范围凭据。建链时，BusinessGateway 还传当前主体的 IAM bearer，Approval 向 IAM 复核身份与建链权限。ERP 与 Inventory 的发起人记录为认证服务主体。兼容共享凭据的旧机器调用记录为 `service:legacy-internal`，其请求体发起人不写入审计记录。
+3. 对各范围验证每个调用方的成功路径及范围外、其他调用方凭据的拒绝路径。停用相应 `AllowLegacyBearer` 后，再验证同一路由拒绝共享令牌。如果切换受阻，先恢复接收方兼容并验证生效，再恢复旧发送方或关闭其范围凭据。保留上线前后各操作的调用结果与回滚配置。
+
 ### Approval 建链调用凭据
 
-存量部署可继续使用原配置。迁移时在 AppHost 设置 `ApprovalCreateChain:Enabled=true`，并在 `ApprovalCreateChain:Scopes` 的每条记录提供 `OrganizationId` 与 `EnvironmentId`。为每个范围按列表下标提供三项 Aspire secret 参数 `approval-create-chain-erp-{index}`、`approval-create-chain-inventory-{index}` 和 `approval-create-chain-gateway-{index}`。每项使用独立凭据，范围列表应覆盖三个调用方实际使用的组织和环境。
+迁移时在 AppHost 设置 `ApprovalCreateChain:Enabled=true`，并在 `ApprovalCreateChain:Scopes` 的每条记录提供 `OrganizationId` 与 `EnvironmentId`。为每个范围按列表下标提供三项 Aspire secret 参数 `approval-create-chain-erp-{index}`、`approval-create-chain-inventory-{index}` 和 `approval-create-chain-gateway-{index}`。每项使用独立凭据，范围列表应覆盖三个调用方实际使用的组织和环境。
 
 1. 先让 Approval 部署支持限定凭据的版本，设置 `ApprovalCreateChain:AllowLegacyBearer=true` 和 `ApprovalCreateChain:ConfigureSenders=false`。
 2. 更新 ERP、Inventory 和 BusinessGateway，并将 `ConfigureSenders` 设为 `true`。在每个配置范围验证采购订单或销售授信审批、盘点调整审批及 Gateway 代用户建链。保留各入口的响应状态和相关 ID。
@@ -98,7 +119,7 @@
 
 ### Approval 超时人工检查凭据
 
-- `POST /api/business/v1/approvals/tasks/overdue/check` 保留为内部运维入口。先保持 `Approval:OverdueCheck:HttpAuthorization:AllowLegacyBearer=true`（默认值），在 Approval 服务配置 `Approval:OverdueCheck:HttpAuthorization:ScopedCallers:Profiles`。每个 profile 填写唯一的 `Name`、独立的 `BearerToken`、`Subject=approval-overdue-operator`、`Permissions:0=internal.approval-tasks.check-overdue` 及对应的 `OrganizationId` 和 `EnvironmentId`。通过部署的 secret 注入机制提供 token，每组范围使用独立凭据。
+- `POST /api/business/v1/approvals/tasks/overdue/check` 保留为内部运维入口。存量滚动切换时显式设置 `Approval:OverdueCheck:HttpAuthorization:AllowLegacyBearer=true`，在 Approval 服务配置 `Approval:OverdueCheck:HttpAuthorization:ScopedCallers:Profiles`。每个 profile 填写唯一的 `Name`、独立的 `BearerToken`、`Subject=approval-overdue-operator`、`Permissions:0=internal.approval-tasks.check-overdue` 及对应的 `OrganizationId` 和 `EnvironmentId`。通过部署的 secret 注入机制提供 token，每组范围使用独立凭据。
 - 将人工调用方迁移到对应范围的凭据。验证请求返回 `200` 和 `markedCount`，匹配凭据但超出范围的请求返回 `403`。全部迁移完成后，将 `AllowLegacyBearer` 设为 `false`，共享凭据应收到 `401`。严格模式要求在启用前配置有效 profile。需要回滚时，先恢复 `AllowLegacyBearer=true`，再恢复旧调用方。
 - 后台扫描由 `Approval:OverdueCheck:Enabled`、`Scopes` 和 `Interval` 控制。打开扫描并配置范围后，服务启动时扫描一次，随后按间隔扫描，默认间隔 15 分钟。后台直接派发应用命令，无需 HTTP 凭据。手动调用只检查本次请求涵盖的范围。
 

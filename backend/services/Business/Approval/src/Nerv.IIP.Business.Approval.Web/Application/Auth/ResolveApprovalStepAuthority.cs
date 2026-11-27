@@ -27,13 +27,19 @@ public sealed class ResolveApprovalStepAuthority(
         bool loadApproverContext = false) =>
         ResolveAsync(authorization, organizationId, environmentId, chainId, null, loadApproverContext, ct);
 
+    internal Task<(int Status, Actor? Actor)> ResolveChainInitiatorAsync(
+        string authorization, string organizationId, string environmentId, CancellationToken ct) =>
+        ResolveAsync(authorization, organizationId, environmentId, null, null, false, ct,
+            requireOrganizationWideAccess: false);
+
     internal Task<(int Status, Actor? Actor)> ResolveDelegationAsync(
         string authorization, string organizationId, string environmentId, ApprovalDelegationId? delegationId, CancellationToken ct) =>
         ResolveAsync(authorization, organizationId, environmentId, null, delegationId, false, ct);
 
     private async Task<(int Status, Actor? Actor)> ResolveAsync(
         string authorization, string? organizationId, string? environmentId,
-        ApprovalChainId? chainId, ApprovalDelegationId? delegationId, bool loadApproverContext, CancellationToken ct)
+        ApprovalChainId? chainId, ApprovalDelegationId? delegationId, bool loadApproverContext, CancellationToken ct,
+        bool requireOrganizationWideAccess = true)
     {
         if (!AuthenticationHeaderValue.TryParse(authorization, out var bearer)
             || !string.Equals(bearer.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase)
@@ -88,8 +94,8 @@ public sealed class ResolveApprovalStepAuthority(
                 new AuthorizationCheckRequest(ApprovalPermissionCodes.Manage, organizationId, environmentId,
                     resourceType, resourceId)
                 {
-                    IncludeSelectedMembership = principal.PrincipalType == "user",
-                    IncludePrincipalContext = principal.PrincipalType == "user",
+                    IncludeSelectedMembership = requireOrganizationWideAccess && principal.PrincipalType == "user",
+                    IncludePrincipalContext = requireOrganizationWideAccess && principal.PrincipalType == "user",
                 }, ct);
             if (check.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
             {
@@ -99,14 +105,14 @@ public sealed class ResolveApprovalStepAuthority(
             var permission = await ReadDataAsync<AuthorizationCheckResponse>(check, ct);
             if (!permission.Allowed || permission.PrincipalId != principal.UserId
                 || permission.PrincipalType != principal.PrincipalType || permission.DataScope?.DenyAll == true
-                || !AllowsSource(permission, source))
+                || (requireOrganizationWideAccess && !AllowsSource(permission, source)))
             {
                 return (StatusCodes.Status403Forbidden, null);
             }
 
             string? roles = null;
             string? department = null;
-            if (principal.PrincipalType == "user")
+            if (requireOrganizationWideAccess && principal.PrincipalType == "user")
             {
                 var membership = permission.SelectedMembership;
                 if (membership?.RoleIds is not { Count: > 0 }
@@ -155,7 +161,7 @@ public sealed class ResolveApprovalStepAuthority(
                 .SingleOrDefaultAsync(ct);
         }
 
-        // A new delegation has only the organization and environment of the requested record.
+        // Creation has only the organization and environment of the requested record.
         return organizationId is not null && environmentId is not null
             ? new ApprovalScope(organizationId, environmentId, organizationId)
             : null;

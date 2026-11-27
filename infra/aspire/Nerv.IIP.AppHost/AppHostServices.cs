@@ -73,7 +73,6 @@ internal sealed partial class AppHostComposition
             .WithEnvironment("Iam__Jwt__SigningKeys__0__PrivateKeyPem", iamJwtPrivateKeyPem)
             .WithEnvironment("Iam__Secrets__Pepper", iamSecretsPepper)
             .WithEnvironment("Iam__EnterpriseIdentity__Mfa__DevelopmentCode", iamEnterpriseIdentityMfaCode)
-            .WithEnvironment("InternalService__BearerToken", internalServiceBearerToken)
             .WithReference(iamDatabase, "IamDb")
             .WithReference(redis)
             .WaitFor(iamDatabase)

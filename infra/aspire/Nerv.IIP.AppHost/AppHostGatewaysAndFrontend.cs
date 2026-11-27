@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 
 internal sealed partial class AppHostComposition
 {
@@ -176,6 +177,9 @@ internal sealed partial class AppHostComposition
         ConfigureApprovalCallers(businessApproval, "ReadDelegations", "read-delegations", "internal.approval-delegations.list",
             (businessGateway, "business-gateway", "gateway"));
 
+        ConfigureApprovalCallers(businessApproval, "OverdueCheck", "check-overdue", "internal.approval-tasks.check-overdue",
+            (null, "approval-overdue-operator", "operator"));
+
         if (platformGatewayDownloadToken is not null && businessGatewayDownloadToken is not null)
         {
             gateway.WithEnvironment("FileStorage__DownloadBearerToken", platformGatewayDownloadToken);
@@ -310,14 +314,21 @@ internal sealed partial class AppHostComposition
         string operation,
         string parameterOperation,
         string permissionPrefix,
-        params (IResourceBuilder<ProjectResource> Resource, string Subject, string Capability)[] callers)
+        params (IResourceBuilder<ProjectResource>? Resource, string Subject, string Capability)[] callers)
     {
         var configuration = builder.Configuration.GetSection($"Approval{operation}");
-        if (!configuration.GetValue("Enabled", false))
+        var production = builder.Environment.IsProduction();
+        if (!configuration.GetValue("Enabled", production))
         {
+            if (production)
+            {
+                throw new InvalidOperationException($"Approval{operation} scoped credentials are required in Production.");
+            }
+
             return;
         }
 
+        var settings = operation == "OverdueCheck" ? "OverdueCheck__HttpAuthorization" : operation;
         var scopes = configuration.GetSection("Scopes").GetChildren().ToArray();
         if (scopes.Length == 0)
         {
@@ -325,13 +336,13 @@ internal sealed partial class AppHostComposition
         }
 
         var configureSenders = configuration.GetValue("ConfigureSenders", true);
-        var allowLegacy = configuration.GetValue("AllowLegacyBearer", true);
-        if (!configureSenders && !allowLegacy)
+        var allowLegacy = configuration.GetValue("AllowLegacyBearer", !production);
+        if (!configureSenders && !allowLegacy && callers.Any(caller => caller.Resource is not null))
         {
             throw new InvalidOperationException($"Approval{operation} requires scoped senders when legacy authentication is disabled.");
         }
 
-        approval.WithEnvironment($"Approval__{operation}__AllowLegacyBearer", allowLegacy ? "true" : "false");
+        approval.WithEnvironment($"Approval__{settings}__AllowLegacyBearer", allowLegacy ? "true" : "false");
         var configuredScopes = new HashSet<(string, string)>();
         var profileIndex = 0;
         for (var index = 0; index < scopes.Length; index++)
@@ -349,15 +360,15 @@ internal sealed partial class AppHostComposition
             {
                 var name = $"approval-{parameterOperation}-{capability}-{index}";
                 var secret = builder.AddParameter(name, secret: true);
-                var profile = $"Approval__{operation}__ScopedCallers__Profiles__{profileIndex++}__";
+                var profile = $"Approval__{settings}__ScopedCallers__Profiles__{profileIndex++}__";
                 approval.WithEnvironment(profile + "Name", name)
                     .WithEnvironment(profile + "Subject", subject)
                     .WithEnvironment(profile + "OrganizationId", organizationId)
                     .WithEnvironment(profile + "EnvironmentId", environmentId)
-                    .WithEnvironment(profile + "Permissions__0", $"{permissionPrefix}-{capability}")
+                    .WithEnvironment(profile + "Permissions__0", resource is null ? permissionPrefix : $"{permissionPrefix}-{capability}")
                     .WithEnvironment(profile + "BearerToken", secret);
 
-                if (configureSenders)
+                if (configureSenders && resource is not null)
                 {
                     var outbound = $"Approval__{operation}__OutboundCredentials__{index}__";
                     resource.WithEnvironment(outbound + "OrganizationId", organizationId)

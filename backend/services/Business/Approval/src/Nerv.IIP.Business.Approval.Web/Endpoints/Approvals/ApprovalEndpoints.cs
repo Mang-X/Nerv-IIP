@@ -96,7 +96,6 @@ public sealed record StartApprovalChainRequest(
     string DocumentType,
     string DocumentId,
     string? DocumentLineId,
-    string StartedBy,
     decimal? Amount = null,
     string? RoutingOrganizationId = null,
     string? DepartmentId = null);
@@ -307,7 +306,7 @@ public sealed class ListApprovalChainsEndpoint(ISender sender)
     }
 }
 
-public sealed class StartApprovalChainEndpoint(ISender sender)
+public sealed class StartApprovalChainEndpoint(ISender sender, ResolveApprovalStepAuthority authority)
     : ApprovalEndpoint<StartApprovalChainRequest, ResponseData<StartApprovalChainResponse>>
 {
     public override void Configure()
@@ -323,6 +322,22 @@ public sealed class StartApprovalChainEndpoint(ISender sender)
             return;
         }
 
+        var caller = CreateApprovalChainAuthorization.CallerSubject(User);
+        var principalBearer = HttpContext.Request.Headers[CreateApprovalChainAuthorization.PrincipalHeader];
+        var startedBy = $"service:{caller ?? "legacy-internal"}";
+        if (caller == "business-gateway" || (caller is null && principalBearer.Count > 0))
+        {
+            var (status, actor) = await authority.ResolveChainInitiatorAsync(
+                principalBearer.ToString(), req.OrganizationId, req.EnvironmentId, ct);
+            if (actor is null)
+            {
+                await WriteApprovalErrorAsync(status, "无法授权当前审批链创建。", ct);
+                return;
+            }
+
+            startedBy = actor.Id;
+        }
+
         var chain = await sender.Send(new StartApprovalChainCommand(
             req.OrganizationId,
             req.EnvironmentId,
@@ -331,7 +346,7 @@ public sealed class StartApprovalChainEndpoint(ISender sender)
             req.DocumentType,
             req.DocumentId,
             req.DocumentLineId,
-            req.StartedBy,
+            startedBy,
             req.Amount,
             req.RoutingOrganizationId,
             req.DepartmentId), ct);

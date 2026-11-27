@@ -401,7 +401,8 @@ internal sealed class RecordingApprovalClient : IBusinessApprovalClient
     public Task<BusinessConsoleStartApprovalChainResponse> StartChainAsync(
         string internalBearerToken,
         BusinessConsoleStartApprovalChainRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? principalBearer = null)
     {
         LastInternalToken = internalBearerToken;
         LastStartChainRequest = request;

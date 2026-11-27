@@ -97,7 +97,8 @@ public sealed class StartBusinessConsoleApprovalChainEndpoint(
         return approval.StartChainAsync(
             tokenProvider.BearerToken,
             request with { StartedBy = actorRef },
-            cancellationToken);
+            cancellationToken,
+            principalBearer: bearerToken);
     }
 }
 

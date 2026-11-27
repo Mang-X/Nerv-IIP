@@ -1280,16 +1280,29 @@ public sealed class ApprovalEndpointContractTests
     [InlineData("business-erp", "erp", "business-erp", "sales-order-credit-release", "org-001", true, true)]
     [InlineData("inventory", "inventory", "inventory", "inventory-count-variance", "org-001", false, true)]
     [InlineData("business-gateway", "gateway", "quality", "ncr-disposition", "org-routing", false, true)]
+    [InlineData("business-gateway", "gateway", "quality", "ncr-disposition", "org-routing", false, false, false, false)]
     [InlineData("business-erp", "inventory", "business-erp", "purchase-order", null, false, false)]
     [InlineData("business-erp", "erp", "business-erp", "purchase-order", "org-other", true, false)]
     [InlineData("business-erp", "erp", "business-erp", "purchase-order", null, true, true, true)]
     [InlineData("business-erp", "erp", "business-erp", "purchase-order", null, null, true, true)]
     public async Task Create_chain_honors_caller_capability_and_keeps_shared_read_access(
         string subject, string capability, string sourceService, string documentType,
-        string? routingOrganizationId, bool? allowLegacy, bool allowed, bool useLegacy = false)
+        string? routingOrganizationId, bool? allowLegacy, bool allowed, bool useLegacy = false, bool sendPrincipal = true)
     {
         const string scopedToken = "synthetic-approval-caller";
         const string legacyToken = "synthetic-shared-internal-token";
+        using var iam = new ApprovalAuthorityHandler(message =>
+        {
+            Assert.Equal("verified-principal", message.Headers.Authorization?.Parameter);
+            object data = message.Method == HttpMethod.Get
+                ? new { userId = "u-verified", principalType = "user" }
+                : new
+                {
+                    allowed = true, principalId = "u-verified", principalType = "user",
+                    dataScope = new Nerv.IIP.Contracts.Iam.AuthorizationDataScope(["site-1"], [], [], OrganizationIds: ["org-001"]),
+                };
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(new { success = true, data }) };
+        });
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -1314,6 +1327,8 @@ public sealed class ApprovalEndpointContractTests
                 services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
                 services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connection));
                 services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
+                services.AddHttpClient(ResolveApprovalStepAuthority.IamClient)
+                    .ConfigurePrimaryHttpMessageHandler(() => iam);
             });
         });
         using var client = factory.CreateClient();
@@ -1327,6 +1342,10 @@ public sealed class ApprovalEndpointContractTests
 
         const string route = "/api/business/v1/approvals/chains";
         client.DefaultRequestHeaders.Authorization = new("Bearer", useLegacy ? legacyToken : scopedToken);
+        if (sendPrincipal && !useLegacy)
+        {
+            client.DefaultRequestHeaders.Add("X-Nerv-IIP-Approval-Principal", "Bearer verified-principal");
+        }
         using var response = await client.PostAsJsonAsync(route, new
         {
             organizationId = "org-001",
@@ -1338,7 +1357,9 @@ public sealed class ApprovalEndpointContractTests
             startedBy = "u-requester",
             routingOrganizationId,
         });
-        Assert.Equal(allowed ? HttpStatusCode.OK : HttpStatusCode.Forbidden, response.StatusCode);
+        var expected = !sendPrincipal ? HttpStatusCode.Unauthorized
+            : allowed ? HttpStatusCode.OK : HttpStatusCode.Forbidden;
+        Assert.Equal(expected, response.StatusCode);
 
         var listRoute = route + "?organizationId=org-001&environmentId=env-dev";
         client.DefaultRequestHeaders.Authorization = new("Bearer", scopedToken);
@@ -1358,6 +1379,11 @@ public sealed class ApprovalEndpointContractTests
             var data = chain.RootElement.GetProperty("data");
             Assert.Equal(sourceService, data.GetProperty("sourceService").GetString());
             Assert.Equal(documentType, data.GetProperty("documentType").GetString());
+            var actor = useLegacy ? "service:legacy-internal"
+                : subject == "business-gateway" ? "u-verified" : $"service:{subject}";
+            using var auditScope = factory.Services.CreateScope();
+            var auditDb = auditScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Equal(actor, (await auditDb.ApprovalChains.AsNoTracking().SingleAsync()).StartedBy);
         }
     }
 

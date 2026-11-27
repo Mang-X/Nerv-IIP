@@ -4,15 +4,17 @@ WMS 按部署 profile 消费 ERP 采购订单下达 V2 事件。来源键使用 
 
 ## 配置
 
-在 WMS 的 `PurchaseOrderReceiving:Routes` 中按 `OrganizationId`、`EnvironmentId`、`SiteCode` 配置唯一条目。在确认该站点的采购收货统一采用同一规则后，填入以下字段。
+按部署范围同时核对两端配置。ERP 的 `PurchaseOrderReceiving:WmsScopes` 决定采购单收货归属，WMS 的 `PurchaseOrderReceiving:Routes` 决定是否能为该范围建单及使用哪个收货暂存位。两端每条启用记录的 `OrganizationId`、`EnvironmentId`、`SiteCode` 必须逐值相同，且各自唯一。检查实际部署配置的三元组集合一致后，再准备开启 ERP 归属。环境变量可用两端各自的数组索引，例如 `PurchaseOrderReceiving__WmsScopes__0__SiteCode` 与 `PurchaseOrderReceiving__Routes__0__SiteCode`。
+
+确认站点的采购收货规则后，在 WMS 对应路由补齐以下字段。
 
 - `StagingLocationCode` 使用该组织、环境和站点下经确认可用的收货暂存位。WMS 此处的入库聚合按站点和暂存位建单，仓库由实际库位归属决定。
 - `QualityStatus` 按确认的规则设置为 `quality` 或 `unrestricted`。
 - `OwnerType` 显式填写 `company`。存在寄售或其他货权、或按物料和供应商区分规则的站点保持未配置。
 
-缺少匹配项时，事件进入 WMS 死信，失败码为 `missing-purchase-order-receiving-route`。删除配置项会停止该范围的新建单。已提交的预期入库单继续保留。
+ERP 缺少范围时按 Direct 归属处理。ERP 已标记 WMS 归属且 WMS 缺少匹配路由时，事件进入 WMS 死信，失败码为 `missing-purchase-order-receiving-route`。
 
-保持收货归属开关及站点路由默认关闭。先部署支持非限制库存受理与完成回执的 ERP，再部署 WMS。启用前需验证 ERP 权威收货受理、WMS 实收写入及库存过账的完整链路。已经按待检受理的批次保持原质量状态。
+生产保持 `WmsScopes` 与 `Routes` 为空。先部署支持非限制库存受理与完成回执的 ERP，再部署 WMS。在隔离环境配置成对的三元组，验证采购下达后自动建单、ERP 权威受理、WMS 全行全量实收、库存过账及完成回执。再用范围外采购单确认仍走 Direct。生产开通同一范围时先配置 WMS 路由并核对生效，再配置 ERP 对应范围。配置不配对或验收失败时停止启用。回退时先停止 ERP 对新采购单采用 WMS 归属，保留 WMS 路由，直到已归属 WMS 的采购单、待消费事件和在途批次完成对账，再撤下路由。已提交的预期入库单和已受理批次保留原收货归属及质量状态。
 
 ## 已提交取消与实收边界
 
