@@ -47,9 +47,13 @@ function Get-ComposeProjectEnvironments {
             $inEnvironment = $true
             continue
         }
-        if ($inEnvironment -and $line -cmatch '^      (?<key>[A-Za-z0-9_-]+): "(?<value>[^"]*)"$') {
-            $services[$currentService][$Matches['key']] = $Matches['value']
-            continue
+        if ($inEnvironment -and $line -match '^      ') {
+            if ($line -match '^      \s*(#.*)?$') { continue }
+            if ($line -cmatch '^      (?:"(?<key>[^"]+)"|''(?<key>[^'']+)''|(?<key>[A-Za-z0-9_.-]+)):\s*(?:"(?<value>[^"]*)"|''(?<value>[^'']*)''|(?<value>[^\s#].*?))\s*$') {
+                $services[$currentService][$Matches['key']] = $Matches['value']
+                continue
+            }
+            throw "Unable to parse environment entry in service '$currentService': $line"
         }
         if ($line -notmatch '^      ' -and $line -notmatch '^    environment:$') {
             $inEnvironment = $false

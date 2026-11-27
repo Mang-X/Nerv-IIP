@@ -145,6 +145,24 @@ $serviceBlocks = @{}
 foreach ($match in [regex]::Matches($platformText, '(?ms)^  (?<name>[a-z0-9-]+):\r?\n(?<body>.*?)(?=^  [a-z0-9-]+:|^\S|\z)')) {
     $serviceBlocks[$match.Groups['name'].Value] = $match.Groups['body'].Value
 }
+$serviceEnvironments = @{}
+foreach ($serviceEntry in $serviceBlocks.GetEnumerator()) {
+    $envMap = [hashtable]::new([StringComparer]::Ordinal)
+    $inEnv = $false
+    foreach ($line in ($serviceEntry.Value -split '\r?\n')) {
+        if ($line -match '^    environment:\s*$') { $inEnv = $true; continue }
+        if ($inEnv -and $line -match '^      ') {
+            if ($line -match '^      \s*(#.*)?$' -or $line -match '^      <<:\s*\*') { continue }
+            if ($line -cmatch '^      (?:"(?<key>[^"]+)"|''(?<key>[^'']+)''|(?<key>[A-Za-z0-9_.-]+)):\s*(?:"(?<value>[^"]*)"|''(?<value>[^'']*)''|(?<value>[^\s#].*?))\s*$') {
+                $envMap[$Matches['key']] = $Matches['value']
+                continue
+            }
+            throw "无法解析服务 $($serviceEntry.Key) 的 environment 条目：$line"
+        }
+        if ($inEnv -and $line -notmatch '^\s*$') { $inEnv = $false }
+    }
+    $serviceEnvironments[$serviceEntry.Key] = $envMap
+}
 $fileStorageBindings = @(
     @('file-storage', 'FileStorage__Tus__VolumeIdentity', 'VOLUME_IDENTITY'),
     @('file-storage', 'FileStorage__DownloadCallers__platform-gateway__BearerToken', 'PLATFORM_GATEWAY_DOWNLOAD_TOKEN'),
@@ -157,18 +175,33 @@ foreach ($binding in $fileStorageBindings) {
     $service, $key, $suffix = $binding
     $variable = "NERV_IIP_FILE_STORAGE_$suffix"
     $reference = '${' + $variable
-    $entry = $key + ': ' + $reference + ':?set ' + $variable + '}'
-    Assert-ContainsOrdinal -Text $serviceBlocks[$service] -Expected $entry -Message "服务 $service 缺少必填的 $key。"
-    Assert-ContainsOrdinal -Text $environmentExampleText -Expected "$variable=" -Message "生产环境样例缺少 $variable。"
+    $expectedValue = $reference + ':?set ' + $variable + '}'
+    $actualValue = [string] $serviceEnvironments[$service][$key]
+    if (-not [string]::Equals($actualValue, $expectedValue, [StringComparison]::Ordinal)) {
+        throw "服务 $service 缺少有效的 $key 必填绑定（实际：'$actualValue'）。"
+    }
+    if (-not [regex]::IsMatch($environmentExampleText, "(?m)^$([regex]::Escape($variable))=")) {
+        throw "生产环境样例缺少有效赋值行 $variable=。"
+    }
     $expectedReferences[$reference]++
 }
 foreach ($reference in $expectedReferences.Keys) {
-    if ([regex]::Matches($platformText, [regex]::Escape($reference)).Count -ne $expectedReferences[$reference]) {
-        throw "部署输入 $reference 的引用数量不匹配，检查是否泄漏到其它服务。"
+    $activeCount = 0
+    foreach ($envMap in $serviceEnvironments.Values) {
+        foreach ($val in $envMap.Values) {
+            if (([string] $val).Contains($reference, [StringComparison]::Ordinal)) {
+                $activeCount++
+            }
+        }
+    }
+    if ($activeCount -ne $expectedReferences[$reference]) {
+        throw "部署输入 $reference 的有效引用数量不匹配（期望 $($expectedReferences[$reference])，实际 $activeCount），检查是否泄漏到其它服务。"
     }
 }
 foreach ($gateway in @('gateway', 'business-gateway')) {
-    Assert-ContainsOrdinal -Text $serviceBlocks[$gateway] -Expected 'FileStorage__BaseUrl: http://file-storage:8080' -Message "网关 $gateway 缺少容器内 FileStorage 路由。"
+    if (-not [string]::Equals([string] $serviceEnvironments[$gateway]['FileStorage__BaseUrl'], 'http://file-storage:8080', [StringComparison]::Ordinal)) {
+        throw "网关 $gateway 缺少有效的容器内 FileStorage 路由。"
+    }
 }
 
 foreach ($service in @('business-master-data', 'business-product-engineering', 'business-quality')) {
