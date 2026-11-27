@@ -5,6 +5,10 @@ import { computed, reactive, shallowRef } from 'vue'
 import EcoPage from './eco.vue'
 
 const stub = vi.hoisted(() => ({
+  impacts: vi.fn(),
+  reschedule: vi.fn(),
+  cancelSchedule: vi.fn(),
+  permissionCodes: [] as string[],
   releaseChange: vi.fn().mockResolvedValue({ data: {} }),
   previewImpact: vi.fn(),
   fetchChangeDetail: vi.fn(),
@@ -30,8 +34,21 @@ const filters = reactive({
 })
 const impactPreview = shallowRef()
 
+const routeState = reactive({ query: {} as Record<string, string> })
+vi.mock('vue-router', async (original) => ({
+  ...(await original<typeof import('vue-router')>()),
+  useRoute: () => routeState,
+}))
+
+vi.mock('@nerv-iip/api-client', async (original) => ({
+  ...(await original<typeof import('@nerv-iip/api-client')>()),
+  listBusinessConsoleMesEngineeringChangeWorkOrderImpacts: stub.impacts,
+  rescheduleBusinessConsoleEngineeringChange: stub.reschedule,
+  cancelScheduledBusinessConsoleEngineeringChange: stub.cancelSchedule,
+}))
+
 vi.mock('@/stores/auth', () => ({
-  useAuthStore: () => ({ principal: { permissionCodes: [] } }),
+  useAuthStore: () => ({ principal: { permissionCodes: stub.permissionCodes } }),
 }))
 
 vi.mock('@/composables/engineering', () => ({
@@ -118,7 +135,7 @@ const formSelectStubs = {
   NvSelectItem: { props: ['value'], template: '<option :value="value"><slot /></option>' },
 }
 const routerLinkStubs = {
-  RouterLink: { props: ['to'], template: '<a data-router-link><slot /></a>' },
+  RouterLink: { props: ['to'], template: '<a data-router-link :data-to="to"><slot /></a>' },
 }
 
 const approvalPanelStub = {
@@ -152,6 +169,11 @@ function findButton(wrapper: ReturnType<typeof mount>, text: string) {
 }
 
 beforeEach(() => {
+  routeState.query = {}
+  stub.permissionCodes = []
+  stub.impacts.mockReset()
+  stub.reschedule.mockReset().mockResolvedValue({ data: { success: true } })
+  stub.cancelSchedule.mockReset().mockResolvedValue({ data: { success: true } })
   stub.releaseChange.mockClear()
   stub.previewImpact.mockReset()
   stub.previewImpact.mockImplementation(async () => {
@@ -394,6 +416,147 @@ describe('engineering eco page', () => {
     await findButton(wrapper, '增加一条')!.trigger('click')
     await flushPromises()
     expect(wrapper.findAll('select').length).toBe(before + 1)
+  })
+
+  it.each(['改期', '取消调度'])('计划生效可二次确认%s，期间不读取实际影响', async (action) => {
+    stub.permissionCodes = [
+      'business.engineering.changes.read',
+      'business.engineering.changes.manage',
+      'business.mes.work-orders.read',
+    ]
+    stub.fetchChangeDetail.mockResolvedValue({
+      ...changeRow,
+      status: 'Scheduled',
+      effectiveDate: '2099-02-01',
+    })
+    const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '查看')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="sheet"]').text()).toContain('计划生效')
+    expect(stub.impacts).not.toHaveBeenCalled()
+
+    await findButton(wrapper, action)!.trigger('click')
+    const confirmation = wrapper.findAll('[data-testid="eco-dialog-content"]').at(-1)!
+    expect(confirmation.text()).toContain(
+      action === '改期' ? '确认工程变更改期' : '确认取消工程变更调度',
+    )
+    expect(stub.reschedule).not.toHaveBeenCalled()
+    expect(stub.cancelSchedule).not.toHaveBeenCalled()
+    await confirmation.get('#eco-schedule-reason').setValue('等新工装验收')
+    if (action === '改期') await confirmation.get('#eco-schedule-date').setValue('2099-02-10')
+    await confirmation.get('form').trigger('submit')
+    await flushPromises()
+
+    const body = {
+      organizationId: 'org-001',
+      environmentId: 'env-dev',
+      changeNumber: 'ECO-1',
+      reason: '等新工装验收',
+    }
+    if (action === '改期') {
+      expect(stub.reschedule).toHaveBeenCalledExactlyOnceWith({
+        body: { ...body, effectiveDate: '2099-02-10' },
+        throwOnError: true,
+      })
+      expect(stub.cancelSchedule).not.toHaveBeenCalled()
+    } else {
+      expect(stub.cancelSchedule).toHaveBeenCalledExactlyOnceWith({ body, throwOnError: true })
+      expect(stub.reschedule).not.toHaveBeenCalled()
+    }
+    expect(stub.impacts).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('只有工程变更读权限时仍可看变更详情，隐藏工单影响且不发请求', async () => {
+    stub.permissionCodes = ['business.engineering.changes.read']
+    stub.fetchChangeDetail.mockResolvedValue({ ...changeRow, status: 'Published' })
+    const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '查看')!.trigger('click')
+    await flushPromises()
+    const sheet = wrapper.get('[data-testid="sheet"]')
+    expect(sheet.text()).toContain('受影响版本')
+    expect(sheet.text()).not.toContain('在制影响')
+    expect(stub.impacts).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('已生效详情按服务端总数翻页，显示实际工单及处置状态', async () => {
+    stub.permissionCodes = ['business.engineering.changes.read', 'business.mes.work-orders.read']
+    stub.fetchChangeDetail.mockResolvedValue({ ...changeRow, status: 'Published' })
+    stub.impacts
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            total: 11,
+            items: [
+              { changeNumber: 'ECO-1', workOrderId: 'WO-202602-01', disposition: 'auto-rebound' },
+            ],
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          data: {
+            total: 11,
+            items: [
+              {
+                changeNumber: 'ECO-1',
+                workOrderId: 'WO-202602-11',
+                disposition: 'abort-work-order',
+              },
+            ],
+          },
+        },
+      })
+    const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
+    await flushPromises()
+    await findButton(wrapper, '查看')!.trigger('click')
+    await flushPromises()
+
+    const sheet = wrapper.get('[data-testid="sheet"]')
+    expect(sheet.get('[data-to="/mes/work-orders/WO-202602-01"]').text()).toBe('WO-202602-01')
+    expect(sheet.text()).toContain('已重绑')
+    await sheet.get('button[aria-label="下一页"]').trigger('click')
+    await flushPromises()
+    expect(stub.impacts.mock.calls.map(([options]) => options.query)).toEqual([
+      {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        changeNumber: 'ECO-1',
+        skip: 0,
+        take: 10,
+      },
+      {
+        organizationId: 'org-001',
+        environmentId: 'env-dev',
+        changeNumber: 'ECO-1',
+        skip: 10,
+        take: 10,
+      },
+    ])
+    expect(sheet.text()).toContain('已中止')
+    expect(sheet.text()).not.toContain('WO-202602-01')
+    wrapper.unmount()
+  })
+
+  it('从工单链接打开指定 ECO 详情，无需该变更位于当前列表页', async () => {
+    routeState.query = { changeNumber: 'ECO/2602-01' }
+    stub.permissionCodes = ['business.engineering.changes.read']
+    stub.fetchChangeDetail.mockResolvedValue({
+      ...changeRow,
+      changeNumber: 'ECO/2602-01',
+      reason: '更新精加工夹具',
+    })
+    const wrapper = mount(EcoPage, { global: { stubs: allStubs } })
+    await flushPromises()
+
+    expect(stub.fetchChangeDetail).toHaveBeenCalledExactlyOnceWith('ECO/2602-01')
+    expect(wrapper.get('[data-testid="sheet"]').text()).toContain('ECO/2602-01 · 更新精加工夹具')
+    wrapper.unmount()
   })
 
   it('查看：行「查看」拉 get-by-id 渲染受影响版本', async () => {

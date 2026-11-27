@@ -12,6 +12,7 @@ import type {
 } from '@nerv-iip/api-client'
 import type { NvDataTableColumn, NvMetricStripCell, StatusTone } from '@nerv-iip/ui'
 import BusinessDocumentApprovalPanel from '@/components/business/BusinessDocumentApprovalPanel.vue'
+import EngineeringWorkOrderImpacts from '@/components/mes/EngineeringWorkOrderImpacts.vue'
 import FormSectionTitle from '@/components/masterData/FormSectionTitle.vue'
 import { useEngineeringChanges, useEngineeringProductionVersions } from '@/composables/engineering'
 import BusinessLayout from '@/layouts/BusinessLayout.vue'
@@ -54,7 +55,8 @@ import {
 } from '@nerv-iip/ui'
 import { NetworkIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
+import { hasBusinessContext } from '@/composables/shared/businessContextBinding'
 import { formatDate, today } from '@/utils/format'
 import {
   inlineErrorMessage,
@@ -368,6 +370,7 @@ async function submitForm() {
 }
 
 // ── 查看变更明细（get-by-id 看受影响版本）──────────────────────
+const route = useRoute()
 const viewOpen = shallowRef(false)
 const viewTarget = shallowRef<BusinessConsoleEngineeringChangeItem | null>(null)
 const detailPending = ref(false)
@@ -421,22 +424,59 @@ async function submitScheduleAction() {
   }
 }
 
+const releasedChangeNumber = computed(() => {
+  const status = viewTarget.value?.status?.toLowerCase()
+  return viewOpen.value && !detailPending.value && (status === 'published' || status === 'released')
+    ? viewTarget.value?.changeNumber
+    : undefined
+})
 const viewAffected = computed(() => viewTarget.value?.affectedVersions ?? [])
-async function openView(row: BusinessConsoleEngineeringChangeItem) {
-  viewTarget.value = row
+let detailRequest = 0
+async function openView(changeNumber?: string | null, row?: BusinessConsoleEngineeringChangeItem) {
+  if (!changeNumber) return
+  const request = ++detailRequest
+  const { organizationId, environmentId } = filters
+  const isCurrent = () =>
+    request === detailRequest &&
+    viewOpen.value &&
+    organizationId === filters.organizationId &&
+    environmentId === filters.environmentId
+
+  viewTarget.value = row ?? null
   viewOpen.value = true
-  if (!row.changeNumber) return
   detailPending.value = true
   try {
-    const detail = await fetchChangeDetail(row.changeNumber)
-    if (detail) viewTarget.value = detail
+    const detail = await fetchChangeDetail(changeNumber)
+    if (!isCurrent()) return
+    if (detail?.changeNumber === changeNumber) {
+      viewTarget.value = detail
+    } else if (!row) {
+      notifyError(undefined, '未找到该工程变更。')
+      viewOpen.value = false
+    }
   } catch (error) {
-    // 结果一律 toast；不在抽屉里留常驻错误条。
-    notifyError(error, '加载受影响版本失败，请稍后重试。')
+    if (!isCurrent()) return
+    notifyError(error, '加载工程变更详情失败，请稍后重试。')
+    if (!row) viewOpen.value = false
   } finally {
-    detailPending.value = false
+    if (request === detailRequest) detailPending.value = false
   }
 }
+
+watch(
+  [() => route.query.changeNumber, () => filters.organizationId, () => filters.environmentId],
+  ([changeNumber]) => {
+    detailRequest++
+    viewOpen.value = false
+    viewTarget.value = null
+    detailPending.value = false
+    scheduleAction.value = undefined
+    if (typeof changeNumber === 'string' && changeNumber.trim() && hasBusinessContext(filters)) {
+      void openView(changeNumber.trim())
+    }
+  },
+  { immediate: true },
+)
 
 function impactNodeTypeLabel(type?: string | null) {
   const labels: Record<string, string> = {
@@ -795,7 +835,9 @@ function riskTone(severity?: string | null): StatusTone {
       </template>
       <template #cell-actions="{ row }">
         <div class="flex justify-end">
-          <NvButton type="button" variant="ghost" size="sm" @click="openView(row)">查看</NvButton>
+          <NvButton type="button" variant="ghost" size="sm" @click="openView(row.changeNumber, row)"
+            >查看</NvButton
+          >
         </div>
       </template>
     </NvDataTable>
@@ -844,12 +886,19 @@ function riskTone(severity?: string | null): StatusTone {
     <NvSheet v-model:open="viewOpen">
       <NvSheetContent class="sm:max-w-lg">
         <NvSheetHeader>
-          <NvSheetTitle>工程变更 · 受影响版本</NvSheetTitle>
+          <NvSheetTitle>工程变更详情</NvSheetTitle>
           <NvSheetDescription>
             {{ viewTarget ? `${viewTarget.changeNumber} · ${viewTarget.reason ?? ''}` : '' }}
           </NvSheetDescription>
         </NvSheetHeader>
-        <div v-if="viewTarget" class="grid gap-3 px-4 py-2">
+        <p
+          v-if="detailPending && !viewTarget"
+          role="status"
+          class="px-4 text-sm text-muted-foreground"
+        >
+          加载工程变更详情…
+        </p>
+        <div v-if="viewTarget" class="grid min-h-0 gap-3 overflow-y-auto px-4 py-2">
           <div
             v-if="canManageSchedule && viewTarget.status?.toLowerCase() === 'scheduled'"
             class="flex gap-2"
@@ -881,6 +930,7 @@ function riskTone(severity?: string | null): StatusTone {
             </div>
           </div>
 
+          <h2 class="text-sm font-semibold">受影响版本</h2>
           <div
             v-if="detailPending"
             class="flex items-center gap-2 py-4 text-sm text-muted-foreground"
@@ -909,6 +959,12 @@ function riskTone(severity?: string | null): StatusTone {
           <p v-else class="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
             该变更没有受影响版本记录。
           </p>
+          <EngineeringWorkOrderImpacts
+            v-if="releasedChangeNumber"
+            :change-number="releasedChangeNumber"
+            :organization-id="filters.organizationId"
+            :environment-id="filters.environmentId"
+          />
         </div>
       </NvSheetContent>
     </NvSheet>
