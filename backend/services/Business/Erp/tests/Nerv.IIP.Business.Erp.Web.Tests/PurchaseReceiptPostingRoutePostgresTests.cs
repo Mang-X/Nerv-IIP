@@ -532,6 +532,7 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
                     services.GetRequiredService<ErpCodingService>()).HandleAsync(outbound with
                     {
                         EventType = WmsIntegrationEventTypes.OutboundOrderCompleted,
+                        IdempotencyKey = hasGrIrReturn ? $"wms:{new string('x', 150)}:{suffix}:{returnNumber}" : outbound.IdempotencyKey,
                         Payload = outbound.Payload with
                         {
                             SourceDocumentType = WmsSourceDocumentTypes.PurchaseReceiptReturn,

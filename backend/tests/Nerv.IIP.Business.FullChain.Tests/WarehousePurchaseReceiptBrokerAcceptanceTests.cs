@@ -12,6 +12,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DependencyInjection;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
+using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Erp.Web.Endpoints.Erp;
 using Nerv.IIP.Business.Inventory.Domain.AggregatesModel.StockLocationAggregate;
 using Nerv.IIP.Business.Inventory.Web.Endpoints.DeadLetters;
@@ -24,6 +25,8 @@ using Nerv.IIP.Business.Wms.Web.Application.Inventory;
 using Nerv.IIP.Business.Wms.Web.Endpoints.Wms;
 using Nerv.IIP.Contracts.Approval;
 using Nerv.IIP.Contracts.Erp;
+using Nerv.IIP.Contracts.Wms;
+using Nerv.IIP.Messaging.CAP;
 using Nerv.IIP.Testing;
 using Nerv.IIP.Testing.PostgreSql;
 using StackExchange.Redis;
@@ -368,7 +371,54 @@ public sealed class WarehousePurchaseReceiptBrokerAcceptanceTests(ITestOutputHel
             var shipmentReplay = await PostAsync(wmsHttp, $"{outboundPath}/complete", ship);
             Assert.Equal(shipped.GetProperty("requestId").GetRawText(), shipmentReplay.GetProperty("requestId").GetRawText());
 
-            await WaitAsync("Supplier return decrements the original blocked stock and posts one GR/IR reversal", async () =>
+            await WaitAsync("Supplier return decrements the original blocked stock and posts one GR/IR reversal", AssertReturnAsync);
+
+            var completionTopic = $"{version}.{nameof(WmsIntegrationEvent)}";
+            JsonElement completionEnvelope;
+            await using (var scope = wms.Services.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<WmsDb>();
+                var serialized = await db.Database.SqlQuery<string>($$"""
+                    SELECT ("Content"::jsonb -> 'Value')::text AS "Value"
+                    FROM cap.published
+                    WHERE "Name" = {{completionTopic}}
+                      AND "Content"::jsonb #>> '{Value,EventType}' = {{WmsIntegrationEventTypes.OutboundOrderCompleted}}
+                    """).SingleAsync();
+                completionEnvelope = JsonSerializer.Deserialize<JsonElement>(serialized);
+            }
+
+            var eventId = completionEnvelope.GetProperty("EventId").GetString();
+            Assert.False(string.IsNullOrWhiteSpace(eventId));
+            const string replayHeader = "warehouse-receipt-acceptance-replay";
+            await using (var scope = wms.Services.CreateAsyncScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<ICapPublisher>().PublishAsync(
+                    nameof(WmsIntegrationEvent), completionEnvelope, new Dictionary<string, string?> { [replayHeader] = "true" });
+            }
+
+            var returnGroup = $"{WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn.ConsumerName}.{version}";
+            await WaitAsync("ERP CAP acknowledges the original and republished WMS completion", async () =>
+            {
+                await using var scope = erp.Services.CreateAsyncScope();
+                var db = scope.ServiceProvider.GetRequiredService<ErpDb>();
+                var replayFlags = await db.Database.SqlQuery<string>($$"""
+                    SELECT COALESCE("Content"::jsonb -> 'Headers' ->> {{replayHeader}}, 'false') AS "Value"
+                    FROM cap.received
+                    WHERE "Group" = {{returnGroup}}
+                      AND "Version" = {{version}}
+                      AND "Name" = {{completionTopic}}
+                      AND "StatusName" = 'Succeeded'
+                      AND "Content"::jsonb #>> '{Value,EventId}' = {{eventId}}
+                    """).ToArrayAsync();
+                Assert.Equal(new[] { "false", "true" }, replayFlags.Order(StringComparer.Ordinal));
+                Assert.False(await db.Set<IntegrationEventDeadLetter>().AnyAsync(x =>
+                    x.ConsumerName == WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn.ConsumerName
+                    && x.EventId == eventId));
+            });
+            await AssertReturnAsync();
+            output.WriteLine("CAP delivered both copies of the WMS completion; ERP and Inventory retained one return posting.");
+
+            async Task AssertReturnAsync()
             {
                 await using var inventoryScope = inventory.Services.CreateAsyncScope();
                 var inventoryDb = inventoryScope.ServiceProvider.GetRequiredService<InventoryDb>();
@@ -388,12 +438,12 @@ public sealed class WarehousePurchaseReceiptBrokerAcceptanceTests(ITestOutputHel
                 Assert.Equal(receipt.PurchaseReceiptNo, returned.PurchaseReceiptNo);
                 Assert.Equal(24m, returned.GrIrReversalAmount);
                 var vouchers = await erpDb.JournalVouchers.Include(x => x.Lines).ToArrayAsync();
+                Assert.Equal(2, vouchers.Length);
                 var accrual = Assert.Single(vouchers, x => x.SourceNo == receipt.PurchaseReceiptNo);
                 var reversal = Assert.Single(vouchers, x => x.SourceNo == returned.PurchaseReturnNo);
                 Assert.Equal(30m, Assert.Single(accrual.Lines, x => x.AccountCode == "GR-IR").LocalCreditAmount);
                 Assert.Equal(30m, Assert.Single(reversal.Lines, x => x.AccountCode == "GR-IR").LocalDebitAmount);
-            });
-            output.WriteLine("Inventory posted one outbound movement and ERP posted one 30 CNY GR/IR reversal.");
+            }
         }
         if (quality is not null) return;
 

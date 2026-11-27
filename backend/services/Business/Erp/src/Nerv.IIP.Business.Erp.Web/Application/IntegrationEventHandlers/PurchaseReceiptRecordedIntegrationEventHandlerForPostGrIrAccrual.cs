@@ -45,9 +45,8 @@ public sealed class PurchaseReceiptRecordedIntegrationEventHandlerForPostGrIrAcc
     public Task HandleCapAsync(
         PurchaseReceiptRecordedIntegrationEvent integrationEvent,
         CancellationToken cancellationToken)
-    {
-        return HandleAsync(integrationEvent, cancellationToken);
-    }
+        => CostingIntegrationEventUnitOfWork.ExecuteAsync(
+            dbContext, dbContext, () => HandleAsync(integrationEvent, cancellationToken), cancellationToken);
 
     private async Task HandleValidEventAsync(
         PurchaseReceiptRecordedIntegrationEvent integrationEvent,

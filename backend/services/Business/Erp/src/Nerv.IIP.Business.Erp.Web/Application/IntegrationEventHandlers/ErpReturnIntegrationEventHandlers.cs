@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.AccountPayableAggregate;
@@ -13,6 +15,7 @@ using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.Validation;
+using Nerv.IIP.Coding;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Contracts.Wms;
@@ -56,6 +59,19 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
             dbContext.ChangeTracker.Clear();
             await DeadLetterAsync(integrationEvent, "invalid-purchase-return-projection", exception.Message, cancellationToken);
         }
+    }
+
+    private static string BoundedAllocationKey(string key)
+    {
+        var legacyKey = key.TrimEnd();
+        if (legacyKey.EnumerateRunes().Count() <= CodeIdempotencyKey.IdempotencyKeyMaxLength)
+        {
+            return legacyKey;
+        }
+
+        // PostgreSQL counts characters. Keep every storable legacy key and reserve a separate prefix for digests.
+        var digest = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(legacyKey)));
+        return $"{ConsumerName}-sha256:{digest}";
     }
 
     private async Task ResolveReceiptAndRecordAsync(WmsIntegrationEvent integrationEvent, CancellationToken cancellationToken)
@@ -274,7 +290,7 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
             receipt.EnvironmentId,
             "purchase-return",
             null,
-            $"{ConsumerName}:{integrationEvent.IdempotencyKey}",
+            BoundedAllocationKey($"{ConsumerName}:{integrationEvent.IdempotencyKey}"),
             ErpCodingService.Fingerprint(receipt.PurchaseReceiptNo, payload.PublicReference, returnLines),
             cancellationToken);
         var purchaseReturn = PurchaseReturn.Record(
@@ -296,7 +312,8 @@ public sealed class WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPur
                 receipt.EnvironmentId,
                 "debit-note",
                 null,
-                ErpCodingService.Fingerprint(ConsumerName, integrationEvent.IdempotencyKey, application.Invoice.InvoiceNo, application.Payable.PayableNo),
+                BoundedAllocationKey(ErpCodingService.Fingerprint(
+                    ConsumerName, integrationEvent.IdempotencyKey, application.Invoice.InvoiceNo, application.Payable.PayableNo)),
                 ErpCodingService.Fingerprint(returnAllocation.Code, application.Invoice.InvoiceNo, application.Payable.PayableNo, application.Amount),
                 cancellationToken);
             application.Payable.ApplyDebitNote(application.Amount);
