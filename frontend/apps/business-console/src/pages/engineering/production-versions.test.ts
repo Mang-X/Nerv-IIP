@@ -430,4 +430,45 @@ describe('engineering production-versions page', () => {
     await wrapper.get('form').trigger('submit')
     expect(stub.createProductionVersion).not.toHaveBeenCalled()
   })
+
+  it('候选超过上限截断时展示提示，允许直接输入目录外精确版本提交', async () => {
+    candidatePages.mbom.mockImplementation(() => ({
+      query: async () => ({
+        success: true,
+        data: {
+          items: [{ bomCode: 'MBOM-1', revision: 'A', skuCode: 'SKU-1' }],
+          total: 5001,
+        },
+      }),
+    }))
+    candidatePages.routing.mockImplementation(() => ({
+      query: async () => ({
+        success: true,
+        data: {
+          items: [{ routingCode: 'RT-1', revision: 'A', skuCode: 'SKU-1' }],
+          total: 5001,
+        },
+      }),
+    }))
+
+    const wrapper = mount(ProductionVersionsPage, { global: { stubs: allStubs } })
+    await findButton(wrapper, '新建生产版本')!.trigger('click')
+    await wrapper.get('#pv-sku').setValue('SKU-1')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('5001')
+    await wrapper.get('#pv-mbom-exact').setValue('MBOM-5001:1')
+    await wrapper.get('#pv-routing-exact').setValue('RT-5001:1')
+    const dates = wrapper.findAll('input[type="date"]')
+    await dates[0]!.setValue('2026-03-01')
+    await flushPromises()
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(stub.createProductionVersion).toHaveBeenCalledTimes(1)
+    const body = stub.createProductionVersion.mock.calls[0]![0] as Record<string, unknown>
+    expect(body.mbomVersionId).toBe('MBOM-5001:1')
+    expect(body.routingVersionId).toBe('RT-5001:1')
+  })
 })

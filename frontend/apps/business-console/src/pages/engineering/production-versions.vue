@@ -299,12 +299,26 @@ function parseNumber(value: string | number | null | undefined): number | undefi
 const lotMin = computed(() => parseNumber(form.lotSizeMin))
 const lotMax = computed(() => parseNumber(form.lotSizeMax))
 
-const skuValid = computed(() => form.skuCode.trim().length > 0)
-const mbomValid = computed(() =>
-  mbomOptions.value.some((option) => option.value === form.mbomVersionId),
+const mbomsTruncated = computed(() => !mbomsPending.value && mbomsTotal.value > mboms.value.length)
+const routingsTruncated = computed(
+  () => !routingsPending.value && routingsTotal.value > routings.value.length,
 )
-const routingValid = computed(() =>
-  routingOptions.value.some((option) => option.value === form.routingVersionId),
+
+function isExactVersionReference(value: string) {
+  const parts = value.trim().split(':')
+  return parts.length === 2 && parts[0]!.trim().length > 0 && parts[1]!.trim().length > 0
+}
+
+const skuValid = computed(() => form.skuCode.trim().length > 0)
+const mbomValid = computed(
+  () =>
+    mbomOptions.value.some((option) => option.value === form.mbomVersionId) ||
+    (mbomsTruncated.value && isExactVersionReference(form.mbomVersionId)),
+)
+const routingValid = computed(
+  () =>
+    routingOptions.value.some((option) => option.value === form.routingVersionId) ||
+    (routingsTruncated.value && isExactVersionReference(form.routingVersionId)),
 )
 const validFromValid = computed(() => !!form.validFrom)
 // from ≤ to（to 可空）
@@ -568,6 +582,17 @@ async function runResolve() {
                       >前往维护</RouterLink
                     >
                   </p>
+                  <div v-if="form.skuCode && mbomsTruncated" class="grid gap-1.5 pt-1">
+                    <p class="text-xs text-muted-foreground">
+                      已加载前 {{ mboms.length }} / {{ mbomsTotal }} 条已发布
+                      MBOM，超出目录的版本可直接输入精确「编号:修订」。
+                    </p>
+                    <NvInput
+                      id="pv-mbom-exact"
+                      v-model="form.mbomVersionId"
+                      placeholder="例如 MBOM-5001:1"
+                    />
+                  </div>
                 </NvField>
                 <NvField :data-invalid="showErrors && !routingValid">
                   <NvFieldLabel for="pv-routing"
@@ -607,6 +632,18 @@ async function runResolve() {
                       >前往维护</RouterLink
                     >
                   </p>
+                  <div v-if="form.skuCode && routingsTruncated" class="grid gap-1.5 pt-1">
+                    <p class="text-xs text-muted-foreground">
+                      已加载前 {{ routings.length }} /
+                      {{ routingsTotal }}
+                      条已发布工艺路线，超出目录的版本可直接输入精确「编号:修订」。
+                    </p>
+                    <NvInput
+                      id="pv-routing-exact"
+                      v-model="form.routingVersionId"
+                      placeholder="例如 RT-5001:1"
+                    />
+                  </div>
                 </NvField>
               </NvFieldGroup>
 
