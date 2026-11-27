@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using MediatR;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -86,13 +87,14 @@ public sealed class WmsEndpointContractTests
     {
         var contracts = WmsEndpointContracts.All.ToArray();
 
-        Assert.Equal(51, contracts.Length);
+        Assert.Equal(52, contracts.Length);
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/inbound-orders" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsInboundOrders");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/assignment" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "assignWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/putaway-tasks" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "createWmsPutawayTask");
         Assert.Contains(contracts, x => x.HttpMethod == "GET" && x.Route == "/api/business/v1/wms/putaway-tasks" && x.PermissionCode == WmsPermissionCodes.ReceiptsRead && x.OperationId == "listWmsPutawayTasks");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/putaway-tasks/{warehouseTaskId}/assignment" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "assignWmsPutawayTask");
+        Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/confirm-receipt" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "confirmWmsInboundReceipt");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/complete" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "completeWmsInboundOrder");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/{inboundOrderId}/inventory-posting/retry" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "retryWmsInboundInventoryPosting");
         Assert.Contains(contracts, x => x.HttpMethod == "POST" && x.Route == "/api/business/v1/wms/inbound-orders/cancel-by-source" && x.PermissionCode == WmsPermissionCodes.ReceiptsManage && x.OperationId == "cancelWmsInboundOrdersForSource");
@@ -417,6 +419,93 @@ public sealed class WmsEndpointContractTests
 
         Assert.Contains("Completed", diagnostics, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("PLC_TIMEOUT", diagnostics, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Receipt_confirmation_uses_explicit_quantities_and_leaves_inventory_unposted()
+    {
+        await using var factory = CreateAuthorizedFactory();
+        using var client = factory.CreateClient();
+        InboundOrderId id;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var inbound = InboundOrder.CreatePendingReceipt(
+                "org-http", "env-http", "IN-PENDING", "purchase-order", "PO-001", "SITE-01",
+                [
+                    new("10", "SKU-1", "pcs", 5m, "STAGE-01", "qualified", "company", null),
+                    new("20", "SKU-2", "pcs", 3m, "STAGE-01", "qualified", "company", null),
+                ],
+                assignedOperatorUserId: "operator", assignedPoolCode: "POOL-01");
+            db.InboundOrders.Add(inbound);
+            await db.SaveChangesAsync();
+            id = inbound.Id;
+        }
+
+        var route = $"/api/business/v1/wms/inbound-orders/{id}/confirm-receipt";
+        var body = new
+        {
+            organizationId = "org-http",
+            environmentId = "env-http",
+            actorPrincipalId = "operator",
+            authorizedSiteCodes = new[] { "SITE-01" },
+            scopeKind = "site",
+            scopeId = "SITE-01",
+            expectedVersion = 1L,
+            idempotencyKey = "receipt-confirm-1",
+            lines = new[] { new { lineNo = "10", receivedQuantity = 5m }, new { lineNo = "20", receivedQuantity = 3m } },
+        };
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync(route, body)).StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync(route, body with { authorizedSiteCodes = ["SITE-02"] })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync(route, body with { environmentId = "other" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync(route, body with { actorPrincipalId = "other" })).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync(route, body with { expectedVersion = 2 })).StatusCode);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, (await client.PostAsJsonAsync(route, body with { lines = [body.lines[0]] })).StatusCode);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, (await client.PostAsJsonAsync(route, body with
+        {
+            lines = [body.lines[0], body.lines[1] with { receivedQuantity = 2m }],
+        })).StatusCode);
+
+        var responses = await Task.WhenAll(
+            client.PostAsJsonAsync(route, body),
+            client.PostAsJsonAsync(route, body with { lines = [body.lines[1], body.lines[0]] }));
+        var results = new List<string>();
+        foreach (var response in responses)
+        {
+            var json = await response.Content.ReadAsStringAsync();
+            Assert.True(response.IsSuccessStatusCode, json);
+            results.Add(json);
+        }
+        Assert.Equal(results[0], results[1]);
+        using var confirmation = JsonDocument.Parse(results[0]);
+        Assert.Equal(2, confirmation.RootElement.GetProperty("data").GetProperty("version").GetInt64());
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync(route, body with
+        {
+            authorizedSiteCodes = ["SITE-02"],
+        })).StatusCode);
+        var conflictingReplay = await client.PostAsJsonAsync(route, body with
+        {
+            lines = [body.lines[0], body.lines[1] with { receivedQuantity = 4m }],
+        });
+        Assert.Equal(HttpStatusCode.Conflict, conflictingReplay.StatusCode);
+        using var replayError = JsonDocument.Parse(await conflictingReplay.Content.ReadAsStringAsync());
+        Assert.Equal("idempotency-conflict", replayError.RootElement.GetProperty("message").GetString());
+        Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync(route, body with
+        {
+            expectedVersion = 2,
+            idempotencyKey = "another-key",
+        })).StatusCode);
+
+        using var verification = factory.Services.CreateScope();
+        var persisted = verification.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = await persisted.InboundOrders.Include(x => x.Lines).SingleAsync(x => x.Id == id);
+        Assert.Equal(InboundOrderStatus.Open, order.Status);
+        Assert.Equal(2, order.Version);
+        Assert.Equal([5m, 3m], order.Lines.OrderBy(x => x.LineNo).Select(x => x.ReceivedQuantity));
+        Assert.Empty(await persisted.InventoryMovementRequests.ToListAsync());
+        Assert.Empty(await persisted.WarehouseTasks.ToListAsync());
     }
 
     [Fact]

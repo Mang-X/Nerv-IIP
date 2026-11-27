@@ -332,6 +332,18 @@ namespace Nerv.IIP.Business.Wms.Infrastructure.Migrations
                         .HasColumnName("organization_id")
                         .HasComment("Organization tenant id.");
 
+                    b.Property<string>("ReceiptConfirmationFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("receipt_confirmation_fingerprint")
+                        .HasComment("SHA-256 fingerprint of the receipt confirmation intent.");
+
+                    b.Property<string>("ReceiptConfirmationKey")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("receipt_confirmation_key")
+                        .HasComment("Normalized idempotency key for confirming actual receipt quantities.");
+
                     b.Property<string>("SiteCode")
                         .IsRequired()
                         .HasMaxLength(100)
