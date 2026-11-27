@@ -96,7 +96,9 @@ const VERSION_KIND_OPTIONS = [
 ]
 function versionKindLabel(kind?: string | null) {
   const key = kind?.trim().toLowerCase().replace(/[-_]/g, '')
-  return VERSION_KIND_OPTIONS.find((option) => option.value.toLowerCase() === key)?.label ?? '未知类型'
+  return (
+    VERSION_KIND_OPTIONS.find((option) => option.value.toLowerCase() === key)?.label ?? '未知类型'
+  )
 }
 
 // 受影响版本的 versionId 是版本主键。四类对象里只有「生产版本」的读面直接暴露该主键
@@ -392,13 +394,20 @@ async function submitScheduleAction() {
   if (action === 'reschedule' && (!effectiveDate || effectiveDate <= today())) return
 
   schedulePending.value = true
-  const body = { organizationId: filters.organizationId, environmentId: filters.environmentId, changeNumber, reason }
+  const body = {
+    organizationId: filters.organizationId,
+    environmentId: filters.environmentId,
+    changeNumber,
+    reason,
+  }
   try {
-    const { data } = effectiveDate && action === 'reschedule'
-      ? await rescheduleBusinessConsoleEngineeringChange({
-          body: { ...body, effectiveDate }, throwOnError: true,
-        })
-      : await cancelScheduledBusinessConsoleEngineeringChange({ body, throwOnError: true })
+    const { data } =
+      effectiveDate && action === 'reschedule'
+        ? await rescheduleBusinessConsoleEngineeringChange({
+            body: { ...body, effectiveDate },
+            throwOnError: true,
+          })
+        : await cancelScheduledBusinessConsoleEngineeringChange({ body, throwOnError: true })
     if (!data.success) throw data
     scheduleAction.value = undefined
     viewOpen.value = false
@@ -783,10 +792,20 @@ function riskTone(severity?: string | null): StatusTone {
       </template>
     </NvDataTable>
 
-    <NvDialog v-if="scheduleAction" :open="true" @update:open="(open) => { if (!open) scheduleAction = undefined }">
+    <NvDialog
+      v-if="scheduleAction"
+      :open="true"
+      @update:open="
+        (open) => {
+          if (!open) scheduleAction = undefined
+        }
+      "
+    >
       <NvDialogContent>
         <NvDialogHeader>
-          <NvDialogTitle>{{ scheduleAction === 'reschedule' ? '确认工程变更改期' : '确认取消工程变更调度' }}</NvDialogTitle>
+          <NvDialogTitle>{{
+            scheduleAction === 'reschedule' ? '确认工程变更改期' : '确认取消工程变更调度'
+          }}</NvDialogTitle>
           <NvDialogDescription>{{ viewTarget?.changeNumber }}</NvDialogDescription>
         </NvDialogHeader>
         <form class="grid gap-3" @submit.prevent="submitScheduleAction">
@@ -801,7 +820,11 @@ function riskTone(severity?: string | null): StatusTone {
           <NvDialogFooter>
             <NvButton
               type="submit"
-              :disabled="schedulePending || !scheduleReason.trim() || (scheduleAction === 'reschedule' && (!scheduleDate || scheduleDate <= today()))"
+              :disabled="
+                schedulePending ||
+                !scheduleReason.trim() ||
+                (scheduleAction === 'reschedule' && (!scheduleDate || scheduleDate <= today()))
+              "
             >
               确认
             </NvButton>
@@ -819,7 +842,10 @@ function riskTone(severity?: string | null): StatusTone {
           </NvSheetDescription>
         </NvSheetHeader>
         <div v-if="viewTarget" class="grid gap-3 px-4 py-2">
-          <div v-if="canManageSchedule && viewTarget.status?.toLowerCase() === 'scheduled'" class="flex gap-2">
+          <div
+            v-if="canManageSchedule && viewTarget.status?.toLowerCase() === 'scheduled'"
+            class="flex gap-2"
+          >
             <NvButton variant="outline" @click="openScheduleAction('reschedule')">改期</NvButton>
             <NvButton variant="outline" @click="openScheduleAction('cancel')">取消调度</NvButton>
           </div>

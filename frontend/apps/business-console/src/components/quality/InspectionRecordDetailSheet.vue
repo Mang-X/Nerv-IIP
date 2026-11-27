@@ -62,17 +62,21 @@ const auth = useAuthStore()
 const defectReason = ref('')
 const openedNcrId = ref('')
 const openingNcr = ref(false)
-const canOpenNcr = computed(() =>
-  auth.principal?.permissionCodes?.includes('business.quality.ncr.manage') &&
-  record.value?.result === 'failed' &&
-  !record.value.nonconformanceReportId &&
-  !openedNcrId.value,
+const canOpenNcr = computed(
+  () =>
+    auth.principal?.permissionCodes?.includes('business.quality.ncr.manage') &&
+    record.value?.result === 'failed' &&
+    !record.value.nonconformanceReportId &&
+    !openedNcrId.value,
 )
 
-watch(() => [props.open, props.recordId, props.organizationId, props.environmentId], () => {
-  defectReason.value = ''
-  openedNcrId.value = ''
-})
+watch(
+  () => [props.open, props.recordId, props.organizationId, props.environmentId],
+  () => {
+    defectReason.value = ''
+    openedNcrId.value = ''
+  },
+)
 
 async function openNcr() {
   const reason = defectReason.value.trim()
@@ -89,8 +93,11 @@ async function openNcr() {
       throwOnError: true,
     })
     if (!data.success || !data.data?.ncrId) throw data
-    if (props.recordId === inspectionRecordId && props.organizationId === organizationId &&
-        props.environmentId === environmentId) {
+    if (
+      props.recordId === inspectionRecordId &&
+      props.organizationId === organizationId &&
+      props.environmentId === environmentId
+    ) {
       openedNcrId.value = data.data.ncrId
       void refreshRecord()
     }
@@ -177,13 +184,26 @@ function printRecord() {
             v-if="openedNcrId || record.nonconformanceReportId"
             data-print-hidden
             class="text-sm underline"
-            :to="{ path: '/quality/ncrs', query: { ncrId: openedNcrId || record.nonconformanceReportId } }"
+            :to="{
+              path: '/quality/ncrs',
+              query: { ncrId: openedNcrId || record.nonconformanceReportId },
+            }"
           >
             查看关联不合格品报告
           </RouterLink>
-          <form v-else-if="canOpenNcr" data-print-hidden class="grid gap-2" @submit.prevent="openNcr">
+          <form
+            v-else-if="canOpenNcr"
+            data-print-hidden
+            class="grid gap-2"
+            @submit.prevent="openNcr"
+          >
             <label for="inspection-defect-reason" class="text-sm font-medium">缺陷原因</label>
-            <NvInput id="inspection-defect-reason" v-model="defectReason" maxlength="200" required />
+            <NvInput
+              id="inspection-defect-reason"
+              v-model="defectReason"
+              maxlength="200"
+              required
+            />
             <NvButton type="submit" :disabled="openingNcr || !defectReason.trim()">
               开立不合格品报告
             </NvButton>

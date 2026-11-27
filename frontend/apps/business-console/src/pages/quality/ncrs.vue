@@ -725,7 +725,10 @@ watch(
           <form v-if="canManageNcr" class="grid gap-3 rounded-lg border p-3" @submit.prevent>
             <h2 class="text-base font-semibold text-foreground">关闭不合格品</h2>
             <RouterLink
-              v-if="selectedNcr?.dispositionType === 'scrap' || selectedNcr?.dispositionType === 'return-to-supplier'"
+              v-if="
+                selectedNcr?.dispositionType === 'scrap' ||
+                selectedNcr?.dispositionType === 'return-to-supplier'
+              "
               class="text-sm underline"
               :to="{ path: '/quality/capas', query: { sourceNcrId: selectedNcrId } }"
             >

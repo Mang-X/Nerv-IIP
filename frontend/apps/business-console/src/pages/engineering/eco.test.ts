@@ -224,7 +224,9 @@ describe('engineering eco page', () => {
     await flushPromises()
     const text = wrapper.text()
     expect(text).toContain('计划生效')
-    const statusSelect = wrapper.findAll('select').find((select) => select.find('option[value="Scheduled"]').exists())!
+    const statusSelect = wrapper
+      .findAll('select')
+      .find((select) => select.find('option[value="Scheduled"]').exists())!
     await statusSelect.setValue('Scheduled')
     expect(filters.status).toBe('Scheduled')
     await statusSelect.setValue('Published')
