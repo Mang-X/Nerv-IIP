@@ -13,6 +13,7 @@
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '../..')
+. (Join-Path $repoRoot 'scripts/lib/ProductionComposePorts.ps1')
 $startScript = Join-Path $repoRoot 'scripts/install/start-nerv-iip-apphost.ps1'
 $appHostEnvironment = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/AppHostEnvironment.cs') -Raw
 $appHostServices = Get-Content -LiteralPath (Join-Path $repoRoot 'infra/aspire/Nerv.IIP.AppHost/AppHostServices.cs') -Raw
@@ -141,10 +142,7 @@ foreach ($contract in @(
 }
 
 # 校验各服务的独立块，避免其他服务上的同名键掩盖漏配。
-$serviceBlocks = @{}
-foreach ($match in [regex]::Matches($platformText, '(?ms)^  (?<name>[a-z0-9-]+):\r?\n(?<body>.*?)(?=^  [a-z0-9-]+:|^\S|\z)')) {
-    $serviceBlocks[$match.Groups['name'].Value] = $match.Groups['body'].Value
-}
+$serviceBlocks = Get-ComposeServiceBlocks -ComposeText $platformText
 foreach ($service in @('business-master-data', 'business-product-engineering', 'business-quality')) {
     Assert-ContainsOrdinal -Text $serviceBlocks[$service] -Expected 'Iam__Jwt__JwksJson: ${NERV_IIP_IAM_JWT_JWKS_JSON:?' -Message "服务 $service 缺少必填 JWKS。"
     if ($serviceBlocks[$service] -match 'PrivateKey') { throw "服务 $service 不得接收 IAM 私钥。" }
@@ -153,17 +151,7 @@ foreach ($gateway in @('gateway', 'business-gateway')) {
     Assert-ContainsOrdinal -Text $serviceBlocks[$gateway] -Expected 'Security__ForwardedHeaders__TrustedProxies: ${NERV_IIP_GATEWAY_TRUSTED_PROXIES:?' -Message "网关 $gateway 缺少必填可信代理配置。"
 }
 Assert-ContainsOrdinal -Text $environmentExampleText -Expected 'NERV_IIP_GATEWAY_TRUSTED_PROXIES=' -Message '生产环境样例缺少可信代理输入。'
-$exposedBusinessServices = @('business-gateway', 'business-console')
-$internalBusinessServices = @(
-    $serviceBlocks.Keys | Where-Object {
-        $candidate = [string] $_
-        $candidate.StartsWith('business-', [StringComparison]::Ordinal) -and
-            -not ($exposedBusinessServices | Where-Object { [string]::Equals($_, $candidate, [StringComparison]::Ordinal) })
-    }
-)
-foreach ($service in @('iam') + $internalBusinessServices) {
-    if ($serviceBlocks[$service] -match '(?m)^    ports:') { throw "服务 $service 不得发布宿主机端口。" }
-}
+Assert-ProductionComposeInternalPorts -ServiceBlocks $serviceBlocks
 
 Write-Host 'Production deployment input contracts passed.'
 

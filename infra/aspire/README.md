@@ -169,7 +169,7 @@ AppHost 包含 Aspire Docker Compose 部署目标。必须从 AppHost 生成 Com
 .\nerv.ps1 publish-compose
 ```
 
-发布前可运行下列真实产物验证；它会分别生成临时 Development 与 Production Compose 产物并逐资源检查环境、迁移和开发 seed 门控，随后删除该临时目录：
+发布前可运行下列真实产物验证。脚本分别生成临时 Development 与 Production Compose 产物，逐资源检查环境、迁移和开发 seed 门控，并确认 Production 中 IAM 与内部业务服务没有发布宿主机端口。验证结束后删除临时目录。
 
 ```powershell
 pwsh scripts/checks/verify-aspire-apphost-environment-artifacts.ps1
