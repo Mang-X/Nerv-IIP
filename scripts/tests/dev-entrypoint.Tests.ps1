@@ -1,4 +1,4 @@
-# Script-Governance:
+﻿# Script-Governance:
 #   Category: check
 #   SideEffects:
 #     - Runs root development entrypoint smoke tests
@@ -50,7 +50,7 @@ $environmentAssignment = $launchAst.Find({
     param($node)
     $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
         $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
-        $node.Left.VariablePath.UserPath -eq 'appHostEnvironment'
+        [string]::Equals([string]$node.Left.VariablePath.UserPath, 'appHostEnvironment', [StringComparison]::Ordinal)
 }, $true)
 $readLaunchEnvironment = [scriptblock]::Create($environmentAssignment.Right.Extent.Text)
 $savedProvider = $env:Messaging__Provider
@@ -61,7 +61,7 @@ try {
     )) {
         $env:Messaging__Provider = $case.Override
         $localEnvironment = & $readLaunchEnvironment
-        if ($localEnvironment.Messaging__Provider -ne $case.Expected) {
+        if (-not [string]::Equals([string]$localEnvironment.Messaging__Provider, [string]$case.Expected, [StringComparison]::Ordinal)) {
             throw "Expected local Aspire messaging provider '$($case.Expected)'."
         }
     }

@@ -260,7 +260,8 @@ try {
         $postgresService = [regex]::Match($composeText, '(?m)^  postgres:\s*\r?\n(?:^    .*\r?\n)*')
         if (-not $postgresService.Success) { throw 'Published Compose artifact must define postgres.' }
         $hasDevelopmentConnectionLimit = $postgresService.Value.Contains('max_connections=300', [StringComparison]::Ordinal)
-        if ($hasDevelopmentConnectionLimit -ne ($environmentName -ceq 'Development')) {
+        $isDevelopmentEnvironment = [string]::Equals($environmentName, 'Development', [StringComparison]::Ordinal)
+        if ($hasDevelopmentConnectionLimit -ne $isDevelopmentEnvironment) {
             throw "Published $environmentName PostgreSQL command has incorrect Development connection limit."
         }
         if ($composeText -notmatch '(?m)^\s+- type: "volume"\s*\n\s+target: "/home/app"\s*\n\s+source: "nerv-iip-file-storage"' -and

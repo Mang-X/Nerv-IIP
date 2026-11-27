@@ -117,11 +117,14 @@ export function useWmsCountExecutions(initialFilters: Partial<WmsWarehouseTaskLi
     }
     const postingStatus = found.inventoryPostingStatus?.toLowerCase()
     const postingFailed = postingStatus === 'failed'
+    const matchesSubmittedQuantity =
+      typeof found.countedQuantity === 'number' && found.countedQuantity === countedQuantity
     const settled =
-      postingStatus === 'posted' ||
-      postingFailed ||
-      found.status === 'PendingApproval' ||
-      found.status === 'RecountRequired'
+      matchesSubmittedQuantity &&
+      (postingStatus === 'posted' ||
+        postingFailed ||
+        found.status === 'PendingApproval' ||
+        found.status === 'RecountRequired')
     if (settled) {
       clearPendingBusinessIntent(scope)
       void refetchWithWmsListScope(filters, countExecutionsQuery)

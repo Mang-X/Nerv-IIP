@@ -46,7 +46,9 @@ export function useInventoryScopeCatalog() {
     skuCatalog.skus.value.flatMap((sku) => toOption(sku.code, sku.displayName, sku.baseUomCode)),
   )
   const siteOptions = computed<EntityPickerOption[]>(() =>
-    siteCatalog.resources.value.flatMap((site) => toOption(site.code, site.displayName)),
+    siteCatalog.resourcesError?.value
+      ? []
+      : siteCatalog.resources.value.flatMap((site) => toOption(site.code, site.displayName)),
   )
   const baseUomBySku = toBaseUomBySku(skuCatalog.skus)
 
