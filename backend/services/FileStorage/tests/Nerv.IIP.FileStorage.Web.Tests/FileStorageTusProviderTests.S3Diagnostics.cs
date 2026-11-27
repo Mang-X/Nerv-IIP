@@ -139,6 +139,57 @@ public sealed partial class FileStorageTusProviderTests
         }
     }
 
+    [Fact]
+    public async Task S3_staging_write_failure_returns_fixed_diagnostics_and_keeps_path_out_of_host_logs()
+    {
+        var root = CreateTempDirectory();
+        try
+        {
+            var activities = new ConcurrentQueue<string>();
+            using var listener = CaptureHttpActivities(activities);
+            using var logs = new CapturingLogProvider();
+            using var s3 = new TestS3Handler();
+            await using var factory = new FileStorageWebApplicationFactory();
+            await using var host = ConfigureStorage(factory, "s3", s3, root, logProvider: logs);
+            using var client = CreateInternalServiceClient(host);
+            var bytes = "hello"u8.ToArray();
+            var upload = await CreateTusUploadSessionAsync(client, bytes.Length, CreateTextAttachmentRequest());
+
+            var sessionHash = Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(upload.UploadSessionId))).ToLowerInvariant();
+            var blockingDirectory = Path.Combine(root, $"staging-{sessionHash}.bin");
+            Directory.CreateDirectory(blockingDirectory);
+
+            try
+            {
+                using var request = CreateTusPatchRequest(upload.Upload.Url, 0, bytes);
+                using var failure = await client.SendAsync(request);
+                Assert.Equal(HttpStatusCode.ServiceUnavailable, failure.StatusCode);
+                var body = await failure.Content.ReadAsStringAsync();
+                Assert.Equal("The staging volume could not access the upload bytes.", body);
+                Assert.Equal(0, s3.PutCount);
+                Assert.Null(await ReadFileAsync(host, upload.FileId));
+
+                var diagnostics = string.Join('\n', logs.Messages.Concat(activities));
+                AssertSanitized(diagnostics);
+                Assert.DoesNotContain(root, diagnostics);
+                Assert.DoesNotContain(blockingDirectory, diagnostics);
+                Assert.DoesNotContain(nameof(UnauthorizedAccessException), diagnostics);
+            }
+            finally
+            {
+                Directory.Delete(blockingDirectory, recursive: true);
+            }
+
+            await PatchTusBytesAsync(client, upload.Upload.Url, 0, bytes);
+            Assert.NotNull(await ReadFileAsync(host, upload.FileId));
+        }
+        finally
+        {
+            DeleteTempDirectory(root);
+        }
+    }
+
     private static ActivityListener CaptureHttpActivities(ConcurrentQueue<string> activities)
     {
         var listener = new ActivityListener

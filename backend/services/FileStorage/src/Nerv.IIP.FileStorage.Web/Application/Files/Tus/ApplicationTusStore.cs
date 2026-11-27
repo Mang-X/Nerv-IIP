@@ -25,7 +25,7 @@ internal sealed class ApplicationTusStore(
         var result = await gate.ExecutePatchMutationAsync(fileId, async token =>
         {
             // The application gate has just re-read durable open. Hold it through writes, rollback and fsync.
-            await using var file = bytes.OpenWrite(fileId);
+            await using var file = OpenStagingWrite(bytes, fileId, token);
             var offset = file.Length;
             if (offset != long.Parse(context.Request.Headers["Upload-Offset"].ToString(), CultureInfo.InvariantCulture))
                 throw new TusMutationRejectedException(StatusCodes.Status409Conflict);
@@ -37,7 +37,7 @@ internal sealed class ApplicationTusStore(
                 int read;
                 while ((read = await stream.ReadAsync(buffer, 0, buffer.Length, token)) != 0)
                 {
-                    await file.WriteAsync(buffer.AsMemory(0, read), token);
+                    await WriteStagingAsync(file, buffer.AsMemory(0, read), token);
                     hash.AppendData(buffer, 0, read);
                     written += read;
                 }
@@ -45,13 +45,19 @@ internal sealed class ApplicationTusStore(
                 // tusdotnet has validated the algorithm and base64 before calling this method.
                 checksumMatches = checksumHeader.Length == 0 || CryptographicOperations.FixedTimeEquals(
                     hash.GetHashAndReset(), Convert.FromBase64String(checksumHeader.Split(' ', 2)[1]));
-                if (!checksumMatches) { file.SetLength(offset); written = 0; }
-                file.Flush(flushToDisk: true);
+                if (!checksumMatches) { SetStagingLength(file, offset, token); written = 0; }
+                FlushStaging(file, token);
             }
             catch
             {
-                file.SetLength(offset);
-                file.Flush(flushToDisk: true);
+                try
+                {
+                    file.SetLength(offset);
+                    file.Flush(flushToDisk: true);
+                }
+                catch (Exception rollbackError) when (rollbackError is IOException or UnauthorizedAccessException)
+                {
+                }
                 throw;
             }
         }, cancellationToken);
@@ -115,5 +121,65 @@ internal sealed class ApplicationTusStore(
         }, cancellationToken);
         if (result == UploadSessionMutationResult.NotOpen)
             throw new TusMutationRejectedException(StatusCodes.Status409Conflict);
+    }
+
+    private static FileStream OpenStagingWrite(LocalUploadByteStore bytes, string fileId, CancellationToken token)
+    {
+        try
+        {
+            return bytes.OpenWrite(fileId);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            token.ThrowIfCancellationRequested();
+            throw new TusMutationRejectedException(
+                StatusCodes.Status503ServiceUnavailable,
+                "The staging volume could not access the upload bytes.");
+        }
+    }
+
+    private static async Task WriteStagingAsync(FileStream file, ReadOnlyMemory<byte> chunk, CancellationToken token)
+    {
+        try
+        {
+            await file.WriteAsync(chunk, token);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            token.ThrowIfCancellationRequested();
+            throw new TusMutationRejectedException(
+                StatusCodes.Status503ServiceUnavailable,
+                "The staging volume could not access the upload bytes.");
+        }
+    }
+
+    private static void SetStagingLength(FileStream file, long offset, CancellationToken token)
+    {
+        try
+        {
+            file.SetLength(offset);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            token.ThrowIfCancellationRequested();
+            throw new TusMutationRejectedException(
+                StatusCodes.Status503ServiceUnavailable,
+                "The staging volume could not access the upload bytes.");
+        }
+    }
+
+    private static void FlushStaging(FileStream file, CancellationToken token)
+    {
+        try
+        {
+            file.Flush(flushToDisk: true);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            token.ThrowIfCancellationRequested();
+            throw new TusMutationRejectedException(
+                StatusCodes.Status503ServiceUnavailable,
+                "The staging volume could not access the upload bytes.");
+        }
     }
 }
