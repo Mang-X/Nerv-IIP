@@ -12,12 +12,15 @@ using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SalesReturnAuthorizationAggre
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Finance;
+using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Sales;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Erp.Web.Application.MasterData;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
+using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
 
@@ -256,6 +259,79 @@ public sealed class ErpReturnIntegrationHandlerTests
         Assert.Contains(voucher.Lines, x => x.AccountCode == "GR-IR" && x.DebitAmount == 100m);
         Assert.Contains(voucher.Lines, x => x.AccountCode == "1401" && x.CreditAmount == 100m);
         Assert.Empty(await deadLetters.ListAsync(WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn.ConsumerName, IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Returned_quantity_is_unavailable_for_matching_on_its_source_receipt_line()
+    {
+        await using var provider = ErpTestProvider.CreateInMemoryProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.ApplicationDbContext>();
+        var coding = scope.ServiceProvider.GetRequiredService<ErpCodingService>();
+        var order = PurchaseOrder.Create(
+            "org-001", "env-dev", "PO-RETURN-MATCH", "SUP-001", "SITE-01", "CNY",
+            [
+                new("LINE-001", "SKU-RETURN-001", "EA", 3m, 100m, new DateOnly(2026, 7, 1)),
+                new("LINE-002", "SKU-RETURN-001", "EA", 1m, 100m, new DateOnly(2026, 7, 1)),
+            ], receivingAuthority: PurchaseReceiptInventoryPostingRoute.Wms);
+        order.MarkApprovalRequested("approval-return-match");
+        order.ReleaseAfterApproval("approval-return-match");
+        dbContext.PurchaseOrders.Add(order);
+        await dbContext.SaveChangesAsync();
+
+        var accept = new AcceptWmsPurchaseReceiptCommandHandler(dbContext, coding);
+        var batch = new AcceptWmsPurchaseReceiptCommand(
+            "org-001", "env-dev", Guid.NewGuid(), order.PurchaseOrderNo, "SITE-01", 1m,
+            [new("LINE-001", 2m, "LOC-QA"), new("LINE-002", 1m, "LOC-QA")]);
+        var receipt = await accept.Handle(batch, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        var otherReceipt = await accept.Handle(batch with
+        {
+            WmsReceiptBatchId = Guid.NewGuid(),
+            Lines = [new("LINE-001", 1m, "LOC-QA")],
+        }, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var returns = new WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn(
+            dbContext, new InMemoryIntegrationEventDeadLetterStore(), coding);
+        await returns.HandleAsync(WmsEvent(
+            WmsIntegrationEventTypes.OutboundOrderCompleted, "RTS-RETURN-MATCH",
+            WmsSourceDocumentTypes.PurchaseReceiptReturn, receipt.PurchaseReceiptNo, "supplier-return-match",
+            [new("LINE-001", "SKU-RETURN-001", "EA", "SITE-01", "LOC-QA", 1m, "Completed")]),
+            CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+
+        var invoiceHandler = new RecordSupplierInvoiceCommandHandler(dbContext, coding);
+        foreach (var (receiptNo, lineNo, payableNo) in new[]
+        {
+            (receipt.PurchaseReceiptNo, "LINE-001", "AP-RETAINED"),
+            (receipt.PurchaseReceiptNo, "LINE-002", "AP-OTHER-LINE"),
+            (otherReceipt.PurchaseReceiptNo, "LINE-001", "AP-OTHER-BATCH"),
+        })
+        {
+            var command = new RecordSupplierInvoiceCommand(
+                "org-001", "env-dev", $"INV-{payableNo}", order.PurchaseOrderNo, receiptNo,
+                new DateOnly(2026, 7, 1), new DateOnly(2026, 8, 1), "CNY", 0m, 0m,
+                [new(lineNo, lineNo, 1m, 100m)], payableNo);
+            var invoiceId = await invoiceHandler.Handle(command, CancellationToken.None);
+            await dbContext.SaveChangesAsync();
+            Assert.Equal(SupplierInvoiceMatchStatus.Matched,
+                (await dbContext.SupplierInvoices.SingleAsync(x => x.Id == invoiceId)).MatchStatus);
+        }
+
+        var excess = new RecordSupplierInvoiceCommand(
+            "org-001", "env-dev", "INV-RETURNED", order.PurchaseOrderNo, receipt.PurchaseReceiptNo,
+            new DateOnly(2026, 7, 1), new DateOnly(2026, 8, 1), "CNY", 1m, 0m,
+            [new("LINE-001", "LINE-001", 1m, 100m)], "AP-RETURNED");
+        var heldId = await invoiceHandler.Handle(excess, CancellationToken.None);
+        await dbContext.SaveChangesAsync();
+        Assert.Equal(SupplierInvoiceMatchStatus.PaymentHeld,
+            (await dbContext.SupplierInvoices.SingleAsync(x => x.Id == heldId)).MatchStatus);
+        Assert.False(await dbContext.AccountPayables.AnyAsync(x => x.SourceDocumentNo == excess.InvoiceNo));
+
+        var release = new ReleaseSupplierInvoicePaymentHoldCommandHandler(dbContext, coding);
+        await Assert.ThrowsAsync<KnownException>(() => release.Handle(
+            new("org-001", "env-dev", excess.InvoiceNo!, "AP-RETURNED", "release-returned"), CancellationToken.None));
     }
 
     [Fact]

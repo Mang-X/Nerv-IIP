@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
+using Nerv.IIP.Business.Erp.Domain.AggregatesModel.SupplierInvoiceAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
 using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
@@ -17,6 +18,8 @@ using Nerv.IIP.Business.Erp.Web.Application.Wms;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
+using Nerv.IIP.Testing;
+using Npgsql;
 using NetCorePal.Extensions.DependencyInjection;
 using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Primitives;
@@ -309,6 +312,244 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
         Assert.Equal(inspected ? "quality" : "unrestricted", Assert.Single(original.Lines).QualityStatus);
         Assert.Equal(1m, Assert.Single((await LoadOrderAsync(read.ServiceProvider, "PO-bound")).Lines).ReceivedQuantity);
         Assert.Equal(consumer, (await final.ProcessedIntegrationEvents.SingleAsync()).ConsumerName);
+    }
+
+    [PurchaseReceiptPostgresFact]
+    public async Task Accepted_receipt_invoice_and_supplier_return_use_the_committed_winner()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = CreateConcurrencyProvider();
+        await using (var setup = provider.CreateAsyncScope())
+        {
+            var db = setup.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+            await db.Database.MigrateAsync();
+            foreach (var suffix in new[] { "return-first", "invoice-first" })
+                AddReleasedOrder(db, suffix, authority: PurchaseReceiptInventoryPostingRoute.Wms);
+            await db.SaveChangesAsync();
+        }
+
+        foreach (var returnFirst in new[] { true, false })
+        {
+            var suffix = returnFirst ? "return-first" : "invoice-first";
+            var batch = new AcceptWmsPurchaseReceiptCommand(
+                "org-route", "env-route", Guid.NewGuid(), $"PO-{suffix}", "SITE-001", 1m,
+                [new("10", 1m, "RAW-A-01")]);
+            RecordPurchaseReceiptResult receipt;
+            await using (var acceptScope = provider.CreateAsyncScope())
+            {
+                using var causation = acceptScope.ServiceProvider.GetRequiredService<IErpIntegrationEventContextAccessor>()
+                    .BeginScope($"command:test:{suffix}");
+                receipt = await acceptScope.ServiceProvider.GetRequiredService<ISender>().Send(batch);
+            }
+
+            var invoice = new RecordSupplierInvoiceCommand(
+                batch.OrganizationId, batch.EnvironmentId, $"INV-{suffix}", batch.PurchaseOrderNo,
+                receipt.PurchaseReceiptNo, new DateOnly(2026, 9, 1), new DateOnly(2026, 10, 1), "CNY",
+                1m, 0m, [new("10", "10", 1m, 12.5m)], $"AP-{suffix}");
+            var @return = InboundEvent($"RTS-{suffix}", batch.PurchaseOrderNo);
+            @return = @return with
+            {
+                EventType = WmsIntegrationEventTypes.OutboundOrderCompleted,
+                Payload = @return.Payload with
+                {
+                    SourceDocumentType = WmsSourceDocumentTypes.PurchaseReceiptReturn,
+                    SourceDocumentId = receipt.PurchaseReceiptNo,
+                },
+            };
+
+            var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+            await using var first = provider.CreateAsyncScope();
+            await using var second = provider.CreateAsyncScope();
+            var firstDb = first.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var secondDb = second.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await secondDb.Database.OpenConnectionAsync();
+            var secondPid = ((NpgsqlConnection)secondDb.Database.GetDbConnection()).ProcessID;
+
+            Task ProjectReturnAsync(IServiceProvider services) =>
+                new WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn(
+                    services.GetRequiredService<ApplicationDbContext>(), deadLetters,
+                    services.GetRequiredService<ErpCodingService>()).HandleAsync(@return, CancellationToken.None);
+
+            await using var transaction = await firstDb.Database.BeginTransactionAsync();
+            if (returnFirst)
+            {
+                await ProjectReturnAsync(first.ServiceProvider);
+            }
+            else
+            {
+                await new RecordSupplierInvoiceCommandHandler(
+                    firstDb, first.ServiceProvider.GetRequiredService<ErpCodingService>()).Handle(invoice, CancellationToken.None);
+            }
+            await firstDb.SaveChangesAsync();
+
+            var competing = returnFirst
+                ? (Task)second.ServiceProvider.GetRequiredService<ISender>().Send(invoice)
+                : ProjectReturnAsync(second.ServiceProvider);
+
+            try
+            {
+                await using var probe = new NpgsqlConnection(ErpPostgresLaneDatabase.ConnectionString);
+                await probe.OpenAsync();
+                await using var query = new NpgsqlCommand(
+                    "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE pid = @pid AND wait_event_type = 'Lock' AND wait_event = 'advisory')", probe);
+                query.Parameters.AddWithValue("pid", secondPid);
+                await Eventually.WaitAsync(
+                    condition: $"ERP receipt settlement lock for {suffix}",
+                    observe: async token => (bool)(await query.ExecuteScalarAsync(token))!,
+                    isSatisfied: waiting => waiting || competing.IsCompleted,
+                    describe: waiting => $"blocked={waiting}, completed={competing.IsCompleted}",
+                    options: new EventuallyOptions(Timeout: TimeSpan.FromSeconds(10), PollInterval: TimeSpan.FromMilliseconds(50),
+                        SensitiveValues: [ErpPostgresLaneDatabase.ConnectionString]));
+                Assert.False(competing.IsCompleted);
+            }
+            finally
+            {
+                await transaction.CommitAsync();
+                await competing;
+            }
+
+            await using var verify = provider.CreateAsyncScope();
+            var db = verify.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var storedInvoice = await db.SupplierInvoices.SingleAsync(x => x.InvoiceNo == invoice.InvoiceNo);
+            var storedReturn = await db.PurchaseReturns.Include(x => x.Lines)
+                .SingleAsync(x => x.PurchaseReceiptNo == receipt.PurchaseReceiptNo);
+            Assert.Equal(returnFirst ? SupplierInvoiceMatchStatus.PaymentHeld : SupplierInvoiceMatchStatus.Matched,
+                storedInvoice.MatchStatus);
+            Assert.Equal(returnFirst ? 1m : 0m, Assert.Single(storedReturn.Lines).GrIrReversalQuantity);
+            Assert.Equal(returnFirst ? 0m : 1m, Assert.Single(storedReturn.Lines).DebitNoteQuantity);
+            Assert.Equal(!returnFirst, await db.DebitNotes.AnyAsync(x => x.PurchaseReturnNo == storedReturn.PurchaseReturnNo));
+            Assert.Empty(await deadLetters.ListAsync(
+                WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn.ConsumerName,
+                IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+        }
+    }
+
+    [PurchaseReceiptPostgresFact]
+    public async Task Accepted_receipt_only_grir_returns_limit_invoice_matching_and_hold_release()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = CreateConcurrencyProvider();
+        (string Suffix, bool HasGrIrReturn, bool NeedsReview)[] scenarios =
+        [
+            ("debit-match", false, false),
+            ("debit-release", false, true),
+            ("mixed-match", true, false),
+            ("mixed-release", true, true),
+        ];
+        await using (var setup = provider.CreateAsyncScope())
+        {
+            var db = setup.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+            await db.Database.MigrateAsync();
+            foreach (var scenario in scenarios)
+                AddReleasedOrder(db, scenario.Suffix, authority: PurchaseReceiptInventoryPostingRoute.Wms);
+            await db.SaveChangesAsync();
+        }
+
+        foreach (var (suffix, hasGrIrReturn, needsReview) in scenarios)
+        {
+            var batch = new AcceptWmsPurchaseReceiptCommand(
+                "org-route", "env-route", Guid.NewGuid(), $"PO-{suffix}", "SITE-001", 2m,
+                [new("10", 2m, "RAW-A-01")]);
+            string receiptNo;
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var services = scope.ServiceProvider;
+                using var causation = services.GetRequiredService<IErpIntegrationEventContextAccessor>()
+                    .BeginScope($"command:test:{suffix}");
+                receiptNo = (await services.GetRequiredService<ISender>().Send(batch)).PurchaseReceiptNo;
+            }
+
+            var original = new RecordSupplierInvoiceCommand(
+                batch.OrganizationId, batch.EnvironmentId, $"INV-original-{suffix}", batch.PurchaseOrderNo,
+                receiptNo, new DateOnly(2026, 9, 1), new DateOnly(2026, 10, 1), "CNY",
+                0m, 0m, [new("10", "10", 1m, 12.5m)], $"AP-original-{suffix}");
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<ISender>().Send(original);
+            }
+
+            var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+            for (var returnNumber = 1; returnNumber <= (hasGrIrReturn ? 2 : 1); returnNumber++)
+            {
+                var outbound = InboundEvent($"RTS-{suffix}-{returnNumber}", batch.PurchaseOrderNo);
+                await using var scope = provider.CreateAsyncScope();
+                var services = scope.ServiceProvider;
+                await new WmsOutboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReturn(
+                    services.GetRequiredService<ApplicationDbContext>(), deadLetters,
+                    services.GetRequiredService<ErpCodingService>()).HandleAsync(outbound with
+                    {
+                        EventType = WmsIntegrationEventTypes.OutboundOrderCompleted,
+                        Payload = outbound.Payload with
+                        {
+                            SourceDocumentType = WmsSourceDocumentTypes.PurchaseReceiptReturn,
+                            SourceDocumentId = receiptNo,
+                        },
+                    }, CancellationToken.None);
+            }
+
+            // Pure debit: 2.5 invoiced against 2 received, within the legacy 0.5 tolerance.
+            // Mixed: 1.5 invoiced against a remaining GR/IR ceiling of 1.
+            var followUp = original with
+            {
+                InvoiceNo = $"INV-follow-up-{suffix}",
+                PayableNo = $"AP-follow-up-{suffix}",
+                QuantityTolerance = 0.5m,
+                Lines = [new("10", "10", hasGrIrReturn ? 0.5m : 1.5m, needsReview ? 13m : 12.5m)],
+            };
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<ISender>().Send(followUp);
+            }
+
+            var expectedStatus = hasGrIrReturn || needsReview
+                ? SupplierInvoiceMatchStatus.PaymentHeld
+                : SupplierInvoiceMatchStatus.Matched;
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var returns = await db.PurchaseReturns.Where(x => x.PurchaseReceiptNo == receiptNo)
+                    .SelectMany(x => x.Lines).ToListAsync();
+                Assert.All(returns, line => Assert.Equal("10", line.PurchaseOrderLineNo));
+                var debit = Assert.Single(returns, line => line.DebitNoteQuantity > 0m);
+                Assert.Equal(0m, debit.GrIrReversalQuantity);
+                Assert.Equal(1m, debit.DebitNoteQuantity);
+                if (hasGrIrReturn)
+                {
+                    var reversal = Assert.Single(returns, line => line.GrIrReversalQuantity > 0m);
+                    Assert.Equal(1m, reversal.GrIrReversalQuantity);
+                    Assert.Equal(0m, reversal.DebitNoteQuantity);
+                }
+                Assert.Equal(hasGrIrReturn ? 2 : 1, returns.Count);
+                Assert.Equal(expectedStatus, (await db.SupplierInvoices.SingleAsync(x => x.InvoiceNo == followUp.InvoiceNo)).MatchStatus);
+            }
+
+            if (needsReview)
+            {
+                var release = new ReleaseSupplierInvoicePaymentHoldCommand(
+                    batch.OrganizationId, batch.EnvironmentId, followUp.InvoiceNo, followUp.PayableNo, $"release-{suffix}");
+                await using (var scope = provider.CreateAsyncScope())
+                {
+                    var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+                    if (hasGrIrReturn)
+                    {
+                        var error = await Assert.ThrowsAsync<KnownException>(() => sender.Send(release));
+                        Assert.Contains("退货后的可匹配数量", error.Message);
+                    }
+                    else
+                    {
+                        await sender.Send(release);
+                    }
+                }
+
+                await using var verify = provider.CreateAsyncScope();
+                var db = verify.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                Assert.Equal(hasGrIrReturn ? SupplierInvoiceMatchStatus.PaymentHeld : SupplierInvoiceMatchStatus.Matched,
+                    (await db.SupplierInvoices.SingleAsync(x => x.InvoiceNo == followUp.InvoiceNo)).MatchStatus);
+                Assert.Equal(!hasGrIrReturn, await db.AccountPayables.AnyAsync(x => x.SourceDocumentNo == followUp.InvoiceNo));
+            }
+        }
     }
 
     private static void AddReleasedOrder(ApplicationDbContext db, string suffix, bool alreadyReceived = false,

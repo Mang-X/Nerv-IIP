@@ -41,7 +41,8 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
         decimal amountTolerance,
         decimal? priceTolerancePercent,
         IEnumerable<SupplierInvoiceLineDraft> lineDrafts,
-        IReadOnlyDictionary<string, decimal>? alreadyInvoicedQuantitiesByReceiptLineNo)
+        IReadOnlyDictionary<string, decimal>? alreadyInvoicedQuantitiesByReceiptLineNo,
+        IReadOnlyDictionary<string, decimal>? returnedGrIrQuantitiesByReceiptLineNo)
     {
         ArgumentNullException.ThrowIfNull(order);
         ArgumentNullException.ThrowIfNull(receipt);
@@ -87,7 +88,12 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
 
             var alreadyInvoicedQuantity = alreadyInvoicedQuantitiesByReceiptLineNo?.GetValueOrDefault(draft.PurchaseReceiptLineNo) ?? 0m;
             var currentInvoiceQuantity = currentInvoiceQuantitiesByReceiptLineNo.GetValueOrDefault(draft.PurchaseReceiptLineNo);
-            if (!IsWithinTolerance(draft, poLine, receiptLine, alreadyInvoicedQuantity + currentInvoiceQuantity, quantityTolerance, amountTolerance, priceTolerancePercent))
+            var totalInvoiceQuantity = alreadyInvoicedQuantity + currentInvoiceQuantity + draft.InvoiceQuantity;
+            var exceedsUnreturnedQuantity = returnedGrIrQuantitiesByReceiptLineNo is not null
+                && returnedGrIrQuantitiesByReceiptLineNo.TryGetValue(draft.PurchaseReceiptLineNo, out var returnedGrIrQuantity)
+                && totalInvoiceQuantity > receiptLine.ReceivedQuantity - returnedGrIrQuantity;
+            if (exceedsUnreturnedQuantity
+                || !IsWithinTolerance(draft, poLine, receiptLine, alreadyInvoicedQuantity + currentInvoiceQuantity, quantityTolerance, amountTolerance, priceTolerancePercent))
             {
                 held = true;
             }
@@ -137,9 +143,10 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
         decimal amountTolerance,
         IEnumerable<SupplierInvoiceLineDraft> lines,
         IReadOnlyDictionary<string, decimal>? alreadyInvoicedQuantitiesByReceiptLineNo = null,
-        decimal exchangeRate = 1m)
+        decimal exchangeRate = 1m,
+        IReadOnlyDictionary<string, decimal>? returnedGrIrQuantitiesByReceiptLineNo = null)
     {
-        return new SupplierInvoice(order, receipt, invoiceNo, invoiceDate, dueDate, currencyCode, exchangeRate, quantityTolerance, amountTolerance, null, lines, alreadyInvoicedQuantitiesByReceiptLineNo);
+        return new SupplierInvoice(order, receipt, invoiceNo, invoiceDate, dueDate, currencyCode, exchangeRate, quantityTolerance, amountTolerance, null, lines, alreadyInvoicedQuantitiesByReceiptLineNo, returnedGrIrQuantitiesByReceiptLineNo);
     }
 
     public static SupplierInvoice Match(
@@ -154,9 +161,10 @@ public sealed class SupplierInvoice : Entity<SupplierInvoiceId>, IAggregateRoot
         decimal priceTolerancePercent,
         IEnumerable<SupplierInvoiceLineDraft> lines,
         IReadOnlyDictionary<string, decimal>? alreadyInvoicedQuantitiesByReceiptLineNo = null,
-        decimal exchangeRate = 1m)
+        decimal exchangeRate = 1m,
+        IReadOnlyDictionary<string, decimal>? returnedGrIrQuantitiesByReceiptLineNo = null)
     {
-        return new SupplierInvoice(order, receipt, invoiceNo, invoiceDate, dueDate, currencyCode, exchangeRate, quantityTolerance, amountTolerance, priceTolerancePercent, lines, alreadyInvoicedQuantitiesByReceiptLineNo);
+        return new SupplierInvoice(order, receipt, invoiceNo, invoiceDate, dueDate, currencyCode, exchangeRate, quantityTolerance, amountTolerance, priceTolerancePercent, lines, alreadyInvoicedQuantitiesByReceiptLineNo, returnedGrIrQuantitiesByReceiptLineNo);
     }
 
     public void ReleasePaymentHold()
