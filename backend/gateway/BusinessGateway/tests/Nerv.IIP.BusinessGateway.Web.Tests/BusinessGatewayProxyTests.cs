@@ -9171,6 +9171,50 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Approval_template_client_sends_distinct_read_and_write_credentials()
+    {
+        const string sharedToken = "synthetic-shared-token";
+        const string readToken = "synthetic-gateway-template-read-token";
+        const string writeToken = "synthetic-gateway-template-write-token";
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Approval:ReadTemplates:OutboundCredentials:0:OrganizationId"] = "org-001",
+            ["Approval:ReadTemplates:OutboundCredentials:0:EnvironmentId"] = "env-dev",
+            ["Approval:ReadTemplates:OutboundCredentials:0:BearerToken"] = readToken,
+            ["Approval:WriteTemplates:OutboundCredentials:0:OrganizationId"] = "org-001",
+            ["Approval:WriteTemplates:OutboundCredentials:0:EnvironmentId"] = "env-dev",
+            ["Approval:WriteTemplates:OutboundCredentials:0:BearerToken"] = writeToken,
+        }).Build();
+        using var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://approval.local") };
+        var client = new HttpBusinessApprovalClient(downstream, configuration);
+        var template = new BusinessConsoleCreateOrUpdateApprovalTemplateRequest(
+            "org-001", "env-dev", "ECO-DEFAULT", "engineering-change-order", 1, true, []);
+
+        var read = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.ListTemplatesAsync(sharedToken, new("org-001", "env-dev"), CancellationToken.None));
+        var write = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.CreateOrUpdateTemplateAsync(sharedToken, template, CancellationToken.None));
+        var unavailable = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.CreateOrUpdateTemplateAsync(sharedToken, template with { EnvironmentId = "env-other" }, CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Forbidden, read.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, write.StatusCode);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+        Assert.Collection(handler.Requests,
+            request =>
+            {
+                Assert.Equal(HttpMethod.Get, request.Method);
+                Assert.Equal(readToken, request.Headers.Authorization?.Parameter);
+            },
+            request =>
+            {
+                Assert.Equal(HttpMethod.Post, request.Method);
+                Assert.Equal(writeToken, request.Headers.Authorization?.Parameter);
+            });
+    }
+
+    [Fact]
     public async Task Approval_client_uses_the_scoped_read_bearer_and_preserves_detail_not_found()
     {
         const string profile = "Approval:GetChain:OutboundCredentials:0:";

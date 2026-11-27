@@ -70,7 +70,7 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient, IConfigura
         BusinessConsoleApprovalTemplateListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleApprovalTemplateListResponse>(
-            internalBearerToken,
+            ResolveOperationBearer("ReadTemplates", request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Get,
             "/api/business/v1/approvals/templates?" + Query(
                 ("organizationId", request.OrganizationId),
@@ -87,7 +87,7 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient, IConfigura
         BusinessConsoleCreateOrUpdateApprovalTemplateRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleCreateOrUpdateApprovalTemplateResponse>(
-            internalBearerToken,
+            ResolveOperationBearer("WriteTemplates", request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Post,
             "/api/business/v1/approvals/templates",
             request,
@@ -110,7 +110,7 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient, IConfigura
         BusinessConsoleApprovalChainListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleApprovalChainListResponse>(
-            ResolveCollectionReadBearer(request.OrganizationId, request.EnvironmentId, internalBearerToken),
+            ResolveOperationBearer("ReadCollections", request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Get,
             "/api/business/v1/approvals/chains?" + Query(
                 ("organizationId", request.OrganizationId),
@@ -163,7 +163,7 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient, IConfigura
         BusinessConsoleApprovalTaskListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleApprovalTaskListResponse>(
-            ResolveCollectionReadBearer(request.OrganizationId, request.EnvironmentId, internalBearerToken),
+            ResolveOperationBearer("ReadCollections", request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Get,
             "/api/business/v1/approvals/tasks?" + Query(
                 ("organizationId", request.OrganizationId),
@@ -182,7 +182,7 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient, IConfigura
         BusinessConsoleApprovalDecisionListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleApprovalDecisionListResponse>(
-            ResolveCollectionReadBearer(request.OrganizationId, request.EnvironmentId, internalBearerToken),
+            ResolveOperationBearer("ReadCollections", request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Get,
             "/api/business/v1/approvals/decisions?" + Query(
                 ("organizationId", request.OrganizationId),
@@ -256,11 +256,11 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient, IConfigura
             request,
             cancellationToken);
 
-    private string ResolveCollectionReadBearer(string organizationId, string environmentId, string legacyBearer)
+    private string ResolveOperationBearer(string operation, string organizationId, string environmentId, string legacyBearer)
     {
         try
         {
-            return ScopedCallerOutboundToken.Resolve(configuration?.GetSection("Approval:ReadCollections:OutboundCredentials"),
+            return ScopedCallerOutboundToken.Resolve(configuration?.GetSection($"Approval:{operation}:OutboundCredentials"),
                 organizationId, environmentId, legacyBearer);
         }
         catch (InvalidOperationException)

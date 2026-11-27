@@ -29,6 +29,8 @@
 - `internal.approval-chains.read-mes`
 - `internal.approval-chains.read-product-engineering`
 - `internal.approval-chains.read-quality`
+- `internal.approval-templates.read-gateway`
+- `internal.approval-templates.write-gateway`
 - `internal.gateway-cache.invalidate`
 - `iam.users.read`
 - `iam.users.manage`

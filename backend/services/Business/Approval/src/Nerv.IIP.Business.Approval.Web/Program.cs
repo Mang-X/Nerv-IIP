@@ -37,7 +37,9 @@ try
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
     builder.Services.AddCreateApprovalChainAuthorization(builder.Configuration);
     builder.Services.AddGetApprovalChainAuthorization(builder.Configuration);
-    builder.Services.AddReadApprovalCollectionsAuthorization(builder.Configuration);
+    ApprovalGatewayOperationAuthorization.ReadCollections.Register(builder.Services, builder.Configuration);
+    ApprovalGatewayOperationAuthorization.ReadTemplates.Register(builder.Services, builder.Configuration);
+    ApprovalGatewayOperationAuthorization.WriteTemplates.Register(builder.Services, builder.Configuration);
     builder.Services.AddScoped<ResolveApprovalStepAuthority>();
     var iamBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
         builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");
