@@ -5,13 +5,19 @@ namespace Nerv.IIP.FileStorage.Web.Application.Files.Tus;
 internal sealed class TusVolumeHealthCheck(
     IConfiguration configuration,
     IWebHostEnvironment environment,
-    ILocalTusFileStoreAccessor stores) : IHealthCheck
+    ILocalTusFileStoreAccessor stores,
+    S3FinalFileStore? s3 = null) : IHealthCheck
 {
     public Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (s3 is { IsEnabled: true })
+        {
+            return s3.CheckHealthAsync(cancellationToken);
+        }
+
         var rootPath = configuration["FileStorage:Tus:RootPath"];
         if (!Directory.Exists(rootPath) || !stores.TryGet(out var store))
         {

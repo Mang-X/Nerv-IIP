@@ -11,9 +11,9 @@ Knowledge、Ops、AppHub 与业务域可以引用文件，但文件的业务语�
 ## 当前字节与元数据边界
 
 1. 当前通用文件 metadata 使用 PostgreSQL-backed 实现；`filestorage` schema 与服务代码是持久化事实来源，运行环境不以 InMemory 作为 metadata 实现。
-2. 当前通用文件字节只有本地 tus 链路可用，当前部署（AppHost 生成产物与 legacy overlay）都显式选择它；代码内的 provider 缺省值也是 `tus`。传输协议由 tusdotnet 承接，实际 PATCH 在 application-owned mutation gate 内重读 durable `open`，字节写入、checksum 回退与 offset 推进都在该 gate 内完成；完整上传回调复用 application complete。显式配置其他上传 provider 会导致服务启动失败。下载授权的传输模式仍为 `server-proxy`。
-3. complete 冻结大小与 SHA-256 校验和。File Storage 在持久卷的同一目录内把 staging 文件原子发布到 final 命名空间，按 `ObjectKey` 定位并回读校验字节，再提交正式元数据。发布后中断时，重试复核同一个 final 对象。既有会话字节在长度和已保存的 SHA-256 一致时可发布至 final，下载始终从 final 读取。
-4. MinIO 当前服务独立的 `VersionedArchive` 合规归档边界，不是通用 File Storage 的当前字节后端。
+2. 当前通用文件使用 tus 上传，AppHost 生成产物与 legacy overlay 默认以本地卷保存正式字节。单实例可选择 S3-compatible 保存正式字节，tus staging 仍保留在本地持久卷。传输协议由 tusdotnet 承接，实际 PATCH 在 application-owned mutation gate 内重读 durable `open`，字节写入、checksum 回退与 offset 推进都在该 gate 内完成；完整上传回调复用 application complete。显式配置其他上传 provider 会导致服务启动失败。下载授权的传输模式仍为 `server-proxy`。
+3. complete 冻结大小与 SHA-256 校验和。File Storage 按 `ObjectKey` 发布并回读校验正式字节，再提交正式元数据。发布后中断时，重试复核同一个正式对象。下载从选定后端的正式字节读取。
+4. `VersionedArchive` 使用独立的 MinIO 连接配置、归档桶和版本生命周期。
 5. `ObjectKey` 可以作为 File Storage 内部持久化事实存在，但不得暴露到公开 API、Gateway facade、SDK DTO 或业务持久化模型。
 6. UI、外部应用、Connector Host 与业务服务不得绕过 File Storage 直接访问对象存储；上传、完成、下载都必须经过受控会话或授权入口。
 7. purpose、content type / extension、quota、retention 等当前策略由 File Storage 自己的配置与实现解释；其它服务不能维护平行 allowlist 或配额事实。
@@ -23,6 +23,14 @@ Knowledge、Ops、AppHub 与业务域可以引用文件，但文件的业务语�
 
 9. PlatformGateway 的 `GET /api/console/v1/files/{fileId}/content` 要求 `files.download-grants.create` 和 `files.read`。网关用专用服务凭据签发并兑换授权。File Storage 按文件的注册用途及其 `DownloadFacade` 声明校验网关身份。缺少归属的用途不能通过网关签发授权。BusinessGateway 仍先检查具体路由固定的用途，以维持 SOP 与交接班附件各自的权限边界。
 10. 下载授权绑定签发调用身份、组织和环境，并且仅可成功兑换一次。File Storage 输出 `attachment`、安全文件名、`nosniff` 和 `private, no-store`，网关保留这些响应头。
+
+### 通用文件正式字节后端
+
+`FileStorage:StorageProvider` 缺省为 `local`，显式配置仅支持精确匹配的 `local` 和 `s3`。`local` 使用现有卷标记、下载与本地卷对账，将暂存文件在卷内原子提升为正式文件。较旧的会话字节在长度和已保存的 SHA-256 一致时仍可按需提升。S3 使用受校验的 `ObjectKey` 和可选前缀定位对象。
+
+S3 提交复用现有 Tx1/Tx2 与恢复流程。服务校验暂存大小和 SHA-256，条件写入正式对象，完整回读复验后提交元数据。已存在且匹配的对象可继续提交。暂存清理在 Tx2 后执行，GC 可复验并清理中断遗留的暂存。下载通过应用已有授权一次性兑换，S3 GET 流式转发，缺失返回 404。保留期 GC 通过 S3 删除正式对象，远端已缺失也可完成元数据回收。
+
+`/health/tus-volume` 在 S3 模式检查桶可达性，本地正式字节对账在该模式返回 409。`/health` 继续提供进程存活检查。[ADR 0037](../../adr/2026-11-27-0037-filestorage-single-instance-s3.md)
 
 ## 契约与目标边界
 

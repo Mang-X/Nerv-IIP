@@ -102,7 +102,14 @@ builder.Services.AddSingleton<IVersionedObjectStore>(_ =>
 builder.Services.AddSingleton<VersionedArchiveService>();
 builder.Services.AddSingleton<UploadSessionGateRegistry>();
 builder.Services.AddSingleton<IUploadSessionMutationGate, UploadSessionMutationGate>();
-builder.Services.AddSingleton<IUploadCommitStorage, LocalTusUploadCommitStorage>();
+builder.Services.AddSingleton<S3FinalFileStore>();
+builder.Services.AddHttpClient(S3FinalFileStore.ClientName)
+    .RemoveAllLoggers()
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
+builder.Services.AddSingleton<IUploadCommitStorage>(services =>
+    services.GetRequiredService<S3FinalFileStore>().IsEnabled
+        ? ActivatorUtilities.CreateInstance<S3TusUploadCommitStorage>(services)
+        : ActivatorUtilities.CreateInstance<LocalTusUploadCommitStorage>(services));
 builder.Services.AddScoped<UploadCommitExecutionLeaseManager>();
 
 builder.Services.AddScoped<IFileStorageService, PostgreSqlFileStorageService>();
@@ -118,6 +125,7 @@ builder.Services.AddNervIipLocalization();
 
 var app = builder.Build();
 // 测试宿主的 ConfigureAppConfiguration 到 Build() 才生效。
+_ = app.Services.GetRequiredService<S3FinalFileStore>();
 var uploadProvider = app.Configuration["FileStorage:UploadProvider"] ?? TusUploadProvider.Name;
 if (!string.Equals(uploadProvider, TusUploadProvider.Name, StringComparison.Ordinal))
 {
