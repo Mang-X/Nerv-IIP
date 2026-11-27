@@ -226,6 +226,22 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
     inventoryPostingStatus?: string | null;
     inventoryMovementIds?: Array<string> | null;
     postingFailureHistory?: Array<string> | null;
+    purchaseReceipt?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceipt | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceipt = {
+    status?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptStatus;
+    erpReceiptNo?: string | null;
+    lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptLine>;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptStatus = 'awaiting-confirmation' | 'erp-pending' | 'erp-accepted' | 'wms-confirmed' | 'unavailable';
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptLine = {
+    lineNo?: string;
+    skuCode?: string;
+    uomCode?: string;
+    expectedQuantity?: number;
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsInventoryContext = {
@@ -792,6 +808,29 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleRemoveWmsWorkPoolMemberRequest = {
     [key: string]: never;
+};
+
+export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsReceiptConfirmationResult = NetCorePalExtensionsDtoResponseData & {
+    data?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsReceiptConfirmationResult | null;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsReceiptConfirmationResult = {
+    inboundOrderId?: string;
+    version?: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfirmWmsInboundReceiptRequest = {
+    scopeKind: string;
+    scopeId: string;
+    expectedVersion: number;
+    idempotencyKey: string;
+    lines: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsReceiptQuantity>;
+    exchangeRate: number;
+};
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsReceiptQuantity = {
+    lineNo: string;
+    receivedQuantity: number;
 };
 
 export type NetCorePalExtensionsDtoResponseDataOfBusinessConsoleConnectorCollectionHealthResponse = NetCorePalExtensionsDtoResponseData & {
@@ -12142,6 +12181,46 @@ export type RemoveBusinessConsoleWmsWorkPoolMemberResponses = {
 };
 
 export type RemoveBusinessConsoleWmsWorkPoolMemberResponse = RemoveBusinessConsoleWmsWorkPoolMemberResponses[keyof RemoveBusinessConsoleWmsWorkPoolMemberResponses];
+
+export type ConfirmBusinessConsoleWmsInboundReceiptData = {
+    body: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleConfirmWmsInboundReceiptRequest;
+    path: {
+        inboundOrderId: string;
+    };
+    query: {
+        organizationId: string;
+        environmentId: string;
+    };
+    url: '/api/business-console/v1/wms/inbound-orders/{inboundOrderId}/confirm-receipt';
+};
+
+export type ConfirmBusinessConsoleWmsInboundReceiptErrors = {
+    /**
+     * Bad Request
+     */
+    400: NetCorePalExtensionsDtoResponseData;
+    /**
+     * Unauthorized
+     */
+    401: unknown;
+    /**
+     * Forbidden
+     */
+    403: NetCorePalExtensionsDtoResponseData;
+    409: NetCorePalExtensionsDtoResponseData;
+    422: NetCorePalExtensionsDtoResponseData;
+};
+
+export type ConfirmBusinessConsoleWmsInboundReceiptError = ConfirmBusinessConsoleWmsInboundReceiptErrors[keyof ConfirmBusinessConsoleWmsInboundReceiptErrors];
+
+export type ConfirmBusinessConsoleWmsInboundReceiptResponses = {
+    /**
+     * Success
+     */
+    200: NetCorePalExtensionsDtoResponseDataOfBusinessConsoleWmsReceiptConfirmationResult;
+};
+
+export type ConfirmBusinessConsoleWmsInboundReceiptResponse = ConfirmBusinessConsoleWmsInboundReceiptResponses[keyof ConfirmBusinessConsoleWmsInboundReceiptResponses];
 
 export type QueryBusinessConsoleTelemetryConnectorCollectionHealthData = {
     body?: never;

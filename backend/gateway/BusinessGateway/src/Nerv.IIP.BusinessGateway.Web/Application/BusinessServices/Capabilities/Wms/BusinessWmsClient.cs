@@ -100,6 +100,11 @@ public interface IBusinessWmsClient
         BusinessWmsCompleteWarehouseTaskActionRequest request,
         CancellationToken cancellationToken);
 
+    Task<BusinessConsoleWmsReceiptConfirmationResult> ConfirmInboundReceiptAsync(
+        string internalBearerToken,
+        BusinessWmsConfirmInboundReceiptRequest request,
+        CancellationToken cancellationToken);
+
     Task<BusinessConsoleCompleteWmsMovementResponse> CompleteInboundOrderAsync(
         string internalBearerToken,
         string inboundOrderId,
@@ -244,6 +249,7 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
     // frontend/apps/business-console/src/utils/wmsReasonCodes.ts; unknown text must stay fail-closed.
     private static readonly HashSet<string> RegisteredLegacySemanticCodes = new(StringComparer.Ordinal)
     {
+        "receipt-pre-stage-version-conflict",
         "outbound-pack-review-not-passed",
         "outbound-picking-task-missing",
         "outbound-picking-not-completed",
@@ -472,6 +478,17 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
             "putaway-tasks",
             warehouseTaskId,
             "complete",
+            request,
+            cancellationToken);
+
+    public Task<BusinessConsoleWmsReceiptConfirmationResult> ConfirmInboundReceiptAsync(
+        string internalBearerToken,
+        BusinessWmsConfirmInboundReceiptRequest request,
+        CancellationToken cancellationToken) =>
+        SendAsync<BusinessConsoleWmsReceiptConfirmationResult>(
+            internalBearerToken,
+            HttpMethod.Post,
+            $"/api/business/v1/wms/inbound-orders/{Uri.EscapeDataString(request.InboundOrderId)}/confirm-receipt",
             request,
             cancellationToken);
 

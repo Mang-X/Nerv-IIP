@@ -1,4 +1,4 @@
-import { wms, layoutStub, setInput, resetFixture } from './wms-operate.fixture'
+import { wms, inboundVersion, layoutStub, setInput, resetFixture } from './wms-operate.fixture'
 import { WMS_RECEIVING_QUALITY_OPTIONS } from '@/data/inventoryReference'
 import { BusinessOperationPendingError } from '@nerv-iip/api-client'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -36,6 +36,151 @@ describe('WMS operate actions', () => {
     expect(wms.refreshInboundOrders).toHaveBeenCalled()
     wrapper.unmount()
   })
+
+  it('opens eligible purchase receipt confirmation and submits only explicitly entered actuals', async () => {
+    wms.inboundStatus = 'Open'
+    wms.purchaseReceipt = {
+      status: 'awaiting-confirmation',
+      lines: [{ lineNo: '10', skuCode: 'SKU-001', uomCode: 'pcs', expectedQuantity: 5 }],
+    }
+    const action = 'button[aria-label="确认采购实收 IB-1"]'
+    wms.permissionCodes = ['business.wms.receipts.read']
+    const readOnly = mount(InboundPage, { global: { stubs: layoutStub } })
+    expect(readOnly.find(action).exists()).toBe(false)
+    readOnly.unmount()
+
+    wms.permissionCodes.push('business.wms.receipts.manage')
+    wms.confirmReceipt.mockResolvedValueOnce({
+      data: { success: true, data: { inboundOrderId: 'ib-1', version: 5 } },
+    })
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    expect(wrapper.get('button[aria-label="完成入库 IB-1"]').attributes('disabled')).toBeDefined()
+    await wrapper.get(action).trigger('click')
+    await flushPromises()
+    const dialog = document.body.querySelector('[role="dialog"]')!
+    const submit = () => dialog.querySelector<HTMLButtonElement>('button[type="submit"]')!.click()
+    expect(dialog.textContent).toContain('待收 5 pcs')
+    expect(dialog.querySelector<HTMLInputElement>('input[id$="-quantity-0"]')!.value).toBe('')
+    submit()
+    await flushPromises()
+    expect(dialog.textContent).toContain('请输入实收数量')
+    expect(wms.confirmReceipt).not.toHaveBeenCalled()
+
+    setInput('input[id$="-quantity-0"]', '5')
+    setInput('input[id$="-exchange-rate"]', '1.25')
+    await flushPromises()
+    submit()
+    await flushPromises()
+    expect(wms.confirmReceipt).toHaveBeenCalledWith({
+      path: { inboundOrderId: 'ib-1' },
+      query: { organizationId: 'org-001', environmentId: 'env-dev' },
+      body: {
+        scopeKind: 'self',
+        scopeId: 'emp049',
+        idempotencyKey: expect.any(String),
+        expectedVersion: 3,
+        exchangeRate: 1.25,
+        lines: [{ lineNo: '10', receivedQuantity: 5 }],
+      },
+      throwOnError: true,
+    })
+    expect(wms.refreshInboundOrders).toHaveBeenCalledOnce()
+    expect(wms.completeInbound).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('refreshes after a pre-stage assignment conflict and requires a new explicit receipt', async () => {
+    wms.inboundStatus = 'Open'
+    wms.purchaseReceipt = {
+      status: 'awaiting-confirmation',
+      lines: [{ lineNo: '10', skuCode: 'SKU-001', uomCode: 'pcs', expectedQuantity: 5 }],
+    }
+    wms.confirmReceipt
+      .mockRejectedValueOnce({
+        success: false,
+        code: 'receipt-pre-stage-version-conflict',
+        message: 'receipt-pre-stage-version-conflict',
+        response: { status: 409 },
+      })
+      .mockResolvedValueOnce({
+        data: { success: true, data: { inboundOrderId: 'ib-1', version: 6 } },
+      })
+    const refreshed = Promise.withResolvers<void>()
+    wms.refreshInboundOrders.mockImplementationOnce(async () => {
+      await refreshed.promise
+      inboundVersion.value = 4
+      return undefined
+    })
+
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    const open = () => wrapper.get('button[aria-label="确认采购实收 IB-1"]').trigger('click')
+    const submit = () =>
+      document.body
+        .querySelector<HTMLButtonElement>('[role="dialog"] button[type="submit"]')!
+        .click()
+    const fill = async (rate: string) => {
+      setInput('input[id$="-quantity-0"]', '5')
+      setInput('input[id$="-exchange-rate"]', rate)
+      await flushPromises()
+    }
+
+    await open()
+    await flushPromises()
+    await fill('1.25')
+    submit()
+    await flushPromises()
+
+    expect(wms.refreshInboundOrders).toHaveBeenCalledOnce()
+    expect(
+      document.body.querySelector<HTMLButtonElement>('[role="dialog"] button[type="submit"]')!
+        .disabled,
+    ).toBe(true)
+    refreshed.resolve()
+    await flushPromises()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(wms.confirmReceipt).toHaveBeenCalledOnce()
+    expect(toast.error).toHaveBeenCalledWith(
+      '实收未提交：入库单已更新，请核对最新信息后重新填写实收数量和汇率。',
+    )
+
+    await open()
+    await flushPromises()
+    expect(document.body.querySelector<HTMLInputElement>('input[id$="-quantity-0"]')!.value).toBe(
+      '',
+    )
+    await fill('1.50')
+    submit()
+    await flushPromises()
+
+    const [first, second] = wms.confirmReceipt.mock.calls
+    expect(first![0].body).toMatchObject({ expectedVersion: 3, exchangeRate: 1.25 })
+    expect(second![0].body).toMatchObject({ expectedVersion: 4, exchangeRate: 1.5 })
+    expect(second![0].body.idempotencyKey).not.toBe(first![0].body.idempotencyKey)
+    expect(toast.success).toHaveBeenCalledWith('ERP 已受理实收')
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['erp-pending', undefined, '待 ERP 受理'],
+    ['erp-accepted', 'RCV-001', 'ERP 已受理'],
+  ] as const)(
+    'renders scoped purchase receipt status %s without offering a new submission',
+    (status, erpReceiptNo, label) => {
+      wms.inboundStatus = 'Open'
+      wms.purchaseReceipt = {
+        status,
+        erpReceiptNo,
+        lines: [{ lineNo: '10', skuCode: 'SKU-001', uomCode: 'pcs', expectedQuantity: 5 }],
+      }
+      const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+      expect(wrapper.text()).toContain(label)
+      if (erpReceiptNo) expect(wrapper.text()).toContain(erpReceiptNo)
+      expect(wrapper.find('button[aria-label="确认采购实收 IB-1"]').exists()).toBe(false)
+      const complete = wrapper.get<HTMLButtonElement>('button[aria-label="完成入库 IB-1"]')
+      expect(complete.element.disabled).toBe(status !== 'erp-accepted')
+      wrapper.unmount()
+    },
+  )
 
   it('completes an inbound order after confirmation', async () => {
     const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })

@@ -117,6 +117,15 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
             Assert.Equal(bind.BatchId, order.ReceiptBatchId);
             Assert.Equal(0m, Assert.Single(order.Lines).ReceivedQuantity);
             Assert.Null(order.ReceiptConfirmationKey);
+
+            var handler = new ListInboundOrdersQueryHandler(db);
+            var query = new ListInboundOrdersQuery("org-replay", "env-replay",
+                InboundOrderId: order.Id, SiteCodes: [order.SiteCode], SiteWideScope: true);
+            var listed = Assert.Single((await handler.Handle(query, default)).Items);
+            Assert.Equal("erp-pending", listed.PurchaseReceipt?.Status);
+            Assert.Equal(12.5m, Assert.Single(listed.PurchaseReceipt!.Lines).ExpectedQuantity);
+            Assert.Empty((await handler.Handle(query with { SiteCodes = ["OTHER-SITE"] }, default)).Items);
+            Assert.Empty((await handler.Handle(query with { EnvironmentId = "other-env" }, default)).Items);
         }
 
         await DeliverAsync(fixture, Cancelled());

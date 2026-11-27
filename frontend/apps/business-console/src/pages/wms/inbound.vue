@@ -5,6 +5,7 @@ import {
 } from '@nerv-iip/api-client'
 import { statusActionGate } from '@nerv-iip/business-core'
 import type { NvDataTableColumn } from '@nerv-iip/ui'
+import WmsConfirmPurchaseReceiptDialog from '@/components/wms/WmsConfirmPurchaseReceiptDialog.vue'
 import WmsAssignWorkPoolDialog from '@/components/wms/WmsAssignWorkPoolDialog.vue'
 import WmsInventoryContextPanel from '@/components/wms/WmsInventoryContextPanel.vue'
 import WmsOperationalCandidateFilters from '@/components/wms/WmsOperationalCandidateFilters.vue'
@@ -20,6 +21,11 @@ import { usePendingWriteLeaveGuard } from '@nerv-iip/app-shell/pending-write'
 import { createWmsIdempotencyKey, useWmsInboundOrders } from '@/composables/wms'
 import { useInventoryScopeDefaults } from '@/composables/inventory/useInventoryScope'
 import { usePagedList } from '@/composables/shared/usePagedList'
+import {
+  canConfirmPurchaseReceipt,
+  readPurchaseReceiptIntent,
+  type WmsReceiptConfirmationScope,
+} from '@/composables/wms/useWmsReceiptConfirmation'
 import { useWmsPostingRetry } from '@/composables/wms/useWmsPostingRetry'
 import { useWmsOperationalCandidates } from '@/composables/wms/useWmsOperationalCandidates'
 import { bindWmsWorkScopeFilters } from '@/composables/wms/useWmsWorkScope'
@@ -76,7 +82,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
-import { computed, reactive, shallowRef, watchEffect } from 'vue'
+import { computed, reactive, shallowRef, watch, watchEffect } from 'vue'
 import { RouterLink } from 'vue-router'
 
 definePage({
@@ -352,6 +358,57 @@ const listErrorMessage = computed(() =>
 // 业务范围是否选定走全站唯一判定，不在页面里另写一份——判定分叉了，
 // 「还没查」和「真的 0 条」很快又会混回同一个渲染。
 const contextReady = computed(() => hasBusinessContext(filters) && inboundScopeReady.value)
+const receiptScope = computed<WmsReceiptConfirmationScope | undefined>(() => {
+  const principalId = auth.principal?.principalId
+  if (
+    !canManageReceipts.value ||
+    !contextReady.value ||
+    !principalId ||
+    !filters.scopeKind ||
+    !filters.scopeId
+  ) {
+    return undefined
+  }
+  return {
+    principalId,
+    organizationId: filters.organizationId,
+    environmentId: filters.environmentId,
+    scopeKind: filters.scopeKind,
+    scopeId: filters.scopeId,
+  }
+})
+const receiptTarget = shallowRef<InboundRow>()
+watch(
+  receiptScope,
+  () => {
+    receiptTarget.value = undefined
+  },
+  { flush: 'sync' },
+)
+
+function originalReceipt(row: InboundRow) {
+  return receiptScope.value && row.inboundOrderId
+    ? readPurchaseReceiptIntent(receiptScope.value, row.inboundOrderId)
+    : undefined
+}
+
+function showReceiptAction(row: InboundRow) {
+  return !!receiptScope.value && canConfirmPurchaseReceipt(row, originalReceipt(row))
+}
+
+function purchaseReceiptStatusLabel(row: InboundRow) {
+  switch (row.purchaseReceipt?.status) {
+    case 'awaiting-confirmation':
+      return row.status === 'Open' ? '待确认实收' : undefined
+    case 'erp-pending':
+      return '待 ERP 受理'
+    case 'erp-accepted':
+      return 'ERP 已受理'
+    case 'wms-confirmed':
+      return 'WMS 已确认实收'
+  }
+}
+
 const headerCount = computed(() => {
   if (!contextReady.value) return '未选择业务范围'
   if (inboundOrdersError.value) return '入库单数取不到'
@@ -586,6 +643,12 @@ function formatDateTime(value?: string | null) {
             )
           "
         />
+        <p v-if="purchaseReceiptStatusLabel(row)" class="text-sm text-muted-foreground">
+          {{ purchaseReceiptStatusLabel(row) }}
+          <span v-if="row.purchaseReceipt?.erpReceiptNo">
+            · {{ row.purchaseReceipt.erpReceiptNo }}</span
+          >
+        </p>
         <p
           v-for="reason in row.postingFailureHistory"
           :key="reason"
@@ -621,6 +684,16 @@ function formatDateTime(value?: string | null) {
       <template #cell-actions="{ row }">
         <div class="flex justify-end gap-2">
           <NvButton
+            v-if="showReceiptAction(row)"
+            size="sm"
+            type="button"
+            variant="outline"
+            :aria-label="`${originalReceipt(row) ? '重试原实收提交' : '确认采购实收'} ${row.inboundOrderNo ?? ''}`"
+            @click="receiptTarget = row"
+          >
+            {{ originalReceipt(row) ? '重试原提交' : '确认实收' }}
+          </NvButton>
+          <NvButton
             v-if="
               canManageReceipts &&
               contextReady &&
@@ -655,7 +728,11 @@ function formatDateTime(value?: string | null) {
             type="button"
             variant="outline"
             :aria-label="`完成入库 ${row.inboundOrderNo ?? ''}`"
-            :disabled="!canComplete(row) || !row.inboundOrderId"
+            :disabled="
+              !canComplete(row) ||
+              !row.inboundOrderId ||
+              (!!row.purchaseReceipt && row.purchaseReceipt.status !== 'erp-accepted')
+            "
             @click="openComplete(row)"
           >
             完成入库
@@ -663,6 +740,15 @@ function formatDateTime(value?: string | null) {
         </div>
       </template>
     </NvDataTable>
+
+    <WmsConfirmPurchaseReceiptDialog
+      v-if="receiptTarget && receiptScope"
+      :order="receiptTarget"
+      :scope="receiptScope"
+      :refresh-order="refreshInboundOrders"
+      @close="receiptTarget = undefined"
+      @refresh="refreshAll"
+    />
 
     <WmsAssignWorkPoolDialog
       v-if="canManagePools"
