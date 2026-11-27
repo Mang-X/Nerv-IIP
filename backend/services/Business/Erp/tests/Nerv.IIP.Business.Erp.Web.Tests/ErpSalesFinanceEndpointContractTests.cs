@@ -905,8 +905,11 @@ internal sealed class TestInternalServiceTokenProvider : IInternalServiceTokenPr
 
 internal sealed class StubHttpMessageHandler(HttpStatusCode statusCode, string body, string mediaType) : HttpMessageHandler
 {
+    public string? BearerToken { get; private set; }
+
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        BearerToken = request.Headers.Authorization?.Parameter;
         return Task.FromResult(new HttpResponseMessage(statusCode)
         {
             Content = new StringContent(body, Encoding.UTF8, mediaType),

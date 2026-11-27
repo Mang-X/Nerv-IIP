@@ -35,6 +35,7 @@ try
     builder.Services.AddHealthChecks().ForwardToPrometheus();
     builder.Services.AddHttpClient(Options.DefaultName).UseHttpClientMetrics();
     builder.Services.AddNervIipInternalServiceAuthentication(builder.Configuration, builder.Environment);
+    builder.Services.AddCreateApprovalChainAuthorization(builder.Configuration);
     builder.Services.AddScoped<ResolveApprovalStepAuthority>();
     var iamBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
         builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");

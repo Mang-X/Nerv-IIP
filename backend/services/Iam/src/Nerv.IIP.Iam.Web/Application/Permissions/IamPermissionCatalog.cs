@@ -11,6 +11,9 @@ public static class IamPermissionCatalog
 {
     private static readonly IReadOnlyDictionary<string, string> Descriptions = new Dictionary<string, string>(StringComparer.Ordinal)
     {
+        [NervIipPermissionCodes.InternalApprovalChainsCreateErp] = "Create approval chains from the scoped ERP caller.",
+        [NervIipPermissionCodes.InternalApprovalChainsCreateInventory] = "Create approval chains from the scoped Inventory caller.",
+        [NervIipPermissionCodes.InternalApprovalChainsCreateGateway] = "Create approval chains from the scoped BusinessGateway caller.",
         [NervIipPermissionCodes.InternalGatewayCacheInvalidate] = "Invalidate one organization/environment of PlatformGateway read caches via a scoped internal caller.",
         [NervIipPermissionCodes.IamUsersRead] = "Read IAM users.",
         [NervIipPermissionCodes.IamUsersManage] = "Create, update, disable and reset IAM users.",

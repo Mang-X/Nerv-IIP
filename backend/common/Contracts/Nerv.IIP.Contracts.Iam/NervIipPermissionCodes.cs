@@ -8,6 +8,9 @@ namespace Nerv.IIP.Contracts.Iam;
 public static class NervIipPermissionCodes
 {
     // Internal scoped callers only; not a Console user action.
+    public const string InternalApprovalChainsCreateErp = "internal.approval-chains.create-erp";
+    public const string InternalApprovalChainsCreateInventory = "internal.approval-chains.create-inventory";
+    public const string InternalApprovalChainsCreateGateway = "internal.approval-chains.create-gateway";
     public const string InternalGatewayCacheInvalidate = "internal.gateway-cache.invalidate";
 
     // iam.*

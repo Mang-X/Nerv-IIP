@@ -54,7 +54,7 @@ public sealed class ApprovalEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/chains"
             && x.PermissionCode == ApprovalPermissionCodes.Manage
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy == "Approval.CreateChain"
             && x.OperationId == "startApprovalChain");
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/approvals/chains/{chainId}"
@@ -1018,6 +1018,158 @@ public sealed class ApprovalEndpointContractTests
         });
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("test-internal-token", "org-001", "env-dev", "business-erp", HttpStatusCode.Unauthorized)]
+    [InlineData("synthetic-erp-approval-token", "org-other", "env-dev", "business-erp", HttpStatusCode.Forbidden)]
+    [InlineData("synthetic-erp-approval-token", "org-001", "env-other", "business-erp", HttpStatusCode.Forbidden)]
+    [InlineData("synthetic-erp-approval-token", "org-001", "env-dev", "inventory", HttpStatusCode.Forbidden)]
+    public async Task Create_chain_checks_caller_credential_and_scope_before_persistence(
+        string token, string organizationId, string environmentId, string sourceService, HttpStatusCode expected)
+    {
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("environment", "Testing");
+            builder.UseSetting("InternalService:BearerToken", "test-internal-token");
+            builder.UseSetting("Approval:Seed:Enabled", "false");
+            builder.UseSetting("Approval:CreateChain:AllowLegacyBearer", "false");
+            const string profile = "Approval:CreateChain:ScopedCallers:Profiles:0:";
+            builder.UseSetting(profile + "Name", "erp");
+            builder.UseSetting(profile + "BearerToken", "synthetic-erp-approval-token");
+            builder.UseSetting(profile + "Subject", "business-erp");
+            builder.UseSetting(profile + "OrganizationId", "org-001");
+            builder.UseSetting(profile + "EnvironmentId", "env-dev");
+            builder.UseSetting(profile + "Permissions:0", "internal.approval-chains.create-erp");
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+                services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite("Data Source=:memory:"));
+            });
+        });
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", token);
+
+        using var response = await client.PostAsJsonAsync("/api/business/v1/approvals/chains", new
+        {
+            organizationId,
+            environmentId,
+            templateCode = "PO-DEFAULT",
+            sourceService,
+            documentType = "purchase-order",
+            documentId = "PO-001",
+            startedBy = "u-requester",
+        });
+
+        Assert.Equal(expected, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("business-erp", "erp", "business-erp", "purchase-order", null, false, true)]
+    [InlineData("business-erp", "erp", "business-erp", "sales-order-credit-release", "org-001", true, true)]
+    [InlineData("inventory", "inventory", "inventory", "inventory-count-variance", "org-001", false, true)]
+    [InlineData("business-gateway", "gateway", "quality", "ncr-disposition", "org-routing", false, true)]
+    [InlineData("business-erp", "inventory", "business-erp", "purchase-order", null, false, false)]
+    [InlineData("business-erp", "erp", "business-erp", "purchase-order", "org-other", true, false)]
+    [InlineData("business-erp", "erp", "business-erp", "purchase-order", null, true, true, true)]
+    [InlineData("business-erp", "erp", "business-erp", "purchase-order", null, null, true, true)]
+    public async Task Create_chain_honors_caller_capability_and_keeps_shared_read_access(
+        string subject, string capability, string sourceService, string documentType,
+        string? routingOrganizationId, bool? allowLegacy, bool allowed, bool useLegacy = false)
+    {
+        const string scopedToken = "synthetic-approval-caller";
+        const string legacyToken = "synthetic-shared-internal-token";
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("environment", "Testing");
+            builder.UseSetting("InternalService:BearerToken", legacyToken);
+            builder.UseSetting("Approval:Seed:Enabled", "false");
+            if (allowLegacy is { } legacyEnabled)
+            {
+                builder.UseSetting("Approval:CreateChain:AllowLegacyBearer", legacyEnabled ? "true" : "false");
+                const string profile = "Approval:CreateChain:ScopedCallers:Profiles:0:";
+                builder.UseSetting(profile + "Name", "fixture-caller");
+                builder.UseSetting(profile + "BearerToken", scopedToken);
+                builder.UseSetting(profile + "Subject", subject);
+                builder.UseSetting(profile + "OrganizationId", "org-001");
+                builder.UseSetting(profile + "EnvironmentId", "env-dev");
+                builder.UseSetting(profile + "Permissions:0", $"internal.approval-chains.create-{capability}");
+            }
+
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+                services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connection));
+                services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
+            });
+        });
+        using var client = factory.CreateClient();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Database.EnsureCreatedAsync();
+            var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+            await sender.Send(NewTemplateCommand() with { DocumentType = documentType });
+        }
+
+        const string route = "/api/business/v1/approvals/chains";
+        client.DefaultRequestHeaders.Authorization = new("Bearer", useLegacy ? legacyToken : scopedToken);
+        using var response = await client.PostAsJsonAsync(route, new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            templateCode = "ECO-DEFAULT",
+            sourceService,
+            documentType,
+            documentId = "doc-fixture",
+            startedBy = "u-requester",
+            routingOrganizationId,
+        });
+        Assert.Equal(allowed ? HttpStatusCode.OK : HttpStatusCode.Forbidden, response.StatusCode);
+
+        var listRoute = route + "?organizationId=org-001&environmentId=env-dev";
+        client.DefaultRequestHeaders.Authorization = new("Bearer", scopedToken);
+        using var scopedRead = await client.GetAsync(listRoute);
+        Assert.Equal(HttpStatusCode.Unauthorized, scopedRead.StatusCode);
+
+        if (allowed)
+        {
+            using var created = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var chainId = created.RootElement.GetProperty("data").GetProperty("chainId").GetString();
+            Assert.False(string.IsNullOrWhiteSpace(chainId));
+
+            client.DefaultRequestHeaders.Authorization = new("Bearer", legacyToken);
+            using var legacyRead = await client.GetAsync($"{route}/{chainId}");
+            Assert.Equal(HttpStatusCode.OK, legacyRead.StatusCode);
+            using var chain = System.Text.Json.JsonDocument.Parse(await legacyRead.Content.ReadAsStringAsync());
+            var data = chain.RootElement.GetProperty("data");
+            Assert.Equal(sourceService, data.GetProperty("sourceService").GetString());
+            Assert.Equal(documentType, data.GetProperty("documentType").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task Create_chain_host_rejects_reusing_the_shared_bearer_as_a_scoped_credential()
+    {
+        const string shared = "synthetic-shared-internal-token";
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("environment", "Testing");
+            builder.UseSetting("InternalService:BearerToken", shared);
+            builder.UseSetting("Approval:Seed:Enabled", "false");
+            const string profile = "Approval:CreateChain:ScopedCallers:Profiles:0:";
+            builder.UseSetting(profile + "Name", "erp");
+            builder.UseSetting(profile + "BearerToken", shared);
+            builder.UseSetting(profile + "Subject", "business-erp");
+            builder.UseSetting(profile + "OrganizationId", "org-001");
+            builder.UseSetting(profile + "EnvironmentId", "env-dev");
+            builder.UseSetting(profile + "Permissions:0", "internal.approval-chains.create-erp");
+        });
+
+        var failure = Assert.Throws<Microsoft.Extensions.Options.OptionsValidationException>(() => factory.CreateClient());
+        Assert.Contains("Approval create-chain credentials must differ from the shared internal bearer.", failure.Failures);
     }
 
     [Fact]

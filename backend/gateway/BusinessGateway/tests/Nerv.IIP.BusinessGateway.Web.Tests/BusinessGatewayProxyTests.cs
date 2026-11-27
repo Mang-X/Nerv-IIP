@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http;
@@ -9053,6 +9054,40 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("u-backup", approval.LastCreateDelegationRequest?.DelegateActorRef);
         Assert.Equal("delegation-001", approval.LastRevokeDelegationRequest?.DelegationId);
         Assert.Equal("user-admin", approval.LastRevokeDelegationRequest?.RevokedBy);
+    }
+
+    [Fact]
+    public async Task Approval_client_uses_the_scoped_bearer_only_for_chain_creation()
+    {
+        const string profile = "Approval:CreateChain:OutboundCredentials:0:";
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [profile + "OrganizationId"] = "org-001",
+            [profile + "EnvironmentId"] = "env-dev",
+            [profile + "BearerToken"] = "synthetic-gateway-approval-token",
+        }).Build();
+        using var handler = new RecordingHandler(request => request.Method == HttpMethod.Post
+            ? JsonResponse(HttpStatusCode.OK, new { data = new { chainId = "chain-001" }, success = true })
+            : JsonResponse(HttpStatusCode.OK, new { data = new { items = Array.Empty<object>(), total = 0 }, success = true }));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://approval.local") };
+        var client = new HttpBusinessApprovalClient(downstream, configuration);
+        const string legacy = "synthetic-shared-token";
+        var request = new BusinessConsoleStartApprovalChainRequest("org-001", "env-dev", "fixture", "quality",
+            "ncr-disposition", "ncr-001", null, "user-admin", RoutingOrganizationId: "org-routing");
+
+        var started = await client.StartChainAsync(legacy, request, CancellationToken.None);
+        Assert.Equal("chain-001", started.ChainId);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.StartChainAsync(legacy,
+            request with { EnvironmentId = "env-other" }, CancellationToken.None));
+        await client.ListChainsAsync(legacy, new("org-001", "env-dev", null, null, null, null, null), CancellationToken.None);
+
+        Assert.Collection(handler.Requests,
+            posted => Assert.Equal("synthetic-gateway-approval-token", posted.Headers.Authorization?.Parameter),
+            listed => Assert.Equal(legacy, listed.Headers.Authorization?.Parameter));
+        using var payload = JsonDocument.Parse(handler.RequestBodies[0]!);
+        Assert.Equal("quality", payload.RootElement.GetProperty("sourceService").GetString());
+        Assert.Equal("user-admin", payload.RootElement.GetProperty("startedBy").GetString());
+        Assert.Equal("org-routing", payload.RootElement.GetProperty("routingOrganizationId").GetString());
     }
 
     [Fact]

@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Configuration;
+
 internal sealed partial class AppHostComposition
 {
     private void RegisterGatewaysAndFrontend(InfrastructureResources infrastructure, ServiceResources services)
@@ -156,6 +158,8 @@ internal sealed partial class AppHostComposition
             .WaitFor(businessMaintenance)
             .WaitFor(redis);
 
+        ConfigureApprovalCreateChainCallers(businessApproval, businessErp, businessInventory, businessGateway);
+
         if (fullStackEphemeral)
         {
             var templateAssetRetirementProofIssuer = builder.AddParameter("template-asset-retirement-proof-issuer");
@@ -277,5 +281,73 @@ internal sealed partial class AppHostComposition
             .WithReference(businessGateway)
             .WaitFor(gateway)
             .WaitFor(businessGateway);
+    }
+
+    private void ConfigureApprovalCreateChainCallers(
+        IResourceBuilder<ProjectResource> approval,
+        IResourceBuilder<ProjectResource> erp,
+        IResourceBuilder<ProjectResource> inventory,
+        IResourceBuilder<ProjectResource> gateway)
+    {
+        var configuration = builder.Configuration.GetSection("ApprovalCreateChain");
+        if (!configuration.GetValue("Enabled", false))
+        {
+            return;
+        }
+
+        var scopes = configuration.GetSection("Scopes").GetChildren().ToArray();
+        if (scopes.Length == 0)
+        {
+            throw new InvalidOperationException("ApprovalCreateChain requires at least one organization and environment.");
+        }
+
+        var configureSenders = configuration.GetValue("ConfigureSenders", true);
+        var allowLegacy = configuration.GetValue("AllowLegacyBearer", true);
+        if (!configureSenders && !allowLegacy)
+        {
+            throw new InvalidOperationException("ApprovalCreateChain requires scoped senders when legacy authentication is disabled.");
+        }
+
+        approval.WithEnvironment("Approval__CreateChain__AllowLegacyBearer", allowLegacy ? "true" : "false");
+        var callers = new[]
+        {
+            (Resource: erp, Subject: "business-erp", Capability: "erp"),
+            (Resource: inventory, Subject: "inventory", Capability: "inventory"),
+            (Resource: gateway, Subject: "business-gateway", Capability: "gateway"),
+        };
+        var configuredScopes = new HashSet<(string, string)>();
+        var profileIndex = 0;
+        for (var index = 0; index < scopes.Length; index++)
+        {
+            var organizationId = scopes[index]["OrganizationId"];
+            var environmentId = scopes[index]["EnvironmentId"];
+            if (string.IsNullOrWhiteSpace(organizationId) || string.IsNullOrWhiteSpace(environmentId)
+                || organizationId != organizationId.Trim() || environmentId != environmentId.Trim()
+                || !configuredScopes.Add((organizationId, environmentId)))
+            {
+                throw new InvalidOperationException("ApprovalCreateChain scopes require unique, nonempty organization and environment IDs.");
+            }
+
+            foreach (var (resource, subject, capability) in callers)
+            {
+                var name = $"approval-create-chain-{capability}-{index}";
+                var secret = builder.AddParameter(name, secret: true);
+                var profile = $"Approval__CreateChain__ScopedCallers__Profiles__{profileIndex++}__";
+                approval.WithEnvironment(profile + "Name", name)
+                    .WithEnvironment(profile + "Subject", subject)
+                    .WithEnvironment(profile + "OrganizationId", organizationId)
+                    .WithEnvironment(profile + "EnvironmentId", environmentId)
+                    .WithEnvironment(profile + "Permissions__0", $"internal.approval-chains.create-{capability}")
+                    .WithEnvironment(profile + "BearerToken", secret);
+
+                if (configureSenders)
+                {
+                    var outbound = $"Approval__CreateChain__OutboundCredentials__{index}__";
+                    resource.WithEnvironment(outbound + "OrganizationId", organizationId)
+                        .WithEnvironment(outbound + "EnvironmentId", environmentId)
+                        .WithEnvironment(outbound + "BearerToken", secret);
+                }
+            }
+        }
     }
 }

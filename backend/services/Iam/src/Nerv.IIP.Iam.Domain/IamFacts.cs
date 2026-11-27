@@ -115,6 +115,9 @@ public static class NervIipSeedPermissions
 {
     public static readonly string[] All =
     [
+        "internal.approval-chains.create-erp",
+        "internal.approval-chains.create-inventory",
+        "internal.approval-chains.create-gateway",
         "internal.gateway-cache.invalidate",
         "iam.users.read",
         "iam.users.manage",
