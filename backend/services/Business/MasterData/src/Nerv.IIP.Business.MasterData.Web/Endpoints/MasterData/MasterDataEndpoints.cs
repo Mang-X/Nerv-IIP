@@ -7,6 +7,7 @@ using Nerv.IIP.Business.MasterData.Web.Application.Commands.MasterData;
 using Nerv.IIP.Business.MasterData.Web.Application.Queries;
 using Nerv.IIP.Contracts.Coding;
 using Nerv.IIP.Contracts.MasterData;
+using Nerv.IIP.Contracts.Iam;
 using NetCorePal.Extensions.Dto;
 using Nerv.IIP.ServiceAuth;
 using System.Diagnostics.CodeAnalysis;
@@ -52,7 +53,7 @@ public abstract class MasterDataEndpoint<TRequest, TResponse> : Endpoint<TReques
         }
 
         Tags("Business MasterData");
-        Policies(InternalServiceAuthorizationPolicy.Name);
+        Policies(contract.AuthorizationPolicy);
     }
 }
 
@@ -1897,7 +1898,8 @@ public sealed record MasterDataEndpointContract(
     string HttpMethod,
     string Route,
     string PermissionCode,
-    string OperationId);
+    string OperationId,
+    string AuthorizationPolicy = InternalServiceAuthorizationPolicy.Name);
 
 public static class MasterDataEndpointContracts
 {
@@ -1919,6 +1921,7 @@ public static class MasterDataEndpointContracts
         new(typeof(AddTeamMemberEndpoint), "POST", "/api/business/v1/master-data/teams/{teamCode}/members", BusinessPermissionCodes.MasterDataResourcesManage, "addBusinessMasterDataTeamMember"),
         new(typeof(CreateWorkerEndpoint), "POST", "/api/business/v1/master-data/workers", BusinessPermissionCodes.MasterDataResourcesManage, "createBusinessMasterDataWorker"),
         new(typeof(ListWorkerDirectoryEndpoint), "GET", "/api/business/v1/master-data/workers", BusinessPermissionCodes.MasterDataResourcesRead, "listBusinessMasterDataWorkers"),
+        new(typeof(ApprovalPrincipalDepartmentEndpoint), "POST", "/internal/master-data/v1/approval-principal-department", NervIipPermissionCodes.InternalMasterDataApprovalDepartmentRead, "getBusinessMasterDataApprovalPrincipalDepartment", ApprovalDepartmentAuthorization.Policy),
         new(typeof(GetPrincipalWorkContextEndpoint), "GET", "/api/business/v1/master-data/principals/{userId}/work-context", BusinessPermissionCodes.MasterDataResourcesRead, "getBusinessMasterDataPrincipalWorkContext"),
         new(typeof(ListTeamMembersEndpoint), "GET", "/api/business/v1/master-data/teams/{teamCode}/members", BusinessPermissionCodes.MasterDataResourcesRead, "listBusinessMasterDataTeamMembers"),
         new(typeof(RemoveTeamMemberEndpoint), "DELETE", "/api/business/v1/master-data/teams/{teamCode}/members/{userId}", BusinessPermissionCodes.MasterDataResourcesManage, "removeBusinessMasterDataTeamMember"),
