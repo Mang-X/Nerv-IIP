@@ -19,6 +19,7 @@ public interface IBusinessApprovalClient
     Task<BusinessConsoleStartApprovalChainResponse> StartChainAsync(
         string internalBearerToken,
         BusinessConsoleStartApprovalChainRequest request,
+        string authorizedActorRef,
         CancellationToken cancellationToken,
         string? principalBearer = null);
 
@@ -97,6 +98,7 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient, IConfigura
     public Task<BusinessConsoleStartApprovalChainResponse> StartChainAsync(
         string internalBearerToken,
         BusinessConsoleStartApprovalChainRequest request,
+        string authorizedActorRef,
         CancellationToken cancellationToken,
         string? principalBearer = null) =>
         SendAsync<BusinessConsoleStartApprovalChainResponse>(
@@ -104,7 +106,21 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient, IConfigura
                 request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Post,
             "/api/business/v1/approvals/chains",
-            request,
+            new
+            {
+                request.OrganizationId,
+                request.EnvironmentId,
+                request.TemplateCode,
+                request.SourceService,
+                request.DocumentType,
+                request.DocumentId,
+                request.DocumentLineId,
+                // 兼容滚动升级期间仍读取该字段的 Approval 实例。
+                StartedBy = authorizedActorRef,
+                request.Amount,
+                request.RoutingOrganizationId,
+                request.DepartmentId,
+            },
             cancellationToken,
             configureRequest: principalBearer is null ? null : message =>
                 message.Headers.Add("X-Nerv-IIP-Approval-Principal", $"Bearer {principalBearer}"));

@@ -74796,9 +74796,6 @@
             "type": "string",
             "nullable": true
           },
-          "startedBy": {
-            "type": "string"
-          },
           "amount": {
             "type": "number",
             "format": "decimal",

@@ -6,6 +6,8 @@ WMS 按部署 profile 消费 ERP 采购订单下达 V2 事件。来源键使用 
 
 按部署范围同时核对两端配置。ERP 的 `PurchaseOrderReceiving:WmsScopes` 决定采购单收货归属，WMS 的 `PurchaseOrderReceiving:Routes` 决定是否能为该范围建单及使用哪个收货暂存位。两端每条启用记录的 `OrganizationId`、`EnvironmentId`、`SiteCode` 必须逐值相同，且各自唯一。检查实际部署配置的三元组集合一致后，再准备开启 ERP 归属。环境变量可用两端各自的数组索引，例如 `PurchaseOrderReceiving__WmsScopes__0__SiteCode` 与 `PurchaseOrderReceiving__Routes__0__SiteCode`。
 
+通过 Production AppHost 发布时，在运行 `aspire publish` 的进程中提供这两组数组。生成的 `docker-compose.yaml` 将 `WmsScopes` 注入 `business-erp`，将 `Routes` 注入 `business-wms`。缺省发布省略两组配置。部署前检查生成文件中各服务的 `environment`，分批启用和回退时按以下顺序逐次重新发布。
+
 确认站点的采购收货规则后，在 WMS 对应路由补齐以下字段。
 
 - `StagingLocationCode` 使用该组织、环境和站点下经确认可用的收货暂存位。WMS 此处的入库聚合按站点和暂存位建单，仓库由实际库位归属决定。

@@ -1,5 +1,6 @@
 using Aspire.Hosting.ApplicationModel;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 
 internal sealed partial class AppHostComposition
 {
@@ -599,6 +600,10 @@ internal sealed partial class AppHostComposition
                 .WaitFor(rabbitmq);
         }
 
+        ConfigurePurchaseOrderReceiving(businessErp, "WmsScopes", ["OrganizationId", "EnvironmentId", "SiteCode"]);
+        ConfigurePurchaseOrderReceiving(businessWms, "Routes",
+            ["OrganizationId", "EnvironmentId", "SiteCode", "StagingLocationCode", "QualityStatus", "OwnerType"]);
+
         businessWms = businessWms
             .WithEnvironment("Erp__BaseUrl", businessErp.GetEndpoint("http"))
             .WithReference(businessErp);
@@ -698,17 +703,41 @@ internal sealed partial class AppHostComposition
         }
     }
 
+    private void ConfigurePurchaseOrderReceiving(
+        IResourceBuilder<ProjectResource> service,
+        string collection,
+        string[] fields)
+    {
+        foreach (var item in builder.Configuration.GetSection($"PurchaseOrderReceiving:{collection}").GetChildren())
+        {
+            foreach (var field in fields)
+            {
+                if (item[field] is { } value)
+                {
+                    service.WithEnvironment($"PurchaseOrderReceiving__{collection}__{item.Key}__{field}", value);
+                }
+            }
+        }
+    }
+
     private void ConfigureApprovalMasterDataDepartment(
         IResourceBuilder<ProjectResource> approval,
         IResourceBuilder<ProjectResource> masterData)
     {
         var settings = builder.Configuration.GetSection("ApprovalMasterDataDepartment");
-        var configureSender = settings.GetValue("ConfigureSender", false);
-        if (!settings.GetValue("Enabled", false))
+        var production = builder.Environment.IsProduction();
+        var enabled = settings.GetValue("Enabled", production);
+        var configureSender = settings.GetValue("ConfigureSender", production && enabled);
+        if (!enabled)
         {
             if (configureSender)
             {
                 throw new InvalidOperationException("ApprovalMasterDataDepartment requires the receiver before configuring the sender.");
+            }
+
+            if (production)
+            {
+                approval.WithEnvironment("Approval__MasterDataDepartment__UseScopedCaller", "false");
             }
 
             return;
@@ -751,10 +780,7 @@ internal sealed partial class AppHostComposition
             }
         }
 
-        if (configureSender)
-        {
-            approval.WithEnvironment("Approval__MasterDataDepartment__UseScopedCaller", "true");
-        }
+        approval.WithEnvironment("Approval__MasterDataDepartment__UseScopedCaller", configureSender ? "true" : "false");
     }
 
     private sealed record ServiceResources(

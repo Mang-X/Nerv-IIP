@@ -10171,7 +10171,6 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleS
     documentType?: string;
     documentId?: string;
     documentLineId?: string | null;
-    startedBy?: string;
     amount?: number | null;
     routingOrganizationId?: string | null;
     departmentId?: string | null;

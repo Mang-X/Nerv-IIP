@@ -1,7 +1,7 @@
 ﻿# Script-Governance:
 #   Category: verify
 #   SideEffects:
-#     - Builds and publishes two temporary Aspire Docker Compose artifacts
+#     - Builds and publishes temporary Aspire Docker Compose artifacts
 #     - Validates Production Compose internal service port isolation
 #     - Validates environment-gated BarcodeLabel printer configuration and its FileStorage endpoint
 #     - Validates synthetic Approval department caller wiring and rollout in generated Compose
@@ -218,6 +218,29 @@ function Assert-EnvironmentArtifact {
     }
 }
 
+function Assert-PurchaseReceivingArtifact {
+    param([hashtable] $Services, [hashtable] $Inputs)
+
+    foreach ($service in $Services.GetEnumerator()) {
+        $expected = [hashtable]::new([StringComparer]::Ordinal)
+        foreach ($entry in $Inputs.GetEnumerator()) {
+            if (($service.Key -ceq 'business-erp' -and $entry.Key -clike 'PurchaseOrderReceiving__WmsScopes__*') -or
+                ($service.Key -ceq 'business-wms' -and $entry.Key -clike 'PurchaseOrderReceiving__Routes__*')) {
+                $expected[$entry.Key] = $entry.Value
+            }
+        }
+        $actual = @($service.Value.Keys | Where-Object { $_ -clike 'PurchaseOrderReceiving__*' })
+        if (-not (Test-OrdinalSetEquals -Actual $actual -Expected @($expected.Keys))) {
+            throw "Unexpected purchase receiving settings for $($service.Key) in published Compose."
+        }
+        foreach ($entry in $expected.GetEnumerator()) {
+            if ($service.Value[$entry.Key] -cne $entry.Value) {
+                throw "Published Compose changed $($service.Key) purchase receiving setting $($entry.Key)."
+            }
+        }
+    }
+}
+
 function Assert-ApprovalDepartmentArtifact {
     param([hashtable] $Services, [bool] $ConfigureSender)
 
@@ -267,8 +290,9 @@ function Assert-ApprovalDepartmentArtifact {
             throw 'Approval must explicitly enable the configured department caller.'
         }
     }
-    elseif (@($approval.Keys | Where-Object { $_ -clike 'Approval__MasterDataDepartment__*' }).Count -ne 0) {
-        throw 'Receiver-first deployment must leave the Approval sender configuration absent.'
+    elseif ($approval['Approval__MasterDataDepartment__UseScopedCaller'] -cne 'false' -or
+        @($approval.Keys | Where-Object { $_ -clike 'Approval__MasterDataDepartment__OutboundCredentials__*' }).Count -ne 0) {
+        throw 'Receiver-first deployment must explicitly keep the compatibility sender and omit scoped credentials.'
     }
 }
 
@@ -325,8 +349,23 @@ $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) "nerv-iip-apphost-environm
 try {
     [IO.Directory]::CreateDirectory($temporaryRoot) | Out-Null
     $appHostProject = Join-Path $root 'infra/aspire/Nerv.IIP.AppHost/Nerv.IIP.AppHost.csproj'
-    foreach ($environmentName in @('Development', 'Production')) {
-        $outputPath = Join-Path $temporaryRoot $environmentName.ToLowerInvariant()
+    foreach ($profile in @('Development', 'ProductionScoped', 'ProductionCompatibility')) {
+        $environmentName = if ($profile -ceq 'Development') { 'Development' } else { 'Production' }
+        $outputPath = Join-Path $temporaryRoot $profile.ToLowerInvariant()
+        $receivingInputs = @{}
+        if ($profile -ceq 'ProductionScoped') {
+            $receivingInputs = @{
+                PurchaseOrderReceiving__WmsScopes__0__OrganizationId = 'verify-receiving-org'
+                PurchaseOrderReceiving__WmsScopes__0__EnvironmentId = 'verify-receiving-env'
+                PurchaseOrderReceiving__WmsScopes__0__SiteCode = 'verify-site'
+                PurchaseOrderReceiving__Routes__0__OrganizationId = 'verify-receiving-org'
+                PurchaseOrderReceiving__Routes__0__EnvironmentId = 'verify-receiving-env'
+                PurchaseOrderReceiving__Routes__0__SiteCode = 'verify-site'
+                PurchaseOrderReceiving__Routes__0__StagingLocationCode = 'verify-staging'
+                PurchaseOrderReceiving__Routes__0__QualityStatus = 'unrestricted'
+                PurchaseOrderReceiving__Routes__0__OwnerType = 'company'
+            }
+        }
         $publishEnvironment = @{}
         if ([string]::Equals($environmentName, 'Production', [StringComparison]::Ordinal)) {
             $publishEnvironment = @{
@@ -348,23 +387,27 @@ try {
                 $publishEnvironment["Approval${operation}__ConfigureSenders"] = 'false'
             }
         }
-        $configureApprovalDepartmentSender = $environmentName -ceq 'Development'
+        $configureApprovalDepartmentSender = $profile -cne 'ProductionCompatibility'
         $publishEnvironment += @{
-            ApprovalMasterDataDepartment__Enabled = 'true'
-            ApprovalMasterDataDepartment__ConfigureSender = $configureApprovalDepartmentSender.ToString()
             ApprovalMasterDataDepartment__Scopes__0__OrganizationId = 'verify-approval-org-a'
             ApprovalMasterDataDepartment__Scopes__0__EnvironmentId = 'verify-approval-env-a'
             ApprovalMasterDataDepartment__Scopes__1__OrganizationId = 'verify-approval-org-b'
             ApprovalMasterDataDepartment__Scopes__1__EnvironmentId = 'verify-approval-env-b'
         }
+        if ($profile -cne 'ProductionScoped') {
+            $publishEnvironment['ApprovalMasterDataDepartment__Enabled'] = 'true'
+            $publishEnvironment['ApprovalMasterDataDepartment__ConfigureSender'] = $configureApprovalDepartmentSender.ToString()
+        }
+        $publishEnvironment += $receivingInputs
         Invoke-WithScopedEnvironment -Variables $publishEnvironment -ScriptBlock {
-            Invoke-Aspire -Arguments @('publish', '--output-path', $outputPath, '--environment', $environmentName, '--apphost', $appHostProject, '--non-interactive', '--nologo') -WorkingDirectory $root -TimeoutSeconds $PublishTimeoutSeconds -Name "verify-apphost-$($environmentName.ToLowerInvariant())-publish" | Out-Null
+            Invoke-Aspire -Arguments @('publish', '--output-path', $outputPath, '--environment', $environmentName, '--apphost', $appHostProject, '--non-interactive', '--nologo') -WorkingDirectory $root -TimeoutSeconds $PublishTimeoutSeconds -Name "verify-apphost-$($profile.ToLowerInvariant())-publish" | Out-Null
         }
         $composePath = Join-Path $outputPath 'docker-compose.yaml'
         if (-not (Test-Path -LiteralPath $composePath -PathType Leaf)) { throw "Aspire publish did not produce $composePath." }
         $services = Get-ComposeProjectEnvironments -ComposePath $composePath
         Assert-EnvironmentArtifact -Services $services -EnvironmentName $environmentName
         Assert-ApprovalCallerArtifact -Services $services -AllowLegacy $allowLegacyApproval
+        Assert-PurchaseReceivingArtifact -Services $services -Inputs $receivingInputs
         Assert-ApprovalDepartmentArtifact -Services $services -ConfigureSender $configureApprovalDepartmentSender
         $composeText = [IO.File]::ReadAllText($composePath)
         if ($environmentName -ceq 'Production') {

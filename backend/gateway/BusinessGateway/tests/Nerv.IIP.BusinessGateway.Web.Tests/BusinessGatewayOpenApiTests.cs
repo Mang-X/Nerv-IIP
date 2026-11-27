@@ -973,6 +973,12 @@ public sealed class BusinessGatewayOpenApiTests
         AssertOperationId(paths, "/api/business-console/v1/approval/templates", "post", "createOrUpdateBusinessConsoleApprovalTemplate");
         AssertOperationId(paths, "/api/business-console/v1/approval/chains", "get", "listBusinessConsoleApprovalChains");
         AssertOperationId(paths, "/api/business-console/v1/approval/chains", "post", "startBusinessConsoleApprovalChain");
+        var startApprovalSchema = paths.GetProperty("/api/business-console/v1/approval/chains")
+            .GetProperty("post").GetProperty("requestBody").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema").GetProperty("$ref").GetString()!;
+        var startApprovalProperties = document.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty(startApprovalSchema.Split('/')[^1]).GetProperty("properties");
+        Assert.False(startApprovalProperties.TryGetProperty("startedBy", out _));
         AssertOperationId(paths, "/api/business-console/v1/approval/chains/{chainId}", "get", "getBusinessConsoleApprovalChain");
         AssertOperationId(paths, "/api/business-console/v1/approval/tasks", "get", "listBusinessConsoleApprovalTasks");
         AssertOperationId(paths, "/api/business-console/v1/approval/decisions", "get", "listBusinessConsoleApprovalDecisions");

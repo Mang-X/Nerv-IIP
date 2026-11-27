@@ -51,6 +51,8 @@
 
 不要把 `infra/compose/` 的 legacy overlay 当成完整平台拓扑；它只用于已有迁移期验证/发布演练。生成产物进入交付前，运行当前仓库提供的 production deployment artifact / release rehearsal 验证入口；准确脚本名、参数和 impact 以 `scripts/` 与 CI producer 为准。
 
+开启 ERP → WMS 采购订单自动收货时，在运行 `publish-compose` 的同一进程环境准备配置，详见[采购收货配置与启用顺序](wms-purchase-order-receiving.md#配置)。
+
 ### Approval 生产认证与存量切换
 
 IAM 的授权检查和当前主体查询使用 IAM 凭据。网关、Approval 等请求方将当前主体的令牌传给 IAM。IAM 服务部署不接收共享内部令牌。
@@ -66,7 +68,7 @@ Approval 的生产配置默认关闭七组 HTTP 操作的共享令牌兼容。�
 
 每节的 `Scopes` 数组必填，例如 `ApprovalCreateChain__Scopes__0__OrganizationId` 与 `ApprovalCreateChain__Scopes__0__EnvironmentId`。按各操作后续章节的参数名提供相应 secret。legacy Compose 验证入口在 `nerv-iip.production.env.example` 中列出单组范围和独立 secret 输入。多范围部署使用 Aspire 生成入口。
 
-已经给 BusinessGateway 配置建链专用凭据的部署，先更新全部 BusinessGateway 实例并验证建链，再更新 Approval。更新后的网关继续向上一版 Approval 提供原建链请求，并额外传递主体证明。
+已经给 BusinessGateway 配置建链专用凭据的部署，先更新全部 BusinessGateway 实例并验证建链，再更新 Approval。更新后的网关兼容仍携带 `startedBy` 的旧 Console 请求。转发给上一版 Approval 时，网关使用已验证的当前主体填充旧服务契约，并附带主体证明。
 
 1. 仍使用共享凭据的存量部署先更新 Approval。Aspire 按操作显式设置 `AllowLegacyBearer=true`、`ConfigureSenders=false`。legacy Compose 验证时显式设置 `NERV_IIP_APPROVAL_ALLOW_LEGACY_BEARER=true` 并保留旧发送方实例。
 2. 更新发送方并启用范围凭据。建链时，BusinessGateway 还传当前主体的 IAM bearer，Approval 向 IAM 复核身份与建链权限。ERP 与 Inventory 的发起人记录为认证服务主体。兼容共享凭据的旧机器调用记录为 `service:legacy-internal`，其请求体发起人不写入审计记录。
@@ -125,11 +127,10 @@ Approval 的生产配置默认关闭七组 HTTP 操作的共享令牌兼容。�
 
 ### Approval 审批人部门读取凭据
 
-在 AppHost 设置 `ApprovalMasterDataDepartment:Enabled=true`，用 `ApprovalMasterDataDepartment:Scopes` 登记审批人实际使用的每组 `OrganizationId` 和 `EnvironmentId`。为每组范围按列表下标配置 Aspire secret 参数 `approval-master-data-department-{index}`。每项使用独立凭据，并与共享内部凭据及其他操作凭据分开。由 AppHost 生成的 Compose 使用同一配置。
+Production AppHost 默认同时配置 Approval 专用发送端和 MasterData 接收端。发布时用 `ApprovalMasterDataDepartment__Scopes__0__OrganizationId` 和 `ApprovalMasterDataDepartment__Scopes__0__EnvironmentId` 等数组项登记审批人实际使用的全部范围。默认发布缺少范围时会失败。为每组范围按列表下标配置 Aspire secret 参数 `approval-master-data-department-{index}`。生成的 Compose 通过 `APPROVAL_MASTER_DATA_DEPARTMENT_{index}` 向匹配的两端注入同一凭据。每个范围使用独立凭据，并与共享内部凭据及其他操作凭据分开。
 
-1. 先部署带专用接收端的 MasterData，将 `ApprovalMasterDataDepartment:ConfigureSender` 保持为 `false`。只有 MasterData 接收新凭据。
-2. 确认所有 MasterData 实例就绪后，更新 Approval 并将 `ConfigureSender` 设为 `true`。逐范围验证用户可按实际部门完成审批。切换后，缺少对应范围的凭据、下游拒绝或异常响应都会终止审批并返回 `503`。
-3. 如需计划回滚，先将 `ConfigureSender` 恢复为 `false` 并更新 Approval。确认各实例都恢复原工作上下文查询后，可关闭 `Enabled` 并撤下 MasterData 的专用凭据。
+- 分批迁移时，先用 `ApprovalMasterDataDepartment__ConfigureSender=false` 发布。MasterData 接收专用凭据，Approval 继续使用原工作上下文查询。确认所有 MasterData 实例就绪后，删除该覆盖并更新 Approval。逐范围验证用户可按实际部门完成审批。
+- 专用发送端启用后，缺少对应范围的凭据、下游拒绝或异常响应都会终止审批并返回 `503`。如需计划回滚，先将 `ConfigureSender` 恢复为 `false` 并更新 Approval。确认各实例恢复原工作上下文查询后，可用 `ApprovalMasterDataDepartment__Enabled=false` 撤下 MasterData 的专用凭据。
 
 ### FileStorage tus 字节落点
 

@@ -8984,8 +8984,10 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal("purchase-order-default", document.RootElement.GetProperty("data").GetProperty("items")[0].GetProperty("templateCode").GetString());
     }
 
-    [Fact]
-    public async Task Approval_center_forwards_end_principal_for_delegation_writes_and_internal_token_for_reads()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Approval_center_forwards_end_principal_for_writes_and_internal_token_for_reads(bool includeLegacyInitiator)
     {
         var approval = new RecordingApprovalClient();
         await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
@@ -9004,7 +9006,7 @@ public sealed class BusinessGatewayProxyTests
         var decisions = await client.GetAsync("/api/business-console/v1/approval/decisions?organizationId=org-001&environmentId=env-dev&chainId=chain-001&actorType=user&actorRef=u-manager&decision=approve&skip=2&take=11");
         var tasks = await client.GetAsync("/api/business-console/v1/approval/tasks?organizationId=org-001&environmentId=env-dev&actorType=user&actorRef=u-manager&skip=3&take=12");
         var delegations = await client.GetAsync("/api/business-console/v1/approval/delegations?organizationId=org-001&environmentId=env-dev&status=active&delegateActorRef=u-backup&skip=4&take=13");
-        var startChain = await client.PostAsJsonAsync("/api/business-console/v1/approval/chains", new
+        var startChainBody = JsonSerializer.SerializeToNode(new
         {
             organizationId = "org-001",
             environmentId = "env-dev",
@@ -9013,8 +9015,13 @@ public sealed class BusinessGatewayProxyTests
             documentType = "purchase-order",
             documentId = "PO-001",
             documentLineId = (string?)null,
-            startedBy = "u-victim",
-        });
+        })!.AsObject();
+        if (includeLegacyInitiator)
+        {
+            startChainBody["startedBy"] = new string('x', 151);
+        }
+
+        var startChain = await client.PostAsJsonAsync("/api/business-console/v1/approval/chains", startChainBody);
         var createDelegation = await client.PostAsJsonAsync("/api/business-console/v1/approval/delegations", new
         {
             organizationId = "org-001",
@@ -9049,7 +9056,8 @@ public sealed class BusinessGatewayProxyTests
         Assert.Equal(3, approval.LastRequest?.Skip);
         Assert.Equal(12, approval.LastRequest?.Take);
         Assert.Equal(new BusinessConsoleApprovalDelegationListRequest("org-001", "env-dev", "active", null, "u-backup", null, 4, 13), approval.LastDelegationListRequest);
-        Assert.Equal("user-admin", approval.LastStartChainRequest?.StartedBy);
+        Assert.Equal(client.DefaultRequestHeaders.Authorization.Parameter, approval.LastStartChainPrincipalBearer);
+        Assert.Equal("user-admin", approval.LastStartChainActorRef);
         Assert.Equal("user", approval.LastCreateDelegationRequest?.DelegatorActorType);
         Assert.Equal("user-admin", approval.LastCreateDelegationRequest?.DelegatorActorRef);
         Assert.Equal("user-admin", approval.LastCreateDelegationRequest?.CreatedBy);
@@ -9113,12 +9121,12 @@ public sealed class BusinessGatewayProxyTests
         var client = new HttpBusinessApprovalClient(downstream, configuration);
         const string legacy = "synthetic-shared-token";
         var request = new BusinessConsoleStartApprovalChainRequest("org-001", "env-dev", "fixture", "quality",
-            "ncr-disposition", "ncr-001", null, "user-admin", RoutingOrganizationId: "org-routing");
+            "ncr-disposition", "ncr-001", null, RoutingOrganizationId: "org-routing");
 
-        var started = await client.StartChainAsync(legacy, request, CancellationToken.None, "synthetic-user-token");
+        var started = await client.StartChainAsync(legacy, request, "user-admin", CancellationToken.None, "synthetic-user-token");
         Assert.Equal("chain-001", started.ChainId);
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.StartChainAsync(legacy,
-            request with { EnvironmentId = "env-other" }, CancellationToken.None));
+            request with { EnvironmentId = "env-other" }, "user-admin", CancellationToken.None));
         await client.ListChainsAsync(legacy, new("org-001", "env-dev", null, null, null, null, null), CancellationToken.None);
 
         Assert.Collection(handler.Requests,

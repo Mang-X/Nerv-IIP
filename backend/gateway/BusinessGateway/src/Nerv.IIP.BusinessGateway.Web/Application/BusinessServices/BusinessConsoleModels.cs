@@ -4350,7 +4350,6 @@ public sealed record BusinessConsoleStartApprovalChainRequest(
     string DocumentType,
     string DocumentId,
     string? DocumentLineId,
-    string StartedBy,
     decimal? Amount = null,
     string? RoutingOrganizationId = null,
     string? DepartmentId = null);
