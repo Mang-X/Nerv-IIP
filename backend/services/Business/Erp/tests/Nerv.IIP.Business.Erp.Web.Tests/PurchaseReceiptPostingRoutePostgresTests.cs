@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseOrderAggregate;
 using Nerv.IIP.Business.Erp.Domain.AggregatesModel.PurchaseReceiptAggregate;
 using Nerv.IIP.Business.Erp.Domain.DomainEvents;
@@ -12,8 +13,12 @@ using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Business.Erp.Web.Application.Queries.Procurement;
+using Nerv.IIP.Business.Erp.Web.Application.Wms;
 using Nerv.IIP.Contracts.Erp;
+using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
+using NetCorePal.Extensions.DependencyInjection;
+using NetCorePal.Extensions.DistributedTransactions;
 using NetCorePal.Extensions.Primitives;
 
 namespace Nerv.IIP.Business.Erp.Web.Tests;
@@ -23,6 +28,193 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 [Collection(ErpPostgresLaneDatabase.CollectionName)]
 public sealed class PurchaseReceiptPostingRoutePostgresTests
 {
+    [PurchaseReceiptPostgresFact]
+    public async Task Partial_direct_receipt_and_order_closure_cannot_both_commit_from_same_snapshot()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = CreateConcurrencyProvider();
+        await using (var setup = provider.CreateAsyncScope())
+        {
+            var db = setup.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+            await db.Database.MigrateAsync();
+            foreach (var suffix in new[] { "cancel-first", "close-first", "receipt-before-cancel", "receipt-before-close" })
+                AddReleasedOrder(db, suffix, alreadyReceived: suffix is "close-first" or "receipt-before-close");
+            await db.SaveChangesAsync();
+        }
+
+        foreach (var (suffix, cancel, receiptWins) in new[]
+        {
+            ("cancel-first", true, false),
+            ("close-first", false, false),
+            ("receipt-before-cancel", true, true),
+            ("receipt-before-close", false, true),
+        })
+        {
+            var command = cancel ? Command(suffix) : Command(suffix) with
+            {
+                Lines = [new PurchaseReceiptCommandLine("10", 1m, "unrestricted", "RAW-A-01")],
+            };
+            await using var receiptScope = provider.CreateAsyncScope();
+            await using var closureScope = provider.CreateAsyncScope();
+            await LoadOrderAsync(receiptScope.ServiceProvider, command.PurchaseOrderNo);
+            await LoadOrderAsync(closureScope.ServiceProvider, command.PurchaseOrderNo);
+            using var causation = receiptScope.ServiceProvider.GetRequiredService<IErpIntegrationEventContextAccessor>()
+                .BeginScope($"command:test:{suffix}");
+            var receiptSender = receiptScope.ServiceProvider.GetRequiredService<ISender>();
+            var closureSender = closureScope.ServiceProvider.GetRequiredService<ISender>();
+
+            Task CloseOrCancelAsync(ISender sender) => cancel
+                ? sender.Send(new CancelPurchaseOrderCommand(command.OrganizationId, command.EnvironmentId, command.PurchaseOrderNo, "cancel"))
+                : sender.Send(new ClosePurchaseOrderLineCommand(command.OrganizationId, command.EnvironmentId, command.PurchaseOrderNo, "10", "close"));
+
+            await using var read = provider.CreateAsyncScope();
+            var readDb = read.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            if (receiptWins)
+            {
+                var receipt = await receiptSender.Send(command);
+                await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => CloseOrCancelAsync(closureSender));
+
+                Assert.Equal(receipt.PurchaseReceiptId, (await read.ServiceProvider.GetRequiredService<ISender>().Send(command)).PurchaseReceiptId);
+                Assert.Equal(1, await readDb.CodeIdempotencyKeys.CountAsync(x => x.IdempotencyKey == command.IdempotencyKey));
+            }
+            else
+            {
+                await CloseOrCancelAsync(closureSender);
+                await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => receiptSender.Send(command));
+
+                Assert.False(await readDb.PurchaseReceipts.AnyAsync(x => x.PurchaseReceiptNo == command.PurchaseReceiptNo));
+                Assert.False(await readDb.CodeIdempotencyKeys.AnyAsync(x => x.IdempotencyKey == command.IdempotencyKey));
+                await Assert.ThrowsAsync<KnownException>(() => read.ServiceProvider.GetRequiredService<ISender>().Send(command));
+            }
+
+            var order = await LoadOrderAsync(read.ServiceProvider, command.PurchaseOrderNo);
+            var line = Assert.Single(order.Lines);
+            Assert.Equal(receiptWins ? PurchaseOrderStatus.Released : cancel ? PurchaseOrderStatus.Cancelled : PurchaseOrderStatus.Closed, order.Status);
+            Assert.Equal(receiptWins ? 2m : cancel ? 0m : 1m, line.ReceivedQuantity);
+            Assert.Equal(!receiptWins && !cancel, line.FinalDelivery);
+        }
+    }
+
+    [PurchaseReceiptPostgresFact]
+    public async Task Inbound_projection_conflict_rolls_back_and_redelivery_applies_once()
+    {
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = CreateConcurrencyProvider();
+        const string suffix = "inbound-race";
+        const string orderNo = "PO-" + suffix;
+        await using (var setup = provider.CreateAsyncScope())
+        {
+            var db = setup.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+            await db.Database.MigrateAsync();
+            AddReleasedOrder(db, suffix);
+            await db.SaveChangesAsync();
+        }
+
+        var first = InboundEvent("INB-first", orderNo);
+        var second = InboundEvent("INB-second", orderNo);
+        var deadLetters = new InMemoryIntegrationEventDeadLetterStore();
+        // 保留先读到的 PO 版本，让两个 scope 的提交顺序可复现。
+        await using (var stale = provider.CreateAsyncScope())
+        {
+            await LoadOrderAsync(stale.ServiceProvider, orderNo);
+            await using var winner = provider.CreateAsyncScope();
+            await InboundHandler(winner.ServiceProvider, deadLetters).HandleAsync(first, CancellationToken.None);
+            await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
+                InboundHandler(stale.ServiceProvider, deadLetters).HandleAsync(second, CancellationToken.None));
+        }
+
+        await using (var retry = provider.CreateAsyncScope())
+        {
+            var db = retry.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Equal(first.Payload.PublicReference, (await db.PurchaseReceipts.SingleAsync()).PurchaseReceiptNo);
+            Assert.Equal(first.IdempotencyKey, (await db.ProcessedIntegrationEvents.SingleAsync()).IdempotencyKey);
+            Assert.Equal(1, await db.CodeIdempotencyKeys.CountAsync());
+            await InboundHandler(retry.ServiceProvider, deadLetters).HandleAsync(second, CancellationToken.None);
+        }
+
+        await using var replay = provider.CreateAsyncScope();
+        await InboundHandler(replay.ServiceProvider, deadLetters).HandleAsync(second, CancellationToken.None);
+        var finalDb = replay.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var order = await LoadOrderAsync(replay.ServiceProvider, orderNo);
+        Assert.Equal(PurchaseOrderStatus.Released, order.Status);
+        Assert.Equal(2m, Assert.Single(order.Lines).ReceivedQuantity);
+        var receipts = await finalDb.PurchaseReceipts.Include(x => x.Lines).OrderBy(x => x.PurchaseReceiptNo).ToArrayAsync();
+        Assert.Equal(new[] { first.Payload.PublicReference, second.Payload.PublicReference }, receipts.Select(x => x.PurchaseReceiptNo));
+        Assert.All(receipts, receipt =>
+        {
+            Assert.Equal(PurchaseReceiptInventoryPostingRoute.Wms, receipt.InventoryPostingRoute);
+            Assert.Equal(1m, Assert.Single(receipt.Lines).ReceivedQuantity);
+        });
+        Assert.Equal(2, await finalDb.ProcessedIntegrationEvents.CountAsync());
+        Assert.Equal(2, await finalDb.CodeIdempotencyKeys.CountAsync());
+        Assert.Empty(await deadLetters.ListAsync(
+            WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.ConsumerName,
+            IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
+    }
+
+    private static void AddReleasedOrder(ApplicationDbContext db, string suffix, bool alreadyReceived = false)
+    {
+        var order = PurchaseOrder.Create("org-route", "env-route", $"PO-{suffix}", "SUP-001", "SITE-001",
+            [new PurchaseOrderLineDraft("10", "SKU-001", "pcs", 3m, 12.5m, new DateOnly(2026, 9, 1), UnderReceiptTolerancePercent: 70m)]);
+        order.MarkApprovalRequested($"approval-{suffix}");
+        order.ReleaseAfterApproval($"approval-{suffix}");
+        if (alreadyReceived)
+            order.RegisterReceipt("10", 1m);
+        db.PurchaseOrders.Add(order);
+    }
+
+    private static Task<PurchaseOrder> LoadOrderAsync(IServiceProvider services, string purchaseOrderNo) =>
+        services.GetRequiredService<ApplicationDbContext>().PurchaseOrders.Include(x => x.Lines)
+            .SingleAsync(x => x.PurchaseOrderNo == purchaseOrderNo);
+
+    private static ServiceProvider CreateConcurrencyProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddIntegrationEvents(typeof(Program));
+        services.AddHttpContextAccessor();
+        services.AddScoped<IErpIntegrationEventContextAccessor, HttpErpIntegrationEventContextAccessor>();
+        services.AddSingleton<IIntegrationEventPublisher, NoopIntegrationEventPublisher>();
+        services.AddMediatR(configuration => configuration
+            .RegisterServicesFromAssembly(typeof(RecordPurchaseReceiptCommand).Assembly)
+            .AddUnitOfWorkBehaviors());
+        services.AddErpPostgreSqlPersistence(ErpPostgresLaneDatabase.ConnectionString);
+        services.AddScoped<ErpCodingService>();
+        services.AddSingleton<IWmsInboundCancellationClient, NoopWmsInboundCancellationClient>();
+        return services.BuildServiceProvider();
+    }
+
+    private static WmsIntegrationEvent InboundEvent(string inboundNo, string orderNo) => new(
+        $"evt-{inboundNo}", WmsIntegrationEventTypes.InboundOrderCompleted, 1,
+        new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero), WmsIntegrationEventSources.BusinessWms, "corr", "cause",
+        "org-route", "env-route", "system:test", $"key-{inboundNo}",
+        new WmsIntegrationPayload(inboundNo, null, null, null, null, null, null, "completed", null, null,
+            Lines: [new WmsIntegrationPayloadLine("10", "SKU-001", "pcs", "SITE-001", "RAW-A-01", 1m, "qualified")],
+            SourceDocumentType: WmsSourceDocumentTypes.PurchaseOrder, SourceDocumentId: orderNo));
+
+    private static WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt InboundHandler(
+        IServiceProvider services, IIntegrationEventDeadLetterStore deadLetters) => new(
+        services.GetRequiredService<ApplicationDbContext>(),
+        deadLetters,
+        services.GetRequiredService<ErpCodingService>(),
+        NullLogger<WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt>.Instance,
+        services.GetRequiredService<IErpIntegrationEventContextAccessor>());
+
+    private sealed class NoopIntegrationEventPublisher : IIntegrationEventPublisher
+    {
+        Task IIntegrationEventPublisher.PublishAsync<TIntegrationEvent>(
+            TIntegrationEvent integrationEvent, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class NoopWmsInboundCancellationClient : IWmsInboundCancellationClient
+    {
+        public Task CancelOpenInboundOrdersForPurchaseOrderAsync(
+            string organizationId, string environmentId, string purchaseOrderNo, string reason, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+    }
+
     [PurchaseReceiptPostgresFact]
     public async Task Routes_persist_replay_without_events_and_keep_financial_facts_on_postgres()
     {

@@ -180,11 +180,11 @@ public sealed class ErpProcurementAggregateTests
         Assert.Equal(15m, line.UnitPrice);
         Assert.Equal(new DateOnly(2026, 6, 10), line.PromisedDate);
         Assert.Equal(PurchaseOrderChangeStatus.Approved, change.Status);
-        Assert.Equal(2, order.Version);
+        Assert.Equal(3, order.Version);
         Assert.Single(order.ChangeHistory);
         var etaChanged = Assert.Single(order.GetDomainEvents().OfType<MaterialSupplyEtaChangedDomainEvent>());
         Assert.Equal("purchase-order-change-approved", etaChanged.ChangeReason);
-        Assert.Equal("purchase-order:PO-CHANGE-001:change:2", etaChanged.ChangeIdentity);
+        Assert.Equal("purchase-order:PO-CHANGE-001:change:3", etaChanged.ChangeIdentity);
         Assert.InRange(etaChanged.ChangedAtUtc, beforeApply, afterApply);
         Assert.Equal(["SKU-RM-1000"], etaChanged.SkuCodes);
     }
