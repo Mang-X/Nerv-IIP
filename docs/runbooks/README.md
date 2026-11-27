@@ -16,6 +16,7 @@
 | FileStorage 停服离线迁移、切换与回滚 | [`file-storage-offline-migration.md`](file-storage-offline-migration.md) | ADR 0027、FileStorage/provider 实现、对应迁移实现 |
 | PDA / Capacitor / APK 构建与部署 | [`mobile-pda-deployment.md`](mobile-pda-deployment.md) | `frontend/apps/business-pda/scripts/pda-apk-build.ps1`、Capacitor/Android 配置 |
 | ERP 销售订单 → DemandPlanning 演示与跨进程验证 | [`erp-sales-order-demand-planning.md`](erp-sales-order-demand-planning.md) | ERP/DemandPlanning 当前代码、AppHost 配置与 `scripts/integration/verify-erp-sales-order-demand-planning.ps1` |
+| ERP 采购订单 → WMS 待收货配置与死信恢复 | [`wms-purchase-order-receiving.md`](wms-purchase-order-receiving.md) | WMS `PurchaseOrderReceiving:Routes` 配置与采购订单下达 V2 消费者 |
 | Scheduling 订单紧急度归档/恢复与保留发布 | [`scheduling-order-urgency-retention.md`](scheduling-order-urgency-retention.md) | BusinessScheduling/FileStorage 当前代码、配置、迁移与 `scripts/ci/run-postgres-test-lane.ps1` |
 | Quality 工单发布事实缺失的观测与回填恢复 | [`quality-release-fact-backlog.md`](quality-release-fact-backlog.md) | BusinessQuality 巡检与指标当前代码、`Quality:ReleaseFactBacklog` 配置、MES 回填端点 |
 

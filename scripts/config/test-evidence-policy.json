@@ -1960,7 +1960,7 @@
       "id": "wms-deadletter-replay",
       "sourceId": "wms-deadletter-replay",
       "classification": "environment-gated",
-      "testPattern": "^Nerv\\.IIP\\.Business\\.Wms\\.Web\\.Tests\\.(WmsDeadLetterReplayPostgresTests|WmsDeadLetterBusinessReplayPostgresTests)\\..+$",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Wms\\.Web\\.Tests\\.(WmsDeadLetterReplayPostgresTests|WmsDeadLetterBusinessReplayPostgresTests|WmsPurchaseOrderReleasePostgresTests)\\..+$",
       "reasonPattern": "^Set NERV_IIP_TEST_POSTGRES to run WMS dead-letter HTTP recovery tests\\.$",
       "allowedLanes": [
         "backend"
@@ -1977,9 +1977,14 @@
         "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Outbound_material_issue_return_and_expiration_restore_original_documents_without_duplicates_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Wcs_adapter_failure_rolls_back_inbox_before_http_retry_and_duplicate_replay_on_postgres",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Delivery_normalized_document_replays_original_event_without_duplicates_on_postgres",
-        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Rma_normalized_document_replays_original_event_without_duplicates_on_postgres"
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsDeadLetterBusinessReplayPostgresTests.Rma_normalized_document_replays_original_event_without_duplicates_on_postgres",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Replay_creates_expected_only_receipt_with_original_order_and_line_numbers",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Concurrent_deliveries_with_distinct_envelopes_create_one_receipt_for_the_scoped_po",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Missing_scoped_route_can_be_corrected_before_original_event_replay",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Manual_receipt_requires_reconciliation_before_replay_can_create_an_expectation",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Running_wms_subscribes_to_the_concrete_canonical_topic"
       ],
-      "expectedRuntimeTestCount": 7
+      "expectedRuntimeTestCount": 12
     }
   ]
 }
