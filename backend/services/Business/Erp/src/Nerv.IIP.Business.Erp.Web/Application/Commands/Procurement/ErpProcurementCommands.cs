@@ -875,40 +875,82 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
         RecordAsync(request with { InventoryPostingRoute = PurchaseReceiptInventoryPostingRoute.Wms },
             fromWmsCompletion: true, cancellationToken);
 
+    internal Task<RecordPurchaseReceiptResult> HandleWmsAcceptanceAsync(
+        RecordPurchaseReceiptCommand request, string siteCode, string fingerprint, CancellationToken cancellationToken) =>
+        RecordAsync(request, fromWmsCompletion: false, cancellationToken, siteCode, fingerprint);
+
     private async Task<RecordPurchaseReceiptResult> RecordAsync(
-        RecordPurchaseReceiptCommand request, bool fromWmsCompletion, CancellationToken cancellationToken)
+        RecordPurchaseReceiptCommand request, bool fromWmsCompletion, CancellationToken cancellationToken,
+        string? acceptanceSiteCode = null, string? acceptanceFingerprint = null)
     {
-        // Direct 保留旧指纹，使升级前的幂等键仍可重放；WMS 显式绑定不同路径。
-        var fingerprint = ErpCodingService.Fingerprint(request.PurchaseOrderNo, request.ExchangeRate, request.Lines.Select(x => $"{x.PurchaseOrderLineNo}:{x.ReceivedQuantity}:{x.QualityStatus}:{x.FinalDelivery}"));
-        if (request.InventoryPostingRoute != PurchaseReceiptInventoryPostingRoute.Direct)
+        // 先读实收的 PO 版本，再查批次。若同批次刚提交并关闭了订单，重试仍能读回结果。
+        var order = acceptanceSiteCode is null ? null : await ReadOrderAsync(request, cancellationToken);
+        var fingerprint = acceptanceFingerprint;
+        if (fingerprint is null)
         {
-            fingerprint = ErpCodingService.Fingerprint(fingerprint, request.InventoryPostingRoute);
+            // 保留 ERP Direct 和旧 WMS 完成投影的历史幂等指纹。
+            fingerprint = ErpCodingService.Fingerprint(request.PurchaseOrderNo, request.ExchangeRate,
+                request.Lines.Select(x => $"{x.PurchaseOrderLineNo}:{x.ReceivedQuantity}:{x.QualityStatus}:{x.FinalDelivery}"));
+            if (request.InventoryPostingRoute != PurchaseReceiptInventoryPostingRoute.Direct)
+            {
+                fingerprint = ErpCodingService.Fingerprint(fingerprint, request.InventoryPostingRoute);
+            }
         }
+
         var replay = await _codingService.TryPeekReplayAsync(
-            request.OrganizationId, request.EnvironmentId, "purchase-receipt",
+            request.OrganizationId, request.EnvironmentId, WmsPurchaseReceiptAcceptanceIdentity.ReceiptRuleKey,
             request.IdempotencyKey, fingerprint, cancellationToken);
         if (replay is not null)
         {
             return await ReadReplayAsync(request, replay.Code, cancellationToken);
         }
 
-        var order = await dbContext.PurchaseOrders
-            .Include(x => x.Lines)
-            .SingleOrDefaultAsync(x =>
-                x.OrganizationId == request.OrganizationId
-                && x.EnvironmentId == request.EnvironmentId
-                && x.PurchaseOrderNo == request.PurchaseOrderNo,
-                cancellationToken)
-            ?? throw new KnownException($"采购订单『{request.PurchaseOrderNo}』不存在。");
+        if (acceptanceSiteCode is null && request.IdempotencyKey?.Trim()
+                .StartsWith(WmsPurchaseReceiptAcceptanceIdentity.KeyPrefix, StringComparison.Ordinal) == true)
+        {
+            throw new KnownException("此幂等键前缀保留给 WMS 收货批次。");
+        }
 
-        if (!fromWmsCompletion && order.ReceivingAuthority == PurchaseReceiptInventoryPostingRoute.Wms)
+        if (acceptanceSiteCode is null)
+        {
+            order = await ReadOrderAsync(request, cancellationToken);
+        }
+        if (order is null)
+        {
+            throw new KnownException($"采购订单『{request.PurchaseOrderNo}』不存在。");
+        }
+
+        if (acceptanceSiteCode is not null)
+        {
+            if (order.ReceivingAuthority != PurchaseReceiptInventoryPostingRoute.Wms
+                || order.SiteCode != acceptanceSiteCode)
+            {
+                throw new KnownException("该采购订单不属于此站点的 WMS 收货范围。");
+            }
+
+            if (order.Status != PurchaseOrderStatus.Released)
+            {
+                throw new KnownException("该采购订单当前不可收货。");
+            }
+
+            var orderLines = order.Lines.ToDictionary(line => line.LineNo, StringComparer.Ordinal);
+            foreach (var actual in request.Lines)
+            {
+                if (!orderLines.TryGetValue(actual.PurchaseOrderLineNo, out var line)
+                    || actual.ReceivedQuantity > line.OpenQuantity)
+                {
+                    throw new KnownException("实收行不存在或实收数量超出采购订单行当前可收货数量。");
+                }
+            }
+        }
+        else if (!fromWmsCompletion && order.ReceivingAuthority == PurchaseReceiptInventoryPostingRoute.Wms)
         {
             throw new KnownException("该采购订单由 WMS 收货，请在 WMS 完成收货。");
         }
 
         var allocation = await _codingService.AllocateAsync(
             request.OrganizationId,
-            request.EnvironmentId, "purchase-receipt",
+            request.EnvironmentId, WmsPurchaseReceiptAcceptanceIdentity.ReceiptRuleKey,
             request.PurchaseReceiptNo,
             request.IdempotencyKey,
             fingerprint,
@@ -936,6 +978,13 @@ public sealed class RecordPurchaseReceiptCommandHandler(ApplicationDbContext dbC
         dbContext.PurchaseReceipts.Add(receipt);
         return new RecordPurchaseReceiptResult(receipt.Id, receipt.PurchaseReceiptNo);
     }
+
+    private Task<PurchaseOrder?> ReadOrderAsync(RecordPurchaseReceiptCommand request, CancellationToken cancellationToken) =>
+        dbContext.PurchaseOrders.Include(x => x.Lines).SingleOrDefaultAsync(x =>
+            x.OrganizationId == request.OrganizationId
+            && x.EnvironmentId == request.EnvironmentId
+            && x.PurchaseOrderNo == request.PurchaseOrderNo,
+            cancellationToken);
 
     private async Task<RecordPurchaseReceiptResult> ReadReplayAsync(
         RecordPurchaseReceiptCommand request, string code, CancellationToken cancellationToken)

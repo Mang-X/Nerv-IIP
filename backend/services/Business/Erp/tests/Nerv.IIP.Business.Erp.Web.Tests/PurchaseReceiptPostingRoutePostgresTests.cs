@@ -154,10 +154,86 @@ public sealed class PurchaseReceiptPostingRoutePostgresTests
             IntegrationEventDeadLetterStatus.Pending, CancellationToken.None));
     }
 
-    private static void AddReleasedOrder(ApplicationDbContext db, string suffix, bool alreadyReceived = false)
+    [PurchaseReceiptPostgresFact]
+    public async Task Wms_batches_and_cancellation_share_the_purchase_order_write_boundary()
     {
-        var order = PurchaseOrder.Create("org-route", "env-route", $"PO-{suffix}", "SUP-001", "SITE-001",
-            [new PurchaseOrderLineDraft("10", "SKU-001", "pcs", 3m, 12.5m, new DateOnly(2026, 9, 1), UnderReceiptTolerancePercent: 70m)]);
+        await ErpPostgresLaneDatabase.ResetSchemaAsync();
+        await using var provider = CreateConcurrencyProvider();
+        await using (var setup = provider.CreateAsyncScope())
+        {
+            var db = setup.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            ErpPostgresLaneDatabase.AssertUsesGovernedDatabase(db);
+            await db.Database.MigrateAsync();
+            foreach (var suffix in new[] { "wms-cancel-first", "wms-batches" })
+            {
+                AddReleasedOrder(db, suffix, authority: PurchaseReceiptInventoryPostingRoute.Wms);
+            }
+            await db.SaveChangesAsync();
+        }
+
+        foreach (var cancelFirst in new[] { true, false })
+        {
+            var orderNo = cancelFirst ? "PO-wms-cancel-first" : "PO-wms-batches";
+            var request = new AcceptWmsPurchaseReceiptCommand(
+                "org-route", "env-route", Guid.NewGuid(), orderNo, "SITE-001", 1.2m, [new("10", 1m)]);
+            var competingBatch = request with { WmsReceiptBatchId = Guid.NewGuid() };
+            await using var stale = provider.CreateAsyncScope();
+            await LoadOrderAsync(stale.ServiceProvider, orderNo);
+            using var staleCausation = stale.ServiceProvider.GetRequiredService<IErpIntegrationEventContextAccessor>()
+                .BeginScope("command:test:wms-stale");
+            await using (var winner = provider.CreateAsyncScope())
+            {
+                using var winnerCausation = winner.ServiceProvider.GetRequiredService<IErpIntegrationEventContextAccessor>()
+                    .BeginScope("command:test:wms-winner");
+                var sender = winner.ServiceProvider.GetRequiredService<ISender>();
+                if (cancelFirst)
+                {
+                    await sender.Send(new CancelPurchaseOrderCommand(
+                        request.OrganizationId, request.EnvironmentId, orderNo, "cancel"));
+                }
+                else
+                {
+                    await sender.Send(competingBatch);
+                }
+            }
+
+            var staleSender = stale.ServiceProvider.GetRequiredService<ISender>();
+            await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => staleSender.Send(request));
+
+            await using var recovery = provider.CreateAsyncScope();
+            using var recoveryCausation = recovery.ServiceProvider.GetRequiredService<IErpIntegrationEventContextAccessor>()
+                .BeginScope("command:test:wms-recovery");
+            var recoverySender = recovery.ServiceProvider.GetRequiredService<ISender>();
+            var query = new GetWmsPurchaseReceiptAcceptanceQuery(
+                request.OrganizationId, request.EnvironmentId, request.WmsReceiptBatchId);
+            Assert.Null(await recoverySender.Send(query));
+            if (cancelFirst)
+            {
+                await Assert.ThrowsAsync<KnownException>(() => recoverySender.Send(request));
+            }
+            else
+            {
+                var first = await recoverySender.Send(query with { WmsReceiptBatchId = competingBatch.WmsReceiptBatchId });
+                Assert.NotNull(first);
+                var second = await recoverySender.Send(request);
+                Assert.NotEqual(first.PurchaseReceiptNo, second.PurchaseReceiptNo);
+                Assert.Equal(second.PurchaseReceiptNo, (await recoverySender.Send(query))?.PurchaseReceiptNo);
+            }
+        }
+
+        await using var verification = provider.CreateAsyncScope();
+        var cancelled = await LoadOrderAsync(verification.ServiceProvider, "PO-wms-cancel-first");
+        Assert.Equal(PurchaseOrderStatus.Cancelled, cancelled.Status);
+        Assert.Equal(0m, Assert.Single(cancelled.Lines).ReceivedQuantity);
+        var received = await LoadOrderAsync(verification.ServiceProvider, "PO-wms-batches");
+        Assert.Equal(2m, Assert.Single(received.Lines).ReceivedQuantity);
+    }
+
+    private static void AddReleasedOrder(ApplicationDbContext db, string suffix, bool alreadyReceived = false,
+        PurchaseReceiptInventoryPostingRoute authority = PurchaseReceiptInventoryPostingRoute.Direct)
+    {
+        var order = PurchaseOrder.Create("org-route", "env-route", $"PO-{suffix}", "SUP-001", "SITE-001", "CNY",
+            [new PurchaseOrderLineDraft("10", "SKU-001", "pcs", 3m, 12.5m, new DateOnly(2026, 9, 1), UnderReceiptTolerancePercent: 70m)], authority);
         order.MarkApprovalRequested($"approval-{suffix}");
         order.ReleaseAfterApproval($"approval-{suffix}");
         if (alreadyReceived)
