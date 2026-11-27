@@ -2680,7 +2680,13 @@ public sealed class MarkInventoryMovementRequestPostedCommandHandler(Application
             return;
         }
 
+        var alreadyPosted = movementRequest.Status == InventoryMovementRequestStatus.Posted;
         movementRequest.MarkPosted(request.InventoryMovementId);
+        if (request.MovementType == InventoryMovementTypes.Inbound && !alreadyPosted)
+        {
+            await AcknowledgeBoundReceiptAsync(movementRequest, cancellationToken);
+        }
+
         if (!string.Equals(request.MovementType, InventoryMovementTypes.Outbound, StringComparison.Ordinal)
             || movementRequest.SourceDocumentLineId is null)
         {
@@ -2716,6 +2722,31 @@ public sealed class MarkInventoryMovementRequestPostedCommandHandler(Application
             outbound.MarkInventoryPostingCompleted();
         }
     }
+
+    private async Task AcknowledgeBoundReceiptAsync(InventoryMovementRequest request, CancellationToken cancellationToken)
+    {
+        var inbound = await dbContext.InboundOrders.Include(order => order.Lines)
+            .SingleOrDefaultAsync(order => order.OrganizationId == request.OrganizationId
+                && order.EnvironmentId == request.EnvironmentId && order.InboundOrderNo == request.SourceDocumentId
+                && order.ErpReceiptAcceptedVersion != null, cancellationToken);
+        if (inbound is null || request.SourceDocumentLineId is not { } postedLine
+            || request.IdempotencyKey != inbound.ErpReceiptMovementKey(postedLine))
+        {
+            return;
+        }
+
+        var keys = inbound.Lines.Select(line => inbound.ErpReceiptMovementKey(line.LineNo)).ToArray();
+        var movements = await dbContext.InventoryMovementRequests
+            .Where(movement => movement.OrganizationId == inbound.OrganizationId
+                && movement.EnvironmentId == inbound.EnvironmentId && movement.SourceDocumentId == inbound.InboundOrderNo
+                && movement.MovementType == InventoryMovementTypes.Inbound && keys.Contains(movement.IdempotencyKey))
+            .ToArrayAsync(cancellationToken);
+        if (movements.Length == keys.Length && movements.All(movement => movement.Status == InventoryMovementRequestStatus.Posted))
+        {
+            inbound.AcknowledgeErpReceiptPosting();
+        }
+    }
+
 }
 
 public sealed record MarkInventoryMovementRequestFailedCommand(

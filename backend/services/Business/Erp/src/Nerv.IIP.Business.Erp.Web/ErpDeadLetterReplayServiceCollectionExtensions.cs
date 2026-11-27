@@ -35,7 +35,8 @@ public static class ErpDeadLetterReplayServiceCollectionExtensions
         Add<StockMovementPostedIntegrationEvent, StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost>(services, StockMovementPostedIntegrationEventHandlerForAccumulateMaterialCost.ConsumerName);
         Add<WmsIntegrationEvent, WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt>(services, WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.ConsumerName,
             async (provider, integrationEvent, token) => await HasInboxAsync(provider, WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.ConsumerName, integrationEvent, token)
-                || WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.IsPurchaseOrderSource(integrationEvent.Payload.SourceDocumentType)
+                || integrationEvent.Payload.WmsReceiptBatchId is null
+                    && WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurchaseReceipt.IsPurchaseOrderSource(integrationEvent.Payload.SourceDocumentType)
                     && await provider.GetRequiredService<ApplicationDbContext>().PurchaseReceipts.AsNoTracking().AnyAsync(x =>
                         x.OrganizationId == integrationEvent.OrganizationId && x.EnvironmentId == integrationEvent.EnvironmentId
                         && x.PurchaseReceiptNo == integrationEvent.Payload.PublicReference.Trim(), token));

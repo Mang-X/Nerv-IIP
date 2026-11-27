@@ -124,7 +124,8 @@ public sealed record WmsIntegrationPayload(
     IReadOnlyCollection<WmsIntegrationPayloadLine>? Lines = null,
     string? SourceDocumentType = null,
     string? SourceDocumentId = null,
-    string? AdapterType = null);
+    string? AdapterType = null,
+    Guid? WmsReceiptBatchId = null);
 
 public sealed record WmsIntegrationPayloadLine(
     string LineReference,

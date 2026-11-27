@@ -515,6 +515,13 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         }
     }
 
+    public void AcknowledgeErpReceiptPosting()
+    {
+        ResumeErpReceiptPosting();
+        AdvanceVersion();
+        this.AddDomainEvent(new InboundOrderCompletedDomainEvent(this));
+    }
+
     public IReadOnlyCollection<InventoryMovementRequest> RetryInventoryPosting(
         string idempotencyKey,
         IReadOnlyDictionary<string, string>? inventoryLocationByLine = null,

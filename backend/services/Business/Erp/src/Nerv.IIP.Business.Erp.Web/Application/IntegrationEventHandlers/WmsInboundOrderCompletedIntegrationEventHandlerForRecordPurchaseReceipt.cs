@@ -6,6 +6,7 @@ using Nerv.IIP.Business.Erp.Infrastructure;
 using Nerv.IIP.Business.Erp.Web.Application.Commands;
 using Nerv.IIP.Business.Erp.Web.Application.Commands.Procurement;
 using Nerv.IIP.Business.Erp.Web.Application.IntegrationEventConverters;
+using Nerv.IIP.Business.Erp.Web.Application.Queries.Procurement;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.IntegrationEvents;
 using Nerv.IIP.Contracts.Wms;
@@ -88,6 +89,12 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurc
             return;
         }
 
+        if (integrationEvent.Payload.WmsReceiptBatchId is { } batchId)
+        {
+            await AcknowledgeBoundReceiptAsync(integrationEvent, batchId, cancellationToken);
+            return;
+        }
+
         if (IsErpPurchaseReceiptSource(integrationEvent.Payload.SourceDocumentType))
         {
             logger.LogDebug(
@@ -141,6 +148,15 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurc
             && x.PurchaseReceiptNo == purchaseReceiptNo,
             cancellationToken))
         {
+            return;
+        }
+
+        if (order.ReceivingAuthority == PurchaseReceiptInventoryPostingRoute.Wms
+            && integrationEvent.Payload.PublicReference == purchaseOrderNo
+            && await HasAcceptedBatchAsync(integrationEvent, purchaseOrderNo, cancellationToken))
+        {
+            await DeadLetterAsync(integrationEvent, "missing-bound-receipt-reference",
+                "An automatic WMS receipt must acknowledge the accepted ERP batch.", cancellationToken);
             return;
         }
 
@@ -198,6 +214,49 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurc
         }
 
         await dbContext.SaveEntitiesAsync(cancellationToken);
+    }
+
+    private Task<bool> HasAcceptedBatchAsync(
+        WmsIntegrationEvent integrationEvent, string orderNo, CancellationToken cancellationToken) =>
+        (from receipt in dbContext.PurchaseReceipts
+         join key in dbContext.CodeIdempotencyKeys
+            on new { receipt.OrganizationId, receipt.EnvironmentId, Code = receipt.PurchaseReceiptNo }
+            equals new { key.OrganizationId, key.EnvironmentId, key.Code }
+         where receipt.OrganizationId == integrationEvent.OrganizationId
+            && receipt.EnvironmentId == integrationEvent.EnvironmentId
+            && receipt.PurchaseOrderNo == orderNo
+            && receipt.InventoryPostingRoute == PurchaseReceiptInventoryPostingRoute.Wms
+            && key.RuleKey == WmsPurchaseReceiptAcceptanceIdentity.ReceiptRuleKey
+            && key.PayloadFingerprint.StartsWith(WmsPurchaseReceiptAcceptanceIdentity.FingerprintPrefix)
+         select receipt.Id).AnyAsync(cancellationToken);
+
+    private async Task AcknowledgeBoundReceiptAsync(
+        WmsIntegrationEvent integrationEvent, Guid batchId, CancellationToken cancellationToken)
+    {
+        var payload = integrationEvent.Payload;
+        var accepted = await new GetWmsPurchaseReceiptAcceptanceQueryHandler(dbContext).Handle(
+            new GetWmsPurchaseReceiptAcceptanceQuery(integrationEvent.OrganizationId, integrationEvent.EnvironmentId, batchId),
+            cancellationToken);
+        if (payload.SourceDocumentType != WmsSourceDocumentTypes.PurchaseReceipt
+            || accepted is null || accepted.PurchaseReceiptNo != payload.SourceDocumentId
+            || accepted.PurchaseOrderNo != payload.PublicReference || accepted.SiteCode != payload.SiteCode
+            || !string.Equals(payload.Status, "completed", StringComparison.OrdinalIgnoreCase)
+            || payload.Lines is null || payload.Lines.Count != accepted.Lines.Count
+            || accepted.Lines.Any(line => line.QualityStatus != ErpReceiptQualityStatuses.Unrestricted
+                || !payload.Lines.Any(reported => reported is not null && reported.LineReference == line.PurchaseOrderLineNo
+                    && reported.SkuCode == line.SkuCode && reported.UomCode == line.UomCode
+                    && reported.Quantity == line.ReceivedQuantity && reported.LocationCode == line.LocationCode
+                    && reported.SiteCode == accepted.SiteCode && reported.Status == line.QualityStatus)))
+        {
+            await DeadLetterAsync(integrationEvent, "bound-receipt-completion-mismatch",
+                "WMS completion must match the scoped ERP receipt batch, receipt reference and accepted lines.", cancellationToken);
+            return;
+        }
+
+        if (await ErpProcessedIntegrationEventInbox.TryRecordAsync(dbContext, ConsumerName, integrationEvent, cancellationToken))
+        {
+            await dbContext.SaveEntitiesAsync(cancellationToken);
+        }
     }
 
     private static ReceiptProjectionDecision TryBuildReceiptLines(
