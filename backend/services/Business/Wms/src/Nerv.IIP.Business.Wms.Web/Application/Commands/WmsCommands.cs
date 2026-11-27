@@ -718,7 +718,8 @@ public sealed class RetryInboundInventoryPostingCommandHandler(ApplicationDbCont
             && request.IdempotencyKey == inbound.ErpReceiptMovementKey(lineNo))
             .OrderBy(request => request.SourceDocumentLineId, StringComparer.Ordinal).ToArray();
         if (requests.Length != inbound.Lines.Count
-            || inbound.Status is not (InboundOrderStatus.Completed or InboundOrderStatus.InventoryPostingFailed))
+            || inbound.Status is not (InboundOrderStatus.Completed or InboundOrderStatus.InventoryPostingPending
+                or InboundOrderStatus.InventoryPostingFailed))
         {
             throw new WmsLifecycleConflictException("retry-inbound-inventory-posting", inbound.Status.ToString());
         }

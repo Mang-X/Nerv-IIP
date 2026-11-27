@@ -6,7 +6,7 @@
  * 码值与后端保持一致：
  * - `WarehouseTaskStatus` Open / InProgress / Completed / CompletedWithDifference / Exception / Cancelled
  * - `CountExecutionStatus` Open / Completed
- * - `InboundOrderStatus` Open / Completed / InventoryPostingFailed / PendingQualityCheck / Cancelled
+ * - `InboundOrderStatus` Open / Completed / InventoryPostingPending / InventoryPostingFailed / PendingQualityCheck / Cancelled
  * - `OutboundOrderStatus` Open / Completed / InventoryPostingFailed / Cancelled / InventoryPostingPending
  */
 import type { SearchSelectOption } from '@nerv-iip/ui'
@@ -38,6 +38,7 @@ export const WMS_COUNT_EXECUTION_STATUS_OPTIONS: SearchSelectOption[] = [
 export const WMS_INBOUND_ORDER_STATUS_OPTIONS: SearchSelectOption[] = [
   { value: 'Open', label: '待收货' },
   { value: 'PendingQualityCheck', label: '待质检' },
+  { value: 'InventoryPostingPending', label: '库存过账中' },
   { value: 'Completed', label: '已完成' },
   { value: 'InventoryPostingFailed', label: '库存过账失败' },
   { value: 'Cancelled', label: '已取消' },

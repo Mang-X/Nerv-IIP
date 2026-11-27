@@ -17,6 +17,7 @@ public enum InboundOrderStatus
     InventoryPostingFailed = 2,
     PendingQualityCheck = 3,
     Cancelled = 4,
+    InventoryPostingPending = 5,
 }
 
 public sealed record InboundOrderLineDraft(
@@ -410,10 +411,18 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             line.Capture(capture);
         }
 
-        Status = lines.Any(x => x.RequiresQualityInspection)
-            ? InboundOrderStatus.PendingQualityCheck
-            : InboundOrderStatus.Completed;
-        CompletedAtUtc = DateTime.UtcNow;
+        if (RequiresErpReceiptAcceptance)
+        {
+            Status = InboundOrderStatus.InventoryPostingPending;
+        }
+        else
+        {
+            Status = lines.Any(x => x.RequiresQualityInspection)
+                ? InboundOrderStatus.PendingQualityCheck
+                : InboundOrderStatus.Completed;
+            CompletedAtUtc = DateTime.UtcNow;
+        }
+
         AdvanceVersion();
         var singleLine = lines.Count == 1;
         var requests = lines.Select(line => InventoryMovementRequest.Create(
@@ -498,9 +507,14 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             return;
         }
 
-        if (Status != InboundOrderStatus.Completed)
+        if (Status is not (InboundOrderStatus.Completed or InboundOrderStatus.InventoryPostingPending))
         {
-            throw new InvalidOperationException("Only completed inbound orders can be marked as Inventory posting failed.");
+            throw new InvalidOperationException("Only completed or posting inbound orders can be marked as Inventory posting failed.");
+        }
+
+        if (Status == InboundOrderStatus.InventoryPostingPending)
+        {
+            AdvanceVersion();
         }
 
         Status = InboundOrderStatus.InventoryPostingFailed;
@@ -511,13 +525,22 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         EnsureErpReceiptCanPost();
         if (Status == InboundOrderStatus.InventoryPostingFailed)
         {
-            Status = InboundOrderStatus.Completed;
+            Status = InboundOrderStatus.InventoryPostingPending;
+            CompletedAtUtc = null;
+            AdvanceVersion();
         }
     }
 
     public void AcknowledgeErpReceiptPosting()
     {
-        ResumeErpReceiptPosting();
+        EnsureErpReceiptCanPost();
+        if (Status is not (InboundOrderStatus.InventoryPostingPending or InboundOrderStatus.InventoryPostingFailed))
+        {
+            throw new InvalidOperationException("Only pending or failed ERP receipt posting can be acknowledged.");
+        }
+
+        Status = InboundOrderStatus.Completed;
+        CompletedAtUtc = DateTime.UtcNow;
         AdvanceVersion();
         this.AddDomainEvent(new InboundOrderCompletedDomainEvent(this));
     }

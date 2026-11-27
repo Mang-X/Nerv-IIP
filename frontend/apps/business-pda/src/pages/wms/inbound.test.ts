@@ -1,4 +1,5 @@
 import { OfflineError, RequestTimeoutError } from '@/api/request-timeout'
+import { BusinessOperationPendingError } from '@nerv-iip/api-client'
 import { flushPromises, mount } from '@vue/test-utils'
 import { NvBottomSheet, NvMobileDropdownMenuItem, NvPullRefresh } from '@nerv-iip/ui-mobile'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -357,6 +358,21 @@ describe('WMS 收货入库', () => {
       { lineNo: '1', lotNo: 'LOT-A', productionDate: undefined, expiryDate: '2027-12-31' },
     ])
     expect(wmsState.completeInbound.mock.calls[0][3]).toMatchObject({ attempt: 'initial' })
+  })
+
+  it('入库已受理且库存仍在过账时，关闭确认抽屉并展示过账进度', async () => {
+    wmsState.completeInbound.mockRejectedValueOnce(
+      new BusinessOperationPendingError('wms.inbound-order.complete'),
+    )
+    const wrapper = mount(InboundPage, { attachTo: document.body })
+    await wrapper.findAll('[data-row]')[0].trigger('click')
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('[data-testid="confirm-complete"]')!.click()
+    await flushPromises()
+
+    expect(wrapper.find('[data-result]').text()).toContain('入库已提交，库存正在过账')
+    expect(document.body.textContent).not.toContain('提交结果未知')
+    wrapper.unmount()
   })
 
   it('多行新批次：逐行批号手输 → 随 completeInbound 落库', async () => {

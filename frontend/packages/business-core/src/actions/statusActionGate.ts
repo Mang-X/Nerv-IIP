@@ -211,6 +211,7 @@ function wmsGate(
       'completed',
       'inventorypostingfailed',
       'pendingqualitycheck',
+      'inventorypostingpending',
       'cancelled',
     ]),
     'wms-outbound': new Set([
@@ -227,7 +228,12 @@ function wmsGate(
 
   const replayStatus =
     (domain === 'wms-inbound' &&
-      new Set(['completed', 'pendingqualitycheck', 'inventorypostingfailed']).has(status)) ||
+      new Set([
+        'completed',
+        'pendingqualitycheck',
+        'inventorypostingfailed',
+        'inventorypostingpending',
+      ]).has(status)) ||
     (domain === 'wms-outbound' && new Set(['completed', 'inventorypostingpending']).has(status)) ||
     (domain === 'wms-count' && ['completed', 'pendingapproval', 'recountrequired'].includes(status))
   return replayStatus && facts.idempotentReplay ? noop(true) : terminal()

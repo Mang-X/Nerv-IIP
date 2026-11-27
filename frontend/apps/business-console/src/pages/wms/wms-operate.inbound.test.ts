@@ -1,5 +1,6 @@
 import { wms, layoutStub, setInput, resetFixture } from './wms-operate.fixture'
 import { WMS_RECEIVING_QUALITY_OPTIONS } from '@/data/inventoryReference'
+import { BusinessOperationPendingError } from '@nerv-iip/api-client'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { NvAlertDialog, toast } from '@nerv-iip/ui'
@@ -57,6 +58,28 @@ describe('WMS operate actions', () => {
       'wms-intent-1',
       expect.objectContaining({ attempt: 'initial' }),
     )
+  })
+
+  it('closes the inbound completion dialog when inventory posting is pending', async () => {
+    wms.completeInbound.mockRejectedValueOnce(
+      new BusinessOperationPendingError('wms.inbound-order.complete'),
+    )
+    const wrapper = mount(InboundPage, { global: { stubs: layoutStub } })
+    await flushPromises()
+    await wrapper.get('button[aria-label="完成入库 IB-1"]').trigger('click')
+    await flushPromises()
+    const confirm = [...document.body.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === '完成入库',
+    )!
+    confirm.click()
+    await flushPromises()
+
+    expect(document.body.textContent).not.toContain('确认完成入库单 IB-1')
+    expect(toast.warning).toHaveBeenCalledWith(
+      '入库完成请求已提交，库存正在过账。请稍后刷新查看过账结果。',
+    )
+    expect(wms.refreshInboundOrders).toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('closes and clears a stale completion dialog after a typed lifecycle conflict', async () => {

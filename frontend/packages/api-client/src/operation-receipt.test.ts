@@ -485,6 +485,40 @@ describe('business operation receipt confirmation', () => {
     expect(readback).toHaveBeenCalledTimes(1)
   })
 
+  it('waits for an inbound posting to complete and reports pending if it has not settled', async () => {
+    const envelope = accepted('wms.inbound-order.complete', 'in-1')
+    const postingPending = {
+      success: true,
+      data: { items: [{ inboundOrderId: 'in-1', status: 'InventoryPostingPending' }] },
+    }
+    const posted = {
+      success: true,
+      data: { items: [{ inboundOrderId: 'in-1', status: 'Completed' }] },
+    }
+    const options = {
+      expectedOperationType: 'wms.inbound-order.complete',
+      expectedIdempotencyKey: 'idem:wms.inbound-order.complete:in-1',
+      expectedResourceId: 'in-1',
+      retryDelayMs: 0,
+    }
+
+    const settles = vi.fn().mockResolvedValueOnce(postingPending).mockResolvedValue(posted)
+    await expect(
+      confirmBusinessConsoleOperation(envelope, { ...options, readback: settles }),
+    ).resolves.toBe(envelope)
+    expect(settles).toHaveBeenCalledTimes(2)
+
+    await expect(
+      confirmBusinessConsoleOperation(envelope, {
+        ...options,
+        readback: vi.fn().mockResolvedValue(postingPending),
+      }),
+    ).rejects.toMatchObject({
+      name: 'BusinessOperationPendingError',
+      message: '入库完成请求已提交，库存正在过账。请稍后刷新查看过账结果。',
+    })
+  })
+
   it('keeps polling an outbound review while inventory posting is still pending', async () => {
     // #3926：复核已落库、过账是异步的；刚提交读到「过账中」不能判成「尚未确认」。
     const envelope = accepted('wms.outbound-order.complete', 'out-1')

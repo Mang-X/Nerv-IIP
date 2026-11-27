@@ -16,6 +16,7 @@ using Nerv.IIP.Business.Wms.Infrastructure;
 using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Web.Application.Errors;
 using Nerv.IIP.Business.Wms.Web.Application.Inventory;
+using Nerv.IIP.Business.Wms.Web.Application.Queries;
 using Nerv.IIP.Business.Wms.Web.Application.IntegrationEventHandlers;
 using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Inventory;
@@ -276,6 +277,7 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
         var posted = await SendAsync(fixture, completion);
         Assert.Equal(posted, await SendAsync(fixture, completion with { IdempotencyKey = "changed-client-key" }));
         Assert.NotNull(posted.RequestId);
+        await AssertPostingAsync("InventoryPostingPending", "pending");
 
         string key;
         using (var read = fixture.Factory.Services.CreateScope())
@@ -298,12 +300,14 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
             await fixture.ReplayAsync(failureLetter, "replayed");
         }
 
+        await AssertPostingAsync("InventoryPostingFailed", "failed");
         erp.ReceiptNo = "LOOKUP-MUST-NOT-RUN-ON-RETRY";
         var retry = new RetryInboundInventoryPostingCommand(receipt.InboundOrderId, "another-key",
             new("org-replay", "env-replay", "operator", ["SITE"], "site", "SITE", "org-replay",
                 "env-replay", "SITE", null, null));
         Assert.Equal(posted, await SendAsync(fixture, retry));
         Assert.Equal(posted, await SendAsync(fixture, retry));
+        await AssertPostingAsync("InventoryPostingPending", "pending");
         using var verification = fixture.Factory.Services.CreateScope();
         var verifiedDb = verification.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var retried = await verifiedDb.InventoryMovementRequests.SingleAsync(x => x.SourceDocumentLineId == "020");
@@ -340,13 +344,49 @@ public sealed class WmsPurchaseOrderReleasePostgresTests
         }
 
         await DeliverPostedAsync(await verifiedDb.InventoryMovementRequests.SingleAsync(x => x.SourceDocumentLineId == "010"));
+        await AssertPostingAsync("InventoryPostingPending", "pending", "MOV-010");
         Assert.Empty(await ReadOutboxAsync(verifiedDb, nameof(WmsIntegrationEvent)));
+        await verifiedDb.Database.ExecuteSqlRawAsync("""
+            CREATE FUNCTION cap.test_reject_inbound_completion() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                RAISE EXCEPTION 'Injected inbound completion outbox commit failure';
+            END;
+            $$;
+            CREATE CONSTRAINT TRIGGER test_reject_inbound_completion AFTER INSERT ON cap.published
+                DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
+                WHEN (NEW."Name" = 'WmsIntegrationEvent') EXECUTE FUNCTION cap.test_reject_inbound_completion()
+            """);
+        Assert.NotNull(await Record.ExceptionAsync(() => DeliverPostedAsync(retried)));
+        await AssertPostingAsync("InventoryPostingPending", "pending", "MOV-010");
+        Assert.Empty(await ReadOutboxAsync(verifiedDb, nameof(WmsIntegrationEvent)));
+        await verifiedDb.Database.ExecuteSqlRawAsync("DROP TRIGGER test_reject_inbound_completion ON cap.published");
+
         await DeliverPostedAsync(retried);
+        var completedAt = await AssertPostingAsync("Completed", "posted", "MOV-010", "MOV-020");
         await DeliverPostedAsync(retried);
+        Assert.Equal(completedAt, await AssertPostingAsync("Completed", "posted", "MOV-010", "MOV-020"));
         var acknowledgement = Assert.Single(await ReadOutboxAsync(verifiedDb, nameof(WmsIntegrationEvent))).GetProperty("Payload");
+        Assert.Equal("Completed", acknowledgement.GetProperty("Status").GetString());
         Assert.Equal(batchId, acknowledgement.GetProperty("WmsReceiptBatchId").GetGuid());
         Assert.Equal("RCV-123", acknowledgement.GetProperty("SourceDocumentId").GetString());
         Assert.Equal(WmsSourceDocumentTypes.PurchaseReceipt, acknowledgement.GetProperty("SourceDocumentType").GetString());
+
+        async Task<DateTime?> AssertPostingAsync(string orderStatus, string postingStatus, params string[] movementIds)
+        {
+            var query = new ListInboundOrdersQuery("org-replay", "env-replay",
+                InboundOrderId: receipt.InboundOrderId, SiteCodes: ["SITE"], SiteWideScope: true);
+            var item = Assert.Single((await SendAsync(fixture, query)).Items);
+            Assert.Equal(orderStatus, item.Status);
+            Assert.Equal(postingStatus, item.InventoryPostingStatus);
+            Assert.Equal(movementIds, item.InventoryMovementIds!.Order(StringComparer.Ordinal));
+
+            using var scope = fixture.Factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var completedAt = await db.InboundOrders
+                .Where(x => x.Id == receipt.InboundOrderId).Select(x => x.CompletedAtUtc).SingleAsync();
+            Assert.Equal(orderStatus == "Completed", completedAt.HasValue);
+            return completedAt;
+        }
     }
 
     private static async Task<JsonElement[]> ReadOutboxAsync(ApplicationDbContext db, string topic)

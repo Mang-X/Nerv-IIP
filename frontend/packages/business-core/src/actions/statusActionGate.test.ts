@@ -190,6 +190,7 @@ describe('statusActionGate', () => {
     ['wms-inbound', 'Completed'],
     ['wms-inbound', 'PendingQualityCheck'],
     ['wms-inbound', 'InventoryPostingFailed'],
+    ['wms-inbound', 'InventoryPostingPending'],
     ['wms-outbound', 'Completed'],
     ['wms-outbound', 'InventoryPostingPending'],
   ] as const)('preserves matching %s replay in %s as a legal no-op', (domain, status) => {

@@ -22,6 +22,7 @@ export const PDA_INBOUND_ORDER_STATUS_OPTIONS: DropdownOption[] = [
   { label: '全部状态', value: '' },
   { label: '待收货', value: 'Open' },
   { label: '待质检', value: 'PendingQualityCheck' },
+  { label: '库存过账中', value: 'InventoryPostingPending' },
   { label: '已完成', value: 'Completed' },
   { label: '库存过账失败', value: 'InventoryPostingFailed' },
   { label: '已取消', value: 'Cancelled' },
