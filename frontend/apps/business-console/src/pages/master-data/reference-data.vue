@@ -8,6 +8,7 @@ import CarriedContextSummary from '@/components/business/CarriedContextSummary.v
 import IncludeDisabledFilter from '@/components/masterData/IncludeDisabledFilter.vue'
 import MasterDataLifecycleDialog from '@/components/masterData/MasterDataLifecycleDialog.vue'
 import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.vue'
+import { useReturnFocusOnClose } from '@/composables/shared/useReturnFocusOnClose'
 import { useIncludeDisabledFilter } from '@/composables/master-data/masterDataIncludeDisabled'
 import { useMasterDataLifecycleConfirm } from '@/composables/master-data/masterDataLifecycleConfirm'
 import { useReferenceDataCodes, useMasterDataResourceActions } from '@/composables/master-data'
@@ -21,7 +22,6 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
-  NvDialogTrigger,
   NvField,
   NvFieldGroup,
   NvFieldLabel,
@@ -201,7 +201,9 @@ function codeDetailFields(row: BusinessConsoleResourceItem) {
 function resetCreateForm() {
   Object.assign(createForm, { ...CREATE_FORM_DEFAULTS, codeSet: selectedCodeSet.value })
 }
+let restoreCreateFocus: ReturnType<typeof useReturnFocusOnClose> | undefined
 function openCreate() {
+  restoreCreateFocus = useReturnFocusOnClose()
   editingCode.value = null
   resetCreateForm()
   createShowErrors.value = false
@@ -212,6 +214,7 @@ function openCreate() {
 }
 async function openEdit(row: BusinessConsoleResourceItem) {
   if (!row.code) return
+  restoreCreateFocus = undefined
   editingCode.value = row.code
   createShowErrors.value = false
   editLoading.value = true
@@ -286,19 +289,26 @@ function isNonEmpty(value: string) {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
+        <span
+          v-if="!selectedCodeSetCanAdd"
+          id="dictionary-add-reason"
+          class="text-sm text-muted-foreground"
+        >
+          此字典由系统维护，不能新增条目
+        </span>
+        <NvButton
+          size="sm"
+          type="button"
+          class="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+          :aria-disabled="!selectedCodeSetCanAdd"
+          :aria-describedby="!selectedCodeSetCanAdd ? 'dictionary-add-reason' : undefined"
+          @click="selectedCodeSetCanAdd && openCreate()"
+        >
+          <PlusIcon aria-hidden="true" />
+          新建字典条目
+        </NvButton>
         <NvDialog v-model:open="createOpen" @update:open="syncFormOnOpen">
-          <NvDialogTrigger as-child>
-            <NvButton
-              size="sm"
-              type="button"
-              :disabled="!selectedCodeSetCanAdd"
-              @click="openCreate"
-            >
-              <PlusIcon aria-hidden="true" />
-              新建字典条目
-            </NvButton>
-          </NvDialogTrigger>
-          <NvDialogContent class="sm:max-w-lg">
+          <NvDialogContent class="sm:max-w-lg" @close-auto-focus="restoreCreateFocus?.($event)">
             <NvDialogHeader>
               <NvDialogTitle>{{
                 editingCode ? `编辑字典条目 · ${editingCode}` : '新建字典条目'

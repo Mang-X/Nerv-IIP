@@ -143,6 +143,13 @@ const form = reactive<SkillCatalogForm>(blankForm())
 const validityMonths = computed(() => Number(form.validityMonths))
 const nameValid = computed(() => form.skillName.trim().length > 0)
 const groupValid = computed(() => form.groupName.trim().length > 0)
+const groupSearchNotice = computed(() => {
+  if (!groupSuggestions.value.length) return '尚无技能组，输入名称即可新建。'
+  const query = form.groupName.trim().toLowerCase()
+  return query && !groupSuggestions.value.some((group) => group.value.toLowerCase().includes(query))
+    ? '没有匹配的技能组，输入的名称可作为新技能组。'
+    : ''
+})
 const validityValid = computed(
   () =>
     !form.requiresCertification ||
@@ -299,9 +306,13 @@ async function confirmArchive() {
                     v-model="form.groupName"
                     :suggestions="groupSuggestions"
                     placeholder="选择或新建技能组"
-                    empty-text="还没有技能组，填写即新建"
                   />
-                  <NvFieldDescription>例如：机加工。</NvFieldDescription>
+                  <NvFieldDescription id="skill-group-help"
+                    >可选择已有技能组，也可直接输入新组名</NvFieldDescription
+                  >
+                  <NvFieldDescription v-if="groupSearchNotice" role="status">{{
+                    groupSearchNotice
+                  }}</NvFieldDescription>
                 </NvField>
               </NvFieldGroup>
 

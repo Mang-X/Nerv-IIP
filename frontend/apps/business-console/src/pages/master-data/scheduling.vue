@@ -16,6 +16,7 @@ import {
   NvToolbar,
 } from '@nerv-iip/ui'
 import { PlusIcon, RefreshCwIcon } from '@lucide/vue'
+import ShiftWorkingTime from './components/ShiftWorkingTime.vue'
 import WorkCalendarTab from './components/WorkCalendarTab.vue'
 import { useShiftCalendarPage } from './useShiftCalendarPage'
 
@@ -168,7 +169,11 @@ const {
               :detail-fields="baseDetailFields(row, '班次编码', '班次名称')"
               @toggle="(row) => lifecycle.request(row, shiftActions, '班次')"
               @edit="openEditShift"
-            />
+            >
+              <template #detail>
+                <ShiftWorkingTime :code="row.code" :fetch-detail="shiftActions.fetchDetail" />
+              </template>
+            </MasterDataRowActions>
           </template>
         </NvDataTable>
       </NvTabsContent>

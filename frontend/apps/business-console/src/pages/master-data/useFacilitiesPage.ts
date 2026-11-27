@@ -1,5 +1,8 @@
 import type { BusinessConsoleResourceItem } from '@nerv-iip/api-client'
-import type { DirectoryCreateContext } from '@/components/business/directoryCreators'
+import type {
+  DirectoryCreateContext,
+  DirectoryCreatedItem,
+} from '@/components/business/directoryCreators'
 import type { MasterDataTreeNodeData } from '@/components/masterData/MasterDataTreeNode.vue'
 import ProductionLineCreateDialog from '@/components/masterData/ProductionLineCreateDialog.vue'
 import SiteCreateDialog from '@/components/masterData/SiteCreateDialog.vue'
@@ -221,39 +224,34 @@ export function useFacilitiesPage() {
     return prune(forest.value)
   })
 
-  // 节点少时默认全展开；命中搜索自动展开祖先；切换数据时保留选中 code。
+  let expansionInitialized = false
+  function expandBranches(nodes: TreeNode[]) {
+    for (const node of nodes) {
+      if (node.children.length) {
+        expanded.add(nodeKey(node))
+        expandBranches(node.children)
+      }
+    }
+  }
+
+  // 目录分批加载时等待首个真实分支。首次展开后，刷新无需重置用户折叠的分支。
   watch(
-    [forest, treeSearch],
+    [forest, treeSearch, treePending],
     () => {
       if (treeSearch.value.trim()) {
-        // 搜索态：展开所有命中节点的祖先（filteredForest 已剪枝，展开其全部）。
-        const expandAll = (nodes: TreeNode[]) => {
-          for (const n of nodes) {
-            if (n.children.length) {
-              expanded.add(nodeKey(n))
-              expandAll(n.children)
-            }
-          }
-        }
-        expandAll(filteredForest.value)
+        expandBranches(filteredForest.value)
         return
       }
-      if (totalNodes.value > 0 && totalNodes.value < 50 && expanded.size === 0) {
-        const expandAll = (nodes: TreeNode[]) => {
-          for (const n of nodes) {
-            if (n.children.length) {
-              expanded.add(nodeKey(n))
-              expandAll(n.children)
-            }
-          }
-        }
-        expandAll(forest.value)
+      if (!expansionInitialized && !treePending.value && totalNodes.value < 50) {
+        expandBranches(forest.value)
+        expansionInitialized = expanded.size > 0
       }
     },
     { immediate: true },
   )
 
   function toggleExpand(node: TreeNode | MasterDataTreeNodeData) {
+    expansionInitialized = true
     const key = nodeKey(node)
     if (expanded.has(key)) expanded.delete(key)
     else expanded.add(key)
@@ -270,6 +268,7 @@ export function useFacilitiesPage() {
     return hasParent && ok
   })
   function expandAllToggle() {
+    expansionInitialized = true
     if (allExpanded.value) {
       expanded.clear()
       return
@@ -316,8 +315,7 @@ export function useFacilitiesPage() {
   )
 
   // 选中路径（用于面包屑：工厂 ▸ 车间 ▸ 产线 ▸ 工作中心）。
-  const selectedPath = computed<TreeNode[]>(() => {
-    const target = selectedKey.value
+  function pathTo(target: string | null, roots: TreeNode[]): TreeNode[] {
     if (!target) return []
     const path: TreeNode[] = []
     const walk = (nodes: TreeNode[]): boolean => {
@@ -329,9 +327,9 @@ export function useFacilitiesPage() {
       }
       return false
     }
-    walk(tree.value)
-    return path
-  })
+    return walk(roots) ? path : []
+  }
+  const selectedPath = computed(() => pathTo(selectedKey.value, tree.value))
 
   // 选中节点的详情字段（按类型展示 typed 字段）。
   const detailLoading = shallowRef(false)
@@ -418,11 +416,13 @@ export function useFacilitiesPage() {
   }
 
   function refreshAll() {
-    void sites.refresh()
-    void workshops.refreshWorkshops()
-    void lines.refresh()
-    void workCenters.refresh()
-    void stations.refresh()
+    return Promise.allSettled([
+      sites.refresh(),
+      workshops.refreshWorkshops(),
+      lines.refresh(),
+      workCenters.refresh(),
+      stations.refresh(),
+    ])
   }
 
   // ================= 新建（含就地建子级，父级带出为只读归属） =================
@@ -459,6 +459,41 @@ export function useFacilitiesPage() {
       [children.contextKey]: parent.code,
     }
     openCreate(childType ?? children.types[0], { context })
+  }
+
+  const stationLine = computed(() => {
+    const node = selectedNode.value
+    if (node?.type !== 'work-center' || !node.active) return undefined
+    return lines.items.value.find(
+      (line) => line.code === node.item.lineCode && line.active !== false,
+    )?.code
+  })
+  function openRelatedStation() {
+    if (!stationLine.value || !selectedNode.value) return
+    openCreate('station', {
+      context: { lineCode: stationLine.value, workCenterCode: selectedNode.value.code },
+    })
+  }
+
+  const revealedNodeKey = shallowRef<string>()
+  const creationNotice = shallowRef('')
+  async function revealCreatedNode(type: NodeType, item: DirectoryCreatedItem) {
+    const key = `${type}:${item.code}`
+    revealedNodeKey.value = undefined
+    creationNotice.value = ''
+    await refreshAll()
+    const path = pathTo(key, tree.value)
+    if (!path.length) {
+      creationNotice.value = `已创建「${item.name}」，暂未在目录中找到，请刷新后查看。`
+      return
+    }
+    for (const ancestor of path.slice(0, -1)) expanded.add(nodeKey(ancestor))
+    if (!pathTo(key, filteredForest.value).length) {
+      creationNotice.value = `已创建「${item.name}」，当前搜索词将其隐藏。清空搜索即可查看。`
+      return
+    }
+    selectedKey.value = key
+    revealedNodeKey.value = key
   }
 
   // ================= 编辑（编码只读；改名 + 改挂上级，归属经 update 透传） =================
@@ -723,6 +758,11 @@ export function useFacilitiesPage() {
     nodeKey,
     openCreateChild,
     openCreateRoot,
+    openRelatedStation,
+    stationLine,
+    revealedNodeKey,
+    creationNotice,
+    revealCreatedNode,
     openEdit,
     refreshAll,
     requestLifecycle,

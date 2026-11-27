@@ -8,6 +8,7 @@ import { i18n } from '@/i18n'
 const stub = vi.hoisted(() => ({
   assign: vi.fn().mockResolvedValue({}),
   matrixRefresh: vi.fn(),
+  matrixError: undefined as Error | undefined,
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
   // 可被各用例覆写的矩阵数据源（默认含一名工人 + 一项技能）。
@@ -94,7 +95,7 @@ function stubSkillMatrix() {
     refresh: stub.matrixRefresh,
     skillCodes: computed(() => stub.skillCodes),
     rows: computed(() => stub.rows),
-    matrixError: shallowRef(undefined),
+    matrixError: shallowRef(stub.matrixError),
     matrixPending: shallowRef(false),
   }
 }
@@ -185,6 +186,9 @@ describe('master-data skills page (matrix)', () => {
     expect(wrapper.text()).not.toContain('SKILL-A')
     // level → 中文。
     expect(wrapper.text()).toContain('高级')
+    expect(wrapper.text()).toContain('已登记资格中无临期或过期项')
+    await wrapper.get('input[placeholder="搜索工人姓名 / 工号 / 部门"]').setValue('没有匹配的姓名')
+    expect(wrapper.text()).toContain('没有符合条件的工人')
     // 已删除「建设中」文案。
     expect(wrapper.text()).not.toContain('建设中')
   })
@@ -221,9 +225,24 @@ describe('master-data skills page (matrix)', () => {
     const wrapper = mount(SkillsPage, { global: { stubs: layoutStub } })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('还没有任何技能登记')
+    expect(wrapper.text()).toContain('尚未登记技能')
     const goBtn = wrapper.findAll('button').find((b) => b.text().includes('去登记技能'))
     expect(goBtn).toBeTruthy()
+    expect(
+      wrapper.findAll('button').filter((button) => button.text().includes('登记技能')),
+    ).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('已登记资格中无临期或过期项')
+  })
+
+  it('读取失败时显示失败反馈，避免误报零登记', async () => {
+    resetMatrix()
+    stub.matrixError = new Error('offline')
+    const wrapper = mount(SkillsPage, { global: { stubs: layoutStub } })
+    stub.matrixError = undefined
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('技能矩阵加载失败')
+    expect(wrapper.text()).not.toContain('尚未登记技能')
+    expect(wrapper.text()).not.toContain('已登记资格中无临期或过期项')
   })
 
   it('blocks assignment on empty required fields with summary alert and no assign call', async () => {

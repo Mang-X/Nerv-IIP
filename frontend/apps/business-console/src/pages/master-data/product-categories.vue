@@ -285,6 +285,9 @@ async function confirmArchive() {
               </p>
 
               <FormSectionTitle>基本信息</FormSectionTitle>
+              <p v-if="!editingCode" class="text-sm text-muted-foreground">
+                分类编码将在创建后自动生成
+              </p>
               <NvFieldGroup class="grid gap-3 sm:grid-cols-2">
                 <NvField :data-invalid="showErrors && !nameValid">
                   <NvFieldLabel for="cat-name"

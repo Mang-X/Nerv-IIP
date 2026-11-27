@@ -5,12 +5,12 @@ import MasterDataRowActions from '@/components/masterData/MasterDataRowActions.v
 import { NvButton, NvInput, ScrollArea, NvStatusBadge } from '@nerv-iip/ui'
 import { FactoryIcon, PlusIcon, SearchIcon } from '@lucide/vue'
 import { RouterLink } from 'vue-router'
-import type { ShallowUnwrapRef } from 'vue'
+import { useTemplateRef, watch, shallowRef, type ShallowUnwrapRef } from 'vue'
 import type { useFacilitiesPage } from '../useFacilitiesPage'
 
 type View = ShallowUnwrapRef<ReturnType<typeof useFacilitiesPage>>
 
-defineProps<{
+const props = defineProps<{
   NODE_LABEL: View['NODE_LABEL']
   TREE_TAKE: View['TREE_TAKE']
   allExpanded: View['allExpanded']
@@ -26,6 +26,10 @@ defineProps<{
   nodeKey: View['nodeKey']
   openCreateChild: View['openCreateChild']
   openCreateRoot: View['openCreateRoot']
+  openRelatedStation: View['openRelatedStation']
+  stationLine: View['stationLine']
+  revealedNodeKey: View['revealedNodeKey']
+  creationNotice: View['creationNotice']
   openEdit: View['openEdit']
   requestLifecycle: View['requestLifecycle']
   selectNode: View['selectNode']
@@ -43,6 +47,24 @@ defineProps<{
 const treeSearch = defineModel<View['treeSearch']>('treeSearch', { required: true })
 
 const includeDisabled = defineModel<View['includeDisabled']>('includeDisabled', { required: true })
+const nodeTree = useTemplateRef<HTMLElement>('nodeTree')
+const highlightedKey = shallowRef<string>()
+watch(
+  () => props.revealedNodeKey,
+  (key, _, onCleanup) => {
+    highlightedKey.value = key
+    if (!key) return
+    const node = Array.from(
+      nodeTree.value?.querySelectorAll<HTMLElement>('[data-node-key]') ?? [],
+    ).find((element) => element.dataset.nodeKey === key)
+    node?.scrollIntoView?.({ block: 'nearest' })
+    const timer = setTimeout(() => {
+      highlightedKey.value = undefined
+    }, 2500)
+    onCleanup(() => clearTimeout(timer))
+  },
+  { flush: 'post' },
+)
 </script>
 
 <template>
@@ -110,13 +132,14 @@ const includeDisabled = defineModel<View['includeDisabled']>('includeDisabled', 
             >清空搜索</NvButton
           >
         </div>
-        <ul v-else class="grid gap-0.5" role="tree">
+        <ul v-else class="grid gap-0.5" ref="nodeTree" role="tree">
           <MasterDataTreeNode
             v-for="node in filteredForest"
             :key="nodeKey(node)"
             :node="node"
             :depth="0"
             :expanded="expanded"
+            :highlighted-key="highlightedKey"
             :selected-key="selectedKey"
             :child-label-of="childLabelOf"
             @select="selectNode"
@@ -133,6 +156,9 @@ const includeDisabled = defineModel<View['includeDisabled']>('includeDisabled', 
 
     <!-- 右：详情 -->
     <section class="rounded-lg border border-border bg-card p-4" aria-label="节点详情">
+      <p v-if="creationNotice" class="text-sm text-muted-foreground" role="status">
+        {{ creationNotice }}
+      </p>
       <div v-if="!selectedNode" class="grid place-items-center gap-2 py-16 text-center">
         <FactoryIcon class="size-8 text-muted-foreground" aria-hidden="true" />
         <p class="text-sm text-muted-foreground">从左侧选择一个节点查看详情。</p>
@@ -224,7 +250,17 @@ const includeDisabled = defineModel<View['includeDisabled']>('includeDisabled', 
         </div>
 
         <!-- 工作中心 → 设备下钻出口 -->
-        <div v-if="selectedNode.type === 'work-center'" class="border-t border-border/60 pt-3">
+        <div
+          v-if="selectedNode.type === 'work-center'"
+          class="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3"
+        >
+          <NvButton v-if="stationLine" type="button" size="sm" @click="openRelatedStation">
+            <PlusIcon aria-hidden="true" />
+            新建关联工位
+          </NvButton>
+          <p v-else class="text-sm text-muted-foreground">
+            工作中心或所属产线不可用，暂不能新建关联工位。
+          </p>
           <NvButton as-child size="sm" variant="outline">
             <RouterLink
               :to="{ path: '/master-data/devices', query: { workCenterCode: selectedNode.code } }"

@@ -49,6 +49,11 @@ const {
   nodeKey,
   openCreateChild,
   openCreateRoot,
+  openRelatedStation,
+  stationLine,
+  revealedNodeKey,
+  creationNotice,
+  revealCreatedNode,
   openEdit,
   refreshAll,
   requestLifecycle,
@@ -133,6 +138,10 @@ const {
       :node-key="nodeKey"
       :open-create-child="openCreateChild"
       :open-create-root="openCreateRoot"
+      :open-related-station="openRelatedStation"
+      :station-line="stationLine"
+      :revealed-node-key="revealedNodeKey"
+      :creation-notice="creationNotice"
       :open-edit="openEdit"
       :request-lifecycle="requestLifecycle"
       :select-node="selectNode"
@@ -171,6 +180,7 @@ const {
       :key="creating.session"
       v-model:open="createOpen"
       v-bind="creating.bindings"
+      @created="revealCreatedNode(creating.type, $event)"
     />
     <MasterDataLifecycleDialog :controller="lifecycle" />
   </BusinessLayout>

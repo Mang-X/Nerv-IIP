@@ -353,7 +353,12 @@ describe('master-data scheduling page', () => {
     expect(actionStub.calFetchDetail).toHaveBeenCalledWith('CAL-A')
     // 每周工作模式 chip 在月历上方。
     expect(wrapper.text()).toContain('每周工作模式')
-    // 月历图例存在。
+    // 日期格仍提供状态标签，并继续作为节假日与例外日入口。
+    const monthGrid = wrapper.get('.grid-cols-7')
+    const days = monthGrid.findAll('button:not(:disabled)')
+    expect(days.length).toBeGreaterThanOrEqual(28)
+    expect(days[0]!.attributes('aria-label')).toBeTruthy()
+    expect(days[0]!.classes()).toContain('h-11')
     expect(wrapper.text()).toContain('法定节假日')
     expect(wrapper.text()).toContain('例外日')
   })

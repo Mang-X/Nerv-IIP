@@ -179,7 +179,14 @@ const columns: NvDataTableColumn<BusinessConsoleResourceItem>[] = [
   { key: 'displayName', header: '名称', accessor: (r) => r.displayName ?? '无' },
   { key: 'roles', header: '角色', width: 'w-40' },
   { key: 'taxId', header: '税号', width: 'w-44', accessor: (r) => r.taxId ?? '无' },
-  { key: 'creditLimit', header: '信用额度', width: 'w-36', accessor: (r) => formatCreditLimit(r) },
+  {
+    key: 'creditLimit',
+    header: '信用额度',
+    width: 'w-36',
+    align: 'end',
+    cellClass: 'tabular-nums',
+    accessor: (r) => formatCreditLimit(r),
+  },
   { key: 'active', header: '状态', width: 'w-24' },
   {
     key: 'snapshotVersion',
@@ -196,7 +203,7 @@ function partnerDetailFields(row: BusinessConsoleResourceItem) {
     { label: '名称', value: row.displayName ?? '' },
     { label: '角色', value: rolesLabel(row) },
     { label: '统一社会信用代码', value: row.taxId ?? '' },
-    { label: '信用额度', value: formatCreditLimit(row) },
+    { label: '信用额度', value: formatCreditLimit(row), valueClass: 'text-right tabular-nums' },
   ]
 }
 
@@ -337,11 +344,13 @@ function customerCreditPatch() {
     creditCurrencyCode: createForm.creditCurrencyCode,
   }
 }
+const creditLimitFormatter = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 21 })
+
 function formatCreditLimit(
   row: Pick<BusinessConsoleResourceItem, 'creditLimit' | 'creditCurrencyCode'>,
 ) {
   if (row.creditLimit === undefined || row.creditLimit === null) return '无'
-  return `${row.creditCurrencyCode ?? ''} ${row.creditLimit}`.trim()
+  return `${row.creditCurrencyCode ?? ''} ${creditLimitFormatter.format(row.creditLimit)}`.trim()
 }
 </script>
 

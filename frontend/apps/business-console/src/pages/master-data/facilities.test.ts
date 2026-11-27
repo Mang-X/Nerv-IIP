@@ -674,6 +674,26 @@ describe('master-data facilities tree page', () => {
     )
   })
 
+  it('从工作中心新建关联工位时保留产线归属与工作中心关联', async () => {
+    const wrapper = mount(FacilitiesPage, mountOpts)
+    await flushPromises()
+    await findNodeButton(wrapper, '焊接中心')!.trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().trim() === '新建关联工位')!
+      .trigger('click')
+    expect(wrapper.find('#station-line').exists()).toBe(false)
+    await wrapper.get('#station-name').setValue('拧紧工位')
+    await wrapper
+      .findAll('form')
+      .find((form) => form.find('#station-name').exists())!
+      .trigger('submit')
+    await flushPromises()
+    expect(stub.createStation).toHaveBeenLastCalledWith(
+      expect.objectContaining({ name: '拧紧工位', lineCode: 'LINE-A', workCenterCode: 'WC-A' }),
+    )
+  })
+
   it('编辑工位：带出原关联的工作中心，取消关联时提交空串', async () => {
     actionStub.update.mockClear()
     const detail = { name: '前桥一号工位', lineCode: 'LINE-A', workCenterCode: 'WC-A' }

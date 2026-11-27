@@ -312,7 +312,7 @@ describe('工装与模具维护台', () => {
     await wrapper.find('form').trigger('submit')
 
     expect(state.register).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('请修正已标红的字段，并完整填写带 * 的必填项')
+    expect(wrapper.text()).toContain('请检查标红字段后再提交。')
     expect(wrapper.text()).toContain('请填写工装名称。')
     expect(wrapper.text()).toContain('请选择工装类型。')
     expect(wrapper.text()).toContain('使用寿命必须是正整数。')

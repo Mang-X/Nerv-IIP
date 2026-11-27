@@ -26,6 +26,7 @@ const props = withDefaults(
     disabled?: boolean
     id?: string
     ariaLabel?: string
+    ariaDescribedby?: string
     /** 校验未通过时给选择器描红（与输入框的红框保持一致）。 */
     invalid?: boolean
     /** 已选标签区的空态文案。 */
@@ -115,11 +116,12 @@ function remove(code: string) {
       :loading="loading"
       :disabled="disabled"
       :aria-label="ariaLabel"
+      :aria-describedby="ariaDescribedby"
+      :invalid="invalid"
       :search="search"
       :server-search="serverSearch"
       :total-count="totalCount"
       :search-placeholder="searchPlaceholder"
-      :class="invalid ? '[&>button]:border-destructive' : undefined"
       @update:model-value="add"
       @update:search="emit('update:search', $event)"
     />
@@ -142,6 +144,8 @@ function remove(code: string) {
         </button>
       </NvBadge>
     </div>
-    <p v-else class="text-xs text-muted-foreground">{{ selectionEmptyText }}</p>
+    <p v-else-if="selectionEmptyText" class="text-xs text-muted-foreground">
+      {{ selectionEmptyText }}
+    </p>
   </div>
 </template>

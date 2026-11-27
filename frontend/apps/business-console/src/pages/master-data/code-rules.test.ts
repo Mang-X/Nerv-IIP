@@ -109,6 +109,22 @@ beforeEach(() => {
 })
 
 describe('编码规则版本的变更原因', () => {
+  it('默认显示段摘要，展开修改后收起保留输入，提交失败自动展开并定位', async () => {
+    await openVersionForm()
+    const summary = wrapper!.get('button[aria-controls="cr-segment-0"]')
+    expect(summary.attributes('aria-expanded')).toBe('false')
+    expect(summary.text()).toContain('宽 4')
+    await summary.trigger('click')
+    await wrapper!.get('#cr-width-0').setValue('0')
+    await summary.trigger('click')
+    expect(summary.text()).toContain('宽 0')
+    await wrapper!.get('#cr-reason').setValue('调整流水号')
+    await submitVersionForm()
+    expect(summary.attributes('aria-expanded')).toBe('true')
+    expect(document.activeElement?.id).toBe('cr-width-0')
+    expect(stub.createRuleVersion).not.toHaveBeenCalled()
+  })
+
   it('提交后内联拒绝空值与 Unicode 空白，且不发请求', async () => {
     await openVersionForm()
 

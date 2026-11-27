@@ -454,12 +454,14 @@ async function confirmRestore() {
       </template>
       <template #cell-teams="{ row }">
         <div v-if="row.teams?.length" class="flex flex-wrap gap-1">
-          <NvStatusBadge
+          <div
             v-for="team in row.teams"
             :key="team.teamCode"
-            :label="team.isLeader ? `${team.teamName} · 组长` : (team.teamName ?? '')"
-            :tone="team.isLeader ? 'info' : 'neutral'"
-          />
+            class="flex min-w-0 items-center gap-1"
+          >
+            <span class="whitespace-normal break-words">{{ team.teamName || team.teamCode }}</span>
+            <NvStatusBadge v-if="team.isLeader" label="组长" tone="info" class="shrink-0" />
+          </div>
         </div>
         <span v-else class="text-muted-foreground">未编组</span>
       </template>

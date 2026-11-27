@@ -8,6 +8,7 @@ import {
   usePersonnelSkillMatrix,
   useBusinessWorkers,
 } from '@/composables/master-data'
+import { useReturnFocusOnClose } from '@/composables/shared/useReturnFocusOnClose'
 import { useSkillCatalog } from '@/composables/master-data/usePromotedCatalogs'
 import CarriedContextSummary from '@/components/business/CarriedContextSummary.vue'
 import WorkerSelect from '@/components/masterData/WorkerSelect.vue'
@@ -22,7 +23,6 @@ import {
   NvDialogFooter,
   NvDialogHeader,
   NvDialogTitle,
-  NvDialogTrigger,
   NvField,
   NvFieldDescription,
   NvFieldGroup,
@@ -183,6 +183,11 @@ const hasDimensions = computed(
   () => matrix.skillCodes.value.length > 0 && matrix.rows.value.length > 0,
 )
 
+const hasRegistrations = computed(() => !matrixListError.value && hasDimensions.value)
+const isEmpty = computed(
+  () => !matrixListError.value && !hasDimensions.value && !matrix.matrixPending.value,
+)
+
 function refreshAll() {
   void matrix.refresh()
   void refreshSkillCatalog()
@@ -208,7 +213,9 @@ watch(skillOpen, (open) => {
 // 从矩阵格子进入时，工人与技能由该格带出：只读展示，不再给挑选控件。
 const assignLockedUser = ref(false)
 const assignLockedSkill = ref(false)
+let restoreAssignFocus: ReturnType<typeof useReturnFocusOnClose> | undefined
 function openAssign(prefill?: { userId?: string; skillCode?: string }) {
+  restoreAssignFocus = useReturnFocusOnClose()
   Object.assign(skillForm, {
     userId: prefill?.userId ?? '',
     skillCode: prefill?.skillCode ?? '',
@@ -247,7 +254,7 @@ async function submitSkill() {
     <NvPageHeader
       title="人员技能"
       :breadcrumbs="[{ label: '基础数据' }]"
-      :count="`${matrix.rows.value.length} 名工人`"
+      :count="hasRegistrations ? `已登记技能的工人 ${matrix.rows.value.length} 人` : undefined"
     >
       <template #actions>
         <NvButton
@@ -260,7 +267,7 @@ async function submitSkill() {
           <RefreshCwIcon aria-hidden="true" />
           刷新
         </NvButton>
-        <NvButton size="sm" type="button" @click="openAssign()">
+        <NvButton v-if="!isEmpty" size="sm" type="button" @click="openAssign()">
           <PlusIcon aria-hidden="true" />
           登记技能
         </NvButton>
@@ -272,16 +279,15 @@ async function submitSkill() {
       / 过期会高亮提醒。
     </p>
 
-    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+    <div v-if="hasRegistrations" class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
       <!-- 工人与技能项是两种不同量纲的计数，不构成同一总量，用并列 Strip。 -->
       <NvMetricStrip
         :cells="[
           {
             key: 'workers',
-            label: '在岗工人',
+            label: '已登记技能的工人',
             value: matrix.rows.value.length,
             unit: '人',
-            meta: '已登记任一技能',
           },
           {
             key: 'skills',
@@ -303,17 +309,21 @@ async function submitSkill() {
             ? { label: `${expiryStats.past} 项已过期`, tone: 'danger' }
             : expiryStats.soon > 0
               ? { label: `${expiryStats.soon} 项临期`, tone: 'warning' }
-              : { label: '资格齐备', tone: 'success' }
+              : undefined
         "
         :foot-start="
           expiryStats.past + expiryStats.soon > 0
             ? '过期资格会挡住派工，临期（30 天内到期）需提前安排复评。'
-            : '所有技能资格都在有效期内。'
+            : '已登记资格中无临期或过期项。'
         "
       />
     </div>
 
-    <NvToolbar v-model:search="keyword" search-placeholder="搜索工人姓名 / 工号 / 部门">
+    <NvToolbar
+      v-if="hasRegistrations"
+      v-model:search="keyword"
+      search-placeholder="搜索工人姓名 / 工号 / 部门"
+    >
       <template #filters>
         <NvSelect v-model="skillFilter">
           <NvSelectTrigger class="w-44"><NvSelectValue placeholder="按技能筛选" /></NvSelectTrigger>
@@ -333,12 +343,10 @@ async function submitSkill() {
 
     <!-- 空态：无维度（无工人 / 无技能登记）→ 引导去登记，绝不造假数据网格。 -->
     <div
-      v-if="!hasDimensions && !matrix.matrixPending.value"
+      v-else-if="isEmpty"
       class="flex flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/20 px-4 py-12 text-center"
     >
-      <p class="text-sm text-muted-foreground">
-        还没有任何技能登记，先为工人登记一项技能即可生成矩阵。
-      </p>
+      <p class="text-sm text-muted-foreground">尚未登记技能</p>
       <NvButton size="sm" type="button" @click="openAssign()">
         <PlusIcon aria-hidden="true" />
         去登记技能
@@ -347,7 +355,7 @@ async function submitSkill() {
 
     <!-- 筛选无结果。 -->
     <div
-      v-else-if="hasDimensions && filteredRows.length === 0"
+      v-else-if="hasRegistrations && filteredRows.length === 0"
       class="flex flex-col items-center gap-3 rounded-md border border-dashed border-border bg-muted/20 px-4 py-12 text-center"
     >
       <p class="text-sm text-muted-foreground">
@@ -369,8 +377,12 @@ async function submitSkill() {
       >
     </div>
 
+    <p v-else-if="matrix.matrixPending.value" class="text-sm text-muted-foreground" role="status">
+      加载技能矩阵中…
+    </p>
+
     <!-- 矩阵网格：横向可滚、首列（工人）冻结。 -->
-    <div v-else class="overflow-x-auto rounded-md border border-border">
+    <div v-else-if="hasRegistrations" class="overflow-x-auto rounded-md border border-border">
       <table class="w-full border-collapse text-sm">
         <thead>
           <tr class="border-b border-border bg-muted/40">
@@ -447,10 +459,7 @@ async function submitSkill() {
 
     <!-- 登记 Dialog：录入 / 更新某工人某技能等级；可由「登记技能」按钮或格子点击触发。 -->
     <NvDialog v-model:open="skillOpen">
-      <NvDialogTrigger class="sr-only" as-child>
-        <button type="button">登记技能</button>
-      </NvDialogTrigger>
-      <NvDialogContent class="sm:max-w-lg">
+      <NvDialogContent class="sm:max-w-lg" @close-auto-focus="restoreAssignFocus?.($event)">
         <NvDialogHeader>
           <NvDialogTitle>登记人员技能</NvDialogTitle>
           <NvDialogDescription class="sr-only">
