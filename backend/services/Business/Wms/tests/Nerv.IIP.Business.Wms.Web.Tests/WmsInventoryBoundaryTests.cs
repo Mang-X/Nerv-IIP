@@ -1249,6 +1249,34 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
+    public async Task Blocked_supplier_return_reserves_the_original_location_and_unlotted_stock()
+    {
+        await using var db = CreateContext();
+        var outbound = OutboundOrder.Create("org-001", "env-dev", "RTS-001",
+            Nerv.IIP.Contracts.Wms.WmsSourceDocumentTypes.PurchaseReceiptReturn, "GR-001", "SITE-01",
+            [new OutboundOrderLineDraft("PO-LINE-001", "SKU-001", "kg", 2m, "LOC-STAGE",
+                null, null, "blocked", "company", null)]);
+        db.OutboundOrders.Add(outbound);
+        await db.SaveChangesAsync();
+        var inventory = new FakeWmsInventoryReservationClient("res-original");
+        var handler = new CreatePickingTaskCommandHandler(db, inventory);
+        var picking = new CreatePickingTaskCommand(outbound.Id, "PICK-001", "PO-LINE-001", "LOC-STAGE", "PACK-01", 2m);
+
+        await Assert.ThrowsAsync<KnownException>(() =>
+            handler.Handle(picking with { FromLocationCode = "LOC-OTHER" }, CancellationToken.None));
+        Assert.Empty(inventory.Requests);
+
+        await handler.Handle(picking, CancellationToken.None);
+
+        Assert.Empty(inventory.FefoRequests);
+        var reservation = Assert.Single(inventory.Requests);
+        Assert.Equal("PO-LINE-001", reservation.SourceDocumentLineId);
+        Assert.Equal("LOC-STAGE", reservation.LocationCode);
+        Assert.Equal("blocked", reservation.QualityStatus);
+        Assert.Null(reservation.LotNo);
+    }
+
+    [Fact]
     public async Task Picking_task_reserves_inventory_and_outbound_completion_carries_reservation_id()
     {
         await using var dbContext = CreateContext();

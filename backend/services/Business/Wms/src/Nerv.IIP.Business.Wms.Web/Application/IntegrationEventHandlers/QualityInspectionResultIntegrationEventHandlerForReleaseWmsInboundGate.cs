@@ -1,8 +1,7 @@
 using DotNetCore.CAP;
 using Microsoft.EntityFrameworkCore;
-using Nerv.IIP.Business.Wms.Domain.AggregatesModel.OutboundOrderAggregate;
+using Nerv.IIP.Business.Wms.Web.Application.Commands;
 using Nerv.IIP.Business.Wms.Domain.AggregatesModel.InboundOrderAggregate;
-using Nerv.IIP.Business.Wms.Domain.AggregatesModel.SupplierReturnAggregate;
 using Nerv.IIP.Contracts.Quality;
 using Nerv.IIP.Contracts.Wms;
 using Nerv.IIP.Messaging.CAP;
@@ -118,7 +117,7 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
                 var sourceDocumentId = string.Equals(inbound.SourceDocumentType, WmsSourceDocumentTypes.PurchaseReceipt, StringComparison.OrdinalIgnoreCase)
                     ? inbound.SourceDocumentId
                     : inbound.InboundOrderNo;
-                dbContext.OutboundOrders.Add(CreateSupplierReturnOutboundOrder(supplierReturn, sourceDocumentId));
+                dbContext.OutboundOrders.Add(SupplierReturnOutbound.Create(supplierReturn, sourceDocumentId, WmsReceivingQualityStatuses.Quality));
             }
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
@@ -142,28 +141,6 @@ public sealed class QualityInspectionResultIntegrationEventHandlerForReleaseWmsI
                 && x.EnvironmentId == integrationEvent.EnvironmentId
                 && x.SupplierReturnNo == supplierReturnNo,
             cancellationToken);
-    }
-
-    private static OutboundOrder CreateSupplierReturnOutboundOrder(SupplierReturnRequest supplierReturn, string sourceDocumentId)
-    {
-        return OutboundOrder.Create(
-            supplierReturn.OrganizationId,
-            supplierReturn.EnvironmentId,
-            supplierReturn.SupplierReturnNo,
-            WmsSourceDocumentTypes.PurchaseReceiptReturn,
-            sourceDocumentId,
-            supplierReturn.SiteCode,
-            [new OutboundOrderLineDraft(
-                supplierReturn.InboundOrderLineNo,
-                supplierReturn.SkuCode,
-                supplierReturn.UomCode,
-                supplierReturn.Quantity,
-                supplierReturn.LocationCode,
-                supplierReturn.LotNo,
-                supplierReturn.SerialNo,
-                WmsReceivingQualityStatuses.Quality,
-                supplierReturn.OwnerType,
-                supplierReturn.OwnerId)]);
     }
 
     private Task DeadLetterAsync(

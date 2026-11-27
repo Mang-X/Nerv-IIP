@@ -34,4 +34,4 @@ ERP 取消与 ERP 收货受理竞争同一个采购订单版本。WMS 来源事�
 
 ERP 批次受理事件携带原 WMS 批次 UUID。Quality 以 ERP 收货单号和原采购行生成待检任务，提交结果时发布同一批次和原行号。WMS 按组织、环境、批次和 ERP 收货单号定位绑定，再核对原行、SKU、物料批号和实收量。遇到 `erp-receipt-acceptance-not-bound`，先恢复原批次绑定，再重放原死信。遇到 `erp-receipt-quality-result-conflict`，保留首个已记录判定并核对 ERP、WMS、Quality 三方事实。
 
-有待检行的批次须等所有待检行完成合格或让步放行，再刷新入库单并执行完成。合格行过账到非限制库存（`unrestricted`），让步放行行过账到限制库存（`restricted`）。待检或有拒收行的批次停在库存过账前。保持生产收货归属配置关闭，直到跨服务收货、检验、库存回执和拒收处置通过上线验收。
+有待检行的批次须等所有待检行完成判定，再刷新入库单并执行完成。合格行进入非限制库存（`unrestricted`），让步放行行进入限制库存（`restricted`），拒收行在原收货暂存位进入冻结库存（`blocked`）。全部原行的 Inventory 回执提交时，WMS 为每个拒收行生成一张退供申请及出库单。按原暂存位拣货，ERP 以原收货单号及采购行接收退供出库完成事实，沿用[采购退货会计规则](../architecture/business/erp-return-accounting.md)。保持生产收货归属配置关闭，直到跨服务收货、检验、库存回执和拒收处置通过上线验收。

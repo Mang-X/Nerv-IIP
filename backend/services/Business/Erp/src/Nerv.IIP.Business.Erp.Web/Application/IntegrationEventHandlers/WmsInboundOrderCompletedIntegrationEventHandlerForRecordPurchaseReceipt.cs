@@ -263,7 +263,8 @@ public sealed class WmsInboundOrderCompletedIntegrationEventHandlerForRecordPurc
         acceptedStatus switch
         {
             ErpReceiptQualityStatuses.Unrestricted => postedStatus == InventoryQualityStatuses.Unrestricted,
-            ErpReceiptQualityStatuses.Quality => postedStatus is InventoryQualityStatuses.Unrestricted or InventoryQualityStatuses.Restricted,
+            ErpReceiptQualityStatuses.Quality => postedStatus is InventoryQualityStatuses.Unrestricted or InventoryQualityStatuses.Restricted
+                or InventoryQualityStatuses.Blocked,
             _ => false,
         };
 

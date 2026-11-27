@@ -1706,9 +1706,10 @@
         "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Inbound_projection_conflict_rolls_back_and_redelivery_applies_once",
         "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Bound_completion_rejects_wrong_reference_and_acknowledges_only_the_accepted_receipt",
         "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Bound_completion_acknowledges_restricted_stock_without_rebooking_the_inspected_receipt",
+        "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Bound_completion_acknowledges_blocked_stock_without_rebooking_the_inspected_receipt",
         "Nerv.IIP.Business.Erp.Web.Tests.PurchaseReceiptPostingRoutePostgresTests.Wms_batches_and_cancellation_share_the_purchase_order_write_boundary"
       ],
-      "expectedRuntimeTestCount": 7
+      "expectedRuntimeTestCount": 8
     },
     {
       "id": "erp-wms-purchase-receipt-acceptance",
@@ -2046,9 +2047,10 @@
         "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Ambiguous_ack_replays_the_frozen_batch_and_committed_actual_survives_cancellation",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Bound_unrestricted_receipt_posts_frozen_cost_and_retries_the_same_movement",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Bound_inspected_receipt_posts_pass_and_concession_at_frozen_cost_after_both_decisions",
+        "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Bound_rejection_posts_quarantine_stock_and_opens_one_return_after_all_acknowledgements",
         "Nerv.IIP.Business.Wms.Web.Tests.WmsPurchaseOrderReleasePostgresTests.Migration_separates_unbound_candidate_requests_from_confirmed_history"
       ],
-      "expectedRuntimeTestCount": 23
+      "expectedRuntimeTestCount": 24
     }
   ]
 }

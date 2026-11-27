@@ -276,7 +276,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
 
         if (lines.Any(line => !line.CanPostErpReceiptStock))
         {
-            throw new InvalidOperationException("ERP 收货批次的所有待检行须合格或让步放行后才能过账。");
+            throw new InvalidOperationException("ERP 收货批次的所有待检行须完成检验判定后才能过账。");
         }
     }
 
@@ -437,7 +437,8 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
                 line.SkuCode,
                 line.UomCode,
                 SiteCode,
-                InventoryLocationFor(line, inventoryLocationByLine),
+                line.ErpReceiptInspectionResult == InboundQualityGateStatuses.Rejected
+                    ? line.StagingLocationCode : InventoryLocationFor(line, inventoryLocationByLine),
                 line.LotNo,
                 line.SerialNo,
                 RequiresErpReceiptAcceptance ? line.ErpReceiptPostingQualityStatus : line.ReceiptQualityStatus,
@@ -477,7 +478,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         decimal inspectedQuantity,
         string? dispositionReason)
     {
-        if (Status != InboundOrderStatus.PendingQualityCheck && Status != InboundOrderStatus.Completed)
+        if (RequiresErpReceiptAcceptance || Status is not (InboundOrderStatus.PendingQualityCheck or InboundOrderStatus.Completed))
         {
             throw new InvalidOperationException("Quality inspection result can only be applied after inbound completion.");
         }
@@ -495,6 +496,12 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             return null;
         }
 
+        return CreateSupplierReturn(line, inspectionRecordId, inspectedQuantity, dispositionReason);
+    }
+
+    private SupplierReturnRequest CreateSupplierReturn(
+        InboundOrderLine line, string inspectionRecordId, decimal inspectedQuantity, string? dispositionReason)
+    {
         return SupplierReturnRequest.Create(
             OrganizationId,
             EnvironmentId,
@@ -544,7 +551,7 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
         }
     }
 
-    public void AcknowledgeErpReceiptPosting()
+    public IReadOnlyCollection<SupplierReturnRequest> AcknowledgeErpReceiptPosting()
     {
         EnsureErpReceiptCanPost();
         if (Status is not (InboundOrderStatus.InventoryPostingPending or InboundOrderStatus.InventoryPostingFailed))
@@ -552,16 +559,23 @@ public sealed class InboundOrder : Entity<InboundOrderId>, IAggregateRoot
             throw new InvalidOperationException("Only pending or failed ERP receipt posting can be acknowledged.");
         }
 
+        var supplierReturns = new List<SupplierReturnRequest>();
         foreach (var line in lines.Where(line => line.RequiresQualityInspection))
         {
-            line.ApplyInspectionResult(line.ErpReceiptInspectionResult!, line.ErpReceiptInspectionRecordId!,
-                line.ErpReceiptInspectedQuantity!.Value, line.ErpReceiptInspectionReason);
+            var recordId = line.ErpReceiptInspectionRecordId!;
+            var quantity = line.ErpReceiptInspectedQuantity!.Value;
+            line.ApplyInspectionResult(line.ErpReceiptInspectionResult!, recordId, quantity, line.ErpReceiptInspectionReason);
+            if (line.QualityGateStatus == InboundQualityGateStatuses.Rejected)
+            {
+                supplierReturns.Add(CreateSupplierReturn(line, recordId, quantity, line.ErpReceiptInspectionReason));
+            }
         }
 
         Status = InboundOrderStatus.Completed;
         CompletedAtUtc = DateTime.UtcNow;
         AdvanceVersion();
         this.AddDomainEvent(new InboundOrderCompletedDomainEvent(this));
+        return supplierReturns;
     }
 
     public IReadOnlyCollection<InventoryMovementRequest> RetryInventoryPosting(
@@ -836,13 +850,17 @@ public sealed class InboundOrderLine : Entity<InboundOrderLineId>
 
     internal bool CanPostErpReceiptStock => !RequiresQualityInspection
         || (ErpReceiptInspectionResult is InboundQualityGateStatuses.Passed or InboundQualityGateStatuses.ConditionalReleased
+            or InboundQualityGateStatuses.Rejected
             && ErpReceiptInspectionRecordId is not null && ErpReceiptInspectedQuantity == ReceivedQuantity);
 
     public string ErpReceiptPostingQualityStatus => CanPostErpReceiptStock
-        ? ErpReceiptInspectionResult == InboundQualityGateStatuses.ConditionalReleased
-            ? "restricted"
-            : "unrestricted"
-        : throw new InvalidOperationException("ERP 收货行缺少放行判定。");
+        ? ErpReceiptInspectionResult switch
+        {
+            InboundQualityGateStatuses.ConditionalReleased => "restricted",
+            InboundQualityGateStatuses.Rejected => "blocked",
+            _ => "unrestricted",
+        }
+        : throw new InvalidOperationException("ERP 收货行缺少检验判定。");
 
     public static InboundOrderLine Create(InboundOrderLineDraft draft)
     {
