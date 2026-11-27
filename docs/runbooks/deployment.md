@@ -51,6 +51,15 @@
 
 不要把 `infra/compose/` 的 legacy overlay 当成完整平台拓扑；它只用于已有迁移期验证/发布演练。生成产物进入交付前，运行当前仓库提供的 production deployment artifact / release rehearsal 验证入口；准确脚本名、参数和 impact 以 `scripts/` 与 CI producer 为准。
 
+### Approval 建链调用凭据
+
+存量部署可继续使用原配置。迁移时在 AppHost 设置 `ApprovalCreateChain:Enabled=true`，并在 `ApprovalCreateChain:Scopes` 的每条记录提供 `OrganizationId` 与 `EnvironmentId`。为每个范围按列表下标提供三项 Aspire secret 参数 `approval-create-chain-erp-{index}`、`approval-create-chain-inventory-{index}` 和 `approval-create-chain-gateway-{index}`。每项使用独立凭据，范围列表应覆盖三个调用方实际使用的组织和环境。
+
+1. 先让 Approval 部署支持限定凭据的版本，设置 `ApprovalCreateChain:AllowLegacyBearer=true` 和 `ApprovalCreateChain:ConfigureSenders=false`。
+2. 更新 ERP、Inventory 和 BusinessGateway，并将 `ConfigureSenders` 设为 `true`。在每个配置范围验证采购订单或销售授信审批、盘点调整审批及 Gateway 代用户建链。保留各入口的响应状态和相关 ID。
+3. 确认所有实例已切换后，将 `AllowLegacyBearer` 设为 `false`。验证共享凭据在建链入口收到 `401`，且其他 Approval 入口继续使用各自现有认证。
+4. 若新凭据或范围配置阻断合法建链，先恢复 Approval 的 `AllowLegacyBearer=true`，再关闭发送方的限定凭据配置，检查建链恢复后再继续切换。
+
 ### FileStorage tus 字节落点
 
 FileStorage 的 tus 目录同时承载已 complete 文件的字节，因此部署必须给它一个显式、绝对、持久的位置：

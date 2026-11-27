@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using System.Net;
 using Nerv.IIP.Business.Erp.Web.Application.Approval;
 using Nerv.IIP.Business.Erp.Web.Application.MasterData;
@@ -7,17 +8,27 @@ namespace Nerv.IIP.Business.Erp.Web.Tests;
 
 public sealed class ErpKnownExceptionDynamicBoundaryTests
 {
-    [Fact]
-    public async Task Approval_client_does_not_preserve_downstream_message()
+    [Theory]
+    [InlineData(false, "test-internal-token")]
+    [InlineData(true, "synthetic-erp-approval-token")]
+    public async Task Approval_client_does_not_preserve_downstream_message(bool scoped, string expectedBearer)
     {
-        using var httpClient = new HttpClient(new StubHttpMessageHandler(
+        using var handler = new StubHttpMessageHandler(
             HttpStatusCode.OK,
             "{\"data\":null,\"success\":false,\"message\":\"downstream internal exception\",\"code\":500}",
-            "application/json"))
+            "application/json");
+        using var httpClient = new HttpClient(handler)
         {
             BaseAddress = new Uri("http://approval.test"),
         };
-        var client = new HttpPurchaseOrderApprovalClient(httpClient, new TestInternalServiceTokenProvider());
+        const string scope = "Approval:CreateChain:OutboundCredentials:0:";
+        var configuration = scoped ? new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [scope + "OrganizationId"] = "org-001",
+            [scope + "EnvironmentId"] = "env-dev",
+            [scope + "BearerToken"] = "synthetic-erp-approval-token",
+        }).Build() : null;
+        var client = new HttpPurchaseOrderApprovalClient(httpClient, new TestInternalServiceTokenProvider(), configuration);
 
         var exception = await Assert.ThrowsAsync<KnownException>(() => client.StartApprovalAsync(
             new PurchaseOrderApprovalRequest(
@@ -32,6 +43,7 @@ public sealed class ErpKnownExceptionDynamicBoundaryTests
                 "chain-001"),
             CancellationToken.None));
 
+        Assert.Equal(expectedBearer, handler.BearerToken);
         Assert.Equal("审批服务未返回审批链，请稍后重试。", exception.Message);
         Assert.DoesNotContain("downstream", exception.Message, StringComparison.OrdinalIgnoreCase);
     }

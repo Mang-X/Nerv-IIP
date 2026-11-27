@@ -1,3 +1,4 @@
+using Nerv.IIP.ServiceAuth;
 using System.Globalization;
 using System.Net;
 
@@ -62,7 +63,7 @@ public interface IBusinessApprovalClient
         CancellationToken cancellationToken);
 }
 
-public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : BusinessServiceHttpClient(httpClient), IBusinessApprovalClient
+public sealed class HttpBusinessApprovalClient(HttpClient httpClient, IConfiguration? configuration = null) : BusinessServiceHttpClient(httpClient), IBusinessApprovalClient
 {
     public Task<BusinessConsoleApprovalTemplateListResponse> ListTemplatesAsync(
         string internalBearerToken,
@@ -97,7 +98,8 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient) : Business
         BusinessConsoleStartApprovalChainRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleStartApprovalChainResponse>(
-            internalBearerToken,
+            ScopedCallerOutboundToken.Resolve(configuration?.GetSection("Approval:CreateChain:OutboundCredentials"),
+                request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Post,
             "/api/business/v1/approvals/chains",
             request,
