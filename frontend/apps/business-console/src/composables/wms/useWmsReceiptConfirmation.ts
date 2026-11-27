@@ -6,6 +6,7 @@ import {
 import {
   acquirePendingBusinessIntent,
   clearPendingBusinessIntent,
+  getBusinessWriteErrorStatus,
   peekPendingBusinessIntent,
 } from '@nerv-iip/business-core'
 import { createWmsIdempotencyKey } from './wmsShared'
@@ -82,14 +83,29 @@ export async function submitPurchaseReceipt(
   const intent = acquirePendingBusinessIntent(key, createWmsIdempotencyKey, draft)
   const original = intent.payloadSnapshot as ReceiptDraft
   const { organizationId, environmentId, scopeKind, scopeId } = scope
-  const { data } = await confirmBusinessConsoleWmsInboundReceipt({
-    path: { inboundOrderId: orderId },
-    query: { organizationId, environmentId },
-    body: { ...original, scopeKind, scopeId, idempotencyKey: intent.idempotencyKey },
-    throwOnError: true,
-  })
-  if (!data.success || data.data?.inboundOrderId !== orderId) {
-    throw new Error('实收确认结果待核实，请重试原提交。')
+  try {
+    const { data } = await confirmBusinessConsoleWmsInboundReceipt({
+      path: { inboundOrderId: orderId },
+      query: { organizationId, environmentId },
+      body: { ...original, scopeKind, scopeId, idempotencyKey: intent.idempotencyKey },
+      throwOnError: true,
+    })
+    if (!data.success || data.data?.inboundOrderId !== orderId) {
+      throw new Error('实收确认结果待核实，请重试原提交。')
+    }
+  } catch (error) {
+    if (
+      getBusinessWriteErrorStatus(error) !== 409 ||
+      !error ||
+      typeof error !== 'object' ||
+      !('code' in error) ||
+      error.code !== 'receipt-pre-stage-version-conflict'
+    ) {
+      throw error
+    }
+    clearPendingBusinessIntent(key)
+    return 'stale-before-staging'
   }
   clearPendingBusinessIntent(key)
+  return 'confirmed'
 }

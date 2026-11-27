@@ -37892,7 +37892,7 @@
         "additionalProperties": false,
         "properties": {
           "status": {
-            "type": "string"
+            "$ref": "#/components/schemas/NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptStatus"
           },
           "erpReceiptNo": {
             "type": "string",
@@ -37905,6 +37905,24 @@
             }
           }
         }
+      },
+      "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptStatus": {
+        "type": "string",
+        "description": "",
+        "x-enumNames": [
+          "AwaitingConfirmation",
+          "ErpPending",
+          "ErpAccepted",
+          "WmsConfirmed",
+          "Unavailable"
+        ],
+        "enum": [
+          "awaiting-confirmation",
+          "erp-pending",
+          "erp-accepted",
+          "wms-confirmed",
+          "unavailable"
+        ]
       },
       "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptLine": {
         "type": "object",

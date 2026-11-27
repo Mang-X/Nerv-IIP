@@ -230,10 +230,12 @@ export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleW
 };
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceipt = {
-    status?: string;
+    status?: NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptStatus;
     erpReceiptNo?: string | null;
     lines?: Array<NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptLine>;
 };
+
+export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptStatus = 'awaiting-confirmation' | 'erp-pending' | 'erp-accepted' | 'wms-confirmed' | 'unavailable';
 
 export type NervIipBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceiptLine = {
     lineNo?: string;

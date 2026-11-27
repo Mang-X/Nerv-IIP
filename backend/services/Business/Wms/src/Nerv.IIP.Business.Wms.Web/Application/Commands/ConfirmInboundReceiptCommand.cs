@@ -68,6 +68,7 @@ public sealed class ConfirmInboundReceiptCommandHandler(
     : ICommandHandler<ConfirmInboundReceiptCommand, ConfirmInboundReceiptResult>
 {
     private const string Action = "confirm-inbound-receipt";
+    public const string StableErrorCode = "receipt-pre-stage-version-conflict";
 
     public async Task<ConfirmInboundReceiptResult> Handle(
         ConfirmInboundReceiptCommand request,
@@ -104,13 +105,21 @@ public sealed class ConfirmInboundReceiptCommandHandler(
                 inbound.ErpReceiptAcceptedVersion ?? checked(request.ExpectedVersion + 1));
         }
 
-        WarehouseAssignedResourceCompletionExecution.EnsureExpectedVersion(
-            inbound.Version, request.ExpectedVersion, Action);
         if (inbound.Status != InboundOrderStatus.Open || inbound.ReceiptConfirmationKey is not null
-            || inbound.ReceiptBatchId is not null)
+            || inbound.ReceiptBatchId is not null || inbound.ReceiptRequestKey is not null)
         {
             throw new WmsLifecycleConflictException(Action, inbound.Status.ToString());
         }
+
+        // A superseded version cannot stage on retry. An ahead-of-server version does not prove that.
+        if (request.ExpectedVersion < inbound.Version && inbound.RequiresErpReceiptAcceptance
+            && inbound.Lines.All(line => line.ExpectedQuantity.HasValue && line.ReceivedQuantity == 0m))
+        {
+            throw new WmsLifecycleConflictException(Action, inbound.Status.ToString(), StableErrorCode);
+        }
+
+        WarehouseAssignedResourceCompletionExecution.EnsureExpectedVersion(
+            inbound.Version, request.ExpectedVersion, Action);
 
         try
         {

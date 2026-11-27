@@ -25,6 +25,7 @@ import { notifyOperationFailure, notifySuccess } from '@/utils/notify'
 const props = defineProps<{
   order: BusinessConsoleWmsInboundOrderItem
   scope: WmsReceiptConfirmationScope
+  refreshOrder: () => Promise<unknown>
 }>()
 const emit = defineEmits<{ close: []; refresh: [] }>()
 const id = useId()
@@ -52,14 +53,29 @@ async function submit() {
   const scope = props.scope
   sending.value = true
   try {
-    await submitPurchaseReceipt(scope, orderId, {
+    const draft = original.value ?? {
       expectedVersion: props.order.version!,
       exchangeRate: Number(exchangeRate.value),
-      lines: lines.map(({ lineNo }, index) => ({
-        lineNo,
-        receivedQuantity: Number(quantities.value[index]),
-      })),
-    })
+      lines: lines.map(({ lineNo }, index) => {
+        if (!lineNo) throw new Error('入库单缺少行号，请刷新列表后重试。')
+        return { lineNo, receivedQuantity: Number(quantities.value[index]) }
+      }),
+    }
+    const result = await submitPurchaseReceipt(scope, orderId, draft)
+    if (result === 'stale-before-staging') {
+      try {
+        await props.refreshOrder()
+        notifyOperationFailure(
+          '实收未提交',
+          'receipt-pre-stage-version-conflict',
+          '请核对最新入库单后重新确认实收。',
+        )
+      } catch (error) {
+        notifyOperationFailure('刷新入库单失败', error, '请刷新列表后重新确认实收。')
+      }
+      emit('close')
+      return
+    }
     notifySuccess('ERP 已受理实收')
     emit('close')
   } catch (error) {
@@ -67,8 +83,8 @@ async function submit() {
     notifyOperationFailure('实收确认未完成', error, '请查阅入库单状态，或重试原提交。')
   } finally {
     sending.value = false
-    emit('refresh')
   }
+  emit('refresh')
 }
 </script>
 

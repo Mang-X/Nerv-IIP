@@ -4,6 +4,7 @@
  * 只负责展示，不归一化或猜测相似值；未知值返回空串，由各端保留原有兜底链。
  */
 export const STABLE_ERROR_MESSAGES: Readonly<Record<string, string>> = {
+  'receipt-pre-stage-version-conflict': '入库单已更新，请核对最新信息后重新填写实收数量和汇率。',
   'barcode-resolve-page-invalid': '扫码查询的分页参数有误，请返回扫码页重试。',
   'mes-operation-read-forbidden': '当前账号没有查看工序任务的权限，请联系管理员。',
   'idempotency-key-required': '本次提交缺少操作标识，请刷新后重新发起。',

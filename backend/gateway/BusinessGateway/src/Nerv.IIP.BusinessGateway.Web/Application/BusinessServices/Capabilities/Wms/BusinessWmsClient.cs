@@ -249,6 +249,7 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
     // frontend/apps/business-console/src/utils/wmsReasonCodes.ts; unknown text must stay fail-closed.
     private static readonly HashSet<string> RegisteredLegacySemanticCodes = new(StringComparer.Ordinal)
     {
+        "receipt-pre-stage-version-conflict",
         "outbound-pack-review-not-passed",
         "outbound-picking-task-missing",
         "outbound-picking-not-completed",

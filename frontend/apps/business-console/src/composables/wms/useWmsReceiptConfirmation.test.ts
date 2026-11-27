@@ -45,22 +45,28 @@ describe('purchase receipt confirmation', () => {
     expect(canConfirmPurchaseReceipt({ ...row, status: 'Cancelled' }, undefined)).toBe(false)
   })
 
-  it('reuses the first key, version, scope, quantities and rate after an uncertain result', async () => {
-    confirm.mockRejectedValueOnce(new TypeError('connection lost')).mockResolvedValueOnce({
-      data: { success: true, data: { inboundOrderId: row.inboundOrderId, version: 5 } },
-    })
+  it.each([
+    ['a lost response', new TypeError('connection lost')],
+    ['an unclassified 409', { response: { status: 409 } }],
+    ['a lifecycle conflict', { code: 'lifecycle-conflict', response: { status: 409 } }],
+    ['an idempotency conflict', { code: 'idempotency-conflict', response: { status: 409 } }],
+  ])('replays the original key, version, scope, quantities and rate after %s', async (_, error) => {
+    confirm
+      .mockClear()
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce({
+        data: { success: true, data: { inboundOrderId: row.inboundOrderId, version: 5 } },
+      })
     const draft = {
       expectedVersion: 3,
       exchangeRate: 1.25,
       lines: [{ lineNo: '10', receivedQuantity: 5 }],
     }
-    await expect(submitPurchaseReceipt(scope, row.inboundOrderId, draft)).rejects.toThrow(
-      'connection lost',
-    )
+    await expect(submitPurchaseReceipt(scope, row.inboundOrderId, draft)).rejects.toBe(error)
     const staged = {
       ...row,
       version: 4,
-      purchaseReceipt: { ...row.purchaseReceipt, status: 'erp-pending' },
+      purchaseReceipt: { ...row.purchaseReceipt, status: 'erp-pending' as const },
     }
     expect(canConfirmPurchaseReceipt(staged, undefined)).toBe(false)
     expect(

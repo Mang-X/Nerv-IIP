@@ -16,6 +16,18 @@ namespace Nerv.IIP.BusinessGateway.Web.Tests;
 public sealed class BusinessGatewayOpenApiTests
 {
     [Fact]
+    public async Task Wms_purchase_receipt_openapi_exposes_the_five_wire_statuses()
+    {
+        using var document = JsonDocument.Parse(await BusinessGatewayTestHost.GetOpenApiDocumentAsync());
+        const string prefix = "NervIIPBusinessGatewayWebApplicationBusinessServicesBusinessConsoleWmsPurchaseReceipt";
+        var status = document.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty(prefix).GetProperty("properties").GetProperty("status");
+        Assert.Equal($"#/components/schemas/{prefix}Status", status.GetProperty("$ref").GetString());
+        AssertStringEnumSchema(document, prefix + "Status",
+            "awaiting-confirmation", "erp-pending", "erp-accepted", "wms-confirmed", "unavailable");
+    }
+
+    [Fact]
     public async Task Mes_engineering_change_impacts_openapi_exposes_only_public_filters_and_valid_dispositions()
     {
         using var document = JsonDocument.Parse(await BusinessGatewayTestHost.GetOpenApiDocumentAsync());

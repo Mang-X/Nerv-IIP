@@ -730,6 +730,7 @@ function formatDateTime(value?: string | null) {
       v-if="receiptTarget && receiptScope"
       :order="receiptTarget"
       :scope="receiptScope"
+      :refresh-order="refreshInboundOrders"
       @close="receiptTarget = undefined"
       @refresh="refreshAll"
     />

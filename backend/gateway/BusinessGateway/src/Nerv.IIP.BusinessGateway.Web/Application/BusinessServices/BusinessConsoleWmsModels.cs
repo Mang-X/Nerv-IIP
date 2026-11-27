@@ -1,4 +1,6 @@
 using System.ComponentModel.DataAnnotations;
+using System.Runtime.Serialization;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using FastEndpoints;
 
@@ -551,8 +553,26 @@ public sealed record BusinessConsoleWmsInboundOrderItem(
     IReadOnlyCollection<string>? PostingFailureHistory = null,
     BusinessConsoleWmsPurchaseReceipt? PurchaseReceipt = null);
 
+[JsonConverter(typeof(BusinessConsoleWmsPurchaseReceiptStatusJsonConverter))]
+public enum BusinessConsoleWmsPurchaseReceiptStatus
+{
+    [EnumMember(Value = "awaiting-confirmation")]
+    AwaitingConfirmation,
+    [EnumMember(Value = "erp-pending")]
+    ErpPending,
+    [EnumMember(Value = "erp-accepted")]
+    ErpAccepted,
+    [EnumMember(Value = "wms-confirmed")]
+    WmsConfirmed,
+    [EnumMember(Value = "unavailable")]
+    Unavailable,
+}
+
+public sealed class BusinessConsoleWmsPurchaseReceiptStatusJsonConverter()
+    : JsonStringEnumConverter<BusinessConsoleWmsPurchaseReceiptStatus>(JsonNamingPolicy.KebabCaseLower, allowIntegerValues: false);
+
 public sealed record BusinessConsoleWmsPurchaseReceipt(
-    string Status,
+    [property: JsonRequired] BusinessConsoleWmsPurchaseReceiptStatus Status,
     string? ErpReceiptNo,
     IReadOnlyCollection<BusinessConsoleWmsPurchaseReceiptLine> Lines);
 

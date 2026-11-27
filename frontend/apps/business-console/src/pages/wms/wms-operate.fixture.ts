@@ -84,6 +84,7 @@ const wms = vi.hoisted(() => ({
   refreshOutboundOrders: vi.fn(async () => undefined),
   refreshCountExecutions: vi.fn(async () => undefined),
 }))
+const inboundVersion = shallowRef(3)
 const candidateState = vi.hoisted(() => ({ refresh: vi.fn(async () => undefined) }))
 const routeGuardState = vi.hoisted(() => ({
   guard: undefined as (() => boolean) | undefined,
@@ -149,7 +150,7 @@ vi.mock('@/composables/wms', () => ({
         inboundOrderNo: 'IB-1',
         siteCode: 'SITE-001',
         status: wms.inboundStatus,
-        version: 3,
+        version: inboundVersion.value,
         purchaseReceipt: wms.purchaseReceipt,
         createdAtUtc: '2026-06-01T00:00:00Z',
         qualityGateStatus: wms.qualityGateStatus,
@@ -348,6 +349,7 @@ const resetFixture = () => {
   wms.qualityGateStatus = undefined
   wms.isReleasedForPutaway = true
   wms.inboundStatus = 'open'
+  inboundVersion.value = 3
   wms.confirmReceipt.mockReset()
   wms.purchaseReceipt = undefined
   wms.outboundStatus = 'open'
@@ -362,4 +364,4 @@ const resetFixture = () => {
   ]
 }
 
-export { wms, candidateState, layoutStub, resetFixture, routeGuardState, setInput }
+export { wms, candidateState, inboundVersion, layoutStub, resetFixture, routeGuardState, setInput }

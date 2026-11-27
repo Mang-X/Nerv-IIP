@@ -194,6 +194,68 @@ public sealed partial class BusinessGatewayWmsTests
     }
 
     [Theory]
+    [InlineData("receipt-pre-stage-version-conflict")]
+    [InlineData("lifecycle-conflict")]
+    public async Task Receipt_confirmation_facade_preserves_downstream_conflict_reason(string reason)
+    {
+        var handler = new RecordingHandler(_ =>
+            JsonResponse(
+                HttpStatusCode.Conflict,
+                new
+                {
+                    success = false,
+                    message = reason,
+                }));
+        using var downstreamHttpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://wms.local"),
+        };
+        var wms = new HttpBusinessWmsClient(downstreamHttpClient);
+        var auth = ScopeAuth(
+            [BusinessGatewayPermissions.WmsReceiptsManage],
+            new AuthorizationScopeGrant(
+                "role",
+                "role-warehouse",
+                "site",
+                "SITE-A",
+                [BusinessGatewayPermissions.WmsReceiptsManage]));
+        await using var lease = LeaseHost(auth, services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(wms);
+            services.RemoveAll<IInternalServiceTokenProvider>();
+            services.AddSingleton<IInternalServiceTokenProvider>(
+                new TestInternalServiceTokenProvider("internal-wms-token"));
+        });
+        var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/business-console/v1/wms/inbound-orders/inbound-001/confirm-receipt?organizationId=org-001&environmentId=env-dev",
+            new
+            {
+                scopeKind = "site",
+                scopeId = "SITE-A",
+                idempotencyKey = "receipt-intent",
+                exchangeRate = 1.25m,
+                lines = new[] { new { lineNo = "10", receivedQuantity = 5m } },
+                expectedVersion = 3,
+            });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(
+            reason,
+            document.RootElement.GetProperty("code").GetString());
+        Assert.Equal(
+            reason,
+            document.RootElement.GetProperty("message").GetString());
+        Assert.Empty(document.RootElement.GetProperty("errorData").EnumerateArray());
+        var downstreamRequest = Assert.Single(handler.Requests);
+        Assert.Equal("internal-wms-token", downstreamRequest.Headers.Authorization!.Parameter);
+    }
+
+    [Theory]
     [InlineData("eyJhbGciOiJIUzI1NiJ9.e30.x")]
     [InlineData("TOP-SECRET")]
     [InlineData("sk_live_51H8ExampleApiKey")]
@@ -449,7 +511,23 @@ public sealed partial class BusinessGatewayWmsTests
             {
                 data = request.RequestUri!.AbsolutePath switch
                 {
-                    "/api/business/v1/wms/inbound-orders" => new { items = Array.Empty<object>(), total = 23 },
+                    "/api/business/v1/wms/inbound-orders" => new
+                    {
+                        items = new[]
+                        {
+                            new
+                            {
+                                inboundOrderId = "inbound-order-001",
+                                purchaseReceipt = new
+                                {
+                                    status = "erp-pending",
+                                    erpReceiptNo = (string?)null,
+                                    lines = new[] { new { lineNo = "10", skuCode = "SKU-001", uomCode = "EA", expectedQuantity = 5m } },
+                                },
+                            },
+                        },
+                        total = 23,
+                    },
                     "/api/business/v1/wms/putaway-tasks" => new
                     {
                         items = new[]
@@ -706,6 +784,7 @@ public sealed partial class BusinessGatewayWmsTests
         var returns = await client.ListSupplierReturnRequestsAsync("internal-token-001", new BusinessConsoleWmsListRequest("org-001", "env-dev", 10, 20, "Open", "RTS"), CancellationToken.None);
 
         Assert.Equal(23, inbound.Total);
+        Assert.Equal(BusinessConsoleWmsPurchaseReceiptStatus.ErpPending, Assert.Single(inbound.Items).PurchaseReceipt?.Status);
         Assert.Equal(19, putaway.Total);
         var putawayTask = Assert.Single(putaway.Items);
         Assert.Equal(["start"], putawayTask.AllowedActions);

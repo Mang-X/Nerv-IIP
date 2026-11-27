@@ -473,6 +473,21 @@ public sealed class WmsEndpointContractTests
             lines = [body.lines[0], body.lines[1] with { receivedQuantity = 2m }],
         })).StatusCode);
 
+        using (var assignment = factory.Services.CreateScope())
+        {
+            var db = assignment.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var inbound = await db.InboundOrders.SingleAsync(x => x.Id == id);
+            inbound.AssignWorkPool("POOL-01", "operator", body.expectedVersion);
+            await db.SaveChangesAsync();
+        }
+
+        using var stale = await client.PostAsJsonAsync(route, body);
+        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+        var staleError = await stale.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("receipt-pre-stage-version-conflict", staleError.GetProperty("message").GetString());
+        Assert.Empty(erp.PostedBatchIds);
+        body = body with { expectedVersion = 2, idempotencyKey = "receipt-confirm-fresh" };
+
         var failed = await client.PostAsJsonAsync(route, body);
         using var failure = JsonDocument.Parse(await failed.Content.ReadAsStringAsync());
         Assert.False(failure.RootElement.GetProperty("success").GetBoolean());
@@ -492,6 +507,15 @@ public sealed class WmsEndpointContractTests
         Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync(route, body with { exchangeRate = 2m })).StatusCode);
         Assert.Single(erp.PostedBatchIds);
 
+        using var stagedConflict = await client.PostAsJsonAsync(route, body with
+        {
+            expectedVersion = 1,
+            idempotencyKey = "different-intent",
+        });
+        Assert.Equal(HttpStatusCode.Conflict, stagedConflict.StatusCode);
+        var stagedError = await stagedConflict.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("lifecycle-conflict", stagedError.GetProperty("message").GetString());
+
         var responses = await Task.WhenAll(
             client.PostAsJsonAsync(route, body),
             client.PostAsJsonAsync(route, body with { lines = [body.lines[1], body.lines[0]] }));
@@ -504,7 +528,7 @@ public sealed class WmsEndpointContractTests
         }
         Assert.Equal(results[0], results[1]);
         using var confirmation = JsonDocument.Parse(results[0]);
-        Assert.Equal(3, confirmation.RootElement.GetProperty("data").GetProperty("version").GetInt64());
+        Assert.Equal(4, confirmation.RootElement.GetProperty("data").GetProperty("version").GetInt64());
         Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync(route, body with
         {
             authorizedSiteCodes = ["SITE-02"],
@@ -526,7 +550,7 @@ public sealed class WmsEndpointContractTests
         var persisted = verification.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var order = await persisted.InboundOrders.Include(x => x.Lines).SingleAsync(x => x.Id == id);
         Assert.Equal(InboundOrderStatus.Open, order.Status);
-        Assert.Equal(3, order.Version);
+        Assert.Equal(4, order.Version);
         Assert.Equal("RCV-001", order.ErpPurchaseReceiptNo);
         Assert.Throws<InvalidOperationException>(() => order.Complete("blocked", order.Version));
         Assert.Throws<InvalidOperationException>(() => order.CreatePutawayTask("PUT-2", "10", "STAGE-01", "BIN-01", 5m));
