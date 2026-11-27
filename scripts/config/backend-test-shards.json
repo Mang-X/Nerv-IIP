@@ -136,6 +136,7 @@
         "Nerv.IIP.Business.Acceptance.Tests.PurchaseReceiptPostingRoutePostgresAcceptanceTests",
         "Nerv.IIP.Business.Acceptance.Tests.QualityFirstArticleMesQualityHoldAcceptanceTests",
         "Nerv.IIP.Business.Acceptance.Tests.RuntimeHoursMaintenancePostgresAcceptanceTests",
+        "Nerv.IIP.Business.Acceptance.Tests.ScheduledEngineeringChangeAcceptanceTests",
         "Nerv.IIP.Business.BarcodeLabel.Web.Tests.BarcodeLabelPostgresProfileTests",
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryDirectoryPostgresTests",
         "Nerv.IIP.Business.Inventory.Web.Tests.InventoryPostgresProfileTests",
@@ -176,7 +177,8 @@
         "Nerv.IIP.Business.Quality.Web.Tests.QualitySpcAnalysisTests.Postgres_spc_point_projection_materializes_latest_points_without_client_translation"
       ],
       "excludedTestLanes": [
-        "real-postgres"
+        "real-postgres",
+        "redis-cap"
       ]
     },
     {

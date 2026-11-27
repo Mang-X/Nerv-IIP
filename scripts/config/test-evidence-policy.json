@@ -86,6 +86,12 @@
       "sourceReasonPattern": "^Skip = \"Set NERV_IIP_TEST_POSTGRES and NERV_IIP_TEST_REDIS to run the real PostgreSQL \\+ Redis CAP release-projection backfill proof\\.\";$"
     },
     {
+      "id": "scheduled-eco-mes-impact-postgres-redis",
+      "sourcePath": "backend/tests/Nerv.IIP.Business.Acceptance.Tests/ScheduledEngineeringChangeAcceptanceTests.cs",
+      "sourceOrdinal": 1,
+      "sourceReasonPattern": "^Skip = \"Requires the governed scheduled ECO Redis/CAP lane member and its isolated database\\.\";$"
+    },
+    {
       "id": "mes-asset-unavailable-postgres-redis",
       "sourcePath": "backend/services/Business/Mes/tests/Nerv.IIP.Business.Mes.Web.Tests/MesAssetUnavailableRedisCapTransportTests.cs",
       "sourceOrdinal": 1,
@@ -837,6 +843,25 @@
       "exitCondition": null,
       "testIdentities": [
         "Nerv.IIP.Business.Quality.Web.Tests.WorkOrderReleaseProjectionBackfillRedisCapTransportTests.Redis_cap_transport_routes_the_backfill_topic_to_its_own_consumer_group_and_stays_idempotent_in_postgres"
+      ],
+      "expectedRuntimeTestCount": 1
+    },
+    {
+      "id": "scheduled-eco-mes-impact-postgres-redis",
+      "sourceId": "scheduled-eco-mes-impact-postgres-redis",
+      "classification": "environment-gated",
+      "testPattern": "^Nerv\\.IIP\\.Business\\.Acceptance\\.Tests\\.ScheduledEngineeringChangeAcceptanceTests\\.Future_eco_releases_at_due_scan_and_persists_scoped_work_order_decision_on_redis_cap$",
+      "reasonPattern": "^Requires the governed scheduled ECO Redis/CAP lane member and its isolated database\\.$",
+      "allowedLanes": [
+        "backend"
+      ],
+      "requiredLane": "redis-cap",
+      "allowedOperatingSystems": [],
+      "responsibilityIssue": null,
+      "expiresOn": null,
+      "exitCondition": null,
+      "testIdentities": [
+        "Nerv.IIP.Business.Acceptance.Tests.ScheduledEngineeringChangeAcceptanceTests.Future_eco_releases_at_due_scan_and_persists_scoped_work_order_decision_on_redis_cap"
       ],
       "expectedRuntimeTestCount": 1
     },
