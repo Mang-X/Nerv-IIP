@@ -43,6 +43,8 @@ BusinessGateway 在用户授权通过后，可按组织和环境使用专用凭�
 
 审批模板列表和创建或更新操作分别使用按组织、环境限定的 BusinessGateway 服务凭据。Gateway 继续校验最终用户的审批读取或管理权限。切换步骤见 [部署 Runbook](../../runbooks/deployment.md#approval-模板读取与写入凭据)。
 
+委托列表使用按组织、环境限定的独立 BusinessGateway 服务凭据，Gateway 校验最终用户的审批读取权限。列表切换步骤见 [部署 Runbook](../../runbooks/deployment.md#approval-委托列表凭据)。
+
 BusinessGateway 在创建和撤销审批委托时转发当前主体的 bearer。Approval 创建时验证请求的组织环境，撤销时验证路由目标中持久化的委托组织环境。两条写入路径均需通过 IAM 的 `business.approvals.manage` 和数据范围校验，委托人、创建人或撤销人均来自验证后的主体。受托人和委托条件由业务请求携带。请求及权限登记以 [Approval 端点登记](../../../backend/services/Business/Approval/src/Nerv.IIP.Business.Approval.Web/Endpoints/Approvals/ApprovalEndpoints.cs) 为准。
 
 ## Platform SDK 边界

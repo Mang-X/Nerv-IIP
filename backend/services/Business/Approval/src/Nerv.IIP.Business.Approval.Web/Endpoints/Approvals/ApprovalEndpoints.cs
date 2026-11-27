@@ -674,6 +674,12 @@ public sealed class ListApprovalDelegationsEndpoint(ISender sender)
 
     public override async Task HandleAsync(ListApprovalDelegationsRequest req, CancellationToken ct)
     {
+        if (!ApprovalGatewayOperationAuthorization.ReadDelegations.Allows(User, req.OrganizationId, req.EnvironmentId))
+        {
+            await Send.ForbiddenAsync(ct);
+            return;
+        }
+
         var response = await sender.Send(new ListApprovalDelegationsQuery(
             req.OrganizationId,
             req.EnvironmentId,
@@ -791,7 +797,7 @@ public static class ApprovalEndpointContracts
         new(typeof(ResubmitApprovalChainEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/resubmit", ApprovalPermissionCodes.Manage, null, "resubmitApprovalChain"),
         new(typeof(AddApprovalStepSignerEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/add-signer", ApprovalPermissionCodes.Manage, null, "addApprovalStepSigner"),
         new(typeof(TransferApprovalStepEndpoint), "POST", "/api/business/v1/approvals/chains/{chainId}/steps/{stepNo}/transfer", ApprovalPermissionCodes.Manage, null, "transferApprovalStep"),
-        new(typeof(ListApprovalDelegationsEndpoint), "GET", "/api/business/v1/approvals/delegations", ApprovalPermissionCodes.Read, InternalServiceAuthorizationPolicy.Name, "listApprovalDelegations"),
+        new(typeof(ListApprovalDelegationsEndpoint), "GET", "/api/business/v1/approvals/delegations", ApprovalPermissionCodes.Read, ApprovalGatewayOperationAuthorization.ReadDelegations.PolicyName, "listApprovalDelegations"),
         new(typeof(CreateApprovalDelegationEndpoint), "POST", "/api/business/v1/approvals/delegations", ApprovalPermissionCodes.Manage, null, "createApprovalDelegation"),
         new(typeof(RevokeApprovalDelegationEndpoint), "POST", "/api/business/v1/approvals/delegations/{delegationId}/revoke", ApprovalPermissionCodes.Manage, null, "revokeApprovalDelegation"),
     ];

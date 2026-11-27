@@ -87,6 +87,15 @@
 3. 确认该组在所有 Gateway 实例完成切换后，将其 `AllowLegacyBearer` 设为 `false`。验证授权操作继续可用，且共享凭据调用对应 Approval 路由时收到 `401`。
 4. 如需回滚，先在 Approval 恢复该组的 `AllowLegacyBearer=true`，再将其 `ConfigureSenders` 设为 `false`。
 
+### Approval 委托列表凭据
+
+在 AppHost 设置 `ApprovalReadDelegations:Enabled=true`，用 `ApprovalReadDelegations:Scopes` 登记委托列表实际使用的每组 `OrganizationId` 与 `EnvironmentId`。为各范围按列表下标提供 Aspire secret 参数 `approval-read-delegations-gateway-{index}`，每项凭据须与共享凭据及其他 Approval 操作凭据不同。
+
+1. 先更新 Approval，设置 `ApprovalReadDelegations:AllowLegacyBearer=true` 和 `ApprovalReadDelegations:ConfigureSenders=false`。
+2. 更新 BusinessGateway，将 `ConfigureSenders` 设为 `true`。逐范围使用具备审批读取权限的用户验证委托列表与筛选。
+3. 确认所有 Gateway 实例完成切换后，将 `AllowLegacyBearer` 设为 `false`，确认授权列表继续可用且共享凭据调用 Approval 委托列表时收到 `401`。
+4. 如需回滚，先在 Approval 恢复 `AllowLegacyBearer=true`，再将 `ConfigureSenders` 设为 `false`。
+
 ### FileStorage tus 字节落点
 
 FileStorage 的 tus 目录同时承载已 complete 文件的字节，因此部署必须给它一个显式、绝对、持久的位置：

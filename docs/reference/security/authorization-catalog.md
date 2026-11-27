@@ -31,6 +31,7 @@
 - `internal.approval-chains.read-quality`
 - `internal.approval-templates.read-gateway`
 - `internal.approval-templates.write-gateway`
+- `internal.approval-delegations.list-gateway`
 - `internal.gateway-cache.invalidate`
 - `iam.users.read`
 - `iam.users.manage`

@@ -106,7 +106,7 @@ public sealed class ApprovalEndpointContractTests
         Assert.Contains(contracts, x => x.HttpMethod == "GET"
             && x.Route == "/api/business/v1/approvals/delegations"
             && x.PermissionCode == ApprovalPermissionCodes.Read
-            && x.AuthorizationPolicy == InternalServiceAuthorizationPolicy.Name
+            && x.AuthorizationPolicy == "Approval.ReadDelegations"
             && x.OperationId == "listApprovalDelegations");
         Assert.Contains(contracts, x => x.HttpMethod == "POST"
             && x.Route == "/api/business/v1/approvals/delegations"
@@ -264,6 +264,59 @@ public sealed class ApprovalEndpointContractTests
             })
             : await client.GetAsync(route + $"?organizationId=org-001&environmentId={environmentId}");
         Assert.Equal(expected, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("internal.approval-delegations.list-gateway", "scoped", HttpStatusCode.OK)]
+    [InlineData("internal.approval-chains.list-gateway", "scoped", HttpStatusCode.Forbidden)]
+    [InlineData("internal.approval-delegations.list-gateway", "legacy", HttpStatusCode.OK)]
+    [InlineData("internal.approval-delegations.list-gateway", "shared", HttpStatusCode.Unauthorized)]
+    public async Task Approval_delegation_list_requires_its_own_scoped_capability(
+        string permission, string credential, HttpStatusCode expected)
+    {
+        const string sharedToken = "synthetic-shared-delegation-test-token";
+        const string scopedToken = "synthetic-scoped-delegation-test-token";
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("environment", "Testing");
+            builder.UseSetting("InternalService:BearerToken", sharedToken);
+            builder.UseSetting("Approval:Seed:Enabled", "false");
+            builder.UseSetting("Approval:ReadDelegations:AllowLegacyBearer", (credential == "legacy").ToString());
+            const string profile = "Approval:ReadDelegations:ScopedCallers:Profiles:0:";
+            builder.UseSetting(profile + "Name", "fixture-delegation-reader");
+            builder.UseSetting(profile + "BearerToken", scopedToken);
+            builder.UseSetting(profile + "Subject", "business-gateway");
+            builder.UseSetting(profile + "OrganizationId", "org-001");
+            builder.UseSetting(profile + "EnvironmentId", "env-dev");
+            builder.UseSetting(profile + "Permissions:0", permission);
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+                services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connection)
+                    .ReplaceService<IModelCustomizer, SqliteDateTimeOffsetModelCustomizer>());
+            });
+        });
+        using var client = factory.CreateClient();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        client.DefaultRequestHeaders.Authorization = new("Bearer", credential == "scoped" ? scopedToken : sharedToken);
+        const string route = "/api/business/v1/approvals/delegations";
+        using var response = await client.GetAsync(route + "?organizationId=org-001&environmentId=env-dev");
+        Assert.Equal(expected, response.StatusCode);
+
+        if (credential == "scoped" && expected == HttpStatusCode.OK)
+        {
+            using var otherOrganization = await client.GetAsync(route + "?organizationId=org-other&environmentId=env-dev");
+            using var otherEnvironment = await client.GetAsync(route + "?organizationId=org-001&environmentId=env-other");
+            Assert.Equal(HttpStatusCode.Forbidden, otherOrganization.StatusCode);
+            Assert.Equal(HttpStatusCode.Forbidden, otherEnvironment.StatusCode);
+        }
     }
 
     [Theory]

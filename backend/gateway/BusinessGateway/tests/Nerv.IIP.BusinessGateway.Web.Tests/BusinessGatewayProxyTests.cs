@@ -9171,6 +9171,36 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Approval_delegation_list_client_uses_its_configured_scope_without_shared_retry()
+    {
+        const string profile = "Approval:ReadDelegations:OutboundCredentials:0:";
+        const string scopedToken = "synthetic-gateway-delegation-list-token";
+        const string sharedToken = "synthetic-shared-token";
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [profile + "OrganizationId"] = "org-001",
+            [profile + "EnvironmentId"] = "env-dev",
+            [profile + "BearerToken"] = scopedToken,
+        }).Build();
+        using var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden));
+        using var downstream = new HttpClient(handler) { BaseAddress = new Uri("http://approval.local") };
+        var client = new HttpBusinessApprovalClient(downstream, configuration);
+        var request = new BusinessConsoleApprovalDelegationListRequest("org-001", "env-dev", Status: "active");
+
+        var denied = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.ListDelegationsAsync(sharedToken, request, CancellationToken.None));
+        var unavailable = await Assert.ThrowsAsync<BusinessServiceProxyException>(() =>
+            client.ListDelegationsAsync(sharedToken, request with { EnvironmentId = "env-other" }, CancellationToken.None));
+
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+        var forwarded = Assert.Single(handler.Requests);
+        Assert.Equal(scopedToken, forwarded.Headers.Authorization?.Parameter);
+        Assert.Equal("/api/business/v1/approvals/delegations", forwarded.RequestUri!.AbsolutePath);
+        Assert.Contains("status=active", forwarded.RequestUri.Query);
+    }
+
+    [Fact]
     public async Task Approval_template_client_sends_distinct_read_and_write_credentials()
     {
         const string sharedToken = "synthetic-shared-token";

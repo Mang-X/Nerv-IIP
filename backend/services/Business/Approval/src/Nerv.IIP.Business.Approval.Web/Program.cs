@@ -40,6 +40,7 @@ try
     ApprovalGatewayOperationAuthorization.ReadCollections.Register(builder.Services, builder.Configuration);
     ApprovalGatewayOperationAuthorization.ReadTemplates.Register(builder.Services, builder.Configuration);
     ApprovalGatewayOperationAuthorization.WriteTemplates.Register(builder.Services, builder.Configuration);
+    ApprovalGatewayOperationAuthorization.ReadDelegations.Register(builder.Services, builder.Configuration);
     builder.Services.AddScoped<ResolveApprovalStepAuthority>();
     var iamBaseAddress = InternalServiceBaseAddress.ResolveAllowingTestHost(
         builder.Configuration, builder.Environment, "Iam:BaseUrl", "http://localhost:5102");

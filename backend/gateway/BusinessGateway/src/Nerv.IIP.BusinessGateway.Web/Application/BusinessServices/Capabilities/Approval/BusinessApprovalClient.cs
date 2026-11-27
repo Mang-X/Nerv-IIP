@@ -217,7 +217,7 @@ public sealed class HttpBusinessApprovalClient(HttpClient httpClient, IConfigura
         BusinessConsoleApprovalDelegationListRequest request,
         CancellationToken cancellationToken) =>
         SendAsync<BusinessConsoleApprovalDelegationListResponse>(
-            internalBearerToken,
+            ResolveOperationBearer("ReadDelegations", request.OrganizationId, request.EnvironmentId, internalBearerToken),
             HttpMethod.Get,
             "/api/business/v1/approvals/delegations?" + Query(
                 ("organizationId", request.OrganizationId),

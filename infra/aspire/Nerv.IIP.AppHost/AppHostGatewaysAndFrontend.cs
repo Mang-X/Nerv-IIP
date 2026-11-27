@@ -173,6 +173,8 @@ internal sealed partial class AppHostComposition
             (businessGateway, "business-gateway", "gateway"));
         ConfigureApprovalCallers(businessApproval, "WriteTemplates", "write-templates", "internal.approval-templates.write",
             (businessGateway, "business-gateway", "gateway"));
+        ConfigureApprovalCallers(businessApproval, "ReadDelegations", "read-delegations", "internal.approval-delegations.list",
+            (businessGateway, "business-gateway", "gateway"));
 
         if (fullStackEphemeral)
         {

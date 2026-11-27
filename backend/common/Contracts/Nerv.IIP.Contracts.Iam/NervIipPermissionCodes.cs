@@ -18,6 +18,7 @@ public static class NervIipPermissionCodes
     public const string InternalApprovalChainsListGateway = "internal.approval-chains.list-gateway";
     public const string InternalApprovalTemplatesReadGateway = "internal.approval-templates.read-gateway";
     public const string InternalApprovalTemplatesWriteGateway = "internal.approval-templates.write-gateway";
+    public const string InternalApprovalDelegationsListGateway = "internal.approval-delegations.list-gateway";
     public const string InternalGatewayCacheInvalidate = "internal.gateway-cache.invalidate";
 
     // iam.*

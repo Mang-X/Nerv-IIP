@@ -12,6 +12,8 @@ internal sealed class ApprovalGatewayOperationAuthorization(string operation, st
         new("ReadTemplates", NervIipPermissionCodes.InternalApprovalTemplatesReadGateway);
     internal static readonly ApprovalGatewayOperationAuthorization WriteTemplates =
         new("WriteTemplates", NervIipPermissionCodes.InternalApprovalTemplatesWriteGateway);
+    internal static readonly ApprovalGatewayOperationAuthorization ReadDelegations =
+        new("ReadDelegations", NervIipPermissionCodes.InternalApprovalDelegationsListGateway);
 
     internal string PolicyName => $"Approval.{operation}";
     private string SchemeName => $"Approval{operation}Caller";
