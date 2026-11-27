@@ -43,6 +43,19 @@ describe('inventory workflow pages', () => {
     expect(metric().props('series')).toBeUndefined()
   })
 
+  it('shows count-frozen stock outside available and reserved quantities', async () => {
+    const wrapper = mountInventoryPage(AvailabilityPage)
+    inventoryState.availabilityQuantity!.value = 0
+    await nextTick()
+
+    const ring = wrapper.findAllComponents({ name: 'NvMetricRing' }).at(0)!
+    expect(ring.props('segments')).toEqual([
+      { key: 'available', label: '可用', value: 0, tone: 'success' },
+      { key: 'reserved', label: '预留', value: 2, tone: 'warning' },
+      { key: 'frozen', label: '冻结/其他', value: 8, tone: 'danger' },
+    ])
+  })
+
   it('shows current expiry risk counts without a synthetic period change', () => {
     inventoryState.initialSkuCode = ''
     const wrapper = mountInventoryPage(AvailabilityPage)

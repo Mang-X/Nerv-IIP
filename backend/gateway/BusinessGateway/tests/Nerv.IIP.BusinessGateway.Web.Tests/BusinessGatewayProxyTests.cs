@@ -7205,6 +7205,37 @@ public sealed class BusinessGatewayProxyTests
     }
 
     [Fact]
+    public async Task Create_zero_book_count_returns_chinese_bad_request_when_inventory_ledger_is_missing()
+    {
+        const string reason = "该物料在所选库位和批次没有库存台账，无法创建盘点。";
+        using var http = new HttpClient(new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK,
+            new { success = false, code = 0, message = reason }))) { BaseAddress = new Uri("http://wms.local") };
+        await using var lease = LeaseHost(FakeBusinessGatewayAuthorizationClient.Allowed(), services =>
+        {
+            services.RemoveAll<IBusinessWmsClient>();
+            services.AddSingleton<IBusinessWmsClient>(new HttpBusinessWmsClient(http));
+        });
+        using var client = lease.CreateClient();
+        BusinessGatewayTestHost.Authenticated(client);
+
+        using var response = await client.PostAsJsonAsync("/api/business-console/v1/wms/count-executions", new
+        {
+            organizationId = "org-001",
+            environmentId = "env-dev",
+            skuCode = "IGBT",
+            uomCode = "pcs",
+            siteCode = "SITE-01",
+            locationCode = "LOC-01",
+            expectedQuantity = 0m,
+            idempotencyKey = "zero-book-missing-ledger",
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(reason, body.RootElement.GetProperty("message").GetString());
+    }
+
+    [Fact]
     public async Task Engineering_bom_diff_returns_business_rejection_for_different_root_items()
     {
         const string reason = "工程 BOM 两个版本必须属于同一父物料才能比较。";

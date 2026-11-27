@@ -46,7 +46,7 @@ public sealed class StockCountAdjustment : Entity<StockCountAdjustmentId>, IAggr
         VarianceQuantity = task.VarianceQuantity ?? throw new InvalidOperationException("Count task has no variance quantity.");
         VarianceAmount = varianceAmount;
         Status = InventoryText.Required(status);
-        ConfirmedAtUtc = movement is null ? null : DateTime.UtcNow;
+        ConfirmedAtUtc = status == StockCountAdjustmentStatuses.Posted ? DateTime.UtcNow : null;
     }
 
     public string OrganizationId { get; private set; } = string.Empty;
@@ -80,6 +80,17 @@ public sealed class StockCountAdjustment : Entity<StockCountAdjustmentId>, IAggr
         }
 
         return new StockCountAdjustment(task, idempotencyKey, StockCountAdjustmentStatuses.Posted, null, movement, Math.Abs(movement.MovementAmount ?? 0m));
+    }
+
+    public static StockCountAdjustment RecordWithoutVariance(StockCountTask task, string idempotencyKey)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        if (task.Status != StockCountTaskStatuses.Confirmed || task.VarianceQuantity != 0m)
+        {
+            throw new InvalidOperationException("Only a confirmed stock count without variance can be recorded without a movement.");
+        }
+
+        return new StockCountAdjustment(task, idempotencyKey, StockCountAdjustmentStatuses.Posted, null, null, 0m);
     }
 
     public static StockCountAdjustment RecordPendingApproval(

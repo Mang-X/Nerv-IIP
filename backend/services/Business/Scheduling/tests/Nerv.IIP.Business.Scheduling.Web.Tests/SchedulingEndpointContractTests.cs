@@ -47,6 +47,23 @@ public sealed partial class SchedulingEndpointContractTests
     }
 
     [Fact]
+    public async Task List_order_urgencies_returns_ok_with_scope_validation_enabled()
+    {
+        await using var baseFactory = new SchedulingLiveHttpTestFactory();
+        await using var factory = baseFactory.WithWebHostBuilder(builder =>
+            builder.UseDefaultServiceProvider(options => options.ValidateScopes = true));
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "test-internal-token");
+
+        using var response = await client.GetAsync(
+            "/api/business/v1/scheduling/order-urgencies?organizationId=org-001&environmentId=prod");
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Empty(document.RootElement.GetProperty("data").EnumerateArray());
+    }
+
+    [Fact]
     public async Task Working_draft_discovery_requires_internal_authentication_and_forwarded_user()
     {
         await using var factory = new SchedulingLiveHttpTestFactory();

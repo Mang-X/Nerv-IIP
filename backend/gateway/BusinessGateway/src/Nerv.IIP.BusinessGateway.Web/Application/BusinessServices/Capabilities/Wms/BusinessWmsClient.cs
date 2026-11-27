@@ -664,7 +664,8 @@ public sealed class HttpBusinessWmsClient(HttpClient httpClient) : BusinessServi
             HttpMethod.Post,
             "/api/business/v1/wms/count-executions",
             request,
-            cancellationToken);
+            cancellationToken,
+            acceptKnownExceptionCodeZero: true);
 
     public Task<BusinessConsoleWmsCountExecutionListResponse> ListCountExecutionsAsync(
         string internalBearerToken,

@@ -150,6 +150,22 @@ public sealed class StockCountTask : Entity<StockCountTaskId>, IAggregateRoot
         return ApplyConfirmedAdjustment(ledger, countedQuantity, idempotencyKey);
     }
 
+    public void ConfirmWithoutVariance(StockLedger ledger, decimal countedQuantity)
+    {
+        EnsureStatus(StockCountTaskStatuses.Open, "Only open stock count tasks can be confirmed.");
+        EnsureReadyForAdjustment(ledger, countedQuantity);
+        if (countedQuantity != ledger.OnHandQuantity)
+        {
+            throw new InvalidOperationException("Stock count has a variance and requires an adjustment.");
+        }
+
+        ledger.ReleaseCountFreeze();
+        CountedQuantity = countedQuantity;
+        VarianceQuantity = 0m;
+        Status = StockCountTaskStatuses.Confirmed;
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
     public decimal SubmitForApproval(StockLedger ledger, decimal countedQuantity)
     {
         EnsureStatus(StockCountTaskStatuses.Open, "Only open stock count tasks can be submitted for approval.");

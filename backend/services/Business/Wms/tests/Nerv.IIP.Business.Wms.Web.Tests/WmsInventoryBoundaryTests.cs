@@ -1889,6 +1889,25 @@ public sealed class WmsInventoryBoundaryTests
     }
 
     [Fact]
+    public async Task Count_task_client_reports_the_missing_inventory_ledger()
+    {
+        using var http = new HttpClient(new StubHttpMessageHandler(
+            """{"data":null,"success":false,"message":"未找到盘点任务对应的库存台账。","code":0}"""))
+        {
+            BaseAddress = new Uri("http://inventory.test"),
+        };
+        var client = new HttpWmsInventoryReservationClient(http, new TestInternalServiceTokenProvider());
+
+        var error = await Assert.ThrowsAsync<KnownException>(() => client.CreateCountTaskAsync(
+            new WmsInventoryCountTaskRequest(
+                "org-001", "env-dev", "COUNT-MISSING", "IGBT", "pcs", "SITE-01", "LOC-01",
+                null, null, "qualified", "company", null, "count-missing"),
+            CancellationToken.None));
+
+        Assert.Equal("该物料在所选库位和批次没有库存台账，无法创建盘点。", error.Message);
+    }
+
+    [Fact]
     public async Task Reservation_client_uses_a_safe_outer_message_for_downstream_rejection()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(
@@ -2058,6 +2077,32 @@ public sealed class WmsInventoryBoundaryTests
                 .TrustedFor(dbContext, count),
             CancellationToken.None);
         Assert.Equal(result, replay);
+        Assert.Single(inventory.CountAdjustmentRequests);
+    }
+
+    [Fact]
+    public async Task Complete_matching_count_persists_and_replays_receipt_without_stock_movement()
+    {
+        await using var db = CreateContext();
+        var inventory = new FakeWmsInventoryReservationClient("unused") { InventoryMovementId = null };
+        var id = await new CreateCountExecutionCommandHandler(db, inventory).Handle(
+            new CreateCountExecutionCommand("org-001", "env-dev", "COUNT-MATCH", "SKU-FG-1000", "kg", "SITE-01", "LOC-A-01", 10m),
+            CancellationToken.None);
+        await db.SaveChangesAsync();
+
+        var count = await db.CountExecutions.SingleAsync();
+        var command = new CompleteCountExecutionCommand(id, 10m, "count-match").TrustedFor(db, count);
+        var handler = new CompleteCountExecutionCommandHandler(db, inventory);
+        var result = await handler.Handle(command, CancellationToken.None);
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        Assert.Null(result.InventoryMovementId);
+        var receipt = Assert.Single(db.InventoryMovementRequests);
+        Assert.Equal(InventoryMovementRequestStatus.Posted, receipt.Status);
+        Assert.Equal(0m, receipt.Quantity);
+        Assert.Equal(CountExecutionStatus.Completed, db.CountExecutions.Single().Status);
+        Assert.Equal(result, await handler.Handle(command, CancellationToken.None));
         Assert.Single(inventory.CountAdjustmentRequests);
     }
 
@@ -3096,7 +3141,7 @@ public sealed class WmsInventoryBoundaryTests
         public List<string> ReservationResults { get; } = [];
         public bool SplitFefoAllocation { get; init; }
         public string CountTaskId { get; init; } = Guid.CreateVersion7().ToString();
-        public string InventoryMovementId { get; init; } = Guid.CreateVersion7().ToString();
+        public string? InventoryMovementId { get; init; } = Guid.CreateVersion7().ToString();
         public Exception? RenewalException { get; init; }
         public Exception? PickedException { get; init; }
 

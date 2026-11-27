@@ -38,6 +38,38 @@ foreach ($relativePath in @(
     }
 }
 
+$launchPath = Join-Path $repoRoot 'scripts/dev/start-platform.ps1'
+$launchTokens = $null
+$launchParseErrors = $null
+$launchAst = [System.Management.Automation.Language.Parser]::ParseFile(
+    $launchPath, [ref] $launchTokens, [ref] $launchParseErrors)
+if ($launchParseErrors.Count -gt 0) {
+    throw "Local launcher has parse errors: $launchParseErrors"
+}
+$environmentAssignment = $launchAst.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+        $node.Left.VariablePath.UserPath -eq 'appHostEnvironment'
+}, $true)
+$readLaunchEnvironment = [scriptblock]::Create($environmentAssignment.Right.Extent.Text)
+$savedProvider = $env:Messaging__Provider
+try {
+    foreach ($case in @(
+        @{ Override = $null; Expected = 'Redis' },
+        @{ Override = 'RabbitMQ'; Expected = 'RabbitMQ' }
+    )) {
+        $env:Messaging__Provider = $case.Override
+        $localEnvironment = & $readLaunchEnvironment
+        if ($localEnvironment.Messaging__Provider -ne $case.Expected) {
+            throw "Expected local Aspire messaging provider '$($case.Expected)'."
+        }
+    }
+}
+finally {
+    $env:Messaging__Provider = $savedProvider
+}
+
 function Invoke-Nerv {
     param(
         [Parameter(Mandatory)]
