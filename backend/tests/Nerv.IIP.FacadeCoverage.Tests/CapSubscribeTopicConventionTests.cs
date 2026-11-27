@@ -1,6 +1,8 @@
 using System.Reflection;
+using Nerv.IIP.Contracts.Erp;
 using Nerv.IIP.Contracts.Maintenance;
 using Nerv.IIP.Contracts.Mes;
+using Nerv.IIP.Messaging.CAP;
 
 namespace Nerv.IIP.FacadeCoverage.Tests;
 
@@ -47,9 +49,23 @@ public sealed class CapSubscribeTopicConventionTests
         Assert.True(IsAllowedSubscriptionTopic(
             typeof(AndonCallEscalatedIntegrationEvent),
             AndonCallEscalatedIntegrationEvent.TopicTemplate));
+        Assert.True(IsAllowedSubscriptionTopic(
+            typeof(PurchaseOrderReleasedV2IntegrationEvent),
+            PurchaseOrderReleasedV2IntegrationEvent.TopicTemplate));
         Assert.False(IsAllowedSubscriptionTopic(
             typeof(AssetUnavailableV2IntegrationEvent),
             "nerv-iip.{deployment-profile}.business-maintenance.maintenance.asset-unavailable.v3"));
+    }
+
+    [Theory]
+    [InlineData("Development", "development")]
+    [InlineData("  StAgInG  ", "staging")]
+    public void Purchase_order_release_topic_matches_the_subscription_resolver(string profile, string expectedProfile)
+    {
+        var expected = $"nerv-iip.{expectedProfile}.business-erp.procurement.purchase-order-released.v2";
+        Assert.Equal(expected, PurchaseOrderReleasedV2IntegrationEvent.Topic(profile));
+        Assert.Equal(expected, new DeploymentProfileTopicResolver().Resolve(
+            PurchaseOrderReleasedV2IntegrationEvent.TopicTemplate, profile));
     }
 
     [Fact]
@@ -119,6 +135,9 @@ public sealed class CapSubscribeTopicConventionTests
     private static string? CanonicalSubscriptionTemplate(Type integrationEventType) =>
         AssetUnavailableIntegrationEventTopics.CanonicalSubscriptionTemplate(integrationEventType)
         ?? MesActualTimeIntegrationEventTopics.CanonicalSubscriptionTemplate(integrationEventType)
+        ?? (integrationEventType == typeof(PurchaseOrderReleasedV2IntegrationEvent)
+            ? PurchaseOrderReleasedV2IntegrationEvent.TopicTemplate
+            : null)
         ?? (integrationEventType == typeof(AndonCallEscalatedIntegrationEvent)
             ? AndonCallEscalatedIntegrationEvent.TopicTemplate
             : null);
