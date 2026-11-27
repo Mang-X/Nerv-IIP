@@ -141,6 +141,9 @@ public sealed class FileStorageStartupGovernanceTests
     [InlineData("server-proxy")]
     [InlineData("s3-multipart")]
     [InlineData("tuss")]
+    [InlineData("TUS")]
+    [InlineData("TuS")]
+    [InlineData(" tus ")]
     [InlineData("")]
     public void Unsupported_upload_provider_fails_fast(string provider)
     {

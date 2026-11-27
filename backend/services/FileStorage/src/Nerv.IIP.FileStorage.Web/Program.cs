@@ -115,7 +115,7 @@ builder.Services.AddNervIipLocalization();
 var app = builder.Build();
 // 测试宿主的 ConfigureAppConfiguration 到 Build() 才生效。
 var uploadProvider = app.Configuration["FileStorage:UploadProvider"] ?? TusUploadProvider.Name;
-if (!string.Equals(uploadProvider, TusUploadProvider.Name, StringComparison.OrdinalIgnoreCase))
+if (!string.Equals(uploadProvider, TusUploadProvider.Name, StringComparison.Ordinal))
 {
     throw new InvalidOperationException("FileStorage:UploadProvider only supports tus.");
 }
